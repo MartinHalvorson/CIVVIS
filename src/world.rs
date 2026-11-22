@@ -498,6 +498,13 @@ impl TileGrid {
         self.tiles.iter()
     }
 
+    /// Whether this grid and `other` still share one tile allocation, which
+    /// means no tile of either has been written since one was cloned from
+    /// the other. Constant time.
+    pub fn shares_tiles_with(&self, other: &TileGrid) -> bool {
+        std::sync::Arc::ptr_eq(&self.tiles, &other.tiles)
+    }
+
     /// Every position whose tile differs between this grid and `other`, in
     /// map order; empty when the two share one allocation, and `None` when
     /// they are not grids of the same map. A cache that drew conclusions on

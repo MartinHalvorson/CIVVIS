@@ -252,6 +252,11 @@ pub(super) struct NarrowsAtlas {
     turn: Option<u32>,
     pid: usize,
     tiles: BTreeMap<Pos, Narrows>,
+    /// `chokepoint_site_bonus` per site, kept while the map is the very
+    /// allocation `ground` holds: the bonus reads the turn's readings above,
+    /// fixed once read, and each ring tile's owning city.
+    sites: BTreeMap<Pos, f64>,
+    ground: Option<crate::world::TileGrid>,
 }
 
 impl Clone for NarrowsAtlas {
@@ -270,6 +275,25 @@ impl NarrowsAtlas {
         self.turn = Some(g.turn);
         self.pid = pid;
         self.tiles.clear();
+        self.sites.clear();
+        self.ground = None;
+    }
+
+    /// Keep the site bonuses while `g`'s map is the very allocation they
+    /// were priced on; any tile written since starts them afresh. (Comparing
+    /// the two maps tile by tile to keep the untouched rings cost more than
+    /// it saved: the map is rewritten far more often than a site is asked
+    /// twice.)
+    fn sync_ground(&mut self, g: &Game) {
+        if self
+            .ground
+            .as_ref()
+            .is_some_and(|ground| g.map.tiles.shares_tiles_with(ground))
+        {
+            return;
+        }
+        self.sites.clear();
+        self.ground = Some(g.map.tiles.clone());
     }
 }
 
@@ -504,6 +528,25 @@ impl AdvancedAi {
         if !self.chokepoint_siting {
             return 0.0;
         }
+        // A settle scan prices every candidate, and every settler and every
+        // frame scans again: thirty-seven readings a site each time, 1.4 to
+        // 2.4% of a gene-screen game with the gene drawn (2026-11-22).
+        {
+            let mut atlas = self.narrows_atlas.borrow_mut();
+            if !atlas.matches(g, pid) {
+                atlas.start(g, pid);
+            }
+            atlas.sync_ground(g);
+            if let Some(bonus) = atlas.sites.get(&pos) {
+                return *bonus;
+            }
+        }
+        let bonus = self.chokepoint_site_bonus_uncached(g, pid, pos);
+        self.narrows_atlas.borrow_mut().sites.insert(pos, bonus);
+        bonus
+    }
+
+    fn chokepoint_site_bonus_uncached(&self, g: &Game, pid: usize, pos: Pos) -> f64 {
         let mut worth: Vec<f64> = Vec::new();
         for tile in g.wdisk(pos, SITE_RINGS) {
             if g.map.get(tile).is_none_or(|tile| tile.owner_city.is_some()) {
@@ -1093,6 +1136,34 @@ mod tests {
         let mut owned = game.clone();
         owned.found_city_for(1, gap, None);
         assert_eq!(ai.chokepoint_site_bonus(&owned, 0, beside), 0.0);
+    }
+
+    /// A site bonus kept from an earlier pricing is the bonus the site prices
+    /// now: on the same map it is answered from memory, and on a map written
+    /// anywhere since (here far from its rings, then inside them, a gate
+    /// taken into a border) it is priced again and is still right.
+    #[test]
+    fn a_kept_site_bonus_is_the_bonus_the_site_prices_now() {
+        let (game, gap) = mountain_wall(717_005, 14, 9);
+        let mut ai = AdvancedAi::new();
+        ai.enable_chokepoint_siting();
+        let beside = at(&game, 13, 9);
+        let first = ai.chokepoint_site_bonus(&game, 0, beside);
+        assert!(first > 0.0);
+        assert_eq!(ai.chokepoint_site_bonus(&game, 0, beside), first);
+        assert_eq!(ai.chokepoint_site_bonus_uncached(&game, 0, beside), first);
+        let mut elsewhere = game.clone();
+        let distant = at(&game, 2, 2);
+        assert!(elsewhere.wdist(distant, beside) > SITE_RINGS * 2);
+        elsewhere.map.tiles.get_mut(&distant).unwrap().hills = true;
+        assert_eq!(
+            ai.chokepoint_site_bonus(&elsewhere, 0, beside),
+            ai.chokepoint_site_bonus_uncached(&elsewhere, 0, beside)
+        );
+        let mut owned = game.clone();
+        owned.found_city_for(1, gap, None);
+        assert_eq!(ai.chokepoint_site_bonus(&owned, 0, beside), 0.0);
+        assert_eq!(ai.chokepoint_site_bonus(&game, 0, beside), first);
     }
 
     #[test]
