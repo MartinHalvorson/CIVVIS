@@ -652,6 +652,26 @@ pub fn added_indices(
     next..next + count.saturating_sub(mine)
 }
 
+/// The order a run plays its tables in, as (series, place in that series).
+/// `counts` is how many tables each series (the pool, each rung) has to play.
+/// Every series advances through its own share of the run together, so a run
+/// that is cut short has measured a little of everything, however many
+/// tables each series has and wherever its indices start.
+pub fn interleaved(counts: &[usize]) -> Vec<(usize, usize)> {
+    let mut order: Vec<(usize, usize)> = counts
+        .iter()
+        .enumerate()
+        .flat_map(|(series, count)| (0..*count).map(move |place| (series, place)))
+        .collect();
+    // By (place + 1/2) / count, compared as cross products to stay exact.
+    order.sort_by(|a, b| {
+        let left = (2 * a.1 + 1) * counts[b.0];
+        let right = (2 * b.1 + 1) * counts[a.0];
+        left.cmp(&right).then(a.0.cmp(&b.0))
+    });
+    order
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -669,6 +689,24 @@ mod tests {
         );
         assert_eq!(kept(9).len(), 4);
         assert!(kept(3).contains("a") && !kept(3).contains(""));
+    }
+
+    #[test]
+    fn a_run_cut_short_has_played_some_of_every_series() {
+        // A pool of eight tables, two rungs of two, and a rung with none.
+        let counts = [8, 2, 0, 2];
+        let order = interleaved(&counts);
+        assert_eq!(order.len(), 12);
+        for (series, count) in counts.iter().enumerate() {
+            let places: Vec<usize> = order
+                .iter()
+                .filter(|(at, _)| *at == series)
+                .map(|(_, place)| *place)
+                .collect();
+            assert_eq!(places, (0..*count).collect::<Vec<_>>());
+        }
+        let played = |series: usize| order[..6].iter().filter(|(at, _)| *at == series).count();
+        assert_eq!((played(0), played(1), played(3)), (4, 1, 1), "{order:?}");
     }
 
     #[test]

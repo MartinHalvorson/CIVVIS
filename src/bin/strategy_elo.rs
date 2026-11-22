@@ -534,7 +534,8 @@ fn main() {
                 .filter_map(|line| line["index"].as_u64())
                 .collect()
         };
-        let mut plans = Vec::new();
+        // What each series (the pool, each rung) has to play.
+        let mut series: Vec<Vec<Plan>> = Vec::new();
         // A labelled run: each series adds its count after its newest index.
         let added = |kind: &str, rung: &str, count: usize| {
             let run = options.run.as_deref();
@@ -550,35 +551,50 @@ fn main() {
             )
         };
         if adding {
-            for index in added("pool", PRINCE, options.add_games) {
-                plans.push(pool_plan(&options, index));
-            }
+            series.push(
+                added("pool", PRINCE, options.add_games)
+                    .map(|index| pool_plan(&options, index))
+                    .collect(),
+            );
             for (order, (rung, _)) in CIV6_RUNGS.iter().enumerate() {
                 if *rung == PRINCE {
                     continue;
                 }
-                for index in added(rung_kind(rung), rung, options.add_rung_games) {
-                    plans.push(measured_plan(&options, order, rung, index));
-                }
+                series.push(
+                    added(rung_kind(rung), rung, options.add_rung_games)
+                        .map(|index| measured_plan(&options, order, rung, index))
+                        .collect(),
+                );
             }
         }
         let played = have("pool", PRINCE);
-        for index in (0..options.games).filter(|index| !played.contains(&(*index as u64))) {
-            plans.push(pool_plan(&options, index));
-        }
+        series.push(
+            (0..options.games)
+                .filter(|index| !played.contains(&(*index as u64)))
+                .map(|index| pool_plan(&options, index))
+                .collect(),
+        );
         for (order, (rung, _)) in CIV6_RUNGS.iter().enumerate() {
             if *rung == PRINCE {
                 continue;
             }
             let played = have(rung_kind(rung), rung);
-            for index in (0..options.rung_games).filter(|index| !played.contains(&(*index as u64)))
-            {
-                plans.push(measured_plan(&options, order, rung, index));
-            }
+            series.push(
+                (0..options.rung_games)
+                    .filter(|index| !played.contains(&(*index as u64)))
+                    .map(|index| measured_plan(&options, order, rung, index))
+                    .collect(),
+            );
         }
-        // Rungs and pool interleave, so a run that is cut short has measured
-        // a little of everything instead of all of one thing.
-        plans.sort_by_key(|plan| plan.index);
+        // Every series advances through its own share together, so a run that
+        // is cut short has measured a little of everything instead of all of
+        // one thing. A table's index cannot order them: each series counts on
+        // from wherever its own log ends.
+        let counts: Vec<usize> = series.iter().map(Vec::len).collect();
+        let plans: Vec<Plan> = strategies::interleaved(&counts)
+            .into_iter()
+            .map(|(series_at, place)| series[series_at][place].clone())
+            .collect();
         println!(
             "{} tables to play ({} already logged), {} jobs",
             plans.len(),
