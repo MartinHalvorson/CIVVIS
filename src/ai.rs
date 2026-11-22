@@ -1157,10 +1157,6 @@ impl EnvelopeReach {
     fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
-
-    fn as_slice(&self) -> &[Pos] {
-        &self.0
-    }
 }
 
 /// The hostile envelopes one board hands back: each enemy, and the tiles it

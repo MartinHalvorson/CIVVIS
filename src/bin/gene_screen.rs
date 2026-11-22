@@ -3559,6 +3559,7 @@ fn normal_quantile_upper(p: f64) -> f64 {
 
 /// Solve `A x = b` in place by Gaussian elimination with partial pivoting.
 /// Returns `None` when the matrix is singular to working precision.
+#[cfg(test)]
 fn solve(mut a: Vec<Vec<f64>>, mut b: Vec<f64>) -> Option<Vec<f64>> {
     let n = b.len();
     for col in 0..n {
