@@ -2187,6 +2187,18 @@ pub struct StateSnapshot {
     /// older export; a real zero means the seat has no pending era choice.
     #[serde(default)]
     pub dedication_choices: Option<i64>,
+    /// Our own Historic Moments by type, `{"MOMENT_*": [count, era score]}`
+    /// (`CivvisLedger.momentCensus`, 2026-11-13). Until 2026-11-22 it crossed
+    /// and was read only by the analysis tools, so on a mirrored board every
+    /// one-time Moment looked unearned: a gene asking whether the first ship or
+    /// the first unique unit would still pay could not tell. `None` on an
+    /// older export leaves the model's counters alone.
+    ///
+    /// ⚠ An empty Lua table arrives as `[]` (see `map_or_empty_sequence`), and
+    /// the values stay raw JSON: a malformed entry is skipped where it is read,
+    /// never allowed to fail the whole snapshot.
+    #[serde(default, deserialize_with = "map_or_empty_sequence")]
+    pub historic_moments: Option<BTreeMap<String, serde_json::Value>>,
     /// Observed activity in the preceding native era, reconstructed from this log.
     /// Missing history stays unknown; it is never fabricated from the current board.
     #[serde(skip)]

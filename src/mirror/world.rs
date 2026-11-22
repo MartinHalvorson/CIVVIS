@@ -140,8 +140,48 @@ pub(super) fn apply_observed_age(
     }
 }
 
+/// The engine's own first-time key for a host Moment, where the engine books
+/// one (`Game::first_historic_moment` in `game/eras.rs`).
+fn first_moment_key(moment: &str) -> Option<&'static str> {
+    match moment {
+        "MOMENT_UNIT_CREATED_FIRST_DOMAIN_SEA"
+        | "MOMENT_UNIT_CREATED_FIRST_DOMAIN_SEA_IN_WORLD" => Some("first_sea_unit"),
+        "MOMENT_UNIT_CREATED_FIRST_DOMAIN_AIR"
+        | "MOMENT_UNIT_CREATED_FIRST_DOMAIN_AIR_IN_WORLD" => Some("first_air_unit"),
+        _ => None,
+    }
+}
+
+/// The host's Historic Moments onto the model's award counters: what
+/// `Game::add_historic_moment` books as `historic_moment_awards:<MOMENT>`, and
+/// for the one-time Moments the engine keys, its `historic_moment:<key>` guard,
+/// so a speculative board does not pay a Moment the seat has already had.
+fn apply_historic_moments(player: &mut crate::game::Player, state: &StateSnapshot) {
+    let Some(moments) = &state.historic_moments else {
+        return;
+    };
+    for (moment, entry) in moments {
+        let count = entry
+            .as_array()
+            .and_then(|pair| pair.first())
+            .and_then(serde_json::Value::as_f64)
+            .unwrap_or(0.0);
+        if !moment.starts_with("MOMENT_") || !count.is_finite() || count < 1.0 {
+            continue;
+        }
+        player.counters.insert(
+            format!("historic_moment_awards:{moment}"),
+            count.round() as i64,
+        );
+        if let Some(key) = first_moment_key(moment) {
+            player.counters.insert(format!("historic_moment:{key}"), 1);
+        }
+    }
+}
+
 pub(super) fn apply_player_ages(game: &mut crate::game::Game, state: &StateSnapshot) {
     let player = &mut game.players[0];
+    apply_historic_moments(player, state);
     if let Some(activity) = &state.observed_dedication_activity {
         player.last_era_triggers.clone_from(activity);
     }

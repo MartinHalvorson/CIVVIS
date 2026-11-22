@@ -2328,3 +2328,55 @@ fn malformed_and_duplicate_plot_prices_do_not_authorize_a_purchase() {
     let game = rebuild_from_state(&snapshot, &state, 2, 1, 250, 0).game;
     assert!(game.host_plot_purchases[&city].is_empty());
 }
+
+/// The host's Historic Moments reach the model's award counters, so a gene
+/// asking whether a one-time Moment (the first ship, the first unique unit)
+/// would still pay reads the real game, and the empty `[]` a Lua empty table
+/// encodes to, or a malformed entry, can never lose the board.
+#[test]
+fn the_host_historic_moments_reach_the_award_counters() {
+    let snapshot = Snapshot::from_chunks(&[TilesChunk {
+        turn: 40,
+        width: 4,
+        height: 4,
+        chunk: 1,
+        plots: vec![host_grass(2, 2)],
+    }]);
+    let empty: StateSnapshot =
+        serde_json::from_str(r#"{"turn": 1, "gold": 10, "historic_moments": []}"#)
+            .expect("an empty moment table encoded as [] must still parse");
+    assert_eq!(empty.historic_moments, Some(BTreeMap::new()));
+    assert_eq!(empty.gold, 10, "and the rest of the board survives it");
+
+    let state: StateSnapshot = serde_json::from_str(
+        r#"{"turn": 40, "era_score": 6, "normal_age_threshold": 8,
+            "historic_moments": {
+                "MOMENT_UNIT_CREATED_FIRST_DOMAIN_SEA_IN_WORLD": [1, 3],
+                "MOMENT_TECH_RESEARCHED_IN_ERA_FIRST": [4, 4],
+                "MOMENT_BROKEN": "not a pair",
+                "NOT_A_MOMENT": [2, 2]
+            }}"#,
+    )
+    .expect("a populated moment table parses, malformed entries included");
+    let rebuilt = rebuild_from_state(&snapshot, &state, 2, 1, 250, 0).game;
+    let counters = &rebuilt.players[0].counters;
+    assert_eq!(
+        counters.get("historic_moment_awards:MOMENT_UNIT_CREATED_FIRST_DOMAIN_SEA_IN_WORLD"),
+        Some(&1)
+    );
+    assert_eq!(
+        counters.get("historic_moment:first_sea_unit"),
+        Some(&1),
+        "the engine's own first-ship guard is set, so no clone pays it twice"
+    );
+    assert_eq!(
+        counters.get("historic_moment_awards:MOMENT_TECH_RESEARCHED_IN_ERA_FIRST"),
+        Some(&4)
+    );
+    assert!(!counters.contains_key("historic_moment_awards:MOMENT_BROKEN"));
+    assert!(!counters.contains_key("historic_moment_awards:NOT_A_MOMENT"));
+
+    let absent: StateSnapshot =
+        serde_json::from_str(r#"{"turn": 3}"#).expect("an absent field parses");
+    assert_eq!(absent.historic_moments, None);
+}
