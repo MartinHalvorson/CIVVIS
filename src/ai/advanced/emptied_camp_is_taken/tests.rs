@@ -91,7 +91,7 @@ fn empty_camp_beside_a_warrior(seed: u64) -> (Game, Pos, u32) {
     (game, camp, uid)
 }
 
-fn ai(on: bool) -> AdvancedAi {
+fn camp_ai(on: bool) -> AdvancedAi {
     let mut ai = AdvancedAi::new();
     ai.battlefront_observation = false;
     if on {
@@ -125,7 +125,7 @@ fn a_soldier_beside_an_empty_camp_walks_onto_it() {
     for on in [true, false] {
         let (mut game, camp, warrior) = empty_camp_beside_a_warrior(91_210);
         let gold = game.players[0].gold;
-        let mut ai = ai(on);
+        let mut ai = camp_ai(on);
         let mut field = ai.danger_field(&game, 0, ai.strike_reach);
         let taken = ai.take_emptied_camps(&mut game, 0, &mut field);
         if on {
@@ -149,7 +149,7 @@ fn an_occupied_camp_is_left_to_the_fight() {
     let (mut game, camp, warrior) = empty_camp_beside_a_warrior(91_211);
     let barb = game.barb_pid.unwrap();
     game.spawn_test_unit("warrior", barb, camp);
-    let mut ai = ai(true);
+    let mut ai = camp_ai(true);
     let mut field = ai.danger_field(&game, 0, ai.strike_reach);
     assert_eq!(ai.take_emptied_camps(&mut game, 0, &mut field), 0);
     assert_ne!(game.units[&warrior].pos, camp);
@@ -166,7 +166,7 @@ fn the_garrison_a_spent_soldier_and_an_ordered_one_stay_put() {
     game.barb_camps.insert(camp, game.turn + 1_000);
     game.map.tiles.get_mut(&camp).unwrap().improvement = Some(crate::name!("barbarian_camp"));
     let garrison = game.spawn_test_unit("warrior", 0, home);
-    let mut ai = ai(true);
+    let mut ai = camp_ai(true);
     let mut field = ai.danger_field(&game, 0, ai.strike_reach);
     assert_eq!(ai.take_emptied_camps(&mut game, 0, &mut field), 0);
     assert_eq!(game.units[&garrison].pos, home);
@@ -174,14 +174,14 @@ fn the_garrison_a_spent_soldier_and_an_ordered_one_stay_put() {
     // A spent soldier.
     let (mut game, camp, warrior) = empty_camp_beside_a_warrior(91_213);
     game.units.get_mut(&warrior).unwrap().moves_left = 0.0;
-    let mut ai = ai(true);
+    let mut ai = camp_ai(true);
     let mut field = ai.danger_field(&game, 0, ai.strike_reach);
     assert_eq!(ai.take_emptied_camps(&mut game, 0, &mut field), 0);
     assert!(game.barb_camps.contains_key(&camp));
 
     // One the plan already ordered this turn.
     let (mut game, camp, warrior) = empty_camp_beside_a_warrior(91_214);
-    let mut ai = ai(true);
+    let mut ai = camp_ai(true);
     ai.battle_planner_ordered.insert(warrior);
     let mut field = ai.danger_field(&game, 0, ai.strike_reach);
     assert_eq!(ai.take_emptied_camps(&mut game, 0, &mut field), 0);
@@ -204,7 +204,7 @@ fn the_battle_plan_takes_the_empty_camp_before_its_positions() {
     };
     for on in [true, false] {
         let (mut game, camp, warrior) = empty_camp_beside_a_warrior(91_215);
-        let mut ai = ai(on);
+        let mut ai = camp_ai(on);
         ai.enable_battle_planner_2();
         ai.rebuild_force_groups(&game, 0, &plan);
         let _ = ai.plan_battle(&mut game, 0, &plan);
