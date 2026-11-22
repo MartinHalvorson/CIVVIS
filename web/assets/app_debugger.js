@@ -23,10 +23,12 @@
 // begin locked: they stay on the same turn, and this box is the one control
 // panel for both. Clicking the lock opens it, and then each has a panel of
 // its own. The timeline is one for as long as the two hold the same world,
-// and forks in two from the last turn they do. Each branch has an ✕ at its
-// left that closes it, and the one that is left is the timeline again: when
-// that is B, a timeline that passes from one Civ AI to another on the turn
-// it was branched on.
+// and forks in two from the last turn they do. It is drawn as a tree on its
+// side: the one timeline is the trunk, in the middle, and from the fork a
+// branch slants up to A's row and another down to B's. Each branch has an ✕
+// at its left that closes it, and the one that is left is the timeline again:
+// when that is B, a timeline that passes from one Civ AI to another on the
+// turn it was branched on.
 //
 // A game under the debugger has two views. The Debugger view is how it opens:
 // the map with the standings across the top, the victory tracker down the
@@ -38,6 +40,13 @@
 // `render`, `fetchJSON` and turn loop it uses. Nothing in `app.js` knows it
 // is here: the bar redraws by standing behind `render`, the one door every
 // state comes through.
+
+// A split's timeline is drawn as a tree on its side (see the style): `row` is
+// how tall each of its rails is, `gap` the dark between its two branches, and
+// `run` how far along a branch goes before it is in its own row. `rise` is how
+// far up or down that takes it, half a row and half the gap, and `tilt` the
+// angle it slants at, in radians.
+const DEBUG_TREE = {row: 28, gap: 24, run: 32, rise: 26, tilt: Math.atan2(26, 32).toFixed(4)};
 
 const DEBUG_BAR_STYLE = `
   /* The header box stands at the top of the window beside the left panel:
@@ -157,9 +166,17 @@ const DEBUG_BAR_STYLE = `
 
   /* The timeline is the top of the box: a rail as long as the game. A split
      keeps the one rail for as long as its two halves are the same world, and
-     from the turn they differ each half has a branch of its own. It is bright
-     on purpose, sky behind and the turns played in sun across it. */
+     from the turn they differ it forks like a tree, a branch for each half.
+     It is bright on purpose, sky behind and the turns played in sun across
+     it. */
   #debugbar .dbg-time { display: grid; gap: 4px; min-width: 0; }
+  /* The measures of that tree (DEBUG_TREE), and where along a rail it forks:
+     --dbg-fork is how far along the last turn the halves hold as one world
+     stands, and --dbg-at the same from the left end of a rail. */
+  #debugbar {
+    --dbg-row: ${DEBUG_TREE.row}px; --dbg-gap: ${DEBUG_TREE.gap}px; --dbg-run: ${DEBUG_TREE.run}px; --dbg-rise: ${DEBUG_TREE.rise}px;
+    --dbg-at: calc((100% - 36px) * var(--dbg-fork, 1) + 18px);
+  }
   /* Above the timeline: the Civ AI that plays the seat from the open turn.
      It begins where the rail does, past the first turn's number. */
   #debugbar .dbg-who { display: flex; align-items: center; gap: 8px; min-width: 0; height: 24px; padding-left: 64px; }
@@ -211,16 +228,17 @@ const DEBUG_BAR_STYLE = `
     background: linear-gradient(180deg, #9be2ff 0%, #58bdf7 100%); border: 1px solid #d3f2ff;
     box-shadow: inset 0 1px 0 #ffffffa0, 0 2px 10px #0007;
   }
-  /* A split has three lanes in one grid. The world's lane is the trunk: the
-     one timeline of two halves that are the same world, as tall as both
-     halves' rows. Each half's lane is a row of its own, the old height, and
-     its slider runs the whole length of it: the top of the timeline is the
-     hand on A and the bottom the hand on B, on the trunk as on the branches.
-     The lock stands across both rows, between the first turn and the rail. */
-  #debugbar .dbg-half .dbg-rail { height: 40px; }
+  /* A split has three lanes in one grid, and they are drawn as a tree on its
+     side. The world's lane is the trunk: the one timeline of two halves that
+     are the same world, a rail in the middle of the box. Each half's lane is
+     a row of its own, A's over the trunk and B's under it, with the box's
+     dark between them, and from the turn the worlds differ the trunk forks
+     into the two. The lock stands where the two rows' pickers meet, and the
+     trunk leaves it. */
+  #debugbar .dbg-half .dbg-rail { height: var(--dbg-row); }
   #debugbar.dbg-split-on .dbg-time {
-    grid-template-columns: auto auto auto auto auto minmax(0, 1fr) auto; grid-template-rows: 40px 40px;
-    column-gap: 8px; align-items: center;
+    grid-template-columns: auto auto auto auto auto minmax(0, 1fr) auto; grid-template-rows: var(--dbg-row) var(--dbg-row);
+    column-gap: 8px; row-gap: var(--dbg-gap); align-items: center;
   }
   #debugbar.dbg-split-on .dbg-lane { display: contents; }
   #debugbar.dbg-split-on .dbg-lane > * { grid-row: 1 / span 2; }
@@ -242,44 +260,95 @@ const DEBUG_BAR_STYLE = `
   #debugbar .dbg-half .dbg-start, #debugbar .dbg-half .dbg-finish { display: none; }
   #debugbar.dbg-split-on .dbg-lane[data-dbg-lane=""] .dbg-start,
   #debugbar.dbg-split-on .dbg-lane[data-dbg-lane=""] .dbg-finish { width: auto; }
-  /* The trunk is drawn and not pressed: what is pressed is a half's slider. */
-  #debugbar.dbg-split-on .dbg-lane[data-dbg-lane=""] .dbg-rail { height: auto; align-self: stretch; pointer-events: none; }
-  /* --dbg-fork is how far along the rail the last turn the halves hold as
-     one world stands. What a half holds past it is the half's own, and is
-     drawn in the half's row from there: the turns it has played, in its
-     colour. Where the two worlds differ (dbg-forked) the rail itself
-     branches: the trunk is shown up to that turn, and each half's own rail
-     from it, with a ruler of its own. Until then the trunk is the whole
-     timeline, and a half's rail shows only when its slider has the keys. */
+  /* The trunk is drawn and not pressed: what is pressed is a half's slider.
+     Each is pressed from its own row to the middle of the tree, so the top
+     half of the timeline is the hand on A and the bottom half the hand on B,
+     on the trunk as on the branches. */
+  #debugbar.dbg-split-on .dbg-lane[data-dbg-lane=""] .dbg-rail { height: var(--dbg-row); align-self: center; pointer-events: none; }
+  #debugbar.dbg-split-on .dbg-half .dbg-rail input { height: calc(100% + var(--dbg-gap) / 2 + 1px); }
+  #debugbar.dbg-split-on .dbg-lane[data-dbg-lane="a"] .dbg-rail input { bottom: auto; }
+  #debugbar.dbg-split-on .dbg-lane[data-dbg-lane="b"] .dbg-rail input { top: auto; }
+  #debugbar .dbg-half .dbg-rail input::-webkit-slider-thumb { height: calc(var(--dbg-row) + var(--dbg-gap) / 2); }
+  #debugbar .dbg-half .dbg-rail input::-moz-range-thumb { height: calc(var(--dbg-row) + var(--dbg-gap) / 2); }
+  /* What a half holds past the turn the two share is the half's own, and is
+     drawn in the half's lane from there: the turns it has played, in its
+     colour. Until the two worlds differ that is on the trunk, which is the
+     whole timeline, and a half's rail shows only when its slider has the
+     keys: a half's lane is drawn where the trunk is. */
   #debugbar.dbg-split-on .dbg-half .dbg-deco { clip-path: inset(0 0 0 calc(100% * var(--dbg-fork, 1))); }
+  #debugbar.dbg-split-on:not(.dbg-forked) .dbg-lane[data-dbg-lane="a"] :is(.dbg-sky, .dbg-deco) { transform: translateY(var(--dbg-rise)); }
+  #debugbar.dbg-split-on:not(.dbg-forked) .dbg-lane[data-dbg-lane="b"] :is(.dbg-sky, .dbg-deco) { transform: translateY(calc(-1 * var(--dbg-rise))); }
+  #debugbar:not(.dbg-forked) .dbg-half .dbg-sky { background: none; border-color: transparent; box-shadow: none; }
+  #debugbar:not(.dbg-forked) .dbg-half .dbg-ruler { visibility: hidden; }
+  /* Where the two worlds differ (dbg-forked) the tree forks. The trunk is
+     shown up to that turn, and each half's own rail from where its branch is
+     in its row, --dbg-run further on. Between the two is the branch on its
+     way there (dbg-arm): the half's rail and what is drawn on it over again
+     (dbg-bent), slanted from the trunk to the row. Each arm is cut along the
+     middle of the tree, so at the fork the trunk's band is half A's colour
+     and half B's, and the two part from there. */
   #debugbar.dbg-forked .dbg-lane[data-dbg-lane=""] .dbg-sky {
     right: calc((100% - 36px) * (1 - var(--dbg-fork, 1)) + 18px); border-right: 0; border-radius: 12px 0 0 12px;
   }
   #debugbar.dbg-forked .dbg-lane[data-dbg-lane=""] .dbg-deco { clip-path: inset(0 calc(100% * (1 - var(--dbg-fork, 1))) 0 0); }
-  #debugbar.dbg-forked .dbg-half .dbg-sky {
-    left: calc((100% - 36px) * var(--dbg-fork, 1) + 18px); border-left: 0; border-radius: 0 12px 12px 0;
+  #debugbar.dbg-forked .dbg-half .dbg-sky { left: calc(var(--dbg-at) + var(--dbg-run)); border-left: 0; border-radius: 0 12px 12px 0; }
+  #debugbar.dbg-forked .dbg-half .dbg-deco { clip-path: inset(0 0 0 calc(100% * var(--dbg-fork, 1) + var(--dbg-run))); }
+  #debugbar .dbg-arm {
+    display: none; position: absolute; inset: 0; pointer-events: none;
+    transform-origin: calc(var(--dbg-at) + var(--dbg-run)) 0;
   }
-  #debugbar:not(.dbg-forked) .dbg-half .dbg-sky { background: none; border-color: transparent; box-shadow: none; }
-  #debugbar:not(.dbg-forked) .dbg-half .dbg-ruler { visibility: hidden; }
-  /* The turn the timeline branches on, said where it does: between the two
-     branches, at their start. */
+  #debugbar.dbg-forked .dbg-arm { display: block; }
+  #debugbar .dbg-lane[data-dbg-lane="a"] .dbg-arm {
+    transform: skewY(-${DEBUG_TREE.tilt}rad);
+    clip-path: polygon(calc(var(--dbg-at) - 1px) -13px, calc(var(--dbg-at) + var(--dbg-run) + 1px) -13px,
+      calc(var(--dbg-at) + var(--dbg-run) + 1px) calc(50% + var(--dbg-rise)), calc(var(--dbg-at) - 1px) 50%);
+  }
+  #debugbar .dbg-lane[data-dbg-lane="b"] .dbg-arm {
+    transform: skewY(${DEBUG_TREE.tilt}rad);
+    clip-path: polygon(calc(var(--dbg-at) - 1px) 50%, calc(var(--dbg-at) + var(--dbg-run) + 1px) calc(50% - var(--dbg-rise)),
+      calc(var(--dbg-at) + var(--dbg-run) + 1px) calc(100% + 13px), calc(var(--dbg-at) - 1px) calc(100% + 13px));
+  }
+  #debugbar .dbg-arm-sky {
+    position: absolute; inset: -1px 0; border: solid #d3f2ff; border-width: 1px 0;
+    background: linear-gradient(180deg, #9be2ff 0%, #58bdf7 100%); box-shadow: inset 0 1px 0 #ffffffa0, 0 2px 10px #0007;
+  }
+  #debugbar .dbg-bent { position: absolute; inset: 0 18px; }
+  /* The band runs on through the fork: the trunk's has no end there, and a
+     branch's no beginning. */
+  #debugbar.dbg-forked .dbg-lane[data-dbg-lane=""] .dbg-band { border-radius: 7px 0 0 7px; }
+  #debugbar.dbg-forked .dbg-half .dbg-band.dbg-own { border-radius: 0 7px 7px 0; }
+  /* The turn the timeline forks on, said where it does: between the two
+     branches, where they have parted. */
   #debugbar .dbg-fork {
-    position: absolute; z-index: 2; top: 50%; transform: translate(6px, -50%); padding: 2px 7px; border-radius: 999px;
+    position: absolute; z-index: 2; top: 50%; transform: translate(calc(var(--dbg-run) + 3px), -50%); padding: 2px 7px; border-radius: 999px;
     white-space: nowrap; font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums;
     color: #ffffff; background: #0b3554; box-shadow: 0 0 0 1px #d3f2ff;
   }
+  /* The turns of a tree are numbered once, on the dark beside its rails:
+     over the trunk, and between the two branches. */
+  #debugbar.dbg-split-on .dbg-ruler b { display: none; }
+  #debugbar.dbg-split-on .dbg-ruler i.major { top: 0; }
+  #debugbar .dbg-axis { position: absolute; inset: 0 18px; pointer-events: none; }
+  #debugbar .dbg-axis b {
+    position: absolute; bottom: calc(100% + 7px); transform: translateX(-50%);
+    font-size: 11px; font-weight: 700; color: #b7c7c0; font-variant-numeric: tabular-nums;
+  }
+  #debugbar .dbg-axis b.dbg-between {
+    z-index: 4; bottom: auto; top: 50%; transform: translate(-50%, -50%); padding: 1px 4px; background: #0a1512;
+  }
   /* The lock that joins the two halves of a split. A bracket runs from the
-     middle of one half's row to the middle of the other's with the lock on
-     it: whole and bright while the halves are locked on the same turn,
-     broken and dim while each keeps its own. */
+     middle of one half's row, where its picker ends, to the middle of the
+     other's, with the lock on it where the trunk begins: whole and bright
+     while the halves are locked on the same turn, broken and dim while each
+     keeps its own. The turn the game begins on stands inside it. */
   #debugbar .dbg-tie { display: none; }
   #debugbar.dbg-split-on .dbg-tie {
     display: block; grid-column: 5; grid-row: 1 / span 2; align-self: stretch; position: relative;
     width: 32px; margin-right: -8px;
   }
   #debugbar .dbg-tie::before {
-    content: ""; position: absolute; left: 14px; right: 0; top: 20px; bottom: 20px;
-    border: 2px dashed #6f8a80; border-right: 0; border-radius: 9px 0 0 9px;
+    content: ""; position: absolute; left: -24px; right: 16px; top: calc(var(--dbg-row) / 2 - 1px); bottom: calc(var(--dbg-row) / 2 - 1px);
+    border: 2px dashed #6f8a80; border-left: 0; border-radius: 0 9px 9px 0;
   }
   #debugbar.dbg-locked .dbg-tie::before { border-style: solid; border-color: #ffd23f; }
   #debugbar button.dbg-lock {
@@ -297,9 +366,20 @@ const DEBUG_BAR_STYLE = `
   /* Locked and on the same turn, the two markers are one: a link stands
      between them, from the middle of A's to the middle of B's. */
   #debugbar.dbg-joined .dbg-lane[data-dbg-lane="a"] .dbg-cursor::after {
-    content: ""; position: absolute; z-index: -1; left: -2px; top: 50%; width: 4px; height: 44px;
+    content: ""; position: absolute; z-index: -1; left: -2px; top: 50%; width: 4px; height: calc(var(--dbg-row) + var(--dbg-gap));
     border-radius: 2px; background: #ffd23f; box-shadow: 0 0 0 1px #3a1d0060;
   }
+  /* A half's marker stands in the half's own row. Where the tree is not in
+     that row (the trunk, and a branch still on its way to its row) a pin
+     runs from the marker to the middle of the tree. */
+  #debugbar .dbg-half .dbg-cursor.dbg-pinned::before {
+    content: ""; position: absolute; left: -1.5px; width: 3px; height: var(--dbg-rise); border-radius: 2px;
+    background: var(--dbg-own); box-shadow: 0 0 0 1px #3a1d0060;
+  }
+  #debugbar .dbg-lane[data-dbg-lane="a"] .dbg-cursor.dbg-pinned::before { top: 50%; }
+  #debugbar .dbg-lane[data-dbg-lane="b"] .dbg-cursor.dbg-pinned::before { bottom: 50%; }
+  /* Two markers that are joined have the link between them instead. */
+  #debugbar.dbg-joined .dbg-half .dbg-cursor.dbg-pinned::before { display: none; }
   #debugbar .dbg-rail:focus-within .dbg-sky, #debugbar .dbg-half .dbg-rail:focus-within .dbg-sky {
     border-color: #ffffff; box-shadow: inset 0 1px 0 #ffffffa0, 0 0 0 2px #ffd23f, 0 2px 10px #0007;
   }
@@ -333,9 +413,9 @@ const DEBUG_BAR_STYLE = `
     position: absolute; top: 20px; bottom: 20px; min-width: 4px; border-radius: 7px;
     background: linear-gradient(180deg, #fff27a 0%, #ffc61a 100%); box-shadow: 0 0 0 1px #b8770a80, 0 1px 4px #0b355466;
   }
-  /* A half's band stands under its ruler. The trunk's runs from the top of
-     A's to the bottom of B's, so the one band becomes the two. */
-  #debugbar.dbg-split-on .dbg-band { top: 16px; bottom: 5px; }
+  /* A tree's rails are slim, and the band is in the middle of each, so the
+     trunk's band is cut in two down its middle where the tree forks. */
+  #debugbar.dbg-split-on .dbg-band { top: 3px; bottom: 3px; }
   #debugbar .dbg-band.dbg-own { background: var(--dbg-own); }
   /* Whose play the turns were: each stretch of the band one Civ AI played is
      named at its start, every other one is a shade darker, and a line stands
@@ -345,7 +425,7 @@ const DEBUG_BAR_STYLE = `
   #debugbar .dbg-by s {
     position: absolute; top: 20px; bottom: 20px; overflow: hidden; text-decoration: none; border-radius: 0 7px 7px 0;
   }
-  #debugbar.dbg-split-on .dbg-by s { top: 16px; bottom: 5px; }
+  #debugbar.dbg-split-on .dbg-by s { top: 3px; bottom: 3px; }
   #debugbar .dbg-by s.dbg-alt { background: #3a1d0024; }
   #debugbar .dbg-by s.dbg-next { border-left: 2px solid #3a1d00a0; border-radius: 0; }
   #debugbar .dbg-by s.dbg-free { overflow: visible; }
@@ -367,14 +447,14 @@ const DEBUG_BAR_STYLE = `
     position: absolute; top: 20px; bottom: 20px; border-right: 2px solid var(--dbg-own);
     background: repeating-linear-gradient(-45deg, #ffffffc0 0 5px, transparent 5px 10px);
   }
-  #debugbar.dbg-split-on .dbg-goal { top: 16px; bottom: 5px; }
+  #debugbar.dbg-split-on .dbg-goal { top: 3px; bottom: 3px; }
   /* Kept turns ahead that another Civ AI played: not this seat's line, and
      played over by the one picked now. */
   #debugbar .dbg-beyond {
     position: absolute; top: 25px; bottom: 25px; min-width: 4px; border-radius: 0 5px 5px 0;
     background: repeating-linear-gradient(90deg, #3f5f7ad0 0 4px, transparent 4px 8px); box-shadow: 0 0 0 1px #3f5f7a90;
   }
-  #debugbar.dbg-split-on .dbg-beyond { top: 20px; bottom: 9px; }
+  #debugbar.dbg-split-on .dbg-beyond { top: 8px; bottom: 8px; }
   #debugbar .dbg-ghost { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: #0b3554c0; }
   /* The marker stands over whatever else is on its turn (an era's line, a
      flag), and a press on it still reaches the slider beneath. */
@@ -391,10 +471,13 @@ const DEBUG_BAR_STYLE = `
     min-width: 48px; border: 3px solid transparent; box-shadow: 0 3px 9px #0b3554a0;
     background: linear-gradient(#ffffff, #ffffff) padding-box, linear-gradient(180deg, #ff6b4a 50%, #b06cff 50%) border-box;
   }
-  /* Locked, a place on the timeline is both halves': the line under the
-     pointer runs the height of both rows. */
-  #debugbar.dbg-locked .dbg-lane[data-dbg-lane="a"] .dbg-ghost { bottom: -44px; }
-  #debugbar.dbg-locked .dbg-lane[data-dbg-lane="b"] .dbg-ghost { top: -44px; }
+  /* The line under the pointer runs from a half's row to the middle of the
+     tree, and locked, when a place on the timeline is both halves', the
+     height of both rows. */
+  #debugbar.dbg-split-on .dbg-lane[data-dbg-lane="a"] .dbg-ghost { bottom: calc(var(--dbg-gap) / -2); }
+  #debugbar.dbg-split-on .dbg-lane[data-dbg-lane="b"] .dbg-ghost { top: calc(var(--dbg-gap) / -2); }
+  #debugbar.dbg-locked .dbg-lane[data-dbg-lane="a"] .dbg-ghost { bottom: calc(-1 * (var(--dbg-row) + var(--dbg-gap))); }
+  #debugbar.dbg-locked .dbg-lane[data-dbg-lane="b"] .dbg-ghost { top: calc(-1 * (var(--dbg-row) + var(--dbg-gap))); }
   /* Save points stand on a rail as flags and turn breakpoints as red dots,
      each at its own turn. */
   #debugbar .dbg-marks i {
@@ -403,8 +486,7 @@ const DEBUG_BAR_STYLE = `
   }
   #debugbar .dbg-marks i.auto { background: #8fb4a8; }
   #debugbar .dbg-marks i.stop { top: auto; bottom: -5px; border-radius: 50%; background: #e2574c; }
-  /* Two lanes stand four pixels apart, so there a mark keeps to its own rail:
-     A's breakpoint would otherwise sit under B's save point on the same turn. */
+  /* On a tree's slim rails a mark keeps closer to its own rail. */
   #debugbar.dbg-split-on .dbg-marks i { top: -2px; }
   #debugbar.dbg-split-on .dbg-marks i.stop { top: auto; bottom: -2px; }
   /* The first turn of each era the game has been through: a line down the
@@ -419,9 +501,8 @@ const DEBUG_BAR_STYLE = `
   }
   #debugbar .dbg-marks u b:hover { background: #124d78; }
   /* An era both halves began on the same turn is named once, at the foot of
-     the timeline, and its line runs the height of both rows. */
-  #debugbar .dbg-marks u.dbg-both { top: -44px; }
-  /* Unlocked, it is neither half's to go to: each has its own slider. */
+     the trunk (dbg-both). Unlocked, it is neither half's to go to: each has
+     its own slider. */
   #debugbar .dbg-marks u.dbg-still b { pointer-events: none; cursor: default; }
   /* What letting go of the timeline here would do, said under the pointer. */
   #debugbar .dbg-hover {
@@ -436,7 +517,7 @@ const DEBUG_BAR_STYLE = `
      away (dbg-pane-locked). */
   #debugbar.dbg-split-on:not(.dbg-merged) .dbg-deck, #debugbar.dbg-split-on:not(.dbg-merged) .dbg-pop { display: none; }
   #debugbar.dbg-split-on .dbg-hover { top: calc(100% + 5px); }
-  #debugbar.dbg-merged .dbg-hover { top: 98px; }
+  #debugbar.dbg-merged .dbg-hover { top: 94px; }
   /* Each half's Civ AI is picked at the head of its lane, and a save is one
      world's, kept from that half's own panel. */
   #debugbar.dbg-split-on .dbg-agent-field, #debugbar.dbg-split-on .dbg-file-saves { display: none; }
@@ -1030,7 +1111,8 @@ function debugLaneMarkup(key, id, label) {
         <b class="dbg-start"></b>
         <div class="dbg-rail">
           <div class="dbg-sky"></div>
-          <div class="dbg-deco"><div class="dbg-ruler"></div><div class="dbg-band"></div><div class="dbg-band dbg-own"></div><div class="dbg-by"></div><div class="dbg-beyond" hidden></div><div class="dbg-kept-turns"></div><div class="dbg-goal"></div></div>
+          <div class="dbg-deco"><div class="dbg-ruler"></div><div class="dbg-band"></div><div class="dbg-band dbg-own"></div><div class="dbg-by"></div><div class="dbg-beyond" hidden></div><div class="dbg-kept-turns"></div><div class="dbg-goal"></div></div>${
+          key ? `<div class="dbg-arm"><div class="dbg-arm-sky"></div><div class="dbg-bent"></div></div>` : `<div class="dbg-axis"></div>`}
           <div class="dbg-hands"><div class="dbg-ghost" hidden></div>${key ? "" : `<span class="dbg-fork" hidden></span>`}<div class="dbg-cursor"><b></b>${key ? "" : `
             <button class="dbg-branch" data-dbg="split" title="Branch: a second timeline from this turn, beside this one. This one keeps the turns it holds past here; seat another Civ AI in the branch and play both, and close either with its ✕" aria-label="Branch the timeline on this turn"><i>⑂</i>Branch</button>`}</div></div>
           <input type="range" id="${id}" step="1"${key ? ` data-dbg-half="${key}"` : ""} aria-label="${label}">
@@ -1165,7 +1247,8 @@ function debugBuildBar() {
     debugLanes[box.dataset.dbgLane] = {box, input: box.querySelector("input"), ruler: part("ruler"),
       band: part("band"), own: part("own"), by: part("by"), beyond: part("beyond"), kept: part("kept-turns"), goal: part("goal"), ghost: part("ghost"),
       cursor: part("cursor"), pill: box.querySelector(".dbg-cursor b"), marks: part("marks"), agent: part("agent"),
-      start: part("start"), finish: part("finish"), fork: part("fork"), close: part("close")};
+      start: part("start"), finish: part("finish"), fork: part("fork"), close: part("close"),
+      deco: part("deco"), bent: part("bent"), axis: part("axis")};
   }
 
   bar.addEventListener("click", event => {
@@ -1404,22 +1487,49 @@ function debugAxis(first, last) {
 function debugAlong(turn, lo, hi) {
   return hi > lo ? Math.round(Math.max(0, Math.min(1, (turn - lo) / (hi - lo))) * 10000) / 100 : 0;
 }
-// The ruler on a lane: a tick every few turns and a number on the round ones
-// between the two ends, which are named beside the rail. `quiet` is a stretch
-// of turns whose numbers are left out, because something else is said there.
-function debugRulerMarkup(lo, hi, finish = null, quiet = null) {
+// How many turns apart the numbered turns of a timeline are.
+function debugRulerStep(lo, hi) {
   const length = hi - lo;
-  const major = length <= 60 ? 10 : length <= 150 ? 25 : length <= 300 ? 50 : length <= 600 ? 100 : 250;
-  const minor = major / 5;
+  return length <= 60 ? 10 : length <= 150 ? 25 : length <= 300 ? 50 : length <= 600 ? 100 : 250;
+}
+// The ruler on a lane: a tick every few turns and a number on the round ones
+// between the two ends, which are named beside the rail.
+function debugRulerMarkup(lo, hi, finish = null) {
+  const major = debugRulerStep(lo, hi), minor = major / 5;
   let ruler = "";
   for (let turn = Math.ceil((lo + 1) / minor) * minor; turn < hi; turn += minor) {
     const at = debugAlong(turn, lo, hi), round = turn % major === 0;
     ruler += `<i${round ? ' class="major"' : ""} style="left:${at}%"></i>`;
-    if (round && !(quiet && turn >= quiet[0] && turn <= quiet[1])) ruler += `<b style="left:${at}%">${turn}</b>`;
+    if (round) ruler += `<b style="left:${at}%">${turn}</b>`;
   }
   if (finish !== null && finish > lo && finish < hi)
     ruler += `<i class="dbg-finish-line" style="left:${debugAlong(finish, lo, hi)}%" title="Turn ${finish}: the last turn of the game"></i>`;
   return ruler;
+}
+// A split's timeline is a tree (`model.tree`: whether it has forked, and on
+// which turn), and its turns are numbered once, beside its rails: over the
+// trunk, and from where the two branches are in their rows, between them.
+// `fork` is how far along the lane the tree forks, in pixels (`travel` wide),
+// and no number stands where the turn it forks on is said.
+function debugAxisMarkup(lo, hi, tree, at, travel) {
+  const major = debugRulerStep(lo, hi), fork = at(tree.turn) / 100 * travel;
+  let axis = "";
+  for (let turn = Math.ceil((lo + 1) / major) * major; turn < hi; turn += major) {
+    const between = tree.forked && turn > tree.turn, px = at(turn) / 100 * travel;
+    if (tree.forked && travel > 0 && px > fork - 14 && px < fork + DEBUG_TREE.run + 66) continue;
+    axis += `<b${between ? ' class="dbg-between"' : ""} style="left:${at(turn)}%">${turn}</b>`;
+  }
+  return axis;
+}
+// A half's lane is drawn in the half's own row, and the tree is not in that
+// row everywhere: the trunk is in the middle of the box, and a branch takes
+// `DEBUG_TREE.run` pixels to reach its row. How far out of its row the tree
+// stands on a turn: all the way on the trunk (1), and not at all once the
+// branch is in its row (0). `px` is how far along the lane the turn stands,
+// and `fork` the turn the tree forks on, both in pixels.
+function debugOffRow(tree, turn, px, fork, travel) {
+  if (!tree.forked || turn <= tree.turn) return 1;
+  return travel > 0 ? Math.max(0, 1 - (px - fork) / DEBUG_TREE.run) : 0;
 }
 // Drawn only when it changes: a list rebuilt under the pointer loses the click.
 function debugDrawn(box, html) {
@@ -1478,7 +1588,8 @@ function debugNameWidth(name) {
 // those stand, each from and to in pixels along the lane and in their order,
 // and `travel` the width the lane's turns are drawn across (`debugTravel`).
 // Where there is no rail to step on to, the name is cut short before the
-// thing instead.
+// thing instead, and a name that has stepped on is cut short at the end of
+// its stretch.
 function debugStretchMarkup(model, at, travel, blocks, free) {
   const stretches = model.by || [];
   const px = turn => at(turn) / 100 * travel;
@@ -1498,6 +1609,7 @@ function debugStretchMarkup(model, at, travel, blocks, free) {
       else if (last) left = Math.round(Math.max(3, lo - from - 2 - width));
       break;
     }
+    if (room === null && !last && left !== 3) room = Math.max(0, Math.round(reach - left - 3));
     const far = stretch.from >= model.last;
     const kind = [far ? "dbg-far" : index % 2 ? "dbg-alt" : "", index && !far ? "dbg-next" : "", last ? "dbg-free" : ""]
       .filter(Boolean).join(" ");
@@ -1513,7 +1625,9 @@ function debugStretchMarkup(model, at, travel, blocks, free) {
 // A split draws three: the trunk, and a lane for each half. It says itself
 // where each marker stands (`marker`, null for none), because two halves on
 // one turn of the trunk have one marker between them, and on the trunk where
-// the timeline branches (`branches`).
+// the timeline branches (`branches`). Its three lanes are one tree (`tree`):
+// what a half's lane holds on the trunk, or on a branch still on its way to
+// the half's row, is drawn where the tree is (`debugOffRow`).
 function debugDrawLane(key, model) {
   const lane = debugLanes[key];
   debugLaneModels[key] = model;
@@ -1527,11 +1641,11 @@ function debugDrawLane(key, model) {
   if (debugScrubbing !== key) lane.input.value = model.turn;
   const shown = model.marker !== undefined ? model.marker : debugScrubbing === key ? +lane.input.value : model.turn;
   lane.input.setAttribute("aria-valuetext", `Turn ${debugScrubbing === key ? +lane.input.value : model.turn} of ${hi}`);
-  const finish = model.finish ?? null, quiet = model.quiet || null;
-  const axis = `${lo}:${hi}:${finish}:${quiet || ""}`;
+  const finish = model.finish ?? null;
+  const axis = `${lo}:${hi}:${finish}`;
   if (lane.ruler.dataset.axis !== axis) {
     lane.ruler.dataset.axis = axis;
-    lane.ruler.innerHTML = debugRulerMarkup(lo, hi, finish, quiet);
+    lane.ruler.innerHTML = debugRulerMarkup(lo, hi, finish);
     lane.start.textContent = lo;
     lane.start.title = `Turn ${lo}: where the game begins`;
     lane.finish.classList.toggle("dbg-flagged", finish === hi);
@@ -1548,13 +1662,17 @@ function debugDrawLane(key, model) {
   // A lane's last name runs on over the rail ahead unless something else is
   // drawn there (a trunk's branches). What a name steps past: the marker in
   // the lane's row, which in a half's row may be the trunk's (`over`), the
-  // wider of the two, and in a half's row the names of its eras.
+  // wider of the two; on a tree's slim rails the names of the eras that
+  // stand on the lane (`under`: the ones a half's lane draws on the trunk);
+  // and a branch on its way to its row, where no name is drawn.
   const travel = debugTravel[key] || 0, along = turn => at(turn) / 100 * travel;
+  const tree = model.tree || null, half = tree !== null && !!model.name;
   const over = model.over ?? null, pill = over !== null ? over : shown;
   const wide = over !== null || !model.name ? 30 : 23;
   const blocks = pill === null ? [] : [[along(pill) - wide, along(pill) + wide]];
-  if (model.name) for (const era of model.eras || [])
+  for (const era of (model.name ? model.eras : model.under) || [])
     blocks.push([along(era.turn) + 2, along(era.turn) + 6 + debugNameWidth(debugEraName(era))]);
+  if (half && tree.forked) blocks.push([along(tree.turn), along(tree.turn) + DEBUG_TREE.run]);
   debugDrawn(lane.by, debugStretchMarkup(model, at, travel, blocks.sort((one, other) => one[0] - other[0]), model.free !== false));
   lane.box.classList.toggle("dbg-thinned", !!model.kept);
   const kept = model.kept ? `${lo}:${hi}:${model.turns.join()}` : "";
@@ -1565,10 +1683,26 @@ function debugDrawLane(key, model) {
   const goal = model.goal !== null && model.goal > model.turn ? model.goal : null;
   lane.goal.hidden = goal === null;
   if (goal !== null) debugPlace(lane.goal, span(model.turn, goal));
+  // A branch on its way to its row: everything drawn on the half's rail over
+  // again but its words, for the style to slant (`dbg-arm`).
+  if (lane.bent) debugDrawn(lane.bent, half && tree.forked ? lane.deco.innerHTML.replace(/<b\b[^>]*>[^<]*<\/b>| data-drawn="[^"]*"/g, "") : "");
+  if (lane.axis) debugDrawn(lane.axis, tree ? debugAxisMarkup(lo, hi, tree, at, travel) : "");
+  // How far out of its row a half's lane is drawn on a turn, and in pixels
+  // how far a mark there is moved to stand on the tree: A's down, B's up.
+  // Unlocked, each half's save points and breakpoints are its own to go to,
+  // and on the trunk the two halves' keep a little apart (`lean`).
+  const off = turn => half ? debugOffRow(tree, turn, along(turn), along(tree.turn), travel) : 0;
+  const moved = (turn, lean = 0) => {
+    const by = Math.round(off(turn) * (DEBUG_TREE.rise - lean) * 10) / 10;
+    return by ? `;transform:translateY(${key === "a" ? by : -by}px)` : "";
+  };
   lane.cursor.hidden = shown === null;
   if (shown !== null) {
     debugPlace(lane.cursor, `left:${at(shown)}%`);
     if (lane.pill.textContent !== String(shown)) lane.pill.textContent = shown;
+    // A half's marker keeps to its row, with a pin to the tree where the
+    // tree is not there.
+    lane.cursor.classList.toggle("dbg-pinned", off(shown) > 0);
   }
   if (lane.fork) {
     const branches = model.branches ?? null;
@@ -1581,13 +1715,13 @@ function debugDrawLane(key, model) {
   }
   debugDrawn(lane.marks,
     (model.eras || []).filter(era => era.turn >= lo && era.turn <= hi).map(era =>
-      `<u${era.both ? ` class="dbg-both${era.still ? " dbg-still" : ""}"` : ""} style="left:${at(era.turn)}%"><b data-dbg-turn="${era.turn}" title="The ${escapeAttr(titleCase(String(era.name || `era ${era.era}`)))} era began on turn ${era.turn}. Click to go there">${
+      `<u${era.both ? ` class="dbg-both${era.still ? " dbg-still" : ""}"` : ""} style="left:${at(era.turn)}%${moved(era.turn)}"><b data-dbg-turn="${era.turn}" title="The ${escapeAttr(titleCase(String(era.name || `era ${era.era}`)))} era began on turn ${era.turn}. Click to go there">${
         escapeAttr(titleCase(String(era.name || `era ${era.era}`)))}</b></u>`).join("") +
     (model.stops || []).filter(turn => turn >= lo && turn <= hi).map(turn =>
-      `<i class="stop" data-dbg-turn="${turn}" style="left:${at(turn)}%" title="Breakpoint on turn ${turn}. Click to ${
+      `<i class="stop" data-dbg-turn="${turn}" style="left:${at(turn)}%${moved(turn, tree ? tree.lean : 0)}" title="Breakpoint on turn ${turn}. Click to ${
         turn > last ? "play to it" : "go there"}"></i>`).join("") +
     (model.flags || []).filter(point => point.turn >= lo && point.turn <= hi).map(point =>
-      `<i${point.auto ? ' class="auto"' : ""} data-dbg-goto="${point.id}" style="left:${at(point.turn)}%"` +
+      `<i${point.auto ? ' class="auto"' : ""} data-dbg-goto="${point.id}" style="left:${at(point.turn)}%${moved(point.turn, tree ? tree.lean : 0)}"` +
       ` title="${escapeAttr(point.name)}: turn ${point.turn}. Click to go there"></i>`).join(""));
 }
 function debugHover(rail, x = 0) {
@@ -1771,15 +1905,18 @@ function drawDebugBar(measure = true) {
       .map(stretch => ({...stretch, from: Math.max(stretch.from, lo), to: Math.min(stretch.to, hi)}))
       .filter(stretch => stretch.to > stretch.from);
     const trunkFirst = Math.min(fork.first.a, fork.first.b);
+    // The three lanes are one tree: whether it has forked, and on which turn.
+    const tree = {forked: fork.forked, turn: fork.turn, lean: debugSplit.locked ? 0 : 5};
     debugDrawLane("", {name: "", ...axis, first: trunkFirst, last: fork.turn,
       turn: Math.min(panes.a.turn ?? from, panes.b.turn ?? from), fork: null, kept: null, turns: null, beyond: null,
       by: stretches(told("a", "by").length ? "a" : "b", trunkFirst, fork.turn),
       free: Math.max(fork.last.a, fork.last.b) <= fork.turn && !beyond("a") && !beyond("b"),
+      under: [...told("a", "eras"), ...told("b", "eras")].filter(era => onTrunk(era.turn)), tree,
       goal, idle: false, marker: one ? stands.a : null, branches: fork.forked ? fork.turn : null});
     // A half has no timeline of its own to show them on, so its save points,
     // its breakpoint turns and the eras it has been through stand on its
-    // lane (`pane-marks`): A's in the top row of the timeline and B's in the
-    // bottom row. What both halves hold on the trunk is said once there, as
+    // lane (`pane-marks`): on its branch, and on the trunk for the turns the
+    // two share. What both halves hold on the trunk is said once there, as
     // on any timeline. An era is the world's, and is named once at the foot.
     // A save point and a breakpoint turn are a half's own to go to, so they
     // are said once only while the halves are locked and go together: a
@@ -1798,9 +1935,6 @@ function drawDebugBar(measure = true) {
       b: {flags: told("b", "flags").filter(point => !once("flags", "b", point)), stops: told("b", "stops"),
         eras: told("b", "eras").map(era => both("eras", "b", era) ? {...era, both: true, still: !debugSplit.locked} : era)},
     };
-    // The turn the timeline branches on is said between the two branches,
-    // where B's ruler would have its numbers.
-    const quiet = fork.forked ? [fork.turn, fork.turn + Math.ceil((axis.hi - axis.lo) * .045)] : null;
     for (const letter of ["a", "b"]) {
       const pane = panes[letter];
       debugDrawLane(letter, {name: letter.toUpperCase(), ...axis, first: fork.first[letter], last: fork.last[letter],
@@ -1808,7 +1942,7 @@ function drawDebugBar(measure = true) {
         by: stretches(letter, fork.turn, kept(letter)), played: told(letter, "by"),
         beyond: beyond(letter), goal: fork.forked ? goal : null, idle: pane.turn !== null && !debugSplit.busy && !running,
         marker: one ? null : stands[letter], over: one ? stands.a : null,
-        branches: fork.forked ? fork.turn : null, quiet: letter === "b" ? quiet : null});
+        branches: fork.forked ? fork.turn : null, tree});
       const agent = debugLanes[letter].agent;
       debugOfferAgents(agent, pane.strategy);
       agent.disabled = debugSplit.busy || running;

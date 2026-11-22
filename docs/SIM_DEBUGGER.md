@@ -577,17 +577,17 @@ and then branch to 2 when they actually diverge in simulated worlds", and
 later that day "a branch should fork the tree appropriate (1 timeline into 2
 at the branch)").
 
-- **One world**: one rail as tall as both rows, the turns played in gold
-  across it, and one marker ringed in both halves' colours. This is how a
-  split opens, and how it stays while the halves are played alike: twins
-  played once, or each played by itself to the same worlds. Two different
-  Civ AIs that play the same opening are one timeline until the first turn
-  they play differently.
+- **One world**: one rail in the middle of the box, between the two halves'
+  rows, the turns played in gold across it, and one marker ringed in both
+  halves' colours. This is how a split opens, and how it stays while the
+  halves are played alike: twins played once, or each played by itself to
+  the same worlds. Two different Civ AIs that play the same opening are one
+  timeline until the first turn they play differently.
 - **Two worlds**: the rail ends on the last turn the halves hold as one
-  world, with that turn's number beside a ⑂, and from there each half has a
-  rail of its own in its row, with its own ruler, its turns in its own
-  colour and its own marker. Two halves that both stand on a turn of the
-  trunk have one marker there.
+  world, and from there each half has a rail of its own in its row, with
+  its turns in its own colour and its own marker. Two halves that both
+  stand on a turn of the trunk have one marker there. The two are drawn as a
+  tree ("A tree on its side", below).
 - **One half ahead**: turns that only one half holds are that half's own,
   and the timeline forks on the last turn the two hold as one, with a rail
   for each from there and nothing yet on the other's. This is what a branch
@@ -600,6 +600,54 @@ at the branch)").
   does not fork a timeline that was one: while a split is moving (a run, a
   locked half still following, a request out), a half that is only ahead
   forks the timeline if it was forked already, and not otherwise.
+
+### A tree on its side
+
+A split's timeline is drawn as a tree lying on its side (operator
+2026-11-22: "the branching should form more of a distinct y shape. or like 4
+or h like (the one can be between the 2). but more of a tree like timeline
+please"):
+
+- **The trunk** is the one timeline of two halves that are the same world.
+  It is a slim rail in the middle of the box. A's row is over it and B's row
+  under it, each at the end of its own picker, and the lock stands where the
+  two rows meet, with the trunk leaving it.
+- **The fork** is on the last turn the two share. A branch leaves the trunk
+  there for each half, A's slanting up to A's row and B's down to B's, and a
+  little further along each is a rail in its own row, with the box's dark
+  between the two all the way to the end of the game. Where the branches
+  leave, the trunk's gold band is cut down its middle: the top half goes on
+  in A's colour and the bottom half in B's, as far as each has played. The
+  turn the tree forks on is said between the two branches, beside a ⑂,
+  unless both halves stand on that turn: then their one marker is on the
+  fork itself.
+- **The numbers** of the turns are said once for the whole tree, on the
+  dark beside its rails: over the trunk up to the fork, and between the two
+  branches from there.
+- **The markers**: two halves on one turn of the trunk have one marker, on
+  the trunk. Otherwise each half's marker stands in the half's own row, A's
+  over the tree and B's under it. Where the tree is not in that row (on the
+  trunk, and where a branch has only just left it) a pin runs from the
+  marker to the tree, and two locked halves' markers have a link between
+  them instead.
+- **Save points, breakpoints and eras** a half holds stand where the tree
+  is: on its branch, and on the trunk for the turns the two share. While the
+  halves are unlocked each half's are its own to go to, and on the trunk A's
+  stand a little over B's so that either can be pressed.
+- **Pressing it**: the top half of the tree is the hand on A and the bottom
+  half the hand on B, on the trunk as on the branches. Each half's slider is
+  pressed from its own row to the middle of the tree.
+
+A tree has two branches and no more: there is no Branch while the screen is
+split.
+
+How it is drawn (`web/assets/app_debugger.js`): the tree's measures are in
+one place (`DEBUG_TREE`: a rail 28 pixels tall, 24 pixels of dark between
+the branches, a branch in its row 32 pixels past the fork). Each half's lane
+is laid out in its own row, and the part of a branch between the trunk and
+the row is the half's rail over again (`dbg-arm`), slanted by the style and
+cut along the middle of the tree. What a half's lane holds on the trunk, or
+on that slanted part, is moved to where the tree is (`debugOffRow`).
 
 Which worlds are the same is the engine's to say, and it says it turn by
 turn. Every mark carries a print of its world (`world_print` in

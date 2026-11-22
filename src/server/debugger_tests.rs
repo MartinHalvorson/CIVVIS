@@ -968,12 +968,82 @@ fn a_branched_timeline_is_one_until_its_two_worlds_differ() {
         "#debugbar:not(.dbg-forked) .dbg-half .dbg-sky { background: none; border-color: transparent; box-shadow: none; }",
         // The trunk is drawn and not pressed: each half keeps a slider the
         // length of the game.
-        "#debugbar.dbg-split-on .dbg-lane[data-dbg-lane=\"\"] .dbg-rail { height: auto; align-self: stretch; pointer-events: none; }",
+        "#debugbar.dbg-split-on .dbg-lane[data-dbg-lane=\"\"] .dbg-rail { height: var(--dbg-row); align-self: center; pointer-events: none; }",
     ] {
         assert!(page.contains(piece), "the branching timeline is missing {piece}");
     }
     // The turn the screen was split on no longer says where the lanes part.
     assert!(!page.contains("fork: debugSplit.from"));
+}
+
+/// Operator, 2026-11-22: "the branching should form more of a distinct y
+/// shape. or like 4 or h like (the one can be between the 2). but more of a
+/// tree like timeline please". The page draws a split's timeline as a tree
+/// on its side: the trunk is a rail in the middle, between the two halves'
+/// rows, and from the turn the two worlds differ a branch leaves it for each
+/// half, up to A's row and down to B's, with the box's dark between the two.
+/// `beta/debugger_test.py` measures the shape in a browser; this holds the
+/// page to the pieces it is made of.
+#[test]
+fn a_branched_timeline_is_drawn_as_a_tree() {
+    let page = super::super::EMBEDDED_APP_DEBUGGER_JS;
+    for piece in [
+        // The tree's measures, in one place for the style and the script:
+        // how tall a rail is, the dark between the two branches, how far
+        // along a branch is in its own row, and how far up or down that is
+        // (half a row and half the gap).
+        "const DEBUG_TREE = {row: 28, gap: 24, run: 32, rise: 26, tilt: Math.atan2(26, 32).toFixed(4)};",
+        "--dbg-row: ${DEBUG_TREE.row}px; --dbg-gap: ${DEBUG_TREE.gap}px; --dbg-run: ${DEBUG_TREE.run}px; --dbg-rise: ${DEBUG_TREE.rise}px;",
+        "--dbg-at: calc((100% - 36px) * var(--dbg-fork, 1) + 18px);",
+        // Two rows with the dark between them, and the trunk in the middle.
+        "column-gap: 8px; row-gap: var(--dbg-gap); align-items: center;",
+        "#debugbar.dbg-split-on .dbg-lane[data-dbg-lane=\"\"] .dbg-rail { height: var(--dbg-row); align-self: center; pointer-events: none; }",
+        // Until the worlds differ a half's lane is drawn where the trunk is.
+        "#debugbar.dbg-split-on:not(.dbg-forked) .dbg-lane[data-dbg-lane=\"a\"] :is(.dbg-sky, .dbg-deco) { transform: translateY(var(--dbg-rise)); }",
+        "#debugbar.dbg-split-on:not(.dbg-forked) .dbg-lane[data-dbg-lane=\"b\"] :is(.dbg-sky, .dbg-deco) { transform: translateY(calc(-1 * var(--dbg-rise))); }",
+        // From the fork a half's own rail begins where its branch is in its
+        // row, and the branch on its way there is the rail over again,
+        // slanted from the trunk: A's up, B's down, each cut along the
+        // middle of the tree.
+        "#debugbar.dbg-forked .dbg-half .dbg-sky { left: calc(var(--dbg-at) + var(--dbg-run)); border-left: 0; border-radius: 0 12px 12px 0; }",
+        "#debugbar.dbg-forked .dbg-half .dbg-deco { clip-path: inset(0 0 0 calc(100% * var(--dbg-fork, 1) + var(--dbg-run))); }",
+        "key ? `<div class=\"dbg-arm\"><div class=\"dbg-arm-sky\"></div><div class=\"dbg-bent\"></div></div>` : `<div class=\"dbg-axis\"></div>`}",
+        "#debugbar.dbg-forked .dbg-arm { display: block; }",
+        "transform: skewY(-${DEBUG_TREE.tilt}rad);",
+        "transform: skewY(${DEBUG_TREE.tilt}rad);",
+        "calc(var(--dbg-at) + var(--dbg-run) + 1px) calc(50% + var(--dbg-rise)), calc(var(--dbg-at) - 1px) 50%);",
+        "if (lane.bent) debugDrawn(lane.bent, half && tree.forked ? lane.deco.innerHTML.replace(",
+        // The three lanes are told they are one tree, and what a half's
+        // lane holds on the trunk, or on a branch still on its way to the
+        // half's row, is drawn where the tree is.
+        "const tree = {forked: fork.forked, turn: fork.turn, lean: debugSplit.locked ? 0 : 5};",
+        "function debugOffRow(tree, turn, px, fork, travel) {",
+        "return by ? `;transform:translateY(${key === \"a\" ? by : -by}px)` : \"\";",
+        // A half's marker keeps to its own row, with a pin to the tree.
+        "lane.cursor.classList.toggle(\"dbg-pinned\", off(shown) > 0);",
+        "#debugbar .dbg-half .dbg-cursor.dbg-pinned::before {",
+        // Each half's slider is pressed from its row to the middle of the tree.
+        "#debugbar.dbg-split-on .dbg-half .dbg-rail input { height: calc(100% + var(--dbg-gap) / 2 + 1px); }",
+        // The turns are numbered once for the whole tree, beside its rails.
+        "function debugAxisMarkup(lo, hi, tree, at, travel) {",
+        "#debugbar.dbg-split-on .dbg-ruler b { display: none; }",
+        "if (lane.axis) debugDrawn(lane.axis, tree ? debugAxisMarkup(lo, hi, tree, at, travel) : \"\");",
+        // The turn it forks on is said between the two branches.
+        "position: absolute; z-index: 2; top: 50%; transform: translate(calc(var(--dbg-run) + 3px), -50%); padding: 2px 7px; border-radius: 999px;",
+        // The lock stands where the two rows meet, and the trunk leaves it.
+        "border: 2px dashed #6f8a80; border-left: 0; border-radius: 0 9px 9px 0;",
+    ] {
+        assert!(page.contains(piece), "the tree is missing {piece}");
+    }
+    // The trunk is no longer as tall as both rows, and a branch no longer
+    // begins flush against the other.
+    for gone in [
+        "grid-template-rows: 40px 40px;",
+        "{ height: auto; align-self: stretch; pointer-events: none; }",
+        "#debugbar .dbg-marks u.dbg-both { top: -44px; }",
+    ] {
+        assert!(!page.contains(gone), "the page still has {gone}");
+    }
 }
 
 #[test]

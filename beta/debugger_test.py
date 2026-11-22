@@ -1306,7 +1306,11 @@ def check_a_run_takes_the_turns_already_played(bar: Bar) -> None:
 # The timeline of a split as it is drawn: whether it has branched and what the
 # tag at the branch says; where each rail's sky is seen from and to, or None
 # for one that is not seen; the turn each marker stands on, or None for one
-# that is put away; and where on the page a turn stands.
+# that is put away; and where on the page a turn stands. It is a tree on its
+# side, so also: the top and bottom of each lane's rail (`rows`); for each
+# half the branch on its way from the trunk to the half's row (`arm`: the
+# place along the timeline where it is in the row, and how steeply it gets
+# there), or None while there is none; and where the tag at the branch is.
 TIMELINE = (
     "(() => { const lane = key => document.querySelector(`[data-dbg-lane=\"${key}\"]`);"
     " const box = held => held.getBoundingClientRect();"
@@ -1314,39 +1318,68 @@ TIMELINE = (
     " return getComputedStyle(held).backgroundImage === 'none' ? null : [box(held).left, box(held).right]; };"
     " const marker = key => { const held = lane(key).querySelector('.dbg-cursor');"
     " return held.hidden ? null : +held.querySelector('b').textContent; };"
+    " const rows = key => { const rail = box(lane(key).querySelector('.dbg-rail')); return [rail.top, rail.bottom]; };"
+    " const arm = key => { const held = lane(key).querySelector('.dbg-arm'), style = getComputedStyle(held);"
+    " if (style.display === 'none') return null;"
+    " const rail = lane(key).querySelector('.dbg-rail');"
+    " return {to: box(rail).left + rail.clientLeft + parseFloat(style.transformOrigin), slope: new DOMMatrix(style.transform).b}; };"
     " const tag = lane('').querySelector('.dbg-fork'), slider = document.getElementById('dbg-slider-a'), rail = box(slider);"
     " const at = turn => rail.left + 7 + (turn - slider.min) / (slider.max - slider.min) * (rail.width - 14);"
     " return {forked: debugBar.classList.contains('dbg-forked'), tag: tag.hidden ? null : tag.textContent,"
+    " tagged: tag.hidden ? null : [box(tag).left, box(tag).top, box(tag).bottom],"
     " sky: {trunk: sky(''), a: sky('a'), b: sky('b')}, marker: {trunk: marker(''), a: marker('a'), b: marker('b')},"
+    " rows: {trunk: rows(''), a: rows('a'), b: rows('b')}, arm: {a: arm('a'), b: arm('b')},"
     " rail: [box(lane('').querySelector('.dbg-rail')).left, box(lane('').querySelector('.dbg-rail')).right],"
     " at: Object.fromEntries(TURNS.map(turn => [turn, at(turn)]))}; })()")
+# How far along a branch is in its own row, and how far the trunk is from it.
+RUN, RISE = 32, 26
 
 
 def timeline(bar: Bar, *turns: int) -> dict:
     return bar.ev(TIMELINE.replace("TURNS", json.dumps(list(turns))))
 
 
+def a_tree(seen: dict, why: str) -> None:
+    """The trunk is a rail in the middle, with A's row over it and B's under, and the dark between the two rows."""
+    trunk, a, b = (seen["rows"][key] for key in ("trunk", "a", "b"))
+    assert a[1] - a[0] == b[1] - b[0] == trunk[1] - trunk[0] > 20, (why, seen["rows"])
+    assert b[0] - a[1] >= 20, (why, seen["rows"])
+    assert trunk[0] + trunk[1] == a[0] + b[1] and trunk[0] - a[0] == b[0] - trunk[0] == RISE, (why, seen["rows"])
+
+
 def one_timeline(bar: Bar, turn: int, why: str) -> None:
     """The two halves are one world: one rail the length of the game, and one marker on it."""
     seen = timeline(bar)
     assert (seen["forked"], seen["tag"], seen["sky"]["a"], seen["sky"]["b"]) == (False, None, None, None), (why, seen)
+    assert seen["arm"] == {"a": None, "b": None}, (why, seen)
     assert seen["marker"] == {"trunk": turn, "a": None, "b": None}, (why, seen)
     assert seen["sky"]["trunk"][0] == seen["rail"][0] and abs(seen["sky"]["trunk"][1] - seen["rail"][1]) <= 1, (why, seen)
+    a_tree(seen, why)
 
 
 def branched(bar: Bar, fork: int, a: int, b: int, why: str) -> None:
-    """The timeline is one rail up to `fork` and a rail for each half from there."""
+    """The timeline is a tree: one rail up to `fork`, and from there a branch for each half, up to A's row and down to B's."""
     seen = timeline(bar, fork)
     # The turn it branches on is said at the branch, unless both halves
     # stand on that very turn: then their marker is there, and says it.
     assert (seen["forked"], seen["tag"]) == (True, None if a == b == fork else f"⑂ {fork}"), (why, seen)
+    a_tree(seen, why)
     joint = seen["at"][str(fork)]
-    # The trunk ends where the branches begin, on the turn they share last.
-    for edge in (seen["sky"]["trunk"][1], seen["sky"]["a"][0], seen["sky"]["b"][0]):
-        assert abs(edge - joint) <= 1, (why, seen)
-    assert seen["sky"]["trunk"][0] == seen["rail"][0], (why, seen)
+    # The trunk ends on the turn the two share last. A branch leaves it there
+    # for each half: where the trunk ends it stands where the trunk does, and
+    # a little further along it is in the half's own row, where the half's
+    # own rail begins.
+    assert abs(seen["sky"]["trunk"][1] - joint) <= 1 and seen["sky"]["trunk"][0] == seen["rail"][0], (why, seen)
     for letter in "ab":
+        arm, row = seen["arm"][letter], seen["rows"][letter]
+        assert abs(arm["to"] - (joint + RUN)) <= 1 and abs(seen["sky"][letter][0] - arm["to"]) <= 1, (why, letter, seen)
+        assert abs(row[0] + arm["slope"] * (joint - arm["to"]) - seen["rows"]["trunk"][0]) <= 1, (why, letter, seen)
         assert abs(seen["sky"][letter][1] - seen["rail"][1]) <= 1, (why, seen)
+    # The turn it branches on is said between the two branches, where they
+    # have parted.
+    if seen["tagged"]:
+        left, top, bottom = seen["tagged"]
+        assert left >= joint + RUN and top >= seen["rows"]["a"][1] and bottom <= seen["rows"]["b"][0], (why, seen)
     # Two halves on one turn of the trunk have one marker, and a half that is
     # on a branch has its own.
     if a == b and a <= fork:
@@ -1400,12 +1433,15 @@ def check_the_split(bar: Bar) -> None:
             " return [lane.querySelector('.dbg-start'), lane.querySelector('.dbg-finish')]"
             ".map(end => end.offsetParent === null ? null : end.textContent); })")
     assert bar.ev(f"['', 'a', 'b'].map({ends})") == [["1", "250"], [None, None], [None, None]]
-    # The timeline is as tall as the two rows the halves' sliders stand in,
-    # A's over B's, and is not itself pressed.
-    rows = bar.ev("['', 'a', 'b'].map(key => { const box = document.querySelector(`[data-dbg-lane=\"${key}\"] .dbg-rail`)"
-                  ".getBoundingClientRect(); return [box.top, box.bottom]; })")
-    assert rows[0][0] == rows[1][0] and rows[0][1] == rows[2][1] and rows[1][1] <= rows[2][0], rows
+    # The timeline stands in the middle, between the two rows the halves'
+    # sliders stand in, A's over B's (`a_tree`), and is not itself pressed:
+    # a press on its top half is a press on A's slider, and one on its
+    # bottom half a press on B's.
     assert bar.ev("getComputedStyle(document.querySelector('[data-dbg-lane=\"\"] .dbg-rail')).pointerEvents") == "none"
+    pressed = bar.ev("(() => { const box = document.querySelector('[data-dbg-lane=\"\"] .dbg-rail').getBoundingClientRect();"
+                     " const x = box.left + box.width / 2;"
+                     " return [box.top + 4, box.bottom - 4].map(y => document.elementFromPoint(x, y).id); })()")
+    assert pressed == ["dbg-slider-a", "dbg-slider-b"], pressed
     assert [bar.ev(half(letter, bar_shown)) for letter in "ab"] == [False, False], "a locked half shows a bar of its own"
     lanes = "['a', 'b'].map(letter => +document.getElementById('dbg-slider-' + letter).value)"
     assert bar.ev(lanes) == [start, start], bar.ev(lanes)
@@ -1783,7 +1819,7 @@ def check_the_lock(bar: Bar) -> None:
     # host's is the only place to see them, and a mark is its half's own to
     # go to. Locked, the other half is brought along, and what both halves
     # hold on the trunk is said once: a save point at the top of the
-    # timeline, in A's row, and a breakpoint turn at its foot, in B's.
+    # trunk, drawn by A's lane, and a breakpoint turn at its foot, by B's.
     mark = "document.querySelector('#debugbar [data-dbg-lane=\"{}\"] .dbg-marks {}')".format
     stop = f'i.stop[data-dbg-turn="{start + 16}"]'
     flag = lambda name: f'i[title^="{name}:"]'
@@ -1826,6 +1862,25 @@ def check_the_lock(bar: Bar) -> None:
     # Unlocked, each half's marks stand in its own row, the ones both hold
     # too: each is its own half's to go to.
     assert bar.ev(f"!!{mark('a', stop)} && !!{mark('b', stop)} && !!{mark('a', flag('fork'))} && !!{mark('b', flag('fork'))}")
+    # The two halves are one world still, so the trunk is the whole timeline
+    # and the save point both hold is on it. Each half's stands on the trunk
+    # there and not in the half's row, and the two keep a little apart, A's
+    # over B's, so that either is pressed.
+    apart = bar.ev(f"(() => {{ const box = held => held.getBoundingClientRect(), a = {mark('a', flag('fork'))}, b = {mark('b', flag('fork'))};"
+                   " const hit = held => document.elementFromPoint((box(held).left + box(held).right) / 2, (box(held).top + box(held).bottom) / 2);"
+                   " const trunk = box(document.querySelector('[data-dbg-lane=\"\"] .dbg-rail'));"
+                   " return [box(b).top - box(a).top, hit(a) === a, hit(b) === b,"
+                   " box(a).bottom > trunk.top && box(a).top < trunk.top, box(b).top >= trunk.top && box(b).bottom < trunk.bottom]; })()")
+    assert apart == [10, True, True, True, True], apart
+    # A half's marker stays in the half's own row, A's over the trunk and
+    # B's under it, with a pin from it to the tree where the tree is not in
+    # that row: here, on the trunk.
+    assert not bar.ev("debugBar.classList.contains('dbg-forked')")
+    pins = bar.ev("['a', 'b'].map(letter => { const cursor = document.querySelector(`[data-dbg-lane=\"${letter}\"] .dbg-cursor`);"
+                  " const pill = cursor.querySelector('b').getBoundingClientRect(), row = cursor.closest('.dbg-rail').getBoundingClientRect();"
+                  " return [+cursor.querySelector('b').textContent, cursor.classList.contains('dbg-pinned'),"
+                  " getComputedStyle(cursor, '::before').height, pill.top >= row.top - 2 && pill.bottom <= row.bottom + 2]; })")
+    assert pins == [[start + 6, True, f"{RISE}px", True], [start + 7, True, f"{RISE}px", True]], pins
     forget()
     bar.ev(f"{mark('b', flag('fork'))}.click(), true")
     bar.until(both(start + 6, start + 6), "a save point clicked on B's lane takes B alone to it")
@@ -1853,7 +1908,7 @@ def check_a_branch_forks_the_timeline(bar: Bar) -> None:
     both = "debugSplit.panes.a.turn === {} && debugSplit.panes.b.turn === {}".format
     deck_idle = "!!debugSplitDeck() && debugSplitDeck().idle && !debugSplit.busy"
     said = "debugSplit.panes.a.marks && debugSplit.panes.b.marks"
-    names = lambda lane: bar.ev(f"[...document.querySelectorAll('[data-dbg-lane=\"{lane}\"] .dbg-by s')].map(s => s.textContent)")
+    names = lambda lane: bar.ev(f"[...document.querySelectorAll('[data-dbg-lane=\"{lane}\"] .dbg-deco .dbg-by s')].map(s => s.textContent)")
     shown = lambda name: bar.ev(f"document.querySelector({json.dumps(name)}).offsetParent !== null")
 
     # Jack plays six turns past the last one played, and the world is walked
@@ -1892,6 +1947,34 @@ def check_a_branch_forks_the_timeline(bar: Bar) -> None:
     own = ("['a', 'b'].map(letter => { const band = document.querySelector(`[data-dbg-lane=\"${letter}\"] .dbg-own`);"
            " return !band.hidden && band.getBoundingClientRect().width > 0; })")
     assert bar.ev(own) == [True, False], bar.ev(own)
+    # The timeline is a tree on its side (operator, 2026-11-22: "the branching
+    # should form more of a distinct y shape. or like 4 or h like (the one can
+    # be between the 2). but more of a tree like timeline please"). `branched`
+    # has looked at its shape: the trunk in the middle, and from the fork a
+    # branch up to A's row and down to B's. What is drawn on a half's rail is
+    # drawn over again on its branch's way there, all but the words: the
+    # turns A holds past the fork are on A's, and B's has none.
+    bent = bar.ev("['a', 'b'].map(letter => { const arm = document.querySelector(`[data-dbg-lane=\"${letter}\"] .dbg-arm`);"
+                  " const band = arm.querySelector('.dbg-bent .dbg-own');"
+                  " return [!!band && !band.hidden, arm.querySelectorAll('b').length,"
+                  " getComputedStyle(arm).clipPath.startsWith('polygon('), getComputedStyle(arm).pointerEvents]; })")
+    assert bent == [[True, 0, True, "none"], [False, 0, True, "none"]], bent
+    # A press on a branch is a press on that half's slider.
+    pressed = bar.ev("['a', 'b'].map(letter => { const box = document.querySelector(`[data-dbg-lane=\"${letter}\"] .dbg-rail`)"
+                     ".getBoundingClientRect(); return document.elementFromPoint(box.right - 40, (box.top + box.bottom) / 2).id; })")
+    assert pressed == ["dbg-slider-a", "dbg-slider-b"], pressed
+    # The turns are numbered once for the whole tree, beside its rails: over
+    # the trunk up to the turn it forks on, and between the two branches
+    # from there.
+    numbers = bar.ev("(() => { const box = held => held.getBoundingClientRect();"
+                     " const rail = key => box(document.querySelector(`[data-dbg-lane=\"${key}\"] .dbg-rail`));"
+                     " return {inside: [...document.querySelectorAll('#debugbar .dbg-ruler b')].filter(held => held.offsetParent !== null).length,"
+                     " axis: [...document.querySelectorAll('#debugbar .dbg-axis b')].map(held => [+held.textContent, box(held).top, box(held).bottom]),"
+                     " trunk: rail('').top, a: rail('a').bottom, b: rail('b').top}; })()")
+    assert numbers["inside"] == 0 and len(numbers["axis"]) >= 3, numbers
+    for turn, top, bottom in numbers["axis"]:
+        assert turn % 50 == 0, numbers
+        assert bottom <= numbers["trunk"] if turn <= back else numbers["a"] <= top and bottom <= numbers["b"], (back, turn, numbers)
     # Who played what is named where it stands: on the trunk, and on A's branch.
     assert names("")[-1] == "Jack" and names("a") == ["Jack"] and names("b") == [], (names(""), names("a"), names("b"))
 
@@ -2072,8 +2155,10 @@ def main() -> int:
               "points, once while they are locked, and goes to the one that is clicked.")
         check_a_branch_forks_the_timeline(bar)
         print("Branch under the marker forks the timeline on the turn it is pressed on, the branch "
-              "holding nothing past it; each branch has an ✕ at its left, and closing the timeline as "
-              "it was leaves the branch as the timeline, named by the Civ AI that played each stretch.")
+              "holding nothing past it; the fork is drawn as a tree, the trunk in the middle and a branch "
+              "up to A's row and down to B's, numbered once; each branch has an ✕ at its left, and closing "
+              "the timeline as it was leaves the branch as the timeline, named by the Civ AI that played "
+              "each stretch.")
         return 0
     finally:
         chrome.terminate()
