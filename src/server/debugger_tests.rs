@@ -1962,7 +1962,22 @@ fn the_page_says_a_picked_civ_ai_to_the_engine_when_it_is_picked() {
         let rest = script.split_once(heard).expect("the picker is heard").1;
         &rest[..rest.find("} else if").expect("another branch follows")]
     };
-    assert!(branch(r#"target.id === "dbg-agent""#).contains("debugSeat();"));
+    // The box's own picker. Another Civ AI than the one seated is asked about
+    // first (operator, 2026-11-22: "when edited to a different strategy,
+    // should ask to switch or branch"), and nothing is said until it is
+    // answered. The one that is seated, and the one Switch answers with, go
+    // through `debugSwitchSeat`, which says the seat to the engine at once.
+    assert!(branch(r#"target.id === "dbg-agent""#)
+        .contains("if (debugAsk) drawDebugBar(false); else debugSwitchSeat(target.value);"));
+    let switched = script
+        .split_once("function debugSwitchSeat(name) {")
+        .and_then(|(_, rest)| rest.split_once("\n}\n"))
+        .expect("debugSwitchSeat is a top-level function")
+        .0;
+    assert!(switched.contains("debugSeat();"));
+    assert!(script.contains(
+        r#"else if (how === "switch" && ask.kind === "switch") debugSwitchSeat(ask.name);"#
+    ));
     assert!(branch(r#"data.civvis === "pane-strategy""#).contains("await debugSeat();"));
     // Whose the turns ahead are is the engine's to say, and the page draws it.
     assert!(script.contains("timeline.beyond"));
