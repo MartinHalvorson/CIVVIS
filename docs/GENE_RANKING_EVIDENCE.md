@@ -187,6 +187,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `emptied-camp-is-taken` | off (unmeasured) | Opt-in gene `emptied-camp-is-taken`: an empty barbarian camp is walked onto this turn; see `advanced/emptied_camp_is_taken.rs`. | 1 \| 1 |
 | `first-ship-closes-the-dark-age` | off (unmeasured) | Opt-in gene `first-ship-closes-the-dark-age`: the first ship, a Historic Moment, when it closes the Age; see `advanced/first_ship_closes_the_age.rs`. | 1 \| 1 |
 | `refusals-alone-reopen-the-turn` | off (unmeasured) | Opt-in gene `refusals-alone-reopen-the-turn`; see `ai::player::take_turn`. | 1 \| 1 |
+| `staged-siege-keeps-its-breakers` | off (unmeasured) | Opt-in gene `staged-siege-keeps-its-breakers`: a staged siege with nothing to open the walls holds its queued breakers; see `advanced/staged_siege_keeps_its_breakers.rs`. | 1 \| 1 |
 | `strategic-unit-closes-the-dark-age` | off (unmeasured) | Opt-in gene `strategic-unit-closes-the-dark-age`: one short, the first unit of a strategic resource not used yet; see `advanced/strategic_unit_closes_the_age.rs`. | 1 \| 1 |
 
 ## Removed from the code
