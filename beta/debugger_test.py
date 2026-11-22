@@ -116,7 +116,7 @@ window.requestAnimationFrame = drawn => setTimeout(drawn, 0);
 // the same way from one world give the same prints, as two halves of the
 // real engine do (`world_print`).
 const engine = {turn: 1, marks: [1], worlds: {1: 1}, saves: [], ids: 0, breaks: [], line: null, stopped: null, score: 0,
-  seat: null, by: {},
+  seat: null, by: {}, seed: 7,
   current: 0, stepped: null, acted: 0, reveal: false, layers: [], wait: 0,
   eras: [{era: 0, name: "ancient", turn: 1}], eraAt: null,
   watch: {categories: [], phrases: [], important: false, every_seat: false, conditions: [], eras: false}, sent: []};
@@ -174,7 +174,7 @@ function enginePlayedBy(marks) {
 }
 function engineState(error = null) {
   const marks = engineLine(), kept = engine.marks;
-  return {error, turn: engine.turn, seed: 7, current: engine.current, units: [], cities: [],
+  return {error, turn: engine.turn, seed: engine.seed, current: engine.current, units: [], cities: [],
     world_era: engine.eras.filter(era => era.turn <= engine.turn).pop().era,
     ...(engine.limit ? {turn_limit: engine.limit} : {}),
     players: [{id: 0, civ: "rome", score: engine.score, cities: 1, population: 1, military: 1,
@@ -404,6 +404,23 @@ class Bar:
 
 
 LANE = '[data-dbg-lane=""]'
+
+# A game under the debugger opens on its two tracks. Every check but the one
+# of that opening view begins on the one timeline, which a page asked for
+# this way opens on.
+ONE_TIMELINE = "?tracks=1"
+
+
+def seat_the_timeline(bar: Bar, name: str) -> None:
+    """Pick a Civ AI in the box's own picker, on the one timeline, and have the timeline play on with it.
+
+    Another Civ AI than the one seated is asked about first (Switch, or
+    Branch); the one already seated is nothing to ask."""
+    bar.ev(f"(() => {{ const select = document.getElementById('dbg-agent'); select.value = '{name}';"
+           " select.dispatchEvent(new Event('change', {bubbles: true})); return true; })()")
+    if bar.ev("!!debugAsk"):
+        assert bar.ev("debugAsk.kind") == "switch", bar.ev("debugAsk")
+        bar.click('#dbg-ask [data-dbg-ask="switch"]')
 
 
 # Whether a select is as wide as it would be left to itself: its longest
@@ -763,8 +780,7 @@ def check_the_bar(bar: Bar) -> None:
     assert bar.ev(f"{PICKER_FITS}({agent})"), "the Civ AI picker cuts its longest listing short"
 
     def seat(name: str) -> None:
-        bar.ev(f"(() => {{ const select = {agent}; select.value = '{name}';"
-               " select.dispatchEvent(new Event('change', {bubbles: true})); return true; })()")
+        seat_the_timeline(bar, name)
         assert bar.ev("document.getElementById('autoplaystrategy').value") == name
 
     last = bar.ev("Math.max(...state.debug.turns)")
@@ -1137,8 +1153,7 @@ def check_a_picked_civ_ai_plays_its_own_turns(bar: Bar) -> None:
 
     def seat(name: str) -> None:
         bar.forget()
-        bar.ev(f"(() => {{ const select = {agent}; select.value = '{name}';"
-               " select.dispatchEvent(new Event('change', {bubbles: true})); return true; })()")
+        seat_the_timeline(bar, name)
         bar.idle(f"engine.seat === '{name}'", f"{name} is said to the engine when it is picked")
         # The pick is said at once, and nothing is played by saying it.
         assert bar.sent() == [{"op": "status", "strategy": name}], bar.sent()
@@ -1402,13 +1417,43 @@ def check_the_split(bar: Bar) -> None:
                 "&& debugSplit.panes[letter].numbers)").format
 
     start = bar.ev("state.turn")
-    # Branch splits the screen at once: side by side, and locked.
-    # Head to head is the strip's own button.
+    # Branch splits the screen at once: side by side, and locked. Head to
+    # head, the two halves' numbers side by side, is open with it (operator
+    # 2026-11-22: "Default the stats window open"): the strip's VS button
+    # puts it away and brings it back, and the choice is kept.
     bar.click('[data-dbg="split"]')
     bar.until(reported(start), "both halves say where they stand")
     assert bar.ev("[debugSplit.dir, debugSplit.locked]") == ["row", True]
+    versus = "[debugSplit.versus, !debugSplit.host.querySelector('[data-dbg-versus]').hidden, localStorage.getItem('civvis-debug-versus')]"
+    assert bar.ev(versus) == [True, True, None], bar.ev(versus)
     bar.click('[data-dbg-split="versus"]')
-    assert bar.ev("debugSplit.versus && !debugSplit.host.querySelector('[data-dbg-versus]').hidden")
+    assert bar.ev(versus) == [False, False, "0"], bar.ev(versus)
+    bar.click('[data-dbg-split="versus"]')
+    assert bar.ev(versus) == [True, True, "1"], bar.ev(versus)
+    # The strip between the halves, end to end (operator 2026-11-22: "the ai
+    # debugger center should have "A=>B" and "A<-B" or something like that.
+    # Should have Drop A and Drop B over Keep, as keep isnt informing the
+    # user of the action of drop"): each half's name and the button that
+    # drops it at that half's end, and the two copies in the middle, both
+    # written A then B with the arrow the way the copy goes.
+    strip = bar.ev("[...debugSplit.host.querySelectorAll('.dbg-divider [data-dbg-split]:not([data-dbg-split^=\"versus-\"]),"
+                   " .dbg-divider .dbg-pane-name')].map(held => held.dataset.dbgSplit || held.dataset.dbgName)")
+    assert strip == ["a", "drop-a", "copy-a", "copy-b", "view", "flip", "versus", "drop-b", "b"], strip
+    # Head to head is open as a split opens, so the strip holds all of it in
+    # the window: nothing it has is past its ends, and what drops a branch
+    # is on the screen.
+    fits = bar.ev("(() => { const strip = debugSplit.host.querySelector('.dbg-divider'), box = strip.getBoundingClientRect();"
+                  " return [...strip.querySelectorAll('.dbg-pane-name, [data-dbg-split^=\"drop-\"], [data-dbg-split^=\"copy-\"]')]"
+                  ".every(held => { const at = held.getBoundingClientRect(); return at.height > 0 && at.top >= box.top && at.bottom <= box.bottom"
+                  " && at.bottom <= innerHeight; }); })()")
+    assert fits, "the strip between the halves runs past the window"
+    words = bar.ev("['drop-a', 'copy-a', 'copy-b', 'drop-b'].map(name =>"
+                   " debugSplit.host.querySelector(`[data-dbg-split=\"${name}\"]`).textContent)")
+    assert words == ["Drop A", "A ⇒ B", "A ⇐ B", "Drop B"], words
+    assert bar.ev("debugSplit.host.textContent.includes('Keep')") is False
+    # A branch that was just made is B, and the box asks which Civ AI plays
+    # it (`check_the_box_asks`). Left unanswered, B keeps the one A has.
+    assert bar.ev("debugAsk") == {"kind": "seat", "letter": "b"}, bar.ev("debugAsk")
 
     # The host's bar stays up across the top, over the two halves, and its
     # timeline is theirs: one timeline, as the split opens, because the two
@@ -1568,7 +1613,7 @@ def check_the_split(bar: Bar) -> None:
     assert bar.ev("debugSplit.until") is None, "the run is over and the lanes still show where it was headed"
 
     branched(bar, start, start + 10, start + 10, "both halves played on, each on its branch")
-    # A -> B makes B a copy of A, its line in the chart included. The two are
+    # A ⇒ B makes B a copy of A, its line in the chart included. The two are
     # one world again, turn for turn, and the timeline is one again.
     bar.click('[data-dbg-split="copy-a"]')
     bar.until("debugSplit.panes.b.numbers.score === debugSplit.panes.a.numbers.score", "B becomes a copy of A")
@@ -1576,10 +1621,10 @@ def check_the_split(bar: Bar) -> None:
     bar.until("!debugBar.classList.contains('dbg-forked')", "a copy holds the worlds it was copied from")
     one_timeline(bar, start + 10, "B was made a copy of A")
 
-    # Keep B: the split closes and the host plays on from that half.
+    # Drop A: the split closes and the host plays on from the other half, B.
     kept = bar.ev("debugSplit.panes.b.id")
     bar.forget()
-    bar.click('[data-dbg-split="keep-b"]')
+    bar.click('[data-dbg-split="drop-a"]')
     bar.until("!debugSplit", "the split closes")
     assert bar.sent() == [{"op": "adopt", "pane": kept}], bar.sent()
     assert bar.ev("state.turn") == start + 10
@@ -1600,7 +1645,7 @@ def check_the_split(bar: Bar) -> None:
     bar.ev("window.lateScript = true")
     bar.click('[data-dbg="split"]')
     bar.until(reported(start + 10), "a half whose script came late still reports")
-    bar.click('[data-dbg-split="keep-a"]')
+    bar.click('[data-dbg-split="drop-b"]')
     bar.until("!debugSplit", "the second split closes")
     bar.ev("window.lateScript = false")
     assert not bar.dev.console, f"the page complained: {bar.dev.console}"
@@ -1630,8 +1675,7 @@ def check_the_lock(bar: Bar) -> None:
         bar.until(half(letter, "'debugStrategy()'") + f" === '{name}'", f"{letter.upper()} is seated with {name}")
 
     # The halves of a split start on the Civ AI picked in the box.
-    bar.ev("(() => { const select = document.getElementById('dbg-agent'); select.value = 'jack';"
-           " select.dispatchEvent(new Event('change', {bubbles: true})); return true; })()")
+    seat_the_timeline(bar, "jack")
     bar.idle("engine.seat === 'jack'", "the Civ AI picked in the box is said to the engine")
     start = bar.ev("state.turn")
     bar.click('[data-dbg="split"]')
@@ -1887,7 +1931,7 @@ def check_the_lock(bar: Bar) -> None:
     bar.until(half("b", "'!debugBusy'"), "B is done")
     assert calls("a") == [] and calls("b") == [["/debug", "goto_save", None]], (calls("a"), calls("b"))
 
-    bar.click('[data-dbg-split="keep-a"]')
+    bar.click('[data-dbg-split="drop-b"]')
     bar.until("!debugSplit", "the split closes")
     assert bar.ev(deck_shown) and not bar.ev("debugBar.classList.contains('dbg-merged')")
     assert not bar.dev.console, f"the page complained: {bar.dev.console}"
@@ -1901,6 +1945,8 @@ def check_a_branch_forks_the_timeline(bar: Bar) -> None:
     fork the tree appropriate (1 timeline into 2 at the branch). if the
     initial is deleted though, the branchbecomes the main tree, transitioning
     from one ai strat to another. lets label ai strats on the timeline too".
+    And 2026-11-22: "lets label the branches themselves", "move x deletes
+    over to the right side please, right after each closable timeline ends".
     """
     half = "debugSplit.panes.{}.frame.contentWindow.eval({})".format
     ops = lambda letter: bar.ev(half(letter, json.dumps(
@@ -1913,8 +1959,7 @@ def check_a_branch_forks_the_timeline(bar: Bar) -> None:
 
     # Jack plays six turns past the last one played, and the world is walked
     # four of them back: that is where the timeline is branched.
-    bar.ev("(() => { const select = document.getElementById('dbg-agent'); select.value = 'jack';"
-           " select.dispatchEvent(new Event('change', {bubbles: true})); return true; })()")
+    seat_the_timeline(bar, "jack")
     bar.idle("engine.seat === 'jack'", "Jack holds the seat")
     # Nothing an earlier check left behind stops the run.
     bar.ev("debugOp({op: 'breakpoints'}), true")
@@ -1975,20 +2020,41 @@ def check_a_branch_forks_the_timeline(bar: Bar) -> None:
     for turn, top, bottom in numbers["axis"]:
         assert turn % 50 == 0, numbers
         assert bottom <= numbers["trunk"] if turn <= back else numbers["a"] <= top and bottom <= numbers["b"], (back, turn, numbers)
-    # Who played what is named where it stands: on the trunk, and on A's branch.
-    assert names("")[-1] == "Jack" and names("a") == ["Jack"] and names("b") == [], (names(""), names("a"), names("b"))
+    # Who played what is named where it stands: on the trunk, and on A's
+    # branch. A branch is named on itself, its letter before the name on its
+    # first stretch, and B's, which nothing has been played on yet, by the
+    # Civ AI seated in it: the one that will play it.
+    assert names("")[-1] == "Jack" and names("a") == ["A · Jack"] and names("b") == ["B · Jack"], (names(""), names("a"), names("b"))
+    # A branch's name stands on the branch: in its own row, past where the
+    # branch has reached it.
+    for letter in "ab":
+        name, rail, at = bar.ev(
+            f"(() => {{ const lane = document.querySelector('[data-dbg-lane=\"{letter}\"]');"
+            " const box = held => { const b = held.getBoundingClientRect(); return [b.left, b.right, b.top, b.bottom]; };"
+            " const slider = lane.querySelector('input').getBoundingClientRect();"
+            f" return [box(lane.querySelector('.dbg-deco .dbg-by b')), box(lane.querySelector('.dbg-rail')),"
+            f" slider.left + 7 + ({back} - 1) / (+lane.querySelector('input').max - 1) * (slider.width - 14)]; }})()")
+        assert name[1] - name[0] > 20 and name[0] >= at + RUN - 1 and rail[2] <= name[2] and name[3] <= rail[3], (letter, name, rail, at)
 
-    # Each branch has an ✕ at its left, before its letter and its picker.
+    # Each branch has an ✕ after its right end: its letter and its picker
+    # stand before its rail, the ✕ past it, and the game's last turn, which
+    # is said once for the tree, past the ✕.
     for letter in "ab":
         places = bar.ev(
             f"['[data-dbg-close=\"{letter}\"]', '[data-dbg-lane=\"{letter}\"] .dbg-lane-name', '[data-dbg-agent=\"{letter}\"]',"
-            f" '[data-dbg-lane=\"{letter}\"] .dbg-rail'].map(name => {{"
+            f" '[data-dbg-lane=\"{letter}\"] .dbg-rail', '{LANE} .dbg-finish'].map(name => {{"
             " const box = document.querySelector('#debugbar ' + name).getBoundingClientRect();"
             " return [box.left, box.right, box.top, box.bottom]; })")
-        cross, name, picker, rail = places
-        assert cross[1] > cross[0] and cross[1] <= name[0] and name[1] <= picker[0] and picker[1] <= rail[0], (letter, places)
+        cross, name, picker, rail, finish = places
+        assert name[1] <= picker[0] and picker[1] <= rail[0], (letter, places)
+        assert cross[1] > cross[0] and rail[1] <= cross[0] and cross[0] - rail[1] <= 12 and cross[1] <= finish[0], (letter, places)
         assert rail[2] <= (cross[2] + cross[3]) / 2 <= rail[3], (letter, places)
         assert bar.ev(f"document.querySelector('[data-dbg-close=\"{letter}\"]').textContent") == "✕"
+    # In the page as it is written the ✕ follows its rail too, so the keys
+    # reach it where the eye finds it.
+    order = bar.ev("['a', 'b'].map(letter => [...document.querySelector(`[data-dbg-lane=\"${letter}\"]`).children]"
+                   ".map(held => held.className.split(' ')[0]))")
+    assert order == [["dbg-lane-name", "dbg-agent", "dbg-start", "dbg-rail", "dbg-close", "dbg-finish"]] * 2, order
 
     # Locked, one turn on: A walks to the turn it holds, and B, which holds
     # none, plays it. Jack plays B's seat too, so the toy's two worlds are the
@@ -2008,7 +2074,7 @@ def check_a_branch_forks_the_timeline(bar: Bar) -> None:
               "both branches go another turn on")
     assert (ops("a"), ops("b")) == (["forward"] * 2, ["branch", "step", "step"]), (ops("a"), ops("b"))
     branched(bar, back + 1, back + 2, back + 2, "another Civ AI played the branch's turn")
-    assert names("a") == ["Jack"] and names("b") == ["Stock"], (names("a"), names("b"))
+    assert names("a") == ["A · Jack"] and names("b") == ["B · Stock"], (names("a"), names("b"))
     words = bar.ev(f"debugTurnWords(debugLaneModels.b, {back + 2})")
     assert words == f"B · turn {back + 2} · open now · Stock", words
     # A name on a branch does not stand under the branch's marker.
@@ -2063,6 +2129,222 @@ def check_a_branch_forks_the_timeline(bar: Bar) -> None:
     assert not bar.dev.console, f"the page complained: {bar.dev.console}"
 
 
+def check_the_box_asks(bar: Bar) -> None:
+    """What the box asks: Switch or Branch for another Civ AI on the one timeline, and which Civ AI plays a new branch.
+
+    Operator, 2026-11-22: "after this, user should be prompted for the
+    strategy for the second branch", "editable branches should be able to
+    switch strategies. leading strategies should be editable and when edited
+    to a different strategy, should ask to switch or branch".
+    """
+    half = "debugSplit.panes.{}.frame.contentWindow.eval({})".format
+    both = "debugSplit.panes.a.turn === {0} && debugSplit.panes.b.turn === {0}".format
+    deck_idle = "!!debugSplitDeck() && debugSplitDeck().idle && !debugSplit.busy"
+    said = "debugSplit.panes.a.marks && debugSplit.panes.b.marks"
+    seated = "[document.getElementById('autoplaystrategy').value, document.getElementById('dbg-agent').value]"
+    asked = ("(() => { const box = document.getElementById('dbg-ask'); if (box.hidden || box.offsetParent === null) return null;"
+             " const at = box.getBoundingClientRect();"
+             " return {title: box.querySelector('h4').textContent,"
+             " buttons: [...box.querySelectorAll('button')].map(held => [held.dataset.dbgAsk, held.value, held.textContent, held.classList.contains('on')]),"
+             " left: at.left, top: at.top, right: at.right, bottom: at.bottom}; })()")
+    under = ("(name => { const from = document.querySelector(name).getBoundingClientRect(), box = document.getElementById('dbg-ask').getBoundingClientRect();"
+             " return box.top >= from.bottom && box.top - from.bottom <= 12 && Math.abs(box.left - from.left) <= 1"
+             " && box.right <= innerWidth && box.bottom <= innerHeight; })")
+
+    def pick(name: str) -> None:
+        bar.ev(f"(() => {{ const select = document.getElementById('dbg-agent'); select.value = '{name}';"
+               " select.dispatchEvent(new Event('change', {bubbles: true})); return true; })()")
+
+    seat_the_timeline(bar, "jack")
+    bar.idle("engine.seat === 'jack'", "Jack holds the seat")
+    turn = bar.ev("state.turn")
+    assert bar.ev(asked) is None and bar.ev("debugAsk") is None
+
+    # Another Civ AI picked on the one timeline is asked about before
+    # anything is done with it: nothing is said to the engine, the seat is
+    # still Jack's, and the picker shows what the question is about.
+    bar.forget()
+    pick("stock")
+    assert bar.ev("debugAsk") == {"kind": "switch", "name": "stock"}, bar.ev("debugAsk")
+    seen = bar.ev(asked)
+    assert seen["title"] == f"Stock from turn {turn}: switch or branch?", seen
+    assert [button[0] for button in seen["buttons"]] == ["switch", "branch", "close"], seen
+    assert [button[2] for button in seen["buttons"]] == ["Switch", "⑂ Branch", "Cancel"], seen
+    assert bar.ev(f"{under}('#dbg-agent')"), seen
+    assert bar.ev(seated) == ["jack", "stock"] and bar.sent() == [], (bar.ev(seated), bar.sent())
+    # Cancel leaves the timeline as it was, and so does Escape, and a press
+    # anywhere else on the page.
+    bar.click('#dbg-ask [data-dbg-ask="close"]')
+    assert bar.ev(asked) is None and bar.ev(seated) == ["jack", "jack"] and bar.sent() == [], (bar.ev(seated), bar.sent())
+    pick("stock")
+    assert bar.ev(asked) is not None
+    bar.ev("document.querySelector('#dbg-ask button').dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', bubbles: true})), true")
+    assert bar.ev(asked) is None and bar.ev(seated) == ["jack", "jack"] and bar.sent() == [], (bar.ev(seated), bar.sent())
+    pick("stock")
+    # A press on the question itself is not a press elsewhere.
+    bar.ev("document.querySelector('#dbg-ask h4').dispatchEvent(new PointerEvent('pointerdown', {bubbles: true})), true")
+    assert bar.ev(asked) is not None
+    bar.ev("document.getElementById('maparea').dispatchEvent(new PointerEvent('pointerdown', {bubbles: true})), true")
+    assert bar.ev(asked) is None and bar.ev(seated) == ["jack", "jack"] and bar.sent() == [], (bar.ev(seated), bar.sent())
+    # The Civ AI already seated is nothing to ask: it is said to the engine,
+    # as any pick is.
+    pick("jack")
+    bar.idle("engine.sent.some(call => call.path === '/debug')", "the seated Civ AI is said again")
+    assert bar.ev(asked) is None and bar.sent() == [{"op": "status", "strategy": "jack"}], bar.sent()
+
+    # Switch: this timeline plays on with it. It is seated as a pick always
+    # was, said to the engine at once.
+    bar.forget()
+    pick("stock")
+    bar.click('#dbg-ask [data-dbg-ask="switch"]')
+    bar.idle("engine.seat === 'stock'", "Switch seats the Civ AI picked")
+    assert bar.ev(asked) is None and bar.ev(seated) == ["stock", "stock"], bar.ev(seated)
+    assert bar.sent() == [{"op": "status", "strategy": "stock"}], bar.sent()
+    seat_the_timeline(bar, "jack")
+    bar.idle("engine.seat === 'jack'", "Jack holds the seat again")
+
+    # Branch: a second timeline begins here with the Civ AI picked, and this
+    # one keeps its own. The branch was made for that Civ AI, so the box does
+    # not ask which one plays it, and nothing is asked of this page's world.
+    bar.forget()
+    pick("stock")
+    bar.click('#dbg-ask [data-dbg-ask="branch"]')
+    bar.until(f"debugSplit && {both(turn)} && {said} && {deck_idle}", "Branch splits the timeline on the open turn")
+    assert bar.ev("[debugSplit.panes.a.strategy, debugSplit.panes.b.strategy, debugAsk]") == ["jack", "stock", None]
+    assert bar.ev(asked) is None
+    bar.until(half("a", "'debugStrategy()'") + " === 'jack' && " + half("b", "'debugStrategy()'") + " === 'stock'"
+              " && " + half("b", "'engine.seat'") + " === 'stock'", "the branch is seated with the Civ AI it was made for")
+    assert bar.ev("['a', 'b'].map(letter => debugLanes[letter].agent.value)") == ["jack", "stock"]
+    assert [call for call in bar.sent() if call.get("op") != "adopt"] == [], bar.sent()
+    bar.click('[data-dbg-split="drop-b"]')
+    bar.until("!debugSplit", "the branch is dropped")
+    assert bar.ev(seated) == ["jack", "jack"], bar.ev(seated)
+
+    # A branch made by Branch begins with A's Civ AI, and the box asks which
+    # one plays it: every Civ AI the page offers, as its picker lists them,
+    # the one seated lit and marked as A's, under the branch's own picker.
+    bar.click('[data-dbg="split"]')
+    bar.until(f"debugSplit && {both(turn)} && {said} && {deck_idle}", "Branch splits the timeline")
+    assert bar.ev("debugAsk") == {"kind": "seat", "letter": "b"}, bar.ev("debugAsk")
+    seen = bar.ev(asked)
+    assert seen["title"] == "Branch B: which Civ AI plays it?", seen
+    assert seen["buttons"] == [["seat", "jack", "1211 - JackOfAllTradesplays A", True], ["seat", "stock", "1000 - ByTheBook", False]], seen
+    assert bar.ev(f"{under}('#debugbar [data-dbg-agent=\"b\"]')"), seen
+    # It is the box's own, and stays up while the halves are unlocked and
+    # the deck is put away.
+    bar.click("[data-dbg-lock]")
+    bar.until("!debugSplit.locked && !debugBar.classList.contains('dbg-merged')", "the lock opens")
+    assert bar.ev(asked) is not None
+    bar.click("[data-dbg-lock]")
+    bar.until(f"debugSplit.locked && {deck_idle}", "the lock closes again")
+    # Answered, the branch is seated with the Civ AI picked, as from its picker.
+    bar.click('#dbg-ask [data-dbg-ask="seat"][value="stock"]')
+    bar.until(half("b", "'debugStrategy()'") + " === 'stock' && " + half("b", "'engine.seat'") + f" === 'stock' && {deck_idle}",
+              "the Civ AI picked is seated in the branch")
+    assert bar.ev(asked) is None and bar.ev("debugAsk") is None
+    assert bar.ev("[debugSplit.panes.a.strategy, debugSplit.panes.b.strategy]") == ["jack", "stock"]
+    assert bar.ev("['a', 'b'].map(letter => debugLanes[letter].agent.value)") == ["jack", "stock"]
+    bar.click('[data-dbg-close="b"]')
+    bar.until("!debugSplit", "the branch is closed")
+    # The branch's own picker answers it as well.
+    bar.click('[data-dbg="split"]')
+    bar.until(f"debugSplit && {both(turn)} && {said} && {deck_idle}", "Branch splits the timeline again")
+    assert bar.ev(asked) is not None
+    bar.ev("(() => { const select = document.querySelector('#debugbar [data-dbg-agent=\"b\"]'); select.value = 'stock';"
+           " select.dispatchEvent(new Event('change', {bubbles: true})); return true; })()")
+    bar.until(half("b", "'debugStrategy()'") + f" === 'stock' && {deck_idle}", "the branch is seated from its picker")
+    assert bar.ev(asked) is None and bar.ev("debugAsk") is None
+    # A question about a branch is gone with the branch.
+    bar.click('[data-dbg-close="b"]')
+    bar.until("!debugSplit", "the branch is closed")
+    bar.click('[data-dbg="split"]')
+    bar.until(f"debugSplit && {both(turn)} && {said} && {deck_idle}", "Branch splits the timeline a third time")
+    assert bar.ev(asked) is not None
+    bar.click('[data-dbg-split="drop-b"]')
+    bar.until("!debugSplit", "the branch is dropped")
+    assert bar.ev(asked) is None and bar.ev("debugAsk") is None
+    assert bar.ev("[state.turn, engine.seat]") == [turn, "jack"]
+    assert not bar.dev.console, f"the page complained: {bar.dev.console}"
+
+
+def check_the_game_opens_on_two_tracks(bar: Bar, address: str) -> None:
+    """The opening view: a game under the debugger is drawn on its two tracks at once, and the box asks for B's Civ AI.
+
+    Operator, 2026-11-22: "in ai debugger, the opening view should go to the
+    2 track immediately. after this, user should be prompted for the strategy
+    for the second branch".
+    """
+    both = "debugSplit.panes.a.turn === {0} && debugSplit.panes.b.turn === {0}".format
+    deck_idle = "!!debugSplitDeck() && debugSplitDeck().idle && !debugSplit.busy"
+    said = "debugSplit.panes.a.marks && debugSplit.panes.b.marks"
+    ready = "typeof drawDebugBar === 'function' && typeof engineState === 'function'"
+
+    def settled() -> None:
+        """Long enough for a page that was going to split to have done it."""
+        bar.ev("new Promise(done => setTimeout(() => done(true), 250))")
+
+    # Every other check asked for the one timeline. The page as anyone opens it:
+    bar.dev.call("Page.navigate", {"url": address})
+    bar.until(f"{ready} && !location.search", "the page as it is opened, loaded")
+    assert bar.ev("typeof debugSplit !== 'undefined' && debugSplit === null && state === null")
+    bar.ev("render(engineState()), true")
+    # Nothing is pressed: the first state drawn splits the screen as Branch
+    # does, side by side, locked, with head to head open.
+    bar.until(f"debugSplit && {both(1)} && {said} && {deck_idle}", "the game opens on its two tracks")
+    assert bar.ev("[debugSplit.dir, debugSplit.locked, debugSplit.versus, debugSplit.from]") == ["row", True, True, 1]
+    assert bar.ev("['', 'a', 'b'].map(key => getComputedStyle(document.querySelector(`[data-dbg-lane=\"${key}\"]`)).display !== 'none')") == [True] * 3
+    one_timeline(bar, 1, "a game opens on two tracks that are one world")
+    # Nothing was asked of the world that waits under the two halves.
+    assert bar.sent() == [], bar.sent()
+    # And the box asks which Civ AI plays B.
+    assert bar.ev("debugAsk") == {"kind": "seat", "letter": "b"}, bar.ev("debugAsk")
+    assert bar.ev("(() => { const box = document.getElementById('dbg-ask');"
+                  " return !box.hidden && box.offsetParent !== null && box.querySelector('h4').textContent; })()") == "Branch B: which Civ AI plays it?"
+    bar.click('#dbg-ask [data-dbg-ask="seat"][value="stock"]')
+    bar.until("debugSplit.panes.b.frame.contentWindow.eval('engine.seat') === 'stock' && " + deck_idle, "B is seated from the question")
+    assert bar.ev("debugAsk") is None
+    # Played on, each track is its own Civ AI's.
+    bar.click('[data-dbg="next"]')
+    bar.until(f"{both(2)} && {deck_idle} && debugBar.classList.contains('dbg-forked')", "the two tracks part")
+    branched(bar, 1, 2, 2, "two Civ AIs played the first turn")
+    names = bar.ev("['a', 'b'].map(key => [...document.querySelectorAll(`[data-dbg-lane=\"${key}\"] .dbg-deco .dbg-by s`)].map(s => s.textContent))")
+    assert names == [["A · Jack"], ["B · Stock"]], names
+
+    # It is the opening view, given once a game: a track dropped leaves the
+    # one timeline, which is not split again when it is next drawn.
+    bar.click('[data-dbg-split="drop-b"]')
+    bar.until("!debugSplit && state.turn === 2", "B is dropped")
+    bar.ev("render(engineState()), true")
+    settled()
+    assert bar.ev("debugSplit === null && debugAsk === null")
+    # A new game opens on its two tracks again.
+    bar.ev("Object.assign(engine, {seed: 8, turn: 1, marks: [1], worlds: {1: 1}, by: {}, score: 0, eras: [{era: 0, name: 'ancient', turn: 1}]}),"
+           " render(engineState()), true")
+    bar.until(f"debugSplit && {both(1)} && {said} && {deck_idle}", "a new game opens on its two tracks")
+    assert bar.ev("debugAsk") == {"kind": "seat", "letter": "b"}, bar.ev("debugAsk")
+    bar.click('[data-dbg-split="drop-a"]')
+    bar.until("!debugSplit", "A is dropped")
+    assert bar.note() == "Branch A closed · B is the timeline", bar.note()
+
+    # A game with no room for two halves opens on the one timeline, and so
+    # does one whose seat is being played by hand in the Single player view.
+    bar.dev.call("Emulation.setDeviceMetricsOverride", {"width": 800, "height": 900, "deviceScaleFactor": 1, "mobile": False})
+    bar.until("innerWidth === 800", "a narrow window")
+    bar.ev("engine.seed = 9, render(engineState()), true")
+    settled()
+    assert bar.ev("debugSplit === null && debugOpenedGame === '9'")
+    bar.dev.call("Emulation.clearDeviceMetricsOverride")
+    bar.until("innerWidth > 1000", "the window is its own size again")
+    bar.ev("render(engineState()), true")
+    settled()
+    assert bar.ev("debugSplit === null"), "a game that opened on one timeline was split later, by a window made wider"
+    bar.ev("SOLO_UI = true, engine.seed = 10, render(engineState()), true")
+    settled()
+    assert bar.ev("debugSplit === null && debugOpenedGame === '10'")
+    bar.ev("SOLO_UI = false, true")
+    assert not bar.dev.console, f"the page complained: {bar.dev.console}"
+
+
 def main() -> int:
     here = pathlib.Path(__file__).resolve().parent
     stage = pathlib.Path(tempfile.mkdtemp(prefix="civvis-debugger-"))
@@ -2078,7 +2360,7 @@ def main() -> int:
     chrome = subprocess.Popen(
         [os.environ.get("CIVVIS_TEST_CHROME") or find_chrome(), "--headless=new",
          f"--remote-debugging-port={debug_port}", f"--user-data-dir={profile}", "--no-first-run",
-         "--disable-gpu", "--window-size=1400,900", f"http://127.0.0.1:{port}/"],
+         "--disable-gpu", "--window-size=1400,900", f"http://127.0.0.1:{port}/{ONE_TIMELINE}"],
         stdout=subprocess.DEVNULL, stderr=chrome_log)
     tether(chrome)
     try:
@@ -2118,7 +2400,7 @@ def main() -> int:
                 if attempt == 4:
                     raise
                 print(f"attempt {attempt}: {late}; opening the page again.")
-                dev.call("Page.navigate", {"url": f"http://127.0.0.1:{port}/"})
+                dev.call("Page.navigate", {"url": f"http://127.0.0.1:{port}/{ONE_TIMELINE}"})
         print(f"the stand-in page was ready {time.time() - opened:.1f}s after Chrome answered.")
         check_the_bar(bar)
         print("the header box stands beside the left panel with the map area beneath it, the timeline "
@@ -2145,8 +2427,8 @@ def main() -> int:
         print("the split opens at once on one timeline, seats a Civ AI in each half, plays both to a "
               "turn locked and unlocked, branches the timeline on the last turn the two hold as one "
               "world, sets their numbers side by side, starts both again from the split, moves "
-              "each half or both by its slider in the host's bar, copies, keeps, and hears a half "
-              "whose script came late.")
+              "each half or both by its slider in the host's bar, copies, drops a branch by its name, and "
+              "hears a half whose script came late.")
         check_the_lock(bar)
         print("the lock joins the two halves and closes only on one turn, the host's deck is the one "
               "panel of a locked split and each half's own comes back when it opens, two "
@@ -2156,9 +2438,16 @@ def main() -> int:
         check_a_branch_forks_the_timeline(bar)
         print("Branch under the marker forks the timeline on the turn it is pressed on, the branch "
               "holding nothing past it; the fork is drawn as a tree, the trunk in the middle and a branch "
-              "up to A's row and down to B's, numbered once; each branch has an ✕ at its left, and closing "
-              "the timeline as it was leaves the branch as the timeline, named by the Civ AI that played "
-              "each stretch.")
+              "up to A's row and down to B's, numbered once and each named on itself by its letter and its "
+              "Civ AI; each branch has an ✕ after its right end, and closing the timeline as it was leaves the "
+              "branch as the timeline, named by the Civ AI that played each stretch.")
+        check_the_box_asks(bar)
+        print("another Civ AI picked on the one timeline is asked about first, Switch seats it and Branch "
+              "makes a branch for it; a branch made by Branch asks which Civ AI plays it, under its picker, "
+              "and is answered from the list or from the picker.")
+        check_the_game_opens_on_two_tracks(bar, f"http://127.0.0.1:{port}/")
+        print("a game opens on its two tracks at once with head to head open, asks for B's Civ AI, and does "
+              "so once a game; a narrow window and the Single player view open on the one timeline.")
         return 0
     finally:
         chrome.terminate()
