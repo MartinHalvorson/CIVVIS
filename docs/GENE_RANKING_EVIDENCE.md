@@ -178,6 +178,14 @@ The set is discovered from the code: every gene whose flag field `src/ai/advance
 | `competition-victory-points` | off | +35 | +0.04 (z +0.46) ~ | +16 [-19, +50] | unresolved |
 | `victory-portfolio` | off | – | – | – | awaiting its first screen |
 
+## Awaiting measurement
+
+These screenable genes have no on/off result, so they receive no rank. Their displayed default remains the retained selection rather than an inference from this reporting batch.
+
+| Gene | Default | Description | Best version \| Total versions |
+|---|---|---|---:|
+| `refusals-alone-reopen-the-turn` | off (unmeasured) | Opt-in gene `refusals-alone-reopen-the-turn`; see `ai::player::take_turn`. | 1 \| 1 |
+
 ## Removed from the code
 
 Genes whose code has left the repository (operator directive: the bottom of the table leaves the code), listed from their last measurement:

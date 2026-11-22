@@ -186,6 +186,40 @@ class TournamentsPage(unittest.TestCase):
         self.assertEqual(ladder["victories"], [["Science", 2]])
         self.assertEqual(record["scheduled"], [])
 
+    def test_an_indefinite_tournament_benchmarks_its_win_rate_by_level_day_by_day(self):
+        # Operator 2026-11-22: "whenever we have no other tourney, we run lv 6,
+        # lv 7, lv 8 (x 2) games. diplomacy off. benchmark our win rates
+        # roughly for these games over time."
+        spec = {"name": "Bench", "conditions": "c", "start": "civvis-t7-", "end": "civvis-t8-",
+                "indefinite": True, "match": MATCH}
+        turn = ["DIFFICULTY_EMPEROR", "DIFFICULTY_IMMORTAL", "DIFFICULTY_DEITY", "DIFFICULTY_DEITY"]
+        rows = []
+        for i in range(12):
+            day = 21 + i // 8
+            rows.append(run(f"civvis-t7-202611{day}T{i:02d}0000Z", "win" if i % 4 != 3 else "rival_victory",
+                            "CIVILIZATION_ROME", 0, utc=f"2026-11-{day}T{i:02d}:30:00Z", difficulty=turn[i % 4]))
+        record = tournaments_page.record(rows, [spec], ["Rome"])
+        (bench,) = record["running"]
+        self.assertEqual((bench["games"], bench["size"], bench["end"]), (12, None, None))
+        self.assertEqual(bench["benchmark"]["days"], ["11-21", "11-22"])
+        self.assertEqual(
+            [(lv["level"], lv["wins"], lv["games"], lv["days"]) for lv in bench["benchmark"]["levels"]],
+            [(6, 3, 3, [[2, 2], [1, 1]]), (7, 3, 3, [[2, 2], [1, 1]]), (8, 3, 6, [[2, 4], [1, 2]])])
+        # The 95% range: Wilson's, honest at 100% on three games.
+        self.assertEqual(bench["benchmark"]["levels"][0]["range"], [44, 100])
+        self.assertEqual(tournaments_page.wilson(50, 100), [40, 60])
+        self.assertIsNone(tournaments_page.wilson(0, 0))
+        # A series of a fixed size carries no benchmark.
+        self.assertNotIn("benchmark", self.record()["running"][0])
+        # Scheduled, it has no size to show.
+        waiting = tournaments_page.record([], [spec], ["Rome"])
+        self.assertEqual([(t["name"], t["size"]) for t in waiting["scheduled"]], [("Bench", None)])
+        for piece in ('t.size == null ? " · indefinite" : " of " + t.size',
+                      't.size == null ? "Indefinite" : plural(t.size, "game", "games")',
+                      'if (bench(t.benchmark)) body.append(bench(t.benchmark));',
+                      'el("p", "tour-latest-title", "Win rate by level")'):
+            self.assertIn(piece, PAGE)
+
     def test_the_counting_is_the_home_tables_own(self):
         # The page, the live mirror's Mode line and an older home page's
         # table count one set of series: the detail the page asks for adds
