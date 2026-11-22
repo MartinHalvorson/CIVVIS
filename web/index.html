@@ -6525,19 +6525,21 @@
            clicked in, and all five leave a split's frame for the whole
            window. Under them is the game itself, on the shop page that sells
            it. Only the published site has a /home, a /research (the Musings
-           page, which kept its address when it was renamed) and a
-           /tournaments to go to (`beta/publish.sh` makes the three links
-           lane-relative); the head
+           page, which kept its address when it was renamed), a
+           /tournaments and a /performance to go to (`beta/publish.sh` makes
+           the four links lane-relative); the head
            script unhides the list on the hosts that serve them.
            Performance is CIVVIS's own entry, listed under it only while
-           CIVVIS is the page on screen. It opens the simulator's
-           performance notes, which are long and live in the repository. -->
+           CIVVIS is the page on screen. It is a page of the site (operator,
+           2026-11-21: "performance should be a page similar to the home/
+           and other similar pages"): the fastest game on video and how long
+           a self-play game takes. -->
       <nav class="head-links" id="headlinks" aria-label="CIVVIS sites" hidden>
         <a class="home-link" id="homelink" href="/home" target="_top">Home</a>
         <a class="home-link" id="researchlink" href="/research" target="_top">Musings</a>
         <a class="home-link" id="tourlink" href="/tournaments" target="_top">Tournaments</a>
         <a class="home-link" id="watchlink" href="./" target="_top">CIVVIS</a>
-        <a class="home-link sub-link under-watch" id="perflink" href="https://github.com/MartinHalvorson/CIVVIS/blob/main/docs/SIMULATOR_PERFORMANCE.md" target="_blank" rel="noopener" title="How fast the simulator runs: the performance notes on GitHub">Performance</a>
+        <a class="home-link sub-link under-watch" id="perflink" href="/performance" target="_top" title="How fast the simulator plays: the fastest game on video and how long a self-play game takes">Performance</a>
         <a class="home-link" id="playlink" href="?mode=play" target="_top">AI Debugger</a>
         <a class="home-link" id="civ6link" href="https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/" target="_blank" rel="noopener" title="Buy Civilization VI on Steam">Civ 6</a>
       </nav>
