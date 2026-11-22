@@ -6062,6 +6062,14 @@ pub const GENES: &[Gene] = &[
     // survive there walks onto it before the positions plan runs. Opt-in;
     // see `advanced/emptied_camp_is_taken.rs`.
     Gene { tag: "emptied-camp-is-taken", field: "emptied_camp_is_taken", kind: Kind::OptIn, enable: AdvancedAi::enable_emptied_camp_is_taken, disable: AdvancedAi::disable_emptied_camp_is_taken },
+    // Live Tournament 6 / Lv 8 Deity 2026-11-21/22: 71 of 128 Dark Ages were
+    // entered one to three Era Score short, and 41 of those had never built a
+    // ship, a 2-point Moment (3 first in the world); many at the first era's
+    // close (t30 Online, threshold 8), with Sailing known since t25-32. One or
+    // two short with the era closing, the coastal city that finishes the
+    // cheapest ship in time builds it, else it is bought. Opt-in; see
+    // `advanced/first_ship_closes_the_age.rs`.
+    Gene { tag: "first-ship-closes-the-dark-age", field: "first_ship_closes_the_dark_age", kind: Kind::OptIn, enable: AdvancedAi::enable_first_ship_closes_the_dark_age, disable: AdvancedAi::disable_first_ship_closes_the_dark_age },
     // ---- append: g-k ------------------------------------------------
     // `gutted-rival-passes-the-edge`: a Domination lane's staged declaration
     // passes the peak edge against a target at 60% or less of its 30-turn

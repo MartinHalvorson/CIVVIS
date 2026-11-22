@@ -51,7 +51,7 @@ const LATER_ERA_STANDARD: u32 = 30;
 impl AdvancedAi {
     /// The turn the world's current era is expected to close: the host's
     /// countdown when it runs, else the speed's era schedule.
-    fn unique_unit_era_end(g: &Game) -> u32 {
+    pub(super) fn unique_unit_era_end(g: &Game) -> u32 {
         g.world_era_countdown_end.unwrap_or_else(|| {
             let length = if g.world_era == 0 {
                 FIRST_ERA_STANDARD
@@ -64,7 +64,7 @@ impl AdvancedAi {
     }
 
     /// The seat's own unique unit, cheapest first.
-    fn seat_unique_unit(g: &Game, pid: usize) -> Option<Name> {
+    pub(super) fn seat_unique_unit(g: &Game, pid: usize) -> Option<Name> {
         g.rules
             .units
             .iter()

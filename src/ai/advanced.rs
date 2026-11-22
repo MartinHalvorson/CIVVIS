@@ -7959,6 +7959,11 @@ pub struct AdvancedAi {
     /// there, before the positions plan holds that soldier back. See
     /// `advanced/emptied_camp_is_taken.rs`. Off by default.
     emptied_camp_is_taken: bool,
+    /// `first-ship-closes-the-dark-age`: a seat one or two Era Score short of
+    /// a Normal Age before the era closes trains or buys its first ship, a
+    /// 2-point Historic Moment. See `advanced/first_ship_closes_the_age.rs`.
+    /// Off by default.
+    first_ship_closes_the_dark_age: bool,
     // ---- append: g-k ------------------------------------------------
     /// `guru-walks-to-the-wounded`: a Guru with nothing to heal this turn
     /// walks to the wounded of its faith instead of at the nearest rival. See
@@ -12504,6 +12509,9 @@ mod early_conquest;
 mod edge_unit_takes_the_soft_city;
 /// `emptied-camp-is-taken`: see `advanced/emptied_camp_is_taken.rs`.
 mod emptied_camp_is_taken;
+/// `first-ship-closes-the-dark-age`: see
+/// `advanced/first_ship_closes_the_age.rs`.
+mod first_ship_closes_the_age;
 /// Version two of rapid city expansion keeps the measured-positive opening
 /// pace and safety gates without version one's forced queues, sprawl, or war.
 pub(super) mod rapid_city_expansion;
@@ -27961,6 +27969,10 @@ impl AdvancedAi {
         // the era closes, when it turns a Dark Age Normal. Exact no-op while
         // the gene is off. See `advanced/unique_unit_closes_the_age.rs`.
         self.claim_unique_unit_for_the_age(g, pid);
+        // `first-ship-closes-the-dark-age`: the first ship, a 2-point Moment,
+        // when it alone closes the Age. Exact no-op while the gene is off. See
+        // `advanced/first_ship_closes_the_age.rs`.
+        self.claim_first_ship_for_the_age(g, pid);
         // `culture-theater-buildings-pass-the-claims`: a Culture seat's next
         // Theater building over the routine claims' passable heads, after
         // every ordinary writer and before the paused-district, near-done
