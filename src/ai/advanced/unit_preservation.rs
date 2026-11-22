@@ -641,6 +641,12 @@ impl AdvancedAi {
             .flat_map(actors)
             .filter(|uid| military(before, pid, *uid))
             .collect();
+        // Every board below is the plan replayed from `before` with some units
+        // held back, so each differs from the first only where a held-back
+        // unit (or what its orders would have done) stands. The hostiles'
+        // reaches are read once, on the first, and kept wherever a later one
+        // cannot have changed them; see `TrialReach`.
+        let mut shared: Option<std::cell::RefCell<TrialReach>> = None;
         loop {
             let companions: Vec<u32> = departures
                 .iter()
@@ -650,7 +656,9 @@ impl AdvancedAi {
             // whose intended site that route would have reached.
             blocked.extend(companions);
             let after = replay(before, pid, actions, &blocked);
-            let mut forecast = ReplyForecast::new(&after.board, pid);
+            let trials =
+                shared.get_or_insert_with(|| std::cell::RefCell::new(TrialReach::new(&after.board, pid)));
+            let mut forecast = ReplyForecast::for_trial(&after.board, trials);
             let unsafe_units: Vec<u32> = affected
                 .iter()
                 .copied()
@@ -687,7 +695,9 @@ impl AdvancedAi {
             .cloned()
             .collect();
         let outcome = replay(before, pid, &kept, &BTreeSet::new());
-        let mut forecast = ReplyForecast::new(&outcome.board, pid);
+        let trials = shared
+            .get_or_insert_with(|| std::cell::RefCell::new(TrialReach::new(&outcome.board, pid)));
+        let mut forecast = ReplyForecast::for_trial(&outcome.board, trials);
         // Unordered units can be exposed too, e.g. a gun exempted by a siege.
         for uid in before.player_unit_ids(pid) {
             if military(before, pid, uid)
