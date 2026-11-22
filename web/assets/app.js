@@ -9013,7 +9013,7 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
       const winnerActions = SPEC
         ? `${oneMoreTurn}
           <button class="winner-again winner-playon" id="finale-pause" onclick="toggleSpecPause()"
-            title="Keep this result on screen. The next game waits until you resume.">Pause here</button>
+            title="Keep this result on screen. The next game waits until you resume.">Pause here</button>${gameStatsButton(st)}
           <button class="primary winner-again" id="finale-new-game" onclick="startNewSimulation()"
             title="Start a new game now.">New Game</button>`
         : `<button class="primary winner-again" onclick="startNewSimulation()" id="finale-restart"
@@ -9026,7 +9026,7 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
             title="Keep playing this world without a turn limit. The exact result shown here will not repeat; the next distinct victory ends the game.">Continue to the next Victory type</button>
           <button class="winner-again winner-playon" id="play-on-indefinite"
             onclick="playOnPastVictory('indefinite', false)"
-            title="Keep playing this world without a turn limit and ignore every later victory.">To infinity and beyond</button>`;
+            title="Keep playing this world without a turn limit and ignore every later victory.">To infinity and beyond</button>${gameStatsButton(st)}`;
       w.innerHTML = `<div class="winner-content">
         <span class="winner-kicker">${kicker}</span>
         <span class="winner-mark" aria-hidden="true">✦</span>
@@ -9040,7 +9040,7 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
         <span class="winner-actions${SPEC ? " winner-actions-sim" : ""}">
           ${winnerActions}
         </span>
-        ${finaleCountdownChoiceMarkup()}${gameStatsMarkup(st)}
+        ${finaleCountdownChoiceMarkup()}
       </div>`;
       settleResultActions();
       updateSpecPauseButtons();
