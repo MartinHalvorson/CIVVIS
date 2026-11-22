@@ -1,0 +1,1154 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#171d25">
+<title>AI Interpretability · CIVVIS.ai</title>
+<meta name="description" content="How a CIVVIS AI agent decides, read from both ends: the steps of one turn in order, the plan its seats write down through a game, and every rule it is made of with what that rule is worth in wins.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23171d25'/%3E%3Ccircle cx='16' cy='16' r='11.5' fill='none' stroke='%2366c0f4'/%3E%3Cpath d='M7 16h18M16 4.5c-4.2 4.1-4.2 18.9 0 23M16 4.5c4.2 4.1 4.2 18.9 0 23' fill='none' stroke='%2366c0f4' stroke-width='1.15'/%3E%3C/svg%3E">
+<style>
+  /* The home page's own palette, header and cards (`beta/landing.html`), as
+     the Charts and Auto-Tourneys pages repeat them: the pages are one site
+     and read as one. Each is a single file with no shared stylesheet, so
+     what they share is repeated here. */
+  :root {
+    color-scheme: dark;
+    --bg: #171d25;
+    --panel: #1f2733;
+    --panel-raised: #242f3d;
+    --border: #2e3a4a;
+    --border-strong: #46566a;
+    --text: #e2e8ef;
+    --muted: #93a3b5;
+    --faint: #67788b;
+    --accent: #66c0f4;
+    --action-bg: #274b66;
+    --action-fg: #a8d8f5;
+    --action-hover: #315d7e;
+    --gold: #d7b66a;
+    --yt: #b3261e;
+    --yt-edge: #d9534a;
+    --yt-mark: #ff6257;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    /* The chart colours are Win Analytics' six, a victory each, checked
+       against this panel (#1f2733) at 3:1 and over and against each other
+       for the common colour-vision deficiencies in the order they are
+       stacked. A posture that pushes for a victory wears that victory's
+       colour; Expansion wears Score's green (a Score seat's posture is
+       Expansion) and Recovery a violet of its own. The five kinds of step
+       wear the first five in the same order. A seat left to choose its own
+       victory is the neutral line. */
+    --series: #3987e5;
+    --v-science: #3987e5;
+    --v-culture: #d95926;
+    --v-diplomatic: #199e70;
+    --v-religious: #c98500;
+    --v-domination: #d55181;
+    --v-score: #0ca30c;
+    --v-civvis: #c5cfdb;
+    --p-expansion: #0ca30c;
+    --p-science: #3987e5;
+    --p-culture: #d95926;
+    --p-diplomacy: #199e70;
+    --p-religion: #c98500;
+    --p-conquest: #d55181;
+    --p-recovery: #9a7be8;
+    --k-plan: #3987e5;
+    --k-govern: #d95926;
+    --k-spend: #199e70;
+    --k-production: #c98500;
+    --k-units: #d55181;
+    --g-on: #d95926;
+    --g-off: #3987e5;
+  }
+
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    min-width: 320px;
+    margin: 0;
+    overflow-x: hidden;
+    color: var(--text);
+    background: var(--bg);
+    font: 15px/1.55 var(--sans);
+    -webkit-font-smoothing: antialiased;
+  }
+  /* 1120px, up from 1060px on 2026-11-22: the header's row of links grew
+     when GitHub and YouTube were made to stand out, and at 1060px it no
+     longer fitted on the title's line. */
+  .shell { width: min(1120px, 100%); margin: 0 auto; padding: 0 clamp(16px, 3vw, 32px); }
+  main { padding-bottom: 48px; }
+
+  .site-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    flex-wrap: wrap;
+    padding-top: 26px;
+    padding-bottom: 18px;
+    border-bottom: 1px solid var(--border);
+  }
+  .site-title { margin: 0; color: #fff; font-size: 26px; font-weight: 700; letter-spacing: 0.04em; }
+  .site-title span { color: var(--accent); font-weight: 600; }
+  .site-tagline { margin: 3px 0 0; color: var(--muted); font-size: 13.5px; }
+  .site-tagline span { display: block; }
+  .utility-nav { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: flex-end; gap: 10px; margin-left: auto; }
+  .utility-nav > .utility-link { min-height: 44px; }
+  .utility-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 38px;
+    padding: 0 14px;
+    border: 1px solid var(--border-strong);
+    border-radius: 3px;
+    background: var(--panel);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    text-decoration: none;
+  }
+  .utility-link svg { width: 15px; height: 15px; flex: none; }
+  .utility-link:hover,
+  .utility-link:focus-visible { background: var(--panel-raised); border-color: var(--accent); color: #fff; }
+  .utility-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* The project's two homes stand out from the row (operator, 2026-11-22:
+     "make the GitHub, dev progress stand out a bit more"): GitHub filled in
+     the site's blue, with what it holds under its name ("everything open
+     source, free"), and YouTube in its red. */
+  .utility-link.is-github,
+  .utility-link.is-youtube { min-height: 44px; color: #fff; font-size: 14px; font-weight: 700; }
+  .utility-link.is-github svg,
+  .utility-link.is-youtube svg { width: 20px; height: 20px; }
+  .utility-link.is-github { border-color: var(--accent); background: var(--action-bg); }
+  .utility-link.is-github:hover,
+  .utility-link.is-github:focus-visible { background: var(--action-hover); border-color: #fff; }
+  .utility-link.is-github span { display: grid; line-height: 1.25; }
+  .utility-link.is-github small { color: var(--action-fg); font-size: 11px; font-weight: 500; white-space: nowrap; }
+  .utility-link.is-youtube { border-color: var(--yt-edge); background: var(--yt); }
+  .utility-link.is-youtube:hover,
+  .utility-link.is-youtube:focus-visible { background: #c9342b; border-color: #fff; }
+  /* Under YouTube, the channel's top playlists, one to a line (operator,
+     2026-11-22: "list top playlists under youtube. maybe in a vertical
+     list"). The row's links keep their tops in a line, so the list hangs
+     under its button alone, in the room the site list's height leaves. */
+  .utility-group { display: grid; gap: 5px; }
+  .utility-lists { display: grid; gap: 1px; margin: 0; padding: 0; list-style: none; }
+  .utility-list {
+    display: flex; align-items: center; gap: 6px; padding: 2px 3px; border-radius: 2px;
+    color: var(--text); font-size: 12.5px; font-weight: 600; line-height: 1.35; text-decoration: none; white-space: nowrap;
+  }
+  .utility-list svg { width: 14px; height: 14px; flex: none; color: var(--yt-mark); }
+  .utility-list:hover,
+  .utility-list:focus-visible { color: #fff; text-decoration: underline; }
+  .utility-list:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  /* The site's pages, listed in the same order on every one of them with
+     the page on screen in gold: Home, Charts, Auto-Tourneys, CIVVIS and AI
+     Debugger, and under them the game they are built on. As on the home
+     page, whose header this is, the column stands to the left of the title. */
+  .site-brand { display: flex; align-items: center; gap: 18px; min-width: 0; }
+  .site-lockup { min-width: 0; }
+  .site-nav { display: grid; flex: none; gap: 4px; }
+  .site-link {
+    display: block;
+    padding: 3px 12px 4px;
+    border-radius: 3px;
+    background: var(--action-bg);
+    color: var(--action-fg);
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    line-height: 1.4;
+    text-decoration: none;
+    text-transform: uppercase;
+  }
+  .site-link:hover,
+  .site-link:focus-visible { background: var(--action-hover); color: #fff; }
+  .site-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .site-link[aria-current="page"],
+  .site-link[aria-current="page"]:hover { background: var(--gold); color: #17130c; }
+  /* The list is a tree that keeps its branches folded (operator,
+     2026-11-21: "a somewhat collapsable model for the info"): a page's own
+     pages are listed under it only on that page and on those pages. This is
+     the last of the three under Charts/ (operator, 2026-11-22: "Add a new
+     chart to the bottom of Charts/ called AI Interpretablity"), so here
+     Charts/'s branch is open and this page is the gold entry in it, under
+     CIVVIS Performance, set in from the rest. Every name stands on one line
+     (operator, 2026-11-21: "make sure it fits on one line"), and the column
+     is as wide as its longest, AUTO-TOURNEYS: 145px. */
+  /* A page under Charts/: set in, and in smaller type, so that the longest
+     of them, CIVVIS PERFORMANCE, is as wide on its one line as
+     AUTO-TOURNEYS is on its own (145px), and the column is the same width
+     on every page. */
+  .site-link.sub-link { margin-left: 10px; padding: 2px 6px 3px; font-size: 10px; letter-spacing: 0.03em; }
+
+  .intro { max-width: 860px; margin: 18px 0 22px; color: var(--muted); font-size: 14.5px; line-height: 1.6; }
+  .intro a { color: var(--accent); }
+
+  .res-empty { margin: 0; color: var(--faint); font-size: 13px; }
+  .res-record { display: grid; gap: 16px; min-width: 0; }
+  .res-record[hidden], .res-empty[hidden], .res-section[hidden] { display: none; }
+  .res-section { min-width: 0; padding: 12px 14px 12px; border: 1px solid var(--border); border-radius: 4px; background: var(--panel); }
+  .rank-title { margin: 0; color: #fff; font-size: 13.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+  .rank-sub { max-width: 900px; margin: 2px 0 8px; color: var(--faint); font-size: 12px; line-height: 1.45; }
+  .rank-note { margin: 10px 0 0; padding-top: 8px; border-top: 1px solid var(--border); color: var(--faint); font-size: 11.5px; line-height: 1.5; }
+  .rank-note a { color: var(--accent); }
+  .rank-note p { margin: 0 0 4px; }
+  /* A figure of the page under its name, five across: what the agent is
+     made of, counted off the source when the site is published. */
+  .int-tiles { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin-top: 8px; }
+  @media (max-width: 899px) { .int-tiles { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); } }
+  .int-tile { min-width: 0; padding: 8px 10px 9px; border: 1px solid var(--border); border-radius: 4px; background: var(--panel-raised); }
+  .int-tile b { display: block; color: #fff; font-size: clamp(20px, 2.6vw, 27px); font-weight: 700; line-height: 1.25; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .int-tile span { display: block; color: var(--text); font-size: 12.5px; font-weight: 600; }
+  .int-tile small { display: block; margin-top: 2px; color: var(--faint); font-size: 11.5px; line-height: 1.4; }
+
+  /* One turn. The five kinds of step are the strip's key and its reading
+     order at once: a card each, numbered, with how many steps are of it. */
+  .int-kinds { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin: 10px 0 0; padding: 0; list-style: none; }
+  @media (max-width: 899px) { .int-kinds { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); } }
+  .int-kind { min-width: 0; padding: 7px 10px 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--panel-raised); cursor: default; }
+  .int-kind:hover, .int-kind:focus-visible { border-color: var(--border-strong); }
+  .int-kind:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .int-kind-head { display: flex; align-items: center; gap: 7px; color: #fff; font-size: 13px; font-weight: 700; line-height: 1.3; }
+  .int-kind-head i { width: 12px; height: 12px; border-radius: 3px; flex: none; }
+  .int-kind-count { display: block; margin-top: 2px; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .int-kind-count b { color: #fff; font-size: 17px; font-weight: 700; }
+  .int-kind-say { display: block; margin-top: 3px; color: var(--faint); font-size: 11.5px; line-height: 1.4; }
+  /* The strip: a square a step, in the order the turn takes them, wrapped
+     like a line of text. Pointing at a kind's card leaves its steps lit. */
+  .int-strip { display: flex; flex-wrap: wrap; gap: 2px; margin-top: 12px; }
+  .int-cell { width: 16px; height: 16px; border-radius: 3px; flex: none; }
+  .int-cell.is-on { outline: 2px solid #fff; outline-offset: 1px; }
+  .int-strip[data-only] .int-cell { opacity: 0.18; }
+  .int-strip[data-only="plan"] .k-plan, .int-strip[data-only="govern"] .k-govern, .int-strip[data-only="spend"] .k-spend,
+  .int-strip[data-only="production"] .k-production, .int-strip[data-only="units"] .k-units { opacity: 1; }
+  .k-plan { background: var(--k-plan); } .k-govern { background: var(--k-govern); } .k-spend { background: var(--k-spend); }
+  .k-production { background: var(--k-production); } .k-units { background: var(--k-units); }
+  .int-ends { display: flex; justify-content: space-between; margin: 4px 0 0; color: var(--faint); font-size: 11.5px; }
+  .int-strip-note { max-width: 900px; margin: 8px 0 0; color: var(--muted); font-size: 12.5px; line-height: 1.5; }
+  .int-strip-note code, .rank-sub code, .rank-note code, .int-kind-sub code { color: var(--text); font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .int-steps { columns: 3 260px; column-gap: 22px; margin: 8px 0 0; padding-left: 34px; color: var(--faint); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .int-steps li { break-inside: avoid; padding: 1px 0; }
+  .int-steps li i { display: inline-block; width: 8px; height: 8px; margin-right: 6px; border-radius: 2px; }
+  .int-steps a { color: var(--text); font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; text-decoration: none; overflow-wrap: anywhere; }
+  .int-steps a:hover { color: var(--accent); text-decoration: underline; }
+
+  /* The control, one row above everything it scopes: which seats. */
+  .res-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; margin: 10px 0 4px; }
+  .res-control { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+  .res-control > span { color: var(--faint); font-size: 12px; }
+  .res-seg { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--border-strong); border-radius: 3px; overflow: hidden; }
+  .res-seg button {
+    min-height: 28px; padding: 0 10px; border: 0; border-left: 1px solid var(--border-strong); white-space: nowrap;
+    background: var(--panel); color: var(--muted); font: 600 12.5px/1 var(--sans); cursor: pointer;
+  }
+  .res-seg button:first-child { border-left: 0; }
+  .res-seg button:hover { background: var(--panel-raised); color: #fff; }
+  .res-seg button[aria-pressed="true"] { background: var(--action-bg); color: #fff; }
+  .res-seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .res-counted { margin: 4px 0 0; color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+  .res-counted b { color: #fff; font-weight: 700; }
+  .res-counted a { color: var(--accent); }
+
+  /* A chart: its title, a line saying how to read it, its key and the plot.
+     The plot is drawn by the script below at the width it is given. */
+  .res-kind { min-width: 0; margin-top: 14px; }
+  .res-kind-title { margin: 0; color: #fff; font-size: 14px; font-weight: 700; }
+  .int-kind-sub { max-width: 900px; margin: 2px 0 0; color: var(--faint); font-size: 12px; line-height: 1.45; }
+  .res-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 8px 0 2px; padding: 0; list-style: none; color: var(--text); font-size: 12.5px; }
+  .res-legend li { display: inline-flex; align-items: center; gap: 6px; }
+  .res-swatch { width: 12px; height: 12px; border-radius: 3px; flex: none; }
+  .res-linekey { width: 16px; height: 3px; border-radius: 2px; flex: none; }
+  .res-dotkey { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+  .res-plot { position: relative; min-height: 40px; margin-top: 6px; }
+  .res-plot svg { display: block; overflow: visible; }
+  .res-grid line { stroke: var(--border); stroke-width: 1; shape-rendering: crispEdges; }
+  .res-base { stroke: var(--border-strong); stroke-width: 1; shape-rendering: crispEdges; }
+  .res-tick { fill: var(--muted); font: 11px var(--sans); font-variant-numeric: tabular-nums; }
+  .res-axis-title { fill: var(--faint); font: 11px var(--sans); }
+  .res-hover { fill: rgba(255, 255, 255, 0.08); }
+  .res-cross { stroke: var(--muted); stroke-width: 1; shape-rendering: crispEdges; }
+  .int-mark-name { fill: var(--text); font: 600 11px var(--sans); }
+  .int-zero { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; shape-rendering: crispEdges; }
+  .int-thin { margin: 4px 0 0; color: var(--faint); font-size: 11.5px; }
+  .int-thin[hidden] { display: none; }
+
+  /* The posture chart beside what the seat says is in its way; one under
+     the other below 900px. */
+  .int-pair { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); gap: 0 26px; align-items: start; }
+  @media (max-width: 899px) { .int-pair { grid-template-columns: minmax(0, 1fr); } }
+  /* A bar a row, its name over it and its figure at its end. */
+  .int-bars { display: grid; gap: 7px; margin: 10px 0 0; padding: 0; list-style: none; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+  .int-bars li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; align-items: center; }
+  .int-bars span { grid-column: 1 / -1; color: var(--text); line-height: 1.3; }
+  .int-bars i { display: block; height: 10px; min-width: 2px; border-radius: 0 4px 4px 0; background: var(--series); }
+  .int-bars b { color: #fff; font-weight: 700; }
+  .int-bars-none { margin: 10px 0 0; color: var(--faint); font-size: 12.5px; }
+
+  /* What a seat aims for and what it wins by: a row a kind of seat, its bar
+     as long as its win rate and cut by the victories it won. A row is a
+     button: it picks the seats the charts above and below count. */
+  .int-aims { display: grid; gap: 4px; margin: 10px 0 0; }
+  .int-aim {
+    display: grid; grid-template-columns: 132px minmax(0, 1fr) 150px; gap: 10px; align-items: center; width: 100%; padding: 4px 6px;
+    border: 1px solid transparent; border-radius: 4px; background: none; color: var(--text); font: 13px/1.3 var(--sans); font-variant-numeric: tabular-nums; text-align: left; cursor: pointer;
+  }
+  .int-aim:hover { background: var(--panel-raised); }
+  .int-aim:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .int-aim[aria-pressed="true"] { border-color: var(--border-strong); background: var(--panel-raised); }
+  .int-aim-name { color: #fff; font-weight: 600; }
+  .int-aim-track { position: relative; display: flex; gap: 2px; height: 16px; }
+  .int-aim-track i { display: block; height: 100%; min-width: 2px; }
+  .int-aim-track i:last-of-type { border-radius: 0 4px 4px 0; }
+  .int-aim-even { position: absolute; top: -3px; bottom: -3px; width: 0; border-left: 1px dashed var(--muted); }
+  .int-aim-figure { color: var(--muted); white-space: nowrap; }
+  .int-aim-figure b { color: #fff; font-weight: 700; }
+  .int-even-key { width: 0; height: 12px; border-left: 1px dashed var(--muted); flex: none; }
+  @media (max-width: 639px) {
+    .int-aim { grid-template-columns: minmax(0, 1fr) auto; }
+    .int-aim-track { grid-column: 1 / -1; grid-row: 2; }
+  }
+
+  /* The empire at every 25th turn: four small charts on one scale of turns. */
+  .int-smalls { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px 18px; margin-top: 4px; }
+  @media (max-width: 899px) { .int-smalls { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 479px) { .int-smalls { grid-template-columns: minmax(0, 1fr); } }
+  .int-small h4 { margin: 8px 0 0; color: var(--text); font-size: 12.5px; font-weight: 700; }
+
+  /* The figures as tables: every number the charts draw, without hovering. */
+  .res-scroll { overflow-x: auto; }
+  .rank-table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+  .rank-table th { padding: 4px 12px 4px 0; color: var(--faint); font-size: 11.5px; font-weight: 500; text-align: right; white-space: nowrap; }
+  .rank-table th:first-child, .rank-table td:first-child { text-align: left; }
+  .rank-table td { padding: 5px 12px 5px 0; border-top: 1px solid var(--border); color: var(--text); text-align: right; white-space: nowrap; vertical-align: top; }
+  .rank-table td:first-child { color: #fff; font-weight: 600; white-space: normal; }
+  .rank-table td small { display: block; max-width: 520px; color: var(--muted); font-size: 12px; font-weight: 400; line-height: 1.4; }
+  .rank-table td code { font: 600 12.5px ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
+  .res-details { margin-top: 10px; }
+  .res-details summary { color: var(--accent); font-size: 12.5px; font-weight: 600; cursor: pointer; }
+  .int-lists { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 26px; margin-top: 6px; }
+  @media (max-width: 899px) { .int-lists { grid-template-columns: minmax(0, 1fr); } }
+  .int-on { display: inline-block; padding: 0 6px; border-radius: 3px; background: var(--action-bg); color: #fff; font-size: 11.5px; font-weight: 700; }
+  .int-off { color: var(--faint); font-size: 11.5px; }
+
+  /* One tooltip for every chart: the value first, then what it is. */
+  .res-tip {
+    position: absolute; z-index: 10; min-width: 180px; max-width: 300px; padding: 7px 9px 6px;
+    border: 1px solid var(--border-strong); border-radius: 4px; background: #121820;
+    color: var(--text); font-size: 12px; line-height: 1.45; pointer-events: none;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35); font-variant-numeric: tabular-nums;
+  }
+  .res-tip[hidden] { display: none; }
+  .res-tip p { margin: 0 0 3px; color: var(--muted); font-weight: 600; overflow-wrap: anywhere; }
+  .res-tip p.say { margin: 4px 0 0; color: var(--muted); font-weight: 400; }
+  .res-tip div { display: flex; align-items: center; gap: 7px; }
+  .res-tip b { min-width: 3.4em; color: #fff; font-weight: 700; text-align: right; white-space: nowrap; }
+  .res-tip span.n { margin-left: auto; padding-left: 8px; color: var(--faint); }
+  .res-tip .res-swatch { width: 10px; height: 10px; }
+</style>
+</head>
+<body>
+  <header class="shell site-header">
+    <div class="site-brand">
+      <!-- The site's pages, in the order every one of them lists them, with
+           the page on screen in gold. This is AI Interpretability, the last
+           page under Charts/ (operator 2026-11-22: "Add a new chart to the
+           bottom of Charts/ called AI Interpretablity"): it stands under
+           Charts/, set in, after CIVVIS Performance, here and on the other
+           two pages of Charts/, and on no other page.
+           Every link is lane-relative (this page lives at
+           <lane>/interpretability/), so the test lane's page opens the test
+           lane's other pages and viewer. -->
+      <nav class="site-nav" aria-label="CIVVIS sites">
+        <a class="site-link" href="../home/">Home</a>
+        <a class="site-link" href="../research/" title="What the games show: charts read off the CIVVIS AI agents&#8217; games.">Charts/</a>
+        <a class="site-link sub-link" href="../research/" title="Who wins, how and when: the games against Civilization VI&#8217;s own AI beside the CIVVIS self-play games.">Win Analytics</a>
+        <a class="site-link sub-link" href="../performance/" title="How fast the simulator plays: the fastest game on video and how long a self-play game takes.">CIVVIS Performance</a>
+        <a class="site-link sub-link" href="./" aria-current="page">AI Interpretability</a>
+        <a class="site-link" href="../tournaments/" title="Series of verification games against Civilization VI&#8217;s own AI: running, scheduled and finished.">Auto-Tourneys</a>
+        <a class="site-link" href="../" title="Every civilization is played by a CIVVIS AI agent.">CIVVIS</a>
+        <a class="site-link" href="../?mode=play" title="You play one civilization. CIVVIS AI agents play the rest.">AI Debugger</a>
+        <a class="site-link" href="https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/" target="_blank" rel="noopener" title="Buy Civilization VI on Steam">Civ 6</a>
+      </nav>
+      <div class="site-lockup">
+        <h1 class="site-title">CIVVIS<span>.ai</span></h1>
+        <p class="site-tagline"><span>An open source Civilization VI Simulator</span> <span>for AI strategy development</span></p>
+      </div>
+    </div>
+    <nav class="utility-nav" aria-label="CIVVIS links">
+      <a class="utility-link is-github" href="https://github.com/MartinHalvorson/CIVVIS" target="_blank" rel="noreferrer">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2.2c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1.1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.8 18.3 5.1 18.3 5.1c.6 1.7.2 2.9.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .3z"/></svg>
+        <span>GitHub <small>Everything open source, free</small></span>
+      </a>
+      <div class="utility-group">
+        <a class="utility-link is-youtube" href="https://www.youtube.com/@civvis" target="_blank" rel="noreferrer">
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.6 12 3.6 12 3.6s-7.5 0-9.4.5A3 3 0 0 0 .5 6.2C0 8.1 0 12 0 12s0 3.9.5 5.8a3 3 0 0 0 2.1 2.1c1.9.5 9.4.5 9.4.5s7.5 0 9.4-.5a3 3 0 0 0 2.1-2.1c.5-1.9.5-5.8.5-5.8s0-3.9-.5-5.8zM9.5 15.6V8.4l6.3 3.6-6.3 3.6z"/></svg>
+          YouTube
+        </a>
+        <ul class="utility-lists" aria-label="Top playlists">
+          <li><a class="utility-list" href="https://www.youtube.com/playlist?list=PLWcKlP8e8iy4" target="_blank" rel="noreferrer"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4 6h12v2H4zm0 4h12v2H4zm0 4h8v2H4zm10 0v6l5-3z"/></svg>Lv 8 Deity Wins</a></li>
+          <li><a class="utility-list" href="https://www.youtube.com/playlist?list=PLecirlzIUSSo" target="_blank" rel="noreferrer"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4 6h12v2H4zm0 4h12v2H4zm0 4h8v2H4zm10 0v6l5-3z"/></svg>Lv 1 - 7 Archive</a></li>
+        </ul>
+      </div>
+      <!-- The home page files a report itself, from a dialog; here the same
+           button is GitHub's own form, which needs no script on this page. -->
+      <a class="utility-link" href="https://github.com/MartinHalvorson/CIVVIS/issues/new/choose" target="_blank" rel="noreferrer">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M12 2C6.5 2 2 5.9 2 10.7c0 2.8 1.5 5.3 3.9 6.9L5 22l4.6-2.4c.8.2 1.6.3 2.4.3 5.5 0 10-3.9 10-8.7S17.5 2 12 2zm-1 4.5h2v6h-2v-6zm0 7.5h2v2h-2v-2z"/></svg>
+        Suggest Feature / Report Issue
+      </a>
+    </nav>
+  </header>
+  <main class="shell">
+    <p class="intro">
+      A CIVVIS AI agent is not a neural network, and it asks no language model anything while it plays
+      <cite>Sid Meier&#8217;s Civilization VI</cite>. It is a program of written rules, so every decision it makes
+      can be traced to the line that made it. This page reads the agent from both ends: from the top down, what it
+      does in a turn and what it says its plan is through a game; and from the bottom up, one rule at a time, what
+      each rule is worth in wins.
+    </p>
+
+    <!-- The record. `beta/publish.sh` fills the `interpretability-data` slot
+         below (`beta/interpretability_page.py`): the steps of a turn and the
+         size of the code read off the source, the genes from
+         `GENE_HEURISTIC_RANKING.md`, and the seats' plans from the snapshot in
+         `data/interpretability/self_play_plans.json`. A page whose slot still
+         reads `null` (this file opened as it is committed) shows the one
+         sentence; a part that could not be read leaves its section out. -->
+    <p class="res-empty" id="int-empty">This copy of the page has no figures. They are written in when the site is published.</p>
+    <div class="res-record" id="int-record" hidden>
+      <section class="res-section" id="int-glance" aria-labelledby="int-glance-title" hidden>
+        <h2 class="rank-title" id="int-glance-title">The agent at a glance</h2>
+        <div class="int-tiles" id="int-tiles"></div>
+      </section>
+
+      <!-- Top down, first: one turn. Every step `take_turn_inner` calls, in
+           the order it calls them, sorted by what the step's name says it
+           does. -->
+      <section class="res-section" id="int-turn" aria-labelledby="int-turn-title" hidden>
+        <h2 class="rank-title" id="int-turn-title">Top down: one turn, step by step</h2>
+        <p class="rank-sub">
+          Every civilization the agent plays takes the same steps in the same order, every turn. It thinks before it acts:
+          it reads the board and settles its plan, then governs and spends, then gives every city something to build,
+          and only then moves its units. Each square below is one step, in order, read like a line of text.
+        </p>
+        <ol class="int-kinds" id="int-kinds" aria-label="The five kinds of step, in the order a turn reaches them"></ol>
+        <div class="int-strip" id="int-strip" role="img"></div>
+        <p class="int-strip-note">
+          A step is sorted by what its name says it does: one named <code>claim_&#8230;</code> asks for a city&#8217;s queue,
+          one named <code>&#8230;_purchase</code> spends. Many stand behind a condition and do nothing on most turns.
+          A square is a call, not a size: <code>advanced_units</code>, one square near the end, moves every unit on the map.
+        </p>
+        <details class="res-details">
+          <summary>Every step as a list</summary>
+          <ol class="int-steps" id="int-steps"></ol>
+        </details>
+        <div class="rank-note">
+          <p>
+            <a href="https://github.com/MartinHalvorson/CIVVIS/blob/main/src/ai/advanced.rs" target="_blank" rel="noreferrer">The turn in the source</a> ·
+            <a href="https://github.com/MartinHalvorson/CIVVIS/blob/main/docs/ARCHITECTURE.md" target="_blank" rel="noreferrer">How the simulator and its agents are laid out</a> ·
+            <a href="../?mode=play">Watch it decide, turn by turn, in the AI Debugger</a>
+          </p>
+        </div>
+      </section>
+
+      <!-- Top down, second: the plan through a game, as the seats of the
+           newest finished tournament batch recorded it. -->
+      <section class="res-section" id="int-plans" aria-labelledby="int-plans-title" hidden>
+        <h2 class="rank-title" id="int-plans-title">Top down: the plan through a game</h2>
+        <p class="rank-sub">
+          Above the steps sits a plan. A seat aims for one of the six victories, either told which or left to choose, and
+          every few turns it names its posture: what the turn is for. Each seat writes its plan down as it plays, so these
+          are the agent&#8217;s own words for what it was doing, counted over one tournament batch of self-play: six seats a game,
+          a Continents map, Online speed, 250 turns.
+        </p>
+        <div class="res-controls">
+          <div class="res-control" role="group" aria-label="Seats counted">
+            <span>The seat aims for</span>
+            <div class="res-seg" id="int-target"></div>
+          </div>
+        </div>
+        <p class="res-counted" id="int-counted"></p>
+        <div class="int-pair">
+          <div class="res-kind">
+            <h3 class="res-kind-title">What the turn is for</h3>
+            <p class="int-kind-sub">
+              The share of the seats still playing that are in each posture, in every span of turns.
+              Most seats open on Expansion whatever their goal; the push for the victory itself starts near turn 100.
+            </p>
+            <ul class="res-legend" id="int-posture-key" aria-label="Postures"></ul>
+            <div class="res-plot" id="int-posture-plot"></div>
+            <p class="int-thin" id="int-posture-thin" hidden></p>
+          </div>
+          <div class="res-kind">
+            <h3 class="res-kind-title">What it says is in its way</h3>
+            <p class="int-kind-sub" id="int-bottleneck-say"></p>
+            <ul class="int-bars" id="int-bottleneck"></ul>
+            <p class="int-bars-none" id="int-bottleneck-none" hidden>These seats named nothing.</p>
+          </div>
+        </div>
+        <div class="res-kind">
+          <h3 class="res-kind-title">What it aims for, and what it wins by</h3>
+          <p class="int-kind-sub">
+            A bar is as long as the share of those seats that won their game, cut by the victory they won it with.
+            Six seats share a game, so an even share is one win in six. A seat does not always win the way it set out to. Press a row to count those seats above and below.
+          </p>
+          <ul class="res-legend" id="int-aims-key" aria-label="Victories"></ul>
+          <div class="int-aims" id="int-aims"></div>
+          <details class="res-details">
+            <summary>The same as a table</summary>
+            <div class="res-scroll">
+              <table class="rank-table" id="int-aims-table">
+                <thead><tr><th scope="col">The seat aims for</th><th scope="col">Seats</th><th scope="col">Won</th><th scope="col">Win rate</th></tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </details>
+        </div>
+        <div class="res-kind">
+          <h3 class="res-kind-title">The empire it builds, at every 25th turn</h3>
+          <p class="int-kind-sub">
+            The middle seat of each kind, among those still playing. The goal shows in the empire: a Culture seat
+            gives up science for culture. The seats start alike and drift apart from turn 50 on.
+          </p>
+          <ul class="res-legend" id="int-smalls-key" aria-label="What the seat aims for"></ul>
+          <div class="int-smalls" id="int-smalls"></div>
+        </div>
+        <div class="rank-note">
+          <p id="int-plans-note"></p>
+          <p>
+            <a href="https://github.com/MartinHalvorson/CIVVIS/blob/main/data/interpretability/self_play_plans.json" target="_blank" rel="noreferrer">The counts</a> ·
+            <a href="https://github.com/MartinHalvorson/CIVVIS/blob/main/src/ai/advanced/victory_portfolio.rs" target="_blank" rel="noreferrer">How a seat forecasts its victory</a> ·
+            <a href="../research/">Who wins, how and when: Win Analytics</a>
+          </p>
+        </div>
+      </section>
+
+      <!-- Bottom up: the gene pool, every rule with what it is worth. -->
+      <section class="res-section" id="int-genes" aria-labelledby="int-genes-title" hidden>
+        <h2 class="rank-title" id="int-genes-title">Bottom up: one rule at a time</h2>
+        <p class="rank-sub">
+          A gene is a switch on one rule, such as <q>a Settler always has somewhere to go</q>. A player&#8217;s genome is the set
+          of genes it has switched on. In a tournament every seat draws its own: a gene of the best genome is on for about three
+          seats in four, any other for about one in four. Over thousands of seats that prices each rule alone: the win rate
+          of the seats that had it on, less the win rate of the seats that had it off.
+        </p>
+        <div class="res-kind">
+          <h3 class="res-kind-title">Every rule, by what it is worth</h3>
+          <p class="int-kind-sub">
+            A dot is a gene. To the right, seats win more often with the rule on; higher, the estimate is surer that it helps.
+            Most rules sit near the middle and cannot be told from chance. A few carry the wins, and a few cost them.
+          </p>
+          <ul class="res-legend" id="int-genes-key" aria-label="Genes"></ul>
+          <div class="res-plot" id="int-genes-plot"></div>
+        </div>
+        <div class="int-lists">
+          <div class="res-kind">
+            <h3 class="res-kind-title">The rules that add the most wins</h3>
+            <div class="res-scroll">
+              <table class="rank-table" id="int-genes-best">
+                <thead><tr><th scope="col">Rule</th><th scope="col">On less off</th><th scope="col">Sure it helps</th><th scope="col">Best genome</th></tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="res-kind">
+            <h3 class="res-kind-title">The rules that cost the most</h3>
+            <div class="res-scroll">
+              <table class="rank-table" id="int-genes-worst">
+                <thead><tr><th scope="col">Rule</th><th scope="col">On less off</th><th scope="col">Sure it helps</th><th scope="col">Best genome</th></tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="rank-note">
+          <p>
+            The difference is in percentage points of win rate, over every seat that priced the gene. A gene is kept on or
+            turned off by its last three batches, with a margin so that one batch cannot flip it, so a rule in the best
+            genome can stand left of zero here and one outside it to the right. A rule that costs wins stays in the pool,
+            switched off, as the record of what was tried.
+          </p>
+          <p>
+            <a href="https://github.com/MartinHalvorson/CIVVIS/blob/main/GENE_HEURISTIC_RANKING.md" target="_blank" rel="noreferrer">Every gene as a table</a> ·
+            <a href="https://github.com/MartinHalvorson/CIVVIS/blob/main/docs/GENE_SCREEN.md" target="_blank" rel="noreferrer">How a tournament prices a gene</a> ·
+            <a href="https://github.com/MartinHalvorson/CIVVIS/blob/main/src/ai/advanced/genes.rs" target="_blank" rel="noreferrer">The gene pool in the source</a>
+          </p>
+        </div>
+      </section>
+    </div>
+  </main>
+  <div class="res-tip" id="int-tip" role="presentation" hidden></div>
+
+  <script type="application/json" id="interpretability-data">null</script>
+  <script>
+  // The page, drawn from the slot. Every name and figure arrives through
+  // textContent or an attribute checked first: the slot holds data, never
+  // markup.
+  (() => {
+    let data = null;
+    try { data = JSON.parse(document.getElementById("interpretability-data").textContent); } catch (_) { return; }
+    if (!data) return;
+    // The record is shown before anything is drawn: a plot is drawn at the
+    // width it has on the page.
+    document.getElementById("int-empty").hidden = true;
+    document.getElementById("int-record").hidden = false;
+    const SVG = "http://www.w3.org/2000/svg";
+    const REPO = "https://github.com/MartinHalvorson/CIVVIS/blob/main/";
+    const $ = (id) => document.getElementById(id);
+    const el = (tag, cls, text) => {
+      const node = document.createElement(tag);
+      if (cls) node.className = cls;
+      if (text != null) node.textContent = text;
+      return node;
+    };
+    const svg = (tag, attrs) => {
+      const node = document.createElementNS(SVG, tag);
+      for (const [k, v] of Object.entries(attrs || {})) node.setAttribute(k, v);
+      return node;
+    };
+    const fmt = (n) => Number(n).toLocaleString("en-US");
+    const pct = (x, digits) => (100 * x).toFixed(digits == null ? 1 : digits) + "%";
+    const points = (x) => (x > 0 ? "+" : x < 0 ? "−" : "") + Math.abs(x).toFixed(2);
+    const key = (shape, colour) => { const k = el("i", "res-" + shape); k.style.background = colour; return k; };
+
+    const tip = $("int-tip");
+    const showTip = (event, title, rows, say) => {
+      tip.replaceChildren(el("p", "", title));
+      for (const row of rows) {
+        const line = el("div");
+        const mark = el("span", "res-" + (row.shape || "swatch"));
+        mark.style.background = row.colour || "transparent";
+        line.append(mark, el("b", "", row.value), el("span", "", row.name));
+        if (row.n != null) line.append(el("span", "n", row.n));
+        tip.append(line);
+      }
+      if (say) tip.append(el("p", "say", say));
+      tip.hidden = false;
+      const pad = 14, w = tip.offsetWidth, h = tip.offsetHeight;
+      let x = event.pageX + pad, y = event.pageY + pad;
+      if (x + w > window.scrollX + document.documentElement.clientWidth - 8) x = event.pageX - w - pad;
+      if (y + h > window.scrollY + window.innerHeight - 8) y = event.pageY - h - pad;
+      tip.style.left = Math.max(4, x) + "px";
+      tip.style.top = y + "px";
+    };
+    const hideTip = () => { tip.hidden = true; };
+    // Clean ticks from 0 to a little past `max`: steps of 1, 2, 2.5 or 5 in
+    // a power of ten, about `about` of them.
+    const ticks = (max, about) => {
+      if (!(max > 0)) return [0];
+      const raw = max / (about || 4), mag = Math.pow(10, Math.floor(Math.log10(raw)));
+      const step = [1, 2, 2.5, 5, 10].map((s) => s * mag).find((s) => s >= raw);
+      const out = [];
+      for (let t = 0; t < max + step * 0.999; t += step) out.push(+t.toFixed(10));
+      return out;
+    };
+
+    const turn = data.turn && Array.isArray(data.turn.steps) && data.turn.steps.length ? data.turn : null;
+    const genes = data.genes && Array.isArray(data.genes.rows) && data.genes.rows.length ? data.genes : null;
+    const plans = data.plans && data.plans.targets && data.plans.targets.all && data.plans.targets.all.seats ? data.plans : null;
+
+    // ---- The agent at a glance.
+    const tiles = [];
+    if (turn && turn.code) tiles.push([fmt(turn.code.lines), "lines of Rust", "The whole agent, in " + fmt(turn.code.files) + " files of rules. Its tests are not counted."]);
+    if (turn) tiles.push([fmt(turn.steps.length), "steps in a turn", "The same steps in the same order, for every civilization, every turn."]);
+    if (genes) tiles.push([fmt(genes.rows.length), "genes", "A gene is a switch on one rule. Every one has been priced in tournaments."]);
+    if (genes) tiles.push([fmt(genes.on), "genes switched on", "The best genome so far: the rules the tournaments have kept."]);
+    if (genes && genes.seats) tiles.push([fmt(genes.seats), "seats priced each gene", "A seat is one civilization in one game, with its own draw of genes."]);
+    for (const [figure, name, say] of tiles) {
+      const tile = el("div", "int-tile");
+      tile.append(el("b", "", figure), el("span", "", name), el("small", "", say));
+      $("int-tiles").append(tile);
+    }
+    $("int-glance").hidden = !tiles.length;
+
+    // ---- One turn, step by step.
+    const KIND = {
+      plan: ["Read the board, choose the plan", "Which victory to aim for, who is a threat, where the army goes, what this turn is for. Nothing is ordered yet."],
+      govern: ["Research and govern", "The next technology and civic, the government and its policy cards, governors, envoys, Great People, deals and spies."],
+      spend: ["Spend Gold and Faith", "Defenders for a city in danger, upgrades for the army, and the purchases the plan asked for."],
+      production: ["Fill the city queues", "Dozens of claims, each one rule asking for a city (walls before a siege, a Campus in the capital), around the choice of what every other city builds."],
+      units: ["Order the units", "Last, with the plan and the purse settled: every unit moves, fights, settles or builds."],
+    };
+    if (turn) {
+      const kinds = (Array.isArray(turn.kinds) ? turn.kinds : []).filter((k) => KIND[k]);
+      const steps = turn.steps.filter((s) => Array.isArray(s) && KIND[s[2]]);
+      const strip = $("int-strip"), cards = $("int-kinds"), list = $("int-steps");
+      const only = (kind) => { if (kind) strip.dataset.only = kind; else delete strip.dataset.only; };
+      kinds.forEach((kind, i) => {
+        const n = steps.filter((s) => s[2] === kind).length;
+        const card = el("li", "int-kind");
+        card.tabIndex = 0;
+        const head = el("span", "int-kind-head");
+        const mark = el("i", "k-" + kind);
+        head.append(mark, (i + 1) + ". " + KIND[kind][0]);
+        const count = el("span", "int-kind-count");
+        count.append(el("b", "", fmt(n)), n === 1 ? " step" : " steps");
+        card.append(head, count, el("span", "int-kind-say", KIND[kind][1]));
+        card.addEventListener("pointerenter", () => only(kind));
+        card.addEventListener("pointerleave", () => only(null));
+        card.addEventListener("focus", () => only(kind));
+        card.addEventListener("blur", () => only(null));
+        cards.append(card);
+      });
+      const PATH = /^[\w./-]+$/;
+      steps.forEach((step, i) => {
+        const cell = el("i", "int-cell k-" + step[2]);
+        cell.dataset.i = i;
+        strip.append(cell);
+        const item = el("li"), link = el("a", "", step[0]);
+        if (PATH.test(String(step[1]))) { link.href = REPO + "src/ai/" + step[1]; link.target = "_blank"; link.rel = "noreferrer"; }
+        item.append(el("i", "k-" + step[2]), link);
+        list.append(item);
+      });
+      strip.setAttribute("aria-label", "The " + fmt(steps.length) + " steps of a turn in order: "
+        + kinds.map((k) => fmt(steps.filter((s) => s[2] === k).length) + " " + KIND[k][0].toLowerCase()).join(", ") + ". Every step is in the list below.");
+      let lit = null;
+      strip.addEventListener("pointermove", (event) => {
+        const cell = event.target.closest(".int-cell");
+        if (!cell) return;
+        if (lit && lit !== cell) lit.classList.remove("is-on");
+        lit = cell;
+        cell.classList.add("is-on");
+        const step = steps[Number(cell.dataset.i)];
+        showTip(event, "Step " + (Number(cell.dataset.i) + 1) + " of " + fmt(steps.length),
+          [{ colour: "var(--k-" + step[2] + ")", value: "", name: KIND[step[2]][0] }], step[0] + " · " + step[1]);
+      });
+      strip.addEventListener("pointerleave", () => { if (lit) lit.classList.remove("is-on"); lit = null; hideTip(); });
+      $("int-turn").hidden = false;
+    }
+
+    // ---- The plan through a game.
+    const POSTURES = ["expansion", "science", "culture", "diplomacy", "religion", "conquest", "recovery"];
+    const POSTURE = {
+      expansion: ["Expansion", "settle, grow, build the economy"], science: ["Science", "push for the Science victory"],
+      culture: ["Culture", "push for the Culture victory"], diplomacy: ["Diplomacy", "push for the Diplomatic victory"],
+      religion: ["Religion", "found a religion and spread it"], conquest: ["Conquest", "take cities"],
+      recovery: ["Recovery", "outgunned or under attack: defend first"],
+    };
+    const VICTORIES = ["science", "culture", "diplomatic", "religious", "domination", "score"];
+    const VICTORY = { science: "Science", culture: "Culture", diplomatic: "Diplomatic", religious: "Religious", domination: "Domination", score: "Score" };
+    const AIMS = ["civvis", "science", "culture", "diplomatic", "religious", "domination", "score"];
+    const AIM = { all: "Every seat", civvis: "Its own choice", science: "Science", culture: "Culture", diplomatic: "Diplomatic", religious: "Religious", domination: "Domination", score: "Score" };
+    const BOTTLENECK = {
+      unmet_rivals: "Rivals it has not met yet", research: "Technologies still to research",
+      congress_and_competitions: "World Congress votes and competitions", diplomatic_point_sources: "Sources of Diplomatic Victory points",
+      score_standing: "Its standing on score", conversion_holdouts: "Cities holding out against its religion",
+      unknown_conversion_targets: "Rival cities it has not found", tourism_growth: "Tourism growing slower than a rival’s culture",
+      tourism_multipliers: "Tourism multipliers", tourism_sources: "Sources of tourism", launch_production: "Production in the launch city",
+      launch_site: "No city to launch from", capital_access: "Reaching the rival capitals", expedition_speed: "Speed of the expedition in flight",
+      religion_unavailable: "No religion left to found", religion_foundation: "Founding a religion",
+      religious_purchase_capacity: "Faith to buy its missionaries", capital_capture_and_hold: "Taking and holding the capitals",
+      military_advantage: "Military advantage", capture_unit: "A unit that can take the city", wall_damage: "Breaking the walls",
+    };
+    const MEASURE = { cities: "Cities", science: "Science a turn", culture: "Culture a turn", military: "Military strength" };
+    const pcol = (p) => "var(--p-" + p + ")", vcol = (v) => "var(--v-" + v + ")";
+    const state = { target: "all" };
+    let drawPlans = () => {};
+    if (plans) {
+      const T = plans.targets, SPAN = Number(plans.span) || 5, MARKS = Array.isArray(plans.marks) ? plans.marks : [];
+      const aims = AIMS.filter((a) => T[a] && T[a].seats > 0);
+      const target = () => T[state.target] || T.all;
+      const rate = (t) => t.wins / t.seats;
+
+      const seg = $("int-target");
+      for (const a of ["all", ...aims]) {
+        const button = el("button", "", AIM[a]);
+        button.type = "button";
+        button.dataset.target = a;
+        seg.append(button);
+      }
+      for (const p of POSTURES) {
+        const item = el("li");
+        item.title = POSTURE[p][0] + ": " + POSTURE[p][1];
+        item.append(key("swatch", pcol(p)), POSTURE[p][0]);
+        $("int-posture-key").append(item);
+      }
+      for (const v of VICTORIES) {
+        const item = el("li");
+        item.append(key("swatch", vcol(v)), VICTORY[v]);
+        $("int-aims-key").append(item);
+      }
+      const even = el("li");
+      even.append(el("i", "int-even-key"), "An even share, 1 seat in 6");
+      $("int-aims-key").append(even);
+      for (const a of aims) {
+        const item = el("li");
+        item.append(key("linekey", vcol(a)), AIM[a]);
+        $("int-smalls-key").append(item);
+      }
+
+      const drawCounted = () => {
+        const t = target(), line = $("int-counted");
+        line.replaceChildren(el("b", "", fmt(t.seats) + " seats"));
+        if (state.target === "all") line.append(" in " + fmt(plans.games) + " games, every kind of seat together");
+        else if (state.target === "civvis") line.append(" told no victory: each chooses its own");
+        else line.append(" told to aim for the " + AIM[state.target] + " victory");
+        if (state.target !== "all") line.append(" · ", el("b", "", pct(rate(t))), " of them won (" + fmt(t.wins) + "), against an even share of " + pct(1 / 6));
+      };
+
+      // What the turn is for: a column per span of turns, stacked to the
+      // whole of the seats still playing.
+      const drawPosture = () => {
+        const plot = $("int-posture-plot"), t = target();
+        plot.replaceChildren();
+        const spans = t.playing.length;
+        const width = Math.max(260, plot.clientWidth), height = 252, m = { l: 38, r: 6, t: 8, b: 36 };
+        const inner = width - m.l - m.r;
+        // A span is a column; where a column would be a hairline (a phone),
+        // spans are counted two to a column.
+        const group = inner / spans >= 8 ? 1 : 2;
+        const cols = [];
+        for (let i = 0; i < spans; i += group) {
+          const col = { from: i * SPAN + 1, to: Math.min(spans, i + group) * SPAN, playing: 0, by: {} };
+          for (const p of POSTURES) col.by[p] = 0;
+          for (let k = i; k < Math.min(spans, i + group); k++) {
+            col.playing += Number(t.playing[k]) || 0;
+            for (const p of POSTURES) col.by[p] += Number((t.posture[p] || [])[k]) || 0;
+          }
+          cols.push(col);
+        }
+        // Past the turn most games have ended on, a column would be a
+        // handful of seats: it is drawn while 3 seats in 100 still play.
+        const floor = 0.03 * Math.max(...cols.map((c) => c.playing));
+        const drawn = cols.filter((c) => c.playing >= floor && c.playing > 0);
+        const slot = inner / cols.length, gap = slot >= 7 ? 2 : 1, barW = Math.max(1, slot - gap);
+        const y = (share) => m.t + (1 - share) * (height - m.t - m.b);
+        const root = svg("svg", { width, height, viewBox: "0 0 " + width + " " + height, role: "img" });
+        const said = (c) => POSTURES.filter((p) => c.by[p] / c.playing >= 0.1).map((p) => POSTURE[p][0] + " " + pct(c.by[p] / c.playing, 0)).join(", ");
+        const mid = drawn[Math.min(drawn.length - 1, Math.floor(150 / (SPAN * group)))];
+        root.setAttribute("aria-label", "The share of " + AIM[state.target].toLowerCase() + " seats in each posture, by turn. Turns "
+          + drawn[0].from + " to " + drawn[0].to + ": " + said(drawn[0]) + ". Turns " + mid.from + " to " + mid.to + ": " + said(mid) + ".");
+        const grid = svg("g", { class: "res-grid" });
+        for (const share of [0, 0.25, 0.5, 0.75, 1]) {
+          if (share > 0) grid.append(svg("line", { x1: m.l, x2: width - m.r, y1: Math.round(y(share)) + 0.5, y2: Math.round(y(share)) + 0.5 }));
+          const label = svg("text", { class: "res-tick", x: m.l - 6, y: y(share) + 3.5, "text-anchor": "end" });
+          label.textContent = pct(share, 0);
+          root.append(label);
+        }
+        root.append(grid);
+        const hover = svg("rect", { class: "res-hover", y: m.t, height: height - m.t - m.b, width: slot, visibility: "hidden" });
+        root.append(hover);
+        cols.forEach((c, i) => {
+          if (!drawn.includes(c)) return;
+          const left = m.l + i * slot + gap / 2;
+          let seen = 0;
+          for (const p of POSTURES) {
+            const share = c.by[p] / c.playing;
+            if (!(share > 0)) continue;
+            const top = y(seen + share), tall = y(seen) - top;
+            seen += share;
+            // A hairline of the panel between two postures, where there is room.
+            const bar = svg("rect", { x: left, y: top, width: barW, height: Math.max(0.5, tall - (tall > 3 ? 1 : 0)) });
+            bar.style.fill = pcol(p);
+            root.append(bar);
+          }
+          const hit = svg("rect", { x: m.l + i * slot, y: m.t, width: slot, height: height - m.t - m.b, fill: "transparent" });
+          hit.addEventListener("pointermove", (event) => {
+            hover.setAttribute("x", m.l + i * slot);
+            hover.setAttribute("visibility", "visible");
+            const rows = POSTURES.slice().reverse().filter((p) => c.by[p] > 0)
+              .map((p) => ({ colour: pcol(p), value: pct(c.by[p] / c.playing), name: POSTURE[p][0] + ": " + POSTURE[p][1] }));
+            showTip(event, "Turns " + c.from + " to " + c.to + " · " + fmt(Math.round(c.playing / (c.to - c.from + 1))) + " seats playing", rows);
+          });
+          hit.addEventListener("pointerleave", () => { hover.setAttribute("visibility", "hidden"); hideTip(); });
+          root.append(hit);
+        });
+        root.append(svg("line", { class: "res-base", x1: m.l, x2: width - m.r, y1: Math.round(y(0)) + 0.5, y2: Math.round(y(0)) + 0.5 }));
+        const last = spans * SPAN;
+        for (let at = 0; at <= last; at += inner >= 420 ? 25 : 50) {
+          const x = m.l + (at / last) * inner;
+          const label = svg("text", { class: "res-tick", x, y: height - m.b + 15, "text-anchor": at === last ? "end" : at === 0 ? "start" : "middle" });
+          label.textContent = at === 0 ? "1" : String(at);
+          root.append(label);
+        }
+        const title = svg("text", { class: "res-axis-title", x: m.l + inner / 2, y: height - 4, "text-anchor": "middle" });
+        title.textContent = "Turn · a column is " + SPAN * group + " turns";
+        root.append(title);
+        plot.append(root);
+        const thin = $("int-posture-thin"), cut = cols.find((c) => !drawn.includes(c));
+        thin.hidden = !cut;
+        if (cut) thin.textContent = "From turn " + cut.from + " fewer than 3 seats in 100 are still playing: their games have ended. The columns stop there.";
+      };
+
+      // What it says is in its way: the bottlenecks the seats name, by the
+      // share of the turns on which one was named.
+      const drawBottleneck = () => {
+        const t = target(), list = $("int-bottleneck");
+        list.replaceChildren();
+        $("int-bottleneck-say").textContent = fmt(t.forecasting) + " of these " + fmt(t.seats)
+          + " seats forecast how their victory will be reached (a gene, victory-portfolio) and name the one thing holding it back. Bars are the share of the turns on which one was named.";
+        const named = Object.entries(t.bottleneck || {}).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]);
+        const total = named.reduce((sum, [, n]) => sum + n, 0);
+        $("int-bottleneck-none").hidden = total > 0;
+        if (!total) return;
+        const shown = named.slice(0, 6), rest = named.slice(6).reduce((sum, [, n]) => sum + n, 0);
+        if (rest) shown.push(["", rest]);
+        const most = shown[0][1];
+        for (const [name, n] of shown) {
+          const item = el("li"), bar = el("i");
+          bar.style.width = (100 * n / most).toFixed(2) + "%";
+          item.append(el("span", "", name ? BOTTLENECK[name] || name.replace(/_/g, " ") : "Everything else"), bar, el("b", "", pct(n / total, n / total < 0.1 ? 1 : 0)));
+          list.append(item);
+        }
+      };
+
+      // What it aims for and what it wins by: built once, a row a kind of seat.
+      const scale = Math.max(0.05, Math.ceil(Math.max(...aims.map((a) => rate(T[a]))) * 20) / 20);
+      const aimRows = {};
+      for (const a of aims) {
+        const t = T[a], row = el("button", "int-aim");
+        row.type = "button";
+        const track = el("span", "int-aim-track");
+        for (const v of VICTORIES) {
+          const n = Number((t.won_by || {})[v]) || 0;
+          if (!n) continue;
+          const part = el("i");
+          part.style.width = (100 * (n / t.seats) / scale).toFixed(2) + "%";
+          part.style.background = vcol(v);
+          track.append(part);
+        }
+        const mark = el("span", "int-aim-even");
+        mark.style.left = (100 * (1 / 6) / scale).toFixed(2) + "%";
+        track.append(mark);
+        const figure = el("span", "int-aim-figure");
+        figure.append(el("b", "", pct(rate(t))), " · " + fmt(t.wins) + " of " + fmt(t.seats));
+        row.append(el("span", "int-aim-name", AIM[a]), track, figure);
+        row.addEventListener("click", () => pick(state.target === a ? "all" : a));
+        row.addEventListener("pointermove", (event) => {
+          const rows = VICTORIES.filter((v) => (t.won_by || {})[v] > 0)
+            .map((v) => ({ colour: vcol(v), value: pct(t.won_by[v] / t.seats), name: "won by " + VICTORY[v], n: fmt(t.won_by[v]) }));
+          showTip(event, AIM[a] + " · " + fmt(t.seats) + " seats", rows, pct(rate(t)) + " won. An even share is " + pct(1 / 6) + ".");
+        });
+        row.addEventListener("pointerleave", hideTip);
+        aimRows[a] = row;
+        $("int-aims").append(row);
+        const tr = el("tr");
+        tr.append(el("td", "", AIM[a]), el("td", "", fmt(t.seats)), el("td", "", fmt(t.wins)), el("td", "", pct(rate(t))));
+        $("int-aims-table").querySelector("tbody").append(tr);
+      }
+      // The table names every victory once, as columns after the win rate.
+      const headRow = $("int-aims-table").querySelector("thead tr");
+      for (const v of VICTORIES) {
+        const th = el("th", "", "By " + VICTORY[v]);
+        th.scope = "col";
+        headRow.append(th);
+      }
+      Array.from($("int-aims-table").querySelectorAll("tbody tr")).forEach((tr, i) => {
+        for (const v of VICTORIES) tr.append(el("td", "", fmt(Number((T[aims[i]].won_by || {})[v]) || 0)));
+      });
+
+      // The empire at every 25th turn: a line a kind of seat, a chart a measure.
+      const measures = (Array.isArray(plans.measures) ? plans.measures : []).filter((k) => MEASURE[k]);
+      // A mark is drawn while one seat in twenty of the batch is still
+      // playing, and a seat kind's line while thirty of its seats are.
+      const kept = MARKS.map((_, i) => i).filter((i) => (T.all.at_marks || [])[i] >= 0.05 * T.all.seats);
+      const value = (a, k, i) => ((T[a].at_marks || [])[i] >= 30 ? (T[a].marks[k] || [])[i] : null);
+      const smalls = $("int-smalls"), boxes = {};
+      for (const k of measures) {
+        const box = el("div", "int-small"), plot = el("div", "res-plot");
+        box.append(el("h4", "", MEASURE[k]), plot);
+        smalls.append(box);
+        boxes[k] = plot;
+      }
+      const drawSmalls = () => {
+        if (kept.length < 2) return;
+        for (const k of measures) {
+          const plot = boxes[k];
+          plot.replaceChildren();
+          const width = Math.max(200, plot.clientWidth), height = 168, m = { l: 40, r: 10, t: 8, b: 24 };
+          const inner = width - m.l - m.r;
+          const top = Math.max(...aims.flatMap((a) => kept.map((i) => Number(value(a, k, i)) || 0)));
+          const marks = ticks(top, 3), max = marks[marks.length - 1];
+          const x = (n) => m.l + (n / (kept.length - 1)) * inner;
+          const y = (v) => m.t + (1 - (max > 0 ? v / max : 0)) * (height - m.t - m.b);
+          const root = svg("svg", { width, height, viewBox: "0 0 " + width + " " + height, role: "img" });
+          const end = kept[kept.length - 1];
+          root.setAttribute("aria-label", MEASURE[k] + " of the middle seat at turn " + MARKS[end] + ": "
+            + aims.filter((a) => value(a, k, end) != null).map((a) => AIM[a] + " " + fmt(value(a, k, end))).join(", ") + ".");
+          const grid = svg("g", { class: "res-grid" });
+          for (const t of marks) {
+            if (t > 0) grid.append(svg("line", { x1: m.l, x2: width - m.r, y1: Math.round(y(t)) + 0.5, y2: Math.round(y(t)) + 0.5 }));
+            const label = svg("text", { class: "res-tick", x: m.l - 6, y: y(t) + 3.5, "text-anchor": "end" });
+            label.textContent = fmt(t);
+            root.append(label);
+          }
+          root.append(grid, svg("line", { class: "res-base", x1: m.l, x2: width - m.r, y1: Math.round(y(0)) + 0.5, y2: Math.round(y(0)) + 0.5 }));
+          kept.forEach((i, n) => {
+            if (n % 2 === 0 && kept.length > 5) return;
+            const label = svg("text", { class: "res-tick", x: x(n), y: height - m.b + 15, "text-anchor": "middle" });
+            label.textContent = String(MARKS[i]);
+            root.append(label);
+          });
+          // The seats picked above are drawn last, over the others in grey.
+          const order = aims.slice().sort((a, b) => (a === state.target) - (b === state.target));
+          for (const a of order) {
+            const pts = kept.map((i, n) => [n, value(a, k, i)]).filter(([, v]) => v != null);
+            if (pts.length < 2) continue;
+            const on = state.target === "all" || state.target === a;
+            const line = svg("path", { d: "M" + pts.map(([n, v]) => x(n).toFixed(1) + "," + y(v).toFixed(1)).join("L"), fill: "none",
+              "stroke-width": state.target === a ? 3 : on ? 2 : 1.5, "stroke-linejoin": "round", "stroke-linecap": "round" });
+            line.style.stroke = on ? vcol(a) : "var(--border-strong)";
+            root.append(line);
+            if (state.target === a) {
+              const [n, v] = pts[pts.length - 1];
+              const dot = svg("circle", { cx: x(n), cy: y(v), r: 4, "stroke-width": 2 });
+              dot.style.fill = vcol(a);
+              dot.style.stroke = "var(--panel)";
+              root.append(dot);
+            }
+          }
+          const cross = svg("line", { class: "res-cross", y1: m.t, y2: height - m.b, visibility: "hidden" });
+          const hit = svg("rect", { x: m.l - 6, y: m.t, width: inner + 12, height: height - m.t - m.b, fill: "transparent" });
+          hit.addEventListener("pointermove", (event) => {
+            const box = root.getBoundingClientRect();
+            const n = Math.max(0, Math.min(kept.length - 1, Math.round(((event.clientX - box.left - m.l) / inner) * (kept.length - 1))));
+            cross.setAttribute("x1", Math.round(x(n)) + 0.5); cross.setAttribute("x2", Math.round(x(n)) + 0.5); cross.setAttribute("visibility", "visible");
+            const rows = aims.map((a) => [a, value(a, k, kept[n])]).filter(([, v]) => v != null).sort((a, b) => b[1] - a[1])
+              .map(([a, v]) => ({ colour: vcol(a), shape: "linekey", value: fmt(v), name: AIM[a] }));
+            showTip(event, MEASURE[k] + " · turn " + MARKS[kept[n]], rows);
+          });
+          hit.addEventListener("pointerleave", () => { cross.setAttribute("visibility", "hidden"); hideTip(); });
+          root.append(cross, hit);
+          plot.append(root);
+        }
+      };
+
+      const buttons = Array.from(seg.querySelectorAll("button"));
+      const pick = (a) => {
+        state.target = T[a] ? a : "all";
+        for (const b of buttons) b.setAttribute("aria-pressed", String(b.dataset.target === state.target));
+        for (const [name, row] of Object.entries(aimRows)) row.setAttribute("aria-pressed", String(name === state.target));
+        hideTip();
+        drawCounted(); drawPosture(); drawBottleneck(); drawSmalls();
+      };
+      seg.addEventListener("click", (event) => {
+        const button = event.target.closest("button");
+        if (button) pick(button.dataset.target);
+      });
+      const COMMIT = /^[0-9a-f]{7,40}$/;
+      const note = $("int-plans-note");
+      note.append("The seats are those of the tournament batch begun " + plans.began + ", " + fmt(plans.games) + " games");
+      if (COMMIT.test(String(plans.commit))) {
+        const link = el("a", "", plans.commit);
+        link.href = "https://github.com/MartinHalvorson/CIVVIS/commit/" + plans.commit;
+        link.target = "_blank";
+        link.rel = "noreferrer";
+        note.append(" of build ", link);
+      }
+      note.append(". A seat holds a posture from the turn it writes it down until it writes the next, and is counted until its game ends or it is out of it."
+        + " In a tournament each seat also plays its own draw of genes, so these are the plans of many slightly different agents, not of one.");
+      $("int-plans").hidden = false;
+      drawPlans = () => { drawPosture(); drawSmalls(); };
+      pick("all");
+    }
+
+    // ---- One rule at a time.
+    let drawGenes = () => {};
+    if (genes) {
+      const rows = genes.rows.filter((r) => Array.isArray(r) && Number.isFinite(r[2]) && Number.isFinite(r[3])).sort((a, b) => b[2] - a[2]);
+      const gcol = (r) => (r[1] ? "var(--g-on)" : "var(--g-off)");
+      const on = rows.filter((r) => r[1]).length;
+      for (const [colour, text] of [["var(--g-on)", "On in the best genome (" + fmt(on) + ")"], ["var(--g-off)", "Off (" + fmt(rows.length - on) + ")"]]) {
+        const item = el("li");
+        item.append(key("dotkey", colour), text);
+        $("int-genes-key").append(item);
+      }
+      drawGenes = () => {
+        const plot = $("int-genes-plot");
+        plot.replaceChildren();
+        const width = Math.max(260, plot.clientWidth), height = width < 520 ? 300 : 340, m = { l: 44, r: 14, t: 22, b: 40 };
+        const inner = width - m.l - m.r, tall = height - m.t - m.b;
+        const lo = Math.floor(rows[rows.length - 1][2]), hi = Math.ceil(rows[0][2]);
+        const x = (d) => m.l + ((d - lo) / (hi - lo)) * inner, y = (p) => m.t + (1 - p / 100) * tall;
+        const root = svg("svg", { width, height, viewBox: "0 0 " + width + " " + height, role: "img" });
+        root.setAttribute("aria-label", fmt(rows.length) + " genes by the win rate with the rule on, less the win rate with it off, from "
+          + points(rows[rows.length - 1][2]) + " to " + points(rows[0][2]) + " percentage points, and by how sure the estimate is that the rule helps. "
+          + "The best and the worst are in the tables below.");
+        const grid = svg("g", { class: "res-grid" });
+        for (const p of [0, 25, 50, 75, 100]) {
+          if (p > 0) grid.append(svg("line", { x1: m.l, x2: width - m.r, y1: Math.round(y(p)) + 0.5, y2: Math.round(y(p)) + 0.5 }));
+          const label = svg("text", { class: "res-tick", x: m.l - 6, y: y(p) + 3.5, "text-anchor": "end" });
+          label.textContent = p + "%";
+          root.append(label);
+        }
+        root.append(grid, svg("line", { class: "res-base", x1: m.l, x2: width - m.r, y1: Math.round(y(0)) + 0.5, y2: Math.round(y(0)) + 0.5 }));
+        const step = inner / (hi - lo) >= 44 ? 1 : 2;
+        for (let d = Math.ceil(lo / step) * step; d <= hi; d += step) {
+          const label = svg("text", { class: "res-tick", x: x(d), y: height - m.b + 15, "text-anchor": "middle" });
+          label.textContent = d === 0 ? "0" : points(d).replace(".00", "");
+          root.append(label);
+        }
+        root.append(svg("line", { class: "int-zero", x1: Math.round(x(0)) + 0.5, x2: Math.round(x(0)) + 0.5, y1: m.t - 6, y2: height - m.b }));
+        const sure = svg("text", { class: "res-axis-title", x: m.l, y: 10 });
+        sure.textContent = "Sure it helps";
+        const title = svg("text", { class: "res-axis-title", x: m.l + inner / 2, y: height - 4, "text-anchor": "middle" });
+        title.textContent = inner < 460 ? "Win rate, on less off (points)" : "Win rate with the rule on, less the win rate with it off (percentage points)";
+        root.append(sure, title);
+        // The genes that are off first, so the best genome's stand over them.
+        const placed = rows.map((r) => ({ r, cx: x(r[2]), cy: y(r[3]) }));
+        for (const pass of [0, 1]) {
+          for (const p of placed) {
+            if (p.r[1] !== pass) continue;
+            const dot = svg("circle", { cx: p.cx.toFixed(1), cy: p.cy.toFixed(1), r: 3.4, "fill-opacity": 0.85, "stroke-width": 0.75 });
+            dot.style.fill = gcol(p.r);
+            dot.style.stroke = "var(--panel)";
+            root.append(dot);
+          }
+        }
+        // The two ends are named on the plot; every other name is a hover away.
+        for (const [p, anchor, dx] of [[placed[0], "end", -8], [placed[placed.length - 1], "start", 8]]) {
+          const name = svg("text", { class: "int-mark-name", x: p.cx + dx, y: p.cy + (anchor === "end" ? 14 : -8), "text-anchor": anchor });
+          name.textContent = p.r[0];
+          root.append(name);
+        }
+        const ring = svg("circle", { r: 6.5, fill: "none", stroke: "#fff", "stroke-width": 2, visibility: "hidden" });
+        root.append(ring);
+        root.addEventListener("pointermove", (event) => {
+          const box = root.getBoundingClientRect(), px = event.clientX - box.left, py = event.clientY - box.top;
+          let best = null, near = 18 * 18;
+          for (const p of placed) {
+            const d = (p.cx - px) * (p.cx - px) + (p.cy - py) * (p.cy - py);
+            if (d < near) { near = d; best = p; }
+          }
+          if (!best) { ring.setAttribute("visibility", "hidden"); hideTip(); return; }
+          ring.setAttribute("cx", best.cx); ring.setAttribute("cy", best.cy); ring.setAttribute("visibility", "visible");
+          showTip(event, best.r[0], [
+            { colour: gcol(best.r), shape: "dotkey", value: points(best.r[2]), name: "points of win rate, on less off" },
+            { value: best.r[3].toFixed(1) + "%", name: "sure it helps" },
+          ], (best.r[4] ? best.r[4] + " " : "") + (best.r[1] ? "On in the best genome." : "Off in the best genome."));
+        });
+        root.addEventListener("pointerleave", () => { ring.setAttribute("visibility", "hidden"); hideTip(); });
+        plot.append(root);
+      };
+      const table = (id, list) => {
+        const body = $(id).querySelector("tbody");
+        for (const r of list) {
+          const tr = el("tr"), name = el("td");
+          name.append(el("code", "", r[0]));
+          if (r[4]) name.append(el("small", "", r[4]));
+          const kept = el("td");
+          kept.append(el("span", r[1] ? "int-on" : "int-off", r[1] ? "on" : "off"));
+          tr.append(name, el("td", "", points(r[2])), el("td", "", r[3].toFixed(1) + "%"), kept);
+          body.append(tr);
+        }
+      };
+      table("int-genes-best", rows.slice(0, 8));
+      table("int-genes-worst", rows.slice(-8).reverse());
+      $("int-genes").hidden = false;
+    }
+
+    drawGenes();
+    const draw = () => { drawPlans(); drawGenes(); };
+    let queued = 0, lastWidth = document.documentElement.clientWidth;
+    window.addEventListener("resize", () => {
+      if (document.documentElement.clientWidth === lastWidth || queued) return;
+      queued = requestAnimationFrame(() => { queued = 0; lastWidth = document.documentElement.clientWidth; hideTip(); draw(); });
+    });
+  })();
+  </script>
+</body>
+</html>

@@ -176,7 +176,7 @@
 
   .res-empty { margin: 0; color: var(--faint); font-size: 13px; }
   .res-record { display: grid; gap: 16px; min-width: 0; }
-  .res-record[hidden], .res-empty[hidden], .res-kind[hidden] { display: none; }
+  .res-record[hidden], .res-empty[hidden], .res-kind[hidden], .res-block[hidden] { display: none; }
   .res-section { min-width: 0; padding: 12px 14px 12px; border: 1px solid var(--border); border-radius: 4px; background: var(--panel); }
   .rank-title { margin: 0; color: #fff; font-size: 13.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
   .rank-sub { margin: 2px 0 8px; color: var(--faint); font-size: 12px; line-height: 1.45; }
@@ -341,6 +341,27 @@
   .rank-table td:first-child { color: #fff; font-weight: 600; }
   .rank-table td .res-swatch { display: inline-block; margin-right: 7px; vertical-align: -1px; }
   .rank-table .is-zero { color: var(--faint); }
+  /* Over the graphs, the win rate against each level of the game's AI from
+     Lv 4 Prince to Lv 8 Deity, over the tournaments' games (operator,
+     2026-11-22: "to the top of win analytics roughly, please list our win
+     rate against lv 4... lv 8 deity ai in tournament games. please list
+     sample sizes, wins, losses in the table too"): a row per level, the
+     rate first among its figures and in white, then the games it is a
+     share of, the wins and the losses. These stand after the table's own
+     rules, which they adjust. */
+  .res-rates td { padding: 6px 12px 6px 0; font-size: 14px; }
+  .res-rates td.is-rate { color: #fff; font-weight: 700; }
+  .res-rates th:last-child, .res-rates td:last-child { padding-right: 2px; }
+  /* On a phone the five columns stand closer, so the losses are on screen
+     without the table scrolling in its card, down to 320px. */
+  @media (max-width: 399px) {
+    .res-rates th, .res-rates td { padding-right: 6px; }
+    .res-rates td { font-size: 13px; }
+  }
+  @media (max-width: 339px) {
+    .res-rates th, .res-rates td { padding-right: 4px; }
+    .res-rates td { font-size: 12.5px; }
+  }
   .res-details { margin-top: 10px; }
   .res-details summary { color: var(--accent); font-size: 12.5px; font-weight: 600; cursor: pointer; }
   .res-details .rank-table td:first-child { font-weight: 500; }
@@ -370,7 +391,8 @@
       <!-- The site's pages, in the order every one of them lists them, with
            the page on screen in gold: this is Win Analytics, the first
            page under Charts/, which stands between Home and Auto-Tourneys
-           with its pages listed under it, this one and CIVVIS Performance.
+           with its pages listed under it: this one, CIVVIS Performance and
+           AI Interpretability.
            Charts/ opens this page. The page was
            named Research, then Musings (operator 2026-11-21: "musings
            (rename research)"), then Charts (operator 2026-11-22: "Change
@@ -387,6 +409,7 @@
         <a class="site-link" href="./" title="What the games show: charts read off the CIVVIS AI agents&#8217; games.">Charts/</a>
         <a class="site-link sub-link" href="./" aria-current="page">Win Analytics</a>
         <a class="site-link sub-link" href="../performance/" title="How fast the simulator plays: the fastest game on video and how long a self-play game takes.">CIVVIS Performance</a>
+        <a class="site-link sub-link" href="../interpretability/" title="How a CIVVIS AI agent decides: one turn step by step, its plan through a game, and what each rule is worth in wins.">AI Interpretability</a>
         <a class="site-link" href="../tournaments/" title="Series of verification games against Civilization VI&#8217;s own AI: running, scheduled and finished.">Auto-Tourneys</a>
         <a class="site-link" href="../" title="Every civilization is played by a CIVVIS AI agent.">CIVVIS</a>
         <a class="site-link" href="../?mode=play" title="You play one civilization. CIVVIS AI agents play the rest.">AI Debugger</a>
@@ -456,9 +479,49 @@
            window of games, and the games against the AI open on the last
            30 days (operator: "default civvis vs ai stuff to last 30 days").
            The script writes each title for the level chosen; as written
-           here they are Deity's, the level the page opens on. -->
+           here they are Deity's, the level the page opens on.
+           Over the graphs, since later that day, stands a table (operator:
+           "to the top of win analytics roughly, please list our win rate
+           against lv 4... lv 8 deity ai in tournament games. please list
+           sample sizes, wins, losses in the table too. table should default
+           to last 30 days"): CIVVIS's win rate at each level from Lv 4
+           Prince to Lv 8 Deity over the tournaments' games, with the games,
+           wins and losses beside it, opening on the last 30 days. It is the
+           first thing in the graphs' column, so the rankings still stand to
+           its right. -->
       <div class="res-layout">
         <div class="res-graphs">
+        <section class="res-block" id="res-side-tourney" aria-labelledby="res-title-tourney">
+          <header class="res-side-head">
+            <div class="res-side-name">
+              <h2 class="res-side-title" id="res-title-tourney">Win rate vs the Lv 4 to Lv 8 AI</h2>
+              <p class="res-counted" id="res-counted-tourney">Tournament games against Civilization VI&#8217;s own AI.</p>
+            </div>
+            <div class="res-control" role="group" aria-label="Tournament games counted">
+              <span>Games</span>
+              <div class="res-seg" id="res-window-tourney">
+                <button type="button" data-window="7" aria-pressed="false">Last 7 days</button>
+                <button type="button" data-window="30" aria-pressed="true">Last 30 days</button>
+                <button type="button" data-window="all" aria-pressed="false">Every game</button>
+              </div>
+            </div>
+          </header>
+          <div class="res-section">
+            <div class="res-scroll">
+              <table class="rank-table res-rates" id="res-rates" aria-labelledby="res-title-tourney">
+                <thead>
+                  <tr><th scope="col">AI level</th><th scope="col">Win rate</th><th scope="col">Games</th><th scope="col">Wins</th><th scope="col">Losses</th></tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+            <p class="rank-note">
+              Every finished game of the tournaments on <a href="../tournaments/">Auto-Tourneys</a>, by the level Civilization VI&#8217;s own AI played at.
+              A win is a CIVVIS victory; a loss is a rival&#8217;s victory, our elimination, or a game conceded early.
+              The charts below count every verification game that ended in a victory, in a tournament or not, so their counts differ.
+            </p>
+          </div>
+        </section>
         <section class="res-block" id="res-side-self_play" aria-labelledby="res-title-self_play">
           <header class="res-side-head">
             <div class="res-side-name">
@@ -671,7 +734,10 @@
     // week, thousands of games; the games against the AI on their last 30
     // days (operator 2026-11-22: "default civvis vs ai stuff to last 30
     // days"), which a level with a few games a week needs to say anything.
-    const state = { windows: { self_play: "7", ai: "30" }, span: 5, level: RUNGS[data.level] ? String(data.level) : "8" };
+    // The table of win rates over the tournaments' games has a window of
+    // its own (`tourney`), and opens on 30 days too (operator: "table
+    // should default to last 30 days").
+    const state = { windows: { self_play: "7", ai: "30", tourney: "30" }, span: 5, level: RUNGS[data.level] ? String(data.level) : "8" };
     // A sentence for the level chosen: `{level}` is "Lv 4 Prince" and
     // `{rung}` is "Prince".
     const worded = (text) => String(text).replaceAll("{level}", "Lv " + state.level + " " + RUNGS[state.level]).replaceAll("{rung}", RUNGS[state.level]);
@@ -969,6 +1035,31 @@
       }
     };
 
+    // ---- The win rate against each level, over the tournaments' games
+    // (operator 2026-11-22: "list our win rate against lv 4... lv 8 deity ai
+    // in tournament games. please list sample sizes, wins, losses in the
+    // table too"). A row per level the record lists, lowest first: the rate
+    // is the wins as a share of the row's games, and a level with no game
+    // in the window has no rate.
+    const RATES = data.tournament_rates && data.tournament_rates.windows ? data.tournament_rates.windows : null;
+    const drawRates = () => {
+      const w = RATES ? RATES[state.windows.tourney] : null;
+      document.getElementById("res-side-tourney").hidden = !w;
+      if (!w) return;
+      document.getElementById("res-counted-tourney").textContent = fmt(w.games) + (w.games === 1 ? " tournament game" : " tournament games")
+        + " against Civilization VI\u2019s own AI · " + days(w);
+      const body = document.querySelector("#res-rates tbody");
+      body.replaceChildren();
+      for (const row of Array.isArray(w.levels) ? w.levels : []) {
+        const games = Number(row.games) || 0, wins = Number(row.wins) || 0, losses = Number(row.losses) || 0;
+        const tr = el("tr");
+        tr.append(el("td", "", "Lv " + row.level + (RUNGS[row.level] ? " " + RUNGS[row.level] : "")));
+        tr.append(el("td", games ? "is-rate" : "is-zero", games ? pct(wins / games) : "—"));
+        for (const n of [games, wins, losses]) tr.append(el("td", games ? "" : "is-zero", fmt(n)));
+        body.append(tr);
+      }
+    };
+
     // ---- The tables.
     const drawTables = () => {
       const body = document.querySelector("#res-summary tbody");
@@ -1064,7 +1155,7 @@
       for (const chart of CHARTS) drawStacks(chart, ymax[chart.kind]);
       drawTiming();
     };
-    const render = () => { notes(); draw(); drawTables(); };
+    const render = () => { notes(); drawRates(); draw(); drawTables(); };
 
     const choose = (groupId, attr, apply) => {
       const group = document.getElementById(groupId);
