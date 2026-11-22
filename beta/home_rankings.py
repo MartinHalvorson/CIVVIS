@@ -159,13 +159,24 @@ def strategies(source: pathlib.Path) -> dict | None:
         pooled.setdefault(elo, []).append(rung)
     for elo, rungs in pooled.items():
         rungs.sort(key=lambda rung: CIV6_RUNGS.index(rung) if rung in CIV6_RUNGS else len(CIV6_RUNGS))
-        bounds = {ratings.get(f"civ6:{rung}", {}).get("bound", "") for rung in rungs}
+        measured = [ratings.get(f"civ6:{rung}", {}) for rung in rungs]
+        bounds = {rating.get("bound", "") for rating in measured}
         rows.append(
             {
                 "kind": "rung",
                 "name": " · ".join(rung.title() for rung in rungs),
                 "levels": [CIV6_RUNGS.index(rung) + 1 for rung in rungs if rung in CIV6_RUNGS],
                 "elo": elo,
+                # The 95% margin of error, as an agent's row carries it. Rungs
+                # sharing a row show the widest of theirs, and the pinned rung
+                # has none: it is where the scale is set.
+                "margin": max(
+                    (
+                        rating.get("margin95", round(MARGIN_Z * rating.get("sd", 0.0)))
+                        for rating in measured
+                    ),
+                    default=0,
+                ),
                 "bound": bounds.pop() if len(bounds) == 1 else "",
             }
         )

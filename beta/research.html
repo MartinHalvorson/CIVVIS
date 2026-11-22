@@ -1296,7 +1296,9 @@
     if (strategies && Array.isArray(strategies.rows)) {
       let place = 0;
       const rows = strategies.rows.map((r) => r.kind === "rung"
-        ? row("is-rung", "", level(r) + " AI Firaxis", "", elo(r), "", "Civilization VI\u2019s own AI at difficulty level " + level(r))
+        ? row("is-rung", "", level(r) + " AI Firaxis", "", elo(r), margin(r) ? "\u00b1" + margin(r) : "",
+              "Civilization VI\u2019s own AI at difficulty level " + level(r)
+                + (margin(r) ? "; 95% interval " + Math.round(r.elo - margin(r)) + "\u2013" + Math.round(r.elo + margin(r)) : ""))
         : row("", String(++place), r.name, r.tilt, elo(r), margin(r) ? "\u00b1" + margin(r) : "",
               r.name + ": won " + r.wins + " of " + r.games + " rated tables"
                 + (margin(r) ? "; 95% interval " + Math.round(r.elo - margin(r)) + "\u2013" + Math.round(r.elo + margin(r)) : "")));
