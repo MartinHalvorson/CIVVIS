@@ -319,14 +319,14 @@ class TheSiteList(unittest.TestCase):
         self.assertEqual(
             re.findall(r'<a class="([^"]+)" href="([^"]+)"[^>]*>([^<]+)</a>', nav),
             [
-                ("site-link", "../home/", "Home"),
-                ("site-link", "../research/", "Charts/"),
-                ("site-link sub-link", "../research/", "Win Analytics"),
-                ("site-link sub-link", "../performance/", "CIVVIS Performance"),
+                ("site-link", "../../home/", "Home"),
+                ("site-link", "../win-analytics/", "Charts/"),
+                ("site-link sub-link", "../win-analytics/", "Win Analytics"),
+                ("site-link sub-link", "../civvis-performance/", "CIVVIS Performance"),
                 ("site-link sub-link", "./", "AI Interpretability"),
-                ("site-link", "../tournaments/", "Auto-Tourneys"),
-                ("site-link", "../", "CIVVIS"),
-                ("site-link", "../?mode=play", "AI Debugger"),
+                ("site-link", "../../auto-tourneys/", "Auto-Tourneys"),
+                ("site-link", "../../", "CIVVIS"),
+                ("site-link", "../../?mode=play", "AI Debugger"),
                 ("site-link", "https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/", "Civ 6"),
             ],
         )
@@ -342,7 +342,7 @@ class TheSiteList(unittest.TestCase):
         self.assertEqual(header(PAGE), header(PERFORMANCE))
 
     def test_only_charts_lists_the_branch(self):
-        listed = '<a class="site-link sub-link" href="../interpretability/" title="How a CIVVIS AI agent decides: one turn step by step, its plan through a game, and what each rule is worth in wins.">AI Interpretability</a>\n        <a class="site-link" href="../tournaments/" '
+        listed = '<a class="site-link sub-link" href="../ai-interpretability/" title="How a CIVVIS AI agent decides: one turn step by step, its plan through a game, and what each rule is worth in wins.">AI Interpretability</a>\n        <a class="site-link" href="../../auto-tourneys/" '
         for page in (RESEARCH, PERFORMANCE):
             self.assertIn(listed, page)
         for page in (LANDING, TOURNAMENTS, VIEWER):
@@ -358,16 +358,22 @@ class TheSiteList(unittest.TestCase):
         for line in (
             'interpretability_page="$source_tree/beta/interpretability.html"',
             'if [ -f "$interpretability_page" ]; then',
-            'mkdir -p "$out/interpretability"',
-            'cp "$interpretability_page" "$out/interpretability/index.html"',
-            'fill interpretability_page.py "$out/interpretability/index.html"',
-            'pages+=(interpretability)',
-            'out / "interpretability" / "index.html": [],',
+            # At the address the page states itself (operator 2026-11-23:
+            # "clean up the URL please. standardized."), which is its name
+            # in the site list, under Charts/; `interpretability` is where a
+            # revision from before pages said so had it.
+            'interpretability_at="$(address "$interpretability_page" interpretability)"',
+            'mkdir -p "$out/$interpretability_at"',
+            'cp "$interpretability_page" "$out/$interpretability_at/index.html"',
+            'fill interpretability_page.py "$out/$interpretability_at/index.html"',
+            'pages+=("$interpretability_at")',
         ):
             self.assertIn(line, PUBLISH)
         self.assertNotIn('"$repo_root/beta/interpretability', PUBLISH)
+        self.assertIn('<link rel="canonical" href="https://civvis.ai/charts/ai-interpretability/">', PAGE)
         verify = (BETA / "verify.py").read_text(encoding="utf-8")
-        self.assertIn("""    "interpretability": b'id="interpretability-data"',\n""", verify)
+        self.assertIn("""    "charts/ai-interpretability": b'id="interpretability-data"',\n""", verify)
+        self.assertIn("""    "interpretability": "charts/ai-interpretability",\n""", verify)
 
 
 if __name__ == "__main__":

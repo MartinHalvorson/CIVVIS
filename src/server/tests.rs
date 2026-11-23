@@ -2124,14 +2124,18 @@ fn viewer_marks_the_selected_revision_and_its_compact_ages_above_the_minimap() {
 /// should have at least win analytics, CIVVIS Performance").
 /// Pinned as one literal because the list is the contract: six links in
 /// this order, inside a list that only the hosts serving a /home, a
-/// /research and a /tournaments reveal.
+/// /charts and an /auto-tourneys reveal. The addresses follow the names in
+/// the list since 2026-11-23 (operator: "clean up the URL please.
+/// standardized. please remove research from the url"): Charts/ opens Win
+/// Analytics at /charts/win-analytics, where it was /research, and
+/// Auto-Tourneys is at /auto-tourneys, where it was /tournaments.
 #[test]
 fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
     assert!(EMBEDDED_INDEX.contains(concat!(
         "<nav class=\"head-links\" id=\"headlinks\" aria-label=\"CIVVIS sites\" hidden>\n",
         "        <a class=\"home-link\" id=\"homelink\" href=\"/home\" target=\"_top\">Home</a>\n",
-        "        <a class=\"home-link\" id=\"researchlink\" href=\"/research\" target=\"_top\">Charts/</a>\n",
-        "        <a class=\"home-link\" id=\"tourlink\" href=\"/tournaments\" target=\"_top\">Auto-Tourneys</a>\n",
+        "        <a class=\"home-link\" id=\"chartslink\" href=\"/charts/win-analytics\" target=\"_top\">Charts/</a>\n",
+        "        <a class=\"home-link\" id=\"tourlink\" href=\"/auto-tourneys\" target=\"_top\">Auto-Tourneys</a>\n",
         "        <a class=\"home-link\" id=\"watchlink\" href=\"./\" target=\"_top\">CIVVIS</a>\n",
         "        <a class=\"home-link\" id=\"playlink\" href=\"?mode=play\" target=\"_top\">AI Debugger</a>\n",
         "        <a class=\"home-link\" id=\"civ6link\" ",
@@ -2185,16 +2189,16 @@ fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
     }
     let performance = include_str!("../../beta/performance.html");
     assert!(performance.contains(concat!(
-        "        <a class=\"site-link\" href=\"../research/\" ",
+        "        <a class=\"site-link\" href=\"../win-analytics/\" ",
         "title=\"What the games show: charts read off the CIVVIS AI agents&#8217; games.\">Charts/</a>\n",
-        "        <a class=\"site-link sub-link\" href=\"../research/\" ",
+        "        <a class=\"site-link sub-link\" href=\"../win-analytics/\" ",
         "title=\"Who wins, how and when: the games against Civilization VI&#8217;s own AI ",
         "beside the CIVVIS self-play games.\">Win Analytics</a>\n",
         "        <a class=\"site-link sub-link\" href=\"./\" aria-current=\"page\">CIVVIS Performance</a>\n",
     )));
     assert!(include_str!("../../beta/research.html").contains(concat!(
         "        <a class=\"site-link sub-link\" href=\"./\" aria-current=\"page\">Win Analytics</a>\n",
-        "        <a class=\"site-link sub-link\" href=\"../performance/\" ",
+        "        <a class=\"site-link sub-link\" href=\"../civvis-performance/\" ",
     )));
     assert!(performance
         .contains("<script type=\"application/json\" id=\"performance-data\">null</script>"));
@@ -2205,28 +2209,37 @@ fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
     ))
     .is_file());
     let publish = include_str!("../../beta/publish.sh");
-    assert!(publish.contains("cp \"$performance_page\" \"$out/performance/index.html\""));
+    // Each page is put at the address it states itself (its canonical
+    // link), so a lane pinned to a revision from before the addresses moved
+    // keeps the layout its links were written for.
+    assert!(performance
+        .contains("<link rel=\"canonical\" href=\"https://civvis.ai/charts/civvis-performance/\">"));
+    assert!(publish.contains("performance_at=\"$(address \"$performance_page\" performance)\""));
+    assert!(publish.contains("cp \"$performance_page\" \"$out/$performance_at/index.html\""));
     // AI Interpretability is the last page under Charts/ (operator
     // 2026-11-22: "Add a new chart to the bottom of Charts/ called AI
     // Interpretablity"): each of the three pages of Charts/ lists all three,
     // with itself in gold.
     let interpretability = include_str!("../../beta/interpretability.html");
     let listed = concat!(
-        "        <a class=\"site-link sub-link\" href=\"../interpretability/\" ",
+        "        <a class=\"site-link sub-link\" href=\"../ai-interpretability/\" ",
         "title=\"How a CIVVIS AI agent decides: one turn step by step, its plan through a game, ",
         "and what each rule is worth in wins.\">AI Interpretability</a>\n",
-        "        <a class=\"site-link\" href=\"../tournaments/\" ",
+        "        <a class=\"site-link\" href=\"../../auto-tourneys/\" ",
     );
     assert!(performance.contains(listed));
     assert!(include_str!("../../beta/research.html").contains(listed));
     assert!(interpretability.contains(concat!(
         "\">CIVVIS Performance</a>\n",
         "        <a class=\"site-link sub-link\" href=\"./\" aria-current=\"page\">AI Interpretability</a>\n",
-        "        <a class=\"site-link\" href=\"../tournaments/\" ",
+        "        <a class=\"site-link\" href=\"../../auto-tourneys/\" ",
     )));
     assert!(interpretability
         .contains("<script type=\"application/json\" id=\"interpretability-data\">null</script>"));
-    assert!(publish.contains("cp \"$interpretability_page\" \"$out/interpretability/index.html\""));
+    assert!(interpretability
+        .contains("<link rel=\"canonical\" href=\"https://civvis.ai/charts/ai-interpretability/\">"));
+    assert!(publish
+        .contains("cp \"$interpretability_page\" \"$out/$interpretability_at/index.html\""));
     // The old label named the destination twice over.
     assert!(!EMBEDDED_INDEX.contains("Open sim debugger"));
     // A list that draws itself as a grid outranks the user agent's
@@ -2239,13 +2252,12 @@ fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
     assert!(EMBEDDED_INDEX
         .contains("#side[data-type-size=\"compact\"] .head-links {\n    grid-column: 1 / -1;"));
     // The viewer's links to the other pages leave the lane-relative rewrite
-    // to `beta/publish.sh`, which turns `/home`, `/research` and
-    // `/tournaments` into the lane's own pages and refuses to publish a root
-    // link it does not know.
+    // to `beta/publish.sh`, which turns a root link to any page the lane
+    // carries (`/home`, `/charts/win-analytics`, `/auto-tourneys`) into the
+    // lane's own page and refuses to publish a root link it does not know.
     assert!(include_str!("../../beta/publish.sh").contains(concat!(
-        "    ('href=\"/home\"', 'href=\"home/\"'),\n",
-        "    ('href=\"/research\"', 'href=\"research/\"'),\n",
-        "    ('href=\"/tournaments\"', 'href=\"tournaments/\"'),\n",
+        "for address in dict.fromkeys([*carried, *former]):\n",
+        "    needle, replacement = f'href=\"/{address}\"', f'href=\"{address}/\"'\n",
     )));
     // Two by two, a link is half its row, except on the second row: there
     // AUTO-TOURNEYS takes six tenths and CIVVIS four. Measured in Chrome in
@@ -2449,9 +2461,9 @@ fn the_home_page_lists_the_sites_with_itself_in_gold() {
         concat!(
             "<nav class=\"site-nav\" aria-label=\"CIVVIS sites\">\n",
             "        <a class=\"site-link\" href=\"./\" aria-current=\"page\">Home</a>\n",
-            "        <a class=\"site-link\" href=\"../research/\" ",
+            "        <a class=\"site-link\" href=\"../charts/win-analytics/\" ",
             "title=\"What the games show: charts read off the CIVVIS AI agents&#8217; games.\">Charts/</a>\n",
-            "        <a class=\"site-link\" href=\"../tournaments/\" ",
+            "        <a class=\"site-link\" href=\"../auto-tourneys/\" ",
             "title=\"Series of verification games against Civilization VI&#8217;s own AI: ",
             "running, scheduled and finished.\">Auto-Tourneys</a>\n",
             "        <a class=\"site-link\" href=\"../\" ",
