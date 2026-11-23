@@ -2580,8 +2580,9 @@ let debugHeld = false;
 // Whether one picture is taking the other's place right now.
 let debugMoving = false;
 // A browser that is not painting (a window nobody can see) may leave a move
-// waiting to begin. The change is not left waiting with it.
-const DEBUG_SWAP_PATIENCE_MS = 500;
+// waiting to begin, or to end. The change is not left waiting with it, and
+// neither is the word that the move is over.
+const DEBUG_SWAP_PATIENCE_MS = 500, DEBUG_SWAP_OVER_MS = 2000;
 function debugHold(on) {
   debugHeld = on;
   document.documentElement.classList.toggle("dbg-held", on);
@@ -2624,9 +2625,12 @@ function debugSwap(change, from = null, to = null) {
   if (still) { make(); return Promise.resolve(); }
   const root = document.documentElement, named = new Set();
   const name = (element, as) => { if (element) { element.style.viewTransitionName = as; named.add(element); } };
-  let waiting = 0;
+  let waiting = 0, ending = 0, ended = false;
   const over = () => {
+    if (ended) return;
+    ended = true;
     clearTimeout(waiting);
+    clearTimeout(ending);
     for (const element of named) element.style.viewTransitionName = "";
     root.classList.remove("dbg-swapping");
     root.style.removeProperty("--dbg-carry-x");
@@ -2655,6 +2659,11 @@ function debugSwap(change, from = null, to = null) {
       make();
       try { move.skipTransition(); } catch (_) {}
     }, DEBUG_SWAP_PATIENCE_MS);
+    ending = setTimeout(() => {
+      make();
+      try { move.skipTransition(); } catch (_) {}
+      over();
+    }, DEBUG_SWAP_OVER_MS);
     return move.finished.then(over, () => { make(); over(); });
   } catch (_) {
     make(); over();

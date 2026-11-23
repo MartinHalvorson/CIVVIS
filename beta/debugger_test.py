@@ -2471,6 +2471,20 @@ def check_one_screen_and_two_change_places_in_one_move(bar: Bar, doc: str) -> No
     bar.click('[data-dbg-split="drop-b"]')
     bar.until("!debugSplit", "the branch is dropped")
 
+    # A browser that takes a move and never makes it (a window it is not
+    # painting) does not keep the change, nor the word that the move is over.
+    bar.ev("document.startViewTransition = () => ({finished: new Promise(() => {}), skipTransition() {}}), true")
+    began = time.time()
+    press('[data-dbg="split"]')
+    bar.until("debugSplit && debugSplit.shown && !debugHeld", "the two screens are shown though the browser never made the move")
+    assert bar.ev("[debugMoving, debugBar.classList.contains('dbg-split-on'), getComputedStyle(debugSplit.host).opacity]") == [True, True, "1"]
+    bar.until("!debugMoving", "the move is over though the browser never ended it")
+    assert time.time() - began < 6, "the change waited on the browser"
+    assert bar.ev("[debugBar.style.viewTransitionName, document.documentElement.classList.contains('dbg-swapping')]") == ["", False]
+    bar.click('[data-dbg-split="drop-b"]')
+    bar.until("!debugSplit", "the branch is dropped")
+    bar.ev("delete document.startViewTransition, true")
+
     # Someone who has asked for less motion gets the change made, and no move.
     bar.dev.call("Emulation.setEmulatedMedia", {"features": [{"name": "prefers-reduced-motion", "value": "reduce"}]})
     bar.until("matchMedia('(prefers-reduced-motion: reduce)').matches", "less motion is asked for")
@@ -2701,7 +2715,8 @@ def main() -> int:
         print("Branch holds the window as it stands while the halves load unseen and shows the two screens once, "
               "with everything they are drawn from there and each looking where the one screen looked; closing a "
               "branch holds the two and greys nothing, and the one screen looks where the kept half did; a half "
-              "that never arrives is not waited on for ever, and less motion asked for is no move at all.")
+              "that never arrives is not waited on for ever, a browser that never makes the move does not keep the "
+              "change, and less motion asked for is no move at all.")
         check_windows_move_by_their_titles(bar)
         print("each panel of the box, and each thing the box asks, is moved by its title, stays where it was put, "
               "cannot leave the window, and goes back under its button on a double click.")
