@@ -6359,6 +6359,13 @@ pub const GENES: &[Gene] = &[
     // race open, takes Exodus whenever it is offered. Opt-in; see
     // `advanced/religious_seat_dedicates_to_the_evangelists.rs`.
     Gene { tag: "religious-seat-dedicates-to-the-evangelists", field: "religious_seat_dedicates_to_the_evangelists", kind: Kind::OptIn, enable: AdvancedAi::enable_religious_seat_dedicates_to_the_evangelists, disable: AdvancedAi::disable_religious_seat_dedicates_to_the_evangelists },
+    // Benchmark tourney 2026-11-23 (6 of 40 reviewed games): Settlers stood
+    // 20-40 turns beside their guard while 1-3 raiders held them, and cities
+    // 3-7 came in a t78-t104 wave. The board never hunted those raiders: a
+    // Defend row on the nearby city "covered" them, a raider far from a city
+    // was not on the board at all, and a Destroy row was priced at the
+    // raiders' own worth. Opt-in; see `advanced/raiders_holding_a_settler.rs`.
+    Gene { tag: "raiders-holding-a-settler-are-hunted", field: "raiders_holding_a_settler_are_hunted", kind: Kind::OptIn, enable: AdvancedAi::enable_raiders_holding_a_settler_are_hunted, disable: AdvancedAi::disable_raiders_holding_a_settler_are_hunted },
     // ---- append: s-s ------------------------------------------------
     // Kristina Deity 11-10 reached Nationalism at t122 with 8 cities on three
     // terrain classes and built no Open-Air Museum by t150 (+48 Culture and
