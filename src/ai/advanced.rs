@@ -1979,6 +1979,15 @@ impl Clone for LaneProgressCache {
 /// every value whose inputs provably did not move; see
 /// `SettlementAtlas::restart` in `advanced/settlement_value.rs`. Between
 /// restarts it answers exactly as it always did.
+/// A seat's prefilter score per plot
+/// (`settlement_prefilter_score_with_water_science_wonder`) and the key of
+/// everything those scores read (`AdvancedAi::settlement_prefilter_key`).
+#[derive(Clone, Default)]
+struct SettlementPrefilterMemo {
+    key: Option<(usize, u64)>,
+    scores: crate::fast_map::FastMap<Pos, f64>,
+}
+
 #[derive(Default)]
 struct SettlementAtlas {
     turn: Option<u32>,
@@ -2104,6 +2113,10 @@ pub struct AdvancedAi {
     /// authoritative controller remains single-threaded; worker clones own
     /// their own empty/copy-on-write atlas state.
     settlement_atlas: RefCell<SettlementAtlas>,
+    /// One seat's settle-site prefilter scores, kept from one global site
+    /// scan to the next while everything they read holds. See
+    /// `AdvancedAi::settlement_prefilter_memo`.
+    settlement_prefilter: RefCell<SettlementPrefilterMemo>,
     /// `lane_progress_table` for one seat, kept for the turn: the turn, the
     /// seat, the map epoch and the table. Cleared at the start of each turn.
     lane_progress_cache: LaneProgressCache,
