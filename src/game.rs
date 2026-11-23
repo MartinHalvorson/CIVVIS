@@ -1805,6 +1805,12 @@ pub struct QueryCache {
     /// production gates ask for the same empire census; keep the integer
     /// rather than copying citizen plans. Policy tracing bypasses it.
     worked_backlog: std::cell::RefCell<Option<crate::fast_map::FastMap<usize, usize>>>,
+    /// Per player, the production-ground census the Builder quota reads
+    /// (`BasicAi::production_tile_backlog`: worked and idle tiles a production
+    /// improvement fits), within one immutable decision. A pass over the
+    /// cities asks it once per city of the same empire. Policy tracing
+    /// bypasses it, as it does `worked_backlog`.
+    production_backlog: std::cell::RefCell<Option<crate::fast_map::FastMap<usize, (usize, usize)>>>,
     // Territory access is a unit-level route predicate. Cache it by unit id
     // while a route call runs, because the same access gates both local and
     // cached planning steps.
@@ -2219,6 +2225,7 @@ impl Drop for QueryMemo<'_> {
             *self.game.query_memo.purchase_price.borrow_mut() = None;
             *self.game.query_memo.unit_ids.borrow_mut() = None;
             *self.game.query_memo.worked_backlog.borrow_mut() = None;
+            *self.game.query_memo.production_backlog.borrow_mut() = None;
             *self.game.query_memo.unit_territory_access.borrow_mut() = None;
             *self.game.query_memo.city_ids.borrow_mut() = None;
             *self.game.query_memo.lux_alloc.borrow_mut() = None;
