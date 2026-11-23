@@ -31,10 +31,14 @@ Use ``run --stop-after-publish`` for a bounded tournament that publishes its
 own result and exits after the merge, including after a service restart.
 
 A machine shared with other work sets ``--machine-cpu-ceiling``: the
-scheduler then measures the whole host's CPU and pauses its own game process
-group (SIGSTOP/SIGCONT in half-second slices) for as much of each two-second
-window as keeps the host under the ceiling.  It only ever signals the group it
-launched or re-adopted, and always resumes it on release, restart or SIGTERM.
+scheduler then measures the whole host's CPU every two seconds and gives its
+own games what is left under the ceiling.  A segment played by several
+one-thread worker processes runs that many WHOLE workers and stops the rest;
+a segment that is one process is paused (SIGSTOP/SIGCONT in half-second
+slices) for part of each window.  ``--beside NAME=PERCENT`` names work the
+games stand further back for while it runs.
+It only ever signals the group it launched or re-adopted, and always resumes
+it on release, restart or SIGTERM.
 ``--progress-minutes`` prints one progress line (this batch and all batches
 served by the state directory) to the service log at that cadence.
 """
@@ -47,6 +51,7 @@ import datetime as dt
 import fcntl
 import hashlib
 import json
+import math
 import os
 import re
 import secrets
@@ -118,6 +123,25 @@ GOVERNOR_DUTY_SNAP = 0.02
 # promise, so overshoot is corrected immediately and headroom is re-taken
 # gradually.
 GOVERNOR_RECOVERY = 0.5
+# Whole workers. A segment of several one-thread ``gene_screen`` processes is
+# governed by HOW MANY of them run. Measured 2026-11-22 on mbp-m5-max-128,
+# nine workers sliced together at a 0.05-0.7 duty: 350 ms of CPU a game turn
+# (429 games), where the same binary spends 243 ms with eighteen workers
+# running flat out and about 200 ms alone. A sliced worker restarts on a cold
+# cache and a slowed core twice a second; a whole worker does not.
+GAME_WORKER_NAME = "gene_screen"
+# One more worker starts only when a whole core is free under the ceiling, and
+# one stops only when the games are this far over it: a band of 1.5 cores, so
+# a host near its ceiling does not start and stop a worker every window.
+WORKER_OVERSHOOT_CORES = 0.5
+# Stopped workers take turns with running ones, most CPU out and least CPU
+# in, so every worker's window of seeds ends at about the same time and no
+# game waits out a long quiet stretch of the host.
+WORKER_ROTATE_SECONDS = 120.0
+WORKER_ROTATE_GAP_SECONDS = 60.0
+# macOS darwin-background: where `taskpolicy -b` (and a host guard that parks
+# batch work that way) puts a process. A worker there is barely scheduled.
+BACKGROUND_PRIORITY = 4
 DEFAULT_PROGRESS_MINUTES = 5.0
 # How often the governor re-reads the power source (one ``pmset`` per read).
 POWER_POLL_SECONDS = 10.0
@@ -286,25 +310,6 @@ def parse_cpu_time(text: str) -> float:
     return days * 86_400 + seconds
 
 
-def group_cpu_seconds(group: int) -> float | None:
-    """Cumulative CPU seconds of every live process in one process group."""
-    result = subprocess.run(
-        ["ps", "-A", "-o", "pgid=,time="], text=True, stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL, check=False)
-    if result.returncode != 0:
-        return None
-    total, found = 0.0, False
-    for line in result.stdout.splitlines():
-        parts = line.split()
-        if len(parts) == 2 and parts[0] == str(group):
-            try:
-                total += parse_cpu_time(parts[1])
-            except ValueError:
-                continue
-            found = True
-    return total if found else None
-
-
 def power_draining_battery() -> bool | None:
     """True while the host's battery is paying for the games, None when unknown.
 
@@ -330,6 +335,99 @@ def battery_is_draining(pmset_ps: str) -> bool | None:
     if source.group(1) == "Battery Power":
         return True
     return bool(re.search(r";\s*discharging;", pmset_ps))
+
+
+@dataclass(frozen=True)
+class ProcessRow:
+    """One line of the host's process table, as the governor reads it."""
+
+    pid: int
+    group: int
+    priority: int
+    stopped: bool
+    cpu_seconds: float
+    name: str
+
+
+def parse_process_table(text: str) -> list[ProcessRow]:
+    """Rows of ``ps -A -o pid=,pgid=,pri=,stat=,time=,comm=``.
+
+    ``comm`` is last because on macOS it is the executable's whole path, which
+    may hold spaces; a row is named by that path's last component.
+    """
+    rows = []
+    for line in text.splitlines():
+        parts = line.split(None, 5)
+        if len(parts) != 6:
+            continue
+        try:
+            rows.append(ProcessRow(
+                pid=int(parts[0]), group=int(parts[1]), priority=int(parts[2]),
+                stopped="T" in parts[3], cpu_seconds=parse_cpu_time(parts[4]),
+                name=parts[5].strip().rsplit("/", 1)[-1]))
+        except ValueError:
+            continue
+    return rows
+
+
+def process_table() -> list[ProcessRow] | None:
+    """Every process on the host, or None when ``ps`` cannot say."""
+    try:
+        result = subprocess.run(
+            ["ps", "-A", "-o", "pid=,pgid=,pri=,stat=,time=,comm="], text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=False)
+    except OSError:
+        return None
+    if result.returncode != 0:
+        return None
+    return parse_process_table(result.stdout)
+
+
+def lift_from_background(pid: int) -> None:
+    """Take one of our own workers out of darwin-background (macOS only)."""
+    if sys.platform != "darwin":
+        return
+    try:
+        subprocess.run(["/usr/sbin/taskpolicy", "-B", "-p", str(pid)], check=False,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+
+
+def parse_beside(values: Iterable[str]) -> dict[str, float]:
+    """``NAME=PERCENT`` options as a name-to-percent map."""
+    beside: dict[str, float] = {}
+    for value in values:
+        name, mark, percent = value.rpartition("=")
+        try:
+            beside[name] = float(percent)
+        except ValueError:
+            mark = ""
+        if not mark or not name:
+            raise SchedulerError(f"--beside takes NAME=PERCENT, not {value!r}")
+    return beside
+
+
+def governed_workers(*, ceiling: float, cores: int, busy: float, group_cores: float,
+                     running: int, total: int) -> int:
+    """How many whole one-thread workers may run in the next window.
+
+    The rest of the machine is ``busy * cores - group_cores``, as in
+    :func:`governed_duty`; the games may have the cores left under the
+    ceiling, one worker a core. A cut is applied at once and to the whole
+    overshoot, because the ceiling is the promise. Room is retaken one worker
+    a window, and only when a whole core is free: a worker started into half
+    a core would be the next one stopped.
+    """
+    rest = max(0.0, busy * cores - group_cores)
+    allowed = ceiling * cores - rest
+    if allowed < running - WORKER_OVERSHOOT_CORES:
+        target = math.ceil(allowed - WORKER_OVERSHOOT_CORES)
+    elif allowed >= running + 1:
+        target = running + 1
+    else:
+        target = running
+    return max(0, min(total, target))
 
 
 def governed_duty(*, ceiling: float, cores: int, busy: float, group_cores: float,
@@ -379,22 +477,46 @@ def governed_duty(*, ceiling: float, cores: int, busy: float, group_cores: float
 
 
 class CpuGovernor:
-    """Hold the whole host under a CPU ceiling by pausing the owned game group.
+    """Hold the whole host under a CPU ceiling by pausing the owned games.
 
-    A background thread re-plans every ``GOVERNOR_WINDOW_SECONDS`` with
-    :func:`governed_duty` and applies the duty as SIGCONT/SIGSTOP inside
-    ``GOVERNOR_PERIOD_SECONDS`` slices. Every game in flight pauses together,
-    so the pauses add wall-clock noise to the time-cost columns but cannot
-    favour one genome over another. ``release`` always leaves the group
-    running.
+    A background thread re-plans every ``GOVERNOR_WINDOW_SECONDS``.
+
+    **Whole workers.** When the group holds two or more one-thread
+    ``gene_screen`` processes, :func:`governed_workers` says how many run and
+    the others are stopped outright: a running worker keeps its core, its
+    cache and its clock speed for the whole window. Which ones run turns over
+    slowly by CPU time (:data:`WORKER_ROTATE_SECONDS`). A stopped worker's
+    game waits in wall-clock time only, which is why the rows carry a game's
+    CPU seconds beside its wall seconds.
+
+    **Slices.** A group that is one process (the stock segment, one
+    ``gene_screen`` with many threads) cannot be governed by a count, so
+    :func:`governed_duty` gives a running fraction, applied as SIGCONT/SIGSTOP
+    inside ``GOVERNOR_PERIOD_SECONDS`` slices. Every game in flight pauses
+    together.
+
+    Neither way can favour one genome over another: what is paused is chosen
+    by the host's load and a worker's CPU time, never by what it is playing.
+    ``release`` always leaves the group running.
+
+    ``beside`` maps executable names (exact, as ``pgrep -x``) to the ceiling
+    in force while a process of that name runs; the lowest one that applies
+    wins, and none can raise the ceiling.
     """
 
     def __init__(self, ceiling_percent: float, *, cores: int, workers: int = 0,
-                 host: HostCpu | None = None, group_cpu=group_cpu_seconds, send=None,
-                 pause_on_battery: bool = False, battery=power_draining_battery) -> None:
+                 host: HostCpu | None = None, group_cpu=None, send=None,
+                 pause_on_battery: bool = False, battery=power_draining_battery,
+                 processes=None, send_one=None, lift=lift_from_background,
+                 beside: dict[str, float] | None = None) -> None:
         if not 0 < ceiling_percent <= 100:
             raise SchedulerError("--machine-cpu-ceiling must be a percentage in (0, 100]")
         self.ceiling = ceiling_percent / 100.0
+        self.beside: dict[str, float] = {}
+        for name, percent in (beside or {}).items():
+            if not name or not 0 < percent <= 100:
+                raise SchedulerError("--beside takes NAME=PERCENT with a percentage in (0, 100]")
+            self.beside[name] = min(self.ceiling, percent / 100.0)
         self.cores = positive_int(cores, name="logical core count")
         # Each game worker is one CPU-bound thread: the most the group can burn.
         self.workers = workers
@@ -407,8 +529,20 @@ class CpuGovernor:
         self.on_battery = False
         self.power_read_at = -POWER_POLL_SECONDS
         self.host = host or HostCpu()
+        # One `ps` a window answers everything: the group's CPU seconds, its
+        # worker processes and whether foreground work is up. A caller that
+        # supplies only ``group_cpu`` (the slice tests) reads no table.
+        self.processes = processes if processes is not None else (
+            process_table if group_cpu is None else None)
         self.group_cpu = group_cpu
         self.send = send or os.killpg
+        self.send_one = send_one or os.kill
+        self.lift = lift
+        # Workers this governor holds stopped, and when it last rotated them.
+        self.held: set[int] = set()
+        self.rotated_at = 0.0
+        # Only macOS has the band; elsewhere no priority means "parked".
+        self.background_priority = BACKGROUND_PRIORITY if sys.platform == "darwin" else None
         # Re-entrant: the SIGTERM handler releases from the main thread, which
         # may be interrupted while it already holds the lock.
         self.lock = threading.RLock()
@@ -456,20 +590,115 @@ class CpuGovernor:
         except (ProcessLookupError, PermissionError):
             return False
 
+    def _signal_one(self, pid: int, which: int) -> bool:
+        try:
+            self.send_one(pid, which)
+            return True
+        except (ProcessLookupError, PermissionError):
+            return False
+
     def _run(self, group: int, stop: threading.Event) -> None:
         try:
             self._serve(group, stop)
         finally:
+            self.held.clear()
             self._signal(group, signal.SIGCONT)
+
+    def _probe(self, group: int) -> tuple[tuple[int, ...] | None, float | None,
+                                          list[ProcessRow], str | None]:
+        """Host ticks, the group's CPU seconds, its workers, foreground work that is up."""
+        table = self.processes() if self.processes is not None else None
+        workers: list[ProcessRow] = []
+        foreground = None
+        cpu: float | None = None
+        if table is not None:
+            ours = [row for row in table if row.group == group]
+            workers = [row for row in ours if row.name == GAME_WORKER_NAME]
+            if ours:
+                cpu = sum(row.cpu_seconds for row in ours)
+            if self.beside:
+                up = {row.name for row in table} & set(self.beside)
+                # The lowest ceiling that applies; the name breaks a tie the same way each time.
+                foreground = min(up, key=lambda name: (self.beside[name], name), default=None)
+        if self.group_cpu is not None:
+            cpu = self.group_cpu(group)
+        return self.host.ticks(), cpu, workers, foreground
+
+    def _read_power(self, started: float) -> None:
+        if not self.pause_on_battery or started - self.power_read_at < POWER_POLL_SECONDS:
+            return
+        self.power_read_at = started
+        draining = bool(self.battery())
+        if draining != self.on_battery:
+            print(f"{utc_now()} cpu governor: "
+                  + ("host is spending its battery; games paused" if draining
+                     else "host is on mains power again; games resume"),
+                  flush=True)
+        self.on_battery = draining
+
+    def _apply_workers(self, workers: list[ProcessRow], target: int, now: float) -> int:
+        """Stop and resume whole workers until ``target`` of them run; return how many do.
+
+        Out first: a worker something else put in the background band (it is
+        barely scheduled there, and a stopped worker frees its whole core),
+        then the worker with the most CPU time. In first: one that is not in
+        the background band, then the least CPU time; a worker in the band is
+        lifted out of it as it resumes, since there is now room for it.
+        """
+        self.held &= {row.pid for row in workers}
+        background = set() if self.background_priority is None else {
+            row.pid for row in workers if row.priority <= self.background_priority}
+
+        def stop_one(row: ProcessRow) -> None:
+            if self._signal_one(row.pid, signal.SIGSTOP):
+                self.held.add(row.pid)
+
+        def resume_one(row: ProcessRow) -> None:
+            if row.pid in background:
+                self.lift(row.pid)
+            self._signal_one(row.pid, signal.SIGCONT)
+            self.held.discard(row.pid)
+
+        # A parked worker is not a running one, whatever the count says.
+        for row in workers:
+            if row.pid in background and row.pid not in self.held:
+                stop_one(row)
+        running = sorted((row for row in workers if row.pid not in self.held),
+                         key=lambda row: -row.cpu_seconds)
+        stopped = sorted((row for row in workers if row.pid in self.held),
+                         key=lambda row: (row.pid in background, row.cpu_seconds))
+        changed = False
+        while len(running) > target:
+            stop_one(running.pop(0))
+            changed = True
+        while len(running) < target and stopped:
+            row = stopped.pop(0)
+            resume_one(row)
+            running.append(row)
+            changed = True
+        if changed:
+            self.rotated_at = now
+        elif running and stopped and now - self.rotated_at >= WORKER_ROTATE_SECONDS:
+            self.rotated_at = now
+            ahead, behind = running[0], stopped[0]
+            if ahead.cpu_seconds - behind.cpu_seconds >= WORKER_ROTATE_GAP_SECONDS:
+                stop_one(ahead)
+                resume_one(behind)
+        # A stop that could not be delivered leaves that worker running.
+        return sum(1 for row in workers if row.pid not in self.held)
 
     def _serve(self, group: int, stop: threading.Event) -> None:
         host_before: tuple[int, ...] | None = None
         cpu_before: float | None = None
+        workers: list[ProcessRow] = []
+        foreground: str | None = None
+        worker_target: int | None = None
         while not stop.is_set():
             if host_before is None or cpu_before is None:
-                host_before, cpu_before = self.host.ticks(), self.group_cpu(group)
+                host_before, cpu_before, workers, foreground = self._probe(group)
             if host_before is None or cpu_before is None:
                 # No measurement means no pausing: the games run as launched.
+                self.held.clear()
                 if not self._signal(group, signal.SIGCONT):
                     return
                 stop.wait(GOVERNOR_WINDOW_SECONDS)
@@ -477,67 +706,99 @@ class CpuGovernor:
             started = time.monotonic()
             running = 0.0
             duty = self.duty
-            if self.pause_on_battery:
-                if started - self.power_read_at >= POWER_POLL_SECONDS:
-                    self.power_read_at = started
-                    draining = bool(self.battery())
-                    if draining != self.on_battery:
-                        print(f"{utc_now()} cpu governor: "
-                              + ("host is spending its battery; games paused" if draining
-                                 else "host is on mains power again; games resume"),
-                              flush=True)
-                    self.on_battery = draining
-                if self.on_battery:
-                    duty = 0.0
-            while not stop.is_set():
-                elapsed = time.monotonic() - started
-                if elapsed >= GOVERNOR_WINDOW_SECONDS:
-                    break
-                period = min(GOVERNOR_PERIOD_SECONDS, GOVERNOR_WINDOW_SECONDS - elapsed)
-                run_for = period * duty
-                if run_for > 0:
-                    if not self._signal(group, signal.SIGCONT):
-                        return
-                    resumed = time.monotonic()
-                    stop.wait(run_for)
-                    # Count the run the group really got: on a saturated host
-                    # this thread wakes late, so the group runs past run_for.
-                    running += time.monotonic() - resumed
-                if period - run_for > 0 and not stop.is_set():
-                    if not self._signal(group, signal.SIGSTOP):
-                        return
-                    stop.wait(period - run_for)
+            self._read_power(started)
+            if self.on_battery:
+                duty = 0.0
+            whole = len(workers) >= 2
+            ran = 0
+            if whole:
+                # Whole workers: the plan is a count, held for the whole window.
+                if worker_target is None:
+                    worker_target = len(workers) - len(self.held & {row.pid for row in workers})
+                ran = self._apply_workers(
+                    workers, 0 if self.on_battery else min(worker_target, len(workers)), started)
+                stop.wait(GOVERNOR_WINDOW_SECONDS)
+            else:
+                if self.held:
+                    # The group stopped being several workers (one is left):
+                    # nothing may stay stopped under the slice plan's SIGCONT.
+                    self.held.clear()
+                    worker_target = None
+                while not stop.is_set():
+                    elapsed = time.monotonic() - started
+                    if elapsed >= GOVERNOR_WINDOW_SECONDS:
+                        break
+                    period = min(GOVERNOR_PERIOD_SECONDS, GOVERNOR_WINDOW_SECONDS - elapsed)
+                    run_for = period * duty
+                    if run_for > 0:
+                        if not self._signal(group, signal.SIGCONT):
+                            return
+                        resumed = time.monotonic()
+                        stop.wait(run_for)
+                        # Count the run the group really got: on a saturated host
+                        # this thread wakes late, so the group runs past run_for.
+                        running += time.monotonic() - resumed
+                    if period - run_for > 0 and not stop.is_set():
+                        if not self._signal(group, signal.SIGSTOP):
+                            return
+                        stop.wait(period - run_for)
             if stop.is_set():
                 return
             window = time.monotonic() - started
             # The window's closing sample opens the next one: two probes per
             # window would double the ``ps`` cost for no information.
-            host_after, cpu_after = self.host.ticks(), self.group_cpu(group)
+            host_after, cpu_after, workers_after, foreground_after = self._probe(group)
             busy = (busy_fraction(host_before, host_after)
                     if host_after is not None else None)
             host_before, cpu_before_window, cpu_before = host_after, cpu_before, cpu_after
+            total = len(workers)
+            workers, foreground_now, foreground = workers_after, foreground, foreground_after
             if busy is None or cpu_after is None or window <= 0:
                 continue
             group_cores = max(0.0, cpu_after - cpu_before_window) / window
-            applied = min(1.0, running / window)
-            new_duty, demand = governed_duty(
-                ceiling=self.ceiling, cores=self.cores, busy=busy, group_cores=group_cores,
-                applied_duty=applied, demand_cores=self.demand, previous_duty=duty,
-                demand_floor=float(self.workers))
-            if self.on_battery:
-                new_duty = 0.0
+            # The ceiling in force while foreground work was up during the window.
+            ceiling = self.beside.get(foreground_now, self.ceiling)
+            reading: dict[str, Any] = {
+                "observed_at": utc_now(),
+                "ceiling_percent": round(ceiling * 100, 1),
+                "host_busy_percent": round(busy * 100, 1),
+                "games_cores": round(group_cores, 2),
+                "on_battery": self.on_battery,
+            }
+            if foreground_now is not None:
+                reading["foreground"] = foreground_now
+            if whole:
+                worker_target = governed_workers(
+                    ceiling=ceiling, cores=self.cores, busy=busy, group_cores=group_cores,
+                    running=ran, total=len(workers))
+                if self.on_battery:
+                    worker_target = 0
+                applied = ran / total if total else 0.0
+                new_duty = worker_target / len(workers) if workers else 0.0
+                demand = float(total)
+                reading.update({"mode": "workers", "workers": total, "workers_running": ran,
+                                "workers_next": worker_target})
+            else:
+                worker_target = None
+                applied = min(1.0, running / window)
+                new_duty, demand = governed_duty(
+                    ceiling=ceiling, cores=self.cores, busy=busy, group_cores=group_cores,
+                    applied_duty=applied, demand_cores=self.demand, previous_duty=duty,
+                    demand_floor=float(self.workers))
+                if self.on_battery:
+                    new_duty = 0.0
+                reading["mode"] = "slices"
+            reading.update({
+                "games_demand_cores": None if demand is None else round(demand, 2),
+                "applied_duty": round(applied, 3),
+                "next_duty": round(new_duty, 3),
+            })
             with self.lock:
-                self.duty, self.demand = new_duty, demand
-                self.last = {
-                    "observed_at": utc_now(),
-                    "ceiling_percent": round(self.ceiling * 100, 1),
-                    "host_busy_percent": round(busy * 100, 1),
-                    "games_cores": round(group_cores, 2),
-                    "games_demand_cores": None if demand is None else round(demand, 2),
-                    "applied_duty": round(applied, 3),
-                    "next_duty": round(new_duty, 3),
-                    "on_battery": self.on_battery,
-                }
+                # The slice plan keeps its own duty and demand across a spell
+                # of whole workers, so it restarts from where it stood.
+                if not whole:
+                    self.duty, self.demand = new_duty, demand
+                self.last = reading
 
 
 class ProgressLog:
@@ -570,6 +831,10 @@ class ProgressLog:
             parts.append(
                 f"host_cpu={governor['host_busy_percent']}% games_cores={governor['games_cores']} "
                 f"duty={governor['applied_duty']}")
+            if governor.get("workers") is not None:
+                parts.append(f"workers={governor['workers_running']}/{governor['workers']}")
+            if governor.get("foreground"):
+                parts.append(f"ceiling={governor['ceiling_percent']}%({governor['foreground']})")
             if governor.get("on_battery"):
                 parts.append("PAUSED_ON_BATTERY")
         return " ".join(parts)
@@ -2301,9 +2566,13 @@ def print_status(state_root: Path, state: dict[str, Any], *, as_json: bool = Fal
     print(f"  scheduler: {'running (lock held)' if report['scheduler_running'] else 'not running'}")
     governor = read_governor_snapshot(state_root) if report["scheduler_running"] else None
     if governor:
+        share = (f"{governor.get('workers_running')} of {governor.get('workers')} workers running"
+                 if governor.get("workers") is not None
+                 else f"at duty {governor.get('applied_duty')}")
+        beside = f" beside {governor['foreground']}" if governor.get("foreground") else ""
         print(f"  cpu governor: host {governor.get('host_busy_percent')}% of ceiling "
-              f"{governor.get('ceiling_percent')}%; games {governor.get('games_cores')} cores "
-              f"at duty {governor.get('applied_duty')} ({governor.get('observed_at')})")
+              f"{governor.get('ceiling_percent')}%{beside}; games {governor.get('games_cores')} "
+              f"cores, {share} ({governor.get('observed_at')})")
     if report["cut_request_pending"]:
         print("  cut request: pending, not yet adopted")
     if report["deadline_at"] is not None:
@@ -2368,8 +2637,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--cpu-share", type=int, metavar="PERCENT",
                         help="game workers as floor(PERCENT%% of logical cores), at most 85")
     parser.add_argument("--machine-cpu-ceiling", type=float, metavar="PERCENT",
-                        help=("pause the owned games for part of each two-second window "
-                              "whenever the whole host is above PERCENT busy"))
+                        help=("give the owned games only what keeps the whole host at or "
+                              "under PERCENT busy: whole one-thread workers are stopped and "
+                              "resumed, a one-process segment is paused for part of each "
+                              "two-second window"))
+    parser.add_argument("--beside", action="append", default=[], metavar="NAME=PERCENT",
+                        help=("while a process with exactly this executable name runs (as "
+                              "`pgrep -x`), the ceiling is PERCENT instead; repeatable, the "
+                              "lowest that applies wins; needs --machine-cpu-ceiling"))
     parser.add_argument("--pause-on-battery", action="store_true",
                         help=("pause the owned games while the host runs on battery or "
                               "discharges on an adapter that cannot keep up (macOS pmset); "
@@ -2440,9 +2715,12 @@ def main(argv: list[str] | None = None) -> int:
             raise SchedulerError("--jobs and --cpu-share are alternatives; pass one")
         jobs = (positive_int(args.jobs, name="--jobs") if args.jobs is not None
                 else workers_for_cores(logical_cores(), args.cpu_share or DEFAULT_WORKER_PERCENT))
+        if args.beside and args.machine_cpu_ceiling is None:
+            raise SchedulerError("--beside needs --machine-cpu-ceiling")
         governor = (CpuGovernor(
             args.machine_cpu_ceiling if args.machine_cpu_ceiling is not None else 100.0,
-            cores=logical_cores(), workers=jobs, pause_on_battery=args.pause_on_battery)
+            cores=logical_cores(), workers=jobs, pause_on_battery=args.pause_on_battery,
+            beside=parse_beside(args.beside))
             if args.machine_cpu_ceiling is not None or args.pause_on_battery else None)
         progress = ProgressLog(args.progress_minutes)
         if args.poll_seconds <= 0:
@@ -2483,6 +2761,8 @@ def main(argv: list[str] | None = None) -> int:
             if governor is not None:
                 print(f"{utc_now()} cpu governor: ceiling {governor.ceiling * 100:g}% of "
                       f"{governor.cores} logical cores; {jobs} game workers"
+                      + "".join(f"; {ceiling * 100:g}% beside {name}"
+                                for name, ceiling in sorted(governor.beside.items()))
                       + ("; paused on battery" if governor.pause_on_battery else ""), flush=True)
 
                 def resume_and_exit(_signum: int, _frame: Any) -> None:

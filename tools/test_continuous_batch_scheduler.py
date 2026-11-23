@@ -326,6 +326,230 @@ class MachineSharing(unittest.TestCase):
             governor.release()
         self.assertNotIn(signals.SIGSTOP, sent)
 
+    # --- whole workers ---------------------------------------------------
+
+    @staticmethod
+    def worker(pid, cpu, *, priority=20, group=77, name="gene_screen"):
+        return scheduler.ProcessRow(pid=pid, group=group, priority=priority, stopped=False,
+                                    cpu_seconds=cpu, name=name)
+
+    def test_whole_worker_count_follows_the_room_under_the_ceiling(self):
+        count = scheduler.governed_workers
+        # 80% of 18 cores is 14.4. The rest of the host burns 9 - 5 = 4 cores,
+        # so 10.4 are allowed: one more worker a window, not all at once.
+        self.assertEqual(count(ceiling=0.8, cores=18, busy=0.5, group_cores=5.0,
+                               running=5, total=14), 6)
+        # Half a core over the allowance is tolerated ...
+        self.assertEqual(count(ceiling=0.8, cores=18, busy=14.8 / 18, group_cores=5.0,
+                               running=5, total=14), 5)
+        # ... and so is less than a whole free core.
+        self.assertEqual(count(ceiling=0.8, cores=18, busy=13.6 / 18, group_cores=5.0,
+                               running=5, total=14), 5)
+        # A compile takes eight cores: the whole overshoot goes in one window.
+        # Rest 4 + 8 = 12, allowed 2.4, so two workers stay.
+        self.assertEqual(count(ceiling=0.8, cores=18, busy=17.0 / 18, group_cores=5.0,
+                               running=5, total=14), 2)
+        # The rest of the host alone is over the ceiling: nothing runs.
+        self.assertEqual(count(ceiling=0.6, cores=18, busy=1.0, group_cores=2.0,
+                               running=3, total=9), 0)
+        # Never more than there are.
+        self.assertEqual(count(ceiling=1.0, cores=18, busy=0.1, group_cores=1.8,
+                               running=3, total=3), 3)
+
+    def test_process_table_names_a_row_by_the_last_part_of_its_path(self):
+        rows = scheduler.parse_process_table(
+            "  14687 14683  20 RN     64:33.53 /Users/a/sources/abc/target/release/gene_screen\n"
+            "  84281 84281  31 S     101:02.10 /Users/a/Sid Meier's Civilization VI/Civ6.app/"
+            "Contents/MacOS/Civ6_Exe_Child\n"
+            "  14690 14683  20 TN      0:01.00 /usr/bin/caffeinate\n"
+            "garbage\n")
+        self.assertEqual([row.name for row in rows],
+                         ["gene_screen", "Civ6_Exe_Child", "caffeinate"])
+        self.assertEqual(rows[0].group, 14683)
+        self.assertAlmostEqual(rows[0].cpu_seconds, 64 * 60 + 33.53)
+        self.assertEqual([row.stopped for row in rows], [False, False, True])
+
+    def governor_for_workers(self, **keywords):
+        import signal as signals
+
+        sent: list[tuple[int, int]] = []
+        lifted: list[int] = []
+        governor = scheduler.CpuGovernor(
+            80, cores=18, processes=lambda: [], send=lambda _group, _which: None,
+            send_one=lambda pid, which: sent.append((pid, which)), lift=lifted.append,
+            **keywords)
+        governor.background_priority = scheduler.BACKGROUND_PRIORITY
+        return governor, sent, lifted, signals
+
+    def test_the_worker_furthest_ahead_stops_first_and_the_one_furthest_behind_resumes(self):
+        governor, sent, _lifted, signals = self.governor_for_workers()
+        workers = [self.worker(1, 500.0), self.worker(2, 900.0), self.worker(3, 100.0),
+                   self.worker(4, 700.0)]
+        self.assertEqual(governor._apply_workers(workers, 2, now=10.0), 2)
+        self.assertEqual(sent, [(2, signals.SIGSTOP), (4, signals.SIGSTOP)])
+        self.assertEqual(governor.held, {2, 4})
+        del sent[:]
+        # Room for one more: the stopped worker with the least CPU time.
+        self.assertEqual(governor._apply_workers(workers, 3, now=12.0), 3)
+        self.assertEqual(sent, [(4, signals.SIGCONT)])
+        self.assertEqual(governor.held, {2})
+
+    def test_stopped_workers_take_turns_with_running_ones(self):
+        governor, sent, _lifted, signals = self.governor_for_workers()
+        workers = [self.worker(1, 900.0), self.worker(2, 400.0), self.worker(3, 100.0)]
+        governor._apply_workers(workers, 2, now=0.0)
+        self.assertEqual(governor.held, {1})
+        del sent[:]
+        later = [self.worker(1, 900.0), self.worker(2, 1000.0), self.worker(3, 700.0)]
+        # Nothing moves before the rotation is due ...
+        governor._apply_workers(later, 2, now=scheduler.WORKER_ROTATE_SECONDS - 1)
+        self.assertEqual(sent, [])
+        # ... then the running worker furthest ahead swaps with the held one.
+        governor._apply_workers(later, 2, now=scheduler.WORKER_ROTATE_SECONDS + 1)
+        self.assertEqual(sent, [(2, signals.SIGSTOP), (1, signals.SIGCONT)])
+        self.assertEqual(governor.held, {2})
+        del sent[:]
+        # A swap that would trade places for under a minute of CPU is skipped.
+        close = [self.worker(1, 1010.0), self.worker(2, 1000.0), self.worker(3, 1030.0)]
+        governor._apply_workers(close, 2, now=3 * scheduler.WORKER_ROTATE_SECONDS)
+        self.assertEqual(sent, [])
+
+    def test_a_worker_parked_in_the_background_band_is_stopped_and_lifted_when_it_resumes(self):
+        governor, sent, lifted, signals = self.governor_for_workers()
+        # Another controller parked worker 3 (priority 4): it is not running
+        # in any useful sense, so it stops first and is never the first back.
+        workers = [self.worker(1, 500.0), self.worker(2, 600.0),
+                   self.worker(3, 100.0, priority=4)]
+        self.assertEqual(governor._apply_workers(workers, 2, now=1.0), 2)
+        self.assertEqual(sent, [(3, signals.SIGSTOP)])
+        self.assertEqual(lifted, [])
+        del sent[:]
+        self.assertEqual(governor._apply_workers(workers, 1, now=2.0), 1)
+        self.assertEqual(sent, [(2, signals.SIGSTOP)])
+        del sent[:]
+        # Back to two: the worker outside the band first, though it is ahead.
+        self.assertEqual(governor._apply_workers(workers, 2, now=3.0), 2)
+        self.assertEqual(sent, [(2, signals.SIGCONT)])
+        self.assertEqual(lifted, [])
+        del sent[:]
+        # Room for the third: it is lifted out of the band as it resumes.
+        self.assertEqual(governor._apply_workers(workers, 3, now=4.0), 3)
+        self.assertEqual(lifted, [3])
+        self.assertEqual(sent, [(3, signals.SIGCONT)])
+
+    def test_governor_stops_whole_workers_never_the_group_and_resumes_on_release(self):
+        import signal as signals
+        import threading
+        import time
+
+        class Host:
+            busy = 0
+            idle = 0
+
+            def ticks(self):
+                # Every window the host reads 17 of 18 cores busy.
+                Host.busy += 17
+                Host.idle += 1
+                return (Host.busy, Host.idle)
+
+        clock = {"cpu": 0.0}
+
+        def table():
+            # Four workers that burn nothing measurable, a launcher, and a
+            # stranger in another group: the rest of the host holds the load.
+            clock["cpu"] += 0.001
+            return [self.worker(pid, 100.0 * pid + clock["cpu"]) for pid in (11, 12, 13, 14)] + [
+                self.worker(10, 1.0, name="Python"), self.worker(99, 5.0, group=5)]
+
+        group_signals: list[int] = []
+        one: list[tuple[int, int]] = []
+        stopped = threading.Event()
+
+        def send_one(pid, which):
+            one.append((pid, which))
+            if len({p for p, w in one if w == signals.SIGSTOP}) == 4:
+                stopped.set()
+
+        governor = scheduler.CpuGovernor(
+            80, cores=18, host=Host(), processes=table,
+            send=lambda _group, which: group_signals.append(which), send_one=send_one)
+        with mock.patch.object(scheduler, "GOVERNOR_WINDOW_SECONDS", 0.02):
+            governor.govern(77)
+            self.assertTrue(stopped.wait(3.0), "an over-ceiling host must stop every worker")
+            deadline = time.monotonic() + 2.0
+            while governor.snapshot().get("workers_running") != 0 and time.monotonic() < deadline:
+                time.sleep(0.01)
+            snapshot = governor.snapshot()
+            governor.release()
+        self.assertEqual(snapshot["mode"], "workers")
+        self.assertEqual((snapshot["workers"], snapshot["workers_running"]), (4, 0))
+        self.assertEqual({pid for pid, _which in one}, {11, 12, 13, 14},
+                         "only gene_screen processes of the governed group are signalled")
+        self.assertNotIn(signals.SIGSTOP, group_signals, "whole workers: the group is never sliced")
+        self.assertEqual(group_signals[-1], signals.SIGCONT, "release must leave the games running")
+        self.assertEqual(governor.held, set())
+
+    def test_work_named_beside_lowers_the_ceiling_while_it_runs(self):
+        import threading
+        import time
+
+        class Host:
+            busy = 0
+            idle = 0
+
+            def ticks(self):
+                # 70% busy: under an 80% ceiling, over a 60% one.
+                Host.busy += 7
+                Host.idle += 3
+                return (Host.busy, Host.idle)
+
+        game_up = threading.Event()
+
+        def table():
+            rows = [self.worker(pid, 100.0 * pid) for pid in (11, 12, 13)]
+            if game_up.is_set():
+                rows.append(self.worker(500, 9.0, group=500, name="Civ6_Exe_Child"))
+            return rows
+
+        governor = scheduler.CpuGovernor(
+            80, cores=10, host=Host(), processes=table, send=lambda _group, _which: None,
+            send_one=lambda _pid, _which: None, beside={"Civ6_Exe_Child": 60, "rustc": 70})
+
+        def reading(want):
+            deadline = time.monotonic() + 3.0
+            while time.monotonic() < deadline:
+                snapshot = governor.snapshot()
+                if snapshot and want(snapshot):
+                    return snapshot
+                time.sleep(0.01)
+            self.fail(f"no such reading; last was {governor.snapshot()}")
+
+        with mock.patch.object(scheduler, "GOVERNOR_WINDOW_SECONDS", 0.02):
+            governor.govern(77)
+            # The rest of the host holds seven of ten cores: one worker fits
+            # under eight, none under six.
+            alone = reading(lambda snapshot: "foreground" not in snapshot
+                            and snapshot["workers_running"] == 1)
+            self.assertEqual(alone["ceiling_percent"], 80.0)
+            self.assertEqual(alone["workers_next"], 1)
+            game_up.set()
+            beside = reading(lambda snapshot: snapshot.get("foreground") == "Civ6_Exe_Child"
+                             and snapshot["workers_running"] == 0)
+            self.assertEqual(beside["ceiling_percent"], 60.0)
+            governor.release()
+
+    def test_beside_options_name_a_process_and_a_ceiling(self):
+        self.assertEqual(scheduler.parse_beside(["Civ6_Exe_Child=70", "rustc=60"]),
+                         {"Civ6_Exe_Child": 70.0, "rustc": 60.0})
+        for bad in ("rustc", "=60", "rustc=fast"):
+            with self.assertRaises(scheduler.SchedulerError):
+                scheduler.parse_beside([bad])
+        with self.assertRaises(scheduler.SchedulerError):
+            scheduler.CpuGovernor(80, cores=18, beside={"rustc": 0})
+        # Work to stand back for can only lower the ceiling.
+        governor = scheduler.CpuGovernor(60, cores=18, beside={"rustc": 90})
+        self.assertEqual(governor.beside, {"rustc": 0.6})
+
     def test_progress_line_counts_this_batch_and_every_batch_before_it(self):
         state = scheduler.new_state(1000, 5000)
         state["history"].append({"complete_games": 5000, "complete_seats": 30000})
