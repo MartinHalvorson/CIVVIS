@@ -414,7 +414,8 @@ fn live_policy_counterfactuals_replay_serially_on_workers() {
 /// exactly the set of paths the board happens to open.
 #[test]
 fn a_reading_inert_policy_card_moves_the_empire_reading_by_exactly_zero() {
-    let mut game = Game::new_full(4, 44, 30, 7_320_017, 300, 6, true);
+    let seed = crate::rng::fixture_seed("INERTCARD", 7_320_018);
+    let mut game = Game::new_full(4, 44, 30, seed, 300, 6, true);
     game.set_fog_memory(false);
     let mut ais: Vec<AdvancedAi> = game.players.iter().map(|_| AdvancedAi::new()).collect();
     while game.winner.is_none() && game.turn <= 110 {

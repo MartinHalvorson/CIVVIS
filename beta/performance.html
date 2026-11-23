@@ -247,13 +247,14 @@
      (operator 2026-11-22: "at the top of civvis performance we want to
      calculate a multiplier on the theoretical and experimetnal throughput
      of the simualtor. and the calculations ... add this info, maybe in
-     tables to the top"): a sentence that answers it, four tiles with the
-     multipliers, and two tables in which every figure stands beside the sum
-     that gives it. The tiles are the percentile tiles, four across and
-     their figure larger; two and two on a phone. */
+     tables to the top"): a sentence that answers it, tiles with the
+     multipliers, the goals among them, and tables in which every figure
+     stands beside the sum that gives it. The tiles are the percentile
+     tiles with their figure larger, as many across as fit; two across on a
+     phone. */
   .perf-speed-lede { max-width: 900px; margin: 6px 0 0; color: var(--text); font-size: 14.5px; line-height: 1.55; }
   .perf-speed-lede b { color: #fff; font-weight: 700; }
-  .perf-speed-tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .perf-speed-tiles { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
   /* A grid set by the page is not hidden by the attribute alone. */
   .perf-speed-tiles[hidden] { display: none; }
   @media (max-width: 719px) { .perf-speed-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
@@ -276,6 +277,10 @@
   .perf-kind { display: inline-block; margin-left: 4px; padding: 1px 6px; vertical-align: 1px; border: 1px solid var(--border-strong); border-radius: 3px; color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: 0.04em; line-height: 1.4; text-transform: uppercase; }
   .perf-kind.is-measured { border-color: var(--series); background: rgba(57, 135, 229, 0.18); color: #fff; }
   .perf-kind.is-goal { border-color: var(--gold); color: var(--gold); }
+  /* An estimate is neither a run nor a sum of readings alone: what renting
+     the rest of the way to a goal would cost, and whose estimate it is. */
+  .perf-kind.is-estimate { border-style: dashed; border-color: var(--gold); color: var(--gold); }
+  .perf-cloud-sub b { color: #fff; font-weight: 700; }
   .perf-sum-table tr.is-measured td:first-child { box-shadow: inset 2px 0 0 var(--series); padding-left: 8px; }
   /* The sums table is wider than a phone: its first column stays in view. */
   .perf-sum-scroll .rank-table th:first-child,
@@ -512,6 +517,31 @@
             </table>
           </div>
         </div>
+        <!-- What renting the rest of the way to each goal is estimated to
+             cost (operator 2026-11-22: "Addd 1 billion x to the scaling
+             scale as well. we should also estimate the cloud cost in $ to
+             fill i nthe remaining amount (note that this is a Fable 5.2
+             best estimate of the numbers)"). The machine rented, its price
+             and who made the estimate are the `cloud` entry of the
+             readings, and `speedup_timeline.rented` works out the rows.
+             The words over the table are written with them, so that they
+             name whose estimate it is. -->
+        <div class="res-kind" id="perf-cloud" hidden>
+          <h3 class="res-kind-title">The rest of the way, rented: an estimate of the cloud cost</h3>
+          <p class="rank-sub perf-cloud-sub" id="perf-cloud-sub"></p>
+          <div class="res-scroll perf-sum-scroll">
+            <table class="rank-table perf-sum-table" id="perf-cloud-table">
+              <thead>
+                <tr>
+                  <th scope="col">Rented</th><th scope="col">Speedup it adds</th><th scope="col">Machines</th>
+                  <th scope="col" class="perf-sum">The calculation</th>
+                  <th scope="col">An hour, list price</th><th scope="col">An hour, spot price</th><th scope="col">A year, list price</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
         <details class="res-details">
           <summary>How each figure was measured</summary>
           <dl class="perf-from" id="perf-from"></dl>
@@ -713,7 +743,7 @@
     const hideTip = () => { tip.hidden = true; };
 
     // ---- How many times faster than a game played by hand: the sentence,
-    // the four tiles and the two tables of sums. A way of playing is named
+    // the tiles and the tables of sums. A way of playing is named
     // here by its key in the readings; a key this page has no name for
     // stands under the key itself.
     const speed = data.speedup && typeof data.speedup === "object" ? data.speedup : null;
@@ -728,7 +758,8 @@
     const text = (value) => (value == null ? "" : String(value));
     const speedGames = speed && Array.isArray(speed.games) ? speed.games.filter((row) => row && row.key && row.times) : [];
     if (speedGames.length) {
-      const base = speed.base || {}, answer = speed.answer, goal = speed.goal || {}, machine = speed.machine || {};
+      const base = speed.base || {}, answer = speed.answer, machine = speed.machine || {};
+      const goals = Array.isArray(speed.goals) ? speed.goals.filter((goal) => goal && goal.times) : [];
       const cores = Number(machine.cores) || 0;
       const host = machine.chip ? "one " + machine.chip : "one machine";
       const named = (row, said) => {
@@ -757,7 +788,12 @@
           tile("Every core, in theory", text(answer.theory), "the measured run reaches " + text(answer.reaches),
             (cores ? cores + " cores" : "every core") + (answer.theory_basis === "alone" ? " as fast as one game alone" : " as fast as one core was measured"));
         }
-        if (goal.times) tile("The goal", text(goal.times), "a game every " + text(goal.time), text(goal.a_minute) + " games a minute");
+        // A goal, and what renting the rest of the way to it is estimated
+        // to cost.
+        for (const goal of goals) {
+          tile("Goal", text(goal.words || goal.times), "a game every " + text(goal.time),
+            text(goal.a_minute) + " games a minute" + (goal.cost ? ". Renting the rest: about " + text(goal.cost) + " an hour." : ""));
+        }
       }
       tiles.hidden = !tiles.childElementCount;
 
@@ -778,14 +814,14 @@
           + (row.had && cores ? " The workers were given " + text(row.had) + " of the " + cores + " cores." : ""),
         one_core: (row) => "Every core as fast as the one core of the table above: " + text(row.one_game) + " a game on each.",
         alone: (row) => "Every core as fast as one game with the machine to itself: " + text(row.one_game) + " a game on each.",
-        goal: (row) => (row.key === "goal" ? "The goal of the whole project." : "The goal for every core of " + host + "."),
+        goal: (row) => (row.whole ? "A goal of the whole project." : "The goal for every core of " + host + "."),
       };
       const through = Array.isArray(speed.throughput) ? speed.throughput.filter((row) => row && row.key && KINDS[row.kind]) : [];
       const body = document.querySelector("#perf-throughput-table tbody");
       for (const row of through) {
         const tr = el("tr", row.kind === "measured" ? "is-measured" : "");
         const first = row.kind === "goal" ? el("td") : named(row, (TOLD[row.kind === "theory" ? row.basis : row.kind] || (() => ""))(row));
-        if (row.kind === "goal") first.append(el("b", "", row.key === "goal" ? text(row.times) + " in all" : "A game every " + text(row.one_game)), el("small", "", TOLD.goal(row)));
+        if (row.kind === "goal") first.append(el("b", "", row.whole ? text(row.times) + " in all" : "A game every " + text(row.one_game)), el("small", "", TOLD.goal(row)));
         first.firstChild.after(" ", el("span", "perf-kind is-" + row.kind, KINDS[row.kind]));
         tr.append(first, el("td", "perf-times", text(row.times)), el("td", "", text(row.a_minute)), el("td", "", text(row.an_hour)),
           el("td", "perf-sum", text(row.sum)), el("td", "", row.kind === "measured" ? "—" : row.reaches ? text(row.reaches) : "not run yet"));
@@ -874,6 +910,49 @@
         document.getElementById("perf-processors").hidden = false;
       }
 
+      // What renting the rest of the way to each goal is estimated to cost
+      // (operator 2026-11-22: "we should also estimate the cloud cost in $
+      // to fill i nthe remaining amount (note that this is a Fable 5.2 best
+      // estimate of the numbers)"): the machine rented, then a row for each
+      // goal, every figure with its sum under it. It is an estimate, and
+      // the words over the table open on whose.
+      const cloud = speed.cloud && typeof speed.cloud === "object" ? speed.cloud : null;
+      const rents = cloud && Array.isArray(cloud.rows) ? cloud.rows.filter((row) => row && row.key && row.times) : [];
+      if (cloud && cloud.machine && rents.length) {
+        document.getElementById("perf-cloud-sub").append(
+          el("b", "", "A best estimate by " + text(cloud.by) + (cloud.taken ? ", " + day(cloud.taken) : "") + "."),
+          " Not a quote and not a run: nothing has been played in a cloud. "
+          + host.charAt(0).toUpperCase() + host.slice(1) + " reaches " + text(cloud.have) + ", and the rest of the way to each goal is taken as machines rented beside it: "
+          + text(cloud.machine) + ", at its list price and at its spot price. One game on one of its cores is the one-core " + way(cloud.of)
+          + " reading, longer by the two processors’ single thread scores, and every core is taken to play as fast as one."
+          + (cloud.a_million ? " At that rate a million games cost about " + text(cloud.a_million) + " at the list price"
+            + (cloud.spot_a_million ? " and " + text(cloud.spot_a_million) + " at the spot price" : "") + "." : "")
+          + (cloud.hours_a_year ? " A year is " + text(cloud.hours_a_year) + " hours of playing without a stop." : ""));
+        const summed = (value, said, cls) => {
+          const cell = el("td", cls || "", value ? text(value) : "—");
+          if (value && said) cell.append(el("small", "", text(said)));
+          return cell;
+        };
+        const estimate = () => el("span", "perf-kind is-estimate", "Estimate");
+        const rent = document.querySelector("#perf-cloud-table tbody");
+        const one = el("tr"), rented = el("td");
+        rented.append(el("b", "", "One " + text(cloud.machine)), " ", estimate(), el("small", "",
+          (Number(cloud.cores) ? Number(cloud.cores) + " cores. " : "") + "One game on one of them takes " + text(cloud.one_game) + ": " + text(cloud.one_game_sum) + "."));
+        one.append(rented, summed(cloud.times, cloud.a_minute && text(cloud.a_minute) + " games a minute", "perf-times"), summed("One"),
+          el("td", "perf-sum", text(cloud.times_sum)), summed(cloud.price), summed(cloud.spot), summed(cloud.a_year, cloud.spot_a_year && "spot: " + text(cloud.spot_a_year)));
+        rent.append(one);
+        for (const row of rents) {
+          const tr = el("tr"), name = el("td");
+          name.append(el("b", "", "The rest of the way to " + text(row.times)), " ", estimate(),
+            el("small", "", "Beside the " + text(cloud.have) + " of " + host + "."));
+          tr.append(name, summed(row.rest, row.rest_sum, "perf-times"), summed(row.machines, row.cores && text(row.cores) + " cores"),
+            el("td", "perf-sum", text(row.machines_sum)), summed(row.an_hour, row.an_hour_sum), summed(row.spot_an_hour, row.spot_an_hour_sum),
+            summed(row.a_year, row.spot_a_year && "spot: " + text(row.spot_a_year)));
+          rent.append(tr);
+        }
+        document.getElementById("perf-cloud").hidden = false;
+      }
+
       // How each figure was measured: the reading's own account. The
       // readings mark a command with backticks, which a page does not.
       const from = document.getElementById("perf-from");
@@ -887,6 +966,11 @@
         const name = el("dt", "", "Single thread and multithread scores");
         if (site.read) name.append(el("span", "", " · " + day(site.read)));
         from.append(name, el("dd", "", text(site.from)));
+      }
+      if (cloud && cloud.from) {
+        const name = el("dt", "", "The cloud cost" + (cloud.by ? ", estimated by " + text(cloud.by) : ""));
+        if (cloud.taken) name.append(el("span", "", " · " + day(cloud.taken)));
+        from.append(name, el("dd", "", text(cloud.from)));
       }
       from.parentElement.hidden = !from.childElementCount;
       document.getElementById("perf-speedup").hidden = false;

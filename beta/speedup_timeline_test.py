@@ -41,7 +41,7 @@ def tree(scratch: str, ledger: dict | None, runs: list[dict] | None = None, list
 class Words(unittest.TestCase):
     def test_a_time_is_worded_by_its_size(self):
         for seconds, words in [
-            (0.018, "18 ms"), (0.9, "900 ms"), (1, "1 s"), (3.273, "3.3 s"), (9.94, "9.9 s"), (9.96, "10 s"), (21.4, "21 s"),
+            (0.000018, "18 µs"), (0.00099, "990 µs"), (0.001, "1 ms"), (0.018, "18 ms"), (0.9, "900 ms"), (1, "1 s"), (3.273, "3.3 s"), (9.94, "9.9 s"), (9.96, "10 s"), (21.4, "21 s"),
             (99.4, "99 s"), (99.6, "1.7 min"), (600, "10 min"), (757, "12.6 min"), (5969, "99.5 min"),
             (5970, "1.7 h"), (18000, "5 h"), (19800, "5.5 h"),
         ]:
@@ -50,9 +50,23 @@ class Words(unittest.TestCase):
     def test_a_multiplier_is_a_whole_number_with_its_thousands_marked(self):
         for multiplier, words in [
             (1, "1x"), (1.02, "1x"), (2.5, "2.5x"), (9.9, "9.9x"), (9.96, "10x"), (23.78, "24x"),
-            (5498.9999, "5,499x"), (18000, "18,000x"), (1000000, "1,000,000x"),
+            (5498.9999, "5,499x"), (18000, "18,000x"), (1000000, "1,000,000x"), (1000000000, "1,000,000,000x"),
         ]:
             self.assertEqual(speedup_timeline.times(multiplier), words, multiplier)
+
+    def test_a_mark_of_the_scale_is_in_words_from_a_million_up(self):
+        for multiplier, words in [
+            (1, "1x"), (1000, "1,000x"), (100000, "100,000x"), (1000000, "1 million x"), (2500000, "2.5 million x"),
+            (100000000, "100 million x"), (1000000000, "1 billion x"),
+        ]:
+            self.assertEqual(speedup_timeline.scale(multiplier), words, multiplier)
+
+    def test_a_sum_of_money_is_a_price_to_the_cent_or_an_estimate_to_three_figures(self):
+        for value, words in [
+            (2.85, "$2.85"), (10.346, "$10.35"), (74.1, "$74"), (268.996, "$269"), (999.6, "$1,000"), (1336.7, "$1,340"), (90631, "$90,600"),
+            (267351, "$267,000"), (999600, "$1 million"), (2356406, "$2.36 million"), (645200000, "$645 million"), (2342000000, "$2.34 billion"),
+        ]:
+            self.assertEqual(speedup_timeline.dollars(value), words, value)
 
 
 class Ledger(unittest.TestCase):
@@ -78,7 +92,14 @@ class Ledger(unittest.TestCase):
                 self.assertGreater(len(reading["from"]), 20, f"{stop['key']}: a reading says how it was measured")
         # Nothing derived is kept: a multiplier written here would be a copy.
         self.assertNotIn("multiplier", json.dumps(LEDGER["stops"]))
-        self.assertGreater(LEDGER["goal"], 1)
+
+    def test_the_goals_are_the_operator_s_two(self):
+        # Operator 2026-11-22: "1,000,000x speed imrpove would be a huge
+        # achievement", and later that day "Addd 1 billion x to the scaling
+        # scale as well."
+        self.assertEqual([(goal["key"], goal["times"]) for goal in LEDGER["goals"]], [("million", 1000000), ("billion", 1000000000)])
+        self.assertEqual(speedup_timeline.marked(LEDGER), LEDGER["goals"])
+        self.assertNotIn("goal", LEDGER)
 
     def test_the_first_stop_is_the_one_the_others_are_measured_against(self):
         shown = speedup_timeline.timeline(ROOT)
@@ -96,9 +117,13 @@ class Ledger(unittest.TestCase):
         self.assertEqual(shown["speedup"], fastest["times"])
         self.assertEqual(shown["fastest"], fastest["key"])
         self.assertEqual(shown["reach"], fastest["at"])
-        self.assertEqual(shown["goal"], speedup_timeline.times(LEDGER["goal"]))
+        # The goals are on the line smallest first, and it ends at the last.
         base = shown["stops"][0]["seconds"]
-        self.assertEqual(shown["goal_time"], speedup_timeline.clock(base / LEDGER["goal"]))
+        self.assertEqual([(goal["key"], goal["times"], goal["time"]) for goal in shown["goals"]],
+                         [(goal["key"], speedup_timeline.times(goal["times"]), speedup_timeline.clock(base / goal["times"])) for goal in LEDGER["goals"]])
+        self.assertEqual([goal["at"] for goal in shown["goals"]], [0.6667, 1.0])
+        self.assertEqual((shown["goals"][-1]["times"], shown["goals"][-1]["time"]), ("1,000,000,000x", "18 µs"))
+        self.assertEqual(shown["ticks"][-1], {"times": "1 billion x", "at": 1.0})
         self.assertRegex(shown["speedup"], r"^\d{1,3}(,\d{3})*x$")
 
     def test_every_core_follows_the_games_per_minute_record(self):
@@ -115,7 +140,7 @@ class Ledger(unittest.TestCase):
 
 class Following(unittest.TestCase):
     LEDGER = {
-        "goal": 1000000,
+        "goals": [{"key": "million", "times": 1000000}],
         "stops": [
             {"key": "hand", "readings": [{"taken": "2026-11-22", "seconds": 18000, "from": "a person's own games"}]},
             {"key": "self_play", "goal_seconds": 10, "readings": [
@@ -158,12 +183,27 @@ class Following(unittest.TestCase):
         self.assertNotIn("was", stops["hand"])
         self.assertNotIn("goal", stops["hand"])
         self.assertEqual((shown["speedup"], shown["fastest"], shown["was"]), ("9,000x", "all_cores", "5,400x on 11-22"))
-        self.assertEqual((shown["goal"], shown["goal_time"]), ("1,000,000x", "18 ms"))
+        self.assertEqual(shown["goals"], [{"key": "million", "times": "1,000,000x", "time": "18 ms", "at": 1.0, "side": "above"}])
         # The line runs by tenfolds from 1x at one end to the goal at the other.
         self.assertEqual([tick["times"] for tick in shown["ticks"]],
-                         ["1x", "10x", "100x", "1,000x", "10,000x", "100,000x", "1,000,000x"])
+                         ["1x", "10x", "100x", "1,000x", "10,000x", "100,000x", "1 million x"])
         self.assertEqual([tick["at"] for tick in shown["ticks"]], [0.0, 0.1667, 0.3333, 0.5, 0.6667, 0.8333, 1.0])
         self.assertAlmostEqual(stops["all_cores"]["at"], 0.659, places=3)
+        # No estimate of a cloud's cost in the ledger: none on the page.
+        self.assertNotIn("cloud", shown)
+
+    def test_a_second_goal_lengthens_the_line_and_the_first_keeps_its_place_on_it(self):
+        ledger = json.loads(json.dumps(self.LEDGER))
+        ledger["goals"] = [{"key": "billion", "times": 1000000000}, {"key": "million", "times": 1000000}]
+        with tempfile.TemporaryDirectory() as scratch:
+            shown = speedup_timeline.timeline(tree(scratch, ledger, self.RUNS))
+        self.assertEqual([(goal["key"], goal["times"], goal["time"], goal["at"]) for goal in shown["goals"]],
+                         [("million", "1,000,000x", "18 ms", 0.6667), ("billion", "1,000,000,000x", "18 µs", 1.0)])
+        self.assertEqual([tick["times"] for tick in shown["ticks"]],
+                         ["1x", "10x", "100x", "1,000x", "10,000x", "100,000x", "1 million x", "10 million x", "100 million x", "1 billion x"])
+        stops = {stop["key"]: stop for stop in shown["stops"]}
+        self.assertAlmostEqual(stops["all_cores"]["at"], 0.4394, places=3)
+        self.assertEqual(shown["reach"], stops["all_cores"]["at"])
 
     def test_a_revision_with_no_ledger_shows_nothing(self):
         with tempfile.TemporaryDirectory() as scratch:
@@ -173,7 +213,10 @@ class Following(unittest.TestCase):
         with tempfile.TemporaryDirectory() as scratch:
             self.assertIsNone(speedup_timeline.timeline(tree(scratch, self.LEDGER)))
         with tempfile.TemporaryDirectory() as scratch:
-            self.assertIsNone(speedup_timeline.timeline(tree(scratch, {"goal": 1000000, "stops": []})))
+            self.assertIsNone(speedup_timeline.timeline(tree(scratch, {"goals": [{"key": "million", "times": 1000000}], "stops": []})))
+        # Nor one with no goal for its line to end at.
+        with tempfile.TemporaryDirectory() as scratch:
+            self.assertIsNone(speedup_timeline.timeline(tree(scratch, {**self.LEDGER, "goals": []}, self.RUNS)))
 
     def test_stops_that_stand_close_together_take_opposite_sides(self):
         # Self-play and the Deity sim are one engine and stand a few pixels
@@ -182,22 +225,35 @@ class Following(unittest.TestCase):
                          ["below", "above", "below", "above", "below"])
         # In whatever order the ledger lists them.
         self.assertEqual(speedup_timeline.sides([0.45, 0.0, 0.44]), ["below", "below", "above"])
+
+    def test_words_that_would_meet_on_one_side_stand_a_row_out(self):
+        # A line that runs to a far goal holds the stops in a short stretch
+        # of it. Words are 150px wide on a line of at least 1040px.
+        room = speedup_timeline.ROOM
+        self.assertAlmostEqual(room, 150 / 1040)
+        self.assertEqual(speedup_timeline.rows([0.0, 0.28, 0.42], ["below", "below", "below"]), [False, False, True])
+        self.assertEqual(speedup_timeline.rows([0.0, 0.28, 0.42], ["below", "above", "below"]), [False, False, False])
+        # In whatever order they are listed, and a third goes back to the
+        # row next to the line once there is room for it there.
+        self.assertEqual(speedup_timeline.rows([0.36, 0.1, 0.0, 0.2], ["above"] * 4), [False, True, False, False])
+        self.assertIn("@media (min-width: 1120px) {", LANDING)
         shown = speedup_timeline.timeline(ROOT)
-        by_side: dict[str, list[float]] = {"above": [], "below": []}
-        for stop in shown["stops"]:
-            by_side[stop["side"]].append(stop["at"])
-        for side, places in by_side.items():
+        entries = shown["stops"] + shown["goals"]
+        self.assertTrue(all(goal["side"] == "above" for goal in shown["goals"]))
+        by_row: dict[tuple[str, bool], list[float]] = {}
+        for entry in entries:
+            by_row.setdefault((entry["side"], bool(entry.get("far"))), []).append(entry["at"])
+        for (side, far), places in by_row.items():
             places.sort()
-            for near, far in zip(places, places[1:]):
-                # Words are 150px wide on a line of at least 936px.
-                self.assertGreaterEqual(far - near, 150 / 936, f"two stops' words meet {side} the line")
+            for near, next_one in zip(places, places[1:]):
+                self.assertGreaterEqual(next_one - near, room, f"two stops' words meet {side} the line{', a row out' if far else ''}")
 
 
 def done_again(said: str) -> float:
     """A sum as the page writes it, worked out: `18 cores × 18,000 s ÷ 57.1 s`
     with its words dropped and its signs read."""
-    bare = re.sub(r"[A-Za-z]+", " ", re.sub(r"(?<=\d),(?=\d)", "", said)).replace("×", "*").replace("÷", "/")
-    assert re.fullmatch(r"[\d\s.*/()]+", bare), said
+    bare = re.sub(r"[A-Za-z$]+", " ", re.sub(r"(?<=\d),(?=\d)", "", said)).replace("×", "*").replace("÷", "/").replace("−", "-")
+    assert re.fullmatch(r"[\d\s.*/()-]+", bare), said
     return eval(bare)  # noqa: S307 (digits and signs only, checked above)
 
 
@@ -209,7 +265,7 @@ class Worked(unittest.TestCase):
     deity computer control, deity self-play, civvis self-play.")."""
 
     LEDGER = {
-        "goal": 1000000,
+        "goals": [{"key": "million", "times": 1000000}],
         "stops": [
             {"key": "hand", "readings": [{"taken": "2026-11-22", "seconds": 18000, "from": "a person's own games"}]},
             {"key": "control", "readings": [{"taken": "2026-11-22", "seconds": 750, "from": "the middle verification game"}]},
@@ -242,7 +298,8 @@ class Worked(unittest.TestCase):
             self.assertEqual(speedup_timeline.rate(value), words, value)
         for value, words in [(757, "757"), (57.1, "57.1"), (29.1, "29.1"), (18.33, "18.33"), (194.7, "194.7"), (5, "5"), (18000, "18,000"), (999.4, "999.4")]:
             self.assertEqual(speedup_timeline.figure(value), words, value)
-        for part, words in [(0.9692, "97%"), (0.679, "68%"), (0.3055, "31%"), (0.0057, "0.6%"), (0.005499, "0.5%"), (1.0, "100%")]:
+        for part, words in [(0.9692, "97%"), (0.679, "68%"), (0.3055, "31%"), (0.0057, "0.6%"), (0.005499, "0.5%"), (1.0, "100%"),
+                            (0.0024, "0.2%"), (0.000005499, "0.0005%"), (0.0, "0%")]:
             self.assertEqual(speedup_timeline.share(part), words, part)
 
     def test_one_game_at_a_time_is_every_stop_with_readings_of_its_own(self):
@@ -276,7 +333,7 @@ class Worked(unittest.TestCase):
                 ("deity_sim", "theory", "one_core"),
                 # and the goals: the run's own, then the whole line's.
                 ("all_cores", "goal", ""),
-                ("goal", "goal", ""),
+                ("million", "goal", ""),
             ],
         )
         run, one_core, alone, deity, own_goal, goal = rows
@@ -298,7 +355,9 @@ class Worked(unittest.TestCase):
         # The goals, with the share of each the run reaches.
         self.assertEqual((own_goal["times"], own_goal["a_minute"], own_goal["an_hour"], own_goal["sum"], own_goal["reaches"]), ("18,000x", "60", "3,600", "18,000 s ÷ 1 s", "13%"))
         self.assertEqual((goal["times"], goal["a_minute"], goal["an_hour"], goal["sum"], goal["reaches"]), ("1,000,000x", "3,333", "200,000", "a game every 18 ms", "0.2%"))
-        self.assertEqual(shown["goal"], {"times": "1,000,000x", "time": "18 ms", "a_minute": "3,333", "an_hour": "200,000"})
+        self.assertEqual(("whole" in own_goal, goal["whole"]), (False, True))
+        self.assertEqual(shown["goals"], [{"key": "million", "times": "1,000,000x", "words": "1 million x", "time": "18 ms", "a_minute": "3,333", "an_hour": "200,000"}])
+        self.assertNotIn("cloud", shown)
         # The opening sentence: self-play one game at a time, on every core
         # as measured, and the highest theory there is for it.
         self.assertEqual(
@@ -309,7 +368,7 @@ class Worked(unittest.TestCase):
 
     def test_every_sum_shown_gives_the_figure_beside_it(self):
         for shown in (self.shown(), speedup_timeline.worked(ROOT)):
-            rows = [row for row in shown["games"][1:] + shown["throughput"] if row["key"] != "goal"]
+            rows = [row for row in shown["games"][1:] + shown["throughput"] if not row.get("whole")]
             self.assertGreaterEqual(len(rows), 5)
             for row in rows:
                 # The figures of a sum are written to four figures.
@@ -338,7 +397,7 @@ class Worked(unittest.TestCase):
         with tempfile.TemporaryDirectory() as scratch:
             self.assertIsNone(speedup_timeline.worked(tree(scratch, None)))
         with tempfile.TemporaryDirectory() as scratch:
-            self.assertIsNone(speedup_timeline.worked(tree(scratch, {"goal": 1000000, "stops": []})))
+            self.assertIsNone(speedup_timeline.worked(tree(scratch, {"goals": [{"key": "million", "times": 1000000}], "stops": []})))
 
     def test_the_two_pages_read_one_ledger_and_agree(self):
         shown, line = speedup_timeline.worked(ROOT), speedup_timeline.timeline(ROOT)
@@ -347,7 +406,14 @@ class Worked(unittest.TestCase):
             self.assertEqual((row["times"], row["time"]), (stops[row["key"]]["times"], stops[row["key"]]["time"]), row["key"])
         # The home page's number is the run's.
         self.assertEqual(shown["answer"]["all"], line["speedup"])
-        self.assertEqual(shown["goal"]["times"], line["goal"])
+        self.assertEqual([(goal["key"], goal["times"], goal["time"]) for goal in shown["goals"]],
+                         [(goal["key"], goal["times"], goal["time"]) for goal in line["goals"]])
+        # Every goal of the line is a row of the throughput table, the run
+        # held against it.
+        whole = [row for row in shown["throughput"] if row.get("whole")]
+        self.assertEqual([(row["key"], row["times"], row["sum"]) for row in whole],
+                         [("million", "1,000,000x", "a game every 18 ms"), ("billion", "1,000,000,000x", "a game every 18 µs")])
+        self.assertEqual([row["reaches"] for row in whole], ["0.5%", "0.0005%"])
         # The operator's baseline and his three ways of playing, in the
         # order he listed them, then the theory and the run for self-play.
         self.assertEqual([row["key"] for row in shown["games"]], ["hand", "control", "deity_sim", "self_play"])
@@ -566,6 +632,135 @@ class Processors(unittest.TestCase):
             self.assertEqual([cell["key"] for cell in row["games"]], ["deity_sim", "self_play"])
 
 
+class Rented(unittest.TestCase):
+    """What renting the rest of the way to a goal is estimated to cost
+    (operator 2026-11-22: "Addd 1 billion x to the scaling scale as well. we
+    should also estimate the cloud cost in $ to fill i nthe remaining amount
+    (note that this is a Fable 5.2 best estimate of the numbers)")."""
+
+    CLOUD = [
+        {"taken": "2026-11-23", "by": "A Model", "machine": "Rented Hundred", "cores": 100, "of": "self_play", "single_thread": 2000,
+         "dollars_an_hour": 5.0, "spot_dollars_an_hour": 2.0, "from": "an estimate from a list price and a score"},
+        {"taken": "2026-11-01", "by": "An Older Model", "machine": "Rented Ten", "cores": 10, "of": "self_play", "single_thread": 1000,
+         "dollars_an_hour": 1.0, "from": "an older estimate"},
+    ]
+
+    def ledger(self, **changed) -> dict:
+        ledger = json.loads(json.dumps(Worked.LEDGER))
+        ledger["goals"] = [{"key": "million", "times": 1000000}, {"key": "billion", "times": 1000000000}]
+        ledger["cloud"] = json.loads(json.dumps(self.CLOUD))
+        ledger.update(changed)
+        return ledger
+
+    def both(self, ledger: dict, listed: dict | None = Processors.LISTED) -> tuple[dict, dict]:
+        with tempfile.TemporaryDirectory() as scratch:
+            source = tree(scratch, ledger, Worked.RUNS, listed)
+            return speedup_timeline.worked(source), speedup_timeline.timeline(source)
+
+    def test_a_rented_machine_is_its_cores_at_one_core_s_speed_by_the_two_scores(self):
+        cloud = self.both(self.ledger())[0]["cloud"]
+        # The newest estimate is the one shown, and it says whose it is.
+        self.assertEqual((cloud["by"], cloud["taken"], cloud["machine"], cloud["cores"], cloud["of"]), ("A Model", "2026-11-23", "Rented Hundred", 100, "self_play"))
+        self.assertEqual(cloud["from"], "an estimate from a list price and a score")
+        # One game on one core: the 60 s one-core reading, longer by the
+        # measured processor's 4,000 over the rented one's 2,000.
+        self.assertEqual((cloud["seconds"], cloud["one_game"], cloud["one_game_sum"]), (120.0, "2 min", "60 s × 4,000 ÷ 2,000"))
+        # The machine: a hundred cores of that.
+        self.assertEqual((cloud["times"], cloud["times_sum"], cloud["a_minute"], cloud["an_hour"]), ("15,000x", "100 cores × 18,000 s ÷ 120 s", "50", "3,000"))
+        self.assertEqual((cloud["price"], cloud["spot"], cloud["a_year"], cloud["spot_a_year"], cloud["hours_a_year"]), ("$5.00", "$2.00", "$43,800", "$17,500", "8,760"))
+        # A million games at 3,000 an hour.
+        self.assertEqual((cloud["a_million"], cloud["spot_a_million"]), ("$1,670", "$667"))
+        # What the fastest stop reaches is not rented: the every-core run.
+        self.assertEqual((cloud["have"], cloud["have_stop"]), ("2,400x", "all_cores"))
+
+    def test_the_rest_of_the_way_to_each_goal_is_whole_machines_at_their_price(self):
+        shown, line = self.both(self.ledger())
+        million, billion = shown["cloud"]["rows"]
+        self.assertEqual((million["key"], million["times"], million["rest"], million["rest_sum"]), ("million", "1,000,000x", "997,600x", "1,000,000 − 2,400"))
+        self.assertEqual((million["machines"], million["machines_sum"], million["cores"]), ("67", "997,600 ÷ 15,000 = 66.5, in whole machines", "6,700"))
+        self.assertEqual((million["an_hour"], million["an_hour_sum"], million["a_year"]), ("$335", "67 × $5.00", "$2.93 million"))
+        self.assertEqual((million["spot_an_hour"], million["spot_an_hour_sum"], million["spot_a_year"]), ("$134", "67 × $2.00", "$1.17 million"))
+        self.assertEqual((billion["key"], billion["rest"], billion["machines"], billion["cores"]), ("billion", "999,997,600x", "66,667", "6,666,700"))
+        self.assertEqual((billion["machines_sum"], billion["an_hour"], billion["a_year"]), ("999,997,600 ÷ 15,000 = 66,666.5, in whole machines", "$333,000", "$2.92 billion"))
+        # Each goal carries its cost on both pages, and the home page says
+        # whose estimate it is and of what.
+        self.assertEqual([goal["cost"] for goal in shown["goals"]], ["$335", "$333,000"])
+        self.assertEqual([goal["cost"] for goal in line["goals"]], ["about $335 an hour in the cloud", "about $333,000 an hour in the cloud"])
+        self.assertEqual(line["cloud"], {"by": "A Model", "machine": "Rented Hundred", "price": "$5.00", "taken": "11-23"})
+
+    def test_a_goal_already_reached_rents_nothing_and_an_estimate_may_have_no_spot_price(self):
+        ledger = self.ledger(goals=[{"key": "near", "times": 2000}], cloud=[self.CLOUD[1]])
+        cloud = self.both(ledger)[0]["cloud"]
+        self.assertEqual((cloud["by"], cloud["rows"][0]["rest"], cloud["rows"][0]["machines"], cloud["rows"][0]["an_hour"]), ("An Older Model", "0x", "0", "$0.00"))
+        for key in ("spot", "spot_a_million", "spot_a_year"):
+            self.assertNotIn(key, cloud)
+        self.assertNotIn("spot_an_hour", cloud["rows"][0])
+
+    def test_without_an_estimate_or_the_measured_processor_s_score_no_cost_is_shown(self):
+        for ledger, listed in ((self.ledger(cloud=[]), Processors.LISTED), (self.ledger(), None),
+                               (self.ledger(cloud=[{**self.CLOUD[0], "of": "nothing"}]), Processors.LISTED)):
+            shown, line = self.both(ledger, listed)
+            self.assertNotIn("cloud", shown)
+            self.assertNotIn("cloud", line)
+            self.assertTrue(all("cost" not in goal for goal in shown["goals"] + line["goals"]))
+            # The goals and the tables stand without it.
+            self.assertEqual(len(line["goals"]), 2)
+            self.assertEqual(len(shown["games"]), 4)
+
+    def test_every_sum_shown_gives_the_figure_beside_it(self):
+        for cloud in (self.both(self.ledger())[0]["cloud"], speedup_timeline.worked(ROOT)["cloud"]):
+            self.assertAlmostEqual(done_again(cloud["one_game_sum"]), cloud["seconds"], delta=0.002 * cloud["seconds"])
+            self.assertAlmostEqual(done_again(cloud["times_sum"]), cloud["multiplier"], delta=0.002 * cloud["multiplier"])
+            self.assertEqual(cloud["times"], speedup_timeline.times(cloud["multiplier"]))
+            price = float(cloud["price"].lstrip("$"))
+            for row in cloud["rows"]:
+                rest = done_again(row["rest_sum"])
+                self.assertEqual(row["rest"], speedup_timeline.times(rest))
+                # The machines are the rest over one machine, a whole one
+                # for any part of one.
+                said, machines = row["machines_sum"].split(" = ")[0], int(row["machines"].replace(",", ""))
+                self.assertAlmostEqual(done_again(said), rest / cloud["multiplier"], delta=0.002 * machines)
+                self.assertLessEqual(rest / cloud["multiplier"], machines + 0.002 * machines)
+                self.assertGreater(rest / cloud["multiplier"], machines - 1 - 0.002 * machines)
+                self.assertEqual(int(row["cores"].replace(",", "")), machines * cloud["cores"])
+                self.assertEqual(row["an_hour_sum"], f"{row['machines']} × {cloud['price']}")
+                self.assertEqual(row["an_hour"], speedup_timeline.dollars(machines * price))
+
+    def test_the_committed_estimate_is_whole_and_says_whose_it_is(self):
+        # A new estimate is a new entry after the ones there.
+        days = [entry["taken"] for entry in LEDGER["cloud"]]
+        self.assertEqual(days, sorted(days))
+        one_core = {stop["key"] for stop in LEDGER["stops"] if stop.get("cores") == 1}
+        for entry in LEDGER["cloud"]:
+            self.assertRegex(entry["taken"], r"^\d{4}-\d{2}-\d{2}$")
+            self.assertIn(entry["of"], one_core, "a rented core plays the game of a one-core stop")
+            for key in ("cores", "single_thread", "dollars_an_hour"):
+                self.assertGreater(entry[key], 0, key)
+            self.assertLessEqual(entry.get("spot_dollars_an_hour", 0), entry["dollars_an_hour"])
+            self.assertTrue(entry["by"] and entry["machine"])
+            # It says for itself that it is an estimate and not a quote.
+            self.assertIn("estimate", entry["from"])
+            self.assertIn("Not a quote", entry["from"])
+        # The operator: "note that this is a Fable 5.2 best estimate of the
+        # numbers".
+        self.assertEqual(LEDGER["cloud"][-1]["by"], "Claude Fable 5.2")
+        # Nothing derived is kept: an entry is the machine, its score and
+        # its prices, and no cost is written in the ledger.
+        for entry in LEDGER["cloud"]:
+            self.assertLessEqual(set(entry), {"taken", "by", "machine", "cores", "of", "single_thread", "dollars_an_hour", "spot_dollars_an_hour", "from"})
+        shown, line = speedup_timeline.worked(ROOT), speedup_timeline.timeline(ROOT)
+        self.assertEqual(shown["cloud"]["by"], "Claude Fable 5.2")
+        self.assertEqual(line["cloud"]["by"], "Claude Fable 5.2")
+        self.assertEqual([row["key"] for row in shown["cloud"]["rows"]], ["million", "billion"])
+        # It is the run that is short of the goals, and a larger goal costs more.
+        self.assertEqual(shown["cloud"]["have"], shown["answer"]["all"])
+        machines = [int(row["machines"].replace(",", "")) for row in shown["cloud"]["rows"]]
+        self.assertEqual(machines, sorted(machines))
+        self.assertGreater(machines[0], 0)
+        for goal in line["goals"]:
+            self.assertRegex(goal["cost"], r"^about \$[\d,.]+( million| billion)? an hour in the cloud$")
+
+
 class Page(unittest.TestCase):
     def test_the_page_has_an_entry_for_every_stop_and_no_figure_of_its_own(self):
         entries = re.findall(r'<li class="speed-stop" data-stop="(\w+)">', LANDING)
@@ -575,17 +770,35 @@ class Page(unittest.TestCase):
         section = LANDING[LANDING.index('<section class="speed"') : LANDING.index('<section class="watch"')]
         self.assertIn('<section class="speed" id="speed" aria-label="How many times faster than a person a game is played" hidden>', section)
         self.assertIn("section.hidden = false;", LANDING)
-        for place in ("speedup", "was", "target", "target-time"):
+        for place in ("speedup", "was", "cloud-by", "cloud-machine", "cloud-price"):
             self.assertEqual(section.count(f'data-speed="{place}"'), 1, place)
-        # The goal is the line's last entry, at its left end.
-        self.assertLess(section.rindex('data-stop="'), section.index('<li class="speed-stop speed-finish is-above is-start">'))
-        self.assertIn(".speed-finish { right: 100%; }", LANDING)
-        for place in ("time", "times", "goal"):
-            self.assertEqual(section.count(f'data-speed="{place}"'), len(entries), place)
+        # The goals are the line's last entries, one for each in the ledger,
+        # smallest first, and each stands at its own place as a stop does:
+        # the largest is the line's left end.
+        goals = re.findall(r'<li class="speed-stop speed-finish" data-goal="(\w+)">', LANDING)
+        self.assertEqual(goals, [goal["key"] for goal in speedup_timeline.marked(LEDGER)])
+        self.assertLess(section.rindex('data-stop="'), section.index('data-goal="'))
+        self.assertNotIn(".speed-finish { right:", LANDING)
+        self.assertIn('entry.style.setProperty("--at", goal.at);', LANDING)
+        for place in ("time", "times"):
+            self.assertEqual(section.count(f'data-speed="{place}"'), len(entries) + len(goals), place)
+        self.assertEqual(section.count('data-speed="goal"'), len(entries))
+        self.assertEqual(section.count('data-speed="cost"'), len(goals))
+        # Under the line, whose estimate a goal's cloud cost is (operator
+        # 2026-11-22: "note that this is a Fable 5.2 best estimate of the
+        # numbers"): hidden until the slot names one, and the name is the
+        # slot's.
+        self.assertIn('<p class="speed-note" id="speed-note" hidden>', section)
+        self.assertIn('Cloud cost is a best estimate by <span data-speed="cloud-by"></span>, not a quote:', section)
+        self.assertIn('document.getElementById("speed-note").hidden = false;', LANDING)
+        self.assertNotIn("Fable", section)
+        # Words that would meet their neighbour's stand a row out.
+        self.assertIn('entry.classList.toggle("is-far", !!stop.far);', LANDING)
+        self.assertIn('entry.classList.toggle("is-far", !!goal.far);', LANDING)
         # No figure is written into the page: every one is the slot's.
         text = re.sub(r"<!--.*?-->", "", section, flags=re.S)
         self.assertIsNone(re.search(r"\d[\d,.]*\s*(x|s|min|h)\b", re.sub(r"<[^>]+>", " ", text)))
-        # 1x is at the right end of the line and the goal at the left.
+        # 1x is at the right end of the line and the largest goal at the left.
         self.assertIn(".speed-stop { position: absolute; right: calc(var(--at) * 100%);", LANDING)
         self.assertIn("width: calc(var(--reach, 0) * 100%);", LANDING)
         self.assertIn('entry.style.setProperty("--at", stop.at);', LANDING)
