@@ -6,7 +6,8 @@
     research_page.py --self-play <batches_dir> <out.json>
                                                 rebuild the self-play snapshot
 
-The Research page (`beta/research.html`, served at `<lane>/research/`) is
+The Research page (`beta/research.html`; Win Analytics since 2026-11-22,
+served at `<lane>/charts/win-analytics/`, the address it states itself) is
 the site's page between Home and Tournaments. Its first chart (operator
 2026-11-21: "a civvis self play and civvis play against deity ai
 distribution victory types over online game turn. so when each victory type

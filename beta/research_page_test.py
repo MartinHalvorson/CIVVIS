@@ -513,13 +513,19 @@ class Page(unittest.TestCase):
         for line in (
             'research_page="$source_tree/beta/research.html"',
             'if [ -f "$research_page" ]; then',
-            'cp "$research_page" "$out/research/index.html"',
-            'fill research_page.py "$out/research/index.html"',
-            'pages+=(research)',
-            'out / "research" / "index.html": [],',
-            """('href="/research"', 'href="research/"'),""",
+            # At the address the page states itself, which is where its
+            # relative links are right; `research` is where a revision from
+            # before pages said so had it.
+            'research_at="$(address "$research_page" research)"',
+            'cp "$research_page" "$out/$research_at/index.html"',
+            'fill research_page.py "$out/$research_at/index.html"',
+            'pages+=("$research_at")',
         ):
             self.assertIn(line, PUBLISH)
+        # The address follows the page's name in the site list (operator
+        # 2026-11-23: "clean up the URL please. standardized. please remove
+        # research from the url"): Win Analytics, under Charts/.
+        self.assertIn('<link rel="canonical" href="https://civvis.ai/charts/win-analytics/">', PAGE)
         # Authored lane-relative: nothing in it links the site root.
         self.assertEqual(re.findall(r'(?:href|src)="(/[^"]*)"', PAGE), [])
 
@@ -532,7 +538,7 @@ class Page(unittest.TestCase):
         # is now filled by its own revision's script, so the two always
         # agree; `for_page` still sends an older page what it reads.
         self.assertIn('research_page="$source_tree/beta/research.html"', PUBLISH)
-        self.assertIn('fill research_page.py "$out/research/index.html"', PUBLISH)
+        self.assertIn('fill research_page.py "$out/$research_at/index.html"', PUBLISH)
         self.assertNotIn('"$repo_root/beta/research', PUBLISH)
         deity = {"name": "CIVVIS vs Lv 8 Deity AI", "windows": {"7": {"games": 3}, "30": {"games": 3}, "all": {"games": 3}}}
         king = {"name": "CIVVIS vs Lv 5 King AI", "windows": {"7": {"games": 1}, "30": {"games": 1}, "all": {"games": 1}}}
@@ -835,7 +841,7 @@ class Page(unittest.TestCase):
         # listed on, which table a game stands in, and what a loss is, as
         # `tournament_games` counts one: every finished game that CIVVIS did
         # not win.
-        self.assertIn('Every finished game of the tournaments on <a href="../tournaments/">Auto-Tourneys</a>', block)
+        self.assertIn('Every finished game of the tournaments on <a href="../../auto-tourneys/">Auto-Tourneys</a>', block)
         self.assertIn("The left table holds the games set up with the Diplomatic victory switched off, the right table the games that allowed it.", block)
         self.assertIn("A win is a CIVVIS victory; a loss is a rival&#8217;s victory, our elimination, or a game conceded early.", block)
         self.assertIn("A day is 24 hours, counted back from the newest tournament game.", block)
@@ -947,7 +953,8 @@ class Page(unittest.TestCase):
         # "musings (rename research)") and is Charts since 2026-11-22
         # (operator: "Change musings to "Charts". Move performance from under
         # civvis to charts. Charts is where almost all our charts can go");
-        # the address, the file and the data kept theirs. Later that day it
+        # the file and the data kept theirs, and the address did until
+        # 2026-11-23, when it took the page's name. Later that day it
         # became a folder of pages, named with its slash (operator: "in
         # charts, we should have at least win analytics, CIVVIS Performance
         # ... We should change just "Charts" to "Charts/" with the
@@ -956,21 +963,21 @@ class Page(unittest.TestCase):
         # this page in gold.
         self.assertIn(
             '<nav class="site-nav" aria-label="CIVVIS sites">\n'
-            '        <a class="site-link" href="../home/">Home</a>\n'
+            '        <a class="site-link" href="../../home/">Home</a>\n'
             '        <a class="site-link" href="./" '
             'title="What the games show: charts read off the CIVVIS AI agents&#8217; games.">Charts/</a>\n'
             '        <a class="site-link sub-link" href="./" aria-current="page">Win Analytics</a>\n'
-            '        <a class="site-link sub-link" href="../performance/" '
+            '        <a class="site-link sub-link" href="../civvis-performance/" '
             'title="How fast the simulator plays: the fastest game on video and how long a self-play game takes.">CIVVIS Performance</a>\n'
-            '        <a class="site-link sub-link" href="../interpretability/" '
+            '        <a class="site-link sub-link" href="../ai-interpretability/" '
             'title="How a CIVVIS AI agent decides: one turn step by step, its plan through a game, and what each rule is worth in wins.">AI Interpretability</a>\n'
-            '        <a class="site-link" href="../tournaments/" ',
+            '        <a class="site-link" href="../../auto-tourneys/" ',
             PAGE,
         )
         nav = PAGE[PAGE.index('<nav class="site-nav"'):PAGE.index("</nav>")]
         self.assertEqual(nav.count('aria-current="page"'), 1)
         self.assertIn(".site-link.sub-link { margin-left: 10px; padding: 2px 6px 3px; font-size: 10px; letter-spacing: 0.03em; }", PAGE)
-        self.assertIn('<a href="../performance/">CIVVIS Performance</a>.', PAGE)
+        self.assertIn('<a href="../civvis-performance/">CIVVIS Performance</a>.', PAGE)
         self.assertRegex(PAGE, r'<div class="site-brand">\s*<!--[\s\S]*?-->\s*<nav class="site-nav"[^>]*>[\s\S]*?</nav>\s*<div class="site-lockup">')
         self.assertIn("<title>Win Analytics · CIVVIS.ai</title>", PAGE)
         for page in (PAGE, LANDING, TOURNAMENTS, VIEWER):
@@ -978,13 +985,13 @@ class Page(unittest.TestCase):
             self.assertNotIn(">Musings</a>", page)
             self.assertNotIn(">Charts</a>", page)
         for page, pattern in (
-            (LANDING, r'aria-current="page">Home</a>\s*<a class="site-link" href="\.\./research/"[^>]*>Charts/</a>'
-                      r'\s*<a class="site-link" href="\.\./tournaments/"'),
-            (TOURNAMENTS, r'href="\.\./home/">Home</a>\s*<a class="site-link" href="\.\./research/"[^>]*>Charts/</a>'
+            (LANDING, r'aria-current="page">Home</a>\s*<a class="site-link" href="\.\./charts/win-analytics/"[^>]*>Charts/</a>'
+                      r'\s*<a class="site-link" href="\.\./auto-tourneys/"'),
+            (TOURNAMENTS, r'href="\.\./home/">Home</a>\s*<a class="site-link" href="\.\./charts/win-analytics/"[^>]*>Charts/</a>'
                           r'\s*<a class="site-link" href="\./" aria-current="page">Auto-Tourneys</a>'),
             (VIEWER, r'id="homelink" href="/home" target="_top">Home</a>\s*'
-                     r'<a class="home-link" id="researchlink" href="/research" target="_top">Charts/</a>\s*'
-                     r'<a class="home-link" id="tourlink" href="/tournaments" target="_top">Auto-Tourneys</a>'),
+                     r'<a class="home-link" id="chartslink" href="/charts/win-analytics" target="_top">Charts/</a>\s*'
+                     r'<a class="home-link" id="tourlink" href="/auto-tourneys" target="_top">Auto-Tourneys</a>'),
         ):
             self.assertRegex(page, pattern)
 
