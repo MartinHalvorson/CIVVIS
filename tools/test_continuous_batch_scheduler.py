@@ -538,6 +538,105 @@ class MachineSharing(unittest.TestCase):
             self.assertEqual(beside["ceiling_percent"], 60.0)
             governor.release()
 
+    def test_a_sliced_group_that_becomes_several_workers_is_resumed_whole(self):
+        # One worker is sliced with the group, launcher included; when the
+        # second worker arrives the group must be running again, or the
+        # launcher never starts the third.
+        import signal as signals
+        import threading
+        import time
+
+        class Host:
+            busy = 0
+
+            def ticks(self):
+                Host.busy += 1000
+                return (Host.busy, 0)  # a saturated host: the slice plan pauses the group
+
+        second = threading.Event()
+        group_signals: list[int] = []
+        paused = threading.Event()
+
+        def send(_group, which):
+            group_signals.append(which)
+            if which == signals.SIGSTOP:
+                paused.set()
+
+        def table():
+            rows = [self.worker(10, 1.0, name="Python"), self.worker(11, 100.0)]
+            if second.is_set():
+                rows.append(self.worker(12, 0.0))
+            return rows
+
+        governor = scheduler.CpuGovernor(
+            80, cores=18, workers=14, host=Host(), processes=table, send=send,
+            send_one=lambda _pid, _which: None)
+        with mock.patch.object(scheduler, "GOVERNOR_WINDOW_SECONDS", 0.04), \
+                mock.patch.object(scheduler, "GOVERNOR_PERIOD_SECONDS", 0.01):
+            governor.govern(77)
+            self.assertTrue(paused.wait(3.0), "one worker on a saturated host is sliced")
+            second.set()
+            deadline = time.monotonic() + 3.0
+            while governor.snapshot().get("mode") != "workers" and time.monotonic() < deadline:
+                time.sleep(0.01)
+            self.assertEqual(governor.snapshot().get("mode"), "workers")
+            sent_so_far = list(group_signals)
+            governor.release()
+        self.assertEqual(sent_so_far[-1], signals.SIGCONT,
+                         "whole workers must start from a running group")
+
+    def test_a_script_is_seen_while_it_runs_or_waits_but_not_in_our_own_options(self):
+        lines = [
+            "/usr/bin/python3 curated_scheduler.py run --beside-script /x/heavy.sh=55",
+            "/bin/zsh /x/heavy.sh 3 cargo test --profile ci",
+            "vim /y/heavy.sh.bak",
+        ]
+        self.assertEqual(scheduler.scripts_running(lines, ["/x/heavy.sh", "/x/other.sh"]),
+                         {"/x/heavy.sh"})
+        self.assertEqual(scheduler.scripts_running(lines[:1] + lines[2:], ["/x/heavy.sh"]), set())
+
+    def test_a_queued_script_lowers_the_ceiling_though_it_burns_nothing(self):
+        import threading
+        import time
+
+        class Host:
+            busy = 0
+            idle = 0
+
+            def ticks(self):
+                # 70% busy: under an 80% ceiling, over a 55% one.
+                Host.busy += 7
+                Host.idle += 3
+                return (Host.busy, Host.idle)
+
+        queued = threading.Event()
+        governor = scheduler.CpuGovernor(
+            80, cores=10, host=Host(),
+            processes=lambda: [self.worker(pid, 100.0 * pid) for pid in (11, 12, 13)],
+            send=lambda _group, _which: None, send_one=lambda _pid, _which: None,
+            beside_scripts={"/x/heavy.sh": 55},
+            commands=lambda: (["/bin/zsh /x/heavy.sh 3 cargo build"] if queued.is_set() else []))
+
+        def reading(want):
+            deadline = time.monotonic() + 3.0
+            while time.monotonic() < deadline:
+                snapshot = governor.snapshot()
+                if snapshot and want(snapshot):
+                    return snapshot
+                time.sleep(0.01)
+            self.fail(f"no such reading; last was {governor.snapshot()}")
+
+        with mock.patch.object(scheduler, "GOVERNOR_WINDOW_SECONDS", 0.02):
+            governor.govern(77)
+            alone = reading(lambda snapshot: "foreground" not in snapshot
+                            and snapshot["workers_running"] == 1)
+            self.assertEqual(alone["ceiling_percent"], 80.0)
+            queued.set()
+            beside = reading(lambda snapshot: snapshot.get("foreground") == "heavy.sh"
+                             and snapshot["workers_running"] == 0)
+            self.assertEqual(beside["ceiling_percent"], 55.0)
+            governor.release()
+
     def test_beside_options_name_a_process_and_a_ceiling(self):
         self.assertEqual(scheduler.parse_beside(["Civ6_Exe_Child=70", "rustc=60"]),
                          {"Civ6_Exe_Child": 70.0, "rustc": 60.0})

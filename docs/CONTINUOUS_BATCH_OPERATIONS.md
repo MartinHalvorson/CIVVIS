@@ -61,6 +61,7 @@ should not give the tournament 85% of its cores. Three `run` options bound it:
 | `--cpu-share PERCENT` | Game workers = floor(PERCENT% of logical cores), never above the 85% cap; an alternative to `--jobs`. The pinned release build uses the same worker count as its `cargo --jobs`. |
 | `--machine-cpu-ceiling PERCENT` | A governor thread measures the WHOLE host's CPU (`host_statistics` on macOS, `/proc/stat` on Linux) every two seconds and gives the owned games what is left under PERCENT. **Whole workers:** a segment played by several one-thread `gene_screen` processes runs that many of them and stops the others outright (SIGSTOP to the process, never to the group), so a running worker keeps its core, its cache and its clock speed. A cut is the whole overshoot in one window; room is retaken one worker a window, and only when a whole core is free. Stopped and running workers trade places every two minutes by CPU time, so every worker's seed window ends at about the same time. A worker another controller parked in darwin-background is stopped, and lifted out of that band when it resumes. **Slices:** a segment that is one process (the stock `--jobs N` segment) is paused with SIGSTOP/SIGCONT, in half-second slices, for as much of the next window as keeps the host at or under PERCENT; headroom is retaken half the way per window. There the games' demand is never taken below their worker count: a low-priority worker resumed on a saturated host is barely scheduled, and a duty sized from that starved reading would let every worker in as soon as the other work paused. Nor is it taken above the worker count plus one core, and a window counts the run the games really got (this thread wakes late on a saturated host): an uncapped mis-timed reading once latched seven workers at a 0.02-0.08 duty for six days (`mbp-m5-max-128`, 2026-10-09..15, demand 144.6 cores on 18). Either way it governs a re-adopted segment after a daemon restart too, resumes the group on release, on segment exit and on SIGTERM, and never pauses when it cannot measure. |
 | `--beside NAME=PERCENT` | While a process with exactly that executable name runs (as `pgrep -x`), the ceiling is PERCENT instead. Repeatable; the lowest that applies wins, and none can raise the ceiling. For work that needs free cores rather than a share: a live Civilization VI game (`Civ6_Exe_Child`), a compiler (`rustc`). The progress line then reads `ceiling=…%(NAME)`. |
+| `--beside-script PATH=PERCENT` | The same for a script: the ceiling is PERCENT while PATH is a whole word of any process's command line (one more `ps` a window). That holds while the script runs and also while it only waits its turn, which is the point: a job queued behind a load gate burns no CPU, so no reading of the host's load would ever make room for it. On `mbp-m5-max-128` every other session's build, test run and simulation goes through `~/civvis-score-tools/heavy.sh`, which admits a job only while the one-minute load is under 14; a tournament holding the host at 80% keeps that load above 14 by itself. |
 | `--pause-on-battery` | Pause the games (duty 0) while the host draws from its battery, or is plugged in but still discharging because the adapter cannot keep up (`pmset -g ps`, re-read every 10 s; unknown elsewhere, which never pauses). Logs each transition and marks the progress line `PAUSED_ON_BATTERY`. Turns the governor on at a 100% ceiling when no ceiling is given. Measured why on 2026-09-30: `mbp-m5-max-128` ran on battery from 82% to 1% in one hour under the host's whole load, hibernated for two hours, and took a live Civilization VI game down with it. |
 | `--progress-minutes N` | One `progress` line every N minutes (default 5) in the service log: this batch's games and seats against the boundary, the totals over every batch the state directory has served, the rate and ETA, and the governor's last reading. |
 
@@ -116,12 +117,22 @@ a turn against about 200 ms for one worker alone. Nice already puts any
 ordinary thread ahead of a worker.
 
 Example (same host): `--cpu-share 80 --machine-cpu-ceiling 80 --beside
-Civ6_Exe_Child=70 --beside rustc=60` gives fourteen one-thread workers, runs
-as many as keep the host at 80%, stands back to 70% while a live game is up
-and to 60% while anything compiles. The 60 is not arbitrary on that host:
-`~/bin/civvis-cpu-headroom` parks batch work and compilers when under 20% of
-the host is idle beside a live game and lifts them only above 40%, so a
-tournament that refilled the host past 60% would hold a parked compiler down.
+Civ6_Exe_Child=70 --beside-script
+/Users/…/civvis-score-tools/heavy.sh=55` gives fourteen one-thread workers,
+runs as many as keep the host at 80%, stands back to 70% while a live game is
+up and to 55% while any heavy job runs or waits. The 55 is not arbitrary on
+that host. The heavy gate opens under a load of 14, about 60% of eighteen
+cores with what else is runnable. And `~/bin/civvis-cpu-headroom` parks batch
+work and compilers when under 20% of the host is idle beside a live game and
+lifts them only above 40%, so a tournament that refilled the host past 60%
+would hold a parked compiler down.
+
+⚠ Do not name the compiler itself (`--beside rustc=55`) on a host where other
+sessions compile most of the day. Tried on that host on 2026-11-22: the rest
+of the host alone was 57-99% busy, so under a 55% ceiling no worker ran at
+all, where the old sliced governor had been giving the games two to three
+cores. The heavy script is the better name: it marks the work that is queued
+as well as the work that is running, and nothing else.
 
 ## Do not
 

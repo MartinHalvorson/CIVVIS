@@ -36,7 +36,8 @@ own games what is left under the ceiling.  A segment played by several
 one-thread worker processes runs that many WHOLE workers and stops the rest;
 a segment that is one process is paused (SIGSTOP/SIGCONT in half-second
 slices) for part of each window.  ``--beside NAME=PERCENT`` names work the
-games stand further back for while it runs.
+games stand further back for while it runs, and ``--beside-script
+PATH=PERCENT`` does the same for a script, running or still waiting its turn.
 It only ever signals the group it launched or re-adopted, and always resumes
 it on release, restart or SIGTERM.
 ``--progress-minutes`` prints one progress line (this batch and all batches
@@ -383,6 +384,29 @@ def process_table() -> list[ProcessRow] | None:
     return parse_process_table(result.stdout)
 
 
+def command_lines() -> list[str] | None:
+    """The command line of every process on the host, or None when ``ps`` cannot say."""
+    try:
+        result = subprocess.run(["ps", "-A", "-o", "args="], text=True, stdout=subprocess.PIPE,
+                                stderr=subprocess.DEVNULL, check=False)
+    except OSError:
+        return None
+    return result.stdout.splitlines() if result.returncode == 0 else None
+
+
+def scripts_running(lines: Iterable[str], scripts: Iterable[str]) -> set[str]:
+    """Which of ``scripts`` some process is running: the path is a whole word of its command line.
+
+    A whole word, so the scheduler's own ``--beside-script PATH=PERCENT`` is
+    never mistaken for the script running.
+    """
+    wanted = set(scripts)
+    found: set[str] = set()
+    for line in lines:
+        found |= wanted.intersection(line.split())
+    return found
+
+
 def lift_from_background(pid: int) -> None:
     """Take one of our own workers out of darwin-background (macOS only)."""
     if sys.platform != "darwin":
@@ -394,7 +418,7 @@ def lift_from_background(pid: int) -> None:
         pass
 
 
-def parse_beside(values: Iterable[str]) -> dict[str, float]:
+def parse_beside(values: Iterable[str], *, option: str = "--beside") -> dict[str, float]:
     """``NAME=PERCENT`` options as a name-to-percent map."""
     beside: dict[str, float] = {}
     for value in values:
@@ -404,7 +428,7 @@ def parse_beside(values: Iterable[str]) -> dict[str, float]:
         except ValueError:
             mark = ""
         if not mark or not name:
-            raise SchedulerError(f"--beside takes NAME=PERCENT, not {value!r}")
+            raise SchedulerError(f"{option} takes NAME=PERCENT, not {value!r}")
     return beside
 
 
@@ -501,22 +525,32 @@ class CpuGovernor:
 
     ``beside`` maps executable names (exact, as ``pgrep -x``) to the ceiling
     in force while a process of that name runs; the lowest one that applies
-    wins, and none can raise the ceiling.
+    wins, and none can raise the ceiling. ``beside_scripts`` does the same
+    for a script path that is a whole word of some process's command line,
+    which is how work that is still WAITING is seen: a job queued behind a
+    load gate burns no CPU, so no reading of the host's load would ever make
+    room for it.
     """
 
     def __init__(self, ceiling_percent: float, *, cores: int, workers: int = 0,
                  host: HostCpu | None = None, group_cpu=None, send=None,
                  pause_on_battery: bool = False, battery=power_draining_battery,
                  processes=None, send_one=None, lift=lift_from_background,
-                 beside: dict[str, float] | None = None) -> None:
+                 beside: dict[str, float] | None = None,
+                 beside_scripts: dict[str, float] | None = None, commands=None) -> None:
         if not 0 < ceiling_percent <= 100:
             raise SchedulerError("--machine-cpu-ceiling must be a percentage in (0, 100]")
         self.ceiling = ceiling_percent / 100.0
         self.beside: dict[str, float] = {}
-        for name, percent in (beside or {}).items():
-            if not name or not 0 < percent <= 100:
-                raise SchedulerError("--beside takes NAME=PERCENT with a percentage in (0, 100]")
-            self.beside[name] = min(self.ceiling, percent / 100.0)
+        self.beside_scripts: dict[str, float] = {}
+        for given, kept, option in ((beside, self.beside, "--beside"),
+                                    (beside_scripts, self.beside_scripts, "--beside-script")):
+            for name, percent in (given or {}).items():
+                if not name or not 0 < percent <= 100:
+                    raise SchedulerError(
+                        f"{option} takes NAME=PERCENT with a percentage in (0, 100]")
+                kept[name] = min(self.ceiling, percent / 100.0)
+        self.commands = commands if commands is not None else command_lines
         self.cores = positive_int(cores, name="logical core count")
         # Each game worker is one CPU-bound thread: the most the group can burn.
         self.workers = workers
@@ -541,6 +575,8 @@ class CpuGovernor:
         # Workers this governor holds stopped, and when it last rotated them.
         self.held: set[int] = set()
         self.rotated_at = 0.0
+        # Named work found up at the last probe, with the ceiling each asks for.
+        self.standing_back: dict[str, float] = {}
         # Only macOS has the band; elsewhere no priority means "parked".
         self.background_priority = BACKGROUND_PRIORITY if sys.platform == "darwin" else None
         # Re-entrant: the SIGTERM handler releases from the main thread, which
@@ -616,10 +652,14 @@ class CpuGovernor:
             workers = [row for row in ours if row.name == GAME_WORKER_NAME]
             if ours:
                 cpu = sum(row.cpu_seconds for row in ours)
-            if self.beside:
-                up = {row.name for row in table} & set(self.beside)
-                # The lowest ceiling that applies; the name breaks a tie the same way each time.
-                foreground = min(up, key=lambda name: (self.beside[name], name), default=None)
+            up = {name: self.beside[name]
+                  for name in {row.name for row in table} & set(self.beside)}
+            if self.beside_scripts:
+                for path in scripts_running(self.commands() or (), self.beside_scripts):
+                    up[path.rsplit("/", 1)[-1]] = self.beside_scripts[path]
+            # The lowest ceiling that applies; the name breaks a tie the same way each time.
+            foreground = min(up, key=lambda name: (up[name], name), default=None)
+            self.standing_back = up
         if self.group_cpu is not None:
             cpu = self.group_cpu(group)
         return self.host.ticks(), cpu, workers, foreground
@@ -693,6 +733,7 @@ class CpuGovernor:
         workers: list[ProcessRow] = []
         foreground: str | None = None
         worker_target: int | None = None
+        was_whole = False
         while not stop.is_set():
             if host_before is None or cpu_before is None:
                 host_before, cpu_before, workers, foreground = self._probe(group)
@@ -706,6 +747,8 @@ class CpuGovernor:
             started = time.monotonic()
             running = 0.0
             duty = self.duty
+            # The ceilings that applied at the probe that opened this window.
+            ceilings_now = dict(self.standing_back)
             self._read_power(started)
             if self.on_battery:
                 duty = 0.0
@@ -713,6 +756,17 @@ class CpuGovernor:
             ran = 0
             if whole:
                 # Whole workers: the plan is a count, held for the whole window.
+                if not was_whole:
+                    # ⚠ The slice plan ends a window with the WHOLE GROUP stopped,
+                    # and the group is more than workers: the segment's launcher
+                    # starts the other workers and merges every finished game.
+                    # 2026-11-22, mbp-m5-max-128, the first segment under whole
+                    # workers: sliced while it had one worker, the launcher was
+                    # left stopped when the second arrived, and twelve of
+                    # fourteen workers were never started.
+                    self.held.clear()
+                    if not self._signal(group, signal.SIGCONT):
+                        return
                 if worker_target is None:
                     worker_target = len(workers) - len(self.held & {row.pid for row in workers})
                 ran = self._apply_workers(
@@ -744,6 +798,7 @@ class CpuGovernor:
                         stop.wait(period - run_for)
             if stop.is_set():
                 return
+            was_whole = whole
             window = time.monotonic() - started
             # The window's closing sample opens the next one: two probes per
             # window would double the ``ps`` cost for no information.
@@ -757,7 +812,7 @@ class CpuGovernor:
                 continue
             group_cores = max(0.0, cpu_after - cpu_before_window) / window
             # The ceiling in force while foreground work was up during the window.
-            ceiling = self.beside.get(foreground_now, self.ceiling)
+            ceiling = ceilings_now.get(foreground_now, self.ceiling)
             reading: dict[str, Any] = {
                 "observed_at": utc_now(),
                 "ceiling_percent": round(ceiling * 100, 1),
@@ -2645,6 +2700,10 @@ def main(argv: list[str] | None = None) -> int:
                         help=("while a process with exactly this executable name runs (as "
                               "`pgrep -x`), the ceiling is PERCENT instead; repeatable, the "
                               "lowest that applies wins; needs --machine-cpu-ceiling"))
+    parser.add_argument("--beside-script", action="append", default=[], metavar="PATH=PERCENT",
+                        help=("as --beside, for a script: applies while PATH is a whole word "
+                              "of any process's command line, so also while the script only "
+                              "waits its turn; repeatable"))
     parser.add_argument("--pause-on-battery", action="store_true",
                         help=("pause the owned games while the host runs on battery or "
                               "discharges on an adapter that cannot keep up (macOS pmset); "
@@ -2715,12 +2774,13 @@ def main(argv: list[str] | None = None) -> int:
             raise SchedulerError("--jobs and --cpu-share are alternatives; pass one")
         jobs = (positive_int(args.jobs, name="--jobs") if args.jobs is not None
                 else workers_for_cores(logical_cores(), args.cpu_share or DEFAULT_WORKER_PERCENT))
-        if args.beside and args.machine_cpu_ceiling is None:
-            raise SchedulerError("--beside needs --machine-cpu-ceiling")
+        if (args.beside or args.beside_script) and args.machine_cpu_ceiling is None:
+            raise SchedulerError("--beside and --beside-script need --machine-cpu-ceiling")
         governor = (CpuGovernor(
             args.machine_cpu_ceiling if args.machine_cpu_ceiling is not None else 100.0,
             cores=logical_cores(), workers=jobs, pause_on_battery=args.pause_on_battery,
-            beside=parse_beside(args.beside))
+            beside=parse_beside(args.beside),
+            beside_scripts=parse_beside(args.beside_script, option="--beside-script"))
             if args.machine_cpu_ceiling is not None or args.pause_on_battery else None)
         progress = ProgressLog(args.progress_minutes)
         if args.poll_seconds <= 0:
@@ -2762,7 +2822,8 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"{utc_now()} cpu governor: ceiling {governor.ceiling * 100:g}% of "
                       f"{governor.cores} logical cores; {jobs} game workers"
                       + "".join(f"; {ceiling * 100:g}% beside {name}"
-                                for name, ceiling in sorted(governor.beside.items()))
+                                for name, ceiling in sorted(
+                                    {**governor.beside, **governor.beside_scripts}.items()))
                       + ("; paused on battery" if governor.pause_on_battery else ""), flush=True)
 
                 def resume_and_exit(_signum: int, _frame: Any) -> None:
