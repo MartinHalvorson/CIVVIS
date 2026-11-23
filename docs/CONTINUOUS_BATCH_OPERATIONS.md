@@ -60,6 +60,7 @@ should not give the tournament 85% of its cores. Three `run` options bound it:
 | --- | --- |
 | `--cpu-share PERCENT` | Game workers = floor(PERCENT% of logical cores), never above the 85% cap; an alternative to `--jobs`. The pinned release build uses the same worker count as its `cargo --jobs`. |
 | `--machine-cpu-ceiling PERCENT` | A governor thread measures the WHOLE host's CPU (`host_statistics` on macOS, `/proc/stat` on Linux) every two seconds and gives the owned games what is left under PERCENT. **Whole workers:** a segment played by several one-thread `gene_screen` processes runs that many of them and stops the others outright (SIGSTOP to the process, never to the group), so a running worker keeps its core, its cache and its clock speed. A cut is the whole overshoot in one window; room is retaken one worker a window, and only when a whole core is free. (`GOVERNOR_PEAK_SECONDS` can measure that room against the busiest the rest of the host has been over a longer stretch; it is 0, the window just ended, because thirty seconds left the games 0-1 workers beside a live game on a host that averaged 40% busy: the game bursts on every turn. The reading's `rest_peak_cores` is that figure.) And only while the running workers are fed: if they received fewer cores than there are of them, none is added, and workers queued more than one deep are stopped (table below). A governor that takes over a running segment starts from no workers and adds one a window. Stopped and running workers trade places every two minutes by CPU time, so every worker's seed window ends at about the same time. A worker another controller parked in darwin-background is stopped, and lifted out of that band when it resumes. **Slices:** a segment that is one process (the stock `--jobs N` segment) is paused with SIGSTOP/SIGCONT, in half-second slices, for as much of the next window as keeps the host at or under PERCENT; headroom is retaken half the way per window. There the games' demand is never taken below their worker count: a low-priority worker resumed on a saturated host is barely scheduled, and a duty sized from that starved reading would let every worker in as soon as the other work paused. Nor is it taken above the worker count plus one core, and a window counts the run the games really got (this thread wakes late on a saturated host): an uncapped mis-timed reading once latched seven workers at a 0.02-0.08 duty for six days (`mbp-m5-max-128`, 2026-10-09..15, demand 144.6 cores on 18). Either way it governs a re-adopted segment after a daemon restart too, resumes the group on release, on segment exit and on SIGTERM, and never pauses when it cannot measure. |
+| `--machine-load-ceiling LOAD` | With one-thread workers: no worker is added within 1 of this one-minute load average, and one is stopped a window at or over it. The average answers over a minute, so the governor steers on where it is heading: the load now, plus the workers running now, less the workers it ran on average over the last minute (the reading's `load_projected`). A load average counts every runnable thread, running or queued, and it is the number other work on a shared host is steered by; CPU does not show it (measured below). `--beside NAME=PERCENT/LOAD` and `--beside-script PATH=PERCENT/LOAD` give a tighter load ceiling while that work is up; the lowest that applies wins. The progress line reads `load=NOW/CEILING`. A sliced one-process segment is not governed by it. |
 | `--beside NAME=PERCENT` | While a process with exactly that executable name runs (as `pgrep -x`), the ceiling is PERCENT instead. Repeatable; the lowest that applies wins, and none can raise the ceiling. For work that needs free cores rather than a share: a live Civilization VI game (`Civ6_Exe_Child`), a compiler (`rustc`). The progress line then reads `ceiling=…%(NAME)`. |
 | `--beside-script PATH=PERCENT` | The same for a script: the ceiling is PERCENT while PATH is a whole word of any process's command line (one more `ps` a window). That holds while the script runs and also while it only waits its turn, which is the point: a job queued behind a load gate burns no CPU, so no reading of the host's load would ever make room for it. On `mbp-m5-max-128` every other session's build, test run and simulation goes through `~/civvis-score-tools/heavy.sh`, which admits a job only while the one-minute load is under 14; a tournament holding the host at 80% keeps that load above 14 by itself. |
 | `--beside-linger SECONDS` | How long a `--beside` or `--beside-script` ceiling holds after the work was last seen (default 300). Work that needs free cores stops and starts again: Civilization VI quits and relaunches between two games, a build pauses between two crates. Without it the games took the room back inside the gap, a worker every two seconds, and the next game booted into a saturated host (measured below). |
@@ -120,6 +121,18 @@ the running ones are each getting a core. On this host a ceiling above about
 60% therefore changes little while the service is a `Standard` job: what
 would use the room is `ProcessType Interactive`.
 
+**Why a load ceiling as well, on that host.** With the workers fed and the
+live-game ceiling at its old 60%, the governor ran six or seven workers where
+the sliced one had averaged two or three, and for twelve minutes on
+2026-11-23 (02:00Z) the one-minute load read a median of 18.1 and a maximum
+of 23.4 on a host 45-58% busy. The heavy-job queue admits a job only under
+14: one queued at 02:02 waited about five minutes. And the games were no
+further on for it: 151 games an hour at 448 ms of CPU a turn on 3.7 cores,
+where the half hour before at three workers had read 159 an hour at 364 ms on
+3.1. Past what the class feeds well, a worker adds load and nothing else.
+The service now runs `--machine-load-ceiling 15` and
+`--beside-script …/heavy.sh=55/13`.
+
 ⚠ Probing this on that host: `~/bin/civvis-cpu-headroom` parks any process
 whose path holds `/target/` or `gene_screen` when under 20% of the host is
 idle beside a live game. Three probes parked together read an identical 406
@@ -159,9 +172,9 @@ flat out, twelve of them necessarily on the lower cluster, spent 243 ms of CPU
 a turn against about 200 ms for one worker alone. Nice already puts any
 ordinary thread ahead of a worker.
 
-Example (same host): `--cpu-share 80 --machine-cpu-ceiling 80 --beside
-Civ6_Exe_Child=70 --beside-script
-/Users/…/civvis-score-tools/heavy.sh=55` gives fourteen one-thread workers,
+Example (same host): `--cpu-share 80 --machine-cpu-ceiling 80
+--machine-load-ceiling 15 --beside Civ6_Exe_Child=70 --beside-script
+/Users/…/civvis-score-tools/heavy.sh=55/13` gives fourteen one-thread workers,
 runs as many as keep the host at 80%, stands back to 70% while a live game is
 up (and for five minutes after it was last seen) and to 55% while any heavy
 job runs or waits. That host itself runs `Civ6_Exe_Child=60`; see the
