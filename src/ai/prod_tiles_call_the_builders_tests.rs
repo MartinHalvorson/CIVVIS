@@ -138,6 +138,28 @@ fn the_backlog_counts_worked_production_ground_and_good_idle_ground() {
     assert_eq!(BasicAi::production_tile_backlog(&game, 0).worked, 1);
 }
 
+/// A pass over the cities asks the quota once per city, and each ask counts
+/// the whole empire. Inside one query scope the count is taken once and
+/// shared; outside one each ask takes its own; a shared count is the count
+/// taken afresh.
+#[test]
+fn one_query_scope_counts_the_production_ground_once() {
+    let (game, _cid, _ring) = ring_fixture("production-census-once", 1);
+    let censuses = || PRODUCTION_TILE_CENSUSES.with(std::cell::Cell::get);
+    let before = censuses();
+    let fresh = BasicAi::production_tile_backlog(&game, 0);
+    assert_eq!(BasicAi::production_tile_backlog(&game, 0), fresh);
+    assert_eq!(censuses() - before, 2, "unscoped, each ask counts afresh");
+    let before = censuses();
+    {
+        let _memo = game.query_memo();
+        for _ in 0..3 {
+            assert_eq!(BasicAi::production_tile_backlog(&game, 0), fresh);
+        }
+    }
+    assert_eq!(censuses() - before, 1, "one scope, one count");
+}
+
 /// Off, the quota is the stock 60% of the backlog. On, one charge per worked
 /// production tile, 60% of the rest, and half a charge per good idle tile,
 /// and never below the stock quota.
