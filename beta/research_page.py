@@ -55,21 +55,34 @@ that level's, so a snapshot left unrefreshed, or a level last played weeks
 ago, still shows its last week rather than an empty one, and the page says
 which days each window holds.
 
-Over the charts the page opens on a table (operator 2026-11-22: "to the top
-of win analytics roughly, please list our win rate against lv 4... lv 8
-deity ai in tournament games. please list sample sizes, wins, losses in the
-table too. table should default to last 30 days"): CIVVIS's win rate against
-the game's AI at each level from Prince (Lv 4) to Deity (Lv 8), with the
-games, wins and losses it is made of. Its games are the tournaments' own,
-every finished game of every tournament the Auto-Tourneys page lists
+Over the charts the page opens on the benchmark against the game's AI
+(operator 2026-11-22: "to the top of win analytics roughly, please list our
+win rate against lv 4... lv 8 deity ai in tournament games"; and 2026-11-23:
+"at the top of win analytics, we should have a last 1 day win rate col, last
+3 days, last 7 days, last 30 days. this will help us track win rates. order
+the cols lv 8 down to level 4. this will be our primary Firaxis Civ 6 AI
+benchmark - win rate on each level. half the games can be diplo, half no
+diplo. we should have a table on the left the is with diplo excluded and a
+table on the right that allows diplo wins. we can drop the wins, losses.
+games (n) should be listed after each value. so like 100% (5) or 14% (181).
+at the top, we should have win rate (total games)"): two tables, the games
+played with the Diplomatic victory switched off and the games played with it
+on, each a row per level from Deity (Lv 8) down to Prince (Lv 4) and a column
+per window, the last 1, 3, 7 and 30 days, a cell being CIVVIS's win rate and
+the games it is a share of. Its games are the tournaments' own, every
+finished game of every tournament the Auto-Tourneys page lists
 (`data/tournaments.json`, counted by `home_rankings.tournament_series`), so
 the two pages agree: a win is CIVVIS's victory and anything else a finished
 game ended in is a loss, a rival's victory, our elimination or a game
 conceded early. That is a wider count than the charts', which have no place
-for a game without a victory. The record holds it under `tournament_rates`,
-for the same three windows, all five levels in each, and one window's days
-are the same for every level: it is measured back from the newest tournament
-game at any of them, so the rows of the table are the same days' games.
+for a game without a victory. Which table a game stands in is the game's own
+setup, read off its run summary on the ledger (`switches`): what the game
+itself reported of its Diplomatic victory, or what a hotseat table was asked
+to switch off. A game whose summary does not say is in neither table. The
+record holds it under `tournament_rates`: `tables.off` and `tables.on`, each
+with every level and every window, and `to`, the newest tournament game's
+start, which every window is measured back from in whole days of 24 hours,
+so every cell of both tables is the same days' games.
 
 Like the home page's tables this runs inside the script that publishes the
 whole site, so what it cannot read costs the page its figures, said on
@@ -123,11 +136,18 @@ OPENING_LEVEL = 8
 #: every game).
 WINDOWS = [("7", 7), ("30", 30), ("all", None)]
 
-#: The tournaments' definitions, in the source tree, and the levels the table
-#: of win rates lists, lowest first: Prince to Deity (operator 2026-11-22:
-#: "our win rate against lv 4... lv 8 deity ai in tournament games").
+#: The tournaments' definitions, in the source tree, and what the two tables
+#: of win rates list (operator 2026-11-23): their rows, the levels from Deity
+#: down to Prince ("order the cols lv 8 down to level 4"), their columns, the
+#: days back from the newest tournament game ("a last 1 day win rate col,
+#: last 3 days, last 7 days, last 30 days"), and the tables themselves, the
+#: games with the Diplomatic victory off before the games with it on ("a
+#: table on the left the is with diplo excluded and a table on the right
+#: that allows diplo wins").
 TOURNAMENTS = pathlib.Path("data/tournaments.json")
-RATE_LEVELS = [4, 5, 6, 7, 8]
+RATE_LEVELS = [8, 7, 6, 5, 4]
+RATE_DAYS = [1, 3, 7, 30]
+RATE_TABLES = [("off", False), ("on", True)]
 
 
 def per_turn(turns: dict[int, int]) -> list[int]:
@@ -202,10 +222,10 @@ def window(groups: list[dict], days: int | None) -> dict | None:
 SUMMARY_REF = "refs/remotes/origin/ledger:runs/{tag}/summary.json"
 
 
-def limits(source: pathlib.Path, tags: list[str]) -> dict[str, tuple]:
-    """Each run's speed and turn limit, `(speed, max_turns)`, from its summary
-    on the ledger branch, read in one pass. A run whose summary is missing or
-    unreadable is not in the answer."""
+def summaries(source: pathlib.Path, tags: list[str], said) -> dict[str, object]:
+    """What each run's summary on the ledger branch says (`said`, asked of the
+    summary), read in one pass. A run whose summary is missing or unreadable
+    is not in the answer."""
     asked = "".join(SUMMARY_REF.format(tag=tag) + "\n" for tag in tags).encode()
     try:
         shown = subprocess.run(
@@ -229,8 +249,36 @@ def limits(source: pathlib.Path, tags: list[str]) -> dict[str, tuple]:
         except ValueError:
             continue
         if isinstance(summary, dict):
-            found[tag] = (summary.get("speed"), summary.get("max_turns"))
+            found[tag] = said(summary)
     return found
+
+
+def limits(source: pathlib.Path, tags: list[str]) -> dict[str, tuple]:
+    """Each run's speed and turn limit, `(speed, max_turns)`, from its summary
+    on the ledger branch."""
+    return summaries(source, tags, lambda summary: (summary.get("speed"), summary.get("max_turns")))
+
+
+def diplomatic(summary: dict) -> bool | None:
+    """Whether a run was played with the Diplomatic victory on, as its
+    summary says. A hotseat table's names what the table was asked to switch
+    off (`victories_off`); a single-player game's carries what the game
+    itself reported once the board was up (`seat.victories`, a switch per
+    victory type). `None` when it says neither: a launch that never reached a
+    board, or a run from before the game reported its switches."""
+    off = summary.get("victories_off")
+    if isinstance(off, list):
+        return "VICTORY_DIPLOMATIC" not in off
+    seat = summary.get("seat")
+    reported = seat.get("victories") if isinstance(seat, dict) else None
+    on = reported.get("diplomatic") if isinstance(reported, dict) else None
+    return on if isinstance(on, bool) else None
+
+
+def switches(source: pathlib.Path, tags: list[str]) -> dict[str, bool]:
+    """Each run's Diplomatic victory, on or off, from its summary on the
+    ledger branch. A run whose summary does not say is not in the answer."""
+    return {tag: on for tag, on in summaries(source, tags, diplomatic).items() if on is not None}
 
 
 def full_length(limit: tuple | None) -> bool:
@@ -302,42 +350,75 @@ def self_play_groups(snapshot: dict) -> list[dict]:
     return groups
 
 
-def tournament_games(rows: list[dict], specs: list[dict]) -> list[tuple[str, int, bool]]:
-    """Every finished game of every tournament, at a level the table lists:
-    the day it began, the level the game's AI played at, and whether CIVVIS
-    won it. The games and their endings are `home_rankings.tournament_series`'s
-    own, the count the Auto-Tourneys page shows; a game counts once, whatever
-    series it stands in."""
-    games: dict[str, tuple[str, int, bool]] = {}
+#: A run tag's stamp, the moment the game was launched, and a result line's.
+STAMP = re.compile(r"(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z")
+STAMPED = re.compile(r"(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})Z")
+
+
+def started(key: str, ending: dict) -> datetime.datetime | None:
+    """When a game began, to the second: the stamp in its tag
+    (`civvis-t7-20261123T042112Z`), and for a tag with no stamp the moment
+    its ending was recorded."""
+    m = STAMP.search(key) or STAMPED.fullmatch(str(ending.get("utc") or ""))
+    try:
+        return datetime.datetime(*map(int, m.groups())) if m else None
+    except ValueError:
+        return None
+
+
+def tournament_games(rows: list[dict], specs: list[dict], switch=lambda tags: {}) -> list[tuple]:
+    """Every finished game of every tournament, at a level the tables list:
+    when it began, the level the game's AI played at, whether CIVVIS won it,
+    and whether it was played with the Diplomatic victory on. The games and
+    their endings are `home_rankings.tournament_series`'s own, the count the
+    Auto-Tourneys page shows; a game counts once, whatever series it stands
+    in. `switch` answers each run's Diplomatic victory (`switches`), asked of
+    the run a game ended in and, where that run does not say, of the game's
+    first; a game neither says it for stands in neither table and is left
+    out."""
+    games: dict[str, tuple] = {}
     for series in ranks.tournament_series(rows, specs, detail=True) or []:
         for key, ending in series["played"]:
-            at = ranks.level(ending.get("difficulty"))
-            day = ranks.began(key, [ending])
-            if at in RATE_LEVELS and day:
-                games[key] = (day, at, ending["outcome"] == "win")
-    return list(games.values())
+            at = started(key, ending)
+            if ranks.level(ending.get("difficulty")) in RATE_LEVELS and at:
+                games[key] = (at, ending)
+    known = switch(sorted({tag for key, (_, ending) in games.items() for tag in (ending.get("tag") or key, key)}))
+    out = []
+    for key, (at, ending) in games.items():
+        on = known.get(ending.get("tag") or key, known.get(key))
+        if on is not None:
+            out.append((at, ranks.level(ending.get("difficulty")), ending["outcome"] == "win", bool(on)))
+    return out
 
 
-def win_rates(games: list[tuple[str, int, bool]]) -> dict | None:
-    """The table of win rates: for each window, every level of `RATE_LEVELS`
-    with its games, wins and losses. A window counts back from the newest
-    game of them all, so its days are the same for every level, and a level
-    with no game in it is listed with none. `None` without a game."""
+def win_rates(games: list[tuple]) -> dict | None:
+    """The two tables of win rates, the games with the Diplomatic victory off
+    and the games with it on: in each, every level of `RATE_LEVELS` with its
+    games and wins in each window of `RATE_DAYS`. A window is that many days
+    of 24 hours back from the newest game of them all, in either table, so
+    every cell is the same days' games, and a level with no game in a window
+    is listed with none. `games` is what the widest window holds, in a table
+    and in both. `None` without a game."""
     if not games:
         return None
-    newest = max(day for day, _, _ in games)
-    windows = {}
-    for key, days in WINDOWS:
-        since = None
-        if days is not None:
-            since = (datetime.date.fromisoformat(newest) - datetime.timedelta(days=days - 1)).isoformat()
-        kept = [game for game in games if since is None or game[0] >= since]
+    newest = max(at for at, _, _, _ in games)
+    tables = {}
+    for name, switched in RATE_TABLES:
         levels = []
-        for at in RATE_LEVELS:
-            won = [won for _, level, won in kept if level == at]
-            levels.append({"level": at, "games": len(won), "wins": sum(won), "losses": len(won) - sum(won)})
-        windows[key] = {"from": min(day for day, _, _ in kept), "to": newest, "games": len(kept), "levels": levels}
-    return {"windows": windows}
+        for level in RATE_LEVELS:
+            windows = []
+            for days in RATE_DAYS:
+                since = newest - datetime.timedelta(days=days)
+                won = [won for at, played, won, on in games if played == level and on is switched and at > since]
+                windows.append({"days": days, "games": len(won), "wins": sum(won)})
+            levels.append({"level": level, "windows": windows})
+        tables[name] = {"games": sum(row["windows"][-1]["games"] for row in levels), "levels": levels}
+    return {
+        "to": newest.strftime("%Y-%m-%d %H:%MZ"),
+        "days": RATE_DAYS,
+        "games": sum(table["games"] for table in tables.values()),
+        "tables": tables,
+    }
 
 
 def kind(name: str, groups: list[dict]) -> dict | None:
@@ -372,12 +453,13 @@ def research(source: pathlib.Path) -> dict | None:
         print(f"research_page: no figures against the game's AI ({error})", file=sys.stderr)
         out["levels"] = {}
     # The win rate at each level over the tournaments' games, off the same
-    # result lines and the definitions the Auto-Tourneys page reads.
+    # result lines and the definitions the Auto-Tourneys page reads, each
+    # game in the table of its own Diplomatic switch.
     out["tournament_rates"] = None
     try:
         if rows:
             specs = json.loads((source / TOURNAMENTS).read_text(encoding="utf-8")).get("tournaments") or []
-            out["tournament_rates"] = win_rates(tournament_games(rows, specs))
+            out["tournament_rates"] = win_rates(tournament_games(rows, specs, lambda tags: switches(source, tags)))
     except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:
         print(f"research_page: no win rates over the tournaments' games ({error})", file=sys.stderr)
     if not out["self_play"] and not out["levels"] and not out["tournament_rates"]:
@@ -529,7 +611,7 @@ def main(argv: list[str]) -> int:
         kinds = [*data.get("levels", {}).values(), data.get("deity"), data.get("self_play")]
         said = [f"{k['windows']['all']['games']} {k['name']} games" for k in kinds if k]
         if data.get("tournament_rates"):
-            said.append(f"{data['tournament_rates']['windows']['all']['games']} tournament games")
+            said.append(f"{data['tournament_rates']['games']} tournament games")
         print(f"research_page: wrote {' and '.join(said)} into {page}", file=sys.stderr)
     return 0
 

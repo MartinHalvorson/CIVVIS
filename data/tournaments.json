@@ -57,7 +57,14 @@
     "is one series that never fills (no `series_size`); its `end` only bounds the tags it counts, so a tournament played between",
     "its games pauses it and does not close it. The page shows its win rate by level, over every game and day by day. Its games",
     "are tagged `civvis-t7-` and played in turn at Lv 6, Lv 7, Lv 8, Lv 8 by the host's conductor whenever no other tournament",
-    "is being played."
+    "is being played.",
+    "Operator 2026-11-23 ~04:10Z: \"across lv 4 - 8, lets run the autotourney (the indefinite one) to play games 1/8 chance on lv 4,",
+    "5, 6, 7 and 1/2 chance on level 8 ... this will be our primary Firaxis Civ 6 AI benchmark - win rate on each level. half the",
+    "games can be diplo, half no diplo.\": the same tournament (its tags, `start` and `end` are unchanged), dealt differently from",
+    "2026-11-23 ~04:30Z. The host's conductor deals the games in blocks of 16, each block Lv 8 eight times and Lv 4, 5, 6 and 7",
+    "twice each, half of every level's games with the Diplomatic victory on and half with it off, in an order shuffled per block.",
+    "A game's result line does not say which; its run summary on the ledger does (`seat.victories`), and Win Analytics",
+    "(beta/research_page.py) lists the two kinds of game in two tables, Diplomatic off and Diplomatic allowed."
   ],
   "descriptions": {
     "1": "Proof of concept, 10 game series",
@@ -121,10 +128,11 @@
       "note": "Restarted on 2026-11-21 with one CIVVIS agent instead of two; the first attempt's one finished game is not counted. Games 1-7 were hotseat tables; from 2026-11-22 the rest are played in single player (one CIVVIS seat, five Firaxis AI at the level), tagged civvis-t6-."
     },
     {
-      "name": "Indefinite benchmark, Lv 6, 7, 8, 8 in turn, 1 CIVVIS agent + 5 AI",
-      "description": "Indefinite: Lv 6, Lv 7, Lv 8 (x 2) whenever no other tourney runs (no Diplo allowed)",
-      "idea": "Whenever no other tournament is being played, one CIVVIS agent plays five Firaxis AI at Lv 6, Lv 7, Lv 8 and Lv 8 again, in turn, with the Diplomatic victory off, so our win rate at each level is measured as it moves over time.",
-      "conditions": "Lv 6, 7, 8, 8 in turn, 6P Continents Online, 1 CIVVIS + 5 AI, no Diplomatic victory",
+      "name": "Indefinite benchmark, Lv 4 to Lv 8, 1 CIVVIS agent + 5 AI",
+      "description": "Indefinite: our Firaxis AI benchmark, Lv 8 half the games and Lv 4 to Lv 7 an eighth each, Diplo allowed in half, whenever no other tourney runs",
+      "idea": "Whenever no other tournament is being played, one CIVVIS agent plays five Firaxis AI: half the games at Lv 8 and an eighth at each of Lv 4, 5, 6 and 7, half of each level's games with the Diplomatic victory allowed and half with it off. It is our primary benchmark against the Firaxis AI, the win rate at each level as it moves over time.",
+      "conditions": "Lv 8 one game in two, Lv 4-7 one in eight each, 6P Continents Online, 1 CIVVIS + 5 AI, Diplomatic victory on in half the games",
+      "note": "Until 2026-11-23 its games were Lv 6, Lv 7, Lv 8 and Lv 8 in turn, all with the Diplomatic victory off.",
       "start": "civvis-t7-",
       "end": "civvis-t8-",
       "indefinite": true,
