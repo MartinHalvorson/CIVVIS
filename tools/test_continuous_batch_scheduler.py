@@ -538,6 +538,58 @@ class MachineSharing(unittest.TestCase):
             self.assertEqual(beside["ceiling_percent"], 60.0)
             governor.release()
 
+    def test_a_script_is_seen_while_it_runs_or_waits_but_not_in_our_own_options(self):
+        lines = [
+            "/usr/bin/python3 curated_scheduler.py run --beside-script /x/heavy.sh=55",
+            "/bin/zsh /x/heavy.sh 3 cargo test --profile ci",
+            "vim /y/heavy.sh.bak",
+        ]
+        self.assertEqual(scheduler.scripts_running(lines, ["/x/heavy.sh", "/x/other.sh"]),
+                         {"/x/heavy.sh"})
+        self.assertEqual(scheduler.scripts_running(lines[:1] + lines[2:], ["/x/heavy.sh"]), set())
+
+    def test_a_queued_script_lowers_the_ceiling_though_it_burns_nothing(self):
+        import threading
+        import time
+
+        class Host:
+            busy = 0
+            idle = 0
+
+            def ticks(self):
+                # 70% busy: under an 80% ceiling, over a 55% one.
+                Host.busy += 7
+                Host.idle += 3
+                return (Host.busy, Host.idle)
+
+        queued = threading.Event()
+        governor = scheduler.CpuGovernor(
+            80, cores=10, host=Host(),
+            processes=lambda: [self.worker(pid, 100.0 * pid) for pid in (11, 12, 13)],
+            send=lambda _group, _which: None, send_one=lambda _pid, _which: None,
+            beside_scripts={"/x/heavy.sh": 55},
+            commands=lambda: (["/bin/zsh /x/heavy.sh 3 cargo build"] if queued.is_set() else []))
+
+        def reading(want):
+            deadline = time.monotonic() + 3.0
+            while time.monotonic() < deadline:
+                snapshot = governor.snapshot()
+                if snapshot and want(snapshot):
+                    return snapshot
+                time.sleep(0.01)
+            self.fail(f"no such reading; last was {governor.snapshot()}")
+
+        with mock.patch.object(scheduler, "GOVERNOR_WINDOW_SECONDS", 0.02):
+            governor.govern(77)
+            alone = reading(lambda snapshot: "foreground" not in snapshot
+                            and snapshot["workers_running"] == 1)
+            self.assertEqual(alone["ceiling_percent"], 80.0)
+            queued.set()
+            beside = reading(lambda snapshot: snapshot.get("foreground") == "heavy.sh"
+                             and snapshot["workers_running"] == 0)
+            self.assertEqual(beside["ceiling_percent"], 55.0)
+            governor.release()
+
     def test_beside_options_name_a_process_and_a_ceiling(self):
         self.assertEqual(scheduler.parse_beside(["Civ6_Exe_Child=70", "rustc=60"]),
                          {"Civ6_Exe_Child": 70.0, "rustc": 60.0})
