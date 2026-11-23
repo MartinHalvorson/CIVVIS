@@ -1059,6 +1059,10 @@ fn the_split_speaks_one_set_of_messages_on_both_sides() {
         // What stands on a half's timeline, for its lane in the host's bar:
         // its save points and its breakpoint turns.
         "pane-marks",
+        // One screen becomes two in one move: a half that is not yet shown
+        // says when it has painted itself, and is told when it is seen.
+        "pane-shown",
+        "pane-seen",
         // Autosearch: asked for on a half's own panel, a line that was
         // found for a half to play, each Civ AI of it as the half seats
         // it, and how the line came out.
@@ -1961,7 +1965,7 @@ fn a_branch_begins_on_the_turn_it_is_made_on() {
     let page = super::super::EMBEDDED_APP_DEBUGGER_JS;
     for piece in [
         // B is the branch, and is told so when turns are kept ahead.
-        "branches: Math.max(timeline.last ?? state.turn, (timeline.beyond || {}).to ?? 0) > state.turn};",
+        "branches: Math.max(timeline.last ?? state.turn, (timeline.beyond || {}).to ?? 0) > state.turn,",
         "if (letter === \"b\" && debugSplit.branches) debugSplitTell(\"b\", {civvis: \"pane-op\", body: {op: \"branch\"}});",
         // Until it says it holds none of them, they are left out of its line.
         "const cut = letter === \"b\" && debugSplit.branches ? from : Infinity;",
@@ -1981,7 +1985,23 @@ fn a_branch_begins_on_the_turn_it_is_made_on() {
         // A game opens on its two tracks, and the box asks which Civ AI
         // plays the branch: a branch made for one is not asked about.
         "try { drawDebugBar(); debugPaneReport(); debugPaneNumbers(); debugOpenOnTwoTracks(); }",
-        "debugAsk = seat ? null : {kind: \"seat\", letter: \"b\"};",
+        // It asks when the two screens are shown, not while the halves load:
+        // one screen and two change places in one move (operator,
+        // 2026-11-22: "i do not like the whole transition between ai
+        // debugger 1 screen and 2 screens"). The window is held as it
+        // stands, the split is made unseen, and it is shown when both
+        // halves are there. What that looks like in a browser is held by
+        // `beta/debugger_test.py`
+        // (`check_one_screen_and_two_change_places_in_one_move`).
+        "shown: false, ask: seat ? null : {kind: \"seat\", letter: \"b\"}, look,",
+        "debugAsk = split.ask;",
+        "if (debugHeld) return;",
+        "host.className = \"dbg-unseen\";",
+        "if (there(split.panes.a) && there(split.panes.b) && split.panes.a.deck && !split.branches) debugSplitReveal();",
+        "waiting: setTimeout(debugSplitReveal, DEBUG_SPLIT_WAIT_MS)};",
+        // A game that opens this way waits under a veil instead.
+        "debugSplitOpen(\"row\", null, null, true);",
+        "if (fresh) debugVeil(true); else debugBar.classList.add(\"dbg-branching\");",
         // Another Civ AI picked on the one timeline is asked about first.
         "debugAsk = target.value && target.value !== debugStrategy() ? {kind: \"switch\", name: target.value} : null;",
     ] {

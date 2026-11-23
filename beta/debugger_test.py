@@ -466,6 +466,14 @@ class Bar:
         found = self.ev(f"(() => {{ const el = document.querySelector({json.dumps(selector)});"
                         " if (!el) return 'missing'; if (el.disabled) return 'disabled'; el.click(); return 'ok'; })()")
         assert found == "ok", f"{selector}: {found}"
+        self.settled()
+
+    def settled(self) -> None:
+        """One screen and two change places in one move, and the window is held until it is made.
+
+        A press that begins one (Branch, Drop, the ✕ of a branch) is over
+        when the other picture stands there and takes a press again."""
+        self.until("!debugHeld && !debugMoving", "the window is let go of when the move is made")
 
     def drag(self, slider: str, turn: int) -> None:
         """Move a range input and let go of it: `input`, then `change`."""
@@ -2366,9 +2374,17 @@ def check_the_game_opens_on_two_tracks(bar: Bar, address: str) -> None:
     bar.dev.call("Page.navigate", {"url": address})
     bar.until(f"{ready} && !location.search", "the page as it is opened, loaded")
     assert bar.ev("typeof debugSplit !== 'undefined' && debugSplit === null && state === null")
-    bar.ev("render(engineState()), true")
     # Nothing is pressed: the first state drawn splits the screen as Branch
-    # does, side by side, locked, with head to head open.
+    # does, side by side, locked, with head to head open. The game is not
+    # shown on one screen first: in the task that draws its first state the
+    # window goes under a veil, and stays there until the two are shown.
+    veiled = bar.ev("(() => { render(engineState()); const veil = document.getElementById('dbg-veil');"
+                    " return [!!debugSplit, debugSplit.shown, debugHeld, !!veil"
+                    " && veil.getBoundingClientRect().width === innerWidth && veil.getBoundingClientRect().height === innerHeight,"
+                    " +getComputedStyle(veil).zIndex > +getComputedStyle(debugBar).zIndex, debugBar.classList.contains('dbg-branching')]; })()")
+    assert veiled == [True, False, True, True, True, False], veiled
+    bar.settled()
+    assert bar.ev("[debugSplit.shown, document.getElementById('dbg-veil')]") == [True, None]
     bar.until(f"debugSplit && {both(1)} && {said} && {deck_idle}", "the game opens on its two tracks")
     assert bar.ev("[debugSplit.dir, debugSplit.locked, debugSplit.versus, debugSplit.from]") == ["row", True, True, 1]
     assert bar.ev("['', 'a', 'b'].map(key => getComputedStyle(document.querySelector(`[data-dbg-lane=\"${key}\"]`)).display !== 'none')") == [True] * 3
@@ -2399,6 +2415,7 @@ def check_the_game_opens_on_two_tracks(bar: Bar, address: str) -> None:
     # A new game opens on its two tracks again.
     bar.ev("Object.assign(engine, {seed: 8, turn: 1, marks: [1], worlds: {1: 1}, by: {}, score: 0, eras: [{era: 0, name: 'ancient', turn: 1}]}),"
            " render(engineState()), true")
+    bar.settled()
     bar.until(f"debugSplit && {both(1)} && {said} && {deck_idle}", "a new game opens on its two tracks")
     assert bar.ev("debugAsk") == {"kind": "seat", "letter": "b"}, bar.ev("debugAsk")
     bar.click('[data-dbg-split="drop-a"]')
@@ -2424,6 +2441,253 @@ def check_the_game_opens_on_two_tracks(bar: Bar, address: str) -> None:
     assert not bar.dev.console, f"the page complained: {bar.dev.console}"
 
 
+def check_one_screen_and_two_change_places_in_one_move(bar: Bar, doc: str) -> None:
+    """Branch, and closing a branch, hold the window as it stands and then change it once.
+
+    Operator, 2026-11-22: "i do not like the whole transition between ai
+    debugger 1 screen and 2 screens. please clean this up a lot more". A
+    half is a whole page and takes a moment to be there. Before this the
+    window showed all of it: an empty split, each half loading, the box
+    without its deck and then with it.
+    """
+    half = "debugSplit.panes.{}.frame.contentWindow.eval({})".format
+    press = lambda selector: bar.ev(f"document.querySelector({json.dumps(selector)}).click(), true")
+    held = ("[debugHeld, document.documentElement.classList.contains('dbg-held'),"
+            " getComputedStyle(debugBar).pointerEvents]")
+    one_timeline_box = ("[debugBar.classList.contains('dbg-split-on'), document.documentElement.classList.contains('dbg-split-open'),"
+                        " document.getElementById('dbg-ask').hidden, debugAsk]")
+    assert bar.ev("debugSplit === null && !debugHeld && !debugMoving")
+    turn = bar.ev("state.turn")
+    # What the split is shown with, taken down as it is shown.
+    bar.ev("(() => { const show = window.realReveal = debugSplitReveal; window.shownWith = [];"
+           " debugSplitReveal = function () { const {a, b} = debugSplit.panes;"
+           " shownWith.push([a, b].map(pane => [pane.turn, !!pane.marks, !!pane.numbers, pane.agreed, pane.painted]).concat([!!a.deck, debugSplit.branches]));"
+           " return show(); }; return true; })()")
+
+    # The one screen is looking somewhere, and the halves will open looking there.
+    bar.ev("cam.x = 111, cam.y = 222, cam.scale = 2, true")
+    # The halves' own script comes late, so there is time to see the window held.
+    bar.ev("window.lateScript = true")
+    press('[data-dbg="split"]')
+    # At once: the split is made and its halves are loading, unseen, and the
+    # window is as it was. The box is still the one timeline's, takes no
+    # press, asks nothing yet, and Branch says it is at work.
+    unseen = "[debugSplit.shown, debugSplit.host.classList.contains('dbg-unseen'), getComputedStyle(debugSplit.host).opacity]"
+    assert bar.ev("!!debugSplit") and bar.ev(unseen) == [False, True, "0"], bar.ev(unseen)
+    assert bar.ev(held) == [True, True, "none"], bar.ev(held)
+    assert bar.ev(one_timeline_box) == [False, False, True, None], bar.ev(one_timeline_box)
+    assert bar.ev("debugBar.classList.contains('dbg-branching')")
+    assert bar.ev("getComputedStyle(document.querySelector('#debugbar .dbg-branch'), '::after').content") == '"ing…"'
+    # The unseen halves take no press, and nothing is asked of the world they are made from.
+    assert bar.ev("[...debugSplit.host.children].every(part => getComputedStyle(part).pointerEvents === 'none')")
+    assert bar.ev("send({type: 'end_turn'}).then(answer => answer === undefined)"), "a held world was asked to end its turn"
+    bar.ev("new Promise(done => setTimeout(() => done(true), 150))")
+    assert bar.ev("[debugSplit.shown, debugHeld, shownWith.length]") == [False, True, 0], \
+        "the window was let go of before both halves were there"
+    assert bar.ev(one_timeline_box) == [False, False, True, None]
+    bar.ev("window.lateScript = false")
+    bar.settled()
+    # Shown once, and with everything a split is drawn from already there:
+    # where each half stands, its timeline and its numbers, the deck of the
+    # one panel, each half painted looking where it was told.
+    assert bar.ev("shownWith") == [[[turn, True, True, True, True], [turn, True, True, True, True], True, False]], bar.ev("shownWith")
+    assert bar.ev(unseen) == [True, False, "1"], bar.ev(unseen)
+    assert bar.ev(held) == [False, False, "auto"], bar.ev(held)
+    assert bar.ev("[debugBar.classList.contains('dbg-split-on'), debugBar.classList.contains('dbg-merged'),"
+                  " debugBar.classList.contains('dbg-branching'), document.documentElement.classList.contains('dbg-split-open')]") \
+        == [True, True, False, True]
+    # And then the box asks about the branch.
+    assert bar.ev("[debugAsk, document.getElementById('dbg-ask').hidden]") == [{"kind": "seat", "letter": "b"}, False]
+    # Both halves look where the one screen was looking, and are let go of.
+    looks = bar.ev("['a', 'b'].map(letter => debugSplit.panes[letter].frame.contentWindow.eval('[cam.x, cam.y, cam.scale]'))")
+    assert looks == [[111, 222, 2], [111, 222, 2]], looks
+    bar.until("['a', 'b'].every(letter => debugSplit.panes[letter].frame.contentWindow.eval('debugLookKept') === null)",
+              "each half is told it is seen")
+    assert bar.ev("send({type: 'end_turn'}).then(answer => answer === state)"), "the page's own End Turn is its own again"
+    # Nothing is left of the move: no names for the browser to carry, no veil.
+    assert bar.ev("[debugBar.style.viewTransitionName, document.getElementById('maparea').style.viewTransitionName,"
+                  " debugSplit.panes.a.frame.style.viewTransitionName, document.documentElement.classList.contains('dbg-swapping'),"
+                  " document.getElementById('dbg-veil')]") == ["", "", "", False, None]
+
+    # Two screens become one the same way. A looks somewhere of its own.
+    bar.ev("debugAsk = null, drawDebugBar(), true")
+    bar.ev(half("a", "'cam.x = 333, cam.scale = 3, true'"))
+    bar.ev("engine.wait = 150, true")
+    greyed = ("[...document.querySelectorAll('#debugsplit .dbg-divider button, #debugbar button, #debugbar select')]"
+              ".filter(held => held.disabled).length")
+    before = bar.ev(greyed)
+    press('[data-dbg-split="drop-b"]')
+    # At once: held as they stand. Nothing is greyed for the moment the engine takes, and nothing takes a press.
+    assert bar.ev("[debugSplit.busy, debugSplit.host.classList.contains('dbg-closing')]") == [True, True]
+    assert bar.ev(held) == [True, True, "none"], bar.ev(held)
+    assert bar.ev(greyed) == before, "a split being closed is greyed"
+    assert bar.ev("[...debugSplit.host.children].every(part => getComputedStyle(part).pointerEvents === 'none')")
+    # What a half says meanwhile draws nothing.
+    bar.ev("drawDebugSplit(), drawDebugBar(), true")
+    assert bar.ev(f"[debugBar.classList.contains('dbg-split-on'), {greyed}]") == [True, before]
+    bar.settled()
+    bar.ev("engine.wait = 0, true")
+    assert bar.ev("[debugSplit, document.getElementById('debugsplit'), debugBar.classList.contains('dbg-split-on')]") == [None, None, False]
+    assert bar.note() == "Branch B closed · A is the timeline", bar.note()
+    # The one screen looks where the kept half was looking.
+    assert bar.ev("[cam.x, cam.scale]") == [333, 3], bar.ev("[cam.x, cam.scale]")
+
+    # A half that never says it is there is not waited on for ever: the two
+    # screens are shown as they are when the wait is up.
+    bar.ev("(() => { window.realReady = debugSplitReady; debugSplitReady = () => {}; shownWith.length = 0; return true; })()")
+    began = time.time()
+    press('[data-dbg="split"]')
+    bar.ev("new Promise(done => setTimeout(() => done(true), 600))")
+    assert bar.ev("[debugSplit.shown, debugHeld]") == [False, True]
+    bar.until("debugSplit.shown && !debugHeld && !debugMoving", "the split is shown when the wait is up", seconds=12)
+    waited = time.time() - began
+    patience = bar.ev("DEBUG_SPLIT_WAIT_MS")
+    assert patience / 1000 - 0.5 <= waited, waited
+    # The document gives the wait the script uses.
+    said = f"after {patience // 1000} s the two are shown as they are"
+    assert said in doc, f"docs/SIM_DEBUGGER.md no longer says: {said}"
+    bar.ev("debugSplitReady = realReady, true")
+    bar.click('[data-dbg-split="drop-b"]')
+    bar.until("!debugSplit", "the branch is dropped")
+
+    # A browser that takes a move and never makes it (a window it is not
+    # painting) does not keep the change, nor the word that the move is over.
+    bar.ev("document.startViewTransition = () => ({finished: new Promise(() => {}), skipTransition() {}}), true")
+    began = time.time()
+    press('[data-dbg="split"]')
+    bar.until("debugSplit && debugSplit.shown && !debugHeld", "the two screens are shown though the browser never made the move")
+    # (A window that is hidden is asked for no move at all, and has none to wait on.)
+    seen = not bar.ev("document.hidden")
+    assert bar.ev("[debugMoving, debugBar.classList.contains('dbg-split-on'), getComputedStyle(debugSplit.host).opacity]") == [seen, True, "1"]
+    bar.until("!debugMoving", "the move is over though the browser never ended it")
+    assert time.time() - began < 6, "the change waited on the browser"
+    assert bar.ev("[debugBar.style.viewTransitionName, document.documentElement.classList.contains('dbg-swapping')]") == ["", False]
+    bar.click('[data-dbg-split="drop-b"]')
+    bar.until("!debugSplit", "the branch is dropped")
+    bar.ev("delete document.startViewTransition, true")
+
+    # Someone who has asked for less motion gets the change made, and no move.
+    bar.dev.call("Emulation.setEmulatedMedia", {"features": [{"name": "prefers-reduced-motion", "value": "reduce"}]})
+    bar.until("matchMedia('(prefers-reduced-motion: reduce)').matches", "less motion is asked for")
+    bar.ev("(() => { window.moves = 0; const begin = document.startViewTransition.bind(document);"
+           " document.startViewTransition = (...given) => { moves++; return begin(...given); }; return true; })()")
+    bar.click('[data-dbg="split"]')
+    assert bar.ev("[debugSplit.shown, moves]") == [True, 0]
+    bar.click('[data-dbg-split="drop-a"]')
+    bar.until("!debugSplit", "the branch is dropped")
+    assert bar.ev("moves") == 0
+    bar.dev.call("Emulation.setEmulatedMedia", {"features": []})
+    bar.until("!matchMedia('(prefers-reduced-motion: reduce)').matches", "motion is as it was")
+    bar.click('[data-dbg="split"]')
+    assert bar.ev("moves") == (1 if seen else 0), "one screen became two without a move"
+    bar.click('[data-dbg-split="drop-b"]')
+    bar.until("!debugSplit", "the branch is dropped")
+    assert bar.ev("moves") == (2 if seen else 0), "two screens became one without a move"
+    bar.ev("delete document.startViewTransition, debugSplitReveal = realReveal, true")
+    assert not bar.dev.console, f"the page complained: {bar.dev.console}"
+
+
+def check_windows_move_by_their_titles(bar: Bar) -> None:
+    """A panel of the box, and what the box asks, are moved by pressing their title and dragging.
+
+    Operator, 2026-11-22: "also, important - clicking and dragging on a
+    window title allows for repositioning".
+    """
+    box = ("(id => { const win = document.getElementById(id); if (win.hidden) return null;"
+           " const at = win.getBoundingClientRect(); return [Math.round(at.left), Math.round(at.top), Math.round(at.width), Math.round(at.height)]; })")
+    # Under its button, or as near under it as the box's right end lets it be.
+    under = ("(id => { const win = document.getElementById(id).getBoundingClientRect(), box = debugBar.getBoundingClientRect(),"
+             " from = document.querySelector(`[data-dbg-pop=\"${id.slice(8)}\"]`).getBoundingClientRect();"
+             " const left = Math.max(box.left + 8, Math.min(from.left, box.right - win.width - 8));"
+             " return Math.round(win.top - from.bottom) === 6 && Math.abs(win.left - left) <= 1; })")
+
+    def near(found, wanted) -> bool:
+        """The same place, to the pixel a pointer's own rounding allows."""
+        return found is not None and all(abs(a - b) <= 1 for a, b in zip(found, wanted))
+
+    def drag(win: str, dx: int, dy: int, let_go: bool = True) -> None:
+        """Press the window's title, take the pointer somewhere, and let go."""
+        bar.ev(f"(() => {{ const title = document.getElementById('{win}').firstElementChild, at = title.getBoundingClientRect();"
+               " const x = at.left + 40, y = at.top + 8, said = (kind, to, px, py) => to.dispatchEvent(new PointerEvent(kind,"
+               " {bubbles: true, cancelable: true, pointerId: 5, button: 0, clientX: px, clientY: py}));"
+               f" said('pointerdown', title, x, y); said('pointermove', window, x + {dx} / 2, y + {dy} / 2);"
+               f" said('pointermove', window, x + {dx}, y + {dy});"
+               + (f" said('pointerup', window, x + {dx}, y + {dy});" if let_go else "") + " return true; })()")
+
+    assert bar.ev("debugSplit === null && debugPopOpen === null")
+    # Save points open at the right end of the box, and are taken left.
+    for name, across in (("layers", 140), ("breaks", 140), ("saves", -140)):
+        win = f"dbg-pop-{name}"
+        bar.click(f'[data-dbg-pop="{name}"]')
+        assert bar.ev(f"{under}('{win}')"), f"{name} does not open under its button"
+        # Its title is what it is held by, and says so to the pointer.
+        assert bar.ev(f"(() => {{ const title = document.getElementById('{win}').firstElementChild;"
+                      " return [title.tagName, getComputedStyle(title).cursor]; })()") == ["H4", "grab"]
+        before = bar.ev(f"{box}('{win}')")
+        # A press that does not travel is a click: nothing moves.
+        drag(win, 1, 1)
+        assert bar.ev(f"{box}('{win}')") == before and bar.ev("Object.keys(debugWindowPlace)") == []
+        # Dragged, it goes where the pointer went, and shows it is held until it is let go of.
+        drag(win, across, 90, let_go=False)
+        assert bar.ev(f"document.getElementById('{win}').classList.contains('dbg-moving')")
+        bar.ev("window.dispatchEvent(new PointerEvent('pointerup', {pointerId: 5})), true")
+        after = bar.ev(f"{box}('{win}')")
+        assert near(after, [before[0] + across, before[1] + 90, before[2], before[3]]), (before, after)
+        assert bar.ev(f"document.getElementById('{win}').classList.contains('dbg-moving')") is False
+        # It stays there when the box is drawn again, and opens there again.
+        bar.ev("drawDebugBar(), true")
+        assert bar.ev(f"{box}('{win}')") == after
+        bar.click(f'[data-dbg-pop="{name}"]')
+        assert bar.ev(f"{box}('{win}')") is None
+        bar.click(f'[data-dbg-pop="{name}"]')
+        assert bar.ev(f"{box}('{win}')") == after
+        # It cannot be taken out of the window, nor its title out of reach.
+        drag(win, 5000, 5000)
+        kept_in = bar.ev(f"{box}('{win}')")
+        assert kept_in[0] + kept_in[2] <= bar.ev("innerWidth") and kept_in[1] <= bar.ev("innerHeight") - 44, kept_in
+        drag(win, -9000, -9000)
+        kept_in = bar.ev(f"{box}('{win}')")
+        assert kept_in[0] >= 0 and kept_in[1] >= 0, kept_in
+        # A double click on its title puts it back under its button.
+        bar.ev(f"document.getElementById('{win}').firstElementChild.dispatchEvent(new MouseEvent('dblclick', {{bubbles: true}})), true")
+        assert bar.ev(f"{under}('{win}')") and bar.ev("Object.keys(debugWindowPlace)") == []
+        bar.click(f'[data-dbg-pop="{name}"]')
+    # Only the title: a press on the rest of a panel moves nothing.
+    bar.click('[data-dbg-pop="breaks"]')
+    before = bar.ev(f"{box}('dbg-pop-breaks')")
+    bar.ev("(() => { const text = document.querySelector('#dbg-pop-breaks p'), at = text.getBoundingClientRect();"
+           " for (const [kind, to, x] of [['pointerdown', text, 0], ['pointermove', window, 80], ['pointerup', window, 80]])"
+           "   to.dispatchEvent(new PointerEvent(kind, {bubbles: true, pointerId: 6, button: 0, clientX: at.left + 5 + x, clientY: at.top + 5}));"
+           " return true; })()")
+    assert bar.ev(f"{box}('dbg-pop-breaks')") == before
+    bar.click('[data-dbg-pop="breaks"]')
+
+    # What the box asks is a window too. Each of its two questions keeps its
+    # own place: the one about another Civ AI on the one timeline, moved, is
+    # not where the one about a new branch then opens.
+    bar.ev("(() => { const select = document.getElementById('dbg-agent');"
+           " select.value = [...select.options].find(option => option.value !== debugStrategy()).value;"
+           " select.dispatchEvent(new Event('change', {bubbles: true})); return true; })()")
+    assert bar.ev("debugAsk.kind") == "switch"
+    before = bar.ev(f"{box}('dbg-ask')")
+    drag("dbg-ask", 200, 120)
+    assert near(bar.ev(f"{box}('dbg-ask')")[:2], [before[0] + 200, before[1] + 120])
+    assert bar.ev("debugAsk.kind") == "switch", "moving the question answered it"
+    bar.click('#dbg-ask [data-dbg-ask="close"]')
+    bar.click('[data-dbg="split"]')
+    assert bar.ev("debugAsk") == {"kind": "seat", "letter": "b"}
+    assert bar.ev("(() => { const from = document.querySelector('#debugbar [data-dbg-agent=\"b\"]').getBoundingClientRect(),"
+                  " at = document.getElementById('dbg-ask').getBoundingClientRect(); return Math.round(at.top - from.bottom); })()") == 6
+    # Moved over a half, it is still asked, and is answered where it stands.
+    before = bar.ev(f"{box}('dbg-ask')")
+    drag("dbg-ask", 300, 200)
+    assert near(bar.ev(f"{box}('dbg-ask')")[:2], [before[0] + 300, before[1] + 200])
+    assert bar.ev("debugAsk") == {"kind": "seat", "letter": "b"}
+    bar.click('#dbg-ask [data-dbg-ask="seat"][value="stock"]')
+    bar.until("debugSplit.panes.b.frame.contentWindow.eval('engine.seat') === 'stock'", "B is seated from the moved question")
+    bar.click('[data-dbg-split="drop-b"]')
+    bar.until("!debugSplit", "the branch is dropped")
+    bar.ev("for (const key of Object.keys(debugWindowPlace)) delete debugWindowPlace[key]; true")
 def check_autosearch(bar: Bar, address: str) -> None:
     """Autosearch: the button, its panel, a search played on copies of the engine, and the line it found played on the page.
 
@@ -2483,6 +2747,28 @@ def check_autosearch(bar: Bar, address: str) -> None:
     assert bar.ev(f"[{shown}, debugPopOpen]") == [False, "layers"]
     bar.click('[data-dbg-search="open"]')
     assert bar.ev(f"[{shown}, debugPopOpen]") == [True, None]
+    # It is a window as they are (`check_windows_move_by_their_titles`): it
+    # opens under its button, is moved by its title, stays where it was put
+    # when it is drawn again, and a double click on the title puts it back.
+    place = ("(() => { const at = document.getElementById('dbg-search').getBoundingClientRect(),"
+             " from = document.querySelector('[data-dbg-search=\"open\"]').getBoundingClientRect();"
+             " return [Math.round(at.left - from.left), Math.round(at.top - from.bottom)]; })()")
+    under = lambda at: abs(at[0]) <= 1 and at[1] == 6
+    home = bar.ev(place)
+    assert under(home), home
+    assert bar.ev("(() => { const title = document.getElementById('dbg-search').firstElementChild;"
+                  " return [title.tagName, title.textContent, getComputedStyle(title).cursor]; })()") == ["H4", "Autosearch", "grab"]
+    bar.ev("(() => { const title = document.getElementById('dbg-search').firstElementChild, at = title.getBoundingClientRect();"
+           " const x = at.left + 40, y = at.top + 8, said = (kind, to, px, py) => to.dispatchEvent(new PointerEvent(kind,"
+           " {bubbles: true, cancelable: true, pointerId: 7, button: 0, clientX: px, clientY: py}));"
+           " said('pointerdown', title, x, y); said('pointermove', window, x + 60, y + 40); said('pointermove', window, x + 120, y + 80);"
+           " said('pointerup', window, x + 120, y + 80); return true; })()")
+    moved = bar.ev(place)
+    assert abs(moved[0] - home[0] - 120) <= 1 and abs(moved[1] - home[1] - 80) <= 1, (home, moved)
+    bar.ev("drawDebugBar(), true")
+    assert bar.ev(place) == moved and bar.ev("Object.keys(debugWindowPlace)") == ["dbg-search"]
+    bar.ev("document.getElementById('dbg-search').firstElementChild.dispatchEvent(new MouseEvent('dblclick', {bubbles: true})), true")
+    assert under(bar.ev(place)) and bar.ev("Object.keys(debugWindowPlace)") == []
 
     # A search: ten turns on, on a quarter of the cores. Every copy is asked
     # to forget the page's breakpoints and stand on the turn the search
@@ -2749,6 +3035,16 @@ def main() -> int:
         print("another Civ AI picked on the one timeline is asked about first, Switch seats it and Branch "
               "makes a branch for it; a branch made by Branch asks which Civ AI plays it, under its picker, "
               "and is answered from the list or from the picker.")
+        doc = " ".join((here.parent / "docs" / "SIM_DEBUGGER.md").read_text(encoding="utf-8").split())
+        check_one_screen_and_two_change_places_in_one_move(bar, doc)
+        print("Branch holds the window as it stands while the halves load unseen and shows the two screens once, "
+              "with everything they are drawn from there and each looking where the one screen looked; closing a "
+              "branch holds the two and greys nothing, and the one screen looks where the kept half did; a half "
+              "that never arrives is not waited on for ever, a browser that never makes the move does not keep the "
+              "change, and less motion asked for is no move at all.")
+        check_windows_move_by_their_titles(bar)
+        print("each panel of the box, and each thing the box asks, is moved by its title, stays where it was put, "
+              "cannot leave the window, and goes back under its button on a double click.")
         check_the_game_opens_on_two_tracks(bar, f"http://127.0.0.1:{port}/")
         print("a game opens on its two tracks at once with head to head open, asks for B's Civ AI, and does "
               "so once a game; a narrow window and the Single player view open on the one timeline.")

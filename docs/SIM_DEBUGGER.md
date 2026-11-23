@@ -161,6 +161,30 @@ between the ends are numbered along the top of the rail. On it:
   one played (the turns after it are played over), or the turn a thinned one
   would land on.
 
+### Panels are windows
+
+Layers, Breakpoints, Save points and Autosearch each open a panel under
+their button, and what the box asks (Switch or Branch, and which Civ AI plays
+a branch) opens under the picker it is about. Each is a window, and a window
+is moved
+by its title (operator 2026-11-22: "clicking and dragging on a window title
+allows for repositioning"): press the title, drag, and the window goes where
+the pointer takes it, over the map or over either half of a split
+(`debugMoveWindows`). The rest of a panel is not a handle: its fields and
+buttons take their own presses.
+
+A window stays where it was put while the page is open: it opens there
+again, and is still there when the box changes shape (the place is kept as
+the window's corner in the browser window, `debugWindowPlace`). Each panel
+has its own place, and so has each of the two questions. It cannot be taken
+out of the browser window, nor far enough down that its title is out of
+reach. A double click on the title puts it back under what it opens from.
+
+The windows over the map (standings, victory tracker, world minimap,
+dossiers) are the viewer's own and were already moved by their title bars
+(`[data-widget-drag]` in `web/assets/app.js`), on one screen and in each
+half.
+
 ## Two views
 
 A game under the debugger is shown one of two ways, and the bar's **Single
@@ -615,6 +639,64 @@ half that is asked to follow the other onto such a turn plays to it with its
 own Civ AI. The halves of a new split start on the Civ AI picked in the box,
 and a half that is kept keeps its own.
 
+### One screen and two change places in one move
+
+A half is a whole page in a frame and takes about a second to be there: it
+loads, folds its left panel away, draws its first state, and tells the host
+where it stands, what is on its timeline and its deck. The page under the
+halves takes a moment as well, to become the half that is kept when a branch
+is closed. None of that is shown (operator 2026-11-22: "i do not like the
+whole transition between ai debugger 1 screen and 2 screens. please clean
+this up a lot more"). Before, the window showed all of it: an empty split,
+each half's left panel and empty frames, the two maps arriving one after the
+other, the box without its deck and then with it, which pushed both halves
+down, and on the way back every control greyed and then a cut.
+
+**Held, then changed once.** While the other picture is made ready the
+window is held as it stands (`debugHold`): the box is not drawn again and
+takes no press, and nothing is asked of the world a split is being made
+from. Then the one picture takes the other's place in one move
+(`debugSwap`).
+
+- **Branch.** The split is made at once and its halves load where they will
+  stand, unseen (`#debugsplit.dbg-unseen`). The one screen stays up, and
+  Branch reads "Branching…". The two screens are shown when both halves are
+  there (`debugSplitReady`): each has said its turn, its timeline and its
+  numbers, half A has given the deck the one panel is drawn from, each seats
+  the Civ AI it was given, the branch has let go of the turns ahead of it,
+  and each has painted itself (`pane-shown`). So the box has its deck from
+  the first frame and nothing moves after it. Then the box asks which Civ AI
+  plays the branch. A half that never arrives is not waited on for ever:
+  after 6 s the two are shown as they are.
+- **A game that opens on its two tracks** is not shown on one screen first.
+  In the task that draws its first state the window goes under a veil, and
+  the veil lifts on the two screens.
+- **Drop A, Drop B, a branch's ✕.** The two screens stay as they are, with
+  nothing greyed, while the engine makes the kept half the game (`adopt`) and
+  this page draws it under them. Then two become one.
+
+**The same ground.** The halves open looking where the one screen was
+looking, at the same zoom: the host reads its camera and the place on the
+map at the middle of what shows (`debugLookNow`), and each half puts that
+place at the middle of its own map (`pane-look`). Closing a branch, the one
+screen looks where the kept half was looking. Whether the map was moved by
+hand goes with it, so a view somebody chose is not framed over at the next
+turn.
+
+**The move.** Where the browser has view transitions the change is one, about
+a quarter of a second long. The box goes from one shape to the other with
+its right end, where the game ends, held still. The map area goes to half A,
+which carries the game on (or the kept half to the map area), and each of the
+two pictures is carried by as much as puts the middle of its map on the
+middle of the other's, so what is seen is one map with its panels changing
+round it while the other half and the strip come or go. Nothing is
+stretched. A browser without view transitions, and anyone who has asked for
+less motion (`prefers-reduced-motion`), gets the change made and no move.
+
+How long Branch holds the window is how long the halves take: about 0.7 to
+1.5 s on the published engine (2026-11-22, headless Chrome in windows 1440
+to 1920 wide; the longer times with the host busy).
+
 ### One timeline until the worlds differ
 
 The timeline stays one for as long as the two halves hold the same world,
@@ -973,7 +1055,10 @@ opens a panel with three things to pick:
   cores the browser says this computer has.
 
 A split has a fourth, **From**: which branch the search begins from. What is
-picked is kept for the next visit.
+picked is kept for the next visit. The panel is a window like the box's
+others ("Panels are windows"): it is moved by its title, and it is the box's
+own and not the deck's, so a split whose halves are unlocked shows it too,
+opened from either half's own Autosearch button.
 
 ### Lines, and how the search climbs
 
