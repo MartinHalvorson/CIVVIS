@@ -1083,10 +1083,13 @@ impl Game {
     /// decides whether the whole pass can be skipped; folding them in here too
     /// would throw away a seat's reconciled ground every time any city
     /// anywhere gained a point of pressure.
+    ///
+    /// The map's own writes are not folded in: the pass reads them from the
+    /// grid's write log (`TileGrid::writes_since`) and re-checks only the
+    /// tiles written, rather than every tile it covered.
     fn tile_memory_stamp(&self, pid: usize) -> u64 {
         let seat = &self.players[pid];
         let mut key = vision_key(&[
-            self.map.tiles.epoch(),
             self.turn as u64,
             self.track_fog_memory as u64,
             seat.explored.len() as u64,
@@ -1310,7 +1313,7 @@ impl Game {
         self.record_turn_visibility(pid, visible);
         if self.remembered_under.len() < self.players.len() {
             self.remembered_under
-                .resize(self.players.len(), (0, 0, TileBits::default()));
+                .resize(self.players.len(), MemoryUnder::default());
         }
         // A move reveals over a wider set than the refresh that follows it, so
         // the second of the pair is the common case rather than a corner of
@@ -1322,14 +1325,33 @@ impl Game {
         // memory are as they were. So a wider sight is not a reason to walk
         // the whole of it again: only the hexes that were not covered can
         // differ, and a step reveals a handful of those out of a few hundred.
+        //
+        // ★★ A write elsewhere on the map is not a reason either. Every route
+        // that writes a tile is logged (`TileGrid::writes_since`), and a
+        // covered tile nobody wrote reads as it did when it was reconciled:
+        // its contents are the same, and so are the cities that own the
+        // hexes, this seat's memory and the turn, which the tile stamp still
+        // holds. So only the written tiles are taken back out of the covered
+        // set. The epoch used to stand in the stamp, and any improvement,
+        // border or chop anywhere sent every seat back over all of its sight.
+        // A chain the log cannot follow (another branch, a whole-map write)
+        // still walks everything.
         let tile_stamp = self.tile_memory_stamp(pid);
         let mut reconciled: Option<TileBits> = None;
-        if let Some((under, tiles_under, covered)) = self.remembered_under.get(pid) {
-            if *under == stamp && visible.is_subset_of(covered) {
+        if let Some(under) = self.remembered_under.get(pid) {
+            if under.stamp == stamp && visible.is_subset_of(&under.covered) {
                 return;
             }
-            if *tiles_under == tile_stamp {
-                reconciled = Some(covered.clone());
+            if under.tiles == tile_stamp {
+                if let Some(written) = self.map.tiles.writes_since(under.chain) {
+                    let mut kept = under.covered.clone();
+                    for position in written {
+                        if let Some(index) = self.map.tiles.index_of(position) {
+                            kept.remove(index);
+                        }
+                    }
+                    reconciled = Some(kept);
+                }
             }
         }
         let taken = visible.clone();
@@ -1349,10 +1371,14 @@ impl Game {
         // Record the world as it stands *after* the snapshot: taking one grows
         // what the seat has explored, which is itself part of the stamp the
         // next call will compute.
-        let settled = self.memory_stamp_with_world(pid, memory_world);
-        let settled_tiles = self.tile_memory_stamp(pid);
+        let settled = MemoryUnder {
+            stamp: self.memory_stamp_with_world(pid, memory_world),
+            tiles: self.tile_memory_stamp(pid),
+            chain: self.map.tiles.write_chain(),
+            covered: taken,
+        };
         if let Some(slot) = self.remembered_under.get_mut(pid) {
-            *slot = (settled, settled_tiles, taken);
+            *slot = settled;
         }
     }
 
@@ -1976,12 +2002,10 @@ impl Game {
         }
         // Memory just arrived from somewhere other than a sweep, so no seat's
         // last snapshot can be assumed to still describe it.
-        self.remembered_under
-            .iter_mut()
-            .for_each(|(stamp, tiles, _)| {
-                *stamp = 0;
-                *tiles = 0;
-            });
+        self.remembered_under.iter_mut().for_each(|under| {
+            under.stamp = 0;
+            under.tiles = 0;
+        });
         // Allies pool what they know, and a ring closed between two of them is
         // still a closed ring: each side has sailed its half and the charts
         // agree where they meet. Shared memory is the one path that grows

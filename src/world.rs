@@ -1352,6 +1352,13 @@ impl TileBits {
     }
 
     #[inline]
+    pub fn remove(&mut self, index: usize) {
+        if let Some(word) = self.words.get_mut(index / 64) {
+            *word &= !(1 << (index % 64));
+        }
+    }
+
+    #[inline]
     pub fn contains(&self, index: usize) -> bool {
         self.words
             .get(index / 64)

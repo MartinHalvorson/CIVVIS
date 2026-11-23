@@ -2869,6 +2869,23 @@ struct VisibilityBatch {
 #[derive(Default)]
 struct SharedVec<T>(Arc<Vec<T>>);
 
+/// What one seat's remembered map was last taken under; see
+/// `Game::refresh_visibility_snapshot_with_world`. Zero stamps assume
+/// nothing.
+#[derive(Clone, Default)]
+struct MemoryUnder {
+    /// Everything the pass read (`memory_stamp_with_world`).
+    stamp: u64,
+    /// The narrower part the tile memory is drawn from, less the map's own
+    /// writes (`tile_memory_stamp`).
+    tiles: u64,
+    /// The map's write chain at the pass: the tiles opened since are
+    /// `TileGrid::writes_since` this.
+    chain: u64,
+    /// The tiles the pass reconciled.
+    covered: TileBits,
+}
+
 impl<T> Clone for SharedVec<T> {
     fn clone(&self) -> Self {
         Self(Arc::clone(&self.0))
@@ -7017,11 +7034,10 @@ pub struct Game {
     #[serde(skip)]
     attack_reach_cache: Arc<std::sync::Mutex<AttackReachCache>>,
     /// The state of the world each seat's remembered map was last taken
-    /// under — the whole of it, then the narrower part the tile memory is
-    /// drawn from — and the tiles it was taken over. Empty means "assume
+    /// under, and the tiles it was taken over. Empty means "assume
     /// nothing".
     #[serde(skip)]
-    remembered_under: SharedVec<(u64, u64, TileBits)>,
+    remembered_under: SharedVec<MemoryUnder>,
     /// Whether to keep each player's remembered map of fogged tiles and
     /// cities up to date.
     ///
