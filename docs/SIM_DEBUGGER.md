@@ -1177,7 +1177,7 @@ for this demo. the ai debugger we will make to scale to any number of
 screens."
 
 `?mode=strange` is the split screen above, shown another way. It is listed
-under AI Debugger in the site list, and it is the same played game: one
+just above AI Debugger in the site list, and it is the same played game: one
 engine, two worlds A and B locked to one turn, a Civ AI in each seat. Nothing
 in the engine knows about it. `beta/shim.js` seats the visitor for
 `mode=strange` as it does for `mode=play`, and the last section of

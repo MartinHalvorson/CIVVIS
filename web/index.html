@@ -365,10 +365,10 @@
   .head-links > .home-link { grid-column: span 5; }
   .head-links > #tourlink { grid-column: span 6; }
   .head-links > #watchlink { grid-column: span 4; }
-  /* Doctor Strange's Civ 6 (operator, 2026-11-23: "lets actually place the
-     ai debugger above this") is the one name longer than half a row and has
-     a row of its own. AI Debugger before it and Civ 6 after it would each be
-     left alone on half a row, so each has its row too. */
+  /* Doctor Strange's Civ 6 (operator, 2026-11-23: "lest move dr strange civ
+     6 above ai debugger", after CIVVIS) is the one name longer than half a
+     row and has a row of its own. AI Debugger and Civ 6 keep the rows of
+     their own they had beside it. */
   .head-links > #playlink, .head-links > #strangelink, .head-links > #civ6link { grid-column: 1 / -1; }
   /* A name stands on one line wherever it fits, and every one of them
      does in the typefaces measured. In a wider one a name of two words
@@ -6642,7 +6642,7 @@
            own. Both are relative, so they stay in whichever lane they were
            clicked in, and all five leave a split's frame for the whole
            window. Under them is the game itself, on the shop page that sells
-           it. Doctor Strange's Civ 6, under AI Debugger since 2026-11-23,
+           it. Doctor Strange's Civ 6, listed just above AI Debugger since 2026-11-23,
            is that same played game shown another way (`?mode=strange`): two
            worlds in the lower quarters of the window and their timeline a
            tree up the middle of it, drawn by `assets/app_debugger.js`.
@@ -6657,8 +6657,8 @@
         <a class="home-link" id="chartslink" href="/charts/win-analytics" target="_top">Charts/</a>
         <a class="home-link" id="tourlink" href="/auto-tourneys" target="_top">Auto-Tourneys</a>
         <a class="home-link" id="watchlink" href="./" target="_top">CIVVIS</a>
-        <a class="home-link" id="playlink" href="?mode=play" target="_top">AI Debugger</a>
         <a class="home-link" id="strangelink" href="?mode=strange" target="_top">Doctor Strange's Civ 6</a>
+        <a class="home-link" id="playlink" href="?mode=play" target="_top">AI Debugger</a>
         <a class="home-link" id="civ6link" href="https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/" target="_blank" rel="noopener" title="Buy Civilization VI on Steam">Civ 6</a>
       </nav>
     </div>
