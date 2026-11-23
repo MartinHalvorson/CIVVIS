@@ -21,6 +21,17 @@
 //! stepped, which a return home does not reset). A wanderer still walks and
 //! founds when a site opens; only the next Settler waits. Off, nothing
 //! changes.
+//!
+//! **The empire clock (2026-11-23).** The first armed live game, Qin
+//! `civvis-t7-20261123T080638Z` (Lv 8), held three cities from t50 to t150
+//! with 2-5 Settlers out, "stranded | no legal site is reachable" from t95,
+//! and trained Settlers again at t105, t109, t125, t128, t131 and t159: the
+//! per-unit clock did not hold those Settlers (an id the board does not carry
+//! from one turn to the next restarts it, and a Settler handled outside the
+//! ordinary step is never stamped). So the brake also reads an empire-level
+//! clock, [`AdvancedAi::note_settlers_out`]: the turn since which the empire
+//! has had a Settler out without founding a city, reset when a city is founded
+//! or no Settler is left. It is keyed to nothing a unit id can move.
 
 use super::*;
 
@@ -49,8 +60,40 @@ impl AdvancedAi {
             .count()
     }
 
+    /// Keep the empire clock: the turn since which `pid` has had a Settler
+    /// out and founded no city. Reset when the city count grows or no Settler
+    /// is left; a lost city only lowers the count it compares against. Nothing
+    /// with the gene off.
+    pub(super) fn note_settlers_out(&mut self, g: &Game, pid: usize) {
+        if !self.settler_brake_counts_the_wanderer {
+            return;
+        }
+        let cities = g.player_city_ids(pid).len();
+        let settlers = g
+            .player_unit_ids(pid)
+            .into_iter()
+            .filter(|uid| {
+                g.units
+                    .get(uid)
+                    .is_some_and(|unit| unit.kind.as_str() == "settler")
+            })
+            .count();
+        match self.settlers_out_since {
+            _ if settlers == 0 => self.settlers_out_since = None,
+            Some((_, counted)) if cities > counted => {
+                self.settlers_out_since = Some((g.turn, cities));
+            }
+            Some((since, counted)) if cities < counted => {
+                self.settlers_out_since = Some((since, cities));
+            }
+            Some(_) => {}
+            None => self.settlers_out_since = Some((g.turn, cities)),
+        }
+    }
+
     /// Whether the pipeline closes for a wanderer: the gene is on, the empire
-    /// holds the backlog brake's city floor, and a Settler has wandered.
+    /// holds the backlog brake's city floor, and a Settler has wandered, by
+    /// its own clock or the empire's.
     pub(super) fn wanderer_closes_the_pipeline(
         &self,
         g: &Game,
@@ -59,7 +102,10 @@ impl AdvancedAi {
     ) -> bool {
         self.settler_brake_counts_the_wanderer
             && city_count >= BasicAi::SETTLER_BACKLOG_MIN_CITIES
-            && self.wandering_settlers(g, pid) > 0
+            && (self.wandering_settlers(g, pid) > 0
+                || self
+                    .settlers_out_since
+                    .is_some_and(|(since, _)| g.turn.saturating_sub(since) >= WANDERER_TURNS))
     }
 }
 

@@ -64,3 +64,48 @@ fn a_settler_wandering_fifteen_turns_closes_the_pipeline() {
     assert_eq!(off.wandering_settlers(&game, 0), 0);
     assert!(!off.wanderer_closes_the_pipeline(&game, 0, 5));
 }
+
+/// The empire clock holds a Settler the per-unit clock never stamped (live
+/// Qin `civvis-t7-20261123T080638Z`): fifteen turns with a Settler out and no
+/// city founded close the pipeline from three cities; founding a city, or no
+/// Settler left, restarts it.
+#[test]
+fn the_empire_clock_holds_a_settler_no_unit_clock_saw() {
+    let (mut game, _uid) = capital_and_settler();
+    let mut ai = seat(true);
+    // No per-unit clock at all.
+    assert!(ai.settler_walk_started.is_empty());
+    ai.note_settlers_out(&game, 0);
+    assert!(!ai.wanderer_closes_the_pipeline(&game, 0, 3), "just out");
+    game.turn += WANDERER_TURNS;
+    ai.note_settlers_out(&game, 0);
+    assert!(
+        ai.wanderer_closes_the_pipeline(&game, 0, 3),
+        "out fifteen turns, nothing founded"
+    );
+    assert!(
+        !ai.wanderer_closes_the_pipeline(&game, 0, 2),
+        "below the city floor"
+    );
+
+    // A city founded restarts the clock: the count it compares against grows.
+    ai.settlers_out_since = Some((game.turn - WANDERER_TURNS, 0));
+    ai.note_settlers_out(&game, 0);
+    assert_eq!(ai.settlers_out_since, Some((game.turn, 1)));
+    assert!(
+        !ai.wanderer_closes_the_pipeline(&game, 0, 3),
+        "a new city restarts the clock"
+    );
+
+    // No Settler left clears it.
+    for unit in game.player_unit_ids(0) {
+        game.remove_unit(unit);
+    }
+    ai.note_settlers_out(&game, 0);
+    assert_eq!(ai.settlers_out_since, None);
+
+    // Off, the clock is never kept.
+    let mut off = seat(false);
+    off.note_settlers_out(&game, 0);
+    assert_eq!(off.settlers_out_since, None);
+}
