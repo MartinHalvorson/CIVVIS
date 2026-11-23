@@ -1302,7 +1302,7 @@ function debugBuildBar() {
       <div class="dbg-search-set">
         <span>Most</span><select id="dbg-search-goal" title="What the search makes the most of: one of the seat's own numbers, as its row of the standings shows it" aria-label="What to make the most of"></select>
         <span>By</span><select id="dbg-search-turns" title="How far ahead the search plays: the number is read on that turn" aria-label="Turns to search ahead"></select>
-        <span>Cores</span><select id="dbg-search-cores" title="How much of this computer searches. Each core plays on a copy of the engine, so each costs the engine's memory again" aria-label="Cores to search with"></select>
+        <span>Cores</span><select id="dbg-search-cores" title="How much of this computer searches. Each core plays lines on a copy of the engine, walking back down the timeline and up it again, so each costs the engine's memory again" aria-label="Cores to search with"></select>
         <span id="dbg-search-half-word">From</span><select id="dbg-search-half" title="Which branch the search begins from, as it stands on its open turn" aria-label="Branch to search from"></select>
       </div>
       <div class="dbg-search-line"><button class="dbg-search-go" data-dbg-search="go"></button>
@@ -1314,11 +1314,11 @@ function debugBuildBar() {
       <div class="dbg-search-found" id="dbg-search-found" hidden>
         <p id="dbg-search-best"></p>
         <div class="dbg-search-plan" id="dbg-search-plan"></div>
+        <div class="dbg-search-line" id="dbg-search-play"></div>
         <div class="dbg-search-chart" id="dbg-search-chart"></div>
         <div class="dbg-search-key" id="dbg-search-key"></div>
         <p id="dbg-search-lone">Each Civ AI alone, the one seated in gold:</p>
         <div class="dbg-search-table" id="dbg-search-table"></div>
-        <div class="dbg-search-line" id="dbg-search-play"></div>
       </div>
     </div>
     <div class="dbg-pop" id="dbg-pop-layers" hidden>
@@ -3952,8 +3952,7 @@ function debugDrawSearch(bar) {
   const acted = !debugSplit && (debugTimeline().acted || 0) > 0;
   text("dbg-search-about", from === null ? "The branch has no turn open yet."
     : `From ${acted ? "the top of " : ""}turn ${from}${letter ? ` of ${letter.toUpperCase()}` : ""}: which Civ AIs should hold the seat, and when, ` +
-      `for the most ${goal.name.toLowerCase()} by turn ${from + turns}. ` +
-      "Each core plays futures on a copy of the engine, walking back down the timeline and up it again, and this game is left as it is.");
+      `for the most ${goal.name.toLowerCase()} by turn ${from + turns}. This game is left as it is while the cores search.`);
   const go = panel.querySelector('[data-dbg-search="go"]');
   const goWords = live ? "⏹ Stop" : search && search.best ? "Search again" : "Search";
   if (go.textContent !== goWords) go.textContent = goWords;

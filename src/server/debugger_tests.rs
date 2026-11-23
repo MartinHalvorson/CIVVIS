@@ -741,7 +741,7 @@ fn every_goal_autosearch_offers_reads_a_number_the_engine_gives() {
             .split_once("read: seat => ")
             .expect("a goal reads the seat")
             .1
-            .trim_end_matches(|end: char| end == '}' || end == ',' || end == ' ');
+            .trim_end_matches(['}', ',', ' ']);
         // `seat.score`, or `(seat.yields || {}).production`.
         let value = match read.strip_prefix("(seat.yields || {}).") {
             Some(field) => &seat["yields"][field],

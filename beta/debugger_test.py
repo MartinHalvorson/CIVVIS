@@ -2476,7 +2476,8 @@ def check_autosearch(bar: Bar, address: str) -> None:
     assert cores == 1 or offered[-1] == ["1", f"{cores} of {cores} cores · all"], offered
     assert bar.ev("['goal', 'turns', 'cores'].map(field => document.getElementById('dbg-search-' + field).value)")[:2] == ["score", "30"]
     assert bar.ev("document.getElementById('dbg-search-half').hidden") is True
-    assert f"From turn {start}:" in bar.ev("document.getElementById('dbg-search-about').textContent")
+    about = bar.ev("document.getElementById('dbg-search-about').textContent")
+    assert about.startswith(f"From turn {start}: which Civ AIs should hold the seat, and when, for the most score by turn {start + 30}."), about
     # A panel of the deck that opens takes its place, and it takes theirs.
     bar.click('[data-dbg-pop="layers"]')
     assert bar.ev(f"[{shown}, debugPopOpen]") == [False, "layers"]
