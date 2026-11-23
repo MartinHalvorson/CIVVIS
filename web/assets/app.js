@@ -1596,6 +1596,11 @@ function knownGlobeFrameShare() {
 function clampPanelDimension(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
+// The victory tracker's turn bar stands in a column of its own: `.turn-gauge`
+// in index.html, its 30px and the 5px between it and the paths. The panel is
+// that much wider than its share of the map, so the bar's room comes off the
+// map and the paths keep theirs.
+const TURN_GAUGE_COLUMN = 35;
 function syncResponsivePanelGeometry() {
   const {width, height} = mapAreaSize();
   const shortEdge = Math.max(1, Math.min(width, height));
@@ -1677,7 +1682,7 @@ function syncResponsivePanelGeometry() {
       wideMinimapWidth * knownGlobeShare, 130, wideMinimapWidth));
     wideMinimapHeight = wideMinimapWidth;
   }
-  const victoryWidth = Math.round(clampPanelDimension(width * .15, 156, 340));
+  const victoryWidth = Math.round(clampPanelDimension(width * .15, 156, 340)) + TURN_GAUGE_COLUMN;
   const style = area.style;
   style.setProperty("--panel-edge", `${edge}px`);
   style.setProperty("--panel-gap", `${gap}px`);
@@ -27363,20 +27368,51 @@ function turnCapLabel() {
 
 // The game's own clock, up the victory tracker's left edge (operator,
 // 2026-11-23: "a rising gold bar. starts at the bottom when turn is 1 of 250
-// and rises throughout the game"): no height on turn 1, where the stylesheet
-// keeps a two-pixel seed of it at the foot, and the whole edge on the last
-// turn. It reads the cap the turn plate prints, so "of 250" there and the top
-// of the bar here are the same turn. A world with no cap has nothing to rise
-// toward, and draws no bar.
+// and rises throughout the game", then "wider please. like 6mm wide-ish, with
+// a bit for labels and such"): no height on turn 1, where the bar's bright
+// head rests on the foot, and the whole edge on the last turn. It reads the
+// cap the turn plate prints, so "of 250" there and the top of the bar here
+// are the same turn. A world with no cap has nothing to rise toward, and
+// draws no bar.
+//
+// The width carries a scale: the cap under the top, and round turns below it
+// at the height the bar stands on them. A mark near either end would sit
+// under the cap's figure or hang off the foot, so the scale starts and stops
+// short of both.
+const TURN_GAUGE_STEPS = [1, 2, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 25000];
+function turnGaugeMarks(cap) {
+  const step = TURN_GAUGE_STEPS.find(step => cap / step <= 6) ?? cap;
+  const marks = [];
+  for (let turn = step; turn < cap; turn += step) {
+    const at = (turn - 1) / (cap - 1);
+    if (at < .08 || at > .9) continue;
+    marks.push({turn, at, major:turn % (step * 2) === 0});
+  }
+  return marks;
+}
+
+// The scale is drawn twice, dim for the empty track and dark for the gold, and
+// each copy is cut off at the bar's head from its own side: a figure the bar
+// is passing through reads on both sides of it. Both stand above the head's
+// bright line, which passes behind a figure rather than through it.
 function turnGauge() {
   const cap = Number(turnCapLabel());
   if (!(cap > 1)) return "";
   const turn = Math.min(cap, Math.max(1, Math.floor(+reportedTurn()) || 1));
   const rise = +((turn - 1) / (cap - 1) * 100).toFixed(2);
+  const figure = (count, mark, place = "") => {
+    const text = count < 1000 ? String(count) : `${+(count / 1000).toFixed(2)}k`;
+    return `<b class="${mark}${text.length > 3 ? " long" : ""}"${place}>${text}</b>`;
+  };
+  const scale = figure(cap, "cap") +
+    turnGaugeMarks(cap).map(mark => figure(mark.turn, mark.major ? "major" : "minor",
+      ` style="bottom:${+(mark.at * 100).toFixed(2)}%"`)).join("");
   return `<div class="turn-gauge" data-key="turn-gauge" role="progressbar" aria-label="Game progress" ` +
     `aria-valuemin="1" aria-valuemax="${cap}" aria-valuenow="${turn}" ` +
-    `aria-valuetext="Turn ${turn} of ${cap}" title="Turn ${turn} of ${cap}">` +
-    `<i style="height:${rise}%"></i></div>`;
+    `aria-valuetext="Turn ${turn} of ${cap}" title="Turn ${turn} of ${cap}" style="--rise:${rise}%">` +
+    `<span class="turn-gauge-fill"></span><i></i>` +
+    `<span class="turn-gauge-scale" aria-hidden="true">${scale}</span>` +
+    `<span class="turn-gauge-scale lit" aria-hidden="true">${scale}</span></div>`;
 }
 
 // The meter under each civilization. Most races are one number against one
