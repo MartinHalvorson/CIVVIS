@@ -46,6 +46,7 @@ served by the state directory) to the service log at that cadence.
 from __future__ import annotations
 
 import argparse
+import collections
 import copy
 import ctypes
 import datetime as dt
@@ -140,6 +141,18 @@ WORKER_OVERSHOOT_CORES = 0.5
 # game waits out a long quiet stretch of the host.
 WORKER_ROTATE_SECONDS = 120.0
 WORKER_ROTATE_GAP_SECONDS = 60.0
+# Room is retaken against the busiest the rest of the host has been over this
+# long, not against its last two seconds. Work that needs free cores comes in
+# bursts (a live game's turn, a build between two crates): a worker started
+# into a lull is a worker in the way at the next burst.
+GOVERNOR_PEAK_SECONDS = 30.0
+# A ceiling asked for by named work holds this long after the work was last
+# seen. ⚠ 2026-11-23 01:00Z, mbp-m5-max-128: Civilization VI quits and starts
+# again between two games. In the twenty seconds it was gone the governor
+# took the host from its 70% ceiling toward 80%, a worker every two seconds,
+# and the next game booted into a one-minute load of 40 on eighteen cores
+# (its rival turns have hung at 16).
+DEFAULT_BESIDE_LINGER_SECONDS = 300.0
 # macOS darwin-background: where `taskpolicy -b` (and a host guard that parks
 # batch work that way) puts a process. A worker there is barely scheduled.
 BACKGROUND_PRIORITY = 4
@@ -433,7 +446,7 @@ def parse_beside(values: Iterable[str], *, option: str = "--beside") -> dict[str
 
 
 def governed_workers(*, ceiling: float, cores: int, busy: float, group_cores: float,
-                     running: int, total: int) -> int:
+                     running: int, total: int, rest_peak: float | None = None) -> int:
     """How many whole one-thread workers may run in the next window.
 
     The rest of the machine is ``busy * cores - group_cores``, as in
@@ -442,12 +455,18 @@ def governed_workers(*, ceiling: float, cores: int, busy: float, group_cores: fl
     overshoot, because the ceiling is the promise. Room is retaken one worker
     a window, and only when a whole core is free: a worker started into half
     a core would be the next one stopped.
+
+    ``rest_peak`` is the most the rest of the machine used in any recent
+    window (:data:`GOVERNOR_PEAK_SECONDS`). A cut reads the window just
+    ended; room is measured against the peak, so the games do not move into
+    a lull between two bursts of somebody else's work.
     """
     rest = max(0.0, busy * cores - group_cores)
     allowed = ceiling * cores - rest
+    room = ceiling * cores - max(rest, rest_peak or 0.0)
     if allowed < running - WORKER_OVERSHOOT_CORES:
         target = math.ceil(allowed - WORKER_OVERSHOOT_CORES)
-    elif allowed >= running + 1:
+    elif room >= running + 1:
         target = running + 1
     else:
         target = running
@@ -537,7 +556,8 @@ class CpuGovernor:
                  pause_on_battery: bool = False, battery=power_draining_battery,
                  processes=None, send_one=None, lift=lift_from_background,
                  beside: dict[str, float] | None = None,
-                 beside_scripts: dict[str, float] | None = None, commands=None) -> None:
+                 beside_scripts: dict[str, float] | None = None, commands=None,
+                 linger_seconds: float = DEFAULT_BESIDE_LINGER_SECONDS) -> None:
         if not 0 < ceiling_percent <= 100:
             raise SchedulerError("--machine-cpu-ceiling must be a percentage in (0, 100]")
         self.ceiling = ceiling_percent / 100.0
@@ -551,6 +571,11 @@ class CpuGovernor:
                         f"{option} takes NAME=PERCENT with a percentage in (0, 100]")
                 kept[name] = min(self.ceiling, percent / 100.0)
         self.commands = commands if commands is not None else command_lines
+        if linger_seconds < 0:
+            raise SchedulerError("--beside-linger must not be negative")
+        self.linger = linger_seconds
+        # Named work and when it was last seen up: name -> (monotonic time, ceiling).
+        self.last_seen: dict[str, tuple[float, float]] = {}
         self.cores = positive_int(cores, name="logical core count")
         # Each game worker is one CPU-bound thread: the most the group can burn.
         self.workers = workers
@@ -657,6 +682,14 @@ class CpuGovernor:
             if self.beside_scripts:
                 for path in scripts_running(self.commands() or (), self.beside_scripts):
                     up[path.rsplit("/", 1)[-1]] = self.beside_scripts[path]
+            # Work seen a moment ago still holds its ceiling: see
+            # DEFAULT_BESIDE_LINGER_SECONDS.
+            now = time.monotonic()
+            for name, ceiling in up.items():
+                self.last_seen[name] = (now, ceiling)
+            self.last_seen = {name: seen for name, seen in self.last_seen.items()
+                              if now - seen[0] <= self.linger}
+            up = {name: ceiling for name, (_seen, ceiling) in self.last_seen.items()}
             # The lowest ceiling that applies; the name breaks a tie the same way each time.
             foreground = min(up, key=lambda name: (up[name], name), default=None)
             self.standing_back = up
@@ -734,6 +767,8 @@ class CpuGovernor:
         foreground: str | None = None
         worker_target: int | None = None
         was_whole = False
+        # (monotonic time, cores the rest of the host used) for recent windows.
+        rest_seen: collections.deque[tuple[float, float]] = collections.deque()
         while not stop.is_set():
             if host_before is None or cpu_before is None:
                 host_before, cpu_before, workers, foreground = self._probe(group)
@@ -811,6 +846,11 @@ class CpuGovernor:
             if busy is None or cpu_after is None or window <= 0:
                 continue
             group_cores = max(0.0, cpu_after - cpu_before_window) / window
+            closed = time.monotonic()
+            rest_seen.append((closed, max(0.0, busy * self.cores - group_cores)))
+            while rest_seen and closed - rest_seen[0][0] > GOVERNOR_PEAK_SECONDS:
+                rest_seen.popleft()
+            rest_peak = max(rest for _at, rest in rest_seen)
             # The ceiling in force while foreground work was up during the window.
             ceiling = ceilings_now.get(foreground_now, self.ceiling)
             reading: dict[str, Any] = {
@@ -825,14 +865,15 @@ class CpuGovernor:
             if whole:
                 worker_target = governed_workers(
                     ceiling=ceiling, cores=self.cores, busy=busy, group_cores=group_cores,
-                    running=ran, total=len(workers))
+                    running=ran, total=len(workers), rest_peak=rest_peak)
                 if self.on_battery:
                     worker_target = 0
                 applied = ran / total if total else 0.0
                 new_duty = worker_target / len(workers) if workers else 0.0
                 demand = float(total)
                 reading.update({"mode": "workers", "workers": total, "workers_running": ran,
-                                "workers_next": worker_target})
+                                "workers_next": worker_target,
+                                "rest_peak_cores": round(rest_peak, 2)})
             else:
                 worker_target = None
                 applied = min(1.0, running / window)
@@ -2704,6 +2745,11 @@ def main(argv: list[str] | None = None) -> int:
                         help=("as --beside, for a script: applies while PATH is a whole word "
                               "of any process's command line, so also while the script only "
                               "waits its turn; repeatable"))
+    parser.add_argument("--beside-linger", type=float, default=DEFAULT_BESIDE_LINGER_SECONDS,
+                        metavar="SECONDS",
+                        help=("how long a --beside or --beside-script ceiling holds after the "
+                              "work was last seen (default: 300), for work that stops and "
+                              "starts again, like a game between two matches"))
     parser.add_argument("--pause-on-battery", action="store_true",
                         help=("pause the owned games while the host runs on battery or "
                               "discharges on an adapter that cannot keep up (macOS pmset); "
@@ -2780,7 +2826,8 @@ def main(argv: list[str] | None = None) -> int:
             args.machine_cpu_ceiling if args.machine_cpu_ceiling is not None else 100.0,
             cores=logical_cores(), workers=jobs, pause_on_battery=args.pause_on_battery,
             beside=parse_beside(args.beside),
-            beside_scripts=parse_beside(args.beside_script, option="--beside-script"))
+            beside_scripts=parse_beside(args.beside_script, option="--beside-script"),
+            linger_seconds=args.beside_linger)
             if args.machine_cpu_ceiling is not None or args.pause_on_battery else None)
         progress = ProgressLog(args.progress_minutes)
         if args.poll_seconds <= 0:

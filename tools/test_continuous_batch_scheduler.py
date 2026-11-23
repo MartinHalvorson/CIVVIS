@@ -585,6 +585,73 @@ class MachineSharing(unittest.TestCase):
         self.assertEqual(sent_so_far[-1], signals.SIGCONT,
                          "whole workers must start from a running group")
 
+    def test_room_is_retaken_against_the_recent_peak_of_other_work(self):
+        count = scheduler.governed_workers
+        # This window the rest of the host used 4 cores (9 - 5): 10.4 allowed,
+        # a sixth worker fits. But a moment ago it used 9: against that peak
+        # only 5.4 are free, and the games stay where they are.
+        self.assertEqual(count(ceiling=0.8, cores=18, busy=0.5, group_cores=5.0,
+                               running=5, total=14), 6)
+        self.assertEqual(count(ceiling=0.8, cores=18, busy=0.5, group_cores=5.0,
+                               running=5, total=14, rest_peak=9.0), 5)
+        # The peak never cuts: only the window just ended does.
+        self.assertEqual(count(ceiling=0.8, cores=18, busy=0.5, group_cores=5.0,
+                               running=5, total=14, rest_peak=13.0), 5)
+        # And a burst in this window cuts at once whatever the peak was.
+        self.assertEqual(count(ceiling=0.8, cores=18, busy=17.0 / 18, group_cores=5.0,
+                               running=5, total=14, rest_peak=1.0), 2)
+
+    def test_named_work_that_stops_keeps_its_ceiling_for_a_while(self):
+        # A game between two matches is gone for seconds: its ceiling must
+        # outlast the gap, and end once the work has really stopped.
+        import threading
+        import time
+
+        class Host:
+            busy = 0
+            idle = 0
+
+            def ticks(self):
+                Host.busy += 7
+                Host.idle += 3
+                return (Host.busy, Host.idle)
+
+        game_up = threading.Event()
+        game_up.set()
+
+        def table():
+            rows = [self.worker(pid, 100.0 * pid) for pid in (11, 12, 13)]
+            if game_up.is_set():
+                rows.append(self.worker(500, 9.0, group=500, name="Civ6_Exe_Child"))
+            return rows
+
+        governor = scheduler.CpuGovernor(
+            80, cores=10, host=Host(), processes=table, send=lambda _group, _which: None,
+            send_one=lambda _pid, _which: None, beside={"Civ6_Exe_Child": 60},
+            linger_seconds=0.5)
+        with mock.patch.object(scheduler, "GOVERNOR_WINDOW_SECONDS", 0.02):
+            governor.govern(77)
+            deadline = time.monotonic() + 3.0
+            while (governor.snapshot().get("ceiling_percent") != 60.0
+                   and time.monotonic() < deadline):
+                time.sleep(0.01)
+            self.assertEqual(governor.snapshot().get("ceiling_percent"), 60.0)
+            game_up.clear()
+            gone = time.monotonic()
+            time.sleep(0.2)
+            held = governor.snapshot()
+            self.assertEqual(held["ceiling_percent"], 60.0,
+                             "0.2 s after the game quit its ceiling still holds")
+            self.assertEqual(held["foreground"], "Civ6_Exe_Child")
+            deadline = time.monotonic() + 3.0
+            while (governor.snapshot().get("ceiling_percent") != 80.0
+                   and time.monotonic() < deadline):
+                time.sleep(0.01)
+            released = time.monotonic() - gone
+            self.assertEqual(governor.snapshot().get("ceiling_percent"), 80.0)
+            self.assertGreaterEqual(released, 0.5)
+            governor.release()
+
     def test_a_script_is_seen_while_it_runs_or_waits_but_not_in_our_own_options(self):
         lines = [
             "/usr/bin/python3 curated_scheduler.py run --beside-script /x/heavy.sh=55",
