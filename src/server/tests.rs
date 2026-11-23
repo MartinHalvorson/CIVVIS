@@ -17574,7 +17574,10 @@ fn a_table_plays_fog_honest_until_the_turn_box_says_otherwise() {
     walked.set_fog_honest(false);
     let back = walked.debug(&json!({"op": "jump", "turn": 2}));
     assert_eq!(back["error"], Value::Null);
-    assert!(!walked.fog_honest(), "a jump back turned Fog-honest AI on again");
+    assert!(
+        !walked.fog_honest(),
+        "a jump back turned Fog-honest AI on again"
+    );
     assert_eq!(walked.fog_honest_seats(), 0);
     walked.set_fog_honest(true);
     walked.debug(&json!({"op": "jump", "turn": 1}));
