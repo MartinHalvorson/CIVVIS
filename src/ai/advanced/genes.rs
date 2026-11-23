@@ -6557,6 +6557,15 @@ pub const GENES: &[Gene] = &[
     // turns plus two) without starting stands aside for 10 turns, in the
     // claim and the scorer. Opt-in; see `advanced/pillaged_repairs_first.rs`.
     Gene { tag: "stuck-repair-yields-the-queue", field: "stuck_repair_yields_the_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_stuck_repair_yields_the_queue, disable: AdvancedAi::disable_stuck_repair_yields_the_queue },
+    // Live Tournament 7 2026-11-22/23: `settler-backlog-brake` counts a
+    // Settler parked only after six turns on one tile, and a Settler boxed in
+    // by rival Loyalty marches, refuses and retargets without standing still.
+    // Ludwig `civvis-t7-20261123T045817Z` (Lv 8) trained Settlers at t85, 89,
+    // 92 and 101 with 2-5 already out on three cities; 3-5 Settlers stood out
+    // 40-60 turns with the city count flat in five of 60 games. A Settler out
+    // 15 turns without founding closes the pipeline from three cities. Opt-in;
+    // see `advanced/settler_brake_counts_the_wanderer.rs`.
+    Gene { tag: "settler-brake-counts-the-wanderer", field: "settler_brake_counts_the_wanderer", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_brake_counts_the_wanderer, disable: AdvancedAi::disable_settler_brake_counts_the_wanderer },
     // ---- append: t-z ------------------------------------------------
     // Host previews of our religious strikes, 11-09: rival defenders carry +4
     // for difficulty (68 of 75) and +3/+6 Intel (55 of 75), which the fight

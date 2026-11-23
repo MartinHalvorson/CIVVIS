@@ -10685,6 +10685,10 @@ pub struct AdvancedAi {
     /// Per (city, site) repair asking runs, for
     /// `stuck-repair-yields-the-queue`.
     stuck_repairs: RefCell<BTreeMap<(u32, Pos), pillaged_repairs_first::StuckRepair>>,
+    /// `settler-brake-counts-the-wanderer`: a Settler out of a city long
+    /// without founding closes the pipeline. See
+    /// `advanced/settler_brake_counts_the_wanderer.rs`. Off by default.
+    settler_brake_counts_the_wanderer: bool,
     // ---- append: t-z ------------------------------------------------
     /// `world-religion-condemns-the-faith`: our soldiers condemn a faith
     /// World Religion's option B names, at peace, and the agent's ballot asks
@@ -12388,6 +12392,9 @@ mod science_victory_drive;
 /// empire is short of its settlement target. Reads only. See
 /// `advanced/settler_admission_journal.rs`.
 mod settler_admission_journal;
+/// `settler-brake-counts-the-wanderer`: see
+/// `advanced/settler_brake_counts_the_wanderer.rs`.
+mod settler_brake_counts_the_wanderer;
 mod settler_departure;
 mod settler_path_clear;
 /// `shooters-man-the-capital`: see `advanced/shooters_man_the_capital.rs`.
@@ -23134,6 +23141,12 @@ impl AdvancedAi {
                 .parked_settlers(g, pid, BasicAi::SETTLER_BACKLOG_IDLE_TURNS)
                 > 0
         {
+            return 0;
+        }
+        // `settler-brake-counts-the-wanderer`: a Settler walking long without
+        // founding closes the pipeline too. See
+        // `advanced/settler_brake_counts_the_wanderer.rs`.
+        if self.wanderer_closes_the_pipeline(g, pid, city_count) {
             return 0;
         }
         let width = self.settler_in_flight_allowed(g, desired_cities, city_count, settlers);
