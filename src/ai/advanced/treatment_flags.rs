@@ -570,6 +570,10 @@ impl AdvancedAi {
         /// seat takes Exodus of the Evangelists; see
         /// `advanced/religious_seat_dedicates_to_the_evangelists.rs`.
         religious_seat_dedicates_to_the_evangelists => enable_religious_seat_dedicates_to_the_evangelists, disable_religious_seat_dedicates_to_the_evangelists;
+        /// Opt-in gene `raiders-holding-a-settler-are-hunted`: the board
+        /// hunts the hostiles that hold a Settler of ours in the field; see
+        /// `advanced/raiders_holding_a_settler.rs`.
+        raiders_holding_a_settler_are_hunted => enable_raiders_holding_a_settler_are_hunted, disable_raiders_holding_a_settler_are_hunted;
         // ---- append: s-s --------------------------------------------
         /// Opt-in gene `siege-goes-on-the-forecast`: the siege train goes,
         /// holds and stands down on the capture forecast, and Siege rows rank
