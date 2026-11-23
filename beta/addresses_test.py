@@ -1,0 +1,259 @@
+#!/usr/bin/env python3
+"""An address follows the page's name in the site list.
+
+Operator, 2026-11-23: "clean up the URL please. standardized. please remove
+research from the url". Until then four pages answered at addresses that were
+not their names. Win Analytics was at `/research`, what the page was called
+the day it was written, three names ago. CIVVIS Performance and AI
+Interpretability stood beside it at the top of the site, although the list
+keeps them under Charts/. Auto-Tourneys was at `/tournaments`.
+
+The rule, for every page the site list names: the address is the name as the
+list shows it, in lower case with a hyphen for anything that is not a letter
+or a digit, and a page listed under a folder (Charts/) sits in that folder.
+
+    Home                  /home/
+    Charts/
+      Win Analytics       /charts/win-analytics/
+      CIVVIS Performance  /charts/civvis-performance/
+      AI Interpretability /charts/ai-interpretability/
+    Auto-Tourneys         /auto-tourneys/
+
+A page states its own address (its `<link rel="canonical">`), `publish.sh`
+puts it there, and every link in it is relative to it. So this reads the
+pages as they are written and holds each to the rule, and holds every link to
+landing on a page: with pages at two depths, a link written for the wrong one
+stays inside the lane and reaches nothing. It also holds the two tables of
+the addresses pages have left (the router's, which forwards them, and the
+publish check's) to each other and to the pages.
+
+    python3 beta/addresses_test.py
+"""
+
+from __future__ import annotations
+
+import pathlib
+import posixpath
+import re
+import sys
+import unittest
+
+BETA = pathlib.Path(__file__).resolve().parent
+sys.path.insert(0, str(BETA))
+
+import verify  # noqa: E402
+
+PUBLISH = (BETA / "publish.sh").read_text(encoding="utf-8")
+WORKER = (BETA / "_worker.js").read_text(encoding="utf-8")
+VIEWER = (BETA.parent / "web" / "index.html").read_text(encoding="utf-8")
+
+#: The pages `publish.sh` publishes, found in the script rather than listed
+#: here: a page added to a lane is held to the rule the day it is added.
+SOURCES = sorted(set(re.findall(r'_page="\$source_tree/beta/([a-z_]+\.html)"', PUBLISH)))
+
+STATED = re.compile(r'<link rel="canonical" href="https://civvis\.ai/([^"]*)/">')
+LINK = re.compile(r'<a class="(site-link(?: sub-link)?)" href="([^"]*)"([^>]*)>([^<]+)</a>')
+
+#: Names a lane already answers to, which no page may take.
+TAKEN = {"test", "assets", "report", "beta", "build", "index"}
+
+
+def slug(name: str) -> str:
+    """A name of the site list as an address: `Auto-Tourneys` -> `auto-tourneys`."""
+    return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+
+
+def read(source: str) -> str:
+    return (BETA / source).read_text(encoding="utf-8")
+
+
+def stated(source: str) -> list:
+    return STATED.findall(read(source))
+
+
+def site_list(text: str) -> list:
+    """The site list of a page: (classes, href, is this page, name) per link."""
+    if '<nav class="site-nav"' not in text:
+        return []
+    nav = text[text.index('<nav class="site-nav"'):]
+    nav = nav[:nav.index("</nav>")]
+    return [
+        (classes, href, 'aria-current="page"' in rest, name)
+        for classes, href, rest, name in LINK.findall(nav)
+    ]
+
+
+def lands(address: str, link: str) -> str:
+    """Where a relative link of the page at `address` comes out, in the lane."""
+    target = link.split("#", 1)[0].split("?", 1)[0]
+    return posixpath.normpath(posixpath.join(address, target))
+
+
+#: Every page by the address it states.
+ADDRESS = {source: (stated(source) or [""])[0] for source in SOURCES}
+
+
+class Addresses(unittest.TestCase):
+    def test_the_script_names_its_pages(self):
+        # The glob this whole file stands on. Six pages on 2026-11-23.
+        self.assertGreaterEqual(len(SOURCES), 6, SOURCES)
+        for source in SOURCES:
+            self.assertTrue((BETA / source).is_file(), source)
+
+    def test_every_page_states_one_address_and_no_two_the_same(self):
+        for source in SOURCES:
+            self.assertEqual(len(stated(source)), 1, f"{source} states {stated(source)}")
+            address = ADDRESS[source]
+            # What `publish.sh` and the router read as a page: one name, or a
+            # folder and a name.
+            self.assertRegex(address, r"^[a-z][a-z0-9-]*(/[a-z][a-z0-9-]*)?$", source)
+            self.assertNotIn(address.split("/")[0], TAKEN, source)
+        self.assertEqual(len(set(ADDRESS.values())), len(SOURCES), ADDRESS)
+        # No page lives at a folder's own address: the folder opens its
+        # first page.
+        folders = {address.split("/")[0] for address in ADDRESS.values() if "/" in address}
+        self.assertEqual(folders & set(ADDRESS.values()), set())
+
+    def test_an_address_is_the_pages_name_in_the_site_list(self):
+        named = 0
+        for source in SOURCES:
+            links = site_list(read(source))
+            if not links:
+                # A page the list does not name (the downloads page) keeps
+                # the address it has.
+                continue
+            here = [index for index, link in enumerate(links) if link[2]]
+            self.assertEqual(len(here), 1, f"{source} marks {len(here)} links as itself")
+            classes, _, _, name = links[here[0]]
+            if "sub-link" in classes:
+                # Under the folder that stands over it in the list.
+                over = [link for link in links[:here[0]] if "sub-link" not in link[0]][-1]
+                self.assertTrue(over[3].endswith("/"), f"{source} stands under {over[3]!r}")
+                expected = f"{slug(over[3])}/{slug(name)}"
+            else:
+                expected = slug(name)
+            self.assertEqual(ADDRESS[source], expected, f"{source} is {name!r} in the site list")
+            named += 1
+        self.assertGreaterEqual(named, 5)
+
+    def test_no_address_says_research(self):
+        # The word left the site list on 2026-11-21, when the page became
+        # Musings. The file names and the data slot keep it; an address a
+        # reader sees does not.
+        for source, address in ADDRESS.items():
+            self.assertNotIn("research", address, source)
+        self.assertNotIn('href="/research', VIEWER)
+
+    def test_every_link_of_the_site_list_opens_the_page_it_names(self):
+        # A name of the list to the address it opens: a page its own, a
+        # folder its first page.
+        by_name = {}
+        for source in SOURCES:
+            for classes, _, current, name in site_list(read(source)):
+                if current:
+                    by_name[name] = ADDRESS[source]
+        firsts = {}
+        for address in ADDRESS.values():
+            if "/" in address:
+                firsts.setdefault(address.split("/")[0], []).append(address)
+        checked = 0
+        for source in SOURCES:
+            links = site_list(read(source))
+            for index, (classes, href, current, name) in enumerate(links):
+                if re.match(r"[a-z][a-z0-9+.-]*:", href):
+                    continue  # Civ 6, on Steam
+                where = lands(ADDRESS[source], href)
+                if name in by_name:
+                    self.assertEqual(where, by_name[name], f"{source}: {name} -> {href}")
+                elif name.endswith("/"):
+                    # The folder opens the first page listed under it.
+                    under = [link[3] for link in links[index + 1:] if "sub-link" in link[0]]
+                    opens = by_name[under[0]] if under else sorted(firsts[slug(name)])[0]
+                    if under:
+                        self.assertEqual(where, opens, f"{source}: {name} -> {href}")
+                    else:
+                        self.assertIn(where, firsts[slug(name)], f"{source}: {name} -> {href}")
+                else:
+                    # CIVVIS and AI Debugger: the viewer, at the lane's root.
+                    self.assertEqual(where, ".", f"{source}: {name} -> {href}")
+                checked += 1
+        self.assertGreaterEqual(checked, 25)
+
+    def test_the_folder_opens_the_same_page_from_everywhere(self):
+        opens = set()
+        for source in SOURCES:
+            for classes, href, _, name in site_list(read(source)):
+                if name.endswith("/"):
+                    opens.add(lands(ADDRESS[source], href))
+        self.assertEqual(opens, {"charts/win-analytics"})
+        self.assertIn('href="/charts/win-analytics" target="_top">Charts/</a>', VIEWER)
+
+    def test_every_relative_link_of_a_page_lands_on_a_page_or_the_viewer(self):
+        # The same reading `publish.sh` gives the published pages, given here
+        # to the pages as written, so a pull request's own checks see it.
+        plain = re.compile(r"[A-Za-z0-9._~/?#=&%+-]+")
+        addresses = set(ADDRESS.values())
+        checked = 0
+        for source in SOURCES:
+            text = read(source)
+            self.assertEqual(re.findall(r'(?:href|src)="(/[^"]*)"', text), [], source)
+            for link in sorted(set(re.findall(r'(?:href|src)="([^"]*)"', text))):
+                if not plain.fullmatch(link):
+                    continue
+                where = lands(ADDRESS[source], link)
+                if where.startswith(f"{ADDRESS['landing.html']}/assets/"):
+                    self.assertTrue(
+                        (BETA / "assets" / where.split("/assets/", 1)[1]).is_file(), f"{source}: {link}")
+                else:
+                    self.assertIn(
+                        where, addresses | {"."},
+                        f"{source}, at {ADDRESS[source]}/, links {link}, which is no page of the site")
+                checked += 1
+        self.assertGreaterEqual(checked, 30)
+
+    def test_the_viewer_links_pages_where_they_are(self):
+        # Root-absolute as written (the desktop build serves the viewer at
+        # the root); `publish.sh` makes each lane-relative, and knows a link
+        # only as the address of a page the lane carries.
+        linked = re.findall(r'href="/([a-z][^"?#]*)"', VIEWER)
+        self.assertGreaterEqual(len(linked), 3, linked)
+        for address in linked:
+            self.assertIn(address, set(ADDRESS.values()), f'the viewer links "/{address}"')
+
+
+class Moved(unittest.TestCase):
+    """The addresses pages have left forward to where the pages are."""
+
+    def router_table(self) -> dict:
+        block = WORKER[WORKER.index("const MOVED = {"):]
+        block = block[:block.index("};")]
+        return dict(re.findall(r'^\s*"?([a-z][a-z0-9/-]*)"?: "([^"]+)",$', block, re.M))
+
+    def test_the_router_and_the_publish_check_keep_one_table(self):
+        moved = self.router_table()
+        self.assertEqual(moved, verify.FORMER)
+        self.assertGreaterEqual(len(moved), 4)
+
+    def test_every_left_address_forwards_to_a_page_that_is_there(self):
+        addresses = set(ADDRESS.values())
+        for old, new in self.router_table().items():
+            self.assertIn(new, addresses, f"/{old} forwards to /{new}, which no page states")
+            # An address in use is not one a page has left.
+            self.assertNotIn(old, addresses, old)
+            self.assertNotIn(old, {address.split("/")[0] for address in addresses}, old)
+
+    def test_the_publish_check_knows_every_page_by_its_address(self):
+        self.assertEqual(set(verify.PAGES), set(ADDRESS.values()))
+        # Each by the bytes that prove the page answering is that page.
+        for source, address in ADDRESS.items():
+            self.assertIn(verify.PAGES[address], read(source).encode("utf-8"), source)
+
+    def test_publish_puts_every_page_where_it_says(self):
+        for source in SOURCES:
+            name = source[:-len(".html")]
+            self.assertRegex(
+                PUBLISH, rf'\n[a-z]+_at="\$\(address "\${name}_page" [a-z]+\)"\n', source)
+
+
+if __name__ == "__main__":
+    unittest.main()

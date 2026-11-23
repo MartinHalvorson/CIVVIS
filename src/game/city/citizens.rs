@@ -64,6 +64,39 @@ impl Game {
         count
     }
 
+    /// `pid`'s production-ground census, `(worked, idle)`, taken once per
+    /// immutable query scope: `derive` runs on the first ask and every later
+    /// one shares its answer. The census itself belongs to the Builder quota
+    /// (`BasicAi::production_tile_backlog`); a policy trace derives it every
+    /// time to retain its reads, as [`Self::unimproved_worked_tiles`] does.
+    pub(crate) fn production_backlog_once(
+        &self,
+        pid: usize,
+        derive: impl FnOnce() -> (usize, usize),
+    ) -> (usize, usize) {
+        let _memo = self.query_memo();
+        let reuse = !self.query_memo.policy_reads_on.get();
+        if reuse {
+            if let Some(census) = self
+                .query_memo
+                .production_backlog
+                .borrow()
+                .as_ref()
+                .and_then(|memo| memo.get(&pid))
+                .copied()
+            {
+                return census;
+            }
+        }
+        let census = derive();
+        if reuse {
+            if let Some(memo) = self.query_memo.production_backlog.borrow_mut().as_mut() {
+                memo.insert(pid, census);
+            }
+        }
+        census
+    }
+
     /// One city's contribution, including authoritative host assignments.
     pub(crate) fn city_unimproved_worked_tiles(&self, pid: usize, cid: u32) -> usize {
         self.city_citizen_plan(cid)

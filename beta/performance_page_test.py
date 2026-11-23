@@ -399,14 +399,14 @@ class TheSiteList(unittest.TestCase):
         self.assertEqual(
             re.findall(r'<a class="([^"]+)" href="([^"]+)"[^>]*>([^<]+)</a>', nav),
             [
-                ("site-link", "../home/", "Home"),
-                ("site-link", "../research/", "Charts/"),
-                ("site-link sub-link", "../research/", "Win Analytics"),
+                ("site-link", "../../home/", "Home"),
+                ("site-link", "../win-analytics/", "Charts/"),
+                ("site-link sub-link", "../win-analytics/", "Win Analytics"),
                 ("site-link sub-link", "./", "CIVVIS Performance"),
-                ("site-link sub-link", "../interpretability/", "AI Interpretability"),
-                ("site-link", "../tournaments/", "Auto-Tourneys"),
-                ("site-link", "../", "CIVVIS"),
-                ("site-link", "../?mode=play", "AI Debugger"),
+                ("site-link sub-link", "../ai-interpretability/", "AI Interpretability"),
+                ("site-link", "../../auto-tourneys/", "Auto-Tourneys"),
+                ("site-link", "../../", "CIVVIS"),
+                ("site-link", "../../?mode=play", "AI Debugger"),
                 ("site-link", "https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/", "Civ 6"),
             ],
         )
@@ -424,7 +424,7 @@ class TheSiteList(unittest.TestCase):
         # (CIVVIS and AI Debugger, the two tools) list none of them.
         self.assertIn(
             '<a class="site-link sub-link" href="./" aria-current="page">Win Analytics</a>\n'
-            '        <a class="site-link sub-link" href="../performance/" ',
+            '        <a class="site-link sub-link" href="../civvis-performance/" ',
             RESEARCH,
         )
         for page in (LANDING, TOURNAMENTS, VIEWER):
@@ -441,16 +441,21 @@ class TheSiteList(unittest.TestCase):
         for line in (
             'performance_page="$source_tree/beta/performance.html"',
             'if [ -f "$performance_page" ]; then',
-            'mkdir -p "$out/performance"',
-            'cp "$performance_page" "$out/performance/index.html"',
-            'fill performance_page.py "$out/performance/index.html"',
-            'pages+=(performance)',
-            "('href=\"/performance\"', 'href=\"performance/\"'),",
-            'out / "performance" / "index.html": [],',
+            # At the address the page states itself (operator 2026-11-23:
+            # "clean up the URL please. standardized."), which is its name
+            # in the site list, under Charts/; `performance` is where a
+            # revision from before pages said so had it.
+            'performance_at="$(address "$performance_page" performance)"',
+            'mkdir -p "$out/$performance_at"',
+            'cp "$performance_page" "$out/$performance_at/index.html"',
+            'fill performance_page.py "$out/$performance_at/index.html"',
+            'pages+=("$performance_at")',
         ):
             self.assertIn(line, PUBLISH)
+        self.assertIn('<link rel="canonical" href="https://civvis.ai/charts/civvis-performance/">', PAGE)
         verify = (BETA / "verify.py").read_text(encoding="utf-8")
-        self.assertIn("""    "performance": b'id="performance-data"',\n""", verify)
+        self.assertIn("""    "charts/civvis-performance": b'id="performance-data"',\n""", verify)
+        self.assertIn("""    "performance": "charts/civvis-performance",\n""", verify)
 
 
 if __name__ == "__main__":

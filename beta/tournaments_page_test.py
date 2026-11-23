@@ -260,13 +260,20 @@ class TournamentsPage(unittest.TestCase):
         for line in (
             'tournaments_page="$source_tree/beta/tournaments.html"',
             'if [ -f "$tournaments_page" ]; then',
-            'cp "$tournaments_page" "$out/tournaments/index.html"',
-            'fill tournaments_page.py "$out/tournaments/index.html"',
-            'pages+=(tournaments)',
-            # And its links are held inside the lane like every page's.
-            'out / "tournaments" / "index.html": [],',
+            # At the address the page states itself; `tournaments` is where
+            # a revision from before pages said so had it.
+            'tournaments_at="$(address "$tournaments_page" tournaments)"',
+            'cp "$tournaments_page" "$out/$tournaments_at/index.html"',
+            'fill tournaments_page.py "$out/$tournaments_at/index.html"',
+            'pages+=("$tournaments_at")',
+            # And its links are held inside the lane like every page's: the
+            # guard runs over every page the lane carries.
+            'for address in carried:',
         ):
             self.assertIn(line, PUBLISH)
+        # The address follows the page's name in the site list (operator
+        # 2026-11-23: "clean up the URL please. standardized.").
+        self.assertIn('<link rel="canonical" href="https://civvis.ai/auto-tourneys/">', PAGE)
         # The page is authored lane-relative: nothing in it links the site root.
         self.assertEqual(re.findall(r'(?:href|src)="(/[^"]*)"', PAGE), [])
 
@@ -310,7 +317,8 @@ class TournamentsPage(unittest.TestCase):
         # Tournaments view." This page lists the site's pages as the others
         # do, with itself in gold, and is named Auto-Tourneys in the list
         # and on the tab since 2026-11-22 ("make sure Tournaments changes to
-        # Auto-Tourneys"); its address stayed /tournaments/. As on the home
+        # Auto-Tourneys"); its address was /tournaments/ until 2026-11-23
+        # and is /auto-tourneys/, the name in the list, since. As on the home
         # page, the list stands to the left of the title (operator
         # 2026-11-21, of the home page: "on the left side, to the left of
         # civvis.ai").
@@ -319,7 +327,7 @@ class TournamentsPage(unittest.TestCase):
         self.assertIn(
             '<nav class="site-nav" aria-label="CIVVIS sites">\n'
             '        <a class="site-link" href="../home/">Home</a>\n'
-            '        <a class="site-link" href="../research/" '
+            '        <a class="site-link" href="../charts/win-analytics/" '
             'title="What the games show: charts read off the CIVVIS AI agents&#8217; games.">Charts/</a>\n'
             '        <a class="site-link" href="./" aria-current="page">Auto-Tourneys</a>\n'
             '        <a class="site-link" href="../" title="Every civilization is played by a CIVVIS AI agent.">CIVVIS</a>\n'
@@ -347,19 +355,22 @@ class TournamentsPage(unittest.TestCase):
         # joined between Home and Tournaments the same day as Research; its
         # own test is `research_page_test.py`), each in its own markup.
         for page, pattern in (
-            (LANDING, r'aria-current="page">Home</a>\s*<a class="site-link" href="\.\./research/"[^>]*>Charts/</a>'
-                      r'\s*<a class="site-link" href="\.\./tournaments/"[^>]*>Auto-Tourneys</a>'
+            (LANDING, r'aria-current="page">Home</a>\s*<a class="site-link" href="\.\./charts/win-analytics/"[^>]*>Charts/</a>'
+                      r'\s*<a class="site-link" href="\.\./auto-tourneys/"[^>]*>Auto-Tourneys</a>'
                       r'\s*<a class="site-link" href="\.\./"[^>]*>CIVVIS</a>'),
             (VIEWER, r'id="homelink" href="/home" target="_top">Home</a>\s*'
-                     r'<a class="home-link" id="researchlink" href="/research" target="_top">Charts/</a>\s*'
-                     r'<a class="home-link" id="tourlink" href="/tournaments" target="_top">Auto-Tourneys</a>\s*'
+                     r'<a class="home-link" id="chartslink" href="/charts/win-analytics" target="_top">Charts/</a>\s*'
+                     r'<a class="home-link" id="tourlink" href="/auto-tourneys" target="_top">Auto-Tourneys</a>\s*'
                      r'<a class="home-link" id="watchlink" href="\./" target="_top">CIVVIS</a>'),
         ):
             self.assertRegex(page, pattern)
         for page in (PAGE, LANDING, VIEWER):
             self.assertNotIn(">Tournaments</a>", page)
-        # The viewer's link is root-absolute as written and lane-relative as published.
-        self.assertIn("""('href="/tournaments"', 'href="tournaments/"')""", PUBLISH)
+        # The viewer's link is root-absolute as written and lane-relative as
+        # published: `publish.sh` turns a root link to any page the lane
+        # carries into the lane's own.
+        self.assertIn('href="/auto-tourneys"', VIEWER)
+        self.assertIn("""needle, replacement = f'href="/{address}"', f'href="{address}/"'""", PUBLISH)
 
     def test_a_tournament_links_its_result_video_on_youtube(self):
         # Operator 2026-11-21: "on our new tournaments page we are building
@@ -554,7 +565,8 @@ class TournamentsPage(unittest.TestCase):
         for unsafe in ("innerHTML", "insertAdjacentHTML", "document.write"):
             self.assertNotIn(unsafe, PAGE)
         verify = (BETA / "verify.py").read_text(encoding="utf-8")
-        self.assertIn("""    "tournaments": b'id="tournaments-data"',\n""", verify)
+        self.assertIn("""    "auto-tourneys": b'id="tournaments-data"',\n""", verify)
+        self.assertIn("""    "tournaments": "auto-tourneys",\n""", verify)
 
 
 if __name__ == "__main__":

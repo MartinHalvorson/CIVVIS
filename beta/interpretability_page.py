@@ -7,7 +7,8 @@
                                                 rebuild the plan snapshot
 
 The AI Interpretability page (`beta/interpretability.html`, served at
-`<lane>/interpretability/`) is the last page under Charts/ (operator
+`<lane>/charts/ai-interpretability/`, the address it states itself) is the
+last page under Charts/ (operator
 2026-11-22: "Add a new chart to the bottom of Charts/ called AI
 Interpretablity ... study our codebase, how the AI works, and do your best to
 explain the AI to a human reader ... Top Down and bottom up if useful."). A

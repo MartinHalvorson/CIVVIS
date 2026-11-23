@@ -38,6 +38,13 @@
 
 use super::*;
 
+#[cfg(test)]
+thread_local! {
+    /// How many times this thread has counted the production ground afresh
+    /// rather than answering from a scope's memo.
+    static PRODUCTION_TILE_CENSUSES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
 /// The charge one owned, unworked tile with Food asks for when a production
 /// improvement fits it: half a worked tile's, so the cities' growth ground
 /// waits behind the ground they already work.
@@ -72,8 +79,21 @@ impl BasicAi {
             })
     }
 
-    /// See [`ProductionTileBacklog`].
+    /// See [`ProductionTileBacklog`]. Taken once per immutable query scope
+    /// (`Game::production_backlog_once`): a pass over the cities asks the
+    /// quota once per city, and each ask counts the whole empire.
     pub(crate) fn production_tile_backlog(g: &Game, pid: usize) -> ProductionTileBacklog {
+        let (worked, idle) = g.production_backlog_once(pid, || {
+            let census = Self::production_tile_census(g, pid);
+            (census.worked, census.idle)
+        });
+        ProductionTileBacklog { worked, idle }
+    }
+
+    /// [`Self::production_tile_backlog`] counted afresh.
+    fn production_tile_census(g: &Game, pid: usize) -> ProductionTileBacklog {
+        #[cfg(test)]
+        PRODUCTION_TILE_CENSUSES.with(|taken| taken.set(taken.get() + 1));
         let _memo = g.query_memo();
         let mut backlog = ProductionTileBacklog::default();
         for cid in g.player_city_ids(pid) {
