@@ -1710,8 +1710,11 @@ fn a_branch_begins_on_the_turn_it_is_made_on() {
         "#debugbar.dbg-split-on .dbg-branch, #debugbar.dbg-split-on .dbg-who { display: none; }",
         // A branch is named on itself, by its letter and its Civ AI.
         "letter: fork.forked ? letter.toUpperCase() : null, seated: pane.strategy,",
-        // A game opens on its two tracks, and the box asks which Civ AI
-        // plays the branch: a branch made for one is not asked about.
+        // A game opens on its two tracks. The box asks which Civ AI plays a
+        // branch Branch made: a branch made for one is not asked about, and
+        // neither is the opening view, which nobody pressed Branch for
+        // (operator, 2026-11-22: "branch b should only ask when branch is
+        // selected. not just auto ask rom the start").
         "try { drawDebugBar(); debugPaneReport(); debugPaneNumbers(); debugOpenOnTwoTracks(); }",
         // It asks when the two screens are shown, not while the halves load:
         // one screen and two change places in one move (operator,
@@ -1721,7 +1724,7 @@ fn a_branch_begins_on_the_turn_it_is_made_on() {
         // halves are there. What that looks like in a browser is held by
         // `beta/debugger_test.py`
         // (`check_one_screen_and_two_change_places_in_one_move`).
-        "shown: false, ask: seat ? null : {kind: \"seat\", letter: \"b\"}, look,",
+        "shown: false, ask: seat || fresh ? null : {kind: \"seat\", letter: \"b\"}, look,",
         "debugAsk = split.ask;",
         "if (debugHeld) return;",
         "host.className = \"dbg-unseen\";",
@@ -1734,6 +1737,28 @@ fn a_branch_begins_on_the_turn_it_is_made_on() {
         "debugAsk = target.value && target.value !== debugStrategy() ? {kind: \"switch\", name: target.value} : null;",
     ] {
         assert!(page.contains(piece), "the branch is missing {piece}");
+    }
+}
+
+/// The timeline says how it is used, Click to travel, until it has been
+/// clicked to travel, and then never again in that browser (operator,
+/// 2026-11-22: "have the initial timeline say click to travel so people
+/// understand the mechanism. make the click to travel very visible at the
+/// start and then not appear once they understand"). What that looks like,
+/// and what counts as a click on the timeline, is held by
+/// `beta/debugger_test.py` (`check_the_timeline_says_click_to_travel`).
+#[test]
+fn the_timeline_says_click_to_travel_until_it_is_clicked() {
+    let page = super::super::EMBEDDED_APP_DEBUGGER_JS;
+    for piece in [
+        "<div class=\"dbg-travel\" aria-hidden=\"true\" hidden><i>◀</i>Click to travel<i>▶</i></div>",
+        "animation: dbg-travel-call 1.6s ease-out infinite;",
+        "try { localStorage.setItem(DEBUG_TRAVEL_KEY, \"known\"); } catch (_) {}",
+        "const call = !debugTravelKnown && !!model.travel;",
+        // A slider let go of on another turn has travelled.
+        "debugSliderHeld = false;\n      debugTravelLearnt();",
+    ] {
+        assert!(page.contains(piece), "the timeline is missing {piece}");
     }
 }
 

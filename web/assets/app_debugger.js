@@ -485,6 +485,34 @@ const DEBUG_BAR_STYLE = `
     color: #3a1d00; background: #ffffff; box-shadow: 0 0 0 3px var(--dbg-own), 0 3px 9px #0b3554a0;
   }
   #debugbar .dbg-half .dbg-cursor b { min-width: 34px; padding: 4px 6px; font-size: 12px; }
+  /* The timeline says how it is used, loud, until it has been used: Click to
+     travel, in the open rail beside the marker, calling with a ring (operator
+     2026-11-22: "have the initial timeline say click to travel so people
+     understand the mechanism. make the click to travel very visible at the
+     start and then not appear once they understand"). It takes no press: a
+     click on it is the rail's, under it. The marker stands over it. */
+  #debugbar .dbg-travel {
+    position: absolute; z-index: 3; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    display: flex; align-items: center; gap: 9px; padding: 5px 16px; border-radius: 999px;
+    pointer-events: none; white-space: nowrap; font-size: 15px; font-weight: 800; letter-spacing: .02em;
+    color: #10140f; background: #ffd23f; border: 2px solid #ffffff;
+    animation: dbg-travel-call 1.6s ease-out infinite;
+  }
+  #debugbar.dbg-split-on .dbg-travel { padding: 3px 16px; font-size: 14px; }
+  #debugbar .dbg-travel i { font-style: normal; font-size: 10px; animation: dbg-travel-nudge 1.6s ease-in-out infinite; }
+  #debugbar .dbg-travel i:first-child { --dbg-nudge: -4px; }
+  #debugbar .dbg-travel i:last-child { --dbg-nudge: 4px; }
+  @keyframes dbg-travel-call {
+    from { box-shadow: 0 2px 10px #0009, 0 0 0 0 #ffd23fd0; }
+    to { box-shadow: 0 2px 10px #0009, 0 0 0 16px #ffd23f00; }
+  }
+  @keyframes dbg-travel-nudge { 50% { transform: translateX(var(--dbg-nudge)); } }
+  /* Used once, it goes, and is not said again. */
+  #debugbar .dbg-travel.dbg-travel-gone { animation: dbg-travel-gone .35s ease-in forwards; }
+  @keyframes dbg-travel-gone { to { opacity: 0; transform: translate(-50%, -50%) scale(.8); } }
+  @media (prefers-reduced-motion: reduce) {
+    #debugbar .dbg-travel, #debugbar .dbg-travel i { animation: none; box-shadow: 0 2px 10px #0009; }
+  }
   /* Two halves on one turn of the trunk have one marker, ringed in both
      their colours. */
   #debugbar.dbg-split-on .dbg-lane[data-dbg-lane=""] .dbg-cursor b {
@@ -1205,7 +1233,8 @@ function debugLaneMarkup(key, id, label) {
         <div class="dbg-rail">
           <div class="dbg-sky"></div>
           <div class="dbg-deco"><div class="dbg-ruler"></div><div class="dbg-band"></div><div class="dbg-band dbg-own"></div><div class="dbg-by"></div><div class="dbg-beyond" hidden></div><div class="dbg-kept-turns"></div><div class="dbg-goal"></div></div>${
-          key ? `<div class="dbg-arm"><div class="dbg-arm-sky"></div><div class="dbg-bent"></div></div>` : `<div class="dbg-axis"></div>`}
+          key ? `<div class="dbg-arm"><div class="dbg-arm-sky"></div><div class="dbg-bent"></div></div>` : `<div class="dbg-axis"></div>
+          <div class="dbg-travel" aria-hidden="true" hidden><i>◀</i>Click to travel<i>▶</i></div>`}
           <div class="dbg-hands"><div class="dbg-ghost" hidden></div>${key ? "" : `<span class="dbg-fork" hidden></span>`}<div class="dbg-cursor"><b></b>${key ? "" : `
             <button class="dbg-branch" data-dbg="split" title="Branch: a second timeline from this turn, beside this one. This one keeps the turns it holds past here; seat another Civ AI in the branch and play both, and close either with its ✕" aria-label="Branch the timeline on this turn"><i>⑂</i>Branch</button>`}</div></div>
           <input type="range" id="${id}" step="1"${key ? ` data-dbg-half="${key}"` : ""} aria-label="${label}">
@@ -1343,7 +1372,7 @@ function debugBuildBar() {
       band: part("band"), own: part("own"), by: part("by"), beyond: part("beyond"), kept: part("kept-turns"), goal: part("goal"), ghost: part("ghost"),
       cursor: part("cursor"), pill: box.querySelector(".dbg-cursor b"), marks: part("marks"), agent: part("agent"),
       start: part("start"), finish: part("finish"), fork: part("fork"), close: part("close"),
-      deco: part("deco"), bent: part("bent"), axis: part("axis")};
+      deco: part("deco"), bent: part("bent"), axis: part("axis"), travel: part("travel")};
   }
 
   bar.addEventListener("click", event => {
@@ -1372,6 +1401,7 @@ function debugBuildBar() {
     const lane = debugSplit ? event.target.closest(".dbg-lane") : null;
     const mark = lane && lane.dataset.dbgLane ? event.target.closest("[data-dbg-turn], [data-dbg-goto]") : null;
     if (mark) {
+      debugTravelLearnt();
       debugSay("");
       if (mark.dataset.dbgTurn) debugSplitGoTo(lane.dataset.dbgLane, mark.dataset.dbgTurn);
       else debugSplitGoToSave(lane.dataset.dbgLane, +mark.dataset.dbgGoto);
@@ -1388,9 +1418,9 @@ function debugBuildBar() {
       return;
     }
     const named = event.target.closest("[data-dbg-turn]");
-    if (named && debugTimeline()) { debugSay(""); debugGoToTurn(named.dataset.dbgTurn); return; }
+    if (named && debugTimeline()) { debugTravelLearnt(); debugSay(""); debugGoToTurn(named.dataset.dbgTurn); return; }
     const point = event.target.closest("[data-dbg-goto]");
-    if (point && debugTimeline()) { debugSay(""); debugOp({op: "goto_save", id: +point.dataset.dbgGoto}); return; }
+    if (point && debugTimeline()) { if (point.closest(".dbg-marks")) debugTravelLearnt(); debugSay(""); debugOp({op: "goto_save", id: +point.dataset.dbgGoto}); return; }
     const dropped = event.target.closest("[data-dbg-drop]");
     if (dropped && debugTimeline()) { debugOp({op: "drop_save", id: +dropped.dataset.dbgDrop}); return; }
     const load = event.target.closest("[data-dbg-load]");
@@ -1452,6 +1482,7 @@ function debugBuildBar() {
       // A slider let go of by the pointer gives the keys back to the page.
       if (debugSliderHeld) target.blur();
       debugSliderHeld = false;
+      debugTravelLearnt();
       debugSay("");
       if (target.dataset.dbgHalf) debugSplitGoTo(target.dataset.dbgHalf, turn);
       else debugGoToTurn(turn);
@@ -1891,6 +1922,18 @@ function debugDrawLane(key, model) {
     // tree is not there.
     lane.cursor.classList.toggle("dbg-pinned", off(shown) > 0);
   }
+  // Click to travel, until the timeline has been clicked to travel: in the
+  // open rail ahead of the marker, or behind it once the marker is far
+  // along, and only while a click would travel.
+  if (lane.travel) {
+    const call = !debugTravelKnown && !!model.travel;
+    // One that is going is left to go.
+    if (call || !lane.travel.classList.contains("dbg-travel-gone")) lane.travel.hidden = !call;
+    if (call) {
+      const from = at(shown ?? model.turn), centre = from <= 60 ? (from + 100) / 2 : from / 2;
+      debugPlace(lane.travel, `left:clamp(120px, ${centre.toFixed(1)}%, calc(100% - 120px))`);
+    }
+  }
   if (lane.fork) {
     const branches = model.branches ?? null;
     // Two halves standing on that very turn have their marker there instead.
@@ -1927,6 +1970,24 @@ function debugHover(rail, x = 0) {
   tag.hidden = false;
   const bar = debugBar.getBoundingClientRect(), half = tag.offsetWidth / 2;
   tag.style.left = `${Math.max(half + 4, Math.min(bar.width - half - 4, x - bar.left))}px`;
+}
+// Whether the timeline has been clicked to travel in this browser. Until it
+// has, it says Click to travel (`.dbg-travel`); once it has, that goes and
+// is not said again, in this game or the next. A travel by the timeline is a
+// slider let go of on another turn, or a mark on a rail clicked (an era, a
+// breakpoint turn, a save point).
+const DEBUG_TRAVEL_KEY = "civvis-debug-click-to-travel";
+let debugTravelKnown = (() => {
+  try { return localStorage.getItem(DEBUG_TRAVEL_KEY) === "known"; } catch (_) { return false; }
+})();
+function debugTravelLearnt() {
+  if (debugTravelKnown) return;
+  debugTravelKnown = true;
+  try { localStorage.setItem(DEBUG_TRAVEL_KEY, "known"); } catch (_) {}
+  const call = (debugLanes[""] || {}).travel;
+  if (!call || call.hidden) return;
+  call.classList.add("dbg-travel-gone");
+  setTimeout(() => { call.hidden = true; call.classList.remove("dbg-travel-gone"); }, 400);
 }
 // The words on the tools are for a box with room for them: when the tools at
 // either end wrap past two rows, or have so little room that they stand over
@@ -2101,7 +2162,8 @@ function drawDebugBar(measure = true) {
       by: stretches(told("a", "by").length ? "a" : "b", trunkFirst, fork.turn),
       free: Math.max(fork.last.a, fork.last.b) <= fork.turn && !beyond("a") && !beyond("b"),
       under: [...told("a", "eras"), ...told("b", "eras")].filter(era => onTrunk(era.turn)), tree,
-      goal, idle: false, marker: one ? stands.a : null, branches: fork.forked ? fork.turn : null});
+      goal, idle: false, marker: one ? stands.a : null, branches: fork.forked ? fork.turn : null,
+      travel: panes.a.turn !== null && panes.b.turn !== null && !debugSplit.busy && !running});
     // A half has no timeline of its own to show them on, so its save points,
     // its breakpoint turns and the eras it has been through stand on its
     // lane (`pane-marks`): on its branch, and on the trunk for the turns the
@@ -2164,16 +2226,17 @@ function drawDebugBar(measure = true) {
       fork: null, beyond, kept: thinned ? new Set(kept) : null, turns: thinned ? kept : null,
       flags: [...(timeline.saves || [])].sort((a, b) => a.turn - b.turn || a.id - b.id), stops: timeline.breakpoints.turns,
       by: timeline.played_by || [], played: timeline.played_by || [],
-      eras: timeline.eras || [], goal: debugRunning ? debugGoal : null, idle: deck.idle});
+      eras: timeline.eras || [], goal: debugRunning ? debugGoal : null, idle: deck.idle, travel: deck.idle && !debugRunning});
   }
   debugDrawDeck(bar, deck);
   debugDrawAsk(bar);
   if (DEBUG_PANE !== null) { debugPaneDeck(deck); debugPaneMarks(timeline); }
   if (measure) debugDock(bar);
 }
-// What the box asks, or null. `seat`: which Civ AI plays a branch that was
-// just made (operator 2026-11-22: "user should be prompted for the strategy
-// for the second branch"). `switch`: another Civ AI was picked on the one
+// What the box asks, or null. `seat`: which Civ AI plays a branch that
+// Branch just made (operator 2026-11-22: "user should be prompted for the
+// strategy for the second branch"; the game's opening two tracks are not a
+// branch anybody made, and ask nothing). `switch`: another Civ AI was picked on the one
 // timeline, and the timeline either plays on with it or a branch does.
 // A question stays until it is answered, the box is pressed anywhere else,
 // or Escape: unanswered, the branch keeps the Civ AI it began with and the
@@ -2981,10 +3044,13 @@ function debugSplitReveal() {
   });
 }
 // `seat` is the Civ AI the branch is made for, when it was picked before the
-// branch was made. Otherwise B begins with A's, and the box asks. `fresh` is
-// a game that opens on its two tracks: it has not been shown on one, and is
-// not, so the window waits under a veil where a branch made by hand waits
-// showing the one screen it was made from.
+// branch was made. Otherwise B begins with A's, and the box asks when Branch
+// was pressed. `fresh` is a game that opens on its two tracks: it has not
+// been shown on one, and is not, so the window waits under a veil where a
+// branch made by hand waits showing the one screen it was made from. Nothing
+// was pressed for it, so nothing is asked (operator 2026-11-22: "branch b
+// should only ask when branch is selected. not just auto ask from the
+// start"): B begins on A's Civ AI, and B's picker seats another.
 function debugSplitOpen(dir, versus = null, seat = null, fresh = false) {
   if (debugSplit || DEBUG_PANE !== null || !debugTimeline() || debugBusy || autoplaying) return;
   if (!document.getElementById("debugsplit-style")) {
@@ -3051,7 +3117,7 @@ function debugSplitOpen(dir, versus = null, seat = null, fresh = false) {
     versus: versus ?? remembered, running: 0, until: null, chart: "score", history: {a: new Map(), b: new Map()},
     from: state ? state.turn : null, forked: false,
     branches: Math.max(timeline.last ?? state.turn, (timeline.beyond || {}).to ?? 0) > state.turn,
-    shown: false, ask: seat ? null : {kind: "seat", letter: "b"}, look,
+    shown: false, ask: seat || fresh ? null : {kind: "seat", letter: "b"}, look,
     waiting: setTimeout(debugSplitReveal, DEBUG_SPLIT_WAIT_MS)};
   for (const letter of ["a", "b"]) {
     const frame = host.querySelector(`[data-dbg-frame="${letter}"]`);
