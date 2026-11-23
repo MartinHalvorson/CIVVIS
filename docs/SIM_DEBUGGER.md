@@ -1054,9 +1054,12 @@ Continents, an 18-core computer busy with a tournament and a live game, a
 quarter of its cores): from turn 12 for ten turns on the one timeline, 559
 lines and 3,384 turns in 16.7 s on five copies of 44 MB (200 turns a second),
 the best line worth 71 Score against 65 for the Civ AI seated, and played on
-the page it came to 71. From a half of a split, 273 lines in 12.6 s, 66
-against 63, and played in the other half it came to 66 while the half that
-was searched played on to 63.
+the page it came to 71. On all eighteen cores the same search took 8.3 s
+(474 turns a second) and found a line of the same worth. From a half of a
+split, 273 lines in 12.6 s, 66 against 63, and played in the other half it
+came to 66 while the half that was searched played on to 63. Later in a game
+a turn costs more and a copy weighs more: from turn 40 on nine cores, 85
+turns a second on copies of 128 MB.
 
 Autosearch needs forks, so it runs in the browser build. The desktop
 program's server does not know `/forks`, and there the panel says so.
