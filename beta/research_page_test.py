@@ -207,7 +207,8 @@ class TournamentWinRates(unittest.TestCase):
     diplo excluded and a table on the right that allows diplo wins. we can
     drop the wins, losses. games (n) should be listed after each value. so
     like 100% (5) or 14% (181). at the top, we should have win rate (total
-    games)"."""
+    games)". Later that day he reversed the sides: "put diplo victory allowed
+    to the left of no diplo victory"."""
 
     SPECS = [
         {"name": "Deity series", "start": "civvis-20261001T000000Z", "end": "civvis-t", "series_size": 2,
@@ -331,13 +332,13 @@ class TournamentWinRates(unittest.TestCase):
     def test_the_two_tables_list_every_level_in_every_window(self):
         self.assertEqual(research_page.RATE_LEVELS, [8, 7, 6, 5, 4])
         self.assertEqual(research_page.RATE_DAYS, [1, 3, 7, 30])
-        self.assertEqual(research_page.RATE_TABLES, [("off", False), ("on", True)])
+        self.assertEqual(research_page.RATE_TABLES, [("on", True), ("off", False)])
         rates = research_page.win_rates(self.games())
         self.assertEqual(list(rates), ["to", "days", "games", "tables"])
         # Every window counts back from the newest tournament game in either
         # table, the Deity loss begun 11-22 04:00.
         self.assertEqual((rates["to"], rates["days"]), ("2026-11-22 04:00Z", [1, 3, 7, 30]))
-        self.assertEqual(list(rates["tables"]), ["off", "on"])
+        self.assertEqual(list(rates["tables"]), ["on", "off"])
         cells = lambda table, level: [
             (w["days"], w["games"], w["wins"])
             for row in rates["tables"][table]["levels"] if row["level"] == level
@@ -786,17 +787,21 @@ class Page(unittest.TestCase):
         block = PAGE[side : PAGE.index("</section>", side)]
         self.assertEqual(PAGE[side + len(block) + len("</section>") : layout].strip(), "")
         self.assertIn('<h2 class="res-side-title" id="res-title-tourney">Firaxis Civ 6 AI benchmark: win rate by level</h2>', block)
-        # Two tables side by side, the games with the Diplomatic victory off
-        # at the left and the games that allowed it at the right, each named
-        # and with the count of its games after its name.
+        # Two tables side by side, each named and with the count of its
+        # games after its name. The games that allowed the Diplomatic
+        # victory are at the left and the games with it off at the right
+        # (operator, later on 2026-11-23, reversing the sides he first asked
+        # for: "put diplo victory allowed to the left of no diplo victory"),
+        # and nothing stands between the pair's opening and the left table.
         self.assertEqual(block.count("<table"), 2)
         pair = block.index('<div class="res-bench-pair">')
         off, on = block.index('<div class="res-section" id="res-bench-off">'), block.index('<div class="res-section" id="res-bench-on">')
-        self.assertLess(pair, off)
-        self.assertLess(off, on)
+        self.assertLess(pair, on)
+        self.assertLess(on, off)
+        self.assertEqual(block[pair + len('<div class="res-bench-pair">') : on].strip(), "")
         self.assertIn(".res-bench-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; min-width: 0; }", PAGE)
         self.assertIn("@media (max-width: 859px) { .res-bench-pair { grid-template-columns: minmax(0, 1fr); } }", PAGE)
-        for name, title in (("off", "Diplomatic victory off"), ("on", "Diplomatic victory allowed")):
+        for name, title in (("on", "Diplomatic victory allowed"), ("off", "Diplomatic victory off")):
             self.assertIn(
                 f'<h3 class="res-bench-title" id="res-title-rates-{name}">{title} <small id="res-rates-count-{name}"></small></h3>', block
             )
@@ -822,8 +827,8 @@ class Page(unittest.TestCase):
         # in the record's order of rows, Lv 8 Deity first: a cell is the wins
         # as a share of its games and then the games in brackets, "14% (181)".
         self.assertIn("const BENCH = data.tournament_rates && data.tournament_rates.tables ? data.tournament_rates : null;", PAGE)
-        self.assertIn('for (const name of ["off", "on"]) {', PAGE)
-        self.assertEqual([name for name, _ in research_page.RATE_TABLES], ["off", "on"])
+        self.assertIn('for (const name of ["on", "off"]) {', PAGE)
+        self.assertEqual([name for name, _ in research_page.RATE_TABLES], ["on", "off"])
         self.assertIn('const body = document.querySelector("#res-rates-" + name + " tbody");', PAGE)
         self.assertIn('const td = el("td", games ? "is-rate" : "is-zero", games ? pct(wins / games) : "—");', PAGE)
         self.assertIn('if (games) td.append(" ", el("small", "", "(" + fmt(games) + ")"));', PAGE)
@@ -842,7 +847,7 @@ class Page(unittest.TestCase):
         # `tournament_games` counts one: every finished game that CIVVIS did
         # not win.
         self.assertIn('Every finished game of the tournaments on <a href="../../auto-tourneys/">Auto-Tourneys</a>', block)
-        self.assertIn("The left table holds the games set up with the Diplomatic victory switched off, the right table the games that allowed it.", block)
+        self.assertIn("The left table holds the games that allowed the Diplomatic victory, the right table the games set up with it switched off.", block)
         self.assertIn("A win is a CIVVIS victory; a loss is a rival&#8217;s victory, our elimination, or a game conceded early.", block)
         self.assertIn("A day is 24 hours, counted back from the newest tournament game.", block)
         self.assertEqual(home_rankings.OUTCOMES, ["win", "defeat", "rival_victory", "abandoned", "unfinished"])
