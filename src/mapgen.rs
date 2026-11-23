@@ -14,17 +14,23 @@ use crate::world::WorldMap;
 use crate::{hex, Pos};
 
 mod canals;
+mod cliffs;
 mod earth;
 mod lakes;
 mod natural_wonders;
 mod rivers;
+pub mod shipped;
 mod starts;
+mod stock;
 use canals::*;
+use cliffs::*;
 use earth::*;
 use lakes::*;
 use natural_wonders::*;
 use rivers::*;
+use shipped::StockScript;
 pub use starts::*;
+use stock::*;
 
 /// The share of the world `Lakes.lua` leaves as land. It stacks three fractal
 /// layers at 81, 88 and 95 percent, but `Adjacent` bars every layer after the
@@ -32,6 +38,41 @@ pub use starts::*;
 /// cut really decides the world: land nearly everywhere, and the driest fifth
 /// of the field left behind as scattered interior basins.
 const LAKES_SCRIPT_LAND_PERCENT: u32 = 81;
+
+/// The smallest map Civilization VI generates: Duel, 44 by 26.
+const SMALLEST_STOCK_PLOTS: i32 = 44 * 26;
+
+/// The stock script that draws this world, where one does.
+///
+/// A world type the game ships is drawn by the game's own script
+/// ([`stock::paint_stock_world`]) on every board the game could itself make,
+/// which is Duel and anything larger.
+///
+/// A board under Duel is not one the scripts were written for, and they do
+/// not scale down to it: the centre rift drifts each side three plots
+/// whatever the width, the polar rows and the seam rift take a fixed share,
+/// and the fractal lattice is coarser than the map. Such boards exist only
+/// as fixtures, a dozen plots across with two seats on them, and they keep
+/// the compact generators below, which were built to give exactly that board
+/// room to play on.
+fn draws_by_stock_script(script: MapScript, width: i32, height: i32) -> Option<StockScript> {
+    stock_script(script).filter(|_| width * height >= SMALLEST_STOCK_PLOTS)
+}
+
+/// The land share the compact generators aim a stock world type at, on the
+/// boards under Duel that they still draw. [`MapScript::land_percent`] now
+/// reports what the game's own script leaves, which is a different number
+/// for every one of these.
+fn compact_land_percent(script: MapScript) -> u32 {
+    match script {
+        MapScript::Lakes => 81,
+        MapScript::InlandSea => 68,
+        MapScript::Pangaea | MapScript::Continents => 42,
+        MapScript::SmallContinents => 36,
+        MapScript::Islands => 22,
+        other => other.land_percent(),
+    }
+}
 
 fn offset_region(
     wm: &WorldMap,
@@ -341,6 +382,11 @@ fn taken_within(wm: &WorldMap, starts: &[Pos], radius: i32) -> BTreeSet<Pos> {
 /// The land of a world, under the world type asked for and on whatever shape
 /// the world turned out to be.
 ///
+/// The types the game ships (Continents, Pangaea, Small Continents, Islands,
+/// Inland Sea and Lakes) come here only for a board under the smallest size
+/// the game makes. At Duel and above the game's own scripts draw them, land,
+/// relief and climate together: see [`draws_by_stock_script`].
+///
 /// The two shapes want genuinely different generators and always have. A flat
 /// map is a rectangle with edges, so its scripts draw against those edges — an
 /// oval that stops short of them, two regions cut out of them, a fractal cut
@@ -545,7 +591,7 @@ fn flat_land(
             // water, so every one of them is its own shore and the sea lanes
             // between them are the map.
             let mut open = offset_region(wm, 0, width, 1, height - 1);
-            let target = area * MapScript::Islands.land_percent() as usize / 100;
+            let target = area * compact_land_percent(MapScript::Islands) as usize / 100;
             let seats = num_major_spawns + num_minor_spawns;
             scatter_islands(
                 wm,
@@ -994,7 +1040,7 @@ fn globe_land(
         .collect();
 
     let tiles = wm.tiles.len();
-    let land_share = script.land_percent() as usize;
+    let land_share = compact_land_percent(script) as usize;
     let seats = num_major_spawns + num_minor_spawns;
 
     if land_share > 50 {
@@ -1950,11 +1996,15 @@ pub fn generate_with_script_and_leader_starts(
     };
     let mut wm = if topology.is_globe() {
         WorldMap::globe(globe_frequency(width, height))
-    } else if script.is_battlefield() {
+    } else if script.is_battlefield()
+        || draws_by_stock_script(script, width, height).is_some_and(stock_world_is_bounded)
+    {
         // Four walls rather than an east-west seam. A world wants its two
         // longitudes to be the same longitude; an arena must not, or a flank
         // that walks off the east side arrives behind the enemy in the west
-        // and an archer on one wall is two steps from the far wall.
+        // and an archer on one wall is two steps from the far wall. Inland
+        // Sea is the one world that asks for the same: the stock script
+        // turns the wrap off, so its sea is ringed by land on every side.
         WorldMap::arena(width, height)
     } else {
         WorldMap::new(width, height)
@@ -1968,10 +2018,19 @@ pub fn generate_with_script_and_leader_starts(
     // same geometry every time it is asked.
     let blocks = (script == MapScript::GrandCanalsTwo).then(|| canal_blocks(&wm, poles, rng));
     let earth = script.is_fixed_geography().then(|| earth_tile_cache(&wm));
+    // A world type the game ships is drawn by the game's own script: its
+    // land, its hills and mountains and its climate arrive together, the way
+    // `GeneratePlotTypes` and `GenerateTerrainTypes` hand them over. See
+    // `mapgen/stock.rs`.
+    let mut stock_ground = draws_by_stock_script(script, width, height)
+        .map(|stock| paint_stock_world(&mut wm, stock, poles, rng));
     let mut land = match &blocks {
         Some(plan) => plan.land.clone(),
         None if script.is_fixed_geography() => earth_land_from_cache(&wm, earth.as_ref().unwrap()),
-        None => generate_land(&wm, script, poles, num_major_spawns, num_minor_spawns, rng),
+        None => match &mut stock_ground {
+            Some(ground) => std::mem::take(&mut ground.land),
+            None => generate_land(&wm, script, poles, num_major_spawns, num_minor_spawns, rng),
+        },
     };
 
     // Every stock script stamps its continents before the relief pass whose
@@ -1992,8 +2051,16 @@ pub fn generate_with_script_and_leader_starts(
     // A fixed-geography world skips both: its ranges and its climates are as
     // real as its coastlines and are read from the same grid, so there is no
     // fractal to cut and no latitude band to paint.
+    let coast_painted = stock_ground
+        .as_ref()
+        .is_some_and(|ground| ground.coast_painted);
+    let is_stock = stock_ground.is_some();
+    let mut table_hills = None;
     let mut mountain_terrain = if script.is_fixed_geography() {
         paint_earth(&mut wm, &land, poles, earth.as_ref(), rng)
+    } else if let Some(ground) = stock_ground {
+        table_hills = Some(ground.hills);
+        ground.mountain_terrain
     } else {
         apply_tectonics(&mut wm, &land, script, rng);
         assign_biomes(&mut wm, &land_list, poles, rng)
@@ -2047,18 +2114,24 @@ pub fn generate_with_script_and_leader_starts(
     // touch shallow water their own turn to become Coast. Shelves therefore
     // vary from one tile in the open sea to five or more in a broad bay,
     // instead of a uniform outline traced around every landmass.
-    let coastal: Vec<Pos> = wm
-        .tiles
-        .iter()
-        .filter(|(pos, t)| {
-            t.terrain == "ocean" && wm.neighbors(**pos).iter().any(|n| land.contains(n))
-        })
-        .map(|(pos, _)| *pos)
-        .collect();
+    //
+    // A flat stock world arrives with its shelf already laid by the same
+    // rule, on the script's own dice, and is left as it came.
+    let coastal: Vec<Pos> = if coast_painted {
+        Vec::new()
+    } else {
+        wm.tiles
+            .iter()
+            .filter(|(pos, t)| {
+                t.terrain == "ocean" && wm.neighbors(**pos).iter().any(|n| land.contains(n))
+            })
+            .map(|(pos, _)| *pos)
+            .collect()
+    };
     for pos in coastal {
         wm.tiles.get_mut(&pos).unwrap().terrain = "coast".into();
     }
-    for _ in 0..3 {
+    for _ in 0..if coast_painted { 0 } else { 3 } {
         let expansion: Vec<Pos> = wm
             .tiles
             .iter()
@@ -2118,27 +2191,41 @@ pub fn generate_with_script_and_leader_starts(
         }
     }
 
-    // Coastal cliffs are shared edge features rather than tile terrain.
-    // Generate from the land side and mirror the edge onto the water tile;
-    // this makes embark/disembark legality exact at bays and narrow points.
-    let mut cliff_edges = Vec::new();
-    for &pos in &land_list {
-        if wm.tiles[&pos].terrain == "mountain" {
-            continue;
-        }
-        for neighbor in wm.neighbors(pos).into_iter() {
-            if wm
-                .tiles
-                .get(&neighbor)
-                .is_some_and(|tile| matches!(tile.terrain.as_str(), "coast" | "ocean"))
-                && rng.chance(0.35)
-            {
-                cliff_edges.push((pos, neighbor));
+    // Coastal cliffs are shared edge features rather than tile terrain. On
+    // any board the game could itself make they are laid by the stock rule
+    // once the ice is down (`add_cliffs`, below). An arena, and a board under
+    // Duel, still rolls them here, one edge in three: an arena's ground is
+    // repainted by hand afterwards and its battles were tuned on these
+    // shores, and the small boards are fixtures whose worlds are kept as they
+    // were.
+    //
+    // CIVVIS's own world types used to roll here at every size. Their dice
+    // are still thrown, so the rivers, wonders and resources of every seeded
+    // world of theirs fall where they always did; a stock world is drawn
+    // afresh by its script and has no such history to keep.
+    let stock_cliffs = !script.is_battlefield() && width * height >= SMALLEST_STOCK_PLOTS;
+    if !is_stock {
+        let mut cliff_edges = Vec::new();
+        for &pos in &land_list {
+            if wm.tiles[&pos].terrain == "mountain" {
+                continue;
+            }
+            for neighbor in wm.neighbors(pos).into_iter() {
+                if wm
+                    .tiles
+                    .get(&neighbor)
+                    .is_some_and(|tile| matches!(tile.terrain.as_str(), "coast" | "ocean"))
+                    && rng.chance(0.35)
+                {
+                    cliff_edges.push((pos, neighbor));
+                }
             }
         }
-    }
-    for (land, water) in cliff_edges {
-        wm.set_cliff_edge(land, water, true);
+        if !stock_cliffs {
+            for (land, water) in cliff_edges {
+                wm.set_cliff_edge(land, water, true);
+            }
+        }
     }
 
     // --- rivers: connected chains along shared hex edges, as in Civ VI.
@@ -2224,6 +2311,12 @@ pub fn generate_with_script_and_leader_starts(
         })
         .count();
     add_features(&mut wm, &land, rng);
+
+    // --- cliffs, where the stock scripts lay them: after the features, so
+    // the sea ice a cliff gives way to is already on the map.
+    if stock_cliffs {
+        add_cliffs(&mut wm, &land, table_hills.as_ref());
+    }
 
     // --- natural wonders. See `mapgen/natural_wonders.rs`.
     wm = place_natural_wonders(
@@ -2463,16 +2556,7 @@ struct TectonicProfile {
 /// mountains only. Neither does a board under the smallest shipped map, Duel
 /// at 44x26: a seam there can swallow the land the seats need.
 fn stamps_continents_before_relief(script: MapScript, width: i32, height: i32) -> bool {
-    width * height >= 44 * 26
-        && matches!(
-            script,
-            MapScript::Continents
-                | MapScript::SmallContinents
-                | MapScript::Pangaea
-                | MapScript::Islands
-                | MapScript::Lakes
-                | MapScript::InlandSea
-        )
+    draws_by_stock_script(script, width, height).is_some()
 }
 
 /// The seams of a world whose continents are stamped, and none otherwise. A
@@ -3727,6 +3811,9 @@ fn largest_component(wm: &WorldMap, cells: &BTreeSet<Pos>) -> BTreeSet<Pos> {
 
 #[cfg(test)]
 mod river_tests;
+
+#[cfg(test)]
+mod stock_tests;
 
 #[cfg(test)]
 mod start_bias_tests {

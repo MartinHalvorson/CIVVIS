@@ -1,0 +1,26 @@
+. .                   . . s .   . .                           . .   . s s s . s s s S S
+. .               . . . . t S . .                   . . . . . . . . . S . . . . . . . .
+  .           . . . . . t t t t .                     . . . t . . s . . . . . .   . . .
+. .               . t T t t t t p . . . . .     .   . . p G t t t t . . . t .       . .
+              . . . . g t T T t g g t . .     . . . . p P P G g g t T t T G .   .
+            .   . . g g g g g g g g g p . .   . . P G p p p G g p p p ^pP . . . .
+          . . . . . g D G ^gg g g g p P p . . . P p p p p p g P p p p P P . .
+              . . d D d G g g g G D p P p p . P P P p D P G g g P D ^dP P .
+            . . d p D D g G g G p p P P p p . p d p d d p p G g G D d d G . .
+            . . p P ^pd d G g G p p p P P P p d d d p p . . . . g d d D . . . .
+        . . . p p P ^pD g g g p p p p p p ^pp p p p P . . . . . . g g . . .   .
+          . . g P P P P ^pp p g g g p g g ^gg g g g . . .   .   . . . .     .
+      . . . . g g g G p g ^gg g g g g g g G g g g g .
+          . g p p P p p p p p g g g g g G g p g g . . .
+      . . . p p p p p p p d d g g p p G ^pP p p p .
+    . . . P p P p p p d d D d G g p p G g D D d p .
+  . . . . p P ^pP p p D d g G G ^gG g G G d D D p .
+    . G G P P P p d d d d P d D D ^pp p P P d d P .
+  . . g g G P d d d D g G d d D d D D d d p D p g . . .
+    . G g p P P d p G g G p P p D D g p p p p G . . .
+    . t t p ^pp ^pP g T g p p g g G t p p g g . . .
+  . . t t t T P t T t t t t t t T T t t t t . . .
+  . . s t t . . . . T t T t s s S S s s t .
+. . . s s . . . .   . . . . . s s S s s S .   . .
+    . s . .     . .     .   . . . . S s s . .
+  . . s .                       .   . s . . .

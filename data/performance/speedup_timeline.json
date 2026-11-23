@@ -3,11 +3,28 @@
     "The speed timeline on the home page (`beta/landing.html`): five ways one game of Civilization VI gets played, and how many times faster each is than a person playing it by hand. `docs/SPEEDUP_TIMELINE.md` says how each stop is measured.",
     "Operator 2026-11-22: \"Above the 6 seconds video, lets have a timeline: right to left: 5 hrs for me to play a Civ 6 game, 10-15 minutes with CIVVIS computer control, how long with Firaxis Civ 6 Deity Sim? CIVVIS self-play should be down to 10s or so. Can scale across M5 Max cores to 1 game per second. which is on the left. We should track the multipliers for each one though and see how much we can push things. 1,000,000x speed imrpove would be a huge achievement over playing Civ 6 games. Provide a speedup number: Like 123,654x.\"",
     "`stops` are listed slowest first as the operator listed them, and the first is the one the others are measured against. A stop's `readings` are its measurements, oldest first: `taken` the day, `seconds` the time one game takes, `from` how it was measured. The newest reading is the one shown; the older ones are the track of how far the stop has been pushed. A stop with `follows` keeps no readings: it is read from that ledger, one reading for every run that set a record.",
-    "`goal` is the multiplier the line ends at, and a stop's `goal_seconds` its own target (the operator's \"10s or so\" for a self-play game and \"1 game per second\" across the cores).",
+    "`goals` are the multipliers the line is marked with, each under a `key` the pages name it by, and the line ends at the largest. The first was the operator's on 2026-11-22 (\"1,000,000x speed imrpove would be a huge achievement\") and the second his later the same day: \"Addd 1 billion x to the scaling scale as well.\" A stop's `goal_seconds` is its own target (the operator's \"10s or so\" for a self-play game and \"1 game per second\" across the cores).",
+    "`cloud` is what renting the rest of the way to a goal would cost (operator 2026-11-22: \"we should also estimate the cloud cost in $ to fill i nthe remaining amount (note that this is a Fable 5.2 best estimate of the numbers)\"). It is an estimate and not a measurement: nothing has been run in a cloud. Its entries are dated estimates, oldest first, the newest shown: who made it (`by`), the `machine` rented and its `cores`, the one-core stop whose game those cores play (`of`), the `single_thread` score of the machine's processor on the website of `data/performance/processors.json`, its list price for an hour (`dollars_an_hour`) and its spot price (`spot_dollars_an_hour`), and `from`, where each figure was read and what the estimate leaves out. A newer estimate is a new entry after the ones there.",
     "The CIVVIS Performance page (`beta/performance.html`) opens on the same readings as two tables with every calculation written out (operator 2026-11-22: \"at the top of civvis performance we want to calculate a multiplier on the theoretical and experimetnal throughput of the simualtor. and the calculations. baeline is 5 hrs for manually played game. please add the deity computer control, deity self-play, civvis self-play.\"). Three keys are read by that page alone. A stop with `cores: 1` is the simulator on one core, so its speed can be multiplied across a machine's cores: that product is the theoretical throughput. A stop's `of` names the one-core stop whose game it plays on every core: its reading is the experimental throughput the theory is held against. `alone` on a one-core stop is a second list of readings, oldest first, of one game played with the machine to itself (`turns` played in `seconds`): the speed a core has when nothing else is running, which the busy host's readings are not.",
     "Nothing derived is written here. `beta/speedup_timeline.py` works out every multiplier, text and place on the line when the site is published."
   ],
-  "goal": 1000000,
+  "goals": [
+    {"key": "million", "times": 1000000},
+    {"key": "billion", "times": 1000000000}
+  ],
+  "cloud": [
+    {
+      "taken": "2026-11-23",
+      "by": "Claude Fable 5.2",
+      "machine": "AWS c8a.48xlarge",
+      "cores": 192,
+      "of": "self_play",
+      "single_thread": 3812,
+      "dollars_an_hour": 10.346,
+      "spot_dollars_an_hour": 2.85,
+      "from": "A best estimate by Claude Fable 5.2, the model that wrote this entry, asked for as one by the project owner. Not a quote, and nothing was run in a cloud. The machine is Amazon's c8a.48xlarge, its largest compute-optimized size on AMD's EPYC 9R45: 192 processors, each a whole core, and 384 GiB of memory. Its price was read on 2026-11-23 for US East (N. Virginia), Linux: $10.34592 an hour on demand, and $2.854 an hour on the spot market that day (other trackers showed $2.70 to $3.75). Its processor's score is PassMark's Single Thread Rating for the EPYC 9R45, read the same day from two samples with a high margin for error. One game on one of its cores is taken to be the one-core self-play reading, longer by the two processors' single thread scores, and every core is taken to play as fast as one, which the every-core run on the M5 Max came close to. The estimate leaves out storage, network traffic and the work of running such a fleet, counts whole machines, and assumes the price holds at any number of them, which no one has tested for the tens of thousands the larger goal needs."
+    }
+  ],
   "stops": [
     {
       "key": "hand",

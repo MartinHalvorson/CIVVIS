@@ -207,7 +207,8 @@ class TournamentWinRates(unittest.TestCase):
     diplo excluded and a table on the right that allows diplo wins. we can
     drop the wins, losses. games (n) should be listed after each value. so
     like 100% (5) or 14% (181). at the top, we should have win rate (total
-    games)"."""
+    games)". Later that day he reversed the sides: "put diplo victory allowed
+    to the left of no diplo victory"."""
 
     SPECS = [
         {"name": "Deity series", "start": "civvis-20261001T000000Z", "end": "civvis-t", "series_size": 2,
@@ -331,13 +332,13 @@ class TournamentWinRates(unittest.TestCase):
     def test_the_two_tables_list_every_level_in_every_window(self):
         self.assertEqual(research_page.RATE_LEVELS, [8, 7, 6, 5, 4])
         self.assertEqual(research_page.RATE_DAYS, [1, 3, 7, 30])
-        self.assertEqual(research_page.RATE_TABLES, [("off", False), ("on", True)])
+        self.assertEqual(research_page.RATE_TABLES, [("on", True), ("off", False)])
         rates = research_page.win_rates(self.games())
         self.assertEqual(list(rates), ["to", "days", "games", "tables"])
         # Every window counts back from the newest tournament game in either
         # table, the Deity loss begun 11-22 04:00.
         self.assertEqual((rates["to"], rates["days"]), ("2026-11-22 04:00Z", [1, 3, 7, 30]))
-        self.assertEqual(list(rates["tables"]), ["off", "on"])
+        self.assertEqual(list(rates["tables"]), ["on", "off"])
         cells = lambda table, level: [
             (w["days"], w["games"], w["wins"])
             for row in rates["tables"][table]["levels"] if row["level"] == level
@@ -412,6 +413,225 @@ class TournamentWinRates(unittest.TestCase):
         # The same file the Auto-Tourneys page counts its tournaments from.
         self.assertIn('path = source / "data" / "tournaments.json"', (BETA / "tournaments_page.py").read_text(encoding="utf-8"))
         self.assertEqual(research_page.TOURNAMENTS, pathlib.Path("data/tournaments.json"))
+
+
+class BuildOrders(unittest.TestCase):
+    """Operator 2026-11-23: "add a tree for the early build order win rates
+    for deity games. meaning, when scout was built first, what percentage of
+    those games won? when settler was secnod, what percentage of
+    scout-settler won? a person should be able to click thourgh and see the
+    win rates of all the units. we should sort the tree by win rates
+    descending. so the very first thing is: the winngest first build,
+    underneath the second winnest first bulid. if etierh is clicked, then the
+    winninest combinations of first build second build. etc... add this chart
+    to the top of win analytics"."""
+
+    SCOUT, SLINGER, SETTLER, BUILDER = "UNIT_SCOUT", "UNIT_SLINGER", "UNIT_SETTLER", "UNIT_BUILDER"
+
+    #: The games: a tag's stamp, how it ended, and what its capital built.
+    PLAYED = [
+        ("20261120T010000Z", "win", [SCOUT, SETTLER, SLINGER]),
+        ("20261120T020000Z", "rival_victory", [SCOUT, SETTLER, BUILDER]),
+        ("20261120T030000Z", "defeat", [SCOUT, SLINGER, SETTLER]),
+        ("20261120T040000Z", "abandoned", [SCOUT, SLINGER]),
+        ("20261121T050000Z", "win", [SLINGER, SCOUT, SETTLER]),
+        ("20261121T060000Z", "rival_victory", [SCOUT, SLINGER, SETTLER]),
+        ("20261122T070000Z", "win", [SETTLER]),
+    ]
+
+    def rows(self) -> list[dict]:
+        return [run(f"civvis-{stamp}", outcome, 200) for stamp, outcome, _ in self.PLAYED]
+
+    def known(self) -> dict[str, list[str]]:
+        return {f"civvis-{stamp}": builds for stamp, _, builds in self.PLAYED}
+
+    def test_a_game_is_a_finished_game_against_deity_with_one_agent_in_it(self):
+        rows = self.rows() + [
+            # Somebody stopped it: no result.
+            run("civvis-20261122T080000Z", "unfinished", 40),
+            # Another level, and a table of two CIVVIS agents.
+            run("civvis-20261122T090000Z", "win", 200, difficulty="DIFFICULTY_KING"),
+            run("civvis-20261122T100000Z", "win", 200, civ="CIVILIZATION_ROME+CIVILIZATION_KOREA"),
+            # A game reloaded: one game, ended the best way a run did, its
+            # first run first, where the opening is.
+            run("civvis-20261122T110000Z-cont2", "win", 210),
+            run("civvis-20261122T110000Z", "unfinished", 90),
+            run("civvis-20261122T110000Z-cont1", "rival_victory", 200),
+        ]
+        games = research_page.build_games(rows)
+        self.assertEqual(len(games), len(self.PLAYED) + 1)
+        self.assertEqual(
+            games[-1],
+            ("civvis-20261122T110000Z", ["civvis-20261122T110000Z", "civvis-20261122T110000Z-cont1", "civvis-20261122T110000Z-cont2"], True, "2026-11-22"),
+        )
+        self.assertEqual([won for _, _, won, _ in games[:7]], [True, False, False, False, True, False, True])
+        self.assertEqual(research_page.build_games(rows, level=5), [("civvis-20261122T090000Z", ["civvis-20261122T090000Z"], True, "2026-11-22")])
+        self.assertEqual(research_page.BUILD_LEVEL, home_rankings.CIV6_RUNGS.index("deity") + 1)
+
+    def test_the_tree_lists_each_build_best_win_rate_first(self):
+        tree = research_page.build_orders(research_page.build_games(self.rows()), self.known())
+        self.assertEqual({key: tree[key] for key in ("level", "games", "wins", "finished", "from", "to", "depth")}, {
+            "level": 8, "games": 7, "wins": 3, "finished": 7, "from": "2026-11-20", "to": "2026-11-22", "depth": research_page.BUILD_DEPTH,
+        })
+        named = lambda nodes: [(tree["items"][node[0]], node[1], node[2]) for node in nodes]
+        # The first builds: the winningest at the top, the next under it.
+        first = tree["tree"]
+        self.assertEqual(named(first), [("Settler", 1, 1), ("Slinger", 1, 1), ("Scout", 5, 1)])
+        # One game opened with a Settler and one with a Slinger: a line of
+        # one game is not opened further.
+        self.assertEqual([len(node) for node in first], [3, 3, 4])
+        # Scout first: then the Settler (1 of 2) over the Slinger (0 of 3).
+        second = first[2][3]
+        self.assertEqual(named(second), [("Settler", 2, 1), ("Slinger", 3, 0)])
+        # Scout, Settler: the two third builds, the one that won first.
+        self.assertEqual(named(second[0][3]), [("Slinger", 1, 1), ("Builder", 1, 0)])
+        # Scout, Slinger: one game built nothing more, so the builds under
+        # it hold two of its three games.
+        self.assertEqual(named(second[1][3]), [("Settler", 2, 0)])
+        self.assertEqual(tree["items"], ["Settler", "Slinger", "Scout", "Builder"])
+
+    def test_a_tie_goes_to_the_build_more_games_played_then_to_its_name(self):
+        played = [("a", True, [self.SCOUT]), ("b", False, [self.SCOUT]), ("c", True, [self.SLINGER]), ("d", False, [self.SLINGER]),
+                  ("e", True, [self.SETTLER]), ("f", False, [self.SETTLER]), ("g", True, [self.SETTLER]), ("h", False, [self.SETTLER])]
+        games = [(key, [key], won, "2026-11-20") for key, won, _ in played]
+        tree = research_page.build_orders(games, {key: builds for key, _, builds in played})
+        self.assertEqual([(tree["items"][node[0]], node[1], node[2]) for node in tree["tree"]], [("Settler", 4, 2), ("Scout", 2, 1), ("Slinger", 2, 1)])
+
+    def test_the_tree_is_no_deeper_than_its_depth_and_a_game_without_an_opening_is_left_out(self):
+        games = [("a", ["a", "a-cont1"], True, "2026-11-20"), ("b", ["b"], False, "2026-11-21"), ("c", ["c"], False, "2026-11-22")]
+        # A game's opening is asked of its first run, then of the rest.
+        known = {"a-cont1": [self.SCOUT, self.SLINGER, self.SETTLER], "b": [self.SCOUT, self.SLINGER, self.BUILDER]}
+        tree = research_page.build_orders(games, known, depth=2)
+        self.assertEqual((tree["games"], tree["wins"], tree["finished"], tree["from"], tree["to"]), (2, 1, 3, "2026-11-20", "2026-11-21"))
+        self.assertEqual(tree["tree"], [[0, 2, 1, [[1, 2, 1]]]])
+        self.assertEqual(tree["items"], ["Scout", "Slinger"])
+        self.assertIsNone(research_page.build_orders(games, {}))
+        self.assertIsNone(research_page.build_orders([], known))
+
+    def test_a_build_is_named_as_the_game_names_it(self):
+        for item, name in (
+            ("UNIT_SCOUT", "Scout"),
+            ("UNIT_HEAVY_CHARIOT", "Heavy Chariot"),
+            ("BUILDING_MONUMENT", "Monument"),
+            ("BUILDING_WALLS", "Ancient Walls"),
+            ("DISTRICT_HOLY_SITE", "Holy Site"),
+            ("DISTRICT_THEATER", "Theater Square"),
+            ("DISTRICT_GOVERNMENT", "Government Plaza"),
+            ("BUILDING_GOV_WIDE", "Ancestral Hall"),
+            # A civ's own unit: the type leads with the civ, the name does not.
+            ("UNIT_GREEK_HOPLITE", "Hoplite"),
+            ("UNIT_GAUL_GAESATAE", "Gaesatae"),
+            ("UNIT_AZTEC_EAGLE_WARRIOR", "Eagle Warrior"),
+            ("UNIT_SUMERIAN_WAR_CART", "War-Cart"),
+            ("BUILDING_TAJ_MAHAL", "Taj Mahal"),
+        ):
+            self.assertEqual(research_page.build_name(item), name)
+
+    def test_an_opening_comes_from_the_snapshot_or_the_runs_summary(self):
+        first, second, third, fourth = (f"civvis-{stamp}" for stamp, _, _ in self.PLAYED[:4])
+        rows = self.rows()[:4]
+        more = {
+            # The harness writes the builds with their turns.
+            second: {"build_order": [[self.SCOUT, 4], [self.SETTLER, 12], [self.BUILDER, 16]]},
+            # Held by the snapshot too, which is not asked twice.
+            first: {"build_order": [[self.BUILDER, 9]]},
+            third: {"build_order": []},
+        }
+        snapshot = {"items": [self.SCOUT, self.SETTLER, self.SLINGER], "games": [[first, [0, 1, 2]]]}
+        self.assertEqual(research_page.held_openings(snapshot), {first: [self.SCOUT, self.SETTLER, self.SLINGER]})
+        self.assertEqual(research_page.builds_named([[self.SCOUT, 4], ["UNIT_SETTLER", 12]]), [self.SCOUT, self.SETTLER])
+        for none in (None, [], "UNIT_SCOUT", [[4]]):
+            self.assertIsNone(research_page.builds_named(none))
+        with tempfile.TemporaryDirectory() as scratch, contextlib.redirect_stderr(io.StringIO()):
+            source = GamesAgainstTheAI().ledger(scratch, rows, more)
+            self.assertEqual(
+                research_page.openings(source, [first, second, third, fourth, "civvis-missing"]),
+                {first: [self.BUILDER], second: [self.SCOUT, self.SETTLER, self.BUILDER]},
+            )
+            # No snapshot in the clone: the summaries alone, two games that
+            # opened differently, so neither is opened further.
+            bare = research_page.research(source)["build_orders"]
+            self.assertEqual((bare["games"], bare["finished"], bare["items"]), (2, 4, ["Builder", "Scout"]))
+            self.assertEqual(bare["tree"], [[0, 1, 1], [1, 1, 0]])
+            (source / research_page.BUILD_ORDERS).parent.mkdir(parents=True)
+            (source / research_page.BUILD_ORDERS).write_text(json.dumps(snapshot), encoding="utf-8")
+            record = research_page.research(source)["build_orders"]
+            said = io.StringIO()
+            page = source / "index.html"
+            page.write_text(PAGE, encoding="utf-8")
+            with contextlib.redirect_stderr(said):
+                self.assertEqual(research_page.main(["research_page.py", scratch, str(page)]), 0)
+            written = json.loads(research_page.SLOT.search(page.read_text(encoding="utf-8"))[2])
+        # Two of the four games have an opening: one win of two, Scout then
+        # Settler, then the Slinger of the game won over the Builder.
+        self.assertEqual((record["games"], record["wins"], record["finished"]), (2, 1, 4))
+        self.assertEqual(record["tree"], [[0, 2, 1, [[1, 2, 1, [[2, 1, 1], [3, 1, 0]]]]]])
+        self.assertEqual(record["items"], ["Scout", "Settler", "Slinger", "Builder"])
+        self.assertEqual(written["build_orders"], record)
+        self.assertIn("wrote 2 build orders into", said.getvalue())
+
+    def test_the_snapshot_is_read_off_the_event_logs_on_the_ledger(self):
+        import gzip
+
+        scout = lambda turn, **more: {"kind": "state", "turn": turn, "units": more.pop("units", []), "cities": [{
+            "id": 1, "capital": True, "x": 5, "y": 5, "buildings": [], "districts": [], "wonders": [],
+            "buildable": [{"t": self.SCOUT, "c": 15, "pr": more.get("production_progress", 0)}], **more}]}
+        opening = [
+            scout(1, producing_hash=7, production_cost=15, production_progress=11, production_turns=1),
+            {"kind": "host_move", "turn": 1, "unit": 9},
+            scout(2, producing_hash=0, production_cost=-1, production_progress=-1, units=[{"id": 2, "kind": self.SCOUT, "x": 5, "y": 5}]),
+        ]
+        first, second, third = "civvis-20261120T010000Z", "civvis-20261120T020000Z", "civvis-20261120T030000Z"
+        rows = [run(first, "win", 200), run(second + "-cont1", "rival_victory", 200), run(third, "defeat", 150)]
+        with tempfile.TemporaryDirectory() as scratch, contextlib.redirect_stderr(io.StringIO()):
+            repo = pathlib.Path(scratch)
+            git = lambda *args: subprocess.run(["git", "-C", scratch, *args], check=True, capture_output=True, text=True)
+            git("init", "-q")
+            (repo / "results.jsonl").write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+            for tag, events, summary in (
+                (first, opening, {}),
+                # A game reloaded from a save: its one published run opens
+                # mid-game, so its opening is in no log.
+                (second + "-cont1", [scout(140, producing_hash=7, production_cost=15, production_progress=3)], {}),
+                # Its summary carries the opening: left to the summary.
+                (third, opening, {"build_order": [[self.SETTLER, 9]]}),
+            ):
+                (repo / "runs" / tag).mkdir(parents=True)
+                (repo / "runs" / tag / "summary.json").write_text(json.dumps(summary), encoding="utf-8")
+                with gzip.open(repo / "runs" / tag / "events.jsonl.gz", "wt", encoding="utf-8") as log:
+                    log.write("".join(json.dumps(event) + "\n" for event in opening if events is opening) or json.dumps(events[0]) + "\n")
+            git("add", "-A")
+            git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "ledger")
+            git("update-ref", "refs/remotes/origin/ledger", "HEAD")
+            self.assertEqual([event["kind"] for event in research_page.run_events(repo, first)], ["state", "state"])
+            self.assertEqual(list(research_page.run_events(repo, "civvis-missing")), [])
+            out = repo / "out" / "build_orders.json"
+            self.assertEqual(research_page.main(["research_page.py", "--build-orders", scratch, str(out)]), 0)
+            taken = json.loads(out.read_text(encoding="utf-8"))
+            self.assertEqual((taken["level"], taken["items"], taken["games"]), (8, [self.SCOUT], [[first, [0]]]))
+            # A game per line, and a second run adds nothing it holds.
+            self.assertIn('\n["civvis-20261120T010000Z",[0]]\n', out.read_text(encoding="utf-8"))
+            held = {**taken, "items": ["UNIT_WARRIOR", self.SCOUT], "games": [[first, [1, 0]]]}
+            again = research_page.openings_snapshot(repo, held)
+            self.assertEqual((again["items"], again["games"]), (held["items"], held["games"]))
+            self.assertEqual(research_page.research(repo)["build_orders"]["games"], 1)
+
+    def test_the_committed_snapshot_holds_openings_the_tree_can_list(self):
+        taken = json.loads((ROOT / research_page.BUILD_ORDERS).read_text(encoding="utf-8"))
+        self.assertEqual(research_page.BUILD_ORDERS, pathlib.Path("data/research/build_orders.json"))
+        self.assertEqual(taken["level"], research_page.BUILD_LEVEL)
+        self.assertGreater(len(taken["games"]), 1000)
+        keys = [key for key, _ in taken["games"]]
+        self.assertEqual(keys, sorted(set(keys)))
+        for key, builds in taken["games"]:
+            self.assertTrue(builds and len(builds) <= 10, key)
+            self.assertTrue(all(isinstance(at, int) and 0 <= at < len(taken["items"]) for at in builds), key)
+        self.assertEqual(len(taken["items"]), len(set(taken["items"])))
+        # Written a game to a line, as `written_openings` writes it.
+        self.assertEqual((ROOT / research_page.BUILD_ORDERS).read_text(encoding="utf-8"), research_page.written_openings(taken))
+        # Every build in it has a name the page can print.
+        for item in taken["items"]:
+            self.assertRegex(research_page.build_name(item), r"^[A-Z][A-Za-z\u2019' -]+$", item)
 
 
 class Windows(unittest.TestCase):
@@ -670,13 +890,16 @@ class Page(unittest.TestCase):
         # ... a table on the left the is with diplo excluded and a table on
         # the right that allows diplo wins";
         # `test_the_benchmark_stands_over_the_graphs_as_two_tables`): one
-        # block across the page, its two tables side by side. Nothing else
-        # is over the graphs' column, whose first block is self-play's, and
-        # the rankings stand to its right. The key to the colours and the
-        # span of a column are over the first chart, in its panel.
+        # block across the page, its two tables side by side. Over it, since
+        # 2026-11-23, is the tree of build orders, a block of one panel
+        # (`test_the_build_orders_stand_first_as_a_tree_a_reader_opens`).
+        # Nothing else is over the graphs' column, whose first block is
+        # self-play's, and the rankings stand to its right. The key to the
+        # colours and the span of a column are over the first chart, in its
+        # panel.
         over = PAGE[PAGE.index('<div class="res-record" id="res-record" hidden>') : graphs]
-        self.assertEqual((over.count('class="res-section"'), over.count("<h2"), over.count("<section")), (2, 1, 1))
-        self.assertIn('<section class="res-block" id="res-side-tourney"', over)
+        self.assertEqual((over.count('class="res-section"'), over.count("<h2"), over.count("<section")), (3, 2, 2))
+        self.assertLess(over.index('<section class="res-block" id="res-side-builds"'), over.index('<section class="res-block" id="res-side-tourney"'))
         self.assertNotIn("res-kind", over)
         self.assertEqual(PAGE[graphs:own].strip(), '<div class="res-graphs">')
         key = PAGE[own : at["self_play"]]
@@ -775,28 +998,33 @@ class Page(unittest.TestCase):
         # losses. games (n) should be listed after each value. so like 100%
         # (5) or 14% (181). at the top, we should have win rate (total
         # games)".
-        # The benchmark is the first thing in the record, over the graphs
-        # and the rankings alike, the width of the page.
+        # The benchmark is over the graphs and the rankings alike, the width
+        # of the page, with one block over it: the tree of build orders,
+        # which the operator asked for at the top later the same day.
         record = PAGE.index('<div class="res-record" id="res-record" hidden>')
         side = PAGE.index('<section class="res-block" id="res-side-tourney" aria-labelledby="res-title-tourney">')
         layout = PAGE.index('<div class="res-layout">')
         self.assertLess(record, side)
         self.assertLess(side, layout)
-        self.assertNotIn("<section", PAGE[record:side])
+        self.assertEqual(re.findall(r'<section class="res-block" id="([^"]+)"', PAGE[record:side]), ["res-side-builds"])
         block = PAGE[side : PAGE.index("</section>", side)]
         self.assertEqual(PAGE[side + len(block) + len("</section>") : layout].strip(), "")
         self.assertIn('<h2 class="res-side-title" id="res-title-tourney">Firaxis Civ 6 AI benchmark: win rate by level</h2>', block)
-        # Two tables side by side, the games with the Diplomatic victory off
-        # at the left and the games that allowed it at the right, each named
-        # and with the count of its games after its name.
+        # Two tables side by side, each named and with the count of its
+        # games after its name. The games that allowed the Diplomatic
+        # victory are at the left and the games with it off at the right
+        # (operator, later on 2026-11-23, reversing the sides he first asked
+        # for: "put diplo victory allowed to the left of no diplo victory"),
+        # and nothing stands between the pair's opening and the left table.
         self.assertEqual(block.count("<table"), 2)
         pair = block.index('<div class="res-bench-pair">')
         off, on = block.index('<div class="res-section" id="res-bench-off">'), block.index('<div class="res-section" id="res-bench-on">')
-        self.assertLess(pair, off)
-        self.assertLess(off, on)
+        self.assertLess(pair, on)
+        self.assertLess(on, off)
+        self.assertEqual(block[pair + len('<div class="res-bench-pair">') : on].strip(), "")
         self.assertIn(".res-bench-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; min-width: 0; }", PAGE)
         self.assertIn("@media (max-width: 859px) { .res-bench-pair { grid-template-columns: minmax(0, 1fr); } }", PAGE)
-        for name, title in (("off", "Diplomatic victory off"), ("on", "Diplomatic victory allowed")):
+        for name, title in (("on", "Diplomatic victory allowed"), ("off", "Diplomatic victory off")):
             self.assertIn(
                 f'<h3 class="res-bench-title" id="res-title-rates-{name}">{title} <small id="res-rates-count-{name}"></small></h3>', block
             )
@@ -822,8 +1050,8 @@ class Page(unittest.TestCase):
         # in the record's order of rows, Lv 8 Deity first: a cell is the wins
         # as a share of its games and then the games in brackets, "14% (181)".
         self.assertIn("const BENCH = data.tournament_rates && data.tournament_rates.tables ? data.tournament_rates : null;", PAGE)
-        self.assertIn('for (const name of ["off", "on"]) {', PAGE)
-        self.assertEqual([name for name, _ in research_page.RATE_TABLES], ["off", "on"])
+        self.assertIn('for (const name of ["on", "off"]) {', PAGE)
+        self.assertEqual([name for name, _ in research_page.RATE_TABLES], ["on", "off"])
         self.assertIn('const body = document.querySelector("#res-rates-" + name + " tbody");', PAGE)
         self.assertIn('const td = el("td", games ? "is-rate" : "is-zero", games ? pct(wins / games) : "—");', PAGE)
         self.assertIn('if (games) td.append(" ", el("small", "", "(" + fmt(games) + ")"));', PAGE)
@@ -842,10 +1070,84 @@ class Page(unittest.TestCase):
         # `tournament_games` counts one: every finished game that CIVVIS did
         # not win.
         self.assertIn('Every finished game of the tournaments on <a href="../../auto-tourneys/">Auto-Tourneys</a>', block)
-        self.assertIn("The left table holds the games set up with the Diplomatic victory switched off, the right table the games that allowed it.", block)
+        self.assertIn("The left table holds the games that allowed the Diplomatic victory, the right table the games set up with it switched off.", block)
         self.assertIn("A win is a CIVVIS victory; a loss is a rival&#8217;s victory, our elimination, or a game conceded early.", block)
         self.assertIn("A day is 24 hours, counted back from the newest tournament game.", block)
         self.assertEqual(home_rankings.OUTCOMES, ["win", "defeat", "rival_victory", "abandoned", "unfinished"])
+
+    def test_the_build_orders_stand_first_as_a_tree_a_reader_opens(self):
+        # Operator 2026-11-23: "add a tree for the early build order win
+        # rates for deity games ... a person should be able to click thourgh
+        # and see the win rates of all the units. we should sort the tree by
+        # win rates descending. so the very first thing is: the winngest
+        # first build, underneath the second winnest first bulid. if etierh
+        # is clicked, then the winninest combinations of first build second
+        # build. etc... add this chart to the top of win analytics".
+        # First in the record, the width of the page, over the benchmark.
+        record = PAGE.index('<div class="res-record" id="res-record" hidden>')
+        side = PAGE.index('<section class="res-block" id="res-side-builds" aria-labelledby="res-title-builds" hidden>')
+        self.assertNotIn("<section", PAGE[record:side])
+        block = PAGE[side : PAGE.index("</section>", side)]
+        self.assertTrue(PAGE[side + len(block) + len("</section>") :].lstrip().startswith('<section class="res-block" id="res-side-tourney"'))
+        self.assertIn('<h2 class="res-side-title" id="res-title-builds">Early build order: win rate against Lv 8 Deity AI</h2>', block)
+        self.assertIn('<p class="res-counted" id="res-counted-builds">', block)
+        # One panel: the two headings, then the list the script fills.
+        self.assertEqual(block.count('class="res-section"'), 1)
+        self.assertIn('<div class="res-builds-head" aria-hidden="true"><span>Build order</span><span>Win rate (total games)</span></div>', block)
+        self.assertIn('<ul class="res-builds" id="res-builds" aria-labelledby="res-title-builds"></ul>', block)
+        # The note says what a build is, which games count and what a row is.
+        for sentence in (
+            "What CIVVIS&#8217;s capital finished producing, in the order it finished it.",
+            "The first builds are listed best win rate first; press one to list what was built second after it, then third,",
+            "A row is CIVVIS&#8217;s win rate over the games that opened with exactly the builds down to it and, in brackets, those games.",
+            "one bought with Gold or Faith is not a build.",
+            "Every finished game against the Deity AI on the run ledger counts, in a tournament or not: a win is a CIVVIS victory; a loss is a rival&#8217;s victory, our elimination, or a game conceded early.",
+            "A build order only one game played is not opened further.",
+        ):
+            self.assertIn(sentence, block)
+        self.assertIn(f'<span id="res-builds-depth">{["zero", "one", "two", "three", "four", "five", "six", "seven", "eight"][research_page.BUILD_DEPTH]}</span>', block)
+        self.assertIn('<span id="res-builds-left"></span>', block)
+        # Hidden until the record holds a tree, drawn once, before the rest:
+        # no control changes its games, and a second drawing would close
+        # what a reader has opened.
+        self.assertIn("const BUILDS = data.build_orders && Array.isArray(data.build_orders.tree) && data.build_orders.tree.length ? data.build_orders : null;", PAGE)
+        self.assertIn('document.getElementById("res-side-builds").hidden = !BUILDS;', PAGE)
+        self.assertEqual(PAGE.count("drawBuilds();"), 1)
+        self.assertLess(PAGE.index("drawBuilds();"), PAGE.rindex("render();"))
+        self.assertNotIn("drawBuilds", PAGE[PAGE.index("const render = () =>") : PAGE.index("const choose =")])
+        draw = PAGE[PAGE.index("const drawBuilds = () => {") : PAGE.index("// ---- The tables.")]
+        # The record's order is the page's: best win rate first, as sent.
+        self.assertIn('document.getElementById("res-builds").replaceChildren(...BUILDS.tree.map((node) => row(node, [])));', draw)
+        self.assertNotIn(".sort(", draw)
+        # A row: its place in the order, its name, then `14% (181)`.
+        self.assertIn('el("span", "res-build-place", String(path.length)),', draw)
+        self.assertIn('el("span", "res-build-name", name(item)),', draw)
+        self.assertIn('figures.append(el("span", "res-build-rate", n ? pct((Number(won) || 0) / n) : "—"), el("span", "res-build-games", "(" + fmt(n) + ")"));', draw)
+        # A build with builds after it is a button that opens them under it
+        # and closes them again; one with none is a plain row.
+        self.assertIn('const line = el(opens ? "button" : "div", "res-build");', draw)
+        self.assertIn('line.setAttribute("aria-expanded", "false");', draw)
+        self.assertIn('const open = line.getAttribute("aria-expanded") !== "true";', draw)
+        self.assertIn("below.append(...next.map((child) => row(child, path)));", draw)
+        self.assertIn("if (below) below.hidden = !open;", draw)
+        # The whole order down to a row is its title and what a reader hears.
+        self.assertIn('const said = path.join(", then ") + ": CIVVIS won "', draw)
+        # The games left out are counted in the note.
+        self.assertIn('document.getElementById("res-builds-left").textContent = left > 0', draw)
+        # The two figures keep their widths, so they stand in columns down
+        # the tree, and the builds after a build are set in under a rule.
+        self.assertIn(".res-build { display: grid; grid-template-columns: 12px auto minmax(0, 1fr) 52px 58px;", PAGE)
+        self.assertIn(".res-builds ul { margin-left: 6px; padding-left: 14px; border-left: 1px solid var(--border-strong); }", PAGE)
+        self.assertIn(".res-builds ul[hidden] { display: none; }", PAGE)
+        self.assertIn('.res-build[aria-expanded="true"] > .res-build-mark { border-left-color: var(--accent); transform: rotate(90deg); }', PAGE)
+        self.assertIn("button.res-build:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }", PAGE)
+        # A phone: a step in is half as deep, and under 360px the figures
+        # stand one over the other and a name may wrap.
+        self.assertIn(".res-builds ul { margin-left: 5px; padding-left: 6px; }", PAGE)
+        self.assertIn(".res-build-figures { display: grid; justify-items: end; min-width: 40px; line-height: 1.25; }", PAGE)
+        # A page from before the tree is not sent it.
+        old = '<html><script type="application/json" id="research-data">null</script></html>'
+        self.assertNotIn("build_orders", research_page.for_page(old, {"levels": {}, "build_orders": {"tree": []}}))
 
     def test_a_level_picks_the_games_against_the_ai(self):
         # Operator 2026-11-21: "on the civvis vs deity ai chart, lets have an

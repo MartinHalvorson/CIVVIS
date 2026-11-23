@@ -3243,6 +3243,172 @@ if __name__ == "__main__":
     unittest.main()
 
 
+class TheSummaryCarriesTheOpeningBuilds(unittest.TestCase):
+    """Operator 2026-11-23: "add a tree for the early build order win rates
+    for deity games. meaning, when scout was built first, what percentage of
+    those games won?" The site reads each game's opening off its summary."""
+
+    CAPITAL = 65536
+    #: What the capital can build, with each item's cost.
+    COSTS = {"UNIT_SCOUT": 15, "UNIT_BUILDER": 25, "UNIT_SETTLER": 40,
+             "UNIT_SLINGER": 17, "UNIT_ARCHER": 30, "BUILDING_WALLS": 40}
+    HASHES = {name: 1000 + at for at, name in enumerate(COSTS)}
+
+    def _frame(self, turn, making=None, progress=0, turns=3, units=(),
+               buildings=("BUILDING_PALACE",), started=None, frame=0):
+        """One board: the capital at (10, 10) producing `making`, `units` as
+        (id, kind) on the capital or (id, kind, x, y), and `started` the
+        progress an item it is not producing was left with."""
+        left = dict(started or {})
+        if making:
+            left[making] = progress
+        city = {
+            "id": self.CAPITAL, "capital": True, "x": 10, "y": 10,
+            "producing_hash": self.HASHES[making] if making else 0,
+            "production_cost": self.COSTS[making] if making else -1,
+            "production_progress": progress if making else -1,
+            "production_turns": turns if making else -1,
+            "buildings": list(buildings), "districts": [], "wonders": [],
+            "buildable": [{"t": name, "c": cost, "pr": left.get(name, 0)}
+                          for name, cost in self.COSTS.items()],
+        }
+        return {"kind": "state", "turn": turn, "frame": frame, "cities": [city],
+                "units": [{"id": unit[0], "kind": unit[1],
+                           "x": unit[2] if len(unit) > 2 else 10,
+                           "y": unit[3] if len(unit) > 2 else 10}
+                          for unit in units]}
+
+    WARRIOR = (1, "UNIT_WARRIOR")
+
+    def test_a_build_is_what_the_capital_finished_not_what_it_was_told(self):
+        scout, slinger = (2, "UNIT_SCOUT"), (3, "UNIT_SLINGER")
+        builds = civ6_ladder.opening_builds([
+            {"kind": "state", "turn": 1, "cities": [], "units": [
+                {"id": 0, "kind": "UNIT_SETTLER", "x": 10, "y": 10}]},
+            self._frame(1, units=[self.WARRIOR], frame=1),
+            self._frame(2, "UNIT_SCOUT", 4, units=[self.WARRIOR]),
+            self._frame(3, "UNIT_SCOUT", 11, turns=1, units=[self.WARRIOR]),
+            # The Scout stands on the capital and the city is idle.
+            self._frame(4, units=[self.WARRIOR, scout]),
+            self._frame(4, "UNIT_BUILDER", 0, units=[self.WARRIOR, scout], frame=1),
+            self._frame(6, "UNIT_BUILDER", 17, turns=2, units=[self.WARRIOR, scout]),
+            # The seat changed its mind after the turn's last frame: the
+            # Builder was ordered and never built.
+            self._frame(7, "UNIT_SLINGER", 7, units=[self.WARRIOR, scout],
+                        started={"UNIT_BUILDER": 17}),
+            self._frame(8, "UNIT_SLINGER", 14, turns=1, units=[self.WARRIOR, scout],
+                        started={"UNIT_BUILDER": 17}),
+            self._frame(9, units=[self.WARRIOR, scout, slinger],
+                        started={"UNIT_BUILDER": 17}),
+            self._frame(9, "BUILDING_WALLS", 0, units=[self.WARRIOR, scout, slinger],
+                        frame=1, started={"UNIT_BUILDER": 17}),
+            self._frame(12, "BUILDING_WALLS", 36, turns=1,
+                        units=[self.WARRIOR, scout, slinger]),
+            self._frame(13, units=[self.WARRIOR, scout, slinger],
+                        buildings=("BUILDING_PALACE", "BUILDING_WALLS")),
+        ])
+        self.assertEqual(builds, [
+            ["UNIT_SCOUT", 4], ["UNIT_SLINGER", 9], ["BUILDING_WALLS", 13]])
+
+    def test_the_build_is_the_item_in_production_among_what_arrived(self):
+        """A pantheon's free Builder lands on the capital the turn a Settler
+        finishes there, an upgraded Slinger is a new Archer in the city, and
+        a great person arrives at it (civvis-20261121T064317Z,
+        civvis-20261031T005343Z)."""
+        builds = civ6_ladder.opening_builds([
+            self._frame(1, "UNIT_SETTLER", 0, units=[self.WARRIOR]),
+            self._frame(2, "UNIT_SETTLER", 37, turns=1, units=[self.WARRIOR]),
+            self._frame(3, units=[self.WARRIOR, (5, "UNIT_BUILDER"), (6, "UNIT_SETTLER")]),
+            self._frame(3, "UNIT_SLINGER", 0, frame=1,
+                        units=[self.WARRIOR, (5, "UNIT_BUILDER"), (6, "UNIT_SETTLER")]),
+            self._frame(4, "UNIT_SLINGER", 14, turns=1,
+                        units=[self.WARRIOR, (5, "UNIT_BUILDER"), (6, "UNIT_SETTLER")]),
+            # The Slinger came out beside the city; the Archer on the centre
+            # is the garrison, upgraded.
+            self._frame(5, units=[(7, "UNIT_ARCHER"), (5, "UNIT_BUILDER"),
+                                  (6, "UNIT_SETTLER"), (8, "UNIT_SLINGER", 11, 10)]),
+            self._frame(5, "UNIT_SCOUT", 0, frame=1, units=[
+                (7, "UNIT_ARCHER"), (5, "UNIT_BUILDER"), (6, "UNIT_SETTLER"),
+                (8, "UNIT_SLINGER", 11, 10)]),
+            self._frame(6, "UNIT_SCOUT", 7, units=[
+                (7, "UNIT_ARCHER"), (5, "UNIT_BUILDER"), (6, "UNIT_SETTLER"),
+                (8, "UNIT_SLINGER", 11, 10)]),
+            # A change of item and a general arriving: nothing was built.
+            self._frame(7, "UNIT_BUILDER", 7, started={"UNIT_SCOUT": 7}, units=[
+                (7, "UNIT_ARCHER"), (5, "UNIT_BUILDER"), (6, "UNIT_SETTLER"),
+                (8, "UNIT_SLINGER", 11, 10), (9, "UNIT_GREAT_GENERAL")]),
+        ])
+        self.assertEqual(builds, [["UNIT_SETTLER", 3], ["UNIT_SLINGER", 5]])
+
+    def test_a_purchase_is_not_a_build(self):
+        """One made after the turn's last frame shows on the next board like a
+        build; its `order_verified` line follows that board."""
+        bought = {"kind": "order_verified", "order_kind": "purchase",
+                  "subject": self.CAPITAL, "turn": 2, "verb": "UNIT_BUILDER"}
+        frames = [
+            self._frame(1, "UNIT_BUILDER", 0, units=[self.WARRIOR]),
+            self._frame(2, "UNIT_BUILDER", 7, turns=3, units=[self.WARRIOR]),
+            # On to a Settler, and a Builder stands on the capital.
+            self._frame(3, "UNIT_SETTLER", 7, started={"UNIT_BUILDER": 7},
+                        units=[self.WARRIOR, (4, "UNIT_BUILDER")]),
+        ]
+        after = self._frame(4, "UNIT_SETTLER", 14, started={"UNIT_BUILDER": 7},
+                            units=[self.WARRIOR, (4, "UNIT_BUILDER")])
+        self.assertEqual(civ6_ladder.opening_builds([*frames, bought, after]), [])
+        # The same boards with no purchase on record: the Builder was built
+        # (overflow from a chop finishes an item its board gave three turns).
+        self.assertEqual(civ6_ladder.opening_builds([*frames, after]),
+                         [["UNIT_BUILDER", 3]])
+
+    def test_a_unit_far_from_the_capital_or_seen_before_is_not_its_build(self):
+        scout = (2, "UNIT_SCOUT", 30, 30)
+        builds = civ6_ladder.opening_builds([
+            self._frame(1, "UNIT_SCOUT", 0, units=[self.WARRIOR, scout]),
+            self._frame(2, "UNIT_SCOUT", 11, turns=1, units=[self.WARRIOR, scout]),
+            # The item was dropped for another; the Scouts on the board are
+            # the one we had and one a village gave, far away.
+            self._frame(3, "UNIT_SLINGER", 5, started={"UNIT_SCOUT": 11},
+                        units=[self.WARRIOR, scout, (3, "UNIT_SCOUT", 40, 12)]),
+        ])
+        self.assertEqual(builds, [])
+
+    def test_a_log_that_opens_mid_game_has_no_opening(self):
+        """A game reloaded from a save: its opening is in an earlier run."""
+        self.assertIsNone(civ6_ladder.opening_builds([
+            self._frame(140, "UNIT_SCOUT", 11, turns=1, units=[self.WARRIOR]),
+            self._frame(141, units=[self.WARRIOR, (2, "UNIT_SCOUT")]),
+        ]))
+        self.assertEqual(civ6_ladder.opening_builds([]), [])
+
+    def test_the_reading_stops_at_the_limit_and_with_the_capital(self):
+        frames, units = [], [self.WARRIOR]
+        for at in range(6):
+            frames.append(self._frame(2 * at + 1, "UNIT_SCOUT", 11, turns=1, units=list(units)))
+            units.append((10 + at, "UNIT_SCOUT"))
+            frames.append(self._frame(2 * at + 2, units=list(units)))
+        self.assertEqual(civ6_ladder.opening_builds(frames, limit=3),
+                         [["UNIT_SCOUT", 2], ["UNIT_SCOUT", 4], ["UNIT_SCOUT", 6]])
+        lost = [frames[0], frames[1],
+                {"kind": "state", "turn": 3, "cities": [], "units": []},
+                *frames[2:]]
+        self.assertEqual(civ6_ladder.opening_builds(lost), [["UNIT_SCOUT", 2]])
+
+    def test_every_summary_carries_it_and_the_ladder_row_does_not(self):
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "events.jsonl"
+            path.write_text("".join(json.dumps(record) + "\n" for record in [
+                self._frame(1, "UNIT_SCOUT", 11, turns=1, units=[self.WARRIOR]),
+                self._frame(2, units=[self.WARRIOR, (2, "UNIT_SCOUT")]),
+            ]), encoding="utf-8")
+            self.assertEqual(civ6_ladder.build_order(path), [["UNIT_SCOUT", 2]])
+            marks = civ6_ladder.progress_marks(path)
+        self.assertEqual(marks["build_order"], [["UNIT_SCOUT", 2]])
+        self.assertIn(("build_order", civ6_ladder.build_order), civ6_ladder.SUMMARY_MARKS)
+        self.assertNotIn("build_order", dict(civ6_ladder.PROGRESS_MARKS))
+        self.assertNotIn("build_order", civ6_ladder.entry_from(
+            {"tag": "civvis-s", "build_order": [["UNIT_SCOUT", 2]]}))
+
+
 class TheAttritionTableCountsGamesNotSegments(unittest.TestCase):
     """A parked game reloaded from its autosave writes a ledger row per
     segment, and the table counted rows.

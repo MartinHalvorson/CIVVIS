@@ -204,13 +204,17 @@ class TheSpeedup(unittest.TestCase):
                 (root / "data/performance" / name).write_text((ROOT / "data/performance" / name).read_text(encoding="utf-8"), encoding="utf-8")
             alone = performance_page.performance(root)
             # Without the list of processors the two tables stand as they
-            # were and the third is not drawn.
+            # were and the third is not drawn, nor the cloud's cost, which
+            # is worked out from the measured processor's score.
             (root / speedup_timeline.PROCESSORS).unlink()
             unlisted = performance_page.performance(root)
         self.assertEqual((alone["speedup"], alone["windows"], alone["videos"]), (record["speedup"], {}, []))
         self.assertNotIn("no speedup readings", said.getvalue())
         self.assertTrue(record["speedup"]["processors"]["rows"])
-        self.assertEqual(unlisted["speedup"], {key: value for key, value in record["speedup"].items() if key != "processors"})
+        self.assertTrue(record["speedup"]["cloud"]["rows"])
+        bare = {key: value for key, value in record["speedup"].items() if key not in ("processors", "cloud")}
+        bare["goals"] = [{key: value for key, value in goal.items() if key != "cost"} for goal in bare["goals"]]
+        self.assertEqual(unlisted["speedup"], bare)
         # And one without them says so and shows the rest.
         with tempfile.TemporaryDirectory() as scratch, contextlib.redirect_stderr(io.StringIO()) as said:
             root = pathlib.Path(scratch)
@@ -226,10 +230,11 @@ class TheSpeedup(unittest.TestCase):
         self.assertEqual(re.findall(r'<section class="res-section" id="([\w-]+)"', record), ["perf-speedup", "perf-video", "perf-times", "perf-batches"])
         self.assertIn('<section class="res-section" id="perf-speedup" aria-labelledby="perf-speedup-title" hidden>', PAGE)
         self.assertIn('document.getElementById("perf-speedup").hidden = false;', PAGE)
-        # The sentence, the tiles, one game at a time, the machine, then
-        # the same benchmarks processor by processor.
+        # The sentence, the tiles, one game at a time, the machine, the
+        # same benchmarks processor by processor, then what renting the
+        # rest of the way to the goals is estimated to cost.
         order = ['id="perf-speed-lede"', 'id="perf-speed-tiles"', 'id="perf-games-table"', 'id="perf-throughput"', 'id="perf-throughput-table"',
-                 'id="perf-processors"', 'id="perf-processors-table"', 'id="perf-from"']
+                 'id="perf-processors"', 'id="perf-processors-table"', 'id="perf-cloud"', 'id="perf-cloud-table"', 'id="perf-from"']
         places = [self.SECTION.index(mark) for mark in order]
         self.assertEqual(places, sorted(places))
         self.assertIn("One machine, every core: experimental and theoretical throughput", self.SECTION)
@@ -250,11 +255,15 @@ class TheSpeedup(unittest.TestCase):
         # The third, processor by processor, has its head written with its
         # rows (a column for each one-core way of playing).
         heads = re.findall(r"<thead>(.*?)</thead>", self.SECTION, flags=re.S)
-        self.assertEqual(len(heads), 3)
+        self.assertEqual(len(heads), 4)
         for head in heads[:2]:
             self.assertEqual(re.findall(r"<th[^>]*>([^<]+)</th>", head)[1], "Faster than by hand")
             self.assertIn('<th scope="col" class="perf-sum">The calculation</th>', head)
         self.assertEqual(heads[2], "")
+        # The fourth is the cloud's cost: what is rented, the speedup it
+        # adds, the machines, the sum, and the price for an hour and a year.
+        self.assertEqual(re.findall(r"<th[^>]*>([^<]+)</th>", heads[3]),
+                         ["Rented", "Speedup it adds", "Machines", "The calculation", "An hour, list price", "An hour, spot price", "A year, list price"])
 
     def test_the_benchmarks_stand_processor_by_processor_under_the_machine(self):
         # Operator 2026-11-22: "Add in a theoretical 9980, performance and
@@ -292,6 +301,40 @@ class TheSpeedup(unittest.TestCase):
         # accounts of how a figure was measured.
         self.assertIn('const name = el("dt", "", "Single thread and multithread scores");', PAGE)
         self.assertIn('from.append(name, el("dd", "", text(site.from)));', PAGE)
+
+    def test_the_goals_are_tiles_and_rows_and_the_cloud_s_cost_says_whose_estimate_it_is(self):
+        # Operator 2026-11-22: "Addd 1 billion x to the scaling scale as
+        # well. we should also estimate the cloud cost in $ to fill i nthe
+        # remaining amount (note that this is a Fable 5.2 best estimate of
+        # the numbers)".
+        shown = speedup_timeline.worked(ROOT)
+        self.assertEqual([goal["words"] for goal in shown["goals"]], ["1 million x", "1 billion x"])
+        script = PAGE[PAGE.index("// ---- How many times faster than a game played by hand"):PAGE.index("// ---- The fastest game on video.")]
+        # A tile for every goal, with what renting the rest of the way costs.
+        self.assertIn("for (const goal of goals) {", script)
+        self.assertIn('tile("Goal", text(goal.words || goal.times), "a game every " + text(goal.time),', script)
+        self.assertIn('(goal.cost ? ". Renting the rest: about " + text(goal.cost) + " an hour." : "")', script)
+        self.assertIn(".perf-speed-tiles { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }", PAGE)
+        # A goal of the whole line is a row of the throughput table.
+        self.assertIn('row.whole ? text(row.times) + " in all" : "A game every " + text(row.one_game)', script)
+        # The cloud's cost is hidden until the slot has it, opens on whose
+        # estimate it is, and no name is written in the page: it is the
+        # slot's.
+        self.assertIn('<div class="res-kind" id="perf-cloud" hidden>', self.SECTION)
+        self.assertIn("The rest of the way, rented: an estimate of the cloud cost", self.SECTION)
+        self.assertIn('el("b", "", "A best estimate by " + text(cloud.by) + (cloud.taken ? ", " + day(cloud.taken) : "") + "."),', script)
+        self.assertIn('" Not a quote and not a run: nothing has been played in a cloud. "', script)
+        self.assertIn('document.getElementById("perf-cloud").hidden = false;', script)
+        written = re.sub(r"(?<!:)//.*", "", re.sub(r"<!--.*?-->", "", self.SECTION + script, flags=re.S))
+        self.assertIn("A best estimate by", written)
+        self.assertNotIn("Fable", written)
+        # Each figure of a row has its sum under it, and the estimate gives
+        # its own account with the others.
+        for cell in ("summed(row.rest, row.rest_sum, \"perf-times\")", "summed(row.an_hour, row.an_hour_sum)", "summed(row.spot_an_hour, row.spot_an_hour_sum)",
+                     'el("td", "perf-sum", text(row.machines_sum))', 'el("td", "perf-sum", text(cloud.times_sum))'):
+            self.assertIn(cell, script)
+        self.assertIn('from.append(name, el("dd", "", text(cloud.from)));', script)
+        self.assertEqual(shown["cloud"]["by"], "Claude Fable 5.2")
 
     def test_no_figure_is_written_into_the_page(self):
         # Every one is the slot's, so the page cannot say a figure the
