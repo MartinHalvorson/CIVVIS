@@ -387,6 +387,14 @@ class Bar:
         found = self.ev(f"(() => {{ const el = document.querySelector({json.dumps(selector)});"
                         " if (!el) return 'missing'; if (el.disabled) return 'disabled'; el.click(); return 'ok'; })()")
         assert found == "ok", f"{selector}: {found}"
+        self.settled()
+
+    def settled(self) -> None:
+        """One screen and two change places in one move, and the window is held until it is made.
+
+        A press that begins one (Branch, Drop, the ✕ of a branch) is over
+        when the other picture stands there and takes a press again."""
+        self.until("!debugHeld && !debugMoving", "the window is let go of when the move is made")
 
     def drag(self, slider: str, turn: int) -> None:
         """Move a range input and let go of it: `input`, then `change`."""

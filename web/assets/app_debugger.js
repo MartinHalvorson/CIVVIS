@@ -572,6 +572,62 @@ const DEBUG_BAR_STYLE = `
   #debugbar .dbg-ask-list small { font-size: 10.5px; opacity: .75; }
   #debugbar .dbg-ask .dbg-line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
   #debugbar .dbg-ask .dbg-line button { padding: 0 11px; font-weight: 700; }
+  /* A panel and the box's question are windows: each is moved by its title
+     (debugMoveWindows), and stands where it was put for as long as it is
+     open. */
+  #debugbar .dbg-pop h4:first-child, #debugbar .dbg-ask h4 {
+    margin: -12px -12px -6px; padding: 12px 12px 6px; border-radius: 14px 14px 0 0;
+    cursor: grab; touch-action: none;
+  }
+  #debugbar .dbg-pop h4:first-child:hover, #debugbar .dbg-ask h4:hover { background: #ffffff0d; }
+  #debugbar .dbg-moving > h4:first-child { cursor: grabbing; background: #ffffff14; }
+
+  /* One screen and two change places in one move (debugSwap). While the move
+     is made ready the window is held as it stands: the box takes no press,
+     and Branch says that it is at work. */
+  html.dbg-held #debugbar { pointer-events: none; }
+  html.dbg-held body { cursor: progress; }
+  @keyframes dbg-at-work { from { box-shadow: 0 2px 6px #0007, 0 0 0 0 #ffd23f66; } to { box-shadow: 0 2px 6px #0007, 0 0 0 7px #ffd23f00; } }
+  #debugbar.dbg-branching button.dbg-branch { animation: dbg-at-work .8s ease-out infinite; }
+  #debugbar.dbg-branching button.dbg-branch::after { content: "ing…"; margin-left: -4px; }
+  /* A game that opens on its two tracks is not shown on one first: the window
+     waits, as the page's own curtain has it wait, for the two to be there. */
+  #dbg-veil {
+    position: fixed; inset: 0; z-index: 100002; display: flex; flex-direction: column; gap: 14px;
+    align-items: center; justify-content: center; background: #07110f; color: #d7b66a;
+    font-family: Georgia, "Times New Roman", serif;
+  }
+  #dbg-veil b { font-size: 40px; font-weight: 400; letter-spacing: .34em; text-indent: .34em; }
+  #dbg-veil span { font-size: 13px; letter-spacing: .18em; color: #6f8279; text-transform: uppercase; }
+  /* The move itself: the box goes from one shape to the other with its right
+     end, where the game ends, held still, and the map goes to the half that
+     carries it on (or that half to the map) while the rest comes and goes
+     around it. Nothing is stretched on the way: each picture keeps its own
+     size and is cut to the room it has. And the map does not slide under
+     itself: the two pictures show the same ground at the same size, so each
+     is carried by as much as puts the middle of its map on the middle of the
+     other's (--dbg-carry-x and -y, measured by debugSwap), and what is seen
+     is one map with its panels changing round it. */
+  ::view-transition-group(dbg-bar), ::view-transition-group(dbg-stage) {
+    animation-duration: .28s; animation-timing-function: cubic-bezier(.3, .1, .2, 1);
+  }
+  ::view-transition-old(dbg-bar), ::view-transition-new(dbg-bar) {
+    width: 100%; height: 100%; object-fit: none; object-position: right top; animation-duration: .2s;
+  }
+  @keyframes dbg-swap-out { to { opacity: 0; } }
+  @keyframes dbg-swap-in { from { opacity: 0; } }
+  @keyframes dbg-carry-old { to { object-position: var(--dbg-carry-x, 0px) var(--dbg-carry-y, 0px); } }
+  @keyframes dbg-carry-new { from { object-position: calc(0px - var(--dbg-carry-x, 0px)) calc(0px - var(--dbg-carry-y, 0px)); } }
+  ::view-transition-old(dbg-stage), ::view-transition-new(dbg-stage) {
+    width: 100%; height: 100%; object-fit: none; object-position: 0 0; mix-blend-mode: plus-lighter;
+  }
+  ::view-transition-old(dbg-stage) {
+    animation: dbg-swap-out .28s cubic-bezier(.3, .1, .2, 1) both, dbg-carry-old .28s cubic-bezier(.3, .1, .2, 1) both;
+  }
+  ::view-transition-new(dbg-stage) {
+    animation: dbg-swap-in .28s cubic-bezier(.3, .1, .2, 1) both, dbg-carry-new .28s cubic-bezier(.3, .1, .2, 1) both;
+  }
+  html.dbg-swapping::view-transition-old(root), html.dbg-swapping::view-transition-new(root) { animation-duration: .24s; }
 `;
 
 // The bar, once built, and each lane of its timeline: what is drawn on it
@@ -1450,6 +1506,7 @@ function debugBuildBar() {
     debugHover(on && !on.closest(".dbg-marks i, .dbg-marks u b, .dbg-branch") ? on.closest(".dbg-rail") : null, event.clientX);
   });
   bar.addEventListener("pointerleave", () => debugHover(null));
+  debugMoveWindows(bar);
   // The wheel over the timeline, and the up and down arrows in the turn box,
   // walk the played turns one at a time.
   const walk = forward => {
@@ -1505,6 +1562,70 @@ function debugBuildBar() {
     }).observe(area);
   }
   return bar;
+}
+
+// A panel of the box, and the box's question, are windows, and a window is
+// moved by its title (operator 2026-11-22: "clicking and dragging on a window
+// title allows for repositioning"): pressed there and dragged, it goes where
+// the pointer takes it, over the map or over either half of a split. Where it
+// was put is kept for as long as the page is open, so it opens there again,
+// and a double click on its title puts it back under what it opens from.
+// The place is the window's top left corner in the browser window, so it
+// holds whichever shape the box is in.
+const debugWindowPlace = {};
+let debugWindowMove = null;
+function debugPlaceWindow(win, bar, anchor) {
+  const frame = bar.getBoundingClientRect(), put = debugWindowPlace[win.id];
+  if (put) {
+    // Never out of the browser window, and never with its title out of reach.
+    win.style.left = `${Math.max(4, Math.min(window.innerWidth - win.offsetWidth - 4, put.x)) - frame.left}px`;
+    win.style.top = `${Math.max(4, Math.min(window.innerHeight - 44, put.y)) - frame.top}px`;
+    return;
+  }
+  const from = anchor.getBoundingClientRect();
+  win.style.left = `${Math.max(8, Math.min(from.left - frame.left, frame.width - win.offsetWidth - 8))}px`;
+  win.style.top = `${from.bottom - frame.top + 6}px`;
+}
+function debugMoveWindows(bar) {
+  const titled = target => {
+    const title = target instanceof Element ? target.closest("h4") : null;
+    const win = title ? title.parentElement : null;
+    return win && win.matches(".dbg-pop, .dbg-ask") && win.firstElementChild === title ? win : null;
+  };
+  bar.addEventListener("pointerdown", event => {
+    const win = titled(event.target);
+    if (!win || (event.button !== 0 && event.pointerType !== "touch")) return;
+    const box = win.getBoundingClientRect();
+    debugWindowMove = {win, pointer: event.pointerId, x: event.clientX, y: event.clientY,
+      left: box.left, top: box.top, moved: false};
+    // The window keeps the pointer, so the drag goes on over a half's frame.
+    try { win.setPointerCapture(event.pointerId); } catch (_) {}
+    event.preventDefault();
+  });
+  window.addEventListener("pointermove", event => {
+    const move = debugWindowMove;
+    if (!move || event.pointerId !== move.pointer) return;
+    const dx = event.clientX - move.x, dy = event.clientY - move.y;
+    // A press that does not travel is a click, and moves nothing.
+    if (!move.moved && Math.abs(dx) + Math.abs(dy) < 3) return;
+    move.moved = true;
+    move.win.classList.add("dbg-moving");
+    debugWindowPlace[move.win.id] = {x: move.left + dx, y: move.top + dy};
+    debugPlaceWindow(move.win, bar, null);
+  });
+  for (const kind of ["pointerup", "pointercancel"])
+    window.addEventListener(kind, event => {
+      const move = debugWindowMove;
+      if (!move || event.pointerId !== move.pointer) return;
+      debugWindowMove = null;
+      move.win.classList.remove("dbg-moving");
+    });
+  bar.addEventListener("dblclick", event => {
+    const win = titled(event.target);
+    if (!win || !debugWindowPlace[win.id]) return;
+    delete debugWindowPlace[win.id];
+    drawDebugBar(false);
+  });
 }
 
 // The Civ AIs on offer are the ones the page's own picker lists. A picker
@@ -1901,6 +2022,8 @@ function debugDeckNow() {
 }
 function drawDebugBar(measure = true) {
   const bar = debugBar || debugBuildBar();
+  // A window held for a move is drawn once, by the move (`debugSwap`).
+  if (debugHeld) return;
   const timeline = debugTimeline();
   bar.hidden = !timeline;
   document.documentElement.classList.toggle("dbg-pane-locked", DEBUG_PANE !== null && debugPaneLocked);
@@ -2071,9 +2194,7 @@ function debugDrawAsk(bar) {
   }
   if (box.dataset.drawn !== html) { box.dataset.drawn = html; box.innerHTML = html; }
   // Under the picker it is about, and inside the window.
-  const from = anchor.getBoundingClientRect(), frame = bar.getBoundingClientRect();
-  box.style.left = `${Math.max(8, Math.min(from.left - frame.left, frame.width - box.offsetWidth - 8))}px`;
-  box.style.top = `${from.bottom - frame.top + 6}px`;
+  debugPlaceWindow(box, bar, anchor);
 }
 // The Civ AI picked for the one timeline is seated: the page's own picker is
 // the one every step reads, and the engine is told at once (`debugSeat`).
@@ -2124,7 +2245,7 @@ function debugOpenOnTwoTracks() {
   if (debugBusy || debugRunning || autoplaying || turnAdvancePending) return;
   debugOpenedGame = game;
   if (DEBUG_SMALL_DEVICE || SOLO_UI || window.innerWidth < DEBUG_TWO_TRACKS_FROM) return;
-  debugSplitOpen("row");
+  debugSplitOpen("row", null, null, true);
 }
 // The deck under the timeline, and the panels that open from it, drawn from
 // one account of a world (`debugDeckNow`): this page's own, or, on the host
@@ -2231,9 +2352,7 @@ function debugDrawDeck(bar, deck) {
     button.classList.toggle("on", debugPopOpen === name);
     if (pop.hidden) continue;
     // A panel opens under its own button, and stays inside the window.
-    const from = button.getBoundingClientRect(), box = bar.getBoundingClientRect();
-    pop.style.left = `${Math.max(8, Math.min(from.left - box.left, box.width - pop.offsetWidth - 8))}px`;
-    pop.style.top = `${from.bottom - box.top + 6}px`;
+    debugPlaceWindow(pop, bar, button);
   }
 
   // The lists are the engine's: a layer or an event category added there
@@ -2356,6 +2475,11 @@ const DEBUG_SPLIT_STYLE = `
   }
   #debugsplit iframe { width: 100%; height: 100%; border: 0; display: block; background: #07110f; }
   #debugsplit.dbg-dragging iframe { pointer-events: none; }
+  /* The halves load where they will stand, unseen: the window shows what it
+     showed until both are there (debugSplitReveal). Until then, and while a
+     branch is being closed, nothing in the split takes a press. */
+  #debugsplit.dbg-unseen { opacity: 0; }
+  #debugsplit.dbg-unseen > *, #debugsplit.dbg-closing > * { pointer-events: none; }
   #debugsplit .dbg-divider {
     display: flex; flex-direction: column; align-items: stretch; justify-content: center; gap: 6px;
     width: 68px; padding: 6px 5px; background: #0a1512; border-inline: 1px solid #35504a;
@@ -2419,6 +2543,115 @@ const DEBUG_SPLIT_STYLE = `
 `;
 // The host's record of the split, or null when the screen is whole.
 let debugSplit = null;
+
+// ---- one move
+//
+// One screen and two change places in one move (operator 2026-11-22: "i do
+// not like the whole transition between ai debugger 1 screen and 2 screens").
+// A half is a whole page and takes about a second to be there, and the page
+// under the halves takes a moment to become the half that was kept. None of
+// that is shown. The window is held as it stands while the other picture is
+// made ready out of sight (`debugHold`): the box is not drawn again and takes
+// no press. Then the one picture takes the other's place, once
+// (`debugSwap`): the box goes from one shape to the other, the map goes to
+// the half that carries it on (or the kept half to the map), and the rest
+// comes and goes around them.
+let debugHeld = false;
+// Whether one picture is taking the other's place right now.
+let debugMoving = false;
+// A browser that is not painting (a window nobody can see) may leave a move
+// waiting to begin. The change is not left waiting with it.
+const DEBUG_SWAP_PATIENCE_MS = 500;
+function debugHold(on) {
+  debugHeld = on;
+  document.documentElement.classList.toggle("dbg-held", on);
+}
+// Where the middle of what shows of this page's map stands, in the page's
+// own window. A half is asked by the host, which reads it off the half's
+// frame.
+function debugFocusNow() {
+  const canvas = document.getElementById("map");
+  if (!canvas || typeof mapFocusPoint !== "function") return null;
+  const box = canvas.getBoundingClientRect(), focus = mapFocusPoint();
+  return {x: box.left + focus.x, y: box.top + focus.y};
+}
+// What the map is shown in, on one screen or in one half, and where in it
+// the middle of the map stands: the map area of this page, or a half's frame.
+function debugStage(frame = null) {
+  try {
+    if (frame) return {element: frame, focus: frame.contentWindow.debugFocusNow()};
+    const element = document.getElementById("maparea"), focus = debugFocusNow();
+    const box = element.getBoundingClientRect();
+    return {element, focus: focus ? {x: focus.x - box.left, y: focus.y - box.top} : null};
+  } catch (_) {
+    return {element: frame || document.getElementById("maparea"), focus: null};
+  }
+}
+// `change` makes the window the other picture. Where the browser can show one
+// picture becoming another (a view transition) it does: the box goes from
+// its one shape to its other, and the stage the map was shown in (`from`)
+// goes to the one it is shown in once the change is made (what `to` gives),
+// each carried so that the middle of its map is where the other's is. With
+// no `from` the whole window gives way at once: a veil lifting has no map
+// under it to carry anywhere. Where the browser cannot, or the person has
+// asked for less motion, the change is simply made. Either way it is made
+// once, and what comes back settles when the move is over.
+function debugSwap(change, from = null, to = null) {
+  let made = false;
+  const make = () => { if (!made) { made = true; change(); } };
+  const still = typeof document.startViewTransition !== "function" || document.hidden ||
+    (typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches);
+  if (still) { make(); return Promise.resolve(); }
+  const root = document.documentElement, named = new Set();
+  const name = (element, as) => { if (element) { element.style.viewTransitionName = as; named.add(element); } };
+  let waiting = 0;
+  const over = () => {
+    clearTimeout(waiting);
+    for (const element of named) element.style.viewTransitionName = "";
+    root.classList.remove("dbg-swapping");
+    root.style.removeProperty("--dbg-carry-x");
+    root.style.removeProperty("--dbg-carry-y");
+    debugMoving = false;
+  };
+  debugMoving = true;
+  root.classList.add("dbg-swapping");
+  if (from) { name(debugBar, "dbg-bar"); name(from.element, "dbg-stage"); }
+  try {
+    const move = document.startViewTransition(() => {
+      if (made) return;
+      // One thing at a time carries a name: the old picture has been taken.
+      if (from) from.element.style.viewTransitionName = "";
+      make();
+      const next = from && to ? to() : null;
+      if (!next) return;
+      name(next.element, "dbg-stage");
+      if (from.focus && next.focus) {
+        root.style.setProperty("--dbg-carry-x", `${Math.round(next.focus.x - from.focus.x)}px`);
+        root.style.setProperty("--dbg-carry-y", `${Math.round(next.focus.y - from.focus.y)}px`);
+      }
+    });
+    waiting = setTimeout(() => {
+      if (made) return;
+      make();
+      try { move.skipTransition(); } catch (_) {}
+    }, DEBUG_SWAP_PATIENCE_MS);
+    return move.finished.then(over, () => { make(); over(); });
+  } catch (_) {
+    make(); over();
+    return Promise.resolve();
+  }
+}
+// The veil over a game that opens on its two tracks, until the two are there.
+function debugVeil(on) {
+  let veil = document.getElementById("dbg-veil");
+  if (!on) { if (veil) veil.remove(); return; }
+  if (veil) return;
+  veil = document.createElement("div");
+  veil.id = "dbg-veil";
+  veil.setAttribute("role", "status");
+  veil.innerHTML = "<b>CIVVIS</b><span>Opening both timelines</span>";
+  document.body.appendChild(veil);
+}
 // Head to head: what each half says about its seat, set side by side. The
 // yields are what the seat makes a turn.
 const DEBUG_VERSUS_ROWS = [
@@ -2626,7 +2859,8 @@ function debugRemote(kind, target) {
   if (key === '[data-dbg="point"]') debugBar.querySelector("[data-dbg-field=pointname]").value = "";
 }
 function drawDebugSplit() {
-  if (!debugSplit) return;
+  // Two screens that are being put away are held as they stand.
+  if (!debugSplit || debugSplit.busy) return;
   const host = debugSplit.host;
   host.classList.toggle("dbg-col", debugSplit.dir === "col");
   host.style.setProperty("--dbg-a", `${debugSplit.share}fr`);
@@ -2675,9 +2909,53 @@ function drawDebugSplit() {
   back.disabled = debugSplit.busy || debugSplit.running > 0 || debugSplit.from === null ||
     ["a", "b"].every(letter => debugSplit.panes[letter].turn === debugSplit.from);
 }
+// How long a split waits for its halves before it is shown as it is.
+const DEBUG_SPLIT_WAIT_MS = 6000;
+// The two screens are there: both halves have said where they stand and what
+// is on their timelines, the one panel has A's deck to draw, each seats the
+// Civ AI it was given, the branch has let go of the turns ahead of it, and
+// each has painted itself looking where it was told to.
+function debugSplitReady() {
+  const split = debugSplit;
+  if (!split || split.shown) return;
+  const there = pane => pane.turn !== null && !!pane.marks && !!pane.numbers && pane.agreed && pane.painted;
+  if (there(split.panes.a) && there(split.panes.b) && split.panes.a.deck && !split.branches) debugSplitReveal();
+}
+// One screen becomes two, in one move: the box takes the shape of a split,
+// the map goes to A, which carries it on, and B and the strip come in
+// beside it. Then the box asks what it has to ask about the branch.
+function debugSplitReveal() {
+  const split = debugSplit;
+  if (!split || split.shown) return;
+  split.shown = true;
+  clearTimeout(split.waiting);
+  return debugSwap(() => {
+    if (debugSplit !== split) return;
+    debugHold(false);
+    debugVeil(false);
+    debugBar.classList.remove("dbg-branching");
+    split.host.classList.remove("dbg-unseen");
+    debugAsk = split.ask;
+    drawDebugSplit();
+    // The box has taken its other shape and the halves the room that leaves
+    // them. Each fits itself to it now, not a frame from now, so what is
+    // shown first is each half as it will stand.
+    for (const letter of ["a", "b"]) {
+      const frame = split.panes[letter].frame;
+      try { void frame.getBoundingClientRect(); frame.contentWindow.dispatchEvent(new Event("resize")); } catch (_) {}
+    }
+  }, split.look === undefined ? null : debugStage(),
+    () => debugSplit === split ? debugStage(split.panes.a.frame) : null).then(() => {
+    // Seen: from here each half's map is its own to move.
+    if (debugSplit === split) for (const letter of ["a", "b"]) debugSplitTell(letter, {civvis: "pane-seen"});
+  });
+}
 // `seat` is the Civ AI the branch is made for, when it was picked before the
-// branch was made. Otherwise B begins with A's, and the box asks.
-function debugSplitOpen(dir, versus = null, seat = null) {
+// branch was made. Otherwise B begins with A's, and the box asks. `fresh` is
+// a game that opens on its two tracks: it has not been shown on one, and is
+// not, so the window waits under a veil where a branch made by hand waits
+// showing the one screen it was made from.
+function debugSplitOpen(dir, versus = null, seat = null, fresh = false) {
   if (debugSplit || DEBUG_PANE !== null || !debugTimeline() || debugBusy || autoplaying) return;
   if (!document.getElementById("debugsplit-style")) {
     const style = document.createElement("style");
@@ -2685,9 +2963,18 @@ function debugSplitOpen(dir, versus = null, seat = null) {
     style.textContent = DEBUG_SPLIT_STYLE;
     document.head.appendChild(style);
   }
+  // The window is held as it stands, with nothing open over it, until both
+  // halves are there (`debugSplitReady`). Where the one screen is looking is
+  // where the halves will open looking.
+  debugAsk = null; debugPopOpen = null;
+  drawDebugBar();
+  const look = fresh ? undefined : debugLookNow();
+  debugHold(true);
+  if (fresh) debugVeil(true); else debugBar.classList.add("dbg-branching");
   const nonce = Date.now().toString(36);
   const host = document.createElement("div");
   host.id = "debugsplit";
+  host.className = "dbg-unseen";
   host.innerHTML = `
     <iframe data-dbg-frame="a" title="Simulator A"></iframe>
     <div class="dbg-divider" role="toolbar" aria-label="Split simulators" title="Drag to resize; double-click to make the halves equal">
@@ -2727,17 +3014,22 @@ function debugSplitOpen(dir, versus = null, seat = null) {
   // When turns are kept ahead of that turn they stay A's, and B is told to
   // begin where it stands (`branches`, until B says it holds none of them).
   const timeline = debugTimeline();
+  // `shown` is whether the two screens have taken the one's place, `ask` what
+  // the box asks when they do, and `look` where each half opens looking
+  // (undefined for a game that opens this way, which was looking nowhere).
   debugSplit = {dir, locked: true, settling: true, view: true, share: .5, busy: false, panes: {}, host,
     versus: versus ?? remembered, running: 0, until: null, chart: "score", history: {a: new Map(), b: new Map()},
     from: state ? state.turn : null, forked: false,
-    branches: Math.max(timeline.last ?? state.turn, (timeline.beyond || {}).to ?? 0) > state.turn};
+    branches: Math.max(timeline.last ?? state.turn, (timeline.beyond || {}).to ?? 0) > state.turn,
+    shown: false, ask: seat ? null : {kind: "seat", letter: "b"}, look,
+    waiting: setTimeout(debugSplitReveal, DEBUG_SPLIT_WAIT_MS)};
   for (const letter of ["a", "b"]) {
     const frame = host.querySelector(`[data-dbg-frame="${letter}"]`);
     // A half starts on the Civ AI picked here, and is told if it loads on another.
     debugSplit.panes[letter] = {frame, id: `${letter}-${nonce}`, turn: null, first: null, last: null,
-      deck: null, told: null, strategy: letter === "b" && seat ? seat : debugStrategy()};
+      deck: null, told: null, strategy: letter === "b" && seat ? seat : debugStrategy(),
+      agreed: false, painted: false};
   }
-  debugAsk = seat ? null : {kind: "seat", letter: "b"};
   debugRememberSeat();
   host.addEventListener("click", event => {
     const stat = event.target.closest("[data-dbg-stat]");
@@ -2869,29 +3161,49 @@ function debugMirrored(body) {
 }
 // The screen is whole again, playing the half that was kept: its session
 // takes the host's place in the engine, so nothing it could walk back to is lost.
+//
+// Two screens become one in one move, as one became two. The two are held as
+// they stand, with nothing greyed, while the engine makes the kept half the
+// game and this page draws it under them. Then the kept half goes to the map,
+// which is looking where that half was, the box takes the shape of the one
+// timeline, and the other half and the strip go.
 async function debugSplitClose(keep) {
-  if (!debugSplit || debugSplit.busy) return;
-  debugSplit.busy = true; drawDebugSplit();
+  if (!debugSplit || debugSplit.busy || !debugSplit.shown) return;
+  const split = debugSplit, kept = split.panes[keep];
+  split.busy = true;
+  debugHold(true);
+  split.host.classList.add("dbg-closing");
+  // Where the kept half is looking, and where in it the middle of its map
+  // stands, read before anything is asked of it.
+  let look = null;
+  try { look = kept.frame.contentWindow.debugLookNow(); } catch (_) {}
+  const stage = debugStage(kept.frame);
   let note = "";
   try {
     const next = await fetchJSON("/debug", {method: "POST",
       headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({op: "adopt", pane: debugSplit.panes[keep].id})}, 60000);
+      body: JSON.stringify({op: "adopt", pane: kept.id})}, 60000);
     if (next.error) throw new Error(next.error);
     debugForgetStandingOrders(next.turn);
     sel = null; selCity = null;
     // The half that is kept keeps its Civ AI: the seat is still that agent's.
-    const page = document.getElementById("autoplaystrategy"), kept = debugSplit.panes[keep].strategy;
-    if (page && kept && [...page.options].some(option => option.value === kept)) page.value = kept;
+    const page = document.getElementById("autoplaystrategy");
+    if (page && kept.strategy && [...page.options].some(option => option.value === kept.strategy)) page.value = kept.strategy;
     debugRememberSeat();
     render(next);
     note = `Branch ${keep === "a" ? "B" : "A"} closed · ${keep.toUpperCase()} is the timeline`;
   } catch (error) {
     note = `Branch ${keep.toUpperCase()} could not be kept: ${error.message || error}`;
   }
-  debugSplit.host.remove();
-  debugSplit = null;
-  debugSay(note);
+  await debugSwap(() => {
+    split.host.remove();
+    debugSplit = null;
+    debugHold(false);
+    // The box is drawn as the one timeline's, which gives the map its room,
+    // and then the map looks where the kept half did.
+    debugSay(note);
+    debugCameraLook(look);
+  }, stage, () => debugStage());
 }
 window.addEventListener("message", event => {
   if (!debugSplit || event.origin !== location.origin) return;
@@ -2907,8 +3219,11 @@ window.addEventListener("message", event => {
     if (data.how === "boot") {
       debugSplitSync(letter);
       if (letter === "b" && debugSplit.branches) debugSplitTell("b", {civvis: "pane-op", body: {op: "branch"}});
+      // And, while it is unseen, where to look: it says when it has painted that.
+      if (!debugSplit.shown) debugSplitTell(letter, {civvis: "pane-look", view: debugSplit.look || null, say: true});
     }
     drawDebugSplit();
+    debugSplitReady();
     // A pane that moved because it was following is not followed back. A
     // twin that was played with it has only its state to read.
     if (debugSplit.locked && data.how !== "follow" && data.how !== "boot")
@@ -2927,10 +3242,15 @@ window.addEventListener("message", event => {
     if (letter === "b" && debugSplit.branches && Array.isArray(data.turns) && !data.beyond &&
         data.turns.every(turn => turn <= debugSplit.from)) debugSplit.branches = false;
     drawDebugBar();
+    debugSplitReady();
   } else if (data.civvis === "pane-deck") {
     debugSplit.panes[letter].deck = data.deck;
     debugSplitSettle();
     drawDebugBar();
+    debugSplitReady();
+  } else if (data.civvis === "pane-shown") {
+    debugSplit.panes[letter].painted = true;
+    debugSplitReady();
   } else if (data.civvis === "pane-camera") {
     if (debugSplit.view) debugSplitTell(other, {civvis: "pane-look", view: data.view});
   } else if (data.civvis === "pane-numbers") {
@@ -2947,7 +3267,9 @@ window.addEventListener("message", event => {
     // a copy or a reload starts it on the page's own choice.
     if (pane.strategy === undefined) pane.strategy = data.strategy;
     else if (pane.strategy !== data.strategy) debugSplitTell(letter, {civvis: "pane-strategy", name: pane.strategy});
+    pane.agreed = pane.strategy === data.strategy;
     drawDebugSplit();
+    debugSplitReady();
   } else if (data.civvis === "pane-ran") {
     debugSplit.running = Math.max(0, debugSplit.running - 1);
     if (debugSplit.running === 0) debugSplit.until = null;
@@ -3080,16 +3402,39 @@ function debugCameraNow() {
   return {x: cam.x, y: cam.y, scale: cam.scale, rot: cam.rot, tilt: cam.tilt,
     pan: {x: SKY_PAN.x, y: SKY_PAN.y}};
 }
+// Where this page's map is looking, for a page of another size to look at
+// the same ground: the camera, and the place on the map that stands at the
+// middle of what shows of it (`focus`). Null while the camera is on its way
+// somewhere, which is nowhere to send another page.
+function debugLookNow() {
+  if (!state || SPEC || cameraFlight || cameraZoom) return null;
+  const view = debugCameraNow();
+  if (typeof currentMapFocusWorld === "function") view.focus = currentMapFocusWorld();
+  // Whether the person has moved the map themselves: a page left to frame
+  // the seat's own ground does so again at the next turn, and one that was
+  // put somewhere by hand stays there.
+  view.own = typeof watchedEmpireAutoFrame !== "undefined" && !watchedEmpireAutoFrame;
+  return view;
+}
+// Two halves are the same size, and one looks where the other does by taking
+// its camera whole. A page of another size takes the zoom and the bearing,
+// and puts the same place at the middle of its own map (`view.focus`).
 function debugCameraLook(view) {
   if (!state || !view || !view.pan) return;
+  if (view.own === true && typeof takeCameraControl === "function") takeCameraControl();
   cameraFlight = null; cameraZoom = null;
   clearCameraInertia();
   cam.x = +view.x; cam.y = +view.y; cam.scale = +view.scale; cam.rot = +view.rot; cam.tilt = +view.tilt;
   SKY_PAN = {x: +view.pan.x, y: +view.pan.y};
-  draw(); drawMini();
+  if (Array.isArray(view.focus) && typeof reframeCurrentMapFocus === "function") reframeCurrentMapFocus(view.focus);
+  else { draw(); drawMini(); }
   debugCameraSaid = JSON.stringify(debugCameraNow());
 }
+// Where an unseen half was told to look, kept until it is seen.
+let debugLookKept = null;
 if (DEBUG_PANE !== null) {
+  // After the page's own listener, which has fitted the map to the new room.
+  window.addEventListener("resize", () => { if (debugLookKept) debugCameraLook(debugLookKept); });
   window.addEventListener("message", async event => {
     if (event.source !== window.parent || event.origin !== location.origin) return;
     const data = event.data;
@@ -3125,7 +3470,18 @@ if (DEBUG_PANE !== null) {
       });
     } else if (data.civvis === "pane-solo") setSoloUi(data.on === true);
     else if (data.civvis === "pane-go") { debugSay(""); debugGoToTurn(String(data.turn)); }
-    else if (data.civvis === "pane-look") debugCameraLook(data.view);
+    else if (data.civvis === "pane-look") {
+      debugCameraLook(data.view);
+      // A half that is still unseen says when it has painted what it was
+      // told to look at: the host shows the two when both have. Being shown
+      // changes the room the half has, so it keeps what it was told and
+      // looks there again in its new room, until the host says it is seen.
+      if (data.say === true) {
+        debugLookKept = data.view || null;
+        requestAnimationFrame(() => requestAnimationFrame(() =>
+          window.parent.postMessage({civvis: "pane-shown", pane: DEBUG_PANE}, location.origin)));
+      }
+    } else if (data.civvis === "pane-seen") debugLookKept = null;
     else if (data.civvis === "pane-strategy") {
       const select = document.getElementById("autoplaystrategy");
       if (select && [...select.options].some(option => option.value === data.name)) select.value = data.name;
@@ -3182,6 +3538,8 @@ if (DEBUG_PANE !== null) {
   const sendAction = send;
   send = function (action, ...rest) {
     const timeline = debugTimeline();
+    // The world a split is being made from stays as it is until it is made.
+    if (timeline && debugHeld) return Promise.resolve();
     if (!timeline || !timeline.playing) return sendAction(action, ...rest);
     if (action && action.type === "end_turn")
       return debugOp({op: "finish_round"}, AUTOPLAY_BATCH_TIMEOUT_MS);
