@@ -253,6 +253,8 @@
   .perf-speed-lede { max-width: 900px; margin: 6px 0 0; color: var(--text); font-size: 14.5px; line-height: 1.55; }
   .perf-speed-lede b { color: #fff; font-weight: 700; }
   .perf-speed-tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  /* A grid set by the page is not hidden by the attribute alone. */
+  .perf-speed-tiles[hidden] { display: none; }
   @media (max-width: 719px) { .perf-speed-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   .perf-speed-tiles .perf-tile-value { font-size: clamp(22px, 3.3vw, 34px); }
   .perf-speed-tiles .perf-tile-clock { min-height: 0; }
