@@ -10685,6 +10685,11 @@ pub struct AdvancedAi {
     /// Per (city, site) repair asking runs, for
     /// `stuck-repair-yields-the-queue`.
     stuck_repairs: RefCell<BTreeMap<(u32, Pos), pillaged_repairs_first::StuckRepair>>,
+    /// `science-seat-campus-before-the-settler`: a Science seat's first
+    /// Campus goes ahead of the early Settler floor's Settler on
+    /// `first-campus-before-the-settler`'s terms. See
+    /// `advanced/science_seat_campus_before_the_settler.rs`. Off by default.
+    science_seat_campus_before_the_settler: bool,
     // ---- append: t-z ------------------------------------------------
     /// `world-religion-condemns-the-faith`: our soldiers condemn a faith
     /// World Religion's option B names, at peace, and the agent's ballot asks
@@ -12339,6 +12344,9 @@ mod industrial_zone_claims_the_factory;
 mod industrial_zone_claims_the_producer_queue;
 /// `nearly-built-keeps-its-queue`: see `advanced/nearly_built_keeps_its_queue.rs`.
 mod nearly_built_keeps_its_queue;
+/// `science-seat-campus-before-the-settler`: see
+/// `advanced/science_seat_campus_before_the_settler.rs`.
+mod science_seat_campus_before_the_settler;
 
 mod barbarian_research_prices_the_field;
 /// `first-campus-before-the-settler`: see

@@ -665,6 +665,10 @@ impl AdvancedAi {
         /// after turns of asking stands aside; see
         /// `advanced/pillaged_repairs_first.rs`.
         stuck_repair_yields_the_queue => enable_stuck_repair_yields_the_queue, disable_stuck_repair_yields_the_queue;
+        /// Opt-in gene `science-seat-campus-before-the-settler`: a Science
+        /// seat's first Campus goes ahead of the floor's Settler; see
+        /// `advanced/science_seat_campus_before_the_settler.rs`.
+        science_seat_campus_before_the_settler => enable_science_seat_campus_before_the_settler, disable_science_seat_campus_before_the_settler;
         // ---- append: t-z --------------------------------------------
         /// Opt-in gene `theology-fights-count-the-host-edge`; see
         /// `advanced/theology_fights.rs`.
