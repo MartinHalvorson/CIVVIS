@@ -3100,7 +3100,7 @@ impl Game {
             if host_refused(name) {
                 continue;
             }
-            if name == "national_park" {
+            if *name == crate::name!("national_park") {
                 if self.tree_effect(pid, "national_parks") > 0.0
                     && self.national_park_site_at(pid, pos).is_some()
                 {
@@ -3114,7 +3114,7 @@ impl Game {
             if natural_wonder {
                 continue;
             }
-            if name == "industry" {
+            if *name == crate::name!("industry") {
                 if self.can_establish_industry(pid, pos) {
                     out.push(*name);
                 }
@@ -3127,7 +3127,7 @@ impl Game {
             if t.improvement.is_some() && !connects_strategic(name.as_str()) {
                 continue;
             }
-            if matches!(name.as_str(), "fishery" | "city_park")
+            if (*name == crate::name!("fishery") || *name == crate::name!("city_park"))
                 && oc.is_none_or(|city| self.governor_effect(pid, city, name) <= 0.0)
             {
                 continue;
@@ -3142,8 +3142,8 @@ impl Game {
             // neighbour scans ran for every improvement on every tile, and
             // `grants_city_state_unique_bonus` for every unique improvement
             // on every tile a Builder considered.
-            let seaside_volcanic =
-                name == "seaside_resort" && t.feature.as_deref() == Some("volcanic_soil");
+            let seaside_volcanic = *name == crate::name!("seaside_resort")
+                && t.feature.as_deref() == Some("volcanic_soil");
             // Civ 6 sites an improvement through any one of three routes —
             // a valid terrain, a valid feature, or a valid resource. Farms
             // stand on grassland OR on desert floodplains OR on wheat;
@@ -3195,7 +3195,8 @@ impl Game {
                 || (spec.requires_flat
                     && t.hills
                     && !seaside_volcanic
-                    && !(name == "farm" && self.tree_effect(pid, "hill_farms") > 0.0))
+                    && !(*name == crate::name!("farm")
+                        && self.tree_effect(pid, "hill_farms") > 0.0))
                 || (spec.removes_feature
                     && !feature_route
                     && t.feature
@@ -3204,7 +3205,7 @@ impl Game {
             {
                 continue;
             }
-            let seaside_invalid = name == "seaside_resort"
+            let seaside_invalid = *name == crate::name!("seaside_resort")
                 && (self.tile_appeal(pos) < 4
                     || !self.nbrs(pos).iter().any(|neighbor| {
                         self.map
@@ -3327,7 +3328,8 @@ impl Game {
             // before the siting tests it ran for every bare tile a Builder
             // considered (0.7% of a late site game). It is a pure read like
             // the rest, so where it stands changes only the work.
-            if matches!(name.as_str(), "archaeological_dig" | "shipwreck_excavation")
+            if (*name == crate::name!("archaeological_dig")
+                || *name == crate::name!("shipwreck_excavation"))
                 && !*artifact_home
                     .get_or_insert_with(|| self.can_house_additional_great_work(pid, "artifact"))
             {
