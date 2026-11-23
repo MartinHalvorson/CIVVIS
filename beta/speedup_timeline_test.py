@@ -778,6 +778,16 @@ class Page(unittest.TestCase):
         goals = re.findall(r'<li class="speed-stop speed-finish" data-goal="(\w+)">', LANDING)
         self.assertEqual(goals, [goal["key"] for goal in speedup_timeline.marked(LEDGER)])
         self.assertLess(section.rindex('data-stop="'), section.index('data-goal="'))
+        # On this page each of them is named Theoretical (operator,
+        # 2026-11-23: "replace "goal" on home for 1Bx and 1Mx with
+        # "theoretical""): nothing has run at a million or a billion times,
+        # and the note under the line calls them the same thing. A stop's own
+        # goal, the small line under its time, keeps the word.
+        named = re.findall(r'<li class="speed-stop speed-finish" data-goal="\w+">.*?<b class="speed-name">([^<]+)</b>', section, re.S)
+        self.assertEqual(named, ["Theoretical"] * len(goals))
+        self.assertNotIn('<b class="speed-name">Goal</b>', LANDING)
+        self.assertIn("the rest of the way to a theoretical speed, rented as", section)
+        self.assertNotIn("to a goal", re.sub(r"<!--.*?-->", "", section, flags=re.S))
         self.assertNotIn(".speed-finish { right:", LANDING)
         self.assertIn('entry.style.setProperty("--at", goal.at);', LANDING)
         for place in ("time", "times"):
