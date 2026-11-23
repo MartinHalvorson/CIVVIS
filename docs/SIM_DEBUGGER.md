@@ -1167,6 +1167,59 @@ turns a second on copies of 128 MB.
 Autosearch needs forks, so it runs in the browser build. The desktop
 program's server does not know `/forks`, and there the panel says so.
 
+## Doctor Strange's Civ 6
+
+Operator, 2026-11-23: "it will have a scrolling guitar hero setup. where the
+timeline we are on and following is center screen. forward in time is up.
+forward will branch out more in the tree. bottom left quad and bottom right
+quad, roughly are our world to compare. 2 simulatoins. this is limited at 2
+for this demo. the ai debugger we will make to scale to any number of
+screens."
+
+`?mode=strange` is the split screen above, shown another way. It is listed
+under AI Debugger in the site list, and it is the same played game: one
+engine, two worlds A and B locked to one turn, a Civ AI in each seat. Nothing
+in the engine knows about it. `beta/shim.js` seats the visitor for
+`mode=strange` as it does for `mode=play`, and the last section of
+`web/assets/app_debugger.js` draws the rest over the split the debugger makes.
+
+- **The two worlds are the two lower quarters of the window.** Each half puts
+  its standings, tracker and seat boxes away and is a map; the numbers of the
+  two are set side by side in the top right corner. A is on the left and B on
+  the right, each under a name plate with its Civ AI's picker.
+- **The timeline is a highway up the middle.** The open turn is a line across
+  the centre of the window. The turns played run down from it, between the
+  worlds, and the turns to come run up from it. A turn near the line is tall
+  and one far from it thin, so the whole game is on the board. Playing
+  scrolls it: the line follows the followed world's turn.
+- **The highway is a tree.** The turns the two worlds share are the trunk.
+  From the turn they part on (`debugSplitFork`, the engine's own word on
+  which worlds are the same) each has a branch. The followed timeline stands
+  in the middle and the other peels off to its own world's side; either can
+  be followed. A city founded is a gem on the branch that founded it, and an
+  era is named on its first turn.
+- **B begins with another Civ AI.** Two worlds that seat the same one are one
+  world for ever, so the branch is given the first of a short list that is
+  not A's. Each picker seats another.
+- **Branch here** lets the other world's branch go and makes it a copy of the
+  followed world on the open turn (`pane-copy`), with the next Civ AI. The
+  branch that was let go of stays on the tree, grey and struck off where it
+  ended, with its Civ AI and score, so the tree grows a fork for every branch
+  made. Fourteen are kept.
+- **Going back** (the step buttons, To the fork, or a press on the highway at
+  a turn's height) puts both worlds back as they stood. The turns they hold
+  ahead of the open one stay on the tree, above the line.
+- **Ahead of the last turn played nothing is known**, and what is drawn there
+  says so: a thin dashed line straight on and a fan of ways it could still
+  go, a fork every few turns, each closing as the open turn reaches it. It is
+  a picture of not knowing. No turn in it has been played.
+
+It is two worlds because the split is two. A window narrower than the split
+needs, or a small device, has the one timeline, which is the AI Debugger, and
+its bar says why. `beta/debugger_test.py` (`check_doctor_strange`) holds the
+layout, the fork, Branch here, going back, following and the narrow window in
+a browser.
+
 ## `POST /debug`
 
 `{"op": ...}` and the operation's fields. The answer is the state document

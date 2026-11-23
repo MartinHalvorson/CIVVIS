@@ -2117,12 +2117,16 @@ fn viewer_marks_the_selected_revision_and_its_compact_ages_above_the_minimap() {
 /// only while it is the page on screen. Performance, the one branch, is
 /// Charts' since 2026-11-22 ("Move performance from under civvis to charts
 /// ... This keeps AI Debugger as a clean tool. CIVVIS as a clean tool"), so
-/// the viewer lists the six top-level names and nothing under them. Later
+/// the viewer lists the top-level names and nothing under them: six until
+/// 2026-11-23, and seven since Doctor Strange's Civ 6 joined under AI
+/// Debugger (operator: "add below civvis and above ai debugger "Doctor
+/// Strange's Civ 6"", then "lets actually place the ai debugger above
+/// this"), the played game shown as a tree of two timelines. Later
 /// that day Charts became a folder of pages, named with its slash ("change
 /// just "Charts" to "Charts/" with the intentional slash"), holding Win
 /// Analytics, the page it opens, and CIVVIS Performance ("in charts, we
 /// should have at least win analytics, CIVVIS Performance").
-/// Pinned as one literal because the list is the contract: six links in
+/// Pinned as one literal because the list is the contract: seven links in
 /// this order, inside a list that only the hosts serving a /home, a
 /// /charts and an /auto-tourneys reveal. The addresses follow the names in
 /// the list since 2026-11-23 (operator: "clean up the URL please.
@@ -2138,6 +2142,7 @@ fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
         "        <a class=\"home-link\" id=\"tourlink\" href=\"/auto-tourneys\" target=\"_top\">Auto-Tourneys</a>\n",
         "        <a class=\"home-link\" id=\"watchlink\" href=\"./\" target=\"_top\">CIVVIS</a>\n",
         "        <a class=\"home-link\" id=\"playlink\" href=\"?mode=play\" target=\"_top\">AI Debugger</a>\n",
+        "        <a class=\"home-link\" id=\"strangelink\" href=\"?mode=strange\" target=\"_top\">Doctor Strange's Civ 6</a>\n",
         "        <a class=\"home-link\" id=\"civ6link\" ",
         "href=\"https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/\" ",
         "target=\"_blank\" rel=\"noopener\" title=\"Buy Civilization VI on Steam\">Civ 6</a>\n",
@@ -2148,19 +2153,34 @@ fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
     // spectated simulation.
     assert!(include_str!("../../beta/shim.js")
         .contains("if (mode === \"play\") payload.spectate = false;"));
+    // Doctor Strange's Civ 6 (operator, 2026-11-23: "add below civvis and
+    // above ai debugger "Doctor Strange's Civ 6"", then "lets actually place
+    // the ai debugger above this") is the same played game, shown as a tree
+    // of two timelines: the shim seats the visitor for it as it does for
+    // the Debugger, and the debugger's script is what reads the word and
+    // marks the page (`strange` on the root, which is what lights its link).
+    assert!(include_str!("../../beta/shim.js")
+        .contains("else if (mode === \"strange\") payload.spectate = false;"));
+    assert!(include_str!("../../web/assets/app_debugger.js").contains(
+        "return DEBUG_PANE === null && new URLSearchParams(location.search).get(\"mode\") === \"strange\";"
+    ));
+    assert!(include_str!("../../web/assets/app_debugger.js")
+        .contains("document.documentElement.classList.add(\"strange\");"));
     // The page on screen is the one in gold. `watching-sim` is the
     // engine's own answer to which of the two this is, and until the first
     // observation says so (`seat-known`) neither is lit. Every top-level
     // link is there from the start, so no rule hides one any more.
     assert!(EMBEDDED_INDEX.contains(concat!(
         "  body.watching-sim #watchlink,\n",
-        "  html.seat-known body:not(.watching-sim) #playlink {\n",
+        "  html.seat-known:not(.strange) body:not(.watching-sim) #playlink,\n",
+        "  html.seat-known.strange body:not(.watching-sim) #strangelink {\n",
         "    color: #17130c; border-color: #efd184;\n",
         "    background: linear-gradient(145deg, #dec176, #aa7d30);\n",
         "  }",
     )));
     for hides in [
         "#playlink { display: none; }",
+        "#strangelink { display: none; }",
         "#watchlink { display: none; }",
     ] {
         assert!(
@@ -2272,6 +2292,12 @@ fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
         "  .head-links > #tourlink { grid-column: span 6; }\n",
         "  .head-links > #watchlink { grid-column: span 4; }\n",
     )));
+    // Doctor Strange's Civ 6 is the one name longer than half a row and has
+    // a row of its own, and so do the two it stands between, which would
+    // each be left alone on half of one.
+    assert!(EMBEDDED_INDEX.contains(
+        "  .head-links > #playlink, .head-links > #strangelink, .head-links > #civ6link { grid-column: 1 / -1; }\n"
+    ));
     for gone in [
         ".head-links > :last-child:nth-child(odd)",
         ".head-links > #playlink { grid-column: span 6; }",
@@ -2473,6 +2499,8 @@ fn the_home_page_lists_the_sites_with_itself_in_gold() {
             "title=\"Every civilization is played by a CIVVIS AI agent.\">CIVVIS</a>\n",
             "        <a class=\"site-link\" href=\"../?mode=play\" ",
             "title=\"You play one civilization. CIVVIS AI agents play the rest.\">AI Debugger</a>\n",
+            "        <a class=\"site-link\" href=\"../?mode=strange\" ",
+            "title=\"One world, two timelines: the same game played two ways, side by side, on a timeline that branches.\">Doctor Strange's Civ 6</a>\n",
             "        <a class=\"site-link\" ",
             "href=\"https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/\" ",
             "target=\"_blank\" rel=\"noopener\" title=\"Buy Civilization VI on Steam\">Civ 6</a>\n",
