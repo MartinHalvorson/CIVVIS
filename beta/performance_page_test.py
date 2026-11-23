@@ -411,7 +411,9 @@ class ThePage(unittest.TestCase):
         self.assertNotIn("youtube-nocookie", MARKUP)
         press = PAGE[PAGE.index('poster.addEventListener("click"'):]
         self.assertLess(press.index('el("iframe")'), press.index("poster.replaceWith(frame);"))
-        self.assertIn('"https://www.youtube-nocookie.com/embed/" + record.id + "?autoplay=1&rel=0&playsinline=1"', press)
+        # It loops for as long as the page is open (operator 2026-11-23:
+        # "please have the vido on the website all loop indefinitely").
+        self.assertIn('"https://www.youtube-nocookie.com/embed/" + record.id + "?autoplay=1&rel=0&playsinline=1&loop=1&playlist=" + record.id;', press)
         # A press that asks for a new tab is the link it is.
         self.assertIn("if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button) return;", press)
         self.assertIn('<a class="perf-poster" id="perf-poster" target="_blank" rel="noreferrer">', PAGE)

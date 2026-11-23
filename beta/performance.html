@@ -1017,13 +1017,16 @@
         if (!picture.dataset.plain) { picture.dataset.plain = "1"; picture.src = "https://i.ytimg.com/vi/" + record.id + "/hqdefault.jpg"; }
       });
       picture.src = "https://i.ytimg.com/vi_webp/" + record.id + "/hq720.webp";
-      // Pressed, the picture gives its place to the video's player. A press
-      // that asks for a new tab or window is the link it is, to YouTube.
+      // Pressed, the picture gives its place to the video's player, which
+      // loops for as long as the page is open (operator 2026-11-23: "please
+      // have the vido on the website all loop indefinitely"; YouTube loops a
+      // video that is its own playlist). A press that asks for a new tab or
+      // window is the link it is, to YouTube.
       poster.addEventListener("click", (event) => {
         if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button) return;
         event.preventDefault();
         const player = el("iframe");
-        player.src = "https://www.youtube-nocookie.com/embed/" + record.id + "?autoplay=1&rel=0&playsinline=1";
+        player.src = "https://www.youtube-nocookie.com/embed/" + record.id + "?autoplay=1&rel=0&playsinline=1&loop=1&playlist=" + record.id;
         player.title = record.title;
         player.allow = "autoplay; encrypted-media; picture-in-picture; fullscreen";
         player.allowFullscreen = true;
