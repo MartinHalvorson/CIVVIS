@@ -8013,7 +8013,7 @@ fn browser_orders_controls_interface_setup_and_logs() {
     for tag in [
         "<details class=\"sidebar-section\" data-section=\"display-settings\" name=\"deck-section\">",
         "<details class=\"sidebar-section\" id=\"setupsec\" data-section=\"game-settings\" name=\"deck-section\">",
-        "<details class=\"sidebar-section\" id=\"politicssec\" data-section=\"world-politics-v3\" open name=\"deck-section\">",
+        "<details class=\"sidebar-section\" id=\"politicssec\" data-section=\"world-politics-v4\" name=\"deck-section\">",
         "<details class=\"sidebar-section\" id=\"strategysec\" data-section=\"active-strategy\" name=\"deck-section\">",
         "<details class=\"sidebar-section\" id=\"warsec\" data-section=\"war-log\" name=\"deck-section\">",
         "<details class=\"sidebar-section\" id=\"eventsec\" data-section=\"event-log\" name=\"deck-section\">",
@@ -10856,7 +10856,7 @@ fn browser_minimap_highlights_the_camera_footprint_for_both_map_shapes() {
 }
 
 #[test]
-fn world_politics_sits_under_game_setup_and_opens_by_default() {
+fn world_politics_sits_under_game_setup_and_starts_closed() {
     let setup = EMBEDDED_INDEX.find("id=\"setupsec\"").expect("Game setup");
     let politics = EMBEDDED_INDEX
         .find("id=\"politicssec\"")
@@ -10866,20 +10866,20 @@ fn world_politics_sits_under_game_setup_and_opens_by_default() {
         .expect("AI strategy");
     assert!(setup < politics && politics < strategy);
     assert!(EMBEDDED_INDEX.contains("<span>World politics</span>"));
-    // World politics is the one section of the deck that opens by itself.
+    // No section of the deck opens by itself, World politics included.
     assert_eq!(
         EMBEDDED_INDEX
             .matches(" open name=\"deck-section\">")
             .count(),
-        1
+        0
     );
-    assert!(
-        EMBEDDED_INDEX.contains("id=\"politicssec\" data-section=\"world-politics-v3\" open name=")
-    );
-    // A saved value beats the markup. Browsers saved the first key open and the
-    // second shut while each was the default, so neither may come back.
+    assert!(EMBEDDED_INDEX.contains("id=\"politicssec\" data-section=\"world-politics-v4\" name="));
+    // A saved value beats the markup, and every load saves what it showed, so
+    // a default change needs a new key. Browsers saved the first and third keys
+    // open and the second shut while each was the default: none may come back.
     assert!(!EMBEDDED_INDEX.contains("data-section=\"world-politics\""));
     assert!(!EMBEDDED_INDEX.contains("data-section=\"world-politics-v2\""));
+    assert!(!EMBEDDED_INDEX.contains("data-section=\"world-politics-v3\""));
     // A section the reader left open still outranks the default.
     assert!(EMBEDDED_INDEX.contains(
         "let open = section.open && !(keptOpen && section.classList.contains(\"sidebar-section\"));"

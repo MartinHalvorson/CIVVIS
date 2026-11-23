@@ -28,8 +28,8 @@ const PLANET_GPU_MAP_STATS = {frames:0, nearFrames:0, fullBakes:0, faceBakes:0, 
 let PLANET_GPU = null;
 // The command deck's scrolling sections — Display Settings, Game setup, World
 // politics, AI strategy, War log, Game event log, Government — are one
-// accordion: at most one is open at a time, and none is fine. World politics
-// opens by itself; a section the reader left open keeps its place over it. Opening a section closes whichever
+// accordion: at most one is open at a time, and none is fine. Every section
+// starts closed; the reader's saved choice wins after that. Opening a section closes whichever
 // other one was open, so two long logs never stack and push a third off the
 // bottom of the deck. The markup asks the browser for the same rule natively
 // (one `name="deck-section"` shared by their `<details>` tags); this closes
