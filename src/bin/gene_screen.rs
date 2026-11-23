@@ -1378,6 +1378,20 @@ struct Row {
     alive: bool,
     /// Whole-game wall seconds; every seat of one game carries the same value.
     secs: f64,
+    /// CPU seconds the game's own thread spent playing it, where the platform
+    /// says ([`thread_cpu_seconds`]); every seat of one game carries the same
+    /// value.
+    ///
+    /// ★ WALL SECONDS COUNT THE TIME A WORKER STOOD STOPPED. A tournament that
+    /// shares its host is paused by a governor
+    /// (`tools/continuous_batch_scheduler.py`), and since 2026-11-22 that
+    /// governor stops whole workers: one game waits minutes and its neighbour
+    /// not at all, so `secs` says how long the host was busy as much as what
+    /// the genome cost. This does not move while the thread is stopped or
+    /// waiting for a core. The cost columns are fitted on it whenever every
+    /// timed game carries it ([`cost_clock`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    cpu_secs: Option<f64>,
     /// ★ WHY THE SEAT LOST, NOT ONLY THAT IT DID. The first native runs said
     /// two thirds of games ended by RELIGIOUS conversion at a median of turn
     /// 149 — the single largest failure mode on the board — and the rows could
@@ -2877,6 +2891,7 @@ fn play_game(
     genomes: &[Vec<bool>],
 ) -> Vec<Row> {
     let started = Instant::now();
+    let cpu_started = thread_cpu_seconds();
     // ⭐ THE MASK IS PER GAME, FROM THE SEED: the batch-level set minus the
     // lanes this game's mask closes, score always on.
     let closed: Vec<String> = profile
@@ -3226,6 +3241,9 @@ fn play_game(
         }
     }
     let secs = started.elapsed().as_secs_f64();
+    let cpu_secs = cpu_started
+        .zip(thread_cpu_seconds())
+        .map(|(from, to)| to - from);
     majors
         .iter()
         .enumerate()
@@ -3244,6 +3262,7 @@ fn play_game(
                 },
                 secs,
             );
+            row.cpu_secs = cpu_secs;
             row.victories_off = closed.clone();
             row.trajectory = trajectories[seat].clone();
             row.trace = std::mem::take(&mut traces[seat]);
@@ -3430,6 +3449,7 @@ fn row_for_seat(
         cities: game.player_city_ids(seat).len(),
         alive: game.players[seat].alive,
         secs,
+        cpu_secs: None,
         founded_religion: religion.is_some(),
         foreign_faith_cities,
         faith: game.players[seat].faith,
@@ -4412,6 +4432,94 @@ fn adjusted_cost_effects(counts: &[Vec<f64>], y: &[f64]) -> Vec<Option<(f64, f64
         .collect()
 }
 
+/// Which of a row's two timings the cost columns are fitted on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CostClock {
+    /// The game thread's CPU seconds (`Row::cpu_secs`).
+    Cpu,
+    /// Whole-game wall seconds (`Row::secs`): every file written before the
+    /// rows carried CPU seconds, and any platform that cannot report them.
+    Wall,
+}
+
+impl CostClock {
+    fn name(self) -> &'static str {
+        match self {
+            CostClock::Cpu => "cpu",
+            CostClock::Wall => "wall",
+        }
+    }
+
+    /// The row's seconds on this clock, when it has a usable timing at all.
+    fn seconds(self, row: &Row) -> Option<f64> {
+        let usable = |seconds: f64| seconds.is_finite() && seconds > 0.0;
+        if !usable(row.secs) || row.turn == 0 {
+            return None;
+        }
+        match self {
+            CostClock::Cpu => row.cpu_secs.filter(|seconds| usable(*seconds)),
+            CostClock::Wall => Some(row.secs),
+        }
+    }
+}
+
+/// CPU seconds when every timed game carries them, else wall seconds for all.
+///
+/// One clock for the whole fit, never a mixture: a file that joins rows from
+/// before and after the CPU column would otherwise regress two different
+/// quantities as one.
+fn cost_clock(rows: &[Row]) -> CostClock {
+    let mut timed = rows
+        .iter()
+        .filter(|row| CostClock::Wall.seconds(row).is_some())
+        .peekable();
+    if timed.peek().is_some() && timed.all(|row| CostClock::Cpu.seconds(row).is_some()) {
+        CostClock::Cpu
+    } else {
+        CostClock::Wall
+    }
+}
+
+/// CPU seconds this thread has used so far, where the platform can say.
+///
+/// A game is played from its first turn to its last on the thread that calls
+/// `play_game`, so the difference of two readings is what the game cost
+/// that thread. Unlike a wall clock it does not run while the thread is
+/// stopped by a signal or waits for a core.
+#[cfg(all(
+    any(target_os = "macos", target_os = "linux"),
+    target_pointer_width = "64"
+))]
+fn thread_cpu_seconds() -> Option<f64> {
+    /// `struct timespec` on 64-bit macOS and Linux: two 64-bit integers.
+    #[repr(C)]
+    struct Timespec {
+        seconds: i64,
+        nanoseconds: i64,
+    }
+    extern "C" {
+        fn clock_gettime(clock: std::ffi::c_int, time: *mut Timespec) -> std::ffi::c_int;
+    }
+    /// `CLOCK_THREAD_CPUTIME_ID` in each platform's `<time.h>`.
+    const THREAD_CPU: std::ffi::c_int = if cfg!(target_os = "macos") { 16 } else { 3 };
+    let mut time = Timespec {
+        seconds: 0,
+        nanoseconds: 0,
+    };
+    // SAFETY: `clock_gettime` writes one `timespec` through the pointer, which
+    // is valid and exclusively ours for the call, and keeps nothing.
+    let status = unsafe { clock_gettime(THREAD_CPU, &mut time) };
+    (status == 0).then(|| time.seconds as f64 + time.nanoseconds as f64 * 1e-9)
+}
+
+#[cfg(not(all(
+    any(target_os = "macos", target_os = "linux"),
+    target_pointer_width = "64"
+)))]
+fn thread_cpu_seconds() -> Option<f64> {
+    None
+}
+
 /// Estimate the incremental runtime cost of enabling every screened gene from
 /// the screen rows that already exist. No heuristic is timed in its hot path
 /// and no profiling-only game is required.
@@ -4422,23 +4530,26 @@ fn adjusted_cost_effects(counts: &[Vec<f64>], y: &[f64]) -> Vec<Option<(f64, f64
 /// duplicate timings.
 ///
 /// `compute` is seconds per completed turn: it answers whether the simulation
-/// does more wall-clock work at the same game length. `time` is whole-game
-/// seconds: it is the throughput impact operators actually pay, including a
-/// gene that reaches the same victory in more or fewer turns.
+/// does more work at the same game length. `time` is whole-game seconds: it
+/// is the throughput impact operators actually pay, including a gene that
+/// reaches the same victory in more or fewer turns. Both are read on one
+/// clock, [`cost_clock`]: the game thread's CPU seconds when every timed game
+/// carries them, else wall seconds.
 fn estimate_costs(header: &Header, rows: &[Row]) -> BTreeMap<String, CostEstimate> {
     let seats = Seats::of(header, rows);
     let width = seats.columns.len();
+    let clock = cost_clock(rows);
     // key -> (count of seats with each gene on, compute log, time log)
     let mut games: BTreeMap<GameKey, (Vec<f64>, f64, f64)> = BTreeMap::new();
     for ((row, signs), key) in seats.rows.iter().zip(&seats.signs).zip(&seats.clusters) {
-        if !(row.secs.is_finite() && row.secs > 0.0) || row.turn == 0 {
+        let Some(seconds) = clock.seconds(row) else {
             continue;
-        }
+        };
         let game = games.entry(*key).or_insert_with(|| {
             (
                 vec![0.0; width],
-                (row.secs / f64::from(row.turn)).ln(),
-                row.secs.ln(),
+                (seconds / f64::from(row.turn)).ln(),
+                seconds.ln(),
             )
         });
         for (count, sign) in game.0.iter_mut().zip(signs) {
@@ -5635,6 +5746,8 @@ fn write_json_summary(path: &str, header: &Header, rows: &[Row]) {
         },
         "seats": estimates.seats,
         "games": estimates.games,
+        // Which timing `compute_cost_pct` and `time_cost_pct` were fitted on.
+        "cost_clock": cost_clock(rows).name(),
         "endings": ending_census(rows),
         "drift": drift_meter(rows).map(|meter| meter.json()),
         "victory_masks": mask_report(header, rows).map(|report| report.json()),
@@ -8324,6 +8437,7 @@ mod tests {
             cities: 0,
             alive: true,
             secs: 0.0,
+            cpu_secs: None,
             founded_religion: false,
             foreign_faith_cities: 0,
             faith: 0.0,
@@ -8863,6 +8977,71 @@ mod tests {
         let g1 = costs.get("g1").expect("gene 1 priced");
         assert!(g1.compute_pct().abs() < 0.05, "{}", g1.compute_pct());
         assert_eq!(g0.games, 400);
+    }
+
+    /// A stopped worker's game has long wall seconds and ordinary CPU seconds:
+    /// when every timed game carries CPU seconds the cost is read on those,
+    /// and one row without them sends the whole fit back to the wall clock.
+    #[test]
+    fn timing_cost_reads_cpu_seconds_when_every_game_has_them() {
+        let (header, mut rows) = synthetic(2, 400, |bits, _| (bits[0], 0.3));
+        let mut on_count: BTreeMap<GameKey, usize> = BTreeMap::new();
+        for row in &rows {
+            *on_count.entry(row.game_key()).or_default() += usize::from(row.bits()[0]);
+        }
+        let keys: Vec<GameKey> = on_count.keys().copied().collect();
+        for row in rows.iter_mut() {
+            let n = on_count[&row.game_key()] as f64;
+            let game = keys.iter().position(|key| *key == row.game_key()).unwrap();
+            row.turn = 100;
+            // +10% CPU per enabled seat on gene 0. Every third game with the
+            // gene on nowhere stood stopped for ten minutes of wall time.
+            let cpu = 50.0 * 1.10f64.powf(n);
+            let stopped = if n == 0.0 && game % 3 == 0 {
+                600.0
+            } else {
+                0.0
+            };
+            row.cpu_secs = Some(cpu);
+            row.secs = cpu + stopped;
+        }
+        assert_eq!(cost_clock(&rows), CostClock::Cpu);
+        let costs = estimate_costs(&header, &rows);
+        let g0 = costs.get("g0").expect("gene 0 priced");
+        assert!(
+            (g0.compute_pct() - 10.0).abs() < 0.05,
+            "{}",
+            g0.compute_pct()
+        );
+        // The same rows on the wall clock: the stopped games make the gene
+        // look cheap.
+        rows[0].cpu_secs = None;
+        assert_eq!(cost_clock(&rows), CostClock::Wall);
+        let wall = estimate_costs(&header, &rows);
+        assert!(
+            wall["g0"].compute_pct() < 5.0,
+            "{}",
+            wall["g0"].compute_pct()
+        );
+    }
+
+    /// The thread clock runs while the thread computes and not while it
+    /// sleeps.
+    #[test]
+    fn thread_cpu_seconds_count_work_not_waiting() {
+        let Some(before) = thread_cpu_seconds() else {
+            return; // a platform without the clock writes rows without the column
+        };
+        std::thread::sleep(std::time::Duration::from_millis(60));
+        let slept = thread_cpu_seconds().unwrap() - before;
+        assert!((0.0..0.03).contains(&slept), "sleeping cost {slept} CPU s");
+        let started = Instant::now();
+        let mut sum = 0u64;
+        while started.elapsed().as_millis() < 60 {
+            sum = std::hint::black_box(sum.wrapping_mul(31).wrapping_add(7));
+        }
+        let worked = thread_cpu_seconds().unwrap() - before - slept;
+        assert!(worked > 0.02, "60 ms of work read {worked} CPU s");
     }
 
     /// Rows without a timing publish no cost guess.
