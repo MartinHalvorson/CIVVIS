@@ -665,6 +665,10 @@ impl AdvancedAi {
         /// after turns of asking stands aside; see
         /// `advanced/pillaged_repairs_first.rs`.
         stuck_repair_yields_the_queue => enable_stuck_repair_yields_the_queue, disable_stuck_repair_yields_the_queue;
+        /// Opt-in gene `settler-brake-counts-the-wanderer`: a wandering
+        /// Settler closes the pipeline; see
+        /// `advanced/settler_brake_counts_the_wanderer.rs`.
+        settler_brake_counts_the_wanderer => enable_settler_brake_counts_the_wanderer, disable_settler_brake_counts_the_wanderer;
         // ---- append: t-z --------------------------------------------
         /// Opt-in gene `theology-fights-count-the-host-edge`; see
         /// `advanced/theology_fights.rs`.
