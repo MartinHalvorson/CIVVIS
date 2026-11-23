@@ -21,7 +21,9 @@ CLI / HTTP server / browser / WASM / evaluation tools
   directory for validation and mod work.
 - **World generation** — `src/mapgen.rs`, `src/world.rs`, `src/fractal.rs`, and
   `src/sphere.rs`. Flat maps and geodesic Planet worlds share the same `Pos` and
-  adjacency-facing game APIs.
+  adjacency-facing game APIs. The six world types Civilization VI ships are
+  drawn by a port of its own map scripts in `src/mapgen/shipped/`, held to the
+  scripts' output by the fixtures beside it.
 - **Game** — `src/game.rs`, with `src/game/` beside it. `Game` owns
   authoritative state: players, map,
   units, cities, diplomacy, victory state, event log, and the serialized RNG.

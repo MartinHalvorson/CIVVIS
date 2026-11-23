@@ -1590,7 +1590,8 @@ fn barbarian_camps_open_with_fortified_guards_and_recon() {
 
 #[test]
 fn alerted_naval_barbarian_camps_reconnoiter_and_produce_ships() {
-    let mut game = Game::new_full(1, 44, 30, 88_101, 100, 0, true);
+    let seed = crate::rng::fixture_seed("NAVALCAMP", 88_102);
+    let mut game = Game::new_full(1, 44, 30, seed, 100, 0, true);
     let barbarian = game.barb_pid.unwrap();
 
     // Strip the generated world to one controlled outpost, retaining the

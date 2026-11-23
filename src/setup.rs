@@ -621,11 +621,19 @@ impl MapScript {
     /// as the generator aims for it. Fjords includes its mountain terrain in
     /// this total; its separate relief profile divides that sixty percent into
     /// forty percent ordinary land and twenty percent mountains.
+    ///
+    /// The six types the game ships are drawn by its own scripts, which aim at
+    /// a sea level rather than a land share, so theirs are measured rather
+    /// than chosen: each is midway between what the script leaves on a flat
+    /// map and what the same world comes to wrapped round a globe, where the
+    /// polar rows shrink. Continents is 35% on a flat map and 43% on a globe,
+    /// Pangaea 40% and 49%, Small Continents 36% and 40%, Islands 32% and 34%,
+    /// Inland Sea 84% and 76%, Lakes 88% and 90%.
     pub const fn land_percent(self) -> u32 {
         match self {
             Self::LandOnly => 95,
-            Self::Lakes => 81,
-            Self::InlandSea => 68,
+            Self::Lakes => 88,
+            Self::InlandSea => 80,
             // The seam is the world's only ordinary water on a flat map. A
             // globe also holds its pentagons and, with poles, its caps out of
             // the ground, so this is the share both shapes come out near.
@@ -640,17 +648,17 @@ impl MapScript {
             // its rim: see `mapgen::CANAL_BLOCK_LAND_TILES`, which is the
             // number this one is measured from rather than chosen against.
             Self::GrandCanalsTwo => 44,
-            Self::Pangaea => 42,
+            Self::Pangaea => 44,
             // Both Earth choices sample the same fixed geography. The only
             // difference is where their civilizations begin.
             Self::Earth | Self::TrueStartEarth => 29,
-            Self::Continents => 42,
-            Self::SmallContinents => 36,
+            Self::Continents => 39,
+            Self::SmallContinents => 38,
             // Forty percent open water, forty percent ordinary land, and
             // twenty percent mountains. Mountains are land in the generator,
             // so this is sixty percent total non-water terrain.
             Self::Fjords => 60,
-            Self::Islands => 22,
+            Self::Islands => 33,
             Self::WaterWorld => 5,
             // Ground everywhere except the one-column seam that seals the
             // cylinder's east-west wrap into a bounded arena, plus a pond or

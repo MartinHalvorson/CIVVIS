@@ -3524,7 +3524,8 @@ fn outgunned_at_war_fixture() -> (Game, AdvancedAi) {
 }
 
 fn recovery_hostile_side_fixture() -> Game {
-    let mut game = Game::new(4, 80, 40, 5_151, 250, 0);
+    let seed = crate::rng::fixture_seed("RECOVERYSIDE", 5_152);
+    let mut game = Game::new(4, 80, 40, seed, 250, 0);
     game.turn = 80;
     game.found_city_for(0, (10, 20), None);
     game.found_city_for(1, (18, 20), None);
@@ -8675,6 +8676,9 @@ fn support_search_builds_air_defense_only_for_a_real_hostile_air_threat() {
 /// Build a game with player 0's capital founded, every other unit of its
 /// cleared away, and a declared war so force orders are built at all.
 fn empire_with_a_capital(seed: u64) -> (Game, u32, Pos) {
+    // `CIVVIS_FIXTURE_SEED_EMPIRE<seed>` re-picks one caller's world without
+    // touching the hundred others that share this fixture.
+    let seed = crate::rng::fixture_seed(&format!("EMPIRE{seed}"), seed);
     let mut game = Game::new_full(2, 74, 46, seed, 200, 0, false);
     game.current = 0;
     let settler = game
@@ -10721,7 +10725,7 @@ fn science_bankruptcy_banks_a_spy_queue_and_preserves_victory_and_defence() {
 #[test]
 fn colonization_earns_its_slot_2_weighs_the_builder_cards_too() {
     let setup = |version: u8| {
-        let (mut game, city, _) = empire_with_a_capital(79_101);
+        let (mut game, city, _) = empire_with_a_capital(79_125);
         game.cities.get_mut(&city).unwrap().pop = 3;
         game.players[0].government = Some("chiefdom".to_string());
         game.players[0].civics.extend([
