@@ -1017,6 +1017,104 @@ console.log("hud window checks passed");
 """
 
 
+TURN_GAUGE_SCENARIOS = r"""
+let state = {};
+__CLOCK__
+const eq = (actual, wanted, note) => {
+  if (JSON.stringify(actual) !== JSON.stringify(wanted))
+    throw new Error(`${note}: got ${JSON.stringify(actual)}, wanted ${JSON.stringify(wanted)}`);
+};
+const rise = () => {
+  const fill = /<i style="height:([\d.]+)%"><\/i>/.exec(turnGauge());
+  return fill ? +fill[1] : null;
+};
+// The operator's two ends: the bottom on turn 1 of 250, the top on turn 250.
+state = {turn:1, turn_limit:250}; eq(rise(), 0, "turn 1 of 250");
+state = {turn:250, turn_limit:250}; eq(rise(), 100, "the last turn");
+// A server that sends only max_turns is read the way the turn plate reads it.
+state = {turn:126, max_turns:251}; eq(rise(), 50, "halfway");
+// It rises on every turn of the game and never falls.
+let last = -1;
+for (let turn = 1; turn <= 250; turn++) {
+  state = {turn, turn_limit:250};
+  const now = rise();
+  if (!(now > last)) throw new Error(`turn ${turn} stands at ${now}, no higher than ${last}`);
+  last = now;
+}
+// A score game is settled on the wrap out of its final turn: the bar reads the
+// turn it was won on, and nothing takes it past the top or under the bottom.
+state = {turn:251, victory_turn:250, turn_limit:250}; eq(rise(), 100, "a finished game");
+state = {turn:300, turn_limit:250}; eq(rise(), 100, "past the cap");
+state = {turn:0, turn_limit:250}; eq(rise(), 0, "before the first turn");
+// A game won early stops where it was won.
+state = {turn:181, victory_turn:180, turn_limit:250}; eq(rise(), 71.89, "won on turn 180");
+// No cap, nothing to rise toward: no bar at all.
+state = {turn:40, turn_limit:null, max_turns:250}; eq(turnGauge(), "", "an uncapped world");
+state = {turn:40, turn_limit:100000}; eq(turnGauge(), "", "a cap nobody reaches");
+state = {turn:1, turn_limit:1}; eq(turnGauge(), "", "a one-turn world");
+// It says which turn it stands on, to a pointer and to a screen reader.
+state = {turn:37, turn_limit:250};
+for (const part of ['title="Turn 37 of 250"', 'role="progressbar"', 'aria-valuemin="1"',
+                    'aria-valuemax="250"', 'aria-valuenow="37"', 'data-key="turn-gauge"'])
+  if (!turnGauge().includes(part)) throw new Error(`the bar does not carry ${part}: ${turnGauge()}`);
+console.log("turn gauge checks passed");
+"""
+
+
+@unittest.skipUnless(NODE, "no node on this host; CI runners have one")
+class AGoldBarRisesUpTheVictoryTrackerWithTheTurn(unittest.TestCase):
+    """Operator, 2026-11-23: "on the left side of the victory tracker, add a
+    rising gold bar. starts at the bottom when turn is 1 of 250 and rises
+    throughout the game. tasteful. not too big." """
+
+    def test_the_bar_stands_where_the_turn_is(self):
+        source = (ASSETS / "app.js").read_text(encoding="utf-8")
+        clock = source[source.index("function reportedTurn("):
+                       source.index("function victoryMeterFill(")]
+        self.assertIn("function turnGauge()", clock)
+        done = subprocess.run([NODE, "-e", TURN_GAUGE_SCENARIOS.replace("__CLOCK__", clock)],
+                              capture_output=True, text=True, timeout=60)
+        self.assertEqual(done.returncode, 0, done.stderr.strip())
+        self.assertIn("turn gauge checks passed", done.stdout)
+
+    def test_it_is_the_trackers_own_left_column(self):
+        source = (ASSETS / "app.js").read_text(encoding="utf-8")
+        overview = source[source.index("function playerHudOverview()"):]
+        overview = overview[:overview.index("\n}\n")]
+        # Drawn once, inside the tracker's box and outside the rail that
+        # scrolls, so the paths cannot carry it away.
+        self.assertEqual(source.count("turnGauge()"), 2)
+        region = overview.index('<section class="hud-region victory-region"')
+        gauge = overview.index("turnGauge() +")
+        rail = overview.index('<div class="hud-rail"')
+        self.assertLess(region, gauge)
+        self.assertLess(gauge, rail)
+        page = INDEX.read_text(encoding="utf-8")
+        style = page[page.index("  #victoryhud > .victory-region {\n    display: grid;"):]
+        style = style[:style.index("@media (prefers-reduced-motion: reduce) { .turn-gauge")]
+        # The bar's column is as wide as the bar and no wider without one; the
+        # heading and the "Off" line span both columns, the bar and the rail
+        # share the row under them.
+        self.assertIn("grid-template-columns: auto minmax(0, 1fr);", style)
+        self.assertIn("#victoryhud > .victory-region > .hud-region-bar { grid-area: 1 / 1 / 2 / -1; }", style)
+        self.assertIn("#victoryhud > .victory-region > .victory-off-note { grid-area: 2 / 1 / 3 / -1; }", style)
+        self.assertIn("#victoryhud > .victory-region > .hud-rail { grid-area: 3 / 2; }", style)
+        gauge_rule = style[style.index("  .turn-gauge {"):]
+        gauge_rule = gauge_rule[:gauge_rule.index("}")]
+        self.assertIn("grid-area: 3 / 1;", gauge_rule)
+        # Not too big: three pixels of bar.
+        self.assertIn("width: 3px;", gauge_rule)
+        # Gold, and filled from the bottom up, with a seed of it showing at the
+        # foot on turn 1.
+        fill = style[style.index("  .turn-gauge > i {"):]
+        fill = fill[:fill.index("}")]
+        self.assertIn("inset: auto 0 0;", fill)
+        self.assertIn("min-height: 2px;", fill)
+        self.assertIn("var(--gold-bright)", fill)
+        # A folded tracker folds the bar away with its paths.
+        self.assertIn("#victoryhud.victory-collapsed .turn-gauge { display: none; }", style)
+
+
 @unittest.skipUnless(NODE, "no node on this host; CI runners have one")
 class AHundredSeatMastheadStaysOnItsShare(unittest.TestCase):
     """Operator, 2026-11-09: the player HUD should cap "such that it isn't taking

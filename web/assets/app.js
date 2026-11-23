@@ -27361,6 +27361,24 @@ function turnCapLabel() {
   return cap > 0 && cap < 100000 ? String(cap) : "∞";
 }
 
+// The game's own clock, up the victory tracker's left edge (operator,
+// 2026-11-23: "a rising gold bar. starts at the bottom when turn is 1 of 250
+// and rises throughout the game"): no height on turn 1, where the stylesheet
+// keeps a two-pixel seed of it at the foot, and the whole edge on the last
+// turn. It reads the cap the turn plate prints, so "of 250" there and the top
+// of the bar here are the same turn. A world with no cap has nothing to rise
+// toward, and draws no bar.
+function turnGauge() {
+  const cap = Number(turnCapLabel());
+  if (!(cap > 1)) return "";
+  const turn = Math.min(cap, Math.max(1, Math.floor(+reportedTurn()) || 1));
+  const rise = +((turn - 1) / (cap - 1) * 100).toFixed(2);
+  return `<div class="turn-gauge" data-key="turn-gauge" role="progressbar" aria-label="Game progress" ` +
+    `aria-valuemin="1" aria-valuemax="${cap}" aria-valuenow="${turn}" ` +
+    `aria-valuetext="Turn ${turn} of ${cap}" title="Turn ${turn} of ${cap}">` +
+    `<i style="height:${rise}%"></i></div>`;
+}
+
 // The meter under each civilization. Most races are one number against one
 // target; science and culture are two, and are drawn as two half-width
 // meters. Their researched trees fill against the whole tree, so a half that
@@ -28000,6 +28018,7 @@ function playerHudOverview() {
     `aria-orientation="horizontal" aria-label="Simulation stats height; drag or use arrow keys, double-click resets" ` +
     `title="Drag to divide the panel · double-click resets"></button>` +
     `<section class="hud-region victory-region" data-key="victory" aria-labelledby="victory-tracker-title">` +
+    turnGauge() +
     `<div class="hud-region-bar">` +
     `<div class="hud-section-heading widget-drag-handle" data-widget-drag tabindex="0" role="button" ` +
     `aria-label="Move victory tracker; use arrow keys or drag" title="Drag to move · arrow keys also move" id="victory-tracker-title">` +
