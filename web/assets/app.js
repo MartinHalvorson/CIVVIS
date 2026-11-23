@@ -33804,8 +33804,10 @@ function releaseWatchedWar() {
 // order so nobody's place moves as the game goes on. A pact or a war belongs to
 // the pair and is written in both of its cells. Otherwise a cell holds what its
 // row's leader makes of its column's, which the other leader need not share.
-// A column wears its civilization's colour instead of a name, and meets that
-// civilization's row on the diagonal. The engine reports the pairs; the War log below keeps the history. The
+// A column wears its civilization's colour under its name, set upright along
+// the top, and meets that civilization's row on the diagonal. Every other cell
+// is a step off its column's colour, so the board reads as a checkerboard.
+// The engine reports the pairs; the War log below keeps the history. The
 // heading's count is cheap and always current, and the table is built only
 // while somebody can see it.
 const WORLD_POLITICS_MARKS = [
@@ -33854,23 +33856,27 @@ function worldPoliticsMatrix(civs, bonds, wars, attitudes) {
   for (const war of wars) place(war, worldPoliticsWarTie(war));
   const seat = new Map((attitudes.civs || []).map((id, index) => [id, index]));
   const jersey = id => `--civ:${pcol(id)};--civ-trim:${pcol2(id)}`;
-  const rows = civs.map(row => {
+  const plate = id => `<span class="politics-name" style="${jersey(id)};` +
+    `--civ-ink:${hudJerseyInk(id)}">${warEntityLink(id)}</span>`;
+  const rows = civs.map((row, r) => {
     const stances = attitudes.rows?.[seat.get(row.id)] || "";
-    const cells = civs.map(column => {
+    const cells = civs.map((column, c) => {
       if (column.id === row.id) return `<td class="self" style="${jersey(row.id)}"></td>`;
+      const check = (r + c) % 2 ? ` class="politics-check" style="--civ:${pcol(column.id)}"` : "";
       const tie = ties.get(`${row.id}:${column.id}`);
-      if (tie) return `<td title="${escapeAttr(`${row.civ} and ${column.civ}: ${tie.text}`)}">${tie.mark}</td>`;
+      if (tie) return `<td${check} title="${escapeAttr(`${row.civ} and ${column.civ}: ${tie.text}`)}">${tie.mark}</td>`;
       const kind = WORLD_POLITICS_ATTITUDES[stances[seat.get(column.id)]];
-      if (!kind) return `<td></td>`;
+      if (!kind) return `<td${check}></td>`;
       const text = kind === "unmet" ? `${row.civ} and ${column.civ} have not met`
         : `${row.civ} toward ${column.civ}: ${WORLD_POLITICS_LABELS.get(kind)}`;
-      return `<td title="${escapeAttr(text)}">${worldPoliticsMark(kind)}</td>`;
+      return `<td${check} title="${escapeAttr(text)}">${worldPoliticsMark(kind)}</td>`;
     }).join("");
-    return `<tr><th scope="row"><span class="politics-name" style="${jersey(row.id)};` +
-      `--civ-ink:${hudJerseyInk(row.id)}">${warEntityLink(row.id)}</span></th>${cells}</tr>`;
+    return `<tr><th scope="row">${plate(row.id)}</th>${cells}</tr>`;
   }).join("");
   const columns = civs.map(civ => `<col style="--civ:${pcol(civ.id)}">`).join("");
-  return `<table class="politics-matrix"><colgroup><col>${columns}</colgroup><tbody>${rows}</tbody></table>`;
+  const names = civs.map(civ => `<th scope="col">${plate(civ.id)}</th>`).join("");
+  return `<table class="politics-matrix"><colgroup><col>${columns}</colgroup>` +
+    `<thead><tr><th></th>${names}</tr></thead><tbody>${rows}</tbody></table>`;
 }
 // Hovering a row is CSS's to light, but no selector can light a column, or the
 // name of the civilization whose column it is. The column is remembered
@@ -33883,6 +33889,7 @@ function markPoliticsColumn(column) {
   const table = list.querySelector("table");
   if (!table || column < 1) return;
   table.querySelector("colgroup").children[column]?.classList.add("politics-crossed");
+  table.tHead?.rows[0].cells[column]?.classList.add("politics-crossed");
   table.tBodies[0].rows[column - 1]?.cells[0].classList.add("politics-crossed");
 }
 function drawWorldPolitics() {

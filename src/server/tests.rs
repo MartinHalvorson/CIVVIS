@@ -10962,12 +10962,32 @@ fn world_politics_is_one_alphabetical_matrix_with_fixed_labels() {
             .find("<div id=\"worldpolitics\"")
             .expect("table")
     );
-    // Only the rows are named, each on its civilization's plate in both jersey
-    // colours. A column is that civilization's colour in full, the same as the
-    // plate, and meets its row on the diagonal, which adds the trim.
-    assert!(!matrix.contains("<thead>") && !matrix.contains("<tfoot>"));
+    // Rows and columns are both named, each name on its civilization's plate
+    // in both jersey colours: down the side, and upright along the top. A
+    // column is that civilization's colour in full, the same as the plate,
+    // and meets its row on the diagonal, which adds the trim.
+    assert!(
+        matrix.contains("<thead><tr><th></th>${names}</tr></thead>") && !matrix.contains("<tfoot>")
+    );
     assert!(matrix.contains("const jersey = id => `--civ:${pcol(id)};--civ-trim:${pcol2(id)}`;"));
-    assert!(matrix.contains("--civ-ink:${hudJerseyInk(row.id)}"));
+    assert!(matrix.contains("--civ-ink:${hudJerseyInk(id)}"));
+    assert!(matrix.contains("<th scope=\"row\">${plate(row.id)}</th>"));
+    assert!(matrix.contains("civs.map(civ => `<th scope=\"col\">${plate(civ.id)}</th>`)"));
+    assert!(EMBEDDED_INDEX.contains(
+        ".politics-matrix thead th > .politics-name {\n    writing-mode: vertical-rl; rotate: 180deg;"
+    ));
+    assert!(EMBEDDED_INDEX
+        .contains(".politics-matrix thead th {\n    position: sticky; top: 0; z-index: 2;"));
+    assert!(
+        EMBEDDED_INDEX.contains(".politics-matrix thead th:first-child { left: 0; z-index: 3; }")
+    );
+    // The board is checkered: every other cell, never the diagonal, is veiled
+    // toward white on a dark column and toward black on a light one.
+    assert!(matrix.contains(
+        "const check = (r + c) % 2 ? ` class=\"politics-check\" style=\"--civ:${pcol(column.id)}\"` : \"\";"
+    ));
+    assert!(EMBEDDED_INDEX
+        .contains("background: oklch(from var(--civ) clamp(0, (.6 - l) * 100, 1) 0 0 / .24);"));
     assert!(matrix.contains("civs.map(civ => `<col style=\"--civ:${pcol(civ.id)}\">`)"));
     assert!(EMBEDDED_INDEX.contains(".politics-matrix col + col {"));
     assert!(EMBEDDED_INDEX.contains(".politics-matrix col + col { background: var(--civ); }"));
@@ -10983,8 +11003,11 @@ fn world_politics_is_one_alphabetical_matrix_with_fixed_labels() {
         ".politics-matrix .politics-mark::after {\n    content: \"\"; position: absolute; inset: -1.5px; z-index: -2; border-radius: 50%;\n    background: var(--politics-disc);"
     ));
     assert!(EMBEDDED_INDEX.contains("--politics-disc: #0b1513;"));
-    // Pointing at a column lights it and the name of the civilization it is.
+    // Pointing at a column lights it, its name on top and the name of the
+    // civilization it is down the side.
     assert!(EMBEDDED_INDEX.contains("table.tBodies[0].rows[column - 1]?.cells[0]"));
+    assert!(EMBEDDED_INDEX
+        .contains("table.tHead?.rows[0].cells[column]?.classList.add(\"politics-crossed\");"));
     // The slanted column names along the bottom are gone, with their corner.
     for gone in [
         "politics-corner",
@@ -10997,12 +11020,13 @@ fn world_politics_is_one_alphabetical_matrix_with_fixed_labels() {
     }
     assert!(!EMBEDDED_INDEX.contains("politics-legend"));
 
-    // The names stay put while the table scrolls under them. Six rows always
-    // fit, and the labels below stop covering the table while it is open.
+    // The names stay put while the table scrolls under them. The names along
+    // the top and six rows always fit, and the labels below stop covering the
+    // table while it is open.
     assert!(EMBEDDED_INDEX
         .contains(".politics-matrix tbody th {\n    position: sticky; left: 0; z-index: 1;"));
     assert!(EMBEDDED_INDEX.contains(
-        "#side.deck-stops .politics-list { max-height: max(calc(20px + 6 * var(--politics-cell)), calc(var(--deck-window) + var(--stop-bottom) - 112px)); }"
+        "#side.deck-stops .politics-list { max-height: max(calc(20px + var(--politics-head) + 6 * var(--politics-cell)), calc(var(--deck-window) + var(--stop-bottom) - 112px)); }"
     ));
     assert!(EMBEDDED_INDEX.contains(
         "#side.deck-stops #politicssec[open] ~ .sidebar-section:not([open]) { position: static; box-shadow: none; }"
