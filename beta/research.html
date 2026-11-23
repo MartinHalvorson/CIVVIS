@@ -200,20 +200,22 @@
   .res-seg button[aria-pressed="true"] { background: var(--action-bg); color: #fff; }
   .res-seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
   /* The level of Civilization VI's AI: a slider over the games against
-     it, Lv 1 Settler to Lv 8 Deity (operator, 2026-11-22: "civvis vs lv 8
+     it, Lv 4 Prince to Lv 8 Deity (operator, 2026-11-22: "civvis vs lv 8
      deity ai chart should have a lv 1 to lv 8 slider at the top. defaults
-     to 8"). Under the track, the eight levels by number and name, each
-     under its stop: the track runs from the middle of the first name to
-     the middle of the last, so the thumb (18px) stands over the level it
-     is on. All eight are always there, so the scale reads as the game's
-     own ladder; a level with no games is faint, the level chosen white.
-     A scale too narrow for the names shows the numbers alone. */
+     to 8"; 2026-11-23: "ai level in charts can go from lv 4 to lv 8", the
+     levels the benchmark over the page lists). Under the track, the five
+     levels by number and name, each under its stop: the track runs from
+     the middle of the first name to the middle of the last, so the thumb
+     (18px) stands over the level it is on. All five are always there; a
+     level with no games is faint, the level chosen white. A scale too
+     narrow for the names (under 52px a stop, as it was with eight) shows
+     the numbers alone. */
   .res-level { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 0 10px; margin: 0 0 10px; }
   .res-level > label { color: var(--faint); font-size: 12px; line-height: 20px; white-space: nowrap; }
   .res-level-scale { display: grid; min-width: 0; container-type: inline-size; }
   #res-level {
     -webkit-appearance: none; appearance: none; box-sizing: border-box;
-    width: calc(87.5% + 18px); height: 20px; margin: 0 calc(6.25% - 9px); padding: 0;
+    width: calc(80% + 18px); height: 20px; margin: 0 calc(10% - 9px); padding: 0;
     background: transparent; cursor: pointer;
   }
   #res-level::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: var(--border-strong); }
@@ -226,7 +228,7 @@
   #res-level:hover::-webkit-slider-thumb { background: var(--action-hover); }
   #res-level:hover::-moz-range-thumb { background: var(--action-hover); }
   #res-level:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .res-level-stops { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); }
+  .res-level-stops { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); }
   .res-level-stops span { display: grid; justify-items: center; color: var(--muted); font-size: 11.5px; line-height: 1.25; cursor: pointer; white-space: nowrap; }
   .res-level-stops span::before { content: ""; width: 1px; height: 4px; margin-bottom: 2px; background: var(--border-strong); }
   .res-level-stops span[data-on]::before { background: #fff; }
@@ -236,7 +238,7 @@
   .res-level-stops span:hover,
   .res-level-stops span[data-on] { color: #fff; }
   .res-level-stops span[data-on] b { font-weight: 700; }
-  @container (max-width: 419px) { .res-level-stops small { display: none; } }
+  @container (max-width: 259px) { .res-level-stops small { display: none; } }
   /* Under a side's name, what it is in a line: against the AI the win
      rate, which is what a level is picked to see. */
   .res-counted { margin: 1px 0 0; color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
@@ -673,7 +675,8 @@
                  see the win rate of civvis against level 4"; 2026-11-22:
                  "civvis vs lv 8 deity ai chart should have a lv 1 to lv 8
                  slider at the top. defaults to 8. but people can change the
-                 level if they want"). It picks the games against the AI
+                 level if they want"; 2026-11-23: "ai level in charts can go
+                 from lv 4 to lv 8"). It picks the games against the AI
                  everywhere on the page: the three column charts, the line
                  in each small chart, and the tables. The page opens on
                  Deity, where most of the games were played. The slider is
@@ -682,11 +685,8 @@
             <div class="res-level">
               <label for="res-level">AI level</label>
               <div class="res-level-scale">
-                <input type="range" id="res-level" min="1" max="8" step="1" value="8" aria-valuetext="Lv 8 Deity">
+                <input type="range" id="res-level" min="4" max="8" step="1" value="8" aria-valuetext="Lv 8 Deity">
                 <div class="res-level-stops" id="res-level-stops" aria-hidden="true">
-                <span data-level="1" data-rung="Settler"><b>Lv 1</b> <small>Settler</small></span>
-                <span data-level="2" data-rung="Chieftain"><b>Lv 2</b> <small>Chieftain</small></span>
-                <span data-level="3" data-rung="Warlord"><b>Lv 3</b> <small>Warlord</small></span>
                 <span data-level="4" data-rung="Prince"><b>Lv 4</b> <small>Prince</small></span>
                 <span data-level="5" data-rung="King"><b>Lv 5</b> <small>King</small></span>
                 <span data-level="6" data-rung="Emperor"><b>Lv 6</b> <small>Emperor</small></span>
@@ -725,7 +725,7 @@
               Every game that ended in a victory, by the turn it ended on and the victory that ended it.
               Both kinds of game are six players on a Continents map at Online speed, 250 turns.
               A column is the share of the games counted that ended in its span of turns.
-              The games against Civilization VI&#8217;s own AI are shown one level at a time, Lv 1 Settler to Lv 8 Deity, by the slider over them,
+              The games against Civilization VI&#8217;s own AI are shown one level at a time, Lv 4 Prince to Lv 8 Deity, by the slider over them,
               and drawn three times: every victory, then only the AI&#8217;s wins, then only CIVVIS&#8217;s wins.
               All three are shares of the same games, so the second and third add up to the first.
             </p>
@@ -821,8 +821,8 @@
     const KINDS = ["ai", "self_play"];
     // The games against the AI are a kind per level, under the level's
     // number, and the level chosen is the one drawn (operator 2026-11-21:
-    // "an option to select by level too"). The eight levels and their names
-    // are the picker's own buttons.
+    // "an option to select by level too"). The levels and their names are
+    // the stops of the slider's own scale, Lv 4 Prince to Lv 8 Deity.
     const LEVELS = data.levels && typeof data.levels === "object" ? data.levels : {};
     const levelSlider = document.getElementById("res-level");
     const levelStops = Array.from(document.querySelectorAll("#res-level-stops [data-level]"));
