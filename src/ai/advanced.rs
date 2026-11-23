@@ -10689,6 +10689,10 @@ pub struct AdvancedAi {
     /// without founding closes the pipeline. See
     /// `advanced/settler_brake_counts_the_wanderer.rs`. Off by default.
     settler_brake_counts_the_wanderer: bool,
+    /// The empire clock of `settler-brake-counts-the-wanderer`: the turn since
+    /// which a Settler has been out with no city founded, and the city count
+    /// then. Keyed to no unit, so a remapped id cannot restart it.
+    settlers_out_since: Option<(u32, usize)>,
     // ---- append: t-z ------------------------------------------------
     /// `world-religion-condemns-the-faith`: our soldiers condemn a faith
     /// World Religion's option B names, at peace, and the agent's ballot asks
@@ -21245,6 +21249,9 @@ impl AdvancedAi {
         self.note_upkeep_wait_state(g, pid);
         // `guns-keep-the-oil`: see `advanced/guns_keep_the_oil.rs`.
         self.note_guns_keep_the_oil(g, pid);
+        // `settler-brake-counts-the-wanderer`: the empire's Settler clock. See
+        // `advanced/settler_brake_counts_the_wanderer.rs`.
+        self.note_settlers_out(g, pid);
         let sanctuary = self.adopted_faith_sanctuary_choice(g, pid, plan.threatened_city);
         let science_targeted = self.active_victory_target(g) == Some(VictoryTarget::Science);
         let science_specialized = self.phase_specialization_active(g) && science_targeted;
