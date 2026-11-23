@@ -330,6 +330,11 @@ mod tests {
     /// a derivation having *run* (the policy scorer's read trace did, and
     /// the first build of this kept the acting seat's cities straight
     /// through it; every card read as inert and the saves parted by turn 26).
+    ///
+    /// The keeping is the board's, which a seat reads only while it plans on
+    /// the board: with Fog-honest AI on, as every site world opens, each seat
+    /// plans on a view of its own and the view keeps its own yields
+    /// (`player::ViewYields`). So these runs plan on the board.
     #[test]
     fn keeping_yields_plays_the_same_game() {
         let derived = run_with(
@@ -337,6 +342,7 @@ mod tests {
             YIELD_TURNS,
             Options {
                 keeps_rival_yields: false,
+                fog_honest: false,
                 ..Options::default()
             },
         );
@@ -347,6 +353,7 @@ mod tests {
                 YIELD_TURNS,
                 Options {
                     keeps_own_yields,
+                    fog_honest: false,
                     ..Options::default()
                 },
             );
@@ -445,6 +452,9 @@ mod tests {
             Options {
                 documents: false,
                 audits_rival_yields: true,
+                // The board's keeping, which only a seat planning on the
+                // board reads (see `keeping_yields_plays_the_same_game`).
+                fog_honest: false,
                 ..Options::default()
             },
         );
