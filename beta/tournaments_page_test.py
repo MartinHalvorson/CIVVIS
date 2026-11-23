@@ -252,13 +252,17 @@ class TournamentsPage(unittest.TestCase):
         self.assertEqual(json.loads(tournaments_page.SLOT.search(filled)[2]), record)
         # Nothing but the slot moved.
         self.assertEqual(tournaments_page.SLOT.sub("", filled), tournaments_page.SLOT.sub("", PAGE))
-        # The publish script is what runs it: the lane's own page (head's for
-        # a revision that predates it), filled from head's definitions.
+        # The publish script is what runs it: the lane's own page, filled by
+        # the lane's own script from the lane's own definitions. (Both lanes
+        # had head's definitions until 2026-11-22; a tournament scheduled on
+        # main now reaches the front page's list with a promotion.)
+        self.assertNotIn('"$repo_root/beta/tournaments', PUBLISH)
         for line in (
             'tournaments_page="$source_tree/beta/tournaments.html"',
-            '[ -f "$tournaments_page" ] || tournaments_page="$repo_root/beta/tournaments.html"',
+            'if [ -f "$tournaments_page" ]; then',
             'cp "$tournaments_page" "$out/tournaments/index.html"',
-            'tournaments_page.py" "$repo_root" "$out/tournaments/index.html"',
+            'fill tournaments_page.py "$out/tournaments/index.html"',
+            'pages+=(tournaments)',
             # And its links are held inside the lane like every page's.
             'out / "tournaments" / "index.html": [],',
         ):
@@ -550,8 +554,7 @@ class TournamentsPage(unittest.TestCase):
         for unsafe in ("innerHTML", "insertAdjacentHTML", "document.write"):
             self.assertNotIn(unsafe, PAGE)
         verify = (BETA / "verify.py").read_text(encoding="utf-8")
-        self.assertIn('f"{lane}tournaments/index.html",', verify)
-        self.assertIn("""b'id="tournaments-data"' not in get("/tournaments/").read()""", verify)
+        self.assertIn("""    "tournaments": b'id="tournaments-data"',\n""", verify)
 
 
 if __name__ == "__main__":

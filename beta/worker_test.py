@@ -95,13 +95,25 @@ globalThis.Response = class extends RealResponse {
 
 const worker = (await import("./_worker.js")).default;
 
+// Each lane states its own build, as the published lanes do, so a check can
+// tell which lane's build.json something read.
+const laneBuilds = { "/build.json": "stable01", "/test/build.json": "head0002" };
+
 const env = {
   ASSETS: {
-    fetch: (request) =>
-      new Response("asset:" + new URL(request.url).pathname, {
+    fetch: (request) => {
+      const path = new URL(request.url).pathname;
+      if (path in laneBuilds) {
+        return new Response(JSON.stringify({ short: laneBuilds[path] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response("asset:" + path, {
         status: 200,
         headers: { "Content-Type": "text/html" },
-      }),
+      });
+    },
   },
 };
 
@@ -553,6 +565,13 @@ def main(argv: list[str] | None = None) -> int:
               payload.get("title") == "A sharper minimap"
               and "swift-settler-47" in (payload.get("body") or ""),
               f"got {payload.get('body')!r}")
+        # Each lane's home page posts to its own lane, so the build an issue
+        # names is the one its reporter was looking at: the promoted build
+        # from the front page, never the test lane's.
+        check(problems, "a report from the front page names the stable build",
+              "Build: `stable01`" in (payload.get("body") or "")
+              and "head0002" not in (payload.get("body") or ""),
+              f"got {payload.get('body')!r}")
 
         bugged = hit(path="/report", method="POST",
                      json={**report, "kind": "issue", "reporter": ""}, env=tokened)
@@ -600,6 +619,23 @@ def main(argv: list[str] | None = None) -> int:
         check(problems, "GitHub refusing the token surfaces as 502",
               refused["status"] == 502, f"got {refused['status']}")
         dev.evaluate("githubReply.status = 201")
+
+        # The test lane's home page files through /test/report, the same
+        # endpoint under its own lane, and its issue names the test build.
+        calls_before = dev.evaluate("githubCalls.length")
+        lane_filed = hit(path="/test/report", method="POST", json=report, env=tokened)
+        lane_body = (dev.evaluate(f"githubCalls[{calls_before}]") or {}).get("payload", {}).get("body", "")
+        check(problems, "a report from the test lane is filed",
+              lane_filed["status"] == 201 and "issues/999" in lane_filed["body"],
+              f"got {lane_filed['status']} {lane_filed['body'][:80]!r}")
+        check(problems, "a report from the test lane names the test build",
+              "Build: `head0002`" in lane_body and "stable01" not in lane_body
+              and "civvis.ai/test" in lane_body,
+              f"got {lane_body!r}")
+        check(problems, "/test/report takes POST only",
+              hit(path="/test/report", env=tokened)["status"] == 405)
+        check(problems, "the test lane's report endpoint is no page of the lane",
+              "asset:" not in hit(path="/test/report", method="POST", json=report)["body"])
 
         # The door still exists; it is just not shut unless somebody shuts it.
         # This is checked because an unused capability is one that has quietly

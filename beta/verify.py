@@ -157,20 +157,78 @@ def fresh_profile(prefix: str) -> str:
     return tempfile.mkdtemp(prefix=prefix)
 
 
-# The site carries the same set of pages twice: the promoted stable lane at
-# the root and the automatic head lane under /test, each a complete tree —
-# viewer, landing page, downloads page. Each lane is checked separately
-# (`--mount root` / `--mount test`) because they are different builds from
-# different commits, and a deploy that works in one lane and not the other is
-# exactly the mistake worth catching. Every page is asserted per lane, so
-# either invocation rejects a bundle whose lane is missing its landing page.
+# The site is two whole sets of pages: the promoted stable lane at the root
+# and the automatic head lane under /test, each one revision's site and
+# nothing else — viewer, landing page, the pages of Charts/, downloads page.
+# Each lane is checked separately (`--mount root` / `--mount test`) because
+# they are different builds from different commits, and a deploy that works
+# in one lane and not the other is exactly the mistake worth catching.
 #
+# The pages a lane can carry beside its viewer, each with the bytes that prove
+# the page answering at its address is that page: the home page by its small,
+# fixed utility nav (a more durable marker than a label that is part of the
+# page's editorial design), the pages `beta/publish.sh` fills by the slot it
+# fills, the downloads page by the release links that are its whole job.
+PAGES = {
+    "home": b'aria-label="CIVVIS links"',
+    "tournaments": b'id="tournaments-data"',
+    "research": b'id="research-data"',
+    "performance": b'id="performance-data"',
+    "interpretability": b'id="interpretability-data"',
+    "download": b"releases/latest/download/",
+}
+
+
+def lane_pages(build: dict) -> list:
+    """The pages a lane carries, as its own `build.json` lists them.
+
+    A lane has the pages its revision has: a promoted revision from before a
+    page was written is published without it, and a page that only main has
+    must not answer on the front page. `publish.sh` writes the list as
+    `pages`; a bundle from before it did carried every page there was."""
+    listed = build.get("pages")
+    if listed is None:
+        return list(PAGES)
+    return [name for name in PAGES if name in listed]
+
+
+def lane_page_problems(dist: pathlib.Path, mount: str, build: dict) -> list:
+    """Whether the lane's directory holds exactly the pages it says it carries.
+
+    The test lane is main's, and main has every page there is, so a test lane
+    short of one has lost it in the build. Either lane holding a page it does
+    not list is holding another revision's page: that is how a page nobody
+    had promoted came to answer on the front page until 2026-11-22."""
+    lane = dist if mount == "root" else dist / "test"
+    carried = lane_pages(build)
+    problems = []
+    unknown = sorted(set(build.get("pages") or []) - set(PAGES))
+    if unknown:
+        problems.append(
+            f"build.json lists {', '.join(unknown)}, which this check does not know as a page")
+    if mount == "test":
+        problems += [
+            f"the test lane has no {name} page; main has every page"
+            for name in PAGES if name not in carried
+        ]
+    for name in PAGES:
+        present = (lane / name / "index.html").is_file()
+        if name in carried and not present:
+            problems.append(f"{name}/index.html is missing from a lane that lists the page")
+        if name not in carried and present:
+            problems.append(
+                f"{name}/index.html is in a lane whose revision ({build.get('short', '?')}) "
+                "does not have the page")
+    return problems
+
+
 # The atlases are republished as WebP when Pillow is available and stay PNG
 # when it is not, so the required-files list asks for the unit-flag atlas the
 # viewer draws in whichever form this build actually chose. (publish.sh leaves
 # out art the viewer no longer references, so a retired atlas is no witness.)
-def required(mount: str) -> list:
+def required(mount: str, pages=None) -> list:
     lane = "" if mount == "root" else "test/"
+    pages = list(PAGES) if pages is None else pages
     return [
         f"{lane}index.html",
         f"{lane}civvis.wasm",
@@ -182,12 +240,8 @@ def required(mount: str) -> list:
         # each lane ships its own revision's art, so the stable lane's set
         # legitimately differs from head's. The page's own references are
         # checked against the disk further down instead.
-        f"{lane}home/index.html",
-        f"{lane}tournaments/index.html",
-        f"{lane}research/index.html",
-        f"{lane}performance/index.html",
-        f"{lane}interpretability/index.html",
-        f"{lane}download/index.html",
+        # The pages the lane carries: its revision's, by its own build.json.
+        *(f"{lane}{name}/index.html" for name in pages),
         # Deployment-global rather than lane content: the shell always sits at
         # the site root, whichever lane is being checked.
         "_worker.js",
@@ -419,10 +473,12 @@ def check_gate(dist: pathlib.Path) -> list[str]:
             if dev.poll() is not None:
                 return [f"wrangler exited before serving anything (see {log.name})"]
             try:
-                # `/home`, not `/`: the root is a redirect to YouTube, and
-                # `urlopen` follows redirects, so probing it would make this
-                # loop's readiness depend on reaching youtube.com.
-                urllib.request.urlopen(f"http://127.0.0.1:{port}/home", timeout=2).read()
+                # `/build.json`, not `/`: the root can be a redirect to
+                # YouTube, and `urlopen` follows redirects, so probing it
+                # would make this loop's readiness depend on reaching
+                # youtube.com. Every lane has its build.json, where a pinned
+                # revision need not have any one page.
+                urllib.request.urlopen(f"http://127.0.0.1:{port}/build.json", timeout=2).read()
                 ready = True
             except Exception:
                 time.sleep(1)
@@ -445,31 +501,30 @@ def check_gate(dist: pathlib.Path) -> list[str]:
         if b"shim.js" not in root:
             problems.append("/ is not serving the stable viewer; is ROOT_REDIRECT set?")
 
-        # The landing page moved to /home when the root became the product.
-        # Its small, fixed utility nav is a more durable routing marker than
-        # the old watch-button label, which is a deliberate part of the page's
-        # editorial design rather than a route contract.
-        landing = get("/home/").read()
-        if b'aria-label="CIVVIS links"' not in landing:
-            problems.append("the landing page is not being served at /home")
+        # Every page a lane carries answers at its own address, and a page it
+        # does not carry answers 404 there. The second half is the lane rule
+        # itself: the front page holds what was promoted, so a page only main
+        # has must not be reachable at the root, whether or not anything
+        # links it.
+        def lane_routes(prefix, which, carried):
+            for name, marker in PAGES.items():
+                address = f"{prefix}/{name}/"
+                try:
+                    body = get(address).read()
+                except urllib.error.HTTPError as answer:
+                    if name in carried:
+                        problems.append(
+                            f"{which}'s {name} page answers HTTP {answer.code} at {address}")
+                    elif answer.code != 404:
+                        problems.append(f"{address} answers HTTP {answer.code} rather than 404")
+                    continue
+                if name not in carried:
+                    problems.append(
+                        f"{address} answers, but {which}'s revision does not have the page")
+                elif marker not in body:
+                    problems.append(f"{which}'s {name} page is not being served at {address}")
 
-        # The Tournaments page stands between Home and the viewer, found by
-        # the slot `beta/publish.sh` fills with the record.
-        if b'id="tournaments-data"' not in get("/tournaments/").read():
-            problems.append("the Tournaments page is not being served at /tournaments")
-        # And the Research page between Home and Tournaments, by its slot.
-        if b'id="research-data"' not in get("/research/").read():
-            problems.append("the Research page is not being served at /research")
-        # And the Performance page, CIVVIS's own, by its slot.
-        if b'id="performance-data"' not in get("/performance/").read():
-            problems.append("the Performance page is not being served at /performance")
-        # And the AI Interpretability page, the last under Charts/, by its slot.
-        if b'id="interpretability-data"' not in get("/interpretability/").read():
-            problems.append("the AI Interpretability page is not being served at /interpretability")
-
-        # So is the downloads page.
-        if b"releases/latest/download/" not in get("/download/").read():
-            problems.append("/download/ is not serving the downloads page")
+        lane_routes("", "the stable lane", lane_pages(json.loads((dist / "build.json").read_text())))
 
         # And so is the test lane — when this directory carries one. A
         # standalone publish.sh build is a single lane and has no /test; the
@@ -483,22 +538,12 @@ def check_gate(dist: pathlib.Path) -> list[str]:
             elif b"shim.js" not in head_lane:
                 problems.append("/test/ is not serving the viewer")
 
-            # Every page exists per lane now, and reviewing the test lane
-            # means clicking around /test without ever landing in prod — so
-            # the test lane's landing and downloads pages must answer at
-            # their own addresses, not merely exist as files.
-            if b'aria-label="CIVVIS links"' not in get("/test/home/").read():
-                problems.append("the test lane's landing page is not being served at /test/home")
-            if b'id="tournaments-data"' not in get("/test/tournaments/").read():
-                problems.append("the test lane's Tournaments page is not being served at /test/tournaments")
-            if b'id="research-data"' not in get("/test/research/").read():
-                problems.append("the test lane's Research page is not being served at /test/research")
-            if b'id="performance-data"' not in get("/test/performance/").read():
-                problems.append("the test lane's Performance page is not being served at /test/performance")
-            if b'id="interpretability-data"' not in get("/test/interpretability/").read():
-                problems.append("the test lane's AI Interpretability page is not being served at /test/interpretability")
-            if b"releases/latest/download/" not in get("/test/download/").read():
-                problems.append("/test/download/ is not serving the downloads page")
+            # Reviewing the test lane means clicking around /test without
+            # ever landing in prod, so its pages must answer at their own
+            # addresses, not merely exist as files.
+            lane_routes(
+                "/test", "the test lane",
+                lane_pages(json.loads((dist / "test" / "build.json").read_text())))
         else:
             print("    (single-lane build: no /test to route)")
 
@@ -645,8 +690,19 @@ def main(argv: list[str] | None = None) -> int:
         print(f"no build at {dist} — run ./beta/publish.sh first", file=sys.stderr)
         return 1
 
-    needed = required(args.mount)
     print(f"==> checking the {args.mount} lane of the bundle at {dist}")
+    build_file = dist / lane / "build.json"
+    if not build_file.is_file():
+        print(f"    MISSING {lane}build.json", file=sys.stderr)
+        return 1
+    build = json.loads(build_file.read_text())
+    pages = lane_pages(build)
+    page_problems = lane_page_problems(dist, args.mount, build)
+    for problem in page_problems:
+        print(f"    {problem}", file=sys.stderr)
+    if page_problems:
+        return 1
+    needed = required(args.mount, pages)
     missing = [
         entry
         for entry in needed
@@ -656,8 +712,12 @@ def main(argv: list[str] | None = None) -> int:
         for entry in missing:
             print(f"    MISSING {entry if isinstance(entry, str) else ' or '.join(entry)}", file=sys.stderr)
         return 1
-    build = json.loads((dist / lane / "build.json").read_text())
-    print(f"    {len(needed)} required files present, build {build['short']}")
+    left_out = [name for name in PAGES if name not in pages]
+    print(
+        f"    {len(needed)} required files present, build {build['short']}, "
+        f"pages: {', '.join(pages) or 'none'}"
+        + (f" (its revision has no {', '.join(left_out)})" if left_out else "")
+    )
 
     page = (dist / lane / "index.html").read_text(encoding="utf-8")
     for absolute in ('"/assets/',):
@@ -732,7 +792,9 @@ def main(argv: list[str] | None = None) -> int:
     # home page asks for must ship beside it, content-versioned like the
     # atlases. Reference-driven rather than a pinned filename list, because
     # each lane carries its own revision's art.
-    home_page = (dist / lane / "home" / "index.html").read_text(encoding="utf-8")
+    home_page = (
+        (dist / lane / "home" / "index.html").read_text(encoding="utf-8") if "home" in pages else ""
+    )
     for asset_url in re.findall(r'''["'](assets/[^"']+)["']''', home_page):
         match = re.fullmatch(r"(assets/[^?]+)\?v=([0-9a-f]{64})", asset_url)
         if (
@@ -756,13 +818,18 @@ def main(argv: list[str] | None = None) -> int:
     # and a disagreement is a 404 on the only page whose whole job is handing
     # somebody a program. Renaming an asset must therefore fail here rather
     # than on a visitor's click.
-    downloads = (dist / lane / "download" / "index.html").read_text(encoding="utf-8")
+    downloads = (
+        (dist / lane / "download" / "index.html").read_text(encoding="utf-8")
+        if "download" in pages else ""
+    )
     linked = set(re.findall(r"releases/latest/download/([^\"']+)", downloads))
     workflow = here.parent / ".github" / "workflows" / "release.yml"
-    if not linked:
+    if "download" not in pages:
+        print("    this lane's revision has no download page")
+    elif not linked:
         print("    the download page links no release assets at all", file=sys.stderr)
         return 1
-    if workflow.exists():
+    elif workflow.exists():
         built = set(re.findall(r"^\s*asset:\s*(\S+)\s*$", workflow.read_text(encoding="utf-8"), re.M))
         orphans = sorted(linked - built)
         if orphans:
@@ -781,7 +848,7 @@ def main(argv: list[str] | None = None) -> int:
         if gate_problems:
             print("\nFAILED: the site would not route correctly", file=sys.stderr)
             return 1
-        print("    / is the stable lane; /home, /download and the whole /test lane answer")
+        print("    / is the stable lane and /test the head lane; each answers with its own pages and no others")
 
     if not pathlib.Path(args.chrome).exists():
         print(f"    no Chrome at {args.chrome}; skipping the browser check", file=sys.stderr)

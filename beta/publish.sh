@@ -14,6 +14,17 @@
 # stable lane) and under /test (the head lane); the deploy workflow builds one
 # lane per revision and stacks them.
 #
+# A LANE IS ONE REVISION'S SITE AND NOTHING ELSE. Everything a visitor is
+# served comes from the revision the lane names: the engine, the viewer, its
+# scripts (shim.js and worker.js among them), every page, the script that
+# fills a page's figures and the data that script reads. The site is therefore
+# two whole sets, one of the promoted revision at / and one of main at /test,
+# and nothing reaches / except by a promotion. A page the revision does not
+# have is a page the lane does not have. This script, which is the invoking
+# tree's, only assembles; the two things it adds that are not the lane's are
+# the serving shell (_worker.js and 404.html, one per deployment) and the run
+# ledger, the games as played by the time of the build.
+#
 #   ./beta/publish.sh                  build from the working tree
 #   ./beta/publish.sh --commit <ref>   build from a pinned revision
 #   ./beta/publish.sh --symbols-out <dir>   retain a separate profiling sidecar
@@ -139,88 +150,163 @@ else
 fi
 
 echo "==> assembling the pages"
-cp "$repo_root/beta/shim.js" "$repo_root/beta/worker.js" "$out/"
+# The viewer's two scripts of its own are the lane's like the rest of it: the
+# shim speaks to the engine built above, so it has to be that revision's.
+for script in shim.js worker.js; do
+  [ -f "$source_tree/beta/$script" ] \
+    || { echo "$short has no beta/$script; it cannot be published as a lane" >&2; exit 1; }
+done
+cp "$source_tree/beta/shim.js" "$source_tree/beta/worker.js" "$out/"
 cp -R "$source_tree/web/assets" "$out/assets"
 # Every page of the site exists once per lane, built from the lane's own
-# revision: the promoted stable lane shows the promoted landing and download
+# revision and from nothing else: the promoted stable lane shows the promoted
 # pages, and /test shows head's. A pinned revision that predates one of the
-# pages falls back to head's copy, so any commit stays publishable.
+# pages does not have that page. (Until 2026-11-22 it was given head's copy,
+# and a page nobody had promoted answered on the front page: the AI
+# Interpretability page did, the day it was written.) `pages` is the list of
+# what this lane carries, written into build.json for the checks to hold the
+# bundle to.
 landing_page="$source_tree/beta/landing.html"
-[ -f "$landing_page" ] || landing_page="$repo_root/beta/landing.html"
 landing_assets="$source_tree/beta/assets"
-[ -d "$landing_assets" ] || landing_assets="$repo_root/beta/assets"
 download_page="$source_tree/beta/download.html"
-[ -f "$download_page" ] || download_page="$repo_root/beta/download.html"
 tournaments_page="$source_tree/beta/tournaments.html"
-[ -f "$tournaments_page" ] || tournaments_page="$repo_root/beta/tournaments.html"
 research_page="$source_tree/beta/research.html"
-[ -f "$research_page" ] || research_page="$repo_root/beta/research.html"
 performance_page="$source_tree/beta/performance.html"
-[ -f "$performance_page" ] || performance_page="$repo_root/beta/performance.html"
 interpretability_page="$source_tree/beta/interpretability.html"
-[ -f "$interpretability_page" ] || interpretability_page="$repo_root/beta/interpretability.html"
-mkdir -p "$out/home"
-cp "$landing_page" "$out/home/index.html"
-# The home page is four videos, and its fastest game is whichever record
-# leads the lane's data/performance/fastest_game_videos.json: it is written
-# into the page here rather than committed as a copy that could drift. A home
-# page from before 2026-11-22 carries the two rankings instead (the winningest
-# civs of the verification games, the Civ AI Agents by Elo) and is filled
-# with those, the civs from the run ledger and the agents from the lane's own
-# revision; a page with neither slot is left as it is. The same run writes
-# the speed timeline over the videos (how many times faster than a person
-# each way of playing gets through a game) from the lane's
-# data/performance/speedup_timeline.json, by beta/speedup_timeline.py.
-python3 "$repo_root/beta/home_rankings.py" "$source_tree" "$out/home/index.html"
+pages=()
+without=()
+
+# A lane built from some other revision than the invoking tree's is pinned:
+# the stable lane, on every deployment.
+pinned_elsewhere=0
+if [ "$commit" != "$(git -C "$repo_root" rev-parse HEAD)" ]; then pinned_elsewhere=1; fi
+
+# Fill a page's figures with the lane's own script, read against the lane's
+# own tree: `fill <script in beta/> <page>`. The page, the script that fills
+# it and the snapshots under data/ are one revision's, so the record always
+# has the shape the page reads. Until 2026-11-22 the script and most of the
+# data were head's in both lanes, which moved the front page's figures with
+# every merge and handed a promoted page a record written for a later one.
+#
+# What still moves between two builds of one revision is the run ledger
+# (`results.jsonl` on the `ledger` branch): the games played are not a
+# property of any revision, so each lane counts them as of the build, by its
+# own script.
+#
+# A script that fails stops the publish when it is the invoking tree's own,
+# because that is a fault main can mend. A pinned revision's script cannot be
+# mended, only promoted past, and it fails on a ledger written after it: that
+# costs its page the figures (the slot stays `null`, which every page reads
+# as "no record"), never the deployment, which would hold /test back too.
+fill() {
+  local script="$source_tree/beta/$1" page="$2"
+  if [ ! -f "$script" ]; then
+    echo "   $short has no beta/$1; ${page#"$out"/} keeps the slot it came with"
+    return 0
+  fi
+  if [ "$pinned_elsewhere" = 1 ]; then
+    python3 "$script" "$source_tree" "$page" \
+      || echo "::warning::$short: beta/$1 failed on ${page#"$out"/}; the page is published without its figures"
+  else
+    python3 "$script" "$source_tree" "$page"
+  fi
+}
+
+if [ -f "$landing_page" ]; then
+  mkdir -p "$out/home"
+  cp "$landing_page" "$out/home/index.html"
+  # The home page is four videos, and its fastest game is whichever record
+  # leads the lane's data/performance/fastest_game_videos.json: it is written
+  # into the page here rather than committed as a copy that could drift. A
+  # home page from before 2026-11-22 carries the two rankings instead (the
+  # winningest civs of the verification games, the Civ AI Agents by Elo) and
+  # is filled with those, the civs from the run ledger and the agents from
+  # the lane's own revision; a page with neither slot is left as it is. The
+  # same run writes the speed timeline over the videos (how many times faster
+  # than a person each way of playing gets through a game) from the lane's
+  # data/performance/speedup_timeline.json, by beta/speedup_timeline.py.
+  fill home_rankings.py "$out/home/index.html"
+  pages+=(home)
+else
+  without+=(home)
+fi
 # The Tournaments page (running, scheduled and finished series of the
-# verification games) is filled the same way, from the run ledger. Its
-# definitions are head's in both lanes: what is scheduled is a fact about the
-# queue, not about the revision a lane is pinned to.
-mkdir -p "$out/tournaments"
-cp "$tournaments_page" "$out/tournaments/index.html"
-python3 "$repo_root/beta/tournaments_page.py" "$repo_root" "$out/tournaments/index.html"
+# verification games) is filled the same way: the definitions in the lane's
+# data/tournaments.json, the games from the run ledger. A tournament
+# scheduled on main is listed on /test at once and on the front page when it
+# is promoted.
+if [ -f "$tournaments_page" ]; then
+  mkdir -p "$out/tournaments"
+  cp "$tournaments_page" "$out/tournaments/index.html"
+  fill tournaments_page.py "$out/tournaments/index.html"
+  pages+=(tournaments)
+else
+  without+=(tournaments)
+fi
 # The Research page (when in the game each victory type lands, in self-play
 # and against the Deity AI) is filled the same way: the self-play games from
-# head's snapshot in data/research/, the Deity games from the run ledger. Like
-# the tournaments these are facts about the games played, so both lanes get
-# head's figures.
-mkdir -p "$out/research"
-cp "$research_page" "$out/research/index.html"
-python3 "$repo_root/beta/research_page.py" "$repo_root" "$out/research/index.html"
-# The two rankings stand on this page since 2026-11-22, the winningest civs
-# under the games against the AI and the Civ AI Agents by Elo under
-# self-play. They are derived as they were for the home page: the civs from
-# the run ledger, the agents from the lane's own revision. A page that
-# predates the move has no slot for them and is left as it is.
-python3 "$repo_root/beta/home_rankings.py" "$source_tree" "$out/research/index.html"
+# the lane's snapshot in data/research/, the Deity games from the run ledger.
+if [ -f "$research_page" ]; then
+  mkdir -p "$out/research"
+  cp "$research_page" "$out/research/index.html"
+  fill research_page.py "$out/research/index.html"
+  # The two rankings stand on this page since 2026-11-22, the winningest civs
+  # under the games against the AI and the Civ AI Agents by Elo under
+  # self-play. They are derived as they were for the home page: the civs
+  # from the run ledger, the agents from the lane's own revision. A page that
+  # predates the move has no slot for them and is left as it is.
+  fill home_rankings.py "$out/research/index.html"
+  pages+=(research)
+else
+  without+=(research)
+fi
 # The Performance page (the fastest game on video, how long a self-play game
 # takes at five percentiles, and game time batch by batch) is CIVVIS's own
-# page in the site list. It is filled the same way, from head's record videos
-# and head's snapshot of the games' times in data/performance/: both lanes get
-# head's figures, facts about the games played.
-mkdir -p "$out/performance"
-cp "$performance_page" "$out/performance/index.html"
-python3 "$repo_root/beta/performance_page.py" "$repo_root" "$out/performance/index.html"
+# page in the site list. It is filled the same way, from the lane's record
+# videos and the lane's snapshot of the games' times in data/performance/.
+if [ -f "$performance_page" ]; then
+  mkdir -p "$out/performance"
+  cp "$performance_page" "$out/performance/index.html"
+  fill performance_page.py "$out/performance/index.html"
+  pages+=(performance)
+else
+  without+=(performance)
+fi
 # The AI Interpretability page (the steps of one turn in order, the plan the
 # seats write down through a game, and every gene with what it is worth in
-# wins) is the last page under Charts/. It is filled the same way, from
-# head's source (the turn's steps, the gene ranking) and head's snapshot of
-# the seats' plans in data/interpretability/: both lanes get head's record,
-# facts about the agent as it is.
-mkdir -p "$out/interpretability"
-cp "$interpretability_page" "$out/interpretability/index.html"
-python3 "$repo_root/beta/interpretability_page.py" "$repo_root" "$out/interpretability/index.html"
+# wins) is the last page under Charts/. It is filled the same way, from the
+# lane's source (the turn's steps, the gene ranking) and the lane's snapshot
+# of the seats' plans in data/interpretability/: the agent as it is in the
+# revision the lane plays.
+if [ -f "$interpretability_page" ]; then
+  mkdir -p "$out/interpretability"
+  cp "$interpretability_page" "$out/interpretability/index.html"
+  fill interpretability_page.py "$out/interpretability/index.html"
+  pages+=(interpretability)
+else
+  without+=(interpretability)
+fi
 # The home page carries no art of its own any more, so there is usually no
 # directory to ship; a pinned revision from when it had photographs still does.
-if [ -d "$landing_assets" ]; then cp -R "$landing_assets" "$out/home/assets"; fi
+if [ -f "$landing_page" ] && [ -d "$landing_assets" ]; then cp -R "$landing_assets" "$out/home/assets"; fi
 # `/download/` rather than `/download.html`: the page outlives any one release
 # and gets linked around, so it should have the tidier address.
-mkdir -p "$out/download"
-cp "$download_page" "$out/download/index.html"
+if [ -f "$download_page" ]; then
+  mkdir -p "$out/download"
+  cp "$download_page" "$out/download/index.html"
+  pages+=(download)
+else
+  without+=(download)
+fi
+if [ "${#without[@]}" -gt 0 ]; then
+  echo "   $short has no ${without[*]} page; this lane is published without"
+fi
 # The gate travels *inside* the deployed directory. See beta/_worker.js for
-# why this is not a `functions/` directory. Unlike the pages, these two are
-# deployment-global rather than lane content — always head's copy, and the
-# deploy workflow keeps only the root copy when it stacks two lanes.
+# why this is not a `functions/` directory. These two are the serving shell
+# and the one part of a deployment that is not a lane's: a deployment has a
+# single request handler, which routes both lanes, so there cannot be one of
+# it per lane. Always the invoking tree's copy, and the deploy workflow keeps
+# only the root copy when it stacks two lanes.
 cp "$repo_root/beta/_worker.js" "$out/_worker.js"
 # Its very existence switches Pages from single-page-app fallback (unknown
 # path -> the front page, 200) to honest 404s. See the comment inside it.
@@ -290,6 +376,8 @@ for needle, replacement in [
     ('href="/research"', 'href="research/"'),
     ('href="/tournaments"', 'href="tournaments/"'),
     ('href="/performance"', 'href="performance/"'),
+    ('href="/interpretability"', 'href="interpretability/"'),
+    ('href="/download"', 'href="download/"'),
 ]:
     page = page.replace(needle, replacement)
     for path in scripts:
@@ -458,6 +546,9 @@ edits = {
 }
 
 for path, rules in edits.items():
+    if not path.is_file():
+        # A page this lane's revision does not have.
+        continue
     text = path.read_text(encoding="utf-8")
     for needle, replacement in rules:
         text = text.replace(needle, replacement)
@@ -519,12 +610,18 @@ done < <(viewer_files)
 
 wasm_bytes=$(wc -c < "$out/civvis.wasm" | tr -d ' ')
 bundle_bytes=$(find "$out" -type f ! -name '*.br' -exec wc -c {} + | tail -1 | awk '{print $1}')
+# `pages` is the lane's own list of what it carries beside the viewer: the
+# checks (beta/verify.py) hold the bundle to exactly these, so a page from
+# another revision cannot be slipped into a lane, and a lane cannot lose one.
+pages_json=""
+for page in ${pages[@]+"${pages[@]}"}; do pages_json="$pages_json${pages_json:+, }\"$page\""; done
 cat > "$out/build.json" <<JSON
 {
   "commit": "$commit",
   "short": "$short",
   "commit_time": "$commit_time",
   "built_at": "$built_at",
+  "pages": [$pages_json],
   "wasm_bytes": $wasm_bytes,
   "download_bytes": $download_bytes,
   "bundle_bytes": $bundle_bytes

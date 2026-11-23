@@ -413,9 +413,10 @@ class Page(unittest.TestCase):
         self.assertEqual(research_page.SLOT.sub("", filled), research_page.SLOT.sub("", PAGE))
         for line in (
             'research_page="$source_tree/beta/research.html"',
-            '[ -f "$research_page" ] || research_page="$repo_root/beta/research.html"',
+            'if [ -f "$research_page" ]; then',
             'cp "$research_page" "$out/research/index.html"',
-            'research_page.py" "$repo_root" "$out/research/index.html"',
+            'fill research_page.py "$out/research/index.html"',
+            'pages+=(research)',
             'out / "research" / "index.html": [],',
             """('href="/research"', 'href="research/"'),""",
         ):
@@ -424,13 +425,16 @@ class Page(unittest.TestCase):
         self.assertEqual(re.findall(r'(?:href|src)="(/[^"]*)"', PAGE), [])
 
     def test_a_page_from_before_the_level_picker_is_sent_the_deity_games_where_it_reads_them(self):
-        # The stable lane serves its own revision's page with head's figures
-        # (`publish.sh`: the page from `$source_tree`, the script from
-        # `$repo_root`). Up to 2026-11-21 the page read the Deity games under
-        # `deity`; sent only `levels` it would show its Deity charts empty
-        # until the next promotion.
+        # Until 2026-11-22 the stable lane served its own revision's page
+        # with head's figures (`publish.sh` took the page from `$source_tree`
+        # and the script from `$repo_root`), and a page that read the Deity
+        # games under `deity` (up to 2026-11-21), sent only `levels`, would
+        # have shown its Deity charts empty until the next promotion. A lane
+        # is now filled by its own revision's script, so the two always
+        # agree; `for_page` still sends an older page what it reads.
         self.assertIn('research_page="$source_tree/beta/research.html"', PUBLISH)
-        self.assertIn('python3 "$repo_root/beta/research_page.py" "$repo_root" "$out/research/index.html"', PUBLISH)
+        self.assertIn('fill research_page.py "$out/research/index.html"', PUBLISH)
+        self.assertNotIn('"$repo_root/beta/research', PUBLISH)
         deity = {"name": "CIVVIS vs Lv 8 Deity AI", "windows": {"7": {"games": 3}, "30": {"games": 3}, "all": {"games": 3}}}
         king = {"name": "CIVVIS vs Lv 5 King AI", "windows": {"7": {"games": 1}, "30": {"games": 1}, "all": {"games": 1}}}
         rates = {"windows": {"7": {"games": 2}, "30": {"games": 2}, "all": {"games": 2}}}
