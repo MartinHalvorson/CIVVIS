@@ -1230,6 +1230,22 @@ named, from the same turn, judged by the same lists, and says how often the
 best line still met every Need there, how often the seated Civ AI alone did,
 and what the line came to against it on average.
 
+On one core a search goes the same way every time. On several, which line
+comes back first decides what the climb tries next, so two runs may try
+different lines and settle on different ones of equal worth (seed 7, from
+turn 10 for six turns: 72 lines and the same line on one core both times; 80
+lines and then 77 on four, ending on two different lines that both came to
+Score 32).
+
+Measured on this MacBook Air (10 cores) with a release build: the site's
+opening world on seed 7, from turn 20 for 20 turns, eight roster Civ AIs,
+JackOfAllTrades seated, a Need of six cities by turn 40, do not lose, and the
+most Score. On eight cores 1,310 lines in 78 s. No line met the Need. The
+best line, SiegeTheDay, then HolyRoller from turn 35, then ByTheBook from turn
+38, came to Score 105 against 82 for JackOfAllTrades alone (+28%). Played
+again on seeds 11 and 13 (`--robust 11,13`) it came to +1.5% and −4.2%
+against JackOfAllTrades alone there: the +28% was a fact about one world.
+
 ### What a model is for, and what it is not
 
 A language model is no part of a turn. A turn costs tens of milliseconds and
