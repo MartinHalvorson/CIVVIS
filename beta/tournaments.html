@@ -140,6 +140,23 @@
   .site-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .site-link[aria-current="page"],
   .site-link[aria-current="page"]:hover { background: var(--gold); color: #17130c; }
+  /* A button wears the ground of what it opens (operator, 2026-11-23: "make
+     home, charts/ and auto-tourneys buttons all have a blue background
+     (like the pages do). civvis, ai debugger have a black background (same
+     as simulator)"). The pages are blue and so are their buttons: the rule
+     above. The simulator is the lane's own address, bare for CIVVIS and in
+     play mode for AI Debugger, so a link that ends there is the
+     simulator's black, inside the edge its own buttons have. Civ 6 opens
+     Steam's shop and is the blue of Steam's buttons ("civ 6 can have the
+     steam color of blue"), dark under the name and light at the far end.
+     The page on screen is still the one in gold. */
+  .site-link[href$="../"],
+  .site-link[href$="?mode=play"] { background: #050607; color: #c9cecb; box-shadow: inset 0 0 0 1px #30363a; }
+  .site-link[href$="../"]:hover, .site-link[href$="../"]:focus-visible,
+  .site-link[href$="?mode=play"]:hover, .site-link[href$="?mode=play"]:focus-visible { background: #181c1f; color: #fff; }
+  .site-link[href^="https://store.steampowered.com/"] { background: linear-gradient(90deg, #1a44c2 35%, #47bfff); color: #fff; }
+  .site-link[href^="https://store.steampowered.com/"]:hover,
+  .site-link[href^="https://store.steampowered.com/"]:focus-visible { background: linear-gradient(90deg, #2352d6 35%, #73cfff); color: #fff; }
   /* The column is as wide as its longest name, AUTO-TOURNEYS, on one line:
      145px. Every name stands on one line (operator, 2026-11-21: "make sure
      it fits on one line"), down to a 320px phone, where the title beside

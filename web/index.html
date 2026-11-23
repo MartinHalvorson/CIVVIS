@@ -378,6 +378,21 @@
   }
   .home-link:hover { color: var(--gold-bright); border-color: var(--gold); }
   .home-link:focus-visible { outline: 2px solid var(--gold-bright); outline-offset: 1px; }
+  /* A button wears the ground of what it opens (operator, 2026-11-23: "make
+     home, charts/ and auto-tourneys buttons all have a blue background
+     (like the pages do). civvis, ai debugger have a black background (same
+     as simulator)"). The rule above is this page's black, which CIVVIS and
+     AI Debugger keep. Home, Charts/ and Auto-Tourneys are the blue those
+     pages set their own lists in, and Civ 6, which opens Steam's shop, is
+     the blue of Steam's buttons ("civ 6 can have the steam color of
+     blue"), dark under the name and light at the far end. */
+  #homelink, #chartslink, #tourlink { color: #a8d8f5; border-color: #3b6788; background: #274b66; }
+  #homelink:hover, #chartslink:hover, #tourlink:hover { color: #fff; border-color: #66c0f4; background: #315d7e; }
+  #civ6link {
+    color: #fff; border-color: transparent;
+    background: linear-gradient(90deg, #1a44c2 35%, #47bfff) border-box;
+  }
+  #civ6link:hover { color: #fff; border-color: #fff; background: linear-gradient(90deg, #2352d6 35%, #73cfff) border-box; }
   /* The page on screen is the one in gold. This page is two of them: CIVVIS
      while it watches a simulation, AI Debugger while somebody holds a seat.
      Which of the two is known once the first observation arrives
