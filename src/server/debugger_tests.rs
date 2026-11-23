@@ -708,6 +708,75 @@ fn a_schedule_walked_back_to_is_the_schedule_played_straight() {
     assert_eq!(world(&searched), world(&whole));
 }
 
+/// Operator 2026-11-22: "allow a reasonable objective function to be chosen.
+/// score or prod or city or fpt or gpt".
+///
+/// What Autosearch may be asked to make the most of is read out of how the
+/// engine says the seat stands (`obs::standing`): a lean answer's `seat` on
+/// the copies it plays its lines on, and the seat's entry of the state
+/// document once a line is played on the page. Each goal the page offers
+/// names a number that reading gives, the operator's five come first, and
+/// the page asks its copies in operations the engine has.
+#[test]
+fn every_goal_autosearch_offers_reads_a_number_the_engine_gives() {
+    let script = super::super::EMBEDDED_APP_DEBUGGER_JS;
+    let goals = script
+        .split_once("const DEBUG_SEARCH_GOALS = [")
+        .and_then(|(_, rest)| rest.split_once("];"))
+        .expect("the goals are listed")
+        .0;
+    let mut session = played();
+    for _ in 0..3 {
+        step_as(&mut session, "jack");
+    }
+    let seat = session.debug(&json!({"op": "status", "lean": true}))["seat"].clone();
+    let mut keys = Vec::new();
+    for row in goals.lines().filter(|line| line.contains("read: seat => ")) {
+        let key = row
+            .split_once("key: \"")
+            .and_then(|(_, rest)| rest.split_once('"'))
+            .expect("a goal has a key")
+            .0;
+        let read = row
+            .split_once("read: seat => ")
+            .expect("a goal reads the seat")
+            .1
+            .trim_end_matches(|end: char| end == '}' || end == ',' || end == ' ');
+        // `seat.score`, or `(seat.yields || {}).production`.
+        let value = match read.strip_prefix("(seat.yields || {}).") {
+            Some(field) => &seat["yields"][field],
+            None => {
+                &seat[read
+                    .strip_prefix("seat.")
+                    .expect("a goal reads one of the seat's own numbers")]
+            }
+        };
+        assert!(
+            value.is_number(),
+            "{key} reads {read}, which the engine does not give"
+        );
+        keys.push(key);
+    }
+    assert!(keys.len() >= 5, "{keys:?}");
+    assert_eq!(&keys[..5], ["score", "prod", "city", "fpt", "gpt"]);
+    // A copy is made ready, walked back and played with these.
+    for piece in [
+        r#"debugSearchPost("/forks", {count: search.cores})"#,
+        r#"debugSearchAsk(search, fork, {op: "breakpoints"})"#,
+        r#"if (search.pane) refused(await debugSearchAsk(search, fork, {op: "remember"}));"#,
+        r#"{op: "jump", turn, strategy: debugPlanWho(plan, turn)}"#,
+        r#"{op: "play", turns: asked, strategy: debugPlanWho(plan, fork.at)}"#,
+        // And the line that was found is played from the same turn the same way.
+        r#"const there = await debugOp({op: "jump", turn: plan.from, strategy: stretch.name});"#,
+    ] {
+        assert!(script.contains(piece), "{piece}");
+    }
+    // The button is a size larger than the tools beside it (operator: "make
+    // it a bit bigger than the others"); `beta/debugger_test.py` measures it.
+    assert!(script.contains("#debugbar button.dbg-search-open {\n    height: 32px;"));
+    assert!(script.contains("min-width: 26px; height: 26px; padding: 0 6px;"));
+}
+
 #[test]
 fn both_front_ends_serve_the_debugger() {
     assert!(include_str!("../wasm.rs").contains("(\"POST\", \"/debug\")"));
@@ -990,6 +1059,13 @@ fn the_split_speaks_one_set_of_messages_on_both_sides() {
         // What stands on a half's timeline, for its lane in the host's bar:
         // its save points and its breakpoint turns.
         "pane-marks",
+        // Autosearch: asked for on a half's own panel, a line that was
+        // found for a half to play, each Civ AI of it as the half seats
+        // it, and how the line came out.
+        "pane-search",
+        "pane-plan",
+        "pane-seated",
+        "pane-planned",
     ] {
         let quoted = format!("\"{message}\"");
         assert!(
