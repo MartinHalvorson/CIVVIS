@@ -65,8 +65,8 @@
 
 use super::civilian_safety::{BarbarianReach, REACH_SCAN_RADIUS};
 use super::{
-    AdvancedAi, VictoryTarget, EARLY_SETTLER_HOME_RADIUS, SETTLEMENT_GLOBAL_PREFILTER_LIMIT,
-    SETTLER_DEAD_SITE_AVOID_TURNS, SETTLER_STEP_RISK_LIMIT,
+    AdvancedAi, SettlerWalkCosts, VictoryTarget, EARLY_SETTLER_HOME_RADIUS,
+    SETTLEMENT_GLOBAL_PREFILTER_LIMIT, SETTLER_DEAD_SITE_AVOID_TURNS, SETTLER_STEP_RISK_LIMIT,
 };
 use crate::ai::BasicAi;
 use crate::game::{Action, Game};
