@@ -58,8 +58,12 @@ Like the home page's civ table this reads a branch every finished game
 writes to, from inside the script that publishes the whole site. So a
 definition or a line it cannot count costs the page its record, said on
 stderr, and never costs the site its publish; the page then says it has no
-record. Both lanes are sent head's definitions: what is scheduled is a fact
-about the queue, not about the revision a lane is pinned to.
+record. A lane is filled by its own revision's copy of this script from its
+own revision's definitions (`fill` in `beta/publish.sh`), and both lanes
+count the games off the run ledger as of the build. So a tournament added on
+main is listed on /test at once and on the front page once it is promoted,
+while the games of a tournament the front page already lists keep counting
+there.
 """
 
 from __future__ import annotations

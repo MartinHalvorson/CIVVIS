@@ -299,7 +299,7 @@ else
   without+=(download)
 fi
 if [ "${#without[@]}" -gt 0 ]; then
-  echo "   $short has no ${without[*]} page; this lane is published without"
+  echo "   $short does not have every page, and its lane is published without: ${without[*]}"
 fi
 # The gate travels *inside* the deployed directory. See beta/_worker.js for
 # why this is not a `functions/` directory. These two are the serving shell

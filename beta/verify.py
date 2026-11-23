@@ -989,7 +989,8 @@ def main(argv: list[str] | None = None) -> int:
             problems.append(f"the map canvas holds only {painted} distinct colours")
         # The test lane is built from current main, but the root lane is
         # intentionally pinned to the last promoted revision.  publish.sh
-        # supplies the current manifest to both lanes, so an old pinned
+        # (the invoking tree's, for both lanes) writes the current manifest
+        # into each, so an old pinned
         # viewer can have ``wasm_bytes`` in build.json without knowing how to
         # render the new marker field.  Gate the new assertion on the viewer
         # contract, rather than on the publisher's manifest alone.  Since
@@ -1006,9 +1007,15 @@ def main(argv: list[str] | None = None) -> int:
         def positive(value):
             return isinstance(value, int) and not isinstance(value, bool) and value > 0
 
-        # Both lanes run head's shim, which hands every viewer the manifest's
-        # compressed download when it records one and the module otherwise.
-        shown_bytes = download_bytes if positive(download_bytes) else wasm_bytes
+        # A lane runs its own revision's shim. A current one hands the viewer
+        # the manifest's compressed download when it records one and the
+        # module otherwise; one pinned from before the manifest counted the
+        # download (2026-11-18) knows only the module. (Until 2026-11-22 both
+        # lanes ran head's shim, and this read the download unasked.)
+        shim_counts_download = "download_bytes" in shim
+        shown_bytes = (
+            download_bytes if shim_counts_download and positive(download_bytes) else wasm_bytes
+        )
         # A current viewer labels it "Build"; a pinned one still says
         # "Build size". Whitespace-insensitive: the published scripts are
         # minified, and `(bytes / 1e6)` arrives as `(bytes/1e6)`.

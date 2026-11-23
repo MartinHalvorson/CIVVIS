@@ -45,7 +45,9 @@ column of the chart is `SPAN` turns, and counts seat-turns.
 
 Like the other pages' scripts this runs inside the script that publishes the
 whole site, so what it cannot read costs the page that part, said on stderr,
-and never costs the site its publish. Both lanes are sent head's record.
+and never costs the site its publish. A lane is filled by its own revision's
+copy of this script from its own revision's tree (`fill` in
+`beta/publish.sh`): the front page shows the agent as it was promoted.
 """
 
 from __future__ import annotations
