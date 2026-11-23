@@ -182,6 +182,9 @@ impl AdvancedAi {
         plan.threatened_city == Some(cid)
             || self.early_settler_floor_holds(g, pid, cid, plan)
             || !self.deterrence_may_displace(g, pid, cid)
+            // `nearly-built-keeps-its-queue`: a build a few turns from done
+            // finishes first. See `advanced/nearly_built_keeps_its_queue.rs`.
+            || self.nearly_built_holds(g, pid, cid)
             // `culture-seat-builds-past-the-deterrent`: see
             // `advanced/culture_past_the_deterrent.rs`.
             || self.deterrent_spares_the_culture_build(g, pid, cid, plan)
