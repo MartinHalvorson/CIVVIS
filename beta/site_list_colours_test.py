@@ -11,14 +11,16 @@ six blue buttons on the pages, six black ones in the simulator. Now a button
 says where it goes, and says the same thing on every page:
 
     Home, Charts/ and its pages, Auto-Tourneys   the pages' blue
-    CIVVIS, AI Debugger                          the simulator's black
+    CIVVIS, AI Debugger, Doctor Strange's Civ 6  the simulator's black
     Civ 6                                        the blue of Steam's buttons
 
 and the page on screen is still the one in gold.
 
 The pages do it without a word in the markup, which a dozen tests pin as it
 stands: a link that ends at the lane's own address (`../`, or two up from a
-page of Charts/, bare for CIVVIS and with `?mode=play` for AI Debugger) is a
+page of Charts/, bare for CIVVIS, with `?mode=play` for AI Debugger and with
+`?mode=strange` for Doctor Strange's Civ 6, which is the same game shown as a
+tree of two timelines) is a
 link into the simulator, and a link to Steam's shop is Civ 6. So this reads
 every page `publish.sh` publishes and holds each list to it: the three rules
 are there, and they catch those three links and no other. The simulator's own
@@ -55,9 +57,11 @@ BLUE = (
 #: the edge its own buttons have (`--line`).
 BLACK = (
     '  .site-link[href$="../"],\n'
-    '  .site-link[href$="?mode=play"] { background: #050607; color: #c9cecb; box-shadow: inset 0 0 0 1px #30363a; }\n'
+    '  .site-link[href$="?mode=play"],\n'
+    '  .site-link[href$="?mode=strange"] { background: #050607; color: #c9cecb; box-shadow: inset 0 0 0 1px #30363a; }\n'
     '  .site-link[href$="../"]:hover, .site-link[href$="../"]:focus-visible,\n'
-    '  .site-link[href$="?mode=play"]:hover, .site-link[href$="?mode=play"]:focus-visible { background: #181c1f; color: #fff; }\n'
+    '  .site-link[href$="?mode=play"]:hover, .site-link[href$="?mode=play"]:focus-visible,\n'
+    '  .site-link[href$="?mode=strange"]:hover, .site-link[href$="?mode=strange"]:focus-visible { background: #181c1f; color: #fff; }\n'
 )
 #: Steam's button blue, the dark end under the name so the name reads.
 STEAM = (
@@ -70,7 +74,7 @@ STEAM = (
 def ground(href: str) -> str:
     """What the three rules make of a link, read as the browser reads them:
     `$=` is "ends with" and `^=` "starts with"."""
-    if href.endswith("../") or href.endswith("?mode=play"):
+    if href.endswith("../") or href.endswith("?mode=play") or href.endswith("?mode=strange"):
         return "black"
     if href.startswith("https://store.steampowered.com/"):
         return "steam"
@@ -96,7 +100,7 @@ class Pages(unittest.TestCase):
         carried = lists()
         self.assertGreaterEqual(len(carried), 5, sorted(carried))
         for source, links in carried.items():
-            self.assertGreaterEqual(len(links), 6, source)
+            self.assertGreaterEqual(len(links), 7, source)
             # Every link in the list is one the rules were read against.
             page = (BETA / source).read_text(encoding="utf-8")
             self.assertEqual(len(links), NAV.search(page).group(1).count("<a "), source)
@@ -116,7 +120,9 @@ class Pages(unittest.TestCase):
         for source, links in lists().items():
             worn = {name: ground(href) for name, href in links}
             with self.subTest(page=source):
-                self.assertEqual({name for name, kind in worn.items() if kind == "black"}, {"CIVVIS", "AI Debugger"})
+                self.assertEqual(
+                    {name for name, kind in worn.items() if kind == "black"},
+                    {"CIVVIS", "AI Debugger", "Doctor Strange's Civ 6"})
                 self.assertEqual({name for name, kind in worn.items() if kind == "steam"}, {"Civ 6"})
                 blue = {name for name, kind in worn.items() if kind == "blue"}
                 self.assertLessEqual({"Home", "Charts/", "Auto-Tourneys"}, blue)
@@ -144,6 +150,7 @@ class Simulator(unittest.TestCase):
             ("tourlink", "Auto-Tourneys"),
             ("watchlink", "CIVVIS"),
             ("playlink", "AI Debugger"),
+            ("strangelink", "Doctor Strange's Civ 6"),
             ("civ6link", "Civ 6"),
         ):
             self.assertRegex(VIEWER, rf'<a class="home-link" id="{mark}" [^>]*>{re.escape(name)}</a>')
@@ -161,20 +168,24 @@ class Simulator(unittest.TestCase):
         )
 
     def test_its_own_two_links_keep_the_black(self):
-        # CIVVIS and AI Debugger wear the list's own rule, the simulator's
-        # panel inside its line, and nothing recolours either but the gold
-        # of the page on screen.
+        # CIVVIS, AI Debugger and Doctor Strange's Civ 6 wear the list's own
+        # rule, the simulator's panel inside its line, and nothing recolours
+        # any of them but the gold of the page on screen.
         rule = VIEWER.split("  .home-link {\n", 1)[1].split("  }\n", 1)[0]
         self.assertIn("border: 1px solid var(--line); border-radius: 6px; background: var(--panel-2);", rule)
         self.assertIn("    --panel-2: #111416;\n", VIEWER)
         rules = [chunk.rpartition("{") for chunk in VIEWER.split("}")]
-        for mark in ("watchlink", "playlink"):
+        for mark in ("watchlink", "playlink", "strangelink"):
             coloured = [
                 selector for selector, _, body in rules
                 if f"#{mark}" in selector and ("color" in body or "background" in body)
             ]
             self.assertEqual(len(coloured), 1, mark)
-            self.assertIn("body.watching-sim #watchlink,\n  html.seat-known body:not(.watching-sim) #playlink", coloured[0])
+            self.assertIn(
+                "body.watching-sim #watchlink,\n"
+                "  html.seat-known:not(.strange) body:not(.watching-sim) #playlink,\n"
+                "  html.seat-known.strange body:not(.watching-sim) #strangelink",
+                coloured[0])
         # The ground the pages' black buttons are set in is this page's own.
         self.assertIn("    --ink: #050607;\n", VIEWER)
         self.assertIn("    --line: #30363a;\n", VIEWER)

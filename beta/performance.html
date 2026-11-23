@@ -151,15 +151,23 @@
      (like the pages do). civvis, ai debugger have a black background (same
      as simulator)"). The pages are blue and so are their buttons: the rule
      above. The simulator is the lane's own address, bare for CIVVIS and in
-     play mode for AI Debugger, so a link that ends there is the
+     play mode for AI Debugger (and in strange mode for Doctor Strange's
+     Civ 6, the same game shown as a tree of two timelines), so a link
+     that ends there is the
      simulator's black, inside the edge its own buttons have. Civ 6 opens
      Steam's shop and is the blue of Steam's buttons ("civ 6 can have the
      steam color of blue"), dark under the name and light at the far end.
      The page on screen is still the one in gold. */
   .site-link[href$="../"],
-  .site-link[href$="?mode=play"] { background: #050607; color: #c9cecb; box-shadow: inset 0 0 0 1px #30363a; }
+  .site-link[href$="?mode=play"],
+  .site-link[href$="?mode=strange"] { background: #050607; color: #c9cecb; box-shadow: inset 0 0 0 1px #30363a; }
   .site-link[href$="../"]:hover, .site-link[href$="../"]:focus-visible,
-  .site-link[href$="?mode=play"]:hover, .site-link[href$="?mode=play"]:focus-visible { background: #181c1f; color: #fff; }
+  .site-link[href$="?mode=play"]:hover, .site-link[href$="?mode=play"]:focus-visible,
+  .site-link[href$="?mode=strange"]:hover, .site-link[href$="?mode=strange"]:focus-visible { background: #181c1f; color: #fff; }
+  /* Doctor Strange's Civ 6 is the one name longer than the column. It does
+     not widen it: the name takes two lines in the column as it stands,
+     set a little closer so that each line fits. */
+  .site-link[href$="?mode=strange"] { box-sizing: border-box; width: 0; min-width: 100%; letter-spacing: 0.02em; }
   .site-link[href^="https://store.steampowered.com/"] { background: linear-gradient(90deg, #1a44c2 35%, #47bfff); color: #fff; }
   .site-link[href^="https://store.steampowered.com/"]:hover,
   .site-link[href^="https://store.steampowered.com/"]:focus-visible { background: linear-gradient(90deg, #2352d6 35%, #73cfff); color: #fff; }
@@ -403,6 +411,7 @@
         <a class="site-link" href="../../auto-tourneys/" title="Series of verification games against Civilization VI&#8217;s own AI: running, scheduled and finished.">Auto-Tourneys</a>
         <a class="site-link" href="../../" title="Every civilization is played by a CIVVIS AI agent.">CIVVIS</a>
         <a class="site-link" href="../../?mode=play" title="You play one civilization. CIVVIS AI agents play the rest.">AI Debugger</a>
+        <a class="site-link" href="../../?mode=strange" title="One world, two timelines: the same game played two ways, side by side, on a timeline that branches.">Doctor Strange's Civ 6</a>
         <a class="site-link" href="https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/" target="_blank" rel="noopener" title="Buy Civilization VI on Steam">Civ 6</a>
       </nav>
       <div class="site-lockup">

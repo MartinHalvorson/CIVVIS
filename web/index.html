@@ -360,11 +360,16 @@
      page's own pages are listed under it only on that page. Performance is
      Charts' (operator, 2026-11-22: "Move performance from under civvis to
      charts ... This keeps AI Debugger as a clean tool. CIVVIS as a clean
-     tool"), so this page, which is CIVVIS and AI Debugger, lists the six
-     top-level names and no branch. */
+     tool"), so this page, which is CIVVIS, AI Debugger and Doctor Strange's
+     Civ 6, lists the seven top-level names and no branch. */
   .head-links > .home-link { grid-column: span 5; }
   .head-links > #tourlink { grid-column: span 6; }
   .head-links > #watchlink { grid-column: span 4; }
+  /* Doctor Strange's Civ 6 (operator, 2026-11-23: "lets actually place the
+     ai debugger above this") is the one name longer than half a row and has
+     a row of its own. AI Debugger before it and Civ 6 after it would each be
+     left alone on half a row, so each has its row too. */
+  .head-links > #playlink, .head-links > #strangelink, .head-links > #civ6link { grid-column: 1 / -1; }
   /* A name stands on one line wherever it fits, and every one of them
      does in the typefaces measured. In a wider one a name of two words
      takes two lines, a word to each, and the link beside it in a row is as
@@ -393,12 +398,16 @@
     background: linear-gradient(90deg, #1a44c2 35%, #47bfff) border-box;
   }
   #civ6link:hover { color: #fff; border-color: #fff; background: linear-gradient(90deg, #2352d6 35%, #73cfff) border-box; }
-  /* The page on screen is the one in gold. This page is two of them: CIVVIS
-     while it watches a simulation, AI Debugger while somebody holds a seat.
+  /* The page on screen is the one in gold. This page is three of them:
+     CIVVIS while it watches a simulation, AI Debugger while somebody holds a
+     seat, and Doctor Strange's Civ 6 while that game is shown as its tree of
+     two timelines (`?mode=strange`, which `app_debugger.js` marks on the
+     root as `strange`).
      Which of the two is known once the first observation arrives
      (`seat-known`); until then neither is lit. */
   body.watching-sim #watchlink,
-  html.seat-known body:not(.watching-sim) #playlink {
+  html.seat-known:not(.strange) body:not(.watching-sim) #playlink,
+  html.seat-known.strange body:not(.watching-sim) #strangelink {
     color: #17130c; border-color: #efd184;
     background: linear-gradient(145deg, #dec176, #aa7d30);
   }
@@ -436,13 +445,14 @@
       grid-column: 1; grid-row: 1; grid-template-columns: minmax(0, 1fr);
       align-content: center; justify-self: stretch; margin-top: 0;
     }
-    /* Six to the column, a name to a line. The column is 92px with 7px
+    /* Seven to the column, a name to a line but for Doctor Strange's Civ 6,
+       which is longer than the column and takes two. The column is 92px with 7px
        gutters, the size it took for STRAT DEBUGGER (83px in this type
        against the 86px inside the column) while that was the Debugger's
        name here, and it keeps that size, so neither width at which the
        lockup changes shape has moved. AUTO-TOURNEYS is the longest name
        now, 80px. Each link is one track here, wherever it stands two by
-       two. Six one-line links make the column 111px. */
+       two. Six one-line links and the one of two lines make it 141px. */
     #side .brand:has(> .head-links:not([hidden])) .home-link {
       grid-column: auto; padding: 1px 2px 2px; font-size: 8.5px; letter-spacing: .02em;
     }
@@ -6599,7 +6609,11 @@
            own. Both are relative, so they stay in whichever lane they were
            clicked in, and all five leave a split's frame for the whole
            window. Under them is the game itself, on the shop page that sells
-           it. Only the published site has a /home, a /research (the Charts
+           it. Doctor Strange's Civ 6, under AI Debugger since 2026-11-23,
+           is that same played game shown another way (`?mode=strange`): two
+           worlds in the lower quarters of the window and their timeline a
+           tree up the middle of it, drawn by `assets/app_debugger.js`.
+           Only the published site has a /home, a /research (the Charts
            page, which kept its address through two renames) and a
            /tournaments (the Auto-Tourneys page, likewise) to go to
            (`beta/publish.sh` makes the three links lane-relative); the head
@@ -6611,6 +6625,7 @@
         <a class="home-link" id="tourlink" href="/auto-tourneys" target="_top">Auto-Tourneys</a>
         <a class="home-link" id="watchlink" href="./" target="_top">CIVVIS</a>
         <a class="home-link" id="playlink" href="?mode=play" target="_top">AI Debugger</a>
+        <a class="home-link" id="strangelink" href="?mode=strange" target="_top">Doctor Strange's Civ 6</a>
         <a class="home-link" id="civ6link" href="https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/" target="_blank" rel="noopener" title="Buy Civilization VI on Steam">Civ 6</a>
       </nav>
     </div>

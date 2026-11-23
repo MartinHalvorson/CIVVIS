@@ -4607,6 +4607,716 @@ async function debugPlayPlan(plan, copy = null) {
   return {ok: true, turn: state.turn, value: read ? got : null, note};
 }
 
+// ------------------------------------------------- Doctor Strange's Civ 6
+//
+// Operator 2026-11-23: "it will have a scrolling guitar hero setup. where the
+// timeline we are on and following is center screen. forward in time is up.
+// forward will branch out more in the tree. bottom left quad and bottom right
+// quad, roughly are our world to compare. 2 simulatoins. this is limited at 2
+// for this demo. the ai debugger we will make to scale to any number of
+// screens."
+//
+// `?mode=strange` is a played game under the debugger, shown another way. It
+// is the same split: one engine, two worlds A and B, locked to one turn, each
+// with a Civ AI of its own in the seat. What changes is the picture. The two
+// worlds are the two lower quarters of the window, map and little else. The
+// timeline is not a bar across the top but a highway up the middle: the turn
+// that is open is a line across the centre of the window, the turns played
+// run down from it between the worlds, and the turns to come run up from it
+// and away. Playing scrolls it, as the notes come down a rhythm game's board.
+//
+// The highway is a tree. The turns the two worlds share are its trunk; from
+// the turn they part on, each has a branch of its own. The timeline being
+// followed stands in the middle, straight up the window, and the other peels
+// off towards its own world's side. Branch here lets the other world go and
+// makes it a copy of the followed one on the open turn, with another Civ AI:
+// the branch that was let go of stays on the tree, struck off where it ended,
+// so the tree grows a fork for every branch made. Ahead of the open turn
+// nothing has been played, and what is drawn there is drawn as that: the
+// thin fan of ways it could still go, which closes on each fork as the turn
+// reaches it.
+//
+// Everything here is the host's. A half only puts its panels away
+// (`strange-pane`), and all that plays, walks and copies is the split's own
+// (`debugSplitRun`, `debugSplitGoTo`, `pane-copy`, `debugSplitSeat`). The
+// bar is still there, unseen, because half A's deck is drawn from it.
+
+// Whether this page is Doctor Strange's Civ 6, and whether it is a half of one.
+const STRANGE = (() => {
+  try { return DEBUG_PANE === null && new URLSearchParams(location.search).get("mode") === "strange"; }
+  catch (_) { return false; }
+})();
+const STRANGE_PANE = (() => {
+  try { return DEBUG_PANE !== null && new URLSearchParams(window.parent.location.search).get("mode") === "strange"; }
+  catch (_) { return false; }
+})();
+// The Civ AIs a branch is given, in the order they are tried: the first that
+// is on offer and is not the one the other world seats.
+const STRANGE_RIVALS = ["siege", "moonshot", "holy", "tourist", "forward", "swing", "jack", "stock"];
+// The most branches let go of that the tree keeps.
+const STRANGE_GHOSTS_MOST = 14;
+// The highway's own colours: the trunk, and what is not yet played.
+const STRANGE_GOLD = "#f3d27a";
+
+const STRANGE_STYLE = `
+  /* The bar is the split's one panel and half A's deck is drawn from it, so
+     it stays where it is, unseen and deaf. */
+  html.strange.dbg-split-open #debugbar { visibility: hidden !important; pointer-events: none !important; }
+  html.strange #debugsplit {
+    inset: 0 !important; display: block !important; overflow: hidden; background: #03070a;
+    --strange-gutter: clamp(170px, 13vw, 240px); --strange-head: 34px;
+  }
+  html.strange #debugsplit .dbg-divider { display: none !important; }
+  /* The two worlds: roughly the two lower quarters, with the trunk between. */
+  html.strange #debugsplit iframe {
+    position: absolute; z-index: 1; bottom: 0;
+    width: calc(50% - var(--strange-gutter) / 2); height: calc(50% - var(--strange-head));
+  }
+  html.strange #debugsplit iframe[data-dbg-frame="a"] { left: 0; border-right: 1px solid #ff8f6b66; }
+  html.strange #debugsplit iframe[data-dbg-frame="b"] { right: 0; border-left: 1px solid #6fd3e066; }
+  #strange-sky { position: absolute; inset: 0; z-index: 0; width: 100%; height: 100%; display: block; cursor: pointer; }
+  #strange-hud {
+    position: absolute; inset: 0; z-index: 2; pointer-events: none; user-select: none;
+    color: #e8e3d2; font: 12px/1.25 system-ui, sans-serif;
+  }
+  #strange-hud > * { pointer-events: auto; }
+  #strange-hud button, #strange-hud select {
+    height: 26px; padding: 0 8px; border-radius: 8px; font: inherit; line-height: 1; cursor: pointer;
+    color: inherit; background: #14231f; border: 1px solid #35504a;
+  }
+  #strange-hud select { min-width: 0; max-width: 100%; background: #060d0b; }
+  #strange-hud button:hover:not(:disabled) { border-color: ${STRANGE_GOLD}; }
+  #strange-hud button:disabled { opacity: .38; cursor: default; }
+  #strange-hud .strange-title {
+    position: absolute; left: 14px; top: 12px; box-sizing: border-box; width: min(330px, 34vw); padding: 10px 12px 10px;
+    border: 1px solid #35504a; border-radius: 12px; background: #07110fd9;
+  }
+  #strange-hud .strange-title b {
+    display: block; color: ${STRANGE_GOLD}; font: 700 19px/1.15 Georgia, serif; letter-spacing: .02em;
+  }
+  #strange-hud .strange-title span { display: block; margin-top: 4px; color: #bccac4; }
+  #strange-hud .strange-title nav { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+  #strange-hud .strange-title a {
+    padding: 2px 7px 3px; border: 1px solid #35504a; border-radius: 6px; background: #14231f;
+    color: #bccac4; font-size: 10.5px; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; text-decoration: none;
+  }
+  #strange-hud .strange-title a:hover { color: ${STRANGE_GOLD}; border-color: ${STRANGE_GOLD}; }
+  #strange-hud .strange-versus {
+    position: absolute; right: 14px; top: 12px; padding: 8px 12px 9px; display: grid; gap: 2px 14px;
+    grid-template-columns: auto auto auto; align-items: baseline; font-variant-numeric: tabular-nums;
+    border: 1px solid #35504a; border-radius: 12px; background: #07110fd9;
+  }
+  #strange-hud .strange-versus i { font-style: normal; color: #9fb3ab; }
+  #strange-hud .strange-versus b { font-weight: 400; text-align: right; min-width: 3.2em; }
+  #strange-hud .strange-versus b.lead { font-weight: 700; color: ${STRANGE_GOLD}; }
+  #strange-hud .strange-versus .strange-a, #strange-hud .strange-versus .strange-b { font-weight: 700; text-align: right; }
+  #strange-hud .strange-a { color: #ff8f6b; }
+  #strange-hud .strange-b { color: #6fd3e0; }
+  /* A world's name plate, across the top of it under the line of the open turn. */
+  #strange-hud .strange-world {
+    position: absolute; top: 50%; height: var(--strange-head); box-sizing: border-box;
+    width: calc(50% - var(--strange-gutter) / 2); padding: 0 10px;
+    display: flex; align-items: center; gap: 8px; white-space: nowrap; overflow: hidden;
+    background: #0a1512; border-bottom: 1px solid #22332e;
+  }
+  #strange-hud .strange-world[data-strange-world="a"] { left: 0; border-top: 2px solid #ff8f6b; }
+  #strange-hud .strange-world[data-strange-world="b"] { right: 0; border-top: 2px solid #6fd3e0; }
+  #strange-hud .strange-world > b { font: 700 17px Georgia, serif; }
+  #strange-hud .strange-world select { flex: none; width: auto; max-width: 46%; }
+  #strange-hud .strange-world [data-strange-line] { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: #bccac4; font-variant-numeric: tabular-nums; }
+  #strange-hud .strange-world button.on { color: #10140f; background: ${STRANGE_GOLD}; border-color: transparent; font-weight: 700; cursor: default; opacity: 1; }
+  /* The hand on the highway, on the title's card: the trunk's column between
+     the worlds is left to the turns played. */
+  #strange-hud .strange-deck { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; margin-top: 9px; }
+  #strange-hud .strange-deck button { width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #strange-hud .strange-deck .strange-play {
+    grid-column: 1 / -1; height: 32px; font-size: 14px; font-weight: 700;
+    color: #10140f; background: ${STRANGE_GOLD}; border-color: transparent;
+  }
+  #strange-hud .strange-steps { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; }
+  #strange-hud .strange-steps button { padding: 0; font-variant-numeric: tabular-nums; }
+  #strange-hud .strange-title .strange-say { margin-top: 7px; color: #9fb3ab; font-size: 11px; min-height: 1.25em; }
+  /* The open turn, at the foot of the trunk. */
+  #strange-hud .strange-now {
+    position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%); box-sizing: border-box;
+    width: calc(var(--strange-gutter) - 20px); padding: 6px 6px 7px; text-align: center; pointer-events: none;
+    border: 1px solid #35504a; border-radius: 12px; background: #07110fe6;
+  }
+  #strange-hud .strange-turn { display: flex; align-items: baseline; justify-content: center; gap: 6px; color: #9fb3ab; font-weight: 700; letter-spacing: .12em; }
+  #strange-hud .strange-turn b { color: ${STRANGE_GOLD}; font: 700 30px/1 Georgia, serif; letter-spacing: 0; font-variant-numeric: tabular-nums; }
+  #strange-hud .strange-era { margin-top: 2px; color: #bccac4; min-height: 1.25em; }
+  @media (max-height: 640px) { #strange-hud .strange-title > span, #strange-hud .strange-title .strange-say { display: none; } }
+`;
+// A half of it is a map: the standings, the tracker and the seat's own boxes
+// are put away, and the numbers of the two are set side by side by the host.
+const STRANGE_PANE_STYLE = `
+  html.strange-pane #playerhud, html.strange-pane #victoryhud, html.strange-pane #livepause,
+  html.strange-pane #moments, html.strange-pane #site-pick, html.strange-pane #buildmark { display: none !important; }
+`;
+
+// The host's record of the highway, beside the split's own.
+const strange = {
+  // The timeline being followed: the one in the middle.
+  follow: "a",
+  // The turn on the line across the middle of the window, which follows the
+  // followed world's turn, and the lane each world's branch stands in (0 is
+  // the middle; B's side is the right, A's the left). Both move by easing.
+  cam: null, lanes: {a: 0, b: 1},
+  // Branches let go of: {letter, parent, from, to, slot, by, score}.
+  ghosts: [],
+  canvas: null, hud: null, then: 0, hover: null, said: "", drawn: "",
+  // Whether the bar has said there is no room for two worlds.
+  sorry: false,
+};
+
+function strangeOther(letter) { return letter === "a" ? "b" : "a"; }
+function strangeAgents() {
+  return [...((document.getElementById("autoplaystrategy") || {}).options || [])].map(option => option.value);
+}
+// The Civ AI a branch is given: not the one the world it parts from seats,
+// and not the one it had, when there is another.
+function strangeRival(against, had = null) {
+  const offered = strangeAgents();
+  const order = [...STRANGE_RIVALS.filter(name => offered.includes(name)), ...offered.filter(name => !STRANGE_RIVALS.includes(name))];
+  const from = had === null ? 0 : order.indexOf(had) + 1;
+  for (let at = 0; at < order.length; at++) {
+    const name = order[(from + at) % order.length];
+    if (name !== against && name !== had) return name;
+  }
+  return order.find(name => name !== against) || against;
+}
+function strangeSay(text) { strange.said = text; strangeDraw(); }
+// The game's last turn, when it has one.
+function strangeLimit() {
+  const deck = debugSplitDeck();
+  if (deck && deck.limit) return deck.limit;
+  return [state.turn_limit, state.max_turns].find(turns => Number.isFinite(turns) && turns > 0) || null;
+}
+// Whether the split can be asked for something now.
+function strangeIdle() {
+  const split = debugSplit;
+  if (!split || !split.shown || split.busy || split.running > 0) return false;
+  const {a, b} = split.panes;
+  return a.turn !== null && a.turn === b.turn && !!a.deck && a.deck.idle === true;
+}
+// The window, as the highway is laid out in it. The open turn is a line
+// across the middle. `up` and `down` are how far the highway runs from it,
+// and each `tau` how many turns it takes to cover most of that: a turn near
+// the line is tall and one far from it thin, so the whole game is on the
+// board and the turns about to be played are the ones with room.
+function strangeGeometry() {
+  const W = window.innerWidth, H = window.innerHeight;
+  const gutter = Math.max(170, Math.min(240, W * .13));
+  const cy = Math.round(H / 2);
+  return {W, H, gutter, cx: W / 2, cy, up: cy - 16, down: H - cy - 12, tauUp: 26, tauDown: 20,
+    // How far apart two lanes stand: between the worlds, and at the far end.
+    near: Math.min(42, gutter / 2 - 34), far: Math.min(300, W * .15)};
+}
+function strangeY(g, turn, cam) {
+  const ahead = turn - cam;
+  return ahead >= 0 ? g.cy - g.up * (1 - Math.exp(-ahead / g.tauUp)) : g.cy + g.down * (1 - Math.exp(ahead / g.tauDown));
+}
+// The turn a height of the window stands for.
+function strangeTurnAt(g, y, cam) {
+  if (y <= g.cy) return cam - g.tauUp * Math.log(Math.max(1e-4, 1 - (g.cy - y) / g.up));
+  return cam + g.tauDown * Math.log(Math.max(1e-4, 1 - (y - g.cy) / g.down));
+}
+function strangeSpread(g, y) {
+  return y >= g.cy ? g.near : g.near + (g.far - g.near) * Math.pow(Math.min(1, (g.cy - y) / g.up), 1.5);
+}
+function strangeRamp(x) { return x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x); }
+// A number between 0 and 1 that is always the same for the same two numbers.
+function strangeDice(one, other) {
+  let x = (Math.imul(one | 0, 374761393) + Math.imul(other | 0, 668265263)) | 0;
+  x = Math.imul(x ^ (x >>> 13), 1274126177);
+  return ((x ^ (x >>> 16)) >>> 0) / 4294967296;
+}
+
+// The branch a world is on is let go of: it stays on the tree from the turn
+// it parted on to the last turn it played, in the first free place on its
+// own side.
+function strangeKeepGhost(letter) {
+  const split = debugSplit, fork = debugSplitFork();
+  if (!fork.forked || fork.last[letter] <= fork.turn) return;
+  const side = letter === "b" ? 1 : -1, from = fork.turn, to = fork.last[letter];
+  let slot = 0;
+  while (strange.ghosts.some(ghost => ghost.side === side && ghost.slot === slot && ghost.from < to && from < ghost.to)) slot++;
+  const numbers = split.panes[letter].numbers || {};
+  strange.ghosts.push({letter, side, slot, from, to, parent: strangeOther(letter),
+    by: debugAgentName(split.panes[letter].strategy), score: typeof numbers.score === "number" ? numbers.score : null});
+  if (strange.ghosts.length > STRANGE_GHOSTS_MOST) strange.ghosts.shift();
+}
+// Branch here: the other world becomes the followed one as it stands on the
+// open turn, and is given another Civ AI. They are one world until one of
+// them plays a turn, and two from there.
+function strangeBranch() {
+  if (!strangeIdle()) return;
+  const split = debugSplit, from = strange.follow, to = strangeOther(from);
+  strangeKeepGhost(to);
+  split.history[to] = new Map(split.history[from]);
+  debugSplitTell(to, {civvis: "pane-copy", from: split.panes[from].id});
+  const name = strangeRival(split.panes[from].strategy, split.panes[to].strategy);
+  debugSplitSeat(to, name);
+  strangeSay(`${to.toUpperCase()} branches from ${from.toUpperCase()} on turn ${split.panes[from].turn}, played by ${debugAgentName(name)}`);
+}
+// Play both worlds on, each with its own Civ AI, or stop them.
+function strangePlay(until = null) {
+  const split = debugSplit;
+  if (!split || split.busy || !split.shown) return;
+  if (split.running > 0) {
+    for (const letter of ["a", "b"]) debugSplitTell(letter, {civvis: "pane-stop"});
+    split.running = 0;
+    split.until = null;
+    strangeDraw();
+    return;
+  }
+  if (!strangeIdle()) return;
+  const reached = Math.max(split.panes.a.turn ?? 0, split.panes.b.turn ?? 0);
+  const end = until ?? strangeLimit() ?? reached + 250;
+  if (end <= reached) return;
+  strangeSay("");
+  debugSplitRun(end, ["a"]);
+  strangeDraw();
+}
+// Go to a turn: one that was played is gone back to as it stood, in both
+// worlds, and one still ahead is played to.
+function strangeGoTo(turn) {
+  if (!strangeIdle() || !Number.isFinite(turn)) return;
+  const split = debugSplit, limit = strangeLimit();
+  const first = Math.max(split.panes.a.first ?? 1, split.panes.b.first ?? 1);
+  const to = Math.max(first, Math.min(limit ?? Infinity, Math.round(turn)));
+  if (to === split.panes.a.turn) return;
+  strangeSay("");
+  debugSplitGoTo("a", String(to));
+}
+
+// The highway is made when the split is: the sky behind the two worlds, and
+// over them what is written on it and the hand that moves it.
+function strangeMount() {
+  const split = debugSplit;
+  if (!split || split.host.querySelector("#strange-sky")) return;
+  if (!document.getElementById("strange-style")) {
+    const style = document.createElement("style");
+    style.id = "strange-style";
+    style.textContent = STRANGE_STYLE;
+    document.head.appendChild(style);
+  }
+  // The branch begins with a Civ AI of its own, or the two would be one world.
+  split.panes.b.strategy = strangeRival(split.panes.a.strategy);
+  strange.follow = "a"; strange.cam = null; strange.lanes = {a: 0, b: 1}; strange.ghosts = []; strange.said = ""; strange.drawn = "";
+  const canvas = document.createElement("canvas");
+  canvas.id = "strange-sky";
+  canvas.setAttribute("role", "img");
+  canvas.setAttribute("aria-label", "The timeline of the two worlds, as a tree: forward in time is up");
+  const hud = document.createElement("div");
+  hud.id = "strange-hud";
+  hud.innerHTML = `
+    <div class="strange-title">
+      <b>Doctor Strange's Civ 6</b>
+      <span>One world, two timelines. Forward in time is up: what is played runs down between the worlds, what is still to come fans out ahead.</span>
+      <div class="strange-deck" role="toolbar" aria-label="Timeline">
+        <button class="strange-play" data-strange="play"></button>
+        <div class="strange-steps">
+          <button data-strange="back10" title="Both worlds go back ten turns, as they stood">−10</button>
+          <button data-strange="back1" title="Both worlds go back a turn, as they stood">−1</button>
+          <button data-strange="on1" title="Both worlds play a turn, each with its own Civ AI">+1</button>
+          <button data-strange="on10" title="Both worlds play ten turns, each with its own Civ AI">+10</button>
+        </div>
+        <button data-strange="branch"></button>
+        <button data-strange="fork"></button>
+      </div>
+      <div class="strange-say" data-strange="say" role="status"></div>
+      <nav aria-label="CIVVIS sites"><a href="./" target="_top">CIVVIS</a><a href="?mode=play" target="_top">AI Debugger</a></nav>
+    </div>
+    <div class="strange-versus" data-strange="numbers"></div>
+    ${["a", "b"].map(letter => `
+    <div class="strange-world" data-strange-world="${letter}">
+      <b class="strange-${letter}">${letter.toUpperCase()}</b>
+      <select data-strange-agent="${letter}" title="The Civ AI that plays ${letter.toUpperCase()}'s seat" aria-label="Civ AI for ${letter.toUpperCase()}"></select>
+      <span data-strange-line="${letter}"></span>
+      <button data-strange="follow-${letter}"></button>
+    </div>`).join("")}
+    <div class="strange-now">
+      <div class="strange-turn"><span>TURN</span><b data-strange="turn"></b><span data-strange="limit"></span></div>
+      <div class="strange-era" data-strange="era"></div>
+    </div>`;
+  hud.addEventListener("click", event => {
+    const button = event.target.closest("[data-strange]");
+    if (!button || button.disabled || !debugSplit) return;
+    const action = button.dataset.strange, now = debugSplit.panes.a.turn ?? 1;
+    if (action === "play") strangePlay();
+    else if (action === "back10") strangeGoTo(now - 10);
+    else if (action === "back1") strangeGoTo(now - 1);
+    else if (action === "on1") strangeGoTo(now + 1);
+    else if (action === "on10") strangeGoTo(now + 10);
+    else if (action === "branch") strangeBranch();
+    else if (action === "fork") strangeGoTo(debugSplitFork().turn);
+    else if (action === "follow-a" || action === "follow-b") { strange.follow = action.slice(-1); strangeDraw(); }
+  });
+  hud.addEventListener("change", event => {
+    const letter = event.target.dataset.strangeAgent;
+    if (letter && debugSplit) debugSplitSeat(letter, event.target.value);
+  });
+  // The page's keys are not a picker's.
+  hud.addEventListener("keydown", event => { if (event.target.matches("select")) event.stopPropagation(); });
+  canvas.addEventListener("pointermove", event => { strange.hover = {x: event.clientX, y: event.clientY}; });
+  canvas.addEventListener("pointerleave", () => { strange.hover = null; });
+  canvas.addEventListener("click", event => {
+    if (strange.cam === null) return;
+    strangeGoTo(strangeTurnAt(strangeGeometry(), event.clientY, strange.cam));
+  });
+  split.host.prepend(canvas);
+  split.host.appendChild(hud);
+  strange.canvas = canvas; strange.hud = hud;
+  strange.then = 0;
+  requestAnimationFrame(strangePaint);
+}
+
+// What is written on the highway, drawn from the split's record whenever the
+// split is drawn.
+function strangeDraw() {
+  const split = debugSplit, hud = strange.hud;
+  if (!split || !hud || !hud.isConnected) return;
+  const {a, b} = split.panes, idle = strangeIdle(), fork = debugSplitFork();
+  const turn = split.panes[strange.follow].turn ?? fork.turn, limit = strangeLimit();
+  const one = !fork.forked;
+  const set = (name, text) => { const held = hud.querySelector(`[data-strange="${name}"]`); if (held.textContent !== text) held.textContent = text; return held; };
+  set("turn", String(turn));
+  set("limit", limit ? `/ ${limit}` : "");
+  const deck = debugSplitDeck();
+  set("era", deck && typeof deck.era === "number" ? `${debugEraName({era: deck.era})} era` : "");
+  const play = set("play", split.running > 0 ? "⏸ Pause" : "▶ Play both");
+  play.disabled = !split.shown || split.busy || (split.running === 0 && (!idle || (limit !== null && turn >= limit)));
+  play.title = split.running > 0 ? "Stop both worlds on the turn they are playing"
+    : "Play both worlds on from here, each with its own Civ AI";
+  const first = Math.max(a.first ?? 1, b.first ?? 1);
+  for (const [name, off] of [["back10", turn <= first], ["back1", turn <= first],
+    ["on1", limit !== null && turn >= limit], ["on10", limit !== null && turn >= limit]])
+    hud.querySelector(`[data-strange="${name}"]`).disabled = !idle || off;
+  const other = strangeOther(strange.follow);
+  const branch = set("branch", `⑂ Branch ${other.toUpperCase()} here`);
+  branch.disabled = !idle;
+  branch.title = `Let ${other.toUpperCase()}'s branch go and begin it again here: a copy of ${strange.follow.toUpperCase()} on turn ${turn}, played by another Civ AI`;
+  const back = set("fork", one ? "⏮ To the fork" : `⏮ To the fork · ${fork.turn}`);
+  back.disabled = !idle || one || turn === fork.turn;
+  back.title = one ? "The two worlds are one world so far" : `Both worlds go back to turn ${fork.turn}, the last they share`;
+  set("say", strange.said || (one
+    ? (a.strategy === b.strategy ? "A and B seat the same Civ AI: they are one world until one is given another"
+      : "One world so far. Play, and each Civ AI takes it its own way")
+    : `A and B parted on turn ${fork.turn}`));
+  for (const letter of ["a", "b"]) {
+    const pane = split.panes[letter], numbers = pane.numbers || {};
+    debugOfferAgents(hud.querySelector(`[data-strange-agent="${letter}"]`), pane.strategy);
+    hud.querySelector(`[data-strange-agent="${letter}"]`).disabled = !idle;
+    const line = [["score", "Score"], ["cities", "Cities"], ["science", "Science"]]
+      .filter(([key]) => typeof numbers[key] === "number")
+      .map(([key, label]) => `${label} ${debugVersusNumber(numbers[key])}`).join(" · ");
+    const held = hud.querySelector(`[data-strange-line="${letter}"]`);
+    if (held.textContent !== line) held.textContent = line;
+    const follow = hud.querySelector(`[data-strange="follow-${letter}"]`);
+    const on = strange.follow === letter;
+    const words = on ? "Following" : "Follow";
+    if (follow.textContent !== words) follow.textContent = words;
+    follow.classList.toggle("on", on);
+    follow.disabled = on;
+    follow.title = on ? `${letter.toUpperCase()} is the timeline in the middle`
+      : `Put ${letter.toUpperCase()}'s timeline in the middle: Branch here then branches from ${letter.toUpperCase()}`;
+  }
+  const table = `<i></i><span class="strange-a">A</span><span class="strange-b">B</span>` +
+    DEBUG_VERSUS_ROWS.map(([key, label, title]) => {
+      const mine = (a.numbers || {})[key], theirs = (b.numbers || {})[key];
+      const lead = (left, right) => typeof left === "number" && typeof right === "number" && left > right ? ' class="lead"' : "";
+      return `<i title="${title}">${label}</i><b${lead(mine, theirs)}>${debugVersusNumber(mine)}</b><b${lead(theirs, mine)}>${debugVersusNumber(theirs)}</b>`;
+    }).join("");
+  if (strange.drawn !== table) { strange.drawn = table; hud.querySelector('[data-strange="numbers"]').innerHTML = table; }
+}
+
+// One frame of the highway.
+function strangePaint(time) {
+  const split = debugSplit, canvas = strange.canvas;
+  if (!split || !canvas || !canvas.isConnected) { strange.canvas = null; return; }
+  requestAnimationFrame(strangePaint);
+  if (document.hidden) return;
+  const g = strangeGeometry(), ratio = Math.min(2, window.devicePixelRatio || 1);
+  if (canvas.width !== Math.round(g.W * ratio) || canvas.height !== Math.round(g.H * ratio)) {
+    canvas.width = Math.round(g.W * ratio);
+    canvas.height = Math.round(g.H * ratio);
+  }
+  const pen = canvas.getContext("2d");
+  pen.setTransform(ratio, 0, 0, ratio, 0, 0);
+  pen.clearRect(0, 0, g.W, g.H);
+  const fork = debugSplitFork(), follow = strange.follow, other = strangeOther(follow);
+  const turnOf = letter => split.panes[letter].turn ?? fork.turn;
+  const since = Math.min(.1, strange.then ? (time - strange.then) / 1000 : 0);
+  strange.then = time;
+  // The line follows the followed world's turn, and each branch its lane.
+  const ease = 1 - Math.exp(-since * 7), want = turnOf(follow);
+  if (strange.cam === null || Math.abs(want - strange.cam) > 60) strange.cam = want;
+  strange.cam += (want - strange.cam) * ease;
+  if (Math.abs(want - strange.cam) < .003) strange.cam = want;
+  for (const letter of ["a", "b"]) {
+    const lane = letter === follow ? 0 : letter === "b" ? 1 : -1;
+    strange.lanes[letter] += (lane - strange.lanes[letter]) * ease;
+  }
+  const cam = strange.cam, limit = strangeLimit();
+  const first = Math.max(1, Math.min(fork.first.a, fork.first.b));
+  const y = turn => strangeY(g, turn, cam);
+  const lane = (letter, turn) => fork.forked ? strange.lanes[letter] * strangeRamp((turn - fork.turn) / 4) : 0;
+  const x = (letter, turn) => g.cx + lane(letter, turn) * strangeSpread(g, y(turn));
+  const colour = {a: DEBUG_VERSUS_COLOURS.a, b: DEBUG_VERSUS_COLOURS.b};
+  const low = Math.max(first, Math.floor(cam - 5 * g.tauDown)), high = Math.ceil(cam + 5 * g.tauUp);
+  const end = limit ?? Infinity;
+
+  // The sky: darker away from the line, with a glow where the turn is open.
+  const glow = pen.createRadialGradient(g.cx, g.cy, 10, g.cx, g.cy, Math.max(g.W, g.H) * .62);
+  glow.addColorStop(0, "#12312b"); glow.addColorStop(.35, "#081712"); glow.addColorStop(1, "#03070a");
+  pen.fillStyle = glow;
+  pen.fillRect(0, 0, g.W, g.H);
+
+  // The board: a fret for every turn, heavier on every fifth and tenth, as
+  // wide as the tree is at that height.
+  const half = at => at >= g.cy ? g.gutter / 2 - 10 : Math.min(g.W / 2 - 12, strangeSpread(g, at) * 2.7 + 40);
+  pen.lineCap = "round"; pen.lineJoin = "round";
+  pen.textBaseline = "middle";
+  pen.font = "600 11px system-ui, sans-serif";
+  for (let turn = low; turn <= Math.min(high, end); turn++) {
+    const at = y(turn), room = Math.abs(y(turn + 1) - at);
+    const tenth = turn % 10 === 0, fifth = turn % 5 === 0;
+    if (room < (tenth ? .6 : fifth ? 2 : 5)) continue;
+    const wide = half(at);
+    pen.strokeStyle = STRANGE_GOLD;
+    pen.globalAlpha = Math.min(1, room / 9) * (tenth ? .34 : fifth ? .17 : .08);
+    pen.lineWidth = tenth ? 1.5 : 1;
+    pen.beginPath(); pen.moveTo(g.cx - wide, at); pen.lineTo(g.cx + wide, at); pen.stroke();
+    if (tenth && room > 1.6) {
+      pen.globalAlpha = Math.min(.8, room / 5);
+      pen.fillStyle = "#bccac4";
+      pen.textAlign = at >= g.cy ? "left" : "right";
+      pen.fillText(String(turn), at >= g.cy ? g.cx - wide + 2 : g.cx - wide - 8, at >= g.cy ? at - 8 : at);
+    }
+  }
+  // Its two edges, from the far end to the line.
+  pen.globalAlpha = .22; pen.strokeStyle = STRANGE_GOLD; pen.lineWidth = 1.5;
+  for (const side of [-1, 1]) {
+    pen.beginPath();
+    for (let at = g.cy - g.up; at <= g.cy; at += 6) {
+      const px = g.cx + side * half(Math.min(at, g.cy - .01));
+      if (at === g.cy - g.up) pen.moveTo(px, at); else pen.lineTo(px, at);
+    }
+    pen.stroke();
+  }
+  // The game's last turn, under its flag.
+  if (limit !== null && limit <= high) {
+    const at = y(limit), wide = half(at);
+    pen.globalAlpha = .9; pen.strokeStyle = "#e8e3d2"; pen.lineWidth = 2; pen.setLineDash([6, 6]);
+    pen.beginPath(); pen.moveTo(g.cx - wide, at); pen.lineTo(g.cx + wide, at); pen.stroke();
+    pen.setLineDash([]);
+    pen.fillStyle = "#e8e3d2"; pen.textAlign = "left";
+    pen.fillText(`🏁 ${limit}`, g.cx + wide + 8, at);
+  }
+  // The eras the followed world has been through, each named on its first turn.
+  for (const era of (split.panes[follow].marks || {}).eras || []) {
+    if (!Number.isFinite(era.turn) || era.turn < low || era.turn > high || era.turn <= first) continue;
+    const at = y(era.turn), wide = half(at);
+    pen.globalAlpha = .75; pen.strokeStyle = STRANGE_GOLD; pen.lineWidth = 1.5;
+    pen.beginPath(); pen.moveTo(g.cx - wide, at); pen.lineTo(g.cx + wide, at); pen.stroke();
+    if (at < g.cy - 14) {
+      pen.fillStyle = STRANGE_GOLD; pen.textAlign = "left";
+      pen.fillText(debugEraName(era).toUpperCase(), g.cx + wide + 8, at);
+    }
+  }
+  pen.globalAlpha = 1;
+
+  // A stretch of one line of the tree, from one turn to another.
+  const path = (from, to, where) => {
+    const begin = Math.max(from, low), stop = Math.min(to, high);
+    if (stop <= begin) return false;
+    pen.beginPath();
+    for (let turn = begin, at = 0; ; turn = Math.min(stop, turn + .25), at++) {
+      const [px, py] = where(turn);
+      if (at === 0) pen.moveTo(px, py); else pen.lineTo(px, py);
+      if (turn >= stop) break;
+    }
+    return true;
+  };
+  const stroke = (tint, width, alpha) => {
+    pen.strokeStyle = tint;
+    pen.globalAlpha = alpha * .3; pen.lineWidth = width + 8; pen.stroke();
+    pen.globalAlpha = alpha; pen.lineWidth = width; pen.stroke();
+    pen.globalAlpha = 1;
+  };
+
+  // What has not been played: from each world's last turn, the ways it could
+  // still go. A fork stands every few turns up the highway and comes down it
+  // as the turns are played; when the open turn reaches one, the way not
+  // taken closes.
+  const heads = fork.forked ? ["a", "b"] : [follow];
+  for (const letter of heads) {
+    const tip = fork.forked ? fork.last[letter] : Math.max(fork.last.a, fork.last.b);
+    if (tip >= end || tip > high) continue;
+    const tint = fork.forked ? colour[letter] : STRANGE_GOLD, salt = letter === "a" ? 11 : 23;
+    const base = turn => lane(letter, turn);
+    const at = (turn, off) => { const py = y(turn); return [g.cx + (base(turn) + off) * strangeSpread(g, py), py]; };
+    // Straight on, the way it is going.
+    pen.setLineDash([3, 7]);
+    pen.lineDashOffset = -(time / 60) % 10;
+    if (path(tip, Math.min(end, high), turn => at(turn, 0))) stroke(tint, 1.5, .55);
+    pen.setLineDash([]);
+    for (let nth = 1; nth <= 8; nth++) {
+      const begins = (Math.floor(tip / 4) + nth) * 4;
+      if (begins >= end || begins > high) break;
+      const near = Math.min(1, Math.max(0, (begins - cam) / 2.5)), dice = strangeDice(begins, salt);
+      const way = dice < .5 ? -1 : 1, reach = .5 + strangeDice(begins, salt + 1) * .8;
+      const off = turn => way * reach * (1 - Math.exp(-(turn - begins) / 9));
+      const upTo = Math.min(end, high, begins + 70);
+      if (path(begins, upTo, turn => at(turn, off(turn)))) stroke(tint, 1.2, .34 * near);
+      for (let twig = 1; twig <= 2; twig++) {
+        const sprouts = begins + 4 * twig + Math.floor(strangeDice(begins, salt + twig + 1) * 4);
+        if (sprouts >= upTo) break;
+        const turnsOut = strangeDice(sprouts, salt + 7) < .5 ? -1 : 1, far = .3 + strangeDice(sprouts, salt + 9) * .5;
+        if (path(sprouts, upTo, turn => at(turn, off(turn) + turnsOut * far * (1 - Math.exp(-(turn - sprouts) / 8)))))
+          stroke(tint, 1, .2 * near);
+      }
+      // The fork itself, which comes down the board like a note.
+      const [px, py] = at(begins, 0), size = 3 + 4 * Math.max(0, 1 - (begins - cam) / 14);
+      pen.globalAlpha = .25 + .6 * near * Math.max(0, 1 - (begins - cam) / 30);
+      pen.strokeStyle = tint; pen.lineWidth = 1.5;
+      pen.beginPath(); pen.arc(px, py, size, 0, Math.PI * 2); pen.stroke();
+      pen.globalAlpha = 1;
+    }
+  }
+
+  // The branches let go of, struck off where each ended.
+  pen.font = "600 10.5px system-ui, sans-serif";
+  for (const ghost of strange.ghosts) {
+    if (ghost.to < low || ghost.from > high) continue;
+    const where = turn => {
+      const py = y(turn), out = strangeRamp((turn - ghost.from) / 4);
+      const home = x(ghost.parent, turn), away = g.cx + ghost.side * (1.55 + .5 * ghost.slot) * strangeSpread(g, py);
+      return [home + (away - home) * out, py];
+    };
+    if (path(ghost.from, ghost.to, where)) stroke("#8a958f", 2, .5);
+    const [px, py] = where(ghost.to);
+    if (py > 20 && py < g.H) {
+      pen.globalAlpha = .8; pen.strokeStyle = "#c9d2cd"; pen.lineWidth = 2;
+      pen.beginPath(); pen.moveTo(px - 5, py - 5); pen.lineTo(px + 5, py + 5); pen.moveTo(px + 5, py - 5); pen.lineTo(px - 5, py + 5); pen.stroke();
+      if (py < g.cy - 6) {
+        pen.fillStyle = "#c9d2cd"; pen.textAlign = ghost.side > 0 ? "left" : "right";
+        pen.fillText(`${ghost.by}${ghost.score === null ? "" : ` · ${Math.round(ghost.score)}`}`, px + ghost.side * 10, py);
+      }
+      pen.globalAlpha = 1;
+    }
+  }
+
+  // The tree as played: the trunk the two share, and a branch for each from
+  // the turn they part on. A turn ahead of the open one that a world still
+  // holds is played, and is drawn so.
+  const trunkTo = fork.forked ? fork.turn : Math.max(fork.last.a, fork.last.b);
+  if (path(first, trunkTo, turn => [g.cx, y(turn)])) stroke(STRANGE_GOLD, 4, .95);
+  if (fork.forked) for (const letter of [other, follow]) {
+    if (path(fork.turn, fork.last[letter], turn => [x(letter, turn), y(turn)])) stroke(colour[letter], letter === follow ? 4.5 : 3.5, .95);
+  }
+  // A city founded is a gem on the branch that founded it.
+  for (const letter of fork.forked ? ["a", "b"] : [follow]) {
+    const history = split.history[letter];
+    let before = null;
+    for (const turn of [...history.keys()].sort((one, two) => one - two)) {
+      const cities = (history.get(turn) || {}).cities;
+      if (typeof cities !== "number") continue;
+      if (before !== null && cities > before && turn >= low && turn <= high && (fork.forked || turn <= trunkTo)) {
+        const px = turn <= fork.turn || !fork.forked ? g.cx : x(letter, turn), py = y(turn);
+        pen.save();
+        pen.translate(px, py); pen.rotate(Math.PI / 4);
+        pen.fillStyle = "#fff6d8"; pen.strokeStyle = "#7a5a18"; pen.lineWidth = 1;
+        pen.fillRect(-4, -4, 8, 8); pen.strokeRect(-4, -4, 8, 8);
+        pen.restore();
+      }
+      before = cities;
+    }
+  }
+
+  // The line of the open turn, across the window.
+  const line = pen.createLinearGradient(0, 0, g.W, 0);
+  line.addColorStop(0, colour.a); line.addColorStop(.5, STRANGE_GOLD); line.addColorStop(1, colour.b);
+  pen.strokeStyle = line; pen.globalAlpha = .28; pen.lineWidth = 7;
+  pen.beginPath(); pen.moveTo(0, g.cy); pen.lineTo(g.W, g.cy); pen.stroke();
+  pen.globalAlpha = .95; pen.lineWidth = 1.5;
+  pen.beginPath(); pen.moveTo(0, g.cy); pen.lineTo(g.W, g.cy); pen.stroke();
+  pen.globalAlpha = 1;
+
+  // Where each world stands. The followed one has the circle of the spell
+  // about it, turning.
+  pen.font = "700 12px Georgia, serif"; pen.textAlign = "center";
+  for (const letter of fork.forked ? [other, follow] : [follow]) {
+    const turn = turnOf(letter), px = x(letter, turn), py = y(turn);
+    const tint = fork.forked ? colour[letter] : STRANGE_GOLD;
+    if (letter === follow) {
+      pen.strokeStyle = STRANGE_GOLD;
+      for (const [radius, dash, speed] of [[19, [2, 5], 1], [26, [9, 4, 2, 4], -.6]]) {
+        pen.globalAlpha = .75; pen.lineWidth = 1.5; pen.setLineDash(dash); pen.lineDashOffset = time / 1000 * 18 * speed;
+        pen.beginPath(); pen.arc(px, py, radius, 0, Math.PI * 2); pen.stroke();
+      }
+      pen.setLineDash([]); pen.globalAlpha = 1;
+    }
+    pen.fillStyle = "#07110f"; pen.strokeStyle = tint; pen.lineWidth = 2.5;
+    pen.beginPath(); pen.arc(px, py, 11, 0, Math.PI * 2); pen.fill(); pen.stroke();
+    pen.fillStyle = tint;
+    pen.fillText(fork.forked ? letter.toUpperCase() : "AB", px, py + .5);
+  }
+
+  // Under the pointer: the turn that height stands for, and what a press does.
+  const hover = strange.hover;
+  if (hover && strangeIdle()) {
+    const turn = Math.max(first, Math.min(end, Math.round(strangeTurnAt(g, hover.y, cam)))), at = y(turn);
+    const played = Math.max(fork.last.a, fork.last.b);
+    if (turn !== turnOf(follow) && at > 8 && at < g.H - 8) {
+      const wide = half(at);
+      pen.globalAlpha = .9; pen.strokeStyle = "#ffffff"; pen.lineWidth = 1;
+      pen.beginPath(); pen.moveTo(g.cx - wide, at); pen.lineTo(g.cx + wide, at); pen.stroke();
+      pen.font = "600 11px system-ui, sans-serif"; pen.textAlign = "center"; pen.fillStyle = "#ffffff";
+      pen.fillText(turn > played ? `Play to turn ${turn}` : `Go to turn ${turn}`, g.cx, at - 10);
+      pen.globalAlpha = 1;
+    }
+  }
+}
+
+if (STRANGE_PANE) {
+  document.documentElement.classList.add("strange-pane");
+  const style = document.createElement("style");
+  style.id = "strange-pane-style";
+  style.textContent = STRANGE_PANE_STYLE;
+  document.head.appendChild(style);
+}
+if (STRANGE) {
+  document.documentElement.classList.add("strange");
+  // The split is made by the debugger and drawn by it. The highway is made
+  // with it, and is drawn again whenever it is.
+  const open = debugSplitOpen;
+  debugSplitOpen = function (...given) {
+    const before = debugSplit;
+    const opened = open(...given);
+    if (debugSplit && debugSplit !== before) strangeMount();
+    return opened;
+  };
+  const draw = drawDebugSplit;
+  drawDebugSplit = function (...given) {
+    const drawn = draw(...given);
+    try { strangeDraw(); } catch (error) { console.error("doctor strange", error); }
+    return drawn;
+  };
+  // With no room for two worlds (a small device, a narrow window) the game
+  // stays on its one timeline, which is the AI Debugger, and the bar says so.
+  const tracks = debugOpenOnTwoTracks;
+  debugOpenOnTwoTracks = function (...given) {
+    const opened = tracks(...given);
+    if (!debugSplit && !strange.sorry && debugOpenedGame !== null && debugTimeline()) {
+      strange.sorry = true;
+      debugSay("Doctor Strange's Civ 6 sets two worlds side by side and needs a wider window. This is the AI Debugger, on one timeline");
+    }
+    return opened;
+  };
+}
+
 // `render` is the one door a state comes through, whoever asked for it.
 // `drawTurnLoop` is the page's own word that the turn's standing changed —
 // an end of turn in flight, a request finished — which is exactly when the

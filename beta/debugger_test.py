@@ -3011,6 +3011,109 @@ def check_autosearch(bar: Bar, address: str) -> None:
     assert not bar.dev.console, f"the page complained: {bar.dev.console}"
 
 
+def check_doctor_strange(bar: Bar, address: str) -> None:
+    """Doctor Strange's Civ 6: the same split, shown as two worlds under the tree of their timeline.
+
+    Operator, 2026-11-23: "it will have a scrolling guitar hero setup. where
+    the timeline we are on and following is center screen. forward in time is
+    up. forward will branch out more in the tree. bottom left quad and bottom
+    right quad, roughly are our world to compare. 2 simulatoins. this is
+    limited at 2 for this demo."
+    """
+    both = "debugSplit.panes.a.turn === {0} && debugSplit.panes.b.turn === {0}".format
+    ready = "typeof drawDebugBar === 'function' && typeof engineState === 'function'"
+    bar.dev.call("Page.navigate", {"url": f"{address}?mode=strange"})
+    bar.until(f"{ready} && location.search === '?mode=strange' && state === null", "the page, asked for as Doctor Strange's Civ 6")
+    assert bar.ev("[STRANGE, STRANGE_PANE, document.documentElement.classList.contains('strange')]") == [True, False, True]
+    bar.ev("render(engineState()), true")
+    bar.settled()
+    bar.until(f"debugSplit && debugSplit.shown && {both(1)} && strangeIdle()", "its two worlds are there")
+    # The branch begins with a Civ AI of its own, or the two would be one world for ever.
+    assert bar.ev("[debugSplit.panes.a.strategy, debugSplit.panes.b.strategy, debugSplit.locked]") == ["jack", "stock", True]
+    bar.until("debugSplit.panes.b.frame.contentWindow.eval('engine.seat') === 'stock'", "B is seated with its own Civ AI")
+    # The two worlds are the two lower quarters of the window, with the
+    # trunk's column between them. The sky they stand on is the whole
+    # window, the bar is unseen (half A's deck is still drawn from it) and
+    # the strip between the halves is gone. Each half knows what it is a
+    # half of, which is what puts its panels away.
+    layout = bar.ev("""(() => {
+      const box = letter => debugSplit.panes[letter].frame.getBoundingClientRect(), a = box("a"), b = box("b");
+      const sky = document.getElementById("strange-sky").getBoundingClientRect();
+      return {
+        a: [a.left === 0, a.top >= innerHeight / 2, a.right < innerWidth / 2, Math.round(a.bottom) === innerHeight],
+        b: [Math.round(b.right) === innerWidth, b.top >= innerHeight / 2, b.left > innerWidth / 2, Math.round(b.bottom) === innerHeight],
+        alike: Math.round(a.width) === Math.round(b.width) && Math.round(a.height) === Math.round(b.height),
+        roomy: a.height > innerHeight * .4 && a.width > innerWidth * .4,
+        sky: [sky.left, sky.top, sky.width === innerWidth, sky.height === innerHeight],
+        bar: getComputedStyle(debugBar).visibility,
+        strip: getComputedStyle(debugSplit.host.querySelector(".dbg-divider")).display,
+        halves: ["a", "b"].map(letter => debugSplit.panes[letter].frame.contentWindow.eval(
+          "[STRANGE, STRANGE_PANE, document.documentElement.classList.contains('strange-pane')]")),
+      };
+    })()""")
+    assert layout == {"a": [True] * 4, "b": [True] * 4, "alike": True, "roomy": True, "sky": [0, 0, True, True],
+                      "bar": "hidden", "strip": "none", "halves": [[False, True, True]] * 2}, layout
+    # The highway is painted: the open turn is the line across the middle of
+    # the window, which is where the followed world's turn is put.
+    bar.until("strange.canvas.width === Math.round(innerWidth * Math.min(2, devicePixelRatio || 1)) && strange.cam === 1",
+              "the highway is painted")
+    geometry = bar.ev("(() => { const g = strangeGeometry(); return [strangeY(g, strange.cam, strange.cam) === Math.round(innerHeight / 2),"
+                      " strangeY(g, 11, 1) < strangeY(g, 2, 1), strangeY(g, 2, 1) < g.cy,"
+                      " Math.round(strangeTurnAt(g, strangeY(g, 37, 12), 12)), Math.round(strangeTurnAt(g, strangeY(g, 3, 12), 12)),"
+                      " strangeSpread(g, 20) > strangeSpread(g, g.cy)]; })()")
+    # Forward in time is up, a turn is the turn its height stands for, and the tree is wider ahead.
+    assert geometry == [True, True, True, 37, 3, True], geometry
+    words = "[...document.querySelectorAll('#strange-hud [data-strange]')].map(held => [held.dataset.strange, held.textContent.trim(), !!held.disabled])"
+    said = {name: [text, off] for name, text, off in bar.ev(words) if name != "numbers"}
+    assert said == {"play": ["▶ Play both", False], "back10": ["−10", True], "back1": ["−1", True], "on1": ["+1", False],
+                    "on10": ["+10", False], "branch": ["⑂ Branch B here", False], "fork": ["⏮ To the fork", True],
+                    "say": ["One world so far. Play, and each Civ AI takes it its own way", False],
+                    "follow-a": ["Following", True], "follow-b": ["Follow", False],
+                    "turn": ["1", False], "limit": ["", False], "era": ["Ancient era", False]}, said
+    # One world so far, and one line on the tree. A turn played by two Civ AIs forks it there.
+    assert bar.ev("[debugSplitFork().forked, strange.ghosts.length, strange.follow]") == [False, 0, "a"]
+    bar.click('#strange-hud [data-strange="on1"]')
+    bar.until(f"{both(2)} && strangeIdle() && debugSplitFork().forked", "the two worlds part")
+    assert bar.ev("[debugSplitFork().turn, document.querySelector('#strange-hud [data-strange=\"say\"]').textContent,"
+                  " document.querySelector('#strange-hud [data-strange=\"fork\"]').textContent]") == \
+        [1, "A and B parted on turn 1", "⏮ To the fork · 1"]
+    # Branch here: B's branch is let go of and stays on the tree, on its own
+    # side, from the turn it parted on to the last it played; and B is A
+    # again as A stands on the open turn, so the two are one world from there.
+    bar.click('#strange-hud [data-strange="branch"]')
+    bar.until(f"{both(2)} && strangeIdle() && !debugSplitFork().forked", "B branches from A on the open turn")
+    assert bar.ev("strange.ghosts.map(ghost => [ghost.letter, ghost.side, ghost.slot, ghost.from, ghost.to, ghost.parent, ghost.by])") == \
+        [["b", 1, 0, 1, 2, "a", "Stock"]]
+    assert bar.ev("debugSplit.panes.b.frame.contentWindow.eval('engine.sent.filter(call => call.path === \"/debug\")"
+                  ".map(call => call.body.op)')").count("copy") == 1
+    # A turn back is both worlds, as they stood.
+    bar.click('#strange-hud [data-strange="back1"]')
+    bar.until(f"{both(1)} && strangeIdle()", "both worlds go back a turn")
+    # Following B puts its timeline in the middle: Branch here then begins A again, from B.
+    bar.click('#strange-hud [data-strange="follow-b"]')
+    assert bar.ev("[strange.follow, document.querySelector('#strange-hud [data-strange=\"branch\"]').textContent]") == ["b", "⑂ Branch A here"]
+    # A press on the highway goes to the turn that height stands for: one
+    # ahead of the last played is played to.
+    bar.ev("(() => { const g = strangeGeometry(); strange.canvas.dispatchEvent(new MouseEvent('click',"
+           " {clientX: g.cx, clientY: strangeY(g, 3, strange.cam), bubbles: true})); return true; })()")
+    bar.until(f"{both(3)} && strangeIdle()", "a press on the highway plays to its turn")
+    assert not bar.dev.console, f"the page complained: {bar.dev.console}"
+
+    # With no room for two worlds the game is on its one timeline, which is
+    # the AI Debugger, with its bar in sight and saying why.
+    bar.dev.call("Emulation.setDeviceMetricsOverride", {"width": 800, "height": 900, "deviceScaleFactor": 1, "mobile": False})
+    bar.until("innerWidth === 800", "a narrow window")
+    bar.dev.call("Page.navigate", {"url": f"{address}?mode=strange&narrow"})
+    bar.until(f"{ready} && location.search === '?mode=strange&narrow' && state === null", "the page again, in a narrow window")
+    bar.ev("render(engineState()), true")
+    bar.until("debugOpenedGame !== null && strange.sorry", "a narrow window is told why it has one timeline")
+    assert bar.ev("[debugSplit, getComputedStyle(debugBar).visibility]") == [None, "visible"]
+    assert bar.note().startswith("Doctor Strange's Civ 6 sets two worlds side by side and needs a wider window"), bar.note()
+    bar.dev.call("Emulation.clearDeviceMetricsOverride")
+    bar.until("innerWidth > 1000", "the window is its own size again")
+    assert not bar.dev.console, f"the page complained: {bar.dev.console}"
+
+
 def main() -> int:
     here = pathlib.Path(__file__).resolve().parent
     stage = pathlib.Path(tempfile.mkdtemp(prefix="civvis-debugger-"))
@@ -3132,6 +3235,12 @@ def main() -> int:
               "of, how far ahead and how many cores; a search plays on copies of the engine, leaves the "
               "page's game alone, finds the best line and lets its copies go; the line is played on the "
               "one timeline or in either half of a split, and says what it came to beside what was found.")
+        check_doctor_strange(bar, f"http://127.0.0.1:{port}/")
+        print("Doctor Strange's Civ 6 is the split shown as two worlds in the lower quarters of the window under "
+              "the tree of their timeline: the open turn is the line across the middle, forward in time is up and "
+              "the tree is wider ahead; B begins with a Civ AI of its own, a turn played forks the tree, Branch here "
+              "lets the other branch go and keeps it on the tree, both worlds go back as they stood, either can be "
+              "followed, and a press on the highway goes to its turn; a narrow window has the one timeline and says why.")
         return 0
     finally:
         chrome.terminate()

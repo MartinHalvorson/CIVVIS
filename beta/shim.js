@@ -225,6 +225,7 @@
     // how the home page's "Play" quadrants differ from its "Watch" ones.
     const mode = word("mode");
     if (mode === "play") payload.spectate = false;
+    else if (mode === "strange") payload.spectate = false;
     else if (mode === "watch") payload.spectate = true;
     // A battlefield's dimensions are their own setting — no seat count
     // implies an arena size — so they travel as the one token the lobby's

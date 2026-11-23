@@ -224,6 +224,11 @@ page's four game quadrants and its battle picker are exactly these links:
 `/?mode=play` is Play Civ, `/` is Watch Civ, and a picked battle travels as
 `/?map=<battle>&players=2` with `&mode=play` when it is to be played.
 
+`/?mode=strange` is Doctor Strange's Civ 6, listed under AI Debugger since
+2026-11-23: the played game of `mode=play` with its two timelines drawn as a
+tree up the middle of the window and the two worlds under it
+(`docs/SIM_DEBUGGER.md`).
+
 ### One property worth knowing
 
 On a socket, a spectated turn is played by a stepper thread and *delivered* to
