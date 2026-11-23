@@ -385,21 +385,24 @@ class TheSiteList(unittest.TestCase):
         for gone in ("perflink", "under-watch", "opens-watching", "sub-link"):
             self.assertNotIn(gone, VIEWER)
 
-    def test_publishing_builds_the_page_into_every_lane(self):
+    def test_publishing_builds_the_page_into_a_lane_whose_revision_has_it(self):
+        # The lane's own page, filled by the lane's own script from the
+        # lane's own record videos and snapshot (it was head's script and
+        # head's record in both lanes until 2026-11-22).
+        self.assertNotIn('"$repo_root/beta/performance', PUBLISH)
         for line in (
             'performance_page="$source_tree/beta/performance.html"',
-            '[ -f "$performance_page" ] || performance_page="$repo_root/beta/performance.html"',
+            'if [ -f "$performance_page" ]; then',
             'mkdir -p "$out/performance"',
             'cp "$performance_page" "$out/performance/index.html"',
-            'python3 "$repo_root/beta/performance_page.py" "$repo_root" "$out/performance/index.html"',
+            'fill performance_page.py "$out/performance/index.html"',
+            'pages+=(performance)',
             "('href=\"/performance\"', 'href=\"performance/\"'),",
             'out / "performance" / "index.html": [],',
         ):
             self.assertIn(line, PUBLISH)
         verify = (BETA / "verify.py").read_text(encoding="utf-8")
-        self.assertIn('f"{lane}performance/index.html",', verify)
-        self.assertIn("""b'id="performance-data"' not in get("/performance/").read()""", verify)
-        self.assertIn("""b'id="performance-data"' not in get("/test/performance/").read()""", verify)
+        self.assertIn("""    "performance": b'id="performance-data"',\n""", verify)
 
 
 if __name__ == "__main__":

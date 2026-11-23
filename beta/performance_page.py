@@ -53,8 +53,10 @@ machine's load as well as with the code. The page says so.
 
 Like the home page's tables this runs inside the script that publishes the
 whole site, so what it cannot read costs the page its figures, said on
-stderr, and never costs the site its publish. Both lanes are sent head's
-figures: they are facts about the games played, not about a revision.
+stderr, and never costs the site its publish. A lane is filled by its own
+revision's copy of this script from its own revision's snapshot and record
+videos (`fill` in `beta/publish.sh`): a refreshed snapshot or a new record
+is on /test once it is on main, and on the front page once it is promoted.
 """
 
 from __future__ import annotations

@@ -3,16 +3,22 @@
 // The site is the same set of pages twice — one complete lane per build:
 //
 //   /              the STABLE lane — the promoted build, deliberately chosen:
-//                  the viewer at /, the landing page at /home, the native
-//                  binaries at /download
+//                  the viewer at /, the landing page at /home, the pages of
+//                  Charts/, the native binaries at /download
 //   /test/...      the HEAD lane — the same pages, republished automatically
 //                  from the latest main: /test, /test/home, /test/download
 //
 // Both lanes are relative-pathed, so each works at its mount point without
 // rewrites, and every link inside a lane stays inside the lane — reviewing
-// /test means clicking around /test and never landing in prod. The lanes
-// differ only in which commit they were built from, and each states its
-// commit in its own build.json.
+// /test means clicking around /test and never landing in prod. A lane is one
+// commit's site and nothing else (its pages, their figures, the viewer's
+// scripts, the engine), and each states its commit and its pages in its own
+// build.json.
+//
+// This file and 404.html are the exception, and the only one: a deployment
+// has a single request handler, so they are main's for both lanes, and a
+// change here reaches the front page without a promotion. Keep what is in
+// here to routing and headers.
 //
 // **This is a `_worker.js`, deliberately, and it must stay one.** Cloudflare
 // Pages also supports a `functions/` directory, and that is the obvious way to
@@ -121,7 +127,12 @@ function askForIt(wrong) {
 /// the dialog sends `device` when its checkbox is ticked, and a report
 /// without one records nothing about the machine it came from. The request's
 /// own User-Agent header is deliberately never quoted.
-async function fileReport(request, env, url) {
+///
+/// `lane` is where the report was filed from: "" for the front page's
+/// dialog, "/test" for the test lane's. Each lane's home page posts to its
+/// own lane, so the build named on the issue is the one the reporter was
+/// looking at.
+async function fileReport(request, env, url, lane) {
   const token = env.GITHUB_ISSUE_TOKEN;
   const answer = (status, payload) =>
     new Response(JSON.stringify(payload), {
@@ -166,12 +177,12 @@ async function fileReport(request, env, url) {
     await cache.put(cooldown, new Response("held", { headers: { "Cache-Control": "max-age=60" } }));
   }
 
-  // Stamp the report with the build it was filed against — the bundle's own
-  // build.json says which commit is live, and a bug without a commit is a
+  // Stamp the report with the build it was filed against — the lane's own
+  // build.json says which commit it serves, and a bug without a commit is a
   // guessing game. Absence (old bundle, test harness) is fine: unstamped.
   let build = "";
   try {
-    const shipped = await env.ASSETS.fetch(new Request(new URL("/build.json", url)));
+    const shipped = await env.ASSETS.fetch(new Request(new URL(`${lane}/build.json`, url)));
     if (shipped.ok) build = (await shipped.json()).short || "";
   } catch {}
 
@@ -181,7 +192,7 @@ async function fileReport(request, env, url) {
   const device = String(report.device || "").replace(/[^\x20-\x7E]/g, " ").trim().slice(0, 400);
   const body =
     `${details || "(no details given)"}\n\n---\n` +
-    `Reported from civvis.ai by **${reporter}** via the site's report dialog (no GitHub account).\n` +
+    `Reported from civvis.ai${lane} by **${reporter}** via the site's report dialog (no GitHub account).\n` +
     (build ? `Build: \`${build}\`\n` : "") +
     (device ? `Browser: ${device}` : "");
   const filed = await fetch("https://api.github.com/repos/MartinHalvorson/CIVVIS/issues", {
@@ -308,15 +319,19 @@ export default {
     // channels, were dropped in favour of those real addresses; they fall
     // through to the 404 like any other retired URL.)
 
-    // The home page's report dialog files GitHub issues through here.
-    if (url.pathname === "/report") {
+    // The home page's report dialog files GitHub issues through here, each
+    // lane's page through its own lane's address (`../report` from
+    // <lane>/home/), which is how a report says which build it is about.
+    const reportLane =
+      url.pathname === "/report" ? "" : url.pathname === "/test/report" ? "/test" : null;
+    if (reportLane !== null) {
       if (request.method !== "POST") {
         return new Response("POST only", {
           status: 405,
           headers: { Allow: "POST", "Cache-Control": "no-store" },
         });
       }
-      return fileReport(request, env, url);
+      return fileReport(request, env, url, reportLane);
     }
 
     // /beta — the lane's name for its first day — is scrapped. Answered with
