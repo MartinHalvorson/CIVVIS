@@ -36,7 +36,11 @@ fn the_pingala_metadata_family_retains_unrelated_treatments_in_either_order() {
         let winner = if ledger_held_live_treatment(new) || ledger_held_opt_in(new) {
             new
         } else {
-            tags.iter().rev().copied().find(|tag| *tag == old || *tag == new).unwrap()
+            tags.iter()
+                .rev()
+                .copied()
+                .find(|tag| *tag == old || *tag == new)
+                .unwrap()
         };
         let loser = if winner == new { old } else { new };
         assert_eq!(reported.len(), 2);
