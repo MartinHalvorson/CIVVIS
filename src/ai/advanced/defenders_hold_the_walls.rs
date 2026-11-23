@@ -81,6 +81,15 @@ impl AdvancedAi {
                 continue;
             };
             let spec = &g.rules.units[unit.kind];
+            // A soldier `defend-force-holds-the-city` has posted stays the
+            // hold's: its post is the hold's call, not the rotation's
+            // (2026-11-23 #5725 made this gene default-on and released posted
+            // ring units, breaking `paired_posed_defences_four_arms`).
+            if self.defend_hold_plan.posts.contains_key(&uid)
+                || self.defend_hold_members.contains(&uid)
+            {
+                continue;
+            }
             if spec.class != "military"
                 || matches!(spec.domain.as_deref(), Some("sea" | "air"))
                 || g.is_embarked(unit)
