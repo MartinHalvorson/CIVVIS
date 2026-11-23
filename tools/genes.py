@@ -1386,10 +1386,22 @@ def gene_tags_at(commit: str) -> list[str] | None:
         return None
 
 
+@functools.lru_cache(maxsize=None)
+def _gene_tags_in_the_working_tree() -> tuple[str, ...]:
+    return tuple(gene_tags_from_sources(lambda path: (ROOT / path).read_text()))
+
+
 def gene_tags_now() -> list[str]:
     """The gene tags in the working tree — the code a ledger written here
-    would ship."""
-    return gene_tags_from_sources(lambda path: (ROOT / path).read_text())
+    would ship.
+
+    Cached as `genes()` is: the registry does not change within one process
+    (`write` rewrites only the verdict block, never a row), and each call
+    returns a fresh list. Uncached, `build_gap` re-scraped the 2.7 MB
+    `genes.rs` once per priced tag: 3,123 scrapes, 88 of the 98 s a `check`
+    took on 2026-11-23, which ran the policy job's tooling tests past its
+    10-minute limit."""
+    return list(_gene_tags_in_the_working_tree())
 
 
 def gene_set_fingerprint(tags) -> str:
@@ -1516,7 +1528,8 @@ def build_gap(data: dict, name: str, tags_at=None, tags_now=None) -> str:
         ]))
         return (f"{name} was NOT played by the code at the commit it names "
                 f"({commit[:12]}) — {detail}")
-    gone = [tag for tag in priced if tag not in set(tags_now())]
+    now = set(tags_now())
+    gone = [tag for tag in priced if tag not in now]
     if gone:
         return (f"{name} prices {len(gone)} gene(s) this repository no longer registers: "
                 + ", ".join(sorted(gone))
