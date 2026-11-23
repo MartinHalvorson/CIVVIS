@@ -367,7 +367,7 @@ muster-at-command-…  30120/29880 31.0%  22.3% +8.9pp z+2.53   +8.4pp z+2.40   
 | `all 95% CI`, `z` | the on − off estimate over every seat, errors clustered by game |
 | `shareΔ`, `z` | the same contrast on **score share** (a seat's score ÷ all majors' scores): continuous, so it resolves an edge at a fraction of the seats a win count needs |
 | `adjΔpp` | the win Δ from one OLS of the seat outcome on an intercept and every screened gene at once; printed once there are at least `genes + 11` seats |
-| `compute cost`, `time cost` | percent change per enabled major seat in wall seconds per completed turn, and in whole-game wall seconds (see below) |
+| `compute cost`, `time cost` | percent change per enabled major seat in seconds per completed turn, and in whole-game seconds, on the game thread's CPU clock where every game carries it (see below) |
 | `read` | `helps *`/`hurts *` at \|z\| ≥ 2, `HELPS **`/`HURTS **` past the family-wise 5% bar — on the win Δ first, then `share …` when the score-share z says more; `~` otherwise |
 
 "Newest" is input order, deliberately: appended runs can use any disjoint seed
@@ -618,14 +618,25 @@ how many of its major seats had each gene on (with an intercept for
 machine-load drift and HC1 robust errors), so the coefficient is the cost of
 enabling the gene for **one major seat**:
 
-- **compute cost** is the percent change in wall seconds per completed turn —
+- **compute cost** is the percent change in seconds per completed turn —
   whether each simulated turn itself became dearer;
-- **time cost** is the percent change in whole-game wall seconds — the
+- **time cost** is the percent change in whole-game seconds — the
   throughput an operator pays, including a gene that ends games earlier or
   later.
 
 Positive is slower. Old rows with absent timings produce an unknown cost rather
 than a false zero.
+
+**Which seconds.** A row carries the game's wall seconds (`secs`) and, since
+2026-11-22, the CPU seconds its own thread spent on it (`cpu_secs`). The fit
+reads CPU seconds when every timed game in the file carries them, and wall
+seconds for the whole file otherwise, never a mixture; the analysis JSON says
+which as `cost_clock` (`cpu` or `wall`). Wall seconds count the time a worker
+stood stopped: a tournament that shares its host is paused by the scheduler's
+governor, which stops whole workers, so one game waits minutes and its
+neighbour not at all. CPU seconds do not move while a worker is stopped or
+waits for a core. They still depend on which core ran the game and how fast
+it was clocked, which the intercept and the robust errors absorb as before.
 
 What a game itself costs, and where it goes, is in
 `docs/SIMULATOR_PERFORMANCE.md` (2026-11-15). Two switches there play the
