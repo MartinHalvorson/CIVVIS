@@ -12322,8 +12322,6 @@ mod group_steps_read_the_field;
 /// `holdable-land-keeps-settling`: a mid-game Settler floor for land we can
 /// very likely hold. See `advanced/holdable_land_keeps_settling.rs`.
 mod holdable_land_keeps_settling;
-/// `nearly-built-keeps-its-queue`: see `advanced/nearly_built_keeps_its_queue.rs`.
-mod nearly_built_keeps_its_queue;
 /// `founder-holds-the-holy-city`: a founder keeps its Holy City on its own
 /// faith. See `advanced/holy_city_guard.rs`.
 mod holy_city_guard;
@@ -12339,6 +12337,8 @@ mod industrial_zone_claims_the_factory;
 /// Industrial Zone or Workshop claims its city's queue. See
 /// `advanced/industrial_zone_claims_the_producer_queue.rs`.
 mod industrial_zone_claims_the_producer_queue;
+/// `nearly-built-keeps-its-queue`: see `advanced/nearly_built_keeps_its_queue.rs`.
+mod nearly_built_keeps_its_queue;
 
 mod barbarian_research_prices_the_field;
 /// `first-campus-before-the-settler`: see

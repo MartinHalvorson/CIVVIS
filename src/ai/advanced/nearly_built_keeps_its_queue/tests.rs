@@ -90,10 +90,16 @@ fn only_an_invested_build_a_few_turns_from_done_holds() {
 
     granary_with_turns_left(&mut game, capital, 2.0);
     assert!(!off.nearly_built_holds(&game, 0, capital), "off: never");
-    assert!(on.nearly_built_holds(&game, 0, capital), "two turns left holds");
+    assert!(
+        on.nearly_built_holds(&game, 0, capital),
+        "two turns left holds"
+    );
 
     granary_with_turns_left(&mut game, capital, limit + 3.0);
-    assert!(!on.nearly_built_holds(&game, 0, capital), "far from done: the claims may take it");
+    assert!(
+        !on.nearly_built_holds(&game, 0, capital),
+        "far from done: the claims may take it"
+    );
 
     // Uninvested: nothing paid yet, nothing kept.
     game.cities.get_mut(&capital).unwrap().production = 0.0;
@@ -129,7 +135,11 @@ fn the_early_settler_floor_waits_for_a_nearly_built_granary() {
     let mut off = game.clone();
     let plan = floor_only.assess(&off, 0);
     floor_only.claim_early_settler_floor(&mut off, 0, &plan);
-    assert_eq!(settlers_queued(&off), 1, "off: the floor displaces a Granary");
+    assert_eq!(
+        settlers_queued(&off),
+        1,
+        "off: the floor displaces a Granary"
+    );
 
     let mut both = armed();
     both.enable_early_settler_floor();
