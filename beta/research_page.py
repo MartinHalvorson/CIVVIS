@@ -22,11 +22,13 @@ on a Continents map at Online speed, 250 turns:
   against the game's own AI. These are the verification games, read off
   `results.jsonl` on the ledger branch at publish, so the figures move with
   every finished game. They are kept apart by the level the AI played at,
-  Settler (Lv 1) to Deity (Lv 8), and the page draws one level at a time
+  Prince (Lv 4) to Deity (Lv 8), and the page draws one level at a time
   (operator 2026-11-21: "an option to select by level too. so i could for
-  example go to level 4 and see the win rate of civvis against level 4"),
-  opening on Deity, where most of them were played. A game counts once
-  however many runs it took, and only a game that ended in a victory, ours or
+  example go to level 4 and see the win rate of civvis against level 4";
+  2026-11-23: "ai level in charts can go from lv 4 to lv 8", so a game
+  against a lower level is not counted), opening on Deity, where most of
+  them were played. A game counts once however many runs it took, and only
+  a game that ended in a victory, ours or
   a rival's, has a victory type and a turn; an elimination or a stopped game
   has neither and is left out. Some series were played to a shorter limit
   (170, 160 and 120 turns in the Score series of 2026-11-12 to 15), where the
@@ -132,6 +134,12 @@ TABLE = {"players": 6, "map": "Continents.lua"}
 #: the AI were played at.
 OPENING_LEVEL = 8
 
+#: The levels the page lists, on its slider and in its tables of win rates:
+#: Prince to Deity, the levels the benchmark tournament deals (operator
+#: 2026-11-23: "ai level in charts can go from lv 4 to lv 8"). A game against
+#: a lower level is in no chart and not in the record.
+LEVELS = [4, 5, 6, 7, 8]
+
 #: The windows, newest first: days back from a kind's newest game (`None` is
 #: every game).
 WINDOWS = [("7", 7), ("30", 30), ("all", None)]
@@ -145,7 +153,7 @@ WINDOWS = [("7", 7), ("30", 30), ("all", None)]
 #: table on the left the is with diplo excluded and a table on the right
 #: that allows diplo wins").
 TOURNAMENTS = pathlib.Path("data/tournaments.json")
-RATE_LEVELS = [8, 7, 6, 5, 4]
+RATE_LEVELS = LEVELS[::-1]
 RATE_DAYS = [1, 3, 7, 30]
 RATE_TABLES = [("off", False), ("on", True)]
 
@@ -296,15 +304,16 @@ def level_name(level: int) -> str:
 
 def level_groups(rows: list[dict], limit=lambda tags: {}) -> dict[int, list[dict]]:
     """The verification games that ended in a victory, by the level the
-    game's AI played at (Deity is 8): for each level a group per day a game
-    began. `limit` answers each ending run's speed and turn limit (`limits`);
+    game's AI played at (Deity is 8), of the levels the page lists
+    (`LEVELS`): for each level a group per day a game began.
+    `limit` answers each ending run's speed and turn limit (`limits`);
     a game not played to the full length is left out. So is a table with more
     than one CIVVIS agent at it (its row names them all, `A+B`): either agent
     winning is a win there, which is not one agent's chance against the AI.
     A level with no game counted is not in the answer."""
     games: dict[str, list[dict]] = {}
     for row in rows:
-        if ranks.level(row.get("difficulty")) is None or "+" in str(row.get("civ") or ""):
+        if ranks.level(row.get("difficulty")) not in LEVELS or "+" in str(row.get("civ") or ""):
             continue
         if any(row.get(key) != value for key, value in TABLE.items()):
             continue
