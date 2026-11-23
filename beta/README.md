@@ -61,9 +61,10 @@ complete tree — the viewer at its root, `/home`, the pages of `/charts`, `/aut
 and every link inside a lane is lane-relative, so reviewing `/test` means
 clicking around `/test` and never landing in prod. `/test` follows `main` on
 a schedule so the newest site is always reviewable without anyone deciding
-anything; `/` is whatever the `site-stable` tag names and moves only when
-somebody runs the **to-prod-manual-only** workflow, because whether a build is
-worth being the front page is a judgement no gate can make. Each lane states
+anything; `/` is whatever the `site-stable` tag names and moves only when the
+tag does: when somebody runs the **to-prod-manual-only** workflow, and, since
+2026-11-23 and for now, every six hours when **to-prod-auto-6h** puts the tag
+on the commit `/test` is serving. Each lane states
 its commit and its pages in its own `build.json`. Both lanes ship in every deployment —
 Pages deployments are immutable snapshots of a whole directory, so there is no
 such thing as updating half a site; a promotion is nothing but moving the tag
@@ -163,7 +164,9 @@ to be movable.
 | `beta/download.html` | `civvis.ai/download` (and `/test/download`). Links `releases/latest/download/<asset>`, so it never needs republishing when a release is cut. |
 | `.github/workflows/release.yml` | Builds those assets for Windows, macOS (both architectures) and Linux on a `v*` tag. |
 | `.github/workflows/to-test-auto-30.yml` | Builds both lanes, checks them, and deploys — half-hourly behind the gate, and on demand. Without the Cloudflare secrets it degrades to a dry run, so the schedule is safe before the account exists. |
-| `.github/workflows/to-prod-manual-only.yml` | Moves the `site-stable` tag to a chosen revision, then runs to-test-auto-30 — the only way `/` changes. |
+| `.github/workflows/to-prod-manual-only.yml` | Moves the `site-stable` tag to a chosen revision, then runs to-test-auto-30. One of the two ways `/` changes. |
+| `.github/workflows/to-prod-auto-6h.yml` | The other: every six hours (00:12, 06:12, 12:12, 18:12 UTC) it moves the tag to the commit `/test` is serving, then runs to-test-auto-30. On for now; disabling the workflow switches it off and leaves the rest alone. |
+| `beta/promotion_test.py` | Runs to-prod-auto-6h's own tag step against a small repository (the two lanes' `build.json` stood in for) and holds what it promotes and what it leaves alone, that its deployments are counted against the month, and that it and to-prod-manual-only take turns. Run on every pull request. |
 | `beta/publish.sh` | Assembles one complete lane into `beta/dist/` from a named revision and from nothing else — viewer at the root, the pages that revision has beside it, each at the address it states and filled by that revision's script, every inter-page link lane-relative and landing on something the lane has. |
 | `beta/addresses_test.py` | Holds every page to the address rule (the page's name in the site list), every relative link of every page to landing on a page or the viewer, and the router's table of left addresses to the publish check's and to the pages. Run on every pull request. |
 | `beta/publish_lanes_test.py` | Publishes lanes from a small two-commit repository with `publish.sh` as it ships (the engine build stood in for) and holds the lane rule: a lane's pages, scripts, figures and data are its own commit's, and only the serving shell is the invoking tree's. Run on every pull request. |
@@ -262,7 +265,10 @@ skips, and scheduled runs pace themselves against **320 of Cloudflare's 500
 deployments a month**, earned continuously rather than refilled at midnight.
 A run past that pace still deploys when a change under `web/` or `beta/` has
 landed since `/test` was built, up to a second line of **470 a month plus 20**,
-also earned continuously. Promotions and manual runs are never gated. When it
+also earned continuously. The same second line lets a run through when a
+promotion is waiting: `site-stable` names a commit `/` is not serving, because
+a tick took the place of the promotion's own deploy in the queue. Promotions
+and manual runs are never gated. When it
 does run, it rebuilds both lanes — `/test` from the head of `main`, `/` from
 the `site-stable` tag — checks that each plays, and deploys them as one site.
 
@@ -274,12 +280,26 @@ forces a governor at all: this repository has merged several hundred commits a
 day, and an ungoverned half-hour cadence is ~1,440 deployments a month against
 a cap of 500.
 
-**Promoting** is the human act. When `main` is in a state worth being the
+**Promoting** by hand: when `main` is in a state worth being the
 front page: **Actions → to-prod-manual-only → Run workflow**, ref = the sha you have
 been watching on `/test` (or `main`). It moves the tag and runs the same
 publish job the schedule runs — one code path, no drift. The gates prove a
 build is not broken; whether a whole game is worth watching is the judgement
 being exercised here, usually after simply watching `/test` for a while.
+
+**Promoting on a clock** (since 2026-11-23, for now): **to-prod-auto-6h** does
+the same thing every six hours with the commit `/test` is serving, so nothing
+reaches `/` that was never on `/test`. It only moves forward: it leaves the
+tag alone when `/` already serves that commit, when `/test` does not contain
+what `/` serves or the commit somebody last put the tag on, when `/test`
+serves something that is not on `main`, and when it cannot read either lane.
+If its deploy fails it puts the tag back on the commit `/` is serving, so a
+commit that cannot be deployed never holds both lanes; if its deploy is
+cancelled the tag stays, and the next scheduled run publishes it. It spends at
+most four deployments a day (~120 a month) from the same 500, none when there
+is nothing to promote. **Run workflow** on it is "test to prod now". To stop
+it: **Actions → to-prod-auto-6h → Disable workflow** (or `gh workflow disable
+to-prod-auto-6h.yml`); manual promotion and the `/test` schedule carry on.
 
 By hand, the equivalent of one scheduled run:
 
