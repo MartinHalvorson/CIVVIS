@@ -12,7 +12,9 @@ The CIVVIS Performance page opens on the same readings as two tables, each
 figure beside the sum that gives it. They are described under
 [The tables on CIVVIS Performance](#the-tables-on-civvis-performance). A
 third table there puts the same benchmarks on other processors:
-[Processor by processor](#processor-by-processor).
+[Processor by processor](#processor-by-processor). A fourth estimates what
+renting the rest of the way to each goal would cost:
+[The goals and the cloud's cost](#the-goals-and-the-clouds-cost).
 
 ## The five stops
 
@@ -37,12 +39,65 @@ read from, because it is what one machine delivers.
 
 A stop's multiplier is the first stop's seconds over its own. The page's
 number is the largest. The line is a scale of multipliers by tenfolds, 1x at
-its right end and the goal at its left, so a stop stands at
-`log(multiplier) / log(goal)` of the way across.
+its right end and the largest goal at its left, so a stop stands at
+`log(multiplier) / log(largest goal)` of the way across. The marks from a
+million up are worded (`1 million x`), so that ten of them fit along the line.
 
-The goal is 1,000,000x: a game every 18 ms, which is 3,333 games a minute on
-one machine. Two stops have goals of their own, a self-play game in 10 s and
-a game a second on every core (18,000x).
+The line runs far past the fastest stop, so the stops stand in a short
+stretch of it. Words that would meet their neighbour's on the same side of
+the line stand a row further out, at the end of a rule from the stop's point
+(`speedup_timeline.rows`). The line is drawn from a window 1120px wide, where
+it is at its full length. A narrower window shows the stops as a list.
+
+## The goals and the cloud's cost
+
+The ledger's `goals` are the multipliers the line is marked with, each under
+a `key` the pages name it by. There are two. 1,000,000x is a game every
+18 ms, which is 3,333 games a minute. 1,000,000,000x is a game every 18 µs,
+which is 3.3 million games a minute, and it is the line's left end. Two stops
+have goals of their own as well, a self-play game in 10 s and a game a second
+on every core (18,000x).
+
+Each goal says what renting the rest of the way to it would cost. This is an
+estimate and not a measurement: nothing has been run in a cloud. The pages
+say so, and say who made it. The project owner asked for it as "a Fable 5.2
+best estimate of the numbers", and the entry in the ledger was written by
+that model. It is the newest entry of the ledger's `cloud`:
+
+- `by` is who made the estimate and `taken` the day.
+- `machine` is the machine rented and `cores` its cores.
+- `of` is the one-core stop whose game those cores play.
+- `single_thread` is the score of the machine's processor on the website of
+  `data/performance/processors.json`.
+- `dollars_an_hour` is its list price for an hour, and
+  `spot_dollars_an_hour` its spot price, if it has one.
+- `from` says where each figure was read and what the estimate leaves out.
+
+`speedup_timeline.rented` works the cost out, and the Performance page shows
+each step with its sum:
+
+| Step | The sum |
+| --- | --- |
+| One game on one rented core | `the one-core reading's seconds × the measured processor's single thread score ÷ the rented one's` |
+| One rented machine | `cores × 18,000 s ÷ the seconds of one game on one of them` |
+| The rest of the way | `the goal − the fastest stop's multiplier` |
+| Machines | `the rest ÷ one machine`, a whole machine for any part of one |
+| Cost for an hour | `machines × the price for an hour` |
+| Cost for a year | `the cost for an hour × 8,760 h` |
+
+The first step is the sum the processors' table uses for a processor the
+benchmarks were not run on. The second takes every core to play as fast as
+one, which the every-core run on the M5 Max comes close to.
+
+The estimate leaves out storage, network traffic and the work of running a
+fleet. It assumes the price holds at any number of machines. The larger goal
+needs tens of thousands of them, and no one has tested that such a number
+can be rented at the list price, or at all.
+
+To change the estimate, add a newer entry to `cloud` after the ones there:
+another machine, a price read again, or a score with more samples behind it.
+A goal is added to `goals` with a key, and an entry for it to the home
+page's line (`beta/landing.html`, by `data-goal`).
 
 ## The tables on CIVVIS Performance
 
@@ -63,14 +118,14 @@ sum:
 | Any other | `18,000 s ÷ the seconds one game takes` |
 
 **One machine, every core** holds the experimental throughput against the
-theoretical one.
+theoretical one, and then against the goals.
 
 | Kind | What it is | The sum |
 | --- | --- | --- |
 | Experimental | A run: the every-core record (`all_cores`), games counted as they finish. | `games a minute × 60 × 5 h` |
 | Theoretical, one core | A calculation: every core of that machine as fast as the stop's one-core reading. | `cores × 18,000 s ÷ the seconds one game takes on one core` |
 | Theoretical, alone | The same, at the speed of one game that had the machine to itself, playing games as long as the run's. | `cores × (turns ÷ seconds, alone) × 18,000 s ÷ the run's turns a game` |
-| Goal | The run's own goal, then the goal of the line. | `18,000 s ÷ the goal's seconds` |
+| Goal | The run's own goal, then each goal of the line. | `18,000 s ÷ the goal's seconds` |
 
 Games an hour times the hours one game takes by hand is the multiplier, so
 the two columns say the same thing. A theoretical row also gives the share
