@@ -152,11 +152,15 @@ WORKER_ROTATE_GAP_SECONDS = 60.0
 # our workers are getting them is ours to read.
 WORKER_FED_SLACK_CORES = 0.5
 WORKER_QUEUE_CORES = 1.5
-# Room is retaken against the busiest the rest of the host has been over this
-# long, not against its last two seconds. Work that needs free cores comes in
-# bursts (a live game's turn, a build between two crates): a worker started
-# into a lull is a worker in the way at the next burst.
-GOVERNOR_PEAK_SECONDS = 30.0
+# Room can be retaken against the busiest the rest of the host has been over
+# this long instead of its last window; 0 reads the window just ended.
+# ⚠ OFF, after an hour at 30 seconds on mbp-m5-max-128 (2026-11-23). A live
+# Civilization VI game bursts on every turn, so the peak of any half minute
+# is the burst: under a 60% ceiling the rest of the host peaked at 9-10.6 of
+# 10.8 allowed cores and the games were left 0-1 workers on a host that
+# averaged 40% busy. The load it was meant to tame came from queued workers
+# (WORKER_FED_SLACK_CORES), not from workers started into a lull.
+GOVERNOR_PEAK_SECONDS = 0.0
 # A ceiling asked for by named work holds this long after the work was last
 # seen. ⚠ 2026-11-23 01:00Z, mbp-m5-max-128: Civilization VI quits and starts
 # again between two games. In the twenty seconds it was gone the governor
