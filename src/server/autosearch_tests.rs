@@ -494,7 +494,16 @@ fn the_native_runner_searches_on_threads_and_plays_the_line_again_elsewhere() {
     let robust = &report["robust"];
     assert_eq!(robust["played"], json!(1), "{robust}");
     assert_eq!(robust["plan"], report["best"]["plan"]);
-    // The same search on the same world finds the same line.
-    let again = run(&options).unwrap();
-    assert_eq!(again["best"]["key"], report["best"]["key"]);
+    // On one copy the climb goes the same way every time, and the same
+    // search on the same world finds the same line. On several, which line
+    // comes back first decides what the climb tries next, so the lines tried
+    // may differ from run to run.
+    let one = RunOptions {
+        cores: 1,
+        robust: Vec::new(),
+        ..options
+    };
+    let (first, again) = (run(&one).unwrap(), run(&one).unwrap());
+    assert_eq!(first["best"]["key"], again["best"]["key"]);
+    assert_eq!(first["lines"], again["lines"]);
 }
