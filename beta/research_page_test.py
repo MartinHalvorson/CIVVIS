@@ -66,6 +66,9 @@ class GamesAgainstTheAI(unittest.TestCase):
             # one winning is a win there, so it is no level's game.
             run("civvis-t6-20261121T131243Z", "win", 224, "VICTORY_TECHNOLOGY", difficulty="DIFFICULTY_PRINCE",
                 civ="CIVILIZATION_GREECE+CIVILIZATION_VIETNAM"),
+            # A level under the page's lowest (operator 2026-11-23: "ai level
+            # in charts can go from lv 4 to lv 8"): left out.
+            run("civvis-20261121T153000Z", "win", 150, "VICTORY_CULTURE", difficulty="DIFFICULTY_WARLORD"),
             # A level the game does not have: left out.
             run("civvis-20261121T160000Z", "win", 150, "VICTORY_CULTURE", difficulty="DIFFICULTY_NIGHTMARE"),
             run("civvis-20261121T170000Z", "win", 150, "VICTORY_CULTURE", difficulty=None),
@@ -853,19 +856,22 @@ class Page(unittest.TestCase):
         # And 2026-11-22: "civvis vs lv 8 deity ai chart should have a lv 1
         # to lv 8 slider at the top. defaults to 8. but people can change the
         # level if they want."
-        # The picker is a slider over the game's eight levels, standing on
-        # the level the record opens on, Deity.
-        last = len(home_rankings.CIV6_RUNGS)
+        # And 2026-11-23: "ai level in charts can go from lv 4 to lv 8".
+        # The picker is a slider over the levels the page lists, Prince to
+        # Deity, the game's highest, standing on the level the record opens
+        # on, Deity.
+        first, last = research_page.LEVELS[0], len(home_rankings.CIV6_RUNGS)
+        self.assertEqual(research_page.LEVELS, list(range(4, last + 1)))
         self.assertEqual((last, research_page.OPENING_LEVEL), (8, 8))
         self.assertIn(
-            f'<input type="range" id="res-level" min="1" max="{last}" step="1" value="{research_page.OPENING_LEVEL}" '
+            f'<input type="range" id="res-level" min="{first}" max="{last}" step="1" value="{research_page.OPENING_LEVEL}" '
             f'aria-valuetext="Lv {research_page.OPENING_LEVEL} {home_rankings.CIV6_RUNGS[-1].title()}">',
             PAGE,
         )
         self.assertEqual(PAGE.count('id="res-level"'), 1)
         self.assertIn('<label for="res-level">AI level</label>', PAGE)
-        # Under it, its scale: the eight levels under the site's names for
-        # them, in order, the opening one lit.
+        # Under it, its scale: the five levels under the site's names for
+        # them, in order, the opening one lit, and no level under Prince.
         stops = re.findall(
             r'<span data-level="(\d)" data-rung="(\w+)"( data-on)?><b>Lv (\d)</b> <small>(\w+)</small></span>',
             PAGE,
@@ -875,14 +881,19 @@ class Page(unittest.TestCase):
             [
                 (str(at), rung.title(), " data-on" if at == research_page.OPENING_LEVEL else "", str(at), rung.title())
                 for at, rung in enumerate(home_rankings.CIV6_RUNGS, 1)
+                if at in research_page.LEVELS
             ],
         )
+        self.assertEqual([stop[4] for stop in stops], ["Prince", "King", "Emperor", "Immortal", "Deity"])
         scale = PAGE[PAGE.index('<div class="res-level-stops" id="res-level-stops" aria-hidden="true">') :]
-        self.assertEqual(scale[: scale.index("</div>")].count("<span data-level="), last)
+        self.assertEqual(scale[: scale.index("</div>")].count("<span data-level="), len(research_page.LEVELS))
         # The thumb stands over the level it is on: the track runs from the
-        # middle of the first of the eight names to the middle of the last.
-        self.assertIn("width: calc(87.5% + 18px); height: 20px; margin: 0 calc(6.25% - 9px); padding: 0;", PAGE)
-        self.assertIn(".res-level-stops { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); }", PAGE)
+        # middle of the first of the five names to the middle of the last.
+        self.assertIn("width: calc(80% + 18px); height: 20px; margin: 0 calc(10% - 9px); padding: 0;", PAGE)
+        self.assertIn(".res-level-stops { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); }", PAGE)
+        # The page says the same range in words.
+        self.assertIn("one level at a time, Lv 4 Prince to Lv 8 Deity, by the slider over them,", PAGE)
+        self.assertNotIn("Lv 1 Settler", PAGE)
         # It is at the top of the games against the AI, the first thing
         # in their head, over their name. The buttons it replaces are gone.
         side = PAGE.index('<section class="res-block" id="res-side-ai"')
