@@ -11,25 +11,53 @@ viewer is not a reimplementation: it is `web/index.html`, copied byte for byte
 apart from the asset paths a subdirectory forces.
 
 ```
-civvis.ai                 the STABLE lane — the promoted build, moved by a person
-civvis.ai/home            its landing page
-civvis.ai/research        its Charts page (named Research, then Musings; the address stayed): charts read off the games, first when each victory type lands
-civvis.ai/tournaments     its Auto-Tourneys page (named Tournaments until 2026-11-22; the address stayed): series of verification games, running, scheduled and finished
-civvis.ai/performance     its Performance page, Charts' own: the fastest game on video and how long a self-play game takes
-civvis.ai/interpretability  its AI Interpretability page, Charts' own: one turn step by step, the plan through a game, every gene by what it is worth
-civvis.ai/download        its native-binaries page, from the latest GitHub release
-civvis.ai/test            the HEAD lane — latest main, republished automatically
-civvis.ai/test/home       head's landing page
-civvis.ai/test/research   head's Charts page
-civvis.ai/test/tournaments  head's Auto-Tourneys page
-civvis.ai/test/performance  head's Performance page
-civvis.ai/test/interpretability  head's AI Interpretability page
-civvis.ai/test/download   head's binaries page
+civvis.ai                             the STABLE lane — the promoted build, moved by a person
+civvis.ai/home                        its landing page
+civvis.ai/charts/win-analytics        Win Analytics, the page Charts/ opens: who wins, how and when
+civvis.ai/charts/civvis-performance   CIVVIS Performance: the fastest game on video and how long a self-play game takes
+civvis.ai/charts/ai-interpretability  AI Interpretability: one turn step by step, the plan through a game, every gene by what it is worth
+civvis.ai/auto-tourneys               Auto-Tourneys: series of verification games, running, scheduled and finished
+civvis.ai/download                    its native-binaries page, from the latest GitHub release
+civvis.ai/test                        the HEAD lane — latest main, republished automatically
+civvis.ai/test/home                   head's landing page
+civvis.ai/test/charts/...             head's pages of Charts/, by the same three names
+civvis.ai/test/auto-tourneys          head's Auto-Tourneys page
+civvis.ai/test/download               head's binaries page
 ```
+
+**An address follows the page's name in the site list** (operator 2026-11-23:
+"clean up the URL please. standardized. please remove research from the
+url"). It is the name as the list shows it, in lower case with a hyphen for
+anything that is not a letter or a digit, and a page listed under a folder
+(Charts/) sits in that folder: Win Analytics is `/charts/win-analytics/`,
+Auto-Tourneys is `/auto-tourneys/`. `/charts/` itself has no page and opens
+the first page of the folder, as Charts/ does in the list. A page added to
+the list takes its address by the same rule, and a page renamed in the list
+moves with its name; `beta/addresses_test.py` holds every page and every link
+to it.
+
+Until that day four pages answered where their names were not: Win Analytics
+at `/research` (what the page was called the day it was written), CIVVIS
+Performance at `/performance` and AI Interpretability at `/interpretability`
+(at the top of the site, though the list keeps them under Charts/), and
+Auto-Tourneys at `/tournaments`. Those addresses are in links this site does
+not control, so each **forwards** to its page (`MOVED` in `_worker.js`, a 301
+with the query kept), in a lane that has the page at its new address.
+
+**Where a page is served is the lane's own commit's to say**, like the page
+itself. Every link in a page is relative, so a page works at one depth only,
+and `publish.sh`, which is `main`'s, lays out both lanes. So each page states
+its address (its `<link rel="canonical">`), and `publish.sh` puts it there; a
+page from before pages said so is put where it was written for. A lane
+pinned to a commit from before the move therefore keeps the old layout, and
+there `/research/` is still the page and `/charts/...` a 404, until the move
+is promoted. The source files kept their names (`beta/research.html` is Win
+Analytics, `beta/tournaments.html` Auto-Tourneys), as did the data slots and
+`data/research/`: nothing a reader's address bar shows.
 
 **The site is two whole sets of pages, from two commits: one test set of
 everything and one prod set of everything.** Each lane is a
-complete tree — the viewer at its root, `/home`, `/research`, `/tournaments`, `/performance`, `/interpretability` and `/download` beside it —
+complete tree — the viewer at its root, `/home`, the pages of `/charts`, `/auto-tourneys` and `/download` beside it —
 and every link inside a lane is lane-relative, so reviewing `/test` means
 clicking around `/test` and never landing in prod. `/test` follows `main` on
 a schedule so the newest site is always reviewable without anyone deciding
@@ -49,7 +77,10 @@ data that script reads (the snapshots and definitions under `data/`, the
 Elo, the gene ranking). So nothing reaches `/` except by a promotion:
 
 - A page that only `main` has answers at `/test/<page>/` and is a **404** at
-  `/<page>/` until the commit that added it is promoted.
+  `/<page>/` until the commit that added it is promoted. So does an address
+  only `main` has: a page that moves is at its new address on `/test` at
+  once and on `/` when the move is promoted, with the old one forwarding from
+  then.
 - A refreshed snapshot, a newly scheduled tournament, a new record video or a
   re-rated Elo is on `/test` once it is on `main`, and on `/` once promoted.
 - A lane built from a commit that is not the invoking tree's own (the stable
@@ -85,9 +116,11 @@ Until 2026-11-22 a lane took `shim.js`, `worker.js`, the filling scripts,
 most of their data and any page its commit lacked from `main`. The front page
 therefore moved with every merge, and the AI Interpretability page answered
 there the day it was written, unpromoted. `beta/publish_lanes_test.py`
-publishes lanes from a two-commit repository and holds each of the rules
-above; `beta/verify.py` holds every deployed lane to the pages its
-`build.json` lists, at the file and at the address.
+publishes lanes from a small repository of an earlier and a later commit
+and holds each of the rules above, the two layouts among them;
+`beta/verify.py` holds every deployed lane to the pages its `build.json`
+lists, at the file and at the address, and every address a page has left to
+forwarding where the lane has the page.
 
 Repeat visitors cannot be left on an earlier deployment. Each lane's HTML is a
 moving pointer and revalidates on every visit. The publisher gives `shim.js`,
@@ -115,7 +148,7 @@ to be movable.
 | `src/wasm.rs` | The engine's request router for the browser. A child module of `server`, `cfg`-gated to wasm, answering the same endpoints over the same JSON. |
 | `beta/worker.js` | Runs the module off the main thread. A turn is not a quick call, and the viewer paints on `requestAnimationFrame`; on the page's own thread the engine would stall the frames it exists to produce. |
 | `beta/shim.js` | Intercepts `fetch` before it reaches the network. Also owns the three things that genuinely became the page's job: the turn clock, the selected between-game finale countdown, and saved games in IndexedDB. |
-| `beta/_worker.js` | The whole site's routing: the two lanes, a 404 for a page its lane does not list, the optional gates on `/` and `/test`, and the response headers. |
+| `beta/_worker.js` | The whole site's routing: the two lanes, a 404 for a page its lane does not list, a forward from an address a page has left to where the lane has it (`MOVED`) and from a folder to its first page, the optional gates on `/` and `/test`, and the response headers. |
 | `beta/landing.html` | `civvis.ai/home` (and `/test/home` from head's revision) — the landing page, one of the site's five pages: the list of all five beside its title (Home, in gold because it is this page; Charts/; Auto-Tourneys; CIVVIS, the simulation the AIs play; and AI Debugger, the same game with a seat of your own through `?mode=play`) with a Civ 6 link to the game's shop page under them, the project's links (GitHub and YouTube in their own colours, GitHub saying "Everything open source, free", and under YouTube the channel's two top playlists, Lv 8 Deity Wins and Lv 1 - 7 Archive, one to a line; the same on every page), one paragraph and four videos, two by two: the fastest game upper left (whichever record leads `data/performance/fastest_game_videos.json`, written into the page's `home-videos` slot by `home_rankings.py` at publish), a single player's view of a game upper right (from 6 seconds in, its `data-start`), the AI Debugger lower left and a Lv 8 Deity win lower right. A tile is the video's title and under it the video's picture, which gives its place to the YouTube player, playing without sound, once the tile is on screen (a visitor who asked for reduced motion keeps the pictures and presses one to play it). The two rankings that stood here moved to Win Analytics on 2026-11-22. The viewer's masthead carries the same six in the same order down its left side, with whichever of CIVVIS and AI Debugger it is showing in gold. The list is a tree that keeps its branches folded: a page's own pages are listed under it only while it is the page on screen. Charts has one, Performance (`beta/performance.html`), which Charts lists under itself and which lists itself there, in gold; the viewer (CIVVIS and AI Debugger, the two tools) lists no branch. |
 | `beta/research.html` | `civvis.ai/research` (and `/test/research`) — Win Analytics, the first page under Charts/ and the one Charts/ opens (the page was named Research, then Musings, then Charts, until 2026-11-22: the address and these file names did not move). Charts/ stands between Home and Auto-Tourneys in every page's list, with its two pages, Win Analytics and CIVVIS Performance, under it on those two pages: charts read off the games the CIVVIS AI agents play. The page opens on a table of CIVVIS's win rate against the game's AI at each level from Lv 4 Prince to Lv 8 Deity, over the finished games of the tournaments Auto-Tourneys lists, with the games, wins and losses beside each rate, on the last 30 days (7 days and every game are its other two windows). Under it, in the same wide column, are the graphs, CIVVIS self-play's first and the games against Civilization VI's own AI under it, each game length split by victory type; to their right, in a narrower column, stand the two rankings that were the home page's until 2026-11-22, the Civ AI Agents by Elo over the winningest civs (the `rankings-data` slot, filled by `home_rankings.py`). (Until later on 2026-11-22 the page was two equal columns, the AI's games on the left and self-play on the right.) The first is when each victory type lands, by Online-speed turn, in CIVVIS against Civilization VI's own AI and in CIVVIS self-play (every seat an agent, in the simulator), six players on Continents to 250 turns. A slider over the games against the AI picks the AI's level, Lv 1 Settler to Lv 8 Deity (the page opens on Deity), and the line of counts under their name gives CIVVIS's win rate at it. The games against the AI are three charts of stacked columns per span of turns (every victory, the AI's wins, CIVVIS's wins) and self-play is one; then a small chart per victory with both kinds as lines, and the figures as tables. Each kind of game counts a window of its own, last 7 days, last 30 days or every game: self-play opens on 7 days and the games against the AI on 30; 5- or 10-turn spans. |
 | `beta/research_page.py` | That page's figures. `publish.sh` runs it and writes the result into the page's `research-data` slot. Self-play comes from the snapshot `data/research/self_play_endings.json` (the lane's own commit's), which `research_page.py --self-play <state dir>/batches data/research/self_play_endings.json` rebuilds from the gene-screen batch rows on the machine that plays them; the Deity games come from `results.jsonl` on the `ledger` branch, each kept only when its run summary there says Online speed and a limit of at least 250 turns. The table of win rates (`tournament_rates`) is counted off the same result lines by the tournaments' definitions, `data/tournaments.json`, through `home_rankings.tournament_series`, so it holds the games the Auto-Tourneys page holds. What it cannot read costs the page its figures, never the publish. |
@@ -131,7 +164,8 @@ to be movable.
 | `.github/workflows/release.yml` | Builds those assets for Windows, macOS (both architectures) and Linux on a `v*` tag. |
 | `.github/workflows/to-test-auto-30.yml` | Builds both lanes, checks them, and deploys — half-hourly behind the gate, and on demand. Without the Cloudflare secrets it degrades to a dry run, so the schedule is safe before the account exists. |
 | `.github/workflows/to-prod-manual-only.yml` | Moves the `site-stable` tag to a chosen revision, then runs to-test-auto-30 — the only way `/` changes. |
-| `beta/publish.sh` | Assembles one complete lane into `beta/dist/` from a named revision and from nothing else — viewer at the root, the pages that revision has beside it, each filled by that revision's script, every inter-page link lane-relative. |
+| `beta/publish.sh` | Assembles one complete lane into `beta/dist/` from a named revision and from nothing else — viewer at the root, the pages that revision has beside it, each at the address it states and filled by that revision's script, every inter-page link lane-relative and landing on something the lane has. |
+| `beta/addresses_test.py` | Holds every page to the address rule (the page's name in the site list), every relative link of every page to landing on a page or the viewer, and the router's table of left addresses to the publish check's and to the pages. Run on every pull request. |
 | `beta/publish_lanes_test.py` | Publishes lanes from a small two-commit repository with `publish.sh` as it ships (the engine build stood in for) and holds the lane rule: a lane's pages, scripts, figures and data are its own commit's, and only the serving shell is the invoking tree's. Run on every pull request. |
 | `beta/verify.py` | Holds a lane to the pages its `build.json` lists (each present and answering at its address, every other page a 404 there), then opens the assembled bundle in a real browser, watches it play, and walks through the password door. |
 | `beta/worker_test.py` | Calls `_worker.js` directly — the forward, the password, the headers — needing only Chrome. |
