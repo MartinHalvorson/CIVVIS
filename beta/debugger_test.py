@@ -172,13 +172,20 @@ function enginePlayedBy(marks) {
   }
   return stretches;
 }
+// How the seat stands, as the engine reads it for a search (`obs::standing`:
+// a lean answer's `seat`, and one for each turn of a `play`). The state's own
+// entry for the seat carries the same numbers.
+function engineSeat() {
+  return {turn: engine.turn, alive: true, score: engine.score, cities: 1, population: 1, gold_per_turn: 1,
+    yields: {food: 1, production: 1, science: 1, culture: 1, gold: 1, faith: 0}};
+}
 function engineState(error = null) {
-  const marks = engineLine(), kept = engine.marks;
+  const marks = engineLine(), kept = engine.marks, seat = engineSeat();
   return {error, turn: engine.turn, seed: engine.seed, current: engine.current, units: [], cities: [],
     world_era: engine.eras.filter(era => era.turn <= engine.turn).pop().era,
-    ...(engine.limit ? {turn_limit: engine.limit} : {}),
-    players: [{id: 0, civ: "rome", score: engine.score, cities: 1, population: 1, military: 1,
-      yields: {science: 1, culture: 1, gold: 1, faith: 0}},
+    ...(engine.limit ? {turn_limit: engine.limit} : {}), seat,
+    players: [{id: 0, civ: "rome", score: seat.score, cities: seat.cities, population: seat.population, military: 1,
+      gold_per_turn: seat.gold_per_turn, yields: seat.yields},
       {id: 1, civ: "greece"}, {id: 2, civ: "barbarians", is_barbarian: true}],
     debug: {turn: engine.turn, turns: [...marks], worlds: marks.map(turn => engine.worlds[turn]),
       first: marks[0], last: marks[marks.length - 1],
@@ -195,15 +202,63 @@ function engineState(error = null) {
       played_by: enginePlayedBy(kept),
       saves: engine.saves.map(save => ({...save}))}};
 }
+// ---- copies of the toy engine, as `POST /forks` makes them of the real one
+// (`beta/shim.js`): each holds this page's world and each half's as they
+// stood, and from there plays its own history. `refuse` makes this an engine
+// that cannot be copied, as the desktop program's is, and `wait` slows every
+// copy so that a search can be seen on its way.
+const forks = {held: [], refuse: null, wait: 0};
+function forkEngines(count) {
+  if (forks.refuse) return {error: forks.refuse};
+  const frames = [...document.querySelectorAll("iframe")];
+  forks.held = Array.from({length: count}, () => {
+    const worlds = {"": worldOf(engine)};
+    for (const frame of frames) {
+      const pane = new URL(frame.src, location.href).searchParams.get("pane");
+      if (pane) worlds[pane] = worldOf(frame.contentWindow.eval("engine"));
+    }
+    return worlds;
+  });
+  return count ? {forks: count, memory_bytes: 1 << 20, ms: 1} : {forks: 0};
+}
+// One request to one copy. The toy engine answers from whatever `engine`
+// holds, so the copy's world is put there for as long as one answer takes,
+// which awaits nothing, and what it became is kept as the copy's.
+async function forkAnswer(number, path, body) {
+  if (forks.wait) await new Promise(done => setTimeout(done, forks.wait));
+  const pane = new URLSearchParams(path.split("?")[1] || "").get("pane") || "";
+  const worlds = forks.held[number - 1], world = worlds && worlds[pane];
+  if (!world) return {error: `there is no fork ${number}`};
+  const mine = {...engine};
+  const hold = held => {
+    for (const key of Object.keys(engine)) delete engine[key];
+    Object.assign(engine, held);
+  };
+  hold({...JSON.parse(JSON.stringify(world)), sent: [], wait: 0});
+  try {
+    const answer = engineDebug(body);
+    worlds[pane] = worldOf(engine);
+    return answer;
+  } finally {
+    hold(mine);
+  }
+}
 async function fetchJSON(path, init = {}) {
   const body = init.body ? JSON.parse(init.body) : null;
   engine.sent.push({path, body});
   if (path === "/saves") return {saves: []};
   // A half reads the world it holds after its twin was played for both.
   if (path === "/state") return engineState();
+  if (path === "/forks") return forkEngines(body.count);
+  const forked = /^\/debug\?fork=(\d+)/.exec(path);
+  if (forked) return forkAnswer(+forked[1], path, body);
   if (path !== "/debug") return {error: null};
   // A slowed engine, so that a run can be seen on its way.
   if (engine.wait) await new Promise(done => setTimeout(done, engine.wait));
+  return engineDebug(body);
+}
+// One debugger operation on the world `engine` holds, answered at once.
+function engineDebug(body) {
   // A request that names the other half as its twin. The real engine knows
   // from its own record whether the two are the same world; the toy reads
   // it off the two worlds as they stand before the request.
@@ -235,15 +290,9 @@ async function fetchJSON(path, init = {}) {
   if (engine.current !== 0 && (body.op === "step" || body.op === "finish_round")) opens();
   const marks = engineLine(), at = marks.indexOf(engine.turn);
   const others = engine.marks[marks.length];
-  let error = null;
-  if (body.op === "step_seat") {
-    const seat = engine.current, next = (seat + 1) % SEATS;
-    if (next === 0) opens(); else engine.current = next;
-    engine.stepped = {seat, actions: 2 * seat, next};
-  } else if (body.op === "step" && engine.turn >= 400) {
-    // A run nobody stopped must still end.
-    error = "this game has no turn left to play";
-  } else if (body.op === "step") {
+  let error = null, readings = null;
+  // One whole turn by the Civ AI seated.
+  const step = () => {
     engine.turn += 1;
     // Which Civ AI plays the seat is the one thing that tells two halves apart.
     engine.score += body.strategy === "stock" ? 2 : 1;
@@ -256,6 +305,29 @@ async function fetchJSON(path, init = {}) {
     else if (dawn && engine.watch.eras) engine.stopped = {kind: "era", turn: engine.turn, era: engine.eras.length - 1};
     // The game is over at its last turn.
     else if (engine.limit && engine.turn >= engine.limit) engine.stopped = {kind: "end", turn: engine.turn};
+    if (engine.scores) engine.scores[engine.turn] = engine.score;
+  };
+  if (body.op === "step_seat") {
+    const seat = engine.current, next = (seat + 1) % SEATS;
+    if (next === 0) opens(); else engine.current = next;
+    engine.stepped = {seat, actions: 2 * seat, next};
+  } else if (body.op === "step" && engine.turn >= 400) {
+    // A run nobody stopped must still end.
+    error = "this game has no turn left to play";
+  } else if (body.op === "step") {
+    step();
+  } else if (body.op === "play") {
+    // A run of steps asked for once, answered with how the seat stood as
+    // each turn opened. It stops where a run stops.
+    readings = [];
+    while (readings.length < body.turns && engine.turn < 400 && !engine.stopped) {
+      step();
+      readings.push(engineSeat());
+    }
+    if (!readings.length) error = "this game has no turn left to play";
+  } else if (body.op === "remember") {
+    // Only a copy made to search is asked this, and only of a half.
+    engine.remembers = true;
   } else if (body.op === "walk") {
     // Along the turns the seated Civ AI already played, as far as asked and
     // no further than the first a breakpoint names. Nothing is played, so
@@ -308,7 +380,14 @@ async function fetchJSON(path, init = {}) {
   } else if (body.op === "adopt") {
     Object.assign(engine, engineOf(document.querySelectorAll("iframe"), body.pane));
   }
+  // The score is a count of the turns played, which the checks of what was
+  // and was not played again read, and a walk leaves it alone. A toy asked
+  // to keep each turn's score (`engine.scores`) has it put back by a walk,
+  // as the real engine puts the whole world back: what a search reads.
+  if (engine.scores && ["jump", "back", "forward", "walk", "goto_save"].includes(body.op) &&
+      engine.scores[engine.turn] !== undefined) engine.score = engine.scores[engine.turn];
   const answer = engineState(error);
+  if (readings !== null) answer.readings = readings;
   // Played once for both: the twin is made a copy of what this half holds.
   if (twin !== null) {
     if (alike) Object.assign(twin, worldOf(engine));
@@ -2609,6 +2688,250 @@ def check_windows_move_by_their_titles(bar: Bar) -> None:
     bar.click('[data-dbg-split="drop-b"]')
     bar.until("!debugSplit", "the branch is dropped")
     bar.ev("for (const key of Object.keys(debugWindowPlace)) delete debugWindowPlace[key]; true")
+def check_autosearch(bar: Bar, address: str) -> None:
+    """Autosearch: the button, its panel, a search played on copies of the engine, and the line it found played on the page.
+
+    Operator, 2026-11-22: "build out autosearch button in the ai debugger.
+    make it a bit bigger than the others. autosearch should allow use to use
+    some fraction of the cores of this machine to each run a search up and
+    down the timeline. allow a reasonable objective function to be chosen.
+    score or prod or city or fpt or gpt".
+
+    The toy's score rises by two a turn under `stock` and by one under
+    `jack`, so the best line there is from any turn is `stock` alone.
+    """
+    ready = "typeof drawDebugBar === 'function' && typeof engineState === 'function'"
+    bar.dev.call("Page.navigate", {"url": f"{address}{ONE_TIMELINE}"})
+    bar.until(f"{ready} && location.search === '{ONE_TIMELINE}' && state === null", "the one timeline, loaded again")
+    # A walk back puts the score back with the world, as the real engine does.
+    bar.ev("localStorage.removeItem('civvis-debug-search-v1'), engine.scores = {[engine.turn]: engine.score}, render(engineState()), true")
+    for turn in (2, 3, 4):
+        bar.click('[data-dbg="next"]')
+        bar.idle(f"state.turn === {turn}", f"turn {turn} is played")
+    start, score = 4, bar.ev("engine.score")
+    forked = "engine.sent.filter(call => call.path.startsWith('/debug?fork='))"
+    copies = "engine.sent.filter(call => call.path === '/forks').map(call => call.body.count)"
+    pick = lambda field, value: bar.ev(
+        f"(() => {{ const held = document.getElementById('dbg-search-{field}'); held.value = '{value}';"
+        " held.dispatchEvent(new Event('change', {bubbles: true})); return true; })()")
+    shown = "!document.getElementById('dbg-search').hidden"
+    over = "!!debugSearch && !debugSearch.live"
+
+    # The button stands with Layers and Breakpoints, after them, and is a
+    # size larger than any other tool at either end of the deck.
+    sizes = bar.ev("(() => { const mine = document.querySelector('[data-dbg-search=\"open\"]');"
+                   " const tools = [...document.querySelectorAll('#debugbar .dbg-cluster button')].filter(held => held !== mine && held.offsetParent);"
+                   " const tall = held => held.getBoundingClientRect().height, type = held => parseFloat(getComputedStyle(held).fontSize);"
+                   " return {mine: [tall(mine), type(mine)], most: [Math.max(...tools.map(tall)), Math.max(...tools.map(type))],"
+                   " word: mine.textContent.trim(), after: mine.previousElementSibling.dataset.dbgPop,"
+                   " side: !!mine.closest('.dbg-left .dbg-cluster')}; })()")
+    assert sizes["mine"][0] > sizes["most"][0] and sizes["mine"][1] > sizes["most"][1], sizes
+    assert (sizes["word"], sizes["after"], sizes["side"]) == ("Autosearch", "breaks", True), sizes
+
+    # Its panel: what to make the most of, in the operator's order first, how
+    # far ahead, and how much of this computer, from one core to all of them.
+    bar.click('[data-dbg-search="open"]')
+    assert bar.ev(shown)
+    options = lambda field: bar.ev(f"[...document.getElementById('dbg-search-{field}').options].map(held => [held.value, held.textContent])")
+    assert [goal[0] for goal in options("goal")][:5] == ["score", "prod", "city", "fpt", "gpt"], options("goal")
+    cores = bar.ev("Math.min(64, navigator.hardwareConcurrency || 4)")
+    offered = options("cores")
+    assert offered[0][1] == f"1 of {cores} cores", offered
+    assert cores == 1 or offered[-1] == ["1", f"{cores} of {cores} cores · all"], offered
+    assert bar.ev("['goal', 'turns', 'cores'].map(field => document.getElementById('dbg-search-' + field).value)")[:2] == ["score", "30"]
+    assert bar.ev("document.getElementById('dbg-search-half').hidden") is True
+    about = bar.ev("document.getElementById('dbg-search-about').textContent")
+    assert about.startswith(f"From turn {start}: which Civ AIs should hold the seat, and when, for the most score by turn {start + 30}."), about
+    # A panel of the deck that opens takes its place, and it takes theirs.
+    bar.click('[data-dbg-pop="layers"]')
+    assert bar.ev(f"[{shown}, debugPopOpen]") == [False, "layers"]
+    bar.click('[data-dbg-search="open"]')
+    assert bar.ev(f"[{shown}, debugPopOpen]") == [True, None]
+    # It is a window as they are (`check_windows_move_by_their_titles`): it
+    # opens under its button, is moved by its title, stays where it was put
+    # when it is drawn again, and a double click on the title puts it back.
+    place = ("(() => { const at = document.getElementById('dbg-search').getBoundingClientRect(),"
+             " from = document.querySelector('[data-dbg-search=\"open\"]').getBoundingClientRect();"
+             " return [Math.round(at.left - from.left), Math.round(at.top - from.bottom)]; })()")
+    under = lambda at: abs(at[0]) <= 1 and at[1] == 6
+    home = bar.ev(place)
+    assert under(home), home
+    assert bar.ev("(() => { const title = document.getElementById('dbg-search').firstElementChild;"
+                  " return [title.tagName, title.textContent, getComputedStyle(title).cursor]; })()") == ["H4", "Autosearch", "grab"]
+    bar.ev("(() => { const title = document.getElementById('dbg-search').firstElementChild, at = title.getBoundingClientRect();"
+           " const x = at.left + 40, y = at.top + 8, said = (kind, to, px, py) => to.dispatchEvent(new PointerEvent(kind,"
+           " {bubbles: true, cancelable: true, pointerId: 7, button: 0, clientX: px, clientY: py}));"
+           " said('pointerdown', title, x, y); said('pointermove', window, x + 60, y + 40); said('pointermove', window, x + 120, y + 80);"
+           " said('pointerup', window, x + 120, y + 80); return true; })()")
+    moved = bar.ev(place)
+    assert abs(moved[0] - home[0] - 120) <= 1 and abs(moved[1] - home[1] - 80) <= 1, (home, moved)
+    bar.ev("drawDebugBar(), true")
+    assert bar.ev(place) == moved and bar.ev("Object.keys(debugWindowPlace)") == ["dbg-search"]
+    bar.ev("document.getElementById('dbg-search').firstElementChild.dispatchEvent(new MouseEvent('dblclick', {bubbles: true})), true")
+    assert under(bar.ev(place)) and bar.ev("Object.keys(debugWindowPlace)") == []
+
+    # A search: ten turns on, on a quarter of the cores. Every copy is asked
+    # to forget the page's breakpoints and stand on the turn the search
+    # begins on, and a copy of the game itself is not asked to `remember`.
+    pick("turns", 10)
+    pick("cores", 0.25)
+    # A quarter of the cores, rounded as the page rounds it (a half goes up).
+    asked = max(1, int(cores * 0.25 + 0.5))
+    bar.forget()
+    bar.click('#dbg-search [data-dbg-search="go"]')
+    bar.until(over, "the search ends", seconds=60)
+    found = bar.ev("({state: debugSearch.state, best: debugSearch.best.plan, value: debugSearch.best.value, alone: debugSearch.alone.plan,"
+                   " was: debugSearch.alone.value, last: debugSearch.best.last, futures: debugSearch.futures, cores: debugSearch.cores})")
+    assert found["state"] == "done", bar.ev("debugSearch.note")
+    assert (found["best"], found["value"], found["last"]) == ([[start, "stock"]], score + 20, start + 10), found
+    assert (found["alone"], found["was"], found["cores"]) == ([[start, "jack"]], score + 10, asked), found
+    # The page's own game was asked nothing, and stands where it stood.
+    assert bar.sent() == [] and bar.ev("[state.turn, engine.turn, engine.score]") == [start, start, score], bar.sent()
+    # The copies were made once and let go when it ended.
+    assert bar.ev(copies) == [asked, 0], bar.ev(copies)
+    first = bar.ev(f"{forked}.filter(call => call.path === '/debug?fork=1').slice(0, 2).map(call => [call.body.op, call.body.turn ?? null])")
+    assert first == [["breakpoints", None], ["jump", start]], first
+    assert bar.ev(f"{forked}.every(call => call.body.lean === true)")
+    assert bar.ev(f"{forked}.some(call => call.body.op === 'remember')") is False
+    plays = bar.ev(f"{forked}.filter(call => call.body.op === 'play').map(call => [call.body.turns, call.body.strategy])")
+    assert plays and all(1 <= turns <= 5 and agent in ("jack", "stock") for turns, agent in plays), plays
+    # Each line is walked back to with the Civ AI that holds its turn named.
+    walks = bar.ev(f"{forked}.filter(call => call.body.op === 'jump' && call.body.strategy).map(call => call.body.turn)")
+    assert walks and all(start <= turn < start + 10 for turn in walks), walks
+    assert found["futures"] > 2, "only the Civ AIs alone were played: the climb around the best of them never began"
+
+    # What the panel says of it: the line, what it comes to beside the Civ AI
+    # seated, the two of them over the turns, and each Civ AI alone.
+    said = bar.ev("document.getElementById('dbg-search-best').textContent")
+    assert said == f"Best found: SCORE {score + 20} on turn {start + 10}, +10 on Jack alone ({score + 10}).", said
+    assert bar.ev("document.getElementById('dbg-search-status').textContent").startswith("Done in "), "the search does not say it is done"
+    assert bar.ev("[...document.querySelectorAll('#dbg-search-plan span')].map(held => held.textContent)") == [f"{start} Stock"]
+    drawn = bar.ev("(() => { const chart = document.querySelector('#dbg-search-chart svg');"
+                   " return [chart.querySelectorAll('path').length, chart.querySelectorAll('circle').length,"
+                   " [...chart.querySelectorAll('text.dbg-value')].map(held => held.textContent),"
+                   " [...document.querySelectorAll('#dbg-search-key span')].map(held => held.textContent)]; })()")
+    assert drawn == [2, 2, [str(score + 10), str(score + 20)], ["Best line", "Jack alone"]], drawn
+    table = bar.ev("[...document.querySelectorAll('#dbg-search-table span')].map(held => held.textContent)")
+    assert table == ["Stock", str(score + 20), "Jack", str(score + 10)], table
+    assert bar.ev("document.getElementById('dbg-search-count').textContent") == ""
+    # The turn under the pointer is read off the chart, and under the keys.
+    bar.ev("(() => { const chart = document.querySelector('#dbg-search-chart svg'); chart.focus();"
+           " chart.dispatchEvent(new KeyboardEvent('keydown', {key: 'ArrowLeft', bubbles: true})); return true; })()")
+    tip = bar.ev("[...document.querySelectorAll('#dbg-search-chart .dbg-search-tip div')].map(held => held.textContent)")
+    assert tip == [f"Turn {start + 9}", f"{score + 18}Best line", f"{score + 9}Jack alone"], tip
+
+    # Played: this timeline walks back to the turn the search began on with
+    # the line's Civ AI named, plays the line out, and says what the seat has
+    # beside what the search read.
+    bar.forget()
+    bar.click('#dbg-search [data-dbg-search="play"][value="here"]')
+    bar.until("debugSearch.playing === null && !!debugSearch.said", "the line is played", seconds=60)
+    ops = [[call["op"], call.get("turn"), call.get("strategy")] for call in bar.sent()]
+    assert ops == [["jump", start, "stock"]] + [["step", None, "stock"]] * 10, ops
+    done = f"Played to turn {start + 10}: SCORE {score + 20}, as found"
+    assert bar.ev("[debugSearch.said, document.getElementById('dbg-note').textContent, state.turn, engine.score,"
+                  " document.getElementById('autoplaystrategy').value]") == [done, done, start + 10, score + 20, "stock"]
+    # A line that does not come to what was found says so.
+    bar.ev("debugSearch.best.value += 1, true")
+    bar.click('#dbg-search [data-dbg-search="play"][value="here"]')
+    bar.until(f"debugSearch.playing === null && debugSearch.said !== {json.dumps(done)}", "the line is played again", seconds=60)
+    assert bar.ev("debugSearch.said") == f"Played to turn {start + 10}: SCORE {score + 20}, not the {score + 21} found"
+    # Played from a turn that is no longer the world that was searched, it is refused.
+    bar.ev("debugSearch.print = -1, true")
+    bar.click('#dbg-search [data-dbg-search="play"][value="here"]')
+    bar.until("debugSearch.playing === null && debugSearch.said.includes('no longer the world')", "another world is not played on")
+
+    # Stopped by hand: the same button, and the copies are let go at once.
+    bar.ev("engine.sent.length = 0, forks.wait = 40, true")
+    bar.click('#dbg-search [data-dbg-search="go"]')
+    bar.until("debugSearch.state === 'running' && debugSearch.futures > 0", "a slowed search is on its way", seconds=60)
+    assert bar.ev("[document.querySelector('#dbg-search [data-dbg-search=\"go\"]').textContent,"
+                  " document.getElementById('dbg-search-run').hidden, document.querySelectorAll('#dbg-search-heads i').length,"
+                  " document.getElementById('dbg-search-count').textContent !== '']") == ["⏹ Stop", False, asked, True]
+    # The panel put away, the search goes on and the button counts it.
+    bar.ev("document.getElementById('dbg-search').dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', bubbles: true})), true")
+    assert bar.ev(f"[{shown}, debugSearch.live, document.querySelector('[data-dbg-search=\"open\"]').classList.contains('on')]") == [False, True, True]
+    bar.click('[data-dbg-search="open"]')
+    bar.click('#dbg-search [data-dbg-search="go"]')
+    assert bar.ev("[debugSearch.live, debugSearch.state]") == [False, "stopped"]
+    bar.until(f"JSON.stringify({copies}) === '[{asked},0]' && forks.held.length === 0", "a stopped search lets its copies go")
+    assert bar.ev("document.getElementById('dbg-search-status').textContent").startswith("Stopped after ")
+    bar.ev("forks.wait = 0, true")
+
+    # An engine that cannot be copied has no cores to search with, and says so.
+    bar.ev("forks.refuse = '/forks returned HTTP 404', true")
+    bar.click('#dbg-search [data-dbg-search="go"]')
+    bar.until("debugSearch.state === 'failed'", "an engine with no forks is not searched")
+    refusal = bar.ev("document.getElementById('dbg-search-status').textContent")
+    assert "this build could not make them (/forks returned HTTP 404)" in refusal, refusal
+    assert bar.ev("document.getElementById('dbg-search-found').hidden") is True
+    bar.ev("forks.refuse = null, true")
+
+    # Two tracks: the search begins from the half that is picked, on copies
+    # of that half, which are asked to keep their agents from there on.
+    turn = bar.ev("state.turn")
+    reported = (f"debugSplit && ['a', 'b'].every(letter => debugSplit.panes[letter].turn === {turn} && debugSplit.panes[letter].numbers"
+                " && debugSplit.panes[letter].marks) && !!debugSplitDeck() && debugSplitDeck().idle")
+    bar.click('[data-dbg="split"]')
+    bar.until(reported, "both halves say where they stand")
+    half = "debugSplit.panes.{}.frame.contentWindow.eval({})".format
+    sent = lambda letter: bar.ev(half(letter, json.dumps(
+        "engine.sent.filter(call => call.path === '/debug' && call.body.op !== 'status').map(call => [call.body.op, call.body.strategy ?? call.body.from ?? null])")))
+    # Each half is seated by the host: A with jack, to set beside the line.
+    bar.ev("debugSplitSeat('a', 'jack'), debugSplitSeat('b', 'jack'), true")
+    bar.until(half("a", "'engine.seat'") + " === 'jack' && " + half("b", "'engine.seat'") + " === 'jack' && debugSplitDeck().idle", "both halves seat jack")
+    assert bar.ev(shown), "the panel is the box's own, and stays up when the timeline is branched"
+    assert bar.ev("[document.getElementById('dbg-search-half').hidden, [...document.getElementById('dbg-search-half').options].map(held => held.textContent)]") == \
+        [False, [f"A · turn {turn} · Jack", f"B · turn {turn} · Jack"]]
+    pick("half", "b")
+    base = bar.ev(half("b", "'engine.score'"))
+    for letter in ("a", "b"):
+        bar.ev(half(letter, "'engine.sent.length = 0, true'"))
+    bar.ev("engine.sent.length = 0, true")
+    bar.click('#dbg-search [data-dbg-search="go"]')
+    bar.until(over, "the search from B ends", seconds=60)
+    assert bar.ev("[debugSearch.state, debugSearch.letter, debugSearch.pane === debugSplit.panes.b.id, debugSearch.best.plan, debugSearch.best.value]") == \
+        ["done", "b", True, [[turn, "stock"]], base + 20], bar.ev("debugSearch.note")
+    assert bar.ev(f"{forked}.every(call => call.path.endsWith('&pane=' + debugSplit.panes.b.id))")
+    assert bar.ev(f"{forked}.filter(call => call.body.op === 'remember').length") == asked
+    # Neither half was asked anything while it was searched.
+    assert sent("a") == [] and sent("b") == [], (sent("a"), sent("b"))
+    words = bar.ev("[...document.querySelectorAll('#dbg-search-play button')].map(held => [held.textContent, held.disabled])")
+    assert words == [["▶ Play it in A", False], ["▶ Play it in B", False]], words
+    # Played in the other half: A is made a copy of B, walks back to the turn
+    # and plays the line, each Civ AI of it said to the host as it sits down.
+    # B, locked to it, plays the same turns under its own.
+    bar.click('#dbg-search [data-dbg-search="play"][value="a"]')
+    bar.until("debugSearch.playing === null && !!debugSearch.said", "the line is played in A", seconds=60)
+    assert bar.ev("debugSearch.said") == f"Played to turn {turn + 10}: SCORE {base + 20}, as found"
+    played_a = sent("a")
+    assert played_a[:2] == [["copy", bar.ev("debugSplit.panes.b.id")], ["jump", "stock"]], played_a
+    assert played_a[2:] == [["step", "stock"]] * 10, played_a
+    bar.until(f"debugSplit.panes.a.turn === {turn + 10} && debugSplit.panes.b.turn === {turn + 10} && debugSplitDeck().idle", "B plays the same turns")
+    assert bar.ev("[debugSplit.panes.a.strategy, debugSplit.panes.b.strategy]") == ["stock", "jack"]
+    assert [bar.ev(half(letter, "'engine.score'")) for letter in ("a", "b")] == [base + 20, base + 10]
+    assert all(op == ["step", "jack"] for op in sent("b") if op[0] == "step") and len([op for op in sent("b") if op[0] == "step"]) == 10, sent("b")
+
+    # Unlocked, each half has a panel of its own, and Autosearch on it is the
+    # host's, begun from that half.
+    bar.ev("debugSearchShow(false), true")
+    bar.click("[data-dbg-lock]")
+    for letter in ("b", "a"):
+        bar.until(half(letter, "'debugBar && !debugBar.hidden && getComputedStyle(debugBar).display !== \"none\"'"), f"{letter.upper()}'s own panel is up")
+        bar.ev(half(letter, "'document.querySelector(\"[data-dbg-search=open]\").click(), true'"))
+        bar.until(f"{shown} && debugSearchSet.half === '{letter}'", f"Autosearch on {letter.upper()}'s panel opens the host's, from {letter.upper()}")
+        assert bar.ev(half(letter, "'document.getElementById(\"dbg-search\").hidden'")) is True
+        bar.ev("debugSearchShow(false), true")
+    # A branch closed since the search: its line is another world's to play.
+    bar.ev("debugSearchShow(true), true")
+    bar.click('[data-dbg-split="drop-b"]')
+    bar.until("!debugSplit", "B is dropped")
+    assert bar.ev("[...document.querySelectorAll('#dbg-search-play button')].map(held => [held.value, held.disabled])") == [["here", True]]
+    assert "search again" in bar.ev("document.getElementById('dbg-search-play').textContent")
+    # A new game lets go of the search and of what it found.
+    bar.ev("engine.seed += 1, render(engineState()), true")
+    assert bar.ev("[debugSearch, document.getElementById('dbg-search-found').hidden]") == [None, True]
+    bar.ev("debugSearchShow(false), true")
     assert not bar.dev.console, f"the page complained: {bar.dev.console}"
 
 
@@ -2725,6 +3048,11 @@ def main() -> int:
         check_the_game_opens_on_two_tracks(bar, f"http://127.0.0.1:{port}/")
         print("a game opens on its two tracks at once with head to head open, asks for B's Civ AI, and does "
               "so once a game; a narrow window and the Single player view open on the one timeline.")
+        check_autosearch(bar, f"http://127.0.0.1:{port}/")
+        print("Autosearch is a size larger than the tools beside it; its panel picks what to make the most "
+              "of, how far ahead and how many cores; a search plays on copies of the engine, leaves the "
+              "page's game alone, finds the best line and lets its copies go; the line is played on the "
+              "one timeline or in either half of a split, and says what it came to beside what was found.")
         return 0
     finally:
         chrome.terminate()

@@ -55,7 +55,12 @@ Civ AI that played it. Two more parts hold what the box asks (Switch or
 Branch for another Civ AI picked on the one timeline, and which Civ AI plays
 a branch that was just made) and the opening view: a page opened as anyone
 opens it draws its first state on two tracks with nothing pressed, once a
-game. Every part before that one asks for the one timeline (`?tracks=1`). A
+game. Every part before that one asks for the one timeline (`?tracks=1`).
+The last part holds Autosearch (see "Autosearch"): the button's size and
+place, the panel's choices, a search played on copies of the toy engine with
+the page's own game left alone, the copies let go when it ends or is stopped,
+an engine that cannot be copied, the line played on the one timeline and in
+the other half of a split, and Autosearch pressed on a half's own panel. A
 control added to the box or the strip is added there.
 
 ## The bar
@@ -112,8 +117,10 @@ begin with), and the button. It plays that many turns from the turn that is
 open and stops early when a breakpoint does. While it plays, the button
 counts the turns (`7/20`, or just `7` when it plays all) and is its own Stop.
 A turn played to from the timeline or by the turn buttons is counted and
-stopped the same way. Beside it are Layers, Breakpoints and **Branch
-Timeline** (the split screen).
+stopped the same way. Beside it are Layers and Breakpoints, and after them
+**Autosearch**, a size larger than the tools beside it (operator 2026-11-22:
+"make it a bit bigger than the others"): see "Autosearch". Branch (the split
+screen) is under the timeline's marker.
 
 At the right end are the rest of the tools: step in, step a seat, undo, save
 points, Reveal and the Single player switch.
@@ -156,9 +163,10 @@ between the ends are numbered along the top of the rail. On it:
 
 ### Panels are windows
 
-Layers, Breakpoints and Save points each open a panel under their button,
-and what the box asks (Switch or Branch, and which Civ AI plays a branch)
-opens under the picker it is about. Each is a window, and a window is moved
+Layers, Breakpoints, Save points and Autosearch each open a panel under
+their button, and what the box asks (Switch or Branch, and which Civ AI plays
+a branch) opens under the picker it is about. Each is a window, and a window
+is moved
 by its title (operator 2026-11-22: "clicking and dragging on a window title
 allows for repositioning"): press the title, drag, and the window goes where
 the pointer takes it, over the map or over either half of a split
@@ -961,7 +969,7 @@ The published build has them (`beta/shim.js`, `beta/worker.js`):
 
 | Request | What it does |
 |---------|--------------|
-| `POST /forks` `{"count": N}` | N forks (0 to 16) of the engine as it stands now, in place of any there were. Answers `forks`, `memory_bytes` (one engine's memory) and `ms`. A count of 0 lets them all go. |
+| `POST /forks` `{"count": N}` | N forks (0 to 64) of the engine as it stands now, in place of any there were. Answers `forks`, `memory_bytes` (one engine's memory) and `ms`. A count of 0 lets them all go. |
 | any engine request with `?fork=K` | Answered by fork K (1 to N) instead of the page's engine: `POST /debug?fork=2` steps, jumps and reads fork 2. |
 
 The engine imports nothing and keeps everything it knows in its own memory,
@@ -998,6 +1006,7 @@ build of `65cafca` for the rivals, the conditions and the search below).
 | Piece | How it is asked | What it costs |
 |-------|-----------------|---------------|
 | A turn played and only its outcome read | `step` with `"lean": true` | 36 ms a turn over turns 1 to 20, 69 ms over 40 to 60, 107 ms over 80 to 100. It is the seats' turns and nothing else: nine tenths of it is the Civ AIs deciding |
+| A run of turns asked for once | `play` with `turns`, `"lean": true` | the same turns, with one request and one answer for all of them: how the seat stood as each opened (`readings`) |
 | The same turn with the page's document | `step` | 3 ms more at turn 40, 15 ms and a megabyte at turn 100 |
 | Back to a turn already played | `jump`, `back` with `"lean": true` | 0.5 ms |
 | The futures side by side | `POST /forks`, then `?fork=K` | 82 ms for four forks of a 79 MB engine; each fork is the engine's memory again (76 MB at turn 30, 140 MB at 60, 268 MB at 100) |
@@ -1023,6 +1032,123 @@ back is the world that was left. Forks buy time with memory; one engine
 walking back costs neither, and is what a search that wants more futures
 than there are cores, or than there is memory for, falls back to.
 
+## Autosearch
+
+Operator, 2026-11-22: "build out autosearch button in the ai debugger. make
+it a bit bigger than the others. autosearch should allow use to use some
+fraction of the cores of this machine to each run a search up and down the
+timeline. allow a reasonable objective function to be chosen. score or prod
+or city or fpt or gpt".
+
+Autosearch answers one question: from the open turn, which Civ AIs should
+hold the seat, and when, for the seat to have the most of one number a
+chosen count of turns on. Its button stands in the bar after Breakpoints and
+opens a panel with three things to pick:
+
+- **Most**: the number to make the most of. They are the seat's own, by the
+  names its row of the standings gives them: Score, Production a turn
+  (PROD), Cities (CITY), Faith a turn (FPT) and net Gold a turn (GPT), and
+  after the operator's five, Science and Culture a turn.
+- **By**: how far ahead to play, 10 to 100 turns. The number is read on that
+  turn.
+- **Cores**: one core, or a quarter, half, three quarters or all of the
+  cores the browser says this computer has.
+
+A split has a fourth, **From**: which branch the search begins from. What is
+picked is kept for the next visit. The panel is a window like the box's
+others ("Panels are windows"): it is moved by its title, and it is the box's
+own and not the deck's, so a split whose halves are unlocked shows it too,
+opened from either half's own Autosearch button.
+
+### Lines, and how the search climbs
+
+A line is a plan of who holds the seat: one Civ AI from the turn the search
+begins on, and any number of handovers after it, each on a turn. The search
+first plays every Civ AI on offer alone, the one that is seated among them,
+which is what every other line is set against. Then it climbs. It takes the
+best line it has and, at each of a spread of turns along it, hands the rest
+of the line to each other Civ AI, and also just one stride of it. It plays
+those, and the moment one beats the best it lets the others go and begins
+again around that one. The turns are a quarter of the search apart to begin
+with, then half that, down to a turn (and to no finer than a thirtieth of a
+long search). When no handover at the finest stride beats the best line, the
+search is done. It is a climb and not a proof: it finds a line that no single
+handover improves.
+
+Which of two lines is the better: one the seat wins the game on, then one it
+does not lose on, then the more of the number asked for, then the plan with
+fewer handovers.
+
+### Cores, and up and down the timeline
+
+Each core that is given to the search plays on a fork (see "Forks"): the
+whole engine again on a thread of its own, with the timeline behind it. The
+page's own game is never asked anything while a search runs, so it can go on
+being played, and the copies are let go the moment the search ends or is
+stopped, because each is the engine's memory over again. The panel says how
+many copies there are and what each weighs.
+
+To play a line a copy walks back down the timeline to the turn where the
+line parts from the one it played last (`jump`, with the line's Civ AI for
+that turn named) and plays up it from there, a few turns a request (`play`),
+reading how the seat stood as each turn opened. Most lines the climb tries
+differ from the best line only late, so most of the work is short. The panel
+shows each core as a row: the turns it holds of the line it is on, cut back
+and grown again.
+
+That walk back has to be exact, or what the search found is not what
+playing it gives. It is, for the reason "Turns that are not played again"
+gives: the agents kept with a turn sit down again when the turn is put back.
+The game itself keeps them with every turn. A half of a split keeps none, so
+the copy of a half is asked to keep them from the turn the search begins on
+(`remember`, below), and the half on the page plays the line straight from
+that turn without walking back along the way. Both begin from the top of the
+turn as a walk back to it leaves it: what the seat did by hand in the open
+turn is not part of a line. `a_schedule_walked_back_to_is_the_schedule_played_straight`
+holds this in the engine's tests, and `tools/simloop/walkback.mjs` measures
+it on a real world in the browser build, as the page and a copy each play a
+line. On the build of `0ba58f1` (six seats, Continents, seeds 7 and 11, from
+turns 20 and 45): nine walks back in different orders, on the game itself
+and on a half, each ended on the same print of the world and the same
+reading of the seat as the line played straight, where six lines gave six
+different worlds.
+
+### What it finds, and playing it
+
+While it runs and after, the panel says the best line: the number it comes
+to and on which turn, what that is over the Civ AI seated alone, the line as
+its stretches (the turn each Civ AI takes the seat on), the number over the
+turns for both as a chart, and what each Civ AI alone comes to.
+
+**Play it** plays the best line on the page, with the page's own controls.
+The world walks back to the turn the search began on, each stretch seats its
+Civ AI and is run to its last turn as Auto-play runs, so a breakpoint stops
+it and so does Stop, and the timeline names each stretch by the Civ AI that
+played it. On the one timeline that is this timeline. In a split there is a
+button for each half: the half the search began from plays it over the turns
+it holds past that turn, and the other half is first made a copy of that
+one, so the one searched stays as it was, to set beside the line. Locked,
+the other half plays the same turns under its own Civ AI. When the line is
+played out the bar says what the seat has beside what the search read
+("SCORE 71, as found"), so a line that did not play out as found is seen at
+once. A line is played on the world it was found in: after the timeline is
+branched, a branch is closed or a new game begins, the search is run again.
+
+Measured in Chrome for Testing on the build of `0ba58f1` (six seats, seed 7,
+Continents, an 18-core computer busy with a tournament and a live game, a
+quarter of its cores): from turn 12 for ten turns on the one timeline, 559
+lines and 3,384 turns in 16.7 s on five copies of 44 MB (200 turns a second),
+the best line worth 71 Score against 65 for the Civ AI seated, and played on
+the page it came to 71. On all eighteen cores the same search took 8.3 s
+(474 turns a second) and found a line of the same worth. From a half of a
+split, 273 lines in 12.6 s, 66 against 63, and played in the other half it
+came to 66 while the half that was searched played on to 63. Later in a game
+a turn costs more and a copy weighs more: from turn 40 on nine cores, 85
+turns a second on copies of 128 MB.
+
+Autosearch needs forks, so it runs in the browser build. The desktop
+program's server does not know `/forks`, and there the panel says so.
+
 ## `POST /debug`
 
 `{"op": ...}` and the operation's fields. The answer is the state document
@@ -1037,11 +1163,13 @@ operation leaves the world as it was.
 | `goto_save`, `drop_save` | `id` |
 | `room` | `megabytes`: where the memory line is, 128 to 3072 |
 | `step`, `step_action`, `assist` | optional `strategy`, the Civ AI to seat first |
+| `play` | `turns`, 1 to 100: that many `step`s, asked for once; optional `strategy`. It stops early where a run stops (a breakpoint, the end of the game), and the answer carries `readings`: how the seat stood as each turn it played opened, in the keys of a lean answer's `seat` |
 | `walk` | optional `turn`, the furthest to go; optional `era`: true to stop where a new era begins; optional `strategy`. Goes on along the kept turns the seated Civ AI would only play again, plays nothing, and is never refused: with none to take the world stays where it is |
 | `status` | optional `strategy`: seat that Civ AI and play nothing, which is how the page says a pick |
 | `step_seat`, `finish_round` | none |
 | `reveal` | `on`: true or false |
 | `branch` | none. Lets go of every turn kept ahead of the open one: what a half of a split that is a new branch is asked, so that it begins on the turn it was made on |
+| `remember` | none. A half of a split keeps its agents with every turn it marks from here on, and none with the turns it has marked already: what a fork made to search asks of the half it will play (see "Autosearch"). The game itself keeps them already and is asked nothing |
 | `copy` | from a half of a split: `from`, the other half's name |
 | any, from a half of a split | optional `twin`, the other half's name: do it once for both if the two are the same world (see "Identical halves are played once") |
 | `adopt` | from the host of a split: `pane`, the half to keep |
@@ -1073,8 +1201,11 @@ A watched game keeps no timeline and its state carries no `debug`.
 An operation sent with `"lean": true` does exactly what it does without it
 and is answered with a small document in place of the state: `lean`, `turn`,
 `current`, `seed`, `finished`, `draw`, `winner`, `error`, the same `debug`,
-and `scores`, one of `id`, `alive` and `score` for every civilization, met or
-not. The state document is the map as the seat sees it, every city and unit
+`scores`, one of `id`, `alive` and `score` for every civilization, met or
+not, and `seat`, the played seat's row of the standings: `turn`, `alive`,
+`score`, `cities`, `population`, `gold_per_turn` and `yields` (`food`,
+`production`, `gold`, `science`, `culture`, `faith`), the same numbers the
+state document gives the seat in `players`. The state document is the map as the seat sees it, every city and unit
 and everything the seat may do next. At turn 80 of a six-seat game on
 published build `145fabd` it took 9 ms to build, of a jump's 20 ms and a
 step's 130 ms. Something that plays a world forward only to read how it came

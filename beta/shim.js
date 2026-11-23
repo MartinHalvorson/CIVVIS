@@ -344,7 +344,10 @@
   //
   // A fork costs the engine's memory over again and a copy of it takes a few
   // tens of milliseconds, so making them is cheap and keeping many is not.
-  const FORKS_MOST = 16;
+  // The most is a fork for every core of a large workstation: the Sim
+  // debugger's Autosearch (`assets/app_debugger.js`) asks for a share of the
+  // cores the browser says this computer has, up to all of them.
+  const FORKS_MOST = 64;
   const forks = [];
 
   // One message to one worker, answered with whatever it answers.

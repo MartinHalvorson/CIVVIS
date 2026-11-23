@@ -71,6 +71,9 @@ const MAX_PHRASES: usize = 16;
 const MAX_BREAK_TURNS: usize = 64;
 /// Breakpoint conditions a page may hold at once.
 const MAX_CONDITIONS: usize = 16;
+/// The most turns one `play` plays. The engine answers nothing else until it
+/// is done, so a longer run is asked for in pieces.
+const PLAY_MOST: u32 = 100;
 
 /// One rung of handing the seat to its agent.
 ///
@@ -1156,6 +1159,35 @@ impl Session {
         self.debugger.forgetful = false;
     }
 
+    /// A half of a split is about to be searched: it keeps its agents with
+    /// every turn it marks from here on, and none with the turns it has
+    /// marked already.
+    ///
+    /// A half keeps none, so a turn it walks back to is played on by agents
+    /// that have just sat down, which is another game than the one that was
+    /// played on from it (`Minds`). A search plays one line, walks back to
+    /// the middle of it and plays another from there, on a copy of the engine
+    /// made for it (`docs/SIM_DEBUGGER.md`, "Autosearch"), and that has to be
+    /// the second line played straight through. So the copy's half is asked
+    /// this first, and from then on a turn it walks back to seats the agents
+    /// that were playing it.
+    ///
+    /// The marks it holds already are left with no agents, some of them kept
+    /// before the screen was split. That is how the half on the page has
+    /// them: walked back to the turn the search begins on, the half and its
+    /// copy both seat new agents there and play the same game from it, so
+    /// what the search found is what the half plays. The game itself keeps
+    /// its agents already and is asked nothing.
+    fn debug_remember(&mut self) {
+        if !self.debugger.forgetful {
+            return;
+        }
+        for mark in &mut self.debugger.marks {
+            mark.minds = None;
+        }
+        self.debugger.forgetful = false;
+    }
+
     /// The marks on the seat's line as it stands (`Timeline::line`).
     fn debug_line(&self) -> &[Mark] {
         self.debugger
@@ -1542,6 +1574,29 @@ impl Session {
         played > 0
     }
 
+    /// Play whole turns with the seat's agent, one after another, `turns` of
+    /// them at most: what a run of that many steps does, asked for once.
+    ///
+    /// It stops early where a run stops (a breakpoint, the end of the game),
+    /// and why is left in the timeline as a step leaves it. Every turn played
+    /// keeps its mark, as a step's does, so any of them is walked back to.
+    /// The answer is how the seat stood as each of those turns opened
+    /// (`obs::standing`), which is all that something playing a world
+    /// forward to see how it comes out reads of the turns on the way.
+    pub fn debug_play(&mut self, turns: u32) -> Vec<Value> {
+        let mut readings = Vec::new();
+        for _ in 0..turns {
+            if !self.debug_step() {
+                break;
+            }
+            readings.push(crate::obs::standing(&self.game, 0));
+            if self.debugger.stopped.is_some() {
+                break;
+            }
+        }
+        readings
+    }
+
     /// What an agent decides that is not an action: its standing preferences
     /// for the governors of its cities. The agent's own plan-then-replay path
     /// carries the same fields across ("These preferences are decisions",
@@ -1775,6 +1830,8 @@ impl Session {
             }
             _ => Ok(()),
         };
+        // How the seat stood on each turn a `play` played.
+        let mut readings: Option<Vec<Value>> = None;
         let result: Result<(), String> = if !self.debuggable() {
             Err("the debugger walks a game with a seat of its own".to_string())
         } else if let Err(error) = seated {
@@ -1841,6 +1898,23 @@ impl Session {
                         Err("this game has no turn left to play".to_string())
                     }
                 }
+                // A run of steps asked for once (`debug_play`).
+                "play" => match request["turns"]
+                    .as_u64()
+                    .filter(|turns| (1..=u64::from(PLAY_MOST)).contains(turns))
+                {
+                    Some(turns) => {
+                        let played = self.debug_play(turns as u32);
+                        let moved = !played.is_empty();
+                        readings = Some(played);
+                        if moved {
+                            Ok(())
+                        } else {
+                            Err("this game has no turn left to play".to_string())
+                        }
+                    }
+                    None => Err(format!("play needs turns, 1 to {PLAY_MOST}")),
+                },
                 "step_action" => self.debug_step_action(),
                 "step_seat" => self.debug_step_seat(),
                 // The rest of a round that is being stepped a seat at a time.
@@ -1869,6 +1943,12 @@ impl Session {
                         self.debugger.breakpoints = breakpoints;
                     })
                 }
+                // What a copy of the engine made to search asks of a half
+                // of a split (`debug_remember`).
+                "remember" => {
+                    self.debug_remember();
+                    Ok(())
+                }
                 // A half of a split that is a new branch from the open turn
                 // holds nothing past it (`Timeline::branch`).
                 "branch" => {
@@ -1892,12 +1972,15 @@ impl Session {
             Ok(()) => Value::Null,
             Err(error) => json!(error),
         };
+        if let Some(readings) = readings {
+            out["readings"] = json!(readings);
+        }
         out
     }
 
     /// The answer to an operation that asked to be answered `lean`: where the
-    /// world stands, every seat's score and what the debugger holds, and no
-    /// state document.
+    /// world stands, every seat's score, how the played seat stands and what
+    /// the debugger holds, and no state document.
     ///
     /// The document is the map as the seat sees it, every city and unit, and
     /// everything the seat may do next. At turn 80 of a six-seat game it took
@@ -1905,7 +1988,9 @@ impl Session {
     /// many futures of a world to compare how they came out reads none of
     /// it. The scores are
     /// every seat's, met or not: this is a reading of the world, as a
-    /// breakpoint condition is, not what the seat is shown.
+    /// breakpoint condition is, not what the seat is shown. `seat` is the
+    /// played seat's row of the standings (`obs::standing`): what a search
+    /// may be asked to make the most of.
     fn debug_lean(&self) -> Value {
         let game = &self.game;
         let scores: Vec<Value> = game
@@ -1928,6 +2013,7 @@ impl Session {
             "scores": scores,
         });
         if self.debuggable() {
+            out["seat"] = crate::obs::standing(game, 0);
             out["debug"] = self.debugger_json();
         }
         out
