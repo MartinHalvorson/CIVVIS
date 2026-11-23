@@ -27,10 +27,25 @@ fn the_pingala_metadata_family_retains_unrelated_treatments_in_either_order() {
         vec![old]
     );
     for tags in [vec![unrelated, old, new], vec![new, old, unrelated]] {
-        let reported = collapse_mutually_exclusive_treatments(tags, &[new]);
+        let reported = collapse_mutually_exclusive_treatments(tags.clone(), &[new]);
+        // A forced arm the deployment already ships is no override (as in
+        // a_forced_parity_arm_reports_the_same_winner_as_its_flags): the forced
+        // version wins only while the ledger holds it off, otherwise the family's
+        // last tag does. Every published batch re-decides that (#5708 promoted
+        // pingala-follows-research-2), so read it from the ledger.
+        let winner = if ledger_held_live_treatment(new) || ledger_held_opt_in(new) {
+            new
+        } else {
+            tags.iter()
+                .rev()
+                .copied()
+                .find(|tag| *tag == old || *tag == new)
+                .unwrap()
+        };
+        let loser = if winner == new { old } else { new };
         assert_eq!(reported.len(), 2);
         assert!(reported.contains(&unrelated));
-        assert!(reported.contains(&new));
-        assert!(!reported.contains(&old));
+        assert!(reported.contains(&winner));
+        assert!(!reported.contains(&loser));
     }
 }
