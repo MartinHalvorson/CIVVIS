@@ -27872,24 +27872,7 @@ function hudTurnPlate() {
       `<option value="0"${state.tactics.fog ? "" : " selected"}>Off</option>` +
       `</select><span class="turn-pace-caret" aria-hidden="true">⌄</span></span></div>`
     : ``;
-  // Whether the Civ AIs plan on what their civilizations can see (operator
-  // 2026-11-23: "we should have a fog honest ai play setting in the turn box
-  // set to true or false. and it should pretty much always be set to true").
-  // Every world the engine deals opens True; False is for the world on
-  // screen, and the next world is True again. A live Civilization VI game is
-  // played by Civilization VI's own AIs, so it has no such row.
-  const fogHonest = typeof state.fog_honest === "boolean" && !livePause.available ? state.fog_honest : null;
-  const fogHonestRow = fogHonest !== null
-    ? `<div class="turn-setting" title="True: every Civ AI plans its turn on what its own civilization can see, ` +
-      `and remembers what it has seen, as a person would. False: it plans on the whole board, fog and all. ` +
-      `City-states, barbarians and TrainingWheels are scripted and read the whole board either way. ` +
-      `Every new world starts True.">` +
-      `<span>Fog-honest AI:</span><span class="turn-pace-choice"><select data-hud-fog-honest ` +
-      `aria-label="Fog-honest AI">` +
-      `<option value="1"${fogHonest ? " selected" : ""}>True</option>` +
-      `<option value="0"${fogHonest ? "" : " selected"}>False</option>` +
-      `</select><span class="turn-pace-caret" aria-hidden="true">⌄</span></span></div>`
-    : ``;
+  const fogHonestRow = hudFogHonestRow(); // app_setup.js
   const plateLabel = `${context}; ${ageLabel}; turn ${turn} of ${turnCap}; ` +
     (liveTime ? `live time ${liveTime.spoken}; ` : ``) +
     `max speed ${watchPace}; ` +
@@ -27897,7 +27880,7 @@ function hudTurnPlate() {
     (liveLevel ? `difficulty level ${liveLevel.level}, ${liveLevel.name}; ` : ``) +
     `game speed ${speedName}; ` +
     (fogRow ? `in-game fog ${state.tactics.fog ? "on" : "off"}; ` : ``) +
-    (fogHonestRow ? `fog-honest AI ${fogHonest ? "true" : "false"}; ` : ``) +
+    (fogHonestRow ? `fog-honest AI ${state.fog_honest}; ` : ``) +
     `${civCount} civilizations remaining, ${civsLost} eliminated; ` +
     `${cityStateCount} city states remaining, ${cityStatesLost} eliminated; ` +
     `mode ${plateMode[0]}; point of view ${platePov[0]}`;
@@ -29138,25 +29121,6 @@ hudRibbon.addEventListener("keydown", event => {
   standings.scrollLeft += direction * (event.shiftKey ? standings.clientWidth * .8 : 48);
 });
 
-// The turn box's Fog-honest AI row, turned. The engine answers with the
-// state, and only what the row reads is taken from it: a spectated world is
-// moving on underneath, and its frames are the stepper's to paint.
-async function chooseFogHonest(on) {
-  try {
-    const answer = await fetchJSON("/fog-honest", {method: "POST",
-      headers: {"Content-Type": "application/json"}, body: JSON.stringify({on})});
-    if (state && answer && typeof answer.fog_honest === "boolean") {
-      state.fog_honest = answer.fog_honest;
-      state.fog_honest_seats = answer.fog_honest_seats;
-    }
-  } catch (e) {
-    const errEl = document.getElementById("err");
-    errEl.textContent = `Could not change Fog-honest AI: ${e.message}`;
-    errEl.style.display = "block";
-    setTimeout(() => errEl.style.display = "none", 2500);
-  }
-  if (state) drawPlayerHud();
-}
 hudRibbon.addEventListener("change", ev => {
   const fog = ev.target.closest?.("[data-hud-fog]");
   if (fog) {
@@ -29165,11 +29129,7 @@ hudRibbon.addEventListener("change", ev => {
     return;
   }
   const honest = ev.target.closest?.("[data-hud-fog-honest]");
-  if (honest) {
-    chooseFogHonest(honest.value === "1");
-    honest.blur();
-    return;
-  }
+  if (honest) { chooseFogHonest(honest.value === "1"); honest.blur(); return; }
   const pace = ev.target.closest?.("[data-hud-pace]");
   if (!pace) return;
   chooseWatchPace(pace.value);
