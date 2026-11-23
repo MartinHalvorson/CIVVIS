@@ -250,6 +250,16 @@ class OneShape(unittest.TestCase):
         self.assertEqual(len(self.sources(analysis([{"tag": "a"}], map="pangaea"),
                                           legacy_shape=True)), 1)
 
+    def test_a_simultaneous_batch_is_refused_as_a_source(self):
+        """`gene_screen --turn-structure simultaneous` (the fast self-play probe)
+        matches every map leg, but each of its seats plans against the board as
+        it stood before anybody moved: a different game, never pooled."""
+        fast = analysis([{"tag": "a"}], turn_structure="simultaneous")
+        self.assertEqual(gene_ledger.shape_of(gene_ledger.profile_of(fast)), "legacy")
+        self.assertIn("turn_structure", gene_ledger.shape_gap(gene_ledger.profile_of(fast)))
+        with self.assertRaises(SystemExit):
+            self.sources(fast)
+
     def test_a_contested_field_batch_is_refused_as_a_source(self):
         """⚠⚠ The one refusal the map legs cannot make.
 

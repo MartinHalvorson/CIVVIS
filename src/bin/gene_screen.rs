@@ -2160,6 +2160,15 @@ struct Header {
     /// game. This is a profile leg; differently configured batches never pool.
     #[serde(default)]
     native_competitions: bool,
+    /// ⭐ `simultaneous` when every game played the simultaneous turn
+    /// structure (`--turn-structure simultaneous`), empty for the sequential
+    /// games every ledger column was taken on. A profile leg: `shape_of` reads
+    /// a simultaneous batch as `legacy` and `tools/genes.py` refuses it as a
+    /// source, because each of its seats plans against the board as it stood
+    /// before anybody moved. Absent from a sequential header, so every file
+    /// written before it reads as it always did.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    turn_structure: String,
     /// The genes a FIELD seat played on top of the deployment genome, comma
     /// separated (`CONTESTED_FIELD_GENES`). Provenance, not a shape leg — a
     /// batch that has a field is already refused as a source by
@@ -2647,6 +2656,9 @@ struct Profile {
     field: Vec<VictoryTarget>,
     /// `Game::native_competitions`.
     native_competitions: bool,
+    /// `--turn-structure simultaneous`: the planning threads each game fans
+    /// its seats across (`--planners`), `None` for the sequential screen.
+    simultaneous: Option<usize>,
     /// Genes switched on for a field seat over the deployment genome
     /// (`CONTESTED_FIELD_GENES`). Never applied to a measured seat.
     field_genes: Vec<String>,
@@ -3209,6 +3221,13 @@ fn play_game(
             chair_tactics.absorb(&seat.census);
         }
         ais = wrapped.into_iter().map(|seat| seat.inner).collect();
+    } else if let Some(planners) = profile.simultaneous {
+        civvis::simultaneous::run_simultaneous_observed(
+            &mut world,
+            &mut ais,
+            planners,
+            &mut observe,
+        );
     } else {
         run_game_observed(&mut world, &mut ais, &mut observe);
     }
@@ -5747,6 +5766,7 @@ fn read_rows(paths: &[String]) -> (Header, Vec<Row>) {
                                 || first.target_mix != found.target_mix
                                 || first.native_competitions != found.native_competitions
                                 || first.contested_field != found.contested_field
+                                || first.turn_structure != found.turn_structure
                                 || first.players != found.players
                                 || first.width != found.width
                                 || first.height != found.height
@@ -5874,6 +5894,7 @@ fn shape_of(header: &Header) -> &'static str {
         // on. Both legs default to the fieldless values, so every file
         // written before 2026-08-24 keeps the shape it always had.
         && header.contested_field.is_empty()
+        && header.turn_structure.is_empty()
         && header.native_competitions
             == (header.player_contract == civvis::ai::player::CONTRACT)
         && header.baseline == "best";
@@ -7184,7 +7205,7 @@ fn usage() -> ! {
          [--target-mix civvis,science,culture,religion,diplomatic,domination,score] (independent per seat; repetitions weight a target)\n       \
          (6 majors, 74x46 continents, 9 city-states, online/250, all six lanes, every seat its own \
          random genome, shuffled civs — the one shape the ledger accepts)\n       \
-         probe only, NOT a ledger source: [--contested] [--contested-field lane,lane] \
+         probe only, NOT a ledger source: [--turn-structure simultaneous [--planners N]] (every seat plans against the board at the top of the turn, the seats in parallel across N threads, default one per major; a different, faster game) [--contested] [--contested-field lane,lane] \
          [--contested-field-genes lanes|tag,tag] [--native-competitions] [--no-native-competitions] \
          [--players N] [--turns N] [--width N] \
          [--height N] [--city-states N] [--speed ID] [--map ID] [--victories a,b,...] [--stock-civs]\n       \
@@ -7629,6 +7650,23 @@ fn main() {
             std::process::exit(2);
         }),
     };
+    // ⭐ THE FAST SELF-PLAY PROBE. `--turn-structure simultaneous` plays every
+    // game under the simultaneous turn structure (`src/simultaneous.rs`): each
+    // seat plans its whole turn against the board as it stood at the top of
+    // the turn, so the seats deliberate at once, across `--planners` threads
+    // (default one per major), and their plans are committed in seat order
+    // through the ordinary rules. A 6-major game ran in 8-11 s on 4 planners
+    // against 23-29 s sequential (2026-11-22). It is a different game, which
+    // is why the batch is a probe and never a ledger source; the planner count
+    // is an execution detail and changes nothing in it.
+    let simultaneous = match text(&args, "--turn-structure").as_deref() {
+        None | Some("sequential") => None,
+        Some("simultaneous") => Some(number(&args, "--planners", players as i64).max(1) as usize),
+        Some(other) => {
+            eprintln!("--turn-structure: `{other}` is neither `sequential` nor `simultaneous`");
+            std::process::exit(2);
+        }
+    };
     // ⭐ THE CONTESTED FIELD. `--contested` is the default field — one
     // diplomatic pursuer and one culture pursuer, the two lanes that take 83%
     // of the live seat's early losses. `--contested-field a,b` names it
@@ -7880,6 +7918,17 @@ fn main() {
             eprintln!("cannot open {out_path}: {error}");
             std::process::exit(2);
         });
+    // The rival-pacing and host-tactics probes wrap the seats for the
+    // sequential runner; the simultaneous one plans the bare seats.
+    if simultaneous.is_some()
+        && (rival_war_pace.is_some() || rival_walls.is_some() || rival_host_tactics)
+    {
+        eprintln!(
+            "--turn-structure simultaneous plays the bare seats; it does not combine with \
+             --rival-war-pace, --rival-walls or --rival-host-tactics"
+        );
+        std::process::exit(2);
+    }
     let header = Header {
         target_mix: target_mix_text,
         player_contract: civvis::ai::player::CONTRACT.to_string(),
@@ -7914,6 +7963,11 @@ fn main() {
             .collect::<Vec<_>>()
             .join(","),
         native_competitions,
+        turn_structure: if simultaneous.is_some() {
+            "simultaneous".to_string()
+        } else {
+            String::new()
+        },
         contested_field_genes: field_genes.join(","),
         victory_mask: victory_mask.map(VictoryMask::id).unwrap_or_default(),
         victory_mask_games: victory_mask
@@ -7986,6 +8040,13 @@ fn main() {
     // the operator can see that in the first line instead of at the end.
     println!("{}", build_line(&header));
     println!("{}", field_line(&header));
+    if let Some(planners) = simultaneous {
+        println!(
+            "turn structure: simultaneous across {planners} planner(s) — the fast self-play \
+             probe: every seat plans against the board as it stood at the top of the turn; \
+             a different game, so never a ledger source"
+        );
+    }
     println!("{}", mask_line(&header));
     println!("{}", difficulty_line(&header));
     println!("{}", rivals_line(&header));
@@ -8009,6 +8070,7 @@ fn main() {
         victories,
         field: field.clone(),
         native_competitions,
+        simultaneous,
         field_genes: field_genes.clone(),
         victory_mask,
         difficulty,
@@ -8264,6 +8326,7 @@ mod tests {
             all_seats: true,
             contested_field: String::new(),
             native_competitions: false,
+            turn_structure: String::new(),
             contested_field_genes: String::new(),
             victory_mask: String::new(),
             victory_mask_games: BTreeMap::new(),
@@ -9392,6 +9455,26 @@ mod tests {
         assert!(header.contested_field.is_empty());
         assert!(!header.native_competitions);
         assert_eq!(shape_of(&header), "standard");
+    }
+
+    /// ⭐ The fast self-play probe is a different game: a simultaneous batch
+    /// reads `legacy`, a sequential header carries no `turn_structure` at all
+    /// (so every file before the leg is byte-for-byte what it was), and the
+    /// leg survives a round trip.
+    #[test]
+    fn a_simultaneous_batch_is_never_the_screen() {
+        let mut header = screen_header(&["a"]);
+        header.player_contract = civvis::ai::player::CONTRACT.to_string();
+        header.native_competitions = true;
+        assert_eq!(shape_of(&header), "standard");
+        let sequential = serde_json::to_string(&header).expect("a header serializes");
+        assert!(!sequential.contains("turn_structure"));
+        header.turn_structure = "simultaneous".into();
+        assert_eq!(shape_of(&header), "legacy");
+        let written = serde_json::to_string(&header).expect("a header serializes");
+        let read: Header = serde_json::from_str(&written).expect("and parses back");
+        assert_eq!(read.turn_structure, "simultaneous");
+        assert_eq!(shape_of(&read), "legacy");
     }
 
     fn screen_header(genes: &[&str]) -> Header {
