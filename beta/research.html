@@ -157,19 +157,30 @@
      (like the pages do). civvis, ai debugger have a black background (same
      as simulator)"). The pages are blue and so are their buttons: the rule
      above. The simulator is the lane's own address, bare for CIVVIS and in
-     play mode for AI Debugger (and in strange mode for Doctor Strange's
-     Civ 6, the same game shown as a tree of two timelines), so a link
-     that ends there is the
+     play mode for AI Debugger, so a link that ends there is the
      simulator's black, inside the edge its own buttons have. Civ 6 opens
      Steam's shop and is the blue of Steam's buttons ("civ 6 can have the
      steam color of blue"), dark under the name and light at the far end.
      The page on screen is still the one in gold. */
   .site-link[href$="../"],
-  .site-link[href$="?mode=play"],
-  .site-link[href$="?mode=strange"] { background: #050607; color: #c9cecb; box-shadow: inset 0 0 0 1px #30363a; }
+  .site-link[href$="?mode=play"] { background: #050607; color: #c9cecb; box-shadow: inset 0 0 0 1px #30363a; }
   .site-link[href$="../"]:hover, .site-link[href$="../"]:focus-visible,
-  .site-link[href$="?mode=play"]:hover, .site-link[href$="?mode=play"]:focus-visible,
-  .site-link[href$="?mode=strange"]:hover, .site-link[href$="?mode=strange"]:focus-visible { background: #181c1f; color: #fff; }
+  .site-link[href$="?mode=play"]:hover, .site-link[href$="?mode=play"]:focus-visible { background: #181c1f; color: #fff; }
+  /* Doctor Strange's Civ 6 (strange mode, the same game shown as a tree of
+     two timelines) stands out in Doctor Strange's own colours (operator,
+     2026-11-23: "highlight dr strange civ 6 button in dr strange colors"):
+     the deep blue of his tunic running into the crimson of his cloak,
+     ringed and lit by the orange of his spells' sparks, the name in their
+     pale gold. */
+  .site-link[href$="?mode=strange"] {
+    background: linear-gradient(135deg, #1c2a7a 30%, #a3122f); color: #ffe3a3;
+    box-shadow: inset 0 0 0 1px #ff9a2e, 0 0 6px rgba(255, 138, 30, 0.6);
+  }
+  .site-link[href$="?mode=strange"]:hover,
+  .site-link[href$="?mode=strange"]:focus-visible {
+    background: linear-gradient(135deg, #2638a0 30%, #c8193d); color: #fff;
+    box-shadow: inset 0 0 0 1px #ffb85c, 0 0 10px rgba(255, 150, 40, 0.85);
+  }
   /* Doctor Strange's Civ 6 is the one name longer than the column. It does
      not widen it: the name takes two lines in the column as it stands,
      set a little closer so that each line fits. */
