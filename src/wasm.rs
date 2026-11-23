@@ -541,6 +541,12 @@ fn route_unversioned(method: &str, target: &str, body: &str) -> Value {
             out
         }),
 
+        ("POST", "/fog-honest") => with_session(|session| {
+            let mut out = crate::routes::fog_honest(session, &parsed);
+            decorate_browser(&mut out);
+            out
+        }),
+
         ("POST", "/spectator-status") => with_session(|session| {
             let out = crate::routes::spectator_status(session, &parsed);
             if out["ok"] == json!(true) {

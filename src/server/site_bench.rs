@@ -102,6 +102,10 @@ pub struct Options {
     /// Which seats take `shortcuts`, as a bit per player id. `None` is every
     /// seat, city-states and barbarians included.
     pub shortcut_seats: Option<u64>,
+    /// The table's Fog-honest AI setting (`Session::set_fog_honest`): on,
+    /// as every world the site deals opens. Off is the table planning on the
+    /// whole board, which is a different game and prices the setting.
+    pub fog_honest: bool,
 }
 
 impl Default for Options {
@@ -113,6 +117,7 @@ impl Default for Options {
             keeps_own_yields: true,
             shortcuts: SiteShortcuts::default(),
             shortcut_seats: None,
+            fog_honest: true,
         }
     }
 }
@@ -188,6 +193,7 @@ pub fn run_with(seed: u64, turns: u32, options: Options) -> Report {
     let mut session = Session::new(stock_opening_params(seed));
     session.keeps_rival_yields = options.keeps_rival_yields;
     session.keeps_own_yields = options.keeps_own_yields;
+    session.set_fog_honest(options.fog_honest);
     if options.shortcuts != SiteShortcuts::default() {
         for seat in 0..session.game.players.len() {
             let taken = options

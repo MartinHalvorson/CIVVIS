@@ -26968,6 +26968,14 @@ impl Ai for AdvancedAi {
         self.base.site_shortcuts()
     }
 
+    /// The one difference between [`AdvancedAi::enable_engine_repairs`] and
+    /// [`AdvancedAi::enable_native_deployment`]: a major plans its turn on a
+    /// fog-redacted copy of the board and replays the plan on the board
+    /// (`player::take_turn`), or plans on the board itself.
+    fn set_fog_honest(&mut self, on: bool) {
+        self.observed_player = on;
+    }
+
     fn strategy_label(&self) -> Option<&'static str> {
         self.plan.as_ref().map(|plan| plan.strategy.as_str())
     }

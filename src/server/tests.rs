@@ -7996,10 +7996,10 @@ fn browser_orders_controls_interface_setup_and_logs() {
         "if (html === hudHtml || hudLayoutGesture?.name === \"players\" || playerHudColumnGesture\n      || playerHudReorderGesture || hudPaceHeldOpen()) {"
     ));
     assert!(EMBEDDED_INDEX.contains("function hudPaceHeldOpen()"));
-    // The moment focus leaves either held select — watch pace or the
-    // arena's in-game fog — the held snapshots paint.
+    // The moment focus leaves a held select — watch pace, the arena's
+    // in-game fog or Fog-honest AI — the held snapshots paint.
     assert!(EMBEDDED_INDEX.contains(
-        "if (ev.target.closest?.(\"[data-hud-pace], [data-hud-fog]\") && state) drawPlayerHud();"
+        "if (ev.target.closest?.(\"[data-hud-pace], [data-hud-fog], [data-hud-fog-honest]\") && state) drawPlayerHud();"
     ));
     // The bars are placed from the rendered heading, so they cannot drift
     // from the columns they name.
@@ -17520,4 +17520,77 @@ fn no_two_page_scripts_declare_the_same_function() {
         }
     }
     assert!(declared > 1000, "the scan found only {declared} functions");
+}
+
+/// Operator 2026-11-23: "we should have a fog honest ai play setting in the
+/// turn box set to true or false. and it should pretty much always be set to
+/// true." Every world a session is dealt opens with its Civ AIs planning on
+/// what their civilizations can see. The turn box turns that over for the
+/// world on screen, and a copy of the world (each half of a split is one)
+/// keeps what it was set to.
+#[test]
+fn a_table_plays_fog_honest_until_the_turn_box_says_otherwise() {
+    let mut session = Session::new(current());
+    let majors = session
+        .game
+        .players
+        .iter()
+        .filter(|player| !player.is_minor && !player.is_barbarian)
+        .count();
+    assert!(session.fog_honest(), "a new world opens fog-honest");
+    assert_eq!(
+        session.fog_honest_seats(),
+        majors,
+        "every major's Civ AI plans on what its civilization can see, and no scripted seat claims to"
+    );
+    let state = session.state();
+    assert_eq!(state["fog_honest"], json!(true));
+    assert_eq!(state["fog_honest_seats"], json!(majors));
+
+    // A Civ AI seated by name is seated under the table's setting.
+    session.seat_rivals("siege").unwrap();
+    session.seat_strategy_at(0, "holy").unwrap();
+    assert_eq!(session.fog_honest_seats(), majors);
+
+    // The turn box turns it off, over the route the page uses...
+    let off = crate::routes::fog_honest(&mut session, &json!({"on": false}));
+    assert_eq!(off["fog_honest"], json!(false));
+    assert_eq!(off["fog_honest_seats"], json!(0));
+    // ...anything but a yes or a no changes nothing...
+    let _ = crate::routes::fog_honest(&mut session, &json!({"on": "yes"}));
+    assert!(!session.fog_honest());
+    // ...and a copy of the world keeps the setting it was made with.
+    let half = session.fork();
+    assert!(!half.fog_honest());
+    assert_eq!(half.fog_honest_seats(), 0);
+    session.set_fog_honest(true);
+    assert_eq!(session.fork().fog_honest_seats(), majors);
+
+    assert!(EMBEDDED_INDEX.contains("<select data-hud-fog-honest "));
+    assert!(EMBEDDED_INDEX.contains("fetchJSON(\"/fog-honest\""));
+}
+
+/// The setting is read back from the game, not only from the agents: a
+/// fog-honest table plays a game of its own, and plays it on.
+#[test]
+fn a_fog_honest_table_plays_its_own_game() {
+    let play = |honest: bool| {
+        let mut session = Session::new(watched_table());
+        session.set_fog_honest(honest);
+        assert_eq!(session.fog_honest_seats() > 0, honest);
+        for _ in 0..16 * session.game.players.len() {
+            session.step_quietly();
+        }
+        (
+            session.game.turn,
+            serde_json::to_string(&session.game.log).unwrap(),
+        )
+    };
+    let (turn, honest) = play(true);
+    let (_, board) = play(false);
+    assert!(turn > 12, "a fog-honest table stopped on turn {turn}");
+    assert_ne!(
+        honest, board,
+        "planning on a fog-redacted view played the same game as planning on the board"
+    );
 }
