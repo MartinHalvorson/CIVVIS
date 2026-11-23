@@ -1233,7 +1233,7 @@ function debugLaneMarkup(key, id, label) {
         <div class="dbg-rail">
           <div class="dbg-sky"></div>
           <div class="dbg-deco"><div class="dbg-ruler"></div><div class="dbg-band"></div><div class="dbg-band dbg-own"></div><div class="dbg-by"></div><div class="dbg-beyond" hidden></div><div class="dbg-kept-turns"></div><div class="dbg-goal"></div></div>${
-          key ? `<div class="dbg-arm"><div class="dbg-arm-sky"></div><div class="dbg-bent"></div></div>` : `<div class="dbg-axis"></div>
+          key ? `<div class="dbg-arm"><div class="dbg-arm-sky"></div><div class="dbg-bent"></div></div>` : `<div class="dbg-axis"></div>`}${key ? "" : `
           <div class="dbg-travel" aria-hidden="true" hidden><i>◀</i>Click to travel<i>▶</i></div>`}
           <div class="dbg-hands"><div class="dbg-ghost" hidden></div>${key ? "" : `<span class="dbg-fork" hidden></span>`}<div class="dbg-cursor"><b></b>${key ? "" : `
             <button class="dbg-branch" data-dbg="split" title="Branch: a second timeline from this turn, beside this one. This one keeps the turns it holds past here; seat another Civ AI in the branch and play both, and close either with its ✕" aria-label="Branch the timeline on this turn"><i>⑂</i>Branch</button>`}</div></div>
@@ -2162,8 +2162,8 @@ function drawDebugBar(measure = true) {
       by: stretches(told("a", "by").length ? "a" : "b", trunkFirst, fork.turn),
       free: Math.max(fork.last.a, fork.last.b) <= fork.turn && !beyond("a") && !beyond("b"),
       under: [...told("a", "eras"), ...told("b", "eras")].filter(era => onTrunk(era.turn)), tree,
-      goal, idle: false, marker: one ? stands.a : null, branches: fork.forked ? fork.turn : null,
-      travel: panes.a.turn !== null && panes.b.turn !== null && !debugSplit.busy && !running});
+      travel: panes.a.turn !== null && panes.b.turn !== null && !debugSplit.busy && !running,
+      goal, idle: false, marker: one ? stands.a : null, branches: fork.forked ? fork.turn : null});
     // A half has no timeline of its own to show them on, so its save points,
     // its breakpoint turns and the eras it has been through stand on its
     // lane (`pane-marks`): on its branch, and on the trunk for the turns the
@@ -2226,7 +2226,8 @@ function drawDebugBar(measure = true) {
       fork: null, beyond, kept: thinned ? new Set(kept) : null, turns: thinned ? kept : null,
       flags: [...(timeline.saves || [])].sort((a, b) => a.turn - b.turn || a.id - b.id), stops: timeline.breakpoints.turns,
       by: timeline.played_by || [], played: timeline.played_by || [],
-      eras: timeline.eras || [], goal: debugRunning ? debugGoal : null, idle: deck.idle, travel: deck.idle && !debugRunning});
+      travel: deck.idle && !debugRunning,
+      eras: timeline.eras || [], goal: debugRunning ? debugGoal : null, idle: deck.idle});
   }
   debugDrawDeck(bar, deck);
   debugDrawAsk(bar);
