@@ -794,6 +794,10 @@ fn the_split_speaks_one_set_of_messages_on_both_sides() {
         // What stands on a half's timeline, for its lane in the host's bar:
         // its save points and its breakpoint turns.
         "pane-marks",
+        // One screen becomes two in one move: a half that is not yet shown
+        // says when it has painted itself, and is told when it is seen.
+        "pane-shown",
+        "pane-seen",
     ] {
         let quoted = format!("\"{message}\"");
         assert!(
