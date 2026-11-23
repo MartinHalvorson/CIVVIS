@@ -4687,6 +4687,33 @@
      race moves, and the wheel must not be pulled along after one of them. */
   #victoryhud .hud-rail { overflow-x: hidden; overflow-y: auto; overflow-anchor: none; }
   #victoryhud .hud-rail::-webkit-scrollbar { width: 3px; height: 3px; }
+  /* The game's own clock, up the tracker's left edge: a slim gold bar that
+     stands at the bottom on turn 1 and reaches the top on the last turn
+     (operator, 2026-11-23: "tasteful. not too big"). The tracker's box is a
+     grid so the bar can stand in a column of its own beside the paths, exactly
+     as tall as their rail: it never scrolls away with them, and the heading
+     and the "Off" line above keep the whole width. A world with no turn cap
+     draws no bar, and the empty column gives its width back to the paths. */
+  #victoryhud > .victory-region {
+    display: grid; grid-template-columns: auto minmax(0, 1fr);
+    grid-template-rows: auto auto minmax(0, 1fr);
+  }
+  #victoryhud > .victory-region > .hud-region-bar { grid-area: 1 / 1 / 2 / -1; }
+  #victoryhud > .victory-region > .victory-off-note { grid-area: 2 / 1 / 3 / -1; }
+  #victoryhud > .victory-region > .hud-rail { grid-area: 3 / 2; }
+  .turn-gauge {
+    grid-area: 3 / 1; position: relative; width: 3px; margin: 2px 4px 2px 0;
+    border-radius: 2px; background: color-mix(in srgb, var(--gold) 14%, transparent);
+  }
+  .turn-gauge::after { content: ""; position: absolute; inset: 0 -3px; }
+  .turn-gauge > i {
+    position: absolute; inset: auto 0 0; min-height: 2px; border-radius: inherit;
+    background: linear-gradient(to top, color-mix(in srgb, var(--gold) 55%, transparent), var(--gold-bright));
+    box-shadow: 0 0 5px color-mix(in srgb, var(--gold-bright) 38%, transparent);
+    transition: height .45s ease-out;
+  }
+  #victoryhud.victory-collapsed .turn-gauge { display: none; }
+  @media (prefers-reduced-motion: reduce) { .turn-gauge > i { transition: none; } }
 
 
   .overlay-options { margin-top: 11px; padding-top: 10px; border-top: 1px solid var(--line-soft); }
