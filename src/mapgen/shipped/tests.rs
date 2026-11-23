@@ -461,3 +461,139 @@ fn a_board_under_the_stock_sizes_still_gets_a_world() {
         }
     }
 }
+
+/// A stock world as the fixtures write it: north at the top, two characters
+/// a plot. Ocean is blank and Coast a dot; land is its climate's letter, in
+/// capitals on Hills and after a caret on a Mountain.
+fn render(world: &StockWorld) -> String {
+    let mut out = String::new();
+    for y in (0..world.grid.h).rev() {
+        let mut line = String::new();
+        for x in 0..world.grid.w {
+            let plot = world.plot(x, y);
+            let letter = match world.climate_at(x, y) {
+                Climate::Ocean => ' ',
+                Climate::Coast => '.',
+                Climate::Grass => 'g',
+                Climate::Plains => 'p',
+                Climate::Desert => 'd',
+                Climate::Tundra => 't',
+                Climate::Snow => 's',
+            };
+            if plot == PLOT_MOUNTAIN {
+                line.push('^');
+                line.push(letter);
+            } else if plot == PLOT_HILLS {
+                line.push(letter.to_ascii_uppercase());
+                line.push(' ');
+            } else {
+                line.push(letter);
+                line.push(' ');
+            }
+        }
+        out.push_str(line.trim_end());
+        out.push('\n');
+    }
+    out
+}
+
+/// The port, held to the scripts it is a port of.
+///
+/// Every file in `golden/` is a world one of Civilization VI's own map
+/// scripts drew: the shipped Lua, unmodified, run under Lua 5.1 as far as
+/// `ApplyBaseTerrain` on this crate's random stream
+/// (`tools/civ6_map_script_golden.py write`, on a machine with the game
+/// installed). The same seed through the port has to come out the same
+/// world, plot for plot: land and sea, hills and mountains, climate, and the
+/// shallow water round every coast.
+///
+/// That holds the port to every loop bound, every table index and every
+/// order of dice in `Continents.lua`, `Pangaea.lua`, `Small_Continents.lua`,
+/// `Island_Plates.lua`, `InlandSea.lua`, `Lakes.lua`, `MapUtilities.lua`,
+/// `MountainsCliffs.lua` and `TerrainGenerator.lua`. It does not reach the
+/// fractal, which both sides take from the same reading of the engine's
+/// source; see `fractal.rs`.
+#[test]
+fn the_port_draws_the_world_the_shipped_script_draws() {
+    let golden = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/mapgen/shipped/golden");
+    let mut paths: Vec<std::path::PathBuf> = std::fs::read_dir(&golden)
+        .expect("the fixtures are part of the crate")
+        .map(|entry| entry.expect("a readable fixture directory").path())
+        .filter(|path| path.extension().is_some_and(|extension| extension == "txt"))
+        .collect();
+    paths.sort();
+
+    let mut scripts_seen = std::collections::BTreeSet::new();
+    for path in &paths {
+        let stem = path.file_stem().unwrap().to_str().unwrap();
+        // `<script>_<width>x<height>_<seed>`, and a script name has
+        // underscores of its own.
+        let (rest, seed) = stem.rsplit_once('_').expect("a seed");
+        let (name, size) = rest.rsplit_once('_').expect("a size");
+        let (w, h) = size.split_once('x').expect("width x height");
+        let script = match name {
+            "continents" => StockScript::Continents,
+            "pangaea" => StockScript::Pangaea,
+            "small_continents" => StockScript::SmallContinents,
+            "island_plates" => StockScript::IslandPlates,
+            "inland_sea" => StockScript::InlandSea,
+            "lakes" => StockScript::Lakes,
+            other => panic!("{stem}: no stock script is called {other}"),
+        };
+        scripts_seen.insert(name.to_string());
+        let drawn = render(&world(
+            script,
+            w.parse().unwrap(),
+            h.parse().unwrap(),
+            seed.parse().unwrap(),
+        ));
+        let wanted = std::fs::read_to_string(path).unwrap();
+        if drawn != wanted {
+            let row = drawn
+                .lines()
+                .zip(wanted.lines())
+                .position(|(ours, theirs)| ours != theirs)
+                .unwrap_or(0);
+            panic!(
+                "{stem}: the port and the shipped script part at row {row} from the north\n \
+                 port:   {:?}\n script: {:?}",
+                drawn.lines().nth(row).unwrap_or(""),
+                wanted.lines().nth(row).unwrap_or(""),
+            );
+        }
+    }
+    // A check that quietly ran over nothing is no check: every script has
+    // its fixtures, three apiece.
+    assert_eq!(scripts_seen.len(), 6, "fixtures cover {scripts_seen:?}");
+    assert!(
+        paths.len() >= 18,
+        "only {} fixtures in {}",
+        paths.len(),
+        golden.display()
+    );
+}
+
+/// The fixtures are only worth anything if the tool that writes them throws
+/// the same dice and builds the same fractal as this crate. These are the
+/// numbers `tools/test_civ6_map_script_golden.py` pins on the Python side.
+#[test]
+fn the_fixture_tool_and_the_port_share_their_dice_and_their_fractal() {
+    let mut rng = Rng::new(1);
+    let rolls: Vec<usize> = (0..6).map(|_| rng.below(1000)).collect();
+    assert_eq!(rolls, [387, 965, 744, 470, 780, 485]);
+
+    let field = CvFractal::create(&mut Rng::new(7), 44, 26, 2, FRAC_POLAR, 6, 5);
+    assert_eq!(field.height_from_percent(62), 103);
+    assert_eq!(
+        [0, 10, 22, 43].map(|x| field.height(x, 13)),
+        [0, 11, 98, 34]
+    );
+
+    let mut ridged = CvFractal::create(&mut Rng::new(7), 44, 26, 3, FRAC_WRAP_X, -1, -1);
+    ridged.build_ridges(&mut Rng::new(8), 9, FRAC_WRAP_X, 10, 5);
+    assert_eq!(ridged.height_from_percent(89), 211);
+    assert_eq!(
+        [0, 10, 22, 43].map(|x| ridged.height(x, 13)),
+        [175, 152, 235, 119]
+    );
+}

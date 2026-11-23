@@ -41,11 +41,12 @@ pub(super) fn stock_script(script: MapScript) -> Option<StockScript> {
     }
 }
 
-/// Whether a flat world of this type has four edges instead of wrapping east
-/// to west. `InlandSea.lua` asks for exactly that map (`WrapX = false`): its
-/// sea is ringed by land, and a ring that wrapped would be a band.
-pub(super) fn flat_world_is_bounded(script: MapScript) -> bool {
-    stock_script(script).is_some_and(|stock| !shipped::wraps_east_west(stock))
+/// Whether a flat world drawn by this script has four edges instead of
+/// wrapping east to west. `InlandSea.lua` asks for exactly that map
+/// (`WrapX = false`): its sea is ringed by land, and a ring that wrapped
+/// would be a band.
+pub(super) fn stock_world_is_bounded(script: StockScript) -> bool {
+    !shipped::wraps_east_west(script)
 }
 
 /// What a stock world leaves for the passes after it.

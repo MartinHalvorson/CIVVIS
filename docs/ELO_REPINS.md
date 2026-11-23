@@ -2426,3 +2426,23 @@ The engine before this change measures **19,739 decisions /
 `0xf971_70e9_be13_b1e2`**. The legacy planning configuration and the five
 anchor profiles are unchanged. This re-pin records a rules boundary and does
 not establish stronger play.
+
+## v55 (2026-11-22) — the shipped world types are drawn by the shipped map scripts
+
+A rules correction in map generation (`src/mapgen/shipped/`, `src/mapgen/stock.rs`,
+`src/mapgen/cliffs.rs`), read from `DLC/Expansion2/Maps` and
+`Base/Assets/Maps/Utility`. Continents, Pangaea, Small Continents, Islands,
+Inland Sea and Lakes take their land, relief and climate from a port of the
+game's own scripts on every board from Duel up, cliffs follow `AddCliffs` on
+every world type at those sizes, and a start keeps the shipped standoff from a
+Natural Wonder when its region runs out of candidates. Two of the five anchor
+profiles are Duel-sized or larger (44x28 Continents and 54x34 Pangaea), so
+every controller, `AdvancedAi::legacy()` included, now plays those two on the
+script's worlds; the three boards under Duel are unchanged. `docs/FIDELITY.md`
+has the table and the check against the scripts themselves.
+
+The engine before this change measures **19,866 decisions /
+`0xf971_70e9_be13_b1e2`**. The corrected engine measures **19,889 decisions /
+`0xc8df_373e_53a3_f7b8`**. The legacy planning configuration and the five
+anchor profiles are unchanged. This re-pin records a rules boundary and does
+not establish stronger play.

@@ -867,6 +867,70 @@ civilization's own site beats the average of the other seven *for its bias*:
 | before | 34 | 16 |
 | after | **50** | **0** |
 
+## Closed: the shipped world types are drawn by the shipped scripts
+
+Read against `DLC/Expansion2/Maps` and `Base/Assets/Maps/Utility` on 2026-11-22.
+CIVVIS drew Continents, Pangaea, Small Continents, Islands, Inland Sea and
+Lakes with generators of its own that shared only the names. `src/mapgen/shipped`
+is now a port of the six scripts and the three utilities they call, on a port
+of the engine's fractal, and it draws every board from Duel (44x26) up, flat or
+globe. Boards under Duel are not maps the game makes and the scripts do not
+scale down to them; they keep the compact generators.
+
+| Rule | Shipped | CIVVIS before |
+|---|---|---|
+| Continents land (`Continents.lua:114`) | a rifted fractal cut at 62% water (`:119`), redrawn until no landmass holds over 64% of the land (`:230`); `floor(H/13)` polar rows always sea (`:172`); the emptiest columns turned to the seam (`ShiftPlotTypes`); then a centre rift whose two sides slide 3 plots apart (`:332`, `:570`) | two blobs grown in two boxes, 21% of the map each |
+| Pangaea land (`Pangaea.lua:118`) | fractal at 58% water (`:123`), redrawn until one landmass holds 84% of the land (`:190`) | an oval with a roughened edge |
+| Small Continents land (`Small_Continents.lua:116`) | grain-3 fractal at 69% water until no landmass holds over 34% (`:186`), then island layers at 85% and 95% (`:199`, `:214`) kept one plot clear of standing land | one blob in each cell of a grid of four to eight |
+| Island Plates land (`Island_Plates.lua:121`) | island layers at 65% and 95% water, then a 90% layer cut back out (`:149`, `:163`, `:177`) | blobs of 8 to 24 tiles scattered to 22% land |
+| Inland Sea (`InlandSea.lua:148`) | a map that does not wrap (`:142`); a fractal sea at 60% of the middle 64% by 44% (`:164`) and an oval over its centre (`:193`) | a wrapping map; an oval sea with a roughened edge |
+| Lakes land (`Lakes.lua:121`) | three layers at 81, 88 and 95, land where the field lies *under* the cut (`:291`) | one cut at 81 |
+| Hills and Mountains (`MountainsCliffs.lua:8`) | two ridged fields cut at percentiles of the whole map: Mountains from `97 - age - extra`, passes and foothills from `91 - 2*age - extra`, Hills in two bands `age` either side of 28 and 72; nine in ten coastal Mountains lowered (`:151`); then lone peaks up to one Mountain in `8 + 3*age` land plots (`:167`) | the same shape cut at percentiles of the land only, 9 plates, no lone peaks, Continents alone at the 92nd |
+| Plates in the continental field (`Continents.lua:304`) | 4 on every size: the lookup is keyed by size name and asked by size number, so it always falls back | 9 |
+| Climate (`TerrainGenerator.lua:72`) | Snow from latitude 0.8, Tundra from 0.65, Grass under 0.1, Desert on the top quarter of its field between 0.2 and 0.5, Plains on the top half of its field | the same bands on a different fractal |
+| Shallow water (`TerrainGenerator.lua:244`) | Coast beside land, then three passes at one in four | the same |
+| Cliffs (`MountainsCliffs.lua:276`) | every water edge of a Hills plot that touches the sea and no ice, on a landmass with flat coast; never flat ground | 35% of every coastal edge, flat or not |
+
+The port is held to the scripts by running them. `tools/civ6_map_script_golden.py`
+loads the shipped Lua unmodified under Lua 5.1, gives it CIVVIS's dice and a
+second copy of the fractal, and writes down the world each script draws; 65 of
+65 worlds over the six scripts and four sizes matched the port plot for plot,
+and 18 of them are committed as fixtures that
+`the_port_draws_the_world_the_shipped_script_draws` reads on every run.
+
+Some of what the scripts do is not what they say, and the port follows what
+they do. Pangaea's shift toward a pole compares an area object with an area id
+and never fires (`Pangaea.lua:230`). `IsAdjacentToRiver` reads two globals
+nobody sets (`MapUtilities.lua:46`), so a river spares no hill its cliff. The
+64% test reads the land before the shift and the centre rift, and the rift
+drifts three plots a side at any width: about one Duel world in eight and one
+Small world in a hundred rejoins round the seam. `Lakes.lua` declares its own
+`world_age` of 1 over the one it is handed (`:133`).
+
+What the scripts draw on the Small map, over 200 seeds each, before the seam
+relief and the lakes:
+
+| Script | Land | Biggest landmass | Second | Mountains | Hills |
+|---|---|---|---|---|---|
+| Continents | 34.5% | 52% of the land | 39% | 6.6% of the land | 24.5% |
+| Pangaea | 40.0% | 98% | 1% | 4.1% | 24.9% |
+| Small Continents | 36.0% | 26% | 20% | 6.0% | 29.4% |
+| Island Plates | 32.3% | 38% | 18% | 11.5% | 19.6% |
+| Inland Sea | 84.1% | all of it | | 6.6% | 21.9% |
+| Lakes | 87.5% | all of it | | 9.1% | 13.8% |
+
+On finished 84x54 Continents worlds the generator now gives 10.1% Mountains,
+27.2% Hills and 186 land plots per volcano. The 64 recorded live games show
+8.2%, 26.3% and 198, over revealed plots only. The generator before this change
+gave 9.8%, 24.3% and 204 (`a_standard_continents_world_has_the_live_games_relief`).
+
+🟡 `Fractal.Create`, `CreateRifts`, `BuildRidges` and `GetHeight` are compiled.
+The port follows Civilization V's public `CvFractal.cpp`, which takes the same
+arguments in the same order. 🟡 The engine's random stream is not exposed, so a
+seed is not the same world here and there; the worlds come from the same rules.
+Rivers, floodplains, sea ice, resources and start positions are still CIVVIS's
+own passes, each modelled on its shipped counterpart and none a port.
+
 ## Closed: continent seams, volcanoes, fissures, lakes and the Woods roll
 
 Read against the shipped `DLC/Expansion2/Maps` scripts on 2026-11-10, and checked

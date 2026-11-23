@@ -282,7 +282,7 @@ fn culture_releases_first_campus_claims_after_its_tourism_technologies() {
 
 #[test]
 fn earlier_culture_and_other_targets_keep_their_campus_claims() {
-    let (mut game, ranked) = campus_less_empire(95_121, 1);
+    let (mut game, ranked) = campus_less_empire(95_123, 1);
     all_queue(&mut game, &ranked, &unit("knight"));
     for tech in ["flight", "radio", "computers"] {
         game.players[0].techs.insert(Name::new(tech));

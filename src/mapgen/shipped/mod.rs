@@ -22,6 +22,11 @@
 //! The map options are the setup screen's defaults throughout: Standard world
 //! age, Standard sea level and Standard temperature.
 //!
+//! The port is held to the scripts by running them. The files in `golden/`
+//! are worlds the shipped Lua drew, unmodified, under Lua 5.1 on this crate's
+//! dice (`tools/civ6_map_script_golden.py`), and `tests.rs` requires the same
+//! seed through this module to come out the same world, plot for plot.
+//!
 //! What cannot be matched is the dice. The engine's random stream is not
 //! exposed, so a seed here is not the same world there: the rules are the
 //! same, and the worlds are drawn from the same distribution.
@@ -914,9 +919,8 @@ fn generate_center_rift(grid: Grid, plot_types: &mut PlotTable, rng: &mut Rng) {
         let next_direction;
         if current_direction == tertiary {
             let segment_length = roll(rng, tertiary_max_length + 1);
-            next_direction = if past_boundary(current_x) {
-                secondary
-            } else if roll(rng, 3) == 1 {
+            // Past the boundary the line must turn back, and no die is thrown.
+            next_direction = if past_boundary(current_x) || roll(rng, 3) == 1 {
                 secondary
             } else {
                 primary
@@ -1156,10 +1160,11 @@ fn apply_tectonics(grid: Grid, args: &Tectonics, plot_types: &mut PlotTable, rng
     for x in 0..w {
         for y in 0..h {
             let i = y * w + x + 1;
-            if plot_types.get(i) == PLOT_MOUNTAIN && adjacent_to_water(grid, plot_types, x, y) {
-                if roll(rng, 10) < 9 {
-                    plot_types.set(i, PLOT_HILLS);
-                }
+            if plot_types.get(i) == PLOT_MOUNTAIN
+                && adjacent_to_water(grid, plot_types, x, y)
+                && roll(rng, 10) < 9
+            {
+                plot_types.set(i, PLOT_HILLS);
             }
         }
     }

@@ -8,7 +8,7 @@ fn fixture(count: usize) -> (Game, AdvancedAi, StrategicPlan, Vec<u32>) {
         1,
         64,
         40,
-        crate::rng::fixture_seed("CULTUREFAITH", 1),
+        crate::rng::fixture_seed("CULTUREFAITH", 2),
         250,
         0,
         false,

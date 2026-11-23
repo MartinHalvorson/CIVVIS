@@ -44,7 +44,6 @@ pub struct CvFractal {
     frac_y: i32,
     xs: i32,
     ys: i32,
-    flags: u32,
     x_inc: i32,
     y_inc: i32,
 }
@@ -168,7 +167,6 @@ impl CvFractal {
             frac_y,
             xs,
             ys,
-            flags,
             x_inc: (frac_x * FLOAT_PRECISION) / xs.max(1),
             y_inc: (frac_y * FLOAT_PRECISION) / ys.max(1),
         };
@@ -534,9 +532,7 @@ mod tests {
     fn ridges_follow_the_lines_between_plates() {
         let mut rng = Rng::new(9);
         let mut field = CvFractal::create(&mut rng, 84, 54, 3, FRAC_WRAP_X, -1, -1);
-        for cell in &mut field.frac {
-            *cell = 0;
-        }
+        field.frac.fill(0);
         field.build_ridges(&mut rng, 9, 0, 1, 0);
         let zeros = field.frac.iter().filter(|height| **height == 0).count();
         let peaks = field.frac.iter().filter(|height| **height == 255).count();

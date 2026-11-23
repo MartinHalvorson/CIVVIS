@@ -893,11 +893,17 @@ pub(super) struct StartBuffers<'a> {
 /// grassland jammed against its neighbour. A region with no site even that
 /// clear is left to the caller's fallback rather than handed a start the game
 /// would silently move somewhere else.
+///
+/// `clear_land` is the ground outside the shipped standoff from every Natural
+/// Wonder. The candidate pool keeps that standoff already; when a region has
+/// no candidate with the room, its other ground is searched clear of the
+/// wonders first and beside them only after.
 pub(super) fn regional_starts(
     rules: &Rules,
     wm: &WorldMap,
     regions: &[Vec<Pos>],
     candidates: &BTreeSet<Pos>,
+    clear_land: &BTreeSet<Pos>,
     fertility: &BTreeMap<Pos, i32>,
     buffers: StartBuffers<'_>,
 ) -> Vec<(usize, Pos)> {
@@ -926,6 +932,11 @@ pub(super) fn regional_starts(
             .copied()
             .filter(|position| candidates.contains(position))
             .collect();
+        let cleared: Vec<Pos> = region
+            .iter()
+            .copied()
+            .filter(|position| clear_land.contains(position))
+            .collect();
         let mut worth = |position: &Pos| {
             cached_start_quality(&mut quality_cache, rules, wm, *position)
                 - REGION_CENTRALITY_PULL * center_distances.distance(*position)
@@ -938,7 +949,7 @@ pub(super) fn regional_starts(
                 .iter()
                 .flat_map(|start| wm.disk(*start, own_want))
                 .collect();
-            for pool in [preferred.as_slice(), region.as_slice()] {
+            for pool in [preferred.as_slice(), cleared.as_slice(), region.as_slice()] {
                 chosen = pool
                     .iter()
                     .filter(|position| {
@@ -971,10 +982,17 @@ pub(super) fn regional_starts(
 /// pool that made this pass hand out a start three hexes from its neighbour,
 /// which the game then refuses to found on. Any passable ground with the room
 /// beats good ground without it.
+///
+/// `clear_land` is the passable ground outside the shipped standoff from every
+/// Natural Wonder (`__NaturalWonderBuffer`). The candidate pool already keeps
+/// that standoff; this is what keeps it when the pool runs out, so the pass
+/// reaches for ground beside a wonder only once there is no other ground with
+/// room. On a world with no wonders it is all of `land` and changes nothing.
 pub(super) fn fill_remaining_starts(
     rules: &Rules,
     wm: &WorldMap,
     candidates: &BTreeSet<Pos>,
+    clear_land: &BTreeSet<Pos>,
     land: &BTreeSet<Pos>,
     spawns: &mut Vec<Pos>,
     count: usize,
@@ -1027,8 +1045,10 @@ pub(super) fn fill_remaining_starts(
                 .copied()
         };
         let next = pick(candidates, MIN_START_SEPARATION)
+            .or_else(|| pick(clear_land, MIN_START_SEPARATION))
             .or_else(|| pick(land, MIN_START_SEPARATION))
             .or_else(|| pick(candidates, 0))
+            .or_else(|| pick(clear_land, 0))
             .or_else(|| pick(land, 0));
         let Some(next) = next else {
             break;
@@ -1432,6 +1452,26 @@ pub(super) fn place_starts_and_finish(
         }
     };
 
+    // The same standoff over all passable ground, for a region with no
+    // candidate left and for the pass that seats whoever the regions could
+    // not: the shipped buffer is never given up while other ground has room.
+    let land_clear_of_wonders = |floor: i32| -> BTreeSet<Pos> {
+        if wonders.is_empty() {
+            return passable.clone();
+        }
+        passable
+            .iter()
+            .copied()
+            .filter(|position| {
+                wonders
+                    .iter()
+                    .all(|wonder| wm.distance(*position, *wonder) > floor)
+            })
+            .collect()
+    };
+    let major_clear = land_clear_of_wonders(START_DISTANCE_MAJOR_NATURAL_WONDER);
+    let minor_clear = land_clear_of_wonders(START_DISTANCE_MINOR_NATURAL_WONDER);
+
     let major_pool = pool_clear_of_wonders(START_DISTANCE_MAJOR_NATURAL_WONDER, num_major_spawns);
     let major_regions = if script == MapScript::Islands {
         // An archipelago's fair share is a slice of the whole island field,
@@ -1578,6 +1618,7 @@ pub(super) fn place_starts_and_finish(
             &wm,
             &major_regions,
             &major_pool,
+            &major_clear,
             &fertility,
             StartBuffers {
                 foreign: &[],
@@ -1613,7 +1654,15 @@ pub(super) fn place_starts_and_finish(
     };
     if spawns.len() < num_major_spawns {
         let missing = num_major_spawns - spawns.len();
-        fill_remaining_starts(rules, &wm, &major_pool, &passable, &mut spawns, missing);
+        fill_remaining_starts(
+            rules,
+            &wm,
+            &major_pool,
+            &major_clear,
+            &passable,
+            &mut spawns,
+            missing,
+        );
     }
 
     // City-states get a second, finer set of regions once the majors are down,
@@ -1769,6 +1818,7 @@ pub(super) fn place_starts_and_finish(
             &wm,
             &minor_regions,
             &minor_pool,
+            &minor_clear,
             &fertility,
             StartBuffers {
                 foreign: &majors,
@@ -1780,7 +1830,15 @@ pub(super) fn place_starts_and_finish(
     }
     if spawns.len() < total_spawns {
         let missing = total_spawns - spawns.len();
-        fill_remaining_starts(rules, &wm, &minor_pool, &passable, &mut spawns, missing);
+        fill_remaining_starts(
+            rules,
+            &wm,
+            &minor_pool,
+            &minor_clear,
+            &passable,
+            &mut spawns,
+            missing,
+        );
     }
     let occupied: BTreeSet<Pos> = spawns.iter().copied().collect();
     for s in &occupied {
