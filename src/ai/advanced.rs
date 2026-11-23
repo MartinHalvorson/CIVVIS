@@ -9055,6 +9055,11 @@ pub struct AdvancedAi {
     /// `(declarer seat, turn the war began)`, under
     /// `mobilization-hears-the-declaration`.
     observed_surprise_declarations: Vec<(usize, u32)>,
+    /// `nearly-built-keeps-its-queue`: a building or district a few turns
+    /// from done keeps its queue against the early Settler floor, the
+    /// holdable-land Settler and the near rival's deterrent. See
+    /// `advanced/nearly_built_keeps_its_queue.rs`. Off by default.
+    nearly_built_keeps_its_queue: bool,
     // ---- append: p-r ------------------------------------------------
     /// `racer-seat-statue-civic-first`: Civil Engineering as the civic goal of
     /// a Science, Culture or Religious seat that reaches for the Statue of
@@ -12332,6 +12337,8 @@ mod industrial_zone_claims_the_factory;
 /// Industrial Zone or Workshop claims its city's queue. See
 /// `advanced/industrial_zone_claims_the_producer_queue.rs`.
 mod industrial_zone_claims_the_producer_queue;
+/// `nearly-built-keeps-its-queue`: see `advanced/nearly_built_keeps_its_queue.rs`.
+mod nearly_built_keeps_its_queue;
 
 mod barbarian_research_prices_the_field;
 /// `first-campus-before-the-settler`: see

@@ -512,6 +512,271 @@ fn a_lean_answer_says_where_the_world_stands_without_the_state_document() {
     assert_eq!(refused["turn"], back["turn"]);
 }
 
+/// A lean answer says how the played seat stands in the numbers its row of
+/// the standings shows, and they are the ones the state document gives it:
+/// what a search is asked to make the most of is what the page shows.
+#[test]
+fn a_lean_answer_gives_the_seat_its_row_of_the_standings() {
+    let mut session = played();
+    for _ in 0..6 {
+        step_as(&mut session, "jack");
+    }
+    let whole = session.state();
+    let lean = session.debug(&json!({"op": "status", "lean": true}));
+    let seat = &lean["seat"];
+    let mine = whole["players"]
+        .as_array()
+        .expect("the document lists the civilizations")
+        .iter()
+        .find(|player| player["id"] == json!(0))
+        .expect("the seat is one of them");
+    assert_eq!(seat["turn"], whole["turn"]);
+    for key in [
+        "alive",
+        "score",
+        "cities",
+        "population",
+        "gold_per_turn",
+        "yields",
+    ] {
+        assert!(!seat[key].is_null(), "the reading has no {key}");
+        assert_eq!(seat[key], mine[key], "{key}");
+    }
+    for key in ["food", "production", "gold", "science", "culture", "faith"] {
+        assert!(seat["yields"][key].is_number(), "{key}");
+    }
+}
+
+/// `play` is a run of steps asked for once: the same turns, the same marks to
+/// walk back to, and how the seat stood as each turn opened. It stops where a
+/// run stops.
+#[test]
+fn play_is_a_run_of_steps_and_reads_the_seat_each_turn() {
+    let (mut stepped, mut run) = (played(), played());
+    for _ in 0..5 {
+        step_as(&mut stepped, "jack");
+    }
+    let answer = run.debug(&json!({"op": "play", "turns": 5, "strategy": "jack", "lean": true}));
+    assert_eq!(answer["error"], Value::Null);
+    assert_eq!(world(&stepped), world(&run));
+    assert_eq!(marked(&stepped), marked(&run));
+    assert_eq!(answer["turn"], json!(6));
+    let readings = answer["readings"].as_array().expect("a reading a turn");
+    assert_eq!(readings.len(), 5);
+    for (at, reading) in readings.iter().enumerate() {
+        assert_eq!(reading["turn"], json!(at as u64 + 2));
+    }
+    // The last of them is how the seat stands now.
+    assert_eq!(readings[4], answer["seat"]);
+    // The whole document carries them as well when it is the answer.
+    let whole = run.debug(&json!({"op": "play", "turns": 1, "strategy": "jack"}));
+    assert_eq!(whole["error"], Value::Null);
+    assert_eq!(whole["readings"].as_array().map(Vec::len), Some(1));
+    assert!(whole.get("map").is_some());
+
+    // A breakpoint stops it where it stops a run of steps.
+    let set = run.debug(&json!({"op": "breakpoints", "turns": [9]}));
+    assert_eq!(set["error"], Value::Null);
+    let stopped = run.debug(&json!({"op": "play", "turns": 5, "strategy": "jack", "lean": true}));
+    assert_eq!(stopped["error"], Value::Null);
+    assert_eq!(stopped["turn"], json!(9));
+    assert_eq!(stopped["readings"].as_array().map(Vec::len), Some(2));
+    assert_eq!(
+        stopped["debug"]["stopped"],
+        json!({"kind": "turn", "turn": 9})
+    );
+
+    // Asked for no turns, or for more than one request plays, it is refused
+    // and nothing is played.
+    for turns in [json!(null), json!(0), json!(101), json!("5")] {
+        let refused = run.debug(&json!({"op": "play", "turns": turns, "lean": true}));
+        assert!(
+            refused["error"]
+                .as_str()
+                .unwrap_or("")
+                .starts_with("play needs turns"),
+            "{turns}: {}",
+            refused["error"]
+        );
+        assert_eq!(refused["turn"], json!(9));
+        assert!(refused.get("readings").is_none());
+    }
+}
+
+/// What a search does with a fork (`docs/SIM_DEBUGGER.md`, "Autosearch"): it
+/// plays one schedule of Civ AIs, walks back to a turn in the middle of it
+/// and plays another from there. That has to be the second schedule played
+/// straight through, or what a search found is not what playing it gives.
+///
+/// On the game itself a walk back seats the agents kept with the turn. A
+/// half of a split keeps none, so the copy a search is run on is asked to
+/// keep them from the turn the search begins on (`remember`), and the half
+/// on the page, which is not, plays the schedule straight from that turn.
+#[test]
+fn a_schedule_walked_back_to_is_the_schedule_played_straight() {
+    let play = |session: &mut Session, turns: u32, agent: &str| {
+        let answer =
+            session.debug(&json!({"op": "play", "turns": turns, "strategy": agent, "lean": true}));
+        assert_eq!(answer["error"], Value::Null);
+    };
+    let walk_to = |session: &mut Session, turn: u32, agent: &str| {
+        let answer =
+            session.debug(&json!({"op": "jump", "turn": turn, "strategy": agent, "lean": true}));
+        assert_eq!(answer["error"], Value::Null);
+        assert_eq!(answer["turn"], json!(turn));
+    };
+
+    // The game itself: jack for three turns and siege for three, straight.
+    let mut straight = played();
+    play(&mut straight, 3, "jack");
+    play(&mut straight, 3, "siege");
+    let mut one = played();
+    play(&mut one, 6, "jack");
+    let all_jack = world(&one);
+    // Walked back to the turn siege takes over on, from a line jack played.
+    walk_to(&mut one, 4, "siege");
+    play(&mut one, 3, "siege");
+    assert_eq!(world(&one), world(&straight));
+    // And back to jack's own line from the middle of it: its kept agent
+    // sits down again and plays the turns it played.
+    walk_to(&mut one, 4, "jack");
+    play(&mut one, 3, "jack");
+    assert_eq!(world(&one), all_jack);
+    // The game keeps its agents already, and is asked nothing.
+    let kept = one
+        .debugger
+        .marks
+        .iter()
+        .filter(|mark| mark.minds.is_some())
+        .count();
+    assert!(kept > 0);
+    assert_eq!(
+        one.debug(&json!({"op": "remember", "lean": true}))["error"],
+        Value::Null
+    );
+    assert_eq!(
+        one.debugger
+            .marks
+            .iter()
+            .filter(|mark| mark.minds.is_some())
+            .count(),
+        kept
+    );
+
+    // A half of a split, three turns into a game: the page walks it to the
+    // turn the search began on and plays the schedule straight from there.
+    let mut host = played();
+    play(&mut host, 2, "jack");
+    let mut paged = host.fork();
+    walk_to(&mut paged, 3, "jack");
+    play(&mut paged, 3, "jack");
+    play(&mut paged, 3, "siege");
+    let mut whole = host.fork();
+    walk_to(&mut whole, 3, "jack");
+    play(&mut whole, 6, "jack");
+    // The copy that is searched keeps its agents from that turn on, and none
+    // with the turns it was handed.
+    let mut searched = host.fork();
+    assert!(searched.debugger.forgetful);
+    assert!(searched
+        .debugger
+        .marks
+        .iter()
+        .any(|mark| mark.minds.is_some()));
+    let asked = searched.debug(&json!({"op": "remember", "lean": true}));
+    assert_eq!(asked["error"], Value::Null);
+    assert!(!searched.debugger.forgetful);
+    assert!(searched
+        .debugger
+        .marks
+        .iter()
+        .all(|mark| mark.minds.is_none()));
+    walk_to(&mut searched, 3, "jack");
+    play(&mut searched, 6, "jack");
+    assert_eq!(world(&searched), world(&whole));
+    assert!(searched
+        .debugger
+        .marks
+        .iter()
+        .filter(|mark| mark.turn > 3)
+        .all(|mark| mark.minds.is_some()));
+    walk_to(&mut searched, 6, "siege");
+    play(&mut searched, 3, "siege");
+    assert_eq!(world(&searched), world(&paged));
+    walk_to(&mut searched, 6, "jack");
+    play(&mut searched, 3, "jack");
+    assert_eq!(world(&searched), world(&whole));
+}
+
+/// Operator 2026-11-22: "allow a reasonable objective function to be chosen.
+/// score or prod or city or fpt or gpt".
+///
+/// What Autosearch may be asked to make the most of is read out of how the
+/// engine says the seat stands (`obs::standing`): a lean answer's `seat` on
+/// the copies it plays its lines on, and the seat's entry of the state
+/// document once a line is played on the page. Each goal the page offers
+/// names a number that reading gives, the operator's five come first, and
+/// the page asks its copies in operations the engine has.
+#[test]
+fn every_goal_autosearch_offers_reads_a_number_the_engine_gives() {
+    let script = super::super::EMBEDDED_APP_DEBUGGER_JS;
+    let goals = script
+        .split_once("const DEBUG_SEARCH_GOALS = [")
+        .and_then(|(_, rest)| rest.split_once("];"))
+        .expect("the goals are listed")
+        .0;
+    let mut session = played();
+    for _ in 0..3 {
+        step_as(&mut session, "jack");
+    }
+    let seat = session.debug(&json!({"op": "status", "lean": true}))["seat"].clone();
+    let mut keys = Vec::new();
+    for row in goals.lines().filter(|line| line.contains("read: seat => ")) {
+        let key = row
+            .split_once("key: \"")
+            .and_then(|(_, rest)| rest.split_once('"'))
+            .expect("a goal has a key")
+            .0;
+        let read = row
+            .split_once("read: seat => ")
+            .expect("a goal reads the seat")
+            .1
+            .trim_end_matches(['}', ',', ' ']);
+        // `seat.score`, or `(seat.yields || {}).production`.
+        let value = match read.strip_prefix("(seat.yields || {}).") {
+            Some(field) => &seat["yields"][field],
+            None => {
+                &seat[read
+                    .strip_prefix("seat.")
+                    .expect("a goal reads one of the seat's own numbers")]
+            }
+        };
+        assert!(
+            value.is_number(),
+            "{key} reads {read}, which the engine does not give"
+        );
+        keys.push(key);
+    }
+    assert!(keys.len() >= 5, "{keys:?}");
+    assert_eq!(&keys[..5], ["score", "prod", "city", "fpt", "gpt"]);
+    // A copy is made ready, walked back and played with these.
+    for piece in [
+        r#"debugSearchPost("/forks", {count: search.cores})"#,
+        r#"debugSearchAsk(search, fork, {op: "breakpoints"})"#,
+        r#"if (search.pane) refused(await debugSearchAsk(search, fork, {op: "remember"}));"#,
+        r#"{op: "jump", turn, strategy: debugPlanWho(plan, turn)}"#,
+        r#"{op: "play", turns: asked, strategy: debugPlanWho(plan, fork.at)}"#,
+        // And the line that was found is played from the same turn the same way.
+        r#"const there = await debugOp({op: "jump", turn: plan.from, strategy: stretch.name});"#,
+    ] {
+        assert!(script.contains(piece), "{piece}");
+    }
+    // The button is a size larger than the tools beside it (operator: "make
+    // it a bit bigger than the others"); `beta/debugger_test.py` measures it.
+    assert!(script.contains("#debugbar button.dbg-search-open {\n    height: 32px;"));
+    assert!(script.contains("min-width: 26px; height: 26px; padding: 0 6px;"));
+}
+
 #[test]
 fn both_front_ends_serve_the_debugger() {
     assert!(include_str!("../wasm.rs").contains("(\"POST\", \"/debug\")"));
@@ -798,6 +1063,13 @@ fn the_split_speaks_one_set_of_messages_on_both_sides() {
         // says when it has painted itself, and is told when it is seen.
         "pane-shown",
         "pane-seen",
+        // Autosearch: asked for on a half's own panel, a line that was
+        // found for a half to play, each Civ AI of it as the half seats
+        // it, and how the line came out.
+        "pane-search",
+        "pane-plan",
+        "pane-seated",
+        "pane-planned",
     ] {
         let quoted = format!("\"{message}\"");
         assert!(
@@ -1710,8 +1982,11 @@ fn a_branch_begins_on_the_turn_it_is_made_on() {
         "#debugbar.dbg-split-on .dbg-branch, #debugbar.dbg-split-on .dbg-who { display: none; }",
         // A branch is named on itself, by its letter and its Civ AI.
         "letter: fork.forked ? letter.toUpperCase() : null, seated: pane.strategy,",
-        // A game opens on its two tracks, and the box asks which Civ AI
-        // plays the branch: a branch made for one is not asked about.
+        // A game opens on its two tracks. The box asks which Civ AI plays a
+        // branch Branch made: a branch made for one is not asked about, and
+        // neither is the opening view, which nobody pressed Branch for
+        // (operator, 2026-11-22: "branch b should only ask when branch is
+        // selected. not just auto ask rom the start").
         "try { drawDebugBar(); debugPaneReport(); debugPaneNumbers(); debugOpenOnTwoTracks(); }",
         // It asks when the two screens are shown, not while the halves load:
         // one screen and two change places in one move (operator,
@@ -1721,7 +1996,7 @@ fn a_branch_begins_on_the_turn_it_is_made_on() {
         // halves are there. What that looks like in a browser is held by
         // `beta/debugger_test.py`
         // (`check_one_screen_and_two_change_places_in_one_move`).
-        "shown: false, ask: seat ? null : {kind: \"seat\", letter: \"b\"}, look,",
+        "shown: false, ask: seat || fresh ? null : {kind: \"seat\", letter: \"b\"}, look,",
         "debugAsk = split.ask;",
         "if (debugHeld) return;",
         "host.className = \"dbg-unseen\";",
@@ -1734,6 +2009,28 @@ fn a_branch_begins_on_the_turn_it_is_made_on() {
         "debugAsk = target.value && target.value !== debugStrategy() ? {kind: \"switch\", name: target.value} : null;",
     ] {
         assert!(page.contains(piece), "the branch is missing {piece}");
+    }
+}
+
+/// The timeline says how it is used, Click to travel, until it has been
+/// clicked to travel, and then never again in that browser (operator,
+/// 2026-11-22: "have the initial timeline say click to travel so people
+/// understand the mechanism. make the click to travel very visible at the
+/// start and then not appear once they understand"). What that looks like,
+/// and what counts as a click on the timeline, is held by
+/// `beta/debugger_test.py` (`check_the_timeline_says_click_to_travel`).
+#[test]
+fn the_timeline_says_click_to_travel_until_it_is_clicked() {
+    let page = super::super::EMBEDDED_APP_DEBUGGER_JS;
+    for piece in [
+        "<div class=\"dbg-travel\" aria-hidden=\"true\" hidden><i>◀</i>Click to travel<i>▶</i></div>",
+        "animation: dbg-travel-call 1.6s ease-out infinite;",
+        "try { localStorage.setItem(DEBUG_TRAVEL_KEY, \"known\"); } catch (_) {}",
+        "const call = !debugTravelKnown && !!model.travel;",
+        // A slider let go of on another turn has travelled.
+        "debugSliderHeld = false;\n      debugTravelLearnt();",
+    ] {
+        assert!(page.contains(piece), "the timeline is missing {piece}");
     }
 }
 

@@ -156,7 +156,28 @@ const compressedEnv = {
   },
 };
 
-window.hit = async ({ path, method = "GET", body, json, cookie, env: overrides, accepts, compressed }) => {
+// A deployment whose lanes say which pages they carry, as published lanes do
+// (`pages` in build.json): `listed` is the list per lane, "" and "/test".
+// Every other address is the same stand-in as above, which is the point: the
+// stand-in answers anything, as the asset layer answers a page it kept from
+// an earlier deployment.
+const listingEnv = (listed) => ({
+  ASSETS: {
+    fetch: (request) => {
+      const path = new URL(request.url).pathname;
+      if (path in laneBuilds) {
+        const lane = path.slice(0, -"/build.json".length);
+        return new Response(JSON.stringify({ short: laneBuilds[path], pages: listed[lane] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response("asset:" + path, { status: 200, headers: { "Content-Type": "text/html" } });
+    },
+  },
+});
+
+window.hit = async ({ path, method = "GET", body, json, cookie, env: overrides, accepts, compressed, listed }) => {
   const init = { method, redirect: "manual" };
   if (body) init.body = new URLSearchParams(body);
   if (json !== undefined) init.body = JSON.stringify(json);
@@ -165,7 +186,7 @@ window.hit = async ({ path, method = "GET", body, json, cookie, env: overrides, 
   if (accepts) Object.defineProperty(request, "cf", { value: { clientAcceptEncoding: accepts } });
   const response = await worker.fetch(
     request,
-    { ...env, ...(compressed ? compressedEnv : {}), ...(overrides || {}) },
+    { ...env, ...(compressed ? compressedEnv : {}), ...(listed ? listingEnv(listed) : {}), ...(overrides || {}) },
   );
   return {
     status: response.status,
@@ -431,6 +452,62 @@ def main(argv: list[str] | None = None) -> int:
             interpretability["status"] == 200 and interpretability["body"].strip() == "asset:/interpretability/",
             f"got {interpretability['status']} {interpretability['body'][:60]!r}",
         )
+        # A lane is one commit's site, and its build.json lists the pages it
+        # has. The router holds an address to that list, because the files in
+        # the deployment are not the last word: Pages goes on serving a file
+        # it served before for up to a week after a deployment removes it.
+        # The AI Interpretability page answered on the front page that way on
+        # 2026-11-23, from a deployment that no longer had it. The stand-in
+        # asset layer here answers every address, as that cache did.
+        print("==> a page a lane does not carry is a 404, whatever the asset layer kept of it")
+        lanes = {
+            "": ["home", "tournaments", "research", "performance", "download"],
+            "/test": ["home", "tournaments", "research", "performance", "interpretability", "download"],
+        }
+        for address in ("/interpretability/", "/interpretability", "/interpretability/index.html"):
+            kept = hit(path=address, listed=lanes)
+            check(problems, f"{address} is a 404 on a front page whose commit has no such page",
+                  kept["status"] == 404 and "asset:/interpretability" not in kept["body"],
+                  f"got {kept['status']} {kept['body'][:60]!r}")
+        check(problems, "it answers with the 404 page, from an address that never had a file",
+              kept["body"].strip() == "asset:/__no-such-page__", f"got {kept['body'][:60]!r}")
+        check(problems, "and is revalidated like any page",
+              "max-age=0" in (kept["cacheControl"] or ""), f"got {kept['cacheControl']!r}")
+        carried = hit(path="/test/interpretability/", listed=lanes)
+        check(problems, "the test lane, which has the page, serves it",
+              carried["status"] == 200 and carried["body"].strip() == "asset:/test/interpretability/"
+              and carried["robots"] == "noindex",
+              f"got {carried['status']} {carried['body'][:60]!r}")
+        for address in ("/home", "/research/", "/download/index.html", "/test/home/"):
+            page = hit(path=address, listed=lanes)
+            check(problems, f"{address} is a page its lane carries",
+                  page["status"] == 200 and page["body"].strip() == f"asset:{address}",
+                  f"got {page['status']} {page['body'][:60]!r}")
+        # The lanes' own roots and files are no page's address.
+        for address in ("/", "/test", "/test/", "/test/index.html", "/build.json", "/test/build.json",
+                        "/shim.js", "/test/assets/app.js", "/civvis.wasm"):
+            passed = hit(path=address, listed=lanes)
+            check(problems, f"{address} is not held to the list of pages",
+                  passed["status"] == 200, f"got {passed['status']} {passed['body'][:60]!r}")
+        # The other way round: a page only the front page still has.
+        only_stable = hit(path="/test/home/", listed={"": ["home"], "/test": []})
+        check(problems, "a page the test lane does not carry is a 404 there",
+              only_stable["status"] == 404 and only_stable["robots"] == "noindex",
+              f"got {only_stable['status']} {only_stable['robots']!r}")
+        check(problems, "while the front page keeps its own",
+              hit(path="/home/", listed={"": ["home"], "/test": []})["status"] == 200)
+        # A lane that does not say what it carries is passed through: a
+        # bundle from before lanes listed their pages still serves them.
+        unlisted = hit(path="/interpretability/")
+        check(problems, "a lane with no list is passed through",
+              unlisted["status"] == 200 and unlisted["body"].strip() == "asset:/interpretability/",
+              f"got {unlisted['status']} {unlisted['body'][:60]!r}")
+        # Only reading is held to it; the test lane's password form posts to
+        # whatever address it was shown at.
+        posted = hit(path="/interpretability/", method="POST", body={"x": "1"}, listed=lanes)
+        check(problems, "a POST is not answered from the list",
+              posted["status"] == 200, f"got {posted['status']}")
+
         download = hit(path="/download/")
         check(
             problems,
