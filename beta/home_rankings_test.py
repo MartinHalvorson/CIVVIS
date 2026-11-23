@@ -483,11 +483,26 @@ class HomeRankings(unittest.TestCase):
         markup = LANDING[: LANDING.index('<script type="application/json" id="home-videos">')]
         self.assertNotIn("youtube-nocookie", markup)
         self.assertNotIn("<iframe", markup)
+        self.assertIn('const PLAYER = "https://www.youtube-nocookie.com";', LANDING)
+        # Every video loops for as long as the page is open (operator
+        # 2026-11-23: "please have the vido on the website all loop
+        # indefinitely"): YouTube loops a video that is its own playlist.
         self.assertIn(
-            'player.src = "https://www.youtube-nocookie.com/embed/" + id + "?autoplay=1&rel=0&playsinline=1"'
-            ' + (muted ? "&mute=1" : "") + (start ? "&start=" + start : "");',
+            'player.src = PLAYER + "/embed/" + id + "?autoplay=1&rel=0&playsinline=1&loop=1&playlist=" + id'
+            ' + (muted ? "&mute=1" : "") + (start ? "&start=" + start + "&enablejsapi=1" : "");',
             LANDING,
         )
+        # Its loop comes round to 0 s, so a tile with a start sends its
+        # player back there each time round, through the player's messages,
+        # and only once it plays again (a seek while it reloads is not taken).
+        self.assertIn("if (start) keepStart(player, Number(start));", LANDING)
+        keep = LANDING[LANDING.index("const keepStart = "):LANDING.index("const starts = new Map();")]
+        self.assertIn('send({ event: "listening", id: player.title, channel: "widget" })', keep)
+        self.assertIn("if (event.origin !== PLAYER || event.source !== player.contentWindow) return;", keep)
+        self.assertIn("if (info.playerState === -1 || info.playerState === 0) round = true;", keep)
+        self.assertIn("if (round && playing && Date.now() - asked > 1000) {", keep)
+        self.assertIn('send({ event: "command", func: "seekTo", args: [start, true] });', keep)
+        self.assertNotIn("innerHTML", keep)
         self.assertIn("starts.get(entry.target)(true);", LANDING)
         self.assertIn("if (seen) { starts.set(tile, play); seen.observe(tile); }", LANDING)
         self.assertIn("play(false);", LANDING)
