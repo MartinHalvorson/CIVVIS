@@ -444,6 +444,9 @@ impl AdvancedAi {
                 .index_of(pos)
                 .is_some_and(|index| bits.contains(index))
         };
+        // The seat's kept prefilter scores, valid for this board and economy;
+        // see `settlement_prefilter_memo`. Released before any site is valued.
+        let mut kept_prefilter = prefilter_limit.map(|_| self.settlement_prefilter_memo(g, pid));
         let mut candidates = g
             .wdisk(from, radius)
             .into_iter()
@@ -474,10 +477,14 @@ impl AdvancedAi {
                             return cached;
                         }
                         // `contested_land_first`: a contested site is never
-                        // cut before it is priced.
-                        let score = self
-                            .settlement_prefilter_score_with_water_science_wonder(g, pid, pos)
-                            + self.contested_land_credit(g, pid, pos);
+                        // cut before it is priced. Its credit reads this
+                        // turn's fronts and is asked live; the rest is kept.
+                        let base = match kept_prefilter.as_deref_mut() {
+                            Some(memo) => self.kept_settlement_prefilter_score(g, pid, pos, memo),
+                            None => self
+                                .settlement_prefilter_score_with_water_science_wonder(g, pid, pos),
+                        };
+                        let score = base + self.contested_land_credit(g, pid, pos);
                         if let Some(cache) = prefilter_cache.as_deref_mut() {
                             cache.insert(pos, score);
                         }
@@ -487,6 +494,7 @@ impl AdvancedAi {
                 Some((pos, prefilter_score))
             })
             .collect::<Vec<_>>();
+        drop(kept_prefilter);
         let mut overflow = Vec::new();
         if let Some(limit) = prefilter_limit {
             candidates.sort_by_shared(|left, right| {
