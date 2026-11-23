@@ -471,6 +471,10 @@ impl AdvancedAi {
         /// Opt-in gene `mobilization-hears-the-declaration`; see
         /// `advanced/mobilization_hears_the_declaration.rs`.
         mobilization_hears_the_declaration => enable_mobilization_hears_the_declaration, disable_mobilization_hears_the_declaration;
+        /// Opt-in gene `nearly-built-keeps-its-queue`: a build a few turns
+        /// from done keeps its queue against the Settler floors and the
+        /// deterrent; see `advanced/nearly_built_keeps_its_queue.rs`.
+        nearly_built_keeps_its_queue => enable_nearly_built_keeps_its_queue, disable_nearly_built_keeps_its_queue;
         // ---- append: p-r --------------------------------------------
         /// Opt-in gene `racer-seat-statue-civic-first`; see
         /// `AdvancedAi::diplo_statue_civic_goal`.

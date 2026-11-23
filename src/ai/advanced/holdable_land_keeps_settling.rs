@@ -532,6 +532,9 @@ impl AdvancedAi {
                 || (self.score_expands_hard_now(g) && Self::score_expands_keeps_the_hall(g, cid))
                 // `score-seat-builds-the-bath`: nor is the Bath.
                 || self.score_bath_holds(g, pid, cid)
+                // `nearly-built-keeps-its-queue`: nor a build a few turns
+                // from done. See `advanced/nearly_built_keeps_its_queue.rs`.
+                || self.nearly_built_holds(g, pid, cid)
                 || !Self::holdable_land_may_displace(g, pid, cid)
             {
                 Some("its queue keeps its item")

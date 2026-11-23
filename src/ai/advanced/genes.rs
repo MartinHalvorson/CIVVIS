@@ -6206,6 +6206,14 @@ pub const GENES: &[Gene] = &[
     // `diplomacy_choice` line (122 surprise). Opt-in; see
     // `advanced/mobilization_hears_the_declaration.rs`.
     Gene { tag: "mobilization-hears-the-declaration", field: "mobilization_hears_the_declaration", kind: Kind::OptIn, enable: AdvancedAi::enable_mobilization_hears_the_declaration, disable: AdvancedAi::disable_mobilization_hears_the_declaration },
+    // Live Tournaments 6-7 2026-11-21/22, 44 Deity and Immortal runs, t15-80:
+    // early-settler-floor, near-rival-deterrence and holdable-land-keeps-
+    // settling made 448 of 659 queue displacements (Monuments 153, Granaries
+    // 76), each keeping a head only when it finishes this turn; the first
+    // Granary stood at t47 against Pottery at t21. A building or district with
+    // production in it that finishes within 6 standard turns keeps its queue
+    // against those claims. Opt-in; see `advanced/nearly_built_keeps_its_queue.rs`.
+    Gene { tag: "nearly-built-keeps-its-queue", field: "nearly_built_keeps_its_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_nearly_built_keeps_its_queue, disable: AdvancedAi::disable_nearly_built_keeps_its_queue },
     // ---- append: p-r ------------------------------------------------
     // `racer-seat-statue-civic-first`: Civil Engineering first for a Science,
     // Culture or Religious seat that reaches for the Statue of Liberty, as

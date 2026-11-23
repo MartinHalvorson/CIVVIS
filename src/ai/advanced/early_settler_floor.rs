@@ -280,6 +280,10 @@ impl AdvancedAi {
                 })
                 || (hard && Self::score_expands_keeps_the_hall(g, cid))
                 || self.score_bath_holds(g, pid, cid)
+                // `nearly-built-keeps-its-queue`: a build a few turns from
+                // done finishes first. See
+                // `advanced/nearly_built_keeps_its_queue.rs`.
+                || self.nearly_built_holds(g, pid, cid)
                 || Self::score_expands_on_the_frontier(g, &frontier, city.pos)
                 || !(Self::early_settler_may_displace(g, pid, cid)
                     || (hard && Self::score_expands_may_displace(g, pid, cid)))

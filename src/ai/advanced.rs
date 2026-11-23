@@ -9055,6 +9055,11 @@ pub struct AdvancedAi {
     /// `(declarer seat, turn the war began)`, under
     /// `mobilization-hears-the-declaration`.
     observed_surprise_declarations: Vec<(usize, u32)>,
+    /// `nearly-built-keeps-its-queue`: a building or district a few turns
+    /// from done keeps its queue against the early Settler floor, the
+    /// holdable-land Settler and the near rival's deterrent. See
+    /// `advanced/nearly_built_keeps_its_queue.rs`. Off by default.
+    nearly_built_keeps_its_queue: bool,
     // ---- append: p-r ------------------------------------------------
     /// `racer-seat-statue-civic-first`: Civil Engineering as the civic goal of
     /// a Science, Culture or Religious seat that reaches for the Statue of
@@ -12317,6 +12322,8 @@ mod group_steps_read_the_field;
 /// `holdable-land-keeps-settling`: a mid-game Settler floor for land we can
 /// very likely hold. See `advanced/holdable_land_keeps_settling.rs`.
 mod holdable_land_keeps_settling;
+/// `nearly-built-keeps-its-queue`: see `advanced/nearly_built_keeps_its_queue.rs`.
+mod nearly_built_keeps_its_queue;
 /// `founder-holds-the-holy-city`: a founder keeps its Holy City on its own
 /// faith. See `advanced/holy_city_guard.rs`.
 mod holy_city_guard;
