@@ -12586,6 +12586,9 @@ mod emptied_camp_is_taken;
 /// `first-ship-closes-the-dark-age`: see
 /// `advanced/first_ship_closes_the_age.rs`.
 mod first_ship_closes_the_age;
+/// `raiders-holding-a-settler-are-hunted`: see
+/// `advanced/raiders_holding_a_settler.rs`.
+mod raiders_holding_a_settler;
 /// Version two of rapid city expansion keeps the measured-positive opening
 /// pace and safety gates without version one's forced queues, sprawl, or war.
 pub(super) mod rapid_city_expansion;
@@ -12605,9 +12608,6 @@ mod settler_keeps_its_named_site;
 mod settler_never_idles;
 /// `settler-founds-under-raiders`: see `advanced/settler_raiders.rs`.
 mod settler_raiders;
-/// `raiders-holding-a-settler-are-hunted`: see
-/// `advanced/raiders_holding_a_settler.rs`.
-mod raiders_holding_a_settler;
 /// Route around a host-refused step before discarding its city destination.
 mod settler_route_recovery;
 mod settler_shelter;
