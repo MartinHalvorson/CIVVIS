@@ -2744,6 +2744,17 @@ fn every_civilization_reports_what_it_has_made_so_far() {
     for (key, _) in figures {
         assert_eq!(opening[key], json!(0.0), "nothing made yet: {opening}");
     }
+    // Ending turns plays no AI, so each civilization's capital is founded
+    // here, or nothing would ever be made.
+    for pid in 0..2 {
+        let settler = game
+            .player_unit_ids(pid)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.found_city_for(pid, game.units[&settler].pos, None);
+        game.remove_unit(settler);
+    }
     let advance = |game: &mut Game| {
         for _ in 0..12 {
             game.apply(game.current, &crate::game::Action::EndTurn)
@@ -2755,7 +2766,11 @@ fn every_civilization_reports_what_it_has_made_so_far() {
     advance(&mut game);
     for world in [&earlier, &game] {
         let frame = observation_spectator(world, 0);
-        for player in world.players.iter().filter(|p| !p.is_minor && !p.is_barbarian) {
+        for player in world
+            .players
+            .iter()
+            .filter(|p| !p.is_minor && !p.is_barbarian)
+        {
             let totals = &frame["players"][player.id]["totals"];
             for (key, figure) in figures {
                 let made: f64 = world

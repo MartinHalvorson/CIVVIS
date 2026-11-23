@@ -1685,7 +1685,13 @@ fn yield_totals(g: &Game) -> Vec<[f64; 5]> {
     let mut totals = vec![[0.0; 5]; g.players.len()];
     for row in g.turn_stats.iter() {
         if let Some(sum) = totals.get_mut(usize::from(row.player)) {
-            let figures = [row.production, row.science, row.culture, row.gold, row.faith];
+            let figures = [
+                row.production,
+                row.science,
+                row.culture,
+                row.gold,
+                row.faith,
+            ];
             for (total, figure) in sum.iter_mut().zip(figures) {
                 *total += f64::from(figure);
             }
