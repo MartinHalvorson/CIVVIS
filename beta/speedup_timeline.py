@@ -51,6 +51,20 @@ over my manual 5 hr games? add this info, maybe in tables to the top"):
   busy host) and from a game played with the machine to itself (the stop's
   `alone` readings), and each says what share of it the measured run reaches.
 
+Under them stands a third table, **processor by processor** (`processors`;
+operator, 2026-11-22: "Add in a theoretical 9980, performance and m5 ultra,
+m6. we should have a table in civvis performance that has our benchmarks (and
+age) across each processor. we should also list the single thread score and
+multithread score from the website"). Its rows are the processors of
+`data/performance/processors.json`, each with the website's two scores for
+it. The processor the readings were taken on shows them as they were
+measured. Every other row is a calculation from the scores, not a run: one
+game on one core is the measured time, times the measured processor's single
+thread score, over the row's own, and the games a minute on every core are
+the measured record, times the row's multithread score, over the measured
+processor's. Each cell carries the day of the reading it rests on, so the
+page can say how old a benchmark is on the day it is read.
+
 Both pages read one ledger through this one file, so they cannot disagree.
 """
 
@@ -64,6 +78,10 @@ import sys
 
 #: The stops and their readings, in the source tree.
 LEDGER = pathlib.Path("data/performance/speedup_timeline.json")
+
+#: The processors the Performance page lists the benchmarks across, with the
+#: website's two scores for each, in the source tree.
+PROCESSORS = pathlib.Path("data/performance/processors.json")
 
 #: The home page's slot for the timeline.
 SLOT = re.compile(r'(<script type="application/json" id="home-speedup">)(.*?)(</script>)', re.S)
@@ -229,6 +247,122 @@ def timeline(source: pathlib.Path) -> dict | None:
     return shown
 
 
+def processors(source: pathlib.Path, measured: list[tuple[dict, list[dict]]], base: float) -> dict | None:
+    """The benchmarks processor by processor, for the stops as `worked` read
+    them (`measured`) and the baseline's seconds (`base`). `None` when the
+    revision has no list of processors, or one that cannot be read.
+
+    `rows` are the processors in the list's order. A row has the website's
+    two scores as the newest reading gives them, with the `samples` behind
+    them, the `margin` for error, the day they were `read` and the `page`;
+    `games`, one cell for every one-core stop; and `every_core`, the games a
+    minute with a worker on every core, with the multiplier that gives
+    (`times`, and `times_sum` the sum for it). A cell's `kind` is `measured`
+    when the benchmark was run on that processor and `theory` when it is
+    worked out from the scores, and then its `sum` shows how. A row's own
+    `kind` is `measured` when the benchmarks were run on it, and its `taken`
+    is the oldest day among the readings its figures rest on. `site` is the
+    website the scores are read from, with the newest day any was read.
+
+    The processor the one-core readings were taken on is the list's
+    `measured`. A processor's every-core figure is measured when the
+    benchmark's ledger has a run on its `chip`: the record among those runs.
+    """
+    try:
+        ledger = json.loads((source / PROCESSORS).read_text(encoding="utf-8"))
+        site, listed, own = ledger["scores"], ledger["processors"], ledger["measured"]
+        newest = {entry["key"]: sorted(entry["scores"], key=lambda reading: reading["read"])[-1] for entry in listed}
+        anchor = next(entry for entry in listed if entry["key"] == own)
+        single, multi = newest[own]["single_thread"], newest[own]["multithread"]
+        hours = f"{figure(base / 3600)} h"
+        one_core = [(stop, taken[-1]) for stop, taken in measured if stop.get("cores") == 1]
+        # The stop that plays a one-core stop's game on every core, and the
+        # runs of the ledger it follows: a processor's record is the record
+        # among the runs on its own chip.
+        runner = next((stop for stop, _ in measured if "follows" in stop and stop.get("of")), None)
+        runs = json.loads((source / runner["follows"]).read_text(encoding="utf-8"))["runs"] if runner else []
+
+        def record(entry: dict) -> dict | None:
+            chip = entry.get("chip")
+            mine = [run for run in runs if chip and (run.get("machine") or {}).get("chip") == chip]
+            took = records(mine, FOLLOWED[runner["follows"]]) if mine else []
+            return took[-1] if took else None
+
+        held = record(anchor)
+        address = str(site["address"])
+        rows = []
+        for entry in listed:
+            scores, ours = newest[entry["key"]], entry["key"] == own
+            row = {
+                "key": entry["key"],
+                "name": entry["name"],
+                "cores": entry["cores"],
+                "threads": entry["threads"],
+                "single_thread": f"{scores['single_thread']:,}",
+                "multithread": f"{scores['multithread']:,}",
+                "samples": scores["samples"],
+                "read": scores["read"],
+            }
+            if scores.get("margin"):
+                row["margin"] = scores["margin"]
+            # A score links the page it was read on, when that page is the
+            # website's own.
+            if address.startswith("https://") and str(scores.get("page") or "").startswith(address):
+                row["page"] = scores["page"]
+            if entry.get("fleet"):
+                row["fleet"] = entry["fleet"]
+            days, games = [], []
+            for stop, reading in one_core:
+                cell = {"key": stop["key"], "kind": "measured" if ours else "theory", "taken": reading["taken"][:10]}
+                seconds = reading["seconds"]
+                if not ours:
+                    cell["sum"] = f"{figure(seconds)} s × {figure(single)} ÷ {figure(scores['single_thread'])}"
+                    seconds = seconds * single / scores["single_thread"]
+                cell.update(seconds=round(seconds, 3), time=clock(seconds))
+                games.append(cell)
+                days.append(cell["taken"])
+            row["games"] = games
+            run = record(entry) if runner else None
+            every = None
+            if run:
+                every = {"kind": "measured", "a_minute": 60 / run["seconds"], "taken": run["taken"][:10]}
+            elif held and not ours:
+                every = {
+                    "kind": "theory",
+                    "a_minute": 60 / held["seconds"] * scores["multithread"] / multi,
+                    "taken": held["taken"][:10],
+                    "sum": f"{figure(60 / held['seconds'])} games a minute × {figure(scores['multithread'])} ÷ {figure(multi)}",
+                }
+            if every:
+                a_minute = every["a_minute"]
+                multiplier = a_minute * base / 60
+                every.update(of=runner["of"], games_a_minute=round(a_minute, 3), a_minute=rate(a_minute), an_hour=rate(60 * a_minute))
+                row.update(
+                    every_core=every,
+                    multiplier=round(multiplier, 2),
+                    times=times(multiplier),
+                    times_sum=f"{figure(a_minute)} games a minute × 60 × {hours}",
+                )
+                days.append(every["taken"])
+            row["kind"] = "measured" if run or (ours and games) else "theory"
+            if days:
+                row["taken"] = min(days)
+            rows.append(row)
+        return {
+            "site": {
+                "name": site["site"],
+                "address": address,
+                "single_thread": site["single_thread"],
+                "multithread": site["multithread"],
+                "from": str(site.get("from") or ""),
+                "read": max(row["read"] for row in rows),
+            },
+            "rows": rows,
+        }
+    except (OSError, ValueError, KeyError, TypeError, IndexError, ZeroDivisionError, StopIteration):
+        return None
+
+
 def worked(source: pathlib.Path) -> dict | None:
     """What the CIVVIS Performance page opens on: the readings as two tables,
     every figure with the sum that gives it. `None` when the revision has no
@@ -246,7 +380,9 @@ def worked(source: pathlib.Path) -> dict | None:
     (`kind: "goal"`): each measured run's own, and the goal the home page's
     line ends at (`key: "goal"`). `answer` is the page's opening sentence in
     figures: the self-play stop one game at a time, on every core as
-    measured, and the highest theory there is for it.
+    measured, and the highest theory there is for it. `processors` is the
+    same benchmarks processor by processor (see `processors`), in a revision
+    that lists them.
     """
     try:
         ledger = json.loads((source / LEDGER).read_text(encoding="utf-8"))
@@ -387,6 +523,9 @@ def worked(source: pathlib.Path) -> dict | None:
         }
         if machine:
             shown["machine"] = machine
+        across = processors(source, measured, base)
+        if across:
+            shown["processors"] = across
         # The opening sentence: the stop a measured run plays on every core
         # (self-play), one game at a time, as measured, and in theory.
         held = next((row for row in throughput if row["kind"] == "measured" and row["of"] in newest), None)
