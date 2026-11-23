@@ -2477,7 +2477,9 @@ def check_one_screen_and_two_change_places_in_one_move(bar: Bar, doc: str) -> No
     began = time.time()
     press('[data-dbg="split"]')
     bar.until("debugSplit && debugSplit.shown && !debugHeld", "the two screens are shown though the browser never made the move")
-    assert bar.ev("[debugMoving, debugBar.classList.contains('dbg-split-on'), getComputedStyle(debugSplit.host).opacity]") == [True, True, "1"]
+    # (A window that is hidden is asked for no move at all, and has none to wait on.)
+    seen = not bar.ev("document.hidden")
+    assert bar.ev("[debugMoving, debugBar.classList.contains('dbg-split-on'), getComputedStyle(debugSplit.host).opacity]") == [seen, True, "1"]
     bar.until("!debugMoving", "the move is over though the browser never ended it")
     assert time.time() - began < 6, "the change waited on the browser"
     assert bar.ev("[debugBar.style.viewTransitionName, document.documentElement.classList.contains('dbg-swapping')]") == ["", False]
@@ -2498,10 +2500,10 @@ def check_one_screen_and_two_change_places_in_one_move(bar: Bar, doc: str) -> No
     bar.dev.call("Emulation.setEmulatedMedia", {"features": []})
     bar.until("!matchMedia('(prefers-reduced-motion: reduce)').matches", "motion is as it was")
     bar.click('[data-dbg="split"]')
-    assert bar.ev("moves") == 1, "one screen became two without a move"
+    assert bar.ev("moves") == (1 if seen else 0), "one screen became two without a move"
     bar.click('[data-dbg-split="drop-b"]')
     bar.until("!debugSplit", "the branch is dropped")
-    assert bar.ev("moves") == 2, "two screens became one without a move"
+    assert bar.ev("moves") == (2 if seen else 0), "two screens became one without a move"
     bar.ev("delete document.startViewTransition, debugSplitReveal = realReveal, true")
     assert not bar.dev.console, f"the page complained: {bar.dev.console}"
 
