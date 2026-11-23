@@ -590,6 +590,7 @@ fn an_unmet_civilization_reaches_the_wire_as_identity_and_nothing_else() {
         "score",
         "victories",
         "yields",
+        "totals",
         "military",
         "cities",
         "population",
@@ -2720,5 +2721,65 @@ fn a_finished_game_sends_every_civilization_s_history_on_one_turn_axis() {
                 "{key}: {player}"
             );
         }
+    }
+}
+
+/// Doctor Strange's Civ 6 sets what each world has made so far beside what it
+/// makes a turn. A civilization's `totals` are its rows of the result
+/// screen's record added up, and the record is part of the world: a copy
+/// taken twelve turns earlier, which is what a timeline walked back holds,
+/// still says what it had made by then.
+#[test]
+fn every_civilization_reports_what_it_has_made_so_far() {
+    type Figure = fn(&crate::game::TurnStats) -> f32;
+    let figures: [(&str, Figure); 5] = [
+        ("production", |row| row.production),
+        ("science", |row| row.science),
+        ("culture", |row| row.culture),
+        ("gold", |row| row.gold),
+        ("faith", |row| row.faith),
+    ];
+    let mut game = Game::new_full(2, 20, 14, 19_068, 250, 0, false);
+    let opening = observation(&game, 0)["players"][0]["totals"].clone();
+    for (key, _) in figures {
+        assert_eq!(opening[key], json!(0.0), "nothing made yet: {opening}");
+    }
+    let advance = |game: &mut Game| {
+        for _ in 0..12 {
+            game.apply(game.current, &crate::game::Action::EndTurn)
+                .unwrap();
+        }
+    };
+    advance(&mut game);
+    let earlier = game.clone();
+    advance(&mut game);
+    for world in [&earlier, &game] {
+        let frame = observation_spectator(world, 0);
+        for player in world.players.iter().filter(|p| !p.is_minor && !p.is_barbarian) {
+            let totals = &frame["players"][player.id]["totals"];
+            for (key, figure) in figures {
+                let made: f64 = world
+                    .turn_stats
+                    .iter()
+                    .filter(|row| usize::from(row.player) == player.id)
+                    .map(|row| f64::from(figure(row)))
+                    .sum();
+                let said = totals[key].as_f64().expect("a total for each yield");
+                assert!(
+                    (said - made).abs() <= 0.051,
+                    "turn {} player {} {key}: said {said}, the record adds to {made}",
+                    world.turn,
+                    player.id
+                );
+            }
+        }
+    }
+    let then = &observation(&earlier, 0)["players"][0]["totals"];
+    let now = &observation(&game, 0)["players"][0]["totals"];
+    for key in ["production", "science", "culture"] {
+        assert!(
+            now[key].as_f64() > then[key].as_f64(),
+            "{key} keeps adding up: {then} then, {now} now"
+        );
     }
 }

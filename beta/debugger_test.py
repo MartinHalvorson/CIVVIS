@@ -185,7 +185,11 @@ function engineState(error = null) {
     world_era: engine.eras.filter(era => era.turn <= engine.turn).pop().era,
     ...(engine.limit ? {turn_limit: engine.limit} : {}), seat,
     players: [{id: 0, civ: "rome", score: seat.score, cities: seat.cities, population: seat.population, military: 1,
-      gold_per_turn: seat.gold_per_turn, yields: seat.yields},
+      gold_per_turn: seat.gold_per_turn, yields: seat.yields,
+      // What the seat has made so far grows with the score, so two worlds
+      // played by different Civ AIs have different totals.
+      totals: {production: engine.score * 1250, science: engine.score * 3, culture: engine.score * 2,
+        gold: engine.score * 4 - 0.4, faith: 0}},
       {id: 1, civ: "greece"}, {id: 2, civ: "barbarians", is_barbarian: true}],
     debug: {turn: engine.turn, turns: [...marks], worlds: marks.map(turn => engine.worlds[turn]),
       first: marks[0], last: marks[marks.length - 1],
@@ -3077,6 +3081,27 @@ def check_doctor_strange(bar: Bar, address: str) -> None:
     assert bar.ev("[debugSplitFork().turn, document.querySelector('#strange-hud [data-strange=\"say\"]').textContent,"
                   " document.querySelector('#strange-hud [data-strange=\"fork\"]').textContent]") == \
         [1, "A and B parted on turn 1", "⏮ To the fork · 1"]
+    # The card sets each yield a turn beside what the world has made so far
+    # (operator 2026-11-23: "lets track cumulative prod, science, culture,
+    # gold, faith next to the current turn yields"): two columns a world, the
+    # totals in whole numbers, the greater of each pair in gold.
+    bar.until("debugSplit.panes.a.numbers.production_total !== debugSplit.panes.b.numbers.production_total",
+              "the two worlds' totals part with them")
+    scores = bar.ev("[debugSplit.panes.a.numbers.score, debugSplit.panes.b.numbers.score]")
+    cells = bar.ev("[...document.querySelectorAll('#strange-hud [data-strange=\"numbers\"] > *')]"
+                   ".map(cell => [cell.textContent, cell.className])")
+    assert [text for text, _ in cells[:8]] == ["", "A", "B", "", "Now", "Total", "Now", "Total"], cells[:8]
+    card = {row[0][0]: row[1:] for row in (cells[at:at + 5] for at in range(8, len(cells), 5))}
+    assert list(card) == ["Score", "Cities", "Population", "Production", "Science", "Culture", "Gold", "Faith",
+                          "Military"], list(card)
+    low, high = sorted(scores)
+    lead = ["", "lead"] if scores[1] > scores[0] else ["lead", ""]
+    total = lambda value: f"{round(value):,}"
+    assert card["Production"] == [["1", ""], [total(scores[0] * 1250), f"strange-total {lead[0]}".strip()],
+                                  ["1", "strange-pair"], [total(scores[1] * 1250), f"strange-total {lead[1]}".strip()]], card
+    assert [cell[0] for cell in card["Gold"]] == ["1", total(scores[0] * 4 - 0.4), "1", total(scores[1] * 4 - 0.4)], card
+    assert [cell[0] for cell in card["Faith"]] == ["0", "0", "0", "0"], card
+    assert [cell[0] for cell in card["Score"]] == [str(scores[0]), "", str(scores[1]), ""] and low < high, card
     # Branch here: B's branch is let go of and stays on the tree, on its own
     # side, from the turn it parted on to the last it played; and B is A
     # again as A stands on the open turn, so the two are one world from there.
