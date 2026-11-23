@@ -598,8 +598,9 @@ const DEBUG_BAR_STYLE = `
   #debugbar .dbg-search h4 { margin: 0; font: 600 15px Georgia, serif; color: var(--gold-bright, #e7c873); }
   #debugbar .dbg-search p { margin: 0; color: var(--muted); line-height: 1.35; }
   #debugbar .dbg-search p b { color: var(--text); font-weight: 600; }
-  #debugbar .dbg-search-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-  #debugbar .dbg-search-head button { min-width: 0; width: 22px; height: 22px; padding: 0; border-radius: 50%; }
+  #debugbar .dbg-search button.dbg-search-shut {
+    position: absolute; z-index: 1; right: 10px; top: 9px; min-width: 0; width: 22px; height: 22px; padding: 0; border-radius: 50%;
+  }
   #debugbar .dbg-search-set { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 6px 10px; }
   #debugbar .dbg-search-set > span { color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
   #debugbar .dbg-search select {
@@ -1296,8 +1297,8 @@ function debugBuildBar() {
     <div class="dbg-hover" id="dbg-hover" hidden></div>
     <div class="dbg-ask" id="dbg-ask" role="dialog" aria-labelledby="dbg-ask-title" hidden></div>
     <div class="dbg-search" id="dbg-search" role="dialog" aria-labelledby="dbg-search-title" hidden>
-      <div class="dbg-search-head"><h4 id="dbg-search-title">Autosearch</h4>
-        <button data-dbg-search="close" title="Put this panel away. A search that is running goes on" aria-label="Close the Autosearch panel">✕</button></div>
+      <h4 id="dbg-search-title">Autosearch</h4>
+      <button class="dbg-search-shut" data-dbg-search="close" title="Put this panel away. A search that is running goes on" aria-label="Close the Autosearch panel">✕</button>
       <p id="dbg-search-about"></p>
       <div class="dbg-search-set">
         <span>Most</span><select id="dbg-search-goal" title="What the search makes the most of: one of the seat's own numbers, as its row of the standings shows it" aria-label="What to make the most of"></select>
@@ -3914,6 +3915,8 @@ function debugDrawSearch(bar) {
   const under = anchor.width > 0 ? anchor.left - frame.left : 8;
   panel.style.left = `${Math.max(8, Math.min(under, frame.width - panel.offsetWidth - 8))}px`;
   panel.style.top = anchor.width > 0 ? `${anchor.bottom - frame.top + 6}px` : "";
+  // As tall as the window has room for under it, and what does not fit scrolls.
+  panel.style.maxHeight = `${Math.max(160, window.innerHeight - panel.getBoundingClientRect().top - 8)}px`;
   const root = debugSearchRoot();
   const text = (id, words) => {
     const part = document.getElementById(id);
