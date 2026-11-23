@@ -17566,6 +17566,20 @@ fn a_table_plays_fog_honest_until_the_turn_box_says_otherwise() {
     session.set_fog_honest(true);
     assert_eq!(session.fork().fog_honest_seats(), majors);
 
+    // Going back along the timeline rebuilds the session from the world
+    // kept with the turn: the table's setting is kept with it, and the
+    // agents put back with the turn take it.
+    let mut walked = Session::new(current());
+    walked.debug(&json!({"op": "play", "turns": 3}));
+    walked.set_fog_honest(false);
+    let back = walked.debug(&json!({"op": "jump", "turn": 2}));
+    assert_eq!(back["error"], Value::Null);
+    assert!(!walked.fog_honest(), "a jump back turned Fog-honest AI on again");
+    assert_eq!(walked.fog_honest_seats(), 0);
+    walked.set_fog_honest(true);
+    walked.debug(&json!({"op": "jump", "turn": 1}));
+    assert_eq!(walked.fog_honest_seats(), majors);
+
     // A watched table's state says so too: the turn box is drawn from it.
     let mut watched = Session::new(watched_table());
     assert_eq!(watched.state()["fog_honest"], json!(true));
