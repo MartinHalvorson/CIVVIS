@@ -4509,7 +4509,7 @@ fn thread_cpu_seconds() -> Option<f64> {
     // SAFETY: `clock_gettime` writes one `timespec` through the pointer, which
     // is valid and exclusively ours for the call, and keeps nothing.
     let status = unsafe { clock_gettime(THREAD_CPU, &mut time) };
-    (status == 0).then(|| time.seconds as f64 + time.nanoseconds as f64 * 1e-9)
+    (status == 0).then_some(time.seconds as f64 + time.nanoseconds as f64 * 1e-9)
 }
 
 #[cfg(not(all(
