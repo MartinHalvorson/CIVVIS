@@ -276,6 +276,18 @@ impl AdvancedAi {
     /// per-Settler exclusions.
     /// `None` when the map holds nothing this Settler can reach.
     pub(super) fn settler_exhaustion_target(&self, g: &Game, pid: usize, uid: u32) -> Option<Pos> {
+        self.settler_exhaustion_target_sharing(g, pid, uid, &mut SettlerWalkCosts::new())
+    }
+
+    /// [`Self::settler_exhaustion_target`] for a Settler step that already
+    /// flooded its walk on this board (`settler_walk_costs_cached`).
+    pub(super) fn settler_exhaustion_target_sharing(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        walk_costs: &mut SettlerWalkCosts,
+    ) -> Option<Pos> {
         let from = g.units[&uid].pos;
         // The normal target picker receives this exception explicitly, but
         // the exhaustion fallback is also reached after a target was dropped
@@ -320,7 +332,7 @@ impl AdvancedAi {
         // growing cost of leaving an older Settler without a city.
         let turn_price = self.settle_sooner_walk_price(g, uid);
         if let Some((_, moves)) = turn_price {
-            let costs = Self::settle_sooner_walk_costs(g, uid, radius);
+            let costs = Self::settler_walk_costs_cached(g, uid, radius, walk_costs);
             for (position, value) in &mut ranked {
                 let movement_cost = costs
                     .get(position)

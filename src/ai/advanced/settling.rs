@@ -2525,6 +2525,11 @@ impl AdvancedAi {
             self.settler_stalls.remove(&uid);
             self.settler_closest.remove(&uid);
         }
+        // ★ One flood per radius for the whole step. Every ranking below —
+        // the forecast retries, the local fallback and the never-idles
+        // exhaustion target — reads the same unchanged board from the same
+        // Settler, and each used to build its own `settle_sooner_walk_costs`.
+        let mut walk_costs = SettlerWalkCosts::new();
         let target = overseas_target.or(valid_target).or_else(|| {
             if let Some(site) = self.air_resource_colony_settler_target(g, pid, uid, avoid) {
                 self.air_resource_colony_target = Some((uid, site));
@@ -2554,9 +2559,17 @@ impl AdvancedAi {
                 // filters; it merely declines the global premium.
                 let local_fallback = rejected >= SETTLE_TARGET_FORECAST_RETRIES;
                 let candidate = if local_fallback {
-                    self.best_reachable_settle_site_except(g, pid, uid, 8, avoid)
+                    self.best_reachable_settle_site_except_cached(
+                        g,
+                        pid,
+                        uid,
+                        8,
+                        avoid,
+                        &mut BTreeMap::new(),
+                        &mut walk_costs,
+                    )
                 } else {
-                    self.best_settler_target(g, pid, uid, 8, avoid)
+                    self.best_settler_target_cached(g, pid, uid, 8, avoid, &mut walk_costs)
                 };
                 let Some((pos, _)) = candidate else {
                     break None;
@@ -2596,7 +2609,7 @@ impl AdvancedAi {
             if !self.settler_never_idles || self.settler_stranded_recently(g, uid) {
                 return None;
             }
-            let site = self.settler_exhaustion_target(g, pid, uid)?;
+            let site = self.settler_exhaustion_target_sharing(g, pid, uid, &mut walk_costs)?;
             self.settler_targets.insert(uid, site);
             self.settler_relaxed_targets.insert(uid, site);
             self.settler_stalls.remove(&uid);
