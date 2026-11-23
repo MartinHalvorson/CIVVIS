@@ -176,8 +176,8 @@ def check_forks(dev: Devtools) -> None:
     assert said('await said("/forks", {count: 0})') == {"forks": 0}
     gone = said('await said("/status?fork=1")')
     assert "no fork 1" in str(gone.get("error")), gone
-    many = said('await said("/forks", {count: 17})')
-    assert "0 to 16" in str(many.get("error")), many
+    many = said('await said("/forks", {count: 65})')
+    assert "0 to 64" in str(many.get("error")), many
     never = said('await said("/status?fork=nine")')
     assert "no fork" in str(never.get("error")), never
     # And the engine is still the engine.

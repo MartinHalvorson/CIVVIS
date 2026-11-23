@@ -613,11 +613,12 @@ const DEBUG_BAR_STYLE = `
   #debugbar .dbg-ask .dbg-line button { padding: 0 11px; font-weight: 700; }
   /* A panel and the box's question are windows: each is moved by its title
      (debugMoveWindows), which is the whole band across its top. */
-  #debugbar .dbg-pop h4:first-child, #debugbar .dbg-ask h4 {
+  #debugbar .dbg-pop h4:first-child, #debugbar .dbg-ask h4, #debugbar .dbg-search > h4:first-child {
     margin: -12px -12px -6px; padding: 12px 12px 6px; border-radius: 14px 14px 0 0;
     cursor: grab; touch-action: none;
   }
-  #debugbar .dbg-pop h4:first-child:hover, #debugbar .dbg-ask h4:hover { background: #ffffff0d; }
+  #debugbar .dbg-pop h4:first-child:hover, #debugbar .dbg-ask h4:hover,
+  #debugbar .dbg-search > h4:first-child:hover { background: #ffffff0d; }
   #debugbar .dbg-moving > h4:first-child { cursor: grabbing; background: #ffffff14; }
 
   /* One screen and two change places in one move (debugSwap). While the move
@@ -666,6 +667,86 @@ const DEBUG_BAR_STYLE = `
     animation: dbg-swap-in .28s cubic-bezier(.3, .1, .2, 1) both, dbg-carry-new .28s cubic-bezier(.3, .1, .2, 1) both;
   }
   html.dbg-swapping::view-transition-old(root), html.dbg-swapping::view-transition-new(root) { animation-duration: .24s; }
+
+  /* Autosearch stands with Layers and Breakpoints and is a size larger than
+     the tools beside it (operator 2026-11-22: "make it a bit bigger than the
+     others"): as tall as a turn button, in gold. While a search runs it is
+     lit and counts the futures played. */
+  #debugbar button.dbg-search-open {
+    height: 32px; padding: 0 12px; gap: 6px; border-radius: 9px; font-size: 13.5px; font-weight: 700;
+    color: var(--gold-bright, #e7c873); border-color: var(--gold-bright, #e7c873); font-variant-numeric: tabular-nums;
+  }
+  #debugbar button.dbg-search-open svg { display: block; flex: none; }
+  #debugbar button.dbg-search-open:not(.on):hover:not(:disabled) { background: #1d302a; border-color: #fff3b0; }
+  #debugbar button.dbg-search-open.on { color: #10140f; background: var(--gold-bright, #e7c873); border-color: transparent; }
+  #debugbar button.dbg-search-open.on:hover:not(:disabled) { background: #f3d98c; border-color: transparent; }
+  #debugbar button.dbg-search-open.dbg-live .dbg-count { color: inherit; }
+  #debugbar.dbg-tight button.dbg-search-open { padding: 0 9px; }
+  /* The panel is the box's own and not the deck's, as what the box asks is,
+     so a split whose halves are unlocked shows it too. */
+  #debugbar .dbg-search {
+    position: absolute; z-index: 4; left: 8px; top: calc(100% + 6px);
+    width: min(396px, calc(100vw - 16px)); max-height: calc(100vh - 96px); overflow-y: auto; scrollbar-width: thin;
+    display: grid; gap: 9px; padding: 12px; white-space: normal;
+    border-radius: 14px; border: 1px solid var(--gold-bright, #e7c873); background: #0a1512fa; box-shadow: var(--shadow);
+  }
+  #debugbar .dbg-search h4 { margin: 0; font: 600 15px Georgia, serif; color: var(--gold-bright, #e7c873); }
+  #debugbar .dbg-search p { margin: 0; color: var(--muted); line-height: 1.35; }
+  #debugbar .dbg-search p b { color: var(--text); font-weight: 600; }
+  #debugbar .dbg-search button.dbg-search-shut {
+    position: absolute; z-index: 1; right: 10px; top: 9px; min-width: 0; width: 22px; height: 22px; padding: 0; border-radius: 50%;
+  }
+  #debugbar .dbg-search-set { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 6px 10px; }
+  #debugbar .dbg-search-set > span { color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
+  #debugbar .dbg-search select {
+    min-width: 0; width: 100%; height: 26px; padding: 0 4px; border-radius: 8px; cursor: pointer;
+    color: var(--text); background: #060d0b; border: 1px solid #35504a; font: inherit;
+  }
+  #debugbar .dbg-search select:disabled { opacity: .5; cursor: default; }
+  #debugbar .dbg-search-line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+  #debugbar .dbg-search-line button { padding: 0 11px; font-weight: 700; }
+  #debugbar .dbg-search button.dbg-search-go {
+    height: 32px; padding: 0 16px; font-size: 13.5px;
+    color: #10140f; background: var(--gold-bright, #e7c873); border-color: transparent;
+  }
+  #debugbar .dbg-search button.dbg-search-go.on { color: var(--text); background: #14231f; border-color: #e2574c; }
+  #debugbar .dbg-search-status { flex: 1 1 120px; min-width: 0; color: var(--text); font-variant-numeric: tabular-nums; }
+  /* Each core's place on the turns being searched: a row a core, the turns
+     it holds of the line it is on as a bar, walked back and played on again. */
+  #debugbar .dbg-search-cores { display: grid; gap: 2px; padding: 5px 6px; border-radius: 8px; background: #060d0b; border: 1px solid #22332e; }
+  #debugbar .dbg-search-cores i { display: block; position: relative; height: 4px; border-radius: 2px; background: #1b2a26; }
+  #debugbar .dbg-search-cores i b { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 2px; background: #5c7c70; }
+  #debugbar .dbg-search-cores i.busy b { background: var(--gold-bright, #e7c873); }
+  #debugbar .dbg-search-ends { display: flex; justify-content: space-between; color: var(--muted); font-size: 10.5px; font-variant-numeric: tabular-nums; }
+  /* What was found: the best line as the stretches it is made of, then the
+     number it was asked for over the turns beside the Civ AI seated alone. */
+  #debugbar .dbg-search-found { display: grid; gap: 7px; padding-top: 8px; border-top: 1px solid #22332e; }
+  #debugbar .dbg-search-plan { display: flex; flex-wrap: wrap; gap: 4px; }
+  #debugbar .dbg-search-plan span {
+    padding: 2px 7px; border-radius: 6px; white-space: nowrap; font-variant-numeric: tabular-nums;
+    color: var(--text); background: #14231f; border: 1px solid #35504a;
+  }
+  #debugbar .dbg-search-plan span b { color: var(--gold-bright, #e7c873); }
+  #debugbar .dbg-search-chart { position: relative; }
+  #debugbar .dbg-search-chart svg { display: block; width: 100%; height: auto; border-radius: 8px; background: #060d0b; border: 1px solid #22332e; }
+  #debugbar .dbg-search-chart text { font: 10.5px system-ui, sans-serif; fill: #9fb3ab; font-variant-numeric: tabular-nums; }
+  #debugbar .dbg-search-chart text.dbg-value { fill: var(--text, #e8e3d2); font-weight: 700; }
+  #debugbar .dbg-search-key { display: flex; flex-wrap: wrap; gap: 4px 14px; color: var(--muted); }
+  #debugbar .dbg-search-key span { display: inline-flex; align-items: center; gap: 6px; }
+  #debugbar .dbg-search-key i { display: block; width: 14px; height: 0; border-top: 2px solid; border-radius: 1px; }
+  #debugbar .dbg-search-tip {
+    position: absolute; z-index: 1; top: 4px; padding: 4px 8px; border-radius: 8px; pointer-events: none; white-space: nowrap;
+    color: var(--muted); border: 1px solid #4d685f; background: #0a1512f5; font-variant-numeric: tabular-nums;
+  }
+  #debugbar .dbg-search-tip div { display: flex; align-items: center; gap: 6px; }
+  #debugbar .dbg-search-tip div i { display: block; width: 10px; height: 0; border-top: 2px solid; }
+  #debugbar .dbg-search-tip b { color: var(--text); }
+  #debugbar .dbg-search-table {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto; gap: 3px 8px; font-variant-numeric: tabular-nums;
+  }
+  #debugbar .dbg-search-table > * { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  #debugbar .dbg-search-table .dbg-v { text-align: right; color: var(--text); padding-right: 8px; }
+  #debugbar .dbg-search-table .dbg-top { color: var(--gold-bright, #e7c873); font-weight: 700; }
 `;
 
 // The bar, once built, and each lane of its timeline: what is drawn on it
@@ -1276,6 +1357,7 @@ function debugBuildBar() {
           <button data-dbg="autoplay" title="Auto-play: the Civ AI plays the turns picked, and stops early when a breakpoint does. While it plays this counts the turns, and pressing it stops" aria-label="Auto-play"><i id="dbg-run-sign">▶▶</i><span class="dbg-word" id="dbg-run-word">Auto-play</span><span id="dbg-run-count"></span></button>
           <button class="dbg-apart" data-dbg-pop="layers" title="Layers: which decisions the Civ AI takes for you each turn">Layers<span class="dbg-count" id="dbg-layer-count"></span></button>
           <button data-dbg-pop="breaks" title="Breakpoints: what stops Auto-play and a turn played to" aria-label="Breakpoints"><span class="dbg-dot">●</span><span class="dbg-word">Breakpoints</span><span class="dbg-count" id="dbg-break-count"></span></button>
+          <button class="dbg-search-open dbg-apart" data-dbg-search="open" aria-expanded="false" title="Autosearch: from the open turn, find which Civ AIs should hold the seat, and when, to make the most of a number you pick. A share of this computer's cores each plays futures up and down the timeline" aria-label="Autosearch"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="6.5" cy="6.5" r="4.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M10 10l4.5 4.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span class="dbg-word">Autosearch</span><span class="dbg-count" id="dbg-search-count"></span></button>
         </div>
         <span class="dbg-group dbg-nav">
           <button data-dbg="first" title="Turn 1: go to where the timeline begins" aria-label="Go to the first turn"><i class="dbg-sign">⏮</i><span class="dbg-word">Turn 1</span></button>
@@ -1310,6 +1392,32 @@ function debugBuildBar() {
     </div>
     <div class="dbg-hover" id="dbg-hover" hidden></div>
     <div class="dbg-ask" id="dbg-ask" role="dialog" aria-labelledby="dbg-ask-title" hidden></div>
+    <div class="dbg-search" id="dbg-search" role="dialog" aria-labelledby="dbg-search-title" hidden>
+      <h4 id="dbg-search-title">Autosearch</h4>
+      <button class="dbg-search-shut" data-dbg-search="close" title="Put this panel away. A search that is running goes on" aria-label="Close the Autosearch panel">✕</button>
+      <p id="dbg-search-about"></p>
+      <div class="dbg-search-set">
+        <span>Most</span><select id="dbg-search-goal" title="What the search makes the most of: one of the seat's own numbers, as its row of the standings shows it" aria-label="What to make the most of"></select>
+        <span>By</span><select id="dbg-search-turns" title="How far ahead the search plays: the number is read on that turn" aria-label="Turns to search ahead"></select>
+        <span>Cores</span><select id="dbg-search-cores" title="How much of this computer searches. Each core plays lines on a copy of the engine, walking back down the timeline and up it again, so each costs the engine's memory again" aria-label="Cores to search with"></select>
+        <span id="dbg-search-half-word">From</span><select id="dbg-search-half" title="Which branch the search begins from, as it stands on its open turn" aria-label="Branch to search from"></select>
+      </div>
+      <div class="dbg-search-line"><button class="dbg-search-go" data-dbg-search="go"></button>
+        <span class="dbg-search-status" id="dbg-search-status" role="status"></span></div>
+      <div id="dbg-search-run" hidden>
+        <div class="dbg-search-cores" id="dbg-search-heads" title="Each row is a core: the turns it holds of the future it is playing, walked back down the timeline and played up it again"></div>
+        <div class="dbg-search-ends"><span id="dbg-search-from"></span><span id="dbg-search-size"></span><span id="dbg-search-to"></span></div>
+      </div>
+      <div class="dbg-search-found" id="dbg-search-found" hidden>
+        <p id="dbg-search-best"></p>
+        <div class="dbg-search-plan" id="dbg-search-plan"></div>
+        <div class="dbg-search-line" id="dbg-search-play"></div>
+        <div class="dbg-search-chart" id="dbg-search-chart"></div>
+        <div class="dbg-search-key" id="dbg-search-key"></div>
+        <p id="dbg-search-lone">Each Civ AI alone, the one seated in gold:</p>
+        <div class="dbg-search-table" id="dbg-search-table"></div>
+      </div>
+    </div>
     <div class="dbg-pop" id="dbg-pop-layers" hidden>
       <h4>Who decides</h4>
       <p>A layer that is on is played by the Civ AI at the top of each of your turns.
@@ -1366,6 +1474,7 @@ function debugBuildBar() {
     </div>`;
   document.body.appendChild(bar);
   debugBar = bar;
+  debugSearchWire(bar);
   for (const box of bar.querySelectorAll(".dbg-lane")) {
     const part = name => box.querySelector(`.dbg-${name}`);
     debugLanes[box.dataset.dbgLane] = {box, input: box.querySelector("input"), ruler: part("ruler"),
@@ -1605,7 +1714,8 @@ function debugBuildBar() {
   return bar;
 }
 
-// A panel of the box, and the box's question, are windows, and a window is
+// A panel of the box, the box's question and the Autosearch panel are
+// windows, and a window is
 // moved by its title (operator 2026-11-22: "clicking and dragging on a window
 // title allows for repositioning"): pressed there and dragged, it goes where
 // the pointer takes it, over the map or over either half of a split. Where it
@@ -1635,7 +1745,7 @@ function debugMoveWindows(bar) {
   const titled = target => {
     const title = target instanceof Element ? target.closest("h4") : null;
     const win = title ? title.parentElement : null;
-    return win && win.matches(".dbg-pop, .dbg-ask") && win.firstElementChild === title ? win : null;
+    return win && win.matches(".dbg-pop, .dbg-ask, .dbg-search") && win.firstElementChild === title ? win : null;
   };
   bar.addEventListener("pointerdown", event => {
     const win = titled(event.target);
@@ -2212,7 +2322,7 @@ function drawDebugBar(measure = true) {
       : together ? "Unlocked: each simulator keeps its own turn and its own panel. Click to lock them on this turn"
       : "Unlocked: each simulator keeps its own turn and its own panel. They can be locked when both stand on the same turn";
     if (lock.title !== lockTitle) { lock.title = lockTitle; lock.setAttribute("aria-label", lockTitle.split(".")[0]); }
-    if (deck === null) { debugDrawAsk(bar); if (measure) debugDock(bar); return; }
+    if (deck === null) { debugDrawAsk(bar); debugDrawSearch(bar); if (measure) debugDock(bar); return; }
   } else {
     bar.classList.remove("dbg-joined", "dbg-forked");
     // The timeline: the whole game, the turns played on it, the save points
@@ -2231,6 +2341,7 @@ function drawDebugBar(measure = true) {
   }
   debugDrawDeck(bar, deck);
   debugDrawAsk(bar);
+  debugDrawSearch(bar);
   if (DEBUG_PANE !== null) { debugPaneDeck(deck); debugPaneMarks(timeline); }
   if (measure) debugDock(bar);
 }
@@ -3371,6 +3482,16 @@ window.addEventListener("message", event => {
     debugSplit.running = Math.max(0, debugSplit.running - 1);
     if (debugSplit.running === 0) debugSplit.until = null;
     drawDebugSplit();
+  } else if (data.civvis === "pane-search") {
+    // Autosearch pressed on a half's own panel: the search is this page's,
+    // which holds the engine, and begins from that half.
+    debugSearchShow(true, letter);
+  } else if (data.civvis === "pane-seated") {
+    // A half playing a line that was found seats each Civ AI of it in turn.
+    if (typeof data.name === "string") debugSplit.panes[letter].strategy = data.name;
+    drawDebugSplit();
+  } else if (data.civvis === "pane-planned") {
+    if (debugSearch && debugSearch.playing === letter) debugSearchPlayed(debugSearch, data.done);
   }
 });
 
@@ -3598,6 +3719,12 @@ if (DEBUG_PANE !== null) {
       else debugRun(+data.until || null);
     } else if (data.civvis === "pane-stop") {
       if (debugRunning) { debugStopAsked = true; drawDebugBar(); }
+    } else if (data.civvis === "pane-plan" && data.plan) {
+      // A line Autosearch found, for this half to play (`debugPlayPlan`).
+      debugInTurn(async () => {
+        const done = await debugPlayPlan(data.plan, typeof data.copy === "string" ? data.copy : null);
+        window.parent.postMessage({civvis: "pane-planned", pane: DEBUG_PANE, done}, location.origin);
+      });
     }
     else if (data.civvis === "pane-copy") {
       // A copy is not a move of this half's own, so the other is not told to follow it.
@@ -3619,6 +3746,865 @@ if (DEBUG_PANE !== null) {
     debugCameraSaid = said;
     window.parent.postMessage({civvis: "pane-camera", pane: DEBUG_PANE, view: JSON.parse(said)}, location.origin);
   }, 120);
+}
+
+// -------------------------------------------------------------- autosearch
+//
+// Operator 2026-11-22: "build out autosearch button in the ai debugger. make
+// it a bit bigger than the others. autosearch should allow use to use some
+// fraction of the cores of this machine to each run a search up and down the
+// timeline. allow a reasonable objective function to be chosen. score or prod
+// or city or fpt or gpt".
+//
+// The question a search answers: from the open turn, which Civ AIs should
+// hold the seat, and when, for the seat to have the most of one number so
+// many turns on. A line is a plan of that: who holds the seat from which
+// turn. The search begins with every Civ AI holding it alone, and then
+// climbs: it takes the best line it has, hands a stretch of it to each other
+// Civ AI at each of a spread of turns, plays those, and begins again around
+// whichever beats it, at wide strides first and then finer ones, until
+// nothing does.
+//
+// Every core that is given to it plays on a copy of the engine (a fork,
+// `beta/shim.js`), so the page's own game is never touched and goes on being
+// played while the search runs. A copy has the whole timeline behind it. To
+// play a line it walks back down the timeline to the turn where that line
+// parts from the one it played last (`jump`), and plays up it from there
+// (`play`), reading how the seat stood as each turn opened. That walk back is
+// exact: the agents kept with a turn sit down again, so a line played from
+// the middle of another is the line played straight through
+// (`a_schedule_walked_back_to_is_the_schedule_played_straight`).
+//
+// A found line is then played on the page, by the page's own controls, from
+// the turn the search began on: one timeline plays it itself, and a split
+// plays it in the half that is picked. What the seat has when it is done is
+// said beside what the search read, so a line that did not play out as found
+// is seen at once.
+
+// What a search may be asked to make the most of: the seat's own numbers, by
+// the names its row of the standings gives them. Each reads one number out of
+// how the seat stands on a turn (`obs::standing` in the engine: a lean
+// answer's `seat` and the `readings` of a `play`), which carries the same
+// keys the state document gives the seat, so the same reading says what the
+// page holds once a line has been played on it.
+const DEBUG_SEARCH_GOALS = [
+  {key: "score", sign: "SCORE", name: "Score", read: seat => seat.score},
+  {key: "prod", sign: "PROD", name: "Production a turn", read: seat => (seat.yields || {}).production},
+  {key: "city", sign: "CITY", name: "Cities", read: seat => seat.cities},
+  {key: "fpt", sign: "FPT", name: "Faith a turn", read: seat => (seat.yields || {}).faith},
+  {key: "gpt", sign: "GPT", name: "Gold a turn, net", read: seat => seat.gold_per_turn},
+  {key: "sci", sign: "SCI", name: "Science a turn", read: seat => (seat.yields || {}).science},
+  {key: "cul", sign: "CUL", name: "Culture a turn", read: seat => (seat.yields || {}).culture},
+];
+// How far ahead a search may be asked to play, and how far it is set to.
+const DEBUG_SEARCH_TURNS = [10, 20, 30, 50, 100], DEBUG_SEARCH_TURNS_PICK = 30;
+// The shares of this computer's cores on offer, after a single core.
+const DEBUG_SEARCH_SHARES = [[.25, "a quarter"], [.5, "half"], [.75, "three quarters"], [1, "all"]];
+// The most copies of the engine one page holds (`FORKS_MOST` in beta/shim.js).
+const DEBUG_SEARCH_FORKS_MOST = 64;
+// A copy plays a few turns a request, so the panel sees it move and a search
+// that is stopped is not waited on for long.
+const DEBUG_SEARCH_CHUNK = 5;
+// The two lines of the chart: the Civ AI seated, alone, and the best line
+// found. Slots 1 and 2 of the charts' palette as stepped for a dark surface;
+// they were checked against this one for contrast and for colour blindness.
+const DEBUG_SEARCH_COLOURS = {alone: "#3987e5", best: "#d95926"};
+const DEBUG_SEARCH_KEY = "civvis-debug-search-v1";
+// What the panel is set to, kept for the next visit.
+const debugSearchSet = (() => {
+  const set = {goal: "score", turns: DEBUG_SEARCH_TURNS_PICK, share: .5, half: "a"};
+  try {
+    const kept = JSON.parse(localStorage.getItem(DEBUG_SEARCH_KEY) || "{}") || {};
+    if (DEBUG_SEARCH_GOALS.some(goal => goal.key === kept.goal)) set.goal = kept.goal;
+    if (DEBUG_SEARCH_TURNS.includes(kept.turns)) set.turns = kept.turns;
+    if (typeof kept.share === "number" && kept.share >= 0 && kept.share <= 1) set.share = kept.share;
+  } catch (_) {}
+  return set;
+})();
+// Whether the panel is up, and the search that is running or last ran.
+let debugSearchShown = false;
+let debugSearch = null;
+
+// A plan says which Civ AI holds the seat when: `[[turn, name], ...]`, each
+// from its turn until the next one's, the first from the turn the search
+// began on. Two neighbours are never the same Civ AI.
+function debugPlanTidy(plan) {
+  const tidy = [];
+  for (const [turn, name] of plan) if (!tidy.length || tidy[tidy.length - 1][1] !== name) tidy.push([turn, name]);
+  return tidy;
+}
+function debugPlanWho(plan, turn) {
+  let who = plan[0][1];
+  for (const [from, name] of plan) {
+    if (from > turn) break;
+    who = name;
+  }
+  return who;
+}
+// The plan with the turns from `from` up to `to` handed to `name`; `end` is
+// the turn the search plays to.
+function debugPlanSplice(plan, from, to, end, name) {
+  const next = plan.filter(([turn]) => turn < from);
+  next.push([from, name]);
+  if (to < end) {
+    next.push([to, debugPlanWho(plan, to)]);
+    for (const stretch of plan) if (stretch[0] > to) next.push(stretch);
+  }
+  return debugPlanTidy(next);
+}
+function debugPlanKey(plan) {
+  return plan.map(([turn, name]) => `${turn}:${name}`).join(" ");
+}
+// The stretches a plan is made of, up to the turn it was played to.
+function debugPlanStretches(plan, end) {
+  return plan.map(([from, name], at) => ({from, name, to: Math.min(end, at + 1 < plan.length ? plan[at + 1][0] : end)}))
+    .filter(stretch => stretch.to > stretch.from);
+}
+// The strides a search climbs at, widest first: a quarter of the turns it
+// plays, halved down to a turn (and to no finer than a thirtieth of a long
+// search, whose lines are dear).
+function debugSearchStrides(turns) {
+  const finest = Math.max(1, Math.round(turns / 30)), strides = [];
+  for (let stride = Math.max(finest, Math.round(turns / 4)); ; stride = Math.max(finest, Math.round(stride / 2))) {
+    if (!strides.includes(stride)) strides.push(stride);
+    if (stride <= finest) break;
+  }
+  return strides;
+}
+// The cores on offer: one, and each share of what this computer has. A small
+// device is offered two at most, because each is the engine's memory again.
+function debugSearchCores() {
+  const all = Math.max(1, Math.min(DEBUG_SEARCH_FORKS_MOST, navigator.hardwareConcurrency || 4));
+  const most = DEBUG_SMALL_DEVICE ? Math.min(all, 2) : all;
+  const offered = [];
+  for (const [share, word] of [[0, ""], ...DEBUG_SEARCH_SHARES]) {
+    const count = share === 0 ? 1 : Math.max(1, Math.min(most, Math.round(all * share)));
+    if (!offered.some(held => held.count === count)) offered.push({share, count, word});
+  }
+  const picked = offered.reduce((near, held) =>
+    Math.abs(held.share - debugSearchSet.share) < Math.abs(near.share - debugSearchSet.share) ? held : near);
+  return {all, offered, picked};
+}
+// Where a search begins: the world of the one timeline on its open turn, or
+// of the half of a split that is picked. Only the page that holds the engine
+// searches; a half asks its host.
+function debugSearchRoot() {
+  const timeline = debugTimeline();
+  if (!timeline || DEBUG_PANE !== null) return null;
+  if (debugSplit) {
+    const letter = debugSearchSet.half === "b" ? "b" : "a", pane = debugSplit.panes[letter];
+    if (pane.turn === null) return null;
+    return {letter, pane: pane.id, turn: pane.turn, seated: pane.strategy || debugStrategy() || "",
+      idle: !debugSplit.busy && debugSplit.running === 0 && (!pane.deck || pane.deck.idle !== false)};
+  }
+  return {letter: null, pane: null, turn: state.turn, seated: debugStrategy() || "",
+    idle: !debugBusy && !autoplaying && !turnAdvancePending && !timeline.playing};
+}
+function debugSearchPost(path, body) {
+  return fetchJSON(path, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)}, 600000);
+}
+// One request to one copy of the engine, answered lean. A search that has
+// been stopped hears nothing more from its copies.
+const DEBUG_SEARCH_OVER = "the search was stopped";
+async function debugSearchAsk(search, fork, body) {
+  const answer = await debugSearchPost(fork.path, {...body, lean: true});
+  if (search !== debugSearch || !search.live) throw new Error(DEBUG_SEARCH_OVER);
+  if (!answer) throw new Error("the engine gave no answer");
+  return answer;
+}
+function debugSearchValue(search, reading) {
+  const value = reading ? search.goal.read(reading) : undefined;
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+// A number as the panel writes it: whole, or to one place.
+function debugSearchNumber(value) {
+  return typeof value === "number" && Number.isFinite(value) ? String(Math.round(value * 10) / 10) : "–";
+}
+
+async function debugSearchStart() {
+  if (debugSearch && (debugSearch.live || debugSearch.playing)) return;
+  const root = debugSearchRoot();
+  if (!root || !root.idle) return;
+  const goal = DEBUG_SEARCH_GOALS.find(held => held.key === debugSearchSet.goal) || DEBUG_SEARCH_GOALS[0];
+  const agents = [...((document.getElementById("autoplaystrategy") || {}).options || [])]
+    .map(option => option.value).filter(Boolean);
+  if (!agents.length) return;
+  const seated = agents.includes(root.seated) ? root.seated : agents[0];
+  const turns = debugSearchSet.turns;
+  const search = debugSearch = {
+    live: true, state: "starting", note: "", game: String(state.seed ?? ""), goal, turns, from: root.turn, end: root.turn + turns,
+    letter: root.letter, pane: root.pane, seated, agents, cores: debugSearchCores().picked.count,
+    forks: [], memory: 0, print: null, queue: [], seen: new Map(), results: [], best: null, alone: null,
+    aloneKey: debugPlanKey([[root.turn, seated]]), sweep: new Set(), tries: new Map(), level: 0, strides: debugSearchStrides(turns),
+    began: performance.now(), ended: null, played: 0, futures: 0, playing: null, said: "", hover: null,
+  };
+  drawDebugBar(false);
+  try {
+    let made;
+    try {
+      made = await debugSearchPost("/forks", {count: search.cores});
+    } catch (error) {
+      made = {error: String(error.message || error)};
+    }
+    if (search !== debugSearch || !search.live) return;
+    if (!made || made.error || !(made.forks > 0)) {
+      throw new Error("Autosearch plays on copies of the engine, and this build could not make them" +
+        ` (${(made && made.error) || "it has no forks"}). It runs in the browser build`);
+    }
+    search.memory = made.memory_bytes || 0;
+    const half = root.pane ? `&pane=${encodeURIComponent(root.pane)}` : "";
+    search.forks = Array.from({length: made.forks}, (_, at) => ({n: at + 1, path: `/debug?fork=${at + 1}${half}`,
+      at: search.from, from: search.from, plan: null, series: [], busy: false, dead: false}));
+    drawDebugBar(false);
+    const prints = await Promise.all(search.forks.map(fork => debugSearchRootOn(search, fork)));
+    if (prints.some(print => print !== prints[0])) throw new Error("the copies of the engine do not hold the same world");
+    search.print = prints[0];
+    search.state = "running";
+    // First every Civ AI alone, the one seated among them: the climb begins
+    // once those are in (`sweep` is the ones still out).
+    for (const name of agents) {
+      const alone = [[search.from, name]];
+      search.sweep.add(debugPlanKey(alone));
+      debugSearchOffer(search, alone);
+    }
+    debugSearchPump(search);
+  } catch (error) {
+    if (search.live) debugSearchEnd(search, "failed", String(error.message || error));
+  }
+}
+// A copy is made ready: nothing stops a future on it but the turn it is
+// played to (the page's breakpoints are the page's), a half keeps its agents
+// with the turns it marks from here on (`remember` in the engine), and it
+// stands on the top of the turn the search begins on. The answer is the
+// engine's print of that world.
+async function debugSearchRootOn(search, fork) {
+  const refused = answer => { if (answer.error) throw new Error(answer.error); return answer; };
+  refused(await debugSearchAsk(search, fork, {op: "breakpoints"}));
+  if (search.pane) refused(await debugSearchAsk(search, fork, {op: "remember"}));
+  const there = refused(await debugSearchAsk(search, fork, {op: "jump", turn: search.from}));
+  if (there.turn !== search.from) throw new Error(`turn ${search.from} is no longer kept, so nothing can be played from it`);
+  if (!there.seat) throw new Error("this engine is older than this page, and does not say how the seat stands");
+  fork.at = fork.from = search.from;
+  fork.plan = null;
+  fork.series = [debugSearchValue(search, there.seat)];
+  const marks = there.debug || {};
+  return (marks.worlds || [])[(marks.turns || []).indexOf(search.from)] ?? null;
+}
+// A plan nobody has played or is about to is put in the line to be played.
+function debugSearchOffer(search, plan) {
+  const tidy = debugPlanTidy(plan), key = debugPlanKey(tidy);
+  if (search.seen.has(key)) return 0;
+  search.seen.set(key, null);
+  search.queue.push(tidy);
+  return 1;
+}
+// The turn a copy's own line and a plan part on: as far as that, the copy
+// already holds the plan's turns.
+function debugSearchParts(search, fork, plan) {
+  let turn = search.from;
+  if (fork.plan) {
+    while (turn < fork.at && turn < search.end && debugPlanWho(fork.plan, turn) === debugPlanWho(plan, turn)) turn += 1;
+  }
+  return turn;
+}
+// The next plan for a copy that is free: of the ones at the head of the
+// line, the one it has the most turns of already.
+function debugSearchTake(search, fork) {
+  const queue = search.queue, look = Math.min(queue.length, 4 * search.forks.length);
+  let pick = -1, most = -1;
+  for (let at = 0; at < look; at++) {
+    const shared = debugSearchParts(search, fork, queue[at]);
+    if (shared > most) { most = shared; pick = at; }
+  }
+  return pick < 0 ? null : queue.splice(pick, 1)[0];
+}
+// More plans to play, around the best line there is: at each of a spread of
+// turns, each other Civ AI is handed the rest of the line, and one stride of
+// it. The latest turns come first, because a copy plays those soonest. When
+// a stride has nothing new to offer the next finer one is tried.
+function debugSearchGrow(search) {
+  const best = search.best;
+  if (!best) return 0;
+  for (; search.level < search.strides.length; search.level++) {
+    const stride = search.strides[search.level];
+    let added = 0;
+    for (let turn = search.from + stride * Math.floor((best.last - 1 - search.from) / stride); turn >= search.from; turn -= stride) {
+      const holds = debugPlanWho(best.plan, turn);
+      for (const name of search.agents) {
+        if (name === holds) continue;
+        added += debugSearchOffer(search, debugPlanSplice(best.plan, turn, search.end, search.end, name));
+        if (turn + stride < best.last)
+          added += debugSearchOffer(search, debugPlanSplice(best.plan, turn, turn + stride, search.end, name));
+      }
+    }
+    if (added) return added;
+  }
+  return 0;
+}
+// Which of two lines is the better: one the seat wins on, then one it does
+// not lose on, then the more of what was asked for, then the simpler plan.
+function debugSearchBetter(one, other) {
+  if (one.won !== other.won) return one.won;
+  if (one.lost !== other.lost) return other.lost;
+  const mine = one.value ?? -Infinity, theirs = other.value ?? -Infinity;
+  if (mine !== theirs) return mine > theirs;
+  return one.plan.length < other.plan.length;
+}
+function debugSearchTook(search, result) {
+  result.value = result.series[result.series.length - 1] ?? null;
+  search.seen.set(result.key, result);
+  search.results.push(result);
+  search.futures += 1;
+  if (result.key === search.aloneKey) search.alone = result;
+  search.sweep.delete(result.key);
+  if (search.best && !debugSearchBetter(result, search.best)) return;
+  search.best = result;
+  // What is waiting was made around the line this one has passed: it is let
+  // go, and the climb begins again around this one, at the widest stride.
+  if (search.sweep.size > 0) return;
+  for (const plan of search.queue) search.seen.delete(debugPlanKey(plan));
+  search.queue = [];
+  search.level = 0;
+}
+// One plan played on one copy. The copy walks back to the turn the plan
+// parts from the line it holds, with the plan's Civ AI for that turn named,
+// so the agent kept with the turn sits down again if it is the same one and
+// a new one if not, and plays up the timeline from there a stretch at a time.
+// A line is kept as the number asked for on each of its turns, from the
+// turn the search began on.
+async function debugSearchRun(search, fork, plan) {
+  fork.busy = true;
+  const result = {plan, key: debugPlanKey(plan), series: [], last: search.from, value: null, ended: false, won: false, lost: false};
+  try {
+    let turn = debugSearchParts(search, fork, plan);
+    let there = await debugSearchAsk(search, fork, {op: "jump", turn, strategy: debugPlanWho(plan, turn)});
+    if (there.error) throw new Error(there.error);
+    if (there.turn !== turn) {
+      // A turn that is no longer kept answers with the nearest before it,
+      // which is this plan's as well: its own Civ AI is named for it.
+      turn = there.turn;
+      if (turn < search.from) throw new Error(`turn ${search.from} is no longer kept`);
+      there = await debugSearchAsk(search, fork, {op: "jump", turn, strategy: debugPlanWho(plan, turn)});
+      if (there.error || there.turn !== turn) throw new Error(there.error || `turn ${turn} is no longer kept`);
+    }
+    fork.plan = plan;
+    fork.at = fork.from = turn;
+    fork.series.length = turn - search.from + 1;
+    while (fork.at < search.end) {
+      let stop = search.end;
+      for (const [start] of plan) if (start > fork.at) { stop = Math.min(stop, start); break; }
+      const asked = Math.min(DEBUG_SEARCH_CHUNK, stop - fork.at);
+      const answer = await debugSearchAsk(search, fork, {op: "play", turns: asked, strategy: debugPlanWho(plan, fork.at)});
+      const readings = Array.isArray(answer.readings) ? answer.readings : [];
+      for (const reading of readings) fork.series.push(debugSearchValue(search, reading));
+      fork.at += readings.length;
+      search.played += readings.length;
+      const seat = readings[readings.length - 1] || {};
+      // The game ended on the way, or the seat fell: the line is read there.
+      if (answer.finished || seat.alive === false || readings.length < asked) {
+        if (answer.error && !answer.finished && readings.length === 0 && !/no turn left/.test(answer.error)) throw new Error(answer.error);
+        result.ended = true;
+        result.won = answer.finished === true && answer.winner === 0;
+        result.lost = seat.alive === false || (answer.finished === true && answer.winner !== null && answer.winner !== undefined && answer.winner !== 0);
+        break;
+      }
+      debugSearchDrawSoon();
+    }
+    result.series = fork.series.slice();
+    result.last = fork.at;
+    debugSearchTook(search, result);
+  } catch (error) {
+    if (search !== debugSearch || !search.live) return;
+    // A copy that failed is left out, and its plan goes back in the line
+    // once: a plan that fails a second copy is let go.
+    fork.dead = true;
+    fork.plan = null;
+    search.note = String(error.message || error);
+    if (search.forks.every(held => held.dead)) { debugSearchEnd(search, "failed", search.note); return; }
+    const tries = (search.tries.get(result.key) || 0) + 1;
+    search.tries.set(result.key, tries);
+    if (tries < 2) {
+      search.seen.delete(result.key);
+      debugSearchOffer(search, plan);
+    } else search.sweep.delete(result.key);
+  } finally {
+    fork.busy = false;
+  }
+  debugSearchPump(search);
+}
+// Every copy that is free is given a plan. When none is playing and there is
+// nothing left to offer, the search is done.
+function debugSearchPump(search) {
+  if (search !== debugSearch || !search.live) return;
+  for (const fork of search.forks) {
+    if (fork.busy || fork.dead) continue;
+    if (!search.queue.length && search.sweep.size === 0) debugSearchGrow(search);
+    const plan = debugSearchTake(search, fork);
+    if (!plan) break;
+    debugSearchRun(search, fork, plan);
+  }
+  if (!search.forks.some(fork => fork.busy)) debugSearchEnd(search, search.best ? "done" : "failed", search.best ? "" : search.note);
+  else debugSearchDrawSoon();
+}
+// The search is over, however it ended. Its copies are let go at once: each
+// is the engine's memory over again. What it found stays to be played.
+function debugSearchEnd(search, how, note = "") {
+  if (!search.live) return;
+  search.live = false;
+  search.state = how;
+  search.note = note;
+  search.ended = performance.now();
+  search.queue = [];
+  debugSearchPost("/forks", {count: 0}).catch(() => {});
+  drawDebugBar(false);
+}
+let debugSearchDrawing = false;
+function debugSearchDrawSoon() {
+  if (debugSearchDrawing) return;
+  debugSearchDrawing = true;
+  setTimeout(() => {
+    debugSearchDrawing = false;
+    // A window held while one screen and two change places is left as it stands.
+    if (debugBar && !debugBar.hidden && !debugHeld) debugDrawSearch(debugBar);
+  }, 120);
+}
+// The panel is put up or away. Asked for from a half's own panel, it begins
+// from that half.
+function debugSearchShow(on, letter = null) {
+  debugSearchShown = on;
+  if (on) debugPopOpen = null;
+  if (letter && !(debugSearch && debugSearch.live)) debugSearchSet.half = letter;
+  drawDebugBar();
+}
+function debugSearchKeep() {
+  try {
+    localStorage.setItem(DEBUG_SEARCH_KEY,
+      JSON.stringify({goal: debugSearchSet.goal, turns: debugSearchSet.turns, share: debugSearchSet.share}));
+  } catch (_) {}
+}
+// The button and the panel are the box's own, and hear for themselves: a
+// press on them is not the deck's, which in a locked split belongs to the
+// halves.
+function debugSearchWire(bar) {
+  const panel = bar.querySelector("#dbg-search"), open = bar.querySelector('[data-dbg-search="open"]');
+  open.addEventListener("click", event => {
+    event.stopPropagation();
+    // A half has no engine of its own to copy: its host searches.
+    if (DEBUG_PANE !== null) window.parent.postMessage({civvis: "pane-search", pane: DEBUG_PANE}, location.origin);
+    else debugSearchShow(!debugSearchShown);
+  });
+  panel.addEventListener("click", event => {
+    event.stopPropagation();
+    const button = event.target.closest("[data-dbg-search]");
+    if (!button || button.disabled) return;
+    const action = button.dataset.dbgSearch;
+    if (action === "close") debugSearchShow(false);
+    else if (action === "go") {
+      if (debugSearch && debugSearch.live) debugSearchEnd(debugSearch, "stopped");
+      else debugSearchStart();
+    } else if (action === "play") debugSearchPlay(button.value);
+  });
+  panel.addEventListener("change", event => {
+    event.stopPropagation();
+    const target = event.target;
+    if (target.id === "dbg-search-goal") debugSearchSet.goal = target.value;
+    else if (target.id === "dbg-search-turns") debugSearchSet.turns = +target.value || DEBUG_SEARCH_TURNS_PICK;
+    else if (target.id === "dbg-search-cores") debugSearchSet.share = +target.value || 0;
+    else if (target.id === "dbg-search-half") debugSearchSet.half = target.value === "b" ? "b" : "a";
+    else return;
+    target.blur();
+    debugSearchKeep();
+    drawDebugBar(false);
+  });
+  panel.addEventListener("keydown", event => {
+    event.stopPropagation();
+    if (event.key === "Escape") { debugSearchShow(false); return; }
+    // The arrows walk the chart's line under the keys, as the pointer does.
+    const chart = event.target instanceof Element ? event.target.closest("#dbg-search-chart svg") : null;
+    if (!chart || !debugSearch || !(event.key === "ArrowLeft" || event.key === "ArrowRight")) return;
+    event.preventDefault();
+    const last = debugSearch.best ? debugSearch.best.last : debugSearch.from;
+    const at = debugSearch.hover ?? last;
+    debugSearch.hover = Math.max(debugSearch.from, Math.min(last, at + (event.key === "ArrowRight" ? 1 : -1)));
+    debugSearchTip();
+  });
+  // The chart says the numbers of the turn under the pointer.
+  panel.addEventListener("pointermove", event => {
+    const chart = event.target instanceof Element ? event.target.closest("#dbg-search-chart svg") : null;
+    if (!debugSearch) return;
+    const before = debugSearch.hover;
+    if (chart) {
+      const box = chart.getBoundingClientRect(), plot = debugSearchPlot(debugSearch);
+      const along = ((event.clientX - box.left) / box.width * plot.width - plot.left) / (plot.width - plot.left - plot.right);
+      debugSearch.hover = Math.round(plot.first + Math.max(0, Math.min(1, along)) * (plot.last - plot.first));
+    } else debugSearch.hover = null;
+    if (debugSearch.hover !== before) debugSearchTip();
+  });
+  panel.addEventListener("pointerleave", () => {
+    if (debugSearch && debugSearch.hover !== null) { debugSearch.hover = null; debugSearchTip(); }
+  });
+  panel.addEventListener("focusin", event => {
+    if (debugSearch && event.target instanceof Element && event.target.closest("#dbg-search-chart svg") && debugSearch.hover === null) {
+      debugSearch.hover = debugSearch.best ? debugSearch.best.last : debugSearch.from;
+      debugSearchTip();
+    }
+  });
+}
+// A Civ AI by a name short enough for a row of the panel.
+function debugSearchAgent(name) {
+  return debugAgentName(name);
+}
+// The chart's measures: the turns it spans and the room around its plot.
+function debugSearchPlot(search) {
+  const last = Math.max(search.from + 1, search.best ? search.best.last : search.from, search.alone ? search.alone.last : search.from);
+  return {width: 372, height: 118, left: 10, right: 46, top: 12, bottom: 20, first: search.from, last};
+}
+// The number asked for over the turns: the Civ AI seated, alone, and the best
+// line found, a line each, with the value each ends on written at its end.
+function debugSearchChart(search) {
+  const plot = debugSearchPlot(search);
+  const lines = [];
+  if (search.alone) lines.push(["alone", search.alone]);
+  if (search.best && search.best !== search.alone) lines.push(["best", search.best]);
+  const points = lines.map(([name, result]) => [name, result.series
+    .map((value, at) => [search.from + at, value]).filter(point => point[1] !== null)]).filter(([, held]) => held.length > 0);
+  const values = points.flatMap(([, held]) => held.map(point => point[1]));
+  if (!values.length) return "";
+  const low = Math.min(...values), high = Math.max(...values), span = high - low || 1;
+  const x = turn => plot.left + (turn - plot.first) / (plot.last - plot.first) * (plot.width - plot.left - plot.right);
+  const y = value => plot.height - plot.bottom - (value - low) / span * (plot.height - plot.top - plot.bottom);
+  const fixed = number => number.toFixed(1);
+  let svg = `<svg viewBox="0 0 ${plot.width} ${plot.height}" role="img" tabindex="0" aria-label="${escapeAttr(search.goal.name)} from turn ${plot.first} to turn ${plot.last}">`;
+  // Recessive: a hairline at the foot and one at the top of the range.
+  for (const value of [low, high])
+    svg += `<line x1="${plot.left}" x2="${plot.width - plot.right}" y1="${fixed(y(value))}" y2="${fixed(y(value))}" stroke="#22332e" stroke-width="1"/>`;
+  svg += `<text x="${plot.left}" y="${plot.height - 6}">turn ${plot.first}</text>` +
+    `<text x="${plot.width - plot.right}" y="${plot.height - 6}" text-anchor="end">turn ${plot.last}</text>`;
+  // Where each line ends, its value: two that would overlap are set apart.
+  const ends = points.map(([name, held]) => ({name, turn: held[held.length - 1][0], value: held[held.length - 1][1]}));
+  const labels = ends.map(end => ({...end, at: y(end.value) + 3.5}));
+  if (labels.length === 2 && Math.abs(labels[0].at - labels[1].at) < 12) {
+    const [upper, lower] = labels[0].at <= labels[1].at ? labels : [labels[1], labels[0]];
+    const middle = (upper.at + lower.at) / 2;
+    upper.at = middle - 6;
+    lower.at = middle + 6;
+  }
+  for (const [name, held] of points) {
+    const colour = DEBUG_SEARCH_COLOURS[name];
+    svg += `<path d="${held.map(([turn, value], at) => `${at ? "L" : "M"}${fixed(x(turn))} ${fixed(y(value))}`).join("")}" fill="none" stroke="${colour}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+  }
+  for (const end of ends)
+    svg += `<circle cx="${fixed(x(end.turn))}" cy="${fixed(y(end.value))}" r="4" fill="${DEBUG_SEARCH_COLOURS[end.name]}" stroke="#060d0b" stroke-width="2"/>`;
+  for (const label of labels)
+    svg += `<text class="dbg-value" x="${fixed(x(label.turn) + 8)}" y="${fixed(label.at)}">${debugSearchNumber(label.value)}</text>`;
+  svg += `<line class="dbg-cross" x1="0" x2="0" y1="${plot.top - 4}" y2="${plot.height - plot.bottom}" stroke="#9fb3ab" stroke-width="1" visibility="hidden"/></svg>`;
+  return svg;
+}
+// The turn under the pointer on the chart: a hairline on it, and beside it
+// what each line reads there. A name is written as text, never as markup.
+function debugSearchTip() {
+  const search = debugSearch, box = document.getElementById("dbg-search-chart");
+  if (!search || !box) return;
+  const cross = box.querySelector(".dbg-cross");
+  let tip = box.querySelector(".dbg-search-tip");
+  if (search.hover === null || !cross) {
+    if (cross) cross.setAttribute("visibility", "hidden");
+    if (tip) tip.hidden = true;
+    return;
+  }
+  const plot = debugSearchPlot(search), turn = search.hover;
+  const along = plot.left + (turn - plot.first) / (plot.last - plot.first) * (plot.width - plot.left - plot.right);
+  cross.setAttribute("x1", along.toFixed(1));
+  cross.setAttribute("x2", along.toFixed(1));
+  cross.setAttribute("visibility", "visible");
+  if (!tip) {
+    tip = document.createElement("div");
+    tip.className = "dbg-search-tip";
+    box.appendChild(tip);
+  }
+  tip.hidden = false;
+  tip.textContent = "";
+  const head = document.createElement("div");
+  head.textContent = `Turn ${turn}`;
+  tip.appendChild(head);
+  const rows = [];
+  if (search.best && search.best !== search.alone) rows.push(["best", "Best line", search.best]);
+  if (search.alone) rows.push(["alone", `${debugSearchAgent(search.seated)} alone`, search.alone]);
+  for (const [name, label, result] of rows) {
+    const value = result.series[turn - search.from] ?? null;
+    if (value === null) continue;
+    const row = document.createElement("div"), key = document.createElement("i"), number = document.createElement("b");
+    key.style.borderColor = DEBUG_SEARCH_COLOURS[name];
+    number.textContent = debugSearchNumber(value);
+    row.append(key, number, document.createTextNode(label));
+    tip.appendChild(row);
+  }
+  // Beside the hairline, on whichever side has the room.
+  const share = along / plot.width;
+  tip.style.left = share < .55 ? `calc(${(share * 100).toFixed(1)}% + 8px)` : "auto";
+  tip.style.right = share < .55 ? "auto" : `calc(${((1 - share) * 100).toFixed(1)}% + 8px)`;
+}
+// The Autosearch button, and its panel when it is up: what it is set to,
+// what the search is doing, and what it has found.
+function debugDrawSearch(bar) {
+  const panel = document.getElementById("dbg-search"), open = bar.querySelector('[data-dbg-search="open"]');
+  if (!panel || !open) return;
+  // A search is one game's: a new game lets go of it and of what it found.
+  if (debugSearch && state && debugSearch.game !== String(state.seed ?? "")) {
+    const old = debugSearch;
+    debugSearch = null;
+    if (old.live) { old.live = false; debugSearchPost("/forks", {count: 0}).catch(() => {}); }
+  }
+  const search = debugSearch, live = !!(search && search.live);
+  // A line being played in a half that is gone will not be answered for.
+  if (search && search.playing && search.playing !== "here" && !debugSplit) search.playing = null;
+  // One panel under the deck at a time.
+  if (debugPopOpen) debugSearchShown = false;
+  const shown = debugSearchShown && DEBUG_PANE === null;
+  open.classList.toggle("on", shown || live);
+  open.classList.toggle("dbg-live", live);
+  open.setAttribute("aria-expanded", shown ? "true" : "false");
+  const count = live ? `${search.futures}` : "";
+  const counted = document.getElementById("dbg-search-count");
+  if (counted.textContent !== count) counted.textContent = count;
+  panel.hidden = !shown;
+  if (!shown) return;
+  // A window like the box's other panels: where its title was dragged to,
+  // or under its own button. With the deck put away (a split whose halves
+  // are unlocked) it has no button to stand under, and opens under the box.
+  if (debugWindowPlace[debugWindowKey(panel)] || open.getBoundingClientRect().width > 0) debugPlaceWindow(panel, bar, open);
+  else { panel.style.left = "8px"; panel.style.top = ""; }
+  // As tall as the window has room for under it, and what does not fit scrolls.
+  panel.style.maxHeight = `${Math.max(160, window.innerHeight - panel.getBoundingClientRect().top - 8)}px`;
+  const root = debugSearchRoot();
+  const text = (id, words) => {
+    const part = document.getElementById(id);
+    if (part.textContent !== words) part.textContent = words;
+  };
+  const offer = (id, options, picked) => {
+    const select = document.getElementById(id), drawn = JSON.stringify(options);
+    if (select.dataset.drawn !== drawn) {
+      select.dataset.drawn = drawn;
+      select.innerHTML = options.map(([value, label]) =>
+        `<option value="${escapeAttr(String(value))}">${escapeAttr(label)}</option>`).join("");
+    }
+    if (document.activeElement !== select) select.value = String(picked);
+    select.disabled = live || !!(search && search.playing);
+  };
+  // What the panel is set to. While a search runs it shows that search's.
+  const from = live ? search.from : root ? root.turn : null;
+  const goal = live ? search.goal : DEBUG_SEARCH_GOALS.find(held => held.key === debugSearchSet.goal) || DEBUG_SEARCH_GOALS[0];
+  const turns = live ? search.turns : debugSearchSet.turns;
+  const cores = debugSearchCores();
+  offer("dbg-search-goal", DEBUG_SEARCH_GOALS.map(held => [held.key, `${held.name} · ${held.sign}`]), goal.key);
+  offer("dbg-search-turns", DEBUG_SEARCH_TURNS.map(ahead =>
+    [ahead, from === null ? `${ahead} turns on` : `turn ${from + ahead} · ${ahead} turns on`]), turns);
+  offer("dbg-search-cores", cores.offered.map(held =>
+    [held.share, held.count === 1 ? `1 of ${cores.all} cores` : `${held.count} of ${cores.all} cores · ${held.word}`]),
+    live ? (cores.offered.find(held => held.count === search.cores) || cores.picked).share : cores.picked.share);
+  const halves = debugSplit ? ["a", "b"].map(letter => {
+    const pane = debugSplit.panes[letter];
+    return [letter, `${letter.toUpperCase()}${pane.turn === null ? "" : ` · turn ${pane.turn}`}${pane.strategy ? ` · ${debugAgentName(pane.strategy)}` : ""}`];
+  }) : [];
+  offer("dbg-search-half", halves, live && search.letter ? search.letter : debugSearchSet.half);
+  document.getElementById("dbg-search-half").hidden = document.getElementById("dbg-search-half-word").hidden = !debugSplit;
+  const letter = live ? search.letter : root ? root.letter : null;
+  // What the seat did by hand in the open turn is not part of a line: every
+  // line is played from the top of the turn.
+  const acted = !debugSplit && (debugTimeline().acted || 0) > 0;
+  text("dbg-search-about", from === null ? "The branch has no turn open yet."
+    : `From ${acted ? "the top of " : ""}turn ${from}${letter ? ` of ${letter.toUpperCase()}` : ""}: which Civ AIs should hold the seat, and when, ` +
+      `for the most ${goal.name.toLowerCase()} by turn ${from + turns}. This game is left as it is while the cores search.`);
+  const go = panel.querySelector('[data-dbg-search="go"]');
+  const goWords = live ? "⏹ Stop" : search && search.best ? "Search again" : "Search";
+  if (go.textContent !== goWords) go.textContent = goWords;
+  go.classList.toggle("on", live);
+  go.disabled = !live && (!root || !root.idle || !!(search && search.playing));
+  go.title = live ? "Stop the search. The best line found so far stays to be played"
+    : !root || !root.idle ? "The game is being played: a search begins from a turn that stands still"
+    : `Search from turn ${root.turn}`;
+  // What the search is doing.
+  let status = "";
+  if (search) {
+    const seconds = Math.max(.001, ((search.ended ?? performance.now()) - search.began) / 1000);
+    const work = `${search.futures} future${search.futures === 1 ? "" : "s"} · ${search.played} turns`;
+    if (search.state === "starting") status = `Copying the engine to ${search.cores} core${search.cores === 1 ? "" : "s"}…`;
+    else if (search.state === "running") status = `${work} · ${Math.round(search.played / seconds)} turns a second`;
+    else if (search.state === "done") status = `Done in ${debugSearchNumber(seconds)} s: ${work}. Nothing else it tried was better`;
+    else if (search.state === "stopped") status = `Stopped after ${debugSearchNumber(seconds)} s: ${work}`;
+    else status = `The search could not go on: ${search.note}`;
+  }
+  text("dbg-search-status", status);
+  const run = document.getElementById("dbg-search-run");
+  run.hidden = !(live && search.forks.length > 0);
+  if (!run.hidden) {
+    const span = Math.max(1, search.end - search.from);
+    const heads = search.forks.map(fork => {
+      const left = (fork.from - search.from) / span * 100, width = Math.max(0, fork.at - fork.from) / span * 100;
+      return `<i class="${fork.busy ? "busy" : ""}"><b style="left:${left.toFixed(1)}%;width:${Math.max(1.5, width).toFixed(1)}%"></b></i>`;
+    }).join("");
+    debugDrawn(document.getElementById("dbg-search-heads"), heads);
+    text("dbg-search-from", `turn ${search.from}`);
+    text("dbg-search-to", `turn ${search.end}`);
+    const each = search.memory ? ` · ${Math.round(search.memory / 1048576)} MB each` : "";
+    text("dbg-search-size", `${search.forks.length} cop${search.forks.length === 1 ? "y" : "ies"} of the engine${each}`);
+  }
+  // What it has found.
+  const found = document.getElementById("dbg-search-found"), best = search ? search.best : null;
+  found.hidden = !best;
+  if (!best) return;
+  const alone = search.alone, sign = search.goal.sign;
+  const gain = alone && alone.value !== null && best.value !== null ? best.value - alone.value : null;
+  const seated = escapeAttr(debugSearchAgent(search.seated));
+  let said = `${live ? "Best so far" : "Best found"}: <b>${sign} ${debugSearchNumber(best.value)}</b> on turn ${best.last}`;
+  if (best.won) said += ", where the seat wins the game";
+  else if (best.ended) said += ", where the game ends";
+  if (best === alone) said += `. That is ${seated} alone: no other line has beaten it`;
+  else if (gain !== null) said += `, <b>${gain >= 0 ? "+" : ""}${debugSearchNumber(gain)}</b> on ${seated} alone (${debugSearchNumber(alone.value)})`;
+  debugDrawn(document.getElementById("dbg-search-best"), `${said}.`);
+  debugDrawn(document.getElementById("dbg-search-plan"), debugPlanStretches(best.plan, best.last).map(stretch =>
+    `<span title="${escapeAttr(debugSearchAgent(stretch.name))} holds the seat from turn ${stretch.from} to turn ${stretch.to}"><b>${stretch.from}</b> ${escapeAttr(debugSearchAgent(stretch.name))}</span>`).join(""));
+  const chart = document.getElementById("dbg-search-chart"), drawn = debugSearchChart(search);
+  if (chart.dataset.drawn !== drawn) {
+    chart.dataset.drawn = drawn;
+    chart.innerHTML = drawn;
+    debugSearchTip();
+  }
+  const key = (name, label) => `<span><i style="border-color:${DEBUG_SEARCH_COLOURS[name]}"></i>${label}</span>`;
+  debugDrawn(document.getElementById("dbg-search-key"),
+    (best !== alone ? key("best", "Best line") : "") + (alone ? key("alone", `${seated} alone`) : ""));
+  // Every Civ AI holding the seat alone, the best first: what the line that
+  // was found is set against, and what each of them comes to by itself.
+  const lone = search.results.filter(result => result.plan.length === 1)
+    .sort((one, other) => debugSearchBetter(one, other) ? -1 : debugSearchBetter(other, one) ? 1 : 0);
+  debugDrawn(document.getElementById("dbg-search-table"), lone.map(result => {
+    const name = escapeAttr(debugSearchAgent(result.plan[0][1])), held = result === alone;
+    return `<span${held ? ' class="dbg-top"' : ""} title="${name} alone from turn ${search.from}${held ? ": the Civ AI that is seated" : ""}">${name}</span>` +
+      `<span class="dbg-v">${debugSearchNumber(result.value)}</span>`;
+  }).join(""));
+  // Playing it: on the one timeline, or in either half of a split. A line is
+  // played on the world it was found in, so a timeline branched or closed
+  // since the search has to be searched again.
+  const moved = (search.pane === null) !== (debugSplit === null) ||
+    (debugSplit !== null && debugSplit.panes[search.letter].id !== search.pane);
+  const busy = live || !!search.playing || moved || !root || !root.idle;
+  const button = (value, label, title) =>
+    `<button data-dbg-search="play" value="${value}" title="${escapeAttr(title)}"${busy ? " disabled" : ""}>${label}</button>`;
+  const walked = `walks back to turn ${search.from} and plays the line to turn ${best.last}`;
+  let play;
+  if (!debugSplit) play = button("here", "▶ Play it", `Play it: this timeline ${walked}, over the turns it holds past there`);
+  else play = ["a", "b"].map(letter => {
+    const name = letter.toUpperCase(), other = search.letter === "a" ? "A" : "B";
+    return button(letter, `▶ Play it in ${name}`, letter === search.letter
+      ? `Play it in ${name}: ${name} ${walked}, over the turns it holds past there`
+      : `Play it in ${name}: ${name} is made a copy of ${other}, ${walked}. ${other} stays as it is, to set beside it`);
+  }).join("");
+  const note = moved ? "The timeline was branched or a branch closed since this search: search again to play a line."
+    : live ? "Stop the search to play the best line so far." : search.said;
+  debugDrawn(document.getElementById("dbg-search-play"), `${play}<span class="dbg-search-status">${escapeAttr(note)}</span>`);
+}
+// The best line is played: on the one timeline by this page, and in a split
+// by the half that was picked, which is first made a copy of the half the
+// search began from when it is the other one.
+async function debugSearchPlay(target) {
+  const search = debugSearch;
+  if (!search || search.live || !search.best || search.playing) return;
+  const best = search.best;
+  const plan = {from: search.from, print: search.print, goal: search.goal.key, value: best.value,
+    stretches: debugPlanStretches(best.plan, best.last)};
+  if (!plan.stretches.length) return;
+  if ((search.pane === null) !== (debugSplit === null)) return;
+  if (!debugSplit) {
+    search.playing = "here";
+    search.said = `Playing it from turn ${search.from}…`;
+    drawDebugBar(false);
+    debugSearchPlayed(search, await debugPlayPlan(plan));
+    return;
+  }
+  if (debugSplit.panes[search.letter].id !== search.pane || debugSplit.busy || debugSplit.running > 0) return;
+  const letter = target === "b" ? "b" : "a";
+  const copy = letter === search.letter ? null : search.pane;
+  // A copy is the other half's whole history, and so is its line in the chart.
+  if (copy) debugSplit.history[letter] = new Map(debugSplit.history[search.letter]);
+  search.playing = letter;
+  search.said = `Playing it in ${letter.toUpperCase()} from turn ${search.from}…`;
+  debugSplitTell(letter, {civvis: "pane-plan", plan, copy});
+  drawDebugBar(false);
+}
+function debugSearchPlayed(search, done) {
+  search.playing = null;
+  search.said = done && typeof done.note === "string" ? done.note : "";
+  drawDebugBar(false);
+}
+// Play a line that was found, on this page's own world: the one timeline, or
+// one half of a split (told by its host, `pane-plan`).
+//
+// The world is walked back to the turn the search began on, with the line's
+// first Civ AI named, which is what each copy the search played on did: the
+// agents kept with that turn sit down again (a half keeps none, and seats
+// new ones), and the line is played from there. Each stretch of it seats its
+// Civ AI and runs to the stretch's last turn, as Auto-play would, so a
+// breakpoint stops it and so does Stop. The answer says how far it got and,
+// when it was played out, what the seat has beside what the search read.
+async function debugPlayPlan(plan, copy = null) {
+  const fail = note => { debugSay(note); return {ok: false, turn: state ? state.turn : null, note}; };
+  if (debugRunning || autoplaying || debugBusy || turnAdvancePending || !debugTimeline())
+    return fail("The game is being played: play the line when it stands still");
+  const page = document.getElementById("autoplaystrategy");
+  const stretches = Array.isArray(plan.stretches) ? plan.stretches : [];
+  if (!page || !stretches.length || stretches.some(stretch => ![...page.options].some(option => option.value === stretch.name)))
+    return fail("That line names a Civ AI this page does not offer");
+  // The Civ AI of a stretch is this page's pick from then on. A half says so
+  // to its host, which keeps each half's, and plays what follows by itself:
+  // the other half is not its twin while their Civ AIs differ.
+  const seat = name => {
+    page.value = name;
+    debugRememberSeat();
+    if (DEBUG_PANE === null) return;
+    debugTwin = null;
+    window.parent.postMessage({civvis: "pane-seated", pane: DEBUG_PANE, name}, location.origin);
+  };
+  if (copy) {
+    // A copy is not a move of this half's own, so the other is not told to follow it.
+    debugMirroring = true;
+    try {
+      const copied = await debugOp({op: "copy", from: copy}, 60000);
+      if (!copied || copied.error) return fail("The other branch could not be copied to play the line in");
+    } finally {
+      debugMirroring = false;
+    }
+  }
+  debugSay("");
+  for (const [at, stretch] of stretches.entries()) {
+    seat(stretch.name);
+    if (at === 0) {
+      const there = await debugOp({op: "jump", turn: plan.from, strategy: stretch.name});
+      if (!there || there.error) return fail(`Turn ${plan.from} could not be walked back to${there && there.error ? `: ${there.error}` : ""}`);
+      const marks = there.debug || {};
+      const print = (marks.worlds || [])[(marks.turns || []).indexOf(plan.from)] ?? null;
+      if (there.turn !== plan.from || (plan.print !== null && plan.print !== undefined && print !== plan.print))
+        return fail(`Turn ${plan.from} is no longer the world that was searched: search again from here`);
+    } else {
+      const seated = await debugSeat();
+      if (!seated || seated.error) return fail(`${debugAgentName(stretch.name)} could not be seated on turn ${state.turn}`);
+    }
+    await debugRun(stretch.to);
+    // Stopped short: by a breakpoint, by hand, or by the end of the game.
+    // The bar has said which.
+    if (state.turn < stretch.to)
+      return {ok: false, turn: state.turn, note: `Stopped on turn ${state.turn}, before the line was played out: ${debugNoteText || "it was not finished"}`};
+  }
+  const goal = DEBUG_SEARCH_GOALS.find(held => held.key === plan.goal);
+  const seated = (state.players || []).find(player => player.id === 0) || {};
+  const got = goal ? goal.read(seated) : undefined, read = typeof got === "number" && Number.isFinite(got);
+  let note = `Played to turn ${state.turn}`;
+  if (goal && read && typeof plan.value === "number") {
+    note += Math.abs(got - plan.value) < 1e-6
+      ? `: ${goal.sign} ${debugSearchNumber(got)}, as found`
+      : `: ${goal.sign} ${debugSearchNumber(got)}, not the ${debugSearchNumber(plan.value)} found`;
+  }
+  debugSay(note);
+  return {ok: true, turn: state.turn, value: read ? got : null, note};
 }
 
 // `render` is the one door a state comes through, whoever asked for it.
