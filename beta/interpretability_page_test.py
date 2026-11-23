@@ -348,20 +348,26 @@ class TheSiteList(unittest.TestCase):
         for page in (LANDING, TOURNAMENTS, VIEWER):
             self.assertNotIn("Interpretability</a>", page)
 
-    def test_publishing_builds_the_page_into_every_lane(self):
+    def test_publishing_builds_the_page_into_a_lane_whose_revision_has_it(self):
+        # The lane's own page, filled by the lane's own script: a lane is one
+        # revision's site, so a revision from before this page is published
+        # without it (operator 2026-11-22: "1 test set of everything and 1
+        # real prod set of everything"). It was given head's copy until then,
+        # and this page answered on the front page the day it was written,
+        # with nobody having promoted it.
         for line in (
             'interpretability_page="$source_tree/beta/interpretability.html"',
-            '[ -f "$interpretability_page" ] || interpretability_page="$repo_root/beta/interpretability.html"',
+            'if [ -f "$interpretability_page" ]; then',
             'mkdir -p "$out/interpretability"',
             'cp "$interpretability_page" "$out/interpretability/index.html"',
-            'python3 "$repo_root/beta/interpretability_page.py" "$repo_root" "$out/interpretability/index.html"',
+            'fill interpretability_page.py "$out/interpretability/index.html"',
+            'pages+=(interpretability)',
             'out / "interpretability" / "index.html": [],',
         ):
             self.assertIn(line, PUBLISH)
+        self.assertNotIn('"$repo_root/beta/interpretability', PUBLISH)
         verify = (BETA / "verify.py").read_text(encoding="utf-8")
-        self.assertIn('f"{lane}interpretability/index.html",', verify)
-        self.assertIn("""b'id="interpretability-data"' not in get("/interpretability/").read()""", verify)
-        self.assertIn("""b'id="interpretability-data"' not in get("/test/interpretability/").read()""", verify)
+        self.assertIn("""    "interpretability": b'id="interpretability-data"',\n""", verify)
 
 
 if __name__ == "__main__":

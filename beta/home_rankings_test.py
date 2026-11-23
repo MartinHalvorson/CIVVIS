@@ -353,8 +353,12 @@ class HomeRankings(unittest.TestCase):
         # on this page, and on the home page, which had the slot until
         # 2026-11-22 and still has it in a lane pinned to an older revision.
         publish = (BETA / "publish.sh").read_text(encoding="utf-8")
-        self.assertIn('home_rankings.py" "$source_tree" "$out/research/index.html"', publish)
-        self.assertIn('home_rankings.py" "$source_tree" "$out/home/index.html"', publish)
+        self.assertIn('fill home_rankings.py "$out/research/index.html"', publish)
+        self.assertIn('fill home_rankings.py "$out/home/index.html"', publish)
+        # `fill` runs the lane's own script against the lane's own tree.
+        self.assertIn('local script="$source_tree/beta/$1" page="$2"', publish)
+        self.assertIn('python3 "$script" "$source_tree" "$page"', publish)
+        self.assertNotIn('"$repo_root/beta/home_rankings', publish)
 
     def test_the_two_rankings_stand_to_the_right_of_the_graphs_strategies_over_civs(self):
         # Operator 2026-11-22: "move 2 charts on home/ to charts/", and later

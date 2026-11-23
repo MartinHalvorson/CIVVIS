@@ -8,6 +8,10 @@ The readings are `data/performance/speedup_timeline.json`. The page's figures
 are worked out from them by `beta/speedup_timeline.py` when the site is
 published. Nothing derived is committed.
 
+The CIVVIS Performance page opens on the same readings as two tables, each
+figure beside the sum that gives it. They are described under
+[The tables on CIVVIS Performance](#the-tables-on-civvis-performance).
+
 ## The five stops
 
 The simulator's game is six players and nine city-states on a 74x46
@@ -37,6 +41,59 @@ its right end and the goal at its left, so a stop stands at
 The goal is 1,000,000x: a game every 18 ms, which is 3,333 games a minute on
 one machine. Two stops have goals of their own, a self-play game in 10 s and
 a game a second on every core (18,000x).
+
+## The tables on CIVVIS Performance
+
+The Performance page (`beta/performance.html`) answers one question at its
+top: how many times faster than a game played by hand. It names the three
+simulator-side stops as the project owner does: Deity computer control
+(`control`), Deity self-play (`deity_sim`) and CIVVIS self-play (`self_play`).
+`speedup_timeline.worked` builds both tables from the ledger, and
+`python3 beta/speedup_timeline.py --worked .` prints them.
+
+**One game at a time** has a row for every stop with readings of its own. The
+multiplier is the baseline's seconds over the row's, and the row shows that
+sum:
+
+| Row | The sum |
+| --- | --- |
+| By hand | `5 h = 18,000 s`, the baseline |
+| Any other | `18,000 s ÷ the seconds one game takes` |
+
+**One machine, every core** holds the experimental throughput against the
+theoretical one.
+
+| Kind | What it is | The sum |
+| --- | --- | --- |
+| Experimental | A run: the every-core record (`all_cores`), games counted as they finish. | `games a minute × 60 × 5 h` |
+| Theoretical, one core | A calculation: every core of that machine as fast as the stop's one-core reading. | `cores × 18,000 s ÷ the seconds one game takes on one core` |
+| Theoretical, alone | The same, at the speed of one game that had the machine to itself, playing games as long as the run's. | `cores × (turns ÷ seconds, alone) × 18,000 s ÷ the run's turns a game` |
+| Goal | The run's own goal, then the goal of the line. | `18,000 s ÷ the goal's seconds` |
+
+Games an hour times the hours one game takes by hand is the multiplier, so
+the two columns say the same thing. A theoretical row also gives the share
+of it the measured run reaches.
+
+The two theoretical rows for self-play differ because of where their speed
+was measured. The one-core reading was taken on the host as it works, beside
+a live game and the tournament, so eighteen times it comes out close to the
+run. A game alone on the machine is about half again as fast, and eighteen
+times that is the ceiling the run is held against. No machine reaches it
+whole: the run's workers had 14.7 of the 18 cores, and twelve of the
+eighteen are of the slower class (`docs/GAMES_PER_MINUTE.md`). Deity
+self-play has a theoretical row and no experimental one, because no run has
+played it on every core.
+
+Three ledger keys are read by these tables alone:
+
+- `cores: 1` on a stop marks the simulator on one core. Only such a stop gets
+  theoretical rows.
+- `of` on a stop that follows a benchmark names the one-core stop whose game
+  the benchmark plays. The machine's core count, its chip and the turns its
+  games ran are read from the record run.
+- `alone` on a one-core stop is a list of readings of one game played with
+  the machine to itself: `taken`, the `turns` it ran, the `seconds` it took,
+  and `from`. The newest is used.
 
 ## Adding a reading
 
@@ -69,4 +126,9 @@ Each game writes one row per seat with the game's `secs`. The reading is the
 mean over the games. Say in `from` what else the machine was doing: a game on
 a busy host takes longer than the same game alone.
 
-`python3 beta/speedup_timeline.py .` prints what the page will show.
+A game alone on the machine is one more reading, in the stop's `alone`: one
+`gene_screen --jobs 1` game with nothing else running, its turns and its
+seconds. One seed is a thin reading; the mean of several is a better one.
+
+`python3 beta/speedup_timeline.py .` prints what the home page will show, and
+`python3 beta/speedup_timeline.py --worked .` the Performance page's tables.

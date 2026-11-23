@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#171d25">
 <title>CIVVIS Performance · CIVVIS.ai</title>
-<meta name="description" content="How fast the CIVVIS simulator plays: the fastest complete game on video, how long a self-play game takes at the 1st, 10th, 50th, 90th and 99th percentile, and game time batch by batch.">
+<meta name="description" content="How fast the CIVVIS simulator plays: how many times faster than a game played by hand, the fastest complete game on video, how long a self-play game takes at the 1st, 10th, 50th, 90th and 99th percentile, and game time batch by batch.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23171d25'/%3E%3Ccircle cx='16' cy='16' r='11.5' fill='none' stroke='%2366c0f4'/%3E%3Cpath d='M7 16h18M16 4.5c-4.2 4.1-4.2 18.9 0 23M16 4.5c4.2 4.1 4.2 18.9 0 23' fill='none' stroke='%2366c0f4' stroke-width='1.15'/%3E%3C/svg%3E">
 <style>
   /* The home page's own palette, header and cards (`beta/landing.html`), as
@@ -242,6 +242,51 @@
   .perf-facts { margin: 8px 0 0; color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
   .perf-facts b { color: #fff; font-weight: 700; }
 
+  /* The page's first part, how many times faster than a game played by hand
+     (operator 2026-11-22: "at the top of civvis performance we want to
+     calculate a multiplier on the theoretical and experimetnal throughput
+     of the simualtor. and the calculations ... add this info, maybe in
+     tables to the top"): a sentence that answers it, four tiles with the
+     multipliers, and two tables in which every figure stands beside the sum
+     that gives it. The tiles are the percentile tiles, four across and
+     their figure larger; two and two on a phone. */
+  .perf-speed-lede { max-width: 900px; margin: 6px 0 0; color: var(--text); font-size: 14.5px; line-height: 1.55; }
+  .perf-speed-lede b { color: #fff; font-weight: 700; }
+  .perf-speed-tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  /* A grid set by the page is not hidden by the attribute alone. */
+  .perf-speed-tiles[hidden] { display: none; }
+  @media (max-width: 719px) { .perf-speed-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .perf-speed-tiles .perf-tile-value { font-size: clamp(22px, 3.3vw, 34px); }
+  .perf-speed-tiles .perf-tile-clock { min-height: 0; }
+  /* The run that was measured is the one in the page's blue. */
+  .perf-speed-tiles .perf-tile.is-measured { border-color: var(--series); }
+  /* A table of sums. The first column is the way of playing with what it
+     is under its name, and wraps; the sum is read as a line of text, so it
+     is set left, and the multiplier it gives is the row's bright figure. */
+  .perf-sum-table th, .perf-sum-table td { vertical-align: top; }
+  .perf-sum-table td:first-child { min-width: 240px; max-width: 360px; white-space: normal; }
+  .perf-sum-table td small { display: block; color: var(--faint); font-size: 11.5px; font-weight: 400; line-height: 1.4; }
+  .perf-sum-table td.perf-times { color: #fff; font-size: 15px; font-weight: 700; }
+  .perf-sum-table th.perf-sum, .perf-sum-table td.perf-sum { padding-left: 6px; color: var(--muted); text-align: left; }
+  .perf-sum-table td.perf-sum { min-width: 170px; white-space: normal; }
+  /* What a row of the throughput table is, beside its name: a run, a
+     calculation or a goal. It has no column of its own, so that on a phone
+     the multiplier is the first thing beside the name. */
+  .perf-kind { display: inline-block; margin-left: 4px; padding: 1px 6px; vertical-align: 1px; border: 1px solid var(--border-strong); border-radius: 3px; color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: 0.04em; line-height: 1.4; text-transform: uppercase; }
+  .perf-kind.is-measured { border-color: var(--series); background: rgba(57, 135, 229, 0.18); color: #fff; }
+  .perf-kind.is-goal { border-color: var(--gold); color: var(--gold); }
+  .perf-sum-table tr.is-measured td:first-child { box-shadow: inset 2px 0 0 var(--series); padding-left: 8px; }
+  /* The sums table is wider than a phone: its first column stays in view. */
+  .perf-sum-scroll .rank-table th:first-child,
+  .perf-sum-scroll .rank-table td:first-child { position: sticky; left: 0; background: var(--panel); }
+  @media (max-width: 719px) { .perf-sum-table td:first-child { min-width: 150px; max-width: 190px; } }
+  /* How each figure was measured: the reading's own account, a way of
+     playing to a line. */
+  .perf-from { margin: 8px 0 0; font-size: 12.5px; line-height: 1.5; }
+  .perf-from dt { margin-top: 8px; color: #fff; font-weight: 600; }
+  .perf-from dt span { color: var(--faint); font-weight: 400; }
+  .perf-from dd { max-width: 900px; margin: 0; color: var(--muted); overflow-wrap: anywhere; }
+
   /* The key of the batch chart: the line and its two bands, as they are drawn. */
   .res-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 10px 0 2px; padding: 0; list-style: none; color: var(--text); font-size: 12.5px; }
   .res-legend li { display: inline-flex; align-items: center; gap: 6px; }
@@ -359,8 +404,9 @@
     <p class="intro">
       How fast the simulator plays a complete game of
       <cite>Sid Meier&#8217;s Civilization VI</cite>, from the first turn to the
-      victory: the fastest game on video, and the time of every self-play game
-      in the tournament batches.
+      victory: how many times faster that is than a game played by hand, the
+      fastest game on video, and the time of every self-play game in the
+      tournament batches.
     </p>
 
     <!-- The figures. `beta/publish.sh` fills the `performance-data` slot
@@ -371,6 +417,78 @@
          with neither) shows the one sentence. -->
     <p class="res-empty" id="perf-empty">This copy of the page has no figures. They are written in when the site is published.</p>
     <div class="res-record" id="perf-record" hidden>
+      <!-- How many times faster than a game played by hand, the page's
+           first part (operator 2026-11-22: "at the top of civvis performance
+           we want to calculate a multiplier on the theoretical and
+           experimetnal throughput of the simualtor. and the calculations.
+           baeline is 5 hrs for manually played game. please add the deity
+           computer control, deity self-play, civvis self-play. how much has
+           civvis self-play speed up over my manual 5 hr games? add this
+           info, maybe in tables to the top"). No figure is written here:
+           the readings are `data/performance/speedup_timeline.json`, the
+           ledger the home page's speed timeline is drawn from, and
+           `beta/speedup_timeline.py` works out every multiplier and the sum
+           shown beside it, so the two pages cannot disagree. -->
+      <section class="res-section" id="perf-speedup" aria-labelledby="perf-speedup-title" hidden>
+        <h2 class="rank-title" id="perf-speedup-title">Speedup over a game played by hand</h2>
+        <p class="perf-speed-lede" id="perf-speed-lede"></p>
+        <div class="perf-tiles perf-speed-tiles" id="perf-speed-tiles"></div>
+        <div class="res-kind">
+          <h3 class="res-kind-title">One game at a time</h3>
+          <p class="rank-sub">
+            How long one complete game takes, and how many of them fit in an hour.
+            The multiplier is the seconds of the game played by hand over the seconds of the game in the row.
+          </p>
+          <div class="res-scroll perf-sum-scroll">
+            <table class="rank-table perf-sum-table" id="perf-games-table">
+              <thead>
+                <tr>
+                  <th scope="col">Way of playing</th><th scope="col">Faster than by hand</th>
+                  <th scope="col">One game takes</th><th scope="col">Games an hour</th>
+                  <th scope="col" class="perf-sum">The calculation</th><th scope="col">Goal</th><th scope="col">Measured</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="res-kind" id="perf-throughput" hidden>
+          <h3 class="res-kind-title">One machine, every core: experimental and theoretical throughput</h3>
+          <p class="rank-sub">
+            Experimental is a run: a worker on every core of one machine, the games counted as they finish.
+            Theoretical is a calculation, not a run: every core of that machine playing as fast as one core was measured.
+            Games an hour, times the hours one game takes by hand, is the multiplier.
+          </p>
+          <div class="res-scroll perf-sum-scroll">
+            <table class="rank-table perf-sum-table" id="perf-throughput-table">
+              <thead>
+                <tr>
+                  <th scope="col">Simulator and throughput</th>
+                  <th scope="col">Faster than by hand</th><th scope="col">Games a minute</th><th scope="col">Games an hour</th>
+                  <th scope="col" class="perf-sum">The calculation</th><th scope="col">The run reaches</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+        <details class="res-details">
+          <summary>How each figure was measured</summary>
+          <dl class="perf-from" id="perf-from"></dl>
+        </details>
+        <div class="rank-note">
+          <p>
+            A new measurement is a new line in the readings, and both this page and the line over the home page&#8217;s videos follow it.
+          </p>
+          <p>
+            <a href="https://github.com/MartinHalvorson/CIVVIS/blob/main/data/performance/speedup_timeline.json" target="_blank" rel="noreferrer">The readings</a> ·
+            <a href="https://github.com/MartinHalvorson/CIVVIS/blob/main/docs/SPEEDUP_TIMELINE.md" target="_blank" rel="noreferrer">How each way of playing is measured</a> ·
+            <a href="https://github.com/MartinHalvorson/CIVVIS/blob/main/docs/GAMES_PER_MINUTE.md" target="_blank" rel="noreferrer">The every-core test</a> ·
+            <a href="../home/#speed">The same figures as a line</a>
+          </p>
+        </div>
+      </section>
+
       <!-- The fastest game on video (operator 2026-11-21: "fastest game
            video"). The video is YouTube's and stays there (operator
            2026-11-21: "website is a fast and light surface layer ... store
@@ -553,6 +671,100 @@
       tip.style.top = y + "px";
     };
     const hideTip = () => { tip.hidden = true; };
+
+    // ---- How many times faster than a game played by hand: the sentence,
+    // the four tiles and the two tables of sums. A way of playing is named
+    // here by its key in the readings; a key this page has no name for
+    // stands under the key itself.
+    const speed = data.speedup && typeof data.speedup === "object" ? data.speedup : null;
+    const WAYS = {
+      hand: ["By hand", "One person plays one game of Civilization VI. The baseline."],
+      control: ["Deity computer control", "CIVVIS at the controls of Civilization VI itself, against its Deity AI."],
+      deity_sim: ["Deity self-play", "The simulator, one core: a CIVVIS seat against five Deity rivals that play as Civilization VI’s AI does."],
+      self_play: ["CIVVIS self-play", "The simulator, one core: every seat a CIVVIS AI agent."],
+    };
+    const way = (key) => (WAYS[key] || [String(key), ""])[0];
+    const KINDS = { measured: "Experimental", theory: "Theoretical", goal: "Goal" };
+    const text = (value) => (value == null ? "" : String(value));
+    const speedGames = speed && Array.isArray(speed.games) ? speed.games.filter((row) => row && row.key && row.times) : [];
+    if (speedGames.length) {
+      const base = speed.base || {}, answer = speed.answer, goal = speed.goal || {}, machine = speed.machine || {};
+      const cores = Number(machine.cores) || 0;
+      const host = machine.chip ? "one " + machine.chip : "one machine";
+      const named = (row, said) => {
+        const cell = el("td");
+        cell.append(el("b", "", way(row.kind === "measured" ? row.of : row.key)));
+        if (said) cell.append(el("small", "", said));
+        return cell;
+      };
+
+      // The sentence that answers the question, and the tiles.
+      const lede = document.getElementById("perf-speed-lede");
+      lede.append("One game of Civilization VI played by hand takes " + text(base.time) + ". ");
+      const tiles = document.getElementById("perf-speed-tiles");
+      const tile = (label, value, clockText, say, cls) => {
+        const node = el("div", "perf-tile" + (cls ? " " + cls : ""));
+        node.append(el("span", "perf-tile-label", label), el("b", "perf-tile-value", value), el("span", "perf-tile-clock", clockText), el("span", "perf-tile-say", say));
+        tiles.append(node);
+      };
+      if (answer) {
+        lede.append(way(answer.stop) + " plays one in " + text(answer.one_time) + " on one core, ", el("b", "", text(answer.one)), " faster. With every core of "
+          + host + " playing, a game finishes every " + text(answer.all_time) + ": ", el("b", "", text(answer.all)), " faster, measured.");
+        if (answer.theory) lede.append(" In theory the same machine reaches ", el("b", "", text(answer.theory)), ".");
+        tile("One game, one core", text(answer.one), text(answer.one_time) + " a game", way(answer.stop) + " in the simulator");
+        tile("Every core, measured", text(answer.all), "a game every " + text(answer.all_time), text(answer.all_an_hour) + " games an hour on " + host, "is-measured");
+        if (answer.theory) {
+          tile("Every core, in theory", text(answer.theory), "the measured run reaches " + text(answer.reaches),
+            (cores ? cores + " cores" : "every core") + (answer.theory_basis === "alone" ? " as fast as one game alone" : " as fast as one core was measured"));
+        }
+        if (goal.times) tile("The goal", text(goal.times), "a game every " + text(goal.time), text(goal.a_minute) + " games a minute");
+      }
+      tiles.hidden = !tiles.childElementCount;
+
+      // One game at a time.
+      const games = document.querySelector("#perf-games-table tbody");
+      for (const row of speedGames) {
+        const tr = el("tr");
+        const times = el("td", "perf-times", text(row.times));
+        if (row.was) times.append(el("small", "", "was " + text(row.was)));
+        tr.append(named(row, (WAYS[row.key] || [])[1]), times, el("td", "", text(row.time)), el("td", "", text(row.an_hour)),
+          el("td", "perf-sum", text(row.sum)), el("td", "", row.goal ? text(row.goal) : "—"), el("td", "", row.taken ? day(row.taken) : "—"));
+        games.append(tr);
+      }
+
+      // One machine, every core: the run, the theory, the goals.
+      const TOLD = {
+        measured: (row) => "A run: a worker on each of the " + (cores || "machine’s") + " cores, the games counted as they finish."
+          + (row.had && cores ? " The workers were given " + text(row.had) + " of the " + cores + " cores." : ""),
+        one_core: (row) => "Every core as fast as the one core of the table above: " + text(row.one_game) + " a game on each.",
+        alone: (row) => "Every core as fast as one game with the machine to itself: " + text(row.one_game) + " a game on each.",
+        goal: (row) => (row.key === "goal" ? "The goal of the whole project." : "The goal for every core of " + host + "."),
+      };
+      const through = Array.isArray(speed.throughput) ? speed.throughput.filter((row) => row && row.key && KINDS[row.kind]) : [];
+      const body = document.querySelector("#perf-throughput-table tbody");
+      for (const row of through) {
+        const tr = el("tr", row.kind === "measured" ? "is-measured" : "");
+        const first = row.kind === "goal" ? el("td") : named(row, (TOLD[row.kind === "theory" ? row.basis : row.kind] || (() => ""))(row));
+        if (row.kind === "goal") first.append(el("b", "", row.key === "goal" ? text(row.times) + " in all" : "A game every " + text(row.one_game)), el("small", "", TOLD.goal(row)));
+        first.firstChild.after(" ", el("span", "perf-kind is-" + row.kind, KINDS[row.kind]));
+        tr.append(first, el("td", "perf-times", text(row.times)), el("td", "", text(row.a_minute)), el("td", "", text(row.an_hour)),
+          el("td", "perf-sum", text(row.sum)), el("td", "", row.kind === "measured" ? "—" : row.reaches ? text(row.reaches) : "not run yet"));
+        body.append(tr);
+      }
+      document.getElementById("perf-throughput").hidden = !through.length;
+
+      // How each figure was measured: the reading's own account. The
+      // readings mark a command with backticks, which a page does not.
+      const from = document.getElementById("perf-from");
+      for (const row of [...speedGames, ...through]) {
+        if (!row.from) continue;
+        const name = el("dt", "", row.kind === "measured" ? way(row.of) + ", every core" : row.kind === "theory" ? way(row.key) + ", alone on the machine" : way(row.key));
+        if (row.taken) name.append(el("span", "", " · " + day(row.taken)));
+        from.append(name, el("dd", "", text(row.from).replace(/`/g, "")));
+      }
+      from.parentElement.hidden = !from.childElementCount;
+      document.getElementById("perf-speedup").hidden = false;
+    }
 
     // ---- The fastest game on video.
     const VIDEO_ID = /^[\w-]{11}$/;

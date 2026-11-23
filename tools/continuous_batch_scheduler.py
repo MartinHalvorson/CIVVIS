@@ -141,11 +141,38 @@ WORKER_OVERSHOOT_CORES = 0.5
 # game waits out a long quiet stretch of the host.
 WORKER_ROTATE_SECONDS = 120.0
 WORKER_ROTATE_GAP_SECONDS = 60.0
-# Room is retaken against the busiest the rest of the host has been over this
-# long, not against its last two seconds. Work that needs free cores comes in
-# bursts (a live game's turn, a build between two crates): a worker started
-# into a lull is a worker in the way at the next burst.
-GOVERNOR_PEAK_SECONDS = 30.0
+# Fed workers. A worker is only added while the running ones each get about a
+# core, and workers queued more than one deep are stopped. ⚠ Measured
+# 2026-11-23 on mbp-m5-max-128, the service a launchd `Standard` job at Nice
+# 15: one to six running workers received 1.2, 2.1, 4.1, 5.0 and 5.4 cores,
+# and FOURTEEN received 4.7. The host read 55% busy with cores idle, so a
+# governor that counts only CPU kept adding workers; they did not run, they
+# queued, and the one-minute load went from 13 to 25-40 beside a live game.
+# How many cores a scheduling class is given is the host's business. Whether
+# our workers are getting them is ours to read.
+WORKER_FED_SLACK_CORES = 0.5
+WORKER_QUEUE_CORES = 1.5
+# The load ceiling. A host's one-minute load average counts every runnable
+# thread, running or queued, and on a shared host it is the number other work
+# is steered by: mbp-m5-max-128's heavy-job queue admits a job only under 14,
+# and a live game's rival turns have hung at 16. CPU says nothing about it:
+# that host read 45-58% busy while seven workers on five cores' worth of
+# class held the load at 17-23 and a queued build waited five minutes
+# (2026-11-23). No worker is added within LOAD_BAND of the ceiling, and one
+# is stopped a window at or over it. The average answers over a minute, so
+# the governor steers on where it is heading: the load now, plus the workers
+# running now, less the workers it ran on average while that load built up.
+LOAD_BAND = 1.0
+LOAD_MEMORY_SECONDS = 60.0
+# Room can be retaken against the busiest the rest of the host has been over
+# this long instead of its last window; 0 reads the window just ended.
+# ⚠ OFF, after an hour at 30 seconds on mbp-m5-max-128 (2026-11-23). A live
+# Civilization VI game bursts on every turn, so the peak of any half minute
+# is the burst: under a 60% ceiling the rest of the host peaked at 9-10.6 of
+# 10.8 allowed cores and the games were left 0-1 workers on a host that
+# averaged 40% busy. The load it was meant to tame came from queued workers
+# (WORKER_FED_SLACK_CORES), not from workers started into a lull.
+GOVERNOR_PEAK_SECONDS = 0.0
 # A ceiling asked for by named work holds this long after the work was last
 # seen. ⚠ 2026-11-23 01:00Z, mbp-m5-max-128: Civilization VI quits and starts
 # again between two games. In the twenty seconds it was gone the governor
@@ -431,18 +458,51 @@ def lift_from_background(pid: int) -> None:
         pass
 
 
+def split_beside(value: str, option: str) -> tuple[str, float, float | None]:
+    """``NAME=PERCENT`` or ``NAME=PERCENT/LOAD`` as (name, CPU percent, load ceiling or None)."""
+    name, mark, limits = value.rpartition("=")
+    percent, slash, load = limits.partition("/")
+    try:
+        return name if mark else "", float(percent), float(load) if slash else None
+    except ValueError:
+        return "", 0.0, None
+
+
 def parse_beside(values: Iterable[str], *, option: str = "--beside") -> dict[str, float]:
-    """``NAME=PERCENT`` options as a name-to-percent map."""
+    """``NAME=PERCENT[/LOAD]`` options as a name-to-percent map."""
     beside: dict[str, float] = {}
     for value in values:
-        name, mark, percent = value.rpartition("=")
-        try:
-            beside[name] = float(percent)
-        except ValueError:
-            mark = ""
-        if not mark or not name:
-            raise SchedulerError(f"{option} takes NAME=PERCENT, not {value!r}")
+        name, percent, _load = split_beside(value, option)
+        if not name:
+            raise SchedulerError(f"{option} takes NAME=PERCENT or NAME=PERCENT/LOAD, not {value!r}")
+        beside[name] = percent
     return beside
+
+
+def parse_beside_loads(values: Iterable[str], *, option: str = "--beside") -> dict[str, float]:
+    """The load ceilings of the ``NAME=PERCENT/LOAD`` options that carry one."""
+    loads: dict[str, float] = {}
+    for value in values:
+        name, _percent, load = split_beside(value, option)
+        if name and load is not None:
+            if load <= 0:
+                raise SchedulerError(f"{option}: a load ceiling must be positive, not {value!r}")
+            loads[name] = load
+    return loads
+
+
+def load_limited(target: int, *, running: int, projected: float, ceiling: float) -> int:
+    """A worker count after the load ceiling has had its say.
+
+    ``projected`` is where the one-minute load is heading with ``running``
+    workers held (see :data:`LOAD_BAND`). At or over the ceiling one worker
+    stops; within the band none is added; under it the count stands.
+    """
+    if projected >= ceiling:
+        return min(target, max(0, running - 1))
+    if projected >= ceiling - LOAD_BAND:
+        return min(target, running)
+    return target
 
 
 def governed_workers(*, ceiling: float, cores: int, busy: float, group_cores: float,
@@ -460,16 +520,25 @@ def governed_workers(*, ceiling: float, cores: int, busy: float, group_cores: fl
     window (:data:`GOVERNOR_PEAK_SECONDS`). A cut reads the window just
     ended; room is measured against the peak, so the games do not move into
     a lull between two bursts of somebody else's work.
+
+    ``running`` workers that received fewer cores than there are of them are
+    not fed: none is added, and those queued more than one deep are stopped
+    (:data:`WORKER_FED_SLACK_CORES`).
     """
     rest = max(0.0, busy * cores - group_cores)
     allowed = ceiling * cores - rest
     room = ceiling * cores - max(rest, rest_peak or 0.0)
+    fed = group_cores >= running - WORKER_FED_SLACK_CORES
     if allowed < running - WORKER_OVERSHOOT_CORES:
         target = math.ceil(allowed - WORKER_OVERSHOOT_CORES)
-    elif room >= running + 1:
+    elif room >= running + 1 and fed:
         target = running + 1
     else:
         target = running
+    if running - group_cores >= WORKER_QUEUE_CORES:
+        # Queued, not running: keep one worker waiting for the next free
+        # core and stop the rest. See WORKER_FED_SLACK_CORES.
+        target = min(target, max(1, math.ceil(group_cores + WORKER_FED_SLACK_CORES)))
     return max(0, min(total, target))
 
 
@@ -557,10 +626,22 @@ class CpuGovernor:
                  processes=None, send_one=None, lift=lift_from_background,
                  beside: dict[str, float] | None = None,
                  beside_scripts: dict[str, float] | None = None, commands=None,
-                 linger_seconds: float = DEFAULT_BESIDE_LINGER_SECONDS) -> None:
+                 linger_seconds: float = DEFAULT_BESIDE_LINGER_SECONDS,
+                 load_ceiling: float | None = None,
+                 beside_loads: dict[str, float] | None = None,
+                 beside_script_loads: dict[str, float] | None = None,
+                 loadavg=None) -> None:
         if not 0 < ceiling_percent <= 100:
             raise SchedulerError("--machine-cpu-ceiling must be a percentage in (0, 100]")
         self.ceiling = ceiling_percent / 100.0
+        if load_ceiling is not None and load_ceiling <= 0:
+            raise SchedulerError("--machine-load-ceiling must be positive")
+        # One-minute load averages the whole-worker plan holds the host under:
+        # always, and while named work or a named script is up.
+        self.load_ceiling = load_ceiling
+        self.beside_loads = dict(beside_loads or {})
+        self.beside_script_loads = dict(beside_script_loads or {})
+        self.loadavg = loadavg or os.getloadavg
         self.beside: dict[str, float] = {}
         self.beside_scripts: dict[str, float] = {}
         for given, kept, option in ((beside, self.beside, "--beside"),
@@ -574,8 +655,9 @@ class CpuGovernor:
         if linger_seconds < 0:
             raise SchedulerError("--beside-linger must not be negative")
         self.linger = linger_seconds
-        # Named work and when it was last seen up: name -> (monotonic time, ceiling).
-        self.last_seen: dict[str, tuple[float, float]] = {}
+        # Named work and when it was last seen up:
+        # name -> (monotonic time, CPU ceiling, load ceiling or None).
+        self.last_seen: dict[str, tuple[float, float, float | None]] = {}
         self.cores = positive_int(cores, name="logical core count")
         # Each game worker is one CPU-bound thread: the most the group can burn.
         self.workers = workers
@@ -600,8 +682,10 @@ class CpuGovernor:
         # Workers this governor holds stopped, and when it last rotated them.
         self.held: set[int] = set()
         self.rotated_at = 0.0
-        # Named work found up at the last probe, with the ceiling each asks for.
+        # Named work found up at the last probe, with the ceiling each asks for,
+        # and the lowest load ceiling any of it asks for.
         self.standing_back: dict[str, float] = {}
+        self.standing_load: float | None = None
         # Only macOS has the band; elsewhere no priority means "parked".
         self.background_priority = BACKGROUND_PRIORITY if sys.platform == "darwin" else None
         # Re-entrant: the SIGTERM handler releases from the main thread, which
@@ -677,25 +761,34 @@ class CpuGovernor:
             workers = [row for row in ours if row.name == GAME_WORKER_NAME]
             if ours:
                 cpu = sum(row.cpu_seconds for row in ours)
-            up = {name: self.beside[name]
-                  for name in {row.name for row in table} & set(self.beside)}
+            now = time.monotonic()
+            for name in {row.name for row in table} & set(self.beside):
+                self.last_seen[name] = (now, self.beside[name], self.beside_loads.get(name))
             if self.beside_scripts:
                 for path in scripts_running(self.commands() or (), self.beside_scripts):
-                    up[path.rsplit("/", 1)[-1]] = self.beside_scripts[path]
-            # Work seen a moment ago still holds its ceiling: see
+                    self.last_seen[path.rsplit("/", 1)[-1]] = (
+                        now, self.beside_scripts[path], self.beside_script_loads.get(path))
+            # Work seen a moment ago still holds its ceilings: see
             # DEFAULT_BESIDE_LINGER_SECONDS.
-            now = time.monotonic()
-            for name, ceiling in up.items():
-                self.last_seen[name] = (now, ceiling)
             self.last_seen = {name: seen for name, seen in self.last_seen.items()
                               if now - seen[0] <= self.linger}
-            up = {name: ceiling for name, (_seen, ceiling) in self.last_seen.items()}
+            up = {name: ceiling for name, (_seen, ceiling, _load) in self.last_seen.items()}
             # The lowest ceiling that applies; the name breaks a tie the same way each time.
             foreground = min(up, key=lambda name: (up[name], name), default=None)
             self.standing_back = up
+            self.standing_load = min(
+                (load for _seen, _ceiling, load in self.last_seen.values() if load is not None),
+                default=None)
         if self.group_cpu is not None:
             cpu = self.group_cpu(group)
         return self.host.ticks(), cpu, workers, foreground
+
+    def _load(self) -> float | None:
+        """The host's one-minute load average, or None where it cannot be read."""
+        try:
+            return float(self.loadavg()[0])
+        except (OSError, AttributeError, IndexError, TypeError, ValueError):
+            return None
 
     def _read_power(self, started: float) -> None:
         if not self.pause_on_battery or started - self.power_read_at < POWER_POLL_SECONDS:
@@ -769,6 +862,8 @@ class CpuGovernor:
         was_whole = False
         # (monotonic time, cores the rest of the host used) for recent windows.
         rest_seen: collections.deque[tuple[float, float]] = collections.deque()
+        # (monotonic time, workers that ran) while the present load built up.
+        ran_seen: collections.deque[tuple[float, int]] = collections.deque()
         while not stop.is_set():
             if host_before is None or cpu_before is None:
                 host_before, cpu_before, workers, foreground = self._probe(group)
@@ -784,6 +879,9 @@ class CpuGovernor:
             duty = self.duty
             # The ceilings that applied at the probe that opened this window.
             ceilings_now = dict(self.standing_back)
+            load_ceiling = min(
+                (limit for limit in (self.load_ceiling, self.standing_load) if limit is not None),
+                default=None)
             self._read_power(started)
             if self.on_battery:
                 duty = 0.0
@@ -803,7 +901,11 @@ class CpuGovernor:
                     if not self._signal(group, signal.SIGCONT):
                         return
                 if worker_target is None:
-                    worker_target = len(workers) - len(self.held & {row.pid for row in workers})
+                    # From nothing, one worker a window: a governor that takes
+                    # over a running segment (a daemon restart) must not let
+                    # every worker run until its first reading, and a segment
+                    # that has just grown to two workers loses nothing by it.
+                    worker_target = 0
                 ran = self._apply_workers(
                     workers, 0 if self.on_battery else min(worker_target, len(workers)), started)
                 stop.wait(GOVERNOR_WINDOW_SECONDS)
@@ -866,6 +968,16 @@ class CpuGovernor:
                 worker_target = governed_workers(
                     ceiling=ceiling, cores=self.cores, busy=busy, group_cores=group_cores,
                     running=ran, total=len(workers), rest_peak=rest_peak)
+                ran_seen.append((closed, ran))
+                while ran_seen and closed - ran_seen[0][0] > LOAD_MEMORY_SECONDS:
+                    ran_seen.popleft()
+                load = self._load() if load_ceiling is not None else None
+                if load is not None and load_ceiling is not None:
+                    projected = load + ran - sum(count for _at, count in ran_seen) / len(ran_seen)
+                    worker_target = load_limited(
+                        worker_target, running=ran, projected=projected, ceiling=load_ceiling)
+                    reading.update({"load": round(load, 2), "load_projected": round(projected, 2),
+                                    "load_ceiling": load_ceiling})
                 if self.on_battery:
                     worker_target = 0
                 applied = ran / total if total else 0.0
@@ -931,6 +1043,8 @@ class ProgressLog:
                 parts.append(f"workers={governor['workers_running']}/{governor['workers']}")
             if governor.get("foreground"):
                 parts.append(f"ceiling={governor['ceiling_percent']}%({governor['foreground']})")
+            if governor.get("load_ceiling") is not None:
+                parts.append(f"load={governor['load']}/{governor['load_ceiling']:g}")
             if governor.get("on_battery"):
                 parts.append("PAUSED_ON_BATTERY")
         return " ".join(parts)
@@ -2737,11 +2851,17 @@ def main(argv: list[str] | None = None) -> int:
                               "under PERCENT busy: whole one-thread workers are stopped and "
                               "resumed, a one-process segment is paused for part of each "
                               "two-second window"))
-    parser.add_argument("--beside", action="append", default=[], metavar="NAME=PERCENT",
+    parser.add_argument("--machine-load-ceiling", type=float, metavar="LOAD",
+                        help=("with one-thread workers: add none within 1 of this one-minute "
+                              "load average and stop one a window at or over it; needs "
+                              "--machine-cpu-ceiling"))
+    parser.add_argument("--beside", action="append", default=[], metavar="NAME=PERCENT[/LOAD]",
                         help=("while a process with exactly this executable name runs (as "
-                              "`pgrep -x`), the ceiling is PERCENT instead; repeatable, the "
-                              "lowest that applies wins; needs --machine-cpu-ceiling"))
-    parser.add_argument("--beside-script", action="append", default=[], metavar="PATH=PERCENT",
+                              "`pgrep -x`), the ceiling is PERCENT instead, and the load "
+                              "ceiling LOAD when given; repeatable, the lowest that applies "
+                              "wins; needs --machine-cpu-ceiling"))
+    parser.add_argument("--beside-script", action="append", default=[],
+                        metavar="PATH=PERCENT[/LOAD]",
                         help=("as --beside, for a script: applies while PATH is a whole word "
                               "of any process's command line, so also while the script only "
                               "waits its turn; repeatable"))
@@ -2820,14 +2940,19 @@ def main(argv: list[str] | None = None) -> int:
             raise SchedulerError("--jobs and --cpu-share are alternatives; pass one")
         jobs = (positive_int(args.jobs, name="--jobs") if args.jobs is not None
                 else workers_for_cores(logical_cores(), args.cpu_share or DEFAULT_WORKER_PERCENT))
-        if (args.beside or args.beside_script) and args.machine_cpu_ceiling is None:
-            raise SchedulerError("--beside and --beside-script need --machine-cpu-ceiling")
+        if ((args.beside or args.beside_script or args.machine_load_ceiling is not None)
+                and args.machine_cpu_ceiling is None):
+            raise SchedulerError(
+                "--beside, --beside-script and --machine-load-ceiling need --machine-cpu-ceiling")
         governor = (CpuGovernor(
             args.machine_cpu_ceiling if args.machine_cpu_ceiling is not None else 100.0,
             cores=logical_cores(), workers=jobs, pause_on_battery=args.pause_on_battery,
             beside=parse_beside(args.beside),
             beside_scripts=parse_beside(args.beside_script, option="--beside-script"),
-            linger_seconds=args.beside_linger)
+            linger_seconds=args.beside_linger,
+            load_ceiling=args.machine_load_ceiling,
+            beside_loads=parse_beside_loads(args.beside),
+            beside_script_loads=parse_beside_loads(args.beside_script, option="--beside-script"))
             if args.machine_cpu_ceiling is not None or args.pause_on_battery else None)
         progress = ProgressLog(args.progress_minutes)
         if args.poll_seconds <= 0:
@@ -2868,9 +2993,14 @@ def main(argv: list[str] | None = None) -> int:
             if governor is not None:
                 print(f"{utc_now()} cpu governor: ceiling {governor.ceiling * 100:g}% of "
                       f"{governor.cores} logical cores; {jobs} game workers"
-                      + "".join(f"; {ceiling * 100:g}% beside {name}"
-                                for name, ceiling in sorted(
-                                    {**governor.beside, **governor.beside_scripts}.items()))
+                      + (f"; load under {governor.load_ceiling:g}"
+                         if governor.load_ceiling is not None else "")
+                      + "".join(
+                          f"; {ceiling * 100:g}% beside {name}"
+                          + (f" (load under {loads[name]:g})" if name in loads else "")
+                          for loads in [{**governor.beside_loads, **governor.beside_script_loads}]
+                          for name, ceiling in sorted(
+                              {**governor.beside, **governor.beside_scripts}.items()))
                       + ("; paused on battery" if governor.pause_on_battery else ""), flush=True)
 
                 def resume_and_exit(_signum: int, _frame: Any) -> None:

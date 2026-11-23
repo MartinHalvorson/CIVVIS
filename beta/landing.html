@@ -701,7 +701,9 @@
        tracker. Whoever wants their GitHub name on it gets GitHub's own
        prefilled new-issue form in a new tab; everyone else signs with a pen
        name or stays anonymous and the site files the issue itself through
-       `POST /report` (beta/_worker.js). An unconfigured /report answers 503
+       `POST ../report`, the lane's own address (beta/_worker.js: /report
+       from the front page, /test/report from the test lane, so the issue
+       names the build it was filed from). An unconfigured one answers 503
        and the dialog falls back to offering the prefilled form. -->
   <dialog class="report-dialog" id="report-dialog" aria-labelledby="report-dialog-title">
     <form class="report-form" id="report-form" novalidate>
@@ -857,7 +859,7 @@
       submit.disabled = true;
       say("Filing…");
       try {
-        const answer = await fetch("/report", {
+        const answer = await fetch("../report", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({

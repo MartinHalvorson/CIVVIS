@@ -190,6 +190,191 @@ class Following(unittest.TestCase):
                 self.assertGreaterEqual(far - near, 150 / 936, f"two stops' words meet {side} the line")
 
 
+def done_again(said: str) -> float:
+    """A sum as the page writes it, worked out: `18 cores × 18,000 s ÷ 57.1 s`
+    with its words dropped and its signs read."""
+    bare = re.sub(r"[A-Za-z]+", " ", re.sub(r"(?<=\d),(?=\d)", "", said)).replace("×", "*").replace("÷", "/")
+    assert re.fullmatch(r"[\d\s.*/()]+", bare), said
+    return eval(bare)  # noqa: S307 (digits and signs only, checked above)
+
+
+class Worked(unittest.TestCase):
+    """The CIVVIS Performance page's tables (operator 2026-11-22: "at the top
+    of civvis performance we want to calculate a multiplier on the
+    theoretical and experimetnal throughput of the simualtor. and the
+    calculations. baeline is 5 hrs for manually played game. please add the
+    deity computer control, deity self-play, civvis self-play.")."""
+
+    LEDGER = {
+        "goal": 1000000,
+        "stops": [
+            {"key": "hand", "readings": [{"taken": "2026-11-22", "seconds": 18000, "from": "a person's own games"}]},
+            {"key": "control", "readings": [{"taken": "2026-11-22", "seconds": 750, "from": "the middle verification game"}]},
+            {"key": "deity_sim", "cores": 1, "readings": [{"taken": "2026-11-22", "seconds": 30, "from": "twelve games on one core"}]},
+            {"key": "self_play", "cores": 1, "goal_seconds": 10,
+             "alone": [
+                 {"taken": "2026-11-20", "turns": 100, "seconds": 50, "from": "an older game alone"},
+                 {"taken": "2026-11-22", "turns": 200, "seconds": 40, "from": "one game with the machine to itself"},
+             ],
+             "readings": [
+                 {"taken": "2026-11-22", "seconds": 90, "from": "twelve games on one core"},
+                 {"taken": "2026-12-01", "seconds": 60, "from": "twelve games on one core"},
+             ]},
+            {"key": "all_cores", "of": "self_play", "goal_seconds": 1, "follows": BENCHMARK},
+        ],
+    }
+    RUNS = [
+        {"taken": "2026-11-22T05:32:38Z", "games_per_minute": 6.0, "workers": 10, "mean_turns": 150.0},
+        {"taken": "2026-11-25T05:00:00Z", "games_per_minute": 8.0, "workers": 10, "mean_turns": 160.0,
+         "machine": {"chip": "Apple M5 Max", "cores": 10}, "conditions": {"workers_cpu_cores_sampled": 9.5}},
+        {"taken": "2026-11-26T05:00:00Z", "games_per_minute": 7.0, "workers": 10, "mean_turns": 150.0},
+    ]
+
+    def shown(self, ledger: dict | None = None, runs: list[dict] | None = None) -> dict | None:
+        with tempfile.TemporaryDirectory() as scratch:
+            return speedup_timeline.worked(tree(scratch, ledger or self.LEDGER, self.RUNS if runs is None else runs))
+
+    def test_a_rate_a_figure_and_a_share_are_worded_by_their_size(self):
+        for value, words in [(0.2, "0.2"), (4.756, "4.8"), (27.0, "27"), (63.05, "63"), (99.94, "99.9"), (99.96, "100"), (1099.8, "1,100"), (200000, "200,000")]:
+            self.assertEqual(speedup_timeline.rate(value), words, value)
+        for value, words in [(757, "757"), (57.1, "57.1"), (29.1, "29.1"), (18.33, "18.33"), (194.7, "194.7"), (5, "5"), (18000, "18,000"), (999.4, "999.4")]:
+            self.assertEqual(speedup_timeline.figure(value), words, value)
+        for part, words in [(0.9692, "97%"), (0.679, "68%"), (0.3055, "31%"), (0.0057, "0.6%"), (0.005499, "0.5%"), (1.0, "100%")]:
+            self.assertEqual(speedup_timeline.share(part), words, part)
+
+    def test_one_game_at_a_time_is_every_stop_with_readings_of_its_own(self):
+        shown = self.shown()
+        self.assertEqual([row["key"] for row in shown["games"]], ["hand", "control", "deity_sim", "self_play"])
+        hand, control, deity, self_play = shown["games"]
+        self.assertEqual((hand["time"], hand["an_hour"], hand["times"], hand["sum"]), ("5 h", "0.2", "1x", "5 h = 18,000 s, the baseline"))
+        self.assertEqual((control["time"], control["an_hour"], control["times"], control["sum"]), ("12.5 min", "4.8", "24x", "18,000 s ÷ 750 s"))
+        self.assertEqual((deity["time"], deity["an_hour"], deity["times"], deity["sum"]), ("30 s", "120", "600x", "18,000 s ÷ 30 s"))
+        # The newest reading is the one shown, with its goal and where the
+        # stop started, and the day in full for the page to word.
+        self.assertEqual((self_play["time"], self_play["an_hour"], self_play["times"], self_play["sum"]), ("60 s", "60", "300x", "18,000 s ÷ 60 s"))
+        self.assertEqual((self_play["goal"], self_play["was"], self_play["taken"]), ("10 s, 1,800x", "200x on 11-22", "2026-12-01"))
+        self.assertEqual(self_play["from"], "twelve games on one core")
+        self.assertNotIn("goal", control)
+        self.assertNotIn("was", control)
+        self.assertEqual(shown["base"], {"time": "5 h", "seconds": "18,000", "an_hour": "0.2"})
+
+    def test_experimental_is_the_run_and_theoretical_is_every_core_at_one_core_s_speed(self):
+        shown = self.shown()
+        self.assertEqual(shown["machine"], {"cores": 10, "chip": "Apple M5 Max"})
+        rows = shown["throughput"]
+        self.assertEqual(
+            [(row["key"], row["kind"], row.get("basis", "")) for row in rows],
+            [
+                ("all_cores", "measured", ""),
+                # The theory for the game the run plays stands under it ...
+                ("self_play", "theory", "one_core"),
+                ("self_play", "theory", "alone"),
+                # ... then the theory for a game no run has played on every core,
+                ("deity_sim", "theory", "one_core"),
+                # and the goals: the run's own, then the whole line's.
+                ("all_cores", "goal", ""),
+                ("goal", "goal", ""),
+            ],
+        )
+        run, one_core, alone, deity, own_goal, goal = rows
+        # Experimental: the record run, 8 games a minute on 10 cores.
+        self.assertEqual((run["of"], run["a_minute"], run["an_hour"], run["times"], run["time"]), ("self_play", "8", "480", "2,400x", "7.5 s"))
+        self.assertEqual((run["sum"], run["had"], run["goal"], run["taken"]), ("8 games a minute × 60 × 5 h", "9.5", "1 s, 18,000x", "2026-11-25"))
+        self.assertNotIn("reaches", run)
+        # Theoretical: 10 cores, each a game in the 60 s one core was measured at.
+        self.assertEqual((one_core["a_minute"], one_core["an_hour"], one_core["times"]), ("10", "600", "3,000x"))
+        self.assertEqual((one_core["sum"], one_core["one_game"], one_core["reaches"]), ("10 cores × 18,000 s ÷ 60 s", "60 s", "80%"))
+        # And each at the speed of the newest game that had the machine to
+        # itself, 200 turns in 40 s, playing the run's 160-turn games: 32 s.
+        self.assertEqual((alone["one_game"], alone["an_hour"], alone["times"], alone["reaches"]), ("32 s", "1,125", "5,625x", "43%"))
+        self.assertEqual(alone["sum"], "10 cores × (200 turns ÷ 40 s) × 18,000 s ÷ 160 turns a game")
+        self.assertEqual((alone["from"], alone["taken"]), ("one game with the machine to itself", "2026-11-22"))
+        # A game no run has played on every core has its theory and no share.
+        self.assertEqual((deity["times"], deity["sum"]), ("6,000x", "10 cores × 18,000 s ÷ 30 s"))
+        self.assertNotIn("reaches", deity)
+        # The goals, with the share of each the run reaches.
+        self.assertEqual((own_goal["times"], own_goal["a_minute"], own_goal["an_hour"], own_goal["sum"], own_goal["reaches"]), ("18,000x", "60", "3,600", "18,000 s ÷ 1 s", "13%"))
+        self.assertEqual((goal["times"], goal["a_minute"], goal["an_hour"], goal["sum"], goal["reaches"]), ("1,000,000x", "3,333", "200,000", "a game every 18 ms", "0.2%"))
+        self.assertEqual(shown["goal"], {"times": "1,000,000x", "time": "18 ms", "a_minute": "3,333", "an_hour": "200,000"})
+        # The opening sentence: self-play one game at a time, on every core
+        # as measured, and the highest theory there is for it.
+        self.assertEqual(
+            shown["answer"],
+            {"stop": "self_play", "one": "300x", "one_time": "60 s", "all": "2,400x", "all_time": "7.5 s", "all_an_hour": "480",
+             "theory": "5,625x", "theory_basis": "alone", "reaches": "43%"},
+        )
+
+    def test_every_sum_shown_gives_the_figure_beside_it(self):
+        for shown in (self.shown(), speedup_timeline.worked(ROOT)):
+            rows = [row for row in shown["games"][1:] + shown["throughput"] if row["key"] != "goal"]
+            self.assertGreaterEqual(len(rows), 5)
+            for row in rows:
+                # The figures of a sum are written to four figures.
+                self.assertAlmostEqual(done_again(row["sum"]), row["multiplier"], delta=0.002 * row["multiplier"], msg=row["sum"])
+                self.assertEqual(row["times"], speedup_timeline.times(row["multiplier"]))
+
+    def test_without_an_every_core_run_there_is_one_game_at_a_time_alone(self):
+        # A ledger whose every-core stop names no game, or whose run does
+        # not say its cores, has no machine to multiply by.
+        ledger = json.loads(json.dumps(self.LEDGER))
+        ledger["stops"] = ledger["stops"][:-1]
+        shown = self.shown(ledger)
+        self.assertEqual(len(shown["games"]), 4)
+        self.assertEqual(shown["throughput"], [])
+        self.assertNotIn("answer", shown)
+        self.assertNotIn("machine", shown)
+        shown = self.shown(runs=[{"taken": "2026-11-22T05:32:38Z", "games_per_minute": 6.0}])
+        self.assertEqual((shown["throughput"], "answer" in shown), ([], False))
+        # No game alone on the machine: the theory is the one-core reading's.
+        ledger = json.loads(json.dumps(self.LEDGER))
+        del ledger["stops"][3]["alone"]
+        shown = self.shown(ledger)
+        self.assertEqual([row.get("basis") for row in shown["throughput"] if row["kind"] == "theory"], ["one_core", "one_core"])
+        self.assertEqual((shown["answer"]["theory"], shown["answer"]["theory_basis"]), ("3,000x", "one_core"))
+        # No ledger, or one that is not the shape this reads: nothing.
+        with tempfile.TemporaryDirectory() as scratch:
+            self.assertIsNone(speedup_timeline.worked(tree(scratch, None)))
+        with tempfile.TemporaryDirectory() as scratch:
+            self.assertIsNone(speedup_timeline.worked(tree(scratch, {"goal": 1000000, "stops": []})))
+
+    def test_the_two_pages_read_one_ledger_and_agree(self):
+        shown, line = speedup_timeline.worked(ROOT), speedup_timeline.timeline(ROOT)
+        stops = {stop["key"]: stop for stop in line["stops"]}
+        for row in shown["games"] + [row for row in shown["throughput"] if row["kind"] == "measured"]:
+            self.assertEqual((row["times"], row["time"]), (stops[row["key"]]["times"], stops[row["key"]]["time"]), row["key"])
+        # The home page's number is the run's.
+        self.assertEqual(shown["answer"]["all"], line["speedup"])
+        self.assertEqual(shown["goal"]["times"], line["goal"])
+        # The operator's baseline and his three ways of playing, in the
+        # order he listed them, then the theory and the run for self-play.
+        self.assertEqual([row["key"] for row in shown["games"]], ["hand", "control", "deity_sim", "self_play"])
+        self.assertEqual(shown["base"]["time"], "5 h")
+        self.assertEqual(shown["answer"]["stop"], "self_play")
+        kinds = [(row["key"], row["kind"]) for row in shown["throughput"]]
+        self.assertEqual(kinds[0], ("all_cores", "measured"))
+        self.assertIn(("self_play", "theory"), kinds)
+        self.assertIn(("deity_sim", "theory"), kinds)
+        # The theory is over the run, and the run reaches a share of it.
+        measured = shown["throughput"][0]
+        for row in shown["throughput"]:
+            if row["kind"] == "theory" and row["key"] == "self_play":
+                self.assertGreater(row["multiplier"], measured["multiplier"])
+                self.assertRegex(row["reaches"], r"^\d{1,2}%$")
+
+    def test_the_ledger_s_keys_for_the_tables_are_whole(self):
+        keys = {stop["key"]: stop for stop in LEDGER["stops"]}
+        for stop in LEDGER["stops"]:
+            if "of" in stop:
+                self.assertIn("follows", stop)
+                self.assertEqual(keys[stop["of"]].get("cores"), 1, "a run plays the game of a one-core stop")
+            for reading in stop.get("alone", []):
+                self.assertEqual(stop.get("cores"), 1)
+                self.assertRegex(reading["taken"], r"^\d{4}-\d{2}-\d{2}$")
+                self.assertGreater(reading["turns"], 0)
+                self.assertGreater(reading["seconds"], 0)
+                self.assertGreater(len(reading["from"]), 20)
+
+
 class Page(unittest.TestCase):
     def test_the_page_has_an_entry_for_every_stop_and_no_figure_of_its_own(self):
         entries = re.findall(r'<li class="speed-stop" data-stop="(\w+)">', LANDING)

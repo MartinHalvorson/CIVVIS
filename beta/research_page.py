@@ -73,11 +73,13 @@ game at any of them, so the rows of the table are the same days' games.
 
 Like the home page's tables this runs inside the script that publishes the
 whole site, so what it cannot read costs the page its figures, said on
-stderr, and never costs the site its publish. Both lanes are sent head's
-figures: they are facts about the games played, not about a revision. The
-page a lane serves is its own revision's, though, and a page from before the
-level picker reads the Deity games under `deity`; `for_page` hands such a
-page that, so a lane pinned to an older revision keeps its charts.
+stderr, and never costs the site its publish. A lane is filled by its own
+revision's copy of this script from its own revision's snapshot (`fill` in
+`beta/publish.sh`), and both lanes count the games against the AI off the
+run ledger as of the build. Until 2026-11-22 both lanes were sent head's
+figures by head's script, while the page a lane served was its own
+revision's: a page from before the level picker reads the Deity games under
+`deity`, and `for_page` still hands such a page that.
 """
 
 from __future__ import annotations
@@ -474,11 +476,12 @@ LEVEL_PICKER = 'id="res-level"'
 def for_page(page: str, data: dict | None) -> dict | None:
     """The record in the shape this page reads.
 
-    The stable lane serves its own revision's page, filled with head's
-    figures (`beta/publish.sh`). Sent `levels`, a page from before the picker
-    would find no `deity` and show its Deity charts empty until the next
-    promotion, so it is sent the Deity games where it looks for them and
-    nothing it has no place for."""
+    A page is filled by its own revision's script now (`beta/publish.sh`),
+    so the two agree by construction; this is for a page older than the
+    script filling it, as the stable lane's was while both lanes were filled
+    by head's. Sent `levels`, a page from before the picker would find no
+    `deity` and show its Deity charts empty, so it is sent the Deity games
+    where it looks for them and nothing it has no place for."""
     if data is None or LEVEL_PICKER in page:
         return data
     out = {key: value for key, value in data.items() if key not in ("levels", "level", "tournament_rates")}
