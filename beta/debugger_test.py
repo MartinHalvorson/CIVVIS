@@ -2355,11 +2355,13 @@ def check_the_box_asks(bar: Bar) -> None:
 
 
 def check_the_game_opens_on_two_tracks(bar: Bar, address: str) -> None:
-    """The opening view: a game under the debugger is drawn on its two tracks at once, and the box asks for B's Civ AI.
+    """The opening view: a game under the debugger is drawn on its two tracks at once, and asks nothing.
 
     Operator, 2026-11-22: "in ai debugger, the opening view should go to the
-    2 track immediately. after this, user should be prompted for the strategy
-    for the second branch".
+    2 track immediately". Then, the same day: "branch b should only ask when
+    branch is selected. not just auto ask rom the start": the box asks for
+    B's Civ AI when Branch is pressed (`check_the_box_asks`), and B's picker
+    seats one in the opening view.
     """
     both = "debugSplit.panes.a.turn === {0} && debugSplit.panes.b.turn === {0}".format
     deck_idle = "!!debugSplitDeck() && debugSplitDeck().idle && !debugSplit.busy"
@@ -2374,6 +2376,11 @@ def check_the_game_opens_on_two_tracks(bar: Bar, address: str) -> None:
     bar.dev.call("Page.navigate", {"url": address})
     bar.until(f"{ready} && !location.search", "the page as it is opened, loaded")
     assert bar.ev("typeof debugSplit !== 'undefined' && debugSplit === null && state === null")
+    # The checks before this one clicked the timeline to travel, and a page
+    # opened after that does not say Click to travel. This one is opened as
+    # by somebody who never has.
+    assert bar.ev(f"[debugTravelKnown, localStorage.getItem('{TRAVEL_KEY}')]") == [True, "known"]
+    bar.ev(f"localStorage.removeItem('{TRAVEL_KEY}'), debugTravelKnown = false, true")
     # Nothing is pressed: the first state drawn splits the screen as Branch
     # does, side by side, locked, with head to head open. The game is not
     # shown on one screen first: in the task that draws its first state the
@@ -2391,12 +2398,16 @@ def check_the_game_opens_on_two_tracks(bar: Bar, address: str) -> None:
     one_timeline(bar, 1, "a game opens on two tracks that are one world")
     # Nothing was asked of the world that waits under the two halves.
     assert bar.sent() == [], bar.sent()
-    # And the box asks which Civ AI plays B.
-    assert bar.ev("debugAsk") == {"kind": "seat", "letter": "b"}, bar.ev("debugAsk")
-    assert bar.ev("(() => { const box = document.getElementById('dbg-ask');"
-                  " return !box.hidden && box.offsetParent !== null && box.querySelector('h4').textContent; })()") == "Branch B: which Civ AI plays it?"
-    bar.click('#dbg-ask [data-dbg-ask="seat"][value="stock"]')
-    bar.until("debugSplit.panes.b.frame.contentWindow.eval('engine.seat') === 'stock' && " + deck_idle, "B is seated from the question")
+    # And nothing is asked of the person: nobody pressed Branch.
+    assert bar.ev("[debugAsk, document.getElementById('dbg-ask').hidden]") == [None, True]
+    # What the timeline says instead is how it is used: Click to travel, on
+    # the trunk, ahead of the marker, over the hand on A.
+    assert travel_said(bar) == {"words": "◀Click to travel▶", "inside": True, "clear": True, "size": 14,
+                                "calling": "dbg-travel-call", "under": "dbg-slider-a"}, travel_said(bar)
+    # B's own picker seats another Civ AI in it.
+    bar.ev("(() => { const select = document.querySelector('#debugbar [data-dbg-agent=\"b\"]'); select.value = 'stock';"
+           " select.dispatchEvent(new Event('change', {bubbles: true})); return true; })()")
+    bar.until("debugSplit.panes.b.frame.contentWindow.eval('engine.seat') === 'stock' && " + deck_idle, "B is seated from its picker")
     assert bar.ev("debugAsk") is None
     # Played on, each track is its own Civ AI's.
     bar.click('[data-dbg="next"]')
@@ -2417,7 +2428,7 @@ def check_the_game_opens_on_two_tracks(bar: Bar, address: str) -> None:
            " render(engineState()), true")
     bar.settled()
     bar.until(f"debugSplit && {both(1)} && {said} && {deck_idle}", "a new game opens on its two tracks")
-    assert bar.ev("debugAsk") == {"kind": "seat", "letter": "b"}, bar.ev("debugAsk")
+    assert bar.ev("[debugAsk, document.getElementById('dbg-ask').hidden]") == [None, True]
     bar.click('[data-dbg-split="drop-a"]')
     bar.until("!debugSplit", "A is dropped")
     assert bar.note() == "Branch A closed · B is the timeline", bar.note()
@@ -2438,6 +2449,71 @@ def check_the_game_opens_on_two_tracks(bar: Bar, address: str) -> None:
     settled()
     assert bar.ev("debugSplit === null && debugOpenedGame === '10'")
     bar.ev("SOLO_UI = false, true")
+    assert not bar.dev.console, f"the page complained: {bar.dev.console}"
+
+
+# Where the timeline says Click to travel, while it says it (None when it
+# does not): its words, whether it stands inside the rail and clear of the
+# marker, how large it is and whether it calls, and what a click on it
+# reaches, which is the rail's slider under it.
+TRAVEL_KEY = "civvis-debug-click-to-travel"
+
+
+def travel_said(bar: Bar):
+    return bar.ev(
+        "(() => { const words = document.querySelector('" + LANE + " .dbg-travel');"
+        " if (words.hidden || words.offsetParent === null) return null;"
+        " const at = words.getBoundingClientRect(), rail = words.closest('.dbg-rail').getBoundingClientRect();"
+        " const marker = document.querySelector('" + LANE + " .dbg-cursor b').getBoundingClientRect(), style = getComputedStyle(words);"
+        " return {words: words.textContent,"
+        " inside: at.top >= rail.top - 4 && at.bottom <= rail.bottom + 4 && at.left >= rail.left && at.right <= rail.right,"
+        " clear: marker.width === 0 || at.left > marker.right || at.right < marker.left,"
+        " size: parseFloat(style.fontSize), calling: style.animationName,"
+        " under: document.elementFromPoint(at.left + at.width / 2, at.top + at.height / 2 - 4).id}; })()")
+
+
+def check_the_timeline_says_click_to_travel(bar: Bar) -> None:
+    """The timeline says Click to travel, loud, until it has been clicked to travel, and then never again.
+
+    Operator, 2026-11-22: "have the initial timeline say click to travel so
+    people understand the mechanism. make the click to travel very visible
+    at the start and then not appear once they understand".
+    """
+    assert bar.ev("debugSplit === null && !matchMedia('(prefers-reduced-motion: reduce)').matches")
+    bar.ev(f"localStorage.removeItem('{TRAVEL_KEY}'), debugTravelKnown = false, render(engineState()), true")
+    bar.idle("true", "the timeline can be travelled")
+    # Large, calling, in the open rail beside the marker, and a click on it is the rail's.
+    assert travel_said(bar) == {"words": "◀Click to travel▶", "inside": True, "clear": True, "size": 15,
+                                "calling": "dbg-travel-call", "under": "dbg-slider"}, travel_said(bar)
+    # A turn gone to some other way is not the timeline clicked: it is still said.
+    start = bar.ev("state.turn")
+    bar.type_turn(start + 2)
+    bar.idle(f"state.turn === {start + 2}", "the turn box plays on")
+    assert travel_said(bar) is not None
+    # It is said while a click would travel, and not while turns are played.
+    bar.ev("engine.wait = 120, true")
+    bar.click('[data-dbg="next"]')
+    bar.until("debugBusy", "a turn is played")
+    assert travel_said(bar) is None
+    bar.ev("engine.wait = 0, true")
+    bar.idle(f"state.turn === {start + 3}", "the turn is played")
+    assert travel_said(bar) is not None
+    # Clicked to travel once, it goes, and is not said again, in this game or
+    # the next: a page opened later reads it (`check_the_game_opens_on_two_tracks`).
+    bar.drag("dbg-slider", start + 1)
+    bar.idle(f"state.turn === {start + 1}", "the timeline travels")
+    assert bar.ev(f"[debugTravelKnown, localStorage.getItem('{TRAVEL_KEY}')]") == [True, "known"]
+    assert bar.ev(f"document.querySelector('{LANE} .dbg-travel').classList.contains('dbg-travel-gone')"), "it does not go, it vanishes"
+    bar.until(f"document.querySelector('{LANE} .dbg-travel').hidden", "the words go")
+    bar.ev("render(engineState()), true")
+    assert travel_said(bar) is None
+    # A mark on the rail clicked (an era's name) is the timeline clicked too;
+    # a save point gone to from its panel is not.
+    bar.ev(f"localStorage.removeItem('{TRAVEL_KEY}'), debugTravelKnown = false, render(engineState()), true")
+    assert travel_said(bar) is not None
+    bar.click(f"{LANE} .dbg-marks [data-dbg-turn]")
+    bar.idle("true", "the era is gone to")
+    assert bar.ev(f"[debugTravelKnown, localStorage.getItem('{TRAVEL_KEY}')]") == [True, "known"]
     assert not bar.dev.console, f"the page complained: {bar.dev.console}"
 
 
@@ -3045,9 +3121,12 @@ def main() -> int:
         check_windows_move_by_their_titles(bar)
         print("each panel of the box, and each thing the box asks, is moved by its title, stays where it was put, "
               "cannot leave the window, and goes back under its button on a double click.")
+        check_the_timeline_says_click_to_travel(bar)
+        print("the timeline says Click to travel, large and calling, in the open rail beside the marker, while a "
+              "click would travel; a click on the timeline, or on a mark on it, makes it go for good.")
         check_the_game_opens_on_two_tracks(bar, f"http://127.0.0.1:{port}/")
-        print("a game opens on its two tracks at once with head to head open, asks for B's Civ AI, and does "
-              "so once a game; a narrow window and the Single player view open on the one timeline.")
+        print("a game opens on its two tracks at once with head to head open, asks nothing and says Click to "
+              "travel, and does so once a game; a narrow window and the Single player view open on the one timeline.")
         check_autosearch(bar, f"http://127.0.0.1:{port}/")
         print("Autosearch is a size larger than the tools beside it; its panel picks what to make the most "
               "of, how far ahead and how many cores; a search plays on copies of the engine, leaves the "

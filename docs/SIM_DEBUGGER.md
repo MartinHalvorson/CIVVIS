@@ -53,15 +53,17 @@ on itself and has an ✕ after its right end, that closing the timeline as it
 was leaves the branch as the timeline, and that each stretch is named by the
 Civ AI that played it. Two more parts hold what the box asks (Switch or
 Branch for another Civ AI picked on the one timeline, and which Civ AI plays
-a branch that was just made) and the opening view: a page opened as anyone
-opens it draws its first state on two tracks with nothing pressed, once a
-game. Every part before that one asks for the one timeline (`?tracks=1`).
-The last part holds Autosearch (see "Autosearch"): the button's size and
-place, the panel's choices, a search played on copies of the toy engine with
-the page's own game left alone, the copies let go when it ends or is stopped,
-an engine that cannot be copied, the line played on the one timeline and in
-the other half of a split, and Autosearch pressed on a half's own panel. A
-control added to the box or the strip is added there.
+a branch that Branch just made), and one that the timeline says Click to
+travel until it is clicked to travel. The next holds the opening view: a
+page opened as anyone opens it draws its first state on two tracks with
+nothing pressed and nothing asked, once a game. Every part before that one
+asks for the one timeline (`?tracks=1`). The last part holds Autosearch (see
+"Autosearch"): the button's size and place, the panel's choices, a search
+played on copies of the toy engine with the page's own game left alone, the
+copies let go when it ends or is stopped, an engine that cannot be copied,
+the line played on the one timeline and in the other half of a split, and
+Autosearch pressed on a half's own panel. A control added to the box or the
+strip is added there.
 
 ## The bar
 
@@ -154,6 +156,19 @@ between the ends are numbered along the top of the rail. On it:
   that was played is put back as it stood, and a turn still ahead is played to
   by the seat's Civ AI from the turn that is open. While it plays, the stretch
   still to go is hatched;
+- until the timeline has been clicked to travel, the words **Click to travel**
+  on it, large, yellow and calling with a ring, in the open rail ahead of the
+  marker (behind it once the marker is past 60% of the rail), and only while a
+  click would travel: not while turns are being played (operator 2026-11-22:
+  "have the initial timeline say click to travel so people understand the
+  mechanism. make the click to travel very visible at the start and then not
+  appear once they understand"). They take no press: a click on them is the
+  timeline's, under them. The first slider let go of on another turn, or mark
+  on the rail clicked (an era, a breakpoint turn, a save point), makes them go,
+  and the browser keeps that (`civvis-debug-click-to-travel` in its local
+  storage), so they are not said again, in that game or any later one. Going
+  to a turn any other way (the turn box, the turn buttons, the Save points
+  panel) leaves them;
 - save points as flags along the top edge and turn breakpoints as red marks
   along the bottom, each to click;
 - under the pointer, the turn there and what letting go would do: "play to
@@ -577,14 +592,17 @@ game begins. A page asked for with `tracks=1` in its address opens on the
 one timeline, and so does a window under 900px wide, a small device, and a
 seat being played by hand in the Single player view.
 
-A branch that was just made begins with A's Civ AI, and the box asks which
+A branch begins with A's Civ AI. When Branch made it, the box asks which
 one plays it (operator: "after this, user should be prompted for the
 strategy for the second branch"): a list of every Civ AI the page offers,
 under B's picker, the one seated lit and marked as A's. A press on one seats
 it in B, as B's picker does, and B's picker answers the question as well. A
 press anywhere else, or Escape, leaves B on the Civ AI it began with. A
 branch made from the Switch or Branch question above was made for a Civ AI,
-and is not asked about.
+and is not asked about. Nor is the opening view, which nobody pressed Branch
+for (operator 2026-11-22: "branch b should only ask when branch is
+selected. not just auto ask rom the start"): it opens with B on A's Civ AI,
+and B's picker seats another.
 
 A is the timeline as it was, and B is the branch. A keeps every turn it
 holds, the ones past the open turn included. B begins on the open turn: when
@@ -665,8 +683,8 @@ from. Then the one picture takes the other's place in one move
   numbers, half A has given the deck the one panel is drawn from, each seats
   the Civ AI it was given, the branch has let go of the turns ahead of it,
   and each has painted itself (`pane-shown`). So the box has its deck from
-  the first frame and nothing moves after it. Then the box asks which Civ AI
-  plays the branch. A half that never arrives is not waited on for ever:
+  the first frame and nothing moves after it. Then, for a branch Branch made,
+  the box asks which Civ AI plays it. A half that never arrives is not waited on for ever:
   after 6 s the two are shown as they are.
 - **A game that opens on its two tracks** is not shown on one screen first.
   In the task that draws its first state the window goes under a veil, and
