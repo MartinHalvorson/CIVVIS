@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import contextlib
 import datetime
+import html
 import io
 import json
 import os
@@ -14,6 +15,7 @@ import tempfile
 import unittest
 
 import performance_page
+import speedup_timeline
 
 BETA = pathlib.Path(__file__).resolve().parent
 ROOT = BETA.parent
@@ -177,6 +179,81 @@ class RecordVideos(unittest.TestCase):
         for video in videos:
             self.assertTrue(video["title"] and video["time"])
             self.assertRegex(video["posted"], r"^\d{4}-\d{2}-\d{2}$")
+
+
+class TheSpeedup(unittest.TestCase):
+    """The page's first part (operator 2026-11-22: "at the top of civvis
+    performance we want to calculate a multiplier on the theoretical and
+    experimetnal throughput of the simualtor. and the calculations. baeline
+    is 5 hrs for manually played game. please add the deity computer control,
+    deity self-play, civvis self-play. how much has civvis self-play speed up
+    over my manual 5 hr games? add this info, maybe in tables to the top")."""
+
+    SECTION = PAGE[PAGE.index('<section class="res-section" id="perf-speedup"'):PAGE.index('<section class="res-section" id="perf-video"')]
+
+    def test_the_record_carries_the_worked_tables_of_the_home_page_s_ledger(self):
+        with contextlib.redirect_stderr(io.StringIO()):
+            record = performance_page.performance(ROOT)
+        self.assertEqual(record["speedup"], speedup_timeline.worked(ROOT))
+        self.assertEqual(record["speedup"]["answer"]["all"], speedup_timeline.timeline(ROOT)["speedup"])
+        # A revision with the readings and nothing else still has its page.
+        with tempfile.TemporaryDirectory() as scratch, contextlib.redirect_stderr(io.StringIO()) as said:
+            root = pathlib.Path(scratch)
+            (root / "data/performance").mkdir(parents=True)
+            for name in ("speedup_timeline.json", "games_per_minute.json"):
+                (root / "data/performance" / name).write_text((ROOT / "data/performance" / name).read_text(encoding="utf-8"), encoding="utf-8")
+            alone = performance_page.performance(root)
+        self.assertEqual((alone["speedup"], alone["windows"], alone["videos"]), (record["speedup"], {}, []))
+        self.assertNotIn("no speedup readings", said.getvalue())
+        # And one without them says so and shows the rest.
+        with tempfile.TemporaryDirectory() as scratch, contextlib.redirect_stderr(io.StringIO()) as said:
+            root = pathlib.Path(scratch)
+            (root / "data/performance").mkdir(parents=True)
+            (root / performance_page.VIDEOS).write_text((ROOT / performance_page.VIDEOS).read_text(encoding="utf-8"), encoding="utf-8")
+            without = performance_page.performance(root)
+        self.assertIsNone(without["speedup"])
+        self.assertTrue(without["videos"])
+        self.assertIn("no speedup readings", said.getvalue())
+
+    def test_it_is_the_first_part_of_the_page_and_shows_only_when_filled(self):
+        record = PAGE[PAGE.index('<div class="res-record" id="perf-record" hidden>'):]
+        self.assertEqual(re.findall(r'<section class="res-section" id="([\w-]+)"', record), ["perf-speedup", "perf-video", "perf-times", "perf-batches"])
+        self.assertIn('<section class="res-section" id="perf-speedup" aria-labelledby="perf-speedup-title" hidden>', PAGE)
+        self.assertIn('document.getElementById("perf-speedup").hidden = false;', PAGE)
+        # The sentence, the tiles, one game at a time, then the machine.
+        order = ['id="perf-speed-lede"', 'id="perf-speed-tiles"', 'id="perf-games-table"', 'id="perf-throughput"', 'id="perf-throughput-table"', 'id="perf-from"']
+        places = [self.SECTION.index(mark) for mark in order]
+        self.assertEqual(places, sorted(places))
+        self.assertIn("One machine, every core: experimental and theoretical throughput", self.SECTION)
+        self.assertIn("Theoretical is a calculation, not a run", self.SECTION)
+
+    def test_every_way_of_playing_in_the_readings_has_its_name(self):
+        ways = dict(re.findall(r'^      (\w+): \["([^"]+)", "[^"]+"\],$', PAGE, flags=re.M))
+        shown = speedup_timeline.worked(ROOT)
+        self.assertEqual(list(ways), [row["key"] for row in shown["games"]])
+        # The operator's own words for his three.
+        self.assertEqual((ways["control"], ways["deity_sim"], ways["self_play"]), ("Deity computer control", "Deity self-play", "CIVVIS self-play"))
+        # Every kind of throughput row, and every basis of a theory, is worded.
+        self.assertIn('const KINDS = { measured: "Experimental", theory: "Theoretical", goal: "Goal" };', PAGE)
+        told = PAGE[PAGE.index("const TOLD = {"):PAGE.index("const through =")]
+        for row in shown["throughput"]:
+            self.assertIn(f"\n        {row.get('basis') or row['kind']}: (row) =>", told)
+        # The multiplier is the first figure beside the name in both tables.
+        heads = re.findall(r"<thead>(.*?)</thead>", self.SECTION, flags=re.S)
+        self.assertEqual(len(heads), 2)
+        for head in heads:
+            self.assertEqual(re.findall(r"<th[^>]*>([^<]+)</th>", head)[1], "Faster than by hand")
+            self.assertIn('<th scope="col" class="perf-sum">The calculation</th>', head)
+
+    def test_no_figure_is_written_into_the_page(self):
+        # Every one is the slot's, so the page cannot say a figure the
+        # readings do not, and cannot disagree with the home page's line.
+        text = html.unescape(re.sub(r"<[^>]+>", " ", re.sub(r"<!--.*?-->", "", self.SECTION, flags=re.S)))
+        self.assertIsNone(re.search(r"\d", text), re.findall(r".{0,20}\d.{0,20}", text)[:3])
+        script = PAGE[PAGE.index("// ---- How many times faster than a game played by hand"):PAGE.index("// ---- The fastest game on video.")]
+        for unsafe in ("innerHTML", "insertAdjacentHTML", "outerHTML"):
+            self.assertNotIn(unsafe, script)
+        self.assertIsNone(re.search(r"\d[\d,.]*\s*(x|s|min|h)\b", re.sub(r"//.*", "", script)))
 
 
 class ThePage(unittest.TestCase):

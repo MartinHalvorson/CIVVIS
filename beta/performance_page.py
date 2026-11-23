@@ -11,8 +11,16 @@ The Performance page (`beta/performance.html`, served at
 opens under CIVVIS (operator 2026-11-21: "performance should be a page
 similar to the home/ and other similar pages (musings/research/) etc. we want
 the civvis performance charts there. fastest game video. p1, p10, p50, p90,
-p99 times for games for self-play games."). It carries three things:
+p99 times for games for self-play games."). It carries four things:
 
+- **how many times faster than a game played by hand**, at its top
+  (operator 2026-11-22: "at the top of civvis performance we want to
+  calculate a multiplier on the theoretical and experimetnal throughput of
+  the simualtor. and the calculations. baeline is 5 hrs for manually played
+  game."): the readings of `data/performance/speedup_timeline.json`, the
+  ledger the home page's speed timeline is drawn from, as two tables with
+  the sum beside every figure. `speedup_timeline.worked` works them out;
+  nothing of them is written in the page.
 - **the fastest game on video**: the record videos of the site playing a
   complete game in real time, listed in
   `data/performance/fastest_game_videos.json`. The one with the shortest time
@@ -57,6 +65,8 @@ import math
 import pathlib
 import re
 import sys
+
+import speedup_timeline
 
 SLOT = re.compile(r'(<script type="application/json" id="performance-data">)(.*?)(</script>)', re.S)
 
@@ -248,8 +258,12 @@ def videos(listed: object) -> list[dict]:
 
 
 def performance(source: pathlib.Path) -> dict | None:
-    """The record, or `None` when neither the times nor a video can be read."""
+    """The record, or `None` when neither the times, nor a video, nor the
+    speedup can be read."""
     out: dict = {"percentiles": PERCENTILES, "spans_per_tenfold": SPANS_PER_TENFOLD}
+    out["speedup"] = speedup_timeline.worked(source)
+    if out["speedup"] is None:
+        print("performance_page: no speedup readings", file=sys.stderr)
     try:
         taken = json.loads((source / SELF_PLAY).read_text(encoding="utf-8"))
         windows = {key: taken["windows"][key] for key in WINDOWS if taken["windows"].get(key)}
@@ -266,7 +280,7 @@ def performance(source: pathlib.Path) -> dict | None:
     except (OSError, ValueError, AttributeError) as error:
         print(f"performance_page: no record videos ({error})", file=sys.stderr)
         out["videos"] = []
-    return out if out["windows"] or out["videos"] else None
+    return out if out["windows"] or out["videos"] or out["speedup"] else None
 
 
 def fill(page: str, data: dict | None) -> str | None:
@@ -304,7 +318,12 @@ def main(argv: list[str]) -> int:
         print(f"performance_page: no figures to write into {page}", file=sys.stderr)
     else:
         games = data["windows"].get("all", {}).get("games", 0)
-        print(f"performance_page: wrote {games} self-play games' times in {len(data['batches'])} batches and {len(data['videos'])} videos into {page}", file=sys.stderr)
+        speedup = ((data.get("speedup") or {}).get("answer") or {}).get("all") or "no"
+        print(
+            f"performance_page: wrote {games} self-play games' times in {len(data['batches'])} batches, {len(data['videos'])} videos"
+            f" and {speedup} speedup into {page}",
+            file=sys.stderr,
+        )
     return 0
 
 
