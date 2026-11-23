@@ -195,9 +195,10 @@ if [ "$commit" != "$(git -C "$repo_root" rev-parse HEAD)" ]; then pinned_elsewhe
 #
 # A script that fails stops the publish when it is the invoking tree's own,
 # because that is a fault main can mend. A pinned revision's script cannot be
-# mended, only promoted past, and it fails on a ledger written after it: that
-# costs its page the figures (the slot stays `null`, which every page reads
-# as "no record"), never the deployment, which would hold /test back too.
+# mended, only promoted past, and the ledger it reads goes on being written
+# after it: a failure there costs its page the figures (the slot stays
+# `null`, which every page reads as "no record"), never the deployment,
+# which would hold /test back too.
 fill() {
   local script="$source_tree/beta/$1" page="$2"
   if [ ! -f "$script" ]; then
