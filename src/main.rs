@@ -807,6 +807,10 @@ fn main() {
         // document, so neither speed tool could see a change that only the
         // site pays for; see `civvis::server::site_bench`.
         "site-bench" => site_bench_command(args),
+        // Autosearch without a browser: which Civ AIs should hold the seat,
+        // and when, to meet four lists, searched on this machine's cores and
+        // played again on other seeds; see `civvis::server::autosearch`.
+        "autosearch" => autosearch_command(args),
         // What an agent that searches actually does: take a position and roll
         // it forward, over and over. Cloning a position dominates that, and
         // nothing else here measured it.
@@ -826,6 +830,76 @@ fn main() {
         "pedia" => pedia_command(args),
         "validate" => validate_command(args),
         _ => print_usage(),
+    }
+}
+
+/// `civvis autosearch --spec spec.json [--seed N] [--cores N] [--offers plans.json]
+/// [--robust 101,102,...]`: the search the AI Debugger's Autosearch runs,
+/// on this machine's own copies of the engine, one a thread
+/// (`civvis::server::autosearch::run`). The spec is what the page sends:
+/// `{"objective": {"need", "avoid", "want", "dont_want"}, "from", "turns",
+/// "letters", "seated"}`. `--robust` plays the best line found again on each
+/// of those seeds, against the seated Civ AI alone. The report is printed as
+/// JSON.
+fn autosearch_command(args: Vec<String>) {
+    let read = |flag: &str| -> Option<serde_json::Value> {
+        let path = arg_text(&args, flag, "");
+        if path.is_empty() {
+            return None;
+        }
+        let text = std::fs::read_to_string(&path).unwrap_or_else(|error| {
+            eprintln!("{flag} {path}: {error}");
+            std::process::exit(2);
+        });
+        Some(serde_json::from_str(&text).unwrap_or_else(|error| {
+            eprintln!("{flag} {path}: {error}");
+            std::process::exit(2);
+        }))
+    };
+    let Some(spec) = read("--spec") else {
+        eprintln!("civvis autosearch needs --spec spec.json");
+        std::process::exit(2);
+    };
+    let offers = read("--offers")
+        .map(|plans| {
+            serde_json::from_value::<Vec<civvis::server::autosearch::Plan>>(plans).unwrap_or_else(
+                |error| {
+                    eprintln!("--offers: {error}");
+                    std::process::exit(2);
+                },
+            )
+        })
+        .unwrap_or_default();
+    let robust = arg_text(&args, "--robust", "")
+        .split(',')
+        .filter_map(|seed| seed.trim().parse::<u64>().ok())
+        .collect();
+    let cores = std::thread::available_parallelism().map_or(1, |cores| cores.get());
+    let options = civvis::server::autosearch::RunOptions {
+        seed: arg(&args, "--seed", 7).max(1) as u64,
+        spec,
+        cores: arg(&args, "--cores", cores as i64).max(1) as usize,
+        offers,
+        robust,
+        fog_honest: match arg_text(&args, "--fog-honest", "").as_str() {
+            "true" | "1" | "on" => Some(true),
+            "false" | "0" | "off" => Some(false),
+            _ => None,
+        },
+    };
+    let started = Instant::now();
+    match civvis::server::autosearch::run(&options) {
+        Ok(mut report) => {
+            report["seconds"] = serde_json::json!(started.elapsed().as_secs_f64());
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&report).unwrap_or_default()
+            );
+        }
+        Err(error) => {
+            eprintln!("autosearch: {error}");
+            std::process::exit(1);
+        }
     }
 }
 
@@ -1992,7 +2066,7 @@ fn validate_command(args: Vec<String>) {
 /// The usage line, for `help` and anything unrecognised.
 fn print_usage() {
     println!(
-        "usage: civvis <simulate|soak|odds-audit|benchmark|site-bench|play|evolve|validate|pedia> \
+        "usage: civvis <simulate|soak|odds-audit|benchmark|site-bench|autosearch|play|evolve|validate|pedia> \
               [--players N] [--seed N] [--turns N] [--width N] [--height N] \
               [--city-states N] [--games N] [--port N] [--no-open] \
               [--map land_only|lakes|inland_sea|tenins_ball|grand_canals|grand_canals_2|pangaea|earth|true_start_earth|continents|small_continents|fjords|islands|water_world|battlefield|tactics_planet|tactics_ocean|trafalgar] \
@@ -2009,6 +2083,7 @@ fn print_usage() {
               [--victories science,culture,religious,diplomatic,domination,score] \
               [--native-competitions] [--spectate] [--supervised] [--resume checkpoint.json] [--strict] \
               [--generations N] [--pop N] \
+              [--spec spec.json --cores N --offers plans.json --robust 101,102 (autosearch)] \
               [--no-documents (site-bench: play the frames, skip the page's state documents)] \
               [--no-kept-yields (site-bench: derive every city yield afresh)] \
               [--no-own-kept-yields (site-bench: keep only the rivals' between a seat's passes)] \

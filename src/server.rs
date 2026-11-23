@@ -50,6 +50,7 @@ pub mod site_bench;
 /// The simulator debugger: the marks a played game keeps of its own turns,
 /// and the operations that walk them. Its own file because it is one idea,
 /// and a child for the same reason as the two above.
+pub mod autosearch;
 mod debugger;
 
 /// A session of its own for each half of the split Sim debugger, beside the
@@ -3234,16 +3235,22 @@ impl Session {
         if name.is_empty() || self.autoplay_strategy.as_deref() == Some(name) {
             return Ok(());
         }
-        let row =
-            crate::strategies::find(name).ok_or_else(|| format!("no strategy named {name}"))?;
-        if self.autoplay_strategy.as_deref() == Some(row.id) {
+        if let Some(row) = crate::strategies::find(name) {
+            if self.autoplay_strategy.as_deref() == Some(row.id) {
+                return Ok(());
+            }
+        }
+        // A roster row by name, or one with a victory target and genes on top
+        // (`strategies::build_named`), which is what a search may seat.
+        let (agent, written) = crate::strategies::build_named(name)?;
+        if self.autoplay_strategy.as_deref() == Some(written.as_str()) {
             return Ok(());
         }
-        self.ais[seat] = row.build();
+        self.ais[seat] = agent;
         // A newly seated agent joins the same record as the rest of the table;
         // without this the seat a player just handed over goes quiet.
         self.ais[seat].attach_journal(self.journal.handle());
-        self.autoplay_strategy = Some(row.id.to_string());
+        self.autoplay_strategy = Some(written);
         Ok(())
     }
 
