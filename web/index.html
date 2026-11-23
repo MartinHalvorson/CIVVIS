@@ -4702,33 +4702,82 @@
      race moves, and the wheel must not be pulled along after one of them. */
   #victoryhud .hud-rail { overflow-x: hidden; overflow-y: auto; overflow-anchor: none; }
   #victoryhud .hud-rail::-webkit-scrollbar { width: 3px; height: 3px; }
-  /* The game's own clock, up the tracker's left edge: a slim gold bar that
-     stands at the bottom on turn 1 and reaches the top on the last turn
-     (operator, 2026-11-23: "tasteful. not too big"). The tracker's box is a
-     grid so the bar can stand in a column of its own beside the paths, exactly
-     as tall as their rail: it never scrolls away with them, and the heading
-     and the "Off" line above keep the whole width. A world with no turn cap
-     draws no bar, and the empty column gives its width back to the paths. */
+  /* The game's own clock, up the tracker's left edge: a gold bar that stands
+     at the bottom on turn 1 and reaches the top on the last turn (operator,
+     2026-11-23: "tasteful. not too big", then "wider please. like 6mm
+     wide-ish, with a bit for labels and such"; 30px is six millimetres on the
+     operator's own screen). The tracker's box is a grid so the bar can stand
+     in a column of its own beside the paths, exactly as tall as their rail:
+     it never scrolls away with them, and the heading and the "Off" line above
+     keep the whole width. The panel is that column wider than it was
+     (TURN_GAUGE_COLUMN in app.js), so the bar's room comes off the map and
+     not out of the paths. A world with no turn cap draws no bar, and the
+     empty column gives its width to the paths. */
   #victoryhud > .victory-region {
     display: grid; grid-template-columns: auto minmax(0, 1fr);
     grid-template-rows: auto auto minmax(0, 1fr);
+    container: victory-region / inline-size;
   }
   #victoryhud > .victory-region > .hud-region-bar { grid-area: 1 / 1 / 2 / -1; }
   #victoryhud > .victory-region > .victory-off-note { grid-area: 2 / 1 / 3 / -1; }
   #victoryhud > .victory-region > .hud-rail { grid-area: 3 / 2; }
   .turn-gauge {
-    grid-area: 3 / 1; position: relative; width: 3px; margin: 2px 4px 2px 0;
-    border-radius: 2px; background: color-mix(in srgb, var(--gold) 14%, transparent);
+    grid-area: 3 / 1; position: relative; width: 30px; margin: 2px 5px 2px 0;
+    overflow: hidden; border-radius: 5px; container: turn-gauge / size;
+    background: color-mix(in srgb, var(--gold) 8%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--gold) 24%, transparent);
   }
-  .turn-gauge::after { content: ""; position: absolute; inset: 0 -3px; }
+  /* The gold stands the whole height and is cut off at the turn, so its
+     colour belongs to the height and not to the bar: deep at the foot,
+     bright by the last turn. */
+  .turn-gauge-fill {
+    position: absolute; inset: 0;
+    background: linear-gradient(to top, color-mix(in srgb, var(--gold) 78%, #2a2008), var(--gold) 50%, var(--gold-bright));
+    clip-path: inset(calc(100% - var(--rise, 0%)) 0 0 0);
+    transition: clip-path .45s ease-out;
+  }
+  /* The bar's head: a bright line that is all there is of it on turn 1. */
   .turn-gauge > i {
-    position: absolute; inset: auto 0 0; min-height: 2px; border-radius: inherit;
-    background: linear-gradient(to top, color-mix(in srgb, var(--gold) 55%, transparent), var(--gold-bright));
-    box-shadow: 0 0 5px color-mix(in srgb, var(--gold-bright) 38%, transparent);
-    transition: height .45s ease-out;
+    position: absolute; left: 0; right: 0; height: 2px;
+    bottom: clamp(0px, calc(var(--rise, 0%) - 2px), calc(100% - 2px));
+    background: color-mix(in srgb, var(--gold-bright) 70%, #fff);
+    box-shadow: 0 0 7px color-mix(in srgb, var(--gold-bright) 70%, transparent);
+    transition: bottom .45s ease-out;
+  }
+  /* The scale: a hairline across the bar at the height it stands at on a
+     round turn, and the turn's figure hung just under it, so the bar's head
+     arrives at the line with the figure already on the gold. One copy is
+     dim, for the empty track, and one dark, for the gold; each is cut off at
+     the head from its own side, and both stand above the head's line. The
+     cap's line is the top of the bar itself. */
+  .turn-gauge-scale {
+    position: absolute; inset: 0; color: color-mix(in srgb, var(--gold) 72%, transparent);
+    clip-path: inset(0 0 var(--rise, 0%) 0); transition: clip-path .45s ease-out;
+  }
+  .turn-gauge-scale.lit { color: #2a2008d9; clip-path: inset(calc(100% - var(--rise, 0%)) 0 0 0); }
+  .turn-gauge-scale > b {
+    position: absolute; left: 0; right: 0; padding-top: 3px; transform: translateY(100%);
+    border-top: 1px solid color-mix(in srgb, currentColor 42%, transparent);
+    font-size: var(--type-caption); font-weight: 800; font-variant-numeric: tabular-nums;
+    letter-spacing: 0; line-height: 1; text-align: center;
+  }
+  .turn-gauge-scale > b.long { font-size: 7.5px; letter-spacing: -.03em; }
+  .turn-gauge-scale > b.cap { top: 0; padding-top: 5px; border-top: 0; transform: none; }
+  /* A short bar, in the shallow band a narrow window gives the tracker, has
+     room for every other figure; the lines of the rest stay. */
+  @container turn-gauge (max-height: 150px) {
+    .turn-gauge-scale > b.minor { font-size: 0; }
+  }
+  /* A tracker too narrow to give the paths six millimetres keeps the bar
+     and gives up the scale. */
+  @container victory-region (max-width: 170px) {
+    .turn-gauge { width: 6px; margin-right: 4px; border-radius: 3px; }
+    .turn-gauge-scale { display: none; }
   }
   #victoryhud.victory-collapsed .turn-gauge { display: none; }
-  @media (prefers-reduced-motion: reduce) { .turn-gauge > i { transition: none; } }
+  @media (prefers-reduced-motion: reduce) {
+    .turn-gauge-fill, .turn-gauge > i, .turn-gauge-scale { transition: none; }
+  }
 
 
   .overlay-options { margin-top: 11px; padding-top: 10px; border-top: 1px solid var(--line-soft); }
