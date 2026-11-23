@@ -1159,6 +1159,35 @@ impl Session {
         self.debugger.forgetful = false;
     }
 
+    /// A half of a split is about to be searched: it keeps its agents with
+    /// every turn it marks from here on, and none with the turns it has
+    /// marked already.
+    ///
+    /// A half keeps none, so a turn it walks back to is played on by agents
+    /// that have just sat down, which is another game than the one that was
+    /// played on from it (`Minds`). A search plays one line, walks back to
+    /// the middle of it and plays another from there, on a copy of the engine
+    /// made for it (`docs/SIM_DEBUGGER.md`, "Autosearch"), and that has to be
+    /// the second line played straight through. So the copy's half is asked
+    /// this first, and from then on a turn it walks back to seats the agents
+    /// that were playing it.
+    ///
+    /// The marks it holds already are left with no agents, some of them kept
+    /// before the screen was split. That is how the half on the page has
+    /// them: walked back to the turn the search begins on, the half and its
+    /// copy both seat new agents there and play the same game from it, so
+    /// what the search found is what the half plays. The game itself keeps
+    /// its agents already and is asked nothing.
+    fn debug_remember(&mut self) {
+        if !self.debugger.forgetful {
+            return;
+        }
+        for mark in &mut self.debugger.marks {
+            mark.minds = None;
+        }
+        self.debugger.forgetful = false;
+    }
+
     /// The marks on the seat's line as it stands (`Timeline::line`).
     fn debug_line(&self) -> &[Mark] {
         self.debugger
@@ -1913,6 +1942,12 @@ impl Session {
                     Breakpoints::from_request(request, &self.game).map(|breakpoints| {
                         self.debugger.breakpoints = breakpoints;
                     })
+                }
+                // What a copy of the engine made to search asks of a half
+                // of a split (`debug_remember`).
+                "remember" => {
+                    self.debug_remember();
+                    Ok(())
                 }
                 // A half of a split that is a new branch from the open turn
                 // holds nothing past it (`Timeline::branch`).

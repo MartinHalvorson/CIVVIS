@@ -531,7 +531,14 @@ fn a_lean_answer_gives_the_seat_its_row_of_the_standings() {
         .find(|player| player["id"] == json!(0))
         .expect("the seat is one of them");
     assert_eq!(seat["turn"], whole["turn"]);
-    for key in ["alive", "score", "cities", "population", "gold_per_turn", "yields"] {
+    for key in [
+        "alive",
+        "score",
+        "cities",
+        "population",
+        "gold_per_turn",
+        "yields",
+    ] {
         assert!(!seat[key].is_null(), "the reading has no {key}");
         assert_eq!(seat[key], mine[key], "{key}");
     }
@@ -574,14 +581,20 @@ fn play_is_a_run_of_steps_and_reads_the_seat_each_turn() {
     assert_eq!(stopped["error"], Value::Null);
     assert_eq!(stopped["turn"], json!(9));
     assert_eq!(stopped["readings"].as_array().map(Vec::len), Some(2));
-    assert_eq!(stopped["debug"]["stopped"], json!({"kind": "turn", "turn": 9}));
+    assert_eq!(
+        stopped["debug"]["stopped"],
+        json!({"kind": "turn", "turn": 9})
+    );
 
     // Asked for no turns, or for more than one request plays, it is refused
     // and nothing is played.
     for turns in [json!(null), json!(0), json!(101), json!("5")] {
         let refused = run.debug(&json!({"op": "play", "turns": turns, "lean": true}));
         assert!(
-            refused["error"].as_str().unwrap_or("").starts_with("play needs turns"),
+            refused["error"]
+                .as_str()
+                .unwrap_or("")
+                .starts_with("play needs turns"),
             "{turns}: {}",
             refused["error"]
         );
@@ -595,10 +608,10 @@ fn play_is_a_run_of_steps_and_reads_the_seat_each_turn() {
 /// and plays another from there. That has to be the second schedule played
 /// straight through, or what a search found is not what playing it gives.
 ///
-/// On the game itself a walk back seats the agents kept with the turn, so it
-/// is exact wherever the walk lands. A half of a split keeps none and seats
-/// new agents on a walk, so there it is exact where the page does the same:
-/// every stretch of a schedule begins with a walk to its first turn.
+/// On the game itself a walk back seats the agents kept with the turn. A
+/// half of a split keeps none, so the copy a search is run on is asked to
+/// keep them from the turn the search begins on (`remember`), and the half
+/// on the page, which is not, plays the schedule straight from that turn.
 #[test]
 fn a_schedule_walked_back_to_is_the_schedule_played_straight() {
     let play = |session: &mut Session, turns: u32, agent: &str| {
@@ -629,21 +642,70 @@ fn a_schedule_walked_back_to_is_the_schedule_played_straight() {
     walk_to(&mut one, 4, "jack");
     play(&mut one, 3, "jack");
     assert_eq!(world(&one), all_jack);
+    // The game keeps its agents already, and is asked nothing.
+    let kept = one
+        .debugger
+        .marks
+        .iter()
+        .filter(|mark| mark.minds.is_some())
+        .count();
+    assert!(kept > 0);
+    assert_eq!(
+        one.debug(&json!({"op": "remember", "lean": true}))["error"],
+        Value::Null
+    );
+    assert_eq!(
+        one.debugger
+            .marks
+            .iter()
+            .filter(|mark| mark.minds.is_some())
+            .count(),
+        kept
+    );
 
-    // A half of a split: the page walks to the first turn of each stretch.
-    let host = played();
+    // A half of a split, three turns into a game: the page walks it to the
+    // turn the search began on and plays the schedule straight from there.
+    let mut host = played();
+    play(&mut host, 2, "jack");
     let mut paged = host.fork();
-    walk_to(&mut paged, 1, "jack");
+    walk_to(&mut paged, 3, "jack");
     play(&mut paged, 3, "jack");
-    walk_to(&mut paged, 4, "siege");
     play(&mut paged, 3, "siege");
-    // A fork of it that had played another schedule first.
+    let mut whole = host.fork();
+    walk_to(&mut whole, 3, "jack");
+    play(&mut whole, 6, "jack");
+    // The copy that is searched keeps its agents from that turn on, and none
+    // with the turns it was handed.
     let mut searched = host.fork();
-    walk_to(&mut searched, 1, "jack");
+    assert!(searched.debugger.forgetful);
+    assert!(searched
+        .debugger
+        .marks
+        .iter()
+        .any(|mark| mark.minds.is_some()));
+    let asked = searched.debug(&json!({"op": "remember", "lean": true}));
+    assert_eq!(asked["error"], Value::Null);
+    assert!(!searched.debugger.forgetful);
+    assert!(searched
+        .debugger
+        .marks
+        .iter()
+        .all(|mark| mark.minds.is_none()));
+    walk_to(&mut searched, 3, "jack");
     play(&mut searched, 6, "jack");
-    walk_to(&mut searched, 4, "siege");
+    assert_eq!(world(&searched), world(&whole));
+    assert!(searched
+        .debugger
+        .marks
+        .iter()
+        .filter(|mark| mark.turn > 3)
+        .all(|mark| mark.minds.is_some()));
+    walk_to(&mut searched, 6, "siege");
     play(&mut searched, 3, "siege");
     assert_eq!(world(&searched), world(&paged));
+    walk_to(&mut searched, 6, "jack");
+    play(&mut searched, 3, "jack");
+    assert_eq!(world(&searched), world(&whole));
 }
 
 #[test]
