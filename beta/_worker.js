@@ -20,6 +20,10 @@
 // change here reaches the front page without a promotion. Keep what is in
 // here to routing and headers.
 //
+// One piece of that routing holds the lanes apart: a page a lane does not
+// list in its build.json answers 404 here (`lacksPage`), whatever the asset
+// layer still remembers of it from an earlier deployment.
+//
 // **This is a `_worker.js`, deliberately, and it must stay one.** Cloudflare
 // Pages also supports a `functions/` directory, and that is the obvious way to
 // write this — but `functions/` is resolved relative to the *working
@@ -251,10 +255,61 @@ async function precompressedCopy(request, env, url) {
   return copy;
 }
 
+// The address of one of a lane's pages: `<lane>/<name>`, with or without the
+// trailing slash or `index.html`. The lane is "" for the stable lane and
+// "/test" for the head lane; `/test` itself is the head lane's viewer, not a
+// page of the stable lane named "test".
+const PAGE_ADDRESS = /^(\/test)?\/([a-z][a-z0-9-]*)(?:\/(?:index\.html)?)?$/;
+
+// An address no deployment has ever had a file at, so what the asset layer
+// answers for it is the 404 page and nothing it kept from an earlier
+// deployment.
+const NO_SUCH_PAGE = "/__no-such-page__";
+
+/// Whether this address is a page the lane does not carry.
+///
+/// A lane is one commit's site, and its own `build.json` lists the pages it
+/// has (`pages`). The deployed directory already holds exactly those, but the
+/// directory is not the last word on what an address answers: **Pages keeps
+/// serving a file it has served before for up to a week after a deployment
+/// removes it**, from each data center's cache ("asset retention"). So a page
+/// that left a lane goes on answering there, a week at a time, for every
+/// reader near a data center that had served it. That is how the AI
+/// Interpretability page was still on the front page on 2026-11-23, after the
+/// deployment that took it out: a 404 on `civvis.pages.dev`, a 404 with a
+/// query string, and the old page, two hours stale, at the address itself.
+///
+/// So the lane's list is asked here, where the answer cannot be a kept copy.
+/// A lane that does not say what it carries (a bundle from before lanes
+/// listed their pages, or a `build.json` that cannot be read) is passed
+/// through as before.
+async function lacksPage(request, env, url) {
+  if (request.method !== "GET" && request.method !== "HEAD") return false;
+  const address = PAGE_ADDRESS.exec(url.pathname);
+  if (!address) return false;
+  const [, lane = "", name] = address;
+  if (!lane && name === "test") return false;
+  try {
+    const shipped = await env.ASSETS.fetch(new Request(new URL(`${lane}/build.json`, url)));
+    if (!shipped.ok) return false;
+    const pages = (await shipped.json()).pages;
+    return Array.isArray(pages) && !pages.includes(name);
+  } catch {
+    return false;
+  }
+}
+
 /// Serve a file, with the headers a `_headers` file would have carried — that
 /// file is ignored once a `_worker.js` exists, so the rules live here instead.
 async function asset(request, env, gated) {
-  const url = new URL(request.url);
+  let url = new URL(request.url);
+  // A page its lane does not carry is answered as any address with nothing
+  // at it is: the 404 page, from an address that never had a file.
+  const absent = await lacksPage(request, env, url);
+  if (absent) {
+    url = new URL(NO_SUCH_PAGE, url);
+    request = new Request(url, { method: request.method, headers: request.headers });
+  }
   const path = url.pathname;
   const copy = await precompressedCopy(request, env, url);
   const response = copy || await env.ASSETS.fetch(request);
@@ -291,7 +346,7 @@ async function asset(request, env, gated) {
     // them again or decode them to re-encode at a weaker setting.
     return new Response(response.body, { status: response.status, headers, encodeBody: "manual" });
   }
-  return new Response(response.body, { status: response.status, headers });
+  return new Response(response.body, { status: absent ? 404 : response.status, headers });
 }
 
 export default {
