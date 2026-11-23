@@ -534,6 +534,12 @@ def main(argv: list[str] | None = None) -> int:
               promoted["status"] == 301 and promoted["location"] == "/charts/win-analytics/"
               and promoted["robots"] is None,
               f"got {promoted['status']} {promoted['location']!r} {promoted['robots']!r}")
+        # Only reading is forwarded: a form posted to an old address is
+        # answered as it always was.
+        posted_old = hit(path="/test/research/", method="POST", body={"x": "1"}, listed=lanes)
+        check(problems, "a POST to an address a page has left is not forwarded",
+              posted_old["status"] == 200 and not posted_old["location"],
+              f"got {posted_old['status']} {posted_old['location']!r}")
         # A name in the folder that is no page is a 404, not a forward.
         stray = hit(path="/test/charts/no-such-chart/", listed=lanes)
         check(problems, "a page the folder does not hold is a 404",
