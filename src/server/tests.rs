@@ -2212,8 +2212,9 @@ fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
     // Each page is put at the address it states itself (its canonical
     // link), so a lane pinned to a revision from before the addresses moved
     // keeps the layout its links were written for.
-    assert!(performance
-        .contains("<link rel=\"canonical\" href=\"https://civvis.ai/charts/civvis-performance/\">"));
+    assert!(performance.contains(
+        "<link rel=\"canonical\" href=\"https://civvis.ai/charts/civvis-performance/\">"
+    ));
     assert!(publish.contains("performance_at=\"$(address \"$performance_page\" performance)\""));
     assert!(publish.contains("cp \"$performance_page\" \"$out/$performance_at/index.html\""));
     // AI Interpretability is the last page under Charts/ (operator
@@ -2236,10 +2237,12 @@ fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
     )));
     assert!(interpretability
         .contains("<script type=\"application/json\" id=\"interpretability-data\">null</script>"));
-    assert!(interpretability
-        .contains("<link rel=\"canonical\" href=\"https://civvis.ai/charts/ai-interpretability/\">"));
-    assert!(publish
-        .contains("cp \"$interpretability_page\" \"$out/$interpretability_at/index.html\""));
+    assert!(interpretability.contains(
+        "<link rel=\"canonical\" href=\"https://civvis.ai/charts/ai-interpretability/\">"
+    ));
+    assert!(
+        publish.contains("cp \"$interpretability_page\" \"$out/$interpretability_at/index.html\"")
+    );
     // The old label named the destination twice over.
     assert!(!EMBEDDED_INDEX.contains("Open sim debugger"));
     // A list that draws itself as a grid outranks the user agent's
