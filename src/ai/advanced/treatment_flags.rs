@@ -669,6 +669,10 @@ impl AdvancedAi {
         /// seat's first Campus goes ahead of the floor's Settler; see
         /// `advanced/science_seat_campus_before_the_settler.rs`.
         science_seat_campus_before_the_settler => enable_science_seat_campus_before_the_settler, disable_science_seat_campus_before_the_settler;
+        /// Opt-in gene `settler-brake-counts-the-wanderer`: a wandering
+        /// Settler closes the pipeline; see
+        /// `advanced/settler_brake_counts_the_wanderer.rs`.
+        settler_brake_counts_the_wanderer => enable_settler_brake_counts_the_wanderer, disable_settler_brake_counts_the_wanderer;
         // ---- append: t-z --------------------------------------------
         /// Opt-in gene `theology-fights-count-the-host-edge`; see
         /// `advanced/theology_fights.rs`.

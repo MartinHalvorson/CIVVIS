@@ -6562,6 +6562,15 @@ pub const GENES: &[Gene] = &[
     // held the first Campus in 39 of 44 Science games, a median 9 turns).
     // Opt-in; see `advanced/science_seat_campus_before_the_settler.rs`.
     Gene { tag: "science-seat-campus-before-the-settler", field: "science_seat_campus_before_the_settler", kind: Kind::OptIn, enable: AdvancedAi::enable_science_seat_campus_before_the_settler, disable: AdvancedAi::disable_science_seat_campus_before_the_settler },
+    // Live Tournament 7 2026-11-22/23: `settler-backlog-brake` counts a
+    // Settler parked only after six turns on one tile, and a Settler boxed in
+    // by rival Loyalty marches, refuses and retargets without standing still.
+    // Ludwig `civvis-t7-20261123T045817Z` (Lv 8) trained Settlers at t85, 89,
+    // 92 and 101 with 2-5 already out on three cities; 3-5 Settlers stood out
+    // 40-60 turns with the city count flat in five of 60 games. A Settler out
+    // 15 turns without founding closes the pipeline from three cities. Opt-in;
+    // see `advanced/settler_brake_counts_the_wanderer.rs`.
+    Gene { tag: "settler-brake-counts-the-wanderer", field: "settler_brake_counts_the_wanderer", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_brake_counts_the_wanderer, disable: AdvancedAi::disable_settler_brake_counts_the_wanderer },
     // ---- append: t-z ------------------------------------------------
     // Host previews of our religious strikes, 11-09: rival defenders carry +4
     // for difficulty (68 of 75) and +3/+6 Intel (55 of 75), which the fight
