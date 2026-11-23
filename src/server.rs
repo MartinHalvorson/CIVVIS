@@ -3012,6 +3012,7 @@ impl Session {
             o["required_victory_types"] = json!(self.game.effective_required_victories());
             o["victories_won"] = json!(self.game.victories_won);
             o["legal_actions"] = json!([]);
+            self.fog_honest_json(&mut o);
             // Lets a long-running spectator notice that its server was
             // rebuilt/restarted between games and reload the latest UI.
             o["server_instance"] = json!(process_identity());
@@ -3073,10 +3074,7 @@ impl Session {
         o["legal_actions"] = offered;
         // Where this world sits on its own timeline, for the debugger's bar.
         o["debug"] = self.debugger_json();
-        // The turn box's Fog-honest AI row: the table's setting, and how
-        // many seats are playing that way (see `set_fog_honest`).
-        o["fog_honest"] = json!(self.fog_honest);
-        o["fog_honest_seats"] = json!(self.fog_honest_seats());
+        self.fog_honest_json(&mut o);
         o["server_instance"] = json!(process_identity());
         o["server_commit"] = json!(runtime_commit("unknown"));
         o["server_commit_time"] = json!(runtime_commit_time());
@@ -3130,6 +3128,16 @@ impl Session {
     fn seat_fog(&mut self) {
         for agent in &mut self.ais {
             agent.set_fog_honest(self.fog_honest);
+        }
+    }
+
+    /// The turn box's Fog-honest AI row: the table's setting, and how many
+    /// seats are playing that way. A repainted game of Civilization VI is
+    /// played by its own AIs, and says nothing.
+    fn fog_honest_json(&self, o: &mut Value) {
+        if self.mirror.is_none() {
+            o["fog_honest"] = json!(self.fog_honest);
+            o["fog_honest_seats"] = json!(self.fog_honest_seats());
         }
     }
 
