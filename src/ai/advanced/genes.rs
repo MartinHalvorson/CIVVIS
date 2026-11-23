@@ -6557,6 +6557,11 @@ pub const GENES: &[Gene] = &[
     // turns plus two) without starting stands aside for 10 turns, in the
     // claim and the scorer. Opt-in; see `advanced/pillaged_repairs_first.rs`.
     Gene { tag: "stuck-repair-yields-the-queue", field: "stuck_repair_yields_the_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_stuck_repair_yields_the_queue, disable: AdvancedAi::disable_stuck_repair_yields_the_queue },
+    // A Science seat's first Campus goes ahead of the early Settler floor's
+    // Settler on `first-campus-before-the-settler`'s terms (live: the floor
+    // held the first Campus in 39 of 44 Science games, a median 9 turns).
+    // Opt-in; see `advanced/science_seat_campus_before_the_settler.rs`.
+    Gene { tag: "science-seat-campus-before-the-settler", field: "science_seat_campus_before_the_settler", kind: Kind::OptIn, enable: AdvancedAi::enable_science_seat_campus_before_the_settler, disable: AdvancedAi::disable_science_seat_campus_before_the_settler },
     // Live Tournament 7 2026-11-22/23: `settler-backlog-brake` counts a
     // Settler parked only after six turns on one tile, and a Settler boxed in
     // by rival Loyalty marches, refuses and retargets without standing still.
