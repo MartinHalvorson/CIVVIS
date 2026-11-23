@@ -1455,8 +1455,13 @@ pub(super) fn place_starts_and_finish(
     // The same standoff over all passable ground, for a region with no
     // candidate left and for the pass that seats whoever the regions could
     // not: the shipped buffer is never given up while other ground has room.
+    //
+    // A board under Duel keeps the old fallback, which took any ground: it
+    // is not a map the game makes, a wonder's standoff is a third of its
+    // width, and the fixtures built on such boards stay the worlds they were.
+    let board_the_game_makes = wm.width * wm.height >= super::SMALLEST_STOCK_PLOTS;
     let land_clear_of_wonders = |floor: i32| -> BTreeSet<Pos> {
-        if wonders.is_empty() {
+        if wonders.is_empty() || !board_the_game_makes {
             return passable.clone();
         }
         passable

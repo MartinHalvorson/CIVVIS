@@ -2434,8 +2434,8 @@ A rules correction in map generation (`src/mapgen/shipped/`, `src/mapgen/stock.r
 `Base/Assets/Maps/Utility`. Continents, Pangaea, Small Continents, Islands,
 Inland Sea and Lakes take their land, relief and climate from a port of the
 game's own scripts on every board from Duel up, cliffs follow `AddCliffs` on
-every world type at those sizes, and a start keeps the shipped standoff from a
-Natural Wonder when its region runs out of candidates. Two of the five anchor
+every world type at those sizes, and a start on such a board keeps the shipped
+standoff from a Natural Wonder when its region runs out of candidates. Two of the five anchor
 profiles are Duel-sized or larger (44x28 Continents and 54x34 Pangaea), so
 every controller, `AdvancedAi::legacy()` included, now plays those two on the
 script's worlds; the three boards under Duel are unchanged. `docs/FIDELITY.md`
