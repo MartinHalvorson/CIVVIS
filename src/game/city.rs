@@ -3155,7 +3155,7 @@ impl Game {
                     || spec
                         .feature_after_civic
                         .get(feature.as_str())
-                        .is_some_and(|civic| self.players[pid].civics.contains(&Name::new(civic)))
+                        .is_some_and(|civic| self.players[pid].civics.contains(civic))
             });
             let resource_route = visible_resource.is_some_and(|resource| {
                 spec.resources.iter().any(|candidate| candidate == resource)

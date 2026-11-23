@@ -416,8 +416,11 @@ pub struct ImprovementSpec {
     pub feature: Vec<Name>,
     /// Features the improvement may also sit on once a civic is unlocked --
     /// Gathering Storm opens the Lumber Mill to Rainforest at Mercantilism.
+    /// The civic is held interned: `valid_improvements` asks it for every
+    /// improvement on every such tile a Builder weighs, and interning text
+    /// there took the global name registry's lock each time.
     #[serde(default)]
-    pub feature_after_civic: BTreeMap<String, String>,
+    pub feature_after_civic: BTreeMap<String, Name>,
     #[serde(default)]
     pub resources: Vec<Name>,
     #[serde(default)]
