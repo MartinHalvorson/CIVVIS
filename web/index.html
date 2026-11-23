@@ -3125,13 +3125,15 @@
   #side.deck-stops #politicssec[open] { scroll-margin-bottom: 0; }
   .politics-list {
     --politics-ground: #12211e; --politics-lit: #213a34; --politics-cell: 22px; --politics-disc: #0b1513;
-    position: relative; isolation: isolate; overflow: auto; max-width: 100%; max-height: 220px;
+    --politics-head: 100px;
+    position: relative; isolation: isolate; overflow: auto; max-width: 100%; max-height: calc(220px + var(--politics-head));
     overscroll-behavior-x: contain; scrollbar-color: #385148 transparent; scrollbar-width: thin;
   }
-  /* Never less than six rows, so a six-player world is read whole on any
-     window, plus a scrollbar's width. A larger world takes the height down to
-     the deck's floor, less the key below it and the padding. */
-  #side.deck-stops .politics-list { max-height: max(calc(20px + 6 * var(--politics-cell)), calc(var(--deck-window) + var(--stop-bottom) - 112px)); }
+  /* Never less than the names along the top and six rows, so a six-player
+     world is read whole on any window, plus a scrollbar's width. A larger
+     world takes the height down to the deck's floor, less the key below it and
+     the padding. */
+  #side.deck-stops .politics-list { max-height: max(calc(20px + var(--politics-head) + 6 * var(--politics-cell)), calc(var(--deck-window) + var(--stop-bottom) - 112px)); }
   .politics-matrix { min-width: 100%; border-collapse: separate; border-spacing: 0; font-size: calc(var(--type-secondary) - 1px); line-height: 1.2; }
   .politics-matrix th, .politics-matrix td { padding: 0; }
   .politics-matrix tbody td {
@@ -3147,6 +3149,14 @@
     background: color-mix(in oklab, var(--civ) 82%, #808080);
     background: oklch(from var(--civ) calc(l + clamp(-.1, (.62 - l) * 10, .1)) c h);
   }
+  /* Every other square is a step off its column's colour, as on a
+     chessboard: toward white on a dark column and toward black on a light
+     one, so the board shows on navy and on white alike. It is a veil, so a
+     lit column still shows through it; the diagonal is never one. */
+  .politics-matrix tbody td.politics-check {
+    background: #0000003d;
+    background: oklch(from var(--civ) clamp(0, (.6 - l) * 100, 1) 0 0 / .24);
+  }
   .politics-matrix tbody tr:hover td:not(.self) { background: #ffffff2e; }
   /* Where a civilization's row crosses its own column it shows its plate. */
   .politics-matrix tbody td.self { background: var(--civ); box-shadow: inset 3px 0 var(--civ-trim); }
@@ -3156,6 +3166,18 @@
     box-shadow: 1px 0 0 var(--line), 5px 0 5px -3px #0009;
   }
   .politics-matrix tbody tr:hover th, .politics-matrix tbody th.politics-crossed { background: var(--politics-lit); }
+  /* The column names stand upright along the top, each on its column, and
+     stay while the rows scroll under them; the corner stays over both. */
+  .politics-matrix thead th {
+    position: sticky; top: 0; z-index: 2; background: var(--politics-ground); vertical-align: bottom;
+    box-shadow: 0 1px 0 var(--line), 0 5px 5px -3px #0009;
+  }
+  .politics-matrix thead th:first-child { left: 0; z-index: 3; }
+  .politics-matrix thead th.politics-crossed { background: var(--politics-lit); }
+  .politics-matrix thead th > .politics-name {
+    writing-mode: vertical-rl; rotate: 180deg; width: 16px; height: auto; max-width: none; max-height: 96px;
+    margin: 4px auto 3px; padding: 4px 0 5px; border-left: 0; border-top: 3px solid var(--civ-trim);
+  }
   /* Every name is on its civilization's plate: the jersey's first colour for
      the ground, its partner for the trim and, wherever it reads, the ink. */
   .politics-name {
