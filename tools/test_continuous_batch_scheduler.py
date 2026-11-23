@@ -585,6 +585,83 @@ class MachineSharing(unittest.TestCase):
         self.assertEqual(sent_so_far[-1], signals.SIGCONT,
                          "whole workers must start from a running group")
 
+    def test_the_load_ceiling_stops_a_worker_at_it_and_adds_none_near_it(self):
+        limit = scheduler.load_limited
+        # Heading for 17.2 under a ceiling of 15: one worker stops, whatever CPU allows.
+        self.assertEqual(limit(7, running=6, projected=17.2, ceiling=15.0), 5)
+        # Within one of the ceiling: nobody is added, nobody stops.
+        self.assertEqual(limit(7, running=6, projected=14.3, ceiling=15.0), 6)
+        # Clear of it: the CPU plan stands.
+        self.assertEqual(limit(7, running=6, projected=12.0, ceiling=15.0), 7)
+        # It never raises a count the CPU plan lowered, and never goes below none.
+        self.assertEqual(limit(2, running=6, projected=12.0, ceiling=15.0), 2)
+        self.assertEqual(limit(0, running=0, projected=30.0, ceiling=15.0), 0)
+
+    def test_a_beside_option_may_carry_a_load_ceiling(self):
+        options = ["Civ6_Exe_Child=60", "/x/heavy.sh=55/13"]
+        self.assertEqual(scheduler.parse_beside(options),
+                         {"Civ6_Exe_Child": 60.0, "/x/heavy.sh": 55.0})
+        self.assertEqual(scheduler.parse_beside_loads(options), {"/x/heavy.sh": 13.0})
+        for bad in ("rustc=55/fast", "rustc=/13"):
+            with self.assertRaises(scheduler.SchedulerError):
+                scheduler.parse_beside([bad])
+        with self.assertRaises(scheduler.SchedulerError):
+            scheduler.parse_beside_loads(["rustc=55/0"])
+        with self.assertRaises(scheduler.SchedulerError):
+            scheduler.CpuGovernor(80, cores=18, load_ceiling=0)
+
+    def test_governor_holds_the_load_under_its_ceiling_though_cpu_has_room(self):
+        # An idle host by CPU, a one-minute load of 20: the workers queue
+        # behind something CPU does not show. A waiting script tightens the
+        # ceiling further, and a load well under it lets a worker back in.
+        import threading
+        import time
+
+        class Host:
+            busy = 0
+            idle = 0
+
+            def ticks(self):
+                Host.busy += 1
+                Host.idle += 99
+                return (Host.busy, Host.idle)
+
+        load = {"now": 20.0}
+        queued = threading.Event()
+        governor = scheduler.CpuGovernor(
+            80, cores=18, host=Host(),
+            processes=lambda: [self.worker(pid, 100.0 * pid) for pid in (11, 12, 13, 14)],
+            send=lambda _group, _which: None, send_one=lambda _pid, _which: None,
+            load_ceiling=15.0, loadavg=lambda: (load["now"], 0.0, 0.0),
+            beside_scripts={"/x/heavy.sh": 55}, beside_script_loads={"/x/heavy.sh": 13.0},
+            commands=lambda: (["/bin/zsh /x/heavy.sh 3 cargo build"] if queued.is_set() else []))
+
+        def reading(want):
+            deadline = time.monotonic() + 3.0
+            while time.monotonic() < deadline:
+                snapshot = governor.snapshot()
+                if snapshot and want(snapshot):
+                    return snapshot
+                time.sleep(0.01)
+            self.fail(f"no such reading; last was {governor.snapshot()}")
+
+        with mock.patch.object(scheduler, "GOVERNOR_WINDOW_SECONDS", 0.02):
+            governor.govern(77)
+            over = reading(lambda snapshot: snapshot.get("load_ceiling") == 15.0
+                           and snapshot["workers_running"] == 0 and snapshot["workers_next"] == 0)
+            self.assertEqual(over["load"], 20.0)
+            load["now"] = 14.0  # under the host's ceiling of 15, but within one of it
+            near = reading(lambda snapshot: snapshot.get("load") == 14.0)
+            self.assertEqual(near["workers_next"], 0, "nobody is added within one of the ceiling")
+            load["now"] = 5.0
+            reading(lambda snapshot: snapshot["workers_running"] == 1)
+            queued.set()
+            load["now"] = 13.5  # fine for the host, over what the queued script asks
+            tight = reading(lambda snapshot: snapshot.get("load_ceiling") == 13.0
+                            and snapshot["workers_running"] == 0)
+            self.assertEqual(tight["foreground"], "heavy.sh")
+            governor.release()
+
     def test_a_worker_is_added_only_while_the_running_ones_are_fed(self):
         count = scheduler.governed_workers
         # mbp-m5-max-128, 2026-11-23: the host reads 55% busy and the ceiling
