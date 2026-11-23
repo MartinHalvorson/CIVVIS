@@ -1648,7 +1648,7 @@ impl Game {
             *self.query_memo.passage_improvements.borrow_mut() = None;
             *self.query_memo.movement.borrow_mut() = Some(Default::default());
             *self.query_memo.amenities.borrow_mut() = Some(Default::default());
-            *self.query_memo.purchase_price.borrow_mut() = Some(PurchasePriceMemo::new());
+            *self.query_memo.purchase_price.borrow_mut() = Some(PurchasePriceMemo::default());
             *self.query_memo.unit_ids.borrow_mut() = Some(Default::default());
             *self.query_memo.worked_backlog.borrow_mut() = Some(Default::default());
             *self.query_memo.production_backlog.borrow_mut() = Some(Default::default());
