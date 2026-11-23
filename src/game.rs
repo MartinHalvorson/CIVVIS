@@ -1669,7 +1669,9 @@ struct RegionalSlot {
 /// guard: keyed on (player, city, unit kind, formation, gold?) → price.
 /// Only keyed lookups read this cache; action order comes from the ruleset
 /// sweep. Hashing the interned name avoids ordering it by ruleset text.
-type PurchasePriceMemo = HashMap<(usize, u32, Name, u8, bool), Option<f64>>;
+/// Hashed with the crate's fast hasher: a lookup is asked for every price a
+/// purchase loop quotes, and SipHash was most of the lookup.
+type PurchasePriceMemo = crate::fast_map::FastMap<(usize, u32, Name, u8, bool), Option<f64>>;
 
 /// Answer `key` from one query-memo slot, or compute it and keep it there.
 ///
