@@ -686,7 +686,8 @@ stretched. A browser without view transitions, and anyone who has asked for
 less motion (`prefers-reduced-motion`), gets the change made and no move.
 
 How long Branch holds the window is how long the halves take: about 0.7 to
-1.2 s on the published engine at 1600 by 1000 (2026-11-22, headless Chrome).
+1.5 s on the published engine (2026-11-22, headless Chrome in windows 1440
+to 1920 wide; the longer times with the host busy).
 
 ### One timeline until the worlds differ
 
