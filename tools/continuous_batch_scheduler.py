@@ -141,6 +141,17 @@ WORKER_OVERSHOOT_CORES = 0.5
 # game waits out a long quiet stretch of the host.
 WORKER_ROTATE_SECONDS = 120.0
 WORKER_ROTATE_GAP_SECONDS = 60.0
+# Fed workers. A worker is only added while the running ones each get about a
+# core, and workers queued more than one deep are stopped. ⚠ Measured
+# 2026-11-23 on mbp-m5-max-128, the service a launchd `Standard` job at Nice
+# 15: one to six running workers received 1.2, 2.1, 4.1, 5.0 and 5.4 cores,
+# and FOURTEEN received 4.7. The host read 55% busy with cores idle, so a
+# governor that counts only CPU kept adding workers; they did not run, they
+# queued, and the one-minute load went from 13 to 25-40 beside a live game.
+# How many cores a scheduling class is given is the host's business. Whether
+# our workers are getting them is ours to read.
+WORKER_FED_SLACK_CORES = 0.5
+WORKER_QUEUE_CORES = 1.5
 # Room is retaken against the busiest the rest of the host has been over this
 # long, not against its last two seconds. Work that needs free cores comes in
 # bursts (a live game's turn, a build between two crates): a worker started
@@ -460,16 +471,25 @@ def governed_workers(*, ceiling: float, cores: int, busy: float, group_cores: fl
     window (:data:`GOVERNOR_PEAK_SECONDS`). A cut reads the window just
     ended; room is measured against the peak, so the games do not move into
     a lull between two bursts of somebody else's work.
+
+    ``running`` workers that received fewer cores than there are of them are
+    not fed: none is added, and those queued more than one deep are stopped
+    (:data:`WORKER_FED_SLACK_CORES`).
     """
     rest = max(0.0, busy * cores - group_cores)
     allowed = ceiling * cores - rest
     room = ceiling * cores - max(rest, rest_peak or 0.0)
+    fed = group_cores >= running - WORKER_FED_SLACK_CORES
     if allowed < running - WORKER_OVERSHOOT_CORES:
         target = math.ceil(allowed - WORKER_OVERSHOOT_CORES)
-    elif room >= running + 1:
+    elif room >= running + 1 and fed:
         target = running + 1
     else:
         target = running
+    if running - group_cores >= WORKER_QUEUE_CORES:
+        # Queued, not running: keep one worker waiting for the next free
+        # core and stop the rest. See WORKER_FED_SLACK_CORES.
+        target = min(target, max(1, math.ceil(group_cores + WORKER_FED_SLACK_CORES)))
     return max(0, min(total, target))
 
 
@@ -803,7 +823,11 @@ class CpuGovernor:
                     if not self._signal(group, signal.SIGCONT):
                         return
                 if worker_target is None:
-                    worker_target = len(workers) - len(self.held & {row.pid for row in workers})
+                    # From nothing, one worker a window: a governor that takes
+                    # over a running segment (a daemon restart) must not let
+                    # every worker run until its first reading, and a segment
+                    # that has just grown to two workers loses nothing by it.
+                    worker_target = 0
                 ran = self._apply_workers(
                     workers, 0 if self.on_battery else min(worker_target, len(workers)), started)
                 stop.wait(GOVERNOR_WINDOW_SECONDS)
