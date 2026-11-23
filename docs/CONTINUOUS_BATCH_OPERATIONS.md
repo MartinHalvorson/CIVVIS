@@ -59,7 +59,8 @@ should not give the tournament 85% of its cores. Three `run` options bound it:
 | Option | Effect |
 | --- | --- |
 | `--cpu-share PERCENT` | Game workers = floor(PERCENT% of logical cores), never above the 85% cap; an alternative to `--jobs`. The pinned release build uses the same worker count as its `cargo --jobs`. |
-| `--machine-cpu-ceiling PERCENT` | A governor thread measures the WHOLE host's CPU (`host_statistics` on macOS, `/proc/stat` on Linux) every two seconds and pauses the owned game process group with SIGSTOP/SIGCONT, in half-second slices, for as much of the next window as keeps the host at or under PERCENT. Overshoot is cut in the next window; headroom is retaken half the way per window. The games' demand is never taken below their worker count: a low-priority worker resumed on a saturated host is barely scheduled, and a duty sized from that starved reading would let every worker in as soon as the other work paused. Nor is it taken above the worker count plus one core, and a window counts the run the games really got (this thread wakes late on a saturated host): an uncapped mis-timed reading once latched seven workers at a 0.02-0.08 duty for six days (`mbp-m5-max-128`, 2026-10-09..15, demand 144.6 cores on 18). It governs a re-adopted segment after a daemon restart too, resumes the group on release, on segment exit and on SIGTERM, and never pauses when it cannot measure. |
+| `--machine-cpu-ceiling PERCENT` | A governor thread measures the WHOLE host's CPU (`host_statistics` on macOS, `/proc/stat` on Linux) every two seconds and gives the owned games what is left under PERCENT. **Whole workers:** a segment played by several one-thread `gene_screen` processes runs that many of them and stops the others outright (SIGSTOP to the process, never to the group), so a running worker keeps its core, its cache and its clock speed. A cut is the whole overshoot in one window; room is retaken one worker a window, and only when a whole core is free. Stopped and running workers trade places every two minutes by CPU time, so every worker's seed window ends at about the same time. A worker another controller parked in darwin-background is stopped, and lifted out of that band when it resumes. **Slices:** a segment that is one process (the stock `--jobs N` segment) is paused with SIGSTOP/SIGCONT, in half-second slices, for as much of the next window as keeps the host at or under PERCENT; headroom is retaken half the way per window. There the games' demand is never taken below their worker count: a low-priority worker resumed on a saturated host is barely scheduled, and a duty sized from that starved reading would let every worker in as soon as the other work paused. Nor is it taken above the worker count plus one core, and a window counts the run the games really got (this thread wakes late on a saturated host): an uncapped mis-timed reading once latched seven workers at a 0.02-0.08 duty for six days (`mbp-m5-max-128`, 2026-10-09..15, demand 144.6 cores on 18). Either way it governs a re-adopted segment after a daemon restart too, resumes the group on release, on segment exit and on SIGTERM, and never pauses when it cannot measure. |
+| `--beside NAME=PERCENT` | While a process with exactly that executable name runs (as `pgrep -x`), the ceiling is PERCENT instead. Repeatable; the lowest that applies wins, and none can raise the ceiling. For work that needs free cores rather than a share: a live Civilization VI game (`Civ6_Exe_Child`), a compiler (`rustc`). The progress line then reads `ceiling=…%(NAME)`. |
 | `--pause-on-battery` | Pause the games (duty 0) while the host draws from its battery, or is plugged in but still discharging because the adapter cannot keep up (`pmset -g ps`, re-read every 10 s; unknown elsewhere, which never pauses). Logs each transition and marks the progress line `PAUSED_ON_BATTERY`. Turns the governor on at a 100% ceiling when no ceiling is given. Measured why on 2026-09-30: `mbp-m5-max-128` ran on battery from 82% to 1% in one hour under the host's whole load, hibernated for two hours, and took a live Civilization VI game down with it. |
 | `--progress-minutes N` | One `progress` line every N minutes (default 5) in the service log: this batch's games and seats against the boundary, the totals over every batch the state directory has served, the rate and ETA, and the governor's last reading. |
 
@@ -67,9 +68,18 @@ should not give the tournament 85% of its cores. Three `run` options bound it:
 …%`) while the daemon runs, and `status --json` carries it as `governor` beside
 `all_batches_games` / `all_batches_seats`.
 
-Pausing stops every game in flight together, so it adds wall-clock noise to
-the table's time-cost columns but cannot favour one genome over another. It
-does not change a game's result: games are seeded and have no wall-clock rule.
+Pausing cannot favour one genome over another: what is stopped is chosen by
+the host's load and a worker's CPU time, never by what it is playing. It does
+not change a game's result either: games are seeded and have no wall-clock
+rule. It does stretch wall-clock time, and under whole workers it stretches
+one game a great deal and its neighbour not at all, so a wall-clock time-cost
+column gets noisier.
+
+Why whole workers (measured 2026-11-22 on `mbp-m5-max-128`, build
+`a57ffc68c6`): nine workers sliced together at a 0.05-0.7 duty spent 350 ms
+of CPU a game turn over 429 games; the same binary spends 243 ms with
+eighteen workers running flat out and about 200 ms alone. A sliced worker
+restarts on a cold cache and a slowed core twice a second.
 
 Launch the launchd job as `ProcessType` `Standard` with a positive `Nice`
 (15 on `mbp-m5-max-128`), **not** `Background`. Measured 2026-09-30 on that
@@ -93,10 +103,25 @@ beats a lost live game. The opposite direction does work in place:
 `taskpolicy -b -p <pid>` moves a RUNNING game process to darwin background
 (its workers went from priority 20 to 4 at once), and `renice -n 19 -g <pgid>`
 lowers it too (on macOS `-n` is an increment, capped at 20). Do not pause the
-tournament with `kill -STOP`: the governor resumes its group every half second.
+tournament with `kill -STOP`: the governor resumes what it does not hold.
 
-Example (same host): `--cpu-share 50 --machine-cpu-ceiling 90` gives nine
-workers and holds the host under 90%.
+Do not pin the workers to the lower cluster with a QoS clamp to make them
+"efficiency core work". Measured 2026-11-22 on that host, one 90-turn game,
+three runs each: plain or Nice 15, 4.3-5.8 s at 3.8-4.3 GHz; `taskpolicy -c
+utility`, 9.7-11.7 s at 2.8-3.1 GHz; `taskpolicy -c background` or `-b`,
+19-36 s. The lower cluster under a clamp runs this workload at under half
+speed. At the default class the same cores cost far less: eighteen workers
+flat out, twelve of them necessarily on the lower cluster, spent 243 ms of CPU
+a turn against about 200 ms for one worker alone. Nice already puts any
+ordinary thread ahead of a worker.
+
+Example (same host): `--cpu-share 80 --machine-cpu-ceiling 80 --beside
+Civ6_Exe_Child=70 --beside rustc=60` gives fourteen one-thread workers, runs
+as many as keep the host at 80%, stands back to 70% while a live game is up
+and to 60% while anything compiles. The 60 is not arbitrary on that host:
+`~/bin/civvis-cpu-headroom` parks batch work and compilers when under 20% of
+the host is idle beside a live game and lifts them only above 40%, so a
+tournament that refilled the host past 60% would hold a parked compiler down.
 
 ## Do not
 
