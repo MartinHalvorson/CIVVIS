@@ -18,6 +18,15 @@ save deserializes through. The driver below is intact and supported, but it
 is a research regime reached only by an explicit
 `--turn-structure simultaneous`.
 
+`gene_screen --turn-structure simultaneous [--planners N]` (2026-11-22) plays
+the screen's own production players this way as a probe — the fast self-play
+mode: one planner per major by default, the rows filled exactly as a sequential
+batch fills them (`simultaneous::run_simultaneous_observed`), and the header
+marked `turn_structure: simultaneous`, which makes the batch `legacy` to
+`shape_of` and to `tools/genes.py`, so it never prices a gene. A six-major game
+of the deployment genome took 8.7 s on four planners against 22-29 s
+sequential, the same game at any planner count.
+
 It exists for throughput. Roughly two thirds of simulator runtime is the
 AIs' own deliberation (`docs/SIMULATOR_PERFORMANCE.md`), and under the
 sequential regime that deliberation cannot be parallelized across seats,
