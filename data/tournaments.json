@@ -70,7 +70,17 @@
     "played under: Games, AI level, Players, Victory types, Civ, Strategy, Map, Game speed, Turn limit, Ruleset, Played in, Game end",
     "and CIVVIS agent, in that order (`tournaments_page.HYPERPARAMETERS`). Tournaments 1-7's were read back from their games' run",
     "summaries on the ledger (`seat`, `map_size`, `speed`, `max_turns`, `ruleset`, `victories`, `decider_revisions`) on 2026-11-23.",
-    "Add a tournament's line when it is scheduled; a definition may carry its own `hyperparameters`, used for a number with no line."
+    "Add a tournament's line when it is scheduled; a definition may carry its own `hyperparameters`, used for a number with no line.",
+    "Operator 2026-11-23 ~20:50Z: \"Call our Indefinite Tourney the \"Indefinite Benchmarking Tourney\". Runs games for",
+    "benchmarking. Can run analytics over the games. Track progress over time. When we have a Tournament to run, we can pause the",
+    "Indefinite Benchmarking and run the specific Tournament. Then back to benchmarking tourneys. We should use opus 5.5 to try",
+    "to spot problem we make in benchmarking games, fix the problems in code and self-imrpove our performance over time.\":",
+    "Tournament 7 is the Indefinite Benchmarking Tourney (its `descriptions` line, the page's title line). A scheduled tournament",
+    "pauses it: the host's bench conductor yields while another tournament's conductor has its policy block in, that tournament",
+    "plays under its own tag prefix, and the benchmark resumes when it is done. Each finished benchmark game is read by Claude",
+    "Opus 5.5 on the host (bench/review_bench.py), which lists the mistakes it finds; a mistake seen in several games is handed",
+    "to an Opus 5.5 session that fixes it in code as an opt-in gene, ships it and arms it, and the benchmark's win rates measure",
+    "the change."
   ],
   "descriptions": {
     "1": "Proof of concept, 10 game series",
@@ -78,7 +88,8 @@
     "3": "30 game series",
     "4": "50 game series",
     "5": "Repeat 50 game series but with 2/6 CIVVIS AI Agents (2nd half no Diplo allowed)",
-    "6": "Benchmarking across levels: 5 games at each level (no Diplo allowed)"
+    "6": "Benchmarking across levels: 5 games at each level (no Diplo allowed)",
+    "7": "Indefinite Benchmarking Tourney"
   },
   "hyperparameters": {
     "1": {
@@ -172,7 +183,7 @@
       "CIVVIS agent": "The newest build when each game launched: 6 builds over games 8-25"
     },
     "7": {
-      "Games": "Indefinite: played whenever no other tourney runs",
+      "Games": "Indefinite: played whenever no scheduled tourney runs; a scheduled tourney pauses it and it resumes after",
       "AI level": "Since 2026-11-23 04:43: Lv 8 Deity 1 game in 2; Lv 4 Prince, Lv 5 King, Lv 6 Emperor and Lv 7 Immortal 1 in 8 each, dealt in shuffled blocks of 16. Before: Lv 6, Lv 7, Lv 8, Lv 8 in turn",
       "Players": "6: 1 CIVVIS agent + 5 Firaxis AI",
       "Victory types": "Since 2026-11-23 04:43: Diplomatic allowed in half of each level's games and off in the other half; Science, Culture, Domination, Religious and Score always on. Before: all but Diplomatic",
@@ -184,7 +195,7 @@
       "Ruleset": "Gathering Storm",
       "Played in": "Civ VI single player",
       "Game end": "Played out: a victory, our elimination or turn 250",
-      "CIVVIS agent": "The newest build when each game launched; the agent keeps changing as the tourney runs"
+      "CIVVIS agent": "The newest build when each game launched; Claude Opus 5.5 reviews every game, and a mistake it finds in several games is fixed in code and armed, so the agent keeps changing as the tourney runs"
     }
   },
   "videos": {
@@ -241,9 +252,9 @@
       "note": "Restarted on 2026-11-21 with one CIVVIS agent instead of two; the first attempt's one finished game is not counted. Games 1-7 were hotseat tables; from 2026-11-22 the rest are played in single player (one CIVVIS seat, five Firaxis AI at the level), tagged civvis-t6-."
     },
     {
-      "name": "Indefinite benchmark, Lv 4 to Lv 8, 1 CIVVIS agent + 5 AI",
-      "description": "Indefinite: our Firaxis AI benchmark, Lv 8 half the games and Lv 4 to Lv 7 an eighth each, Diplo allowed in half, whenever no other tourney runs",
-      "idea": "Whenever no other tournament is being played, one CIVVIS agent plays five Firaxis AI: half the games at Lv 8 and an eighth at each of Lv 4, 5, 6 and 7, half of each level's games with the Diplomatic victory allowed and half with it off. It is our primary benchmark against the Firaxis AI, the win rate at each level as it moves over time.",
+      "name": "Lv 4 to Lv 8 against the Firaxis AI, 1 CIVVIS agent + 5 AI",
+      "description": "Indefinite Benchmarking Tourney",
+      "idea": "Benchmark games, played whenever no scheduled tourney is: one CIVVIS agent against five Firaxis AI, half the games at Lv 8 and an eighth at each of Lv 4, 5, 6 and 7, half of each level's games with the Diplomatic victory allowed. A scheduled tourney pauses it, and it resumes when that tourney is done. Its win rate at each level is our primary benchmark against the Firaxis AI, tracked over time here and on Win Analytics. Claude Opus 5.5 reviews every game for our mistakes, and a mistake that recurs is fixed in code, so the agent improves as the tourney runs.",
       "conditions": "Lv 8 one game in two, Lv 4-7 one in eight each, 6P Continents Online, 1 CIVVIS + 5 AI, Diplomatic victory on in half the games",
       "note": "Until 2026-11-23 its games were Lv 6, Lv 7, Lv 8 and Lv 8 in turn, all with the Diplomatic victory off.",
       "start": "civvis-t7-",

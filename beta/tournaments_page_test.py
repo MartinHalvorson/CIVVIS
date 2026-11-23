@@ -467,8 +467,10 @@ class TournamentsPage(unittest.TestCase):
         # and the 11.5px number over a 17px name in the two lists.
         for gone in ("tour-number", 'el("b", "", "Tournament " + t.id)', "td.is-name b"):
             self.assertNotIn(gone, PAGE)
-        # The definitions carry the operator's six, word for word, and no
-        # tournament from the first to the last described is left out.
+        # The definitions carry the operator's descriptions, word for word,
+        # and no tournament from the first to the last described is left
+        # out. The seventh is his name for it (2026-11-23: "Call our
+        # Indefinite Tourney the "Indefinite Benchmarking Tourney"").
         defined = json.loads((ROOT / "data" / "tournaments.json").read_text(encoding="utf-8"))
         self.assertEqual(defined["descriptions"], {
             "1": "Proof of concept, 10 game series",
@@ -477,6 +479,7 @@ class TournamentsPage(unittest.TestCase):
             "4": "50 game series",
             "5": "Repeat 50 game series but with 2/6 CIVVIS AI Agents (2nd half no Diplo allowed)",
             "6": "Benchmarking across levels: 5 games at each level (no Diplo allowed)",
+            "7": "Indefinite Benchmarking Tourney",
         })
         self.assertEqual(list(defined["descriptions"]), [str(n) for n in range(1, len(defined["descriptions"]) + 1)])
         self.assertGreaterEqual(len(defined["descriptions"]), len(defined["tournaments"]))
