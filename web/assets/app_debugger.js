@@ -36,6 +36,17 @@
 // another Civ AI asks first whether the timeline plays on with it (Switch)
 // or a branch does (Branch).
 //
+// One screen and two change places in one move. A half is a whole page, and
+// takes about a second to be there: the window is held as it stands while
+// the two load out of sight, and then the two take the one's place at once,
+// the map carried to the half that goes on with it and both halves looking
+// where the one screen was looking. Closing a branch is the same move back.
+// A game that opens on its two tracks waits under a veil and is never shown
+// on one. See "one move", below the split's style.
+//
+// A panel of the box (Layers, Breakpoints, Save points) and what the box
+// asks are windows: each is moved by pressing its title and dragging.
+//
 // A game under the debugger has two views. The Debugger view is how it opens:
 // the map with the standings across the top, the victory tracker down the
 // right and the seat's governors and policies, as a watched game is shown.
@@ -573,8 +584,7 @@ const DEBUG_BAR_STYLE = `
   #debugbar .dbg-ask .dbg-line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
   #debugbar .dbg-ask .dbg-line button { padding: 0 11px; font-weight: 700; }
   /* A panel and the box's question are windows: each is moved by its title
-     (debugMoveWindows), and stands where it was put for as long as it is
-     open. */
+     (debugMoveWindows), which is the whole band across its top. */
   #debugbar .dbg-pop h4:first-child, #debugbar .dbg-ask h4 {
     margin: -12px -12px -6px; padding: 12px 12px 6px; border-radius: 14px 14px 0 0;
     cursor: grab; touch-action: none;
@@ -1571,11 +1581,15 @@ function debugBuildBar() {
 // was put is kept for as long as the page is open, so it opens there again,
 // and a double click on its title puts it back under what it opens from.
 // The place is the window's top left corner in the browser window, so it
-// holds whichever shape the box is in.
+// holds whichever shape the box is in. Each panel has its own, and so has
+// each of the two things the box asks (`data-place`).
 const debugWindowPlace = {};
 let debugWindowMove = null;
+function debugWindowKey(win) {
+  return win.dataset.place || win.id;
+}
 function debugPlaceWindow(win, bar, anchor) {
-  const frame = bar.getBoundingClientRect(), put = debugWindowPlace[win.id];
+  const frame = bar.getBoundingClientRect(), put = debugWindowPlace[debugWindowKey(win)];
   if (put) {
     // Never out of the browser window, and never with its title out of reach.
     win.style.left = `${Math.max(4, Math.min(window.innerWidth - win.offsetWidth - 4, put.x)) - frame.left}px`;
@@ -1610,7 +1624,7 @@ function debugMoveWindows(bar) {
     if (!move.moved && Math.abs(dx) + Math.abs(dy) < 3) return;
     move.moved = true;
     move.win.classList.add("dbg-moving");
-    debugWindowPlace[move.win.id] = {x: move.left + dx, y: move.top + dy};
+    debugWindowPlace[debugWindowKey(move.win)] = {x: move.left + dx, y: move.top + dy};
     debugPlaceWindow(move.win, bar, null);
   });
   for (const kind of ["pointerup", "pointercancel"])
@@ -1621,9 +1635,11 @@ function debugMoveWindows(bar) {
       move.win.classList.remove("dbg-moving");
     });
   bar.addEventListener("dblclick", event => {
-    const win = titled(event.target);
-    if (!win || !debugWindowPlace[win.id]) return;
-    delete debugWindowPlace[win.id];
+    // The window kept the pointer for the press, so the click is said of the
+    // window: what was clicked is read from where the pointer is.
+    const win = titled(event.target) || titled(document.elementFromPoint(event.clientX, event.clientY));
+    if (!win || !debugWindowPlace[debugWindowKey(win)]) return;
+    delete debugWindowPlace[debugWindowKey(win)];
     drawDebugBar(false);
   });
 }
@@ -2193,7 +2209,9 @@ function debugDrawAsk(bar) {
       `<button data-dbg-ask="close" title="Keep ${seated}">Cancel</button></div>`;
   }
   if (box.dataset.drawn !== html) { box.dataset.drawn = html; box.innerHTML = html; }
-  // Under the picker it is about, and inside the window.
+  // Under the picker it is about, and inside the window, unless it was put
+  // somewhere else: each of the two questions keeps the place it was given.
+  box.dataset.place = `dbg-ask-${debugAsk.kind}`;
   debugPlaceWindow(box, bar, anchor);
 }
 // The Civ AI picked for the one timeline is seated: the page's own picker is
@@ -2452,7 +2470,9 @@ function debugDrawDeck(bar, deck) {
 //   host → pane  pane-go      go to this turn of its own accord
 //   host → pane  pane-copy    become a copy of the other half
 //   pane → host  pane-camera  where its map is looking
-//   host → pane  pane-look    look there too
+//   host → pane  pane-look    look there too; and, to a half not yet shown, where to open looking
+//   pane → host  pane-shown   it has painted itself looking there
+//   host → pane  pane-seen    the two are shown: its map is its own to move
 // Closing the split is the host's own request to the engine: the half that
 // is kept becomes the host's session (`op: "adopt"`), timeline and all.
 //
@@ -2930,10 +2950,11 @@ function debugSplitReveal() {
   split.shown = true;
   clearTimeout(split.waiting);
   return debugSwap(() => {
-    if (debugSplit !== split) return;
+    // Whatever became of the split, the window is let go of.
     debugHold(false);
     debugVeil(false);
     debugBar.classList.remove("dbg-branching");
+    if (debugSplit !== split) { drawDebugBar(); return; }
     split.host.classList.remove("dbg-unseen");
     debugAsk = split.ask;
     drawDebugSplit();
@@ -3478,7 +3499,10 @@ if (DEBUG_PANE !== null) {
       // looks there again in its new room, until the host says it is seen.
       if (data.say === true) {
         debugLookKept = data.view || null;
-        requestAnimationFrame(() => requestAnimationFrame(() =>
+        // Two frames on, it has been painted. A window nobody is looking
+        // at paints nothing, and has nothing to wait for.
+        const painted = document.hidden ? drawn => setTimeout(drawn, 0) : drawn => requestAnimationFrame(drawn);
+        painted(() => painted(() =>
           window.parent.postMessage({civvis: "pane-shown", pane: DEBUG_PANE}, location.origin)));
       }
     } else if (data.civvis === "pane-seen") debugLookKept = null;
