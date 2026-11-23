@@ -353,8 +353,8 @@ class HomeRankings(unittest.TestCase):
         # on this page, and on the home page, which had the slot until
         # 2026-11-22 and still has it in a lane pinned to an older revision.
         publish = (BETA / "publish.sh").read_text(encoding="utf-8")
-        self.assertIn('fill home_rankings.py "$out/research/index.html"', publish)
-        self.assertIn('fill home_rankings.py "$out/home/index.html"', publish)
+        self.assertIn('fill home_rankings.py "$out/$research_at/index.html"', publish)
+        self.assertIn('fill home_rankings.py "$out/$home_at/index.html"', publish)
         # `fill` runs the lane's own script against the lane's own tree.
         self.assertIn('local script="$source_tree/beta/$1" page="$2"', publish)
         self.assertIn('python3 "$script" "$source_tree" "$page"', publish)
@@ -408,7 +408,7 @@ class HomeRankings(unittest.TestCase):
         for gone in ("rank-tournaments", "is-wide", "data.tournaments", "toursShown"):
             self.assertNotIn(gone, CHARTS)
             self.assertNotIn(gone, LANDING)
-        self.assertIn('<a class="site-link" href="../tournaments/"', CHARTS)
+        self.assertIn('<a class="site-link" href="../../auto-tourneys/"', CHARTS)
         # Every game behind the table is one click away, on the branch the
         # table is read from.
         self.assertIn(
