@@ -72,10 +72,12 @@ diplo. we should have a table on the left the is with diplo excluded and a
 table on the right that allows diplo wins. we can drop the wins, losses.
 games (n) should be listed after each value. so like 100% (5) or 14% (181).
 at the top, we should have win rate (total games)"): two tables, the games
-played with the Diplomatic victory switched off and the games played with it
-on, each a row per level from Deity (Lv 8) down to Prince (Lv 4) and a column
+played with the Diplomatic victory on and the games played with it switched
+off, each a row per level from Deity (Lv 8) down to Prince (Lv 4) and a column
 per window, the last 1, 3, 7 and 30 days, a cell being CIVVIS's win rate and
-the games it is a share of. Its games are the tournaments' own, every
+the games it is a share of. The games with it on are the left table (later on
+2026-11-23, reversing the sides first asked for: "put diplo victory allowed
+to the left of no diplo victory"). Its games are the tournaments' own, every
 finished game of every tournament the Auto-Tourneys page lists
 (`data/tournaments.json`, counted by `home_rankings.tournament_series`), so
 the two pages agree: a win is CIVVIS's victory and anything else a finished
@@ -85,7 +87,7 @@ for a game without a victory. Which table a game stands in is the game's own
 setup, read off its run summary on the ledger (`switches`): what the game
 itself reported of its Diplomatic victory, or what a hotseat table was asked
 to switch off. A game whose summary does not say is in neither table. The
-record holds it under `tournament_rates`: `tables.off` and `tables.on`, each
+record holds it under `tournament_rates`: `tables.on` and `tables.off`, each
 with every level and every window, and `to`, the newest tournament game's
 start, which every window is measured back from in whole days of 24 hours,
 so every cell of both tables is the same days' games.
@@ -176,13 +178,14 @@ WINDOWS = [("7", 7), ("30", 30), ("all", None)]
 #: down to Prince ("order the cols lv 8 down to level 4"), their columns, the
 #: days back from the newest tournament game ("a last 1 day win rate col,
 #: last 3 days, last 7 days, last 30 days"), and the tables themselves, the
-#: games with the Diplomatic victory off before the games with it on ("a
-#: table on the left the is with diplo excluded and a table on the right
-#: that allows diplo wins").
+#: games with the Diplomatic victory on before the games with it off (he
+#: first asked for "a table on the left the is with diplo excluded and a
+#: table on the right that allows diplo wins", and later that day reversed
+#: it: "put diplo victory allowed to the left of no diplo victory").
 TOURNAMENTS = pathlib.Path("data/tournaments.json")
 RATE_LEVELS = LEVELS[::-1]
 RATE_DAYS = [1, 3, 7, 30]
-RATE_TABLES = [("off", False), ("on", True)]
+RATE_TABLES = [("on", True), ("off", False)]
 
 #: The snapshot of the openings, in the source tree, and what the tree of
 #: build orders lists (operator 2026-11-23: "early build order win rates for
@@ -463,8 +466,8 @@ def tournament_games(rows: list[dict], specs: list[dict], switch=lambda tags: {}
 
 
 def win_rates(games: list[tuple]) -> dict | None:
-    """The two tables of win rates, the games with the Diplomatic victory off
-    and the games with it on: in each, every level of `RATE_LEVELS` with its
+    """The two tables of win rates, the games with the Diplomatic victory on
+    and the games with it off: in each, every level of `RATE_LEVELS` with its
     games and wins in each window of `RATE_DAYS`. A window is that many days
     of 24 hours back from the newest game of them all, in either table, so
     every cell is the same days' games, and a level with no game in a window
