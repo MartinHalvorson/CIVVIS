@@ -72,11 +72,12 @@ class TournamentsPage(unittest.TestCase):
             run("civvis-tinywar-20260731T231249Z", "unfinished", None, 0, utc="2026-07-31T23:30:00Z", players=None, map=None),
         ]
         return tournaments_page.record(rows + list(more), specs, ["Rome", "Gran Colombia", "Mali", "Gaul", "Korea"],
-                                       self.videos, self.descriptions)
+                                       self.videos, self.descriptions, self.listed)
 
-    #: The definitions file's `videos` and `descriptions`, as `record` is handed them.
+    #: The definitions file's `videos`, `descriptions` and `hyperparameters`, as `record` is handed them.
     videos: dict | None = None
     descriptions: dict | None = None
+    listed: dict | None = None
 
     def test_the_record_is_what_runs_what_waits_and_what_has_finished(self):
         record = self.record()
@@ -87,7 +88,7 @@ class TournamentsPage(unittest.TestCase):
         # ran and is not listed.
         self.assertEqual(record["scheduled"], [{
             "id": 3, "description": "", "name": "Level ladder", "idea": "Two agents at one table, level by level.",
-            "conditions": "Lv 4-8 6P Continents Online, 2 CIVVIS + 4 AI", "note": "", "size": 50,
+            "hyperparameters": [], "conditions": "Lv 4-8 6P Continents Online, 2 CIVVIS + 4 AI", "note": "", "size": 50,
         }])
         first, second = record["finished"][0], record["running"][0]
         self.assertEqual((first["games"], first["size"], first["wins"], first["losses"]), (2, 2, 1, 1))
@@ -480,6 +481,67 @@ class TournamentsPage(unittest.TestCase):
         self.assertEqual(list(defined["descriptions"]), [str(n) for n in range(1, len(defined["descriptions"]) + 1)])
         self.assertGreaterEqual(len(defined["descriptions"]), len(defined["tournaments"]))
 
+    def test_every_tournament_spells_out_its_hyperparameters(self):
+        # Operator 2026-11-23: "please spell out the tourney hyperparameters
+        # for each tourney clearly."
+        every = lambda record: {t["id"]: t["hyperparameters"] for t in record["finished"] + record["running"] + record["scheduled"]}
+        self.assertEqual(every(self.record()), {1: [], 2: [], 3: []})
+        # Listed by the tournament's number, as a description is, and put in
+        # the one order every tournament shares, whatever the file's order.
+        # A name the list does not know follows, in the file's order.
+        self.listed = {
+            "1": {"Turn limit": "250", "Extra": "  last,\n  in file order ", "Games": "2", "AI level": "Lv 8 Deity"},
+            "3": {"Games": "50", "Blank": "  ", "Number": 7},
+        }
+        self.assertEqual(every(self.record()), {
+            1: [["Games", "2"], ["AI level", "Lv 8 Deity"], ["Turn limit", "250"], ["Extra", "last, in file order"]],
+            2: [],
+            3: [["Games", "50"]],   # scheduled, and anything not a few words left out
+        })
+        # A definition's own are used for a number with no line.
+        spec = {"name": "n", "hyperparameters": {"Games": "From the definition"}, "conditions": "c",
+                "start": "civvis-t6-", "series_size": 2, "match": MATCH}
+        rows = [run("civvis-t6-20261121T100000Z", "win", "CIVILIZATION_ROME", 5)]
+        own = lambda given: tournaments_page.record(rows, [spec], ["Rome"], None, None, given)["running"][0]["hyperparameters"]
+        self.assertEqual(own(None), [["Games", "From the definition"]])
+        self.assertEqual(own({"2": {"Games": "Another tournament's"}}), [["Games", "From the definition"]])
+        self.assertEqual(own({"1": {"Games": "From the list"}}), [["Games", "From the list"]])
+        for odd in ({"1": {}}, {"1": "Games: 2"}, {"1": {"Games": ""}}, ["not", "a", "map"]):
+            self.assertEqual(own(odd), [["Games", "From the definition"]])
+        # The definitions file spells out all thirteen for every tournament
+        # begun, in the shared order, each a few words.
+        defined = json.loads((ROOT / "data" / "tournaments.json").read_text(encoding="utf-8"))
+        self.assertEqual(tournaments_page.HYPERPARAMETERS, (
+            "Games", "AI level", "Players", "Victory types", "Civ", "Strategy", "Map", "Game speed",
+            "Turn limit", "Ruleset", "Played in", "Game end", "CIVVIS agent",
+        ))
+        self.assertEqual(list(defined["hyperparameters"]), [str(n) for n in range(1, len(defined["hyperparameters"]) + 1)])
+        self.assertGreaterEqual(len(defined["hyperparameters"]), len(defined["tournaments"]) + 1)   # T4 and T5 share one
+        for number, given in defined["hyperparameters"].items():
+            self.assertEqual(tuple(given), tournaments_page.HYPERPARAMETERS, number)
+            self.assertEqual(tournaments_page.hyperparameters(defined["hyperparameters"], int(number), {}),
+                             [[name, value] for name, value in given.items()], number)
+        # What the ledger shows, spelled out where it differs from the rest.
+        hp = defined["hyperparameters"]
+        self.assertEqual({n: hp[n]["Map"] for n in hp}, {n: "Continents, Small, 9 city-states, a new map each game" for n in hp})
+        self.assertEqual({hp[n]["Game speed"] for n in hp} | {hp[n]["Turn limit"] for n in hp}, {"Online", "250"})
+        self.assertIn("all but Diplomatic", hp["5"]["Victory types"])
+        self.assertTrue(hp["6"]["Victory types"].startswith("All but Diplomatic"))
+        self.assertIn("hotseat for games 1-7", hp["6"]["Played in"])
+        self.assertIn("Lv 8 Deity 1 game in 2", hp["7"]["AI level"])
+        # The page draws them in all three lists, a name and its value to a
+        # line, as text.
+        for piece in (
+            "const hyper = (t) => {",
+            'div.append(el("dt", "", name), el("dd", "", value));',
+            'box.append(el("p", "tour-latest-title", "Hyperparameters"), dl);',
+            "  .tour-hyper { display: grid; grid-template-columns: max-content minmax(0, 1fr);",
+            "  .tour-hyper > div { display: contents; }",
+            "Hyperparameters are the settings every game of a tournament was played under.",
+        ):
+            self.assertIn(piece, PAGE)
+        self.assertEqual(PAGE.count("const settings = hyper(t);"), 3)   # running, scheduled and finished
+
     def test_a_tournament_is_its_name_on_the_left_third_and_the_rest_on_the_right(self):
         # Operator 2026-11-22: "lets have The tournaments structure to be
         # tournament number, name, and description on the left third. and
@@ -514,7 +576,8 @@ class TournamentsPage(unittest.TestCase):
             "const ident = identity(t, \"td\");",
             "ident.rowSpan = 2;",
             "cell.colSpan = columns - 1;",
-            'cell.append(strip(t, false), counts(t, [t.idea, t.note].filter(Boolean).join(" ")));',
+            'if (settings) cell.append(settings);\n'
+            '        cell.append(strip(t, false), counts(t, [t.idea, t.note].filter(Boolean).join(" ")));',
             'if (note) line("Notes", el("dd", "is-note", note));',
             "body.append(tr, games);",
             # Too narrow for that, each figure stands under its own label.

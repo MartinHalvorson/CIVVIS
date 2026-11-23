@@ -585,7 +585,10 @@
          without sound (operator: "please have the videos autoplay if
          possible (no audio)"). The single player's game starts 6 seconds
          in (operator: "have the home upper right video start at 6 seconds
-         in"), which its `data-start` says. The fastest game is whichever
+         in"), which its `data-start` says. Every video loops for as long
+         as the page is open, the single player's game back to its 6
+         seconds each time round (operator 2026-11-23: "please have the
+         vido on the website all loop indefinitely"). The fastest game is whichever
          record leads `data/performance/fastest_game_videos.json`:
          `beta/publish.sh` writes it into the `home-videos` slot below
          (`beta/home_rankings.py`), and the tile as written here is the
@@ -727,6 +730,9 @@
   // muted. A picture pressed before that plays with its sound, and a press
   // that asks for a new tab or window is the link it is, to YouTube. A
   // tile with a `data-start` begins that many seconds in, either way.
+  // Every video loops for as long as the page is open (operator
+  // 2026-11-23: "please have the vido on the website all loop
+  // indefinitely"): YouTube loops a video that is its own playlist.
   (() => {
     const VIDEO_ID = /^[\w-]{11}$/;
     let data = null;
@@ -743,6 +749,34 @@
     // Whoever asked their system for less motion keeps the pictures, and
     // plays a video by pressing it.
     const still = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    // YouTube's loop comes round to 0 s, so a player whose video starts
+    // later listens to the player's news (`enablejsapi=1`) and, once it plays
+    // again after coming round, is sent back to its start. A seek sent while
+    // the player is still reloading is not taken, so it is sent again, once
+    // a second, until the video is past its start. A player that never
+    // answers still loops, from 0 s.
+    const PLAYER = "https://www.youtube-nocookie.com";
+    const keepStart = (player, start) => {
+      let round = false, playing = false, asked = 0;
+      const send = (message) => { if (player.contentWindow) player.contentWindow.postMessage(JSON.stringify(message), PLAYER); };
+      player.addEventListener("load", () => send({ event: "listening", id: player.title, channel: "widget" }));
+      window.addEventListener("message", (event) => {
+        if (event.origin !== PLAYER || event.source !== player.contentWindow) return;
+        let info = null;
+        try { info = JSON.parse(event.data).info; } catch (_) { return; }
+        if (!info || typeof info !== "object") return;
+        if (typeof info.playerState === "number") {
+          if (info.playerState === -1 || info.playerState === 0) round = true;
+          playing = info.playerState === 1;
+        }
+        if (typeof info.currentTime !== "number") return;
+        if (info.currentTime >= start - 0.5) { round = false; return; }
+        if (round && playing && Date.now() - asked > 1000) {
+          asked = Date.now();
+          send({ event: "command", func: "seekTo", args: [start, true] });
+        }
+      });
+    };
     const starts = new Map();
     const seen = !still && "IntersectionObserver" in window && new IntersectionObserver((entries) => {
       for (const entry of entries) {
@@ -775,7 +809,8 @@
         if (!poster.isConnected) return;
         if (seen) seen.unobserve(tile);
         const player = document.createElement("iframe");
-        player.src = "https://www.youtube-nocookie.com/embed/" + id + "?autoplay=1&rel=0&playsinline=1" + (muted ? "&mute=1" : "") + (start ? "&start=" + start : "");
+        player.src = PLAYER + "/embed/" + id + "?autoplay=1&rel=0&playsinline=1&loop=1&playlist=" + id + (muted ? "&mute=1" : "") + (start ? "&start=" + start + "&enablejsapi=1" : "");
+        if (start) keepStart(player, Number(start));
         player.title = title;
         player.allow = "autoplay; encrypted-media; picture-in-picture; fullscreen";
         player.allowFullscreen = true;
