@@ -538,6 +538,53 @@ class MachineSharing(unittest.TestCase):
             self.assertEqual(beside["ceiling_percent"], 60.0)
             governor.release()
 
+    def test_a_sliced_group_that_becomes_several_workers_is_resumed_whole(self):
+        # One worker is sliced with the group, launcher included; when the
+        # second worker arrives the group must be running again, or the
+        # launcher never starts the third.
+        import signal as signals
+        import threading
+        import time
+
+        class Host:
+            busy = 0
+
+            def ticks(self):
+                Host.busy += 1000
+                return (Host.busy, 0)  # a saturated host: the slice plan pauses the group
+
+        second = threading.Event()
+        group_signals: list[int] = []
+        paused = threading.Event()
+
+        def send(_group, which):
+            group_signals.append(which)
+            if which == signals.SIGSTOP:
+                paused.set()
+
+        def table():
+            rows = [self.worker(10, 1.0, name="Python"), self.worker(11, 100.0)]
+            if second.is_set():
+                rows.append(self.worker(12, 0.0))
+            return rows
+
+        governor = scheduler.CpuGovernor(
+            80, cores=18, workers=14, host=Host(), processes=table, send=send,
+            send_one=lambda _pid, _which: None)
+        with mock.patch.object(scheduler, "GOVERNOR_WINDOW_SECONDS", 0.04), \
+                mock.patch.object(scheduler, "GOVERNOR_PERIOD_SECONDS", 0.01):
+            governor.govern(77)
+            self.assertTrue(paused.wait(3.0), "one worker on a saturated host is sliced")
+            second.set()
+            deadline = time.monotonic() + 3.0
+            while governor.snapshot().get("mode") != "workers" and time.monotonic() < deadline:
+                time.sleep(0.01)
+            self.assertEqual(governor.snapshot().get("mode"), "workers")
+            sent_so_far = list(group_signals)
+            governor.release()
+        self.assertEqual(sent_so_far[-1], signals.SIGCONT,
+                         "whole workers must start from a running group")
+
     def test_a_script_is_seen_while_it_runs_or_waits_but_not_in_our_own_options(self):
         lines = [
             "/usr/bin/python3 curated_scheduler.py run --beside-script /x/heavy.sh=55",

@@ -733,6 +733,7 @@ class CpuGovernor:
         workers: list[ProcessRow] = []
         foreground: str | None = None
         worker_target: int | None = None
+        was_whole = False
         while not stop.is_set():
             if host_before is None or cpu_before is None:
                 host_before, cpu_before, workers, foreground = self._probe(group)
@@ -755,6 +756,17 @@ class CpuGovernor:
             ran = 0
             if whole:
                 # Whole workers: the plan is a count, held for the whole window.
+                if not was_whole:
+                    # ⚠ The slice plan ends a window with the WHOLE GROUP stopped,
+                    # and the group is more than workers: the segment's launcher
+                    # starts the other workers and merges every finished game.
+                    # 2026-11-22, mbp-m5-max-128, the first segment under whole
+                    # workers: sliced while it had one worker, the launcher was
+                    # left stopped when the second arrived, and twelve of
+                    # fourteen workers were never started.
+                    self.held.clear()
+                    if not self._signal(group, signal.SIGCONT):
+                        return
                 if worker_target is None:
                     worker_target = len(workers) - len(self.held & {row.pid for row in workers})
                 ran = self._apply_workers(
@@ -786,6 +798,7 @@ class CpuGovernor:
                         stop.wait(period - run_for)
             if stop.is_set():
                 return
+            was_whole = whole
             window = time.monotonic() - started
             # The window's closing sample opens the next one: two probes per
             # window would double the ``ps`` cost for no information.
