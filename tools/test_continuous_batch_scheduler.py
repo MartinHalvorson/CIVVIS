@@ -585,6 +585,62 @@ class MachineSharing(unittest.TestCase):
         self.assertEqual(sent_so_far[-1], signals.SIGCONT,
                          "whole workers must start from a running group")
 
+    def test_a_worker_is_added_only_while_the_running_ones_are_fed(self):
+        count = scheduler.governed_workers
+        # mbp-m5-max-128, 2026-11-23: the host reads 55% busy and the ceiling
+        # is 80%, so by CPU alone there is room for many more. But six running
+        # workers are receiving 4.7 cores: the class they run in is full.
+        self.assertEqual(count(ceiling=0.8, cores=18, busy=0.55, group_cores=4.7,
+                               running=6, total=14), 6, "no seventh worker into a queue")
+        # Fourteen running on the same 4.7 cores: nine of them only wait.
+        self.assertEqual(count(ceiling=0.8, cores=18, busy=0.55, group_cores=4.7,
+                               running=14, total=14), 6,
+                         "one worker stays queued for the next free core, the rest stop")
+        # Fed workers grow as before.
+        self.assertEqual(count(ceiling=0.8, cores=18, busy=0.55, group_cores=5.8,
+                               running=6, total=14), 7)
+        # Starved outright on a saturated host: the ceiling's own cut still rules.
+        self.assertEqual(count(ceiling=0.8, cores=18, busy=1.0, group_cores=0.3,
+                               running=5, total=14), 0)
+        # Starved under the ceiling: one worker keeps waiting.
+        self.assertEqual(count(ceiling=0.8, cores=18, busy=0.5, group_cores=0.2,
+                               running=5, total=14), 1)
+
+    def test_a_governor_taking_over_a_running_segment_starts_from_no_workers(self):
+        import signal as signals
+        import threading
+        import time
+
+        class Host:
+            busy = 0
+            idle = 0
+
+            def ticks(self):
+                Host.busy += 1
+                Host.idle += 99  # an idle host: every worker could run
+                return (Host.busy, Host.idle)
+
+        stops: list[int] = []
+        first_plan = threading.Event()
+
+        def send_one(pid, which):
+            if which == signals.SIGSTOP:
+                stops.append(pid)
+                if len(set(stops)) == 4:
+                    first_plan.set()
+
+        governor = scheduler.CpuGovernor(
+            80, cores=18, host=Host(),
+            processes=lambda: [self.worker(pid, 100.0 * pid) for pid in (11, 12, 13, 14)],
+            send=lambda _group, _which: None, send_one=send_one)
+        with mock.patch.object(scheduler, "GOVERNOR_WINDOW_SECONDS", 0.05):
+            governor.govern(77)
+            self.assertTrue(first_plan.wait(3.0),
+                            "the first window stops every worker of an adopted segment")
+            time.sleep(0.01)
+            governor.release()
+        self.assertEqual(set(stops[:4]), {11, 12, 13, 14})
+
     def test_room_is_retaken_against_the_recent_peak_of_other_work(self):
         count = scheduler.governed_workers
         # This window the rest of the host used 4 cores (9 - 5): 10.4 allowed,
