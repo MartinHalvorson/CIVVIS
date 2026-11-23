@@ -512,6 +512,140 @@ fn a_lean_answer_says_where_the_world_stands_without_the_state_document() {
     assert_eq!(refused["turn"], back["turn"]);
 }
 
+/// A lean answer says how the played seat stands in the numbers its row of
+/// the standings shows, and they are the ones the state document gives it:
+/// what a search is asked to make the most of is what the page shows.
+#[test]
+fn a_lean_answer_gives_the_seat_its_row_of_the_standings() {
+    let mut session = played();
+    for _ in 0..6 {
+        step_as(&mut session, "jack");
+    }
+    let whole = session.state();
+    let lean = session.debug(&json!({"op": "status", "lean": true}));
+    let seat = &lean["seat"];
+    let mine = whole["players"]
+        .as_array()
+        .expect("the document lists the civilizations")
+        .iter()
+        .find(|player| player["id"] == json!(0))
+        .expect("the seat is one of them");
+    assert_eq!(seat["turn"], whole["turn"]);
+    for key in ["alive", "score", "cities", "population", "gold_per_turn", "yields"] {
+        assert!(!seat[key].is_null(), "the reading has no {key}");
+        assert_eq!(seat[key], mine[key], "{key}");
+    }
+    for key in ["food", "production", "gold", "science", "culture", "faith"] {
+        assert!(seat["yields"][key].is_number(), "{key}");
+    }
+}
+
+/// `play` is a run of steps asked for once: the same turns, the same marks to
+/// walk back to, and how the seat stood as each turn opened. It stops where a
+/// run stops.
+#[test]
+fn play_is_a_run_of_steps_and_reads_the_seat_each_turn() {
+    let (mut stepped, mut run) = (played(), played());
+    for _ in 0..5 {
+        step_as(&mut stepped, "jack");
+    }
+    let answer = run.debug(&json!({"op": "play", "turns": 5, "strategy": "jack", "lean": true}));
+    assert_eq!(answer["error"], Value::Null);
+    assert_eq!(world(&stepped), world(&run));
+    assert_eq!(marked(&stepped), marked(&run));
+    assert_eq!(answer["turn"], json!(6));
+    let readings = answer["readings"].as_array().expect("a reading a turn");
+    assert_eq!(readings.len(), 5);
+    for (at, reading) in readings.iter().enumerate() {
+        assert_eq!(reading["turn"], json!(at as u64 + 2));
+    }
+    // The last of them is how the seat stands now.
+    assert_eq!(readings[4], answer["seat"]);
+    // The whole document carries them as well when it is the answer.
+    let whole = run.debug(&json!({"op": "play", "turns": 1, "strategy": "jack"}));
+    assert_eq!(whole["error"], Value::Null);
+    assert_eq!(whole["readings"].as_array().map(Vec::len), Some(1));
+    assert!(whole.get("map").is_some());
+
+    // A breakpoint stops it where it stops a run of steps.
+    let set = run.debug(&json!({"op": "breakpoints", "turns": [9]}));
+    assert_eq!(set["error"], Value::Null);
+    let stopped = run.debug(&json!({"op": "play", "turns": 5, "strategy": "jack", "lean": true}));
+    assert_eq!(stopped["error"], Value::Null);
+    assert_eq!(stopped["turn"], json!(9));
+    assert_eq!(stopped["readings"].as_array().map(Vec::len), Some(2));
+    assert_eq!(stopped["debug"]["stopped"], json!({"kind": "turn", "turn": 9}));
+
+    // Asked for no turns, or for more than one request plays, it is refused
+    // and nothing is played.
+    for turns in [json!(null), json!(0), json!(101), json!("5")] {
+        let refused = run.debug(&json!({"op": "play", "turns": turns, "lean": true}));
+        assert!(
+            refused["error"].as_str().unwrap_or("").starts_with("play needs turns"),
+            "{turns}: {}",
+            refused["error"]
+        );
+        assert_eq!(refused["turn"], json!(9));
+        assert!(refused.get("readings").is_none());
+    }
+}
+
+/// What a search does with a fork (`docs/SIM_DEBUGGER.md`, "Autosearch"): it
+/// plays one schedule of Civ AIs, walks back to a turn in the middle of it
+/// and plays another from there. That has to be the second schedule played
+/// straight through, or what a search found is not what playing it gives.
+///
+/// On the game itself a walk back seats the agents kept with the turn, so it
+/// is exact wherever the walk lands. A half of a split keeps none and seats
+/// new agents on a walk, so there it is exact where the page does the same:
+/// every stretch of a schedule begins with a walk to its first turn.
+#[test]
+fn a_schedule_walked_back_to_is_the_schedule_played_straight() {
+    let play = |session: &mut Session, turns: u32, agent: &str| {
+        let answer =
+            session.debug(&json!({"op": "play", "turns": turns, "strategy": agent, "lean": true}));
+        assert_eq!(answer["error"], Value::Null);
+    };
+    let walk_to = |session: &mut Session, turn: u32, agent: &str| {
+        let answer =
+            session.debug(&json!({"op": "jump", "turn": turn, "strategy": agent, "lean": true}));
+        assert_eq!(answer["error"], Value::Null);
+        assert_eq!(answer["turn"], json!(turn));
+    };
+
+    // The game itself: jack for three turns and siege for three, straight.
+    let mut straight = played();
+    play(&mut straight, 3, "jack");
+    play(&mut straight, 3, "siege");
+    let mut one = played();
+    play(&mut one, 6, "jack");
+    let all_jack = world(&one);
+    // Walked back to the turn siege takes over on, from a line jack played.
+    walk_to(&mut one, 4, "siege");
+    play(&mut one, 3, "siege");
+    assert_eq!(world(&one), world(&straight));
+    // And back to jack's own line from the middle of it: its kept agent
+    // sits down again and plays the turns it played.
+    walk_to(&mut one, 4, "jack");
+    play(&mut one, 3, "jack");
+    assert_eq!(world(&one), all_jack);
+
+    // A half of a split: the page walks to the first turn of each stretch.
+    let host = played();
+    let mut paged = host.fork();
+    walk_to(&mut paged, 1, "jack");
+    play(&mut paged, 3, "jack");
+    walk_to(&mut paged, 4, "siege");
+    play(&mut paged, 3, "siege");
+    // A fork of it that had played another schedule first.
+    let mut searched = host.fork();
+    walk_to(&mut searched, 1, "jack");
+    play(&mut searched, 6, "jack");
+    walk_to(&mut searched, 4, "siege");
+    play(&mut searched, 3, "siege");
+    assert_eq!(world(&searched), world(&paged));
+}
+
 #[test]
 fn both_front_ends_serve_the_debugger() {
     assert!(include_str!("../wasm.rs").contains("(\"POST\", \"/debug\")"));

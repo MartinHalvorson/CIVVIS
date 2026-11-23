@@ -882,21 +882,7 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
             // than hidden city details, and make spectator comparisons useful.
             let city_ids = g.player_city_ids(o.id);
             let public_stats = g.observed_public_empire_stats.get(&o.id);
-            let mut output = crate::rules::Yields::default();
-            for &cid in &city_ids {
-                output.add(g.city_yields(cid));
-            }
-            if let Some(adjustment) = g.observed_yield_adjustments.get(&o.id) {
-                output.add(*adjustment);
-            }
-            output.add(g.player_yield_extras(o.id));
-            // An arena grants Gold and Science to the side rather than to a
-            // city, so summing cities alone would report zero of both while
-            // the treasury filled and the tree opened — and would report a
-            // side with no city as having no economy at all. Add the grants
-            // where they are actually collected, so the panel says what the
-            // turn is about to do.
-            output.add(g.arena_side_yields(o.id));
+            let output = empire_output(g, o.id);
             let modeled_population: i32 = city_ids
                 .iter()
                 .map(|&cid| g.cities[&cid].pop)
@@ -2363,6 +2349,50 @@ pub fn map_search_buildings(g: &Game, viewer: Option<usize>) -> Value {
         })
         .collect();
     json!({ "sites": sites })
+}
+
+/// What a civilization makes a turn, as the standings show it: its cities'
+/// yields, what the host said to add to them, and what the empire collects
+/// that no city does.
+pub(crate) fn empire_output(g: &Game, pid: usize) -> crate::rules::Yields {
+    let mut output = crate::rules::Yields::default();
+    for cid in g.player_city_ids(pid) {
+        output.add(g.city_yields(cid));
+    }
+    if let Some(adjustment) = g.observed_yield_adjustments.get(&pid) {
+        output.add(*adjustment);
+    }
+    output.add(g.player_yield_extras(pid));
+    // An arena grants Gold and Science to the side rather than to a
+    // city, so summing cities alone would report zero of both while
+    // the treasury filled and the tree opened — and would report a
+    // side with no city as having no economy at all. Add the grants
+    // where they are actually collected, so the panel says what the
+    // turn is about to do.
+    output.add(g.arena_side_yields(pid));
+    output
+}
+
+/// How one civilization stands on the open turn, in the numbers its row of
+/// the standings shows: score, cities, population, net Gold a turn and what
+/// it makes a turn. It is what something that plays many futures of a world
+/// compares them by (`server/debugger.rs`, a lean answer's `seat` and the
+/// `readings` of `play`), so it is a reading of the world and is given
+/// whether or not anybody has met the civilization. A game the debugger
+/// walks is never a mirrored one, so the counts are the board's own.
+pub(crate) fn standing(g: &Game, pid: usize) -> Value {
+    let player = &g.players[pid];
+    let city_ids = g.player_city_ids(pid);
+    let population: i32 = city_ids.iter().map(|&cid| g.cities[&cid].pop).sum();
+    json!({
+        "turn": g.turn,
+        "alive": player.alive,
+        "score": g.score(pid),
+        "cities": city_ids.len(),
+        "population": population,
+        "gold_per_turn": round1(player.gold_per_turn),
+        "yields": yields_json(&empire_output(g, pid)),
+    })
 }
 
 fn round1(v: f64) -> f64 {
