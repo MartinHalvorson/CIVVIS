@@ -281,6 +281,17 @@
   .perf-sum-scroll .rank-table th:first-child,
   .perf-sum-scroll .rank-table td:first-child { position: sticky; left: 0; background: var(--panel); }
   @media (max-width: 719px) { .perf-sum-table td:first-child { min-width: 150px; max-width: 190px; } }
+  /* The benchmarks processor by processor. A figure worked out from the
+     scores has its sum under it, which wraps to a second line and no
+     further, so on a phone the table scrolls sideways as the two above it
+     do. The age says in words where a row's figures come from, so that
+     cell wraps too. */
+  .rank-sub a { color: var(--accent); }
+  .rank-table.perf-proc-table th { vertical-align: bottom; white-space: normal; }
+  .rank-table.perf-proc-table td:first-child { min-width: 180px; max-width: 230px; }
+  .perf-proc-table td small { min-width: 100px; white-space: normal; }
+  .perf-proc-table td.perf-age { min-width: 120px; max-width: 170px; white-space: normal; }
+  .perf-proc-table td.perf-age b { display: block; color: #fff; font-weight: 600; }
   /* How each figure was measured: the reading's own account, a way of
      playing to a line. */
   .perf-from { margin: 8px 0 0; font-size: 12.5px; line-height: 1.5; }
@@ -469,6 +480,34 @@
                   <th scope="col" class="perf-sum">The calculation</th><th scope="col">The run reaches</th>
                 </tr>
               </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+        <!-- The same benchmarks, processor by processor (operator
+             2026-11-22: "Add in a theoretical 9980, performance and m5
+             ultra, m6. we should have a table in civvis performance that
+             has our benchmarks (and age) across each processor. we should
+             also list the single thread score and multithread score from
+             the website"). The processors and the website's scores for
+             them are `data/performance/processors.json`, and
+             `speedup_timeline.processors` works out the rows. The head of
+             the table is written with them, a column for each one-core way
+             of playing, and the age is counted on the day the page is
+             read. -->
+        <div class="res-kind" id="perf-processors" hidden>
+          <h3 class="res-kind-title">Processor by processor: the benchmarks, measured and worked out</h3>
+          <p class="rank-sub" id="perf-processors-sub">
+            Experimental is the processor the benchmarks were run on.
+            Theoretical is a calculation from two scores, not a run.
+            One game on one core is the measured time, times the measured processor&#8217;s single thread score, over the row&#8217;s own.
+            Games a minute on every core are the measured run&#8217;s, times the row&#8217;s multithread score, over the measured processor&#8217;s.
+            A score is not this simulator, so a theoretical row is what the scores predict until the benchmark is run on that processor.
+            The age is how old the readings are that a row&#8217;s figures rest on.
+          </p>
+          <div class="res-scroll perf-sum-scroll">
+            <table class="rank-table perf-sum-table perf-proc-table" id="perf-processors-table">
+              <thead></thead>
               <tbody></tbody>
             </table>
           </div>
@@ -754,6 +793,87 @@
       }
       document.getElementById("perf-throughput").hidden = !through.length;
 
+      // The same benchmarks, processor by processor (operator 2026-11-22:
+      // "we should have a table in civvis performance that has our
+      // benchmarks (and age) across each processor. we should also list the
+      // single thread score and multithread score from the website"). A row
+      // is the processor the benchmarks were run on, or a calculation from
+      // the website's two scores, and then each figure has its sum under it.
+      const across = speed.processors && typeof speed.processors === "object" ? speed.processors : null;
+      const chips = across && Array.isArray(across.rows) ? across.rows.filter((row) => row && row.key && row.name) : [];
+      const site = (across && across.site) || {};
+      if (chips.length) {
+        // A page of the website becomes an address, so it is checked for
+        // its shape first.
+        const ADDRESS = /^https:\/\/[\w.-]+\/[\w\/.?=&+%-]*$/;
+        const linked = (words, address) => {
+          if (!ADDRESS.test(String(address))) return document.createTextNode(words);
+          const link = el("a", "", words);
+          link.href = address;
+          link.target = "_blank";
+          link.rel = "noreferrer";
+          return link;
+        };
+        // How old a reading is on the day the page is read, in whole days.
+        const DAY = 24 * 60 * 60 * 1000;
+        const old = (iso) => {
+          const then = Date.parse(String(iso) + "T00:00:00Z");
+          if (!Number.isFinite(then)) return "";
+          const n = Math.max(0, Math.floor((Date.now() - then) / DAY));
+          return n ? n + (n === 1 ? " day" : " days") : "Under a day";
+        };
+        // The head: the multiplier beside the name as in the tables above,
+        // then the every-core run it is worked out from, a column for each
+        // one-core way of playing, the two scores, and the age.
+        const played = (Array.isArray(chips[0].games) ? chips[0].games : []).filter((game) => game && game.key).map((game) => game.key);
+        const head = el("tr");
+        const column = (words) => { const th = el("th", "", words); th.scope = "col"; head.append(th); };
+        ["Processor", "Faster than by hand", "Games a minute, every core"].forEach(column);
+        for (const key of played) column(way(key) + ", one core");
+        ["Single thread score", "Multithread score", "Benchmark age"].forEach(column);
+        document.querySelector("#perf-processors-table thead").append(head);
+        const figured = (value, said, cls) => {
+          const cell = el("td", cls || "", value ? text(value) : "—");
+          if (value && said) cell.append(el("small", "", text(said)));
+          return cell;
+        };
+        const rows = document.querySelector("#perf-processors-table tbody");
+        for (const row of chips) {
+          const ran = row.kind === "measured", kind = ran ? "measured" : "theory";
+          const tr = el("tr", ran ? "is-measured" : "");
+          const made = Number(row.cores) || 0, threads = Number(row.threads) || 0;
+          const first = el("td");
+          first.append(el("b", "", text(row.name)), " ", el("span", "perf-kind is-" + kind, KINDS[kind]), el("small", "",
+            (made ? made + " cores" + (threads && threads !== made ? ", " + threads + " threads" : "") + ". " : "")
+            + (ran ? "The benchmarks were run on it." : row.fleet ? "In the fleet. The benchmarks have not been run on it." : "Not run. Worked out from its scores.")));
+          const every = row.every_core || {};
+          tr.append(first, figured(row.times, row.times_sum, "perf-times"),
+            figured(every.a_minute, every.kind === "theory" ? every.sum : "counted in a run"));
+          for (const key of played) {
+            const game = (Array.isArray(row.games) ? row.games : []).find((cell) => cell && cell.key === key) || {};
+            tr.append(figured(game.time, game.kind === "theory" ? game.sum : "measured"));
+          }
+          // Each score links the website's page it was read on.
+          const single = el("td"), multi = el("td"), age = el("td", "perf-age");
+          single.append(linked(text(row.single_thread) || "—", row.page));
+          multi.append(linked(text(row.multithread) || "—", row.page));
+          const samples = Number(row.samples) || 0;
+          if (samples) {
+            multi.append(el("small", "", samples + (samples === 1 ? " sample" : " samples")
+              + (row.margin && row.margin !== "low" ? ", " + text(row.margin) + " margin for error" : "")));
+          }
+          if (row.taken) age.append(el("b", "", old(row.taken)), el("small", "", (ran ? "measured " : "from the readings of ") + day(row.taken)));
+          else age.append("—");
+          tr.append(single, multi, age);
+          rows.append(tr);
+        }
+        if (site.name) {
+          document.getElementById("perf-processors-sub").append(" The scores are ", linked(text(site.name), site.address),
+            "’s " + text(site.single_thread) + " and " + text(site.multithread) + (site.read ? ", read " + day(site.read) : "") + ".");
+        }
+        document.getElementById("perf-processors").hidden = false;
+      }
+
       // How each figure was measured: the reading's own account. The
       // readings mark a command with backticks, which a page does not.
       const from = document.getElementById("perf-from");
@@ -762,6 +882,11 @@
         const name = el("dt", "", row.kind === "measured" ? way(row.of) + ", every core" : row.kind === "theory" ? way(row.key) + ", alone on the machine" : way(row.key));
         if (row.taken) name.append(el("span", "", " · " + day(row.taken)));
         from.append(name, el("dd", "", text(row.from).replace(/`/g, "")));
+      }
+      if (chips.length && site.from) {
+        const name = el("dt", "", "Single thread and multithread scores");
+        if (site.read) name.append(el("span", "", " · " + day(site.read)));
+        from.append(name, el("dd", "", text(site.from)));
       }
       from.parentElement.hidden = !from.childElementCount;
       document.getElementById("perf-speedup").hidden = false;

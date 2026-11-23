@@ -10,7 +10,9 @@ published. Nothing derived is committed.
 
 The CIVVIS Performance page opens on the same readings as two tables, each
 figure beside the sum that gives it. They are described under
-[The tables on CIVVIS Performance](#the-tables-on-civvis-performance).
+[The tables on CIVVIS Performance](#the-tables-on-civvis-performance). A
+third table there puts the same benchmarks on other processors:
+[Processor by processor](#processor-by-processor).
 
 ## The five stops
 
@@ -95,6 +97,60 @@ Three ledger keys are read by these tables alone:
   the machine to itself: `taken`, the `turns` it ran, the `seconds` it took,
   and `from`. The newest is used.
 
+## Processor by processor
+
+The third table on the Performance page lists the benchmarks across
+processors: the one they were run on, and others they have not been run on.
+The processors are `data/performance/processors.json`, and
+`speedup_timeline.processors` works out the rows.
+
+Each processor has two scores from PassMark's CPU benchmark charts
+(cpubenchmark.net): the Single Thread Rating and the Multithread Rating of
+its page there. A score is the website's average over the machines its users
+tested, so the list keeps the number of samples and the margin for error the
+page gives beside it.
+
+A row is one of two kinds.
+
+| Kind | What it is | The sums |
+| --- | --- | --- |
+| Experimental | The processor the benchmarks were run on. Its one-core games are the readings of the timeline, and its games a minute are the every-core record among the runs on its chip. | None: the figures are counted. |
+| Theoretical | A processor the benchmarks were not run on. A calculation from the two scores, not a run. | One game on one core: `measured seconds × measured single thread score ÷ its own`. Every core: `measured games a minute × its multithread score ÷ the measured one`. |
+
+The multiplier is the row's games a minute, times 60, times the hours one
+game takes by hand, as in the table above it.
+
+A theoretical row says what the scores predict. PassMark's tests are not
+this simulator, and a score is an average over other people's machines, so
+the row stands until the benchmark is run on that processor. When
+`tools/games_per_minute.py --record` is run on a listed processor, its row's
+every-core figure becomes the run's: the tool writes the chip's name into
+the run, and a processor whose `chip` matches it shows the record among its
+runs. Its one-core games stay worked out until the one-core readings are
+taken there too.
+
+The age in the last column is counted by the page on the day it is read,
+from the oldest reading a row's figures rest on. A theoretical row is as old
+as the measured readings it is worked out from.
+
+The list's keys:
+
+- `scores` names the website: `site`, `address`, what it calls each score,
+  and `from`, how a score is read there.
+- `measured` is the key of the processor the one-core readings were taken on.
+- A processor is a `key`, the `name` the table shows, `cores`, `threads`, and
+  `scores`: dated readings of its page, oldest first, the newest shown.
+  A reading is the day it was `read`, `single_thread`, `multithread`,
+  `samples`, `margin` and the `page`.
+- `chip` is the name `tools/games_per_minute.py` gives the processor in a
+  recorded run (`machine.chip`). `fleet` is the machine's ID in
+  `docs/MACHINES.md` when the project has one.
+
+To add a processor, add an entry with one reading of its page. To refresh a
+score, add a newer reading after the ones there. The page of a processor is
+found from `https://www.cpubenchmark.net/cpu.php?cpu=<its name there>`, with
+`+` for each space.
+
 ## Adding a reading
 
 A reading is one line in a stop's `readings`, after the ones already there:
@@ -131,4 +187,5 @@ A game alone on the machine is one more reading, in the stop's `alone`: one
 seconds. One seed is a thin reading; the mean of several is a better one.
 
 `python3 beta/speedup_timeline.py .` prints what the home page will show, and
-`python3 beta/speedup_timeline.py --worked .` the Performance page's tables.
+`python3 beta/speedup_timeline.py --worked .` the Performance page's tables,
+the processors among them.

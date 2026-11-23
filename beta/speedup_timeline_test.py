@@ -24,14 +24,17 @@ LEDGER = json.loads((ROOT / speedup_timeline.LEDGER).read_text(encoding="utf-8")
 BENCHMARK = "data/performance/games_per_minute.json"
 
 
-def tree(scratch: str, ledger: dict | None, runs: list[dict] | None = None) -> pathlib.Path:
-    """A source tree holding this ledger and these benchmark runs."""
+def tree(scratch: str, ledger: dict | None, runs: list[dict] | None = None, listed: dict | None = None) -> pathlib.Path:
+    """A source tree holding this ledger, these benchmark runs and this list
+    of processors."""
     source = pathlib.Path(scratch)
     (source / "data/performance").mkdir(parents=True, exist_ok=True)
     if ledger is not None:
         (source / speedup_timeline.LEDGER).write_text(json.dumps(ledger), encoding="utf-8")
     if runs is not None:
         (source / BENCHMARK).write_text(json.dumps({"runs": runs}), encoding="utf-8")
+    if listed is not None:
+        (source / speedup_timeline.PROCESSORS).write_text(json.dumps(listed), encoding="utf-8")
     return source
 
 
@@ -373,6 +376,194 @@ class Worked(unittest.TestCase):
                 self.assertGreater(reading["turns"], 0)
                 self.assertGreater(reading["seconds"], 0)
                 self.assertGreater(len(reading["from"]), 20)
+
+
+class Processors(unittest.TestCase):
+    """The Performance page's third table (operator 2026-11-22: "Add in a
+    theoretical 9980, performance and m5 ultra, m6. we should have a table
+    in civvis performance that has our benchmarks (and age) across each
+    processor. we should also list the single thread score and multithread
+    score from the website")."""
+
+    LISTED = {
+        "scores": {"site": "Chartsite", "address": "https://charts.example/", "single_thread": "One Thread", "multithread": "Every Thread",
+                   "from": "the website's page for each processor"},
+        "measured": "ours",
+        "processors": [
+            {"key": "ours", "name": "Ours", "cores": 10, "threads": 10, "chip": "Apple M5 Max", "fleet": "mbp-m5-max-128", "scores": [
+                {"read": "2026-11-01", "single_thread": 9999, "multithread": 9999, "samples": 3, "page": "https://charts.example/ours"},
+                {"read": "2026-11-23", "single_thread": 4000, "multithread": 40000, "samples": 200, "margin": "low", "page": "https://charts.example/ours"},
+            ]},
+            {"key": "wide", "name": "Wide", "cores": 64, "threads": 128, "fleet": "martbot-9985", "scores": [
+                {"read": "2026-11-22", "single_thread": 3200, "multithread": 100000, "samples": 4, "margin": "high", "page": "https://elsewhere.example/wide"},
+            ]},
+            {"key": "quick", "name": "Quick", "cores": 12, "threads": 12, "chip": "Quick Chip", "scores": [
+                {"read": "2026-11-20", "single_thread": 5000, "multithread": 20000, "samples": 80, "page": "https://charts.example/quick"},
+            ]},
+        ],
+    }
+
+    def shown(self, listed: dict | None = None, runs: list[dict] | None = None, ledger: dict | None = None) -> dict | None:
+        with tempfile.TemporaryDirectory() as scratch:
+            source = tree(scratch, ledger or Worked.LEDGER, Worked.RUNS if runs is None else runs, self.LISTED if listed is None else listed)
+            return speedup_timeline.worked(source)
+
+    def test_the_processor_the_readings_were_taken_on_shows_them_as_measured(self):
+        across = self.shown()["processors"]
+        self.assertEqual(across["site"], {
+            "name": "Chartsite", "address": "https://charts.example/", "single_thread": "One Thread", "multithread": "Every Thread",
+            "from": "the website's page for each processor", "read": "2026-11-23",
+        })
+        self.assertEqual([row["key"] for row in across["rows"]], ["ours", "wide", "quick"])
+        ours = across["rows"][0]
+        # The newest reading of the website is the one shown.
+        self.assertEqual((ours["single_thread"], ours["multithread"], ours["samples"], ours["margin"], ours["read"]), ("4,000", "40,000", 200, "low", "2026-11-23"))
+        self.assertEqual((ours["name"], ours["cores"], ours["threads"], ours["fleet"], ours["page"]), ("Ours", 10, 10, "mbp-m5-max-128", "https://charts.example/ours"))
+        # Its one-core games are the stops' newest readings, and its
+        # every-core figure the record among the runs on its own chip: the
+        # only run that names it.
+        self.assertEqual(ours["kind"], "measured")
+        self.assertEqual([(cell["key"], cell["kind"], cell["time"], cell["taken"]) for cell in ours["games"]],
+                         [("deity_sim", "measured", "30 s", "2026-11-22"), ("self_play", "measured", "60 s", "2026-12-01")])
+        self.assertTrue(all("sum" not in cell for cell in ours["games"]))
+        self.assertEqual(ours["every_core"], {"kind": "measured", "of": "self_play", "games_a_minute": 8.0, "a_minute": "8", "an_hour": "480", "taken": "2026-11-25"})
+        self.assertEqual((ours["times"], ours["times_sum"]), ("2,400x", "8 games a minute × 60 × 5 h"))
+        # The age is counted from the oldest reading its figures rest on.
+        self.assertEqual(ours["taken"], "2026-11-22")
+
+    def test_any_other_processor_is_worked_out_from_the_two_scores(self):
+        across = self.shown()["processors"]
+        wide, quick = across["rows"][1:]
+        self.assertEqual(wide["kind"], "theory")
+        # One game on one core: the measured time, times the measured
+        # processor's single thread score, over the row's own.
+        self.assertEqual([(cell["key"], cell["kind"], cell["time"], cell["sum"]) for cell in wide["games"]],
+                         [("deity_sim", "theory", "38 s", "30 s × 4,000 ÷ 3,200"), ("self_play", "theory", "75 s", "60 s × 4,000 ÷ 3,200")])
+        # Every core: the measured record, times the row's multithread
+        # score, over the measured processor's.
+        self.assertEqual(wide["every_core"], {
+            "kind": "theory", "of": "self_play", "games_a_minute": 20.0, "a_minute": "20", "an_hour": "1,200", "taken": "2026-11-25",
+            "sum": "8 games a minute × 100,000 ÷ 40,000",
+        })
+        self.assertEqual((wide["times"], wide["times_sum"], wide["taken"]), ("6,000x", "20 games a minute × 60 × 5 h", "2026-11-22"))
+        self.assertEqual((wide["single_thread"], wide["multithread"], wide["samples"], wide["margin"], wide["fleet"]), ("3,200", "100,000", 4, "high", "martbot-9985"))
+        # A page that is not the website's own is not linked.
+        self.assertNotIn("page", wide)
+        # A slower many-core processor plays one game slower and more games.
+        self.assertEqual((quick["games"][1]["time"], quick["every_core"]["a_minute"], quick["times"]), ("48 s", "4", "1,200x"))
+        self.assertNotIn("margin", quick)
+        self.assertNotIn("fleet", quick)
+
+    def test_a_run_on_a_processor_s_own_chip_is_its_measured_figure(self):
+        # Once the benchmark is run on a listed chip its every-core figure
+        # is the count and not the calculation, the record among its runs.
+        runs = Worked.RUNS + [
+            {"taken": "2026-11-27T05:00:00Z", "games_per_minute": 3.0, "machine": {"chip": "Quick Chip", "cores": 12}},
+            {"taken": "2026-11-28T05:00:00Z", "games_per_minute": 5.0, "machine": {"chip": "Quick Chip", "cores": 12}},
+            {"taken": "2026-11-29T05:00:00Z", "games_per_minute": 4.5, "machine": {"chip": "Quick Chip", "cores": 12}},
+        ]
+        across = self.shown(runs=runs)["processors"]
+        ours, wide, quick = across["rows"]
+        self.assertEqual(quick["every_core"], {"kind": "measured", "of": "self_play", "games_a_minute": 5.0, "a_minute": "5", "an_hour": "300", "taken": "2026-11-28"})
+        self.assertEqual((quick["kind"], quick["times"]), ("measured", "1,500x"))
+        # Its one-core games were not run there, so they stay worked out.
+        self.assertEqual([cell["kind"] for cell in quick["games"]], ["theory", "theory"])
+        # The others still rest on the measured processor's own record.
+        self.assertEqual((ours["every_core"]["a_minute"], wide["every_core"]["sum"]), ("8", "8 games a minute × 100,000 ÷ 40,000"))
+
+    def test_every_sum_shown_gives_the_figure_beside_it(self):
+        base = 18000
+        for across in (self.shown()["processors"], speedup_timeline.worked(ROOT)["processors"]):
+            worked_out = 0
+            for row in across["rows"]:
+                every = row["every_core"]
+                self.assertAlmostEqual(done_again(row["times_sum"]), row["multiplier"], delta=0.002 * row["multiplier"], msg=row["times_sum"])
+                self.assertEqual(row["times"], speedup_timeline.times(row["multiplier"]))
+                self.assertEqual(every["a_minute"], speedup_timeline.rate(every["games_a_minute"]))
+                self.assertAlmostEqual(row["multiplier"], every["games_a_minute"] * base / 60, delta=0.001 * row["multiplier"])
+                for cell in [every] + row["games"]:
+                    self.assertEqual("sum" in cell, cell["kind"] == "theory", row["key"])
+                    if cell["kind"] == "theory":
+                        worked_out += 1
+                        figure = cell.get("games_a_minute") or cell["seconds"]
+                        self.assertAlmostEqual(done_again(cell["sum"]), figure, delta=0.002 * figure, msg=cell["sum"])
+                for cell in row["games"]:
+                    self.assertEqual(cell["time"], speedup_timeline.clock(cell["seconds"]))
+            self.assertGreaterEqual(worked_out, 6)
+
+    def test_without_a_list_or_a_run_the_table_shows_what_it_can(self):
+        # A revision with no list of processors has its two tables and no
+        # third, and so has one whose list cannot be read.
+        with tempfile.TemporaryDirectory() as scratch:
+            shown = speedup_timeline.worked(tree(scratch, Worked.LEDGER, Worked.RUNS))
+        self.assertNotIn("processors", shown)
+        self.assertEqual(len(shown["games"]), 4)
+        for broken in ({"processors": []}, {**self.LISTED, "measured": "nobody"}):
+            self.assertNotIn("processors", self.shown(listed=broken))
+        # No run on the measured processor's chip: the one-core games are
+        # shown, and no every-core figure is made up for anyone.
+        across = self.shown(runs=[{"taken": "2026-11-22T05:32:38Z", "games_per_minute": 6.0}])["processors"]
+        for row in across["rows"]:
+            self.assertNotIn("every_core", row)
+            self.assertNotIn("times", row)
+            self.assertEqual(len(row["games"]), 2)
+        self.assertEqual([row["kind"] for row in across["rows"]], ["measured", "theory", "theory"])
+
+    def test_the_committed_list_is_whole(self):
+        listed = json.loads((ROOT / speedup_timeline.PROCESSORS).read_text(encoding="utf-8"))
+        site = listed["scores"]
+        self.assertRegex(site["address"], r"^https://[\w.-]+/$")
+        for key in ("site", "single_thread", "multithread"):
+            self.assertTrue(site[key], key)
+        self.assertGreater(len(site["from"]), 40, "the list says how a score is read")
+        keys = [entry["key"] for entry in listed["processors"]]
+        names = [entry["name"] for entry in listed["processors"]]
+        self.assertEqual(len(keys), len(set(keys)))
+        self.assertEqual(len(names), len(set(names)), "two rows of the table would read alike")
+        self.assertIn(listed["measured"], keys)
+        machines = (ROOT / "docs/MACHINES.md").read_text(encoding="utf-8")
+        for entry in listed["processors"]:
+            self.assertGreaterEqual(entry["threads"], entry["cores"], entry["key"])
+            self.assertGreater(entry["cores"], 0)
+            days = [reading["read"] for reading in entry["scores"]]
+            self.assertTrue(days, entry["key"])
+            self.assertEqual(days, sorted(days), f"{entry['key']}: the readings are kept oldest first")
+            for reading in entry["scores"]:
+                self.assertRegex(reading["read"], r"^\d{4}-\d{2}-\d{2}$")
+                self.assertGreater(reading["single_thread"], 0)
+                self.assertGreater(reading["multithread"], reading["single_thread"])
+                self.assertGreater(reading["samples"], 0)
+                self.assertIn(reading["margin"], ("low", "medium", "high"))
+                self.assertTrue(reading["page"].startswith(site["address"]), reading["page"])
+            # A machine of the fleet is named as the registry names it.
+            if "fleet" in entry:
+                self.assertIn(f"`{entry['fleet']}`", machines)
+        # Nothing derived is kept.
+        self.assertNotIn("multiplier", json.dumps(listed["processors"]))
+        # The measured processor is the one the benchmark's runs name, so
+        # its row is the record and every other row has a figure to be
+        # worked out from.
+        measured = next(entry for entry in listed["processors"] if entry["key"] == listed["measured"])
+        runs = json.loads((ROOT / BENCHMARK).read_text(encoding="utf-8"))["runs"]
+        self.assertIn(measured["chip"], {(run.get("machine") or {}).get("chip") for run in runs})
+        self.assertEqual(measured["cores"], speedup_timeline.worked(ROOT)["machine"]["cores"])
+
+    def test_the_operator_s_processors_are_listed_and_only_ours_is_measured(self):
+        across = speedup_timeline.worked(ROOT)["processors"]
+        rows = {row["key"]: row for row in across["rows"]}
+        # The machine the benchmarks run on, then the three he asked for.
+        self.assertEqual(across["rows"][0]["key"], "m5_max")
+        for key in ("threadripper_9980x", "m5_ultra_36", "m6"):
+            self.assertEqual(rows[key]["kind"], "theory", key)
+        self.assertEqual([row["key"] for row in across["rows"] if row["kind"] == "measured"], ["m5_max"])
+        # Our row is the run the rest of the page shows.
+        run = speedup_timeline.worked(ROOT)["throughput"][0]
+        self.assertEqual((rows["m5_max"]["times"], rows["m5_max"]["every_core"]["a_minute"]), (run["times"], run["a_minute"]))
+        for row in across["rows"]:
+            self.assertRegex(row["single_thread"], r"^\d{1,3}(,\d{3})*$")
+            self.assertRegex(row["multithread"], r"^\d{1,3}(,\d{3})*$")
+            self.assertRegex(row["taken"], r"^\d{4}-\d{2}-\d{2}$")
+            self.assertEqual([cell["key"] for cell in row["games"]], ["deity_sim", "self_play"])
 
 
 class Page(unittest.TestCase):

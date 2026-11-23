@@ -200,11 +200,17 @@ class TheSpeedup(unittest.TestCase):
         with tempfile.TemporaryDirectory() as scratch, contextlib.redirect_stderr(io.StringIO()) as said:
             root = pathlib.Path(scratch)
             (root / "data/performance").mkdir(parents=True)
-            for name in ("speedup_timeline.json", "games_per_minute.json"):
+            for name in ("speedup_timeline.json", "games_per_minute.json", "processors.json"):
                 (root / "data/performance" / name).write_text((ROOT / "data/performance" / name).read_text(encoding="utf-8"), encoding="utf-8")
             alone = performance_page.performance(root)
+            # Without the list of processors the two tables stand as they
+            # were and the third is not drawn.
+            (root / speedup_timeline.PROCESSORS).unlink()
+            unlisted = performance_page.performance(root)
         self.assertEqual((alone["speedup"], alone["windows"], alone["videos"]), (record["speedup"], {}, []))
         self.assertNotIn("no speedup readings", said.getvalue())
+        self.assertTrue(record["speedup"]["processors"]["rows"])
+        self.assertEqual(unlisted["speedup"], {key: value for key, value in record["speedup"].items() if key != "processors"})
         # And one without them says so and shows the rest.
         with tempfile.TemporaryDirectory() as scratch, contextlib.redirect_stderr(io.StringIO()) as said:
             root = pathlib.Path(scratch)
@@ -220,8 +226,10 @@ class TheSpeedup(unittest.TestCase):
         self.assertEqual(re.findall(r'<section class="res-section" id="([\w-]+)"', record), ["perf-speedup", "perf-video", "perf-times", "perf-batches"])
         self.assertIn('<section class="res-section" id="perf-speedup" aria-labelledby="perf-speedup-title" hidden>', PAGE)
         self.assertIn('document.getElementById("perf-speedup").hidden = false;', PAGE)
-        # The sentence, the tiles, one game at a time, then the machine.
-        order = ['id="perf-speed-lede"', 'id="perf-speed-tiles"', 'id="perf-games-table"', 'id="perf-throughput"', 'id="perf-throughput-table"', 'id="perf-from"']
+        # The sentence, the tiles, one game at a time, the machine, then
+        # the same benchmarks processor by processor.
+        order = ['id="perf-speed-lede"', 'id="perf-speed-tiles"', 'id="perf-games-table"', 'id="perf-throughput"', 'id="perf-throughput-table"',
+                 'id="perf-processors"', 'id="perf-processors-table"', 'id="perf-from"']
         places = [self.SECTION.index(mark) for mark in order]
         self.assertEqual(places, sorted(places))
         self.assertIn("One machine, every core: experimental and theoretical throughput", self.SECTION)
@@ -239,11 +247,51 @@ class TheSpeedup(unittest.TestCase):
         for row in shown["throughput"]:
             self.assertIn(f"\n        {row.get('basis') or row['kind']}: (row) =>", told)
         # The multiplier is the first figure beside the name in both tables.
+        # The third, processor by processor, has its head written with its
+        # rows (a column for each one-core way of playing).
         heads = re.findall(r"<thead>(.*?)</thead>", self.SECTION, flags=re.S)
-        self.assertEqual(len(heads), 2)
-        for head in heads:
+        self.assertEqual(len(heads), 3)
+        for head in heads[:2]:
             self.assertEqual(re.findall(r"<th[^>]*>([^<]+)</th>", head)[1], "Faster than by hand")
             self.assertIn('<th scope="col" class="perf-sum">The calculation</th>', head)
+        self.assertEqual(heads[2], "")
+
+    def test_the_benchmarks_stand_processor_by_processor_under_the_machine(self):
+        # Operator 2026-11-22: "Add in a theoretical 9980, performance and
+        # m5 ultra, m6. we should have a table in civvis performance that
+        # has our benchmarks (and age) across each processor. we should
+        # also list the single thread score and multithread score from the
+        # website".
+        self.assertIn('<div class="res-kind" id="perf-processors" hidden>', self.SECTION)
+        self.assertIn('document.getElementById("perf-processors").hidden = false;', PAGE)
+        self.assertIn('<table class="rank-table perf-sum-table perf-proc-table" id="perf-processors-table">', self.SECTION)
+        self.assertIn("Theoretical is a calculation from two scores, not a run.", self.SECTION)
+        script = PAGE[PAGE.index("// The same benchmarks, processor by processor"):PAGE.index("// How each figure was measured: the reading's own account.")]
+        # The multiplier beside the name as in the tables above, the run it
+        # comes from, each one-core way of playing, his two scores, the age.
+        self.assertIn('["Processor", "Faster than by hand", "Games a minute, every core"].forEach(column);', script)
+        self.assertIn('for (const key of played) column(way(key) + ", one core");', script)
+        self.assertIn('["Single thread score", "Multithread score", "Benchmark age"].forEach(column);', script)
+        # A row is a run or a calculation, said beside its name in the words
+        # of the table above, and a figure worked out has its sum under it.
+        self.assertIn('el("span", "perf-kind is-" + kind, KINDS[kind])', script)
+        self.assertIn('figured(every.a_minute, every.kind === "theory" ? every.sum : "counted in a run")', script)
+        self.assertIn('tr.append(figured(game.time, game.kind === "theory" ? game.sum : "measured"));', script)
+        # The age is counted on the day the page is read, from the day of
+        # the oldest reading the row rests on.
+        self.assertIn("Math.floor((Date.now() - then) / DAY)", script)
+        self.assertIn('age.append(el("b", "", old(row.taken))', script)
+        # A score links the website's page it was read on, and an address
+        # from the slot is checked for its shape before it is one.
+        self.assertIn("if (!ADDRESS.test(String(address))) return document.createTextNode(words);", script)
+        self.assertIn("single.append(linked(text(row.single_thread) || \"—\", row.page));", script)
+        self.assertIn("multi.append(linked(text(row.multithread) || \"—\", row.page));", script)
+        for row in speedup_timeline.worked(ROOT)["processors"]["rows"]:
+            self.assertRegex(row["page"], r"^https://[\w.-]+/[\w/.?=&+%-]*$")
+        # The website says for itself how a score is read, with the other
+        # accounts of how a figure was measured.
+        self.assertIn('const name = el("dt", "", "Single thread and multithread scores");', PAGE)
+        self.assertIn('from.append(name, el("dd", "", text(site.from)));', PAGE)
 
     def test_no_figure_is_written_into_the_page(self):
         # Every one is the slot's, so the page cannot say a figure the

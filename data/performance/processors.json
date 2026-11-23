@@ -1,0 +1,77 @@
+{
+  "about": [
+    "The processors the CIVVIS Performance page (`beta/performance.html`) lists the simulator's benchmarks across, in the page's order. `docs/SPEEDUP_TIMELINE.md` says how a row is worked out.",
+    "Operator 2026-11-22: \"Add in a theoretical 9980, performance and m5 ultra, m6. we should have a table in civvis performance that has our benchmarks (and age) across each processor. we should also list the single thread score and multithread score from the website\".",
+    "`scores` is the website the two scores are read from: its name, its `address`, what it calls each score, and `from`, how a score is read there. A processor is a `key`, the `name` the page shows, its `cores` and `threads`, and its `scores`: dated readings of the website's page for it, oldest first, the newest the one shown. A reading is the day it was `read`, the `single_thread` and `multithread` scores, the `samples` the website's average is of, the `margin` for error the website gives that average, and the `page` they were read on. A newer reading is a new line after the ones already there.",
+    "`measured` is the key of the processor the one-core readings of `data/performance/speedup_timeline.json` were taken on. `chip`, where a processor has one, is what `tools/games_per_minute.py` writes as `machine.chip` in a recorded run on it: the record among that chip's runs is the processor's every-core figure, counted and not worked out. `fleet` is the machine's ID in `docs/MACHINES.md` when the project has one of these.",
+    "Every other figure is a calculation, not a run. One game on one core is the measured processor's time, times its single thread score, over this processor's. The games a minute on every core are the measured processor's record, times this processor's multithread score, over the measured processor's.",
+    "Nothing derived is written here. `beta/speedup_timeline.py` works out every row when the site is published."
+  ],
+  "scores": {
+    "site": "PassMark",
+    "address": "https://www.cpubenchmark.net/",
+    "single_thread": "Single Thread Rating",
+    "multithread": "Multithread Rating",
+    "from": "PassMark's CPU benchmark charts at cpubenchmark.net. A processor's page there gives its Single Thread Rating and its Multithread Rating, each the average over the machines whose owners ran PassMark's PerformanceTest on that processor and sent in the result. The samples are the machines behind the average, and the margin for error is the one the page gives it. Read from each processor's own page on the day shown."
+  },
+  "measured": "m5_max",
+  "processors": [
+    {
+      "key": "m5_max",
+      "name": "Apple M5 Max",
+      "cores": 18,
+      "threads": 18,
+      "chip": "Apple M5 Max",
+      "fleet": "mbp-m5-max-128",
+      "scores": [
+        {"read": "2026-11-23", "single_thread": 5962, "multithread": 57634, "samples": 205, "margin": "low", "page": "https://www.cpubenchmark.net/cpu.php?cpu=Apple+M5+Max+18+Core&id=7231"}
+      ]
+    },
+    {
+      "key": "threadripper_9980x",
+      "name": "AMD Threadripper 9980X",
+      "cores": 64,
+      "threads": 128,
+      "scores": [
+        {"read": "2026-11-23", "single_thread": 4556, "multithread": 143623, "samples": 45, "margin": "low", "page": "https://www.cpubenchmark.net/cpu.php?cpu=AMD+Ryzen+Threadripper+9980X&id=6670"}
+      ]
+    },
+    {
+      "key": "threadripper_pro_9985wx",
+      "name": "AMD Threadripper PRO 9985WX",
+      "cores": 64,
+      "threads": 128,
+      "fleet": "martbot-9985",
+      "scores": [
+        {"read": "2026-11-23", "single_thread": 4486, "multithread": 150121, "samples": 74, "margin": "low", "page": "https://www.cpubenchmark.net/cpu.php?cpu=AMD+Ryzen+Threadripper+PRO+9985WX&id=6807"}
+      ]
+    },
+    {
+      "key": "m5_ultra_36",
+      "name": "Apple M5 Ultra, 36-core",
+      "cores": 36,
+      "threads": 36,
+      "scores": [
+        {"read": "2026-11-23", "single_thread": 6336, "multithread": 86618, "samples": 4, "margin": "high", "page": "https://www.cpubenchmark.net/cpu.php?cpu=ARM+Apple+M5+Ultra+36+Core+0+MHz&id=7508"}
+      ]
+    },
+    {
+      "key": "m5_ultra_30",
+      "name": "Apple M5 Ultra, 30-core",
+      "cores": 30,
+      "threads": 30,
+      "scores": [
+        {"read": "2026-11-23", "single_thread": 6278, "multithread": 74618, "samples": 13, "margin": "medium", "page": "https://www.cpubenchmark.net/cpu.php?cpu=ARM+Apple+M5+Ultra+30+Core+0+MHz&id=7523"}
+      ]
+    },
+    {
+      "key": "m6",
+      "name": "Apple M6",
+      "cores": 12,
+      "threads": 12,
+      "scores": [
+        {"read": "2026-11-23", "single_thread": 6414, "multithread": 35746, "samples": 83, "margin": "low", "page": "https://www.cpubenchmark.net/cpu.php?cpu=ARM+Apple+M6+12+Core+0+MHz&id=7488"}
+      ]
+    }
+  ]
+}
