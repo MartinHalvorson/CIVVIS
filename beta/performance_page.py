@@ -7,7 +7,8 @@
                                                 rebuild the timing snapshot
 
 The Performance page (`beta/performance.html`, served at
-`<lane>/performance/`) is CIVVIS's own page in the site list: the entry that
+`<lane>/charts/civvis-performance/`, the address it states itself) is
+CIVVIS's own page in the site list: the entry that
 opens under CIVVIS (operator 2026-11-21: "performance should be a page
 similar to the home/ and other similar pages (musings/research/) etc. we want
 the civvis performance charts there. fastest game video. p1, p10, p50, p90,
