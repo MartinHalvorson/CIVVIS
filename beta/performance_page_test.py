@@ -227,7 +227,9 @@ class TheSpeedup(unittest.TestCase):
 
     def test_it_is_the_first_part_of_the_page_and_shows_only_when_filled(self):
         record = PAGE[PAGE.index('<div class="res-record" id="perf-record" hidden>'):]
-        self.assertEqual(re.findall(r'<section class="res-section" id="([\w-]+)"', record), ["perf-speedup", "perf-video", "perf-times", "perf-batches"])
+        # Under the computer control chart, the page's top chart since
+        # 2026-11-24 (`control_times_test.py`).
+        self.assertEqual(re.findall(r'<section class="res-section" id="([\w-]+)"', record), ["perf-control", "perf-speedup", "perf-video", "perf-times", "perf-batches"])
         self.assertIn('<section class="res-section" id="perf-speedup" aria-labelledby="perf-speedup-title" hidden>', PAGE)
         self.assertIn('document.getElementById("perf-speedup").hidden = false;', PAGE)
         # The sentence, the tiles, one game at a time, the machine, the
@@ -376,7 +378,7 @@ class ThePage(unittest.TestCase):
         self.assertIn('<p class="res-empty" id="perf-empty">This copy of the page has no figures.', PAGE)
         self.assertIn('<div class="res-record" id="perf-record" hidden>', PAGE)
         # Each part shows only when its own figures arrived.
-        for part in ("perf-video", "perf-times", "perf-batches"):
+        for part in ("perf-control", "perf-video", "perf-times", "perf-batches"):
             self.assertRegex(PAGE, rf'<section class="res-section" id="{part}" aria-labelledby="{part}-title" hidden>')
 
     def test_a_snapshot_taken_with_other_percentiles_is_not_drawn(self):
@@ -429,7 +431,7 @@ class ThePage(unittest.TestCase):
         self.assertEqual([key for key, _, _ in buttons], performance_page.WINDOWS)
         # One blue for every mark, and what a time is and is not is said.
         self.assertIn("--series: #3987e5;", PAGE)
-        self.assertIn("These are a tournament&#8217;s times, not a benchmark&#8217;s", PAGE)
+        self.assertIn("A tournament&#8217;s times, not a benchmark&#8217;s.", PAGE)
 
 
 class TheSiteList(unittest.TestCase):

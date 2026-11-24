@@ -305,7 +305,7 @@
      nthe remaining amount (note that this is a Fable 5.2 best estimate of
      the numbers)"). A goal says what renting the rest of the way to it is
      estimated to cost, and a note under the line says whose estimate that
-     is and of what.
+     is. What it is an estimate of is on CIVVIS Performance.
      Between the fastest stop and the goals stand the stops nothing has
      played yet, under the line (operator, 2026-11-22: "add to out speedup
      timeline: 10x theoretical scale up from local hardware ... hardware
@@ -335,18 +335,18 @@
   .speed-dot { display: none; }
   .speed-label { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 0 14px; }
   .speed-name { color: var(--text); font-size: 14px; font-weight: 600; }
-  .speed-what { grid-column: 1; grid-row: 2; color: var(--muted); font-size: 12px; line-height: 1.4; }
+  .speed-what { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .speed-read { grid-column: 2; grid-row: 1; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
   .speed-read b { color: #fff; font-size: 16px; font-weight: 700; }
   .speed-read i { margin-left: 6px; color: var(--gold); font-size: 14px; font-style: normal; font-weight: 700; }
   .speed-goal { grid-column: 2; grid-row: 2; color: var(--muted); font-size: 11.5px; text-align: right; white-space: nowrap; }
   .speed-stop.is-fastest .speed-name { color: #fff; }
-  /* Under the line: whose estimate the goals' cloud cost is, and of what. */
+  /* Under the line: whose estimate the goals' cloud cost is. */
   .speed-note { max-width: 860px; margin: 8px 0 0; color: var(--faint); font-size: 12px; line-height: 1.5; }
   .speed-note a { color: var(--accent); text-decoration: none; white-space: nowrap; }
   .speed-note a:hover { text-decoration: underline; }
-  /* A phone keeps the names and the figures and leaves the sentences out. */
-  @media (max-width: 639px) { .speed-what { display: none; } }
+  /* A stop is its name and its figures at every width. Its sentence is
+     what a pointer held over it says, and what a screen reader reads. */
   @media (min-width: 1120px) {
     /* The line: 70px of room over it for the stops that stand above, the
        tenfolds' own marks under it, and the stops that stand below under
@@ -403,7 +403,6 @@
        many times a measured stop, and nothing has played at it. */
     .speed-ahead .speed-dot { background: var(--bg); border: 2px solid var(--accent); box-shadow: none; }
     .speed-name { display: block; font-size: 13px; white-space: nowrap; }
-    .speed-what { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
     .speed-read { display: block; text-align: inherit; }
     .speed-goal { display: block; text-align: inherit; }
   }
@@ -527,16 +526,14 @@
   </header>
 
   <main class="shell">
+    <!-- One line, where a paragraph stood until 2026-11-24 (operator:
+         "there is too much text on pages, particualrly home/ and charts/.
+         should be a more visual experience. some text ok. just not too
+         much"). What it left out is in the header over it: the code under
+         GitHub, requests and issues under Suggest Feature / Report Issue. -->
     <p class="intro">
-      CIVVIS is an open source re-implementation of the 4X turn-based strategy
-      game <cite>Sid Meier&#8217;s Civilization VI</cite> &#8212; built with a
-      simulator UI wrapping the headless mode game logic.
-      Everything here is a best-effort work in progress; the AI logic in
-      particular still needs a good bit of work. Feel free to
-      <a href="https://github.com/MartinHalvorson/CIVVIS" target="_blank" rel="noreferrer">clone the code</a>,
-      request new features or
-      <a href="https://github.com/MartinHalvorson/CIVVIS/issues" target="_blank" rel="noreferrer">report any issues</a>
-      you run into.
+      An open source re-implementation of <cite>Sid Meier&#8217;s Civilization VI</cite>.
+      A best-effort work in progress.
     </p>
 
     <!-- The speed timeline (operator, 2026-11-22: "Above the 6 seconds
@@ -563,7 +560,7 @@
     <section class="speed" id="speed" aria-label="How many times faster than a person a game is played" hidden>
       <div class="speed-head">
         <p class="speed-number" data-speed="speedup"></p>
-        <p class="speed-claim">faster than playing a game of Civilization VI by hand <span data-speed="was" hidden></span></p>
+        <p class="speed-claim">faster than a game played by hand <span data-speed="was" hidden></span></p>
         <p class="speed-aim"><a href="https://github.com/MartinHalvorson/CIVVIS/blob/main/docs/SPEEDUP_TIMELINE.md" target="_blank" rel="noreferrer">How it is measured</a></p>
       </div>
       <div class="speed-track">
@@ -653,9 +650,7 @@
         </ol>
       </div>
       <p class="speed-note" id="speed-note" hidden>
-        Cloud cost is a best estimate by <span data-speed="cloud-by"></span>, not a quote:
-        the rest of the way to a theoretical speed, rented as <span data-speed="cloud-machine"></span> machines
-        at <span data-speed="cloud-price"></span> an hour each.
+        Cloud cost: a best estimate by <span data-speed="cloud-by"></span>, not a quote.
         <a href="../charts/civvis-performance/#perf-cloud">How it is worked out</a>
       </p>
     </section>
@@ -799,12 +794,11 @@
       entry.classList.toggle("is-start", stop.at > 0.92);
       entry.title = [entry.querySelector(".speed-what").textContent, stop.from].filter(Boolean).join(" ");
     }
-    // Whose estimate the cloud cost is, and of what machine at what price.
+    // Whose estimate the cloud cost is. The machine and its price are on
+    // CIVVIS Performance, where the note's link goes.
     const cloud = data.cloud && typeof data.cloud === "object" ? data.cloud : null;
-    if (cloud && cloud.by && cloud.machine && cloud.price) {
+    if (cloud && cloud.by) {
       put(section, "cloud-by", cloud.by);
-      put(section, "cloud-machine", cloud.machine);
-      put(section, "cloud-price", cloud.price);
       document.getElementById("speed-note").hidden = false;
     }
     // Words a row out from the line need the room for it on their side.

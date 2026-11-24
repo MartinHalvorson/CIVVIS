@@ -292,6 +292,12 @@
   .tour-key { display: inline-block; width: 9px; height: 9px; margin-right: 4px; border-radius: 2px; background: var(--loss); vertical-align: -1px; }
   .tour-key.is-win { background: var(--gold); }
   .tour-legend { margin: 0; color: var(--faint); font-size: 11.5px; line-height: 1.5; }
+  /* How a game is counted, closed until it is pressed (operator, 2026-11-24:
+     "there is too much text on pages ... some text ok. just not too much"). */
+  .fine { margin-top: 8px; }
+  .fine > summary { width: max-content; max-width: 100%; color: var(--faint); font-size: 11.5px; cursor: pointer; }
+  .fine > summary:hover, .fine[open] > summary { color: var(--accent); }
+  details.fine > .tour-legend { max-width: 860px; margin-top: 6px; }
 
   /* The counts under the squares, a line each: wins by victory, losses by
      how they were lost, the record per level when the levels differ, and
@@ -456,12 +462,14 @@
   </header>
 
   <main class="shell">
+    <!-- One line, where a paragraph stood until 2026-11-24 (operator:
+         "there is too much text on pages, particualrly home/ and charts/.
+         should be a more visual experience. some text ok. just not too
+         much"). Each tourney's own description and its hyperparameters are
+         as he asked for them; the page's notes on how a game is counted are
+         under "How it is counted", closed until it is pressed. -->
     <p class="intro">
-      A tournament is one idea, played out: a set number of verification
-      games under fixed conditions, in which a CIVVIS AI agent plays inside
-      <cite>Sid Meier&#8217;s Civilization VI</cite> against the game&#8217;s
-      own AI. Tournaments are scheduled one after another, and the agents
-      play them in order, game after game.
+      Series of verification games: a CIVVIS AI agent inside <cite>Civilization VI</cite>, against the game&#8217;s own AI.
     </p>
 
     <!-- The record. Three lists, all read from the run ledger and the
@@ -483,9 +491,7 @@
         <p class="rank-sub" data-sub></p>
         <ol class="tour-queue"></ol>
         <p class="rank-note">
-          Scheduling a tournament is adding its definition, the idea, the conditions and the number of games, to
-          <a href="https://github.com/MartinHalvorson/CIVVIS/blob/main/data/tournaments.json" target="_blank" rel="noreferrer">data/tournaments.json</a>.
-          It is listed here until its first game finishes.
+          Scheduled in <a href="https://github.com/MartinHalvorson/CIVVIS/blob/main/data/tournaments.json" target="_blank" rel="noreferrer">data/tournaments.json</a>.
         </p>
       </section>
       <section class="tour-section" id="tour-finished" hidden aria-labelledby="tour-finished-title">
@@ -505,13 +511,18 @@
       <p class="tour-legend">
         <span class="tour-key is-win"></span>win &#160; <span class="tour-key"></span>loss &#160;
         A square is a game, in the order played; hover one for the civ, the ending and the turn.
-        A win is any victory. A loss is a rival&#8217;s victory, our elimination, or a game conceded early.
-        A launch that never reached a board is not a game.
-        Dates are UTC, on the 24-hour clock.
-        Wall time is from a tournament&#8217;s first game starting to its last game ending.
-        Run time is the time its games were in play, added up, without the time between them.
-        Hyperparameters are the settings every game of a tournament was played under.
       </p>
+      <details class="fine">
+        <summary>How it is counted</summary>
+        <p class="tour-legend">
+          A win is any victory. A loss is a rival&#8217;s victory, our elimination, or a game conceded early.
+          A launch that never reached a board is not a game.
+          Dates are UTC, on the 24-hour clock.
+          Wall time is from a tournament&#8217;s first game starting to its last game ending.
+          Run time is the time its games were in play, added up, without the time between them.
+          Hyperparameters are the settings every game of a tournament was played under.
+        </p>
+      </details>
     </div>
   </main>
 

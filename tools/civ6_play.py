@@ -624,6 +624,9 @@ def partial_summary(tag: str, config: dict, state: dict) -> dict:
         "max_turns": config["MaxTurns"],
         "reason": "killed",
         "partial": True,
+        # How long the run had been going when it was stopped; see `RUN_CLOCK`.
+        "started_utc": RUN_CLOCK["started_utc"],
+        "timing": run_timing(),
         "last_turn": state.get("turn"),
         "last_score": state.get("score"),
         "cities_at_60": state.get("cities_at_60"),
@@ -1989,6 +1992,67 @@ def _setup_timed(name: str, fn):
 
 def utc_stamp() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+# ★ THE RUN CLOCK: how long a game takes with CIVVIS at the controls, end to
+# end (operator 2026-11-24: "we should be benchmarking our civvis computer
+# control games time end to end and that number show flow through to a
+# performance chart"). One monotonic clock for the whole run, started as
+# `play` is entered, before Civilization VI is launched, and read as the
+# summary is written. Two marks split it into the three parts a run has:
+# `configured` (the game is hosted and set up; play begins) and `ended` (the
+# watch loop is over; what is left is the hold on the final screen, the quit
+# and the summary). The summary carries the readings as `timing` and the
+# moment the clock started as `started_utc`; `civ6_ladder.result_row` puts
+# them on the run's line of `results.jsonl`, which the CIVVIS Performance
+# page charts (`beta/control_times.py`, `docs/CONTROL_GAME_TIME.md`).
+#
+# Until this clock a run's time could only be read off two stamps, the one in
+# its tag and `finished_utc`, which is wrong for a game reloaded from its
+# autosave: a continuation's tag carries the first run's stamp.
+#
+# A reading must never cost a run its summary: `run_timing` returns `None`
+# for anything it cannot work out, and a mark that was never reached is
+# simply absent.
+RUN_CLOCK: dict = {"t0": None, "started_utc": None, "marks": {}}
+
+
+def run_clock_start() -> None:
+    RUN_CLOCK.update(t0=time.monotonic(), started_utc=utc_stamp(), marks={})
+
+
+def run_clock_mark(step: str) -> None:
+    """Note the first time `step` is reached; a second call changes nothing."""
+    if RUN_CLOCK["t0"] is not None:
+        RUN_CLOCK["marks"].setdefault(step, time.monotonic())
+
+
+def run_timing(now: float | None = None) -> dict | None:
+    """The run's time so far as the summary records it, in seconds to a
+    tenth, or `None` when the clock never started.
+
+    `seconds` is the whole run. `setup_seconds` is the start to the game
+    being configured, `play_seconds` from there to the end of the watch loop
+    and `end_seconds` the rest; a part whose mark was never reached is left
+    out (a run stopped during setup has `seconds` alone), so the parts that
+    are there never add up to more than the whole.
+    """
+    try:
+        t0 = RUN_CLOCK["t0"]
+        if t0 is None:
+            return None
+        now = time.monotonic() if now is None else now
+        marks = RUN_CLOCK["marks"]
+        timing = {"seconds": round(max(0.0, now - t0), 1)}
+        configured, ended = marks.get("configured"), marks.get("ended")
+        if configured is not None:
+            timing["setup_seconds"] = round(max(0.0, configured - t0), 1)
+            if ended is not None and ended >= configured:
+                timing["play_seconds"] = round(ended - configured, 1)
+                timing["end_seconds"] = round(max(0.0, now - ended), 1)
+        return timing
+    except Exception:  # noqa: BLE001 - a reading is never why a summary is lost
+        return None
 
 
 #: How often the control mod polls SQLite for CIVVIS's answer, in agent ticks —
@@ -6845,6 +6909,8 @@ def _uninstall_owned_mod(tag: str, preinstalled_mod: bool = False) -> None:
 
 
 def play(args: argparse.Namespace) -> int:
+    # The benchmark's clock: everything from here to the summary is the run.
+    run_clock_start()
     legacy_score_ratio = getattr(args, "restart_below_leader_ratio", 0.0)
     if legacy_score_ratio not in (0, 0.0):
         print("[policy] ignoring --restart-below-leader-ratio="
@@ -8692,6 +8758,7 @@ def _play(args: argparse.Namespace) -> int:
             return EXIT_LEADER_UNVERIFIED
         return 5
     setup_mark("configured", stop=True)
+    run_clock_mark("configured")
     if host_health.clear():
         print("[host] a game configured; cleared the recorded host fault", flush=True)
     # ★★★★★ THE SEAT EVENT USUALLY ARRIVES DURING BOOTSTRAP, so `finished` never
@@ -9011,6 +9078,7 @@ def _play(args: argparse.Namespace) -> int:
     # row, step by step (the hold, the rescue queue, the quit, the decider, the
     # summary). Play log only.
     end_t0 = time.monotonic()
+    run_clock_mark("ended")
 
     def end_mark(step: str) -> None:
         print(f"[end-time] {step} +{time.monotonic() - end_t0:.2f}s", flush=True)
@@ -9070,6 +9138,11 @@ def _play(args: argparse.Namespace) -> int:
     summary = {
         "tag": args.tag,
         "finished_utc": utc_stamp(),
+        # ★ THE BENCHMARK: how long this run took end to end, by the harness's
+        # own clock, and its three parts (setup, play, the ending). The
+        # CIVVIS Performance page charts it game by game; see `RUN_CLOCK`.
+        "started_utc": RUN_CLOCK["started_utc"],
+        "timing": run_timing(),
         "difficulty": config["Difficulty"],
         "map_size": config["MapSize"],
         "speed": config["GameSpeed"],
