@@ -36,7 +36,7 @@ The first stop is the one every other is divided into.
 | --- | --- | --- |
 | Human player (`hand`) | One person, in Civilization VI. | The project owner's own figure for a game: five hours. |
 | Firaxis computer control (`control`) | Civilization VI itself, Firaxis's game, with CIVVIS at the controls of one seat. | The computer control benchmark (`beta/control_times.py`, [`docs/CONTROL_GAME_TIME.md`](CONTROL_GAME_TIME.md)): the middle game of the games played to a victory in the last seven days, each timed end to end, from launching the game to its ending. The stop names it (`"benchmark": "control"`), so a finished game moves the stop with the next publish. A clone without the run ledger shows the newest reading written in the ledger instead. |
-| Firaxis self-play (`firaxis_self_play`) | Civilization VI itself with Firaxis's own AI in every seat. | Not timed yet. The reading is worked out from our own games: the setup, the turns Firaxis's AI takes and the ending of a computer control game, with a sixth AI seat in place of ours. See [A reading that was worked out](#a-reading-that-was-worked-out). |
+| Firaxis self-play (`firaxis_self_play`) | Civilization VI itself with Firaxis's own AI in every seat. | One game played by the verification lane between two of its own (`tools/civ6_play.py --firaxis-self-play`): the lane's setup at Lv 8, our seat handed to the game's autoplay manager on its first turn. Timed end to end by the harness's run clock, the clock the computer control games are timed by. See [Timing a Firaxis self-play game](#timing-a-firaxis-self-play-game). |
 | CIVVIS self-play (`self_play`) | The simulator, one core: every seat a CIVVIS AI agent. | The mean of twelve games, `gene_screen --jobs 1` with its defaults, from each game's `secs`. |
 | Parallel games, M5 Max, all 18 cores (`all_cores`) | CIVVIS self-play on every core of one machine at once. | Sixty seconds over the record of `data/performance/games_per_minute.json` (`docs/GAMES_PER_MINUTE.md`): the time from one finished game to the next. |
 
@@ -58,22 +58,45 @@ not timed itself. The home page draws its stop as a broken ring and says
 "worked out, not yet timed", and the Performance page marks its row. A timed
 reading added after it takes its place, and the mark goes with it.
 
-Firaxis self-play is the one such reading. The control harness
-(`tools/civ6_play.py`) always plays our seat, so it cannot start a game that
-leaves every seat to the game's own autoplay, and the older grounding harness
-(`tools/civ6_run.py`) can only start the game's default setup. Until one of
-them can, the figure is this sum over our newest computer control games:
+Firaxis self-play began as such a reading on 2026-11-24, 549 s, worked out
+from the turns Firaxis's AI takes in our own computer control games. The same
+day the lane played one for real, and the timed reading took its place:
+331.9 s. The sum had been too slow by two thirds. With no seat of ours in the
+game, a turn took 1.61 s, where the AI's share of a turn in our games is
+2.1 s.
 
-| Part of the middle game | Seconds |
+### Timing a Firaxis self-play game
+
+The control harness plays one when asked (`--firaxis-self-play`, #5795): the
+lane's own setup, with our seat handed to the game's autoplay manager on its
+first turn and no order issued. The lane starts it from a one-shot marker:
+
+```bash
+touch ~/.civvis-firaxis-self-play-once
+```
+
+At its next game boundary the lane removes the file, plays one self-play
+game, and goes on to its ordinary game. The run is kept beside the lane's
+own, in `~/civvis-civ6-runs/firaxis-selfplay/<tag>/summary.json`, under
+`firaxis_self_play`: whether the autoplay took the seat, how the game ended
+and on which turn, `play_seconds` from the first turn to the victory,
+`run_seconds` for the whole run, and the machine's load at both ends. It is
+not a game of ours, so it writes no ladder row and nothing to the run ledger.
+
+The reading in the ledger is `run_seconds`, the whole run, so that it stands
+beside the computer control games' end-to-end time. The first game, run
+`firaxis-selfplay-20261124T174852Z`:
+
+| Part | Seconds |
 | --- | ---: |
-| Setup, from launching Civilization VI to the first turn | 47.8 |
-| Our own seat's turns | 238.7 |
-| The turns of Firaxis's AI: five seats, the city-states, the barbarians | 409.4 |
-| The ending | 9.9 |
+| Setup, from launching Civilization VI to the first turn | 48.0 |
+| Play, 171 turns to a science victory | 275.2 |
+| The ending | 8.7 |
+| The whole run | 331.9 |
 
-A game of the same length with a sixth Firaxis seat in place of ours is the
-setup, the AI's turns and the ending: 467 s if the sixth seat cost nothing,
-and 549 s if it cost a fifth more. The slower figure is the reading.
+It is one game. A game's length moves with the turn it is won on (our own
+Lv 8 games end between turn 135 and turn 219), so a few more games would
+give a middle one.
 
 ## The number
 
