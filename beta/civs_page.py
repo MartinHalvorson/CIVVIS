@@ -34,8 +34,16 @@ winngest civs to the bottom"):
   Diplomatic victory switch (`research_page.switches`), whether CIVVIS won,
   the day it began, the turns its second and third cities were founded, and
   its pantheon and its religion's two founding beliefs, as places in
-  `names`. The page counts them itself, for the level, switch and days its
-  reader picks. A game's cities and faith (`civ6_ladder.founding_reading`)
+  `names`; then how the game stood at two marks and what it aimed for
+  (operator 2026-11-24: "reflect on the top most important decisions a civ
+  player has to make throughout the game. rank them into a list
+  chronologically. make a top chart or two that shows monitors the
+  problem. merge your charts into the civ analytics chart chronologically
+  as well so the whole thing is really one logic timeline of making
+  decisions in civ"): its cities at turn 50 and the best rival's, its
+  science at turn 100 as a share of the best rival's, and the victory its
+  seat was set to aim for (`progress`). The page counts them itself, for
+  the level, switch and days its reader picks. A game's cities and faith (`civ6_ladder.founding_reading`)
   are in its runs' summaries (`founding_marks`) from 2026-11-24, and the
   games before that are in a snapshot, `data/research/game_marks.json`,
   which `--marks` fills from the event logs on the ledger branch.
@@ -213,18 +221,78 @@ def written_marks(data: dict) -> str:
     return json.dumps(head, indent=1)[:-2] + ',\n "games": [\n' + ",\n".join(lines) + "\n ]\n}\n"
 
 
+#: The victories a seat can be set to aim for (a run summary's
+#: `victory_target`), in Win Analytics' order, and as the game names them.
+TARGETS = research_page.VICTORIES
+TARGET_NAMES = ["Science", "Culture", "Diplomatic", "Religious", "Domination", "Score"]
+
+
+def _count(value) -> int:
+    """A count off a board, or -1 when the board does not hold one."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0:
+        return -1
+    return round(value)
+
+
+def progress(source: pathlib.Path, games: list[tuple]) -> dict[str, dict]:
+    """How each game stood at two marks, and what it aimed for, off its
+    runs' summaries on the ledger branch (`civ6_ladder.economy_marks`, read
+    on the first board of the mark's turn, and `victory_target`):
+
+    - `cities50`, our cities at turn 50, and `rival_cities50`, the most any
+      rival we had met held then. At Deity the gap opens in the first fifty
+      turns (`civ6_ladder.ECONOMY_MARK_TURNS`).
+    - `science100`, our science a turn at turn 100 as a whole percent of the
+      best rival's.
+    - `victory`, the victory the seat was set to aim for, a place in
+      `TARGETS` counted from 1.
+
+    A game's first run leads: a mark comes from the first of its runs whose
+    summary holds it (a run reloaded from a save holds only the marks it
+    played through). A figure no summary holds is -1, a target 0; a game
+    with no summary at all is not in the answer."""
+    tags = sorted({tag for game in games for tag in game[1]})
+    read = research_page.summaries(source, tags, lambda summary: (summary.get("economy_marks"), summary.get("victory_target")))
+    out: dict[str, dict] = {}
+    for key, game_tags, *_ in games:
+        if not any(tag in read for tag in game_tags):
+            continue
+        boards: dict[str, dict] = {}
+        target = None
+        for tag in game_tags:
+            economy, aim = read.get(tag, (None, None))
+            if isinstance(economy, dict):
+                for mark, board in economy.items():
+                    if isinstance(board, dict):
+                        boards.setdefault(str(mark), board)
+            target = target or (aim if aim in TARGETS else None)
+        at50, at100 = boards.get("50") or {}, boards.get("100") or {}
+        ours, best = _count(at100.get("science")), at100.get("rival_science")
+        share = round(100 * at100["science"] / best) if ours >= 0 and _count(best) > 0 else -1
+        out[key] = {
+            "cities50": _count(at50.get("cities")),
+            "rival_cities50": _count(at50.get("rival_cities")),
+            "science100": share,
+            "victory": TARGETS.index(target) + 1 if target else 0,
+        }
+    return out
+
+
 def game_rows(source: pathlib.Path, rows: list[dict], held: dict[str, dict]) -> dict | None:
     """The games the charts of cities and faith count, a row each (`FIELDS`),
     or `None` when none has a reading. `diplo` is 1 for a game played with
     the Diplomatic victory on, 0 off, and 2 when its summary does not say;
     `day` is days after `first`; a city never founded is 0, and so is a
     pantheon or belief the game never had, the others being places in
-    `names` counted from 1. `finished` is the finished games of each level,
-    those without a reading among them."""
+    `names` counted from 1, and after them what `progress` read (`PROGRESS`:
+    -1 for a figure no summary holds, 0 for no target), the targets being
+    places in `targets` counted from 1. `finished` is the finished games of
+    each level, those without a reading among them."""
     games = finished_games(rows)
     if not games:
         return None
     known = {**summary_marks(source, [game[:4] for game in games if game[0] not in held]), **held}
+    marks = progress(source, games)
     switched = research_page.switches(source, sorted({tag for game in games for tag in game[1]}))
     names: list[str] = []
 
@@ -241,6 +309,7 @@ def game_rows(source: pathlib.Path, rows: list[dict], held: dict[str, dict]) -> 
     for key, tags, won, day, level in games:
         finished[str(level)] = finished.get(str(level), 0) + 1
         found = known.get(key)
+        reached = marks.get(key) or {}
         if not found or not day:
             continue
         cities = found.get("cities") or []
@@ -256,6 +325,7 @@ def game_rows(source: pathlib.Path, rows: list[dict], held: dict[str, dict]) -> 
             place(found.get("pantheon")),
             place(religion.get("founder")),
             place(religion.get("follower")),
+            *(reached.get(field, unread) for field, unread in PROGRESS),
         ]))
     if not counted:
         return None
@@ -272,10 +342,14 @@ def game_rows(source: pathlib.Path, rows: list[dict], held: dict[str, dict]) -> 
         "rows": out,
         "finished": finished,
         "level": OPENING_LEVEL,
+        "targets": TARGET_NAMES,
     }
 
 
-FIELDS = ["level", "diplo", "won", "day", "city2", "city3", "pantheon", "founder", "follower"]
+#: The fields `progress` adds to a row after the cities and the faith, each
+#: with what it reads when no summary holds it.
+PROGRESS = [("cities50", -1), ("rival_cities50", -1), ("science100", -1), ("victory", 0)]
+FIELDS = ["level", "diplo", "won", "day", "city2", "city3", "pantheon", "founder", "follower", *(field for field, _ in PROGRESS)]
 
 
 # --- The self-play seats ------------------------------------------------------

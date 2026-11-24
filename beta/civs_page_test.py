@@ -189,15 +189,43 @@ class TheRecord(unittest.TestCase):
         }
         with mock.patch.object(civs_page, "finished_games", return_value=games), \
                 mock.patch.object(civs_page, "summary_marks", return_value={}), \
+                mock.patch.object(civs_page, "progress", return_value={
+                    "a": {"cities50": 6, "rival_cities50": 5, "science100": 81, "victory": 1}}), \
                 mock.patch.object(civs_page.research_page, "switches", return_value={"a": True, "b": False}):
             out = civs_page.game_rows(BETA.parent, [{}], held)
-        self.assertEqual(out["fields"], ["level", "diplo", "won", "day", "city2", "city3", "pantheon", "founder", "follower"])
+        self.assertEqual(out["fields"], ["level", "diplo", "won", "day", "city2", "city3", "pantheon", "founder", "follower",
+                                         "cities50", "rival_cities50", "science100", "victory"])
         self.assertEqual(out["first"], "2026-11-20")
         self.assertEqual(out["names"], ["Divine Spark", "Tithe", "Work Ethic"])
+        self.assertEqual(out["targets"], ["Science", "Culture", "Diplomatic", "Religious", "Domination", "Score"])
         # Oldest first; "d" has no reading and is only counted as finished.
-        self.assertEqual(out["rows"], [[8, 1, 1, 0, 12, 25, 1, 2, 3], [6, 2, 0, 1, 0, 0, 0, 0, 0], [8, 0, 0, 2, 30, 0, 1, 0, 0]])
+        # A game no summary told of its marks reads -1 for each, 0 for its
+        # target.
+        self.assertEqual(out["rows"], [[8, 1, 1, 0, 12, 25, 1, 2, 3, 6, 5, 81, 1], [6, 2, 0, 1, 0, 0, 0, 0, 0, -1, -1, -1, 0],
+                                       [8, 0, 0, 2, 30, 0, 1, 0, 0, -1, -1, -1, 0]])
         self.assertEqual(out["finished"], {"8": 2, "6": 2})
         self.assertEqual(out["level"], 8)
+
+
+    def test_the_marks_and_the_target_come_off_the_games_summaries(self):
+        first, second, third = "civvis-20261120T010000Z", "civvis-20261120T020000Z", "civvis-20261120T030000Z"
+        board = lambda cities, rivals, science, best: {"cities": cities, "rival_cities": rivals, "science": science, "rival_science": best}
+        with tempfile.TemporaryDirectory() as scratch:
+            repo = ledger(scratch, [], {
+                # The first run reaches turn 50; its reload holds turn 100
+                # and its own turn 50, which the first run's outranks.
+                first: ([], {"economy_marks": {"50": board(4, 5, 11.5, 65.7)}, "victory_target": "religious"}),
+                first + "-cont1": ([], {"economy_marks": {"50": board(1, 9, 0, 1), "100": board(7, 9, 51.0, 183.0)}}),
+                # No marks on record, an unknown target, and a best rival
+                # with no science.
+                second: ([], {"economy_marks": {"100": board(3, 4, 5.0, 0)}, "victory_target": "space"}),
+            })
+            out = civs_page.progress(repo, [(first, [first, first + "-cont1"], True, "2026-11-20"),
+                                            (second, [second], False, "2026-11-20"), (third, [third], False, "2026-11-20")])
+        self.assertEqual(out[first], {"cities50": 4, "rival_cities50": 5, "science100": 28, "victory": 4})
+        self.assertEqual(out[second], {"cities50": -1, "rival_cities50": -1, "science100": -1, "victory": 0})
+        # A game with no summary at all is not in the answer.
+        self.assertNotIn(third, out)
 
 
 class TheSnapshots(unittest.TestCase):
