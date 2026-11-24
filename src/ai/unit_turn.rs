@@ -2576,7 +2576,10 @@ impl BasicAi {
             return Some(self.fortify_or_stop(g, pid, uid));
         }
 
-        let friendly_tiles: HashSet<Pos> = g
+        // The fast hasher, not SipHash: this set is built over the whole map
+        // for every unit that reaches this fallback, and `route_step_to_any`
+        // only asks it membership (or sorts a copy), so no order is read.
+        let friendly_tiles: crate::fast_map::FastSet<Pos> = g
             .map
             .tiles
             .keys()
