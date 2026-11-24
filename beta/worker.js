@@ -116,6 +116,26 @@ function request(method, path, body, seed) {
   return take(engine.civvis_request(inPtr, encoded.length));
 }
 
+// How long the engine has spent answering, since it began.
+let busyMs = 0;
+
+// The engine cannot see the computer from inside a page, so its answer to
+// `/machine-metrics` says nothing of it. What is known here is added: the
+// memory the module holds, and the time it has spent at work. A page that
+// shows what it costs (Doctor Strange's Civ 6, `strangeMeasure`) reads how
+// busy the engine is from two of these.
+function metered(answer) {
+  try {
+    const told = JSON.parse(new TextDecoder().decode(answer));
+    if (!told || typeof told !== "object" || Array.isArray(told)) return answer;
+    told.engine_bytes = engine.memory.buffer.byteLength;
+    told.engine_busy_ms = Math.round(busyMs);
+    return new TextEncoder().encode(JSON.stringify(told));
+  } catch (error) {
+    return answer;
+  }
+}
+
 self.onmessage = async (event) => {
   const { id, method, path, body, wasmUrl, seed, fork } = event.data;
   try {
@@ -130,7 +150,10 @@ self.onmessage = async (event) => {
       self.postMessage({ id, ok: true, answer }, [answer.memory]);
       return;
     }
-    const answer = request(method, path, body, seed);
+    const began = performance.now();
+    let answer = request(method, path, body, seed);
+    busyMs += performance.now() - began;
+    if (String(path).split("?")[0] === "/machine-metrics") answer = metered(answer);
     self.postMessage({ id, ok: true, answer }, [answer.buffer]);
   } catch (error) {
     const reported = String((error && error.message) || error);

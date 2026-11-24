@@ -1637,6 +1637,101 @@ impl Session {
         (readings, terms, killed)
     }
 
+    /// Play on from the end of what the seated Civ AI has played, `turns` of
+    /// them at most, and come back to the open turn (operator 2026-11-24: "we
+    /// can compute (a degree in advance) the futures of the paths we are on",
+    /// "we will compute the future of each path").
+    ///
+    /// The turns played are kept ahead of the open one as any played turn is,
+    /// so going on from here walks to them instead of playing them again. The
+    /// world on the table is the open turn's when this returns, as it stood:
+    /// it is refused where the seat has acted in the turn, which coming back
+    /// would undo. The answer is how the seat stood as each of those turns
+    /// opened, and what happened on the way that is worth seeing coming
+    /// (`debug_alerts`).
+    pub fn debug_ahead(&mut self, turns: u32) -> Result<(Vec<Value>, Vec<Value>), String> {
+        let here = self.game.turn;
+        if !self.debugger_turn_stands() {
+            return Err(
+                "the open turn has been played in; what is ahead is played from its top"
+                    .to_string(),
+            );
+        }
+        let Some(home) = self.debugger.mark(here).cloned() else {
+            return Err("the open turn is not kept to come back to".to_string());
+        };
+        let last = self.debug_line().last().map_or(here, |mark| mark.turn);
+        if last > here {
+            self.debug_jump(last)?;
+        }
+        let from = self.game.turn;
+        let (played, _, _) = self.debug_play_read(turns);
+        let alerts = self.debug_alerts(from);
+        // Home: the open turn's own mark where it is still kept, and the
+        // world it held where the marks ahead have thinned it away.
+        let home = self.debugger.mark(here).cloned().unwrap_or(home);
+        self.debug_put(home.game, home.minds);
+        // Why the play ahead stopped is not why the open turn would.
+        self.debugger.stopped = None;
+        self.debugger.read = None;
+        Ok((played, alerts))
+    }
+
+    /// What has happened since turn `from` that a page showing the turns
+    /// ahead puts a sign up for: every nuclear detonation in the world, what
+    /// the played seat was told that was too consequential to scroll past,
+    /// and the end of the game. In the order it happened, the first two
+    /// dozen.
+    fn debug_alerts(&self, from: u32) -> Vec<Value> {
+        const MOST: usize = 24;
+        let game = &self.game;
+        let mut alerts: Vec<(u32, Value)> = Vec::new();
+        for strike in game.chronicle.nuclear_strikes.iter() {
+            if strike.turn < from {
+                continue;
+            }
+            let device = if strike.thermonuclear {
+                "thermonuclear device"
+            } else {
+                "nuclear device"
+            };
+            let who = game
+                .players
+                .get(strike.attacker)
+                .map_or("A civilization", |player| player.civ.as_str());
+            alerts.push((
+                strike.turn,
+                json!({"turn": strike.turn, "kind": "nuclear", "text": format!("{who} detonates a {device}")}),
+            ));
+        }
+        for event in game.events_for(0) {
+            if event.turn < from || !event.important || event.category == "Nuclear" {
+                continue;
+            }
+            alerts.push((
+                event.turn,
+                json!({"turn": event.turn, "kind": event.category.to_lowercase(), "text": event.text}),
+            ));
+        }
+        if game.is_finished() || !game.players[0].alive {
+            let text = match game.winner {
+                Some(0) => "The seat wins the game".to_string(),
+                Some(winner) => format!(
+                    "{} wins the game",
+                    game.players
+                        .get(winner)
+                        .map_or("A rival", |player| player.civ.as_str())
+                ),
+                None if !game.players[0].alive => "The seat is out of the game".to_string(),
+                None => "The game ends".to_string(),
+            };
+            let kind = if game.winner == Some(0) { "won" } else { "over" };
+            alerts.push((game.turn, json!({"turn": game.turn, "kind": kind, "text": text})));
+        }
+        alerts.sort_by_key(|(turn, _)| *turn);
+        alerts.into_iter().take(MOST).map(|(_, alert)| alert).collect()
+    }
+
     /// What an agent decides that is not an action: its standing preferences
     /// for the governors of its cities. The agent's own plan-then-replay path
     /// carries the same fields across ("These preferences are decisions",
@@ -1875,6 +1970,8 @@ impl Session {
         let mut readings: Option<Vec<Value>> = None;
         let mut terms: Option<Vec<super::autosearch::Reading>> = None;
         let mut killed: Option<Value> = None;
+        // What a play ahead of the open turn saw coming (`debug_ahead`).
+        let mut alerts: Option<Vec<Value>> = None;
         let result: Result<(), String> = if !self.debuggable() {
             Err("the debugger walks a game with a seat of its own".to_string())
         } else if let Err(error) = seated {
@@ -1962,6 +2059,18 @@ impl Session {
                     }
                     None => Err(format!("play needs turns, 1 to {PLAY_MOST}")),
                 },
+                // The same run, played past the turns kept ahead, with the
+                // world left on the open turn (`debug_ahead`).
+                "ahead" => match request["turns"]
+                    .as_u64()
+                    .filter(|turns| (1..=u64::from(PLAY_MOST)).contains(turns))
+                {
+                    Some(turns) => self.debug_ahead(turns as u32).map(|(played, seen)| {
+                        readings = Some(played);
+                        alerts = Some(seen);
+                    }),
+                    None => Err(format!("ahead needs turns, 1 to {PLAY_MOST}")),
+                },
                 "step_action" => self.debug_step_action(),
                 "step_seat" => self.debug_step_seat(),
                 // The rest of a round that is being stepped a seat at a time.
@@ -2035,6 +2144,9 @@ impl Session {
         };
         if let Some(readings) = readings {
             out["readings"] = json!(readings);
+        }
+        if let Some(alerts) = alerts {
+            out["alerts"] = json!(alerts);
         }
         if let Some(terms) = terms {
             out["terms"] = json!(terms);
