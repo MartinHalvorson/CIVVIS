@@ -365,6 +365,14 @@
   .civ-bin { display: grid; justify-items: center; min-width: 0; color: var(--muted); font-size: 11px; line-height: 1.3; text-align: center; font-variant-numeric: tabular-nums; }
   .civ-bin small { color: var(--faint); font-size: 10px; }
   .civ-axis-name { margin: 3px 0 0; color: var(--faint); font-size: 11px; text-align: center; }
+  /* On a phone a span's name stands on two lines, its first turn over its
+     last, the caps are a size smaller, and the games under each span are
+     left to the tooltip and the table: side by side they ran together. */
+  @media (max-width: 559px) {
+    .civ-bin-name { display: grid; }
+    .civ-bin small, .civ-axis-games { display: none; }
+    .civ-cap { font-size: 10px; }
+  }
   .civ-none { margin: 8px 0 0; color: var(--faint); font-size: 12.5px; }
   .civ-table { margin-top: 8px; color: var(--muted); font-size: 12px; }
   .civ-table summary { width: max-content; cursor: pointer; color: var(--muted); }
@@ -899,7 +907,11 @@
           tipped(col, b.games ? pct(rates[i]) : "No " + many, when + ": CIVVIS won " + fmt(b.wins) + " of " + plural(b.games, one, many) + ".");
           plot.append(col);
           const bin = el("span", "civ-bin");
-          bin.append(el("span", "", name), el("small", "", fmt(b.games)));
+          const binName = el("span", "civ-bin-name");
+          const dash = name.indexOf("\u2013");
+          if (dash > 0) binName.append(el("span", "", name.slice(0, dash + 1)), el("span", "", name.slice(dash + 1)));
+          else binName.textContent = name;
+          bin.append(binName, el("small", "", fmt(b.games)));
           axis.append(bin);
           const tr = el("tr");
           tr.append(el("td", "", name), el("td", "", fmt(b.games)), el("td", "", fmt(b.wins)), el("td", "", b.games ? pct(rates[i]) : "\u2014"));
@@ -913,7 +925,9 @@
         plot.append(ref);
         const details = el("details", "civ-table");
         details.append(el("summary", "", "Table"), table);
-        host.replaceChildren(plot, axis, el("p", "civ-axis-name", "Turn the " + nth + " city was founded \u00b7 " + many + " under each span"), details);
+        const axisName = el("p", "civ-axis-name", "Turn the " + nth + " city was founded");
+        axisName.append(el("span", "civ-axis-games", " \u00b7 " + many + " under each span"));
+        host.replaceChildren(plot, axis, axisName, details);
       };
       // A list of win rates, best first: [name, games, wins] rows.
       const list = (box, rows, none) => {
