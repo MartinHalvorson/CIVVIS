@@ -417,9 +417,68 @@
     .speed-goal { display: block; text-align: inherit; }
   }
 
-  /* The page is four videos, two by two (operator, 2026-11-22): the
-     fastest game upper left, a single player's view of a game upper right,
-     the AI Debugger lower left and a Lv 8 victory lower right. They are
+  /* Between the speed timeline and the videos, the Firaxis Civ 6 AI
+     benchmark: CIVVIS's win rate against the game's own AI at each level,
+     with the Diplomatic victory allowed and with it off (operator,
+     2026-11-24: "above the videos, lets copy the Firaxis Civ 6 Benchmarks
+     showing our win rate (both diplo on and off), same as the chart is now.
+     then the videos below"). It is Win Analytics' first chart, copied: the
+     rules from here to the next comment are that page's own, line for line
+     (`beta/research.html`), and `beta/home_rankings_test.py` holds the two
+     pages to each other, so the chart cannot change there and stay as it
+     was here. The record is the same one too, written into this page's
+     `home-benchmark` slot when the site is published. */
+  .res-block { display: grid; gap: 8px; min-width: 0; }
+  .res-block[hidden] { display: none; }
+  .res-side-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 6px 16px; padding: 0 2px 6px; border-bottom: 2px solid var(--border-strong); }
+  .res-side-name { min-width: 0; }
+  .res-side-title { margin: 0; color: #fff; font-size: 17px; font-weight: 700; line-height: 1.3; }
+  .res-counted { margin: 1px 0 0; color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+  .res-section { min-width: 0; padding: 12px 14px 12px; border: 1px solid var(--border); border-radius: 4px; background: var(--panel); }
+  .res-scroll { overflow-x: auto; }
+  .rank-table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+  .rank-table th { padding: 4px 12px 4px 0; color: var(--faint); font-size: 11.5px; font-weight: 500; text-align: right; white-space: nowrap; }
+  .rank-table th:first-child, .rank-table td:first-child { text-align: left; }
+  .rank-table th.is-group { padding-bottom: 0; color: var(--muted); font-weight: 700; text-align: center; }
+  .rank-table td { padding: 5px 12px 5px 0; border-top: 1px solid var(--border); color: var(--text); text-align: right; white-space: nowrap; }
+  .rank-table td:first-child { color: #fff; font-weight: 600; }
+  .rank-table .is-zero { color: var(--faint); }
+  .res-bench-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; min-width: 0; }
+  @media (max-width: 859px) { .res-bench-pair { grid-template-columns: minmax(0, 1fr); } }
+  .res-bench-title { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 12px; margin: 0 0 8px; color: #fff; font-size: 15px; font-weight: 700; line-height: 1.3; }
+  .res-bench-title small { color: var(--muted); font-size: 12px; font-weight: 400; font-variant-numeric: tabular-nums; }
+  .res-bench-par { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; margin: 0 0 14px; padding: 12px 16px; border: 1px solid var(--gold); border-left-width: 6px; border-radius: 6px; background: rgba(215, 182, 106, 0.1); }
+  .res-bench-par b { color: var(--gold); font-size: 26px; font-weight: 800; line-height: 1.2; font-variant-numeric: tabular-nums; }
+  .res-bench-par span { color: var(--text); font-size: 13.5px; line-height: 1.4; }
+  @media (max-width: 479px) { .res-bench-par b { font-size: 21px; } }
+  .res-rates { border-collapse: separate; border-spacing: 3px; }
+  .res-rates th { padding-right: 8px; vertical-align: bottom; }
+  .res-rates th.is-group { padding: 0 2px 3px 0; border-bottom: 1px solid var(--border); font-size: 12px; text-align: center; }
+  .res-rates td { padding: 7px 8px; border-top: 0; border-radius: 4px; font-size: 14.5px; }
+  .res-rates td:first-child { padding-left: 0; }
+  .res-rates td.is-rate { color: #fff; font-weight: 700; }
+  .res-rates td.is-zero { box-shadow: inset 0 0 0 1px var(--border); }
+  .res-rates td small { color: var(--muted); font-size: 12.5px; font-weight: 400; }
+  .res-rates td.is-rate small { color: inherit; opacity: 0.75; }
+  @media (max-width: 479px) {
+    .res-rates { border-spacing: 2px; }
+    .res-rates th { padding-right: 5px; }
+    .res-rates td { padding: 6px 5px; font-size: 13.5px; line-height: 1.25; }
+    .res-rates td small { display: block; font-size: 11.5px; }
+    .res-rates .res-wide { display: none; }
+  }
+  /* This page's own: the room under the benchmark, and at the head's right
+     the way to the page it is copied from. */
+  .home-bench { margin: 0 0 26px; }
+  .home-bench-more { margin: 0; font-size: 13px; }
+  .home-bench-more a { color: var(--accent); text-decoration: none; white-space: nowrap; }
+  .home-bench-more a:hover { text-decoration: underline; }
+
+  /* Under it the page is six videos, two by two by two (operator,
+     2026-11-22, four of them; 2026-11-24, six): the fastest game upper
+     left, a single player's view of a game upper right, two Lv 8 victories
+     under them, science at the left and culture at the right, and under
+     those the AI Debugger and Doctor Strange's Civ 6. They are
      YouTube's and stay there: a tile is the video's picture until the tile
      is on screen, and then its player, in the picture's place, playing
      without sound. A window too narrow for two columns stacks the tiles in
@@ -667,12 +726,76 @@
       </p>
     </section>
 
-    <!-- Four videos, two by two (operator, 2026-11-22: "On home, we can have
-         our fastest game youtube video embedded to watch in the upper left.
-         in upper right, we can have a single player pov game", and later
-         that day "swap the positions of the bottom 2 videos to the Maya
-         Culture win is lower right", so the AI Debugger's Multiverse, Time
-         Travel video is lower left). Each has its title over it. The videos
+    <!-- The Firaxis Civ 6 AI benchmark, between the speed timeline and the
+         videos (operator, 2026-11-24: "above the videos, lets copy the
+         Firaxis Civ 6 Benchmarks showing our win rate (both diplo on and
+         off), same as the chart is now. then the videos below"). It is the
+         chart Win Analytics opens on, copied: its yardstick in big type, and
+         the two tables, the games that allowed the Diplomatic victory at
+         the left and the games with it off at the right, a row per level
+         from Lv 8 Deity down to Lv 4 Prince and a column per window. From
+         the yardstick to the end of the tables the markup is that page's
+         own, and so are the script that fills it and the shade of a cell
+         (`beta/home_rankings_test.py` holds the two pages to each other).
+         The record is the page's `home-benchmark` slot, the one Win
+         Analytics is given as `tournament_rates`
+         (`research_page.tournament_rates`, written by
+         `beta/home_rankings.py` when the site is published), and the
+         section stays hidden on a page that was not given one. How the
+         games are counted is on Win Analytics, where the head's link goes. -->
+    <section class="res-block home-bench" id="bench" aria-labelledby="res-title-tourney" hidden>
+      <header class="res-side-head">
+        <div class="res-side-name">
+          <h2 class="res-side-title" id="res-title-tourney">Firaxis Civ 6 AI benchmark: win rate by level</h2>
+          <p class="res-counted" id="res-counted-tourney">Tournament games against Civilization VI&#8217;s own AI.</p>
+        </div>
+        <p class="home-bench-more"><a href="../charts/win-analytics/">Win Analytics</a></p>
+      </header>
+      <p class="res-bench-par" id="res-bench-par"><b>Expected win rate in a 6P game: 1/6 = 16.7%</b> <span>A rate above 16.7% beats the Firaxis AI.</span></p>
+      <div class="res-bench-pair">
+        <div class="res-section" id="res-bench-on">
+          <h3 class="res-bench-title" id="res-title-rates-on">Diplomatic victory allowed <small id="res-rates-count-on"></small></h3>
+          <div class="res-scroll">
+            <table class="rank-table res-rates" id="res-rates-on" aria-labelledby="res-title-rates-on">
+              <thead>
+                <tr><th scope="col" rowspan="2">AI level</th><th scope="colgroup" colspan="4" class="is-group">Win rate (total games)</th></tr>
+                <tr><th scope="col" data-days="1"><span class="res-wide">Last </span>1 day</th><th scope="col" data-days="3"><span class="res-wide">Last </span>3 days</th><th scope="col" data-days="7"><span class="res-wide">Last </span>7 days</th><th scope="col" data-days="30"><span class="res-wide">Last </span>30 days</th></tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="res-section" id="res-bench-off">
+          <h3 class="res-bench-title" id="res-title-rates-off">Diplomatic victory off <small id="res-rates-count-off"></small></h3>
+          <div class="res-scroll">
+            <table class="rank-table res-rates" id="res-rates-off" aria-labelledby="res-title-rates-off">
+              <thead>
+                <tr><th scope="col" rowspan="2">AI level</th><th scope="colgroup" colspan="4" class="is-group">Win rate (total games)</th></tr>
+                <tr><th scope="col" data-days="1"><span class="res-wide">Last </span>1 day</th><th scope="col" data-days="3"><span class="res-wide">Last </span>3 days</th><th scope="col" data-days="7"><span class="res-wide">Last </span>7 days</th><th scope="col" data-days="30"><span class="res-wide">Last </span>30 days</th></tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Six videos, two by two by two (operator, 2026-11-24: "on home,
+         first video can be "Fastest recorded CIVVIS self-play game" subtitle
+         4P Tennis Ball, Online. Single Player POV is great as is. Space 3 we
+         can insert a Lv 8 scienec win ... space 4 is culture win. titles can
+         be Lv 8 Deity Win - Culture, Maya. and Lv 8 Deity Win - France,
+         Science for vid 3 (first title for vid 4). vid 5 can be our AI
+         Debugger - Multiverse, Time Travel. vid 6 can be Doctor Strange's
+         Civ 6"). There were four from 2026-11-22 (operator: "On home, we
+         can have our fastest game youtube video embedded to watch in the
+         upper left. in upper right, we can have a single player pov game",
+         and later that day "swap the positions of the bottom 2 videos to
+         the Maya Culture win is lower right"): the culture win is still at
+         the right, of the second row now, with the science win at its
+         left, and the AI Debugger's video is at the left of the third.
+         Each has its title over it, and a title that says everything has
+         no second line under it. The videos
          are YouTube's: a tile shows the video's picture, and its player
          takes the picture's place when the tile is on screen, playing
          without sound (operator: "please have the videos autoplay if
@@ -685,7 +808,10 @@
          record leads `data/performance/fastest_game_videos.json`:
          `beta/publish.sh` writes it into the `home-videos` slot below
          (`beta/home_rankings.py`), and the tile as written here is the
-         record on the day it was written. The section has no heading of
+         record on the day it was written. Its second line is the game
+         that record played (the record's `setup` in that file), and a
+         record that does not say what it played shows its video's title
+         there instead. The section has no heading of
          its own (operator: "Drop "watch" title or whatever from this
          section"), and the channel's top playlists are in the header,
          under YouTube. The two rankings that stood here are on Charts
@@ -694,7 +820,7 @@
     <section class="watch" id="watch" aria-label="Videos">
       <div class="watch-grid">
         <figure class="watch-tile" id="watch-fastest" data-video="iHlUWPIqr5g">
-          <figcaption><b>Fastest game</b> <span data-watch-title>A complete Civ 6 match in under 6 seconds, real-time simulation</span> <a href="../charts/civvis-performance/">CIVVIS Performance</a></figcaption>
+          <figcaption><b>Fastest recorded CIVVIS self-play game</b> <span data-watch-title>4P Tennis Ball, Online</span> <a href="../charts/civvis-performance/">CIVVIS Performance</a></figcaption>
           <a class="watch-poster" href="https://www.youtube.com/watch?v=iHlUWPIqr5g" target="_blank" rel="noreferrer">
             <img alt="" width="1280" height="720" decoding="async" referrerpolicy="no-referrer" src="https://i.ytimg.com/vi_webp/iHlUWPIqr5g/hq720.webp">
             <span class="watch-play" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span>
@@ -707,6 +833,20 @@
             <span class="watch-play" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span>
           </a>
         </figure>
+        <figure class="watch-tile" id="watch-science" data-video="rVDor7Xb4Mg">
+          <figcaption><b>Lv 8 Deity Win - France, Science</b> <a href="https://www.youtube.com/playlist?list=PLWcKlP8e8iy4" target="_blank" rel="noreferrer">Lv 8 Deity Wins</a></figcaption>
+          <a class="watch-poster" href="https://www.youtube.com/watch?v=rVDor7Xb4Mg" target="_blank" rel="noreferrer">
+            <img alt="" width="1280" height="720" decoding="async" referrerpolicy="no-referrer" src="https://i.ytimg.com/vi_webp/rVDor7Xb4Mg/hq720.webp">
+            <span class="watch-play" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span>
+          </a>
+        </figure>
+        <figure class="watch-tile" id="watch-culture" data-video="6PCd4R08UPM">
+          <figcaption><b>Lv 8 Deity Win - Culture, Maya</b> <a href="https://www.youtube.com/playlist?list=PLWcKlP8e8iy4" target="_blank" rel="noreferrer">Lv 8 Deity Wins</a></figcaption>
+          <a class="watch-poster" href="https://www.youtube.com/watch?v=6PCd4R08UPM" target="_blank" rel="noreferrer">
+            <img alt="" width="1280" height="720" decoding="async" referrerpolicy="no-referrer" src="https://i.ytimg.com/vi_webp/6PCd4R08UPM/hq720.webp">
+            <span class="watch-play" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span>
+          </a>
+        </figure>
         <figure class="watch-tile" id="watch-debugger" data-video="6W5t0hcR_N4">
           <figcaption><b>AI Debugger</b> <span data-watch-title>Multiverse, Time Travel</span> <a href="../?mode=play">AI Debugger</a></figcaption>
           <a class="watch-poster" href="https://www.youtube.com/watch?v=6W5t0hcR_N4" target="_blank" rel="noreferrer">
@@ -714,10 +854,10 @@
             <span class="watch-play" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span>
           </a>
         </figure>
-        <figure class="watch-tile" id="watch-victory" data-video="6PCd4R08UPM">
-          <figcaption><b>Lv 8 Deity win</b> <span data-watch-title>Maya Culture</span> <a href="https://www.youtube.com/playlist?list=PLWcKlP8e8iy4" target="_blank" rel="noreferrer">Lv 8 Deity Wins</a></figcaption>
-          <a class="watch-poster" href="https://www.youtube.com/watch?v=6PCd4R08UPM" target="_blank" rel="noreferrer">
-            <img alt="" width="1280" height="720" decoding="async" referrerpolicy="no-referrer" src="https://i.ytimg.com/vi_webp/6PCd4R08UPM/hq720.webp">
+        <figure class="watch-tile" id="watch-strange" data-video="H50wfMantkY">
+          <figcaption><b>Doctor Strange's Civ 6</b> <a href="../?mode=strange">Doctor Strange's Civ 6</a></figcaption>
+          <a class="watch-poster" href="https://www.youtube.com/watch?v=H50wfMantkY" target="_blank" rel="noreferrer">
+            <img alt="" width="1280" height="720" decoding="async" referrerpolicy="no-referrer" src="https://i.ytimg.com/vi_webp/H50wfMantkY/hq720.webp">
             <span class="watch-play" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span>
           </a>
         </figure>
@@ -726,6 +866,7 @@
   </main>
 
   <script type="application/json" id="home-videos">null</script>
+  <script type="application/json" id="home-benchmark">null</script>
   <script type="application/json" id="home-speedup">null</script>
   <script>
   // The speed timeline. The slot holds every figure as the words the page
@@ -838,11 +979,79 @@
   })();
   </script>
   <script>
+  // The Firaxis Civ 6 AI benchmark, over the videos: the record Win
+  // Analytics opens on, drawn as that page draws it. The slot is its
+  // `tournament_rates`, two tables, `on` and `off`, each a row per level,
+  // highest first, and in a row a cell per window: the wins as a share of
+  // the cell's games, then the games in brackets, on a background that is
+  // white at the 1/6 par of a 6-player game, dark green at 100% and red at
+  // 0%. The helpers, the shade and the loop that fills the tables are that
+  // page's own lines (`beta/home_rankings_test.py` holds them to it). A
+  // level's name is the slot's (`rungs`). With no slot the section stays
+  // hidden.
+  (() => {
+    let BENCH = null;
+    try { BENCH = JSON.parse(document.getElementById("home-benchmark").textContent); } catch (_) {}
+    const section = document.getElementById("bench");
+    if (!section || !BENCH || !BENCH.tables) return;
+    const RUNGS = BENCH.rungs && typeof BENCH.rungs === "object" ? BENCH.rungs : {};
+    const el = (tag, cls, text) => {
+      const node = document.createElement(tag);
+      if (cls) node.className = cls;
+      if (text != null) node.textContent = text;
+      return node;
+    };
+    const fmt = (n) => Number(n).toLocaleString("en-US");
+    const pct = (x) => (x > 0 && x < 0.0005 ? "<0.1%" : (100 * x).toFixed(x >= 0.1 || !x ? 0 : 1) + "%");
+    const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const day = (iso) => { const [, m, d] = String(iso).split("-").map(Number); return MONTHS[m - 1] + " " + d; };
+    const PAR = 1 / 6, PAR_WHITE = [255, 255, 255], PAR_GREEN = [22, 101, 52], PAR_RED = [220, 38, 38];
+    const shade = (rate) => {
+      const [to, t] = rate >= PAR ? [PAR_GREEN, (rate - PAR) / (1 - PAR)] : [PAR_RED, (PAR - rate) / PAR];
+      const rgb = PAR_WHITE.map((c, i) => Math.round(c + (to[i] - c) * Math.min(1, Math.max(0, t))));
+      const [r, g, b] = rgb.map((c) => (c / 255 <= 0.04045 ? c / 255 / 12.92 : ((c / 255 + 0.055) / 1.055) ** 2.4));
+      const light = 0.2126 * r + 0.7152 * g + 0.0722 * b + 0.05;
+      return { background: "rgb(" + rgb.join(", ") + ")", color: 1.05 / light >= light / 0.0587 ? "#fff" : "#101820" };
+    };
+    {
+      const count = (n, one, many) => fmt(n) + " " + (n === 1 ? one : many);
+      const [date, time] = String(BENCH.to).split(" ");
+      const spans = Array.isArray(BENCH.days) ? BENCH.days : [];
+      document.getElementById("res-counted-tourney").textContent = count(Number(BENCH.games) || 0, "tournament game", "tournament games")
+        + " against Civilization VI\u2019s own AI in the last " + spans[spans.length - 1] + " days · to " + day(date) + ", " + String(time).replace("Z", " UTC");
+      for (const name of ["on", "off"]) {
+        const table = BENCH.tables[name] || {};
+        document.getElementById("res-rates-count-" + name).textContent = count(Number(table.games) || 0, "game", "games");
+        const body = document.querySelector("#res-rates-" + name + " tbody");
+        body.replaceChildren();
+        for (const row of Array.isArray(table.levels) ? table.levels : []) {
+          const tr = el("tr");
+          const level = el("td", "", "Lv " + row.level);
+          if (RUNGS[row.level]) level.append(el("span", "res-wide", " " + RUNGS[row.level]));
+          tr.append(level);
+          for (const w of Array.isArray(row.windows) ? row.windows : []) {
+            const games = Number(w.games) || 0, wins = Number(w.wins) || 0;
+            const td = el("td", games ? "is-rate" : "is-zero", games ? pct(wins / games) : "—");
+            if (games) {
+              td.append(" ", el("small", "", "(" + fmt(games) + ")"));
+              Object.assign(td.style, shade(wins / games));
+            }
+            tr.append(td);
+          }
+          body.append(tr);
+        }
+      }
+    }
+    section.hidden = false;
+  })();
+  </script>
+  <script>
   // The video tiles. A tile's video is its `data-video`, and the fastest
   // game's is the record the slot names, when the page was published with
-  // one. A tile on screen gives its picture's place to the video's player,
-  // which plays without sound: a browser lets a video start by itself only
-  // muted. A picture pressed before that plays with its sound, and a press
+  // one, with the game that record played as the tile's second line (the
+  // record's `setup`; its video's title when it does not say). A tile on
+  // screen gives its picture's place to the video's player, which plays
+  // without sound: a browser lets a video start by itself only muted. A picture pressed before that plays with its sound, and a press
   // that asks for a new tab or window is the link it is, to YouTube. A
   // tile with a `data-start` begins that many seconds in, either way.
   // Every video loops for as long as the page is open (operator
@@ -859,7 +1068,7 @@
         tile.dataset.video = fastest.id;
         tile.querySelector("img").src = "https://i.ytimg.com/vi_webp/" + fastest.id + "/hq720.webp";
       }
-      if (fastest.title) tile.querySelector("[data-watch-title]").textContent = fastest.title;
+      if (fastest.setup || fastest.title) tile.querySelector("[data-watch-title]").textContent = fastest.setup || fastest.title;
     }
     // Whoever asked their system for less motion keeps the pictures, and
     // plays a video by pressing it.
@@ -905,7 +1114,9 @@
       if (!VIDEO_ID.test(id)) continue;
       const start = /^[1-9]\d*$/.test(tile.dataset.start || "") ? tile.dataset.start : "";
       const poster = tile.querySelector(".watch-poster"), picture = poster.querySelector("img");
-      const title = tile.querySelector("b").textContent + ": " + tile.querySelector("[data-watch-title]").textContent;
+      // A tile's name is its title and, where it has one, its second line.
+      const second = tile.querySelector("[data-watch-title]");
+      const title = tile.querySelector("b").textContent + (second ? ": " + second.textContent : "");
       poster.href = "https://www.youtube.com/watch?v=" + id + (start ? "&t=" + start + "s" : "");
       poster.setAttribute("aria-label", "Play the video: " + title);
       // YouTube's own picture of the video, the wide one; a video without

@@ -1230,8 +1230,10 @@ class Page(unittest.TestCase):
             self.assertIn("the speed timeline", said.getvalue())
             filled = page.read_text(encoding="utf-8")
             self.assertEqual(json.loads(speedup_timeline.SLOT.search(filled)[2]), shown)
-            # Nothing but the page's two slots moved.
-            bare = lambda text: home_rankings.VIDEOS_SLOT.sub("", speedup_timeline.SLOT.sub("", text))  # noqa: E731
+            # Nothing but the page's slots moved: this one, the videos' and
+            # the Firaxis AI benchmark's (`beta/home_rankings_test.py`
+            # reads those two).
+            bare = lambda text: home_rankings.BENCHMARK_SLOT.sub("", home_rankings.VIDEOS_SLOT.sub("", speedup_timeline.SLOT.sub("", text)))  # noqa: E731
             self.assertEqual(bare(filled), bare(LANDING))
             # A revision with no ledger: the slot says so and the section
             # stays hidden.

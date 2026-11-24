@@ -33,13 +33,21 @@ tournaments a page of their own between Home and CIVVIS
 still lives here, because that page, the live mirror's Mode line and a lane
 pinned to a home page that still has the card all count the same series.
 
-The home page (`beta/landing.html`) is four videos now, and one of them
+The home page (`beta/landing.html`) is six videos now, and one of them
 follows a record: the fastest game is whichever video leads
 `data/performance/fastest_game_videos.json`, the list the Performance page
 shows. The page carries a second slot for it,
 `<script type="application/json" id="home-videos">null</script>`, which is
 filled here too (`videos`), so a new record reaches both pages from its one
 line in that file.
+
+Over the videos the home page shows the Firaxis Civ 6 AI benchmark, the two
+tables of win rates Win Analytics opens on (operator 2026-11-24: "above the
+videos, lets copy the Firaxis Civ 6 Benchmarks showing our win rate (both
+diplo on and off), same as the chart is now"). Its record is a slot of its
+own, `home-benchmark`, filled here (`benchmark`) with what
+`research_page.tournament_rates` works out for Win Analytics, so the two
+pages show one count.
 
 Over the videos the home page carries the speed timeline: how many times
 faster than a person each way of playing gets through a game. Its figures
@@ -481,7 +489,7 @@ def for_page(page: str, data: dict) -> dict:
     return {key: value for key, value in data.items() if key != "tournaments"}
 
 
-#: The home page's own slot: the videos of its four that follow a record.
+#: The home page's own slot: the videos of its six that follow a record.
 VIDEOS_SLOT = re.compile(
     r'(<script type="application/json" id="home-videos">)(.*?)(</script>)', re.S
 )
@@ -490,8 +498,12 @@ VIDEOS_SLOT = re.compile(
 def videos(source: pathlib.Path) -> dict | None:
     """The home page's videos that follow a record: `fastest`, the fastest
     game on video, which is the record the Performance page leads with
-    (`performance_page.videos`, fewest seconds first). `None` when the
-    revision has no list of records or the list has no video."""
+    (`performance_page.videos`, fewest seconds first). With it the game the
+    record played, when its line in the list says (`setup`, "4P Tennis Ball,
+    Online"): the tile's second line (operator 2026-11-24: "first video can
+    be "Fastest recorded CIVVIS self-play game" subtitle 4P Tennis Ball,
+    Online"). `None` when the revision has no list of records or the list
+    has no video."""
     try:
         listed = json.loads((source / performance_page.VIDEOS).read_text(encoding="utf-8"))["videos"]
     except (OSError, ValueError, KeyError, TypeError):
@@ -499,7 +511,33 @@ def videos(source: pathlib.Path) -> dict | None:
     records = performance_page.videos(listed)
     if not records:
         return None
-    return {"fastest": {key: records[0][key] for key in ("id", "title", "time")}}
+    fastest = {key: records[0][key] for key in ("id", "title", "time")}
+    for entry in listed:
+        if isinstance(entry, dict) and entry.get("setup") and str(entry.get("video") or "").endswith("v=" + fastest["id"]):
+            fastest["setup"] = str(entry["setup"])
+    return {"fastest": fastest}
+
+
+#: The home page's slot for the Firaxis Civ 6 AI benchmark, over its videos.
+BENCHMARK_SLOT = re.compile(
+    r'(<script type="application/json" id="home-benchmark">)(.*?)(</script>)', re.S
+)
+
+
+def benchmark(source: pathlib.Path) -> dict | None:
+    """The Firaxis Civ 6 AI benchmark as the home page shows it: the record
+    Win Analytics is given as `tournament_rates` (CIVVIS's win rate at each
+    level over the tournaments' games, with the Diplomatic victory allowed
+    and with it off), and with it the levels' names (`rungs`: `8` is Deity),
+    which that page has from its level picker and this one has nowhere
+    else. `None` when the run ledger or the tournaments cannot be read."""
+    # Read here and not at the top of the file: that module reads this one.
+    import research_page
+
+    rates = research_page.tournament_rates(source, results(source))
+    if not rates:
+        return None
+    return {**rates, "rungs": {str(level): CIV6_RUNGS[level - 1].title() for level in research_page.RATE_LEVELS}}
 
 
 def fill(page: str, data: dict | None, slot: re.Pattern[str] = SLOT) -> str | None:
@@ -534,6 +572,12 @@ def main(argv: list[str]) -> int:
         records = videos(source)
         text = fill(text, records, VIDEOS_SLOT)
         shown.append("the fastest game's video" if records else "no video")
+    # The home page's Firaxis Civ 6 AI benchmark, on the page that has its
+    # slot.
+    if BENCHMARK_SLOT.search(text):
+        rates = benchmark(source)
+        text = fill(text, rates, BENCHMARK_SLOT)
+        shown.append("the Firaxis AI benchmark" if rates else "no Firaxis AI benchmark")
     # The home page's speed timeline, on the page that has its slot.
     if speedup_timeline.SLOT.search(text):
         timeline = speedup_timeline.timeline(source)

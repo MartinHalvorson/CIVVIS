@@ -13,9 +13,11 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import unittest.mock
 
 import home_rankings
 import performance_page
+import research_page
 
 BETA = pathlib.Path(__file__).resolve().parent
 ROOT = BETA.parent
@@ -25,7 +27,8 @@ ROOT = BETA.parent
 # Analytics (operator: "add that to a new page: Charts/ELO Rankings ... at
 # the top of this page is the player straetgies, pulled from win analytics,
 # add another page: Civ Analytics. First can be the civ records (pulled from
-# win analytics), then early build order"). The home page is four videos.
+# win analytics), then early build order"). The home page is six videos,
+# with the Firaxis Civ 6 AI benchmark copied over them from Win Analytics.
 CHARTS = (BETA / "research.html").read_text(encoding="utf-8")
 ELO = (BETA / "elo.html").read_text(encoding="utf-8")
 CIVS = (BETA / "civs.html").read_text(encoding="utf-8")
@@ -436,44 +439,75 @@ class HomeRankings(unittest.TestCase):
         for gone in ("rankings-data", "rank-civs", "rank-strategies", "rank-list", 'id="rankings"'):
             self.assertNotIn(gone, LANDING)
 
-    def test_the_home_page_is_four_videos_two_by_two(self):
-        # Operator 2026-11-22: "On home, we can have our fastest game youtube
-        # video embedded to watch in the upper left. in upper right, we can
-        # have a single player pov game (should be under performance). Maybe
-        # the AI Debugger - Multiverse, Time Travel video in the lower right.
-        # lower left please save for a lv 8 victory video lv 8 maya cluture
-        # from the youtube." And later that day: "swap the positions of the
-        # bottom 2 videos to the Maya Culture win is lower right", "Make the
-        # video Titles above the video and bigger or more readable", "have
-        # the home upper right video start at 6 seconds in".
+    def test_the_home_page_is_six_videos_two_by_two_by_two(self):
+        # Operator 2026-11-24: "on home, first video can be "Fastest recorded
+        # CIVVIS self-play game" subtitle 4P Tennis Ball, Online. Single
+        # Player POV is great as is. Space 3 we can insert a Lv 8 scienec win
+        # - https://www.youtube.com/watch?v=rVDor7Xb4Mg. space 4 is culture
+        # win. titles can be Lv 8 Deity Win - Culture, Maya. and Lv 8 Deity
+        # Win - France, Science for vid 3 (first title for vid 4). vid 5 can
+        # be our AI Debugger - Multiverse, Time Travel. vid 6 can be Doctor
+        # Strange's Civ 6 https://www.youtube.com/watch?v=H50wfMantkY."
+        #
+        # Four of them stood there from 2026-11-22: "On home, we can have our
+        # fastest game youtube video embedded to watch in the upper left. in
+        # upper right, we can have a single player pov game (should be under
+        # performance). Maybe the AI Debugger - Multiverse, Time Travel video
+        # in the lower right. lower left please save for a lv 8 victory video
+        # lv 8 maya cluture from the youtube." And later that day: "swap the
+        # positions of the bottom 2 videos to the Maya Culture win is lower
+        # right", "Make the video Titles above the video and bigger or more
+        # readable", "have the home upper right video start at 6 seconds in".
         tiles = re.findall(
             r'<figure class="watch-tile" id="(watch-[a-z]+)" data-video="([\w-]{11})"( data-start="\d+")?>\s*'
-            r"<figcaption><b>([^<]+)</b> <span data-watch-title>([^<]+)</span> <a [^>]+>[^<]+</a></figcaption>\s*"
+            r"<figcaption><b>([^<]+)</b> (?:<span data-watch-title>([^<]+)</span> )?<a [^>]+>[^<]+</a></figcaption>\s*"
             r'<a class="watch-poster" href="https://www\.youtube\.com/watch\?v=([\w-]{11})((?:&amp;t=\d+s)?)" target="_blank" rel="noreferrer">\s*'
             r'<img alt="" width="1280" height="720" decoding="async" referrerpolicy="no-referrer" '
             r'src="https://i\.ytimg\.com/vi_webp/([\w-]{11})/hq720\.webp">',
             LANDING,
         )
-        # Two columns, so document order reads upper left, upper right,
-        # lower left, lower right. A tile's title is the first thing in it,
-        # over its video, which the pattern above reads in that order.
+        # Two columns, so document order reads left then right, row by
+        # row: his spaces 1 to 6. A tile's title is the first thing in it,
+        # over its video, which the pattern above reads in that order. A
+        # title that says everything has no second line: the two victories
+        # are titled as he wrote them, and so is Doctor Strange's Civ 6. The
+        # culture win is still at the right (2026-11-22), of the second row.
         self.assertEqual(
             [(ident, video, label, title) for ident, video, _, label, title, _, _, _ in tiles],
             [
-                ("watch-fastest", "iHlUWPIqr5g", "Fastest game", "A complete Civ 6 match in under 6 seconds, real-time simulation"),
+                ("watch-fastest", "iHlUWPIqr5g", "Fastest recorded CIVVIS self-play game", "4P Tennis Ball, Online"),
                 ("watch-pov", "9c8m87e3rCg", "Single player POV", "A full Civ 6 match in 14 seconds"),
+                ("watch-science", "rVDor7Xb4Mg", "Lv 8 Deity Win - France, Science", ""),
+                ("watch-culture", "6PCd4R08UPM", "Lv 8 Deity Win - Culture, Maya", ""),
                 ("watch-debugger", "6W5t0hcR_N4", "AI Debugger", "Multiverse, Time Travel"),
-                ("watch-victory", "6PCd4R08UPM", "Lv 8 Deity win", "Maya Culture"),
+                ("watch-strange", "H50wfMantkY", "Doctor Strange's Civ 6", ""),
             ],
         )
         for _, video, _, _, _, link, _, picture in tiles:
             self.assertEqual((link, picture), (video, video))
+        # Where there is more of each: the two victories lead to the
+        # playlist of them, the debugger and Doctor Strange's Civ 6 to the
+        # modes themselves, as the site list names them.
+        more = re.findall(r'<figure class="watch-tile" id="(watch-[a-z]+)".*?<figcaption>.*?<a href="([^"]+)"[^>]*>([^<]+)</a></figcaption>', LANDING, re.S)
+        self.assertEqual(more, [
+            ("watch-fastest", "../charts/civvis-performance/", "CIVVIS Performance"),
+            ("watch-pov", "../charts/civvis-performance/", "CIVVIS Performance"),
+            ("watch-science", "https://www.youtube.com/playlist?list=PLWcKlP8e8iy4", "Lv 8 Deity Wins"),
+            ("watch-culture", "https://www.youtube.com/playlist?list=PLWcKlP8e8iy4", "Lv 8 Deity Wins"),
+            ("watch-debugger", "../?mode=play", "AI Debugger"),
+            ("watch-strange", "../?mode=strange", "Doctor Strange's Civ 6"),
+        ])
+        for href, name in (("../?mode=play", "AI Debugger"), ("../?mode=strange", "Doctor Strange's Civ 6")):
+            self.assertRegex(LANDING, rf'<a class="site-link" href="{re.escape(href)}"[^>]*>{re.escape(name)}</a>')
         # The single player's game starts 6 seconds in, on the page and on
-        # YouTube; the other three start at their start.
+        # YouTube; the other five start at their start.
         self.assertEqual(
             [(start, at) for _, _, start, _, _, _, at, _ in tiles],
-            [("", ""), (' data-start="6"', "&amp;t=6s"), ("", ""), ("", "")],
+            [("", ""), (' data-start="6"', "&amp;t=6s")] + [("", "")] * 4,
         )
+        # A tile with no second line is named by its title alone.
+        self.assertIn('const second = tile.querySelector("[data-watch-title]");', LANDING)
+        self.assertIn('const title = tile.querySelector("b").textContent + (second ? ": " + second.textContent : "");', LANDING)
         self.assertIn('const start = /^[1-9]\\d*$/.test(tile.dataset.start || "") ? tile.dataset.start : "";', LANDING)
         self.assertIn('poster.href = "https://www.youtube.com/watch?v=" + id + (start ? "&t=" + start + "s" : "");', LANDING)
         # The titles are the largest type under the page's name, and whole.
@@ -485,7 +519,7 @@ class HomeRankings(unittest.TestCase):
         self.assertIn('<section class="watch" id="watch" aria-label="Videos">\n      <div class="watch-grid">', LANDING)
         for gone in ('id="watch-title"', 'class="watch-title"', "aria-labelledby=\"watch", "watch-head", ">Watch<"):
             self.assertNotIn(gone, LANDING)
-        self.assertEqual(LANDING.count('class="watch-tile"'), 4)
+        self.assertEqual(LANDING.count('class="watch-tile"'), 6)
         self.assertIn(".watch-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));", LANDING)
         self.assertIn("@media (max-width: 639px) { .watch-grid { grid-template-columns: minmax(0, 1fr); } }", LANDING)
         # The single player's game is one of the Performance page's records.
@@ -536,8 +570,15 @@ class HomeRankings(unittest.TestCase):
         # record reaches the home page from its one line in that file.
         self.assertEqual(LANDING.count('<script type="application/json" id="home-videos">null</script>'), 1)
         records = performance_page.videos(json.loads((ROOT / performance_page.VIDEOS).read_text(encoding="utf-8"))["videos"])
-        fastest = {"fastest": {key: records[0][key] for key in ("id", "title", "time")}}
+        # With it, the game the record played, from its line in the list:
+        # the tile's second line (operator 2026-11-24: "first video can be
+        # "Fastest recorded CIVVIS self-play game" subtitle 4P Tennis Ball,
+        # Online").
+        fastest = {"fastest": {**{key: records[0][key] for key in ("id", "title", "time")}, "setup": "4P Tennis Ball, Online"}}
         self.assertEqual(home_rankings.videos(ROOT), fastest)
+        listed = json.loads((ROOT / performance_page.VIDEOS).read_text(encoding="utf-8"))["videos"]
+        self.assertEqual([entry["video"][-11:] for entry in listed if entry.get("setup")], [records[0]["id"]])
+        self.assertIn("<span data-watch-title>4P Tennis Ball, Online</span>", LANDING)
         self.assertEqual(records[0]["seconds"], min(v["seconds"] for v in records))
         with tempfile.TemporaryDirectory() as scratch:
             page = pathlib.Path(scratch) / "index.html"
@@ -547,10 +588,18 @@ class HomeRankings(unittest.TestCase):
             self.assertIn("the fastest game's video", said.getvalue())
             filled = page.read_text(encoding="utf-8")
             self.assertEqual(json.loads(home_rankings.VIDEOS_SLOT.search(filled)[2]), fastest)
-            # Nothing but the page's slots moved: this one, and the speed
-            # timeline's (`beta/speedup_timeline_test.py` reads that one).
-            bare = lambda text: home_rankings.speedup_timeline.SLOT.sub("", home_rankings.VIDEOS_SLOT.sub("", text))  # noqa: E731
+            # Nothing but the page's slots moved: this one, the Firaxis AI
+            # benchmark's, and the speed timeline's
+            # (`beta/speedup_timeline_test.py` reads that one).
+            bare = lambda text: home_rankings.speedup_timeline.SLOT.sub("", home_rankings.BENCHMARK_SLOT.sub("", home_rankings.VIDEOS_SLOT.sub("", text)))  # noqa: E731
             self.assertEqual(bare(filled), bare(LANDING))
+            # A record that does not say what game it played: no setup in
+            # the slot, and the tile's second line is its video's title.
+            (pathlib.Path(scratch) / performance_page.VIDEOS).parent.mkdir(parents=True)
+            (pathlib.Path(scratch) / performance_page.VIDEOS).write_text(
+                json.dumps({"videos": [{"video": "https://www.youtube.com/watch?v=" + "a" * 11, "seconds": 5, "title": "A faster one"}]}), encoding="utf-8")
+            self.assertEqual(home_rankings.videos(pathlib.Path(scratch))["fastest"], {"id": "a" * 11, "title": "A faster one", "time": "5 seconds"})
+            (pathlib.Path(scratch) / performance_page.VIDEOS).unlink()
             # A revision with no list of records: the slot says so, and the
             # tile stays the video it is written with.
             self.assertIsNone(home_rankings.videos(pathlib.Path(scratch)))
@@ -562,9 +611,118 @@ class HomeRankings(unittest.TestCase):
             "const fastest = data && data.fastest;",
             "if (fastest && VIDEO_ID.test(fastest.id)) {",
             "tile.dataset.video = fastest.id;",
-            'if (fastest.title) tile.querySelector("[data-watch-title]").textContent = fastest.title;',
+            'if (fastest.setup || fastest.title) tile.querySelector("[data-watch-title]").textContent = fastest.setup || fastest.title;',
         ):
             self.assertIn(line, LANDING)
+
+    def test_the_firaxis_benchmark_stands_over_the_videos_as_win_analytics_has_it(self):
+        # Operator 2026-11-24: "above the videos, lets copy the Firaxis Civ 6
+        # Benchmarks showing our win rate (both diplo on and off), same as
+        # the chart is now. then the videos below".
+        places = [LANDING.index(mark) for mark in (
+            '<section class="speed"',
+            '<section class="res-block home-bench" id="bench" aria-labelledby="res-title-tourney" hidden>',
+            '<section class="watch"',
+        )]
+        self.assertEqual(places, sorted(places))
+        section = LANDING[places[1]:places[2]]
+        bare = lambda text: [line.strip() for line in text.strip().split("\n")]  # noqa: E731
+        # Its title and the line under it are Win Analytics' own, and so is
+        # everything from the yardstick to the end of the two tables: the
+        # games that allowed the Diplomatic victory at the left, the games
+        # with it off at the right, the four windows as columns.
+        for line in (
+            '<h2 class="res-side-title" id="res-title-tourney">Firaxis Civ 6 AI benchmark: win rate by level</h2>',
+            '<p class="res-counted" id="res-counted-tourney">Tournament games against Civilization VI&#8217;s own AI.</p>',
+        ):
+            self.assertIn(line, section)
+            self.assertIn(line, CHARTS)
+        par = '<p class="res-bench-par" id="res-bench-par">'
+        theirs = CHARTS[CHARTS.index(par) : CHARTS.index('<details class="fine">', CHARTS.index(par))]
+        ours = section[section.index(par) : section.index("</section>")]
+        self.assertEqual(bare(ours), bare(theirs))
+        self.assertEqual(ours.count("<table"), 2)
+        self.assertLess(ours.index('id="res-rates-on"'), ours.index('id="res-rates-off"'))
+        # How the games are counted stays on Win Analytics, a link away.
+        self.assertIn('<p class="home-bench-more"><a href="../charts/win-analytics/">Win Analytics</a></p>', section)
+        self.assertNotIn("<details", section)
+        # The look is that page's too: every rule of the copy is a line of
+        # its stylesheet, and no rule of its benchmark is missing here.
+        style = LANDING[LANDING.index("<style>") : LANDING.index("</style>")]
+        copied = style[style.index("  .res-block { display: grid;") : style.index("  /* This page's own: the room under the benchmark")]
+        theirs = CHARTS[CHARTS.index("<style>") : CHARTS.index("</style>")]
+        rules = [line for line in copied.split("\n") if line.strip()]
+        self.assertGreater(len(rules), 30)
+        for line in rules:
+            if line.strip() == ".res-block[hidden] { display: none; }":
+                self.assertIn(".res-block[hidden] { display: none; }", theirs)
+                continue
+            self.assertIn("\n" + line + "\n", theirs, line.strip())
+        for line in theirs.split("\n"):
+            if re.match(r"\s*(@media [^{]+\{ )?\.res-(rates|bench)", line):
+                self.assertIn("\n" + line + "\n", style, line.strip())
+        # And the drawing: the shade of a cell against the 1/6 par, the
+        # words of a rate, and the loop that fills the two tables are that
+        # page's own lines.
+        def cut(page: str, start: str, end: str) -> list[str]:
+            at = page.index(start)
+            return bare(page[at : page.index(end, at) + len(end)])
+        for start, end in (
+            ("const PAR = 1 / 6,", '"#fff" : "#101820" };\n    };'),
+            ("const el = (tag, cls, text) => {", "return node;\n    };"),
+            ("const fmt = (n) =>", ";"),
+            ("const pct = (x) =>", '"%");'),
+            ("const day = (iso) =>", "};"),
+            ("const count = (n, one, many) =>", '.replace("Z", " UTC");'),
+            ('for (const name of ["on", "off"]) {', "body.append(tr);"),
+        ):
+            self.assertEqual(cut(LANDING, start, end), cut(CHARTS, start, end), start)
+        self.assertNotIn("innerHTML", LANDING)
+        # Shown only when the page was given the record.
+        self.assertIn("if (!section || !BENCH || !BENCH.tables) return;", LANDING)
+        self.assertIn("section.hidden = false;", LANDING[LANDING.index('document.getElementById("home-benchmark")'):LANDING.index("// The video tiles.")])
+
+    def test_the_benchmark_s_record_is_the_one_win_analytics_is_given(self):
+        self.assertEqual(LANDING.count('<script type="application/json" id="home-benchmark">null</script>'), 1)
+        rates = research_page.tournament_rates(ROOT, home_rankings.results(ROOT))
+        shown = home_rankings.benchmark(ROOT)
+        if rates is None:
+            # A clone without the run ledger: no record, and the section
+            # stays hidden.
+            self.assertIsNone(shown)
+        else:
+            self.assertEqual({key: value for key, value in shown.items() if key != "rungs"}, rates)
+            self.assertEqual(sorted(shown["tables"]), ["off", "on"])
+        # Whatever the ledger holds: the record as it is, and with it the
+        # levels' names, which Win Analytics has from its level picker.
+        record = {"to": "2026-11-24 20:18Z", "days": [1, 3, 7, 30], "games": 3, "tables": {
+            name: {"games": games, "levels": [{"level": level, "windows": [{"days": days, "games": games, "wins": 1} for days in (1, 3, 7, 30)]} for level in (8, 7, 6, 5, 4)]}
+            for name, games in (("on", 2), ("off", 1))
+        }}
+        with unittest.mock.patch.object(research_page, "tournament_rates", return_value=record):
+            shown = home_rankings.benchmark(ROOT)
+            self.assertEqual(shown, {**record, "rungs": {"8": "Deity", "7": "Immortal", "6": "Emperor", "5": "King", "4": "Prince"}})
+            for level, name in shown["rungs"].items():
+                self.assertRegex(CHARTS, rf'data-level="{level}" data-rung="{name}"')
+            with tempfile.TemporaryDirectory() as scratch:
+                page = pathlib.Path(scratch) / "index.html"
+                page.write_text(LANDING, encoding="utf-8")
+                with contextlib.redirect_stderr(io.StringIO()) as said:
+                    self.assertEqual(home_rankings.main(["home_rankings.py", str(ROOT), str(page)]), 0)
+                self.assertIn("the Firaxis AI benchmark", said.getvalue())
+                self.assertEqual(json.loads(home_rankings.BENCHMARK_SLOT.search(page.read_text(encoding="utf-8"))[2]), shown)
+        with unittest.mock.patch.object(research_page, "tournament_rates", return_value=None):
+            self.assertIsNone(home_rankings.benchmark(ROOT))
+            with tempfile.TemporaryDirectory() as scratch:
+                page = pathlib.Path(scratch) / "index.html"
+                page.write_text(LANDING, encoding="utf-8")
+                with contextlib.redirect_stderr(io.StringIO()) as said:
+                    self.assertEqual(home_rankings.main(["home_rankings.py", str(ROOT), str(page)]), 0)
+                self.assertIn("no Firaxis AI benchmark", said.getvalue())
+                self.assertIsNone(json.loads(home_rankings.BENCHMARK_SLOT.search(page.read_text(encoding="utf-8"))[2]))
+        # Win Analytics is given the same function's answer.
+        source = (BETA / "research_page.py").read_text(encoding="utf-8")
+        self.assertIn('out["tournament_rates"] = tournament_rates(source, rows)', source)
 
     def test_github_and_youtube_stand_out_and_the_top_playlists_are_listed_under_youtube(self):
         # Operator 2026-11-22: "make the GitHub, dev progress stand out a bit
