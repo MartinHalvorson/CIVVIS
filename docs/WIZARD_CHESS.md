@@ -143,6 +143,17 @@ cloaked figure with their reins. A take back is the last move, whoever made
 it, and the board goes back to them. There is no Elo to set, so it is not
 shown.
 
+**The fallen stay fallen** (`World.heaps`). A piece taken does not only
+break: what it was lies as a heap of its broken stone on the board's rim for
+the rest of the game, Black's along the left of White's side and White's
+along the right, half a square apart, a bigger heap for a bigger piece. A
+take back stands it up again; a new game clears the rim.
+
+**The rider commands with their hand** (`World.gesture`). Commanding the
+piece they ride (or any piece) from the saddle, the rider's right hand is
+thrown out at arm's length toward the square, and stays pointing while the
+command is obeyed.
+
 **The rider's own hands** (`World.arms`, `World.reach`). What a rider sees
 of themself: two gauntleted fists with gold cuffs and the forearms up to
 them from below the eye. On a knight they hold the reins, which end in them;
@@ -320,7 +331,7 @@ given (#5771); the opponent deliberating (#5772); riding into the blow
 (#5774); each piece its own stone (#5775); the hall's own sound (#5776); the
 hall's light following the game (#5777); riding any piece (#5778); the
 rider's own hands (#5781); two players at one laptop (#5782); the headset
-seat (#5784).
+seat (#5784); the fallen and the commanding hand (#5785).
 
 What is next, most felt first:
 
@@ -349,6 +360,13 @@ What is next, most felt first:
   move is slow too; a test waits on what it checks, not on a clock.
 - **The mount seen whole.** Its ears and mane are above a rider's eye: a
   glance up, or a look back at it from beside the board while riding.
+- **The knights as horses.** The pieces of the film-free set are busts; a
+  rider's knight wants a body under them: a stone horse's neck and shoulders
+  before the saddle, legs that gather and land, kept a chess knight from the
+  board.
+- **The board between moves.** What a rider hears and sees while nobody
+  moves: the pieces' small shifts, the fires, a far piece turning its head,
+  so that the wait for the opponent is a wait among the living.
 
 ## How it is built
 
