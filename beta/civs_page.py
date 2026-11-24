@@ -9,6 +9,9 @@ and how CIVVIS does as each civ.
                                             add the games played since to
                                             the snapshot of the cities and
                                             faith
+    civs_page.py --invasions <source_tree> <out.json>
+                                            add the games played since to
+                                            the snapshot of first invasions
     civs_page.py --self-play <batches_dir> <out.json>
                                             rebuild the self-play snapshot
 
@@ -38,7 +41,16 @@ winngest civs to the bottom"):
   reader picks. A game's cities and faith (`civ6_ladder.founding_reading`)
   are in its runs' summaries (`founding_marks`) from 2026-11-24, and the
   games before that are in a snapshot, `data/research/game_marks.json`,
-  which `--marks` fills from the event logs on the ledger branch.
+  which `--marks` fills from the event logs on the ledger branch. The last
+  field, `invaded`, is the turn another civilization first invaded CIVVIS
+  (operator 2026-11-24: "make a chart of the win odds by the turn that a civ
+  is first invaded by another civ"): the first turn a major civ's unit
+  fought us on our own ground, one of our cities or districts, or one of
+  our units where it or its attacker stood on our land
+  (`civ6_ladder.invasion_reading`). A barbarian's or a city-state's attack
+  is not another civ's. It is in the runs' summaries (`first_invasion`)
+  from 2026-11-24, and before that in `data/research/first_invasions.json`,
+  which `--invasions` fills the same way.
 - **self_play**, the CIVVIS self-play seats batch by batch (every seat a
   CIVVIS AI agent): per batch, each seat's second and third city turns, its
   religion, and its civ, with whether it won. Its games are rows on the
@@ -75,6 +87,7 @@ OPENING_LEVEL = 8
 
 #: The snapshots, in the source tree.
 MARKS = pathlib.Path("data/research/game_marks.json")
+INVASIONS = pathlib.Path("data/research/first_invasions.json")
 SELF_PLAY = pathlib.Path("data/research/self_play_seats.json")
 
 #: The lines of a run's log `founding_reading` reads: the seat, each city we
@@ -213,18 +226,112 @@ def written_marks(data: dict) -> str:
     return json.dumps(head, indent=1)[:-2] + ',\n "games": [\n' + ",\n".join(lines) + "\n ]\n}\n"
 
 
-def game_rows(source: pathlib.Path, rows: list[dict], held: dict[str, dict]) -> dict | None:
+# --- The turn a game was first invaded ---------------------------------------
+
+
+def merged_invasion(readings: list[dict | None]) -> dict | None:
+    """A game's first invasion from its runs' readings
+    (`civ6_ladder.invasion_reading`), the game's first run leading: the
+    earliest turn any run saw another civ invade us, or `None` for the turn
+    when none did, through the last turn any run covers. `None` when the
+    first run has no reading: the game's opening turns are in no log."""
+    if not readings or not readings[0]:
+        return None
+    turns = [r["turn"] for r in readings if r and type(r.get("turn")) is int]
+    through = [r["through"] for r in readings if r and type(r.get("through")) is int]
+    return {"turn": min(turns) if turns else None, "through": max(through) if through else None}
+
+
+def held_invasions(snapshot: dict) -> dict[str, int]:
+    """The snapshot's games, each under its key with the turn it was first
+    invaded, 0 for a game no civ invaded."""
+    return {str(key): int(turn) for key, turn, _through in snapshot.get("games") or []}
+
+
+def summary_invasions(source: pathlib.Path, games: list[tuple]) -> dict[str, int]:
+    """Each game's first invasion off its runs' summaries on the ledger
+    branch, 0 for a game no civ invaded, for a game whose every run's summary
+    carries `first_invasion` (a run from 2026-11-24 on)."""
+    tags = sorted({tag for game in games for tag in game[1]})
+    read = research_page.summaries(source, tags, lambda summary: ("first_invasion" in summary, summary.get("first_invasion")))
+    out = {}
+    for key, game_tags, *_ in games:
+        if all(read.get(tag, (False, None))[0] for tag in game_tags):
+            found = merged_invasion([read[tag][1] for tag in game_tags])
+            if found:
+                out[key] = found["turn"] or 0
+    return out
+
+
+#: The lines of a run's log `invasion_reading` reads: the seat, the land
+#: (`tiles`), the boards that name the rivals, and the fights.
+INVASION_READ = ('"kind": "seat"', '"kind": "tiles"', '"kind": "state"', '"kind": "combat"')
+
+
+def read_invasion(source: pathlib.Path, tags: list[str]) -> dict | None:
+    """A game's first invasion off its runs' event logs."""
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "tools"))
+    import civ6_ladder
+
+    readings = []
+    for tag in tags:
+        events = research_page.run_events(source, tag, INVASION_READ)
+        try:
+            readings.append(civ6_ladder.invasion_reading(events))
+        finally:
+            events.close()
+    return merged_invasion(readings)
+
+
+def invasions_snapshot(source: pathlib.Path, snapshot: dict | None = None) -> dict:
+    """The snapshot of first invasions brought up to the ledger: the games it
+    held, and every finished game at Lv 4 to Lv 8 it did not, read off the
+    game's event logs, as `marks_snapshot` brings up the cities and faith. A
+    game is its key, the turn another civ first invaded it (0 for none) and
+    the last turn its logs cover."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    snapshot = snapshot or {}
+    held = {str(game[0]): list(game) for game in snapshot.get("games") or []}
+    games = [game[:4] for game in finished_games(ranks.results(source) or []) if game[0] not in held]
+    carried = summary_invasions(source, games)
+    games = [game for game in games if game[0] not in carried]
+    with ThreadPoolExecutor(4) as readers:
+        read = list(readers.map(lambda game: read_invasion(source, game[1]), games))
+    for (key, *_), found in zip(games, read):
+        if found:
+            held[key] = [key, found["turn"] or 0, found["through"]]
+    return {
+        "about": "Each finished game against Lv 4 to Lv 8 AI on the run ledger: its key, the turn another "
+        "civilization first invaded CIVVIS (0 when none did), and the last turn its logs cover. An invasion is a "
+        "major civ's attack on one of our cities or districts, or on one of our units where it or its attacker "
+        "stood on our land. Read off the game's event logs by `civ6_ladder.invasion_reading`; a game whose run "
+        "summaries carry `first_invasion` is not here. Filled by `beta/civs_page.py --invasions`; read by Civ "
+        "Analytics.",
+        "taken": datetime.datetime.now(datetime.timezone.utc).date().isoformat(),
+        "games": [held[key] for key in sorted(held)],
+    }
+
+
+def game_rows(
+    source: pathlib.Path, rows: list[dict], held: dict[str, dict], invaded: dict[str, int] | None = None
+) -> dict | None:
     """The games the charts of cities and faith count, a row each (`FIELDS`),
     or `None` when none has a reading. `diplo` is 1 for a game played with
     the Diplomatic victory on, 0 off, and 2 when its summary does not say;
     `day` is days after `first`; a city never founded is 0, and so is a
     pantheon or belief the game never had, the others being places in
-    `names` counted from 1. `finished` is the finished games of each level,
-    those without a reading among them."""
+    `names` counted from 1. `invaded` is the turn another civ first invaded
+    us, 0 when none did, and -1 when no log or summary says (`held` and
+    `invaded` are the snapshots, the summaries answering for the games they
+    do not hold). `finished` is the finished games of each level, those
+    without a reading among them."""
     games = finished_games(rows)
     if not games:
         return None
     known = {**summary_marks(source, [game[:4] for game in games if game[0] not in held]), **held}
+    invaded = invaded or {}
+    invaded = {**summary_invasions(source, [game for game in games if game[0] not in invaded]), **invaded}
     switched = research_page.switches(source, sorted({tag for game in games for tag in game[1]}))
     names: list[str] = []
 
@@ -256,6 +363,7 @@ def game_rows(source: pathlib.Path, rows: list[dict], held: dict[str, dict]) -> 
             place(found.get("pantheon")),
             place(religion.get("founder")),
             place(religion.get("follower")),
+            invaded.get(key, -1),
         ]))
     if not counted:
         return None
@@ -275,7 +383,7 @@ def game_rows(source: pathlib.Path, rows: list[dict], held: dict[str, dict]) -> 
     }
 
 
-FIELDS = ["level", "diplo", "won", "day", "city2", "city3", "pantheon", "founder", "follower"]
+FIELDS = ["level", "diplo", "won", "day", "city2", "city3", "pantheon", "founder", "follower", "invaded"]
 
 
 # --- The self-play seats ------------------------------------------------------
@@ -418,7 +526,12 @@ def record(source: pathlib.Path) -> dict | None:
             except OSError as error:
                 print(f"civs_page: no snapshot of the cities and faith ({error})", file=sys.stderr)
                 held = {}
-            out["games"] = game_rows(source, rows, held)
+            try:
+                invaded = held_invasions(json.loads((source / INVASIONS).read_text(encoding="utf-8")))
+            except OSError as error:
+                print(f"civs_page: no snapshot of first invasions ({error})", file=sys.stderr)
+                invaded = {}
+            out["games"] = game_rows(source, rows, held, invaded)
     except (ValueError, KeyError, TypeError, AttributeError, IndexError) as error:
         print(f"civs_page: no games' cities and faith ({error})", file=sys.stderr)
     try:
@@ -453,6 +566,18 @@ def main(argv: list[str]) -> int:
         out.write_text(written_marks(data), encoding="utf-8")
         added = len(data["games"]) - len((before or {}).get("games") or [])
         print(f"civs_page: {len(data['games'])} games' cities and faith in {out}, {added} of them new", file=sys.stderr)
+        return 0
+    if len(argv) == 4 and argv[1] == "--invasions":
+        out = pathlib.Path(argv[3])
+        try:
+            before = json.loads(out.read_text(encoding="utf-8"))
+        except OSError:
+            before = None
+        data = invasions_snapshot(pathlib.Path(argv[2]), before)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(written_marks(data), encoding="utf-8")
+        added = len(data["games"]) - len((before or {}).get("games") or [])
+        print(f"civs_page: {len(data['games'])} games' first invasions in {out}, {added} of them new", file=sys.stderr)
         return 0
     if len(argv) == 4 and argv[1] == "--self-play":
         data = self_play_snapshot(pathlib.Path(argv[2]))
