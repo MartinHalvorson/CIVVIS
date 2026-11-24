@@ -7,6 +7,7 @@ import contextlib
 import datetime
 import io
 import json
+import os
 import pathlib
 import re
 import shutil
@@ -759,10 +760,141 @@ class SelfPlay(unittest.TestCase):
             groups = research_page.self_play_groups(snap)
             self.assertEqual(groups[0]["turns"]["science"], {204: 2})
 
+    #: A moment for the newest game of the batches below to finish at.
+    NOW = 1795546800.0  # 2026-11-24T19:00:00Z
+
+    def part(self, root: pathlib.Path, batch: str, name: str, games: list[tuple[int, float]], written: float) -> None:
+        """One worker's games of a batch, in the order it played them, each
+        with how long it took, in a file last written at `written`."""
+        directory = root / batch / "parts"
+        directory.mkdir(parents=True, exist_ok=True)
+        lines = [json.dumps(self.HEADER)]
+        for seed, secs in games:
+            for seat in range(2):  # every seat's row carries the game's length
+                lines.append(json.dumps({"kind": "game", "seed": seed, "seat": seat, "secs": secs}))
+        (directory / name).write_text("\n".join(lines) + "\n", encoding="utf-8")
+        os.utime(directory / name, (written, written))
+
+    def rows_written(self, root: pathlib.Path, batch: str, written: float) -> None:
+        os.utime(root / batch / "rows-continuous.jsonl", (written, written))
+
+    def test_a_game_finished_when_its_part_was_last_written_less_the_games_after_it(self):
+        # A row has no clock, only how long its game took, and a part is one
+        # worker's games end to end: the last finished when the file was last
+        # written, and each one before it that game's length earlier.
+        hour = 3600.0
+        with tempfile.TemporaryDirectory() as scratch:
+            root = pathlib.Path(scratch)
+            self.part(root, "20261124T000000Z-aaaa", "part-1.jsonl", [(1, 2 * hour), (2, hour), (3, 3 * hour)], self.NOW)
+            self.part(root, "20261124T000000Z-aaaa", "part-4.jsonl", [(4, hour), (5, 0)], self.NOW - 10 * hour)
+            first = research_page.part_finishes(root / "20261124T000000Z-aaaa" / "parts" / "part-1.jsonl")
+            self.assertEqual(first, {3: self.NOW, 2: self.NOW - 3 * hour, 1: self.NOW - 4 * hour})
+            # A row with no length is dated with the game after it; a batch's
+            # games are its parts' together.
+            every = research_page.batch_finishes(root / "20261124T000000Z-aaaa")
+            self.assertEqual(every[4], self.NOW - 10 * hour)
+            self.assertEqual(every[5], self.NOW - 10 * hour)
+            self.assertEqual(sorted(every), [1, 2, 3, 4, 5])
+            self.assertEqual(research_page.batch_finishes(root / "no-such-batch"), {})
+        self.assertEqual(research_page.stamp(self.NOW), "2026-11-24T19:00:00Z")
+
+    def test_the_last_day_is_the_24_hours_before_the_newest_game_finished(self):
+        # Operator 2026-11-24: "to win analytics civvis self play, add 3 days
+        # and 1 day options please. 1 day covers last 24 hrs". A batch runs
+        # for six hours to a day and a half, so a day is counted game by
+        # game, back from the moment the newest finished.
+        self.assertEqual(research_page.RECENT, [("1", 1), ("3", 3)])
+        hour = 3600.0
+        now = self.NOW
+        with tempfile.TemporaryDirectory() as scratch:
+            root = pathlib.Path(scratch)
+            # A batch from a week ago: in neither window, and its parts are
+            # not opened (this one's would put a game at this very hour).
+            self.batch(root, "20261117T000000Z-0001", self.HEADER, [(1, "science", 200)])
+            self.part(root, "20261117T000000Z-0001", "part-1.jsonl", [(1, hour)], now)
+            self.rows_written(root, "20261117T000000Z-0001", now - 7 * 24 * hour)
+            # A batch with no parts, whose rows were last written 50 hours
+            # ago: its games count from then.
+            self.batch(root, "20261122T000000Z-0002", self.HEADER, [(2, "culture", 180), (3, "culture", 181)])
+            self.rows_written(root, "20261122T000000Z-0002", now - 50 * hour)
+            # The running batch, two workers. The first played games 4 to 7,
+            # finishing 30 h, 24 h, 23 h and 1 h ago; the second game 8,
+            # finishing now, and game 9, which reached no victory.
+            self.batch(root, "20261123T120000Z-0003", self.HEADER, [
+                (4, "science", 204), (5, "science", 205), (6, "diplomatic", 205), (7, "science", 204), (8, "score", 250),
+            ])
+            self.part(root, "20261123T120000Z-0003", "part-4.jsonl",
+                      [(4, hour), (5, 6 * hour), (6, hour), (7, 22 * hour)], now - hour)
+            self.part(root, "20261123T120000Z-0003", "part-8.jsonl", [(9, hour), (8, 5 * hour)], now)
+            self.rows_written(root, "20261123T120000Z-0003", now - 60)
+            snap = research_page.snapshot(root)
+            last = snap["last"]
+            self.assertEqual(last["to"], "2026-11-24T19:00:00Z")
+            self.assertEqual(list(last["windows"]), ["1", "3"])
+            day, three = last["windows"]["1"], last["windows"]["3"]
+            # 24 hours: the games that finished 23 h and 1 h ago and now. The
+            # one that finished exactly 24 hours before the newest is out.
+            self.assertEqual((day["hours"], day["games"], day["from"]), (24, 3, "2026-11-23T20:00:00Z"))
+            self.assertEqual(day["turns"], {"science": {"204": 1}, "diplomatic": {"205": 1}, "score": {"250": 1}})
+            # 72 hours: those, the two before them and the batch of 50 hours ago.
+            self.assertEqual((three["hours"], three["games"], three["from"]), (72, 7, "2026-11-22T17:00:00Z"))
+            self.assertEqual(three["turns"]["science"], {"204": 2, "205": 1})
+            self.assertEqual(three["turns"]["culture"], {"180": 1, "181": 1})
+            # The batches are held as they were, whole.
+            self.assertEqual([b["games"] for b in snap["batches"]], [1, 2, 5])
+            # The file keeps a line per window after the batches and reads
+            # back as it was written.
+            text = research_page.written(snap)
+            self.assertEqual(json.loads(text), snap)
+            self.assertEqual(sum(line.startswith('   "') for line in text.splitlines()), 2)
+            self.assertLess(text.index('"batches"'), text.index('"last"'))
+
+            # As the page reads them: a window like any other, with the hours
+            # it covers and the moment they run back from, before the longer
+            # windows.
+            recent = research_page.recent_windows(snap)
+            self.assertEqual(list(recent), ["1", "3"])
+            self.assertEqual(
+                {key: recent["1"][key] for key in ("from", "to", "games", "hours", "until")},
+                {"from": "2026-11-23", "to": "2026-11-24", "games": 3, "hours": 24, "until": "2026-11-24T19:00:00Z"},
+            )
+            self.assertEqual(recent["1"]["victories"]["science"]["games"], 1)
+            self.assertEqual(recent["1"]["victories"]["science"]["median"], 204)
+            self.assertEqual(recent["1"]["victories"]["score"]["turns"][249], 1)
+            self.assertEqual((recent["3"]["from"], recent["3"]["games"], recent["3"]["hours"]), ("2026-11-22", 7, 72))
+            kind = research_page.kind("CIVVIS self-play", research_page.self_play_groups(snap), recent)
+            self.assertEqual(list(kind["windows"]), ["1", "3", "7", "30", "all"])
+            # The longer windows are counted as before, by whole batches.
+            self.assertEqual(kind["windows"]["7"]["games"], 7)
+            self.assertEqual(kind["windows"]["all"]["games"], 8)
+            # A snapshot from before these windows were kept has none, and
+            # neither has a kind that is not self-play.
+            self.assertEqual(research_page.recent_windows({"batches": snap["batches"]}), {})
+            self.assertEqual(research_page.recent_windows({**snap, "last": {"to": "soon", "windows": last["windows"]}}), {})
+            plain = research_page.kind("CIVVIS self-play", research_page.self_play_groups(snap))
+            self.assertEqual(list(plain["windows"]), ["7", "30", "all"])
+        self.assertIsNone(research_page.last_windows([]))
+
     def test_the_committed_snapshot_is_the_one_table(self):
         snap = json.loads((ROOT / research_page.SELF_PLAY).read_text(encoding="utf-8"))
         self.assertTrue(snap["batches"])
         self.assertRegex(snap["taken"], r"^\d{4}-\d{2}-\d{2}$")
+        # It holds the last 24 and 72 hours already counted, and the page's
+        # record offers them.
+        last = snap["last"]
+        self.assertRegex(last["to"], research_page.STAMPED.pattern)
+        self.assertEqual(list(last["windows"]), [key for key, _ in research_page.RECENT])
+        every = sum(batch["games"] for batch in snap["batches"])
+        counts = []
+        for (key, days), held in zip(research_page.RECENT, last["windows"].values()):
+            self.assertEqual(held["hours"], 24 * days)
+            self.assertEqual(sum(n for turns in held["turns"].values() for n in turns.values()), held["games"])
+            self.assertLessEqual(set(held["turns"]), set(research_page.VICTORIES))
+            span = research_page.stamped(last["to"]) - research_page.stamped(held["from"])
+            self.assertTrue(datetime.timedelta(0) <= span < datetime.timedelta(hours=24 * days), (key, span))
+            counts.append(held["games"])
+        self.assertTrue(0 < counts[0] <= counts[1] <= every, counts)
+        self.assertEqual(list(research_page.recent_windows(snap)), ["1", "3"])
         for batch in snap["batches"]:
             self.assertRegex(batch["batch"], research_page.BATCH.pattern)
             counted = sum(n for turns in batch["turns"].values() for n in turns.values())
@@ -892,7 +1024,7 @@ class Page(unittest.TestCase):
         self.assertEqual(
             charts,
             [
-                ("ai", "ai", "all", "CIVVIS vs {level} AI: every victory"),
+                ("ai", "ai", "all", "CIVVIS vs {level} AI: all games"),
                 ("ai-rival", "ai", "rival", "CIVVIS vs {level} AI: {rung} AI wins"),
                 ("ai-civvis", "ai", "civvis", "CIVVIS vs {level} AI: CIVVIS wins"),
                 ("self_play", "self_play", "all", "CIVVIS self-play"),
@@ -908,7 +1040,12 @@ class Page(unittest.TestCase):
         heads = re.findall(r'\{ id: "([\w-]+)", kind: "\w+", side: "\w+", label: "[^"]+", head: "([^"]+)"', PAGE)
         self.assertEqual(
             heads,
-            [("ai", "Every victory"), ("ai-rival", "{rung} AI wins"), ("ai-civvis", "CIVVIS wins"), ("self_play", "Every victory")],
+            [
+                ("ai", "Turn Length and Victory Type Histogram of All Games"),
+                ("ai-rival", "{rung} AI wins"),
+                ("ai-civvis", "CIVVIS wins against {rung} AI"),
+                ("self_play", "Every victory"),
+            ],
         )
         self.assertIn('box.querySelector("[data-title]").textContent = worded(chart.head);', PAGE)
         # Each chart of the markup the script fills stands under the title
@@ -1008,11 +1145,14 @@ class Page(unittest.TestCase):
         # its last 7. So each kind has its own control, in its own head, and
         # the script counts each kind by its own choice.
         windows = re.findall(
-            r'<div class="res-seg" id="res-window-(\w+)">\s*'
-            r'<button type="button" data-window="7" aria-pressed="(true|false)">Last 7 days</button>\s*'
-            r'<button type="button" data-window="30" aria-pressed="(true|false)">Last 30 days</button>\s*'
+            r'<div class="res-seg" id="res-window-(\w+)">\s*(?:<!--.*?-->\s*'
+            r'<button type="button" data-window="1" aria-pressed="false">(?:Last |<span class="res-wide">Last </span>)1 day</button>\s*'
+            r'<button type="button" data-window="3" aria-pressed="false">(?:Last |<span class="res-wide">Last </span>)3 days</button>\s*)?'
+            r'<button type="button" data-window="7" aria-pressed="(true|false)">(?:Last |<span class="res-wide">Last </span>)7 days</button>\s*'
+            r'<button type="button" data-window="30" aria-pressed="(true|false)">(?:Last |<span class="res-wide">Last </span>)30 days</button>\s*'
             r'<button type="button" data-window="all" aria-pressed="(true|false)">Every game</button>\s*</div>',
             PAGE,
+            re.S,
         )
         # The benchmark over them, the first thing on the page, has none
         # since 2026-11-23: its tables list their windows side by side.
@@ -1034,7 +1174,58 @@ class Page(unittest.TestCase):
         # The record holds every window a control can ask for, for each kind
         # and at every level (`research_page.kind`).
         self.assertEqual([key for key, _ in research_page.WINDOWS], ["7", "30", "all"])
-        self.assertEqual(sorted(set(re.findall(r'data-window="(\w+)"', PAGE))), ["30", "7", "all"])
+        self.assertEqual(sorted(set(re.findall(r'data-window="(\w+)"', PAGE))), ["1", "3", "30", "7", "all"])
+
+    def test_self_play_alone_offers_its_last_day_and_its_last_three(self):
+        # Operator 2026-11-24: "to win analytics civvis self play, add 3 days
+        # and 1 day options please. 1 day covers last 24 hrs". Two more
+        # choices in self-play's control, shortest first, and none in the
+        # control of the games against the AI.
+        def offered(kind: str) -> list:
+            control = PAGE[PAGE.index(f'<div class="res-seg" id="res-window-{kind}">') :]
+            control = control[: control.index("</div>")]
+            found = re.findall(r'<button type="button" data-window="(\w+)" aria-pressed="(?:true|false)">(.+?)</button>', control)
+            # Self-play's five lose their "Last" on a phone, so it stands in
+            # a span of its own there; read, a choice says the same.
+            return [(window, said.replace('<span class="res-wide">Last </span>', "Last ")) for window, said in found]
+
+        self.assertEqual(
+            offered("self_play"),
+            [("1", "Last 1 day"), ("3", "Last 3 days"), ("7", "Last 7 days"), ("30", "Last 30 days"), ("all", "Every game")],
+        )
+        self.assertEqual(offered("ai"), [("7", "Last 7 days"), ("30", "Last 30 days"), ("all", "Every game")])
+        # The record holds what the control offers, under the same names.
+        self.assertEqual(
+            [key for key, _ in research_page.RECENT] + [key for key, _ in research_page.WINDOWS],
+            [key for key, _ in offered("self_play")],
+        )
+        # Self-play still opens on its last 7 days.
+        control = PAGE[PAGE.index('id="res-window-self_play"') :]
+        control = control[: control.index("</div>")]
+        self.assertIn('data-window="7" aria-pressed="true"><span class="res-wide">Last </span>7 days</button>', control)
+        self.assertEqual(control.count('aria-pressed="true"'), 1)
+        # Five choices are wider than a phone: there each loses its "Last",
+        # and narrower still the control scrolls in its own width.
+        self.assertEqual(control.count('<span class="res-wide">Last </span>'), 4)
+        self.assertIn("#res-window-self_play { max-width: 100%; overflow-x: auto; }", PAGE)
+        self.assertRegex(
+            PAGE,
+            r"@media \(max-width: 479px\) \{\s*#res-window-self_play \.res-wide \{ display: none; \}\s*"
+            r"#res-window-self_play button \{ padding: 0 8px; \}\s*\}",
+        )
+        # Under the title the page says what a day is: the hours, and the
+        # moment they run back from.
+        self.assertIn(
+            'if (w.hours && w.until) return w.hours + " hours to " + day(w.to) + ", " + String(w.until).slice(11, 16) + " UTC";',
+            PAGE,
+        )
+        # A window the record does not hold (a snapshot from before these
+        # were counted) is not offered.
+        self.assertIn(
+            'if (kind === "self_play") button.hidden = !(data.self_play && data.self_play.windows '
+            "&& data.self_play.windows[button.dataset.window]);",
+            PAGE,
+        )
 
     def test_the_benchmark_says_its_par_in_big_type(self):
         # Operator 2026-11-24: "add a big note to firaxis civ 6 benchmark
@@ -1399,11 +1590,11 @@ class Page(unittest.TestCase):
             '<nav class="site-nav" aria-label="CIVVIS sites">\n'
             '      <a class="site-link" href="../../home/">Home</a>\n'
             '      <div class="site-folder">\n'
-            '        <a class="site-link" href="../ai-interpretability/" '
+            '        <a class="site-link" href="../civ-ai-interpretability/" '
             'title="What the games show: charts read off the CIVVIS AI agents&#8217; games.">Charts/</a>\n'
             '        <div class="site-menu">\n'
-            '          <a class="site-link sub-link" href="../ai-interpretability/" '
-            'title="How a CIVVIS AI agent decides: one turn step by step, its plan through a game, and what each rule is worth in wins.">AI Interpretability</a>\n'
+            '          <a class="site-link sub-link" href="../civ-ai-interpretability/" '
+            'title="How a CIVVIS AI agent decides: one turn step by step, its plan through a game, and what each rule is worth in wins.">Civ AI Interpretability</a>\n'
             '          <a class="site-link sub-link" href="../civ-analytics/" '
             'title="How CIVVIS does as each civ, and the early build orders that win against Deity.">Civ Analytics</a>\n'
             '          <a class="site-link sub-link" href="./" aria-current="page">Win Analytics</a>\n'
@@ -1437,7 +1628,7 @@ class Page(unittest.TestCase):
             self.assertEqual(
                 re.findall(r'<a class="site-link sub-link" href="([^"]+)"[^>]*>([^<]+)</a>', nav),
                 [(("./" if listed == name else f"../{at}/"), listed) for at, listed in (
-                    ("ai-interpretability", "AI Interpretability"), ("civ-analytics", "Civ Analytics"),
+                    ("civ-ai-interpretability", "Civ AI Interpretability"), ("civ-analytics", "Civ Analytics"),
                     ("win-analytics", "Win Analytics"), ("elo-rankings", "ELO Rankings"),
                     ("civvis-performance", "CIVVIS Performance"))],
             )
@@ -1453,12 +1644,12 @@ class Page(unittest.TestCase):
             self.assertNotIn(">Musings</a>", page)
             self.assertNotIn(">Charts</a>", page)
         for page, pattern in (
-            (LANDING, r'aria-current="page">Home</a>\s*<div class="site-folder">\s*<a class="site-link" href="\.\./charts/ai-interpretability/"[^>]*>Charts/</a>'
+            (LANDING, r'aria-current="page">Home</a>\s*<div class="site-folder">\s*<a class="site-link" href="\.\./charts/civ-ai-interpretability/"[^>]*>Charts/</a>'
                       r'[\s\S]*?</div>\s*</div>\s*<a class="site-link" href="\.\./tournaments/"'),
-            (TOURNAMENTS, r'href="\.\./home/">Home</a>\s*<div class="site-folder">\s*<a class="site-link" href="\.\./charts/ai-interpretability/"[^>]*>Charts/</a>'
+            (TOURNAMENTS, r'href="\.\./home/">Home</a>\s*<div class="site-folder">\s*<a class="site-link" href="\.\./charts/civ-ai-interpretability/"[^>]*>Charts/</a>'
                           r'[\s\S]*?</div>\s*</div>\s*<a class="site-link" href="\./" aria-current="page">Tournaments</a>'),
             (VIEWER, r'id="homelink" href="/home" target="_top">Home</a>\s*'
-                     r'<a class="home-link" id="chartslink" href="/charts/ai-interpretability" target="_top">Charts/</a>\s*'
+                     r'<a class="home-link" id="chartslink" href="/charts/civ-ai-interpretability" target="_top">Charts/</a>\s*'
                      r'<a class="home-link" id="tourlink" href="/tournaments" target="_top">Tournaments</a>'),
         ):
             self.assertRegex(page, pattern)

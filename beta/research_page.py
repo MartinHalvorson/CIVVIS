@@ -63,6 +63,15 @@ that level's, so a snapshot left unrefreshed, or a level last played weeks
 ago, still shows its last week rather than an empty one, and the page says
 which days each window holds.
 
+Self-play has two shorter windows as well (operator 2026-11-24: "to win
+analytics civvis self play, add 3 days and 1 day options please. 1 day
+covers last 24 hrs"): the 24 hours and the 72 hours before its newest game
+finished, counted game by game. The longer windows count whole batches by
+the day each ended, which a day cannot be read from: a batch runs for six
+hours to a day and a half. A game's row carries no clock, so `--self-play`
+works out when each game of the last three days finished (`part_finishes`)
+and the snapshot holds those two windows already counted, under `last`.
+
 Over the charts the page opens on the benchmark against the game's AI
 (operator 2026-11-22: "to the top of win analytics roughly, please list our
 win rate against lv 4... lv 8 deity ai in tournament games"; and 2026-11-23:
@@ -187,6 +196,12 @@ LEVELS = [4, 5, 6, 7, 8]
 #: The windows, newest first: days back from a kind's newest game (`None` is
 #: every game).
 WINDOWS = [("7", 7), ("30", 30), ("all", None)]
+
+#: Self-play's two shorter windows, in days of 24 hours back from the moment
+#: its newest game finished (operator 2026-11-24: "add 3 days and 1 day
+#: options please. 1 day covers last 24 hrs"). They are counted when the
+#: snapshot is taken, from each game's own finish.
+RECENT = [("1", 1), ("3", 3)]
 
 #: The tournaments' definitions, in the source tree, and what the two tables
 #: of win rates list (operator 2026-11-23): their rows, the levels from Deity
@@ -687,11 +702,39 @@ def build_orders(
     }
 
 
-def kind(name: str, groups: list[dict]) -> dict | None:
+def kind(name: str, groups: list[dict], recent: dict | None = None) -> dict | None:
+    """One kind of game as the page reads it: its windows, the shorter ones
+    (`recent`, self-play's alone) before the rest."""
     windows = {key: window(groups, days) for key, days in WINDOWS}
     if not windows["all"]:
         return None
-    return {"name": name, "windows": windows}
+    return {"name": name, "windows": {**(recent or {}), **windows}}
+
+
+def recent_windows(snapshot: dict) -> dict:
+    """Self-play's windows of `RECENT` as the page reads them, from the
+    snapshot's `last`: each a window like any other, with the hours it
+    covers (`hours`) and the moment they are counted back from (`until`, the
+    newest game's finish, to the second). A snapshot taken before these
+    windows were kept has none, and the page then offers none."""
+    last = snapshot.get("last") or {}
+    until = STAMPED.fullmatch(str(last.get("to") or ""))
+    out = {}
+    for key, days in RECENT:
+        held = (last.get("windows") or {}).get(key)
+        if not until or not held or not held.get("games"):
+            continue
+        group = {
+            "day": last["to"][:10],
+            "games": int(held["games"]),
+            "turns": {v: {int(t): int(n) for t, n in held["turns"].get(v, {}).items()} for v in VICTORIES},
+        }
+        counted = window([group], None)
+        counted["from"] = str(held["from"])[:10]
+        counted["hours"] = 24 * days
+        counted["until"] = last["to"]
+        out[key] = counted
+    return out
 
 
 def research(source: pathlib.Path) -> dict | None:
@@ -699,7 +742,7 @@ def research(source: pathlib.Path) -> dict | None:
     out: dict = {"turns": TURNS, "victories": VICTORIES}
     try:
         snapshot = json.loads((source / SELF_PLAY).read_text(encoding="utf-8"))
-        out["self_play"] = kind("CIVVIS self-play", self_play_groups(snapshot))
+        out["self_play"] = kind("CIVVIS self-play", self_play_groups(snapshot), recent_windows(snapshot))
         out["self_play_taken"] = str(snapshot.get("taken") or "")
     except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:
         print(f"research_page: no self-play figures ({error})", file=sys.stderr)
@@ -796,10 +839,94 @@ def batch_endings(directory: pathlib.Path) -> dict | None:
     return {"games": len(endings), "endings": endings} if endings else None
 
 
+def part_finishes(part: pathlib.Path) -> dict[int, float]:
+    """When each game in one part of a batch finished, by seed, in seconds
+    since 1970.
+
+    A game's row carries no clock. It carries how long the game took
+    (`secs`), and a part is one worker's games in the order it played them,
+    one after the other, written as each ends. So the part's last game
+    finished when the file was last written, and each game before it that
+    game's length earlier. Measured on the batches of 2026-11-22 to 24: a
+    part's lengths add up to the hours between its worker's launch and its
+    last write to within the launch's own minutes, 14 parts of a batch each
+    landing 20 seconds after the one before, as the workers are started. A
+    worker the CPU governor holds mid-game is no exception: the held time is
+    in that game's length. A row with no length is read as none, which dates
+    it with the game after it."""
+    lengths: dict[int, float] = {}
+    with part.open(encoding="utf-8") as lines:
+        for line in lines:
+            try:
+                row = json.loads(line)
+            except ValueError:
+                continue
+            if row.get("kind") != "game" or row.get("seed") in lengths:
+                continue
+            secs = row.get("secs")
+            lengths[row["seed"]] = float(secs) if isinstance(secs, (int, float)) and secs > 0 else 0.0
+    at = part.stat().st_mtime
+    finishes = {}
+    for seed in reversed(list(lengths)):
+        finishes[seed] = at
+        at -= lengths[seed]
+    return finishes
+
+
+def batch_finishes(directory: pathlib.Path) -> dict[int, float]:
+    """When each game of a batch finished, by seed: read off its parts
+    (`part_finishes`). A game in no part is not in the answer (a batch from
+    before workers wrote parts has none), and `snapshot` counts it as
+    finished when the batch's rows were last written."""
+    finishes: dict[int, float] = {}
+    for part in sorted((directory / "parts").glob("part-*.jsonl")):
+        for seed, at in part_finishes(part).items():
+            finishes.setdefault(seed, at)
+    return finishes
+
+
+def stamp(at: float) -> str:
+    """A moment as the snapshot writes it: `2026-11-24T18:45:41Z`."""
+    return datetime.datetime.fromtimestamp(at, datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def stamped(text: str) -> datetime.datetime:
+    """The moment a snapshot's stamp names."""
+    return datetime.datetime.strptime(text, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=datetime.timezone.utc)
+
+
+def last_windows(played: list[tuple[float, str, int]]) -> dict | None:
+    """The windows of `RECENT` over `played`, a `(finished, victory, turn)`
+    per game: `to`, the moment the newest game finished, and per window the
+    games that finished in the days of 24 hours before it, the oldest's
+    finish (`from`) and each victory's count on each turn. `None` when there
+    is no game."""
+    if not played:
+        return None
+    to = max(at for at, _, _ in played)
+    windows = {}
+    for key, days in RECENT:
+        since = to - days * 24 * 3600
+        kept = [(at, victory, turn) for at, victory, turn in played if at > since]
+        turns: dict[str, dict[str, int]] = {}
+        for _, victory, turn in kept:
+            tally = turns.setdefault(victory, {})
+            tally[str(turn)] = tally.get(str(turn), 0) + 1
+        windows[key] = {
+            "hours": 24 * days,
+            "from": stamp(min(at for at, _, _ in kept)),
+            "games": len(kept),
+            "turns": {v: dict(sorted(turns[v].items(), key=lambda item: int(item[0]))) for v in VICTORIES if v in turns},
+        }
+    return {"to": stamp(to), "windows": windows}
+
+
 def snapshot(batches: pathlib.Path) -> dict:
     """Every batch under a gene-screen state directory's `batches/`, oldest
-    first, as the snapshot file holds them."""
+    first, as the snapshot file holds them, and the windows of `RECENT`
+    already counted (`last`)."""
     out = []
+    read_batches = []
     for directory in sorted(p for p in batches.iterdir() if p.is_dir() and BATCH.fullmatch(p.name)):
         read = batch_endings(directory)
         if not read:
@@ -808,6 +935,7 @@ def snapshot(batches: pathlib.Path) -> dict:
         began = f"{m[1]}-{m[2]}-{m[3]}"
         ended = began
         newest = max((p.stat().st_mtime for p in directory.glob("rows*.jsonl")), default=None)
+        read_batches.append((directory, newest, read["endings"]))
         if newest is not None:
             ended = datetime.datetime.fromtimestamp(newest, datetime.timezone.utc).date().isoformat()
         turns: dict[str, dict[str, int]] = {}
@@ -823,21 +951,44 @@ def snapshot(batches: pathlib.Path) -> dict:
                 "turns": {v: dict(sorted(turns[v].items(), key=lambda item: int(item[0]))) for v in VICTORIES if v in turns},
             }
         )
-    return {
-        "about": "When each self-play game ended and by which victory: a batch per entry, a game per seed. "
-        "Rebuilt by `beta/research_page.py --self-play`; read by the Research page.",
+    # The games of the last days, each by its own finish. Only a batch whose
+    # rows were written inside the widest window can hold one, so only those
+    # batches' parts are read.
+    played: list[tuple[float, str, int]] = []
+    written_at = [newest for _, newest, _ in read_batches if newest is not None]
+    if written_at:
+        widest = max(written_at) - max(days for _, days in RECENT) * 24 * 3600
+        for directory, newest, endings in read_batches:
+            if newest is None or newest <= widest:
+                continue
+            finishes = batch_finishes(directory)
+            played += [(finishes.get(seed, newest), victory, turn) for seed, (victory, turn) in endings.items()]
+    data = {
+        "about": "When each self-play game ended and by which victory: a batch per entry, a game per seed, and under "
+        "`last` the games that finished in the 24 and the 72 hours before the newest did (`to`), counted the same "
+        "way. Rebuilt by `beta/research_page.py --self-play`; read by the Win Analytics page.",
         "setup": "6 players, Continents, Online speed, 250 turns, every seat a CIVVIS AI agent",
         "taken": datetime.datetime.now(datetime.timezone.utc).date().isoformat(),
         "batches": out,
     }
+    last = last_windows(played)
+    if last:
+        data["last"] = last
+    return data
 
 
 def written(data: dict) -> str:
     """The snapshot as its file holds it: a line per batch, so a refresh's
     diff is the batches that changed."""
-    head = {key: value for key, value in data.items() if key != "batches"}
+    head = {key: value for key, value in data.items() if key not in ("batches", "last")}
     lines = [json.dumps(batch, separators=(",", ":")) for batch in data["batches"]]
-    return json.dumps(head, indent=1)[:-2] + ',\n "batches": [\n' + ",\n".join(lines) + "\n ]\n}\n"
+    text = json.dumps(head, indent=1)[:-2] + ',\n "batches": [\n' + ",\n".join(lines) + "\n ]"
+    if "last" in data:
+        # A line for the moment and a line per window, after the batches.
+        last = data["last"]
+        windows = [f'   {json.dumps(key)}: {json.dumps(held, separators=(",", ":"))}' for key, held in last["windows"].items()]
+        text += ',\n "last": {\n  "to": ' + json.dumps(last["to"]) + ',\n  "windows": {\n' + ",\n".join(windows) + "\n  }\n }"
+    return text + "\n}\n"
 
 
 # --- The snapshot of the openings -------------------------------------------
