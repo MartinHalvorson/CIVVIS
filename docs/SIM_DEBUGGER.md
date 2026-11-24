@@ -53,11 +53,13 @@ on itself and has an ✕ after its right end, that closing the timeline as it
 was leaves the branch as the timeline, and that each stretch is named by the
 Civ AI that played it. Two more parts hold what the box asks (Switch or
 Branch for another Civ AI picked on the one timeline, and which Civ AI plays
-a branch that Branch just made), and one that the timeline says Click to
-travel until it is clicked to travel. The next holds the opening view: a
-page opened as anyone opens it draws its first state on two tracks with
-nothing pressed and nothing asked, once a game. Every part before that one
-asks for the one timeline (`?tracks=1`). The last part holds Autosearch (see
+the branch that Branch is about to make), and one that the timeline says
+Click to travel until it is clicked to travel. The next holds the opening
+view: a page opened as anyone opens it draws its first state on one timeline
+with the top-rated Civ AI in its seat, nothing pressed and nothing asked,
+and a page that asks for two tracks (`?tracks=2`) opens on them, once a
+game. Every part before that one asks for the one timeline by name
+(`?tracks=1`). The last part holds Autosearch (see
 "Autosearch"): the button's size and place, the panel's choices, a search
 played on copies of the toy engine with the page's own game left alone, the
 copies let go when it ends or is stopped, an engine that cannot be copied,
@@ -76,7 +78,9 @@ again whenever either changes (the left panel folded away, brought back or
 dragged wider). A watched game has no box and is not moved.
 
 Above the timeline is the Civ AI that plays the seat from the open turn, to
-pick there. Picking another one there asks first what to do with it
+pick there. A page's first game opens with the best one there is in it, the
+one with the highest Elo ("The opening view", under "Split screen"). Picking
+another one there asks first what to do with it
 (operator 2026-11-22: "leading strategies should be editable and when edited
 to a different strategy, should ask to switch or branch"): **Switch**, and
 this timeline plays on with it from the open turn, or **Branch**, and a
@@ -179,8 +183,9 @@ between the ends are numbered along the top of the rail. On it:
 ### Panels are windows
 
 Layers, Breakpoints, Save points and Autosearch each open a panel under
-their button, and what the box asks (Switch or Branch, and which Civ AI plays
-a branch) opens under the picker it is about. Each is a window, and a window
+their button, and what the box asks opens under what it is about (Switch or
+Branch under the picker, and which Civ AI plays a branch under Branch). Each
+is a window, and a window
 is moved
 by its title (operator 2026-11-22: "clicking and dragging on a window title
 allows for repositioning"): press the title, drag, and the window goes where
@@ -575,34 +580,55 @@ turn: back to it if it was played, and on to it if it is still ahead.
 
 ## Split screen
 
-Branch puts two simulators in one window. It asks nothing first: the screen
-splits at once, side by side, and the two halves begin locked on the same
-turn (the strip between them can stack them instead). Both start from the
-world as it stood when the screen was split, and from there each can play
-its own history: play one by hand and step the other, or try two answers to
-the same turn.
+Branch puts two simulators in one window. It asks one thing first, which
+Civ AI plays the branch (below), and nothing about how the two are laid out:
+when a Civ AI is picked the screen splits at once, side by side, and the two
+halves begin locked on the same turn (the strip between them can stack them
+instead). Both start from the world as it stood when the screen was split,
+and from there each can play its own history: play one by hand and step the
+other, or try two answers to the same turn.
 
-A game opens that way (operator 2026-11-22: "in ai debugger, the opening
-view should go to the 2 track immediately"): the first state of a game drawn
-under the debugger is branched where it stands, as Branch does it, with
-nothing pressed. It is the opening view and is given once a game
-(`debugOpenOnTwoTracks`, by the game's seed): a branch that is dropped
-leaves the one timeline, which stays one until Branch is pressed or a new
-game begins. A page asked for with `tracks=1` in its address opens on the
-one timeline, and so does a window under 900px wide, a small device, and a
-seat being played by hand in the Single player view.
+**The opening view.** A game opens on its one timeline, with one Civ AI
+(operator 2026-11-24: "ai debugger should start with 1 strategy (maybe the
+best strategy). players can branch if they want (they should choose the new
+strategy when they branch)"). The Civ AI is the best there is: the one with
+the highest Elo anything has measured, which is the first the picker lists
+(`debugBestAgent`). It is seated once a page, for the page's first game,
+whatever that browser last picked, and the engine is told at once; after
+that the seat is whoever is picked for it, through every new game on the
+page. A page whose Civ AIs nothing has rated keeps the seat it had. A second
+timeline is the person's to make, with Branch.
 
-A branch begins with A's Civ AI. When Branch made it, the box asks which
-one plays it (operator: "after this, user should be prompted for the
-strategy for the second branch"): a list of every Civ AI the page offers,
-under B's picker, the one seated lit and marked as A's. A press on one seats
-it in B, as B's picker does, and B's picker answers the question as well. A
-press anywhere else, or Escape, leaves B on the Civ AI it began with. A
-branch made from the Switch or Branch question above was made for a Civ AI,
-and is not asked about. Nor is the opening view, which nobody pressed Branch
-for (operator 2026-11-22: "branch b should only ask when branch is
-selected. not just auto ask rom the start"): it opens with B on A's Civ AI,
-and B's picker seats another.
+From 2026-11-22 until then every game opened on two tracks (operator: "in ai
+debugger, the opening view should go to the 2 track immediately"), and a
+page asked for with `tracks=2` in its address still does: the first state of
+a game drawn under the debugger is branched where it stands, as Branch does
+it, with nothing pressed and nothing asked, both tracks on the one Civ AI.
+That is given once a game (`debugOpenTheGame`, by the game's seed): a branch
+that is dropped leaves the one timeline, which stays one until Branch makes
+another or a new game begins. Doctor Strange's Civ 6 is two worlds and
+opens on them, unless it is asked for with `tracks=1`. A window under 900px
+wide, a small device, and a seat being played by hand in the Single player
+view open on the one timeline whatever was asked.
+
+**Branch asks which Civ AI plays the branch**, and makes the branch when one
+is picked (operator 2026-11-24: "they should choose the new strategy when
+they branch"). Pressed, it opens a list under itself of every Civ AI the
+page offers, as the picker lists them, Elo first and the best at the top,
+with the one this timeline has marked "plays this timeline". A press on one
+makes the branch for it in one step: B begins seated with it, and A keeps
+its own. The timeline's own Civ AI may be picked too, and then the two are
+one world until one of them is played another way. Nothing is done until
+one is picked: Cancel, Escape, a press anywhere else, or Branch pressed
+again leaves the one timeline as it was, and nothing is said to the engine.
+A branch made from the Switch or Branch question above was made for a Civ
+AI the same way. Two screens are asked nothing: each branch's picker, at the
+head of its lane, seats another Civ AI in it. (From 2026-11-22 until
+2026-11-24 Branch split the screen first, with B on A's Civ AI, and asked
+afterwards.) A game that opens on two tracks is asked nothing either, since
+nobody pressed Branch for it (operator 2026-11-22: "branch b should only ask
+when branch is selected. not just auto ask rom the start"): it opens with B
+on A's Civ AI, and B's picker seats another.
 
 A is the timeline as it was, and B is the branch. A keeps every turn it
 holds, the ones past the open turn included. B begins on the open turn: when
@@ -676,17 +702,18 @@ takes no press, and nothing is asked of the world a split is being made
 from. Then the one picture takes the other's place in one move
 (`debugSwap`).
 
-- **Branch.** The split is made at once and its halves load where they will
+- **Branch.** When the branch's Civ AI is picked the split is made at once
+  and its halves load where they will
   stand, unseen (`#debugsplit.dbg-unseen`). The one screen stays up, and
   Branch reads "Branching…". The two screens are shown when both halves are
   there (`debugSplitReady`): each has said its turn, its timeline and its
   numbers, half A has given the deck the one panel is drawn from, each seats
   the Civ AI it was given, the branch has let go of the turns ahead of it,
   and each has painted itself (`pane-shown`). So the box has its deck from
-  the first frame and nothing moves after it. Then, for a branch Branch made,
-  the box asks which Civ AI plays it. A half that never arrives is not waited on for ever:
+  the first frame and nothing moves after it, and B is already seated with
+  the Civ AI picked for it. A half that never arrives is not waited on for ever:
   after 6 s the two are shown as they are.
-- **A game that opens on its two tracks** is not shown on one screen first.
+- **A game that opens on two tracks** (`tracks=2`, Doctor Strange's Civ 6) is not shown on one screen first.
   In the task that draws its first state the window goes under a veil, and
   the veil lifts on the two screens.
 - **Drop A, Drop B, a branch's ✕.** The two screens stay as they are, with
