@@ -1,6 +1,8 @@
 //! Core turn engine (mirrors civvis/game.py — same mechanics and action protocol).
 use crate::shared_sort::SharedSort;
 use serde::ser::SerializeMap;
+#[cfg(test)]
+mod favor_migration_tests;
 mod host_policy_windows;
 #[cfg(test)]
 mod host_trade_tests;
@@ -5648,7 +5650,11 @@ pub struct Player {
     /// for a War of Retribution for the standard 30-turn window.
     #[serde(default)]
     pub broken_promises_until: BTreeMap<usize, u32>,
-    #[serde(default)]
+    /// Spendable Diplomatic Favor. A save written before favor was its own
+    /// field has no such key and reads as NaN, which is how the loader tells
+    /// a pre-trade save (migrate from the lifetime `counters` tally) from a
+    /// seat that has simply spent everything (`From<GameSer> for Game`).
+    #[serde(default = "favor_absent_from_save")]
     pub diplomatic_favor: f64,
     /// Accumulated War Weariness points. Every
     /// `WAR_WEARINESS_POINTS_FOR_AMENITY_LOSS` (400) of them costs one
@@ -6391,6 +6397,12 @@ const POLAR_LAP_LIMIT: f64 = 66.5 * std::f64::consts::PI / 180.0;
 
 pub fn default_difficulty() -> String {
     "prince".to_string()
+}
+
+/// What a save without a `diplomatic_favor` field reads as, so the loader can
+/// tell it apart from a balance of zero.
+fn favor_absent_from_save() -> f64 {
+    f64::NAN
 }
 
 /// ★★★ THE BARBARIANS PLAY AT THEIR OWN DIFFICULTY — EMPEROR, NOT THE SEAT'S.
@@ -8683,7 +8695,12 @@ impl From<GameSer> for Game {
             // Favor lived in the generic counter map in pre-trade saves.
             // Migrate it once into the typed balance used by Congress and
             // diplomatic trades without changing the save format version.
-            if player.diplomatic_favor == 0.0 {
+            // Only a save with no favor field qualifies: the engine still adds
+            // every grant to `counters["diplomatic_favor"]`, so it is a
+            // lifetime total, and treating a spent balance of exactly zero as
+            // "never migrated" handed a seat back everything it had ever
+            // earned (seen by the core-state probe, #5749).
+            if player.diplomatic_favor.is_nan() {
                 player.diplomatic_favor = player
                     .counters
                     .get("diplomatic_favor")
