@@ -131,6 +131,18 @@ they look, and sit down again when they look ahead. From one seat
 to another the view travels; it does not cut. A rider does not see their own
 cloak.
 
+**Any piece can be ridden** (`rideSquare`, `RIDER_TOPS`). A double click
+on one of the player's own pieces rides it, from either seat; anywhere else
+a double click puts the view back. The knight is ridden in its saddle (below);
+any other piece is ridden standing on top of it, its rider seen there from
+the board: on a pawn's head, among the pieces' feet with everything over
+them; in a rook's battlements; on a bishop's mitre; in the queen's crown or
+the king's, high over the board. The piece carries its rider as it goes,
+turns to where it is going and back to the enemy after, and is what "ride
+to …" moves. The button names it ("On a pawn"), and so do the warnings ("Your
+queen is threatened …"). A pawn ridden to the last rank carries its rider
+up onto what it becomes.
+
 **The knight ridden** (`World.ride`) wears a cloth over its neck in its
 side's colour, with its rider sitting behind its ears, so that from the
 board it is plain which knight is ridden. It is alive to the one on its
@@ -286,13 +298,13 @@ sound where it happens (#5755); the knight ridden alive (#5757); peril felt
 hall (#5766); the pieces alive (#5768); the board hearing a command as it is
 given (#5771); the opponent deliberating (#5772); riding into the blow
 (#5774); each piece its own stone (#5775); the hall's own sound (#5776); the
-hall's light following the game (#5777).
+hall's light following the game (#5777); riding any piece (#5778).
 
 What is next, most felt first:
 
-- **Riding other pieces.** A rook's battlements to stand on, a bishop's
-  mitre, the queen's crown: every piece of your side as a seat, each moving
-  as it moves (a rook's grinding slide, a bishop's long glide).
+- **A rider's hands.** From the saddle, the rider's own arms and gauntlets
+  in the lower corners of the view, holding the reins on a knight or a
+  battlement's edge on a rook, gripping when the piece leaps or strikes.
 - **Speed: measured, and there is room.** `wizardChess.frameCost(n)` times
   `n` frames of the world's work and drawing, each finished on the graphics
   card (a pixel read back), and names what drew them. On the shared Mac
