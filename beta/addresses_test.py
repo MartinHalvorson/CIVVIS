@@ -15,6 +15,8 @@ or a digit, and a page listed under a folder (Charts/) sits in that folder.
     Home                  /home/
     Charts/
       Win Analytics       /charts/win-analytics/
+      ELO Rankings        /charts/elo-rankings/
+      Civ Analytics       /charts/civ-analytics/
       CIVVIS Performance  /charts/civvis-performance/
       AI Interpretability /charts/ai-interpretability/
     Auto-Tourneys         /auto-tourneys/

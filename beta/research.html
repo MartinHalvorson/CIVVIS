@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#171d25">
 <title>Win Analytics · CIVVIS.ai</title>
-<meta name="description" content="CIVVIS win analytics: who wins, how and when. Game length and victory type, the winningest civs and the Civ AI Agents by Elo, the games against Civilization VI's own AI beside the CIVVIS self-play games.">
+<meta name="description" content="CIVVIS win analytics: who wins, how and when. Game length and victory type, the games against Civilization VI's own AI beside the CIVVIS self-play games, and the benchmark's win rate at each level.">
 <link rel="canonical" href="https://civvis.ai/charts/win-analytics/">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23171d25'/%3E%3Ccircle cx='16' cy='16' r='11.5' fill='none' stroke='%2366c0f4'/%3E%3Cpath d='M7 16h18M16 4.5c-4.2 4.1-4.2 18.9 0 23M16 4.5c4.2 4.1 4.2 18.9 0 23' fill='none' stroke='%2366c0f4' stroke-width='1.15'/%3E%3C/svg%3E">
 <style>
@@ -304,17 +304,16 @@
 
   /* The page's first screen (operator, 2026-11-22: "at the very top, we
      should have a wide civvis self play graph. below it, the civvis vs lv 8
-     deity ai. then deity ai wins, and civvis wins. player strategies ranking
-     should be off to the right side of the graphs mentioned above. The
-     winningest civs on the right below the other table"): the graphs in a
-     wide column, self-play first and the games against the AI under it, and
-     the two rankings in a narrower column to their right, one under the
-     other. This replaces the two equal sides of earlier that day, the AI's
-     on the left and self-play's on the right. A window too narrow for two
-     columns stacks them, the graphs first. */
-  .res-layout { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 16px; align-items: start; min-width: 0; }
-  @media (max-width: 859px) { .res-layout { grid-template-columns: minmax(0, 1fr); } }
-  .res-graphs, .res-lists { display: grid; align-content: start; gap: 16px; min-width: 0; }
+     deity ai. then deity ai wins, and civvis wins"): the graphs in one wide
+     column, self-play first and the games against the AI under it. The two
+     rankings that stood in a column to their right moved off the page on
+     2026-11-23 (operator: "add that to a new page: Charts/ELO Rankings ...
+     at the top of this page is the player straetgies, pulled from win
+     analytics, add another page: Civ Analytics. First can be the civ
+     records (pulled from win analytics), then early build order"), so the
+     graphs have the page's width. */
+  .res-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-items: start; min-width: 0; }
+  .res-graphs { display: grid; align-content: start; gap: 16px; min-width: 0; }
   /* A kind of game is its head and its charts. The head names it, says it
      in a line, and holds which of its games are counted: each kind has a
      window of its own, because the two are played at very different rates. */
@@ -329,33 +328,6 @@
   .res-key { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 16px; margin-bottom: 10px; }
   .res-key .res-legend { margin: 0; }
   .res-block .rank-note { margin-top: 12px; }
-
-  /* The two lists that stood on the home page until 2026-11-22 (operator:
-     "move 2 charts on home/ to charts/"), in the column to the right of the
-     graphs: the Civ AI Agents by Elo, and under them the winningest civs of
-     the verification games. Their figures are the `rankings-data` slot's
-     (`beta/home_rankings.py`), and a list with no source stays hidden. */
-  /* A date stays on one line: a narrow card would break it at a hyphen. */
-  .rank-day { white-space: nowrap; }
-  .rank-list { margin: 0; padding: 0; list-style: none; }
-  .rank-row {
-    display: grid;
-    grid-template-columns: 18px minmax(0, 1fr) auto;
-    gap: 8px;
-    align-items: baseline;
-    padding: 4px 0;
-    border-top: 1px solid var(--border);
-    font-size: 13px;
-    line-height: 1.4;
-  }
-  .rank-n { color: var(--faint); font-size: 11.5px; font-variant-numeric: tabular-nums; text-align: right; }
-  .rank-name { min-width: 0; overflow: hidden; color: var(--text); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-  .rank-name small { margin-left: 6px; color: var(--muted); font-size: 11.5px; font-weight: 400; }
-  .rank-value { color: #fff; font-variant-numeric: tabular-nums; font-weight: 700; white-space: nowrap; }
-  .rank-value small { margin-left: 4px; color: var(--faint); font-size: 11px; font-weight: 400; }
-  /* A Civilization VI difficulty level: a landmark on the scale, not an entrant. */
-  .rank-row.is-rung .rank-name,
-  .rank-row.is-rung .rank-value { color: var(--faint); font-size: 12px; font-weight: 500; }
 
   /* Each victory on its own: a small chart per type, the two kinds of game
      as two lines over the same turns. */
@@ -416,50 +388,6 @@
     .res-rates td small { display: block; font-size: 11.5px; }
     .res-rates .res-wide { display: none; }
   }
-  /* The tree of build orders, first on the page (operator, 2026-11-23:
-     "add a tree for the early build order win rates for deity games ... a
-     person should be able to click thourgh and see the win rates of all the
-     units. we should sort the tree by win rates descending. so the very
-     first thing is: the winngest first build, underneath the second winnest
-     first bulid. if etierh is clicked, then the winninest combinations of
-     first build second build. etc... add this chart to the top of win
-     analytics"). A row is a build: the mark that it opens, its place in the
-     order (1 for a first build), its name, and at the right the win rate
-     and its games as the benchmark's cells write them, `14% (181)`. The two
-     figures keep their widths, so they stand in columns down the whole
-     tree however deep a row is set in. A build that opens is a button;
-     pressing it lists the builds after it one step in, under a rule that
-     ties them to it. A build nothing is listed under is a plain row. */
-  .res-builds-head { display: flex; justify-content: space-between; gap: 12px; padding: 0 2px 5px 0; border-bottom: 1px solid var(--border); color: var(--muted); font-size: 12px; font-weight: 700; }
-  .res-builds, .res-builds ul { margin: 0; padding: 0; list-style: none; }
-  .res-builds ul { margin-left: 6px; padding-left: 14px; border-left: 1px solid var(--border-strong); }
-  .res-builds ul[hidden] { display: none; }
-  .res-build { display: grid; grid-template-columns: 12px auto minmax(0, 1fr) 52px 58px; align-items: center; gap: 0 8px; width: 100%; margin: 0; padding: 6px 2px 6px 0; border: 0; border-top: 1px solid var(--border); border-radius: 0; background: none; color: var(--text); font: inherit; font-size: 14.5px; font-variant-numeric: tabular-nums; line-height: 1.3; text-align: left; }
-  .res-builds > li:first-child > .res-build { border-top: 0; }
-  button.res-build { cursor: pointer; }
-  button.res-build:hover { background: var(--panel-raised); }
-  button.res-build:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-  .res-build-mark { width: 0; height: 0; justify-self: center; border: 4px solid transparent; border-right: 0; border-left: 6px solid var(--muted); }
-  .res-build[aria-expanded="true"] > .res-build-mark { border-left-color: var(--accent); transform: rotate(90deg); }
-  .res-build-place { min-width: 20px; padding: 0 4px; border: 1px solid var(--border-strong); border-radius: 3px; color: var(--muted); font-size: 11px; font-weight: 700; line-height: 16px; text-align: center; }
-  .res-build-name { overflow: hidden; color: #fff; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-  .res-build-figures { display: contents; }
-  .res-build-rate { color: #fff; font-weight: 700; text-align: right; }
-  .res-build-games { color: var(--muted); font-size: 12.5px; }
-  /* On a phone a step in is half as deep. Under 360px the two figures
-     stand one over the other, as the benchmark's cells do on a phone, and
-     a name may take a second line, so the eighth build still reads whole
-     at 320px. */
-  @media (max-width: 479px) {
-    .res-builds ul { margin-left: 5px; padding-left: 6px; }
-    .res-build { grid-template-columns: 10px auto minmax(0, 1fr) 44px 50px; gap: 0 5px; font-size: 13.5px; }
-    .res-build-games { font-size: 11.5px; }
-  }
-  @media (max-width: 359px) {
-    .res-build { grid-template-columns: 10px auto minmax(0, 1fr) auto; }
-    .res-build-figures { display: grid; justify-items: end; min-width: 40px; line-height: 1.25; }
-    .res-build-name { white-space: normal; }
-  }
   .res-details { margin-top: 10px; }
   .res-details summary { color: var(--accent); font-size: 12.5px; font-weight: 600; cursor: pointer; }
   .res-details .rank-table td:first-child { font-weight: 500; }
@@ -489,8 +417,8 @@
       <!-- The site's pages, in the order every one of them lists them, with
            the page on screen in gold: this is Win Analytics, the first
            page under Charts/, which stands between Home and Auto-Tourneys
-           with its pages listed under it: this one, CIVVIS Performance and
-           AI Interpretability.
+           with its pages listed under it: this one, ELO Rankings, Civ
+           Analytics, CIVVIS Performance and AI Interpretability.
            Charts/ opens this page. The page was
            named Research, then Musings (operator 2026-11-21: "musings
            (rename research)"), then Charts (operator 2026-11-22: "Change
@@ -500,12 +428,14 @@
            Performance"); the name in the list and the tab changed, and the
            address, this file and its data kept theirs.
            Every link is lane-relative (this page lives at
-           <lane>/research/), so the test lane's page opens the test lane's
-           other pages and viewer. -->
+           <lane>/charts/win-analytics/), so the test lane's page opens the
+           test lane's other pages and viewer. -->
       <nav class="site-nav" aria-label="CIVVIS sites">
         <a class="site-link" href="../../home/">Home</a>
         <a class="site-link" href="./" title="What the games show: charts read off the CIVVIS AI agents&#8217; games.">Charts/</a>
         <a class="site-link sub-link" href="./" aria-current="page">Win Analytics</a>
+        <a class="site-link sub-link" href="../elo-rankings/" title="The Civ AI Agents and Civilization VI&#8217;s own AI on one Elo scale, now and over time.">ELO Rankings</a>
+        <a class="site-link sub-link" href="../civ-analytics/" title="How CIVVIS does as each civ, and the early build orders that win against Deity.">Civ Analytics</a>
         <a class="site-link sub-link" href="../civvis-performance/" title="How fast the simulator plays: the fastest game on video and how long a self-play game takes.">CIVVIS Performance</a>
         <a class="site-link sub-link" href="../ai-interpretability/" title="How a CIVVIS AI agent decides: one turn step by step, its plan through a game, and what each rule is worth in wins.">AI Interpretability</a>
         <a class="site-link" href="../../auto-tourneys/" title="Series of verification games against Civilization VI&#8217;s own AI: running, scheduled and finished.">Auto-Tourneys</a>
@@ -548,20 +478,20 @@
       Who wins, how and when. Every chart here is read off games the CIVVIS AI
       agents have played: against each other in the simulator, and one agent
       at a time inside <cite>Sid Meier&#8217;s Civilization VI</cite> against
-      the game&#8217;s own AI. How fast the simulator plays them is charted on
+      the game&#8217;s own AI. How every agent rates is on
+      <a href="../elo-rankings/">ELO Rankings</a>, how CIVVIS does as each
+      civ and which early builds win on <a href="../civ-analytics/">Civ
+      Analytics</a>, and how fast the simulator plays on
       <a href="../civvis-performance/">CIVVIS Performance</a>.
     </p>
 
-    <!-- The figures. `beta/publish.sh` fills the two slots below: the
-         `research-data` slot (`beta/research_page.py`) with the games'
-         endings, the self-play games from the snapshot in
-         `data/research/self_play_endings.json`, the games against the AI
-         from the run ledger and their openings from the run summaries and
-         the snapshot in `data/research/build_orders.json`, and the
-         `rankings-data` slot
-         (`beta/home_rankings.py`) with the two lists. A page whose slots
-         still read `null` (this file opened as it is committed, or a build
-         with neither) shows the one sentence. -->
+    <!-- The figures. `beta/publish.sh` fills the slot below, the
+         `research-data` slot (`beta/research_page.py`), with the games'
+         endings: the self-play games from the snapshot in
+         `data/research/self_play_endings.json` and the games against the
+         AI from the run ledger. A page whose slot still reads `null` (this
+         file opened as it is committed, or a build with neither) shows the
+         one sentence. -->
     <p class="res-empty" id="res-empty">This copy of the page has no figures. They are written in when the site is published.</p>
     <div class="res-record" id="res-record" hidden>
       <!-- The first screen (operator 2026-11-22: "at the very top, we should
@@ -575,8 +505,8 @@
            split by who won (operator 2026-11-21: "start with all victories
            by type along timeline, then just the deity ai wins, then the
            civvis wins"), in the order the script's `CHARTS` lists them. The
-           two rankings are the column to their right, the Civ AI Agents by
-           Elo over the winningest civs. Each kind of game counts its own
+           two rankings that stood in a column to their right are on ELO
+           Rankings and Civ Analytics since 2026-11-23. Each kind of game counts its own
            window of games, and the games against the AI open on the last
            30 days (operator: "default civvis vs ai stuff to last 30 days").
            The script writes each title for the level chosen; as written
@@ -602,39 +532,6 @@
            replaces the one table of 2026-11-22
            (win rate, games, wins and losses for a window chosen), which
            stood at the head of the graphs' column. -->
-      <!-- First on the page, the tree of build orders (operator
-           2026-11-23: "add a tree for the early build order win rates for
-           deity games. meaning, when scout was built first, what percentage
-           of those games won? when settler was secnod, what percentage of
-           scout-settler won? a person should be able to click thourgh and
-           see the win rates of all the units. we should sort the tree by
-           win rates descending. so the very first thing is: the winngest
-           first build, underneath the second winnest first bulid. if etierh
-           is clicked, then the winninest combinations of first build second
-           build. etc... add this chart to the top of win analytics"). The
-           script lists the first builds of the games against Deity, best
-           win rate first, and a build pressed lists the builds that
-           followed it the same way. The benchmark stands under it. -->
-      <section class="res-block" id="res-side-builds" aria-labelledby="res-title-builds" hidden>
-        <header class="res-side-head">
-          <div class="res-side-name">
-            <h2 class="res-side-title" id="res-title-builds">Early build order: win rate against Lv 8 Deity AI</h2>
-            <p class="res-counted" id="res-counted-builds">What the capital built first, second and third against Civilization VI&#8217;s own AI.</p>
-          </div>
-        </header>
-        <div class="res-section">
-          <div class="res-builds-head" aria-hidden="true"><span>Build order</span><span>Win rate (total games)</span></div>
-          <ul class="res-builds" id="res-builds" aria-labelledby="res-title-builds"></ul>
-        </div>
-        <p class="rank-note">
-          What CIVVIS&#8217;s capital finished producing, in the order it finished it. The first builds are listed best win rate first; press one to list what was built second after it, then third, <span id="res-builds-depth">eight</span> builds deep.
-          A row is CIVVIS&#8217;s win rate over the games that opened with exactly the builds down to it and, in brackets, those games.
-          A build is a unit, building, district or wonder the capital&#8217;s production finished; one bought with Gold or Faith is not a build.
-          Every finished game against the Deity AI on the run ledger counts, in a tournament or not: a win is a CIVVIS victory; a loss is a rival&#8217;s victory, our elimination, or a game conceded early.
-          <span id="res-builds-left"></span>
-          A build order only one game played is not opened further.
-        </p>
-      </section>
       <section class="res-block" id="res-side-tourney" aria-labelledby="res-title-tourney">
         <header class="res-side-head">
           <div class="res-side-name">
@@ -775,27 +672,6 @@
           </div>
         </section>
         </div>
-        <aside class="res-lists" aria-label="Rankings">
-        <section class="res-section rank-card" id="rank-strategies" hidden aria-labelledby="rank-strategies-title">
-          <h2 class="rank-title" id="rank-strategies-title">Player strategies</h2>
-          <p class="rank-sub">Civ AI Agents by Elo. Civilization VI&#8217;s Prince is 1000.</p>
-          <ol class="rank-list"></ol>
-          <p class="rank-note">
-            <span data-rank-note></span>
-            Ratings are refitted when new rating tables are played, not after each game on this site.
-            <a href="https://github.com/MartinHalvorson/CIVVIS/blob/main/docs/ELO.md" target="_blank" rel="noreferrer">How the Elo works</a>
-          </p>
-        </section>
-        <section class="res-section rank-card" id="rank-civs" hidden aria-labelledby="rank-civs-title">
-          <h2 class="rank-title" id="rank-civs-title">Winningest civs</h2>
-          <p class="rank-sub">Our AI&#8217;s win rate as each civ, in verification games against Civilization VI&#8217;s own AI.</p>
-          <ol class="rank-list"></ol>
-          <p class="rank-note">
-            <span data-rank-note></span>
-            <a href="https://github.com/MartinHalvorson/CIVVIS/blob/ledger/results.jsonl" target="_blank" rel="noreferrer">Every game</a>
-          </p>
-        </section>
-        </aside>
       </div>
 
       <section class="res-section" id="res-each" aria-labelledby="res-each-title">
@@ -1230,71 +1106,6 @@
       }
     };
 
-    // ---- The tree of build orders (operator 2026-11-23: "when scout was
-    // built first, what percentage of those games won? when settler was
-    // secnod, what percentage of scout-settler won? a person should be able
-    // to click thourgh ... sort the tree by win rates descending"). The
-    // record's `tree` is the first builds, already best win rate first, and
-    // a node is [item, games, wins] with, where the builds after it are
-    // listed, a fourth entry that is their list in the same order. `item`
-    // is a place in `items`, the builds' names. A row is drawn when its list
-    // is first opened, so the page carries the rows a reader asked for.
-    const BUILDS = data.build_orders && Array.isArray(data.build_orders.tree) && data.build_orders.tree.length ? data.build_orders : null;
-    const drawBuilds = () => {
-      document.getElementById("res-side-builds").hidden = !BUILDS;
-      if (!BUILDS) return;
-      const NUMBERS = ["no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
-      const games = Number(BUILDS.games) || 0, wins = Number(BUILDS.wins) || 0;
-      const level = "Lv " + BUILDS.level + (RUNGS[BUILDS.level] ? " " + RUNGS[BUILDS.level] : "");
-      document.getElementById("res-title-builds").textContent = "Early build order: win rate against " + level + " AI";
-      document.getElementById("res-counted-builds").textContent = fmt(games) + (games === 1 ? " game" : " games") + " against " + level + " AI"
-        + (BUILDS.from && BUILDS.to ? " · " + days(BUILDS) : "") + " · CIVVIS won " + fmt(wins) + (games ? " (" + pct(wins / games) + ")" : "");
-      document.getElementById("res-builds-depth").textContent = NUMBERS[BUILDS.depth] || String(BUILDS.depth);
-      const left = (Number(BUILDS.finished) || games) - games;
-      document.getElementById("res-builds-left").textContent = left > 0
-        ? fmt(left) + " of the " + fmt(games + left) + " are left out: " + (left === 1 ? "its" : "their") + " opening is in no log, the game having been reloaded from a save whose first run was not published."
-        : "";
-      const name = (item) => String(Array.isArray(BUILDS.items) && BUILDS.items[item] != null ? BUILDS.items[item] : "?");
-      const row = (node, before) => {
-        const [item, played, won, next] = node;
-        const n = Number(played) || 0, opens = Array.isArray(next) && next.length > 0;
-        const path = before.concat(name(item));
-        const li = el("li");
-        const line = el(opens ? "button" : "div", "res-build");
-        const figures = el("span", "res-build-figures");
-        figures.append(el("span", "res-build-rate", n ? pct((Number(won) || 0) / n) : "—"), el("span", "res-build-games", "(" + fmt(n) + ")"));
-        line.append(
-          el("span", opens ? "res-build-mark" : ""),
-          el("span", "res-build-place", String(path.length)),
-          el("span", "res-build-name", name(item)),
-          figures,
-        );
-        // The whole order down to this build, for the pointer and for a
-        // reader that hears the row.
-        const said = path.join(", then ") + ": CIVVIS won " + (n ? pct((Number(won) || 0) / n) : "none") + " of " + fmt(n) + (n === 1 ? " game" : " games");
-        line.title = said;
-        li.append(line);
-        if (opens) {
-          line.type = "button";
-          line.setAttribute("aria-expanded", "false");
-          line.setAttribute("aria-label", said);
-          let below = null;
-          line.addEventListener("click", () => {
-            const open = line.getAttribute("aria-expanded") !== "true";
-            line.setAttribute("aria-expanded", String(open));
-            if (open && !below) {
-              below = el("ul");
-              below.append(...next.map((child) => row(child, path)));
-              li.append(below);
-            }
-            if (below) below.hidden = !open;
-          });
-        }
-        return li;
-      };
-      document.getElementById("res-builds").replaceChildren(...BUILDS.tree.map((node) => row(node, [])));
-    };
-
     // ---- The tables.
     const drawTables = () => {
       const body = document.querySelector("#res-summary tbody");
@@ -1442,113 +1253,9 @@
 
     document.getElementById("res-empty").hidden = true;
     document.getElementById("res-record").hidden = false;
-    // The tree is drawn once: no control on the page changes its games, and
-    // a second drawing would close what a reader has opened.
-    drawBuilds();
     render();
   })();
   </script>
 
-  <script type="application/json" id="rankings-data">null</script>
-  <script>
-  // The two lists, the winningest civs and the player strategies, built
-  // before first paint so the page never reflows around them. Every figure arrives through textContent: the slot holds names and
-  // sentences from the repository's own files, and none of it is trusted as
-  // markup.
-  (() => {
-    let data = null;
-    try { data = JSON.parse(document.getElementById("rankings-data").textContent); } catch (_) { return; }
-    if (!data) return;
-    const el = (tag, cls, text) => {
-      const node = document.createElement(tag);
-      if (cls) node.className = cls;
-      if (text != null) node.textContent = text;
-      return node;
-    };
-    const row = (cls, n, name, nameSub, value, valueSub, title) => {
-      const item = el("li", "rank-row" + (cls ? " " + cls : ""));
-      if (title) item.title = title;
-      item.append(el("span", "rank-n", n));
-      const label = el("span", "rank-name", name);
-      if (nameSub) label.append(el("small", "", nameSub));
-      const figure = el("span", "rank-value", value);
-      if (valueSub) figure.append(el("small", "", valueSub));
-      item.append(label, figure);
-      return item;
-    };
-    const show = (id, rows, note) => {
-      const card = document.getElementById(id);
-      if (!card || !rows.length) return false;
-      card.querySelector(".rank-list").append(...rows);
-      card.querySelector("[data-rank-note]").textContent = note;
-      card.hidden = false;
-      return true;
-    };
-    // An entrant that never lost is rated "at least", one that never won "at most".
-    const elo = (r) => (r.bound === "upper" ? "\u2264" : "") + Math.round(r.elo) + (r.bound === "lower" ? "+" : "");
-    // Civilization VI's own AI at a level, named as the viewer names it
-    // beside a live game (`strategies::civ6_ai_seat_json`): the level's
-    // number, its name, then whose AI it is, "8 Deity AI Firaxis". Levels
-    // the tables cannot tell apart share a row and read as a range:
-    // "7–8 Immortal · Deity AI Firaxis".
-    const level = (r) => {
-      const lv = Array.isArray(r.levels) ? r.levels : [];
-      if (!lv.length) return r.name;
-      const low = Math.min(...lv), high = Math.max(...lv);
-      return low + (high > low ? "\u2013" + high : "") + " " + r.name;
-    };
-
-    // The winningest civs, under the games against the AI, best win rate first: a row is a
-    // civ's win rate with its record, wins then losses, beside it. Hovering
-    // lists what it won. The slot says which games were counted, one level
-    // (`level`) from one day on (`since`), and the line under the title
-    // repeats it; a table over every level names the highest level a civ
-    // has won at beside it instead.
-    const civs = data.civs;
-    if (civs && Array.isArray(civs.rows)) {
-      const count = (n) => Number(n).toLocaleString("en-US");
-      const plural = (n, one, many) => count(n) + " " + (n === 1 ? one : many);
-      const rows = civs.rows.map((c, i) => row("", String(i + 1), c.name, !civs.level && c.best ? "Lv " + c.best : "",
-        (100 * c.wins / (c.wins + c.losses)).toFixed(1) + "%", count(c.wins) + "\u2013" + count(c.losses),
-        c.name + ": " + plural(c.wins, "win", "wins") + ", " + plural(c.losses, "loss", "losses")
-          + (Array.isArray(c.won) && c.won.length ? ". Won: " + c.won.join(", ") : "")));
-      const sub = document.querySelector("#rank-civs .rank-sub");
-      sub.textContent = "Our AI\u2019s win rate as each civ, in " + (civs.level ? "Lv " + civs.level + " " : "")
-        + "verification games against Civilization VI\u2019s own AI" + (civs.since ? " since " : "");
-      if (civs.since) sub.append(el("span", "rank-day", civs.since));
-      sub.append(".");
-      const note = plural(civs.games, "finished game", "finished games")
-        + (civs.through ? " through " + civs.through : "") + "; "
-        + civs.winners + " of " + plural(civs.played, "civ", "civs") + " played have won."
-        + " A loss is a rival\u2019s victory, our elimination, or a game conceded early;"
-        + " a game stopped any other way is not counted."
-        + (civs.unattributed_wins ? " " + plural(civs.unattributed_wins, "win is", "wins are")
-          + " not listed: the game did not record its civ." : "");
-      show("rank-civs", rows, note);
-    }
-
-    // The player strategies, under self-play.
-    const strategies = data.strategies;
-    // The 95% margin of error (`margin`); a slot built before it carries only `sd`.
-    const margin = (r) => Math.round(r.margin != null ? r.margin : (r.sd ? 1.96 * r.sd : 0));
-    if (strategies && Array.isArray(strategies.rows)) {
-      let place = 0;
-      const rows = strategies.rows.map((r) => r.kind === "rung"
-        ? row("is-rung", "", level(r) + " AI Firaxis", "", elo(r), margin(r) ? "\u00b1" + margin(r) : "",
-              "Civilization VI\u2019s own AI at difficulty level " + level(r)
-                + (margin(r) ? "; 95% interval " + Math.round(r.elo - margin(r)) + "\u2013" + Math.round(r.elo + margin(r)) : ""))
-        : row("", String(++place), r.name, r.tilt, elo(r), margin(r) ? "\u00b1" + margin(r) : "",
-              r.name + ": won " + r.wins + " of " + r.games + " rated tables"
-                + (margin(r) ? "; 95% interval " + Math.round(r.elo - margin(r)) + "\u2013" + Math.round(r.elo + margin(r)) : "")));
-      const note = (strategies.tables ? Number(strategies.tables).toLocaleString("en-US") + " " : "")
-        + (strategies.players === 4 ? "four-player " : "") + "tables"
-        + (strategies.turns ? " of " + strategies.turns + " turns" : "")
-        + (strategies.runs > 1 ? " over the last " + strategies.runs + " rating runs" : "")
-        + (strategies.latest_run ? ", newest " + strategies.latest_run : "") + "."
-        + " \u00b1 is the 95% margin of error.";
-      show("rank-strategies", rows, note);
-    }
-  })();
-  </script>
 </body>
 </html>

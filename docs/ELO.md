@@ -108,8 +108,8 @@ strategy_elo --run 2026-11-23-15125c4 --add-games 480 --add-rung-games 120 \
 
 The published file lists the runs it was fitted on (`runs`) and gives each
 rating a `margin95`: the 95% margin of error, `strategies::MARGIN_Z` (1.96)
-times the bootstrap deviation. Win Analytics lists every agent and every
-Civilization VI level with that margin (`1954 ±48`).
+times the bootstrap deviation. ELO Rankings lists every agent with that
+margin (`1333 ±27`), and so did Win Analytics until 2026-11-23.
 
 **Why a window:** a run's tables describe the genome of its day. A window of K
 runs trades freshness for precision: the margin shrinks with the square root
@@ -117,7 +117,8 @@ of the tables in it (an agent's was about ±75 at 1,320 tables, ±34 at 4,560
 and ±28 at 9,120), while a genome change older than K runs ages out entirely. The
 scheduled job keeps K = 4 runs, one every two days, so no table in the fit is
 older than about eight days. To narrow the margin further, raise the tables
-per run before raising K.
+per run before raising K. (Since 2026-11-24 the runs follow the self-play
+batches instead, smaller and more often: [Fresh ratings](#fresh-ratings).)
 
 **Schedule:** on the tournament host a launchd job starts a run every two
 days: 960 pool tables, 240 at each rung, twice that at Immortal and four
@@ -236,6 +237,73 @@ strategy_elo --run 2026-11-22-ca8754f --rungs deity --add-rung-games 960
 
 It adds under the run's label, up to that many tables at each named rung.
 
+### Fresh ratings
+
+Operator 2026-11-23: "we should have our benchmarking games update our elo.
+as well as our civvis self-play games should update elo too. so elo is always
+staying fresh."
+
+**The self-play batches.** The gene-screen tournament's games cannot rate an
+agent themselves: every seat there plays a random genome (each default gene
+kept with a chance of three in four, each opt-in taken with one in four), so
+no seat is a roster agent and a table of them says nothing about one. What
+the batches do is move the agents: each published batch may promote genes
+into the defaults, and every Deployment agent plays the defaults. So a rating
+run now follows them. The host's cadence (`elo_cadence.py`) starts a run once
+a continuous batch has been published on `main` since its last run, no sooner
+than six hours after it, and every 48 hours whatever happens; each run is
+smaller than the 48-hour runs were and the window keeps more of them, so the
+window is about as large and its newest tables are hours old, not days. The
+run plays its tables in worker slots borrowed from the same tournament, on
+that batch's build, which is as near to self-play updating the ratings as the
+tables can come.
+
+**The benchmark games.** The tournaments against Civilization VI's own AI
+(the Indefinite Benchmarking Tourney and the ones before it) rate the
+Firaxis levels themselves, measured on the real AI rather than on our
+stand-in. A finished game is a table of six: our seat and five Firaxis AIs
+at the game's level. It is fitted on the model above, a seat winning with
+probability proportional to `10^(elo / 400)`, so a game against five AIs
+rated `r` is our seat's with probability `s / (s + 5 * 10^(r / 400))`.
+
+Our seat is the live decider playing one victory lane, and it is rated as
+its twin, the roster agent that plays that lane in the simulator
+(`elo_page.TWINS`: a Science game is MoonshotMaven's, a Religious one
+HolyRoller's, a game with no lane JackOfAllTrades'), at the rating published
+when the game began (`data/strategy_elo_history.json`). That is the one
+assumption joining the two scales: the twin plays inside Civilization VI as
+it plays in the simulator. Each Firaxis level meets only our seat, so the
+joint fit of these tables with the simulator's reduces to one equation per
+level, which `beta/elo_page.py` solves (`fit_level`): the level's rating is
+the one at which our seat's expected wins equal its wins, with the pair of
+imaginary games every entrant gets, so a level we have always beaten reads
+"at most" (`≤`). Its margin is the fit's own and the twins' margins added in
+quadrature.
+
+It is fitted when the site is built, off the run ledger, so the levels move
+with every finished game and never wait for a rating run: over the last 7
+days for the rating shown, and once a day for the line over time.
+
+The first reading (2026-11-24, 326 games): Lv 8 Deity 1198 ±103, Lv 7
+Immortal 1153 ±165, Lv 6 Emperor 824 ±124, Lv 5 King 747 ±179, Lv 4 Prince
+at most 397. The simulator's Difficulty dial puts the same levels at 1954,
+1660, 1507, 1188 and 1000. Two readings of different things, and the gap is
+the finding: our stand-in, `stock` with Deity's handicap, is a far stronger
+rival in the simulator than Civilization VI's own AI with that handicap is in
+the game. Our seat wins 14.5% of its Deity games, where an equal seat at a
+table of six would win 16.7%. Two cautions: the table of one seat against
+five copies of a rival is the shape that read our own rungs 100 to 180 low
+([Why a rung sits alone](#why-a-rung-sits-alone)), and the games pool the
+Diplomatic victory on and off as the benchmark deals them.
+
+**Elo over time.** Every published fit is a point in
+`data/strategy_elo_history.json` (`tools/strategy_elo_history.py`: the
+rating run appends one before it commits, `backfill` rebuilt the fits since
+2026-11-11 from git, and `tools/test_strategy_elo_history.py` fails a
+revision whose newest point is not the published file). ELO Rankings
+(`beta/elo.html`, under Charts/) draws the top ten agents from fit to fit
+and the five Firaxis levels day by day on one axis.
+
 ## What the Civilization VI mapping does and does not prove
 
 It measures, in our engine, what each rung's *handicap* is worth: the yield
@@ -271,10 +339,11 @@ that level's Elo directly: with `p` the win rate at a table of `n`,
 `rung − agent = 400·log10((1 − p) / (p·(n − 1)))`. That is the fit's reading
 of a table of `n − 1` equal rivals, the shape
 [that read our own rungs low](#why-a-rung-sits-alone), so expect it to
-understate the rung. Most recorded attempts were stopped or abandoned rather
-than played out, so they are not yet a win rate.
-When a rung has enough finished games, compare, and move `CIV6_REFERENCE` to
-the roster agent that agrees with them.
+understate the rung. Since 2026-11-24 the benchmark's games are that check,
+fitted level by level on every build of the site
+([Fresh ratings](#fresh-ratings)), and they put every level from Prince to
+Deity far under the stand-in's rung. Moving `CIV6_REFERENCE` to the roster
+agent that agrees with them is still open.
 
 `src/odds.rs` carries hand-set handicap constants (`HANDICAP_YIELD_ELO` and its
 neighbours) for the win-odds annotation. The rung ratings here are the
@@ -333,6 +402,10 @@ on our stand-in for Civilization VI's AI, not on that AI.
   has rated yet follows the rated ones under its handle alone.
 - `/rules` publishes `strategies`, `civ6_ladder` and `rival_strategy`; `/new`
   accepts `rival_strategy` by id or handle and refuses a name nobody registered.
+- **ELO Rankings** on the site (Charts/, `beta/elo.html`) lists the agents by
+  Elo with the Firaxis levels the benchmark measures among them, each level's
+  two readings side by side, and the Elo of the top ten agents and of Lv 4 to
+  Lv 8 over time.
 
 Difficulty and rival are separate dials. Difficulty is what the rules hand the
 rivals; the agent is how well they play. As measured on 2026-11-22 the

@@ -92,7 +92,7 @@ with every level and every window, and `to`, the newest tournament game's
 start, which every window is measured back from in whole days of 24 hours,
 so every cell of both tables is the same days' games.
 
-Over the benchmark, first on the page, stands the tree of build orders
+The record also holds the tree of build orders
 (operator 2026-11-23: "add a tree for the early build order win rates for
 deity games. meaning, when scout was built first, what percentage of those
 games won? when settler was secnod, what percentage of scout-settler won? a
@@ -114,6 +114,13 @@ it, counted as the civ table counts them (a win, or a loss: a rival's
 victory, our elimination, a game conceded early), less the games whose
 opening is in no log (a game reloaded from a save whose first run was never
 published). The record holds it under `build_orders`.
+
+The tree stood on this page for one day. It moved to Civ Analytics
+(`beta/civs.html`) on 2026-11-23 (operator: "add another page: Civ
+Analytics. First can be the civ records (pulled from win analytics), then
+early build order"), whose filler (`beta/civs_page.py`) takes it from the
+record built here, so it is read one way for both. A page with no place for
+it, Win Analytics since then, is not sent it (`for_page`).
 
 Like the home page's tables this runs inside the script that publishes the
 whole site, so what it cannot read costs the page its figures, said on
@@ -867,6 +874,10 @@ def written_openings(data: dict) -> str:
 #: Deity games alone and reads them under `deity`, not `levels`.
 LEVEL_PICKER = 'id="res-level"'
 
+#: The tree of build orders as a page carries it: Win Analytics did on
+#: 2026-11-23 only, and Civ Analytics since.
+BUILD_TREE = 'id="res-builds"'
+
 
 def for_page(page: str, data: dict | None) -> dict | None:
     """The record in the shape this page reads.
@@ -876,9 +887,12 @@ def for_page(page: str, data: dict | None) -> dict | None:
     script filling it, as the stable lane's was while both lanes were filled
     by head's. Sent `levels`, a page from before the picker would find no
     `deity` and show its Deity charts empty, so it is sent the Deity games
-    where it looks for them and nothing it has no place for."""
-    if data is None or LEVEL_PICKER in page:
+    where it looks for them and nothing it has no place for. A page with no
+    tree of build orders is not sent one."""
+    if data is None:
         return data
+    if LEVEL_PICKER in page:
+        return data if BUILD_TREE in page else {key: value for key, value in data.items() if key != "build_orders"}
     out = {key: value for key, value in data.items() if key not in ("levels", "level", "tournament_rates", "build_orders")}
     deity = data.get("levels", {}).get(str(ranks.CIV6_RUNGS.index("deity") + 1))
     out["deity"] = {**deity, "name": "CIVVIS vs Deity AI"} if deity else None
