@@ -25167,9 +25167,9 @@ impl AdvancedAi {
         }
         // Fog is asked out to the loyalty model's own nine-tile pressure radius:
         // that is how far an unseen rival city can press the site.
-        g.wdisk(site, 9)
-            .into_iter()
-            .any(|pos| g.map.tiles.contains_key(&pos) && !g.players[pid].explored.contains(&pos))
+        g.map.disk_any(site, 9, |pos| {
+            g.map.tiles.contains_key(&pos) && !g.players[pid].explored.contains(&pos)
+        })
     }
 
     /// Snapshot visible Barbarian capture envelopes once for a Builder
