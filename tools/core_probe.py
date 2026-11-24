@@ -140,7 +140,7 @@ def main():
     ap.add_argument("--budget-minutes", type=float, default=30.0)
     ap.add_argument("--jobs", type=int, default=os.cpu_count() or 4)
     ap.add_argument("--work", default=None)
-    ap.add_argument("--quick", default=None, help="classes file: skip ablation, bisect agent reads and bench")
+    ap.add_argument("--quick", default=None, help="a classification (docs/core_state_classes.json): skip ablation, bisect what agents read, time clones")
     a = ap.parse_args()
     if a.quick:
         return quick(a)
