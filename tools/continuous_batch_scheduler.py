@@ -810,8 +810,19 @@ class CpuGovernor:
         then the worker with the most CPU time. In first: one that is not in
         the background band, then the least CPU time; a worker in the band is
         lifted out of it as it resumes, since there is now room for it.
+
+        A worker this governor stopped that the process table shows running
+        was resumed by something else, and it is stopped again before
+        anything is counted: the count is of what runs, not of what was
+        signalled. On 2026-11-24 a benchmark stopped three running workers
+        for its own four minutes and resumed them as it left; in between the
+        governor had cut its target to nought and held all three, so they
+        ran outside its count for fifty-two minutes beside the live game.
         """
         self.held &= {row.pid for row in workers}
+        for row in workers:
+            if row.pid in self.held and not row.stopped:
+                self._signal_one(row.pid, signal.SIGSTOP)
         background = set() if self.background_priority is None else {
             row.pid for row in workers if row.priority <= self.background_priority}
 
