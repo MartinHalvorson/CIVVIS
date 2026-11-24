@@ -3528,6 +3528,10 @@ const RESPONSIVE_TEXT_RULES = [
   {selector:"#playerhud .turn-settings", min:8, max:12, slack:4},
   // Max Speed sits alone above the age, so it is fitted on its own.
   {selector:"#playerhud .turn-pace-line", min:8.5, max:12, slack:4},
+  // So does the setup line under it, and on its own it keeps its full size:
+  // fitted with Max Speed, whose menu is wide, it came out smaller than the
+  // settings block it was moved up out of.
+  {selector:"#playerhud .turn-setup-line", min:8, max:12, slack:4},
   {selector:"#victoryhud .hud-section-heading > span", min:8.5, max:12, parentWidth:true},
   // "CIVVIS Arena Stats" is fitted at most widths, where a shorter heading
   // never was, so its run is measured where it lands and not by the ratio.
@@ -27900,6 +27904,10 @@ function hudTurnPlate() {
   // Speed sits directly under it, still above the age (operator 2026-11-09).
   // Both spent 2026-11-15 under the turn counter and the operator moved them
   // "back above age and turn counter like before"; Mode and POV stay below.
+  // The map, level and speed are game settings like Max Speed, so they stand
+  // directly under it (operator 2026-11-24: "move 6p continents lv 8 online
+  // in turn box up to below max speed … these are game settings and so
+  // should be more highly visible").
   return `<section class="victory-turn${liveTimeText !== null ? " has-live-time" : ""}" ` +
     `title="${escapeAttr(context)}" aria-label="${escapeAttr(plateLabel)}">` +
     hudFoldButton("turnplate", "turn box", "turn-plate-fold") +
@@ -27909,6 +27917,8 @@ function hudTurnPlate() {
         `<b data-live-time data-hundredths="${liveTime.hundredths}">${liveTimeText}</b></div>`
       : ``) +
     `<div class="turn-setting turn-pace-line"><span>Max Speed:</span>${watchPaceValue}</div>` +
+    `<div class="turn-setting turn-setup-line" title="${escapeAttr(setupTitle)}">` +
+    `<b>${escapeAttr(setupLine)}</b></div>` +
     `<span class="turn-era">${ageLabel}</span>` +
     `<div class="${turnCountClasses}"><span class="turn-label">Turn</span>` +
     `<div class="turn-progress"><strong>${reportedTurn()}</strong>` +
@@ -27917,8 +27927,6 @@ function hudTurnPlate() {
     `</div>` +
     `<div class="turn-settings" aria-label="Game setup">` +
     frameRow("Mode:", plateMode) + frameRow("POV:", platePov) +
-    `<div class="turn-setting turn-setup-line" title="${escapeAttr(setupTitle)}">` +
-    `<b>${escapeAttr(setupLine)}</b></div>` +
     fogRow +
     fogHonestRow +
     rosterRow("Civs:", civCount, civsLost) +
