@@ -4835,6 +4835,14 @@
   @media (prefers-reduced-motion: reduce) {
     .turn-gauge-fill, .turn-gauge > i, .turn-gauge-scale { transition: none; }
   }
+  /* A new game's bar starts where that game is, with no glide down from
+     where the last game ended (operator, 2026-11-24: "have gold bar
+     immediately start at 1/250 rather than a motion down", "between games
+     that is"). `settleTurnGauge` in app_clock.js puts the bar at the new
+     game's turn while this holds its motion off, and takes it away again. */
+  .turn-gauge.turn-gauge-settling > .turn-gauge-fill,
+  .turn-gauge.turn-gauge-settling > i,
+  .turn-gauge.turn-gauge-settling > .turn-gauge-scale { transition: none; }
 
 
   .overlay-options { margin-top: 11px; padding-top: 10px; border-top: 1px solid var(--line-soft); }

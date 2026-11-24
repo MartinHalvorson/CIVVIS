@@ -8,7 +8,7 @@
 // which looks for the plate's value and finds none until app.js has drawn
 // one. Everything else is called by app.js once a world is on screen, so the
 // renderer's own names these lean on (`state`, `SPEC`, `specPaused`,
-// `livePause`, `gameFinished`) exist by the time they are read.
+// `livePause`, `gameFinished`, `turnGauge`) exist by the time they are read.
 //
 // The stopwatch is the turn plate's top section, above the age. It
 // reads how long the world on screen has actually been playing: it starts
@@ -73,9 +73,38 @@ function syncLiveClock(st, newWorld) {
     if (liveClock.seed === undefined) restoreLiveClock(st);
     else { liveClock.ms = 0; liveClock.runningSince = null; }
     liveClock.seed = st.seed ?? null;
+    // The game's other clock, the gold bar up the victory tracker, starts
+    // over with it.
+    settleTurnGauge();
   }
   syncLiveClockRun();
   saveLiveClock(st);
+}
+// The victory tracker's gold turn bar (`turnGauge` in app.js) glides to each
+// new turn, and so a new game began with the bar gliding down, from wherever
+// the last game ended to the foot. A new game's bar starts where that game
+// is (operator, 2026-11-24: "on civvis have gold bar immediately start at
+// 1/250 rather than a motion down", "between games that is").
+//
+// This runs when the world on screen has become a new one and before the
+// tracker is redrawn for it, so the bar in the document still stands at the
+// last world's turn. It is put at this world's turn with its motion held off
+// for that one change (`turn-gauge-settling` in index.html, and a reading of
+// the layout so the turn is styled while it holds). The redraw that follows
+// finds the bar where it belongs and has nothing to move, and every turn
+// after that glides up as before.
+//
+// A new world is what the page takes for one everywhere else: another game,
+// or the same game wound back. So the bar never glides down. A world with no
+// turn cap draws no bar, and the redraw takes the old one away.
+function settleTurnGauge() {
+  const gauge = document.querySelector("#victoryhud .turn-gauge");
+  const rise = gauge && /--rise:([\d.]+%)/.exec(turnGauge())?.[1];
+  if (!rise) return;
+  gauge.classList.add("turn-gauge-settling");
+  gauge.style.setProperty("--rise", rise);
+  void gauge.offsetHeight;
+  gauge.classList.remove("turn-gauge-settling");
 }
 function saveLiveClock(st) {
   try {
