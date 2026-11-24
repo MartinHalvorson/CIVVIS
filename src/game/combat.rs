@@ -286,13 +286,13 @@ impl Game {
             c.hp -= dmg;
         }
         let (after_hp, after_wall) = (c.hp, c.wall_hp);
-        self.siege.blows += 1;
-        self.siege.damage += i64::from(before_hp - after_hp);
+        self.chronicle.siege.blows += 1;
+        self.chronicle.siege.damage += i64::from(before_hp - after_hp);
         if wall > 0 && after_wall == 0 {
-            self.siege.walls_breached += 1;
+            self.chronicle.siege.walls_breached += 1;
         }
         if before_hp > 0 && after_hp <= 0 {
-            self.siege.cities_reduced += 1;
+            self.chronicle.siege.cities_reduced += 1;
             let city_pos = self.cities[&cid].pos;
             let melee_on_the_doorstep = self.units.values().any(|unit| {
                 unit.owner == attacker
@@ -300,7 +300,7 @@ impl Game {
                     && self.rules.units[unit.kind].is_melee_capable()
             });
             if melee_on_the_doorstep {
-                self.siege.reduced_with_melee_adjacent += 1;
+                self.chronicle.siege.reduced_with_melee_adjacent += 1;
             }
         }
     }

@@ -5033,6 +5033,10 @@ pub struct Chronicle {
     /// Where each unit has walked lately, oldest first and bounded like the
     /// strike ledger: a client draws the recent tail.
     pub unit_move_trails: Arc<Vec<UnitMoveTrail>>,
+    /// Per-civilization event stream; see [`Event`]. Shared until written.
+    pub events: EventLog,
+    /// What has actually landed on cities this game, for evaluators.
+    pub siege: SiegeCensus,
 }
 
 impl Chronicle {
@@ -5351,6 +5355,178 @@ pub struct ObservedPublicEmpireStats {
     pub military_unit_count: Option<usize>,
 }
 
+/// Everything about one seat that the rules never read back
+/// (`docs/CORE_STATE.md`): what the seat has seen (its last-seen tiles and
+/// cities, and what it saw this turn), what it has done (combat and unit
+/// lifetime tallies), and what a live Civilization VI host reported about it
+/// (`live_*`, `observed_*`, `borders_enforced`, empty in self-play). See
+/// `Player::aside`.
+#[derive(Clone, Default, Serialize, Deserialize)]
+pub struct PlayerAside {
+    /// Tiles this civilization has seen at any point during its active player
+    /// turn. Current sight remains authoritative for rules and targeting; this
+    /// short-lived union exists so the map can keep the just-seen frame lit
+    /// until this player's End Turn, then fall back to ordinary fog memory.
+    #[serde(default)]
+    pub turn_visible: BTreeSet<Pos>,
+    /// Rival units last observed during this active player turn. Unlike the
+    /// long-term map memory, these contacts survive only until End Turn.
+    #[serde(default, deserialize_with = "numbered_keys")]
+    pub turn_units: BTreeMap<u32, Unit>,
+    /// Per-tile last-known state. Unlike `explored`, this does not update
+    /// while a tile is under fog, so improvements, ownership, disasters, and
+    /// other changes cannot leak through a player observation.
+    #[serde(default)]
+    pub remembered_tiles: TileMemory,
+    /// Last public City Center state observed by this player.
+    #[serde(default, deserialize_with = "numbered_keys")]
+    pub remembered_cities: BTreeMap<u32, RememberedCity>,
+    /// The exact Great Person classes Firaxis is offering right now, when a
+    /// live mirror supplied that screen. `None` preserves CIVVIS's native
+    /// global roster for headless games, older exports, and saved games;
+    /// `Some(empty)` is the host's authoritative answer that no class can be
+    /// recruited this turn.
+    #[serde(default)]
+    pub live_great_person_offers: Option<BTreeSet<String>>,
+    /// Open native Great Work slot kinds after retaining each work in its
+    /// observed building. None means occupancy was not exported; this is a
+    /// spending input, not a restriction on recruiting a physical Great Person.
+    #[serde(default)]
+    pub live_open_great_work_slots: Option<BTreeSet<String>>,
+    /// The exact named individual Firaxis is offering for each class. A
+    /// mirrored controller uses this to distinguish a Space Race Engineer
+    /// from an otherwise-valid Engineer whose effect belongs to another
+    /// victory plan. Empty on native boards and older exports.
+    #[serde(default)]
+    pub live_great_person_offer_individuals: BTreeMap<String, String>,
+    /// Hard activation prerequisites of the *live* named offer, keyed by
+    /// Great Person class. Headless games leave this empty; the Firaxis mirror
+    /// fills it only when an offered individual names a completed district the
+    /// empire does not have.
+    #[serde(default)]
+    pub live_great_person_offer_blockers: BTreeMap<String, String>,
+    /// Physical Great People in a mirrored Civilization VI game for whom the
+    /// host currently exposes no legal activation plot. This is mirror input,
+    /// never persistent policy; an empty/default value preserves ordinary
+    /// engine and old-save behavior.
+    #[serde(default)]
+    pub live_great_person_activation_needs: Vec<LiveGreatPersonActivationNeed>,
+    /// The Great Person classes the mirrored Civilization VI game has nobody
+    /// left to recruit in, when the host says. `None` in headless games and
+    /// on older exports: the engine then falls back to its own roster
+    /// (`current_great_person`). `Some(set)` is the host's answer — a class in
+    /// it has no unclaimed individual anywhere on the timeline, and its
+    /// points are the ones Firaxis turns into Faith
+    /// (`great_person_class_earnable`, `unused_great_person_faith`).
+    #[serde(default)]
+    pub live_great_person_exhausted: Option<BTreeSet<String>>,
+    /// How many majors the host says are alive, the seat included: the
+    /// World Congress standing (`congress_dvp`, one entry per alive major,
+    /// met or not). `None` headless and before the first standing. The
+    /// mirror plants a seat for every major at setup and never retires one,
+    /// so an eliminated major stays `alive` on the board; see
+    /// `AdvancedAi::retire_defeated_majors`.
+    #[serde(default)]
+    pub live_living_majors: Option<usize>,
+    /// Whether this seat's border is ENFORCED at all, when a live host has
+    /// said so. Civilization VI shuts a civilization's territory to foreign
+    /// units only once that civilization holds Early Empire
+    /// (`CIVIC_ENFORCE_BORDERS` hangs off `CIVIC_EARLY_EMPIRE`), and a
+    /// native game reads that off the seat's own civics through
+    /// [`Game::enforces_borders`]. A mirrored board does not model a rival's
+    /// or a city-state's civics, so without this it answered "no border" for
+    /// every foreign seat and walked military units into ground the host
+    /// refuses: run civvis-20260826T184456Z sent 122 military steps into a
+    /// non-suzerain city-state's land and 4 % arrived, 37 into a rival's
+    /// closed border and 0 arrived. `None` = derive from civics, which is
+    /// every native game.
+    #[serde(default)]
+    pub borders_enforced: Option<bool>,
+    /// Diplomatic Visibility this seat holds on each rival AS THE HOST REPORTS
+    /// IT (`GetVisibilityOn`, the `GameInfo.Visibilities` index), when a live
+    /// mirror has said so. A native game derives the level in
+    /// [`Game::diplomatic_visibility`] from trees, missions, routes, alliances
+    /// and listening posts; a mirrored board cannot see most of those sources,
+    /// so without this every rival read as level 0 both ways and the combat
+    /// modifier that visibility buys was never priced. Assigned from every
+    /// export; empty on every native board.
+    #[serde(default, deserialize_with = "numbered_keys")]
+    pub observed_visibility: BTreeMap<usize, f64>,
+    /// This leader's standing toward each seat AS THE HOST REPORTS IT
+    /// (`GetDiplomaticStateIndex`, `DiplomacyActionView.lua:870`), without the
+    /// `DIPLO_STATE_` prefix: `FRIENDLY`, `NEUTRAL`, `UNFRIENDLY`,
+    /// `DENOUNCED`, `DECLARED_FRIEND`, `ALLIED`, `WAR`. The treaty states are
+    /// already applied as treaties; the attitudes are what a live seat needs
+    /// before it asks for one, since the host's leaders value a declared
+    /// friendship only from `FRIENDLY`. Assigned from every export; empty on
+    /// every native board.
+    #[serde(default, deserialize_with = "numbered_keys")]
+    pub observed_diplomatic_state: BTreeMap<usize, String>,
+    /// Completed military-unit lives by the kind the unit carried when it
+    /// left play. Live units are composed with this by
+    /// [`Game::unit_lifetime_stats`].
+    #[serde(default)]
+    pub unit_lifetimes: BTreeMap<Name, UnitLifetimeStats>,
+    /// Units killed and lost in combat, civilians taken and lost. Observes
+    /// only; absent from a save while empty. See `game/combat_ledger.rs`.
+    #[serde(default, skip_serializing_if = "CombatLedger::is_empty")]
+    pub combat_ledger: CombatLedger,
+}
+
+/// A map keyed by numbers, read back from a flattened save.
+///
+/// `PlayerAside` is `#[serde(flatten)]` into `Player`, and serde reads a
+/// flattened struct from a buffered copy of the document, where a JSON object
+/// key is only ever a string: the `"5"` that `serde_json` would have turned
+/// into a `u32` stays `"5"` and fails. This reads the keys as text and parses
+/// them, which is what a direct read did.
+fn numbered_keys<'de, D, K, V>(deserializer: D) -> Result<BTreeMap<K, V>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    K: std::str::FromStr + Ord,
+    V: Deserialize<'de>,
+{
+    BTreeMap::<String, V>::deserialize(deserializer)?
+        .into_iter()
+        .map(|(key, value)| {
+            key.parse::<K>()
+                .map(|key| (key, value))
+                .map_err(|_| serde::de::Error::custom(format!("map key {key:?} is not a number")))
+        })
+        .collect()
+}
+
+/// `PlayerAside` behind an `Arc`, saved as its fields so a save reads exactly
+/// as it did when they sat in `Player`.
+#[derive(Clone, Default)]
+pub struct SharedAside(Arc<PlayerAside>);
+
+impl Serialize for SharedAside {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.0.as_ref().serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for SharedAside {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        PlayerAside::deserialize(deserializer).map(|memory| SharedAside(Arc::new(memory)))
+    }
+}
+
+impl std::ops::Deref for Player {
+    type Target = PlayerAside;
+
+    fn deref(&self) -> &PlayerAside {
+        &self.aside.0
+    }
+}
+
+impl std::ops::DerefMut for Player {
+    fn deref_mut(&mut self) -> &mut PlayerAside {
+        Arc::make_mut(&mut self.aside.0)
+    }
+}
+
 /// Whether `key` names one of the stock agents' own notes rather than a
 /// tally the rules keep. Every one of these is written from inside an
 /// agent's turn, outside any action. Asked on every counter access, so it is
@@ -5657,16 +5833,6 @@ pub struct Player {
     #[serde(default)]
     pub co2_emissions: f64,
     pub explored: crate::explored_set::ExploredSet,
-    /// Tiles this civilization has seen at any point during its active player
-    /// turn. Current sight remains authoritative for rules and targeting; this
-    /// short-lived union exists so the map can keep the just-seen frame lit
-    /// until this player's End Turn, then fall back to ordinary fog memory.
-    #[serde(default)]
-    pub turn_visible: BTreeSet<Pos>,
-    /// Rival units last observed during this active player turn. Unlike the
-    /// long-term map memory, these contacts survive only until End Turn.
-    #[serde(default)]
-    pub turn_units: BTreeMap<u32, Unit>,
     /// Whether this civilization's own knowledge has ever run the whole way
     /// round the world — see [`Game::update_world_lap`]. Once a people have
     /// been around they know the shape they live on; until then they do not,
@@ -5682,14 +5848,6 @@ pub struct Player {
     /// Cleared once the lap closes, because the answer can never change back.
     #[serde(default)]
     pub lap_bands: BTreeSet<u32>,
-    /// Per-tile last-known state. Unlike `explored`, this does not update
-    /// while a tile is under fog, so improvements, ownership, disasters, and
-    /// other changes cannot leak through a player observation.
-    #[serde(default)]
-    pub remembered_tiles: TileMemory,
-    /// Last public City Center state observed by this player.
-    #[serde(default)]
-    pub remembered_cities: BTreeMap<u32, RememberedCity>,
     /// Every seat this civilization has made contact with, and never forgets.
     /// A world is full of empires nobody has met yet; until a unit or a city
     /// of theirs has actually been seen, they are not on anybody's ledger,
@@ -5732,53 +5890,6 @@ pub struct Player {
     pub envoys_free: i64,
     #[serde(default)]
     pub gpp: BTreeMap<String, f64>, // great person points by type
-    /// The exact Great Person classes Firaxis is offering right now, when a
-    /// live mirror supplied that screen. `None` preserves CIVVIS's native
-    /// global roster for headless games, older exports, and saved games;
-    /// `Some(empty)` is the host's authoritative answer that no class can be
-    /// recruited this turn.
-    #[serde(default)]
-    pub live_great_person_offers: Option<BTreeSet<String>>,
-    /// Open native Great Work slot kinds after retaining each work in its
-    /// observed building. None means occupancy was not exported; this is a
-    /// spending input, not a restriction on recruiting a physical Great Person.
-    #[serde(default)]
-    pub live_open_great_work_slots: Option<BTreeSet<String>>,
-    /// The exact named individual Firaxis is offering for each class. A
-    /// mirrored controller uses this to distinguish a Space Race Engineer
-    /// from an otherwise-valid Engineer whose effect belongs to another
-    /// victory plan. Empty on native boards and older exports.
-    #[serde(default)]
-    pub live_great_person_offer_individuals: BTreeMap<String, String>,
-    /// Hard activation prerequisites of the *live* named offer, keyed by
-    /// Great Person class. Headless games leave this empty; the Firaxis mirror
-    /// fills it only when an offered individual names a completed district the
-    /// empire does not have.
-    #[serde(default)]
-    pub live_great_person_offer_blockers: BTreeMap<String, String>,
-    /// Physical Great People in a mirrored Civilization VI game for whom the
-    /// host currently exposes no legal activation plot. This is mirror input,
-    /// never persistent policy; an empty/default value preserves ordinary
-    /// engine and old-save behavior.
-    #[serde(default)]
-    pub live_great_person_activation_needs: Vec<LiveGreatPersonActivationNeed>,
-    /// The Great Person classes the mirrored Civilization VI game has nobody
-    /// left to recruit in, when the host says. `None` in headless games and
-    /// on older exports: the engine then falls back to its own roster
-    /// (`current_great_person`). `Some(set)` is the host's answer — a class in
-    /// it has no unclaimed individual anywhere on the timeline, and its
-    /// points are the ones Firaxis turns into Faith
-    /// (`great_person_class_earnable`, `unused_great_person_faith`).
-    #[serde(default)]
-    pub live_great_person_exhausted: Option<BTreeSet<String>>,
-    /// How many majors the host says are alive, the seat included: the
-    /// World Congress standing (`congress_dvp`, one entry per alive major,
-    /// met or not). `None` headless and before the first standing. The
-    /// mirror plants a seat for every major at setup and never retires one,
-    /// so an eliminated major stays `alive` on the board; see
-    /// `AdvancedAi::retire_defeated_majors`.
-    #[serde(default)]
-    pub live_living_majors: Option<usize>,
     #[serde(default)]
     pub gp_claimed: BTreeMap<String, i64>,
     /// IDs of named Great People recruited from the global market.
@@ -5849,40 +5960,6 @@ pub struct Player {
     pub friends_until: BTreeMap<usize, u32>,
     #[serde(default)]
     pub open_borders_until: BTreeMap<usize, u32>,
-    /// Whether this seat's border is ENFORCED at all, when a live host has
-    /// said so. Civilization VI shuts a civilization's territory to foreign
-    /// units only once that civilization holds Early Empire
-    /// (`CIVIC_ENFORCE_BORDERS` hangs off `CIVIC_EARLY_EMPIRE`), and a
-    /// native game reads that off the seat's own civics through
-    /// [`Game::enforces_borders`]. A mirrored board does not model a rival's
-    /// or a city-state's civics, so without this it answered "no border" for
-    /// every foreign seat and walked military units into ground the host
-    /// refuses: run civvis-20260826T184456Z sent 122 military steps into a
-    /// non-suzerain city-state's land and 4 % arrived, 37 into a rival's
-    /// closed border and 0 arrived. `None` = derive from civics, which is
-    /// every native game.
-    #[serde(default)]
-    pub borders_enforced: Option<bool>,
-    /// Diplomatic Visibility this seat holds on each rival AS THE HOST REPORTS
-    /// IT (`GetVisibilityOn`, the `GameInfo.Visibilities` index), when a live
-    /// mirror has said so. A native game derives the level in
-    /// [`Game::diplomatic_visibility`] from trees, missions, routes, alliances
-    /// and listening posts; a mirrored board cannot see most of those sources,
-    /// so without this every rival read as level 0 both ways and the combat
-    /// modifier that visibility buys was never priced. Assigned from every
-    /// export; empty on every native board.
-    #[serde(default)]
-    pub observed_visibility: BTreeMap<usize, f64>,
-    /// This leader's standing toward each seat AS THE HOST REPORTS IT
-    /// (`GetDiplomaticStateIndex`, `DiplomacyActionView.lua:870`), without the
-    /// `DIPLO_STATE_` prefix: `FRIENDLY`, `NEUTRAL`, `UNFRIENDLY`,
-    /// `DENOUNCED`, `DECLARED_FRIEND`, `ALLIED`, `WAR`. The treaty states are
-    /// already applied as treaties; the attitudes are what a live seat needs
-    /// before it asks for one, since the host's leaders value a declared
-    /// friendship only from `FRIENDLY`. Assigned from every export; empty on
-    /// every native board.
-    #[serde(default)]
-    pub observed_diplomatic_state: BTreeMap<usize, String>,
     #[serde(default)]
     pub alliances: BTreeMap<usize, AllianceState>,
     /// Outgoing Delegations or Resident Embassies, keyed by the leader that
@@ -5980,15 +6057,6 @@ pub struct Player {
     /// [`Counters`].
     #[serde(default)]
     pub counters: Counters,
-    /// Completed military-unit lives by the kind the unit carried when it
-    /// left play. Live units are composed with this by
-    /// [`Game::unit_lifetime_stats`].
-    #[serde(default)]
-    pub unit_lifetimes: BTreeMap<Name, UnitLifetimeStats>,
-    /// Units killed and lost in combat, civilians taken and lost. Observes
-    /// only; absent from a save while empty. See `game/combat_ledger.rs`.
-    #[serde(default, skip_serializing_if = "CombatLedger::is_empty")]
-    pub combat_ledger: CombatLedger,
     /// Every great work as an object with its creating era and creator, kept
     /// in lockstep with the ``great_work:*`` counters. Theming reads these.
     #[serde(default)]
@@ -6001,6 +6069,13 @@ pub struct Player {
     pub boosted_techs: BTreeSet<Name>,
     #[serde(default)]
     pub boosted_civics: BTreeSet<Name>,
+    /// What this seat has seen, what it has done and what a host reported
+    /// about it: none of it is read by the rules (`docs/CORE_STATE.md`), so
+    /// none of it is the world. One shared pointer that a fork copies only if
+    /// it writes; saved flat under the old names, and every field still reads
+    /// as `player.remembered_tiles` through `Deref`.
+    #[serde(flatten)]
+    pub aside: SharedAside,
 }
 
 impl Player {
@@ -6032,12 +6107,9 @@ impl Player {
             power_fuel_consumed: BTreeMap::new(),
             co2_emissions: 0.0,
             explored: Default::default(),
-            turn_visible: BTreeSet::new(),
-            turn_units: BTreeMap::new(),
+            aside: SharedAside::default(),
             went_around: false,
             lap_bands: BTreeSet::new(),
-            remembered_tiles: TileMemory::default(),
-            remembered_cities: BTreeMap::new(),
             met: BTreeSet::new(),
             alive: true,
             is_minor,
@@ -6052,13 +6124,6 @@ impl Player {
             influence: 0.0,
             envoys_free: 0,
             gpp: BTreeMap::new(),
-            live_great_person_offers: None,
-            live_open_great_work_slots: None,
-            live_great_person_offer_individuals: BTreeMap::new(),
-            live_great_person_offer_blockers: BTreeMap::new(),
-            live_great_person_activation_needs: Vec::new(),
-            live_great_person_exhausted: None,
-            live_living_majors: None,
             gp_claimed: BTreeMap::new(),
             great_people: Vec::new(),
             pantheon: None,
@@ -6086,9 +6151,6 @@ impl Player {
             denounced_since: BTreeMap::new(),
             friends_until: BTreeMap::new(),
             open_borders_until: BTreeMap::new(),
-            borders_enforced: None,
-            observed_visibility: BTreeMap::new(),
-            observed_diplomatic_state: BTreeMap::new(),
             alliances: BTreeMap::new(),
             diplomatic_missions: BTreeMap::new(),
             defensive_pacts: BTreeMap::new(),
@@ -6114,8 +6176,6 @@ impl Player {
             mass_driver_shots: 0,
             envoys: Vec::new(),
             counters: Counters::default(),
-            unit_lifetimes: BTreeMap::new(),
-            combat_ledger: CombatLedger::default(),
             great_work_pieces: Vec::new(),
             quests: BTreeMap::new(),
             boosted_techs: BTreeSet::new(),
@@ -8132,11 +8192,9 @@ pub struct Game {
     pub peace_treaties: BTreeMap<(usize, usize), u32>,
     /// Running chronicle of every war in progress, keyed by belligerent pair.
     pub wars: BTreeMap<(usize, usize), WarRecord>,
-    /// What has actually landed on cities this game, for evaluators.
-    #[serde(default)]
-    pub siege: SiegeCensus,
-    /// What happened, for whoever watches: ended wars, nuclear strikes, the
-    /// result screen's yields, and units' recent walks. The rules write it and
+    /// What happened, for whoever watches: the event log, ended wars, nuclear
+    /// strikes, the siege census, the result screen's yields, and units'
+    /// recent walks. The rules write it and
     /// never read it back (`docs/CORE_STATE.md`), so it is not part of the
     /// world a fork has to copy: every record is shared until written.
     pub chronicle: Chronicle,
@@ -8237,8 +8295,6 @@ pub struct Game {
     /// f(seed+params, log), so this is the replay/desync-detection record.
     /// Runtime-only (not in saves yet).
     pub log: crate::actionlog::ActionLog,
-    /// Per-civilization event stream; see [`Event`].
-    pub events: EventLog,
     /// Everything a mirrored seat was told by the Civilization VI game it
     /// plays in (`observed_*`, `host_*`, `blocked_*` and the host's
     /// switches): read by the rules only when a host supplied it, empty in
@@ -8665,7 +8721,6 @@ impl From<GameSer> for Game {
             ai_late_science_pct: s.ai_late_science_pct,
             ai_space_tech_floor: s.ai_space_tech_floor,
             mods: s.mods,
-            events: s.events.into(),
             base_ruleset: s.base_ruleset,
             start_era: s.start_era,
             future_era: s.future_era,
@@ -8697,8 +8752,9 @@ impl From<GameSer> for Game {
             at_war: s.at_war.into_iter().collect(),
             peace_treaties: s.peace_treaties.into_iter().collect(),
             wars: s.wars.into_iter().collect(),
-            siege: SiegeCensus::default(),
             chronicle: Chronicle {
+                events: s.events.into(),
+                siege: SiegeCensus::default(),
                 concluded_wars: Arc::new(s.concluded_wars),
                 nuclear_strikes: Arc::new(s.nuclear_strikes),
                 turn_stats: Arc::new(s.turn_stats),
@@ -8961,7 +9017,7 @@ impl From<Game> for GameSer {
             ai_late_science_pct: g.ai_late_science_pct,
             ai_space_tech_floor: g.ai_space_tech_floor,
             mods: g.mods,
-            events: g.events.into(),
+            events: g.chronicle.events.into(),
             base_ruleset: g.base_ruleset,
             start_era: g.start_era,
             future_era: g.future_era,
@@ -9516,7 +9572,6 @@ impl Game {
             at_war: BTreeSet::new(),
             peace_treaties: BTreeMap::new(),
             wars: BTreeMap::new(),
-            siege: SiegeCensus::default(),
             chronicle: Chronicle::default(),
             barb_pid: None,
             barb_camps: BTreeMap::new(),
@@ -9554,7 +9609,6 @@ impl Game {
             occ: pos_map::UnitIndex::default(),
             city_by_pos: pos_map::CityIndex::default(),
             log: crate::actionlog::ActionLog::new(),
-            events: EventLog::default(),
             host: Arc::new(HostMirror {
                 observed_military_power: Arc::new(BTreeMap::new()),
                 host_unit_facts: Arc::new(BTreeMap::new()),
@@ -10709,7 +10763,7 @@ impl Game {
         // which is the turn being played for all but the victory a score
         // tiebreak declares on the wrap out of the final turn.
         let turn = self.reported_turn();
-        self.events.push(Event {
+        self.chronicle.events.push(Event {
             turn,
             player: pid,
             category: category.to_string(),
@@ -10717,9 +10771,9 @@ impl Game {
             pos,
             important: false,
         });
-        if self.events.len() > EVENT_LIMIT {
-            let excess = self.events.len() - EVENT_LIMIT;
-            self.events.drain(..excess);
+        if self.chronicle.events.len() > EVENT_LIMIT {
+            let excess = self.chronicle.events.len() - EVENT_LIMIT;
+            self.chronicle.events.drain(..excess);
         }
     }
 
@@ -10740,10 +10794,10 @@ impl Game {
     ) {
         // `note` drops minor and barbarian seats, so marking the last entry
         // blind would promote whatever unrelated event happened to precede it.
-        let before = self.events.len();
+        let before = self.chronicle.events.len();
         self.note(pid, category, text, pos);
-        if self.events.len() != before {
-            if let Some(event) = self.events.last_mut() {
+        if self.chronicle.events.len() != before {
+            if let Some(event) = self.chronicle.events.last_mut() {
                 event.important = true;
             }
         }
@@ -10776,7 +10830,11 @@ impl Game {
 
     /// The events one civilization can see, oldest first.
     pub fn events_for(&self, pid: usize) -> Vec<&Event> {
-        self.events.iter().filter(|e| e.player == pid).collect()
+        self.chronicle
+            .events
+            .iter()
+            .filter(|e| e.player == pid)
+            .collect()
     }
 
     pub fn city_at(&self, pos: Pos) -> Option<u32> {
@@ -14244,6 +14302,8 @@ mod victory_conditions;
 mod counters_tests;
 #[cfg(test)]
 mod great_work_tests;
+#[cfg(test)]
+mod player_aside_tests;
 #[cfg(test)]
 mod world_boundary_tests;
 

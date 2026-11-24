@@ -349,7 +349,7 @@ impl Game {
         });
         view.wars.clear();
         view.chronicle.concluded_wars = Default::default();
-        view.siege = Default::default();
+        view.chronicle.siege = Default::default();
         view.chronicle.unit_move_trails = Default::default();
         view.chronicle.nuclear_strikes = Default::default();
         view.barb_camps.retain(|pos, _| visible.contains(pos));
@@ -382,7 +382,7 @@ impl Game {
         view.droughts.clear();
         view.fires.clear();
         view.log = Default::default();
-        view.events = Vec::new().into();
+        view.chronicle.events = Vec::new().into();
         // A simulator's future random stream is not observable in the game.
         view.seed = (self.turn as u64).wrapping_mul(0x9e3779b9) ^ pid as u64;
         view.rng = Rng::new(view.seed);

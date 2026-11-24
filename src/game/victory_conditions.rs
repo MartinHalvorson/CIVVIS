@@ -225,6 +225,7 @@ fn a_mercy_ending_is_denoted_by_the_lane_it_ended_on() {
     // The seats are told the notation, not that somebody won a "mercy
     // victory" — the rule is a concession, and the lane is the news.
     let declared = game
+        .chronicle
         .events
         .iter()
         .rev()
@@ -318,6 +319,7 @@ fn an_ordinary_victory_is_still_written_as_its_bare_type() {
     assert_eq!(game.victory_label().as_deref(), Some("science"));
     assert!(game.mercy_lanes.is_empty(), "only mercy carries lanes");
     assert!(game
+        .chronicle
         .events
         .iter()
         .any(|event| event.text.contains("won a science victory")));
@@ -3272,6 +3274,7 @@ fn a_score_victory_is_dated_on_the_turn_the_limit_names() {
     assert_eq!(g.turn, 4, "the count is taken on the wrap past the limit");
     assert_eq!(g.reported_turn(), 3, "the game is won on the limit's turn");
     let declared = g
+        .chronicle
         .events
         .iter()
         .rev()
