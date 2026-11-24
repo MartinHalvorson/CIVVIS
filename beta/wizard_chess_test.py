@@ -292,6 +292,11 @@ class Played(unittest.TestCase):
         ev("wizardChess.opponent.stop(), wizardChess.begin('w', ['g1f3', 'd7d6', 'f3e5']), wizardChess.game.turn++, wizardChess.opponent.stop()")
         self.assertEqual(ev("[wizardChess.seat.mode, wizardChess.world.ridden.userData.square]"), ["ride", 36])
         self.assertEqual(ev("[...wizardChess.world.pieces.values()].filter(held => held.userData.menace).map(held => held.userData.square)"), [43])
+        # It leans toward the knight, as if about to come.
+        self.until("wizardChess.world.pieces.get(43).quaternion.w < 0.9995", "the pawn leans in", seconds=60)
+        # A threat that is new turns the rider's head to it.
+        ev("wizardChess.game.threats = ''; wizardChess.peril()")
+        self.assertIsNotNone(ev("wizardChess.seat.alarm"))
         # Taken: the rider is thrown, and stands at the side of the board.
         ev("(w => w.make(w.moveFromUci(w.game.position, 'd6e5'), 'b'))(wizardChess)")
         self.until("wizardChess.seat.mode === 'aside'", "the rider is thrown and gets up", seconds=120)
@@ -302,6 +307,18 @@ class Played(unittest.TestCase):
         # Taken back to before the knight went to e5: the rider is on it again, on f3.
         ev("wizardChess.takeBack()")
         self.assertEqual(ev("[wizardChess.seat.mode, wizardChess.world.ridden.userData.square, wizardChess.game.played.length]"), ["ride", 21, 2])
+        # A move that gives the knight up is asked about first.
+        ev("wizardChess.opponent.stop(), wizardChess.begin('w', ['g1f3', 'd7d6']), wizardChess.game.turn++, wizardChess.opponent.stop()")
+        self.assertTrue(ev("wizardChess.command('ride to e5')"))
+        self.assertEqual(ev("[document.getElementById('risk').hidden, wizardChess.game.played.length]"), [False, 2])
+        self.assertIn("Ride on?", ev("document.getElementById('risk-said').textContent"))
+        ev("wizardChess.settle(false)")
+        self.assertEqual(ev("[document.getElementById('risk').hidden, wizardChess.game.played.length]"), [True, 2])
+        # Said again, it is the rider's choice, and the knight goes.
+        self.assertTrue(ev("wizardChess.command('ride to e5')"))
+        self.until("wizardChess.game.played.length >= 3", "the knight rides on", seconds=60)
+        self.assertEqual(ev("wizardChess.game.played[2].san"), "Ne5")
+        ev("wizardChess.opponent.stop(), wizardChess.game.turn++")
         # And back to the board.
         ev("wizardChess.ride(false)")
         self.assertEqual(ev("[wizardChess.seat.mode, wizardChess.world.ridden]"), ["table", None])

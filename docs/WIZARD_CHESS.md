@@ -147,10 +147,17 @@ strength only within about two squares, so a capture beside the rider is
 loud and on that side, one across the board is far, and one behind is
 behind.
 
-**Peril** (`peril`, `World.menace`). The pieces that could take the knight
-ridden glow red and pulse, and when the threat is new after the opponent's
-move it is said ("Your knight is threatened by the bishop on b4") with a low
-drum.
+**Peril** (`peril`, `World.menace`, `World.loom`, `Seat.glance`, `risks`).
+The pieces that could take the knight ridden glow red and pulse, and lean
+toward it as if about to come; a knight among them turns its head to it.
+When the threat is new after the opponent's move it is said ("Your knight is
+threatened by the bishop on b4") with a low drum, and the rider's head
+snaps round to the piece and holds there a moment. A move after which the
+knight ridden can be taken, by its own going or by what it uncovers, is
+asked about first ("Your knight can be taken on g5, and you with it. Ride
+on?"), aloud too: "Ride on" (or yes, Enter) plays it, "Hold your ground" (or
+no, Escape) does not. Said again, it is the rider's choice and is not asked
+twice.
 
 **Thrown** (`Seat.thrown`). A knight taken under its rider breaks, and the
 rider is thrown on the way the blow came, over the edge of the board,
@@ -189,13 +196,14 @@ loop). The structure that makes that converge rather than wander:
    camera is, which pieces glow) rather than "looks right".
 
 Done: the rider's seat (#5747); the rider low and beside the head, and
-sound where it happens (#5755); the knight ridden alive (#5757).
+sound where it happens (#5755); the knight ridden alive (#5757); peril felt
+(#5758).
 
 What is next, most felt first:
 
-- **Peril felt.** The threatening piece turns its head toward you; the
-  camera sees it coming; a sacrifice of the ridden knight is said before it
-  is played ("You will be taken there. Ride on?").
+- **Seeing past your own knight.** A threat on the far side of the knight's
+  head is behind it: a rider who turns to look across it should lean up and
+  over (the eye rising with how far round the head turns).
 - **The hall.** Walls, columns and a ceiling to be inside of, instead of
   black: what a low seat looks up at.
 - **Riding other pieces.** Any of your pieces, not only knights.
