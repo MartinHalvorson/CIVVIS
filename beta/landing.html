@@ -321,6 +321,12 @@
      the numbers)"). A goal says what renting the rest of the way to it is
      estimated to cost, and a note under the line says whose estimate that
      is. What it is an estimate of is on CIVVIS Performance.
+     Between the fastest stop and the goals stand the stops nothing has
+     played yet, under the line (operator, 2026-11-22: "add to out speedup
+     timeline: 10x theoretical scale up from local hardware ... hardware
+     scaleup is to the left of m5 max. potential distributed RL fleet: up to
+     1000+x"): each is so many times the M5 Max's stop, a ring in the line's
+     own colour where a measured stop is a dot.
      The figures are the page's
      `home-speedup` slot, written when the site is published
      (`beta/speedup_timeline.py`), and the section stays hidden on a page
@@ -408,6 +414,9 @@
     /* A goal is a ring where the stops are dots: nothing has reached it.
        The largest is the line's left end. */
     .speed-finish .speed-dot { background: var(--bg); border: 2px solid var(--gold); box-shadow: none; }
+    /* So is a stop past what was measured, in the line's own colour: so
+       many times a measured stop, and nothing has played at it. */
+    .speed-ahead .speed-dot { background: var(--bg); border: 2px solid var(--accent); box-shadow: none; }
     .speed-name { display: block; font-size: 13px; white-space: nowrap; }
     .speed-read { display: block; text-align: inherit; }
     .speed-goal { display: block; text-align: inherit; }
@@ -557,7 +566,13 @@
          worked out by `beta/speedup_timeline.py` and written into the
          `home-speedup` slot below when the site is published. Nothing is
          shown until then: a figure written here would be a copy to keep in
-         step by hand. -->
+         step by hand.
+
+         After the measured stops come the two nothing has played yet
+         (operator, 2026-11-22: "add to out speedup timeline: 10x
+         theoretical scale up from local hardware ... hardware scaleup is to
+         the left of m5 max. potential distributed RL fleet: up to 1000+x"),
+         each so many times the M5 Max's stop: the slot's `projected`. -->
     <section class="speed" id="speed" aria-label="How many times faster than a person a game is played" hidden>
       <div class="speed-head">
         <p class="speed-number" data-speed="speedup"></p>
@@ -610,6 +625,24 @@
               <small class="speed-what">Self-play on every core of one M5 Max: the time from one finished game to the next.</small>
               <span class="speed-read"><b data-speed="time"></b> <i data-speed="times"></i></span>
               <small class="speed-goal" data-speed="goal" hidden></small>
+            </span>
+          </li>
+          <li class="speed-stop speed-ahead" data-ahead="scale_up">
+            <span class="speed-dot" aria-hidden="true"></span>
+            <span class="speed-label">
+              <b class="speed-name">Hardware scale-up</b>
+              <small class="speed-what">Larger hardware of our own than the one M5 Max. A calculation: nothing has run on it.</small>
+              <span class="speed-read"><b data-speed="time"></b> <i data-speed="times"></i></span>
+              <small class="speed-goal">theoretical, <span data-speed="by"></span> the M5 Max</small>
+            </span>
+          </li>
+          <li class="speed-stop speed-ahead" data-ahead="fleet">
+            <span class="speed-dot" aria-hidden="true"></span>
+            <span class="speed-label">
+              <b class="speed-name">Distributed RL fleet</b>
+              <small class="speed-what">Many machines playing self-play at once for reinforcement learning. A potential: no such fleet exists.</small>
+              <span class="speed-read"><b data-speed="time"></b> <i data-speed="times"></i></span>
+              <small class="speed-goal">potential, up to <span data-speed="by"></span></small>
             </span>
           </li>
           <li class="speed-stop speed-finish" data-goal="million">
@@ -704,9 +737,10 @@
   // go: a stop's time, multiplier and goal into its entry, its place on
   // the line into `--at`, which side of the line its words stand on, and
   // the tenfolds' marks along the line. A goal is put the same way, with
-  // what renting the rest of the way to it is estimated to cost. A stop or
-  // a goal the slot does not name is not shown, and with no slot the
-  // section stays hidden.
+  // what renting the rest of the way to it is estimated to cost, and so is
+  // a stop past what was measured, with how many times a measured stop it
+  // is. A stop or a goal the slot does not name is not shown, and with no
+  // slot the section stays hidden.
   (() => {
     let data = null;
     try { data = JSON.parse(document.getElementById("home-speedup").textContent); } catch (_) {}
@@ -759,6 +793,23 @@
       entry.title = [entry.querySelector(".speed-what").textContent, goal.cost && "Renting the rest of the way: " + goal.cost + ", an estimate."]
         .filter(Boolean).join(" ");
     }
+    // The stops past what was measured stand under the line: so many times
+    // a measured stop, with what that comes to. Nothing has played at one,
+    // so none of them is the page's number.
+    const ahead = new Map((Array.isArray(data.projected) ? data.projected : []).map((stop) => [stop.key, stop]));
+    for (const entry of section.querySelectorAll("[data-ahead]")) {
+      const stop = ahead.get(entry.dataset.ahead);
+      entry.hidden = !stop;
+      if (!stop) continue;
+      put(entry, "time", stop.time);
+      put(entry, "times", stop.times);
+      put(entry, "by", stop.by);
+      entry.style.setProperty("--at", stop.at);
+      entry.classList.add(stop.side === "above" ? "is-above" : "is-below");
+      entry.classList.toggle("is-far", !!stop.far);
+      entry.classList.toggle("is-start", stop.at > 0.92);
+      entry.title = [entry.querySelector(".speed-what").textContent, stop.from].filter(Boolean).join(" ");
+    }
     // Whose estimate the cloud cost is. The machine and its price are on
     // CIVVIS Performance, where the note's link goes.
     const cloud = data.cloud && typeof data.cloud === "object" ? data.cloud : null;
@@ -768,7 +819,7 @@
     }
     // Words a row out from the line need the room for it on their side.
     const track = section.querySelector(".speed-track");
-    const out = (side) => [...data.stops, ...aimed.values()].some((entry) => entry.far && entry.side === side);
+    const out = (side) => [...data.stops, ...ahead.values(), ...aimed.values()].some((entry) => entry.far && entry.side === side);
     track.classList.toggle("is-tall-above", out("above"));
     track.classList.toggle("is-tall-below", out("below"));
     put(section, "speedup", data.speedup);

@@ -625,15 +625,18 @@
            should be able to click thourgh and see the win rates of all the
            units. we should sort the tree by win rates descending"; and
            2026-11-24: "top chart is build order"). The script lists the
-           first builds of the games against Deity, best win rate first,
-           and a build pressed lists the builds that followed it the same
-           way. -->
+           first steps of the games against Deity, best win rate first, and
+           a step pressed lists the steps that followed it the same way. A
+           step is what the capital finished, or what it dropped unfinished,
+           marked (operator 2026-11-24: "capital cant make a settler first -
+           needs 2 pop"; a Scout taken up on turn 1 and dropped at pop 2 is
+           "Scout, dropped"). -->
       <section class="res-block civ-builds" id="res-side-builds" aria-labelledby="res-title-builds" hidden>
         <header class="res-side-head">
           <div class="res-side-name">
             <p class="civ-step-tag"><span class="civ-step-n">1</span>What the capital builds first &#183; turns 1&#8211;30</p>
             <h2 class="res-side-title" id="res-title-builds">Early build order: win rate against Lv 8 Deity AI</h2>
-            <p class="res-counted" id="res-counted-builds">What the capital built first, second and third against Civilization VI&#8217;s own AI.</p>
+            <p class="res-counted" id="res-counted-builds">What the capital worked on first, second and third against Civilization VI&#8217;s own AI.</p>
           </div>
         </header>
         <p class="civ-step-why">A Scout finds the land, a Slinger guards it, a Settler claims it.</p>
@@ -644,10 +647,9 @@
         <details class="fine">
         <summary>How it is counted</summary>
         <p class="rank-note">
-          What CIVVIS&#8217;s capital finished producing, in the order it finished it. The first builds are listed best win rate first; press one to list what was built second after it, then third, <span id="res-builds-depth">eight</span> builds deep.
-          A row is CIVVIS&#8217;s win rate over the games that opened with exactly the builds down to it and, in brackets, those games.
-          A build is a unit, building, district or wonder the capital&#8217;s production finished; one bought with Gold or Faith is not a build, and an item dropped for another before it was done is not one either.
-          A Settler can come first: the capital needs two citizens to train one, it has them by turn 3 or 4 at Online speed, and in those games CIVVIS dropped what it began on turn 1, a Scout or a Builder, for the Settler.
+          CIVVIS&#8217;s capital&#8217;s build order: what it worked on, in order. A step is a unit, building, district, wonder or project the capital&#8217;s production finished, or one it put production into and dropped unfinished, marked &#8220;dropped&#8221;: a Scout started on turn 1 and dropped at pop 2 for a Settler reads &#8220;Scout, dropped&#8221;, then &#8220;Settler&#8221;, so the first step is always one the capital could start on turn 1. The first steps are listed best win rate first; press one to list the steps after it, then the third, <span id="res-builds-depth">eight</span> steps deep.
+          A row is CIVVIS&#8217;s win rate over the games whose build order opened with exactly the steps down to it and, in brackets, those games.
+          An item bought with Gold or Faith, or handed over (a pantheon&#8217;s free Settler or Builder), is not a step.
           Every finished game against the Deity AI on the run ledger counts, in a tournament or not: a win is a CIVVIS victory; a loss is a rival&#8217;s victory, our elimination, or a game conceded early.
           <span id="res-builds-left"></span>
           A build order only one game played is not opened further.

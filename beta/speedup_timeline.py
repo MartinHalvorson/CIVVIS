@@ -35,6 +35,14 @@ the way across, which is its `at`. The ledger's `goals` are marked on it, each
 at its own place (operator, 2026-11-22, of the second: "Addd 1 billion x to
 the scaling scale as well").
 
+Past the fastest stop the line has stops nothing has played yet
+(`projected`; operator, 2026-11-22: "add to out speedup timeline: 10x
+theoretical scale up from local hardware ... hardware scaleup is to the left
+of m5 max. potential distributed RL fleet: up to 1000+x"). Each is a measured
+stop's multiplier (`over`) times a figure of the operator's, so it moves when
+that stop does, and it is never the page's number: that is the fastest stop
+that was measured.
+
 What renting the rest of the way to a goal would cost stands with each goal
 (`cloud`; operator, 2026-11-22: "we should also estimate the cloud cost in $
 to fill i nthe remaining amount (note that this is a Fable 5.2 best estimate
@@ -360,6 +368,44 @@ def rented(source: pathlib.Path, ledger: dict, measured: list[tuple[dict, list[d
         return None
 
 
+def projected(ledger: dict, measured: list[tuple[dict, list[dict]]], base: float, goal: float) -> list[dict]:
+    """The stops past what was measured, in the ledger's order, for the stops
+    as read (`measured`), the baseline's seconds (`base`) and the multiplier
+    the line ends at (`goal`). None when the ledger lists none.
+
+    A projected stop is a measured stop's multiplier (`over` names the stop)
+    times the figure of its newest estimate (`times`), and nothing has run at
+    it. A row has that figure as it is worded (`by`), the multiplier it comes
+    to (`times`) with the time from one finished game to the next at it
+    (`time`), the sum that gives it (`sum`), its place on the line (`at`) and
+    the estimate's own account (`from`). An estimate that is `or_more` is
+    open at its top, and both figures end in a `+`.
+    """
+    newest = {stop["key"]: taken[-1] for stop, taken in measured}
+    rows = []
+    for stop in ledger.get("projected") or []:
+        estimate = sorted(stop["estimates"], key=lambda entry: entry["taken"])[-1]
+        under = base / newest[stop["over"]]["seconds"]
+        multiplier = estimate["times"] * under
+        more = "+" if estimate.get("or_more") else ""
+        row = {
+            "key": stop["key"],
+            "over": stop["over"],
+            "by": times(estimate["times"]) + more,
+            "seconds": round(base / multiplier, 6),
+            "time": clock(base / multiplier),
+            "multiplier": round(multiplier, 2),
+            "times": times(multiplier) + more,
+            "sum": f"{figure(estimate['times'])} × {figure(under)}",
+            "taken": day(estimate["taken"]),
+            "at": round(min(1.0, max(0.0, math.log(multiplier) / math.log(goal))), 4),
+        }
+        if estimate.get("from"):
+            row["from"] = estimate["from"]
+        rows.append(row)
+    return rows
+
+
 def timeline(source: pathlib.Path) -> dict | None:
     """What the home page shows: the stops in the ledger's order, each with
     its newest reading as a time and a multiplier, its goal when it has one,
@@ -370,8 +416,10 @@ def timeline(source: pathlib.Path) -> dict | None:
     estimated to cost (`cost`, with `cloud` saying whose estimate it is and
     of what machine at what price). A stop or a goal whose words would meet
     its neighbour's is `far`: its words stand a row out from the line (see
-    `rows`). `None` when the revision has no ledger or one that cannot be
-    read."""
+    `rows`). `projected` are the stops past what was measured (see
+    `projected`), in a ledger that lists any: their words stand under the
+    line, and none of them is the page's number. `None` when the revision
+    has no ledger or one that cannot be read."""
     try:
         ledger = json.loads((source / LEDGER).read_text(encoding="utf-8"))
         marks = marked(ledger)
@@ -407,15 +455,18 @@ def timeline(source: pathlib.Path) -> dict | None:
             }
             for mark in marks
         ]
+        ahead = projected(ledger, measured, base, goal)
     except (OSError, ValueError, KeyError, TypeError, IndexError, ZeroDivisionError):
         return None
     for row, side in zip(stops, sides([row["at"] for row in stops])):
         row["side"] = side
-    # The goals' words stand over the line, and take their rows with the
-    # stops' words there.
+    # The goals' words stand over the line and the projected stops' under
+    # it, and both take their rows with the stops' words there.
     for mark in goals:
         mark["side"] = "above"
-    entries = stops + goals
+    for row in ahead:
+        row["side"] = "below"
+    entries = stops + ahead + goals
     for row, far in zip(entries, rows([row["at"] for row in entries], [row["side"] for row in entries])):
         if far:
             row["far"] = True
@@ -430,6 +481,8 @@ def timeline(source: pathlib.Path) -> dict | None:
     }
     if "was" in fastest:
         shown["was"] = fastest["was"]
+    if ahead:
+        shown["projected"] = ahead
     cloud = rented(source, ledger, measured, base)
     if cloud:
         costs = {row["key"]: row["an_hour"] for row in cloud["rows"]}
