@@ -113,8 +113,11 @@ stay this page's own; nothing is taken from the film.
 **The seat** (`Seat`, modes `table`, `ride`, `thrown`, `aside`). "On a
 knight", top right, puts the player on the back of their king's knight
 ("Other knight" changes it). The eye is a point on the knight itself
-(`EYE`, behind its ears, about a rider's height up), so the rider is carried
-through its leap, rears with it as it takes off and lurches as it lands. The
+(`EYE`), so the rider is carried through its leap, rears with it as it takes
+off and lurches as it lands. It is low on the knight's neck and to its left:
+the knight's head is beside the rider, its cloth under them, and the pieces
+stand over them, a pawn near their eye, a queen a third again its height and
+a king more than half again (the table seat is unchanged). The
 field of view widens from 36° to 64°. The rider's head turns to what is
 happening: a capture most of all, and any piece that moves. A drag, two
 fingers or an arrow key turn the head instead (take hold of the world and
@@ -127,6 +130,14 @@ side's colour, with its rider sitting behind its ears, so that from the
 board it is plain which knight is ridden. It looks straight at the enemy, not
 in toward the middle like the others, and turns to where it is going before
 it goes.
+
+**Sound where it happens** (`Sound.place`, `Sound.hear`). Every sound the
+world makes is made at the point of the hall where it happens, through a
+panner, and heard from the seat's eye, facing the way it faces. At the board
+everything is some way off and heard alike; on a knight a sound is at full
+strength only within about two squares, so a capture beside the rider is
+loud and on that side, one across the board is far, and one behind is
+behind.
 
 **Peril** (`peril`, `World.menace`). The pieces that could take the knight
 ridden glow red and pulse, and when the threat is new after the opponent's
@@ -169,17 +180,15 @@ loop). The structure that makes that converge rather than wander:
    engine's Elo from its own scale, and what a test can see (where the
    camera is, which pieces glow) rather than "looks right".
 
+Done: the rider's seat (#5747); the rider low and beside the head, and
+sound where it happens (#5755).
+
 What is next, most felt first:
 
-- **Scale.** The pieces are a little taller than the rider. A rider's view
-  wants them two or three times their height: the board and pieces scaled
-  up around a rider of fixed size, with the table seat unchanged.
-- **The mount itself.** From the saddle the knight's head is a slab seen
-  from behind. A mane, ears and a neck that move; a breath of dust at each
-  hoof-fall; the stone groaning under you.
-- **Sound where it happens.** Sounds placed in the hall (Web Audio panner)
-  so a capture behind you is behind you, and loud when it is next to you.
-- **Peril felt.** The threatening piece turns its head toward you; the
+- **The mount itself.** From the saddle the knight's head is a flat slab of
+  stone. A mane, an eye, ears that turn toward what moves; a breath of dust
+  at each hoof-fall; the stone groaning under you as it turns.
+- **Peril felt. The threatening piece turns its head toward you; the
   camera sees it coming; a sacrifice of the ridden knight is said before it
   is played ("You will be taken there. Ride on?").
 - **The hall.** Walls, columns and a ceiling to be inside of, instead of
