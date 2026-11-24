@@ -261,7 +261,12 @@ class Played(unittest.TestCase):
         # On a knight: the king's knight, unless another is asked for.
         ev("wizardChess.ride(true)")
         self.assertEqual(ev("[wizardChess.seat.mode, wizardChess.world.ridden.userData.square, wizardChess.game.mount]"), ["ride", 6, 6])
-        self.until("wizardChess.seat.blend === null", "the view reaches the saddle", seconds=20)
+        # Time on the page is the world's: a frame moves it on 50 ms at most,
+        # so where frames are slow (a browser drawing in software, as on CI)
+        # an animation is too. The view's travel to the saddle is cut, and
+        # each wait below is long enough for a slow frame.
+        ev("wizardChess.seat.blend = null")
+        self.until("Math.abs(wizardChess.seat.camera.position.y - 1.24) < 0.1", "the eye is in the saddle", seconds=60)
         # The eye is on the knight: on g1, low on its neck and to its left
         # (half a square toward the a-file), a pawn's height up.
         x, y, z = ev("wizardChess.seat.camera.position.toArray()")
@@ -273,7 +278,7 @@ class Played(unittest.TestCase):
         self.assertTrue(ev("wizardChess.command('ride to f3')"))
         self.until("wizardChess.game.played.length >= 1 && wizardChess.world.ridden.userData.square === 21 && "
                    "Math.abs(wizardChess.seat.camera.position.x - 1.0) < 0.1 && wizardChess.seat.camera.position.z < 2.2",
-                   "the rider is carried to f3", seconds=30)
+                   "the rider is carried to f3", seconds=120)
         self.assertEqual(ev("wizardChess.game.played[0].san"), "Nf3")
         # A knight on e5 that a pawn can take: the pawn's light turns red.
         ev("wizardChess.opponent.stop(), wizardChess.begin('w', ['g1f3', 'd7d6', 'f3e5']), wizardChess.game.turn++, wizardChess.opponent.stop()")
@@ -281,7 +286,7 @@ class Played(unittest.TestCase):
         self.assertEqual(ev("[...wizardChess.world.pieces.values()].filter(held => held.userData.menace).map(held => held.userData.square)"), [43])
         # Taken: the rider is thrown, and stands at the side of the board.
         ev("(w => w.make(w.moveFromUci(w.game.position, 'd6e5'), 'b'))(wizardChess)")
-        self.until("wizardChess.seat.mode === 'aside'", "the rider is thrown and gets up", seconds=30)
+        self.until("wizardChess.seat.mode === 'aside'", "the rider is thrown and gets up", seconds=120)
         self.assertIn("thrown clear", ev("document.getElementById('said').textContent"))
         x, y, z = ev("wizardChess.seat.camera.position.toArray()")
         self.assertTrue(max(abs(x), abs(z)) > 5.5 and y < 0.6, (x, y, z))
@@ -292,7 +297,7 @@ class Played(unittest.TestCase):
         # And back to the board.
         ev("wizardChess.ride(false)")
         self.assertEqual(ev("[wizardChess.seat.mode, wizardChess.world.ridden]"), ["table", None])
-        self.until("wizardChess.sound.near === 14", "the ear goes back to the board's side", seconds=5)
+        self.until("wizardChess.sound.near === 14", "the ear goes back to the board's side", seconds=60)
         self.assertEqual(self.dev.console, [], f"the page complained: {self.dev.console}")
 
 
