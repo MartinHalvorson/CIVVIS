@@ -1208,13 +1208,17 @@ BUILD_ORDER_REACH = 2
 
 
 def _producing(city: dict) -> str | None:
-    """What a city is producing, by name. The board says it as a hash
-    (`producing_hash`) and names what the city can build beside each item's
-    cost and progress (`buildable`), so the name is the one entry with the
-    production's own cost and progress. None for an idle city, and when two
-    entries fit (two items of one cost, neither started)."""
+    """What a city is producing, by name: the board's own `producing`, and on
+    a board from before it carried that, the one entry of what the city can
+    build (`buildable`) with the production's own cost and progress, the
+    board naming the item itself only as a hash (`producing_hash`). None for
+    an idle city, and on an older board when two entries fit (two items of
+    one cost, neither started)."""
     if not city.get("producing_hash"):
         return None
+    named = city.get("producing")
+    if isinstance(named, str) and named:
+        return named
     cost, progress = city.get("production_cost"), city.get("production_progress")
     fits = [item.get("t") for item in city.get("buildable") or []
             if isinstance(item, dict)
@@ -1248,14 +1252,24 @@ def opening_builds(events, limit: int = BUILD_ORDER_LIMIT) -> list | None:
     Slinger, civvis-20261105T214426Z), so the order of the `produce` orders
     is not the order things were built in. This reads what was built.
 
-    No event says "built". The reading is the `state` frames either side of a
-    turn's end: the capital was producing an item, and on the next turn's
-    first board it is idle, or on to another item, or back at the start of
-    the same one, AND what it made is there -- a building, a finished
-    district or a wonder the city did not have, or a unit of ours no frame
-    has listed before, on the capital or within `BUILD_ORDER_REACH` of it. A
-    change of item with nothing to show for it is the seat changing its mind
-    after the turn's last frame, not a build.
+    No event says "built". The reading is two `state` frames in a row: the
+    capital was producing an item, and on the next board it is idle, or on to
+    another item, or back at the start of the same one, AND what it made is
+    there -- a building, a finished district or a wonder the city did not
+    have, or a unit of ours no frame has listed before, on the capital or
+    within `BUILD_ORDER_REACH` of it. A change of item with nothing to show
+    for it is the seat changing its mind, not a build.
+
+    Every pair of frames is read, not only the last of one turn against the
+    first of the next (operator 2026-11-23, of Settler-first openings: "i
+    dont think the should be possible so please investigate"). A turn's
+    first board is often taken before the game has rolled the capital's
+    production over: it still shows the item at the last turn's progress,
+    and the item comes out on the turn's second board. Read across turns
+    alone, that build was never seen, and the game's first build went
+    missing: civvis-20261120T031624Z's Scout (10 of 15 on turn 3's board and
+    on turn 4's first, idle with a new Scout beside it on turn 4's second),
+    and three more Scouts or Slingers that left a Settler standing first.
 
     Which of the new things was built is the item the capital was producing
     (`_producing`), when that is among them. It matters: a pantheon's free
@@ -1265,11 +1279,16 @@ def opening_builds(events, limit: int = BUILD_ORDER_LIMIT) -> list | None:
     build (`buildable`) is never a build. When the item the last frame named
     is not among the new things but the city stands idle, the seat changed
     item after that frame and that one finished, so the build is the new
-    thing nearest the centre. Bought items are not builds: a purchase lands
-    during our own turn, between two frames of one turn, where nothing here
-    looks; one made after the turn's last frame is told apart by the
-    `order_verified` line of its purchase, which follows the next board, so a
-    completion is settled one frame late.
+    thing nearest the centre. Bought items are not builds: a purchase is
+    told apart by the `order_verified` line of its purchase, made on the
+    turn of the board it shows on or the turn before. Those lines are
+    written a turn behind the boards, so a completion is settled only once
+    a board two turns on has arrived (or the log has ended).
+
+    A Settler can be a first build. The capital needs two citizens to train
+    one, and at Online speed it has them on turn 3 or 4: the seat drops the
+    Scout it began on turn 1 for the Settler (civvis-t7-20261122T152428Z:
+    Scout at 8 of 15 on turn 3, the city at 2, a Settler out on turn 10).
 
     The capital is the first city the log shows; when it is lost the reading
     ends. Checked against the run's own verified `produce` orders over 160
@@ -1286,17 +1305,13 @@ def opening_builds(events, limit: int = BUILD_ORDER_LIMIT) -> list | None:
     seen: set = set()  # every unit of ours a frame has listed
     width = None  # the map's, for a capital beside the seam
     names: dict = {}  # production hash -> name, as this game has shown them
-    claim = None  # a completion not settled yet
+    claims: list = []  # completions not settled yet, oldest first
     bought: list = []  # (turn, item): what the capital bought, as verified
     opened = False
 
-    def settle() -> None:
-        nonlocal claim
-        if not claim:
-            return
+    def settle(claim) -> None:
         turn, name, made, idle, sure = claim
-        claim = None
-        paid = [item for at, item in bought if at == turn - 1]
+        paid = [item for at, item in bought if at in (turn - 1, turn)]
         if name in [item for item, _ in made]:
             if sure or name not in paid:
                 builds.append([name, turn])
@@ -1305,6 +1320,10 @@ def opening_builds(events, limit: int = BUILD_ORDER_LIMIT) -> list | None:
                           key=lambda m: m[1])
             if left:
                 builds.append([left[0][0], turn])
+
+    def settled(turn) -> None:
+        while claims and (turn is None or claims[0][0] <= turn - 2):
+            settle(claims.pop(0))
 
     for event in events:
         if not isinstance(event, dict):
@@ -1331,7 +1350,7 @@ def opening_builds(events, limit: int = BUILD_ORDER_LIMIT) -> list | None:
             opened = True
             if turn != 1:
                 return None
-        settle()
+        settled(turn)
         if len(builds) >= limit:
             break
         ours = {unit["id"]: (unit.get("kind"), unit.get("x"), unit.get("y"))
@@ -1347,7 +1366,7 @@ def opening_builds(events, limit: int = BUILD_ORDER_LIMIT) -> list | None:
             name = _producing(now)
             if name:
                 names[now.get("producing_hash")] = name
-        if now is not None and before is not None and turn > before[0]:
+        if now is not None and before is not None and turn >= before[0]:
             was = before[1]
             had, has = was.get("producing_hash"), now.get("producing_hash")
             spent, held = (was.get("production_progress"),
@@ -1369,17 +1388,24 @@ def opening_builds(events, limit: int = BUILD_ORDER_LIMIT) -> list | None:
                     if across <= BUILD_ORDER_REACH and abs(uy - y) <= BUILD_ORDER_REACH:
                         made.append((unit, 0 if (ux, uy) == (x, y) else 2))
                 made = [m for m in made if m[0] in can]
-                if made:
-                    # Sure when the city is idle, restarted the same item, or
-                    # was a turn from done: then a purchase of the same item
-                    # on that turn does not unmake the build.
-                    claim = (turn, _producing(was) or names.get(had), made,
-                             not has,
-                             not has or again or was.get("production_turns") == 1)
+                # Sure when the city is idle, restarted the same item, or was
+                # a turn from done: then a purchase of the same item on that
+                # turn does not unmake the build. Between two boards of one
+                # turn nothing is produced, so there an item can only have
+                # come out of a city that stands idle or was a turn from
+                # done; anything else is a unit that arrived as the seat
+                # changed item (civvis-20261120T125019Z: the free Settler of
+                # the Religious Settlements pantheon, founded that turn, on
+                # the capital as its own Settler stood at 18 of 40).
+                sure = not has or again or was.get("production_turns") == 1
+                if made and (turn > before[0] or not has
+                             or was.get("production_turns") == 1):
+                    claims.append((turn, _producing(was) or names.get(had), made,
+                                   not has, sure))
         seen.update(ours)
         if now is not None:
             before = (turn, now)
-    settle()
+    settled(None)
     return builds[:limit]
 
 
@@ -1388,6 +1414,70 @@ def build_order(events_path: Path) -> list | None:
     `opening_builds`): `[[item, turn], ...]`, None when the run's log does
     not hold the opening."""
     return opening_builds(events_of(events_path))
+
+
+def founding_reading(events) -> dict | None:
+    """Our cities' founding turns, our pantheon and the religion we founded,
+    as one run's `events` show them: `{"cities": [turn, ...], "pantheon":
+    belief, "religion": {"turn", "religion", "founder", "follower"}}`.
+
+    ⭐ THE CITIES DOWN AND THE FAITH CHOSEN, PER GAME (operator 2026-11-23:
+    "i also want to see a 2nd city down vs win rate graph by lv default lv 8
+    and 3rd city down turn win rate"; "a religion founded win rate and a no
+    religion win rate ... a win rate for each pantheon belief and a win rate
+    for each religion first belief"). Civ Analytics (`beta/civs_page.py`)
+    reads it off every run's summary.
+
+    `cities` is the turn of each city we founded, in order, from the
+    harness's `found` lines (the capital's, turn 1, first in a game's first
+    run); a city taken is not one founded. `pantheon` is the belief of the
+    pantheon order the game verified. `religion` is what the game reported
+    when our religion was founded (`religion_founded`: the turn, the religion,
+    the founder belief and the follower belief chosen with it), or on a log
+    from before that line the first verified `religion` order, whose verb
+    names the follower belief and then the founder. Each is `None` when the
+    run did not see it; `None` for a log with none of the three.
+    """
+    cities: list = []
+    at: set = set()
+    pantheon = religion = ordered = None
+    us = None
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        kind = event.get("kind")
+        if kind == "seat" and type(event.get("local_player")) is int:
+            us = event["local_player"]
+        elif kind == "found":
+            turn, x, y = event.get("turn"), event.get("x"), event.get("y")
+            if isinstance(turn, int) and (x, y) not in at:
+                at.add((x, y))
+                cities.append(turn)
+        elif kind == "order_verified":
+            verb = event.get("verb")
+            if not isinstance(verb, str):
+                continue
+            if event.get("order_kind") == "pantheon" and pantheon is None:
+                pantheon = verb
+            elif event.get("order_kind") == "religion" and ordered is None:
+                beliefs = verb.split(",")
+                ordered = {"turn": event.get("turn"), "religion": None,
+                           "founder": beliefs[1] if len(beliefs) > 1 else None,
+                           "follower": beliefs[0]}
+        elif kind == "religion_founded" and religion is None:
+            if us is not None and type(event.get("player")) is int and event["player"] != us:
+                continue
+            religion = {key: event.get(key) for key in ("turn", "religion", "founder", "follower")}
+    religion = religion or ordered
+    if not cities and pantheon is None and religion is None:
+        return None
+    return {"cities": sorted(cities), "pantheon": pantheon, "religion": religion}
+
+
+def founding_marks(events_path: Path) -> dict | None:
+    """One run's cities, pantheon and religion, for its summary (see
+    `founding_reading`)."""
+    return founding_reading(events_of(events_path))
 
 
 #: The ledger fields `progress_marks` fills, each read by the function it names.
@@ -1399,9 +1489,11 @@ PROGRESS_MARKS = (
 
 #: What `progress_marks` reads for the run's summary alone. The ladder's row
 #: has no column for these: the summary on the ledger branch is where the
-#: site reads them (`build_order`: `beta/research_page.py`).
+#: site reads them (`build_order`: `beta/research_page.py`; `founding_marks`:
+#: `beta/civs_page.py`).
 SUMMARY_MARKS = (
     ("build_order", build_order),
+    ("founding_marks", founding_marks),
 )
 
 

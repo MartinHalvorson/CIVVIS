@@ -579,7 +579,7 @@ class BuildOrders(unittest.TestCase):
         self.assertEqual(record["tree"], [[0, 2, 1, [[1, 2, 1, [[2, 1, 1], [3, 1, 0]]]]]])
         self.assertEqual(record["items"], ["Scout", "Settler", "Slinger", "Builder"])
         self.assertEqual(written["build_orders"], record)
-        self.assertIn("and 2 build orders into", said.getvalue())
+        self.assertIn("civs_page: wrote 2 build orders", said.getvalue())
 
     def test_the_snapshot_is_read_off_the_event_logs_on_the_ledger(self):
         import gzip
@@ -625,6 +625,12 @@ class BuildOrders(unittest.TestCase):
             held = {**taken, "items": ["UNIT_WARRIOR", self.SCOUT], "games": [[first, [1, 0]]]}
             again = research_page.openings_snapshot(repo, held)
             self.assertEqual((again["items"], again["games"]), (held["items"], held["games"]))
+            # Read afresh (`--again`, for a change to how an opening is read):
+            # the snapshot's own readings are dropped, and the game whose
+            # summary carries an opening is read off its log too.
+            self.assertEqual(research_page.main(["research_page.py", "--build-orders", scratch, str(out), "--again"]), 0)
+            fresh = json.loads(out.read_text(encoding="utf-8"))
+            self.assertEqual((fresh["items"], fresh["games"]), ([self.SCOUT], [[first, [0]], [third, [0]]]))
             self.assertEqual(research_page.research(repo)["build_orders"]["games"], 1)
 
     def test_the_committed_snapshot_holds_openings_the_tree_can_list(self):
@@ -1123,14 +1129,16 @@ class Page(unittest.TestCase):
         # build. etc... add this chart to the top of win analytics". Later
         # that day it moved to a page of its own (operator: "add another
         # page: Civ Analytics. First can be the civ records (pulled from win
-        # analytics), then early build order"): after the civ records, the
-        # last block of Civ Analytics' record.
+        # analytics), then early build order"), and on 2026-11-24 to its top
+        # ("top chart is build order"): the first block of Civ Analytics'
+        # record, the cities and the faith after it.
         PAGE = CIVS
         record = PAGE.index('<div class="civ-record" id="civ-record" hidden>')
-        side = PAGE.index('<section class="res-block" id="res-side-builds" aria-labelledby="res-title-builds" hidden>')
-        self.assertEqual(re.findall(r'<section [^>]*id="([a-z-]+)"', PAGE[record:side]), ["rank-civs"])
+        side = PAGE.index('<section class="res-block civ-builds" id="res-side-builds" aria-labelledby="res-title-builds" hidden>')
+        self.assertEqual(re.findall(r'<section [^>]*id="([a-z-]+)"', PAGE[record:side]), [])
         block = PAGE[side : PAGE.index("</section>", side)]
-        self.assertTrue(PAGE[side + len(block) + len("</section>") :].lstrip().startswith("</div>\n  </main>"))
+        after = PAGE[side + len(block) + len("</section>") :]
+        self.assertEqual(re.search(r'<section [^>]*id="([a-z-]+)"', after)[1], "civ-filtered")
         self.assertIn('<h2 class="res-side-title" id="res-title-builds">Early build order: win rate against Lv 8 Deity AI</h2>', block)
         self.assertIn('<p class="res-counted" id="res-counted-builds">', block)
         # One panel: the two headings, then the list the script fills.
@@ -1142,7 +1150,8 @@ class Page(unittest.TestCase):
             "What CIVVIS&#8217;s capital finished producing, in the order it finished it.",
             "The first builds are listed best win rate first; press one to list what was built second after it, then third,",
             "A row is CIVVIS&#8217;s win rate over the games that opened with exactly the builds down to it and, in brackets, those games.",
-            "one bought with Gold or Faith is not a build.",
+            "one bought with Gold or Faith is not a build, and an item dropped for another before it was done is not one either.",
+            "A Settler can come first: the capital needs two citizens to train one, it has them by turn 3 or 4 at Online speed,",
             "Every finished game against the Deity AI on the run ledger counts, in a tournament or not: a win is a CIVVIS victory; a loss is a rival&#8217;s victory, our elimination, or a game conceded early.",
             "A build order only one game played is not opened further.",
         ):
@@ -1154,8 +1163,8 @@ class Page(unittest.TestCase):
         # has opened.
         self.assertIn("const BUILDS = data.build_orders && Array.isArray(data.build_orders.tree) && data.build_orders.tree.length ? data.build_orders : null;", PAGE)
         self.assertIn('    if (BUILDS) {\n      document.getElementById("res-side-builds").hidden = false;', PAGE)
-        self.assertEqual(PAGE.count(".replaceChildren("), 1)
-        draw = PAGE[PAGE.index("    if (BUILDS) {") : PAGE.index('document.getElementById("civ-empty").hidden = true;')]
+        self.assertEqual(PAGE.count('document.getElementById("res-builds").replaceChildren('), 1)
+        draw = PAGE[PAGE.index("    if (BUILDS) {") : PAGE.index("    // ---- The cities and the faith")]
         # The record's order is the page's: best win rate first, as sent.
         self.assertIn('document.getElementById("res-builds").replaceChildren(...BUILDS.tree.map((node) => row(node, [])));', draw)
         self.assertNotIn(".sort(", draw)

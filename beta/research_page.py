@@ -5,9 +5,11 @@
     research_page.py <source_tree> <page.html>  write it into the page
     research_page.py --self-play <batches_dir> <out.json>
                                                 rebuild the self-play snapshot
-    research_page.py --build-orders <source_tree> <out.json>
+    research_page.py --build-orders <source_tree> <out.json> [--again]
                                                 add the games played since to
                                                 the snapshot of the openings
+                                                (with --again, read every game
+                                                afresh)
 
 The Research page (`beta/research.html`; Win Analytics since 2026-11-22,
 served at `<lane>/charts/win-analytics/`, the address it states itself) is
@@ -779,11 +781,12 @@ EVENTS_REF = "refs/remotes/origin/ledger:runs/{tag}/events.jsonl.gz"
 EVENTS_READ = ('"kind": "state"', '"order_verified"', '"tiles_done"')
 
 
-def run_events(source: pathlib.Path, tag: str):
-    """A run's events off the ledger branch, in order, the kinds in
-    `EVENTS_READ` alone. The log is read as it is asked for, so a reader that
-    stops after the opening has read a few turns of a 5 MB log; closing the
-    generator stops the read. A run with no log on the branch has no events."""
+def run_events(source: pathlib.Path, tag: str, read: tuple = EVENTS_READ):
+    """A run's events off the ledger branch, in order, the lines holding one
+    of `read` (the kinds in `EVENTS_READ` unless asked otherwise) alone. The
+    log is read as it is asked for, so a reader that stops after the opening
+    has read a few turns of a 5 MB log; closing the generator stops the read.
+    A run with no log on the branch has no events."""
     import gzip
 
     show = subprocess.Popen(
@@ -794,7 +797,7 @@ def run_events(source: pathlib.Path, tag: str):
     try:
         with gzip.open(show.stdout, "rt", encoding="utf-8", errors="replace") as lines:
             for line in lines:
-                if any(mark in line for mark in EVENTS_READ):
+                if any(mark in line for mark in read):
                     try:
                         yield json.loads(line)
                     except ValueError:
@@ -823,23 +826,31 @@ def read_opening(source: pathlib.Path, tags: list[str]) -> list[str] | None:
     return None
 
 
-def openings_snapshot(source: pathlib.Path, snapshot: dict | None = None) -> dict:
+def openings_snapshot(source: pathlib.Path, snapshot: dict | None = None, again: bool = False) -> dict:
     """The snapshot of the openings brought up to the ledger: the games it
     held, and every finished game against Deity it did not, read off the
     game's event log. A game whose run summary carries its opening is left to
     the summary, and a game whose opening is in no log is left out, to be
     asked again next time. The builds' names are kept once, in `items`, and a
     game is its key and its builds' places there, so a refresh's diff is the
-    games it added."""
+    games it added.
+
+    `again` reads every game afresh, the games the snapshot held and the
+    games whose summaries carry an opening among them: what a change to how
+    an opening is read needs (2026-11-24, `civ6_ladder.opening_builds`
+    reading every pair of boards). The snapshot then holds every game played
+    so far, and since it is read over the summaries, a summary written by
+    the reader before is never read again."""
     from concurrent.futures import ThreadPoolExecutor
 
-    snapshot = snapshot or {}
+    snapshot = {} if again else snapshot or {}
     items = list(snapshot.get("items") or [])
     held = {str(key): list(builds) for key, builds in snapshot.get("games") or []}
     games = [game for game in build_games(ranks.results(source) or []) if game[0] not in held]
-    carried = openings(source, sorted({tag for _, tags, _, _ in games for tag in tags}))
-    games = [game for game in games if not any(tag in carried for tag in game[1])]
-    with ThreadPoolExecutor(4) as readers:
+    if not again:
+        carried = openings(source, sorted({tag for _, tags, _, _ in games for tag in tags}))
+        games = [game for game in games if not any(tag in carried for tag in game[1])]
+    with ThreadPoolExecutor(8 if again else 4) as readers:
         read = list(readers.map(lambda game: read_opening(source, game[1]), games))
     for (key, _, _, _), names in zip(games, read):
         if not names:
@@ -851,7 +862,8 @@ def openings_snapshot(source: pathlib.Path, snapshot: dict | None = None) -> dic
     return {
         "about": "What the capital finished producing, in order, in each finished game against Lv 8 Deity AI on "
         "the run ledger: the game's key and its builds as places in `items`. Read off the game's event log by "
-        "`civ6_ladder.opening_builds`; a game whose run summary carries `build_order` is not here. "
+        "`civ6_ladder.opening_builds`, every game afresh on 2026-11-24 when the reader learned to read every "
+        "pair of boards; a game played since whose run summary carries `build_order` is not here. "
         "Filled by `beta/research_page.py --build-orders`; read by Win Analytics.",
         "level": BUILD_LEVEL,
         "taken": datetime.datetime.now(datetime.timezone.utc).date().isoformat(),
@@ -916,13 +928,13 @@ def main(argv: list[str]) -> int:
         games = sum(b["games"] for b in data["batches"])
         print(f"research_page: {games} self-play games in {len(data['batches'])} batches into {out}", file=sys.stderr)
         return 0
-    if len(argv) == 4 and argv[1] == "--build-orders":
+    if len(argv) in (4, 5) and argv[1] == "--build-orders" and argv[4:] in ([], ["--again"]):
         out = pathlib.Path(argv[3])
         try:
             before = json.loads(out.read_text(encoding="utf-8"))
         except OSError:
             before = None
-        data = openings_snapshot(pathlib.Path(argv[2]), before)
+        data = openings_snapshot(pathlib.Path(argv[2]), before, again=argv[4:] == ["--again"])
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(written_openings(data), encoding="utf-8")
         added = len(data["games"]) - len((before or {}).get("games") or [])

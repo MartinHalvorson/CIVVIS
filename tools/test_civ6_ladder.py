@@ -3393,6 +3393,58 @@ class TheSummaryCarriesTheOpeningBuilds(unittest.TestCase):
                 *frames[2:]]
         self.assertEqual(civ6_ladder.opening_builds(lost), [["UNIT_SCOUT", 2]])
 
+    def test_a_build_on_a_turns_second_board_is_read(self):
+        """Operator 2026-11-23, of Settler-first openings: "i dont think the
+        should be possible so please investigate". A turn's first board is
+        often the last turn's production over again; the item comes out on
+        the turn's second board (civvis-20261120T031624Z: a Scout at 10 of 15
+        on turn 3 and on turn 4's first board, idle beside a new Scout on
+        turn 4's second). Read across turns alone, the game opened with the
+        Settler after it."""
+        scout = (2, "UNIT_SCOUT")
+        frames = [
+            self._frame(1, units=[self.WARRIOR], frame=1),
+            self._frame(2, "UNIT_SCOUT", 5, units=[self.WARRIOR]),
+            self._frame(3, "UNIT_SCOUT", 10, turns=1, units=[self.WARRIOR]),
+            self._frame(4, "UNIT_SCOUT", 10, turns=1, units=[self.WARRIOR]),
+            self._frame(4, units=[self.WARRIOR, scout], frame=1),
+            self._frame(4, "UNIT_SETTLER", 0, units=[self.WARRIOR, scout], frame=2),
+            self._frame(9, "UNIT_SETTLER", 37, turns=1, units=[self.WARRIOR, scout]),
+            self._frame(10, units=[self.WARRIOR, scout, (3, "UNIT_SETTLER")]),
+        ]
+        self.assertEqual(civ6_ladder.opening_builds(frames), [["UNIT_SCOUT", 4], ["UNIT_SETTLER", 10]])
+
+    def test_between_two_boards_of_a_turn_only_an_item_a_turn_from_done_comes_out(self):
+        """Nothing is produced between two boards of one turn. A Settler on the
+        capital as its own stood at 18 of 40 and the seat moved to Walls is a
+        unit that arrived (civvis-20261120T125019Z: the free Settler of the
+        Religious Settlements pantheon, founded that turn), not a build."""
+        frames = [
+            self._frame(1, units=[self.WARRIOR], frame=1),
+            self._frame(7, "UNIT_SETTLER", 14, turns=7, units=[self.WARRIOR]),
+            self._frame(8, "UNIT_SETTLER", 18, turns=6, units=[self.WARRIOR]),
+            self._frame(8, "BUILDING_WALLS", 0, frame=1, started={"UNIT_SETTLER": 18},
+                        units=[self.WARRIOR, (4, "UNIT_SETTLER")]),
+            self._frame(9, "BUILDING_WALLS", 6, started={"UNIT_SETTLER": 18},
+                        units=[self.WARRIOR, (4, "UNIT_SETTLER")]),
+        ]
+        self.assertEqual(civ6_ladder.opening_builds(frames), [])
+        # A turn from done, it did come out between the two boards.
+        frames[2] = self._frame(8, "UNIT_SETTLER", 37, turns=1, units=[self.WARRIOR])
+        self.assertEqual(civ6_ladder.opening_builds(frames), [["UNIT_SETTLER", 8]])
+
+    def test_the_board_names_what_it_is_producing(self):
+        """A board carries the item by name (`producing`) as well as by hash;
+        the name stands where two items of one cost and progress fit."""
+        city = {"producing_hash": 5, "producing": "UNIT_SLINGER", "production_cost": 30, "production_progress": 0,
+                "buildable": [{"t": "UNIT_ARCHER", "c": 30, "pr": 0}, {"t": "UNIT_SLINGER", "c": 30, "pr": 0}]}
+        self.assertEqual(civ6_ladder._producing(city), "UNIT_SLINGER")
+        del city["producing"]
+        self.assertIsNone(civ6_ladder._producing(city))
+        city["buildable"].pop(0)
+        self.assertEqual(civ6_ladder._producing(city), "UNIT_SLINGER")
+        self.assertIsNone(civ6_ladder._producing({**city, "producing_hash": 0, "producing": "UNIT_SLINGER"}))
+
     def test_every_summary_carries_it_and_the_ladder_row_does_not(self):
         with TemporaryDirectory() as tmp:
             path = Path(tmp) / "events.jsonl"
@@ -3407,6 +3459,60 @@ class TheSummaryCarriesTheOpeningBuilds(unittest.TestCase):
         self.assertNotIn("build_order", dict(civ6_ladder.PROGRESS_MARKS))
         self.assertNotIn("build_order", civ6_ladder.entry_from(
             {"tag": "civvis-s", "build_order": [["UNIT_SCOUT", 2]]}))
+
+
+class TheSummaryCarriesTheCitiesAndTheFaith(unittest.TestCase):
+    """Operator 2026-11-23: "a 2nd city down vs win rate graph ... and 3rd
+    city down turn win rate"; "a win rate for each pantheon belief and a win
+    rate for each religion first belief". Civ Analytics reads them off each
+    run's summary."""
+
+    def test_the_cities_founded_the_pantheon_and_the_religion(self):
+        events = [
+            {"kind": "seat", "local_player": 0},
+            {"kind": "found", "turn": 1, "x": 7, "y": 24},
+            {"kind": "order_failed", "order_kind": "pantheon", "turn": 17, "verb": "BELIEF_RELIGIOUS_SETTLEMENTS"},
+            {"kind": "order_verified", "order_kind": "pantheon", "turn": 18, "verb": "BELIEF_DIVINE_SPARK"},
+            {"kind": "found", "turn": 12, "x": 7, "y": 20},
+            # A rival's founding is not ours.
+            {"kind": "religion_founded", "player": 5, "turn": 19, "religion": "RELIGION_SHINTO",
+             "founder": "BELIEF_PILGRIMAGE", "follower": "BELIEF_CHORAL_MUSIC"},
+            {"kind": "religion_founded", "player": 0, "turn": 20, "religion": "RELIGION_BUDDHISM",
+             "founder": "BELIEF_TITHE", "follower": "BELIEF_WORK_ETHIC", "requested_turn": 19},
+            {"kind": "order_verified", "order_kind": "religion", "turn": 20, "verb": "BELIEF_WORK_ETHIC,BELIEF_TITHE"},
+            # The same city told twice is one city.
+            {"kind": "found", "turn": 12, "x": 7, "y": 20},
+            {"kind": "found", "turn": 65, "x": 6, "y": 28},
+        ]
+        self.assertEqual(civ6_ladder.founding_reading(events), {
+            "cities": [1, 12, 65],
+            "pantheon": "BELIEF_DIVINE_SPARK",
+            "religion": {"turn": 20, "religion": "RELIGION_BUDDHISM", "founder": "BELIEF_TITHE", "follower": "BELIEF_WORK_ETHIC"},
+        })
+
+    def test_a_log_from_before_the_founding_line_reads_the_order(self):
+        """The verified `religion` order names the follower belief, then the
+        founder."""
+        events = [{"kind": "found", "turn": 1, "x": 1, "y": 1},
+                  {"kind": "order_verified", "order_kind": "religion", "turn": 58, "verb": "BELIEF_WORK_ETHIC,BELIEF_TITHE"}]
+        self.assertEqual(civ6_ladder.founding_reading(events)["religion"],
+                         {"turn": 58, "religion": None, "founder": "BELIEF_TITHE", "follower": "BELIEF_WORK_ETHIC"})
+        no_faith = civ6_ladder.founding_reading([{"kind": "found", "turn": 1, "x": 1, "y": 1}])
+        self.assertEqual(no_faith, {"cities": [1], "pantheon": None, "religion": None})
+        self.assertIsNone(civ6_ladder.founding_reading([{"kind": "state", "turn": 1}]))
+
+    def test_every_summary_carries_it_and_the_ladder_row_does_not(self):
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "events.jsonl"
+            path.write_text("".join(json.dumps(record) + "\n" for record in [
+                {"kind": "found", "turn": 1, "x": 3, "y": 3},
+                {"kind": "found", "turn": 14, "x": 3, "y": 7},
+            ]), encoding="utf-8")
+            marks = civ6_ladder.progress_marks(path)
+        self.assertEqual(marks["founding_marks"], {"cities": [1, 14], "pantheon": None, "religion": None})
+        self.assertIn(("founding_marks", civ6_ladder.founding_marks), civ6_ladder.SUMMARY_MARKS)
+        self.assertNotIn("founding_marks", dict(civ6_ladder.PROGRESS_MARKS))
+        self.assertNotIn("founding_marks", civ6_ladder.entry_from({"tag": "civvis-s", "founding_marks": {"cities": [1]}}))
 
 
 class TheAttritionTableCountsGamesNotSegments(unittest.TestCase):
