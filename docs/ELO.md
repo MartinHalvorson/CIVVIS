@@ -338,6 +338,29 @@ ELO Rankings shows both side by side: Player strategies has a column for
 each (its head sorts the list), the levels table each reading's benchmark and
 simulator figures, and the graph a switch between the two.
 
+**The first reading** (2026-11-24; the agents from one run of 1,800 diplo-off
+tables, `2026-11-24-d27f49f`, so their margins are about ±60 against the
+stock fit's ±25 until the window fills). The difference is in the real game,
+not in the simulator:
+
+| Lv | Benchmark, diplo on | Benchmark, diplo off |
+|---|---|---|
+| 8 Deity | 1125 ±113, won 32 of 157 | 1451 ±187, won 3 of 87 |
+| 7 Immortal | 1004 ±242, 3 of 8 | 1165 ±175, 5 of 27 |
+| 6 Emperor | 750 ±250, 6 of 8 | 900 ±141, 15 of 30 |
+| 5 King | 647 ±281, 7 of 8 | 794 ±205, 9 of 13 |
+| 4 Prince | ≤582, 8 of 8 | ≤452, 13 of 13 |
+
+Our seat wins a fifth of its Deity games with the Diplomatic victory on and
+one in thirty without it, so Deity reads about 325 Elo stronger when the
+Diplomatic victory is off. In the simulator the agents move far less: every one
+is within its margin of its stock rating (HolyRoller 1312 against 1341,
+JackOfAllTrades 1193 against 1146, SwingVote 1074 against 1047), and the
+stand-in ladder reads Deity 1915, Immortal 1737 and Emperor 1574 against 1971,
+1661 and 1513. The simulator's tables end in a Diplomatic victory too seldom
+(270 of the stock fit's 10,920, 2.5%) for the switch to move them much; the
+benchmark's do not.
+
 ## What the Civilization VI mapping does and does not prove
 
 It measures, in our engine, what each rung's *handicap* is worth: the yield
