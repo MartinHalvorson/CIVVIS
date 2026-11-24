@@ -302,6 +302,10 @@ class Played(unittest.TestCase):
         self.assertTrue(ev("wizardChess.command('pawn takes e4')"))
         self.until("wizardChess.game.played.length >= 4 && wizardChess.world.pieces.size === 31", "the pawn is taken", seconds=60)
         self.assertEqual(ev("wizardChess.game.played[3].san"), "dxe4")
+        # A piece falling flares the fires, and the hall is a little darker
+        # for a board with a piece fewer.
+        self.assertGreaterEqual(ev("wizardChess.world.mood.falls"), 1)
+        self.assertGreater(ev("wizardChess.world.mood.gloomWant"), 0)
         # The pieces are alive. They watch what moves: the pawn on d2 leans
         # toward the pawn on e2 while it moves, and stands straight after.
         ev("wizardChess.opponent.stop(), wizardChess.begin('w'), wizardChess.game.turn++")
@@ -317,6 +321,15 @@ class Played(unittest.TestCase):
         away = ev("(king => king.userData.check && king.userData.check.toArray())(wizardChess.world.pieces.get(60))")
         self.assertTrue(away and away[0] < 0, away)
         self.until("wizardChess.world.pieces.get(60).quaternion.w < 0.9995", "the king flinches", seconds=60)
+        # The hall's light follows the game: the shaft from the dome narrows
+        # onto the king in check; a mate makes the fires blaze; and a board
+        # set down afresh is lit as a board is.
+        self.until("wizardChess.world.moon.target.position.distanceTo(wizardChess.world.pieces.get(60).position) < 0.3 && "
+                   "wizardChess.world.moon.angle < 0.07", "the light narrows onto the king in check", seconds=60)
+        ev("wizardChess.opponent.stop(), wizardChess.begin('w', ['e2e4', 'e7e5', 'f1c4', 'b8c6', 'd1h5', 'g8f6', 'h5f7'])")
+        self.assertEqual(ev("[wizardChess.game.over, wizardChess.world.mood.blaze]"), ["checkmate", 1])
+        ev("wizardChess.opponent.stop(), wizardChess.begin('w'), wizardChess.game.turn++")
+        self.assertEqual(ev("[wizardChess.world.mood.blaze, wizardChess.world.mood.spot, wizardChess.world.mood.gloomWant]"), [0, None, 0])
         # The board hears a command as it is given. Typed "knight", the two
         # knights stir; "knight takes e5", the pawn on e5 turns to face what is
         # coming and braces; cleared, the board is still again.
