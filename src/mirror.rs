@@ -7482,7 +7482,7 @@ fn step_host_envoys(ctx: &mut HostStepCtx<'_>) {
     // Refresh on BOTH reconstruction paths, including same-turn frames.
     // An omitted city-state or unknown permission must not retain an older
     // grant/refusal. Keys use mapped board seats, never raw host ids.
-    let permissions = Arc::make_mut(&mut ctx.game.host_envoy_permissions);
+    let permissions = Arc::make_mut(&mut Arc::make_mut(&mut ctx.game.host).host_envoy_permissions);
     permissions.retain(|(actor, _), _| *actor != 0);
     for &(minor, owner) in ctx.minor_assignments {
         if minor.is_city_state() {
@@ -7499,7 +7499,8 @@ fn step_rival_wars(ctx: &mut HostStepCtx<'_>) {
 }
 
 fn step_host_war_types(ctx: &mut HostStepCtx<'_>) {
-    let permissions = Arc::make_mut(&mut ctx.game.host_war_type_permissions);
+    let permissions =
+        Arc::make_mut(&mut Arc::make_mut(&mut ctx.game.host).host_war_type_permissions);
     permissions.retain(|(actor, _), _| *actor != 0);
     for rival in &ctx.state.rivals {
         let (Some(facts), Some(&owner)) = (
@@ -7968,7 +7969,8 @@ pub fn rebuild_from_state(
                     built.food = city.food;
                 }
                 apply_city_religion(built, city);
-                Arc::make_mut(&mut game.observed_city_religion_markers).insert(cid);
+                Arc::make_mut(&mut Arc::make_mut(&mut game.host).observed_city_religion_markers)
+                    .insert(cid);
                 apply_city_capture(built, city, &capture_seats);
                 // ★★★★ SEED THE QUEUE WITH WHAT CIVILIZATION VI IS ALREADY BUILDING.
                 //
@@ -9711,7 +9713,10 @@ impl LiveMirror {
                         live.food = city.food;
                     }
                     apply_city_religion(live, city);
-                    Arc::make_mut(&mut self.game.observed_city_religion_markers).insert(*cid);
+                    Arc::make_mut(
+                        &mut Arc::make_mut(&mut self.game.host).observed_city_religion_markers,
+                    )
+                    .insert(*cid);
                     apply_city_capture(live, city, &capture_seats);
                     // Firaxis exports the current item, not a speculative
                     // multi-item queue.  Clear even when the item is absent: a

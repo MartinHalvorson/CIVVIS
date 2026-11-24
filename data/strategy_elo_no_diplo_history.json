@@ -1,0 +1,6 @@
+{
+ "_doc": "Every published strategy Elo fit, oldest first (tools/strategy_elo_history.py). A point: `at`, when it was published (the commit's time, UTC); `tables` and `runs`, what it was fitted on; `ratings`, each entrant as [elo, margin95, bound] (bound '' when the fit places it from both sides); `ladder`, the rungs as a person is shown them. Drawn over time by Charts/ELO Rankings (beta/elo_page.py).",
+ "points": [
+  {"at":"2026-11-24T07:18:39Z","tables":1800,"runs":["2026-11-24-d27f49f"],"ratings":{"civ6:chieftain":[987.4,109,""],"civ6:deity":[1915.0,96,""],"civ6:emperor":[1573.5,94,""],"civ6:immortal":[1736.7,98,""],"civ6:king":[1190.1,87,""],"civ6:prince":[1000.0,0,""],"civ6:settler":[1007.2,107,""],"civ6:warlord":[1038.5,98,""],"forward":[1170.9,63,""],"holy":[1311.6,60,""],"jack":[1192.8,62,""],"moonshot":[1112.7,66,""],"oldguard":[547.4,177,""],"siege":[1136.0,60,""],"stock":[1000.0,0,""],"swing":[1074.2,67,""],"tourist":[1288.7,59,""],"wheels":[302.4,50,"upper"]},"ladder":{"chieftain":997.3,"deity":1915.0,"emperor":1573.5,"immortal":1736.7,"king":1190.1,"prince":1000.0,"settler":997.3,"warlord":1000.0}}
+ ]
+}

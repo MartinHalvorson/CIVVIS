@@ -36,12 +36,12 @@ impl Game {
                 war.target = war.defender;
             }
         }
-        for index in 0..self.concluded_wars.len() {
-            if self.concluded_wars[index].conflict != 0 {
+        for index in 0..self.chronicle.concluded_wars.len() {
+            if self.chronicle.concluded_wars[index].conflict != 0 {
                 continue;
             }
             let conflict = self.allocate_conflict_id();
-            let war = &mut self.concluded_wars[index];
+            let war = &mut self.chronicle.concluded_wars_mut()[index];
             war.conflict = conflict;
             war.declarer = war.aggressor;
             war.target = war.defender;
@@ -359,16 +359,19 @@ impl Game {
             subject,
             city: None,
         });
-        self.concluded_wars.push(war);
+        self.chronicle.concluded_wars_mut().push(war);
         const CONCLUDED_CONFLICTS_KEPT: usize = 24;
         let conflicts = self
+            .chronicle
             .concluded_wars
             .iter()
             .map(|war| war.conflict)
             .collect::<BTreeSet<_>>();
         if conflicts.len() > CONCLUDED_CONFLICTS_KEPT {
-            let oldest = self.concluded_wars[0].conflict;
-            self.concluded_wars.retain(|war| war.conflict != oldest);
+            let oldest = self.chronicle.concluded_wars[0].conflict;
+            self.chronicle
+                .concluded_wars_mut()
+                .retain(|war| war.conflict != oldest);
         }
     }
 

@@ -123,8 +123,11 @@ def roster(source: pathlib.Path) -> dict[str, dict[str, str]]:
     return {m[1]: {"name": m[2], "tilt": m[3]} for m in rows}
 
 
-def strategies(source: pathlib.Path) -> dict | None:
-    path = source / "data" / "strategy_elo.json"
+def strategies(source: pathlib.Path, published: pathlib.Path = pathlib.Path("data/strategy_elo.json")) -> dict | None:
+    """The Player strategies ranking from one published fit: the stock
+    game's, or (ELO Rankings) the one with the Diplomatic victory off,
+    `data/strategy_elo_no_diplo.json`."""
+    path = source / published
     if not path.is_file():
         return None
     published = json.loads(path.read_text(encoding="utf-8"))

@@ -1840,7 +1840,20 @@ impl AdvancedAi {
         pid: usize,
         site: Pos,
     ) -> Option<String> {
-        if let Some(why) = self.settle_site_frontier_loyalty_verdict(g, pid, site) {
+        self.settle_site_loyalty_verdict_with(g, pid, site, &SiteForecast::new())
+    }
+
+    /// [`Self::settle_site_loyalty_verdict`] sharing `forecast`, the site's
+    /// Loyalty forecast, with the frontier floor and with a caller that asks
+    /// for it again. See [`AdvancedAi::site_forecast_revolt`].
+    pub(super) fn settle_site_loyalty_verdict_with(
+        &self,
+        g: &Game,
+        pid: usize,
+        site: Pos,
+        forecast: &SiteForecast,
+    ) -> Option<String> {
+        if let Some(why) = self.settle_site_frontier_loyalty_verdict_with(g, pid, site, forecast) {
             return Some(why);
         }
         // `exhaustion-loyalty-guard` and an explicit Science lane: the
@@ -1863,7 +1876,7 @@ impl AdvancedAi {
                     .to_string(),
             );
         }
-        Self::settle_site_forecast_revolt(g, pid, site).map(|(loyalty_per_turn, turns_to_flip)| {
+        Self::site_forecast_revolt(g, pid, site, forecast).map(|(loyalty_per_turn, turns_to_flip)| {
             format!(
                 "the city would lose {:.1} Loyalty a turn beside its neighbours and revolt in about {:.0} turns",
                 -loyalty_per_turn,

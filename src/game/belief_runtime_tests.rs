@@ -678,6 +678,7 @@ fn wmd_strikes_launch_from_range_consume_devices_and_leave_fallout() {
     // The engine's own account of the detonation, which is what a client
     // animates and what the notification log is written from.
     let record = game
+        .chronicle
         .nuclear_strikes
         .last()
         .expect("a detonation is recorded on the game");
@@ -761,7 +762,11 @@ fn a_nuclear_submarine_carries_a_device_past_its_launch_city_reach() {
         .expect("some other tile is within range of the target");
     let submarine = game.spawn_test_unit("nuclear_submarine", 0, boat);
     assert!(game.apply(0, &strike).is_ok());
-    let record = game.nuclear_strikes.last().expect("the strike is recorded");
+    let record = game
+        .chronicle
+        .nuclear_strikes
+        .last()
+        .expect("the strike is recorded");
     assert_eq!(record.platform, "nuclear_submarine");
     assert_eq!(record.launched_from, boat);
     // The stockpile, not the boat, is what a launch spends.
@@ -811,7 +816,7 @@ fn a_city_center_is_not_a_launch_site() {
     game.install_test_silo(launch);
     assert!(game.legal_actions(0).contains(&strike));
     assert!(game.apply(0, &strike).is_ok());
-    assert_eq!(game.nuclear_strikes[0].platform, "missile_silo");
+    assert_eq!(game.chronicle.nuclear_strikes[0].platform, "missile_silo");
 }
 
 /// A bomber drops the device, so it reaches as far as it can fly rather than
@@ -866,7 +871,11 @@ fn bombers_and_jet_bombers_deliver_a_device_as_far_as_they_fly() {
 
         let carrier = game.spawn_test_unit(kind, 0, base);
         assert!(game.apply(0, &strike).is_ok(), "{kind} at its own range");
-        let record = game.nuclear_strikes.last().expect("the strike is recorded");
+        let record = game
+            .chronicle
+            .nuclear_strikes
+            .last()
+            .expect("the strike is recorded");
         assert_eq!(record.platform, kind);
         assert_eq!(record.launched_from, base);
         assert_eq!(
@@ -948,11 +957,14 @@ fn the_strike_ledger_survives_a_save_round_trip() {
         },
     )
     .unwrap();
-    assert_eq!(game.nuclear_strikes.len(), 1);
+    assert_eq!(game.chronicle.nuclear_strikes.len(), 1);
 
     let encoded = serde_json::to_value(&game).unwrap();
     let restored: Game = serde_json::from_value(encoded).unwrap();
-    assert_eq!(restored.nuclear_strikes, game.nuclear_strikes);
+    assert_eq!(
+        restored.chronicle.nuclear_strikes,
+        game.chronicle.nuclear_strikes
+    );
 
     // And a save written before the ledger existed loads as an empty one
     // rather than refusing to open.
@@ -963,7 +975,7 @@ fn the_strike_ledger_survives_a_save_round_trip() {
         .remove("nuclear_strikes")
         .expect("the field is written");
     let old_save: Game = serde_json::from_value(older).unwrap();
-    assert!(old_save.nuclear_strikes.is_empty());
+    assert!(old_save.chronicle.nuclear_strikes.is_empty());
 }
 
 /// An empty plains board with an interior tile to walk from, so a route
@@ -1018,7 +1030,11 @@ fn a_move_records_its_exact_walked_route() {
         },
     )
     .unwrap();
-    let trail = game.unit_move_trails.last().expect("the walk is recorded");
+    let trail = game
+        .chronicle
+        .unit_move_trails
+        .last()
+        .expect("the walk is recorded");
     assert_eq!(trail.unit, soldier);
     assert_eq!(trail.owner, 0);
     assert_eq!(trail.turn, game.turn);
@@ -1059,8 +1075,15 @@ fn steps_chain_within_a_turn_and_break_at_the_boundary() {
         },
     )
     .unwrap();
-    assert_eq!(game.unit_move_trails.len(), 1, "same turn, same route");
-    assert_eq!(game.unit_move_trails[0].path, vec![start, first, second]);
+    assert_eq!(
+        game.chronicle.unit_move_trails.len(),
+        1,
+        "same turn, same route"
+    );
+    assert_eq!(
+        game.chronicle.unit_move_trails[0].path,
+        vec![start, first, second]
+    );
 
     game.turn += 1;
     game.units.get_mut(&soldier).unwrap().moves_left = 2.0;
@@ -1072,9 +1095,13 @@ fn steps_chain_within_a_turn_and_break_at_the_boundary() {
         },
     )
     .unwrap();
-    assert_eq!(game.unit_move_trails.len(), 2, "a new turn walks fresh");
-    assert_eq!(game.unit_move_trails[1].path, vec![second, first]);
-    assert_eq!(game.unit_move_trails[1].turn, game.turn);
+    assert_eq!(
+        game.chronicle.unit_move_trails.len(),
+        2,
+        "a new turn walks fresh"
+    );
+    assert_eq!(game.chronicle.unit_move_trails[1].path, vec![second, first]);
+    assert_eq!(game.chronicle.unit_move_trails[1].turn, game.turn);
 }
 
 /// A reloaded game keeps the tails a client was drawing, and a save
@@ -1093,11 +1120,14 @@ fn the_trail_ledger_survives_a_save_round_trip() {
         },
     )
     .unwrap();
-    assert_eq!(game.unit_move_trails.len(), 1);
+    assert_eq!(game.chronicle.unit_move_trails.len(), 1);
 
     let encoded = serde_json::to_value(&game).unwrap();
     let restored: Game = serde_json::from_value(encoded).unwrap();
-    assert_eq!(restored.unit_move_trails, game.unit_move_trails);
+    assert_eq!(
+        restored.chronicle.unit_move_trails,
+        game.chronicle.unit_move_trails
+    );
 
     let mut older = serde_json::to_value(&game).unwrap();
     older
@@ -1106,7 +1136,7 @@ fn the_trail_ledger_survives_a_save_round_trip() {
         .remove("unit_move_trails")
         .expect("the field is written");
     let old_save: Game = serde_json::from_value(older).unwrap();
-    assert!(old_save.unit_move_trails.is_empty());
+    assert!(old_save.chronicle.unit_move_trails.is_empty());
 }
 
 /// The ledger is a tail, not a chronicle: however long a game runs, the
@@ -1118,9 +1148,9 @@ fn the_trail_ledger_stays_bounded() {
     for walker in 0..600u32 {
         game.record_move_step(0, 900_000 + walker, start, step);
     }
-    assert_eq!(game.unit_move_trails.len(), 512);
+    assert_eq!(game.chronicle.unit_move_trails.len(), 512);
     assert_eq!(
-        game.unit_move_trails.first().unwrap().unit,
+        game.chronicle.unit_move_trails.first().unwrap().unit,
         900_088,
         "the oldest walks are the ones that fell off"
     );
@@ -1137,7 +1167,7 @@ fn a_long_jump_never_chains_into_a_walked_route() {
         .find(|position| game.wdist(start, **position) == 2)
         .expect("an interior tile has a neighbor two steps out");
     game.record_move_step(0, 900_000, start, far);
-    assert!(game.unit_move_trails.is_empty());
+    assert!(game.chronicle.unit_move_trails.is_empty());
 }
 
 /// Fallout that only cost yields would make a crater the safest ground on

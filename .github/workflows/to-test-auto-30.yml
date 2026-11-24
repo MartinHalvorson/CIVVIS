@@ -7,9 +7,9 @@ name: to-test-auto-30
 #   /        the STABLE lane: whatever the `site-stable` tag names — the
 #            viewer at /, the landing page at /home, the binaries page at
 #            /download, all from the promoted commit. It moves only when
-#            somebody runs to-prod-manual-only, because whether a build is
-#            worth being the front page is a judgement, and no gate can
-#            make it.
+#            the tag does: when somebody runs to-prod-manual-only, and,
+#            since 2026-11-23 and for now, every six hours when
+#            to-prod-auto-6h puts the tag on the commit /test is serving.
 #   /test    the HEAD lane: the same complete set of pages from origin/main
 #            as of this run — /test, /test/home, /test/download —
 #            republished on a schedule. It exists so the newest site is
@@ -41,8 +41,15 @@ name: to-test-auto-30
 #     site itself (web/ or beta/) has landed since /test was built, because
 #     that is what active work on the site looks like. Those runs answer to
 #     a second line, 470 a month plus 20, also earned continuously, so a busy
-#     week cannot run the month dry. to-prod-manual-only and manual runs
-#     never wait and spend from the same 500.
+#     week cannot run the month dry. to-prod-manual-only, to-prod-auto-6h
+#     (at most four a day) and manual runs never wait and spend from the
+#     same 500.
+#   - A promotion waiting. The same second line lets a run through when
+#     `site-stable` names a commit `/` is not serving: a promotion moved
+#     the tag and its own deploy never ran. That happens, because this
+#     workflow's queue holds one waiting run and a scheduled tick takes the
+#     place of a promotion waiting behind a build. The tick that displaced
+#     it is the one that publishes it.
 #
 # The effect: a change to the site is on /test within about half an hour of
 # merging plus the build (GitHub's cron drifts some minutes under load). A
@@ -66,13 +73,20 @@ on:
         description: "Deploy to Cloudflare Pages (otherwise build and check only)"
         type: boolean
         default: true
-  # to-prod-manual-only runs this same job after moving the site-stable tag,
-  # so a promotion cannot drift from what the schedule does.
+  # to-prod-manual-only and to-prod-auto-6h run this same job after moving the
+  # site-stable tag, so a promotion cannot drift from what the schedule does.
   workflow_call:
     inputs:
       deploy:
         type: boolean
         default: true
+        required: false
+      # A promotion has already decided to deploy. to-prod-auto-6h says so
+      # because its runs are scheduled ones, and the gate below would
+      # otherwise take them for a half-hourly tick.
+      promotion:
+        type: boolean
+        default: false
         required: false
 
 permissions:
@@ -99,9 +113,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          if [ "${{ github.event_name }}" != "schedule" ]; then
+          if [ "${{ github.event_name }}" != "schedule" ] || [ "${{ inputs.promotion }}" = "true" ]; then
             echo "go=true" >> "$GITHUB_OUTPUT"
-            echo "not a scheduled run; no gate"
+            echo "not a half-hourly tick; no gate"
             exit 0
           fi
 
@@ -112,7 +126,28 @@ jobs:
           live="$(curl -fsS --max-time 10 https://civvis.pages.dev/test/build.json \
                   | python3 -c 'import json,sys; print(json.load(sys.stdin)["commit"])' \
                   2>/dev/null || echo unknown)"
-          if [ "$live" = "$GITHUB_SHA" ]; then
+
+          # A promotion waiting: site-stable names a commit the front page is
+          # not serving. A promotion deploys for itself, but its deploy waits
+          # in this workflow's queue, which holds one waiting run, and a tick
+          # that arrives meanwhile takes its place (2026-11-21: run
+          # 44948629665, cancelled the second the 21:12Z tick was created).
+          # This is that tick, so it carries the promotion. Either reading
+          # failing reads as nothing waiting, for the same reason no count is
+          # not a licence to spend. The commit rather than the ref, so a tag
+          # object could never read as a promotion for ever.
+          promoted="$(gh api -H "Accept: application/vnd.github.sha" \
+                      "repos/$GITHUB_REPOSITORY/commits/tags/site-stable" 2>/dev/null || echo unknown)"
+          front="$(curl -fsS --max-time 10 https://civvis.pages.dev/build.json \
+                   | python3 -c 'import json,sys; print(json.load(sys.stdin)["commit"])' \
+                   2>/dev/null || echo unknown)"
+          promotion=""
+          if [[ "$promoted" =~ ^[0-9a-f]{40}$ && "$front" =~ ^[0-9a-f]{40}$ && "$promoted" != "$front" ]]; then
+            promotion="yes"
+            echo "site-stable names $promoted and / serves $front; a promotion is waiting"
+          fi
+
+          if [ "$live" = "$GITHUB_SHA" ] && [ -z "$promotion" ]; then
             echo "go=false" >> "$GITHUB_OUTPUT"
             echo "/test already serves $GITHUB_SHA; nothing to do"
             exit 0
@@ -137,7 +172,7 @@ jobs:
           # by the 33 runs that had done nothing.
           #
           # A run deployed only if its publish job ran: `publish` here,
-          # `deploy / publish` when to-prod-manual-only calls this workflow in.
+          # `deploy / publish` when a promotion calls this workflow in.
           # A run whose jobs cannot be read counts as a deploy, so an API
           # stumble slows the cadence rather than overspending the cap.
           month_start="$(date -u +%Y-%m-01)"
@@ -188,6 +223,7 @@ jobs:
 
           runs = []
           for workflow in ("to-test-auto-30.yml", "to-prod-manual-only.yml",
+                           "to-prod-auto-6h.yml",
                            "publish-site.yml", "promote-site.yml"):
               runs += runs_for(workflow)
 
@@ -240,13 +276,18 @@ jobs:
                   break
           PY
               )" || waiting=""
+              # A waiting promotion goes out on the same line: it was decided
+              # where promotions are decided, and only its deploy is missing.
+              if [ -n "$promotion" ]; then
+                waiting="yes"
+              fi
             fi
             if [ "$waiting" != "yes" ]; then
               echo "go=false" >> "$GITHUB_OUTPUT"
               echo "ahead of the monthly budget; the next half-hour tick will ask again"
               exit 0
             fi
-            echo "ahead of the pace, but a change to the site is waiting on /test"
+            echo "ahead of the pace, but a change to the site or a promotion is waiting"
           fi
 
           echo "go=true" >> "$GITHUB_OUTPUT"

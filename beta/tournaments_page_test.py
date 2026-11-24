@@ -316,36 +316,43 @@ class TournamentsPage(unittest.TestCase):
     def test_every_page_lists_tournaments_between_charts_and_civvis(self):
         # Operator 2026-11-21: "Between Home and CIVVIS, we want to add a
         # Tournaments view." This page lists the site's pages as the others
-        # do, with itself in gold. It was named Auto-Tourneys in the list
+        # do, with itself marked. It was named Auto-Tourneys in the list
         # and on the tab from 2026-11-22 ("make sure Tournaments changes to
         # Auto-Tourneys") and at /auto-tourneys/ from 2026-11-23, and took
         # its first name and address back on 2026-11-24 ("change
         # auto-outnrye to Tournaments. Auto-tourney suggests some self
         # imrpvoing tourney thing"): Tournaments, at /tournaments/. As on the home
-        # page, the list stands to the left of the title (operator
-        # 2026-11-21, of the home page: "on the left side, to the left of
-        # civvis.ai").
-        self.assertRegex(PAGE, r'<div class="site-brand">\s*<!--[\s\S]*?-->\s*<nav class="site-nav"[^>]*>[\s\S]*?</nav>\s*<div class="site-lockup">')
-        self.assertRegex(LANDING, r'<div class="site-brand">\s*<!--[\s\S]*?-->\s*<nav class="site-nav"[^>]*>[\s\S]*?</nav>\s*<div class="site-lockup">')
+        # page, the list is a row across the top, over the title (operator
+        # 2026-11-24: "try putting the vertical menu from home... civ across
+        # the top instead"; from 2026-11-21 it stood to the left of the
+        # title), and Charts/ drops its pages down.
+        self.assertRegex(PAGE, r'<header class=\"shell site-header\">\s*<!--[\s\S]*?-->\s*<nav class=\"site-nav\"[^>]*>[\s\S]*?</nav>\s*<script data-site-folder>[\s\S]*?</script>\s*<div class=\"site-brand\">\s*<div class=\"site-lockup\">')
+        self.assertRegex(LANDING, r'<header class=\"shell site-header\">\s*<!--[\s\S]*?-->\s*<nav class=\"site-nav\"[^>]*>[\s\S]*?</nav>\s*<script data-site-folder>[\s\S]*?</script>\s*<div class=\"site-brand\">\s*<div class=\"site-lockup\">')
         self.assertIn(
-            '<nav class="site-nav" aria-label="CIVVIS sites">\n'
-            '        <a class="site-link" href="../home/">Home</a>\n'
-            '        <a class="site-link" href="../charts/win-analytics/" '
-            'title="What the games show: charts read off the CIVVIS AI agents&#8217; games.">Charts/</a>\n'
-            '        <a class="site-link" href="./" aria-current="page">Tournaments</a>\n'
-            '        <a class="site-link" href="../" title="Every civilization is played by a CIVVIS AI agent.">CIVVIS</a>\n'
-            '        <a class="site-link" href="../?mode=strange" '
+            '      </div>\n'
+            '      <a class="site-link" href="./" aria-current="page">Tournaments</a>\n'
+            '      <a class="site-link" href="../" title="Every civilization is played by a CIVVIS AI agent.">CIVVIS</a>\n'
+            '      <a class="site-link" href="../?mode=strange" '
             'title="One world, two timelines: the same game played two ways, side by side, on a timeline that branches.">Doctor Strange\'s Civ 6</a>\n'
-            '        <a class="site-link" href="../?mode=play" '
+            '      <a class="site-link" href="../?mode=play" '
             'title="You play one civilization. CIVVIS AI agents play the rest.">AI Debugger</a>\n'
-            '        <a class="site-link" href="https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/" '
+            '      <a class="site-link" href="https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/" '
             'target="_blank" rel="noopener" title="Buy Civilization VI on Steam">Civ 6</a>\n'
-            '        <a class="site-link" href="../wizard-chess/" '
+            '      <a class="site-link" href="../wizard-chess/" '
             'title="Chess where you command and the pieces obey, against an opponent at the Elo you pick.">Wizard Chess</a>\n'
-            "      </nav>",
+            "    </nav>",
             PAGE,
         )
-        self.assertIn('.site-link[aria-current="page"]:hover { background: var(--gold); color: #17130c; }', PAGE)
+        self.assertIn(
+            '<nav class="site-nav" aria-label="CIVVIS sites">\n'
+            '      <a class="site-link" href="../home/">Home</a>\n'
+            '      <div class="site-folder">\n'
+            '        <a class="site-link" href="../charts/ai-interpretability/" '
+            'title="What the games show: charts read off the CIVVIS AI agents&#8217; games.">Charts/</a>\n'
+            '        <div class="site-menu">\n',
+            PAGE,
+        )
+        self.assertIn('  .site-link[aria-current="page"],\n  .site-folder:has([aria-current="page"]) > .site-link { box-shadow: inset 0 0 0 2px #fff; }\n', PAGE)
         self.assertIn("<title>Tournaments · CIVVIS.ai</title>", PAGE)
         # The Debugger is AI Debugger in this list again (operator
         # 2026-11-21: "AI Debugger (rename plz)", after a day as Strategy
@@ -362,11 +369,11 @@ class TournamentsPage(unittest.TestCase):
         # joined between Home and Tournaments the same day as Research; its
         # own test is `research_page_test.py`), each in its own markup.
         for page, pattern in (
-            (LANDING, r'aria-current="page">Home</a>\s*<a class="site-link" href="\.\./charts/win-analytics/"[^>]*>Charts/</a>'
-                      r'\s*<a class="site-link" href="\.\./tournaments/"[^>]*>Tournaments</a>'
+            (LANDING, r'aria-current="page">Home</a>\s*<div class="site-folder">\s*<a class="site-link" href="\.\./charts/ai-interpretability/"[^>]*>Charts/</a>'
+                      r'[\s\S]*?</div>\s*</div>\s*<a class="site-link" href="\.\./tournaments/"[^>]*>Tournaments</a>'
                       r'\s*<a class="site-link" href="\.\./"[^>]*>CIVVIS</a>'),
             (VIEWER, r'id="homelink" href="/home" target="_top">Home</a>\s*'
-                     r'<a class="home-link" id="chartslink" href="/charts/win-analytics" target="_top">Charts/</a>\s*'
+                     r'<a class="home-link" id="chartslink" href="/charts/ai-interpretability" target="_top">Charts/</a>\s*'
                      r'<a class="home-link" id="tourlink" href="/tournaments" target="_top">Tournaments</a>\s*'
                      r'<a class="home-link" id="watchlink" href="\./" target="_top">CIVVIS</a>'),
         ):

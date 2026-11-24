@@ -1837,6 +1837,10 @@ const SETTLER_THREAT_DETOUR_RETRIES: usize = 12;
 /// `AdvancedAi::settler_walk_costs_cached`.
 type SettlerWalkCosts = BTreeMap<i32, BTreeMap<Pos, f64>>;
 
+/// One site's Loyalty forecast, filled the first time a verdict asks for it.
+/// See [`AdvancedAi::site_forecast_revolt`].
+pub(super) type SiteForecast = std::cell::OnceCell<Option<(f64, f64)>>;
+
 /// The read-only answers one settlement scan shares with the next scan of
 /// the same board for the same seat. `map_settlement_room` scans from every
 /// expansion origin in turn, and nothing here depends on the origin: the
@@ -25023,11 +25027,23 @@ impl AdvancedAi {
         pid: usize,
         site: Pos,
     ) -> Option<String> {
+        self.settle_site_frontier_loyalty_verdict_with(g, pid, site, &SiteForecast::new())
+    }
+
+    /// [`Self::settle_site_frontier_loyalty_verdict`] sharing `forecast`, the
+    /// site's Loyalty forecast, with a caller that asks for it again.
+    pub(super) fn settle_site_frontier_loyalty_verdict_with(
+        &self,
+        g: &Game,
+        pid: usize,
+        site: Pos,
+        forecast: &SiteForecast,
+    ) -> Option<String> {
         // A measured native contribution is stronger evidence than the modeled
         // rate behind `loyalty-rate-alarm`. Honor it on the ordinary live path
         // even when no rival city is visible, including move-and-found batches.
         if g.native_settlement_pressure(pid, site).is_some() {
-            if let Some((per_turn, turns)) = Self::settle_site_forecast_revolt(g, pid, site) {
+            if let Some((per_turn, turns)) = Self::site_forecast_revolt(g, pid, site, forecast) {
                 return Some(format!(
                     "the native nearby-city pressure would leave the city losing {:.1} Loyalty a turn and revolting in about {:.0} turns",
                     -per_turn, turns.ceil()
@@ -25073,7 +25089,7 @@ impl AdvancedAi {
         // radius used for an unresolved major border.
         if self.frontier_loyalty && Self::visible_major_city_near(g, pid, site) {
             if let Some((loyalty_per_turn, turns_to_flip)) =
-                Self::settle_site_forecast_revolt(g, pid, site)
+                Self::site_forecast_revolt(g, pid, site, forecast)
             {
                 return Some(format!(
                     "it is within five tiles of a visible rival city and would lose \
@@ -25096,6 +25112,21 @@ impl AdvancedAi {
                 && !g.players[city.owner].is_barbarian
                 && g.wdist(city.pos, site) <= UNRESOLVED_MAJOR_BORDER_RADIUS
         })
+    }
+
+    /// [`Self::settle_site_forecast_revolt`], computed at most once per
+    /// `forecast`. The forecast founds a city on a clone of the board, which
+    /// is the dearest thing a settle verdict does, and one site's verdicts
+    /// used to ask it up to three times over the same `&Game`: the frontier
+    /// floor, the rate check after it, and the stranded-settler hold. The
+    /// board is borrowed throughout, so the answer cannot have changed.
+    pub(super) fn site_forecast_revolt(
+        g: &Game,
+        pid: usize,
+        site: Pos,
+        forecast: &SiteForecast,
+    ) -> Option<(f64, f64)> {
+        *forecast.get_or_init(|| Self::settle_site_forecast_revolt(g, pid, site))
     }
 
     /// The live mirror's prospective Loyalty result for a city founded at
