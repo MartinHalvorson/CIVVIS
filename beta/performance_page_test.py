@@ -610,7 +610,8 @@ class TheSiteList(unittest.TestCase):
             re.findall(r'<a class="([^"]+)" href="([^"]+)"[^>]*>([^<]+)</a>', nav),
             [
                 ("site-link", "../../home/", "Home"),
-                ("site-link", "../civ-ai-interpretability/", "Charts/"),
+                ("site-link", "../ai-insights/", "Charts/"),
+                ("site-link sub-link", "../ai-insights/", "AI Insights"),
                 ("site-link sub-link", "../civ-ai-interpretability/", "Civ AI Interpretability"),
                 ("site-link sub-link", "../civ-analytics/", "Civ Analytics"),
                 ("site-link sub-link", "../win-analytics/", "Win Analytics"),
@@ -637,8 +638,9 @@ class TheSiteList(unittest.TestCase):
         # pages. Until then a branch was folded unless one of its pages was
         # on screen. Its order is the operator's of the same day: "move ai
         # interpretablity to the top of the charts/ then civ analytics, win
-        # analytics. elo rankings.. civvis performanc". The viewer (CIVVIS and
-        # AI Debugger, the two tools) still lists none of them.
+        # analytics. elo rankings.. civvis performanc", with AI Insights over
+        # them since later that day ("we want a new ai insights"). The viewer
+        # (CIVVIS and AI Debugger, the two tools) still lists none of them.
         self.assertIn(
             '<a class="site-link sub-link" href="./" aria-current="page">Win Analytics</a>\n'
             '          <a class="site-link sub-link" href="../elo-rankings/" ',
@@ -650,11 +652,11 @@ class TheSiteList(unittest.TestCase):
             menu = menu[:menu.index("</div>")]
             self.assertEqual(
                 re.findall(r'<a class="site-link sub-link" href="\.\./charts/([^"]+)/"[^>]*>([^<]+)</a>', menu),
-                [("civ-ai-interpretability", "Civ AI Interpretability"), ("civ-analytics", "Civ Analytics"), ("win-analytics", "Win Analytics"),
-                 ("elo-rankings", "ELO Rankings"), ("civvis-performance", "CIVVIS Performance")],
+                [("ai-insights", "AI Insights"), ("civ-ai-interpretability", "Civ AI Interpretability"), ("civ-analytics", "Civ Analytics"),
+                 ("win-analytics", "Win Analytics"), ("elo-rankings", "ELO Rankings"), ("civvis-performance", "CIVVIS Performance")],
             )
         self.assertNotIn("Performance</a>", VIEWER)
-        for name in (">Win Analytics</a>", ">ELO Rankings</a>", ">Civ Analytics</a>"):
+        for name in (">Win Analytics</a>", ">ELO Rankings</a>", ">Civ Analytics</a>", ">AI Insights</a>"):
             self.assertNotIn(name, VIEWER)
         for gone in ("perflink", "under-watch", "opens-watching", "sub-link"):
             self.assertNotIn(gone, VIEWER)

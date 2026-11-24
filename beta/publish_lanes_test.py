@@ -74,10 +74,16 @@ FILLERS = (
     "civs_page.py",
     "performance_page.py",
     "interpretability_page.py",
+    "insights_page.py",
 )
 
 #: A filler's page, for the fillers of pages a revision may not have yet.
-FILLED = {"interpretability_page.py": "interpretability", "elo_page.py": "elo", "civs_page.py": "civs"}
+FILLED = {
+    "interpretability_page.py": "interpretability",
+    "elo_page.py": "elo",
+    "civs_page.py": "civs",
+    "insights_page.py": "insights",
+}
 
 #: The viewer, as little of it as the script's own checks ask for: one
 #: `<head>`, a root-absolute script for the lane rewrite to make relative, and
@@ -104,6 +110,7 @@ ADDRESSES = {
     "civs": "charts/civ-analytics",
     "performance": "charts/civvis-performance",
     "interpretability": "charts/civ-ai-interpretability",
+    "insights": "charts/ai-insights",
     "download": "download",
 }
 
@@ -176,7 +183,7 @@ class Lanes(unittest.TestCase):
         cls.git("init", "--quiet", str(cls.repo), cwd=cls.scratch)
 
         # The promoted revision: five pages, and no ELO Rankings, Civ
-        # Analytics or Civ AI Interpretability page.
+        # Analytics, Civ AI Interpretability or AI Insights page.
         # Its Performance script is one that fails.
         # Its pages are from before a page stated its address.
         cls.write_revision("promoted", pages=("landing", "download", "tournaments", "research", "performance"),
@@ -204,7 +211,7 @@ class Lanes(unittest.TestCase):
             landing.write_text(
                 landing.read_text(encoding="utf-8") + f'<a href="../{address}/">Wizard Chess</a>\n', encoding="utf-8")
         cls.listed_revision = cls.commit("Wizard Chess is on the site")
-        # Main: every script, page and figure has moved on, there are three more
+        # Main: every script, page and figure has moved on, there are four more
         # pages, and every page says where it lives.
         cls.write_revision("main", pages=tuple(ADDRESSES), addresses=ADDRESSES)
         # And main still has the page that is set aside, and its parts.
@@ -292,9 +299,10 @@ class Lanes(unittest.TestCase):
         # The page only main has is in the test lane and not in the stable
         # lane: nothing reaches the front page except by a promotion.
         self.assertTrue((self.test / "charts" / "civ-ai-interpretability" / "index.html").is_file())
+        self.assertTrue((self.test / "charts" / "ai-insights" / "index.html").is_file())
         self.assertFalse((self.stable / "interpretability").exists())
         self.assertFalse((self.stable / "charts").exists())
-        self.assertIn("published without: interpretability civ-analytics elo-rankings\n", self.stable_said)
+        self.assertIn("published without: ai-insights interpretability civ-analytics elo-rankings\n", self.stable_said)
         # And each lane says which pages it carries, by address, for the
         # checks and for the router.
         self.assertEqual(
@@ -303,11 +311,12 @@ class Lanes(unittest.TestCase):
         )
         self.assertEqual(
             json.loads(self.read(self.test, "build.json"))["pages"],
-            # In the order of Charts/ (since 2026-11-24: Civ AI Interpretability,
-            # Civ Analytics, Win Analytics, ELO Rankings, CIVVIS Performance),
-            # because the router opens a folder's first page in this list.
-            ["home", "tournaments", "charts/civ-ai-interpretability", "charts/civ-analytics", "charts/win-analytics",
-             "charts/elo-rankings", "charts/civvis-performance", "download"],
+            # In the order of Charts/ (since 2026-11-24: AI Insights, Civ AI
+            # Interpretability, Civ Analytics, Win Analytics, ELO Rankings,
+            # CIVVIS Performance), because the router opens a folder's first
+            # page in this list.
+            ["home", "tournaments", "charts/ai-insights", "charts/civ-ai-interpretability", "charts/civ-analytics",
+             "charts/win-analytics", "charts/elo-rankings", "charts/civvis-performance", "download"],
         )
         # And the publish check reads each list in the order it was written.
         # It asks a folder for the first page the list has in it, which is
@@ -372,7 +381,7 @@ class Lanes(unittest.TestCase):
         # were written for, with nothing of main's layout beside them.
         self.assertEqual(
             sorted(str(found.relative_to(self.test)) for found in self.test.glob("**/index.html")),
-            ["charts/civ-ai-interpretability/index.html",
+            ["charts/ai-insights/index.html", "charts/civ-ai-interpretability/index.html",
              "charts/civ-analytics/index.html", "charts/civvis-performance/index.html",
              "charts/elo-rankings/index.html", "charts/win-analytics/index.html",
              "download/index.html", "home/index.html", "index.html", "tournaments/index.html"],
@@ -424,6 +433,8 @@ class Lanes(unittest.TestCase):
                           self.read(self.test, f"{ADDRESSES[name]}/index.html"))
         self.assertIn("<!-- interpretability_page.py: script main, data main -->",
                       self.read(self.test, "charts/civ-ai-interpretability/index.html"))
+        self.assertIn("<!-- insights_page.py: script main, data main -->",
+                      self.read(self.test, "charts/ai-insights/index.html"))
         # Nothing of main's is in the promoted lane's pages.
         for filled in self.stable.glob("**/index.html"):
             self.assertNotIn("main", filled.read_text(encoding="utf-8"), filled)
