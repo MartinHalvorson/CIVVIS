@@ -98,6 +98,8 @@ class TheOrderOfThePage(unittest.TestCase):
             self.assertIn(f'class="civ-seg" id="{box}"', part)
         self.assertIn("OPENING_LEVEL = 8", (BETA / "civs_page.py").read_text(encoding="utf-8"))
         self.assertIn("pick.games === \"self\"", PAGE)
+        # A belief's bar is drawn: its fill is a block, sized by the width set on it.
+        self.assertIn(".civ-row-fill { display: block; height: 100%;", PAGE)
         # The note says what a Settler first is.
         self.assertIn("A Settler can come first: the capital needs two citizens to train one", PAGE)
 
