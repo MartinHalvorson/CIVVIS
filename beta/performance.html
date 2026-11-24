@@ -1340,13 +1340,13 @@
         tiles.append(node);
       };
       tile("Steps in one game", fmt(newest.steps), fmt(Math.round(newest.steps / newest.turns)) + " a turn", "over " + fmt(Math.round(newest.turns)) + " turns");
-      tile("A walk as one step", fmt(newest.kept), part(newest.saved / newest.steps) + " fewer", "a unit’s moves in one turn counted once");
+      tile("A walk as one step", fmt(newest.kept), "up to " + part(newest.saved / newest.steps) + " fewer", "a unit’s moves in one turn counted once");
       tile("Written down", size(newest.bytes), Math.round(newest.bytes / newest.steps) + " bytes a step", "every action, as compact JSON");
       if (newest.instructions) {
         tile("To play it", billions(newest.instructions), "processor instructions", "the agents deciding and the rules applying");
         tile("The path alone", billions(newest.replay_instructions), part(newest.replay_share) + " of playing it", "the same steps with nobody deciding them");
       }
-      const KEYS = [["Steps that stay", ""], ["Steps a walk as one step would save", "is-second"]];
+      const KEYS = [["Steps that stay", ""], ["Steps a walk as one step could save", "is-second"]];
       const keys = document.getElementById("perf-path-keys");
       for (const [name, cls] of KEYS) {
         const item = el("li");
@@ -1370,7 +1370,7 @@
         const slot = (width - m.l - m.r) / n, bar = Math.min(24, Math.max(6, slot * 0.6));
         const x = (i) => m.l + (i + 0.5) * slot, y = (v) => m.t + (1 - v / ceiling) * (height - m.t - m.b);
         const root = svg("svg", { width, height, viewBox: "0 0 " + width + " " + height, role: "img" });
-        root.setAttribute("aria-label", "The steps in one game at each reading: " + fmt(newest.steps) + " on " + day(newest.taken) + ", of which a walk as one step would save "
+        root.setAttribute("aria-label", "The steps in one game at each reading: " + fmt(newest.steps) + " on " + day(newest.taken) + ", of which a walk as one step could save "
           + fmt(newest.saved) + ". Every reading is in the table below.");
         const grid = svg("g", { class: "res-grid" });
         for (let v = 0; v <= ceiling + 1e-9; v += step) {
@@ -1412,7 +1412,7 @@
           const hit = svg("rect", { x: x(i) - Math.max(bar, 24) / 2, y: m.t, width: Math.max(bar, 24), height: height - m.t - m.b, fill: "transparent" });
           hit.addEventListener("pointermove", (event) => showTip(event, day(r.taken) + (r.build ? " · build " + r.build : ""), [
             { value: fmt(r.steps), name: "steps in one game" },
-            { colour: "var(--series-2)", tall: true, value: fmt(r.saved), name: "a walk as one step would save" },
+            { colour: "var(--series-2)", tall: true, value: fmt(r.saved), name: "a walk as one step could save" },
             { colour: "var(--series)", tall: true, value: fmt(r.kept), name: "steps that stay" },
           ]));
           hit.addEventListener("pointerleave", hideTip);

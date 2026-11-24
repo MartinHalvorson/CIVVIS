@@ -99,10 +99,17 @@ Nothing has been removed yet. This is the plan the first reading supports.
 
 1. **A walk as one step.** A third of all steps are the second and later
    hexes of a walk already begun. The engine already has a go-to action
-   (`move_to`), and the agents use it for under one step in a hundred. Each
-   hop reveals fog and can meet a zone of control, so whether one go-to ends
-   on the same world as its hops has to be shown by replay before the agents
-   switch. Worth 24,964 steps a game.
+   (`move_to`), and the agents use it for under one step in a hundred. Worth
+   at most 24,964 steps a game. It is an upper bound, and it cannot be had by
+   rewriting a finished path. Tried on one recorded game on 2026-11-24:
+   every walk replaced by one go-to to its last hex (80,347 steps down to
+   53,308), then replayed. The replay left the game at its 274th step, on
+   turn 6, where a unit walks out and back to look around and the go-to is
+   refused as "already there"; from there the two games are different games.
+   A go-to also picks its own route, which need not be the route the hops
+   took. So the saving has to come from the agents choosing to go to a tile
+   where they do not need what the hops in between show them, and the count
+   after that change is the real figure.
 2. **Steps that change nothing.** A fortify order to a unit already
    fortified, a policy slotted and taken out in the same turn. The log cannot
    show these: it needs the engine to compare the world before and after a

@@ -482,7 +482,10 @@ class ThePath(unittest.TestCase):
         self.assertIn('document.getElementById("perf-path").hidden = false;', self.SCRIPT)
         # Blue is the steps that stay and orange the steps a walk as one
         # step would save, in the columns and in the bars alike.
-        self.assertIn('const KEYS = [["Steps that stay", ""], ["Steps a walk as one step would save", "is-second"]];', self.SCRIPT)
+        self.assertIn('const KEYS = [["Steps that stay", ""], ["Steps a walk as one step could save", "is-second"]];', self.SCRIPT)
+        # The saving is an upper bound (a walk that doubles back cannot be
+        # one go-to), and the tile says so.
+        self.assertIn('"up to " + part(newest.saved / newest.steps) + " fewer"', self.SCRIPT)
         self.assertIn('upper.style.fill = "var(--series-2)";', self.SCRIPT)
         self.assertIn('const parts = k.saved ? [[k.kept, ""], [k.saved, "is-second"]] : [[k.steps, ""]];', self.SCRIPT)
         # A column stands on nought, and the pointer reads a reading out.
