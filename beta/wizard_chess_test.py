@@ -211,6 +211,26 @@ class Played(unittest.TestCase):
         # The hall stands round the board: twelve columns, each part of them
         # (a shaft, a base and a capital) drawn twelve at once.
         self.assertEqual(ev("wizardChess.world.scene.children.filter(part => part.isInstancedMesh && part.count === 12).length"), 3)
+        # The headset seat: the camera stands in a rig, "Enter VR" is only
+        # shown where a headset is offered (this browser has none), a
+        # controller's ray picks what a click on the same line of sight picks,
+        # and a headset's wearer stands at their side's edge of the board.
+        self.assertEqual(ev("[wizardChess.seat.camera.parent === wizardChess.seat.rig, document.getElementById('enter-vr').hidden, "
+                            "wizardChess.seat.pointers.length]"), [True, True, 2])
+        same = ev("""(seat => {
+          const box = seat.canvas.getBoundingClientRect(), clicked = seat.under({clientX: box.left + box.width / 2, clientY: box.top + box.height * 0.62});
+          const hand = new (seat.rig.constructor)();
+          const look = new seat.ray.ray.direction.constructor();
+          seat.ray.setFromCamera({x: 0, y: -0.24}, seat.camera);
+          hand.position.copy(seat.ray.ray.origin);
+          hand.lookAt(look.copy(seat.ray.ray.origin).add(seat.ray.ray.direction));
+          hand.rotateY(Math.PI);
+          const pointed = seat.pointed(hand);
+          return [JSON.stringify(clicked), JSON.stringify(pointed)];
+        })(wizardChess.seat)""")
+        self.assertEqual(same[0], same[1])
+        self.assertIn('"floor":', same[0])
+        self.assertEqual(ev("(at => [at.at.x, at.at.y, at.at.z, at.yaw])(wizardChess.seat.headsetPlace())"), [0, 1.3, 5.8, 0])
         # The board is set, and the seat is White's.
         self.assertEqual(ev("[wizardChess.world.pieces.size, wizardChess.game.side, wizardChess.game.position.turn]"), [32, "w", "w"])
         # The engine wakes, and the slider is the range it gave.
@@ -376,6 +396,11 @@ class Played(unittest.TestCase):
         x, y, z = ev("wizardChess.seat.camera.position.toArray()")
         self.assertAlmostEqual(x, 3.0, delta=0.1)
         self.assertTrue(1.1 < y < 1.4 and 3.6 < z < 4.2, (x, y, z))
+        # A headset's wearer riding is put at the rider's eye, turned the way
+        # the knight faces (toward Black: no turn).
+        place = ev("(at => [at.at.x, at.at.y, at.at.z, at.yaw])(wizardChess.seat.headsetPlace())")
+        self.assertAlmostEqual(place[0], 3.0, delta=0.1)
+        self.assertAlmostEqual(place[3], 0, delta=0.05)
         # And what is heard is heard from there: full strength only close by.
         self.assertEqual(ev("wizardChess.sound.near"), 2.2)
         # The knight ridden is alive: two ears, two eyes, and its ears turn
