@@ -366,7 +366,7 @@ class TournamentsPage(unittest.TestCase):
                       r'\s*<a class="site-link" href="\.\./tournaments/"[^>]*>Tournaments</a>'
                       r'\s*<a class="site-link" href="\.\./"[^>]*>CIVVIS</a>'),
             (VIEWER, r'id="homelink" href="/home" target="_top">Home</a>\s*'
-                     r'<a class="home-link" id="chartslink" href="/charts/ai-interpretability" target="_top">Charts/</a>\s*'
+                     r'<a class="home-link" id="chartslink" href="/charts/win-analytics" target="_top">Charts/</a>\s*'
                      r'<a class="home-link" id="tourlink" href="/tournaments" target="_top">Tournaments</a>\s*'
                      r'<a class="home-link" id="watchlink" href="\./" target="_top">CIVVIS</a>'),
         ):

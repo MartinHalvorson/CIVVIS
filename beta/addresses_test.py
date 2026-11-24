@@ -192,9 +192,7 @@ class Addresses(unittest.TestCase):
                 if name.endswith("/"):
                     opens.add(lands(ADDRESS[source], href))
         self.assertEqual(opens, {"charts/win-analytics"})
-        # The viewer's Charts/ opens the folder's first page, AI
-        # Interpretability since 2026-11-24, as /charts does.
-        self.assertIn('href="/charts/ai-interpretability" target="_top">Charts/</a>', VIEWER)
+        self.assertIn('href="/charts/win-analytics" target="_top">Charts/</a>', VIEWER)
 
     def test_every_relative_link_of_a_page_lands_on_a_page_or_the_viewer(self):
         # The same reading `publish.sh` gives the published pages, given here

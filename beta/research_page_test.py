@@ -1361,7 +1361,7 @@ class Page(unittest.TestCase):
             (TOURNAMENTS, r'href="\.\./home/">Home</a>\s*<a class="site-link" href="\.\./charts/win-analytics/"[^>]*>Charts/</a>'
                           r'\s*<a class="site-link" href="\./" aria-current="page">Tournaments</a>'),
             (VIEWER, r'id="homelink" href="/home" target="_top">Home</a>\s*'
-                     r'<a class="home-link" id="chartslink" href="/charts/ai-interpretability" target="_top">Charts/</a>\s*'
+                     r'<a class="home-link" id="chartslink" href="/charts/win-analytics" target="_top">Charts/</a>\s*'
                      r'<a class="home-link" id="tourlink" href="/tournaments" target="_top">Tournaments</a>'),
         ):
             self.assertRegex(page, pattern)

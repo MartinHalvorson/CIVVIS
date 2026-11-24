@@ -2131,12 +2131,9 @@ fn viewer_marks_the_selected_revision_and_its_compact_ages_above_the_minimap() {
 /// this order, inside a list that only the hosts serving a /home, a
 /// /charts and a /tournaments reveal. The addresses follow the names in
 /// the list since 2026-11-23 (operator: "clean up the URL please.
-/// standardized. please remove research from the url"): Charts/ opened Win
-/// Analytics at /charts/win-analytics, where it was /research, and since
-/// 2026-11-24 opens AI Interpretability at /charts/ai-interpretability, the
-/// folder's first page now (operator: "move ai interpretablity to the top of
-/// the charts/ then civ analytics, win analytics. elo rankings.. civvis
-/// performanc"); Auto-Tourneys was at /auto-tourneys, where it was /tournaments, until it took
+/// standardized. please remove research from the url"): Charts/ opens Win
+/// Analytics at /charts/win-analytics, where it was /research, and
+/// Auto-Tourneys was at /auto-tourneys, where it was /tournaments, until it took
 /// its first name and address back on 2026-11-24 (operator: "change
 /// auto-outnrye to Tournaments. Auto-tourney suggests some self imrpvoing
 /// tourney thing"): Tournaments, at /tournaments.
@@ -2145,7 +2142,7 @@ fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
     assert!(EMBEDDED_INDEX.contains(concat!(
         "<nav class=\"head-links\" id=\"headlinks\" aria-label=\"CIVVIS sites\" hidden>\n",
         "        <a class=\"home-link\" id=\"homelink\" href=\"/home\" target=\"_top\">Home</a>\n",
-        "        <a class=\"home-link\" id=\"chartslink\" href=\"/charts/ai-interpretability\" target=\"_top\">Charts/</a>\n",
+        "        <a class=\"home-link\" id=\"chartslink\" href=\"/charts/win-analytics\" target=\"_top\">Charts/</a>\n",
         "        <a class=\"home-link\" id=\"tourlink\" href=\"/tournaments\" target=\"_top\">Tournaments</a>\n",
         "        <a class=\"home-link\" id=\"watchlink\" href=\"./\" target=\"_top\">CIVVIS</a>\n",
         "        <a class=\"home-link\" id=\"strangelink\" href=\"?mode=strange\" target=\"_top\">Doctor Strange's Civ 6</a>\n",
