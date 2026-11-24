@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The AI Interpretability page: one turn, the plan through a game, and every gene by what it is worth."""
+"""The Civ AI Interpretability page: one turn, the plan through a game, and every gene by what it is worth."""
 
 from __future__ import annotations
 
@@ -326,7 +326,7 @@ class TheSiteList(unittest.TestCase):
             [
                 ("site-link", "../../home/", "Home"),
                 ("site-link", "./", "Charts/"),
-                ("site-link sub-link", "./", "AI Interpretability"),
+                ("site-link sub-link", "./", "Civ AI Interpretability"),
                 ("site-link sub-link", "../civ-analytics/", "Civ Analytics"),
                 ("site-link sub-link", "../win-analytics/", "Win Analytics"),
                 ("site-link sub-link", "../elo-rankings/", "ELO Rankings"),
@@ -339,9 +339,9 @@ class TheSiteList(unittest.TestCase):
             ],
         )
         self.assertEqual(nav.count('aria-current="page"'), 1)
-        self.assertIn('<a class="site-link sub-link" href="./" aria-current="page">AI Interpretability</a>', nav)
+        self.assertIn('<a class="site-link sub-link" href="./" aria-current="page">Civ AI Interpretability</a>', nav)
         self.assertIn("  .site-folder:hover > .site-menu,\n  .site-folder:focus-within > .site-menu,\n  .site-folder.is-open > .site-menu { display: grid; }\n", PAGE)
-        self.assertIn("<title>AI Interpretability · CIVVIS.ai</title>", PAGE)
+        self.assertIn("<title>Civ AI Interpretability · CIVVIS.ai</title>", PAGE)
         # Every link of the page stays in its lane.
         self.assertEqual(re.findall(r'(?:href|src)="(/[^"]*)"', PAGE), [])
 
@@ -355,12 +355,12 @@ class TheSiteList(unittest.TestCase):
         # the user can pick the right chart", then "move ai interpretablity
         # to the top of the charts/"); the viewer lists none.
         listed = ('        <div class="site-menu">\n'
-                  '          <a class="site-link sub-link" href="../ai-interpretability/" title="How a CIVVIS AI agent decides: one turn '
-                  'step by step, its plan through a game, and what each rule is worth in wins.">AI Interpretability</a>\n')
+                  '          <a class="site-link sub-link" href="../civ-ai-interpretability/" title="How a CIVVIS AI agent decides: one turn '
+                  'step by step, its plan through a game, and what each rule is worth in wins.">Civ AI Interpretability</a>\n')
         for page in (RESEARCH, PERFORMANCE):
             self.assertIn(listed, page)
         for page in (LANDING, TOURNAMENTS):
-            self.assertIn(listed.replace('href="../ai-interpretability/"', 'href="../charts/ai-interpretability/"'), page)
+            self.assertIn(listed.replace('href="../civ-ai-interpretability/"', 'href="../charts/civ-ai-interpretability/"'), page)
         self.assertNotIn("Interpretability</a>", VIEWER)
 
     def test_publishing_builds_the_page_into_a_lane_whose_revision_has_it(self):
@@ -385,10 +385,13 @@ class TheSiteList(unittest.TestCase):
         ):
             self.assertIn(line, PUBLISH)
         self.assertNotIn('"$repo_root/beta/interpretability', PUBLISH)
-        self.assertIn('<link rel="canonical" href="https://civvis.ai/charts/ai-interpretability/">', PAGE)
+        self.assertIn('<link rel="canonical" href="https://civvis.ai/charts/civ-ai-interpretability/">', PAGE)
         verify = (BETA / "verify.py").read_text(encoding="utf-8")
-        self.assertIn("""    "charts/ai-interpretability": b'id="interpretability-data"',\n""", verify)
+        self.assertIn("""    "charts/civ-ai-interpretability": b'id="interpretability-data"',\n""", verify)
+        # Two moves: out of the top of the site on 2026-11-23, and to the
+        # name Civ AI Interpretability on 2026-11-24.
         self.assertIn("""    "interpretability": "charts/ai-interpretability",\n""", verify)
+        self.assertIn("""    "charts/ai-interpretability": "charts/civ-ai-interpretability",\n""", verify)
 
 
 if __name__ == "__main__":

@@ -1399,11 +1399,11 @@ class Page(unittest.TestCase):
             '<nav class="site-nav" aria-label="CIVVIS sites">\n'
             '      <a class="site-link" href="../../home/">Home</a>\n'
             '      <div class="site-folder">\n'
-            '        <a class="site-link" href="../ai-interpretability/" '
+            '        <a class="site-link" href="../civ-ai-interpretability/" '
             'title="What the games show: charts read off the CIVVIS AI agents&#8217; games.">Charts/</a>\n'
             '        <div class="site-menu">\n'
-            '          <a class="site-link sub-link" href="../ai-interpretability/" '
-            'title="How a CIVVIS AI agent decides: one turn step by step, its plan through a game, and what each rule is worth in wins.">AI Interpretability</a>\n'
+            '          <a class="site-link sub-link" href="../civ-ai-interpretability/" '
+            'title="How a CIVVIS AI agent decides: one turn step by step, its plan through a game, and what each rule is worth in wins.">Civ AI Interpretability</a>\n'
             '          <a class="site-link sub-link" href="../civ-analytics/" '
             'title="How CIVVIS does as each civ, and the early build orders that win against Deity.">Civ Analytics</a>\n'
             '          <a class="site-link sub-link" href="./" aria-current="page">Win Analytics</a>\n'
@@ -1437,7 +1437,7 @@ class Page(unittest.TestCase):
             self.assertEqual(
                 re.findall(r'<a class="site-link sub-link" href="([^"]+)"[^>]*>([^<]+)</a>', nav),
                 [(("./" if listed == name else f"../{at}/"), listed) for at, listed in (
-                    ("ai-interpretability", "AI Interpretability"), ("civ-analytics", "Civ Analytics"),
+                    ("civ-ai-interpretability", "Civ AI Interpretability"), ("civ-analytics", "Civ Analytics"),
                     ("win-analytics", "Win Analytics"), ("elo-rankings", "ELO Rankings"),
                     ("civvis-performance", "CIVVIS Performance"))],
             )
@@ -1453,12 +1453,12 @@ class Page(unittest.TestCase):
             self.assertNotIn(">Musings</a>", page)
             self.assertNotIn(">Charts</a>", page)
         for page, pattern in (
-            (LANDING, r'aria-current="page">Home</a>\s*<div class="site-folder">\s*<a class="site-link" href="\.\./charts/ai-interpretability/"[^>]*>Charts/</a>'
+            (LANDING, r'aria-current="page">Home</a>\s*<div class="site-folder">\s*<a class="site-link" href="\.\./charts/civ-ai-interpretability/"[^>]*>Charts/</a>'
                       r'[\s\S]*?</div>\s*</div>\s*<a class="site-link" href="\.\./tournaments/"'),
-            (TOURNAMENTS, r'href="\.\./home/">Home</a>\s*<div class="site-folder">\s*<a class="site-link" href="\.\./charts/ai-interpretability/"[^>]*>Charts/</a>'
+            (TOURNAMENTS, r'href="\.\./home/">Home</a>\s*<div class="site-folder">\s*<a class="site-link" href="\.\./charts/civ-ai-interpretability/"[^>]*>Charts/</a>'
                           r'[\s\S]*?</div>\s*</div>\s*<a class="site-link" href="\./" aria-current="page">Tournaments</a>'),
             (VIEWER, r'id="homelink" href="/home" target="_top">Home</a>\s*'
-                     r'<a class="home-link" id="chartslink" href="/charts/ai-interpretability" target="_top">Charts/</a>\s*'
+                     r'<a class="home-link" id="chartslink" href="/charts/civ-ai-interpretability" target="_top">Charts/</a>\s*'
                      r'<a class="home-link" id="tourlink" href="/tournaments" target="_top">Tournaments</a>'),
         ):
             self.assertRegex(page, pattern)
