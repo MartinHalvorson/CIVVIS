@@ -1460,7 +1460,8 @@ document.getElementById("newgame-options").addEventListener("change", stageSelec
 // defined here (readSetting, initAdvancedSettings, …) — the first such call
 // threw and the crash cascaded until the page never registered as a viewer.
 // Those calls live HERE, at the very end of the second script, where every
-// declaration in both files is guaranteed initialized, and still ahead of the
-// engine's first /state answer (boot's synchronous prefix ends at its first
-// await).
+// declaration in both files is guaranteed initialized, and still before boot
+// goes on past the engine's first answer (boot's synchronous prefix ends at
+// its first await, and it then waits for every script of the page to have
+// run: `pageScriptsRan`, declared in app_palette.js).
 initAdvancedSettings();

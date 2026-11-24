@@ -1289,7 +1289,7 @@ fn the_header_box_has_the_timeline_on_top_and_its_controls_in_the_operators_orde
         // Branch is in the world's marker, so it is wherever the marker is,
         // and hangs under the rail. It says its name in a box of any width.
         "<div class=\"dbg-cursor\"><b></b>${key ? \"\" : `\n            <button class=\"dbg-branch\" data-dbg=\"split\"",
-        "aria-label=\"Branch the timeline on this turn\"><i>⑂</i>Branch</button>`}</div></div>",
+        "aria-label=\"Branch the timeline on this turn\" aria-haspopup=\"dialog\"><i>⑂</i>Branch</button>`}</div></div>",
         "position: absolute; left: 0; top: calc(100% + 6px); transform: translateX(-50%); pointer-events: auto;",
         "#debugbar:not(.dbg-split-on) .dbg-lane[data-dbg-lane=\"\"] { margin-bottom: 26px; }",
     ] {
@@ -1415,9 +1415,14 @@ fn the_split_speaks_one_set_of_messages_on_both_sides() {
 fn a_split_opens_at_once_and_locked_with_a_lock_between_its_lanes_and_one_panel() {
     let page = super::super::EMBEDDED_APP_DEBUGGER_JS;
     for piece in [
-        // Branch is a button, not a panel that asks: side by side.
+        // Branch is a button, and how the two are laid out is not asked:
+        // side by side. What it asks is the one thing a branch is made
+        // for, the Civ AI that plays it (operator, 2026-11-24: "they
+        // should choose the new strategy when they branch"), and the
+        // split opens when one is picked.
         "<button class=\"dbg-branch\" data-dbg=\"split\"",
-        "else if (action === \"split\") { debugPopOpen = null; debugSplitOpen(\"row\"); }",
+        "debugAsk = debugAsk && debugAsk.kind === \"branch\" ? null : {kind: \"branch\"};",
+        "debugSplitOpen(\"row\", null, ask.kind === \"branch\" ? button.value : ask.name);",
         // The lock stands in the lanes, shut as the split opens.
         "<div class=\"dbg-tie\"><button class=\"dbg-lock\" data-dbg-lock aria-pressed=\"true\">",
         "debugSplit = {dir, locked: true, settling: true,",
@@ -2294,22 +2299,31 @@ fn a_branch_begins_on_the_turn_it_is_made_on() {
         "#debugbar.dbg-split-on .dbg-branch, #debugbar.dbg-split-on .dbg-who { display: none; }",
         // A branch is named on itself, by its letter and its Civ AI.
         "letter: fork.forked ? letter.toUpperCase() : null, seated: pane.strategy,",
-        // A game opens on its two tracks. The box asks which Civ AI plays a
-        // branch Branch made: a branch made for one is not asked about, and
-        // neither is the opening view, which nobody pressed Branch for
-        // (operator, 2026-11-22: "branch b should only ask when branch is
-        // selected. not just auto ask rom the start").
-        "try { drawDebugBar(); debugPaneReport(); debugPaneNumbers(); debugOpenOnTwoTracks(); }",
-        // It asks when the two screens are shown, not while the halves load:
-        // one screen and two change places in one move (operator,
+        // A game opens on its one timeline, with the top-rated Civ AI in
+        // its seat, and a second timeline is Branch's to make (operator,
+        // 2026-11-24: "ai debugger should start with 1 strategy (maybe the
+        // best strategy). players can branch if they want (they should
+        // choose the new strategy when they branch)"). Two tracks at once
+        // is what a page asks for by name, and Doctor Strange's Civ 6.
+        "try { drawDebugBar(); debugPaneReport(); debugPaneNumbers(); debugOpenTheGame(); }",
+        "if (best === null || Number(entry.elo) > Number(best.elo)) best = entry;",
+        "const told = best && best !== debugStrategy() ? debugSwitchSeat(best) : null;",
+        "const two = DEBUG_TRACKS_ASKED === null ? STRANGE : DEBUG_TRACKS_ASKED === 2;",
+        // Branch asks which Civ AI plays the branch before there is one,
+        // and makes it for the one picked: the two screens are asked
+        // nothing, and neither is a game that opens on two (operator,
+        // 2026-11-22: "branch b should only ask when branch is selected.
+        // not just auto ask rom the start").
+        "if (debugAsk && debugSplit !== null) debugAsk = null;",
+        "<button data-dbg-ask=\"seat\" value=\"${escapeAttr(option.value)}\"${busy ? \" disabled\" : \"\"}>",
+        // One screen and two change places in one move (operator,
         // 2026-11-22: "i do not like the whole transition between ai
         // debugger 1 screen and 2 screens"). The window is held as it
         // stands, the split is made unseen, and it is shown when both
         // halves are there. What that looks like in a browser is held by
         // `beta/debugger_test.py`
         // (`check_one_screen_and_two_change_places_in_one_move`).
-        "shown: false, ask: seat || fresh ? null : {kind: \"seat\", letter: \"b\"}, look,",
-        "debugAsk = split.ask;",
+        "shown: false, look,",
         "if (debugHeld) return;",
         "host.className = \"dbg-unseen\";",
         "if (there(split.panes.a) && there(split.panes.b) && split.panes.a.deck && !split.branches) debugSplitReveal();",
@@ -2604,9 +2618,8 @@ fn the_page_says_a_picked_civ_ai_to_the_engine_when_it_is_picked() {
         .expect("debugSwitchSeat is a top-level function")
         .0;
     assert!(switched.contains("debugSeat();"));
-    assert!(script.contains(
-        r#"else if (how === "switch" && ask.kind === "switch") debugSwitchSeat(ask.name);"#
-    ));
+    assert!(script
+        .contains(r#"if (how === "switch" && ask.kind === "switch") debugSwitchSeat(ask.name);"#));
     assert!(branch(r#"data.civvis === "pane-strategy""#).contains("await debugSeat();"));
     // Whose the turns ahead are is the engine's to say, and the page draws it.
     assert!(script.contains("timeline.beyond"));
