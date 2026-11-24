@@ -1432,7 +1432,10 @@ impl Game {
         let (union, known) = (&mut aside.turn_visible, &mut aside.turn_visible_bits);
         if known.len != union.len() {
             known.bits = TileBits::with_capacity(tiles.len());
-            for index in union.iter().filter_map(|position| tiles.index_of(*position)) {
+            for index in union
+                .iter()
+                .filter_map(|position| tiles.index_of(*position))
+            {
                 known.bits.insert(index);
             }
         }
