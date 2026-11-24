@@ -5,7 +5,7 @@
 # The output is one complete LANE of the site — the viewer at its root with
 # the engine compiled to WebAssembly beside it, the landing page at /home, the
 # pages of Charts/ under /charts (Win Analytics, ELO Rankings, Civ Analytics,
-# CIVVIS Performance, AI Interpretability), the Auto-Tourneys page at /auto-tourneys, the
+# CIVVIS Performance, AI Interpretability), the Tournaments page at /tournaments, the
 # downloads page at /download and Wizard Chess at /wizard-chess — a
 # plain directory of static files with no
 # host-specific anything beyond the two Cloudflare Pages control files, which
@@ -189,6 +189,9 @@ without=()
 # (operator: "clean up the URL please. standardized. please remove research
 # from the url"): Win Analytics is at charts/win-analytics where it was at
 # research, and Auto-Tourneys at auto-tourneys where it was at tournaments.
+# On 2026-11-24 Auto-Tourneys took its first name back, Tournaments, and with
+# it its first address (operator: "change auto-outnrye to Tournaments.
+# Auto-tourney suggests some self imrpvoing tourney thing").
 # Every link inside a page is relative, so a page works at one depth only,
 # and this script, which is the invoking tree's, lays out both lanes. A page
 # of a pinned revision placed at main's address would be a page of dead
@@ -278,7 +281,7 @@ if [ -f "$landing_page" ]; then
 else
   without+=(home)
 fi
-# The Auto-Tourneys page (running, scheduled and finished series of the
+# The Tournaments page (running, scheduled and finished series of the
 # verification games) is filled the same way: the definitions in the lane's
 # data/tournaments.json, the games from the run ledger. A tournament
 # scheduled on main is listed on /test at once and on the front page when it

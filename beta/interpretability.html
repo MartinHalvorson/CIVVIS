@@ -10,7 +10,7 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23171d25'/%3E%3Ccircle cx='16' cy='16' r='11.5' fill='none' stroke='%2366c0f4'/%3E%3Cpath d='M7 16h18M16 4.5c-4.2 4.1-4.2 18.9 0 23M16 4.5c4.2 4.1 4.2 18.9 0 23' fill='none' stroke='%2366c0f4' stroke-width='1.15'/%3E%3C/svg%3E">
 <style>
   /* The home page's own palette, header and cards (`beta/landing.html`), as
-     the Charts and Auto-Tourneys pages repeat them: the pages are one site
+     the Charts and Tournaments pages repeat them: the pages are one site
      and read as one. Each is a single file with no shared stylesheet, so
      what they share is repeated here. */
   :root {
@@ -147,7 +147,7 @@
   .utility-list:focus-visible { color: #fff; text-decoration: underline; }
   .utility-list:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   /* The site's pages, listed in the same order on every one of them with
-     the page on screen in gold: Home, Charts, Auto-Tourneys, CIVVIS and AI
+     the page on screen in gold: Home, Charts, Tournaments, CIVVIS and AI
      Debugger, and under them the game they are built on. As on the home
      page, whose header this is, the column stands to the left of the title. */
   .site-brand { display: flex; align-items: center; gap: 18px; min-width: 0; }
@@ -230,10 +230,11 @@
      Charts/'s branch is open and this page is the gold entry in it, under
      CIVVIS Performance, set in from the rest. Every name stands on one line
      (operator, 2026-11-21: "make sure it fits on one line"), and the column
-     is as wide as its longest, AUTO-TOURNEYS: 145px. */
+     is as wide as AUTO-TOURNEYS, the Tournaments page's name from
+     2026-11-22 to 2026-11-24: 145px. */
   /* A page under Charts/: set in, and in smaller type, so that the longest
      of them, CIVVIS PERFORMANCE, is as wide on its one line as
-     AUTO-TOURNEYS is on its own (145px), and the column is the same width
+     AUTO-TOURNEYS was on its own (145px), and the column is the same width
      on every page. */
   .site-link.sub-link { margin-left: 10px; padding: 2px 6px 3px; font-size: 10px; letter-spacing: 0.03em; }
 
@@ -423,7 +424,7 @@
         <a class="site-link sub-link" href="../civ-analytics/" title="How CIVVIS does as each civ, and the early build orders that win against Deity.">Civ Analytics</a>
         <a class="site-link sub-link" href="../civvis-performance/" title="How fast the simulator plays: the fastest game on video and how long a self-play game takes.">CIVVIS Performance</a>
         <a class="site-link sub-link" href="./" aria-current="page">AI Interpretability</a>
-        <a class="site-link" href="../../auto-tourneys/" title="Series of verification games against Civilization VI&#8217;s own AI: running, scheduled and finished.">Auto-Tourneys</a>
+        <a class="site-link" href="../../tournaments/" title="Series of verification games against Civilization VI&#8217;s own AI: running, scheduled and finished.">Tournaments</a>
         <a class="site-link" href="../../" title="Every civilization is played by a CIVVIS AI agent.">CIVVIS</a>
         <a class="site-link" href="../../?mode=strange" title="One world, two timelines: the same game played two ways, side by side, on a timeline that branches.">Doctor Strange's Civ 6</a>
         <a class="site-link" href="../../?mode=play" title="You play one civilization. CIVVIS AI agents play the rest.">AI Debugger</a>
@@ -432,7 +433,7 @@
       </nav>
       <div class="site-lockup">
         <h1 class="site-title">CIVVIS<span>.ai</span></h1>
-        <p class="site-tagline"><span>An open source Civilization VI Simulator</span> <span>for AI strategy development</span></p>
+        <p class="site-tagline"><span>An open source Civilization VI Simulator</span> <span>for AI reasoning insights</span></p>
       </div>
     </div>
     <nav class="utility-nav" aria-label="CIVVIS links">

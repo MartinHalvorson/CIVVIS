@@ -78,7 +78,7 @@ per window, the last 1, 3, 7 and 30 days, a cell being CIVVIS's win rate and
 the games it is a share of. The games with it on are the left table (later on
 2026-11-23, reversing the sides first asked for: "put diplo victory allowed
 to the left of no diplo victory"). Its games are the tournaments' own, every
-finished game of every tournament the Auto-Tourneys page lists
+finished game of every tournament the Tournaments page lists
 (`data/tournaments.json`, counted by `home_rankings.tournament_series`), so
 the two pages agree: a win is CIVVIS's victory and anything else a finished
 game ended in is a loss, a rival's victory, our elimination or a game
@@ -452,7 +452,7 @@ def tournament_games(rows: list[dict], specs: list[dict], switch=lambda tags: {}
     when it began, the level the game's AI played at, whether CIVVIS won it,
     and whether it was played with the Diplomatic victory on. The games and
     their endings are `home_rankings.tournament_series`'s own, the count the
-    Auto-Tourneys page shows; a game counts once, whatever series it stands
+    Tournaments page shows; a game counts once, whatever series it stands
     in. `switch` answers each run's Diplomatic victory (`switches`), asked of
     the run a game ended in and, where that run does not say, of the game's
     first; a game neither says it for stands in neither table and is left
@@ -660,7 +660,7 @@ def research(source: pathlib.Path) -> dict | None:
         print(f"research_page: no figures against the game's AI ({error})", file=sys.stderr)
         out["levels"] = {}
     # The win rate at each level over the tournaments' games, off the same
-    # result lines and the definitions the Auto-Tourneys page reads, each
+    # result lines and the definitions the Tournaments page reads, each
     # game in the table of its own Diplomatic switch.
     out["tournament_rates"] = None
     try:
