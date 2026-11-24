@@ -2,6 +2,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
 
+mod core_probe;
+
 use civvis::ai::{run_game, AdvancedAi, Ai};
 use civvis::game::{
     default_difficulty, default_speed, Game, GameOptions, LeaderPool, VictoryConditions, WarRecord,
@@ -815,6 +817,10 @@ fn main() {
         // it forward, over and over. Cloning a position dominates that, and
         // nothing else here measured it.
         "rollouts" => rollouts_command(args),
+        // Which saved fields the transition function itself reads: blank one,
+        // replay the recorded actions, see what else changed. See
+        // `src/core_probe.rs`.
+        "core-probe" => core_probe::command(args),
         #[cfg(not(feature = "closed-experiments"))]
         "selfplay" => {
             eprintln!(
