@@ -290,8 +290,10 @@
      next's when the level changes, so the eye follows the games' endings
      across the turns. */
   .ins-chart { margin-top: 18px; padding-top: 14px; border-top: 2px solid var(--border-strong); }
-  .ins-chart-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 16px; }
+  .ins-chart-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 2px 16px; }
+  .ins-chart-name { min-width: 0; }
   .ins-chart-title { margin: 0; color: #fff; font-size: 17px; font-weight: 700; line-height: 1.3; }
+  .ins-chart-kind { margin: 1px 0 0; color: var(--text); font-size: 13.5px; font-weight: 600; }
   .ins-counted { margin: 0; color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
   .ins-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 8px 0 2px; padding: 0; list-style: none; color: var(--text); font-size: 12.5px; }
   .ins-legend li { display: inline-flex; align-items: center; gap: 6px; }
@@ -454,8 +456,14 @@
         </div>
 
         <div class="ins-chart">
+          <!-- The chart's own name is the one it has on Win Analytics
+               (operator, 2026-11-24, of that page's chart: "lets call it:
+               Turn Length and Victory Type Histogram of All Games"). -->
           <header class="ins-chart-head">
-            <h3 class="ins-chart-title" id="ins-speed-chart-title" data-say="CIVVIS vs {level} AI">CIVVIS vs Lv 8 Deity AI</h3>
+            <div class="ins-chart-name">
+              <h3 class="ins-chart-title" id="ins-speed-chart-title" data-say="CIVVIS vs {level} AI">CIVVIS vs Lv 8 Deity AI</h3>
+              <p class="ins-chart-kind">Turn Length and Victory Type Histogram of All Games</p>
+            </div>
             <p class="ins-counted" id="ins-speed-counted"></p>
           </header>
           <ul class="ins-legend" id="ins-speed-legend" aria-label="Victory types"></ul>
@@ -668,7 +676,7 @@
           const lines = VICTORIES.filter((v) => level.bins[v] && level.bins[v][i] > 0).reverse().map((v) => ({
             colour: colour(v), value: pct1(level.bins[v][i] / level.games), name: NAMES[v], n: fmt(level.bins[v][i]),
           }));
-          lines.push({ colour: "transparent", value: pct1(sum / level.games), name: "All victories", n: fmt(sum) });
+          lines.push({ colour: "transparent", value: pct1(sum / level.games), name: "All games", n: fmt(sum) });
           showTip(event, "Turns " + (i * SPAN + 1) + "–" + Math.min(TURNS, (i + 1) * SPAN) + " · " + worded("CIVVIS vs {level} AI"), lines);
         });
         hit.addEventListener("pointerleave", () => { hover.setAttribute("visibility", "hidden"); hideTip(); });
