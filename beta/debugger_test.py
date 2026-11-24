@@ -329,6 +329,8 @@ async function fetchJSON(path, init = {}) {
   // A half reads the world it holds after its twin was played for both.
   if (path === "/state") return engineState();
   if (path === "/forks") return forkEngines(body.count);
+  // What the engine's host says of the computer (`/machine-metrics`).
+  if (path === "/machine-metrics") return {cpu_percent: 12.5, memory_percent: 40.2};
   if (path === "/autosearch") return toyClimb(body);
   const forked = /^\/debug\?fork=(\d+)/.exec(path);
   if (forked) return forkAnswer(+forked[1], path, body);
@@ -370,7 +372,7 @@ function engineDebug(body) {
   if (engine.current !== 0 && (body.op === "step" || body.op === "finish_round")) opens();
   const marks = engineLine(), at = marks.indexOf(engine.turn);
   const others = engine.marks[marks.length];
-  let error = null, readings = null, terms = null;
+  let error = null, readings = null, terms = null, alerts = null;
   // One whole turn by the Civ AI seated.
   const step = () => {
     engine.turn += 1;
@@ -408,6 +410,23 @@ function engineDebug(body) {
       if (terms) terms.push(engineTerms(engine.objective));
     }
     if (!readings.length) error = "this game has no turn left to play";
+  } else if (body.op === "ahead") {
+    // Played on from the end of the seat's line, with the world left on the
+    // open turn as it stood. What is seen coming is the test's to say
+    // (`engine.nukes`, the turns a device goes off on).
+    const home = engine.turn, stood = engine.score, from = marks[marks.length - 1];
+    engine.turn = from;
+    if (engine.scores && engine.scores[from] !== undefined) engine.score = engine.scores[from];
+    readings = [];
+    while (readings.length < body.turns && engine.turn < 400 && !engine.stopped) {
+      step();
+      readings.push(engineSeat());
+    }
+    alerts = (engine.nukes || []).filter(turn => turn >= from && turn < engine.turn)
+      .map(turn => ({turn, kind: "nuclear", text: "Greece detonates a nuclear device"}));
+    engine.turn = home;
+    engine.score = stood;
+    engine.stopped = null;
   } else if (body.op === "objective") {
     // A search's lists, read off the toy's seat: a key it has no number for
     // is refused, as the engine refuses it.
@@ -479,6 +498,7 @@ function engineDebug(body) {
       engine.scores[engine.turn] !== undefined) engine.score = engine.scores[engine.turn];
   const answer = engineState(error);
   if (readings !== null) answer.readings = readings;
+  if (alerts !== null) answer.alerts = alerts;
   if (terms !== null) { answer.terms = terms; answer.killed = null; }
   // Played once for both: the twin is made a copy of what this half holds.
   if (twin !== null) {
@@ -3155,42 +3175,58 @@ def check_doctor_strange(bar: Bar, address: str) -> None:
     should also not spew random lines on the timeline. Move turn count up to
     the center line".
     """
-    both = "debugSplit.panes.a.turn === {0} && debugSplit.panes.b.turn === {0}".format
+    turns = lambda letters, turn: " && ".join(f"debugSplit.panes.{letter}.turn === {turn}" for letter in letters)
+    both = lambda turn: turns("ab", turn)
     ready = "typeof drawDebugBar === 'function' && typeof engineState === 'function'"
     bar.dev.call("Page.navigate", {"url": f"{address}?mode=strange"})
     bar.until(f"{ready} && location.search === '?mode=strange' && state === null", "the page, asked for as Doctor Strange's Civ 6")
     assert bar.ev("[STRANGE, STRANGE_PANE, document.documentElement.classList.contains('strange')]") == [True, False, True]
-    bar.ev("render(engineState()), true")
+    # The toy keeps each turn's score, as the engine keeps each turn's world.
+    # The first part of this is the page with no future played ahead, so
+    # that what is played is what is asked for; the futures come after.
+    bar.ev("engine.scores = {1: 0}, strange.futures = false, render(engineState()), true")
     bar.settled()
-    bar.until(f"debugSplit && debugSplit.shown && {both(1)} && strangeIdle()", "its two worlds are there")
-    # The branch begins with a Civ AI of its own, or the two would be one world for ever.
-    assert bar.ev("[debugSplit.panes.a.strategy, debugSplit.panes.b.strategy, debugSplit.locked]") == ["jack", "stock", True]
-    bar.until("debugSplit.panes.b.frame.contentWindow.eval('engine.seat') === 'stock'", "B is seated with its own Civ AI")
+    bar.until(f"debugSplit && debugSplit.shown && {both(1)} && strangeIdle() && !debugSplit.locked", "its two worlds are there")
+    # The page opens on the best player strategy and the one to beat it with
+    # (operator 2026-11-24: "our top strategy on the right and the challenger
+    # on the left"): the picker rates Jack 1211 and Stock 1000, so B, on the
+    # right, is Jack, and A, on the left and followed, is Stock. The worlds
+    # are locked by the page, and the split's own lock is left open.
+    assert bar.ev("[debugSplit.panes.a.strategy, debugSplit.panes.b.strategy, strange.locked, debugSplit.locked, strange.follow]") == \
+        ["stock", "jack", True, False, "a"]
+    bar.until("debugSplit.panes.a.frame.contentWindow.eval('engine.seat') === 'stock'", "A is seated with the challenger")
     # The two worlds are a box each under the line of the open turn, with
     # the trunk's column between them: the line is the divide between the
     # tree and the boxes, and each box hangs from it under its name plate.
-    # The sky they stand on is the whole window, the bar is unseen (half A's
-    # deck is still drawn from it) and the strip between the halves is gone.
-    # Each half knows what it is a half of, which is what puts its panels away.
+    # The sky they stand on is the whole window, the bar is unseen and the
+    # strip between the halves is gone. Each half knows what it is a half
+    # of, which is what puts its panels away, its own bar among them. What
+    # the page costs is in the top right corner, and the worlds' numbers
+    # stand on the line under it, in the lower right of the upper half.
     layout = bar.ev("""(() => {
       const box = letter => debugSplit.panes[letter].frame.getBoundingClientRect(), a = box("a"), b = box("b");
       const sky = document.getElementById("strange-sky").getBoundingClientRect(), line = strangeGeometry().cy;
+      const card = name => document.querySelector(`#strange-hud .${name}`).getBoundingClientRect();
+      const meter = card("strange-meter"), versus = card("strange-versus");
       return {
         a: [a.left === 0, Math.round(a.top) === line + 34, a.right < innerWidth / 2, Math.round(a.bottom) === innerHeight],
         b: [Math.round(b.right) === innerWidth, Math.round(b.top) === line + 34, b.left > innerWidth / 2, Math.round(b.bottom) === innerHeight],
         alike: Math.round(a.width) === Math.round(b.width) && Math.round(a.height) === Math.round(b.height),
-        roomy: a.height > innerHeight * .35 && a.width > innerWidth * .4 && line >= strange.floor,
+        roomy: a.height > innerHeight * .3 && a.width > innerWidth * .4 && line >= strange.floor,
         sky: [sky.left, sky.top, sky.width === innerWidth, sky.height === innerHeight],
         bar: getComputedStyle(debugBar).visibility,
         strip: getComputedStyle(debugSplit.host.querySelector(".dbg-divider")).display,
+        meter: [meter.top < 40, meter.right > innerWidth - 40],
+        versus: [versus.bottom <= line, versus.bottom > line - 40, versus.right > innerWidth - 40, versus.top > meter.bottom],
         halves: ["a", "b"].map(letter => debugSplit.panes[letter].frame.contentWindow.eval(
-          "[STRANGE, STRANGE_PANE, document.documentElement.classList.contains('strange-pane')]")),
+          "[STRANGE, STRANGE_PANE, document.documentElement.classList.contains('strange-pane'), getComputedStyle(debugBar).display]")),
       };
     })()""")
     assert layout == {"a": [True] * 4, "b": [True] * 4, "alike": True, "roomy": True, "sky": [0, 0, True, True],
-                      "bar": "hidden", "strip": "none", "halves": [[False, True, True]] * 2}, layout
-    # The highway is painted: the open turn is the line across the middle of
-    # the window, which is where the followed world's turn is put.
+                      "bar": "hidden", "strip": "none", "meter": [True, True], "versus": [True] * 4,
+                      "halves": [[False, True, True, "none"]] * 2}, layout
+    # The highway is painted: the open turn is the line across the window,
+    # which is where the followed world's turn is put.
     bar.until("strange.canvas.width === Math.round(innerWidth * Math.min(2, devicePixelRatio || 1)) && strange.cam === 1",
               "the highway is painted")
     geometry = bar.ev("(() => { const g = strangeGeometry(); return [strangeY(g, strange.cam, strange.cam) === g.cy,"
@@ -3204,28 +3240,29 @@ def check_doctor_strange(bar: Bar, address: str) -> None:
     # Branch is a picker: the open turn and each player strategy the followed
     # world does not seat. Each box has its exit.
     assert said == {"play": ["▶ Play Time", False], "back10": ["−10", True], "back1": ["−1", True], "on1": ["+1", False],
-                    "on10": ["+10", False], "branch": ["⑂ Branch: 1-(player strategy)1-Stock", False],
-                    "fork": ["⏮ To the fork", True], "lock": ["🔒 Locked", False],
+                    "on10": ["+10", False], "branch": ["⑂ Branch: 1-(player strategy)1-Jack", False],
+                    "fork": ["⏮ To the fork", True], "lock": ["🔒 Locked", False], "futures": ["🔮 Futures: off", False],
                     "say": ["One world so far. Play, and each player strategy takes it its own way", False],
                     "follow-a": ["Following", True], "follow-b": ["Follow", False],
                     "close-a": ["✕", False], "close-b": ["✕", False],
                     "turn": ["1", False], "limit": ["", False], "era": ["Ancient era", False]}, said
     # A branch is named by who plays it, and its box is in its colour. The
     # turn is written on the line of the open turn, not at the foot of the window.
-    names = "['a', 'b'].map(letter => document.querySelector(`#strange-hud [data-strange-name=\"${letter}\"]`).textContent)"
-    assert bar.ev(names) == ["Jack", "Stock"]
-    inks = ("['a', 'b'].map(letter => [strange.tint[letter], getComputedStyle(debugSplit.panes[letter].frame).borderLeftColor,"
+    names = "strange.order.map(letter => document.querySelector(`#strange-hud [data-strange-name=\"${letter}\"]`).textContent)"
+    assert bar.ev(names) == ["Stock", "Jack"]
+    inks = ("strange.order.map(letter => [strange.tint[letter], getComputedStyle(debugSplit.panes[letter].frame).borderLeftColor,"
             " getComputedStyle(document.querySelector(`#strange-hud [data-strange-world=\"${letter}\"]`)).borderTopColor])")
     assert bar.ev(inks) == [["#ff8f6b", "rgb(255, 143, 107)", "rgb(255, 143, 107)"], ["#6fd3e0", "rgb(111, 211, 224)", "rgb(111, 211, 224)"]]
-    assert bar.ev("(() => { const turn = document.querySelector('#strange-hud .strange-turn').getBoundingClientRect(), g = strangeGeometry();"
-                  " return [Math.round(turn.bottom) === g.cy, turn.right < g.cx, turn.right > g.cx - 260]; })()") == [True, True, True]
-    # One world so far, and one line on the tree. A turn played by two Civ AIs forks it there.
-    assert bar.ev("[debugSplitFork().forked, strange.ghosts.length, strange.follow]") == [False, 0, "a"]
+    assert bar.ev("(() => { const chip = document.querySelector('#strange-hud .strange-turn'), turn = chip.getBoundingClientRect(), g = strangeGeometry();"
+                  " return [Math.round(turn.bottom) === g.cy, turn.right < g.cx, turn.right > g.cx - 260, chip.textContent]; })()") == \
+        [True, True, True, "TURN1Ancient era"]
+    # One world so far, and one line on the tree. A turn played by two player strategies forks it there.
+    assert bar.ev("[strangeTree().splits === Infinity, strange.order.join(''), strange.follow]") == [True, "ab", "a"]
     bar.click('#strange-hud [data-strange="on1"]')
-    bar.until(f"{both(2)} && strangeIdle() && debugSplitFork().forked", "the two worlds part")
-    assert bar.ev("[debugSplitFork().turn, document.querySelector('#strange-hud [data-strange=\"say\"]').textContent,"
-                  " document.querySelector('#strange-hud [data-strange=\"fork\"]').textContent]") == \
-        [1, "A and B parted on turn 1", "⏮ To the fork · 1"]
+    bar.until(f"{both(2)} && strangeIdle() && strangeTree().splits === 1", "the two worlds part")
+    assert bar.ev("[document.querySelector('#strange-hud [data-strange=\"say\"]').textContent,"
+                  " document.querySelector('#strange-hud [data-strange=\"fork\"]').textContent, strangeTree().worlds.b.parent]") == \
+        ["A and B parted on turn 1", "⏮ To the fork · 1", "a"]
     # The card sets each yield a turn beside what the world has made so far
     # (operator 2026-11-23: "lets track cumulative prod, science, culture,
     # gold, faith next to the current turn yields"): two columns a world, the
@@ -3248,7 +3285,7 @@ def check_doctor_strange(bar: Bar, address: str) -> None:
     assert [cell[0] for cell in card["Faith"]] == ["0", "0", "0", "0"], card
     assert [cell[0] for cell in card["Score"]] == [str(scores[0]), "", str(scores[1]), ""] and low < high, card
     # The pointer over a world's box, or its name plate, picks out its line.
-    over = "[strange.over, debugSplit.host.classList.contains('strange-over-a'), debugSplit.host.classList.contains('strange-over-b')]"
+    over = "[strange.over, ...['a', 'b'].map(letter => debugSplit.panes[letter].frame.classList.contains('strange-over'))]"
     bar.ev("debugSplit.panes.b.frame.dispatchEvent(new MouseEvent('mouseenter')), true")
     assert bar.ev(over) == ["b", False, True]
     bar.ev("debugSplit.panes.b.frame.dispatchEvent(new MouseEvent('mouseleave')), true")
@@ -3256,69 +3293,81 @@ def check_doctor_strange(bar: Bar, address: str) -> None:
     assert bar.ev(over) == ["a", True, False]
     bar.ev("document.querySelector('#strange-hud [data-strange-world=\"a\"]').dispatchEvent(new MouseEvent('mouseleave')), true")
     assert bar.ev(over) == [None, False, False]
-    # A branch is made in one step, by picking who plays it: B's branch is
-    # let go of and stays on the tree under its own name and colour, on its
-    # own side, from the turn it parted on to the last it played; and B is A
-    # again as A stands on the open turn, with the picked strategy in the
-    # seat, a colour of its own and a name that says who played it and from when.
+    # A branch is made in one step, by picking who plays it, and is a world
+    # of its own (operator 2026-11-24: "simulating along 3 paths. 2 different
+    # player-strategies at the start of the game and 1 branched during the
+    # game"): a third page, C, beside the world it was made from, which is A
+    # as A stands on the open turn with the picked strategy in the seat, a
+    # colour of its own and a name that says who played it and from when.
     pick = ("(name => {{ const picker = document.querySelector('#strange-hud [data-strange=\"branch\"]'); picker.value = name;"
             " picker.dispatchEvent(new Event('change', {{bubbles: true}})); return picker.value; }})('{0}')").format
-    assert bar.ev(pick("stock")) == ""
-    bar.until(f"{both(2)} && strangeIdle() && !debugSplitFork().forked", "B branches from A on the open turn")
-    assert bar.ev("strange.ghosts.map(ghost => [ghost.letter, ghost.side, ghost.slot, ghost.from, ghost.to, ghost.parent, ghost.name, ghost.tint])") == \
-        [["b", 1, 0, 1, 2, "a", "Stock", "#6fd3e0"]]
-    bar.until("debugSplit.panes.b.marks.by.length === 1", "B says who played the turns it was copied with")
-    assert bar.ev(names) == ["Jack", "Jack-2-Stock"]
+    assert bar.ev(pick("jack")) == ""
+    bar.until(f"strange.order.join('') === 'acb' && debugSplit.panes.c && {turns('abc', 2)} && strangeIdle()"
+              " && debugSplit.panes.c.marks && debugSplit.panes.c.marks.by.length === 1"
+              " && debugSplit.panes.c.frame.contentWindow.eval('engine.seat') === 'jack'", "a branch is a third world, beside A")
+    assert bar.ev(names) == ["Stock", "Stock-2-Jack", "Jack"]
     assert bar.ev(inks)[1] == ["#b79cff", "rgb(183, 156, 255)", "rgb(183, 156, 255)"]
-    assert bar.ev("document.querySelector('#strange-hud [data-strange=\"say\"]').textContent") == "Branch 2-Stock is world B, from A"
-    assert bar.ev("debugSplit.panes.b.frame.contentWindow.eval('engine.sent.filter(call => call.path === \"/debug\")"
+    assert bar.ev("[document.querySelector('#strange-hud [data-strange=\"say\"]').textContent, debugSplit.panes.c.id.slice(2) === debugSplit.panes.a.id.slice(2),"
+                  " strangeTree().worlds.c.parent, strangeTree().worlds.c.fork, strangeTree().worlds.c.parted]") == \
+        ["Branch 2-Jack is world C, from A", True, "a", 2, False]
+    assert bar.ev("debugSplit.panes.c.frame.contentWindow.eval('engine.sent.filter(call => call.path === \"/debug\")"
                   ".map(call => call.body.op)')").count("copy") == 1
-    # A turn back is both worlds, as they stood.
+    # Three boxes share the width, under a strip left clear below the line
+    # where the worlds stand on it; the numbers have a pair of columns each.
+    boxes = ("(() => { const g = strangeGeometry(); return strange.order.map(letter => {"
+             " const box = debugSplit.panes[letter].frame.getBoundingClientRect();"
+             " return [Math.round(box.left), Math.round(box.width), Math.round(box.top) - g.cy, Math.round(box.bottom) === innerHeight]; }); })()")
+    wide = bar.ev("innerWidth")
+    three = bar.ev(boxes)
+    assert [box[2:] for box in three] == [[30 + 34, True]] * 3, three
+    assert all(abs(box[1] - wide / 3) <= 1 and abs(box[0] - at * wide / 3) <= 1 for at, box in enumerate(three)), three
+    assert bar.ev("[...document.querySelectorAll('#strange-hud [data-strange=\"numbers\"] .strange-letter')].map(cell => cell.textContent)") == ["A", "C", "B"]
+    # A turn back is every world, as they stood.
     bar.click('#strange-hud [data-strange="back1"]')
-    bar.until(f"{both(1)} && strangeIdle()", "both worlds go back a turn")
-    # Following B puts its timeline in the middle: Branch here then begins A again, from B.
-    bar.click('#strange-hud [data-strange="follow-b"]')
+    bar.until(f"{turns('abc', 1)} && strangeIdle()", "the worlds go back a turn")
+    # Following C puts its timeline in the middle: a branch is then made from C.
+    bar.click('#strange-hud [data-strange="follow-c"]')
     assert bar.ev("[strange.follow, document.querySelector('#strange-hud [data-strange=\"branch\"]').textContent]") == \
-        ["b", "⑂ Branch: 1-(player strategy)1-Jack"]
+        ["c", "⑂ Branch: 1-(player strategy)1-Stock"]
     # A press on the highway goes to the turn that height stands for: one
     # ahead of the last played is played to.
     bar.ev("(() => { const g = strangeGeometry(); strange.canvas.dispatchEvent(new MouseEvent('click',"
            " {clientX: g.cx, clientY: strangeY(g, 3, strange.cam), bubbles: true})); return true; })()")
-    bar.until(f"{both(3)} && strangeIdle()", "a press on the highway plays to its turn")
+    bar.until(f"{turns('abc', 3)} && strangeIdle()", "a press on the highway plays to its turn")
     # Locked, which is how the worlds begin, they go through the turns
     # together (operator 2026-11-23: "the doctor strange tool should step
     # through turns in sync when locked (which is the default). always on the
     # same turn"). Each is asked for the same next turn at once and holds it
-    # unshown until the other has played its own, so neither is ever seen a
-    # turn ahead, and each plays every turn with its own Civ AI.
+    # unshown until the rest have played their own, so none is ever seen a
+    # turn ahead, and each plays every turn with its own player strategy.
     steps = "debugSplit.panes.{0}.frame.contentWindow.eval('engine.sent.filter(call => call.path === \"/debug\" && call.body.op === \"step\").length')".format
-    stepped = bar.ev(f"[{steps('a')}, {steps('b')}]")
-    bar.ev("window.strangeGaps = []; window.strangeWatch = setInterval(() =>"
-           " strangeGaps.push(debugSplit.panes.a.turn - debugSplit.panes.b.turn), 4); true")
+    stepped = bar.ev(f"[{steps('a')}, {steps('b')}, {steps('c')}]")
+    bar.ev("window.strangeGaps = []; window.strangeWatch = setInterval(() => strangeGaps.push("
+           "debugSplit.panes.a.turn - debugSplit.panes.b.turn, debugSplit.panes.a.turn - debugSplit.panes.c.turn), 4); true")
     bar.click('#strange-hud [data-strange="on10"]')
-    bar.until(f"{both(13)} && strangeIdle()", "ten turns on, both worlds together")
+    bar.until(f"{turns('abc', 13)} && strangeIdle()", "ten turns on, the worlds together")
     gaps = bar.ev("clearInterval(strangeWatch), strangeGaps")
     assert gaps and max(map(abs, gaps)) <= 1, gaps
-    assert bar.ev(f"[{steps('a')}, {steps('b')}]") == [stepped[0] + 10, stepped[1] + 10]
-    # Paused, the two stop together, on the turn both were asked for.
+    assert bar.ev(f"[{steps('a')}, {steps('b')}, {steps('c')}]") == [count + 10 for count in stepped]
+    # Paused, the worlds stop together, on the turn all were asked for.
     bar.click('#strange-hud [data-strange="play"]')
     assert bar.ev("document.querySelector('#strange-hud [data-strange=\"play\"]').textContent") == "⏸ Pause Time"
     bar.until("debugSplit.panes.a.turn >= 16", "Play Time plays on")
     bar.click('#strange-hud [data-strange="play"]')
-    bar.until("strange.run === null && strangeIdle()", "Pause stops both")
-    paused = bar.ev("[debugSplit.panes.a.turn, debugSplit.panes.b.turn, document.querySelector('#strange-hud [data-strange=\"say\"]').textContent]")
-    assert paused[0] == paused[1] and paused[2] == f"Paused on turn {paused[0]}", paused
+    bar.until("strange.run === null && strangeIdle()", "Pause stops the worlds")
+    paused = bar.ev("[debugSplit.panes.a.turn, debugSplit.panes.b.turn, debugSplit.panes.c.turn, document.querySelector('#strange-hud [data-strange=\"say\"]').textContent]")
+    assert paused[0] == paused[1] == paused[2] and paused[3] == f"Paused on turn {paused[0]}", paused
     # Unlocked, each world goes by itself: a turn back is the followed one's
-    # (B's, here) alone, and each says its own turn.
+    # (C's, here) alone, and each says its own turn.
     bar.click('#strange-hud [data-strange="lock"]')
-    assert bar.ev("[debugSplit.locked, document.querySelector('#strange-hud [data-strange=\"lock\"]').textContent]") == [False, "🔓 Unlocked"]
+    assert bar.ev("[strange.locked, document.querySelector('#strange-hud [data-strange=\"lock\"]').textContent]") == [False, "🔓 Unlocked"]
     turn = paused[0]
     bar.click('#strange-hud [data-strange="back1"]')
-    bar.until(f"debugSplit.panes.b.turn === {turn - 1} && debugSplit.panes.a.turn === {turn} && strangeIdle()", "B alone goes back a turn")
+    bar.until(f"debugSplit.panes.c.turn === {turn - 1} && {both(turn)} && strangeIdle()", "C alone goes back a turn")
     assert bar.ev("document.querySelector('#strange-hud [data-strange-line=\"a\"]').textContent").startswith(f"Turn {turn}")
-    # Locking again brings the other world to the followed one's turn first.
+    # Locking again brings the other worlds to the followed one's turn first.
     bar.click('#strange-hud [data-strange="lock"]')
-    bar.until(f"debugSplit.locked && {both(turn - 1)} && strangeIdle()", "locked again, on B's turn")
+    bar.until(f"strange.locked && {turns('abc', turn - 1)} && strangeIdle()", "locked again, on C's turn")
     assert bar.ev("document.querySelector('#strange-hud [data-strange=\"play\"]').textContent") == "▶ Play Time"
     # Only what was played is a line: nothing on the tree is made up. (The
     # fan of ways a game might go was drawn from a dice the page no longer has.)
@@ -3331,45 +3380,92 @@ def check_doctor_strange(bar: Bar, address: str) -> None:
            " hold.dispatchEvent(new PointerEvent(kind, {clientX: 300, clientY: y, pointerId: 1, bubbles: true})); return true; })()"
            % (placed, placed + 60, placed + 60))
     assert bar.ev("[strangeGeometry().cy, Math.round(debugSplit.panes.a.frame.getBoundingClientRect().top),"
-                  " debugSplit.host.classList.contains('strange-dragging')]") == [placed + 60, placed + 60 + 34, False]
+                  " debugSplit.host.classList.contains('strange-dragging')]") == [placed + 60, placed + 60 + 30 + 34, False]
     bar.ev("document.querySelector('#strange-hud .strange-divide').dispatchEvent(new MouseEvent('dblclick', {bubbles: true})), true")
     assert bar.ev("strangeGeometry().cy") == placed
-    # A box has an exit. Closing A lets its branch go, which stays on the
-    # tree under its name, and B has the room: the whole width, and more of
-    # the height, so the line of the open turn goes up. B is followed, the
-    # last box stays open, and time runs for B alone.
-    # (B went back to turn 1 and played on from there, so every turn it
-    # holds is now its own strategy's, and its name says so.)
-    named = bar.ev(names)
-    assert named == ["Jack", "Stock"], named
+    # A branch is deleted by its box's exit: its line goes from the tree and
+    # its box from the window (operator 2026-11-24: "we should be able delete
+    # branches and that removes the line and the window"). C is a page this
+    # one made, and is let go of whole; the two that are left have the
+    # trunk's column between them again.
+    bar.click('#strange-hud [data-strange="close-c"]')
+    bar.until("strange.order.join('') === 'ab' && strangeIdle()", "C is deleted")
+    gone = bar.ev("[debugSplit.panes.c === undefined, document.querySelector('iframe[data-dbg-frame=\"c\"]'),"
+                  " document.querySelector('#strange-hud [data-strange-world=\"c\"]'), strange.follow, Object.keys(strangeTree().worlds).join(''),"
+                  " document.querySelector('#strange-hud [data-strange=\"say\"]').textContent]")
+    assert gone == [True, None, None, "a", "ab", "Jack deleted"], gone
+    two = bar.ev(boxes)
+    assert two[0][0] == 0 and two[0][1] < wide / 2 and two[1][0] > wide / 2 and [box[2:] for box in two] == [[34, True]] * 2, two
+    # A is one of the split's own two, so it is put out of sight and B has
+    # the whole width, and more of the height: the line of the open turn
+    # goes up. B is followed, the last box stays open, and time runs for B alone.
+    paired = bar.ev("strangeGeometry().cy")
     bar.click('#strange-hud [data-strange="close-a"]')
-    bar.until("strange.closed.a && strangeIdle()", "A's box is closed")
+    bar.until("strange.order.join('') === 'b' && strangeIdle()", "A is deleted")
     shut = bar.ev("""(() => {
-      const box = debugSplit.panes.b.frame.getBoundingClientRect(), plate = document.querySelector('#strange-hud [data-strange-world="b"]').getBoundingClientRect();
-      const gone = document.querySelector('#strange-hud [data-strange-world="a"]');
-      return {follow: strange.follow, locked: debugSplit.locked, ghost: strange.ghosts[strange.ghosts.length - 1].name,
-        wide: [Math.round(box.left), Math.round(box.width) === innerWidth, Math.round(plate.width) === innerWidth],
-        hangs: Math.round(box.top) === strangeGeometry().cy + 34, line: strangeGeometry().cy,
-        gone: [getComputedStyle(gone).display, getComputedStyle(debugSplit.panes.a.frame).visibility],
-        exits: ["a", "b"].map(letter => document.querySelector(`#strange-hud [data-strange="close-${letter}"]`).disabled),
-        lock: document.querySelector('#strange-hud [data-strange="lock"]').disabled};
+      const box = debugSplit.panes.b.frame.getBoundingClientRect(), plate = document.querySelector('#strange-hud [data-strange-world="b"]');
+      return {follow: strange.follow, wide: [Math.round(box.left), Math.round(box.width) === innerWidth, Math.round(plate.getBoundingClientRect().width) === innerWidth],
+        hangs: Math.round(box.top) === strangeGeometry().cy + 34, notch: plate.classList.contains("strange-notch"), line: strangeGeometry().cy,
+        gone: [document.querySelector('#strange-hud [data-strange-world="a"]'), getComputedStyle(debugSplit.panes.a.frame).visibility],
+        exit: document.querySelector('#strange-hud [data-strange="close-b"]').disabled,
+        lock: document.querySelector('#strange-hud [data-strange="lock"]').disabled,
+        say: document.querySelector('#strange-hud [data-strange="say"]').textContent};
     })()""")
-    assert shut == {"follow": "b", "locked": False, "ghost": named[0], "wide": [0, True, True], "hangs": True, "line": shut["line"],
-                    "gone": ["none", "hidden"], "exits": [True, True], "lock": True}, shut
-    assert shut["line"] < placed, (shut["line"], placed)
+    assert shut == {"follow": "b", "wide": [0, True, True], "hangs": True, "notch": True, "line": shut["line"],
+                    "gone": [None, "hidden"], "exit": True, "lock": True, "say": "Stock deleted"}, shut
+    assert shut["line"] < paired, (shut["line"], paired)
     stood = bar.ev("[debugSplit.panes.a.turn, debugSplit.panes.b.turn]")
     bar.click('#strange-hud [data-strange="on1"]')
     bar.until(f"debugSplit.panes.b.turn === {stood[1] + 1} && strangeIdle()", "time runs for the open world")
     assert bar.ev("debugSplit.panes.a.turn") == stood[0]
-    # A branch opens the closed box again: A is B as it stands, played by the
-    # strategy picked, in another colour, and the two are locked as they were.
-    assert bar.ev(pick("jack")) == ""
-    bar.until(f"!strange.closed.a && debugSplit.locked && {both(stood[1] + 1)} && strangeIdle()", "a branch opens A's box again")
-    opened = bar.ev("[strange.tint.a, debugSplit.panes.a.strategy, debugSplit.host.classList.contains('strange-one'), strangeGeometry().cy,"
-                    " Math.round(debugSplit.panes.a.frame.getBoundingClientRect().width) < innerWidth / 2]")
-    assert opened == ["#8fe07a", "jack", False, placed, True], opened
-    bar.until(f"document.querySelector('#strange-hud [data-strange-name=\"a\"]').textContent.endsWith('-{stood[1] + 1}-Jack')",
+    # A branch opens a box again: A is B as it stands, played by the strategy
+    # picked, in another colour, in a box beside B's.
+    assert bar.ev(pick("stock")) == ""
+    bar.until(f"strange.order.join('') === 'ba' && {both(stood[1] + 1)} && strangeIdle() && debugSplit.panes.a.strategy === 'stock'",
+              "a branch opens A's box again")
+    opened = bar.ev("[strange.tint.a, strangeGeometry().cy, debugSplit.panes.b.frame.getBoundingClientRect().left === 0,"
+                    " debugSplit.panes.a.frame.getBoundingClientRect().left > innerWidth / 2, getComputedStyle(debugSplit.panes.a.frame).visibility]")
+    assert opened == ["#8fe07a", paired, True, True, "visible"], opened
+    bar.until(f"document.querySelector('#strange-hud [data-strange-name=\"a\"]').textContent.endsWith('-{stood[1] + 1}-Stock')",
               "the branch is named by who played it and who plays it from here")
+    # What the page costs is read and shown: the toy's host says the
+    # computer is at an eighth of its processors and two fifths of its memory.
+    bar.until("document.querySelector('#strange-hud [data-strange-gauge=\"cpu\"]').textContent !== '–'", "what the page costs is read")
+    assert bar.ev("[...document.querySelectorAll('#strange-hud [data-strange-gauge]')].map(held => held.textContent)"
+                  ".concat(document.querySelector('#strange-hud [data-strange-worlds]').textContent)") == ["13%", "40%", "2 worlds open"]
+    assert not bar.dev.console, f"the page complained: {bar.dev.console}"
+
+    # The futures (operator 2026-11-24: "we can compute (a degree in advance)
+    # the futures of the paths we are on", "we should have for example
+    # nuclear war visual forecasts out in the future (we will compute the
+    # future of each path). these should alert on the top section out in the
+    # distance"). Each world is played ahead of the open turn along its own
+    # player strategy, a few turns at a request, and stays on the open turn:
+    # the turns are kept ahead of it, which is the line the tree draws, and
+    # what the engine saw coming is kept with the world for its line. In B's
+    # world a device goes off five turns on.
+    here = stood[1] + 1
+    aheads = "debugSplit.panes.{0}.frame.contentWindow.eval('engine.sent.filter(call => call.path === \"/debug\" && call.body.op === \"ahead\").length')".format
+    bar.ev(f"debugSplit.panes.b.frame.contentWindow.eval('engine.nukes = [{here + 5}]'), true")
+    bar.click('#strange-hud [data-strange="futures"]')
+    held = "['a', 'b'].every(letter => strangeKept(letter) - debugSplit.panes[letter].turn >= STRANGE_AHEAD)"
+    bar.until(f"strange.futures && !strange.peek && {held}", "each world's future is played ahead of the open turn")
+    future = bar.ev(f"[debugSplit.panes.a.turn, debugSplit.panes.b.turn, {aheads('a')}, {aheads('b')}, strangeTree().worlds.a.last, strangeTree().worlds.b.last,"
+                    " debugSplit.panes.a.alerts, debugSplit.panes.b.alerts, debugSplit.panes.b.ahead.size,"
+                    " document.querySelector('#strange-hud [data-strange=\"futures\"]').textContent]")
+    assert future == [here, here, 3, 3, here + 12, here + 12, [],
+                      [{"turn": here + 5, "kind": "nuclear", "text": "Greece detonates a nuclear device"}], 12,
+                      "🔮 Futures: 12 turns ahead"], future
+    # Time running on is shown the turns that were played ahead, and none is
+    # played again: the worlds are asked for more of their futures as they
+    # use them up, and never for a turn of their own.
+    stepped = bar.ev(f"[{steps('a')}, {steps('b')}]")
+    bar.click('#strange-hud [data-strange="play"]')
+    bar.until(f"debugSplit.panes.b.turn >= {here + 6}", "time runs on through the turns played ahead")
+    bar.click('#strange-hud [data-strange="play"]')
+    bar.until(f"strange.run === null && strangeIdle() && !strange.peek && {held}", "paused, with the futures played out again")
+    ran = bar.ev(f"[debugSplit.panes.a.turn === debugSplit.panes.b.turn, {steps('a')}, {steps('b')}, {aheads('a')} > 3, {aheads('b')} > 3]")
+    assert ran == [True, stepped[0], stepped[1], True, True], ran
     assert not bar.dev.console, f"the page complained: {bar.dev.console}"
 
     # With no room for two worlds the game is on its one timeline, which is
@@ -3510,16 +3606,17 @@ def main() -> int:
               "page's game alone, finds the best line and lets its copies go; the line is played on the "
               "one timeline or in either half of a split, and says what it came to beside what was found.")
         check_doctor_strange(bar, f"http://127.0.0.1:{port}/")
-        print("Doctor Strange's Civ 6 is the split shown as two worlds in boxes under the tree of their timeline: "
-              "the open turn is the line across the window, which is the divide between the tree and the boxes and "
-              "has the turn written on it, forward in time is up and the tree is wider ahead; a branch is named by "
-              "the player strategies that played it and its box is in its colour; B begins with a Civ AI of its own, "
-              "a turn played forks the tree, Branch is a picker that makes the branch in one step and keeps the one "
-              "let go of on the tree, the pointer over a box picks out its line, the divide is dragged, a box is "
-              "closed by its exit and opened again by a branch, both worlds go back as they stood, either can be "
-              "followed, and a press on the highway goes to its turn; locked, the two go through the turns together, never "
-              "seen a turn apart, and Play Time and Pause Time start and stop both, and unlocked they go by themselves "
-              "until locked again on the followed one's turn; a narrow window has the one timeline and says why.")
+        print("Doctor Strange's Civ 6 is the split shown as worlds in boxes under the tree of their timelines: it "
+              "opens on the top rated player strategy on the right and its challenger on the left; the open turn is "
+              "the line across the window, which is the divide between the tree and the boxes and has the turn "
+              "written on it; a branch is named by the player strategies that played it, its box is in its colour, "
+              "and Branch is a picker that makes one in a step, a third world in a third box; the pointer over a box "
+              "picks out its line, the divide is dragged, and a box's exit deletes its branch, line and window; "
+              "locked, the worlds go through the turns together, never seen a turn apart, and Play Time and Pause "
+              "Time start and stop them, and unlocked they go by themselves until locked again; what the page costs "
+              "is read and shown; each world's future is played ahead of the open turn and kept, what was seen "
+              "coming is kept with it, and time running on is shown those turns and plays none again; a narrow "
+              "window has the one timeline and says why.")
         return 0
     finally:
         chrome.terminate()
