@@ -1,5 +1,13 @@
 # Wizard Chess
 
+> **Set aside, 2026-11-24.** Operator: "also, lets set aside wizard chess
+> right now. please remove from civvis.ai". Wizard Chess is off the site: no
+> page lists it, `beta/publish.sh` publishes nothing of it, and
+> `/wizard-chess/` answers the site's 404. The game is kept in the tree
+> (`beta/chess.html`, `beta/chess/`, `beta/wizard_chess_test.py`, this
+> document). Putting it back on the site is reverting #5793, the pull request
+> that took it off. What follows describes it as it stood on the site.
+
 Operator, 2026-11-23: "below civ 6, add wizard chess. the background there
 can be black and white checkerboard. in it, i want you to build wizard chess.
 a laptop version and a version for a VR headset (but that can be later).

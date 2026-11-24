@@ -5,6 +5,7 @@
     "`stops` are listed slowest first as the operator listed them, and the first is the one the others are measured against. A stop's `readings` are its measurements, oldest first: `taken` the day, `seconds` the time one game takes, `from` how it was measured. The newest reading is the one shown; the older ones are the track of how far the stop has been pushed. A stop with `follows` keeps no readings: it is read from that ledger, one reading for every run that set a record.",
     "`goals` are the multipliers the line is marked with, each under a `key` the pages name it by, and the line ends at the largest. The first was the operator's on 2026-11-22 (\"1,000,000x speed imrpove would be a huge achievement\") and the second his later the same day: \"Addd 1 billion x to the scaling scale as well.\" A stop's `goal_seconds` is its own target (the operator's \"10s or so\" for a self-play game and \"1 game per second\" across the cores).",
     "`cloud` is what renting the rest of the way to a goal would cost (operator 2026-11-22: \"we should also estimate the cloud cost in $ to fill i nthe remaining amount (note that this is a Fable 5.2 best estimate of the numbers)\"). It is an estimate and not a measurement: nothing has been run in a cloud. Its entries are dated estimates, oldest first, the newest shown: who made it (`by`), the `machine` rented and its `cores`, the one-core stop whose game those cores play (`of`), the `single_thread` score of the machine's processor on the website of `data/performance/processors.json`, its list price for an hour (`dollars_an_hour`) and its spot price (`spot_dollars_an_hour`), and `from`, where each figure was read and what the estimate leaves out. A newer estimate is a new entry after the ones there.",
+    "`projected` are the stops past what was measured (operator 2026-11-22: \"add to out speedup timeline: 10x theoretical scale up from local hardware ... hardware scaleup is to the left of m5 max. potential distributed RL fleet: up to 1000+x\"). Nothing has run at one. Each names the measured stop it multiplies (`over`) and keeps dated `estimates`, oldest first, the newest shown: the day it was `taken`, the figure that stop's multiplier is multiplied by (`times`), `or_more` when the figure is open at its top (his \"1000+\"), and `from`, whose figure it is and what it stands for. A projected stop moves when the stop under it does, and it is never the page's number.",
     "The CIVVIS Performance page (`beta/performance.html`) opens on the same readings as two tables with every calculation written out (operator 2026-11-22: \"at the top of civvis performance we want to calculate a multiplier on the theoretical and experimetnal throughput of the simualtor. and the calculations. baeline is 5 hrs for manually played game. please add the deity computer control, deity self-play, civvis self-play.\"). Three keys are read by that page alone. A stop with `cores: 1` is the simulator on one core, so its speed can be multiplied across a machine's cores: that product is the theoretical throughput. A stop's `of` names the one-core stop whose game it plays on every core: its reading is the experimental throughput the theory is held against. `alone` on a one-core stop is a second list of readings, oldest first, of one game played with the machine to itself (`turns` played in `seconds`): the speed a core has when nothing else is running, which the busy host's readings are not.",
     "Nothing derived is written here. `beta/speedup_timeline.py` works out every multiplier, text and place on the line when the site is published."
   ],
@@ -42,7 +43,8 @@
       "key": "deity_sim",
       "cores": 1,
       "readings": [
-        {"taken": "2026-11-22", "seconds": 29.1, "from": "Twelve games on one core, seeds 9101 to 9112, build a57ffc68: `gene_screen --jobs 1 --players 6 --width 74 --height 46 --city-states 9 --map continents --difficulty deity --rivals firaxis-faithful --handicap rivals --rival-chairs 5 --rival-rung -2 --rival-pace`. 349.7 s in all by the games' own `secs`, 19.6 s to 48.3 s a game, ending on turn 151 on average, every one by a science victory. Taken at nice 19 on a host at load 15 with a live Civilization VI game playing, so a quiet machine is faster."}
+        {"taken": "2026-11-22", "seconds": 29.1, "from": "Twelve games on one core, seeds 9101 to 9112, build a57ffc68: `gene_screen --jobs 1 --players 6 --width 74 --height 46 --city-states 9 --map continents --difficulty deity --rivals firaxis-faithful --handicap rivals --rival-chairs 5 --rival-rung -2 --rival-pace`. 349.7 s in all by the games' own `secs`, 19.6 s to 48.3 s a game, ending on turn 151 on average, every one by a science victory. Taken at nice 19 on a host at load 15 with a live Civilization VI game playing, so a quiet machine is faster."},
+        {"taken": "2026-11-24", "seconds": 26.8, "from": "Twelve games on one core, seeds 9101 to 9112, build d301d68d (main of 2026-11-24): `gene_screen --jobs 1 --players 6 --width 74 --height 46 --city-states 9 --map continents --difficulty deity --rivals firaxis-faithful --handicap rivals --rival-chairs 5 --rival-rung -2 --rival-pace`. 321.8 s in all by the games' own `secs`, 17.3 s to 49.8 s a game, ending on turn 154 on average. Every game was played to a victory and a Deity rival won each: eight by science, two by culture, two by religion. A turn took 174 ms, as much as a self-play turn the same day (178 ms): the game is shorter than a self-play game because it ends forty turns sooner, not because its turns are cheaper. Taken at nice 19 beside that day's self-play reading, on a host at load 12 with a live Civilization VI game and the tournament playing. The games' own `cpu_secs` come to 317.6 s, so the core was the game's for nearly all of the time."}
       ]
     },
     {
@@ -53,7 +55,8 @@
         {"taken": "2026-11-22", "turns": 180, "seconds": 37, "from": "One standard self-play game with the machine to itself, build a57ffc68: 180 turns in 37 s, 4.9 turns a second. One seed, taken the day of the every-core record and written up with it (docs/GAMES_PER_MINUTE.md, \"Eighteen games at once run slower than one alone\")."}
       ],
       "readings": [
-        {"taken": "2026-11-22", "seconds": 57.1, "from": "Twelve standard self-play games on one core, seeds 20261122000000 to 20261122000011, build a57ffc68: `gene_screen --jobs 1` with its defaults (six CIVVIS seats, nine city-states, 74x46 Continents, Online speed, 250 turns). 685.5 s in all by the games' own `secs`, 28.9 s to 102.8 s a game, ending on turn 192 on average. Taken at nice 19 on a host at load 15 with a live Civilization VI game playing, so a quiet machine is faster; a worker of the every-core benchmark, whose neighbours are all busy too, takes 59 s."}
+        {"taken": "2026-11-22", "seconds": 57.1, "from": "Twelve standard self-play games on one core, seeds 20261122000000 to 20261122000011, build a57ffc68: `gene_screen --jobs 1` with its defaults (six CIVVIS seats, nine city-states, 74x46 Continents, Online speed, 250 turns). 685.5 s in all by the games' own `secs`, 28.9 s to 102.8 s a game, ending on turn 192 on average. Taken at nice 19 on a host at load 15 with a live Civilization VI game playing, so a quiet machine is faster; a worker of the every-core benchmark, whose neighbours are all busy too, takes 59 s."},
+        {"taken": "2026-11-24", "seconds": 34.5, "from": "Twelve standard self-play games on one core, seeds 20261122000000 to 20261122000011, build d301d68d (main of 2026-11-24): `gene_screen --jobs 1` with its defaults (six CIVVIS seats, nine city-states, 74x46 Continents, Online speed, 250 turns). 414.0 s in all by the games' own `secs`, 18.0 s to 80.7 s a game with the middle game at 28.9 s, ending on turn 194 on average, 178 ms a turn. Taken at nice 19 beside that day's Deity sim reading, on a host at load 12 with a live Civilization VI game and the tournament playing. The games' own `cpu_secs` come to 408.3 s, so the core was the game's for nearly all of the time. The seeds are those of 2026-11-22 and the games are not: genes were added since, so a seed draws other genomes. With the shipped genome on every seat in place of a drawn one (`--deployment-genome`), the same seeds took 26.5 s a game right after, 17.8 s to 33.9 s, ending on turn 188 on average, 141 ms a turn."}
       ]
     },
     {
@@ -61,6 +64,22 @@
       "of": "self_play",
       "goal_seconds": 1,
       "follows": "data/performance/games_per_minute.json"
+    }
+  ],
+  "projected": [
+    {
+      "key": "scale_up",
+      "over": "all_cores",
+      "estimates": [
+        {"taken": "2026-11-22", "times": 10, "from": "The project owner's figure, 2026-11-22: \"10x theoretical scale up from local hardware\". Ten times what the one M5 Max delivers with a game on every core, from larger hardware of our own. A calculation and not a run: no larger machine has played a game."}
+      ]
+    },
+    {
+      "key": "fleet",
+      "over": "all_cores",
+      "estimates": [
+        {"taken": "2026-11-22", "times": 1000, "or_more": true, "from": "The project owner's figure, 2026-11-22: \"potential distributed RL fleet: up to 1000+x\". A thousand times the one M5 Max and more, from many machines playing self-play at once for reinforcement learning. A potential and not a run: no such fleet exists."}
+      ]
     }
   ]
 }

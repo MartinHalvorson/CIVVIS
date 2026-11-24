@@ -431,7 +431,7 @@ class ThePage(unittest.TestCase):
         self.assertEqual([key for key, _, _ in buttons], performance_page.WINDOWS)
         # One blue for every mark, and what a time is and is not is said.
         self.assertIn("--series: #3987e5;", PAGE)
-        self.assertIn("These are a tournament&#8217;s times, not a benchmark&#8217;s", PAGE)
+        self.assertIn("A tournament&#8217;s times, not a benchmark&#8217;s.", PAGE)
 
 
 class TheSiteList(unittest.TestCase):
@@ -458,7 +458,6 @@ class TheSiteList(unittest.TestCase):
                 ("site-link", "../../?mode=strange", "Doctor Strange's Civ 6"),
                 ("site-link", "../../?mode=play", "AI Debugger"),
                 ("site-link", "https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/", "Civ 6"),
-                ("site-link", "../../wizard-chess/", "Wizard Chess"),
             ],
         )
         self.assertEqual(nav.count('aria-current="page"'), 1)

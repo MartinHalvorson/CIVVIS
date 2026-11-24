@@ -530,22 +530,39 @@ class BuildOrders(unittest.TestCase):
             ("UNIT_AZTEC_EAGLE_WARRIOR", "Eagle Warrior"),
             ("UNIT_SUMERIAN_WAR_CART", "War-Cart"),
             ("BUILDING_TAJ_MAHAL", "Taj Mahal"),
+            # A project, by the name the game gives it.
+            ("PROJECT_ENHANCE_DISTRICT_HOLY_SITE", "Holy Site Prayers"),
+            ("PROJECT_REPAIR_OUTER_DEFENSES", "Repair Outer Defenses"),
+            # An item the capital dropped unfinished (operator 2026-11-24).
+            ("UNIT_SCOUT:dropped", "Scout, dropped"),
+            ("DISTRICT_HOLY_SITE:dropped", "Holy Site, dropped"),
         ):
             self.assertEqual(research_page.build_name(item), name)
 
     def test_an_opening_comes_from_the_snapshot_or_the_runs_summary(self):
         first, second, third, fourth = (f"civvis-{stamp}" for stamp, _, _ in self.PLAYED[:4])
         rows = self.rows()[:4]
+        reading = research_page.ladder().BUILD_ORDER_READING
         more = {
-            # The harness writes the builds with their turns.
-            second: {"build_order": [[self.SCOUT, 4], [self.SETTLER, 12], [self.BUILDER, 16]]},
+            # The harness writes the builds with their turns, and how it read them.
+            second: {"build_order": [[self.SCOUT, 4], [self.SETTLER, 12], [self.BUILDER, 16]], "build_order_reading": reading},
             # Held by the snapshot too, which is not asked twice.
-            first: {"build_order": [[self.BUILDER, 9]]},
-            third: {"build_order": []},
+            first: {"build_order": [[self.BUILDER, 9]], "build_order_reading": reading},
+            third: {"build_order": [], "build_order_reading": reading},
+            # Read another way than the reader reads now: not taken.
+            fourth: {"build_order": [[self.SLINGER, 6]], "build_order_reading": reading - 1},
         }
-        snapshot = {"items": [self.SCOUT, self.SETTLER, self.SLINGER], "games": [[first, [0, 1, 2]]]}
+        snapshot = {"reading": reading, "items": [self.SCOUT, self.SETTLER, self.SLINGER], "games": [[first, [0, 1, 2]]]}
         self.assertEqual(research_page.held_openings(snapshot), {first: [self.SCOUT, self.SETTLER, self.SLINGER]})
+        # A snapshot read another way holds nothing the tree takes.
+        self.assertEqual(research_page.held_openings({**snapshot, "reading": reading - 1}), {})
+        self.assertEqual(research_page.held_openings({key: value for key, value in snapshot.items() if key != "reading"}), {})
         self.assertEqual(research_page.builds_named([[self.SCOUT, 4], ["UNIT_SETTLER", 12]]), [self.SCOUT, self.SETTLER])
+        # A step the capital dropped is marked.
+        self.assertEqual(
+            research_page.builds_named([[self.SCOUT, 4, "dropped"], ["UNIT_SETTLER", 12]]),
+            [self.SCOUT + research_page.DROPPED, self.SETTLER],
+        )
         for none in (None, [], "UNIT_SCOUT", [[4]]):
             self.assertIsNone(research_page.builds_named(none))
         with tempfile.TemporaryDirectory() as scratch, contextlib.redirect_stderr(io.StringIO()):
@@ -594,7 +611,10 @@ class BuildOrders(unittest.TestCase):
             scout(2, producing_hash=0, production_cost=-1, production_progress=-1, units=[{"id": 2, "kind": self.SCOUT, "x": 5, "y": 5}]),
         ]
         first, second, third = "civvis-20261120T010000Z", "civvis-20261120T020000Z", "civvis-20261120T030000Z"
-        rows = [run(first, "win", 200), run(second + "-cont1", "rival_victory", 200), run(third, "defeat", 150)]
+        fourth = "civvis-20261120T040000Z"
+        reading = research_page.ladder().BUILD_ORDER_READING
+        rows = [run(first, "win", 200), run(second + "-cont1", "rival_victory", 200), run(third, "defeat", 150),
+                run(fourth, "defeat", 160)]
         with tempfile.TemporaryDirectory() as scratch, contextlib.redirect_stderr(io.StringIO()):
             repo = pathlib.Path(scratch)
             git = lambda *args: subprocess.run(["git", "-C", scratch, *args], check=True, capture_output=True, text=True)
@@ -605,8 +625,11 @@ class BuildOrders(unittest.TestCase):
                 # A game reloaded from a save: its one published run opens
                 # mid-game, so its opening is in no log.
                 (second + "-cont1", [scout(140, producing_hash=7, production_cost=15, production_progress=3)], {}),
-                # Its summary carries the opening: left to the summary.
-                (third, opening, {"build_order": [[self.SETTLER, 9]]}),
+                # Its summary carries the opening, read the way the reader
+                # reads now: left to the summary.
+                (third, opening, {"build_order": [[self.SETTLER, 9]], "build_order_reading": reading}),
+                # One read another way is read again off the log.
+                (fourth, opening, {"build_order": [[self.SETTLER, 9]]}),
             ):
                 (repo / "runs" / tag).mkdir(parents=True)
                 (repo / "runs" / tag / "summary.json").write_text(json.dumps(summary), encoding="utf-8")
@@ -620,19 +643,25 @@ class BuildOrders(unittest.TestCase):
             out = repo / "out" / "build_orders.json"
             self.assertEqual(research_page.main(["research_page.py", "--build-orders", scratch, str(out)]), 0)
             taken = json.loads(out.read_text(encoding="utf-8"))
-            self.assertEqual((taken["level"], taken["items"], taken["games"]), (8, [self.SCOUT], [[first, [0]]]))
+            self.assertEqual((taken["level"], taken["reading"], taken["items"], taken["games"]),
+                             (8, reading, [self.SCOUT], [[first, [0]], [fourth, [0]]]))
             # A game per line, and a second run adds nothing it holds.
-            self.assertIn('\n["civvis-20261120T010000Z",[0]]\n', out.read_text(encoding="utf-8"))
-            held = {**taken, "items": ["UNIT_WARRIOR", self.SCOUT], "games": [[first, [1, 0]]]}
+            self.assertIn('\n["civvis-20261120T010000Z",[0]],\n', out.read_text(encoding="utf-8"))
+            held = {**taken, "items": ["UNIT_WARRIOR", self.SCOUT], "games": [[first, [1, 0]], [fourth, [1]]]}
             again = research_page.openings_snapshot(repo, held)
             self.assertEqual((again["items"], again["games"]), (held["items"], held["games"]))
+            # A snapshot read another way is read again whole.
+            anew = research_page.openings_snapshot(repo, {**held, "reading": reading - 1})
+            self.assertEqual((anew["items"], anew["games"]), ([self.SCOUT], [[first, [0]], [fourth, [0]]]))
             # Read afresh (`--again`, for a change to how an opening is read):
             # the snapshot's own readings are dropped, and the game whose
             # summary carries an opening is read off its log too.
             self.assertEqual(research_page.main(["research_page.py", "--build-orders", scratch, str(out), "--again"]), 0)
             fresh = json.loads(out.read_text(encoding="utf-8"))
-            self.assertEqual((fresh["items"], fresh["games"]), ([self.SCOUT], [[first, [0]], [third, [0]]]))
-            self.assertEqual(research_page.research(repo)["build_orders"]["games"], 1)
+            self.assertEqual((fresh["items"], fresh["games"]), ([self.SCOUT], [[first, [0]], [third, [0]], [fourth, [0]]]))
+            # With no snapshot, a publish reads off their logs the openings
+            # no summary holds the way the reader reads now.
+            self.assertEqual(research_page.research(repo)["build_orders"]["games"], 3)
 
     def test_the_committed_snapshot_holds_openings_the_tree_can_list(self):
         taken = json.loads((ROOT / research_page.BUILD_ORDERS).read_text(encoding="utf-8"))
@@ -649,7 +678,10 @@ class BuildOrders(unittest.TestCase):
         self.assertEqual((ROOT / research_page.BUILD_ORDERS).read_text(encoding="utf-8"), research_page.written_openings(taken))
         # Every build in it has a name the page can print.
         for item in taken["items"]:
-            self.assertRegex(research_page.build_name(item), r"^[A-Z][A-Za-z\u2019' -]+$", item)
+            self.assertRegex(research_page.build_name(item), r"^[A-Z][A-Za-z\u2019' -]+(, dropped)?$", item)
+        # Read the way the reader reads now: the page takes it.
+        self.assertEqual(taken["reading"], research_page.ladder().BUILD_ORDER_READING)
+        self.assertEqual(research_page.held_openings(taken).keys(), {key for key, _ in taken["games"]})
 
 
 class Windows(unittest.TestCase):
@@ -1185,13 +1217,15 @@ class Page(unittest.TestCase):
         self.assertEqual(block.count('class="res-section"'), 1)
         self.assertIn('<div class="res-builds-head" aria-hidden="true"><span>Build order</span><span>Win rate (total games)</span></div>', block)
         self.assertIn('<ul class="res-builds" id="res-builds" aria-labelledby="res-title-builds"></ul>', block)
-        # The note says what a build is, which games count and what a row is.
+        # The note says what a step is, which games count and what a row is
+        # (operator 2026-11-24: an item dropped unfinished is a step, marked).
         for sentence in (
-            "What CIVVIS&#8217;s capital finished producing, in the order it finished it.",
-            "The first builds are listed best win rate first; press one to list what was built second after it, then third,",
-            "A row is CIVVIS&#8217;s win rate over the games that opened with exactly the builds down to it and, in brackets, those games.",
-            "one bought with Gold or Faith is not a build, and an item dropped for another before it was done is not one either.",
-            "A Settler can come first: the capital needs two citizens to train one, it has them by turn 3 or 4 at Online speed,",
+            "CIVVIS&#8217;s capital&#8217;s build order: what it worked on, in order.",
+            "or one it put production into and dropped unfinished, marked &#8220;dropped&#8221;",
+            "so the first step is always one the capital could start on turn 1.",
+            "The first steps are listed best win rate first; press one to list the steps after it, then the third,",
+            "A row is CIVVIS&#8217;s win rate over the games whose build order opened with exactly the steps down to it and, in brackets, those games.",
+            "An item bought with Gold or Faith, or handed over (a pantheon&#8217;s free Settler or Builder), is not a step.",
             "Every finished game against the Deity AI on the run ledger counts, in a tournament or not: a win is a CIVVIS victory; a loss is a rival&#8217;s victory, our elimination, or a game conceded early.",
             "A build order only one game played is not opened further.",
         ):
@@ -1385,7 +1419,14 @@ class Page(unittest.TestCase):
         nav = PAGE[PAGE.index('<nav class="site-nav"'):PAGE.index("</nav>")]
         self.assertEqual(nav.count('aria-current="page"'), 1)
         self.assertIn("  .site-folder:hover > .site-menu,\n  .site-folder:focus-within > .site-menu,\n  .site-folder.is-open > .site-menu { display: grid; }\n", PAGE)
-        self.assertIn('<a href="../civvis-performance/">CIVVIS Performance</a>.', PAGE)
+        # The page's opening words are one line and name no other page: the
+        # list over them does (operator, 2026-11-24: "there is too much text
+        # on pages, particualrly home/ and charts/ ... some text ok. just
+        # not too much").
+        intro = PAGE[PAGE.index('<p class="intro">'):]
+        intro = intro[:intro.index("</p>")]
+        self.assertNotIn("<a ", intro)
+        self.assertLess(len(re.sub(r"<[^>]+>", "", intro).split()), 20)
         # The two pages after it under Charts/ (operator 2026-11-23: "add
         # that to a new page: Charts/ELO Rankings. this should be after win
         # analytics in the ordering ... add another page: Civ Analytics")

@@ -206,21 +206,6 @@
   .site-link[href^="https://store.steampowered.com/"] { background: linear-gradient(90deg, #1a44c2 35%, #47bfff); color: #fff; }
   .site-link[href^="https://store.steampowered.com/"]:hover,
   .site-link[href^="https://store.steampowered.com/"]:focus-visible { background: linear-gradient(90deg, #2352d6 35%, #73cfff); color: #fff; }
-  /* Wizard Chess is a chessboard (operator, 2026-11-23: "below civ 6, add
-     wizard chess. the background there can be black and white
-     checkerboard"): black and white squares round a black plate that the
-     name stands on, so that it reads on either. */
-  .site-link[href$="wizard-chess/"] {
-    background: linear-gradient(#0b0b0c, #0b0b0c) center / calc(100% - 16px) calc(100% - 8px) no-repeat,
-      repeating-conic-gradient(#f4f1e8 0 25%, #0b0b0c 0 50%) 0 0 / 8px 8px;
-    color: #f4f1e8;
-  }
-  .site-link[href$="wizard-chess/"]:hover,
-  .site-link[href$="wizard-chess/"]:focus-visible {
-    background: linear-gradient(#26262a, #26262a) center / calc(100% - 16px) calc(100% - 8px) no-repeat,
-      repeating-conic-gradient(#ffffff 0 25%, #0b0b0c 0 50%) 0 0 / 8px 8px;
-    color: #fff;
-  }
   /* Charts/ is a folder of pages and reads "Charts/", with the slash
      (operator, 2026-11-22), and drops down like one (operator,
      2026-11-24: "charts/ can drop down folder style and the user can
@@ -263,6 +248,13 @@
   .rank-note { margin: 10px 0 0; padding-top: 8px; border-top: 1px solid var(--border); color: var(--faint); font-size: 11.5px; line-height: 1.5; }
   .rank-note a { color: var(--accent); }
   .rank-note p { margin: 0 0 4px; }
+  /* What a chart counts, closed until it is pressed (operator, 2026-11-24:
+     "there is too much text on pages ... should be a more visual
+     experience"). The words are a visitor's to open; the page is its charts. */
+  .fine { margin-top: 10px; }
+  .fine > summary { width: max-content; max-width: 100%; color: var(--faint); font-size: 11.5px; cursor: pointer; }
+  .fine > summary:hover, .fine[open] > summary { color: var(--accent); }
+  details.fine > .rank-note, details.fine > .int-strip-note { max-width: 860px; margin-top: 6px; padding-top: 0; border-top: 0; color: var(--faint); font-size: 11.5px; }
   /* A figure of the page under its name, five across: what the agent is
      made of, counted off the source when the site is published. */
   .int-tiles { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin-top: 8px; }
@@ -447,7 +439,6 @@
       <a class="site-link" href="../../?mode=strange" title="One world, two timelines: the same game played two ways, side by side, on a timeline that branches.">Doctor Strange's Civ 6</a>
       <a class="site-link" href="../../?mode=play" title="You play one civilization. CIVVIS AI agents play the rest.">AI Debugger</a>
       <a class="site-link" href="https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/" target="_blank" rel="noopener" title="Buy Civilization VI on Steam">Civ 6</a>
-      <a class="site-link" href="../../wizard-chess/" title="Chess where you command and the pieces obey, against an opponent at the Elo you pick.">Wizard Chess</a>
     </nav>
     <script data-site-folder>
     // Charts/ on a touch screen, where nothing points at it: the first tap
@@ -501,12 +492,16 @@
     </nav>
   </header>
   <main class="shell">
+    <!-- Two short sentences. Until 2026-11-24 a paragraph stood here, a
+         paragraph under every heading and a sentence in every tile
+         (operator: "there is too much text on pages, particualrly home/ and
+         charts/. should be a more visual experience. some text ok. just not
+         too much"). This page is the one that explains, so a chart keeps a
+         line saying how to read it; what the figures count is under "How it
+         is counted", closed until it is pressed. -->
     <p class="intro">
-      A CIVVIS AI agent is not a neural network, and it asks no language model anything while it plays
-      <cite>Sid Meier&#8217;s Civilization VI</cite>. It is a program of written rules, so every decision it makes
-      can be traced to the line that made it. This page reads the agent from both ends: from the top down, what it
-      does in a turn and what it says its plan is through a game; and from the bottom up, one rule at a time, what
-      each rule is worth in wins.
+      A CIVVIS AI agent is a program of written rules, not a neural network.
+      Every decision it makes traces to the line that made it.
     </p>
 
     <!-- The record. `beta/publish.sh` fills the `interpretability-data` slot
@@ -528,21 +523,20 @@
            does. -->
       <section class="res-section" id="int-turn" aria-labelledby="int-turn-title" hidden>
         <h2 class="rank-title" id="int-turn-title">Top down: one turn, step by step</h2>
-        <p class="rank-sub">
-          Every civilization the agent plays takes the same steps in the same order, every turn. It thinks before it acts:
-          it reads the board and settles its plan, then governs and spends, then gives every city something to build,
-          and only then moves its units. Each square below is one step, in order, read like a line of text.
-        </p>
+        <p class="rank-sub">The same steps in the same order, every turn. A square is one step, read like a line of text.</p>
         <ol class="int-kinds" id="int-kinds" aria-label="The five kinds of step, in the order a turn reaches them"></ol>
         <div class="int-strip" id="int-strip" role="img"></div>
-        <p class="int-strip-note">
-          A step is sorted by what its name says it does: one named <code>claim_&#8230;</code> asks for a city&#8217;s queue,
-          one named <code>&#8230;_purchase</code> spends. Many stand behind a condition and do nothing on most turns.
-          A square is a call, not a size: <code>advanced_units</code>, one square near the end, moves every unit on the map.
-        </p>
         <details class="res-details">
           <summary>Every step as a list</summary>
           <ol class="int-steps" id="int-steps"></ol>
+        </details>
+        <details class="fine">
+          <summary>How it is counted</summary>
+          <p class="int-strip-note">
+            A step is sorted by what its name says it does: one named <code>claim_&#8230;</code> asks for a city&#8217;s queue,
+            one named <code>&#8230;_purchase</code> spends. Many stand behind a condition and do nothing on most turns.
+            A square is a call, not a size: <code>advanced_units</code>, one square near the end, moves every unit on the map.
+          </p>
         </details>
         <div class="rank-note">
           <p>
@@ -557,12 +551,7 @@
            newest finished tournament batch recorded it. -->
       <section class="res-section" id="int-plans" aria-labelledby="int-plans-title" hidden>
         <h2 class="rank-title" id="int-plans-title">Top down: the plan through a game</h2>
-        <p class="rank-sub">
-          Above the steps sits a plan. A seat aims for one of the six victories, either told which or left to choose, and
-          every few turns it names its posture: what the turn is for. Each seat writes its plan down as it plays, so these
-          are the agent&#8217;s own words for what it was doing, counted over one tournament batch of self-play: six seats a game,
-          a Continents map, Online speed, 250 turns.
-        </p>
+        <p class="rank-sub">A seat aims for a victory and, every few turns, names its posture: what the turn is for. These are its own words.</p>
         <div class="res-controls">
           <div class="res-control" role="group" aria-label="Seats counted">
             <span>The seat aims for</span>
@@ -573,10 +562,7 @@
         <div class="int-pair">
           <div class="res-kind">
             <h3 class="res-kind-title">What the turn is for</h3>
-            <p class="int-kind-sub">
-              The share of the seats still playing that are in each posture, in every span of turns.
-              Most seats open on Expansion whatever their goal; the push for the victory itself starts near turn 100.
-            </p>
+            <p class="int-kind-sub">Most seats open on Expansion; the push for the victory starts near turn 100.</p>
             <ul class="res-legend" id="int-posture-key" aria-label="Postures"></ul>
             <div class="res-plot" id="int-posture-plot"></div>
             <p class="int-thin" id="int-posture-thin" hidden></p>
@@ -590,10 +576,7 @@
         </div>
         <div class="res-kind">
           <h3 class="res-kind-title">What it aims for, and what it wins by</h3>
-          <p class="int-kind-sub">
-            A bar is as long as the share of those seats that won their game, cut by the victory they won it with.
-            Six seats share a game, so an even share is one win in six. A seat does not always win the way it set out to. Press a row to count those seats above and below.
-          </p>
+          <p class="int-kind-sub">The share of those seats that won, cut by the victory they won with. Press a row to count only its seats.</p>
           <ul class="res-legend" id="int-aims-key" aria-label="Victories"></ul>
           <div class="int-aims" id="int-aims"></div>
           <details class="res-details">
@@ -608,15 +591,20 @@
         </div>
         <div class="res-kind">
           <h3 class="res-kind-title">The empire it builds, at every 25th turn</h3>
-          <p class="int-kind-sub">
-            The middle seat of each kind, among those still playing. The goal shows in the empire: a Culture seat
-            gives up science for culture. The seats start alike and drift apart from turn 50 on.
-          </p>
+          <p class="int-kind-sub">The middle seat of each kind, among those still playing.</p>
           <ul class="res-legend" id="int-smalls-key" aria-label="What the seat aims for"></ul>
           <div class="int-smalls" id="int-smalls"></div>
         </div>
+        <details class="fine">
+          <summary>How it is counted</summary>
+          <p class="rank-note" id="int-plans-note"></p>
+          <p class="rank-note">
+            One tournament batch of self-play: six seats a game, a Continents map, Online speed, 250 turns.
+            A seat aims for one of the six victories, either told which or left to choose.
+            Six seats share a game, so an even share of the wins is one in six.
+          </p>
+        </details>
         <div class="rank-note">
-          <p id="int-plans-note"></p>
           <p>
             <a href="https://github.com/MartinHalvorson/CIVVIS/blob/main/data/interpretability/self_play_plans.json" target="_blank" rel="noreferrer">The counts</a> ·
             <a href="https://github.com/MartinHalvorson/CIVVIS/blob/main/src/ai/advanced/victory_portfolio.rs" target="_blank" rel="noreferrer">How a seat forecasts its victory</a> ·
@@ -628,18 +616,10 @@
       <!-- Bottom up: the gene pool, every rule with what it is worth. -->
       <section class="res-section" id="int-genes" aria-labelledby="int-genes-title" hidden>
         <h2 class="rank-title" id="int-genes-title">Bottom up: one rule at a time</h2>
-        <p class="rank-sub">
-          A gene is a switch on one rule, such as <q>a Settler always has somewhere to go</q>. A player&#8217;s genome is the set
-          of genes it has switched on. In a tournament every seat draws its own: a gene of the best genome is on for about three
-          seats in four, any other for about one in four. Over thousands of seats that prices each rule alone: the win rate
-          of the seats that had it on, less the win rate of the seats that had it off.
-        </p>
+        <p class="rank-sub">A gene is a switch on one rule, such as <q>a Settler always has somewhere to go</q>. Its price: the win rate of the seats with it on, less those with it off.</p>
         <div class="res-kind">
           <h3 class="res-kind-title">Every rule, by what it is worth</h3>
-          <p class="int-kind-sub">
-            A dot is a gene. To the right, seats win more often with the rule on; higher, the estimate is surer that it helps.
-            Most rules sit near the middle and cannot be told from chance. A few carry the wins, and a few cost them.
-          </p>
+          <p class="int-kind-sub">A dot is a gene. Right: seats win more with the rule on. Higher: surer that it helps.</p>
           <ul class="res-legend" id="int-genes-key" aria-label="Genes"></ul>
           <div class="res-plot" id="int-genes-plot"></div>
         </div>
@@ -663,13 +643,17 @@
             </div>
           </div>
         </div>
-        <div class="rank-note">
-          <p>
+        <details class="fine">
+          <summary>How it is counted</summary>
+          <p class="rank-note">
             The difference is in percentage points of win rate, over every seat that priced the gene. A gene is kept on or
             turned off by its last three batches, with a margin so that one batch cannot flip it, so a rule in the best
             genome can stand left of zero here and one outside it to the right. A rule that costs wins stays in the pool,
-            switched off, as the record of what was tried.
+            switched off, as the record of what was tried. In a tournament every seat draws its own genes: one of the best
+            genome is on for about three seats in four, any other for about one in four.
           </p>
+        </details>
+        <div class="rank-note">
           <p>
             <a href="https://github.com/MartinHalvorson/CIVVIS/blob/main/GENE_HEURISTIC_RANKING.md" target="_blank" rel="noreferrer">Every gene as a table</a> ·
             <a href="https://github.com/MartinHalvorson/CIVVIS/blob/main/docs/GENE_SCREEN.md" target="_blank" rel="noreferrer">How a tournament prices a gene</a> ·
@@ -751,11 +735,11 @@
 
     // ---- The agent at a glance.
     const tiles = [];
-    if (turn && turn.code) tiles.push([fmt(turn.code.lines), "lines of Rust", "The whole agent, in " + fmt(turn.code.files) + " files of rules. Its tests are not counted."]);
-    if (turn) tiles.push([fmt(turn.steps.length), "steps in a turn", "The same steps in the same order, for every civilization, every turn."]);
-    if (genes) tiles.push([fmt(genes.rows.length), "genes", "A gene is a switch on one rule. Every one has been priced in tournaments."]);
-    if (genes) tiles.push([fmt(genes.on), "genes switched on", "The best genome so far: the rules the tournaments have kept."]);
-    if (genes && genes.seats) tiles.push([fmt(genes.seats), "seats priced each gene", "A seat is one civilization in one game, with its own draw of genes."]);
+    if (turn && turn.code) tiles.push([fmt(turn.code.lines), "lines of Rust", fmt(turn.code.files) + " files, tests not counted"]);
+    if (turn) tiles.push([fmt(turn.steps.length), "steps in a turn", "the same order, every turn"]);
+    if (genes) tiles.push([fmt(genes.rows.length), "genes", "each a switch on one rule"]);
+    if (genes) tiles.push([fmt(genes.on), "genes switched on", "the best genome so far"]);
+    if (genes && genes.seats) tiles.push([fmt(genes.seats), "seats priced each gene", "a seat is one civ in one game"]);
     for (const [figure, name, say] of tiles) {
       const tile = el("div", "int-tile");
       tile.append(el("b", "", figure), el("span", "", name), el("small", "", say));
@@ -765,11 +749,11 @@
 
     // ---- One turn, step by step.
     const KIND = {
-      plan: ["Read the board, choose the plan", "Which victory to aim for, who is a threat, where the army goes, what this turn is for. Nothing is ordered yet."],
-      govern: ["Research and govern", "The next technology and civic, the government and its policy cards, governors, envoys, Great People, deals and spies."],
-      spend: ["Spend Gold and Faith", "Defenders for a city in danger, upgrades for the army, and the purchases the plan asked for."],
-      production: ["Fill the city queues", "Dozens of claims, each one rule asking for a city (walls before a siege, a Campus in the capital), around the choice of what every other city builds."],
-      units: ["Order the units", "Last, with the plan and the purse settled: every unit moves, fights, settles or builds."],
+      plan: ["Read the board, choose the plan", "Which victory, who is a threat, where the army goes."],
+      govern: ["Research and govern", "Technology, civics, policies, governors, envoys, deals, spies."],
+      spend: ["Spend Gold and Faith", "Defenders, upgrades, and the plan\u2019s purchases."],
+      production: ["Fill the city queues", "Dozens of claims, each one rule asking for a city."],
+      units: ["Order the units", "Last: every unit moves, fights, settles or builds."],
     };
     if (turn) {
       const kinds = (Array.isArray(turn.kinds) ? turn.kinds : []).filter((k) => KIND[k]);
@@ -978,7 +962,7 @@
         const t = target(), list = $("int-bottleneck");
         list.replaceChildren();
         $("int-bottleneck-say").textContent = fmt(t.forecasting) + " of these " + fmt(t.seats)
-          + " seats forecast how their victory will be reached (a gene, victory-portfolio) and name the one thing holding it back. Bars are the share of the turns on which one was named.";
+          + " seats name the one thing holding their victory back. Bars: the share of the turns it was named.";
         const named = Object.entries(t.bottleneck || {}).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]);
         const total = named.reduce((sum, [, n]) => sum + n, 0);
         $("int-bottleneck-none").hidden = total > 0;

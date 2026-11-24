@@ -101,6 +101,47 @@ class Ledger(unittest.TestCase):
         self.assertEqual(speedup_timeline.marked(LEDGER), LEDGER["goals"])
         self.assertNotIn("goal", LEDGER)
 
+    def test_the_stops_past_what_was_measured_are_the_operator_s_two(self):
+        # Operator 2026-11-22: "add to out speedup timeline: 10x theoretical
+        # scale up from local hardware ... hardware scaleup is to the left of
+        # m5 max. potential distributed RL fleet: up to 1000+x".
+        listed = LEDGER["projected"]
+        self.assertEqual([(stop["key"], stop["over"]) for stop in listed], [("scale_up", "all_cores"), ("fleet", "all_cores")])
+        measured = {stop["key"] for stop in LEDGER["stops"]}
+        for stop in listed:
+            self.assertIn(stop["over"], measured)
+            self.assertNotIn(stop["key"], measured)
+            days = [estimate["taken"] for estimate in stop["estimates"]]
+            self.assertEqual(days, sorted(days), f"{stop['key']}: the estimates are kept oldest first")
+            for estimate in stop["estimates"]:
+                self.assertRegex(estimate["taken"], r"^\d{4}-\d{2}-\d{2}$")
+                self.assertGreater(estimate["times"], 1)
+                self.assertIn("The project owner's figure", estimate["from"])
+                self.assertIn("not a run", estimate["from"])
+        newest = {stop["key"]: stop["estimates"][-1] for stop in listed}
+        self.assertEqual((newest["scale_up"]["times"], newest["scale_up"].get("or_more", False)), (10, False))
+        self.assertEqual((newest["fleet"]["times"], newest["fleet"].get("or_more", False)), (1000, True))
+        # Nothing derived is kept: what a figure comes to is worked out.
+        self.assertNotIn("multiplier", json.dumps(listed))
+        self.assertNotIn("seconds", json.dumps(listed))
+        # On the line each is that many times the M5 Max's stop, to its left
+        # (a larger `at` is further left), the fleet past the first goal.
+        shown = speedup_timeline.timeline(ROOT)
+        stops = {stop["key"]: stop for stop in shown["stops"]}
+        ahead = {stop["key"]: stop for stop in shown["projected"]}
+        self.assertEqual(list(ahead), ["scale_up", "fleet"])
+        under = stops["all_cores"]["multiplier"]
+        self.assertAlmostEqual(ahead["scale_up"]["multiplier"], 10 * under, delta=0.01 * under)
+        self.assertAlmostEqual(ahead["fleet"]["multiplier"], 1000 * under, delta=under)
+        self.assertEqual((ahead["scale_up"]["by"], ahead["fleet"]["by"]), ("10x", "1,000x+"))
+        self.assertTrue(ahead["fleet"]["times"].endswith("x+"))
+        self.assertLess(stops["all_cores"]["at"], ahead["scale_up"]["at"])
+        self.assertLess(ahead["scale_up"]["at"], ahead["fleet"]["at"])
+        self.assertLess(shown["goals"][0]["at"], ahead["fleet"]["at"])
+        # And neither is the page's number: that is the fastest measured stop.
+        self.assertEqual(shown["fastest"], "all_cores")
+        self.assertNotIn(shown["speedup"], [stop["times"] for stop in ahead.values()])
+
     def test_the_first_stop_is_the_one_the_others_are_measured_against(self):
         shown = speedup_timeline.timeline(ROOT)
         first = shown["stops"][0]
@@ -192,6 +233,40 @@ class Following(unittest.TestCase):
         # No estimate of a cloud's cost in the ledger: none on the page.
         self.assertNotIn("cloud", shown)
 
+    def test_a_projected_stop_is_so_many_times_the_stop_it_names(self):
+        ledger = json.loads(json.dumps(self.LEDGER))
+        ledger["projected"] = [
+            {"key": "scale_up", "over": "all_cores", "estimates": [
+                {"taken": "2026-11-22", "times": 4, "from": "an older figure"},
+                {"taken": "2026-11-23", "times": 10, "from": "ten times the machine"},
+            ]},
+            {"key": "fleet", "over": "self_play", "estimates": [{"taken": "2026-11-22", "times": 1000, "or_more": True, "from": "a fleet"}]},
+        ]
+        with tempfile.TemporaryDirectory() as scratch:
+            shown = speedup_timeline.timeline(tree(scratch, ledger, self.RUNS))
+        scale_up, fleet = shown["projected"]
+        # The newest estimate, times the record that stands (30 games a
+        # minute is 9,000x), with the sum that gives it.
+        self.assertEqual((scale_up["key"], scale_up["over"], scale_up["by"], scale_up["times"], scale_up["time"]),
+                         ("scale_up", "all_cores", "10x", "90,000x", "200 ms"))
+        self.assertEqual((scale_up["sum"], scale_up["taken"], scale_up["from"]), ("10 × 9,000", "11-23", "ten times the machine"))
+        self.assertAlmostEqual(done_again(scale_up["sum"]), scale_up["multiplier"])
+        self.assertAlmostEqual(scale_up["at"], 0.8257, places=3)
+        # A figure open at its top says so twice, and any stop can be named.
+        self.assertEqual((fleet["over"], fleet["by"], fleet["times"], fleet["time"]), ("self_play", "1,000x+", "900,000x+", "20 ms"))
+        # Their words stand under the line, and the page's number is still
+        # the fastest stop that was measured.
+        self.assertEqual({stop["side"] for stop in shown["projected"]}, {"below"})
+        self.assertEqual((shown["speedup"], shown["fastest"]), ("9,000x", "all_cores"))
+        self.assertEqual(shown["reach"], {stop["key"]: stop for stop in shown["stops"]}["all_cores"]["at"])
+        # A ledger with none shows none, and one that names a stop that is
+        # not there cannot be read.
+        with tempfile.TemporaryDirectory() as scratch:
+            self.assertNotIn("projected", speedup_timeline.timeline(tree(scratch, self.LEDGER, self.RUNS)))
+        ledger["projected"][0]["over"] = "nowhere"
+        with tempfile.TemporaryDirectory() as scratch:
+            self.assertIsNone(speedup_timeline.timeline(tree(scratch, ledger, self.RUNS)))
+
     def test_a_second_goal_lengthens_the_line_and_the_first_keeps_its_place_on_it(self):
         ledger = json.loads(json.dumps(self.LEDGER))
         ledger["goals"] = [{"key": "billion", "times": 1000000000}, {"key": "million", "times": 1000000}]
@@ -238,8 +313,9 @@ class Following(unittest.TestCase):
         self.assertEqual(speedup_timeline.rows([0.36, 0.1, 0.0, 0.2], ["above"] * 4), [False, True, False, False])
         self.assertIn("@media (min-width: 1120px) {", LANDING)
         shown = speedup_timeline.timeline(ROOT)
-        entries = shown["stops"] + shown["goals"]
+        entries = shown["stops"] + shown["projected"] + shown["goals"]
         self.assertTrue(all(goal["side"] == "above" for goal in shown["goals"]))
+        self.assertTrue(all(stop["side"] == "below" for stop in shown["projected"]))
         by_row: dict[tuple[str, bool], list[float]] = {}
         for entry in entries:
             by_row.setdefault((entry["side"], bool(entry.get("far"))), []).append(entry["at"])
@@ -770,8 +846,14 @@ class Page(unittest.TestCase):
         section = LANDING[LANDING.index('<section class="speed"') : LANDING.index('<section class="watch"')]
         self.assertIn('<section class="speed" id="speed" aria-label="How many times faster than a person a game is played" hidden>', section)
         self.assertIn("section.hidden = false;", LANDING)
-        for place in ("speedup", "was", "cloud-by", "cloud-machine", "cloud-price"):
+        for place in ("speedup", "was", "cloud-by"):
             self.assertEqual(section.count(f'data-speed="{place}"'), 1, place)
+        # The machine rented and its price are CIVVIS Performance's to say,
+        # where the note's link goes: Home says whose estimate it is and no
+        # more (operator, 2026-11-24: "there is too much text on pages,
+        # particualrly home/ and charts/").
+        for place in ("cloud-machine", "cloud-price"):
+            self.assertNotIn(f'data-speed="{place}"', LANDING)
         # The goals are the line's last entries, one for each in the ledger,
         # smallest first, and each stands at its own place as a stop does:
         # the largest is the line's left end.
@@ -780,18 +862,32 @@ class Page(unittest.TestCase):
         self.assertLess(section.rindex('data-stop="'), section.index('data-goal="'))
         # On this page each of them is named Theoretical (operator,
         # 2026-11-23: "replace "goal" on home for 1Bx and 1Mx with
-        # "theoretical""): nothing has run at a million or a billion times,
-        # and the note under the line calls them the same thing. A stop's own
-        # goal, the small line under its time, keeps the word.
+        # "theoretical""): nothing has run at a million or a billion times.
+        # A stop's own goal, the small line under its time, keeps the word.
         named = re.findall(r'<li class="speed-stop speed-finish" data-goal="\w+">.*?<b class="speed-name">([^<]+)</b>', section, re.S)
         self.assertEqual(named, ["Theoretical"] * len(goals))
         self.assertNotIn('<b class="speed-name">Goal</b>', LANDING)
-        self.assertIn("the rest of the way to a theoretical speed, rented as", section)
         self.assertNotIn("to a goal", re.sub(r"<!--.*?-->", "", section, flags=re.S))
         self.assertNotIn(".speed-finish { right:", LANDING)
         self.assertIn('entry.style.setProperty("--at", goal.at);', LANDING)
+        # Between the stops and the goals, the stops past what was measured
+        # (operator, 2026-11-22: "hardware scaleup is to the left of m5
+        # max"): one for each in the ledger, a ring like a goal's, and how
+        # many times the M5 Max it is comes from the slot.
+        ahead = re.findall(r'<li class="speed-stop speed-ahead" data-ahead="(\w+)">', LANDING)
+        self.assertEqual(ahead, [stop["key"] for stop in LEDGER["projected"]])
+        self.assertLess(section.rindex('data-stop="'), section.index('data-ahead="'))
+        self.assertLess(section.rindex('data-ahead="'), section.index('data-goal="'))
+        names = re.findall(r'<li class="speed-stop speed-ahead" data-ahead="\w+">.*?<b class="speed-name">([^<]+)</b>', section, re.S)
+        self.assertEqual(names, ["Hardware scale-up", "Distributed RL fleet"])
+        self.assertIn('<small class="speed-goal">theoretical, <span data-speed="by"></span> the M5 Max</small>', section)
+        self.assertIn('<small class="speed-goal">potential, up to <span data-speed="by"></span></small>', section)
+        self.assertEqual(section.count('data-speed="by"'), len(ahead))
+        self.assertIn(".speed-ahead .speed-dot { background: var(--bg); border: 2px solid var(--accent);", LANDING)
+        self.assertIn('entry.style.setProperty("--at", stop.at);', LANDING)
+        self.assertIn("...ahead.values()", LANDING)
         for place in ("time", "times"):
-            self.assertEqual(section.count(f'data-speed="{place}"'), len(entries) + len(goals), place)
+            self.assertEqual(section.count(f'data-speed="{place}"'), len(entries) + len(ahead) + len(goals), place)
         self.assertEqual(section.count('data-speed="goal"'), len(entries))
         self.assertEqual(section.count('data-speed="cost"'), len(goals))
         # Under the line, whose estimate a goal's cloud cost is (operator
@@ -799,7 +895,8 @@ class Page(unittest.TestCase):
         # numbers"): hidden until the slot names one, and the name is the
         # slot's.
         self.assertIn('<p class="speed-note" id="speed-note" hidden>', section)
-        self.assertIn('Cloud cost is a best estimate by <span data-speed="cloud-by"></span>, not a quote:', section)
+        self.assertIn('Cloud cost: a best estimate by <span data-speed="cloud-by"></span>, not a quote.', section)
+        self.assertIn('<a href="../charts/civvis-performance/#perf-cloud">How it is worked out</a>', section)
         self.assertIn('document.getElementById("speed-note").hidden = false;', LANDING)
         self.assertNotIn("Fable", section)
         # Words that would meet their neighbour's stand a row out.

@@ -175,21 +175,6 @@
   .site-link[href^="https://store.steampowered.com/"] { background: linear-gradient(90deg, #1a44c2 35%, #47bfff); color: #fff; }
   .site-link[href^="https://store.steampowered.com/"]:hover,
   .site-link[href^="https://store.steampowered.com/"]:focus-visible { background: linear-gradient(90deg, #2352d6 35%, #73cfff); color: #fff; }
-  /* Wizard Chess is a chessboard (operator, 2026-11-23: "below civ 6, add
-     wizard chess. the background there can be black and white
-     checkerboard"): black and white squares round a black plate that the
-     name stands on, so that it reads on either. */
-  .site-link[href$="wizard-chess/"] {
-    background: linear-gradient(#0b0b0c, #0b0b0c) center / calc(100% - 16px) calc(100% - 8px) no-repeat,
-      repeating-conic-gradient(#f4f1e8 0 25%, #0b0b0c 0 50%) 0 0 / 8px 8px;
-    color: #f4f1e8;
-  }
-  .site-link[href$="wizard-chess/"]:hover,
-  .site-link[href$="wizard-chess/"]:focus-visible {
-    background: linear-gradient(#26262a, #26262a) center / calc(100% - 16px) calc(100% - 8px) no-repeat,
-      repeating-conic-gradient(#ffffff 0 25%, #0b0b0c 0 50%) 0 0 / 8px 8px;
-    color: #fff;
-  }
   /* Charts/ is a folder of pages and reads "Charts/", with the slash
      (operator, 2026-11-22), and drops down like one (operator,
      2026-11-24: "charts/ can drop down folder style and the user can
@@ -307,6 +292,12 @@
   .tour-key { display: inline-block; width: 9px; height: 9px; margin-right: 4px; border-radius: 2px; background: var(--loss); vertical-align: -1px; }
   .tour-key.is-win { background: var(--gold); }
   .tour-legend { margin: 0; color: var(--faint); font-size: 11.5px; line-height: 1.5; }
+  /* How a game is counted, closed until it is pressed (operator, 2026-11-24:
+     "there is too much text on pages ... some text ok. just not too much"). */
+  .fine { margin-top: 8px; }
+  .fine > summary { width: max-content; max-width: 100%; color: var(--faint); font-size: 11.5px; cursor: pointer; }
+  .fine > summary:hover, .fine[open] > summary { color: var(--accent); }
+  details.fine > .tour-legend { max-width: 860px; margin-top: 6px; }
 
   /* The counts under the squares, a line each: wins by victory, losses by
      how they were lost, the record per level when the levels differ, and
@@ -417,7 +408,6 @@
       <a class="site-link" href="../?mode=strange" title="One world, two timelines: the same game played two ways, side by side, on a timeline that branches.">Doctor Strange's Civ 6</a>
       <a class="site-link" href="../?mode=play" title="You play one civilization. CIVVIS AI agents play the rest.">AI Debugger</a>
       <a class="site-link" href="https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/" target="_blank" rel="noopener" title="Buy Civilization VI on Steam">Civ 6</a>
-      <a class="site-link" href="../wizard-chess/" title="Chess where you command and the pieces obey, against an opponent at the Elo you pick.">Wizard Chess</a>
     </nav>
     <script data-site-folder>
     // Charts/ on a touch screen, where nothing points at it: the first tap
@@ -472,12 +462,14 @@
   </header>
 
   <main class="shell">
+    <!-- One line, where a paragraph stood until 2026-11-24 (operator:
+         "there is too much text on pages, particualrly home/ and charts/.
+         should be a more visual experience. some text ok. just not too
+         much"). Each tourney's own description and its hyperparameters are
+         as he asked for them; the page's notes on how a game is counted are
+         under "How it is counted", closed until it is pressed. -->
     <p class="intro">
-      A tournament is one idea, played out: a set number of verification
-      games under fixed conditions, in which a CIVVIS AI agent plays inside
-      <cite>Sid Meier&#8217;s Civilization VI</cite> against the game&#8217;s
-      own AI. Tournaments are scheduled one after another, and the agents
-      play them in order, game after game.
+      Series of verification games: a CIVVIS AI agent inside <cite>Civilization VI</cite>, against the game&#8217;s own AI.
     </p>
 
     <!-- The record. Three lists, all read from the run ledger and the
@@ -499,9 +491,7 @@
         <p class="rank-sub" data-sub></p>
         <ol class="tour-queue"></ol>
         <p class="rank-note">
-          Scheduling a tournament is adding its definition, the idea, the conditions and the number of games, to
-          <a href="https://github.com/MartinHalvorson/CIVVIS/blob/main/data/tournaments.json" target="_blank" rel="noreferrer">data/tournaments.json</a>.
-          It is listed here until its first game finishes.
+          Scheduled in <a href="https://github.com/MartinHalvorson/CIVVIS/blob/main/data/tournaments.json" target="_blank" rel="noreferrer">data/tournaments.json</a>.
         </p>
       </section>
       <section class="tour-section" id="tour-finished" hidden aria-labelledby="tour-finished-title">
@@ -521,13 +511,18 @@
       <p class="tour-legend">
         <span class="tour-key is-win"></span>win &#160; <span class="tour-key"></span>loss &#160;
         A square is a game, in the order played; hover one for the civ, the ending and the turn.
-        A win is any victory. A loss is a rival&#8217;s victory, our elimination, or a game conceded early.
-        A launch that never reached a board is not a game.
-        Dates are UTC, on the 24-hour clock.
-        Wall time is from a tournament&#8217;s first game starting to its last game ending.
-        Run time is the time its games were in play, added up, without the time between them.
-        Hyperparameters are the settings every game of a tournament was played under.
       </p>
+      <details class="fine">
+        <summary>How it is counted</summary>
+        <p class="tour-legend">
+          A win is any victory. A loss is a rival&#8217;s victory, our elimination, or a game conceded early.
+          A launch that never reached a board is not a game.
+          Dates are UTC, on the 24-hour clock.
+          Wall time is from a tournament&#8217;s first game starting to its last game ending.
+          Run time is the time its games were in play, added up, without the time between them.
+          Hyperparameters are the settings every game of a tournament was played under.
+        </p>
+      </details>
     </div>
   </main>
 

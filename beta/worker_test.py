@@ -431,16 +431,11 @@ def main(argv: list[str] | None = None) -> int:
             ("/charts/civvis-performance/", "CIVVIS Performance"),
             ("/charts/ai-interpretability/", "AI Interpretability"),
             ("/tournaments/", "Tournaments"),
-            ("/wizard-chess/", "Wizard Chess"),
-            # And what Wizard Chess loads from beside its page, which is a
-            # file and not a page: the router leaves it to the asset layer.
-            ("/wizard-chess/chess/game.js", "Wizard Chess script"),
-            ("/wizard-chess/chess/vendor/stockfish-18-lite-single.wasm", "Wizard Chess engine"),
         ):
             passed = hit(path=address)
             check(
                 problems,
-                f"{address} passes through to {name}",
+                f"{address} passes through to the {name} page",
                 passed["status"] == 200 and passed["body"].strip() == f"asset:{address}",
                 f"got {passed['status']} {passed['body'][:60]!r}",
             )
@@ -498,6 +493,15 @@ def main(argv: list[str] | None = None) -> int:
               f"got {only_stable['status']} {only_stable['robots']!r}")
         check(problems, "while the front page keeps its own",
               hit(path="/home/", listed={"": ["home"], "/test": []})["status"] == 200)
+        # Wizard Chess was a page at /wizard-chess from 2026-11-23 and was set
+        # aside on 2026-11-24 (operator: "lets set aside wizard chess right
+        # now. please remove from civvis.ai"). No lane lists it any more, so
+        # its address is a 404 in both, whatever Pages kept of the page.
+        for address in ("/wizard-chess/", "/wizard-chess", "/wizard-chess/index.html", "/test/wizard-chess/"):
+            gone = hit(path=address, listed=lanes)
+            check(problems, f"{address} is a 404: Wizard Chess is set aside and no lane lists it",
+                  gone["status"] == 404 and gone["body"].strip() == "asset:/__no-such-page__",
+                  f"got {gone['status']} {gone['body'][:60]!r}")
         # An address a page has left forwards to the page, in a lane that has
         # the page at its new address. The old ones are in links this site
         # does not control, and nothing a visitor was sent should go dead.

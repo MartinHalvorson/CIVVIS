@@ -187,21 +187,6 @@
   .site-link[href^="https://store.steampowered.com/"] { background: linear-gradient(90deg, #1a44c2 35%, #47bfff); color: #fff; }
   .site-link[href^="https://store.steampowered.com/"]:hover,
   .site-link[href^="https://store.steampowered.com/"]:focus-visible { background: linear-gradient(90deg, #2352d6 35%, #73cfff); color: #fff; }
-  /* Wizard Chess is a chessboard (operator, 2026-11-23: "below civ 6, add
-     wizard chess. the background there can be black and white
-     checkerboard"): black and white squares round a black plate that the
-     name stands on, so that it reads on either. */
-  .site-link[href$="wizard-chess/"] {
-    background: linear-gradient(#0b0b0c, #0b0b0c) center / calc(100% - 16px) calc(100% - 8px) no-repeat,
-      repeating-conic-gradient(#f4f1e8 0 25%, #0b0b0c 0 50%) 0 0 / 8px 8px;
-    color: #f4f1e8;
-  }
-  .site-link[href$="wizard-chess/"]:hover,
-  .site-link[href$="wizard-chess/"]:focus-visible {
-    background: linear-gradient(#26262a, #26262a) center / calc(100% - 16px) calc(100% - 8px) no-repeat,
-      repeating-conic-gradient(#ffffff 0 25%, #0b0b0c 0 50%) 0 0 / 8px 8px;
-    color: #fff;
-  }
   /* Charts/ is a folder of pages and reads "Charts/", with the slash
      (operator, 2026-11-22), and drops down like one (operator,
      2026-11-24: "charts/ can drop down folder style and the user can
@@ -244,6 +229,14 @@
   .rank-note { margin: 10px 0 0; padding-top: 8px; border-top: 1px solid var(--border); color: var(--faint); font-size: 11.5px; line-height: 1.5; }
   .rank-note a { color: var(--accent); }
   .rank-note p { margin: 0 0 4px; }
+  /* What a table or chart counts, closed until it is pressed (operator,
+     2026-11-24: "there is too much text on pages ... should be a more
+     visual experience"). The words are a visitor's to open; the page is its
+     tables and its chart. */
+  .fine { margin-top: 10px; }
+  .fine > summary { width: max-content; max-width: 100%; color: var(--faint); font-size: 11.5px; cursor: pointer; }
+  .fine > summary:hover, .fine[open] > summary { color: var(--accent); }
+  details.fine > .rank-note { max-width: 860px; margin-top: 6px; padding-top: 0; border-top: 0; }
 
   /* At the top, the player strategies as Win Analytics listed them until
      2026-11-23 (operator: "at the top of this page is the player
@@ -384,7 +377,6 @@
       <a class="site-link" href="../../?mode=strange" title="One world, two timelines: the same game played two ways, side by side, on a timeline that branches.">Doctor Strange's Civ 6</a>
       <a class="site-link" href="../../?mode=play" title="You play one civilization. CIVVIS AI agents play the rest.">AI Debugger</a>
       <a class="site-link" href="https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/" target="_blank" rel="noopener" title="Buy Civilization VI on Steam">Civ 6</a>
-      <a class="site-link" href="../../wizard-chess/" title="Chess where you command and the pieces obey, against an opponent at the Elo you pick.">Wizard Chess</a>
     </nav>
     <script data-site-folder>
     // Charts/ on a touch screen, where nothing points at it: the first tap
@@ -439,13 +431,14 @@
   </header>
 
   <main class="shell">
+    <!-- One line. Until 2026-11-24 a paragraph stood here, a sentence
+         under each heading and a paragraph under each table (operator:
+         "there is too much text on pages, particualrly home/ and charts/.
+         should be a more visual experience. some text ok. just not too
+         much"). What the figures count is under "How it is counted", closed
+         until it is pressed. -->
     <p class="intro">
-      Every Civ AI Agent and Civilization VI&#8217;s own AI on one Elo scale.
-      The agents are rated against each other in the simulator; each Firaxis
-      level is rated from the benchmark&#8217;s games against it in
-      <cite>Sid Meier&#8217;s Civilization VI</cite>, our one seat against
-      five of its AIs, so the levels move with every finished game. How the
-      games went is charted on <a href="../win-analytics/">Win Analytics</a>.
+      Every Civ AI Agent and <cite>Civilization VI</cite>&#8217;s own AI on one Elo scale.
     </p>
 
     <!-- The figures: `beta/publish.sh` fills the slot below
@@ -457,21 +450,24 @@
       <div class="elo-top">
         <section class="res-section" id="rank-strategies" data-elo-card hidden aria-labelledby="rank-strategies-title">
           <h2 class="rank-title" id="rank-strategies-title">Player strategies</h2>
-          <p class="rank-sub">Civ AI Agents by Elo, and Civilization VI&#8217;s own AI at each level as the benchmark measures it, in games with the Diplomatic victory on and in games with it off. Our stand-in for Prince is 1000.</p>
+          <p class="rank-sub">Our stand-in for Prince is 1000.</p>
           <div class="rank-row rank-head">
             <span></span><span></span>
             <button type="button" class="rank-sort" data-sort="on" aria-pressed="true" title="Every victory on. Sort by this column">Diplo on</button>
             <button type="button" class="rank-sort" data-sort="off" aria-pressed="false" title="The Diplomatic victory switched off. Sort by this column">Diplo off</button>
           </div>
           <ol class="rank-list"></ol>
-          <p class="rank-note">
-            <span data-rank-note></span>
-            <a href="https://github.com/MartinHalvorson/CIVVIS/blob/main/docs/ELO.md" target="_blank" rel="noreferrer">How the Elo works</a>
-          </p>
+          <details class="fine">
+            <summary>How it is counted</summary>
+            <p class="rank-note">
+              <span data-rank-note></span>
+              <a href="https://github.com/MartinHalvorson/CIVVIS/blob/main/docs/ELO.md" target="_blank" rel="noreferrer">How the Elo works</a>
+            </p>
+          </details>
         </section>
         <section class="res-section" id="elo-levels" data-elo-card hidden aria-labelledby="elo-levels-title">
           <h2 class="rank-title" id="elo-levels-title">Firaxis Civ 6 AI: Elo by level</h2>
-          <p class="rank-sub" id="elo-levels-sub">Two readings of each level, with the Diplomatic victory on and with it off: the benchmark&#8217;s games against the real AI, and the simulator&#8217;s Difficulty setting.</p>
+          <p class="rank-sub" id="elo-levels-sub">Benchmark: our games against the real AI. Simulator: its Difficulty setting.</p>
           <div class="elo-scroll">
             <table class="rank-table" id="elo-levels-table" aria-labelledby="elo-levels-title">
               <thead>
@@ -481,13 +477,16 @@
               <tbody></tbody>
             </table>
           </div>
-          <p class="rank-note" id="elo-levels-note"></p>
+          <details class="fine">
+            <summary>How it is counted</summary>
+            <p class="rank-note" id="elo-levels-note"></p>
+          </details>
         </section>
       </div>
 
       <section class="res-section" id="elo-over-time" data-elo-card hidden aria-labelledby="elo-over-time-title">
         <h2 class="rank-title" id="elo-over-time-title">Elo over time</h2>
-        <p class="rank-sub" id="elo-over-time-sub">The top 10 Civ AI Agents at every published fit, and Civilization VI&#8217;s own AI at Lv 4 to Lv 8 day by day.</p>
+        <p class="rank-sub" id="elo-over-time-sub">The top 10 Civ AI Agents, and the Firaxis AI at Lv 4 to Lv 8.</p>
         <div class="res-seg" id="elo-diplo" role="group" aria-label="Diplomatic victory" hidden>
           <button type="button" data-diplo="on" aria-pressed="true">Diplo on</button>
           <button type="button" data-diplo="off" aria-pressed="false">Diplo off</button>
@@ -500,7 +499,10 @@
             <table class="rank-table" id="elo-points"><thead></thead><tbody></tbody></table>
           </div>
         </details>
-        <p class="rank-note" id="elo-over-time-note"></p>
+        <details class="fine" id="elo-over-time-fine">
+          <summary>How it is counted</summary>
+          <p class="rank-note" id="elo-over-time-note"></p>
+        </details>
       </section>
     </div>
   </main>
@@ -730,12 +732,17 @@
       tip.hidden = true;
       document.querySelector("#elo-points thead").textContent = "";
       document.querySelector("#elo-points tbody").textContent = "";
-      document.getElementById("elo-over-time-sub").textContent = "The top 10 Civ AI Agents at every published fit, and Civilization VI\u2019s"
-        + " own AI at Lv 4 to Lv 8 day by day, in games with the Diplomatic victory " + side + ".";
+      // The buttons under the title say which side is drawn. A side with
+      // nothing to draw says so here, in the open, where the chart would be:
+      // the note under it is closed until it is pressed.
+      document.getElementById("elo-over-time-sub").textContent = lines.length
+        ? "The top 10 Civ AI Agents, and the Firaxis AI at Lv 4 to Lv 8."
+        : "No fit or benchmark game to draw with the Diplomatic victory " + side + " yet.";
+      document.getElementById("elo-over-time-fine").hidden = !lines.length;
       for (const button of document.querySelectorAll("#elo-diplo button")) button.setAttribute("aria-pressed", String(button.dataset.diplo === side));
       if (!lines.length) {
         redraw = null;
-        document.getElementById("elo-over-time-note").textContent = "No fit or benchmark game to draw with the Diplomatic victory " + side + " yet.";
+        document.getElementById("elo-over-time-note").textContent = "";
         return;
       }
       const all = lines.flatMap((l) => l.points);

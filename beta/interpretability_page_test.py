@@ -244,15 +244,19 @@ class ThePlans(unittest.TestCase):
             self.assertEqual(sum(counted["won_by"].values()), counted["wins"], name)
             for column, playing in enumerate(counted["playing"]):
                 self.assertEqual(sum(counted["posture"][p][column] for p in interpretability_page.POSTURES), playing, name)
-        # The page's two sentences about the chart, said of the snapshot it draws.
+        # The page's sentence about the chart, said of the snapshot it draws.
         share = lambda column: everyone["posture"]["expansion"][column] / everyone["playing"][column]
         self.assertGreater(share(0), 0.5)
         self.assertLess(share(29), share(19))
-        self.assertIn("Most seats open on Expansion whatever their goal; the push for the victory itself starts near turn 100.", PAGE)
+        self.assertIn("Most seats open on Expansion; the push for the victory starts near turn 100.", PAGE)
+        # The page said until 2026-11-24 that a Culture seat gives up science
+        # for culture. The sentence went with most of the page's words
+        # (operator: "there is too much text on pages, particualrly home/ and
+        # charts/"); the small charts still show it, of this snapshot.
         culture, science = plans["targets"]["culture"]["marks"], plans["targets"]["science"]["marks"]
         self.assertGreater(culture["culture"][5], science["culture"][5])
         self.assertLess(culture["science"][5], science["science"][5])
-        self.assertIn("a Culture seat\n            gives up science for culture.", PAGE)
+        self.assertNotIn("gives up science for culture", PAGE)
 
     def test_a_snapshot_taken_with_another_span_is_not_read(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -332,7 +336,6 @@ class TheSiteList(unittest.TestCase):
                 ("site-link", "../../?mode=strange", "Doctor Strange's Civ 6"),
                 ("site-link", "../../?mode=play", "AI Debugger"),
                 ("site-link", "https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/", "Civ 6"),
-                ("site-link", "../../wizard-chess/", "Wizard Chess"),
             ],
         )
         self.assertEqual(nav.count('aria-current="page"'), 1)
