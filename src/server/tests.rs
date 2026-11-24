@@ -2157,7 +2157,7 @@ fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
     )));
     assert!(EMBEDDED_INDEX.contains("  .head-links > #chesslink { grid-column: 1 / -1; }\n"));
     assert!(EMBEDDED_INDEX.contains(
-        "repeating-conic-gradient(#f4f1e8 0 25%, #0b0b0c 0 50%) 0 0 / 8px 8px border-box;"
+        "repeating-conic-gradient(#f4f1e8 0 25%, #0b0b0c 0 50%) 0 0 / 4px 4px border-box;"
     ));
     // The Debugger link is only as good as the shim's reading of it, and
     // the CIVVIS link needs no word at all: a lane's bare address is the

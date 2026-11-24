@@ -216,12 +216,13 @@ class Simulator(unittest.TestCase):
         )
 
     def test_wizard_chess_is_a_chessboard(self):
-        # The same squares as on the pages, by name.
+        # The same squares as on the pages, by name, at half the size: the
+        # link is 16px tall here.
         self.assertIn(
             "  #chesslink {\n"
             f"    color: {SQUARE}; border-color: transparent;\n"
-            f"    background: linear-gradient({PLATE}, {PLATE}) center / calc(100% - 16px) calc(100% - 8px) no-repeat,\n"
-            f"      repeating-conic-gradient({SQUARE} 0 25%, {PLATE} 0 50%) 0 0 / 8px 8px border-box;\n"
+            f"    background: linear-gradient({PLATE}, {PLATE}) center / calc(100% - 12px) calc(100% - 6px) no-repeat,\n"
+            f"      repeating-conic-gradient({SQUARE} 0 25%, {PLATE} 0 50%) 0 0 / 4px 4px border-box;\n"
             "  }\n",
             VIEWER,
         )

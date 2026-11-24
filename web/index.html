@@ -405,16 +405,18 @@
   #civ6link:hover { color: #fff; border-color: #fff; background: linear-gradient(90deg, #2352d6 35%, #73cfff) border-box; }
   /* Wizard Chess is a chessboard ("the background there can be black and
      white checkerboard"): black and white squares round a black plate that
-     the name stands on, as on the pages. */
+     the name stands on, as on the pages. The link is 16px tall here, so the
+     squares are half the pages' size and the plate leaves two of them above
+     and below the name's line. */
   #chesslink {
     color: #f4f1e8; border-color: transparent;
-    background: linear-gradient(#0b0b0c, #0b0b0c) center / calc(100% - 16px) calc(100% - 8px) no-repeat,
-      repeating-conic-gradient(#f4f1e8 0 25%, #0b0b0c 0 50%) 0 0 / 8px 8px border-box;
+    background: linear-gradient(#0b0b0c, #0b0b0c) center / calc(100% - 12px) calc(100% - 6px) no-repeat,
+      repeating-conic-gradient(#f4f1e8 0 25%, #0b0b0c 0 50%) 0 0 / 4px 4px border-box;
   }
   #chesslink:hover {
     color: #fff; border-color: transparent;
-    background: linear-gradient(#26262a, #26262a) center / calc(100% - 16px) calc(100% - 8px) no-repeat,
-      repeating-conic-gradient(#ffffff 0 25%, #0b0b0c 0 50%) 0 0 / 8px 8px border-box;
+    background: linear-gradient(#26262a, #26262a) center / calc(100% - 12px) calc(100% - 6px) no-repeat,
+      repeating-conic-gradient(#ffffff 0 25%, #0b0b0c 0 50%) 0 0 / 4px 4px border-box;
   }
   /* Doctor Strange's Civ 6 stands out in Doctor Strange's own colours
      (operator, 2026-11-23: "highlight dr strange civ 6 button in dr
