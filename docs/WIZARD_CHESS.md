@@ -187,6 +187,18 @@ pulled to what is nearly underneath it (the prey of the knight as it comes
 down on it), and tips only so far up and down, so the dive onto a capture
 is ridden, not spun.
 
+**Each piece its own stone** (`VOICES`, `Sound.chime`). Every sound the
+world makes says whose it is, and each kind of piece is its own stone: a
+pawn scrapes light and high, a rook is a grinding mass with its weight
+under it, a bishop, a queen and a king ring like struck stone after they are
+set down (a bell's note and the out-of-tune partial that makes it stone),
+and a knight's hooves strike twice as it lands. The knight ridden breathes
+out through its nostrils as it lands. Rendered offline in the page, a slide
+and a landing, each: a pawn 0.18 s of sound at the highest pitch (5,600 zero
+crossings a second) and the quietest (RMS 0.011); a knight 0.27 s; a bishop
+0.72 s; a rook the loudest (0.039, three and a half times a pawn) and low
+(2,300); a queen the longest ring (0.86 s); a king the lowest (2,200).
+
 **The hall** (`World.vault`). From a knight's back the room is what is
 above the pieces, so it is built to be looked up at: a ring of twelve stone
 columns round the board under a ribbed dome, a wall beyond them with tall
@@ -251,14 +263,14 @@ sound where it happens (#5755); the knight ridden alive (#5757); peril felt
 (#5758); seeing over your own knight, and the frame measured (#5760); the
 hall (#5766); the pieces alive (#5768); the board hearing a command as it is
 given (#5771); the opponent deliberating (#5772); riding into the blow
-(#5774).
+(#5774); each piece its own stone (#5775).
 
 What is next, most felt first:
 
-- **The pieces' own voices.** Each kind of piece its own stone: a pawn's
-  light scrape, a rook's grinding mass, a queen's ringing; the knight ridden
-  snorts and its hooves strike. Sound is what a seat among the pieces is
-  most of.
+- **The hall's own sound.** A room of stone answers: a capture's crash
+  comes back off the dome a moment later (a convolution of the hall's
+  size), the braziers crackle where they stand, and the rider hears the
+  board's quiet between moves.
 - **Riding other pieces.** Any of your pieces, not only knights.
 - **Speed: measured, and there is room.** `wizardChess.frameCost(n)` times
   `n` frames of the world's work and drawing, each finished on the graphics
