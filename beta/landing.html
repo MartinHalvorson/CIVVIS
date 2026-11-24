@@ -116,7 +116,7 @@
   .utility-list:hover,
   .utility-list:focus-visible { color: #fff; text-decoration: underline; }
   .utility-list:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-  /* The site is five pages, Home, Charts, Auto-Tourneys, CIVVIS and AI
+  /* The site is five pages, Home, Charts, Tournaments, CIVVIS and AI
      Debugger, and every one of them lists all five in that order, with the game they are
      built on under them and the page on screen in gold. Here they stand in a column
      to the left of the title (operator, 2026-11-21: "on the left side, to
@@ -181,8 +181,8 @@
   .site-link[href^="https://store.steampowered.com/"] { background: linear-gradient(90deg, #1a44c2 35%, #47bfff); color: #fff; }
   .site-link[href^="https://store.steampowered.com/"]:hover,
   .site-link[href^="https://store.steampowered.com/"]:focus-visible { background: linear-gradient(90deg, #2352d6 35%, #73cfff); color: #fff; }
-  /* The column is as wide as its longest name, AUTO-TOURNEYS, on one line:
-     145px. Every name stands on one line (operator, 2026-11-21: "make sure
+  /* The column is as wide as AUTO-TOURNEYS on one line, the Tournaments page's
+     name from 2026-11-22 to 2026-11-24: 145px. Every name stands on one line (operator, 2026-11-21: "make sure
      it fits on one line"), down to a 320px phone, where the title beside
      the column still has its room. The list is a tree that keeps its
      branches folded (operator, 2026-11-21: "a somewhat collapsable model
@@ -426,13 +426,13 @@
 <body>
   <header class="shell site-header">
     <div class="site-brand">
-      <!-- The site is five pages, Home, Charts, Auto-Tourneys, CIVVIS and AI
+      <!-- The site is five pages, Home, Charts, Tournaments, CIVVIS and AI
            Debugger, listed in that order on every one of them with the page
            on screen in gold: this is Home, Charts is the charts read off
            the games (the page was named Research, then Musings, and its
-           address is still <lane>/research/), Auto-Tourneys is the series
+           address is still <lane>/research/), Tournaments is the series
            of verification games (running, scheduled and finished; named
-           Tournaments until 2026-11-22, address <lane>/tournaments/), CIVVIS is the simulation
+           Auto-Tourneys from 2026-11-22 to 2026-11-24), CIVVIS is the simulation
            the AIs play and AI Debugger the same game with a seat of your own
            (`mode=play` in beta/shim.js). All three are lane-relative (this
            page lives at <lane>/home/), so the test lane's home page opens
@@ -442,7 +442,7 @@
       <nav class="site-nav" aria-label="CIVVIS sites">
         <a class="site-link" href="./" aria-current="page">Home</a>
         <a class="site-link" href="../charts/win-analytics/" title="What the games show: charts read off the CIVVIS AI agents&#8217; games.">Charts/</a>
-        <a class="site-link" href="../auto-tourneys/" title="Series of verification games against Civilization VI&#8217;s own AI: running, scheduled and finished.">Auto-Tourneys</a>
+        <a class="site-link" href="../tournaments/" title="Series of verification games against Civilization VI&#8217;s own AI: running, scheduled and finished.">Tournaments</a>
         <a class="site-link" href="../" title="Every civilization is played by a CIVVIS AI agent.">CIVVIS</a>
         <a class="site-link" href="../?mode=strange" title="One world, two timelines: the same game played two ways, side by side, on a timeline that branches.">Doctor Strange's Civ 6</a>
         <a class="site-link" href="../?mode=play" title="You play one civilization. CIVVIS AI agents play the rest.">AI Debugger</a>

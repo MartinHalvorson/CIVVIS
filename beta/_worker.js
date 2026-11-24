@@ -4,7 +4,7 @@
 //
 //   /              the STABLE lane — the promoted build, deliberately chosen:
 //                  the viewer at /, the landing page at /home, the pages of
-//                  Charts/ under /charts, Auto-Tourneys at /auto-tourneys,
+//                  Charts/ under /charts, Tournaments at /tournaments,
 //                  the native binaries at /download
 //   /test/...      the HEAD lane — the same pages, republished automatically
 //                  from the latest main: /test, /test/home, /test/download
@@ -281,10 +281,26 @@ const PAGE_ADDRESS =
 // in a lane that has the page at its new address, though: a lane pinned to a
 // revision from before the move still serves its pages where they were, and
 // there the old address is the page.
+//
+// Tournaments was Auto-Tourneys from 2026-11-22 and at /auto-tourneys from
+// 2026-11-23, and on 2026-11-24 it took its first name back, and with it
+// its first address (operator: "change auto-outnrye to Tournaments.
+// Auto-tourney suggests some self imrpvoing tourney thing"). So
+// /auto-tourneys is an address it has left like the others.
 const MOVED = {
   research: "charts/win-analytics",
   performance: "charts/civvis-performance",
   interpretability: "charts/ai-interpretability",
+  "auto-tourneys": "tournaments",
+};
+
+// A page back at an address it once left, by that address, and the address
+// it had in between. A lane pinned to a revision from in between (the front
+// page, until a promotion carries the change there) has the page at the
+// address in between, and the address the page is back at forwards to it,
+// as it did then. Once no lane can be pinned to such a revision the entry can
+// go.
+const BETWEEN = {
   tournaments: "auto-tourneys",
 };
 
@@ -337,7 +353,9 @@ async function pageAnswer(request, env, url) {
   if (!Array.isArray(pages) || pages.includes(name)) return null;
   const now = Object.hasOwn(MOVED, name)
     ? MOVED[name]
-    : pages.find((page) => typeof page === "string" && page.startsWith(`${name}/`));
+    : Object.hasOwn(BETWEEN, name)
+      ? BETWEEN[name]
+      : pages.find((page) => typeof page === "string" && page.startsWith(`${name}/`));
   if (now && pages.includes(now)) return { moved: `${lane}/${now}/` };
   return { absent: true };
 }

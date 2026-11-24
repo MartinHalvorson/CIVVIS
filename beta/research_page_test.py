@@ -291,7 +291,7 @@ class TournamentWinRates(unittest.TestCase):
                 (at("11-22", 4), 8, False, True),
             ],
         )
-        # They are the games the Auto-Tourneys page counts, level by level,
+        # They are the games the Tournaments page counts, level by level,
         # the same series, the same wins and losses, less the one game whose
         # summary does not say which table it stands in.
         series = home_rankings.tournament_series(self.ROWS, self.SPECS, detail=True)
@@ -415,7 +415,7 @@ class TournamentWinRates(unittest.TestCase):
     def test_the_committed_definitions_are_where_the_record_reads_them(self):
         defined = json.loads((ROOT / research_page.TOURNAMENTS).read_text(encoding="utf-8"))
         self.assertTrue(defined["tournaments"])
-        # The same file the Auto-Tourneys page counts its tournaments from.
+        # The same file the Tournaments page counts its tournaments from.
         self.assertIn('path = source / "data" / "tournaments.json"', (BETA / "tournaments_page.py").read_text(encoding="utf-8"))
         self.assertEqual(research_page.TOURNAMENTS, pathlib.Path("data/tournaments.json"))
 
@@ -1079,7 +1079,7 @@ class Page(unittest.TestCase):
         # listed on, which table a game stands in, and what a loss is, as
         # `tournament_games` counts one: every finished game that CIVVIS did
         # not win.
-        self.assertIn('Every finished game of the tournaments on <a href="../../auto-tourneys/">Auto-Tourneys</a>', block)
+        self.assertIn('Every finished game of the tournaments on the <a href="../../tournaments/">Tournaments</a> page', block)
         self.assertIn("The left table holds the games that allowed the Diplomatic victory, the right table the games set up with it switched off.", block)
         self.assertIn("A win is a CIVVIS victory; a loss is a rival&#8217;s victory, our elimination, or a game conceded early.", block)
         self.assertIn("A day is 24 hours, counted back from the newest tournament game.", block)
@@ -1267,7 +1267,7 @@ class Page(unittest.TestCase):
         self.assertIn("const CHARTS = [", script)
         self.assertEqual(re.findall(r'"[^"\n]*Deity[^"\n]*"', script), [])
 
-    def test_every_page_lists_charts_between_home_and_auto_tourneys(self):
+    def test_every_page_lists_charts_between_home_and_tournaments(self):
         # Operator 2026-11-21: "between home and tournaments, we should add a
         # "Research"." This page lists the site's pages as the others do,
         # with itself in gold. It was Musings later that day (operator:
@@ -1296,7 +1296,7 @@ class Page(unittest.TestCase):
             'title="How fast the simulator plays: the fastest game on video and how long a self-play game takes.">CIVVIS Performance</a>\n'
             '        <a class="site-link sub-link" href="../ai-interpretability/" '
             'title="How a CIVVIS AI agent decides: one turn step by step, its plan through a game, and what each rule is worth in wins.">AI Interpretability</a>\n'
-            '        <a class="site-link" href="../../auto-tourneys/" ',
+            '        <a class="site-link" href="../../tournaments/" ',
             PAGE,
         )
         nav = PAGE[PAGE.index('<nav class="site-nav"'):PAGE.index("</nav>")]
@@ -1329,12 +1329,12 @@ class Page(unittest.TestCase):
             self.assertNotIn(">Charts</a>", page)
         for page, pattern in (
             (LANDING, r'aria-current="page">Home</a>\s*<a class="site-link" href="\.\./charts/win-analytics/"[^>]*>Charts/</a>'
-                      r'\s*<a class="site-link" href="\.\./auto-tourneys/"'),
+                      r'\s*<a class="site-link" href="\.\./tournaments/"'),
             (TOURNAMENTS, r'href="\.\./home/">Home</a>\s*<a class="site-link" href="\.\./charts/win-analytics/"[^>]*>Charts/</a>'
-                          r'\s*<a class="site-link" href="\./" aria-current="page">Auto-Tourneys</a>'),
+                          r'\s*<a class="site-link" href="\./" aria-current="page">Tournaments</a>'),
             (VIEWER, r'id="homelink" href="/home" target="_top">Home</a>\s*'
                      r'<a class="home-link" id="chartslink" href="/charts/win-analytics" target="_top">Charts/</a>\s*'
-                     r'<a class="home-link" id="tourlink" href="/auto-tourneys" target="_top">Auto-Tourneys</a>'),
+                     r'<a class="home-link" id="tourlink" href="/tournaments" target="_top">Tournaments</a>'),
         ):
             self.assertRegex(page, pattern)
 

@@ -2102,7 +2102,7 @@ fn viewer_marks_the_selected_revision_and_its_compact_ages_above_the_minimap() {
     assert!(EMBEDDED_INDEX.contains("position: fixed; z-index: 16;\n    right:"));
 }
 
-/// The site is five pages, Home, Charts, Auto-Tourneys, CIVVIS and AI
+/// The site is five pages, Home, Charts, Tournaments, CIVVIS and AI
 /// Debugger (the operator's names in this list: "home, musings (rename
 /// research), tournaments, civvis, AI Debugger (rename plz), Civ 6 at the
 /// top level" on 2026-11-21, then on 2026-11-22 "Change musings to
@@ -2129,18 +2129,21 @@ fn viewer_marks_the_selected_revision_and_its_compact_ages_above_the_minimap() {
 /// should have at least win analytics, CIVVIS Performance").
 /// Pinned as one literal because the list is the contract: seven links in
 /// this order, inside a list that only the hosts serving a /home, a
-/// /charts and an /auto-tourneys reveal. The addresses follow the names in
+/// /charts and a /tournaments reveal. The addresses follow the names in
 /// the list since 2026-11-23 (operator: "clean up the URL please.
 /// standardized. please remove research from the url"): Charts/ opens Win
 /// Analytics at /charts/win-analytics, where it was /research, and
-/// Auto-Tourneys is at /auto-tourneys, where it was /tournaments.
+/// Auto-Tourneys was at /auto-tourneys, where it was /tournaments, until it took
+/// its first name and address back on 2026-11-24 (operator: "change
+/// auto-outnrye to Tournaments. Auto-tourney suggests some self imrpvoing
+/// tourney thing"): Tournaments, at /tournaments.
 #[test]
 fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
     assert!(EMBEDDED_INDEX.contains(concat!(
         "<nav class=\"head-links\" id=\"headlinks\" aria-label=\"CIVVIS sites\" hidden>\n",
         "        <a class=\"home-link\" id=\"homelink\" href=\"/home\" target=\"_top\">Home</a>\n",
         "        <a class=\"home-link\" id=\"chartslink\" href=\"/charts/win-analytics\" target=\"_top\">Charts/</a>\n",
-        "        <a class=\"home-link\" id=\"tourlink\" href=\"/auto-tourneys\" target=\"_top\">Auto-Tourneys</a>\n",
+        "        <a class=\"home-link\" id=\"tourlink\" href=\"/tournaments\" target=\"_top\">Tournaments</a>\n",
         "        <a class=\"home-link\" id=\"watchlink\" href=\"./\" target=\"_top\">CIVVIS</a>\n",
         "        <a class=\"home-link\" id=\"strangelink\" href=\"?mode=strange\" target=\"_top\">Doctor Strange's Civ 6</a>\n",
         "        <a class=\"home-link\" id=\"playlink\" href=\"?mode=play\" target=\"_top\">AI Debugger</a>\n",
@@ -2266,14 +2269,14 @@ fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
         "        <a class=\"site-link sub-link\" href=\"../ai-interpretability/\" ",
         "title=\"How a CIVVIS AI agent decides: one turn step by step, its plan through a game, ",
         "and what each rule is worth in wins.\">AI Interpretability</a>\n",
-        "        <a class=\"site-link\" href=\"../../auto-tourneys/\" ",
+        "        <a class=\"site-link\" href=\"../../tournaments/\" ",
     );
     assert!(performance.contains(listed));
     assert!(include_str!("../../beta/research.html").contains(listed));
     assert!(interpretability.contains(concat!(
         "\">CIVVIS Performance</a>\n",
         "        <a class=\"site-link sub-link\" href=\"./\" aria-current=\"page\">AI Interpretability</a>\n",
-        "        <a class=\"site-link\" href=\"../../auto-tourneys/\" ",
+        "        <a class=\"site-link\" href=\"../../tournaments/\" ",
     )));
     assert!(interpretability
         .contains("<script type=\"application/json\" id=\"interpretability-data\">null</script>"));
@@ -2296,14 +2299,15 @@ fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
         .contains("#side[data-type-size=\"compact\"] .head-links {\n    grid-column: 1 / -1;"));
     // The viewer's links to the other pages leave the lane-relative rewrite
     // to `beta/publish.sh`, which turns a root link to any page the lane
-    // carries (`/home`, `/charts/win-analytics`, `/auto-tourneys`) into the
+    // carries (`/home`, `/charts/win-analytics`, `/tournaments`) into the
     // lane's own page and refuses to publish a root link it does not know.
     assert!(include_str!("../../beta/publish.sh").contains(concat!(
         "for address in dict.fromkeys([*carried, *former]):\n",
         "    needle, replacement = f'href=\"/{address}\"', f'href=\"{address}/\"'\n",
     )));
     // Two by two, a link is half its row, except on the second row: there
-    // AUTO-TOURNEYS takes six tenths and CIVVIS four. Measured in Chrome in
+    // TOURNAMENTS takes six tenths and CIVVIS four, the room AUTO-TOURNEYS (its
+    // name until 2026-11-24) needed. Measured in Chrome in
     // the system face, AUTO-TOURNEYS is 91.3px in this type and half a row
     // holds 84px at its narrowest (a 195px band), six tenths 103.8px;
     // CIVVIS is 36px in the 64.2px left to it.
@@ -2363,7 +2367,7 @@ fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
     // type at .02em, 86px inside it, and 7px gutters, so the column and its
     // gutter take 99px of the band and neither width at which the lockup
     // changes shape has moved. Measured in Chrome in the system face:
-    // AUTO-TOURNEYS, the longest name now, is 80.2px and AI DEBUGGER
+    // AUTO-TOURNEYS, the longest name until 2026-11-24, is 80.2px and AI DEBUGGER
     // 62.8px. Each link is one track in the column wherever it stands two
     // by two.
     assert!(EMBEDDED_INDEX.contains(concat!(
@@ -2474,7 +2478,7 @@ fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
 }
 
 /// The home page is one of the site's five pages and lists all five from
-/// its header, Home, Charts, Auto-Tourneys, CIVVIS and AI Debugger, with itself in gold
+/// its header, Home, Charts, Tournaments, CIVVIS and AI Debugger, with itself in gold
 /// and the Civ 6 link under them, as the viewer's masthead does; below that
 /// it is one paragraph, the speed timeline (operator, 2026-11-22: how many
 /// times faster than a person each way of playing gets through a game;
@@ -2496,7 +2500,7 @@ fn the_home_page_lists_the_sites_with_itself_in_gold() {
     let landing = include_str!("../../beta/landing.html");
     for piece in [
         // The site's pages in the viewer's order, this one marked as the
-        // page on screen, Auto-Tourneys saying what it lists and the other
+        // page on screen, Tournaments saying what it lists and the other
         // two saying in the viewer's own words what they open, then the
         // game itself. They stand to the left of the title (operator,
         // 2026-11-21: "on home, lets have the home/civvis/ai debugger/civ 6
@@ -2511,9 +2515,9 @@ fn the_home_page_lists_the_sites_with_itself_in_gold() {
             "        <a class=\"site-link\" href=\"./\" aria-current=\"page\">Home</a>\n",
             "        <a class=\"site-link\" href=\"../charts/win-analytics/\" ",
             "title=\"What the games show: charts read off the CIVVIS AI agents&#8217; games.\">Charts/</a>\n",
-            "        <a class=\"site-link\" href=\"../auto-tourneys/\" ",
+            "        <a class=\"site-link\" href=\"../tournaments/\" ",
             "title=\"Series of verification games against Civilization VI&#8217;s own AI: ",
-            "running, scheduled and finished.\">Auto-Tourneys</a>\n",
+            "running, scheduled and finished.\">Tournaments</a>\n",
             "        <a class=\"site-link\" href=\"../\" ",
             "title=\"Every civilization is played by a CIVVIS AI agent.\">CIVVIS</a>\n",
             "        <a class=\"site-link\" href=\"../?mode=strange\" ",
@@ -2556,8 +2560,8 @@ fn the_home_page_lists_the_sites_with_itself_in_gold() {
     ] {
         assert!(landing.contains(piece), "the home page lost {piece}");
     }
-    // The column is as wide as its longest name on one line, AUTO-TOURNEYS:
-    // 145px. While the Debugger's name was STRATEGY DEBUGGER the column was
+    // The column is as wide as AUTO-TOURNEYS on one line, the Tournaments
+    // page's name from 2026-11-22 to 2026-11-24: 145px. While the Debugger's name was STRATEGY DEBUGGER the column was
     // 178px and a phone under 380px narrowed it to its longest word, which
     // put the name on two lines. Every name stands on one line down to a
     // 320px phone with the page no wider than the screen (measured), so no

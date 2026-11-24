@@ -14,7 +14,7 @@ nobody having promoted it.
 The same holds for where a page is served. Since 2026-11-23 an address
 follows the page's name in the site list (operator: "clean up the URL please.
 standardized. please remove research from the url"), so the pages of Charts/
-sit under `charts/` and Auto-Tourneys at `auto-tourneys`. Each page states its
+sit under `charts/` and Tournaments at `tournaments`. Each page states its
 own address and every link in it is relative to that, so the promoted revision
 here is one from before the move, and its lane has to keep the layout its
 pages were written for while main's takes the new one.
@@ -94,7 +94,7 @@ VIEWER = textwrap.dedent(
 #: said so, and its lane keeps the addresses the script knew them by.
 ADDRESSES = {
     "landing": "home",
-    "tournaments": "auto-tourneys",
+    "tournaments": "tournaments",
     "research": "charts/win-analytics",
     "elo": "charts/elo-rankings",
     "civs": "charts/civ-analytics",
@@ -269,7 +269,7 @@ class Lanes(unittest.TestCase):
         )
         self.assertEqual(
             json.loads(self.read(self.test, "build.json"))["pages"],
-            ["home", "auto-tourneys", "charts/win-analytics", "charts/elo-rankings", "charts/civ-analytics",
+            ["home", "tournaments", "charts/win-analytics", "charts/elo-rankings", "charts/civ-analytics",
              "charts/civvis-performance", "charts/ai-interpretability", "download"],
         )
 
@@ -286,10 +286,10 @@ class Lanes(unittest.TestCase):
         # were written for, with nothing of main's layout beside them.
         self.assertEqual(
             sorted(str(found.relative_to(self.test)) for found in self.test.glob("**/index.html")),
-            ["auto-tourneys/index.html", "charts/ai-interpretability/index.html",
+            ["charts/ai-interpretability/index.html",
              "charts/civ-analytics/index.html", "charts/civvis-performance/index.html",
              "charts/elo-rankings/index.html", "charts/win-analytics/index.html",
-             "download/index.html", "home/index.html", "index.html"],
+             "download/index.html", "home/index.html", "index.html", "tournaments/index.html"],
         )
         self.assertEqual(
             sorted(str(found.relative_to(self.stable)) for found in self.stable.glob("**/index.html")),

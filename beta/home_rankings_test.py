@@ -416,7 +416,7 @@ class HomeRankings(unittest.TestCase):
             for name, page in PAGES.items():
                 self.assertNotIn(gone, page, name)
         for page in (CHARTS, ELO, CIVS):
-            self.assertIn('<a class="site-link" href="../../auto-tourneys/"', page)
+            self.assertIn('<a class="site-link" href="../../tournaments/"', page)
         # Every game behind the civ table is one click away, on the branch
         # the table is read from.
         self.assertIn(

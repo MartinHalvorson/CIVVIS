@@ -174,10 +174,11 @@ def fresh_profile(prefix: str) -> str:
 # A page is named here by its address in the lane, which follows its name in
 # the site list (operator 2026-11-23: "clean up the URL please. standardized.
 # please remove research from the url"): the pages of Charts/ under charts/,
-# Auto-Tourneys at auto-tourneys.
+# Tournaments at tournaments (at auto-tourneys while it was named
+# Auto-Tourneys, 2026-11-23 to 2026-11-24).
 PAGES = {
     "home": b'aria-label="CIVVIS links"',
-    "auto-tourneys": b'id="tournaments-data"',
+    "tournaments": b'id="tournaments-data"',
     "charts/win-analytics": b'id="research-data"',
     "charts/elo-rankings": b'id="elo-data"',
     "charts/civ-analytics": b'id="civ-data"',
@@ -194,10 +195,19 @@ PAGES = {
 # the old one forwards to it (`MOVED` in `beta/_worker.js`, which a test holds
 # to this table).
 FORMER = {
-    "tournaments": "auto-tourneys",
+    "auto-tourneys": "tournaments",
     "research": "charts/win-analytics",
     "performance": "charts/civvis-performance",
     "interpretability": "charts/ai-interpretability",
+}
+
+# A page back at an address it once left (Tournaments, at auto-tourneys from
+# 2026-11-23 to 2026-11-24 while it was named Auto-Tourneys), and the address
+# it had in between. A lane pinned to a revision from in between carries the
+# page there, and the address it is back at forwards to it (`BETWEEN` in
+# `beta/_worker.js`, which a test holds to this table).
+BETWEEN = {
+    "tournaments": "auto-tourneys",
 }
 
 # Every address a page can answer at, in the site list's order, a page's
@@ -224,7 +234,7 @@ def lane_pages(build: dict) -> list:
     addresses they had then."""
     listed = build.get("pages")
     if listed is None:
-        then = {new: old for old, new in FORMER.items()}
+        then = {new: old for old, new in FORMER.items() if new not in BETWEEN}
         return [then.get(name, name) for name in PAGES]
     return [address for address in ADDRESSES if address in listed]
 
@@ -564,7 +574,7 @@ def check_gate(dist: pathlib.Path) -> list[str]:
             for name in ADDRESSES:
                 address = f"{prefix}/{name}/"
                 marker = PAGES[page_at(name)]
-                moved_to = FORMER.get(name) if name not in carried else None
+                moved_to = (FORMER.get(name) or BETWEEN.get(name)) if name not in carried else None
                 forwards = moved_to in carried if moved_to else False
                 try:
                     answer = get(address)
