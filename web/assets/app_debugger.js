@@ -3598,9 +3598,15 @@ let debugNumbersSaid = "";
 function debugPaneNumbers() {
   if (DEBUG_PANE === null || !state || SPEC) return;
   const seat = state.players.find(player => player.id === 0) || {}, yields = seat.yields || {};
+  // And what it has made over the game so far, which Doctor Strange's Civ 6
+  // sets beside each yield (`STRANGE_TOTALS`).
+  const totals = seat.totals || {};
   const numbers = {score: seat.score, cities: seat.cities, population: seat.population,
+    production: yields.production,
     science: yields.science, culture: yields.culture, gold: yields.gold, faith: yields.faith,
-    military: seat.military};
+    military: seat.military,
+    production_total: totals.production, science_total: totals.science, culture_total: totals.culture,
+    gold_total: totals.gold, faith_total: totals.faith};
   const last = Math.max((state.debug || {}).last ?? state.turn, state.turn);
   const first = Math.min((state.debug || {}).first ?? state.turn, state.turn);
   const said = JSON.stringify([state.turn, first, last, numbers, debugStrategy() || ""]);
@@ -4850,6 +4856,16 @@ const STRANGE_RIVALS = ["siege", "moonshot", "holy", "tourist", "forward", "swin
 const STRANGE_GHOSTS_MOST = 14;
 // The highway's own colours: the trunk, and what is not yet played.
 const STRANGE_GOLD = "#f3d27a";
+// The two worlds' card. Operator 2026-11-23: "lets track cumulative prod,
+// science, culture, gold, faith next to the current turn yields". A yield
+// has two columns a world: what it makes a turn, and what it has made over
+// the game so far (the engine's `totals`, Gold net of upkeep). The rest are
+// one figure each, in the first.
+const STRANGE_VERSUS_ROWS = [
+  ["score", "Score", "Score"], ["cities", "Cities", "Cities"], ["population", "Population", "Population"],
+  ["production", "Production", "Production"], ...DEBUG_VERSUS_ROWS.filter(([key]) => !["score", "cities", "population"].includes(key)),
+];
+const STRANGE_TOTALS = ["production", "science", "culture", "gold", "faith"];
 
 const STRANGE_STYLE = `
   /* The bar is the split's one panel and half A's deck is drawn from it, so
@@ -4895,14 +4911,25 @@ const STRANGE_STYLE = `
   }
   #strange-hud .strange-title a:hover { color: ${STRANGE_GOLD}; border-color: ${STRANGE_GOLD}; }
   #strange-hud .strange-versus {
-    position: absolute; right: 14px; top: 12px; padding: 8px 12px 9px; display: grid; gap: 2px 14px;
-    grid-template-columns: auto auto auto; align-items: baseline; font-variant-numeric: tabular-nums;
+    position: absolute; right: 14px; top: 12px; padding: 8px 12px 9px; display: grid; gap: 2px 0;
+    grid-template-columns: auto auto auto auto auto; align-items: baseline; font-variant-numeric: tabular-nums;
     border: 1px solid #35504a; border-radius: 12px; background: #07110fd9;
   }
   #strange-hud .strange-versus i { font-style: normal; color: #9fb3ab; }
-  #strange-hud .strange-versus b { font-weight: 400; text-align: right; min-width: 3.2em; }
+  #strange-hud .strange-versus b { font-weight: 400; text-align: right; min-width: 3.2em; padding-left: 12px; }
+  #strange-hud .strange-versus b.strange-total { min-width: 3.6em; padding-left: 8px; color: #bccac4; }
+  #strange-hud .strange-versus .strange-pair { padding-left: 20px; }
   #strange-hud .strange-versus b.lead { font-weight: 700; color: ${STRANGE_GOLD}; }
-  #strange-hud .strange-versus .strange-a, #strange-hud .strange-versus .strange-b { font-weight: 700; text-align: right; }
+  #strange-hud .strange-versus .strange-a, #strange-hud .strange-versus .strange-b {
+    grid-column: span 2; font-weight: 700; text-align: center; padding-left: 12px;
+  }
+  #strange-hud .strange-versus .strange-b { padding-left: 20px; }
+  #strange-hud .strange-versus em {
+    font-style: normal; font-size: 10px; letter-spacing: .06em; text-transform: uppercase; text-align: right;
+    color: #7f958d; padding-left: 12px;
+  }
+  #strange-hud .strange-versus em.strange-total { padding-left: 8px; }
+  #strange-hud .strange-versus em.strange-pair { padding-left: 20px; }
   #strange-hud .strange-a { color: #ff8f6b; }
   #strange-hud .strange-b { color: #6fd3e0; }
   /* A world's name plate, across the top of it under the line of the open turn. */
@@ -5350,11 +5377,25 @@ function strangeDraw() {
     follow.title = on ? `${letter.toUpperCase()} is the timeline in the middle`
       : `Put ${letter.toUpperCase()}'s timeline in the middle: Branch here then branches from ${letter.toUpperCase()}`;
   }
+  // Each world has two columns: where it stands now (for a yield, what it
+  // makes a turn), and beside a yield what it has made so far, in whole
+  // numbers.
+  const cell = (value, other, classes, total) => {
+    const named = [...classes, ...(typeof value === "number" && typeof other === "number" && value > other ? ["lead"] : [])];
+    const text = !total ? debugVersusNumber(value)
+      : typeof value === "number" && Number.isFinite(value) ? (Math.round(value) || 0).toLocaleString("en-US") : "–";
+    return `<b${named.length ? ` class="${named.join(" ")}"` : ""}>${text}</b>`;
+  };
   const table = `<i></i><span class="strange-a">A</span><span class="strange-b">B</span>` +
-    DEBUG_VERSUS_ROWS.map(([key, label, title]) => {
-      const mine = (a.numbers || {})[key], theirs = (b.numbers || {})[key];
-      const lead = (left, right) => typeof left === "number" && typeof right === "number" && left > right ? ' class="lead"' : "";
-      return `<i title="${title}">${label}</i><b${lead(mine, theirs)}>${debugVersusNumber(mine)}</b><b${lead(theirs, mine)}>${debugVersusNumber(theirs)}</b>`;
+    `<i></i><em>Now</em><em class="strange-total">Total</em><em class="strange-pair">Now</em><em class="strange-total">Total</em>` +
+    STRANGE_VERSUS_ROWS.map(([key, label, title]) => {
+      const mine = a.numbers || {}, theirs = b.numbers || {}, summed = STRANGE_TOTALS.includes(key);
+      const total = `${key}_total`;
+      return `<i title="${summed ? `${title}: a turn, and made over the game so far${key === "gold" ? " (net of upkeep)" : ""}` : title}">${label}</i>` +
+        cell(mine[key], theirs[key], [], false) +
+        (summed ? cell(mine[total], theirs[total], ["strange-total"], true) : `<b class="strange-total"></b>`) +
+        cell(theirs[key], mine[key], ["strange-pair"], false) +
+        (summed ? cell(theirs[total], mine[total], ["strange-total"], true) : `<b class="strange-total"></b>`);
     }).join("");
   if (strange.drawn !== table) { strange.drawn = table; hud.querySelector('[data-strange="numbers"]').innerHTML = table; }
 }

@@ -1303,6 +1303,16 @@ in the engine knows about it. `beta/shim.js` seats the visitor for
   its standings, tracker and seat boxes away and is a map; the numbers of the
   two are set side by side in the top right corner. A is on the left and B on
   the right, each under a name plate with its Civ AI's picker.
+- **Each yield is a figure a turn and a total so far.** Operator, 2026-11-23:
+  "lets track cumulative prod, science, culture, gold, faith next to the
+  current turn yields". The card in the top right gives each world two
+  columns: what its seat makes a turn, and for Production, Science, Culture,
+  Gold and Faith what it has made over the game so far. The totals are the
+  engine's: a major civilization's `totals` in `players` is its rows of the
+  result screen's record (`turn_stats`) added up, Gold net of upkeep. The
+  record is part of the world, so a world walked back or branched carries the
+  totals of its own past (`every_civilization_reports_what_it_has_made_so_far`
+  in `src/obs/tests.rs`).
 - **The timeline is a highway up the middle.** The open turn is a line across
   the centre of the window. The turns played run down from it, between the
   worlds, and the turns to come run up from it. A turn near the line is tall
