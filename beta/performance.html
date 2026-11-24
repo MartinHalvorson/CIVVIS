@@ -182,6 +182,21 @@
   .site-link[href^="https://store.steampowered.com/"] { background: linear-gradient(90deg, #1a44c2 35%, #47bfff); color: #fff; }
   .site-link[href^="https://store.steampowered.com/"]:hover,
   .site-link[href^="https://store.steampowered.com/"]:focus-visible { background: linear-gradient(90deg, #2352d6 35%, #73cfff); color: #fff; }
+  /* Wizard Chess is a chessboard (operator, 2026-11-23: "below civ 6, add
+     wizard chess. the background there can be black and white
+     checkerboard"): black and white squares round a black plate that the
+     name stands on, so that it reads on either. */
+  .site-link[href$="wizard-chess/"] {
+    background: linear-gradient(#0b0b0c, #0b0b0c) center / calc(100% - 16px) calc(100% - 8px) no-repeat,
+      repeating-conic-gradient(#f4f1e8 0 25%, #0b0b0c 0 50%) 0 0 / 8px 8px;
+    color: #f4f1e8;
+  }
+  .site-link[href$="wizard-chess/"]:hover,
+  .site-link[href$="wizard-chess/"]:focus-visible {
+    background: linear-gradient(#26262a, #26262a) center / calc(100% - 16px) calc(100% - 8px) no-repeat,
+      repeating-conic-gradient(#ffffff 0 25%, #0b0b0c 0 50%) 0 0 / 8px 8px;
+    color: #fff;
+  }
   /* The list is a tree that keeps its branches folded (operator,
      2026-11-21: "a somewhat collapsable model for the info"): a page's own
      pages are listed under it only on that page and on those pages. This is
@@ -426,6 +441,7 @@
         <a class="site-link" href="../../?mode=strange" title="One world, two timelines: the same game played two ways, side by side, on a timeline that branches.">Doctor Strange's Civ 6</a>
         <a class="site-link" href="../../?mode=play" title="You play one civilization. CIVVIS AI agents play the rest.">AI Debugger</a>
         <a class="site-link" href="https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/" target="_blank" rel="noopener" title="Buy Civilization VI on Steam">Civ 6</a>
+        <a class="site-link" href="../../wizard-chess/" title="Chess where you command and the pieces obey, against an opponent at the Elo you pick.">Wizard Chess</a>
       </nav>
       <div class="site-lockup">
         <h1 class="site-title">CIVVIS<span>.ai</span></h1>

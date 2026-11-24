@@ -20,6 +20,7 @@ or a digit, and a page listed under a folder (Charts/) sits in that folder.
       CIVVIS Performance  /charts/civvis-performance/
       AI Interpretability /charts/ai-interpretability/
     Auto-Tourneys         /auto-tourneys/
+    Wizard Chess          /wizard-chess/
 
 A page states its own address (its `<link rel="canonical">`), `publish.sh`
 puts it there, and every link in it is relative to it. So this reads the
@@ -206,6 +207,11 @@ class Addresses(unittest.TestCase):
                 if where.startswith(f"{ADDRESS['landing.html']}/assets/"):
                     self.assertTrue(
                         (BETA / "assets" / where.split("/assets/", 1)[1]).is_file(), f"{source}: {link}")
+                elif where.startswith(f"{ADDRESS['chess.html']}/chess/"):
+                    # Wizard Chess loads its own scripts from the directory
+                    # `publish.sh` sets beside its page.
+                    self.assertTrue(
+                        (BETA / "chess" / where.split("/chess/", 1)[1]).is_file(), f"{source}: {link}")
                 else:
                     self.assertIn(
                         where, addresses | {"."},

@@ -431,11 +431,16 @@ def main(argv: list[str] | None = None) -> int:
             ("/charts/civvis-performance/", "CIVVIS Performance"),
             ("/charts/ai-interpretability/", "AI Interpretability"),
             ("/auto-tourneys/", "Auto-Tourneys"),
+            ("/wizard-chess/", "Wizard Chess"),
+            # And what Wizard Chess loads from beside its page, which is a
+            # file and not a page: the router leaves it to the asset layer.
+            ("/wizard-chess/chess/game.js", "Wizard Chess script"),
+            ("/wizard-chess/chess/vendor/stockfish-18-lite-single.wasm", "Wizard Chess engine"),
         ):
             passed = hit(path=address)
             check(
                 problems,
-                f"{address} passes through to the {name} page",
+                f"{address} passes through to {name}",
                 passed["status"] == 200 and passed["body"].strip() == f"asset:{address}",
                 f"got {passed['status']} {passed['body'][:60]!r}",
             )
