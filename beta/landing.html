@@ -116,17 +116,17 @@
   .utility-list:hover,
   .utility-list:focus-visible { color: #fff; text-decoration: underline; }
   .utility-list:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-  /* The site is five pages, Home, Charts, Tournaments, CIVVIS and AI
-     Debugger, and every one of them lists all five in that order, with the game they are
-     built on under them and the page on screen in gold. Here they stand in a column
-     to the left of the title (operator, 2026-11-21: "on the left side, to
-     the left of civvis.ai"), at the page's left edge, and they carry the
-     colour; the project's links across the header stay plain. The tagline
-     is the viewer's two lines, so the column has the room beside it. */
+  /* The site's pages stand in one row across the top of every page, over
+     the title and the project's links (operator, 2026-11-24: "try
+     putting the vertical menu from home... civ across the top
+     instad"); until then they were a column to the left of the title.
+     The row wraps onto a second line on a narrow screen, and every name
+     stands on one line (operator, 2026-11-21: "make sure it fits on one
+     line"). */
+  .site-nav { display: flex; flex: 1 0 100%; flex-wrap: wrap; align-items: center; gap: 6px; }
   .site-brand { display: flex; align-items: center; gap: 18px; min-width: 0; }
   .site-lockup { min-width: 0; }
   .site-tagline span { display: block; }
-  .site-nav { display: grid; flex: none; gap: 4px; }
   .site-link {
     display: block;
     padding: 3px 12px 4px;
@@ -137,27 +137,27 @@
     font-weight: 700;
     letter-spacing: 0.12em;
     line-height: 1.4;
+    white-space: nowrap;
     text-decoration: none;
     text-transform: uppercase;
   }
   .site-link:hover,
   .site-link:focus-visible { background: var(--action-hover); color: #fff; }
   .site-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .site-link[aria-current="page"],
-  .site-link[aria-current="page"]:hover { background: var(--gold); color: #17130c; }
   /* A button wears the ground of what it opens (operator, 2026-11-23: "make
      home, charts/ and auto-tourneys buttons all have a blue background
      (like the pages do). civvis, ai debugger have a black background (same
      as simulator)"). The pages are blue and so are their buttons: the rule
-     above. The simulator is the lane's own address, bare for CIVVIS and in
-     play mode for AI Debugger, so a link that ends there is the
+     above. CIVVIS, the simulation itself at the lane's own address, is
+     gold (operator, 2026-11-24: "lets give civvis a gold background on the
+     button, rather than black"), the gold the simulator lights its own
+     button in. AI Debugger, the simulator in play mode, keeps the
      simulator's black, inside the edge its own buttons have. Civ 6 opens
      Steam's shop and is the blue of Steam's buttons ("civ 6 can have the
-     steam color of blue"), dark under the name and light at the far end.
-     The page on screen is still the one in gold. */
-  .site-link[href$="../"],
+     steam color of blue"), dark under the name and light at the far end. */
+  .site-link[href$="../"] { background: linear-gradient(145deg, #dec176, #aa7d30); color: #17130c; box-shadow: inset 0 0 0 1px #efd184; }
+  .site-link[href$="../"]:hover, .site-link[href$="../"]:focus-visible { background: linear-gradient(145deg, #f0d68e, #c0913c); color: #000; }
   .site-link[href$="?mode=play"] { background: #050607; color: #c9cecb; box-shadow: inset 0 0 0 1px #30363a; }
-  .site-link[href$="../"]:hover, .site-link[href$="../"]:focus-visible,
   .site-link[href$="?mode=play"]:hover, .site-link[href$="?mode=play"]:focus-visible { background: #181c1f; color: #fff; }
   /* Doctor Strange's Civ 6 (strange mode, the same game shown as a tree of
      two timelines) stands out in Doctor Strange's own colours (operator,
@@ -174,10 +174,6 @@
     background: linear-gradient(135deg, #2638a0 30%, #c8193d); color: #fff;
     box-shadow: inset 0 0 0 1px #ffb85c, 0 0 10px rgba(255, 150, 40, 0.85);
   }
-  /* Doctor Strange's Civ 6 is the one name longer than the column. It does
-     not widen it: the name takes two lines in the column as it stands,
-     set a little closer so that each line fits. */
-  .site-link[href$="?mode=strange"] { box-sizing: border-box; width: 0; min-width: 100%; letter-spacing: 0.02em; }
   .site-link[href^="https://store.steampowered.com/"] { background: linear-gradient(90deg, #1a44c2 35%, #47bfff); color: #fff; }
   .site-link[href^="https://store.steampowered.com/"]:hover,
   .site-link[href^="https://store.steampowered.com/"]:focus-visible { background: linear-gradient(90deg, #2352d6 35%, #73cfff); color: #fff; }
@@ -196,16 +192,34 @@
       repeating-conic-gradient(#ffffff 0 25%, #0b0b0c 0 50%) 0 0 / 8px 8px;
     color: #fff;
   }
-  /* The column is as wide as AUTO-TOURNEYS on one line, the Tournaments page's
-     name from 2026-11-22 to 2026-11-24: 145px. Every name stands on one line (operator, 2026-11-21: "make sure
-     it fits on one line"), down to a 320px phone, where the title beside
-     the column still has its room. The list is a tree that keeps its
-     branches folded (operator, 2026-11-21: "a somewhat collapsable model
-     for the info"): a page's own pages are listed under it only on that
-     page. Charts is a folder of pages and reads "Charts/", with the slash
-     (operator, 2026-11-22: "change just "Charts" to "Charts/" with the
-     intentional slash"). Its pages, Win Analytics and CIVVIS Performance,
-     are listed under it on those two pages and folded away here. */
+  /* Charts/ is a folder of pages and reads "Charts/", with the slash
+     (operator, 2026-11-22), and drops down like one (operator,
+     2026-11-24: "charts/ can drop down folder style and the user can
+     pick the right chart"): pointing at it, or tabbing to it, opens its
+     five pages under it, and the reader picks one. Charts/ itself still
+     opens the folder's first page, Win Analytics, as /charts/ does. On
+     a touch screen the first tap opens the list (the script after the
+     row). A strip as tall as the gap over the list keeps it open on the
+     pointer's way down to it. */
+  .site-folder { position: relative; }
+  .site-folder > .site-link::after { content: "\25BE"; margin-left: 6px; letter-spacing: 0; }
+  .site-menu {
+    position: absolute; top: calc(100% + 6px); left: 0; z-index: 30;
+    display: none; gap: 4px; width: max-content; min-width: 100%; padding: 6px;
+    border: 1px solid var(--border-strong); border-radius: 4px; background: var(--panel);
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5);
+  }
+  .site-menu::before { content: ""; position: absolute; left: 0; right: 0; top: -7px; height: 7px; }
+  .site-folder:hover > .site-menu,
+  .site-folder:focus-within > .site-menu,
+  .site-folder.is-open > .site-menu { display: grid; }
+  /* The page on screen keeps the colour of what it is and is ringed in
+     white. It was gold until 2026-11-24, when gold became CIVVIS's own
+     (operator: "lets give civvis a gold background on the button, rather
+     than black"). On a page of Charts/ the folder is ringed as well, so
+     the row says where the page is with the list folded. */
+  .site-link[aria-current="page"],
+  .site-folder:has([aria-current="page"]) > .site-link { box-shadow: inset 0 0 0 2px #fff; }
 
   /* The report dialog: a visitor's bug or feature request, headed for the
      project's GitHub issue tracker — filed by the site itself for anonymous
@@ -440,30 +454,57 @@
 </head>
 <body>
   <header class="shell site-header">
-    <div class="site-brand">
-      <!-- The site is five pages, Home, Charts, Tournaments, CIVVIS and AI
-           Debugger, listed in that order on every one of them with the page
-           on screen in gold: this is Home, Charts is the charts read off
-           the games (the page was named Research, then Musings, and its
-           address is still <lane>/research/), Tournaments is the series
-           of verification games (running, scheduled and finished; named
-           Auto-Tourneys from 2026-11-22 to 2026-11-24), CIVVIS is the simulation
-           the AIs play and AI Debugger the same game with a seat of your own
-           (`mode=play` in beta/shim.js). All three are lane-relative (this
-           page lives at <lane>/home/), so the test lane's home page opens
-           the test lane's pages. Under them is the game itself, on the shop
-           page that sells it. The column comes first in the header, so it
-           stands to the left of the title. -->
-      <nav class="site-nav" aria-label="CIVVIS sites">
-        <a class="site-link" href="./" aria-current="page">Home</a>
+    <!-- The site's pages, in the order every one of them lists them, in one
+         row across the top of the page (operator, 2026-11-24: "try putting
+         the vertical menu from home... civ across the top instad"), where
+         until then they stood in a column to the left of the title. Charts/
+         is a folder and drops down like one to its five pages ("charts/ can
+         drop down folder style and the user can pick the right chart"). The
+         page on screen is ringed in white: this is Home, a page of its own.
+         Every link is lane-relative (this page lives at <lane>/home/), so
+         the test lane's page opens the test lane's other pages and viewer. -->
+    <nav class="site-nav" aria-label="CIVVIS sites">
+      <a class="site-link" href="./" aria-current="page">Home</a>
+      <div class="site-folder">
         <a class="site-link" href="../charts/win-analytics/" title="What the games show: charts read off the CIVVIS AI agents&#8217; games.">Charts/</a>
-        <a class="site-link" href="../tournaments/" title="Series of verification games against Civilization VI&#8217;s own AI: running, scheduled and finished.">Tournaments</a>
-        <a class="site-link" href="../" title="Every civilization is played by a CIVVIS AI agent.">CIVVIS</a>
-        <a class="site-link" href="../?mode=strange" title="One world, two timelines: the same game played two ways, side by side, on a timeline that branches.">Doctor Strange's Civ 6</a>
-        <a class="site-link" href="../?mode=play" title="You play one civilization. CIVVIS AI agents play the rest.">AI Debugger</a>
-        <a class="site-link" href="https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/" target="_blank" rel="noopener" title="Buy Civilization VI on Steam">Civ 6</a>
-        <a class="site-link" href="../wizard-chess/" title="Chess where you command and the pieces obey, against an opponent at the Elo you pick.">Wizard Chess</a>
-      </nav>
+        <div class="site-menu">
+          <a class="site-link sub-link" href="../charts/win-analytics/" title="Who wins, how and when: the games against Civilization VI&#8217;s own AI beside the CIVVIS self-play games.">Win Analytics</a>
+          <a class="site-link sub-link" href="../charts/elo-rankings/" title="The Civ AI Agents and Civilization VI&#8217;s own AI on one Elo scale, now and over time.">ELO Rankings</a>
+          <a class="site-link sub-link" href="../charts/civ-analytics/" title="How CIVVIS does as each civ, and the early build orders that win against Deity.">Civ Analytics</a>
+          <a class="site-link sub-link" href="../charts/civvis-performance/" title="How fast the simulator plays: the fastest game on video and how long a self-play game takes.">CIVVIS Performance</a>
+          <a class="site-link sub-link" href="../charts/ai-interpretability/" title="How a CIVVIS AI agent decides: one turn step by step, its plan through a game, and what each rule is worth in wins.">AI Interpretability</a>
+        </div>
+      </div>
+      <a class="site-link" href="../tournaments/" title="Series of verification games against Civilization VI&#8217;s own AI: running, scheduled and finished.">Tournaments</a>
+      <a class="site-link" href="../" title="Every civilization is played by a CIVVIS AI agent.">CIVVIS</a>
+      <a class="site-link" href="../?mode=strange" title="One world, two timelines: the same game played two ways, side by side, on a timeline that branches.">Doctor Strange's Civ 6</a>
+      <a class="site-link" href="../?mode=play" title="You play one civilization. CIVVIS AI agents play the rest.">AI Debugger</a>
+      <a class="site-link" href="https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/" target="_blank" rel="noopener" title="Buy Civilization VI on Steam">Civ 6</a>
+      <a class="site-link" href="../wizard-chess/" title="Chess where you command and the pieces obey, against an opponent at the Elo you pick.">Wizard Chess</a>
+    </nav>
+    <script data-site-folder>
+    // Charts/ on a touch screen, where nothing points at it: the first tap
+    // drops its list down and a second opens the folder's first page, as
+    // /charts/ does. A tap anywhere else folds the list away.
+    (() => {
+      const folder = document.querySelector(".site-folder");
+      if (!folder) return;
+      folder.firstElementChild.addEventListener("click", (event) => {
+        if (matchMedia("(hover: hover)").matches || folder.classList.contains("is-open")) return;
+        event.preventDefault();
+        folder.classList.add("is-open");
+      });
+      document.addEventListener("click", (event) => {
+        if (!folder.contains(event.target)) folder.classList.remove("is-open");
+      });
+      folder.addEventListener("keydown", (event) => {
+        if (event.key !== "Escape") return;
+        folder.classList.remove("is-open");
+        document.activeElement.blur();
+      });
+    })();
+    </script>
+    <div class="site-brand">
       <div class="site-lockup">
         <h1 class="site-title">CIVVIS<span>.ai</span></h1>
         <p class="site-tagline"><span>An open source Civilization VI Simulator</span> <span>for AI reasoning insights</span></p>

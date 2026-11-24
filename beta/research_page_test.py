@@ -1270,7 +1270,7 @@ class Page(unittest.TestCase):
     def test_every_page_lists_charts_between_home_and_tournaments(self):
         # Operator 2026-11-21: "between home and tournaments, we should add a
         # "Research"." This page lists the site's pages as the others do,
-        # with itself in gold. It was Musings later that day (operator:
+        # with itself marked. It was Musings later that day (operator:
         # "musings (rename research)") and is Charts since 2026-11-22
         # (operator: "Change musings to "Charts". Move performance from under
         # civvis to charts. Charts is where almost all our charts can go");
@@ -1280,28 +1280,34 @@ class Page(unittest.TestCase):
         # charts, we should have at least win analytics, CIVVIS Performance
         # ... We should change just "Charts" to "Charts/" with the
         # intentional slash"): this page is Win Analytics, the first under
-        # it and the one Charts/ opens, and the branch is open here with
-        # this page in gold.
+        # it and the one Charts/ opens. Since 2026-11-24 the list is a row
+        # across the top and Charts/ drops its pages down (operator: "charts/
+        # can drop down folder style and the user can pick the right
+        # chart"), with this page ringed in it.
         self.assertIn(
             '<nav class="site-nav" aria-label="CIVVIS sites">\n'
-            '        <a class="site-link" href="../../home/">Home</a>\n'
+            '      <a class="site-link" href="../../home/">Home</a>\n'
+            '      <div class="site-folder">\n'
             '        <a class="site-link" href="./" '
             'title="What the games show: charts read off the CIVVIS AI agents&#8217; games.">Charts/</a>\n'
-            '        <a class="site-link sub-link" href="./" aria-current="page">Win Analytics</a>\n'
-            '        <a class="site-link sub-link" href="../elo-rankings/" '
+            '        <div class="site-menu">\n'
+            '          <a class="site-link sub-link" href="./" aria-current="page">Win Analytics</a>\n'
+            '          <a class="site-link sub-link" href="../elo-rankings/" '
             'title="The Civ AI Agents and Civilization VI&#8217;s own AI on one Elo scale, now and over time.">ELO Rankings</a>\n'
-            '        <a class="site-link sub-link" href="../civ-analytics/" '
+            '          <a class="site-link sub-link" href="../civ-analytics/" '
             'title="How CIVVIS does as each civ, and the early build orders that win against Deity.">Civ Analytics</a>\n'
-            '        <a class="site-link sub-link" href="../civvis-performance/" '
+            '          <a class="site-link sub-link" href="../civvis-performance/" '
             'title="How fast the simulator plays: the fastest game on video and how long a self-play game takes.">CIVVIS Performance</a>\n'
-            '        <a class="site-link sub-link" href="../ai-interpretability/" '
+            '          <a class="site-link sub-link" href="../ai-interpretability/" '
             'title="How a CIVVIS AI agent decides: one turn step by step, its plan through a game, and what each rule is worth in wins.">AI Interpretability</a>\n'
-            '        <a class="site-link" href="../../tournaments/" ',
+            '        </div>\n'
+            '      </div>\n'
+            '      <a class="site-link" href="../../tournaments/" ',
             PAGE,
         )
         nav = PAGE[PAGE.index('<nav class="site-nav"'):PAGE.index("</nav>")]
         self.assertEqual(nav.count('aria-current="page"'), 1)
-        self.assertIn(".site-link.sub-link { margin-left: 10px; padding: 2px 6px 3px; font-size: 10px; letter-spacing: 0.03em; }", PAGE)
+        self.assertIn("  .site-folder:hover > .site-menu,\n  .site-folder:focus-within > .site-menu,\n  .site-folder.is-open > .site-menu { display: grid; }\n", PAGE)
         self.assertIn('<a href="../civvis-performance/">CIVVIS Performance</a>.', PAGE)
         # The two pages after it under Charts/ (operator 2026-11-23: "add
         # that to a new page: Charts/ELO Rankings. this should be after win
@@ -1321,17 +1327,17 @@ class Page(unittest.TestCase):
             self.assertIn(f'<link rel="canonical" href="https://civvis.ai/charts/{address}/">', page)
             self.assertIn(f"<title>{name} · CIVVIS.ai</title>", page)
             self.assertEqual(re.findall(r'(?:href|src)="(/[^"]*)"', page), [])
-        self.assertRegex(PAGE, r'<div class="site-brand">\s*<!--[\s\S]*?-->\s*<nav class="site-nav"[^>]*>[\s\S]*?</nav>\s*<div class="site-lockup">')
+        self.assertRegex(PAGE, r'<header class=\"shell site-header\">\s*<!--[\s\S]*?-->\s*<nav class=\"site-nav\"[^>]*>[\s\S]*?</nav>\s*<script data-site-folder>[\s\S]*?</script>\s*<div class=\"site-brand\">\s*<div class=\"site-lockup\">')
         self.assertIn("<title>Win Analytics · CIVVIS.ai</title>", PAGE)
         for page in (PAGE, LANDING, TOURNAMENTS, VIEWER):
             self.assertNotIn(">Research</a>", page)
             self.assertNotIn(">Musings</a>", page)
             self.assertNotIn(">Charts</a>", page)
         for page, pattern in (
-            (LANDING, r'aria-current="page">Home</a>\s*<a class="site-link" href="\.\./charts/win-analytics/"[^>]*>Charts/</a>'
-                      r'\s*<a class="site-link" href="\.\./tournaments/"'),
-            (TOURNAMENTS, r'href="\.\./home/">Home</a>\s*<a class="site-link" href="\.\./charts/win-analytics/"[^>]*>Charts/</a>'
-                          r'\s*<a class="site-link" href="\./" aria-current="page">Tournaments</a>'),
+            (LANDING, r'aria-current="page">Home</a>\s*<div class="site-folder">\s*<a class="site-link" href="\.\./charts/win-analytics/"[^>]*>Charts/</a>'
+                      r'[\s\S]*?</div>\s*</div>\s*<a class="site-link" href="\.\./tournaments/"'),
+            (TOURNAMENTS, r'href="\.\./home/">Home</a>\s*<div class="site-folder">\s*<a class="site-link" href="\.\./charts/win-analytics/"[^>]*>Charts/</a>'
+                          r'[\s\S]*?</div>\s*</div>\s*<a class="site-link" href="\./" aria-current="page">Tournaments</a>'),
             (VIEWER, r'id="homelink" href="/home" target="_top">Home</a>\s*'
                      r'<a class="home-link" id="chartslink" href="/charts/win-analytics" target="_top">Charts/</a>\s*'
                      r'<a class="home-link" id="tourlink" href="/tournaments" target="_top">Tournaments</a>'),
