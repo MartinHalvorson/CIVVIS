@@ -24,6 +24,7 @@ Keep deployment, builtins, and evaluator arms separate when describing the AI:
 | city-state or barbarian | `BasicAi` |
 | human-seat auto-play | selected live roster entry, with scripted builtin fallbacks |
 | explicit fair-play arm | `AdvancedAi::fog_honest()` (opt-in; screened, not strength-promoted) |
+| civvis.ai table, Fog-honest AI True (every world opens so) | each seat's agent with `Ai::set_fog_honest(true)`: an `AdvancedAi` plans on a fog-redacted view and replays the plan (`ai::player::take_turn`); `BasicAi` seats read the board either way |
 | `strategic` | champion-weight `StrategicAi` using score-share rollouts; offline `league_only` anchor, not an exhibition seat |
 
 The shipped tree contains and embeds `data/evolved/best.json`; it contains no
@@ -84,6 +85,16 @@ evaluator it was measured with has since been retired, and the record stands
 in `docs/EVAL.md`. The pre-registered deployment-shaped screen (20 paired maps,
 seed prefix `920000..920019`) retained `advanced`: fog-honest scored 15.0%
 (95% Wilson CI 5.2%..36.0%). It is therefore not promoted into the incumbent.
+
+The constructor that screen named is gone from the code; the fog-honest
+executor it measured lives on as `AdvancedAi`'s observed-player mode, which
+`enable_engine_repairs` and `enable_live_bridge` switch on and
+`enable_native_deployment` switches off. Since 2026-11-23 civvis.ai turns it
+back on for every Civ AI at a table (`Session::set_fog_honest`, the turn box's
+**Fog-honest AI** row), because the operator asked that AI play there be fog
+honest "pretty much always". A table can be set to False for the world on
+screen; the next world opens True again. City-states, barbarians and
+TrainingWheels are `BasicAi` and read the whole board either way.
 
 ### Policy and envoy production default (2026-08-17)
 
