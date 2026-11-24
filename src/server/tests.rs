@@ -2215,12 +2215,31 @@ fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
         "        <a class=\"site-link sub-link\" href=\"../win-analytics/\" ",
         "title=\"Who wins, how and when: the games against Civilization VI&#8217;s own AI ",
         "beside the CIVVIS self-play games.\">Win Analytics</a>\n",
+        "        <a class=\"site-link sub-link\" href=\"../elo-rankings/\" ",
+        "title=\"The Civ AI Agents and Civilization VI&#8217;s own AI on one Elo scale, ",
+        "now and over time.\">ELO Rankings</a>\n",
+        "        <a class=\"site-link sub-link\" href=\"../civ-analytics/\" ",
+        "title=\"How CIVVIS does as each civ, and the early build orders that win against ",
+        "Deity.\">Civ Analytics</a>\n",
         "        <a class=\"site-link sub-link\" href=\"./\" aria-current=\"page\">CIVVIS Performance</a>\n",
     )));
+    // ELO Rankings and Civ Analytics follow Win Analytics under Charts/
+    // (operator 2026-11-23: "add that to a new page: Charts/ELO Rankings.
+    // this should be after win analytics in the ordering ... add another
+    // page: Civ Analytics").
     assert!(include_str!("../../beta/research.html").contains(concat!(
         "        <a class=\"site-link sub-link\" href=\"./\" aria-current=\"page\">Win Analytics</a>\n",
-        "        <a class=\"site-link sub-link\" href=\"../civvis-performance/\" ",
+        "        <a class=\"site-link sub-link\" href=\"../elo-rankings/\" ",
     )));
+    for page in [
+        include_str!("../../beta/elo.html"),
+        include_str!("../../beta/civs.html"),
+    ] {
+        assert!(page.contains(concat!(
+            "\">Civ Analytics</a>\n",
+            "        <a class=\"site-link sub-link\" href=\"../civvis-performance/\" ",
+        )));
+    }
     assert!(performance
         .contains("<script type=\"application/json\" id=\"performance-data\">null</script>"));
     assert!(performance.contains("/blob/main/docs/SIMULATOR_PERFORMANCE.md\""));

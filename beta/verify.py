@@ -179,6 +179,8 @@ PAGES = {
     "home": b'aria-label="CIVVIS links"',
     "auto-tourneys": b'id="tournaments-data"',
     "charts/win-analytics": b'id="research-data"',
+    "charts/elo-rankings": b'id="elo-data"',
+    "charts/civ-analytics": b'id="civ-data"',
     "charts/civvis-performance": b'id="performance-data"',
     "charts/ai-interpretability": b'id="interpretability-data"',
     "download": b"releases/latest/download/",

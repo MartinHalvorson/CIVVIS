@@ -1,0 +1,548 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#171d25">
+<title>Civ Analytics · CIVVIS.ai</title>
+<meta name="description" content="CIVVIS civ analytics: our AI's win rate as each civilization, and the early build orders that win against Civilization VI's Deity AI.">
+<link rel="canonical" href="https://civvis.ai/charts/civ-analytics/">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23171d25'/%3E%3Ccircle cx='16' cy='16' r='11.5' fill='none' stroke='%2366c0f4'/%3E%3Cpath d='M7 16h18M16 4.5c-4.2 4.1-4.2 18.9 0 23M16 4.5c4.2 4.1 4.2 18.9 0 23' fill='none' stroke='%2366c0f4' stroke-width='1.15'/%3E%3C/svg%3E">
+<style>
+  /* The home page's own palette, header and cards (`beta/landing.html`), as
+     the Auto-Tourneys page repeats them: the pages are one site and read as
+     one. Each is a single file with no shared stylesheet, so what they share
+     is repeated here. */
+  :root {
+    color-scheme: dark;
+    --bg: #171d25;
+    --panel: #1f2733;
+    --panel-raised: #242f3d;
+    --border: #2e3a4a;
+    --border-strong: #46566a;
+    --text: #e2e8ef;
+    --muted: #93a3b5;
+    --faint: #67788b;
+    --accent: #66c0f4;
+    --action-bg: #274b66;
+    --action-fg: #a8d8f5;
+    --action-hover: #315d7e;
+    --gold: #d7b66a;
+    --yt: #b3261e;
+    --yt-edge: #d9534a;
+    --yt-mark: #ff6257;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    /* Civilization VI's six victory types, one colour each, the same on
+       every chart of the page and in this order (a stack runs bottom to top
+       in it). The six are a categorical set checked as one against this
+       panel (#1f2733): each at least 3:1 on it, and each pair that stands
+       side by side in a stack apart for every common colour-vision type. */
+    --v-science: #3987e5;
+    --v-culture: #d95926;
+    --v-diplomatic: #199e70;
+    --v-religious: #c98500;
+    --v-domination: #d55181;
+    --v-score: #0ca30c;
+  }
+
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    min-width: 320px;
+    margin: 0;
+    overflow-x: hidden;
+    color: var(--text);
+    background: var(--bg);
+    font: 15px/1.55 var(--sans);
+    -webkit-font-smoothing: antialiased;
+  }
+  /* 1120px, up from 1060px on 2026-11-22: the header's row of links grew
+     when GitHub and YouTube were made to stand out, and at 1060px it no
+     longer fitted on the title's line. */
+  .shell { width: min(1120px, 100%); margin: 0 auto; padding: 0 clamp(16px, 3vw, 32px); }
+  main { padding-bottom: 48px; }
+
+  .site-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    flex-wrap: wrap;
+    padding-top: 26px;
+    padding-bottom: 18px;
+    border-bottom: 1px solid var(--border);
+  }
+  .site-title { margin: 0; color: #fff; font-size: 26px; font-weight: 700; letter-spacing: 0.04em; }
+  .site-title span { color: var(--accent); font-weight: 600; }
+  .site-tagline { margin: 3px 0 0; color: var(--muted); font-size: 13.5px; }
+  .site-tagline span { display: block; }
+  .utility-nav { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: flex-end; gap: 10px; margin-left: auto; }
+  .utility-nav > .utility-link { min-height: 44px; }
+  .utility-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 38px;
+    padding: 0 14px;
+    border: 1px solid var(--border-strong);
+    border-radius: 3px;
+    background: var(--panel);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    text-decoration: none;
+  }
+  .utility-link svg { width: 15px; height: 15px; flex: none; }
+  .utility-link:hover,
+  .utility-link:focus-visible { background: var(--panel-raised); border-color: var(--accent); color: #fff; }
+  .utility-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* The project's two homes stand out from the row (operator, 2026-11-22:
+     "make the GitHub, dev progress stand out a bit more"): GitHub filled in
+     the site's blue, with what it holds under its name ("everything open
+     source, free"), and YouTube in its red. */
+  .utility-link.is-github,
+  .utility-link.is-youtube { min-height: 44px; color: #fff; font-size: 14px; font-weight: 700; }
+  .utility-link.is-github svg,
+  .utility-link.is-youtube svg { width: 20px; height: 20px; }
+  .utility-link.is-github { border-color: var(--accent); background: var(--action-bg); }
+  .utility-link.is-github:hover,
+  .utility-link.is-github:focus-visible { background: var(--action-hover); border-color: #fff; }
+  .utility-link.is-github span { display: grid; line-height: 1.25; }
+  .utility-link.is-github small { color: var(--action-fg); font-size: 11px; font-weight: 500; white-space: nowrap; }
+  .utility-link.is-youtube { border-color: var(--yt-edge); background: var(--yt); }
+  .utility-link.is-youtube:hover,
+  .utility-link.is-youtube:focus-visible { background: #c9342b; border-color: #fff; }
+  /* Under YouTube, the channel's top playlists, one to a line (operator,
+     2026-11-22: "list top playlists under youtube. maybe in a vertical
+     list"). The row's links keep their tops in a line, so the list hangs
+     under its button alone, in the room the site list's height leaves. */
+  .utility-group { display: grid; gap: 5px; }
+  .utility-lists { display: grid; gap: 1px; margin: 0; padding: 0; list-style: none; }
+  .utility-list {
+    display: flex; align-items: center; gap: 6px; padding: 2px 3px; border-radius: 2px;
+    color: var(--text); font-size: 12.5px; font-weight: 600; line-height: 1.35; text-decoration: none; white-space: nowrap;
+  }
+  .utility-list svg { width: 14px; height: 14px; flex: none; color: var(--yt-mark); }
+  .utility-list:hover,
+  .utility-list:focus-visible { color: #fff; text-decoration: underline; }
+  .utility-list:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  /* The site's pages, listed in the same order on every one of them with
+     the page on screen in gold: Home, Charts, Auto-Tourneys, CIVVIS and AI
+     Debugger, and under them the game they are built on. As on the home
+     page, whose header this is, the column stands to the left of the title. */
+  .site-brand { display: flex; align-items: center; gap: 18px; min-width: 0; }
+  .site-lockup { min-width: 0; }
+  .site-nav { display: grid; flex: none; gap: 4px; }
+  .site-link {
+    display: block;
+    padding: 3px 12px 4px;
+    border-radius: 3px;
+    background: var(--action-bg);
+    color: var(--action-fg);
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    line-height: 1.4;
+    text-decoration: none;
+    text-transform: uppercase;
+  }
+  .site-link:hover,
+  .site-link:focus-visible { background: var(--action-hover); color: #fff; }
+  .site-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .site-link[aria-current="page"],
+  .site-link[aria-current="page"]:hover { background: var(--gold); color: #17130c; }
+  /* A button wears the ground of what it opens (operator, 2026-11-23: "make
+     home, charts/ and auto-tourneys buttons all have a blue background
+     (like the pages do). civvis, ai debugger have a black background (same
+     as simulator)"). The pages are blue and so are their buttons: the rule
+     above. The simulator is the lane's own address, bare for CIVVIS and in
+     play mode for AI Debugger, so a link that ends there is the
+     simulator's black, inside the edge its own buttons have. Civ 6 opens
+     Steam's shop and is the blue of Steam's buttons ("civ 6 can have the
+     steam color of blue"), dark under the name and light at the far end.
+     The page on screen is still the one in gold. */
+  .site-link[href$="../"],
+  .site-link[href$="?mode=play"] { background: #050607; color: #c9cecb; box-shadow: inset 0 0 0 1px #30363a; }
+  .site-link[href$="../"]:hover, .site-link[href$="../"]:focus-visible,
+  .site-link[href$="?mode=play"]:hover, .site-link[href$="?mode=play"]:focus-visible { background: #181c1f; color: #fff; }
+  /* Doctor Strange's Civ 6 (strange mode, the same game shown as a tree of
+     two timelines) stands out in Doctor Strange's own colours (operator,
+     2026-11-23: "highlight dr strange civ 6 button in dr strange colors"):
+     the deep blue of his tunic running into the crimson of his cloak,
+     ringed and lit by the orange of his spells' sparks, the name in their
+     pale gold. */
+  .site-link[href$="?mode=strange"] {
+    background: linear-gradient(135deg, #1c2a7a 30%, #a3122f); color: #ffe3a3;
+    box-shadow: inset 0 0 0 1px #ff9a2e, 0 0 6px rgba(255, 138, 30, 0.6);
+  }
+  .site-link[href$="?mode=strange"]:hover,
+  .site-link[href$="?mode=strange"]:focus-visible {
+    background: linear-gradient(135deg, #2638a0 30%, #c8193d); color: #fff;
+    box-shadow: inset 0 0 0 1px #ffb85c, 0 0 10px rgba(255, 150, 40, 0.85);
+  }
+  /* Doctor Strange's Civ 6 is the one name longer than the column. It does
+     not widen it: the name takes two lines in the column as it stands,
+     set a little closer so that each line fits. */
+  .site-link[href$="?mode=strange"] { box-sizing: border-box; width: 0; min-width: 100%; letter-spacing: 0.02em; }
+  .site-link[href^="https://store.steampowered.com/"] { background: linear-gradient(90deg, #1a44c2 35%, #47bfff); color: #fff; }
+  .site-link[href^="https://store.steampowered.com/"]:hover,
+  .site-link[href^="https://store.steampowered.com/"]:focus-visible { background: linear-gradient(90deg, #2352d6 35%, #73cfff); color: #fff; }
+  /* The column is as wide as its longest name, AUTO-TOURNEYS, on one line:
+     145px. Every name stands on one line (operator, 2026-11-21: "make sure
+     it fits on one line"), down to a 320px phone, where the title beside
+     the column still has its room. The list is a tree that keeps its
+     branches folded (operator, 2026-11-21: "a somewhat collapsable model
+     for the info"): a page's own pages are listed under it only on that
+     page and on those pages. Charts is a folder of pages and reads
+     "Charts/", with the slash (operator, 2026-11-22: "change just "Charts"
+     to "Charts/" with the intentional slash"). This is one of its pages,
+     so its branch is open: Win Analytics, this page, and CIVVIS
+     Performance stand under it, set in from the rest (operator: "in
+     charts, we should have at least win analytics, CIVVIS Performance").
+     Under Charts/ the column is as wide as CIVVIS PERFORMANCE on one
+     line. */
+  /* A page under Charts/: set in, and in smaller type, so that the longest
+     of them, CIVVIS PERFORMANCE, is as wide on its one line as
+     AUTO-TOURNEYS is on its own (145px), and the column is the same width
+     on every page. */
+  .site-link.sub-link { margin-left: 10px; padding: 2px 6px 3px; font-size: 10px; letter-spacing: 0.03em; }
+
+  .intro { max-width: 860px; margin: 18px 0 22px; color: var(--muted); font-size: 14.5px; line-height: 1.6; }
+  .intro a { color: var(--accent); }
+
+  .civ-empty { margin: 0; color: var(--faint); font-size: 13px; }
+  .civ-record[hidden], .civ-empty[hidden], .res-block[hidden], .rank-card[hidden] { display: none; }
+  .res-section { min-width: 0; padding: 12px 14px 12px; border: 1px solid var(--border); border-radius: 4px; background: var(--panel); }
+  .rank-title { margin: 0; color: #fff; font-size: 13.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+  .rank-sub { margin: 2px 0 8px; color: var(--faint); font-size: 12px; line-height: 1.45; }
+  .rank-note { margin: 10px 0 0; padding-top: 8px; border-top: 1px solid var(--border); color: var(--faint); font-size: 11.5px; line-height: 1.5; }
+  .rank-note a { color: var(--accent); }
+
+  /* The civ records first and the tree of build orders after them
+     (operator, 2026-11-23: "First can be the civ records (pulled from win
+     analytics), then early build order"): side by side on a wide window,
+     the records at the left, and one under the other, records first, on a
+     narrow one. */
+  .civ-record { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: 16px; align-items: start; min-width: 0; }
+  @media (max-width: 859px) { .civ-record { grid-template-columns: minmax(0, 1fr); } }
+  .rank-day { white-space: nowrap; }
+  .rank-list { margin: 0; padding: 0; list-style: none; }
+  .rank-row {
+    display: grid;
+    grid-template-columns: 18px minmax(0, 1fr) auto;
+    gap: 8px;
+    align-items: baseline;
+    padding: 4px 0;
+    border-top: 1px solid var(--border);
+    font-size: 13px;
+    line-height: 1.4;
+  }
+  .rank-n { color: var(--faint); font-size: 11.5px; font-variant-numeric: tabular-nums; text-align: right; }
+  .rank-name { min-width: 0; overflow: hidden; color: var(--text); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+  .rank-name small { margin-left: 6px; color: var(--muted); font-size: 11.5px; font-weight: 400; }
+  .rank-value { color: #fff; font-variant-numeric: tabular-nums; font-weight: 700; white-space: nowrap; }
+  .rank-value small { margin-left: 4px; color: var(--faint); font-size: 11px; font-weight: 400; }
+
+  .res-block { display: grid; gap: 8px; min-width: 0; }
+  .res-side-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 6px 16px; padding: 0 2px 6px; border-bottom: 2px solid var(--border-strong); }
+  .res-side-name { min-width: 0; }
+  .res-side-title { margin: 0; color: #fff; font-size: 17px; font-weight: 700; line-height: 1.3; }
+  .res-counted { margin: 1px 0 0; color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+  .res-block .rank-note { margin-top: 4px; }
+  /* The tree of build orders (operator, 2026-11-23:
+     "add a tree for the early build order win rates for deity games ... a
+     person should be able to click thourgh and see the win rates of all the
+     units. we should sort the tree by win rates descending. so the very
+     first thing is: the winngest first build, underneath the second winnest
+     first bulid. if etierh is clicked, then the winninest combinations of
+     first build second build. etc... add this chart to the top of win
+     analytics"). A row is a build: the mark that it opens, its place in the
+     order (1 for a first build), its name, and at the right the win rate
+     and its games as the benchmark's cells write them, `14% (181)`. The two
+     figures keep their widths, so they stand in columns down the whole
+     tree however deep a row is set in. A build that opens is a button;
+     pressing it lists the builds after it one step in, under a rule that
+     ties them to it. A build nothing is listed under is a plain row. */
+  .res-builds-head { display: flex; justify-content: space-between; gap: 12px; padding: 0 2px 5px 0; border-bottom: 1px solid var(--border); color: var(--muted); font-size: 12px; font-weight: 700; }
+  .res-builds, .res-builds ul { margin: 0; padding: 0; list-style: none; }
+  .res-builds ul { margin-left: 6px; padding-left: 14px; border-left: 1px solid var(--border-strong); }
+  .res-builds ul[hidden] { display: none; }
+  .res-build { display: grid; grid-template-columns: 12px auto minmax(0, 1fr) 52px 58px; align-items: center; gap: 0 8px; width: 100%; margin: 0; padding: 6px 2px 6px 0; border: 0; border-top: 1px solid var(--border); border-radius: 0; background: none; color: var(--text); font: inherit; font-size: 14.5px; font-variant-numeric: tabular-nums; line-height: 1.3; text-align: left; }
+  .res-builds > li:first-child > .res-build { border-top: 0; }
+  button.res-build { cursor: pointer; }
+  button.res-build:hover { background: var(--panel-raised); }
+  button.res-build:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .res-build-mark { width: 0; height: 0; justify-self: center; border: 4px solid transparent; border-right: 0; border-left: 6px solid var(--muted); }
+  .res-build[aria-expanded="true"] > .res-build-mark { border-left-color: var(--accent); transform: rotate(90deg); }
+  .res-build-place { min-width: 20px; padding: 0 4px; border: 1px solid var(--border-strong); border-radius: 3px; color: var(--muted); font-size: 11px; font-weight: 700; line-height: 16px; text-align: center; }
+  .res-build-name { overflow: hidden; color: #fff; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+  .res-build-figures { display: contents; }
+  .res-build-rate { color: #fff; font-weight: 700; text-align: right; }
+  .res-build-games { color: var(--muted); font-size: 12.5px; }
+  /* On a phone a step in is half as deep. Under 360px the two figures
+     stand one over the other, as the benchmark's cells do on a phone, and
+     a name may take a second line, so the eighth build still reads whole
+     at 320px. */
+  @media (max-width: 479px) {
+    .res-builds ul { margin-left: 5px; padding-left: 6px; }
+    .res-build { grid-template-columns: 10px auto minmax(0, 1fr) 44px 50px; gap: 0 5px; font-size: 13.5px; }
+    .res-build-games { font-size: 11.5px; }
+  }
+  @media (max-width: 359px) {
+    .res-build { grid-template-columns: 10px auto minmax(0, 1fr) auto; }
+    .res-build-figures { display: grid; justify-items: end; min-width: 40px; line-height: 1.25; }
+    .res-build-name { white-space: normal; }
+  }
+
+</style>
+</head>
+<body>
+  <header class="shell site-header">
+    <div class="site-brand">
+      <!-- The site's pages, in the order every one of them lists them, with
+           the page on screen in gold: this is Civ Analytics, the third page
+           under Charts/, after Win Analytics and ELO Rankings (operator
+           2026-11-23: "add another page: Civ Analytics"), and before CIVVIS
+           Performance and AI Interpretability.
+           Every link is lane-relative (this page lives at
+           <lane>/charts/civ-analytics/), so the test lane's page opens the
+           test lane's other pages and viewer. -->
+      <nav class="site-nav" aria-label="CIVVIS sites">
+        <a class="site-link" href="../../home/">Home</a>
+        <a class="site-link" href="../win-analytics/" title="What the games show: charts read off the CIVVIS AI agents&#8217; games.">Charts/</a>
+        <a class="site-link sub-link" href="../win-analytics/" title="Who wins, how and when: the games against Civilization VI&#8217;s own AI beside the CIVVIS self-play games.">Win Analytics</a>
+        <a class="site-link sub-link" href="../elo-rankings/" title="The Civ AI Agents and Civilization VI&#8217;s own AI on one Elo scale, now and over time.">ELO Rankings</a>
+        <a class="site-link sub-link" href="./" aria-current="page">Civ Analytics</a>
+        <a class="site-link sub-link" href="../civvis-performance/" title="How fast the simulator plays: the fastest game on video and how long a self-play game takes.">CIVVIS Performance</a>
+        <a class="site-link sub-link" href="../ai-interpretability/" title="How a CIVVIS AI agent decides: one turn step by step, its plan through a game, and what each rule is worth in wins.">AI Interpretability</a>
+        <a class="site-link" href="../../auto-tourneys/" title="Series of verification games against Civilization VI&#8217;s own AI: running, scheduled and finished.">Auto-Tourneys</a>
+        <a class="site-link" href="../../" title="Every civilization is played by a CIVVIS AI agent.">CIVVIS</a>
+        <a class="site-link" href="../../?mode=strange" title="One world, two timelines: the same game played two ways, side by side, on a timeline that branches.">Doctor Strange's Civ 6</a>
+        <a class="site-link" href="../../?mode=play" title="You play one civilization. CIVVIS AI agents play the rest.">AI Debugger</a>
+        <a class="site-link" href="https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/" target="_blank" rel="noopener" title="Buy Civilization VI on Steam">Civ 6</a>
+      </nav>
+      <div class="site-lockup">
+        <h1 class="site-title">CIVVIS<span>.ai</span></h1>
+        <p class="site-tagline"><span>An open source Civilization VI Simulator</span> <span>for AI strategy development</span></p>
+      </div>
+    </div>
+    <nav class="utility-nav" aria-label="CIVVIS links">
+      <a class="utility-link is-github" href="https://github.com/MartinHalvorson/CIVVIS" target="_blank" rel="noreferrer">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2.2c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1.1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.8 18.3 5.1 18.3 5.1c.6 1.7.2 2.9.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .3z"/></svg>
+        <span>GitHub <small>Everything open source, free</small></span>
+      </a>
+      <div class="utility-group">
+        <a class="utility-link is-youtube" href="https://www.youtube.com/@civvis" target="_blank" rel="noreferrer">
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.6 12 3.6 12 3.6s-7.5 0-9.4.5A3 3 0 0 0 .5 6.2C0 8.1 0 12 0 12s0 3.9.5 5.8a3 3 0 0 0 2.1 2.1c1.9.5 9.4.5 9.4.5s7.5 0 9.4-.5a3 3 0 0 0 2.1-2.1c.5-1.9.5-5.8.5-5.8s0-3.9-.5-5.8zM9.5 15.6V8.4l6.3 3.6-6.3 3.6z"/></svg>
+          YouTube
+        </a>
+        <ul class="utility-lists" aria-label="Top playlists">
+          <li><a class="utility-list" href="https://www.youtube.com/playlist?list=PLWcKlP8e8iy4" target="_blank" rel="noreferrer"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4 6h12v2H4zm0 4h12v2H4zm0 4h8v2H4zm10 0v6l5-3z"/></svg>Lv 8 Deity Wins</a></li>
+          <li><a class="utility-list" href="https://www.youtube.com/playlist?list=PLecirlzIUSSo" target="_blank" rel="noreferrer"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4 6h12v2H4zm0 4h12v2H4zm0 4h8v2H4zm10 0v6l5-3z"/></svg>Lv 1 - 7 Archive</a></li>
+        </ul>
+      </div>
+      <!-- The home page files a report itself, from a dialog; here the same
+           button is GitHub's own form, which needs no script on this page. -->
+      <a class="utility-link" href="https://github.com/MartinHalvorson/CIVVIS/issues/new/choose" target="_blank" rel="noreferrer">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M12 2C6.5 2 2 5.9 2 10.7c0 2.8 1.5 5.3 3.9 6.9L5 22l4.6-2.4c.8.2 1.6.3 2.4.3 5.5 0 10-3.9 10-8.7S17.5 2 12 2zm-1 4.5h2v6h-2v-6zm0 7.5h2v2h-2v-2z"/></svg>
+        Suggest Feature / Report Issue
+      </a>
+    </nav>
+  </header>
+
+  <main class="shell">
+    <p class="intro">
+      How CIVVIS does as each civilization, and which early builds win, in
+      its games inside <cite>Sid Meier&#8217;s Civilization VI</cite> against
+      the game&#8217;s own AI. Who wins and when is charted on
+      <a href="../win-analytics/">Win Analytics</a>, and how every agent rates
+      on <a href="../elo-rankings/">ELO Rankings</a>.
+    </p>
+
+    <!-- The figures: `beta/publish.sh` fills the slot below
+         (`beta/civs_page.py`) with the civ records off the run ledger and
+         the tree of build orders, the openings from the run summaries and
+         the snapshot in `data/research/build_orders.json`. A page whose
+         slot still reads `null` shows the one sentence. -->
+    <p class="civ-empty" id="civ-empty">This copy of the page has no figures. They are written in when the site is published.</p>
+    <div class="civ-record" id="civ-record" hidden>
+      <!-- First, the civ records, as Win Analytics listed them until
+           2026-11-23: our AI's win rate as each civ. -->
+      <section class="res-section rank-card" id="rank-civs" hidden aria-labelledby="rank-civs-title">
+        <h2 class="rank-title" id="rank-civs-title">Winningest civs</h2>
+        <p class="rank-sub">Our AI&#8217;s win rate as each civ, in verification games against Civilization VI&#8217;s own AI.</p>
+        <ol class="rank-list"></ol>
+        <p class="rank-note">
+          <span data-rank-note></span>
+          <a href="https://github.com/MartinHalvorson/CIVVIS/blob/ledger/results.jsonl" target="_blank" rel="noreferrer">Every game</a>
+        </p>
+      </section>
+      <!-- Then the tree of build orders (operator 2026-11-23: "add a tree
+           for the early build order win rates for deity games. meaning, when
+           scout was built first, what percentage of those games won? when
+           settler was secnod, what percentage of scout-settler won? a person
+           should be able to click thourgh and see the win rates of all the
+           units. we should sort the tree by win rates descending"), on Win
+           Analytics until it moved here the same evening. The script lists
+           the first builds of the games against Deity, best win rate first,
+           and a build pressed lists the builds that followed it the same
+           way. -->
+      <section class="res-block" id="res-side-builds" aria-labelledby="res-title-builds" hidden>
+        <header class="res-side-head">
+          <div class="res-side-name">
+            <h2 class="res-side-title" id="res-title-builds">Early build order: win rate against Lv 8 Deity AI</h2>
+            <p class="res-counted" id="res-counted-builds">What the capital built first, second and third against Civilization VI&#8217;s own AI.</p>
+          </div>
+        </header>
+        <div class="res-section">
+          <div class="res-builds-head" aria-hidden="true"><span>Build order</span><span>Win rate (total games)</span></div>
+          <ul class="res-builds" id="res-builds" aria-labelledby="res-title-builds"></ul>
+        </div>
+        <p class="rank-note">
+          What CIVVIS&#8217;s capital finished producing, in the order it finished it. The first builds are listed best win rate first; press one to list what was built second after it, then third, <span id="res-builds-depth">eight</span> builds deep.
+          A row is CIVVIS&#8217;s win rate over the games that opened with exactly the builds down to it and, in brackets, those games.
+          A build is a unit, building, district or wonder the capital&#8217;s production finished; one bought with Gold or Faith is not a build.
+          Every finished game against the Deity AI on the run ledger counts, in a tournament or not: a win is a CIVVIS victory; a loss is a rival&#8217;s victory, our elimination, or a game conceded early.
+          <span id="res-builds-left"></span>
+          A build order only one game played is not opened further.
+        </p>
+      </section>
+    </div>
+  </main>
+
+  <script type="application/json" id="civ-data">null</script>
+  <script>
+  // Every figure arrives through textContent: the slot holds names and
+  // sentences from the repository's own files and the run ledger, and none
+  // of it is trusted as markup.
+  (() => {
+    let data = null;
+    try { data = JSON.parse(document.getElementById("civ-data").textContent); } catch (_) { return; }
+    if (!data) return;
+    const el = (tag, cls, text) => {
+      const node = document.createElement(tag);
+      if (cls) node.className = cls;
+      if (text != null) node.textContent = text;
+      return node;
+    };
+    const fmt = (n) => Number(n).toLocaleString("en-US");
+    // A share as Win Analytics prints it: whole percents from 10%, a
+    // decimal under, "0%" for none, and "<0.1%" for a share that is not
+    // nothing but rounds to it.
+    const pct = (x) => (x > 0 && x < 0.0005 ? "<0.1%" : (100 * x).toFixed(x >= 0.1 || !x ? 0 : 1) + "%");
+    const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const day = (iso) => { const [, m, d] = String(iso).split("-").map(Number); return MONTHS[m - 1] + " " + d; };
+    // "Nov 18–21", or "Oct 25–Nov 21" across a month.
+    const days = (w) => {
+      if (w.from === w.to) return day(w.to);
+      const [from, to] = [day(w.from), day(w.to)];
+      return from.split(" ")[0] === to.split(" ")[0] ? from + "\u2013" + to.split(" ")[1] : from + "\u2013" + to;
+    };
+    const RUNGS = { 4: "Prince", 5: "King", 6: "Emperor", 7: "Immortal", 8: "Deity" };
+
+    // ---- The winningest civs, best win rate first: a row is a civ's win
+    // rate with its record, wins then losses, beside it. Hovering lists what
+    // it won. The slot says which games were counted, one level (`level`)
+    // from one day on (`since`), and the line under the title repeats it; a
+    // table over every level names the highest level a civ has won at
+    // beside it instead.
+    const civs = data.civs;
+    if (civs && Array.isArray(civs.rows) && civs.rows.length) {
+      const card = document.getElementById("rank-civs");
+      const plural = (n, one, many) => fmt(n) + " " + (n === 1 ? one : many);
+      const rows = civs.rows.map((c, i) => {
+        const item = el("li", "rank-row");
+        item.title = c.name + ": " + plural(c.wins, "win", "wins") + ", " + plural(c.losses, "loss", "losses")
+          + (Array.isArray(c.won) && c.won.length ? ". Won: " + c.won.join(", ") : "");
+        item.append(el("span", "rank-n", String(i + 1)));
+        const label = el("span", "rank-name", c.name);
+        if (!civs.level && c.best) label.append(el("small", "", "Lv " + c.best));
+        const figure = el("span", "rank-value", (100 * c.wins / (c.wins + c.losses)).toFixed(1) + "%");
+        figure.append(el("small", "", fmt(c.wins) + "\u2013" + fmt(c.losses)));
+        item.append(label, figure);
+        return item;
+      });
+      card.querySelector(".rank-list").append(...rows);
+      const sub = card.querySelector(".rank-sub");
+      sub.textContent = "Our AI\u2019s win rate as each civ, in " + (civs.level ? "Lv " + civs.level + " " : "")
+        + "verification games against Civilization VI\u2019s own AI" + (civs.since ? " since " : "");
+      if (civs.since) sub.append(el("span", "rank-day", civs.since));
+      sub.append(".");
+      card.querySelector("[data-rank-note]").textContent = plural(civs.games, "finished game", "finished games")
+        + (civs.through ? " through " + civs.through : "") + "; "
+        + civs.winners + " of " + plural(civs.played, "civ", "civs") + " played have won."
+        + " A loss is a rival\u2019s victory, our elimination, or a game conceded early;"
+        + " a game stopped any other way is not counted."
+        + (civs.unattributed_wins ? " " + plural(civs.unattributed_wins, "win is", "wins are")
+          + " not listed: the game did not record its civ." : "");
+      card.hidden = false;
+    }
+
+    // ---- The tree of build orders. The record's `tree` is the first
+    // builds, already best win rate first, and a node is [item, games, wins]
+    // with, where the builds after it are listed, a fourth entry that is
+    // their list in the same order. `item` is a place in `items`, the
+    // builds' names. A row is drawn when its list is first opened, so the
+    // page carries the rows a reader asked for.
+    const BUILDS = data.build_orders && Array.isArray(data.build_orders.tree) && data.build_orders.tree.length ? data.build_orders : null;
+    if (BUILDS) {
+      document.getElementById("res-side-builds").hidden = false;
+      const NUMBERS = ["no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
+      const games = Number(BUILDS.games) || 0, wins = Number(BUILDS.wins) || 0;
+      const level = "Lv " + BUILDS.level + (RUNGS[BUILDS.level] ? " " + RUNGS[BUILDS.level] : "");
+      document.getElementById("res-title-builds").textContent = "Early build order: win rate against " + level + " AI";
+      document.getElementById("res-counted-builds").textContent = fmt(games) + (games === 1 ? " game" : " games") + " against " + level + " AI"
+        + (BUILDS.from && BUILDS.to ? " \u00b7 " + days(BUILDS) : "") + " \u00b7 CIVVIS won " + fmt(wins) + (games ? " (" + pct(wins / games) + ")" : "");
+      document.getElementById("res-builds-depth").textContent = NUMBERS[BUILDS.depth] || String(BUILDS.depth);
+      const left = (Number(BUILDS.finished) || games) - games;
+      document.getElementById("res-builds-left").textContent = left > 0
+        ? fmt(left) + " of the " + fmt(games + left) + " are left out: " + (left === 1 ? "its" : "their") + " opening is in no log, the game having been reloaded from a save whose first run was not published."
+        : "";
+      const name = (item) => String(Array.isArray(BUILDS.items) && BUILDS.items[item] != null ? BUILDS.items[item] : "?");
+      const row = (node, before) => {
+        const [item, played, won, next] = node;
+        const n = Number(played) || 0, opens = Array.isArray(next) && next.length > 0;
+        const path = before.concat(name(item));
+        const li = el("li");
+        const line = el(opens ? "button" : "div", "res-build");
+        const figures = el("span", "res-build-figures");
+        figures.append(el("span", "res-build-rate", n ? pct((Number(won) || 0) / n) : "\u2014"), el("span", "res-build-games", "(" + fmt(n) + ")"));
+        line.append(
+          el("span", opens ? "res-build-mark" : ""),
+          el("span", "res-build-place", String(path.length)),
+          el("span", "res-build-name", name(item)),
+          figures,
+        );
+        // The whole order down to this build, for the pointer and for a
+        // reader that hears the row.
+        const said = path.join(", then ") + ": CIVVIS won " + (n ? pct((Number(won) || 0) / n) : "none") + " of " + fmt(n) + (n === 1 ? " game" : " games");
+        line.title = said;
+        li.append(line);
+        if (opens) {
+          line.type = "button";
+          line.setAttribute("aria-expanded", "false");
+          line.setAttribute("aria-label", said);
+          let below = null;
+          line.addEventListener("click", () => {
+            const open = line.getAttribute("aria-expanded") !== "true";
+            line.setAttribute("aria-expanded", String(open));
+            if (open && !below) {
+              below = el("ul");
+              below.append(...next.map((child) => row(child, path)));
+              li.append(below);
+            }
+            if (below) below.hidden = !open;
+          });
+        }
+        return li;
+      };
+      document.getElementById("res-builds").replaceChildren(...BUILDS.tree.map((node) => row(node, [])));
+    }
+
+    document.getElementById("civ-empty").hidden = true;
+    document.getElementById("civ-record").hidden = false;
+  })();
+  </script>
+</body>
+</html>

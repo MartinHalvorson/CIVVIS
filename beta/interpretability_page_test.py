@@ -322,6 +322,8 @@ class TheSiteList(unittest.TestCase):
                 ("site-link", "../../home/", "Home"),
                 ("site-link", "../win-analytics/", "Charts/"),
                 ("site-link sub-link", "../win-analytics/", "Win Analytics"),
+                ("site-link sub-link", "../elo-rankings/", "ELO Rankings"),
+                ("site-link sub-link", "../civ-analytics/", "Civ Analytics"),
                 ("site-link sub-link", "../civvis-performance/", "CIVVIS Performance"),
                 ("site-link sub-link", "./", "AI Interpretability"),
                 ("site-link", "../../auto-tourneys/", "Auto-Tourneys"),
