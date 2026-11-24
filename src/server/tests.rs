@@ -2102,7 +2102,7 @@ fn viewer_marks_the_selected_revision_and_its_compact_ages_above_the_minimap() {
     assert!(EMBEDDED_INDEX.contains("position: fixed; z-index: 16;\n    right:"));
 }
 
-/// The site is five pages, Home, Charts, Auto-Tourneys, CIVVIS and AI
+/// The site is five pages, Home, Charts, Tournaments, CIVVIS and AI
 /// Debugger (the operator's names in this list: "home, musings (rename
 /// research), tournaments, civvis, AI Debugger (rename plz), Civ 6 at the
 /// top level" on 2026-11-21, then on 2026-11-22 "Change musings to
@@ -2117,50 +2117,81 @@ fn viewer_marks_the_selected_revision_and_its_compact_ages_above_the_minimap() {
 /// only while it is the page on screen. Performance, the one branch, is
 /// Charts' since 2026-11-22 ("Move performance from under civvis to charts
 /// ... This keeps AI Debugger as a clean tool. CIVVIS as a clean tool"), so
-/// the viewer lists the six top-level names and nothing under them. Later
+/// the viewer lists the top-level names and nothing under them: six until
+/// 2026-11-23, and seven since Doctor Strange's Civ 6 joined between CIVVIS
+/// and AI Debugger (operator: "add below civvis and above ai debugger "Doctor
+/// Strange's Civ 6"", then "lets actually place the ai debugger above this",
+/// then "lest move dr strange civ 6 above ai debugger"), the played game
+/// shown as a tree of two timelines. Later
 /// that day Charts became a folder of pages, named with its slash ("change
 /// just "Charts" to "Charts/" with the intentional slash"), holding Win
 /// Analytics, the page it opens, and CIVVIS Performance ("in charts, we
 /// should have at least win analytics, CIVVIS Performance").
-/// Pinned as one literal because the list is the contract: six links in
+/// Pinned as one literal because the list is the contract: seven links in
 /// this order, inside a list that only the hosts serving a /home, a
-/// /charts and an /auto-tourneys reveal. The addresses follow the names in
+/// /charts and a /tournaments reveal. The addresses follow the names in
 /// the list since 2026-11-23 (operator: "clean up the URL please.
 /// standardized. please remove research from the url"): Charts/ opens Win
 /// Analytics at /charts/win-analytics, where it was /research, and
-/// Auto-Tourneys is at /auto-tourneys, where it was /tournaments.
+/// Auto-Tourneys was at /auto-tourneys, where it was /tournaments, until it took
+/// its first name and address back on 2026-11-24 (operator: "change
+/// auto-outnrye to Tournaments. Auto-tourney suggests some self imrpvoing
+/// tourney thing"): Tournaments, at /tournaments.
 #[test]
 fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
     assert!(EMBEDDED_INDEX.contains(concat!(
         "<nav class=\"head-links\" id=\"headlinks\" aria-label=\"CIVVIS sites\" hidden>\n",
         "        <a class=\"home-link\" id=\"homelink\" href=\"/home\" target=\"_top\">Home</a>\n",
         "        <a class=\"home-link\" id=\"chartslink\" href=\"/charts/win-analytics\" target=\"_top\">Charts/</a>\n",
-        "        <a class=\"home-link\" id=\"tourlink\" href=\"/auto-tourneys\" target=\"_top\">Auto-Tourneys</a>\n",
+        "        <a class=\"home-link\" id=\"tourlink\" href=\"/tournaments\" target=\"_top\">Tournaments</a>\n",
         "        <a class=\"home-link\" id=\"watchlink\" href=\"./\" target=\"_top\">CIVVIS</a>\n",
+        "        <a class=\"home-link\" id=\"strangelink\" href=\"?mode=strange\" target=\"_top\">Doctor Strange's Civ 6</a>\n",
         "        <a class=\"home-link\" id=\"playlink\" href=\"?mode=play\" target=\"_top\">AI Debugger</a>\n",
         "        <a class=\"home-link\" id=\"civ6link\" ",
         "href=\"https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/\" ",
         "target=\"_blank\" rel=\"noopener\" title=\"Buy Civilization VI on Steam\">Civ 6</a>\n",
+        // Wizard Chess (operator, 2026-11-23: "below civ 6, add wizard
+        // chess"): a page of its own at /wizard-chess, the last in the list.
+        "        <a class=\"home-link\" id=\"chesslink\" href=\"/wizard-chess\" target=\"_top\">Wizard Chess</a>\n",
         "      </nav>",
     )));
+    assert!(EMBEDDED_INDEX.contains("  .head-links > #chesslink { grid-column: 1 / -1; }\n"));
+    assert!(EMBEDDED_INDEX.contains(
+        "repeating-conic-gradient(#f4f1e8 0 25%, #0b0b0c 0 50%) 0 0 / 4px 4px border-box;"
+    ));
     // The Debugger link is only as good as the shim's reading of it, and
     // the CIVVIS link needs no word at all: a lane's bare address is the
     // spectated simulation.
     assert!(include_str!("../../beta/shim.js")
         .contains("if (mode === \"play\") payload.spectate = false;"));
+    // Doctor Strange's Civ 6 (operator, 2026-11-23: "add below civvis and
+    // above ai debugger "Doctor Strange's Civ 6"", then "lets actually place
+    // the ai debugger above this") is the same played game, shown as a tree
+    // of two timelines: the shim seats the visitor for it as it does for
+    // the Debugger, and the debugger's script is what reads the word and
+    // marks the page (`strange` on the root, which is what lights its link).
+    assert!(include_str!("../../beta/shim.js")
+        .contains("else if (mode === \"strange\") payload.spectate = false;"));
+    assert!(include_str!("../../web/assets/app_debugger.js").contains(
+        "return DEBUG_PANE === null && new URLSearchParams(location.search).get(\"mode\") === \"strange\";"
+    ));
+    assert!(include_str!("../../web/assets/app_debugger.js")
+        .contains("document.documentElement.classList.add(\"strange\");"));
     // The page on screen is the one in gold. `watching-sim` is the
     // engine's own answer to which of the two this is, and until the first
     // observation says so (`seat-known`) neither is lit. Every top-level
     // link is there from the start, so no rule hides one any more.
     assert!(EMBEDDED_INDEX.contains(concat!(
         "  body.watching-sim #watchlink,\n",
-        "  html.seat-known body:not(.watching-sim) #playlink {\n",
+        "  html.seat-known:not(.strange) body:not(.watching-sim) #playlink,\n",
+        "  html.seat-known.strange body:not(.watching-sim) #strangelink {\n",
         "    color: #17130c; border-color: #efd184;\n",
         "    background: linear-gradient(145deg, #dec176, #aa7d30);\n",
         "  }",
     )));
     for hides in [
         "#playlink { display: none; }",
+        "#strangelink { display: none; }",
         "#watchlink { display: none; }",
     ] {
         assert!(
@@ -2194,12 +2225,31 @@ fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
         "        <a class=\"site-link sub-link\" href=\"../win-analytics/\" ",
         "title=\"Who wins, how and when: the games against Civilization VI&#8217;s own AI ",
         "beside the CIVVIS self-play games.\">Win Analytics</a>\n",
+        "        <a class=\"site-link sub-link\" href=\"../elo-rankings/\" ",
+        "title=\"The Civ AI Agents and Civilization VI&#8217;s own AI on one Elo scale, ",
+        "now and over time.\">ELO Rankings</a>\n",
+        "        <a class=\"site-link sub-link\" href=\"../civ-analytics/\" ",
+        "title=\"How CIVVIS does as each civ, and the early build orders that win against ",
+        "Deity.\">Civ Analytics</a>\n",
         "        <a class=\"site-link sub-link\" href=\"./\" aria-current=\"page\">CIVVIS Performance</a>\n",
     )));
+    // ELO Rankings and Civ Analytics follow Win Analytics under Charts/
+    // (operator 2026-11-23: "add that to a new page: Charts/ELO Rankings.
+    // this should be after win analytics in the ordering ... add another
+    // page: Civ Analytics").
     assert!(include_str!("../../beta/research.html").contains(concat!(
         "        <a class=\"site-link sub-link\" href=\"./\" aria-current=\"page\">Win Analytics</a>\n",
-        "        <a class=\"site-link sub-link\" href=\"../civvis-performance/\" ",
+        "        <a class=\"site-link sub-link\" href=\"../elo-rankings/\" ",
     )));
+    for page in [
+        include_str!("../../beta/elo.html"),
+        include_str!("../../beta/civs.html"),
+    ] {
+        assert!(page.contains(concat!(
+            "\">Civ Analytics</a>\n",
+            "        <a class=\"site-link sub-link\" href=\"../civvis-performance/\" ",
+        )));
+    }
     assert!(performance
         .contains("<script type=\"application/json\" id=\"performance-data\">null</script>"));
     assert!(performance.contains("/blob/main/docs/SIMULATOR_PERFORMANCE.md\""));
@@ -2226,14 +2276,14 @@ fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
         "        <a class=\"site-link sub-link\" href=\"../ai-interpretability/\" ",
         "title=\"How a CIVVIS AI agent decides: one turn step by step, its plan through a game, ",
         "and what each rule is worth in wins.\">AI Interpretability</a>\n",
-        "        <a class=\"site-link\" href=\"../../auto-tourneys/\" ",
+        "        <a class=\"site-link\" href=\"../../tournaments/\" ",
     );
     assert!(performance.contains(listed));
     assert!(include_str!("../../beta/research.html").contains(listed));
     assert!(interpretability.contains(concat!(
         "\">CIVVIS Performance</a>\n",
         "        <a class=\"site-link sub-link\" href=\"./\" aria-current=\"page\">AI Interpretability</a>\n",
-        "        <a class=\"site-link\" href=\"../../auto-tourneys/\" ",
+        "        <a class=\"site-link\" href=\"../../tournaments/\" ",
     )));
     assert!(interpretability
         .contains("<script type=\"application/json\" id=\"interpretability-data\">null</script>"));
@@ -2256,14 +2306,15 @@ fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
         .contains("#side[data-type-size=\"compact\"] .head-links {\n    grid-column: 1 / -1;"));
     // The viewer's links to the other pages leave the lane-relative rewrite
     // to `beta/publish.sh`, which turns a root link to any page the lane
-    // carries (`/home`, `/charts/win-analytics`, `/auto-tourneys`) into the
+    // carries (`/home`, `/charts/win-analytics`, `/tournaments`) into the
     // lane's own page and refuses to publish a root link it does not know.
     assert!(include_str!("../../beta/publish.sh").contains(concat!(
         "for address in dict.fromkeys([*carried, *former]):\n",
         "    needle, replacement = f'href=\"/{address}\"', f'href=\"{address}/\"'\n",
     )));
     // Two by two, a link is half its row, except on the second row: there
-    // AUTO-TOURNEYS takes six tenths and CIVVIS four. Measured in Chrome in
+    // TOURNAMENTS takes six tenths and CIVVIS four, the room AUTO-TOURNEYS (its
+    // name until 2026-11-24) needed. Measured in Chrome in
     // the system face, AUTO-TOURNEYS is 91.3px in this type and half a row
     // holds 84px at its narrowest (a 195px band), six tenths 103.8px;
     // CIVVIS is 36px in the 64.2px left to it.
@@ -2272,6 +2323,11 @@ fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
         "  .head-links > #tourlink { grid-column: span 6; }\n",
         "  .head-links > #watchlink { grid-column: span 4; }\n",
     )));
+    // Doctor Strange's Civ 6 is the one name longer than half a row and has
+    // a row of its own, and AI Debugger and Civ 6 keep theirs.
+    assert!(EMBEDDED_INDEX.contains(
+        "  .head-links > #playlink, .head-links > #strangelink, .head-links > #civ6link { grid-column: 1 / -1; }\n"
+    ));
     for gone in [
         ".head-links > :last-child:nth-child(odd)",
         ".head-links > #playlink { grid-column: span 6; }",
@@ -2318,7 +2374,7 @@ fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
     // type at .02em, 86px inside it, and 7px gutters, so the column and its
     // gutter take 99px of the band and neither width at which the lockup
     // changes shape has moved. Measured in Chrome in the system face:
-    // AUTO-TOURNEYS, the longest name now, is 80.2px and AI DEBUGGER
+    // AUTO-TOURNEYS, the longest name until 2026-11-24, is 80.2px and AI DEBUGGER
     // 62.8px. Each link is one track in the column wherever it stands two
     // by two.
     assert!(EMBEDDED_INDEX.contains(concat!(
@@ -2429,7 +2485,7 @@ fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
 }
 
 /// The home page is one of the site's five pages and lists all five from
-/// its header, Home, Charts, Auto-Tourneys, CIVVIS and AI Debugger, with itself in gold
+/// its header, Home, Charts, Tournaments, CIVVIS and AI Debugger, with itself in gold
 /// and the Civ 6 link under them, as the viewer's masthead does; below that
 /// it is one paragraph, the speed timeline (operator, 2026-11-22: how many
 /// times faster than a person each way of playing gets through a game;
@@ -2451,7 +2507,7 @@ fn the_home_page_lists_the_sites_with_itself_in_gold() {
     let landing = include_str!("../../beta/landing.html");
     for piece in [
         // The site's pages in the viewer's order, this one marked as the
-        // page on screen, Auto-Tourneys saying what it lists and the other
+        // page on screen, Tournaments saying what it lists and the other
         // two saying in the viewer's own words what they open, then the
         // game itself. They stand to the left of the title (operator,
         // 2026-11-21: "on home, lets have the home/civvis/ai debugger/civ 6
@@ -2466,16 +2522,20 @@ fn the_home_page_lists_the_sites_with_itself_in_gold() {
             "        <a class=\"site-link\" href=\"./\" aria-current=\"page\">Home</a>\n",
             "        <a class=\"site-link\" href=\"../charts/win-analytics/\" ",
             "title=\"What the games show: charts read off the CIVVIS AI agents&#8217; games.\">Charts/</a>\n",
-            "        <a class=\"site-link\" href=\"../auto-tourneys/\" ",
+            "        <a class=\"site-link\" href=\"../tournaments/\" ",
             "title=\"Series of verification games against Civilization VI&#8217;s own AI: ",
-            "running, scheduled and finished.\">Auto-Tourneys</a>\n",
+            "running, scheduled and finished.\">Tournaments</a>\n",
             "        <a class=\"site-link\" href=\"../\" ",
             "title=\"Every civilization is played by a CIVVIS AI agent.\">CIVVIS</a>\n",
+            "        <a class=\"site-link\" href=\"../?mode=strange\" ",
+            "title=\"One world, two timelines: the same game played two ways, side by side, on a timeline that branches.\">Doctor Strange's Civ 6</a>\n",
             "        <a class=\"site-link\" href=\"../?mode=play\" ",
             "title=\"You play one civilization. CIVVIS AI agents play the rest.\">AI Debugger</a>\n",
             "        <a class=\"site-link\" ",
             "href=\"https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/\" ",
             "target=\"_blank\" rel=\"noopener\" title=\"Buy Civilization VI on Steam\">Civ 6</a>\n",
+            "        <a class=\"site-link\" href=\"../wizard-chess/\" ",
+            "title=\"Chess where you command and the pieces obey, against an opponent at the Elo you pick.\">Wizard Chess</a>\n",
             "      </nav>\n      <div class=\"site-lockup\">\n",
             "        <h1 class=\"site-title\">CIVVIS<span>.ai</span></h1>",
         ),
@@ -2509,8 +2569,8 @@ fn the_home_page_lists_the_sites_with_itself_in_gold() {
     ] {
         assert!(landing.contains(piece), "the home page lost {piece}");
     }
-    // The column is as wide as its longest name on one line, AUTO-TOURNEYS:
-    // 145px. While the Debugger's name was STRATEGY DEBUGGER the column was
+    // The column is as wide as AUTO-TOURNEYS on one line, the Tournaments
+    // page's name from 2026-11-22 to 2026-11-24: 145px. While the Debugger's name was STRATEGY DEBUGGER the column was
     // 178px and a phone under 380px narrowed it to its longest word, which
     // put the name on two lines. Every name stands on one line down to a
     // 320px phone with the page no wider than the screen (measured), so no
@@ -2526,7 +2586,7 @@ fn the_home_page_lists_the_sites_with_itself_in_gold() {
         "Strategy Debugger",
         ">Research</a>",
         ">Musings</a>",
-        ">Tournaments</a>",
+        ">Auto-Tourneys</a>",
         ">Performance</a>",
         ">Charts</a>",
         "sub-link",
@@ -7968,10 +8028,10 @@ fn browser_orders_controls_interface_setup_and_logs() {
         "if (html === hudHtml || hudLayoutGesture?.name === \"players\" || playerHudColumnGesture\n      || playerHudReorderGesture || hudPaceHeldOpen()) {"
     ));
     assert!(EMBEDDED_INDEX.contains("function hudPaceHeldOpen()"));
-    // The moment focus leaves either held select — watch pace or the
-    // arena's in-game fog — the held snapshots paint.
+    // The moment focus leaves a held select — watch pace, the arena's
+    // in-game fog or Fog-honest AI — the held snapshots paint.
     assert!(EMBEDDED_INDEX.contains(
-        "if (ev.target.closest?.(\"[data-hud-pace], [data-hud-fog]\") && state) drawPlayerHud();"
+        "if (ev.target.closest?.(\"[data-hud-pace], [data-hud-fog], [data-hud-fog-honest]\") && state) drawPlayerHud();"
     ));
     // The bars are placed from the rendered heading, so they cannot drift
     // from the columns they name.
@@ -8985,8 +9045,8 @@ fn browser_names_a_live_games_level_on_the_turn_plate() {
         "return {level: spec.order + 1, of: Object.keys(ladder).length, name: spec.name || titleCase(id)};",
         "const liveLevel = livePause.available ? difficultyLevel(state.difficulty) : null;",
         "const setupLine = [mapRowValue, liveLevel && `Lv ${liveLevel.level}`, speedName]\n    .filter(Boolean).join(\" · \");",
-        "`<div class=\"turn-setting turn-setup-line\" title=\"${escapeAttr(setupTitle)}\">` +\n    `<b>${escapeAttr(setupLine)}</b></div>` +",
-        "#playerhud.turn-plate-wide .turn-setup-line { grid-column: 1 / -1; }",
+        "`<div class=\"turn-setting turn-setup-line\" title=\"${escapeAttr(setupTitle)}\"><b>${escapeAttr(setupLine)}</b></div>` +",
+        "#playerhud.turn-plate-wide .turn-setup-line { grid-column: 1 / -1; grid-row: 2; }",
         "if (livePause.available !== wasAvailable && state) drawPlayerHud();",
     ] {
         assert!(
@@ -9021,10 +9081,12 @@ fn browser_names_a_live_games_level_on_the_turn_plate() {
 /// spectator and for a debugger game with Reveal on, and Single Player for
 /// a played seat or a Watch-as view, whose tooltip names the civilization.
 ///
-/// The two rows open the settings list, above the setup line. Live time and
-/// Max Speed stand above the age and the turn counter: they spent an
-/// afternoon under the counter and the operator moved them "back above age
-/// and turn counter like before", so Max Speed is again a line of its own.
+/// The two rows open the settings list. Live time and Max Speed stand above
+/// the age and the turn counter: they spent an afternoon under the counter
+/// and the operator moved them "back above age and turn counter like
+/// before". The setup line ("6P Continents · Lv 8 · Online") stands directly
+/// under Max Speed (operator 2026-11-24: "these are game settings and so
+/// should be more highly visible"), fitted on its own so it keeps its size.
 ///
 /// A short roster's table ends above the box's last row, so the masthead's
 /// automatic height takes the box's measured content as a floor; a dragged
@@ -9041,13 +9103,15 @@ fn browser_turn_plate_names_the_mode_and_the_point_of_view() {
         "const platePov = (!SPEC && !state.debug?.reveal) || playerView",
         "? [\"Single Player\", `The world as ${identity.civ || \"one civilization\"} sees it, behind its own fog.`]",
         ": [\"Global\", \"The whole world at once, with no civilization's fog.\"];",
-        "frameRow(\"Mode:\", plateMode) + frameRow(\"POV:\", platePov) +\n    `<div class=\"turn-setting turn-setup-line\"",
+        "frameRow(\"Mode:\", plateMode) + frameRow(\"POV:\", platePov) +\n    fogRow +",
         "`mode ${plateMode[0]}; point of view ${platePov[0]}`;",
         // The long Mode name is whole on the narrowest plate at 8px.
         "{selector:\"#playerhud .turn-settings\", min:8, max:12, slack:4},",
-        // Max Speed is a line of its own, fitted and ruled as before.
+        // Max Speed and the setup line are each fitted on their own, and the
+        // rule under the setup line closes their section.
         "{selector:\"#playerhud .turn-pace-line\", min:8.5, max:12, slack:4},",
-        ".has-live-time .turn-pace-line { padding-bottom: 4px; border-bottom: 1px solid #d7b66a24; }",
+        "{selector:\"#playerhud .turn-setup-line\", min:8, max:12, slack:4},",
+        ".has-live-time .turn-setup-line { padding-bottom: 4px; border-bottom: 1px solid #d7b66a24; }",
         "function measureTurnPlateNeed(hud) {",
         "const last = plate?.querySelector(\".turn-settings\")?.lastElementChild;",
         "const plateNeed = measureTurnPlateNeed(hud);",
@@ -9058,7 +9122,8 @@ fn browser_turn_plate_names_the_mode_and_the_point_of_view() {
             "the turn box's Mode and POV rows are missing {piece}"
         );
     }
-    // Live time, Max Speed, age, turn counter, then the list from Mode down.
+    // Live time, Max Speed, the setup line, age, turn counter, then the list
+    // from Mode down.
     let (_, plate) = EMBEDDED_INDEX
         .split_once("function hudTurnPlate() {")
         .expect("the turn plate");
@@ -9068,11 +9133,11 @@ fn browser_turn_plate_names_the_mode_and_the_point_of_view() {
     let order = [
         "<div class=\"turn-live\"",
         "<span>Max Speed:</span>",
+        "turn-setup-line",
         "<span class=\"turn-era\">",
         "<span class=\"turn-label\">Turn</span>",
         "frameRow(\"Mode:\", plateMode)",
         "frameRow(\"POV:\", platePov)",
-        "turn-setup-line",
         "rosterRow(\"Civs:\"",
         "rosterRow(\"City states:\"",
     ]
@@ -10962,12 +11027,32 @@ fn world_politics_is_one_alphabetical_matrix_with_fixed_labels() {
             .find("<div id=\"worldpolitics\"")
             .expect("table")
     );
-    // Only the rows are named, each on its civilization's plate in both jersey
-    // colours. A column is that civilization's colour in full, the same as the
-    // plate, and meets its row on the diagonal, which adds the trim.
-    assert!(!matrix.contains("<thead>") && !matrix.contains("<tfoot>"));
+    // Rows and columns are both named, each name on its civilization's plate
+    // in both jersey colours: down the side, and upright along the top. A
+    // column is that civilization's colour in full, the same as the plate,
+    // and meets its row on the diagonal, which adds the trim.
+    assert!(
+        matrix.contains("<thead><tr><th></th>${names}</tr></thead>") && !matrix.contains("<tfoot>")
+    );
     assert!(matrix.contains("const jersey = id => `--civ:${pcol(id)};--civ-trim:${pcol2(id)}`;"));
-    assert!(matrix.contains("--civ-ink:${hudJerseyInk(row.id)}"));
+    assert!(matrix.contains("--civ-ink:${hudJerseyInk(id)}"));
+    assert!(matrix.contains("<th scope=\"row\">${plate(row.id)}</th>"));
+    assert!(matrix.contains("civs.map(civ => `<th scope=\"col\">${plate(civ.id)}</th>`)"));
+    assert!(EMBEDDED_INDEX.contains(
+        ".politics-matrix thead th > .politics-name {\n    writing-mode: vertical-rl; rotate: 180deg;"
+    ));
+    assert!(EMBEDDED_INDEX
+        .contains(".politics-matrix thead th {\n    position: sticky; top: 0; z-index: 2;"));
+    assert!(
+        EMBEDDED_INDEX.contains(".politics-matrix thead th:first-child { left: 0; z-index: 3; }")
+    );
+    // The board is checkered: every other cell, never the diagonal, is veiled
+    // toward white on a dark column and toward black on a light one.
+    assert!(matrix.contains(
+        "const check = (r + c) % 2 ? ` class=\"politics-check\" style=\"--civ:${pcol(column.id)}\"` : \"\";"
+    ));
+    assert!(EMBEDDED_INDEX
+        .contains("background: oklch(from var(--civ) clamp(0, (.6 - l) * 100, 1) 0 0 / .24);"));
     assert!(matrix.contains("civs.map(civ => `<col style=\"--civ:${pcol(civ.id)}\">`)"));
     assert!(EMBEDDED_INDEX.contains(".politics-matrix col + col {"));
     assert!(EMBEDDED_INDEX.contains(".politics-matrix col + col { background: var(--civ); }"));
@@ -10983,8 +11068,11 @@ fn world_politics_is_one_alphabetical_matrix_with_fixed_labels() {
         ".politics-matrix .politics-mark::after {\n    content: \"\"; position: absolute; inset: -1.5px; z-index: -2; border-radius: 50%;\n    background: var(--politics-disc);"
     ));
     assert!(EMBEDDED_INDEX.contains("--politics-disc: #0b1513;"));
-    // Pointing at a column lights it and the name of the civilization it is.
+    // Pointing at a column lights it, its name on top and the name of the
+    // civilization it is down the side.
     assert!(EMBEDDED_INDEX.contains("table.tBodies[0].rows[column - 1]?.cells[0]"));
+    assert!(EMBEDDED_INDEX
+        .contains("table.tHead?.rows[0].cells[column]?.classList.add(\"politics-crossed\");"));
     // The slanted column names along the bottom are gone, with their corner.
     for gone in [
         "politics-corner",
@@ -10997,12 +11085,13 @@ fn world_politics_is_one_alphabetical_matrix_with_fixed_labels() {
     }
     assert!(!EMBEDDED_INDEX.contains("politics-legend"));
 
-    // The names stay put while the table scrolls under them. Six rows always
-    // fit, and the labels below stop covering the table while it is open.
+    // The names stay put while the table scrolls under them. The names along
+    // the top and six rows always fit, and the labels below stop covering the
+    // table while it is open.
     assert!(EMBEDDED_INDEX
         .contains(".politics-matrix tbody th {\n    position: sticky; left: 0; z-index: 1;"));
     assert!(EMBEDDED_INDEX.contains(
-        "#side.deck-stops .politics-list { max-height: max(calc(20px + 6 * var(--politics-cell)), calc(var(--deck-window) + var(--stop-bottom) - 112px)); }"
+        "#side.deck-stops .politics-list { max-height: max(calc(20px + var(--politics-head) + 6 * var(--politics-cell)), calc(var(--deck-window) + var(--stop-bottom) - 112px)); }"
     ));
     assert!(EMBEDDED_INDEX.contains(
         "#side.deck-stops #politicssec[open] ~ .sidebar-section:not([open]) { position: static; box-shadow: none; }"
@@ -17468,4 +17557,100 @@ fn no_two_page_scripts_declare_the_same_function() {
         }
     }
     assert!(declared > 1000, "the scan found only {declared} functions");
+}
+
+/// Operator 2026-11-23: "we should have a fog honest ai play setting in the
+/// turn box set to true or false. and it should pretty much always be set to
+/// true." Every world a session is dealt opens with its Civ AIs planning on
+/// what their civilizations can see. The turn box turns that over for the
+/// world on screen, and a copy of the world (each half of a split is one)
+/// keeps what it was set to.
+#[test]
+fn a_table_plays_fog_honest_until_the_turn_box_says_otherwise() {
+    let mut session = Session::new(current());
+    let majors = session
+        .game
+        .players
+        .iter()
+        .filter(|player| !player.is_minor && !player.is_barbarian)
+        .count();
+    assert!(session.fog_honest(), "a new world opens fog-honest");
+    assert_eq!(
+        session.fog_honest_seats(),
+        majors,
+        "every major's Civ AI plans on what its civilization can see, and no scripted seat claims to"
+    );
+    let state = session.state();
+    assert_eq!(state["fog_honest"], json!(true));
+    assert_eq!(state["fog_honest_seats"], json!(majors));
+
+    // A Civ AI seated by name is seated under the table's setting.
+    session.seat_rivals("siege").unwrap();
+    session.seat_strategy_at(0, "holy").unwrap();
+    assert_eq!(session.fog_honest_seats(), majors);
+
+    // The turn box turns it off, over the route the page uses...
+    let off = crate::routes::fog_honest(&mut session, &json!({"on": false}));
+    assert_eq!(off["fog_honest"], json!(false));
+    assert_eq!(off["fog_honest_seats"], json!(0));
+    // ...anything but a yes or a no changes nothing...
+    let _ = crate::routes::fog_honest(&mut session, &json!({"on": "yes"}));
+    assert!(!session.fog_honest());
+    // ...and a copy of the world keeps the setting it was made with.
+    let half = session.fork();
+    assert!(!half.fog_honest());
+    assert_eq!(half.fog_honest_seats(), 0);
+    session.set_fog_honest(true);
+    assert_eq!(session.fork().fog_honest_seats(), majors);
+
+    // Going back along the timeline rebuilds the session from the world
+    // kept with the turn: the table's setting is kept with it, and the
+    // agents put back with the turn take it.
+    let mut walked = Session::new(current());
+    walked.debug(&json!({"op": "play", "turns": 3}));
+    walked.set_fog_honest(false);
+    let back = walked.debug(&json!({"op": "jump", "turn": 2}));
+    assert_eq!(back["error"], Value::Null);
+    assert!(
+        !walked.fog_honest(),
+        "a jump back turned Fog-honest AI on again"
+    );
+    assert_eq!(walked.fog_honest_seats(), 0);
+    walked.set_fog_honest(true);
+    walked.debug(&json!({"op": "jump", "turn": 1}));
+    assert_eq!(walked.fog_honest_seats(), majors);
+
+    // A watched table's state says so too: the turn box is drawn from it.
+    let mut watched = Session::new(watched_table());
+    assert_eq!(watched.state()["fog_honest"], json!(true));
+    watched.set_fog_honest(false);
+    assert_eq!(watched.state()["fog_honest"], json!(false));
+
+    assert!(EMBEDDED_INDEX.contains("<select data-hud-fog-honest "));
+    assert!(EMBEDDED_INDEX.contains("fetchJSON(\"/fog-honest\""));
+}
+
+/// The setting is read back from the game, not only from the agents: a
+/// fog-honest table plays a game of its own, and plays it on.
+#[test]
+fn a_fog_honest_table_plays_its_own_game() {
+    let play = |honest: bool| {
+        let mut session = Session::new(watched_table());
+        session.set_fog_honest(honest);
+        assert_eq!(session.fog_honest_seats() > 0, honest);
+        for _ in 0..16 * session.game.players.len() {
+            session.step_quietly();
+        }
+        (
+            session.game.turn,
+            serde_json::to_string(&session.game.log).unwrap(),
+        )
+    };
+    let (turn, honest) = play(true);
+    let (_, board) = play(false);
+    assert!(turn > 12, "a fog-honest table stopped on turn {turn}");
+    assert_ne!(
+        honest, board,
+        "planning on a fog-redacted view played the same game as planning on the board"
+    );
 }

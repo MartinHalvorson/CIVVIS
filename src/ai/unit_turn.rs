@@ -2205,7 +2205,7 @@ impl BasicAi {
 
         // If the chosen frontier target was unreachable, search for the
         // nearest hidden tile by an actual traversable route instead.
-        let goals: HashSet<Pos> = {
+        let goals: crate::fast_map::FastSet<Pos> = {
             let _memo = g.query_memo();
             g.map
                 .tiles
@@ -2260,7 +2260,7 @@ impl BasicAi {
         // aiming at it parks the castaway one hex offshore forever — closing
         // to shore distance 1 and never landing, which is the defect wearing
         // a different hat.
-        let (home, any): (HashSet<Pos>, HashSet<Pos>) = {
+        let (home, any): (crate::fast_map::FastSet<Pos>, crate::fast_map::FastSet<Pos>) = {
             let _memo = g.query_memo();
             let landable: Vec<(Pos, bool)> = g
                 .map

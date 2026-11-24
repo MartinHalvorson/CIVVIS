@@ -4,9 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#171d25">
-<title>Auto-Tourneys · CIVVIS.ai</title>
+<title>Tournaments · CIVVIS.ai</title>
 <meta name="description" content="CIVVIS tournaments: series of verification games against Civilization VI's own AI, running, scheduled and finished.">
-<link rel="canonical" href="https://civvis.ai/auto-tourneys/">
+<link rel="canonical" href="https://civvis.ai/tournaments/">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23171d25'/%3E%3Ccircle cx='16' cy='16' r='11.5' fill='none' stroke='%2366c0f4'/%3E%3Cpath d='M7 16h18M16 4.5c-4.2 4.1-4.2 18.9 0 23M16 4.5c4.2 4.1 4.2 18.9 0 23' fill='none' stroke='%2366c0f4' stroke-width='1.15'/%3E%3C/svg%3E">
 <style>
   /* The home page's own palette, header and cards (`beta/landing.html`): the
@@ -116,7 +116,7 @@
   .utility-list:focus-visible { color: #fff; text-decoration: underline; }
   .utility-list:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   /* The site's pages, listed in the same order on every one of them with
-     the page on screen in gold: Home, Charts, Auto-Tourneys, CIVVIS and AI
+     the page on screen in gold: Home, Charts, Tournaments, CIVVIS and AI
      Debugger, and under them the game they are built on. As on the home page, whose
      header this is, the column stands to the left of the title. */
   .site-brand { display: flex; align-items: center; gap: 18px; min-width: 0; }
@@ -154,11 +154,45 @@
   .site-link[href$="?mode=play"] { background: #050607; color: #c9cecb; box-shadow: inset 0 0 0 1px #30363a; }
   .site-link[href$="../"]:hover, .site-link[href$="../"]:focus-visible,
   .site-link[href$="?mode=play"]:hover, .site-link[href$="?mode=play"]:focus-visible { background: #181c1f; color: #fff; }
+  /* Doctor Strange's Civ 6 (strange mode, the same game shown as a tree of
+     two timelines) stands out in Doctor Strange's own colours (operator,
+     2026-11-23: "highlight dr strange civ 6 button in dr strange colors"):
+     the deep blue of his tunic running into the crimson of his cloak,
+     ringed and lit by the orange of his spells' sparks, the name in their
+     pale gold. */
+  .site-link[href$="?mode=strange"] {
+    background: linear-gradient(135deg, #1c2a7a 30%, #a3122f); color: #ffe3a3;
+    box-shadow: inset 0 0 0 1px #ff9a2e, 0 0 6px rgba(255, 138, 30, 0.6);
+  }
+  .site-link[href$="?mode=strange"]:hover,
+  .site-link[href$="?mode=strange"]:focus-visible {
+    background: linear-gradient(135deg, #2638a0 30%, #c8193d); color: #fff;
+    box-shadow: inset 0 0 0 1px #ffb85c, 0 0 10px rgba(255, 150, 40, 0.85);
+  }
+  /* Doctor Strange's Civ 6 is the one name longer than the column. It does
+     not widen it: the name takes two lines in the column as it stands,
+     set a little closer so that each line fits. */
+  .site-link[href$="?mode=strange"] { box-sizing: border-box; width: 0; min-width: 100%; letter-spacing: 0.02em; }
   .site-link[href^="https://store.steampowered.com/"] { background: linear-gradient(90deg, #1a44c2 35%, #47bfff); color: #fff; }
   .site-link[href^="https://store.steampowered.com/"]:hover,
   .site-link[href^="https://store.steampowered.com/"]:focus-visible { background: linear-gradient(90deg, #2352d6 35%, #73cfff); color: #fff; }
-  /* The column is as wide as its longest name, AUTO-TOURNEYS, on one line:
-     145px. Every name stands on one line (operator, 2026-11-21: "make sure
+  /* Wizard Chess is a chessboard (operator, 2026-11-23: "below civ 6, add
+     wizard chess. the background there can be black and white
+     checkerboard"): black and white squares round a black plate that the
+     name stands on, so that it reads on either. */
+  .site-link[href$="wizard-chess/"] {
+    background: linear-gradient(#0b0b0c, #0b0b0c) center / calc(100% - 16px) calc(100% - 8px) no-repeat,
+      repeating-conic-gradient(#f4f1e8 0 25%, #0b0b0c 0 50%) 0 0 / 8px 8px;
+    color: #f4f1e8;
+  }
+  .site-link[href$="wizard-chess/"]:hover,
+  .site-link[href$="wizard-chess/"]:focus-visible {
+    background: linear-gradient(#26262a, #26262a) center / calc(100% - 16px) calc(100% - 8px) no-repeat,
+      repeating-conic-gradient(#ffffff 0 25%, #0b0b0c 0 50%) 0 0 / 8px 8px;
+    color: #fff;
+  }
+  /* The column is as wide as AUTO-TOURNEYS on one line, the Tournaments page's
+     name from 2026-11-22 to 2026-11-24: 145px. Every name stands on one line (operator, 2026-11-21: "make sure
      it fits on one line"), down to a 320px phone, where the title beside
      the column still has its room. The list is a tree that keeps its
      branches folded (operator, 2026-11-21: "a somewhat collapsable model
@@ -266,6 +300,19 @@
   .tour-counts dd.is-note { color: var(--muted); font-variant-numeric: normal; }
   .tour-counts dd b { color: #fff; font-weight: 700; }
 
+  /* A tournament's hyperparameters, the settings every one of its games
+     was played under (operator, 2026-11-23: "please spell out the tourney
+     hyperparameters for each tourney clearly"): a name and its value to a
+     line, the same names in the same order for every tournament, so two
+     tournaments read side by side. The names stand in a column as wide as
+     the longest of them; a long value wraps in its own column. */
+  .tour-hyper-box { display: grid; gap: 4px; }
+  .tour-hyper { display: grid; grid-template-columns: max-content minmax(0, 1fr); margin: 0; font-size: 12.5px; line-height: 1.45; }
+  .tour-hyper > div { display: contents; }
+  .tour-hyper dt, .tour-hyper dd { padding: 3px 0; border-top: 1px solid var(--border); }
+  .tour-hyper dt { padding-right: 14px; color: var(--faint); white-space: nowrap; }
+  .tour-hyper dd { margin: 0; color: var(--text); }
+
   /* An indefinite tournament's win rate by level: every game, then day by day. */
   .tour-bench-box { display: grid; gap: 4px; overflow-x: auto; }
   .tour-bench { border-collapse: collapse; font-size: 12.5px; font-variant-numeric: tabular-nums; }
@@ -308,6 +355,7 @@
   .rank-table .is-ident { width: 33.333%; padding-right: 24px; white-space: normal; }
   .rank-table tr.is-games td { padding: 4px 10px 12px 0; border-top: 0; white-space: normal; }
   .rank-table tr.is-games .tour-counts { margin-top: 5px; }
+  .rank-table tr.is-games .tour-hyper-box { margin-bottom: 8px; }
   /* Narrower than the two parts and the figures' one line need, a
      tournament is its title line and name, then its figures side by side,
      each under its own label, then its games. */
@@ -326,23 +374,28 @@
   <header class="shell site-header">
     <div class="site-brand">
       <!-- The site's pages, in the order every one of them lists them, with
-           the page on screen in gold: this is Auto-Tourneys (named
-           Tournaments until 2026-11-22: operator, "make sure Tournaments
-           changes to Auto-Tourneys"), between Charts and the simulation.
+           the page on screen in gold: this is Tournaments, between Charts
+           and the simulation. It was Auto-Tourneys from 2026-11-22
+           (operator, "make sure Tournaments changes to Auto-Tourneys") until
+           2026-11-24, when it took its first name back (operator: "change
+           auto-outnrye to Tournaments. Auto-tourney suggests some self
+           imrpvoing tourney thing").
            Every link is lane-relative (this page lives at
            <lane>/tournaments/), so the test lane's page opens the test
            lane's home page and viewer. -->
       <nav class="site-nav" aria-label="CIVVIS sites">
         <a class="site-link" href="../home/">Home</a>
         <a class="site-link" href="../charts/win-analytics/" title="What the games show: charts read off the CIVVIS AI agents&#8217; games.">Charts/</a>
-        <a class="site-link" href="./" aria-current="page">Auto-Tourneys</a>
+        <a class="site-link" href="./" aria-current="page">Tournaments</a>
         <a class="site-link" href="../" title="Every civilization is played by a CIVVIS AI agent.">CIVVIS</a>
+        <a class="site-link" href="../?mode=strange" title="One world, two timelines: the same game played two ways, side by side, on a timeline that branches.">Doctor Strange's Civ 6</a>
         <a class="site-link" href="../?mode=play" title="You play one civilization. CIVVIS AI agents play the rest.">AI Debugger</a>
         <a class="site-link" href="https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/" target="_blank" rel="noopener" title="Buy Civilization VI on Steam">Civ 6</a>
+        <a class="site-link" href="../wizard-chess/" title="Chess where you command and the pieces obey, against an opponent at the Elo you pick.">Wizard Chess</a>
       </nav>
       <div class="site-lockup">
         <h1 class="site-title">CIVVIS<span>.ai</span></h1>
-        <p class="site-tagline"><span>An open source Civilization VI Simulator</span> <span>for AI strategy development</span></p>
+        <p class="site-tagline"><span>An open source Civilization VI Simulator</span> <span>for AI reasoning insights</span></p>
       </div>
     </div>
     <nav class="utility-nav" aria-label="CIVVIS links">
@@ -424,6 +477,7 @@
         Dates are UTC, on the 24-hour clock.
         Wall time is from a tournament&#8217;s first game starting to its last game ending.
         Run time is the time its games were in play, added up, without the time between them.
+        Hyperparameters are the settings every game of a tournament was played under.
       </p>
     </div>
   </main>
@@ -535,6 +589,25 @@
       return box;
     };
 
+    // A tournament's hyperparameters (operator 2026-11-23: "please spell
+    // out the tourney hyperparameters for each tourney clearly"): every
+    // setting its games were played under, a name and its value to a line,
+    // in the order the definitions file's `hyperparameters` are put in
+    // (`beta/tournaments_page.py` `HYPERPARAMETERS`).
+    const hyper = (t) => {
+      const pairs = list(t.hyperparameters).filter((pair) => Array.isArray(pair) && pair.length === 2);
+      if (!pairs.length) return null;
+      const dl = el("dl", "tour-hyper");
+      for (const [name, value] of pairs) {
+        const div = el("div");
+        div.append(el("dt", "", name), el("dd", "", value));
+        dl.append(div);
+      }
+      const box = el("div", "tour-hyper-box");
+      box.append(el("p", "tour-latest-title", "Hyperparameters"), dl);
+      return box;
+    };
+
     // A tournament's result video, when the channel has one: a link to
     // its page on YouTube, in a tab of its own. The address was written at
     // publish as a YouTube watch page; one that is anything else is not
@@ -580,7 +653,10 @@
       figure.append(el("p", "tour-score", record(t)), el("p", "tour-rate", plural(t.games, "game", "games")
         + (t.size == null ? " · indefinite" : " of " + t.size) + (t.games ? " · " + rate(t) + " won" : "")));
       head.append(about, figure);
-      body.append(head, strip(t, true), counts(t));
+      body.append(head);
+      const settings = hyper(t);
+      if (settings) body.append(settings);
+      body.append(strip(t, true), counts(t));
       if (bench(t.benchmark)) body.append(bench(t.benchmark));
       body.append(el("p", "tour-meta", [t.conditions, "started " + t.start,
         t.wall ? "wall time " + t.wall : "", t.run ? "run time " + t.run : "", t.note].filter(Boolean).join(" · ")));
@@ -616,6 +692,8 @@
       const body = el("div", "tour-body");
       body.append(el("p", "tour-size", t.size == null ? "Indefinite" : plural(t.size, "game", "games")));
       if (t.idea) body.append(el("p", "tour-idea", t.idea));
+      const settings = hyper(t);
+      if (settings) body.append(settings);
       body.append(el("p", "tour-meta", [t.conditions, before ? "after Tournament " + before : "next to start", t.note].filter(Boolean).join(" · ")));
       item.append(identity(t, "div"), body);
       queueBox.querySelector(".tour-queue").append(item);
@@ -657,6 +735,8 @@
         const games = el("tr", "is-games");
         const cell = el("td");
         cell.colSpan = columns - 1;
+        const settings = hyper(t);
+        if (settings) cell.append(settings);
         cell.append(strip(t, false), counts(t, [t.idea, t.note].filter(Boolean).join(" ")));
         if (video(t)) cell.append(video(t));
         games.append(cell);

@@ -4,9 +4,9 @@
 #
 # The output is one complete LANE of the site — the viewer at its root with
 # the engine compiled to WebAssembly beside it, the landing page at /home, the
-# pages of Charts/ under /charts (Win Analytics, CIVVIS Performance, AI
-# Interpretability), the Auto-Tourneys page at /auto-tourneys and the
-# downloads page at /download — a
+# pages of Charts/ under /charts (AI Interpretability, Civ Analytics, Win
+# Analytics, ELO Rankings, CIVVIS Performance), the Tournaments page at
+# /tournaments, the downloads page at /download and Wizard Chess at /wizard-chess — a
 # plain directory of static files with no
 # host-specific anything beyond the two Cloudflare Pages control files, which
 # any other host simply ignores. Every link between the pages is
@@ -171,8 +171,14 @@ landing_assets="$source_tree/beta/assets"
 download_page="$source_tree/beta/download.html"
 tournaments_page="$source_tree/beta/tournaments.html"
 research_page="$source_tree/beta/research.html"
+elo_page="$source_tree/beta/elo.html"
+civs_page="$source_tree/beta/civs.html"
 performance_page="$source_tree/beta/performance.html"
 interpretability_page="$source_tree/beta/interpretability.html"
+chess_page="$source_tree/beta/chess.html"
+# What Wizard Chess is made of beside its page: its scripts, and the two
+# things it did not write (three.js and the Stockfish engine, chess/vendor).
+chess_parts="$source_tree/beta/chess"
 pages=()
 without=()
 
@@ -183,6 +189,9 @@ without=()
 # (operator: "clean up the URL please. standardized. please remove research
 # from the url"): Win Analytics is at charts/win-analytics where it was at
 # research, and Auto-Tourneys at auto-tourneys where it was at tournaments.
+# On 2026-11-24 Auto-Tourneys took its first name back, Tournaments, and with
+# it its first address (operator: "change auto-outnrye to Tournaments.
+# Auto-tourney suggests some self imrpvoing tourney thing").
 # Every link inside a page is relative, so a page works at one depth only,
 # and this script, which is the invoking tree's, lays out both lanes. A page
 # of a pinned revision placed at main's address would be a page of dead
@@ -210,9 +219,12 @@ address() {
 home_at="$(address "$landing_page" home)"
 tournaments_at="$(address "$tournaments_page" tournaments)"
 research_at="$(address "$research_page" research)"
+elo_at="$(address "$elo_page" elo)"
+civs_at="$(address "$civs_page" civs)"
 performance_at="$(address "$performance_page" performance)"
 interpretability_at="$(address "$interpretability_page" interpretability)"
 download_at="$(address "$download_page" download)"
+chess_at="$(address "$chess_page" chess)"
 
 # A lane built from some other revision than the invoking tree's is pinned:
 # the stable lane, on every deployment.
@@ -269,7 +281,7 @@ if [ -f "$landing_page" ]; then
 else
   without+=(home)
 fi
-# The Auto-Tourneys page (running, scheduled and finished series of the
+# The Tournaments page (running, scheduled and finished series of the
 # verification games) is filled the same way: the definitions in the lane's
 # data/tournaments.json, the games from the run ledger. A tournament
 # scheduled on main is listed on /test at once and on the front page when it
@@ -282,24 +294,66 @@ if [ -f "$tournaments_page" ]; then
 else
   without+=(tournaments)
 fi
-# Win Analytics, the first page under Charts/ (when in the game each victory
-# type lands, in self-play and against the Deity AI; `beta/research.html`, by
-# the name the page had first), is filled the same way: the self-play games
+# The AI Interpretability page (the steps of one turn in order, the plan the
+# seats write down through a game, and every gene with what it is worth in
+# wins) is the first page under Charts/ since 2026-11-24 (operator: "move ai
+# interpretablity to the top of the charts/ then civ analytics, win
+# analytics. elo rankings.. civvis performanc"), and so the page /charts
+# opens: the worker opens a folder's first page in the lane's list. It is
+# filled the same way, from the lane's source (the turn's steps, the gene
+# ranking) and the lane's snapshot of the seats' plans in
+# data/interpretability/: the agent as it is in the revision the lane plays.
+if [ -f "$interpretability_page" ]; then
+  mkdir -p "$out/$interpretability_at"
+  cp "$interpretability_page" "$out/$interpretability_at/index.html"
+  fill interpretability_page.py "$out/$interpretability_at/index.html"
+  pages+=("$interpretability_at")
+else
+  without+=(interpretability)
+fi
+# Civ Analytics, the second under Charts/ (operator 2026-11-23: "add another
+# page: Civ Analytics. First can be the civ records (pulled from win
+# analytics), then early build order"): both off the run ledger, the tree of build
+# orders as Win Analytics' script reads it.
+if [ -f "$civs_page" ]; then
+  mkdir -p "$out/$civs_at"
+  cp "$civs_page" "$out/$civs_at/index.html"
+  fill civs_page.py "$out/$civs_at/index.html"
+  pages+=("$civs_at")
+else
+  without+=(civ-analytics)
+fi
+# Win Analytics, the third page under Charts/ and the first until 2026-11-24
+# (when in the game each victory type lands, in self-play and against the
+# Deity AI; `beta/research.html`, by the name the page had first), is filled the same way: the self-play games
 # from the lane's snapshot in data/research/, the Deity games from the run
 # ledger.
 if [ -f "$research_page" ]; then
   mkdir -p "$out/$research_at"
   cp "$research_page" "$out/$research_at/index.html"
   fill research_page.py "$out/$research_at/index.html"
-  # The two rankings stand on this page since 2026-11-22, the winningest civs
-  # under the games against the AI and the Civ AI Agents by Elo under
-  # self-play. They are derived as they were for the home page: the civs
-  # from the run ledger, the agents from the lane's own revision. A page that
-  # predates the move has no slot for them and is left as it is.
+  # The two rankings stood on this page from 2026-11-22 until they moved to
+  # ELO Rankings and Civ Analytics on 2026-11-23. A page of a revision that
+  # still has their slot is filled as it was; one without it is left as it is.
   fill home_rankings.py "$out/$research_at/index.html"
   pages+=("$research_at")
 else
   without+=(research)
+fi
+# ELO Rankings, the fourth page under Charts/ (operator 2026-11-23: "add
+# that to a new page: Charts/ELO Rankings. this should be after win
+# analytics in the ordering"): the Civ AI Agents by Elo and Civilization
+# VI's own AI at Lv 4 to Lv 8, now and over time. Filled the same way: the
+# agents from the lane's own data/strategy_elo.json and the history of its
+# fits, the Firaxis levels from the benchmark games on the run ledger, so
+# they move with every finished game.
+if [ -f "$elo_page" ]; then
+  mkdir -p "$out/$elo_at"
+  cp "$elo_page" "$out/$elo_at/index.html"
+  fill elo_page.py "$out/$elo_at/index.html"
+  pages+=("$elo_at")
+else
+  without+=(elo-rankings)
 fi
 # The Performance page (the fastest game on video, how long a self-play game
 # takes at five percentiles, and game time batch by batch) is CIVVIS's own
@@ -313,20 +367,6 @@ if [ -f "$performance_page" ]; then
 else
   without+=(performance)
 fi
-# The AI Interpretability page (the steps of one turn in order, the plan the
-# seats write down through a game, and every gene with what it is worth in
-# wins) is the last page under Charts/. It is filled the same way, from the
-# lane's source (the turn's steps, the gene ranking) and the lane's snapshot
-# of the seats' plans in data/interpretability/: the agent as it is in the
-# revision the lane plays.
-if [ -f "$interpretability_page" ]; then
-  mkdir -p "$out/$interpretability_at"
-  cp "$interpretability_page" "$out/$interpretability_at/index.html"
-  fill interpretability_page.py "$out/$interpretability_at/index.html"
-  pages+=("$interpretability_at")
-else
-  without+=(interpretability)
-fi
 # The home page carries no art of its own any more, so there is usually no
 # directory to ship; a pinned revision from when it had photographs still does.
 if [ -f "$landing_page" ] && [ -d "$landing_assets" ]; then cp -R "$landing_assets" "$out/$home_at/assets"; fi
@@ -338,6 +378,18 @@ if [ -f "$download_page" ]; then
   pages+=("$download_at")
 else
   without+=(download)
+fi
+# Wizard Chess (operator 2026-11-23: "below civ 6, add wizard chess"): a
+# game of its own, with nothing of the simulator in it. The page, and beside
+# it the directory it loads its scripts and its engine from, as they stand:
+# nothing here is filled or rewritten.
+if [ -f "$chess_page" ]; then
+  mkdir -p "$out/$chess_at"
+  cp "$chess_page" "$out/$chess_at/index.html"
+  if [ -d "$chess_parts" ]; then cp -R "$chess_parts" "$out/$chess_at/chess"; fi
+  pages+=("$chess_at")
+else
+  without+=(wizard-chess)
 fi
 if [ "${#without[@]}" -gt 0 ]; then
   echo "   $short does not have every page, and its lane is published without: ${without[*]}"

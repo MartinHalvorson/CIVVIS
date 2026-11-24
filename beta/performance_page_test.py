@@ -411,7 +411,9 @@ class ThePage(unittest.TestCase):
         self.assertNotIn("youtube-nocookie", MARKUP)
         press = PAGE[PAGE.index('poster.addEventListener("click"'):]
         self.assertLess(press.index('el("iframe")'), press.index("poster.replaceWith(frame);"))
-        self.assertIn('"https://www.youtube-nocookie.com/embed/" + record.id + "?autoplay=1&rel=0&playsinline=1"', press)
+        # It loops for as long as the page is open (operator 2026-11-23:
+        # "please have the vido on the website all loop indefinitely").
+        self.assertIn('"https://www.youtube-nocookie.com/embed/" + record.id + "?autoplay=1&rel=0&playsinline=1&loop=1&playlist=" + record.id;', press)
         # A press that asks for a new tab is the link it is.
         self.assertIn("if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button) return;", press)
         self.assertIn('<a class="perf-poster" id="perf-poster" target="_blank" rel="noreferrer">', PAGE)
@@ -445,12 +447,16 @@ class TheSiteList(unittest.TestCase):
                 ("site-link", "../../home/", "Home"),
                 ("site-link", "../win-analytics/", "Charts/"),
                 ("site-link sub-link", "../win-analytics/", "Win Analytics"),
+                ("site-link sub-link", "../elo-rankings/", "ELO Rankings"),
+                ("site-link sub-link", "../civ-analytics/", "Civ Analytics"),
                 ("site-link sub-link", "./", "CIVVIS Performance"),
                 ("site-link sub-link", "../ai-interpretability/", "AI Interpretability"),
-                ("site-link", "../../auto-tourneys/", "Auto-Tourneys"),
+                ("site-link", "../../tournaments/", "Tournaments"),
                 ("site-link", "../../", "CIVVIS"),
+                ("site-link", "../../?mode=strange", "Doctor Strange's Civ 6"),
                 ("site-link", "../../?mode=play", "AI Debugger"),
                 ("site-link", "https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/", "Civ 6"),
+                ("site-link", "../../wizard-chess/", "Wizard Chess"),
             ],
         )
         self.assertEqual(nav.count('aria-current="page"'), 1)
@@ -463,16 +469,18 @@ class TheSiteList(unittest.TestCase):
     def test_only_charts_lists_the_branch(self):
         # A branch is folded unless one of its pages is on screen: Win
         # Analytics, the page Charts/ opens, lists every page of Charts/
-        # under it as this page does, and Home, Auto-Tourneys and the viewer
+        # under it as this page does, and Home, Tournaments and the viewer
         # (CIVVIS and AI Debugger, the two tools) list none of them.
         self.assertIn(
             '<a class="site-link sub-link" href="./" aria-current="page">Win Analytics</a>\n'
-            '        <a class="site-link sub-link" href="../civvis-performance/" ',
+            '        <a class="site-link sub-link" href="../elo-rankings/" ',
             RESEARCH,
         )
+        self.assertIn('        <a class="site-link sub-link" href="../civvis-performance/" ', RESEARCH)
         for page in (LANDING, TOURNAMENTS, VIEWER):
             self.assertNotIn("Performance</a>", page.replace(">CIVVIS Performance</a></figcaption>", ""))
-            self.assertNotIn(">Win Analytics</a>", page)
+            for name in (">Win Analytics</a>", ">ELO Rankings</a>", ">Civ Analytics</a>"):
+                self.assertNotIn(name, page)
         for gone in ("perflink", "under-watch", "opens-watching", "sub-link"):
             self.assertNotIn(gone, VIEWER)
 

@@ -420,20 +420,27 @@ def main(argv: list[str] | None = None) -> int:
             home["status"] == 200 and home["body"].strip() == "asset:/home",
             f"got {home['status']} {home['body'][:60]!r}",
         )
-        # So are the pages of Charts/, in their folder, and Auto-Tourneys. An
+        # So are the pages of Charts/, in their folder, and Tournaments. An
         # address follows the name in the site list (operator 2026-11-23:
         # "clean up the URL please. standardized. please remove research from
         # the url"), so a page of Charts/ is two names deep.
         for address, name in (
             ("/charts/win-analytics/", "Win Analytics"),
+            ("/charts/elo-rankings/", "ELO Rankings"),
+            ("/charts/civ-analytics/", "Civ Analytics"),
             ("/charts/civvis-performance/", "CIVVIS Performance"),
             ("/charts/ai-interpretability/", "AI Interpretability"),
-            ("/auto-tourneys/", "Auto-Tourneys"),
+            ("/tournaments/", "Tournaments"),
+            ("/wizard-chess/", "Wizard Chess"),
+            # And what Wizard Chess loads from beside its page, which is a
+            # file and not a page: the router leaves it to the asset layer.
+            ("/wizard-chess/chess/game.js", "Wizard Chess script"),
+            ("/wizard-chess/chess/vendor/stockfish-18-lite-single.wasm", "Wizard Chess engine"),
         ):
             passed = hit(path=address)
             check(
                 problems,
-                f"{address} passes through to the {name} page",
+                f"{address} passes through to {name}",
                 passed["status"] == 200 and passed["body"].strip() == f"asset:{address}",
                 f"got {passed['status']} {passed['body'][:60]!r}",
             )
@@ -447,10 +454,15 @@ def main(argv: list[str] | None = None) -> int:
         print("==> a page a lane does not carry is a 404, whatever the asset layer kept of it")
         # The two lanes as they stood on 2026-11-23: the front page pinned to
         # a revision from before the addresses moved, five pages at the
-        # addresses they had then, and main with all six at their names.
+        # addresses they had then, and main with all six at their names
+        # (Tournaments back at its first, as it is since 2026-11-24).
         before = ["home", "tournaments", "research", "performance", "download"]
-        after = ["home", "auto-tourneys", "charts/win-analytics", "charts/civvis-performance",
+        after = ["home", "tournaments", "charts/win-analytics", "charts/civvis-performance",
                  "charts/ai-interpretability", "download"]
+        # And a lane pinned to a revision from 2026-11-23 to 2026-11-24, when
+        # the page was Auto-Tourneys, at /auto-tourneys/.
+        between = ["home", "auto-tourneys", "charts/win-analytics", "charts/civvis-performance",
+                   "charts/ai-interpretability", "download"]
         lanes = {"": before, "/test": after}
         for address in ("/interpretability/", "/interpretability", "/interpretability/index.html"):
             kept = hit(path=address, listed=lanes)
@@ -468,7 +480,7 @@ def main(argv: list[str] | None = None) -> int:
               f"got {carried['status']} {carried['body'][:60]!r}")
         for address in ("/home", "/research/", "/download/index.html", "/test/home/",
                         "/test/charts/win-analytics", "/test/charts/win-analytics/index.html",
-                        "/test/auto-tourneys/"):
+                        "/test/tournaments/"):
             page = hit(path=address, listed=lanes)
             check(problems, f"{address} is a page its lane carries",
                   page["status"] == 200 and page["body"].strip() == f"asset:{address}",
@@ -496,9 +508,9 @@ def main(argv: list[str] | None = None) -> int:
             ("/test/research/index.html", "/test/charts/win-analytics/"),
             ("/test/performance/", "/test/charts/civvis-performance/"),
             ("/test/interpretability/", "/test/charts/ai-interpretability/"),
-            ("/test/tournaments/", "/test/auto-tourneys/"),
+            ("/test/auto-tourneys/", "/test/tournaments/"),
             # With whatever was asked of the page.
-            ("/test/tournaments/?series=7", "/test/auto-tourneys/?series=7"),
+            ("/test/auto-tourneys/?series=7", "/test/tournaments/?series=7"),
             # A folder of the site list opens its first page, as Charts/
             # does in the list: the folder has no page of its own.
             ("/test/charts/", "/test/charts/win-analytics/"),
@@ -510,6 +522,17 @@ def main(argv: list[str] | None = None) -> int:
                   f"got {moved['status']} {moved['location']!r} {moved['body'][:60]!r}")
         check(problems, "a forward out of the test lane stays in it and is not indexed",
               moved["robots"] == "noindex", f"got {moved['robots']!r}")
+        # Since 2026-11-24 AI Interpretability leads Charts/ (operator: "move
+        # ai interpretablity to the top of the charts/ then civ analytics, win
+        # analytics. elo rankings.. civvis performanc"), and a lane built from
+        # main lists the pages in that order, so the folder opens it.
+        now = ["home", "tournaments", "charts/ai-interpretability", "charts/civ-analytics",
+               "charts/win-analytics", "charts/elo-rankings", "charts/civvis-performance", "download"]
+        for old in ("/test/charts/", "/test/charts"):
+            opened = hit(path=old, listed={"": before, "/test": now})
+            check(problems, f"{old} opens AI Interpretability, the first page of Charts/ now",
+                  opened["status"] == 301 and opened["location"] == "/test/charts/ai-interpretability/",
+                  f"got {opened['status']} {opened['location']!r}")
         # Which address a lane serves a page at follows the revision promoted
         # to it, and a promotion can go back: a browser must not remember the
         # forward as it would an ordinary permanent one.
@@ -522,11 +545,35 @@ def main(argv: list[str] | None = None) -> int:
             check(problems, f"{address} is still the page on a front page from before the move",
                   still["status"] == 200 and still["body"].strip() == f"asset:{address}",
                   f"got {still['status']} {still['location']!r} {still['body'][:60]!r}")
-        for address in ("/charts/", "/charts/win-analytics/", "/auto-tourneys/"):
+        for address in ("/charts/", "/charts/win-analytics/"):
             ahead = hit(path=address, listed=lanes)
             check(problems, f"{address} is a 404 on a front page from before the move",
                   ahead["status"] == 404 and not ahead["location"],
                   f"got {ahead['status']} {ahead['location']!r}")
+        # /auto-tourneys/ is an address the page has left, and the page is
+        # at /tournaments/ on that front page too.
+        back = hit(path="/auto-tourneys/", listed=lanes)
+        check(problems, "/auto-tourneys/ forwards to /tournaments/ on a front page from before the move",
+              back["status"] == 301 and back["location"] == "/tournaments/",
+              f"got {back['status']} {back['location']!r}")
+        # A page back at an address it once left (Tournaments, at
+        # /auto-tourneys/ from 2026-11-23 to 2026-11-24): a lane pinned to a
+        # revision from in between keeps the page there, and the address the
+        # page is back at forwards to it, as it did then.
+        pinned = {"": between, "/test": after}
+        kept = hit(path="/auto-tourneys/", listed=pinned)
+        check(problems, "/auto-tourneys/ is the page on a front page pinned while it was there",
+              kept["status"] == 200 and kept["body"].strip() == "asset:/auto-tourneys/",
+              f"got {kept['status']} {kept['location']!r} {kept['body'][:60]!r}")
+        for old, new in (("/tournaments/", "/auto-tourneys/"), ("/tournaments/?series=7", "/auto-tourneys/?series=7")):
+            moved = hit(path=old, listed=pinned)
+            check(problems, f"{old} forwards to {new} on that front page",
+                  moved["status"] == 301 and moved["location"] == new,
+                  f"got {moved['status']} {moved['location']!r}")
+        moved = hit(path="/test/auto-tourneys/", listed=pinned)
+        check(problems, "while the test lane forwards /test/auto-tourneys/ to /test/tournaments/",
+              moved["status"] == 301 and moved["location"] == "/test/tournaments/",
+              f"got {moved['status']} {moved['location']!r}")
         # Once that revision is promoted the front page forwards too, and
         # there the forward is one a search engine should follow.
         promoted = hit(path="/research/", listed={"": after, "/test": after})
@@ -593,7 +640,7 @@ def main(argv: list[str] | None = None) -> int:
         check(problems, "the test landing page is not indexed",
               test_home["robots"] == "noindex", f"got {test_home['robots']!r}")
         for address, name in (
-            ("/test/auto-tourneys/", "Auto-Tourneys"),
+            ("/test/tournaments/", "Tournaments"),
             ("/test/charts/win-analytics/", "Win Analytics"),
             ("/test/charts/civvis-performance/", "CIVVIS Performance"),
             ("/test/charts/ai-interpretability/", "AI Interpretability"),

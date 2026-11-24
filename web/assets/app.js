@@ -1596,6 +1596,11 @@ function knownGlobeFrameShare() {
 function clampPanelDimension(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
+// The victory tracker's turn bar stands in a column of its own: `.turn-gauge`
+// in index.html, its 30px and the 5px between it and the paths. The panel is
+// that much wider than its share of the map, so the bar's room comes off the
+// map and the paths keep theirs.
+const TURN_GAUGE_COLUMN = 35;
 function syncResponsivePanelGeometry() {
   const {width, height} = mapAreaSize();
   const shortEdge = Math.max(1, Math.min(width, height));
@@ -1677,7 +1682,7 @@ function syncResponsivePanelGeometry() {
       wideMinimapWidth * knownGlobeShare, 130, wideMinimapWidth));
     wideMinimapHeight = wideMinimapWidth;
   }
-  const victoryWidth = Math.round(clampPanelDimension(width * .15, 156, 340));
+  const victoryWidth = Math.round(clampPanelDimension(width * .15, 156, 340)) + TURN_GAUGE_COLUMN;
   const style = area.style;
   style.setProperty("--panel-edge", `${edge}px`);
   style.setProperty("--panel-gap", `${gap}px`);
@@ -3521,8 +3526,9 @@ const RESPONSIVE_TEXT_RULES = [
   // "Mode: Firaxis Civ VI Testing" needs 126px at 8.5px and the narrowest
   // plate has 124, so the floor is 8: smaller type, not a clipped letter.
   {selector:"#playerhud .turn-settings", min:8, max:12, slack:4},
-  // Max Speed sits alone above the age, so it is fitted on its own.
+  // Max Speed and the setup line under it are fitted apart: as a pair, the menu's width shrank both.
   {selector:"#playerhud .turn-pace-line", min:8.5, max:12, slack:4},
+  {selector:"#playerhud .turn-setup-line", min:8, max:12, slack:4},
   {selector:"#victoryhud .hud-section-heading > span", min:8.5, max:12, parentWidth:true},
   // "CIVVIS Arena Stats" is fitted at most widths, where a shorter heading
   // never was, so its run is measured where it lands and not by the ratio.
@@ -8048,7 +8054,7 @@ function paceHeldOpen() {
 // pace select. The sidebar #specspeed lives outside #playerhud and never
 // has this problem.
 function hudPaceHeldOpen() {
-  return [...document.querySelectorAll("[data-hud-pace], [data-hud-fog]")]
+  return [...document.querySelectorAll("[data-hud-pace], [data-hud-fog], [data-hud-fog-honest]")]
     .some(select => document.activeElement === select);
 }
 function paceOffered(select, ms) {
@@ -27363,20 +27369,51 @@ function turnCapLabel() {
 
 // The game's own clock, up the victory tracker's left edge (operator,
 // 2026-11-23: "a rising gold bar. starts at the bottom when turn is 1 of 250
-// and rises throughout the game"): no height on turn 1, where the stylesheet
-// keeps a two-pixel seed of it at the foot, and the whole edge on the last
-// turn. It reads the cap the turn plate prints, so "of 250" there and the top
-// of the bar here are the same turn. A world with no cap has nothing to rise
-// toward, and draws no bar.
+// and rises throughout the game", then "wider please. like 6mm wide-ish, with
+// a bit for labels and such"): no height on turn 1, where the bar's bright
+// head rests on the foot, and the whole edge on the last turn. It reads the
+// cap the turn plate prints, so "of 250" there and the top of the bar here
+// are the same turn. A world with no cap has nothing to rise toward, and
+// draws no bar.
+//
+// The width carries a scale: the cap under the top, and round turns below it
+// at the height the bar stands on them. A mark near either end would sit
+// under the cap's figure or hang off the foot, so the scale starts and stops
+// short of both.
+const TURN_GAUGE_STEPS = [1, 2, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 25000];
+function turnGaugeMarks(cap) {
+  const step = TURN_GAUGE_STEPS.find(step => cap / step <= 6) ?? cap;
+  const marks = [];
+  for (let turn = step; turn < cap; turn += step) {
+    const at = (turn - 1) / (cap - 1);
+    if (at < .08 || at > .9) continue;
+    marks.push({turn, at, major:turn % (step * 2) === 0});
+  }
+  return marks;
+}
+
+// The scale is drawn twice, dim for the empty track and dark for the gold, and
+// each copy is cut off at the bar's head from its own side: a figure the bar
+// is passing through reads on both sides of it. Both stand above the head's
+// bright line, which passes behind a figure rather than through it.
 function turnGauge() {
   const cap = Number(turnCapLabel());
   if (!(cap > 1)) return "";
   const turn = Math.min(cap, Math.max(1, Math.floor(+reportedTurn()) || 1));
   const rise = +((turn - 1) / (cap - 1) * 100).toFixed(2);
+  const figure = (count, mark, place = "") => {
+    const text = count < 1000 ? String(count) : `${+(count / 1000).toFixed(2)}k`;
+    return `<b class="${mark}${text.length > 3 ? " long" : ""}"${place}>${text}</b>`;
+  };
+  const scale = figure(cap, "cap") +
+    turnGaugeMarks(cap).map(mark => figure(mark.turn, mark.major ? "major" : "minor",
+      ` style="bottom:${+(mark.at * 100).toFixed(2)}%"`)).join("");
   return `<div class="turn-gauge" data-key="turn-gauge" role="progressbar" aria-label="Game progress" ` +
     `aria-valuemin="1" aria-valuemax="${cap}" aria-valuenow="${turn}" ` +
-    `aria-valuetext="Turn ${turn} of ${cap}" title="Turn ${turn} of ${cap}">` +
-    `<i style="height:${rise}%"></i></div>`;
+    `aria-valuetext="Turn ${turn} of ${cap}" title="Turn ${turn} of ${cap}" style="--rise:${rise}%">` +
+    `<span class="turn-gauge-fill"></span><i></i>` +
+    `<span class="turn-gauge-scale" aria-hidden="true">${scale}</span>` +
+    `<span class="turn-gauge-scale lit" aria-hidden="true">${scale}</span></div>`;
 }
 
 // The meter under each civilization. Most races are one number against one
@@ -27836,6 +27873,7 @@ function hudTurnPlate() {
       `<option value="0"${state.tactics.fog ? "" : " selected"}>Off</option>` +
       `</select><span class="turn-pace-caret" aria-hidden="true">⌄</span></span></div>`
     : ``;
+  const fogHonestRow = hudFogHonestRow(); // app_setup.js
   const plateLabel = `${context}; ${ageLabel}; turn ${turn} of ${turnCap}; ` +
     (liveTime ? `live time ${liveTime.spoken}; ` : ``) +
     `max speed ${watchPace}; ` +
@@ -27843,6 +27881,7 @@ function hudTurnPlate() {
     (liveLevel ? `difficulty level ${liveLevel.level}, ${liveLevel.name}; ` : ``) +
     `game speed ${speedName}; ` +
     (fogRow ? `in-game fog ${state.tactics.fog ? "on" : "off"}; ` : ``) +
+    (fogHonestRow ? `fog-honest AI ${state.fog_honest}; ` : ``) +
     `${civCount} civilizations remaining, ${civsLost} eliminated; ` +
     `${cityStateCount} city states remaining, ${cityStatesLost} eliminated; ` +
     `mode ${plateMode[0]}; point of view ${platePov[0]}`;
@@ -27858,10 +27897,10 @@ function hudTurnPlate() {
   const frameRow = (label, [value, title]) => `<div class="turn-setting" title="${escapeAttr(title)}">` +
     `<span>${label}</span><b>${escapeAttr(value)}</b></div>`;
   // The stopwatch is the plate's own top section, above the age (operator
-  // 2026-10-14: "live time can be a very top section above the age"). Max
-  // Speed sits directly under it, still above the age (operator 2026-11-09).
-  // Both spent 2026-11-15 under the turn counter and the operator moved them
-  // "back above age and turn counter like before"; Mode and POV stay below.
+  // 2026-10-14). Max Speed sits directly under it (2026-11-09, restored after
+  // a 2026-11-15 detour under the counter), then the map, level and speed,
+  // game settings too (2026-11-24: "should be more highly visible"). Mode and
+  // POV stay below the turn counter.
   return `<section class="victory-turn${liveTimeText !== null ? " has-live-time" : ""}" ` +
     `title="${escapeAttr(context)}" aria-label="${escapeAttr(plateLabel)}">` +
     hudFoldButton("turnplate", "turn box", "turn-plate-fold") +
@@ -27871,6 +27910,7 @@ function hudTurnPlate() {
         `<b data-live-time data-hundredths="${liveTime.hundredths}">${liveTimeText}</b></div>`
       : ``) +
     `<div class="turn-setting turn-pace-line"><span>Max Speed:</span>${watchPaceValue}</div>` +
+    `<div class="turn-setting turn-setup-line" title="${escapeAttr(setupTitle)}"><b>${escapeAttr(setupLine)}</b></div>` +
     `<span class="turn-era">${ageLabel}</span>` +
     `<div class="${turnCountClasses}"><span class="turn-label">Turn</span>` +
     `<div class="turn-progress"><strong>${reportedTurn()}</strong>` +
@@ -27879,9 +27919,8 @@ function hudTurnPlate() {
     `</div>` +
     `<div class="turn-settings" aria-label="Game setup">` +
     frameRow("Mode:", plateMode) + frameRow("POV:", platePov) +
-    `<div class="turn-setting turn-setup-line" title="${escapeAttr(setupTitle)}">` +
-    `<b>${escapeAttr(setupLine)}</b></div>` +
     fogRow +
+    fogHonestRow +
     rosterRow("Civs:", civCount, civsLost) +
     rosterRow("City states:", cityStateCount, cityStatesLost) +
     `</div></section>`;
@@ -29089,6 +29128,8 @@ hudRibbon.addEventListener("change", ev => {
     fog.blur();
     return;
   }
+  const honest = ev.target.closest?.("[data-hud-fog-honest]");
+  if (honest) { chooseFogHonest(honest.value === "1"); honest.blur(); return; }
   const pace = ev.target.closest?.("[data-hud-pace]");
   if (!pace) return;
   chooseWatchPace(pace.value);
@@ -29101,7 +29142,7 @@ hudRibbon.addEventListener("change", ev => {
 // so the open menu's anchor survives the next snapshot. The moment focus
 // leaves it, paint whatever those held snapshots changed.
 hudRibbon.addEventListener("focusout", ev => {
-  if (ev.target.closest?.("[data-hud-pace], [data-hud-fog]") && state) drawPlayerHud();
+  if (ev.target.closest?.("[data-hud-pace], [data-hud-fog], [data-hud-fog-honest]") && state) drawPlayerHud();
 });
 hudRibbon.addEventListener("mousedown", ev => {
   if (ev.button !== 0) return;
@@ -33768,8 +33809,10 @@ function releaseWatchedWar() {
 // order so nobody's place moves as the game goes on. A pact or a war belongs to
 // the pair and is written in both of its cells. Otherwise a cell holds what its
 // row's leader makes of its column's, which the other leader need not share.
-// A column wears its civilization's colour instead of a name, and meets that
-// civilization's row on the diagonal. The engine reports the pairs; the War log below keeps the history. The
+// A column wears its civilization's colour under its name, set upright along
+// the top, and meets that civilization's row on the diagonal. Every other cell
+// is a step off its column's colour, so the board reads as a checkerboard.
+// The engine reports the pairs; the War log below keeps the history. The
 // heading's count is cheap and always current, and the table is built only
 // while somebody can see it.
 const WORLD_POLITICS_MARKS = [
@@ -33818,23 +33861,27 @@ function worldPoliticsMatrix(civs, bonds, wars, attitudes) {
   for (const war of wars) place(war, worldPoliticsWarTie(war));
   const seat = new Map((attitudes.civs || []).map((id, index) => [id, index]));
   const jersey = id => `--civ:${pcol(id)};--civ-trim:${pcol2(id)}`;
-  const rows = civs.map(row => {
+  const plate = id => `<span class="politics-name" style="${jersey(id)};` +
+    `--civ-ink:${hudJerseyInk(id)}">${warEntityLink(id)}</span>`;
+  const rows = civs.map((row, r) => {
     const stances = attitudes.rows?.[seat.get(row.id)] || "";
-    const cells = civs.map(column => {
+    const cells = civs.map((column, c) => {
       if (column.id === row.id) return `<td class="self" style="${jersey(row.id)}"></td>`;
+      const check = (r + c) % 2 ? ` class="politics-check" style="--civ:${pcol(column.id)}"` : "";
       const tie = ties.get(`${row.id}:${column.id}`);
-      if (tie) return `<td title="${escapeAttr(`${row.civ} and ${column.civ}: ${tie.text}`)}">${tie.mark}</td>`;
+      if (tie) return `<td${check} title="${escapeAttr(`${row.civ} and ${column.civ}: ${tie.text}`)}">${tie.mark}</td>`;
       const kind = WORLD_POLITICS_ATTITUDES[stances[seat.get(column.id)]];
-      if (!kind) return `<td></td>`;
+      if (!kind) return `<td${check}></td>`;
       const text = kind === "unmet" ? `${row.civ} and ${column.civ} have not met`
         : `${row.civ} toward ${column.civ}: ${WORLD_POLITICS_LABELS.get(kind)}`;
-      return `<td title="${escapeAttr(text)}">${worldPoliticsMark(kind)}</td>`;
+      return `<td${check} title="${escapeAttr(text)}">${worldPoliticsMark(kind)}</td>`;
     }).join("");
-    return `<tr><th scope="row"><span class="politics-name" style="${jersey(row.id)};` +
-      `--civ-ink:${hudJerseyInk(row.id)}">${warEntityLink(row.id)}</span></th>${cells}</tr>`;
+    return `<tr><th scope="row">${plate(row.id)}</th>${cells}</tr>`;
   }).join("");
   const columns = civs.map(civ => `<col style="--civ:${pcol(civ.id)}">`).join("");
-  return `<table class="politics-matrix"><colgroup><col>${columns}</colgroup><tbody>${rows}</tbody></table>`;
+  const names = civs.map(civ => `<th scope="col">${plate(civ.id)}</th>`).join("");
+  return `<table class="politics-matrix"><colgroup><col>${columns}</colgroup>` +
+    `<thead><tr><th></th>${names}</tr></thead><tbody>${rows}</tbody></table>`;
 }
 // Hovering a row is CSS's to light, but no selector can light a column, or the
 // name of the civilization whose column it is. The column is remembered
@@ -33847,6 +33894,7 @@ function markPoliticsColumn(column) {
   const table = list.querySelector("table");
   if (!table || column < 1) return;
   table.querySelector("colgroup").children[column]?.classList.add("politics-crossed");
+  table.tHead?.rows[0].cells[column]?.classList.add("politics-crossed");
   table.tBodies[0].rows[column - 1]?.cells[0].classList.add("politics-crossed");
 }
 function drawWorldPolitics() {

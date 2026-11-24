@@ -1669,7 +1669,9 @@ struct RegionalSlot {
 /// guard: keyed on (player, city, unit kind, formation, gold?) → price.
 /// Only keyed lookups read this cache; action order comes from the ruleset
 /// sweep. Hashing the interned name avoids ordering it by ruleset text.
-type PurchasePriceMemo = HashMap<(usize, u32, Name, u8, bool), Option<f64>>;
+/// Hashed with the crate's fast hasher: a lookup is asked for every price a
+/// purchase loop quotes, and SipHash was most of the lookup.
+type PurchasePriceMemo = crate::fast_map::FastMap<(usize, u32, Name, u8, bool), Option<f64>>;
 
 /// Answer `key` from one query-memo slot, or compute it and keep it there.
 ///
@@ -7416,6 +7418,10 @@ pub struct Game {
     /// board routed Builders across them. Set by the seat each turn.
     #[serde(default)]
     pub observed_builders_avoid_mountains: bool,
+    /// `exploration-replans-need-a-sighting`, for the acting seat's frame
+    /// executor (`ai::player`): set by the seat each turn, read only there.
+    #[serde(skip)]
+    pub exploration_replans_need_a_sighting: bool,
     /// `culture-denial-heist`: a Great Work heist the HOST lists on a spy's
     /// operation menu is offered, though the board cannot see the works. The
     /// mirror carries only our own Great Works, so a rival city's
@@ -8530,6 +8536,7 @@ impl From<GameSer> for Game {
             lump_quote_viewer: None,
             nusantara_site_planner: None,
             observed_builders_avoid_mountains: false,
+            exploration_replans_need_a_sighting: false,
             heist_reads_the_host_menu: false,
             spy_targets_read_the_host: false,
             // Not carried in a save: host refusals are rebuilt from the run's event
@@ -9319,6 +9326,7 @@ impl Game {
             lump_quote_viewer: None,
             nusantara_site_planner: None,
             observed_builders_avoid_mountains: false,
+            exploration_replans_need_a_sighting: false,
             heist_reads_the_host_menu: false,
             spy_targets_read_the_host: false,
             blocked_city_sites: Arc::new(BTreeSet::new()),
@@ -10946,17 +10954,26 @@ impl Game {
     /// Whether this player may use content marked unique to `civilization`.
     #[inline]
     pub fn owns_civ_unique(&self, pid: usize, civilization: &str) -> bool {
-        self.uses_civ6_content(pid) && self.players[pid].civ == civilization
+        // The name first: it is one comparison and almost always false,
+        // whereas the roster boundary is a table lookup. Both are pure, so
+        // the order changes only what is paid, never the answer.
+        self.players
+            .get(pid)
+            .is_some_and(|player| player.civ == civilization)
+            && self.uses_civ6_content(pid)
     }
 
     /// Leader/civ ability check (data in civs.json, effects keyed by name).
     pub fn has_ability(&self, pid: usize, ability: &str) -> bool {
-        (self.uses_civ6_content(pid)
-            && self
-                .rules
-                .civs
-                .get(&self.players[pid].civ)
-                .is_some_and(|c| c.ability == ability))
+        // The seat's own ability is read before the roster boundary is
+        // asked: almost every call names some other civilization's ability,
+        // and that comparison is cheaper than the roster lookup it spares.
+        (self
+            .players
+            .get(pid)
+            .and_then(|player| self.rules.civs.get(&player.civ))
+            .is_some_and(|c| c.ability == ability)
+            && self.uses_civ6_content(pid))
             || self.modifier_grants_ability(pid, ability)
     }
 
@@ -10969,16 +10986,20 @@ impl Game {
     /// See `CivSpec::effects` for the vocabulary. Abilities the engine cannot
     /// express as a modifier stay keyed by name in [`Game::has_ability`].
     pub fn civ_effect(&self, pid: usize, effect: &str) -> f64 {
-        if !self.uses_civ6_content(pid) {
-            return 0.0;
-        }
-        self.players
+        // The effect is looked up before the roster boundary is asked: most
+        // civilizations declare no such effect, and then the answer is zero
+        // whatever the roster says.
+        let declared = self
+            .players
             .get(pid)
             .filter(|player| !player.is_minor && !player.is_barbarian)
             .and_then(|player| self.rules.civs.get(player.civ.as_str()))
             .and_then(|civ| civ.effects.get(effect))
-            .copied()
-            .unwrap_or(0.0)
+            .copied();
+        match declared {
+            Some(value) if self.uses_civ6_content(pid) => value,
+            _ => 0.0,
+        }
     }
 
     /// A city that has just grown gains 50 Pressure for its majority religion,

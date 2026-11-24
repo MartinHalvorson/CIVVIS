@@ -410,6 +410,10 @@ impl AdvancedAi {
         /// Historic Moment, when it closes the Age; see
         /// `advanced/first_ship_closes_the_age.rs`.
         first_ship_closes_the_dark_age => enable_first_ship_closes_the_dark_age, disable_first_ship_closes_the_dark_age;
+        /// Opt-in gene `exploration-replans-need-a-sighting`: explored ground
+        /// re-opens the turn only when it shows a foreign unit or city; see
+        /// `ai::player::take_turn`.
+        exploration_replans_need_a_sighting => enable_exploration_replans_need_a_sighting, disable_exploration_replans_need_a_sighting;
         // ---- append: g-k --------------------------------------------
         /// `gutted-rival-passes-the-edge`: a staged declaration by a Domination
         /// lane passes the peak edge against a target at 60% or less of its
@@ -475,6 +479,9 @@ impl AdvancedAi {
         /// from done keeps its queue against the Settler floors and the
         /// deterrent; see `advanced/nearly_built_keeps_its_queue.rs`.
         nearly_built_keeps_its_queue => enable_nearly_built_keeps_its_queue, disable_nearly_built_keeps_its_queue;
+        /// Opt-in gene `one-replan-per-turn`: a turn re-opens for a fresh
+        /// plan at most once; see `ai::player::take_turn`.
+        one_replan_per_turn => enable_one_replan_per_turn, disable_one_replan_per_turn;
         // ---- append: p-r --------------------------------------------
         /// Opt-in gene `racer-seat-statue-civic-first`; see
         /// `AdvancedAi::diplo_statue_civic_goal`.
@@ -570,6 +577,10 @@ impl AdvancedAi {
         /// seat takes Exodus of the Evangelists; see
         /// `advanced/religious_seat_dedicates_to_the_evangelists.rs`.
         religious_seat_dedicates_to_the_evangelists => enable_religious_seat_dedicates_to_the_evangelists, disable_religious_seat_dedicates_to_the_evangelists;
+        /// Opt-in gene `raiders-holding-a-settler-are-hunted`: the board
+        /// hunts the hostiles that hold a Settler of ours in the field; see
+        /// `advanced/raiders_holding_a_settler.rs`.
+        raiders_holding_a_settler_are_hunted => enable_raiders_holding_a_settler_are_hunted, disable_raiders_holding_a_settler_are_hunted;
         // ---- append: s-s --------------------------------------------
         /// Opt-in gene `siege-goes-on-the-forecast`: the siege train goes,
         /// holds and stands down on the capture forecast, and Siege rows rank

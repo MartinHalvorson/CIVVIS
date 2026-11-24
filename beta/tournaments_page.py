@@ -4,8 +4,9 @@
     tournaments_page.py <source_tree>              print the record as JSON
     tournaments_page.py <source_tree> <page.html>  write it into the page
 
-The Tournaments page (`beta/tournaments.html`; Auto-Tourneys since 2026-11-22,
-served at `<lane>/auto-tourneys/`, the address it states itself)
+The Tournaments page (`beta/tournaments.html`; named Auto-Tourneys and served
+at `<lane>/auto-tourneys/` from 2026-11-22 to 2026-11-24, at
+`<lane>/tournaments/` since, the address it states itself)
 is the site's page between Home and CIVVIS (operator 2026-11-21: "This is my
 Simulator Experiments page essentially. I have an idea I want to run. I
 schedule in a tournament for it. The AI models just keep working away at
@@ -54,6 +55,19 @@ number like the videos, and a tournament carries its own as `description`;
 the page writes it on the tournament's title line, "Tournament 4: 50 game
 series". A definition may carry a `description` of its own, used when the
 list has no line for its number.
+
+Every tournament spells out its hyperparameters, the settings all its
+games were played under (operator 2026-11-23: "please spell out the
+tourney hyperparameters for each tourney clearly"): how many games, the
+AI level, the players at the table, the victory types, how the civ and
+its strategy were picked, the map, the game speed, the turn limit, the
+ruleset, where the games were played, how a game ended and which build
+of the agent played it. The definitions file lists them under
+`hyperparameters`, by the tournament's number like the descriptions, and
+a tournament carries them as `hyperparameters`, a list of `[name, value]`
+pairs in the order of `HYPERPARAMETERS`, the same for every tournament so
+two of them read side by side. A definition may carry its own, used when
+the list has no line for its number.
 
 Like the home page's civ table this reads a branch every finished game
 writes to, from inside the script that publishes the whole site. So a
@@ -107,6 +121,42 @@ def description(descriptions: dict, number: int, spec: dict) -> str:
         if isinstance(listed, str) and listed.strip():
             return " ".join(listed.split())
     return ""
+
+
+#: A tournament's hyperparameters, in the order the page lists them. A
+#: name the definitions file adds outside this list follows them, in the
+#: file's order.
+HYPERPARAMETERS = (
+    "Games",
+    "AI level",
+    "Players",
+    "Victory types",
+    "Civ",
+    "Strategy",
+    "Map",
+    "Game speed",
+    "Turn limit",
+    "Ruleset",
+    "Played in",
+    "Game end",
+    "CIVVIS agent",
+)
+
+
+def hyperparameters(listed: dict, number: int, spec: dict) -> list[list[str]]:
+    """A tournament's hyperparameters as `[name, value]` pairs in the order
+    of `HYPERPARAMETERS`, or `[]`. The ones listed for its number are the
+    ones shown; without them, its definition's own are. A name or a value
+    that is not a few words is left out."""
+    rank = {name: place for place, name in enumerate(HYPERPARAMETERS)}
+    for given in (listed.get(str(number)), spec.get("hyperparameters")):
+        if not isinstance(given, dict):
+            continue
+        pairs = [[" ".join(name.split()), " ".join(value.split())] for name, value in given.items()
+                 if isinstance(name, str) and name.strip() and isinstance(value, str) and value.strip()]
+        if pairs:
+            return sorted(pairs, key=lambda pair: rank.get(pair[0], len(rank)))
+    return []
 
 
 #: A date as `home_rankings` writes one: `2026-11-19 18:45Z`.
@@ -233,7 +283,7 @@ def benchmark(played: list, days: int = 7) -> dict:
     return {"days": [day[5:] for day in recent], "levels": levels}
 
 
-def series_view(row: dict, spec: dict, names: list[str], videos: dict, descriptions: dict) -> dict:
+def series_view(row: dict, spec: dict, names: list[str], videos: dict, descriptions: dict, listed: dict) -> dict:
     """A series as the page draws it: the table's row and its games."""
     games = [game(result, names) for _, result in row["played"]]
     levels = sorted({g["level"] for g in games if g["level"]})
@@ -243,6 +293,7 @@ def series_view(row: dict, spec: dict, names: list[str], videos: dict, descripti
         "description": description(descriptions, row["id"], spec),
         "name": row["tournament"],
         "idea": spec.get("idea") or "",
+        "hyperparameters": hyperparameters(listed, row["id"], spec),
         "conditions": row["conditions"],
         "note": row["note"],
         "start": plain(row["start"]),
@@ -289,16 +340,17 @@ def passed_over(spec: dict, rows: list[dict]) -> bool:
 
 
 def record(rows: list[dict], specs: list[dict], names: list[str], videos: dict | None = None,
-           descriptions: dict | None = None) -> dict:
+           descriptions: dict | None = None, listed: dict | None = None) -> dict:
     """The page's three lists and the totals over every game counted.
-    `videos` and `descriptions` are the definitions file's own: a result
-    video's address, and a short description, by the number of its
-    tournament."""
+    `videos`, `descriptions` and `listed` are the definitions file's own: a
+    result video's address, a short description and the hyperparameters, by
+    the number of their tournament."""
     series = ranks.tournament_series(rows, specs, detail=True) or []
     started = {row["definition"] for row in series}
     videos = videos if isinstance(videos, dict) else {}
     descriptions = descriptions if isinstance(descriptions, dict) else {}
-    views = [series_view(row, specs[row["definition"]], names, videos, descriptions) for row in series]
+    listed = listed if isinstance(listed, dict) else {}
+    views = [series_view(row, specs[row["definition"]], names, videos, descriptions, listed) for row in series]
     number = max((view["id"] for view in views), default=0)
     scheduled = []
     for place, spec in enumerate(specs):
@@ -312,6 +364,7 @@ def record(rows: list[dict], specs: list[dict], names: list[str], videos: dict |
             "description": description(descriptions, number, spec),
             "name": spec.get("name") or "",
             "idea": spec.get("idea") or "",
+            "hyperparameters": hyperparameters(listed, number, spec),
             "conditions": spec.get("conditions") or "",
             "note": spec.get("note") or "",
             "size": None if spec.get("indefinite") else int(spec.get("series_size") or 10),
@@ -344,7 +397,8 @@ def tournaments(source: pathlib.Path) -> dict | None:
         specs = defined.get("tournaments") or []
         civs = source / "data" / "civs.json"
         names = list(json.loads(civs.read_text(encoding="utf-8"))) if civs.is_file() else []
-        return record(rows, specs, names, defined.get("videos"), defined.get("descriptions"))
+        return record(rows, specs, names, defined.get("videos"), defined.get("descriptions"),
+                      defined.get("hyperparameters"))
     except Exception as error:  # noqa: BLE001 - see the module's last paragraph
         print(f"tournaments_page: the tournaments could not be read ({error!r}); no record", file=sys.stderr)
         return None

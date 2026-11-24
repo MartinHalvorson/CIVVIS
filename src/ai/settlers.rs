@@ -455,7 +455,8 @@ impl BasicAi {
         for batch in candidates.chunks(40) {
             let contains_current = batch.iter().any(|(pos, _)| *pos == from);
             if !contains_current {
-                let goals: HashSet<Pos> = batch.iter().map(|(pos, _)| *pos).collect();
+                let goals: crate::fast_map::FastSet<Pos> =
+                    batch.iter().map(|(pos, _)| *pos).collect();
                 if g.route_step_to_any(uid, &goals).is_none() {
                     continue;
                 }
