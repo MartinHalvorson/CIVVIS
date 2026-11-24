@@ -139,9 +139,16 @@ give a middle one.
 
 A stop's multiplier is the first stop's seconds over its own. The page's
 number is the largest. The line is a scale of multipliers by tenfolds, 1x at
-its right end and the largest goal at its left, so a stop stands at
-`log(multiplier) / log(largest goal)` of the way across. The marks from a
+its right end and its end at its left, so a stop stands at
+`log(multiplier) / log(end)` of the way across. The marks from a
 million up are worded (`1 million x`), so that ten of them fit along the line.
+
+The line's end is the largest goal, or the ledger's `line_to` where that is
+further out (`speedup_timeline.end`). It is 10,000,000x, a tenfold past the
+one goal, since the project owner asked on 2026-11-24: "maybe extend timeline
+out to 10,000,000x". `line_to` is no goal: nothing is aimed at it and nothing
+is costed to it. It is seven tenfolds of line where there were six, so every
+entry stands a seventh nearer its neighbours.
 
 The line runs far past the fastest stop, so the stops stand in a short
 stretch of it. Words that would meet their neighbour's on the same side of
@@ -192,9 +199,11 @@ line, a stop, a projected stop or a goal, takes its side of the line in turn
 (`speedup_timeline.sides`), so two that stand close together go one over the
 line and one under it. The page's number is never a projected stop: it is the
 fastest stop that was measured, and the line is drawn solid only as far as
-that stop. A thousand M5 Maxes are past the 1,000,000x the line ends at, so
-the fleet stands at the line's end as an arrow that points on from it
-(`past` in the slot), with its own figure beside it.
+that stop. A thousand M5 Maxes are past the 1,000,000x goal and short of the
+10,000,000x the line runs out to, so the fleet stands on the line at its own
+place, left of the goal. Until the line was extended it stood at the line's
+end as an arrow that pointed on from it, and a stop past the end of the line
+still does (`past` in the slot), with its own figure beside it.
 
 A projected stop is an entry of `projected`:
 
@@ -214,7 +223,9 @@ page's tables do not show them.
 
 The ledger's `goals` are the multipliers the line is marked with, each under
 a `key` the pages name it by. There is one: 1,000,000x, a game every 18 ms,
-which is 3,333 games a minute, and it is the line's left end. A billion
+which is 3,333 games a minute. It was the line's left end until the line was
+run out a tenfold past it (see The number), and stands six sevenths of the
+way along now. A billion
 stood beside it from 2026-11-22 until the project owner took it off on
 2026-11-24: "Change the timeline to just scale to 1,000,000x (drop the
 1bX)." Two stops have goals of their own as well, a self-play game in 10 s

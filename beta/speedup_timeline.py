@@ -30,11 +30,14 @@ here when the site is published (`beta/home_rankings.py` writes the result
 into the home page's `home-speedup` slot), so the page cannot say a figure the
 ledger does not.
 
-The line is a scale of multipliers by tenfolds, 1x at its right end and the
-largest goal at its left: a stop stands at `log(multiplier) / log(goal)` of
-the way across, which is its `at`. The ledger's `goals` are marked on it, each
-at its own place (operator, 2026-11-22, of the second: "Addd 1 billion x to
-the scaling scale as well").
+The line is a scale of multipliers by tenfolds, 1x at its right end and its
+end at its left: a stop stands at `log(multiplier) / log(end)` of the way
+across, which is its `at`. The ledger's `goals` are marked on it, each at its
+own place (operator, 2026-11-22, of the second: "Addd 1 billion x to the
+scaling scale as well"). The end is the largest goal, or the ledger's
+`line_to` where that is further out (operator, 2026-11-24: "maybe extend
+timeline out to 10,000,000x"): the line then runs on past its last goal, which
+keeps its place, and a stop past that goal stands on the line (see `end`).
 
 Past the fastest stop the line has stops nothing has played yet
 (`projected`; operator, 2026-11-22: "add to out speedup timeline: 10x
@@ -377,8 +380,8 @@ def scale(multiplier: float) -> str:
 
 
 def ticks(goal: float) -> list[dict]:
-    """The marks along the line: every tenfold from 1x up to the largest
-    goal, and that goal itself at its end."""
+    """The marks along the line: every tenfold from 1x up to the multiplier
+    the line ends at (`goal`), and that multiplier itself at its end."""
     marks = [10**power for power in range(math.ceil(math.log10(goal)))] + [goal]
     return [{"times": scale(mark), "at": round(math.log(mark) / math.log(goal), 4)} for mark in marks]
 
@@ -386,9 +389,20 @@ def ticks(goal: float) -> list[dict]:
 def marked(ledger: dict) -> list[dict]:
     """The ledger's goals, smallest first: each the `key` the pages name it by
     and its multiplier (`times`), and `amortized` on one that is reached by
-    many games at once. The line ends at the last."""
+    many games at once. The line ends at the last, or runs on past it (see
+    `end`)."""
     kept = ("key", "times", "amortized")
     return sorted(({name: goal[name] for name in kept if name in goal} for goal in ledger["goals"]), key=lambda goal: goal["times"])
+
+
+def end(ledger: dict) -> float:
+    """The multiplier the line runs out to: the largest goal, or the
+    ledger's `line_to` where that is further out. A line that runs on past
+    its last goal has room for the stops past that goal, which otherwise
+    stand at its end as running on from it. `line_to` is no goal: nothing is
+    aimed at it and nothing is costed to it."""
+    last = marked(ledger)[-1]["times"]
+    return max(last, ledger.get("line_to") or last)
 
 
 #: The hours a rented machine is paid for in a year of playing without a stop.
@@ -506,7 +520,7 @@ def rented(source: pathlib.Path, ledger: dict, measured: list[tuple[dict, list[d
 def projected(ledger: dict, measured: list[tuple[dict, list[dict]]], base: float, goal: float) -> list[dict]:
     """The stops past what was measured, in the ledger's order, for the stops
     as read (`measured`), the baseline's seconds (`base`) and the multiplier
-    the line ends at (`goal`). None when the ledger lists none.
+    the line ends at (`goal`; see `end`). None when the ledger lists none.
 
     A projected stop is a measured stop's multiplier (`over` names the stop)
     times the figure of its newest estimate (`times`), and nothing has run at
@@ -547,8 +561,8 @@ def projected(ledger: dict, measured: list[tuple[dict, list[dict]]], base: float
         if stop.get("amortized") or stop["over"] in shared:
             shared.add(stop["key"])
             amortize(row, base / multiplier, more)
-        # Past the goal the line ends at: it stands at the line's end and
-        # the page says it runs on from there.
+        # Past where the line ends: it stands at the line's end and the
+        # page says it runs on from there.
         if multiplier > goal:
             row["past"] = True
         rows.append(row)
@@ -561,7 +575,8 @@ def timeline(source: pathlib.Path) -> dict | None:
     where it started when it has moved, and its place on the line; the largest
     multiplier, which is the page's number; and the `goals`, smallest first,
     each with the time a game would take at it, its place on the line, which
-    ends at the last, and what renting the rest of the way to it is
+    ends at the last or runs on past it to the ledger's `line_to` (see
+    `end`), and what renting the rest of the way to it is
     estimated to cost (`cost`, with `cloud` saying whose estimate it is and
     of what machine at what price). A stop or a goal whose words would meet
     its neighbour's is `far`: its words stand a row out from the line (see
@@ -576,7 +591,7 @@ def timeline(source: pathlib.Path) -> dict | None:
     try:
         ledger = json.loads((source / LEDGER).read_text(encoding="utf-8"))
         marks = marked(ledger)
-        goal = marks[-1]["times"]
+        goal = end(ledger)
         measured = [(stop, readings(source, stop)) for stop in ledger["stops"]]
         base = measured[0][1][-1]["seconds"]
         stops = []

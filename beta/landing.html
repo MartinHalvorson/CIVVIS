@@ -425,7 +425,8 @@
     .speed-stop.is-end .speed-label { left: auto; right: -5px; align-items: flex-end; text-align: right; }
     .speed-stop.is-start .speed-label { left: -5px; align-items: flex-start; text-align: left; }
     /* A goal is a ring where the stops are dots: nothing has reached it.
-       The largest is the line's left end. */
+       The largest is the line's left end, or stands short of it where the
+       slot has the line run on past it. */
     .speed-finish .speed-dot { background: var(--bg); border: 2px solid var(--gold); box-shadow: none; }
     /* So is a stop past what was measured, in the line's own colour: so
        many times a measured stop, and nothing has played at it. */
@@ -433,7 +434,7 @@
     /* A reading worked out from other measurements and not timed itself is
        a broken ring. */
     .speed-stop.is-worked .speed-dot { background: var(--bg); border: 2px dashed var(--accent); box-shadow: none; }
-    /* A stop past the goal the line ends at is an arrow off its end. */
+    /* A stop past where the line ends is an arrow off its end. */
     .speed-stop.is-past .speed-dot {
       left: -20px; top: -6px; width: 0; height: 0; border: 0; border-radius: 0; background: none;
       border-top: 6px solid transparent; border-bottom: 6px solid transparent; border-right: 10px solid var(--accent);
@@ -445,9 +446,10 @@
     .speed-read { display: block; text-align: inherit; }
     .speed-goal, .speed-second { display: block; text-align: inherit; }
     /* On the line the note stands under the figures, where a stop's other
-       small lines stand, and is wider than the 150px of the rest: three
-       lines and not five. */
-    .speed-aside { display: block; flex: none; width: 200px; margin: 2px 0 0; line-height: 1.3; }
+       small lines stand, and wraps in the 150px every stop's words are
+       given: the slot keeps two stops' words that far apart, so no wider
+       line is sure of its room. */
+    .speed-aside { display: block; margin: 2px 0 0; line-height: 1.3; }
   }
 
   /* The page is four videos, two by two (operator, 2026-11-22): the
@@ -600,10 +602,15 @@
          should have: human player 5 hrs, Firaxis Computer control:
          10-15mins but we should benchmark this with our games, Firaxis
          self-play (test how long this take), CIVVIS self-play, "Parallel
-         games, M5 Max, all 18 cores""), and the line ends at the one goal
-         he kept that day ("Change the timeline to just scale to 1,000,000x
-         (drop the 1bX)"). A stop whose reading was worked out and not timed
-         is a broken ring and says so.
+         games, M5 Max, all 18 cores""), and the line has the one goal he
+         kept that day ("Change the timeline to just scale to 1,000,000x
+         (drop the 1bX)"). It ended at that goal until, later the same day,
+         he had it run a tenfold further ("maybe extend timeline out to
+         10,000,000x"): the goal keeps its place, the line's last mark is
+         10 million x, and the fleet, which is past a million, stands on the
+         line where it was an arrow off its end. Where the line ends is the
+         slot's doing (the ledger's `line_to`). A stop whose reading was
+         worked out and not timed is a broken ring and says so.
 
          After the measured stops come the two nothing has played yet
          (operator, 2026-11-22: "add to out speedup timeline: 10x
@@ -882,7 +889,8 @@
     }
     if (!shown) return;
     // The goals stand each at its own place, the largest at the line's left
-    // end, on the side of the line the slot gives it.
+    // end or short of it where the line runs on past it, on the side of the
+    // line the slot gives it.
     const aimed = new Map((Array.isArray(data.goals) ? data.goals : []).map((goal) => [goal.key, goal]));
     for (const entry of section.querySelectorAll("[data-goal]")) {
       const goal = aimed.get(entry.dataset.goal);
@@ -911,7 +919,7 @@
       entry.classList.add(stop.side === "above" ? "is-above" : "is-below");
       entry.classList.toggle("is-far", !!stop.far);
       entry.classList.toggle("is-start", stop.at > 0.92);
-      // Past the goal the line ends at: it stands at the end, as an arrow.
+      // Past where the line ends: it stands at the end, as an arrow.
       entry.classList.toggle("is-past", !!stop.past);
       entry.title = [entry.querySelector(".speed-what").textContent, shared, stop.past && "It is past the end of this line.", stop.from].filter(Boolean).join(" ");
     }

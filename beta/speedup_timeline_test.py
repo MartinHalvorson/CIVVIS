@@ -8,6 +8,7 @@ import contextlib
 import html
 import io
 import json
+import math
 import pathlib
 import re
 import sys
@@ -135,7 +136,10 @@ class Ledger(unittest.TestCase):
         self.assertIn('<small class="speed-what">One person plays one game of Civilization VI.</small>', stop)
         self.assertIn("  .speed-aside { grid-column: 1 / -1; grid-row: 4;", LANDING)
         wide = LANDING[LANDING.index("@media (min-width: 1120px) {"):]
-        self.assertIn("    .speed-aside { display: block; flex: none; width: 200px;", wide[:wide.index("</style>")])
+        # On the line it wraps in the 150px every stop's words have: the
+        # slot keeps two stops' words that far apart and no further.
+        self.assertIn("    .speed-aside { display: block; margin: 2px 0 0; line-height: 1.3; }", wide[:wide.index("</style>")])
+        self.assertNotRegex(LANDING, r"\.speed-aside \{[^}]*\bwidth:")
         # The room over and under the line is measured from every line of
         # words but the hidden sentence, so the note has its room.
         self.assertIn('filter((line) => !line.hidden && !line.classList.contains("speed-what"))', LANDING)
@@ -278,11 +282,18 @@ class Ledger(unittest.TestCase):
         self.assertTrue(ahead["fleet"]["times"].endswith("x+"))
         self.assertLess(stops["all_cores"]["at"], ahead["scale_up"]["at"])
         self.assertLess(ahead["scale_up"]["at"], ahead["fleet"]["at"])
-        # The line ends at a million, which a thousand M5 Maxes are past: the
-        # fleet stands at the line's end and is marked as running on.
-        self.assertEqual((ahead["fleet"]["at"], ahead["fleet"].get("past")), (1.0, True))
+        # A thousand M5 Maxes are past a million, where the line ended until
+        # the operator had it run out to ten million (2026-11-24: "maybe
+        # extend timeline out to 10,000,000x"): the fleet stands on the line
+        # at its own place, past the goal and short of the end. A stop past
+        # the end of a line still stands at its end, marked as running on
+        # (`test_the_line_runs_out_past_its_last_goal`).
         self.assertGreater(ahead["fleet"]["multiplier"], LEDGER["goals"][-1]["times"])
-        self.assertNotIn("past", ahead["scale_up"])
+        self.assertLess(ahead["fleet"]["multiplier"], speedup_timeline.end(LEDGER))
+        self.assertLess(shown["goals"][-1]["at"], ahead["fleet"]["at"])
+        self.assertLess(ahead["fleet"]["at"], 1.0)
+        for stop in ahead.values():
+            self.assertNotIn("past", stop)
         self.assertIn('entry.classList.toggle("is-past", !!stop.past);', LANDING)
         # And neither is the page's number: that is the fastest measured stop.
         self.assertEqual(shown["fastest"], "all_cores")
@@ -355,14 +366,50 @@ class Ledger(unittest.TestCase):
         self.assertEqual(shown["speedup"], fastest["times"])
         self.assertEqual(shown["fastest"], fastest["key"])
         self.assertEqual(shown["reach"], fastest["at"])
-        # The goals are on the line smallest first, and it ends at the last.
+        # The goals are on the line smallest first, each at its own place:
+        # the last a tenfold short of the line's end, six of its seven
+        # tenfolds along (`test_the_line_runs_out_past_its_last_goal`).
         base = shown["stops"][0]["seconds"]
         self.assertEqual([(goal["key"], goal["times"], goal["time"]) for goal in shown["goals"]],
                          [(goal["key"], speedup_timeline.times(goal["times"]), speedup_timeline.clock(base / goal["times"])) for goal in LEDGER["goals"]])
-        self.assertEqual([goal["at"] for goal in shown["goals"]], [1.0])
+        self.assertEqual([goal["at"] for goal in shown["goals"]], [round(6 / 7, 4)])
         self.assertEqual((shown["goals"][-1]["times"], shown["goals"][-1]["time"]), ("1,000,000x", "18 ms"))
-        self.assertEqual(shown["ticks"][-1], {"times": "1 million x", "at": 1.0})
+        self.assertEqual(shown["ticks"][-1], {"times": "10 million x", "at": 1.0})
         self.assertRegex(shown["speedup"], r"^\d{1,3}(,\d{3})*x$")
+
+    def test_the_line_runs_out_past_its_last_goal(self):
+        # Operator 2026-11-24: "maybe extend timeline out to 10,000,000x".
+        # The line's end is the ledger's `line_to`, and no goal: the one
+        # goal is still the million he kept that day, costed as it was.
+        self.assertEqual(LEDGER["line_to"], 10000000)
+        self.assertEqual([goal["key"] for goal in LEDGER["goals"]], ["million"])
+        self.assertEqual(speedup_timeline.end(LEDGER), 10000000)
+        shown = speedup_timeline.timeline(ROOT)
+        self.assertEqual([tick["times"] for tick in shown["ticks"]],
+                         ["1x", "10x", "100x", "1,000x", "10,000x", "100,000x", "1 million x", "10 million x"])
+        self.assertEqual([tick["at"] for tick in shown["ticks"]], [round(power / 7, 4) for power in range(8)])
+        # Every entry stands at its multiplier's place on the longer line,
+        # and nothing of it is past the end.
+        for row in shown["stops"] + shown["projected"] + shown["goals"]:
+            self.assertAlmostEqual(row["at"], math.log10(row["multiplier"]) / 7, places=3, msg=row["key"])
+            self.assertNotIn("past", row)
+        self.assertEqual([goal["key"] for goal in shown["goals"]], ["million"])
+        self.assertIn("an hour in the cloud", shown["goals"][0]["cost"])
+        # A ledger without it ends at its largest goal, as every ledger did
+        # before, and so does one whose `line_to` is short of that goal. A
+        # stop past the end of such a line stands at its end and says so.
+        ledger = json.loads(json.dumps(LEDGER))
+        del ledger["line_to"]
+        self.assertEqual(speedup_timeline.end(ledger), 1000000)
+        runs = json.loads((ROOT / BENCHMARK).read_text(encoding="utf-8"))["runs"]
+        with tempfile.TemporaryDirectory() as scratch:
+            short = speedup_timeline.timeline(tree(scratch, ledger, runs))
+        self.assertEqual([goal["at"] for goal in short["goals"]], [1.0])
+        self.assertEqual(short["ticks"][-1], {"times": "1 million x", "at": 1.0})
+        fleet = {stop["key"]: stop for stop in short["projected"]}["fleet"]
+        self.assertEqual((fleet["at"], fleet.get("past")), (1.0, True))
+        self.assertEqual(speedup_timeline.end(dict(ledger, line_to=1000)), 1000000)
+        self.assertEqual(speedup_timeline.end(dict(ledger, line_to=None)), 1000000)
 
     def test_every_core_follows_the_games_per_minute_record(self):
         # The stop that plays on every core is the record of
