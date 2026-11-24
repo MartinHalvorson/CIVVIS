@@ -1382,8 +1382,11 @@ class Sound {
   hear(camera, near) {
     this.near = near;
     if (!this.audio) return;
-    const ear = this.audio.listener, at = camera.position, ahead = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion),
-      up = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
+    // Where the eye is in the world (in a headset the camera's own place is
+    // within its rig).
+    const turned = camera.getWorldQuaternion(new THREE.Quaternion()), at = camera.getWorldPosition(new THREE.Vector3());
+    const ear = this.audio.listener, ahead = new THREE.Vector3(0, 0, -1).applyQuaternion(turned),
+      up = new THREE.Vector3(0, 1, 0).applyQuaternion(turned);
     if (ear.positionX) {
       ear.positionX.value = at.x; ear.positionY.value = at.y; ear.positionZ.value = at.z;
       ear.forwardX.value = ahead.x; ear.forwardY.value = ahead.y; ear.forwardZ.value = ahead.z;
@@ -1548,6 +1551,25 @@ class Seat {
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
     this.camera = new THREE.PerspectiveCamera(FIELD.table, 1, 0.1, 200);
+    // A headset (WebXR): the camera stands in a rig, and in a headset it is
+    // the rig that is put where the seat is, the player's own head doing the
+    // looking (`frame`). Each hand's controller points, and a press of its
+    // trigger is a click (`pick`).
+    this.renderer.xr.enabled = true;
+    this.renderer.xr.setReferenceSpaceType("local");
+    this.rig = new THREE.Group();
+    this.rig.add(this.camera);
+    world.scene.add(this.rig);
+    this.pointers = [0, 1].map(which => {
+      const controller = this.renderer.xr.getController(which);
+      const beam = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(0, 0, -1)]),
+        new THREE.LineBasicMaterial({color: 0xd7b66a, transparent: true, opacity: 0.7}));
+      beam.scale.z = 8;
+      controller.add(beam);
+      controller.addEventListener("select", () => this.onSelect && this.onSelect(this.pointed(controller)));
+      this.rig.add(controller);
+      return controller;
+    });
     this.side = "w";
     this.mode = "table";
     // Where the seat is (`rest`), where the player has leaned to (`lean`),
@@ -1716,7 +1738,7 @@ class Seat {
   kick(much) { if (!CALM) this.punch = Math.max(this.punch, much); }
   // How near a point is to the eye, 1 at arm's length and 0 from four
   // squares off.
-  nearness(point) { return Math.max(0, Math.min(1, 1 - (this.camera.position.distanceTo(point) - 1) / 3)); }
+  nearness(point) { return Math.max(0, Math.min(1, 1 - (this.camera.getWorldPosition(new THREE.Vector3()).distanceTo(point) - 1) / 3)); }
 
   // What is under the pointer, nearest first: the square of each piece the
   // line of sight passes through, and then the square of the board it lands
@@ -1726,6 +1748,17 @@ class Seat {
     const box = this.canvas.getBoundingClientRect();
     const at = new THREE.Vector2((event.clientX - box.left) / box.width * 2 - 1, -((event.clientY - box.top) / box.height) * 2 + 1);
     this.ray.setFromCamera(at, this.camera);
+    return this.pick();
+  }
+  // What a headset's controller points at: the same, along its ray.
+  pointed(controller) {
+    controller.updateMatrixWorld(true);
+    const from = new THREE.Vector3().setFromMatrixPosition(controller.matrixWorld);
+    const way = new THREE.Vector3(0, 0, -1).transformDirection(controller.matrixWorld);
+    this.ray.set(from, way);
+    return this.pick();
+  }
+  pick() {
     const pieces = [];
     let mounted;
     for (const hit of this.ray.intersectObjects([...this.world.pieces.values()], true)) {
@@ -1803,6 +1836,7 @@ class Seat {
       // where it looks.
       const top = RIDER_TOPS[this.mounted.userData.kind], at = new THREE.Vector3(0.05, top + 0.43, 0);
       const eye = body.localToWorld(at.clone()), ahead = body.localToWorld(new THREE.Vector3(1.6, top + 0.13, 0)).sub(eye);
+      this.held = {at: eye.clone(), yaw: Math.atan2(-ahead.x, -ahead.z)};
       if (!CALM) eye.y += 0.008 * Math.sin(this.clock * 1.3);
       this.aim(eye, Math.atan2(-ahead.x, -ahead.z), Math.atan2(ahead.y, Math.hypot(ahead.x, ahead.z)), dt);
       return;
@@ -1817,6 +1851,7 @@ class Seat {
     seat.y += 0.42 * this.rise;
     seat.z -= 0.2 * this.rise;
     const eye = body.localToWorld(seat);
+    this.held = {at: eye.clone(), yaw: forward};
     // A living thing under you breathes.
     if (!CALM) eye.y += 0.012 * Math.sin(this.clock * 1.7);
     this.aim(eye, Math.atan2(-ahead.x, -ahead.z), Math.atan2(ahead.y, Math.hypot(ahead.x, ahead.z)), dt);
@@ -1824,6 +1859,13 @@ class Seat {
 
   frame(dt) {
     this.clock += dt;
+    const headset = this.renderer.xr.isPresenting;
+    // In a headset nothing travels the view, shakes it or widens it: what
+    // a body does not feel, an eye in a headset must not be shown.
+    if (headset) { this.blend = null; this.shaking = 0; this.punch = 0; }
+    this.rig.position.set(0, 0, 0);
+    this.rig.quaternion.identity();
+    this.rig.updateMatrixWorld();
     if (this.mode === "ride" && !(this.mounted && this.mounted.parent)) this.mode = "table";
     if (this.mode === "table") this.table(dt);
     else if (this.mode === "ride") this.rider(dt);
@@ -1859,8 +1901,29 @@ class Seat {
       this.camera.position.y += (Math.random() - 0.5) * this.shaking;
       this.shaking *= Math.pow(0.004, dt);
     }
-    this.camera.updateMatrixWorld();
+    if (headset) {
+      // The rig goes where the seat's eye is, turned the way the seat faces
+      // but level: the player's head, not the seat, looks round and up.
+      const place = this.headsetPlace();
+      this.rig.position.copy(place.at);
+      this.rig.rotation.set(0, place.yaw, 0);
+      this.rig.updateMatrixWorld(true);
+    } else this.camera.updateMatrixWorld();
     this.renderer.render(this.world.scene, this.camera);
+  }
+
+  // Where a headset's wearer is put, by seat: on the piece ridden, at its
+  // rider's eye; at the board, standing at their side's edge of it, a little
+  // above it; beside the board, where they got up; thrown, where they are.
+  headsetPlace() {
+    if (this.mode === "ride" && this.held) return this.held;
+    if (this.mode === "aside" && this.stand) {
+      const toBoard = new THREE.Vector3().sub(this.stand);
+      return {at: this.stand.clone(), yaw: Math.atan2(-toBoard.x, -toBoard.z)};
+    }
+    if (this.mode === "thrown" && this.pose) return {at: this.pose.position.clone(), yaw: this.pose.yaw};
+    const white = this.side === "w";
+    return {at: new THREE.Vector3(0, 1.3, white ? 5.8 : -5.8), yaw: white ? 0 : Math.PI};
   }
 }
 
@@ -2622,10 +2685,36 @@ function frame(now) {
   world.tick(dt * slow);
   seat.frame(dt);
   sound.hear(seat.camera, seat.mode === "table" ? 14 : 2.2);
-  requestAnimationFrame(frame);
 }
 seat.blend = null;
-requestAnimationFrame(now => { then = now; el("loading").classList.add("gone"); frame(now); });
+// The renderer's own loop: the window's frames, or a headset's when one is on.
+let first = true;
+seat.renderer.setAnimationLoop(now => {
+  if (first) { first = false; then = now; el("loading").classList.add("gone"); }
+  frame(now);
+});
+
+// ---- a headset
+// "Enter VR" is shown where the browser has an immersive headset to offer.
+// In it the player stands at the board or rides, and points with the
+// controllers; a press of a trigger is a click.
+seat.onSelect = under => point(under);
+const enterVr = el("enter-vr");
+if (navigator.xr && navigator.xr.isSessionSupported) {
+  navigator.xr.isSessionSupported("immersive-vr").then(can => { enterVr.hidden = !can; }).catch(() => {});
+}
+enterVr.addEventListener("click", async () => {
+  if (seat.renderer.xr.isPresenting) { seat.renderer.xr.getSession().end(); return; }
+  try {
+    const session = await navigator.xr.requestSession("immersive-vr", {optionalFeatures: ["hand-tracking"]});
+    await seat.renderer.xr.setSession(session);
+    enterVr.textContent = "Leave VR";
+    sound.start();
+    session.addEventListener("end", () => { enterVr.textContent = "Enter VR"; });
+  } catch (error) {
+    say(`The headset could not be entered: ${error.message || error}`, "wrong");
+  }
+});
 
 // What a frame costs on this machine, in milliseconds: the world's own work
 // and the drawing, over `count` frames, each one made to finish on the
