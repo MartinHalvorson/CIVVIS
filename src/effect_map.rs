@@ -45,7 +45,11 @@ impl EffectMap {
 
     #[inline]
     fn position(&self, key: &str) -> Option<usize> {
-        self.entries.iter().position(|(entry, _)| entry == key)
+        // Inline word compares rather than `==`, which calls the C library's
+        // `memcmp` for every entry whose key has the same length.
+        self.entries
+            .iter()
+            .position(|(entry, _)| crate::specmap::same_bytes(entry.as_bytes(), key.as_bytes()))
     }
 
     #[inline]
