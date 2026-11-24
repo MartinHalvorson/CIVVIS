@@ -88,7 +88,7 @@
 //! settler fates on the next runs with the tag in `~/.civvis-live-force-on`.
 
 use super::settler_never_idles::STRANDED_SITE_MIN_HOLD_TURNS;
-use super::{AdvancedAi, VictoryTarget};
+use super::{AdvancedAi, SiteForecast, VictoryTarget};
 use crate::game::{Action, Game};
 use crate::think;
 use crate::Pos;
@@ -199,6 +199,9 @@ impl AdvancedAi {
         g.wdisk(here, radius)
             .into_iter()
             .filter(|pos| {
+                // One Loyalty forecast for this site, shared by the verdict
+                // and the hold below. See `AdvancedAi::site_forecast_revolt`.
+                let forecast = SiteForecast::new();
                 self.base.valid_settle_site(g, pid, *pos)
                     && !g.blocked_city_sites.contains(pos)
                     && !self.settler_site_is_dead(uid, *pos)
@@ -209,12 +212,13 @@ impl AdvancedAi {
                     && self.exhaustion_site_unpriceable(g, pid, *pos).is_none()
                     && !(science_targeted && Self::inside_rival_sphere(g, pid, *pos))
                     && if loyalty_rate {
-                        self.settle_site_loyalty_verdict(g, pid, *pos).is_none()
+                        self.settle_site_loyalty_verdict_with(g, pid, *pos, &forecast)
+                            .is_none()
                     } else {
-                        self.settle_site_frontier_loyalty_verdict(g, pid, *pos)
+                        self.settle_site_frontier_loyalty_verdict_with(g, pid, *pos, &forecast)
                             .is_none()
                     }
-                    && Self::settle_site_forecast_revolt(g, pid, *pos)
+                    && Self::site_forecast_revolt(g, pid, *pos, &forecast)
                         .filter(|(_, turns)| {
                             science_targeted || *turns < STRANDED_SITE_MIN_HOLD_TURNS
                         })
