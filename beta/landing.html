@@ -317,11 +317,14 @@
      games play many at once, so a time there is amortized, the time from
      one finished game to the next, and each stop there says so (operator,
      the same day: "starting left of CIVVIS self-play (but not including
-     that), we should note that estimates are amortized games"). Past one
-     game a second a stop leads with its games per second and its time per
-     game is the second measure, in brackets under it ("at more than 1 game
-     / second, we should also provide the games per second as the standard
-     measure and (time per game amoritized as the second measure)").
+     that), we should note that estimates are amortized games"). Such a
+     stop leads with its games per second and its time per game is the
+     second measure, in brackets under it ("at more than 1 game / second,
+     we should also provide the games per second as the standard measure
+     and (time per game amoritized as the second measure)"; and of the M5
+     Max's stop, which is under a game a second: "lest have m5 max blurb
+     list amortiized games per second as the primary unit. as this is
+     really amortiization at play").
      The figures are the page's
      `home-speedup` slot, written when the site is published
      (`beta/speedup_timeline.py`), and the section stays hidden on a page
@@ -355,6 +358,10 @@
      its goal a row further down. */
   .speed-second:not([hidden]) ~ .speed-goal { grid-row: 3; }
   .speed-stop.is-fastest .speed-name { color: #fff; }
+  /* A note of the owner's own on a stop, where he wrote one (2026-11-24, on
+     the first stop: "with subtitle note"). In the list it runs the row's
+     whole width, under the name and the figures beside it. */
+  .speed-aside { grid-column: 1 / -1; grid-row: 4; margin-top: 2px; color: var(--muted); font-size: 11.5px; line-height: 1.4; }
   /* Under the line: what amortized means, and whose estimate the goals'
      cloud cost is. */
   .speed-note { max-width: 860px; margin: 8px 0 0; color: var(--faint); font-size: 12px; line-height: 1.5; }
@@ -421,7 +428,8 @@
     .speed-stop.is-end .speed-label { left: auto; right: -5px; align-items: flex-end; text-align: right; }
     .speed-stop.is-start .speed-label { left: -5px; align-items: flex-start; text-align: left; }
     /* A goal is a ring where the stops are dots: nothing has reached it.
-       The largest is the line's left end. */
+       The largest is the line's left end, or stands short of it where the
+       slot has the line run on past it. */
     .speed-finish .speed-dot { background: var(--bg); border: 2px solid var(--gold); box-shadow: none; }
     /* So is a stop past what was measured, in the line's own colour: so
        many times a measured stop, and nothing has played at it. */
@@ -429,7 +437,7 @@
     /* A reading worked out from other measurements and not timed itself is
        a broken ring. */
     .speed-stop.is-worked .speed-dot { background: var(--bg); border: 2px dashed var(--accent); box-shadow: none; }
-    /* A stop past the goal the line ends at is an arrow off its end. */
+    /* A stop past where the line ends is an arrow off its end. */
     .speed-stop.is-past .speed-dot {
       left: -20px; top: -6px; width: 0; height: 0; border: 0; border-radius: 0; background: none;
       border-top: 6px solid transparent; border-bottom: 6px solid transparent; border-right: 10px solid var(--accent);
@@ -440,6 +448,11 @@
     .speed-name { display: block; font-size: 13px; white-space: nowrap; }
     .speed-read { display: block; text-align: inherit; }
     .speed-goal, .speed-second { display: block; text-align: inherit; }
+    /* On the line the note stands under the figures, where a stop's other
+       small lines stand, and wraps in the 150px every stop's words are
+       given: the slot keeps two stops' words that far apart, so no wider
+       line is sure of its room. */
+    .speed-aside { display: block; margin: 2px 0 0; line-height: 1.3; }
   }
 
   /* Between the speed timeline and the videos, the Firaxis Civ 6 AI
@@ -651,10 +664,15 @@
          should have: human player 5 hrs, Firaxis Computer control:
          10-15mins but we should benchmark this with our games, Firaxis
          self-play (test how long this take), CIVVIS self-play, "Parallel
-         games, M5 Max, all 18 cores""), and the line ends at the one goal
-         he kept that day ("Change the timeline to just scale to 1,000,000x
-         (drop the 1bX)"). A stop whose reading was worked out and not timed
-         is a broken ring and says so.
+         games, M5 Max, all 18 cores""), and the line has the one goal he
+         kept that day ("Change the timeline to just scale to 1,000,000x
+         (drop the 1bX)"). It ended at that goal until, later the same day,
+         he had it run a tenfold further ("maybe extend timeline out to
+         10,000,000x"): the goal keeps its place, the line's last mark is
+         10 million x, and the fleet, which is past a million, stands on the
+         line where it was an arrow off its end. Where the line ends is the
+         slot's doing (the ledger's `line_to`). A stop whose reading was
+         worked out and not timed is a broken ring and says so.
 
          After the measured stops come the two nothing has played yet
          (operator, 2026-11-22: "add to out speedup timeline: 10x
@@ -679,8 +697,18 @@
          Synthetic Data Pipeline"". And a stop whose games play many at
          once has a second measure in brackets under its figures, which
          says its time is amortized: the slot's `amortized`, with its games
-         per second (`rate`), which it leads with past one game a second
-         (`lead`). -->
+         per second (`rate`), which it leads with (`lead`): past one game a
+         second from the first, and under it since he asked it of the M5
+         Max's stop that day ("lest have m5 max blurb list amortiized games
+         per second as the primary unit. as this is really amortiization at
+         play"). That stop's goal is worded in games a second with it.
+
+         The first stop is his own play, and says so in his words of the
+         same day ("By "Human Player" change it to "Human Player (me)" with
+         subtitle note: Some are faster, some are slower. I'm a bit on the
+         slower side but 5h seems reasonable."): the name, and the note
+         under its figures (`speed-aside`), the one small line on the
+         chart that is written here and not by the slot. -->
     <section class="speed" id="speed" aria-labelledby="speed-title" hidden>
       <h2 class="speed-title" id="speed-title">Civ Game Speedup - Synthetic Data Pipeline</h2>
       <div class="speed-head">
@@ -694,9 +722,10 @@
           <li class="speed-stop" data-stop="hand">
             <span class="speed-dot" aria-hidden="true"></span>
             <span class="speed-label">
-              <b class="speed-name">Human player</b>
+              <b class="speed-name">Human Player (me)</b>
               <small class="speed-what">One person plays one game of Civilization VI.</small>
               <span class="speed-read"><b data-speed="time"></b> <i data-speed="times"></i></span>
+              <small class="speed-aside">Some are faster, some are slower. I&#8217;m a bit on the slower side but 5h&#160;seems&#160;reasonable.</small>
               <small class="speed-goal" data-speed="goal" hidden></small>
             </span>
           </li>
@@ -951,12 +980,15 @@
   //
   // Where the games play many at once a time is amortized (the slot's
   // `amortized`): the time from one finished game to the next. Such a stop
-  // has a second measure in brackets under its figures. Past one game a
-  // second it leads with its games per second and the second measure is its
-  // time per game; under that it leads with its time and the second measure
-  // is its games per second (operator, 2026-11-24: "at more than 1 game /
-  // second, we should also provide the games per second as the standard
-  // measure and (time per game amoritized as the second measure)").
+  // has a second measure in brackets under its figures. Which of the two
+  // it leads with is the slot's say (`lead`), and the slot has every such
+  // stop lead with its games per second, its time per game the second
+  // measure (operator, 2026-11-24: "at more than 1 game / second, we should
+  // also provide the games per second as the standard measure and (time per
+  // game amoritized as the second measure)", and later of the M5 Max's
+  // stop, under a game a second: "amortiized games per second as the
+  // primary unit"). A row the slot does not have lead so leads with its
+  // time, and its games per second are the second measure.
   (() => {
     let data = null;
     try { data = JSON.parse(document.getElementById("home-speedup").textContent); } catch (_) {}
@@ -1007,7 +1039,8 @@
     }
     if (!shown) return;
     // The goals stand each at its own place, the largest at the line's left
-    // end, on the side of the line the slot gives it.
+    // end or short of it where the line runs on past it, on the side of the
+    // line the slot gives it.
     const aimed = new Map((Array.isArray(data.goals) ? data.goals : []).map((goal) => [goal.key, goal]));
     for (const entry of section.querySelectorAll("[data-goal]")) {
       const goal = aimed.get(entry.dataset.goal);
@@ -1036,7 +1069,7 @@
       entry.classList.add(stop.side === "above" ? "is-above" : "is-below");
       entry.classList.toggle("is-far", !!stop.far);
       entry.classList.toggle("is-start", stop.at > 0.92);
-      // Past the goal the line ends at: it stands at the end, as an arrow.
+      // Past where the line ends: it stands at the end, as an arrow.
       entry.classList.toggle("is-past", !!stop.past);
       entry.title = [entry.querySelector(".speed-what").textContent, shared, stop.past && "It is past the end of this line.", stop.from].filter(Boolean).join(" ");
     }

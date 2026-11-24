@@ -30,11 +30,14 @@ here when the site is published (`beta/home_rankings.py` writes the result
 into the home page's `home-speedup` slot), so the page cannot say a figure the
 ledger does not.
 
-The line is a scale of multipliers by tenfolds, 1x at its right end and the
-largest goal at its left: a stop stands at `log(multiplier) / log(goal)` of
-the way across, which is its `at`. The ledger's `goals` are marked on it, each
-at its own place (operator, 2026-11-22, of the second: "Addd 1 billion x to
-the scaling scale as well").
+The line is a scale of multipliers by tenfolds, 1x at its right end and its
+end at its left: a stop stands at `log(multiplier) / log(end)` of the way
+across, which is its `at`. The ledger's `goals` are marked on it, each at its
+own place (operator, 2026-11-22, of the second: "Addd 1 billion x to the
+scaling scale as well"). The end is the largest goal, or the ledger's
+`line_to` where that is further out (operator, 2026-11-24: "maybe extend
+timeline out to 10,000,000x"): the line then runs on past its last goal, which
+keeps its place, and a stop past that goal stands on the line (see `end`).
 
 Past the fastest stop the line has stops nothing has played yet
 (`projected`; operator, 2026-11-22: "add to out speedup timeline: 10x
@@ -49,11 +52,15 @@ finished game to the next, which no single game takes (operator, 2026-11-24:
 "starting left of CIVVIS self-play (but not including that), we should note
 that estimates are amortized games"). The ledger says which stops and goals
 those are (`amortized`), and a projected stop is one when the stop it
-multiplies is. Each has its games per second beside its time, and past a game
-a second it leads with them (operator, the same day: "on the left side of the
-timeline, at more than 1 game / second, we should also provide the games per
-second as the standard measure and (time per game amoritized as the second
-measure)").
+multiplies is. Each has its games per second beside its time and leads with
+them. Past a game a second that was so from the first (operator, the same
+day: "on the left side of the timeline, at more than 1 game / second, we
+should also provide the games per second as the standard measure and (time
+per game amoritized as the second measure)"), and under it since he asked it
+of the M5 Max's stop, the one amortized entry under a game a second, later
+that day: "lest have m5 max blurb list amortiized games per second as the
+primary unit. as this is really amortiization at play". So such a stop's goal
+is worded in games a second as well.
 
 What renting the rest of the way to a goal would cost stands with each goal
 (`cloud`; operator, 2026-11-22: "we should also estimate the cloud cost in $
@@ -190,15 +197,14 @@ def amortize(row: dict, seconds: float, more: str = "") -> None:
     its `time` is the time from one finished game to the next (`seconds`)
     and not what a game takes. It gains its games a second (`rate`, with
     `more` after the figure when the row is open at its top), and `lead`
-    says `rate` when that is past one game a second: there the page leads
-    with the games a second and gives the time per game as the second
-    measure."""
-    games = 1 / seconds
-    figure, unit = per_second(games).split(" ", 1)
+    says `rate`: the page leads with the games a second and gives the time
+    per game as the second measure, at any rate. Until the operator asked
+    it of the M5 Max's stop too (0.41 games a second), a row under one game
+    a second led with its time."""
+    figure, unit = per_second(1 / seconds).split(" ", 1)
     row["amortized"] = True
     row["rate"] = f"{figure}{more} {unit}"
-    if games > 1:
-        row["lead"] = "rate"
+    row["lead"] = "rate"
 
 
 def figure(value: float) -> str:
@@ -377,8 +383,8 @@ def scale(multiplier: float) -> str:
 
 
 def ticks(goal: float) -> list[dict]:
-    """The marks along the line: every tenfold from 1x up to the largest
-    goal, and that goal itself at its end."""
+    """The marks along the line: every tenfold from 1x up to the multiplier
+    the line ends at (`goal`), and that multiplier itself at its end."""
     marks = [10**power for power in range(math.ceil(math.log10(goal)))] + [goal]
     return [{"times": scale(mark), "at": round(math.log(mark) / math.log(goal), 4)} for mark in marks]
 
@@ -386,9 +392,20 @@ def ticks(goal: float) -> list[dict]:
 def marked(ledger: dict) -> list[dict]:
     """The ledger's goals, smallest first: each the `key` the pages name it by
     and its multiplier (`times`), and `amortized` on one that is reached by
-    many games at once. The line ends at the last."""
+    many games at once. The line ends at the last, or runs on past it (see
+    `end`)."""
     kept = ("key", "times", "amortized")
     return sorted(({name: goal[name] for name in kept if name in goal} for goal in ledger["goals"]), key=lambda goal: goal["times"])
+
+
+def end(ledger: dict) -> float:
+    """The multiplier the line runs out to: the largest goal, or the
+    ledger's `line_to` where that is further out. A line that runs on past
+    its last goal has room for the stops past that goal, which otherwise
+    stand at its end as running on from it. `line_to` is no goal: nothing is
+    aimed at it and nothing is costed to it."""
+    last = marked(ledger)[-1]["times"]
+    return max(last, ledger.get("line_to") or last)
 
 
 #: The hours a rented machine is paid for in a year of playing without a stop.
@@ -506,7 +523,7 @@ def rented(source: pathlib.Path, ledger: dict, measured: list[tuple[dict, list[d
 def projected(ledger: dict, measured: list[tuple[dict, list[dict]]], base: float, goal: float) -> list[dict]:
     """The stops past what was measured, in the ledger's order, for the stops
     as read (`measured`), the baseline's seconds (`base`) and the multiplier
-    the line ends at (`goal`). None when the ledger lists none.
+    the line ends at (`goal`; see `end`). None when the ledger lists none.
 
     A projected stop is a measured stop's multiplier (`over` names the stop)
     times the figure of its newest estimate (`times`), and nothing has run at
@@ -547,8 +564,8 @@ def projected(ledger: dict, measured: list[tuple[dict, list[dict]]], base: float
         if stop.get("amortized") or stop["over"] in shared:
             shared.add(stop["key"])
             amortize(row, base / multiplier, more)
-        # Past the goal the line ends at: it stands at the line's end and
-        # the page says it runs on from there.
+        # Past where the line ends: it stands at the line's end and the
+        # page says it runs on from there.
         if multiplier > goal:
             row["past"] = True
         rows.append(row)
@@ -561,7 +578,8 @@ def timeline(source: pathlib.Path) -> dict | None:
     where it started when it has moved, and its place on the line; the largest
     multiplier, which is the page's number; and the `goals`, smallest first,
     each with the time a game would take at it, its place on the line, which
-    ends at the last, and what renting the rest of the way to it is
+    ends at the last or runs on past it to the ledger's `line_to` (see
+    `end`), and what renting the rest of the way to it is
     estimated to cost (`cost`, with `cloud` saying whose estimate it is and
     of what machine at what price). A stop or a goal whose words would meet
     its neighbour's is `far`: its words stand a row out from the line (see
@@ -570,13 +588,13 @@ def timeline(source: pathlib.Path) -> dict | None:
     number. Every entry has the `side` of the line its words stand on,
     `above` or `below`, taken in turn along the line (see `sides`). A stop, a goal or a
     projected stop whose games play many at once is `amortized`, with its
-    games a second (`rate`), and one past a game a second leads with them
-    (`lead`; see `amortize`). `None` when the revision has no ledger or one
+    games a second (`rate`), which it leads with (`lead`; see `amortize`),
+    and its goal, when it has one, is worded in games a second too. `None` when the revision has no ledger or one
     that cannot be read."""
     try:
         ledger = json.loads((source / LEDGER).read_text(encoding="utf-8"))
         marks = marked(ledger)
-        goal = marks[-1]["times"]
+        goal = end(ledger)
         measured = [(stop, readings(source, stop)) for stop in ledger["stops"]]
         base = measured[0][1][-1]["seconds"]
         stops = []
@@ -605,7 +623,10 @@ def timeline(source: pathlib.Path) -> dict | None:
             if stop.get("amortized"):
                 amortize(row, now["seconds"])
             if "goal_seconds" in stop:
-                row["goal"] = f"goal {clock(stop['goal_seconds'])}, {times(base / stop['goal_seconds'])}"
+                # In the measure the stop leads with: games a second where
+                # the games play many at once, and a game's time elsewhere.
+                aim = per_second(1 / stop["goal_seconds"]) if stop.get("amortized") else clock(stop["goal_seconds"])
+                row["goal"] = f"goal {aim}, {times(base / stop['goal_seconds'])}"
             if times(base / first["seconds"]) != row["times"]:
                 row["was"] = f"{times(base / first['seconds'])} on {day(first['taken'])}"
             stops.append(row)
