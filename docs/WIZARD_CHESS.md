@@ -131,6 +131,18 @@ they look, and sit down again when they look ahead. From one seat
 to another the view travels; it does not cut. A rider does not see their own
 cloak.
 
+**Two players at one laptop** (`game.versus`, `pass`, `World.dress`). "A
+person here", top right, has a second player take the other side instead of
+the engine: the two take turns at the laptop. After each move the board is
+handed over: the seat goes round to the side to move (or flies to the piece
+that player rides), the names of the files and ranks turn to be read from
+there, and it is said whose move it is, with what now threatens that
+player's piece. Each side rides a piece of its own (`game.mounts`), and the
+rider who has just moved stays on their piece, seen from the other side, a
+cloaked figure with their reins. A take back is the last move, whoever made
+it, and the board goes back to them. There is no Elo to set, so it is not
+shown.
+
 **The rider's own hands** (`World.arms`, `World.reach`). What a rider sees
 of themself: two gauntleted fists with gold cuffs and the forearms up to
 them from below the eye. On a knight they hold the reins, which end in them;
@@ -307,14 +319,14 @@ hall (#5766); the pieces alive (#5768); the board hearing a command as it is
 given (#5771); the opponent deliberating (#5772); riding into the blow
 (#5774); each piece its own stone (#5775); the hall's own sound (#5776); the
 hall's light following the game (#5777); riding any piece (#5778); the
-rider's own hands (#5781).
+rider's own hands (#5781); two players at one laptop (#5782).
 
 What is next, most felt first:
 
-- **A second rider: two players.** The other side commanded by a person at
-  the same laptop (taking turns) or on another (the same page over a
-  connection), each riding a piece of their own, each seeing the other's
-  rider on the board.
+- **Two players on two machines.** The same game over a connection, each at
+  their own laptop riding their own piece: the moves sent between the two
+  pages (a peer connection, or a small relay), each seeing the other's rider
+  move in real time.
 - **Speed: measured, and there is room.** `wizardChess.frameCost(n)` times
   `n` frames of the world's work and drawing, each finished on the graphics
   card (a pixel read back), and names what drew them. On the shared Mac
@@ -405,6 +417,6 @@ of that is built.
   microphone only when Space or the microphone button is first held.
 - There is no clock, no opening book of its own, no saved games beyond the
   one in progress (kept in the browser, and set down again on return), and
-  no two-player mode.
+  two players play at one laptop only (not yet over a connection).
 - Nothing weaker than Elo 1320 (see above).
 - Not built for a phone: it works by touch, but the layout is a laptop's.
