@@ -1498,7 +1498,10 @@ fn rapid_city_expansion_2_does_not_switch_to_conquest_after_easy_sites_are_full(
     let occupied: BTreeSet<Pos> = game.cities.values().map(|city| city.pos).collect();
     for position in game.map.tiles.keys().copied() {
         if !occupied.contains(&position) {
-            std::sync::Arc::make_mut(&mut game.blocked_city_sites).insert(position);
+            std::sync::Arc::make_mut(
+                &mut std::sync::Arc::make_mut(&mut game.host).blocked_city_sites,
+            )
+            .insert(position);
         }
     }
 
@@ -5040,8 +5043,10 @@ fn a_freshly_hit_city_outranks_an_undamaged_city_under_the_same_army() {
     // Use the host-observed city strengths to reproduce the live shape: the
     // recently hit city can have more local support while an undamaged
     // neighbour has the worse raw hostile/friendly ratio.
-    std::sync::Arc::make_mut(&mut game.observed_city_strength).insert(recent, 200.0);
-    std::sync::Arc::make_mut(&mut game.observed_city_strength).insert(quiet, 190.0);
+    std::sync::Arc::make_mut(&mut std::sync::Arc::make_mut(&mut game.host).observed_city_strength)
+        .insert(recent, 200.0);
+    std::sync::Arc::make_mut(&mut std::sync::Arc::make_mut(&mut game.host).observed_city_strength)
+        .insert(quiet, 190.0);
     game.cities.get_mut(&recent).unwrap().hp = 180;
     game.cities.get_mut(&recent).unwrap().last_attacked = game.turn;
 
@@ -5063,7 +5068,8 @@ fn a_freshly_hit_city_outranks_an_undamaged_city_under_the_same_army() {
         "a fresh city hit must outrank a slightly worse ratio at an undamaged neighbour"
     );
 
-    std::sync::Arc::make_mut(&mut game.observed_city_strength).insert(quiet, 20.0);
+    std::sync::Arc::make_mut(&mut std::sync::Arc::make_mut(&mut game.host).observed_city_strength)
+        .insert(quiet, 20.0);
     let overwhelming_quiet_pressure = AdvancedAi::city_pressure(&game, 0, quiet);
     assert!(
         overwhelming_quiet_pressure - recent_pressure >= FRESH_CITY_DAMAGE_PRIORITY,
@@ -5079,7 +5085,8 @@ fn a_freshly_hit_city_outranks_an_undamaged_city_under_the_same_army() {
     // while the host still reports the city's breached health bars. The
     // critically damaged city must remain the emergency target when the
     // neighbouring ratio is only modestly worse.
-    std::sync::Arc::make_mut(&mut game.observed_city_strength).insert(quiet, 190.0);
+    std::sync::Arc::make_mut(&mut std::sync::Arc::make_mut(&mut game.host).observed_city_strength)
+        .insert(quiet, 190.0);
     game.cities.get_mut(&recent).unwrap().hp = 120;
     game.cities.get_mut(&recent).unwrap().last_attacked = 0;
     let damaged_pressure = AdvancedAi::city_pressure(&game, 0, recent);
@@ -10515,7 +10522,10 @@ fn live_loyalty_alarm_prioritizes_praetorium_for_a_falling_governed_city() {
         },
     );
     game.cities.get_mut(&city).unwrap().loyalty = 80.75;
-    std::sync::Arc::make_mut(&mut game.observed_city_loyalty_per_turn).insert(city, -4.73438);
+    std::sync::Arc::make_mut(
+        &mut std::sync::Arc::make_mut(&mut game.host).observed_city_loyalty_per_turn,
+    )
+    .insert(city, -4.73438);
 
     let frozen = AdvancedAi::new();
     assert!(!frozen.loyalty_policy_needed(&game, 0));

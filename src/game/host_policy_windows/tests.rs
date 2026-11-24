@@ -22,7 +22,8 @@ fn unslot(card: &str) -> Action {
 }
 
 fn window(g: &mut Game, open: bool) {
-    g.host_policy_windows
+    std::sync::Arc::make_mut(&mut g.host)
+        .host_policy_windows
         .insert(0, HostPolicyWindow { turn: g.turn, open });
 }
 

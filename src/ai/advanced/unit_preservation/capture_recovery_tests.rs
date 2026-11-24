@@ -25,7 +25,7 @@ fn breach() -> (Game, u32, u32, Action) {
         unit: ours,
         target: g.cities[&city].pos,
     };
-    std::sync::Arc::make_mut(&mut g.host_previews).insert(
+    std::sync::Arc::make_mut(&mut std::sync::Arc::make_mut(&mut g.host).host_previews).insert(
         (ours, g.cities[&city].pos, false),
         crate::game::HostStrikePreview {
             attacker_strength: 95.0,
@@ -128,9 +128,10 @@ fn standing_walls_do_not_release_the_recovery_latch() {
 #[test]
 fn a_lethal_native_retaliation_bound_still_withholds_the_capture() {
     let (mut g, ours, city, attack) = breach();
-    let preview = std::sync::Arc::make_mut(&mut g.host_previews)
-        .get_mut(&(ours, g.cities[&city].pos, false))
-        .unwrap();
+    let preview =
+        std::sync::Arc::make_mut(&mut std::sync::Arc::make_mut(&mut g.host).host_previews)
+            .get_mut(&(ours, g.cities[&city].pos, false))
+            .unwrap();
     preview.attacker_strength = 40.0;
     preview.defender_strength = 140.0;
     assert!(!policy(None).preservation_finishing_safe(&g, 0, std::slice::from_ref(&attack)));
