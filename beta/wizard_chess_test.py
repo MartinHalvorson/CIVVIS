@@ -240,6 +240,8 @@ class Played(unittest.TestCase):
         self.until("wizardChess.game.played.length >= 2 && !wizardChess.game.busy", "the opponent answers", seconds=120)
         played = ev("wizardChess.game.played.map(entry => [entry.san, entry.by])")
         self.assertEqual(played[0], ["e4", "w"])
+        # Each piece its own stone: the pawn's going was sounded as a pawn's.
+        self.assertIn(["slide", "p"], ev("wizardChess.sound.heard"))
         self.assertEqual(played[1][1], "b")
         self.assertEqual(ev("[wizardChess.game.position.turn, wizardChess.world.pieces.size]"), ["w", 32])
         # It deliberated: its pieces shifted their weight while it thought,
@@ -338,6 +340,10 @@ class Played(unittest.TestCase):
                    "Math.abs(wizardChess.seat.camera.position.x - 2.0) < 0.1 && wizardChess.seat.camera.position.z < 2.2",
                    "the rider is carried to f3", seconds=120)
         self.assertEqual(ev("wizardChess.game.played[0].san"), "Nf3")
+        # The knight ridden came down on its hooves, and breathed out.
+        heard = ev("wizardChess.sound.heard")
+        self.assertIn(["set", "n"], heard)
+        self.assertIn(["snort", "n"], heard)
         # Riding into the blow: the knight ridden takes, and as the blow lands
         # at the rider's side the world's time slows for a moment.
         ev("wizardChess.opponent.stop(), wizardChess.begin('w', ['g1f3', 'e7e5']), wizardChess.game.turn++; wizardChess.seat.blend = null")
