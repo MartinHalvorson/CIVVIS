@@ -44,6 +44,8 @@ function tween(seconds, step, curve = ease.inOut) {
   });
 }
 const wait = seconds => tween(seconds, () => {}, ease.line);
+// The short way from one angle to another.
+const turnBy = (from, to) => ((to - from + Math.PI) % TAU + TAU) % TAU - Math.PI;
 function advance(dt) {
   for (const held of [...running]) {
     held.at += dt;
@@ -289,7 +291,7 @@ class World {
       cloak: new THREE.ConeGeometry(0.13, 0.5, 14), hood: new THREE.SphereGeometry(0.075, 14, 10),
       // And what makes it a living thing to the one on its back: a mane, two
       // ears that turn, an eye, a bit and the reins to the rider's hands.
-      tuft: new THREE.ConeGeometry(0.05, 0.17, 5), ear: new THREE.ConeGeometry(0.04, 0.16, 4),
+      tuft: new THREE.ConeGeometry(0.04, 0.12, 5), ear: new THREE.ConeGeometry(0.04, 0.16, 4),
       eye: new THREE.SphereGeometry(0.032, 12, 8), bit: new THREE.TorusGeometry(0.035, 0.009, 6, 16)};
     this.material = {
       w: new THREE.MeshStandardMaterial({color: 0xe6dcc6, roughness: 0.36, metalness: 0.02, map: stoneTexture("#f1ead9", "rgba(140,120,90,0.3)", 5)}),
@@ -363,11 +365,15 @@ class World {
   }
 
   face(held) {
-    if (held.userData.kind !== "n") return;
-    // A ridden knight looks where its rider does: straight at the enemy.
-    if (held === this.ridden) { held.userData.body.rotation.y = held.userData.facing; return; }
+    if (held.userData.kind === "n") held.userData.body.rotation.y = this.rest(held);
+  }
+  // Where a knight looks when nothing calls it: a ridden knight where its
+  // rider does, straight at the enemy; the others a little in toward the
+  // middle of the board.
+  rest(held) {
+    if (held === this.ridden) return held.userData.facing;
     const inward = sqX(held.userData.square) < 0 ? -1 : 1, side = held.userData.colour === "w" ? 1 : -1;
-    held.userData.body.rotation.y = held.userData.facing + inward * side * 0.95;
+    return held.userData.facing + inward * side * 0.95;
   }
 
   // The knight the player rides: it wears a cloth over its mane in its
@@ -395,7 +401,7 @@ class World {
       part(made.trim, this.cloth.gold, -0.18, 0.69, 0, -0.38);
       // The mane, from the cloth up to between the ears, pointing back.
       [[-0.235, 0.98], [-0.2, 1.07], [-0.165, 1.15], [-0.135, 1.23], [-0.115, 1.3]].forEach(([x, y], at) => {
-        part(made.tuft, this.material[colour], x - 0.03, y, at % 2 ? 0.03 : -0.03, 0.95);
+        part(made.tuft, this.material[colour], x - 0.015, y, at % 2 ? 0.02 : -0.02, 1.15).scale.set(1, 1, 0.45);
       });
       // Ears, each on a pivot so that it can turn toward what it hears.
       const ears = [-1, 1].map(side => {
@@ -785,6 +791,28 @@ class World {
     hooks.look(null);
   }
 
+  // A piece that could take the knight ridden leans toward it, as if about
+  // to come, and a knight among them turns its head to it. When the threat
+  // ends it straightens. A piece that is moving is left to its move.
+  loom(dt) {
+    const prey = this.ridden;
+    for (const held of this.pieces.values()) {
+      const data = held.userData;
+      if (held === this.moving) { data.loom = 0; continue; }
+      if (data.menace && prey) data.toward = prey.position.clone().sub(held.position).setY(0);
+      const want = data.menace && prey ? 0.13 + 0.035 * Math.sin(this.time * 5 + data.square) : 0;
+      data.loom = (data.loom || 0) + (want - (data.loom || 0)) * Math.min(1, dt * 4);
+      if (!data.toward) continue;
+      if (data.loom > 0.003) this.lean(held, data.toward, data.loom);
+      else { held.quaternion.identity(); data.loom = 0; }
+      if (data.kind === "n") {
+        const body = data.body, aim = data.menace && prey ? Math.atan2(-data.toward.z, data.toward.x) : this.rest(held);
+        body.rotation.y += turnBy(body.rotation.y, aim) * Math.min(1, dt * 5);
+      }
+      if (!data.menace && data.loom === 0) data.toward = null;
+    }
+  }
+
   // The knight ridden listens: its ears turn toward the piece that is
   // moving and prick up, and between moves they drift and twitch. Its eyes
   // close now and then.
@@ -829,6 +857,7 @@ class World {
     const pulse = 0.4 + 0.3 * Math.sin(this.time * 6);
     this.mark.check.material.opacity = pulse;
     this.attend(dt);
+    this.loom(dt);
     // Rubble: thrown, falling, coming to rest on the board, and then gone.
     const place = new THREE.Object3D();
     for (const heap of [...this.debris]) {
@@ -1026,8 +1055,6 @@ const EYE = new THREE.Vector3(-0.46, 1.24, 0.5);
 const AHEAD = new THREE.Vector3(1.6, 1.02, 0.5);
 const FLOOR = -0.62, STANDING = FLOOR + 0.8;
 const FIELD = {table: 36, ride: 64, thrown: 70, aside: 58};
-const turnBy = (from, to) => ((to - from + Math.PI) % TAU + TAU) % TAU - Math.PI;
-
 class Seat {
   constructor(canvas, world) {
     this.canvas = canvas;
@@ -1056,6 +1083,7 @@ class Seat {
     this.blend = null;
     this.focus = null;
     this.watching = null;
+    this.alarm = null;
     this.follow = true;
     this.shaking = 0;
     this.fit = 16;
@@ -1197,6 +1225,8 @@ class Seat {
   straighten() { this.lean = {yaw: 0, pitch: 0, zoom: 1}; this.gaze = {yaw: 0, pitch: 0, field: 1, at: -10}; }
 
   look(point) { this.focus = point && this.follow ? point.clone() : null; }
+  // A rider's head snaps round to a new threat, and holds there a moment.
+  glance(point, seconds = 1.8) { this.alarm = point ? {point: point.clone().setY(0.9), until: this.clock + seconds} : null; }
   shake(much) { if (!CALM) this.shaking = Math.max(this.shaking, much); }
 
   // What is under the pointer, nearest first: the square of each piece the
@@ -1250,11 +1280,12 @@ class Seat {
     yaw += this.gaze.yaw;
     pitch += this.gaze.pitch;
     const free = this.clock - this.gaze.at > 2.2;
-    const seen = this.focus || (this.watching && this.watching !== this.mounted ? this.watching.position.clone().setY(0.7) : null);
+    const alarmed = this.alarm && this.clock < this.alarm.until ? this.alarm.point : null;
+    const seen = this.focus || alarmed || (this.watching && this.watching !== this.mounted ? this.watching.position.clone().setY(0.7) : null);
     if (seen && free) {
       const way = seen.clone().sub(eye);
       if (way.lengthSq() > 0.25) {
-        const much = this.focus ? 0.85 : 0.6;
+        const much = this.focus || alarmed ? 0.85 : 0.6;
         yaw += turnBy(yaw, Math.atan2(-way.x, -way.z)) * much;
         pitch += (Math.atan2(way.y, Math.hypot(way.x, way.z)) - pitch) * much;
       }
@@ -1495,6 +1526,8 @@ function peril(quiet = false) {
   if (!quiet && named && named !== game.threats) {
     say(`${el("said").textContent} Your knight is threatened by the ${named}.`.trim(), "peril");
     sound.play("peril");
+    const first = world.pieces.get(threats[0].from);
+    if (first) seat.glance(first.position);
   }
   game.threats = named;
 }
@@ -1598,6 +1631,43 @@ async function answer() {
 }
 
 // A command, however it was given.
+// A move after which the knight ridden can be taken, by its own going or by
+// what it uncovers, is asked about first: the rider goes with their knight.
+// What has been asked once in a position is not asked again.
+function risks(move) {
+  const sq = world.ridden ? world.ridden.userData.square : -1;
+  if (sq < 0) return false;
+  const after = play(game.position, move), at = move.from === sq ? move.to : sq;
+  return legalMoves(after).some(answer => answer.to === at);
+}
+function act(move) {
+  const key = `${positionKey(game.position)} ${uci(move)}`;
+  if (risks(move) && game.asked !== key) {
+    game.asked = key;
+    game.risky = move;
+    const own = world.ridden && move.from === world.ridden.userData.square;
+    el("risk-said").textContent = own
+      ? `Your knight can be taken on ${squareName(move.to)}, and you with it. Ride on?`
+      : `After ${spoken(game.position, move)}, your knight can be taken, and you with it. Play it?`;
+    el("risk").hidden = false;
+    el("risk-go").focus();
+    voice.say(own ? "You will be taken there. Ride on?" : "Your knight will be taken. Play it?");
+    sound.play("peril");
+    return;
+  }
+  game.risky = null;
+  el("risk").hidden = true;
+  say(`You: ${spoken(game.position, move)}.`);
+  make(move, game.side);
+}
+function settle(go) {
+  const move = game.risky;
+  el("risk").hidden = true;
+  game.risky = null;
+  if (go && move) act(move);
+  else say("You hold your ground.");
+}
+
 function command(text, quiet = false) {
   if (game.over || game.busy) return false;
   if (game.position.turn !== game.side) { if (!quiet) say("It is not your move yet.", "wrong"); return false; }
@@ -1606,14 +1676,19 @@ function command(text, quiet = false) {
     if (!quiet) { say(read.error, "wrong"); sound.play("no"); }
     return false;
   }
-  say(`You: ${spoken(game.position, read.move)}.`);
-  make(read.move, game.side);
+  act(read.move);
   return true;
 }
 
 function heard(options, final) {
   if (!options.length) return;
   if (!final) { say(options[0], "heard"); return; }
+  // Asked whether to ride on, a yes or a no is the answer.
+  if (game.risky) {
+    const said = options.join(" ").toLowerCase();
+    if (/\b(yes|yeah|ride|go|charge|onward|play)\b/.test(said)) { settle(true); return; }
+    if (/\b(no|stay|hold|wait|stop)\b/.test(said)) { settle(false); return; }
+  }
   // What was heard comes as several guesses: the first that is a move is it.
   for (const option of options) if (command(option, true)) return;
   command(options[0]);
@@ -1643,6 +1718,8 @@ function begin(side = game.side, moves = []) {
   }
   el("ended").hidden = true;
   el("promote").hidden = true;
+  el("risk").hidden = true;
+  game.risky = null;
   world.set(game.position);
   world.letter(side);
   world.offer([]);
@@ -1693,7 +1770,7 @@ function askPromotion(moves) {
     button.type = "button";
     button.textContent = GLYPH[move.promo];
     button.title = PIECE_NAMES[move.promo.toLowerCase()];
-    button.addEventListener("click", () => { el("promote").hidden = true; say(`You: ${spoken(game.position, move)}.`); make(move, game.side); });
+    button.addEventListener("click", () => { el("promote").hidden = true; act(move); });
     box.appendChild(button);
   }
   el("promote").hidden = false;
@@ -1732,8 +1809,7 @@ function point(under) {
   const what = meant(under);
   if (what.moves) {
     if (what.moves.length > 1) { askPromotion(what.moves); return; }
-    say(`You: ${spoken(game.position, what.moves[0])}.`);
-    make(what.moves[0], game.side);
+    act(what.moves[0]);
   } else if (what.choose !== undefined) {
     choose(what.choose);
     sound.play("pick");
@@ -1798,7 +1874,7 @@ window.addEventListener("keydown", event => {
   }
   sound.start();
   if (event.code === "Space") { event.preventDefault(); if (!event.repeat) voice.listen(); return; }
-  if (event.key === "Escape") { choose(-1); el("promote").hidden = true; return; }
+  if (event.key === "Escape") { choose(-1); el("promote").hidden = true; if (game.risky) settle(false); return; }
   if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "z") { event.preventDefault(); takeBack(); return; }
   if (event.metaKey || event.ctrlKey || event.altKey) return;
   if (event.key === "ArrowLeft") seat.turn(-0.12, 0);
@@ -1823,6 +1899,8 @@ el("take-back").addEventListener("click", takeBack);
 el("play-white").addEventListener("click", () => { if (game.side !== "w" || game.played.length) begin("w"); });
 el("play-black").addEventListener("click", () => { if (game.side !== "b" || game.played.length) begin("b"); });
 el("ended-again").addEventListener("click", () => begin(game.side));
+el("risk-go").addEventListener("click", () => settle(true));
+el("risk-stay").addEventListener("click", () => settle(false));
 el("ended-look").addEventListener("click", () => { el("ended").hidden = true; });
 el("opt-sound").checked = sound.on;
 el("opt-speak").checked = voice.speaks;
@@ -1879,4 +1957,4 @@ requestAnimationFrame(now => { then = now; el("loading").classList.add("gone"); 
 
 // For the checks (beta/wizard_chess_test.py), and for anyone at the console.
 window.wizardChess = {game, world, seat, sound, opponent, command, begin, takeBack, running, meant, point, choose, make, ride, origins,
-  mountSquare, moveFromUci};
+  mountSquare, moveFromUci, peril, settle};
