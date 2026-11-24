@@ -1212,6 +1212,116 @@ class AGoldBarRisesUpTheVictoryTrackerWithTheTurn(unittest.TestCase):
         self.assertIn("container: turn-gauge / size;", rule(".turn-gauge"))
 
 
+TURN_GAUGE_NEW_GAME_SCENARIOS = r"""
+let state = {};
+__CLOCK__
+let bar = null;
+const did = [];
+const document = {querySelector: selector => { did.push(["find", selector]); return bar; }};
+const standing = () => ({
+  classList: {add: name => did.push(["hold", name]), remove: name => did.push(["release", name])},
+  style: {setProperty: (name, value) => did.push(["put", name, value])},
+  get offsetHeight() { did.push(["read"]); return 0; },
+});
+__SETTLE__
+const eq = (actual, wanted, note) => {
+  if (JSON.stringify(actual) !== JSON.stringify(wanted))
+    throw new Error(`${note}: got ${JSON.stringify(actual)}, wanted ${JSON.stringify(wanted)}`);
+};
+const settled = world => { state = world; did.length = 0; settleTurnGauge(); return did.slice(); };
+const found = ["find", "#victoryhud .turn-gauge"];
+const at = rise => [found, ["hold", "turn-gauge-settling"], ["put", "--rise", rise], ["read"],
+                    ["release", "turn-gauge-settling"]];
+// The bar of the game that just ended is still in the document. It is put at
+// the new game's turn while its motion is held off: the hold goes on before
+// the turn is written, the layout is read while it is on, and only then does
+// it come off.
+bar = standing();
+eq(settled({turn:1, turn_limit:250, seed:2}), at("0%"), "turn 1 of 250");
+// A new game first seen a few turns in stands on that turn, not at the foot.
+eq(settled({turn:3, turn_limit:250, seed:3}), at("0.8%"), "first seen on turn 3");
+eq(settled({turn:126, max_turns:251, seed:4}), at("50%"), "a game wound back to its middle");
+// The height is the one the redraw is about to write, to the figure.
+state = {turn:181, victory_turn:180, turn_limit:250};
+eq(settled(state)[2][2], /--rise:([\d.]+%)/.exec(turnGauge())[1], "the redraw's own height");
+// A new game with no cap draws no bar: nothing is put anywhere, and the
+// redraw takes the old bar away.
+eq(settled({turn:1, turn_limit:null, seed:5}), [found], "an uncapped new game");
+// A page's first world has no bar in the document yet.
+bar = null;
+eq(settled({turn:1, turn_limit:250, seed:6}), [found], "the first world");
+console.log("turn gauge new game checks passed");
+"""
+
+
+@unittest.skipUnless(NODE, "no node on this host; CI runners have one")
+class ANewGamesGoldBarStartsAtItsFirstTurn(unittest.TestCase):
+    """Operator, 2026-11-24: "on civvis have gold bar immediately start at
+    1/250 rather than a motion down", and then "between games that is". The
+    bar glides to each new turn, so a new game began with it gliding down
+    from where the last game ended."""
+
+    def setUp(self):
+        self.source = (ASSETS / "app.js").read_text(encoding="utf-8")
+        self.clock = (ASSETS / "app_clock.js").read_text(encoding="utf-8")
+        self.page = INDEX.read_text(encoding="utf-8")
+        settle = self.clock[self.clock.index("function settleTurnGauge() {"):]
+        self.settle = settle[:settle.index("\n}\n") + 3]
+
+    def test_the_bar_is_put_at_the_new_games_turn_with_its_motion_held_off(self):
+        gauge = self.source[self.source.index("function reportedTurn("):
+                            self.source.index("function victoryMeterFill(")]
+        script = (TURN_GAUGE_NEW_GAME_SCENARIOS.replace("__CLOCK__", gauge)
+                  .replace("__SETTLE__", self.settle))
+        done = subprocess.run([NODE, "-e", script], capture_output=True, text=True, timeout=60)
+        self.assertEqual(done.returncode, 0, done.stderr.strip())
+        self.assertIn("turn gauge new game checks passed", done.stdout)
+
+    def test_it_happens_when_the_world_on_screen_is_a_new_one_and_before_the_redraw(self):
+        # A new world is the page's own reading of one, another game or the
+        # same game wound back, and the stopwatch is told of it once the
+        # world is on screen and before anything is redrawn for it. The bar
+        # is settled there, in the script that is loaded ahead of the
+        # renderer: app.js is at its ceiling and gains no line by this.
+        self.assertIn("  const newWorld = !state || st.seed !== state.seed || st.turn < state.turn;", self.source)
+        arrival = self.source[self.source.index("  const newWorld = !state ||"):]
+        self.assertLess(arrival.index("\n  state = st;\n"), arrival.index("  syncLiveClock(st, newWorld);"))
+        self.assertNotIn("drawPlayerHud(", arrival[:arrival.index("  syncLiveClock(st, newWorld);")])
+        self.assertNotIn("settleTurnGauge", self.source)
+        sync = self.clock[self.clock.index("function syncLiveClock(st, newWorld) {"):]
+        sync = sync[:sync.index("\n}\n")]
+        new_world = sync[sync.index("  if (newWorld) {"):sync.index("\n  }\n")]
+        self.assertIn("    settleTurnGauge();", new_world)
+        self.assertEqual(self.clock.count("settleTurnGauge();"), 1)
+        self.assertIn("`turnGauge`", self.clock[:self.clock.index("let liveClock = {")])
+        # It reads the height off the bar the redraw is about to draw, so
+        # the two cannot stand apart.
+        self.assertIn("/--rise:([\\d.]+%)/.exec(turnGauge())?.[1]", self.settle)
+        self.assertIn('document.querySelector("#victoryhud .turn-gauge")', self.settle)
+
+    def test_the_hold_stops_every_part_of_the_bar_that_glides(self):
+        page = self.page
+        gauge = page[page.index("  .turn-gauge {"):page.index("  .overlay-options {")]
+        # Every part of the bar that glides to a new turn...
+        gliding = sorted(selector.strip() for selector, body in re.findall(r"\n  ([^{}\n]+) \{([^}]*)\}", gauge)
+                         if "transition:" in body and "none" not in body)
+        self.assertEqual(gliding, [".turn-gauge > i", ".turn-gauge-fill", ".turn-gauge-scale"])
+        # ...is held by the one rule, which stands after them all.
+        hold = ("  .turn-gauge.turn-gauge-settling > .turn-gauge-fill,\n"
+                "  .turn-gauge.turn-gauge-settling > i,\n"
+                "  .turn-gauge.turn-gauge-settling > .turn-gauge-scale { transition: none; }\n")
+        self.assertIn(hold, gauge)
+        for selector in gliding:
+            self.assertLess(gauge.index(f"  {selector} {{"), gauge.index(hold))
+        # The parts are the bar's own children, as the hold's selectors say.
+        drawn = self.source[self.source.index("function turnGauge() {"):]
+        drawn = drawn[:drawn.index("\n}\n")]
+        self.assertIn('<span class="turn-gauge-fill"></span><i></i>', drawn)
+        self.assertIn("turn-gauge-settling", self.settle)
+        # The markup never names the hold, so a redraw cannot leave it on.
+        self.assertNotIn("turn-gauge-settling", self.source)
+
+
 @unittest.skipUnless(NODE, "no node on this host; CI runners have one")
 class AHundredSeatMastheadStaysOnItsShare(unittest.TestCase):
     """Operator, 2026-11-09: the player HUD should cap "such that it isn't taking
