@@ -572,7 +572,10 @@ fn ahead_plays_the_turns_to_come_and_comes_back_to_the_open_turn() {
     assert_eq!(marked(&run), [1, 2, 3, 4, 5]);
     assert_eq!(answer["debug"]["last"], json!(5));
     let readings = answer["readings"].as_array().expect("a reading a turn");
-    let turns: Vec<_> = readings.iter().map(|reading| reading["turn"].clone()).collect();
+    let turns: Vec<_> = readings
+        .iter()
+        .map(|reading| reading["turn"].clone())
+        .collect();
     assert_eq!(turns, [json!(3), json!(4), json!(5)]);
     assert!(answer["alerts"].is_array());
     // Asked again, it goes on from the end of what is kept, not from here.
@@ -590,14 +593,18 @@ fn ahead_plays_the_turns_to_come_and_comes_back_to_the_open_turn() {
     assert_eq!(world(&stepped), world(&run));
     // It needs a number of turns, as `play` does.
     let none = run.debug(&json!({"op": "ahead", "strategy": "jack", "lean": true}));
-    assert!(none["error"].as_str().is_some_and(|error| error.contains("ahead needs turns")));
+    assert!(none["error"]
+        .as_str()
+        .is_some_and(|error| error.contains("ahead needs turns")));
     // A turn the seat has played in is not left: coming back would undo it.
     let mut acted = played();
     step_as(&mut acted, "jack");
     let action = something_to_do(&acted);
     assert_eq!(acted.act(&action), None);
     let refused = acted.debug(&json!({"op": "ahead", "turns": 1, "lean": true}));
-    assert!(refused["error"].as_str().is_some_and(|error| error.contains("played in")));
+    assert!(refused["error"]
+        .as_str()
+        .is_some_and(|error| error.contains("played in")));
 }
 
 /// `play` is a run of steps asked for once: the same turns, the same marks to

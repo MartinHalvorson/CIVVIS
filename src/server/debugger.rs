@@ -1725,11 +1725,22 @@ impl Session {
                 None if !game.players[0].alive => "The seat is out of the game".to_string(),
                 None => "The game ends".to_string(),
             };
-            let kind = if game.winner == Some(0) { "won" } else { "over" };
-            alerts.push((game.turn, json!({"turn": game.turn, "kind": kind, "text": text})));
+            let kind = if game.winner == Some(0) {
+                "won"
+            } else {
+                "over"
+            };
+            alerts.push((
+                game.turn,
+                json!({"turn": game.turn, "kind": kind, "text": text}),
+            ));
         }
         alerts.sort_by_key(|(turn, _)| *turn);
-        alerts.into_iter().take(MOST).map(|(_, alert)| alert).collect()
+        alerts
+            .into_iter()
+            .take(MOST)
+            .map(|(_, alert)| alert)
+            .collect()
     }
 
     /// What an agent decides that is not an action: its standing preferences
