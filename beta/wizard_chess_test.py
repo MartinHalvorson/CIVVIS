@@ -24,6 +24,11 @@ the opponent answers with a legal move. A browser that will not draw in
 three dimensions (no WebGL) cannot open the board, and that part is skipped
 there with a word saying so.
 
+Set aside on 2026-11-24 (operator: "lets set aside wizard chess right now.
+please remove from civvis.ai"): the game is kept in the tree and is not
+published. Everything here reads and serves it from `beta/` itself, so it
+stays checked while it is off the site.
+
     python3 beta/wizard_chess_test.py
 """
 
@@ -135,11 +140,15 @@ class Page(unittest.TestCase):
         # Its range is read from what the engine says of itself.
         self.assertIn(r"option name UCI_Elo type spin default \d+ min (\d+) max (\d+)", engine)
 
-    def test_publish_sets_its_parts_beside_its_page(self):
-        self.assertIn('chess_page="$source_tree/beta/chess.html"\n', PUBLISH)
-        self.assertIn('  cp "$chess_page" "$out/$chess_at/index.html"\n', PUBLISH)
-        self.assertIn('  if [ -d "$chess_parts" ]; then cp -R "$chess_parts" "$out/$chess_at/chess"; fi\n', PUBLISH)
-        self.assertIn('  pages+=("$chess_at")\n', PUBLISH)
+    def test_it_is_set_aside_and_publish_leaves_it_here(self):
+        # From 2026-11-23 `publish.sh` set the page at /wizard-chess/ with
+        # its parts beside it. Set aside, it copies nothing of the game into
+        # a lane, and says why where the block stood. Putting the game back
+        # on the site is the revert of the pull request that took it off
+        # (docs/WIZARD_CHESS.md names it).
+        self.assertEqual(
+            [line for line in PUBLISH.splitlines() if "chess" in line.lower() and not line.lstrip().startswith("#")], [])
+        self.assertIn("# Wizard Chess is set aside and no lane carries it (operator 2026-11-24:\n", PUBLISH)
 
 
 class Quiet(http.server.SimpleHTTPRequestHandler):

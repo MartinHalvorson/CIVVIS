@@ -6,7 +6,7 @@
 # the engine compiled to WebAssembly beside it, the landing page at /home, the
 # pages of Charts/ under /charts (AI Interpretability, Civ Analytics, Win
 # Analytics, ELO Rankings, CIVVIS Performance), the Tournaments page at
-# /tournaments, the downloads page at /download and Wizard Chess at /wizard-chess — a
+# /tournaments and the downloads page at /download — a
 # plain directory of static files with no
 # host-specific anything beyond the two Cloudflare Pages control files, which
 # any other host simply ignores. Every link between the pages is
@@ -175,10 +175,6 @@ elo_page="$source_tree/beta/elo.html"
 civs_page="$source_tree/beta/civs.html"
 performance_page="$source_tree/beta/performance.html"
 interpretability_page="$source_tree/beta/interpretability.html"
-chess_page="$source_tree/beta/chess.html"
-# What Wizard Chess is made of beside its page: its scripts, and the two
-# things it did not write (three.js and the Stockfish engine, chess/vendor).
-chess_parts="$source_tree/beta/chess"
 pages=()
 without=()
 
@@ -224,7 +220,6 @@ civs_at="$(address "$civs_page" civs)"
 performance_at="$(address "$performance_page" performance)"
 interpretability_at="$(address "$interpretability_page" interpretability)"
 download_at="$(address "$download_page" download)"
-chess_at="$(address "$chess_page" chess)"
 
 # A lane built from some other revision than the invoking tree's is pinned:
 # the stable lane, on every deployment.
@@ -379,18 +374,10 @@ if [ -f "$download_page" ]; then
 else
   without+=(download)
 fi
-# Wizard Chess (operator 2026-11-23: "below civ 6, add wizard chess"): a
-# game of its own, with nothing of the simulator in it. The page, and beside
-# it the directory it loads its scripts and its engine from, as they stand:
-# nothing here is filled or rewritten.
-if [ -f "$chess_page" ]; then
-  mkdir -p "$out/$chess_at"
-  cp "$chess_page" "$out/$chess_at/index.html"
-  if [ -d "$chess_parts" ]; then cp -R "$chess_parts" "$out/$chess_at/chess"; fi
-  pages+=("$chess_at")
-else
-  without+=(wizard-chess)
-fi
+# Wizard Chess is set aside and no lane carries it (operator 2026-11-24:
+# "lets set aside wizard chess right now. please remove from civvis.ai"). It
+# was published at /wizard-chess from 2026-11-23. The game stays in the tree
+# (beta/chess.html, beta/chess/, docs/WIZARD_CHESS.md); nothing here copies it.
 if [ "${#without[@]}" -gt 0 ]; then
   echo "   $short does not have every page, and its lane is published without: ${without[*]}"
 fi
