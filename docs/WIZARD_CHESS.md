@@ -126,8 +126,8 @@ happening: a capture most of all, and any piece that moves. A drag, two
 fingers or an arrow key turn the head instead (take hold of the world and
 pull it), and the head stays where it was put for two seconds. The
 knight's head is on the rider's left: turned toward it they rise in the
-saddle and lean in to see over it (`Seat.rise`), the more the further round
-they look, and sit down again when they look ahead. From one seat
+saddle and lean in to see over it (`Seat.rise`), fully by half a right angle
+round, and sit down again when they look ahead. From one seat
 to another the view travels; it does not cut. A rider does not see their own
 cloak.
 
@@ -186,7 +186,7 @@ up onto what it becomes.
 **The knight ridden** (`World.ride`) wears a cloth over its neck in its
 side's colour, with its rider sitting behind its ears, so that from the
 board it is plain which knight is ridden. It is alive to the one on its
-back (`World.attend`): a mane of stone, an eye lit from inside with its
+back (`World.attend`): a carved crest of mane along its neck, an eye lit from inside with its
 side's light that closes now and then, a bit and reins that run back to the
 rider's hands, and ears that turn toward the piece that is moving and prick
 up while it moves. It breathes out as it lands, and the stone groans under
@@ -331,6 +331,10 @@ loop). The structure that makes that converge rather than wander:
 4. **Measured, not guessed.** Frame time on this Mac's own GPU, the
    engine's Elo from its own scale, and what a test can see (where the
    camera is, which pieces glow) rather than "looks right".
+5. **Played, every few slices.** A tick that builds nothing new: a game
+   ridden against the engine, a picture after every exchange, and what
+   breaks the feeling fixed. Slices are each looked at alone; a game puts
+   them together, and finds what none of them showed (#5788).
 
 Done: the rider's seat (#5747); the rider low and beside the head, and
 sound where it happens (#5755); the knight ridden alive (#5757); peril felt
@@ -341,7 +345,7 @@ given (#5771); the opponent deliberating (#5772); riding into the blow
 hall's light following the game (#5777); riding any piece (#5778); the
 rider's own hands (#5781); two players at one laptop (#5782); the headset
 seat (#5784); the fallen and the commanding hand (#5785); a knight that
-gathers and lands (#5786).
+gathers and lands (#5786); a played game, and what it found (#5788).
 
 What is next, most felt first:
 

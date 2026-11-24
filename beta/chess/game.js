@@ -425,7 +425,7 @@ class World {
       cloak: new THREE.ConeGeometry(0.13, 0.5, 14), hood: new THREE.SphereGeometry(0.075, 14, 10),
       // And what makes it a living thing to the one on its back: a mane, two
       // ears that turn, an eye, a bit and the reins to the rider's hands.
-      tuft: new THREE.ConeGeometry(0.03, 0.075, 5), ear: new THREE.ConeGeometry(0.04, 0.16, 4),
+      ear: new THREE.ConeGeometry(0.04, 0.16, 4),
       eye: new THREE.SphereGeometry(0.032, 12, 8), bit: new THREE.TorusGeometry(0.035, 0.009, 6, 16),
       // The rider's own hands, gauntleted, and their forearms: what a rider
       // sees of themself.
@@ -573,10 +573,14 @@ class World {
       // Over the back of the neck, along the line of the mane.
       part(made.cloth, this.cloth[colour], -0.25, 0.86, 0, -0.38);
       part(made.trim, this.cloth.gold, -0.18, 0.69, 0, -0.38);
-      // The mane, from the cloth up to between the ears, pointing back.
-      [[-0.235, 0.98], [-0.2, 1.07], [-0.165, 1.15], [-0.135, 1.23], [-0.115, 1.3]].forEach(([x, y], at) => {
-        part(made.tuft, this.material[colour], x + 0.005, y, at % 2 ? 0.015 : -0.015, 1.35).scale.set(1, 1, 0.35);
-      });
+      // The mane: one carved crest of stone along the back of the neck, from
+      // the cloth up to between the ears (tufts of it read as spikes).
+      const crest = new THREE.CatmullRomCurve3([[-0.245, 0.95], [-0.215, 1.05], [-0.175, 1.14], [-0.14, 1.23], [-0.11, 1.31]]
+        .map(([x, y]) => new THREE.Vector3(x - 0.012, y, 0)));
+      const mane = new THREE.Mesh(new THREE.TubeGeometry(crest, 24, 0.03, 6), this.material[colour]);
+      mane.scale.z = 0.55;
+      mane.castShadow = true;
+      saddle.add(mane);
       // Ears, each on a pivot so that it can turn toward what it hears.
       const ears = [-1, 1].map(side => {
         const pivot = new THREE.Group();
@@ -1894,7 +1898,9 @@ class Seat {
     // in the saddle and lean in, so as to see over it, the more the further
     // round they look.
     const across = this.head ? turnBy(forward, this.head.yaw) : 0;
-    this.rise += (Math.max(0, Math.min(1, (across - 0.3) / 0.8)) - this.rise) * Math.min(1, dt * 5);
+    // Fully risen by half a right angle round: the head is in the way of
+    // anything ahead and to the left.
+    this.rise += (Math.max(0, Math.min(1, (across - 0.15) / 0.55)) - this.rise) * Math.min(1, dt * 5);
     const seat = EYE.clone();
     seat.y += 0.42 * this.rise;
     seat.z -= 0.2 * this.rise;
