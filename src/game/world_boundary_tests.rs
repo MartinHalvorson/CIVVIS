@@ -133,12 +133,29 @@ fn blank(save: &mut Value, path: &str, zero: bool) {
     }
 }
 
-/// A save with every field outside the world blanked.
+/// A save with every field outside the world blanked. A list whose every
+/// field is outside the world (the event log, turn stats, the war chronicle)
+/// goes whole: its length is history too, and the engine merges a repeated
+/// note into the last one, so blanked texts would merge differently.
 fn world_only(
     mut save: Value,
     layers: &BTreeMap<String, String>,
     zero: &BTreeSet<String>,
 ) -> Value {
+    let mut whole: BTreeMap<&str, bool> = BTreeMap::new();
+    for (path, layer) in layers {
+        if let Some((top, _)) = path.split_once("[*].") {
+            if !top.contains('.') {
+                let outside = OUTSIDE.contains(&layer.as_str());
+                *whole.entry(top).or_insert(true) &= outside;
+            }
+        }
+    }
+    for (top, outside) in whole {
+        if outside {
+            blank(&mut save, top, false);
+        }
+    }
     for (path, layer) in layers {
         if OUTSIDE.contains(&layer.as_str()) {
             blank(&mut save, path, zero.contains(path));
