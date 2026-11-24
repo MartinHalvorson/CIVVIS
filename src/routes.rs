@@ -374,6 +374,17 @@ pub fn pace(session: &mut Session, parsed: &Value) -> Value {
     out
 }
 
+/// `POST /fog-honest` — `{"on": true}` makes every Civ AI at the table plan
+/// on what its civilization can see, `false` on the whole board
+/// (`Session::set_fog_honest`). Anything else changes nothing. The answer is
+/// the state, which says what the table is set to.
+pub fn fog_honest(session: &mut Session, parsed: &Value) -> Value {
+    if let Some(on) = parsed["on"].as_bool() {
+        session.set_fog_honest(on);
+    }
+    session.state()
+}
+
 /// The shared answer from `POST /step`. Native uses `advanced` to publish a
 /// spectator frame after the lock is released; the browser uses the answer
 /// directly and advances its frame sequence in its own single-threaded loop.

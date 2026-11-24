@@ -9734,6 +9734,11 @@ pub struct AdvancedAi {
     /// Exodus of the Evangelists whenever the age offers it. See
     /// `advanced/religious_seat_dedicates_to_the_evangelists.rs`. Off by default.
     religious_seat_dedicates_to_the_evangelists: bool,
+    /// `raiders-holding-a-settler-are-hunted`: the objective board raises a
+    /// Destroy row against hostiles within four tiles of a Settler of ours in
+    /// the field, priced with the Settler. See
+    /// `advanced/raiders_holding_a_settler.rs`. Off by default.
+    raiders_holding_a_settler_are_hunted: bool,
     // ---- append: s-s ------------------------------------------------
     /// `score-seat-raises-wonders`: a Score seat keeps a wonder going in its
     /// capital from turn 40 (Online) and in a second city from turn 90, as a
@@ -12581,6 +12586,9 @@ mod emptied_camp_is_taken;
 /// `first-ship-closes-the-dark-age`: see
 /// `advanced/first_ship_closes_the_age.rs`.
 mod first_ship_closes_the_age;
+/// `raiders-holding-a-settler-are-hunted`: see
+/// `advanced/raiders_holding_a_settler.rs`.
+mod raiders_holding_a_settler;
 /// Version two of rapid city expansion keeps the measured-positive opening
 /// pace and safety gates without version one's forced queues, sprawl, or war.
 pub(super) mod rapid_city_expansion;
@@ -26966,6 +26974,14 @@ impl Ai for AdvancedAi {
 
     fn site_shortcuts(&self) -> crate::ai::SiteShortcuts {
         self.base.site_shortcuts()
+    }
+
+    /// The one difference between [`AdvancedAi::enable_engine_repairs`] and
+    /// [`AdvancedAi::enable_native_deployment`]: a major plans its turn on a
+    /// fog-redacted copy of the board and replays the plan on the board
+    /// (`player::take_turn`), or plans on the board itself.
+    fn set_fog_honest(&mut self, on: bool) {
+        self.observed_player = on;
     }
 
     fn strategy_label(&self) -> Option<&'static str> {

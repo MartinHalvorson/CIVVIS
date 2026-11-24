@@ -3187,6 +3187,7 @@ def check_doctor_strange(bar: Bar, address: str) -> None:
     said = {name: [text, off] for name, text, off in bar.ev(words) if name != "numbers"}
     assert said == {"play": ["▶ Play both", False], "back10": ["−10", True], "back1": ["−1", True], "on1": ["+1", False],
                     "on10": ["+10", False], "branch": ["⑂ Branch B here", False], "fork": ["⏮ To the fork", True],
+                    "lock": ["🔒 Locked", False],
                     "say": ["One world so far. Play, and each Civ AI takes it its own way", False],
                     "follow-a": ["Following", True], "follow-b": ["Follow", False],
                     "turn": ["1", False], "limit": ["", False], "era": ["Ancient era", False]}, said
@@ -3217,6 +3218,39 @@ def check_doctor_strange(bar: Bar, address: str) -> None:
     bar.ev("(() => { const g = strangeGeometry(); strange.canvas.dispatchEvent(new MouseEvent('click',"
            " {clientX: g.cx, clientY: strangeY(g, 3, strange.cam), bubbles: true})); return true; })()")
     bar.until(f"{both(3)} && strangeIdle()", "a press on the highway plays to its turn")
+    # Locked, which is how the worlds begin, they go through the turns
+    # together (operator 2026-11-23: "the doctor strange tool should step
+    # through turns in sync when locked (which is the default). always on the
+    # same turn"). Each is asked for the same next turn at once and holds it
+    # unshown until the other has played its own, so neither is ever seen a
+    # turn ahead, and each plays every turn with its own Civ AI.
+    steps = "debugSplit.panes.{0}.frame.contentWindow.eval('engine.sent.filter(call => call.path === \"/debug\" && call.body.op === \"step\").length')".format
+    stepped = bar.ev(f"[{steps('a')}, {steps('b')}]")
+    bar.ev("window.strangeGaps = []; window.strangeWatch = setInterval(() =>"
+           " strangeGaps.push(debugSplit.panes.a.turn - debugSplit.panes.b.turn), 4); true")
+    bar.click('#strange-hud [data-strange="on10"]')
+    bar.until(f"{both(13)} && strangeIdle()", "ten turns on, both worlds together")
+    gaps = bar.ev("clearInterval(strangeWatch), strangeGaps")
+    assert gaps and max(map(abs, gaps)) <= 1, gaps
+    assert bar.ev(f"[{steps('a')}, {steps('b')}]") == [stepped[0] + 10, stepped[1] + 10]
+    # Paused, the two stop together, on the turn both were asked for.
+    bar.click('#strange-hud [data-strange="play"]')
+    bar.until("debugSplit.panes.a.turn >= 16", "Play both plays on")
+    bar.click('#strange-hud [data-strange="play"]')
+    bar.until("strange.run === null && strangeIdle()", "Pause stops both")
+    paused = bar.ev("[debugSplit.panes.a.turn, debugSplit.panes.b.turn, document.querySelector('#strange-hud [data-strange=\"say\"]').textContent]")
+    assert paused[0] == paused[1] and paused[2] == f"Paused on turn {paused[0]}", paused
+    # Unlocked, each world goes by itself: a turn back is the followed one's
+    # (B's, here) alone, and each says its own turn.
+    bar.click('#strange-hud [data-strange="lock"]')
+    assert bar.ev("[debugSplit.locked, document.querySelector('#strange-hud [data-strange=\"lock\"]').textContent]") == [False, "🔓 Unlocked"]
+    turn = paused[0]
+    bar.click('#strange-hud [data-strange="back1"]')
+    bar.until(f"debugSplit.panes.b.turn === {turn - 1} && debugSplit.panes.a.turn === {turn} && strangeIdle()", "B alone goes back a turn")
+    assert bar.ev("document.querySelector('#strange-hud [data-strange-line=\"a\"]').textContent").startswith(f"Turn {turn}")
+    # Locking again brings the other world to the followed one's turn first.
+    bar.click('#strange-hud [data-strange="lock"]')
+    bar.until(f"debugSplit.locked && {both(turn - 1)} && strangeIdle()", "locked again, on B's turn")
     assert not bar.dev.console, f"the page complained: {bar.dev.console}"
 
     # With no room for two worlds the game is on its one timeline, which is
@@ -3361,7 +3395,9 @@ def main() -> int:
               "the tree of their timeline: the open turn is the line across the middle, forward in time is up and "
               "the tree is wider ahead; B begins with a Civ AI of its own, a turn played forks the tree, Branch here "
               "lets the other branch go and keeps it on the tree, both worlds go back as they stood, either can be "
-              "followed, and a press on the highway goes to its turn; a narrow window has the one timeline and says why.")
+              "followed, and a press on the highway goes to its turn; locked, the two go through the turns together, never "
+              "seen a turn apart, and pause together, and unlocked they go by themselves until locked again on the followed "
+              "one's turn; a narrow window has the one timeline and says why.")
         return 0
     finally:
         chrome.terminate()

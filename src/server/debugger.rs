@@ -1155,6 +1155,9 @@ impl Session {
             self.ais[seat] = mind;
             self.ais[seat].attach_journal(self.journal.handle());
         }
+        // A mind kept before the table's fog setting was changed plays on
+        // under the setting the table has now.
+        self.seat_fog();
     }
 
     /// A half that is kept becomes the game itself (`Panes::adopt`), and from
@@ -1232,6 +1235,9 @@ impl Session {
         let resumed = self.resumed_next_game_params.take();
         let (rival_yields, own_yields) = (self.keeps_rival_yields, self.keeps_own_yields);
         let mut next = Session::from_saved_game(self.params.clone(), game);
+        // The world gone back to is this table's: it keeps the table's Fog-honest
+        // AI setting, which every agent seated below takes.
+        next.set_fog_honest(self.fog_honest);
         if let Some(name) = rivals {
             let _ = next.seat_rivals(&name);
         }
@@ -1262,6 +1268,7 @@ impl Session {
     /// is given (`panes.rs`).
     pub(super) fn fork(&self) -> Session {
         let mut next = Session::from_saved_game(self.params.clone(), self.game.clone());
+        next.set_fog_honest(self.fog_honest);
         if let Some(name) = &self.rival_strategy {
             let _ = next.seat_rivals(name);
         }

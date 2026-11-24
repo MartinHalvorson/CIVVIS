@@ -111,7 +111,7 @@ fn only_reads(method: &str, path: &str) -> bool {
 
 /// Whether a request is one a pane answers from its own session.
 pub(super) fn concerns_a_world(method: &str, path: &str) -> bool {
-    const WORLD: [(&str, &str); 20] = [
+    const WORLD: [(&str, &str); 21] = [
         ("GET", "/state"),
         ("GET", "/rules"),
         ("GET", "/pedia"),
@@ -130,6 +130,7 @@ pub(super) fn concerns_a_world(method: &str, path: &str) -> bool {
         ("POST", "/city-focus"),
         ("POST", "/city-citizen"),
         ("POST", "/view"),
+        ("POST", "/fog-honest"),
         ("POST", "/new"),
         ("POST", "/supervisor-new"),
     ];
@@ -331,6 +332,7 @@ pub(super) fn answer(
         ("POST", "/city-focus") => whole(crate::routes::city_focus(session, parsed)),
         ("POST", "/city-citizen") => whole(crate::routes::city_citizen(session, parsed)),
         ("POST", "/view") => whole(crate::routes::view(session, parsed)),
+        ("POST", "/fog-honest") => whole(crate::routes::fog_honest(session, parsed)),
         // A new game is the whole screen's to start, not half of it.
         ("POST", "/new") | ("POST", "/supervisor-new") => {
             let mut out = session.state();

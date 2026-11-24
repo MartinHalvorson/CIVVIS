@@ -1264,6 +1264,25 @@ What a term reads is the omniscient observation, the spectator's view of the
 whole table. That is right for a searcher looking at a world, and it says
 nothing about what a fog-honest player could have known ("Fog-honest AI").
 
+## Fog-honest AI
+
+The masthead's turn box has a **Fog-honest AI** row, True or False (operator
+2026-11-23: "it should pretty much always be set to true"). True, every Civ
+AI at the table plans its turn on what its own civilization can see and
+remembers, and replays the plan on the board (`ai::player::take_turn`);
+False, it plans on the whole board. Every world the engine deals opens True,
+and False lasts for the world on screen. It is the world's setting
+(`POST /fog-honest`, `Session::set_fog_honest`), so each half of a split
+keeps its own, a half begins with the setting of the world it was copied
+from, and the agents kept with a turn play on under the setting the table
+has now when that turn is walked back to. City-states, barbarians and
+TrainingWheels are scripted and read the board either way.
+
+What a breakpoint or Autosearch reads is not fog-honest and does not claim
+to be: a condition and a search's number are read off the omniscient
+observation, the spectator's view of the whole table. That is the searcher
+looking at the world, not a player looking at it.
+
 ## Doctor Strange's Civ 6
 
 Operator, 2026-11-23: "it will have a scrolling guitar hero setup. where the
@@ -1306,6 +1325,24 @@ in the engine knows about it. `beta/shim.js` seats the visitor for
 - **Going back** (the step buttons, To the fork, or a press on the highway at
   a turn's height) puts both worlds back as they stood. The turns they hold
   ahead of the open one stay on the tree, above the line.
+- **Locked, the worlds go through the turns together** (operator
+  2026-11-23: "the doctor strange tool should step through turns in sync
+  when locked (which is the default). always on the same turn. difference
+  being only the intentional differentces: like say 2 diferent player
+  startegies"). The AI Debugger's own locked run plays A and has B follow
+  it, and A asks for its next turn before B has played the last, so B fell
+  turns behind. Here the page asks both worlds for the same next turn at once
+  (`strangeAsk`, a `pane-follow` with `hold`), each with its own Civ AI, and
+  each holds the turn it has played, unshown, until the other has played its
+  own (`pane-ready`, `pane-show`): both are shown it together, and only then
+  is the next turn asked for. A turn a world has already played along its own
+  timeline is walked to as it stood. Pause stops both on the turn they were
+  asked for. A world that cannot play the turn (its game is over) ends the
+  run and says so. The worlds differ only in what is chosen for each.
+- **The lock** is a button on the panel, locked to begin with. Unlocked, each
+  world plays and goes back by itself, its name plate says its own turn, and
+  the step buttons move the followed world. Locking again brings the other
+  world to the followed one's turn first.
 - **Ahead of the last turn played nothing is known**, and what is drawn there
   says so: a thin dashed line straight on and a fan of ways it could still
   go, a fork every few turns, each closing as the open turn reaches it. It is

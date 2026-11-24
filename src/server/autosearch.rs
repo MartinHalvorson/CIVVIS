@@ -1244,7 +1244,7 @@ fn world(seed: u64, spec: &Spec, fog_honest: Option<bool>) -> Result<Session, St
     params.spectate = false;
     let mut session = Session::new(params);
     if let Some(on) = fog_honest {
-        let _ = on; // TEMP-FOG session.set_fog_honest(on);
+        session.set_fog_honest(on);
     }
     ask(
         &mut session,

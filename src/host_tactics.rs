@@ -1150,6 +1150,10 @@ impl<A: Ai> Ai for HostTacticsSeat<A> {
         self.inner.site_shortcuts()
     }
 
+    fn set_fog_honest(&mut self, on: bool) {
+        self.inner.set_fog_honest(on);
+    }
+
     fn strategy_label(&self) -> Option<&'static str> {
         self.inner.strategy_label()
     }
