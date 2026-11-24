@@ -71,6 +71,7 @@ use serde_json::{json, Value};
 use super::debugger::{as_number, Test};
 use super::Session;
 use crate::game::Game;
+use crate::shared_sort::SharedSort;
 
 /// The most terms one of the four lists holds.
 const MOST_TERMS: usize = 8;
@@ -821,7 +822,7 @@ impl Search {
     /// a turn outside it, is refused.
     pub fn offer(&mut self, plan: Plan) -> Result<bool, String> {
         let mut plan = plan;
-        plan.sort_by_key(|(turn, _)| *turn);
+        plan.sort_by_key_shared(|(turn, _)| *turn);
         let Some(first) = plan.first_mut() else {
             return Err("a line names at least one Civ AI".to_string());
         };
@@ -990,7 +991,7 @@ impl Search {
                     .any(|other| Search::dominates(other, &self.lines[at]))
             })
             .collect();
-        self.front.sort_by(|&one, &other| {
+        self.front.sort_by_shared(|&one, &other| {
             if Search::better(&self.lines[one], &self.lines[other]) {
                 std::cmp::Ordering::Less
             } else if Search::better(&self.lines[other], &self.lines[one]) {
