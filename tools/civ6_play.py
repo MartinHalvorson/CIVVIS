@@ -154,6 +154,26 @@ def _event_seconds(text) -> float | None:
     return None
 
 
+def firaxis_self_play_unseat(event: dict) -> None:
+    """Read a self-play game's ending as nobody's, in place.
+
+    The mod's victory and defeat rows are the ones every game writes: `won`
+    compares the winner with the local player's team and `ours` the defeated
+    player with the local player. Under autoplay the local player should be
+    nobody (-1), which makes both false already. Should the engine name the
+    seat it observes instead, that seat's win would hold the victory film as
+    ours and its elimination would end the run with the game still going. The
+    row on disk keeps what the mod wrote; what the mod said goes beside it.
+    """
+    kind = event.get("kind")
+    if kind == "victory" and "won" in event:
+        event["won_by_local_player"] = event["won"]
+        event["won"] = False
+    elif kind == "defeat" and "ours" in event:
+        event["local_player_defeated"] = event["ours"]
+        event["ours"] = False
+
+
 def firaxis_self_play_note(reading: dict, event: dict) -> None:
     """Keep what a self-play run's summary is built from, row by row.
 
@@ -7891,6 +7911,10 @@ def _play(args: argparse.Namespace) -> int:
         # watched it between runs and no treatment could ever be judged on it.
         "founds": [], "cities_at_60": None,
     }
+    if self_play is not None:
+        # Where `record` finds it: the relay reads the run's state and nothing
+        # else of this function's.
+        state["firaxis_self_play"] = self_play
 
     # ⚠⚠⚠ A KILLED RUN LEFT NO RECORD AT ALL, AND THAT IS MOST OF THEM.
     #
@@ -8093,8 +8117,10 @@ def _play(args: argparse.Namespace) -> int:
         events.write(json.dumps(event, sort_keys=True) + "\n")
         events.flush()
         kind = event.get("kind")
-        if self_play is not None:
-            firaxis_self_play_note(self_play, event)
+        if state.get("firaxis_self_play") is not None:
+            # After the row is on disk as the mod wrote it.
+            firaxis_self_play_unseat(event)
+            firaxis_self_play_note(state["firaxis_self_play"], event)
         # Deal sessions closed with the rival's reply still owed: the rival
         # turn that hangs behind one is not waited out (`ai_stall_window`).
         hung_rivals.note(event)

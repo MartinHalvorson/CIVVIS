@@ -2363,6 +2363,8 @@ def play_command(args, tag: str, orders_db: Path, orders_bin: Path,
 # the game started only once it is gone, so a game that crashes, a harness
 # that is killed and a loop that is restarted all find no marker. A file that
 # cannot be removed starts nothing: it would otherwise start one every cycle.
+# A seat that is not ready for the game (`firaxis_self_play_blocked`) leaves
+# the file alone and says why; the next cycle looks again.
 #
 # ★ HERE, NOT IN THE SUPERVISOR. The supervisor is one long-lived shell that
 # runs the loop it parsed when it started; this script is started afresh from
@@ -2380,15 +2382,64 @@ FIRAXIS_SELF_PLAY_DIFFICULTY = "DIFFICULTY_DEITY"
 FIRAXIS_SELF_PLAY_OBSERVE_NONE = "observe-none"
 
 
+def popup_clearer_file() -> Path:
+    """The popup clearer this seat runs: its keeper's, else this tree's own.
+
+    The interactive host's keeper execs the clearer beside its own script
+    (`civvis-popup-keeper.sh`, `${0:A:h:h}/civ6_control/popup_clear.py`), which
+    is the host's management checkout and not necessarily the tree this batch
+    plays from.
+    """
+    keeper = interactive_popup_keeper_pid()
+    if keeper is not None:
+        found = re.search(r"(\S*civvis-popup-keeper\.sh)",
+                          run(["ps", "-p", str(keeper), "-o", "command="]))
+        if found:
+            return (Path(found.group(1)).resolve().parent.parent
+                    / "civ6_control" / "popup_clear.py")
+    return HERE / "civ6_control" / "popup_clear.py"
+
+
+def firaxis_self_play_blocked() -> str | None:
+    """Why a self-play game must not start on this seat yet, or `None`.
+
+    ⚠ THE POPUP CLEARER CLICKS THE REAL GAME, AND IT CANNOT SEE THIS ONE. It
+    decides "a game is being played" from the lane's runs, and a self-play
+    run is not among them, so during that game's setup it would read the
+    lane's last game, seconds old, as a game in play: the state in which it
+    once clicked a Create Game screen. It stands down for a self-play run
+    since it learned to read the game lock (`popup_clear.self_play_holds_game`),
+    and the clearer a seat runs can be older than this tree: the keeper's copy
+    is the management checkout, synced on its own clock. So the clearer that
+    will be run is read, and a self-play game waits for one that knows.
+    """
+    clearer = popup_clearer_file()
+    try:
+        source = clearer.read_text(encoding="utf-8", errors="replace")
+    except OSError as error:
+        return f"the popup clearer {clearer} cannot be read ({error})"
+    if "def self_play_holds_game(" not in source:
+        return (f"the popup clearer {clearer} does not stand down for a "
+                "self-play game yet (its tree is behind this one)")
+    return None
+
+
 def take_firaxis_self_play_once(path: Path | None = None) -> dict | None:
     """Consume the one-shot marker: the request it carried, or `None`.
 
-    `None` when there is no marker, and also when there is one that could not
-    be removed, which is said out loud: that marker asks for a game it would
-    then ask for again at every cycle.
+    `None` when there is no marker. `None` as well, said out loud and with the
+    marker left where it is, while the seat is not ready for such a game
+    (`firaxis_self_play_blocked`): the next cycle asks again. And `None` for a
+    marker that could not be removed: it asks for a game it would then ask
+    for again at every cycle.
     """
     path = FIRAXIS_SELF_PLAY_ONCE if path is None else path
     if not (path.exists() or path.is_symlink()):
+        return None
+    blocked = firaxis_self_play_blocked()
+    if blocked is not None:
+        print(f"[self-play] {path} asks for a Firaxis self-play game, not yet: "
+              f"{blocked}. The marker stays for the next cycle.", flush=True)
         return None
     try:
         words = path.read_text(encoding="utf-8", errors="replace").split()
@@ -2444,6 +2495,9 @@ def play_firaxis_self_play(args, logs: Path, request: dict) -> int | None:
           f"at {FIRAXIS_SELF_PLAY_DIFFICULTY} {args.map}/{args.map_size}/{args.speed}; "
           f"the marker is consumed, and the ordinary attempt follows ===\n"
           f"  log {log_path}\n  record {record}", flush=True)
+    # The clearer that was just read, running: the batch's own may have been
+    # started from an older copy of that file.
+    ensure_popup_clear()
     status = None
     try:
         with log_path.open("w") as play_log:

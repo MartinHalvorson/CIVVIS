@@ -253,6 +253,48 @@ def operator_holds_game():
         return False
 
 
+#: The harness's game lock (`gamelock.LOCK`) and the tag a Firaxis self-play
+#: run takes it under (`civ6_play.FIRAXIS_SELF_PLAY_PREFIX`). Read as a file
+#: and restated, not imported: this backstop has to start on a tree where
+#: those modules will not. `tools/test_civ6_firaxis_self_play.py` holds both
+#: equal to their sources.
+GAME_LOCK_HOLDER = Path(os.environ.get(
+    "CIVVIS_GAME_LOCK_DIR", str(Path.home() / ".civvis-civ6-game.lock"))) / "holder.json"
+SELF_PLAY_TAG_PREFIX = "firaxis-selfplay-"
+
+
+def self_play_holds_game(holder=None):
+    """True while a Firaxis self-play run holds the seat.
+
+    ⚠ ITS RUN IS NOT IN `--runs`. A self-play game (`civ6_play.py
+    --firaxis-self-play`) keeps its folder beside the lane's, so the newest
+    run this tool can see is the lane's last game: finished, with turns in
+    it, and written to seconds ago. Read alone that says "a game is being
+    played" for three minutes, and those are the self-play game's Create Game
+    screens: the ones this must never click. Nor is there anything to clear
+    later: no seat is ours, so no screen waits on an answer of ours.
+
+    The lock says who holds the seat, and its holder is checked for being
+    alive, so a run that died does not keep this standing down. Unreadable
+    means "no", as it did before there was such a run.
+    """
+    try:
+        held = json.loads((GAME_LOCK_HOLDER if holder is None else holder).read_text())
+        tag, pid = held.get("tag"), held.get("pid")
+        if not isinstance(tag, str) or not tag.startswith(SELF_PLAY_TAG_PREFIX):
+            return False
+        if isinstance(pid, int) and not isinstance(pid, bool):
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                return False
+            except PermissionError:
+                pass
+        return True
+    except Exception:  # noqa: BLE001 - the backstop must never die on this
+        return False
+
+
 def newest_run_is_pre_turn(runs_dir):
     """Whether the current run has not yet recorded a turn.
 
@@ -1321,6 +1363,7 @@ def main():
     warned_cards = False
     last_pause_reason = None
     warned_hold = False
+    warned_self_play = False
     geometry = {"box": None, "at": None}
     while True:
         pass_began = time.monotonic()
@@ -1340,6 +1383,22 @@ def main():
         if warned_hold:
             log("the operator resumed the game; popup checks back on")
             warned_hold = False
+            esc_budget_used = advisor_stuck_passes = 0
+            leader_passes = no_target_passes = misses = 0
+        # A Firaxis self-play game is nobody's to click, from its setup to its
+        # end, and the runs below cannot say it is being played
+        # (`self_play_holds_game`).
+        if self_play_holds_game():
+            if not warned_self_play:
+                log("a Firaxis self-play run holds the game; leaving its screens alone")
+                warned_self_play = True
+            if args.once:
+                return
+            time.sleep(max(SETUP_YIELD_SECONDS, args.interval))
+            continue
+        if warned_self_play:
+            log("the Firaxis self-play run is over; popup checks back on")
+            warned_self_play = False
             esc_budget_used = advisor_stuck_passes = 0
             leader_passes = no_target_passes = misses = 0
         # Do this before even probing capture or window geometry.  A pre-turn
