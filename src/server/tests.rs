@@ -9068,8 +9068,8 @@ fn browser_names_a_live_games_level_on_the_turn_plate() {
         "return {level: spec.order + 1, of: Object.keys(ladder).length, name: spec.name || titleCase(id)};",
         "const liveLevel = livePause.available ? difficultyLevel(state.difficulty) : null;",
         "const setupLine = [mapRowValue, liveLevel && `Lv ${liveLevel.level}`, speedName]\n    .filter(Boolean).join(\" · \");",
-        "`<div class=\"turn-setting turn-setup-line\" title=\"${escapeAttr(setupTitle)}\">` +\n    `<b>${escapeAttr(setupLine)}</b></div>` +",
-        "#playerhud.turn-plate-wide .turn-setup-line { grid-column: 1 / -1; }",
+        "`<div class=\"turn-setting turn-setup-line\" title=\"${escapeAttr(setupTitle)}\"><b>${escapeAttr(setupLine)}</b></div>` +",
+        "#playerhud.turn-plate-wide .turn-setup-line { grid-column: 1 / -1; grid-row: 2; }",
         "if (livePause.available !== wasAvailable && state) drawPlayerHud();",
     ] {
         assert!(
@@ -9104,10 +9104,12 @@ fn browser_names_a_live_games_level_on_the_turn_plate() {
 /// spectator and for a debugger game with Reveal on, and Single Player for
 /// a played seat or a Watch-as view, whose tooltip names the civilization.
 ///
-/// The two rows open the settings list, above the setup line. Live time and
-/// Max Speed stand above the age and the turn counter: they spent an
-/// afternoon under the counter and the operator moved them "back above age
-/// and turn counter like before", so Max Speed is again a line of its own.
+/// The two rows open the settings list. Live time and Max Speed stand above
+/// the age and the turn counter: they spent an afternoon under the counter
+/// and the operator moved them "back above age and turn counter like
+/// before". The setup line ("6P Continents · Lv 8 · Online") stands directly
+/// under Max Speed (operator 2026-11-24: "these are game settings and so
+/// should be more highly visible"), fitted on its own so it keeps its size.
 ///
 /// A short roster's table ends above the box's last row, so the masthead's
 /// automatic height takes the box's measured content as a floor; a dragged
@@ -9124,13 +9126,15 @@ fn browser_turn_plate_names_the_mode_and_the_point_of_view() {
         "const platePov = (!SPEC && !state.debug?.reveal) || playerView",
         "? [\"Single Player\", `The world as ${identity.civ || \"one civilization\"} sees it, behind its own fog.`]",
         ": [\"Global\", \"The whole world at once, with no civilization's fog.\"];",
-        "frameRow(\"Mode:\", plateMode) + frameRow(\"POV:\", platePov) +\n    `<div class=\"turn-setting turn-setup-line\"",
+        "frameRow(\"Mode:\", plateMode) + frameRow(\"POV:\", platePov) +\n    fogRow +",
         "`mode ${plateMode[0]}; point of view ${platePov[0]}`;",
         // The long Mode name is whole on the narrowest plate at 8px.
         "{selector:\"#playerhud .turn-settings\", min:8, max:12, slack:4},",
-        // Max Speed is a line of its own, fitted and ruled as before.
+        // Max Speed and the setup line are each fitted on their own, and the
+        // rule under the setup line closes their section.
         "{selector:\"#playerhud .turn-pace-line\", min:8.5, max:12, slack:4},",
-        ".has-live-time .turn-pace-line { padding-bottom: 4px; border-bottom: 1px solid #d7b66a24; }",
+        "{selector:\"#playerhud .turn-setup-line\", min:8, max:12, slack:4},",
+        ".has-live-time .turn-setup-line { padding-bottom: 4px; border-bottom: 1px solid #d7b66a24; }",
         "function measureTurnPlateNeed(hud) {",
         "const last = plate?.querySelector(\".turn-settings\")?.lastElementChild;",
         "const plateNeed = measureTurnPlateNeed(hud);",
@@ -9141,7 +9145,8 @@ fn browser_turn_plate_names_the_mode_and_the_point_of_view() {
             "the turn box's Mode and POV rows are missing {piece}"
         );
     }
-    // Live time, Max Speed, age, turn counter, then the list from Mode down.
+    // Live time, Max Speed, the setup line, age, turn counter, then the list
+    // from Mode down.
     let (_, plate) = EMBEDDED_INDEX
         .split_once("function hudTurnPlate() {")
         .expect("the turn plate");
@@ -9151,11 +9156,11 @@ fn browser_turn_plate_names_the_mode_and_the_point_of_view() {
     let order = [
         "<div class=\"turn-live\"",
         "<span>Max Speed:</span>",
+        "turn-setup-line",
         "<span class=\"turn-era\">",
         "<span class=\"turn-label\">Turn</span>",
         "frameRow(\"Mode:\", plateMode)",
         "frameRow(\"POV:\", platePov)",
-        "turn-setup-line",
         "rosterRow(\"Civs:\"",
         "rosterRow(\"City states:\"",
     ]

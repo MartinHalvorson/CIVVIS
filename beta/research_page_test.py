@@ -997,6 +997,34 @@ class Page(unittest.TestCase):
         self.assertEqual([key for key, _ in research_page.WINDOWS], ["7", "30", "all"])
         self.assertEqual(sorted(set(re.findall(r'data-window="(\w+)"', PAGE))), ["30", "7", "all"])
 
+    def test_the_benchmark_says_its_par_in_big_type(self):
+        # Operator 2026-11-24: "add a big note to firaxis civ 6 benchmark
+        # that expected win rate for a 6P game is 1/6 or 16.7%". The note
+        # stands between the benchmark's head and its two tables, in the
+        # benchmark's own block, in type bigger than any title on the page.
+        side = PAGE.index('<section class="res-block" id="res-side-tourney" aria-labelledby="res-title-tourney">')
+        block = PAGE[side : PAGE.index("</section>", side)]
+        par = block.index('<p class="res-bench-par" id="res-bench-par">')
+        self.assertLess(block.index("</header>"), par)
+        self.assertLess(par, block.index('<div class="res-bench-pair">'))
+        self.assertIn('<p class="res-bench-par" id="res-bench-par"><b>Expected win rate in a 6P game: 1/6 = 16.7%</b>', block)
+        self.assertEqual(f"{100 / 6:.1f}%", "16.7%")
+        self.assertEqual(PAGE.count('id="res-bench-par"'), 1)
+        self.assertIn(".res-bench-par b { color: var(--gold); font-size: 26px; font-weight: 800;", PAGE)
+
+    def test_the_self_play_count_is_highlighted(self):
+        # Operator 2026-11-24: "hightlight the civvis self play game count
+        # in the chart. 13k is a very solid number". Self-play's chart puts
+        # its count of games in a highlighted figure, its days after it;
+        # the charts of the games against the AI keep the plain count.
+        self.assertIn(
+            'if (s && chart.kind === "self_play") {\n'
+            '        tally.replaceChildren(el("b", "res-big-count", fmt(s.w.games) + (s.w.games === 1 ? " game" : " games")), " · " + days(s.w));',
+            PAGE,
+        )
+        self.assertIn(".res-kind-title .res-big-count { display: inline-block;", PAGE)
+        self.assertRegex(PAGE, r"\.res-kind-title \.res-big-count \{[^}]*color: #fff; font-size: 20px; font-weight: 800;")
+
     def test_the_benchmark_stands_over_the_graphs_as_two_tables(self):
         # Operator 2026-11-23: "at the top of win analytics, we should have a
         # last 1 day win rate col, last 3 days, last 7 days, last 30 days.
