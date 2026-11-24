@@ -223,6 +223,14 @@
   .rank-note { margin: 10px 0 0; padding-top: 8px; border-top: 1px solid var(--border); color: var(--faint); font-size: 11.5px; line-height: 1.5; }
   .rank-note a { color: var(--accent); }
   .rank-note p { margin: 0 0 4px; }
+  /* What a table or chart counts, closed until it is pressed (operator,
+     2026-11-24: "there is too much text on pages ... should be a more
+     visual experience"). The words are a visitor's to open; the page is its
+     figures. */
+  .fine { margin-top: 10px; }
+  .fine > summary { width: max-content; max-width: 100%; color: var(--faint); font-size: 11.5px; cursor: pointer; }
+  .fine > summary:hover, .fine[open] > summary { color: var(--accent); }
+  details.fine > .rank-note { max-width: 860px; margin-top: 6px; padding-top: 0; border-top: 0; }
 
   /* The fastest game on video: the record's picture, which plays the video
      in its place when it is pressed, and beside it the record in words and
@@ -494,12 +502,15 @@
   </header>
 
   <main class="shell">
+    <!-- One line. Until 2026-11-24 a paragraph stood here, a paragraph
+         under every heading and a sentence under every row's name (operator:
+         "there is too much text on pages, particualrly home/ and charts/.
+         should be a more visual experience. some text ok. just not too
+         much"). The tables and their calculations are all here; what a row
+         is says itself when a pointer is held over it, and what the figures
+         count is under "How it is counted", closed until it is pressed. -->
     <p class="intro">
-      How fast the simulator plays a complete game of
-      <cite>Sid Meier&#8217;s Civilization VI</cite>, from the first turn to the
-      victory: how many times faster that is than a game played by hand, the
-      fastest game on video, and the time of every self-play game in the
-      tournament batches.
+      How fast the simulator plays a complete game of <cite>Civilization VI</cite>, against a game played by hand.
     </p>
 
     <!-- The figures. `beta/publish.sh` fills the `performance-data` slot
@@ -528,10 +539,6 @@
         <div class="perf-tiles perf-speed-tiles" id="perf-speed-tiles"></div>
         <div class="res-kind">
           <h3 class="res-kind-title">One game at a time</h3>
-          <p class="rank-sub">
-            How long one complete game takes, and how many of them fit in an hour.
-            The multiplier is the seconds of the game played by hand over the seconds of the game in the row.
-          </p>
           <div class="res-scroll perf-sum-scroll">
             <table class="rank-table perf-sum-table" id="perf-games-table">
               <thead>
@@ -547,11 +554,7 @@
         </div>
         <div class="res-kind" id="perf-throughput" hidden>
           <h3 class="res-kind-title">One machine, every core: experimental and theoretical throughput</h3>
-          <p class="rank-sub">
-            Experimental is a run: a worker on every core of one machine, the games counted as they finish.
-            Theoretical is a calculation, not a run: every core of that machine playing as fast as one core was measured.
-            Games an hour, times the hours one game takes by hand, is the multiplier.
-          </p>
+          <p class="rank-sub">Experimental is a run on every core. Theoretical is a calculation, not a run.</p>
           <div class="res-scroll perf-sum-scroll">
             <table class="rank-table perf-sum-table" id="perf-throughput-table">
               <thead>
@@ -581,10 +584,6 @@
           <p class="rank-sub" id="perf-processors-sub">
             Experimental is the processor the benchmarks were run on.
             Theoretical is a calculation from two scores, not a run.
-            One game on one core is the measured time, times the measured processor&#8217;s single thread score, over the row&#8217;s own.
-            Games a minute on every core are the measured run&#8217;s, times the row&#8217;s multithread score, over the measured processor&#8217;s.
-            A score is not this simulator, so a theoretical row is what the scores predict until the benchmark is run on that processor.
-            The age is how old the readings are that a row&#8217;s figures rest on.
           </p>
           <div class="res-scroll perf-sum-scroll">
             <table class="rank-table perf-sum-table perf-proc-table" id="perf-processors-table">
@@ -592,6 +591,15 @@
               <tbody></tbody>
             </table>
           </div>
+          <details class="fine">
+            <summary>How it is worked out</summary>
+            <p class="rank-note">
+              One game on one core is the measured time, times the measured processor&#8217;s single thread score, over the row&#8217;s own.
+              Games a minute on every core are the measured run&#8217;s, times the row&#8217;s multithread score, over the measured processor&#8217;s.
+              A score is not this simulator, so a theoretical row is what the scores predict until the benchmark is run on that processor.
+              The age is how old the readings are that a row&#8217;s figures rest on.
+            </p>
+          </details>
         </div>
         <!-- What renting the rest of the way to each goal is estimated to
              cost (operator 2026-11-22: "Addd 1 billion x to the scaling
@@ -617,15 +625,16 @@
               <tbody></tbody>
             </table>
           </div>
+          <details class="fine">
+            <summary>How it is worked out</summary>
+            <p class="rank-note" id="perf-cloud-how"></p>
+          </details>
         </div>
         <details class="res-details">
           <summary>How each figure was measured</summary>
           <dl class="perf-from" id="perf-from"></dl>
         </details>
         <div class="rank-note">
-          <p>
-            A new measurement is a new line in the readings, and both this page and the line over the home page&#8217;s videos follow it.
-          </p>
           <p>
             <a href="https://github.com/MartinHalvorson/CIVVIS/blob/main/data/performance/speedup_timeline.json" target="_blank" rel="noreferrer">The readings</a> ·
             <a href="https://github.com/MartinHalvorson/CIVVIS/blob/main/docs/SPEEDUP_TIMELINE.md" target="_blank" rel="noreferrer">How each way of playing is measured</a> ·
@@ -642,10 +651,6 @@
            player is asked for only when the picture is pressed. -->
       <section class="res-section" id="perf-video" aria-labelledby="perf-video-title" hidden>
         <h2 class="rank-title" id="perf-video-title">The fastest game on video</h2>
-        <p class="rank-sub">
-          The site playing a complete game in real time, from the first turn to the victory, recorded as it ran.
-          The record so far, and the records before it.
-        </p>
         <div class="perf-video">
           <a class="perf-poster" id="perf-poster" target="_blank" rel="noreferrer">
             <img id="perf-poster-img" alt="" width="1280" height="720" decoding="async" referrerpolicy="no-referrer">
@@ -665,12 +670,7 @@
            p50, p90, p99 times for games for self-play games"). -->
       <section class="res-section" id="perf-times" aria-labelledby="perf-times-title" hidden>
         <h2 class="rank-title" id="perf-times-title">How long a self-play game takes</h2>
-        <p class="rank-sub">
-          Every seat a CIVVIS AI agent, six players on a Continents map at Online speed, 250 turns, in the simulator with nothing drawn.
-          A time is one game&#8217;s wall-clock seconds, start to victory.
-          These are a tournament&#8217;s times, not a benchmark&#8217;s: seven games are played at once on one MacBook Pro (M5 Max)
-          that is doing other work too, so a time moves with the machine&#8217;s load as well as with the code.
-        </p>
+        <p class="rank-sub">Six CIVVIS AI agents, a Continents map, Online speed, 250 turns. A tournament&#8217;s times, not a benchmark&#8217;s.</p>
         <div class="res-controls">
           <!-- Which games the tiles and the chart under them count. It opens
                on the newest finished batch, the games of the newest build:
@@ -708,12 +708,7 @@
            performance charts there"). -->
       <section class="res-section" id="perf-batches" aria-labelledby="perf-batches-title" hidden>
         <h2 class="rank-title" id="perf-batches-title">Game time, batch by batch</h2>
-        <p class="rank-sub">
-          A batch is the self-play games of one build of the simulator, a thousand or more, oldest on the left.
-          The line is the middle game. The darker band holds eight games in ten, and the lighter band all but the
-          fastest and the slowest one in a hundred. The scale goes by multiples, so the same drop anywhere on it is the same
-          share of the time saved. <span id="perf-batches-counted"></span>
-        </p>
+        <p class="rank-sub">One batch is one build&#8217;s self-play games, oldest on the left. <span id="perf-batches-counted"></span></p>
         <ul class="res-legend" aria-label="What is drawn">
           <li><span class="res-linekey"></span>p50, the middle game</li>
           <li><span class="res-swatch" style="opacity: 0.42"></span>p10 to p90</li>
@@ -732,8 +727,19 @@
             <tbody></tbody>
           </table>
         </div>
+        <details class="fine">
+          <summary>How it is counted</summary>
+          <div class="rank-note">
+            <p>
+              A time is one game&#8217;s wall-clock seconds, start to victory, in the simulator with nothing drawn.
+              Seven games are played at once on one MacBook Pro (M5 Max) that is doing other work too, so a time moves with the machine&#8217;s load as well as with the code.
+              In the chart of batches the darker band holds eight games in ten, and the lighter band all but the fastest and the slowest one in a hundred.
+              Its scale goes by multiples, so the same drop anywhere on it is the same share of the time saved.
+            </p>
+            <p id="perf-note"></p>
+          </div>
+        </details>
         <div class="rank-note">
-          <p id="perf-note"></p>
           <p>
             <a href="https://github.com/MartinHalvorson/CIVVIS/blob/main/data/performance/self_play_times.json" target="_blank" rel="noreferrer">The times</a> ·
             <a href="https://github.com/MartinHalvorson/CIVVIS/blob/main/docs/SIMULATOR_PERFORMANCE.md" target="_blank" rel="noreferrer">Where the simulator&#8217;s time goes, and what was done about it</a> ·
@@ -841,11 +847,16 @@
       const named = (row, said) => {
         const cell = el("td");
         cell.append(el("b", "", way(row.kind === "measured" ? row.of : row.key)));
-        if (said) cell.append(el("small", "", said));
+        // What the row is, said when a pointer is held over its name. It
+        // stood under the name, in every row, until 2026-11-24.
+        if (said) cell.title = said;
         return cell;
       };
 
-      // The sentence that answers the question, and the tiles.
+      // The baseline in a sentence, and the tiles that answer the question.
+      // The sentence said what the tiles say until 2026-11-24 (operator:
+      // "there is too much text on pages ... should be a more visual
+      // experience").
       const lede = document.getElementById("perf-speed-lede");
       lede.append("One game of Civilization VI played by hand takes " + text(base.time) + ". ");
       const tiles = document.getElementById("perf-speed-tiles");
@@ -855,9 +866,6 @@
         tiles.append(node);
       };
       if (answer) {
-        lede.append(way(answer.stop) + " plays one in " + text(answer.one_time) + " on one core, ", el("b", "", text(answer.one)), " faster. With every core of "
-          + host + " playing, a game finishes every " + text(answer.all_time) + ": ", el("b", "", text(answer.all)), " faster, measured.");
-        if (answer.theory) lede.append(" In theory the same machine reaches ", el("b", "", text(answer.theory)), ".");
         tile("One game, one core", text(answer.one), text(answer.one_time) + " a game", way(answer.stop) + " in the simulator");
         tile("Every core, measured", text(answer.all), "a game every " + text(answer.all_time), text(answer.all_an_hour) + " games an hour on " + host, "is-measured");
         if (answer.theory) {
@@ -897,7 +905,8 @@
       for (const row of through) {
         const tr = el("tr", row.kind === "measured" ? "is-measured" : "");
         const first = row.kind === "goal" ? el("td") : named(row, (TOLD[row.kind === "theory" ? row.basis : row.kind] || (() => ""))(row));
-        if (row.kind === "goal") first.append(el("b", "", row.whole ? text(row.times) + " in all" : "A game every " + text(row.one_game)), el("small", "", TOLD.goal(row)));
+        if (row.kind === "goal") first.append(el("b", "", row.whole ? text(row.times) + " in all" : "A game every " + text(row.one_game)));
+        if (row.kind === "goal") first.title = TOLD.goal(row);
         first.firstChild.after(" ", el("span", "perf-kind is-" + row.kind, KINDS[row.kind]));
         tr.append(first, el("td", "perf-times", text(row.times)), el("td", "", text(row.a_minute)), el("td", "", text(row.an_hour)),
           el("td", "perf-sum", text(row.sum)), el("td", "", row.kind === "measured" ? "—" : row.reaches ? text(row.reaches) : "not run yet"));
@@ -956,8 +965,10 @@
           const made = Number(row.cores) || 0, threads = Number(row.threads) || 0;
           const first = el("td");
           first.append(el("b", "", text(row.name)), " ", el("span", "perf-kind is-" + kind, KINDS[kind]), el("small", "",
-            (made ? made + " cores" + (threads && threads !== made ? ", " + threads + " threads" : "") + ". " : "")
-            + (ran ? "The benchmarks were run on it." : row.fleet ? "In the fleet. The benchmarks have not been run on it." : "Not run. Worked out from its scores.")));
+            // Its cores, and whether the fleet has one. Whether it was run
+            // is the word beside its name.
+            (made ? made + " cores" + (threads && threads !== made ? ", " + threads + " threads" : "") + "." : "")
+            + (row.fleet && !ran ? " In the fleet." : "")));
           const every = row.every_core || {};
           tr.append(first, figured(row.times, row.times_sum, "perf-times"),
             figured(every.a_minute, every.kind === "theory" ? every.sum : "counted in a run"));
@@ -997,8 +1008,10 @@
       if (cloud && cloud.machine && rents.length) {
         document.getElementById("perf-cloud-sub").append(
           el("b", "", "A best estimate by " + text(cloud.by) + (cloud.taken ? ", " + day(cloud.taken) : "") + "."),
-          " Not a quote and not a run: nothing has been played in a cloud. "
-          + host.charAt(0).toUpperCase() + host.slice(1) + " reaches " + text(cloud.have) + ", and the rest of the way to each goal is taken as machines rented beside it: "
+          " Not a quote and not a run: nothing has been played in a cloud. ");
+        // How it is worked out, under the table and closed until pressed.
+        document.getElementById("perf-cloud-how").append(
+          host.charAt(0).toUpperCase() + host.slice(1) + " reaches " + text(cloud.have) + ", and the rest of the way to each goal is taken as machines rented beside it: "
           + text(cloud.machine) + ", at its list price and at its spot price. One game on one of its cores is the one-core " + way(cloud.of)
           + " reading, longer by the two processors’ single thread scores, and every core is taken to play as fast as one."
           + (cloud.a_million ? " At that rate a million games cost about " + text(cloud.a_million) + " at the list price"
@@ -1019,8 +1032,8 @@
         rent.append(one);
         for (const row of rents) {
           const tr = el("tr"), name = el("td");
-          name.append(el("b", "", "The rest of the way to " + text(row.times)), " ", estimate(),
-            el("small", "", "Beside the " + text(cloud.have) + " of " + host + "."));
+          name.append(el("b", "", "The rest of the way to " + text(row.times)), " ", estimate());
+          name.title = "Beside the " + text(cloud.have) + " of " + host + ".";
           tr.append(name, summed(row.rest, row.rest_sum, "perf-times"), summed(row.machines, row.cores && text(row.cores) + " cores"),
             el("td", "perf-sum", text(row.machines_sum)), summed(row.an_hour, row.an_hour_sum), summed(row.spot_an_hour, row.spot_an_hour_sum),
             summed(row.a_year, row.spot_a_year && "spot: " + text(row.spot_a_year)));

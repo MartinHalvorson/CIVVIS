@@ -273,13 +273,16 @@ class HomeRankings(unittest.TestCase):
             [("Korea", 1, 0), ("Greece", 3, 1), ("Mali", 3, 2)],
         )
         # The page leads a row with the rate it is ranked by, the record
-        # beside it, and says under the title which games were counted.
+        # beside it, and says which games were counted: the level in the
+        # card's title ("Against Lv 8 Deity AI"), the day under it. The line
+        # under the title said both, at length, until 2026-11-24 (operator:
+        # "there is too much text on pages, particualrly home/ and charts/").
         for line in (
             'const figure = el("span", "rank-value", (100 * wins / (wins + losses)).toFixed(1) + "%");',
             'figure.append(el("small", "", fmt(wins) + "\\u2013" + fmt(losses)));',
             'const item = civRow(i, c.name, c.wins, c.losses,',
-            'sub.textContent = "Our AI\\u2019s win rate as each civ, in " + (civs.level ? "Lv " + civs.level + " " : "")',
-            '+ "verification games against Civilization VI\\u2019s own AI" + (civs.since ? " since " : "");',
+            'card.querySelector(".rank-title").textContent = civs.level ? "Against " + levelName(civs.level) + " AI" : "Against Civilization VI\\u2019s AI";',
+            'sub.textContent = "Win rate as each civ" + (civs.since ? ", since " : "");',
             'if (civs.since) sub.append(el("span", "rank-day", civs.since));',
         ):
             self.assertIn(line, CIVS)
