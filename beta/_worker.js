@@ -287,10 +287,19 @@ const PAGE_ADDRESS =
 // its first address (operator: "change auto-outnrye to Tournaments.
 // Auto-tourney suggests some self imrpvoing tourney thing"). So
 // /auto-tourneys is an address it has left like the others.
+//
+// AI Interpretability was named Civ AI Interpretability on 2026-11-24
+// (operator: "please change AI interpretability to "Civ AI
+// Interpretability""), and its address followed the name once more. So this
+// is a table of single moves, and an address a page has left twice
+// (/interpretability) is followed move by move to wherever the lane has the
+// page: /charts/ai-interpretability in a lane pinned to a revision from
+// before the new name, /charts/civ-ai-interpretability in one from after.
 const MOVED = {
   research: "charts/win-analytics",
   performance: "charts/civvis-performance",
   interpretability: "charts/ai-interpretability",
+  "charts/ai-interpretability": "charts/civ-ai-interpretability",
   "auto-tourneys": "tournaments",
 };
 
@@ -333,7 +342,8 @@ const NO_SUCH_PAGE = "/__no-such-page__";
 ///
 /// An address the lane does not list is then one of three things. An address
 /// its page has left (`MOVED`) forwards to the page, when this lane has the
-/// page there. A folder of the site list (`/charts`) opens the first page the
+/// page at an address it moved to since: the first one it lists, following
+/// the moves in order. A folder of the site list (`/charts`) opens the first page the
 /// lane lists in it, as Charts/ does in the list itself: the folder has no
 /// page of its own. Anything else is a page the lane does not have.
 async function pageAnswer(request, env, url) {
@@ -351,11 +361,20 @@ async function pageAnswer(request, env, url) {
     return null;
   }
   if (!Array.isArray(pages) || pages.includes(name)) return null;
-  const now = Object.hasOwn(MOVED, name)
-    ? MOVED[name]
-    : Object.hasOwn(BETWEEN, name)
-      ? BETWEEN[name]
-      : pages.find((page) => typeof page === "string" && page.startsWith(`${name}/`));
+  if (Object.hasOwn(MOVED, name)) {
+    // Move by move, to the first address this lane has the page at. No
+    // address is in the table twice over (a test holds it to that), so the
+    // walk ends; the count is only so that a mistake here cannot spin.
+    let now = name;
+    for (let moves = 0; Object.hasOwn(MOVED, now) && moves < 16; moves += 1) {
+      now = MOVED[now];
+      if (pages.includes(now)) return { moved: `${lane}/${now}/` };
+    }
+    return { absent: true };
+  }
+  const now = Object.hasOwn(BETWEEN, name)
+    ? BETWEEN[name]
+    : pages.find((page) => typeof page === "string" && page.startsWith(`${name}/`));
   if (now && pages.includes(now)) return { moved: `${lane}/${now}/` };
   return { absent: true };
 }
