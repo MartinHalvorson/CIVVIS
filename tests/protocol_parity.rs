@@ -17,11 +17,19 @@ use std::collections::BTreeSet;
 use std::path::Path;
 
 /// Routes only the browser build serves, and why.
-const WASM_ONLY: &[(&str, &str)] = &[(
-    "/next-game",
-    "The page queues the next simulation itself because a wasm module has no \
+const WASM_ONLY: &[(&str, &str)] = &[
+    (
+        "/autosearch",
+        "Autosearch's climb, pumped by a page that plays its lines on copies of \
+         the engine (`/forks`), which only the browser build makes. Natively the \
+         same climb runs as `civvis autosearch`, on threads of its own.",
+    ),
+    (
+        "/next-game",
+        "The page queues the next simulation itself because a wasm module has no \
          supervisor process behind it. Native queues through the supervisor.",
-)];
+    ),
+];
 
 /// Routes only the native build serves, and why.
 const NATIVE_ONLY: &[(&str, &str)] = &[

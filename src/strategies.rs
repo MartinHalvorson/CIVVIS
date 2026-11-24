@@ -240,6 +240,73 @@ pub fn find(name: &str) -> Option<&'static PlayerStrategy> {
         .find(|row| row.id == name || row.handle == name || row.aliases.contains(&name))
 }
 
+/// A Civ AI by a name a search may give it: a roster row's, or one with a
+/// victory target and gene tags on top, `<row>[@<target>][+<gene>...]`, as in
+/// `jack@science+no-city-limit`. The roster has a handful of agents; a
+/// search's alphabet is wider than that because a gene is a switch an agent
+/// reads as it plays (operator 2026-11-23, pasting a review of Autosearch:
+/// "Let a stretch be a chassis, a victory target and a list of gene tags,
+/// since genes are runtime booleans").
+///
+/// The agent is the row's, built the way the row builds it: the target, when
+/// one is named, replaces the row's, and the genes are switched on after the
+/// row's own. The scripted chassis (TrainingWheels, the frozen OldGuard)
+/// take no target and no genes. The answer is the agent and the name written
+/// the one way (`jack@science+no-city-limit`), which is what the seat is said
+/// to be held by.
+pub fn build_named(name: &str) -> Result<(Box<dyn Ai + Send>, String), String> {
+    let mut parts = name.split('+').map(str::trim);
+    let head = parts.next().unwrap_or("");
+    let (base, target) = match head.split_once('@') {
+        Some((base, target)) => (base.trim(), Some(target.trim())),
+        None => (head, None),
+    };
+    let row = find(base).ok_or_else(|| format!("no strategy named {base}"))?;
+    let target = target
+        .map(|target| target.parse::<VictoryTarget>())
+        .transpose()?;
+    let mut genes: Vec<&str> = Vec::new();
+    for tag in parts {
+        if tag.is_empty() {
+            continue;
+        }
+        crate::ai::gene(tag).ok_or_else(|| format!("no gene tagged {tag}"))?;
+        if !genes.contains(&tag) {
+            genes.push(tag);
+        }
+    }
+    if target.is_none() && genes.is_empty() {
+        return Ok((row.build(), row.id.to_string()));
+    }
+    if !matches!(row.chassis, Chassis::Stock | Chassis::Deployment) {
+        return Err(format!(
+            "{} is scripted and takes no victory target or genes",
+            row.handle
+        ));
+    }
+    let mut ai = match target.or(row.target) {
+        Some(target) => AdvancedAi::targeting(target),
+        None => AdvancedAi::new(),
+    };
+    if row.chassis == Chassis::Deployment {
+        ai.enable_native_deployment();
+    }
+    for tag in row.genes.iter().chain(&genes) {
+        let gene = crate::ai::gene(tag).ok_or_else(|| format!("no gene tagged {tag}"))?;
+        (gene.enable)(&mut ai);
+    }
+    let mut written = row.id.to_string();
+    if let Some(target) = target {
+        written.push('@');
+        written.push_str(target.as_str());
+    }
+    for tag in genes {
+        written.push('+');
+        written.push_str(tag);
+    }
+    Ok((Box::new(ai), written))
+}
+
 /// The roster by published Elo, strongest first. An agent nothing has rated
 /// ranks below every rated one, and equal ratings keep roster order.
 pub fn ranked() -> Vec<&'static PlayerStrategy> {

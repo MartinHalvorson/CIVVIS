@@ -29,6 +29,10 @@ thread_local! {
     /// The split Sim debugger's two halves: sessions forked from the one
     /// above and kept beside it (`panes.rs`). Empty until a screen is split.
     static PANES: RefCell<super::panes::Panes> = RefCell::new(Default::default());
+    /// The Autosearch this page is running, if any: the climb, which hands
+    /// lines to the page's copies of the engine and takes back what each came
+    /// to (`server/autosearch.rs`).
+    static SEARCH: RefCell<Option<super::autosearch::Search>> = const { RefCell::new(None) };
     /// Why the module last died.
     ///
     /// A panic on `wasm32-unknown-unknown` unwinds nowhere: it aborts, and the
@@ -534,6 +538,10 @@ fn route_unversioned(method: &str, target: &str, body: &str) -> Value {
         // published build, and a route missing from it is a feature that works
         // everywhere except the site people actually watch.
         ("POST", "/intel") => with_session(|session| crate::routes::intel(session, &parsed)),
+
+        ("POST", "/autosearch") => {
+            SEARCH.with(|held| super::autosearch::route(&mut held.borrow_mut(), &parsed))
+        }
 
         ("POST", "/view") => with_session(|session| {
             let mut out = crate::routes::view(session, &parsed);

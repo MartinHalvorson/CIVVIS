@@ -709,60 +709,58 @@ fn a_schedule_walked_back_to_is_the_schedule_played_straight() {
 }
 
 /// Operator 2026-11-22: "allow a reasonable objective function to be chosen.
-/// score or prod or city or fpt or gpt".
+/// score or prod or city or fpt or gpt"; and 2026-11-23, four lists in place
+/// of the one number.
 ///
-/// What Autosearch may be asked to make the most of is read out of how the
-/// engine says the seat stands (`obs::standing`): a lean answer's `seat` on
-/// the copies it plays its lines on, and the seat's entry of the state
-/// document once a line is played on the page. Each goal the page offers
-/// names a number that reading gives, the operator's five come first, and
-/// the page asks its copies in operations the engine has.
+/// What a term of the four lists reads is a key of how the engine says the
+/// seat stands (`obs::standing`, reached into with a dot), or `won` and
+/// `lost`. Every key the page offers is one the engine reads a number for,
+/// put to it as an objective is (`autosearch::Objective::check`), the
+/// operator's five come first, and the page asks its copies and the climb in
+/// operations the engine has.
 #[test]
 fn every_goal_autosearch_offers_reads_a_number_the_engine_gives() {
     let script = super::super::EMBEDDED_APP_DEBUGGER_JS;
-    let goals = script
-        .split_once("const DEBUG_SEARCH_GOALS = [")
+    let listed = script
+        .split_once("const DEBUG_SEARCH_KEYS = [")
         .and_then(|(_, rest)| rest.split_once("];"))
-        .expect("the goals are listed")
+        .expect("the keys are listed")
         .0;
+    let keys: Vec<&str> = listed
+        .split("[\"")
+        .skip(1)
+        .map(|row| row.split_once('"').expect("a key").0)
+        .collect();
+    assert!(keys.len() >= 5, "{keys:?}");
+    assert_eq!(
+        &keys[..5],
+        [
+            "score",
+            "yields.production",
+            "cities",
+            "yields.faith",
+            "gold_per_turn"
+        ]
+    );
     let mut session = played();
     for _ in 0..3 {
         step_as(&mut session, "jack");
     }
-    let seat = session.debug(&json!({"op": "status", "lean": true}))["seat"].clone();
-    let mut keys = Vec::new();
-    for row in goals.lines().filter(|line| line.contains("read: seat => ")) {
-        let key = row
-            .split_once("key: \"")
-            .and_then(|(_, rest)| rest.split_once('"'))
-            .expect("a goal has a key")
-            .0;
-        let read = row
-            .split_once("read: seat => ")
-            .expect("a goal reads the seat")
-            .1
-            .trim_end_matches(['}', ',', ' ']);
-        // `seat.score`, or `(seat.yields || {}).production`.
-        let value = match read.strip_prefix("(seat.yields || {}).") {
-            Some(field) => &seat["yields"][field],
-            None => {
-                &seat[read
-                    .strip_prefix("seat.")
-                    .expect("a goal reads one of the seat's own numbers")]
-            }
-        };
-        assert!(
-            value.is_number(),
-            "{key} reads {read}, which the engine does not give"
-        );
-        keys.push(key);
+    for key in &keys {
+        let set = session.debug(&json!({"op": "objective", "lean": true,
+            "objective": {"want": [{"key": key}]}}));
+        assert_eq!(set["error"], Value::Null, "{key}");
     }
-    assert!(keys.len() >= 5, "{keys:?}");
-    assert_eq!(&keys[..5], ["score", "prod", "city", "fpt", "gpt"]);
+    let played = session.debug(&json!({"op": "play", "turns": 1, "lean": true}));
+    assert!(played["terms"][0]["want"][0].is_number(), "{played}");
     // A copy is made ready, walked back and played with these.
     for piece in [
         r#"debugSearchPost("/forks", {count: search.cores})"#,
         r#"debugSearchAsk(search, fork, {op: "breakpoints"})"#,
+        r#"debugSearchAsk(search, fork, {op: "objective", objective: search.objective})"#,
+        r#"debugSearchPost("/autosearch", {op: "begin", objective, from: search.from, end: search.end,"#,
+        r#"debugSearchClimb(search, {op: "next", holding: fork.plan, at: fork.at})"#,
+        r#"debugSearchClimb(search, {op: "took", plan, series: fork.series, last: fork.at})"#,
         r#"if (search.pane) refused(await debugSearchAsk(search, fork, {op: "remember"}));"#,
         r#"{op: "jump", turn, strategy: debugPlanWho(plan, turn)}"#,
         r#"{op: "play", turns: asked, strategy: debugPlanWho(plan, fork.at)}"#,
@@ -797,18 +795,29 @@ fn the_page_loads_the_bar_and_sends_only_operations_the_engine_answers() {
 
     // Read the operations out of the script and put each to the engine, so
     // one renamed on either side fails here and not in somebody's browser.
+    // An operation of Autosearch's climb goes to `POST /autosearch`
+    // (`autosearch::route`), and is put to that instead.
     let mut session = played();
+    let mut climb = None;
+    super::super::autosearch::route(
+        &mut climb,
+        &json!({"op": "begin", "from": 1, "turns": 5, "letters": ["jack"], "seated": "jack"}),
+    );
     let mut rest = script;
     let mut sent = BTreeSet::new();
     while let Some(at) = rest.find("op: \"") {
         rest = &rest[at + 5..];
         let op = &rest[..rest.find('"').expect("a closed string")];
         let answer = session.debug(&json!({"op": op}));
-        let refused = answer["error"].as_str().unwrap_or("");
-        assert!(
-            !refused.starts_with("no debugger operation"),
-            "{op}: {refused}"
-        );
+        let mut refused = answer["error"].as_str().unwrap_or("").to_string();
+        if refused.starts_with("no debugger operation") {
+            let climbed = super::super::autosearch::route(&mut climb, &json!({"op": op}));
+            refused = climbed["error"].as_str().unwrap_or("").to_string();
+            assert!(
+                !refused.starts_with("no autosearch operation"),
+                "{op}: answered by neither the debugger nor the climb"
+            );
+        }
         sent.insert(op.to_string());
     }
     for op in [
