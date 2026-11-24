@@ -433,8 +433,8 @@
     };
     const count = (n) => Number(n).toLocaleString("en-US");
     // An entrant that never lost is rated "at least", one that never won "at most".
-    const elo = (r) => (r.bound === "upper" ? "≤" : "") + Math.round(r.elo) + (r.bound === "lower" ? "+" : "");
-    const pm = (m) => (m ? "±" + Math.round(m) : "");
+    const elo = (r) => (r.bound === "upper" ? "\u2264" : "") + Math.round(r.elo) + (r.bound === "lower" ? "+" : "");
+    const pm = (m) => (m ? "\u00b1" + Math.round(m) : "");
     const day = (iso) => new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
 
     // Each agent's colour follows the agent, never its place: the victory
@@ -474,7 +474,7 @@
       let place = 0;
       const items = rows.map((r) => {
         const item = el("li", "rank-row" + (r.kind === "level" ? " is-rung" : ""));
-        const interval = r.margin ? "; 95% interval " + Math.round(r.elo - r.margin) + "–" + Math.round(r.elo + r.margin) : "";
+        const interval = r.margin ? "; 95% interval " + Math.round(r.elo - r.margin) + "\u2013" + Math.round(r.elo + r.margin) : "";
         item.title = r.kind === "level"
           ? r.name + ": our seat won " + r.wins + " of " + r.games + " benchmark games against five of it" + interval
           : r.name + ": won " + r.wins + " of " + r.games + " rated tables" + interval;
@@ -505,7 +505,7 @@
         + (strategies.latest_run ? ", newest " + strategies.latest_run : "") + "."
         + (firaxis ? " The Firaxis levels: " + count(firaxis.games) + " benchmark games of the last "
           + firaxis.days + " days, through " + day(firaxis.to) + "." : "")
-        + " ± is the 95% margin of error.";
+        + " \u00b1 is the 95% margin of error.";
       list.hidden = false;
     }
 
@@ -520,24 +520,24 @@
         const name = r.measured ? r.measured.name : r.sim.name;
         tr.append(el("td", "", "Lv " + r.n + " " + name));
         const now = r.measured && r.measured.now;
-        const cell = el("td", "is-elo", now ? elo(now) : "–");
+        const cell = el("td", "is-elo", now ? elo(now) : "\u2013");
         if (now && now.margin) cell.append(el("small", "", pm(now.margin)));
         tr.append(cell);
-        const games = el("td", "", now ? count(now.wins) : "–");
+        const games = el("td", "", now ? count(now.wins) : "\u2013");
         if (now) games.append(el("small", "", "(" + count(now.games) + ")"));
         tr.append(games);
-        const dial = el("td", "is-sim", r.sim ? Math.round(r.sim.elo) : "–");
+        const dial = el("td", "is-sim", r.sim ? Math.round(r.sim.elo) : "\u2013");
         if (r.sim && r.sim.margin) dial.append(el("small", "", pm(r.sim.margin)));
         tr.append(dial);
         body.append(tr);
       }
       document.getElementById("elo-levels-note").textContent =
-        "Benchmark Elo: Civilization VI’s own AI, rated from our seat’s games against five of it at each level"
+        "Benchmark Elo: Civilization VI\u2019s own AI, rated from our seat\u2019s games against five of it at each level"
         + (firaxis ? " over the last " + firaxis.days + " days" : "")
-        + ", with our seat rated as the agent that plays its victory lane in the simulator (a Science game is MoonshotMaven’s,"
-        + " a Religious one HolyRoller’s). ≤ is a level we have never lost to in the window: it is at most that."
-        + " Simulator dial: the simulator’s Difficulty setting, our stand-in agent playing with that level’s"
-        + " handicap, which is what the simulator’s games at that level are played against.";
+        + ", with our seat rated as the agent that plays its victory lane in the simulator (a Science game is MoonshotMaven\u2019s,"
+        + " a Religious one HolyRoller\u2019s). \u2264 is a level we have never lost to in the window: it is at most that."
+        + " Simulator dial: the simulator\u2019s Difficulty setting, our stand-in agent playing with that level\u2019s"
+        + " handicap, which is what the simulator\u2019s games at that level are played against.";
       document.getElementById("elo-levels").hidden = false;
     }
 
@@ -685,8 +685,8 @@
             const row = el("div");
             const key = el("span", "rank-swatch" + (line.dash === LEVEL_DASH ? " is-dashed" : line.dash ? " is-dotted" : ""));
             key.style.borderTopColor = line.colour;
-            row.append(el("b", "", (p.bound === "upper" ? "≤" : "") + Math.round(p.elo)), key, el("span", "", line.short || line.name));
-            if (!p.between) row.append(el("span", "n", pm(p.margin) + (p.games ? " · " + p.games + " g" : "")));
+            row.append(el("b", "", (p.bound === "upper" ? "\u2264" : "") + Math.round(p.elo)), key, el("span", "", line.short || line.name));
+            if (!p.between) row.append(el("span", "n", pm(p.margin) + (p.games ? " \u00b7 " + p.games + " g" : "")));
             tip.append(row);
           }
           tip.hidden = !shown.length;
@@ -720,15 +720,15 @@
         tr.append(el("td", "", new Date(t).toISOString().slice(0, 16).replace("T", " ")));
         for (const line of lines) {
           const p = line.points.find((q) => q.t === t);
-          const td = el("td", "", p ? (p.bound === "upper" ? "≤" : "") + Math.round(p.elo) : "");
+          const td = el("td", "", p ? (p.bound === "upper" ? "\u2264" : "") + Math.round(p.elo) : "");
           if (p && p.margin) td.append(el("small", "", pm(p.margin)));
           tr.append(td);
         }
         tbody.append(tr);
       }
       document.getElementById("elo-over-time-note").textContent =
-        "An agent’s line steps at each published fit of the simulator’s rating tables (" + count(data.fits)
-        + " so far) and holds until the next. A Firaxis level’s line is a point a day, each fitted over the benchmark games of the "
+        "An agent\u2019s line steps at each published fit of the simulator\u2019s rating tables (" + count(data.fits)
+        + " so far) and holds until the next. A Firaxis level\u2019s line is a point a day, each fitted over the benchmark games of the "
         + (firaxis ? firaxis.days : 7) + " days before it, drawn when they number at least three; the levels are rated from "
         + (firaxis ? count(firaxis.all_games) : "the") + " benchmark games in all. Hover a name in the key to pick its line out.";
     }

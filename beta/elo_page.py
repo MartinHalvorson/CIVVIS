@@ -243,7 +243,12 @@ def firaxis(games: list[dict], points: list[dict]) -> dict | None:
         mine = [g for g in games if g["level"] == level]
         series = []
         for end in ends:
-            inside = [g for g in mine if end - window < g["at"] <= end]
+            # A day's window ends as the day does; the newest point's takes
+            # in the newest game.
+            if end == to:
+                inside = [g for g in mine if to - window < g["at"] <= to]
+            else:
+                inside = [g for g in mine if end - window <= g["at"] < end]
             if len(inside) < MIN_GAMES:
                 continue
             fitted = fit_level(rated(inside, points).get(level, []))

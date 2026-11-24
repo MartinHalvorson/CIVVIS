@@ -426,6 +426,8 @@ def main(argv: list[str] | None = None) -> int:
         # the url"), so a page of Charts/ is two names deep.
         for address, name in (
             ("/charts/win-analytics/", "Win Analytics"),
+            ("/charts/elo-rankings/", "ELO Rankings"),
+            ("/charts/civ-analytics/", "Civ Analytics"),
             ("/charts/civvis-performance/", "CIVVIS Performance"),
             ("/charts/ai-interpretability/", "AI Interpretability"),
             ("/auto-tourneys/", "Auto-Tourneys"),

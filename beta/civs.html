@@ -437,7 +437,7 @@
     const days = (w) => {
       if (w.from === w.to) return day(w.to);
       const [from, to] = [day(w.from), day(w.to)];
-      return from.split(" ")[0] === to.split(" ")[0] ? from + "–" + to.split(" ")[1] : from + "–" + to;
+      return from.split(" ")[0] === to.split(" ")[0] ? from + "\u2013" + to.split(" ")[1] : from + "\u2013" + to;
     };
     const RUNGS = { 4: "Prince", 5: "King", 6: "Emperor", 7: "Immortal", 8: "Deity" };
 
@@ -459,20 +459,20 @@
         const label = el("span", "rank-name", c.name);
         if (!civs.level && c.best) label.append(el("small", "", "Lv " + c.best));
         const figure = el("span", "rank-value", (100 * c.wins / (c.wins + c.losses)).toFixed(1) + "%");
-        figure.append(el("small", "", fmt(c.wins) + "–" + fmt(c.losses)));
+        figure.append(el("small", "", fmt(c.wins) + "\u2013" + fmt(c.losses)));
         item.append(label, figure);
         return item;
       });
       card.querySelector(".rank-list").append(...rows);
       const sub = card.querySelector(".rank-sub");
-      sub.textContent = "Our AI’s win rate as each civ, in " + (civs.level ? "Lv " + civs.level + " " : "")
-        + "verification games against Civilization VI’s own AI" + (civs.since ? " since " : "");
+      sub.textContent = "Our AI\u2019s win rate as each civ, in " + (civs.level ? "Lv " + civs.level + " " : "")
+        + "verification games against Civilization VI\u2019s own AI" + (civs.since ? " since " : "");
       if (civs.since) sub.append(el("span", "rank-day", civs.since));
       sub.append(".");
       card.querySelector("[data-rank-note]").textContent = plural(civs.games, "finished game", "finished games")
         + (civs.through ? " through " + civs.through : "") + "; "
         + civs.winners + " of " + plural(civs.played, "civ", "civs") + " played have won."
-        + " A loss is a rival’s victory, our elimination, or a game conceded early;"
+        + " A loss is a rival\u2019s victory, our elimination, or a game conceded early;"
         + " a game stopped any other way is not counted."
         + (civs.unattributed_wins ? " " + plural(civs.unattributed_wins, "win is", "wins are")
           + " not listed: the game did not record its civ." : "");
@@ -493,7 +493,7 @@
       const level = "Lv " + BUILDS.level + (RUNGS[BUILDS.level] ? " " + RUNGS[BUILDS.level] : "");
       document.getElementById("res-title-builds").textContent = "Early build order: win rate against " + level + " AI";
       document.getElementById("res-counted-builds").textContent = fmt(games) + (games === 1 ? " game" : " games") + " against " + level + " AI"
-        + (BUILDS.from && BUILDS.to ? " · " + days(BUILDS) : "") + " · CIVVIS won " + fmt(wins) + (games ? " (" + pct(wins / games) + ")" : "");
+        + (BUILDS.from && BUILDS.to ? " \u00b7 " + days(BUILDS) : "") + " \u00b7 CIVVIS won " + fmt(wins) + (games ? " (" + pct(wins / games) + ")" : "");
       document.getElementById("res-builds-depth").textContent = NUMBERS[BUILDS.depth] || String(BUILDS.depth);
       const left = (Number(BUILDS.finished) || games) - games;
       document.getElementById("res-builds-left").textContent = left > 0
@@ -507,7 +507,7 @@
         const li = el("li");
         const line = el(opens ? "button" : "div", "res-build");
         const figures = el("span", "res-build-figures");
-        figures.append(el("span", "res-build-rate", n ? pct((Number(won) || 0) / n) : "—"), el("span", "res-build-games", "(" + fmt(n) + ")"));
+        figures.append(el("span", "res-build-rate", n ? pct((Number(won) || 0) / n) : "\u2014"), el("span", "res-build-games", "(" + fmt(n) + ")"));
         line.append(
           el("span", opens ? "res-build-mark" : ""),
           el("span", "res-build-place", String(path.length)),

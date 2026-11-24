@@ -447,6 +447,8 @@ class TheSiteList(unittest.TestCase):
                 ("site-link", "../../home/", "Home"),
                 ("site-link", "../win-analytics/", "Charts/"),
                 ("site-link sub-link", "../win-analytics/", "Win Analytics"),
+                ("site-link sub-link", "../elo-rankings/", "ELO Rankings"),
+                ("site-link sub-link", "../civ-analytics/", "Civ Analytics"),
                 ("site-link sub-link", "./", "CIVVIS Performance"),
                 ("site-link sub-link", "../ai-interpretability/", "AI Interpretability"),
                 ("site-link", "../../auto-tourneys/", "Auto-Tourneys"),
@@ -470,12 +472,14 @@ class TheSiteList(unittest.TestCase):
         # (CIVVIS and AI Debugger, the two tools) list none of them.
         self.assertIn(
             '<a class="site-link sub-link" href="./" aria-current="page">Win Analytics</a>\n'
-            '        <a class="site-link sub-link" href="../civvis-performance/" ',
+            '        <a class="site-link sub-link" href="../elo-rankings/" ',
             RESEARCH,
         )
+        self.assertIn('        <a class="site-link sub-link" href="../civvis-performance/" ', RESEARCH)
         for page in (LANDING, TOURNAMENTS, VIEWER):
             self.assertNotIn("Performance</a>", page.replace(">CIVVIS Performance</a></figcaption>", ""))
-            self.assertNotIn(">Win Analytics</a>", page)
+            for name in (">Win Analytics</a>", ">ELO Rankings</a>", ">Civ Analytics</a>"):
+                self.assertNotIn(name, page)
         for gone in ("perflink", "under-watch", "opens-watching", "sub-link"):
             self.assertNotIn(gone, VIEWER)
 
