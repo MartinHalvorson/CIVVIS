@@ -6986,6 +6986,23 @@ function clearBootRetrying() {
   el.dataset.boot = "";
   el.style.display = "none";
 }
+// Every script of the page has run. boot() is called from the foot of this
+// file, before the files that load after it (app_setup.js, app_moments.js,
+// app_frontdoor.js, app_debugger.js), and past its first await it calls into
+// them: `syncTeams`, for one, is app_setup.js's. That was safe only while
+// those files ran before the engine's first answer, and on a site that
+// serves them as files of their own nothing promises it. On 2026-11-24 the
+// engine answered /rules first, boot threw "syncTeams is not defined", and
+// the publish check, which lets no page throw, failed a promotion to the
+// front page on it. A visitor would have seen "Boot failed · retry 1" and a
+// world two seconds late.
+//
+// The page's scripts are ordinary parser-run ones, so DOMContentLoaded
+// follows the last of them. A boot begun after that (a retry, a reconnect,
+// a page that injected this file late) waits for nothing.
+const pageScriptsRan = document.readyState === "loading"
+  ? new Promise(resolve => document.addEventListener("DOMContentLoaded", resolve, {once: true}))
+  : Promise.resolve();
 async function boot() {
   if (bootBusy) return;
   bootBusy = true;
@@ -7009,6 +7026,9 @@ async function boot() {
     // Its failure is this boot's failure, reported where it is awaited below.
     openingRead.catch(() => {});
     RULES = await fetchJSON("/rules");
+    // The three reads above are already asked for; nothing past this line
+    // runs until the scripts it calls into have.
+    await pageScriptsRan;
     GENE_PROGRAM = await geneProgramRead;
     // The engine's stock opening setup: the single description of the world
     // nobody has decided anything about. The controls below stamp their
@@ -39858,8 +39878,9 @@ resize();
 // Nothing defined in app_setup.js is called here: that file loads after this
 // one, so a load-time call throws and boot() below never runs — the page
 // stays behind the "Joining the live world" veil with viewers 0. Those calls
-// live at the end of app_setup.js, still before the engine's first answer
-// (boot's synchronous prefix ends at its first await).
+// live at the end of app_setup.js, still before boot goes past the engine's
+// first answer (boot's synchronous prefix ends at its first await, and it
+// then waits for `pageScriptsRan`).
 boot();
 
 // `?setup=1` lands with the sidebar's Game setup drawer open: the home page's

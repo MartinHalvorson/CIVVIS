@@ -350,6 +350,85 @@ fn setup_asset_is_embedded_and_keeps_the_global_script_contract() {
 }
 
 #[test]
+fn boot_waits_for_every_script_of_the_page_before_it_calls_into_them() {
+    // boot() is called from the foot of app.js, before the scripts that load
+    // after it, and past its first await it calls into them. On the site
+    // each script is a file of its own and the engine can answer first: on
+    // 2026-11-24 it did, boot threw "syncTeams is not defined", and the
+    // publish check, which lets no page throw, failed a promotion to the
+    // front page on it. Holding app_setup.js back four seconds in a browser
+    // throws the same; with the wait below it does not.
+    let boot = EMBEDDED_APP_JS
+        .split_once("\nasync function boot() {")
+        .expect("browser boot function")
+        .1
+        .split_once("\n}\n")
+        .expect("end of browser boot function")
+        .0;
+    let at = |needle: &str| {
+        boot.find(needle)
+            .unwrap_or_else(|| panic!("boot no longer has `{needle}`"))
+    };
+    let wait = at("await pageScriptsRan;");
+    // The reads are asked for before the wait, so it costs the world nothing.
+    assert!(at("const openingRead = fetchJSON(") < wait);
+    assert!(at("RULES = await fetchJSON(\"/rules\");") < wait);
+    // The call that threw comes after it, and is app_setup.js's.
+    assert!(wait < at("syncTeams();"));
+    assert!(EMBEDDED_APP_SETUP_JS.contains("\nfunction syncTeams() {"));
+    assert!(!EMBEDDED_APP_JS.contains("function syncTeams("));
+    // What is waited for: the page's scripts are parser-run, so
+    // DOMContentLoaded follows the last of them; a boot begun later (a
+    // retry, a reconnect) waits for nothing.
+    assert!(EMBEDDED_APP_JS.contains(concat!(
+        "const pageScriptsRan = document.readyState === \"loading\"\n",
+        "  ? new Promise(resolve => document.addEventListener(\"DOMContentLoaded\", resolve, {once: true}))\n",
+        "  : Promise.resolve();\n",
+    )));
+    let declared = EMBEDDED_APP_JS
+        .find("const pageScriptsRan")
+        .expect("the wait is declared");
+    let started = EMBEDDED_APP_JS
+        .find("\nboot();\n")
+        .expect("the call that starts the first boot");
+    assert!(declared < started);
+    // And nothing of a later script is called before it.
+    let before = &boot[..wait];
+    for script in [
+        EMBEDDED_APP_SETUP_JS,
+        EMBEDDED_APP_MOMENTS_JS,
+        EMBEDDED_APP_FRONTDOOR_JS,
+        include_str!("../../web/assets/app_debugger.js"),
+    ] {
+        for line in script.lines() {
+            let Some(rest) = line
+                .strip_prefix("async function ")
+                .or_else(|| line.strip_prefix("function "))
+            else {
+                continue;
+            };
+            let Some((name, _)) = rest.split_once('(') else {
+                continue;
+            };
+            if name.is_empty() {
+                continue;
+            }
+            let call = format!("{name}(");
+            for (start, _) in before.match_indices(&call) {
+                let part_of_another_name = before[..start]
+                    .chars()
+                    .next_back()
+                    .is_some_and(|c| c.is_alphanumeric() || matches!(c, '_' | '$' | '.'));
+                assert!(
+                    part_of_another_name,
+                    "boot calls {name}, of a script that loads after app.js, before every script has run"
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn machine_metric_values_are_bounded_and_only_expose_percentages() {
     assert_eq!(super::bounded_percent(f64::NAN), None);
     assert_eq!(super::bounded_percent(-5.0), Some(0.0));
