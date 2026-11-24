@@ -142,6 +142,23 @@ class Benchmark(unittest.TestCase):
             [(1, 8, True, "moonshot"), (2, 8, False, "holy"), (6, 4, False, "jack")],
         )
 
+    def test_each_game_carries_its_diplomatic_switch_from_its_run(self):
+        rows = [
+            self.row("20261122T010000Z", "DIFFICULTY_DEITY", "win"),
+            self.row("20261122T020000Z", "DIFFICULTY_DEITY", "defeat"),
+            # A run whose summary does not say is in neither reading.
+            self.row("20261122T030000Z", "DIFFICULTY_KING", "win"),
+        ]
+        asked = []
+
+        def switch(tags):
+            asked.extend(tags)
+            return {"civvis-t7-20261122T010000Z": True, "civvis-t7-20261122T020000Z": False}
+
+        games = elo_page.benchmark_games(self.source(rows), rows, switch)
+        self.assertEqual([g["diplo"] for g in games], [True, False, None])
+        self.assertIn("civvis-t7-20261122T030000Z", asked)
+
     def test_each_level_is_rated_now_and_a_point_a_day_over_its_window(self):
         points = [point("2026-11-01T00:00:00Z", moonshot=(1000, 0, ""), jack=(1000, 0, ""))]
         games = []
@@ -200,6 +217,74 @@ class Agents(unittest.TestCase):
         self.assertEqual([p["ratings"]["jack"][0] for p in points], [1100, 1150.0])
 
 
+class Readings(unittest.TestCase):
+    """Operator 2026-11-24: "add a second elo for games with diplo off. we
+    should maintain this because diplo on or off makes a big difference"."""
+
+    @staticmethod
+    def tree(on: float, off: float | None) -> pathlib.Path:
+        root = pathlib.Path(tempfile.mkdtemp())
+        (root / "data").mkdir()
+        fits = [(elo_page.PUBLISHED, elo_page.HISTORY, on)]
+        if off is not None:
+            fits.append((elo_page.NO_DIPLO_PUBLISHED, elo_page.NO_DIPLO_HISTORY, off))
+        for published, kept, jack in fits:
+            (root / published).write_text(json.dumps({"tables": 100, "players": 4, "ratings": {
+                "jack": {"elo": jack, "sd": 10.0, "margin95": 20.0, "games": 100, "wins": 30}}}), encoding="utf-8")
+            (root / kept).write_text(json.dumps({"points": [point("2026-11-20T00:00:00Z", jack=(jack, 20, ""))]}),
+                                     encoding="utf-8")
+        return root
+
+    @staticmethod
+    def games(diplo) -> list[dict]:
+        # Six Deity games a day for three days, our seat winning one in six:
+        # level with the twin.
+        start = at("2026-11-21T00:00:00Z")
+        return [{"at": start + datetime.timedelta(days=d, hours=k), "level": 8, "won": k == 0, "twin": "jack",
+                 "diplo": diplo} for d in range(3) for k in range(6)]
+
+    def record(self, root: pathlib.Path, games: list[dict]) -> dict:
+        real = elo_page.benchmark_games
+        elo_page.benchmark_games = lambda source: games
+        try:
+            return elo_page.record(root)
+        finally:
+            elo_page.benchmark_games = real
+
+    def test_each_reading_rates_its_own_games_against_its_own_fit(self):
+        # The same games, played both ways: each reading counts only its
+        # own, and rates our seat at the twin's rating in that reading.
+        games = sorted(self.games(True) + self.games(False) + self.games(None)[:2], key=lambda g: g["at"])
+        record = self.record(self.tree(1000.0, 1300.0), games)
+        on, off = record["firaxis"]["levels"][0]["now"], record["off"]["firaxis"]["levels"][0]["now"]
+        self.assertEqual((on["games"], off["games"]), (18, 18))
+        self.assertAlmostEqual(on["elo"], 1000.0, delta=0.5)
+        self.assertAlmostEqual(off["elo"], 1300.0, delta=0.5)
+        self.assertEqual(record["unswitched"], 2)
+        self.assertEqual([r["elo"] for r in record["strategies"]["rows"]], [1000.0])
+        self.assertEqual([r["elo"] for r in record["off"]["strategies"]["rows"]], [1300.0])
+        self.assertEqual(record["off"]["agents"][0]["series"], [["2026-11-20T00:00:00Z", 1300.0, 20, ""]])
+        # The diplo-off reading carries every field the stock one does.
+        self.assertEqual(set(record["off"]), set(record) - {"off", "unswitched"})
+
+    def test_a_revision_from_before_the_diplo_off_fit_has_no_second_reading(self):
+        record = self.record(self.tree(1000.0, None), self.games(False))
+        self.assertIsNone(record["off"])
+        # Its diplo-off games are not read as diplo-on ones.
+        self.assertIsNone(record["firaxis"])
+
+    def test_the_repository_publishes_both_readings(self):
+        # The diplo-off fit is kept up as the stock one is: it must not go
+        # missing from a revision once it has been published.
+        self.assertTrue((ROOT / elo_page.NO_DIPLO_PUBLISHED).is_file())
+        off = json.loads((ROOT / elo_page.NO_DIPLO_PUBLISHED).read_text(encoding="utf-8"))
+        self.assertIs(off["diplomatic"], False)
+        points = elo_page.history(ROOT, elo_page.NO_DIPLO_PUBLISHED, elo_page.NO_DIPLO_HISTORY)
+        self.assertTrue(points)
+        self.assertTrue(elo_page.agents(ROOT, points))
+        self.assertEqual(elo_page.simulator(points)[0]["level"], 8)
+
+
 class Page(unittest.TestCase):
     def test_the_page_carries_one_empty_slot_and_publishing_fills_it(self):
         self.assertEqual(PAGE.count('<script type="application/json" id="elo-data">null</script>'), 1)
@@ -239,6 +324,22 @@ class Page(unittest.TestCase):
         self.assertEqual(sections, ["rank-strategies", "elo-levels", "elo-over-time"])
         self.assertIn('<h2 class="rank-title" id="rank-strategies-title">Player strategies</h2>', PAGE)
         self.assertIn('<h2 class="rank-title" id="elo-over-time-title">Elo over time</h2>', PAGE)
+
+    def test_every_figure_is_shown_with_the_diplomatic_victory_on_and_off(self):
+        # Player strategies: a column for each, its head sorting the list.
+        strategies = PAGE[PAGE.index('id="rank-strategies"'):PAGE.index('id="elo-levels"')]
+        self.assertEqual(re.findall(r'data-sort="(\w+)" aria-pressed="(\w+)"[^>]*>([^<]+)<', strategies),
+                         [("on", "true", "Diplo on"), ("off", "false", "Diplo off")])
+        self.assertIn("item.append(label, value(r, \"on\"), value(r, \"off\"));", PAGE)
+        # The levels: each reading's benchmark and simulator side by side.
+        levels = PAGE[PAGE.index('id="elo-levels-table"'):PAGE.index("</thead>", PAGE.index('id="elo-levels-table"'))]
+        self.assertEqual(re.findall(r"<span>(Diplo o\w+)</span>", levels), ["Diplo on", "Diplo off"])
+        self.assertEqual(re.findall(r'<th scope="col"[^>]*>(\w+)</th>', levels), ["Level", "Benchmark", "Simulator", "Benchmark", "Simulator"])
+        # The graph: one reading at a time, switched over the key.
+        graph = PAGE[PAGE.index('id="elo-over-time"'):PAGE.index('id="elo-legend"')]
+        self.assertEqual(re.findall(r'data-diplo="(\w+)" aria-pressed="(\w+)">([^<]+)<', graph),
+                         [("on", "true", "Diplo on"), ("off", "false", "Diplo off")])
+        self.assertIn("const VIEWS = { on: data, off: data.off || null };", PAGE)
 
     def test_every_agents_colour_follows_the_agent(self):
         # Colour follows the entity, never its place: every agent of the

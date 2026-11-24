@@ -293,8 +293,9 @@ rival in the simulator than Civilization VI's own AI with that handicap is in
 the game. Our seat wins 14.5% of its Deity games, where an equal seat at a
 table of six would win 16.7%. Two cautions: the table of one seat against
 five copies of a rival is the shape that read our own rungs 100 to 180 low
-([Why a rung sits alone](#why-a-rung-sits-alone)), and the games pool the
-Diplomatic victory on and off as the benchmark deals them.
+([Why a rung sits alone](#why-a-rung-sits-alone)), and the games pooled the
+Diplomatic victory on and off as the benchmark deals them. They no longer do:
+[Diplomatic victory on and off](#diplomatic-victory-on-and-off).
 
 **Elo over time.** Every published fit is a point in
 `data/strategy_elo_history.json` (`tools/strategy_elo_history.py`: the
@@ -303,6 +304,39 @@ rating run appends one before it commits, `backfill` rebuilt the fits since
 revision whose newest point is not the published file). ELO Rankings
 (`beta/elo.html`, under Charts/) draws the top ten agents from fit to fit
 and the five Firaxis levels day by day on one axis.
+
+### Diplomatic victory on and off
+
+Operator 2026-11-24: "add a second elo for games with diplo off. we should
+maintain this because diplo on or off makes a big difference."
+
+Every rating is kept twice: for games with every victory on (the stock game,
+everything above) and for games with the Diplomatic victory switched off.
+
+- **The agents.** `strategy_elo --no-diplo` plays every table with
+  `victory_conditions.diplomatic` off and the other five on, and keeps its own
+  log, fit and history: `data/strategy_elo_no_diplo_games.jsonl`,
+  `data/strategy_elo_no_diplo.json` (`"diplomatic": false`) and
+  `data/strategy_elo_no_diplo_history.json`. Each logged table says which game
+  it was (`"diplomatic"`; a line without it is from before the switch, a stock
+  game), and a fit reads only the tables played its way, so the two can never
+  mix. The recipe is the stock one, pool and rung tables alike, so the two
+  ratings of an agent differ only in the switch.
+- **The Firaxis levels.** The benchmark games are split by their own run's
+  switch, the split Win Analytics' two win-rate tables make
+  (`research_page.switches`). A diplo-off game is rated with our seat at its
+  twin's diplo-off rating, a diplo-on game at the stock one. A game whose run
+  does not say how it was set is in neither reading.
+- **Kept fresh.** The host's cadence (`elo_cadence.py`, `no_diplo` in
+  `elo.json`) plays the same recipe a second time with `--no-diplo` in every
+  scheduled run and ships both fits in the run's one PR;
+  `tools/strategy_elo_history.py append` appends each published fit to its own
+  history, and `check` fails a revision whose diplo-off history does not end at
+  its published fit, as it does for the stock one.
+
+ELO Rankings shows both side by side: Player strategies has a column for
+each (its head sorts the list), the levels table each reading's benchmark and
+simulator figures, and the graph a switch between the two.
 
 ## What the Civilization VI mapping does and does not prove
 
@@ -405,7 +439,7 @@ on our stand-in for Civilization VI's AI, not on that AI.
 - **ELO Rankings** on the site (Charts/, `beta/elo.html`) lists the agents by
   Elo with the Firaxis levels the benchmark measures among them, each level's
   two readings side by side, and the Elo of the top ten agents and of Lv 4 to
-  Lv 8 over time.
+  Lv 8 over time, every figure with the Diplomatic victory on and with it off.
 
 Difficulty and rival are separate dials. Difficulty is what the rules hand the
 rivals; the agent is how well they play. As measured on 2026-11-22 the
