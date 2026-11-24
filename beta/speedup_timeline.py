@@ -260,6 +260,18 @@ def readings(source: pathlib.Path, stop: dict) -> list[dict]:
     return records(runs, FOLLOWED[followed])
 
 
+def began(taken: list[dict]) -> dict:
+    """The reading a stop is said to have started from (`was`), among its
+    readings oldest first: the first that was timed. A figure that was worked
+    out is not somewhere the stop stood, so a timed reading that takes its
+    place did not move from it. A stop with worked-out readings alone starts
+    from its first."""
+    newest = taken[-1]
+    if newest.get("worked"):
+        return taken[0]
+    return next(reading for reading in taken if not reading.get("worked"))
+
+
 def sides(places: list[float]) -> list[str]:
     """Which side of the line each stop's words stand on, `above` or `below`,
     for stops at these places along it. Taken in order along the line, a stop
@@ -518,7 +530,7 @@ def timeline(source: pathlib.Path) -> dict | None:
             # A stop kept for the Performance page's tables alone.
             if stop.get("line") is False:
                 continue
-            now, first = taken[-1], taken[0]
+            now, first = taken[-1], began(taken)
             multiplier = base / now["seconds"]
             row = {
                 "key": stop["key"],
@@ -734,7 +746,7 @@ def worked(source: pathlib.Path) -> dict | None:
         newest = {stop["key"]: taken[-1] for stop, taken in measured}
 
         def common(stop: dict, taken: list[dict]) -> dict:
-            now, first = taken[-1], taken[0]
+            now, first = taken[-1], began(taken)
             row = {
                 "key": stop["key"],
                 "seconds": round(now["seconds"], 3),
