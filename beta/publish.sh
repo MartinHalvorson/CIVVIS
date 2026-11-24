@@ -4,8 +4,8 @@
 #
 # The output is one complete LANE of the site — the viewer at its root with
 # the engine compiled to WebAssembly beside it, the landing page at /home, the
-# pages of Charts/ under /charts (Win Analytics, CIVVIS Performance, AI
-# Interpretability), the Auto-Tourneys page at /auto-tourneys and the
+# pages of Charts/ under /charts (Win Analytics, ELO Rankings, Civ Analytics,
+# CIVVIS Performance, AI Interpretability), the Auto-Tourneys page at /auto-tourneys and the
 # downloads page at /download — a
 # plain directory of static files with no
 # host-specific anything beyond the two Cloudflare Pages control files, which
