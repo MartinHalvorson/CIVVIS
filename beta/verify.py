@@ -185,6 +185,8 @@ PAGES = {
     "charts/civvis-performance": b'id="performance-data"',
     "charts/ai-interpretability": b'id="interpretability-data"',
     "download": b"releases/latest/download/",
+    # Wizard Chess: the board it is played on.
+    "wizard-chess": b'<canvas id="stage"',
 }
 
 # Where four of them answered until 2026-11-23, and where each is now. A lane

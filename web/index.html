@@ -372,6 +372,9 @@
      row and has a row of its own. AI Debugger and Civ 6 keep the rows of
      their own they had beside it. */
   .head-links > #playlink, .head-links > #strangelink, .head-links > #civ6link { grid-column: 1 / -1; }
+  /* Wizard Chess (operator, 2026-11-23: "below civ 6, add wizard chess") is
+     the last name in the list and has the last row. */
+  .head-links > #chesslink { grid-column: 1 / -1; }
   /* A name stands on one line wherever it fits, and every one of them
      does in the typefaces measured. In a wider one a name of two words
      takes two lines, a word to each, and the link beside it in a row is as
@@ -400,6 +403,21 @@
     background: linear-gradient(90deg, #1a44c2 35%, #47bfff) border-box;
   }
   #civ6link:hover { color: #fff; border-color: #fff; background: linear-gradient(90deg, #2352d6 35%, #73cfff) border-box; }
+  /* Wizard Chess is a chessboard ("the background there can be black and
+     white checkerboard"): black and white squares round a black plate that
+     the name stands on, as on the pages. The link is 16px tall here, so the
+     squares are half the pages' size and the plate leaves two of them above
+     and below the name's line. */
+  #chesslink {
+    color: #f4f1e8; border-color: transparent;
+    background: linear-gradient(#0b0b0c, #0b0b0c) center / calc(100% - 12px) calc(100% - 6px) no-repeat,
+      repeating-conic-gradient(#f4f1e8 0 25%, #0b0b0c 0 50%) 0 0 / 4px 4px border-box;
+  }
+  #chesslink:hover {
+    color: #fff; border-color: transparent;
+    background: linear-gradient(#26262a, #26262a) center / calc(100% - 12px) calc(100% - 6px) no-repeat,
+      repeating-conic-gradient(#ffffff 0 25%, #0b0b0c 0 50%) 0 0 / 4px 4px border-box;
+  }
   /* Doctor Strange's Civ 6 stands out in Doctor Strange's own colours
      (operator, 2026-11-23: "highlight dr strange civ 6 button in dr
      strange colors"): the deep blue of his tunic running into the crimson
@@ -6667,6 +6685,7 @@
         <a class="home-link" id="strangelink" href="?mode=strange" target="_top">Doctor Strange's Civ 6</a>
         <a class="home-link" id="playlink" href="?mode=play" target="_top">AI Debugger</a>
         <a class="home-link" id="civ6link" href="https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/" target="_blank" rel="noopener" title="Buy Civilization VI on Steam">Civ 6</a>
+        <a class="home-link" id="chesslink" href="/wizard-chess" target="_top">Wizard Chess</a>
       </nav>
     </div>
   </div>

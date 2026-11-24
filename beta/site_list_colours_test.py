@@ -17,6 +17,11 @@ says where it goes, and says the same thing on every page:
     Doctor Strange's Civ 6                       Doctor Strange's blue and
                                                  crimson, in an orange glow
     Civ 6                                        the blue of Steam's buttons
+    Wizard Chess                                 a chessboard, black and
+                                                 white (operator, later the
+                                                 same day: "the background
+                                                 there can be black and
+                                                 white checkerboard")
 
 and the page on screen is still the one in gold.
 
@@ -85,11 +90,23 @@ STEAM = (
     '  .site-link[href^="https://store.steampowered.com/"]:hover,\n'
     '  .site-link[href^="https://store.steampowered.com/"]:focus-visible { background: linear-gradient(90deg, #2352d6 35%, #73cfff); color: #fff; }\n'
 )
+#: A chessboard: black and white squares round a black plate the name
+#: stands on, so that it reads on either.
+SQUARE, PLATE = "#f4f1e8", "#0b0b0c"
+BOARD = (
+    '  .site-link[href$="wizard-chess/"] {\n'
+    f'    background: linear-gradient({PLATE}, {PLATE}) center / calc(100% - 16px) calc(100% - 8px) no-repeat,\n'
+    f'      repeating-conic-gradient({SQUARE} 0 25%, {PLATE} 0 50%) 0 0 / 8px 8px;\n'
+    f'    color: {SQUARE};\n'
+    '  }\n'
+)
 
 
 def ground(href: str) -> str:
     """What the three rules make of a link, read as the browser reads them:
     `$=` is "ends with" and `^=` "starts with"."""
+    if href.endswith("wizard-chess/"):
+        return "board"
     if href.endswith("../") or href.endswith("?mode=play"):
         return "black"
     if href.endswith("?mode=strange"):
@@ -132,6 +149,7 @@ class Pages(unittest.TestCase):
                 self.assertEqual(page.count(BLACK), 1)
                 self.assertEqual(page.count(STRANGE), 1)
                 self.assertEqual(page.count(STEAM), 1)
+                self.assertEqual(page.count(BOARD), 1)
                 # The strange rule comes after the black, so nothing from
                 # the simulator's black is left on it at equal weight.
                 self.assertLess(page.index(BLACK), page.index(STRANGE))
@@ -147,7 +165,13 @@ class Pages(unittest.TestCase):
                     {"CIVVIS", "AI Debugger"})
                 self.assertEqual({name for name, kind in worn.items() if kind == "strange"}, {"Doctor Strange's Civ 6"})
                 self.assertEqual({name for name, kind in worn.items() if kind == "steam"}, {"Civ 6"})
-                blue = {name for name, kind in worn.items() if kind == "blue"}
+                # Wizard Chess is the board everywhere but on its own page,
+                # where its link is the page on screen and is gold.
+                page = (BETA / source).read_text(encoding="utf-8")
+                here = set(re.findall(r'aria-current="page">([^<]+)</a>', NAV.search(page).group(1)))
+                self.assertEqual({name for name, kind in worn.items() if kind == "board"}, {"Wizard Chess"} - here)
+                self.assertEqual(list(worn)[-1], "Wizard Chess", "it stands below Civ 6, the last in the list")
+                blue = {name for name, kind in worn.items() if kind == "blue"} - ({"Wizard Chess"} & here)
                 self.assertLessEqual({"Home", "Charts/", "Tournaments"}, blue)
                 # Whatever else is blue is a page of Charts/, set in under it.
                 under = {name for kind, _, _, name in LINK.findall(NAV.search((BETA / source).read_text(encoding="utf-8")).group(1)) if kind.endswith("sub-link")}
@@ -175,6 +199,7 @@ class Simulator(unittest.TestCase):
             ("playlink", "AI Debugger"),
             ("strangelink", "Doctor Strange's Civ 6"),
             ("civ6link", "Civ 6"),
+            ("chesslink", "Wizard Chess"),
         ):
             self.assertRegex(VIEWER, rf'<a class="home-link" id="{mark}" [^>]*>{re.escape(name)}</a>')
 
@@ -186,6 +211,18 @@ class Simulator(unittest.TestCase):
             "  #civ6link {\n"
             "    color: #fff; border-color: transparent;\n"
             "    background: linear-gradient(90deg, #1a44c2 35%, #47bfff) border-box;\n"
+            "  }\n",
+            VIEWER,
+        )
+
+    def test_wizard_chess_is_a_chessboard(self):
+        # The same squares as on the pages, by name, at half the size: the
+        # link is 16px tall here.
+        self.assertIn(
+            "  #chesslink {\n"
+            f"    color: {SQUARE}; border-color: transparent;\n"
+            f"    background: linear-gradient({PLATE}, {PLATE}) center / calc(100% - 12px) calc(100% - 6px) no-repeat,\n"
+            f"      repeating-conic-gradient({SQUARE} 0 25%, {PLATE} 0 50%) 0 0 / 4px 4px border-box;\n"
             "  }\n",
             VIEWER,
         )
