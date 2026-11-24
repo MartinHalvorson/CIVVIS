@@ -406,7 +406,9 @@ class HomeRankings(unittest.TestCase):
         self.assertEqual(re.findall(r'<section [^>]*id="([a-z-]+)"', record)[0], "rank-strategies")
         record = CIVS[CIVS.index('<div class="civ-record" id="civ-record" hidden>'):]
         self.assertEqual(re.findall(r'<section [^>]*id="([a-z-]+)"', record), ["rank-civs", "res-side-builds"])
-        self.assertIn("const strategies = data.strategies;", ELO)
+        # Since 2026-11-24 the list has two readings, the Diplomatic victory
+        # on and off, each a record of the same fields (`elo_page.record`).
+        self.assertIn("const rows = view.strategies && Array.isArray(view.strategies.rows) ? view.strategies.rows : [];", ELO)
         self.assertIn("const civs = data.civs;", CIVS)
         # The Tournaments table stood above the two lists until the operator
         # gave tournaments their own page (2026-11-21: "The tournament tables

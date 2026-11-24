@@ -33,6 +33,27 @@ class HistoryTest(unittest.TestCase):
     def test_the_repository_history_ends_at_the_published_fit(self):
         self.assertIsNone(history.check(history.ROOT))
 
+    def test_the_repository_diplo_off_history_ends_at_its_published_fit(self):
+        self.assertIsNone(history.check_all(history.ROOT))
+
+    def test_the_diplo_off_fit_keeps_a_history_of_its_own(self):
+        root = self.tree(fit(1141.3))
+        history.append(root, "2026-11-24T05:00:00Z")
+        # A tree from before the second fit is no fault...
+        self.assertIsNone(history.check_all(root))
+        self.assertFalse(history.append(root, "2026-11-24T05:00:00Z", history.NO_DIPLO_PUBLISHED,
+                                        history.NO_DIPLO_HISTORY))
+        # ...but once it is published, it wants its point.
+        (root / history.NO_DIPLO_PUBLISHED).write_text(json.dumps(fit(1210.0)), encoding="utf-8")
+        self.assertIn("no_diplo_history", history.check_all(root))
+        self.assertTrue(history.append(root, "2026-11-24T05:00:00Z", history.NO_DIPLO_PUBLISHED,
+                                       history.NO_DIPLO_HISTORY))
+        self.assertIsNone(history.check_all(root))
+        on = json.loads((root / history.HISTORY).read_text())["points"]
+        off = json.loads((root / history.NO_DIPLO_HISTORY).read_text())["points"]
+        self.assertEqual([p["ratings"]["jack"][0] for p in on], [1141.3])
+        self.assertEqual([p["ratings"]["jack"][0] for p in off], [1210.0])
+
     def test_a_point_keeps_elo_margin_and_bound_and_derives_a_missing_margin(self):
         p = history.point(fit(1141.26), "2026-11-22T10:28:41Z")
         self.assertEqual(p["ratings"]["jack"], [1141.3, 28, ""])
