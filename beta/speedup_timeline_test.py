@@ -130,6 +130,32 @@ class Ledger(unittest.TestCase):
         self.assertNotIn("deity_sim", stops)
         self.assertIn("deity_sim", [row["key"] for row in speedup_timeline.worked(ROOT)["games"]])
 
+    def test_a_timed_reading_takes_a_worked_out_one_s_place_and_did_not_move_from_it(self):
+        # Operator 2026-11-24: "Firaxis self-play (test how long this take)".
+        # The first reading was worked out from our own games; the lane then
+        # played one such game for real.
+        stop = next(stop for stop in LEDGER["stops"] if stop["key"] == "firaxis_self_play")
+        self.assertEqual([bool(reading.get("worked")) for reading in stop["readings"]][:2], [True, False])
+        newest = stop["readings"][-1]
+        self.assertNotIn("worked", newest)
+        self.assertTrue(newest["from"].startswith("Timed:"))
+        shown = {row["key"]: row for row in speedup_timeline.timeline(ROOT)["stops"]}
+        self.assertNotIn("worked", shown["firaxis_self_play"])
+        self.assertEqual(shown["firaxis_self_play"]["seconds"], newest["seconds"])
+        # The worked-out figure is not where the stop stood before.
+        if not any(not reading.get("worked") for reading in stop["readings"][:-1]):
+            self.assertNotIn("was", shown["firaxis_self_play"])
+        # It stands between computer control and the simulator.
+        self.assertLess(shown["control"]["multiplier"], shown["firaxis_self_play"]["multiplier"])
+        self.assertLess(shown["firaxis_self_play"]["multiplier"], shown["self_play"]["multiplier"])
+        # The rule, on readings of its own.
+        timed, worked = {"taken": "2026-12-01", "seconds": 300}, {"taken": "2026-11-24", "seconds": 500, "worked": True}
+        later = {"taken": "2026-12-09", "seconds": 250}
+        self.assertIs(speedup_timeline.began([worked, timed]), timed)
+        self.assertIs(speedup_timeline.began([worked, timed, later]), timed)
+        self.assertIs(speedup_timeline.began([worked]), worked)
+        self.assertIs(speedup_timeline.began([timed, later]), timed)
+
     def test_a_reading_that_was_worked_out_says_so(self):
         # No game has been timed yet with Firaxis's AI in every seat: the
         # reading is worked out from our own games, and the pages mark it.
