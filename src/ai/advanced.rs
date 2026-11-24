@@ -9073,6 +9073,12 @@ pub struct AdvancedAi {
     /// holdable-land Settler and the near rival's deterrent. See
     /// `advanced/nearly_built_keeps_its_queue.rs`. Off by default.
     nearly_built_keeps_its_queue: bool,
+    /// `one-replan-per-turn`: a turn re-opens for a fresh view and a second
+    /// plan at most once, not twice. The first re-plan still answers the
+    /// ground the orders explored, a strike's outcome or a refusal; the
+    /// second, a third plan of the same turn, is not asked. See
+    /// `ai::player::take_turn`. Off by default.
+    one_replan_per_turn: bool,
     // ---- append: p-r ------------------------------------------------
     /// `racer-seat-statue-civic-first`: Civil Engineering as the civic goal of
     /// a Science, Culture or Religious seat that reaches for the Statue of
@@ -13735,6 +13741,12 @@ impl AdvancedAi {
     /// seat's frame executor (`ai/player.rs`).
     pub(crate) fn refusals_alone_reopen_the_turn_on(&self) -> bool {
         self.refusals_alone_reopen_the_turn
+    }
+
+    /// Whether `one-replan-per-turn` is on, for the observed seat's frame
+    /// loop (`ai/player.rs`).
+    pub(crate) fn one_replan_per_turn_on(&self) -> bool {
+        self.one_replan_per_turn
     }
 
     pub fn current_plan(&self) -> Option<&StrategicPlan> {

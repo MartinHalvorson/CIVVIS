@@ -6214,6 +6214,12 @@ pub const GENES: &[Gene] = &[
     // production in it that finishes within 6 standard turns keeps its queue
     // against those claims. Opt-in; see `advanced/nearly_built_keeps_its_queue.rs`.
     Gene { tag: "nearly-built-keeps-its-queue", field: "nearly_built_keeps_its_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_nearly_built_keeps_its_queue, disable: AdvancedAi::disable_nearly_built_keeps_its_queue },
+    // A turn re-opens (a fresh view, another plan) at most once. Removing
+    // every re-plan but a refusal's cost 4.4 points of win rate (#5725's
+    // screen of `refusals-alone-reopen-the-turn`); the second re-plan is the
+    // rarer one and about a tenth of a turn's compute. Opt-in, unpriced; see
+    // `ai::player::take_turn`.
+    Gene { tag: "one-replan-per-turn", field: "one_replan_per_turn", kind: Kind::OptIn, enable: AdvancedAi::enable_one_replan_per_turn, disable: AdvancedAi::disable_one_replan_per_turn },
     // ---- append: p-r ------------------------------------------------
     // `racer-seat-statue-civic-first`: Civil Engineering first for a Science,
     // Culture or Religious seat that reaches for the Statue of Liberty, as

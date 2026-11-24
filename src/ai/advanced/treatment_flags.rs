@@ -475,6 +475,9 @@ impl AdvancedAi {
         /// from done keeps its queue against the Settler floors and the
         /// deterrent; see `advanced/nearly_built_keeps_its_queue.rs`.
         nearly_built_keeps_its_queue => enable_nearly_built_keeps_its_queue, disable_nearly_built_keeps_its_queue;
+        /// Opt-in gene `one-replan-per-turn`: a turn re-opens for a fresh
+        /// plan at most once; see `ai::player::take_turn`.
+        one_replan_per_turn => enable_one_replan_per_turn, disable_one_replan_per_turn;
         // ---- append: p-r --------------------------------------------
         /// Opt-in gene `racer-seat-statue-civic-first`; see
         /// `AdvancedAi::diplo_statue_civic_goal`.
