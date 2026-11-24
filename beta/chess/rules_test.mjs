@@ -3,7 +3,7 @@
 // `beta/wizard_chess_test.py` runs it with the rest of the page's checks.
 import assert from "node:assert/strict";
 import {START, fromFen, toFen, perft, legalMoves, play, san, uci, moveFromUci, standing, spoken, positionKey, squareAt} from "./rules.js";
-import {readCommand} from "./command.js";
+import {readCommand, candidates} from "./command.js";
 
 // Perft: the published counts of positions reachable in so many moves
 // (chessprogramming.org, "Perft Results"). Castling, en passant, pins and
@@ -116,4 +116,13 @@ assert.equal(says(middle, "e1g1"), "castles kingside");
 assert.equal(says(last, "e7e8n"), "pawn to e8, and becomes a knight");
 assert.equal(squareAt("h8"), 63);
 assert.equal(legalMoves(fromFen(START)).length, 20);
+// What the board hears before a command is done: every move it could still
+// mean, and nothing for what names nothing yet.
+const could = (fen, text, mount = -1) => candidates(fromFen(fen), text, {mount}).map(move => san(fromFen(fen), move)).sort();
+assert.deepEqual(could(START, "knight"), ["Na3", "Nc3", "Nf3", "Nh3"]);
+assert.deepEqual(could(START, "pawn to e"), ["e3", "e4"]);
+assert.deepEqual(could(START, "kn"), []);
+assert.deepEqual(could(START, ""), []);
+assert.deepEqual(could(START, "ride", 6), ["Nf3", "Nh3"]);
+assert.deepEqual(could("4k3/8/8/3p4/8/4N3/8/4K3 w - - 0 1", "knight takes"), ["Nxd5"]);
 console.log("wizard chess rules: perft, a whole game read and written, and the commands, all hold");

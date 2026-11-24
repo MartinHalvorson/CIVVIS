@@ -18,7 +18,7 @@
 import * as THREE from "./vendor/three.module.min.js";
 import {START, fromFen, toFen, legalMoves, play, san, uci, moveFromUci, standing, spoken, positionKey,
   squareName, colourOf, inCheck, kingOf, PIECE_NAMES} from "./rules.js";
-import {readCommand} from "./command.js";
+import {readCommand, candidates} from "./command.js";
 import {Opponent} from "./engine.js";
 
 const CALM = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -941,6 +941,11 @@ class World {
       if (data.menace && prey) {
         toward = look = prey.position.clone().sub(held.position).setY(0);
         want = 0.13 + 0.035 * Math.sin(this.time * 5 + data.square);
+      } else if (data.brace) {
+        // Named as what is to be taken: it faces what is coming and braces.
+        toward = data.brace.clone().negate();
+        look = data.brace;
+        want = 0.06;
       } else if (data.check) {
         toward = data.check;
         want = 0.075 + 0.03 * Math.sin(this.time * 23);
@@ -963,6 +968,18 @@ class World {
       const shake = this.time * 37;
       this.lean(this.doomed, new THREE.Vector3(Math.sin(shake), 0, Math.cos(shake * 1.3)), 0.045);
     }
+  }
+
+  // What the board hears while a command is being given: the pieces it could
+  // be meant for stir (they lift, and their light brightens), and a piece it
+  // would take turns to face them and braces (`regard`).
+  stir(squares = [], prey = -1) {
+    for (const held of this.pieces.values()) { held.userData.stir = squares.includes(held.userData.square); held.userData.brace = null; }
+    const victim = this.pieces.get(prey);
+    if (!victim || !squares.length) return;
+    const toward = new THREE.Vector3();
+    for (const sq of squares) toward.add(sqPoint(sq).sub(victim.position));
+    if (toward.lengthSq() > 1e-6) victim.userData.brace = toward.setY(0).normalize();
   }
 
   // The king in check, and the pieces that check it: it flinches away from
@@ -1013,9 +1030,9 @@ class World {
     // A piece's ring breathes, and is bright while it is awake.
     for (const held of this.pieces.values()) {
       const data = held.userData, want = 0.3 + 0.07 * Math.sin(this.time * 1.6 + data.square) + Math.min(1.4, data.awake) * 0.55 +
-        (data.menace ? 0.45 + 0.25 * Math.sin(this.time * 7) : 0);
+        (data.menace ? 0.45 + 0.25 * Math.sin(this.time * 7) : 0) + (data.stir ? 0.4 : 0);
       data.ring.material.opacity += (want - data.ring.material.opacity) * Math.min(1, dt * 8);
-      const lift = data.awake > 0 ? 0.05 : 0;
+      const lift = data.awake > 0 || data.stir ? 0.05 : 0;
       data.body.position.y += (lift - data.body.position.y) * Math.min(1, dt * 10);
     }
     const pulse = 0.4 + 0.3 * Math.sin(this.time * 6);
@@ -1757,6 +1774,7 @@ async function ended(how) {
 // game looked at again.
 async function make(move, by) {
   game.busy = true;
+  world.stir();
   const epoch = game.epoch;
   choose(-1);
   const before = game.position, text = san(before, move), aloud = spoken(before, move);
@@ -1867,9 +1885,21 @@ function command(text, quiet = false) {
   return true;
 }
 
+// What the board hears while a command is still being given, typed or said:
+// the pieces it could be meant for stir, when that is a few of them and not
+// the whole side, and the piece it would take turns to face them.
+function stir(text) {
+  const yours = !game.over && !game.busy && game.position.turn === game.side;
+  const fits = yours && text ? candidates(game.position, text, {mount: world.ridden ? world.ridden.userData.square : -1}) : [];
+  const movers = [...new Set(fits.map(move => move.from))];
+  const targets = [...new Set(fits.map(move => move.to))];
+  const prey = targets.length === 1 && fits.every(move => move.captured && move.flag !== "ep") ? targets[0] : -1;
+  world.stir(movers.length <= 6 ? movers : [], prey);
+}
+
 function heard(options, final) {
   if (!options.length) return;
-  if (!final) { say(options[0], "heard"); return; }
+  if (!final) { say(options[0], "heard"); stir(options[0]); return; }
   // Asked whether to ride on, a yes or a no is the answer.
   if (game.risky) {
     const said = options.join(" ").toLowerCase();
@@ -2054,8 +2084,9 @@ const typed = el("typed");
 typed.addEventListener("keydown", event => {
   event.stopPropagation();
   if (event.key === "Enter") { if (command(typed.value)) typed.value = ""; else typed.select(); }
-  if (event.key === "Escape") { typed.value = ""; typed.blur(); }
+  if (event.key === "Escape") { typed.value = ""; typed.blur(); stir(""); }
 });
+typed.addEventListener("input", () => stir(typed.value));
 window.addEventListener("keydown", event => {
   if (event.target instanceof HTMLElement && /^(INPUT|SELECT|TEXTAREA|BUTTON|SUMMARY|A)$/.test(event.target.tagName) && event.target !== stage) {
     if (event.code !== "Space" || event.target.tagName === "INPUT") return;
@@ -2160,4 +2191,4 @@ function frameCost(count = 120) {
 
 // For the checks (beta/wizard_chess_test.py), and for anyone at the console.
 window.wizardChess = {game, world, seat, sound, opponent, command, begin, takeBack, running, meant, point, choose, make, ride, origins,
-  mountSquare, moveFromUci, peril, settle, frameCost};
+  mountSquare, moveFromUci, peril, settle, frameCost, stir};
