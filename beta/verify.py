@@ -184,6 +184,7 @@ PAGES = {
     "charts/civ-analytics": b'id="civ-data"',
     "charts/civvis-performance": b'id="performance-data"',
     "charts/ai-interpretability": b'id="interpretability-data"',
+    "charts/ai-insights": b'id="insights-data"',
     "download": b"releases/latest/download/",
 }
 
