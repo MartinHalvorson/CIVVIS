@@ -2577,7 +2577,7 @@ fn the_home_page_lists_the_sites_with_itself_in_gold() {
         "Strategy Debugger",
         ">Research</a>",
         ">Musings</a>",
-        ">Tournaments</a>",
+        ">Auto-Tourneys</a>",
         ">Performance</a>",
         ">Charts</a>",
         "sub-link",
