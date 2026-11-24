@@ -1153,6 +1153,75 @@ def religion_marks(events_path: Path) -> dict | None:
     }
 
 
+def invasion_reading(events) -> dict | None:
+    """When another civilization first invaded us (operator 2026-11-24: "a
+    chart of the win odds by the turn that a civ is first invaded by another
+    civ"): the first turn a major civ's unit fought us on our own ground.
+    That is an attack on one of our cities or districts, or on one of our
+    units while it or its attacker stood on a tile we own. A barbarian's or a
+    city-state's attack is not another civilization's. A fight out past our
+    borders is not an invasion, and neither is a unit walking in without a
+    fight, which the log does not record.
+
+    `events` is a run's events in order, read once. Majors are the players
+    seen in `rivals` during the run, as `conquest_marks` reads them. Who owns
+    a tile is what the run's `tiles` events last said of it: the full map
+    when the board opens, then every change. Returns `{"turn", "by", "from",
+    "through"}`: the turn and the invader's civ, or both None when nobody
+    invaded us in the turns the log covers, `from` to `through`. A run
+    reloaded from a save covers only its own turns. None without a `seat`
+    event naming us or any board."""
+    local_player = None
+    owner: dict = {}
+    majors: dict = {}
+    first: dict = {}
+    opened = through = None
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        kind, turn = event.get("kind"), event.get("turn")
+        if kind == "seat" and type(event.get("local_player")) is int:
+            local_player = event["local_player"]
+        elif kind == "tiles":
+            for plot in event.get("plots") or []:
+                if isinstance(plot, dict) and type(plot.get("o")) is int:
+                    owner[(plot.get("x"), plot.get("y"))] = plot["o"]
+        elif kind == "state" and type(turn) is int:
+            opened = turn if opened is None else min(opened, turn)
+            through = turn if through is None else max(through, turn)
+            for rival in event.get("rivals") or []:
+                if isinstance(rival, dict) and type(rival.get("player")) is int:
+                    majors.setdefault(rival["player"], rival.get("civ"))
+        elif kind == "combat" and event.get("against_us") is True and type(turn) is int:
+            attacker = event.get("attacker") if isinstance(event.get("attacker"), dict) else {}
+            defender = event.get("defender") if isinstance(event.get("defender"), dict) else {}
+            who = attacker.get("player")
+            if type(who) is not int or who == local_player or who in first or local_player is None:
+                continue
+            on_ours = [owner.get((side.get("x"), side.get("y"))) == local_player
+                       for side in (attacker, defender)]
+            if defender.get("type") in ("city", "district") or any(on_ours):
+                first[who] = turn
+    if local_player is None or opened is None:
+        return None
+    invaders = sorted((turn, player) for player, turn in first.items() if player in majors)
+    turn, player = invaders[0] if invaders else (None, None)
+    if turn is not None:
+        # A log that ends in the middle of a turn has no board for it.
+        through = max(through, turn)
+    return {
+        "turn": turn,
+        "by": majors.get(player) if player is not None else None,
+        "from": opened,
+        "through": through,
+    }
+
+
+def first_invasion(events_path: Path) -> dict | None:
+    """The run's first invasion, for its summary (see `invasion_reading`)."""
+    return invasion_reading(events_of(events_path))
+
+
 def _conquest_reading(board: dict, local_player: int, majors: set) -> dict:
     """What one board shows us holding that someone else founded."""
     taken = [city for city in board.get("cities") or []
@@ -1489,11 +1558,12 @@ PROGRESS_MARKS = (
 
 #: What `progress_marks` reads for the run's summary alone. The ladder's row
 #: has no column for these: the summary on the ledger branch is where the
-#: site reads them (`build_order`: `beta/research_page.py`; `founding_marks`:
-#: `beta/civs_page.py`).
+#: site reads them (`build_order`: `beta/research_page.py`; `founding_marks`
+#: and `first_invasion`: `beta/civs_page.py`).
 SUMMARY_MARKS = (
     ("build_order", build_order),
     ("founding_marks", founding_marks),
+    ("first_invasion", first_invasion),
 )
 
 

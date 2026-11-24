@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#171d25">
 <title>Civ Analytics · CIVVIS.ai</title>
-<meta name="description" content="CIVVIS civ analytics: the early build orders that win against Civilization VI's Deity AI, win rate by the turn of the second and third cities, by religion, pantheon and beliefs, and as each civilization.">
+<meta name="description" content="CIVVIS civ analytics: the early build orders that win against Civilization VI's Deity AI, win rate by the turn of the second and third cities, by religion, pantheon and beliefs, by the turn another civilization first invaded, and as each civilization.">
 <link rel="canonical" href="https://civvis.ai/charts/civ-analytics/">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23171d25'/%3E%3Ccircle cx='16' cy='16' r='11.5' fill='none' stroke='%2366c0f4'/%3E%3Cpath d='M7 16h18M16 4.5c-4.2 4.1-4.2 18.9 0 23M16 4.5c4.2 4.1 4.2 18.9 0 23' fill='none' stroke='%2366c0f4' stroke-width='1.15'/%3E%3C/svg%3E">
 <style>
@@ -533,7 +533,7 @@
       <section class="civ-part" id="civ-filtered" aria-labelledby="civ-filtered-title" hidden>
         <header class="res-side-head">
           <div class="res-side-name">
-            <h2 class="res-side-title" id="civ-filtered-title">Cities and faith: win rate</h2>
+            <h2 class="res-side-title" id="civ-filtered-title">Cities, faith and invasion: win rate</h2>
             <p class="res-counted" id="civ-counted"></p>
           </div>
         </header>
@@ -590,11 +590,21 @@
             <div data-list></div>
           </section>
         </div>
+        <!-- Operator 2026-11-24: "make a chart of the win odds by the turn
+             that a civ is first invaded by another civ and add to civ
+             analytics". -->
+        <h3 class="civ-sub-title">Invasion</h3>
+        <section class="res-section" id="civ-invaded" aria-labelledby="civ-invaded-title">
+          <h3 class="rank-title" id="civ-invaded-title">First invaded by another civ</h3>
+          <p class="rank-sub" data-sub></p>
+          <div data-chart></div>
+        </section>
         <p class="rank-note" id="civ-filtered-note">
           Against the AI, a game counts once however many runs it took: a win is a CIVVIS victory; a loss is a rival&#8217;s victory, our elimination, or a game conceded early.
           A city is one CIVVIS founded, not one it took, on the turn it went down.
           A religion&#8217;s founder and follower beliefs are the two chosen when it was founded; the beliefs added when it is enhanced are not counted.
-          In self-play every seat is a CIVVIS AI agent and one in six wins, so a seat&#8217;s par is 16.7%; a self-play seat records its cities and whether it founded a religion, not its pantheon or beliefs, and its cities from 2026-11-20 on.
+          A game is first invaded on the first turn another civilization&#8217;s unit fights CIVVIS on its own ground: it attacks one of our cities or districts, or one of our units while it or its attacker stands on our land. A barbarian&#8217;s or a city-state&#8217;s attack does not count, and neither does a fight past our borders. Never means no civ invaded us before the game ended, however early that was.
+          In self-play every seat is a CIVVIS AI agent and one in six wins, so a seat&#8217;s par is 16.7%; a self-play seat records its cities and whether it founded a religion, not its pantheon, beliefs or invasions, and its cities from 2026-11-20 on.
           A figure over fewer than ten games is faint.
           <span id="civ-left"></span>
         </p>
@@ -775,6 +785,7 @@
     const SPANS = {
       city2: [[1, 10], [11, 13], [14, 16], [17, 19], [20, 23], [24, 29], [30, 39], [40, 250], [0, 0]],
       city3: [[1, 17], [18, 21], [22, 25], [26, 29], [30, 34], [35, 41], [42, 54], [55, 250], [0, 0]],
+      invaded: [[1, 30], [31, 50], [51, 75], [76, 100], [101, 150], [151, 250], [0, 0]],
     };
     const FEW = 10;
     const spanName = ([lo, hi]) => (lo === 0 ? "Never" : hi === 250 ? lo + "+" : lo === 1 ? "\u2264" + hi : lo + "\u2013" + hi);
@@ -782,8 +793,8 @@
       document.getElementById("civ-filtered").hidden = false;
       shown.push("filtered");
       const F = (name) => GAMES ? GAMES.fields.indexOf(name) : -1;
-      const [LEVEL, DIPLO, WON, DAY, CITY2, CITY3, PANTHEON, FOUNDER, FOLLOWER] =
-        ["level", "diplo", "won", "day", "city2", "city3", "pantheon", "founder", "follower"].map(F);
+      const [LEVEL, DIPLO, WON, DAY, CITY2, CITY3, PANTHEON, FOUNDER, FOLLOWER, INVADED] =
+        ["level", "diplo", "won", "day", "city2", "city3", "pantheon", "founder", "follower", "invaded"].map(F);
       const levels = GAMES ? [...new Set(GAMES.rows.map((r) => r[LEVEL]))].sort((a, b) => b - a) : [];
       const pick = {
         games: levels.includes(Number(GAMES && GAMES.level)) ? String(GAMES.level) : levels.length ? String(levels[0]) : "self",
@@ -814,7 +825,7 @@
       };
       // The games the filters pick, counted.
       const counted = () => {
-        const out = { city2: {}, city3: {}, religion: {}, pantheon: {}, founder: {}, follower: {}, games: 0, wins: 0, beliefs: !!GAMES, from: null, to: null };
+        const out = { city2: {}, city3: {}, invaded: {}, religion: {}, pantheon: {}, founder: {}, follower: {}, games: 0, wins: 0, beliefs: !!GAMES, from: null, to: null };
         if (pick.games === "self") {
           out.beliefs = false;
           const batches = SELF.batches;
@@ -849,6 +860,8 @@
           add(out.pantheon, r[PANTHEON], won);
           if (r[FOUNDER] > 0) add(out.founder, r[FOUNDER], won);
           if (r[FOLLOWER] > 0) add(out.follower, r[FOLLOWER], won);
+          // -1: no log or summary says when, or whether, it was invaded.
+          if (INVADED >= 0 && r[INVADED] >= 0) add(out.invaded, r[INVADED], won);
         }
         if (rows.length) {
           const first = isoDay(GAMES.first);
@@ -860,6 +873,29 @@
       };
 
       const what = () => (pick.games === "self" ? ["seat", "seats"] : ["game", "games"]);
+      // What each chart of turns says: under its title, of a span in its tip,
+      // under its axis, and when it has nothing to draw.
+      const cityWords = (nth) => {
+        const City = nth[0].toUpperCase() + nth.slice(1) + " city";
+        return {
+          sub: "Win rate by the turn CIVVIS founded its " + nth + " city",
+          when: ([lo, hi]) => (lo === 0 ? "No " + nth + " city" : hi === 250 ? City + " on turn " + lo + " or later" : City + " on turns " + lo + "\u2013" + hi),
+          axis: "Turn the " + nth + " city was founded",
+          none: (self) => (self
+            ? "No self-play batch in these days recorded its cities: a seat records them from 2026-11-20 on."
+            : "No game here has its cities on record."),
+        };
+      };
+      const WORDS = {
+        city2: cityWords("second"),
+        city3: cityWords("third"),
+        invaded: {
+          sub: "Win rate by the turn another civ first invaded CIVVIS",
+          when: ([lo, hi]) => (lo === 0 ? "Never invaded" : hi === 250 ? "First invaded on turn " + lo + " or later" : "First invaded on turns " + lo + "\u2013" + hi),
+          axis: "Turn another civ first invaded",
+          none: (self) => (self ? "A self-play seat does not record when it was invaded." : "No game here has its invasions on record."),
+        },
+      };
       // A chart of win rate by turn span: a column per span.
       const chart = (box, tally, city) => {
         const host = box.querySelector("[data-chart]");
@@ -873,12 +909,10 @@
           return { span, games: g, wins: w };
         });
         const total = spans.reduce((s, b) => s + b.games, 0), won = spans.reduce((s, b) => s + b.wins, 0);
-        const nth = city === "city2" ? "second" : "third";
-        sub.textContent = "Win rate by the turn CIVVIS founded its " + nth + " city, over " + plural(total, one, many) + ".";
+        const words = WORDS[city];
+        sub.textContent = words.sub + ", over " + plural(total, one, many) + ".";
         if (!total) {
-          host.replaceChildren(el("p", "civ-none", pick.games === "self"
-            ? "No self-play batch in these days recorded its cities: a seat records them from 2026-11-20 on."
-            : "No game here has its cities on record."));
+          host.replaceChildren(el("p", "civ-none", words.none(pick.games === "self")));
           return;
         }
         const rates = spans.map((b) => (b.games ? b.wins / b.games : 0));
@@ -902,9 +936,7 @@
           const bar = el("span", "civ-bar");
           bar.style.height = b.games ? Math.min(100, (100 * rates[i]) / top).toFixed(1) + "%" : "0";
           col.append(bar);
-          const [lo, hi] = b.span, City = nth[0].toUpperCase() + nth.slice(1) + " city";
-          const when = lo === 0 ? "No " + nth + " city" : hi === 250 ? City + " on turn " + lo + " or later" : City + " on turns " + lo + "\u2013" + hi;
-          tipped(col, b.games ? pct(rates[i]) : "No " + many, when + ": CIVVIS won " + fmt(b.wins) + " of " + plural(b.games, one, many) + ".");
+          tipped(col, b.games ? pct(rates[i]) : "No " + many, words.when(b.span) + ": CIVVIS won " + fmt(b.wins) + " of " + plural(b.games, one, many) + ".");
           plot.append(col);
           const bin = el("span", "civ-bin");
           const binName = el("span", "civ-bin-name");
@@ -925,9 +957,7 @@
         plot.append(ref);
         const details = el("details", "civ-table");
         details.append(el("summary", "", "Table"), table);
-        const axisName = el("p", "civ-axis-name", "Turn the " + nth + " city was founded");
-        axisName.append(el("span", "civ-axis-games", " \u00b7 " + many + " under each span"));
-        host.replaceChildren(plot, axis, axisName, details);
+        host.replaceChildren(plot, axis, el("p", "civ-axis-name", words.axis + " \u00b7 " + many + " under each span"), details);
       };
       // A list of win rates, best first: [name, games, wins] rows.
       const list = (box, rows, none) => {
@@ -977,6 +1007,7 @@
             + " \u00b7 CIVVIS won " + fmt(c.wins) + (c.games ? " (" + pct(c.wins / c.games) + ")" : "");
         chart(document.getElementById("civ-city2"), c.city2, "city2");
         chart(document.getElementById("civ-city3"), c.city3, "city3");
+        chart(document.getElementById("civ-invaded"), c.invaded, "invaded");
         const tiles = document.getElementById("civ-religion");
         tiles.replaceChildren(...[["yes", "Founded a religion"], ["no", "No religion"]].map(([key, label]) => {
           const [g, w] = c.religion[key] || [0, 0];
