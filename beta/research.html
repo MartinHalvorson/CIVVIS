@@ -716,7 +716,7 @@
           </header>
           <div class="res-section">
             <div class="res-kind" id="res-kind-ai">
-              <h3 class="res-kind-title"><span data-title>Every victory</span> <small data-count></small></h3>
+              <h3 class="res-kind-title"><span data-title>Turn Length and Victory Type Histogram of All Games</span> <small data-count></small></h3>
               <div class="res-plot" data-plot></div>
             </div>
             <div class="res-kind" id="res-kind-ai-rival">
@@ -724,7 +724,7 @@
               <div class="res-plot" data-plot></div>
             </div>
             <div class="res-kind" id="res-kind-ai-civvis">
-              <h3 class="res-kind-title"><span data-title>CIVVIS wins</span> <small data-count></small></h3>
+              <h3 class="res-kind-title"><span data-title>CIVVIS wins against Deity AI</span> <small data-count></small></h3>
               <div class="res-plot" data-plot></div>
             </div>
             <details class="fine">
@@ -734,7 +734,7 @@
               Both kinds of game are six players on a Continents map at Online speed, 250 turns.
               A column is the share of the games counted that ended in its span of turns.
               The games against Civilization VI&#8217;s own AI are shown one level at a time, Lv 4 Prince to Lv 8 Deity, by the slider over them,
-              and drawn three times: every victory, then only the AI&#8217;s wins, then only CIVVIS&#8217;s wins.
+              and drawn three times: all games, then only the AI&#8217;s wins, then only CIVVIS&#8217;s wins.
               All three are shares of the same games, so the second and third add up to the first.
             </p>
             </details>
@@ -823,9 +823,9 @@
     // the page, where it stands under its side's name. `{level}` and
     // `{rung}` are the level chosen, as `worded` writes them.
     const CHARTS = [
-      { id: "ai", kind: "ai", side: "all", label: "CIVVIS vs {level} AI: every victory", head: "Every victory", short: "CIVVIS vs {level} AI", total: "All victories" },
+      { id: "ai", kind: "ai", side: "all", label: "CIVVIS vs {level} AI: all games", head: "Turn Length and Victory Type Histogram of All Games", short: "CIVVIS vs {level} AI", total: "All victories" },
       { id: "ai-rival", kind: "ai", side: "rival", label: "CIVVIS vs {level} AI: {rung} AI wins", head: "{rung} AI wins", short: "{rung} AI wins", total: "All {rung} AI wins", none: "The {rung} AI won none of these games." },
-      { id: "ai-civvis", kind: "ai", side: "civvis", label: "CIVVIS vs {level} AI: CIVVIS wins", head: "CIVVIS wins", short: "CIVVIS wins", total: "All CIVVIS wins", none: "CIVVIS won none of these games." },
+      { id: "ai-civvis", kind: "ai", side: "civvis", label: "CIVVIS vs {level} AI: CIVVIS wins", head: "CIVVIS wins against {rung} AI", short: "CIVVIS wins", total: "All CIVVIS wins", none: "CIVVIS won none of these games." },
       { id: "self_play", kind: "self_play", side: "all", label: "CIVVIS self-play", head: "Every victory", short: "CIVVIS self-play", total: "All victories" },
     ];
     // Which games of each kind are counted. Self-play opens on its last
