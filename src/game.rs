@@ -5449,6 +5449,16 @@ impl Counters {
         all.into_iter()
     }
 
+    /// Every key, rules' and agents' together, in order.
+    pub fn keys(&self) -> impl Iterator<Item = &String> {
+        self.iter().map(|(key, _)| key)
+    }
+
+    /// Every value, in key order.
+    pub fn values(&self) -> impl Iterator<Item = &i64> {
+        self.iter().map(|(_, value)| value)
+    }
+
     /// The tallies the rules keep: the part of this map that is the world.
     pub fn rules(&self) -> &BTreeMap<String, i64> {
         &self.rules
