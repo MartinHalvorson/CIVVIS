@@ -5033,6 +5033,10 @@ pub struct Chronicle {
     /// Where each unit has walked lately, oldest first and bounded like the
     /// strike ledger: a client draws the recent tail.
     pub unit_move_trails: Arc<Vec<UnitMoveTrail>>,
+    /// Per-civilization event stream; see [`Event`]. Shared until written.
+    pub events: EventLog,
+    /// What has actually landed on cities this game, for evaluators.
+    pub siege: SiegeCensus,
 }
 
 impl Chronicle {
@@ -8132,11 +8136,9 @@ pub struct Game {
     pub peace_treaties: BTreeMap<(usize, usize), u32>,
     /// Running chronicle of every war in progress, keyed by belligerent pair.
     pub wars: BTreeMap<(usize, usize), WarRecord>,
-    /// What has actually landed on cities this game, for evaluators.
-    #[serde(default)]
-    pub siege: SiegeCensus,
-    /// What happened, for whoever watches: ended wars, nuclear strikes, the
-    /// result screen's yields, and units' recent walks. The rules write it and
+    /// What happened, for whoever watches: the event log, ended wars, nuclear
+    /// strikes, the siege census, the result screen's yields, and units'
+    /// recent walks. The rules write it and
     /// never read it back (`docs/CORE_STATE.md`), so it is not part of the
     /// world a fork has to copy: every record is shared until written.
     pub chronicle: Chronicle,
@@ -8237,8 +8239,6 @@ pub struct Game {
     /// f(seed+params, log), so this is the replay/desync-detection record.
     /// Runtime-only (not in saves yet).
     pub log: crate::actionlog::ActionLog,
-    /// Per-civilization event stream; see [`Event`].
-    pub events: EventLog,
     /// Everything a mirrored seat was told by the Civilization VI game it
     /// plays in (`observed_*`, `host_*`, `blocked_*` and the host's
     /// switches): read by the rules only when a host supplied it, empty in
@@ -8665,7 +8665,6 @@ impl From<GameSer> for Game {
             ai_late_science_pct: s.ai_late_science_pct,
             ai_space_tech_floor: s.ai_space_tech_floor,
             mods: s.mods,
-            events: s.events.into(),
             base_ruleset: s.base_ruleset,
             start_era: s.start_era,
             future_era: s.future_era,
@@ -8697,8 +8696,9 @@ impl From<GameSer> for Game {
             at_war: s.at_war.into_iter().collect(),
             peace_treaties: s.peace_treaties.into_iter().collect(),
             wars: s.wars.into_iter().collect(),
-            siege: SiegeCensus::default(),
             chronicle: Chronicle {
+                events: s.events.into(),
+                siege: SiegeCensus::default(),
                 concluded_wars: Arc::new(s.concluded_wars),
                 nuclear_strikes: Arc::new(s.nuclear_strikes),
                 turn_stats: Arc::new(s.turn_stats),
@@ -8961,7 +8961,7 @@ impl From<Game> for GameSer {
             ai_late_science_pct: g.ai_late_science_pct,
             ai_space_tech_floor: g.ai_space_tech_floor,
             mods: g.mods,
-            events: g.events.into(),
+            events: g.chronicle.events.into(),
             base_ruleset: g.base_ruleset,
             start_era: g.start_era,
             future_era: g.future_era,
@@ -9516,7 +9516,6 @@ impl Game {
             at_war: BTreeSet::new(),
             peace_treaties: BTreeMap::new(),
             wars: BTreeMap::new(),
-            siege: SiegeCensus::default(),
             chronicle: Chronicle::default(),
             barb_pid: None,
             barb_camps: BTreeMap::new(),
@@ -9554,7 +9553,6 @@ impl Game {
             occ: pos_map::UnitIndex::default(),
             city_by_pos: pos_map::CityIndex::default(),
             log: crate::actionlog::ActionLog::new(),
-            events: EventLog::default(),
             host: Arc::new(HostMirror {
                 observed_military_power: Arc::new(BTreeMap::new()),
                 host_unit_facts: Arc::new(BTreeMap::new()),
@@ -10709,7 +10707,7 @@ impl Game {
         // which is the turn being played for all but the victory a score
         // tiebreak declares on the wrap out of the final turn.
         let turn = self.reported_turn();
-        self.events.push(Event {
+        self.chronicle.events.push(Event {
             turn,
             player: pid,
             category: category.to_string(),
@@ -10717,9 +10715,9 @@ impl Game {
             pos,
             important: false,
         });
-        if self.events.len() > EVENT_LIMIT {
-            let excess = self.events.len() - EVENT_LIMIT;
-            self.events.drain(..excess);
+        if self.chronicle.events.len() > EVENT_LIMIT {
+            let excess = self.chronicle.events.len() - EVENT_LIMIT;
+            self.chronicle.events.drain(..excess);
         }
     }
 
@@ -10740,10 +10738,10 @@ impl Game {
     ) {
         // `note` drops minor and barbarian seats, so marking the last entry
         // blind would promote whatever unrelated event happened to precede it.
-        let before = self.events.len();
+        let before = self.chronicle.events.len();
         self.note(pid, category, text, pos);
-        if self.events.len() != before {
-            if let Some(event) = self.events.last_mut() {
+        if self.chronicle.events.len() != before {
+            if let Some(event) = self.chronicle.events.last_mut() {
                 event.important = true;
             }
         }
@@ -10776,7 +10774,11 @@ impl Game {
 
     /// The events one civilization can see, oldest first.
     pub fn events_for(&self, pid: usize) -> Vec<&Event> {
-        self.events.iter().filter(|e| e.player == pid).collect()
+        self.chronicle
+            .events
+            .iter()
+            .filter(|e| e.player == pid)
+            .collect()
     }
 
     pub fn city_at(&self, pos: Pos) -> Option<u32> {

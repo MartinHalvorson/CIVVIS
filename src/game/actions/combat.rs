@@ -1139,7 +1139,7 @@ impl Game {
                 // Bombard-class shots may deplete a city, but still cannot
                 // capture it. The depleting shot earns the city final-blow XP.
                 self.cities.get_mut(&cid).unwrap().hp = 0;
-                self.siege.left_depleted += 1;
+                self.chronicle.siege.left_depleted += 1;
                 let city_pos = self.cities[&cid].pos;
                 let taker_ready = self.units.values().any(|unit| {
                     unit.owner == pid
@@ -1148,7 +1148,7 @@ impl Game {
                         && self.rules.units[unit.kind].is_melee_capable()
                 });
                 if taker_ready {
-                    self.siege.depleted_with_a_taker_ready += 1;
+                    self.chronicle.siege.depleted_with_a_taker_ready += 1;
                 }
                 self.award_initiated_combat_xp(uid, 10.0);
             } else {

@@ -37,7 +37,8 @@ fn a_world_is_known_to_come_back_on_itself_only_once_every_longitude_is_seen() {
     game.update_world_lap(0, &[last]);
     assert!(game.players[0].went_around, "that was a lap");
     assert!(
-        game.events
+        game.chronicle
+            .events
             .iter()
             .any(|event| event.player == 0 && event.text.contains("whole way around the world")),
         "closing the ring is the sort of thing a chronicle records",
