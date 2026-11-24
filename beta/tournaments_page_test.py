@@ -72,11 +72,12 @@ class TournamentsPage(unittest.TestCase):
             run("civvis-tinywar-20260731T231249Z", "unfinished", None, 0, utc="2026-07-31T23:30:00Z", players=None, map=None),
         ]
         return tournaments_page.record(rows + list(more), specs, ["Rome", "Gran Colombia", "Mali", "Gaul", "Korea"],
-                                       self.videos, self.descriptions)
+                                       self.videos, self.descriptions, self.listed)
 
-    #: The definitions file's `videos` and `descriptions`, as `record` is handed them.
+    #: The definitions file's `videos`, `descriptions` and `hyperparameters`, as `record` is handed them.
     videos: dict | None = None
     descriptions: dict | None = None
+    listed: dict | None = None
 
     def test_the_record_is_what_runs_what_waits_and_what_has_finished(self):
         record = self.record()
@@ -87,7 +88,7 @@ class TournamentsPage(unittest.TestCase):
         # ran and is not listed.
         self.assertEqual(record["scheduled"], [{
             "id": 3, "description": "", "name": "Level ladder", "idea": "Two agents at one table, level by level.",
-            "conditions": "Lv 4-8 6P Continents Online, 2 CIVVIS + 4 AI", "note": "", "size": 50,
+            "hyperparameters": [], "conditions": "Lv 4-8 6P Continents Online, 2 CIVVIS + 4 AI", "note": "", "size": 50,
         }])
         first, second = record["finished"][0], record["running"][0]
         self.assertEqual((first["games"], first["size"], first["wins"], first["losses"]), (2, 2, 1, 1))
@@ -260,13 +261,20 @@ class TournamentsPage(unittest.TestCase):
         for line in (
             'tournaments_page="$source_tree/beta/tournaments.html"',
             'if [ -f "$tournaments_page" ]; then',
-            'cp "$tournaments_page" "$out/tournaments/index.html"',
-            'fill tournaments_page.py "$out/tournaments/index.html"',
-            'pages+=(tournaments)',
-            # And its links are held inside the lane like every page's.
-            'out / "tournaments" / "index.html": [],',
+            # At the address the page states itself; `tournaments` is where
+            # a revision from before pages said so had it.
+            'tournaments_at="$(address "$tournaments_page" tournaments)"',
+            'cp "$tournaments_page" "$out/$tournaments_at/index.html"',
+            'fill tournaments_page.py "$out/$tournaments_at/index.html"',
+            'pages+=("$tournaments_at")',
+            # And its links are held inside the lane like every page's: the
+            # guard runs over every page the lane carries.
+            'for address in carried:',
         ):
             self.assertIn(line, PUBLISH)
+        # The address follows the page's name in the site list (operator
+        # 2026-11-23: "clean up the URL please. standardized.").
+        self.assertIn('<link rel="canonical" href="https://civvis.ai/tournaments/">', PAGE)
         # The page is authored lane-relative: nothing in it links the site root.
         self.assertEqual(re.findall(r'(?:href|src)="(/[^"]*)"', PAGE), [])
 
@@ -305,38 +313,52 @@ class TournamentsPage(unittest.TestCase):
             finally:
                 home_rankings.results = results
 
-    def test_every_page_lists_auto_tourneys_between_charts_and_civvis(self):
+    def test_every_page_lists_tournaments_between_charts_and_civvis(self):
         # Operator 2026-11-21: "Between Home and CIVVIS, we want to add a
         # Tournaments view." This page lists the site's pages as the others
-        # do, with itself in gold, and is named Auto-Tourneys in the list
-        # and on the tab since 2026-11-22 ("make sure Tournaments changes to
-        # Auto-Tourneys"); its address stayed /tournaments/. As on the home
-        # page, the list stands to the left of the title (operator
-        # 2026-11-21, of the home page: "on the left side, to the left of
-        # civvis.ai").
-        self.assertRegex(PAGE, r'<div class="site-brand">\s*<!--[\s\S]*?-->\s*<nav class="site-nav"[^>]*>[\s\S]*?</nav>\s*<div class="site-lockup">')
-        self.assertRegex(LANDING, r'<div class="site-brand">\s*<!--[\s\S]*?-->\s*<nav class="site-nav"[^>]*>[\s\S]*?</nav>\s*<div class="site-lockup">')
+        # do, with itself marked. It was named Auto-Tourneys in the list
+        # and on the tab from 2026-11-22 ("make sure Tournaments changes to
+        # Auto-Tourneys") and at /auto-tourneys/ from 2026-11-23, and took
+        # its first name and address back on 2026-11-24 ("change
+        # auto-outnrye to Tournaments. Auto-tourney suggests some self
+        # imrpvoing tourney thing"): Tournaments, at /tournaments/. As on the home
+        # page, the list is a row across the top, over the title (operator
+        # 2026-11-24: "try putting the vertical menu from home... civ across
+        # the top instead"; from 2026-11-21 it stood to the left of the
+        # title), and Charts/ drops its pages down.
+        self.assertRegex(PAGE, r'<header class=\"shell site-header\">\s*<!--[\s\S]*?-->\s*<nav class=\"site-nav\"[^>]*>[\s\S]*?</nav>\s*<script data-site-folder>[\s\S]*?</script>\s*<div class=\"site-brand\">\s*<div class=\"site-lockup\">')
+        self.assertRegex(LANDING, r'<header class=\"shell site-header\">\s*<!--[\s\S]*?-->\s*<nav class=\"site-nav\"[^>]*>[\s\S]*?</nav>\s*<script data-site-folder>[\s\S]*?</script>\s*<div class=\"site-brand\">\s*<div class=\"site-lockup\">')
         self.assertIn(
-            '<nav class="site-nav" aria-label="CIVVIS sites">\n'
-            '        <a class="site-link" href="../home/">Home</a>\n'
-            '        <a class="site-link" href="../research/" '
-            'title="What the games show: charts read off the CIVVIS AI agents&#8217; games.">Charts/</a>\n'
-            '        <a class="site-link" href="./" aria-current="page">Auto-Tourneys</a>\n'
-            '        <a class="site-link" href="../" title="Every civilization is played by a CIVVIS AI agent.">CIVVIS</a>\n'
-            '        <a class="site-link" href="../?mode=play" '
+            '      </div>\n'
+            '      <a class="site-link" href="./" aria-current="page">Tournaments</a>\n'
+            '      <a class="site-link" href="../" title="Every civilization is played by a CIVVIS AI agent.">CIVVIS</a>\n'
+            '      <a class="site-link" href="../?mode=strange" '
+            'title="One world, two timelines: the same game played two ways, side by side, on a timeline that branches.">Doctor Strange\'s Civ 6</a>\n'
+            '      <a class="site-link" href="../?mode=play" '
             'title="You play one civilization. CIVVIS AI agents play the rest.">AI Debugger</a>\n'
-            '        <a class="site-link" href="https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/" '
+            '      <a class="site-link" href="https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/" '
             'target="_blank" rel="noopener" title="Buy Civilization VI on Steam">Civ 6</a>\n'
-            "      </nav>",
+            '      <a class="site-link" href="../wizard-chess/" '
+            'title="Chess where you command and the pieces obey, against an opponent at the Elo you pick.">Wizard Chess</a>\n'
+            "    </nav>",
             PAGE,
         )
-        self.assertIn('.site-link[aria-current="page"]:hover { background: var(--gold); color: #17130c; }', PAGE)
-        self.assertIn("<title>Auto-Tourneys · CIVVIS.ai</title>", PAGE)
+        self.assertIn(
+            '<nav class="site-nav" aria-label="CIVVIS sites">\n'
+            '      <a class="site-link" href="../home/">Home</a>\n'
+            '      <div class="site-folder">\n'
+            '        <a class="site-link" href="../charts/ai-interpretability/" '
+            'title="What the games show: charts read off the CIVVIS AI agents&#8217; games.">Charts/</a>\n'
+            '        <div class="site-menu">\n',
+            PAGE,
+        )
+        self.assertIn('  .site-link[aria-current="page"],\n  .site-folder:has([aria-current="page"]) > .site-link { box-shadow: inset 0 0 0 2px #fff; }\n', PAGE)
+        self.assertIn("<title>Tournaments · CIVVIS.ai</title>", PAGE)
         # The Debugger is AI Debugger in this list again (operator
         # 2026-11-21: "AI Debugger (rename plz)", after a day as Strategy
         # Debugger and Strat Debugger), and every name stands on one line
-        # ("make sure it fits on one line"): the column is as wide as its
-        # longest name, AUTO-TOURNEYS, at every width, and the rule that
+        # ("make sure it fits on one line"): the column is as wide as
+        # AUTO-TOURNEYS was, at every width, and the rule that
         # narrowed it on a phone under 380px is still gone.
         for page in (PAGE, LANDING, VIEWER):
             self.assertNotIn("Strategy Debugger", page)
@@ -347,19 +369,23 @@ class TournamentsPage(unittest.TestCase):
         # joined between Home and Tournaments the same day as Research; its
         # own test is `research_page_test.py`), each in its own markup.
         for page, pattern in (
-            (LANDING, r'aria-current="page">Home</a>\s*<a class="site-link" href="\.\./research/"[^>]*>Charts/</a>'
-                      r'\s*<a class="site-link" href="\.\./tournaments/"[^>]*>Auto-Tourneys</a>'
+            (LANDING, r'aria-current="page">Home</a>\s*<div class="site-folder">\s*<a class="site-link" href="\.\./charts/ai-interpretability/"[^>]*>Charts/</a>'
+                      r'[\s\S]*?</div>\s*</div>\s*<a class="site-link" href="\.\./tournaments/"[^>]*>Tournaments</a>'
                       r'\s*<a class="site-link" href="\.\./"[^>]*>CIVVIS</a>'),
             (VIEWER, r'id="homelink" href="/home" target="_top">Home</a>\s*'
-                     r'<a class="home-link" id="researchlink" href="/research" target="_top">Charts/</a>\s*'
-                     r'<a class="home-link" id="tourlink" href="/tournaments" target="_top">Auto-Tourneys</a>\s*'
+                     r'<a class="home-link" id="chartslink" href="/charts/ai-interpretability" target="_top">Charts/</a>\s*'
+                     r'<a class="home-link" id="tourlink" href="/tournaments" target="_top">Tournaments</a>\s*'
                      r'<a class="home-link" id="watchlink" href="\./" target="_top">CIVVIS</a>'),
         ):
             self.assertRegex(page, pattern)
         for page in (PAGE, LANDING, VIEWER):
-            self.assertNotIn(">Tournaments</a>", page)
-        # The viewer's link is root-absolute as written and lane-relative as published.
-        self.assertIn("""('href="/tournaments"', 'href="tournaments/"')""", PUBLISH)
+            self.assertNotIn(">Auto-Tourneys</a>", page)
+            self.assertNotIn("auto-tourneys/", page)
+        # The viewer's link is root-absolute as written and lane-relative as
+        # published: `publish.sh` turns a root link to any page the lane
+        # carries into the lane's own.
+        self.assertIn('href="/tournaments"', VIEWER)
+        self.assertIn("""needle, replacement = f'href="/{address}"', f'href="{address}/"'""", PUBLISH)
 
     def test_a_tournament_links_its_result_video_on_youtube(self):
         # Operator 2026-11-21: "on our new tournaments page we are building
@@ -453,8 +479,10 @@ class TournamentsPage(unittest.TestCase):
         # and the 11.5px number over a 17px name in the two lists.
         for gone in ("tour-number", 'el("b", "", "Tournament " + t.id)', "td.is-name b"):
             self.assertNotIn(gone, PAGE)
-        # The definitions carry the operator's six, word for word, and no
-        # tournament from the first to the last described is left out.
+        # The definitions carry the operator's descriptions, word for word,
+        # and no tournament from the first to the last described is left
+        # out. The seventh is his name for it (2026-11-23: "Call our
+        # Indefinite Tourney the "Indefinite Benchmarking Tourney"").
         defined = json.loads((ROOT / "data" / "tournaments.json").read_text(encoding="utf-8"))
         self.assertEqual(defined["descriptions"], {
             "1": "Proof of concept, 10 game series",
@@ -463,9 +491,71 @@ class TournamentsPage(unittest.TestCase):
             "4": "50 game series",
             "5": "Repeat 50 game series but with 2/6 CIVVIS AI Agents (2nd half no Diplo allowed)",
             "6": "Benchmarking across levels: 5 games at each level (no Diplo allowed)",
+            "7": "Indefinite Benchmarking Tourney",
         })
         self.assertEqual(list(defined["descriptions"]), [str(n) for n in range(1, len(defined["descriptions"]) + 1)])
         self.assertGreaterEqual(len(defined["descriptions"]), len(defined["tournaments"]))
+
+    def test_every_tournament_spells_out_its_hyperparameters(self):
+        # Operator 2026-11-23: "please spell out the tourney hyperparameters
+        # for each tourney clearly."
+        every = lambda record: {t["id"]: t["hyperparameters"] for t in record["finished"] + record["running"] + record["scheduled"]}
+        self.assertEqual(every(self.record()), {1: [], 2: [], 3: []})
+        # Listed by the tournament's number, as a description is, and put in
+        # the one order every tournament shares, whatever the file's order.
+        # A name the list does not know follows, in the file's order.
+        self.listed = {
+            "1": {"Turn limit": "250", "Extra": "  last,\n  in file order ", "Games": "2", "AI level": "Lv 8 Deity"},
+            "3": {"Games": "50", "Blank": "  ", "Number": 7},
+        }
+        self.assertEqual(every(self.record()), {
+            1: [["Games", "2"], ["AI level", "Lv 8 Deity"], ["Turn limit", "250"], ["Extra", "last, in file order"]],
+            2: [],
+            3: [["Games", "50"]],   # scheduled, and anything not a few words left out
+        })
+        # A definition's own are used for a number with no line.
+        spec = {"name": "n", "hyperparameters": {"Games": "From the definition"}, "conditions": "c",
+                "start": "civvis-t6-", "series_size": 2, "match": MATCH}
+        rows = [run("civvis-t6-20261121T100000Z", "win", "CIVILIZATION_ROME", 5)]
+        own = lambda given: tournaments_page.record(rows, [spec], ["Rome"], None, None, given)["running"][0]["hyperparameters"]
+        self.assertEqual(own(None), [["Games", "From the definition"]])
+        self.assertEqual(own({"2": {"Games": "Another tournament's"}}), [["Games", "From the definition"]])
+        self.assertEqual(own({"1": {"Games": "From the list"}}), [["Games", "From the list"]])
+        for odd in ({"1": {}}, {"1": "Games: 2"}, {"1": {"Games": ""}}, ["not", "a", "map"]):
+            self.assertEqual(own(odd), [["Games", "From the definition"]])
+        # The definitions file spells out all thirteen for every tournament
+        # begun, in the shared order, each a few words.
+        defined = json.loads((ROOT / "data" / "tournaments.json").read_text(encoding="utf-8"))
+        self.assertEqual(tournaments_page.HYPERPARAMETERS, (
+            "Games", "AI level", "Players", "Victory types", "Civ", "Strategy", "Map", "Game speed",
+            "Turn limit", "Ruleset", "Played in", "Game end", "CIVVIS agent",
+        ))
+        self.assertEqual(list(defined["hyperparameters"]), [str(n) for n in range(1, len(defined["hyperparameters"]) + 1)])
+        self.assertGreaterEqual(len(defined["hyperparameters"]), len(defined["tournaments"]) + 1)   # T4 and T5 share one
+        for number, given in defined["hyperparameters"].items():
+            self.assertEqual(tuple(given), tournaments_page.HYPERPARAMETERS, number)
+            self.assertEqual(tournaments_page.hyperparameters(defined["hyperparameters"], int(number), {}),
+                             [[name, value] for name, value in given.items()], number)
+        # What the ledger shows, spelled out where it differs from the rest.
+        hp = defined["hyperparameters"]
+        self.assertEqual({n: hp[n]["Map"] for n in hp}, {n: "Continents, Small, 9 city-states, a new map each game" for n in hp})
+        self.assertEqual({hp[n]["Game speed"] for n in hp} | {hp[n]["Turn limit"] for n in hp}, {"Online", "250"})
+        self.assertIn("all but Diplomatic", hp["5"]["Victory types"])
+        self.assertTrue(hp["6"]["Victory types"].startswith("All but Diplomatic"))
+        self.assertIn("hotseat for games 1-7", hp["6"]["Played in"])
+        self.assertIn("Lv 8 Deity 1 game in 2", hp["7"]["AI level"])
+        # The page draws them in all three lists, a name and its value to a
+        # line, as text.
+        for piece in (
+            "const hyper = (t) => {",
+            'div.append(el("dt", "", name), el("dd", "", value));',
+            'box.append(el("p", "tour-latest-title", "Hyperparameters"), dl);',
+            "  .tour-hyper { display: grid; grid-template-columns: max-content minmax(0, 1fr);",
+            "  .tour-hyper > div { display: contents; }",
+            "Hyperparameters are the settings every game of a tournament was played under.",
+        ):
+            self.assertIn(piece, PAGE)
+        self.assertEqual(PAGE.count("const settings = hyper(t);"), 3)   # running, scheduled and finished
 
     def test_a_tournament_is_its_name_on_the_left_third_and_the_rest_on_the_right(self):
         # Operator 2026-11-22: "lets have The tournaments structure to be
@@ -501,7 +591,8 @@ class TournamentsPage(unittest.TestCase):
             "const ident = identity(t, \"td\");",
             "ident.rowSpan = 2;",
             "cell.colSpan = columns - 1;",
-            'cell.append(strip(t, false), counts(t, [t.idea, t.note].filter(Boolean).join(" ")));',
+            'if (settings) cell.append(settings);\n'
+            '        cell.append(strip(t, false), counts(t, [t.idea, t.note].filter(Boolean).join(" ")));',
             'if (note) line("Notes", el("dd", "is-note", note));',
             "body.append(tr, games);",
             # Too narrow for that, each figure stands under its own label.
@@ -555,6 +646,7 @@ class TournamentsPage(unittest.TestCase):
             self.assertNotIn(unsafe, PAGE)
         verify = (BETA / "verify.py").read_text(encoding="utf-8")
         self.assertIn("""    "tournaments": b'id="tournaments-data"',\n""", verify)
+        self.assertIn("""    "auto-tourneys": "tournaments",\n""", verify)
 
 
 if __name__ == "__main__":

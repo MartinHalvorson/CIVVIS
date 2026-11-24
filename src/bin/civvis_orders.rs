@@ -5295,8 +5295,11 @@ fn decide(
         }
         if let Action::MoveTo { unit, .. } | Action::Move { unit, .. } = action {
             let unit = *unit;
-            let steps =
-                walk_reader.steps_before(&planned_game.unit_move_trails, planned_game.turn, action);
+            let steps = walk_reader.steps_before(
+                &planned_game.chronicle.unit_move_trails,
+                planned_game.turn,
+                action,
+            );
             // Each step is the order a hand-stepped walk would have sent; the
             // fold below sends the host the last hex, as before.
             orders.extend(steps.into_iter().filter_map(|to| {

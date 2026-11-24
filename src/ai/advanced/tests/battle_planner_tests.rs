@@ -3924,7 +3924,7 @@ fn adaptive_production_reserves_a_real_siege_support_capability() {
 /// merely in an isolated helper.
 #[test]
 fn named_victory_builders_raise_a_lagging_citys_production_foundation() {
-    let (mut game, capital, home) = empire_with_a_capital(79_124);
+    let (mut game, capital, home) = empire_with_a_capital(79_126);
     clear_barbarian_fixture(&mut game);
     game.at_war.clear();
     let weak = found_nearby_test_city(&mut game, 0, home);

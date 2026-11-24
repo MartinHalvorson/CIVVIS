@@ -11,6 +11,14 @@ lane's revision did not have. So the front page moved with every merge, and
 the AI Interpretability page answered there the day it was written, with
 nobody having promoted it.
 
+The same holds for where a page is served. Since 2026-11-23 an address
+follows the page's name in the site list (operator: "clean up the URL please.
+standardized. please remove research from the url"), so the pages of Charts/
+sit under `charts/` and Tournaments at `tournaments`. Each page states its
+own address and every link in it is relative to that, so the promoted revision
+here is one from before the move, and its lane has to keep the layout its
+pages were written for while main's takes the new one.
+
 None of that shows in a pull request's checks unless the script is run: the
 deploy that runs it (`to-test-auto-30`) runs on main only. So this builds a
 small repository of two revisions, an earlier one standing for the promoted
@@ -35,6 +43,9 @@ import textwrap
 import unittest
 
 BETA = pathlib.Path(__file__).resolve().parent
+sys.path.insert(0, str(BETA))
+
+import verify  # noqa: E402  (the publish check, for how it reads a lane's pages)
 
 #: A page's figures, written by a stand-in for the scripts that fill the real
 #: pages. It says which revision's copy of the script ran and which revision's
@@ -58,9 +69,14 @@ FILLERS = (
     "home_rankings.py",
     "tournaments_page.py",
     "research_page.py",
+    "elo_page.py",
+    "civs_page.py",
     "performance_page.py",
     "interpretability_page.py",
 )
+
+#: A filler's page, for the fillers of pages a revision may not have yet.
+FILLED = {"interpretability_page.py": "interpretability", "elo_page.py": "elo", "civs_page.py": "civs"}
 
 #: The viewer, as little of it as the script's own checks ask for: one
 #: `<head>`, a root-absolute script for the lane rewrite to make relative, and
@@ -70,11 +86,26 @@ VIEWER = textwrap.dedent(
     <!doctype html>
     <html><head><title>viewer of {revision}</title></head>
     <body>
-    <a href="/home">Home</a> <a href="/research">Charts</a>
+    <a href="/home">Home</a> <a href="/{charts}">Charts</a>
     <script src="/assets/app.js"></script>
     </body></html>
     """
 )
+
+#: Where main's pages say they live, by file name: an address follows the
+#: page's name in the site list. The promoted revision is from before pages
+#: said so, and its lane keeps the addresses the script knew them by.
+ADDRESSES = {
+    "landing": "home",
+    "tournaments": "tournaments",
+    "research": "charts/win-analytics",
+    "elo": "charts/elo-rankings",
+    "civs": "charts/civ-analytics",
+    "performance": "charts/civvis-performance",
+    "interpretability": "charts/ai-interpretability",
+    "download": "download",
+    "chess": "wizard-chess",
+}
 
 SHIM = textwrap.dedent(
     """\
@@ -86,8 +117,19 @@ SHIM = textwrap.dedent(
 )
 
 
-def page(name: str, revision: str) -> str:
-    return f'<!doctype html>\n<title>{name} of {revision}</title>\n<a href="../">viewer</a>\n'
+def page(name: str, revision: str, address: str | None = None, home: str | None = None) -> str:
+    """A page of the site: its title, a link to the viewer and one to Home.
+
+    A page that states its `address` links from there, as many directories up
+    as the address is deep; one that does not is a page from before the move,
+    one directory deep. `home` overrides the link to Home, for a page written
+    for the wrong depth."""
+    up = "../" * ((address or name).count("/") + 1)
+    stated = f'<link rel="canonical" href="https://civvis.ai/{address}/">\n' if address else ""
+    return (
+        f"<!doctype html>\n<title>{name} of {revision}</title>\n{stated}"
+        f'<a href="{up}">viewer</a> <a href="{home or up + "home/"}">Home</a>\n'
+    )
 
 
 class Lanes(unittest.TestCase):
@@ -127,15 +169,22 @@ class Lanes(unittest.TestCase):
         }
         cls.git("init", "--quiet", str(cls.repo), cwd=cls.scratch)
 
-        # The promoted revision: five pages, and no AI Interpretability page.
+        # The promoted revision: five pages, and no ELO Rankings, Civ
+        # Analytics or AI Interpretability page.
         # Its Performance script is one that fails.
+        # Its pages are from before a page stated its address.
         cls.write_revision("promoted", pages=("landing", "download", "tournaments", "research", "performance"),
                            failing=("performance_page.py",))
         cls.promoted = cls.commit("the promoted revision")
-        # Main: every script, page and figure has moved on, and there is a
-        # sixth page.
-        cls.write_revision("main", pages=("landing", "download", "tournaments", "research", "performance",
-                                          "interpretability"))
+        # A revision between the two, whose pages have moved to their new
+        # addresses with one link left as it was: Win Analytics, now two
+        # directories deep, still reaches for Home one directory up.
+        cls.write_revision("misplaced", pages=tuple(ADDRESSES), addresses=ADDRESSES,
+                           home={"research": "../home/"})
+        cls.misplaced = cls.commit("a link written for the old depth")
+        # Main: every script, page and figure has moved on, there are three more
+        # pages, and every page says where it lives.
+        cls.write_revision("main", pages=tuple(ADDRESSES), addresses=ADDRESSES)
         cls.main = cls.commit("main")
 
         # The two lanes as the deploy builds them: from main's tree, the
@@ -155,7 +204,7 @@ class Lanes(unittest.TestCase):
         ).stdout.strip()
 
     @classmethod
-    def write_revision(cls, revision: str, *, pages, failing=()):
+    def write_revision(cls, revision: str, *, pages, failing=(), addresses=None, home=None):
         beta, web = cls.repo / "beta", cls.repo / "web"
         for directory in (beta, web):
             shutil.rmtree(directory, ignore_errors=True)
@@ -172,13 +221,16 @@ class Lanes(unittest.TestCase):
         # What a lane is.
         (beta / "shim.js").write_text(SHIM.format(revision=revision), encoding="utf-8")
         (beta / "worker.js").write_text(f"// worker of {revision}\n", encoding="utf-8")
-        (web / "index.html").write_text(VIEWER.format(revision=revision), encoding="utf-8")
+        addresses, home = addresses or {}, home or {}
+        (web / "index.html").write_text(
+            VIEWER.format(revision=revision, charts=addresses.get("research", "research")), encoding="utf-8")
         (web / "assets" / "app.js").write_text(f"// viewer script of {revision}\n", encoding="utf-8")
         (cls.repo / "data" / "figures.txt").write_text(f"{revision}\n", encoding="utf-8")
         for name in pages:
-            (beta / f"{name}.html").write_text(page(name, revision), encoding="utf-8")
+            (beta / f"{name}.html").write_text(
+                page(name, revision, addresses.get(name), home.get(name)), encoding="utf-8")
         for name in FILLERS:
-            if name == "interpretability_page.py" and "interpretability" not in pages:
+            if name in FILLED and FILLED[name] not in pages:
                 continue
             (beta / name).write_text(
                 FILLER.format(revision=revision, fails=name in failing), encoding="utf-8")
@@ -209,38 +261,102 @@ class Lanes(unittest.TestCase):
     def test_a_lane_carries_the_pages_its_revision_has_and_no_others(self):
         # The page only main has is in the test lane and not in the stable
         # lane: nothing reaches the front page except by a promotion.
-        self.assertTrue((self.test / "interpretability" / "index.html").is_file())
+        self.assertTrue((self.test / "charts" / "ai-interpretability" / "index.html").is_file())
         self.assertFalse((self.stable / "interpretability").exists())
-        self.assertIn("published without: interpretability", self.stable_said)
-        # And each lane says which pages it carries, for the checks.
+        self.assertFalse((self.stable / "charts").exists())
+        self.assertIn("published without: interpretability civ-analytics elo-rankings wizard-chess", self.stable_said)
+        # And each lane says which pages it carries, by address, for the
+        # checks and for the router.
         self.assertEqual(
             json.loads(self.read(self.stable, "build.json"))["pages"],
             ["home", "tournaments", "research", "performance", "download"],
         )
         self.assertEqual(
             json.loads(self.read(self.test, "build.json"))["pages"],
-            ["home", "tournaments", "research", "performance", "interpretability", "download"],
+            # In the order of Charts/ (since 2026-11-24: AI Interpretability,
+            # Civ Analytics, Win Analytics, ELO Rankings, CIVVIS Performance),
+            # because the router opens a folder's first page in this list.
+            ["home", "tournaments", "charts/ai-interpretability", "charts/civ-analytics", "charts/win-analytics",
+             "charts/elo-rankings", "charts/civvis-performance", "download", "wizard-chess"],
         )
+        # And the publish check reads each list in the order it was written.
+        # It asks a folder for the first page the list has in it, which is
+        # what the router opens. While it sorted the list into an order of
+        # its own, reordering Charts/ here made the two disagree and no
+        # publish got through (2026-11-24, 06:24Z on); nothing in a pull
+        # request's checks runs the check itself, so this holds the reading.
+        for lane in (self.stable, self.test):
+            build = json.loads(self.read(lane, "build.json"))
+            self.assertEqual(verify.lane_pages(build), build["pages"])
 
     def test_every_page_of_a_lane_is_its_own_revisions(self):
-        for directory, name in (("home", "landing"), ("download", "download"), ("tournaments", "tournaments"),
-                                ("research", "research"), ("performance", "performance")):
-            self.assertIn(f"{name} of promoted", self.read(self.stable, f"{directory}/index.html"))
-            self.assertIn(f"{name} of main", self.read(self.test, f"{directory}/index.html"))
+        for name in ("landing", "download", "tournaments", "research", "performance"):
+            before = "home" if name == "landing" else name
+            self.assertIn(f"{name} of promoted", self.read(self.stable, f"{before}/index.html"))
+            self.assertIn(f"{name} of main", self.read(self.test, f"{ADDRESSES[name]}/index.html"))
+
+    def test_a_page_is_served_where_its_own_revision_says(self):
+        # This script is main's and lays out both lanes, and a page's links
+        # are right at one depth only. Main's pages are at the addresses they
+        # state; the promoted revision's, which state none, are where they
+        # were written for, with nothing of main's layout beside them.
+        self.assertEqual(
+            sorted(str(found.relative_to(self.test)) for found in self.test.glob("**/index.html")),
+            ["charts/ai-interpretability/index.html",
+             "charts/civ-analytics/index.html", "charts/civvis-performance/index.html",
+             "charts/elo-rankings/index.html", "charts/win-analytics/index.html",
+             "download/index.html", "home/index.html", "index.html", "tournaments/index.html",
+             "wizard-chess/index.html"],
+        )
+        self.assertEqual(
+            sorted(str(found.relative_to(self.stable)) for found in self.stable.glob("**/index.html")),
+            ["download/index.html", "home/index.html", "index.html", "performance/index.html",
+             "research/index.html", "tournaments/index.html"],
+        )
+        # So every link still lands: one directory up from a page of the
+        # promoted lane, two from a page of main's Charts/.
+        self.assertIn('<a href="../">viewer</a> <a href="../home/">Home</a>',
+                      self.read(self.stable, "research/index.html"))
+        self.assertIn('<a href="../../">viewer</a> <a href="../../home/">Home</a>',
+                      self.read(self.test, "charts/win-analytics/index.html"))
+        self.assertNotIn("::warning::", self.test_said)
+
+    def test_a_link_that_lands_nowhere_stops_mains_own_publish(self):
+        # A page two directories deep that reaches for `../home/` stays
+        # inside its lane and finds nothing. Published from its own revision
+        # that is main's to mend, before it is a page of dead links.
+        self.git("checkout", "--quiet", "--detach", self.misplaced)
+        try:
+            _, (code, said) = self.publish(self.misplaced, "lane-own-dead-link", check=False)
+        finally:
+            self.git("checkout", "--quiet", "--detach", self.main)
+        self.assertNotEqual(code, 0, said)
+        self.assertIn(
+            "charts/win-analytics/index.html links ../home/, which this lane does not have", said)
+
+    def test_a_pinned_revisions_dead_link_is_reported_not_fatal(self):
+        # The same revision as a pinned lane cannot be mended, only promoted
+        # past: it is published as it is, and the build says what is dead.
+        lane, said = self.publish(self.misplaced, "lane-pinned-dead-link")
+        self.assertIn(
+            "::warning::charts/win-analytics/index.html links ../home/, which this lane does not have",
+            said)
+        self.assertIn("research of misplaced", self.read(lane, "charts/win-analytics/index.html"))
 
     # ----------------------------------------------------------- the figures
 
     def test_a_page_is_filled_by_its_own_revisions_script_from_its_own_revisions_data(self):
-        for directory, script in (("home", "home_rankings.py"), ("tournaments", "tournaments_page.py"),
-                                  ("research", "research_page.py"), ("research", "home_rankings.py")):
+        for name, script in (("landing", "home_rankings.py"), ("tournaments", "tournaments_page.py"),
+                             ("research", "research_page.py"), ("research", "home_rankings.py")):
+            before = "home" if name == "landing" else name
             self.assertIn(f"<!-- {script}: script promoted, data promoted -->",
-                          self.read(self.stable, f"{directory}/index.html"))
+                          self.read(self.stable, f"{before}/index.html"))
             self.assertIn(f"<!-- {script}: script main, data main -->",
-                          self.read(self.test, f"{directory}/index.html"))
+                          self.read(self.test, f"{ADDRESSES[name]}/index.html"))
         self.assertIn("<!-- interpretability_page.py: script main, data main -->",
-                      self.read(self.test, "interpretability/index.html"))
+                      self.read(self.test, "charts/ai-interpretability/index.html"))
         # Nothing of main's is in the promoted lane's pages.
-        for filled in self.stable.glob("*/index.html"):
+        for filled in self.stable.glob("**/index.html"):
             self.assertNotIn("main", filled.read_text(encoding="utf-8"), filled)
 
     def test_a_pinned_revisions_failing_script_costs_its_page_the_figures_not_the_deploy(self):
@@ -275,10 +391,12 @@ class Lanes(unittest.TestCase):
                 self.assertNotIn(f"of {other}", text, relative)
 
     def test_a_lanes_links_stay_inside_it(self):
-        for lane in (self.stable, self.test):
+        # Each viewer links its own revision's pages, at that revision's
+        # addresses, from the lane's root.
+        for lane, charts in ((self.stable, "research"), (self.test, "charts/win-analytics")):
             viewer = self.read(lane, "index.html")
             self.assertIn('href="home/"', viewer)
-            self.assertIn('href="research/"', viewer)
+            self.assertIn(f'href="{charts}/"', viewer)
             self.assertNotIn('href="/', viewer)
             self.assertNotIn('src="/', viewer)
 

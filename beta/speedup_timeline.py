@@ -30,8 +30,19 @@ into the home page's `home-speedup` slot), so the page cannot say a figure the
 ledger does not.
 
 The line is a scale of multipliers by tenfolds, 1x at its right end and the
-goal at its left: a stop stands at `log(multiplier) / log(goal)` of the way
-across, which is its `at`.
+largest goal at its left: a stop stands at `log(multiplier) / log(goal)` of
+the way across, which is its `at`. The ledger's `goals` are marked on it, each
+at its own place (operator, 2026-11-22, of the second: "Addd 1 billion x to
+the scaling scale as well").
+
+What renting the rest of the way to a goal would cost stands with each goal
+(`cloud`; operator, 2026-11-22: "we should also estimate the cloud cost in $
+to fill i nthe remaining amount (note that this is a Fable 5.2 best estimate
+of the numbers)"). It is an estimate from the ledger's `cloud` entry, and the
+pages say whose: a rented machine's cores, each taken to play a game as fast
+as the one-core reading says, slower by the two processors' single thread
+scores; the whole machines it takes to make up what the fastest stop is short
+of the goal; and their price for an hour. Nothing was run in a cloud.
 
 The CIVVIS Performance page opens on the same readings as tables (`worked`),
 each figure beside the sum that gives it (operator, 2026-11-22: "at the top
@@ -51,6 +62,20 @@ over my manual 5 hr games? add this info, maybe in tables to the top"):
   busy host) and from a game played with the machine to itself (the stop's
   `alone` readings), and each says what share of it the measured run reaches.
 
+Under them stands a third table, **processor by processor** (`processors`;
+operator, 2026-11-22: "Add in a theoretical 9980, performance and m5 ultra,
+m6. we should have a table in civvis performance that has our benchmarks (and
+age) across each processor. we should also list the single thread score and
+multithread score from the website"). Its rows are the processors of
+`data/performance/processors.json`, each with the website's two scores for
+it. The processor the readings were taken on shows them as they were
+measured. Every other row is a calculation from the scores, not a run: one
+game on one core is the measured time, times the measured processor's single
+thread score, over the row's own, and the games a minute on every core are
+the measured record, times the row's multithread score, over the measured
+processor's. Each cell carries the day of the reading it rests on, so the
+page can say how old a benchmark is on the day it is read.
+
 Both pages read one ledger through this one file, so they cannot disagree.
 """
 
@@ -64,6 +89,10 @@ import sys
 
 #: The stops and their readings, in the source tree.
 LEDGER = pathlib.Path("data/performance/speedup_timeline.json")
+
+#: The processors the Performance page lists the benchmarks across, with the
+#: website's two scores for each, in the source tree.
+PROCESSORS = pathlib.Path("data/performance/processors.json")
 
 #: The home page's slot for the timeline.
 SLOT = re.compile(r'(<script type="application/json" id="home-speedup">)(.*?)(</script>)', re.S)
@@ -87,8 +116,10 @@ FOLLOWED = {
 
 
 def clock(seconds: float) -> str:
-    """A time as the page words it: `18 ms`, `3.3 s`, `35 s`, `12.6 min`,
-    `5 h`."""
+    """A time as the page words it: `18 µs`, `18 ms`, `3.3 s`, `35 s`,
+    `12.6 min`, `5 h`."""
+    if seconds < 0.0009995:
+        return f"{seconds * 1000000:.0f} µs"
     if seconds < 0.9995:
         return f"{seconds * 1000:.0f} ms"
     if seconds < 9.95:
@@ -123,8 +154,25 @@ def figure(value: float) -> str:
 
 
 def share(part: float) -> str:
-    """A share as the tables word it: `97%`, and `0.5%` under a tenth."""
+    """A share as the tables word it: `97%`, `0.5%` under a tenth, and its
+    first figure under a thousandth, `0.0005%`."""
+    if part < 0.000995:
+        return f"{100 * part:.1g}%" if part > 0 else "0%"
     return f"{100 * part:.1f}%" if part < 0.0995 else f"{round(100 * part)}%"
+
+
+def dollars(value: float) -> str:
+    """A sum of money as the pages word it. A price is to the cent, `$2.85`
+    and `$10.35`; a larger sum is an estimate and is worded to three figures:
+    `$74`, `$269`, `$1,340`, `$267,000`, `$2.36 million`, `$2.34 billion`."""
+    if value < 19.995:
+        return f"${value:.2f}"
+    if value < 999.5:
+        return f"${round(value):,}"
+    for size, name in ((1e12, " trillion"), (1e9, " billion"), (1e6, " million")):
+        if value >= 0.9995 * size:
+            return f"${float(f'{value / size:.3g}'):g}{name}"
+    return f"${round(float(f'{value:.3g}')):,}"
 
 
 def day(stamp: str) -> str:
@@ -171,23 +219,163 @@ def sides(places: list[float]) -> list[str]:
     return chosen
 
 
+#: How far apart along the line two stops' words must stand to share a row,
+#: as a share of the line: the words are 150px wide, and the line is 1040px
+#: long or longer wherever the page draws it.
+ROOM = 150 / 1040
+
+
+def rows(places: list[float], chosen: list[str], room: float = ROOM) -> list[bool]:
+    """Which stops' words stand a row out from the line (`True`), for stops
+    at these places whose words are on these sides. Taken in order along the
+    line, a stop's words go in the row next to the line when the last words
+    there on its side are `room` away, and otherwise in the row beyond it,
+    at the end of a rule from the stop's point. A line that runs to a far
+    goal holds the measured stops in a short stretch of itself, and this is
+    what keeps their words apart there."""
+    last = {(side, out): -math.inf for side in ("above", "below") for out in (False, True)}
+    far = [False] * len(places)
+    for index in sorted(range(len(places)), key=lambda i: places[i]):
+        side = chosen[index]
+        far[index] = places[index] - last[(side, False)] < room
+        last[(side, far[index])] = places[index]
+    return far
+
+
+def scale(multiplier: float) -> str:
+    """A mark of the line's scale as it is worded: a multiplier, and from a
+    million up in words, `1 million x` and `1 billion x`, so that ten marks
+    fit along one line and none is read by counting its noughts."""
+    for size, name in ((1e12, "trillion"), (1e9, "billion"), (1e6, "million")):
+        if multiplier >= size:
+            return f"{multiplier / size:g} {name} x"
+    return times(multiplier)
+
+
 def ticks(goal: float) -> list[dict]:
-    """The marks along the line: every tenfold from 1x up to the goal, and the
-    goal itself at its end."""
+    """The marks along the line: every tenfold from 1x up to the largest
+    goal, and that goal itself at its end."""
     marks = [10**power for power in range(math.ceil(math.log10(goal)))] + [goal]
-    return [{"times": times(mark), "at": round(math.log(mark) / math.log(goal), 4)} for mark in marks]
+    return [{"times": scale(mark), "at": round(math.log(mark) / math.log(goal), 4)} for mark in marks]
+
+
+def marked(ledger: dict) -> list[dict]:
+    """The ledger's goals, smallest first: each the `key` the pages name it by
+    and its multiplier (`times`). The line ends at the last."""
+    return sorted(({"key": goal["key"], "times": goal["times"]} for goal in ledger["goals"]), key=lambda goal: goal["times"])
+
+
+#: The hours a rented machine is paid for in a year of playing without a stop.
+HOURS_A_YEAR = 24 * 365
+
+
+def rented(source: pathlib.Path, ledger: dict, measured: list[tuple[dict, list[dict]]], base: float) -> dict | None:
+    """What renting the rest of the way to each goal would cost, for the
+    stops as read (`measured`) and the baseline's seconds (`base`). An
+    estimate, not a measurement: `None` when the ledger has no `cloud` entry,
+    or the revision no list of processors to read the measured processor's
+    score from.
+
+    The newest entry of the ledger's `cloud` names a machine to rent. One
+    game on one of its cores is the one-core reading of the stop it plays
+    (`of`), times the measured processor's single thread score, over its own
+    (`one_game`, as the processors' table works a processor out), and every
+    core is taken to play as fast as one, so the machine is its cores times
+    that (`times`, with the games it plays in a minute and an hour and what a
+    million of them cost). What is short of a goal is the goal less the
+    fastest stop's multiplier (`have`), and `rows` has for each goal the
+    whole machines that makes (`machines`) and their price for an hour and
+    for a year without a stop, at the list price and, where the entry has
+    one, at the spot price. Every figure has the sum that gives it beside
+    it. `by` is who made the estimate, and `from` its own account.
+    """
+    try:
+        estimates = sorted(ledger.get("cloud") or [], key=lambda entry: entry["taken"])
+        if not estimates:
+            return None
+        entry = estimates[-1]
+        one = next(taken[-1] for stop, taken in measured if stop["key"] == entry["of"])
+        listed = json.loads((source / PROCESSORS).read_text(encoding="utf-8"))
+        own = next(chip for chip in listed["processors"] if chip["key"] == listed["measured"])
+        single = sorted(own["scores"], key=lambda reading: reading["read"])[-1]["single_thread"]
+        cores, price, spot = entry["cores"], entry["dollars_an_hour"], entry.get("spot_dollars_an_hour")
+        seconds = one["seconds"] * single / entry["single_thread"]
+        each = cores * base / seconds
+        fastest, reached = min(measured, key=lambda pair: pair[1][-1]["seconds"])
+        have = base / reached[-1]["seconds"]
+        rows = []
+        for goal in marked(ledger):
+            rest = max(0.0, goal["times"] - have)
+            machines = math.ceil(rest / each - 1e-9)
+            row = {
+                "key": goal["key"],
+                "times": times(goal["times"]),
+                "rest": times(rest),
+                "rest_sum": f"{figure(goal['times'])} − {figure(have)}",
+                "machines": f"{machines:,}",
+                "machines_sum": f"{figure(rest)} ÷ {figure(each)} = {rest / each:,.1f}, in whole machines",
+                "cores": f"{machines * cores:,}",
+                "an_hour": dollars(machines * price),
+                "an_hour_sum": f"{machines:,} × {dollars(price)}",
+                "a_year": dollars(machines * price * HOURS_A_YEAR),
+            }
+            if spot:
+                row.update(
+                    spot_an_hour=dollars(machines * spot),
+                    spot_an_hour_sum=f"{machines:,} × {dollars(spot)}",
+                    spot_a_year=dollars(machines * spot * HOURS_A_YEAR),
+                )
+            rows.append(row)
+        shown = {
+            "by": str(entry["by"]),
+            "taken": entry["taken"][:10],
+            "machine": str(entry["machine"]),
+            "cores": cores,
+            "of": entry["of"],
+            "have": times(have),
+            "have_stop": fastest["key"],
+            "price": dollars(price),
+            "seconds": round(seconds, 3),
+            "one_game": clock(seconds),
+            "one_game_sum": f"{figure(one['seconds'])} s × {figure(single)} ÷ {figure(entry['single_thread'])}",
+            "multiplier": round(each, 2),
+            "times": times(each),
+            "times_sum": f"{cores} cores × {figure(base)} s ÷ {figure(seconds)} s",
+            "a_minute": rate(cores * 60 / seconds),
+            "an_hour": rate(cores * 3600 / seconds),
+            "a_million": dollars(price * seconds / (cores * 3600) * 1000000),
+            "a_year": dollars(price * HOURS_A_YEAR),
+            "hours_a_year": f"{HOURS_A_YEAR:,}",
+            "from": str(entry.get("from") or ""),
+            "rows": rows,
+        }
+        if spot:
+            shown.update(
+                spot=dollars(spot),
+                spot_a_million=dollars(spot * seconds / (cores * 3600) * 1000000),
+                spot_a_year=dollars(spot * HOURS_A_YEAR),
+            )
+        return shown
+    except (OSError, ValueError, KeyError, TypeError, IndexError, ZeroDivisionError, StopIteration):
+        return None
 
 
 def timeline(source: pathlib.Path) -> dict | None:
     """What the home page shows: the stops in the ledger's order, each with
     its newest reading as a time and a multiplier, its goal when it has one,
     where it started when it has moved, and its place on the line; the largest
-    multiplier, which is the page's number; and the goal, with the time a
-    game would take at it. `None` when the revision has no ledger or one that
-    cannot be read."""
+    multiplier, which is the page's number; and the `goals`, smallest first,
+    each with the time a game would take at it, its place on the line, which
+    ends at the last, and what renting the rest of the way to it is
+    estimated to cost (`cost`, with `cloud` saying whose estimate it is and
+    of what machine at what price). A stop or a goal whose words would meet
+    its neighbour's is `far`: its words stand a row out from the line (see
+    `rows`). `None` when the revision has no ledger or one that cannot be
+    read."""
     try:
         ledger = json.loads((source / LEDGER).read_text(encoding="utf-8"))
-        goal = ledger["goal"]
+        marks = marked(ledger)
+        goal = marks[-1]["times"]
         measured = [(stop, readings(source, stop)) for stop in ledger["stops"]]
         base = measured[0][1][-1]["seconds"]
         stops = []
@@ -210,23 +398,161 @@ def timeline(source: pathlib.Path) -> dict | None:
             if times(base / first["seconds"]) != row["times"]:
                 row["was"] = f"{times(base / first['seconds'])} on {day(first['taken'])}"
             stops.append(row)
+        goals = [
+            {
+                "key": mark["key"],
+                "times": times(mark["times"]),
+                "time": clock(base / mark["times"]),
+                "at": round(math.log(mark["times"]) / math.log(goal), 4),
+            }
+            for mark in marks
+        ]
     except (OSError, ValueError, KeyError, TypeError, IndexError, ZeroDivisionError):
         return None
     for row, side in zip(stops, sides([row["at"] for row in stops])):
         row["side"] = side
+    # The goals' words stand over the line, and take their rows with the
+    # stops' words there.
+    for mark in goals:
+        mark["side"] = "above"
+    entries = stops + goals
+    for row, far in zip(entries, rows([row["at"] for row in entries], [row["side"] for row in entries])):
+        if far:
+            row["far"] = True
     fastest = max(stops, key=lambda row: row["multiplier"])
     shown = {
         "speedup": fastest["times"],
         "fastest": fastest["key"],
         "reach": fastest["at"],
-        "goal": times(goal),
-        "goal_time": clock(base / goal),
+        "goals": goals,
         "ticks": ticks(goal),
         "stops": stops,
     }
     if "was" in fastest:
         shown["was"] = fastest["was"]
+    cloud = rented(source, ledger, measured, base)
+    if cloud:
+        costs = {row["key"]: row["an_hour"] for row in cloud["rows"]}
+        for mark in goals:
+            mark["cost"] = f"about {costs[mark['key']]} an hour in the cloud"
+        shown["cloud"] = {"by": cloud["by"], "machine": cloud["machine"], "price": cloud["price"], "taken": day(cloud["taken"])}
     return shown
+
+
+def processors(source: pathlib.Path, measured: list[tuple[dict, list[dict]]], base: float) -> dict | None:
+    """The benchmarks processor by processor, for the stops as `worked` read
+    them (`measured`) and the baseline's seconds (`base`). `None` when the
+    revision has no list of processors, or one that cannot be read.
+
+    `rows` are the processors in the list's order. A row has the website's
+    two scores as the newest reading gives them, with the `samples` behind
+    them, the `margin` for error, the day they were `read` and the `page`;
+    `games`, one cell for every one-core stop; and `every_core`, the games a
+    minute with a worker on every core, with the multiplier that gives
+    (`times`, and `times_sum` the sum for it). A cell's `kind` is `measured`
+    when the benchmark was run on that processor and `theory` when it is
+    worked out from the scores, and then its `sum` shows how. A row's own
+    `kind` is `measured` when the benchmarks were run on it, and its `taken`
+    is the oldest day among the readings its figures rest on. `site` is the
+    website the scores are read from, with the newest day any was read.
+
+    The processor the one-core readings were taken on is the list's
+    `measured`. A processor's every-core figure is measured when the
+    benchmark's ledger has a run on its `chip`: the record among those runs.
+    """
+    try:
+        ledger = json.loads((source / PROCESSORS).read_text(encoding="utf-8"))
+        site, listed, own = ledger["scores"], ledger["processors"], ledger["measured"]
+        newest = {entry["key"]: sorted(entry["scores"], key=lambda reading: reading["read"])[-1] for entry in listed}
+        anchor = next(entry for entry in listed if entry["key"] == own)
+        single, multi = newest[own]["single_thread"], newest[own]["multithread"]
+        hours = f"{figure(base / 3600)} h"
+        one_core = [(stop, taken[-1]) for stop, taken in measured if stop.get("cores") == 1]
+        # The stop that plays a one-core stop's game on every core, and the
+        # runs of the ledger it follows: a processor's record is the record
+        # among the runs on its own chip.
+        runner = next((stop for stop, _ in measured if "follows" in stop and stop.get("of")), None)
+        runs = json.loads((source / runner["follows"]).read_text(encoding="utf-8"))["runs"] if runner else []
+
+        def record(entry: dict) -> dict | None:
+            chip = entry.get("chip")
+            mine = [run for run in runs if chip and (run.get("machine") or {}).get("chip") == chip]
+            took = records(mine, FOLLOWED[runner["follows"]]) if mine else []
+            return took[-1] if took else None
+
+        held = record(anchor)
+        address = str(site["address"])
+        rows = []
+        for entry in listed:
+            scores, ours = newest[entry["key"]], entry["key"] == own
+            row = {
+                "key": entry["key"],
+                "name": entry["name"],
+                "cores": entry["cores"],
+                "threads": entry["threads"],
+                "single_thread": f"{scores['single_thread']:,}",
+                "multithread": f"{scores['multithread']:,}",
+                "samples": scores["samples"],
+                "read": scores["read"],
+            }
+            if scores.get("margin"):
+                row["margin"] = scores["margin"]
+            # A score links the page it was read on, when that page is the
+            # website's own.
+            if address.startswith("https://") and str(scores.get("page") or "").startswith(address):
+                row["page"] = scores["page"]
+            if entry.get("fleet"):
+                row["fleet"] = entry["fleet"]
+            days, games = [], []
+            for stop, reading in one_core:
+                cell = {"key": stop["key"], "kind": "measured" if ours else "theory", "taken": reading["taken"][:10]}
+                seconds = reading["seconds"]
+                if not ours:
+                    cell["sum"] = f"{figure(seconds)} s × {figure(single)} ÷ {figure(scores['single_thread'])}"
+                    seconds = seconds * single / scores["single_thread"]
+                cell.update(seconds=round(seconds, 3), time=clock(seconds))
+                games.append(cell)
+                days.append(cell["taken"])
+            row["games"] = games
+            run = record(entry) if runner else None
+            every = None
+            if run:
+                every = {"kind": "measured", "a_minute": 60 / run["seconds"], "taken": run["taken"][:10]}
+            elif held and not ours:
+                every = {
+                    "kind": "theory",
+                    "a_minute": 60 / held["seconds"] * scores["multithread"] / multi,
+                    "taken": held["taken"][:10],
+                    "sum": f"{figure(60 / held['seconds'])} games a minute × {figure(scores['multithread'])} ÷ {figure(multi)}",
+                }
+            if every:
+                a_minute = every["a_minute"]
+                multiplier = a_minute * base / 60
+                every.update(of=runner["of"], games_a_minute=round(a_minute, 3), a_minute=rate(a_minute), an_hour=rate(60 * a_minute))
+                row.update(
+                    every_core=every,
+                    multiplier=round(multiplier, 2),
+                    times=times(multiplier),
+                    times_sum=f"{figure(a_minute)} games a minute × 60 × {hours}",
+                )
+                days.append(every["taken"])
+            row["kind"] = "measured" if run or (ours and games) else "theory"
+            if days:
+                row["taken"] = min(days)
+            rows.append(row)
+        return {
+            "site": {
+                "name": site["site"],
+                "address": address,
+                "single_thread": site["single_thread"],
+                "multithread": site["multithread"],
+                "from": str(site.get("from") or ""),
+                "read": max(row["read"] for row in rows),
+            },
+            "rows": rows,
+        }
+    except (OSError, ValueError, KeyError, TypeError, IndexError, ZeroDivisionError, StopIteration):
+        return None
 
 
 def worked(source: pathlib.Path) -> dict | None:
@@ -243,14 +569,19 @@ def worked(source: pathlib.Path) -> dict | None:
     has one, from a game played with the machine to itself (`basis:
     "alone"`). A theory row of a stop with a measured run says what share of
     it that run `reaches`. Last come the goals the runs are held against
-    (`kind: "goal"`): each measured run's own, and the goal the home page's
-    line ends at (`key: "goal"`). `answer` is the page's opening sentence in
-    figures: the self-play stop one game at a time, on every core as
-    measured, and the highest theory there is for it.
+    (`kind: "goal"`): each measured run's own, and the goals the home page's
+    line is marked with (`whole`, under the goal's own key). `goals` are
+    those goals by themselves, smallest first. `answer` is the page's opening
+    sentence in figures: the self-play stop one game at a time, on every
+    core as measured, and the highest theory there is for it. `processors`
+    is the same benchmarks processor by processor (see `processors`), in a
+    revision that lists them, and `cloud` what renting the rest of the way to
+    each goal is estimated to cost (see `rented`), in a revision with such an
+    estimate.
     """
     try:
         ledger = json.loads((source / LEDGER).read_text(encoding="utf-8"))
-        goal = ledger["goal"]
+        marks = marked(ledger)
         measured = [(stop, readings(source, stop)) for stop in ledger["stops"]]
         base = measured[0][1][-1]["seconds"]
         hours = f"{figure(base / 3600)} h"
@@ -351,42 +682,57 @@ def worked(source: pathlib.Path) -> dict | None:
                 ordered += [row, *theory.pop(row["of"], [])]
             throughput = ordered + [row for rows in theory.values() for row in rows]
             # The goals, each with the share of it the measured run reaches:
-            # a run's own, then the goal of the whole line.
+            # a run's own, then the goals of the whole line.
             best = max(row["multiplier"] for row in throughput if row["kind"] == "measured")
             aims = [
-                (stop["key"], stop["goal_seconds"], f"{figure(base)} s ÷ {figure(stop['goal_seconds'])} s", base / run["seconds"])
+                (stop["key"], stop["goal_seconds"], f"{figure(base)} s ÷ {figure(stop['goal_seconds'])} s", base / run["seconds"], False)
                 for stop, run in runs
                 if "goal_seconds" in stop
             ]
-            aims.append(("goal", base / goal, f"a game every {clock(base / goal)}", best))
-            for key, seconds, said, reached in aims:
-                throughput.append(
-                    {
-                        "key": key,
-                        "kind": "goal",
-                        "one_game": clock(seconds),
-                        "a_minute": rate(60 / seconds),
-                        "an_hour": rate(3600 / seconds),
-                        "multiplier": round(base / seconds, 2),
-                        "times": times(base / seconds),
-                        "sum": said,
-                        "reaches": share(reached * seconds / base),
-                    }
-                )
+            aims += [(mark["key"], base / mark["times"], f"a game every {clock(base / mark['times'])}", best, True) for mark in marks]
+            for key, seconds, said, reached, whole in aims:
+                row = {
+                    "key": key,
+                    "kind": "goal",
+                    "one_game": clock(seconds),
+                    "a_minute": rate(60 / seconds),
+                    "an_hour": rate(3600 / seconds),
+                    "multiplier": round(base / seconds, 2),
+                    "times": times(base / seconds),
+                    "sum": said,
+                    "reaches": share(reached * seconds / base),
+                }
+                if whole:
+                    row["whole"] = True
+                throughput.append(row)
 
         shown = {
             "base": {"time": clock(base), "seconds": figure(base), "an_hour": rate(3600 / base)},
             "games": games,
             "throughput": throughput,
-            "goal": {
-                "times": times(goal),
-                "time": clock(base / goal),
-                "a_minute": rate(goal * 60 / base),
-                "an_hour": rate(goal * 3600 / base),
-            },
+            "goals": [
+                {
+                    "key": mark["key"],
+                    "times": times(mark["times"]),
+                    "words": scale(mark["times"]),
+                    "time": clock(base / mark["times"]),
+                    "a_minute": rate(mark["times"] * 60 / base),
+                    "an_hour": rate(mark["times"] * 3600 / base),
+                }
+                for mark in marks
+            ],
         }
         if machine:
             shown["machine"] = machine
+        across = processors(source, measured, base)
+        if across:
+            shown["processors"] = across
+        cloud = rented(source, ledger, measured, base)
+        if cloud:
+            shown["cloud"] = cloud
+            costs = {row["key"]: row["an_hour"] for row in cloud["rows"]}
+            for mark in shown["goals"]:
+                mark["cost"] = costs[mark["key"]]
         # The opening sentence: the stop a measured run plays on every core
         # (self-play), one game at a time, as measured, and in theory.
         held = next((row for row in throughput if row["kind"] == "measured" and row["of"] in newest), None)

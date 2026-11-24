@@ -47,6 +47,7 @@ import tempfile
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 # Where Chrome is, on whichever machine is cutting the build.
@@ -169,27 +170,89 @@ def fresh_profile(prefix: str) -> str:
 # fixed utility nav (a more durable marker than a label that is part of the
 # page's editorial design), the pages `beta/publish.sh` fills by the slot it
 # fills, the downloads page by the release links that are its whole job.
+#
+# A page is named here by its address in the lane, which follows its name in
+# the site list (operator 2026-11-23: "clean up the URL please. standardized.
+# please remove research from the url"): the pages of Charts/ under charts/,
+# Tournaments at tournaments (at auto-tourneys while it was named
+# Auto-Tourneys, 2026-11-23 to 2026-11-24).
 PAGES = {
     "home": b'aria-label="CIVVIS links"',
     "tournaments": b'id="tournaments-data"',
-    "research": b'id="research-data"',
-    "performance": b'id="performance-data"',
-    "interpretability": b'id="interpretability-data"',
+    "charts/win-analytics": b'id="research-data"',
+    "charts/elo-rankings": b'id="elo-data"',
+    "charts/civ-analytics": b'id="civ-data"',
+    "charts/civvis-performance": b'id="performance-data"',
+    "charts/ai-interpretability": b'id="interpretability-data"',
     "download": b"releases/latest/download/",
+    # Wizard Chess: the board it is played on.
+    "wizard-chess": b'<canvas id="stage"',
 }
+
+# Where four of them answered until 2026-11-23, and where each is now. A lane
+# is one revision's site, and a page says in its own revision where it lives
+# (`address` in `beta/publish.sh`), so a lane pinned to a revision from before
+# the move carries these pages at the addresses on the left: the front page,
+# until the move is promoted. In a lane that has the page at its new address
+# the old one forwards to it (`MOVED` in `beta/_worker.js`, which a test holds
+# to this table).
+FORMER = {
+    "auto-tourneys": "tournaments",
+    "research": "charts/win-analytics",
+    "performance": "charts/civvis-performance",
+    "interpretability": "charts/ai-interpretability",
+}
+
+# A page back at an address it once left (Tournaments, at auto-tourneys from
+# 2026-11-23 to 2026-11-24 while it was named Auto-Tourneys), and the address
+# it had in between. A lane pinned to a revision from in between carries the
+# page there, and the address it is back at forwards to it (`BETWEEN` in
+# `beta/_worker.js`, which a test holds to this table).
+BETWEEN = {
+    "tournaments": "auto-tourneys",
+}
+
+# Every address a page can answer at, in the site list's order, a page's
+# present address before its former one.
+ADDRESSES = [
+    address
+    for name in PAGES
+    for address in (name, *(old for old, new in FORMER.items() if new == name))
+]
+
+
+def page_at(address: str) -> str:
+    """The page an address is, by its present address."""
+    return FORMER.get(address, address)
 
 
 def lane_pages(build: dict) -> list:
-    """The pages a lane carries, as its own `build.json` lists them.
+    """The pages a lane carries, by address, as its own `build.json` lists them.
 
     A lane has the pages its revision has: a promoted revision from before a
     page was written is published without it, and a page that only main has
     must not answer on the front page. `publish.sh` writes the list as
-    `pages`; a bundle from before it did carried every page there was."""
+    `pages`; a bundle from before it did carried every page there was, at the
+    addresses they had then.
+
+    In the lane's own order, which is the site list's: the router opens a
+    folder (`/charts`) at the first page this list has in it, so the check of
+    that has to read the list as the router does. Until 2026-11-24 this
+    returned them in `PAGES`' order instead. The two agreed until Charts/ was
+    reordered that day (#5751), and from then the check asked `/charts` for
+    Win Analytics while the router opened AI Interpretability, and every
+    publish failed."""
     listed = build.get("pages")
     if listed is None:
-        return list(PAGES)
-    return [name for name in PAGES if name in listed]
+        then = {new: old for old, new in FORMER.items() if new not in BETWEEN}
+        return [then.get(name, name) for name in PAGES]
+    return [address for address in listed if address in ADDRESSES]
+
+
+def pages_left_out(carried: list) -> list:
+    """The pages a lane does not have at either of their addresses."""
+    have = {page_at(address) for address in carried}
+    return [name for name in PAGES if name not in have]
 
 
 def lane_page_problems(dist: pathlib.Path, mount: str, build: dict) -> list:
@@ -202,16 +265,22 @@ def lane_page_problems(dist: pathlib.Path, mount: str, build: dict) -> list:
     lane = dist if mount == "root" else dist / "test"
     carried = lane_pages(build)
     problems = []
-    unknown = sorted(set(build.get("pages") or []) - set(PAGES))
+    unknown = sorted(set(build.get("pages") or []) - set(ADDRESSES))
     if unknown:
         problems.append(
             f"build.json lists {', '.join(unknown)}, which this check does not know as a page")
+    twice = sorted(old for old, new in FORMER.items() if old in carried and new in carried)
+    if twice:
+        problems.append(
+            f"the lane carries a page at the address it left as well as its own: {', '.join(twice)}")
     if mount == "test":
+        # At its present address: main's pages say where they live, and a
+        # page of main's still at an address it left has lost that line.
         problems += [
             f"the test lane has no {name} page; main has every page"
             for name in PAGES if name not in carried
         ]
-    for name in PAGES:
+    for name in ADDRESSES:
         present = (lane / name / "index.html").is_file()
         if name in carried and not present:
             problems.append(f"{name}/index.html is missing from a lane that lists the page")
@@ -506,23 +575,62 @@ def check_gate(dist: pathlib.Path) -> list[str]:
         # itself: the front page holds what was promoted, so a page only main
         # has must not be reachable at the root, whether or not anything
         # links it.
+        #
+        # And an address a page has left forwards to the page, in a lane that
+        # has it at its new one: the old addresses are in links this site
+        # does not control. (`urlopen` follows the forward, so where the
+        # answer came from is asked as well as what it is.)
         def lane_routes(prefix, which, carried):
-            for name, marker in PAGES.items():
+            for name in ADDRESSES:
                 address = f"{prefix}/{name}/"
+                marker = PAGES[page_at(name)]
+                moved_to = (FORMER.get(name) or BETWEEN.get(name)) if name not in carried else None
+                forwards = moved_to in carried if moved_to else False
                 try:
-                    body = get(address).read()
+                    answer = get(address)
+                    body = answer.read()
                 except urllib.error.HTTPError as answer:
                     if name in carried:
                         problems.append(
                             f"{which}'s {name} page answers HTTP {answer.code} at {address}")
+                    elif forwards:
+                        problems.append(
+                            f"{address} answers HTTP {answer.code}; it is meant to forward to "
+                            f"{prefix}/{moved_to}/")
                     elif answer.code != 404:
                         problems.append(f"{address} answers HTTP {answer.code} rather than 404")
                     continue
-                if name not in carried:
+                landed = urllib.parse.urlsplit(answer.geturl()).path
+                if forwards:
+                    if landed != f"{prefix}/{moved_to}/":
+                        problems.append(
+                            f"{address} answers from {landed}; it is meant to forward to "
+                            f"{prefix}/{moved_to}/")
+                    elif marker not in body:
+                        problems.append(
+                            f"{address} forwards to {landed}, which is not {which}'s {moved_to} page")
+                elif name not in carried:
                     problems.append(
                         f"{address} answers, but {which}'s revision does not have the page")
+                elif landed != address:
+                    problems.append(f"{address} answers from {landed} rather than from itself")
                 elif marker not in body:
                     problems.append(f"{which}'s {name} page is not being served at {address}")
+            # A folder of the site list opens the first page the lane has in
+            # it, as Charts/ does in the list.
+            for folder in dict.fromkeys(name.split("/")[0] for name in carried if "/" in name):
+                first = next(name for name in carried if name.startswith(folder + "/"))
+                try:
+                    landed = urllib.parse.urlsplit(get(f"{prefix}/{folder}/").geturl()).path
+                except urllib.error.HTTPError as answer:
+                    problems.append(
+                        f"{prefix}/{folder}/ answers HTTP {answer.code}; it is meant to open "
+                        f"{prefix}/{first}/")
+                    continue
+                if landed != f"{prefix}/{first}/":
+                    problems.append(
+                        f"{prefix}/{folder}/ answers from {landed}; it is meant to open "
+                        f"{prefix}/{first}/")
 
         lane_routes("", "the stable lane", lane_pages(json.loads((dist / "build.json").read_text())))
 
@@ -712,7 +820,7 @@ def main(argv: list[str] | None = None) -> int:
         for entry in missing:
             print(f"    MISSING {entry if isinstance(entry, str) else ' or '.join(entry)}", file=sys.stderr)
         return 1
-    left_out = [name for name in PAGES if name not in pages]
+    left_out = pages_left_out(pages)
     print(
         f"    {len(needed)} required files present, build {build['short']}, "
         f"pages: {', '.join(pages) or 'none'}"

@@ -4,7 +4,8 @@
 //
 //   /              the STABLE lane — the promoted build, deliberately chosen:
 //                  the viewer at /, the landing page at /home, the pages of
-//                  Charts/, the native binaries at /download
+//                  Charts/ under /charts, Tournaments at /tournaments,
+//                  the native binaries at /download
 //   /test/...      the HEAD lane — the same pages, republished automatically
 //                  from the latest main: /test, /test/home, /test/download
 //
@@ -21,8 +22,9 @@
 // here to routing and headers.
 //
 // One piece of that routing holds the lanes apart: a page a lane does not
-// list in its build.json answers 404 here (`lacksPage`), whatever the asset
-// layer still remembers of it from an earlier deployment.
+// list in its build.json answers 404 here (`pageAnswer`), whatever the asset
+// layer still remembers of it from an earlier deployment. And an address a
+// page has left forwards to where the lane has the page now (`MOVED`).
 //
 // **This is a `_worker.js`, deliberately, and it must stay one.** Cloudflare
 // Pages also supports a `functions/` directory, and that is the obvious way to
@@ -255,57 +257,131 @@ async function precompressedCopy(request, env, url) {
   return copy;
 }
 
-// The address of one of a lane's pages: `<lane>/<name>`, with or without the
-// trailing slash or `index.html`. The lane is "" for the stable lane and
-// "/test" for the head lane; `/test` itself is the head lane's viewer, not a
-// page of the stable lane named "test".
-const PAGE_ADDRESS = /^(\/test)?\/([a-z][a-z0-9-]*)(?:\/(?:index\.html)?)?$/;
+// The address of one of a lane's pages: `<lane>/<name>` or, for a page in a
+// folder of the site list (the pages of Charts/), `<lane>/<folder>/<name>`,
+// with or without the trailing slash or `index.html`. The lane is "" for the
+// stable lane and "/test" for the head lane; `/test` itself is the head
+// lane's viewer, not a page of the stable lane named "test".
+const PAGE_ADDRESS =
+  /^(\/test)?\/([a-z][a-z0-9-]*(?:\/[a-z][a-z0-9-]*)?)(?:\/(?:index\.html)?)?$/;
+
+// Where the pages that have moved are now, by the address each had.
+//
+// Until 2026-11-23 four pages answered at addresses that were not their
+// names: Win Analytics at /research (what the page was called the day it was
+// written), CIVVIS Performance and AI Interpretability beside it at the top
+// of the site although the site list keeps them under Charts/, and
+// Auto-Tourneys at /tournaments. An address now follows the list (operator:
+// "clean up the URL please. standardized. please remove research from the
+// url"): the name as the list shows it, in lower case with hyphens, under
+// charts/ for a page of Charts/.
+//
+// The old addresses are in links this site does not control (video
+// descriptions, issues, search results), so each forwards to its page. Only
+// in a lane that has the page at its new address, though: a lane pinned to a
+// revision from before the move still serves its pages where they were, and
+// there the old address is the page.
+//
+// Tournaments was Auto-Tourneys from 2026-11-22 and at /auto-tourneys from
+// 2026-11-23, and on 2026-11-24 it took its first name back, and with it
+// its first address (operator: "change auto-outnrye to Tournaments.
+// Auto-tourney suggests some self imrpvoing tourney thing"). So
+// /auto-tourneys is an address it has left like the others.
+const MOVED = {
+  research: "charts/win-analytics",
+  performance: "charts/civvis-performance",
+  interpretability: "charts/ai-interpretability",
+  "auto-tourneys": "tournaments",
+};
+
+// A page back at an address it once left, by that address, and the address
+// it had in between. A lane pinned to a revision from in between (the front
+// page, until a promotion carries the change there) has the page at the
+// address in between, and the address the page is back at forwards to it,
+// as it did then. Once no lane can be pinned to such a revision the entry can
+// go.
+const BETWEEN = {
+  tournaments: "auto-tourneys",
+};
 
 // An address no deployment has ever had a file at, so what the asset layer
 // answers for it is the 404 page and nothing it kept from an earlier
 // deployment.
 const NO_SUCH_PAGE = "/__no-such-page__";
 
-/// Whether this address is a page the lane does not carry.
+/// What a page address answers in its lane, when it is not simply the file
+/// there: `{ absent: true }` for a page the lane does not carry, `{ moved:
+/// "<path>" }` for an address whose page the lane has somewhere else, and
+/// `null` for everything that is served as it is asked for.
 ///
 /// A lane is one commit's site, and its own `build.json` lists the pages it
-/// has (`pages`). The deployed directory already holds exactly those, but the
-/// directory is not the last word on what an address answers: **Pages keeps
-/// serving a file it has served before for up to a week after a deployment
-/// removes it**, from each data center's cache ("asset retention"). So a page
-/// that left a lane goes on answering there, a week at a time, for every
-/// reader near a data center that had served it. That is how the AI
-/// Interpretability page was still on the front page on 2026-11-23, after the
-/// deployment that took it out: a 404 on `civvis.pages.dev`, a 404 with a
-/// query string, and the old page, two hours stale, at the address itself.
+/// has (`pages`, by address). The deployed directory already holds exactly
+/// those, but the directory is not the last word on what an address answers:
+/// **Pages keeps serving a file it has served before for up to a week after a
+/// deployment removes it**, from each data center's cache ("asset
+/// retention"). So a page that left a lane goes on answering there, a week at
+/// a time, for every reader near a data center that had served it. That is
+/// how the AI Interpretability page was still on the front page on
+/// 2026-11-23, after the deployment that took it out: a 404 on
+/// `civvis.pages.dev`, a 404 with a query string, and the old page, two hours
+/// stale, at the address itself.
 ///
 /// So the lane's list is asked here, where the answer cannot be a kept copy.
 /// A lane that does not say what it carries (a bundle from before lanes
 /// listed their pages, or a `build.json` that cannot be read) is passed
 /// through as before.
-async function lacksPage(request, env, url) {
-  if (request.method !== "GET" && request.method !== "HEAD") return false;
+///
+/// An address the lane does not list is then one of three things. An address
+/// its page has left (`MOVED`) forwards to the page, when this lane has the
+/// page there. A folder of the site list (`/charts`) opens the first page the
+/// lane lists in it, as Charts/ does in the list itself: the folder has no
+/// page of its own. Anything else is a page the lane does not have.
+async function pageAnswer(request, env, url) {
+  if (request.method !== "GET" && request.method !== "HEAD") return null;
   const address = PAGE_ADDRESS.exec(url.pathname);
-  if (!address) return false;
+  if (!address) return null;
   const [, lane = "", name] = address;
-  if (!lane && name === "test") return false;
+  if (!lane && name === "test") return null;
+  let pages;
   try {
     const shipped = await env.ASSETS.fetch(new Request(new URL(`${lane}/build.json`, url)));
-    if (!shipped.ok) return false;
-    const pages = (await shipped.json()).pages;
-    return Array.isArray(pages) && !pages.includes(name);
+    if (!shipped.ok) return null;
+    pages = (await shipped.json()).pages;
   } catch {
-    return false;
+    return null;
   }
+  if (!Array.isArray(pages) || pages.includes(name)) return null;
+  const now = Object.hasOwn(MOVED, name)
+    ? MOVED[name]
+    : Object.hasOwn(BETWEEN, name)
+      ? BETWEEN[name]
+      : pages.find((page) => typeof page === "string" && page.startsWith(`${name}/`));
+  if (now && pages.includes(now)) return { moved: `${lane}/${now}/` };
+  return { absent: true };
 }
 
 /// Serve a file, with the headers a `_headers` file would have carried — that
 /// file is ignored once a `_worker.js` exists, so the rules live here instead.
 async function asset(request, env, gated) {
   let url = new URL(request.url);
+  const answer = await pageAnswer(request, env, url);
+  // An address whose page has moved forwards to it, query and all (a
+  // fragment never reaches a server; the browser carries it across). It is
+  // a permanent move, so a search engine drops the old address for the new
+  // one, but one a browser asks about again each time: which address a lane
+  // serves a page at follows the revision promoted to it, and a promotion
+  // can go back as well as forward.
+  if (answer?.moved) {
+    const headers = new Headers({
+      Location: `${answer.moved}${url.search}`,
+      "Cache-Control": "public, max-age=0, must-revalidate",
+    });
+    if (gated) headers.set("X-Robots-Tag", "noindex");
+    return new Response(null, { status: 301, headers });
+  }
   // A page its lane does not carry is answered as any address with nothing
   // at it is: the 404 page, from an address that never had a file.
-  const absent = await lacksPage(request, env, url);
+  const absent = Boolean(answer?.absent);
   if (absent) {
     url = new URL(NO_SUCH_PAGE, url);
     request = new Request(url, { method: request.method, headers: request.headers });

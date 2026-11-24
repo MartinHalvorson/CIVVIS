@@ -7,7 +7,8 @@
                                                 rebuild the timing snapshot
 
 The Performance page (`beta/performance.html`, served at
-`<lane>/performance/`) is CIVVIS's own page in the site list: the entry that
+`<lane>/charts/civvis-performance/`, the address it states itself) is
+CIVVIS's own page in the site list: the entry that
 opens under CIVVIS (operator 2026-11-21: "performance should be a page
 similar to the home/ and other similar pages (musings/research/) etc. we want
 the civvis performance charts there. fastest game video. p1, p10, p50, p90,
@@ -20,7 +21,13 @@ p99 times for games for self-play games."). It carries four things:
   game."): the readings of `data/performance/speedup_timeline.json`, the
   ledger the home page's speed timeline is drawn from, as two tables with
   the sum beside every figure. `speedup_timeline.worked` works them out;
-  nothing of them is written in the page.
+  nothing of them is written in the page. Under them the same benchmarks
+  stand processor by processor (operator 2026-11-22: "we should have a
+  table in civvis performance that has our benchmarks (and age) across each
+  processor. we should also list the single thread score and multithread
+  score from the website"): the processors of
+  `data/performance/processors.json`, the one the benchmarks were run on as
+  measured and every other worked out from the website's two scores.
 - **the fastest game on video**: the record videos of the site playing a
   complete game in real time, listed in
   `data/performance/fastest_game_videos.json`. The one with the shortest time

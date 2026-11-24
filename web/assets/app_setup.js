@@ -88,6 +88,45 @@ function chooseTacticsFog(on) {
   if (select) select.value = on ? "1" : "0";
   setPace({tactics_fog: on});
 }
+// The turn box's Fog-honest AI row (`hudTurnPlate` in app.js): whether the
+// Civ AIs plan on what their civilizations can see (operator 2026-11-23: "we
+// should have a fog honest ai play setting in the turn box set to true or
+// false. and it should pretty much always be set to true"). Every world the
+// engine deals opens True; False is for the world on screen, and the next
+// world is True again. A live Civilization VI game is played by
+// Civilization VI's own AIs, so it has no such row.
+function hudFogHonestRow() {
+  if (typeof state.fog_honest !== "boolean" || livePause.available) return "";
+  const on = state.fog_honest;
+  return `<div class="turn-setting" title="True: every Civ AI plans its turn on what its own civilization can see, ` +
+    `and remembers what it has seen, as a person would. False: it plans on the whole board, fog and all. ` +
+    `City-states, barbarians and TrainingWheels are scripted and read the whole board either way. ` +
+    `Every new world starts True.">` +
+    `<span>Fog-honest AI:</span><span class="turn-pace-choice"><select data-hud-fog-honest ` +
+    `aria-label="Fog-honest AI">` +
+    `<option value="1"${on ? " selected" : ""}>True</option>` +
+    `<option value="0"${on ? "" : " selected"}>False</option>` +
+    `</select><span class="turn-pace-caret" aria-hidden="true">⌄</span></span></div>`;
+}
+// The row, turned. The engine answers with the state, and only what the row
+// reads is taken from it: a spectated world is moving on underneath, and its
+// frames are the stepper's to paint.
+async function chooseFogHonest(on) {
+  try {
+    const answer = await fetchJSON("/fog-honest", {method: "POST",
+      headers: {"Content-Type": "application/json"}, body: JSON.stringify({on})});
+    if (state && answer && typeof answer.fog_honest === "boolean") {
+      state.fog_honest = answer.fog_honest;
+      state.fog_honest_seats = answer.fog_honest_seats;
+    }
+  } catch (e) {
+    const errEl = document.getElementById("err");
+    errEl.textContent = `Could not change Fog-honest AI: ${e.message}`;
+    errEl.style.display = "block";
+    setTimeout(() => errEl.style.display = "none", 2500);
+  }
+  if (state) drawPlayerHud();
+}
 document.getElementById("specspeed").onchange = event => chooseWatchPace(event.currentTarget.value);
 restorePace();
 document.getElementById("between-game-countdown").onchange = () =>

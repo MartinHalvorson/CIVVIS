@@ -65,8 +65,8 @@
 
 use super::civilian_safety::{BarbarianReach, REACH_SCAN_RADIUS};
 use super::{
-    AdvancedAi, VictoryTarget, EARLY_SETTLER_HOME_RADIUS, SETTLEMENT_GLOBAL_PREFILTER_LIMIT,
-    SETTLER_DEAD_SITE_AVOID_TURNS, SETTLER_STEP_RISK_LIMIT,
+    AdvancedAi, SettlerWalkCosts, VictoryTarget, EARLY_SETTLER_HOME_RADIUS,
+    SETTLEMENT_GLOBAL_PREFILTER_LIMIT, SETTLER_DEAD_SITE_AVOID_TURNS, SETTLER_STEP_RISK_LIMIT,
 };
 use crate::ai::BasicAi;
 use crate::game::{Action, Game};
@@ -276,6 +276,18 @@ impl AdvancedAi {
     /// per-Settler exclusions.
     /// `None` when the map holds nothing this Settler can reach.
     pub(super) fn settler_exhaustion_target(&self, g: &Game, pid: usize, uid: u32) -> Option<Pos> {
+        self.settler_exhaustion_target_sharing(g, pid, uid, &mut SettlerWalkCosts::new())
+    }
+
+    /// [`Self::settler_exhaustion_target`] for a Settler step that already
+    /// flooded its walk on this board (`settler_walk_costs_cached`).
+    pub(super) fn settler_exhaustion_target_sharing(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        walk_costs: &mut SettlerWalkCosts,
+    ) -> Option<Pos> {
         let from = g.units[&uid].pos;
         // The normal target picker receives this exception explicitly, but
         // the exhaustion fallback is also reached after a target was dropped
@@ -320,11 +332,10 @@ impl AdvancedAi {
         // growing cost of leaving an older Settler without a city.
         let turn_price = self.settle_sooner_walk_price(g, uid);
         if let Some((_, moves)) = turn_price {
-            let costs = Self::settle_sooner_walk_costs(g, uid, radius);
+            let costs = Self::settler_walk_costs_cached(g, uid, radius, walk_costs);
             for (position, value) in &mut ranked {
                 let movement_cost = costs
-                    .get(position)
-                    .copied()
+                    .get(g, *position)
                     .unwrap_or_else(|| g.wdist(from, *position) as f64 * moves.max(1.0) / 2.0);
                 *value -= Self::settle_sooner_walk_cost(turn_price, movement_cost);
             }

@@ -4,9 +4,9 @@
 #
 # The output is one complete LANE of the site — the viewer at its root with
 # the engine compiled to WebAssembly beside it, the landing page at /home, the
-# Research page at /research, the Tournaments page at /tournaments, the
-# Performance page at /performance, the AI Interpretability page at
-# /interpretability and the downloads page at /download — a
+# pages of Charts/ under /charts (AI Interpretability, Civ Analytics, Win
+# Analytics, ELO Rankings, CIVVIS Performance), the Tournaments page at
+# /tournaments, the downloads page at /download and Wizard Chess at /wizard-chess — a
 # plain directory of static files with no
 # host-specific anything beyond the two Cloudflare Pages control files, which
 # any other host simply ignores. Every link between the pages is
@@ -171,10 +171,60 @@ landing_assets="$source_tree/beta/assets"
 download_page="$source_tree/beta/download.html"
 tournaments_page="$source_tree/beta/tournaments.html"
 research_page="$source_tree/beta/research.html"
+elo_page="$source_tree/beta/elo.html"
+civs_page="$source_tree/beta/civs.html"
 performance_page="$source_tree/beta/performance.html"
 interpretability_page="$source_tree/beta/interpretability.html"
+chess_page="$source_tree/beta/chess.html"
+# What Wizard Chess is made of beside its page: its scripts, and the two
+# things it did not write (three.js and the Stockfish engine, chess/vendor).
+chess_parts="$source_tree/beta/chess"
 pages=()
 without=()
+
+# Where a page is served is the lane's own revision's to say, like the page
+# itself: `address <page> <the address it had before pages said theirs>`.
+#
+# Since 2026-11-23 an address follows the page's name in the site list
+# (operator: "clean up the URL please. standardized. please remove research
+# from the url"): Win Analytics is at charts/win-analytics where it was at
+# research, and Auto-Tourneys at auto-tourneys where it was at tournaments.
+# On 2026-11-24 Auto-Tourneys took its first name back, Tournaments, and with
+# it its first address (operator: "change auto-outnrye to Tournaments.
+# Auto-tourney suggests some self imrpvoing tourney thing").
+# Every link inside a page is relative, so a page works at one depth only,
+# and this script, which is the invoking tree's, lays out both lanes. A page
+# of a pinned revision placed at main's address would be a page of dead
+# links. So each page states its own address, in its `<link rel="canonical">`,
+# and is put there; a page from before pages said so keeps the address it
+# was written for.
+address() {
+  local page="$1" former="$2" stated=""
+  if [ -f "$page" ]; then
+    stated="$(grep -o -m 1 '<link rel="canonical" href="https://civvis\.ai/[a-z][a-z0-9/-]*/">' "$page" || true)"
+  fi
+  if [ -z "$stated" ]; then
+    printf '%s' "$former"
+    return 0
+  fi
+  stated="${stated#*civvis.ai/}"
+  stated="${stated%/\">}"
+  # One name, or a folder and a name: what `_worker.js` reads as a page.
+  if ! [[ "$stated" =~ ^[a-z][a-z0-9-]*(/[a-z][a-z0-9-]*)?$ ]]; then
+    echo "${page#"$source_tree"/} states the address '$stated', which is not a page address" >&2
+    exit 1
+  fi
+  printf '%s' "$stated"
+}
+home_at="$(address "$landing_page" home)"
+tournaments_at="$(address "$tournaments_page" tournaments)"
+research_at="$(address "$research_page" research)"
+elo_at="$(address "$elo_page" elo)"
+civs_at="$(address "$civs_page" civs)"
+performance_at="$(address "$performance_page" performance)"
+interpretability_at="$(address "$interpretability_page" interpretability)"
+download_at="$(address "$download_page" download)"
+chess_at="$(address "$chess_page" chess)"
 
 # A lane built from some other revision than the invoking tree's is pinned:
 # the stable lane, on every deployment.
@@ -214,8 +264,8 @@ fill() {
 }
 
 if [ -f "$landing_page" ]; then
-  mkdir -p "$out/home"
-  cp "$landing_page" "$out/home/index.html"
+  mkdir -p "$out/$home_at"
+  cp "$landing_page" "$out/$home_at/index.html"
   # The home page is four videos, and its fastest game is whichever record
   # leads the lane's data/performance/fastest_game_videos.json: it is written
   # into the page here rather than committed as a copy that could drift. A
@@ -226,8 +276,8 @@ if [ -f "$landing_page" ]; then
   # same run writes the speed timeline over the videos (how many times faster
   # than a person each way of playing gets through a game) from the lane's
   # data/performance/speedup_timeline.json, by beta/speedup_timeline.py.
-  fill home_rankings.py "$out/home/index.html"
-  pages+=(home)
+  fill home_rankings.py "$out/$home_at/index.html"
+  pages+=("$home_at")
 else
   without+=(home)
 fi
@@ -237,67 +287,109 @@ fi
 # scheduled on main is listed on /test at once and on the front page when it
 # is promoted.
 if [ -f "$tournaments_page" ]; then
-  mkdir -p "$out/tournaments"
-  cp "$tournaments_page" "$out/tournaments/index.html"
-  fill tournaments_page.py "$out/tournaments/index.html"
-  pages+=(tournaments)
+  mkdir -p "$out/$tournaments_at"
+  cp "$tournaments_page" "$out/$tournaments_at/index.html"
+  fill tournaments_page.py "$out/$tournaments_at/index.html"
+  pages+=("$tournaments_at")
 else
   without+=(tournaments)
 fi
-# The Research page (when in the game each victory type lands, in self-play
-# and against the Deity AI) is filled the same way: the self-play games from
-# the lane's snapshot in data/research/, the Deity games from the run ledger.
+# The AI Interpretability page (the steps of one turn in order, the plan the
+# seats write down through a game, and every gene with what it is worth in
+# wins) is the first page under Charts/ since 2026-11-24 (operator: "move ai
+# interpretablity to the top of the charts/ then civ analytics, win
+# analytics. elo rankings.. civvis performanc"), and so the page /charts
+# opens: the worker opens a folder's first page in the lane's list. It is
+# filled the same way, from the lane's source (the turn's steps, the gene
+# ranking) and the lane's snapshot of the seats' plans in
+# data/interpretability/: the agent as it is in the revision the lane plays.
+if [ -f "$interpretability_page" ]; then
+  mkdir -p "$out/$interpretability_at"
+  cp "$interpretability_page" "$out/$interpretability_at/index.html"
+  fill interpretability_page.py "$out/$interpretability_at/index.html"
+  pages+=("$interpretability_at")
+else
+  without+=(interpretability)
+fi
+# Civ Analytics, the second under Charts/ (operator 2026-11-23: "add another
+# page: Civ Analytics. First can be the civ records (pulled from win
+# analytics), then early build order"): both off the run ledger, the tree of build
+# orders as Win Analytics' script reads it.
+if [ -f "$civs_page" ]; then
+  mkdir -p "$out/$civs_at"
+  cp "$civs_page" "$out/$civs_at/index.html"
+  fill civs_page.py "$out/$civs_at/index.html"
+  pages+=("$civs_at")
+else
+  without+=(civ-analytics)
+fi
+# Win Analytics, the third page under Charts/ and the first until 2026-11-24
+# (when in the game each victory type lands, in self-play and against the
+# Deity AI; `beta/research.html`, by the name the page had first), is filled the same way: the self-play games
+# from the lane's snapshot in data/research/, the Deity games from the run
+# ledger.
 if [ -f "$research_page" ]; then
-  mkdir -p "$out/research"
-  cp "$research_page" "$out/research/index.html"
-  fill research_page.py "$out/research/index.html"
-  # The two rankings stand on this page since 2026-11-22, the winningest civs
-  # under the games against the AI and the Civ AI Agents by Elo under
-  # self-play. They are derived as they were for the home page: the civs
-  # from the run ledger, the agents from the lane's own revision. A page that
-  # predates the move has no slot for them and is left as it is.
-  fill home_rankings.py "$out/research/index.html"
-  pages+=(research)
+  mkdir -p "$out/$research_at"
+  cp "$research_page" "$out/$research_at/index.html"
+  fill research_page.py "$out/$research_at/index.html"
+  # The two rankings stood on this page from 2026-11-22 until they moved to
+  # ELO Rankings and Civ Analytics on 2026-11-23. A page of a revision that
+  # still has their slot is filled as it was; one without it is left as it is.
+  fill home_rankings.py "$out/$research_at/index.html"
+  pages+=("$research_at")
 else
   without+=(research)
+fi
+# ELO Rankings, the fourth page under Charts/ (operator 2026-11-23: "add
+# that to a new page: Charts/ELO Rankings. this should be after win
+# analytics in the ordering"): the Civ AI Agents by Elo and Civilization
+# VI's own AI at Lv 4 to Lv 8, now and over time. Filled the same way: the
+# agents from the lane's own data/strategy_elo.json and the history of its
+# fits, the Firaxis levels from the benchmark games on the run ledger, so
+# they move with every finished game.
+if [ -f "$elo_page" ]; then
+  mkdir -p "$out/$elo_at"
+  cp "$elo_page" "$out/$elo_at/index.html"
+  fill elo_page.py "$out/$elo_at/index.html"
+  pages+=("$elo_at")
+else
+  without+=(elo-rankings)
 fi
 # The Performance page (the fastest game on video, how long a self-play game
 # takes at five percentiles, and game time batch by batch) is CIVVIS's own
 # page in the site list. It is filled the same way, from the lane's record
 # videos and the lane's snapshot of the games' times in data/performance/.
 if [ -f "$performance_page" ]; then
-  mkdir -p "$out/performance"
-  cp "$performance_page" "$out/performance/index.html"
-  fill performance_page.py "$out/performance/index.html"
-  pages+=(performance)
+  mkdir -p "$out/$performance_at"
+  cp "$performance_page" "$out/$performance_at/index.html"
+  fill performance_page.py "$out/$performance_at/index.html"
+  pages+=("$performance_at")
 else
   without+=(performance)
 fi
-# The AI Interpretability page (the steps of one turn in order, the plan the
-# seats write down through a game, and every gene with what it is worth in
-# wins) is the last page under Charts/. It is filled the same way, from the
-# lane's source (the turn's steps, the gene ranking) and the lane's snapshot
-# of the seats' plans in data/interpretability/: the agent as it is in the
-# revision the lane plays.
-if [ -f "$interpretability_page" ]; then
-  mkdir -p "$out/interpretability"
-  cp "$interpretability_page" "$out/interpretability/index.html"
-  fill interpretability_page.py "$out/interpretability/index.html"
-  pages+=(interpretability)
-else
-  without+=(interpretability)
-fi
 # The home page carries no art of its own any more, so there is usually no
 # directory to ship; a pinned revision from when it had photographs still does.
-if [ -f "$landing_page" ] && [ -d "$landing_assets" ]; then cp -R "$landing_assets" "$out/home/assets"; fi
+if [ -f "$landing_page" ] && [ -d "$landing_assets" ]; then cp -R "$landing_assets" "$out/$home_at/assets"; fi
 # `/download/` rather than `/download.html`: the page outlives any one release
 # and gets linked around, so it should have the tidier address.
 if [ -f "$download_page" ]; then
-  mkdir -p "$out/download"
-  cp "$download_page" "$out/download/index.html"
-  pages+=(download)
+  mkdir -p "$out/$download_at"
+  cp "$download_page" "$out/$download_at/index.html"
+  pages+=("$download_at")
 else
   without+=(download)
+fi
+# Wizard Chess (operator 2026-11-23: "below civ 6, add wizard chess"): a
+# game of its own, with nothing of the simulator in it. The page, and beside
+# it the directory it loads its scripts and its engine from, as they stand:
+# nothing here is filled or rewritten.
+if [ -f "$chess_page" ]; then
+  mkdir -p "$out/$chess_at"
+  cp "$chess_page" "$out/$chess_at/index.html"
+  if [ -d "$chess_parts" ]; then cp -R "$chess_parts" "$out/$chess_at/chess"; fi
+  pages+=("$chess_at")
+else
+  without+=(wizard-chess)
 fi
 if [ "${#without[@]}" -gt 0 ]; then
   echo "   $short does not have every page, and its lane is published without: ${without[*]}"
@@ -316,11 +408,14 @@ cp "$repo_root/beta/404.html" "$out/404.html"
 # The viewer, copied and then made lane-relative. Each substitution is
 # checked, because a silently unmatched one publishes a page whose strategic
 # map sprites are simply missing.
-python3 - "$source_tree/web/index.html" "$out/index.html" "$out/assets" <<'PY'
+python3 - "$source_tree/web/index.html" "$out/index.html" "$out/assets" ${pages[@]+"${pages[@]}"} <<'PY'
 import re, sys, pathlib
 
 source, target = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
 assets = pathlib.Path(sys.argv[3])
+# The addresses of the pages this lane carries, as its own revision states
+# them (`address` above).
+carried = sys.argv[4:]
 page = source.read_text(encoding="utf-8")
 
 # The viewer's scripts live beside the atlases in `assets/` (the renderer was a
@@ -372,14 +467,16 @@ for needle, replacement in edits:
 # viewer linking `/home` would silently drop the visitor back into prod.
 # Tolerated as already absent (a revision may predate the link); the guard
 # below is what is enforced.
-for needle, replacement in [
-    ('href="/home"', 'href="home/"'),
-    ('href="/research"', 'href="research/"'),
-    ('href="/tournaments"', 'href="tournaments/"'),
-    ('href="/performance"', 'href="performance/"'),
-    ('href="/interpretability"', 'href="interpretability/"'),
-    ('href="/download"', 'href="download/"'),
-]:
+#
+# The addresses are the lane's own: a viewer links the pages of its own
+# revision, which are where that revision says they are (`charts/win-analytics`
+# on main, `research` in a revision from before 2026-11-23). The six names
+# every page had before pages stated their addresses stay listed, for a
+# revision whose viewer links a page its tree keeps somewhere this script does
+# not look.
+former = ["home", "research", "tournaments", "performance", "interpretability", "download"]
+for address in dict.fromkeys([*carried, *former]):
+    needle, replacement = f'href="/{address}"', f'href="{address}/"'
     page = page.replace(needle, replacement)
     for path in scripts:
         scripts[path] = scripts[path].replace(needle, replacement)
@@ -517,13 +614,28 @@ fi
 # revisions, whose pages linked the site by absolute path, and are therefore
 # tolerated as absent. What is enforced is the guard: no root-absolute
 # href/src, and no script-built root link, may survive into any lane page.
-python3 - "$out" <<'PY'
-import re, sys, pathlib
+#
+# And, since 2026-11-23, that a relative link lands on something. The pages
+# are no longer all one directory deep (the pages of Charts/ sit under
+# charts/), so a link written for the wrong depth (`../home/` on a page two
+# deep) stays inside the lane and reaches nothing. Every plain relative
+# href/src of a page is therefore resolved from the page's own address, and
+# has to come out at the viewer, at a page the lane carries, or at a file the
+# lane ships. A dead one stops the publish when the revision is the invoking
+# tree's own, which main can mend; a pinned revision's is reported and
+# published as it is, like its failing script.
+python3 - "$out" "$pinned_elsewhere" "$home_at" "$download_at" ${pages[@]+"${pages[@]}"} <<'PY'
+import posixpath, re, sys, pathlib
 
 out = pathlib.Path(sys.argv[1])
+pinned_elsewhere = sys.argv[2] == "1"
+home_at, download_at = sys.argv[3], sys.argv[4]
+# Every page the lane carries, by its address: the guard holds for each one,
+# and a page added to a lane is covered the day it is added.
+carried = sys.argv[5:]
 
-edits = {
-    out / "home" / "index.html": [
+translations = {
+    home_at: [
         # the photographs, with whatever hand-written ?v= they carried
         ('src="/home/assets/', 'src="assets/'),
         # links into the viewer, one directory up
@@ -533,34 +645,57 @@ edits = {
         ('"/?map=', '"../?map='),
         ('`/?map=', '`../?map='),
     ],
-    # Authored lane-relative from its first day, so there is nothing to
-    # translate; it is listed for the guard below.
-    out / "tournaments" / "index.html": [],
-    out / "research" / "index.html": [],
-    out / "performance" / "index.html": [],
-    out / "interpretability" / "index.html": [],
-    out / "download" / "index.html": [
+    download_at: [
         ('href="/test/"', 'href="../"'),  # the lane's own viewer
         ('href="/home"', 'href="../home/"'),
         ('href="/"', 'href="../"'),
     ],
+    # Every other page was authored lane-relative from its first day, so
+    # there is nothing to translate.
 }
 
-for path, rules in edits.items():
-    if not path.is_file():
-        # A page this lane's revision does not have.
-        continue
+# A link this check can read: a plain relative address. One with a scheme
+# (https:, data:, mailto:) leaves the site, and one a script puts together
+# (quotes, `${...}`) is not an address until the script has run.
+PLAIN = re.compile(r"[A-Za-z0-9._~/?#=&%+-]+")
+
+
+def lands(address, link):
+    target = link.split("#", 1)[0].split("?", 1)[0]
+    if not target:
+        return True  # the page itself, at an anchor or with a query
+    where = posixpath.normpath(posixpath.join(address, target))
+    if where == ".":
+        return True  # the lane's root: the viewer
+    if where == ".." or where.startswith("../"):
+        return False  # out of the lane
+    return where in carried or (out / where).is_file()
+
+
+for address in carried:
+    path = out / address / "index.html"
+    named = f"{address}/index.html"
     text = path.read_text(encoding="utf-8")
-    for needle, replacement in rules:
+    for needle, replacement in translations.get(address, []):
         text = text.replace(needle, replacement)
     leaked = sorted(set(re.findall(r'(?:href|src)="(/[^"]*)"', text)))
     if leaked:
         raise SystemExit(
-            f"{path.name} still links the site root ({', '.join(leaked)}); "
+            f"{named} still links the site root ({', '.join(leaked)}); "
             "a lane page must link relatively so /test stays /test"
         )
     if '"/?map=' in text or '`/?map=' in text:
-        raise SystemExit(f"{path.name} still builds root-absolute viewer links in its script")
+        raise SystemExit(f"{named} still builds root-absolute viewer links in its script")
+    dead = sorted(
+        link for link in set(re.findall(r'(?:href|src)="([^"]*)"', text))
+        if PLAIN.fullmatch(link) and not lands(address, link)
+    )
+    if dead:
+        said = (f"{named} links {', '.join(dead)}, which this lane does not have "
+                f"(a relative link is read from the page's own address, {address}/)")
+        if not pinned_elsewhere:
+            raise SystemExit(said)
+        print(f"::warning::{said}")
     path.write_text(text, encoding="utf-8")
 PY
 

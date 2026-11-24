@@ -1017,6 +1017,201 @@ console.log("hud window checks passed");
 """
 
 
+TURN_GAUGE_SCENARIOS = r"""
+let state = {};
+__CLOCK__
+const eq = (actual, wanted, note) => {
+  if (JSON.stringify(actual) !== JSON.stringify(wanted))
+    throw new Error(`${note}: got ${JSON.stringify(actual)}, wanted ${JSON.stringify(wanted)}`);
+};
+const rise = () => {
+  const fill = /style="--rise:([\d.]+)%"/.exec(turnGauge());
+  return fill ? +fill[1] : null;
+};
+// The operator's two ends: the bottom on turn 1 of 250, the top on turn 250.
+state = {turn:1, turn_limit:250}; eq(rise(), 0, "turn 1 of 250");
+state = {turn:250, turn_limit:250}; eq(rise(), 100, "the last turn");
+// A server that sends only max_turns is read the way the turn plate reads it.
+state = {turn:126, max_turns:251}; eq(rise(), 50, "halfway");
+// It rises on every turn of the game and never falls.
+let last = -1;
+for (let turn = 1; turn <= 250; turn++) {
+  state = {turn, turn_limit:250};
+  const now = rise();
+  if (!(now > last)) throw new Error(`turn ${turn} stands at ${now}, no higher than ${last}`);
+  last = now;
+}
+// A score game is settled on the wrap out of its final turn: the bar reads the
+// turn it was won on, and nothing takes it past the top or under the bottom.
+state = {turn:251, victory_turn:250, turn_limit:250}; eq(rise(), 100, "a finished game");
+state = {turn:300, turn_limit:250}; eq(rise(), 100, "past the cap");
+state = {turn:0, turn_limit:250}; eq(rise(), 0, "before the first turn");
+// A game won early stops where it was won.
+state = {turn:181, victory_turn:180, turn_limit:250}; eq(rise(), 71.89, "won on turn 180");
+// No cap, nothing to rise toward: no bar at all.
+state = {turn:40, turn_limit:null, max_turns:250}; eq(turnGauge(), "", "an uncapped world");
+state = {turn:40, turn_limit:100000}; eq(turnGauge(), "", "a cap nobody reaches");
+state = {turn:1, turn_limit:1}; eq(turnGauge(), "", "a one-turn world");
+// It says which turn it stands on, to a pointer and to a screen reader.
+state = {turn:37, turn_limit:250};
+for (const part of ['title="Turn 37 of 250"', 'role="progressbar"', 'aria-valuemin="1"',
+                    'aria-valuemax="250"', 'aria-valuenow="37"', 'data-key="turn-gauge"'])
+  if (!turnGauge().includes(part)) throw new Error(`the bar does not carry ${part}: ${turnGauge()}`);
+
+// The scale. Both copies, the dim one for the track and the dark one for the
+// gold, carry the same figures at the same heights.
+const scales = () => {
+  const found = [...turnGauge().matchAll(/<span class="turn-gauge-scale( lit)?" aria-hidden="true">(.*?)<\/span>/g)];
+  eq(found.map(copy => copy[1] || ""), ["", " lit"], "one dim copy, then one lit");
+  eq(found[0][2], found[1][2], "the two copies agree");
+  return [...found[0][2].matchAll(/<b class="([a-z ]+)"(?: style="bottom:([\d.]+)%")?>([^<]+)<\/b>/g)]
+    .map(([, kind, at, text]) => ({kind, at:at === undefined ? null : +at, text}));
+};
+const figures = cap => { state = {turn:1, turn_limit:cap}; return scales().map(mark => mark.text); };
+// The cap comes first, under the top of the bar and at no height of its own.
+state = {turn:1, turn_limit:250};
+eq(scales()[0], {kind:"cap", at:null, text:"250"}, "the cap");
+eq(figures(250), ["250", "50", "100", "150", "200"], "a 250-turn game");
+eq(scales().slice(1).map(mark => mark.kind), ["minor", "major", "minor", "major"], "every other figure is a major one");
+// A figure stands exactly where the bar stands on that turn.
+for (const mark of scales().slice(1)) {
+  state = {turn:+mark.text, turn_limit:250};
+  eq(rise(), mark.at, `the bar on turn ${mark.text} against its line`);
+}
+eq(figures(500), ["500", "100", "200", "300", "400"], "Standard speed");
+eq(figures(180), ["180", "50", "100", "150"], "a 180-turn score game");
+// 300 of 330 would sit under the cap's own figure.
+eq(figures(330), ["330", "100", "200"], "Quick speed");
+eq(figures(60), ["60", "10", "20", "30", "40", "50"], "a short Tactics battle");
+eq(figures(2), ["2"], "two turns have no round turn between them");
+// Four figures do not fit the bar at full size: thousands are written short,
+// and a long figure is marked to be set smaller.
+eq(figures(1500), ["1.5k", "250", "500", "750", "1k", "1.25k"], "Marathon");
+state = {turn:1, turn_limit:1500};
+eq(scales().map(mark => mark.kind.includes("long")), [true, false, false, false, false, true], "long figures");
+// Never more figures than the bar has room for, at any cap.
+for (let cap = 2; cap <= 3000; cap++) {
+  const marks = turnGaugeMarks(cap);
+  if (marks.length > 6) throw new Error(`cap ${cap} draws ${marks.length} figures`);
+  for (const mark of marks)
+    if (!(mark.at >= .08 && mark.at <= .9)) throw new Error(`cap ${cap} puts ${mark.turn} at ${mark.at}`);
+}
+console.log("turn gauge checks passed");
+"""
+
+
+@unittest.skipUnless(NODE, "no node on this host; CI runners have one")
+class AGoldBarRisesUpTheVictoryTrackerWithTheTurn(unittest.TestCase):
+    """Operator, 2026-11-23: "on the left side of the victory tracker, add a
+    rising gold bar. starts at the bottom when turn is 1 of 250 and rises
+    throughout the game. tasteful. not too big." Then, of the three-pixel bar
+    that made: "wider please. like 6mm wide-ish, with a bit for labels and
+    such". """
+
+    def test_the_bar_stands_where_the_turn_is(self):
+        source = (ASSETS / "app.js").read_text(encoding="utf-8")
+        clock = source[source.index("function reportedTurn("):
+                       source.index("function victoryMeterFill(")]
+        self.assertIn("function turnGauge()", clock)
+        self.assertIn("function turnGaugeMarks(cap)", clock)
+        done = subprocess.run([NODE, "-e", TURN_GAUGE_SCENARIOS.replace("__CLOCK__", clock)],
+                              capture_output=True, text=True, timeout=60)
+        self.assertEqual(done.returncode, 0, done.stderr.strip())
+        self.assertIn("turn gauge checks passed", done.stdout)
+
+    def test_it_is_the_trackers_own_left_column(self):
+        source = (ASSETS / "app.js").read_text(encoding="utf-8")
+        overview = source[source.index("function playerHudOverview()"):]
+        overview = overview[:overview.index("\n}\n")]
+        # Drawn once, inside the tracker's box and outside the rail that
+        # scrolls, so the paths cannot carry it away.
+        self.assertEqual(source.count("turnGauge()"), 2)
+        region = overview.index('<section class="hud-region victory-region"')
+        gauge = overview.index("turnGauge() +")
+        rail = overview.index('<div class="hud-rail"')
+        self.assertLess(region, gauge)
+        self.assertLess(gauge, rail)
+        page = INDEX.read_text(encoding="utf-8")
+        style = page[page.index("  #victoryhud > .victory-region {\n    display: grid;"):]
+        style = style[:style.index("  @media (prefers-reduced-motion: reduce) {\n    .turn-gauge-fill")]
+        # The bar's column is as wide as the bar and no wider without one; the
+        # heading and the "Off" line span both columns, the bar and the rail
+        # share the row under them.
+        self.assertIn("grid-template-columns: auto minmax(0, 1fr);", style)
+        self.assertIn("#victoryhud > .victory-region > .hud-region-bar { grid-area: 1 / 1 / 2 / -1; }", style)
+        self.assertIn("#victoryhud > .victory-region > .victory-off-note { grid-area: 2 / 1 / 3 / -1; }", style)
+        self.assertIn("#victoryhud > .victory-region > .hud-rail { grid-area: 3 / 2; }", style)
+        gauge_rule = style[style.index("  .turn-gauge {"):]
+        gauge_rule = gauge_rule[:gauge_rule.index("}")]
+        self.assertIn("grid-area: 3 / 1;", gauge_rule)
+        # A folded tracker folds the bar away with its paths.
+        self.assertIn("#victoryhud.victory-collapsed .turn-gauge { display: none; }", style)
+
+    def test_six_millimetres_of_bar_come_off_the_map(self):
+        source = (ASSETS / "app.js").read_text(encoding="utf-8")
+        page = INDEX.read_text(encoding="utf-8")
+        gauge_rule = page[page.index("  .turn-gauge {"):]
+        gauge_rule = gauge_rule[:gauge_rule.index("}")]
+        # 30px is six millimetres on the operator's 16-inch screen, which
+        # draws 1728 points across 345 mm.
+        width = re.search(r"\bwidth: (\d+)px;", gauge_rule)
+        gap = re.search(r"margin: 2px (\d+)px 2px 0;", gauge_rule)
+        self.assertEqual(width.group(1), "30")
+        self.assertAlmostEqual(int(width.group(1)) / (1728 / 345), 6, delta=.25)
+        # The panel is wider by exactly the bar and its gap, so the paths keep
+        # the width they had before there was a bar.
+        column = re.search(r"\nconst TURN_GAUGE_COLUMN = (\d+);", source)
+        self.assertEqual(int(column.group(1)), int(width.group(1)) + int(gap.group(1)))
+        self.assertIn("const victoryWidth = Math.round(clampPanelDimension(width * .15, 156, 340)) + "
+                      "TURN_GAUGE_COLUMN;", source)
+        self.assertLess(source.index("const TURN_GAUGE_COLUMN"),
+                        source.index("function syncResponsivePanelGeometry() {"))
+
+    def test_the_gold_is_cut_at_the_turn_and_the_scale_reads_on_both_sides(self):
+        page = INDEX.read_text(encoding="utf-8")
+
+        def rule(selector):
+            body = page[page.index(f"  {selector} {{"):]
+            return body[:body.index("}")]
+        # Gold, filled from the bottom up to the turn's height.
+        fill = rule(".turn-gauge-fill")
+        self.assertIn("var(--gold-bright)", fill)
+        self.assertIn("linear-gradient(to top,", fill)
+        self.assertIn("clip-path: inset(calc(100% - var(--rise, 0%)) 0 0 0);", fill)
+        # The head is what there is of the bar on turn 1, and stays inside it
+        # on the last turn.
+        head = rule(".turn-gauge > i")
+        self.assertIn("height: 2px;", head)
+        self.assertIn("bottom: clamp(0px, calc(var(--rise, 0%) - 2px), calc(100% - 2px));", head)
+        # The dim copy of the scale is cut off where the gold begins and the
+        # dark copy where it ends, so no figure is drawn twice in one place.
+        self.assertIn("clip-path: inset(0 0 var(--rise, 0%) 0);", rule(".turn-gauge-scale"))
+        self.assertIn("clip-path: inset(calc(100% - var(--rise, 0%)) 0 0 0);", rule(".turn-gauge-scale.lit"))
+        # Both copies come after the head in the markup, so they paint over it.
+        source = (ASSETS / "app.js").read_text(encoding="utf-8")
+        gauge = source[source.index("function turnGauge() {"):]
+        gauge = gauge[:gauge.index("\n}\n")]
+        self.assertLess(gauge.index('<span class="turn-gauge-fill"></span><i></i>'),
+                        gauge.index('<span class="turn-gauge-scale" aria-hidden="true">'))
+        self.assertLess(gauge.index('<span class="turn-gauge-scale" aria-hidden="true">'),
+                        gauge.index('<span class="turn-gauge-scale lit" aria-hidden="true">'))
+        # A figure hangs under its line, which is the element's top edge
+        # brought down to the height it was placed at.
+        figure = rule(".turn-gauge-scale > b")
+        self.assertIn("transform: translateY(100%);", figure)
+        self.assertIn("border-top: 1px solid", figure)
+        # A short bar keeps every other figure, a narrow tracker keeps a slim
+        # bar with no scale.
+        short = page[page.index("@container turn-gauge (max-height: 150px) {"):]
+        self.assertIn(".turn-gauge-scale > b.minor { font-size: 0; }", short[:short.index("\n  }\n")])
+        narrow = page[page.index("@container victory-region (max-width: 170px) {"):]
+        narrow = narrow[:narrow.index("\n  }\n")]
+        self.assertIn(".turn-gauge { width: 6px;", narrow)
+        self.assertIn(".turn-gauge-scale { display: none; }", narrow)
+        self.assertIn("container: victory-region / inline-size;", page)
+        self.assertIn("container: turn-gauge / size;", rule(".turn-gauge"))
+
+
 @unittest.skipUnless(NODE, "no node on this host; CI runners have one")
 class AHundredSeatMastheadStaysOnItsShare(unittest.TestCase):
     """Operator, 2026-11-09: the player HUD should cap "such that it isn't taking

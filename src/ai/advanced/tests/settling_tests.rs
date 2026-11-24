@@ -2652,6 +2652,30 @@ fn settle_sooner_walk_costs_read_terrain_beyond_the_first_turn() {
     assert_eq!(costs[&neighbour], expected);
 }
 
+/// The flood kept on the tile grid answers every tile of the map exactly as
+/// the ordered map does, absent where the walk did not reach, at every radius
+/// the decisions ask for.
+#[test]
+fn settler_walk_flood_reads_every_tile_as_the_ordered_map_does() {
+    let (mut game, home) = camp_bounty_board(93_302);
+    let settler = game.spawn_test_unit("settler", 0, home);
+    for radius in [0, 3, 8, game.map.width + game.map.height] {
+        let flood = AdvancedAi::settle_sooner_walk_flood(&game, settler, radius);
+        let ordered = AdvancedAi::settle_sooner_walk_costs(&game, settler, radius);
+        assert_eq!(ordered.get(&home), Some(&0.0), "radius {radius}");
+        let positions: Vec<Pos> = game.map.tiles.keys().copied().collect();
+        for pos in positions {
+            assert_eq!(
+                flood.get(&game, pos),
+                ordered.get(&pos).copied(),
+                "radius {radius}, {pos:?}"
+            );
+        }
+        // Off the map is never reached.
+        assert_eq!(flood.get(&game, (-1000, -1000)), None);
+    }
+}
+
 #[test]
 fn settle_sooner_never_picks_a_farther_site_and_sometimes_a_nearer_one() {
     let mut nearer = 0;
@@ -3260,7 +3284,8 @@ fn a_barbarian_camp_two_tiles_away_changes_the_shipped_score_by_nothing() {
 /// inside the empire — 148.3 against 62.7 on this board.
 #[test]
 fn the_shipped_score_prefers_a_site_it_cannot_support() {
-    let mut game = Game::new(2, 60, 40, 6_302, 250, 0);
+    let seed = crate::rng::fixture_seed("SHIPPEDSCORE", 6_303);
+    let mut game = Game::new(2, 60, 40, seed, 250, 0);
     game.found_city_for(0, (10, 20), None);
     let shipped = AdvancedAi::new();
 
@@ -3784,7 +3809,7 @@ fn a_settler_stops_waiting_for_a_guard_that_is_not_coming() {
     // ceiling — a visible hostile within reach of the settler's next route
     // step — because that is the state the opening actually sits in.
     let held = |waited: u8, gene: bool| {
-        let (mut game, _capital, home) = empire_with_a_capital(71_605);
+        let (mut game, _capital, home) = empire_with_a_capital(71_607);
         game.turn = 20;
         let ring: Vec<Pos> = {
             let mut r: Vec<Pos> = game
@@ -4542,7 +4567,8 @@ fn a_settler_that_will_not_move_still_stands_somewhere() {
 /// back so the site stays in the ranking.
 #[test]
 fn a_threat_detour_will_not_trade_a_site_for_half_of_one() {
-    let mut game = Game::new_full(2, 44, 28, 8_115, 200, 0, false);
+    let seed = crate::rng::fixture_seed("THREATDETOUR", 8_116);
+    let mut game = Game::new_full(2, 44, 28, seed, 200, 0, false);
     let start = game
         .player_unit_ids(0)
         .into_iter()

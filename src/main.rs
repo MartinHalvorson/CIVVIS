@@ -2,6 +2,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
 
+mod core_probe;
+
 use civvis::ai::{run_game, AdvancedAi, Ai};
 use civvis::game::{
     default_difficulty, default_speed, Game, GameOptions, LeaderPool, VictoryConditions, WarRecord,
@@ -70,14 +72,14 @@ use civvis::setup::{self, BaseRuleset, GameSpeed, MapPoles, MapScript, MapSize, 
 /// catching everything, which is how it stopped being read. The targeted
 /// `*_cannot_reach_the_frozen_anchor` tests below remain the second line.
 #[cfg(test)]
-const ANCHOR_BEHAVIOUR_FNV: u64 = 0xf971_70e9_be13_b1e2;
+const ANCHOR_BEHAVIOUR_FNV: u64 = 0xc8df_373e_53a3_f7b8;
 
 /// How many actions the anchor applies across `ANCHOR_PROFILES`. Pinned beside
 /// the hash because a fingerprint that moved tells you nothing about how far,
 /// and "9,256 decisions rather than 8,959" is a much better first sentence of a
 /// diagnosis than a changed 64-bit number.
 #[cfg(test)]
-const ANCHOR_DECISIONS: usize = 19_866;
+const ANCHOR_DECISIONS: usize = 19_889;
 
 fn arg(args: &[String], key: &str, default: i64) -> i64 {
     args.iter()
@@ -807,10 +809,18 @@ fn main() {
         // document, so neither speed tool could see a change that only the
         // site pays for; see `civvis::server::site_bench`.
         "site-bench" => site_bench_command(args),
+        // Autosearch without a browser: which Civ AIs should hold the seat,
+        // and when, to meet four lists, searched on this machine's cores and
+        // played again on other seeds; see `civvis::server::autosearch`.
+        "autosearch" => autosearch_command(args),
         // What an agent that searches actually does: take a position and roll
         // it forward, over and over. Cloning a position dominates that, and
         // nothing else here measured it.
         "rollouts" => rollouts_command(args),
+        // Which saved fields the transition function itself reads: blank one,
+        // replay the recorded actions, see what else changed. See
+        // `src/core_probe.rs`.
+        "core-probe" => core_probe::command(args),
         #[cfg(not(feature = "closed-experiments"))]
         "selfplay" => {
             eprintln!(
@@ -826,6 +836,76 @@ fn main() {
         "pedia" => pedia_command(args),
         "validate" => validate_command(args),
         _ => print_usage(),
+    }
+}
+
+/// `civvis autosearch --spec spec.json [--seed N] [--cores N] [--offers plans.json]
+/// [--robust 101,102,...]`: the search the AI Debugger's Autosearch runs,
+/// on this machine's own copies of the engine, one a thread
+/// (`civvis::server::autosearch::run`). The spec is what the page sends:
+/// `{"objective": {"need", "avoid", "want", "dont_want"}, "from", "turns",
+/// "letters", "seated"}`. `--robust` plays the best line found again on each
+/// of those seeds, against the seated Civ AI alone. The report is printed as
+/// JSON.
+fn autosearch_command(args: Vec<String>) {
+    let read = |flag: &str| -> Option<serde_json::Value> {
+        let path = arg_text(&args, flag, "");
+        if path.is_empty() {
+            return None;
+        }
+        let text = std::fs::read_to_string(&path).unwrap_or_else(|error| {
+            eprintln!("{flag} {path}: {error}");
+            std::process::exit(2);
+        });
+        Some(serde_json::from_str(&text).unwrap_or_else(|error| {
+            eprintln!("{flag} {path}: {error}");
+            std::process::exit(2);
+        }))
+    };
+    let Some(spec) = read("--spec") else {
+        eprintln!("civvis autosearch needs --spec spec.json");
+        std::process::exit(2);
+    };
+    let offers = read("--offers")
+        .map(|plans| {
+            serde_json::from_value::<Vec<civvis::server::autosearch::Plan>>(plans).unwrap_or_else(
+                |error| {
+                    eprintln!("--offers: {error}");
+                    std::process::exit(2);
+                },
+            )
+        })
+        .unwrap_or_default();
+    let robust = arg_text(&args, "--robust", "")
+        .split(',')
+        .filter_map(|seed| seed.trim().parse::<u64>().ok())
+        .collect();
+    let cores = std::thread::available_parallelism().map_or(1, |cores| cores.get());
+    let options = civvis::server::autosearch::RunOptions {
+        seed: arg(&args, "--seed", 7).max(1) as u64,
+        spec,
+        cores: arg(&args, "--cores", cores as i64).max(1) as usize,
+        offers,
+        robust,
+        fog_honest: match arg_text(&args, "--fog-honest", "").as_str() {
+            "true" | "1" | "on" => Some(true),
+            "false" | "0" | "off" => Some(false),
+            _ => None,
+        },
+    };
+    let started = Instant::now();
+    match civvis::server::autosearch::run(&options) {
+        Ok(mut report) => {
+            report["seconds"] = serde_json::json!(started.elapsed().as_secs_f64());
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&report).unwrap_or_default()
+            );
+        }
+        Err(error) => {
+            eprintln!("autosearch: {error}");
+            std::process::exit(1);
+        }
     }
 }
 
@@ -860,6 +940,8 @@ fn site_bench_command(args: Vec<String>) {
                 .filter(|seat| *seat < 64)
                 .fold(0u64, |seats, seat| seats | (1 << seat))
         }),
+        // Also a different game: the table plans on the whole board.
+        fog_honest: !has("--no-fog-honest"),
     };
     let started = Instant::now();
     let report = civvis::server::site_bench::run_with(seed, turns, options);
@@ -1142,8 +1224,11 @@ fn soak_command(args: Vec<String>) {
                 // six-player games it saw 6 of 39 declarations, 96 of
                 // 317 unit losses, and 0 of 13 city captures, while
                 // `ended_in_peace` could not be anything but zero.
-                let all_wars: Vec<&WarRecord> =
-                    g.wars.values().chain(g.concluded_wars.iter()).collect();
+                let all_wars: Vec<&WarRecord> = g
+                    .wars
+                    .values()
+                    .chain(g.chronicle.concluded_wars.iter())
+                    .collect();
                 let wars = all_wars.len();
                 let (units_lost, cities_taken) =
                     all_wars.iter().fold((0u32, 0u32), |(units, cities), war| {
@@ -1220,13 +1305,13 @@ fn soak_command(args: Vec<String>) {
                 flags.push_str(&format!(
                     " SIEGE blows={} damage={} walls_breached={} cities_reduced={} \
                      left_depleted={} taker_ready={} melee_was_there={}",
-                    g.siege.blows,
-                    g.siege.damage,
-                    g.siege.walls_breached,
-                    g.siege.cities_reduced,
-                    g.siege.left_depleted,
-                    g.siege.depleted_with_a_taker_ready,
-                    g.siege.reduced_with_melee_adjacent,
+                    g.chronicle.siege.blows,
+                    g.chronicle.siege.damage,
+                    g.chronicle.siege.walls_breached,
+                    g.chronicle.siege.cities_reduced,
+                    g.chronicle.siege.left_depleted,
+                    g.chronicle.siege.depleted_with_a_taker_ready,
+                    g.chronicle.siege.reduced_with_melee_adjacent,
                 ));
                 // ⚠ The diplomatic lane is the one that steals most
                 // live games and the one a native game has never been
@@ -1992,7 +2077,7 @@ fn validate_command(args: Vec<String>) {
 /// The usage line, for `help` and anything unrecognised.
 fn print_usage() {
     println!(
-        "usage: civvis <simulate|soak|odds-audit|benchmark|site-bench|play|evolve|validate|pedia> \
+        "usage: civvis <simulate|soak|odds-audit|benchmark|site-bench|autosearch|play|evolve|validate|pedia> \
               [--players N] [--seed N] [--turns N] [--width N] [--height N] \
               [--city-states N] [--games N] [--port N] [--no-open] \
               [--map land_only|lakes|inland_sea|tenins_ball|grand_canals|grand_canals_2|pangaea|earth|true_start_earth|continents|small_continents|fjords|islands|water_world|battlefield|tactics_planet|tactics_ocean|trafalgar] \
@@ -2009,8 +2094,10 @@ fn print_usage() {
               [--victories science,culture,religious,diplomatic,domination,score] \
               [--native-competitions] [--spectate] [--supervised] [--resume checkpoint.json] [--strict] \
               [--generations N] [--pop N] \
+              [--spec spec.json --cores N --offers plans.json --robust 101,102 (autosearch)] \
               [--no-documents (site-bench: play the frames, skip the page's state documents)] \
               [--no-kept-yields (site-bench: derive every city yield afresh)] \
+              [--no-fog-honest (site-bench: the Civ AIs plan on the whole board)] \
               [--no-own-kept-yields (site-bench: keep only the rivals' between a seat's passes)] \
               [--audit-kept-yields (site-bench: re-derive every reused yield and compare)] \
               [--shortcuts envelopes-across-own-moves (site-bench: this changes play)] \
@@ -2578,7 +2665,7 @@ mod tests {
         game.players[1].met.insert(0);
         game.apply(0, &Action::DeclareWar { player: 1 }).unwrap();
         assert_eq!(game.wars.len(), 1, "the declaration must open a war");
-        assert!(game.concluded_wars.is_empty());
+        assert!(game.chronicle.concluded_wars.is_empty());
 
         // Peace is gated behind a mandatory war duration; wait it out.
         while let Some(until) = game.peace_available_at(0, 1) {
@@ -2592,11 +2679,11 @@ mod tests {
             "a settled war must not remain in the live map"
         );
         assert_eq!(
-            game.concluded_wars.len(),
+            game.chronicle.concluded_wars.len(),
             1,
             "the settled war has to be read from concluded_wars or it is \
              invisible to every count in the soak line"
         );
-        assert!(game.concluded_wars[0].ended.is_some());
+        assert!(game.chronicle.concluded_wars[0].ended.is_some());
     }
 }

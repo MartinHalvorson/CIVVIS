@@ -4,9 +4,12 @@ name: to-prod-manual-only
 #
 # The site has two lanes: `/test` follows main automatically
 # (to-test-auto-30), and `/` is whatever the `site-stable` tag names. This
-# workflow is the only thing that moves that tag. Promotion is deliberately a human act — the automated lane
-# proves a build runs; whether it is worth being the thing a visitor lands on
-# is a judgement.
+# workflow moves that tag to the revision a person chooses. Since 2026-11-23,
+# and for now, to-prod-auto-6h moves it too: every six hours, to the commit
+# /test is serving. Nothing else may move it. Promoting here is the human
+# act: the automated lane proves a build runs, and whether it is worth being
+# the thing a visitor lands on, now rather than at the next six-hour tick, or
+# at a revision /test is not serving, is a judgement.
 #
 #   Actions -> to-prod-manual-only -> Run workflow -> ref = main (or any sha/tag)
 #

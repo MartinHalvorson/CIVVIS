@@ -202,6 +202,81 @@ function engineState(error = null) {
       played_by: enginePlayedBy(kept),
       saves: engine.saves.map(save => ({...save}))}};
 }
+// ---- a search's lists, as the engine reads them (`src/server/autosearch.rs`)
+function engineNumber(key) {
+  if (key === "won" || key === "lost") return 0;
+  const value = String(key).split(".").reduce((held, part) => held && typeof held === "object" ? held[part] : undefined, engineSeat());
+  return typeof value === "number" ? value : null;
+}
+function engineTerms(lists) {
+  const holds = term => {
+    const now = engineNumber(term.key), line = term.value;
+    return now !== null && ({"<": now < line, "<=": now <= line, ">": now > line, ">=": now >= line, "==": now === line, "!=": now !== line})[term.test];
+  };
+  return {turn: engine.turn, need: (lists.need || []).map(holds), avoid: (lists.avoid || []).map(holds),
+    want: (lists.want || []).map(term => engineNumber(term.key)), dont_want: (lists.dont_want || []).map(term => engineNumber(term.key))};
+}
+// ---- the climb, as `POST /autosearch` runs it in the engine. The toy's is
+// the engine's ranking (`Search::better`) with a climb cut short: every Civ
+// AI alone, then every other Civ AI handed the rest of the best line from
+// halfway, and done. The engine's own climb is held by its tests
+// (`server/autosearch_tests.rs`); this one is what the page's pump and panel
+// are held against.
+const climb = {search: null};
+function toyClimb(body) {
+  const keyOf = plan => plan.map(([turn, name]) => `${turn}:${name}`).join(" ");
+  if (body.op === "begin") {
+    const letters = [...new Set([body.seated, ...(body.letters || [])])];
+    climb.search = {from: body.from, end: body.end, seated: body.seated, letters, objective: body.objective,
+      queue: letters.map(name => [[body.from, name]]), out: 0, lines: [], grown: false};
+    return toyReport();
+  }
+  if (body.op === "end") { climb.search = null; return {ended: true}; }
+  const search = climb.search;
+  if (!search) return {error: "no search has begun"};
+  if (body.op === "next") {
+    if (!search.queue.length && !search.out && !search.grown) {
+      search.grown = true;
+      const best = toyReport().best, turn = search.from + Math.floor((search.end - search.from) / 2);
+      if (best) for (const name of search.letters) {
+        const held = best.plan.filter(([from]) => from <= turn).pop()[1];
+        if (name !== held) search.queue.push([...best.plan.filter(([from]) => from < turn), [turn, name]]);
+      }
+    }
+    const plan = search.queue.shift() || null;
+    if (plan) search.out += 1;
+    return {plan, from: search.from, done: !plan && !search.out && search.grown};
+  }
+  if (body.op === "took") {
+    search.out -= 1;
+    const series = body.series || [], last = series[series.length - 1] || {need: [], avoid: [], want: [], dont_want: []};
+    const need = (search.objective.need || []).map((term, at) => term.when === "end" ? !!last.need[at] : series.some(held => held.need[at]));
+    const avoid = (search.objective.avoid || []).map((term, at) => term.when === "end" ? !last.avoid[at] : !series.some(held => held.avoid[at]));
+    search.lines.push({plan: body.plan, key: keyOf(body.plan), last: body.last, series,
+      verdict: {need, avoid, broken: [...need, ...avoid].filter(kept => !kept).length, killed: null, want: last.want, dont_want: last.dont_want}});
+  } else if (body.op === "failed") search.out -= 1;
+  return toyReport();
+}
+function toyReport() {
+  const search = climb.search, base = search.lines.find(line => line.plan.length === 1 && line.plan[0][1] === search.seated);
+  const over = (now, then) => typeof now === "number" && typeof then === "number" ? 100 * (now - then) / Math.max(1, Math.abs(then)) : 0;
+  const weights = [...(search.objective.want || []), ...(search.objective.dont_want || [])].map(term => term.weight);
+  const shown = line => {
+    const overs = base ? [...line.verdict.want.map((now, at) => over(now, base.verdict.want[at])),
+      ...line.verdict.dont_want.map((now, at) => -over(now, base.verdict.dont_want[at]))] : [];
+    return {plan: line.plan, key: line.key, last: line.last, verdict: line.verdict, feasible: line.verdict.broken === 0,
+      gain: overs.reduce((sum, value, at) => sum + value * weights[at], 0), over: overs,
+      chart: line.series.map(held => [held.turn, held.want[0] ?? null])};
+  };
+  const lines = search.lines.map(shown);
+  const better = (one, other) => one.feasible !== other.feasible ? one.feasible
+    : one.verdict.broken !== other.verdict.broken ? one.verdict.broken < other.verdict.broken
+    : one.gain !== other.gain ? one.gain > other.gain : one.plan.length < other.plan.length;
+  const best = base ? lines.reduce((held, line) => better(line, held) ? line : held, lines[0]) : null;
+  return {from: search.from, end: search.end, lines: lines.length, played: 0, queued: search.queue.length,
+    feasible: lines.filter(line => line.feasible).length, best, baseline: base ? shown(base) : null,
+    front: best ? [best] : [], front_size: best ? 1 : 0, alone: lines.filter(line => line.plan.length === 1)};
+}
 // ---- copies of the toy engine, as `POST /forks` makes them of the real one
 // (`beta/shim.js`): each holds this page's world and each half's as they
 // stood, and from there plays its own history. `refuse` makes this an engine
@@ -250,6 +325,7 @@ async function fetchJSON(path, init = {}) {
   // A half reads the world it holds after its twin was played for both.
   if (path === "/state") return engineState();
   if (path === "/forks") return forkEngines(body.count);
+  if (path === "/autosearch") return toyClimb(body);
   const forked = /^\/debug\?fork=(\d+)/.exec(path);
   if (forked) return forkAnswer(+forked[1], path, body);
   if (path !== "/debug") return {error: null};
@@ -290,7 +366,7 @@ function engineDebug(body) {
   if (engine.current !== 0 && (body.op === "step" || body.op === "finish_round")) opens();
   const marks = engineLine(), at = marks.indexOf(engine.turn);
   const others = engine.marks[marks.length];
-  let error = null, readings = null;
+  let error = null, readings = null, terms = null;
   // One whole turn by the Civ AI seated.
   const step = () => {
     engine.turn += 1;
@@ -318,13 +394,24 @@ function engineDebug(body) {
     step();
   } else if (body.op === "play") {
     // A run of steps asked for once, answered with how the seat stood as
-    // each turn opened. It stops where a run stops.
+    // each turn opened, and what each turn read of a search's lists. It
+    // stops where a run stops.
     readings = [];
+    terms = engine.objective ? [] : null;
     while (readings.length < body.turns && engine.turn < 400 && !engine.stopped) {
       step();
       readings.push(engineSeat());
+      if (terms) terms.push(engineTerms(engine.objective));
     }
     if (!readings.length) error = "this game has no turn left to play";
+  } else if (body.op === "objective") {
+    // A search's lists, read off the toy's seat: a key it has no number for
+    // is refused, as the engine refuses it.
+    const lists = body.objective || null;
+    const keys = lists ? ["need", "avoid", "want", "dont_want"].flatMap(list => (lists[list] || []).map(term => term.key)) : [];
+    const missing = keys.find(key => engineNumber(key) === null);
+    if (missing !== undefined) error = `seat 0 has no number called ${JSON.stringify(missing)}`;
+    else engine.objective = lists;
   } else if (body.op === "remember") {
     // Only a copy made to search is asked this, and only of a half.
     engine.remembers = true;
@@ -388,6 +475,7 @@ function engineDebug(body) {
       engine.scores[engine.turn] !== undefined) engine.score = engine.scores[engine.turn];
   const answer = engineState(error);
   if (readings !== null) answer.readings = readings;
+  if (terms !== null) { answer.terms = terms; answer.killed = null; }
   // Played once for both: the twin is made a copy of what this half holds.
   if (twin !== null) {
     if (alike) Object.assign(twin, worldOf(engine));
@@ -2780,7 +2868,7 @@ def check_autosearch(bar: Bar, address: str) -> None:
     bar.dev.call("Page.navigate", {"url": f"{address}{ONE_TIMELINE}"})
     bar.until(f"{ready} && location.search === '{ONE_TIMELINE}' && state === null", "the one timeline, loaded again")
     # A walk back puts the score back with the world, as the real engine does.
-    bar.ev("localStorage.removeItem('civvis-debug-search-v1'), engine.scores = {[engine.turn]: engine.score}, render(engineState()), true")
+    bar.ev("localStorage.removeItem('civvis-debug-search-v1'), localStorage.removeItem('civvis-debug-search-v2'), engine.scores = {[engine.turn]: engine.score}, render(engineState()), true")
     for turn in (2, 3, 4):
         bar.click('[data-dbg="next"]')
         bar.idle(f"state.turn === {turn}", f"turn {turn} is played")
@@ -2809,15 +2897,30 @@ def check_autosearch(bar: Bar, address: str) -> None:
     bar.click('[data-dbg-search="open"]')
     assert bar.ev(shown)
     options = lambda field: bar.ev(f"[...document.getElementById('dbg-search-{field}').options].map(held => [held.value, held.textContent])")
-    assert [goal[0] for goal in options("goal")][:5] == ["score", "prod", "city", "fpt", "gpt"], options("goal")
+    # The four lists it is judged by (operator 2026-11-23): what the seat
+    # Needs, Must Avoid, Wants and Doesn't Want. It opens on win, do not
+    # lose, and the most score.
+    lists = bar.ev("[...document.querySelectorAll('#dbg-search-lists .dbg-search-list')].map(list => [list.dataset.list,"
+                   " [...list.querySelectorAll('.dbg-search-term')].map(row => [...row.querySelectorAll('select, input')].map(field => field.value))])")
+    assert lists == [["need", [["won", "==", "1", "end"]]], ["avoid", [["lost", "==", "1", "always"]]],
+                     ["want", [["score", "1"]]], ["dont_want", []]], lists
+    # A term is added, read as it is typed, and taken out again.
+    bar.click('#dbg-search [data-dbg-search="add"][value="dont_want"]')
+    term = "document.querySelector('#dbg-search-lists [data-list=dont_want] [data-term={}]')".format
+    bar.ev(f"(() => {{ const key = {term('key')}; key.value = 'yields.faith'; key.dispatchEvent(new Event('change', {{bubbles: true}})); return true; }})()")
+    bar.ev(f"(() => {{ const weight = {term('weight')}; weight.value = '2'; weight.dispatchEvent(new Event('change', {{bubbles: true}})); return true; }})()")
+    assert bar.ev("debugSearchSet.lists.dont_want") == [{"key": "yields.faith", "weight": 2}]
+    assert bar.ev("JSON.parse(localStorage.getItem('civvis-debug-search-v2')).lists.dont_want") == [{"key": "yields.faith", "weight": 2}]
+    bar.click('#dbg-search [data-dbg-search="remove"][data-list="dont_want"]')
+    assert bar.ev("debugSearchSet.lists.dont_want") == []
     cores = bar.ev("Math.min(64, navigator.hardwareConcurrency || 4)")
     offered = options("cores")
     assert offered[0][1] == f"1 of {cores} cores", offered
     assert cores == 1 or offered[-1] == ["1", f"{cores} of {cores} cores · all"], offered
-    assert bar.ev("['goal', 'turns', 'cores'].map(field => document.getElementById('dbg-search-' + field).value)")[:2] == ["score", "30"]
+    assert bar.ev("['turns', 'cores'].map(field => document.getElementById('dbg-search-' + field).value)")[:1] == ["30"]
     assert bar.ev("document.getElementById('dbg-search-half').hidden") is True
     about = bar.ev("document.getElementById('dbg-search-about').textContent")
-    assert about.startswith(f"From turn {start}: which Civ AIs should hold the seat, and when, for the most score by turn {start + 30}."), about
+    assert about.startswith(f"From turn {start}: which Civ AIs should hold the seat, and when, to meet these lists by turn {start + 30}."), about
     # A panel of the deck that opens takes its place, and it takes theirs.
     bar.click('[data-dbg-pop="layers"]')
     assert bar.ev(f"[{shown}, debugPopOpen]") == [False, "layers"]
@@ -2856,8 +2959,9 @@ def check_autosearch(bar: Bar, address: str) -> None:
     bar.forget()
     bar.click('#dbg-search [data-dbg-search="go"]')
     bar.until(over, "the search ends", seconds=60)
-    found = bar.ev("({state: debugSearch.state, best: debugSearch.best.plan, value: debugSearch.best.value, alone: debugSearch.alone.plan,"
-                   " was: debugSearch.alone.value, last: debugSearch.best.last, futures: debugSearch.futures, cores: debugSearch.cores})")
+    found = bar.ev("({state: debugSearch.state, best: debugSearch.report.best.plan, value: debugSearch.report.best.verdict.want[0],"
+                   " alone: debugSearch.report.baseline.plan, was: debugSearch.report.baseline.verdict.want[0],"
+                   " last: debugSearch.report.best.last, futures: debugSearch.futures, cores: debugSearch.cores})")
     assert found["state"] == "done", bar.ev("debugSearch.note")
     assert (found["best"], found["value"], found["last"]) == ([[start, "stock"]], score + 20, start + 10), found
     assert (found["alone"], found["was"], found["cores"]) == ([[start, "jack"]], score + 10, asked), found
@@ -2865,8 +2969,19 @@ def check_autosearch(bar: Bar, address: str) -> None:
     assert bar.sent() == [] and bar.ev("[state.turn, engine.turn, engine.score]") == [start, start, score], bar.sent()
     # The copies were made once and let go when it ended.
     assert bar.ev(copies) == [asked, 0], bar.ev(copies)
-    first = bar.ev(f"{forked}.filter(call => call.path === '/debug?fork=1').slice(0, 2).map(call => [call.body.op, call.body.turn ?? null])")
-    assert first == [["breakpoints", None], ["jump", start]], first
+    first = bar.ev(f"{forked}.filter(call => call.path === '/debug?fork=1').slice(0, 3).map(call => [call.body.op, call.body.turn ?? null])")
+    assert first == [["breakpoints", None], ["objective", None], ["jump", start]], first
+    # Each copy reads the four lists the panel was set to, and the climb is
+    # the engine's: begun with them, asked for each line, told what each
+    # came to, and let go when the search ended.
+    assert bar.ev(f"{forked}.find(call => call.body.op === 'objective').body.objective") == {
+        "need": [{"seat": 0, "key": "won", "test": "==", "value": 1, "when": "end"}],
+        "avoid": [{"seat": 0, "key": "lost", "test": "==", "value": 1, "when": "always"}],
+        "want": [{"seat": 0, "key": "score", "weight": 1}], "dont_want": []}
+    climbed = bar.ev("engine.sent.filter(call => call.path === '/autosearch').map(call => call.body.op)")
+    assert climbed[0] == "begin" and climbed[-1] == "end" and climbed.count("took") == found["futures"], climbed
+    begun = bar.ev("engine.sent.find(call => call.path === '/autosearch').body")
+    assert (begun["from"], begun["end"], begun["seated"], begun["forks"]) == (start, start + 10, "jack", asked), begun
     assert bar.ev(f"{forked}.every(call => call.body.lean === true)")
     assert bar.ev(f"{forked}.some(call => call.body.op === 'remember')") is False
     plays = bar.ev(f"{forked}.filter(call => call.body.op === 'play').map(call => [call.body.turns, call.body.strategy])")
@@ -2879,7 +2994,11 @@ def check_autosearch(bar: Bar, address: str) -> None:
     # What the panel says of it: the line, what it comes to beside the Civ AI
     # seated, the two of them over the turns, and each Civ AI alone.
     said = bar.ev("document.getElementById('dbg-search-best').textContent")
-    assert said == f"Best found: SCORE {score + 20} on turn {start + 10}, +10 on Jack alone ({score + 10}).", said
+    gain = bar.ev(f"debugSearchPercent(100 * 10 / Math.max(1, {score + 10}))")
+    assert said == (f"Best found: it meets 0 of 1 Need, breaks no Must Avoid; SCORE {score + 20} on turn {start + 10}, "
+                    f"{gain} on what is wanted against Jack alone (SCORE {score + 10})."), said
+    # Nobody wins in ten turns: no line meets the Need, which says so.
+    assert bar.ev("document.getElementById('dbg-search-front').textContent").startswith("No line of "), "the Need not met is not said"
     assert bar.ev("document.getElementById('dbg-search-status').textContent").startswith("Done in "), "the search does not say it is done"
     assert bar.ev("[...document.querySelectorAll('#dbg-search-plan span')].map(held => held.textContent)") == [f"{start} Stock"]
     drawn = bar.ev("(() => { const chart = document.querySelector('#dbg-search-chart svg');"
@@ -2908,7 +3027,7 @@ def check_autosearch(bar: Bar, address: str) -> None:
     assert bar.ev("[debugSearch.said, document.getElementById('dbg-note').textContent, state.turn, engine.score,"
                   " document.getElementById('autoplaystrategy').value]") == [done, done, start + 10, score + 20, "stock"]
     # A line that does not come to what was found says so.
-    bar.ev("debugSearch.best.value += 1, true")
+    bar.ev("debugSearch.report.best.verdict.want[0] += 1, true")
     bar.click('#dbg-search [data-dbg-search="play"][value="here"]')
     bar.until(f"debugSearch.playing === null && debugSearch.said !== {json.dumps(done)}", "the line is played again", seconds=60)
     assert bar.ev("debugSearch.said") == f"Played to turn {start + 10}: SCORE {score + 20}, not the {score + 21} found"
@@ -2966,7 +3085,8 @@ def check_autosearch(bar: Bar, address: str) -> None:
     bar.ev("engine.sent.length = 0, true")
     bar.click('#dbg-search [data-dbg-search="go"]')
     bar.until(over, "the search from B ends", seconds=60)
-    assert bar.ev("[debugSearch.state, debugSearch.letter, debugSearch.pane === debugSplit.panes.b.id, debugSearch.best.plan, debugSearch.best.value]") == \
+    assert bar.ev("[debugSearch.state, debugSearch.letter, debugSearch.pane === debugSplit.panes.b.id, debugSearch.report.best.plan,"
+                  " debugSearch.report.best.verdict.want[0]]") == \
         ["done", "b", True, [[turn, "stock"]], base + 20], bar.ev("debugSearch.note")
     assert bar.ev(f"{forked}.every(call => call.path.endsWith('&pane=' + debugSplit.panes.b.id))")
     assert bar.ev(f"{forked}.filter(call => call.body.op === 'remember').length") == asked
@@ -3008,6 +3128,143 @@ def check_autosearch(bar: Bar, address: str) -> None:
     bar.ev("engine.seed += 1, render(engineState()), true")
     assert bar.ev("[debugSearch, document.getElementById('dbg-search-found').hidden]") == [None, True]
     bar.ev("debugSearchShow(false), true")
+    assert not bar.dev.console, f"the page complained: {bar.dev.console}"
+
+
+def check_doctor_strange(bar: Bar, address: str) -> None:
+    """Doctor Strange's Civ 6: the same split, shown as two worlds under the tree of their timeline.
+
+    Operator, 2026-11-23: "it will have a scrolling guitar hero setup. where
+    the timeline we are on and following is center screen. forward in time is
+    up. forward will branch out more in the tree. bottom left quad and bottom
+    right quad, roughly are our world to compare. 2 simulatoins. this is
+    limited at 2 for this demo."
+    """
+    both = "debugSplit.panes.a.turn === {0} && debugSplit.panes.b.turn === {0}".format
+    ready = "typeof drawDebugBar === 'function' && typeof engineState === 'function'"
+    bar.dev.call("Page.navigate", {"url": f"{address}?mode=strange"})
+    bar.until(f"{ready} && location.search === '?mode=strange' && state === null", "the page, asked for as Doctor Strange's Civ 6")
+    assert bar.ev("[STRANGE, STRANGE_PANE, document.documentElement.classList.contains('strange')]") == [True, False, True]
+    bar.ev("render(engineState()), true")
+    bar.settled()
+    bar.until(f"debugSplit && debugSplit.shown && {both(1)} && strangeIdle()", "its two worlds are there")
+    # The branch begins with a Civ AI of its own, or the two would be one world for ever.
+    assert bar.ev("[debugSplit.panes.a.strategy, debugSplit.panes.b.strategy, debugSplit.locked]") == ["jack", "stock", True]
+    bar.until("debugSplit.panes.b.frame.contentWindow.eval('engine.seat') === 'stock'", "B is seated with its own Civ AI")
+    # The two worlds are the two lower quarters of the window, with the
+    # trunk's column between them. The sky they stand on is the whole
+    # window, the bar is unseen (half A's deck is still drawn from it) and
+    # the strip between the halves is gone. Each half knows what it is a
+    # half of, which is what puts its panels away.
+    layout = bar.ev("""(() => {
+      const box = letter => debugSplit.panes[letter].frame.getBoundingClientRect(), a = box("a"), b = box("b");
+      const sky = document.getElementById("strange-sky").getBoundingClientRect();
+      return {
+        a: [a.left === 0, a.top >= innerHeight / 2, a.right < innerWidth / 2, Math.round(a.bottom) === innerHeight],
+        b: [Math.round(b.right) === innerWidth, b.top >= innerHeight / 2, b.left > innerWidth / 2, Math.round(b.bottom) === innerHeight],
+        alike: Math.round(a.width) === Math.round(b.width) && Math.round(a.height) === Math.round(b.height),
+        roomy: a.height > innerHeight * .4 && a.width > innerWidth * .4,
+        sky: [sky.left, sky.top, sky.width === innerWidth, sky.height === innerHeight],
+        bar: getComputedStyle(debugBar).visibility,
+        strip: getComputedStyle(debugSplit.host.querySelector(".dbg-divider")).display,
+        halves: ["a", "b"].map(letter => debugSplit.panes[letter].frame.contentWindow.eval(
+          "[STRANGE, STRANGE_PANE, document.documentElement.classList.contains('strange-pane')]")),
+      };
+    })()""")
+    assert layout == {"a": [True] * 4, "b": [True] * 4, "alike": True, "roomy": True, "sky": [0, 0, True, True],
+                      "bar": "hidden", "strip": "none", "halves": [[False, True, True]] * 2}, layout
+    # The highway is painted: the open turn is the line across the middle of
+    # the window, which is where the followed world's turn is put.
+    bar.until("strange.canvas.width === Math.round(innerWidth * Math.min(2, devicePixelRatio || 1)) && strange.cam === 1",
+              "the highway is painted")
+    geometry = bar.ev("(() => { const g = strangeGeometry(); return [strangeY(g, strange.cam, strange.cam) === Math.round(innerHeight / 2),"
+                      " strangeY(g, 11, 1) < strangeY(g, 2, 1), strangeY(g, 2, 1) < g.cy,"
+                      " Math.round(strangeTurnAt(g, strangeY(g, 37, 12), 12)), Math.round(strangeTurnAt(g, strangeY(g, 3, 12), 12)),"
+                      " strangeSpread(g, 20) > strangeSpread(g, g.cy)]; })()")
+    # Forward in time is up, a turn is the turn its height stands for, and the tree is wider ahead.
+    assert geometry == [True, True, True, 37, 3, True], geometry
+    words = "[...document.querySelectorAll('#strange-hud [data-strange]')].map(held => [held.dataset.strange, held.textContent.trim(), !!held.disabled])"
+    said = {name: [text, off] for name, text, off in bar.ev(words) if name != "numbers"}
+    assert said == {"play": ["▶ Play both", False], "back10": ["−10", True], "back1": ["−1", True], "on1": ["+1", False],
+                    "on10": ["+10", False], "branch": ["⑂ Branch B here", False], "fork": ["⏮ To the fork", True],
+                    "lock": ["🔒 Locked", False],
+                    "say": ["One world so far. Play, and each Civ AI takes it its own way", False],
+                    "follow-a": ["Following", True], "follow-b": ["Follow", False],
+                    "turn": ["1", False], "limit": ["", False], "era": ["Ancient era", False]}, said
+    # One world so far, and one line on the tree. A turn played by two Civ AIs forks it there.
+    assert bar.ev("[debugSplitFork().forked, strange.ghosts.length, strange.follow]") == [False, 0, "a"]
+    bar.click('#strange-hud [data-strange="on1"]')
+    bar.until(f"{both(2)} && strangeIdle() && debugSplitFork().forked", "the two worlds part")
+    assert bar.ev("[debugSplitFork().turn, document.querySelector('#strange-hud [data-strange=\"say\"]').textContent,"
+                  " document.querySelector('#strange-hud [data-strange=\"fork\"]').textContent]") == \
+        [1, "A and B parted on turn 1", "⏮ To the fork · 1"]
+    # Branch here: B's branch is let go of and stays on the tree, on its own
+    # side, from the turn it parted on to the last it played; and B is A
+    # again as A stands on the open turn, so the two are one world from there.
+    bar.click('#strange-hud [data-strange="branch"]')
+    bar.until(f"{both(2)} && strangeIdle() && !debugSplitFork().forked", "B branches from A on the open turn")
+    assert bar.ev("strange.ghosts.map(ghost => [ghost.letter, ghost.side, ghost.slot, ghost.from, ghost.to, ghost.parent, ghost.by])") == \
+        [["b", 1, 0, 1, 2, "a", "Stock"]]
+    assert bar.ev("debugSplit.panes.b.frame.contentWindow.eval('engine.sent.filter(call => call.path === \"/debug\")"
+                  ".map(call => call.body.op)')").count("copy") == 1
+    # A turn back is both worlds, as they stood.
+    bar.click('#strange-hud [data-strange="back1"]')
+    bar.until(f"{both(1)} && strangeIdle()", "both worlds go back a turn")
+    # Following B puts its timeline in the middle: Branch here then begins A again, from B.
+    bar.click('#strange-hud [data-strange="follow-b"]')
+    assert bar.ev("[strange.follow, document.querySelector('#strange-hud [data-strange=\"branch\"]').textContent]") == ["b", "⑂ Branch A here"]
+    # A press on the highway goes to the turn that height stands for: one
+    # ahead of the last played is played to.
+    bar.ev("(() => { const g = strangeGeometry(); strange.canvas.dispatchEvent(new MouseEvent('click',"
+           " {clientX: g.cx, clientY: strangeY(g, 3, strange.cam), bubbles: true})); return true; })()")
+    bar.until(f"{both(3)} && strangeIdle()", "a press on the highway plays to its turn")
+    # Locked, which is how the worlds begin, they go through the turns
+    # together (operator 2026-11-23: "the doctor strange tool should step
+    # through turns in sync when locked (which is the default). always on the
+    # same turn"). Each is asked for the same next turn at once and holds it
+    # unshown until the other has played its own, so neither is ever seen a
+    # turn ahead, and each plays every turn with its own Civ AI.
+    steps = "debugSplit.panes.{0}.frame.contentWindow.eval('engine.sent.filter(call => call.path === \"/debug\" && call.body.op === \"step\").length')".format
+    stepped = bar.ev(f"[{steps('a')}, {steps('b')}]")
+    bar.ev("window.strangeGaps = []; window.strangeWatch = setInterval(() =>"
+           " strangeGaps.push(debugSplit.panes.a.turn - debugSplit.panes.b.turn), 4); true")
+    bar.click('#strange-hud [data-strange="on10"]')
+    bar.until(f"{both(13)} && strangeIdle()", "ten turns on, both worlds together")
+    gaps = bar.ev("clearInterval(strangeWatch), strangeGaps")
+    assert gaps and max(map(abs, gaps)) <= 1, gaps
+    assert bar.ev(f"[{steps('a')}, {steps('b')}]") == [stepped[0] + 10, stepped[1] + 10]
+    # Paused, the two stop together, on the turn both were asked for.
+    bar.click('#strange-hud [data-strange="play"]')
+    bar.until("debugSplit.panes.a.turn >= 16", "Play both plays on")
+    bar.click('#strange-hud [data-strange="play"]')
+    bar.until("strange.run === null && strangeIdle()", "Pause stops both")
+    paused = bar.ev("[debugSplit.panes.a.turn, debugSplit.panes.b.turn, document.querySelector('#strange-hud [data-strange=\"say\"]').textContent]")
+    assert paused[0] == paused[1] and paused[2] == f"Paused on turn {paused[0]}", paused
+    # Unlocked, each world goes by itself: a turn back is the followed one's
+    # (B's, here) alone, and each says its own turn.
+    bar.click('#strange-hud [data-strange="lock"]')
+    assert bar.ev("[debugSplit.locked, document.querySelector('#strange-hud [data-strange=\"lock\"]').textContent]") == [False, "🔓 Unlocked"]
+    turn = paused[0]
+    bar.click('#strange-hud [data-strange="back1"]')
+    bar.until(f"debugSplit.panes.b.turn === {turn - 1} && debugSplit.panes.a.turn === {turn} && strangeIdle()", "B alone goes back a turn")
+    assert bar.ev("document.querySelector('#strange-hud [data-strange-line=\"a\"]').textContent").startswith(f"Turn {turn}")
+    # Locking again brings the other world to the followed one's turn first.
+    bar.click('#strange-hud [data-strange="lock"]')
+    bar.until(f"debugSplit.locked && {both(turn - 1)} && strangeIdle()", "locked again, on B's turn")
+    assert not bar.dev.console, f"the page complained: {bar.dev.console}"
+
+    # With no room for two worlds the game is on its one timeline, which is
+    # the AI Debugger, with its bar in sight and saying why.
+    bar.dev.call("Emulation.setDeviceMetricsOverride", {"width": 800, "height": 900, "deviceScaleFactor": 1, "mobile": False})
+    bar.until("innerWidth === 800", "a narrow window")
+    bar.dev.call("Page.navigate", {"url": f"{address}?mode=strange&narrow"})
+    bar.until(f"{ready} && location.search === '?mode=strange&narrow' && state === null", "the page again, in a narrow window")
+    bar.ev("render(engineState()), true")
+    bar.until("debugOpenedGame !== null && strange.sorry", "a narrow window is told why it has one timeline")
+    assert bar.ev("[debugSplit, getComputedStyle(debugBar).visibility]") == [None, "visible"]
+    assert bar.note().startswith("Doctor Strange's Civ 6 sets two worlds side by side and needs a wider window"), bar.note()
+    bar.dev.call("Emulation.clearDeviceMetricsOverride")
+    bar.until("innerWidth > 1000", "the window is its own size again")
     assert not bar.dev.console, f"the page complained: {bar.dev.console}"
 
 
@@ -3128,10 +3385,19 @@ def main() -> int:
         print("a game opens on its two tracks at once with head to head open, asks nothing and says Click to "
               "travel, and does so once a game; a narrow window and the Single player view open on the one timeline.")
         check_autosearch(bar, f"http://127.0.0.1:{port}/")
-        print("Autosearch is a size larger than the tools beside it; its panel picks what to make the most "
-              "of, how far ahead and how many cores; a search plays on copies of the engine, leaves the "
+        print("Autosearch is a size larger than the tools beside it; its panel sets the four lists a line is "
+              "judged by (Need, Must avoid, Want, Don't want), how far ahead and how many cores; the climb is the "
+              "engine's, and a search plays on copies of the engine, leaves the "
               "page's game alone, finds the best line and lets its copies go; the line is played on the "
               "one timeline or in either half of a split, and says what it came to beside what was found.")
+        check_doctor_strange(bar, f"http://127.0.0.1:{port}/")
+        print("Doctor Strange's Civ 6 is the split shown as two worlds in the lower quarters of the window under "
+              "the tree of their timeline: the open turn is the line across the middle, forward in time is up and "
+              "the tree is wider ahead; B begins with a Civ AI of its own, a turn played forks the tree, Branch here "
+              "lets the other branch go and keeps it on the tree, both worlds go back as they stood, either can be "
+              "followed, and a press on the highway goes to its turn; locked, the two go through the turns together, never "
+              "seen a turn apart, and pause together, and unlocked they go by themselves until locked again on the followed "
+              "one's turn; a narrow window has the one timeline and says why.")
         return 0
     finally:
         chrome.terminate()

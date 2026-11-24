@@ -340,7 +340,7 @@
      and the text fitter shrinks the type into the lane instead of wrapping. */
   .tagline span { display: block; white-space: nowrap; }
   .tagline span + span { color: #bccac4; }
-  /* The site's pages from the top down: Home, Charts, Auto-Tourneys, CIVVIS
+  /* The site's pages from the top down: Home, Charts, Tournaments, CIVVIS
      and AI Debugger, and under them the game all five are built on. The block below is how they stand
      when there is no room beside the lockup, or no way to ask whether they
      are showing (`:has`): two by two under the tagline. `display: grid`
@@ -351,20 +351,30 @@
   }
   .head-links[hidden] { display: none; }
   /* Two by two a link is half its row, except on the second row: there
-     AUTO-TOURNEYS takes six tenths and CIVVIS four. In this type the name
-     is 91px and half a row holds 84px at its narrowest (a 195px band), and
-     six tenths of it 104px; CIVVIS is 36px in the 64px left to it. Every
+     TOURNAMENTS takes six tenths and CIVVIS four. The six tenths were
+     measured for AUTO-TOURNEYS, its name from 2026-11-22 to 2026-11-24: in
+     this type that name is 91px and half a row holds 84px at its narrowest
+     (a 195px band), and six tenths of it 104px; CIVVIS is 36px in the 64px
+     left to it. Every
      name stands on one line (operator, 2026-11-21: "make sure it fits on
      one line"). The list is a tree that keeps its branches folded
      (operator, 2026-11-21: "a somewhat collapsable model for the info"): a
      page's own pages are listed under it only on that page. Performance is
      Charts' (operator, 2026-11-22: "Move performance from under civvis to
      charts ... This keeps AI Debugger as a clean tool. CIVVIS as a clean
-     tool"), so this page, which is CIVVIS and AI Debugger, lists the six
-     top-level names and no branch. */
+     tool"), so this page, which is CIVVIS, AI Debugger and Doctor Strange's
+     Civ 6, lists the seven top-level names and no branch. */
   .head-links > .home-link { grid-column: span 5; }
   .head-links > #tourlink { grid-column: span 6; }
   .head-links > #watchlink { grid-column: span 4; }
+  /* Doctor Strange's Civ 6 (operator, 2026-11-23: "lest move dr strange civ
+     6 above ai debugger", after CIVVIS) is the one name longer than half a
+     row and has a row of its own. AI Debugger and Civ 6 keep the rows of
+     their own they had beside it. */
+  .head-links > #playlink, .head-links > #strangelink, .head-links > #civ6link { grid-column: 1 / -1; }
+  /* Wizard Chess (operator, 2026-11-23: "below civ 6, add wizard chess") is
+     the last name in the list and has the last row. */
+  .head-links > #chesslink { grid-column: 1 / -1; }
   /* A name stands on one line wherever it fits, and every one of them
      does in the typefaces measured. In a wider one a name of two words
      takes two lines, a word to each, and the link beside it in a row is as
@@ -378,15 +388,67 @@
   }
   .home-link:hover { color: var(--gold-bright); border-color: var(--gold); }
   .home-link:focus-visible { outline: 2px solid var(--gold-bright); outline-offset: 1px; }
-  /* The page on screen is the one in gold. This page is two of them: CIVVIS
-     while it watches a simulation, AI Debugger while somebody holds a seat.
+  /* A button wears the ground of what it opens (operator, 2026-11-23: "make
+     home, charts/ and auto-tourneys buttons all have a blue background
+     (like the pages do). civvis, ai debugger have a black background (same
+     as simulator)"). The rule above is this page's black, which AI
+     Debugger keeps. CIVVIS is gold (operator, 2026-11-24: "lets give
+     civvis a gold background on the button, rather than black"), the gold
+     this list lit the page on screen in until then, and the same gold on
+     every page. Home, Charts/ and Tournaments are the blue those
+     pages set their own lists in, and Civ 6, which opens Steam's shop, is
+     the blue of Steam's buttons ("civ 6 can have the steam color of
+     blue"), dark under the name and light at the far end. */
+  #homelink, #chartslink, #tourlink { color: #a8d8f5; border-color: #3b6788; background: #274b66; }
+  #homelink:hover, #chartslink:hover, #tourlink:hover { color: #fff; border-color: #66c0f4; background: #315d7e; }
+  #watchlink { color: #17130c; border-color: #efd184; background: linear-gradient(145deg, #dec176, #aa7d30); }
+  #watchlink:hover { color: #000; border-color: #fff3c9; background: linear-gradient(145deg, #f0d68e, #c0913c); }
+  #civ6link {
+    color: #fff; border-color: transparent;
+    background: linear-gradient(90deg, #1a44c2 35%, #47bfff) border-box;
+  }
+  #civ6link:hover { color: #fff; border-color: #fff; background: linear-gradient(90deg, #2352d6 35%, #73cfff) border-box; }
+  /* Wizard Chess is a chessboard ("the background there can be black and
+     white checkerboard"): black and white squares round a black plate that
+     the name stands on, as on the pages. The link is 16px tall here, so the
+     squares are half the pages' size and the plate leaves two of them above
+     and below the name's line. */
+  #chesslink {
+    color: #f4f1e8; border-color: transparent;
+    background: linear-gradient(#0b0b0c, #0b0b0c) center / calc(100% - 12px) calc(100% - 6px) no-repeat,
+      repeating-conic-gradient(#f4f1e8 0 25%, #0b0b0c 0 50%) 0 0 / 4px 4px border-box;
+  }
+  #chesslink:hover {
+    color: #fff; border-color: transparent;
+    background: linear-gradient(#26262a, #26262a) center / calc(100% - 12px) calc(100% - 6px) no-repeat,
+      repeating-conic-gradient(#ffffff 0 25%, #0b0b0c 0 50%) 0 0 / 4px 4px border-box;
+  }
+  /* Doctor Strange's Civ 6 stands out in Doctor Strange's own colours
+     (operator, 2026-11-23: "highlight dr strange civ 6 button in dr
+     strange colors"): the deep blue of his tunic running into the crimson
+     of his cloak, ringed and lit by the orange of his spells' sparks, the
+     name in their pale gold. The same on every page that lists it. */
+  #strangelink {
+    color: #ffe3a3; border-color: #ff9a2e;
+    background: linear-gradient(135deg, #1c2a7a 30%, #a3122f) border-box;
+    box-shadow: 0 0 6px rgba(255, 138, 30, 0.6);
+  }
+  #strangelink:hover { color: #fff; border-color: #ffb85c; background: linear-gradient(135deg, #2638a0 30%, #c8193d) border-box; box-shadow: 0 0 10px rgba(255, 150, 40, 0.85); }
+  /* The page on screen keeps the colour of what it is and is ringed in
+     white, as on the pages. It was gold until 2026-11-24, when gold
+     became CIVVIS's own. This page is three of them:
+     CIVVIS while it watches a simulation, AI Debugger while somebody holds a
+     seat, and Doctor Strange's Civ 6 while that game is shown as its tree of
+     two timelines (`?mode=strange`, which `app_debugger.js` marks on the
+     root as `strange`).
      Which of the two is known once the first observation arrives
      (`seat-known`); until then neither is lit. */
   body.watching-sim #watchlink,
-  html.seat-known body:not(.watching-sim) #playlink {
-    color: #17130c; border-color: #efd184;
-    background: linear-gradient(145deg, #dec176, #aa7d30);
+  html.seat-known:not(.strange) body:not(.watching-sim) #playlink,
+  html.seat-known.strange body:not(.watching-sim) #strangelink {
+    border-color: #fff; box-shadow: inset 0 0 0 1px #fff;
   }
+  html.seat-known.strange body:not(.watching-sim) #strangelink { box-shadow: inset 0 0 0 1px #fff, 0 0 6px rgba(255, 138, 30, 0.6); }
   /* With 233px or more across the band the links leave the lockup's foot and
      stand in a column on its left, at the box's left edge, with the globe
      and the wordmark to the right of it (operator, 2026-11-21: the list goes
@@ -421,13 +483,15 @@
       grid-column: 1; grid-row: 1; grid-template-columns: minmax(0, 1fr);
       align-content: center; justify-self: stretch; margin-top: 0;
     }
-    /* Six to the column, a name to a line. The column is 92px with 7px
+    /* Seven to the column, a name to a line but for Doctor Strange's Civ 6,
+       which is longer than the column and takes two. The column is 92px with 7px
        gutters, the size it took for STRAT DEBUGGER (83px in this type
        against the 86px inside the column) while that was the Debugger's
        name here, and it keeps that size, so neither width at which the
-       lockup changes shape has moved. AUTO-TOURNEYS is the longest name
-       now, 80px. Each link is one track here, wherever it stands two by
-       two. Six one-line links make the column 111px. */
+       lockup changes shape has moved. AUTO-TOURNEYS, the Tournaments
+       page's name from 2026-11-22 to 2026-11-24, was the longest name,
+       80px. Each link is one track here, wherever it stands two by
+       two. Six one-line links and the one of two lines make it 141px. */
     #side .brand:has(> .head-links:not([hidden])) .home-link {
       grid-column: auto; padding: 1px 2px 2px; font-size: 8.5px; letter-spacing: .02em;
     }
@@ -979,7 +1043,7 @@
   .hud-rail:focus-visible { outline: 1px solid #d7b66a70; outline-offset: -1px; border-radius: 6px; }
   .victory-turn, .victory-track { min-width: 0; border-radius: 8px; }
   .victory-turn {
-    display: grid; grid-template-rows: auto auto auto minmax(0, 1fr); align-items: start;
+    display: grid; grid-template-rows: auto auto auto auto minmax(0, 1fr); align-items: start;
     padding: 6px 7px 7px; overflow: hidden; color: var(--gold-bright);
     background: linear-gradient(155deg, #d7b66a1c, #d7b66a08);
     border: 1px solid #d7b66a30; text-align: center;
@@ -1008,7 +1072,7 @@
   .turn-count.turn-count-long .turn-progress { column-gap: .15em; }
   .turn-count.turn-count-long .turn-label { letter-spacing: .04em; }
   /* The live stopwatch, the plate's top section when the world is watched. */
-  .victory-turn.has-live-time { grid-template-rows: auto auto auto auto minmax(0, 1fr); }
+  .victory-turn.has-live-time { grid-template-rows: auto auto auto auto auto minmax(0, 1fr); }
   /* The label, the clock and its hundredths are one reading and scale as one:
      every part is sized in em from this row, and the type fitter sizes the
      row. The row ends short of the fold button in the plate's corner, and
@@ -1064,15 +1128,18 @@
   /* Neither half of a row gives up width, and nothing here ellipsizes: a
      setting is shown whole or the block is drawn a quarter-point smaller. */
   .turn-setting > span, .turn-setting > b, .turn-setting > .turn-pace-choice { flex: 0 0 auto; }
-  /* Max Speed sits alone between the stopwatch and the age, in the settings
-     block's type. `safe` starts an overflowing row at its left edge, so the
-     type fitter's scrollWidth still measures all of it. */
-  .turn-pace-line {
-    justify-content: safe center; margin: 0 0 4px; color: #9fb0a9;
+  /* Max Speed and the setup line under it ("6P Continents · Lv 8 · Online")
+     sit between the stopwatch and the age, in the settings block's type.
+     `safe` starts an overflowing row at its left edge, so the type fitter's
+     scrollWidth still measures all of it. */
+  .turn-pace-line, .turn-setup-line {
+    justify-content: safe center; color: #9fb0a9;
     font-size: var(--type-small); font-weight: 700; letter-spacing: -.015em; line-height: 1.2;
   }
-  /* The stopwatch and the pace read as one section; the rule closes it. */
-  .has-live-time .turn-pace-line { padding-bottom: 4px; border-bottom: 1px solid #d7b66a24; }
+  .turn-pace-line { margin: 0 0 2px; }
+  .turn-setup-line { margin: 0 0 4px; }
+  /* The stopwatch and the game settings read as one section; the rule closes it. */
+  .has-live-time .turn-setup-line { padding-bottom: 4px; border-bottom: 1px solid #d7b66a24; }
   /* The seam on the plate's right edge: the command deck's resize affordance
      brought inside the masthead. As a grid item overlapping the plate cell it
      rides the plate's edge at every density, leaning into the panel gap. */
@@ -1132,27 +1199,28 @@
      has wide-monitor room, while a viewer's dragged width remains decisive. */
   #playerhud.turn-plate-wide .victory-turn {
     grid-template-columns: minmax(0, 1fr) auto;
-    grid-template-rows: auto auto minmax(0, 1fr);
+    grid-template-rows: auto auto auto minmax(0, 1fr);
     column-gap: 10px; align-items: center;
   }
   #playerhud.turn-plate-wide .turn-pace-line { grid-column: 1 / -1; grid-row: 1; }
-  #playerhud.turn-plate-wide .turn-era { grid-column: 1; grid-row: 2; text-align: left; }
+  /* The map, level and speed line is one reading: it keeps the whole width. */
+  #playerhud.turn-plate-wide .turn-setup-line { grid-column: 1 / -1; grid-row: 2; }
+  #playerhud.turn-plate-wide .turn-era { grid-column: 1; grid-row: 3; text-align: left; }
   #playerhud.turn-plate-wide .turn-count {
-    grid-column: 2; grid-row: 2; margin: 0; justify-content: flex-end;
+    grid-column: 2; grid-row: 3; margin: 0; justify-content: flex-end;
   }
   #playerhud.turn-plate-wide .turn-settings {
-    grid-column: 1 / -1; grid-row: 3; align-self: start;
+    grid-column: 1 / -1; grid-row: 4; align-self: start;
     grid-template-columns: repeat(2, minmax(max-content, 1fr)); column-gap: 14px;
   }
-  /* The map, level and speed line is one reading: it keeps the whole width. */
-  #playerhud.turn-plate-wide .turn-setup-line { grid-column: 1 / -1; }
-  #playerhud.turn-plate-wide .victory-turn.has-live-time { grid-template-rows: auto auto auto minmax(0, 1fr); }
+  #playerhud.turn-plate-wide .victory-turn.has-live-time { grid-template-rows: auto auto auto auto minmax(0, 1fr); }
   #playerhud.turn-plate-wide .turn-live { grid-column: 1 / -1; grid-row: 1; margin: 0 0 4px; padding: 0 16px; }
   #playerhud.turn-plate-wide .turn-live .turn-label { font-size: 1em; }
   #playerhud.turn-plate-wide .has-live-time .turn-pace-line { grid-row: 2; }
+  #playerhud.turn-plate-wide .has-live-time .turn-setup-line { grid-row: 3; }
   #playerhud.turn-plate-wide .has-live-time .turn-era,
-  #playerhud.turn-plate-wide .has-live-time .turn-count { grid-row: 3; }
-  #playerhud.turn-plate-wide .has-live-time .turn-settings { grid-row: 4; }
+  #playerhud.turn-plate-wide .has-live-time .turn-count { grid-row: 4; }
+  #playerhud.turn-plate-wide .has-live-time .turn-settings { grid-row: 5; }
   /* Tabular figures so a count changing from 10 to 9 moves the row by exactly
      one digit's width instead of an arbitrary one — the block is refitted on
      that width, and a proportional 1 would re-size all four rows mid-game. */
@@ -3110,13 +3178,15 @@
   #side.deck-stops #politicssec[open] { scroll-margin-bottom: 0; }
   .politics-list {
     --politics-ground: #12211e; --politics-lit: #213a34; --politics-cell: 22px; --politics-disc: #0b1513;
-    position: relative; isolation: isolate; overflow: auto; max-width: 100%; max-height: 220px;
+    --politics-head: 100px;
+    position: relative; isolation: isolate; overflow: auto; max-width: 100%; max-height: calc(220px + var(--politics-head));
     overscroll-behavior-x: contain; scrollbar-color: #385148 transparent; scrollbar-width: thin;
   }
-  /* Never less than six rows, so a six-player world is read whole on any
-     window, plus a scrollbar's width. A larger world takes the height down to
-     the deck's floor, less the key below it and the padding. */
-  #side.deck-stops .politics-list { max-height: max(calc(20px + 6 * var(--politics-cell)), calc(var(--deck-window) + var(--stop-bottom) - 112px)); }
+  /* Never less than the names along the top and six rows, so a six-player
+     world is read whole on any window, plus a scrollbar's width. A larger
+     world takes the height down to the deck's floor, less the key below it and
+     the padding. */
+  #side.deck-stops .politics-list { max-height: max(calc(20px + var(--politics-head) + 6 * var(--politics-cell)), calc(var(--deck-window) + var(--stop-bottom) - 112px)); }
   .politics-matrix { min-width: 100%; border-collapse: separate; border-spacing: 0; font-size: calc(var(--type-secondary) - 1px); line-height: 1.2; }
   .politics-matrix th, .politics-matrix td { padding: 0; }
   .politics-matrix tbody td {
@@ -3132,6 +3202,14 @@
     background: color-mix(in oklab, var(--civ) 82%, #808080);
     background: oklch(from var(--civ) calc(l + clamp(-.1, (.62 - l) * 10, .1)) c h);
   }
+  /* Every other square is a step off its column's colour, as on a
+     chessboard: toward white on a dark column and toward black on a light
+     one, so the board shows on navy and on white alike. It is a veil, so a
+     lit column still shows through it; the diagonal is never one. */
+  .politics-matrix tbody td.politics-check {
+    background: #0000003d;
+    background: oklch(from var(--civ) clamp(0, (.6 - l) * 100, 1) 0 0 / .24);
+  }
   .politics-matrix tbody tr:hover td:not(.self) { background: #ffffff2e; }
   /* Where a civilization's row crosses its own column it shows its plate. */
   .politics-matrix tbody td.self { background: var(--civ); box-shadow: inset 3px 0 var(--civ-trim); }
@@ -3141,6 +3219,18 @@
     box-shadow: 1px 0 0 var(--line), 5px 0 5px -3px #0009;
   }
   .politics-matrix tbody tr:hover th, .politics-matrix tbody th.politics-crossed { background: var(--politics-lit); }
+  /* The column names stand upright along the top, each on its column, and
+     stay while the rows scroll under them; the corner stays over both. */
+  .politics-matrix thead th {
+    position: sticky; top: 0; z-index: 2; background: var(--politics-ground); vertical-align: bottom;
+    box-shadow: 0 1px 0 var(--line), 0 5px 5px -3px #0009;
+  }
+  .politics-matrix thead th:first-child { left: 0; z-index: 3; }
+  .politics-matrix thead th.politics-crossed { background: var(--politics-lit); }
+  .politics-matrix thead th > .politics-name {
+    writing-mode: vertical-rl; rotate: 180deg; width: 16px; height: auto; max-width: none; max-height: 96px;
+    margin: 4px auto 3px; padding: 4px 0 5px; border-left: 0; border-top: 3px solid var(--civ-trim);
+  }
   /* Every name is on its civilization's plate: the jersey's first colour for
      the ground, its partner for the trim and, wherever it reads, the ink. */
   .politics-name {
@@ -4687,6 +4777,82 @@
      race moves, and the wheel must not be pulled along after one of them. */
   #victoryhud .hud-rail { overflow-x: hidden; overflow-y: auto; overflow-anchor: none; }
   #victoryhud .hud-rail::-webkit-scrollbar { width: 3px; height: 3px; }
+  /* The game's own clock, up the tracker's left edge: a gold bar that stands
+     at the bottom on turn 1 and reaches the top on the last turn (operator,
+     2026-11-23: "tasteful. not too big", then "wider please. like 6mm
+     wide-ish, with a bit for labels and such"; 30px is six millimetres on the
+     operator's own screen). The tracker's box is a grid so the bar can stand
+     in a column of its own beside the paths, exactly as tall as their rail:
+     it never scrolls away with them, and the heading and the "Off" line above
+     keep the whole width. The panel is that column wider than it was
+     (TURN_GAUGE_COLUMN in app.js), so the bar's room comes off the map and
+     not out of the paths. A world with no turn cap draws no bar, and the
+     empty column gives its width to the paths. */
+  #victoryhud > .victory-region {
+    display: grid; grid-template-columns: auto minmax(0, 1fr);
+    grid-template-rows: auto auto minmax(0, 1fr);
+    container: victory-region / inline-size;
+  }
+  #victoryhud > .victory-region > .hud-region-bar { grid-area: 1 / 1 / 2 / -1; }
+  #victoryhud > .victory-region > .victory-off-note { grid-area: 2 / 1 / 3 / -1; }
+  #victoryhud > .victory-region > .hud-rail { grid-area: 3 / 2; }
+  .turn-gauge {
+    grid-area: 3 / 1; position: relative; width: 30px; margin: 2px 5px 2px 0;
+    overflow: hidden; border-radius: 5px; container: turn-gauge / size;
+    background: color-mix(in srgb, var(--gold) 8%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--gold) 24%, transparent);
+  }
+  /* The gold stands the whole height and is cut off at the turn, so its
+     colour belongs to the height and not to the bar: deep at the foot,
+     bright by the last turn. */
+  .turn-gauge-fill {
+    position: absolute; inset: 0;
+    background: linear-gradient(to top, color-mix(in srgb, var(--gold) 78%, #2a2008), var(--gold) 50%, var(--gold-bright));
+    clip-path: inset(calc(100% - var(--rise, 0%)) 0 0 0);
+    transition: clip-path .45s ease-out;
+  }
+  /* The bar's head: a bright line that is all there is of it on turn 1. */
+  .turn-gauge > i {
+    position: absolute; left: 0; right: 0; height: 2px;
+    bottom: clamp(0px, calc(var(--rise, 0%) - 2px), calc(100% - 2px));
+    background: color-mix(in srgb, var(--gold-bright) 70%, #fff);
+    box-shadow: 0 0 7px color-mix(in srgb, var(--gold-bright) 70%, transparent);
+    transition: bottom .45s ease-out;
+  }
+  /* The scale: a hairline across the bar at the height it stands at on a
+     round turn, and the turn's figure hung just under it, so the bar's head
+     arrives at the line with the figure already on the gold. One copy is
+     dim, for the empty track, and one dark, for the gold; each is cut off at
+     the head from its own side, and both stand above the head's line. The
+     cap's line is the top of the bar itself. */
+  .turn-gauge-scale {
+    position: absolute; inset: 0; color: color-mix(in srgb, var(--gold) 72%, transparent);
+    clip-path: inset(0 0 var(--rise, 0%) 0); transition: clip-path .45s ease-out;
+  }
+  .turn-gauge-scale.lit { color: #2a2008d9; clip-path: inset(calc(100% - var(--rise, 0%)) 0 0 0); }
+  .turn-gauge-scale > b {
+    position: absolute; left: 0; right: 0; padding-top: 3px; transform: translateY(100%);
+    border-top: 1px solid color-mix(in srgb, currentColor 42%, transparent);
+    font-size: var(--type-caption); font-weight: 800; font-variant-numeric: tabular-nums;
+    letter-spacing: 0; line-height: 1; text-align: center;
+  }
+  .turn-gauge-scale > b.long { font-size: 7.5px; letter-spacing: -.03em; }
+  .turn-gauge-scale > b.cap { top: 0; padding-top: 5px; border-top: 0; transform: none; }
+  /* A short bar, in the shallow band a narrow window gives the tracker, has
+     room for every other figure; the lines of the rest stay. */
+  @container turn-gauge (max-height: 150px) {
+    .turn-gauge-scale > b.minor { font-size: 0; }
+  }
+  /* A tracker too narrow to give the paths six millimetres keeps the bar
+     and gives up the scale. */
+  @container victory-region (max-width: 170px) {
+    .turn-gauge { width: 6px; margin-right: 4px; border-radius: 3px; }
+    .turn-gauge-scale { display: none; }
+  }
+  #victoryhud.victory-collapsed .turn-gauge { display: none; }
+  @media (prefers-reduced-motion: reduce) {
+    .turn-gauge-fill, .turn-gauge > i, .turn-gauge-scale { transition: none; }
+  }
 
 
   .overlay-options { margin-top: 11px; padding-top: 10px; border-top: 1px solid var(--line-soft); }
@@ -6499,28 +6665,34 @@
       </div>
       <div class="brand-copy">
         <h1>CIVVIS<span class="brand-suffix">.ai</span></h1>
-        <div class="tagline"><span>A <i>Civilization VI</i> Simulator</span><span>for AI strategy development</span></div>
+        <div class="tagline"><span>A <i>Civilization VI</i> Simulator</span><span>for AI reasoning insights</span></div>
       </div>
-      <!-- The site is five pages, Home, Charts, Auto-Tourneys, CIVVIS and AI
+      <!-- The site is five pages, Home, Charts, Tournaments, CIVVIS and AI
            Debugger, and every one of them lists all five in that order with
-           the one on screen in gold. This page is the last two: `./` is the simulation
+           the one on screen ringed in white. This page is the last two: `./` is the simulation
            the AIs play and `?mode=play` the same game with a seat of your
            own. Both are relative, so they stay in whichever lane they were
            clicked in, and all five leave a split's frame for the whole
            window. Under them is the game itself, on the shop page that sells
-           it. Only the published site has a /home, a /research (the Charts
+           it. Doctor Strange's Civ 6, listed just above AI Debugger since 2026-11-23,
+           is that same played game shown another way (`?mode=strange`): two
+           worlds in the lower quarters of the window and their timeline a
+           tree up the middle of it, drawn by `assets/app_debugger.js`.
+           Only the published site has a /home, a /research (the Charts
            page, which kept its address through two renames) and a
-           /tournaments (the Auto-Tourneys page, likewise) to go to
+           /tournaments (the Tournaments page, back at its first address) to go to
            (`beta/publish.sh` makes the three links lane-relative); the head
            script unhides the list on the hosts that serve them. Performance
            is Charts' own page and is listed under it there, not here. -->
       <nav class="head-links" id="headlinks" aria-label="CIVVIS sites" hidden>
         <a class="home-link" id="homelink" href="/home" target="_top">Home</a>
-        <a class="home-link" id="researchlink" href="/research" target="_top">Charts/</a>
-        <a class="home-link" id="tourlink" href="/tournaments" target="_top">Auto-Tourneys</a>
+        <a class="home-link" id="chartslink" href="/charts/ai-interpretability" target="_top">Charts/</a>
+        <a class="home-link" id="tourlink" href="/tournaments" target="_top">Tournaments</a>
         <a class="home-link" id="watchlink" href="./" target="_top">CIVVIS</a>
+        <a class="home-link" id="strangelink" href="?mode=strange" target="_top">Doctor Strange's Civ 6</a>
         <a class="home-link" id="playlink" href="?mode=play" target="_top">AI Debugger</a>
         <a class="home-link" id="civ6link" href="https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/" target="_blank" rel="noopener" title="Buy Civilization VI on Steam">Civ 6</a>
+        <a class="home-link" id="chesslink" href="/wizard-chess" target="_top">Wizard Chess</a>
       </nav>
     </div>
   </div>

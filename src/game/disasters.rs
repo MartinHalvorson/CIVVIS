@@ -182,7 +182,7 @@ impl Game {
         let mut rng =
             self.disaster_rng(&storm.kind, storm.pos.0 as u64 ^ (storm.pos.1 as u64) << 8);
         for position in self.wdisk(storm.pos, spec.radius(storm.severity)) {
-            self.map.tiles.get_mut(&position).unwrap().storm = Some(storm.kind.clone());
+            self.map.tiles.get_mut(&position).unwrap().storm = Some(Name::new(&storm.kind));
             self.strike_disaster_tile(position, spec, storm.severity, None, &mut rng);
             self.disaster_population_loss(position, spec.population_loss(storm.severity));
         }

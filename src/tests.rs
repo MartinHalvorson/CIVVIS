@@ -383,7 +383,7 @@ fn the_event_stream_records_what_happened_to_each_civilization() {
     assert!(theirs
         .iter()
         .any(|e| e.category == "War" && e.text == declaration));
-    assert!(g.events.iter().all(|event| {
+    assert!(g.chronicle.events.iter().all(|event| {
         !event
             .text
             .split(|character: char| !character.is_alphabetic())
@@ -527,6 +527,7 @@ fn every_event_names_a_civilization_first() {
     }
     let names: Vec<&str> = g.players.iter().map(|player| player.civ.as_str()).collect();
     let orphans: Vec<&str> = g
+        .chronicle
         .events
         .iter()
         .map(|event| event.text.as_str())
@@ -540,7 +541,11 @@ fn every_event_names_a_civilization_first() {
     );
     // The stream is not trivially empty: sixty turns of four civilizations
     // found cities, finish research and meet each other.
-    assert!(g.events.len() > 20, "only {} events", g.events.len());
+    assert!(
+        g.chronicle.events.len() > 20,
+        "only {} events",
+        g.chronicle.events.len()
+    );
 }
 
 /// Every leader carries the agenda and preference traits the shipped

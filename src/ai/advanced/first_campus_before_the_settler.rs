@@ -67,9 +67,12 @@ impl AdvancedAi {
         cid: u32,
         plan: &StrategicPlan,
     ) -> bool {
-        self.first_campus_before_the_settler
+        ((self.first_campus_before_the_settler
             // A Score seat too: see [`AdvancedAi::conquest_or_score_seat`].
-            && self.conquest_or_score_seat(g)
+            && self.conquest_or_score_seat(g))
+            // `science-seat-campus-before-the-settler`: a Science seat too.
+            // See `advanced/science_seat_campus_before_the_settler.rs`.
+            || self.science_seat_takes_the_first_campus(g))
             && g.player_city_ids(pid).len() >= FIRST_CAMPUS_BEFORE_THE_SETTLER_MIN_CITIES
             && !plan.rush
             && plan.threatened_city.is_none()
@@ -187,9 +190,16 @@ impl AdvancedAi {
 
     /// The journal line for a claim this gene released.
     pub(super) fn explain_first_campus_before_the_settler(&self, g: &Game, cid: u32, turns: f64) {
+        // The gene that released it: a Science seat's release is
+        // `science-seat-campus-before-the-settler`'s.
+        let gene = if self.first_campus_before_the_settler && self.conquest_or_score_seat(g) {
+            "first-campus-before-the-settler"
+        } else {
+            "science-seat-campus-before-the-settler"
+        };
         think!(self.journal(), Cities, Decision,
                "{} starts the first Campus before its Settler", g.cities[&cid].name;
-               "first-campus-before-the-settler: {turns:.1} turns with {} cities standing and no war; \
+               "{gene}: {turns:.1} turns with {} cities standing and no war; \
                 the Settler keeps its progress and the floor trains the next one elsewhere or after it",
                g.player_city_ids(g.cities[&cid].owner).len());
     }

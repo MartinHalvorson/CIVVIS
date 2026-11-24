@@ -531,6 +531,85 @@ impl AdvancedAi {
     /// a city: the opening window's Granary price against the treasury, and
     /// Mohenjo-Daro's fresh water. A value is kept across a restart only
     /// under the key it was derived under.
+    /// Everything a seat's prefilter score reads beyond the plot's own
+    /// ground, folded: the turn, every tile (the grid's write chain), every
+    /// city's identity, owner and centre, the early-water and Mohenjo-Daro
+    /// inputs (`settlement_atlas_key`), and the seat's explored ground,
+    /// research, civics, government and policies. The scores read the map,
+    /// the cities that own it, what the seat has explored (the ring-three
+    /// science-wonder term) and whether a Granary can be bought; nothing in
+    /// them reads a unit, so a Settler's step keeps every one.
+    fn settlement_prefilter_key(g: &Game, pid: usize) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let seat = &g.players[pid];
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        g.turn.hash(&mut hasher);
+        g.map.tiles.write_chain().hash(&mut hasher);
+        Self::settlement_atlas_key(g, pid).hash(&mut hasher);
+        seat.explored.len().hash(&mut hasher);
+        seat.techs.len().hash(&mut hasher);
+        seat.civics.len().hash(&mut hasher);
+        seat.government.hash(&mut hasher);
+        for policy in &seat.policies {
+            policy.id().hash(&mut hasher);
+        }
+        for city in g.cities.values() {
+            (city.id, city.owner, city.pos).hash(&mut hasher);
+        }
+        hasher.finish()
+    }
+
+    /// The seat's kept prefilter scores, emptied first if anything they read
+    /// has moved since they were taken (`settlement_prefilter_key`).
+    ///
+    /// ★★ A global site scan scores every candidate plot on the map before it
+    /// cuts to a shortlist, and a seat runs one for every Settler step and
+    /// every frame that asks. Most of those scans repeat the last one's board:
+    /// a probe of one deployment-genome game counted 1,276 of 1,642 global
+    /// scans repeating a scan of the same seat in the same turn, 1,192 of
+    /// them over the same tiles, cities, explored ground and research.
+    pub(super) fn settlement_prefilter_memo(
+        &self,
+        g: &Game,
+        pid: usize,
+    ) -> std::cell::RefMut<'_, SettlementPrefilterMemo> {
+        let key = (pid, Self::settlement_prefilter_key(g, pid));
+        let mut memo = self.settlement_prefilter.borrow_mut();
+        if memo.key != Some(key) {
+            memo.key = Some(key);
+            memo.scores.clear();
+        }
+        memo
+    }
+
+    /// `settlement_prefilter_score_with_water_science_wonder` at `pos`, from
+    /// `memo` when it holds one. `CIVVIS_SETTLE_PREFILTER_AUDIT` derives every
+    /// kept score again and panics on a difference.
+    pub(super) fn kept_settlement_prefilter_score(
+        &self,
+        g: &Game,
+        pid: usize,
+        pos: Pos,
+        memo: &mut SettlementPrefilterMemo,
+    ) -> f64 {
+        if let Some(&kept) = memo.scores.get(&pos) {
+            if settle_prefilter_audit() {
+                let derived =
+                    self.settlement_prefilter_score_with_water_science_wonder(g, pid, pos);
+                assert!(
+                    derived.to_bits() == kept.to_bits(),
+                    "settle prefilter kept {kept} at {pos:?} for seat {pid} on turn {}, \
+                     but the plot now derives {derived}",
+                    g.turn
+                );
+            }
+            return kept;
+        }
+        let score = self.settlement_prefilter_score_with_water_science_wonder(g, pid, pos);
+        memo.scores.insert(pos, score);
+        score
+    }
+
     fn settlement_atlas_key(g: &Game, pid: usize) -> u64 {
         let early = match Self::early_city_water_inputs(g, pid) {
             None => 0,
@@ -887,23 +966,19 @@ impl AdvancedAi {
     /// major already owns, priced per tile and capped. See
     /// `settlement_safety_penalty`.
     pub(super) fn foreign_border_pressure(&self, g: &Game, pid: usize, pos: Pos) -> f64 {
-        let owned = g
-            .wdisk(pos, FOREIGN_BORDER_RADIUS)
-            .into_iter()
-            .filter(|tile| {
-                g.map
-                    .get(*tile)
-                    .and_then(|t| t.owner_city)
-                    .and_then(|city| g.cities.get(&city))
-                    .map(|city| city.owner)
-                    .is_some_and(|owner| {
-                        owner != pid
-                            && g.players
-                                .get(owner)
-                                .is_some_and(|p| p.alive && !p.is_minor && !p.is_barbarian)
-                    })
-            })
-            .count();
+        let owned = g.map.disk_count(pos, FOREIGN_BORDER_RADIUS, |tile| {
+            g.map
+                .get(tile)
+                .and_then(|t| t.owner_city)
+                .and_then(|city| g.cities.get(&city))
+                .map(|city| city.owner)
+                .is_some_and(|owner| {
+                    owner != pid
+                        && g.players
+                            .get(owner)
+                            .is_some_and(|p| p.alive && !p.is_minor && !p.is_barbarian)
+                })
+        });
         (owned as f64 * FOREIGN_BORDER_TILE_PENALTY).min(FOREIGN_BORDER_PENALTY_CAP)
     }
 
@@ -1160,3 +1235,9 @@ impl SettlementAtlas {
 
 #[cfg(test)]
 mod atlas_keeping_tests;
+
+/// `CIVVIS_SETTLE_PREFILTER_AUDIT`: read once per process.
+fn settle_prefilter_audit() -> bool {
+    static AUDIT: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *AUDIT.get_or_init(|| std::env::var_os("CIVVIS_SETTLE_PREFILTER_AUDIT").is_some())
+}

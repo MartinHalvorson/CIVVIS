@@ -89,10 +89,13 @@ fn every_world_type_generates_a_playable_world_on_either_shape_and_climate() {
                         // A world's flat map is a cylinder: its east and west
                         // edges are the same edge. An arena's is a bounded
                         // rectangle with a wall on all four sides, which is
-                        // what stops a unit walking off the field.
+                        // what stops a unit walking off the field. Inland Sea
+                        // is the one world that is bounded too: the shipped
+                        // script turns the wrap off, so its sea is ringed by
+                        // land on every side.
                         assert_eq!(
                             world.topology,
-                            if spec.script.is_battlefield() {
+                            if spec.script.is_battlefield() || spec.script == MapScript::InlandSea {
                                 Topology::Rectangle
                             } else {
                                 Topology::Cylinder
@@ -269,6 +272,9 @@ fn every_world_type_starts_a_game_on_either_shape() {
                     Topology::Rectangle
                 } else if shape.is_globe() {
                     Topology::Globe(size.globe_frequency)
+                } else if spec.script == MapScript::InlandSea {
+                    // `InlandSea.lua` asks for a map that does not wrap.
+                    Topology::Rectangle
                 } else {
                     Topology::Cylinder
                 },
