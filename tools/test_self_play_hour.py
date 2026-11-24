@@ -209,6 +209,49 @@ class TheReading(unittest.TestCase):
             self.assertEqual(samples[0], {"civ6": True, "load": samples[0]["load"], "workers": 14, "running": 4, "cores": 3.9, "host_busy": 41.0, "battery": False})
             self.assertEqual(len(self_play_hour.finished(state, start, end)), 3)
 
+    def test_an_hour_the_tournament_was_held_through_runs_on_until_it_has_games(self):
+        # The scheduled hour of 2026-11-24 20:00Z: no worker ran at any
+        # sample and one game finished. One game is no reading of a game.
+        with tempfile.TemporaryDirectory() as scratch:
+            state = Path(scratch)
+            tournament = Tournament(state)
+            tournament.play(BATCH, workers_running=0, games_cores=0.0)
+            now = [0.0]
+
+            def watched(least_games: int, longest: float | None, finish_every: int) -> tuple[float, int, int]:
+                now[0] = 0.0
+                slept = [0]
+
+                def sleep(seconds: float) -> None:
+                    # Held: a game finishes only every `finish_every`th minute.
+                    slept[0] += 1
+                    if slept[0] % finish_every == 0:
+                        tournament.finish(BATCH, seats(1000 * finish_every + slept[0] + int(tournament.rows(BATCH).stat().st_size), 55.0))
+                    now[0] += seconds
+
+                with mock.patch.object(self_play_hour, "civ6_running", return_value=True):
+                    start, end, samples = self_play_hour.watch(state, 60.0, 60.0, least_games=least_games, longest=longest, clock=lambda: now[0], sleep=sleep)
+                return (end["at"] - start["at"]) / 60, len(self_play_hour.finished(state, start, end)), len(samples)
+
+            # Asked for nothing more: sixty minutes, whatever finished.
+            self.assertEqual(watched(0, 240.0, 30), (60.0, 2, 61))
+            # A game every half hour and five wanted: it ends at the look
+            # that finds the fifth, two and a half hours in.
+            self.assertEqual(watched(5, 240.0, 30), (150.0, 5, 151))
+            # It never runs past the longest it may, with what it has.
+            self.assertEqual(watched(20, 240.0, 30), (240.0, 8, 241))
+            # An hour that has its games ends on the hour.
+            self.assertEqual(watched(5, 240.0, 10), (60.0, 6, 61))
+            # A longest shorter than the hour does not cut the hour short.
+            self.assertEqual(watched(20, 30.0, 30), (60.0, 2, 61))
+
+    def test_the_reading_says_what_it_was_asked_for(self):
+        start = {"at": 0.0, "batch": BATCH, "offset": 0, "commit": COMMIT}
+        games = [{"secs": 50.0, "cpu_secs": 40.0, "turn": 100, "victory": ""}] * 20
+        ran_on = self_play_hour.reading(start, dict(start, at=143 * 60.0), games, [], asked=60.0)
+        self.assertEqual((ran_on["asked"], ran_on["minutes"], ran_on["games"], ran_on["games_an_hour"]), (60.0, 143.0, 20, 8.4))
+        self.assertNotIn("asked", self_play_hour.reading(start, dict(start, at=3600.0), games, []))
+
 
 def git(repo: Path, *args: str, stdin: bytes | None = None) -> str:
     done = subprocess.run(["git", "-C", str(repo), *args], capture_output=True, check=True, input=stdin, env={**os.environ, **IDENTITY})
@@ -329,9 +372,14 @@ class TheSchedule(unittest.TestCase):
     def test_the_job_runs_an_hour_with_its_reading_published_six_hours_apart(self):
         job = self_play_hour.agent(Path("/state"), self_play_hour.HOURS, 60.0, Path("/repo"))
         self.assertEqual(job["Label"], "com.civvis.self-play-hour")
+        # An hour the tournament was held through runs on to twenty games,
+        # and is out two hours before the next is due.
         self.assertEqual(job["ProgramArguments"], [
-            "/usr/bin/python3", "/repo/tools/self_play_hour.py", "run", "--state-dir", "/state", "--minutes", "60", "--record", "--repo", "/repo",
+            "/usr/bin/python3", "/repo/tools/self_play_hour.py", "run", "--state-dir", "/state", "--minutes", "60",
+            "--min-games", "20", "--max-minutes", "240", "--record", "--repo", "/repo",
         ])
+        self.assertEqual((self_play_hour.LEAST_GAMES, self_play_hour.LONGEST_MINUTES), (20, 240.0))
+        self.assertLess(self_play_hour.LONGEST_MINUTES, 6 * 60)
         hours = [slot["Hour"] for slot in job["StartCalendarInterval"]]
         self.assertEqual(hours, [2, 8, 14, 20])
         self.assertEqual({(b - a) % 24 for a, b in zip(hours, hours[1:] + hours[:1])}, {6})
@@ -341,6 +389,11 @@ class TheSchedule(unittest.TestCase):
             self.assertEqual(self_play_hour.main(parser_args), 0)
         self.assertTrue(ran.call_args[0][0].record)
         self.assertEqual(ran.call_args[0][0].minutes, 60.0)
+        self.assertEqual((ran.call_args[0][0].min_games, ran.call_args[0][0].max_minutes), (20, 240.0))
+        # By hand it watches exactly its minutes unless told otherwise.
+        with mock.patch.object(self_play_hour, "run", return_value=0) as ran:
+            self.assertEqual(self_play_hour.main(["run", "--state-dir", "/state", "--minutes", "3"]), 0)
+        self.assertEqual((ran.call_args[0][0].min_games, ran.call_args[0][0].max_minutes), (0, 240.0))
         # A machine's canonical fleet name is not always the one git is
         # configured with, so the job can be told it.
         named = self_play_hour.agent(Path("/state"), [8], 60.0, Path("/repo"), "mbp-m5-max-128")["ProgramArguments"]

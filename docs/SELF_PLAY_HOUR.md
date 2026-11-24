@@ -55,7 +55,8 @@ One JSON object on one line.
 | Key | What it is |
 | --- | --- |
 | `taken` | The moment the hour began, UTC. |
-| `minutes` | How long it ran by the wall clock. More than sixty if the machine slept. |
+| `minutes` | How long it ran by the wall clock. More than sixty if the machine slept, or if the hour ran on (below). |
+| `asked` | The minutes it was asked to watch. Readings from before 2026-11-25 have none. |
 | `games`, `games_an_hour` | The games finished, and that count scaled to an hour. |
 | `p` | A game's wall-clock seconds at the 10th, 50th and 90th percentile, nearest rank. They include time a worker was held by the governor, so they are long on a busy machine. |
 | `cpu_a_turn`, `cpu_a_game` | The middle game's processor seconds for one turn and for the whole game, by the game thread's own clock (`cpu_secs`). The machine's load does not stretch these. |
@@ -92,13 +93,39 @@ A publish that fails leaves the journal as it is. The next hour's publish
 sends both, and `self_play_hour.py publish --state-dir DIR` sends them at any
 time.
 
+## An hour the tournament was held through
+
+The scheduler's governor stops the tournament's workers while the machine is
+busy. It can stop all of them for an hour.
+
+The first scheduled hour did that. It was taken at 20:00Z on 2026-11-24: no
+worker was running at any sample, the load averaged 17.3, and one game
+finished. Its line on the ledger reads 36.3 processor seconds a game. The
+hour before it read 57.1 from 161 games. Nothing about the simulator had
+changed. One game is not a reading of a game.
+
+Two rules follow.
+
+- **A scheduled hour runs on until it has games.** An hour that ends with
+  fewer than twenty finished games (`--min-games`, `LEAST_GAMES`) keeps
+  watching until twenty have finished. It stops at four hours in all
+  (`--max-minutes`, `LONGEST_MINUTES`), two hours before the next is due.
+  `minutes` is then the whole time watched and `games_an_hour` the rate over
+  it. `run` by hand watches exactly its minutes unless told `--min-games`.
+- **The page takes no game time from an hour with fewer than five games.**
+  `beta/self_play_hours.py` calls such an hour `thin` (`MIN_GAMES`). It keeps
+  the hour, its count, its rate and its conditions, and leaves `p`,
+  `cpu_a_turn`, `cpu_a_game` and `turns` empty. The 20:00Z line stays on the
+  ledger as it was written and is read this way.
+
 ## Running it
 
 ```bash
 # One hour now, with its reading on the ledger:
 python3 tools/self_play_hour.py run --state-dir ~/civvis-runs/<state> --record
 
-# Every six hours, by launchd, at 02:00, 08:00, 14:00 and 20:00 local time:
+# Every six hours, by launchd, at 02:00, 08:00, 14:00 and 20:00 local time,
+# each hour running on to twenty games within four hours:
 python3 tools/self_play_hour.py install --state-dir ~/civvis-runs/<state> --host <fleet name>
 
 python3 tools/self_play_hour.py show        # the readings on the ledger
@@ -116,7 +143,10 @@ tool as it changes.
 
 The readings so far are hours taken beside the machine's other work. An hour
 in which self-play has the machine to itself would be a cleaner benchmark,
-and it would finish many times the games.
+and it would finish many times the games. Running an hour on until it has
+games (above) makes every reading say how fast a game is. It does not make
+`games_an_hour` a figure of the machine: that still follows how busy the
+machine was.
 
 That needs two things this tool does not do, and both are the project
 owner's decisions:

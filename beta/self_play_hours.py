@@ -19,6 +19,16 @@ number it should be, so that one odd line costs the page that figure and
 nothing else. The figures are the reading's own: `tools/self_play_hour.py`
 says what each is.
 
+An hour with fewer than `MIN_GAMES` finished games is `thin`. It is kept,
+with its count, its rate and the conditions it was taken in, because that
+the tournament was held through it is true and worth seeing. It gives no
+time of a game (`p`, `cpu_a_turn`, `cpu_a_game`, `turns`): the middle of
+one or two games is not a benchmark. The hour of 2026-11-24 20:00Z finished
+one game, in 36 processor seconds, where the hour before it read 57 from 161
+games, and nothing about the simulator had changed. The tool now runs such
+an hour on until it has games to read, so a thin hour is one the tournament
+was held through for hours on end.
+
 Like the computer control games' times (`beta/control_times.py`) nothing
 here is committed. The ledger moves with every hour taken, and each lane
 shows the hours as of its build.
@@ -40,6 +50,12 @@ HOURS_REF = "refs/remotes/origin/ledger:benchmarks/self_play_hours.jsonl"
 #: A run shorter than this is not an hour.
 MIN_MINUTES = 30
 
+#: An hour with fewer finished games than this gives no time of a game.
+MIN_GAMES = 5
+
+#: The figures that are the time of a game, or go with one.
+OF_A_GAME = ("p", "cpu_a_turn", "cpu_a_game", "turns")
+
 #: The hours the page is given, the newest ones: a hundred days of four a day.
 KEEP = 400
 
@@ -53,6 +69,7 @@ UTC = datetime.timezone.utc
 NUMBERS = {
     "games_an_hour": 0, "turns": 1, "workers": 0, "running": 0, "cores": 0,
     "host_busy": 0, "load": 0, "civ6": 0, "battery": 0, "machine_cores": 1,
+    "asked": 0,
 }
 POSITIVE = ("cpu_a_turn", "cpu_a_game")
 WORDS = ("build", "batch", "host", "machine")
@@ -110,6 +127,10 @@ def hour(row: dict) -> dict | None:
         out["games_an_hour"] = round(out["games"] * 60 / minutes, 1)
     for name in WORDS:
         out[name] = str(row[name]) if isinstance(row.get(name), str) and row[name] else None
+    out["thin"] = out["games"] < MIN_GAMES
+    if out["thin"]:
+        for name in OF_A_GAME:
+            out[name] = None
     return out
 
 
@@ -122,10 +143,11 @@ def record(rows: list[dict]) -> dict | None:
 
     `hours` are the hours, oldest first, the newest `KEEP` of them, and one
     per moment and machine: the first line of an hour stands. `day` is the
-    last twenty-four hours back from the newest: how many hours it holds,
-    their mean `games_an_hour`, the best of them, and the means of the
-    processor time a turn and of the workers running. `first` is the oldest
-    hour's day, so the page can say since when.
+    last twenty-four hours back from the newest: how many hours it holds
+    and how many of them were `thin`, their mean `games_an_hour`, the best
+    of them, and the means of the processor time a turn (of the hours that
+    give one) and of the workers running. `first` is the oldest hour's day,
+    so the page can say since when.
     """
     kept: dict[tuple[str, str], dict] = {}
     for row in rows:
@@ -140,9 +162,11 @@ def record(rows: list[dict]) -> dict | None:
     turn = [read["cpu_a_turn"] for read in lately if read["cpu_a_turn"]]
     return {
         "min_minutes": MIN_MINUTES,
+        "min_games": MIN_GAMES,
         "hours": hours,
         "day": {
             "hours": len(lately),
+            "thin": sum(1 for read in lately if read["thin"]),
             "from": lately[0]["taken"],
             "to": lately[-1]["taken"],
             "games": sum(read["games"] for read in lately),
