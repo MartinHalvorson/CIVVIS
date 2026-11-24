@@ -1144,7 +1144,7 @@ const PLAIN = {pitch: 1, mass: 1, ring: 0, bell: 0};
 // heard from where the seat's eye is (`hear`): from the saddle a capture
 // beside you is loud and on that side, and one behind you is behind you.
 class Sound {
-  constructor() { this.on = true; this.audio = null; this.near = 14; this.heard = []; }
+  constructor() { this.on = true; this.audio = null; this.near = 14; this.heard = []; this.panning = "HRTF"; }
   start() {
     if (this.audio || !this.on) return;
     const Audio = window.AudioContext || window.webkitAudioContext;
@@ -1215,7 +1215,7 @@ class Sound {
   // a player at the board is some way off all of them.
   place(at) {
     const audio = this.audio, panner = audio.createPanner();
-    Object.assign(panner, {panningModel: "HRTF", distanceModel: "inverse", refDistance: this.near, rolloffFactor: 1.3, maxDistance: 80});
+    Object.assign(panner, {panningModel: this.panning, distanceModel: "inverse", refDistance: this.near, rolloffFactor: 1.3, maxDistance: 80});
     if (panner.positionX) { panner.positionX.value = at.x; panner.positionY.value = at.y + 0.5; panner.positionZ.value = at.z; }
     else panner.setPosition(at.x, at.y + 0.5, at.z);
     panner.connect(this.out);
