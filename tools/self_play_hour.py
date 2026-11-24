@@ -30,8 +30,9 @@ one's, and both are read. A game is a seed, and its first row is the game.
 
 **The reading.** One JSON object:
 
-- `taken` (the moment the hour began, UTC) and `minutes` (how long it ran by
-  the wall clock, which is longer than asked if the machine slept);
+- `taken` (the moment the hour began, UTC), `minutes` (how long it ran by
+  the wall clock, which is longer than asked if the machine slept or the
+  hour ran on, below) and `asked` (the minutes it was asked to watch);
 - `games` and `games_an_hour`;
 - `p`: the wall-clock seconds of a game at the 10th, 50th and 90th
   percentile, nearest rank. A game's seconds include any time its worker was
@@ -48,6 +49,17 @@ one's, and both are read. A game is a seed, and its first row is the game.
   hour taken beside everything else the machine was doing;
 - `build` and `batch` (the tournament's source commit and batch), `host`,
   `machine` and `machine_cores`.
+
+**An hour the tournament was held through.** The scheduler's governor stops
+the tournament's workers while the machine is busy, and it can stop all of
+them for an hour: the scheduled hour of 2026-11-24 20:00Z finished one game,
+with no worker running at any sample and a load of 17. One game says nothing
+of how fast a game is played. So with `--min-games N` an hour that ends with
+fewer than N finished games runs on until N have finished, and no longer
+than `--max-minutes`, which keeps a reading from running into the next one.
+`minutes` is then the whole time watched and `games_an_hour` the rate over
+it. `install` schedules the hour with both (`LEAST_GAMES`,
+`LONGEST_MINUTES`); `run` by hand watches exactly its minutes unless told.
 
 **Where it goes.** Every reading is a line of `self-play-hours.jsonl` in the
 state directory, the journal. `--record` (and `publish`) add the journal's
@@ -101,6 +113,11 @@ LABEL = "com.civvis.self-play-hour"
 
 #: The local hours `install` schedules by default: six apart.
 HOURS = [2, 8, 14, 20]
+
+#: The games a scheduled hour waits for past its minutes, and how long it
+#: may run in all: under the six hours to the next one.
+LEAST_GAMES = 20
+LONGEST_MINUTES = 240.0
 
 #: Civilization VI's processes, by the exact names the scheduler's governor
 #: looks for.
@@ -259,7 +276,7 @@ def machine() -> dict:
     return {"machine": chip or platform.processor() or platform.machine(), "machine_cores": os.cpu_count()}
 
 
-def reading(start: dict, end: dict, games: list[dict], samples: list[dict], *, host: str = "", reserved: bool = False) -> dict:
+def reading(start: dict, end: dict, games: list[dict], samples: list[dict], *, host: str = "", reserved: bool = False, asked: float | None = None) -> dict:
     """The hour as one line of the ledger; see the module's own account."""
     minutes = max(0.0, end["at"] - start["at"]) / 60
     secs = sorted(game["secs"] for game in games)
@@ -271,6 +288,7 @@ def reading(start: dict, end: dict, games: list[dict], samples: list[dict], *, h
     return {
         "taken": utc(start["at"]),
         "minutes": round(minutes, 1),
+        **({"asked": round(asked, 1)} if asked is not None else {}),
         "games": len(games),
         "games_an_hour": round(len(games) * 60 / minutes, 1) if minutes > 0 else None,
         "p": [round(percentile(secs, p), 1) for p in PERCENTILES] if secs else None,
@@ -292,18 +310,29 @@ def reading(start: dict, end: dict, games: list[dict], samples: list[dict], *, h
     }
 
 
-def watch(state_dir: Path, minutes: float, every: float, *, clock=time.time, sleep=time.sleep) -> tuple[dict, dict, list[dict]]:
+def watch(
+    state_dir: Path, minutes: float, every: float, *, least_games: int = 0, longest: float | None = None, clock=time.time, sleep=time.sleep
+) -> tuple[dict, dict, list[dict]]:
     """Watch the tournament for `minutes`: the mark as it begins, the mark
     as it ends, and a sample every `every` seconds in between. The end is a
     moment of the wall clock, so a machine that slept through part of the
-    hour ends as soon as it wakes, and the reading says how long it was."""
+    hour ends as soon as it wakes, and the reading says how long it was.
+
+    With `least_games`, an hour that ends with fewer finished games runs on,
+    sampled as before, until that many have finished or `longest` minutes
+    have passed since it began (the module's account says why)."""
     start = mark(state_dir, clock())
     until = start["at"] + minutes * 60
+    last = start["at"] + max(minutes, longest or minutes) * 60
     samples = [sample(state_dir)]
     while True:
-        left = until - clock()
-        if left <= 0:
+        now = clock()
+        if now < until:
+            left = until - now
+        elif now >= last or len(finished(state_dir, start, mark(state_dir, now))) >= least_games:
             break
+        else:
+            left = last - now
         sleep(min(every, left))
         samples.append(sample(state_dir))
     return start, mark(state_dir, clock()), samples
@@ -402,8 +431,8 @@ def default_host(repo: Path) -> str:
 def run(args: argparse.Namespace) -> int:
     state_dir = Path(args.state_dir).expanduser()
     host = args.host or default_host(Path(args.repo))
-    start, end, samples = watch(state_dir, args.minutes, args.sample_seconds)
-    row = reading(start, end, finished(state_dir, start, end), samples, host=host)
+    start, end, samples = watch(state_dir, args.minutes, args.sample_seconds, least_games=args.min_games, longest=args.max_minutes)
+    row = reading(start, end, finished(state_dir, start, end), samples, host=host, asked=args.minutes)
     with (state_dir / JOURNAL).open("a", encoding="utf-8") as out:
         out.write(json.dumps(row, sort_keys=True, separators=(",", ":")) + "\n")
     print(json.dumps(row, sort_keys=True), flush=True)
@@ -438,15 +467,19 @@ def show(repo: Path) -> int:
     return 0
 
 
-def agent(state_dir: Path, hours: list[int], minutes: float, repo: Path, host: str = "") -> dict:
+def agent(
+    state_dir: Path, hours: list[int], minutes: float, repo: Path, host: str = "", *, least_games: int = LEAST_GAMES, longest: float = LONGEST_MINUTES
+) -> dict:
     """The launchd job: `run --record` at each of `hours`, local time, under
-    the machine's fleet name when one is given (`docs/MACHINES.md`)."""
+    the machine's fleet name when one is given (`docs/MACHINES.md`). An hour
+    that ends short of `least_games` runs on, to `longest` minutes at most."""
     log = str(Path.home() / "Library/Logs/civvis-self-play-hour.log")
     return {
         "Label": LABEL,
         "ProgramArguments": [
             "/usr/bin/python3", str(repo / "tools" / "self_play_hour.py"), "run",
-            "--state-dir", str(state_dir), "--minutes", f"{minutes:g}", "--record", "--repo", str(repo),
+            "--state-dir", str(state_dir), "--minutes", f"{minutes:g}", "--min-games", str(least_games), "--max-minutes", f"{max(minutes, longest):g}",
+            "--record", "--repo", str(repo),
             *(["--host", host] if host else []),
         ],
         "StartCalendarInterval": [{"Hour": hour, "Minute": 0} for hour in sorted(set(hours))],
@@ -470,12 +503,15 @@ def install(args: argparse.Namespace) -> int:
     domain = f"gui/{os.getuid()}"
     subprocess.run(["launchctl", "bootout", f"{domain}/{LABEL}"], capture_output=True, check=False)
     with target.open("wb") as out:
-        plistlib.dump(agent(state_dir, hours, args.minutes, Path(args.repo).resolve(), args.host), out)
+        plistlib.dump(agent(state_dir, hours, args.minutes, Path(args.repo).resolve(), args.host, least_games=args.min_games, longest=args.max_minutes), out)
     loaded = subprocess.run(["launchctl", "bootstrap", domain, str(target)], capture_output=True, check=False)
     if loaded.returncode != 0:
         print(f"launchctl bootstrap failed: {loaded.stderr.decode(errors='replace').strip()}", file=sys.stderr)
         return 1
-    print(f"{LABEL}: {args.minutes:g} minutes at {', '.join(f'{hour:02d}:00' for hour in sorted(set(hours)))} local time ({target})")
+    print(
+        f"{LABEL}: {args.minutes:g} minutes at {', '.join(f'{hour:02d}:00' for hour in sorted(set(hours)))} local time,"
+        f" on to {args.min_games} games within {max(args.minutes, args.max_minutes):g} minutes ({target})"
+    )
     return 0
 
 
@@ -500,6 +536,8 @@ def main(argv: list[str] | None = None) -> int:
     took = commands.add_parser("run", help="watch the tournament for an hour and write the reading")
     common(took)
     took.add_argument("--minutes", type=float, default=60.0)
+    took.add_argument("--min-games", type=int, default=0, help="run on past the minutes until this many games have finished")
+    took.add_argument("--max-minutes", type=float, default=LONGEST_MINUTES, help="the longest an hour may run on to")
     took.add_argument("--sample-seconds", type=float, default=30.0)
     took.add_argument("--record", action="store_true", help="publish the journal to the ledger branch")
     took.add_argument("--host", default="", help="this machine's fleet name (default: git config civvis.machine)")
@@ -509,18 +547,24 @@ def main(argv: list[str] | None = None) -> int:
     common(placed)
     placed.add_argument("--hours", default=",".join(str(hour) for hour in HOURS), help="local hours, comma separated")
     placed.add_argument("--minutes", type=float, default=60.0)
+    placed.add_argument("--min-games", type=int, default=LEAST_GAMES, help="the games an hour waits for past its minutes")
+    placed.add_argument("--max-minutes", type=float, default=LONGEST_MINUTES, help="the longest an hour may run on to")
     placed.add_argument("--host", default="", help="this machine's fleet name, for every reading the job takes")
     commands.add_parser("uninstall", help="remove the launchd job")
     args = parser.parse_args(argv)
     if args.command == "run":
         if not args.minutes > 0 or not args.sample_seconds > 0:
             parser.error("--minutes and --sample-seconds are positive")
+        if args.min_games < 0 or not args.max_minutes > 0:
+            parser.error("--min-games is not negative and --max-minutes is positive")
         return run(args)
     if args.command == "publish":
         return send(Path(args.state_dir).expanduser(), Path(args.repo))
     if args.command == "show":
         return show(Path(args.repo))
     if args.command == "install":
+        if not args.minutes > 0 or args.min_games < 0 or not args.max_minutes > 0:
+            parser.error("--minutes and --max-minutes are positive and --min-games is not negative")
         return install(args)
     return uninstall()
 

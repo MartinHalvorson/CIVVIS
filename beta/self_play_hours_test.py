@@ -43,13 +43,42 @@ class TheHours(unittest.TestCase):
         start = {"at": 1795546800.0, "batch": "20261123T202653Z-b999", "offset": 0, "commit": "6126321f33c9c391c2ae2e9668f9cdbcd607c061"}
         games = [{"secs": 60.0 + 10 * n, "cpu_secs": 40.0 + n, "turn": 180 + 2 * n, "victory": "science"} for n in range(10)]
         samples = [{"civ6": True, "load": 12.0, "workers": 14, "running": 4, "cores": 3.8, "host_busy": 40.0, "battery": False}]
-        written = json.loads(json.dumps(self_play_hour.reading(start, dict(start, at=start["at"] + 3600), games, samples, host="mbp-m5-max-128")))
+        written = json.loads(json.dumps(self_play_hour.reading(start, dict(start, at=start["at"] + 3600), games, samples, host="mbp-m5-max-128", asked=60.0)))
         taken = self_play_hours.hour(written)
+        # `thin` is the page's own word for an hour, said of ten games: no.
+        self.assertIs(taken.pop("thin"), False)
         self.assertEqual(taken, {key: written[key] for key in taken})
         # Nothing the tool says of an hour is dropped on the way to the page.
         self.assertEqual(set(written) - set(taken), set())
-        for name in ("games_an_hour", "p", "cpu_a_turn", "cpu_a_game", "turns", "workers", "running", "cores", "host_busy", "load", "civ6", "battery"):
+        for name in ("asked", "games_an_hour", "p", "cpu_a_turn", "cpu_a_game", "turns", "workers", "running", "cores", "host_busy", "load", "civ6", "battery"):
             self.assertIsNotNone(taken[name], name)
+
+    def test_an_hour_with_too_few_games_gives_no_time_of_a_game(self):
+        # The first scheduled hour, as it stands on the ledger: the governor
+        # held every worker for the hour (`running` 0.0, load 17.3) and one
+        # game finished. The hour before it read 57.1 processor seconds a
+        # game from 161 games; this one's single game took 36.3.
+        held = {
+            "batch": "20261123T202653Z-b999", "battery": 0.0, "build": "6126321f3", "civ6": 0.94, "cores": 0.0, "cpu_a_game": 36.3,
+            "cpu_a_turn": 0.2146, "games": 1, "games_an_hour": 1.0, "host": "mbp-m5-max-128", "host_busy": 66.5, "load": 17.3,
+            "machine": "Apple M5 Max", "machine_cores": 18, "minutes": 60.0, "p": [2694.0, 2694.0, 2694.0], "reserved": False,
+            "running": 0.0, "taken": "2026-11-24T20:00:17Z", "turns": 169, "workers": 14,
+        }
+        read = self_play_hours.hour(held)
+        self.assertIs(read["thin"], True)
+        for name in self_play_hours.OF_A_GAME:
+            self.assertIsNone(read[name], name)
+        self.assertEqual(self_play_hours.OF_A_GAME, ("p", "cpu_a_turn", "cpu_a_game", "turns"))
+        # What is true of the hour stays: it was held, and one game finished.
+        self.assertEqual((read["games"], read["games_an_hour"], read["running"], read["load"], read["civ6"]), (1, 1.0, 0.0, 17.3, 0.94))
+        # The line is drawn at MIN_GAMES.
+        self.assertEqual(self_play_hours.MIN_GAMES, 5)
+        four, five = self_play_hours.hour(line("2026-11-25T02:00:00Z", 4)), self_play_hours.hour(line("2026-11-25T08:00:00Z", 5))
+        self.assertEqual((four["thin"], four["cpu_a_game"], four["p"]), (True, None, None))
+        self.assertEqual((five["thin"], five["cpu_a_game"], five["p"]), (False, 40.5, [120.0, 600.0, 2400.0]))
+        # An hour from before `asked` was written has none.
+        self.assertIsNone(read["asked"])
+        self.assertEqual(self_play_hours.hour(line("2026-11-25T08:00:00Z", 25, minutes=143.0, asked=60.0))["asked"], 60.0)
 
     def test_a_trial_run_is_not_an_hour(self):
         self.assertIsNone(self_play_hours.hour(line("2026-11-24T15:50:00Z", minutes=3.0)))
@@ -95,11 +124,13 @@ class TheRecord(unittest.TestCase):
         self.assertEqual([read["taken"] for read in record["hours"]], [
             "2026-11-23T14:00:00Z", "2026-11-23T20:00:00Z", "2026-11-24T08:00:00Z", "2026-11-24T14:00:00Z", "2026-11-24T20:00:00Z",
         ])
+        # The hour in which nothing finished is thin: counted, and no part
+        # of the processor time a turn.
         self.assertEqual(record["day"], {
-            "hours": 3, "from": "2026-11-24T08:00:00Z", "to": "2026-11-24T20:00:00Z", "games": 100,
+            "hours": 3, "thin": 1, "from": "2026-11-24T08:00:00Z", "to": "2026-11-24T20:00:00Z", "games": 100,
             "games_an_hour": 33.3, "best": 80.0, "cpu_a_turn": 0.22, "running": 2.0,
         })
-        self.assertEqual((record["first"], record["min_minutes"]), ("2026-11-23", 30))
+        self.assertEqual((record["first"], record["min_minutes"], record["min_games"]), ("2026-11-23", 30, 5))
         self.assertEqual(json.loads(json.dumps(record)), record)
 
     def test_an_hour_stands_once_per_machine_and_only_the_newest_are_kept(self):
