@@ -9045,7 +9045,7 @@ fn browser_names_a_live_games_level_on_the_turn_plate() {
         "return {level: spec.order + 1, of: Object.keys(ladder).length, name: spec.name || titleCase(id)};",
         "const liveLevel = livePause.available ? difficultyLevel(state.difficulty) : null;",
         "const setupLine = [mapRowValue, liveLevel && `Lv ${liveLevel.level}`, speedName]\n    .filter(Boolean).join(\" · \");",
-        "`<div class=\"turn-setting turn-setup-line\" title=\"${escapeAttr(setupTitle)}\">` +\n    `<b>${escapeAttr(setupLine)}</b></div>` +",
+        "`<div class=\"turn-setting turn-setup-line\" title=\"${escapeAttr(setupTitle)}\"><b>${escapeAttr(setupLine)}</b></div>` +",
         "#playerhud.turn-plate-wide .turn-setup-line { grid-column: 1 / -1; grid-row: 2; }",
         "if (livePause.available !== wasAvailable && state) drawPlayerHud();",
     ] {

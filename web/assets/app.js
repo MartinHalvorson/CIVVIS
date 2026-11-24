@@ -3526,11 +3526,8 @@ const RESPONSIVE_TEXT_RULES = [
   // "Mode: Firaxis Civ VI Testing" needs 126px at 8.5px and the narrowest
   // plate has 124, so the floor is 8: smaller type, not a clipped letter.
   {selector:"#playerhud .turn-settings", min:8, max:12, slack:4},
-  // Max Speed sits alone above the age, so it is fitted on its own.
+  // Max Speed and the setup line under it are fitted apart: as a pair, the menu's width shrank both.
   {selector:"#playerhud .turn-pace-line", min:8.5, max:12, slack:4},
-  // So does the setup line under it, and on its own it keeps its full size:
-  // fitted with Max Speed, whose menu is wide, it came out smaller than the
-  // settings block it was moved up out of.
   {selector:"#playerhud .turn-setup-line", min:8, max:12, slack:4},
   {selector:"#victoryhud .hud-section-heading > span", min:8.5, max:12, parentWidth:true},
   // "CIVVIS Arena Stats" is fitted at most widths, where a shorter heading
@@ -27900,14 +27897,10 @@ function hudTurnPlate() {
   const frameRow = (label, [value, title]) => `<div class="turn-setting" title="${escapeAttr(title)}">` +
     `<span>${label}</span><b>${escapeAttr(value)}</b></div>`;
   // The stopwatch is the plate's own top section, above the age (operator
-  // 2026-10-14: "live time can be a very top section above the age"). Max
-  // Speed sits directly under it, still above the age (operator 2026-11-09).
-  // Both spent 2026-11-15 under the turn counter and the operator moved them
-  // "back above age and turn counter like before"; Mode and POV stay below.
-  // The map, level and speed are game settings like Max Speed, so they stand
-  // directly under it (operator 2026-11-24: "move 6p continents lv 8 online
-  // in turn box up to below max speed … these are game settings and so
-  // should be more highly visible").
+  // 2026-10-14). Max Speed sits directly under it (2026-11-09, restored after
+  // a 2026-11-15 detour under the counter), then the map, level and speed,
+  // game settings too (2026-11-24: "should be more highly visible"). Mode and
+  // POV stay below the turn counter.
   return `<section class="victory-turn${liveTimeText !== null ? " has-live-time" : ""}" ` +
     `title="${escapeAttr(context)}" aria-label="${escapeAttr(plateLabel)}">` +
     hudFoldButton("turnplate", "turn box", "turn-plate-fold") +
@@ -27917,8 +27910,7 @@ function hudTurnPlate() {
         `<b data-live-time data-hundredths="${liveTime.hundredths}">${liveTimeText}</b></div>`
       : ``) +
     `<div class="turn-setting turn-pace-line"><span>Max Speed:</span>${watchPaceValue}</div>` +
-    `<div class="turn-setting turn-setup-line" title="${escapeAttr(setupTitle)}">` +
-    `<b>${escapeAttr(setupLine)}</b></div>` +
+    `<div class="turn-setting turn-setup-line" title="${escapeAttr(setupTitle)}"><b>${escapeAttr(setupLine)}</b></div>` +
     `<span class="turn-era">${ageLabel}</span>` +
     `<div class="${turnCountClasses}"><span class="turn-label">Turn</span>` +
     `<div class="turn-progress"><strong>${reportedTurn()}</strong>` +
