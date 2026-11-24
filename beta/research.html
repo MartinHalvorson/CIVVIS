@@ -307,6 +307,10 @@
   .res-kind { margin-top: 12px; }
   .res-kind-title { margin: 0; color: #fff; font-size: 14px; font-weight: 700; }
   .res-kind-title small { margin-left: 8px; color: var(--muted); font-size: 12.5px; font-weight: 500; font-variant-numeric: tabular-nums; }
+  /* Self-play's games, the thousands its charts are drawn from, highlighted
+     after its title (operator 2026-11-24: "hightlight the civvis self play
+     game count in the chart. 13k is a very solid number"). */
+  .res-kind-title .res-big-count { display: inline-block; margin-right: 2px; padding: 1px 9px; border-radius: 5px; background: var(--action-bg); color: #fff; font-size: 20px; font-weight: 800; line-height: 1.3; vertical-align: -2px; }
   .res-plot { position: relative; min-height: 40px; margin-top: 6px; }
   .res-plot svg { display: block; overflow: visible; }
   .res-plot .is-none { margin: 10px 0; color: var(--faint); font-size: 12.5px; }
@@ -388,6 +392,14 @@
   @media (max-width: 859px) { .res-bench-pair { grid-template-columns: minmax(0, 1fr); } }
   .res-bench-title { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 12px; margin: 0 0 8px; color: #fff; font-size: 15px; font-weight: 700; line-height: 1.3; }
   .res-bench-title small { color: var(--muted); font-size: 12px; font-weight: 400; font-variant-numeric: tabular-nums; }
+  /* What a cell is measured against, over both tables in big type: in a
+     6-player game an even player wins one game in six (operator
+     2026-11-24: "add a big note ... expected win rate for a 6P game is 1/6
+     or 16.7%"). */
+  .res-bench-par { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; margin: 0 0 14px; padding: 12px 16px; border: 1px solid var(--gold); border-left-width: 6px; border-radius: 6px; background: rgba(215, 182, 106, 0.1); }
+  .res-bench-par b { color: var(--gold); font-size: 26px; font-weight: 800; line-height: 1.2; font-variant-numeric: tabular-nums; }
+  .res-bench-par span { color: var(--text); font-size: 13.5px; line-height: 1.4; }
+  @media (max-width: 479px) { .res-bench-par b { font-size: 21px; } }
   .res-rates th { vertical-align: bottom; }
   .res-rates th.is-group { padding: 0 2px 3px 0; border-bottom: 1px solid var(--border); font-size: 12px; text-align: center; }
   .res-rates td { padding: 7px 12px 7px 0; font-size: 14.5px; }
@@ -555,6 +567,10 @@
             <p class="res-counted" id="res-counted-tourney">Tournament games against Civilization VI&#8217;s own AI.</p>
           </div>
         </header>
+        <!-- The yardstick for every cell under it, in big type (operator
+             2026-11-24: "add a big note to firaxis civ 6 benchmark that
+             expected win rate for a 6P game is 1/6 or 16.7%"). -->
+        <p class="res-bench-par" id="res-bench-par"><b>Expected win rate in a 6P game: 1/6 = 16.7%</b> <span>Six players and one winner: a player no better than the field wins one game in six. A rate above 16.7% beats the Firaxis AI.</span></p>
         <div class="res-bench-pair">
           <div class="res-section" id="res-bench-on">
             <h3 class="res-bench-title" id="res-title-rates-on">Diplomatic victory allowed <small id="res-rates-count-on"></small></h3>
@@ -934,9 +950,16 @@
       // two charts that split its games by winner have nothing to split.
       box.hidden = !s && chart.kind === "ai" && chart.side !== "all";
       box.querySelector("[data-title]").textContent = worded(chart.head);
-      box.querySelector("[data-count]").textContent = !s ? ""
+      const tally = box.querySelector("[data-count]");
+      tally.textContent = !s ? ""
         : chart.side === "all" ? fmt(s.w.games) + (s.w.games === 1 ? " game · " : " games · ") + days(s.w)
         : fmt(s.games) + " of " + fmt(s.w.games) + (s.w.games === 1 ? " game · " : " games · ") + pct(s.games / s.w.games);
+      // Self-play's count of games stands out in big white type, its days
+      // after it as before (operator 2026-11-24: "hightlight the civvis self
+      // play game count in the chart. 13k is a very solid number").
+      if (s && chart.kind === "self_play") {
+        tally.replaceChildren(el("b", "res-big-count", fmt(s.w.games) + (s.w.games === 1 ? " game" : " games")), " · " + days(s.w));
+      }
       // A level that has games has them in every window, since a window
       // counts back from the level's own newest game: none here is none yet.
       if (!s) { plot.append(el("p", "is-none", chart.kind === "ai" ? worded("No games against the {level} AI yet.") : "No games of this kind in the window.")); return; }
