@@ -864,12 +864,34 @@ class World {
     this.dust(to, 0.5);
   }
 
+  // A knight gathers itself before it leaps: it sinks, tipping back onto its
+  // haunches, and the leap springs out of that.
+  async gather(piece, heading) {
+    if (piece.userData.kind !== "n") return 0;
+    piece.userData.gathers = (piece.userData.gathers || 0) + 1;
+    // Tipped back as far as the leap's own rearing begins (`rear`), so the
+    // one runs into the other.
+    await tween(0.17, t => { piece.position.y = -GATHER * Math.sin(t * Math.PI / 2); this.lean(piece, heading, -0.24 * t); }, ease.out);
+    return GATHER;
+  }
+  // And it gives as it lands, and comes back up.
+  async land(piece, heading) {
+    if (piece.userData.kind !== "n") return;
+    piece.userData.landings = (piece.userData.landings || 0) + 1;
+    const at = piece.position.y;
+    // From nose down, as the leap ends (`rear`), to level, with a nod in it.
+    await tween(0.24, t => { piece.position.y = at - GATHER * 0.9 * Math.sin(t * Math.PI); this.lean(piece, heading, 0.24 * (1 - t) + 0.06 * Math.sin(t * Math.PI)); }, ease.line);
+    piece.position.y = at;
+  }
+
   async leap(piece, to, high, hooks) {
     const from = piece.position.clone(), far = from.distanceTo(to), heading = to.clone().sub(from).normalize();
+    const low = await this.gather(piece, heading);
     hooks.sound("lift", 0.6, from, piece.userData.kind);
+    if (low) hooks.surge(piece);
     await tween(0.42 + far * 0.07, t => {
       piece.position.lerpVectors(from, to, t);
-      piece.position.y = Math.sin(t * Math.PI) * high;
+      piece.position.y = -low * (1 - t) + Math.sin(t * Math.PI) * high;
       this.rear(piece, heading, t);
     });
     piece.position.copy(to);
@@ -884,6 +906,7 @@ class World {
       this.dust(nose, 0.3, true);
       hooks.sound("snort", 1, nose, "n");
     }
+    await this.land(piece, heading);
     await this.settle(piece);
   }
 
@@ -895,10 +918,12 @@ class World {
     const way = prey.clone().sub(from), far = way.length(), heading = way.clone().normalize();
     const near = prey.clone().addScaledVector(heading, -0.82);
     if (kind === "n") {
+      const low = await this.gather(mover, heading);
       hooks.sound("lift", 0.7, from, kind);
+      hooks.surge(mover);
       await tween(0.5 + far * 0.06, t => {
         mover.position.lerpVectors(from, prey, t);
-        mover.position.y = Math.sin(t * Math.PI) * 2.1;
+        mover.position.y = -low * (1 - t) + Math.sin(t * Math.PI) * 2.1;
         this.rear(mover, heading, t);
       }, ease.in);
       this.shatter(victim, heading, hooks, 1.1);
@@ -1559,6 +1584,8 @@ const AHEAD = new THREE.Vector3(1.6, 1.02, 0.5);
 // Where a rider stands on any other piece (`World.ride`), in its own frame;
 // their eye is a little above it.
 const RIDER_TOPS = {p: 0.91, r: 0.92, b: 1.34, q: 1.47, k: 1.72};
+// How far a knight sinks to gather itself before a leap, and gives as it lands.
+const GATHER = 0.1;
 const FLOOR = -0.62, STANDING = FLOOR + 0.8;
 const FIELD = {table: 36, ride: 64, thrown: 70, aside: 58};
 class Seat {
@@ -1993,6 +2020,8 @@ const opponent = new Opponent(new URL("./vendor/stockfish-18-lite-single.js", im
 const voice = new Voice(heard, listening);
 const hooks = {sound: (name, strength, at, kind) => sound.play(name, strength, at, kind), look: point => seat.look(point), shake: much => seat.shake(much),
   moving: piece => { seat.watching = piece; },
+  // The piece a rider is on springs: the view surges wider for a moment.
+  surge: piece => { if (piece === world.ridden && seat.mode === "ride") seat.kick(0.06); },
   // A blow landing at the rider's side: the view jars and shakes, and the
   // world's time slows for a moment (`pace`), so that it is seen.
   impact: (at, force) => {
