@@ -312,6 +312,16 @@
      scaleup is to the left of m5 max. potential distributed RL fleet: up to
      1000+x"): each is so many times the M5 Max's stop, a ring in the line's
      own colour where a measured stop is a dot.
+     The chart has a title over it (operator, 2026-11-24: "lets title "Civ
+     Game Speedup - Synthetic Data Pipeline""). Left of CIVVIS self-play the
+     games play many at once, so a time there is amortized, the time from
+     one finished game to the next, and each stop there says so (operator,
+     the same day: "starting left of CIVVIS self-play (but not including
+     that), we should note that estimates are amortized games"). Past one
+     game a second a stop leads with its games per second and its time per
+     game is the second measure, in brackets under it ("at more than 1 game
+     / second, we should also provide the games per second as the standard
+     measure and (time per game amoritized as the second measure)").
      The figures are the page's
      `home-speedup` slot, written when the site is published
      (`beta/speedup_timeline.py`), and the section stays hidden on a page
@@ -322,6 +332,7 @@
      the page is at its full width, the list becomes the line. */
   .speed { margin: 0 0 26px; }
   .speed [hidden] { display: none; }
+  .speed-title { margin: 0 0 6px; color: #fff; font-size: 20px; font-weight: 700; line-height: 1.3; }
   .speed-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 14px; margin: 0 0 8px; }
   .speed-number { margin: 0; color: var(--gold); font-size: 34px; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
   .speed-claim { margin: 0; color: var(--text); font-size: 15px; }
@@ -334,15 +345,20 @@
   .speed-stop { padding: 7px 0; border-bottom: 1px solid var(--border); }
   .speed-dot { display: none; }
   .speed-label { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 0 14px; }
-  .speed-name { color: var(--text); font-size: 14px; font-weight: 600; }
+  .speed-name { grid-row: 1 / span 3; color: var(--text); font-size: 14px; font-weight: 600; }
   .speed-what { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .speed-read { grid-column: 2; grid-row: 1; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
   .speed-read b { color: #fff; font-size: 16px; font-weight: 700; }
   .speed-read i { margin-left: 6px; color: var(--gold); font-size: 14px; font-style: normal; font-weight: 700; }
-  .speed-goal { grid-column: 2; grid-row: 2; color: var(--muted); font-size: 11.5px; text-align: right; white-space: nowrap; }
+  .speed-goal, .speed-second { grid-column: 2; grid-row: 2; color: var(--muted); font-size: 11.5px; text-align: right; white-space: nowrap; }
+  /* An amortized stop's second measure stands right under its figures, and
+     its goal a row further down. */
+  .speed-second:not([hidden]) ~ .speed-goal { grid-row: 3; }
   .speed-stop.is-fastest .speed-name { color: #fff; }
-  /* Under the line: whose estimate the goals' cloud cost is. */
+  /* Under the line: what amortized means, and whose estimate the goals'
+     cloud cost is. */
   .speed-note { max-width: 860px; margin: 8px 0 0; color: var(--faint); font-size: 12px; line-height: 1.5; }
+  .speed-note + .speed-note { margin-top: 2px; }
   .speed-note a { color: var(--accent); text-decoration: none; white-space: nowrap; }
   .speed-note a:hover { text-decoration: underline; }
   /* A stop is its name and its figures at every width. Its sentence is
@@ -358,10 +374,15 @@
        stand in a short stretch of it. A stop whose words would meet its
        neighbour's on the same side (`is-far`) has them a row further out,
        at the end of a rule from its point, and the track is that much
-       taller on that side. */
+       taller on that side.
+
+       How tall the words are is the slot's doing: a name of one line or
+       three, a second measure, a goal. So the room over the line and under
+       it (`--over`, `--under`) and how far out a row out begins (`--out`)
+       are measured from the words once they are written in (`fit`, in the
+       script below), and what is written here is what a line of short
+       words takes. */
     .speed-track { --over: 70px; --under: 90px; position: relative; height: calc(var(--over) + var(--under)); }
-    .speed-track.is-tall-above { --over: 128px; }
-    .speed-track.is-tall-below { --under: 148px; }
     .speed-axis {
       display: block; position: absolute; left: 0; right: 0; top: var(--over); height: 2px;
       background: repeating-linear-gradient(to right, var(--border-strong) 0 6px, transparent 6px 10px);
@@ -386,16 +407,19 @@
       border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--bg);
     }
     .speed-stop.is-fastest .speed-dot { left: -7px; top: -6px; width: 14px; height: 14px; background: var(--gold); }
-    .speed-label { display: block; position: absolute; left: -75px; width: 150px; text-align: center; line-height: 1.3; }
+    /* A line of the words wider than their 150px stays centred on the
+       point: the words are a column, and a column centres what overflows
+       it where a block would start it at its left edge. */
+    .speed-label { display: flex; flex-direction: column; align-items: center; position: absolute; left: -75px; width: 150px; text-align: center; line-height: 1.3; }
     .speed-stop.is-above .speed-label { bottom: 11px; }
     .speed-stop.is-below .speed-label { top: 29px; }
-    .speed-stop.is-far.is-above .speed-label { bottom: 69px; }
-    .speed-stop.is-far.is-below .speed-label { top: 87px; }
+    .speed-stop.is-far.is-above .speed-label { bottom: var(--out, 69px); }
+    .speed-stop.is-far.is-below .speed-label { top: var(--out, 87px); }
     .speed-stop.is-far::before { content: ""; position: absolute; left: -0.5px; width: 1px; background: var(--border-strong); }
-    .speed-stop.is-far.is-above::before { bottom: 9px; height: 58px; }
-    .speed-stop.is-far.is-below::before { top: 9px; height: 76px; }
-    .speed-stop.is-end .speed-label { left: auto; right: -5px; text-align: right; }
-    .speed-stop.is-start .speed-label { left: -5px; text-align: left; }
+    .speed-stop.is-far.is-above::before { bottom: 9px; height: calc(var(--out, 69px) - 11px); }
+    .speed-stop.is-far.is-below::before { top: 9px; height: calc(var(--out, 87px) - 11px); }
+    .speed-stop.is-end .speed-label { left: auto; right: -5px; align-items: flex-end; text-align: right; }
+    .speed-stop.is-start .speed-label { left: -5px; align-items: flex-start; text-align: left; }
     /* A goal is a ring where the stops are dots: nothing has reached it.
        The largest is the line's left end. */
     .speed-finish .speed-dot { background: var(--bg); border: 2px solid var(--gold); box-shadow: none; }
@@ -410,11 +434,12 @@
       left: -20px; top: -6px; width: 0; height: 0; border: 0; border-radius: 0; background: none;
       border-top: 6px solid transparent; border-bottom: 6px solid transparent; border-right: 10px solid var(--accent);
     }
-    /* A name of two parts takes two lines on the line. */
+    /* A name of two parts takes two lines on the line, and one of three
+       parts three. */
     .speed-name span { display: block; }
     .speed-name { display: block; font-size: 13px; white-space: nowrap; }
     .speed-read { display: block; text-align: inherit; }
-    .speed-goal { display: block; text-align: inherit; }
+    .speed-goal, .speed-second { display: block; text-align: inherit; }
   }
 
   /* The page is four videos, two by two (operator, 2026-11-22): the
@@ -575,8 +600,29 @@
          (operator, 2026-11-22: "add to out speedup timeline: 10x
          theoretical scale up from local hardware ... hardware scaleup is to
          the left of m5 max. potential distributed RL fleet: up to 1000+x"),
-         each so many times the M5 Max's stop: the slot's `projected`. -->
-    <section class="speed" id="speed" aria-label="How many times faster than a person a game is played" hidden>
+         each so many times the M5 Max's stop: the slot's `projected`. The
+         first is named in the operator's words of 2026-11-24 ("lets change
+         hardware scale-up to "Reasonable Local Hardware Scale-up
+         Theoretical"), which is why the small line under it no longer
+         says theoretical. Before them stand two guesses of his from the
+         same day ("somewhere to the left of CIVVIS self-play, through down
+         Civ 6 Computationl Irreducability - ??? not sure where this is.
+         Maybe just guess a 10x improvement? Maybe through down a "M5 Max,
+         Theoretical Max Civ 6 Throughput" somewhere like 10x to the left
+         of Civ 6 Computational Irr..."): one game with nothing left in it
+         to take out, ten times CIVVIS self-play, and the most one M5 Max
+         could then finish, ten times that. And the control stop is named
+         as he then named it ("lets also call Firaxis computer Control
+         inside CIVVIS->Firaxis computer control"), the arrow drawn as one.
+
+         The title is his too, that day: "lets title "Civ Game Speedup -
+         Synthetic Data Pipeline"". And a stop whose games play many at
+         once has a second measure in brackets under its figures, which
+         says its time is amortized: the slot's `amortized`, with its games
+         per second (`rate`), which it leads with past one game a second
+         (`lead`). -->
+    <section class="speed" id="speed" aria-labelledby="speed-title" hidden>
+      <h2 class="speed-title" id="speed-title">Civ Game Speedup - Synthetic Data Pipeline</h2>
       <div class="speed-head">
         <p class="speed-number" data-speed="speedup"></p>
         <p class="speed-claim">faster than a game played by hand <span data-speed="was" hidden></span></p>
@@ -597,7 +643,7 @@
           <li class="speed-stop" data-stop="control">
             <span class="speed-dot" aria-hidden="true"></span>
             <span class="speed-label">
-              <b class="speed-name">Firaxis computer control</b>
+              <b class="speed-name">CIVVIS &#8594; Firaxis <span>computer control</span></b>
               <small class="speed-what">Civilization VI itself, Firaxis&#8217;s game, with CIVVIS at the controls of one seat.</small>
               <span class="speed-read"><b data-speed="time"></b> <i data-speed="times"></i></span>
               <small class="speed-goal" data-speed="goal" hidden></small>
@@ -628,16 +674,37 @@
               <b class="speed-name">Parallel games, <span>M5 Max, all 18 cores</span></b>
               <small class="speed-what">CIVVIS self-play on every core of one M5 Max at once: the time from one finished game to the next.</small>
               <span class="speed-read"><b data-speed="time"></b> <i data-speed="times"></i></span>
+              <small class="speed-second" data-speed="second" hidden></small>
               <small class="speed-goal" data-speed="goal" hidden></small>
+            </span>
+          </li>
+          <li class="speed-stop speed-ahead" data-ahead="irreducible">
+            <span class="speed-dot" aria-hidden="true"></span>
+            <span class="speed-label">
+              <b class="speed-name">Civ 6 Computational <span>Irreducibility</span></b>
+              <small class="speed-what">One game on one core with nothing left in it that the game does not need. A guess: nobody knows where this is.</small>
+              <span class="speed-read"><b data-speed="time"></b> <i data-speed="times"></i></span>
+              <small class="speed-goal">a guess, <span data-speed="by"></span> self-play</small>
+            </span>
+          </li>
+          <li class="speed-stop speed-ahead" data-ahead="m5_max">
+            <span class="speed-dot" aria-hidden="true"></span>
+            <span class="speed-label">
+              <b class="speed-name">M5 Max, Theoretical Max <span>Civ 6 Throughput</span></b>
+              <small class="speed-what">The most games one M5 Max could finish: the irreducible game on every core at once. A guess on a guess.</small>
+              <span class="speed-read"><b data-speed="time"></b> <i data-speed="times"></i></span>
+              <small class="speed-second" data-speed="second" hidden></small>
+              <small class="speed-goal">a guess, <span data-speed="by"></span> irreducibility</small>
             </span>
           </li>
           <li class="speed-stop speed-ahead" data-ahead="scale_up">
             <span class="speed-dot" aria-hidden="true"></span>
             <span class="speed-label">
-              <b class="speed-name">Hardware scale-up</b>
-              <small class="speed-what">Larger hardware of our own than the one M5 Max. A calculation: nothing has run on it.</small>
+              <b class="speed-name">Reasonable Local <span>Hardware Scale-up</span> <span>Theoretical</span></b>
+              <small class="speed-what">Hardware of our own, scaled up within reason past the one M5 Max. Theoretical: a calculation, nothing has run on it.</small>
               <span class="speed-read"><b data-speed="time"></b> <i data-speed="times"></i></span>
-              <small class="speed-goal">theoretical, <span data-speed="by"></span> the M5 Max</small>
+              <small class="speed-second" data-speed="second" hidden></small>
+              <small class="speed-goal"><span data-speed="by"></span> the M5 Max</small>
             </span>
           </li>
           <li class="speed-stop speed-ahead" data-ahead="fleet">
@@ -646,6 +713,7 @@
               <b class="speed-name">Distributed RL fleet</b>
               <small class="speed-what">Many machines playing self-play at once for reinforcement learning. A potential: no such fleet exists.</small>
               <span class="speed-read"><b data-speed="time"></b> <i data-speed="times"></i></span>
+              <small class="speed-second" data-speed="second" hidden></small>
               <small class="speed-goal">potential, up to <span data-speed="by"></span></small>
             </span>
           </li>
@@ -655,11 +723,13 @@
               <b class="speed-name">Theoretical</b>
               <small class="speed-what">A million games in the time a person plays one.</small>
               <span class="speed-read"><b data-speed="time"></b> <i data-speed="times"></i></span>
+              <small class="speed-second" data-speed="second" hidden></small>
               <small class="speed-goal" data-speed="cost" hidden></small>
             </span>
           </li>
         </ol>
       </div>
+      <p class="speed-note" id="speed-amortized" hidden>Amortized: many games play at once, and the time is from one finished game to the next.</p>
       <p class="speed-note" id="speed-note" hidden>
         Cloud cost: a best estimate by <span data-speed="cloud-by"></span>, not a quote.
         <a href="../charts/civvis-performance/#perf-cloud">How it is worked out</a>
@@ -736,6 +806,15 @@
   // a stop past what was measured, with how many times a measured stop it
   // is. A stop or a goal the slot does not name is not shown, and with no
   // slot the section stays hidden.
+  //
+  // Where the games play many at once a time is amortized (the slot's
+  // `amortized`): the time from one finished game to the next. Such a stop
+  // has a second measure in brackets under its figures. Past one game a
+  // second it leads with its games per second and the second measure is its
+  // time per game; under that it leads with its time and the second measure
+  // is its games per second (operator, 2026-11-24: "at more than 1 game /
+  // second, we should also provide the games per second as the standard
+  // measure and (time per game amoritized as the second measure)").
   (() => {
     let data = null;
     try { data = JSON.parse(document.getElementById("home-speedup").textContent); } catch (_) {}
@@ -747,6 +826,18 @@
       place.textContent = text || "";
       place.hidden = !text;
     };
+    // A stop's figures: the measure it leads with, its multiplier, and for
+    // an amortized one its second measure.
+    const AMORTIZED = "Amortized: many games play at once, and the time is from one finished game to the next.";
+    let amortized = false;
+    const read = (entry, row) => {
+      const fast = row.amortized && row.lead === "rate";
+      put(entry, "time", fast ? row.rate : row.time);
+      put(entry, "times", row.times);
+      put(entry, "second", row.amortized ? "(" + (fast ? row.time + " a game" : row.rate) + ", amortized)" : "");
+      amortized = amortized || !!row.amortized;
+      return row.amortized ? AMORTIZED : "";
+    };
     const named = new Map(data.stops.map((stop) => [stop.key, stop]));
     let shown = 0;
     for (const entry of section.querySelectorAll("[data-stop]")) {
@@ -754,8 +845,7 @@
       entry.hidden = !stop;
       if (!stop) continue;
       shown += 1;
-      put(entry, "time", stop.time);
-      put(entry, "times", stop.times);
+      const shared = read(entry, stop);
       put(entry, "goal", stop.goal);
       // A reading worked out from other measurements says so.
       put(entry, "worked", stop.worked ? "worked out, not yet timed" : "");
@@ -770,37 +860,35 @@
       entry.classList.toggle("is-fastest", stop.key === data.fastest);
       // Held over a stop: what it is, how its time was measured, and
       // where its multiplier stood at its first reading.
-      entry.title = [entry.querySelector(".speed-what").textContent, stop.from, stop.was && "It was " + stop.was + "."]
+      entry.title = [entry.querySelector(".speed-what").textContent, shared, stop.from, stop.was && "It was " + stop.was + "."]
         .filter(Boolean).join(" ");
     }
     if (!shown) return;
-    // The goals stand over the line, each at its own place, the largest at
-    // the line's left end.
+    // The goals stand each at its own place, the largest at the line's left
+    // end, on the side of the line the slot gives it.
     const aimed = new Map((Array.isArray(data.goals) ? data.goals : []).map((goal) => [goal.key, goal]));
     for (const entry of section.querySelectorAll("[data-goal]")) {
       const goal = aimed.get(entry.dataset.goal);
       entry.hidden = !goal;
       if (!goal) continue;
-      put(entry, "time", goal.time);
-      put(entry, "times", goal.times);
+      const shared = read(entry, goal);
       put(entry, "cost", goal.cost);
       entry.style.setProperty("--at", goal.at);
-      entry.classList.add("is-above");
+      entry.classList.add(goal.side === "below" ? "is-below" : "is-above");
       entry.classList.toggle("is-far", !!goal.far);
       entry.classList.toggle("is-start", goal.at > 0.92);
-      entry.title = [entry.querySelector(".speed-what").textContent, goal.cost && "Renting the rest of the way: " + goal.cost + ", an estimate."]
+      entry.title = [entry.querySelector(".speed-what").textContent, shared, goal.cost && "Renting the rest of the way: " + goal.cost + ", an estimate."]
         .filter(Boolean).join(" ");
     }
-    // The stops past what was measured stand under the line: so many times
-    // a measured stop, with what that comes to. Nothing has played at one,
-    // so none of them is the page's number.
+    // The stops past what was measured: so many times a measured stop, or
+    // another of their own, with what that comes to. Nothing has played at
+    // one, so none of them is the page's number.
     const ahead = new Map((Array.isArray(data.projected) ? data.projected : []).map((stop) => [stop.key, stop]));
     for (const entry of section.querySelectorAll("[data-ahead]")) {
       const stop = ahead.get(entry.dataset.ahead);
       entry.hidden = !stop;
       if (!stop) continue;
-      put(entry, "time", stop.time);
-      put(entry, "times", stop.times);
+      const shared = read(entry, stop);
       put(entry, "by", stop.by);
       entry.style.setProperty("--at", stop.at);
       entry.classList.add(stop.side === "above" ? "is-above" : "is-below");
@@ -808,8 +896,20 @@
       entry.classList.toggle("is-start", stop.at > 0.92);
       // Past the goal the line ends at: it stands at the end, as an arrow.
       entry.classList.toggle("is-past", !!stop.past);
-      entry.title = [entry.querySelector(".speed-what").textContent, stop.past && "It is past the end of this line.", stop.from].filter(Boolean).join(" ");
+      entry.title = [entry.querySelector(".speed-what").textContent, shared, stop.past && "It is past the end of this line.", stop.from].filter(Boolean).join(" ");
     }
+    // The narrow layout is a list, slowest first, and a stop nothing has
+    // played yet can be slower than one that was measured: the entries are
+    // put in the order of their multipliers, whatever kind each is. On the
+    // line an entry stands where its `--at` puts it, in any order.
+    const line = section.querySelector(".speed-line");
+    const pace = (entry) => {
+      const row = named.get(entry.dataset.stop) || ahead.get(entry.dataset.ahead) || aimed.get(entry.dataset.goal);
+      return row && Number.isFinite(row.multiplier) ? row.multiplier : Infinity;
+    };
+    for (const entry of [...line.children].sort((one, other) => pace(one) - pace(other))) line.append(entry);
+    // Under the line, once: what amortized means.
+    document.getElementById("speed-amortized").hidden = !amortized;
     // Whose estimate the cloud cost is. The machine and its price are on
     // CIVVIS Performance, where the note's link goes.
     const cloud = data.cloud && typeof data.cloud === "object" ? data.cloud : null;
@@ -817,11 +917,6 @@
       put(section, "cloud-by", cloud.by);
       document.getElementById("speed-note").hidden = false;
     }
-    // Words a row out from the line need the room for it on their side.
-    const track = section.querySelector(".speed-track");
-    const out = (side) => [...data.stops, ...ahead.values(), ...aimed.values()].some((entry) => entry.far && entry.side === side);
-    track.classList.toggle("is-tall-above", out("above"));
-    track.classList.toggle("is-tall-below", out("below"));
     put(section, "speedup", data.speedup);
     put(section, "was", data.was && "(was " + data.was + ")");
     const axis = section.querySelector(".speed-axis");
@@ -834,6 +929,39 @@
       axis.append(mark);
     }
     section.hidden = false;
+    // The room the words take on the line. A stop's words are as tall as
+    // what the slot gave it: a name of one line or three, its figures, a
+    // second measure, a goal. So each side of the line is made as tall as
+    // its words reach, and words a row out begin clear of the words next to
+    // the line that they would run into. It is measured from the page as it
+    // stands, whatever figures the slot brought, and again when the window
+    // changes; the narrow layout is a list and needs none of it.
+    const track = section.querySelector(".speed-track");
+    const wide = window.matchMedia("(min-width: 1120px)");
+    const fit = () => {
+      if (!wide.matches) return;
+      for (const [side, near, least, floor] of [["above", 11, 69, 16], ["below", 29, 87, 30]]) {
+        const span = (entry) => {
+          const label = entry.querySelector(".speed-label");
+          const lines = [...label.children].filter((line) => !line.hidden && !line.classList.contains("speed-what")).map((line) => line.getBoundingClientRect());
+          return { entry, left: Math.min(...lines.map((line) => line.left)), right: Math.max(...lines.map((line) => line.right)), tall: label.getBoundingClientRect().height };
+        };
+        const words = [...section.querySelectorAll(".speed-stop.is-" + side)].filter((entry) => !entry.hidden).map(span);
+        const next = words.filter((own) => !own.entry.classList.contains("is-far"));
+        let reach = Math.max(floor, ...next.map((own) => near + own.tall));
+        for (const own of words.filter((own) => own.entry.classList.contains("is-far"))) {
+          const met = next.filter((other) => other.left < own.right + 12 && own.left < other.right + 12);
+          const out = Math.ceil(Math.max(least, ...met.map((other) => near + other.tall + 10)));
+          own.entry.style.setProperty("--out", out + "px");
+          reach = Math.max(reach, out + own.tall);
+        }
+        track.style.setProperty(side === "above" ? "--over" : "--under", Math.ceil(reach + 6) + "px");
+      }
+    };
+    fit();
+    wide.addEventListener("change", fit);
+    window.addEventListener("resize", fit);
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(fit);
   })();
   </script>
   <script>
