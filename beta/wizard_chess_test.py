@@ -384,6 +384,12 @@ class Played(unittest.TestCase):
         turned = ev("(w => { w.world.moving = w.world.pieces.get(1); for (let at = 0; at < 12; at++) w.world.attend(0.1); "
                     "const yaw = w.world.ridden.userData.saddle.userData.ears[1].rotation.y; w.world.moving = null; return yaw; })(wizardChess)")
         self.assertGreater(turned, 0.8)
+        # The rider's own hands hold the reins, and grip while the knight moves.
+        gripped = ev("(w => { const arms = w.world.ridden.userData.saddle.userData.hands; w.world.moving = w.world.ridden; "
+                     "for (let at = 0; at < 10; at++) w.world.attend(0.1); const grip = arms.map(arm => arm.grip); "
+                     "w.world.moving = null; return [arms.length, Math.min(...grip)]; })(wizardChess)")
+        self.assertEqual(gripped[0], 2)
+        self.assertGreater(gripped[1], 0.9)
         # In the saddle the plates fold.
         self.assertTrue(ev("document.body.classList.contains('riding')"))
         # "ride to f3" is the knight's move, and the rider goes with it.

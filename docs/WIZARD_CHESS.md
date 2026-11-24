@@ -131,6 +131,14 @@ they look, and sit down again when they look ahead. From one seat
 to another the view travels; it does not cut. A rider does not see their own
 cloak.
 
+**The rider's own hands** (`World.arms`, `World.reach`). What a rider sees
+of themself: two gauntleted fists with gold cuffs and the forearms up to
+them from below the eye. On a knight they hold the reins, which end in them;
+standing on any other piece they are held out before the rider, braced, in
+the bottom corners of the view. They grip, drawn back and clenched, while
+the piece moves under the rider, and ease when it stands. The rider's cloak
+and hood are hidden from their own eye; their hands are not.
+
 **Any piece can be ridden** (`rideSquare`, `RIDER_TOPS`). A double click
 on one of the player's own pieces rides it, from either seat; anywhere else
 a double click puts the view back. The knight is ridden in its saddle (below);
@@ -298,13 +306,15 @@ sound where it happens (#5755); the knight ridden alive (#5757); peril felt
 hall (#5766); the pieces alive (#5768); the board hearing a command as it is
 given (#5771); the opponent deliberating (#5772); riding into the blow
 (#5774); each piece its own stone (#5775); the hall's own sound (#5776); the
-hall's light following the game (#5777); riding any piece (#5778).
+hall's light following the game (#5777); riding any piece (#5778); the
+rider's own hands (#5781).
 
 What is next, most felt first:
 
-- **A rider's hands.** From the saddle, the rider's own arms and gauntlets
-  in the lower corners of the view, holding the reins on a knight or a
-  battlement's edge on a rook, gripping when the piece leaps or strikes.
+- **A second rider: two players.** The other side commanded by a person at
+  the same laptop (taking turns) or on another (the same page over a
+  connection), each riding a piece of their own, each seeing the other's
+  rider on the board.
 - **Speed: measured, and there is room.** `wizardChess.frameCost(n)` times
   `n` frames of the world's work and drawing, each finished on the graphics
   card (a pixel read back), and names what drew them. On the shared Mac
