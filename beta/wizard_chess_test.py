@@ -262,14 +262,17 @@ class Played(unittest.TestCase):
         ev("wizardChess.ride(true)")
         self.assertEqual(ev("[wizardChess.seat.mode, wizardChess.world.ridden.userData.square, wizardChess.game.mount]"), ["ride", 6, 6])
         self.until("wizardChess.seat.blend === null", "the view reaches the saddle", seconds=20)
-        # The eye is on the knight: over g1, behind its ears, a rider's height up.
+        # The eye is on the knight: on g1, low on its neck and to its left
+        # (half a square toward the a-file), a pawn's height up.
         x, y, z = ev("wizardChess.seat.camera.position.toArray()")
-        self.assertAlmostEqual(x, 2.5, delta=0.1)
-        self.assertTrue(1.3 < y < 1.8 and 3.6 < z < 4.2, (x, y, z))
+        self.assertAlmostEqual(x, 2.0, delta=0.1)
+        self.assertTrue(1.1 < y < 1.4 and 3.6 < z < 4.2, (x, y, z))
+        # And what is heard is heard from there: full strength only close by.
+        self.assertEqual(ev("wizardChess.sound.near"), 2.2)
         # "ride to f3" is the knight's move, and the rider goes with it.
         self.assertTrue(ev("wizardChess.command('ride to f3')"))
         self.until("wizardChess.game.played.length >= 1 && wizardChess.world.ridden.userData.square === 21 && "
-                   "Math.abs(wizardChess.seat.camera.position.x - 1.5) < 0.1 && wizardChess.seat.camera.position.z < 2.2",
+                   "Math.abs(wizardChess.seat.camera.position.x - 1.0) < 0.1 && wizardChess.seat.camera.position.z < 2.2",
                    "the rider is carried to f3", seconds=30)
         self.assertEqual(ev("wizardChess.game.played[0].san"), "Nf3")
         # A knight on e5 that a pawn can take: the pawn's light turns red.
@@ -289,6 +292,7 @@ class Played(unittest.TestCase):
         # And back to the board.
         ev("wizardChess.ride(false)")
         self.assertEqual(ev("[wizardChess.seat.mode, wizardChess.world.ridden]"), ["table", None])
+        self.until("wizardChess.sound.near === 14", "the ear goes back to the board's side", seconds=5)
         self.assertEqual(self.dev.console, [], f"the page complained: {self.dev.console}")
 
 
