@@ -25,6 +25,7 @@ use std::time::Instant;
 use civvis::ai::{AdvancedAi, Ai};
 use civvis::game::{Action, Game, GameOptions};
 use civvis::setup::{MapScript, MapSize};
+use civvis::shared_sort::SharedSort;
 use serde_json::{Map, Value};
 
 pub fn command(args: Vec<String>) {
@@ -744,7 +745,7 @@ fn bench(args: &[String]) {
         }
         samples.push(t.elapsed().as_secs_f64() / n as f64);
     }
-    samples.sort_by(f64::total_cmp);
+    samples.sort_by_shared(f64::total_cmp);
     let clone_us = samples[4] * 1e6;
     // A clone is shallow: seats, units and the map are shared until written.
     // What a search branch really pays is the first write to each, which
@@ -760,7 +761,7 @@ fn bench(args: &[String]) {
                 t.elapsed().as_secs_f64() / n as f64 * 1e6
             })
             .collect();
-        xs.sort_by(f64::total_cmp);
+        xs.sort_by_shared(f64::total_cmp);
         xs[4] - clone_us
     };
     let seats = g.players.len();
