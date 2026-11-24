@@ -4,6 +4,7 @@ played, and how many times faster each is than a person playing it by hand.
 
     speedup_timeline.py <source_tree>            print the timeline as JSON
     speedup_timeline.py --worked <source_tree>   print the worked tables as JSON
+    speedup_timeline.py --history <source_tree>  print each stop over time as JSON
 
 Operator, 2026-11-22: "Above the 6 seconds video, lets have a timeline: right
 to left: 5 hrs for me to play a Civ 6 game, 10-15 minutes with CIVVIS computer
@@ -101,6 +102,10 @@ LEDGER = pathlib.Path("data/performance/speedup_timeline.json")
 #: The processors the Performance page lists the benchmarks across, with the
 #: website's two scores for each, in the source tree.
 PROCESSORS = pathlib.Path("data/performance/processors.json")
+
+#: The self-play tournament's finished batches, a snapshot in the source
+#: tree (`beta/performance_page.py --self-play` rebuilds it).
+SELF_PLAY = pathlib.Path("data/performance/self_play_times.json")
 
 #: The home page's slot for the timeline.
 SLOT = re.compile(r'(<script type="application/json" id="home-speedup">)(.*?)(</script>)', re.S)
@@ -233,6 +238,23 @@ def sides(places: list[float]) -> list[str]:
 ROOM = 150 / 1040
 
 
+#: A stop this near an end of the line has its words begin or end at its
+#: point, where the others' are centred on theirs (the home page's `is-end`
+#: under this share of the line and `is-start` past one less it).
+EDGE = 0.08
+
+
+def middle(place: float, room: float = ROOM) -> float:
+    """Where along the line a stop's words are centred, for a stop at this
+    place: on its point, or half their width inside it at either end of the
+    line, where they run inward from the point."""
+    if place < EDGE:
+        return place + room / 2
+    if place > 1 - EDGE:
+        return place - room / 2
+    return place
+
+
 def rows(places: list[float], chosen: list[str], room: float = ROOM) -> list[bool]:
     """Which stops' words stand a row out from the line (`True`), for stops
     at these places whose words are on these sides. Taken in order along the
@@ -240,13 +262,14 @@ def rows(places: list[float], chosen: list[str], room: float = ROOM) -> list[boo
     there on its side are `room` away, and otherwise in the row beyond it,
     at the end of a rule from the stop's point. A line that runs to a far
     goal holds the measured stops in a short stretch of itself, and this is
-    what keeps their words apart there."""
+    what keeps their words apart there. The distance is between the middles
+    of the words (`middle`), which at an end of the line is not the point."""
     last = {(side, out): -math.inf for side in ("above", "below") for out in (False, True)}
     far = [False] * len(places)
     for index in sorted(range(len(places)), key=lambda i: places[i]):
-        side = chosen[index]
-        far[index] = places[index] - last[(side, False)] < room
-        last[(side, far[index])] = places[index]
+        side, at = chosen[index], middle(places[index], room)
+        far[index] = at - last[(side, False)] < room
+        last[(side, far[index])] = at
     return far
 
 
@@ -287,10 +310,14 @@ def rented(source: pathlib.Path, ledger: dict, measured: list[tuple[dict, list[d
     The newest entry of the ledger's `cloud` names a machine to rent. One
     game on one of its cores is the one-core reading of the stop it plays
     (`of`), times the measured processor's single thread score, over its own
-    (`one_game`, as the processors' table works a processor out), and every
-    core is taken to play as fast as one, so the machine is its cores times
-    that (`times`, with the games it plays in a minute and an hour and what a
-    million of them cost). What is short of a goal is the goal less the
+    (`one_game`, as the processors' table works a processor out), and the
+    machine is its cores times that (`times`, with the games it plays in a
+    minute and an hour and what a million of them cost). An entry whose
+    `scaling` is `measured` does not take every core to play as fast as one:
+    it takes the share of that our own every-core run reached on the machine
+    it was played on (`scaling`, with `scaling_sum` the sum for it), because
+    that run is the only evidence there is of what busy cores deliver. An
+    entry without it takes the whole. What is short of a goal is the goal less the
     fastest stop's multiplier (`have`), and `rows` has for each goal the
     whole machines that makes (`machines`) and their price for an hour and
     for a year without a stop, at the list price and, where the entry has
@@ -308,7 +335,18 @@ def rented(source: pathlib.Path, ledger: dict, measured: list[tuple[dict, list[d
         single = sorted(own["scores"], key=lambda reading: reading["read"])[-1]["single_thread"]
         cores, price, spot = entry["cores"], entry["dollars_an_hour"], entry.get("spot_dollars_an_hour")
         seconds = one["seconds"] * single / entry["single_thread"]
-        each = cores * base / seconds
+        # The share of cores-times-one-core that busy cores deliver: the
+        # whole, or what the every-core run of the same game reached.
+        part, scaling = 1.0, None
+        if entry.get("scaling") == "measured":
+            run = next(taken[-1] for stop, taken in measured if "follows" in stop and stop.get("of") == entry["of"])
+            part = min(1.0, (one["seconds"] / run["seconds"]) / run["cores"])
+            scaling = {
+                "scaling": share(part),
+                "scaling_sum": f"{figure(60 / run['seconds'])} games a minute ÷ ({run['cores']} cores × 60 s ÷ {figure(one['seconds'])} s)",
+            }
+        a_second = part * cores / seconds
+        each = a_second * base
         fastest, reached = min(measured, key=lambda pair: pair[1][-1]["seconds"])
         have = base / reached[-1]["seconds"]
         rows = []
@@ -348,19 +386,21 @@ def rented(source: pathlib.Path, ledger: dict, measured: list[tuple[dict, list[d
             "one_game_sum": f"{figure(one['seconds'])} s × {figure(single)} ÷ {figure(entry['single_thread'])}",
             "multiplier": round(each, 2),
             "times": times(each),
-            "times_sum": f"{cores} cores × {figure(base)} s ÷ {figure(seconds)} s",
-            "a_minute": rate(cores * 60 / seconds),
-            "an_hour": rate(cores * 3600 / seconds),
-            "a_million": dollars(price * seconds / (cores * 3600) * 1000000),
+            "times_sum": f"{cores} cores × {figure(base)} s ÷ {figure(seconds)} s" + (f" × {figure(part)}" if scaling else ""),
+            "a_minute": rate(a_second * 60),
+            "an_hour": rate(a_second * 3600),
+            "a_million": dollars(price / (a_second * 3600) * 1000000),
             "a_year": dollars(price * HOURS_A_YEAR),
             "hours_a_year": f"{HOURS_A_YEAR:,}",
             "from": str(entry.get("from") or ""),
             "rows": rows,
         }
+        if scaling:
+            shown.update(scaling)
         if spot:
             shown.update(
                 spot=dollars(spot),
-                spot_a_million=dollars(spot * seconds / (cores * 3600) * 1000000),
+                spot_a_million=dollars(spot / (a_second * 3600) * 1000000),
                 spot_a_year=dollars(spot * HOURS_A_YEAR),
             )
         return shown
@@ -402,6 +442,10 @@ def projected(ledger: dict, measured: list[tuple[dict, list[dict]]], base: float
         }
         if estimate.get("from"):
             row["from"] = estimate["from"]
+        # Past the goal the line ends at: it stands at the line's end and
+        # the page says it runs on from there.
+        if multiplier > goal:
+            row["past"] = True
         rows.append(row)
     return rows
 
@@ -428,6 +472,9 @@ def timeline(source: pathlib.Path) -> dict | None:
         base = measured[0][1][-1]["seconds"]
         stops = []
         for stop, taken in measured:
+            # A stop kept for the Performance page's tables alone.
+            if stop.get("line") is False:
+                continue
             now, first = taken[-1], taken[0]
             multiplier = base / now["seconds"]
             row = {
@@ -441,6 +488,9 @@ def timeline(source: pathlib.Path) -> dict | None:
             }
             if now.get("from"):
                 row["from"] = now["from"]
+            # A reading worked out from other measurements, not timed itself.
+            if now.get("worked"):
+                row["worked"] = True
             if "goal_seconds" in stop:
                 row["goal"] = f"goal {clock(stop['goal_seconds'])}, {times(base / stop['goal_seconds'])}"
             if times(base / first["seconds"]) != row["times"]:
@@ -653,6 +703,8 @@ def worked(source: pathlib.Path) -> dict | None:
             }
             if now.get("from"):
                 row["from"] = now["from"]
+            if now.get("worked"):
+                row["worked"] = True
             if "goal_seconds" in stop:
                 row["goal"] = f"{clock(stop['goal_seconds'])}, {times(base / stop['goal_seconds'])}"
             if times(base / first["seconds"]) != row["times"]:
@@ -809,7 +861,133 @@ def worked(source: pathlib.Path) -> dict | None:
         return None
 
 
+def spoken(days: float) -> str:
+    """A length of time in days as the page words it: `2 days`, `6 weeks`."""
+    if days < 13.5:
+        whole = max(1, round(days))
+        return f"{whole} day" + ("" if whole == 1 else "s")
+    whole = round(days / 7)
+    return f"{whole} weeks"
+
+
+def pace(points: list[dict]) -> dict:
+    """How fast a run of readings has moved, from its first to its last
+    (`points` oldest first, each a day `taken` and the `seconds` of one
+    game). `readings` is how many there are. With two or more on different
+    days: the `days` between the first and the last, how many times faster
+    the last is than the first (`factor`, and `times` as it is worded; under
+    1 when it has slowed), `over` the span in words, and from a week's span
+    up `halves`, the days in which a game's time halves at that pace
+    (`doubles` when it has slowed). A pace within two parts in a hundred is
+    `steady`, and one that has slowed has `slower`, how many times slower."""
+    shown: dict = {"readings": len(points)}
+    if len(points) < 2:
+        return shown
+    first, last = points[0], points[-1]
+    days = (_day(last["taken"]) - _day(first["taken"])).days
+    if days <= 0 or first["seconds"] <= 0 or last["seconds"] <= 0:
+        return shown
+    factor = first["seconds"] / last["seconds"]
+    shown.update(days=days, over=spoken(days), factor=round(factor, 3), times=_fold(factor))
+    shown["first"], shown["last"] = clock(first["seconds"]), clock(last["seconds"])
+    # Within two parts in a hundred either way it has not moved; slower is
+    # worded by how many times slower.
+    if abs(math.log(factor)) < math.log(1.02):
+        shown["steady"] = True
+    elif factor < 1:
+        shown["slower"] = _fold(1 / factor)
+    if days >= 7 and abs(math.log(factor)) > 1e-9:
+        turn = days * math.log(2) / abs(math.log(factor))
+        shown["halves" if factor > 1 else "doubles"] = spoken(turn)
+    return shown
+
+
+def _fold(factor: float) -> str:
+    """How many times over, to two places and no trailing nought: `1.66x`,
+    `6.8x`, `2x`."""
+    return f"{factor:.2f}".rstrip("0").rstrip(".") + "x"
+
+
+def _day(stamp: str):
+    import datetime
+
+    return datetime.date.fromisoformat(stamp[:10])
+
+
+def history(source: pathlib.Path) -> dict | None:
+    """How each way of playing has moved over time, for the CIVVIS
+    Performance page's charts (operator, 2026-11-24: "in civvis performance,
+    we should have charts studying the improvements rates of each of these
+    over time"). `None` when the revision has no ledger or one that cannot
+    be read.
+
+    `rows` are the stops of the home page's line after the baseline, in its
+    order. A row has `lines`, each a run of dated points (`taken`, `seconds`,
+    and `time` as it is worded) with the `pace` it has kept (see `pace`):
+
+    - `readings`: the stop's own readings, every one of them. A stop that
+      follows a ledger of runs shows every run there, and its pace is kept
+      over the records among them, so a slower run is drawn and not counted
+      as a step back.
+    - `tournament`, on the stop whose game the self-play tournament plays:
+      the middle game of each finished batch, on the day the batch ended
+      (`data/performance/self_play_times.json`). It is the same game with
+      seven or more played at a time on a busy machine, so it reads slower
+      than a one-core benchmark and it reaches back much further.
+
+    `base` is the baseline's seconds, and `from` and `to` the first and last
+    day any line has a point on.
+    """
+    try:
+        ledger = json.loads((source / LEDGER).read_text(encoding="utf-8"))
+        base = sorted(ledger["stops"][0]["readings"], key=lambda reading: reading["taken"])[-1]["seconds"]
+        rows = []
+        for stop in ledger["stops"][1:]:
+            if stop.get("line") is False:
+                continue
+
+            def point(reading: dict) -> dict:
+                made = {"taken": reading["taken"][:10], "seconds": round(reading["seconds"], 3), "time": clock(reading["seconds"])}
+                if reading.get("worked"):
+                    made["worked"] = True
+                return made
+
+            followed = stop.get("follows")
+            if followed:
+                runs = json.loads((source / followed).read_text(encoding="utf-8"))["runs"]
+                every = [{"taken": run["taken"], **FOLLOWED[followed](run)} for run in sorted(runs, key=lambda run: run["taken"])]
+                kept = pace([point(reading) for reading in records(runs, FOLLOWED[followed])])
+            else:
+                every = sorted(stop["readings"], key=lambda reading: reading["taken"])
+                kept = pace([point(reading) for reading in every])
+            lines = [{"kind": "readings", "points": [point(reading) for reading in every], "pace": kept}]
+            if stop.get("tournament"):
+                try:
+                    batches = json.loads((source / SELF_PLAY).read_text(encoding="utf-8"))["batches"]
+                    points = [
+                        {"taken": batch["ended"][:10], "seconds": batch["p"][2], "time": clock(batch["p"][2]), "games": batch["games"]}
+                        for batch in sorted(batches, key=lambda batch: (batch["ended"], batch["batch"]))
+                    ]
+                    if points:
+                        lines.append({"kind": "tournament", "points": points, "pace": pace(points)})
+                except (OSError, ValueError, KeyError, TypeError, IndexError):
+                    pass
+            row = {"key": stop["key"], "lines": lines}
+            if "goal_seconds" in stop:
+                row["goal_seconds"] = stop["goal_seconds"]
+                row["goal"] = clock(stop["goal_seconds"])
+            rows.append(row)
+        days = [point["taken"] for row in rows for line in row["lines"] for point in line["points"]]
+        return {"base": base, "base_time": clock(base), "from": min(days), "to": max(days), "rows": rows}
+    except (OSError, ValueError, KeyError, TypeError, IndexError, ZeroDivisionError):
+        return None
+
+
 def main(argv: list[str]) -> int:
+    if len(argv) == 3 and argv[1] == "--history":
+        json.dump(history(pathlib.Path(argv[2])), sys.stdout, ensure_ascii=False, indent=2)
+        print()
+        return 0
     if len(argv) == 3 and argv[1] == "--worked":
         json.dump(worked(pathlib.Path(argv[2])), sys.stdout, ensure_ascii=False, indent=2)
         print()

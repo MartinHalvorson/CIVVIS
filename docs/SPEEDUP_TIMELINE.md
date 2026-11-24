@@ -15,10 +15,17 @@ figure beside the sum that gives it. They are described under
 [The tables on CIVVIS Performance](#the-tables-on-civvis-performance). A
 third table there puts the same benchmarks on other processors:
 [Processor by processor](#processor-by-processor). A fourth estimates what
-renting the rest of the way to each goal would cost:
-[The goals and the cloud's cost](#the-goals-and-the-clouds-cost).
+renting the rest of the way to the goal would cost:
+[The goals and the cloud's cost](#the-goals-and-the-clouds-cost). Under the
+tables each stop is charted over time: [Each stop over time](#each-stop-over-time).
 
 ## The five stops
+
+The project owner named them on 2026-11-24: "we should have: human player 5
+hrs, Firaxis Computer control: 10-15mins but we should benchmark this with
+our games, Firaxis self-play (test how long this take), CIVVIS self-play,
+"Parallel games, M5 Max, all 18 cores"." The two Firaxis stops are the real
+game. The two after them are the simulator.
 
 The simulator's game is six players and nine city-states on a 74x46
 Continents map at Online speed, played to a victory or to turn 250. The
@@ -28,14 +35,45 @@ The first stop is the one every other is divided into.
 | Stop | What plays the game | How it is timed |
 | --- | --- | --- |
 | Human player (`hand`) | One person, in Civilization VI. | The project owner's own figure for a game: five hours. |
-| CIVVIS computer control (`control`) | CIVVIS, at the controls of the real Civilization VI, against its Deity AI. | The middle game of the complete Lv 8 verification games in `results.jsonl` on the `ledger` branch, each timed from the stamp in its tag to the stamp of its result. |
-| Firaxis Civ 6 Deity sim (`deity_sim`) | The simulator, one core: one CIVVIS seat against five Deity rivals that play as Civilization VI's AI does (`--rivals firaxis-faithful`). | The mean of twelve games, `gene_screen --jobs 1` with the Deity field's flags, from each game's `secs`. |
+| Firaxis computer control (`control`) | Civilization VI itself, Firaxis's game, with CIVVIS at the controls of one seat. | The middle game of our own complete Lv 8 games of the last seven days in `results.jsonl` on the `ledger` branch, each timed from the stamp in its tag to the stamp of its result: launching the game, setting it up, playing it and its ending. |
+| Firaxis self-play (`firaxis_self_play`) | Civilization VI itself with Firaxis's own AI in every seat. | Not timed yet. The reading is worked out from our own games: the setup, the turns Firaxis's AI takes and the ending of a computer control game, with a sixth AI seat in place of ours. See [A reading that was worked out](#a-reading-that-was-worked-out). |
 | CIVVIS self-play (`self_play`) | The simulator, one core: every seat a CIVVIS AI agent. | The mean of twelve games, `gene_screen --jobs 1` with its defaults, from each game's `secs`. |
-| M5 Max, all 18 cores (`all_cores`) | Self-play on every core of one machine. | Sixty seconds over the record of `data/performance/games_per_minute.json` (`docs/GAMES_PER_MINUTE.md`): the time from one finished game to the next. |
+| Parallel games, M5 Max, all 18 cores (`all_cores`) | CIVVIS self-play on every core of one machine at once. | Sixty seconds over the record of `data/performance/games_per_minute.json` (`docs/GAMES_PER_MINUTE.md`): the time from one finished game to the next. |
 
 The last stop is a rate, not one game's time: eighteen games are in play at
 once and one finishes every few seconds. It is the stop the page's number is
 read from, because it is what one machine delivers.
+
+One more stop is kept in the ledger and off the line (`"line": false`):
+`deity_sim`, the simulator on one core with a CIVVIS seat against five Deity
+rivals that play as Civilization VI's AI does. It stood on the line as
+"Firaxis Civ 6 Deity sim" until the real game's self-play was named as the
+stop. The Performance page's tables still show it, as "CIVVIS against Deity
+rivals".
+
+### A reading that was worked out
+
+A reading with `"worked": true` was worked out from other measurements and
+not timed itself. The home page draws its stop as a broken ring and says
+"worked out, not yet timed", and the Performance page marks its row. A timed
+reading added after it takes its place, and the mark goes with it.
+
+Firaxis self-play is the one such reading. The control harness
+(`tools/civ6_play.py`) always plays our seat, so it cannot start a game that
+leaves every seat to the game's own autoplay, and the older grounding harness
+(`tools/civ6_run.py`) can only start the game's default setup. Until one of
+them can, the figure is this sum over our newest computer control games:
+
+| Part of the middle game | Seconds |
+| --- | ---: |
+| Setup, from launching Civilization VI to the first turn | 47.8 |
+| Our own seat's turns | 238.7 |
+| The turns of Firaxis's AI: five seats, the city-states, the barbarians | 409.4 |
+| The ending | 9.9 |
+
+A game of the same length with a sixth Firaxis seat in place of ours is the
+setup, the AI's turns and the ending: 467 s if the sixth seat cost nothing,
+and 549 s if it cost a fifth more. The slower figure is the reading.
 
 ## The number
 
@@ -73,7 +111,9 @@ reading of his sentence, and it reads the first.
 On the home page they are rings in the line's own colour, under the line and
 to the left of the M5 Max. The page's number is never one of them: it is the
 fastest stop that was measured, and the line is drawn solid only as far as
-that stop. The fleet stands past the 1,000,000x goal.
+that stop. A thousand M5 Maxes are past the 1,000,000x the line ends at, so
+the fleet stands at the line's end as an arrow that points on from it
+(`past` in the slot), with its own figure beside it.
 
 A projected stop is an entry of `projected`:
 
@@ -92,11 +132,12 @@ page's tables do not show them.
 ## The goals and the cloud's cost
 
 The ledger's `goals` are the multipliers the line is marked with, each under
-a `key` the pages name it by. There are two. 1,000,000x is a game every
-18 ms, which is 3,333 games a minute. 1,000,000,000x is a game every 18 µs,
-which is 3.3 million games a minute, and it is the line's left end. Two stops
-have goals of their own as well, a self-play game in 10 s and a game a second
-on every core (18,000x).
+a `key` the pages name it by. There is one: 1,000,000x, a game every 18 ms,
+which is 3,333 games a minute, and it is the line's left end. A billion
+stood beside it from 2026-11-22 until the project owner took it off on
+2026-11-24: "Change the timeline to just scale to 1,000,000x (drop the
+1bX)." Two stops have goals of their own as well, a self-play game in 10 s
+and a game a second on every core (18,000x).
 
 Each goal says what renting the rest of the way to it would cost. This is an
 estimate and not a measurement: nothing has been run in a cloud. The pages
@@ -111,6 +152,8 @@ that model. It is the newest entry of the ledger's `cloud`:
   `data/performance/processors.json`.
 - `dollars_an_hour` is its list price for an hour, and
   `spot_dollars_an_hour` its spot price, if it has one.
+- `scaling`, when it is `measured`, says a machine's cores are not taken to
+  play as fast as one core does alone (see below).
 - `from` says where each figure was read and what the estimate leaves out.
 
 `speedup_timeline.rented` works the cost out, and the Performance page shows
@@ -119,20 +162,34 @@ each step with its sum:
 | Step | The sum |
 | --- | --- |
 | One game on one rented core | `the one-core reading's seconds × the measured processor's single thread score ÷ the rented one's` |
-| One rented machine | `cores × 18,000 s ÷ the seconds of one game on one of them` |
+| The share of its cores a machine delivers | `the every-core record's games a minute ÷ (its cores × 60 s ÷ the one-core reading's seconds)` |
+| One rented machine | `cores × 18,000 s ÷ the seconds of one game on one of them × that share` |
 | The rest of the way | `the goal − the fastest stop's multiplier` |
 | Machines | `the rest ÷ one machine`, a whole machine for any part of one |
 | Cost for an hour | `machines × the price for an hour` |
 | Cost for a year | `the cost for an hour × 8,760 h` |
 
 The first step is the sum the processors' table uses for a processor the
-benchmarks were not run on. The second takes every core to play as fast as
-one, which the every-core run on the M5 Max comes close to.
+benchmarks were not run on.
+
+The second step is what changed when the project owner asked for the cost to
+be worked out again (2026-11-24: "reclauclate the cloud costs to make sure
+they are accurate"). The first estimate took every core of a rented machine
+to play as fast as one core alone. The only measurement of that is our own
+every-core run, and it falls short: eighteen busy cores finish fewer games
+than eighteen times one core. So the estimate of 2026-11-24 takes a rented
+machine to reach the same share of its cores that the M5 Max reached of its
+own. That may be hard on the rented machine, whose cores are all of one
+speed and have nothing else to do, and it is the cautious side to err on. An
+entry without `scaling` is still worked out the first way.
+
+What was checked that day: the list price (unchanged), the spot price (two
+cents higher), and the processor's single thread score, which still rests on
+two samples. Two processors of the same generation with many samples, scaled
+to the rented one's top speed, land within two parts in a hundred of it.
 
 The estimate leaves out storage, network traffic and the work of running a
-fleet. It assumes the price holds at any number of machines. The larger goal
-needs tens of thousands of them, and no one has tested that such a number
-can be rented at the list price, or at all.
+fleet, and it assumes the price holds for the machines it counts.
 
 To change the estimate, add a newer entry to `cloud` after the ones there:
 another machine, a price read again, or a score with more samples behind it.
@@ -253,6 +310,33 @@ score, add a newer reading after the ones there. The page of a processor is
 found from `https://www.cpubenchmark.net/cpu.php?cpu=<its name there>`, with
 `+` for each space.
 
+## Each stop over time
+
+The project owner, 2026-11-24: "in civvis performance, we should have charts
+studying the improvements rates of each of these over time".
+
+The Performance page has a small chart for each stop after the baseline
+(`speedup_timeline.history`, `python3 beta/speedup_timeline.py --history .`).
+A chart draws every reading of its stop by the day it was taken, on a scale
+of seconds that goes by tenfolds, so a steady pace of improvement is a
+straight line. All the charts share one run of days. Each has its own scale,
+because a 12-minute game and a 3-second one do not fit one.
+
+Over each chart stands the pace its readings have kept
+(`speedup_timeline.pace`): how many times faster the newest is than the
+first, over how long, and from a week's span up the time in which a game's
+time halves at that pace. Readings within two parts in a hundred of each
+other are called steady.
+
+| Stop | What its chart draws |
+| --- | --- |
+| Firaxis computer control, Firaxis self-play | The stop's readings in the ledger. |
+| CIVVIS self-play | Its one-core benchmark readings, and beside them the self-play tournament's finished batches, the middle game of each on the day it ended (`data/performance/self_play_times.json`; `"tournament": true` on the stop). The tournament plays the same game seven or more at a time on a busy machine, so it reads slower, and it reaches back to October. |
+| Parallel games | Every run of `data/performance/games_per_minute.json`. The pace is kept over the records among them. |
+
+So a stop's chart grows by itself with every reading added to the ledger and
+every run recorded.
+
 ## Adding a reading
 
 A reading is one line in a stop's `readings`, after the ones already there:
@@ -269,7 +353,7 @@ The two simulator stops, on a build of `gene_screen` (`cargo build --release
 --features developer-tools --bin gene_screen`):
 
 ```bash
-# The Deity sim: twelve games on one core.
+# CIVVIS against Deity rivals (off the line): twelve games on one core.
 gene_screen --games 12 --target-games 12 --start-seed 9101 --jobs 1 \
   --players 6 --width 74 --height 46 --city-states 9 --map continents \
   --difficulty deity --rivals firaxis-faithful --handicap rivals \

@@ -37,6 +37,10 @@
        against this panel (#1f2733) at 3:1 and over. A band is the same blue
        let through at a part of its strength. */
     --series: #3987e5;
+    /* A chart's second line or part: the second of the same chart colours,
+       an orange checked beside the blue on this panel and the raised one
+       (told apart by every kind of colour vision, 3:1 and over). */
+    --series-2: #d95926;
   }
 
   * { box-sizing: border-box; }
@@ -343,6 +347,37 @@
   /* An estimate is neither a run nor a sum of readings alone: what renting
      the rest of the way to a goal would cost, and whose estimate it is. */
   .perf-kind.is-estimate { border-style: dashed; border-color: var(--gold); color: var(--gold); }
+
+  /* Each way of playing over time: a small chart for each, side by side,
+     each on its own scale of seconds. */
+  .perf-trends { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 10px 0 0; }
+  @media (max-width: 759px) { .perf-trends { grid-template-columns: minmax(0, 1fr); } }
+  .perf-trend { min-width: 0; padding: 10px 12px 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--panel-raised); }
+  .perf-trend-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 12px; }
+  .perf-trend-name { color: var(--text); font-size: 14px; font-weight: 700; }
+  .perf-trend-now { color: #fff; font-size: 20px; font-weight: 700; white-space: nowrap; }
+  .perf-trend-now small { margin-left: 6px; color: var(--muted); font-size: 12px; font-weight: 600; }
+  .perf-trend-pace { margin: 2px 0 0; color: var(--muted); font-size: 12.5px; line-height: 1.45; }
+  .perf-trend-pace b { color: var(--text); }
+  .perf-keys { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 6px 0 0; padding: 0; list-style: none; color: var(--muted); font-size: 12px; }
+  .perf-keys li { display: inline-flex; align-items: center; gap: 6px; }
+  .perf-keys i { display: inline-block; flex: none; width: 14px; height: 2px; border-radius: 1px; background: var(--series); }
+  .perf-keys i.is-block { width: 10px; height: 10px; border-radius: 2px; }
+  .perf-keys i.is-second { background: var(--series-2); }
+  .perf-trend-plot { min-height: 170px; margin: 6px 0 0; }
+  .perf-trend-plot svg { display: block; overflow: visible; }
+  .perf-goal-line { stroke: var(--gold); stroke-width: 1; stroke-dasharray: 4 3; }
+
+  /* The path through one game: the newest reading's steps by kind, a bar
+     for each, the longest the whole width. */
+  .perf-steps { display: grid; grid-template-columns: max-content minmax(0, 1fr) max-content; gap: 7px 12px; align-items: center; margin: 10px 0 0; font-size: 13px; }
+  .perf-step-name { color: var(--text); }
+  .perf-step-track { display: flex; gap: 2px; height: 14px; }
+  .perf-step-track i { display: block; flex: none; height: 100%; min-width: 2px; border-radius: 0 4px 4px 0; background: var(--series); }
+  .perf-step-track i.is-second { background: var(--series-2); }
+  .perf-step-track i:not(:last-child) { border-radius: 0; }
+  .perf-step-count { color: var(--text); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+  .perf-step-count small { margin-left: 6px; color: var(--faint); }
   .perf-cloud-sub b { color: #fff; font-weight: 700; }
   .perf-sum-table tr.is-measured td:first-child { box-shadow: inset 2px 0 0 var(--series); padding-left: 8px; }
   /* The sums table is wider than a phone: its first column stays in view. */
@@ -651,6 +686,74 @@
         </div>
       </section>
 
+      <!-- Each way of playing over time (operator 2026-11-24: "in civvis
+           performance, we should have charts studying the improvements
+           rates of each of these over time"). A small chart for each stop
+           of the home page's line after the baseline: its readings by the
+           day they were taken, and the pace they have kept. The readings
+           are the same ledger's, worked out by `speedup_timeline.history`;
+           the self-play chart also draws the tournament's batches. No
+           figure is written here. -->
+      <section class="res-section" id="perf-history" aria-labelledby="perf-history-title" hidden>
+        <h2 class="rank-title" id="perf-history-title">Each way of playing, over time</h2>
+        <p class="rank-sub">The time one game takes, reading by reading. A steady pace of improvement is a straight line.</p>
+        <div class="perf-trends" id="perf-trends"></div>
+        <details class="res-details">
+          <summary>Every reading as a table</summary>
+          <div class="res-scroll">
+            <table class="rank-table" id="perf-history-table">
+              <thead><tr><th scope="col">Way of playing</th><th scope="col">Reading</th><th scope="col">Day</th><th scope="col">One game takes</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </details>
+      </section>
+
+      <!-- The path through one game (operator 2026-11-24: "we should try
+           to reduce the path of civvis through civ 6 down to the
+           computatoinal irreducability and should have a chart tracking the
+           size/num of steps"). The path is the game's own action log, from
+           the first turn to the last. `tools/path_steps.py --record` counts
+           it into `data/performance/path_steps.json` and
+           `performance_page.path` reads it. No figure is written here. -->
+      <section class="res-section" id="perf-path" aria-labelledby="perf-path-title" hidden>
+        <h2 class="rank-title" id="perf-path-title">The path through one game</h2>
+        <p class="rank-sub">Every action of one self-play game, from the first turn to the last: how many steps it is, and how few it could be.</p>
+        <div class="perf-tiles" id="perf-path-tiles"></div>
+        <div class="res-kind">
+          <h3 class="res-kind-title">Steps in one game, reading by reading</h3>
+          <ul class="perf-keys" id="perf-path-keys"></ul>
+          <div class="res-plot" id="perf-path-plot"></div>
+        </div>
+        <div class="res-kind">
+          <h3 class="res-kind-title">Where the steps are</h3>
+          <div class="perf-steps" id="perf-path-steps"></div>
+        </div>
+        <details class="res-details">
+          <summary>Every reading as a table</summary>
+          <div class="res-scroll">
+            <table class="rank-table" id="perf-path-table">
+              <thead>
+                <tr>
+                  <th scope="col">Day</th><th scope="col">Build</th><th scope="col">Games</th><th scope="col">Turns</th>
+                  <th scope="col">Steps</th><th scope="col">A walk as one step</th><th scope="col">Bytes</th>
+                  <th scope="col">Instructions to play</th><th scope="col">Instructions for the path alone</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </details>
+        <div class="rank-note">
+          <p id="perf-path-note"></p>
+          <p>
+            <a href="https://github.com/MartinHalvorson/CIVVIS/blob/main/data/performance/path_steps.json" target="_blank" rel="noreferrer">The readings</a> ·
+            <a href="https://github.com/MartinHalvorson/CIVVIS/blob/main/docs/PATH_STEPS.md" target="_blank" rel="noreferrer">How the path is counted</a> ·
+            <a href="https://github.com/MartinHalvorson/CIVVIS/blob/main/docs/CORE_STATE.md" target="_blank" rel="noreferrer">The state the game cannot do without</a>
+          </p>
+        </div>
+      </section>
+
       <!-- The fastest game on video (operator 2026-11-21: "fastest game
            video"). The video is YouTube's and stays there (operator
            2026-11-21: "website is a fast and light surface layer ... store
@@ -840,10 +943,12 @@
     // stands under the key itself.
     const speed = data.speedup && typeof data.speedup === "object" ? data.speedup : null;
     const WAYS = {
-      hand: ["By hand", "One person plays one game of Civilization VI. The baseline."],
-      control: ["Deity computer control", "CIVVIS at the controls of Civilization VI itself, against its Deity AI."],
-      deity_sim: ["Deity self-play", "The simulator, one core: a CIVVIS seat against five Deity rivals that play as Civilization VI’s AI does."],
+      hand: ["Human player", "One person plays one game of Civilization VI. The baseline."],
+      control: ["Firaxis computer control", "Civilization VI itself, Firaxis’s game, with CIVVIS at the controls of one seat."],
+      firaxis_self_play: ["Firaxis self-play", "Civilization VI itself with Firaxis’s own AI in every seat."],
+      deity_sim: ["CIVVIS against Deity rivals", "The simulator, one core: a CIVVIS seat against five Deity rivals that play as Civilization VI’s AI does. Not on the home page’s line."],
       self_play: ["CIVVIS self-play", "The simulator, one core: every seat a CIVVIS AI agent."],
+      all_cores: ["Parallel games", "CIVVIS self-play on every core of one machine at once: the time from one finished game to the next."],
     };
     const way = (key) => (WAYS[key] || [String(key), ""])[0];
     const KINDS = { measured: "Experimental", theory: "Theoretical", goal: "Goal" };
@@ -895,7 +1000,10 @@
         const tr = el("tr");
         const times = el("td", "perf-times", text(row.times));
         if (row.was) times.append(el("small", "", "was " + text(row.was)));
-        tr.append(named(row, (WAYS[row.key] || [])[1]), times, el("td", "", text(row.time)), el("td", "", text(row.an_hour)),
+        const name = named(row, (WAYS[row.key] || [])[1]);
+        // A reading worked out from other measurements and not timed itself.
+        if (row.worked) name.firstChild.after(" ", el("span", "perf-kind is-estimate", "Worked out, not timed"));
+        tr.append(name, times, el("td", "", text(row.time)), el("td", "", text(row.an_hour)),
           el("td", "perf-sum", text(row.sum)), el("td", "", row.goal ? text(row.goal) : "—"), el("td", "", row.taken ? day(row.taken) : "—"));
         games.append(tr);
       }
@@ -1016,7 +1124,9 @@
           " Not a quote and not a run: nothing has been played in a cloud. "
           + host.charAt(0).toUpperCase() + host.slice(1) + " reaches " + text(cloud.have) + ", and the rest of the way to each goal is taken as machines rented beside it: "
           + text(cloud.machine) + ", at its list price and at its spot price. One game on one of its cores is the one-core " + way(cloud.of)
-          + " reading, longer by the two processors’ single thread scores, and every core is taken to play as fast as one."
+          + " reading, longer by the two processors’ single thread scores"
+          + (cloud.scaling ? ". A machine is taken to reach " + text(cloud.scaling) + " of its cores times that, the share our own every-core run reached: " + text(cloud.scaling_sum) + "."
+            : ", and every core is taken to play as fast as one.")
           + (cloud.a_million ? " At that rate a million games cost about " + text(cloud.a_million) + " at the list price"
             + (cloud.spot_a_million ? " and " + text(cloud.spot_a_million) + " at the spot price" : "") + "." : "")
           + (cloud.hours_a_year ? " A year is " + text(cloud.hours_a_year) + " hours of playing without a stop." : ""));
@@ -1066,6 +1176,292 @@
       }
       from.parentElement.hidden = !from.childElementCount;
       document.getElementById("perf-speedup").hidden = false;
+    }
+
+    // ---- Each way of playing over time (operator 2026-11-24: "charts
+    // studying the improvements rates of each of these over time"): a small
+    // chart for each stop of the home page's line, every one on the same
+    // run of days and on its own scale of seconds, which goes by tenfolds
+    // so that a steady pace of improvement is a straight line. A chart is
+    // drawn when its panel is first laid out and again when it changes width.
+    const watched = (plot, draw) => {
+      let width = 0;
+      const again = () => { const now = plot.clientWidth; if (now && now !== width) { width = now; draw(now); } };
+      if (typeof ResizeObserver === "function") new ResizeObserver(again).observe(plot);
+      else window.addEventListener("resize", again);
+      again();
+    };
+    const past = data.history && typeof data.history === "object" ? data.history : null;
+    const trends = (past && Array.isArray(past.rows) ? past.rows : [])
+      .map((row) => ({ ...row, lines: (Array.isArray(row && row.lines) ? row.lines : []).filter((line) => line && Array.isArray(line.points) && line.points.length) }))
+      .filter((row) => row.key && row.lines.length);
+    if (trends.length) {
+      const LINES = { readings: "Benchmark readings", tournament: "Tournament, the middle game of a batch" };
+      const COLOURS = { readings: "var(--series)", tournament: "var(--series-2)" };
+      const stamp = (iso) => Date.parse(String(iso).slice(0, 10) + "T00:00:00Z");
+      const DAY_MS = 24 * 60 * 60 * 1000;
+      const from = stamp(past.from), to = Math.max(stamp(past.to), from + DAY_MS);
+      const short = (s) => (s < 0.9995 ? Math.round(s * 1000) + " ms" : s < 60 ? +s.toFixed(1) + " s" : s < 3600 ? +(s / 60).toFixed(1) + " min" : +(s / 3600).toFixed(1) + " h");
+      // The marks of a chart's scale of seconds, the roundest first: a mark
+      // is kept when it is on the chart and clear of every mark kept before.
+      const STEPS = [1, 10, 60, 600, 3600, 0.1, 30, 300, 1800, 18000, 5, 0.5, 120, 1200, 7200, 2, 20, 0.2, 900, 15, 45, 90, 180, 3, 4, 6, 8, 240, 480, 720, 1.5, 2.5, 0.3];
+      const machine = (speed && speed.machine) || {};
+      const title = (key) => way(key) + (key === "all_cores" && machine.chip ? ", " + text(machine.chip).replace(/^Apple /, "") + (machine.cores ? ", all " + machine.cores + " cores" : "") : "");
+      // The pace a line has kept, in words.
+      const paced = (pace) => {
+        const said = el("span");
+        if (!pace || !pace.days) return said.append(pace && pace.readings > 1 ? "Readings on one day so far." : "One reading so far."), said;
+        if (pace.steady) said.append("Steady over " + text(pace.over) + ": " + text(pace.first) + " then, " + text(pace.last) + " now.");
+        else if (pace.slower) said.append(el("b", "", text(pace.slower) + " slower"), " in " + text(pace.over) + (pace.doubles ? ", doubling every " + text(pace.doubles) : "") + ".");
+        else said.append(el("b", "", text(pace.times) + " faster"), " in " + text(pace.over) + (pace.halves ? ", halving every " + text(pace.halves) : "") + ".");
+        return said;
+      };
+      const holder = document.getElementById("perf-trends");
+      const table = document.querySelector("#perf-history-table tbody");
+      for (const row of trends) {
+        const panel = el("div", "perf-trend"), head = el("div", "perf-trend-head");
+        const own = row.lines[0], newest = own.points[own.points.length - 1];
+        const now = el("span", "perf-trend-now", text(newest.time));
+        if (newest.worked) now.append(el("small", "", "worked out, not timed"));
+        head.append(el("b", "perf-trend-name", title(row.key)), now);
+        panel.append(head);
+        for (const line of row.lines) {
+          const pace = el("p", "perf-trend-pace");
+          if (row.lines.length > 1) pace.append(LINES[line.kind] + ": ");
+          pace.append(paced(line.pace));
+          panel.append(pace);
+        }
+        // Two lines are told apart by a key as well as by colour.
+        if (row.lines.length > 1) {
+          const keys = el("ul", "perf-keys");
+          for (const line of row.lines) {
+            const item = el("li"), mark = el("i", line.kind === "tournament" ? "is-second" : "");
+            item.append(mark, LINES[line.kind] || text(line.kind));
+            keys.append(item);
+          }
+          panel.append(keys);
+        }
+        const plot = el("div", "perf-trend-plot");
+        panel.append(plot);
+        holder.append(panel);
+        for (const line of row.lines) {
+          for (const point of line.points) {
+            const tr = el("tr");
+            tr.append(el("td", "", title(row.key)), el("td", "", (LINES[line.kind] || text(line.kind)) + (point.worked ? ", worked out" : "")),
+              el("td", "", day(point.taken)), el("td", "", text(point.time)));
+            table.append(tr);
+          }
+        }
+        const all = row.lines.flatMap((line) => line.points.map((point) => ({ ...point, kind: line.kind, at: stamp(point.taken) })));
+        const goal = Number(row.goal_seconds) || 0;
+        const seen = all.map((point) => point.seconds).concat(goal ? [goal] : []);
+        const lo = Math.log10(Math.min(...seen) / 1.35), hi = Math.log10(Math.max(...seen) * 1.35);
+        watched(plot, (width) => {
+          const height = 170, m = { l: 48, r: 14, t: 8, b: 22 };
+          const x = (at) => m.l + ((at - from) / (to - from)) * (width - m.l - m.r);
+          const y = (s) => m.t + (1 - (Math.log10(s) - lo) / (hi - lo)) * (height - m.t - m.b);
+          const root = svg("svg", { width, height, viewBox: "0 0 " + width + " " + height, role: "img" });
+          root.setAttribute("aria-label", title(row.key) + ", the time one game takes at each reading from " + day(past.from) + " to " + day(past.to)
+            + ". The newest is " + text(newest.time) + ". Every reading is in the table below.");
+          const grid = svg("g", { class: "res-grid" });
+          const kept = [];
+          for (const s of STEPS) {
+            if (Math.log10(s) < lo || Math.log10(s) > hi) continue;
+            const at = y(s);
+            if (kept.some((k) => Math.abs(k - at) < 22)) continue;
+            kept.push(at);
+            grid.append(svg("line", { x1: m.l, x2: width - m.r, y1: Math.round(at) + 0.5, y2: Math.round(at) + 0.5 }));
+            const label = svg("text", { class: "res-tick", x: m.l - 6, y: at + 3.5, "text-anchor": "end" });
+            label.textContent = short(s);
+            root.append(label);
+          }
+          root.append(grid, svg("line", { class: "res-base", x1: m.l, x2: width - m.r, y1: height - m.b + 0.5, y2: height - m.b + 0.5 }));
+          const first = svg("text", { class: "res-tick", x: m.l, y: height - 6, "text-anchor": "start" });
+          first.textContent = day(past.from);
+          const last = svg("text", { class: "res-tick", x: width - m.r, y: height - 6, "text-anchor": "end" });
+          last.textContent = day(past.to);
+          root.append(first, last);
+          // The stop's own goal, a mark across the chart with its name.
+          if (goal) {
+            root.append(svg("line", { class: "perf-goal-line", x1: m.l, x2: width - m.r, y1: Math.round(y(goal)) + 0.5, y2: Math.round(y(goal)) + 0.5 }));
+            const name = svg("text", { class: "perf-end", x: m.l + 6, y: y(goal) - 5 });
+            name.textContent = "Goal " + text(row.goal);
+            root.append(name);
+          }
+          for (const line of row.lines) {
+            const colour = COLOURS[line.kind] || "var(--series)";
+            const points = line.points.map((point) => [x(stamp(point.taken)), y(point.seconds), point]);
+            if (points.length > 1) {
+              const drawn = svg("path", { d: "M" + points.map(([px, py]) => px.toFixed(1) + "," + py.toFixed(1)).join("L"), fill: "none", "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round" });
+              drawn.style.stroke = colour;
+              root.append(drawn);
+            }
+            for (const [px, py, point] of points) {
+              // A reading worked out and not timed is a ring, not a dot.
+              const dot = svg("circle", { cx: px, cy: py, r: 4, "stroke-width": 2 });
+              dot.style.fill = point.worked ? "var(--panel-raised)" : colour;
+              dot.style.stroke = point.worked ? colour : "var(--panel-raised)";
+              root.append(dot);
+            }
+          }
+          // The pointer finds the nearest day; the readout lists every
+          // reading taken on it.
+          const cross = svg("line", { class: "res-cross", y1: m.t, y2: height - m.b, visibility: "hidden" });
+          const hit = svg("rect", { x: m.l - 8, y: m.t, width: width - m.l - m.r + 16, height: height - m.t - m.b, fill: "transparent" });
+          hit.addEventListener("pointermove", (event) => {
+            const px = event.clientX - root.getBoundingClientRect().left;
+            const near = all.reduce((best, point) => (Math.abs(x(point.at) - px) < Math.abs(x(best.at) - px) ? point : best), all[0]);
+            const at = Math.round(x(near.at)) + 0.5;
+            cross.setAttribute("x1", at); cross.setAttribute("x2", at); cross.setAttribute("visibility", "visible");
+            showTip(event, day(near.taken), all.filter((point) => point.at === near.at).map((point) => ({
+              colour: COLOURS[point.kind] || "var(--series)", value: text(point.time),
+              name: (LINES[point.kind] || text(point.kind)) + (point.worked ? ", worked out" : ""),
+              n: point.games ? fmt(point.games) + " games" : null,
+            })));
+          });
+          hit.addEventListener("pointerleave", () => { cross.setAttribute("visibility", "hidden"); hideTip(); });
+          root.append(cross, hit);
+          plot.replaceChildren(root);
+        });
+      }
+      document.getElementById("perf-history").hidden = false;
+    }
+
+    // ---- The path through one game (operator 2026-11-24: "we should try
+    // to reduce the path of civvis through civ 6 down to the computatoinal
+    // irreducability and should have a chart tracking the size/num of
+    // steps"): the tiles, a column for every reading, and the newest
+    // reading's steps by kind. Blue is the steps that stay and orange the
+    // steps that a unit's walk taken as one step would save, in both charts.
+    const trail = data.path && typeof data.path === "object" ? data.path : null;
+    const walked = (trail && Array.isArray(trail.readings) ? trail.readings : []).filter((r) => r && r.taken && Number(r.steps) > 0);
+    if (walked.length) {
+      const newest = walked[walked.length - 1];
+      const part = (x) => (100 * x).toFixed(x < 0.0995 ? 1 : 0) + "%";
+      const billions = (n) => (n >= 9.95e9 ? Math.round(n / 1e9) : +(n / 1e9).toFixed(1)) + " billion";
+      const size = (n) => (n >= 999500 ? +(n / 1e6).toFixed(2) + " MB" : Math.round(n / 1000) + " kB");
+      const tiles = document.getElementById("perf-path-tiles");
+      const tile = (label, value, under, say) => {
+        const node = el("div", "perf-tile");
+        node.append(el("span", "perf-tile-label", label), el("b", "perf-tile-value", value), el("span", "perf-tile-clock", under), el("span", "perf-tile-say", say));
+        tiles.append(node);
+      };
+      tile("Steps in one game", fmt(newest.steps), fmt(Math.round(newest.steps / newest.turns)) + " a turn", "over " + fmt(Math.round(newest.turns)) + " turns");
+      tile("A walk as one step", fmt(newest.kept), part(newest.saved / newest.steps) + " fewer", "a unit’s moves in one turn counted once");
+      tile("Written down", size(newest.bytes), Math.round(newest.bytes / newest.steps) + " bytes a step", "every action, as compact JSON");
+      if (newest.instructions) {
+        tile("To play it", billions(newest.instructions), "processor instructions", "the agents deciding and the rules applying");
+        tile("The path alone", billions(newest.replay_instructions), part(newest.replay_share) + " of playing it", "the same steps with nobody deciding them");
+      }
+      const KEYS = [["Steps that stay", ""], ["Steps a walk as one step would save", "is-second"]];
+      const keys = document.getElementById("perf-path-keys");
+      for (const [name, cls] of KEYS) {
+        const item = el("li");
+        item.append(el("i", "is-block" + (cls ? " " + cls : "")), name);
+        keys.append(item);
+      }
+      const table = document.querySelector("#perf-path-table tbody");
+      for (const r of walked) {
+        const tr = el("tr");
+        tr.append(el("td", "", day(r.taken)), el("td", "", text(r.build)), el("td", "", fmt(r.games)), el("td", "", fmt(Math.round(r.turns))),
+          el("td", "", fmt(r.steps)), el("td", "", fmt(r.kept)), el("td", "", fmt(r.bytes)),
+          el("td", "", r.instructions ? billions(r.instructions) : "—"), el("td", "", r.replay_instructions ? billions(r.replay_instructions) : "—"));
+        table.append(tr);
+      }
+      watched(document.getElementById("perf-path-plot"), (width) => {
+        const plot = document.getElementById("perf-path-plot");
+        const height = 230, m = { l: 56, r: 14, t: 22, b: 24 }, n = walked.length;
+        const top = Math.max(...walked.map((r) => r.steps));
+        const unit = Math.pow(10, Math.floor(Math.log10(top))), step = [1, 2, 5, 10].map((k) => k * unit / 2).find((s) => top / s <= 5) || unit;
+        const ceiling = Math.ceil(top / step) * step;
+        const slot = (width - m.l - m.r) / n, bar = Math.min(24, Math.max(6, slot * 0.6));
+        const x = (i) => m.l + (i + 0.5) * slot, y = (v) => m.t + (1 - v / ceiling) * (height - m.t - m.b);
+        const root = svg("svg", { width, height, viewBox: "0 0 " + width + " " + height, role: "img" });
+        root.setAttribute("aria-label", "The steps in one game at each reading: " + fmt(newest.steps) + " on " + day(newest.taken) + ", of which a walk as one step would save "
+          + fmt(newest.saved) + ". Every reading is in the table below.");
+        const grid = svg("g", { class: "res-grid" });
+        for (let v = 0; v <= ceiling + 1e-9; v += step) {
+          if (v) grid.append(svg("line", { x1: m.l, x2: width - m.r, y1: Math.round(y(v)) + 0.5, y2: Math.round(y(v)) + 0.5 }));
+          const label = svg("text", { class: "res-tick", x: m.l - 6, y: y(v) + 3.5, "text-anchor": "end" });
+          label.textContent = fmt(v);
+          root.append(label);
+        }
+        root.append(grid);
+        // A date under a column where it has room; the newest column's
+        // total is written over it.
+        let edge = -Infinity;
+        walked.forEach((r, i) => {
+          const words = day(r.taken), half = words.length * 3.1;
+          if (x(i) - half >= edge + 8) {
+            edge = x(i) + half;
+            const label = svg("text", { class: "res-tick", x: x(i), y: height - 7, "text-anchor": "middle" });
+            label.textContent = words;
+            root.append(label);
+          }
+          // Two parts, a gap of the surface between them, the top rounded.
+          const base = y(0), split = y(r.kept), peak = y(r.steps), gap = r.saved ? 2 : 0;
+          const lower = svg("rect", { x: x(i) - bar / 2, y: split + gap / 2, width: bar, height: Math.max(0, base - split - gap / 2) });
+          lower.style.fill = "var(--series)";
+          root.append(lower);
+          if (r.saved) {
+            const tall = Math.max(1, split - gap / 2 - peak), round = Math.min(4, tall, bar / 2);
+            const left = x(i) - bar / 2, right = x(i) + bar / 2, foot = split - gap / 2;
+            const upper = svg("path", { d: "M" + left + "," + foot + "V" + (peak + round) + "Q" + left + "," + peak + " " + (left + round) + "," + peak
+              + "H" + (right - round) + "Q" + right + "," + peak + " " + right + "," + (peak + round) + "V" + foot + "Z" });
+            upper.style.fill = "var(--series-2)";
+            root.append(upper);
+          }
+          if (i === n - 1) {
+            const total = svg("text", { class: "perf-end", x: x(i), y: peak - 6, "text-anchor": "middle" });
+            total.textContent = fmt(r.steps);
+            root.append(total);
+          }
+          const hit = svg("rect", { x: x(i) - Math.max(bar, 24) / 2, y: m.t, width: Math.max(bar, 24), height: height - m.t - m.b, fill: "transparent" });
+          hit.addEventListener("pointermove", (event) => showTip(event, day(r.taken) + (r.build ? " · build " + r.build : ""), [
+            { value: fmt(r.steps), name: "steps in one game" },
+            { colour: "var(--series-2)", tall: true, value: fmt(r.saved), name: "a walk as one step would save" },
+            { colour: "var(--series)", tall: true, value: fmt(r.kept), name: "steps that stay" },
+          ]));
+          hit.addEventListener("pointerleave", hideTip);
+          root.append(hit);
+        });
+        root.append(svg("line", { class: "res-base", x1: m.l, x2: width - m.r, y1: Math.round(y(0)) + 0.5, y2: Math.round(y(0)) + 0.5 }));
+        plot.replaceChildren(root);
+      });
+      // The newest reading's steps by kind, most first: a bar for each, and
+      // the bar of the one-hex moves in its two parts.
+      const KINDS = {
+        move: "One-hex moves", end_turn: "End of turn", fortify: "Fortify", produce: "Choose what a city builds", slot_policy: "Slot a policy",
+        unslot_policy: "Take a policy out", ranged: "Ranged attacks", attack: "Attacks", improve: "Improve a tile", spread: "Spread religion",
+        move_to: "Go to a tile", research: "Choose research", civic: "Choose a civic", buy: "Buy a unit",
+      };
+      const kinds = (Array.isArray(trail.kinds) ? trail.kinds : []).filter((k) => k && Number(k.steps) > 0);
+      const most = Math.max(1, ...kinds.map((k) => k.steps));
+      const steps = document.getElementById("perf-path-steps");
+      for (const k of kinds) {
+        const name = k.rest ? "Every other kind (" + fmt(k.kinds) + ")" : KINDS[k.kind] || text(k.kind).replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
+        const track = el("div", "perf-step-track"), count = el("div", "perf-step-count", fmt(k.steps));
+        count.append(el("small", "", part(k.steps / newest.steps)));
+        const parts = k.saved ? [[k.kept, ""], [k.saved, "is-second"]] : [[k.steps, ""]];
+        for (const [value, cls] of parts) {
+          const piece = el("i", cls);
+          piece.style.width = "calc(" + (100 * value / most).toFixed(2) + "% - " + (parts.length > 1 ? 1 : 0) + "px)";
+          track.append(piece);
+        }
+        const rows = k.saved
+          ? [{ value: fmt(k.steps), name: "steps" }, { colour: "var(--series-2)", tall: true, value: fmt(k.saved), name: "further hexes of a walk already begun" },
+            { colour: "var(--series)", tall: true, value: fmt(k.kept), name: "walks" }]
+          : [{ colour: "var(--series)", tall: true, value: fmt(k.steps), name: part(k.steps / newest.steps) + " of the path" }];
+        for (const cell of [track, count]) {
+          cell.addEventListener("pointermove", (event) => showTip(event, name, rows));
+          cell.addEventListener("pointerleave", hideTip);
+        }
+        steps.append(el("div", "perf-step-name", name), track, count);
+      }
+      steps.parentElement.hidden = !kinds.length;
+      document.getElementById("perf-path-note").textContent = (trail.setup ? "One game: " + text(trail.setup) + ". " : "")
+        + "A reading is the mean of " + fmt(newest.games) + " games on fixed seeds, so two builds are counted on the same worlds.";
+      document.getElementById("perf-path").hidden = false;
     }
 
     // ---- The fastest game on video.

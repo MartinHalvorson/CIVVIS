@@ -417,6 +417,16 @@
     /* So is a stop past what was measured, in the line's own colour: so
        many times a measured stop, and nothing has played at it. */
     .speed-ahead .speed-dot { background: var(--bg); border: 2px solid var(--accent); box-shadow: none; }
+    /* A reading worked out from other measurements and not timed itself is
+       a broken ring. */
+    .speed-stop.is-worked .speed-dot { background: var(--bg); border: 2px dashed var(--accent); box-shadow: none; }
+    /* A stop past the goal the line ends at is an arrow off its end. */
+    .speed-stop.is-past .speed-dot {
+      left: -20px; top: -6px; width: 0; height: 0; border: 0; border-radius: 0; background: none;
+      border-top: 6px solid transparent; border-bottom: 6px solid transparent; border-right: 10px solid var(--accent);
+    }
+    /* A name of two parts takes two lines on the line. */
+    .speed-name span { display: block; }
     .speed-name { display: block; font-size: 13px; white-space: nowrap; }
     .speed-what { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
     .speed-read { display: block; text-align: inherit; }
@@ -571,6 +581,15 @@
          shown until then: a figure written here would be a copy to keep in
          step by hand.
 
+         The stops are the five the operator named on 2026-11-24 ("we
+         should have: human player 5 hrs, Firaxis Computer control:
+         10-15mins but we should benchmark this with our games, Firaxis
+         self-play (test how long this take), CIVVIS self-play, "Parallel
+         games, M5 Max, all 18 cores""), and the line ends at the one goal
+         he kept that day ("Change the timeline to just scale to 1,000,000x
+         (drop the 1bX)"). A stop whose reading was worked out and not timed
+         is a broken ring and says so.
+
          After the measured stops come the two nothing has played yet
          (operator, 2026-11-22: "add to out speedup timeline: 10x
          theoretical scale up from local hardware ... hardware scaleup is to
@@ -597,19 +616,20 @@
           <li class="speed-stop" data-stop="control">
             <span class="speed-dot" aria-hidden="true"></span>
             <span class="speed-label">
-              <b class="speed-name">CIVVIS computer control</b>
-              <small class="speed-what">CIVVIS plays the real Civilization VI against its Deity AI.</small>
+              <b class="speed-name">Firaxis computer control</b>
+              <small class="speed-what">Civilization VI itself, Firaxis&#8217;s game, with CIVVIS at the controls of one seat.</small>
               <span class="speed-read"><b data-speed="time"></b> <i data-speed="times"></i></span>
               <small class="speed-goal" data-speed="goal" hidden></small>
             </span>
           </li>
-          <li class="speed-stop" data-stop="deity_sim">
+          <li class="speed-stop" data-stop="firaxis_self_play">
             <span class="speed-dot" aria-hidden="true"></span>
             <span class="speed-label">
-              <b class="speed-name">Firaxis Civ 6 Deity sim</b>
-              <small class="speed-what">The same game in the simulator, on one core: a CIVVIS seat against five Deity rivals that play as Civilization VI&#8217;s AI does.</small>
+              <b class="speed-name">Firaxis self-play</b>
+              <small class="speed-what">Civilization VI itself with Firaxis&#8217;s own AI in every seat.</small>
               <span class="speed-read"><b data-speed="time"></b> <i data-speed="times"></i></span>
               <small class="speed-goal" data-speed="goal" hidden></small>
+              <small class="speed-goal" data-speed="worked" hidden></small>
             </span>
           </li>
           <li class="speed-stop" data-stop="self_play">
@@ -624,8 +644,8 @@
           <li class="speed-stop" data-stop="all_cores">
             <span class="speed-dot" aria-hidden="true"></span>
             <span class="speed-label">
-              <b class="speed-name">M5 Max, all 18 cores</b>
-              <small class="speed-what">Self-play on every core of one M5 Max: the time from one finished game to the next.</small>
+              <b class="speed-name">Parallel games, <span>M5 Max, all 18 cores</span></b>
+              <small class="speed-what">CIVVIS self-play on every core of one M5 Max at once: the time from one finished game to the next.</small>
               <span class="speed-read"><b data-speed="time"></b> <i data-speed="times"></i></span>
               <small class="speed-goal" data-speed="goal" hidden></small>
             </span>
@@ -653,15 +673,6 @@
             <span class="speed-label">
               <b class="speed-name">Theoretical</b>
               <small class="speed-what">A million games in the time a person plays one.</small>
-              <span class="speed-read"><b data-speed="time"></b> <i data-speed="times"></i></span>
-              <small class="speed-goal" data-speed="cost" hidden></small>
-            </span>
-          </li>
-          <li class="speed-stop speed-finish" data-goal="billion">
-            <span class="speed-dot" aria-hidden="true"></span>
-            <span class="speed-label">
-              <b class="speed-name">Theoretical</b>
-              <small class="speed-what">A billion games in the time a person plays one.</small>
               <span class="speed-read"><b data-speed="time"></b> <i data-speed="times"></i></span>
               <small class="speed-goal" data-speed="cost" hidden></small>
             </span>
@@ -767,6 +778,9 @@
       put(entry, "time", stop.time);
       put(entry, "times", stop.times);
       put(entry, "goal", stop.goal);
+      // A reading worked out from other measurements says so.
+      put(entry, "worked", stop.worked ? "worked out, not yet timed" : "");
+      entry.classList.toggle("is-worked", !!stop.worked);
       entry.style.setProperty("--at", stop.at);
       entry.classList.add(stop.side === "above" ? "is-above" : "is-below");
       entry.classList.toggle("is-far", !!stop.far);
@@ -813,7 +827,9 @@
       entry.classList.add(stop.side === "above" ? "is-above" : "is-below");
       entry.classList.toggle("is-far", !!stop.far);
       entry.classList.toggle("is-start", stop.at > 0.92);
-      entry.title = [entry.querySelector(".speed-what").textContent, stop.from].filter(Boolean).join(" ");
+      // Past the goal the line ends at: it stands at the end, as an arrow.
+      entry.classList.toggle("is-past", !!stop.past);
+      entry.title = [entry.querySelector(".speed-what").textContent, stop.past && "It is past the end of this line.", stop.from].filter(Boolean).join(" ");
     }
     // Whose estimate the cloud cost is, and of what machine at what price.
     const cloud = data.cloud && typeof data.cloud === "object" ? data.cloud : null;
