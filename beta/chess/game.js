@@ -172,6 +172,9 @@ class World {
     // about to take.
     this.moving = null;
     this.doomed = null;
+    // The hall's light as the game goes (`dusk`, `spotlight`, `blaze`, and a
+    // flare each time a piece falls): what it is now, and what it goes to.
+    this.mood = {flare: 0, falls: 0, gloom: 0, gloomWant: 0, spot: null, spotNow: 0, blaze: 0, blazeNow: 0};
     // The side thinking, if one is, and how many times a side has (`muse`).
     this.musing = null;
     this.musings = 0;
@@ -192,7 +195,8 @@ class World {
 
   light() {
     const scene = this.scene;
-    scene.add(new THREE.HemisphereLight(0x9fb4d8, 0x1a120c, 0.5));
+    this.sky = new THREE.HemisphereLight(0x9fb4d8, 0x1a120c, 0.5);
+    scene.add(this.sky);
     // The key: warm, high and to the left of the seat, the one that casts.
     const key = this.key = new THREE.DirectionalLight(0xffe6c4, 2.6);
     key.position.set(-7, 13, 7);
@@ -333,10 +337,18 @@ class World {
         depthWrite: false, side: THREE.DoubleSide, fog: false}));
     shaft.position.y = (top + WALL + 0.6) / 2 + FLOOR_AT;
     scene.add(shaft);
-    const moon = new THREE.SpotLight(0xa8c2ff, 420, 60, 0.16, 0.7, 2);
+    const moon = this.moon = new THREE.SpotLight(0xa8c2ff, 420, 60, 0.16, 0.7, 2);
     moon.position.set(0, top + WALL - 1, 0);
     moon.target.position.set(0, 0, 0);
     scene.add(moon, moon.target);
+    // The beam that comes down from the eye onto a king in check, seen in the
+    // dusty air: drawn only while there is one (`tick`).
+    this.eyeAt = new THREE.Vector3(0, top + WALL - 0.4, 0);
+    this.beam = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.7, 1, 24, 1, true),
+      new THREE.MeshBasicMaterial({color: 0xc4d8ff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending,
+        depthWrite: false, side: THREE.DoubleSide, fog: false}));
+    this.beam.visible = false;
+    scene.add(this.beam);
   }
 
   board() {
@@ -477,6 +489,8 @@ class World {
     this.ridden = null;
     this.moving = null;
     this.doomed = null;
+    this.mood.blaze = 0;
+    this.mood.spot = null;
     this.era += 1;
     position.board.forEach((piece, sq) => {
       if (!piece) return;
@@ -835,6 +849,8 @@ class World {
   shatter(victim, heading, hooks, force = 1) {
     this.scene.remove(victim);
     if (this.doomed === victim) this.doomed = null;
+    this.mood.flare = 1;
+    this.mood.falls += 1;
     // The knight ridden is broken under its rider, who is thrown on the way
     // the blow came.
     if (victim === this.ridden) {
@@ -1003,6 +1019,18 @@ class World {
     }
   }
 
+  // The hall's light follows the game. The room darkens as the board empties
+  // (`dusk`, the pieces still standing), so that the braziers and the shaft
+  // stand out more the further it has gone; the shaft of light from the
+  // dome's eye narrows onto a king in check (`spotlight`); and at a mate the
+  // fires blaze and hold (`blaze`). A piece falling flares the fires.
+  dusk(standing) { this.mood.gloomWant = Math.max(0, Math.min(1, (32 - standing) / 28)) * 0.55; }
+  spotlight(sq) {
+    const king = this.pieces.get(sq);
+    this.mood.spot = king ? king.position.clone() : null;
+  }
+  blaze() { this.mood.blaze = 1; }
+
   // A side thinking: its pieces shift their weight, each a little and in its
   // own time, until it has chosen (`regard`). `null` is nobody thinking.
   muse(colour) {
@@ -1060,10 +1088,31 @@ class World {
   // What goes on whether or not anyone moves.
   tick(dt) {
     this.time += dt;
+    const mood = this.mood, follow = Math.min(1, dt * 0.8);
+    mood.flare *= Math.pow(0.12, dt);
+    mood.gloom += (mood.gloomWant - mood.gloom) * follow;
+    mood.blazeNow += (mood.blaze - mood.blazeNow) * Math.min(1, dt * 1.5);
+    const fire = 1 + mood.flare * 1.6 + mood.blazeNow * 1.5, blown = 1 + mood.flare * 0.45 + mood.blazeNow * 0.6;
+    this.sky.intensity = 0.5 * (1 - mood.gloom * 0.7) * (1 + mood.blazeNow * 0.4);
+    this.key.intensity = 2.6 * (1 - mood.gloom * 0.55) * (1 + mood.blazeNow * 0.25);
+    // The shaft narrows and brightens onto a king in check, and opens again.
+    const onto = mood.spot || new THREE.Vector3();
+    this.moon.target.position.lerp(onto, Math.min(1, dt * 2.5));
+    this.moon.angle += ((mood.spot ? 0.05 : 0.16) - this.moon.angle) * Math.min(1, dt * 2.5);
+    this.moon.intensity += ((mood.spot ? 2600 : 420) * (1 + mood.blazeNow * 0.5) - this.moon.intensity) * Math.min(1, dt * 2.5);
+    mood.spotNow += ((mood.spot ? 1 : 0) - mood.spotNow) * Math.min(1, dt * 2.5);
+    this.beam.visible = mood.spotNow > 0.01;
+    if (this.beam.visible) {
+      const down = this.moon.target.position.clone().setY(0.2), up = this.eyeAt.clone().sub(down);
+      this.beam.position.copy(down).addScaledVector(up, 0.5);
+      this.beam.scale.set(1, up.length(), 1);
+      this.beam.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), up.normalize());
+      this.beam.material.opacity = 0.13 * mood.spotNow;
+    }
     for (const {flame, lamp, phase} of this.flames) {
       const flicker = 0.86 + 0.1 * Math.sin(this.time * 9 + phase) + 0.07 * Math.sin(this.time * 23.7 + phase * 2) + 0.05 * Math.sin(this.time * 4.1 + phase);
-      lamp.intensity = 26 * flicker;
-      flame.scale.set(2.4 * flicker, 3 * (0.9 + (flicker - 0.86) * 1.3), 1);
+      lamp.intensity = 26 * flicker * fire;
+      flame.scale.set(2.4 * flicker * blown, 3 * (0.9 + (flicker - 0.86) * 1.3) * blown, 1);
     }
     this.motes.rotation.y += dt * 0.012;
     this.flash.intensity *= Math.pow(0.0006, dt);
@@ -1805,6 +1854,10 @@ function draw() {
   const checkers = checked === null ? [] : legalMoves({...game.position, turn: game.position.turn === "w" ? "b" : "w", ep: -1})
     .filter(move => move.to === checked).map(move => move.from);
   world.flinch(checked === null ? -1 : checked, checkers);
+  // The hall's light follows the game: darker as the board empties, the
+  // shaft onto a king in check.
+  world.dusk(game.position.board.filter(Boolean).length);
+  world.spotlight(checked === null ? -1 : checked);
   for (const side of ["w", "b"]) el(side === "w" ? "play-white" : "play-black").setAttribute("aria-pressed", String(game.side === side));
   // Where the player sits.
   const knights = ownKnights();
@@ -1928,6 +1981,7 @@ async function ended(how) {
     const epoch = game.epoch;
     await world.fall(game.position.turn, hooks);
     if (epoch !== game.epoch) return;
+    world.blaze();
   } else voice.say(title);
   el("ended-title").textContent = title;
   el("ended-how").textContent = how === "checkmate"
@@ -2132,7 +2186,7 @@ function begin(side = game.side, moves = []) {
   keep();
   draw();
   const how = standing(game.position, game.seen);
-  if (how !== "play" && how !== "check") { game.over = how; draw(); return; }
+  if (how !== "play" && how !== "check") { game.over = how; draw(); if (how === "checkmate") world.blaze(); return; }
   say(game.played.length ? "The game is as you left it." : side === "w" ? "White to move. Command your pieces." : "Black. The opponent moves first.");
   if (game.position.turn !== game.side) answer();
 }

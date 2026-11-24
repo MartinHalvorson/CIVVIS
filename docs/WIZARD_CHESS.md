@@ -211,6 +211,16 @@ of its own with a crack now and then, heard from wherever the seat is. A
 sound is made on the audio context of where it is going, so a crack sent to
 one context is never made on another.
 
+**The hall's light follows the game** (`World.mood`, `dusk`, `spotlight`,
+`blaze`). The room darkens as the board empties (the sky and the key light
+fall by up to 70% and 55% as the pieces go from 32 to 4), so the braziers
+and the shaft stand out more the further the game has gone. Each piece that
+falls flares the fires. A king in check is picked out: the light from the
+dome's eye narrows and brightens onto it, and a pale beam comes down through
+the dusty air onto its square, until it is out of check. At a mate the fires
+blaze and hold, and the hall brightens round the fallen king, until a new
+game is set down.
+
 **The hall** (`World.vault`). From a knight's back the room is what is
 above the pieces, so it is built to be looked up at: a ring of twelve stone
 columns round the board under a ribbed dome, a wall beyond them with tall
@@ -275,14 +285,14 @@ sound where it happens (#5755); the knight ridden alive (#5757); peril felt
 (#5758); seeing over your own knight, and the frame measured (#5760); the
 hall (#5766); the pieces alive (#5768); the board hearing a command as it is
 given (#5771); the opponent deliberating (#5772); riding into the blow
-(#5774); each piece its own stone (#5775); the hall's own sound (#5776).
+(#5774); each piece its own stone (#5775); the hall's own sound (#5776); the
+hall's light following the game (#5777).
 
 What is next, most felt first:
 
-- **A game's arc.** The hall's light follows the game: the braziers flare
-  when a piece falls, the shaft of light narrows onto a king in check, the
-  room darkens toward the end and blazes for a mate.
-- **Riding other pieces.** Any of your pieces, not only knights.
+- **Riding other pieces.** A rook's battlements to stand on, a bishop's
+  mitre, the queen's crown: every piece of your side as a seat, each moving
+  as it moves (a rook's grinding slide, a bishop's long glide).
 - **Speed: measured, and there is room.** `wizardChess.frameCost(n)` times
   `n` frames of the world's work and drawing, each finished on the graphics
   card (a pixel read back), and names what drew them. On the shared Mac
