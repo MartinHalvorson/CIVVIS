@@ -114,10 +114,13 @@ stay this page's own; nothing is taken from the film.
 knight", top right, puts the player on the back of their king's knight
 ("Other knight" changes it). The eye is a point on the knight itself
 (`EYE`), so the rider is carried through its leap, rears with it as it takes
-off and lurches as it lands. It is low on the knight's neck and to its left:
+off and lurches as it lands. It is low on the knight's neck and to its right:
 the knight's head is beside the rider, its cloth under them, and the pieces
 stand over them, a pawn near their eye, a queen a third again its height and
-a king more than half again (the table seat is unchanged). The
+a king more than half again (the table seat is unchanged). On the right,
+the head is on the left of the screen, where nothing written stands over
+it, and the plates fold to what a rider needs (the opponent's strength, the
+seat, the game) and let the hall show through them. The
 field of view widens from 36° to 64°. The rider's head turns to what is
 happening: a capture most of all, and any piece that moves. A drag, two
 fingers or an arrow key turn the head instead (take hold of the world and
@@ -125,9 +128,14 @@ pull it), and the head stays where it was put for two seconds. From one seat
 to another the view travels; it does not cut. A rider does not see their own
 cloak.
 
-**The knight ridden** (`World.ride`) wears a cloth over its mane in its
+**The knight ridden** (`World.ride`) wears a cloth over its neck in its
 side's colour, with its rider sitting behind its ears, so that from the
-board it is plain which knight is ridden. It looks straight at the enemy, not
+board it is plain which knight is ridden. It is alive to the one on its
+back (`World.attend`): a mane of stone, an eye lit from inside with its
+side's light that closes now and then, a bit and reins that run back to the
+rider's hands, and ears that turn toward the piece that is moving and prick
+up while it moves. It breathes out as it lands, and the stone groans under
+the rider as it turns. It looks straight at the enemy, not
 in toward the middle like the others, and turns to where it is going before
 it goes.
 
@@ -181,21 +189,22 @@ loop). The structure that makes that converge rather than wander:
    camera is, which pieces glow) rather than "looks right".
 
 Done: the rider's seat (#5747); the rider low and beside the head, and
-sound where it happens (#5755).
+sound where it happens (#5755); the knight ridden alive (#5757).
 
 What is next, most felt first:
 
-- **The mount itself.** From the saddle the knight's head is a flat slab of
-  stone. A mane, an eye, ears that turn toward what moves; a breath of dust
-  at each hoof-fall; the stone groaning under you as it turns.
-- **Peril felt. The threatening piece turns its head toward you; the
+- **Peril felt.** The threatening piece turns its head toward you; the
   camera sees it coming; a sacrifice of the ridden knight is said before it
   is played ("You will be taken there. Ride on?").
 - **The hall.** Walls, columns and a ceiling to be inside of, instead of
   black: what a low seat looks up at.
 - **Riding other pieces.** Any of your pieces, not only knights.
 - **Speed.** Frame time measured on this Mac's GPU in both seats, shadows
-  and debris budgeted to hold 60 fps.
+  and debris budgeted to hold 60 fps. Animation runs on the world's time,
+  50 ms at most a frame, so where frames are slow (CI draws in software)
+  every move is slow too; a test waits on what it checks, not on a clock.
+- **The mount seen whole.** Its ears and mane are above a rider's eye: a
+  glance up, or a look back at it from beside the board while riding.
 - **The headset seat** (`renderer.xr`), which the rider's seat is most of.
 
 ## How it is built
