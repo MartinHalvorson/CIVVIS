@@ -220,6 +220,9 @@
   #loading.gone { opacity: 0; pointer-events: none; }
   #loading b { display: block; color: var(--gold); font-size: 26px; font-weight: 600; margin-bottom: 6px; }
 
+  /* Two players at one laptop: there is no engine to set a strength for. */
+  body.two-players .elo, body.two-players #play-white, body.two-players #play-black { display: none; }
+
   /* In the saddle the plates fold to what a rider needs and let the hall
      through: the opponent's strength, the seat, the game. */
   body.riding .elo p, body.riding #made, body.riding .toggles, body.riding #brand p { display: none; }
@@ -262,6 +265,12 @@
 
 <section class="hud plate" id="table" aria-label="The opponent and the game">
   <h2>Opponent</h2>
+  <div class="row">
+    <span class="seg" role="group" aria-label="Who plays the other side">
+      <button type="button" id="vs-engine" aria-pressed="true" title="Stockfish plays the other side, at the Elo you pick">Stockfish</button>
+      <button type="button" id="vs-person" aria-pressed="false" title="Two players at this laptop, taking turns: the view goes round to whoever is to move">A person here</button>
+    </span>
+  </div>
   <div class="elo">
     <output id="elo-said" for="elo">1500<small>Elo</small></output>
     <input type="range" id="elo" min="1320" max="3190" step="10" value="1500" aria-label="The opponent's Elo">
