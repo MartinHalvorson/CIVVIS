@@ -14302,6 +14302,8 @@ mod counters_tests;
 mod great_work_tests;
 #[cfg(test)]
 mod player_aside_tests;
+#[cfg(test)]
+mod world_boundary_tests;
 
 #[cfg(test)]
 mod government_deck;
