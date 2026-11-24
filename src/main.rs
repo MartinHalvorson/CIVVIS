@@ -860,6 +860,8 @@ fn site_bench_command(args: Vec<String>) {
                 .filter(|seat| *seat < 64)
                 .fold(0u64, |seats, seat| seats | (1 << seat))
         }),
+        // Also a different game: the table plans on the whole board.
+        fog_honest: !has("--no-fog-honest"),
     };
     let started = Instant::now();
     let report = civvis::server::site_bench::run_with(seed, turns, options);
@@ -2011,6 +2013,7 @@ fn print_usage() {
               [--generations N] [--pop N] \
               [--no-documents (site-bench: play the frames, skip the page's state documents)] \
               [--no-kept-yields (site-bench: derive every city yield afresh)] \
+              [--no-fog-honest (site-bench: the Civ AIs plan on the whole board)] \
               [--no-own-kept-yields (site-bench: keep only the rivals' between a seat's passes)] \
               [--audit-kept-yields (site-bench: re-derive every reused yield and compare)] \
               [--shortcuts envelopes-across-own-moves (site-bench: this changes play)] \
