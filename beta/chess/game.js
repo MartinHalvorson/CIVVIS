@@ -650,6 +650,33 @@ class World {
     arm.forearm.quaternion.copy(arm.cuff.quaternion);
   }
 
+  // The rider's two arms in the frame of the piece they ride, each from a
+  // shoulder to a fist: a gauntlet, its cuff, and the forearm between.
+  arms(saddle, pairs) {
+    const made = this.geometry, leather = this.cloth.leather, gold = this.cloth.gold;
+    return pairs.map(([shoulder, hand]) => {
+      const fist = new THREE.Mesh(made.fist, leather), cuff = new THREE.Mesh(made.cuff, gold), forearm = new THREE.Mesh(made.forearm, this.cloth.cloak);
+      fist.scale.set(1.25, 0.85, 1);
+      for (const mesh of [fist, cuff, forearm]) { mesh.castShadow = true; saddle.add(mesh); }
+      const arm = {fist, cuff, forearm, shoulder, hand, grip: 0};
+      this.reach(arm);
+      return arm;
+    });
+  }
+  // An arm laid from its shoulder to its fist, the fist drawn back and
+  // clenched by how hard it grips.
+  reach(arm) {
+    const at = arm.hand.clone().lerp(arm.shoulder, 0.12 * arm.grip).add(new THREE.Vector3(0, 0.02 * arm.grip, 0));
+    const way = at.clone().sub(arm.shoulder), long = way.length(), along = way.clone().normalize();
+    arm.fist.position.copy(at);
+    arm.fist.scale.set(1.25 - 0.2 * arm.grip, 0.85, 1 - 0.1 * arm.grip);
+    arm.cuff.position.copy(at).addScaledVector(along, -0.045);
+    arm.cuff.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), along);
+    arm.forearm.position.copy(arm.shoulder).addScaledVector(along, (long - 0.06) / 2);
+    arm.forearm.scale.set(1, Math.max(0.05, long - 0.06), 1);
+    arm.forearm.quaternion.copy(arm.cuff.quaternion);
+  }
+
   // The pieces that could take the knight ridden: their light turns red.
   menace(squares) {
     for (const held of this.pieces.values()) {
