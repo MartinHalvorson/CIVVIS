@@ -1299,10 +1299,47 @@ in the engine knows about it. `beta/shim.js` seats the visitor for
 `mode=strange` as it does for `mode=play`, and the last section of
 `web/assets/app_debugger.js` draws the rest over the split the debugger makes.
 
-- **The two worlds are the two lower quarters of the window.** Each half puts
+- **The worlds are boxes along the bottom of the window.** Each half puts
   its standings, tracker and seat boxes away and is a map; the numbers of the
   two are set side by side in the top right corner. A is on the left and B on
-  the right, each under a name plate with its Civ AI's picker.
+  the right, each under a name plate with its branch's name, its player
+  strategy's picker and its exit.
+- **A branch is named by who played it.** Operator, 2026-11-24: "branches
+  should be labeled with their series of player strategies. like
+  MoonshotMaven-150-JackOfAllTrades-160-MoonshotMaven would mean moonshot
+  maven played the first 1-149 turns, then jackof alltrades from 150-159,
+  then moonshotmaven 160 onwards". The name is read from the engine's own
+  record of whose play each stretch of turns was (`played_by`, a half's
+  `marks.by`) as far as the last turn of the world's line, and the strategy
+  seated now is named last, with the turn it plays from, when it is not the
+  one that played the last stretch (`strangeSeries`). The name is on the
+  world's name plate, and on the tree where the branch ends when that is
+  ahead of the open turn. Turns ended by hand are `ByHand`.
+- **A box is in the colour of its branch.** Operator, 2026-11-24: "we should
+  highlight a box in the lower part of the screen with the color of the
+  branch". Every branch made is given the next of eight colours
+  (`STRANGE_INKS`); its line on the tree, its name and the border of its box
+  are that colour, and a branch that is let go of keeps it. The trunk is the
+  line of the world that was branched from. The pointer over a box, or its
+  name plate, lights that world's line from the first turn to its last and
+  stands the others back ("The cursor over a world on the bottom should
+  highlight that world's line").
+- **A box has an exit.** "each box should have an exit to close the box. the
+  boxes should somewhat automatically resize and the divide between the
+  boxes on the bottom and the lines on the top". ✕ lets the box's branch go,
+  which stays on the tree, and the other world has the whole width. The last
+  box stays open. The engine still holds the closed world, as it stood: it is
+  asked for nothing (the lock is opened, so time runs for the open world
+  alone, and that world's own panel is put away as a locked half's is), and
+  the next branch is made in its place and locks the two again.
+- **The line of the open turn is the divide** between the tree above and the
+  boxes below. The page places it so that a box has the shape of a map,
+  three high to five wide, within a share of the window (`strangeGeometry`):
+  two boxes are narrower and so shorter, and one box is taller and takes the
+  line up with it. It never goes above the cards at the top. It can be
+  dragged, and a double-click gives it back to the page. The turn and its
+  era are written on the line, to either side of the board ("Move turn count
+  up to the center line, as that is the current turn").
 - **Each yield is a figure a turn and a total so far.** Operator, 2026-11-23:
   "lets track cumulative prod, science, culture, gold, faith next to the
   current turn yields". The card in the top right gives each world two
@@ -1324,14 +1361,26 @@ in the engine knows about it. `beta/shim.js` seats the visitor for
   in the middle and the other peels off to its own world's side; either can
   be followed. A city founded is a gem on the branch that founded it, and an
   era is named on its first turn.
+- **Only what was played is a line.** "we should also not spew random lines
+  on the timeline". Ahead of the last turn a world has played there is a
+  dashed way straight on and nothing else. (The fan of ways a game might
+  still go, drawn from a dice, is gone.)
 - **B begins with another Civ AI.** Two worlds that seat the same one are one
   world for ever, so the branch is given the first of a short list that is
   not A's. Each picker seats another.
-- **Branch here** lets the other world's branch go and makes it a copy of the
-  followed world on the open turn (`pane-copy`), with the next Civ AI. The
-  branch that was let go of stays on the tree, grey and struck off where it
-  ended, with its Civ AI and score, so the tree grows a fork for every branch
-  made. Fourteen are kept.
+- **Branch is one step.** Operator, 2026-11-24: "when we branch, we should
+  select the player strategy and make the branch. in one step. Branch:
+  1100-MoonshotMaven (player strat dropdown)". The Branch control is a
+  picker that lists what the branch's name would gain, the open turn and
+  each player strategy the followed world does not seat (`150-MoonshotMaven`),
+  and picking one makes the branch (`strangeBranch`): the other world becomes
+  a copy of the followed one on the open turn (`pane-copy`) with that
+  strategy in the seat and a colour of its own. It takes the other box, or
+  opens it if it was closed. The branch that box was on stays on the tree, in
+  its own colour and struck off where it ended, with its name and score, so
+  the tree grows a fork for every branch made. Fourteen are kept.
+- **Play Time and Pause Time.** The play button runs time on from the open
+  turn and reads Pause Time while it runs.
 - **Going back** (the step buttons, To the fork, or a press on the highway at
   a turn's height) puts both worlds back as they stood. The turns they hold
   ahead of the open one stay on the tree, above the line.
@@ -1353,16 +1402,15 @@ in the engine knows about it. `beta/shim.js` seats the visitor for
   world plays and goes back by itself, its name plate says its own turn, and
   the step buttons move the followed world. Locking again brings the other
   world to the followed one's turn first.
-- **Ahead of the last turn played nothing is known**, and what is drawn there
-  says so: a thin dashed line straight on and a fan of ways it could still
-  go, a fork every few turns, each closing as the open turn reaches it. It is
-  a picture of not knowing. No turn in it has been played.
 
-It is two worlds because the split is two. A window narrower than the split
-needs, or a small device, has the one timeline, which is the AI Debugger, and
-its bar says why. `beta/debugger_test.py` (`check_doctor_strange`) holds the
-layout, the fork, Branch here, going back, following and the narrow window in
-a browser.
+It is two worlds at a time because the split is two: the tree keeps every
+branch made, and two of them are open as worlds. A window narrower than the
+split needs, or a small device, has the one timeline, which is the AI
+Debugger, and its bar says why. `beta/debugger_test.py`
+(`check_doctor_strange`) holds the layout, the fork, the names and colours of
+the branches, the one-step Branch, the pointer over a box, the divide, a box
+closed and opened again, going back, following and the narrow window in a
+browser.
 
 ## `POST /autosearch`
 
