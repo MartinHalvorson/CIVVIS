@@ -175,6 +175,18 @@ than 0.55 s): the piece chosen stirs, what it will take braces, and a
 rider's eye is drawn to it, so that from the saddle the blow is seen
 coming. Then it is said and played.
 
+**Riding into the blow** (`hooks.impact`, `pace`, `Seat.kick`,
+`World.shudder`). A blow that lands at a rider's side, their own knight's
+or the opponent's, jars the view wider for an instant and shakes it, the
+more the nearer; within about two squares the world's own time slows to a
+third for half a second, so the stone is seen breaking and hangs in the air
+past the rider's eye (the rider's head keeps the clock's time, and can turn
+while it hangs). A blow beside the knight ridden that is not on it rocks the
+knight away from it and back, and the rider with it. The head is never
+pulled to what is nearly underneath it (the prey of the knight as it comes
+down on it), and tips only so far up and down, so the dive onto a capture
+is ridden, not spun.
+
 **The hall** (`World.vault`). From a knight's back the room is what is
 above the pieces, so it is built to be looked up at: a ring of twelve stone
 columns round the board under a ribbed dome, a wall beyond them with tall
@@ -238,14 +250,15 @@ Done: the rider's seat (#5747); the rider low and beside the head, and
 sound where it happens (#5755); the knight ridden alive (#5757); peril felt
 (#5758); seeing over your own knight, and the frame measured (#5760); the
 hall (#5766); the pieces alive (#5768); the board hearing a command as it is
-given (#5771); the opponent deliberating (#5772).
+given (#5771); the opponent deliberating (#5772); riding into the blow
+(#5774).
 
 What is next, most felt first:
 
-- **Riding into the blow.** When the knight ridden captures, the rider is
-  carried in with it: the camera dips with the knight's descent onto its
-  prey and the rubble passes the rider's eye; a near-miss (a capture beside
-  the rider) rocks the knight.
+- **The pieces' own voices.** Each kind of piece its own stone: a pawn's
+  light scrape, a rook's grinding mass, a queen's ringing; the knight ridden
+  snorts and its hooves strike. Sound is what a seat among the pieces is
+  most of.
 - **Riding other pieces.** Any of your pieces, not only knights.
 - **Speed: measured, and there is room.** `wizardChess.frameCost(n)` times
   `n` frames of the world's work and drawing, each finished on the graphics
