@@ -171,15 +171,22 @@ Games an hour times the hours one game takes by hand is the multiplier, so
 the two columns say the same thing. A theoretical row also gives the share
 of it the measured run reaches.
 
-The two theoretical rows for self-play differ because of where their speed
-was measured. The one-core reading was taken on the host as it works, beside
-a live game and the tournament, so eighteen times it comes out close to the
-run. A game alone on the machine is about half again as fast, and eighteen
-times that is the ceiling the run is held against. No machine reaches it
-whole: the run's workers had 14.7 of the 18 cores, and twelve of the
-eighteen are of the slower class (`docs/GAMES_PER_MINUTE.md`). Deity
-self-play has a theoretical row and no experimental one, because no run has
-played it on every core.
+The two theoretical rows for self-play differ because of where and when
+their speed was measured. The one-core reading is taken on the host as it
+works, beside a live game and the tournament. A game alone has the machine
+to itself, and eighteen times its speed is the ceiling a run is held
+against. No machine reaches it whole: the run's workers had 14.7 of the 18
+cores, and twelve of the eighteen are of the slower class
+(`docs/GAMES_PER_MINUTE.md`). Deity self-play has a theoretical row and no
+experimental one, because no run has played it on every core.
+
+Each row carries the day of its reading, and the rows need not be of one
+build. The one-core readings of 2026-11-24 are two days newer than the
+every-core run and the game alone, and the simulator got faster in between,
+so eighteen times the one-core reading stands above both and the share the
+run reaches of it is short by that much. A new every-core run and a new game
+alone on the same build put the three back in step. Both need the machine to
+itself.
 
 Three ledger keys are read by these tables alone:
 
