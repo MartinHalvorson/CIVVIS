@@ -275,8 +275,9 @@ class HomeRankings(unittest.TestCase):
         # The page leads a row with the rate it is ranked by, the record
         # beside it, and says under the title which games were counted.
         for line in (
-            'const figure = el("span", "rank-value", (100 * c.wins / (c.wins + c.losses)).toFixed(1) + "%");',
-            'figure.append(el("small", "", fmt(c.wins) + "\\u2013" + fmt(c.losses)));',
+            'const figure = el("span", "rank-value", (100 * wins / (wins + losses)).toFixed(1) + "%");',
+            'figure.append(el("small", "", fmt(wins) + "\\u2013" + fmt(losses)));',
+            'const item = civRow(i, c.name, c.wins, c.losses,',
             'sub.textContent = "Our AI\\u2019s win rate as each civ, in " + (civs.level ? "Lv " + civs.level + " " : "")',
             '+ "verification games against Civilization VI\\u2019s own AI" + (civs.since ? " since " : "");',
             'if (civs.since) sub.append(el("span", "rank-day", civs.since));',
@@ -399,13 +400,16 @@ class HomeRankings(unittest.TestCase):
         ]
         self.assertEqual(at, sorted(at))
         self.assertIn(".res-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-items: start; min-width: 0; }", CHARTS)
-        # The player strategies stand first in ELO Rankings' record, the civ
-        # records first in Civ Analytics', before the tree of build orders.
+        # The player strategies stand first in ELO Rankings' record. The civ
+        # records stood first in Civ Analytics', before the tree of build
+        # orders, until 2026-11-24 (operator: "move winngest civs to the
+        # bottom"): now last, the tree first.
         record = ELO[ELO.index('<div class="elo-record" id="elo-record" hidden>'):]
         self.assertLess(record.index('id="rank-strategies"'), record.index('id="elo-over-time"'))
         self.assertEqual(re.findall(r'<section [^>]*id="([a-z-]+)"', record)[0], "rank-strategies")
         record = CIVS[CIVS.index('<div class="civ-record" id="civ-record" hidden>'):]
-        self.assertEqual(re.findall(r'<section [^>]*id="([a-z-]+)"', record), ["rank-civs", "res-side-builds"])
+        sections = re.findall(r'<section [^>]*id="([a-z0-9-]+)"', record)
+        self.assertEqual((sections[0], sections[-3:]), ("res-side-builds", ["civ-civs", "rank-civs", "rank-civs-self"]))
         self.assertIn("const strategies = data.strategies;", ELO)
         self.assertIn("const civs = data.civs;", CIVS)
         # The Tournaments table stood above the two lists until the operator
