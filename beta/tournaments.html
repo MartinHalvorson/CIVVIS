@@ -289,6 +289,22 @@
   .tour-game { width: 11px; height: 11px; border-radius: 2px; background: var(--loss); }
   .tour-game.is-win { background: var(--gold); }
   .tour-game.is-open { background: none; box-shadow: inset 0 0 0 1px var(--border-strong); }
+  /* The row says where it starts and where it ends (operator, 2026-11-24:
+     "we should label the first game and last game in the chart. just like
+     a first and last label to make the flow clear"): "First" before its
+     first square and "Last" after its last one. A label is written inside
+     its own square and stands in that square's margin, so it has its room
+     in the row and a wrapped row never parts it from its game. The first
+     square's margin is a whole number of squares (14px each: 11px and the
+     3px between two), so every line of a wrapped row keeps its squares in
+     the same columns. Both margins are measured from the label once it is
+     on the page; these are the two words' own. */
+  .tour-game { position: relative; }
+  .tour-game.is-first { margin-left: var(--lead, 28px); }
+  .tour-game.is-last { margin-right: var(--trail, 28px); }
+  .tour-end { position: absolute; top: 0; color: var(--muted); font-size: 10.5px; font-weight: 600; line-height: 11px; white-space: nowrap; }
+  .tour-end.is-first { left: calc(-1 * var(--lead, 28px)); }
+  .tour-end.is-last { left: calc(100% + 5px); }
   .tour-key { display: inline-block; width: 9px; height: 9px; margin-right: 4px; border-radius: 2px; background: var(--loss); vertical-align: -1px; }
   .tour-key.is-win { background: var(--gold); }
   .tour-legend { margin: 0; color: var(--faint); font-size: 11.5px; line-height: 1.5; }
@@ -551,9 +567,18 @@
     // level in front when the tournament's games are not all at one level.
     const told = (g, mixed) => [mixed && g.level ? "Lv " + g.level : "", g.civ, g.how, g.turns != null ? "turn " + g.turns : ""]
       .filter(Boolean).join(" · ");
+    // A label at one end of a row of squares, written inside the square
+    // it names: "first" stands before that square, "last" after it.
+    const ended = (square, side, text) => {
+      square.classList.add("is-" + side);
+      square.append(el("span", "tour-end is-" + side, text));
+    };
     // A square per game in the order played, then an outline per game a
     // running tournament has still to play.
     // An indefinite tournament (no size) draws its latest 100 games.
+    // The row is labelled at both ends, "First" and "Last", so it reads
+    // one way. A row that starts later than the tournament's first game
+    // (the latest 100) says which game it starts at instead, "Game 141".
     const strip = (t, open) => {
       const row = el("ol", "tour-strip");
       const mixed = list(t.levels).length > 0;
@@ -568,6 +593,11 @@
         const square = el("li", "tour-game is-open");
         square.title = "Game " + (i + 1) + ": not played yet";
         row.append(square);
+      }
+      const squares = row.children;
+      if (squares.length) {
+        ended(squares[0], "first", skipped ? "Game " + (skipped + 1) : "First");
+        ended(squares[squares.length - 1], "last", "Last");
       }
       row.setAttribute("aria-label", plural(t.wins, "win", "wins") + " and " + plural(t.losses, "loss", "losses") + ", in the order played");
       return row;
@@ -800,6 +830,18 @@
 
     document.getElementById("tour-empty").hidden = true;
     document.getElementById("tour-record").hidden = false;
+
+    // A label's room in its row, measured now the record is on the page.
+    // Before the first square it is the fewest whole squares the label
+    // fits in, 14px each, so a wrapped row keeps its columns; after the
+    // last square it is the label's own width.
+    document.querySelectorAll(".tour-end").forEach((label) => {
+      const wide = label.getBoundingClientRect().width;
+      if (!wide) return;
+      const first = label.classList.contains("is-first");
+      label.parentNode.style.setProperty(first ? "--lead" : "--trail",
+        (first ? Math.ceil((wide + 4) / 14) * 14 : Math.ceil(wide + 5)) + "px");
+    });
   })();
   </script>
   <script data-first-visit>
