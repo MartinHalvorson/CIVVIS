@@ -380,18 +380,22 @@ fn boot_waits_for_every_script_of_the_page_before_it_calls_into_them() {
     // What is waited for: the page's scripts are parser-run, so
     // DOMContentLoaded follows the last of them; a boot begun later (a
     // retry, a reconnect) waits for nothing.
-    assert!(EMBEDDED_APP_JS.contains(concat!(
+    // It is declared in the page's first script, ahead of app.js, where a
+    // name can never be read before its declaration has run (and app.js is
+    // three lines short of the size test_web_assets.py holds it under).
+    assert!(include_str!("../../web/assets/app_palette.js").contains(concat!(
         "const pageScriptsRan = document.readyState === \"loading\"\n",
         "  ? new Promise(resolve => document.addEventListener(\"DOMContentLoaded\", resolve, {once: true}))\n",
         "  : Promise.resolve();\n",
     )));
-    let declared = EMBEDDED_APP_JS
-        .find("const pageScriptsRan")
-        .expect("the wait is declared");
-    let started = EMBEDDED_APP_JS
-        .find("\nboot();\n")
-        .expect("the call that starts the first boot");
-    assert!(declared < started);
+    assert!(!EMBEDDED_APP_JS.contains("const pageScriptsRan"));
+    let loads = |name: &str| {
+        EMBEDDED_INDEX_HTML
+            .find(&format!("<script src=\"/assets/{name}\"></script>"))
+            .unwrap_or_else(|| panic!("the page no longer loads {name}"))
+    };
+    assert!(loads("app_palette.js") < loads("app.js"));
+    assert!(loads("app.js") < loads("app_setup.js"));
     // And nothing of a later script is called before it.
     let before = &boot[..wait];
     for script in [

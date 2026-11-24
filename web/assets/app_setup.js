@@ -1463,5 +1463,5 @@ document.getElementById("newgame-options").addEventListener("change", stageSelec
 // declaration in both files is guaranteed initialized, and still before boot
 // goes on past the engine's first answer (boot's synchronous prefix ends at
 // its first await, and it then waits for every script of the page to have
-// run: `pageScriptsRan` in app.js).
+// run: `pageScriptsRan`, declared in app_palette.js).
 initAdvancedSettings();

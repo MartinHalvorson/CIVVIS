@@ -20,6 +20,25 @@
 // and that no `const` is declared at the top level of two of them, which is a
 // SyntaxError that kills the page rather than a shadowed variable.
 
+// Every script of the page has run. It is declared here, in the first of
+// them, and app.js's boot() waits for it. boot() is called from the foot of
+// app.js, before the files that load after it (app_setup.js, app_moments.js,
+// app_frontdoor.js, app_debugger.js), and past its first await it calls into
+// them: `syncTeams`, for one, is app_setup.js's. That was safe only while
+// those files ran before the engine's first answer, and on a site that
+// serves them as files of their own nothing promises it. On 2026-11-24 the
+// engine answered /rules first, boot threw "syncTeams is not defined", and
+// the publish check, which lets no page throw, failed a promotion to the
+// front page on it. A visitor would have seen "Boot failed · retry 1" and a
+// world two seconds late.
+//
+// The page's scripts are ordinary parser-run ones, so DOMContentLoaded
+// follows the last of them. A boot begun after that (a retry, a reconnect)
+// waits for nothing.
+const pageScriptsRan = document.readyState === "loading"
+  ? new Promise(resolve => document.addEventListener("DOMContentLoaded", resolve, {once: true}))
+  : Promise.resolve();
+
 const S = 36, SQ3 = Math.sqrt(3);
 // Mountain ground is deliberately much darker than workable land: its broad,
 // grey-brown mass reads as a near-impassable wall before the peak symbol does.
