@@ -2269,6 +2269,9 @@ def entry_from(summary: dict) -> dict:
         **{key: summary[key] for key in ("race", "boosts", "game_id", "seat",
                                        "genome_treatments", "max_turns",
                                        "seed_probe", "seed_request", "recovery_chain") if key in summary},
+        # How long the run took end to end, by the harness's own clock
+        # (`civ6_play.RUN_CLOCK`): absent from every run before the clock.
+        **{key: summary[key] for key in ("started_utc", "timing") if summary.get(key)},
         "tag": summary.get("tag"),
         "utc": summary.get("finished_utc") or datetime.now(timezone.utc)
             .strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -2708,6 +2711,7 @@ def result_entry(summary: dict) -> dict:
     """
     return {
         **{key: summary[key] for key in ("game_id", "seat") if key in summary},
+        **{key: summary[key] for key in ("started_utc", "timing") if summary.get(key)},
         "tag": summary.get("tag"),
         "utc": summary.get("finished_utc"),
         "difficulty": summary.get("difficulty"),
@@ -2723,8 +2727,31 @@ def result_entry(summary: dict) -> dict:
     }
 
 
+#: The readings of a run's clock a result line carries, as the summary's
+#: `timing` names them: the whole run, the launch and setup of the game, and
+#: the play. What is left of the whole is the ending (the hold on the final
+#: screen, the quit, the summary).
+RUN_SECONDS = ("seconds", "setup_seconds", "play_seconds")
+
+
+def run_seconds(timing) -> dict:
+    """The seconds a result line says of a run's `timing`: each of
+    `RUN_SECONDS` that is a real reading, and nothing for a run that was not
+    timed, so the line of every run before the clock stays as it was."""
+    if not isinstance(timing, dict):
+        return {}
+    return {key: timing[key] for key in RUN_SECONDS
+            if isinstance(timing.get(key), (int, float))
+            and not isinstance(timing[key], bool) and timing[key] >= 0}
+
+
 def result_row(entry: dict) -> dict:
     """One run's line in the results file, from its ledger entry.
+
+    A run timed by the harness's own clock (`civ6_play.RUN_CLOCK`, every run
+    since 2026-11-24) says how long it took end to end, in seconds, and how
+    much of that was setup and play (`run_seconds`): the benchmark the CIVVIS
+    Performance page charts (`beta/control_times.py`).
 
     `outcome` is the ending `markdown_for` prints for the same row, as one of
     `OUTCOMES`: a win, our own elimination, a rival's victory, a game the
@@ -2740,6 +2767,7 @@ def result_row(entry: dict) -> dict:
                else "abandoned" if entry.get("reason") == "abandoned"
                else "unfinished")
     return {
+        **run_seconds(entry.get("timing")),
         "tag": tag,
         "game": entry.get("game_id") or game_tag(tag),
         "utc": entry.get("utc"),

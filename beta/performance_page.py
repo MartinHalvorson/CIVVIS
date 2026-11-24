@@ -12,9 +12,18 @@ CIVVIS's own page in the site list: the entry that
 opens under CIVVIS (operator 2026-11-21: "performance should be a page
 similar to the home/ and other similar pages (musings/research/) etc. we want
 the civvis performance charts there. fastest game video. p1, p10, p50, p90,
-p99 times for games for self-play games."). It carries four things:
+p99 times for games for self-play games."). It carries five things:
 
-- **how many times faster than a game played by hand**, at its top
+- **CIVVIS computer control: game speed over time**, at its top (operator
+  2026-11-24: "we should be benchmarking our civvis computer control games
+  time end to end and that number show flow through to a performance chart
+  (civvis comptuer control games speed over time) and be a top chart for
+  civvis performance"): how long one game takes with CIVVIS at the controls
+  of Civilization VI itself, end to end, day by day. `control_times.control`
+  works it out of the run ledger (`results.jsonl` on the `ledger` branch) as
+  it stands when the site is published, so it moves with every finished game
+  and nothing of it is committed.
+- **how many times faster than a game played by hand**, under it
   (operator 2026-11-22: "at the top of civvis performance we want to
   calculate a multiplier on the theoretical and experimetnal throughput of
   the simualtor. and the calculations. baeline is 5 hrs for manually played
@@ -90,6 +99,7 @@ import pathlib
 import re
 import sys
 
+import control_times
 import speedup_timeline
 
 SLOT = re.compile(r'(<script type="application/json" id="performance-data">)(.*?)(</script>)', re.S)
@@ -354,8 +364,18 @@ def path(source: pathlib.Path) -> dict | None:
 
 def performance(source: pathlib.Path) -> dict | None:
     """The record, or `None` when neither the times, nor a video, nor the
-    speedup can be read."""
+    speedup, nor the computer control games can be read."""
     out: dict = {"percentiles": PERCENTILES, "spans_per_tenfold": SPANS_PER_TENFOLD}
+    # The computer control games are the run ledger's, read as it stands now.
+    # A clone that never fetched the `ledger` branch has none, and anything
+    # odd in the ledger costs the page this one part.
+    try:
+        out["control"] = control_times.control(source)
+    except Exception as error:  # noqa: BLE001 - the ledger is written by every game, the site must still publish
+        print(f"performance_page: the computer control games could not be timed ({error!r})", file=sys.stderr)
+        out["control"] = None
+    if out["control"] is None:
+        print("performance_page: no computer control game times", file=sys.stderr)
     out["speedup"] = speedup_timeline.worked(source)
     if out["speedup"] is None:
         print("performance_page: no speedup readings", file=sys.stderr)
@@ -379,7 +399,7 @@ def performance(source: pathlib.Path) -> dict | None:
     except (OSError, ValueError, AttributeError) as error:
         print(f"performance_page: no record videos ({error})", file=sys.stderr)
         out["videos"] = []
-    return out if out["windows"] or out["videos"] or out["speedup"] else None
+    return out if out["windows"] or out["videos"] or out["speedup"] or out["control"] else None
 
 
 def fill(page: str, data: dict | None) -> str | None:
@@ -418,9 +438,10 @@ def main(argv: list[str]) -> int:
     else:
         games = data["windows"].get("all", {}).get("games", 0)
         speedup = ((data.get("speedup") or {}).get("answer") or {}).get("all") or "no"
+        control = ((data.get("control") or {}).get("all") or {}).get("games", 0)
         print(
-            f"performance_page: wrote {games} self-play games' times in {len(data['batches'])} batches, {len(data['videos'])} videos"
-            f" and {speedup} speedup into {page}",
+            f"performance_page: wrote {control} computer control games' times, {games} self-play games' times in"
+            f" {len(data['batches'])} batches, {len(data['videos'])} videos and {speedup} speedup into {page}",
             file=sys.stderr,
         )
     return 0
