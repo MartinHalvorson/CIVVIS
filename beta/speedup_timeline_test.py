@@ -770,8 +770,14 @@ class Page(unittest.TestCase):
         section = LANDING[LANDING.index('<section class="speed"') : LANDING.index('<section class="watch"')]
         self.assertIn('<section class="speed" id="speed" aria-label="How many times faster than a person a game is played" hidden>', section)
         self.assertIn("section.hidden = false;", LANDING)
-        for place in ("speedup", "was", "cloud-by", "cloud-machine", "cloud-price"):
+        for place in ("speedup", "was", "cloud-by"):
             self.assertEqual(section.count(f'data-speed="{place}"'), 1, place)
+        # The machine rented and its price are CIVVIS Performance's to say,
+        # where the note's link goes: Home says whose estimate it is and no
+        # more (operator, 2026-11-24: "there is too much text on pages,
+        # particualrly home/ and charts/").
+        for place in ("cloud-machine", "cloud-price"):
+            self.assertNotIn(f'data-speed="{place}"', LANDING)
         # The goals are the line's last entries, one for each in the ledger,
         # smallest first, and each stands at its own place as a stop does:
         # the largest is the line's left end.
@@ -780,13 +786,11 @@ class Page(unittest.TestCase):
         self.assertLess(section.rindex('data-stop="'), section.index('data-goal="'))
         # On this page each of them is named Theoretical (operator,
         # 2026-11-23: "replace "goal" on home for 1Bx and 1Mx with
-        # "theoretical""): nothing has run at a million or a billion times,
-        # and the note under the line calls them the same thing. A stop's own
-        # goal, the small line under its time, keeps the word.
+        # "theoretical""): nothing has run at a million or a billion times.
+        # A stop's own goal, the small line under its time, keeps the word.
         named = re.findall(r'<li class="speed-stop speed-finish" data-goal="\w+">.*?<b class="speed-name">([^<]+)</b>', section, re.S)
         self.assertEqual(named, ["Theoretical"] * len(goals))
         self.assertNotIn('<b class="speed-name">Goal</b>', LANDING)
-        self.assertIn("the rest of the way to a theoretical speed, rented as", section)
         self.assertNotIn("to a goal", re.sub(r"<!--.*?-->", "", section, flags=re.S))
         self.assertNotIn(".speed-finish { right:", LANDING)
         self.assertIn('entry.style.setProperty("--at", goal.at);', LANDING)
@@ -799,7 +803,8 @@ class Page(unittest.TestCase):
         # numbers"): hidden until the slot names one, and the name is the
         # slot's.
         self.assertIn('<p class="speed-note" id="speed-note" hidden>', section)
-        self.assertIn('Cloud cost is a best estimate by <span data-speed="cloud-by"></span>, not a quote:', section)
+        self.assertIn('Cloud cost: a best estimate by <span data-speed="cloud-by"></span>, not a quote.', section)
+        self.assertIn('<a href="../charts/civvis-performance/#perf-cloud">How it is worked out</a>', section)
         self.assertIn('document.getElementById("speed-note").hidden = false;', LANDING)
         self.assertNotIn("Fable", section)
         # Words that would meet their neighbour's stand a row out.

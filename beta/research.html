@@ -244,6 +244,13 @@
   .rank-note { margin: 10px 0 0; padding-top: 8px; border-top: 1px solid var(--border); color: var(--faint); font-size: 11.5px; line-height: 1.5; }
   .rank-note a { color: var(--accent); }
   .rank-note p { margin: 0 0 4px; }
+  /* What a chart counts, closed until it is pressed (operator, 2026-11-24:
+     "there is too much text on pages ... should be a more visual
+     experience"). The words are a visitor's to open; the page is its charts. */
+  .fine { margin-top: 10px; }
+  .fine > summary { width: max-content; max-width: 100%; color: var(--faint); font-size: 11.5px; cursor: pointer; }
+  .fine > summary:hover, .fine[open] > summary { color: var(--accent); }
+  details.fine > .rank-note { max-width: 860px; margin-top: 6px; padding-top: 0; border-top: 0; }
 
   /* The controls: which games of a kind are counted, in that kind's head,
      and how many turns a column or a point of a line covers, over the first
@@ -542,15 +549,14 @@
   </header>
 
   <main class="shell">
+    <!-- One line. The page was mostly words until 2026-11-24 (operator:
+         "there is too much text on pages, particualrly home/ and charts/.
+         should be a more visual experience. some text ok. just not too
+         much"): the paragraph here became this line, the sentences under
+         each heading went, and what each chart counts is under "How it is
+         counted", closed until it is pressed. -->
     <p class="intro">
-      Who wins, how and when. Every chart here is read off games the CIVVIS AI
-      agents have played: against each other in the simulator, and one agent
-      at a time inside <cite>Sid Meier&#8217;s Civilization VI</cite> against
-      the game&#8217;s own AI. How every agent rates is on
-      <a href="../elo-rankings/">ELO Rankings</a>, how CIVVIS does as each
-      civ and which early builds win on <a href="../civ-analytics/">Civ
-      Analytics</a>, and how fast the simulator plays on
-      <a href="../civvis-performance/">CIVVIS Performance</a>.
+      Who wins, how and when: CIVVIS against <cite>Civilization VI</cite>&#8217;s own AI, and against itself.
     </p>
 
     <!-- The figures. `beta/publish.sh` fills the slot below, the
@@ -610,7 +616,7 @@
         <!-- The yardstick for every cell under it, in big type (operator
              2026-11-24: "add a big note to firaxis civ 6 benchmark that
              expected win rate for a 6P game is 1/6 or 16.7%"). -->
-        <p class="res-bench-par" id="res-bench-par"><b>Expected win rate in a 6P game: 1/6 = 16.7%</b> <span>Six players and one winner: a player no better than the field wins one game in six. A rate above 16.7% beats the Firaxis AI.</span></p>
+        <p class="res-bench-par" id="res-bench-par"><b>Expected win rate in a 6P game: 1/6 = 16.7%</b> <span>A rate above 16.7% beats the Firaxis AI.</span></p>
         <div class="res-bench-pair">
           <div class="res-section" id="res-bench-on">
             <h3 class="res-bench-title" id="res-title-rates-on">Diplomatic victory allowed <small id="res-rates-count-on"></small></h3>
@@ -637,6 +643,8 @@
             </div>
           </div>
         </div>
+        <details class="fine">
+        <summary>How it is counted</summary>
         <p class="rank-note">
           Every finished game of the tournaments on the <a href="../../tournaments/">Tournaments</a> page, by the level Civilization VI&#8217;s own AI played at.
           The left table holds the games that allowed the Diplomatic victory, the right table the games set up with it switched off.
@@ -646,6 +654,7 @@
           A day is 24 hours, counted back from the newest tournament game.
           The charts below count every verification game that ended in a victory, in a tournament or not, so their counts differ.
         </p>
+        </details>
       </section>
       <div class="res-layout">
         <div class="res-graphs">
@@ -734,6 +743,8 @@
               <h3 class="res-kind-title"><span data-title>CIVVIS wins</span> <small data-count></small></h3>
               <div class="res-plot" data-plot></div>
             </div>
+            <details class="fine">
+            <summary>How it is counted</summary>
             <p class="rank-note">
               Every game that ended in a victory, by the turn it ended on and the victory that ended it.
               Both kinds of game are six players on a Continents map at Online speed, 250 turns.
@@ -742,6 +753,7 @@
               and drawn three times: every victory, then only the AI&#8217;s wins, then only CIVVIS&#8217;s wins.
               All three are shares of the same games, so the second and third add up to the first.
             </p>
+            </details>
           </div>
         </section>
         </div>
@@ -749,11 +761,7 @@
 
       <section class="res-section" id="res-each" aria-labelledby="res-each-title">
         <h2 class="rank-title" id="res-each-title">Each victory&#8217;s timing</h2>
-        <p class="rank-sub">
-          One chart per victory type, the two kinds of game over the same turns. A line is that victory&#8217;s
-          games spread over the turns they ended on, so every line adds up to 100% and a peak is when that victory
-          most often lands, however rare the victory is. How common it is stands above each chart.
-        </p>
+        <p class="rank-sub">Every line adds up to 100%: a peak is when that victory lands, however rare it is.</p>
         <ul class="res-legend">
           <li><span class="res-linekey" style="background: var(--text)"></span><span data-say="CIVVIS vs {level} AI">CIVVIS vs Lv 8 Deity AI</span></li>
           <li><span class="res-linekey is-wash" style="border-color: var(--muted); background: rgba(147, 163, 181, 0.16)"></span>CIVVIS self-play (in the victory&#8217;s colour)</li>
@@ -763,7 +771,6 @@
 
       <section class="res-section" id="res-table" aria-labelledby="res-table-title">
         <h2 class="rank-title" id="res-table-title">The figures</h2>
-        <p class="rank-sub">For the games chosen above: how many each victory ended, its share of the games, how many of the games against the AI each side won, its median turn, and the span of turns it ended in most.</p>
         <div class="res-scroll">
           <table class="rank-table" id="res-summary">
             <thead>
@@ -783,6 +790,8 @@
             <table class="rank-table" id="res-spans"><thead></thead><tbody></tbody></table>
           </div>
         </details>
+        <details class="fine">
+        <summary>How it is counted</summary>
         <div class="rank-note">
           <p id="res-note-ai"></p>
           <p id="res-note-self"></p>
@@ -792,6 +801,7 @@
             <a href="https://github.com/MartinHalvorson/CIVVIS/blob/main/data/research/self_play_endings.json" target="_blank" rel="noreferrer">Self-play games</a>
           </p>
         </div>
+        </details>
       </section>
     </div>
   </main>
