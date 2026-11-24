@@ -96,7 +96,7 @@ A day is the UTC day a game ended on.
 | The reading | The same three over the last seven days, back from the newest game. This is the benchmark's number. |
 | Faster than by hand | The seconds of a game played by hand (`data/performance/speedup_timeline.json`, its first stop) over the reading's middle game. |
 | When the record began | The same three over the first seven days of the record. |
-| Where the time goes | The middle setup, play and ending of the last seven days' clocked games, shown from three of them. |
+| Where the time goes | The middle setup, play and ending of the last seven days' clocked games, shown from three of them. While fewer games are clocked than the seven days hold, the line says how many it is drawn from (`split_games`): the parts of a few games do not add up to the middle game of them all. |
 
 Percentiles are nearest rank on the games themselves, as the page's
 self-play times are.
