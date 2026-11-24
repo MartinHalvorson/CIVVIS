@@ -1733,10 +1733,7 @@ impl Session {
         }
         let turn = self.game.turn;
         let struck = self.game.black_swan(kind, seed)?;
-        let by = self
-            .debugger
-            .mark(turn)
-            .and_then(|mark| mark.by.clone());
+        let by = self.debugger.mark(turn).and_then(|mark| mark.by.clone());
         self.debugger.stopped = None;
         self.debugger.stepped = None;
         self.debugger.plan = None;

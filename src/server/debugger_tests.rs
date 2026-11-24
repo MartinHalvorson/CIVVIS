@@ -640,7 +640,11 @@ fn a_black_swan_strikes_the_open_turn_and_lets_go_of_the_turns_ahead() {
     assert_eq!(swan["turn"], json!(5));
     assert_eq!(swan["kind"], json!("leader_collapse"));
     assert_eq!(swan["name"], json!("Leader collapse"));
-    assert_eq!(swan["ongoing"], json!(true), "its Anarchy is still to serve");
+    assert_eq!(
+        swan["ongoing"],
+        json!(true),
+        "its Anarchy is still to serve"
+    );
     assert!(swan["text"]
         .as_str()
         .is_some_and(|text| text.starts_with("Leader collapse. ") && text.contains("Anarchy")));
@@ -652,8 +656,15 @@ fn a_black_swan_strikes_the_open_turn_and_lets_go_of_the_turns_ahead() {
     // The turns ahead are let go of, and the open turn is another world.
     assert_eq!(marked(&struck), [1, 2, 3, 4, 5]);
     let (after, before) = (prints(&struck), prints(&spared));
-    assert_eq!(after[..4], before[..4], "the turns behind are the turns they were");
-    assert_ne!(after[4], before[4], "the struck turn has a print of its own");
+    assert_eq!(
+        after[..4],
+        before[..4],
+        "the turns behind are the turns they were"
+    );
+    assert_ne!(
+        after[4], before[4],
+        "the struck turn has a print of its own"
+    );
     // Jack still played into the turn; the swan did not.
     assert_eq!(
         answer["debug"]["played_by"],
@@ -728,7 +739,10 @@ fn a_black_swan_strikes_the_open_turn_and_lets_go_of_the_turns_ahead() {
     assert_eq!(world(&young), early);
     assert_eq!(marked(&young), [1]);
     // In the middle of a round no turn is open to mark.
-    assert_eq!(young.debug(&json!({"op": "step_seat"}))["error"], Value::Null);
+    assert_eq!(
+        young.debug(&json!({"op": "step_seat"}))["error"],
+        Value::Null
+    );
     let rivals = young.debug(&json!({"op": "black_swan", "seed": 1}));
     assert!(rivals["error"]
         .as_str()
