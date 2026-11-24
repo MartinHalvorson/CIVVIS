@@ -460,7 +460,7 @@ fn browser_traces_each_units_walked_route_for_n_turns() {
         "function drawUnitMovementTails(unitAlpha) {",
         "function drawPlanetUnitMovementTails(cellByKey, onSheet, unitAlpha) {",
         "if (!empireLens) drawPlanetUnitMovementTails(cellByKey, onSheet, unitAlpha);",
-        "state.chronicle.unit_move_trails",
+        "state.unit_move_trails",
         "function ledgerRouteBetween(st, unitId, from, to) {",
         "|| ledgerRouteBetween(next, nu.id, pu.pos, nu.pos);",
     ] {
