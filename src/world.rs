@@ -10,13 +10,17 @@ use crate::{hex, Pos};
 
 /// A district site that has been placed but has not finished construction.
 /// Placement locks both the chosen district and its production cost.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
 pub struct DistrictFoundation {
     pub district: Name,
     pub cost: f64,
 }
 
-#[derive(Clone, Serialize, Deserialize, PartialEq)]
+/// `Copy`: every field is plain data (names are interned), so the map's tile
+/// vector copies as one block when a game cloned to look ahead first writes
+/// a tile — the Loyalty forecast founds a city on such a clone for every
+/// site it prices — and drops without visiting each tile.
+#[derive(Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct Tile {
     pub pos: Pos,
     pub terrain: Name,
@@ -112,13 +116,13 @@ pub struct Tile {
     /// for three turns, so the marker moves with the system rather than
     /// belonging to the tile.
     #[serde(default)]
-    pub storm: Option<String>,
+    pub storm: Option<Name>,
 }
 
 /// Last tile state actually observed by one player. `owner` is snapshotted
 /// separately because a tile stores its owning city ID, while ownership of
 /// that city can change outside the observer's current vision.
-#[derive(Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct RememberedTile {
     pub tile: Tile,
     pub owner: Option<usize>,

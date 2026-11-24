@@ -357,8 +357,8 @@ class TheSnapshots(unittest.TestCase):
                 (repo / civs_page.INVASIONS).write_text(out.read_text(encoding="utf-8"), encoding="utf-8")
                 (repo / civs_page.MARKS).write_text('{"games": []}', encoding="utf-8")
                 record = civs_page.record(repo)["games"]
-        at = record["fields"].index("invaded")
-        self.assertEqual(sorted(row[at] for row in record["rows"]), [0, 33, 120])
+        invaded = record["fields"].index("invaded")
+        self.assertEqual(sorted(row[invaded] for row in record["rows"]), [0, 33, 120])
         self.assertIsNone(civs_page.merged_invasion([None, {"turn": 151, "through": 160}]))
 
     def test_the_self_play_seats_are_counted_batch_by_batch(self):

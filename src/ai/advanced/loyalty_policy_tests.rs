@@ -52,14 +52,19 @@ fn emergency() -> (Game, AdvancedAi, u32) {
     let city = g.cities.get_mut(&cid).unwrap();
     city.loyalty = 80.1875;
     city.districts.insert(crate::name!("campus"), city.pos);
-    std::sync::Arc::make_mut(&mut g.observed_city_loyalty_per_turn).insert(cid, -9.125);
-    g.host_policy_windows.insert(
-        0,
-        crate::game::HostPolicyWindow {
-            turn: g.turn,
-            open: true,
-        },
-    );
+    std::sync::Arc::make_mut(
+        &mut std::sync::Arc::make_mut(&mut g.host).observed_city_loyalty_per_turn,
+    )
+    .insert(cid, -9.125);
+    std::sync::Arc::make_mut(&mut g.host)
+        .host_policy_windows
+        .insert(
+            0,
+            crate::game::HostPolicyWindow {
+                turn: g.turn,
+                open: true,
+            },
+        );
     let mut ai = AdvancedAi::targeting(VictoryTarget::Religion);
     ai.base.loyalty_rate_alarm = true;
     ai.research_economy = true;
@@ -105,7 +110,10 @@ fn stable_or_distant_decline_does_not_displace_the_envoy_card() {
     for rate in [0.0, 1.0, -0.25] {
         let (mut g, ai, cid) = emergency();
         g.cities.get_mut(&cid).unwrap().loyalty = 40.0;
-        std::sync::Arc::make_mut(&mut g.observed_city_loyalty_per_turn).insert(cid, rate);
+        std::sync::Arc::make_mut(
+            &mut std::sync::Arc::make_mut(&mut g.host).observed_city_loyalty_per_turn,
+        )
+        .insert(cid, rate);
         assert!(!ai.loyalty_policy_needed(&g, 0));
         ai.strategic_policies(&mut g, 0, GrandStrategy::Religion);
         assert!(has(&g, "merchant_confederation"));

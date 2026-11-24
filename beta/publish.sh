@@ -4,9 +4,9 @@
 #
 # The output is one complete LANE of the site — the viewer at its root with
 # the engine compiled to WebAssembly beside it, the landing page at /home, the
-# pages of Charts/ under /charts (Win Analytics, ELO Rankings, Civ Analytics,
-# CIVVIS Performance, AI Interpretability), the Tournaments page at /tournaments, the
-# downloads page at /download and Wizard Chess at /wizard-chess — a
+# pages of Charts/ under /charts (AI Interpretability, Civ Analytics, Win
+# Analytics, ELO Rankings, CIVVIS Performance), the Tournaments page at
+# /tournaments, the downloads page at /download and Wizard Chess at /wizard-chess — a
 # plain directory of static files with no
 # host-specific anything beyond the two Cloudflare Pages control files, which
 # any other host simply ignores. Every link between the pages is
@@ -294,9 +294,38 @@ if [ -f "$tournaments_page" ]; then
 else
   without+=(tournaments)
 fi
-# Win Analytics, the first page under Charts/ (when in the game each victory
-# type lands, in self-play and against the Deity AI; `beta/research.html`, by
-# the name the page had first), is filled the same way: the self-play games
+# The AI Interpretability page (the steps of one turn in order, the plan the
+# seats write down through a game, and every gene with what it is worth in
+# wins) is the first page under Charts/ since 2026-11-24 (operator: "move ai
+# interpretablity to the top of the charts/ then civ analytics, win
+# analytics. elo rankings.. civvis performanc"), and so the page /charts
+# opens: the worker opens a folder's first page in the lane's list. It is
+# filled the same way, from the lane's source (the turn's steps, the gene
+# ranking) and the lane's snapshot of the seats' plans in
+# data/interpretability/: the agent as it is in the revision the lane plays.
+if [ -f "$interpretability_page" ]; then
+  mkdir -p "$out/$interpretability_at"
+  cp "$interpretability_page" "$out/$interpretability_at/index.html"
+  fill interpretability_page.py "$out/$interpretability_at/index.html"
+  pages+=("$interpretability_at")
+else
+  without+=(interpretability)
+fi
+# Civ Analytics, the second under Charts/ (operator 2026-11-23: "add another
+# page: Civ Analytics. First can be the civ records (pulled from win
+# analytics), then early build order"): both off the run ledger, the tree of build
+# orders as Win Analytics' script reads it.
+if [ -f "$civs_page" ]; then
+  mkdir -p "$out/$civs_at"
+  cp "$civs_page" "$out/$civs_at/index.html"
+  fill civs_page.py "$out/$civs_at/index.html"
+  pages+=("$civs_at")
+else
+  without+=(civ-analytics)
+fi
+# Win Analytics, the third page under Charts/ and the first until 2026-11-24
+# (when in the game each victory type lands, in self-play and against the
+# Deity AI; `beta/research.html`, by the name the page had first), is filled the same way: the self-play games
 # from the lane's snapshot in data/research/, the Deity games from the run
 # ledger.
 if [ -f "$research_page" ]; then
@@ -311,7 +340,7 @@ if [ -f "$research_page" ]; then
 else
   without+=(research)
 fi
-# ELO Rankings, the second page under Charts/ (operator 2026-11-23: "add
+# ELO Rankings, the fourth page under Charts/ (operator 2026-11-23: "add
 # that to a new page: Charts/ELO Rankings. this should be after win
 # analytics in the ordering"): the Civ AI Agents by Elo and Civilization
 # VI's own AI at Lv 4 to Lv 8, now and over time. Filled the same way: the
@@ -326,18 +355,6 @@ if [ -f "$elo_page" ]; then
 else
   without+=(elo-rankings)
 fi
-# Civ Analytics, the third (operator, the same evening: "add another page:
-# Civ Analytics. First can be the civ records (pulled from win analytics),
-# then early build order"): both off the run ledger, the tree of build
-# orders as Win Analytics' script reads it.
-if [ -f "$civs_page" ]; then
-  mkdir -p "$out/$civs_at"
-  cp "$civs_page" "$out/$civs_at/index.html"
-  fill civs_page.py "$out/$civs_at/index.html"
-  pages+=("$civs_at")
-else
-  without+=(civ-analytics)
-fi
 # The Performance page (the fastest game on video, how long a self-play game
 # takes at five percentiles, and game time batch by batch) is CIVVIS's own
 # page in the site list. It is filled the same way, from the lane's record
@@ -349,20 +366,6 @@ if [ -f "$performance_page" ]; then
   pages+=("$performance_at")
 else
   without+=(performance)
-fi
-# The AI Interpretability page (the steps of one turn in order, the plan the
-# seats write down through a game, and every gene with what it is worth in
-# wins) is the last page under Charts/. It is filled the same way, from the
-# lane's source (the turn's steps, the gene ranking) and the lane's snapshot
-# of the seats' plans in data/interpretability/: the agent as it is in the
-# revision the lane plays.
-if [ -f "$interpretability_page" ]; then
-  mkdir -p "$out/$interpretability_at"
-  cp "$interpretability_page" "$out/$interpretability_at/index.html"
-  fill interpretability_page.py "$out/$interpretability_at/index.html"
-  pages+=("$interpretability_at")
-else
-  without+=(interpretability)
 fi
 # The home page carries no art of its own any more, so there is usually no
 # directory to ship; a pinned revision from when it had photographs still does.

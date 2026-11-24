@@ -482,7 +482,8 @@ fn censorship_amenity_cost_ends_even_without_a_replacement_card() {
         .foreign_tourists = Some(0);
     // An exhausted/host-blocked menu cannot supply a replacement. The
     // condition ending must itself remove the downside, not await a swap.
-    Arc::make_mut(&mut g.blocked_policies).extend(g.rules.policies.keys().copied());
+    Arc::make_mut(&mut Arc::make_mut(&mut g.host).blocked_policies)
+        .extend(g.rules.policies.keys().copied());
     AdvancedAi::targeting(VictoryTarget::Culture).strategic_policies(
         &mut g,
         0,

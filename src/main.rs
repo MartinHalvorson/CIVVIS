@@ -2,6 +2,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
 
+mod core_probe;
+
 use civvis::ai::{run_game, AdvancedAi, Ai};
 use civvis::game::{
     default_difficulty, default_speed, Game, GameOptions, LeaderPool, VictoryConditions, WarRecord,
@@ -815,6 +817,10 @@ fn main() {
         // it forward, over and over. Cloning a position dominates that, and
         // nothing else here measured it.
         "rollouts" => rollouts_command(args),
+        // Which saved fields the transition function itself reads: blank one,
+        // replay the recorded actions, see what else changed. See
+        // `src/core_probe.rs`.
+        "core-probe" => core_probe::command(args),
         #[cfg(not(feature = "closed-experiments"))]
         "selfplay" => {
             eprintln!(
@@ -1218,8 +1224,11 @@ fn soak_command(args: Vec<String>) {
                 // six-player games it saw 6 of 39 declarations, 96 of
                 // 317 unit losses, and 0 of 13 city captures, while
                 // `ended_in_peace` could not be anything but zero.
-                let all_wars: Vec<&WarRecord> =
-                    g.wars.values().chain(g.concluded_wars.iter()).collect();
+                let all_wars: Vec<&WarRecord> = g
+                    .wars
+                    .values()
+                    .chain(g.chronicle.concluded_wars.iter())
+                    .collect();
                 let wars = all_wars.len();
                 let (units_lost, cities_taken) =
                     all_wars.iter().fold((0u32, 0u32), |(units, cities), war| {
@@ -1296,13 +1305,13 @@ fn soak_command(args: Vec<String>) {
                 flags.push_str(&format!(
                     " SIEGE blows={} damage={} walls_breached={} cities_reduced={} \
                      left_depleted={} taker_ready={} melee_was_there={}",
-                    g.siege.blows,
-                    g.siege.damage,
-                    g.siege.walls_breached,
-                    g.siege.cities_reduced,
-                    g.siege.left_depleted,
-                    g.siege.depleted_with_a_taker_ready,
-                    g.siege.reduced_with_melee_adjacent,
+                    g.chronicle.siege.blows,
+                    g.chronicle.siege.damage,
+                    g.chronicle.siege.walls_breached,
+                    g.chronicle.siege.cities_reduced,
+                    g.chronicle.siege.left_depleted,
+                    g.chronicle.siege.depleted_with_a_taker_ready,
+                    g.chronicle.siege.reduced_with_melee_adjacent,
                 ));
                 // ⚠ The diplomatic lane is the one that steals most
                 // live games and the one a native game has never been
@@ -2656,7 +2665,7 @@ mod tests {
         game.players[1].met.insert(0);
         game.apply(0, &Action::DeclareWar { player: 1 }).unwrap();
         assert_eq!(game.wars.len(), 1, "the declaration must open a war");
-        assert!(game.concluded_wars.is_empty());
+        assert!(game.chronicle.concluded_wars.is_empty());
 
         // Peace is gated behind a mandatory war duration; wait it out.
         while let Some(until) = game.peace_available_at(0, 1) {
@@ -2670,11 +2679,11 @@ mod tests {
             "a settled war must not remain in the live map"
         );
         assert_eq!(
-            game.concluded_wars.len(),
+            game.chronicle.concluded_wars.len(),
             1,
             "the settled war has to be read from concluded_wars or it is \
              invisible to every count in the soak line"
         );
-        assert!(game.concluded_wars[0].ended.is_some());
+        assert!(game.chronicle.concluded_wars[0].ended.is_some());
     }
 }

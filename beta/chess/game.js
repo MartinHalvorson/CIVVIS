@@ -8,8 +8,9 @@
 //               played out on it (`World`). It is built in squares, one
 //               unit a square, and knows nothing of who is watching.
 //   the seat    how a laptop sees and commands the world: a camera at the
-//               player's side of the board, a pointer, a keyboard and a
-//               microphone (`Seat`, `Voice`, `Sound`).
+//               player's side of the board or on the back of one of their
+//               knights, a pointer, a keyboard and a microphone (`Seat`,
+//               `Voice`, `Sound`).
 //   the game    whose move it is and what may be played (`rules.js`), what a
 //               command means (`command.js`) and what the opponent answers
 //               (`engine.js`).
@@ -17,7 +18,7 @@
 import * as THREE from "./vendor/three.module.min.js";
 import {START, fromFen, toFen, legalMoves, play, san, uci, moveFromUci, standing, spoken, positionKey,
   squareName, colourOf, inCheck, kingOf, PIECE_NAMES} from "./rules.js";
-import {readCommand} from "./command.js";
+import {readCommand, candidates} from "./command.js";
 import {Opponent} from "./engine.js";
 
 const CALM = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -43,6 +44,8 @@ function tween(seconds, step, curve = ease.inOut) {
   });
 }
 const wait = seconds => tween(seconds, () => {}, ease.line);
+// The short way from one angle to another.
+const turnBy = (from, to) => ((to - from + Math.PI) % TAU + TAU) % TAU - Math.PI;
 function advance(dt) {
   for (const held of [...running]) {
     held.at += dt;
@@ -100,6 +103,31 @@ function stoneTexture(base, vein, seed) {
   return texture;
 }
 
+// Night through a tall window: deep blue paling toward the top, a few stars,
+// and the stone bars that hold the glass, drawn once.
+function nightSky() {
+  const canvas = document.createElement("canvas");
+  canvas.width = 128; canvas.height = 384;
+  const pen = canvas.getContext("2d"), sky = pen.createLinearGradient(0, 0, 0, 384);
+  sky.addColorStop(0, "#2a4472");
+  sky.addColorStop(0.55, "#132443");
+  sky.addColorStop(1, "#0a1428");
+  pen.fillStyle = sky;
+  pen.fillRect(0, 0, 128, 384);
+  let n = 17;
+  const dice = () => { n = (n * 1664525 + 1013904223) >>> 0; return n / 4294967296; };
+  for (let star = 0; star < 26; star++) {
+    pen.fillStyle = `rgba(235,240,255,${0.35 + dice() * 0.6})`;
+    pen.fillRect(dice() * 128, dice() * 300, 1 + dice() * 1.6, 1 + dice() * 1.6);
+  }
+  pen.fillStyle = "#17151b";
+  pen.fillRect(60, 0, 8, 384);
+  for (const y of [120, 250]) pen.fillRect(0, y, 128, 6);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
 // The shapes of the six pieces: each a profile turned on a lathe, with what
 // a lathe cannot make set on top (a rook's battlements, a king's cross, a
 // knight's head). One unit is a square; a king stands two of them tall.
@@ -138,6 +166,19 @@ class World {
     this.scene.background = new THREE.Color(0x040406);
     this.scene.fog = new THREE.FogExp2(0x040406, 0.028);
     this.pieces = new Map();
+    // The knight the player rides, if they ride one (`ride`).
+    this.ridden = null;
+    // The piece that is moving now, if one is (`play`), and the one it is
+    // about to take.
+    this.moving = null;
+    this.doomed = null;
+    // The side thinking, if one is, and how many times a side has (`muse`).
+    this.musing = null;
+    this.musings = 0;
+    // How many times the pieces have been set down afresh (`set`). A move
+    // still being played out when they are (a new game begun, a game come
+    // back to) is the old board's, and stops touching this one.
+    this.era = 0;
     this.glow = glowTexture();
     this.flames = [];
     this.debris = [];
@@ -196,6 +237,7 @@ class World {
       scene.add(pillar, bowl, flame, lamp);
       this.flames.push({flame, lamp, phase: x * 1.7 + z});
     }
+    this.vault();
     // Motes in the air, which is what the light is seen by.
     const count = 260, spots = new Float32Array(count * 3);
     for (let at = 0; at < count; at++) {
@@ -208,6 +250,93 @@ class World {
     this.motes = new THREE.Points(motes, new THREE.PointsMaterial({map: this.glow, size: 0.07, color: 0xffd9a0, transparent: true, opacity: 0.5,
       blending: THREE.AdditiveBlending, depthWrite: false}));
     scene.add(this.motes);
+  }
+
+  // The hall the board stands in, for a seat low among the pieces to look up
+  // at: a ring of twelve columns under a dome, a wall beyond them with tall
+  // windows of night, and a shaft of pale light from the dome's eye onto the
+  // board. Far enough out that the seat at the board is inside the ring, and
+  // with no column on the line from either seat to the board. Nothing here
+  // casts or takes a shadow, and the columns are one draw each part.
+  vault() {
+    const scene = this.scene, FLOOR_AT = -0.62, RING = 16, WALL = 20, TALL = 10;
+    const stone = (repeatX, repeatY, seed, base = "#4a4852") => {
+      const map = stoneTexture(base, "rgba(0,0,0,0.3)", seed);
+      map.repeat.set(repeatX, repeatY);
+      return new THREE.MeshStandardMaterial({color: 0x3a3842, roughness: 0.88, metalness: 0.04, map});
+    };
+    // The columns: a shaft, a base and a capital, each twelve at once.
+    const parts = [
+      [new THREE.CylinderGeometry(0.5, 0.58, TALL - 1.1, 18), FLOOR_AT + 0.5 + (TALL - 1.1) / 2],
+      [new THREE.BoxGeometry(1.5, 0.5, 1.5), FLOOR_AT + 0.25],
+      [new THREE.CylinderGeometry(0.95, 0.55, 0.6, 18), FLOOR_AT + TALL - 0.3],
+    ];
+    const columnStone = stone(1, 3, 37), place = new THREE.Object3D();
+    for (const [geometry, y] of parts) {
+      const ring = new THREE.InstancedMesh(geometry, columnStone, 12);
+      for (let at = 0; at < 12; at++) {
+        const round = (at + 0.5) / 12 * TAU;
+        place.position.set(Math.sin(round) * RING, y, Math.cos(round) * RING);
+        place.rotation.set(0, round, 0);
+        place.updateMatrix();
+        ring.setMatrixAt(at, place.matrix);
+      }
+      scene.add(ring);
+    }
+    // The ring the columns carry, and the wall beyond.
+    const band = new THREE.Mesh(new THREE.CylinderGeometry(RING + 1.1, RING + 1.1, 1.3, 64, 1, true), stone(30, 1, 43));
+    band.material.side = THREE.DoubleSide;
+    band.position.y = FLOOR_AT + TALL + 0.65;
+    const wall = new THREE.Mesh(new THREE.CylinderGeometry(WALL, WALL, TALL + 4, 64, 1, true), stone(26, 3, 47, "#3e3c46"));
+    wall.material.side = THREE.BackSide;
+    wall.position.y = FLOOR_AT + (TALL + 4) / 2;
+    scene.add(band, wall);
+    // Tall windows in the wall, between the columns: night beyond them.
+    const arch = new THREE.Shape();
+    arch.moveTo(-1.1, 0);
+    arch.lineTo(1.1, 0);
+    arch.lineTo(1.1, 5.2);
+    arch.absarc(0, 5.2, 1.1, 0, Math.PI, false);
+    arch.lineTo(-1.1, 0);
+    const pane = new THREE.ShapeGeometry(arch, 12);
+    // A shape's texture runs over its own units: map them onto 0..1.
+    const uv = pane.attributes.uv, at = pane.attributes.position;
+    for (let i = 0; i < uv.count; i++) uv.setXY(i, (at.getX(i) + 1.1) / 2.2, at.getY(i) / 6.3);
+    const night = new THREE.MeshBasicMaterial({map: nightSky(), fog: false});
+    for (let at = 0; at < 12; at++) {
+      const round = at / 12 * TAU, window = new THREE.Mesh(pane, night);
+      window.position.set(Math.sin(round) * (WALL - 0.05), FLOOR_AT + 2.4, Math.cos(round) * (WALL - 0.05));
+      window.lookAt(0, FLOOR_AT + 2.4, 0);
+      scene.add(window);
+    }
+    // The dome, its ribs, and its eye.
+    const top = FLOOR_AT + TALL + 4;
+    const dome = new THREE.Mesh(new THREE.SphereGeometry(WALL, 48, 16, 0, TAU, 0, Math.PI / 2), stone(16, 6, 53, "#36343d"));
+    dome.material.side = THREE.BackSide;
+    dome.position.y = top;
+    scene.add(dome);
+    const ribStone = stone(20, 1, 59);
+    for (let at = 0; at < 6; at++) {
+      const rib = new THREE.Mesh(new THREE.TorusGeometry(WALL - 0.2, 0.28, 6, 48, Math.PI), ribStone);
+      rib.position.y = top;
+      rib.rotation.y = at / 6 * Math.PI + Math.PI / 12;
+      scene.add(rib);
+    }
+    const eye = new THREE.Mesh(new THREE.CircleGeometry(2.4, 32), new THREE.MeshBasicMaterial({color: 0xbcd2ff, fog: false}));
+    eye.rotation.x = Math.PI / 2;
+    eye.position.y = top + WALL - 0.4;
+    scene.add(eye);
+    // The light that falls from it: a shaft seen in the dusty air, and the
+    // pale pool it makes on the board.
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(2.3, 4.6, top + WALL + 0.6, 32, 1, true),
+      new THREE.MeshBasicMaterial({color: 0x8fb0ff, transparent: true, opacity: 0.045, blending: THREE.AdditiveBlending,
+        depthWrite: false, side: THREE.DoubleSide, fog: false}));
+    shaft.position.y = (top + WALL + 0.6) / 2 + FLOOR_AT;
+    scene.add(shaft);
+    const moon = new THREE.SpotLight(0xa8c2ff, 420, 60, 0.16, 0.7, 2);
+    moon.position.set(0, top + WALL - 1, 0);
+    moon.target.position.set(0, 0, 0);
+    scene.add(moon, moon.target);
   }
 
   board() {
@@ -278,13 +407,28 @@ class World {
     }
     this.geometry = {turned, head: knightHead(), merlon: new THREE.BoxGeometry(0.12, 0.1, 0.08), bead: new THREE.SphereGeometry(0.045, 10, 8),
       orb: new THREE.SphereGeometry(0.07, 12, 10), upright: new THREE.BoxGeometry(0.07, 0.3, 0.07), bar: new THREE.BoxGeometry(0.22, 0.07, 0.07),
-      ring: new THREE.TorusGeometry(0.36, 0.014, 6, 40), chunk: new THREE.DodecahedronGeometry(0.09, 0)};
+      ring: new THREE.TorusGeometry(0.36, 0.014, 6, 40), chunk: new THREE.DodecahedronGeometry(0.09, 0),
+      // What a ridden knight wears: a cloth over its mane, and its rider.
+      cloth: new THREE.BoxGeometry(0.2, 0.36, 0.34), trim: new THREE.BoxGeometry(0.21, 0.035, 0.35),
+      cloak: new THREE.ConeGeometry(0.13, 0.5, 14), hood: new THREE.SphereGeometry(0.075, 14, 10),
+      // And what makes it a living thing to the one on its back: a mane, two
+      // ears that turn, an eye, a bit and the reins to the rider's hands.
+      tuft: new THREE.ConeGeometry(0.03, 0.075, 5), ear: new THREE.ConeGeometry(0.04, 0.16, 4),
+      eye: new THREE.SphereGeometry(0.032, 12, 8), bit: new THREE.TorusGeometry(0.035, 0.009, 6, 16)};
     this.material = {
       w: new THREE.MeshStandardMaterial({color: 0xe6dcc6, roughness: 0.36, metalness: 0.02, map: stoneTexture("#f1ead9", "rgba(140,120,90,0.3)", 5)}),
       b: new THREE.MeshStandardMaterial({color: 0x3f3b4c, roughness: 0.22, metalness: 0.55, map: stoneTexture("#8a8598", "rgba(160,170,255,0.25)", 9)}),
     };
     // The light a piece stands in: cold for White's, ember for Black's.
     this.rune = {w: 0x8fd8ff, b: 0xff8a3c};
+    this.cloth = {
+      w: new THREE.MeshStandardMaterial({color: 0x1d3c78, roughness: 0.85, emissive: 0x0a1630, emissiveIntensity: 0.4}),
+      b: new THREE.MeshStandardMaterial({color: 0x6e1c16, roughness: 0.85, emissive: 0x2a0806, emissiveIntensity: 0.4}),
+      gold: new THREE.MeshStandardMaterial({color: 0xc9a04c, roughness: 0.35, metalness: 0.85}),
+      cloak: new THREE.MeshStandardMaterial({color: 0x23201f, roughness: 0.95}),
+      leather: new THREE.MeshStandardMaterial({color: 0x3b2416, roughness: 0.7}),
+      eye: {w: new THREE.MeshBasicMaterial({color: 0x9fe4ff}), b: new THREE.MeshBasicMaterial({color: 0xffa25a})},
+    };
   }
 
   form(piece) {
@@ -330,6 +474,10 @@ class World {
   set(position) {
     for (const held of this.pieces.values()) this.scene.remove(held);
     this.pieces.clear();
+    this.ridden = null;
+    this.moving = null;
+    this.doomed = null;
+    this.era += 1;
     position.board.forEach((piece, sq) => {
       if (!piece) return;
       const held = this.form(piece);
@@ -342,9 +490,96 @@ class World {
   }
 
   face(held) {
-    if (held.userData.kind !== "n") return;
+    if (held.userData.kind === "n") held.userData.body.rotation.y = this.rest(held);
+  }
+  // Where a knight looks when nothing calls it: a ridden knight where its
+  // rider does, straight at the enemy; the others a little in toward the
+  // middle of the board.
+  rest(held) {
+    if (held === this.ridden) return held.userData.facing;
     const inward = sqX(held.userData.square) < 0 ? -1 : 1, side = held.userData.colour === "w" ? 1 : -1;
-    held.userData.body.rotation.y = held.userData.facing + inward * side * 0.95;
+    return held.userData.facing + inward * side * 0.95;
+  }
+
+  // The knight the player rides: it wears a cloth over its mane in its
+  // side's colour, and its rider sits behind its ears (where the seat's eye
+  // is, `Seat.rider`). `null` is nobody riding.
+  ride(held) {
+    if (this.ridden && this.ridden !== held && this.ridden.userData.saddle) {
+      this.ridden.userData.body.remove(this.ridden.userData.saddle);
+      this.ridden.userData.saddle = null;
+    }
+    this.ridden = held || null;
+    if (!held) return;
+    if (!held.userData.saddle) {
+      const made = this.geometry, saddle = new THREE.Group(), colour = held.userData.colour;
+      const part = (geometry, material, x, y, z, tilt = 0) => {
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.position.set(x, y, z);
+        mesh.rotation.z = tilt;
+        mesh.castShadow = true;
+        saddle.add(mesh);
+        return mesh;
+      };
+      // Over the back of the neck, along the line of the mane.
+      part(made.cloth, this.cloth[colour], -0.25, 0.86, 0, -0.38);
+      part(made.trim, this.cloth.gold, -0.18, 0.69, 0, -0.38);
+      // The mane, from the cloth up to between the ears, pointing back.
+      [[-0.235, 0.98], [-0.2, 1.07], [-0.165, 1.15], [-0.135, 1.23], [-0.115, 1.3]].forEach(([x, y], at) => {
+        part(made.tuft, this.material[colour], x + 0.005, y, at % 2 ? 0.015 : -0.015, 1.35).scale.set(1, 1, 0.35);
+      });
+      // Ears, each on a pivot so that it can turn toward what it hears.
+      const ears = [-1, 1].map(side => {
+        const pivot = new THREE.Group();
+        pivot.position.set(-0.07, 1.31, side * 0.055);
+        const ear = new THREE.Mesh(made.ear, this.material[colour]);
+        ear.position.y = 0.075;
+        ear.scale.set(1, 1, 0.45);
+        ear.castShadow = true;
+        pivot.add(ear);
+        pivot.rotation.z = 0.25;
+        saddle.add(pivot);
+        return pivot;
+      });
+      // An eye on each side, lit from inside with its side's light.
+      const eyes = [-1, 1].map(side => part(made.eye, this.cloth.eye[colour], 0.19, 1.02, side * 0.112));
+      // The bit, and the reins from it to the rider's hands.
+      const hands = new THREE.Vector3(-0.08, 1.1, 0.34);
+      for (const side of [-1, 1]) {
+        const bit = part(made.bit, this.cloth.gold, 0.33, 0.74, side * 0.115);
+        bit.rotation.y = Math.PI / 2;
+        const from = new THREE.Vector3(0.33, 0.74, side * 0.115);
+        const sag = from.clone().lerp(hands, 0.5).add(new THREE.Vector3(0, -0.12, 0));
+        const rein = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3([from, sag, hands]), 18, 0.009, 5), this.cloth.leather);
+        rein.castShadow = true;
+        saddle.add(rein);
+      }
+      saddle.userData.ears = ears;
+      saddle.userData.eyes = eyes;
+      const rider = new THREE.Group();
+      const cloak = new THREE.Mesh(made.cloak, this.cloth.cloak);
+      cloak.position.set(0, 0.25, 0);
+      const hood = new THREE.Mesh(made.hood, this.cloth.cloak);
+      hood.position.set(0.02, 0.54, 0);
+      for (const mesh of [cloak, hood]) { mesh.castShadow = true; rider.add(mesh); }
+      rider.position.set(-0.42, 0.7, 0.36);
+      saddle.add(rider);
+      saddle.userData.rider = rider;
+      saddle.traverse(mesh => { mesh.userData.owner = held; });
+      held.userData.body.add(saddle);
+      held.userData.saddle = saddle;
+    }
+    this.face(held);
+  }
+
+  // The pieces that could take the knight ridden: their light turns red.
+  menace(squares) {
+    for (const held of this.pieces.values()) {
+      const data = held.userData, threat = squares.includes(data.square);
+      if (threat === !!data.menace) continue;
+      data.menace = threat;
+      data.ring.material.color.set(threat ? 0xff3b2b : this.rune[data.colour]);
+    }
   }
 
   // What the stone reflects: a dark room with the lamps in it, drawn once.
@@ -416,17 +651,27 @@ class World {
 
   // ---- a move, played out
   //
-  // `hooks` is how the seat hears of it: `sound(name, strength)`, and
+  // `hooks` is how the seat hears of it: `sound(name, strength, at)`, and
   // `look(point)` / `look(null)` when there is something to lean in for.
   async play(move, hooks) {
-    const mover = this.pieces.get(move.from), kind = mover.userData.kind;
+    const mover = this.pieces.get(move.from), kind = mover.userData.kind, era = this.era;
+    // Set down afresh while this was being played out: it is not this board's.
+    const gone = () => { if (this.era === era) return false; hooks.moving(null); return true; };
     const to = sqPoint(move.to);
     const victimAt = move.flag === "ep" ? move.to + (mover.userData.colour === "w" ? -8 : 8) : move.to;
     const victim = move.captured ? this.pieces.get(victimAt) : null;
     this.pieces.delete(move.from);
     mover.userData.awake = 1;
+    hooks.moving(mover);
+    this.moving = mover;
+    // A knight with a rider turns to where it is going before it goes, and
+    // the stone groans under them as it turns.
+    if (mover === this.ridden) await this.turnTo(mover, to.clone().sub(mover.position), hooks);
+    if (gone()) return;
     if (victim) {
       this.pieces.delete(victimAt);
+      // What is about to be taken trembles until it breaks.
+      this.doomed = victim;
       hooks.look(victim.position.clone().lerp(mover.position, 0.3));
       await this.strike(mover, victim, to, hooks);
     } else if (kind === "n") {
@@ -434,6 +679,7 @@ class World {
     } else {
       await this.glide(mover, to, hooks);
     }
+    if (gone()) return;
     mover.userData.square = move.to;
     this.pieces.set(move.to, mover);
     if (kind === "n") {
@@ -448,12 +694,36 @@ class World {
       const rook = this.pieces.get(rookFrom);
       this.pieces.delete(rookFrom);
       await this.leap(rook, sqPoint(rookTo), 1.5, hooks);
+      if (gone()) return;
       rook.userData.square = rookTo;
       this.pieces.set(rookTo, rook);
     }
     if (move.promo) await this.crown(mover, move, hooks);
+    if (gone()) return;
     mover.userData.awake = 0;
+    this.moving = null;
+    hooks.moving(null);
     hooks.look(null);
+  }
+
+  turnTo(piece, way, hooks) {
+    const body = piece.userData.body, was = body.rotation.y;
+    let want = Math.atan2(-way.z, way.x), by = want - was;
+    by = ((by + Math.PI) % TAU + TAU) % TAU - Math.PI;
+    if (Math.abs(by) < 0.05) return Promise.resolve();
+    if (hooks) hooks.sound("groan", Math.min(1.2, 0.5 + Math.abs(by) * 0.4), piece.position);
+    return tween(0.22 + Math.abs(by) * 0.08, t => { body.rotation.y = was + by * t; });
+  }
+
+  // A knight rears as it leaps and comes down nose first.
+  rear(piece, heading, t) {
+    if (piece.userData.kind === "n") this.lean(piece, heading, -0.24 * Math.cos(t * Math.PI));
+  }
+  async settle(piece) {
+    if (piece.userData.kind !== "n") return;
+    const tilt = piece.quaternion.clone(), level = new THREE.Quaternion();
+    await tween(0.16, t => piece.quaternion.slerpQuaternions(tilt, level, t), ease.out);
+    piece.quaternion.identity();
   }
 
   lean(piece, toward, angle) {
@@ -466,28 +736,36 @@ class World {
     const from = piece.position.clone(), way = to.clone().sub(from), far = way.length();
     if (far < 1e-4) return;
     const heading = way.clone().normalize();
-    hooks.sound("slide", Math.min(1, 0.4 + far * 0.12));
+    hooks.sound("slide", Math.min(1, 0.4 + far * 0.12), from);
     await tween((0.3 + far * 0.13) / pace, t => {
       piece.position.lerpVectors(from, to, t);
       // It tips into the move and rights itself as it arrives.
       this.lean(piece, heading, Math.sin(t * Math.PI) * 0.11);
     });
     piece.quaternion.identity();
-    hooks.sound("set", 0.5);
+    hooks.sound("set", 0.5, to);
     this.dust(to, 0.5);
   }
 
   async leap(piece, to, high, hooks) {
-    const from = piece.position.clone(), far = from.distanceTo(to);
-    hooks.sound("lift", 0.6);
+    const from = piece.position.clone(), far = from.distanceTo(to), heading = to.clone().sub(from).normalize();
+    hooks.sound("lift", 0.6, from);
     await tween(0.42 + far * 0.07, t => {
       piece.position.lerpVectors(from, to, t);
       piece.position.y = Math.sin(t * Math.PI) * high;
+      this.rear(piece, heading, t);
     });
     piece.position.copy(to);
-    hooks.sound("set", 0.9);
-    hooks.shake(0.05);
+    hooks.sound("set", piece === this.ridden ? 1.3 : 0.9, to);
+    hooks.shake(piece === this.ridden ? 0.12 : 0.05);
     this.dust(to, 0.8);
+    // The knight ridden breathes out as it lands: a puff at its nostrils.
+    if (piece === this.ridden) {
+      const body = piece.userData.body;
+      body.updateWorldMatrix(true, false);
+      this.dust(body.localToWorld(new THREE.Vector3(0.44, 0.68, 0)), 0.3, true);
+    }
+    await this.settle(piece);
   }
 
   // A capture: how the piece that takes comes at the one it takes is its
@@ -498,31 +776,32 @@ class World {
     const way = prey.clone().sub(from), far = way.length(), heading = way.clone().normalize();
     const near = prey.clone().addScaledVector(heading, -0.82);
     if (kind === "n") {
-      hooks.sound("lift", 0.7);
+      hooks.sound("lift", 0.7, from);
       await tween(0.5 + far * 0.06, t => {
         mover.position.lerpVectors(from, prey, t);
         mover.position.y = Math.sin(t * Math.PI) * 2.1;
+        this.rear(mover, heading, t);
       }, ease.in);
       this.shatter(victim, heading, hooks, 1.1);
     } else if (kind === "q") {
       // She rises where she stands, and what she looks at breaks.
-      hooks.sound("lift", 0.5);
+      hooks.sound("lift", 0.5, from);
       await tween(0.32, t => { mover.position.y = t * 0.45; mover.userData.awake = 1 + t; });
       const bolt = new THREE.Sprite(new THREE.SpriteMaterial({map: this.glow, color: this.rune[mover.userData.colour], blending: THREE.AdditiveBlending, depthWrite: false, transparent: true}));
       bolt.scale.setScalar(0.9);
       this.scene.add(bolt);
       const start = mover.position.clone().setY(1.5), end = prey.clone().setY(0.8);
-      hooks.sound("bolt", 0.9);
+      hooks.sound("bolt", 0.9, start);
       await tween(0.2 + far * 0.02, t => { bolt.position.lerpVectors(start, end, t); bolt.scale.setScalar(0.9 + t * 0.9); }, ease.in);
       this.scene.remove(bolt);
       this.shatter(victim, heading, hooks, 1.2);
       await wait(0.22);
       await tween(0.24 + far * 0.1, t => { mover.position.lerpVectors(from, to, t); mover.position.y = (1 - t) * 0.45; }, ease.inOut);
-      hooks.sound("set", 0.6);
+      hooks.sound("set", 0.6, to);
     } else if (kind === "r") {
       // No stopping: it gathers itself and goes through.
       await tween(0.2, t => this.lean(mover, heading, -0.16 * t));
-      hooks.sound("slide", 1);
+      hooks.sound("slide", 1, from);
       await tween(0.12 + far * 0.07, t => { mover.position.lerpVectors(from, near, t); this.lean(mover, heading, -0.16 + 0.34 * t); }, ease.in);
       this.shatter(victim, heading, hooks, 1.25);
     } else {
@@ -531,7 +810,7 @@ class World {
       const spin = kind === "b" ? TAU : 0;
       // Back, and then forward into it.
       await tween(0.2, t => { this.lean(mover, heading, -0.32 * t); mover.position.lerpVectors(stood, stood.clone().addScaledVector(heading, -0.12), t); }, ease.out);
-      hooks.sound("lift", 0.5);
+      hooks.sound("lift", 0.5, stood);
       const back = mover.position.clone(), reach = stood.clone().addScaledVector(heading, 0.42);
       await tween(0.11, t => {
         mover.position.lerpVectors(back, reach, t);
@@ -553,6 +832,13 @@ class World {
   // A piece broken: it is gone, and what it was made of flies.
   shatter(victim, heading, hooks, force = 1) {
     this.scene.remove(victim);
+    if (this.doomed === victim) this.doomed = null;
+    // The knight ridden is broken under its rider, who is thrown on the way
+    // the blow came.
+    if (victim === this.ridden) {
+      this.ridden = null;
+      hooks.thrown(victim.position.clone(), heading.clone(), victim.userData.colour);
+    }
     const {kind, colour} = victim.userData, tall = HEIGHTS[kind], count = Math.round(26 + tall * 22);
     const stones = new THREE.InstancedMesh(this.geometry.chunk, this.material[colour], count);
     stones.castShadow = true;
@@ -572,15 +858,16 @@ class World {
     this.dust(victim.position, 1.6);
     this.flash.position.copy(victim.position).setY(1);
     this.flash.intensity = 60 * force;
-    hooks.sound("shatter", force);
+    hooks.sound("shatter", force, victim.position);
     hooks.shake(0.16 * force);
   }
 
-  dust(at, much) {
+  // Dust kicked up off the board, or (`aloft`) a breath at a point in the air.
+  dust(at, much, aloft = false) {
     const count = Math.round(14 * much), spots = new Float32Array(count * 3), drift = [];
     for (let i = 0; i < count; i++) {
-      const round = Math.random() * TAU, out = 0.1 + Math.random() * 0.25;
-      spots.set([at.x + Math.cos(round) * out, 0.05 + Math.random() * 0.2 * much, at.z + Math.sin(round) * out], i * 3);
+      const round = Math.random() * TAU, out = (aloft ? 0.02 : 0.1) + Math.random() * (aloft ? 0.05 : 0.25);
+      spots.set([at.x + Math.cos(round) * out, (aloft ? at.y : 0.05) + Math.random() * 0.2 * much, at.z + Math.sin(round) * out], i * 3);
       drift.push([Math.cos(round) * (0.3 + Math.random() * 0.8) * much, 0.2 + Math.random() * 0.5 * much, Math.sin(round) * (0.3 + Math.random() * 0.8) * much]);
     }
     const cloud = new THREE.BufferGeometry();
@@ -601,10 +888,12 @@ class World {
     const flare = new THREE.Sprite(new THREE.SpriteMaterial({map: this.glow, color: 0xfff2c2, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true}));
     flare.position.copy(at).setY(0.9);
     this.scene.add(flare);
-    hooks.sound("crown", 1);
+    hooks.sound("crown", 1, at);
     hooks.look(at);
+    const era = this.era;
     await tween(0.35, t => { flare.scale.setScalar(0.2 + t * 4); pawn.scale.setScalar(1 - t * 0.7); });
     this.scene.remove(pawn);
+    if (this.era !== era) { this.scene.remove(flare); return; }
     const made = this.form(move.promo);
     made.position.copy(at);
     made.userData.square = move.to;
@@ -624,18 +913,123 @@ class World {
     await wait(0.5);
     const away = new THREE.Vector3(king.position.x >= 0 ? 1 : -1, 0, colour === "w" ? 0.4 : -0.4).normalize();
     const pivot = king.position.clone();
-    hooks.sound("slide", 0.8);
+    hooks.sound("slide", 0.8, pivot);
     await tween(0.75, t => {
       const angle = t * (Math.PI / 2 - 0.08);
       this.lean(king, away, angle);
       // It turns about the edge of its foot, not its middle.
       king.position.copy(pivot).addScaledVector(away, Math.sin(angle) * 0.3).setY(Math.sin(angle) * 0.34);
     }, ease.in);
-    hooks.sound("shatter", 0.7);
+    hooks.sound("shatter", 0.7, king.position);
     hooks.shake(0.2);
     this.dust(king.position.clone().addScaledVector(away, 1.4), 1.6);
     await wait(0.6);
     hooks.look(null);
+  }
+
+  // How each piece standing holds itself, most pressing first:
+  //   a piece that could take the knight ridden leans toward it, as if about
+  //     to come, and a knight among them turns its head to it;
+  //   a king in check flinches away from what checks it, shaking (`flinch`);
+  //   every other piece watches the piece that is moving: a knight turns its
+  //     head to it, the rest lean a little its way, less the further off.
+  // The piece about to be taken trembles until it breaks (`doomed`). A piece
+  // that is moving is left to its move, and the knight ridden to its rider.
+  regard(dt) {
+    const prey = this.ridden, moving = this.moving, ease = Math.min(1, dt * 4);
+    for (const held of this.pieces.values()) {
+      const data = held.userData;
+      if (held === moving) { data.loom = 0; data.toward = null; continue; }
+      let toward = null, want = 0, look = null;
+      if (data.menace && prey) {
+        toward = look = prey.position.clone().sub(held.position).setY(0);
+        want = 0.13 + 0.035 * Math.sin(this.time * 5 + data.square);
+      } else if (data.brace) {
+        // Named as what is to be taken: it faces what is coming and braces.
+        toward = data.brace.clone().negate();
+        look = data.brace;
+        want = 0.06;
+      } else if (data.check) {
+        toward = data.check;
+        want = 0.075 + 0.03 * Math.sin(this.time * 23);
+      } else if (moving && held !== prey) {
+        const way = moving.position.clone().sub(held.position).setY(0), far = way.length();
+        if (far > 0.4) { toward = look = way; want = 0.05 * Math.min(1, 2.5 / far); }
+      } else if (this.musing === data.colour && held !== prey) {
+        // Its side is thinking: it shifts its weight, slowly, its own way.
+        const phase = this.time * (0.5 + (data.square % 5) * 0.09) + data.square * 1.7;
+        toward = new THREE.Vector3(Math.sin(phase), 0, Math.cos(phase * 0.8));
+        want = 0.025 + 0.015 * Math.sin(phase * 1.3);
+      }
+      if (toward) data.toward = toward;
+      data.loom = (data.loom || 0) + (want - (data.loom || 0)) * ease;
+      if (held !== prey && data.toward) {
+        if (data.loom > 0.003) this.lean(held, data.toward, data.loom);
+        else { held.quaternion.identity(); data.loom = 0; data.toward = null; }
+      }
+      if (data.kind === "n" && held !== prey) {
+        const body = data.body, aim = look ? Math.atan2(-look.z, look.x) : this.rest(held);
+        body.rotation.y += turnBy(body.rotation.y, aim) * Math.min(1, dt * 5);
+      }
+    }
+    if (this.doomed) {
+      const shake = this.time * 37;
+      this.lean(this.doomed, new THREE.Vector3(Math.sin(shake), 0, Math.cos(shake * 1.3)), 0.045);
+    }
+  }
+
+  // A side thinking: its pieces shift their weight, each a little and in its
+  // own time, until it has chosen (`regard`). `null` is nobody thinking.
+  muse(colour) {
+    if (colour && this.musing !== colour) this.musings += 1;
+    this.musing = colour || null;
+  }
+
+  // What the board hears while a command is being given: the pieces it could
+  // be meant for stir (they lift, and their light brightens), and a piece it
+  // would take turns to face them and braces (`regard`).
+  stir(squares = [], prey = -1) {
+    for (const held of this.pieces.values()) { held.userData.stir = squares.includes(held.userData.square); held.userData.brace = null; }
+    const victim = this.pieces.get(prey);
+    if (!victim || !squares.length) return;
+    const toward = new THREE.Vector3();
+    for (const sq of squares) toward.add(sqPoint(sq).sub(victim.position));
+    if (toward.lengthSq() > 1e-6) victim.userData.brace = toward.setY(0).normalize();
+  }
+
+  // The king in check, and the pieces that check it: it flinches away from
+  // them. `-1` is no king in check.
+  flinch(sq, from = []) {
+    for (const held of this.pieces.values()) held.userData.check = null;
+    const king = this.pieces.get(sq);
+    if (!king) return;
+    const away = new THREE.Vector3();
+    for (const at of from) away.add(king.position.clone().sub(sqPoint(at)).setY(0).normalize());
+    if (away.lengthSq() < 1e-6) away.set(0, 0, king.userData.colour === "w" ? 1 : -1);
+    king.userData.check = away.normalize();
+  }
+
+  // The knight ridden listens: its ears turn toward the piece that is
+  // moving and prick up, and between moves they drift and twitch. Its eyes
+  // close now and then.
+  attend(dt) {
+    const saddle = this.ridden && this.ridden.userData.saddle;
+    if (!saddle) return;
+    const body = this.ridden.userData.body;
+    let turn = 0.22 * Math.sin(this.time * 0.37) * Math.sin(this.time * 1.3), prick = 0.25;
+    if (this.moving && this.moving !== this.ridden) {
+      body.updateWorldMatrix(true, false);
+      const heard = body.worldToLocal(this.moving.position.clone().setY(1.2));
+      turn = Math.max(-1.2, Math.min(1.2, Math.atan2(-heard.z, heard.x)));
+      prick = -0.1;
+    }
+    const follow = Math.min(1, dt * 7);
+    saddle.userData.ears.forEach((ear, at) => {
+      ear.rotation.y += (turn * (at ? 1 : 0.85) - ear.rotation.y) * follow;
+      ear.rotation.z += (prick - ear.rotation.z) * follow;
+    });
+    const shut = this.time % 4.7 < 0.13;
+    for (const eye of saddle.userData.eyes) eye.scale.y = shut ? 0.12 : 1;
   }
 
   // What goes on whether or not anyone moves.
@@ -650,13 +1044,16 @@ class World {
     this.flash.intensity *= Math.pow(0.0006, dt);
     // A piece's ring breathes, and is bright while it is awake.
     for (const held of this.pieces.values()) {
-      const data = held.userData, want = 0.3 + 0.07 * Math.sin(this.time * 1.6 + data.square) + Math.min(1.4, data.awake) * 0.55;
+      const data = held.userData, want = 0.3 + 0.07 * Math.sin(this.time * 1.6 + data.square) + Math.min(1.4, data.awake) * 0.55 +
+        (data.menace ? 0.45 + 0.25 * Math.sin(this.time * 7) : 0) + (data.stir ? 0.4 : 0);
       data.ring.material.opacity += (want - data.ring.material.opacity) * Math.min(1, dt * 8);
-      const lift = data.awake > 0 ? 0.05 : 0;
+      const lift = data.awake > 0 || data.stir ? 0.05 : 0;
       data.body.position.y += (lift - data.body.position.y) * Math.min(1, dt * 10);
     }
     const pulse = 0.4 + 0.3 * Math.sin(this.time * 6);
     this.mark.check.material.opacity = pulse;
+    this.attend(dt);
+    this.regard(dt);
     // Rubble: thrown, falling, coming to rest on the board, and then gone.
     const place = new THREE.Object3D();
     for (const heap of [...this.debris]) {
@@ -685,9 +1082,12 @@ class World {
 
 // ----------------------------------------------------------------- the sound
 // Stone on stone, made here rather than recorded: noise through a filter for
-// what grinds and breaks, a falling tone for what lands.
+// what grinds and breaks, a falling tone for what lands. A sound the world
+// makes is made where it happens (a panner at that point of the hall), and
+// heard from where the seat's eye is (`hear`): from the saddle a capture
+// beside you is loud and on that side, and one behind you is behind you.
 class Sound {
-  constructor() { this.on = true; this.audio = null; }
+  constructor() { this.on = true; this.audio = null; this.near = 14; }
   start() {
     if (this.audio || !this.on) return;
     const Audio = window.AudioContext || window.webkitAudioContext;
@@ -707,7 +1107,34 @@ class Sound {
     air.connect(low).connect(quiet).connect(this.out);
     air.start();
   }
-  burst(seconds, kind, from, to, loud, q = 1) {
+  // A point in the hall to make a sound at. `near` is how close a sound has
+  // to be to be heard at its full strength: a rider is among the pieces, and
+  // a player at the board is some way off all of them.
+  place(at) {
+    const audio = this.audio, panner = audio.createPanner();
+    Object.assign(panner, {panningModel: "HRTF", distanceModel: "inverse", refDistance: this.near, rolloffFactor: 1.3, maxDistance: 80});
+    if (panner.positionX) { panner.positionX.value = at.x; panner.positionY.value = at.y + 0.5; panner.positionZ.value = at.z; }
+    else panner.setPosition(at.x, at.y + 0.5, at.z);
+    panner.connect(this.out);
+    setTimeout(() => panner.disconnect(), 3000);
+    return panner;
+  }
+  // The ear: where the seat's eye is, and which way it faces.
+  hear(camera, near) {
+    this.near = near;
+    if (!this.audio) return;
+    const ear = this.audio.listener, at = camera.position, ahead = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion),
+      up = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
+    if (ear.positionX) {
+      ear.positionX.value = at.x; ear.positionY.value = at.y; ear.positionZ.value = at.z;
+      ear.forwardX.value = ahead.x; ear.forwardY.value = ahead.y; ear.forwardZ.value = ahead.z;
+      ear.upX.value = up.x; ear.upY.value = up.y; ear.upZ.value = up.z;
+    } else {
+      ear.setPosition(at.x, at.y, at.z);
+      ear.setOrientation(ahead.x, ahead.y, ahead.z, up.x, up.y, up.z);
+    }
+  }
+  burst(seconds, kind, from, to, loud, q = 1, into = this.out) {
     const audio = this.audio, now = audio.currentTime;
     const source = audio.createBufferSource(), filter = audio.createBiquadFilter(), gain = audio.createGain();
     source.buffer = this.noise;
@@ -719,39 +1146,41 @@ class Sound {
     gain.gain.setValueAtTime(0.0001, now);
     gain.gain.exponentialRampToValueAtTime(loud, now + Math.min(0.03, seconds / 4));
     gain.gain.exponentialRampToValueAtTime(0.0001, now + seconds);
-    source.connect(filter).connect(gain).connect(this.out);
+    source.connect(filter).connect(gain).connect(into);
     source.start(now, Math.random());
     source.stop(now + seconds + 0.05);
   }
-  tone(seconds, from, to, loud, wave = "sine") {
+  tone(seconds, from, to, loud, wave = "sine", into = this.out) {
     const audio = this.audio, now = audio.currentTime, voice = audio.createOscillator(), gain = audio.createGain();
     voice.type = wave;
     voice.frequency.setValueAtTime(from, now);
     voice.frequency.exponentialRampToValueAtTime(Math.max(20, to), now + seconds);
     gain.gain.setValueAtTime(loud, now);
     gain.gain.exponentialRampToValueAtTime(0.0001, now + seconds);
-    voice.connect(gain).connect(this.out);
+    voice.connect(gain).connect(into);
     voice.start(now);
     voice.stop(now + seconds + 0.05);
   }
-  play(name, strength = 1) {
+  play(name, strength = 1, where = null) {
     if (!this.on) return;
     this.start();
     if (!this.audio) return;
     if (this.audio.state === "suspended") this.audio.resume();
-    const s = Math.max(0.2, Math.min(1.4, strength));
-    if (name === "slide") this.burst(0.34 + 0.3 * s, "bandpass", 420, 170, 0.22 * s, 0.9);
-    else if (name === "lift") this.burst(0.16, "bandpass", 700, 1400, 0.1 * s, 1.5);
-    else if (name === "set") { this.tone(0.16, 120, 48, 0.5 * s); this.burst(0.09, "lowpass", 900, 200, 0.2 * s); }
+    const s = Math.max(0.2, Math.min(1.4, strength)), into = where ? this.place(where) : this.out;
+    if (name === "slide") this.burst(0.34 + 0.3 * s, "bandpass", 420, 170, 0.22 * s, 0.9, into);
+    else if (name === "lift") this.burst(0.16, "bandpass", 700, 1400, 0.1 * s, 1.5, into);
+    else if (name === "set") { this.tone(0.16, 120, 48, 0.5 * s, "sine", into); this.burst(0.09, "lowpass", 900, 200, 0.2 * s, 1, into); }
     else if (name === "shatter") {
-      this.tone(0.3, 150, 34, 0.9 * s);
-      this.burst(0.5, "highpass", 500, 2600, 0.5 * s);
-      this.burst(0.9, "bandpass", 1500, 300, 0.25 * s, 0.7);
-      for (let at = 0; at < 7; at++) setTimeout(() => this.on && this.tone(0.05, 500 + Math.random() * 1400, 200, 0.12 * s, "triangle"), 60 + Math.random() * 520);
-    } else if (name === "bolt") { this.tone(0.26, 1500, 240, 0.16 * s, "sawtooth"); this.burst(0.24, "bandpass", 3000, 600, 0.14 * s, 3); }
-    else if (name === "crown") { for (const [at, pitch] of [[0, 523], [90, 659], [180, 784], [300, 1047]]) setTimeout(() => this.on && this.tone(0.7, pitch, pitch, 0.1, "sine"), at); }
+      this.tone(0.3, 150, 34, 0.9 * s, "sine", into);
+      this.burst(0.5, "highpass", 500, 2600, 0.5 * s, 1, into);
+      this.burst(0.9, "bandpass", 1500, 300, 0.25 * s, 0.7, into);
+      for (let at = 0; at < 7; at++) setTimeout(() => this.on && this.tone(0.05, 500 + Math.random() * 1400, 200, 0.12 * s, "triangle", into), 60 + Math.random() * 520);
+    } else if (name === "bolt") { this.tone(0.26, 1500, 240, 0.16 * s, "sawtooth", into); this.burst(0.24, "bandpass", 3000, 600, 0.14 * s, 3, into); }
+    else if (name === "crown") { for (const [at, pitch] of [[0, 523], [90, 659], [180, 784], [300, 1047]]) setTimeout(() => this.on && this.tone(0.7, pitch, pitch, 0.1, "sine", into), at); }
     else if (name === "pick") this.tone(0.22, 880, 880, 0.05, "sine");
     else if (name === "no") this.tone(0.18, 170, 120, 0.12, "square");
+    else if (name === "groan") { this.burst(0.6, "lowpass", 260, 70, 0.32 * s, 2.5, into); this.tone(0.55, 68, 50, 0.2 * s, "triangle", into); }
+    else if (name === "peril") { this.tone(0.5, 82, 60, 0.4); setTimeout(() => this.on && this.tone(0.5, 82, 58, 0.32), 210); }
     else if (name === "check") { this.tone(0.7, 196, 185, 0.12, "sawtooth"); this.tone(0.7, 207, 196, 0.1, "sawtooth"); }
   }
 }
@@ -807,8 +1236,21 @@ class Voice {
 }
 
 // ------------------------------------------------------------------ the seat
-// Where the player sits: at their own side of the board, far enough back
-// that the whole of it is on the screen, and able to lean.
+// Where the player sits. At the board (`table`): at their own side of it,
+// far enough back that the whole of it is on the screen, and able to lean.
+// On a knight (`ride`): on the back of one of their own knights, behind its
+// ears, carried wherever it goes and looking where it looks. Thrown
+// (`thrown`), when that knight is taken under them, and then standing at the
+// side of the board (`aside`), from where they still command.
+// The rider's eye in the mount's own frame (nose toward +x, the board's
+// unit a square): low on its neck and to its right, so that the head is seen
+// beside them in profile and the pieces stand over them, a pawn near their
+// eye and a king half again its height. On the right, the head is on the
+// left of the screen, where nothing written stands over it.
+const EYE = new THREE.Vector3(-0.46, 1.24, 0.5);
+const AHEAD = new THREE.Vector3(1.6, 1.02, 0.5);
+const FLOOR = -0.62, STANDING = FLOOR + 0.8;
+const FIELD = {table: 36, ride: 64, thrown: 70, aside: 58};
 class Seat {
   constructor(canvas, world) {
     this.canvas = canvas;
@@ -819,17 +1261,30 @@ class Seat {
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
-    this.camera = new THREE.PerspectiveCamera(36, 1, 0.1, 200);
+    this.camera = new THREE.PerspectiveCamera(FIELD.table, 1, 0.1, 200);
     this.side = "w";
+    this.mode = "table";
     // Where the seat is (`rest`), where the player has leaned to (`lean`),
     // and where the view is now, which follows.
     this.rest = {yaw: 0, pitch: 0.53, zoom: 1};
     this.lean = {yaw: 0, pitch: 0, zoom: 1};
     this.now = {yaw: 0, pitch: 0.53, far: 16, target: new THREE.Vector3(0, 0, 0.3)};
+    // A rider's head: where they have turned it (`gaze`), and where it is
+    // now, which follows what is happening unless they have just turned it.
+    this.gaze = {yaw: 0, pitch: 0, field: 1, at: -10};
+    this.head = {yaw: 0, pitch: 0, roll: 0};
+    this.mounted = null;
+    this.stand = null;
+    this.rise = 0;
+    this.flight = 0;
+    this.blend = null;
     this.focus = null;
+    this.watching = null;
+    this.alarm = null;
     this.follow = true;
     this.shaking = 0;
     this.fit = 16;
+    this.clock = 0;
     this.ray = new THREE.Raycaster();
     this.resize();
     window.addEventListener("resize", () => this.resize());
@@ -840,6 +1295,78 @@ class Seat {
     this.rest.yaw = side === "w" ? 0 : Math.PI;
     this.lean = {yaw: 0, pitch: 0, zoom: 1};
     if (at_once) this.now.yaw = this.rest.yaw;
+  }
+
+  // From one seat to another the view travels; it does not cut.
+  carry(seconds) {
+    this.blend = seconds > 0 && !CALM ? {position: this.camera.position.clone(), quaternion: this.camera.quaternion.clone(), fov: this.camera.fov, at: 0, seconds} : null;
+  }
+  mount(held, at_once = false) {
+    if (this.mode === "ride" && this.mounted === held) return;
+    this.carry(at_once ? 0 : 1.1);
+    this.flight += 1;
+    this.mode = "ride";
+    this.mounted = held;
+    this.gaze = {yaw: 0, pitch: 0, field: 1, at: -10};
+    this.head = null;
+  }
+  // Back to the board's side, or to the side of the board with no knight.
+  unmount(at_once = false, aside = false) {
+    if (this.mode === "table" && !aside) return;
+    this.carry(at_once ? 0 : 1);
+    this.flight += 1;
+    this.mounted = null;
+    if (aside) {
+      this.mode = "aside";
+      this.stand = new THREE.Vector3(this.side === "w" ? 5.9 : -5.9, STANDING, this.side === "w" ? 2.6 : -2.6);
+      this.head = null;
+      this.gaze = {yaw: 0, pitch: 0, field: 1, at: -10};
+    } else this.mode = "table";
+  }
+
+  // The knight ridden is taken: the rider is thrown clear on the way the blow
+  // came, over the edge of the board, lands, and gets up at its side.
+  async thrown(from, heading) {
+    const flight = ++this.flight;
+    this.mode = "thrown";
+    this.mounted = null;
+    this.blend = null;
+    const way = heading.clone().setY(0);
+    if (way.lengthSq() < 1e-6) way.set(0, 0, this.side === "w" ? 1 : -1);
+    way.normalize();
+    // Out along the blow to beyond the plinth.
+    const land = from.clone();
+    for (let at = 0; at < 160 && Math.max(Math.abs(land.x), Math.abs(land.z)) < 5.9; at++) land.addScaledVector(way, 0.1);
+    land.y = FLOOR + 0.14;
+    const start = this.camera.position.clone(), head = this.head || {yaw: 0, pitch: 0, roll: 0};
+    const pose = this.pose = {position: start.clone(), yaw: head.yaw, pitch: head.pitch, roll: 0};
+    const spin = (Math.random() < 0.5 ? -1 : 1) * (CALM ? 0 : 1);
+    const gone = () => this.flight !== flight;
+    await tween(0.95, t => {
+      pose.position.lerpVectors(start, land, t);
+      pose.position.y = start.y + (land.y - start.y) * t + Math.sin(t * Math.PI) * 1.4;
+      pose.roll = spin * t * 2.2;
+      pose.pitch = head.pitch - spin * Math.sin(t * Math.PI) * 1.2 + t * 0.4;
+    }, ease.line);
+    if (gone()) return;
+    this.shake(0.3);
+    // On the floor, looking up for a moment.
+    const lay = {...pose};
+    await tween(0.75, t => { pose.roll = lay.roll + (spin * 0.35 - lay.roll) * t; pose.pitch = lay.pitch + (0.9 - lay.pitch) * t; }, ease.out);
+    if (gone()) return;
+    // And up, turned to the board.
+    const toBoard = new THREE.Vector3(0, 0.4, 0).sub(land), faced = Math.atan2(-toBoard.x, -toBoard.z), up = {...pose};
+    await tween(1, t => {
+      pose.position.y = land.y + (STANDING - land.y) * t;
+      pose.roll = up.roll * (1 - t);
+      pose.yaw = up.yaw + turnBy(up.yaw, faced) * t;
+      pose.pitch = up.pitch + (-0.12 - up.pitch) * t;
+    });
+    if (gone()) return;
+    this.mode = "aside";
+    this.stand = land.clone().setY(STANDING);
+    this.head = {yaw: pose.yaw, pitch: pose.pitch, roll: 0};
+    this.gaze = {yaw: 0, pitch: 0, field: 1, at: -10};
   }
 
   place(camera, yaw, pitch, far, target) {
@@ -854,6 +1381,8 @@ class Seat {
     const width = window.innerWidth, height = window.innerHeight;
     this.renderer.setSize(width, height, false);
     this.camera.aspect = width / height;
+    const field = this.camera.fov;
+    this.camera.fov = FIELD.table;
     this.camera.updateProjectionMatrix();
     const pitch = this.rest.pitch, target = new THREE.Vector3(0, 0, 0.3);
     const corners = [];
@@ -869,16 +1398,32 @@ class Seat {
     let near = 7, far = 60;
     for (let at = 0; at < 22; at++) { const mid = (near + far) / 2; if (fits(mid)) far = mid; else near = mid; }
     this.fit = far;
+    this.camera.fov = field;
+    this.camera.updateProjectionMatrix();
   }
 
+  // A drag, two fingers or an arrow: at the board the view goes round it;
+  // on a knight or beside the board it is the rider's head that turns, and
+  // the world is taken hold of (drag it left and the head turns right).
   turn(yaw, pitch) {
+    if (this.mode !== "table") {
+      this.gaze.yaw = Math.max(-2.7, Math.min(2.7, this.gaze.yaw - yaw * 1.3));
+      this.gaze.pitch = Math.max(-1.05, Math.min(0.8, this.gaze.pitch + pitch * 1.3));
+      this.gaze.at = this.clock;
+      return;
+    }
     this.lean.yaw = Math.max(-1.35, Math.min(1.35, this.lean.yaw + yaw));
     this.lean.pitch = Math.max(0.2 - this.rest.pitch, Math.min(1.35 - this.rest.pitch, this.lean.pitch + pitch));
   }
-  zoom(by) { this.lean.zoom = Math.max(0.55, Math.min(1.5, this.lean.zoom * by)); }
-  straighten() { this.lean = {yaw: 0, pitch: 0, zoom: 1}; }
+  zoom(by) {
+    if (this.mode !== "table") { this.gaze.field = Math.max(0.6, Math.min(1.3, this.gaze.field * by)); return; }
+    this.lean.zoom = Math.max(0.55, Math.min(1.5, this.lean.zoom * by));
+  }
+  straighten() { this.lean = {yaw: 0, pitch: 0, zoom: 1}; this.gaze = {yaw: 0, pitch: 0, field: 1, at: -10}; }
 
   look(point) { this.focus = point && this.follow ? point.clone() : null; }
+  // A rider's head snaps round to a new threat, and holds there a moment.
+  glance(point, seconds = 1.8) { this.alarm = point ? {point: point.clone().setY(0.9), until: this.clock + seconds} : null; }
   shake(much) { if (!CALM) this.shaking = Math.max(this.shaking, much); }
 
   // What is under the pointer, nearest first: the square of each piece the
@@ -890,8 +1435,12 @@ class Seat {
     const at = new THREE.Vector2((event.clientX - box.left) / box.width * 2 - 1, -((event.clientY - box.top) / box.height) * 2 + 1);
     this.ray.setFromCamera(at, this.camera);
     const pieces = [];
+    let mounted;
     for (const hit of this.ray.intersectObjects([...this.world.pieces.values()], true)) {
       const owner = hit.object.userData.owner;
+      // The knight ridden is under the rider, not in front of them: a press
+      // on its ears is a press on what is beyond them (`meant`).
+      if (this.mode === "ride" && owner === this.mounted) { mounted = owner.userData.square; continue; }
       if (owner && !pieces.includes(owner.userData.square)) pieces.push(owner.userData.square);
     }
     const spot = new THREE.Vector3();
@@ -900,10 +1449,10 @@ class Seat {
       const file = Math.floor(spot.x + 4), rank = Math.floor(4 - spot.z);
       if (file >= 0 && file <= 7 && rank >= 0 && rank <= 7) floor = rank * 8 + file;
     }
-    return {pieces, floor};
+    return mounted === undefined ? {pieces, floor} : {pieces, floor, mounted};
   }
 
-  frame(dt) {
+  table(dt) {
     const settle = 1 - Math.exp(-dt * (this.focus ? 3.2 : 4.2));
     let yaw = this.rest.yaw + this.lean.yaw, pitch = this.rest.pitch + this.lean.pitch, far = this.fit * this.lean.zoom;
     const target = new THREE.Vector3(0, 0, this.side === "w" ? 0.3 : -0.3);
@@ -914,18 +1463,96 @@ class Seat {
       pitch = Math.max(0.32, pitch - 0.16);
     }
     // The short way round, when the seat changes sides.
-    let turn = yaw - this.now.yaw;
-    turn = ((turn + Math.PI) % TAU + TAU) % TAU - Math.PI;
-    this.now.yaw += turn * settle;
+    this.now.yaw += turnBy(this.now.yaw, yaw) * settle;
     this.now.pitch += (pitch - this.now.pitch) * settle;
     this.now.far += (far - this.now.far) * settle;
     this.now.target.lerp(target, settle);
     this.place(this.camera, this.now.yaw, this.now.pitch, this.now.far, this.now.target);
+  }
+
+  // A head at `eye`, facing `yaw`/`pitch` when nothing is happening, and
+  // turned toward what is: a capture most of all, and any piece that moves.
+  // A player who has just turned their own head keeps it where they put it.
+  aim(eye, yaw, pitch, dt, roll = 0) {
+    yaw += this.gaze.yaw;
+    pitch += this.gaze.pitch;
+    const free = this.clock - this.gaze.at > 2.2;
+    const alarmed = this.alarm && this.clock < this.alarm.until ? this.alarm.point : null;
+    const seen = this.focus || alarmed || (this.watching && this.watching !== this.mounted ? this.watching.position.clone().setY(0.7) : null);
+    if (seen && free) {
+      const way = seen.clone().sub(eye);
+      if (way.lengthSq() > 0.25) {
+        const much = this.focus || alarmed ? 0.85 : 0.6;
+        yaw += turnBy(yaw, Math.atan2(-way.x, -way.z)) * much;
+        pitch += (Math.atan2(way.y, Math.hypot(way.x, way.z)) - pitch) * much;
+      }
+    }
+    if (!this.head) this.head = {yaw, pitch, roll};
+    const settle = 1 - Math.exp(-dt * (seen && free ? 3.6 : 7));
+    this.head.yaw += turnBy(this.head.yaw, yaw) * settle;
+    this.head.pitch += (pitch - this.head.pitch) * settle;
+    this.head.roll += (roll - this.head.roll) * Math.min(1, dt * 10);
+    this.camera.position.copy(eye);
+    this.camera.rotation.set(this.head.pitch, this.head.yaw, this.head.roll, "YXZ");
+  }
+
+  // On the knight: the eye is a place on the knight itself, so the rider is
+  // carried through its leap, rears with it and lurches as it lands.
+  rider(dt) {
+    const body = this.mounted.userData.body;
+    body.updateWorldMatrix(true, false);
+    const ahead = body.localToWorld(AHEAD.clone()).sub(body.localToWorld(EYE.clone())), forward = Math.atan2(-ahead.x, -ahead.z);
+    // The knight's head is to the rider's left. Turned toward it, they rise
+    // in the saddle and lean in, so as to see over it, the more the further
+    // round they look.
+    const across = this.head ? turnBy(forward, this.head.yaw) : 0;
+    this.rise += (Math.max(0, Math.min(1, (across - 0.3) / 0.8)) - this.rise) * Math.min(1, dt * 5);
+    const seat = EYE.clone();
+    seat.y += 0.42 * this.rise;
+    seat.z -= 0.2 * this.rise;
+    const eye = body.localToWorld(seat);
+    // A living thing under you breathes.
+    if (!CALM) eye.y += 0.012 * Math.sin(this.clock * 1.7);
+    this.aim(eye, Math.atan2(-ahead.x, -ahead.z), Math.atan2(ahead.y, Math.hypot(ahead.x, ahead.z)), dt);
+  }
+
+  frame(dt) {
+    this.clock += dt;
+    if (this.mode === "ride" && !(this.mounted && this.mounted.parent)) this.mode = "table";
+    if (this.mode === "table") this.table(dt);
+    else if (this.mode === "ride") this.rider(dt);
+    else if (this.mode === "thrown") {
+      this.camera.position.copy(this.pose.position);
+      this.camera.rotation.set(this.pose.pitch, this.pose.yaw, this.pose.roll, "YXZ");
+    } else {
+      const toBoard = new THREE.Vector3(0, 0.3, 0).sub(this.stand);
+      this.aim(this.stand, Math.atan2(-toBoard.x, -toBoard.z), -0.1, dt);
+    }
+    let field = FIELD[this.mode] * (this.mode === "table" ? 1 : this.gaze.field);
+    if (this.blend) {
+      const blend = this.blend;
+      blend.at += dt;
+      const t = ease.inOut(Math.min(1, blend.at / blend.seconds));
+      this.camera.position.lerpVectors(blend.position, this.camera.position, t);
+      this.camera.quaternion.slerpQuaternions(blend.quaternion, this.camera.quaternion.clone(), t);
+      field = blend.fov + (field - blend.fov) * t;
+      if (t >= 1) this.blend = null;
+    }
+    // A rider does not see themself.
+    const saddle = this.mounted && this.mounted.userData.saddle;
+    if (saddle) saddle.userData.rider.visible = !(this.mode === "ride" && (!this.blend || this.blend.at > this.blend.seconds * 0.6));
+    const near = this.mode === "table" ? 0.1 : 0.03;
+    if (Math.abs(this.camera.fov - field) > 0.01 || this.camera.near !== near) {
+      this.camera.fov = field;
+      this.camera.near = near;
+      this.camera.updateProjectionMatrix();
+    }
     if (this.shaking > 0.002) {
       this.camera.position.x += (Math.random() - 0.5) * this.shaking;
       this.camera.position.y += (Math.random() - 0.5) * this.shaking;
       this.shaking *= Math.pow(0.004, dt);
     }
+    this.camera.updateMatrixWorld();
     this.renderer.render(this.world.scene, this.camera);
   }
 }
@@ -939,6 +1566,13 @@ const kept = (() => { try { return JSON.parse(localStorage.getItem(KEPT) || "{}"
 const game = {
   position: fromFen(START), played: [], seen: new Map(), side: kept.side === "b" ? "b" : "w",
   elo: Number.isFinite(kept.elo) ? kept.elo : 1500, busy: false, over: null, chosen: -1, thinking: false, turn: 0,
+  // Riding: whether the player rides a knight, and which: the square that
+  // knight stood on when the game began (`origins`), which names it through
+  // every move it makes and every move taken back.
+  ride: kept.ride === true, mount: Number.isInteger(kept.mount) ? kept.mount : null, thrown: false,
+  // How many games have been begun: a move still being played out when the
+  // next is begun belongs to the one before (`make`).
+  epoch: 0,
 };
 
 // A browser that will not draw in three dimensions is told so, and nothing
@@ -960,7 +1594,9 @@ world.surround(seat.renderer);
 const sound = new Sound();
 const opponent = new Opponent(new URL("./vendor/stockfish-18-lite-single.js", import.meta.url).href);
 const voice = new Voice(heard, listening);
-const hooks = {sound: (name, strength) => sound.play(name, strength), look: point => seat.look(point), shake: much => seat.shake(much)};
+const hooks = {sound: (name, strength, at) => sound.play(name, strength, at), look: point => seat.look(point), shake: much => seat.shake(much),
+  moving: piece => { seat.watching = piece; },
+  thrown: (at, heading) => { game.thrown = true; seat.thrown(at, heading); sound.play("shatter", 1.4); }};
 
 sound.on = kept.sound !== false;
 voice.speaks = kept.speak !== false;
@@ -969,7 +1605,7 @@ seat.follow = kept.follow !== false;
 function keep() {
   try {
     localStorage.setItem(KEPT, JSON.stringify({side: game.side, elo: game.elo, sound: sound.on, speak: voice.speaks, follow: seat.follow,
-      moves: game.played.map(entry => uci(entry.move))}));
+      ride: game.ride, mount: game.mount, moves: game.played.map(entry => uci(entry.move))}));
   } catch (_) { /* a browser that keeps nothing */ }
 }
 
@@ -982,7 +1618,8 @@ const sideName = colour => (colour === "w" ? "White" : "Black");
 
 function hint() {
   const yours = !game.over && game.position.turn === game.side && !game.busy;
-  const how = voice.can ? "Hold <kbd>Space</kbd> and say a move, type one, or click a piece." : "Type a move, or click a piece. (This browser has no speech recognition.)";
+  const riding = world.ridden ? ` You ride the knight on ${squareName(world.ridden.userData.square)}: “ride to …” moves it.` : "";
+  const how = (voice.can ? "Hold <kbd>Space</kbd> and say a move, type one, or click a piece." : "Type a move, or click a piece. (This browser has no speech recognition.)") + riding;
   el("hint").innerHTML = game.over ? "The game is over." : yours ? how : game.thinking ? `${sideName(game.position.turn)} is thinking…` : "&nbsp;";
   el("typed").placeholder = yours ? (game.played.length < 2 ? "knight to f3" : "your move") : "";
   el("take-back").disabled = game.busy || !game.played.some(entry => entry.by === game.side);
@@ -1010,9 +1647,103 @@ function draw() {
   const last = game.played[game.played.length - 1];
   world.show("from", last ? last.move.from : null);
   world.show("to", last ? last.move.to : null);
-  world.show("check", inCheck(game.position) ? kingOf(game.position.board, game.position.turn) : null);
+  const checked = inCheck(game.position) ? kingOf(game.position.board, game.position.turn) : null;
+  world.show("check", checked);
+  // The king in check flinches away from the pieces that check it.
+  const checkers = checked === null ? [] : legalMoves({...game.position, turn: game.position.turn === "w" ? "b" : "w", ep: -1})
+    .filter(move => move.to === checked).map(move => move.from);
+  world.flinch(checked === null ? -1 : checked, checkers);
   for (const side of ["w", "b"]) el(side === "w" ? "play-white" : "play-black").setAttribute("aria-pressed", String(game.side === side));
+  // Where the player sits.
+  const knights = ownKnights();
+  el("seat-board").setAttribute("aria-pressed", String(!game.ride));
+  el("seat-knight").setAttribute("aria-pressed", String(game.ride));
+  el("seat-knight").textContent = game.ride && !world.ridden && knights.length ? "Ride again" : "On a knight";
+  el("seat-knight").disabled = !game.ride && !knights.length;
+  el("seat-other").hidden = !(game.ride && world.ridden && knights.length > 1);
+  // In the saddle what is written folds to what a rider needs.
+  document.body.classList.toggle("riding", game.ride);
   hint();
+}
+
+// ---- riding
+// Where each piece now standing began the game: its square at the start,
+// carried through every move. A knight's is its name for the rider.
+function origins(played = game.played) {
+  const began = Array.from({length: 64}, (_, sq) => sq);
+  for (const {move} of played) {
+    if (move.flag === "ep") began[move.to + (colourOf(move.piece) === "w" ? -8 : 8)] = null;
+    began[move.to] = began[move.from];
+    began[move.from] = null;
+    if (move.flag === "castle-k") { began[move.to - 1] = began[move.to + 1]; began[move.to + 1] = null; }
+    if (move.flag === "castle-q") { began[move.to + 1] = began[move.to - 2]; began[move.to - 2] = null; }
+  }
+  return began;
+}
+function ownKnights() {
+  const board = game.position.board;
+  return board.map((piece, sq) => (piece && piece.toLowerCase() === "n" && colourOf(piece) === game.side ? sq : -1)).filter(sq => sq >= 0);
+}
+// The square of the knight the player rides, or -1 when it has been taken.
+function mountSquare() {
+  if (game.mount === null) return -1;
+  const began = origins();
+  return ownKnights().find(sq => began[sq] === game.mount) ?? -1;
+}
+// The knight the player rides, set on the world and the seat as the game
+// now stands. With none chosen yet it is the king's knight, or the other.
+function remount(at_once = false) {
+  if (!game.ride) {
+    world.ride(null);
+    seat.unmount(at_once);
+    world.menace([]);
+    return;
+  }
+  let sq = mountSquare();
+  if (sq < 0 && game.mount === null) {
+    const knights = ownKnights(), began = origins(), home = game.side === "w" ? 6 : 62;
+    sq = knights.find(at => began[at] === home) ?? (knights.length ? knights[0] : -1);
+    game.mount = sq >= 0 ? began[sq] : null;
+  }
+  const held = sq >= 0 ? world.pieces.get(sq) : null;
+  if (held) {
+    world.ride(held);
+    seat.mount(held, at_once);
+  } else {
+    world.ride(null);
+    if (seat.mode !== "thrown" && seat.mode !== "aside") seat.unmount(at_once, true);
+  }
+  peril(true);
+}
+function ride(on, other = false) {
+  game.ride = on;
+  if (on && (other || (game.mount !== null && mountSquare() < 0))) {
+    // The next knight along, or another one when this one is gone.
+    const knights = ownKnights(), began = origins(), now = mountSquare();
+    const next = knights[(knights.indexOf(now) + 1) % knights.length];
+    game.mount = next !== undefined ? began[next] : null;
+  }
+  remount();
+  keep();
+  draw();
+  if (on) say(world.ridden ? `You ride the knight on ${squareName(world.ridden.userData.square)}.` : "You have no knight left to ride.");
+}
+// The pieces that could take the knight ridden, as the board stands: their
+// light turns red, and when the threat is new it is said.
+function peril(quiet = false) {
+  const sq = world.ridden ? world.ridden.userData.square : -1;
+  if (sq < 0 || game.over) { world.menace([]); game.threats = ""; return; }
+  const foe = game.side === "w" ? "b" : "w";
+  const threats = legalMoves({...game.position, turn: foe, ep: -1}).filter(move => move.to === sq);
+  world.menace(threats.map(move => move.from));
+  const named = threats.map(move => `${PIECE_NAMES[move.piece.toLowerCase()]} on ${squareName(move.from)}`).join(" and the ");
+  if (!quiet && named && named !== game.threats) {
+    say(`${el("said").textContent} Your knight is threatened by the ${named}.`.trim(), "peril");
+    sound.play("peril");
+    const first = world.pieces.get(threats[0].from);
+    if (first) seat.glance(first.position);
+  }
+  game.threats = named;
 }
 
 function place() {
@@ -1042,7 +1773,9 @@ async function ended(how) {
   game.over = how;
   if (how === "checkmate") {
     voice.say("Checkmate.");
+    const epoch = game.epoch;
     await world.fall(game.position.turn, hooks);
+    if (epoch !== game.epoch) return;
   } else voice.say(title);
   el("ended-title").textContent = title;
   el("ended-how").textContent = how === "checkmate"
@@ -1056,13 +1789,18 @@ async function ended(how) {
 // game looked at again.
 async function make(move, by) {
   game.busy = true;
+  world.stir();
+  const epoch = game.epoch;
   choose(-1);
   const before = game.position, text = san(before, move), aloud = spoken(before, move);
   world.show("from", move.from);
   world.show("to", null);
   hint();
   if (by !== game.side) voice.say(aloud);
+  game.thrown = false;
   await world.play(move, hooks);
+  // A new game begun while it was played out: this move was the old game's.
+  if (epoch !== game.epoch) return;
   game.position = play(before, move);
   game.played.push({move, san: text, by, before});
   const key = positionKey(game.position);
@@ -1071,6 +1809,12 @@ async function make(move, by) {
   keep();
   const how = standing(game.position, game.seen);
   draw();
+  if (game.thrown) {
+    say(ownKnights().length ? "Your knight is broken under you, and you are thrown clear. Command from the side of the board, or ride again."
+      : "Your knight is broken under you, and you are thrown clear. Command from the side of the board.", "peril");
+    voice.say("You are thrown.");
+  }
+  peril(by === game.side);
   if (how === "check") sound.play("check");
   if (how !== "play" && how !== "check") { await ended(how); return; }
   if (game.position.turn !== game.side) answer();
@@ -1084,45 +1828,113 @@ async function answer() {
   game.thinking = true;
   hint();
   if (!opponent.awake) say("The opponent is waking…");
+  // While it thinks, its pieces shift their weight.
+  world.muse(game.position.turn);
   const began = performance.now();
   let found = null;
   try {
     found = await opponent.move(toFen(game.position), game.elo, 900);
   } catch (error) {
     game.thinking = false;
+    world.muse(null);
     say(`The opponent could not be woken: ${error.message || error}`, "wrong");
     hint();
     return;
   }
-  // Taken back, or a new game begun, while it thought.
+  // Taken back, or a new game begun, while it thought: that game's thinking
+  // is over, and this one's is not this answer's to end.
   if (turn !== game.turn || found === null) return;
-  const pause = 650 - (performance.now() - began);
-  if (pause > 0) await new Promise(done => setTimeout(done, pause));
-  if (turn !== game.turn) return;
-  game.thinking = false;
+  world.muse(null);
   const move = moveFromUci(game.position, found);
-  if (!move) { say(`The opponent answered ${found}, which cannot be played.`, "wrong"); hint(); return; }
+  if (!move) { game.thinking = false; say(`The opponent answered ${found}, which cannot be played.`, "wrong"); hint(); return; }
+  // The breath before it is played: the piece chosen stirs, what it will take
+  // braces, and a rider's eye is drawn to it. Never less than a breath, and
+  // not played sooner than 650 ms after it was asked for, so that a move that
+  // comes at once does not look unconsidered.
+  game.foreseen = move.from;
+  world.stir([move.from], move.captured && move.flag !== "ep" ? move.to : -1);
+  const chosen = world.pieces.get(move.from);
+  if (chosen && seat.mode !== "table") seat.glance(chosen.position, 1);
+  const pause = Math.max(BREATH, 650 - (performance.now() - began));
+  await new Promise(done => setTimeout(done, pause));
+  if (turn !== game.turn) { world.stir(); return; }
+  game.thinking = false;
   say(`${sideName(game.position.turn)}: ${spoken(game.position, move)}.`);
   await make(move, game.position.turn);
+}
+const BREATH = 550;
+
+// A move after which the knight ridden can be taken, by its own going or by
+// what it uncovers, is asked about first: the rider goes with their knight.
+// What has been asked once in a position is not asked again.
+function risks(move) {
+  const sq = world.ridden ? world.ridden.userData.square : -1;
+  if (sq < 0) return false;
+  const after = play(game.position, move), at = move.from === sq ? move.to : sq;
+  return legalMoves(after).some(answer => answer.to === at);
+}
+function act(move) {
+  const key = `${positionKey(game.position)} ${uci(move)}`;
+  if (risks(move) && game.asked !== key) {
+    game.asked = key;
+    game.risky = move;
+    const own = world.ridden && move.from === world.ridden.userData.square;
+    el("risk-said").textContent = own
+      ? `Your knight can be taken on ${squareName(move.to)}, and you with it. Ride on?`
+      : `After ${spoken(game.position, move)}, your knight can be taken, and you with it. Play it?`;
+    el("risk").hidden = false;
+    el("risk-go").focus();
+    voice.say(own ? "You will be taken there. Ride on?" : "Your knight will be taken. Play it?");
+    sound.play("peril");
+    return;
+  }
+  game.risky = null;
+  el("risk").hidden = true;
+  say(`You: ${spoken(game.position, move)}.`);
+  make(move, game.side);
+}
+function settle(go) {
+  const move = game.risky;
+  el("risk").hidden = true;
+  game.risky = null;
+  if (go && move) act(move);
+  else say("You hold your ground.");
 }
 
 // A command, however it was given.
 function command(text, quiet = false) {
   if (game.over || game.busy) return false;
   if (game.position.turn !== game.side) { if (!quiet) say("It is not your move yet.", "wrong"); return false; }
-  const read = readCommand(game.position, text);
+  const read = readCommand(game.position, text, {mount: world.ridden ? world.ridden.userData.square : -1});
   if (!read.move) {
     if (!quiet) { say(read.error, "wrong"); sound.play("no"); }
     return false;
   }
-  say(`You: ${spoken(game.position, read.move)}.`);
-  make(read.move, game.side);
+  act(read.move);
   return true;
+}
+
+// What the board hears while a command is still being given, typed or said:
+// the pieces it could be meant for stir, when that is a few of them and not
+// the whole side, and the piece it would take turns to face them.
+function stir(text) {
+  const yours = !game.over && !game.busy && game.position.turn === game.side;
+  const fits = yours && text ? candidates(game.position, text, {mount: world.ridden ? world.ridden.userData.square : -1}) : [];
+  const movers = [...new Set(fits.map(move => move.from))];
+  const targets = [...new Set(fits.map(move => move.to))];
+  const prey = targets.length === 1 && fits.every(move => move.captured && move.flag !== "ep") ? targets[0] : -1;
+  world.stir(movers.length <= 6 ? movers : [], prey);
 }
 
 function heard(options, final) {
   if (!options.length) return;
-  if (!final) { say(options[0], "heard"); return; }
+  if (!final) { say(options[0], "heard"); stir(options[0]); return; }
+  // Asked whether to ride on, a yes or a no is the answer.
+  if (game.risky) {
+    const said = options.join(" ").toLowerCase();
+    if (/\b(yes|yeah|ride|go|charge|onward|play)\b/.test(said)) { settle(true); return; }
+    if (/\b(no|stay|hold|wait|stop)\b/.test(said)) { settle(false); return; }
+  }
   // What was heard comes as several guesses: the first that is a move is it.
   for (const option of options) if (command(option, true)) return;
   command(options[0]);
@@ -1137,6 +1949,8 @@ function listening(on, fault) {
 
 function begin(side = game.side, moves = []) {
   game.turn += 1;
+  game.epoch += 1;
+  if (side !== game.side) game.mount = null;
   opponent.stop();
   opponent.newGame();
   Object.assign(game, {position: fromFen(START), played: [], seen: new Map(), side, busy: false, over: null, chosen: -1, thinking: false});
@@ -1151,6 +1965,9 @@ function begin(side = game.side, moves = []) {
   }
   el("ended").hidden = true;
   el("promote").hidden = true;
+  el("risk").hidden = true;
+  game.risky = null;
+  world.muse(null);
   world.set(game.position);
   world.letter(side);
   world.offer([]);
@@ -1158,6 +1975,8 @@ function begin(side = game.side, moves = []) {
   world.show("hover", null);
   seat.sit(side);
   seat.look(null);
+  if (!moves.length) game.mount = null;
+  remount();
   keep();
   draw();
   const how = standing(game.position, game.seen);
@@ -1181,11 +2000,13 @@ function takeBack() {
   }
   game.over = null;
   el("ended").hidden = true;
+  world.muse(null);
   world.set(game.position);
+  remount();
   choose(-1);
   keep();
   draw();
-  say("Taken back.");
+  say(world.ridden && seat.mode === "ride" ? "Taken back. You are in the saddle." : "Taken back.");
   if (game.position.turn !== game.side) answer();
 }
 
@@ -1198,7 +2019,7 @@ function askPromotion(moves) {
     button.type = "button";
     button.textContent = GLYPH[move.promo];
     button.title = PIECE_NAMES[move.promo.toLowerCase()];
-    button.addEventListener("click", () => { el("promote").hidden = true; say(`You: ${spoken(game.position, move)}.`); make(move, game.side); });
+    button.addEventListener("click", () => { el("promote").hidden = true; act(move); });
     box.appendChild(button);
   }
   el("promote").hidden = false;
@@ -1212,7 +2033,7 @@ function askPromotion(moves) {
 // a move; and only then the square of the board behind them all, when the
 // chosen piece may go there. A piece that cannot act does not hide the one
 // behind it, and a press on a piece is never a press on the floor behind it.
-function meant({pieces, floor}) {
+function meant({pieces, floor, mounted}) {
   if (game.over || game.busy || game.position.turn !== game.side) return {};
   const legal = legalMoves(game.position), going = legal.filter(move => move.from === game.chosen);
   const own = sq => { const piece = game.position.board[sq]; return !!piece && colourOf(piece) === game.side; };
@@ -1224,6 +2045,12 @@ function meant({pieces, floor}) {
   }
   const moves = going.filter(move => move.to === floor);
   if (moves.length) return {moves, square: floor};
+  // A rider's press on their own knight's head, with nothing beyond it to
+  // mean, is the knight: chosen, or let go.
+  if (mounted !== undefined) {
+    if (mounted === game.chosen) return {letGo: true, square: mounted};
+    if (legal.some(move => move.from === mounted)) return {choose: mounted, square: mounted};
+  }
   return pieces.length && own(pieces[0]) ? {stuck: pieces[0]} : {};
 }
 
@@ -1231,8 +2058,7 @@ function point(under) {
   const what = meant(under);
   if (what.moves) {
     if (what.moves.length > 1) { askPromotion(what.moves); return; }
-    say(`You: ${spoken(game.position, what.moves[0])}.`);
-    make(what.moves[0], game.side);
+    act(what.moves[0]);
   } else if (what.choose !== undefined) {
     choose(what.choose);
     sound.play("pick");
@@ -1289,15 +2115,16 @@ const typed = el("typed");
 typed.addEventListener("keydown", event => {
   event.stopPropagation();
   if (event.key === "Enter") { if (command(typed.value)) typed.value = ""; else typed.select(); }
-  if (event.key === "Escape") { typed.value = ""; typed.blur(); }
+  if (event.key === "Escape") { typed.value = ""; typed.blur(); stir(""); }
 });
+typed.addEventListener("input", () => stir(typed.value));
 window.addEventListener("keydown", event => {
   if (event.target instanceof HTMLElement && /^(INPUT|SELECT|TEXTAREA|BUTTON|SUMMARY|A)$/.test(event.target.tagName) && event.target !== stage) {
     if (event.code !== "Space" || event.target.tagName === "INPUT") return;
   }
   sound.start();
   if (event.code === "Space") { event.preventDefault(); if (!event.repeat) voice.listen(); return; }
-  if (event.key === "Escape") { choose(-1); el("promote").hidden = true; return; }
+  if (event.key === "Escape") { choose(-1); el("promote").hidden = true; if (game.risky) settle(false); return; }
   if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "z") { event.preventDefault(); takeBack(); return; }
   if (event.metaKey || event.ctrlKey || event.altKey) return;
   if (event.key === "ArrowLeft") seat.turn(-0.12, 0);
@@ -1315,10 +2142,15 @@ mic.addEventListener("pointerdown", event => { event.preventDefault(); sound.sta
 for (const kind of ["pointerup", "pointerleave", "pointercancel"]) mic.addEventListener(kind, () => voice.done());
 
 el("new-game").addEventListener("click", () => begin(game.side));
+el("seat-board").addEventListener("click", () => { if (game.ride) ride(false); });
+el("seat-knight").addEventListener("click", () => { if (!game.ride || !world.ridden) ride(true); });
+el("seat-other").addEventListener("click", () => ride(true, true));
 el("take-back").addEventListener("click", takeBack);
 el("play-white").addEventListener("click", () => { if (game.side !== "w" || game.played.length) begin("w"); });
 el("play-black").addEventListener("click", () => { if (game.side !== "b" || game.played.length) begin("b"); });
 el("ended-again").addEventListener("click", () => begin(game.side));
+el("risk-go").addEventListener("click", () => settle(true));
+el("risk-stay").addEventListener("click", () => settle(false));
 el("ended-look").addEventListener("click", () => { el("ended").hidden = true; });
 el("opt-sound").checked = sound.on;
 el("opt-speak").checked = voice.speaks;
@@ -1367,9 +2199,27 @@ function frame(now) {
   advance(dt);
   world.tick(dt);
   seat.frame(dt);
+  sound.hear(seat.camera, seat.mode === "table" ? 14 : 2.2);
   requestAnimationFrame(frame);
 }
+seat.blend = null;
 requestAnimationFrame(now => { then = now; el("loading").classList.add("gone"); frame(now); });
 
+// What a frame costs on this machine, in milliseconds: the world's own work
+// and the drawing, over `count` frames, each one made to finish on the
+// graphics card before the next is begun (a pixel is read back). With the
+// name of what drew it, which says whether that was the machine's card or a
+// browser drawing in software.
+function frameCost(count = 120) {
+  const gl = seat.renderer.getContext(), pixel = new Uint8Array(4), told = gl.getExtension("WEBGL_debug_renderer_info");
+  const finish = () => gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+  for (let at = 0; at < Math.min(10, count); at++) { world.tick(1 / 60); seat.frame(1 / 60); finish(); }
+  const started = performance.now();
+  for (let at = 0; at < count; at++) { world.tick(1 / 60); seat.frame(1 / 60); finish(); }
+  return {ms: (performance.now() - started) / count, drawnBy: told ? gl.getParameter(told.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER),
+    pixels: [seat.renderer.domElement.width, seat.renderer.domElement.height], seat: seat.mode};
+}
+
 // For the checks (beta/wizard_chess_test.py), and for anyone at the console.
-window.wizardChess = {game, world, seat, opponent, command, begin, takeBack, running, meant, point, choose};
+window.wizardChess = {game, world, seat, sound, opponent, command, begin, takeBack, running, meant, point, choose, make, ride, origins,
+  mountSquare, moveFromUci, peril, settle, frameCost, stir};

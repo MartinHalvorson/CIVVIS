@@ -197,7 +197,7 @@ impl Game {
         for cid in foreign {
             view.restore_other_defending_districts(cid);
         }
-        view.unseen_city_owners.extend(
+        Arc::make_mut(&mut view.host).unseen_city_owners.extend(
             self.cities
                 .values()
                 .filter(|city| {
@@ -226,10 +226,14 @@ impl Game {
                 tile.owner_city = None;
                 if let Some(owner) = owner.filter(|owner| *owner != pid) {
                     if !self.players[owner].is_minor && !self.players[owner].is_barbarian {
-                        view.unseen_major_borders.insert(tile.pos);
+                        Arc::make_mut(&mut view.host)
+                            .unseen_major_borders
+                            .insert(tile.pos);
                     }
                     if !self.is_at_war(pid, owner) && !self.has_open_borders(pid, owner) {
-                        view.closed_borders.insert(tile.pos);
+                        Arc::make_mut(&mut view.host)
+                            .closed_borders
+                            .insert(tile.pos);
                     }
                 }
             }
@@ -344,10 +348,10 @@ impl Game {
             *a == pid || *b == pid || (self.has_met(pid, *a) && self.has_met(pid, *b))
         });
         view.wars.clear();
-        view.concluded_wars.clear();
-        view.siege = Default::default();
-        view.unit_move_trails.clear();
-        view.nuclear_strikes.clear();
+        view.chronicle.concluded_wars = Default::default();
+        view.chronicle.siege = Default::default();
+        view.chronicle.unit_move_trails = Default::default();
+        view.chronicle.nuclear_strikes = Default::default();
         view.barb_camps.retain(|pos, _| visible.contains(pos));
         for cooldown in view.barb_camps.values_mut() {
             // A visible camp does not disclose its next spawn countdown.
@@ -378,7 +382,7 @@ impl Game {
         view.droughts.clear();
         view.fires.clear();
         view.log = Default::default();
-        view.events = Vec::new().into();
+        view.chronicle.events = Vec::new().into();
         // A simulator's future random stream is not observable in the game.
         view.seed = (self.turn as u64).wrapping_mul(0x9e3779b9) ^ pid as u64;
         view.rng = Rng::new(view.seed);

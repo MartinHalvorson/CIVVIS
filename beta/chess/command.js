@@ -47,6 +47,9 @@ const RANK_WORDS = {
   7: 7, seven: 7, seventh: 7,
   8: 8, eight: 8, ate: 8, eighth: 8, ait: 8,
 };
+// The knight the player rides is named by what is said to a horse: "ride to
+// f3", "gallop to e5", "charge d5".
+const RIDE = new Set(["ride", "rides", "gallop", "gallops", "charge", "charges", "steed", "mount", "onward", "giddyup"]);
 const TAKES = new Set(["takes", "take", "captures", "capture", "x", "times", "kills", "smashes", "smash", "attacks", "attack", "tanks"]);
 const FILLER = new Set(["to", "the", "a", "an", "my", "move", "moves", "go", "goes", "please", "and", "on", "at", "square", "from",
   "into", "piece", "then", "now", "becomes", "become", "promote", "promotes", "promotion", "equals", "check", "checkmate", "mate", "with"]);
@@ -75,6 +78,7 @@ function tokens(text) {
       continue;
     }
     if (TAKES.has(word)) { out.push({takes: true}); continue; }
+    if (RIDE.has(word)) { out.push({mount: true}); continue; }
     if (word === "castle" || word === "castles" || word === "castling") {
       // "castle" is also what many people call a rook. With a side, or
       // alone, it is the move; before a square it is the piece.
@@ -155,7 +159,8 @@ function spokenWants(heard, moves) {
   }
   const to = squares.length ? squares[squares.length - 1] : null;
   const from = squares.length > 1 ? squares[0] : null;
-  if (!to && !piece && !takes) {
+  // The knight ridden, named by what is said to a horse, is a piece named.
+  if (!to && !piece && !takes && !said.some(token => token.mount)) {
     return {error: unknown.length ? `I heard “${heard}”, and do not know a move by that.` : `“${heard}” names no square to go to.`};
   }
   const fit = (kind, becomes) => move =>
@@ -170,16 +175,13 @@ function spokenWants(heard, moves) {
     ranks.every(rank => (move.from >> 3) + 1 === rank || (!to && (move.to >> 3) + 1 === rank));
   // "e8 queen": no queen can go to e8, and a pawn can, to become one.
   const becoming = piece && !promo && piece !== "p" && piece !== "k" ? fit("p", piece) : null;
-  return {wants: fit(piece, promo), becoming, named: piece !== null};
+  return {wants: fit(piece, promo), becoming, named: piece !== null, riding: said.some(token => token.mount)};
 }
 
-// A command read against a position: `{move}` when exactly one legal move
-// fits it, and otherwise `{error}` in words for the player, with `options`
-// when the trouble is that several fit.
-export function readCommand(position, text) {
+// The legal moves a command, or the start of one, could mean, before one is
+// chosen among them: what the board hears while it is still being said.
+function fitting(position, heard, mount) {
   const moves = legalMoves(position);
-  const heard = text.trim();
-  if (!heard) return {error: "Nothing was said."};
   // The written game first, which says the most in the fewest letters, and
   // then the words. A reading that no legal move fits gives way to the next.
   let fits = [];
@@ -194,11 +196,46 @@ export function readCommand(position, text) {
   let named = !!note;
   if (!fits.length) {
     const said = spokenWants(heard, moves);
-    if (said.error) return {error: said.error};
+    if (said.error) return {error: said.error, moves};
     fits = moves.filter(said.wants);
     if (!fits.length && said.becoming) fits = moves.filter(said.becoming);
     named = said.named;
+    if (said.riding) {
+      if (mount < 0) return {error: "You are not riding a knight.", moves};
+      fits = fits.filter(move => move.from === mount);
+      named = true;
+    }
   }
+  if (fits.length > 1 && mount >= 0 && fits.every(move => move.piece.toLowerCase() === "n") && fits.some(move => move.from === mount))
+    fits = fits.filter(move => move.from === mount);
+  return {fits, named, moves};
+}
+
+// Every legal move that what has been said so far could still mean ("knight":
+// every knight move; "knight takes": every knight capture), or none when it
+// names nothing yet. The page makes the pieces spoken to stir before the
+// command is done.
+export function candidates(position, text, {mount = -1} = {}) {
+  const heard = text.trim();
+  if (!heard) return [];
+  const read = fitting(position, heard, mount);
+  return read.error ? [] : read.fits;
+}
+
+// A command read against a position: `{move}` when exactly one legal move
+// fits it, and otherwise `{error}` in words for the player, with `options`
+// when the trouble is that several fit.
+//
+// `mount` is the square of the knight the player rides, or -1: "ride to f3"
+// is that knight's move, and when two knights could go where a command says
+// the one ridden is the one meant.
+export function readCommand(position, text, {mount = -1} = {}) {
+  const heard = text.trim();
+  if (!heard) return {error: "Nothing was said."};
+  const read = fitting(position, heard, mount);
+  if (read.error) return {error: read.error};
+  let {fits} = read;
+  const {named, moves} = read;
   // A pawn that reaches the last rank becomes a queen unless told otherwise.
   if (fits.length > 1 && fits.every(move => move.promo && move.from === fits[0].from && move.to === fits[0].to))
     fits = fits.filter(move => move.promo.toLowerCase() === "q");
