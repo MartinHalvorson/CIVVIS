@@ -7990,7 +7990,7 @@ pub struct Game {
     /// shared pointer, copied only when a fork writes a host fact; every
     /// field keeps its old name through `Deref`, so `game.observed_score`
     /// still reads it.
-    host: Arc<HostMirror>,
+    pub host: Arc<HostMirror>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
