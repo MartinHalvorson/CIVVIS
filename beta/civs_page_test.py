@@ -74,6 +74,7 @@ class TheOrderOfThePage(unittest.TestCase):
         self.assertEqual(sections, [
             "res-side-builds",
             "civ-filtered", "civ-city2", "civ-city3", "civ-pantheons", "civ-founders", "civ-followers",
+            "civ-invaded",
             "civ-civs", "rank-civs", "rank-civs-self",
         ])
         self.assertIn('<h2 class="res-side-title" id="res-title-builds">Early build order: win rate against Lv 8 Deity AI</h2>', PAGE)
@@ -104,7 +105,7 @@ class TheOrderOfThePage(unittest.TestCase):
         self.assertIn("A Settler can come first: the capital needs two citizens to train one", PAGE)
 
     def test_the_spans_of_turns_cover_every_turn_once(self):
-        spans = re.search(r"const SPANS = \{\s*city2: (\[.*?\]\]),\s*city3: (\[.*?\]\]),", PAGE, re.S)
+        spans = re.search(r"const SPANS = \{\s*city2: (\[.*?\]\]),\s*city3: (\[.*?\]\]),\s*invaded: (\[.*?\]\]),", PAGE, re.S)
         for text in spans.groups():
             listed = json.loads(text)
             self.assertEqual(listed[-1], [0, 0])
@@ -191,13 +192,15 @@ class TheRecord(unittest.TestCase):
         }
         with mock.patch.object(civs_page, "finished_games", return_value=games), \
                 mock.patch.object(civs_page, "summary_marks", return_value={}), \
+                mock.patch.object(civs_page, "summary_invasions", return_value={"b": 0}), \
                 mock.patch.object(civs_page.research_page, "switches", return_value={"a": True, "b": False}):
-            out = civs_page.game_rows(BETA.parent, [{}], held)
-        self.assertEqual(out["fields"], ["level", "diplo", "won", "day", "city2", "city3", "pantheon", "founder", "follower"])
+            out = civs_page.game_rows(BETA.parent, [{}], held, {"a": 41})
+        self.assertEqual(out["fields"], ["level", "diplo", "won", "day", "city2", "city3", "pantheon", "founder", "follower", "invaded"])
         self.assertEqual(out["first"], "2026-11-20")
         self.assertEqual(out["names"], ["Divine Spark", "Tithe", "Work Ethic"])
         # Oldest first; "d" has no reading and is only counted as finished.
-        self.assertEqual(out["rows"], [[8, 1, 1, 0, 12, 25, 1, 2, 3], [6, 2, 0, 1, 0, 0, 0, 0, 0], [8, 0, 0, 2, 30, 0, 1, 0, 0]])
+        # "a" was first invaded on turn 41, "b" never, and of "c" no log says.
+        self.assertEqual(out["rows"], [[8, 1, 1, 0, 12, 25, 1, 2, 3, 41], [6, 2, 0, 1, 0, 0, 0, 0, 0, -1], [8, 0, 0, 2, 30, 0, 1, 0, 0, 0]])
         self.assertEqual(out["finished"], {"8": 2, "6": 2})
         self.assertEqual(out["level"], 8)
 
@@ -231,6 +234,53 @@ class TheSnapshots(unittest.TestCase):
         self.assertEqual(sorted(row[0] for row in record["rows"]), [6, 8, 8])
         self.assertEqual(sorted((row[4], row[5]) for row in record["rows"]), [(9, 15), (14, 31), (20, 0)])
         self.assertEqual(record["finished"], {"6": 1, "8": 3})
+
+    def test_the_first_invasions_are_read_off_the_event_logs_or_the_summaries(self):
+        """Operator 2026-11-24: "a chart of the win odds by the turn that a
+        civ is first invaded by another civ"."""
+        first, second, third = "civvis-20261120T010000Z", "civvis-20261120T020000Z", "civvis-20261120T030000Z"
+        rows = [run(first, "win"), run(first + "-cont1", "win"), run(second, "defeat"),
+                run(third, "rival_victory"), run("civvis-20261120T040000Z-cont1", "defeat")]
+        seat = {"kind": "seat", "local_player": 0}
+        land = {"kind": "tiles", "turn": 1, "plots": [{"x": 5, "y": 5, "o": 0}, {"x": 9, "y": 9, "o": -1}]}
+        board = lambda turn: {"kind": "state", "turn": turn, "rivals": [{"player": 1, "civ": "CIVILIZATION_CHINA"}]}
+        attack = lambda turn, at, by=1: {"kind": "combat", "turn": turn, "against_us": True,
+                                         "attacker": {"player": by, "type": "unit", "x": 0, "y": 0},
+                                         "defender": {"player": 0, "type": "unit", "x": at[0], "y": at[1]}}
+        with tempfile.TemporaryDirectory() as scratch, contextlib.redirect_stderr(io.StringIO()):
+            repo = ledger(scratch, rows, {
+                # Out past our borders on turn 20; the game's second run
+                # sees China on our land on turn 120.
+                first: ([seat, land, board(1), attack(20, (9, 9)), board(100)], {}),
+                first + "-cont1": ([seat, land, board(98), attack(120, (5, 5)), board(160)], {}),
+                # Only barbarians attacked: never invaded, through turn 80.
+                second: ([seat, land, board(1), attack(30, (5, 5), by=63), board(80)], {}),
+                # Its summary carries the reading: left to it.
+                third: ([seat, land, board(1)], {"first_invasion": {"turn": 33, "by": "CIVILIZATION_CHINA", "from": 1, "through": 90}}),
+                # A game whose first run was never published.
+                "civvis-20261120T040000Z-cont1": ([seat, land, board(150), attack(151, (5, 5))], {}),
+            })
+            out = repo / "out" / "first_invasions.json"
+            self.assertEqual(civs_page.main(["civs_page.py", "--invasions", scratch, str(out)]), 0)
+            taken = json.loads(out.read_text(encoding="utf-8"))
+            self.assertEqual(taken["games"], [[first, 120, 160], [second, 0, 80]])
+            self.assertEqual(out.read_text(encoding="utf-8"), civs_page.written_marks(taken))
+            # A refresh keeps what it holds and asks again only of the game
+            # it could not read.
+            with mock.patch.object(civs_page, "read_invasion", return_value=None) as asked:
+                self.assertEqual(civs_page.invasions_snapshot(repo, taken)["games"], taken["games"])
+            self.assertEqual([call.args[1] for call in asked.call_args_list], [["civvis-20261120T040000Z", "civvis-20261120T040000Z-cont1"]])
+            self.assertEqual(civs_page.held_invasions(taken), {first: 120, second: 0})
+            # On the page: the snapshot's games and the summary's, in the last field.
+            with mock.patch.object(civs_page, "held_marks", return_value={
+                    key: {"cities": [1], "pantheon": None, "religion": None} for key in (first, second, third)}):
+                (repo / civs_page.INVASIONS).parent.mkdir(parents=True, exist_ok=True)
+                (repo / civs_page.INVASIONS).write_text(out.read_text(encoding="utf-8"), encoding="utf-8")
+                (repo / civs_page.MARKS).write_text('{"games": []}', encoding="utf-8")
+                record = civs_page.record(repo)["games"]
+        invaded = record["fields"].index("invaded")
+        self.assertEqual(sorted(row[invaded] for row in record["rows"]), [0, 33, 120])
+        self.assertIsNone(civs_page.merged_invasion([None, {"turn": 151, "through": 160}]))
 
     def test_the_self_play_seats_are_counted_batch_by_batch(self):
         header = {"kind": "header", **civs_page.research_page.SETUP}
@@ -278,6 +328,14 @@ class TheSnapshots(unittest.TestCase):
         self.assertEqual((ROOT / civs_page.SELF_PLAY).read_text(encoding="utf-8"), civs_page.written_self_play(seats))
         self.assertTrue(any("city2" in b for b in seats["batches"]))
         self.assertTrue(civs_page.self_play(seats)["civs"]["rows"])
+        invaded = json.loads((ROOT / civs_page.INVASIONS).read_text(encoding="utf-8"))
+        self.assertEqual((ROOT / civs_page.INVASIONS).read_text(encoding="utf-8"), civs_page.written_marks(invaded))
+        self.assertGreater(len(invaded["games"]), 3000)
+        keys = [game[0] for game in invaded["games"]]
+        self.assertEqual(keys, sorted(set(keys)))
+        for key, turn, through in invaded["games"]:
+            # A turn, or 0 for never, within the turns the logs cover.
+            self.assertTrue(type(turn) is int and type(through) is int and 0 <= turn <= through, key)
 
 
 if __name__ == "__main__":
