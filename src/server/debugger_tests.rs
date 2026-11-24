@@ -795,18 +795,29 @@ fn the_page_loads_the_bar_and_sends_only_operations_the_engine_answers() {
 
     // Read the operations out of the script and put each to the engine, so
     // one renamed on either side fails here and not in somebody's browser.
+    // An operation of Autosearch's climb goes to `POST /autosearch`
+    // (`autosearch::route`), and is put to that instead.
     let mut session = played();
+    let mut climb = None;
+    super::super::autosearch::route(
+        &mut climb,
+        &json!({"op": "begin", "from": 1, "turns": 5, "letters": ["jack"], "seated": "jack"}),
+    );
     let mut rest = script;
     let mut sent = BTreeSet::new();
     while let Some(at) = rest.find("op: \"") {
         rest = &rest[at + 5..];
         let op = &rest[..rest.find('"').expect("a closed string")];
         let answer = session.debug(&json!({"op": op}));
-        let refused = answer["error"].as_str().unwrap_or("");
-        assert!(
-            !refused.starts_with("no debugger operation"),
-            "{op}: {refused}"
-        );
+        let mut refused = answer["error"].as_str().unwrap_or("").to_string();
+        if refused.starts_with("no debugger operation") {
+            let climbed = super::super::autosearch::route(&mut climb, &json!({"op": op}));
+            refused = climbed["error"].as_str().unwrap_or("").to_string();
+            assert!(
+                !refused.starts_with("no autosearch operation"),
+                "{op}: answered by neither the debugger nor the climb"
+            );
+        }
         sent.insert(op.to_string());
     }
     for op in [
