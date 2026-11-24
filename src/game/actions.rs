@@ -1146,13 +1146,13 @@ impl Game {
         if self.wdist(from, to) != 1 {
             return;
         }
-        if let Some(last) = self.unit_move_trails.last_mut() {
+        if let Some(last) = self.chronicle.unit_move_trails_mut().last_mut() {
             if last.unit == uid && last.turn == self.turn && last.path.last() == Some(&from) {
                 last.path.push(to);
                 return;
             }
         }
-        self.unit_move_trails.push(UnitMoveTrail {
+        self.chronicle.unit_move_trails_mut().push(UnitMoveTrail {
             unit: uid,
             owner: pid,
             turn: self.turn,
@@ -1161,9 +1161,9 @@ impl Game {
         // A client draws the last few turns of this list; the whole walking
         // history of a long game is not worth carrying in every frame.
         const TRAILS_KEPT: usize = 512;
-        if self.unit_move_trails.len() > TRAILS_KEPT {
-            let excess = self.unit_move_trails.len() - TRAILS_KEPT;
-            self.unit_move_trails.drain(..excess);
+        if self.chronicle.unit_move_trails.len() > TRAILS_KEPT {
+            let excess = self.chronicle.unit_move_trails.len() - TRAILS_KEPT;
+            self.chronicle.unit_move_trails_mut().drain(..excess);
         }
     }
 
