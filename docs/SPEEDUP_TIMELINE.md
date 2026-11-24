@@ -35,7 +35,7 @@ The first stop is the one every other is divided into.
 | Stop | What plays the game | How it is timed |
 | --- | --- | --- |
 | Human player (`hand`) | One person, in Civilization VI. | The project owner's own figure for a game: five hours. |
-| Firaxis computer control (`control`) | Civilization VI itself, Firaxis's game, with CIVVIS at the controls of one seat. | The middle game of our own complete Lv 8 games of the last seven days in `results.jsonl` on the `ledger` branch, each timed from the stamp in its tag to the stamp of its result: launching the game, setting it up, playing it and its ending. |
+| Firaxis computer control (`control`) | Civilization VI itself, Firaxis's game, with CIVVIS at the controls of one seat. | The computer control benchmark (`beta/control_times.py`, [`docs/CONTROL_GAME_TIME.md`](CONTROL_GAME_TIME.md)): the middle game of the games played to a victory in the last seven days, each timed end to end, from launching the game to its ending. The stop names it (`"benchmark": "control"`), so a finished game moves the stop with the next publish. A clone without the run ledger shows the newest reading written in the ledger instead. |
 | Firaxis self-play (`firaxis_self_play`) | Civilization VI itself with Firaxis's own AI in every seat. | Not timed yet. The reading is worked out from our own games: the setup, the turns Firaxis's AI takes and the ending of a computer control game, with a sixth AI seat in place of ours. See [A reading that was worked out](#a-reading-that-was-worked-out). |
 | CIVVIS self-play (`self_play`) | The simulator, one core: every seat a CIVVIS AI agent. | The mean of twelve games, `gene_screen --jobs 1` with its defaults, from each game's `secs`. |
 | Parallel games, M5 Max, all 18 cores (`all_cores`) | CIVVIS self-play on every core of one machine at once. | Sixty seconds over the record of `data/performance/games_per_minute.json` (`docs/GAMES_PER_MINUTE.md`): the time from one finished game to the next. |
@@ -319,8 +319,9 @@ The Performance page has a small chart for each stop after the baseline
 (`speedup_timeline.history`, `python3 beta/speedup_timeline.py --history .`).
 A chart draws every reading of its stop by the day it was taken, on a scale
 of seconds that goes by tenfolds, so a steady pace of improvement is a
-straight line. All the charts share one run of days. Each has its own scale,
-because a 12-minute game and a 3-second one do not fit one.
+straight line. Each chart has its own run of days and its own scale: one
+stop has readings since the summer and another since yesterday, and a
+12-minute game and a 3-second one do not fit one scale.
 
 Over each chart stands the pace its readings have kept
 (`speedup_timeline.pace`): how many times faster the newest is than the
@@ -330,9 +331,10 @@ other are called steady.
 
 | Stop | What its chart draws |
 | --- | --- |
-| Firaxis computer control, Firaxis self-play | The stop's readings in the ledger. |
-| CIVVIS self-play | Its one-core benchmark readings, and beside them the self-play tournament's finished batches, the middle game of each on the day it ended (`data/performance/self_play_times.json`; `"tournament": true` on the stop). The tournament plays the same game seven or more at a time on a busy machine, so it reads slower, and it reaches back to October. |
-| Parallel games | Every run of `data/performance/games_per_minute.json`. The pace is kept over the records among them. |
+| Firaxis computer control | The middle game of every day of the computer control benchmark's record (a day is drawn from three games up). Its pace is from the middle game of the record's first seven days to that of its last seven, because one day is a noisy thing to measure a pace by. A clone without the record draws the readings in the ledger. |
+| Firaxis self-play | The stop's readings in the ledger. |
+| CIVVIS self-play | Its one-core benchmark readings, and beside them the self-play tournament's finished batches, the middle game of each on the day it ended (`data/performance/self_play_times.json`; `"tournament": true` on the stop). The tournament plays the same game seven or more at a time on a busy machine, so it reads slower, and it reaches back to October. A third line is the self-play benchmark hours ([`docs/SELF_PLAY_HOUR.md`](SELF_PLAY_HOUR.md)), each as the processor seconds one game took. |
+| Parallel games | Every run of `data/performance/games_per_minute.json`. The pace is kept over the records among them. A second line is the same benchmark hours as the time from one finished game to the next, which is the rate the machine keeps with the live game and everything else running beside the tournament. |
 
 So a stop's chart grows by itself with every reading added to the ledger and
 every run recorded.
@@ -348,6 +350,11 @@ been pushed, and the page says where a stop started once it has moved.
 `all_cores` has no readings to add. Record a run with
 `tools/games_per_minute.py --record` and the home page follows it when it is
 a record.
+
+`control` needs none either: every computer control game is timed, and the
+stop reads the benchmark's record when the site is published. Its readings
+in the ledger are the fallback for a clone without the run ledger, so add
+one now and then to keep the fallback near the truth.
 
 The two simulator stops, on a build of `gene_screen` (`cargo build --release
 --features developer-tools --bin gene_screen`):

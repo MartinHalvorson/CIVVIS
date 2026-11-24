@@ -116,9 +116,14 @@ class Ledger(unittest.TestCase):
                          ["Human player", "Firaxis computer control", "Firaxis self-play", "CIVVIS self-play", "Parallel games, M5 Max, all 18 cores"])
         stops = {stop["key"]: stop for stop in shown["stops"]}
         self.assertEqual(stops["hand"]["time"], "5 h")
-        # His "10-15mins", benchmarked with our own games.
+        # His "10-15mins", benchmarked with our own games: the reading
+        # written down, and over it the computer control benchmark's own
+        # record where this clone holds it.
         self.assertTrue(600 <= stops["control"]["seconds"] <= 900, stops["control"]["seconds"])
-        self.assertIn("our own games", stops["control"]["from"])
+        written = next(stop for stop in LEDGER["stops"] if stop["key"] == "control")
+        self.assertEqual(written.get("benchmark"), "control")
+        self.assertIn("our own games", written["readings"][-1]["from"])
+        self.assertTrue("our own games" in stops["control"]["from"] or "computer control benchmark" in stops["control"]["from"])
         # A stop kept off the line stays in the ledger for the tables.
         off = [stop["key"] for stop in LEDGER["stops"] if stop.get("line") is False]
         self.assertEqual(off, ["deity_sim"])
@@ -996,6 +1001,66 @@ class History(unittest.TestCase):
         # The other stop has no such line.
         self.assertEqual([line["kind"] for line in shown["rows"][1]["lines"]], ["readings"])
 
+    RECORD = {
+        "days": [
+            {"day": "2026-08-01", "games": 5, "p": [1500, 2000, 2600]},
+            {"day": "2026-08-02", "games": 8, "p": [1400, 1800, 2500]},
+            {"day": "2026-12-05", "games": 60, "p": [400, 480, 700]},
+        ],
+        "first": {"from": "2026-08-01", "to": "2026-08-07", "games": 40, "p": [1450, 2000, 2550]},
+        "week": {"from": "2026-11-29", "to": "2026-12-05", "games": 400, "p": [420, 500, 690]},
+    }
+
+    def patched(self, record, ledger):
+        """What the module works out with the benchmark's record as given."""
+        real = speedup_timeline.control_times.control
+        try:
+            speedup_timeline.control_times.control = lambda source: record
+            with tempfile.TemporaryDirectory() as scratch:
+                source = tree(scratch, ledger, Worked.RUNS)
+                return speedup_timeline.timeline(source), speedup_timeline.worked(source), speedup_timeline.history(source)
+        finally:
+            speedup_timeline.control_times.control = real
+
+    def test_a_stop_that_reads_a_benchmark_shows_its_record_and_falls_back_to_its_readings(self):
+        # Operator 2026-11-24: "we should be benchmarking our civvis computer
+        # cnotrol games time end to end and that number show flow through".
+        ledger = json.loads(json.dumps(Worked.LEDGER))
+        ledger["stops"][1]["benchmark"] = "control"
+        line, tables, charts = self.patched(self.RECORD, ledger)
+        stop = next(stop for stop in line["stops"] if stop["key"] == "control")
+        # The middle game of the record's last seven days is the stop.
+        self.assertEqual((stop["seconds"], stop["time"], stop["times"], stop["taken"]), (500, "8.3 min", "36x", "12-05"))
+        self.assertIn("400 games", stop["from"])
+        self.assertIn("A tenth took under 7 min and a tenth over 11.5 min", stop["from"])
+        # It moved from the reading written down, and both pages say so.
+        self.assertEqual(stop["was"], "24x on 11-22")
+        self.assertEqual(next(row for row in tables["games"] if row["key"] == "control")["times"], "36x")
+        # Its chart is the record's days, and its pace is first week to last.
+        row = next(row for row in charts["rows"] if row["key"] == "control")
+        self.assertEqual([one["kind"] for one in row["lines"]], ["days"])
+        self.assertEqual([(point["taken"], point["seconds"], point["games"]) for point in row["lines"][0]["points"]],
+                         [("2026-08-01", 2000, 5), ("2026-08-02", 1800, 8), ("2026-12-05", 480, 60)])
+        pace = row["lines"][0]["pace"]
+        self.assertEqual((pace["times"], pace["days"], pace["readings"]), ("4x", 120, 3))
+        self.assertEqual(row["now"], {"time": "8.3 min"})
+        # A clone without the record shows the reading written down.
+        for record in (None, {}, {"week": {"to": "2026-12-05", "games": 0, "p": [0, 0, 0]}}):
+            line, _, charts = self.patched(record, ledger)
+            stop = next(stop for stop in line["stops"] if stop["key"] == "control")
+            self.assertEqual((stop["seconds"], stop["taken"]), (750, "11-22"))
+            row = next(row for row in charts["rows"] if row["key"] == "control")
+            self.assertEqual([one["kind"] for one in row["lines"]], ["readings"])
+        # And a record older than the newest reading written down does not
+        # take its place.
+        stale = json.loads(json.dumps(self.RECORD))
+        stale["week"]["to"] = "2026-11-01"
+        line, _, _ = self.patched(stale, ledger)
+        self.assertEqual(next(stop for stop in line["stops"] if stop["key"] == "control")["seconds"], 750)
+        # A stop that names no benchmark never reads one.
+        line, _, _ = self.patched(self.RECORD, Worked.LEDGER)
+        self.assertEqual(next(stop for stop in line["stops"] if stop["key"] == "control")["seconds"], 750)
+
     def test_the_benchmark_hours_are_a_line_on_self_play_and_on_every_core(self):
         # The hours are on the `ledger` branch, read by `self_play_hours`;
         # here they are handed over as that reader gives them.
@@ -1037,11 +1102,17 @@ class History(unittest.TestCase):
         self.assertEqual([row["key"] for row in shown["rows"]], [stop["key"] for stop in line["stops"][1:]])
         for row, stop in zip(shown["rows"], line["stops"][1:]):
             own = row["lines"][0]
-            self.assertEqual(own["kind"], "readings")
+            # Its readings, or its benchmark's days where the clone holds
+            # that record.
+            self.assertIn(own["kind"], ("readings", "days"))
+            self.assertEqual(own["kind"] == "days", speedup_timeline.benchmark(ROOT, next(s for s in LEDGER["stops"] if s["key"] == row["key"])) is not None)
             days = [point["taken"] for point in own["points"]]
             self.assertEqual(days, sorted(days))
-            # The chart's newest point is the stop's figure on the line.
-            self.assertLessEqual(stop["seconds"], min(point["seconds"] for point in own["points"]) + 1e-9)
+            # The figure over the chart is the stop's on the line.
+            self.assertEqual(row["now"]["time"], stop["time"])
+            self.assertEqual(bool(row["now"].get("worked")), bool(stop.get("worked")))
+            if own["kind"] == "readings":
+                self.assertLessEqual(stop["seconds"], min(point["seconds"] for point in own["points"]) + 1e-9)
             self.assertEqual(own["pace"]["readings"] >= 1, True)
         tournament = [row["key"] for row in shown["rows"] if any(line["kind"] == "tournament" for line in row["lines"])]
         self.assertEqual(tournament, ["self_play"])

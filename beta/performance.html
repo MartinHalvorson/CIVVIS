@@ -1268,10 +1268,10 @@
       .filter((row) => row.key && row.lines.length);
     if (trends.length) {
       const LINES = {
-        readings: "Benchmark readings", tournament: "Tournament, the middle game of a batch",
+        readings: "Benchmark readings", days: "Every day’s middle game", tournament: "Tournament, the middle game of a batch",
         hours: "Benchmark hour, processor time a game", production: "Benchmark hour, beside the live game",
       };
-      const COLOURS = { readings: "var(--series)", tournament: "var(--series-2)", hours: "var(--series-3)", production: "var(--series-3)" };
+      const COLOURS = { readings: "var(--series)", days: "var(--series)", tournament: "var(--series-2)", hours: "var(--series-3)", production: "var(--series-3)" };
       const MARKS = { tournament: "is-second", hours: "is-third", production: "is-third" };
       const stamp = (iso) => Date.parse(String(iso).slice(0, 10) + "T00:00:00Z");
       // A point taken at a moment of its day stands at that moment.
@@ -1296,7 +1296,8 @@
       const table = document.querySelector("#perf-history-table tbody");
       for (const row of trends) {
         const panel = el("div", "perf-trend"), head = el("div", "perf-trend-head");
-        const own = row.lines[0], newest = own.points[own.points.length - 1];
+        // The stop's figure as the home page's line has it.
+        const own = row.lines[0], newest = row.now && row.now.time ? row.now : own.points[own.points.length - 1];
         const now = el("span", "perf-trend-now", text(newest.time));
         if (newest.worked) now.append(el("small", "", "worked out, not timed"));
         head.append(el("b", "perf-trend-name", title(row.key)), now);
@@ -1382,7 +1383,7 @@
             }
             for (const [px, py, point] of points) {
               // A reading worked out and not timed is a ring, not a dot.
-              const dot = svg("circle", { cx: px, cy: py, r: 4, "stroke-width": 2 });
+              const dot = svg("circle", { cx: px, cy: py, r: points.length > 30 ? 2.5 : 4, "stroke-width": points.length > 30 ? 1 : 2 });
               dot.style.fill = point.worked ? "var(--panel-raised)" : colour;
               dot.style.stroke = point.worked ? colour : "var(--panel-raised)";
               root.append(dot);

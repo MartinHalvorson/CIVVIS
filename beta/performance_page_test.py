@@ -192,6 +192,12 @@ class TheSpeedup(unittest.TestCase):
     SECTION = PAGE[PAGE.index('<section class="res-section" id="perf-speedup"'):PAGE.index('<section class="res-section" id="perf-history"')]
 
     def test_the_record_carries_the_worked_tables_of_the_home_page_s_ledger(self):
+        # The computer control stop reads its benchmark's record from the
+        # run ledger where the clone holds it, and a bare copy of the
+        # readings holds none: both are read here as a clone without it.
+        held = speedup_timeline.control_times.control
+        speedup_timeline.control_times.control = lambda source: None
+        self.addCleanup(setattr, speedup_timeline.control_times, "control", held)
         with contextlib.redirect_stderr(io.StringIO()):
             record = performance_page.performance(ROOT)
         self.assertEqual(record["speedup"], speedup_timeline.worked(ROOT))
@@ -391,12 +397,12 @@ class EachWayOverTime(unittest.TestCase):
         self.assertIn("Math.log10(s)", self.SCRIPT)
         # Two lines on a chart are told apart by a key as well as colour,
         # and the second colour is the page's own second, not a new one.
-        self.assertIn('const COLOURS = { readings: "var(--series)", tournament: "var(--series-2)", hours: "var(--series-3)", production: "var(--series-3)" };', self.SCRIPT)
+        self.assertIn('const COLOURS = { readings: "var(--series)", days: "var(--series)", tournament: "var(--series-2)", hours: "var(--series-3)", production: "var(--series-3)" };', self.SCRIPT)
         self.assertIn("if (row.lines.length > 1) {", self.SCRIPT)
         self.assertIn("--series-2: #d95926;", PAGE)
         self.assertIn("--series-3: #199e70;", PAGE)
         # Every kind of line the record can carry has its name.
-        for kind in ("readings", "tournament", "hours", "production"):
+        for kind in ("readings", "days", "tournament", "hours", "production"):
             self.assertRegex(self.SCRIPT, rf'\b{kind}: "[A-Z][^"]+"')
         # The pace is said in words, the pointer reads any reading out, and
         # every reading is in a table for whoever cannot use the chart.
@@ -406,6 +412,8 @@ class EachWayOverTime(unittest.TestCase):
         self.assertIn('<table class="rank-table" id="perf-history-table">', self.SECTION)
         # A reading worked out and not timed is a ring and says so.
         self.assertIn('if (newest.worked) now.append(el("small", "", "worked out, not timed"));', self.SCRIPT)
+        # The figure over a chart is the stop's own, as the home page has it.
+        self.assertIn("newest = row.now && row.now.time ? row.now : own.points[own.points.length - 1];", self.SCRIPT)
         self.assertIn('dot.style.fill = point.worked ? "var(--panel-raised)" : colour;', self.SCRIPT)
 
     def test_no_figure_is_written_into_the_page(self):

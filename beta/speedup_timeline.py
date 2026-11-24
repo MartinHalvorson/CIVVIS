@@ -96,6 +96,7 @@ import pathlib
 import re
 import sys
 
+import control_times
 import self_play_hours
 
 #: The stops and their readings, in the source tree.
@@ -209,12 +210,52 @@ def records(runs: list[dict], reading) -> list[dict]:
     return readings
 
 
+#: The benchmarks that keep a record of their own, under the name a stop
+#: reads one by (`benchmark`): each gives the record for a source tree, or
+#: `None` in a clone that does not hold it.
+BENCHMARKS = {"control": lambda source: control_times.control(source)}
+
+
+def benchmark(source: pathlib.Path, stop: dict) -> dict | None:
+    """The record of the benchmark a stop reads (`"benchmark": "control"` is
+    the computer control games of `beta/control_times.py`), or `None` for a
+    stop without one, a clone without the record, or a record without a
+    week of games."""
+    try:
+        record = BENCHMARKS[stop["benchmark"]](source)
+        return record if record and record["week"]["p"][1] > 0 else None
+    except (OSError, ValueError, KeyError, TypeError, IndexError):
+        return None
+
+
+def benchmarked(source: pathlib.Path, stop: dict) -> dict | None:
+    """A benchmark's record as a reading: the middle game of its last seven
+    days, taken the day of its newest game. The benchmark is run end to end
+    on every game, so its record is newer than any reading written down;
+    the readings in the ledger are what a clone without the record shows."""
+    record = benchmark(source, stop)
+    if record is None:
+        return None
+    week = record["week"]
+    low, middle, high = week["p"]
+    return {
+        "taken": week["to"],
+        "seconds": middle,
+        "from": f"The computer control benchmark (`beta/control_times.py`, docs/CONTROL_GAME_TIME.md): the middle game of the {week['games']:,} games"
+        f" played to a victory in the seven days to {week['to']}, every level, each timed end to end. A tenth took under {clock(low)} and a tenth over {clock(high)}.",
+    }
+
+
 def readings(source: pathlib.Path, stop: dict) -> list[dict]:
     """A stop's readings, oldest first: its own, or the records of the ledger
-    it follows."""
+    it follows. A stop that reads a benchmark has that benchmark's record as
+    its newest reading, where the clone holds the record and it is no older
+    than the stop's own."""
     followed = stop.get("follows")
     if followed is None:
-        return sorted(stop["readings"], key=lambda reading: reading["taken"])
+        own = sorted(stop["readings"], key=lambda reading: reading["taken"])
+        newest = benchmarked(source, stop)
+        return own + [newest] if newest and newest["taken"] >= own[-1]["taken"] else own
     runs = json.loads((source / followed).read_text(encoding="utf-8"))["runs"]
     return records(runs, FOLLOWED[followed])
 
@@ -931,6 +972,11 @@ def history(source: pathlib.Path) -> dict | None:
       follows a ledger of runs shows every run there, and its pace is kept
       over the records among them, so a slower run is drawn and not counted
       as a step back.
+    - `days`, in place of `readings` on a stop that reads a benchmark, where
+      the clone holds its record: the middle game of every day of the record
+      (`beta/control_times.py` draws a day from three games up). One day is
+      a noisy thing to measure a pace by, so its pace is from the middle
+      game of the record's first seven days to that of its last seven.
     - `tournament`, on the stop whose game the self-play tournament plays:
       the middle game of each finished batch, on the day the batch ended
       (`data/performance/self_play_times.json`). It is the same game with
@@ -946,8 +992,10 @@ def history(source: pathlib.Path) -> dict | None:
       rate the machine keeps while the live game and everything else run
       beside the tournament. It is far under a record run's.
 
-    `base` is the baseline's seconds, and `from` and `to` the first and last
-    day any line has a point on.
+    A row's `now` is the stop's figure as the home page's line shows it:
+    the `time`, and `worked` when it was worked out and not timed. `base` is
+    the baseline's seconds, and `from` and `to` the first and last day any
+    line has a point on.
     """
     try:
         ledger = json.loads((source / LEDGER).read_text(encoding="utf-8"))
@@ -979,14 +1027,21 @@ def history(source: pathlib.Path) -> dict | None:
                 return made
 
             followed = stop.get("follows")
+            record = benchmark(source, stop)
             if followed:
                 runs = json.loads((source / followed).read_text(encoding="utf-8"))["runs"]
                 every = [{"taken": run["taken"], **FOLLOWED[followed](run)} for run in sorted(runs, key=lambda run: run["taken"])]
                 kept = pace([point(reading) for reading in records(runs, FOLLOWED[followed])])
             else:
-                every = sorted(stop["readings"], key=lambda reading: reading["taken"])
+                every = readings(source, stop)
                 kept = pace([point(reading) for reading in every])
             lines = [{"kind": "readings", "points": [point(reading) for reading in every], "pace": kept}]
+            if record and record.get("days"):
+                points = [{"taken": one["day"], "seconds": one["p"][1], "time": clock(one["p"][1]), "games": one["games"]} for one in record["days"]]
+                first, week = record["first"], record["week"]
+                kept = pace([{"taken": first["to"], "seconds": first["p"][1]}, {"taken": week["to"], "seconds": week["p"][1]}])
+                kept["readings"] = len(points)
+                lines = [{"kind": "days", "points": points, "pace": kept}]
             if stop.get("tournament"):
                 try:
                     batches = json.loads((source / SELF_PLAY).read_text(encoding="utf-8"))["batches"]
@@ -1005,7 +1060,10 @@ def history(source: pathlib.Path) -> dict | None:
                 points = hourly(lambda read: 3600 / read["games_an_hour"] if read.get("games_an_hour") else None)
                 if points:
                     lines.append({"kind": "production", "points": points, "pace": pace(points)})
-            row = {"key": stop["key"], "lines": lines}
+            newest = readings(source, stop)[-1]
+            row = {"key": stop["key"], "now": {"time": clock(newest["seconds"])}, "lines": lines}
+            if newest.get("worked"):
+                row["now"]["worked"] = True
             if "goal_seconds" in stop:
                 row["goal_seconds"] = stop["goal_seconds"]
                 row["goal"] = clock(stop["goal_seconds"])
