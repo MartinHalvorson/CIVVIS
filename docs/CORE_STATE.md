@@ -1,10 +1,10 @@
 # The irreducible game state
 
 What a CIVVIS world must carry for the rules to play on, measured rather than
-argued, and the path from today's `Game` to a world that carries only that.
-Measured with `civvis core-probe` (`src/core_probe.rs`) and
-`tools/core_probe.py` on PR #5749, 2026-11-24. The per-field classification
-is `docs/core_state_classes.json`.
+argued, and how `Game` was reduced to carry only that beside it. Measured
+with `civvis core-probe` (`src/core_probe.rs`) and `tools/core_probe.py` on
+PR #5749, 2026-11-24; reduced in #5761-#5770 ("The reduction, done"). The
+per-field classification is `docs/core_state_classes.json`.
 
 ## What "irreducible" means here
 
@@ -134,19 +134,22 @@ rise.
    `opportunistic_war.rs`, `city_campaign.rs`,
    `city_state_before_the_first_capital.rs`). The engine uses about 15
    literal keys of the same map for rule tallies; the agents use 47.
+   **Closed by #5767**: `Player::counters` is a `Counters` that stores the
+   rules' tallies and the agents' notes apart (`is_agent_note`), and the
+   world-boundary test requires every rules tally to replay exactly.
 2. **Loading a save can return favor a seat already spent.** The loader
    migrates pre-trade saves by copying `counters["diplomatic_favor"]` into
    `diplomatic_favor` whenever the balance is exactly `0.0`
    (`impl From<GameSer> for Game`), but the engine still adds every grant to
    that counter (`boosts.rs`, `actions/diplomacy.rs`), so it holds lifetime
-   earnings. Seen in seed 207 in two rounds. The migration needs a save
-   version gate, like `visibility_memory_version`.
+   earnings. Seen in seed 207 in two rounds. **Fixed by #5763**: only a save
+   with no favor field migrates.
 3. **Narration lives inside rule state.** `wars` carries war highlights and
    theater names, so renaming a city changes `wars`; `counters` mixes rule
-   tallies with agents' notes. Both need splitting before the world can be
-   hashed or deduplicated.
+   tallies with agents' notes. `counters` is split (#5767); the narration
+   in `wars` is not yet, so a world hash would still see a renamed city.
 4. **Load is not the identity on `wars`** when the narrated war ledger is
-   stale (headless play runs with `set_war_ledger(false)`): seed 204.
+   stale (headless play runs with `set_war_ledger(false)`): seed 204. Open.
 
 ## What it costs to carry the rest
 
@@ -167,31 +170,62 @@ The rules themselves (replaying the whole log, no agents, JSON load and save
 included) take 18–27% of a self-play game's time, 39% with last-seen memory
 tracked. The agents take the rest.
 
-## How we get there
+## The reduction, done
 
-Each step keeps the game byte-identical, and the probe is the gate.
+The game model is now the world plus blocks beside it, each one shared
+pointer that a fork copies only when it writes there:
 
-1. **Lock the boundary.** Promote the probe to tests: a save replays to the
-   played game; a save stripped to the world replays to the same world;
-   `docs/core_state_classes.json` becomes a manifest, and a field missing
-   from it fails the test, so a new field must declare whether the rules read
-   it. Fix the leaks: agents' notes out of `counters`, a version gate on the
-   favor migration, narration out of `wars`.
-2. **History behind one pointer.** `concluded_wars`, `unit_move_trails`,
-   `turn_stats`, events, combat ledgers and unit lifetimes go into an
-   append-only `Chronicle` (`Arc`) that the engine writes and only observers
-   read. This alone takes most of the measured clone cost.
-3. **The mirror behind one pointer.** The ~100 `observed_*`, `host_*`,
-   `blocked_*` and `live_*` fields become one `Option<Box<HostMirror>>`,
-   `None` in self-play.
-4. **Last-seen memory to the seat.** It is each seat's belief, the input to
-   its observation function, not world state; 88% of a save when tracked.
-5. **Derived fields computed.** Rebuilt every turn boundary anyway.
-6. **Setup out of the world.** Options, seat identities, rules and the
-   generated map geometry go in one `Arc<Setup>`; tiles carry only the
-   overlay; a save is seed, options and overlay.
-7. **What is left is `World`**: 259 fields, the only thing a clone, a branch,
-   a timeline node, a hash or a save needs.
+```
+Game                          the world: the irreducible state, read and
+│                             written directly (95 fields, from 183)
+├── chronicle                 everything the game records about itself:
+│                             event log, ended wars, nuclear strikes, siege
+│                             census, turn stats, unit trails       #5761 #5769
+├── host: Arc<HostMirror>     84 facts a live Civilization VI host
+│                             supplied; read through Deref           #5762
+└── players[i]: Player        the seat's rules state (98 fields)
+    ├── aside: Arc<PlayerAside>   what the seat saw, did and was told
+    │                         (16 fields); read through Deref         #5764
+    └── counters              the rules' tallies | the agents' notes,
+                              stored apart                            #5767
+```
+
+Every step left play byte-identical (a container moved; no rule computes
+anything differently) and saves unchanged: the moved fields are still written
+under their old names at their old places. `Deref` on `Game` and `Player`
+means every one of the ~2,000 host-fact reads and writes kept its spelling.
+
+The boundary is held by `src/game/world_boundary_tests.rs` (#5765, #5770):
+a save with everything outside the world blanked replays the same turns to the
+same world with the same legal actions; the full save replays to the world
+that was played, every rules tally included; and every saved field must have
+a layer in `docs/core_state_classes.json`.
+
+| | Before | After |
+|---|---:|---:|
+| `Game` direct fields | 183 | 95, plus 3 shared blocks |
+| `Player` fields | 114 | 98, plus 1 shared block |
+| Fields outside the world copied per fork | 88 per game, 16 per seat written | one pointer per block |
+{MEASURED}
+
+### Kept on purpose
+
+- **The action log** stays on `Game`. It is already a shared chain (a fork
+  pays a pointer), it is the game's other minimal form, the history form,
+  and the agents read it.
+- **Values rebuilt at each turn boundary** (`gold_per_turn`, a unit's ZoC
+  flags, a city's strike flag, ...) stay stored. They are derived *at a turn
+  boundary*, but between two actions of one turn they are state: a city that
+  has struck cannot strike again. A fork taken mid-turn, which is what a
+  search branch is, needs them.
+- **Setup and map geometry** stay on `Game`. The rules read them, and they
+  are already cheap to fork: the tile grid is shared until written. Only a
+  save needs them reduced, to seed, options and an overlay; that is the one
+  step of the original plan not taken, and the measured size it would buy is
+  above (12–16 KB compressed for a 2-major game at turn 120).
+- **Per-record leftovers**: a unit's lifetime damage and a host's
+  embarkation reading, a tile's host plot readings, a city's name, and the
+  narration inside `wars`.
 
 ## Limits
 
