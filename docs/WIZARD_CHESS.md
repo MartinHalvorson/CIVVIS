@@ -319,14 +319,23 @@ hall (#5766); the pieces alive (#5768); the board hearing a command as it is
 given (#5771); the opponent deliberating (#5772); riding into the blow
 (#5774); each piece its own stone (#5775); the hall's own sound (#5776); the
 hall's light following the game (#5777); riding any piece (#5778); the
-rider's own hands (#5781); two players at one laptop (#5782).
+rider's own hands (#5781); two players at one laptop (#5782); the headset
+seat (#5784).
 
 What is next, most felt first:
 
-- **Two players on two machines.** The same game over a connection, each at
-  their own laptop riding their own piece: the moves sent between the two
-  pages (a peer connection, or a small relay), each seeing the other's rider
-  move in real time.
+- **Two players on two machines: the operator's choice first.** The moves
+  have to travel between two pages, and every way of that has a cost the
+  operator should choose: (a) peer to peer with no server, the two players
+  pasting a code to each other, which reaches across the internet only with a
+  STUN server (someone else's, such as Google's, which then sees both
+  addresses) and otherwise works on one local network; (b) a small relay of
+  this site's own, which is new infrastructure to run; (c) a public relay
+  service, which sends every move to a third party. Until one is chosen, two
+  players share one laptop.
+- **The headset tried in a headset.** On a Quest's browser: comfort of the
+  carried rig, the scale, the controllers' rays; then hands, and the panels
+  in the world.
 - **Speed: measured, and there is room.** `wizardChess.frameCost(n)` times
   `n` frames of the world's work and drawing, each finished on the graphics
   card (a pixel read back), and names what drew them. On the shared Mac
@@ -340,7 +349,6 @@ What is next, most felt first:
   move is slow too; a test waits on what it checks, not on a clock.
 - **The mount seen whole.** Its ears and mane are above a rider's eye: a
   glance up, or a look back at it from beside the board while riding.
-- **The headset seat** (`renderer.xr`), which the rider's seat is most of.
 
 ## How it is built
 
@@ -387,24 +395,35 @@ local directory with its files already cached: the board is on screen about
 file and wakes when it has arrived; the board does not wait for it. The
 opponent is given 0.9 s to think about each move.
 
-## The headset version, later
+## The headset version
 
-The world is built so that a headset can take it as it is.
+Built (#5784), and not yet tried in a headset: nothing on the shared Mac
+can open an immersive session, so what is checked is what a browser without
+one can show (below). It is what the world was kept apart for.
 
-- `World` (the hall, the board, the pieces and `World.play`) knows nothing
-  of a screen. It is in squares, one unit a square, and is told only which
-  move to play out and whom to tell about sound and where to look.
-- `Seat`, `Voice` and the pointer and keyboard handlers are the laptop. A
-  headset replaces them: three.js's `renderer.xr` for the two eyes, the
-  player standing at their side of a board scaled to the room (a square a
-  pace wide, pieces to the shoulder), controllers or hands to point with,
-  and the same `readCommand` behind a microphone that needs no key held.
-- The game, the rules and the engine are untouched.
+- **"Enter VR"**, by the seat buttons, is shown only where the browser has an
+  immersive headset to offer (`navigator.xr.isSessionSupported`), and opens
+  one session (`immersive-vr`, a `local` reference space: the wearer's head
+  where the seat puts them).
+- **The seat in a headset** (`Seat.frame`, `headsetPlace`). The camera stands
+  in a rig, and in a headset it is the rig that is placed: at the board, the
+  wearer stands at their side's edge of it, a little above it, a square a
+  metre wide and the king two metres tall; on a piece, at its rider's eye,
+  carried as it goes and turned the way it faces, but kept level; thrown or
+  beside the board, where they are. Their own head does all the looking. What
+  a body does not feel an eye in a headset is not shown: no travel of the
+  view between seats, no shake, no widening, no head turned for them.
+- **Pointing** (`Seat.pointed`, `pick`). Each hand's controller draws a gold
+  ray, and its trigger is a click: a piece, a square, a capture, by the same
+  rule as the mouse (`meant`), checked to pick exactly what a click on the
+  same line of sight picks.
+- **The loop** is the renderer's (`setAnimationLoop`), which a headset drives
+  when one is on and the window does otherwise. Sound is heard from the eye's
+  place in the world, inside the rig or not.
 
-What a headset adds that a laptop cannot give is the third part of the
-experience, being at the board: pieces that are as tall as they are, a
-capture that happens at arm's length, rubble that lands at your feet. None
-of that is built.
+Not built: hands seen as hands (the controllers are rays), a keyboard (a
+headset's own, or speech where its browser has it), and the panels inside
+the world rather than on a screen that is not there.
 
 ## What it does not do
 
