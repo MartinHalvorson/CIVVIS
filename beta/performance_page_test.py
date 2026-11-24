@@ -583,7 +583,7 @@ class ThePage(unittest.TestCase):
         self.assertEqual([key for key, _, _ in buttons], performance_page.WINDOWS)
         # One blue for every mark, and what a time is and is not is said.
         self.assertIn("--series: #3987e5;", PAGE)
-        self.assertIn("These are a tournament&#8217;s times, not a benchmark&#8217;s", PAGE)
+        self.assertIn("A tournament&#8217;s times, not a benchmark&#8217;s.", PAGE)
 
 
 class TheSiteList(unittest.TestCase):

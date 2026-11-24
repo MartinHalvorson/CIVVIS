@@ -1419,7 +1419,14 @@ class Page(unittest.TestCase):
         nav = PAGE[PAGE.index('<nav class="site-nav"'):PAGE.index("</nav>")]
         self.assertEqual(nav.count('aria-current="page"'), 1)
         self.assertIn("  .site-folder:hover > .site-menu,\n  .site-folder:focus-within > .site-menu,\n  .site-folder.is-open > .site-menu { display: grid; }\n", PAGE)
-        self.assertIn('<a href="../civvis-performance/">CIVVIS Performance</a>.', PAGE)
+        # The page's opening words are one line and name no other page: the
+        # list over them does (operator, 2026-11-24: "there is too much text
+        # on pages, particualrly home/ and charts/ ... some text ok. just
+        # not too much").
+        intro = PAGE[PAGE.index('<p class="intro">'):]
+        intro = intro[:intro.index("</p>")]
+        self.assertNotIn("<a ", intro)
+        self.assertLess(len(re.sub(r"<[^>]+>", "", intro).split()), 20)
         # The two pages after it under Charts/ (operator 2026-11-23: "add
         # that to a new page: Charts/ELO Rankings. this should be after win
         # analytics in the ordering ... add another page: Civ Analytics")
