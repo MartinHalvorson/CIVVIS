@@ -651,7 +651,7 @@ class World {
 
   // ---- a move, played out
   //
-  // `hooks` is how the seat hears of it: `sound(name, strength, at)`, and
+  // `hooks` is how the seat hears of it: `sound(name, strength, at, kind)`, and
   // `look(point)` / `look(null)` when there is something to lean in for.
   async play(move, hooks) {
     const mover = this.pieces.get(move.from), kind = mover.userData.kind, era = this.era;
@@ -711,7 +711,7 @@ class World {
     let want = Math.atan2(-way.z, way.x), by = want - was;
     by = ((by + Math.PI) % TAU + TAU) % TAU - Math.PI;
     if (Math.abs(by) < 0.05) return Promise.resolve();
-    if (hooks) hooks.sound("groan", Math.min(1.2, 0.5 + Math.abs(by) * 0.4), piece.position);
+    if (hooks) hooks.sound("groan", Math.min(1.2, 0.5 + Math.abs(by) * 0.4), piece.position, "n");
     return tween(0.22 + Math.abs(by) * 0.08, t => { body.rotation.y = was + by * t; });
   }
 
@@ -736,34 +736,36 @@ class World {
     const from = piece.position.clone(), way = to.clone().sub(from), far = way.length();
     if (far < 1e-4) return;
     const heading = way.clone().normalize();
-    hooks.sound("slide", Math.min(1, 0.4 + far * 0.12), from);
+    hooks.sound("slide", Math.min(1, 0.4 + far * 0.12), from, piece.userData.kind);
     await tween((0.3 + far * 0.13) / pace, t => {
       piece.position.lerpVectors(from, to, t);
       // It tips into the move and rights itself as it arrives.
       this.lean(piece, heading, Math.sin(t * Math.PI) * 0.11);
     });
     piece.quaternion.identity();
-    hooks.sound("set", 0.5, to);
+    hooks.sound("set", 0.5, to, piece.userData.kind);
     this.dust(to, 0.5);
   }
 
   async leap(piece, to, high, hooks) {
     const from = piece.position.clone(), far = from.distanceTo(to), heading = to.clone().sub(from).normalize();
-    hooks.sound("lift", 0.6, from);
+    hooks.sound("lift", 0.6, from, piece.userData.kind);
     await tween(0.42 + far * 0.07, t => {
       piece.position.lerpVectors(from, to, t);
       piece.position.y = Math.sin(t * Math.PI) * high;
       this.rear(piece, heading, t);
     });
     piece.position.copy(to);
-    hooks.sound("set", piece === this.ridden ? 1.3 : 0.9, to);
+    hooks.sound("set", piece === this.ridden ? 1.3 : 0.9, to, piece.userData.kind);
     hooks.shake(piece === this.ridden ? 0.12 : 0.05);
     this.dust(to, 0.8);
     // The knight ridden breathes out as it lands: a puff at its nostrils.
     if (piece === this.ridden) {
       const body = piece.userData.body;
       body.updateWorldMatrix(true, false);
-      this.dust(body.localToWorld(new THREE.Vector3(0.44, 0.68, 0)), 0.3, true);
+      const nose = body.localToWorld(new THREE.Vector3(0.44, 0.68, 0));
+      this.dust(nose, 0.3, true);
+      hooks.sound("snort", 1, nose, "n");
     }
     await this.settle(piece);
   }
@@ -776,7 +778,7 @@ class World {
     const way = prey.clone().sub(from), far = way.length(), heading = way.clone().normalize();
     const near = prey.clone().addScaledVector(heading, -0.82);
     if (kind === "n") {
-      hooks.sound("lift", 0.7, from);
+      hooks.sound("lift", 0.7, from, kind);
       await tween(0.5 + far * 0.06, t => {
         mover.position.lerpVectors(from, prey, t);
         mover.position.y = Math.sin(t * Math.PI) * 2.1;
@@ -785,23 +787,23 @@ class World {
       this.shatter(victim, heading, hooks, 1.1);
     } else if (kind === "q") {
       // She rises where she stands, and what she looks at breaks.
-      hooks.sound("lift", 0.5, from);
+      hooks.sound("lift", 0.5, from, kind);
       await tween(0.32, t => { mover.position.y = t * 0.45; mover.userData.awake = 1 + t; });
       const bolt = new THREE.Sprite(new THREE.SpriteMaterial({map: this.glow, color: this.rune[mover.userData.colour], blending: THREE.AdditiveBlending, depthWrite: false, transparent: true}));
       bolt.scale.setScalar(0.9);
       this.scene.add(bolt);
       const start = mover.position.clone().setY(1.5), end = prey.clone().setY(0.8);
-      hooks.sound("bolt", 0.9, start);
+      hooks.sound("bolt", 0.9, start, kind);
       await tween(0.2 + far * 0.02, t => { bolt.position.lerpVectors(start, end, t); bolt.scale.setScalar(0.9 + t * 0.9); }, ease.in);
       this.scene.remove(bolt);
       this.shatter(victim, heading, hooks, 1.2);
       await wait(0.22);
       await tween(0.24 + far * 0.1, t => { mover.position.lerpVectors(from, to, t); mover.position.y = (1 - t) * 0.45; }, ease.inOut);
-      hooks.sound("set", 0.6, to);
+      hooks.sound("set", 0.6, to, kind);
     } else if (kind === "r") {
       // No stopping: it gathers itself and goes through.
       await tween(0.2, t => this.lean(mover, heading, -0.16 * t));
-      hooks.sound("slide", 1, from);
+      hooks.sound("slide", 1, from, kind);
       await tween(0.12 + far * 0.07, t => { mover.position.lerpVectors(from, near, t); this.lean(mover, heading, -0.16 + 0.34 * t); }, ease.in);
       this.shatter(victim, heading, hooks, 1.25);
     } else {
@@ -810,7 +812,7 @@ class World {
       const spin = kind === "b" ? TAU : 0;
       // Back, and then forward into it.
       await tween(0.2, t => { this.lean(mover, heading, -0.32 * t); mover.position.lerpVectors(stood, stood.clone().addScaledVector(heading, -0.12), t); }, ease.out);
-      hooks.sound("lift", 0.5, stood);
+      hooks.sound("lift", 0.5, stood, kind);
       const back = mover.position.clone(), reach = stood.clone().addScaledVector(heading, 0.42);
       await tween(0.11, t => {
         mover.position.lerpVectors(back, reach, t);
@@ -858,7 +860,7 @@ class World {
     this.dust(victim.position, 1.6);
     this.flash.position.copy(victim.position).setY(1);
     this.flash.intensity = 60 * force;
-    hooks.sound("shatter", force, victim.position);
+    hooks.sound("shatter", force, victim.position, kind);
     hooks.shake(0.16 * force);
     hooks.impact(victim.position.clone(), force);
     // A blow beside the knight ridden rocks it, and its rider.
@@ -902,7 +904,7 @@ class World {
     const flare = new THREE.Sprite(new THREE.SpriteMaterial({map: this.glow, color: 0xfff2c2, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true}));
     flare.position.copy(at).setY(0.9);
     this.scene.add(flare);
-    hooks.sound("crown", 1, at);
+    hooks.sound("crown", 1, at, move.promo.toLowerCase());
     hooks.look(at);
     const era = this.era;
     await tween(0.35, t => { flare.scale.setScalar(0.2 + t * 4); pawn.scale.setScalar(1 - t * 0.7); });
@@ -927,14 +929,14 @@ class World {
     await wait(0.5);
     const away = new THREE.Vector3(king.position.x >= 0 ? 1 : -1, 0, colour === "w" ? 0.4 : -0.4).normalize();
     const pivot = king.position.clone();
-    hooks.sound("slide", 0.8, pivot);
+    hooks.sound("slide", 0.8, pivot, "k");
     await tween(0.75, t => {
       const angle = t * (Math.PI / 2 - 0.08);
       this.lean(king, away, angle);
       // It turns about the edge of its foot, not its middle.
       king.position.copy(pivot).addScaledVector(away, Math.sin(angle) * 0.3).setY(Math.sin(angle) * 0.34);
     }, ease.in);
-    hooks.sound("shatter", 0.7, king.position);
+    hooks.sound("shatter", 0.7, king.position, "k");
     hooks.shake(0.2);
     this.dust(king.position.clone().addScaledVector(away, 1.4), 1.6);
     await wait(0.6);
@@ -1104,13 +1106,26 @@ class World {
 }
 
 // ----------------------------------------------------------------- the sound
+// Each piece's own stone (`Sound.play`'s `kind`): `pitch` scales every filter
+// and tone it makes, `mass` its loudness and length, and `ring` the chime a
+// finer stone keeps after it is set down. A pawn scrapes light and high; a
+// rook is a grinding mass; a queen rings; a knight's hooves strike.
+const VOICES = {
+  p: {pitch: 1.45, mass: 0.6, ring: 0, bell: 0},
+  n: {pitch: 1.1, mass: 0.85, ring: 0, bell: 0},
+  b: {pitch: 1.25, mass: 0.75, ring: 0.35, bell: 784},
+  r: {pitch: 0.55, mass: 1.5, ring: 0, bell: 0},
+  q: {pitch: 0.95, mass: 1.15, ring: 1, bell: 659},
+  k: {pitch: 0.7, mass: 1.35, ring: 0.6, bell: 523},
+};
+const PLAIN = {pitch: 1, mass: 1, ring: 0, bell: 0};
 // Stone on stone, made here rather than recorded: noise through a filter for
 // what grinds and breaks, a falling tone for what lands. A sound the world
 // makes is made where it happens (a panner at that point of the hall), and
 // heard from where the seat's eye is (`hear`): from the saddle a capture
 // beside you is loud and on that side, and one behind you is behind you.
 class Sound {
-  constructor() { this.on = true; this.audio = null; this.near = 14; }
+  constructor() { this.on = true; this.audio = null; this.near = 14; this.heard = []; }
   start() {
     if (this.audio || !this.on) return;
     const Audio = window.AudioContext || window.webkitAudioContext;
@@ -1157,6 +1172,12 @@ class Sound {
       ear.setOrientation(ahead.x, ahead.y, ahead.z, up.x, up.y, up.z);
     }
   }
+  // A finer stone set down keeps ringing a moment: a bell's note and the
+  // higher, out-of-tune partial that makes it stone and not a bell.
+  chime(note, much, into = this.out) {
+    this.tone(1.6, note, note * 0.997, 0.045 * much, "sine", into);
+    this.tone(1.1, note * 2.76, note * 2.75, 0.018 * much, "sine", into);
+  }
   burst(seconds, kind, from, to, loud, q = 1, into = this.out) {
     const audio = this.audio, now = audio.currentTime;
     const source = audio.createBufferSource(), filter = audio.createBiquadFilter(), gain = audio.createGain();
@@ -1184,20 +1205,36 @@ class Sound {
     voice.start(now);
     voice.stop(now + seconds + 0.05);
   }
-  play(name, strength = 1, where = null) {
+  play(name, strength = 1, where = null, kind = null) {
+    // What was sounded, and whose, kept for the checks.
+    this.heard.push([name, kind]);
+    if (this.heard.length > 60) this.heard.shift();
     if (!this.on) return;
     this.start();
     if (!this.audio) return;
     if (this.audio.state === "suspended") this.audio.resume();
     const s = Math.max(0.2, Math.min(1.4, strength)), into = where ? this.place(where) : this.out;
-    if (name === "slide") this.burst(0.34 + 0.3 * s, "bandpass", 420, 170, 0.22 * s, 0.9, into);
-    else if (name === "lift") this.burst(0.16, "bandpass", 700, 1400, 0.1 * s, 1.5, into);
-    else if (name === "set") { this.tone(0.16, 120, 48, 0.5 * s, "sine", into); this.burst(0.09, "lowpass", 900, 200, 0.2 * s, 1, into); }
-    else if (name === "shatter") {
-      this.tone(0.3, 150, 34, 0.9 * s, "sine", into);
-      this.burst(0.5, "highpass", 500, 2600, 0.5 * s, 1, into);
-      this.burst(0.9, "bandpass", 1500, 300, 0.25 * s, 0.7, into);
-      for (let at = 0; at < 7; at++) setTimeout(() => this.on && this.tone(0.05, 500 + Math.random() * 1400, 200, 0.12 * s, "triangle", into), 60 + Math.random() * 520);
+    const voice = VOICES[kind] || PLAIN, f = voice.pitch, m = voice.mass;
+    if (name === "slide") {
+      this.burst((0.34 + 0.3 * s) * m, "bandpass", 420 * f, 170 * f, 0.22 * s * m, 0.9, into);
+      // A rook's weight is heard under its grinding.
+      if (kind === "r") this.tone(0.7, 52, 40, 0.16 * s, "triangle", into);
+    } else if (name === "lift") this.burst(0.16, "bandpass", 700 * f, 1400 * f, 0.1 * s * m, 1.5, into);
+    else if (name === "set") {
+      this.tone(0.16 * m, 120 * f, 48 * f, 0.5 * s * Math.min(1.3, m), "sine", into);
+      this.burst(0.09, "lowpass", 900 * f, 200 * f, 0.2 * s, 1, into);
+      // A knight comes down on its hooves: two sharp strikes.
+      if (kind === "n") for (const after of [0, 75]) setTimeout(() => this.on && this.burst(0.05, "bandpass", 2400, 1100, 0.3 * s, 4, into), after);
+      if (voice.ring) this.chime(voice.bell, voice.ring * s, into);
+    } else if (name === "shatter") {
+      this.tone(0.3 * m, 150 * f, 34 * f, 0.9 * s, "sine", into);
+      this.burst(0.5, "highpass", 500 * f, 2600 * f, 0.5 * s, 1, into);
+      this.burst(0.9 * m, "bandpass", 1500 * f, 300 * f, 0.25 * s, 0.7, into);
+      for (let at = 0; at < Math.round(7 * m); at++) setTimeout(() => this.on && this.tone(0.05, (500 + Math.random() * 1400) * f, 200, 0.12 * s, "triangle", into), 60 + Math.random() * 520 * m);
+    } else if (name === "snort") {
+      // Breath through stone nostrils: a rush, and the low end of it.
+      this.burst(0.4, "bandpass", 950, 380, 0.3 * s, 1.1, into);
+      this.burst(0.3, "lowpass", 420, 140, 0.22 * s, 1, into);
     } else if (name === "bolt") { this.tone(0.26, 1500, 240, 0.16 * s, "sawtooth", into); this.burst(0.24, "bandpass", 3000, 600, 0.14 * s, 3, into); }
     else if (name === "crown") { for (const [at, pitch] of [[0, 523], [90, 659], [180, 784], [300, 1047]]) setTimeout(() => this.on && this.tone(0.7, pitch, pitch, 0.1, "sine", into), at); }
     else if (name === "pick") this.tone(0.22, 880, 880, 0.05, "sine");
@@ -1629,7 +1666,7 @@ world.surround(seat.renderer);
 const sound = new Sound();
 const opponent = new Opponent(new URL("./vendor/stockfish-18-lite-single.js", import.meta.url).href);
 const voice = new Voice(heard, listening);
-const hooks = {sound: (name, strength, at) => sound.play(name, strength, at), look: point => seat.look(point), shake: much => seat.shake(much),
+const hooks = {sound: (name, strength, at, kind) => sound.play(name, strength, at, kind), look: point => seat.look(point), shake: much => seat.shake(much),
   moving: piece => { seat.watching = piece; },
   // A blow landing at the rider's side: the view jars and shakes, and the
   // world's time slows for a moment (`pace`), so that it is seen.
