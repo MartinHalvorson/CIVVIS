@@ -172,6 +172,9 @@ class World {
     // about to take.
     this.moving = null;
     this.doomed = null;
+    // The side thinking, if one is, and how many times a side has (`muse`).
+    this.musing = null;
+    this.musings = 0;
     // How many times the pieces have been set down afresh (`set`). A move
     // still being played out when they are (a new game begun, a game come
     // back to) is the old board's, and stops touching this one.
@@ -410,7 +413,7 @@ class World {
       cloak: new THREE.ConeGeometry(0.13, 0.5, 14), hood: new THREE.SphereGeometry(0.075, 14, 10),
       // And what makes it a living thing to the one on its back: a mane, two
       // ears that turn, an eye, a bit and the reins to the rider's hands.
-      tuft: new THREE.ConeGeometry(0.04, 0.12, 5), ear: new THREE.ConeGeometry(0.04, 0.16, 4),
+      tuft: new THREE.ConeGeometry(0.03, 0.075, 5), ear: new THREE.ConeGeometry(0.04, 0.16, 4),
       eye: new THREE.SphereGeometry(0.032, 12, 8), bit: new THREE.TorusGeometry(0.035, 0.009, 6, 16)};
     this.material = {
       w: new THREE.MeshStandardMaterial({color: 0xe6dcc6, roughness: 0.36, metalness: 0.02, map: stoneTexture("#f1ead9", "rgba(140,120,90,0.3)", 5)}),
@@ -523,7 +526,7 @@ class World {
       part(made.trim, this.cloth.gold, -0.18, 0.69, 0, -0.38);
       // The mane, from the cloth up to between the ears, pointing back.
       [[-0.235, 0.98], [-0.2, 1.07], [-0.165, 1.15], [-0.135, 1.23], [-0.115, 1.3]].forEach(([x, y], at) => {
-        part(made.tuft, this.material[colour], x - 0.015, y, at % 2 ? 0.02 : -0.02, 1.15).scale.set(1, 1, 0.45);
+        part(made.tuft, this.material[colour], x + 0.005, y, at % 2 ? 0.015 : -0.015, 1.35).scale.set(1, 1, 0.35);
       });
       // Ears, each on a pivot so that it can turn toward what it hears.
       const ears = [-1, 1].map(side => {
@@ -952,6 +955,11 @@ class World {
       } else if (moving && held !== prey) {
         const way = moving.position.clone().sub(held.position).setY(0), far = way.length();
         if (far > 0.4) { toward = look = way; want = 0.05 * Math.min(1, 2.5 / far); }
+      } else if (this.musing === data.colour && held !== prey) {
+        // Its side is thinking: it shifts its weight, slowly, its own way.
+        const phase = this.time * (0.5 + (data.square % 5) * 0.09) + data.square * 1.7;
+        toward = new THREE.Vector3(Math.sin(phase), 0, Math.cos(phase * 0.8));
+        want = 0.025 + 0.015 * Math.sin(phase * 1.3);
       }
       if (toward) data.toward = toward;
       data.loom = (data.loom || 0) + (want - (data.loom || 0)) * ease;
@@ -968,6 +976,13 @@ class World {
       const shake = this.time * 37;
       this.lean(this.doomed, new THREE.Vector3(Math.sin(shake), 0, Math.cos(shake * 1.3)), 0.045);
     }
+  }
+
+  // A side thinking: its pieces shift their weight, each a little and in its
+  // own time, until it has chosen (`regard`). `null` is nobody thinking.
+  muse(colour) {
+    if (colour && this.musing !== colour) this.musings += 1;
+    this.musing = colour || null;
   }
 
   // What the board hears while a command is being given: the pieces it could
@@ -1813,29 +1828,42 @@ async function answer() {
   game.thinking = true;
   hint();
   if (!opponent.awake) say("The opponent is waking…");
+  // While it thinks, its pieces shift their weight.
+  world.muse(game.position.turn);
   const began = performance.now();
   let found = null;
   try {
     found = await opponent.move(toFen(game.position), game.elo, 900);
   } catch (error) {
     game.thinking = false;
+    world.muse(null);
     say(`The opponent could not be woken: ${error.message || error}`, "wrong");
     hint();
     return;
   }
-  // Taken back, or a new game begun, while it thought.
+  // Taken back, or a new game begun, while it thought: that game's thinking
+  // is over, and this one's is not this answer's to end.
   if (turn !== game.turn || found === null) return;
-  const pause = 650 - (performance.now() - began);
-  if (pause > 0) await new Promise(done => setTimeout(done, pause));
-  if (turn !== game.turn) return;
-  game.thinking = false;
+  world.muse(null);
   const move = moveFromUci(game.position, found);
-  if (!move) { say(`The opponent answered ${found}, which cannot be played.`, "wrong"); hint(); return; }
+  if (!move) { game.thinking = false; say(`The opponent answered ${found}, which cannot be played.`, "wrong"); hint(); return; }
+  // The breath before it is played: the piece chosen stirs, what it will take
+  // braces, and a rider's eye is drawn to it. Never less than a breath, and
+  // not played sooner than 650 ms after it was asked for, so that a move that
+  // comes at once does not look unconsidered.
+  game.foreseen = move.from;
+  world.stir([move.from], move.captured && move.flag !== "ep" ? move.to : -1);
+  const chosen = world.pieces.get(move.from);
+  if (chosen && seat.mode !== "table") seat.glance(chosen.position, 1);
+  const pause = Math.max(BREATH, 650 - (performance.now() - began));
+  await new Promise(done => setTimeout(done, pause));
+  if (turn !== game.turn) { world.stir(); return; }
+  game.thinking = false;
   say(`${sideName(game.position.turn)}: ${spoken(game.position, move)}.`);
   await make(move, game.position.turn);
 }
+const BREATH = 550;
 
-// A command, however it was given.
 // A move after which the knight ridden can be taken, by its own going or by
 // what it uncovers, is asked about first: the rider goes with their knight.
 // What has been asked once in a position is not asked again.
@@ -1873,6 +1901,7 @@ function settle(go) {
   else say("You hold your ground.");
 }
 
+// A command, however it was given.
 function command(text, quiet = false) {
   if (game.over || game.busy) return false;
   if (game.position.turn !== game.side) { if (!quiet) say("It is not your move yet.", "wrong"); return false; }
@@ -1938,6 +1967,7 @@ function begin(side = game.side, moves = []) {
   el("promote").hidden = true;
   el("risk").hidden = true;
   game.risky = null;
+  world.muse(null);
   world.set(game.position);
   world.letter(side);
   world.offer([]);
@@ -1970,6 +2000,7 @@ function takeBack() {
   }
   game.over = null;
   el("ended").hidden = true;
+  world.muse(null);
   world.set(game.position);
   remount();
   choose(-1);
