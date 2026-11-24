@@ -267,17 +267,25 @@ class Played(unittest.TestCase):
         # each wait below is long enough for a slow frame.
         ev("wizardChess.seat.blend = null")
         self.until("Math.abs(wizardChess.seat.camera.position.y - 1.24) < 0.1", "the eye is in the saddle", seconds=60)
-        # The eye is on the knight: on g1, low on its neck and to its left
-        # (half a square toward the a-file), a pawn's height up.
+        # The eye is on the knight: on g1, low on its neck and to its right
+        # (half a square toward the h-file), a pawn's height up.
         x, y, z = ev("wizardChess.seat.camera.position.toArray()")
-        self.assertAlmostEqual(x, 2.0, delta=0.1)
+        self.assertAlmostEqual(x, 3.0, delta=0.1)
         self.assertTrue(1.1 < y < 1.4 and 3.6 < z < 4.2, (x, y, z))
         # And what is heard is heard from there: full strength only close by.
         self.assertEqual(ev("wizardChess.sound.near"), 2.2)
+        # The knight ridden is alive: two ears, two eyes, and its ears turn
+        # toward a piece that moves (the knight on b1, off to its left).
+        self.assertEqual(ev("(made => [made.ears.length, made.eyes.length])(wizardChess.world.ridden.userData.saddle.userData)"), [2, 2])
+        turned = ev("(w => { w.world.moving = w.world.pieces.get(1); for (let at = 0; at < 12; at++) w.world.attend(0.1); "
+                    "const yaw = w.world.ridden.userData.saddle.userData.ears[1].rotation.y; w.world.moving = null; return yaw; })(wizardChess)")
+        self.assertGreater(turned, 0.8)
+        # In the saddle the plates fold.
+        self.assertTrue(ev("document.body.classList.contains('riding')"))
         # "ride to f3" is the knight's move, and the rider goes with it.
         self.assertTrue(ev("wizardChess.command('ride to f3')"))
         self.until("wizardChess.game.played.length >= 1 && wizardChess.world.ridden.userData.square === 21 && "
-                   "Math.abs(wizardChess.seat.camera.position.x - 1.0) < 0.1 && wizardChess.seat.camera.position.z < 2.2",
+                   "Math.abs(wizardChess.seat.camera.position.x - 2.0) < 0.1 && wizardChess.seat.camera.position.z < 2.2",
                    "the rider is carried to f3", seconds=120)
         self.assertEqual(ev("wizardChess.game.played[0].san"), "Nf3")
         # A knight on e5 that a pawn can take: the pawn's light turns red.

@@ -220,6 +220,12 @@
   #loading.gone { opacity: 0; pointer-events: none; }
   #loading b { display: block; color: var(--gold); font-size: 26px; font-weight: 600; margin-bottom: 6px; }
 
+  /* In the saddle the plates fold to what a rider needs and let the hall
+     through: the opponent's strength, the seat, the game. */
+  body.riding .elo p, body.riding #made, body.riding .toggles, body.riding #brand p { display: none; }
+  body.riding .plate { background: rgba(12, 11, 14, 0.5); }
+  body.riding #table { gap: 8px; }
+
   /* A narrow window keeps the board and the command and folds the rest. */
   @media (max-width: 860px) {
     #brand p, #score { display: none; }
