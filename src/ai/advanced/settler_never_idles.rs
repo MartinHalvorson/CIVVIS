@@ -335,8 +335,7 @@ impl AdvancedAi {
             let costs = Self::settler_walk_costs_cached(g, uid, radius, walk_costs);
             for (position, value) in &mut ranked {
                 let movement_cost = costs
-                    .get(position)
-                    .copied()
+                    .get(g, *position)
                     .unwrap_or_else(|| g.wdist(from, *position) as f64 * moves.max(1.0) / 2.0);
                 *value -= Self::settle_sooner_walk_cost(turn_price, movement_cost);
             }
