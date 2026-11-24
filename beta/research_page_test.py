@@ -892,7 +892,7 @@ class Page(unittest.TestCase):
         self.assertEqual(
             charts,
             [
-                ("ai", "ai", "all", "CIVVIS vs {level} AI: every victory"),
+                ("ai", "ai", "all", "CIVVIS vs {level} AI: all games"),
                 ("ai-rival", "ai", "rival", "CIVVIS vs {level} AI: {rung} AI wins"),
                 ("ai-civvis", "ai", "civvis", "CIVVIS vs {level} AI: CIVVIS wins"),
                 ("self_play", "self_play", "all", "CIVVIS self-play"),
@@ -908,7 +908,12 @@ class Page(unittest.TestCase):
         heads = re.findall(r'\{ id: "([\w-]+)", kind: "\w+", side: "\w+", label: "[^"]+", head: "([^"]+)"', PAGE)
         self.assertEqual(
             heads,
-            [("ai", "Every victory"), ("ai-rival", "{rung} AI wins"), ("ai-civvis", "CIVVIS wins"), ("self_play", "Every victory")],
+            [
+                ("ai", "Turn Length and Victory Type Histogram of All Games"),
+                ("ai-rival", "{rung} AI wins"),
+                ("ai-civvis", "CIVVIS wins against {rung} AI"),
+                ("self_play", "Every victory"),
+            ],
         )
         self.assertIn('box.querySelector("[data-title]").textContent = worded(chart.head);', PAGE)
         # Each chart of the markup the script fills stands under the title
