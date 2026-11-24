@@ -91,6 +91,23 @@ assert.match(read(START, "abracadabra"), /do not know a move/);
 assert.match(read(START, ""), /Nothing was said/);
 assert.match(read(START, "knight"), /^Which knight\?/);
 
+// The knight ridden: "ride to f3" is its move, and of two knights that
+// could go somewhere the one ridden is the one meant.
+const rides = (fen, text, mount) => {
+  const from = fromFen(fen), got = readCommand(from, text, {mount});
+  return got.move ? san(from, got.move) : got.error;
+};
+assert.equal(rides(START, "ride to f3", 6), "Nf3");
+assert.equal(rides(START, "gallop to h3", 6), "Nh3");
+assert.equal(rides(START, "charge c3", 1), "Nc3");
+assert.match(rides(START, "ride to c3", 6), /not a move that can be played/);
+assert.match(rides(START, "ride to f3", -1), /not riding a knight/);
+assert.equal(rides(twins, "knight to d2", 5), "Nfd2");
+assert.equal(rides(twins, "knight to d2", 1), "Nbd2");
+assert.equal(rides(twins, "Nd2", 1), "Nbd2");
+assert.match(rides(twins, "knight to d2", -1), /^Which knight\?/);
+assert.equal(rides("4k3/8/8/3p4/8/4N3/8/4K3 w - - 0 1", "gallop takes d5", 20), "Nxd5");
+
 // A move said aloud, for the opponent's to be announced.
 const says = (fen, move) => { const from = fromFen(fen); return spoken(from, moveFromUci(from, move)); };
 assert.equal(says(START, "g1f3"), "knight to f3");

@@ -192,7 +192,7 @@ class Played(unittest.TestCase):
             time.sleep(0.2)
         self.fail(f"never happened: {what} ({self.dev.console[-5:]})")
 
-    def test_a_move_is_commanded_and_the_opponent_answers(self):
+    def open(self):
         if not self.chrome:
             self.skipTest("no Chrome on this machine to open the page in")
         self.dev.call("Page.navigate", {"url": self.address})
@@ -204,6 +204,9 @@ class Played(unittest.TestCase):
             if "WebGL" in said:
                 self.skipTest(f"this browser will not draw the board: {said}")
             self.fail(f"the page did not start: {said!r} {self.dev.console[-5:]}")
+
+    def test_a_move_is_commanded_and_the_opponent_answers(self):
+        self.open()
         ev = self.dev.evaluate
         # The board is set, and the seat is White's.
         self.assertEqual(ev("[wizardChess.world.pieces.size, wizardChess.game.side, wizardChess.game.position.turn]"), [32, "w", "w"])
@@ -249,6 +252,43 @@ class Played(unittest.TestCase):
         self.assertTrue(ev("wizardChess.command('pawn takes e4')"))
         self.until("wizardChess.game.played.length >= 4 && wizardChess.world.pieces.size === 31", "the pawn is taken", seconds=60)
         self.assertEqual(ev("wizardChess.game.played[3].san"), "dxe4")
+        self.assertEqual(self.dev.console, [], f"the page complained: {self.dev.console}")
+
+    def test_a_rider_is_carried_by_their_knight_and_thrown_when_it_is_taken(self):
+        self.open()
+        ev = self.dev.evaluate
+        ev("wizardChess.opponent.stop(), wizardChess.begin('w')")
+        # On a knight: the king's knight, unless another is asked for.
+        ev("wizardChess.ride(true)")
+        self.assertEqual(ev("[wizardChess.seat.mode, wizardChess.world.ridden.userData.square, wizardChess.game.mount]"), ["ride", 6, 6])
+        self.until("wizardChess.seat.blend === null", "the view reaches the saddle", seconds=20)
+        # The eye is on the knight: over g1, behind its ears, a rider's height up.
+        x, y, z = ev("wizardChess.seat.camera.position.toArray()")
+        self.assertAlmostEqual(x, 2.5, delta=0.1)
+        self.assertTrue(1.3 < y < 1.8 and 3.6 < z < 4.2, (x, y, z))
+        # "ride to f3" is the knight's move, and the rider goes with it.
+        self.assertTrue(ev("wizardChess.command('ride to f3')"))
+        self.until("wizardChess.game.played.length >= 1 && wizardChess.world.ridden.userData.square === 21 && "
+                   "Math.abs(wizardChess.seat.camera.position.x - 1.5) < 0.1 && wizardChess.seat.camera.position.z < 2.2",
+                   "the rider is carried to f3", seconds=30)
+        self.assertEqual(ev("wizardChess.game.played[0].san"), "Nf3")
+        # A knight on e5 that a pawn can take: the pawn's light turns red.
+        ev("wizardChess.opponent.stop(), wizardChess.begin('w', ['g1f3', 'd7d6', 'f3e5']), wizardChess.game.turn++, wizardChess.opponent.stop()")
+        self.assertEqual(ev("[wizardChess.seat.mode, wizardChess.world.ridden.userData.square]"), ["ride", 36])
+        self.assertEqual(ev("[...wizardChess.world.pieces.values()].filter(held => held.userData.menace).map(held => held.userData.square)"), [43])
+        # Taken: the rider is thrown, and stands at the side of the board.
+        ev("(w => w.make(w.moveFromUci(w.game.position, 'd6e5'), 'b'))(wizardChess)")
+        self.until("wizardChess.seat.mode === 'aside'", "the rider is thrown and gets up", seconds=30)
+        self.assertIn("thrown clear", ev("document.getElementById('said').textContent"))
+        x, y, z = ev("wizardChess.seat.camera.position.toArray()")
+        self.assertTrue(max(abs(x), abs(z)) > 5.5 and y < 0.6, (x, y, z))
+        self.assertEqual(ev("document.getElementById('seat-knight').textContent"), "Ride again")
+        # Taken back to before the knight went to e5: the rider is on it again, on f3.
+        ev("wizardChess.takeBack()")
+        self.assertEqual(ev("[wizardChess.seat.mode, wizardChess.world.ridden.userData.square, wizardChess.game.played.length]"), ["ride", 21, 2])
+        # And back to the board.
+        ev("wizardChess.ride(false)")
+        self.assertEqual(ev("[wizardChess.seat.mode, wizardChess.world.ridden]"), ["table", None])
         self.assertEqual(self.dev.console, [], f"the page complained: {self.dev.console}")
 
 
