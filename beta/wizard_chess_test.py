@@ -449,6 +449,29 @@ class Played(unittest.TestCase):
         self.until("wizardChess.game.played.length >= 3", "the knight rides on", seconds=60)
         self.assertEqual(ev("wizardChess.game.played[2].san"), "Ne5")
         ev("wizardChess.opponent.stop(), wizardChess.game.turn++")
+        # Any of the player's pieces can be ridden (a double click on it): the
+        # pawn on d2, its rider standing on its head, carried as it goes.
+        ev("wizardChess.opponent.stop(), wizardChess.begin('w'), wizardChess.game.turn++")
+        self.assertTrue(ev("wizardChess.rideSquare(11)"))
+        ev("wizardChess.seat.blend = null")
+        self.assertEqual(ev("[wizardChess.world.ridden.userData.kind, wizardChess.seat.mode, document.getElementById('seat-knight').textContent]"),
+                         ["p", "ride", "On a pawn"])
+        self.until("Math.abs(wizardChess.seat.camera.position.y - 1.34) < 0.06", "the eye stands on the pawn", seconds=60)
+        self.assertTrue(ev("wizardChess.command('ride to d4')"))
+        self.until("wizardChess.world.ridden && wizardChess.world.ridden.userData.square === 27 && "
+                   "Math.abs(wizardChess.seat.camera.position.z - 0.45) < 0.15", "the pawn carries its rider to d4", seconds=120)
+        ev("wizardChess.opponent.stop(), wizardChess.game.turn++")
+        # A pawn ridden to the last rank carries its rider up onto what it
+        # becomes. (The opponent is held still, so that its answer cannot take
+        # the queen before it is looked at.)
+        ev("wizardChess.heldMove = wizardChess.opponent.move; wizardChess.opponent.move = () => Promise.resolve(null)")
+        ev("wizardChess.opponent.stop(), wizardChess.begin('w', ['a2a4', 'b7b5', 'a4b5', 'a7a6', 'b5a6', 'c8b7', 'a6b7', 'b8c6']), wizardChess.game.turn++")
+        self.assertTrue(ev("wizardChess.rideSquare(49)"))
+        ev("(w => w.make(w.moveFromUci(w.game.position, 'b7a8q'), 'w'))(wizardChess)")
+        self.until("wizardChess.game.played.length >= 9 && !wizardChess.game.busy", "the pawn crowns", seconds=120)
+        self.assertEqual(ev("[wizardChess.world.ridden.userData.kind, wizardChess.seat.mode, wizardChess.seat.mounted === wizardChess.world.ridden, wizardChess.game.mount]"),
+                         ["q", "ride", True, 8])
+        ev("wizardChess.opponent.move = wizardChess.heldMove; wizardChess.game.turn++")
         # And back to the board.
         ev("wizardChess.ride(false)")
         self.assertEqual(ev("[wizardChess.seat.mode, wizardChess.world.ridden]"), ["table", None])
