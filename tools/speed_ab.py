@@ -11,6 +11,6 @@ candidate = args[args.index("--candidate") + 1] if "--candidate" in args else "t
 here = os.path.dirname(os.path.abspath(__file__))
 sys.exit(
     subprocess.call(
-        [sys.executable, "-u", os.path.join(here, "core_probe.py"), "--civvis", candidate, "--budget-minutes", "22"]
+        [sys.executable, "-u", os.path.join(here, "core_probe.py"), "--civvis", candidate, "--budget-minutes", "30"]
     )
 )

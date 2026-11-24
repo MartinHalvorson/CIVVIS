@@ -42,11 +42,13 @@ pub fn command(args: Vec<String>) {
         Some("record") => record(&args[2..]),
         Some("ablate") => ablate(&args[2..]),
         Some("strip") => strip(&args[2..]),
+        Some("bench") => bench(&args[2..]),
         _ => {
             eprintln!(
-                "usage: civvis core-probe record <players> <seed> <T> <K> <dir> [budget-seconds]\n       \
+                "usage: civvis core-probe record <players> <seed> <T> <K> <dir> [budget-seconds] [fog]\n       \
                  civvis core-probe ablate <dir> <deadline-seconds>\n       \
-                 civvis core-probe strip <dir> <paths-file>"
+                 civvis core-probe strip <dir> <paths-file>\n       \
+                 civvis core-probe bench <save.json> [iterations]"
             );
             std::process::exit(2);
         }
@@ -94,7 +96,10 @@ fn record(args: &[String]) {
         &serde_json::to_string(&g).unwrap(),
     );
     let mut ais = AdvancedAi::fleet(&g);
-    let fog = ais.iter().any(Ai::uses_player_observation);
+    // `fog` forces last-seen memory on even for an agent that does not read
+    // it, so the engine's own use of that memory is exercised too.
+    let forced_fog = args.get(6).is_some_and(|a| a == "fog");
+    let fog = forced_fog || ais.iter().any(Ai::uses_player_observation);
     g.set_fog_memory(fog);
     g.set_war_ledger(false);
     let play_until = |g: &mut Game, ais: &mut [AdvancedAi], turn: u32, until: Option<Instant>| {
@@ -376,6 +381,13 @@ fn diff(a: &Value, b: &Value) -> Vec<FieldPath> {
 
 struct Replayed {
     end: Value,
+    /// The world at the first turn boundary after the save: what a field
+    /// rebuilt every turn has already been rebuilt to.
+    checkpoint: Option<Value>,
+    /// `(round, seat, legal action count, hash of the legal set)` at the
+    /// start of each seat's turn in the first and the middle round: the
+    /// actions nobody took are part of what the state decides.
+    legal: Vec<(u32, usize, usize, u64)>,
     refused: usize,
     first_refusal: Option<(usize, String)>,
 }
@@ -387,7 +399,26 @@ enum Outcome {
     Done(Replayed),
 }
 
-fn replay(save: Value, actions: &[(usize, Action)], fog: bool) -> Outcome {
+/// Through text, as a save is read: an `f32` widened straight into a `Value`
+/// would not compare equal to the same `f32` read back from a file.
+fn as_saved(g: &Game) -> Value {
+    serde_json::from_str(&serde_json::to_string(g).unwrap()).unwrap()
+}
+
+fn legal_hash(g: &Game, pid: usize) -> (usize, u64) {
+    use std::hash::{Hash, Hasher};
+    let mut set: Vec<String> = g
+        .legal_actions(pid)
+        .iter()
+        .map(|a| serde_json::to_string(a).unwrap())
+        .collect();
+    set.sort();
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    set.hash(&mut h);
+    (set.len(), h.finish())
+}
+
+fn replay(save: Value, actions: &[(usize, Action)], fog: bool, rounds: &[u32]) -> Outcome {
     let loaded = catch_unwind(AssertUnwindSafe(|| serde_json::from_value::<Game>(save)));
     let mut g = match loaded {
         Ok(Ok(g)) => g,
@@ -396,12 +427,24 @@ fn replay(save: Value, actions: &[(usize, Action)], fog: bool) -> Outcome {
     };
     g.set_fog_memory(fog);
     g.set_war_ledger(false);
+    let start_turn = g.turn;
     let mut refused = 0usize;
     let mut first_refusal = None;
     let mut applied = 0usize;
+    let mut checkpoint = None;
+    let mut legal = Vec::new();
+    let mut sampled: BTreeSet<(u32, usize)> = BTreeSet::new();
     let ran = catch_unwind(AssertUnwindSafe(|| {
         for (i, (pid, action)) in actions.iter().enumerate() {
             applied = i;
+            let round = g.turn.saturating_sub(start_turn);
+            if checkpoint.is_none() && round > 0 {
+                checkpoint = Some(as_saved(&g));
+            }
+            if rounds.contains(&round) && g.winner.is_none() && sampled.insert((round, g.current)) {
+                let (n, h) = legal_hash(&g, g.current);
+                legal.push((round, g.current, n, h));
+            }
             if let Err(reason) = g.apply(*pid, action) {
                 refused += 1;
                 if first_refusal.is_none() {
@@ -413,9 +456,11 @@ fn replay(save: Value, actions: &[(usize, Action)], fog: bool) -> Outcome {
     if ran.is_err() {
         return Outcome::ReplayPanic(applied);
     }
-    match catch_unwind(AssertUnwindSafe(|| serde_json::to_value(&g).unwrap())) {
+    match catch_unwind(AssertUnwindSafe(|| as_saved(&g))) {
         Ok(end) => Outcome::Done(Replayed {
             end,
+            checkpoint,
+            legal,
             refused,
             first_refusal,
         }),
@@ -437,18 +482,30 @@ fn get_path<'a>(v: &'a Value, path: &FieldPath) -> Vec<Option<&'a Value>> {
     }
 }
 
+fn meta_of(dir: &str) -> Value {
+    serde_json::from_str::<Value>(&read(&format!("{dir}/meta.json"))).unwrap_or(Value::Null)
+}
+
 fn fog_of(dir: &str) -> bool {
-    serde_json::from_str::<Value>(&read(&format!("{dir}/meta.json")))
-        .ok()
-        .and_then(|m| m.get("fog").and_then(Value::as_bool))
+    meta_of(dir)
+        .get("fog")
+        .and_then(Value::as_bool)
         .unwrap_or(true)
+}
+
+/// The first round, and the one halfway through the window.
+fn legal_rounds(dir: &str) -> Vec<u32> {
+    let meta = meta_of(dir);
+    let t = meta.get("t").and_then(Value::as_u64).unwrap_or(0) as u32;
+    let end = meta.get("end_turn").and_then(Value::as_u64).unwrap_or(0) as u32;
+    vec![0, end.saturating_sub(t) / 2]
 }
 
 fn outcome_json(
     path: &str,
     mode: &str,
     outcome: &Outcome,
-    reference: &Value,
+    reference: &Replayed,
     ablated: &[FieldPath],
 ) -> Value {
     match outcome {
@@ -458,22 +515,63 @@ fn outcome_json(
             serde_json::json!({"path": path, "mode": mode, "replay_panic_at": at})
         }
         Outcome::Done(r) => {
-            let diverged: Vec<String> = diff(reference, &r.end)
+            let diverged: Vec<String> = diff(&reference.end, &r.end)
                 .into_iter()
                 .filter(|d| !ablated.iter().any(|a| a.covers(d)))
                 .map(|d| d.show())
                 .collect();
             let restored = ablated
                 .iter()
-                .all(|a| get_path(reference, a) == get_path(&r.end, a));
+                .all(|a| get_path(&reference.end, a) == get_path(&r.end, a));
+            let restored_at_checkpoint = match (&reference.checkpoint, &r.checkpoint) {
+                (Some(x), Some(y)) => ablated.iter().all(|a| get_path(x, a) == get_path(y, a)),
+                _ => false,
+            };
+            let legal_differs = reference
+                .legal
+                .iter()
+                .zip(r.legal.iter())
+                .find(|(x, y)| x != y)
+                .map(|(x, y)| serde_json::json!([x.0, x.1, x.2, y.2]))
+                .or_else(|| {
+                    (reference.legal.len() != r.legal.len())
+                        .then(|| serde_json::json!(["count", reference.legal.len(), r.legal.len()]))
+                });
             let count = diverged.len();
             serde_json::json!({
                 "path": path, "mode": mode, "refused": r.refused,
                 "first_refusal": r.first_refusal, "diverged_count": count,
-                "diverged": diverged.into_iter().take(30).collect::<Vec<_>>(), "restored": restored,
+                "diverged": diverged.into_iter().take(30).collect::<Vec<_>>(),
+                "restored": restored, "restored_at_checkpoint": restored_at_checkpoint,
+                "legal_differs": legal_differs,
             })
         }
     }
+}
+
+/// Which counter keys differ between two worlds, per seat: the counters map
+/// holds engine tallies and agents' private notes side by side.
+fn counter_keys_that_differ(a: &Value, b: &Value) -> Vec<String> {
+    let (Some(xs), Some(ys)) = (
+        a.get("players").and_then(Value::as_array),
+        b.get("players").and_then(Value::as_array),
+    ) else {
+        return vec![];
+    };
+    let mut keys = BTreeSet::new();
+    for (x, y) in xs.iter().zip(ys) {
+        let (cx, cy) = (x.get("counters"), y.get("counters"));
+        let (Some(cx), Some(cy)) = (cx.and_then(Value::as_object), cy.and_then(Value::as_object))
+        else {
+            continue;
+        };
+        for k in cx.keys().chain(cy.keys()) {
+            if cx.get(k) != cy.get(k) {
+                keys.insert(k.clone());
+            }
+        }
+    }
+    keys.into_iter().collect()
 }
 
 fn ablate(args: &[String]) {
@@ -481,6 +579,7 @@ fn ablate(args: &[String]) {
     let deadline_s: f64 = args.get(1).map(|s| s.parse().unwrap()).unwrap_or(1e9);
     let started = Instant::now();
     let fog = fog_of(dir);
+    let rounds = legal_rounds(dir);
     let save: Value = serde_json::from_str(&read(&format!("{dir}/state_t.json"))).unwrap();
     let actions: Vec<(usize, Action)> =
         serde_json::from_str(&read(&format!("{dir}/actions.json"))).unwrap();
@@ -489,7 +588,7 @@ fn ablate(args: &[String]) {
     // Does the save, untouched, replay to the game that was played? What it
     // does not reproduce was written by something other than an action.
     let t = Instant::now();
-    let reference = match replay(save.clone(), &actions, fog) {
+    let reference = match replay(save.clone(), &actions, fog, &rounds) {
         Outcome::Done(r) => {
             let missing: Vec<String> = diff(&recorded, &r.end)
                 .into_iter()
@@ -499,15 +598,14 @@ fn ablate(args: &[String]) {
                 "{}",
                 serde_json::json!({"baseline": true, "refused": r.refused,
                     "first_refusal": r.first_refusal, "differs_from_recorded": missing,
+                    "counter_keys": counter_keys_that_differ(&recorded, &r.end),
+                    "legal_samples": r.legal.len(),
                     "replay_s": t.elapsed().as_secs_f64()})
             );
-            r.end
+            r
         }
-        other => {
-            println!(
-                "{}",
-                outcome_json("<baseline>", "none", &other, &recorded, &[])
-            );
+        _ => {
+            println!("{}", serde_json::json!({"baseline": true, "failed": true}));
             return;
         }
     };
@@ -517,7 +615,7 @@ fn ablate(args: &[String]) {
     let all: Vec<(usize, Action)> =
         serde_json::from_str(&read(&format!("{dir}/actions_all.json"))).unwrap();
     let zero: Value = serde_json::from_str(&read(&format!("{dir}/state_0.json"))).unwrap();
-    if let Outcome::Done(r) = replay(zero, &all, fog) {
+    if let Outcome::Done(r) = replay(zero, &all, fog, &[]) {
         let missing: Vec<String> = diff(&recorded, &r.end)
             .into_iter()
             .map(|d| d.show())
@@ -526,6 +624,7 @@ fn ablate(args: &[String]) {
             "{}",
             serde_json::json!({"from_zero": true, "refused": r.refused,
                 "first_refusal": r.first_refusal, "differs_from_recorded": missing,
+                "counter_keys": counter_keys_that_differ(&recorded, &r.end),
                 "replay_s": t.elapsed().as_secs_f64()})
         );
     } else {
@@ -547,12 +646,12 @@ fn ablate(args: &[String]) {
             continue;
         }
         let t = Instant::now();
-        let mut outcome = replay(ablated, &actions, fog);
+        let mut outcome = replay(ablated, &actions, fog, &rounds);
         let mut mode = "empty";
         if matches!(outcome, Outcome::LoadError(_) | Outcome::LoadPanic) {
             let mut zeroed = save.clone();
             if blank(&mut zeroed, &path, zero_like) {
-                outcome = replay(zeroed, &actions, fog);
+                outcome = replay(zeroed, &actions, fog, &rounds);
                 mode = "zero";
             }
         }
@@ -568,20 +667,26 @@ fn ablate(args: &[String]) {
     }
 }
 
+/// `strip <dir> <paths-file>`: each line is `path` or `path<TAB>zero`.
 fn strip(args: &[String]) {
     let dir = &args[0];
     let fog = fog_of(dir);
-    let paths: Vec<FieldPath> = read(&args[1])
+    let rounds = legal_rounds(dir);
+    let listed: Vec<(FieldPath, bool)> = read(&args[1])
         .lines()
         .map(str::trim)
         .filter(|l| !l.is_empty())
-        .map(FieldPath::parse)
+        .map(|l| match l.split_once('\t') {
+            Some((p, mode)) => (FieldPath::parse(p), mode == "zero"),
+            None => (FieldPath::parse(l), false),
+        })
         .collect();
+    let paths: Vec<FieldPath> = listed.iter().map(|(p, _)| p.clone()).collect();
     let save: Value = serde_json::from_str(&read(&format!("{dir}/state_t.json"))).unwrap();
     let actions: Vec<(usize, Action)> =
         serde_json::from_str(&read(&format!("{dir}/actions.json"))).unwrap();
-    let reference = match replay(save.clone(), &actions, fog) {
-        Outcome::Done(r) => r.end,
+    let reference = match replay(save.clone(), &actions, fog, &rounds) {
+        Outcome::Done(r) => r,
         _ => {
             println!(
                 "{}",
@@ -592,8 +697,9 @@ fn strip(args: &[String]) {
     };
     let mut stripped = save.clone();
     let mut blanked = 0usize;
-    for p in &paths {
-        if blank(&mut stripped, p, empty_like) {
+    for (p, zero) in &listed {
+        let how: fn(&Value) -> Value = if *zero { zero_like } else { empty_like };
+        if blank(&mut stripped, p, how) {
             blanked += 1;
         }
     }
@@ -603,10 +709,10 @@ fn strip(args: &[String]) {
         &format!("{dir}/stripped.json"),
         &serde_json::to_string(&stripped).unwrap(),
     );
-    let outcome = replay(stripped, &actions, fog);
+    let outcome = replay(stripped, &actions, fog, &rounds);
     let mut row = outcome_json(
         &format!("<strip {} paths>", paths.len()),
-        "empty",
+        "mixed",
         &outcome,
         &reference,
         &paths,
@@ -616,4 +722,37 @@ fn strip(args: &[String]) {
     row["bytes_before"] = Value::from(before);
     row["bytes_after"] = Value::from(after);
     println!("{row}");
+}
+
+/// What a position costs to hold: clone and serialize a loaded save. Run on
+/// the full save and on the stripped one, it prices everything the
+/// transition never reads.
+fn bench(args: &[String]) {
+    let path = &args[0];
+    let n: usize = args.get(1).map(|s| s.parse().unwrap()).unwrap_or(2000);
+    let g: Game = serde_json::from_str(&read(path)).unwrap();
+    let mut keep = 0usize;
+    let mut samples = Vec::with_capacity(9);
+    for _ in 0..9 {
+        let t = Instant::now();
+        for _ in 0..n {
+            let c = g.clone();
+            keep = keep.wrapping_add(c.units.len());
+        }
+        samples.push(t.elapsed().as_secs_f64() / n as f64);
+    }
+    samples.sort_by(f64::total_cmp);
+    let clone_us = samples[4] * 1e6;
+    let t = Instant::now();
+    let reps = 20;
+    let mut bytes = 0usize;
+    for _ in 0..reps {
+        bytes = serde_json::to_string(&g).unwrap().len();
+    }
+    let serialize_ms = t.elapsed().as_secs_f64() / reps as f64 * 1e3;
+    println!(
+        "{}",
+        serde_json::json!({"bench": path, "clone_us": clone_us, "serialize_ms": serialize_ms,
+            "json_bytes": bytes, "keep": keep})
+    );
 }
