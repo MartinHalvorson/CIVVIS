@@ -1968,12 +1968,20 @@
       }
 
       // Where a game's time goes, once the games carry the harness's own
-      // clock: the setup, the play, the ending.
+      // clock: the setup, the play, the ending. Until every game of the
+      // window carries it, the three are the middle of fewer games than the
+      // tiles count and do not add up to the tiles' game, so the line says
+      // how many games it is drawn from.
       const parts = Array.isArray(week.split) && week.split.length === 3 && week.split.every((v) => Number(v) >= 0) ? week.split.map(Number) : null;
       if (parts) {
-        const split = document.getElementById("perf-control-split");
-        split.append("Where the middle game’s time goes: ", el("b", "", span(parts[0])), " to launch Civilization VI and set the game up, ",
-          el("b", "", span(parts[1])), " of play, ", el("b", "", span(parts[2])), " to hold the final screen, quit and write the result.");
+        const split = document.getElementById("perf-control-split"), drawn = Number(week.split_games) || 0;
+        // The parts are whole seconds: no tenth is claimed for them.
+        const part = (x) => (x < 99.5 ? Math.round(x) + " s" : span(x));
+        const lead = drawn && drawn < Number(week.games)
+          ? "Where a game’s time goes, in the " + count(drawn) + " timed part by part so far: "
+          : "Where the middle game’s time goes: ";
+        split.append(lead, el("b", "", part(parts[0])), " to launch Civilization VI and set the game up, ",
+          el("b", "", part(parts[1])), " of play, ", el("b", "", part(parts[2])), " to hold the final screen, quit and write the result.");
         split.hidden = false;
       }
 
