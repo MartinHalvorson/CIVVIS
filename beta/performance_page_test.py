@@ -260,8 +260,11 @@ class TheSpeedup(unittest.TestCase):
         # 5 hrs, Firaxis Computer control ..., Firaxis self-play ..., CIVVIS
         # self-play, "Parallel games, M5 Max, all 18 cores""). The game
         # against simulated Deity rivals is not one of them and says so.
+        # The control stop is named as he named it later that day ("lets
+        # also call Firaxis computer Control inside CIVVIS->Firaxis computer
+        # control"), the arrow drawn as one, here as on the home page.
         self.assertEqual((ways["hand"], ways["control"], ways["firaxis_self_play"], ways["self_play"], ways["all_cores"]),
-                         ("Human player", "Firaxis computer control", "Firaxis self-play", "CIVVIS self-play", "Parallel games"))
+                         ("Human player", "CIVVIS → Firaxis computer control", "Firaxis self-play", "CIVVIS self-play", "Parallel games"))
         self.assertEqual(ways["deity_sim"], "CIVVIS against Deity rivals")
         self.assertIn('if (row.worked) name.firstChild.after(" ", el("span", "perf-kind is-estimate", "Worked out, not timed"));', PAGE)
         # Every kind of throughput row, and every basis of a theory, is worded.

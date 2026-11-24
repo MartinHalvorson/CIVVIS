@@ -44,6 +44,17 @@ stop's multiplier (`over`) times a figure of the operator's, so it moves when
 that stop does, and it is never the page's number: that is the fastest stop
 that was measured.
 
+Where the games play many at once, a time is amortized: the time from one
+finished game to the next, which no single game takes (operator, 2026-11-24:
+"starting left of CIVVIS self-play (but not including that), we should note
+that estimates are amortized games"). The ledger says which stops and goals
+those are (`amortized`), and a projected stop is one when the stop it
+multiplies is. Each has its games per second beside its time, and past a game
+a second it leads with them (operator, the same day: "on the left side of the
+timeline, at more than 1 game / second, we should also provide the games per
+second as the standard measure and (time per game amoritized as the second
+measure)").
+
 What renting the rest of the way to a goal would cost stands with each goal
 (`cloud`; operator, 2026-11-22: "we should also estimate the cloud cost in $
 to fill i nthe remaining amount (note that this is a Fable 5.2 best estimate
@@ -161,6 +172,33 @@ def rate(value: float) -> str:
         text = f"{value:.1f}"
         return text[:-2] if text.endswith(".0") else text
     return f"{round(value):,}"
+
+
+def per_second(games: float) -> str:
+    """Games a second as the line words them: `0.41 games/s`, `1 game/s`,
+    `4.1 games/s`, `56 games/s`, `1,200 games/s`."""
+    if games < 0.995:
+        return f"{games:.2f} games/s"
+    if games < 9.95:
+        text = f"{games:.1f}"
+        return "1 game/s" if text == "1.0" else f"{text[:-2] if text.endswith('.0') else text} games/s"
+    return f"{round(games):,} games/s"
+
+
+def amortize(row: dict, seconds: float, more: str = "") -> None:
+    """Mark a row of the line as amortized: its games play many at once, so
+    its `time` is the time from one finished game to the next (`seconds`)
+    and not what a game takes. It gains its games a second (`rate`, with
+    `more` after the figure when the row is open at its top), and `lead`
+    says `rate` when that is past one game a second: there the page leads
+    with the games a second and gives the time per game as the second
+    measure."""
+    games = 1 / seconds
+    figure, unit = per_second(games).split(" ", 1)
+    row["amortized"] = True
+    row["rate"] = f"{figure}{more} {unit}"
+    if games > 1:
+        row["lead"] = "rate"
 
 
 def figure(value: float) -> str:
@@ -347,8 +385,10 @@ def ticks(goal: float) -> list[dict]:
 
 def marked(ledger: dict) -> list[dict]:
     """The ledger's goals, smallest first: each the `key` the pages name it by
-    and its multiplier (`times`). The line ends at the last."""
-    return sorted(({"key": goal["key"], "times": goal["times"]} for goal in ledger["goals"]), key=lambda goal: goal["times"])
+    and its multiplier (`times`), and `amortized` on one that is reached by
+    many games at once. The line ends at the last."""
+    kept = ("key", "times", "amortized")
+    return sorted(({name: goal[name] for name in kept if name in goal} for goal in ledger["goals"]), key=lambda goal: goal["times"])
 
 
 #: The hours a rented machine is paid for in a year of playing without a stop.
@@ -470,18 +510,23 @@ def projected(ledger: dict, measured: list[tuple[dict, list[dict]]], base: float
 
     A projected stop is a measured stop's multiplier (`over` names the stop)
     times the figure of its newest estimate (`times`), and nothing has run at
-    it. A row has that figure as it is worded (`by`), the multiplier it comes
+    it. `over` may also name a projected stop listed before it, and then it
+    is that stop's multiplier it multiplies: a guess that stands on a guess. A row has that figure as it is worded (`by`), the multiplier it comes
     to (`times`) with the time from one finished game to the next at it
     (`time`), the sum that gives it (`sum`), its place on the line (`at`) and
     the estimate's own account (`from`). An estimate that is `or_more` is
-    open at its top, and both figures end in a `+`.
+    open at its top, and both figures end in a `+`. A row over a stop that
+    is `amortized` is amortized too, and so is one the ledger says is (see
+    `amortize`).
     """
-    newest = {stop["key"]: taken[-1] for stop, taken in measured}
+    reached = {stop["key"]: base / taken[-1]["seconds"] for stop, taken in measured}
+    shared = {stop["key"] for stop, _ in measured if stop.get("amortized")}
     rows = []
     for stop in ledger.get("projected") or []:
         estimate = sorted(stop["estimates"], key=lambda entry: entry["taken"])[-1]
-        under = base / newest[stop["over"]]["seconds"]
+        under = reached[stop["over"]]
         multiplier = estimate["times"] * under
+        reached[stop["key"]] = multiplier
         more = "+" if estimate.get("or_more") else ""
         row = {
             "key": stop["key"],
@@ -497,6 +542,11 @@ def projected(ledger: dict, measured: list[tuple[dict, list[dict]]], base: float
         }
         if estimate.get("from"):
             row["from"] = estimate["from"]
+        # So many times a stop whose games play many at once is that many
+        # more of them at once.
+        if stop.get("amortized") or stop["over"] in shared:
+            shared.add(stop["key"])
+            amortize(row, base / multiplier, more)
         # Past the goal the line ends at: it stands at the line's end and
         # the page says it runs on from there.
         if multiplier > goal:
@@ -516,9 +566,13 @@ def timeline(source: pathlib.Path) -> dict | None:
     of what machine at what price). A stop or a goal whose words would meet
     its neighbour's is `far`: its words stand a row out from the line (see
     `rows`). `projected` are the stops past what was measured (see
-    `projected`), in a ledger that lists any: their words stand under the
-    line, and none of them is the page's number. `None` when the revision
-    has no ledger or one that cannot be read."""
+    `projected`), in a ledger that lists any: none of them is the page's
+    number. Every entry has the `side` of the line its words stand on,
+    `above` or `below`, taken in turn along the line (see `sides`). A stop, a goal or a
+    projected stop whose games play many at once is `amortized`, with its
+    games a second (`rate`), and one past a game a second leads with them
+    (`lead`; see `amortize`). `None` when the revision has no ledger or one
+    that cannot be read."""
     try:
         ledger = json.loads((source / LEDGER).read_text(encoding="utf-8"))
         marks = marked(ledger)
@@ -546,6 +600,10 @@ def timeline(source: pathlib.Path) -> dict | None:
             # A reading worked out from other measurements, not timed itself.
             if now.get("worked"):
                 row["worked"] = True
+            # Many games at once: the time is from one finished game to
+            # the next.
+            if stop.get("amortized"):
+                amortize(row, now["seconds"])
             if "goal_seconds" in stop:
                 row["goal"] = f"goal {clock(stop['goal_seconds'])}, {times(base / stop['goal_seconds'])}"
             if times(base / first["seconds"]) != row["times"]:
@@ -555,23 +613,25 @@ def timeline(source: pathlib.Path) -> dict | None:
             {
                 "key": mark["key"],
                 "times": times(mark["times"]),
+                "multiplier": mark["times"],
                 "time": clock(base / mark["times"]),
                 "at": round(math.log(mark["times"]) / math.log(goal), 4),
             }
             for mark in marks
         ]
+        for row, mark in zip(goals, marks):
+            if mark.get("amortized"):
+                amortize(row, base / mark["times"])
         ahead = projected(ledger, measured, base, goal)
     except (OSError, ValueError, KeyError, TypeError, IndexError, ZeroDivisionError):
         return None
-    for row, side in zip(stops, sides([row["at"] for row in stops])):
-        row["side"] = side
-    # The goals' words stand over the line and the projected stops' under
-    # it, and both take their rows with the stops' words there.
-    for mark in goals:
-        mark["side"] = "above"
-    for row in ahead:
-        row["side"] = "below"
+    # Every entry of the line takes its side with the others, a stop, a
+    # projected stop or a goal: the line holds more of them than one side
+    # has room for, and two that stand close together go one over the line
+    # and one under it (see `sides`).
     entries = stops + ahead + goals
+    for row, side in zip(entries, sides([row["at"] for row in entries])):
+        row["side"] = side
     for row, far in zip(entries, rows([row["at"] for row in entries], [row["side"] for row in entries])):
         if far:
             row["far"] = True
