@@ -504,13 +504,13 @@ class World {
   }
 
   face(held) {
-    if (held.userData.kind === "n") held.userData.body.rotation.y = this.rest(held);
+    if (held.userData.kind === "n" || held === this.ridden) held.userData.body.rotation.y = this.rest(held);
   }
   // Where a knight looks when nothing calls it: a ridden knight where its
   // rider does, straight at the enemy; the others a little in toward the
   // middle of the board.
   rest(held) {
-    if (held === this.ridden) return held.userData.facing;
+    if (held === this.ridden || held.userData.kind !== "n") return held.userData.facing;
     const inward = sqX(held.userData.square) < 0 ? -1 : 1, side = held.userData.colour === "w" ? 1 : -1;
     return held.userData.facing + inward * side * 0.95;
   }
@@ -525,6 +525,23 @@ class World {
     }
     this.ridden = held || null;
     if (!held) return;
+    if (!held.userData.saddle && held.userData.kind !== "n") {
+      // Any other piece is ridden standing on top of it: on a pawn's head, in
+      // a rook's battlements, on a bishop's mitre, in a queen's or a king's
+      // crown. Its rider is seen there from the board.
+      const made = this.geometry, saddle = new THREE.Group(), rider = new THREE.Group();
+      const cloak = new THREE.Mesh(made.cloak, this.cloth.cloak), hood = new THREE.Mesh(made.hood, this.cloth.cloak);
+      cloak.position.set(0, 0.25, 0);
+      hood.position.set(0.02, 0.54, 0);
+      for (const mesh of [cloak, hood]) { mesh.castShadow = true; rider.add(mesh); }
+      rider.position.set(0, RIDER_TOPS[held.userData.kind], 0);
+      rider.scale.setScalar(0.85);
+      saddle.add(rider);
+      saddle.userData = {rider, ears: [], eyes: []};
+      saddle.traverse(mesh => { if (mesh !== saddle) mesh.userData.owner = held; });
+      held.userData.body.add(saddle);
+      held.userData.saddle = saddle;
+    }
     if (!held.userData.saddle) {
       const made = this.geometry, saddle = new THREE.Group(), colour = held.userData.colour;
       const part = (geometry, material, x, y, z, tilt = 0) => {
@@ -696,7 +713,7 @@ class World {
     if (gone()) return;
     mover.userData.square = move.to;
     this.pieces.set(move.to, mover);
-    if (kind === "n") {
+    if (kind === "n" || mover === this.ridden) {
       const was = mover.userData.body.rotation.y;
       this.face(mover);
       const now = mover.userData.body.rotation.y;
@@ -855,7 +872,7 @@ class World {
     // the blow came.
     if (victim === this.ridden) {
       this.ridden = null;
-      hooks.thrown(victim.position.clone(), heading.clone(), victim.userData.colour);
+      hooks.thrown(victim.position.clone(), heading.clone(), victim.userData.colour, victim.userData.kind);
     }
     const {kind, colour} = victim.userData, tall = HEIGHTS[kind], count = Math.round(26 + tall * 22);
     const stones = new THREE.InstancedMesh(this.geometry.chunk, this.material[colour], count);
@@ -932,6 +949,12 @@ class World {
     made.scale.setScalar(0.3);
     this.scene.add(made);
     this.pieces.set(move.to, made);
+    // A pawn ridden across the board carries its rider up onto what it becomes.
+    if (pawn === this.ridden) {
+      this.ridden = null;
+      this.ride(made);
+      hooks.carried(made);
+    }
     await tween(0.45, t => { made.scale.setScalar(0.3 + 0.7 * t); flare.scale.setScalar(4.2 * (1 - t)); flare.material.opacity = 1 - t; }, ease.out);
     this.scene.remove(flare);
     this.dust(at, 1);
@@ -1427,6 +1450,9 @@ class Voice {
 // left of the screen, where nothing written stands over it.
 const EYE = new THREE.Vector3(-0.46, 1.24, 0.5);
 const AHEAD = new THREE.Vector3(1.6, 1.02, 0.5);
+// Where a rider stands on any other piece (`World.ride`), in its own frame;
+// their eye is a little above it.
+const RIDER_TOPS = {p: 0.91, r: 0.92, b: 1.34, q: 1.47, k: 1.72};
 const FLOOR = -0.62, STANDING = FLOOR + 0.8;
 const FIELD = {table: 36, ride: 64, thrown: 70, aside: 58};
 class Seat {
@@ -1690,6 +1716,15 @@ class Seat {
   rider(dt) {
     const body = this.mounted.userData.body;
     body.updateWorldMatrix(true, false);
+    if (this.mounted.userData.kind !== "n") {
+      // Standing on top of any other piece: carried as it goes, looking
+      // where it looks.
+      const top = RIDER_TOPS[this.mounted.userData.kind], at = new THREE.Vector3(0.05, top + 0.43, 0);
+      const eye = body.localToWorld(at.clone()), ahead = body.localToWorld(new THREE.Vector3(1.6, top + 0.13, 0)).sub(eye);
+      if (!CALM) eye.y += 0.008 * Math.sin(this.clock * 1.3);
+      this.aim(eye, Math.atan2(-ahead.x, -ahead.z), Math.atan2(ahead.y, Math.hypot(ahead.x, ahead.z)), dt);
+      return;
+    }
     const ahead = body.localToWorld(AHEAD.clone()).sub(body.localToWorld(EYE.clone())), forward = Math.atan2(-ahead.x, -ahead.z);
     // The knight's head is to the rider's left. Turned toward it, they rise
     // in the saddle and lean in, so as to see over it, the more the further
@@ -1797,7 +1832,9 @@ const hooks = {sound: (name, strength, at, kind) => sound.play(name, strength, a
     seat.kick(0.09 * near * force);
     if (near > 0.55 && !CALM) { pace.until = performance.now() + 480; pace.scale = 0.3; pace.count += 1; }
   },
-  thrown: (at, heading) => { game.thrown = true; seat.thrown(at, heading); sound.play("shatter", 1.4); }};
+  thrown: (at, heading, colour, kind) => { game.thrown = kind || "n"; seat.thrown(at, heading); sound.play("shatter", 1.4); },
+  // A pawn ridden to the last rank becomes something else under its rider.
+  carried: held => { seat.mount(held, true); }};
 
 sound.on = kept.sound !== false;
 voice.speaks = kept.speak !== false;
@@ -1819,7 +1856,7 @@ const sideName = colour => (colour === "w" ? "White" : "Black");
 
 function hint() {
   const yours = !game.over && game.position.turn === game.side && !game.busy;
-  const riding = world.ridden ? ` You ride the knight on ${squareName(world.ridden.userData.square)}: “ride to …” moves it.` : "";
+  const riding = world.ridden ? ` You ride the ${mountName()} on ${squareName(world.ridden.userData.square)}: “ride to …” moves it.` : " Double-click any of your pieces to ride it.";
   const how = (voice.can ? "Hold <kbd>Space</kbd> and say a move, type one, or click a piece." : "Type a move, or click a piece. (This browser has no speech recognition.)") + riding;
   el("hint").innerHTML = game.over ? "The game is over." : yours ? how : game.thinking ? `${sideName(game.position.turn)} is thinking…` : "&nbsp;";
   el("typed").placeholder = yours ? (game.played.length < 2 ? "knight to f3" : "your move") : "";
@@ -1863,7 +1900,7 @@ function draw() {
   const knights = ownKnights();
   el("seat-board").setAttribute("aria-pressed", String(!game.ride));
   el("seat-knight").setAttribute("aria-pressed", String(game.ride));
-  el("seat-knight").textContent = game.ride && !world.ridden && knights.length ? "Ride again" : "On a knight";
+  el("seat-knight").textContent = game.ride && !world.ridden && knights.length ? "Ride again" : world.ridden ? `On a ${mountName()}` : "On a knight";
   el("seat-knight").disabled = !game.ride && !knights.length;
   el("seat-other").hidden = !(game.ride && world.ridden && knights.length > 1);
   // In the saddle what is written folds to what a rider needs.
@@ -1885,15 +1922,34 @@ function origins(played = game.played) {
   }
   return began;
 }
+// The squares of the player's own pieces, of a kind or of every kind.
+function ownPieces(kind = null) {
+  const board = game.position.board;
+  return board.map((piece, sq) => (piece && colourOf(piece) === game.side && (!kind || piece.toLowerCase() === kind) ? sq : -1)).filter(sq => sq >= 0);
+}
 function ownKnights() {
   const board = game.position.board;
   return board.map((piece, sq) => (piece && piece.toLowerCase() === "n" && colourOf(piece) === game.side ? sq : -1)).filter(sq => sq >= 0);
 }
-// The square of the knight the player rides, or -1 when it has been taken.
+// The square of the piece the player rides, or -1 when it has been taken.
 function mountSquare() {
   if (game.mount === null) return -1;
   const began = origins();
-  return ownKnights().find(sq => began[sq] === game.mount) ?? -1;
+  return ownPieces().find(sq => began[sq] === game.mount) ?? -1;
+}
+const mountName = () => (world.ridden ? PIECE_NAMES[world.ridden.userData.kind] : "knight");
+// Ride a piece of the player's own: any of them, by its square.
+function rideSquare(sq) {
+  const piece = game.position.board[sq];
+  if (!piece || colourOf(piece) !== game.side) return false;
+  game.ride = true;
+  game.mount = origins()[sq];
+  remount();
+  choose(-1);
+  keep();
+  draw();
+  say(`You ride the ${PIECE_NAMES[piece.toLowerCase()]} on ${squareName(sq)}.`);
+  return true;
 }
 // The knight the player rides, set on the world and the seat as the game
 // now stands. With none chosen yet it is the king's knight, or the other.
@@ -1931,7 +1987,7 @@ function ride(on, other = false) {
   remount();
   keep();
   draw();
-  if (on) say(world.ridden ? `You ride the knight on ${squareName(world.ridden.userData.square)}.` : "You have no knight left to ride.");
+  if (on) say(world.ridden ? `You ride the ${mountName()} on ${squareName(world.ridden.userData.square)}.` : "You have no knight left to ride.");
 }
 // The pieces that could take the knight ridden, as the board stands: their
 // light turns red, and when the threat is new it is said.
@@ -1943,7 +1999,7 @@ function peril(quiet = false) {
   world.menace(threats.map(move => move.from));
   const named = threats.map(move => `${PIECE_NAMES[move.piece.toLowerCase()]} on ${squareName(move.from)}`).join(" and the ");
   if (!quiet && named && named !== game.threats) {
-    say(`${el("said").textContent} Your knight is threatened by the ${named}.`.trim(), "peril");
+    say(`${el("said").textContent} Your ${mountName()} is threatened by the ${named}.`.trim(), "peril");
     sound.play("peril");
     const first = world.pieces.get(threats[0].from);
     if (first) seat.glance(first.position);
@@ -2016,8 +2072,9 @@ async function make(move, by) {
   const how = standing(game.position, game.seen);
   draw();
   if (game.thrown) {
-    say(ownKnights().length ? "Your knight is broken under you, and you are thrown clear. Command from the side of the board, or ride again."
-      : "Your knight is broken under you, and you are thrown clear. Command from the side of the board.", "peril");
+    const lost = PIECE_NAMES[game.thrown] || "knight";
+    say(ownKnights().length ? `Your ${lost} is broken under you, and you are thrown clear. Command from the side of the board, or ride again.`
+      : `Your ${lost} is broken under you, and you are thrown clear. Command from the side of the board.`, "peril");
     voice.say("You are thrown.");
   }
   peril(by === game.side);
@@ -2086,11 +2143,11 @@ function act(move) {
     game.risky = move;
     const own = world.ridden && move.from === world.ridden.userData.square;
     el("risk-said").textContent = own
-      ? `Your knight can be taken on ${squareName(move.to)}, and you with it. Ride on?`
-      : `After ${spoken(game.position, move)}, your knight can be taken, and you with it. Play it?`;
+      ? `Your ${mountName()} can be taken on ${squareName(move.to)}, and you with it. Ride on?`
+      : `After ${spoken(game.position, move)}, your ${mountName()} can be taken, and you with it. Play it?`;
     el("risk").hidden = false;
     el("risk-go").focus();
-    voice.say(own ? "You will be taken there. Ride on?" : "Your knight will be taken. Play it?");
+    voice.say(own ? "You will be taken there. Ride on?" : `Your ${mountName()} will be taken. Play it?`);
     sound.play("peril");
     return;
   }
@@ -2307,7 +2364,14 @@ stage.addEventListener("pointerup", event => {
   if (!was || was.moved || was.button !== 0) return;
   point(seat.under(event));
 });
-stage.addEventListener("dblclick", () => seat.straighten());
+// A double click on one of the player's own pieces rides it; anywhere else
+// it puts the view back.
+stage.addEventListener("dblclick", event => {
+  const under = seat.under(event), own = sq => { const piece = game.position.board[sq]; return !!piece && colourOf(piece) === game.side; };
+  const sq = under.pieces.find(own);
+  if (sq !== undefined && !game.busy && !game.over) rideSquare(sq);
+  else seat.straighten();
+});
 stage.addEventListener("contextmenu", event => event.preventDefault());
 // Two fingers on the trackpad turn the view, and a pinch (which a browser
 // sends as a wheel with Ctrl held) draws it near.
@@ -2433,4 +2497,4 @@ function frameCost(count = 120) {
 
 // For the checks (beta/wizard_chess_test.py), and for anyone at the console.
 window.wizardChess = {game, world, seat, sound, opponent, command, begin, takeBack, running, meant, point, choose, make, ride, origins,
-  mountSquare, moveFromUci, peril, settle, frameCost, stir, pace};
+  mountSquare, moveFromUci, peril, settle, frameCost, stir, pace, rideSquare};
