@@ -1196,7 +1196,7 @@ for this demo. the ai debugger we will make to scale to any number of
 screens."
 
 `?mode=strange` is the split screen above, shown another way. It is listed
-under AI Debugger in the site list, and it is the same played game: one
+just above AI Debugger in the site list, and it is the same played game: one
 engine, two worlds A and B locked to one turn, a Civ AI in each seat. Nothing
 in the engine knows about it. `beta/shim.js` seats the visitor for
 `mode=strange` as it does for `mode=play`, and the last section of
@@ -1228,6 +1228,24 @@ in the engine knows about it. `beta/shim.js` seats the visitor for
 - **Going back** (the step buttons, To the fork, or a press on the highway at
   a turn's height) puts both worlds back as they stood. The turns they hold
   ahead of the open one stay on the tree, above the line.
+- **Locked, the worlds go through the turns together** (operator
+  2026-11-23: "the doctor strange tool should step through turns in sync
+  when locked (which is the default). always on the same turn. difference
+  being only the intentional differentces: like say 2 diferent player
+  startegies"). The AI Debugger's own locked run plays A and has B follow
+  it, and A asks for its next turn before B has played the last, so B fell
+  turns behind. Here the page asks both worlds for the same next turn at once
+  (`strangeAsk`, a `pane-follow` with `hold`), each with its own Civ AI, and
+  each holds the turn it has played, unshown, until the other has played its
+  own (`pane-ready`, `pane-show`): both are shown it together, and only then
+  is the next turn asked for. A turn a world has already played along its own
+  timeline is walked to as it stood. Pause stops both on the turn they were
+  asked for. A world that cannot play the turn (its game is over) ends the
+  run and says so. The worlds differ only in what is chosen for each.
+- **The lock** is a button on the panel, locked to begin with. Unlocked, each
+  world plays and goes back by itself, its name plate says its own turn, and
+  the step buttons move the followed world. Locking again brings the other
+  world to the followed one's turn first.
 - **Ahead of the last turn played nothing is known**, and what is drawn there
   says so: a thin dashed line straight on and a fan of ways it could still
   go, a fork every few turns, each closing as the open turn reaches it. It is

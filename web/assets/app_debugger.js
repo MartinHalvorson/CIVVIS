@@ -855,6 +855,7 @@ async function debugOp(body, timeoutMs = 20000, run = null) {
     if (next.error) { debugSay(next.error); return next; }
     if (run && run.more(next)) run.ahead = ask();
     debugTwinned = led && !!(next.debug && next.debug.twinned);
+    if (debugHolding && next.turn !== before) await debugHoldTurn(next.turn);
     if (DEBUG_TRAVEL_OPS.has(body.op) || body.op === "step" || body.op === "step_action" ||
         body.op === "step_seat" || body.op === "finish_round") {
       sel = null; selCity = null;
@@ -3478,6 +3479,15 @@ window.addEventListener("message", event => {
     pane.agreed = pane.strategy === data.strategy;
     drawDebugSplit();
     debugSplitReady();
+  } else if (data.civvis === "pane-ready") {
+    // A half holding a turn it was given: the host shows it with the other's.
+    if (STRANGE && strange.run && data.turn === strange.run.asked) debugSplit.panes[letter].ready = data.turn;
+    else debugSplitTell(letter, {civvis: "pane-show"});
+    drawDebugSplit();
+  } else if (data.civvis === "pane-followed") {
+    debugSplit.panes[letter].settled = typeof data.turn === "number" && typeof data.wanted === "number"
+      ? {turn: data.turn, wanted: data.wanted} : null;
+    drawDebugSplit();
   } else if (data.civvis === "pane-ran") {
     debugSplit.running = Math.max(0, debugSplit.running - 1);
     if (debugSplit.running === 0) debugSplit.until = null;
@@ -3579,13 +3589,28 @@ function debugPaneNumbers() {
 }
 // Reach the turn the other pane is on, the way it got there: walked along
 // the timeline, stepped by the Civ AI, or by ending the turn as it stands.
-async function debugFollow(turn, how) {
+// A host taking two halves through the turns together (`strangeAsk`) has
+// each hold the turn it is given, unshown, until the other has its own: then
+// both are shown at once. A half is never held for ever.
+let debugHolding = false, debugShow = null;
+function debugHoldTurn(turn) {
+  return new Promise(go => {
+    const shown = () => { if (debugShow === shown) debugShow = null; go(); };
+    debugShow = shown;
+    window.parent.postMessage({civvis: "pane-ready", pane: DEBUG_PANE, turn}, location.origin);
+    setTimeout(shown, 120000);
+  });
+}
+async function debugFollow(turn, how, hold = false) {
   debugFollowWanted = {turn, how};
   if (debugFollowing) return;
   debugFollowing = true;
+  debugHolding = hold === true && DEBUG_PANE !== null;
+  let aimed = turn;
   try {
     for (let guard = 0; guard < 1000 && debugFollowWanted; guard++) {
       const wanted = debugFollowWanted;
+      aimed = wanted.turn;
       if (wanted.how === "twin") {
         // The engine made this half a copy of the other as it answered it.
         await debugRefresh();
@@ -3610,6 +3635,12 @@ async function debugFollow(turn, how) {
   } finally {
     debugFollowing = false;
     debugFollowWanted = null;
+    debugHolding = false;
+    // Where it came to, for a host taking two halves through the turns
+    // together to tell a half that is still playing from one that stopped
+    // short (`strangeStep`).
+    if (DEBUG_PANE !== null)
+      window.parent.postMessage({civvis: "pane-followed", pane: DEBUG_PANE, turn: state.turn, wanted: aimed}, location.origin);
   }
 }
 // Where this half's map is looking, as the few numbers the camera is made of.
@@ -3657,7 +3688,8 @@ if (DEBUG_PANE !== null) {
     if (event.source !== window.parent || event.origin !== location.origin) return;
     const data = event.data;
     if (!data || typeof data.civvis !== "string") return;
-    if (data.civvis === "pane-follow") debugInTurn(() => debugFollow(data.turn, data.how));
+    if (data.civvis === "pane-follow") debugInTurn(() => debugFollow(data.turn, data.how, data.hold));
+    else if (data.civvis === "pane-show") { if (debugShow) debugShow(); }
     else if (data.civvis === "pane-lock") {
       debugPaneLocked = data.on === true;
       debugTwin = typeof data.twin === "string" ? data.twin : null;
@@ -4733,6 +4765,8 @@ const STRANGE_STYLE = `
     grid-column: 1 / -1; height: 32px; font-size: 14px; font-weight: 700;
     color: #10140f; background: ${STRANGE_GOLD}; border-color: transparent;
   }
+  #strange-hud .strange-deck .strange-lock { grid-column: 1 / -1; }
+  #strange-hud .strange-deck .strange-lock.on { color: #3a1d00; background: #ffd23f; border-color: #fff3b0; font-weight: 700; }
   #strange-hud .strange-steps { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; }
   #strange-hud .strange-steps button { padding: 0; font-variant-numeric: tabular-nums; }
   #strange-hud .strange-title .strange-say { margin-top: 7px; color: #9fb3ab; font-size: 11px; min-height: 1.25em; }
@@ -4767,6 +4801,14 @@ const strange = {
   canvas: null, hud: null, then: 0, hover: null, said: "", drawn: "",
   // Whether the bar has said there is no room for two worlds.
   sorry: false,
+  // The two worlds being taken through the turns together, while they are
+  // locked (`strangeAsk`): {end, at, asked, since, stop}. Null when they are not.
+  run: null,
+  // The lock was asked to close on two worlds that stand on different turns:
+  // it closes once the other has come to the followed one's (`strangeStep`).
+  lockWanted: false,
+  // Whether the controls were last drawn as free to press.
+  idleWas: null,
 };
 
 function strangeOther(letter) { return letter === "a" ? "b" : "a"; }
@@ -4795,9 +4837,12 @@ function strangeLimit() {
 // Whether the split can be asked for something now.
 function strangeIdle() {
   const split = debugSplit;
-  if (!split || !split.shown || split.busy || split.running > 0) return false;
+  if (!split || !split.shown || split.busy || split.running > 0 || strange.run || strange.lockWanted) return false;
   const {a, b} = split.panes;
-  return a.turn !== null && a.turn === b.turn && !!a.deck && a.deck.idle === true;
+  if (a.turn === null || b.turn === null) return false;
+  // Unlocked, each world is its own, and no panel speaks for both.
+  if (!split.locked) return true;
+  return a.turn === b.turn && !!a.deck && a.deck.idle === true;
 }
 // The window, as the highway is laid out in it. The open turn is a line
 // across the middle. `up` and `down` are how far the highway runs from it,
@@ -4859,10 +4904,101 @@ function strangeBranch() {
   debugSplitSeat(to, name);
   strangeSay(`${to.toUpperCase()} branches from ${from.toUpperCase()} on turn ${split.panes[from].turn}, played by ${debugAgentName(name)}`);
 }
+// Locked, the two worlds go through the turns together (operator
+// 2026-11-23: "the doctor strange tool should step through turns in sync
+// when locked (which is the default). always on the same turn. difference
+// being only the intentional differentces: like say 2 diferent player
+// startegies"). The AI Debugger's own locked run plays A and has B follow
+// it, and A asks for its next turn before B has played the last one, so B
+// fell turns behind. Here the page asks each world for the same next turn at
+// once and asks for another only when both stand on it: neither is ever
+// ahead of the other by more than the turn the engine is playing for it.
+// Each world plays with its own Civ AI, and a turn either has already played
+// along its own timeline is walked to as it stood (`debugFollow`, "travel").
+// Unlocked, each world plays on by itself, as in the AI Debugger.
+function strangeTravel(end) {
+  const split = debugSplit;
+  const at = split.panes[strange.follow].turn;
+  if (!split.locked) {
+    if (end > Math.max(split.panes[strange.follow].last ?? 0, at)) debugSplitRun(end, [strange.follow]);
+    else debugSplitGoTo(strange.follow, String(end));
+    return;
+  }
+  strange.run = {end, at, asked: null, since: 0, stop: false};
+  strangeAsk(strange.run);
+}
+// The next turn both worlds are asked for: one turn on, or as far on as both
+// have already played, or the turn gone back to.
+function strangeAsk(run) {
+  const split = debugSplit;
+  if (run.stop || run.at === run.end) { strangeRunOver(run); return; }
+  const played = letter => Math.max(split.panes[letter].last ?? 0, split.panes[letter].turn ?? 0);
+  run.asked = run.end < run.at ? run.end
+    : Math.min(run.end, Math.max(run.at + 1, Math.min(played("a"), played("b"))));
+  run.since = performance.now();
+  run.shown = false;
+  for (const letter of ["a", "b"]) {
+    split.panes[letter].settled = null;
+    split.panes[letter].ready = null;
+    debugSplitTell(letter, {civvis: "pane-follow", turn: run.asked, how: "travel", hold: true});
+  }
+  strangeDraw();
+}
+// Both halves holding a turn are shown it, at once.
+function strangeShow() {
+  for (const letter of ["a", "b"]) {
+    const pane = debugSplit.panes[letter];
+    if (pane.ready === null || pane.ready === undefined) continue;
+    pane.ready = null;
+    debugSplitTell(letter, {civvis: "pane-show"});
+  }
+}
+function strangeRunOver(run, note = "") {
+  if (strange.run !== run) return;
+  strange.run = null;
+  strangeShow();
+  strangeSay(note || (run.stop ? `Paused on turn ${run.at}` : ""));
+}
+// Each time the split is drawn: whether both worlds stand on the turn they
+// were asked for, and the next can be asked for.
+function strangeStep() {
+  const split = debugSplit, run = strange.run;
+  if (!split) { strange.run = null; return; }
+  if (strange.lockWanted && !run && split.running === 0) {
+    const {a, b} = split.panes, other = split.panes[strangeOther(strange.follow)];
+    if (a.turn !== null && a.turn === b.turn) { strange.lockWanted = false; debugSplitLock(true); }
+    else if (other.settled && other.settled.wanted === split.panes[strange.follow].turn) {
+      strange.lockWanted = false;
+      strangeSay(`${strangeOther(strange.follow).toUpperCase()} could not come to turn ${split.panes[strange.follow].turn}, so the worlds stay unlocked`);
+    }
+  }
+  if (!run || run.asked === null) return;
+  // Each half holds the turn it has played until the other has played its
+  // own; one that was there already holds nothing.
+  const ready = letter => {
+    const pane = split.panes[letter];
+    return pane.ready === run.asked || (pane.turn === run.asked && !!pane.settled && pane.settled.wanted === run.asked);
+  };
+  if (!run.shown && ready("a") && ready("b")) { run.shown = true; strangeShow(); }
+  const there = letter => split.panes[letter].turn === run.asked;
+  if (there("a") && there("b")) {
+    run.at = run.asked;
+    run.asked = null;
+    strangeAsk(run);
+    return;
+  }
+  // A world that is done following and stands short of the turn could not
+  // play it: its game is over, or the turn is not kept to be gone back to.
+  const short = ["a", "b"].find(letter => !there(letter) && split.panes[letter].settled &&
+    split.panes[letter].settled.wanted === run.asked);
+  if (short) strangeRunOver(run, `${short.toUpperCase()} stopped on turn ${split.panes[short].turn}, short of turn ${run.asked}`);
+}
 // Play both worlds on, each with its own Civ AI, or stop them.
 function strangePlay(until = null) {
   const split = debugSplit;
   if (!split || split.busy || !split.shown) return;
+  // Paused, the two stop on the same turn: the one they were asked for.
+  if (strange.run) { strange.run.stop = true; strangeDraw(); return; }
   if (split.running > 0) {
     for (const letter of ["a", "b"]) debugSplitTell(letter, {civvis: "pane-stop"});
     split.running = 0;
@@ -4871,23 +5007,41 @@ function strangePlay(until = null) {
     return;
   }
   if (!strangeIdle()) return;
-  const reached = Math.max(split.panes.a.turn ?? 0, split.panes.b.turn ?? 0);
+  const reached = split.panes[strange.follow].turn ?? 0;
   const end = until ?? strangeLimit() ?? reached + 250;
   if (end <= reached) return;
   strangeSay("");
-  debugSplitRun(end, ["a"]);
+  if (split.locked) strangeTravel(end);
+  else debugSplitRun(end, ["a", "b"]);
   strangeDraw();
 }
-// Go to a turn: one that was played is gone back to as it stood, in both
-// worlds, and one still ahead is played to.
+// Go to a turn: one that was played is gone back to as it stood, and one
+// still ahead is played to. Locked, both worlds go, together; unlocked, the
+// one that is followed.
 function strangeGoTo(turn) {
   if (!strangeIdle() || !Number.isFinite(turn)) return;
   const split = debugSplit, limit = strangeLimit();
   const first = Math.max(split.panes.a.first ?? 1, split.panes.b.first ?? 1);
   const to = Math.max(first, Math.min(limit ?? Infinity, Math.round(turn)));
-  if (to === split.panes.a.turn) return;
+  if (to === split.panes[strange.follow].turn) return;
   strangeSay("");
-  debugSplitGoTo("a", String(to));
+  strangeTravel(to);
+}
+// Open or close the lock. Two worlds on different turns are locked on the
+// followed one's: the other is brought to it first.
+function strangeLock() {
+  const split = debugSplit;
+  if (!split || split.busy || split.running > 0 || strange.run) return;
+  if (split.locked) { strange.lockWanted = false; debugSplitLock(false); return; }
+  const {a, b} = split.panes, other = strangeOther(strange.follow);
+  if (a.turn !== b.turn) {
+    strange.lockWanted = true;
+    split.panes[other].settled = null;
+    debugSplitTell(other, {civvis: "pane-follow", turn: split.panes[strange.follow].turn, how: "travel"});
+    strangeDraw();
+    return;
+  }
+  debugSplitLock(true);
 }
 
 // The highway is made when the split is: the sky behind the two worlds, and
@@ -4924,6 +5078,7 @@ function strangeMount() {
         </div>
         <button data-strange="branch"></button>
         <button data-strange="fork"></button>
+        <button class="strange-lock" data-strange="lock" aria-pressed="true"></button>
       </div>
       <div class="strange-say" data-strange="say" role="status"></div>
       <nav aria-label="CIVVIS sites"><a href="./" target="_top">CIVVIS</a><a href="?mode=play" target="_top">AI Debugger</a></nav>
@@ -4943,13 +5098,14 @@ function strangeMount() {
   hud.addEventListener("click", event => {
     const button = event.target.closest("[data-strange]");
     if (!button || button.disabled || !debugSplit) return;
-    const action = button.dataset.strange, now = debugSplit.panes.a.turn ?? 1;
+    const action = button.dataset.strange, now = debugSplit.panes[strange.follow].turn ?? 1;
     if (action === "play") strangePlay();
     else if (action === "back10") strangeGoTo(now - 10);
     else if (action === "back1") strangeGoTo(now - 1);
     else if (action === "on1") strangeGoTo(now + 1);
     else if (action === "on10") strangeGoTo(now + 10);
     else if (action === "branch") strangeBranch();
+    else if (action === "lock") strangeLock();
     else if (action === "fork") strangeGoTo(debugSplitFork().turn);
     else if (action === "follow-a" || action === "follow-b") { strange.follow = action.slice(-1); strangeDraw(); }
   });
@@ -4985,10 +5141,20 @@ function strangeDraw() {
   set("limit", limit ? `/ ${limit}` : "");
   const deck = debugSplitDeck();
   set("era", deck && typeof deck.era === "number" ? `${debugEraName({era: deck.era})} era` : "");
-  const play = set("play", split.running > 0 ? "⏸ Pause" : "▶ Play both");
-  play.disabled = !split.shown || split.busy || (split.running === 0 && (!idle || (limit !== null && turn >= limit)));
-  play.title = split.running > 0 ? "Stop both worlds on the turn they are playing"
-    : "Play both worlds on from here, each with its own Civ AI";
+  const going = split.running > 0 || strange.run !== null;
+  const play = set("play", going ? (strange.run && strange.run.stop ? "⏸ Pausing…" : "⏸ Pause") : "▶ Play both");
+  play.disabled = !split.shown || split.busy || (!going && (!idle || (limit !== null && turn >= limit)));
+  play.title = going ? (split.locked ? "Stop both worlds together, on the turn they are both playing"
+    : "Stop both worlds on the turns they are playing")
+    : split.locked ? "Play both worlds on from here, a turn at a time and always on the same turn, each with its own Civ AI"
+    : "Play both worlds on from here, each by itself with its own Civ AI";
+  const lock = set("lock", split.locked ? "🔒 Locked" : strange.lockWanted ? "🔒 Locking…" : "🔓 Unlocked");
+  lock.classList.toggle("on", split.locked);
+  lock.setAttribute("aria-pressed", split.locked ? "true" : "false");
+  lock.disabled = !split.shown || split.busy || going || strange.lockWanted;
+  lock.title = split.locked
+    ? "Locked: the two worlds go through the turns together and always stand on the same turn. They differ only in what is chosen for each, such as its Civ AI. Click to let each go its own way"
+    : `Unlocked: each world plays and goes back by itself. Click to lock them on ${strange.follow.toUpperCase()}'s turn`;
   const first = Math.max(a.first ?? 1, b.first ?? 1);
   for (const [name, off] of [["back10", turn <= first], ["back1", turn <= first],
     ["on1", limit !== null && turn >= limit], ["on10", limit !== null && turn >= limit]])
@@ -5008,9 +5174,10 @@ function strangeDraw() {
     const pane = split.panes[letter], numbers = pane.numbers || {};
     debugOfferAgents(hud.querySelector(`[data-strange-agent="${letter}"]`), pane.strategy);
     hud.querySelector(`[data-strange-agent="${letter}"]`).disabled = !idle;
-    const line = [["score", "Score"], ["cities", "Cities"], ["science", "Science"]]
-      .filter(([key]) => typeof numbers[key] === "number")
-      .map(([key, label]) => `${label} ${debugVersusNumber(numbers[key])}`).join(" · ");
+    const line = [...(split.locked || pane.turn === null ? [] : [`Turn ${pane.turn}`]),
+      ...[["score", "Score"], ["cities", "Cities"], ["science", "Science"]]
+        .filter(([key]) => typeof numbers[key] === "number")
+        .map(([key, label]) => `${label} ${debugVersusNumber(numbers[key])}`)].join(" · ");
     const held = hud.querySelector(`[data-strange-line="${letter}"]`);
     if (held.textContent !== line) held.textContent = line;
     const follow = hud.querySelector(`[data-strange="follow-${letter}"]`);
@@ -5037,6 +5204,10 @@ function strangePaint(time) {
   if (!split || !canvas || !canvas.isConnected) { strange.canvas = null; return; }
   requestAnimationFrame(strangePaint);
   if (document.hidden) return;
+  // What may be pressed turns on what a half says of its panel, which is
+  // not something the split is drawn again for.
+  const idle = strangeIdle();
+  if (idle !== strange.idleWas) { strange.idleWas = idle; strangeDraw(); }
   const g = strangeGeometry(), ratio = Math.min(2, window.devicePixelRatio || 1);
   if (canvas.width !== Math.round(g.W * ratio) || canvas.height !== Math.round(g.H * ratio)) {
     canvas.width = Math.round(g.W * ratio);
@@ -5301,7 +5472,7 @@ if (STRANGE) {
   const draw = drawDebugSplit;
   drawDebugSplit = function (...given) {
     const drawn = draw(...given);
-    try { strangeDraw(); } catch (error) { console.error("doctor strange", error); }
+    try { strangeStep(); strangeDraw(); } catch (error) { console.error("doctor strange", error); }
     return drawn;
   };
   // With no room for two worlds (a small device, a narrow window) the game

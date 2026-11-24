@@ -365,10 +365,10 @@
   .head-links > .home-link { grid-column: span 5; }
   .head-links > #tourlink { grid-column: span 6; }
   .head-links > #watchlink { grid-column: span 4; }
-  /* Doctor Strange's Civ 6 (operator, 2026-11-23: "lets actually place the
-     ai debugger above this") is the one name longer than half a row and has
-     a row of its own. AI Debugger before it and Civ 6 after it would each be
-     left alone on half a row, so each has its row too. */
+  /* Doctor Strange's Civ 6 (operator, 2026-11-23: "lest move dr strange civ
+     6 above ai debugger", after CIVVIS) is the one name longer than half a
+     row and has a row of its own. AI Debugger and Civ 6 keep the rows of
+     their own they had beside it. */
   .head-links > #playlink, .head-links > #strangelink, .head-links > #civ6link { grid-column: 1 / -1; }
   /* A name stands on one line wherever it fits, and every one of them
      does in the typefaces measured. In a wider one a name of two words
@@ -398,6 +398,17 @@
     background: linear-gradient(90deg, #1a44c2 35%, #47bfff) border-box;
   }
   #civ6link:hover { color: #fff; border-color: #fff; background: linear-gradient(90deg, #2352d6 35%, #73cfff) border-box; }
+  /* Doctor Strange's Civ 6 stands out in Doctor Strange's own colours
+     (operator, 2026-11-23: "highlight dr strange civ 6 button in dr
+     strange colors"): the deep blue of his tunic running into the crimson
+     of his cloak, ringed and lit by the orange of his spells' sparks, the
+     name in their pale gold. The same on every page that lists it. */
+  #strangelink {
+    color: #ffe3a3; border-color: #ff9a2e;
+    background: linear-gradient(135deg, #1c2a7a 30%, #a3122f) border-box;
+    box-shadow: 0 0 6px rgba(255, 138, 30, 0.6);
+  }
+  #strangelink:hover { color: #fff; border-color: #ffb85c; background: linear-gradient(135deg, #2638a0 30%, #c8193d) border-box; box-shadow: 0 0 10px rgba(255, 150, 40, 0.85); }
   /* The page on screen is the one in gold. This page is three of them:
      CIVVIS while it watches a simulation, AI Debugger while somebody holds a
      seat, and Doctor Strange's Civ 6 while that game is shown as its tree of
@@ -6631,7 +6642,7 @@
            own. Both are relative, so they stay in whichever lane they were
            clicked in, and all five leave a split's frame for the whole
            window. Under them is the game itself, on the shop page that sells
-           it. Doctor Strange's Civ 6, under AI Debugger since 2026-11-23,
+           it. Doctor Strange's Civ 6, listed just above AI Debugger since 2026-11-23,
            is that same played game shown another way (`?mode=strange`): two
            worlds in the lower quarters of the window and their timeline a
            tree up the middle of it, drawn by `assets/app_debugger.js`.
@@ -6646,8 +6657,8 @@
         <a class="home-link" id="chartslink" href="/charts/win-analytics" target="_top">Charts/</a>
         <a class="home-link" id="tourlink" href="/auto-tourneys" target="_top">Auto-Tourneys</a>
         <a class="home-link" id="watchlink" href="./" target="_top">CIVVIS</a>
-        <a class="home-link" id="playlink" href="?mode=play" target="_top">AI Debugger</a>
         <a class="home-link" id="strangelink" href="?mode=strange" target="_top">Doctor Strange's Civ 6</a>
+        <a class="home-link" id="playlink" href="?mode=play" target="_top">AI Debugger</a>
         <a class="home-link" id="civ6link" href="https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/" target="_blank" rel="noopener" title="Buy Civilization VI on Steam">Civ 6</a>
       </nav>
     </div>

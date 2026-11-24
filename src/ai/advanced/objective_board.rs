@@ -944,6 +944,7 @@ impl AdvancedAi {
         pid: usize,
         visible: &crate::world::TileBits,
         our_cities: &[(u32, Pos)],
+        field_settlers: &[Pos],
     ) -> Vec<Vec<u32>> {
         let arena = g.is_arena();
         let mut hostiles: Vec<u32> = g
@@ -966,7 +967,12 @@ impl AdvancedAi {
                 let home = our_cities
                     .iter()
                     .any(|(_, pos)| g.wdist(*pos, unit.pos) <= THREAT_RELIEF_RADIUS);
-                !barbarian || home
+                // `raiders-holding-a-settler-are-hunted`: a raider beside a
+                // Settler of ours in the field counts wherever our cities
+                // are. Empty with the gene off.
+                let holds =
+                    super::raiders_holding_a_settler::holds_a_settler(g, unit.pos, field_settlers);
+                !barbarian || home || holds
             })
             .map(|unit| unit.id)
             .collect();
@@ -1454,18 +1460,34 @@ impl AdvancedAi {
             .map(|row| row.at)
             .chain(stood_down.iter().copied())
             .collect();
-        for force in self.hostile_forces(g, pid, visible, &our_cities) {
+        // `raiders-holding-a-settler-are-hunted`: our Settlers in the field;
+        // empty with the gene off. See `advanced/raiders_holding_a_settler.rs`.
+        let field_settlers = self.settlers_in_the_field(g, pid);
+        for force in self.hostile_forces(g, pid, visible, &our_cities, &field_settlers) {
             let tiles: Vec<Pos> = force.iter().map(|uid| g.units[uid].pos).collect();
             let Some(at) = medoid(g, &tiles) else {
                 continue;
             };
-            let covered = our_cities.iter().any(|(cid, pos)| {
-                defended.contains(cid) && g.wdist(*pos, at) <= THREAT_RELIEF_RADIUS
-            }) || siege_at
-                .iter()
-                .any(|pos| g.wdist(*pos, at) <= THREAT_RELIEF_RADIUS);
+            let hostage =
+                super::raiders_holding_a_settler::settler_hostage_value(g, &force, &field_settlers);
+            // A Defend force holds its city; it does not walk out to free a
+            // Settler, so a nearby Defend row does not cover these raiders.
+            let covered = hostage <= 0.0
+                && our_cities.iter().any(|(cid, pos)| {
+                    defended.contains(cid) && g.wdist(*pos, at) <= THREAT_RELIEF_RADIUS
+                })
+                || siege_at
+                    .iter()
+                    .any(|pos| g.wdist(*pos, at) <= THREAT_RELIEF_RADIUS);
             if covered {
                 continue;
+            }
+            if hostage > 0.0 {
+                think!(self.journal(), Military, Detail,
+                    "Raiders holding a settler are hunted";
+                    "raiders-holding-a-settler-are-hunted: {} hostile(s) within {} tiles of a Settler \
+                     of ours in the field; the Destroy row carries the Settler's {:.0}",
+                    force.len(), super::raiders_holding_a_settler::SETTLER_HOLD_RADIUS, hostage; at);
             }
             let strength: f64 = force
                 .iter()
@@ -1473,7 +1495,7 @@ impl AdvancedAi {
                     effective_strength(g.unit_strength(&g.units[uid], true), g.units[uid].hp)
                 })
                 .sum();
-            let value: f64 = force.iter().map(|uid| unit_value(g, *uid)).sum();
+            let value: f64 = force.iter().map(|uid| unit_value(g, *uid)).sum::<f64>() + hostage;
             let naval = force.iter().any(|uid| BasicAi::waterborne(g, *uid));
             let land = force.iter().any(|uid| !BasicAi::waterborne(g, *uid));
             let kind = &g.units[&force[0]].kind;
@@ -4377,6 +4399,9 @@ mod breaker_match_tests;
 
 #[cfg(test)]
 mod camp_age_tests;
+
+#[cfg(test)]
+mod settler_hostage_tests;
 
 #[cfg(test)]
 mod capital_defender_tests;
