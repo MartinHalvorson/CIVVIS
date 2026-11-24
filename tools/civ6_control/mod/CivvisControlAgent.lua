@@ -29746,15 +29746,16 @@ end;
 --
 -- The run carries `Play = false` as well, so `tick` never runs, and the two
 -- entry points that reach it return here first: no order is issued, no deal
--- answered, no popup chosen. Only the five events of `EVENTS` are listened to.
+-- answered, no popup chosen. Of the agent's own listeners only the five in
+-- `EVENTS` are added.
 --
 -- What it writes is what the harness reads:
 --   * `autoplay`      once, when the seat is handed over (or could not be);
 --   * `turn`          at the hand-over, then for every game turn, from
---                     `Events.TurnBegin` (the HUD's
---                     own turn hook, TopPanel.lua:544). No local player's turn
---                     begins under autoplay: GameCapabilities.lua:18 reads the
---                     local player as -1 there ("-- Autoplay.");
+--                     `Events.TurnBegin` (the HUD's own turn hook,
+--                     TopPanel.lua:544). No local player's turn begins under
+--                     autoplay: GameCapabilities.lua:18 reads the local
+--                     player as -1 there ("-- Autoplay.");
 --   * `victory`       from `onTeamVictory`, untouched. Its `won` compares the
 --                     winner with the local player's team, and the harness
 --                     reads a self-play game's as nobody's whatever it says

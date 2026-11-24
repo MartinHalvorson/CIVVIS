@@ -315,6 +315,13 @@ class TheReadingTests(unittest.TestCase):
         self.assertIsNone(block["play_seconds"])
         self.assertEqual(block["final_turn"], 187)
         self.assertEqual(block["first_turn_utc"], "2026-11-24T12:00:12.250Z")
+        # The turn rows still time what was played.
+        self.assertEqual(block["last_turn"], 187)
+        self.assertEqual(block["last_turn_utc"], "2026-11-24T12:07:54.000Z")
+        self.assertEqual(block["seconds_to_last_turn"], 464.0)
+        rows = [{key: value for key, value in event.items() if key != "t"}
+                for event in WON[:6]]
+        self.assertEqual(summary(rows)["seconds_to_last_turn"], 461.8)
 
     def test_only_the_mod_s_own_rows_are_read(self) -> None:
         harness = {"kind": "victory", "utc": "2026-11-24T12:00:00.000Z", "team": 1}

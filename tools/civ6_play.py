@@ -203,6 +203,7 @@ def firaxis_self_play_note(reading: dict, event: dict) -> None:
                 reading["first_turn"], reading["first_turn_utc"] = turn, event.get("utc")
                 reading["first_turn_t"] = event.get("t")
             reading["last_turn"], reading["last_turn_utc"] = turn, event.get("utc")
+            reading["last_turn_t"] = event.get("t")
             if event.get("majors"):
                 reading["majors"] = event["majors"]
     elif kind == "victory" and "outcome" not in reading:
@@ -254,8 +255,10 @@ def firaxis_self_play_summary(reading: dict, *, load_start, load_end,
     with the setup's screenshots when the first turns go by and receives those
     rows late. `play_seconds_by_receipt` is the same span by the moments the
     two rows reached this process, to the millisecond, for comparison; it is
-    the one given when a row carries no clock of the mod's. `run_seconds` is
-    the whole run, launch to this summary. `load_start` and `load_end` are the
+    the one given when a row carries no clock of the mod's.
+    `seconds_to_last_turn` is the first turn row to the last one, which is
+    what a run that ended with no outcome row still has. `run_seconds` is the
+    whole run, launch to this summary. `load_start` and `load_end` are the
     machine's load averages as the run began and ended.
     """
     outcome = reading.get("outcome") or {}
@@ -263,10 +266,22 @@ def firaxis_self_play_summary(reading: dict, *, load_start, load_end,
     ended = _event_seconds(outcome.get("utc"))
     by_receipt = (round(ended - began, 1)
                   if began is not None and ended is not None else None)
-    wrote, done = reading.get("first_turn_t"), outcome.get("t")
-    clocked = all(isinstance(value, (int, float)) and not isinstance(value, bool)
-                  for value in (wrote, done))
-    play = round(float(done - wrote), 1) if clocked and done >= wrote else by_receipt
+    def clocked(start, finish) -> float | None:
+        if all(isinstance(value, (int, float)) and not isinstance(value, bool)
+               for value in (start, finish)) and finish >= start:
+            return round(float(finish - start), 1)
+        return None
+
+    wrote = reading.get("first_turn_t")
+    play = clocked(wrote, outcome.get("t"))
+    if play is None:
+        play = by_receipt
+    # How far the turn rows reach, for a run that ended without an outcome
+    # row: a game that was stopped, or one whose victory never arrived.
+    reached = clocked(wrote, reading.get("last_turn_t"))
+    if reached is None:
+        last = _event_seconds(reading.get("last_turn_utc"))
+        reached = round(last - began, 1) if began is not None and last is not None else None
     final_turn = outcome.get("turn")
     if not isinstance(final_turn, int) or isinstance(final_turn, bool) or final_turn < 1:
         final_turn = reading.get("last_turn")
@@ -297,6 +312,9 @@ def firaxis_self_play_summary(reading: dict, *, load_start, load_end,
         "first_turn_utc": reading.get("first_turn_utc"),
         "outcome_utc": outcome.get("utc"),
         "final_turn": final_turn,
+        "last_turn": reading.get("last_turn"),
+        "last_turn_utc": reading.get("last_turn_utc"),
+        "seconds_to_last_turn": reached,
         "play_seconds": play,
         "play_seconds_by_receipt": by_receipt,
         "seconds_per_turn": per_turn,
