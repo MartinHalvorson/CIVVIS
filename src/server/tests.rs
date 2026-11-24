@@ -2692,14 +2692,22 @@ fn the_home_page_lists_the_sites_with_itself_ringed() {
         // check finds the page by (`beta/verify.py`).
         "<nav class=\"utility-nav\" aria-label=\"CIVVIS links\">",
         "id=\"report-open\"",
-        // And the four videos, two by two, with the slot the fastest
-        // game's is written into when the site is published. They have no
+        // And the six videos, two by two by two (four until 2026-11-24),
+        // with the slot the fastest game's is written into when the site is
+        // published. They have no
         // heading over them (operator, 2026-11-22: "Drop "watch" title or
         // whatever from this section"), and each has its title over it. The
         // two rankings that stood here are on Win Analytics, under Charts/
         // (operator, 2026-11-22: "move 2 charts on home/ to charts/").
         "<section class=\"watch\" id=\"watch\" aria-label=\"Videos\">",
         ".watch-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px 16px; }",
+        // Over them, the Firaxis Civ 6 AI benchmark as Win Analytics has it
+        // (operator, 2026-11-24: "above the videos, lets copy the Firaxis
+        // Civ 6 Benchmarks showing our win rate (both diplo on and off)"):
+        // hidden as written, and shown with the record publishing writes
+        // into its own slot.
+        "<section class=\"res-block home-bench\" id=\"bench\" aria-labelledby=\"res-title-tourney\" hidden>",
+        "<script type=\"application/json\" id=\"home-benchmark\">null</script>",
         // The channel's top playlists are a list under the YouTube button.
         "<ul class=\"utility-lists\" aria-label=\"Top playlists\">",
         "<script type=\"application/json\" id=\"home-videos\">null</script>",
@@ -2753,7 +2761,7 @@ fn the_home_page_lists_the_sites_with_itself_ringed() {
     // What the game menu took with it: the cards, their verbs and tags,
     // the world picker with its lenses and catalogs, the page-wide column
     // the rankings stood in beside them, and the photographs. The page
-    // has pictures again since 2026-11-22, the four videos' own, and they
+    // has pictures again since 2026-11-22, its videos' own, and they
     // are YouTube's: none is a file of the site, so `assets/` stays gone
     // and every picture is asked of `i.ytimg.com`.
     for gone in [

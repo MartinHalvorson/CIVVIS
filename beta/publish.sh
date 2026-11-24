@@ -265,9 +265,12 @@ fill() {
 if [ -f "$landing_page" ]; then
   mkdir -p "$out/$home_at"
   cp "$landing_page" "$out/$home_at/index.html"
-  # The home page is four videos, and its fastest game is whichever record
+  # The home page is six videos, and its fastest game is whichever record
   # leads the lane's data/performance/fastest_game_videos.json: it is written
-  # into the page here rather than committed as a copy that could drift. A
+  # into the page here rather than committed as a copy that could drift.
+  # Over the videos stands the Firaxis Civ 6 AI benchmark, the win rates by
+  # level that Win Analytics opens on, written into the page's own slot by
+  # the same run from the run ledger. A
   # home page from before 2026-11-22 carries the two rankings instead (the
   # winningest civs of the verification games, the Civ AI Agents by Elo) and
   # is filled with those, the civs from the run ledger and the agents from

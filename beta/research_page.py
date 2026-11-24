@@ -737,6 +737,26 @@ def recent_windows(snapshot: dict) -> dict:
     return out
 
 
+def tournament_rates(source: pathlib.Path, rows: list[dict] | None) -> dict | None:
+    """The Firaxis Civ 6 AI benchmark: CIVVIS's win rate at each level over
+    the tournaments' games (`win_rates`), for the run ledger's result lines
+    (`rows`, `home_rankings.results`) and the definitions the Tournaments
+    page reads. `None` when the lines or the definitions cannot be read, or
+    hold no game. Win Analytics shows it as its first thing, and the home
+    page shows the same record over its videos (operator 2026-11-24: "above
+    the videos, lets copy the Firaxis Civ 6 Benchmarks showing our win rate
+    (both diplo on and off), same as the chart is now"), so both are worked
+    out here."""
+    try:
+        if not rows:
+            return None
+        specs = json.loads((source / TOURNAMENTS).read_text(encoding="utf-8")).get("tournaments") or []
+        return win_rates(tournament_games(rows, specs, lambda tags: switches(source, tags)))
+    except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:
+        print(f"research_page: no win rates over the tournaments' games ({error})", file=sys.stderr)
+        return None
+
+
 def research(source: pathlib.Path) -> dict | None:
     """The record, or `None` when neither kind of game can be read."""
     out: dict = {"turns": TURNS, "victories": VICTORIES}
@@ -764,13 +784,7 @@ def research(source: pathlib.Path) -> dict | None:
     # The win rate at each level over the tournaments' games, off the same
     # result lines and the definitions the Tournaments page reads, each
     # game in the table of its own Diplomatic switch.
-    out["tournament_rates"] = None
-    try:
-        if rows:
-            specs = json.loads((source / TOURNAMENTS).read_text(encoding="utf-8")).get("tournaments") or []
-            out["tournament_rates"] = win_rates(tournament_games(rows, specs, lambda tags: switches(source, tags)))
-    except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:
-        print(f"research_page: no win rates over the tournaments' games ({error})", file=sys.stderr)
+    out["tournament_rates"] = tournament_rates(source, rows)
     # The tree of build orders over the games against Deity: each game's
     # opening from the snapshot, from its run's summary for a game the
     # snapshot does not hold (a game played since the harness began writing
