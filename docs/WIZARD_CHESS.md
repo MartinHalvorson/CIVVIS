@@ -213,7 +213,7 @@ one context is never made on another.
 
 **The hall's light follows the game** (`World.mood`, `dusk`, `spotlight`,
 `blaze`). The room darkens as the board empties (the sky and the key light
-fall by up to 70% and 55% as the pieces go from 32 to 4), so the braziers
+fall by up to 38% and 30% as the pieces go from 32 to 4), so the braziers
 and the shaft stand out more the further the game has gone. Each piece that
 falls flares the fires. A king in check is picked out: the light from the
 dome's eye narrows and brightens onto it, and a pale beam comes down through
