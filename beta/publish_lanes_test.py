@@ -261,7 +261,7 @@ class Lanes(unittest.TestCase):
         self.assertTrue((self.test / "charts" / "ai-interpretability" / "index.html").is_file())
         self.assertFalse((self.stable / "interpretability").exists())
         self.assertFalse((self.stable / "charts").exists())
-        self.assertIn("published without: elo-rankings civ-analytics interpretability wizard-chess", self.stable_said)
+        self.assertIn("published without: interpretability civ-analytics elo-rankings wizard-chess", self.stable_said)
         # And each lane says which pages it carries, by address, for the
         # checks and for the router.
         self.assertEqual(
@@ -270,8 +270,11 @@ class Lanes(unittest.TestCase):
         )
         self.assertEqual(
             json.loads(self.read(self.test, "build.json"))["pages"],
-            ["home", "tournaments", "charts/win-analytics", "charts/elo-rankings", "charts/civ-analytics",
-             "charts/civvis-performance", "charts/ai-interpretability", "download", "wizard-chess"],
+            # In the order of Charts/ (since 2026-11-24: AI Interpretability,
+            # Civ Analytics, Win Analytics, ELO Rankings, CIVVIS Performance),
+            # because the router opens a folder's first page in this list.
+            ["home", "tournaments", "charts/ai-interpretability", "charts/civ-analytics", "charts/win-analytics",
+             "charts/elo-rankings", "charts/civvis-performance", "download", "wizard-chess"],
         )
 
     def test_every_page_of_a_lane_is_its_own_revisions(self):
