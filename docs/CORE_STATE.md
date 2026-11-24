@@ -151,9 +151,10 @@ rise.
 4. **Load is not the identity on `wars`** when the narrated war ledger is
    stale (headless play runs with `set_war_ledger(false)`): seed 204. Open.
 
-## What it costs to carry the rest
+## What it cost to carry the rest
 
-Median of 9 batches on the CI runner, 3 games:
+Before the reduction; median of 9 batches on the CI runner, 3 games (the
+after is in "The reduction, done"):
 
 | | Full save | Stripped to the world |
 |---|---:|---:|
@@ -206,7 +207,17 @@ a layer in `docs/core_state_classes.json`.
 | `Game` direct fields | 183 | 95, plus 3 shared blocks |
 | `Player` fields | 114 | 98, plus 1 shared block |
 | Fields outside the world copied per fork | 88 per game, 16 per seat written | one pointer per block |
-{MEASURED}
+| `Game::clone`, same three saves, CI runner | 10.3–12.5 µs | 1.8–4.9 µs |
+| Full save vs the same save stripped to the world | clone 2.5–5.7× apart | equal within noise |
+| First write to one seat | 2.6–3.2 µs | 1.6–2.7 µs |
+
+The second row is the point: a fork of the whole game now costs what a fork of
+the bare world costs, so nothing outside the world is copied any more. Measured
+with `tools/core_probe.py --quick` on the speed runner before (round 4) and
+after (run 45363429027): same seeds and same bench. The stripped saves still
+replay to the identical world (3 of 3), and fresh agents from one save still
+play identical games. A first write to the map (8–16 µs) is unchanged: the
+tile grid was never part of the reduction.
 
 ### Kept on purpose
 
