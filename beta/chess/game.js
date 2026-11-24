@@ -426,7 +426,11 @@ class World {
       // And what makes it a living thing to the one on its back: a mane, two
       // ears that turn, an eye, a bit and the reins to the rider's hands.
       tuft: new THREE.ConeGeometry(0.03, 0.075, 5), ear: new THREE.ConeGeometry(0.04, 0.16, 4),
-      eye: new THREE.SphereGeometry(0.032, 12, 8), bit: new THREE.TorusGeometry(0.035, 0.009, 6, 16)};
+      eye: new THREE.SphereGeometry(0.032, 12, 8), bit: new THREE.TorusGeometry(0.035, 0.009, 6, 16),
+      // The rider's own hands, gauntleted, and their forearms: what a rider
+      // sees of themself.
+      fist: new THREE.SphereGeometry(0.034, 12, 9), cuff: new THREE.CylinderGeometry(0.03, 0.026, 0.05, 12, 1, true),
+      forearm: new THREE.CylinderGeometry(0.022, 0.027, 1, 10)};
     this.material = {
       w: new THREE.MeshStandardMaterial({color: 0xe6dcc6, roughness: 0.36, metalness: 0.02, map: stoneTexture("#f1ead9", "rgba(140,120,90,0.3)", 5)}),
       b: new THREE.MeshStandardMaterial({color: 0x3f3b4c, roughness: 0.22, metalness: 0.55, map: stoneTexture("#8a8598", "rgba(160,170,255,0.25)", 9)}),
@@ -538,6 +542,11 @@ class World {
       rider.scale.setScalar(0.85);
       saddle.add(rider);
       saddle.userData = {rider, ears: [], eyes: []};
+      // Their hands held out before them, braced, low enough to be out of the
+      // way and high enough to be seen; arms from the shoulders below the eye.
+      const top = RIDER_TOPS[held.userData.kind];
+      saddle.userData.hands = this.arms(saddle, [-1, 1].map(side => [
+        new THREE.Vector3(0.02, top + 0.3, side * 0.14), new THREE.Vector3(0.4, top + 0.21, side * 0.15)]));
       saddle.traverse(mesh => { if (mesh !== saddle) mesh.userData.owner = held; });
       held.userData.body.add(saddle);
       held.userData.saddle = saddle;
@@ -579,14 +588,18 @@ class World {
       for (const side of [-1, 1]) {
         const bit = part(made.bit, this.cloth.gold, 0.33, 0.74, side * 0.115);
         bit.rotation.y = Math.PI / 2;
-        const from = new THREE.Vector3(0.33, 0.74, side * 0.115);
-        const sag = from.clone().lerp(hands, 0.5).add(new THREE.Vector3(0, -0.12, 0));
-        const rein = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3([from, sag, hands]), 18, 0.009, 5), this.cloth.leather);
+        const from = new THREE.Vector3(0.33, 0.74, side * 0.115), hand = hands.clone().add(new THREE.Vector3(0, 0, side * 0.05));
+        const sag = from.clone().lerp(hand, 0.5).add(new THREE.Vector3(0, -0.12, 0));
+        const rein = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3([from, sag, hand]), 18, 0.009, 5), this.cloth.leather);
         rein.castShadow = true;
         saddle.add(rein);
       }
       saddle.userData.ears = ears;
       saddle.userData.eyes = eyes;
+      // Holding the reins: a fist at the end of each, the arms back to the
+      // rider's shoulders, below their eye.
+      saddle.userData.hands = this.arms(saddle, [-1, 1].map(side => [
+        new THREE.Vector3(EYE.x + 0.03, EYE.y - 0.24, EYE.z + side * 0.13), hands.clone().add(new THREE.Vector3(0, 0, side * 0.05))]));
       const rider = new THREE.Group();
       const cloak = new THREE.Mesh(made.cloak, this.cloth.cloak);
       cloak.position.set(0, 0.25, 0);
@@ -601,6 +614,33 @@ class World {
       held.userData.saddle = saddle;
     }
     this.face(held);
+  }
+
+  // The rider's two arms in the frame of the piece they ride, each from a
+  // shoulder to a fist: a gauntlet, its cuff, and the forearm between.
+  arms(saddle, pairs) {
+    const made = this.geometry, leather = this.cloth.leather, gold = this.cloth.gold;
+    return pairs.map(([shoulder, hand]) => {
+      const fist = new THREE.Mesh(made.fist, leather), cuff = new THREE.Mesh(made.cuff, gold), forearm = new THREE.Mesh(made.forearm, this.cloth.cloak);
+      fist.scale.set(1.25, 0.85, 1);
+      for (const mesh of [fist, cuff, forearm]) { mesh.castShadow = true; saddle.add(mesh); }
+      const arm = {fist, cuff, forearm, shoulder, hand, grip: 0};
+      this.reach(arm);
+      return arm;
+    });
+  }
+  // An arm laid from its shoulder to its fist, the fist drawn back and
+  // clenched by how hard it grips.
+  reach(arm) {
+    const at = arm.hand.clone().lerp(arm.shoulder, 0.12 * arm.grip).add(new THREE.Vector3(0, 0.02 * arm.grip, 0));
+    const way = at.clone().sub(arm.shoulder), long = way.length(), along = way.clone().normalize();
+    arm.fist.position.copy(at);
+    arm.fist.scale.set(1.25 - 0.2 * arm.grip, 0.85, 1 - 0.1 * arm.grip);
+    arm.cuff.position.copy(at).addScaledVector(along, -0.045);
+    arm.cuff.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), along);
+    arm.forearm.position.copy(arm.shoulder).addScaledVector(along, (long - 0.06) / 2);
+    arm.forearm.scale.set(1, Math.max(0.05, long - 0.06), 1);
+    arm.forearm.quaternion.copy(arm.cuff.quaternion);
   }
 
   // The pieces that could take the knight ridden: their light turns red.
@@ -1106,6 +1146,14 @@ class World {
     });
     const shut = this.time % 4.7 < 0.13;
     for (const eye of saddle.userData.eyes) eye.scale.y = shut ? 0.12 : 1;
+    // The rider's hands grip while their piece moves under them, and ease
+    // when it stands.
+    const hold = this.moving === this.ridden ? 1 : 0;
+    for (const arm of saddle.userData.hands || []) {
+      const was = arm.grip;
+      arm.grip += (hold - arm.grip) * Math.min(1, dt * (hold ? 12 : 3));
+      if (Math.abs(arm.grip - was) > 1e-4) this.reach(arm);
+    }
   }
 
   // What goes on whether or not anyone moves.
