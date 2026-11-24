@@ -410,6 +410,10 @@ impl AdvancedAi {
         /// Historic Moment, when it closes the Age; see
         /// `advanced/first_ship_closes_the_age.rs`.
         first_ship_closes_the_dark_age => enable_first_ship_closes_the_dark_age, disable_first_ship_closes_the_dark_age;
+        /// Opt-in gene `exploration-replans-need-a-sighting`: explored ground
+        /// re-opens the turn only when it shows a foreign unit or city; see
+        /// `ai::player::take_turn`.
+        exploration_replans_need_a_sighting => enable_exploration_replans_need_a_sighting, disable_exploration_replans_need_a_sighting;
         // ---- append: g-k --------------------------------------------
         /// `gutted-rival-passes-the-edge`: a staged declaration by a Domination
         /// lane passes the peak edge against a target at 60% or less of its

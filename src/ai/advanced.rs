@@ -7980,6 +7980,12 @@ pub struct AdvancedAi {
     /// 2-point Historic Moment. See `advanced/first_ship_closes_the_age.rs`.
     /// Off by default.
     first_ship_closes_the_dark_age: bool,
+    /// `exploration-replans-need-a-sighting`: ground an order explored
+    /// re-opens the turn for a fresh view and another plan only when the
+    /// foreign units and cities in the seat's sight changed with it. A strike,
+    /// a new unit or city and a refusal still re-open it. See
+    /// `ai::player::take_turn`. Off by default.
+    exploration_replans_need_a_sighting: bool,
     // ---- append: g-k ------------------------------------------------
     /// `guru-walks-to-the-wounded`: a Guru with nothing to heal this turn
     /// walks to the wounded of its faith instead of at the nearest rival. See
@@ -13747,6 +13753,12 @@ impl AdvancedAi {
     /// loop (`ai/player.rs`).
     pub(crate) fn one_replan_per_turn_on(&self) -> bool {
         self.one_replan_per_turn
+    }
+
+    /// Whether `exploration-replans-need-a-sighting` is on, for the observed
+    /// seat's frame executor (`ai/player.rs`).
+    pub(crate) fn exploration_replans_need_a_sighting_on(&self) -> bool {
+        self.exploration_replans_need_a_sighting
     }
 
     pub fn current_plan(&self) -> Option<&StrategicPlan> {
