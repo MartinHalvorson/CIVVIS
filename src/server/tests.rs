@@ -2150,8 +2150,15 @@ fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
         "        <a class=\"home-link\" id=\"civ6link\" ",
         "href=\"https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/\" ",
         "target=\"_blank\" rel=\"noopener\" title=\"Buy Civilization VI on Steam\">Civ 6</a>\n",
+        // Wizard Chess (operator, 2026-11-23: "below civ 6, add wizard
+        // chess"): a page of its own at /wizard-chess, the last in the list.
+        "        <a class=\"home-link\" id=\"chesslink\" href=\"/wizard-chess\" target=\"_top\">Wizard Chess</a>\n",
         "      </nav>",
     )));
+    assert!(EMBEDDED_INDEX.contains("  .head-links > #chesslink { grid-column: 1 / -1; }\n"));
+    assert!(EMBEDDED_INDEX.contains(
+        "repeating-conic-gradient(#f4f1e8 0 25%, #0b0b0c 0 50%) 0 0 / 4px 4px border-box;"
+    ));
     // The Debugger link is only as good as the shim's reading of it, and
     // the CIVVIS link needs no word at all: a lane's bare address is the
     // spectated simulation.
@@ -2527,6 +2534,8 @@ fn the_home_page_lists_the_sites_with_itself_in_gold() {
             "        <a class=\"site-link\" ",
             "href=\"https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/\" ",
             "target=\"_blank\" rel=\"noopener\" title=\"Buy Civilization VI on Steam\">Civ 6</a>\n",
+            "        <a class=\"site-link\" href=\"../wizard-chess/\" ",
+            "title=\"Chess where you command and the pieces obey, against an opponent at the Elo you pick.\">Wizard Chess</a>\n",
             "      </nav>\n      <div class=\"site-lockup\">\n",
             "        <h1 class=\"site-title\">CIVVIS<span>.ai</span></h1>",
         ),
