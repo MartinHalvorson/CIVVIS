@@ -7418,6 +7418,10 @@ pub struct Game {
     /// board routed Builders across them. Set by the seat each turn.
     #[serde(default)]
     pub observed_builders_avoid_mountains: bool,
+    /// `exploration-replans-need-a-sighting`, for the acting seat's frame
+    /// executor (`ai::player`): set by the seat each turn, read only there.
+    #[serde(skip)]
+    pub exploration_replans_need_a_sighting: bool,
     /// `culture-denial-heist`: a Great Work heist the HOST lists on a spy's
     /// operation menu is offered, though the board cannot see the works. The
     /// mirror carries only our own Great Works, so a rival city's
@@ -8532,6 +8536,7 @@ impl From<GameSer> for Game {
             lump_quote_viewer: None,
             nusantara_site_planner: None,
             observed_builders_avoid_mountains: false,
+            exploration_replans_need_a_sighting: false,
             heist_reads_the_host_menu: false,
             spy_targets_read_the_host: false,
             // Not carried in a save: host refusals are rebuilt from the run's event
@@ -9321,6 +9326,7 @@ impl Game {
             lump_quote_viewer: None,
             nusantara_site_planner: None,
             observed_builders_avoid_mountains: false,
+            exploration_replans_need_a_sighting: false,
             heist_reads_the_host_menu: false,
             spy_targets_read_the_host: false,
             blocked_city_sites: Arc::new(BTreeSet::new()),

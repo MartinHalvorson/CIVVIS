@@ -202,6 +202,7 @@ pub fn take_turn(ai: &mut AdvancedAi, game: &mut Game, pid: usize) {
     let mut refused: Vec<(u32, Item)> = Vec::new();
     // Re-observe after discovery, combat, or a rejected hypothesis. Never
     // execute the tail of a plan whose actor IDs or tactical facts went stale.
+    game.exploration_replans_need_a_sighting = ai.exploration_replans_need_a_sighting_on();
     for _frame in 0..=replan_frames(ai) {
         if game.current != pid || game.winner.is_some() {
             return;
@@ -286,6 +287,27 @@ pub fn take_turn(ai: &mut AdvancedAi, game: &mut Game, pid: usize) {
 
 /// Every order the authoritative board has refused this seat, as
 /// `execute_observed_action_recorded` counts them.
+/// The foreign units and cities in `pid`'s sight: what
+/// `exploration-replans-need-a-sighting` compares before and after an order.
+fn foreign_in_sight(game: &Game, pid: usize) -> usize {
+    let sight = game.player_vision_frame(pid);
+    let seen = |pos: Pos| {
+        game.map
+            .tiles
+            .index_of(pos)
+            .is_some_and(|index| sight.contains(index))
+    };
+    game.units
+        .values()
+        .filter(|unit| unit.owner != pid && seen(unit.pos))
+        .count()
+        + game
+            .cities
+            .values()
+            .filter(|city| city.owner != pid && seen(city.pos))
+            .count()
+}
+
 /// How many times a turn may re-open for a fresh view and another plan:
 /// `REPLAN_FRAMES`, or one with `one-replan-per-turn`.
 fn replan_frames(ai: &AdvancedAi) -> usize {
@@ -469,6 +491,11 @@ fn execute_observed_action_recorded(
         _ => None,
     };
     let explored = game.players[pid].explored.len();
+    // `exploration-replans-need-a-sighting`: what the seat sees of others
+    // before the order, read only when the gene asks.
+    let sightings = game
+        .exploration_replans_need_a_sighting
+        .then(|| foreign_in_sight(game, pid));
     let allocator = game.next_id;
     let moved_unit = match action {
         Action::Move { unit, .. } | Action::MoveTo { unit, .. } => {
@@ -550,7 +577,8 @@ fn execute_observed_action_recorded(
     Some(
         game.current != pid
             || game.winner.is_some()
-            || game.players[pid].explored.len() != explored
+            || (game.players[pid].explored.len() != explored
+                && sightings.is_none_or(|before| foreign_in_sight(game, pid) != before))
             || game.next_id != allocator
             || matches!(
                 action,
@@ -582,3 +610,6 @@ mod refusals_alone_reopen_tests;
 
 #[cfg(test)]
 mod one_replan_per_turn_tests;
+
+#[cfg(test)]
+mod exploration_replans_need_a_sighting_tests;

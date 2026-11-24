@@ -6070,6 +6070,11 @@ pub const GENES: &[Gene] = &[
     // cheapest ship in time builds it, else it is bought. Opt-in; see
     // `advanced/first_ship_closes_the_age.rs`.
     Gene { tag: "first-ship-closes-the-dark-age", field: "first_ship_closes_the_dark_age", kind: Kind::OptIn, enable: AdvancedAi::enable_first_ship_closes_the_dark_age, disable: AdvancedAi::disable_first_ship_closes_the_dark_age },
+    // Explored ground re-opens the turn only when it shows a foreign unit or
+    // city. Exploration was the commonest re-plan trigger (2,181 of about
+    // 3,600 on 2026-11-22); new empty ground no longer buys a whole fresh
+    // plan of the turn. Opt-in, unpriced; see `ai::player::take_turn`.
+    Gene { tag: "exploration-replans-need-a-sighting", field: "exploration_replans_need_a_sighting", kind: Kind::OptIn, enable: AdvancedAi::enable_exploration_replans_need_a_sighting, disable: AdvancedAi::disable_exploration_replans_need_a_sighting },
     // ---- append: g-k ------------------------------------------------
     // `gutted-rival-passes-the-edge`: a Domination lane's staged declaration
     // passes the peak edge against a target at 60% or less of its 30-turn
