@@ -4020,3 +4020,120 @@ class RunTagPrefixTest(unittest.TestCase):
         tag = self.prefix("civvis-t6-") + "20261122T020000Z"
         self.assertTrue("civvis-t6-20261121T204000Z" < tag < "civvis-t7-")
         self.assertFalse("civvis-20261120T045254Z" < tag < "civvis-t")
+
+
+class FiraxisSelfPlayOnceTests(_Harness, unittest.TestCase):
+    """`~/.civvis-firaxis-self-play-once`: the next game is one Firaxis
+    self-play game, once, and the attempt after it is an ordinary one."""
+
+    def setUp(self):
+        super().setUp()
+        for name in ("ensure_mirror", "ensure_popup_clear", "retire_stale_wedge_watchdog"):
+            patcher = mock.patch.object(climb, name)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        for target, name, value in ((climb, "installed_run_tag", None),
+                                    (climb.env, "game_pids", [])):
+            patcher = mock.patch.object(target, name, return_value=value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        # The rig moved every home path under its own root, this one included.
+        self.marker = climb.FIRAXIS_SELF_PLAY_ONCE
+        self.assertNotEqual(self.marker.resolve(),
+                            (Path.home() / ".civvis-firaxis-self-play-once").resolve())
+        self.marker.parent.mkdir(parents=True, exist_ok=True)
+        # Every game launched, and whether the marker was still there as it was.
+        self.launched = []
+        test = self
+
+        class Launched(FakeProc):
+            def __init__(self, command, *args, **kwargs):
+                test.launched.append((list(command), test.marker.exists()))
+
+        climb.subprocess.Popen = Launched
+
+    @staticmethod
+    def _value(command, flag):
+        return command[command.index(flag) + 1]
+
+    def test_the_next_game_is_one_self_play_game_and_then_the_attempt(self):
+        self.marker.touch()
+        code, rows = self.climb_with([{"last_turn": 190, "last_score": 267}], attempts=1,
+                                     argv_extra=["--no-build", "--difficulty",
+                                                 "DIFFICULTY_KING"])
+        self.assertEqual(code, 1, "the batch's own attempt was played, and lost")
+        self.assertEqual(len(self.launched), 2)
+        (first, marker_at_first), (second, _) = self.launched
+        # The self-play game first, with the marker already gone.
+        self.assertIn("--firaxis-self-play", first)
+        self.assertFalse(marker_at_first, "consumed before the launch")
+        self.assertTrue(self._value(first, "--tag").startswith("firaxis-selfplay-"))
+        self.assertEqual(self._value(first, "--difficulty"), "DIFFICULTY_DEITY")
+        self.assertNotIn("--civvis-decides", first)
+        # Then the ordinary attempt, at the level the batch was asked for.
+        self.assertNotIn("--firaxis-self-play", second)
+        self.assertIn("--civvis-decides", second)
+        self.assertTrue(self._value(second, "--tag").startswith("civvis-"))
+        self.assertEqual(self._value(second, "--difficulty"), "DIFFICULTY_KING")
+        self.assertFalse(self.marker.exists())
+        # It spent no attempt and wrote no ladder row of its own.
+        self.assertEqual([row["attempt"] for row in rows], [1])
+        # Its log is beside the attempt's, under its own name; nothing of it
+        # is among the lane's runs.
+        tag = self._value(first, "--tag")
+        self.assertTrue((self.logs / f"{tag}-play.log").is_file())
+        self.assertEqual([path.name for path in self.runs.iterdir()
+                          if path.name.startswith("firaxis")], [])
+
+    def test_it_happens_once_in_a_batch_of_several(self):
+        self.marker.touch()
+        self.climb_with([{"last_turn": 190}, {"last_turn": 200}], attempts=2,
+                        argv_extra=["--no-build"])
+        kinds = ["self-play" if "--firaxis-self-play" in command else "attempt"
+                 for command, _ in self.launched]
+        self.assertEqual(kinds, ["self-play", "attempt", "attempt"])
+
+    def test_without_the_marker_the_batch_is_what_it_was(self):
+        code, rows = self.climb_with([{"last_turn": 190}], attempts=1,
+                                     argv_extra=["--no-build"])
+        self.assertEqual(len(self.launched), 1)
+        self.assertNotIn("--firaxis-self-play", self.launched[0][0])
+        self.assertEqual([row["attempt"] for row in rows], [1])
+
+    def test_a_marker_that_cannot_be_removed_starts_no_self_play_game(self):
+        # A folder with something in it stands for a file this user may not
+        # remove: left alone it would ask for a game at every cycle.
+        self.marker.mkdir()
+        (self.marker / "kept").touch()
+        code, rows = self.climb_with([{"last_turn": 190}], attempts=1,
+                                     argv_extra=["--no-build"])
+        self.assertEqual(len(self.launched), 1)
+        self.assertNotIn("--firaxis-self-play", self.launched[0][0])
+        self.assertTrue(self.marker.exists())
+        self.assertEqual([row["attempt"] for row in rows], [1])
+
+    def test_a_blocked_start_leaves_the_marker_for_the_next_cycle(self):
+        self.marker.touch()
+        self.steam = False
+        code, rows = self.climb_with([], attempts=1, argv_extra=["--no-build"])
+        self.assertEqual(code, 3)
+        self.assertEqual(self.launched, [])
+        self.assertTrue(self.marker.exists(), "nothing was launched, so nothing was asked")
+
+    def test_a_seat_that_is_not_ready_plays_its_attempt_and_keeps_the_marker(self):
+        # A popup clearer from before this arm would click the game's setup.
+        self.marker.touch()
+        with mock.patch.object(climb, "firaxis_self_play_blocked",
+                               return_value="the popup clearer does not stand down yet"):
+            code, rows = self.climb_with([{"last_turn": 190}], attempts=1,
+                                         argv_extra=["--no-build"])
+        self.assertEqual(len(self.launched), 1)
+        self.assertNotIn("--firaxis-self-play", self.launched[0][0])
+        self.assertTrue(self.marker.exists(), "asked again at the next cycle")
+        self.assertEqual([row["attempt"] for row in rows], [1])
+
+    def test_the_view_the_marker_asks_for_reaches_the_game(self):
+        self.marker.write_text("observe-none\n")
+        self.climb_with([{"last_turn": 190}], attempts=1, argv_extra=["--no-build"])
+        self.assertEqual(self._value(self.launched[0][0], "--firaxis-self-play-observe"),
+                         "none")

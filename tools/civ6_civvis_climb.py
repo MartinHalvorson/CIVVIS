@@ -92,6 +92,7 @@ from civ6_play import ROMAN_LEADER, VICTORY_LANES, resolve_live_leader  # noqa: 
 from civ6_play import LADDER as DIFFICULTIES, RANDOM_LEADER  # noqa: E402
 from civ6_play import OPTIONS as SETUP_OPTIONS  # noqa: E402
 from civ6_play import read_policy_value  # noqa: E402
+from civ6_play import FIRAXIS_SELF_PLAY_PREFIX, FIRAXIS_SELF_PLAY_ROOT  # noqa: E402
 
 # The map scripts `civ6_play` can drive the Create Game panel to. Taken from
 # that module rather than restated here: a list copied into a second file is
@@ -2342,6 +2343,196 @@ def play_command(args, tag: str, orders_db: Path, orders_bin: Path,
     )
 
 
+# ★★ ONE FIRAXIS SELF-PLAY GAME, WHEN ASKED FOR. Operator 2026-11-24, for the
+# speed timeline: how long one real Civilization VI game takes when Firaxis's
+# own AI plays every seat, timed on this machine by the lane itself.
+#
+# Creating this file asks for one:
+#
+#     touch ~/.civvis-firaxis-self-play-once
+#
+# The loop below looks for it before every attempt, the way the supervisor
+# reads `~/.civvis-play-pin` at every cycle. When it is there the next game is
+# a self-play game instead of an attempt: the lane's map, size, speed and
+# leader, at Deity, launched by `civ6_play.py --firaxis-self-play` (which says
+# what that does and does not do). Then the loop goes on to the batch's
+# ordinary attempt. Nothing else starts one: no flag of this script, no policy
+# key, no environment variable.
+#
+# ★ ONE-SHOT, AND CONSUMED BEFORE THE LAUNCH. The file is removed first and
+# the game started only once it is gone, so a game that crashes, a harness
+# that is killed and a loop that is restarted all find no marker. A file that
+# cannot be removed starts nothing: it would otherwise start one every cycle.
+# A seat that is not ready for the game (`firaxis_self_play_blocked`) leaves
+# the file alone and says why; the next cycle looks again.
+#
+# ★ HERE, NOT IN THE SUPERVISOR. The supervisor is one long-lived shell that
+# runs the loop it parsed when it started; this script is started afresh from
+# the newly checked-out tree at every cycle. So the lane can honour the marker
+# from the first cycle after this lands, without anybody restarting the loop
+# under a live game.
+#
+# The file may hold the one word `observe-none`: the game then draws nobody's
+# view instead of our seat's (`civ6_play.py --firaxis-self-play-observe`).
+FIRAXIS_SELF_PLAY_ONCE = Path(
+    os.environ.get("CIVVIS_FIRAXIS_SELF_PLAY_ONCE", "")
+    or Path.home() / ".civvis-firaxis-self-play-once")
+#: The level the benchmark is played at, whatever the lane's next game is.
+FIRAXIS_SELF_PLAY_DIFFICULTY = "DIFFICULTY_DEITY"
+FIRAXIS_SELF_PLAY_OBSERVE_NONE = "observe-none"
+
+
+def popup_clearer_file() -> Path:
+    """The popup clearer this seat runs: its keeper's, else this tree's own.
+
+    The interactive host's keeper execs the clearer beside its own script
+    (`civvis-popup-keeper.sh`, `${0:A:h:h}/civ6_control/popup_clear.py`), which
+    is the host's management checkout and not necessarily the tree this batch
+    plays from.
+    """
+    keeper = interactive_popup_keeper_pid()
+    if keeper is not None:
+        found = re.search(r"(\S*civvis-popup-keeper\.sh)",
+                          run(["ps", "-p", str(keeper), "-o", "command="]))
+        if found:
+            return (Path(found.group(1)).resolve().parent.parent
+                    / "civ6_control" / "popup_clear.py")
+    return HERE / "civ6_control" / "popup_clear.py"
+
+
+def firaxis_self_play_blocked() -> str | None:
+    """Why a self-play game must not start on this seat yet, or `None`.
+
+    ⚠ THE POPUP CLEARER CLICKS THE REAL GAME, AND IT CANNOT SEE THIS ONE. It
+    decides "a game is being played" from the lane's runs, and a self-play
+    run is not among them, so during that game's setup it would read the
+    lane's last game, seconds old, as a game in play: the state in which it
+    once clicked a Create Game screen. It stands down for a self-play run
+    since it learned to read the game lock (`popup_clear.self_play_holds_game`),
+    and the clearer a seat runs can be older than this tree: the keeper's copy
+    is the management checkout, synced on its own clock. So the clearer that
+    will be run is read, and a self-play game waits for one that knows.
+    """
+    clearer = popup_clearer_file()
+    try:
+        source = clearer.read_text(encoding="utf-8", errors="replace")
+    except OSError as error:
+        return f"the popup clearer {clearer} cannot be read ({error})"
+    if "def self_play_holds_game(" not in source:
+        return (f"the popup clearer {clearer} does not stand down for a "
+                "self-play game yet (its tree is behind this one)")
+    return None
+
+
+def take_firaxis_self_play_once(path: Path | None = None) -> dict | None:
+    """Consume the one-shot marker: the request it carried, or `None`.
+
+    `None` when there is no marker. `None` as well, said out loud and with the
+    marker left where it is, while the seat is not ready for such a game
+    (`firaxis_self_play_blocked`): the next cycle asks again. And `None` for a
+    marker that could not be removed: it asks for a game it would then ask
+    for again at every cycle.
+    """
+    path = FIRAXIS_SELF_PLAY_ONCE if path is None else path
+    if not (path.exists() or path.is_symlink()):
+        return None
+    blocked = firaxis_self_play_blocked()
+    if blocked is not None:
+        print(f"[self-play] {path} asks for a Firaxis self-play game, not yet: "
+              f"{blocked}. The marker stays for the next cycle.", flush=True)
+        return None
+    try:
+        words = path.read_text(encoding="utf-8", errors="replace").split()
+    except OSError:
+        words = []
+    try:
+        path.unlink()
+    except OSError as error:
+        print(f"[self-play] {path} asks for a Firaxis self-play game and cannot "
+              f"be removed ({error}); not starting one, because it would start "
+              "again every cycle. Remove it by hand.", flush=True)
+        return None
+    if path.exists() or path.is_symlink():
+        print(f"[self-play] {path} is still there after being removed; not "
+              "starting a Firaxis self-play game", flush=True)
+        return None
+    return {"observe": "none" if FIRAXIS_SELF_PLAY_OBSERVE_NONE in words else "seat"}
+
+
+def firaxis_self_play_command(args, tag: str, observe: str = "seat") -> list[str]:
+    """The `civ6_play` command line for one Firaxis self-play game.
+
+    The lane's own world and time budget. Everything else a lane game is
+    launched with is either a setting of our seat's, which this game has none
+    of, or one of the values `civ6_play.FIRAXIS_SELF_PLAY_LANE_FLAGS` takes
+    from `play_command` above.
+    """
+    return [sys.executable, "-u", str(HERE / "civ6_play.py"),
+            "--firaxis-self-play",
+            "--firaxis-self-play-observe", observe,
+            "--tag", tag,
+            "--difficulty", FIRAXIS_SELF_PLAY_DIFFICULTY,
+            "--map", args.map,
+            "--map-size", args.map_size,
+            "--speed", args.speed,
+            "--leader", resolve_live_leader(getattr(args, "leader", None)),
+            "--timeout", str(args.timeout),
+            "--timeout-ceiling", str(attempt_ceiling(args))]
+
+
+def play_firaxis_self_play(args, logs: Path, request: dict) -> int | None:
+    """Play the one self-play game the marker asked for; its exit status.
+
+    Not an attempt: no decider is built or frozen for it, no ladder row is
+    written, and a game that stalls is not reloaded. The record is the run's
+    own folder under `FIRAXIS_SELF_PLAY_ROOT`.
+    """
+    tag = FIRAXIS_SELF_PLAY_PREFIX + stamp()
+    command = firaxis_self_play_command(args, tag, request.get("observe", "seat"))
+    log_path = logs / f"{tag}-play.log"
+    record = FIRAXIS_SELF_PLAY_ROOT / tag / "summary.json"
+    print(f"\n=== FIRAXIS SELF-PLAY  {tag}  every seat played by the game's own AI, "
+          f"at {FIRAXIS_SELF_PLAY_DIFFICULTY} {args.map}/{args.map_size}/{args.speed}; "
+          f"the marker is consumed, and the ordinary attempt follows ===\n"
+          f"  log {log_path}\n  record {record}", flush=True)
+    # The clearer that was just read, running: the batch's own may have been
+    # started from an older copy of that file.
+    ensure_popup_clear()
+    status = None
+    try:
+        with log_path.open("w") as play_log:
+            play = subprocess.Popen(command, stdout=play_log, stderr=subprocess.STDOUT)
+            try:
+                status = play.wait(timeout=attempt_ceiling(args) + 600)
+            except subprocess.TimeoutExpired:
+                # TERM, which `civ6_play` turns into its own shutdown: it stops
+                # the game, removes its mod and writes what it had reached.
+                print("[self-play] the game ran past its ceiling; stopping it",
+                      flush=True)
+                play.send_signal(signal.SIGTERM)
+                try:
+                    status = play.wait(timeout=180)
+                except subprocess.TimeoutExpired:
+                    print("[self-play] its harness is still running", flush=True)
+    except OSError as error:
+        print(f"[self-play] could not start the game: {error}", flush=True)
+    # `civ6_play` stops the game and removes its mod on the way out. A run that
+    # left its own tag installed did not get that far, and is cleaned up the
+    # way an attempt is, by its tag.
+    if installed_run_tag() == tag:
+        teardown(tag)
+    # The supervisor's pause between two games, before the attempt that
+    # follows in this same batch: Civilization VI out of the process table
+    # (bounded), then a moment for Steam to register the exit.
+    for _ in range(10):
+        if not env.game_pids():
+            break
+        time.sleep(1.0)
+    time.sleep(2.0)
+    print(f"=== FIRAXIS SELF-PLAY ended (exit {status}); {record} ===", flush=True)
+    return status
+
+
 def check_attempt_decider(args, tag: str, binary: Path) -> bool:
     """Probe the frozen executable with the arm this attempt will actually play.
 
@@ -3618,6 +3809,16 @@ def main() -> int:
             if "Steam" in reason:
                 wake_steam()
             time.sleep(wait)
+            continue
+
+        # ★ ONE FIRAXIS SELF-PLAY GAME FIRST, WHEN THE MARKER ASKS FOR ONE
+        # (`FIRAXIS_SELF_PLAY_ONCE`). The marker is gone before the game is
+        # launched, so whatever becomes of that game the next pass of this
+        # loop is the batch's ordinary attempt. It spends no attempt and
+        # writes no ladder row.
+        self_play_request = None if args.load_save else take_firaxis_self_play_once()
+        if self_play_request is not None:
+            play_firaxis_self_play(args, logs, self_play_request)
             continue
 
         # Between games is the only safe moment to touch the ledger, and it is
