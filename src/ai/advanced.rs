@@ -1833,9 +1833,9 @@ const SETTLER_THREAT_DETOUR_TURNS: u32 = 6;
 /// few next-best sites before deciding there is no safe detour; this work runs
 /// only when a visible blocker has already stopped the preferred route.
 const SETTLER_THREAT_DETOUR_RETRIES: usize = 12;
-/// One Settler decision's `settle_sooner_walk_costs` floods, by radius; see
+/// One Settler decision's `settle_sooner_walk_flood` floods, by radius; see
 /// `AdvancedAi::settler_walk_costs_cached`.
-type SettlerWalkCosts = BTreeMap<i32, BTreeMap<Pos, f64>>;
+type SettlerWalkCosts = BTreeMap<i32, settling::WalkCosts>;
 
 /// One site's Loyalty forecast, filled the first time a verdict asks for it.
 /// See [`AdvancedAi::site_forecast_revolt`].

@@ -1104,7 +1104,7 @@ impl AdvancedAi {
             };
             let moves = g.rules.units[unit.kind].moves.max(1.0);
             let radius = (hexes + 3).min(WALK_PRICE_RADIUS);
-            match AdvancedAi::settle_sooner_walk_costs(g, uid, radius).get(&site) {
+            match AdvancedAi::settle_sooner_walk_flood(g, uid, radius).get(g, site) {
                 Some(cost) => (cost / moves).ceil().max(1.0) as u32,
                 None => hexes.max(1) as u32,
             }
