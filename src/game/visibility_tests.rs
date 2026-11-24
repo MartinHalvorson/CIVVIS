@@ -1237,7 +1237,8 @@ fn turn_sight_union_holds_every_sight_through_clears_and_edits() {
         assert_eq!(held.len, game.players[0].turn_visible.len());
         game.map.tiles.positions(&held.bits).collect()
     };
-    let mut every_sight: BTreeSet<Pos> = BTreeSet::new();
+    // The sight the board had when it was set up is in the union already.
+    let mut every_sight = game.players[0].turn_visible.clone();
     for step in [0, 2, 4, 6, 3] {
         game.units.get_mut(&scout).unwrap().pos = along(&game, origin, step);
         game.refresh_player_visibility(0);
