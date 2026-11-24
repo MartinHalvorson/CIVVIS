@@ -607,6 +607,249 @@ fn ahead_plays_the_turns_to_come_and_comes_back_to_the_open_turn() {
         .is_some_and(|error| error.contains("played in")));
 }
 
+/// Operator 2026-11-24: "add a 'Generate Black Swan' - this will be a random,
+/// unpredicted event that spawns and changes the game". `black_swan` strikes
+/// one on the world as it stands (`game/black_swan.rs`): the turns kept
+/// ahead of the open one were played in a world it did not happen in and are
+/// let go of, the open turn is marked again with a print of its own, and who
+/// played into the turn still did.
+#[test]
+fn a_black_swan_strikes_the_open_turn_and_lets_go_of_the_turns_ahead() {
+    let (mut struck, mut spared) = (played(), played());
+    for session in [&mut struck, &mut spared] {
+        for _ in 0..4 {
+            step_as(session, "jack");
+        }
+        let ahead =
+            session.debug(&json!({"op": "ahead", "turns": 3, "strategy": "jack", "lean": true}));
+        assert_eq!(ahead["error"], Value::Null);
+    }
+    assert_eq!(marked(&struck), [1, 2, 3, 4, 5, 6, 7, 8]);
+    assert_eq!(prints(&struck), prints(&spared));
+    assert_eq!(
+        struck.state()["debug"]["played_by"],
+        json!([{"from": 1, "to": 8, "by": "jack"}])
+    );
+    assert_eq!(struck.state()["debug"]["swans"], json!([]));
+    assert_eq!(struck.state()["black_swans"], json!([]));
+
+    let answer = struck.debug(&json!({"op": "black_swan", "kind": "leader_collapse", "seed": 7}));
+    assert_eq!(answer["error"], Value::Null);
+    assert_eq!(answer["turn"], json!(5), "it strikes the open turn");
+    let swan = answer["black_swan"].clone();
+    assert_eq!(swan["turn"], json!(5));
+    assert_eq!(swan["kind"], json!("leader_collapse"));
+    assert_eq!(swan["name"], json!("Leader collapse"));
+    assert_eq!(
+        swan["ongoing"],
+        json!(true),
+        "its Anarchy is still to serve"
+    );
+    assert!(swan["text"]
+        .as_str()
+        .is_some_and(|text| text.starts_with("Leader collapse. ") && text.contains("Anarchy")));
+    let leader = swan["player"].as_u64().expect("it names who it struck") as usize;
+    assert!(struck.game.in_anarchy(leader));
+    // The world's own account of it, and the timeline's.
+    assert_eq!(answer["black_swans"], json!([swan]));
+    assert_eq!(answer["debug"]["swans"], json!([swan]));
+    // The turns ahead are let go of, and the open turn is another world.
+    assert_eq!(marked(&struck), [1, 2, 3, 4, 5]);
+    let (after, before) = (prints(&struck), prints(&spared));
+    assert_eq!(
+        after[..4],
+        before[..4],
+        "the turns behind are the turns they were"
+    );
+    assert_ne!(
+        after[4], before[4],
+        "the struck turn has a print of its own"
+    );
+    // Jack still played into the turn; the swan did not.
+    assert_eq!(
+        answer["debug"]["played_by"],
+        json!([{"from": 1, "to": 5, "by": "jack"}])
+    );
+    // Its future is played again, from the world it now is, and is another
+    // future than the one that was kept.
+    let there = world(&struck);
+    let again = struck.debug(&json!({"op": "ahead", "turns": 3, "strategy": "jack", "lean": true}));
+    assert_eq!(again["error"], Value::Null);
+    assert_eq!(marked(&struck), [1, 2, 3, 4, 5, 6, 7, 8]);
+    assert_eq!(world(&struck), there);
+    assert_ne!(prints(&struck)[5..], prints(&spared)[5..]);
+    // The swan is on the line by its own account, not among what is seen
+    // coming, though the seat was told of it on this very turn.
+    assert!(struck
+        .game
+        .events_for(0)
+        .iter()
+        .any(|event| event.turn == 5 && event.important && event.text.starts_with("Black swan: ")));
+    let seen = again["alerts"].as_array().expect("what was seen coming");
+    assert!(
+        !seen.iter().any(|alert| alert["text"]
+            .as_str()
+            .is_some_and(|text| text.contains("Black swan"))),
+        "{seen:?}"
+    );
+    // Gone back before it and walked forward along the kept turns, the
+    // world on its turn is the world it struck. The line still holds it.
+    assert_eq!(struck.debug_jump(4), Ok(4));
+    assert!(struck.game.black_swans.is_empty());
+    assert_eq!(struck.state()["debug"]["swans"][0]["turn"], json!(5));
+    assert_eq!(
+        struck.state()["debug"]["swans"][0]["ongoing"],
+        json!(false),
+        "on the turn before, it is not going on yet"
+    );
+    assert_eq!(struck.debug_jump(5), Ok(5));
+    assert_eq!(world(&struck), there);
+
+    // One drawn by a seed, asked for lean: the answer still says what struck.
+    let drawn = spared.debug(&json!({"op": "black_swan", "seed": 3, "lean": true}));
+    assert_eq!(drawn["error"], Value::Null);
+    let kinds: Vec<Value> = drawn["debug"]["swan_kinds"]
+        .as_array()
+        .expect("the timeline says which swans there are")
+        .iter()
+        .map(|kind| kind["id"].clone())
+        .collect();
+    assert_eq!(
+        kinds,
+        [
+            json!("nuclear_war"),
+            json!("pandemic"),
+            json!("radiation_leak"),
+            json!("leader_collapse"),
+            json!("microstates")
+        ]
+    );
+    assert!(kinds.contains(&drawn["black_swan"]["kind"]));
+    assert_eq!(drawn["debug"]["swans"], json!([drawn["black_swan"]]));
+    assert_eq!(marked(&spared), [1, 2, 3, 4, 5]);
+    // The same seed strikes the world it was the same way.
+    let mut twin = played();
+    for _ in 0..4 {
+        step_as(&mut twin, "jack");
+    }
+    let alike = twin.debug(&json!({"op": "black_swan", "seed": 3, "lean": true}));
+    assert_eq!(alike["black_swan"], drawn["black_swan"]);
+    assert_eq!(world(&twin), world(&spared));
+    assert_eq!(prints(&twin), prints(&spared));
+
+    // A swan nobody has heard of is refused, and so is one this world has
+    // nothing for; a refused swan strikes nothing.
+    let stood = world(&spared);
+    let unknown = spared.debug(&json!({"op": "black_swan", "kind": "asteroid", "seed": 1}));
+    assert_eq!(unknown["error"], json!("no black swan named \"asteroid\""));
+    let mut young = played();
+    let early = world(&young);
+    let nothing = young.debug(&json!({"op": "black_swan", "kind": "microstates", "seed": 1}));
+    assert_eq!(
+        nothing["error"],
+        json!("no civilization has a second city to break away")
+    );
+    assert_eq!(world(&spared), stood);
+    assert_eq!(world(&young), early);
+    assert_eq!(marked(&young), [1]);
+    // In the middle of a round no turn is open to mark.
+    assert_eq!(
+        young.debug(&json!({"op": "step_seat"}))["error"],
+        Value::Null
+    );
+    let rivals = young.debug(&json!({"op": "black_swan", "seed": 1}));
+    assert!(rivals["error"]
+        .as_str()
+        .is_some_and(|error| error.contains("the rivals are playing")));
+}
+
+/// A world goes on being a game whatever strikes it. Every kind of swan is
+/// struck in turn through the opening of two games, with turns played
+/// between by the agents that were going to play them and the future played
+/// ahead after each, as the page plays it: none of it may leave a world the
+/// rules, the agents or the page's state document cannot go on from.
+#[test]
+fn a_game_is_played_on_through_every_black_swan() {
+    for seed in [20_261_118_u64, 20_261_124] {
+        let mut params = stock_opening_params(seed);
+        params.spectate = false;
+        params.num_players = 3;
+        params.num_city_states = 2;
+        params.width = 30;
+        params.height = 20;
+        params.map_topology = MapTopology::Flat;
+        params.map_script = MapScript::Pangaea;
+        params.game_speed = GameSpeed::Online;
+        params.max_turns = 500;
+        let mut session = Session::new(params);
+        let on = |session: &Session| !session.game.is_finished() && session.game.players[0].alive;
+        for _ in 0..24 {
+            step_as(&mut session, "jack");
+        }
+        let mut struck: Vec<String> = Vec::new();
+        let kinds = [
+            "pandemic",
+            "radiation_leak",
+            "leader_collapse",
+            "microstates",
+            "nuclear_war",
+            "microstates",
+            "nuclear_war",
+        ];
+        for (at, kind) in kinds.iter().enumerate() {
+            if !on(&session) {
+                break;
+            }
+            let answer = session.debug(
+                &json!({"op": "black_swan", "kind": kind, "seed": seed + at as u64, "lean": true}),
+            );
+            // One this world has nothing for is refused, and strikes nothing.
+            match answer["error"].as_str() {
+                None => struck.push(kind.to_string()),
+                Some(why) => assert!(
+                    why.starts_with("no civilization") || why.starts_with("a nuclear war"),
+                    "{kind} on seed {seed}: {why}"
+                ),
+            }
+            let ahead = session
+                .debug(&json!({"op": "ahead", "turns": 4, "strategy": "jack", "lean": true}));
+            assert_eq!(ahead["error"], Value::Null, "{kind} on seed {seed}");
+            for _ in 0..6 {
+                if on(&session) {
+                    step_as(&mut session, "jack");
+                }
+            }
+        }
+        assert!(
+            struck.len() >= 5,
+            "seed {seed} was struck by {struck:?} only"
+        );
+        assert!(struck.contains(&"nuclear_war".to_string()), "{struck:?}");
+        assert_eq!(session.game.black_swans.len(), struck.len());
+        // The world is whole: everything in it belongs to a seat there is,
+        // it saves, and the page is given its state.
+        let game = &session.game;
+        assert!(game
+            .cities
+            .values()
+            .all(|city| city.owner < game.players.len() && city.pop >= 1));
+        assert!(game
+            .units
+            .values()
+            .all(|unit| unit.owner < game.players.len()));
+        assert!(!world(&session).is_empty());
+        let state = session.state();
+        assert_eq!(
+            state["black_swans"].as_array().map(Vec::len),
+            Some(struck.len())
+        );
+        assert_eq!(
+            state["debug"]["swans"].as_array().map(Vec::len),
+            Some(struck.len())
+        );
+    }
+}
+
 /// `play` is a run of steps asked for once: the same turns, the same marks to
 /// walk back to, and how the seat stood as each turn opened. It stops where a
 /// run stops.
@@ -1298,7 +1541,7 @@ fn a_branched_timeline_is_one_until_its_two_worlds_differ() {
     for piece in [
         // A half tells the host the turns it holds and the print of each.
         "const turns = timeline.turns || [], worlds = timeline.worlds || null;",
-        "window.parent.postMessage({civvis: \"pane-marks\", pane: DEBUG_PANE, flags, stops, beyond, eras, turns, worlds, by},",
+        "window.parent.postMessage({civvis: \"pane-marks\", pane: DEBUG_PANE, flags, stops, beyond, eras, turns, worlds, by, swans},",
         // The host reads the branch off the two lists: the last turn both
         // give the same print for, and whether either holds a turn past it
         // (`a_branch_begins_on_the_turn_it_is_made_on`).

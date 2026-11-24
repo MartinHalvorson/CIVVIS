@@ -550,6 +550,10 @@ mod disasters;
 /// `game/fires.rs`.
 mod fires;
 pub use fires::{Fire, FireKind};
+/// Black swans: events nothing in the world saw coming, struck by hand, and
+/// what of them goes on turn after turn. See `game/black_swan.rs`.
+mod black_swan;
+pub use black_swan::{BlackSwan, BlackSwanKind};
 /// Embarkation: embarked units and their strength. See
 /// `game/embarkation.rs`.
 mod embarkation;
@@ -652,6 +656,9 @@ mod disaster_tests;
 
 #[cfg(test)]
 mod fire_tests;
+
+#[cfg(test)]
+mod black_swan_tests;
 
 #[cfg(test)]
 mod city_trade_tests;
@@ -8261,6 +8268,11 @@ pub struct Game {
     /// Forest and jungle tiles burning or burnt, each with the turn it caught.
     #[serde(default)]
     pub fires: Vec<Fire>,
+    /// Every black swan struck on this world, oldest first and bounded, with
+    /// what of each is still going on (`game/black_swan.rs`). Empty in every
+    /// game nobody struck one on.
+    #[serde(default)]
+    pub black_swans: Vec<BlackSwan>,
     /// Retired named Great People leave the global market permanently.
     pub retired_great_people: BTreeSet<String>,
     /// Recruitment price fixed when each named person enters the market.
@@ -8639,6 +8651,8 @@ struct GameSer {
     droughts: Vec<Drought>,
     #[serde(default)]
     fires: Vec<Fire>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    black_swans: Vec<BlackSwan>,
     #[serde(default)]
     retired_great_people: BTreeSet<String>,
     #[serde(default)]
@@ -8795,6 +8809,7 @@ impl From<GameSer> for Game {
             storms: s.storms,
             droughts: s.droughts,
             fires: s.fires,
+            black_swans: s.black_swans,
             retired_great_people: s.retired_great_people,
             great_person_offer_costs: s.great_person_offer_costs,
             pending_deals: s.pending_deals,
@@ -9152,6 +9167,7 @@ impl From<Game> for GameSer {
             storms: g.storms,
             droughts: g.droughts,
             fires: g.fires,
+            black_swans: g.black_swans,
             retired_great_people: g.retired_great_people,
             great_person_offer_costs: g.great_person_offer_costs,
             pending_deals: g.pending_deals,
@@ -9608,6 +9624,7 @@ impl Game {
             storms: Vec::new(),
             droughts: Vec::new(),
             fires: Vec::new(),
+            black_swans: Vec::new(),
             retired_great_people: BTreeSet::new(),
             great_person_offer_costs: BTreeMap::new(),
             pending_deals: Vec::new(),
@@ -14049,6 +14066,7 @@ impl Game {
             self.process_climate();
             self.process_disasters();
             self.process_meteors();
+            self.process_black_swans();
             self.barbarian_phase();
             self.process_eras();
             self.process_agendas();
