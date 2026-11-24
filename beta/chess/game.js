@@ -168,8 +168,10 @@ class World {
     this.pieces = new Map();
     // The knight the player rides, if they ride one (`ride`).
     this.ridden = null;
-    // The piece that is moving now, if one is (`play`).
+    // The piece that is moving now, if one is (`play`), and the one it is
+    // about to take.
     this.moving = null;
+    this.doomed = null;
     // How many times the pieces have been set down afresh (`set`). A move
     // still being played out when they are (a new game begun, a game come
     // back to) is the old board's, and stops touching this one.
@@ -471,6 +473,7 @@ class World {
     this.pieces.clear();
     this.ridden = null;
     this.moving = null;
+    this.doomed = null;
     this.era += 1;
     position.board.forEach((piece, sq) => {
       if (!piece) return;
@@ -664,6 +667,8 @@ class World {
     if (gone()) return;
     if (victim) {
       this.pieces.delete(victimAt);
+      // What is about to be taken trembles until it breaks.
+      this.doomed = victim;
       hooks.look(victim.position.clone().lerp(mover.position, 0.3));
       await this.strike(mover, victim, to, hooks);
     } else if (kind === "n") {
@@ -824,6 +829,7 @@ class World {
   // A piece broken: it is gone, and what it was made of flies.
   shatter(victim, heading, hooks, force = 1) {
     this.scene.remove(victim);
+    if (this.doomed === victim) this.doomed = null;
     // The knight ridden is broken under its rider, who is thrown on the way
     // the blow came.
     if (victim === this.ridden) {
@@ -918,26 +924,57 @@ class World {
     hooks.look(null);
   }
 
-  // A piece that could take the knight ridden leans toward it, as if about
-  // to come, and a knight among them turns its head to it. When the threat
-  // ends it straightens. A piece that is moving is left to its move.
-  loom(dt) {
-    const prey = this.ridden;
+  // How each piece standing holds itself, most pressing first:
+  //   a piece that could take the knight ridden leans toward it, as if about
+  //     to come, and a knight among them turns its head to it;
+  //   a king in check flinches away from what checks it, shaking (`flinch`);
+  //   every other piece watches the piece that is moving: a knight turns its
+  //     head to it, the rest lean a little its way, less the further off.
+  // The piece about to be taken trembles until it breaks (`doomed`). A piece
+  // that is moving is left to its move, and the knight ridden to its rider.
+  regard(dt) {
+    const prey = this.ridden, moving = this.moving, ease = Math.min(1, dt * 4);
     for (const held of this.pieces.values()) {
       const data = held.userData;
-      if (held === this.moving) { data.loom = 0; continue; }
-      if (data.menace && prey) data.toward = prey.position.clone().sub(held.position).setY(0);
-      const want = data.menace && prey ? 0.13 + 0.035 * Math.sin(this.time * 5 + data.square) : 0;
-      data.loom = (data.loom || 0) + (want - (data.loom || 0)) * Math.min(1, dt * 4);
-      if (!data.toward) continue;
-      if (data.loom > 0.003) this.lean(held, data.toward, data.loom);
-      else { held.quaternion.identity(); data.loom = 0; }
-      if (data.kind === "n") {
-        const body = data.body, aim = data.menace && prey ? Math.atan2(-data.toward.z, data.toward.x) : this.rest(held);
+      if (held === moving) { data.loom = 0; data.toward = null; continue; }
+      let toward = null, want = 0, look = null;
+      if (data.menace && prey) {
+        toward = look = prey.position.clone().sub(held.position).setY(0);
+        want = 0.13 + 0.035 * Math.sin(this.time * 5 + data.square);
+      } else if (data.check) {
+        toward = data.check;
+        want = 0.075 + 0.03 * Math.sin(this.time * 23);
+      } else if (moving && held !== prey) {
+        const way = moving.position.clone().sub(held.position).setY(0), far = way.length();
+        if (far > 0.4) { toward = look = way; want = 0.05 * Math.min(1, 2.5 / far); }
+      }
+      if (toward) data.toward = toward;
+      data.loom = (data.loom || 0) + (want - (data.loom || 0)) * ease;
+      if (held !== prey && data.toward) {
+        if (data.loom > 0.003) this.lean(held, data.toward, data.loom);
+        else { held.quaternion.identity(); data.loom = 0; data.toward = null; }
+      }
+      if (data.kind === "n" && held !== prey) {
+        const body = data.body, aim = look ? Math.atan2(-look.z, look.x) : this.rest(held);
         body.rotation.y += turnBy(body.rotation.y, aim) * Math.min(1, dt * 5);
       }
-      if (!data.menace && data.loom === 0) data.toward = null;
     }
+    if (this.doomed) {
+      const shake = this.time * 37;
+      this.lean(this.doomed, new THREE.Vector3(Math.sin(shake), 0, Math.cos(shake * 1.3)), 0.045);
+    }
+  }
+
+  // The king in check, and the pieces that check it: it flinches away from
+  // them. `-1` is no king in check.
+  flinch(sq, from = []) {
+    for (const held of this.pieces.values()) held.userData.check = null;
+    const king = this.pieces.get(sq);
+    if (!king) return;
+    const away = new THREE.Vector3();
+    for (const at of from) away.add(king.position.clone().sub(sqPoint(at)).setY(0).normalize());
+    if (away.lengthSq() < 1e-6) away.set(0, 0, king.userData.colour === "w" ? 1 : -1);
+    king.userData.check = away.normalize();
   }
 
   // The knight ridden listens: its ears turn toward the piece that is
@@ -984,7 +1021,7 @@ class World {
     const pulse = 0.4 + 0.3 * Math.sin(this.time * 6);
     this.mark.check.material.opacity = pulse;
     this.attend(dt);
-    this.loom(dt);
+    this.regard(dt);
     // Rubble: thrown, falling, coming to rest on the board, and then gone.
     const place = new THREE.Object3D();
     for (const heap of [...this.debris]) {
@@ -1578,7 +1615,12 @@ function draw() {
   const last = game.played[game.played.length - 1];
   world.show("from", last ? last.move.from : null);
   world.show("to", last ? last.move.to : null);
-  world.show("check", inCheck(game.position) ? kingOf(game.position.board, game.position.turn) : null);
+  const checked = inCheck(game.position) ? kingOf(game.position.board, game.position.turn) : null;
+  world.show("check", checked);
+  // The king in check flinches away from the pieces that check it.
+  const checkers = checked === null ? [] : legalMoves({...game.position, turn: game.position.turn === "w" ? "b" : "w", ep: -1})
+    .filter(move => move.to === checked).map(move => move.from);
+  world.flinch(checked === null ? -1 : checked, checkers);
   for (const side of ["w", "b"]) el(side === "w" ? "play-white" : "play-black").setAttribute("aria-pressed", String(game.side === side));
   // Where the player sits.
   const knights = ownKnights();
