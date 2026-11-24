@@ -2020,7 +2020,6 @@ impl SettlementAtlas {
     fn matches(&self, g: &Game, pid: usize) -> bool {
         self.turn == Some(g.turn) && self.map_epoch == g.map.tiles.epoch() && self.pid == pid
     }
-
 }
 
 /// One hostile as it stood at the start of the turn. See
