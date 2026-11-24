@@ -43,6 +43,9 @@ import textwrap
 import unittest
 
 BETA = pathlib.Path(__file__).resolve().parent
+sys.path.insert(0, str(BETA))
+
+import verify  # noqa: E402  (the publish check, for how it reads a lane's pages)
 
 #: A page's figures, written by a stand-in for the scripts that fill the real
 #: pages. It says which revision's copy of the script ran and which revision's
@@ -276,6 +279,15 @@ class Lanes(unittest.TestCase):
             ["home", "tournaments", "charts/ai-interpretability", "charts/civ-analytics", "charts/win-analytics",
              "charts/elo-rankings", "charts/civvis-performance", "download", "wizard-chess"],
         )
+        # And the publish check reads each list in the order it was written.
+        # It asks a folder for the first page the list has in it, which is
+        # what the router opens. While it sorted the list into an order of
+        # its own, reordering Charts/ here made the two disagree and no
+        # publish got through (2026-11-24, 06:24Z on); nothing in a pull
+        # request's checks runs the check itself, so this holds the reading.
+        for lane in (self.stable, self.test):
+            build = json.loads(self.read(lane, "build.json"))
+            self.assertEqual(verify.lane_pages(build), build["pages"])
 
     def test_every_page_of_a_lane_is_its_own_revisions(self):
         for name in ("landing", "download", "tournaments", "research", "performance"):
