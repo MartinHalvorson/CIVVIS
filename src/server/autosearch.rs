@@ -696,6 +696,19 @@ impl Spec {
     }
 }
 
+impl Spec {
+    /// Every Civ AI the search may seat, built once before any line is
+    /// played: a name the engine cannot build (no such roster row, a gene
+    /// it does not have, a target on a scripted Civ AI) is refused now
+    /// rather than on every line that names it.
+    pub fn check_letters(&self) -> Result<(), String> {
+        for letter in &self.letters {
+            crate::strategies::build_named(letter).map_err(|error| format!("{letter}: {error}"))?;
+        }
+        Ok(())
+    }
+}
+
 /// One line played, and what it came to.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Line {
@@ -1129,7 +1142,7 @@ pub fn route(held: &mut Option<Search>, asked: &Value) -> Value {
     };
     let op = asked["op"].as_str().unwrap_or("report");
     if op == "begin" {
-        return match Spec::parse(asked) {
+        return match Spec::parse(asked).and_then(|spec| spec.check_letters().map(|()| spec)) {
             Ok(spec) => {
                 let search = Search::new(spec);
                 let report = search.report();
@@ -1322,6 +1335,7 @@ impl Copy {
 /// other worlds. The answer is the search's report, with `robust` beside it.
 pub fn run(options: &RunOptions) -> Result<Value, String> {
     let spec = Spec::parse(&options.spec)?;
+    spec.check_letters()?;
     let root = world(options.seed, &spec, options.fog_honest)?;
     let cores = options.cores.clamp(1, 256);
     let mut search = Search::new(Spec {

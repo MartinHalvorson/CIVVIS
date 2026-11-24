@@ -185,8 +185,8 @@ fn toy(plan: &Plan, from: u32, end: u32) -> Vec<Reading> {
     (from + 1..=end)
         .map(|turn| {
             total += match who(plan, turn - 1) {
-                "a" if turn <= 5 => 2.0,
-                "a" => 0.0,
+                "a" | "jack" if turn <= 5 => 2.0,
+                "a" | "jack" => 0.0,
                 _ => 1.0,
             };
             reading(turn, &[], &[], &[total], &[])
@@ -343,10 +343,20 @@ fn a_spec_seats_its_seated_civ_ai_and_keeps_to_its_bounds() {
 fn the_route_runs_a_search_for_a_page() {
     let mut held = None;
     assert!(route(&mut held, &json!({"op": "next"}))["error"].is_string());
+    // A Civ AI the engine cannot build is refused before anything is played.
+    let refused = route(
+        &mut held,
+        &json!({"op": "begin", "from": 1, "end": 9, "letters": ["jack", "jack+no such gene"], "seated": "jack"}),
+    );
+    assert!(
+        refused["error"].as_str().unwrap().contains("no such gene"),
+        "{refused}"
+    );
+    assert!(held.is_none());
     let begun = route(
         &mut held,
         &json!({"op": "begin", "objective": {"want": [{"key": "score"}]},
-        "from": 1, "end": 9, "letters": ["a", "b"], "seated": "b"}),
+        "from": 1, "end": 9, "letters": ["jack", "stock"], "seated": "stock"}),
     );
     assert_eq!(begun["lines"], json!(0));
     loop {
@@ -363,10 +373,10 @@ fn the_route_runs_a_search_for_a_page() {
         );
     }
     let report = route(&mut held, &json!({"op": "report"}));
-    assert_eq!(report["best"]["key"], json!("1:a 5:b"));
+    assert_eq!(report["best"]["key"], json!("1:jack 5:stock"));
     let offered = route(
         &mut held,
-        &json!({"op": "offer", "plans": [[[1, "b"], [3, "a"]], [[1, "z"]]]}),
+        &json!({"op": "offer", "plans": [[[1, "stock"], [3, "jack"]], [[1, "z"]]]}),
     );
     assert_eq!(offered["offers"][0], json!(true));
     assert!(offered["offers"][1]
@@ -405,7 +415,7 @@ fn a_play_reads_the_terms_of_the_objective_it_was_given() {
     let set = session.debug(&json!({"op": "objective", "lean": true, "objective": {
         "need": [{"key": "won", "test": "==", "value": 1}],
         "avoid": [{"key": "lost", "test": "==", "value": 1, "when": "always"}],
-        "want": [{"key": "score"}, {"key": "yields.science"}, {"key": "techs"}],
+        "want": [{"key": "score"}, {"key": "yields.science"}, {"key": "unit_count"}],
         "dont_want": [{"key": "cities", "seat": 1}],
     }}));
     assert_eq!(set["error"], Value::Null);
