@@ -1520,8 +1520,8 @@
     let drawControl = null;
     if (CDAYS.length && control.week && three(control.week.p)) {
       const week = control.week, first = control.first && three(control.first.p) ? control.first : null, newest = CDAYS[CDAYS.length - 1];
-      const hand = Number(control.by_hand) || 0, window = Number(control.window_days) || 0;
-      const lately = window ? "last " + window + " days" : "lately";
+      const hand = Number(control.by_hand) || 0, counted = Number(control.window_days) || 0;
+      const lately = counted ? "last " + counted + " days" : "lately";
       // A time as this part words it: seconds under a hundred of them, then
       // minutes to a tenth, then hours.
       const span = (x) => (x < 99.5 ? secs(x) : x < 5970 ? (x / 60).toFixed(1) + " min" : (x / 3600).toFixed(1) + " h");
