@@ -185,8 +185,6 @@ PAGES = {
     "charts/civvis-performance": b'id="performance-data"',
     "charts/ai-interpretability": b'id="interpretability-data"',
     "download": b"releases/latest/download/",
-    # Wizard Chess: the board it is played on.
-    "wizard-chess": b'<canvas id="stage"',
 }
 
 # Where four of them answered until 2026-11-23, and where each is now. A lane
@@ -660,7 +658,12 @@ def check_gate(dist: pathlib.Path) -> list[str]:
         # doing its job: without it, Pages serves the front page for any
         # unknown HTML path (its single-page-app fallback), which is how a
         # "scrapped" URL came back from the dead once already.
-        for dead in ("/beta/", "/no-such-page"):
+        #
+        # Wizard Chess was a page at /wizard-chess from 2026-11-23 and was set
+        # aside on 2026-11-24 (operator: "lets set aside wizard chess right
+        # now. please remove from civvis.ai"). No lane lists it, so its
+        # address is a dead path like the others.
+        for dead in ("/beta/", "/no-such-page", "/wizard-chess/"):
             try:
                 get(dead)
                 problems.append(f"{dead} still answers; it is meant to 404")

@@ -338,8 +338,6 @@ class TournamentsPage(unittest.TestCase):
             'title="You play one civilization. CIVVIS AI agents play the rest.">AI Debugger</a>\n'
             '      <a class="site-link" href="https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/" '
             'target="_blank" rel="noopener" title="Buy Civilization VI on Steam">Civ 6</a>\n'
-            '      <a class="site-link" href="../wizard-chess/" '
-            'title="Chess where you command and the pieces obey, against an opponent at the Elo you pick.">Wizard Chess</a>\n'
             "    </nav>",
             PAGE,
         )

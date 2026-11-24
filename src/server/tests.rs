@@ -2150,15 +2150,18 @@ fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
         "        <a class=\"home-link\" id=\"civ6link\" ",
         "href=\"https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/\" ",
         "target=\"_blank\" rel=\"noopener\" title=\"Buy Civilization VI on Steam\">Civ 6</a>\n",
-        // Wizard Chess (operator, 2026-11-23: "below civ 6, add wizard
-        // chess"): a page of its own at /wizard-chess, the last in the list.
-        "        <a class=\"home-link\" id=\"chesslink\" href=\"/wizard-chess\" target=\"_top\">Wizard Chess</a>\n",
         "      </nav>",
     )));
-    assert!(EMBEDDED_INDEX.contains("  .head-links > #chesslink { grid-column: 1 / -1; }\n"));
-    assert!(EMBEDDED_INDEX.contains(
-        "repeating-conic-gradient(#f4f1e8 0 25%, #0b0b0c 0 50%) 0 0 / 4px 4px border-box;"
-    ));
+    // Wizard Chess stood last in the list, at /wizard-chess, from 2026-11-23
+    // and was set aside on 2026-11-24 (operator: "lets set aside wizard
+    // chess right now. please remove from civvis.ai"). The list ends at
+    // Civ 6, and nothing of its link or its name is left in the viewer.
+    for gone in ["chesslink", "wizard-chess", "Wizard Chess"] {
+        assert!(
+            !EMBEDDED_INDEX.contains(gone),
+            "the viewer still says {gone}"
+        );
+    }
     // The Debugger link is only as good as the shim's reading of it, and
     // the CIVVIS link needs no word at all: a lane's bare address is the
     // spectated simulation.
@@ -2558,8 +2561,6 @@ fn the_home_page_lists_the_sites_with_itself_ringed() {
             "      <a class=\"site-link\" ",
             "href=\"https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/\" ",
             "target=\"_blank\" rel=\"noopener\" title=\"Buy Civilization VI on Steam\">Civ 6</a>\n",
-            "      <a class=\"site-link\" href=\"../wizard-chess/\" ",
-            "title=\"Chess where you command and the pieces obey, against an opponent at the Elo you pick.\">Wizard Chess</a>\n",
             "    </nav>\n",
         ),
         concat!(
@@ -2618,6 +2619,10 @@ fn the_home_page_lists_the_sites_with_itself_ringed() {
         ">Performance</a>",
         ">Charts</a>",
         "rankings-data",
+        // Set aside on 2026-11-24 (operator: "lets set aside wizard chess
+        // right now. please remove from civvis.ai"): the list ends at Civ 6.
+        "Wizard Chess",
+        "wizard-chess",
     ] {
         assert!(!landing.contains(gone), "the home page still says {gone}");
     }
