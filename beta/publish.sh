@@ -464,6 +464,17 @@ for needle, replacement in edits:
 # revision whose viewer links a page its tree keeps somewhere this script does
 # not look.
 former = ["home", "research", "tournaments", "performance", "interpretability", "download"]
+# A page set aside is carried by no lane, and a revision from the days it was
+# on the site still links it from its viewer: Wizard Chess, at /wizard-chess
+# from 2026-11-23 until it was set aside on 2026-11-24. That link is made
+# lane-relative like every other, so it reaches the lane's own 404 until a
+# promotion brings a viewer without it. Left as it was, it stopped every
+# publish from the hour the page was set aside (#5793): the front page was
+# pinned to such a revision, and the guard below stops a publish on any link
+# to the site root. Nothing of the page is copied; this only names where an
+# older viewer's link pointed.
+set_aside = ["wizard-chess"]
+former += set_aside
 for address in dict.fromkeys([*carried, *former]):
     needle, replacement = f'href="/{address}"', f'href="{address}/"'
     page = page.replace(needle, replacement)

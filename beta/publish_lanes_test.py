@@ -35,6 +35,7 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+import re
 import shutil
 import subprocess
 import sys
@@ -187,6 +188,22 @@ class Lanes(unittest.TestCase):
         cls.write_revision("misplaced", pages=tuple(ADDRESSES), addresses=ADDRESSES,
                            home={"research": "../home/"})
         cls.misplaced = cls.commit("a link written for the old depth")
+        # A revision from the day Wizard Chess was on the site (2026-11-23 to
+        # 2026-11-24): its page and parts are in the tree, and its viewer
+        # and its home page list it. The front page was pinned to such a
+        # revision when the page was set aside.
+        cls.write_revision("listed", pages=tuple(ADDRESSES), addresses=ADDRESSES)
+        for name, address in SET_ASIDE.items():
+            (cls.repo / "beta" / f"{name}.html").write_text(page(name, "listed", address), encoding="utf-8")
+            (cls.repo / "beta" / name).mkdir()
+            (cls.repo / "beta" / name / "game.js").write_text("// parts of listed\n", encoding="utf-8")
+            viewer = cls.repo / "web" / "index.html"
+            viewer.write_text(viewer.read_text(encoding="utf-8").replace(
+                "</a>\n<script", f'</a> <a href="/{address}" target="_top">Wizard Chess</a>\n<script'), encoding="utf-8")
+            landing = cls.repo / "beta" / "landing.html"
+            landing.write_text(
+                landing.read_text(encoding="utf-8") + f'<a href="../{address}/">Wizard Chess</a>\n', encoding="utf-8")
+        cls.listed_revision = cls.commit("Wizard Chess is on the site")
         # Main: every script, page and figure has moved on, there are three more
         # pages, and every page says where it lives.
         cls.write_revision("main", pages=tuple(ADDRESSES), addresses=ADDRESSES)
@@ -202,6 +219,9 @@ class Lanes(unittest.TestCase):
         # main's own.
         cls.stable, cls.stable_said = cls.publish(cls.promoted, "lane-stable")
         cls.test, cls.test_said = cls.publish(cls.main, "lane-test")
+        # And the stable lane as it was the day the page was set aside:
+        # pinned to a revision that lists it.
+        cls.listed, cls.listed_said = cls.publish(cls.listed_revision, "lane-listed", check=False)
 
     @classmethod
     def tearDownClass(cls):
@@ -313,6 +333,31 @@ class Lanes(unittest.TestCase):
                 self.assertEqual([found for found in lane.rglob("*") if name in found.name], [], lane.name)
                 self.assertNotIn(address, json.loads(self.read(lane, "build.json"))["pages"])
                 self.assertNotIn(address, said)
+
+    def test_a_lane_pinned_to_a_revision_that_lists_the_page_set_aside_is_published(self):
+        # The first publish after the page was set aside (#5793) failed, and
+        # so would every one after it: the front page was pinned to a
+        # revision whose viewer links `/wizard-chess`, the script made a
+        # viewer's links lane-relative only for the pages it carries, and a
+        # root-absolute link left in a viewer stops the publish. Nothing in
+        # a pull request's checks builds a lane from such a revision, so
+        # this does.
+        code, said = self.listed_said
+        self.assertEqual(code, 0, said)
+        for name, address in SET_ASIDE.items():
+            self.assertIn(f"{name} of listed", self.git("show", f"{self.listed_revision}:beta/{name}.html"))
+            # The viewer's link stays in its lane, like every other.
+            viewer = self.read(self.listed, "index.html")
+            self.assertIn(f'<a href="{address}/" target="_top">Wizard Chess</a>', viewer)
+            self.assertEqual(re.findall(r'(?:href|src)="(/[^"]*)"', viewer), [])
+            # The lane is that revision's in everything else and has no such
+            # page, so the link reaches the lane's 404 until a promotion
+            # brings a viewer without it. The home page's link is reported.
+            self.assertIn("landing of listed", self.read(self.listed, "home/index.html"))
+            self.assertFalse((self.listed / address).exists())
+            self.assertEqual([found for found in self.listed.rglob("*") if name in found.name], [])
+            self.assertNotIn(address, json.loads(self.read(self.listed, "build.json"))["pages"])
+            self.assertIn(f"::warning::home/index.html links ../{address}/, which this lane does not have", said)
 
     def test_every_page_of_a_lane_is_its_own_revisions(self):
         for name in ("landing", "download", "tournaments", "research", "performance"):
