@@ -127,6 +127,10 @@ const ERA_NAMES = ["ancient", "classical", "medieval", "renaissance", "industria
   "information", "future"];
 // The round: the played seat, one rival, and the Barbarians.
 const SEATS = 3;
+// The black swans the toy can strike (`BlackSwanKind`): the name of each and
+// what it does in a line. Which one a seed draws is the seed's parity.
+const SWANS = {pandemic: ["Pandemic", "Every city in the world loses half its people"],
+  nuclear_war: ["Instant nuclear war", "Every civilization is at war with every other"]};
 // Another frame's engine as it stands, for a half that is copied or kept:
 // everything but the record of what this frame's own page sent.
 function engineOf(frames, pane) {
@@ -204,6 +208,10 @@ function engineState(error = null) {
       stepped: engine.stepped, reveal: engine.reveal, playing: engine.current, memory_line: engine.line,
       eras: engine.eras.filter(era => era.turn <= marks[marks.length - 1]),
       played_by: enginePlayedBy(kept),
+      // The black swans that struck the line as far as it is kept, and the
+      // ones there are to strike (`Timeline::json`).
+      swans: (engine.swans || []).filter(swan => swan.turn <= marks[marks.length - 1]),
+      swan_kinds: Object.entries(SWANS).map(([id, [name, about]]) => ({id, name, about})),
       saves: engine.saves.map(save => ({...save}))}};
 }
 // ---- a search's lists, as the engine reads them (`src/server/autosearch.rs`)
@@ -358,6 +366,8 @@ function engineDebug(body) {
     engine.marks = behind.concat(engine.turn);
     engine.by = Object.fromEntries(Object.entries(engine.by).filter(([turn]) => +turn < engine.turn));
     if (by) engine.by[engine.turn] = by;
+    // A turn played again is played in a world no swan has struck on it.
+    engine.swans = (engine.swans || []).filter(swan => swan.turn < engine.turn);
     const from = engine.worlds[behind[behind.length - 1]] || 0;
     engine.worlds = Object.fromEntries(Object.entries(engine.worlds).filter(([turn]) => +turn < engine.turn));
     engine.worlds[engine.turn] = (from * 31 + (by === "stock" ? 2 : by ? 1 : 3)) % 2147483647;
@@ -372,7 +382,7 @@ function engineDebug(body) {
   if (engine.current !== 0 && (body.op === "step" || body.op === "finish_round")) opens();
   const marks = engineLine(), at = marks.indexOf(engine.turn);
   const others = engine.marks[marks.length];
-  let error = null, readings = null, terms = null, alerts = null;
+  let error = null, readings = null, terms = null, alerts = null, swan = null;
   // One whole turn by the Civ AI seated.
   const step = () => {
     engine.turn += 1;
@@ -427,6 +437,26 @@ function engineDebug(body) {
     engine.turn = home;
     engine.score = stood;
     engine.stopped = null;
+  } else if (body.op === "black_swan") {
+    // A black swan strikes the open turn's world (`debug_black_swan`): the
+    // turns kept ahead of it are let go of, the open turn is marked again
+    // with a print of its own, and whoever played into it still did. Which
+    // one is named, or drawn by the seed. The toy's swan halves the score.
+    const kind = body.kind || Object.keys(SWANS)[body.seed % 2];
+    if (engine.current !== 0) error = "the rivals are playing; a black swan strikes on the seat's own turn";
+    else if (!SWANS[kind]) error = `no black swan named ${JSON.stringify(kind)}`;
+    else {
+      // Swans that struck this turn already are part of the world it is.
+      const held = (engine.swans || []).filter(struck => struck.turn <= engine.turn);
+      played(engine.by[engine.turn] || null);
+      engine.swans = held;
+      engine.worlds[engine.turn] = (engine.worlds[engine.turn] * 31 + 7 + body.seed) % 2147483647;
+      engine.score = Math.floor(engine.score / 2);
+      if (engine.scores) engine.scores[engine.turn] = engine.score;
+      swan = {turn: engine.turn, kind, name: SWANS[kind][0], text: `${SWANS[kind][0]}. The score is ${engine.score} now`,
+        sites: [], player: null, until: engine.turn, ongoing: false};
+      engine.swans.push(swan);
+    }
   } else if (body.op === "objective") {
     // A search's lists, read off the toy's seat: a key it has no number for
     // is refused, as the engine refuses it.
@@ -499,6 +529,7 @@ function engineDebug(body) {
   const answer = engineState(error);
   if (readings !== null) answer.readings = readings;
   if (alerts !== null) answer.alerts = alerts;
+  if (swan !== null) answer.black_swan = swan;
   if (terms !== null) { answer.terms = terms; answer.killed = null; }
   // Played once for both: the twin is made a copy of what this half holds.
   if (twin !== null) {
@@ -3242,6 +3273,8 @@ def check_doctor_strange(bar: Bar, address: str) -> None:
     assert said == {"play": ["▶ Play Time", False], "back10": ["−10", True], "back1": ["−1", True], "on1": ["+1", False],
                     "on10": ["+10", False], "branch": ["⑂ Branch: 1-(player strategy)1-Jack", False],
                     "fork": ["⏮ To the fork", True], "lock": ["🔒 Locked", False], "futures": ["🔮 Futures: off", False],
+                    "swan": ["🦢 Generate Black Swan", False], "swan-kind": ["AnyPandemicInstant nuclear war", False],
+                    "omen": ["", False],
                     "say": ["One world so far. Play, and each player strategy takes it its own way", False],
                     "follow-a": ["Following", True], "follow-b": ["Follow", False],
                     "close-a": ["✕", False], "close-b": ["✕", False],
@@ -3468,6 +3501,87 @@ def check_doctor_strange(bar: Bar, address: str) -> None:
     assert ran == [True, stepped[0], stepped[1], True, True], ran
     assert not bar.dev.console, f"the page complained: {bar.dev.console}"
 
+    # Black swans (operator 2026-11-24: "add a 'Generate Black Swan' - this
+    # will be a random, unpredicted event that spawns and changes the game",
+    # "black swans on a civilizational timeline"). The button stands at the
+    # top of the sky, between the cards, with which one beside it, and has
+    # the engine strike one on the worlds as they stand. Locked, it is the
+    # same one on every world: the followed world is struck first with a seed
+    # and no kind named, and the rest with the kind it drew and the same seed.
+    now = bar.ev("debugSplit.panes.a.turn")
+    struck = "debugSplit.panes.{0}.frame.contentWindow.eval('engine.sent.filter(call => call.path === \"/debug\" && call.body.op === \"black_swan\").map(call => call.body)')".format
+    scores = "strange.order.map(letter => debugSplit.panes[letter].numbers.score)"
+    before = bar.ev(f"[{names}, {scores}, strange.locked, strange.follow, strange.order.join('')]")
+    # The boxes as they stand, the world that is followed, and the other.
+    order, lead = before[4], before[3]
+    rest = next(letter for letter in order if letter != lead)
+    assert before[2] is True and sorted(order) == ["a", "b"], before
+    assert bar.ev("[...document.querySelectorAll('#strange-hud [data-strange=\"swan-kind\"] option')].map(option => [option.value, option.textContent, option.title])") == [
+        ["", "Any", "One drawn at random, among those the world has something for"],
+        ["pandemic", "Pandemic", "Every city in the world loses half its people"],
+        ["nuclear_war", "Instant nuclear war", "Every civilization is at war with every other"]]
+    placed = bar.ev("(() => { const box = name => document.querySelector(`#strange-hud .${name}`).getBoundingClientRect();"
+                    " const swans = box('strange-swans'), title = box('strange-title'), meter = box('strange-meter');"
+                    " return [Math.abs(swans.left + swans.width / 2 - innerWidth / 2) < 2, swans.top < 20, swans.left > title.right, swans.right < meter.left,"
+                    " strange.cards.some(card => Math.round(card.left) === Math.round(swans.left) && Math.round(card.top) === Math.round(swans.top))]; })()")
+    assert placed == [True] * 5, placed
+    bar.ev("strangeSwan('', 8), true")
+    assert bar.ev("[strange.swan !== null, strangeIdle(), document.querySelector('#strange-hud [data-strange=\"swan\"]').textContent,"
+                  " document.querySelector('#strange-hud [data-strange=\"swan\"]').disabled]") == [True, False, "🦢 Striking…", True]
+    bar.until("strange.swan === null && strange.omen !== null && ['a', 'b'].every(letter => (debugSplit.panes[letter].marks.swans || []).length === 1)",
+              "a black swan strikes both worlds")
+    asked = bar.ev(f"[{struck(lead)}, {struck(rest)}]")
+    assert asked == [[{"op": "black_swan", "seed": 8}], [{"op": "black_swan", "seed": 8, "kind": "pandemic"}]], asked
+    # The world is another world from there: its score is the swan's doing,
+    # the future that was played ahead of it is let go of and played again,
+    # and the worlds still stand on the turn they stood on. The swan is in
+    # each line's name, on the turn it struck.
+    bar.until(f"strangeIdle() && !strange.peek && {held}", "each struck world's future is played again")
+    after = bar.ev(f"[{names}, {scores}, debugSplit.panes.a.turn, debugSplit.panes.b.turn]")
+    assert after == [[f"{name}-🦢{now}" for name in before[0]], [score // 2 for score in before[1]], now, now], (before, after)
+    swans = bar.ev("['a', 'b'].map(letter => strangeSwans(letter).map(swan => [swan.turn, swan.kind, swan.name, swan.ongoing]))")
+    assert swans == [[[now, "pandemic", "Pandemic", False]]] * 2, swans
+    # What struck is said under the button for as long as it is news, with
+    # the followed world's account, and on the deck's line. A press puts it
+    # away.
+    score = dict(zip(order, before[1]))
+    omen = bar.ev("(() => { const omen = document.querySelector('#strange-hud [data-strange=\"omen\"]'), box = omen.getBoundingClientRect();"
+                  " return [omen.hidden, [...omen.children].map(part => part.textContent), Math.abs(box.left + box.width / 2 - innerWidth / 2) < 2,"
+                  " box.top > document.querySelector('#strange-hud .strange-swans').getBoundingClientRect().bottom && box.top < 70,"
+                  " document.querySelector('#strange-hud [data-strange=\"say\"]').textContent]; })()")
+    assert omen == [False, [f"🦢 Black swan · turn {now}", "Pandemic", f"The score is {score[lead] // 2} now",
+                            f"Worlds {lead.upper()} and {rest.upper()}, the same on each"],
+                    True, True, f"🦢 Black swan on turn {now}: Pandemic"], omen
+    bar.click('#strange-hud [data-strange="omen"]')
+    assert bar.ev("[strange.omen, document.querySelector('#strange-hud [data-strange=\"omen\"]').hidden]") == [None, True]
+    # Gone back a turn the worlds are as they were, with the swan still ahead
+    # on their line; back on its turn they are the worlds it struck, and no
+    # turn was played again for it.
+    bar.click('#strange-hud [data-strange="back1"]')
+    bar.until(f"{both(now - 1)} && strangeIdle()", "the worlds go back before the swan")
+    assert bar.ev(f"[{names}, strangeSwans('{lead}').length]") == [after[0], 1]
+    bar.click('#strange-hud [data-strange="on1"]')
+    bar.until(f"{both(now)} && strangeIdle() && !strange.peek && {held}", "and forward onto its turn again")
+    assert bar.ev(f"[{scores}, {steps('a')}, {steps('b')}]") == [after[1], stepped[0], stepped[1]]
+    # Unlocked, the one picked strikes the followed world alone, which parts
+    # from the other there.
+    bar.click('#strange-hud [data-strange="lock"]')
+    assert bar.ev("strange.locked") is False
+    bar.ev("(() => { const kinds = document.querySelector('#strange-hud [data-strange=\"swan-kind\"]'); kinds.value = 'nuclear_war'; return kinds.value; })()")
+    assert f"world {lead.upper()}" in bar.ev("document.querySelector('#strange-hud [data-strange=\"swan\"]').title")
+    bar.click('#strange-hud [data-strange="swan"]')
+    bar.until(f"strange.swan === null && strange.omen !== null && strangeSwans('{lead}').length === 2", "the picked swan strikes the followed world")
+    asked = bar.ev(f"[{struck(lead)}, {struck(rest)}]")
+    assert [len(asked[0]), len(asked[1]), asked[0][1].get("kind")] == [2, 1, "nuclear_war"], asked
+    alone = bar.ev(f"[{names}, strangeSwans('{rest}').length, [...document.querySelector('#strange-hud [data-strange=\"omen\"]').children].map(part => part.textContent).slice(1),"
+                   f" strangeTree().worlds.{rest}.parent || strangeTree().worlds.{lead}.parent, Math.max(strangeTree().worlds.a.fork, strangeTree().worlds.b.fork)]")
+    assert alone[:3] == [[f"{name}-🦢{now}" + (f"-🦢{now}" if letter == lead else "") for letter, name in zip(order, before[0])], 1,
+                         ["Instant nuclear war", f"The score is {score[lead] // 4} now", f"World {lead.upper()}"]], alone
+    bar.until(f"strangeIdle() && !strange.peek && {held}", "its future is played again")
+    bar.click('#strange-hud [data-strange="lock"]')
+    bar.until("strange.locked && strangeIdle()", "the worlds are locked again")
+    assert not bar.dev.console, f"the page complained: {bar.dev.console}"
+
     # With no room for two worlds the game is on its one timeline, which is
     # the AI Debugger, with its bar in sight and saying why.
     bar.dev.call("Emulation.setDeviceMetricsOverride", {"width": 800, "height": 900, "deviceScaleFactor": 1, "mobile": False})
@@ -3615,7 +3729,10 @@ def main() -> int:
               "locked, the worlds go through the turns together, never seen a turn apart, and Play Time and Pause "
               "Time start and stop them, and unlocked they go by themselves until locked again; what the page costs "
               "is read and shown; each world's future is played ahead of the open turn and kept, what was seen "
-              "coming is kept with it, and time running on is shown those turns and plays none again; a narrow "
+              "coming is kept with it, and time running on is shown those turns and plays none again; "
+              "Generate Black Swan, at the top of the sky, strikes the same event nothing saw coming on every locked "
+              "world and on the followed one alone unlocked, any drawn by a seed or the one picked, says what struck, "
+              "marks it in the line's name and has each struck world's future played again; a narrow "
               "window has the one timeline and says why.")
         return 0
     finally:

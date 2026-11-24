@@ -35,6 +35,13 @@
 //!   played from here on. Going to one puts its world on the table with the
 //!   turns of its own history, and keeps the world that was left.
 //!
+//! * **black swan** strikes an event nothing in the world saw coming on the
+//!   world as it stands (`game/black_swan.rs`): a nuclear war, a pandemic, a
+//!   radiation leak, a fallen leader, a civilization broken into armed
+//!   microstates. The open turn is marked again as the world it now is, and
+//!   the turns kept ahead of it, which were played in a world this did not
+//!   happen in, are let go of.
+//!
 //! A mark is a clone of the game. The game shares what a turn did not change
 //! with its clones, so a mark costs what its turn changed rather than the
 //! world. That is still megabytes (`ROOMY_MARKS` has the measurement), so
@@ -60,7 +67,7 @@ use serde_json::{json, Value};
 
 use super::Session;
 use crate::ai::Ai;
-use crate::game::{Action, Event, Game};
+use crate::game::{Action, BlackSwan, BlackSwanKind, Event, Game};
 use crate::shared_sort::SharedSort;
 
 /// The newest marks are kept one a turn when older ones have to go, for as
@@ -991,6 +998,26 @@ impl Timeline {
                 "to": to,
                 "by": by,
             })).collect::<Vec<_>>(),
+            // The black swans that have struck this line, as far as it is
+            // kept: the account the world at its end holds. `ongoing` is
+            // read off the open turn's world, where one that is still to
+            // come is not going on yet.
+            "swans": line.last().map_or_else(Vec::new, |mark| {
+                mark.game.black_swans.iter().map(|swan| {
+                    let mut told = swan.json(game.turn);
+                    told["ongoing"] = json!(game.black_swans.iter().any(|now| {
+                        now.turn == swan.turn && now.seed == swan.seed && now.kind == swan.kind
+                            && now.ongoing(game.turn)
+                    }));
+                    told
+                }).collect()
+            }),
+            // The black swans there are to strike (`op: "black_swan"`).
+            "swan_kinds": BlackSwanKind::ALL.iter().map(|kind| json!({
+                "id": kind.id(),
+                "name": kind.name(),
+                "about": kind.about(),
+            })).collect::<Vec<_>>(),
             "breakpoints": self.breakpoints.json(),
             "layers": Layer::ALL.iter().map(|layer| json!({
                 "id": layer.id(),
@@ -1678,6 +1705,51 @@ impl Session {
         Ok((played, alerts))
     }
 
+    /// Strike a black swan on the world as it stands (operator 2026-11-24:
+    /// "add a 'Generate Black Swan' - this will be a random, unpredicted
+    /// event that spawns and changes the game"; `Game::black_swan`). `kind`
+    /// is which, or `None` for one drawn by `seed`.
+    ///
+    /// From here on this is another world. The turns kept ahead of the open
+    /// one were played in a world this did not happen in, and are let go of.
+    /// The open turn's mark is taken again as the world now stands, and
+    /// gets a print of its own because the swan moves the world's random
+    /// stream on: a timeline that was one world with this one up to here has
+    /// parted from it on the turn before. Who played into the turn is kept;
+    /// the swan did not play it. What the seat had done in the turn stands,
+    /// and is no longer taken back: the turn now begins where the swan
+    /// struck.
+    ///
+    /// Refused in the middle of a round, where no turn is open to mark.
+    pub fn debug_black_swan(
+        &mut self,
+        kind: Option<BlackSwanKind>,
+        seed: u64,
+    ) -> Result<BlackSwan, String> {
+        if self.debug_mid_round() {
+            return Err(
+                "the rivals are playing; a black swan strikes on the seat's own turn".to_string(),
+            );
+        }
+        let turn = self.game.turn;
+        let struck = self.game.black_swan(kind, seed)?;
+        let by = self
+            .debugger
+            .mark(turn)
+            .and_then(|mark| mark.by.clone());
+        self.debugger.stopped = None;
+        self.debugger.stepped = None;
+        self.debugger.plan = None;
+        self.debugger.record(&self.game);
+        if let Some(mark) = self.debugger.marks.last_mut() {
+            if mark.turn == turn {
+                mark.by = by;
+            }
+        }
+        self.debug_keep_minds();
+        Ok(struck)
+    }
+
     /// What has happened since turn `from` that a page showing the turns
     /// ahead puts a sign up for: every nuclear detonation in the world, what
     /// the played seat was told that was too consequential to scroll past,
@@ -1984,6 +2056,8 @@ impl Session {
         let mut killed: Option<Value> = None;
         // What a play ahead of the open turn saw coming (`debug_ahead`).
         let mut alerts: Option<Vec<Value>> = None;
+        // The black swan that struck (`debug_black_swan`).
+        let mut swan: Option<BlackSwan> = None;
         let result: Result<(), String> = if !self.debuggable() {
             Err("the debugger walks a game with a seat of its own".to_string())
         } else if let Err(error) = seated {
@@ -2083,6 +2157,26 @@ impl Session {
                     }),
                     None => Err(format!("ahead needs turns, 1 to {PLAY_MOST}")),
                 },
+                // An event nothing saw coming, struck on the world as it
+                // stands (`debug_black_swan`). Which one is named, or drawn
+                // by the seed; a request with no seed is given one off the
+                // world's own random stream.
+                "black_swan" => {
+                    let kind = match request["kind"].as_str() {
+                        None => Ok(None),
+                        Some(id) => BlackSwanKind::parse(id)
+                            .map(Some)
+                            .ok_or_else(|| format!("no black swan named {id:?}")),
+                    };
+                    kind.and_then(|kind| {
+                        let seed = match request["seed"].as_u64() {
+                            Some(seed) => seed,
+                            None => self.game.rng.next_u64(),
+                        };
+                        self.debug_black_swan(kind, seed)
+                    })
+                    .map(|struck| swan = Some(struck))
+                }
                 "step_action" => self.debug_step_action(),
                 "step_seat" => self.debug_step_seat(),
                 // The rest of a round that is being stepped a seat at a time.
@@ -2159,6 +2253,9 @@ impl Session {
         }
         if let Some(alerts) = alerts {
             out["alerts"] = json!(alerts);
+        }
+        if let Some(swan) = swan {
+            out["black_swan"] = swan.json(self.game.turn);
         }
         if let Some(terms) = terms {
             out["terms"] = json!(terms);

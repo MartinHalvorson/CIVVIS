@@ -1116,6 +1116,10 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
         // itself, and a client needs the account to place the blast on the map
         // rather than inferring one from a ring of fallout.
         "nuclear_strikes": nuclear_strikes_json(g),
+        // Every black swan struck on this world, oldest first, and whether
+        // some part of it is still going on (`game/black_swan.rs`). World
+        // news, like a detonation: empty in a game nobody struck one on.
+        "black_swans": g.black_swans.iter().map(|swan| swan.json(g.turn)).collect::<Vec<_>>(),
         // The whole game, turn by turn, for the result screen's graphs. Only
         // a finished game sends it: the story is over, so nothing in it is
         // still fog, and a running game's frames do not carry the weight.

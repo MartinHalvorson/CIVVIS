@@ -1461,15 +1461,84 @@ path). these should alert on the top section out in the distance."
   itself, its name plate says its own turn, and the step buttons move the
   followed world. Locking again brings the other worlds to the followed
   one's turn first.
+- **Generate Black Swan.** Operator, 2026-11-24: "add a 'Generate Black
+  Swan' - this will be a random, unpredicted event that spawns and changes
+  the game. Could be instant nuclear war. Bio risk could collapse the
+  population of all cities by 50%. Radiation event that starts leaking
+  radiation around the world. Leader collapse. Civ blossoms out into powerful
+  hostile nuclear armed microstates. stuff like that. black swans on a
+  civilizational timeline." The button stands at the top of the sky, over the
+  far end of the tree and between the cards, because it is not one of the
+  hand's moves on the highway. Beside it is which one: Any, drawn at random
+  among those the world has something for, or one by name. A press has the
+  engine strike it on the worlds as they stand (`strangeSwan`, `pane-swan`,
+  the `black_swan` operation; see "Black swans" below). Locked, the same one
+  strikes every world: the followed world is struck first and says which it
+  drew, and the rest are struck by that one with the same seed, so worlds
+  that are still one world stay one, and worlds that have parted meet the
+  same event. Unlocked, the followed world is struck alone, and parts from
+  the rest there. What struck is said under the button for a quarter of a
+  minute, with the followed world's own account of it, and the sky lights for
+  a moment. A struck world holds no turn ahead of the open one any more, so
+  its future is played again from the world it now is: what the forecast did
+  not see coming changes what is seen coming. The swan is a black disc
+  flagged out from the line on the turn it struck, beating while part of it
+  is still going on, and a word in the line's name: `MoonshotMaven-🦢150` is
+  MoonshotMaven's line with a black swan on turn 150. A world it is still
+  going on in says so on its name plate.
 
 `beta/debugger_test.py` (`check_doctor_strange`) holds all of it in a browser
 against the toy engine: the opening seats, the layout, the names and colours,
 the one-step Branch into a third world, the pointer over a box, going back,
 following, the locked run, the divide, deleting a world of each kind and
 opening one again, the meter, the futures and their alerts, time running
-through turns played ahead, and the narrow window, which has the one timeline
+through turns played ahead, a black swan on every locked world and on the
+followed one alone, and the narrow window, which has the one timeline
 and says why. The engine's side is `ahead_plays_the_turns_to_come_and_comes_back_to_the_open_turn`
-(`src/server/debugger_tests.rs`) and the pane names in `src/server/panes_tests.rs`.
+and `a_black_swan_strikes_the_open_turn_and_lets_go_of_the_turns_ahead`
+(`src/server/debugger_tests.rs`), the pane names in `src/server/panes_tests.rs`,
+and the swans themselves in `src/game/black_swan_tests.rs`.
+
+### Black swans
+
+A black swan is an event nothing in the world saw coming. No rule of the game
+rolls one and no Civ AI can order one: it is struck from outside the game, on
+the world as it stands, by the `black_swan` operation (`Game::black_swan`,
+`src/game/black_swan.rs`). Which one it is and where it lands are drawn from
+the seed it is struck with and from nothing else, so one seed strikes two
+copies of a world alike. Each writes the world with the consequences the
+rules already have for what it does.
+
+| Swan | What it does |
+|------|--------------|
+| Instant nuclear war (`nuclear_war`) | Every civilization is at war with every other, whatever friendship or treaty stood between them. Each fires a nuclear device on the largest city, not yet struck, of each of its two strongest rivals (a thermonuclear one where it knows Nuclear Fusion). A detonation is the blast of a launched device: fallout over the radius, half of the city's people, its walls. Each is on the strike ledger, so the map shows it and a forecast names it. |
+| Pandemic (`pandemic`) | Every city in the world loses half its people. A city of one keeps its one. |
+| Radiation leak (`radiation_leak`) | Four cities around the world, drawn apart from one another, start leaking. Each loses a citizen and takes a reactor accident's damage, the ground a tile around it is contaminated at once, and the contamination spreads a ring a turn for 4 turns, to 5 tiles out. Ground it reaches pays nothing for 20 turns. |
+| Leader collapse (`leader_collapse`) | The leader of the civilization with the highest score falls. Its government waits out 10 turns of Anarchy, and no city of it keeps more than 25 Loyalty (50 in its capital). Which cities hold and which declare independence is the Loyalty rules' to say from there. |
+| Microstates (`microstates`) | A civilization with more than one city, drawn among those there are, breaks up. Every city but the one it is governed from becomes a Free City, which the whole world is at war with, stands up four melee units and holds one nuclear device. On each of the next 40 turns a microstate that is still a Free City and still holds its device fires it with odds of one in five, on the most populous city of a living civilization within 12 tiles. One that is taken, or comes home, has no arsenal. |
+
+A swan that this world has nothing for is refused and says why (no second
+city to break away, one civilization left). One drawn at random is drawn
+among those that are not.
+
+Two of the five are not over when they land, so a struck swan is part of the
+game and of its save (`Game::black_swans`): the turn's `process_black_swans`
+spreads a leak's next ring and rolls for each armed microstate. In a world no
+swan has struck it writes nothing and draws nothing from the world's random
+stream, and that world's save does not carry the field, so every game played
+without one is the game it was.
+
+Striking one moves the world's random stream on by one draw. That is what
+tells a struck world from the one it was: the print of the open turn's world
+reads the stream (`world_print`), so a timeline that was one world with this
+one up to here has parted from it on the turn before. The debugger marks the
+open turn again as the world it now is and lets go of the turns kept ahead of
+it, which were played in a world this did not happen in. Who played into the
+turn still did. What the seat had done in the turn stands and is no longer
+taken back: the turn now begins where the swan struck. Gone back to an
+earlier turn and walked forward along the kept turns, the world on the swan's
+turn is the world it struck; played forward again from an earlier turn, the
+turn is played over and no swan has struck it.
 
 ## `POST /autosearch`
 
@@ -1502,6 +1571,7 @@ operation leaves the world as it was.
 | `play` | `turns`, 1 to 100: that many `step`s, asked for once; optional `strategy`. It stops early where a run stops (a breakpoint, the end of the game, a Must avoid broken for good), and the answer carries `readings`: how the seat stood as each turn it played opened, in the keys of a lean answer's `seat`; and, once an `objective` is set, `terms` and `killed` |
 | `walk` | optional `turn`, the furthest to go; optional `era`: true to stop where a new era begins; optional `strategy`. Goes on along the kept turns the seated Civ AI would only play again, plays nothing, and is never refused: with none to take the world stays where it is |
 | `status` | optional `strategy`: seat that Civ AI and play nothing, which is how the page says a pick |
+| `black_swan` | optional `kind`, one of `debug.swan_kinds` by its `id`; optional `seed`. Strikes a black swan on the world as it stands (see "Black swans"): the one named, or one drawn by the seed among those the world has something for; a request with no seed is given one off the world's own random stream. The open turn is marked again and the turns kept ahead of it are let go of. The answer carries `black_swan`: its `turn`, `kind`, `name`, `text` (what happened, with its numbers), `sites`, the `player` it struck where it struck one, `until` and whether it is still `ongoing`. Refused in the middle of a round, and where the world has nothing for the swan named |
 | `step_seat`, `finish_round` | none |
 | `reveal` | `on`: true or false |
 | `branch` | none. Lets go of every turn kept ahead of the open one: what a half of a split that is a new branch is asked, so that it begins on the turn it was made on |
@@ -1530,7 +1600,10 @@ took this turn (`assisted`), why the last step `stopped`, what the last step
 in did (`stepped`: the action and how many are `left`), whether the view
 is `reveal`ed, the `memory_line` in megabytes if the page set one, and the
 save points (`saves`: `id`, `name`, `turn`, `acted`,
-and `auto` for the one the debugger keeps). The answer to a request that
+and `auto` for the one the debugger keeps), the black swans that have struck
+the seat's line as far as it is kept (`swans`, each as `black_swan` answers
+it, `ongoing` as of the open turn) and the ones there are to strike
+(`swan_kinds`: `id`, `name`, `about`). The answer to a request that
 named a `twin` also says whether the twin was made a copy of it (`twinned`).
 
 A watched game keeps no timeline and its state carries no `debug`.

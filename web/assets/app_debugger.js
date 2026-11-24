@@ -3471,6 +3471,7 @@ window.addEventListener("message", event => {
     debugSplit.panes[letter].marks = {flags: Array.isArray(data.flags) ? data.flags : [],
       stops: Array.isArray(data.stops) ? data.stops : [], beyond: data.beyond || null,
       eras: Array.isArray(data.eras) ? data.eras : [], by: Array.isArray(data.by) ? data.by : [],
+      swans: Array.isArray(data.swans) ? data.swans : [],
       turns: Array.isArray(data.turns) ? data.turns : null, worlds: Array.isArray(data.worlds) ? data.worlds : null};
     // The branch has let go of the turns that were ahead of it.
     if (letter === "b" && debugSplit.branches && Array.isArray(data.turns) && !data.beyond &&
@@ -3530,6 +3531,9 @@ window.addEventListener("message", event => {
   } else if (data.civvis === "pane-ahead-done") {
     // A world played ahead of its open turn, for the page that asked it to.
     if (STRANGE) strangeAheadDone(letter, data);
+  } else if (data.civvis === "pane-swan-done") {
+    // A world a black swan was struck on, for the page that asked for it.
+    if (STRANGE) strangeSwanDone(letter, data);
   } else if (data.civvis === "pane-planned") {
     if (debugSearch && debugSearch.playing === letter) debugSearchPlayed(debugSearch, data.done);
   }
@@ -3584,10 +3588,12 @@ function debugPaneMarks(timeline) {
   const turns = timeline.turns || [], worlds = timeline.worlds || null;
   // And whose play each stretch of them was, for the host to name there.
   const by = timeline.played_by || [];
-  const said = JSON.stringify([flags, stops, beyond, eras, turns, worlds, by]);
+  // And the black swans that have struck the line, for the host to mark on it.
+  const swans = timeline.swans || [];
+  const said = JSON.stringify([flags, stops, beyond, eras, turns, worlds, by, swans]);
   if (said === debugMarksSaid) return;
   debugMarksSaid = said;
-  window.parent.postMessage({civvis: "pane-marks", pane: DEBUG_PANE, flags, stops, beyond, eras, turns, worlds, by},
+  window.parent.postMessage({civvis: "pane-marks", pane: DEBUG_PANE, flags, stops, beyond, eras, turns, worlds, by, swans},
     location.origin);
 }
 // What the host tells a half to do after the other is done one thing at a
@@ -3820,6 +3826,30 @@ if (DEBUG_PANE !== null) {
             }
           }
         } catch (error) { said.error = String(error.message || error); }
+        window.parent.postMessage(said, location.origin);
+      });
+    }
+    else if (data.civvis === "pane-swan") {
+      // A black swan strikes this half's world as it stands (the engine's
+      // `black_swan`): the world that comes back is drawn, and the host is
+      // told what struck. It is not a move of this half's own for a locked
+      // other half to do too: the host strikes each world it means to.
+      debugInTurn(async () => {
+        const said = {civvis: "pane-swan-done", pane: DEBUG_PANE, swan: null, error: null};
+        debugMirroring = true;
+        try {
+          if (!debugTimeline() || debugRunning || autoplaying || gameFinished(state)) said.error = "this world cannot be struck now";
+          else {
+            const body = {op: "black_swan", seed: Number.isFinite(+data.seed) ? Math.max(0, Math.floor(+data.seed)) : 0};
+            if (typeof data.kind === "string" && data.kind) body.kind = data.kind;
+            const next = await debugOp(body, 60000);
+            if (!next) said.error = "the engine did not answer";
+            else if (next.error) said.error = next.error;
+            else said.swan = next.black_swan || null;
+            if (!said.swan && !said.error) said.error = "the engine struck nothing";
+          }
+        } catch (error) { said.error = String(error.message || error); }
+        finally { debugMirroring = false; }
         window.parent.postMessage(said, location.origin);
       });
     }
@@ -4917,6 +4947,21 @@ async function debugPlayPlan(plan, copy = null) {
 // line it is, and carries what was seen coming on it. What all of it costs
 // is read and shown in the top right corner (`strangeMeasure`).
 //
+// Operator 2026-11-24, later: "add a 'Generate Black Swan' - this will be a
+// random, unpredicted event that spawns and changes the game. Could be
+// instant nuclear war. Bio risk could collapse the population of all cities
+// by 50%. Radiation event that starts leaking radiation around the world.
+// Leader collapse. Civ blossoms out into powerful hostile nuclear armed
+// microstates. stuff like that. black swans on a civilizational timeline."
+//
+// So there is Generate Black Swan, at the top of the sky (`strangeSwan`).
+// The engine strikes one on a world as it stands (`black_swan`, `src/game/black_swan.rs`): from
+// that turn it is another world, the future that was played ahead of it is
+// let go of and played again, and the swan is a mark on its line where it
+// struck and a word in the line's name. Locked, the same swan strikes every
+// world, as everything else happens to them together; unlocked, the one
+// that is followed.
+//
 // Everything here is the host's. A half only puts its panels away
 // (`strange-pane`), and all that plays, walks and copies is the split's own
 // (`debugSplitRun`, `debugSplitGoTo`, `pane-copy`, `debugSplitSeat`). The
@@ -4958,6 +5003,10 @@ const STRANGE_DWELL_MS = 160;
 const STRANGE_METER_MS = 2000, STRANGE_METER_KEPT = 60;
 // What is seen coming on a world's future, by kind: its sign and its colour.
 const STRANGE_SIGNS = {nuclear: ["☢", "#ff5a4d"], war: ["⚔", "#ffb347"], won: ["★", "#8fe07a"], over: ["✕", "#c9d2cd"]};
+// A black swan: its sign, the colour it is drawn in on black, how long the
+// page goes on saying that one struck, and how long a world is waited on to
+// say that it was.
+const STRANGE_SWAN = "🦢", STRANGE_SWAN_INK = "#f1ecff", STRANGE_SWAN_MS = 14000, STRANGE_SWAN_WAIT_MS = 90000;
 // The worlds' card. Operator 2026-11-23: "lets track cumulative prod,
 // science, culture, gold, faith next to the current turn yields". A yield
 // has two columns a world: what it makes a turn, and what it has made over
@@ -5097,6 +5146,36 @@ const STRANGE_STYLE = `
   #strange-hud .strange-deck .strange-lock.on { color: #3a1d00; background: #ffd23f; border-color: #fff3b0; font-weight: 700; }
   #strange-hud .strange-deck .strange-futures { grid-column: 1 / -1; }
   #strange-hud .strange-deck .strange-futures.on { color: #10140f; background: #9ad0ff; border-color: transparent; font-weight: 700; }
+  /* A black swan is not one of the hand's moves on the highway: it comes
+     out of the blue. So it is struck from over the far end of the tree, at
+     the top of the sky, between the cards: the button, and beside it which.
+     Nothing is drawn up there but the far tips of the lines. */
+  #strange-hud .strange-swans {
+    position: absolute; left: 50%; top: 12px; transform: translateX(-50%); display: flex; gap: 5px;
+    max-width: calc(100% - 2 * min(330px, 34vw) - 64px);
+  }
+  #strange-hud .strange-swans .strange-swan {
+    flex: 0 1 auto; min-width: 0; height: 32px; padding: 0 14px; font-size: 13px; font-weight: 700;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    color: ${STRANGE_SWAN_INK}; background: #000; border-color: ${STRANGE_SWAN_INK}b3;
+  }
+  #strange-hud .strange-swans .strange-swan:hover:not(:disabled) { border-color: #fff; box-shadow: 0 0 16px -2px ${STRANGE_SWAN_INK}; }
+  #strange-hud .strange-swans select {
+    flex: 0 2 auto; width: auto; max-width: 168px; height: 32px; color: ${STRANGE_SWAN_INK}; background: #000;
+    border-color: ${STRANGE_SWAN_INK}66;
+  }
+  /* What struck, under the button for as long as it is news. */
+  #strange-hud .strange-omen {
+    position: absolute; left: 50%; top: 52px; transform: translateX(-50%); box-sizing: border-box;
+    width: max-content; max-width: min(470px, calc(100% - 2 * min(330px, 34vw) - 64px)); padding: 9px 14px 10px;
+    text-align: center; cursor: pointer; color: ${STRANGE_SWAN_INK}; background: #000000eb;
+    border: 1px solid ${STRANGE_SWAN_INK}; border-radius: 12px; box-shadow: 0 0 34px -4px ${STRANGE_SWAN_INK}99;
+  }
+  #strange-hud .strange-omen[hidden] { display: none; }
+  #strange-hud .strange-omen b { display: block; font-size: 10.5px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; color: #bdb6d6; }
+  #strange-hud .strange-omen strong { display: block; margin-top: 3px; font: 700 21px/1.15 Georgia, serif; color: #fff; }
+  #strange-hud .strange-omen span { display: block; margin-top: 5px; }
+  #strange-hud .strange-omen em { display: block; margin-top: 5px; font-style: normal; font-size: 11px; color: #bdb6d6; }
   #strange-hud .strange-steps { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; }
   #strange-hud .strange-steps button { padding: 0; font-variant-numeric: tabular-nums; }
   #strange-hud .strange-title .strange-say { margin-top: 7px; color: #9fb3ab; font-size: 11px; min-height: 2.5em; }
@@ -5155,6 +5234,10 @@ const strange = {
   // Whether each world's future is played ahead of the open turn, and the
   // world being asked for more of its own now: {letter, turns, since}.
   futures: true, peek: null,
+  // The black swan being struck: {kind, seed, first, waiting, rest, struck,
+  // failed, since}, null when none is (`strangeSwan`). And the one that last
+  // struck, for as long as the page says so: {swan, letters, since}.
+  swan: null, omen: null,
   // What the page costs, as it was read each time, and the last reading's
   // own figures to take the next from.
   meter: [], metered: null, measuring: false, meterTimer: null,
@@ -5204,7 +5287,19 @@ function strangeSeries(letter, tree = strangeTree()) {
   }
   const seated = pane.strategy || null;
   if (parts.length === 0 || (seated && parts[parts.length - 1].by !== seated)) parts.push({from: last, by: seated});
-  return parts.map((part, at) => at === 0 ? strangeHandle(part.by) : `${part.from}-${strangeHandle(part.by)}`).join("-");
+  // A black swan that struck the line is in its name on the turn it struck,
+  // among the strategies that played either side of it.
+  const [head, ...rest] = parts;
+  const tail = [...rest.map(part => ({turn: part.from, word: `${part.from}-${strangeHandle(part.by)}`, after: 0})),
+    ...strangeSwans(letter).filter(swan => swan.turn <= last).map(swan => ({turn: swan.turn, word: `${STRANGE_SWAN}${swan.turn}`, after: 1}))]
+    .sort((one, other) => one.turn - other.turn || one.after - other.after);
+  return [strangeHandle(head.by), ...tail.map(part => part.word)].join("-");
+}
+// The black swans that have struck a world's line, as far as it is kept: the
+// engine's account, which the world says with its marks (`debug.swans`).
+function strangeSwans(letter) {
+  const pane = debugSplit ? debugSplit.panes[letter] : null, told = pane && pane.marks ? pane.marks.swans : null;
+  return Array.isArray(told) ? told.filter(swan => swan && typeof swan.turn === "number") : [];
 }
 // The next colour for a branch: not one an open world is drawn in.
 function strangeInk() {
@@ -5223,7 +5318,7 @@ function strangeLimit() {
 // Whether the worlds can be asked for something now.
 function strangeIdle() {
   const split = debugSplit;
-  if (!split || !split.shown || split.busy || split.running > 0 || strange.run || strange.lockWanted) return false;
+  if (!split || !split.shown || split.busy || split.running > 0 || strange.run || strange.lockWanted || strange.swan) return false;
   const open = strangeOpen();
   return open.length > 0 && open.every(letter => split.panes[letter].turn !== null && !split.panes[letter].born);
 }
@@ -5701,6 +5796,87 @@ function strangeLock() {
   strangeDraw();
 }
 
+// ---- black swans
+//
+// Operator 2026-11-24: "add a 'Generate Black Swan' - this will be a random,
+// unpredicted event that spawns and changes the game", "black swans on a
+// civilizational timeline."
+//
+// The engine strikes one on a world as it stands and says what happened
+// (`pane-swan`, the engine's `black_swan`). Which one it is and where it
+// lands are drawn from a seed the page makes, unless one was picked. The
+// followed world is struck first and says which it was; locked, the rest
+// are then struck by that same one with the same seed, so worlds that are
+// still one world stay one, and worlds that have parted meet the same event.
+// Unlocked, only the followed world is struck, and parts from the rest
+// there. A world that was struck holds nothing ahead of the open turn any
+// more: its future is played again from the world it now is
+// (`strangeAheadNext`), which is how a swan nothing foresaw changes what is
+// seen coming.
+function strangeSwan(kind = "", seed = Math.floor(Math.random() * 4294967296)) {
+  if (!strangeIdle()) return;
+  const first = strange.follow, rest = strange.locked ? strangeOpen().filter(letter => letter !== first) : [];
+  strange.swan = {kind: kind || null, seed, first, waiting: [first], rest, struck: [], failed: [], since: performance.now()};
+  strange.omen = null;
+  debugSplitTell(first, {civvis: "pane-swan", kind: kind || null, seed});
+  strangeSay("");
+}
+// A world says it was struck, or why it was not (`pane-swan-done`, from the
+// split's listener).
+function strangeSwanDone(letter, data) {
+  const split = debugSplit, swanning = strange.swan, pane = split ? split.panes[letter] : null;
+  if (!swanning || !swanning.waiting.includes(letter)) return;
+  swanning.waiting = swanning.waiting.filter(name => name !== letter);
+  const swan = pane && !data.error && data.swan && typeof data.swan.turn === "number" ? data.swan : null;
+  if (swan) {
+    swanning.struck.push({letter, swan});
+    // What it held ahead was played in a world this did not happen in.
+    pane.alerts = (pane.alerts || []).filter(alert => alert.turn < swan.turn);
+    for (const turn of [...(pane.ahead || new Map()).keys()]) if (turn > swan.turn) pane.ahead.delete(turn);
+    for (const turn of [...split.history[letter].keys()]) if (turn > swan.turn) split.history[letter].delete(turn);
+    pane.last = swan.turn;
+    pane.spent = null;
+  } else swanning.failed.push({letter, error: data.error || "it could not be struck"});
+  if (letter === swanning.first) {
+    // The rest are struck by the one the first drew. If it drew none, none is.
+    const rest = swan ? swanning.rest.filter(name => strange.order.includes(name) && split.panes[name]) : [];
+    swanning.rest = [];
+    if (rest.length > 0) {
+      swanning.kind = swan.kind;
+      swanning.waiting = rest;
+      swanning.since = performance.now();
+      for (const name of rest) debugSplitTell(name, {civvis: "pane-swan", kind: swan.kind, seed: swanning.seed});
+    }
+  }
+  if (swanning.waiting.length === 0) strangeSwanOver(swanning);
+  else strangeDraw();
+}
+function strangeSwanOver(swanning) {
+  if (strange.swan !== swanning) return;
+  strange.swan = null;
+  strange.tree = null;
+  const struck = swanning.struck, failed = swanning.failed;
+  if (struck.length > 0) {
+    strange.omen = {swan: struck[0].swan, letters: struck.map(held => held.letter), since: performance.now()};
+    const spared = failed.length === 0 ? ""
+      : `. ${failed.map(held => held.letter.toUpperCase()).join(", ")} ${failed.length === 1 ? "was" : "were"} spared: ${failed[0].error}`;
+    strangeSay(`${STRANGE_SWAN} Black swan on turn ${struck[0].swan.turn}: ${struck[0].swan.name}${spared}`);
+  } else strangeSay(`No black swan struck: ${failed.length > 0 ? failed[0].error : "no world answered"}`);
+  // Each world's future is played again, from the world it now is.
+  strangeAheadNext();
+}
+// A world that was asked and never answered is not waited on for ever, and
+// what struck is news for only so long.
+function strangeSwanWatch() {
+  const swanning = strange.swan, now = performance.now();
+  if (swanning && now - swanning.since >= STRANGE_SWAN_WAIT_MS) {
+    for (const letter of swanning.waiting) swanning.failed.push({letter, error: "it did not answer"});
+    swanning.waiting = [];
+    strangeSwanOver(swanning);
+  }
+  if (strange.omen && now - strange.omen.since >= STRANGE_SWAN_MS) { strange.omen = null; strangeDraw(); }
+}
+
 // ---- what the page costs
 //
 // Operator 2026-11-24: "we should also monitor resource usage - maybe track
@@ -5791,7 +5967,7 @@ function strangeMount() {
   else split.panes.b.strategy = ranked.names.find(name => name !== split.panes.a.strategy) || split.panes.a.strategy;
   Object.assign(strange, {follow: "a", cam: null, lanes: {a: 0, b: 1}, order: ["a", "b"], born: {a: 0, b: 1}, births: 2,
     tint: {a: STRANGE_INKS[0], b: STRANGE_INKS[1]}, inks: 2, tree: null, parted: {}, locked: true, lockWanted: false,
-    divide: null, over: null, peek: null, run: null, said: "", drawn: "", meter: [], metered: null});
+    divide: null, over: null, peek: null, run: null, swan: null, omen: null, said: "", drawn: "", meter: [], metered: null});
   const canvas = document.createElement("canvas");
   canvas.id = "strange-sky";
   canvas.setAttribute("role", "img");
@@ -5823,6 +5999,11 @@ function strangeMount() {
       <em data-strange-worlds></em>
     </div>
     <div class="strange-versus strange-card" data-strange="numbers"></div>
+    <div class="strange-swans" role="group" aria-label="Black swan">
+      <button class="strange-swan" data-strange="swan"></button>
+      <select data-strange="swan-kind" aria-label="Which black swan"></select>
+    </div>
+    <div class="strange-omen" data-strange="omen" role="alert" title="Click to put away" hidden></div>
     <div class="strange-divide" title="Drag to give the tree or the worlds more room. Double-click to let the page place it"></div>
     <div class="strange-now strange-turn"><span>TURN</span><b data-strange="turn"></b><span data-strange="limit"></span><span class="strange-era" data-strange="era"></span></div>`;
   hud.addEventListener("click", event => {
@@ -5837,6 +6018,8 @@ function strangeMount() {
     else if (action === "lock") strangeLock();
     else if (action === "futures") { strange.futures = !strange.futures; strangeAheadNext(); strangeDraw(); }
     else if (action === "fork") strangeGoTo((strange.tree || strangeTree()).splits);
+    else if (action === "swan") strangeSwan(hud.querySelector('[data-strange="swan-kind"]').value);
+    else if (action === "omen") { strange.omen = null; strangeDraw(); }
     else if (action.startsWith("follow-")) { strange.follow = action.slice(7); strangeDraw(); }
     else if (action.startsWith("close-")) strangeClose(action.slice(6));
   });
@@ -5883,7 +6066,7 @@ function strangeMount() {
   for (const letter of strange.order) strangeWorldOpen(letter);
   strangeLayout();
   clearInterval(strange.meterTimer);
-  strange.meterTimer = setInterval(() => { strangeAheadWatch(); strangeMeasure(); }, STRANGE_METER_MS);
+  strange.meterTimer = setInterval(() => { strangeAheadWatch(); strangeSwanWatch(); strangeMeasure(); }, STRANGE_METER_MS);
   strangeMeasure();
   requestAnimationFrame(strangePaint);
 }
@@ -5901,6 +6084,12 @@ function strangeLayout() {
   strange.cards = [{left: title.left, right: title.right, top: title.top, bottom: title.bottom, side: -1},
     {left: meter.left, right: meter.right, top: meter.top, bottom: meter.bottom, side: 1},
     {left: versus.left, right: versus.right, top: versus.top, bottom: versus.bottom, side: 1}];
+  // And off the black swan's button, and what it says while it says it.
+  for (const held of [hud.querySelector(".strange-swans"), hud.querySelector(".strange-omen")]) {
+    if (held.hidden) continue;
+    const said = held.getBoundingClientRect();
+    strange.cards.push({left: said.left, right: said.right, top: said.top, bottom: said.bottom, side: 1});
+  }
   const g = strangeGeometry(), host = split.host, open = strangeOpen();
   const put = (held, name, value) => { if (held.style.getPropertyValue(name) !== value) held.style.setProperty(name, value); };
   put(host, "--strange-line", `${g.cy}px`);
@@ -5960,6 +6149,38 @@ function strangeDraw() {
   futures.title = strange.futures
     ? `Each world is played ${STRANGE_AHEAD} turns ahead of the open turn along its own player strategy, and what is coming is put up on its line. Click to play only what is shown`
     : "Each world plays a turn when it is shown it. Click to play each world's future ahead of the open turn";
+  // Generate Black Swan, and which: any, drawn at random, or one by name.
+  // The engine says which there are (`debug.swan_kinds`).
+  const struck = strange.locked && many ? open : [follow];
+  const swan = set("swan", strange.swan ? `${STRANGE_SWAN} Striking…` : `${STRANGE_SWAN} Generate Black Swan`);
+  swan.disabled = !idle;
+  swan.title = struck.length > 1
+    ? `An event nothing saw coming strikes every world on turn ${turn}, the same one on each, and changes the game from there. Unlock to strike ${follow.toUpperCase()} alone`
+    : `An event nothing saw coming strikes world ${follow.toUpperCase()} on turn ${turn} and changes the game from there`;
+  const kinds = hud.querySelector('[data-strange="swan-kind"]');
+  const sorts = `<option value="" title="One drawn at random, among those the world has something for">Any</option>` +
+    (((state || {}).debug || {}).swan_kinds || []).map(kind =>
+      `<option value="${escapeAttr(kind.id)}" title="${escapeAttr(kind.about)}">${escapeAttr(kind.name)}</option>`).join("");
+  if (kinds.dataset.drawn !== sorts && document.activeElement !== kinds) {
+    const picked = kinds.value;
+    kinds.dataset.drawn = sorts;
+    kinds.innerHTML = sorts;
+    kinds.value = [...kinds.options].some(option => option.value === picked) ? picked : "";
+  }
+  kinds.disabled = !idle;
+  kinds.title = "Which black swan Generate strikes: any, drawn at random, or this one";
+  // What struck, for as long as it is news: the followed world's account.
+  const omen = hud.querySelector('[data-strange="omen"]'), news = strange.omen;
+  const told = !news ? "" : (() => {
+    const text = String(news.swan.text || ""), name = String(news.swan.name || "Black swan");
+    const letters = news.letters.map(letter => letter.toUpperCase());
+    const where = letters.length === 1 ? `World ${letters[0]}`
+      : `Worlds ${letters.slice(0, -1).join(", ")} and ${letters[letters.length - 1]}, the same on each`;
+    return `<b>${STRANGE_SWAN} Black swan · turn ${news.swan.turn}</b><strong>${escapeAttr(name)}</strong>` +
+      `<span>${escapeAttr(text.startsWith(`${name}. `) ? text.slice(name.length + 2) : text)}</span><em>${where}</em>`;
+  })();
+  if (omen.dataset.drawn !== told) { omen.dataset.drawn = told; omen.innerHTML = told; }
+  omen.hidden = !news;
   const first = Math.max(...open.map(letter => panes[letter].first ?? 1));
   for (const [name, off] of [["back10", turn <= first], ["back1", turn <= first],
     ["on1", limit !== null && turn >= limit], ["on10", limit !== null && turn >= limit]])
@@ -5995,11 +6216,13 @@ function strangeDraw() {
     debugOfferAgents(picker, pane.strategy);
     picker.disabled = !idle;
     const series = strangeSeries(letter, tree), named = hud.querySelector(`[data-strange-name="${letter}"]`);
-    if (named.textContent !== series) { named.textContent = series; named.title = `Branch ${series}: the player strategies that played it, and the turn each took the seat on`; }
+    if (named.textContent !== series) { named.textContent = series; named.title = `Branch ${series}: the player strategies that played it, and the turn each took the seat on. ${STRANGE_SWAN} is a black swan, on the turn it struck`; }
     const exit = hud.querySelector(`[data-strange="close-${letter}"]`);
     exit.disabled = !idle || !many;
     exit.title = many ? `Delete ${name}: its line goes from the tree and its box from the window` : "The last world stays open";
-    const line = [...(strange.locked || pane.turn === null ? [] : [`Turn ${pane.turn}`]),
+    // A black swan that is still going on in this world is said first.
+    const still = strangeSwans(letter).filter(swan => swan.ongoing && swan.turn <= (pane.turn ?? 0)).map(swan => `${STRANGE_SWAN} ${swan.name}`);
+    const line = [...still, ...(strange.locked || pane.turn === null ? [] : [`Turn ${pane.turn}`]),
       ...[["score", "Score"], ["cities", "Cities"], ["science", "Science"]]
         .filter(([key]) => typeof numbers[key] === "number")
         .map(([key, label]) => `${label} ${debugVersusNumber(numbers[key])}`)].join(" · ");
@@ -6118,6 +6341,14 @@ function strangePaint(time) {
   glow.addColorStop(0, "#12312b"); glow.addColorStop(.35, "#081712"); glow.addColorStop(1, "#03070a");
   pen.fillStyle = glow;
   pen.fillRect(0, 0, g.W, g.H);
+  // A black swan that has just struck lights the whole sky for a moment.
+  const news = strange.omen, struckFor = news ? performance.now() - news.since : Infinity;
+  if (struckFor < 900) {
+    pen.globalAlpha = .34 * (1 - struckFor / 900);
+    pen.fillStyle = STRANGE_SWAN_INK;
+    pen.fillRect(0, 0, g.W, g.H);
+    pen.globalAlpha = 1;
+  }
 
   // The board: a fret for every turn, heavier on every fifth and tenth, as
   // wide as the tree is at that height.
@@ -6300,6 +6531,44 @@ function strangePaint(time) {
         named.push([py, side]);
         write(`Turn ${alert.turn} · ${alert.text || alert.kind}`, px + side * 4, py, side, tint, quiet(letter), false);
       }
+      pen.globalAlpha = 1;
+    }
+  }
+
+  // A black swan is a mark on the line it struck, on the turn it struck: a
+  // black disc flagged out to the side of the line, clear of the world
+  // standing there. Worlds that were one world when it struck share the
+  // mark. One that is still going on beats, and one that has just struck
+  // rings out. Ahead of the open turn, where there is room, it is named.
+  pen.font = "700 13px system-ui, sans-serif";
+  const flagged = [];
+  for (const letter of [...open].sort((one, other) => (other === follow) - (one === follow))) {
+    for (const swan of strangeSwans(letter)) {
+      if (swan.turn < low || swan.turn > high || swan.turn > worlds[letter].last || swan.turn < worlds[letter].first) continue;
+      const px = x(letter, swan.turn), py = y(swan.turn);
+      if (py < 14 || py > g.H - 14 || flagged.some(([fx, fy]) => Math.abs(fx - px) < 3 && Math.abs(fy - py) < 3)) continue;
+      flagged.push([px, py]);
+      const side = strange.lanes[letter] > 0 ? 1 : -1, fx = px + side * (Math.abs(py - g.cy) < 34 ? 46 : 24);
+      const fresh = !!news && struckFor < 2600 && news.swan.turn === swan.turn && news.letters.includes(letter);
+      pen.globalAlpha = quiet(letter);
+      pen.strokeStyle = STRANGE_SWAN_INK; pen.lineWidth = 1.5;
+      pen.beginPath(); pen.moveTo(px, py); pen.lineTo(fx, py); pen.stroke();
+      if (fresh) {
+        const out = struckFor / 2600;
+        pen.globalAlpha = (1 - out) * .8; pen.lineWidth = 2.5;
+        pen.beginPath(); pen.arc(fx, py, 12 + out * 70, 0, Math.PI * 2); pen.stroke();
+      } else if (swan.ongoing) {
+        pen.globalAlpha = .25 + .3 * (.5 + .5 * Math.sin(time / 320)); pen.lineWidth = 2;
+        pen.beginPath(); pen.arc(fx, py, 17 + 2 * Math.sin(time / 320), 0, Math.PI * 2); pen.stroke();
+      }
+      pen.globalAlpha = quiet(letter);
+      pen.fillStyle = "#000"; pen.lineWidth = 2;
+      pen.beginPath(); pen.arc(fx, py, 12, 0, Math.PI * 2); pen.fill(); pen.stroke();
+      pen.fillStyle = STRANGE_SWAN_INK; pen.textAlign = "center";
+      pen.fillText(STRANGE_SWAN, fx, py + 1);
+      pen.font = "700 11px system-ui, sans-serif";
+      if (py < g.cy - 20) write(`Turn ${swan.turn} · ${swan.name}`, fx + side * 8, py, side, STRANGE_SWAN_INK, quiet(letter), false);
+      pen.font = "700 13px system-ui, sans-serif";
       pen.globalAlpha = 1;
     }
   }
