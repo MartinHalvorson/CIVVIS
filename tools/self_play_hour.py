@@ -57,7 +57,9 @@ commit on the branch's tip built in a scratch index, pushed as a fast
 forward, and rebuilt on the new tip if a finished game got there first. The
 CIVVIS Performance page reads that file when the site is published.
 
-`install` schedules `run --record` with launchd at the given local hours.
+`install` schedules `run --record` with launchd at the given local hours,
+under the machine's canonical fleet name when `--host` gives it
+(`docs/MACHINES.md`; without one a reading takes git's `civvis.machine`).
 `docs/SELF_PLAY_HOUR.md` is the write-up.
 """
 
@@ -436,14 +438,16 @@ def show(repo: Path) -> int:
     return 0
 
 
-def agent(state_dir: Path, hours: list[int], minutes: float, repo: Path) -> dict:
-    """The launchd job: `run --record` at each of `hours`, local time."""
+def agent(state_dir: Path, hours: list[int], minutes: float, repo: Path, host: str = "") -> dict:
+    """The launchd job: `run --record` at each of `hours`, local time, under
+    the machine's fleet name when one is given (`docs/MACHINES.md`)."""
     log = str(Path.home() / "Library/Logs/civvis-self-play-hour.log")
     return {
         "Label": LABEL,
         "ProgramArguments": [
             "/usr/bin/python3", str(repo / "tools" / "self_play_hour.py"), "run",
             "--state-dir", str(state_dir), "--minutes", f"{minutes:g}", "--record", "--repo", str(repo),
+            *(["--host", host] if host else []),
         ],
         "StartCalendarInterval": [{"Hour": hour, "Minute": 0} for hour in sorted(set(hours))],
         "EnvironmentVariables": {"HOME": str(Path.home()), "PATH": "/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin"},
@@ -466,7 +470,7 @@ def install(args: argparse.Namespace) -> int:
     domain = f"gui/{os.getuid()}"
     subprocess.run(["launchctl", "bootout", f"{domain}/{LABEL}"], capture_output=True, check=False)
     with target.open("wb") as out:
-        plistlib.dump(agent(state_dir, hours, args.minutes, Path(args.repo).resolve()), out)
+        plistlib.dump(agent(state_dir, hours, args.minutes, Path(args.repo).resolve(), args.host), out)
     loaded = subprocess.run(["launchctl", "bootstrap", domain, str(target)], capture_output=True, check=False)
     if loaded.returncode != 0:
         print(f"launchctl bootstrap failed: {loaded.stderr.decode(errors='replace').strip()}", file=sys.stderr)
@@ -505,6 +509,7 @@ def main(argv: list[str] | None = None) -> int:
     common(placed)
     placed.add_argument("--hours", default=",".join(str(hour) for hour in HOURS), help="local hours, comma separated")
     placed.add_argument("--minutes", type=float, default=60.0)
+    placed.add_argument("--host", default="", help="this machine's fleet name, for every reading the job takes")
     commands.add_parser("uninstall", help="remove the launchd job")
     args = parser.parse_args(argv)
     if args.command == "run":

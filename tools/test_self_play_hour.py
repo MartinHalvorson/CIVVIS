@@ -341,6 +341,13 @@ class TheSchedule(unittest.TestCase):
             self.assertEqual(self_play_hour.main(parser_args), 0)
         self.assertTrue(ran.call_args[0][0].record)
         self.assertEqual(ran.call_args[0][0].minutes, 60.0)
+        # A machine's canonical fleet name is not always the one git is
+        # configured with, so the job can be told it.
+        named = self_play_hour.agent(Path("/state"), [8], 60.0, Path("/repo"), "mbp-m5-max-128")["ProgramArguments"]
+        self.assertEqual(named[-2:], ["--host", "mbp-m5-max-128"])
+        with mock.patch.object(self_play_hour, "run", return_value=0) as ran:
+            self.assertEqual(self_play_hour.main(named[2:]), 0)
+        self.assertEqual(ran.call_args[0][0].host, "mbp-m5-max-128")
         # It watches; it is not the work. And it is a plist launchd can read.
         self.assertEqual(job["ProcessType"], "Background")
         self.assertEqual(plistlib.loads(plistlib.dumps(job)), job)

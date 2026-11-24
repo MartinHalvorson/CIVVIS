@@ -99,14 +99,15 @@ time.
 python3 tools/self_play_hour.py run --state-dir ~/civvis-runs/<state> --record
 
 # Every six hours, by launchd, at 02:00, 08:00, 14:00 and 20:00 local time:
-python3 tools/self_play_hour.py install --state-dir ~/civvis-runs/<state>
+python3 tools/self_play_hour.py install --state-dir ~/civvis-runs/<state> --host <fleet name>
 
 python3 tools/self_play_hour.py show        # the readings on the ledger
 python3 tools/self_play_hour.py uninstall
 ```
 
 `install` writes `~/Library/LaunchAgents/com.civvis.self-play-hour.plist` and
-loads it. The job only watches, so it runs as a background process. Its log
+loads it. `--host` is the machine's canonical name in `docs/MACHINES.md`,
+which every reading the job takes is filed under. The job only watches, so it runs as a background process. Its log
 is `~/Library/Logs/civvis-self-play-hour.log`. Run it from the checkout that
 the synchronization service keeps at `origin/main`, so the job follows the
 tool as it changes.
