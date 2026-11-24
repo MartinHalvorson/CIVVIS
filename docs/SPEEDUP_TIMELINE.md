@@ -2,7 +2,9 @@
 
 How many times faster than a person a game of Civilization VI gets played.
 The home page shows it over its videos: one number, and under it a line with
-five ways of playing one game, each standing at its multiplier.
+five ways of playing one game, each standing at its multiplier. Past them
+stand two stops nothing has played yet:
+[The stops past what was measured](#the-stops-past-what-was-measured).
 
 The readings are `data/performance/speedup_timeline.json`. The page's figures
 are worked out from them by `beta/speedup_timeline.py` when the site is
@@ -48,6 +50,44 @@ stretch of it. Words that would meet their neighbour's on the same side of
 the line stand a row further out, at the end of a rule from the stop's point
 (`speedup_timeline.rows`). The line is drawn from a window 1120px wide, where
 it is at its full length. A narrower window shows the stops as a list.
+
+## The stops past what was measured
+
+The project owner, 2026-11-22: "add to out speedup timeline: 10x theoretical
+scale up from local hardware ... hardware scaleup is to the left of m5 max.
+potential distributed RL fleet: up to 1000+x".
+
+The ledger's `projected` are stops nothing has run at. Each is a measured
+stop's multiplier times one figure, so it moves when that stop does.
+
+| Stop | What it is | The sum |
+| --- | --- | --- |
+| Hardware scale-up (`scale_up`) | Larger hardware of our own than the one M5 Max. Theoretical. | `10 × the M5 Max's multiplier` |
+| Distributed RL fleet (`fleet`) | Many machines playing self-play at once for reinforcement learning. A potential, and open at its top. | `1,000 × the M5 Max's multiplier`, and more |
+
+Both figures are the project owner's and both are over the M5 Max's
+every-core stop. No machine was sized or priced for either. Whether his
+1,000 is over the one M5 Max or over the scaled-up hardware is this page's
+reading of his sentence, and it reads the first.
+
+On the home page they are rings in the line's own colour, under the line and
+to the left of the M5 Max. The page's number is never one of them: it is the
+fastest stop that was measured, and the line is drawn solid only as far as
+that stop. The fleet stands past the 1,000,000x goal.
+
+A projected stop is an entry of `projected`:
+
+- `key` is the name the page knows it by.
+- `over` is the key of the measured stop it multiplies.
+- `estimates` are dated, oldest first, and the newest is shown. Each has the
+  day it was `taken`, the figure (`times`), `or_more` when the figure is open
+  at its top (his "1000+", shown as `1,000x+`), and `from`, which says whose
+  figure it is and what it stands for.
+
+A changed figure is a new estimate after the ones there, as a new reading
+is. `speedup_timeline.projected` works the rows out, and
+`speedup_timeline.timeline` returns them as `projected`. The Performance
+page's tables do not show them.
 
 ## The goals and the cloud's cost
 
@@ -131,15 +171,22 @@ Games an hour times the hours one game takes by hand is the multiplier, so
 the two columns say the same thing. A theoretical row also gives the share
 of it the measured run reaches.
 
-The two theoretical rows for self-play differ because of where their speed
-was measured. The one-core reading was taken on the host as it works, beside
-a live game and the tournament, so eighteen times it comes out close to the
-run. A game alone on the machine is about half again as fast, and eighteen
-times that is the ceiling the run is held against. No machine reaches it
-whole: the run's workers had 14.7 of the 18 cores, and twelve of the
-eighteen are of the slower class (`docs/GAMES_PER_MINUTE.md`). Deity
-self-play has a theoretical row and no experimental one, because no run has
-played it on every core.
+The two theoretical rows for self-play differ because of where and when
+their speed was measured. The one-core reading is taken on the host as it
+works, beside a live game and the tournament. A game alone has the machine
+to itself, and eighteen times its speed is the ceiling a run is held
+against. No machine reaches it whole: the run's workers had 14.7 of the 18
+cores, and twelve of the eighteen are of the slower class
+(`docs/GAMES_PER_MINUTE.md`). Deity self-play has a theoretical row and no
+experimental one, because no run has played it on every core.
+
+Each row carries the day of its reading, and the rows need not be of one
+build. The one-core readings of 2026-11-24 are two days newer than the
+every-core run and the game alone, and the simulator got faster in between,
+so eighteen times the one-core reading stands above both and the share the
+run reaches of it is short by that much. A new every-core run and a new game
+alone on the same build put the three back in step. Both need the machine to
+itself.
 
 Three ledger keys are read by these tables alone:
 
