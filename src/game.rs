@@ -1,6 +1,8 @@
 //! Core turn engine (mirrors civvis/game.py — same mechanics and action protocol).
 use crate::shared_sort::SharedSort;
 use serde::ser::SerializeMap;
+#[cfg(test)]
+mod favor_migration_tests;
 mod host_policy_windows;
 #[cfg(test)]
 mod host_trade_tests;
@@ -5010,6 +5012,47 @@ pub struct WmdPlatform {
     pub distance: i32,
 }
 
+/// The game's record of itself: what the rules write and never read back.
+///
+/// `docs/CORE_STATE.md` measured it: blank any of these in a save and the
+/// rest of the world replays identically, and fresh agents play the same
+/// game. A search branch, a debugger fork or a planning copy therefore pays a
+/// pointer per record, and copies one only if it writes to it.
+#[derive(Clone, Default)]
+pub struct Chronicle {
+    /// The wars that ended, oldest first and bounded — long enough for a
+    /// client to show what a peace cost, short enough not to grow forever.
+    pub concluded_wars: Arc<Vec<WarRecord>>,
+    /// Every nuclear detonation, oldest first and bounded. The tail is what a
+    /// client animates and what a log describes.
+    pub nuclear_strikes: Arc<Vec<NuclearStrike>>,
+    /// Every major civilization's yields and city count, one row per
+    /// civilization per turn, oldest first: the result screen's graphs. Only
+    /// the played world writes to it.
+    pub turn_stats: Arc<Vec<TurnStats>>,
+    /// Where each unit has walked lately, oldest first and bounded like the
+    /// strike ledger: a client draws the recent tail.
+    pub unit_move_trails: Arc<Vec<UnitMoveTrail>>,
+}
+
+impl Chronicle {
+    pub fn concluded_wars_mut(&mut self) -> &mut Vec<WarRecord> {
+        Arc::make_mut(&mut self.concluded_wars)
+    }
+
+    pub fn nuclear_strikes_mut(&mut self) -> &mut Vec<NuclearStrike> {
+        Arc::make_mut(&mut self.nuclear_strikes)
+    }
+
+    pub fn turn_stats_mut(&mut self) -> &mut Vec<TurnStats> {
+        Arc::make_mut(&mut self.turn_stats)
+    }
+
+    pub fn unit_move_trails_mut(&mut self) -> &mut Vec<UnitMoveTrail> {
+        Arc::make_mut(&mut self.unit_move_trails)
+    }
+}
+
 /// One detonation, recorded on the game rather than reconstructed from its
 /// consequences.
 ///
@@ -5480,6 +5523,221 @@ impl std::ops::DerefMut for Player {
     }
 }
 
+/// Whether `key` names one of the stock agents' own notes rather than a
+/// tally the rules keep. Every one of these is written from inside an
+/// agent's turn, outside any action. Asked on every counter access, so it is
+/// a pair of `match`es rather than a scan.
+pub fn is_agent_note(key: &str) -> bool {
+    let namespaced = key.split_once(':').is_some_and(|(head, _)| {
+        matches!(
+            head,
+            "air_surge"
+                | "band_hunt"
+                | "campaign"
+                | "city_state_harvest"
+                | "city_state_stone"
+                | "coalition"
+                | "commit"
+                | "contested_land"
+                | "diplo_allies_every_friend"
+                | "edge_unit"
+                | "eoe"
+                | "faith_strike"
+                | "heretic_hunt"
+                | "one_war"
+                | "pad_raid"
+                | "player"
+                | "raid_prize"
+                | "research_alliance"
+        )
+    });
+    namespaced
+        || matches!(
+            key,
+            "culture_heist_posts"
+                | "culture_heists"
+                | "denial_denunciations"
+                | "denial_pillages"
+                | "denial_spies_trained"
+                | "denial_spy_posts"
+                | "denial_wars"
+                | "denunciations_withheld"
+                | "every_pad_disrupts"
+                | "every_pad_posts"
+                | "kristina_plaza_claims"
+                | "plaza_district_claims"
+                | "plaza_tier_claims"
+                | "racer_cover_posts"
+                | "racer_spy_posts"
+                | "racer_spy_searches"
+                | "racer_spy_unrunnable_offers_left"
+                | "raid_wars"
+                | "score_wonder_finishes"
+                | "score_wonder_losses"
+                | "score_wonder_rear_starts"
+                | "score_wonder_rear_turns"
+                | "score_wonder_starts"
+                | "sea_scout_claims"
+                | "sources_before_disrupt"
+                | "space_person_project_claims"
+                | "spy_steals"
+                | "steal_spies_trained"
+                | "wounded_ships_sailed_on"
+        )
+}
+
+/// A seat's named tallies, answering as one map.
+///
+/// The rules keep tallies here that they read back (goody huts claimed,
+/// great works, project effects, historic moments). The stock agents keep
+/// their own notes in the same map (commitments made and abandoned, coalition
+/// offers, raids), written from inside an agent's turn rather than through any
+/// action, so a replay of the game's actions could never reproduce them
+/// (`docs/CORE_STATE.md`, "Leaks"). They are stored apart: `rules` is the
+/// world, `notes` (shared until written) is the agents' memory. Callers use
+/// one map interface and the key decides where it lives (`is_agent_note`), so
+/// every reader and writer is unchanged; a save writes them as one map, as
+/// before.
+#[derive(Clone, Default, PartialEq, Debug)]
+pub struct Counters {
+    rules: BTreeMap<String, i64>,
+    notes: Arc<BTreeMap<String, i64>>,
+}
+
+impl Counters {
+    fn side(&self, key: &str) -> &BTreeMap<String, i64> {
+        if is_agent_note(key) {
+            &self.notes
+        } else {
+            &self.rules
+        }
+    }
+
+    fn side_mut(&mut self, key: &str) -> &mut BTreeMap<String, i64> {
+        if is_agent_note(key) {
+            Arc::make_mut(&mut self.notes)
+        } else {
+            &mut self.rules
+        }
+    }
+
+    pub fn get(&self, key: &str) -> Option<&i64> {
+        self.side(key).get(key)
+    }
+
+    pub fn get_mut(&mut self, key: &str) -> Option<&mut i64> {
+        self.side_mut(key).get_mut(key)
+    }
+
+    pub fn contains_key(&self, key: &str) -> bool {
+        self.side(key).contains_key(key)
+    }
+
+    pub fn insert(&mut self, key: String, value: i64) -> Option<i64> {
+        self.side_mut(&key).insert(key, value)
+    }
+
+    pub fn remove(&mut self, key: &str) -> Option<i64> {
+        self.side_mut(key).remove(key)
+    }
+
+    pub fn entry(&mut self, key: String) -> std::collections::btree_map::Entry<'_, String, i64> {
+        if is_agent_note(&key) {
+            Arc::make_mut(&mut self.notes).entry(key)
+        } else {
+            self.rules.entry(key)
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.rules.len() + self.notes.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.rules.is_empty() && self.notes.is_empty()
+    }
+
+    /// Every tally, rules' and agents' together, in key order.
+    pub fn iter(&self) -> std::vec::IntoIter<(&String, &i64)> {
+        let mut all: Vec<(&String, &i64)> = self.rules.iter().chain(self.notes.iter()).collect();
+        all.sort();
+        all.into_iter()
+    }
+
+    /// Every key, rules' and agents' together, in order.
+    pub fn keys(&self) -> impl Iterator<Item = &String> {
+        self.iter().map(|(key, _)| key)
+    }
+
+    /// Every value, in key order.
+    pub fn values(&self) -> impl Iterator<Item = &i64> {
+        self.iter().map(|(_, value)| value)
+    }
+
+    /// The tallies the rules keep: the part of this map that is the world.
+    pub fn rules(&self) -> &BTreeMap<String, i64> {
+        &self.rules
+    }
+
+    /// The stock agents' own notes.
+    pub fn notes(&self) -> &BTreeMap<String, i64> {
+        &self.notes
+    }
+}
+
+impl<'a> IntoIterator for &'a Counters {
+    type Item = (&'a String, &'a i64);
+    type IntoIter = std::vec::IntoIter<(&'a String, &'a i64)>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+impl std::ops::Index<&str> for Counters {
+    type Output = i64;
+
+    fn index(&self, key: &str) -> &i64 {
+        self.get(key).expect("no such counter")
+    }
+}
+
+impl std::ops::Index<&String> for Counters {
+    type Output = i64;
+
+    fn index(&self, key: &String) -> &i64 {
+        self.get(key).expect("no such counter")
+    }
+}
+
+impl FromIterator<(String, i64)> for Counters {
+    fn from_iter<I: IntoIterator<Item = (String, i64)>>(entries: I) -> Counters {
+        let mut counters = Counters::default();
+        for (key, value) in entries {
+            counters.insert(key, value);
+        }
+        counters
+    }
+}
+
+impl Serialize for Counters {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut map = serializer.serialize_map(Some(self.len()))?;
+        for (key, value) in self.iter() {
+            map.serialize_entry(key, value)?;
+        }
+        map.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for Counters {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Counters, D::Error> {
+        Ok(BTreeMap::<String, i64>::deserialize(deserializer)?
+            .into_iter()
+            .collect())
+    }
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Player {
     pub id: usize,
@@ -5721,7 +5979,11 @@ pub struct Player {
     /// for a War of Retribution for the standard 30-turn window.
     #[serde(default)]
     pub broken_promises_until: BTreeMap<usize, u32>,
-    #[serde(default)]
+    /// Spendable Diplomatic Favor. A save written before favor was its own
+    /// field has no such key and reads as NaN, which is how the loader tells
+    /// a pre-trade save (migrate from the lifetime `counters` tally) from a
+    /// seat that has simply spent everything (`From<GameSer> for Game`).
+    #[serde(default = "favor_absent_from_save")]
     pub diplomatic_favor: f64,
     /// Accumulated War Weariness points. Every
     /// `WAR_WEARINESS_POINTS_FOR_AMENITY_LOSS` (400) of them costs one
@@ -5786,8 +6048,11 @@ pub struct Player {
     pub mass_driver_shots: i64,
     #[serde(default)]
     pub envoys: Vec<(usize, i64)>, // (city-state pid, envoys placed)
+    /// Named tallies: the rules' (goody huts claimed, great works, project
+    /// effects, ...) and, stored apart, the stock agents' own notes. See
+    /// [`Counters`].
     #[serde(default)]
-    pub counters: BTreeMap<String, i64>,
+    pub counters: Counters,
     /// Every great work as an object with its creating era and creator, kept
     /// in lockstep with the ``great_work:*`` counters. Theming reads these.
     #[serde(default)]
@@ -5906,7 +6171,7 @@ impl Player {
             mass_driver_ore: None,
             mass_driver_shots: 0,
             envoys: Vec::new(),
-            counters: BTreeMap::new(),
+            counters: Counters::default(),
             great_work_pieces: Vec::new(),
             quests: BTreeMap::new(),
             boosted_techs: BTreeSet::new(),
@@ -6447,6 +6712,12 @@ const POLAR_LAP_LIMIT: f64 = 66.5 * std::f64::consts::PI / 180.0;
 
 pub fn default_difficulty() -> String {
     "prince".to_string()
+}
+
+/// What a save without a `diplomatic_favor` field reads as, so the loader can
+/// tell it apart from a balance of zero.
+fn favor_absent_from_save() -> f64 {
+    f64::NAN
 }
 
 /// ★★★ THE BARBARIANS PLAY AT THEIR OWN DIFFICULTY — EMPEROR, NOT THE SEAT'S.
@@ -7051,6 +7322,645 @@ pub struct HostBandPromotions {
     pub offered: BTreeSet<Name>,
 }
 
+/// The host game's side of a mirrored match: what Civilization VI reported
+/// (observed yields, prices, permissions, menus) and the switches that make
+/// the engine defer to it. `docs/CORE_STATE.md` measured the line: in
+/// self-play every field here is empty, and blanking all of them changes
+/// nothing the rules compute. `Game` holds it behind one `Arc` and reads
+/// through `Deref`, so a fork of the world pays one pointer for all of it.
+#[derive(Clone, Default)]
+pub struct HostMirror {
+    /// Military scores reported by an authoritative host, keyed by CIVVIS seat.
+    ///
+    /// Ordinary games leave this empty and derive strength from their units. A
+    /// live mirror cannot do that for a met rival whose army is currently under
+    /// fog, even though Civilization VI exposes that rival's aggregate military
+    /// score to the player. Keeping the host score here lets the ordinary AI use
+    /// the public information without inventing hidden unit positions.
+    pub observed_military_power: Arc<BTreeMap<usize, f64>>,
+    /// Per-unit facts an authoritative host exported about units in a live
+    /// mirror — the upgrade verdict and bill, the per-type upkeep, the movement
+    /// allowance, a Spy's operation and menu. Own units and visible foreign
+    /// units may carry different subsets. See [`HostUnitFacts`] for which
+    /// decision reads each. Empty in native games.
+    pub host_unit_facts: Arc<BTreeMap<u32, HostUnitFacts>>,
+    /// The host treasury's bill by source for mirrored seats, read by
+    /// [`Game::unit_gold_maintenance`] and
+    /// [`Game::infrastructure_gold_maintenance`] in place of the board's own
+    /// sums. Empty in native games.
+    pub host_maintenance: Arc<BTreeMap<usize, HostMaintenance>>,
+    /// Public host score for mirrored seats. Empty in native CIVVIS games.
+    pub observed_score: Arc<BTreeMap<usize, i64>>,
+    /// Wars between two met rivals as the live host reports them (each
+    /// rival's `at_war_with`), as `(low, high)` seat pairs. Kept apart from
+    /// `at_war`, which every war reader of the planner consults, so the host
+    /// fact reaches only the readers that ask for it
+    /// ([`Game::rivals_at_war`]). Empty in native CIVVIS games.
+    pub observed_rival_wars: Arc<BTreeSet<(usize, usize)>>,
+    /// Current host Palace locations, distinct from original capitals required
+    /// for Domination. Empty in simulated games and older host snapshots.
+    pub observed_city_palaces: Arc<BTreeMap<u32, bool>>,
+    /// Cities whose imported pressure values encode majority and conversion
+    /// warnings rather than measured accumulated pressure. Spreading and
+    /// religious combat cannot forecast a conversion from these markers.
+    pub observed_city_religion_markers: Arc<BTreeSet<u32>>,
+    /// The religion rows a live host's city banner showed for each mirrored
+    /// city: followers, pressure per turn and lifetime pressure. Empty in
+    /// simulated games, whose `City::pressure` is already the real figure.
+    pub observed_city_faiths: Arc<BTreeMap<u32, Vec<ObservedCityFaith>>>,
+    /// Host gross strategic income minus the reconstructed board's income.
+    /// Corrections preserve policy and improvement counterfactuals on clones.
+    /// Empty in simulated games; refreshed on each host snapshot.
+    pub observed_strategic_income_adjustments: Arc<BTreeMap<usize, BTreeMap<Name, f64>>>,
+    /// Exact host trade-route capacity for mirrored seats. Native games derive
+    /// this from their own infrastructure and leave the map empty.
+    pub observed_trade_capacity: Arc<BTreeMap<usize, i64>>,
+    /// Exact Firaxis leader type for mirrored seats. CIVVIS models one leader
+    /// per civilization, while Civ VI can seat alternates and personas; keeping
+    /// the host type separate preserves identity without claiming their rules
+    /// have been folded into the modeled civilization.
+    pub observed_leader_types: Arc<BTreeMap<usize, String>>,
+    /// Host-to-model yield corrections for mirrored empires. Native games leave
+    /// this empty. A correction, rather than an absolute replacement, preserves
+    /// counterfactual deltas when the AI evaluates a policy or build on a clone.
+    pub observed_yield_adjustments: Arc<BTreeMap<usize, crate::rules::Yields>>,
+    /// Public empire-wide figures from an authoritative host which cannot be
+    /// reconstructed from fog-limited city and unit records. Native games leave
+    /// this empty and derive every standing from their full board.
+    pub observed_public_empire_stats: Arc<BTreeMap<usize, ObservedPublicEmpireStats>>,
+    /// Seats known to own cities omitted from this partial board. Existence
+    /// alone prevents speculative casualties from falsely eliminating them.
+    pub unseen_city_owners: BTreeSet<usize>,
+    /// The religion a majority of a seat's cities follow, as the host reports
+    /// it for every met major (`GetReligionInMajorityOfCities`, the test the
+    /// shipped religion tab runs to call a civilization converted), keyed by
+    /// seat. [`Game::majority_religion_of`] prefers it to counting the cities
+    /// the board holds, which for a rival are only the ones in view. Empty on
+    /// a native game.
+    pub observed_majority_religion: Arc<BTreeMap<usize, String>>,
+    /// Tourists one seat's culture draws from another as the host counts them
+    /// (`GetTouristsFrom` on the source's culture), keyed (tourism source,
+    /// where the tourists come from) — the order `visiting_tourists_from`
+    /// takes. The mirror records our seat's draw from each met rival, the
+    /// per-rival term of `foreign_tourists`. Empty on a native game.
+    pub observed_visiting_tourists: Arc<BTreeMap<(usize, usize), i64>>,
+    /// Per-city host-to-model corrections and exact citizen assignments for a
+    /// mirrored Firaxis turn. Native games leave these empty. Corrections are
+    /// additive so counterfactual buildings, policies, and assignments still
+    /// contribute their modeled delta instead of being hidden by an override.
+    pub observed_city_yield_adjustments: Arc<BTreeMap<u32, crate::rules::Yields>>,
+    /// Per-city host-to-model Amenity-surplus corrections for a mirrored
+    /// Firaxis turn. Native games leave this empty. Like yield corrections,
+    /// these are additive: a planned Arena, Luxury, or policy still changes
+    /// the projected surplus instead of being masked by a frozen host value.
+    pub observed_city_amenity_adjustments: Arc<BTreeMap<u32, i64>>,
+    /// Per-city host-to-model Housing corrections for a mirrored Firaxis
+    /// turn, the Amenity map's twin: `host - model`, added inside
+    /// [`Game::city_housing`] so the board reads the host's ceiling while a
+    /// planned Granary or Aqueduct still moves the projection by its modeled
+    /// amount. Native games leave this empty.
+    pub observed_city_housing_adjustments: Arc<BTreeMap<u32, f64>>,
+    /// Per-plot host-to-model yield corrections for a mirrored Firaxis turn:
+    /// `Plot:GetYield` minus CIVVIS's own tile model, on the plots the host
+    /// reports worked. Added inside [`Game::workable_tile_yields`], so the
+    /// board pays a tile what the host pays it — including the terms only the
+    /// host can know, such as the fertility an eruption or a flood left on the
+    /// ground (Rome on run civvis-20260816T003229Z read **+12 Food** over the
+    /// model for forty turns on volcanic soil) — while a counterfactual
+    /// improvement still moves the tile by its modeled amount. Native games
+    /// leave this empty.
+    pub observed_tile_yield_adjustments: Arc<BTreeMap<Pos, crate::rules::Yields>>,
+    /// Trading Posts on the host's own path for one of our routes, keyed by
+    /// (origin, destination) city and filed (own cities, foreign cities). The
+    /// host's pathfinder follows roads the model's straight-line walk does
+    /// not; where the mirror knows the host's answer it is the one that pays
+    /// (`trading_post_route_gold`). Empty on a native game.
+    pub observed_route_posts: Arc<BTreeMap<(u32, u32), (i64, i64)>>,
+    /// Where the host houses this seat's Great Works, by city and kind, when
+    /// the mirror has read it: the host's own placement is the one that
+    /// pays, not the model's best-slot heuristic (a Relic the host kept in
+    /// Rome's Palace read "+6 from GreatWorks" there while the model housed
+    /// it in Mediolanum's St. Basil's, run civvis-20260816T233226Z t154+).
+    /// `None` on a native game or an export without the works.
+    pub observed_great_work_housing: Option<Arc<BTreeMap<u32, BTreeMap<String, usize>>>>,
+    /// What the host says one of our routes pays its ORIGIN, keyed by
+    /// (origin, destination) city — the Trade Overview's own sum of route,
+    /// path and modifier yields under the international multiplier. Stands
+    /// in for the model's route yield where present; empty on a native game.
+    pub observed_route_yields: Arc<BTreeMap<(u32, u32), crate::rules::Yields>>,
+    /// Host-to-model incoming-route count deltas, keyed by destination city
+    /// and stored as `(foreign, domestic)`. A foreign route whose origin city
+    /// is still behind fog cannot be represented in `Game::routes`; this
+    /// correction preserves the host's destination-side count while keeping
+    /// counterfactual route additions/removals modeled. Empty on a native game.
+    pub observed_incoming_route_deltas: Arc<BTreeMap<u32, (i64, i64)>>,
+    pub observed_city_worked_tiles: Arc<BTreeMap<u32, Vec<Pos>>>,
+    pub observed_city_specialists: Arc<BTreeMap<u32, Vec<String>>>,
+    /// Observed loyalty rates for owned cities, keyed by CIVVIS city id.
+    /// Populated by the live mirror and native player decision views.
+    pub observed_city_loyalty_per_turn: Arc<BTreeMap<u32, f64>>,
+    /// Current local-player settler-lens nearby-city pressure. Used only for
+    /// prospective settlements; an absent plot is not a zero-pressure reading.
+    pub observed_settlement_loyalty: Option<Arc<NativeSettlementPressure>>,
+    /// Observed banner defense strengths for reconstructed cities.
+    pub observed_city_strength: Arc<BTreeMap<u32, f64>>,
+    /// Visible host city ranged strength, already including native modifiers.
+    pub observed_city_ranged_strength: Arc<BTreeMap<u32, f64>>,
+    /// Host-reported outer-defense capacity for mirrored cities. Native games
+    /// derive this from wall buildings and leave the override empty.
+    pub observed_city_max_wall_hp: Arc<BTreeMap<u32, i32>>,
+    /// `breach-support-reads-the-wall-tier`: read a mirrored city's wall tier
+    /// from its observed wall pool when deciding whether a Battering Ram or a
+    /// Siege Tower works on it. A rival city's record carries its wall bars,
+    /// not its buildings, so `city_building_effect` read no immunity from
+    /// Medieval or Renaissance Walls it could not see. Set by the seat each
+    /// turn; native games leave the observed pool empty, so it changes nothing
+    /// there.
+    pub observed_wall_tier_rules: bool,
+    /// `trade-quotes-pay-the-lump`: the seat whose own quick-deal quotes are
+    /// paid as one rounded-up Gold lump whenever the payer's treasury covers
+    /// it, instead of the floored lump plus a per-turn sliver that
+    /// `quoted_payment` checks against `empire_gold_per_turn`. That proxy (4
+    /// Gold a city less unit and building upkeep, floored at zero) reads zero
+    /// from about turn 100 for a built-up empire whose real income is 30-200,
+    /// so every fractional quote it is party to vanishes. Set by the seat each
+    /// turn; `None` changes nothing.
+    pub lump_quote_viewer: Option<usize>,
+    /// `nusantara-reads-the-coast`: the Indonesian seat whose district site
+    /// pickers price Great Nusantara's Coast adjacency
+    /// ([`Game::district_site_yields`]). Planning only: real yields never read
+    /// it. Set by the seat each turn; `None` changes nothing.
+    pub nusantara_site_planner: Option<usize>,
+    /// `builders-route-around-mountains`: a Builder never enters a mountain,
+    /// whatever the Ski Resort unlock. The host's move pathing put none of
+    /// ours on a mountain in 984 Builder-turns after Professional Sports over
+    /// two 10-13 games and refused every move that ended on one, while the
+    /// board routed Builders across them. Set by the seat each turn.
+    pub observed_builders_avoid_mountains: bool,
+    /// `exploration-replans-need-a-sighting`, for the acting seat's frame
+    /// executor (`ai::player`): set by the seat each turn, read only there.
+    pub exploration_replans_need_a_sighting: bool,
+    /// `culture-denial-heist`: a Great Work heist the HOST lists on a spy's
+    /// operation menu is offered, though the board cannot see the works. The
+    /// mirror carries only our own Great Works, so a rival city's
+    /// `spy_city_has_stealable_work` always read false and the heist was
+    /// never legal live: the host offered it for 8-14 turns in the culture
+    /// winner's city in three of today's eight culture losses
+    /// (civvis-20261008T062856Z St. Petersburg, T083432Z Tokyo, T090439Z
+    /// Mistahi-Sipihk) and it was never sent. Set by the seat each turn;
+    /// native games have no host menu, so it changes nothing there.
+    pub heist_reads_the_host_menu: bool,
+    /// `spies-steal-the-lead`: a district mission the host offers at a plot
+    /// (`HostUnitFacts::spy_targets`) is offered there though the board has
+    /// not seen the district. The board learns a rival Campus only once the
+    /// tile is seen, so a host-offered Steal Tech Boost went unsent (live
+    /// 080206Z t145 and 073507Z t150: steal on the host menu, Listening Post
+    /// sent). Set by the seat each spy pass; native games have no host
+    /// targets, so it changes nothing there.
+    pub spy_targets_read_the_host: bool,
+    /// Sites a HOST ruleset forbids for a reason CIVVIS's own rules cannot see.
+    ///
+    /// ★★★★ Empty in an ordinary game, and load-bearing when CIVVIS is driving a
+    /// foreign engine. Civilization VI refused 141 `FOUND_CITY` orders in one run and
+    /// 18 in another while the site picker re-chose the SAME tile at turns 20, 33 and
+    /// 79 — because nothing carried the refusal back, so every turn re-derived the
+    /// same answer from the same board and re-sent the same rejected order. Peak city
+    /// count was 2 in every run of the ladder.
+    ///
+    /// The fix is the one this whole bridge keeps needing: stop lying to CIVVIS. A
+    /// site the host rejected is recorded here, `can_found_city` honours it, and the
+    /// planner routes around it on its own. Filtering the order at the bridge instead
+    /// would only have made the turn do nothing — CIVVIS would never learn to pick
+    /// somewhere else.
+    pub blocked_city_sites: Arc<BTreeSet<Pos>>,
+    /// Tiles a HOST ruleset will not let a builder improve, for the same reasons and
+    /// with the same emptiness in an ordinary game as [`Game::blocked_city_sites`].
+    ///
+    /// ★★★★ The largest refusal category measured: **311 `IMPROVEMENT_MINE`
+    /// refusals in one run**, 51 and 31 in others. CIVVIS names improvements from ITS
+    /// terrain model and the two rulesets do not agree tile for tile, so a tile it
+    /// believes is a mine site simply stays bare — and because the mirror then keeps
+    /// reporting an undeveloped empire, CIVVIS orders another builder. One run ended
+    /// with seven builders alive against an army of one.
+    pub blocked_improvement_sites: Arc<BTreeSet<Pos>>,
+    /// Improvements a HOST ruleset refused on one tile, by name. A refusal that
+    /// names its improvement condemns that improvement there, not the ground:
+    /// only a refusal without a name lands in
+    /// [`Game::blocked_improvement_sites`].
+    ///
+    /// ★★★ ONE REFUSED ALCÁZAR HID THE EMPIRE'S ONLY ALUMINUM. Live King
+    /// 20261001T042554Z: a Builder asked for an Alcázar on the Farm at
+    /// (31,29) on turn 112 and the host refused it. The tile was blocked for
+    /// every improvement for the rest of the game, so when Radio revealed
+    /// Aluminum under that Farm and Advanced Flight landed on turn 160, the
+    /// Mine was never valid: eight Builders stood idle, the Bomber wing was
+    /// stood down "no Aluminum" on turn 174, and the Mine went in on turn
+    /// 203 only because a restarted bridge had lost the old refusal.
+    pub blocked_improvements: Arc<BTreeMap<Pos, BTreeSet<Name>>>,
+    /// ★★★★ GROUND A GREAT PERSON STANDS ON, keyed to its owner. Empty in an
+    /// ordinary game; the live mirror fills it because CIVVIS does not model
+    /// Great People as units and drops them from the board (see
+    /// `mirror::is_great_person`), so a plot the host has occupied read as EMPTY.
+    ///
+    /// Civilization VI stacks one civilian per plot and a Great Person is a
+    /// civilian, so a Builder or Settler cannot end a move on one — exactly as
+    /// this engine treats a plot holding a friendly unit of the same class — and
+    /// a foreign Great Person blocks every unit, at war or not (Firaxis
+    /// captures no Great Person; live King civvis-20261004T160213Z). On
+    /// run `civvis-20260816T003229Z` the founded, zero-charge Prophet stood on
+    /// (7,25) beside the capital from turn 73 to the end; a Builder with two
+    /// charges left was ordered `MOVE_TO (7,25)` on 25 consecutive turns
+    /// (t175–t199) and never moved, because CIVVIS chose that tile as its
+    /// improvement target and Firaxis refused the step every time. Nothing on
+    /// the board could tell it otherwise.
+    ///
+    /// Honoured in the two places the board answers "can a unit be here":
+    /// [`Game::valid_improvements`] offers nothing on such a plot (the same
+    /// contract as `blocked_improvement_sites` — a tile a builder cannot reach
+    /// must offer nothing, or the builder loops on it), and `can_enter_past`
+    /// refuses the step for the layers Firaxis refuses it for.
+    pub great_person_plots: BTreeMap<Pos, usize>,
+    /// ★★★★★ PROMOTIONS THE HOST REFUSED, so CIVVIS stops asking for them again.
+    ///
+    /// Every other host refusal already had a block set — `blocked_city_sites`,
+    /// `blocked_improvement_sites`, `blocked_trade_routes`, `blocked_policies`,
+    /// `blocked_districts`, `blocked_wonders`, `blocked_production` — and
+    /// promotions had NONE, so a refused promotion was re-requested every turn
+    /// for the rest of the game.
+    ///
+    /// Measured over every run recorded on 2026-08-03: **411 `promotion_refused`
+    /// events from only 19 distinct (unit, promotion) pairs — a median of 13
+    /// retries each and a maximum of 71.** Only 11% were asked once. The two
+    /// populations:
+    ///
+    /// - **318 on UNIT_APOSTLE** (Translator, Chaplain, Debater, Indulgence
+    ///   Vendor, Proselytizer). A Civilization VI Apostle takes ONE promotion when
+    ///   it is created and can never be promoted again, so every repeat was
+    ///   guaranteed to fail from the first refusal onward.
+    /// - **93 `PROMOTION_ECHELON` on UNIT_PIKE_AND_SHOT.**
+    ///
+    /// Keyed by unit id and promotion, because the refusal is specific to both:
+    /// another unit of the same kind may legitimately take the promotion this one
+    /// cannot.
+    pub blocked_promotions: Arc<BTreeMap<u32, BTreeSet<Name>>>,
+    /// Current native Rock Band promotion offers; absent means unobserved.
+    pub host_band_promotions: Arc<BTreeMap<u32, HostBandPromotions>>,
+    /// ★★★ STRIKES THE HOST REFUSED THIS TURN, so a later frame of the same
+    /// turn does not propose the identical shot again.
+    ///
+    /// `(attacker, target)` in CIVVIS unit ids and axial tiles. A live mirror
+    /// fills it per turn from the mod's `range_attack_refused` (line of sight,
+    /// range, spent attacks — the host's own `why`) and `war_refused` (a strike
+    /// the engine would answer with a war the agent never declared) events;
+    /// native games leave it empty. Gated where `blocked_promotions` is: at
+    /// the one legality each chooser and the applier itself pass through
+    /// (`legal_actions_within`'s strike loops, `ranged_order_is_legal`,
+    /// `melee_order_is_legal`, `do_attack`, `do_ranged`), so a pre-pass that
+    /// proves a strike on a private board (`live_finishing_candidates`) is
+    /// refused the same way the picker is.
+    pub blocked_strikes: Arc<BTreeSet<(u32, Pos)>>,
+    /// Explicit host declaration refusals, keyed by (actor, target, observed
+    /// turn). They mask voluntary war actions only on that observed turn;
+    /// hypothetical later turns and games without host facts use normal rules.
+    pub host_war_blocks: Arc<BTreeSet<(usize, usize, u32)>>,
+    /// Exact native permissions for unilateral war types, refreshed per board.
+    /// Present observations require an explicit true for the selected type;
+    /// missing observations and later simulated turns use ordinary rules.
+    pub host_war_type_permissions: Arc<BTreeMap<(usize, usize), ObservedWarTypes>>,
+    /// Native envoy permissions for (actor, city-state), with observed turn.
+    /// Only that turn uses the host answer; simulations without it retain
+    /// their own rules. Contact, a living minor and an available envoy remain
+    /// mandatory even when the host permits placement.
+    pub host_envoy_permissions: Arc<BTreeMap<(usize, usize), (u32, bool)>>,
+    /// ★★★ THE HOST'S OWN PRICE OF A STRIKE, asked for this turn and answered
+    /// without fighting it. Keyed `(attacker, target, ranged)` in CIVVIS unit
+    /// ids and axial tiles; the value is Civilization VI's
+    /// `CombatManager.SimulateAttackInto` result as the mod's `preview` event
+    /// carries it (`CivvisLedger.preview`, answering a `preview` order). Per
+    /// turn, from the run's events; native games leave it empty. Read through
+    /// [`Game::host_preview`]; nothing else consumes it yet.
+    pub host_previews: Arc<BTreeMap<(u32, Pos, bool), HostStrikePreview>>,
+    /// Origin/destination pairs a host engine rejected for a trade route.
+    /// Native games leave this empty; a live mirror learns it from Firaxis so an
+    /// unreachable city is not offered again every turn on geometric range alone.
+    pub blocked_trade_routes: Arc<BTreeSet<(Pos, Pos)>>,
+    /// Policy cards a HOST ruleset has retired, for the same reasons and with the
+    /// same emptiness in an ordinary game as [`Game::blocked_city_sites`].
+    ///
+    /// ★★★★ Measured on live run `civvis-20260801T012454Z`: `POLICY_ILKUM` was chosen
+    /// and refused **105 times**, `DISCIPLINE` 6 and `AGOGE` 1 — **112 of 813
+    /// refusals**, third behind movement and `no_params`. Civilization VI knew every
+    /// time (`culture:IsPolicyObsolete`) and said so in the refusal reason; nothing
+    /// carried it back, so CIVVIS re-derived the same card from the same board on
+    /// almost every turn of the game.
+    ///
+    /// [`Game::available_policies`] already computes an obsolete set from each card's
+    /// `replaces` list. That is the right mechanism and it is under-populated — 22 of
+    /// 41 shipped rows carry no successor — but **filling it in is what PR #703 is
+    /// blocked on**: the rows are ruleset data, so changing them moves
+    /// `Rules::source_fingerprint` and the Elo ledger rejects new games at bind time.
+    ///
+    /// ⚠ This set deliberately does NOT go near that. It is per-game reconstruction
+    /// state carried beside the board, exactly like the two above, so the fingerprint
+    /// does not move and no rated game is invalidated. It fixes the mirrored game
+    /// without pretending to fix the ruleset — and an ordinary CIVVIS game leaves it
+    /// empty, so nothing about simulated play changes.
+    pub blocked_policies: Arc<BTreeSet<Name>>,
+    /// Current policy eligibility observed from a host, scoped to its mirrored
+    /// seat. Unlike historical refusals this is replaced on each observation:
+    /// government changes and Congress bans can make a card available again.
+    /// An absent seat entry preserves ordinary simulation rules.
+    pub host_policy_choices: BTreeMap<usize, BTreeSet<Name>>,
+    /// A native policy transaction window, scoped to its observed seat and
+    /// turn. Absent in ordinary games and legacy host snapshots.
+    pub host_policy_windows: BTreeMap<usize, HostPolicyWindow>,
+    /// Pantheon beliefs a HOST has already granted to another player, for the same
+    /// reasons and with the same emptiness in an ordinary game as
+    /// [`Game::blocked_city_sites`].
+    ///
+    /// The mirror seats no rival pantheons — the export lists founded religions
+    /// only (`Game.GetReligion():GetReligions()` minus the pantheon rows), so
+    /// `do_choose_pantheon`'s "belief already taken" check sees only our own. A
+    /// first choice a rival holds is refused by the mod as `taken_BELIEF_<X>`, and
+    /// nothing carried that back: the same belief would be re-derived from the same
+    /// board next turn, and after two sightings the mod's own blocker fallback
+    /// picks the FIRST untaken pantheon in database order (Dance of the Aurora on
+    /// the recorded runs). Harvested from the refusal stream by the mirror
+    /// (`refused_pantheons`); an ordinary CIVVIS game leaves it empty. See
+    /// `AdvancedAi::expansion_pantheon` for the choice this protects.
+    pub blocked_pantheons: Arc<BTreeSet<Name>>,
+    /// Districts a HOST ruleset will not place, per city, for the same reasons and
+    /// with the same emptiness in an ordinary game as [`Game::blocked_city_sites`].
+    ///
+    /// ★★★★ Measured on live run `civvis-20260801T024428Z`: `DISTRICT_GOVERNMENT`
+    /// refused **24** times by turn 115 and `build_no_plot` fired **39** times, every
+    /// one of them the same district. Civilization VI offers no plot for a Government
+    /// Plaza once one exists — it is one per civilization — and CIVVIS re-chose it
+    /// from the same board turn after turn. Each discard leaves the city with nothing
+    /// queued, so `ENDTURN_BLOCKING_PRODUCTION` fires and the hand-written ladder
+    /// picks instead; on that run only 11 of 55 builds were CIVVIS's.
+    ///
+    /// ⚠⚠ **KEYED BY CITY, AND THAT IS THE WHOLE CARE IN THIS FIX.** The host refuses
+    /// a district for two opposite reasons: it is impossible *anywhere* (Government
+    /// Plaza), or *this* city has no room. A global set would stop CIVVIS building
+    /// Campuses across the empire the first time one city ran out of space — trading a
+    /// small waste for a large one. The mod now sends the city id with the refusal so
+    /// the block can be scoped; before this it sent only a bare hash.
+    pub blocked_districts: Arc<BTreeMap<u32, BTreeSet<Name>>>,
+    /// Fresh district plots Firaxis explicitly approved after rejecting a different
+    /// CIVVIS coordinate. Native games leave this empty. A positive host candidate
+    /// wins over the accompanying temporary refusal, so the next planner decision
+    /// can select a real placement instead of waiting out the cooldown.
+    pub host_district_sites: Arc<BTreeMap<u32, BTreeMap<Name, BTreeSet<Pos>>>>,
+    /// Fresh wonder plots Firaxis explicitly approved after rejecting a different
+    /// CIVVIS coordinate. Like [`Game::host_district_sites`], this is bridge-only
+    /// feedback: a positive host answer wins over its paired temporary refusal so
+    /// the next decision can start the same wonder on legal ground.
+    pub host_wonder_sites: Arc<BTreeMap<u32, BTreeMap<Name, BTreeSet<Pos>>>>,
+    /// Wonders a HOST engine says have no legal plot IN THIS CITY, scoped for the
+    /// same reason as [`Game::blocked_districts`] — Hanging Gardens needs a river
+    /// and Great Bath floodplains, so one city having no ground says nothing about
+    /// the next.
+    ///
+    /// ★★★★ The wonder half of `build_no_plot` was being DROPPED. That parser reads
+    /// only the event's `district` key, and the mod emits a refused wonder under
+    /// `building`, so every wonder refusal fell through it silently. Measured over
+    /// 20 live runs: **370 wonder refusals against 55 district ones**, from only 29
+    /// distinct (run, city, wonder) combinations — a mean of 12.8 re-asks each and
+    /// **53 consecutive turns** at worst of one city ordering one wonder Firaxis had
+    /// no ground for. `HANGING_GARDENS` 159, `GREAT_BATH` 129, `TEMPLE_ARTEMIS` 45.
+    pub blocked_wonders: Arc<BTreeMap<u32, BTreeSet<Name>>>,
+    /// World-unique wonders the live host has ruled out everywhere.
+    ///
+    /// `blocked_wonders` is deliberately city-local: an ordinary zero-site answer
+    /// can mean this city lacks a river or floodplain. But the control bridge also
+    /// records the host's number of offered locations. An explicit `offered: 0` for
+    /// a model-legal wonder means Firaxis has no target anywhere, most commonly
+    /// because an unseen rival already completed that world unique. Carry that
+    /// stronger, permanent live-only fact separately so the next developed city
+    /// does not spend a production decision rediscovering it. Native games leave
+    /// the set empty.
+    pub host_unavailable_wonders: Arc<BTreeSet<Name>>,
+    /// Production choices a HOST ruleset has refused in a particular city.
+    ///
+    /// The bridge keeps these blocks on a short cooldown: a missing prerequisite or
+    /// temporary host rule must be allowed to become legal later, while an item the
+    /// host has just rejected must not be selected from the same reconstructed board
+    /// on every turn. Keys are typed (`building:library`, `unit:warrior`, ...), so a
+    /// name shared by two production tables cannot suppress the wrong kind of item.
+    pub blocked_production: Arc<BTreeMap<u32, BTreeSet<String>>>,
+    /// Purchases a HOST ruleset has recently refused in a particular city.
+    ///
+    /// This is deliberately separate from [`Game::blocked_production`]. A host may
+    /// reject buying a unit while still allowing the city to build it, and merging
+    /// the two would turn an actuation mismatch into the exact production starvation
+    /// the feedback is meant to repair. Ordinary CIVVIS games leave this empty.
+    pub blocked_purchases: Arc<BTreeMap<u32, BTreeSet<String>>>,
+    /// The HOST's production menu per city, keyed like `blocked_production`
+    /// (`unit:warrior`, `formation:warrior:1`, `building:library`,
+    /// `wonder:pyramids`, `district:campus`, `project:...`): every item the
+    /// engine's `BuildQueue:CanProduce(hash, false, true)` says this city can
+    /// START now, with its cost and turns (`StateCity::buildable`). Empty in
+    /// an ordinary game and on an export without the key, so neither changes.
+    /// When a city has an entry, [`Game::can_produce`] refuses any unit,
+    /// formation, building, wonder, district or project the menu does not
+    /// list — the positive gate beside the refusal cooldown — and
+    /// [`Game::item_cost_for_city`] prices from it.
+    pub host_buildable: Arc<BTreeMap<u32, BTreeMap<String, HostMenuEntry>>>,
+    /// The HOST's saved work per city on PAUSED units, buildings and projects
+    /// (`StateCity::buildable[].pr`, from `BuildQueue:GetUnitProgress`,
+    /// `GetBuildingProgress` and `GetProjectProgress`), keyed like
+    /// [`City::production_progress`] (`unit:builder`, `building:library`,
+    /// `project:...`), positive readings only. Districts are bound to their
+    /// foundation by the mirror instead; Wonders and formations need a plot or
+    /// tier this key does not carry and are left out. Read only by the opt-in
+    /// gene `saved-work-is-seen`. Empty in an ordinary game.
+    pub host_saved_work: Arc<BTreeMap<u32, BTreeMap<String, f64>>>,
+    /// Observed native per-technology costs and saved research progress, by
+    /// player. Like production menus, these are refreshed host facts, not rules.
+    pub host_research_quotes: Arc<BTreeMap<usize, BTreeMap<Name, HostResearchQuote>>>,
+    /// Generated rules before the native mirror applied revealed prerequisite
+    /// observations. Restored on every refresh, including older/missing exports.
+    /// Saves keep that valid generated layout plus the observed differences.
+    pub(crate) host_research_base_rules: Option<Arc<Rules>>,
+    /// Nodes whose complete prerequisite list was revealed in this host frame.
+    /// Transient observation metadata; refreshed after a native save is loaded.
+    pub(crate) host_revealed_research: Arc<BTreeSet<Name>>,
+    /// Instantaneous native CanResearch readings, by mirrored player and node.
+    /// Hypothetical prerequisite searches continue to use the rules graph.
+    pub(crate) host_research_eligibility: Arc<BTreeMap<usize, BTreeMap<Name, bool>>>,
+    /// Native strategic-resource prices for units and formations in each city,
+    /// from `BuildQueue:GetUnitResourceCost(index, formation)`. These already
+    /// include the host's modifiers; absent prices use the ordinary rules.
+    pub host_unit_resource_prices: Arc<BTreeMap<u32, BTreeMap<String, f64>>>,
+    /// The HOST's purchase menu per city, same keys: what
+    /// `CityManager.CanStartCommand(city, PURCHASE, ...)` says this city can
+    /// BUY now and what `CityGold:GetPurchaseCost` charges
+    /// (`StateCity::purchasable`). When a city has an entry the three purchase
+    /// pricers answer from it and nothing else; an item off the menu is not
+    /// for sale.
+    pub host_purchasable: Arc<BTreeMap<u32, BTreeMap<String, HostPurchaseEntry>>>,
+    /// Native plot-purchase prices and prospective Acropolis sites. A present
+    /// empty city menu supplies no purchase; absent observations retain the
+    /// ordinary model price. Refreshed independently of buildable districts.
+    pub host_plot_purchases: Arc<BTreeMap<u32, Vec<HostPlotPurchaseEntry>>>,
+    /// The plots the host's `GetOperationTargets(BUILD)` offers a district in
+    /// a city, kept only when the export carried the complete offer. A site
+    /// outside it is not producible and `district_sites` drops it.
+    pub host_district_plots: Arc<BTreeMap<u32, BTreeMap<Name, BTreeSet<Pos>>>>,
+    /// Actual native specialty-district limit, including Great Person bonuses.
+    /// Missing entries retain the ordinary population-derived limit.
+    pub host_district_capacity: Arc<BTreeMap<u32, usize>>,
+    /// Tiles a HOST says the mirrored seat can see RIGHT NOW, over and above what
+    /// this engine's own sight model derives. Empty in an ordinary CIVVIS game.
+    ///
+    /// ★★★★★ THE EXPORT IS THE HOST'S VISIBILITY ANSWER, AND WE WERE THROWING IT
+    /// AWAY. Civilization VI exports a rival's or a minor's units *only under
+    /// current visibility* — `StateMinor` says so in its own doc — and the bridge
+    /// plants exactly those units on the board. Then
+    /// [`Game::player_vision_now`] RE-DERIVES what the seat can see, from this
+    /// engine's sight radii and height field on a reconstructed map, and the
+    /// tactical layer believes the derivation instead of the export. Every place
+    /// the two disagree, an enemy Civilization VI is showing us is invisible to
+    /// the agent deciding whether to shoot it.
+    ///
+    /// ⚠⚠⚠ Measured on live run `civvis-20260803T191900Z`, the 49 turns of
+    /// Kongo's war (t203-250) that cost Arpinum and Arretium and ended the game
+    /// at **479 against the winner's 1214**: an enemy was in the export on **49
+    /// of 49 turns**, our units stood **adjacent to one on 95 unit-turns** and
+    /// within range 2 — the range of the Field Cannons and Trebuchets that were
+    /// most of the army — on **197**. Attacks issued: **37**. The army declined
+    /// **81%** of the shots the host was showing it.
+    ///
+    /// `ForcePosture` only reaches `Engage` through
+    /// `g.sees(&visible, enemy.pos) && battlefront_unit_visible(..)`, so with the
+    /// derivation disagreeing it fell through to `Muster` — "still gathering" —
+    /// turn after turn while the cities burned. The same disagreement is what
+    /// `blind_ranged_tiles_charged` counts: 3 to 13 tiles on 45 separate turns.
+    ///
+    /// ⚠ Deliberately a stored set rather than "foreign units imply visibility".
+    /// That inference is only sound for a MIRRORED board, where every foreign unit
+    /// arrived from an export gated on sight. In ordinary self-play the board holds
+    /// the full simulation, and reading it the same way would hand every AI player
+    /// perfect vision of the entire world.
+    pub host_observed: Arc<BTreeSet<Pos>>,
+    /// Appeal as the host counts it, per plot (`Plot:GetAppeal` off the tile
+    /// export). [`Game::tile_appeal`] prefers it to the derivation from the
+    /// six neighbours the board can see; empty on a native game.
+    pub observed_appeal: Arc<BTreeMap<Pos, i32>>,
+    /// The host's own `Plot:IsFreshWater()` per revealed plot, which
+    /// `city_water` prefers to the river/lake/oasis derivation for a city
+    /// centre. Exported as `fw` since the tiles export began and read by
+    /// nothing until 2026-08-27.
+    pub observed_fresh_water: Arc<BTreeMap<Pos, bool>>,
+    /// A seat's tourism per turn as the host reports it — ours from the
+    /// state's `tourism_per_turn`, a rival's from `rivals[].tourism`.
+    /// `tourism_per_turn` prefers it; `tourism_per_turn_model` is the
+    /// engine's own figure for the instrument that measures the gap.
+    pub observed_tourism_per_turn: Arc<BTreeMap<usize, f64>>,
+    /// What the host says a route a Trader could START would pay its origin,
+    /// keyed by (origin, destination) — the shipped TradeRouteChooser's own
+    /// `CalculateOriginYield…` sum, exported while a route slot is open.
+    /// Distinct from [`Game::observed_route_yields`], which is for ACTIVE
+    /// routes and stands in for the model inside `city_yields`; this one is
+    /// read by the trader-destination chooser. Empty on a native game.
+    pub observed_route_options: Arc<BTreeMap<(u32, u32), crate::rules::Yields>>,
+    /// The host's climate readings beyond the phase itself: the world's CO2,
+    /// the temperature, the sea-level and disaster forecasts
+    /// (`GameClimate`, the shipped ClimateScreen's reads). `None` on a native
+    /// game or an export without it.
+    pub observed_climate: Option<ObservedClimate>,
+    /// Ground a HOST holds for somebody else and will not let this seat's units
+    /// enter, for tiles whose owner [`Game::territory_owner_at`] cannot name.
+    ///
+    /// ★★★★★ THE MISSING MEMBER OF THE `blocked_*` FAMILY, AND THE COMMENT ON
+    /// [`Game::blocked_policies`] already says which one it is: policies were
+    /// "third behind **movement** and `no_params`". Movement is the largest
+    /// refusal category in the ledger and it was the only one with no block set.
+    ///
+    /// The ordinary gate in `can_enter` reads `territory_owner_at`, which resolves
+    /// a tile's owner through `owner_city -> cities -> owner`. A rival whose cities
+    /// this seat has never SEEN has no city on the mirrored board, so their border
+    /// resolves to `None` and reads as free ground. That is a closed loop: their
+    /// border is invisible precisely because we cannot get past it to see the city
+    /// that makes it.
+    ///
+    /// ⚠⚠⚠ Measured on live run `civvis-20260803T191900Z` (Rome, SETTLER, small).
+    /// Scout `196608` reached offset (12,24) on **turn 42** and was ordered
+    /// `MOVE_TO (11,24)` — one hex — on **74 separate turns** without ever moving;
+    /// at t91 it was upgraded in place and the Skirmisher kept re-sending the same
+    /// step. (11,24) is exported `o: 4`, Kongo's territory, and we were not at war
+    /// and held no open borders. **81 of 670 `MOVE_TO` orders targeted foreign
+    /// ground, every one of them Kongo's, and all 81 were counted `applied` —
+    /// a blocked move is a silent no-op, not a refusal.**
+    ///
+    /// What it cost, in order: exploration flatlined at **283 of 3404 tiles (8.3%)**
+    /// from turn 42; **zero rival cities were observed in 96 snapshots**; with no
+    /// known enemy city `plan.target_city` stayed `None`, so `campaign` fell through
+    /// to `peacetime_step` and all seven combat units garrisoned within three hexes
+    /// of home; and `strategy=conquest` ran for forty turns with `war_legal=9` and
+    /// **no war ever declared**. Of 35 walkable frontier tiles, 21 were sealed
+    /// behind that border — including all six nearest the scout — while 14 neutral
+    /// ones waited at distance 7, leading east into two thirds of an unseen map.
+    ///
+    /// Written fresh from the export every turn rather than accumulated, and never
+    /// written for an owner this seat has access to, so declaring war opens the
+    /// ground on the following turn instead of sealing our own invasion out.
+    pub closed_borders: BTreeSet<Pos>,
+    /// Ground a MET major civilization owns whose city attribution is unresolved
+    /// to this seat. That means either no city of theirs is visible, or the plot
+    /// sits on the fifth ownership ring of the nearest visible city, where the
+    /// host cannot distinguish that city from a nearer one still in fog. Written
+    /// fresh from the export every turn beside `closed_borders`, and empty on any
+    /// board that is not a live mirror. A settle site beside such a border can sit
+    /// under Loyalty pressure the forecast cannot count: run
+    /// civvis-20260826T030045Z founded Lugdunum five tiles from a German border
+    /// attributed to a city ten tiles away, read −22 Loyalty on its first export,
+    /// and lost the undamaged city at t70. See `AdvancedAi::frontier_loyalty`.
+    pub unseen_major_borders: BTreeSet<Pos>,
+    /// How much sealed ground each MAJOR seat accounts for — the mirrored seat
+    /// id against its tile count in [`Game::closed_borders`]. The set alone
+    /// cannot answer the one question the passage-purchase lane asks: WHO to
+    /// buy Open Borders from. Written fresh beside `closed_borders` on a live
+    /// mirror and empty everywhere else; minors seal ground too but are never
+    /// recorded here, because their passage is suzerainty, not a deal.
+    pub sealed_border_owners: BTreeMap<usize, u32>,
+    /// `(band owner, host)` pairs: the host keeps that seat's Rock Bands out
+    /// of its land. A live mirror's reading of a rival's Music Censorship,
+    /// which the export never shows: the host's own concert highlights name
+    /// no stage in a rival's land although a finished World Wonder (a stage
+    /// every band may play) stands there. Live 20261110T164254Z: Ethiopia
+    /// slotted it the turn after our first concerts in its land, every band
+    /// was then refused at its border for the rest of the game, and five
+    /// bands played twice. Written fresh every turn by
+    /// `mirror::band_closed_hosts`, empty on any other board; read through
+    /// [`Game::bars_foreign_rock_bands`].
+    pub rock_band_barred_hosts: BTreeSet<(usize, usize)>,
+    /// Active scored competitions supplied by a live Civilization VI host.
+    /// Native games leave this empty, so host-only projects cannot leak into
+    /// offline production menus.
+    pub host_competitions: Arc<Vec<HostCompetition>>,
+    /// ⭐ The harness switch `--rival-host-tactics` (`host_tactics.rs`): what
+    /// a governed rival chair may not do this turn, set only for that chair's
+    /// own turn and read by `apply`. Never saved, never set outside the
+    /// harness, so every other game is byte for byte what it was.
+    pub(crate) host_gate: Option<Box<crate::host_tactics::Gate>>,
+}
+
+impl std::ops::Deref for Game {
+    type Target = HostMirror;
+
+    fn deref(&self) -> &HostMirror {
+        &self.host
+    }
+}
+
+impl std::ops::DerefMut for Game {
+    fn deref_mut(&mut self) -> &mut HostMirror {
+        Arc::make_mut(&mut self.host)
+    }
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(from = "GameSer", into = "GameSer")]
 pub struct Game {
@@ -7272,694 +8182,6 @@ pub struct Game {
     pub spies: BTreeMap<u32, Spy>,
     pub cities: Cities,
     pub at_war: BTreeSet<(usize, usize)>,
-    /// Military scores reported by an authoritative host, keyed by CIVVIS seat.
-    ///
-    /// Ordinary games leave this empty and derive strength from their units. A
-    /// live mirror cannot do that for a met rival whose army is currently under
-    /// fog, even though Civilization VI exposes that rival's aggregate military
-    /// score to the player. Keeping the host score here lets the ordinary AI use
-    /// the public information without inventing hidden unit positions.
-    #[serde(default)]
-    pub observed_military_power: Arc<BTreeMap<usize, f64>>,
-    /// Per-unit facts an authoritative host exported about units in a live
-    /// mirror — the upgrade verdict and bill, the per-type upkeep, the movement
-    /// allowance, a Spy's operation and menu. Own units and visible foreign
-    /// units may carry different subsets. See [`HostUnitFacts`] for which
-    /// decision reads each. Empty in native games.
-    #[serde(default)]
-    pub host_unit_facts: Arc<BTreeMap<u32, HostUnitFacts>>,
-    /// The host treasury's bill by source for mirrored seats, read by
-    /// [`Game::unit_gold_maintenance`] and
-    /// [`Game::infrastructure_gold_maintenance`] in place of the board's own
-    /// sums. Empty in native games.
-    #[serde(default)]
-    pub host_maintenance: Arc<BTreeMap<usize, HostMaintenance>>,
-    /// Public host score for mirrored seats. Empty in native CIVVIS games.
-    #[serde(default)]
-    pub observed_score: Arc<BTreeMap<usize, i64>>,
-    /// Wars between two met rivals as the live host reports them (each
-    /// rival's `at_war_with`), as `(low, high)` seat pairs. Kept apart from
-    /// `at_war`, which every war reader of the planner consults, so the host
-    /// fact reaches only the readers that ask for it
-    /// ([`Game::rivals_at_war`]). Empty in native CIVVIS games.
-    #[serde(default)]
-    pub observed_rival_wars: Arc<BTreeSet<(usize, usize)>>,
-    /// Current host Palace locations, distinct from original capitals required
-    /// for Domination. Empty in simulated games and older host snapshots.
-    #[serde(default)]
-    pub observed_city_palaces: Arc<BTreeMap<u32, bool>>,
-    /// Cities whose imported pressure values encode majority and conversion
-    /// warnings rather than measured accumulated pressure. Spreading and
-    /// religious combat cannot forecast a conversion from these markers.
-    #[serde(default)]
-    pub observed_city_religion_markers: Arc<BTreeSet<u32>>,
-    /// The religion rows a live host's city banner showed for each mirrored
-    /// city: followers, pressure per turn and lifetime pressure. Empty in
-    /// simulated games, whose `City::pressure` is already the real figure.
-    #[serde(default)]
-    pub observed_city_faiths: Arc<BTreeMap<u32, Vec<ObservedCityFaith>>>,
-    /// Host gross strategic income minus the reconstructed board's income.
-    /// Corrections preserve policy and improvement counterfactuals on clones.
-    /// Empty in simulated games; refreshed on each host snapshot.
-    #[serde(default)]
-    pub observed_strategic_income_adjustments: Arc<BTreeMap<usize, BTreeMap<Name, f64>>>,
-    /// Exact host trade-route capacity for mirrored seats. Native games derive
-    /// this from their own infrastructure and leave the map empty.
-    #[serde(default)]
-    pub observed_trade_capacity: Arc<BTreeMap<usize, i64>>,
-    /// Exact Firaxis leader type for mirrored seats. CIVVIS models one leader
-    /// per civilization, while Civ VI can seat alternates and personas; keeping
-    /// the host type separate preserves identity without claiming their rules
-    /// have been folded into the modeled civilization.
-    #[serde(default)]
-    pub observed_leader_types: Arc<BTreeMap<usize, String>>,
-    /// Host-to-model yield corrections for mirrored empires. Native games leave
-    /// this empty. A correction, rather than an absolute replacement, preserves
-    /// counterfactual deltas when the AI evaluates a policy or build on a clone.
-    #[serde(default)]
-    pub observed_yield_adjustments: Arc<BTreeMap<usize, crate::rules::Yields>>,
-    /// Public empire-wide figures from an authoritative host which cannot be
-    /// reconstructed from fog-limited city and unit records. Native games leave
-    /// this empty and derive every standing from their full board.
-    #[serde(default)]
-    pub observed_public_empire_stats: Arc<BTreeMap<usize, ObservedPublicEmpireStats>>,
-    /// Seats known to own cities omitted from this partial board. Existence
-    /// alone prevents speculative casualties from falsely eliminating them.
-    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
-    pub unseen_city_owners: BTreeSet<usize>,
-    /// The religion a majority of a seat's cities follow, as the host reports
-    /// it for every met major (`GetReligionInMajorityOfCities`, the test the
-    /// shipped religion tab runs to call a civilization converted), keyed by
-    /// seat. [`Game::majority_religion_of`] prefers it to counting the cities
-    /// the board holds, which for a rival are only the ones in view. Empty on
-    /// a native game.
-    #[serde(default)]
-    pub observed_majority_religion: Arc<BTreeMap<usize, String>>,
-    /// Tourists one seat's culture draws from another as the host counts them
-    /// (`GetTouristsFrom` on the source's culture), keyed (tourism source,
-    /// where the tourists come from) — the order `visiting_tourists_from`
-    /// takes. The mirror records our seat's draw from each met rival, the
-    /// per-rival term of `foreign_tourists`. Empty on a native game.
-    #[serde(default)]
-    pub observed_visiting_tourists: Arc<BTreeMap<(usize, usize), i64>>,
-    /// Per-city host-to-model corrections and exact citizen assignments for a
-    /// mirrored Firaxis turn. Native games leave these empty. Corrections are
-    /// additive so counterfactual buildings, policies, and assignments still
-    /// contribute their modeled delta instead of being hidden by an override.
-    #[serde(default)]
-    pub observed_city_yield_adjustments: Arc<BTreeMap<u32, crate::rules::Yields>>,
-    /// Per-city host-to-model Amenity-surplus corrections for a mirrored
-    /// Firaxis turn. Native games leave this empty. Like yield corrections,
-    /// these are additive: a planned Arena, Luxury, or policy still changes
-    /// the projected surplus instead of being masked by a frozen host value.
-    #[serde(default)]
-    pub observed_city_amenity_adjustments: Arc<BTreeMap<u32, i64>>,
-    /// Per-city host-to-model Housing corrections for a mirrored Firaxis
-    /// turn, the Amenity map's twin: `host - model`, added inside
-    /// [`Game::city_housing`] so the board reads the host's ceiling while a
-    /// planned Granary or Aqueduct still moves the projection by its modeled
-    /// amount. Native games leave this empty.
-    #[serde(default)]
-    pub observed_city_housing_adjustments: Arc<BTreeMap<u32, f64>>,
-    /// Per-plot host-to-model yield corrections for a mirrored Firaxis turn:
-    /// `Plot:GetYield` minus CIVVIS's own tile model, on the plots the host
-    /// reports worked. Added inside [`Game::workable_tile_yields`], so the
-    /// board pays a tile what the host pays it — including the terms only the
-    /// host can know, such as the fertility an eruption or a flood left on the
-    /// ground (Rome on run civvis-20260816T003229Z read **+12 Food** over the
-    /// model for forty turns on volcanic soil) — while a counterfactual
-    /// improvement still moves the tile by its modeled amount. Native games
-    /// leave this empty.
-    #[serde(default)]
-    pub observed_tile_yield_adjustments: Arc<BTreeMap<Pos, crate::rules::Yields>>,
-    /// Trading Posts on the host's own path for one of our routes, keyed by
-    /// (origin, destination) city and filed (own cities, foreign cities). The
-    /// host's pathfinder follows roads the model's straight-line walk does
-    /// not; where the mirror knows the host's answer it is the one that pays
-    /// (`trading_post_route_gold`). Empty on a native game.
-    #[serde(default)]
-    pub observed_route_posts: Arc<BTreeMap<(u32, u32), (i64, i64)>>,
-    /// Where the host houses this seat's Great Works, by city and kind, when
-    /// the mirror has read it: the host's own placement is the one that
-    /// pays, not the model's best-slot heuristic (a Relic the host kept in
-    /// Rome's Palace read "+6 from GreatWorks" there while the model housed
-    /// it in Mediolanum's St. Basil's, run civvis-20260816T233226Z t154+).
-    /// `None` on a native game or an export without the works.
-    #[serde(default)]
-    pub observed_great_work_housing: Option<Arc<BTreeMap<u32, BTreeMap<String, usize>>>>,
-    /// What the host says one of our routes pays its ORIGIN, keyed by
-    /// (origin, destination) city — the Trade Overview's own sum of route,
-    /// path and modifier yields under the international multiplier. Stands
-    /// in for the model's route yield where present; empty on a native game.
-    #[serde(default)]
-    pub observed_route_yields: Arc<BTreeMap<(u32, u32), crate::rules::Yields>>,
-    /// Host-to-model incoming-route count deltas, keyed by destination city
-    /// and stored as `(foreign, domestic)`. A foreign route whose origin city
-    /// is still behind fog cannot be represented in `Game::routes`; this
-    /// correction preserves the host's destination-side count while keeping
-    /// counterfactual route additions/removals modeled. Empty on a native game.
-    #[serde(default)]
-    pub observed_incoming_route_deltas: Arc<BTreeMap<u32, (i64, i64)>>,
-    #[serde(default)]
-    pub observed_city_worked_tiles: Arc<BTreeMap<u32, Vec<Pos>>>,
-    #[serde(default)]
-    pub observed_city_specialists: Arc<BTreeMap<u32, Vec<String>>>,
-    /// Observed loyalty rates for owned cities, keyed by CIVVIS city id.
-    /// Populated by the live mirror and native player decision views.
-    #[serde(default)]
-    pub observed_city_loyalty_per_turn: Arc<BTreeMap<u32, f64>>,
-    /// Current local-player settler-lens nearby-city pressure. Used only for
-    /// prospective settlements; an absent plot is not a zero-pressure reading.
-    #[serde(default)]
-    pub observed_settlement_loyalty: Option<Arc<NativeSettlementPressure>>,
-    /// Observed banner defense strengths for reconstructed cities.
-    #[serde(default)]
-    pub observed_city_strength: Arc<BTreeMap<u32, f64>>,
-    /// Visible host city ranged strength, already including native modifiers.
-    #[serde(default)]
-    pub observed_city_ranged_strength: Arc<BTreeMap<u32, f64>>,
-    /// Host-reported outer-defense capacity for mirrored cities. Native games
-    /// derive this from wall buildings and leave the override empty.
-    #[serde(default)]
-    pub observed_city_max_wall_hp: Arc<BTreeMap<u32, i32>>,
-    /// `breach-support-reads-the-wall-tier`: read a mirrored city's wall tier
-    /// from its observed wall pool when deciding whether a Battering Ram or a
-    /// Siege Tower works on it. A rival city's record carries its wall bars,
-    /// not its buildings, so `city_building_effect` read no immunity from
-    /// Medieval or Renaissance Walls it could not see. Set by the seat each
-    /// turn; native games leave the observed pool empty, so it changes nothing
-    /// there.
-    #[serde(default)]
-    pub observed_wall_tier_rules: bool,
-    /// `trade-quotes-pay-the-lump`: the seat whose own quick-deal quotes are
-    /// paid as one rounded-up Gold lump whenever the payer's treasury covers
-    /// it, instead of the floored lump plus a per-turn sliver that
-    /// `quoted_payment` checks against `empire_gold_per_turn`. That proxy (4
-    /// Gold a city less unit and building upkeep, floored at zero) reads zero
-    /// from about turn 100 for a built-up empire whose real income is 30-200,
-    /// so every fractional quote it is party to vanishes. Set by the seat each
-    /// turn; `None` changes nothing.
-    #[serde(default)]
-    pub lump_quote_viewer: Option<usize>,
-    /// `nusantara-reads-the-coast`: the Indonesian seat whose district site
-    /// pickers price Great Nusantara's Coast adjacency
-    /// ([`Game::district_site_yields`]). Planning only: real yields never read
-    /// it. Set by the seat each turn; `None` changes nothing.
-    #[serde(default)]
-    pub nusantara_site_planner: Option<usize>,
-    /// `builders-route-around-mountains`: a Builder never enters a mountain,
-    /// whatever the Ski Resort unlock. The host's move pathing put none of
-    /// ours on a mountain in 984 Builder-turns after Professional Sports over
-    /// two 10-13 games and refused every move that ended on one, while the
-    /// board routed Builders across them. Set by the seat each turn.
-    #[serde(default)]
-    pub observed_builders_avoid_mountains: bool,
-    /// `exploration-replans-need-a-sighting`, for the acting seat's frame
-    /// executor (`ai::player`): set by the seat each turn, read only there.
-    #[serde(skip)]
-    pub exploration_replans_need_a_sighting: bool,
-    /// `culture-denial-heist`: a Great Work heist the HOST lists on a spy's
-    /// operation menu is offered, though the board cannot see the works. The
-    /// mirror carries only our own Great Works, so a rival city's
-    /// `spy_city_has_stealable_work` always read false and the heist was
-    /// never legal live: the host offered it for 8-14 turns in the culture
-    /// winner's city in three of today's eight culture losses
-    /// (civvis-20261008T062856Z St. Petersburg, T083432Z Tokyo, T090439Z
-    /// Mistahi-Sipihk) and it was never sent. Set by the seat each turn;
-    /// native games have no host menu, so it changes nothing there.
-    #[serde(default)]
-    pub heist_reads_the_host_menu: bool,
-    /// `spies-steal-the-lead`: a district mission the host offers at a plot
-    /// (`HostUnitFacts::spy_targets`) is offered there though the board has
-    /// not seen the district. The board learns a rival Campus only once the
-    /// tile is seen, so a host-offered Steal Tech Boost went unsent (live
-    /// 080206Z t145 and 073507Z t150: steal on the host menu, Listening Post
-    /// sent). Set by the seat each spy pass; native games have no host
-    /// targets, so it changes nothing there.
-    #[serde(default)]
-    pub spy_targets_read_the_host: bool,
-    /// Sites a HOST ruleset forbids for a reason CIVVIS's own rules cannot see.
-    ///
-    /// ★★★★ Empty in an ordinary game, and load-bearing when CIVVIS is driving a
-    /// foreign engine. Civilization VI refused 141 `FOUND_CITY` orders in one run and
-    /// 18 in another while the site picker re-chose the SAME tile at turns 20, 33 and
-    /// 79 — because nothing carried the refusal back, so every turn re-derived the
-    /// same answer from the same board and re-sent the same rejected order. Peak city
-    /// count was 2 in every run of the ladder.
-    ///
-    /// The fix is the one this whole bridge keeps needing: stop lying to CIVVIS. A
-    /// site the host rejected is recorded here, `can_found_city` honours it, and the
-    /// planner routes around it on its own. Filtering the order at the bridge instead
-    /// would only have made the turn do nothing — CIVVIS would never learn to pick
-    /// somewhere else.
-    #[serde(default)]
-    pub blocked_city_sites: Arc<BTreeSet<Pos>>,
-    /// Tiles a HOST ruleset will not let a builder improve, for the same reasons and
-    /// with the same emptiness in an ordinary game as [`Game::blocked_city_sites`].
-    ///
-    /// ★★★★ The largest refusal category measured: **311 `IMPROVEMENT_MINE`
-    /// refusals in one run**, 51 and 31 in others. CIVVIS names improvements from ITS
-    /// terrain model and the two rulesets do not agree tile for tile, so a tile it
-    /// believes is a mine site simply stays bare — and because the mirror then keeps
-    /// reporting an undeveloped empire, CIVVIS orders another builder. One run ended
-    /// with seven builders alive against an army of one.
-    #[serde(default)]
-    pub blocked_improvement_sites: Arc<BTreeSet<Pos>>,
-    /// Improvements a HOST ruleset refused on one tile, by name. A refusal that
-    /// names its improvement condemns that improvement there, not the ground:
-    /// only a refusal without a name lands in
-    /// [`Game::blocked_improvement_sites`].
-    ///
-    /// ★★★ ONE REFUSED ALCÁZAR HID THE EMPIRE'S ONLY ALUMINUM. Live King
-    /// 20261001T042554Z: a Builder asked for an Alcázar on the Farm at
-    /// (31,29) on turn 112 and the host refused it. The tile was blocked for
-    /// every improvement for the rest of the game, so when Radio revealed
-    /// Aluminum under that Farm and Advanced Flight landed on turn 160, the
-    /// Mine was never valid: eight Builders stood idle, the Bomber wing was
-    /// stood down "no Aluminum" on turn 174, and the Mine went in on turn
-    /// 203 only because a restarted bridge had lost the old refusal.
-    #[serde(default)]
-    pub blocked_improvements: Arc<BTreeMap<Pos, BTreeSet<Name>>>,
-    /// ★★★★ GROUND A GREAT PERSON STANDS ON, keyed to its owner. Empty in an
-    /// ordinary game; the live mirror fills it because CIVVIS does not model
-    /// Great People as units and drops them from the board (see
-    /// `mirror::is_great_person`), so a plot the host has occupied read as EMPTY.
-    ///
-    /// Civilization VI stacks one civilian per plot and a Great Person is a
-    /// civilian, so a Builder or Settler cannot end a move on one — exactly as
-    /// this engine treats a plot holding a friendly unit of the same class — and
-    /// a foreign Great Person blocks every unit, at war or not (Firaxis
-    /// captures no Great Person; live King civvis-20261004T160213Z). On
-    /// run `civvis-20260816T003229Z` the founded, zero-charge Prophet stood on
-    /// (7,25) beside the capital from turn 73 to the end; a Builder with two
-    /// charges left was ordered `MOVE_TO (7,25)` on 25 consecutive turns
-    /// (t175–t199) and never moved, because CIVVIS chose that tile as its
-    /// improvement target and Firaxis refused the step every time. Nothing on
-    /// the board could tell it otherwise.
-    ///
-    /// Honoured in the two places the board answers "can a unit be here":
-    /// [`Game::valid_improvements`] offers nothing on such a plot (the same
-    /// contract as `blocked_improvement_sites` — a tile a builder cannot reach
-    /// must offer nothing, or the builder loops on it), and `can_enter_past`
-    /// refuses the step for the layers Firaxis refuses it for.
-    #[serde(default)]
-    pub great_person_plots: BTreeMap<Pos, usize>,
-    /// ★★★★★ PROMOTIONS THE HOST REFUSED, so CIVVIS stops asking for them again.
-    ///
-    /// Every other host refusal already had a block set — `blocked_city_sites`,
-    /// `blocked_improvement_sites`, `blocked_trade_routes`, `blocked_policies`,
-    /// `blocked_districts`, `blocked_wonders`, `blocked_production` — and
-    /// promotions had NONE, so a refused promotion was re-requested every turn
-    /// for the rest of the game.
-    ///
-    /// Measured over every run recorded on 2026-08-03: **411 `promotion_refused`
-    /// events from only 19 distinct (unit, promotion) pairs — a median of 13
-    /// retries each and a maximum of 71.** Only 11% were asked once. The two
-    /// populations:
-    ///
-    /// - **318 on UNIT_APOSTLE** (Translator, Chaplain, Debater, Indulgence
-    ///   Vendor, Proselytizer). A Civilization VI Apostle takes ONE promotion when
-    ///   it is created and can never be promoted again, so every repeat was
-    ///   guaranteed to fail from the first refusal onward.
-    /// - **93 `PROMOTION_ECHELON` on UNIT_PIKE_AND_SHOT.**
-    ///
-    /// Keyed by unit id and promotion, because the refusal is specific to both:
-    /// another unit of the same kind may legitimately take the promotion this one
-    /// cannot.
-    #[serde(default)]
-    pub blocked_promotions: Arc<BTreeMap<u32, BTreeSet<Name>>>,
-    /// Current native Rock Band promotion offers; absent means unobserved.
-    #[serde(default)]
-    pub host_band_promotions: Arc<BTreeMap<u32, HostBandPromotions>>,
-    /// ★★★ STRIKES THE HOST REFUSED THIS TURN, so a later frame of the same
-    /// turn does not propose the identical shot again.
-    ///
-    /// `(attacker, target)` in CIVVIS unit ids and axial tiles. A live mirror
-    /// fills it per turn from the mod's `range_attack_refused` (line of sight,
-    /// range, spent attacks — the host's own `why`) and `war_refused` (a strike
-    /// the engine would answer with a war the agent never declared) events;
-    /// native games leave it empty. Gated where `blocked_promotions` is: at
-    /// the one legality each chooser and the applier itself pass through
-    /// (`legal_actions_within`'s strike loops, `ranged_order_is_legal`,
-    /// `melee_order_is_legal`, `do_attack`, `do_ranged`), so a pre-pass that
-    /// proves a strike on a private board (`live_finishing_candidates`) is
-    /// refused the same way the picker is.
-    #[serde(default)]
-    pub blocked_strikes: Arc<BTreeSet<(u32, Pos)>>,
-    /// Explicit host declaration refusals, keyed by (actor, target, observed
-    /// turn). They mask voluntary war actions only on that observed turn;
-    /// hypothetical later turns and games without host facts use normal rules.
-    #[serde(default)]
-    pub host_war_blocks: Arc<BTreeSet<(usize, usize, u32)>>,
-    /// Exact native permissions for unilateral war types, refreshed per board.
-    /// Present observations require an explicit true for the selected type;
-    /// missing observations and later simulated turns use ordinary rules.
-    #[serde(skip)]
-    pub host_war_type_permissions: Arc<BTreeMap<(usize, usize), ObservedWarTypes>>,
-    /// Native envoy permissions for (actor, city-state), with observed turn.
-    /// Only that turn uses the host answer; simulations without it retain
-    /// their own rules. Contact, a living minor and an available envoy remain
-    /// mandatory even when the host permits placement.
-    #[serde(default)]
-    pub host_envoy_permissions: Arc<BTreeMap<(usize, usize), (u32, bool)>>,
-    /// ★★★ THE HOST'S OWN PRICE OF A STRIKE, asked for this turn and answered
-    /// without fighting it. Keyed `(attacker, target, ranged)` in CIVVIS unit
-    /// ids and axial tiles; the value is Civilization VI's
-    /// `CombatManager.SimulateAttackInto` result as the mod's `preview` event
-    /// carries it (`CivvisLedger.preview`, answering a `preview` order). Per
-    /// turn, from the run's events; native games leave it empty. Read through
-    /// [`Game::host_preview`]; nothing else consumes it yet.
-    #[serde(default)]
-    pub host_previews: Arc<BTreeMap<(u32, Pos, bool), HostStrikePreview>>,
-    /// Origin/destination pairs a host engine rejected for a trade route.
-    /// Native games leave this empty; a live mirror learns it from Firaxis so an
-    /// unreachable city is not offered again every turn on geometric range alone.
-    #[serde(default)]
-    pub blocked_trade_routes: Arc<BTreeSet<(Pos, Pos)>>,
-    /// Policy cards a HOST ruleset has retired, for the same reasons and with the
-    /// same emptiness in an ordinary game as [`Game::blocked_city_sites`].
-    ///
-    /// ★★★★ Measured on live run `civvis-20260801T012454Z`: `POLICY_ILKUM` was chosen
-    /// and refused **105 times**, `DISCIPLINE` 6 and `AGOGE` 1 — **112 of 813
-    /// refusals**, third behind movement and `no_params`. Civilization VI knew every
-    /// time (`culture:IsPolicyObsolete`) and said so in the refusal reason; nothing
-    /// carried it back, so CIVVIS re-derived the same card from the same board on
-    /// almost every turn of the game.
-    ///
-    /// [`Game::available_policies`] already computes an obsolete set from each card's
-    /// `replaces` list. That is the right mechanism and it is under-populated — 22 of
-    /// 41 shipped rows carry no successor — but **filling it in is what PR #703 is
-    /// blocked on**: the rows are ruleset data, so changing them moves
-    /// `Rules::source_fingerprint` and the Elo ledger rejects new games at bind time.
-    ///
-    /// ⚠ This set deliberately does NOT go near that. It is per-game reconstruction
-    /// state carried beside the board, exactly like the two above, so the fingerprint
-    /// does not move and no rated game is invalidated. It fixes the mirrored game
-    /// without pretending to fix the ruleset — and an ordinary CIVVIS game leaves it
-    /// empty, so nothing about simulated play changes.
-    #[serde(default)]
-    pub blocked_policies: Arc<BTreeSet<Name>>,
-    /// Current policy eligibility observed from a host, scoped to its mirrored
-    /// seat. Unlike historical refusals this is replaced on each observation:
-    /// government changes and Congress bans can make a card available again.
-    /// An absent seat entry preserves ordinary simulation rules.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub host_policy_choices: BTreeMap<usize, BTreeSet<Name>>,
-    /// A native policy transaction window, scoped to its observed seat and
-    /// turn. Absent in ordinary games and legacy host snapshots.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub host_policy_windows: BTreeMap<usize, HostPolicyWindow>,
-    /// Pantheon beliefs a HOST has already granted to another player, for the same
-    /// reasons and with the same emptiness in an ordinary game as
-    /// [`Game::blocked_city_sites`].
-    ///
-    /// The mirror seats no rival pantheons — the export lists founded religions
-    /// only (`Game.GetReligion():GetReligions()` minus the pantheon rows), so
-    /// `do_choose_pantheon`'s "belief already taken" check sees only our own. A
-    /// first choice a rival holds is refused by the mod as `taken_BELIEF_<X>`, and
-    /// nothing carried that back: the same belief would be re-derived from the same
-    /// board next turn, and after two sightings the mod's own blocker fallback
-    /// picks the FIRST untaken pantheon in database order (Dance of the Aurora on
-    /// the recorded runs). Harvested from the refusal stream by the mirror
-    /// (`refused_pantheons`); an ordinary CIVVIS game leaves it empty. See
-    /// `AdvancedAi::expansion_pantheon` for the choice this protects.
-    #[serde(default)]
-    pub blocked_pantheons: Arc<BTreeSet<Name>>,
-    /// Districts a HOST ruleset will not place, per city, for the same reasons and
-    /// with the same emptiness in an ordinary game as [`Game::blocked_city_sites`].
-    ///
-    /// ★★★★ Measured on live run `civvis-20260801T024428Z`: `DISTRICT_GOVERNMENT`
-    /// refused **24** times by turn 115 and `build_no_plot` fired **39** times, every
-    /// one of them the same district. Civilization VI offers no plot for a Government
-    /// Plaza once one exists — it is one per civilization — and CIVVIS re-chose it
-    /// from the same board turn after turn. Each discard leaves the city with nothing
-    /// queued, so `ENDTURN_BLOCKING_PRODUCTION` fires and the hand-written ladder
-    /// picks instead; on that run only 11 of 55 builds were CIVVIS's.
-    ///
-    /// ⚠⚠ **KEYED BY CITY, AND THAT IS THE WHOLE CARE IN THIS FIX.** The host refuses
-    /// a district for two opposite reasons: it is impossible *anywhere* (Government
-    /// Plaza), or *this* city has no room. A global set would stop CIVVIS building
-    /// Campuses across the empire the first time one city ran out of space — trading a
-    /// small waste for a large one. The mod now sends the city id with the refusal so
-    /// the block can be scoped; before this it sent only a bare hash.
-    #[serde(default)]
-    pub blocked_districts: Arc<BTreeMap<u32, BTreeSet<Name>>>,
-    /// Fresh district plots Firaxis explicitly approved after rejecting a different
-    /// CIVVIS coordinate. Native games leave this empty. A positive host candidate
-    /// wins over the accompanying temporary refusal, so the next planner decision
-    /// can select a real placement instead of waiting out the cooldown.
-    #[serde(default)]
-    pub host_district_sites: Arc<BTreeMap<u32, BTreeMap<Name, BTreeSet<Pos>>>>,
-    /// Fresh wonder plots Firaxis explicitly approved after rejecting a different
-    /// CIVVIS coordinate. Like [`Game::host_district_sites`], this is bridge-only
-    /// feedback: a positive host answer wins over its paired temporary refusal so
-    /// the next decision can start the same wonder on legal ground.
-    #[serde(default)]
-    pub host_wonder_sites: Arc<BTreeMap<u32, BTreeMap<Name, BTreeSet<Pos>>>>,
-    /// Wonders a HOST engine says have no legal plot IN THIS CITY, scoped for the
-    /// same reason as [`Game::blocked_districts`] — Hanging Gardens needs a river
-    /// and Great Bath floodplains, so one city having no ground says nothing about
-    /// the next.
-    ///
-    /// ★★★★ The wonder half of `build_no_plot` was being DROPPED. That parser reads
-    /// only the event's `district` key, and the mod emits a refused wonder under
-    /// `building`, so every wonder refusal fell through it silently. Measured over
-    /// 20 live runs: **370 wonder refusals against 55 district ones**, from only 29
-    /// distinct (run, city, wonder) combinations — a mean of 12.8 re-asks each and
-    /// **53 consecutive turns** at worst of one city ordering one wonder Firaxis had
-    /// no ground for. `HANGING_GARDENS` 159, `GREAT_BATH` 129, `TEMPLE_ARTEMIS` 45.
-    #[serde(default)]
-    pub blocked_wonders: Arc<BTreeMap<u32, BTreeSet<Name>>>,
-    /// World-unique wonders the live host has ruled out everywhere.
-    ///
-    /// `blocked_wonders` is deliberately city-local: an ordinary zero-site answer
-    /// can mean this city lacks a river or floodplain. But the control bridge also
-    /// records the host's number of offered locations. An explicit `offered: 0` for
-    /// a model-legal wonder means Firaxis has no target anywhere, most commonly
-    /// because an unseen rival already completed that world unique. Carry that
-    /// stronger, permanent live-only fact separately so the next developed city
-    /// does not spend a production decision rediscovering it. Native games leave
-    /// the set empty.
-    #[serde(default)]
-    pub host_unavailable_wonders: Arc<BTreeSet<Name>>,
-    /// Production choices a HOST ruleset has refused in a particular city.
-    ///
-    /// The bridge keeps these blocks on a short cooldown: a missing prerequisite or
-    /// temporary host rule must be allowed to become legal later, while an item the
-    /// host has just rejected must not be selected from the same reconstructed board
-    /// on every turn. Keys are typed (`building:library`, `unit:warrior`, ...), so a
-    /// name shared by two production tables cannot suppress the wrong kind of item.
-    #[serde(default)]
-    pub blocked_production: Arc<BTreeMap<u32, BTreeSet<String>>>,
-    /// Purchases a HOST ruleset has recently refused in a particular city.
-    ///
-    /// This is deliberately separate from [`Game::blocked_production`]. A host may
-    /// reject buying a unit while still allowing the city to build it, and merging
-    /// the two would turn an actuation mismatch into the exact production starvation
-    /// the feedback is meant to repair. Ordinary CIVVIS games leave this empty.
-    #[serde(default)]
-    pub blocked_purchases: Arc<BTreeMap<u32, BTreeSet<String>>>,
-    /// The HOST's production menu per city, keyed like `blocked_production`
-    /// (`unit:warrior`, `formation:warrior:1`, `building:library`,
-    /// `wonder:pyramids`, `district:campus`, `project:...`): every item the
-    /// engine's `BuildQueue:CanProduce(hash, false, true)` says this city can
-    /// START now, with its cost and turns (`StateCity::buildable`). Empty in
-    /// an ordinary game and on an export without the key, so neither changes.
-    /// When a city has an entry, [`Game::can_produce`] refuses any unit,
-    /// formation, building, wonder, district or project the menu does not
-    /// list — the positive gate beside the refusal cooldown — and
-    /// [`Game::item_cost_for_city`] prices from it.
-    #[serde(default)]
-    pub host_buildable: Arc<BTreeMap<u32, BTreeMap<String, HostMenuEntry>>>,
-    /// The HOST's saved work per city on PAUSED units, buildings and projects
-    /// (`StateCity::buildable[].pr`, from `BuildQueue:GetUnitProgress`,
-    /// `GetBuildingProgress` and `GetProjectProgress`), keyed like
-    /// [`City::production_progress`] (`unit:builder`, `building:library`,
-    /// `project:...`), positive readings only. Districts are bound to their
-    /// foundation by the mirror instead; Wonders and formations need a plot or
-    /// tier this key does not carry and are left out. Read only by the opt-in
-    /// gene `saved-work-is-seen`. Empty in an ordinary game.
-    #[serde(default)]
-    pub host_saved_work: Arc<BTreeMap<u32, BTreeMap<String, f64>>>,
-    /// Observed native per-technology costs and saved research progress, by
-    /// player. Like production menus, these are refreshed host facts, not rules.
-    #[serde(default)]
-    pub host_research_quotes: Arc<BTreeMap<usize, BTreeMap<Name, HostResearchQuote>>>,
-    /// Generated rules before the native mirror applied revealed prerequisite
-    /// observations. Restored on every refresh, including older/missing exports.
-    /// Saves keep that valid generated layout plus the observed differences.
-    #[serde(skip)]
-    pub(crate) host_research_base_rules: Option<Arc<Rules>>,
-    /// Nodes whose complete prerequisite list was revealed in this host frame.
-    /// Transient observation metadata; refreshed after a native save is loaded.
-    #[serde(skip)]
-    pub(crate) host_revealed_research: Arc<BTreeSet<Name>>,
-    /// Instantaneous native CanResearch readings, by mirrored player and node.
-    /// Hypothetical prerequisite searches continue to use the rules graph.
-    #[serde(skip)]
-    pub(crate) host_research_eligibility: Arc<BTreeMap<usize, BTreeMap<Name, bool>>>,
-    /// Native strategic-resource prices for units and formations in each city,
-    /// from `BuildQueue:GetUnitResourceCost(index, formation)`. These already
-    /// include the host's modifiers; absent prices use the ordinary rules.
-    #[serde(default)]
-    pub host_unit_resource_prices: Arc<BTreeMap<u32, BTreeMap<String, f64>>>,
-    /// The HOST's purchase menu per city, same keys: what
-    /// `CityManager.CanStartCommand(city, PURCHASE, ...)` says this city can
-    /// BUY now and what `CityGold:GetPurchaseCost` charges
-    /// (`StateCity::purchasable`). When a city has an entry the three purchase
-    /// pricers answer from it and nothing else; an item off the menu is not
-    /// for sale.
-    #[serde(default)]
-    pub host_purchasable: Arc<BTreeMap<u32, BTreeMap<String, HostPurchaseEntry>>>,
-    /// Native plot-purchase prices and prospective Acropolis sites. A present
-    /// empty city menu supplies no purchase; absent observations retain the
-    /// ordinary model price. Refreshed independently of buildable districts.
-    #[serde(default)]
-    pub host_plot_purchases: Arc<BTreeMap<u32, Vec<HostPlotPurchaseEntry>>>,
-    /// The plots the host's `GetOperationTargets(BUILD)` offers a district in
-    /// a city, kept only when the export carried the complete offer. A site
-    /// outside it is not producible and `district_sites` drops it.
-    #[serde(default)]
-    pub host_district_plots: Arc<BTreeMap<u32, BTreeMap<Name, BTreeSet<Pos>>>>,
-    /// Actual native specialty-district limit, including Great Person bonuses.
-    /// Missing entries retain the ordinary population-derived limit.
-    #[serde(default)]
-    pub host_district_capacity: Arc<BTreeMap<u32, usize>>,
-    /// Tiles a HOST says the mirrored seat can see RIGHT NOW, over and above what
-    /// this engine's own sight model derives. Empty in an ordinary CIVVIS game.
-    ///
-    /// ★★★★★ THE EXPORT IS THE HOST'S VISIBILITY ANSWER, AND WE WERE THROWING IT
-    /// AWAY. Civilization VI exports a rival's or a minor's units *only under
-    /// current visibility* — `StateMinor` says so in its own doc — and the bridge
-    /// plants exactly those units on the board. Then
-    /// [`Game::player_vision_now`] RE-DERIVES what the seat can see, from this
-    /// engine's sight radii and height field on a reconstructed map, and the
-    /// tactical layer believes the derivation instead of the export. Every place
-    /// the two disagree, an enemy Civilization VI is showing us is invisible to
-    /// the agent deciding whether to shoot it.
-    ///
-    /// ⚠⚠⚠ Measured on live run `civvis-20260803T191900Z`, the 49 turns of
-    /// Kongo's war (t203-250) that cost Arpinum and Arretium and ended the game
-    /// at **479 against the winner's 1214**: an enemy was in the export on **49
-    /// of 49 turns**, our units stood **adjacent to one on 95 unit-turns** and
-    /// within range 2 — the range of the Field Cannons and Trebuchets that were
-    /// most of the army — on **197**. Attacks issued: **37**. The army declined
-    /// **81%** of the shots the host was showing it.
-    ///
-    /// `ForcePosture` only reaches `Engage` through
-    /// `g.sees(&visible, enemy.pos) && battlefront_unit_visible(..)`, so with the
-    /// derivation disagreeing it fell through to `Muster` — "still gathering" —
-    /// turn after turn while the cities burned. The same disagreement is what
-    /// `blind_ranged_tiles_charged` counts: 3 to 13 tiles on 45 separate turns.
-    ///
-    /// ⚠ Deliberately a stored set rather than "foreign units imply visibility".
-    /// That inference is only sound for a MIRRORED board, where every foreign unit
-    /// arrived from an export gated on sight. In ordinary self-play the board holds
-    /// the full simulation, and reading it the same way would hand every AI player
-    /// perfect vision of the entire world.
-    #[serde(default)]
-    pub host_observed: Arc<BTreeSet<Pos>>,
-    /// Appeal as the host counts it, per plot (`Plot:GetAppeal` off the tile
-    /// export). [`Game::tile_appeal`] prefers it to the derivation from the
-    /// six neighbours the board can see; empty on a native game.
-    #[serde(default)]
-    pub observed_appeal: Arc<BTreeMap<Pos, i32>>,
-    /// The host's own `Plot:IsFreshWater()` per revealed plot, which
-    /// `city_water` prefers to the river/lake/oasis derivation for a city
-    /// centre. Exported as `fw` since the tiles export began and read by
-    /// nothing until 2026-08-27.
-    #[serde(default)]
-    pub observed_fresh_water: Arc<BTreeMap<Pos, bool>>,
-    /// A seat's tourism per turn as the host reports it — ours from the
-    /// state's `tourism_per_turn`, a rival's from `rivals[].tourism`.
-    /// `tourism_per_turn` prefers it; `tourism_per_turn_model` is the
-    /// engine's own figure for the instrument that measures the gap.
-    #[serde(default)]
-    pub observed_tourism_per_turn: Arc<BTreeMap<usize, f64>>,
-    /// What the host says a route a Trader could START would pay its origin,
-    /// keyed by (origin, destination) — the shipped TradeRouteChooser's own
-    /// `CalculateOriginYield…` sum, exported while a route slot is open.
-    /// Distinct from [`Game::observed_route_yields`], which is for ACTIVE
-    /// routes and stands in for the model inside `city_yields`; this one is
-    /// read by the trader-destination chooser. Empty on a native game.
-    #[serde(default)]
-    pub observed_route_options: Arc<BTreeMap<(u32, u32), crate::rules::Yields>>,
-    /// The host's climate readings beyond the phase itself: the world's CO2,
-    /// the temperature, the sea-level and disaster forecasts
-    /// (`GameClimate`, the shipped ClimateScreen's reads). `None` on a native
-    /// game or an export without it.
-    #[serde(default)]
-    pub observed_climate: Option<ObservedClimate>,
-    /// Ground a HOST holds for somebody else and will not let this seat's units
-    /// enter, for tiles whose owner [`Game::territory_owner_at`] cannot name.
-    ///
-    /// ★★★★★ THE MISSING MEMBER OF THE `blocked_*` FAMILY, AND THE COMMENT ON
-    /// [`Game::blocked_policies`] already says which one it is: policies were
-    /// "third behind **movement** and `no_params`". Movement is the largest
-    /// refusal category in the ledger and it was the only one with no block set.
-    ///
-    /// The ordinary gate in `can_enter` reads `territory_owner_at`, which resolves
-    /// a tile's owner through `owner_city -> cities -> owner`. A rival whose cities
-    /// this seat has never SEEN has no city on the mirrored board, so their border
-    /// resolves to `None` and reads as free ground. That is a closed loop: their
-    /// border is invisible precisely because we cannot get past it to see the city
-    /// that makes it.
-    ///
-    /// ⚠⚠⚠ Measured on live run `civvis-20260803T191900Z` (Rome, SETTLER, small).
-    /// Scout `196608` reached offset (12,24) on **turn 42** and was ordered
-    /// `MOVE_TO (11,24)` — one hex — on **74 separate turns** without ever moving;
-    /// at t91 it was upgraded in place and the Skirmisher kept re-sending the same
-    /// step. (11,24) is exported `o: 4`, Kongo's territory, and we were not at war
-    /// and held no open borders. **81 of 670 `MOVE_TO` orders targeted foreign
-    /// ground, every one of them Kongo's, and all 81 were counted `applied` —
-    /// a blocked move is a silent no-op, not a refusal.**
-    ///
-    /// What it cost, in order: exploration flatlined at **283 of 3404 tiles (8.3%)**
-    /// from turn 42; **zero rival cities were observed in 96 snapshots**; with no
-    /// known enemy city `plan.target_city` stayed `None`, so `campaign` fell through
-    /// to `peacetime_step` and all seven combat units garrisoned within three hexes
-    /// of home; and `strategy=conquest` ran for forty turns with `war_legal=9` and
-    /// **no war ever declared**. Of 35 walkable frontier tiles, 21 were sealed
-    /// behind that border — including all six nearest the scout — while 14 neutral
-    /// ones waited at distance 7, leading east into two thirds of an unseen map.
-    ///
-    /// Written fresh from the export every turn rather than accumulated, and never
-    /// written for an owner this seat has access to, so declaring war opens the
-    /// ground on the following turn instead of sealing our own invasion out.
-    #[serde(default)]
-    pub closed_borders: BTreeSet<Pos>,
-    /// Ground a MET major civilization owns whose city attribution is unresolved
-    /// to this seat. That means either no city of theirs is visible, or the plot
-    /// sits on the fifth ownership ring of the nearest visible city, where the
-    /// host cannot distinguish that city from a nearer one still in fog. Written
-    /// fresh from the export every turn beside `closed_borders`, and empty on any
-    /// board that is not a live mirror. A settle site beside such a border can sit
-    /// under Loyalty pressure the forecast cannot count: run
-    /// civvis-20260826T030045Z founded Lugdunum five tiles from a German border
-    /// attributed to a city ten tiles away, read −22 Loyalty on its first export,
-    /// and lost the undamaged city at t70. See `AdvancedAi::frontier_loyalty`.
-    #[serde(default)]
-    pub unseen_major_borders: BTreeSet<Pos>,
-    /// How much sealed ground each MAJOR seat accounts for — the mirrored seat
-    /// id against its tile count in [`Game::closed_borders`]. The set alone
-    /// cannot answer the one question the passage-purchase lane asks: WHO to
-    /// buy Open Borders from. Written fresh beside `closed_borders` on a live
-    /// mirror and empty everywhere else; minors seal ground too but are never
-    /// recorded here, because their passage is suzerainty, not a deal.
-    #[serde(default)]
-    pub sealed_border_owners: BTreeMap<usize, u32>,
-    /// `(band owner, host)` pairs: the host keeps that seat's Rock Bands out
-    /// of its land. A live mirror's reading of a rival's Music Censorship,
-    /// which the export never shows: the host's own concert highlights name
-    /// no stage in a rival's land although a finished World Wonder (a stage
-    /// every band may play) stands there. Live 20261110T164254Z: Ethiopia
-    /// slotted it the turn after our first concerts in its land, every band
-    /// was then refused at its border for the rest of the game, and five
-    /// bands played twice. Written fresh every turn by
-    /// `mirror::band_closed_hosts`, empty on any other board; read through
-    /// [`Game::bars_foreign_rock_bands`].
-    #[serde(default)]
-    pub rock_band_barred_hosts: BTreeSet<(usize, usize)>,
     /// The turn each peace treaty runs until, keyed by signatory pair. War
     /// cannot be declared again before it expires — the shipped
     /// `DIPLOMACY_PEACE_MIN_TURNS`.
@@ -7969,26 +8191,11 @@ pub struct Game {
     /// What has actually landed on cities this game, for evaluators.
     #[serde(default)]
     pub siege: SiegeCensus,
-    /// The wars that ended, oldest first and bounded — long enough for a
-    /// client to show what a peace cost, short enough not to grow forever.
-    pub concluded_wars: Vec<WarRecord>,
-    /// Every nuclear detonation, oldest first and bounded. The tail is what a
-    /// client animates and what a log describes; the whole history is not
-    /// worth carrying in every frame of a five-hundred-turn game.
-    #[serde(default)]
-    pub nuclear_strikes: Vec<NuclearStrike>,
-    /// Every major civilization's yields and city count, one row per
-    /// civilization per turn, oldest first: the result screen's graphs. It
-    /// lives behind an `Arc` because a planning or debugger fork copies the
-    /// world, and a pointer is all such a fork should pay for a history it
-    /// never reads. Only the played world writes to it.
-    #[serde(default)]
-    pub turn_stats: Arc<Vec<TurnStats>>,
-    /// Where each unit has walked lately, oldest first and bounded like the
-    /// strike ledger: a client draws the recent tail, and the full walking
-    /// history of a long game is not worth carrying in every frame.
-    #[serde(default)]
-    pub unit_move_trails: Vec<UnitMoveTrail>,
+    /// What happened, for whoever watches: ended wars, nuclear strikes, the
+    /// result screen's yields, and units' recent walks. The rules write it and
+    /// never read it back (`docs/CORE_STATE.md`), so it is not part of the
+    /// world a fork has to copy: every record is shared until written.
+    pub chronicle: Chronicle,
     pub barb_pid: Option<usize>,
     pub barb_camps: BTreeMap<Pos, u32>,
     /// Coastal camps are naval outposts; the set is persisted so a camp does
@@ -8048,11 +8255,6 @@ pub struct Game {
     pub next_deal_id: u32,
     pub congress: Option<CongressSession>,
     pub active_congress_effects: Vec<CongressEffect>,
-    /// Active scored competitions supplied by a live Civilization VI host.
-    /// Native games leave this empty, so host-only projects cannot leak into
-    /// offline production menus.
-    #[serde(default)]
-    pub host_competitions: Arc<Vec<HostCompetition>>,
     /// The scored competition CIVVIS is running itself, if any. Off unless
     /// `native_competitions` is set. See [`Competition`].
     #[serde(default)]
@@ -8073,11 +8275,6 @@ pub struct Game {
     /// `docs/ELO_REPINS.md` for what promoting it costs.
     #[serde(default)]
     pub native_competitions: bool,
-    /// ⭐ The harness switch `--rival-host-tactics` (`host_tactics.rs`): what
-    /// a governed rival chair may not do this turn, set only for that chair's
-    /// own turn and read by `apply`. Never saved, never set outside the
-    /// harness, so every other game is byte for byte what it was.
-    pub(crate) host_gate: Option<Box<crate::host_tactics::Gate>>,
     /// Turn the last Special Session was seated. Shipped
     /// `WORLD_CONGRESS_MIN_TIME_BETWEEN_SPECIAL_SESSIONS` holds the next one
     /// off for 15 standard-scaled turns. Saves from before this field start
@@ -8098,6 +8295,14 @@ pub struct Game {
     pub log: crate::actionlog::ActionLog,
     /// Per-civilization event stream; see [`Event`].
     pub events: EventLog,
+    /// Everything a mirrored seat was told by the Civilization VI game it
+    /// plays in (`observed_*`, `host_*`, `blocked_*` and the host's
+    /// switches): read by the rules only when a host supplied it, empty in
+    /// self-play, and no part of the world (`docs/CORE_STATE.md`). One
+    /// shared pointer, copied only when a fork writes a host fact; every
+    /// field keeps its old name through `Deref`, so `game.observed_score`
+    /// still reads it.
+    pub host: Arc<HostMirror>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -8546,103 +8751,15 @@ impl From<GameSer> for Game {
             spies: s.spies.into_iter().map(|spy| (spy.id, spy)).collect(),
             cities: s.cities.into_iter().map(|c| (c.id, c)).collect(),
             at_war: s.at_war.into_iter().collect(),
-            observed_military_power: Arc::new(s.observed_military_power),
-            host_unit_facts: Arc::new(s.host_unit_facts),
-            host_maintenance: Arc::new(s.host_maintenance),
-            observed_score: Arc::new(s.observed_score),
-            observed_rival_wars: Arc::new(s.observed_rival_wars),
-            observed_city_palaces: Arc::new(s.observed_city_palaces),
-            observed_city_religion_markers: Arc::new(s.observed_city_religion_markers),
-            observed_city_faiths: Arc::new(s.observed_city_faiths),
-            observed_strategic_income_adjustments: Arc::new(
-                s.observed_strategic_income_adjustments,
-            ),
-            observed_trade_capacity: Arc::new(s.observed_trade_capacity),
-            observed_leader_types: Arc::new(s.observed_leader_types),
-            observed_yield_adjustments: Arc::new(s.observed_yield_adjustments),
-            observed_public_empire_stats: Arc::new(s.observed_public_empire_stats),
-            unseen_city_owners: s.unseen_city_owners,
-            observed_majority_religion: Arc::new(s.observed_majority_religion),
-            observed_visiting_tourists: Arc::new(
-                s.observed_visiting_tourists.into_iter().collect(),
-            ),
-            observed_city_yield_adjustments: Arc::new(s.observed_city_yield_adjustments),
-            observed_city_amenity_adjustments: Arc::new(s.observed_city_amenity_adjustments),
-            observed_city_housing_adjustments: Arc::new(s.observed_city_housing_adjustments),
-            observed_tile_yield_adjustments: Arc::new(
-                s.observed_tile_yield_adjustments.into_iter().collect(),
-            ),
-            observed_route_posts: Arc::new(s.observed_route_posts.into_iter().collect()),
-            observed_great_work_housing: s.observed_great_work_housing.map(Arc::new),
-            observed_route_yields: Arc::new(s.observed_route_yields.into_iter().collect()),
-            observed_incoming_route_deltas: Arc::new(s.observed_incoming_route_deltas),
-            observed_route_options: Arc::new(s.observed_route_options.into_iter().collect()),
-            observed_appeal: Arc::new(s.observed_appeal.into_iter().collect()),
-            observed_fresh_water: Arc::new(s.observed_fresh_water.into_iter().collect()),
-            observed_tourism_per_turn: Arc::new(s.observed_tourism_per_turn.into_iter().collect()),
-            observed_climate: s.observed_climate,
-            observed_city_worked_tiles: Arc::new(s.observed_city_worked_tiles),
-            observed_city_specialists: Arc::new(s.observed_city_specialists),
-            observed_city_loyalty_per_turn: Arc::new(s.observed_city_loyalty_per_turn),
-            observed_settlement_loyalty: s.observed_settlement_loyalty.map(Arc::new),
-            observed_city_strength: Arc::new(s.observed_city_strength),
-            observed_city_ranged_strength: Arc::new(s.observed_city_ranged_strength),
-            observed_city_max_wall_hp: Arc::new(s.observed_city_max_wall_hp),
-            observed_wall_tier_rules: false,
-            lump_quote_viewer: None,
-            nusantara_site_planner: None,
-            observed_builders_avoid_mountains: false,
-            exploration_replans_need_a_sighting: false,
-            heist_reads_the_host_menu: false,
-            spy_targets_read_the_host: false,
-            // Not carried in a save: host refusals are rebuilt from the run's event
-            // log on every reconstruction, so a stale copy would only mislead.
-            blocked_city_sites: Arc::new(BTreeSet::new()),
-            host_observed: Arc::new(BTreeSet::new()),
-            closed_borders: BTreeSet::new(),
-            unseen_major_borders: BTreeSet::new(),
-            sealed_border_owners: BTreeMap::new(),
-            rock_band_barred_hosts: BTreeSet::new(),
-            blocked_improvement_sites: Arc::new(BTreeSet::new()),
-            blocked_improvements: Arc::new(BTreeMap::new()),
-            great_person_plots: BTreeMap::new(),
-            blocked_promotions: Arc::new(BTreeMap::new()),
-            host_band_promotions: Arc::new(BTreeMap::new()),
-            blocked_strikes: Arc::new(BTreeSet::new()),
-            host_war_blocks: Arc::new(BTreeSet::new()),
-            host_war_type_permissions: Arc::new(BTreeMap::new()),
-            host_envoy_permissions: Arc::new(BTreeMap::new()),
-            host_previews: Arc::new(BTreeMap::new()),
-            blocked_trade_routes: Arc::new(BTreeSet::new()),
-            blocked_policies: Arc::new(BTreeSet::new()),
-            host_policy_choices: BTreeMap::new(),
-            host_policy_windows: BTreeMap::new(),
-            blocked_pantheons: Arc::new(BTreeSet::new()),
-            blocked_districts: Arc::new(BTreeMap::new()),
-            host_district_sites: Arc::new(BTreeMap::new()),
-            host_wonder_sites: Arc::new(BTreeMap::new()),
-            blocked_wonders: Arc::new(BTreeMap::new()),
-            host_unavailable_wonders: Arc::new(BTreeSet::new()),
-            blocked_production: Arc::new(BTreeMap::new()),
-            blocked_purchases: Arc::new(BTreeMap::new()),
-            host_buildable: Arc::new(BTreeMap::new()),
-            host_saved_work: Arc::new(BTreeMap::new()),
-            host_research_quotes: Arc::new(BTreeMap::new()),
-            host_research_base_rules: None,
-            host_revealed_research: Arc::new(BTreeSet::new()),
-            host_research_eligibility: Arc::new(BTreeMap::new()),
-            host_unit_resource_prices: Arc::new(BTreeMap::new()),
-            host_purchasable: Arc::new(BTreeMap::new()),
-            host_plot_purchases: Arc::new(BTreeMap::new()),
-            host_district_plots: Arc::new(BTreeMap::new()),
-            host_district_capacity: Arc::new(BTreeMap::new()),
             peace_treaties: s.peace_treaties.into_iter().collect(),
             wars: s.wars.into_iter().collect(),
             siege: SiegeCensus::default(),
-            concluded_wars: s.concluded_wars,
-            nuclear_strikes: s.nuclear_strikes,
-            turn_stats: Arc::new(s.turn_stats),
-            unit_move_trails: s.unit_move_trails,
+            chronicle: Chronicle {
+                concluded_wars: Arc::new(s.concluded_wars),
+                nuclear_strikes: Arc::new(s.nuclear_strikes),
+                turn_stats: Arc::new(s.turn_stats),
+                unit_move_trails: Arc::new(s.unit_move_trails),
+            },
             barb_pid: s.barb_pid,
             barb_camps: s.barb_camps.into_iter().collect(),
             barb_naval_camps: s.barb_naval_camps.into_iter().collect(),
@@ -8670,17 +8787,111 @@ impl From<GameSer> for Game {
             next_deal_id: s.next_deal_id,
             congress: s.congress,
             active_congress_effects: s.active_congress_effects,
-            host_competitions: Arc::new(s.host_competitions),
             competition: s.competition,
             competition_lockout_until: s.competition_lockout_until,
             native_competitions: s.native_competitions,
-            host_gate: None,
             last_special_session: s.last_special_session,
             pending_emergencies: s.pending_emergencies,
             active_emergencies: s.active_emergencies,
             occ: pos_map::UnitIndex::default(),
             city_by_pos: pos_map::CityIndex::default(),
             log: crate::actionlog::ActionLog::new(),
+            host: Arc::new(HostMirror {
+                observed_military_power: Arc::new(s.observed_military_power),
+                host_unit_facts: Arc::new(s.host_unit_facts),
+                host_maintenance: Arc::new(s.host_maintenance),
+                observed_score: Arc::new(s.observed_score),
+                observed_rival_wars: Arc::new(s.observed_rival_wars),
+                observed_city_palaces: Arc::new(s.observed_city_palaces),
+                observed_city_religion_markers: Arc::new(s.observed_city_religion_markers),
+                observed_city_faiths: Arc::new(s.observed_city_faiths),
+                observed_strategic_income_adjustments: Arc::new(
+                    s.observed_strategic_income_adjustments,
+                ),
+                observed_trade_capacity: Arc::new(s.observed_trade_capacity),
+                observed_leader_types: Arc::new(s.observed_leader_types),
+                observed_yield_adjustments: Arc::new(s.observed_yield_adjustments),
+                observed_public_empire_stats: Arc::new(s.observed_public_empire_stats),
+                unseen_city_owners: s.unseen_city_owners,
+                observed_majority_religion: Arc::new(s.observed_majority_religion),
+                observed_visiting_tourists: Arc::new(
+                    s.observed_visiting_tourists.into_iter().collect(),
+                ),
+                observed_city_yield_adjustments: Arc::new(s.observed_city_yield_adjustments),
+                observed_city_amenity_adjustments: Arc::new(s.observed_city_amenity_adjustments),
+                observed_city_housing_adjustments: Arc::new(s.observed_city_housing_adjustments),
+                observed_tile_yield_adjustments: Arc::new(
+                    s.observed_tile_yield_adjustments.into_iter().collect(),
+                ),
+                observed_route_posts: Arc::new(s.observed_route_posts.into_iter().collect()),
+                observed_great_work_housing: s.observed_great_work_housing.map(Arc::new),
+                observed_route_yields: Arc::new(s.observed_route_yields.into_iter().collect()),
+                observed_incoming_route_deltas: Arc::new(s.observed_incoming_route_deltas),
+                observed_route_options: Arc::new(s.observed_route_options.into_iter().collect()),
+                observed_appeal: Arc::new(s.observed_appeal.into_iter().collect()),
+                observed_fresh_water: Arc::new(s.observed_fresh_water.into_iter().collect()),
+                observed_tourism_per_turn: Arc::new(
+                    s.observed_tourism_per_turn.into_iter().collect(),
+                ),
+                observed_climate: s.observed_climate,
+                observed_city_worked_tiles: Arc::new(s.observed_city_worked_tiles),
+                observed_city_specialists: Arc::new(s.observed_city_specialists),
+                observed_city_loyalty_per_turn: Arc::new(s.observed_city_loyalty_per_turn),
+                observed_settlement_loyalty: s.observed_settlement_loyalty.map(Arc::new),
+                observed_city_strength: Arc::new(s.observed_city_strength),
+                observed_city_ranged_strength: Arc::new(s.observed_city_ranged_strength),
+                observed_city_max_wall_hp: Arc::new(s.observed_city_max_wall_hp),
+                observed_wall_tier_rules: false,
+                lump_quote_viewer: None,
+                nusantara_site_planner: None,
+                observed_builders_avoid_mountains: false,
+                exploration_replans_need_a_sighting: false,
+                heist_reads_the_host_menu: false,
+                spy_targets_read_the_host: false,
+                // Not carried in a save: host refusals are rebuilt from the run's event
+                // log on every reconstruction, so a stale copy would only mislead.
+                blocked_city_sites: Arc::new(BTreeSet::new()),
+                host_observed: Arc::new(BTreeSet::new()),
+                closed_borders: BTreeSet::new(),
+                unseen_major_borders: BTreeSet::new(),
+                sealed_border_owners: BTreeMap::new(),
+                rock_band_barred_hosts: BTreeSet::new(),
+                blocked_improvement_sites: Arc::new(BTreeSet::new()),
+                blocked_improvements: Arc::new(BTreeMap::new()),
+                great_person_plots: BTreeMap::new(),
+                blocked_promotions: Arc::new(BTreeMap::new()),
+                host_band_promotions: Arc::new(BTreeMap::new()),
+                blocked_strikes: Arc::new(BTreeSet::new()),
+                host_war_blocks: Arc::new(BTreeSet::new()),
+                host_war_type_permissions: Arc::new(BTreeMap::new()),
+                host_envoy_permissions: Arc::new(BTreeMap::new()),
+                host_previews: Arc::new(BTreeMap::new()),
+                blocked_trade_routes: Arc::new(BTreeSet::new()),
+                blocked_policies: Arc::new(BTreeSet::new()),
+                host_policy_choices: BTreeMap::new(),
+                host_policy_windows: BTreeMap::new(),
+                blocked_pantheons: Arc::new(BTreeSet::new()),
+                blocked_districts: Arc::new(BTreeMap::new()),
+                host_district_sites: Arc::new(BTreeMap::new()),
+                host_wonder_sites: Arc::new(BTreeMap::new()),
+                blocked_wonders: Arc::new(BTreeMap::new()),
+                host_unavailable_wonders: Arc::new(BTreeSet::new()),
+                blocked_production: Arc::new(BTreeMap::new()),
+                blocked_purchases: Arc::new(BTreeMap::new()),
+                host_buildable: Arc::new(BTreeMap::new()),
+                host_saved_work: Arc::new(BTreeMap::new()),
+                host_research_quotes: Arc::new(BTreeMap::new()),
+                host_research_base_rules: None,
+                host_revealed_research: Arc::new(BTreeSet::new()),
+                host_research_eligibility: Arc::new(BTreeMap::new()),
+                host_unit_resource_prices: Arc::new(BTreeMap::new()),
+                host_purchasable: Arc::new(BTreeMap::new()),
+                host_plot_purchases: Arc::new(BTreeMap::new()),
+                host_district_plots: Arc::new(BTreeMap::new()),
+                host_district_capacity: Arc::new(BTreeMap::new()),
+                host_competitions: Arc::new(s.host_competitions),
+                host_gate: None,
+            }),
         };
         g.set_host_research_prerequisites(s.host_research_prerequisites)
             .unwrap_or_else(|error| panic!("invalid saved native research prerequisites: {error}"));
@@ -8739,7 +8950,12 @@ impl From<GameSer> for Game {
             // Favor lived in the generic counter map in pre-trade saves.
             // Migrate it once into the typed balance used by Congress and
             // diplomatic trades without changing the save format version.
-            if player.diplomatic_favor == 0.0 {
+            // Only a save with no favor field qualifies: the engine still adds
+            // every grant to `counters["diplomatic_favor"]`, so it is a
+            // lifetime total, and treating a spent balance of exactly zero as
+            // "never migrated" handed a seat back everything it had ever
+            // earned (seen by the core-state probe, #5749).
+            if player.diplomatic_favor.is_nan() {
                 player.diplomatic_favor = player
                     .counters
                     .get("diplomatic_favor")
@@ -8782,6 +8998,7 @@ impl From<Game> for GameSer {
             .as_ref()
             .unwrap_or(&g.rules)
             .future_tree_layout();
+        let host = Arc::unwrap_or_clone(g.host);
         GameSer {
             seed: g.seed,
             future_tree_layout: Some(future_tree_layout),
@@ -8826,74 +9043,80 @@ impl From<Game> for GameSer {
             next_id: g.next_id,
             rng: g.rng,
             at_war: g.at_war.into_iter().collect(),
-            observed_military_power: Arc::unwrap_or_clone(g.observed_military_power),
-            host_unit_facts: Arc::unwrap_or_clone(g.host_unit_facts),
-            host_maintenance: Arc::unwrap_or_clone(g.host_maintenance),
-            observed_score: Arc::unwrap_or_clone(g.observed_score),
-            observed_rival_wars: Arc::unwrap_or_clone(g.observed_rival_wars),
-            observed_city_palaces: Arc::unwrap_or_clone(g.observed_city_palaces),
-            observed_city_religion_markers: Arc::unwrap_or_clone(g.observed_city_religion_markers),
-            observed_city_faiths: Arc::unwrap_or_clone(g.observed_city_faiths),
-            observed_strategic_income_adjustments: Arc::unwrap_or_clone(
-                g.observed_strategic_income_adjustments,
+            observed_military_power: Arc::unwrap_or_clone(host.observed_military_power),
+            host_unit_facts: Arc::unwrap_or_clone(host.host_unit_facts),
+            host_maintenance: Arc::unwrap_or_clone(host.host_maintenance),
+            observed_score: Arc::unwrap_or_clone(host.observed_score),
+            observed_rival_wars: Arc::unwrap_or_clone(host.observed_rival_wars),
+            observed_city_palaces: Arc::unwrap_or_clone(host.observed_city_palaces),
+            observed_city_religion_markers: Arc::unwrap_or_clone(
+                host.observed_city_religion_markers,
             ),
-            observed_trade_capacity: Arc::unwrap_or_clone(g.observed_trade_capacity),
-            observed_leader_types: Arc::unwrap_or_clone(g.observed_leader_types),
-            observed_yield_adjustments: Arc::unwrap_or_clone(g.observed_yield_adjustments),
-            observed_public_empire_stats: Arc::unwrap_or_clone(g.observed_public_empire_stats),
-            unseen_city_owners: g.unseen_city_owners,
-            observed_majority_religion: Arc::unwrap_or_clone(g.observed_majority_religion),
-            observed_visiting_tourists: Arc::unwrap_or_clone(g.observed_visiting_tourists)
+            observed_city_faiths: Arc::unwrap_or_clone(host.observed_city_faiths),
+            observed_strategic_income_adjustments: Arc::unwrap_or_clone(
+                host.observed_strategic_income_adjustments,
+            ),
+            observed_trade_capacity: Arc::unwrap_or_clone(host.observed_trade_capacity),
+            observed_leader_types: Arc::unwrap_or_clone(host.observed_leader_types),
+            observed_yield_adjustments: Arc::unwrap_or_clone(host.observed_yield_adjustments),
+            observed_public_empire_stats: Arc::unwrap_or_clone(host.observed_public_empire_stats),
+            unseen_city_owners: host.unseen_city_owners,
+            observed_majority_religion: Arc::unwrap_or_clone(host.observed_majority_religion),
+            observed_visiting_tourists: Arc::unwrap_or_clone(host.observed_visiting_tourists)
                 .into_iter()
                 .collect(),
             observed_city_yield_adjustments: Arc::unwrap_or_clone(
-                g.observed_city_yield_adjustments,
+                host.observed_city_yield_adjustments,
             ),
             observed_city_amenity_adjustments: Arc::unwrap_or_clone(
-                g.observed_city_amenity_adjustments,
+                host.observed_city_amenity_adjustments,
             ),
             observed_city_housing_adjustments: Arc::unwrap_or_clone(
-                g.observed_city_housing_adjustments,
+                host.observed_city_housing_adjustments,
             ),
             observed_tile_yield_adjustments: Arc::unwrap_or_clone(
-                g.observed_tile_yield_adjustments,
+                host.observed_tile_yield_adjustments,
             )
             .into_iter()
             .collect(),
-            observed_route_posts: Arc::unwrap_or_clone(g.observed_route_posts)
+            observed_route_posts: Arc::unwrap_or_clone(host.observed_route_posts)
                 .into_iter()
                 .collect(),
-            observed_great_work_housing: g.observed_great_work_housing.map(Arc::unwrap_or_clone),
-            observed_route_yields: Arc::unwrap_or_clone(g.observed_route_yields)
+            observed_great_work_housing: host.observed_great_work_housing.map(Arc::unwrap_or_clone),
+            observed_route_yields: Arc::unwrap_or_clone(host.observed_route_yields)
                 .into_iter()
                 .collect(),
-            observed_incoming_route_deltas: Arc::unwrap_or_clone(g.observed_incoming_route_deltas),
-            observed_route_options: Arc::unwrap_or_clone(g.observed_route_options)
+            observed_incoming_route_deltas: Arc::unwrap_or_clone(
+                host.observed_incoming_route_deltas,
+            ),
+            observed_route_options: Arc::unwrap_or_clone(host.observed_route_options)
                 .into_iter()
                 .collect(),
-            observed_appeal: Arc::unwrap_or_clone(g.observed_appeal)
+            observed_appeal: Arc::unwrap_or_clone(host.observed_appeal)
                 .into_iter()
                 .collect(),
-            observed_fresh_water: Arc::unwrap_or_clone(g.observed_fresh_water)
+            observed_fresh_water: Arc::unwrap_or_clone(host.observed_fresh_water)
                 .into_iter()
                 .collect(),
-            observed_tourism_per_turn: Arc::unwrap_or_clone(g.observed_tourism_per_turn)
+            observed_tourism_per_turn: Arc::unwrap_or_clone(host.observed_tourism_per_turn)
                 .into_iter()
                 .collect(),
-            observed_climate: g.observed_climate,
-            observed_city_worked_tiles: Arc::unwrap_or_clone(g.observed_city_worked_tiles),
-            observed_city_specialists: Arc::unwrap_or_clone(g.observed_city_specialists),
-            observed_city_loyalty_per_turn: Arc::unwrap_or_clone(g.observed_city_loyalty_per_turn),
-            observed_settlement_loyalty: g.observed_settlement_loyalty.map(Arc::unwrap_or_clone),
-            observed_city_strength: Arc::unwrap_or_clone(g.observed_city_strength),
-            observed_city_ranged_strength: Arc::unwrap_or_clone(g.observed_city_ranged_strength),
-            observed_city_max_wall_hp: Arc::unwrap_or_clone(g.observed_city_max_wall_hp),
+            observed_climate: host.observed_climate,
+            observed_city_worked_tiles: Arc::unwrap_or_clone(host.observed_city_worked_tiles),
+            observed_city_specialists: Arc::unwrap_or_clone(host.observed_city_specialists),
+            observed_city_loyalty_per_turn: Arc::unwrap_or_clone(
+                host.observed_city_loyalty_per_turn,
+            ),
+            observed_settlement_loyalty: host.observed_settlement_loyalty.map(Arc::unwrap_or_clone),
+            observed_city_strength: Arc::unwrap_or_clone(host.observed_city_strength),
+            observed_city_ranged_strength: Arc::unwrap_or_clone(host.observed_city_ranged_strength),
+            observed_city_max_wall_hp: Arc::unwrap_or_clone(host.observed_city_max_wall_hp),
             peace_treaties: g.peace_treaties.into_iter().collect(),
             wars: g.wars.into_iter().collect(),
-            concluded_wars: g.concluded_wars,
-            nuclear_strikes: g.nuclear_strikes,
-            turn_stats: Arc::unwrap_or_clone(g.turn_stats),
-            unit_move_trails: g.unit_move_trails,
+            concluded_wars: Arc::unwrap_or_clone(g.chronicle.concluded_wars),
+            nuclear_strikes: Arc::unwrap_or_clone(g.chronicle.nuclear_strikes),
+            turn_stats: Arc::unwrap_or_clone(g.chronicle.turn_stats),
+            unit_move_trails: Arc::unwrap_or_clone(g.chronicle.unit_move_trails),
             barb_pid: g.barb_pid,
             barb_camps: g.barb_camps.into_iter().collect(),
             barb_naval_camps: g.barb_naval_camps.into_iter().collect(),
@@ -8921,7 +9144,7 @@ impl From<Game> for GameSer {
             next_deal_id: g.next_deal_id,
             congress: g.congress,
             active_congress_effects: g.active_congress_effects,
-            host_competitions: Arc::unwrap_or_clone(g.host_competitions),
+            host_competitions: Arc::unwrap_or_clone(host.host_competitions),
             competition: g.competition,
             competition_lockout_until: g.competition_lockout_until,
             native_competitions: g.native_competitions,
@@ -9347,95 +9570,10 @@ impl Game {
             spies: BTreeMap::new(),
             cities: Cities::default(),
             at_war: BTreeSet::new(),
-            observed_military_power: Arc::new(BTreeMap::new()),
-            host_unit_facts: Arc::new(BTreeMap::new()),
-            host_maintenance: Arc::new(BTreeMap::new()),
-            observed_score: Arc::new(BTreeMap::new()),
-            observed_rival_wars: Arc::new(BTreeSet::new()),
-            observed_city_palaces: Arc::new(BTreeMap::new()),
-            observed_city_religion_markers: Arc::new(BTreeSet::new()),
-            observed_city_faiths: Arc::new(BTreeMap::new()),
-            observed_strategic_income_adjustments: Arc::new(BTreeMap::new()),
-            observed_trade_capacity: Arc::new(BTreeMap::new()),
-            observed_leader_types: Arc::new(BTreeMap::new()),
-            observed_yield_adjustments: Arc::new(BTreeMap::new()),
-            observed_public_empire_stats: Arc::new(BTreeMap::new()),
-            unseen_city_owners: BTreeSet::new(),
-            observed_majority_religion: Arc::new(BTreeMap::new()),
-            observed_visiting_tourists: Arc::new(BTreeMap::new()),
-            observed_city_yield_adjustments: Arc::new(BTreeMap::new()),
-            observed_city_amenity_adjustments: Arc::new(BTreeMap::new()),
-            observed_city_housing_adjustments: Arc::new(BTreeMap::new()),
-            observed_tile_yield_adjustments: Arc::new(BTreeMap::new()),
-            observed_route_posts: Arc::new(BTreeMap::new()),
-            observed_great_work_housing: None.map(Arc::new),
-            observed_route_yields: Arc::new(BTreeMap::new()),
-            observed_incoming_route_deltas: Arc::new(BTreeMap::new()),
-            observed_city_worked_tiles: Arc::new(BTreeMap::new()),
-            observed_city_specialists: Arc::new(BTreeMap::new()),
-            observed_city_loyalty_per_turn: Arc::new(BTreeMap::new()),
-            observed_settlement_loyalty: None,
-            observed_city_strength: Arc::new(BTreeMap::new()),
-            observed_city_ranged_strength: Arc::new(BTreeMap::new()),
-            observed_city_max_wall_hp: Arc::new(BTreeMap::new()),
-            observed_wall_tier_rules: false,
-            lump_quote_viewer: None,
-            nusantara_site_planner: None,
-            observed_builders_avoid_mountains: false,
-            exploration_replans_need_a_sighting: false,
-            heist_reads_the_host_menu: false,
-            spy_targets_read_the_host: false,
-            blocked_city_sites: Arc::new(BTreeSet::new()),
-            host_observed: Arc::new(BTreeSet::new()),
-            observed_appeal: Arc::new(BTreeMap::new()),
-            observed_fresh_water: Arc::new(BTreeMap::new()),
-            observed_tourism_per_turn: Arc::new(BTreeMap::new()),
-            observed_route_options: Arc::new(BTreeMap::new()),
-            observed_climate: None,
-            closed_borders: BTreeSet::new(),
-            unseen_major_borders: BTreeSet::new(),
-            sealed_border_owners: BTreeMap::new(),
-            rock_band_barred_hosts: BTreeSet::new(),
-            blocked_improvement_sites: Arc::new(BTreeSet::new()),
-            blocked_improvements: Arc::new(BTreeMap::new()),
-            great_person_plots: BTreeMap::new(),
-            blocked_promotions: Arc::new(BTreeMap::new()),
-            host_band_promotions: Arc::new(BTreeMap::new()),
-            blocked_strikes: Arc::new(BTreeSet::new()),
-            host_war_blocks: Arc::new(BTreeSet::new()),
-            host_war_type_permissions: Arc::new(BTreeMap::new()),
-            host_envoy_permissions: Arc::new(BTreeMap::new()),
-            host_previews: Arc::new(BTreeMap::new()),
-            blocked_trade_routes: Arc::new(BTreeSet::new()),
-            blocked_policies: Arc::new(BTreeSet::new()),
-            host_policy_choices: BTreeMap::new(),
-            host_policy_windows: BTreeMap::new(),
-            blocked_pantheons: Arc::new(BTreeSet::new()),
-            blocked_districts: Arc::new(BTreeMap::new()),
-            host_district_sites: Arc::new(BTreeMap::new()),
-            host_wonder_sites: Arc::new(BTreeMap::new()),
-            blocked_wonders: Arc::new(BTreeMap::new()),
-            host_unavailable_wonders: Arc::new(BTreeSet::new()),
-            blocked_production: Arc::new(BTreeMap::new()),
-            blocked_purchases: Arc::new(BTreeMap::new()),
-            host_buildable: Arc::new(BTreeMap::new()),
-            host_saved_work: Arc::new(BTreeMap::new()),
-            host_research_quotes: Arc::new(BTreeMap::new()),
-            host_research_base_rules: None,
-            host_revealed_research: Arc::new(BTreeSet::new()),
-            host_research_eligibility: Arc::new(BTreeMap::new()),
-            host_unit_resource_prices: Arc::new(BTreeMap::new()),
-            host_purchasable: Arc::new(BTreeMap::new()),
-            host_plot_purchases: Arc::new(BTreeMap::new()),
-            host_district_plots: Arc::new(BTreeMap::new()),
-            host_district_capacity: Arc::new(BTreeMap::new()),
             peace_treaties: BTreeMap::new(),
             wars: BTreeMap::new(),
             siege: SiegeCensus::default(),
-            concluded_wars: Vec::new(),
-            nuclear_strikes: Vec::new(),
-            turn_stats: Arc::new(Vec::new()),
-            unit_move_trails: Vec::new(),
+            chronicle: Chronicle::default(),
             barb_pid: None,
             barb_camps: BTreeMap::new(),
             barb_naval_camps: BTreeSet::new(),
@@ -9463,11 +9601,9 @@ impl Game {
             next_deal_id: 1,
             congress: None,
             active_congress_effects: Vec::new(),
-            host_competitions: Arc::new(Vec::new()),
             competition: None,
             competition_lockout_until: BTreeMap::new(),
             native_competitions: false,
-            host_gate: None,
             last_special_session: 0,
             pending_emergencies: Vec::new(),
             active_emergencies: Vec::new(),
@@ -9475,6 +9611,92 @@ impl Game {
             city_by_pos: pos_map::CityIndex::default(),
             log: crate::actionlog::ActionLog::new(),
             events: EventLog::default(),
+            host: Arc::new(HostMirror {
+                observed_military_power: Arc::new(BTreeMap::new()),
+                host_unit_facts: Arc::new(BTreeMap::new()),
+                host_maintenance: Arc::new(BTreeMap::new()),
+                observed_score: Arc::new(BTreeMap::new()),
+                observed_rival_wars: Arc::new(BTreeSet::new()),
+                observed_city_palaces: Arc::new(BTreeMap::new()),
+                observed_city_religion_markers: Arc::new(BTreeSet::new()),
+                observed_city_faiths: Arc::new(BTreeMap::new()),
+                observed_strategic_income_adjustments: Arc::new(BTreeMap::new()),
+                observed_trade_capacity: Arc::new(BTreeMap::new()),
+                observed_leader_types: Arc::new(BTreeMap::new()),
+                observed_yield_adjustments: Arc::new(BTreeMap::new()),
+                observed_public_empire_stats: Arc::new(BTreeMap::new()),
+                unseen_city_owners: BTreeSet::new(),
+                observed_majority_religion: Arc::new(BTreeMap::new()),
+                observed_visiting_tourists: Arc::new(BTreeMap::new()),
+                observed_city_yield_adjustments: Arc::new(BTreeMap::new()),
+                observed_city_amenity_adjustments: Arc::new(BTreeMap::new()),
+                observed_city_housing_adjustments: Arc::new(BTreeMap::new()),
+                observed_tile_yield_adjustments: Arc::new(BTreeMap::new()),
+                observed_route_posts: Arc::new(BTreeMap::new()),
+                observed_great_work_housing: None.map(Arc::new),
+                observed_route_yields: Arc::new(BTreeMap::new()),
+                observed_incoming_route_deltas: Arc::new(BTreeMap::new()),
+                observed_city_worked_tiles: Arc::new(BTreeMap::new()),
+                observed_city_specialists: Arc::new(BTreeMap::new()),
+                observed_city_loyalty_per_turn: Arc::new(BTreeMap::new()),
+                observed_settlement_loyalty: None,
+                observed_city_strength: Arc::new(BTreeMap::new()),
+                observed_city_ranged_strength: Arc::new(BTreeMap::new()),
+                observed_city_max_wall_hp: Arc::new(BTreeMap::new()),
+                observed_wall_tier_rules: false,
+                lump_quote_viewer: None,
+                nusantara_site_planner: None,
+                observed_builders_avoid_mountains: false,
+                exploration_replans_need_a_sighting: false,
+                heist_reads_the_host_menu: false,
+                spy_targets_read_the_host: false,
+                blocked_city_sites: Arc::new(BTreeSet::new()),
+                host_observed: Arc::new(BTreeSet::new()),
+                observed_appeal: Arc::new(BTreeMap::new()),
+                observed_fresh_water: Arc::new(BTreeMap::new()),
+                observed_tourism_per_turn: Arc::new(BTreeMap::new()),
+                observed_route_options: Arc::new(BTreeMap::new()),
+                observed_climate: None,
+                closed_borders: BTreeSet::new(),
+                unseen_major_borders: BTreeSet::new(),
+                sealed_border_owners: BTreeMap::new(),
+                rock_band_barred_hosts: BTreeSet::new(),
+                blocked_improvement_sites: Arc::new(BTreeSet::new()),
+                blocked_improvements: Arc::new(BTreeMap::new()),
+                great_person_plots: BTreeMap::new(),
+                blocked_promotions: Arc::new(BTreeMap::new()),
+                host_band_promotions: Arc::new(BTreeMap::new()),
+                blocked_strikes: Arc::new(BTreeSet::new()),
+                host_war_blocks: Arc::new(BTreeSet::new()),
+                host_war_type_permissions: Arc::new(BTreeMap::new()),
+                host_envoy_permissions: Arc::new(BTreeMap::new()),
+                host_previews: Arc::new(BTreeMap::new()),
+                blocked_trade_routes: Arc::new(BTreeSet::new()),
+                blocked_policies: Arc::new(BTreeSet::new()),
+                host_policy_choices: BTreeMap::new(),
+                host_policy_windows: BTreeMap::new(),
+                blocked_pantheons: Arc::new(BTreeSet::new()),
+                blocked_districts: Arc::new(BTreeMap::new()),
+                host_district_sites: Arc::new(BTreeMap::new()),
+                host_wonder_sites: Arc::new(BTreeMap::new()),
+                blocked_wonders: Arc::new(BTreeMap::new()),
+                host_unavailable_wonders: Arc::new(BTreeSet::new()),
+                blocked_production: Arc::new(BTreeMap::new()),
+                blocked_purchases: Arc::new(BTreeMap::new()),
+                host_buildable: Arc::new(BTreeMap::new()),
+                host_saved_work: Arc::new(BTreeMap::new()),
+                host_research_quotes: Arc::new(BTreeMap::new()),
+                host_research_base_rules: None,
+                host_revealed_research: Arc::new(BTreeSet::new()),
+                host_research_eligibility: Arc::new(BTreeMap::new()),
+                host_unit_resource_prices: Arc::new(BTreeMap::new()),
+                host_purchasable: Arc::new(BTreeMap::new()),
+                host_plot_purchases: Arc::new(BTreeMap::new()),
+                host_district_plots: Arc::new(BTreeMap::new()),
+                host_district_capacity: Arc::new(BTreeMap::new()),
+                host_competitions: Arc::new(Vec::new()),
+                host_gate: None,
+            }),
         };
         // Civilization VI decides *which* start a civilization is given from
         // its shipped StartBias rows. Reorder the major sites to honour them
@@ -14030,6 +14252,8 @@ impl Game {
 }
 
 #[cfg(test)]
+mod chronicle_tests;
+#[cfg(test)]
 mod production_catalog_tests;
 
 #[cfg(test)]
@@ -14072,6 +14296,8 @@ mod movement_zoc_memo_tests;
 #[cfg(test)]
 mod victory_conditions;
 
+#[cfg(test)]
+mod counters_tests;
 #[cfg(test)]
 mod great_work_tests;
 #[cfg(test)]

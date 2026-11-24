@@ -145,6 +145,10 @@ class World {
     this.ridden = null;
     // The piece that is moving now, if one is (`play`).
     this.moving = null;
+    // How many times the pieces have been set down afresh (`set`). A move
+    // still being played out when they are (a new game begun, a game come
+    // back to) is the old board's, and stops touching this one.
+    this.era = 0;
     this.glow = glowTexture();
     this.flames = [];
     this.debris = [];
@@ -353,6 +357,8 @@ class World {
     for (const held of this.pieces.values()) this.scene.remove(held);
     this.pieces.clear();
     this.ridden = null;
+    this.moving = null;
+    this.era += 1;
     position.board.forEach((piece, sq) => {
       if (!piece) return;
       const held = this.form(piece);
@@ -529,7 +535,9 @@ class World {
   // `hooks` is how the seat hears of it: `sound(name, strength, at)`, and
   // `look(point)` / `look(null)` when there is something to lean in for.
   async play(move, hooks) {
-    const mover = this.pieces.get(move.from), kind = mover.userData.kind;
+    const mover = this.pieces.get(move.from), kind = mover.userData.kind, era = this.era;
+    // Set down afresh while this was being played out: it is not this board's.
+    const gone = () => { if (this.era === era) return false; hooks.moving(null); return true; };
     const to = sqPoint(move.to);
     const victimAt = move.flag === "ep" ? move.to + (mover.userData.colour === "w" ? -8 : 8) : move.to;
     const victim = move.captured ? this.pieces.get(victimAt) : null;
@@ -540,6 +548,7 @@ class World {
     // A knight with a rider turns to where it is going before it goes, and
     // the stone groans under them as it turns.
     if (mover === this.ridden) await this.turnTo(mover, to.clone().sub(mover.position), hooks);
+    if (gone()) return;
     if (victim) {
       this.pieces.delete(victimAt);
       hooks.look(victim.position.clone().lerp(mover.position, 0.3));
@@ -549,6 +558,7 @@ class World {
     } else {
       await this.glide(mover, to, hooks);
     }
+    if (gone()) return;
     mover.userData.square = move.to;
     this.pieces.set(move.to, mover);
     if (kind === "n") {
@@ -563,10 +573,12 @@ class World {
       const rook = this.pieces.get(rookFrom);
       this.pieces.delete(rookFrom);
       await this.leap(rook, sqPoint(rookTo), 1.5, hooks);
+      if (gone()) return;
       rook.userData.square = rookTo;
       this.pieces.set(rookTo, rook);
     }
     if (move.promo) await this.crown(mover, move, hooks);
+    if (gone()) return;
     mover.userData.awake = 0;
     this.moving = null;
     hooks.moving(null);
@@ -756,8 +768,10 @@ class World {
     this.scene.add(flare);
     hooks.sound("crown", 1, at);
     hooks.look(at);
+    const era = this.era;
     await tween(0.35, t => { flare.scale.setScalar(0.2 + t * 4); pawn.scale.setScalar(1 - t * 0.7); });
     this.scene.remove(pawn);
+    if (this.era !== era) { this.scene.remove(flare); return; }
     const made = this.form(move.promo);
     made.position.copy(at);
     made.userData.square = move.to;
@@ -1079,6 +1093,7 @@ class Seat {
     this.head = {yaw: 0, pitch: 0, roll: 0};
     this.mounted = null;
     this.stand = null;
+    this.rise = 0;
     this.flight = 0;
     this.blend = null;
     this.focus = null;
@@ -1304,7 +1319,16 @@ class Seat {
   rider(dt) {
     const body = this.mounted.userData.body;
     body.updateWorldMatrix(true, false);
-    const eye = body.localToWorld(EYE.clone()), ahead = body.localToWorld(AHEAD.clone()).sub(eye);
+    const ahead = body.localToWorld(AHEAD.clone()).sub(body.localToWorld(EYE.clone())), forward = Math.atan2(-ahead.x, -ahead.z);
+    // The knight's head is to the rider's left. Turned toward it, they rise
+    // in the saddle and lean in, so as to see over it, the more the further
+    // round they look.
+    const across = this.head ? turnBy(forward, this.head.yaw) : 0;
+    this.rise += (Math.max(0, Math.min(1, (across - 0.3) / 0.8)) - this.rise) * Math.min(1, dt * 5);
+    const seat = EYE.clone();
+    seat.y += 0.42 * this.rise;
+    seat.z -= 0.2 * this.rise;
+    const eye = body.localToWorld(seat);
     // A living thing under you breathes.
     if (!CALM) eye.y += 0.012 * Math.sin(this.clock * 1.7);
     this.aim(eye, Math.atan2(-ahead.x, -ahead.z), Math.atan2(ahead.y, Math.hypot(ahead.x, ahead.z)), dt);
@@ -1364,6 +1388,9 @@ const game = {
   // knight stood on when the game began (`origins`), which names it through
   // every move it makes and every move taken back.
   ride: kept.ride === true, mount: Number.isInteger(kept.mount) ? kept.mount : null, thrown: false,
+  // How many games have been begun: a move still being played out when the
+  // next is begun belongs to the one before (`make`).
+  epoch: 0,
 };
 
 // A browser that will not draw in three dimensions is told so, and nothing
@@ -1559,7 +1586,9 @@ async function ended(how) {
   game.over = how;
   if (how === "checkmate") {
     voice.say("Checkmate.");
+    const epoch = game.epoch;
     await world.fall(game.position.turn, hooks);
+    if (epoch !== game.epoch) return;
   } else voice.say(title);
   el("ended-title").textContent = title;
   el("ended-how").textContent = how === "checkmate"
@@ -1573,6 +1602,7 @@ async function ended(how) {
 // game looked at again.
 async function make(move, by) {
   game.busy = true;
+  const epoch = game.epoch;
   choose(-1);
   const before = game.position, text = san(before, move), aloud = spoken(before, move);
   world.show("from", move.from);
@@ -1581,6 +1611,8 @@ async function make(move, by) {
   if (by !== game.side) voice.say(aloud);
   game.thrown = false;
   await world.play(move, hooks);
+  // A new game begun while it was played out: this move was the old game's.
+  if (epoch !== game.epoch) return;
   game.position = play(before, move);
   game.played.push({move, san: text, by, before});
   const key = positionKey(game.position);
@@ -1703,6 +1735,7 @@ function listening(on, fault) {
 
 function begin(side = game.side, moves = []) {
   game.turn += 1;
+  game.epoch += 1;
   if (side !== game.side) game.mount = null;
   opponent.stop();
   opponent.newGame();
@@ -1955,6 +1988,21 @@ function frame(now) {
 seat.blend = null;
 requestAnimationFrame(now => { then = now; el("loading").classList.add("gone"); frame(now); });
 
+// What a frame costs on this machine, in milliseconds: the world's own work
+// and the drawing, over `count` frames, each one made to finish on the
+// graphics card before the next is begun (a pixel is read back). With the
+// name of what drew it, which says whether that was the machine's card or a
+// browser drawing in software.
+function frameCost(count = 120) {
+  const gl = seat.renderer.getContext(), pixel = new Uint8Array(4), told = gl.getExtension("WEBGL_debug_renderer_info");
+  const finish = () => gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+  for (let at = 0; at < Math.min(10, count); at++) { world.tick(1 / 60); seat.frame(1 / 60); finish(); }
+  const started = performance.now();
+  for (let at = 0; at < count; at++) { world.tick(1 / 60); seat.frame(1 / 60); finish(); }
+  return {ms: (performance.now() - started) / count, drawnBy: told ? gl.getParameter(told.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER),
+    pixels: [seat.renderer.domElement.width, seat.renderer.domElement.height], seat: seat.mode};
+}
+
 // For the checks (beta/wizard_chess_test.py), and for anyone at the console.
 window.wizardChess = {game, world, seat, sound, opponent, command, begin, takeBack, running, meant, point, choose, make, ride, origins,
-  mountSquare, moveFromUci, peril, settle};
+  mountSquare, moveFromUci, peril, settle, frameCost};
