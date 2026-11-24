@@ -247,9 +247,17 @@
     min-height: 28px; padding: 0 10px; border: 0; border-left: 1px solid var(--border-strong); white-space: nowrap;
     background: var(--panel); color: var(--muted); font: 600 12.5px/1 var(--sans); cursor: pointer;
   }
-  .res-seg button:first-child { border-left: 0; }
+  .res-seg button:first-child, .res-seg button[hidden] + button { border-left: 0; }
   .res-seg button:hover { background: var(--panel-raised); color: #fff; }
   .res-seg button[aria-pressed="true"] { background: var(--action-bg); color: #fff; }
+  /* Self-play's control has five choices. On a phone each loses its "Last"
+     and some of its padding, which fits them down to 360px; narrower than
+     that the control scrolls in its own width and the page stays put. */
+  #res-window-self_play { max-width: 100%; overflow-x: auto; }
+  @media (max-width: 479px) {
+    #res-window-self_play .res-wide { display: none; }
+    #res-window-self_play button { padding: 0 8px; }
+  }
   .res-seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
   /* The level of Civilization VI's AI: a slider over the games against
      it, Lv 4 Prince to Lv 8 Deity (operator, 2026-11-22: "civvis vs lv 8
@@ -651,8 +659,17 @@
             <div class="res-control" role="group" aria-label="Self-play games counted">
               <span>Games</span>
               <div class="res-seg" id="res-window-self_play">
-                <button type="button" data-window="7" aria-pressed="true">Last 7 days</button>
-                <button type="button" data-window="30" aria-pressed="false">Last 30 days</button>
+                <!-- The two shortest are self-play's alone (operator,
+                     2026-11-24: "to win analytics civvis self play, add 3
+                     days and 1 day options please. 1 day covers last 24
+                     hrs"): the 24 and the 72 hours before its newest game
+                     finished, which the line under the title then says.
+                     Five choices are wider than a phone, so there each
+                     loses its "Last", as the benchmark's headings do. -->
+                <button type="button" data-window="1" aria-pressed="false"><span class="res-wide">Last </span>1 day</button>
+                <button type="button" data-window="3" aria-pressed="false"><span class="res-wide">Last </span>3 days</button>
+                <button type="button" data-window="7" aria-pressed="true"><span class="res-wide">Last </span>7 days</button>
+                <button type="button" data-window="30" aria-pressed="false"><span class="res-wide">Last </span>30 days</button>
                 <button type="button" data-window="all" aria-pressed="false">Every game</button>
               </div>
             </div>
@@ -781,6 +798,7 @@
           <p id="res-note-self"></p>
           <p>
             A window counts back from the newest game of its kind, and against the AI of its level.
+            Self-play&#8217;s last 1 day and last 3 days are the 24 and 72 hours before its newest game finished.
             <a href="https://github.com/MartinHalvorson/CIVVIS/blob/ledger/results.jsonl" target="_blank" rel="noreferrer">Games against the AI</a> ·
             <a href="https://github.com/MartinHalvorson/CIVVIS/blob/main/data/research/self_play_endings.json" target="_blank" rel="noreferrer">Self-play games</a>
           </p>
@@ -861,8 +879,11 @@
     const pct1 = (x) => (x > 0 && x < 0.0005 ? "<0.1%" : (100 * x).toFixed(1) + "%");
     const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
     const day = (iso) => { const [, m, d] = String(iso).split("-").map(Number); return MONTHS[m - 1] + " " + d; };
-    // "Nov 18–21", or "Oct 25–Nov 21" across a month.
+    // "Nov 18–21", or "Oct 25–Nov 21" across a month. A window counted in
+    // hours says them, and the moment they run back from: "24 hours to Nov
+    // 24, 18:45 UTC" (self-play's last 1 day and last 3 days).
     const days = (w) => {
+      if (w.hours && w.until) return w.hours + " hours to " + day(w.to) + ", " + String(w.until).slice(11, 16) + " UTC";
       if (w.from === w.to) return day(w.to);
       const [from, to] = [day(w.from), day(w.to)];
       return from.split(" ")[0] === to.split(" ")[0] ? from + "–" + to.split(" ")[1] : from + "–" + to;
@@ -1333,7 +1354,12 @@
     for (const kind of Object.keys(state.windows)) {
       const group = document.getElementById("res-window-" + kind);
       // The control stands on the window the page opens that kind on.
-      for (const button of group.querySelectorAll("button")) button.setAttribute("aria-pressed", String(button.dataset.window === state.windows[kind]));
+      for (const button of group.querySelectorAll("button")) {
+        button.setAttribute("aria-pressed", String(button.dataset.window === state.windows[kind]));
+        // A window the record does not hold is not offered: self-play's two
+        // shortest come with a snapshot that counted them.
+        if (kind === "self_play") button.hidden = !(data.self_play && data.self_play.windows && data.self_play.windows[button.dataset.window]);
+      }
       choose(group.id, "data-window", (value) => { state.windows[kind] = value; });
     }
     choose("res-span", "data-span", (value) => { state.span = Number(value) || 5; });
