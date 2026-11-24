@@ -255,6 +255,21 @@ class Played(unittest.TestCase):
         self.assertTrue(ev("wizardChess.command('pawn takes e4')"))
         self.until("wizardChess.game.played.length >= 4 && wizardChess.world.pieces.size === 31", "the pawn is taken", seconds=60)
         self.assertEqual(ev("wizardChess.game.played[3].san"), "dxe4")
+        # The pieces are alive. They watch what moves: the pawn on d2 leans
+        # toward the pawn on e2 while it moves, and stands straight after.
+        ev("wizardChess.opponent.stop(), wizardChess.begin('w'), wizardChess.game.turn++")
+        ev("(w => { w.world.moving = w.world.pieces.get(12); for (let at = 0; at < 12; at++) w.world.regard(0.1); })(wizardChess)")
+        self.assertLess(ev("wizardChess.world.pieces.get(11).quaternion.w"), 0.9999)
+        ev("(w => { w.world.moving = null; for (let at = 0; at < 60; at++) w.world.regard(0.1); })(wizardChess)")
+        self.assertEqual(ev("wizardChess.world.pieces.get(11).quaternion.w"), 1)
+        # A piece about to be taken trembles.
+        self.assertLess(ev("(w => { w.world.doomed = w.world.pieces.get(52); w.world.regard(0.1); const q = w.world.doomed.quaternion.w; "
+                           "w.world.doomed.quaternion.identity(); w.world.doomed = null; return q; })(wizardChess)"), 0.9999)
+        # A king in check flinches away from what checks it (the queen on h5).
+        ev("wizardChess.opponent.stop(), wizardChess.begin('w', ['e2e4', 'f7f6', 'd1h5']), wizardChess.game.turn++, wizardChess.opponent.stop()")
+        away = ev("(king => king.userData.check && king.userData.check.toArray())(wizardChess.world.pieces.get(60))")
+        self.assertTrue(away and away[0] < 0, away)
+        self.until("wizardChess.world.pieces.get(60).quaternion.w < 0.9995", "the king flinches", seconds=60)
         # A new game begun while a move is still being played out: the move
         # was the old game's, and the new board stays as it was set down,
         # every piece in the world where the game says it is and on the board.
