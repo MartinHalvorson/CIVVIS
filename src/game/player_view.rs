@@ -344,10 +344,10 @@ impl Game {
             *a == pid || *b == pid || (self.has_met(pid, *a) && self.has_met(pid, *b))
         });
         view.wars.clear();
-        view.concluded_wars.clear();
+        view.chronicle.concluded_wars = Default::default();
         view.siege = Default::default();
-        view.unit_move_trails.clear();
-        view.nuclear_strikes.clear();
+        view.chronicle.unit_move_trails = Default::default();
+        view.chronicle.nuclear_strikes = Default::default();
         view.barb_camps.retain(|pos, _| visible.contains(pos));
         for cooldown in view.barb_camps.values_mut() {
             // A visible camp does not disclose its next spawn countdown.

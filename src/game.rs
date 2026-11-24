@@ -5010,6 +5010,47 @@ pub struct WmdPlatform {
     pub distance: i32,
 }
 
+/// The game's record of itself: what the rules write and never read back.
+///
+/// `docs/CORE_STATE.md` measured it: blank any of these in a save and the
+/// rest of the world replays identically, and fresh agents play the same
+/// game. A search branch, a debugger fork or a planning copy therefore pays a
+/// pointer per record, and copies one only if it writes to it.
+#[derive(Clone, Default)]
+pub struct Chronicle {
+    /// The wars that ended, oldest first and bounded — long enough for a
+    /// client to show what a peace cost, short enough not to grow forever.
+    pub concluded_wars: Arc<Vec<WarRecord>>,
+    /// Every nuclear detonation, oldest first and bounded. The tail is what a
+    /// client animates and what a log describes.
+    pub nuclear_strikes: Arc<Vec<NuclearStrike>>,
+    /// Every major civilization's yields and city count, one row per
+    /// civilization per turn, oldest first: the result screen's graphs. Only
+    /// the played world writes to it.
+    pub turn_stats: Arc<Vec<TurnStats>>,
+    /// Where each unit has walked lately, oldest first and bounded like the
+    /// strike ledger: a client draws the recent tail.
+    pub unit_move_trails: Arc<Vec<UnitMoveTrail>>,
+}
+
+impl Chronicle {
+    pub fn concluded_wars_mut(&mut self) -> &mut Vec<WarRecord> {
+        Arc::make_mut(&mut self.concluded_wars)
+    }
+
+    pub fn nuclear_strikes_mut(&mut self) -> &mut Vec<NuclearStrike> {
+        Arc::make_mut(&mut self.nuclear_strikes)
+    }
+
+    pub fn turn_stats_mut(&mut self) -> &mut Vec<TurnStats> {
+        Arc::make_mut(&mut self.turn_stats)
+    }
+
+    pub fn unit_move_trails_mut(&mut self) -> &mut Vec<UnitMoveTrail> {
+        Arc::make_mut(&mut self.unit_move_trails)
+    }
+}
+
 /// One detonation, recorded on the game rather than reconstructed from its
 /// consequences.
 ///
@@ -7913,26 +7954,11 @@ pub struct Game {
     /// What has actually landed on cities this game, for evaluators.
     #[serde(default)]
     pub siege: SiegeCensus,
-    /// The wars that ended, oldest first and bounded — long enough for a
-    /// client to show what a peace cost, short enough not to grow forever.
-    pub concluded_wars: Vec<WarRecord>,
-    /// Every nuclear detonation, oldest first and bounded. The tail is what a
-    /// client animates and what a log describes; the whole history is not
-    /// worth carrying in every frame of a five-hundred-turn game.
-    #[serde(default)]
-    pub nuclear_strikes: Vec<NuclearStrike>,
-    /// Every major civilization's yields and city count, one row per
-    /// civilization per turn, oldest first: the result screen's graphs. It
-    /// lives behind an `Arc` because a planning or debugger fork copies the
-    /// world, and a pointer is all such a fork should pay for a history it
-    /// never reads. Only the played world writes to it.
-    #[serde(default)]
-    pub turn_stats: Arc<Vec<TurnStats>>,
-    /// Where each unit has walked lately, oldest first and bounded like the
-    /// strike ledger: a client draws the recent tail, and the full walking
-    /// history of a long game is not worth carrying in every frame.
-    #[serde(default)]
-    pub unit_move_trails: Vec<UnitMoveTrail>,
+    /// What happened, for whoever watches: ended wars, nuclear strikes, the
+    /// result screen's yields, and units' recent walks. The rules write it and
+    /// never read it back (`docs/CORE_STATE.md`), so it is not part of the
+    /// world a fork has to copy: every record is shared until written.
+    pub chronicle: Chronicle,
     pub barb_pid: Option<usize>,
     pub barb_camps: BTreeMap<Pos, u32>,
     /// Coastal camps are naval outposts; the set is persisted so a camp does
@@ -8583,10 +8609,12 @@ impl From<GameSer> for Game {
             peace_treaties: s.peace_treaties.into_iter().collect(),
             wars: s.wars.into_iter().collect(),
             siege: SiegeCensus::default(),
-            concluded_wars: s.concluded_wars,
-            nuclear_strikes: s.nuclear_strikes,
-            turn_stats: Arc::new(s.turn_stats),
-            unit_move_trails: s.unit_move_trails,
+            chronicle: Chronicle {
+                concluded_wars: Arc::new(s.concluded_wars),
+                nuclear_strikes: Arc::new(s.nuclear_strikes),
+                turn_stats: Arc::new(s.turn_stats),
+                unit_move_trails: Arc::new(s.unit_move_trails),
+            },
             barb_pid: s.barb_pid,
             barb_camps: s.barb_camps.into_iter().collect(),
             barb_naval_camps: s.barb_naval_camps.into_iter().collect(),
@@ -8834,10 +8862,10 @@ impl From<Game> for GameSer {
             observed_city_max_wall_hp: Arc::unwrap_or_clone(g.observed_city_max_wall_hp),
             peace_treaties: g.peace_treaties.into_iter().collect(),
             wars: g.wars.into_iter().collect(),
-            concluded_wars: g.concluded_wars,
-            nuclear_strikes: g.nuclear_strikes,
-            turn_stats: Arc::unwrap_or_clone(g.turn_stats),
-            unit_move_trails: g.unit_move_trails,
+            concluded_wars: Arc::unwrap_or_clone(g.chronicle.concluded_wars),
+            nuclear_strikes: Arc::unwrap_or_clone(g.chronicle.nuclear_strikes),
+            turn_stats: Arc::unwrap_or_clone(g.chronicle.turn_stats),
+            unit_move_trails: Arc::unwrap_or_clone(g.chronicle.unit_move_trails),
             barb_pid: g.barb_pid,
             barb_camps: g.barb_camps.into_iter().collect(),
             barb_naval_camps: g.barb_naval_camps.into_iter().collect(),
@@ -9376,10 +9404,7 @@ impl Game {
             peace_treaties: BTreeMap::new(),
             wars: BTreeMap::new(),
             siege: SiegeCensus::default(),
-            concluded_wars: Vec::new(),
-            nuclear_strikes: Vec::new(),
-            turn_stats: Arc::new(Vec::new()),
-            unit_move_trails: Vec::new(),
+            chronicle: Chronicle::default(),
             barb_pid: None,
             barb_camps: BTreeMap::new(),
             barb_naval_camps: BTreeSet::new(),
@@ -14018,6 +14043,8 @@ mod victory_conditions;
 
 #[cfg(test)]
 mod great_work_tests;
+#[cfg(test)]
+mod chronicle_tests;
 
 #[cfg(test)]
 mod government_deck;

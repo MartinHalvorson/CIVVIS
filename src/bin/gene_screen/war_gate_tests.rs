@@ -210,7 +210,7 @@ fn play(score: bool, on: bool, world: usize, genes: &[Gene], base: &[bool], dir:
     GAME_OBSERVER.with(|o| {
         *o.borrow_mut() = Some(Box::new(move |g: &Game| {
             let mut book = sink.borrow_mut();
-            for war in g.wars.values().chain(&g.concluded_wars) {
+            for war in g.wars.values().chain(&g.chronicle.concluded_wars) {
                 book.insert(
                     (war.conflict, war.aggressor, war.defender, war.started),
                     war.clone(),
