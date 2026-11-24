@@ -258,8 +258,9 @@ def firaxis_self_play_summary(reading: dict, *, load_start, load_end,
     the one given when a row carries no clock of the mod's.
     `seconds_to_last_turn` is the first turn row to the last one, which is
     what a run that ended with no outcome row still has. `run_seconds` is the
-    whole run, launch to this summary. `load_start` and `load_end` are the
-    machine's load averages as the run began and ended.
+    whole run by the run clock (`RUN_CLOCK`): `play` entered to this summary.
+    `load_start` and `load_end` are the machine's load averages as the run
+    began and ended.
     """
     outcome = reading.get("outcome") or {}
     began = _event_seconds(reading.get("first_turn_utc"))
@@ -7763,8 +7764,7 @@ def _play(args: argparse.Namespace) -> int:
     science_behind, science_behind_from = science_out_of_reach_line(args)
     # A Firaxis self-play run (`FIRAXIS_SELF_PLAY_PREFIX`): its own folder, and
     # what its summary is built from. `None` for every game of ours.
-    self_play = ({"load_start": host_load(), "began": time.monotonic()}
-                 if firaxis_self_play(args) else None)
+    self_play = {"load_start": host_load()} if firaxis_self_play(args) else None
     run_dir = run_root(args) / args.tag
     run_dir.mkdir(parents=True, exist_ok=True)
     # Bound the corpus before adding to it. See `prune_old_run_screenshots`.
@@ -8029,7 +8029,7 @@ def _play(args: argparse.Namespace) -> int:
             try:
                 partial["firaxis_self_play"] = firaxis_self_play_summary(
                     self_play, load_start=self_play["load_start"], load_end=host_load(),
-                    run_seconds=round(time.monotonic() - self_play["began"], 1))
+                    run_seconds=(partial.get("timing") or {}).get("seconds"))
             except Exception:  # noqa: BLE001 - best-effort evidence at exit
                 pass
         # ⭐ A KILLED RUN STILL MEASURED ITS RESEARCH. `killed` and
@@ -9395,13 +9395,11 @@ def _play(args: argparse.Namespace) -> int:
     except Exception as exc:  # noqa: BLE001 — health must not fail the run
         print(f"bridge-health totals unavailable: {exc}", file=sys.stderr)
     if self_play is not None:
-        # The whole run by the run clock where the summary has one (`timing`),
-        # else from this function's own start.
-        timing = summary.get("timing") if isinstance(summary.get("timing"), dict) else {}
+        # The whole run is the run clock's reading (`RUN_CLOCK`, `timing`
+        # above): launch to this summary, as for a game of ours.
         summary["firaxis_self_play"] = firaxis_self_play_summary(
             self_play, load_start=self_play["load_start"], load_end=host_load(),
-            run_seconds=timing.get(
-                "seconds", round(time.monotonic() - self_play["began"], 1)))
+            run_seconds=(summary.get("timing") or {}).get("seconds"))
     summary = with_diagnostic(summary, run_dir / "summary.json")
     (run_dir / "summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True))
     end_mark("summary_written")

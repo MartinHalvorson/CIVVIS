@@ -369,8 +369,12 @@ class TheRunTests(unittest.TestCase):
 
     def test_the_summary_carries_the_reading_and_both_loads(self) -> None:
         self.assertIn('summary["firaxis_self_play"] = firaxis_self_play_summary(', self.source)
-        self.assertIn('{"load_start": host_load(), "began": time.monotonic()}', self.source)
+        self.assertIn('{"load_start": host_load()}', self.source)
         self.assertIn("load_end=host_load()", self.source)
+        # The whole run is the harness's one run clock, not a second one.
+        self.assertIn('run_seconds=(summary.get("timing") or {}).get("seconds")', self.source)
+        self.assertLess(self.source.index('"timing": run_timing(),'),
+                        self.source.index('summary["firaxis_self_play"] = '))
         # A run that was stopped says how far it got as well.
         self.assertIn('partial["firaxis_self_play"] = firaxis_self_play_summary(', self.source)
 
