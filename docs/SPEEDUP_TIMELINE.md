@@ -2,7 +2,9 @@
 
 How many times faster than a person a game of Civilization VI gets played.
 The home page shows it over its videos: one number, and under it a line with
-five ways of playing one game, each standing at its multiplier.
+five ways of playing one game, each standing at its multiplier. Past them
+stand two stops nothing has played yet:
+[The stops past what was measured](#the-stops-past-what-was-measured).
 
 The readings are `data/performance/speedup_timeline.json`. The page's figures
 are worked out from them by `beta/speedup_timeline.py` when the site is
@@ -48,6 +50,44 @@ stretch of it. Words that would meet their neighbour's on the same side of
 the line stand a row further out, at the end of a rule from the stop's point
 (`speedup_timeline.rows`). The line is drawn from a window 1120px wide, where
 it is at its full length. A narrower window shows the stops as a list.
+
+## The stops past what was measured
+
+The project owner, 2026-11-22: "add to out speedup timeline: 10x theoretical
+scale up from local hardware ... hardware scaleup is to the left of m5 max.
+potential distributed RL fleet: up to 1000+x".
+
+The ledger's `projected` are stops nothing has run at. Each is a measured
+stop's multiplier times one figure, so it moves when that stop does.
+
+| Stop | What it is | The sum |
+| --- | --- | --- |
+| Hardware scale-up (`scale_up`) | Larger hardware of our own than the one M5 Max. Theoretical. | `10 × the M5 Max's multiplier` |
+| Distributed RL fleet (`fleet`) | Many machines playing self-play at once for reinforcement learning. A potential, and open at its top. | `1,000 × the M5 Max's multiplier`, and more |
+
+Both figures are the project owner's and both are over the M5 Max's
+every-core stop. No machine was sized or priced for either. Whether his
+1,000 is over the one M5 Max or over the scaled-up hardware is this page's
+reading of his sentence, and it reads the first.
+
+On the home page they are rings in the line's own colour, under the line and
+to the left of the M5 Max. The page's number is never one of them: it is the
+fastest stop that was measured, and the line is drawn solid only as far as
+that stop. The fleet stands past the 1,000,000x goal.
+
+A projected stop is an entry of `projected`:
+
+- `key` is the name the page knows it by.
+- `over` is the key of the measured stop it multiplies.
+- `estimates` are dated, oldest first, and the newest is shown. Each has the
+  day it was `taken`, the figure (`times`), `or_more` when the figure is open
+  at its top (his "1000+", shown as `1,000x+`), and `from`, which says whose
+  figure it is and what it stands for.
+
+A changed figure is a new estimate after the ones there, as a new reading
+is. `speedup_timeline.projected` works the rows out, and
+`speedup_timeline.timeline` returns them as `projected`. The Performance
+page's tables do not show them.
 
 ## The goals and the cloud's cost
 
