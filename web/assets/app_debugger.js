@@ -3852,11 +3852,12 @@ if (DEBUG_PANE !== null) {
 // game or lost it. A key reaches into the row with a dot. The engine reads
 // any key of the omniscient observation too: what a term reads is the
 // spectator's view of the whole table, not what the seat can see.
+// The operator's five come first, in the operator's order.
 const DEBUG_SEARCH_KEYS = [
-  ["score", "Score", "SCORE"], ["cities", "Cities", "CITY"], ["population", "Population", "POP"],
-  ["yields.production", "Production a turn", "PROD"], ["yields.science", "Science a turn", "SCI"],
-  ["yields.culture", "Culture a turn", "CUL"], ["yields.faith", "Faith a turn", "FPT"],
-  ["gold_per_turn", "Gold a turn, net", "GPT"], ["yields.food", "Food a turn", "FOOD"],
+  ["score", "Score", "SCORE"], ["yields.production", "Production a turn", "PROD"], ["cities", "Cities", "CITY"],
+  ["yields.faith", "Faith a turn", "FPT"], ["gold_per_turn", "Gold a turn, net", "GPT"],
+  ["yields.science", "Science a turn", "SCI"], ["yields.culture", "Culture a turn", "CUL"],
+  ["population", "Population", "POP"], ["yields.food", "Food a turn", "FOOD"],
   ["won", "Won the game", "WON"], ["lost", "Lost: fallen, or beaten", "LOST"],
 ];
 const DEBUG_SEARCH_LISTS = [
