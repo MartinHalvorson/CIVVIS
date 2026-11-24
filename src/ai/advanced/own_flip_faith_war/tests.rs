@@ -420,7 +420,7 @@ fn a_founder_the_host_shields_is_denounced_first() {
             ai.enable_own_flip_faith_war_asks_no_power();
         }
         ai.base.journal = crate::reasoning::Journal::recording();
-        Arc::make_mut(&mut g.host_war_blocks).insert((0, 1, g.turn));
+        Arc::make_mut(&mut Arc::make_mut(&mut g.host).host_war_blocks).insert((0, 1, g.turn));
         ai.advanced_diplomacy(&mut g, 0, &plan);
         assert!(!g.is_at_war(0, 1), "the host refuses the war");
         let civ = g.players[1].civ.clone();
