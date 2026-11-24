@@ -140,7 +140,10 @@ def main():
     ap.add_argument("--budget-minutes", type=float, default=30.0)
     ap.add_argument("--jobs", type=int, default=os.cpu_count() or 4)
     ap.add_argument("--work", default=None)
+    ap.add_argument("--quick", default=None, help="classes file: skip ablation, bisect agent reads and bench")
     a = ap.parse_args()
+    if a.quick:
+        return quick(a)
     start = time.time()
     budget = a.budget_minutes * 60
     work = a.work or tempfile.mkdtemp(prefix="core-probe-")
@@ -321,6 +324,93 @@ def main():
                 if os.path.exists(path):
                     with open(path, "rb") as f:
                         emit({"phase": "blob", "game": os.path.basename(d), "name": name, "b64": base64.b64encode(gzip.compress(f.read(), 9)).decode()})
+    emit({"phase": "done", "secs": round(time.time() - start, 1)})
+    return 0
+
+
+# Schema versions steer the loader (a zero `visibility_memory_version` makes it
+# rebuild last-seen memory), so blanking one measures the loader, not the field.
+KEEP = ("visibility_memory_version",)
+SUSPECTS = (
+    "players[*].gold_per_turn",
+    "cities[*].last_attacked",
+    "players[*].war_weariness",
+    "units[*].moved",
+    "players[*].city_power",
+    "players[*].tourism_pressure",
+    "players[*].lap_bands",
+    "cities[*].building_eras",
+)
+
+
+def quick(a):
+    """Round 4: with the classes already measured, which non-core fields do
+    the agents read, and what does a stripped world cost to branch?"""
+    start = time.time()
+    classes = json.load(open(a.quick))
+    final, modes = classes["final"], classes["mode"]
+    work = a.work or tempfile.mkdtemp(prefix="core-probe-quick-")
+    games = [(4, 201, 60, 40, False), (4, 202, 120, 40, False), (6, 203, 100, 40, True)]
+    emit({"phase": "quick_start", "work": work, "games": games})
+    dirs = {}
+
+    def record(cfg):
+        players, seed, t, k, fog = cfg
+        d = os.path.join(work, f"p{players}-s{seed}")
+        rc, out, err, secs = run([a.civvis, "core-probe", "record", str(players), str(seed), str(t), str(k), d, "600", "fog" if fog else "-"], timeout=900)
+        return d, rc, out, err
+
+    with cf.ThreadPoolExecutor(a.jobs) as ex:
+        for d, rc, out, err in ex.map(record, games):
+            if rc == 0:
+                dirs[d] = json.loads(out.strip().splitlines()[-1])
+            emit({"phase": "record", "game": os.path.basename(d), "rc": rc, "err": err if rc else ""})
+
+    noncore = [p for p, c in final.items() if c != "core" and p not in KEEP]
+    variants = {"full": [], "full_again": [], "all_noncore": noncore}
+    for cls in ("derived", "transient", "inert", "untested", "feeds-record"):
+        variants[cls] = [p for p in noncore if final[p] == cls]
+    for p in SUSPECTS:
+        variants["only:" + p] = [p]
+
+    def listfile(d, name, paths):
+        f = os.path.join(d, name.replace(":", "_").replace("[*]", "").replace("/", "_") + ".txt")
+        with open(f, "w") as h:
+            h.write("\n".join(f"{p}\t{modes.get(p, 'empty')}" for p in paths))
+        return f
+
+    def game(d):
+        fog = "fog" if dirs[d].get("fog") else "-"
+        outs = {}
+        for name, paths in variants.items():
+            save = os.path.join(d, "state_t.json")
+            if paths:
+                lf = listfile(d, name, paths)
+                save = os.path.join(d, "v_" + os.path.basename(lf)[:-4] + ".json")
+                run([a.civvis, "core-probe", "blank", os.path.join(d, "state_t.json"), lf, save], timeout=300)
+            out = os.path.join(d, "agent_" + os.path.basename(save))
+            if name == "full_again":
+                out = os.path.join(d, "agent_again.json")
+            rc, o, err, secs = run([a.civvis, "core-probe", "agent", save, "20", out, fog], timeout=900)
+            outs[name] = (out if rc == 0 else None, save)
+        for name, (out, save) in outs.items():
+            if name == "full" or not out or not outs["full"][0]:
+                continue
+            rc, o, err, secs = run([a.civvis, "core-probe", "diff", outs["full"][0], out], timeout=300)
+            res = json.loads(o.strip().splitlines()[-1]) if rc == 0 and o.strip() else {}
+            own = tuple(variants[name])
+            beyond = [q for q in res.get("paths", []) if not (own and q.startswith(own))]
+            emit({"phase": "agent_bisect", "game": os.path.basename(d), "variant": name, "blanked": len(variants[name]), "beyond_blanked": len(beyond), "sample": beyond[:12]})
+        # The rules' view of the same strip: the recorded window replays the same?
+        lf = listfile(d, "all_noncore_strip", noncore)
+        rc, o, err, secs = run([a.civvis, "core-probe", "strip", d, lf], timeout=900)
+        emit({"phase": "strip_keep_versions", "game": os.path.basename(d), "result": json.loads(o.strip().splitlines()[-1]) if rc == 0 and o.strip() else None, "err": err if rc else ""})
+        for name in ("state_t.json", "stripped.json"):
+            rc, o, err, secs = run([a.civvis, "core-probe", "bench", os.path.join(d, name), "300"], timeout=600)
+            emit({"phase": "bench", "game": os.path.basename(d), "save": name, "result": json.loads(o.strip().splitlines()[-1]) if rc == 0 and o.strip() else None, "err": err if rc else ""})
+
+    with cf.ThreadPoolExecutor(max(1, min(a.jobs, len(dirs)))) as ex:
+        list(ex.map(game, list(dirs)))
     emit({"phase": "done", "secs": round(time.time() - start, 1)})
     return 0
 
