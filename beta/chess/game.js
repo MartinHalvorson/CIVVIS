@@ -18,7 +18,7 @@
 import * as THREE from "./vendor/three.module.min.js";
 import {START, fromFen, toFen, legalMoves, play, san, uci, moveFromUci, standing, spoken, positionKey,
   squareName, colourOf, inCheck, kingOf, PIECE_NAMES} from "./rules.js";
-import {readCommand} from "./command.js";
+import {readCommand, candidates} from "./command.js";
 import {Opponent} from "./engine.js";
 
 const CALM = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -172,6 +172,9 @@ class World {
     // about to take.
     this.moving = null;
     this.doomed = null;
+    // The side thinking, if one is, and how many times a side has (`muse`).
+    this.musing = null;
+    this.musings = 0;
     // How many times the pieces have been set down afresh (`set`). A move
     // still being played out when they are (a new game begun, a game come
     // back to) is the old board's, and stops touching this one.
@@ -410,7 +413,7 @@ class World {
       cloak: new THREE.ConeGeometry(0.13, 0.5, 14), hood: new THREE.SphereGeometry(0.075, 14, 10),
       // And what makes it a living thing to the one on its back: a mane, two
       // ears that turn, an eye, a bit and the reins to the rider's hands.
-      tuft: new THREE.ConeGeometry(0.04, 0.12, 5), ear: new THREE.ConeGeometry(0.04, 0.16, 4),
+      tuft: new THREE.ConeGeometry(0.03, 0.075, 5), ear: new THREE.ConeGeometry(0.04, 0.16, 4),
       eye: new THREE.SphereGeometry(0.032, 12, 8), bit: new THREE.TorusGeometry(0.035, 0.009, 6, 16)};
     this.material = {
       w: new THREE.MeshStandardMaterial({color: 0xe6dcc6, roughness: 0.36, metalness: 0.02, map: stoneTexture("#f1ead9", "rgba(140,120,90,0.3)", 5)}),
@@ -523,7 +526,7 @@ class World {
       part(made.trim, this.cloth.gold, -0.18, 0.69, 0, -0.38);
       // The mane, from the cloth up to between the ears, pointing back.
       [[-0.235, 0.98], [-0.2, 1.07], [-0.165, 1.15], [-0.135, 1.23], [-0.115, 1.3]].forEach(([x, y], at) => {
-        part(made.tuft, this.material[colour], x - 0.015, y, at % 2 ? 0.02 : -0.02, 1.15).scale.set(1, 1, 0.45);
+        part(made.tuft, this.material[colour], x + 0.005, y, at % 2 ? 0.015 : -0.015, 1.35).scale.set(1, 1, 0.35);
       });
       // Ears, each on a pivot so that it can turn toward what it hears.
       const ears = [-1, 1].map(side => {
@@ -857,6 +860,20 @@ class World {
     this.flash.intensity = 60 * force;
     hooks.sound("shatter", force, victim.position);
     hooks.shake(0.16 * force);
+    hooks.impact(victim.position.clone(), force);
+    // A blow beside the knight ridden rocks it, and its rider.
+    if (this.ridden && victim !== this.ridden) this.shudder(victim.position, force);
+  }
+
+  // The knight ridden rocked by a blow at `at`: thrown away from it, and back,
+  // the more the nearer (`regard` plays it out).
+  shudder(at, force = 1) {
+    const prey = this.ridden;
+    if (!prey) return;
+    const away = prey.position.clone().sub(at).setY(0), far = away.length();
+    if (far > 2.4) return;
+    const much = 0.16 * force * (1 - far / 2.4);
+    prey.userData.jolt = {away: far > 1e-3 ? away.normalize() : new THREE.Vector3(0, 0, 1), much: Math.max(much, prey.userData.jolt ? prey.userData.jolt.much : 0), age: 0};
   }
 
   // Dust kicked up off the board, or (`aloft`) a breath at a point in the air.
@@ -941,12 +958,22 @@ class World {
       if (data.menace && prey) {
         toward = look = prey.position.clone().sub(held.position).setY(0);
         want = 0.13 + 0.035 * Math.sin(this.time * 5 + data.square);
+      } else if (data.brace) {
+        // Named as what is to be taken: it faces what is coming and braces.
+        toward = data.brace.clone().negate();
+        look = data.brace;
+        want = 0.06;
       } else if (data.check) {
         toward = data.check;
         want = 0.075 + 0.03 * Math.sin(this.time * 23);
       } else if (moving && held !== prey) {
         const way = moving.position.clone().sub(held.position).setY(0), far = way.length();
         if (far > 0.4) { toward = look = way; want = 0.05 * Math.min(1, 2.5 / far); }
+      } else if (this.musing === data.colour && held !== prey) {
+        // Its side is thinking: it shifts its weight, slowly, its own way.
+        const phase = this.time * (0.5 + (data.square % 5) * 0.09) + data.square * 1.7;
+        toward = new THREE.Vector3(Math.sin(phase), 0, Math.cos(phase * 0.8));
+        want = 0.025 + 0.015 * Math.sin(phase * 1.3);
       }
       if (toward) data.toward = toward;
       data.loom = (data.loom || 0) + (want - (data.loom || 0)) * ease;
@@ -959,10 +986,38 @@ class World {
         body.rotation.y += turnBy(body.rotation.y, aim) * Math.min(1, dt * 5);
       }
     }
+    // The knight ridden rocking from a blow beside it: away, back past
+    // upright, and still, in about a second.
+    const jolt = prey && prey !== moving && prey.userData.jolt;
+    if (jolt) {
+      jolt.age += dt;
+      const swing = jolt.much * Math.exp(-jolt.age * 4.5) * Math.cos(jolt.age * 14);
+      if (jolt.age > 1.2) { prey.userData.jolt = null; prey.quaternion.identity(); }
+      else this.lean(prey, jolt.away, swing);
+    }
     if (this.doomed) {
       const shake = this.time * 37;
       this.lean(this.doomed, new THREE.Vector3(Math.sin(shake), 0, Math.cos(shake * 1.3)), 0.045);
     }
+  }
+
+  // A side thinking: its pieces shift their weight, each a little and in its
+  // own time, until it has chosen (`regard`). `null` is nobody thinking.
+  muse(colour) {
+    if (colour && this.musing !== colour) this.musings += 1;
+    this.musing = colour || null;
+  }
+
+  // What the board hears while a command is being given: the pieces it could
+  // be meant for stir (they lift, and their light brightens), and a piece it
+  // would take turns to face them and braces (`regard`).
+  stir(squares = [], prey = -1) {
+    for (const held of this.pieces.values()) { held.userData.stir = squares.includes(held.userData.square); held.userData.brace = null; }
+    const victim = this.pieces.get(prey);
+    if (!victim || !squares.length) return;
+    const toward = new THREE.Vector3();
+    for (const sq of squares) toward.add(sqPoint(sq).sub(victim.position));
+    if (toward.lengthSq() > 1e-6) victim.userData.brace = toward.setY(0).normalize();
   }
 
   // The king in check, and the pieces that check it: it flinches away from
@@ -1013,9 +1068,9 @@ class World {
     // A piece's ring breathes, and is bright while it is awake.
     for (const held of this.pieces.values()) {
       const data = held.userData, want = 0.3 + 0.07 * Math.sin(this.time * 1.6 + data.square) + Math.min(1.4, data.awake) * 0.55 +
-        (data.menace ? 0.45 + 0.25 * Math.sin(this.time * 7) : 0);
+        (data.menace ? 0.45 + 0.25 * Math.sin(this.time * 7) : 0) + (data.stir ? 0.4 : 0);
       data.ring.material.opacity += (want - data.ring.material.opacity) * Math.min(1, dt * 8);
-      const lift = data.awake > 0 ? 0.05 : 0;
+      const lift = data.awake > 0 || data.stir ? 0.05 : 0;
       data.body.position.y += (lift - data.body.position.y) * Math.min(1, dt * 10);
     }
     const pulse = 0.4 + 0.3 * Math.sin(this.time * 6);
@@ -1251,6 +1306,7 @@ class Seat {
     this.alarm = null;
     this.follow = true;
     this.shaking = 0;
+    this.punch = 0;
     this.fit = 16;
     this.clock = 0;
     this.ray = new THREE.Raycaster();
@@ -1393,6 +1449,11 @@ class Seat {
   // A rider's head snaps round to a new threat, and holds there a moment.
   glance(point, seconds = 1.8) { this.alarm = point ? {point: point.clone().setY(0.9), until: this.clock + seconds} : null; }
   shake(much) { if (!CALM) this.shaking = Math.max(this.shaking, much); }
+  // A blow close by: the view jars wider for an instant and comes back.
+  kick(much) { if (!CALM) this.punch = Math.max(this.punch, much); }
+  // How near a point is to the eye, 1 at arm's length and 0 from four
+  // squares off.
+  nearness(point) { return Math.max(0, Math.min(1, 1 - (this.camera.position.distanceTo(point) - 1) / 3)); }
 
   // What is under the pointer, nearest first: the square of each piece the
   // line of sight passes through, and then the square of the board it lands
@@ -1448,13 +1509,18 @@ class Seat {
     const alarmed = this.alarm && this.clock < this.alarm.until ? this.alarm.point : null;
     const seen = this.focus || alarmed || (this.watching && this.watching !== this.mounted ? this.watching.position.clone().setY(0.7) : null);
     if (seen && free) {
-      const way = seen.clone().sub(eye);
-      if (way.lengthSq() > 0.25) {
+      const way = seen.clone().sub(eye), across = Math.hypot(way.x, way.z);
+      // What is nearly underneath the eye (the prey of the knight ridden as
+      // it comes down on it) gives no way to face: the head is not pulled to
+      // it, or it would look straight down and spin.
+      if (across > 0.9) {
         const much = this.focus || alarmed ? 0.85 : 0.6;
         yaw += turnBy(yaw, Math.atan2(-way.x, -way.z)) * much;
-        pitch += (Math.atan2(way.y, Math.hypot(way.x, way.z)) - pitch) * much;
+        pitch += (Math.atan2(way.y, across) - pitch) * much;
       }
     }
+    // A head tips so far down and so far up, and no further.
+    pitch = Math.max(-1, Math.min(0.85, pitch));
     if (!this.head) this.head = {yaw, pitch, roll};
     const settle = 1 - Math.exp(-dt * (seen && free ? 3.6 : 7));
     this.head.yaw += turnBy(this.head.yaw, yaw) * settle;
@@ -1496,7 +1562,8 @@ class Seat {
       const toBoard = new THREE.Vector3(0, 0.3, 0).sub(this.stand);
       this.aim(this.stand, Math.atan2(-toBoard.x, -toBoard.z), -0.1, dt);
     }
-    let field = FIELD[this.mode] * (this.mode === "table" ? 1 : this.gaze.field);
+    let field = FIELD[this.mode] * (this.mode === "table" ? 1 : this.gaze.field) * (1 + this.punch);
+    this.punch *= Math.pow(0.002, dt);
     if (this.blend) {
       const blend = this.blend;
       blend.at += dt;
@@ -1564,6 +1631,16 @@ const opponent = new Opponent(new URL("./vendor/stockfish-18-lite-single.js", im
 const voice = new Voice(heard, listening);
 const hooks = {sound: (name, strength, at) => sound.play(name, strength, at), look: point => seat.look(point), shake: much => seat.shake(much),
   moving: piece => { seat.watching = piece; },
+  // A blow landing at the rider's side: the view jars and shakes, and the
+  // world's time slows for a moment (`pace`), so that it is seen.
+  impact: (at, force) => {
+    if (seat.mode === "table") return;
+    const near = seat.nearness(at);
+    if (near <= 0) return;
+    seat.shake(0.22 * near * force);
+    seat.kick(0.09 * near * force);
+    if (near > 0.55 && !CALM) { pace.until = performance.now() + 480; pace.scale = 0.3; pace.count += 1; }
+  },
   thrown: (at, heading) => { game.thrown = true; seat.thrown(at, heading); sound.play("shatter", 1.4); }};
 
 sound.on = kept.sound !== false;
@@ -1757,6 +1834,7 @@ async function ended(how) {
 // game looked at again.
 async function make(move, by) {
   game.busy = true;
+  world.stir();
   const epoch = game.epoch;
   choose(-1);
   const before = game.position, text = san(before, move), aloud = spoken(before, move);
@@ -1795,29 +1873,42 @@ async function answer() {
   game.thinking = true;
   hint();
   if (!opponent.awake) say("The opponent is waking…");
+  // While it thinks, its pieces shift their weight.
+  world.muse(game.position.turn);
   const began = performance.now();
   let found = null;
   try {
     found = await opponent.move(toFen(game.position), game.elo, 900);
   } catch (error) {
     game.thinking = false;
+    world.muse(null);
     say(`The opponent could not be woken: ${error.message || error}`, "wrong");
     hint();
     return;
   }
-  // Taken back, or a new game begun, while it thought.
+  // Taken back, or a new game begun, while it thought: that game's thinking
+  // is over, and this one's is not this answer's to end.
   if (turn !== game.turn || found === null) return;
-  const pause = 650 - (performance.now() - began);
-  if (pause > 0) await new Promise(done => setTimeout(done, pause));
-  if (turn !== game.turn) return;
-  game.thinking = false;
+  world.muse(null);
   const move = moveFromUci(game.position, found);
-  if (!move) { say(`The opponent answered ${found}, which cannot be played.`, "wrong"); hint(); return; }
+  if (!move) { game.thinking = false; say(`The opponent answered ${found}, which cannot be played.`, "wrong"); hint(); return; }
+  // The breath before it is played: the piece chosen stirs, what it will take
+  // braces, and a rider's eye is drawn to it. Never less than a breath, and
+  // not played sooner than 650 ms after it was asked for, so that a move that
+  // comes at once does not look unconsidered.
+  game.foreseen = move.from;
+  world.stir([move.from], move.captured && move.flag !== "ep" ? move.to : -1);
+  const chosen = world.pieces.get(move.from);
+  if (chosen && seat.mode !== "table") seat.glance(chosen.position, 1);
+  const pause = Math.max(BREATH, 650 - (performance.now() - began));
+  await new Promise(done => setTimeout(done, pause));
+  if (turn !== game.turn) { world.stir(); return; }
+  game.thinking = false;
   say(`${sideName(game.position.turn)}: ${spoken(game.position, move)}.`);
   await make(move, game.position.turn);
 }
+const BREATH = 550;
 
-// A command, however it was given.
 // A move after which the knight ridden can be taken, by its own going or by
 // what it uncovers, is asked about first: the rider goes with their knight.
 // What has been asked once in a position is not asked again.
@@ -1855,6 +1946,7 @@ function settle(go) {
   else say("You hold your ground.");
 }
 
+// A command, however it was given.
 function command(text, quiet = false) {
   if (game.over || game.busy) return false;
   if (game.position.turn !== game.side) { if (!quiet) say("It is not your move yet.", "wrong"); return false; }
@@ -1867,9 +1959,21 @@ function command(text, quiet = false) {
   return true;
 }
 
+// What the board hears while a command is still being given, typed or said:
+// the pieces it could be meant for stir, when that is a few of them and not
+// the whole side, and the piece it would take turns to face them.
+function stir(text) {
+  const yours = !game.over && !game.busy && game.position.turn === game.side;
+  const fits = yours && text ? candidates(game.position, text, {mount: world.ridden ? world.ridden.userData.square : -1}) : [];
+  const movers = [...new Set(fits.map(move => move.from))];
+  const targets = [...new Set(fits.map(move => move.to))];
+  const prey = targets.length === 1 && fits.every(move => move.captured && move.flag !== "ep") ? targets[0] : -1;
+  world.stir(movers.length <= 6 ? movers : [], prey);
+}
+
 function heard(options, final) {
   if (!options.length) return;
-  if (!final) { say(options[0], "heard"); return; }
+  if (!final) { say(options[0], "heard"); stir(options[0]); return; }
   // Asked whether to ride on, a yes or a no is the answer.
   if (game.risky) {
     const said = options.join(" ").toLowerCase();
@@ -1908,6 +2012,7 @@ function begin(side = game.side, moves = []) {
   el("promote").hidden = true;
   el("risk").hidden = true;
   game.risky = null;
+  world.muse(null);
   world.set(game.position);
   world.letter(side);
   world.offer([]);
@@ -1940,6 +2045,7 @@ function takeBack() {
   }
   game.over = null;
   el("ended").hidden = true;
+  world.muse(null);
   world.set(game.position);
   remount();
   choose(-1);
@@ -2054,8 +2160,9 @@ const typed = el("typed");
 typed.addEventListener("keydown", event => {
   event.stopPropagation();
   if (event.key === "Enter") { if (command(typed.value)) typed.value = ""; else typed.select(); }
-  if (event.key === "Escape") { typed.value = ""; typed.blur(); }
+  if (event.key === "Escape") { typed.value = ""; typed.blur(); stir(""); }
 });
+typed.addEventListener("input", () => stir(typed.value));
 window.addEventListener("keydown", event => {
   if (event.target instanceof HTMLElement && /^(INPUT|SELECT|TEXTAREA|BUTTON|SUMMARY|A)$/.test(event.target.tagName) && event.target !== stage) {
     if (event.code !== "Space" || event.target.tagName === "INPUT") return;
@@ -2130,12 +2237,17 @@ strength();
 begin(game.side, Array.isArray(kept.moves) ? kept.moves : []);
 seat.sit(game.side, true);
 place();
+// The world's time against the clock's: slowed for a moment when a blow lands
+// beside a rider (`hooks.impact`). The seat keeps the clock's time, so a rider
+// can still turn their head while the stone hangs in the air.
+const pace = {scale: 1, until: 0, count: 0};
 let then = performance.now();
 function frame(now) {
   const dt = Math.min(0.05, (now - then) / 1000);
   then = now;
-  advance(dt);
-  world.tick(dt);
+  const slow = performance.now() < pace.until ? pace.scale : 1;
+  advance(dt * slow);
+  world.tick(dt * slow);
   seat.frame(dt);
   sound.hear(seat.camera, seat.mode === "table" ? 14 : 2.2);
   requestAnimationFrame(frame);
@@ -2160,4 +2272,4 @@ function frameCost(count = 120) {
 
 // For the checks (beta/wizard_chess_test.py), and for anyone at the console.
 window.wizardChess = {game, world, seat, sound, opponent, command, begin, takeBack, running, meant, point, choose, make, ride, origins,
-  mountSquare, moveFromUci, peril, settle, frameCost};
+  mountSquare, moveFromUci, peril, settle, frameCost, stir, pace};
