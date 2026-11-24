@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""The AI Interpretability page's record: how a CIVVIS AI agent decides.
+"""The Civ AI Interpretability page's record: how a CIVVIS AI agent decides.
 
     interpretability_page.py <source_tree>              print the record as JSON
     interpretability_page.py <source_tree> <page.html>  write it into the page
     interpretability_page.py --self-play <batches_dir> <out.json>
                                                 rebuild the plan snapshot
 
-The AI Interpretability page (`beta/interpretability.html`, served at
-`<lane>/charts/ai-interpretability/`, the address it states itself) is the
+The Civ AI Interpretability page (`beta/interpretability.html`, served at
+`<lane>/charts/civ-ai-interpretability/`, the address it states itself) is the
 last page under Charts/ (operator
 2026-11-22: "Add a new chart to the bottom of Charts/ called AI
 Interpretablity ... study our codebase, how the AI works, and do your best to
@@ -316,7 +316,7 @@ def snapshot(batches: pathlib.Path) -> dict:
         year, month, day = BATCH.fullmatch(directory.name).groups()
         return {
             "about": "What the seats of the newest finished gene-screen batch said they were doing, turn by turn. "
-            "Rebuilt by `beta/interpretability_page.py --self-play`; read by the AI Interpretability page.",
+            "Rebuilt by `beta/interpretability_page.py --self-play`; read by the Civ AI Interpretability page.",
             "taken": datetime.datetime.now(datetime.timezone.utc).date().isoformat(),
             "batch": directory.name,
             "began": f"{year}-{month}-{day}",

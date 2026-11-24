@@ -2240,9 +2240,9 @@ fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
         "        <div class=\"site-menu\">\n",
         "          <a class=\"site-link sub-link\" href=\"../ai-insights/\" ",
         "title=\"What the games show about AI at large: smarter AI picks up speed.\">AI Insights</a>\n",
-        "          <a class=\"site-link sub-link\" href=\"../ai-interpretability/\" ",
+        "          <a class=\"site-link sub-link\" href=\"../civ-ai-interpretability/\" ",
         "title=\"How a CIVVIS AI agent decides: one turn step by step, its plan through a game, ",
-        "and what each rule is worth in wins.\">AI Interpretability</a>\n",
+        "and what each rule is worth in wins.\">Civ AI Interpretability</a>\n",
         "          <a class=\"site-link sub-link\" href=\"../civ-analytics/\" ",
         "title=\"How CIVVIS does as each civ, and the early build orders that win against ",
         "Deity.\">Civ Analytics</a>\n",
@@ -2287,18 +2287,20 @@ fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
     assert!(publish.contains("cp \"$performance_page\" \"$out/$performance_at/index.html\""));
     // AI Interpretability was added at the bottom of Charts/ (operator
     // 2026-11-22: "Add a new chart to the bottom of Charts/ called AI
-    // Interpretablity") and moved to its top on 2026-11-24, where AI
-    // Insights was put over it later that day: each page of Charts/ lists
-    // them all in the list Charts/ drops down, with itself ringed, and
-    // Charts/ opens AI Insights.
+    // Interpretablity"), moved to its top on 2026-11-24 and named Civ AI
+    // Interpretability later that day (operator: "please change AI
+    // interpretability to "Civ AI Interpretability""), its address with
+    // it; AI Insights was put over it the same day: each page of Charts/
+    // lists them all in the list Charts/ drops down, with itself ringed,
+    // and Charts/ opens AI Insights.
     let interpretability = include_str!("../../beta/interpretability.html");
     let listed = concat!(
         "        <div class=\"site-menu\">\n",
         "          <a class=\"site-link sub-link\" href=\"../ai-insights/\" ",
         "title=\"What the games show about AI at large: smarter AI picks up speed.\">AI Insights</a>\n",
-        "          <a class=\"site-link sub-link\" href=\"../ai-interpretability/\" ",
+        "          <a class=\"site-link sub-link\" href=\"../civ-ai-interpretability/\" ",
         "title=\"How a CIVVIS AI agent decides: one turn step by step, its plan through a game, ",
-        "and what each rule is worth in wins.\">AI Interpretability</a>\n",
+        "and what each rule is worth in wins.\">Civ AI Interpretability</a>\n",
     );
     assert!(performance.contains(listed));
     assert!(include_str!("../../beta/research.html").contains(listed));
@@ -2308,7 +2310,7 @@ fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
         "        <div class=\"site-menu\">\n",
         "          <a class=\"site-link sub-link\" href=\"../ai-insights/\" ",
         "title=\"What the games show about AI at large: smarter AI picks up speed.\">AI Insights</a>\n",
-        "          <a class=\"site-link sub-link\" href=\"./\" aria-current=\"page\">AI Interpretability</a>\n",
+        "          <a class=\"site-link sub-link\" href=\"./\" aria-current=\"page\">Civ AI Interpretability</a>\n",
     )));
     // AI Insights itself: the first page under Charts/, ringed in its own
     // list, with the slot `beta/insights_page.py` fills, at the address its
@@ -2319,7 +2321,7 @@ fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
         "title=\"What the games show: charts read off the CIVVIS AI agents&#8217; games.\">Charts/</a>\n",
         "        <div class=\"site-menu\">\n",
         "          <a class=\"site-link sub-link\" href=\"./\" aria-current=\"page\">AI Insights</a>\n",
-        "          <a class=\"site-link sub-link\" href=\"../ai-interpretability/\" ",
+        "          <a class=\"site-link sub-link\" href=\"../civ-ai-interpretability/\" ",
     )));
     assert!(
         insights.contains("<script type=\"application/json\" id=\"insights-data\">null</script>")
@@ -2330,7 +2332,7 @@ fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
     assert!(interpretability
         .contains("<script type=\"application/json\" id=\"interpretability-data\">null</script>"));
     assert!(interpretability.contains(
-        "<link rel=\"canonical\" href=\"https://civvis.ai/charts/ai-interpretability/\">"
+        "<link rel=\"canonical\" href=\"https://civvis.ai/charts/civ-ai-interpretability/\">"
     ));
     assert!(
         publish.contains("cp \"$interpretability_page\" \"$out/$interpretability_at/index.html\"")

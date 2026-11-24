@@ -9,21 +9,24 @@ Interpretability stood beside it at the top of the site, although the list
 keeps them under Charts/. Auto-Tourneys was at `/tournaments`. On 2026-11-24
 Auto-Tourneys took its first name back, Tournaments (operator: "change
 auto-outnrye to Tournaments"), and with it `/tournaments`; `/auto-tourneys`
-forwards there.
+forwards there. The same day AI Interpretability was named Civ AI
+Interpretability (operator: "please change AI interpretability to "Civ AI
+Interpretability""), and `/charts/ai-interpretability` forwards to where it
+is now.
 
 The rule, for every page the site list names: the address is the name as the
 list shows it, in lower case with a hyphen for anything that is not a letter
 or a digit, and a page listed under a folder (Charts/) sits in that folder.
 
-    Home                  /home/
+    Home                       /home/
     Charts/
-      AI Insights         /charts/ai-insights/
-      Win Analytics       /charts/win-analytics/
-      ELO Rankings        /charts/elo-rankings/
-      Civ Analytics       /charts/civ-analytics/
-      CIVVIS Performance  /charts/civvis-performance/
-      AI Interpretability /charts/ai-interpretability/
-    Tournaments           /tournaments/
+      AI Insights              /charts/ai-insights/
+      Civ AI Interpretability  /charts/civ-ai-interpretability/
+      Civ Analytics            /charts/civ-analytics/
+      Win Analytics            /charts/win-analytics/
+      ELO Rankings             /charts/elo-rankings/
+      CIVVIS Performance       /charts/civvis-performance/
+    Tournaments                /tournaments/
 
 A page states its own address (its `<link rel="canonical">`), `publish.sh`
 puts it there, and every link in it is relative to it. So this reads the
@@ -262,7 +265,7 @@ class Moved(unittest.TestCase):
     def test_the_router_and_the_publish_check_keep_one_table(self):
         moved = self.router_table()
         self.assertEqual(moved, verify.FORMER)
-        self.assertGreaterEqual(len(moved), 4)
+        self.assertGreaterEqual(len(moved), 5)
         # And one table of the pages back at an address they once left.
         block = WORKER[WORKER.index("const BETWEEN = {"):]
         block = block[:block.index("};")]
@@ -281,10 +284,50 @@ class Moved(unittest.TestCase):
             self.assertEqual(verify.FORMER[between], back)
         self.assertIn("Object.hasOwn(BETWEEN, name)", WORKER)
 
+    def test_a_page_that_moved_twice_is_followed_move_by_move(self):
+        # Each line of the table is one move, and a page can have made more
+        # than one: Civ AI Interpretability was at /interpretability, then at
+        # /charts/ai-interpretability, and is at /charts/civ-ai-interpretability
+        # since it took that name on 2026-11-24. A lane pinned to a revision
+        # from before the name still has it at the second, and there
+        # /interpretability forwards to the second, as it did then.
+        self.assertEqual(
+            verify.moves_from("interpretability"),
+            ["charts/ai-interpretability", "charts/civ-ai-interpretability"])
+        self.assertEqual(verify.page_at("interpretability"), "charts/civ-ai-interpretability")
+        self.assertEqual(verify.page_at("charts/ai-interpretability"), "charts/civ-ai-interpretability")
+        named = ["home", "charts/civ-ai-interpretability"]
+        before_the_name = ["home", "charts/ai-interpretability"]
+        self.assertEqual(verify.forwards_to("interpretability", named), "charts/civ-ai-interpretability")
+        self.assertEqual(verify.forwards_to("charts/ai-interpretability", named), "charts/civ-ai-interpretability")
+        self.assertEqual(verify.forwards_to("interpretability", before_the_name), "charts/ai-interpretability")
+        self.assertIsNone(verify.forwards_to("interpretability", ["home"]))
+        # The address a page left last is listed before the one it left
+        # first, and a bundle from before lanes listed their pages had each
+        # page at its first.
+        self.assertEqual(
+            verify.left_by("charts/civ-ai-interpretability"),
+            ["charts/ai-interpretability", "interpretability"])
+        self.assertIn("interpretability", verify.lane_pages({}))
+        self.assertNotIn("charts/ai-interpretability", verify.lane_pages({}))
+        # No address leads back to itself, so following the moves ends, well
+        # inside the count the router allows itself.
+        allowed = int(re.search(r"Object\.hasOwn\(MOVED, now\) && moves < (\d+);", WORKER).group(1))
+        for old in verify.FORMER:
+            went = verify.moves_from(old)
+            self.assertEqual(len(went), len(set(went)), old)
+            self.assertNotIn(old, went)
+            self.assertLess(len(went), allowed)
+        # The router walks the same way: to the first address the lane lists.
+        self.assertIn("now = MOVED[now];\n      if (pages.includes(now)) return { moved: `${lane}/${now}/` };", WORKER)
+
     def test_every_left_address_forwards_to_a_page_that_is_there(self):
         addresses = set(ADDRESS.values())
         for old, new in self.router_table().items():
-            self.assertIn(new, addresses, f"/{old} forwards to /{new}, which no page states")
+            there = verify.page_at(old)
+            self.assertIn(there, addresses, f"/{old} forwards in the end to /{there}, which no page states")
+            # A move lands on a page, or on an address the page has left since.
+            self.assertTrue(new in addresses or new in verify.FORMER, f"/{old} forwards to /{new}")
             # An address in use is not one a page has left.
             self.assertNotIn(old, addresses, old)
             self.assertNotIn(old, {address.split("/")[0] for address in addresses}, old)

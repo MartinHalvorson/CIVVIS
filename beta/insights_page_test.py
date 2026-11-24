@@ -249,6 +249,7 @@ class ThePage(unittest.TestCase):
         # And by the name he gave that chart there the same day: "lets call
         # it: Turn Length and Victory Type Histogram of All Games".
         self.assertIn('<p class="ins-chart-kind">Turn Length and Victory Type Histogram of All Games</p>', PAGE)
+        self.assertIn("<span data-title>Turn Length and Victory Type Histogram of All Games</span>", RESEARCH)
         self.assertIn("const state = { level: played[0], playing: 0 };", PAGE)
 
     def test_a_bar_is_the_turn_from_zero_and_the_chart_is_the_whole_game(self):

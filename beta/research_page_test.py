@@ -892,7 +892,7 @@ class Page(unittest.TestCase):
         self.assertEqual(
             charts,
             [
-                ("ai", "ai", "all", "CIVVIS vs {level} AI: every victory"),
+                ("ai", "ai", "all", "CIVVIS vs {level} AI: all games"),
                 ("ai-rival", "ai", "rival", "CIVVIS vs {level} AI: {rung} AI wins"),
                 ("ai-civvis", "ai", "civvis", "CIVVIS vs {level} AI: CIVVIS wins"),
                 ("self_play", "self_play", "all", "CIVVIS self-play"),
@@ -908,7 +908,12 @@ class Page(unittest.TestCase):
         heads = re.findall(r'\{ id: "([\w-]+)", kind: "\w+", side: "\w+", label: "[^"]+", head: "([^"]+)"', PAGE)
         self.assertEqual(
             heads,
-            [("ai", "Every victory"), ("ai-rival", "{rung} AI wins"), ("ai-civvis", "CIVVIS wins"), ("self_play", "Every victory")],
+            [
+                ("ai", "Turn Length and Victory Type Histogram of All Games"),
+                ("ai-rival", "{rung} AI wins"),
+                ("ai-civvis", "CIVVIS wins against {rung} AI"),
+                ("self_play", "Every victory"),
+            ],
         )
         self.assertIn('box.querySelector("[data-title]").textContent = worded(chart.head);', PAGE)
         # Each chart of the markup the script fills stands under the title
@@ -1406,8 +1411,8 @@ class Page(unittest.TestCase):
             '        <div class="site-menu">\n'
             '          <a class="site-link sub-link" href="../ai-insights/" '
             'title="What the games show about AI at large: smarter AI picks up speed.">AI Insights</a>\n'
-            '          <a class="site-link sub-link" href="../ai-interpretability/" '
-            'title="How a CIVVIS AI agent decides: one turn step by step, its plan through a game, and what each rule is worth in wins.">AI Interpretability</a>\n'
+            '          <a class="site-link sub-link" href="../civ-ai-interpretability/" '
+            'title="How a CIVVIS AI agent decides: one turn step by step, its plan through a game, and what each rule is worth in wins.">Civ AI Interpretability</a>\n'
             '          <a class="site-link sub-link" href="../civ-analytics/" '
             'title="How CIVVIS does as each civ, and the early build orders that win against Deity.">Civ Analytics</a>\n'
             '          <a class="site-link sub-link" href="./" aria-current="page">Win Analytics</a>\n'
@@ -1442,7 +1447,7 @@ class Page(unittest.TestCase):
                 re.findall(r'<a class="site-link sub-link" href="([^"]+)"[^>]*>([^<]+)</a>', nav),
                 [(("./" if listed == name else f"../{at}/"), listed) for at, listed in (
                     ("ai-insights", "AI Insights"),
-                    ("ai-interpretability", "AI Interpretability"), ("civ-analytics", "Civ Analytics"),
+                    ("civ-ai-interpretability", "Civ AI Interpretability"), ("civ-analytics", "Civ Analytics"),
                     ("win-analytics", "Win Analytics"), ("elo-rankings", "ELO Rankings"),
                     ("civvis-performance", "CIVVIS Performance"))],
             )

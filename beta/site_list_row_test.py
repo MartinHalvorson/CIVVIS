@@ -37,7 +37,7 @@ SOURCES = sorted(set(re.findall(r'_page="\$source_tree/beta/([a-z_]+\.html)"', P
 #: that day, "we want a new ai insights", which is listed over them).
 CHARTS = [
     ("ai-insights", "AI Insights"),
-    ("ai-interpretability", "AI Interpretability"),
+    ("civ-ai-interpretability", "Civ AI Interpretability"),
     ("civ-analytics", "Civ Analytics"),
     ("win-analytics", "Win Analytics"),
     ("elo-rankings", "ELO Rankings"),

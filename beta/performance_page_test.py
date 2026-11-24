@@ -612,7 +612,7 @@ class TheSiteList(unittest.TestCase):
                 ("site-link", "../../home/", "Home"),
                 ("site-link", "../ai-insights/", "Charts/"),
                 ("site-link sub-link", "../ai-insights/", "AI Insights"),
-                ("site-link sub-link", "../ai-interpretability/", "AI Interpretability"),
+                ("site-link sub-link", "../civ-ai-interpretability/", "Civ AI Interpretability"),
                 ("site-link sub-link", "../civ-analytics/", "Civ Analytics"),
                 ("site-link sub-link", "../win-analytics/", "Win Analytics"),
                 ("site-link sub-link", "../elo-rankings/", "ELO Rankings"),
@@ -652,7 +652,7 @@ class TheSiteList(unittest.TestCase):
             menu = menu[:menu.index("</div>")]
             self.assertEqual(
                 re.findall(r'<a class="site-link sub-link" href="\.\./charts/([^"]+)/"[^>]*>([^<]+)</a>', menu),
-                [("ai-insights", "AI Insights"), ("ai-interpretability", "AI Interpretability"), ("civ-analytics", "Civ Analytics"),
+                [("ai-insights", "AI Insights"), ("civ-ai-interpretability", "Civ AI Interpretability"), ("civ-analytics", "Civ Analytics"),
                  ("win-analytics", "Win Analytics"), ("elo-rankings", "ELO Rankings"), ("civvis-performance", "CIVVIS Performance")],
             )
         self.assertNotIn("Performance</a>", VIEWER)

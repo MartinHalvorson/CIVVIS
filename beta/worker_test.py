@@ -429,7 +429,7 @@ def main(argv: list[str] | None = None) -> int:
             ("/charts/elo-rankings/", "ELO Rankings"),
             ("/charts/civ-analytics/", "Civ Analytics"),
             ("/charts/civvis-performance/", "CIVVIS Performance"),
-            ("/charts/ai-interpretability/", "AI Interpretability"),
+            ("/charts/civ-ai-interpretability/", "Civ AI Interpretability"),
             ("/charts/ai-insights/", "AI Insights"),
             ("/tournaments/", "Tournaments"),
         ):
@@ -451,7 +451,9 @@ def main(argv: list[str] | None = None) -> int:
         # The two lanes as they stood on 2026-11-23: the front page pinned to
         # a revision from before the addresses moved, five pages at the
         # addresses they had then, and main with all six at their names
-        # (Tournaments back at its first, as it is since 2026-11-24).
+        # (Tournaments back at its first, as it is since 2026-11-24; the
+        # page now named Civ AI Interpretability at the address it had as AI
+        # Interpretability, until later that day).
         before = ["home", "tournaments", "research", "performance", "download"]
         after = ["home", "tournaments", "charts/win-analytics", "charts/civvis-performance",
                  "charts/ai-interpretability", "download"]
@@ -532,20 +534,63 @@ def main(argv: list[str] | None = None) -> int:
         # analytics. elo rankings.. civvis performanc", and later that day
         # "we want a new ai insights", listed over them), and a lane built
         # from main lists the pages in that order, so the folder opens it.
-        now = ["home", "tournaments", "charts/ai-insights", "charts/ai-interpretability", "charts/civ-analytics",
+        # The page that led the folder until then was named Civ AI
+        # Interpretability the same day (operator: "please change AI
+        # interpretability to "Civ AI Interpretability""), and its address
+        # followed the name.
+        now = ["home", "tournaments", "charts/ai-insights", "charts/civ-ai-interpretability", "charts/civ-analytics",
                "charts/win-analytics", "charts/elo-rankings", "charts/civvis-performance", "download"]
+        named = {"": after, "/test": now}
         for old in ("/test/charts/", "/test/charts"):
-            opened = hit(path=old, listed={"": before, "/test": now})
+            opened = hit(path=old, listed=named)
             check(problems, f"{old} opens AI Insights, the first page of Charts/ now",
                   opened["status"] == 301 and opened["location"] == "/test/charts/ai-insights/",
                   f"got {opened['status']} {opened['location']!r}")
         # A lane from before AI Insights was written, the same list without
         # it, still opens the page that led the folder then.
         for old in ("/test/charts/", "/test/charts"):
-            opened = hit(path=old, listed={"": before, "/test": now[:2] + now[3:]})
-            check(problems, f"{old} opens AI Interpretability in a lane that has no AI Insights",
-                  opened["status"] == 301 and opened["location"] == "/test/charts/ai-interpretability/",
+            opened = hit(path=old, listed={"": after, "/test": now[:2] + now[3:]})
+            check(problems, f"{old} opens Civ AI Interpretability in a lane that has no AI Insights",
+                  opened["status"] == 301 and opened["location"] == "/test/charts/civ-ai-interpretability/",
                   f"got {opened['status']} {opened['location']!r}")
+        # So the page has moved twice, and an address it has left is followed
+        # move by move to wherever the lane has it. In the lane with the new
+        # name both of its old addresses forward to the new one.
+        for old, new in (
+            ("/test/charts/ai-interpretability/", "/test/charts/civ-ai-interpretability/"),
+            ("/test/charts/ai-interpretability", "/test/charts/civ-ai-interpretability/"),
+            ("/test/charts/ai-interpretability/?gene=x", "/test/charts/civ-ai-interpretability/?gene=x"),
+            ("/test/interpretability/", "/test/charts/civ-ai-interpretability/"),
+        ):
+            moved_twice = hit(path=old, listed=named)
+            check(problems, f"{old} forwards to {new} in a lane with the page's new name",
+                  moved_twice["status"] == 301 and moved_twice["location"] == new and moved_twice["body"] == "",
+                  f"got {moved_twice['status']} {moved_twice['location']!r} {moved_twice['body'][:60]!r}")
+        served = hit(path="/test/charts/civ-ai-interpretability/", listed=named)
+        check(problems, "and the page answers at its new address there",
+              served["status"] == 200 and served["body"].strip() == "asset:/test/charts/civ-ai-interpretability/",
+              f"got {served['status']} {served['body'][:60]!r}")
+        # The front page there is pinned to a revision from before the name:
+        # the page is still at the address it had, /interpretability/ still
+        # forwards to that one, and the new address is a page it does not have.
+        still = hit(path="/charts/ai-interpretability/", listed=named)
+        check(problems, "/charts/ai-interpretability/ is still the page on a front page from before the name",
+              still["status"] == 200 and still["body"].strip() == "asset:/charts/ai-interpretability/",
+              f"got {still['status']} {still['location']!r} {still['body'][:60]!r}")
+        first_move = hit(path="/interpretability/", listed=named)
+        check(problems, "/interpretability/ forwards to /charts/ai-interpretability/ there, as it did",
+              first_move["status"] == 301 and first_move["location"] == "/charts/ai-interpretability/",
+              f"got {first_move['status']} {first_move['location']!r}")
+        ahead = hit(path="/charts/civ-ai-interpretability/", listed=named)
+        check(problems, "/charts/civ-ai-interpretability/ is a 404 on a front page from before the name",
+              ahead["status"] == 404 and not ahead["location"],
+              f"got {ahead['status']} {ahead['location']!r}")
+        # And in a lane that has the page at none of them, each is a 404.
+        for address in ("/interpretability/", "/charts/ai-interpretability/", "/charts/civ-ai-interpretability/"):
+            none = hit(path=address, listed={"": ["home"], "/test": now})
+            check(problems, f"{address} is a 404 in a lane that has no such page",
+                  none["status"] == 404 and not none["location"],
+                  f"got {none['status']} {none['location']!r}")
         # Which address a lane serves a page at follows the revision promoted
         # to it, and a promotion can go back: a browser must not remember the
         # forward as it would an ordinary permanent one.
@@ -656,7 +701,7 @@ def main(argv: list[str] | None = None) -> int:
             ("/test/tournaments/", "Tournaments"),
             ("/test/charts/win-analytics/", "Win Analytics"),
             ("/test/charts/civvis-performance/", "CIVVIS Performance"),
-            ("/test/charts/ai-interpretability/", "AI Interpretability"),
+            ("/test/charts/civ-ai-interpretability/", "Civ AI Interpretability"),
             ("/test/charts/ai-insights/", "AI Insights"),
         ):
             passed = hit(path=address)

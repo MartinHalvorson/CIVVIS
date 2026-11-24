@@ -4,7 +4,7 @@
 #
 # The output is one complete LANE of the site — the viewer at its root with
 # the engine compiled to WebAssembly beside it, the landing page at /home, the
-# pages of Charts/ under /charts (AI Insights, AI Interpretability, Civ
+# pages of Charts/ under /charts (AI Insights, Civ AI Interpretability, Civ
 # Analytics, Win Analytics, ELO Rankings, CIVVIS Performance), the Tournaments page at
 # /tournaments and the downloads page at /download — a
 # plain directory of static files with no
@@ -309,7 +309,7 @@ if [ -f "$insights_page" ]; then
 else
   without+=(ai-insights)
 fi
-# The AI Interpretability page (the steps of one turn in order, the plan the
+# The Civ AI Interpretability page (the steps of one turn in order, the plan the
 # seats write down through a game, and every gene with what it is worth in
 # wins) is the second page under Charts/, and was the first from 2026-11-24
 # (operator: "move ai interpretablity to the top of the charts/ then civ
