@@ -2586,7 +2586,7 @@ fn a_marked_frame_builds_exactly_the_tiles_it_sends() {
     }
     {
         let tile = game.map.tiles.get_mut(&positions[9]).unwrap();
-        tile.storm = Some("blizzard".to_string());
+        tile.storm = Some(crate::name::Name::new("blizzard"));
         tile.disaster_food = 1.5;
         tile.fallout_until = 7;
     }

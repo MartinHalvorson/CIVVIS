@@ -20,12 +20,22 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use crate::name::Name;
 
 const EMPTY: u32 = u32::MAX;
+/// An empty slot of [`SpecMap::table`]: no entry index, no tag.
+const EMPTY_SLOT: u64 = u64::MAX;
 
 #[derive(Clone, Debug)]
 pub struct SpecMap<T> {
     keys: Vec<Name>,
     values: Vec<T>,
-    table: Vec<u32>,
+    /// Each key's text, index for index with `keys`, so a lookup by text
+    /// confirms its hit without first reading the name registry's slot.
+    texts: Vec<&'static str>,
+    /// Open-addressed slots: the entry index in the low 32 bits and the high
+    /// 32 bits of the key's hash above it ([`EMPTY_SLOT`] when unused). A
+    /// probe that meets another key's slot rejects it on the tag, without
+    /// reading that key's text — and a miss, which is most of what the
+    /// engine asks of the effect tables, then reads no text at all.
+    table: Vec<u64>,
     /// Entry index by [`Name::id`], so a caller holding an interned name
     /// answers its lookup with one array read — no hash, no string compare.
     /// Sized to the largest id this table holds; an id past the end simply
@@ -55,6 +65,22 @@ fn hash_key(key: &str) -> u64 {
     hash_bytes(0, key.as_bytes())
 }
 
+/// The part of a key's hash a table slot keeps beside the entry index: the
+/// high half, which the slot position (the low bits) has not used.
+#[inline]
+fn slot_tag(hash: u64) -> u32 {
+    (hash >> 32) as u32
+}
+
+#[inline]
+fn slot_value(hash: u64, index: usize) -> u64 {
+    debug_assert!(
+        index < EMPTY as usize,
+        "a SpecMap holds fewer than u32::MAX entries"
+    );
+    (u64::from(slot_tag(hash)) << 32) | index as u64
+}
+
 /// One to seven bytes as one word, read in place. Copying them into a zeroed
 /// buffer instead compiles to a call to the C library's `memcpy`, which cost
 /// more than the rest of the hash. Two overlapping reads cover every byte, so
@@ -77,7 +103,7 @@ fn short_word(bytes: &[u8]) -> u64 {
 /// library's `memcmp`, and every string-keyed lookup pays one to confirm its
 /// hit; for keys this short the call costs more than the comparison.
 #[inline]
-fn same_bytes(a: &[u8], b: &[u8]) -> bool {
+pub(crate) fn same_bytes(a: &[u8], b: &[u8]) -> bool {
     let n = a.len();
     if n != b.len() {
         return false;
@@ -100,6 +126,7 @@ impl<T> Default for SpecMap<T> {
         SpecMap {
             keys: Vec::new(),
             values: Vec::new(),
+            texts: Vec::new(),
             table: Vec::new(),
             by_id: Vec::new(),
         }
@@ -124,15 +151,17 @@ impl<T> SpecMap<T> {
     /// never during play.
     fn reindex(&mut self) {
         let capacity = (self.keys.len() * 2).next_power_of_two().max(8);
-        self.table = vec![EMPTY; capacity];
+        self.table = vec![EMPTY_SLOT; capacity];
         let mask = capacity - 1;
         for (index, key) in self.keys.iter().enumerate() {
-            let mut slot = hash_key(key) as usize & mask;
-            while self.table[slot] != EMPTY {
+            let hash = hash_key(key);
+            let mut slot = hash as usize & mask;
+            while self.table[slot] != EMPTY_SLOT {
                 slot = (slot + 1) & mask;
             }
-            self.table[slot] = index as u32;
+            self.table[slot] = slot_value(hash, index);
         }
+        self.texts = self.keys.iter().map(|key| key.as_str()).collect();
         // Interning every key here is what lets `Index<Name>` skip the hash
         // entirely. It costs one registry lock per entry, and reindexing
         // happens when a ruleset is loaded or a mod patches it — never in play.
@@ -175,14 +204,19 @@ impl<T> SpecMap<T> {
             return None;
         }
         let mask = self.table.len() - 1;
-        let mut slot = hash_key(key) as usize & mask;
+        let hash = hash_key(key);
+        let tag = slot_tag(hash);
+        let mut slot = hash as usize & mask;
         loop {
-            let index = self.table[slot];
-            if index == EMPTY {
+            let value = self.table[slot];
+            if value == EMPTY_SLOT {
                 return None;
             }
-            if same_bytes(self.keys[index as usize].as_bytes(), key.as_bytes()) {
-                return Some(index as usize);
+            let index = value as u32 as usize;
+            if (value >> 32) as u32 == tag
+                && same_bytes(self.texts[index].as_bytes(), key.as_bytes())
+            {
+                return Some(index);
             }
             slot = (slot + 1) & mask;
         }
@@ -267,6 +301,7 @@ impl<T> SpecMap<T> {
     pub fn clear(&mut self) {
         self.keys.clear();
         self.values.clear();
+        self.texts.clear();
         self.table.clear();
         self.by_id.clear();
     }
@@ -382,6 +417,7 @@ impl<T> From<BTreeMap<String, T>> for SpecMap<T> {
     fn from(entries: BTreeMap<String, T>) -> Self {
         let mut map = SpecMap {
             keys: Vec::with_capacity(entries.len()),
+            texts: Vec::new(),
             values: Vec::with_capacity(entries.len()),
             table: Vec::new(),
             by_id: Vec::new(),
