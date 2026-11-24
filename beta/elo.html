@@ -383,10 +383,10 @@
         </section>
         <section class="res-section" id="elo-levels" data-elo-card hidden aria-labelledby="elo-levels-title">
           <h2 class="rank-title" id="elo-levels-title">Firaxis Civ 6 AI: Elo by level</h2>
-          <p class="rank-sub" id="elo-levels-sub">Two readings of each level: the benchmark&#8217;s games against the real AI, and the simulator&#8217;s Difficulty dial.</p>
+          <p class="rank-sub" id="elo-levels-sub">Two readings of each level: the benchmark&#8217;s games against the real AI, and the simulator&#8217;s Difficulty setting.</p>
           <div class="elo-scroll">
             <table class="rank-table" id="elo-levels-table" aria-labelledby="elo-levels-title">
-              <thead><tr><th scope="col">Level</th><th scope="col">Benchmark Elo</th><th scope="col">Our wins (games)</th><th scope="col">Simulator dial</th></tr></thead>
+              <thead><tr><th scope="col">Level</th><th scope="col">Benchmark Elo</th><th scope="col">Wins (games)</th><th scope="col">Simulator</th></tr></thead>
               <tbody></tbody>
             </table>
           </div>
@@ -536,7 +536,7 @@
         + (firaxis ? " over the last " + firaxis.days + " days" : "")
         + ", with our seat rated as the agent that plays its victory lane in the simulator (a Science game is MoonshotMaven\u2019s,"
         + " a Religious one HolyRoller\u2019s). \u2264 is a level we have never lost to in the window: it is at most that."
-        + " Simulator dial: the simulator\u2019s Difficulty setting, our stand-in agent playing with that level\u2019s"
+        + " Simulator: the simulator\u2019s Difficulty setting, our stand-in agent playing with that level\u2019s"
         + " handicap, which is what the simulator\u2019s games at that level are played against.";
       document.getElementById("elo-levels").hidden = false;
     }
