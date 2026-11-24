@@ -8,6 +8,7 @@ import contextlib
 import html
 import io
 import json
+import math
 import pathlib
 import re
 import sys
@@ -112,6 +113,37 @@ class Ledger(unittest.TestCase):
         self.assertNotIn("billion", json.dumps(LEDGER["goals"]))
         self.assertNotIn('data-goal="billion"', LANDING)
 
+    def test_the_first_stop_carries_the_operator_s_note_on_his_own_play(self):
+        # Operator 2026-11-24: "By "Human Player" change it to "Human Player
+        # (me)" with subtitle note: Some are faster, some are slower. I'm a
+        # bit on the slower side but 5h seems reasonable."
+        stop = re.search(r'<li class="speed-stop" data-stop="hand">(.*?)</li>', LANDING, re.S).group(1)
+        asides = [" ".join(html.unescape(aside).split()) for aside in re.findall(r'<small class="speed-aside">(.*?)</small>', stop, re.S)]
+        self.assertEqual(asides, ["Some are faster, some are slower. I’m a bit on the slower side but 5h seems reasonable."])
+        # The note names his own figure, the one figure on the chart that
+        # the slot does not write. It is held to the stop's reading here,
+        # so the two cannot come apart unseen.
+        hand = {row["key"]: row for row in speedup_timeline.timeline(ROOT)["stops"]}["hand"]
+        self.assertEqual(re.findall(r"\d[\d,.]*\s*(?:x|s|min|h)\b", asides[0]), [hand["time"].replace(" ", "")])
+        # It is his note on his own five hours and on nothing else: no
+        # other entry of the chart has one.
+        self.assertEqual(LANDING.count('class="speed-aside"'), 1)
+        # Under the figures, where a stop's other small lines stand.
+        self.assertLess(stop.index('class="speed-read"'), stop.index('class="speed-aside"'))
+        # Shown, where a stop's sentence is only what a pointer held over
+        # it says: it is not the hidden `speed-what`, and it has a place in
+        # the list and on the line.
+        self.assertIn('<small class="speed-what">One person plays one game of Civilization VI.</small>', stop)
+        self.assertIn("  .speed-aside { grid-column: 1 / -1; grid-row: 4;", LANDING)
+        wide = LANDING[LANDING.index("@media (min-width: 1120px) {"):]
+        # On the line it wraps in the 150px every stop's words have: the
+        # slot keeps two stops' words that far apart and no further.
+        self.assertIn("    .speed-aside { display: block; margin: 2px 0 0; line-height: 1.3; }", wide[:wide.index("</style>")])
+        self.assertNotRegex(LANDING, r"\.speed-aside \{[^}]*\bwidth:")
+        # The room over and under the line is measured from every line of
+        # words but the hidden sentence, so the note has its room.
+        self.assertIn('filter((line) => !line.hidden && !line.classList.contains("speed-what"))', LANDING)
+
     def test_the_line_s_stops_are_the_five_the_operator_named(self):
         # Operator 2026-11-24: "we should have: human player 5 hrs, Firaxis
         # Computer control: 10-15mins but we should benchmark this with our
@@ -123,8 +155,10 @@ class Ledger(unittest.TestCase):
         # The control stop as he named it later that day: "lets also call
         # Firaxis computer Control inside CIVVIS->Firaxis computer control".
         # His arrow is drawn as one.
+        # The first is his own play and says so, as he asked that day: "By
+        # "Human Player" change it to "Human Player (me)"".
         self.assertEqual([html.unescape(re.sub(r"<[^>]+>", "", name)) for name in names],
-                         ["Human player", "CIVVIS → Firaxis computer control", "Firaxis self-play", "CIVVIS self-play", "Parallel games, M5 Max, all 18 cores"])
+                         ["Human Player (me)", "CIVVIS → Firaxis computer control", "Firaxis self-play", "CIVVIS self-play", "Parallel games, M5 Max, all 18 cores"])
         stops = {stop["key"]: stop for stop in shown["stops"]}
         self.assertEqual(stops["hand"]["time"], "5 h")
         # His "10-15mins", benchmarked with our own games: the reading
@@ -248,11 +282,18 @@ class Ledger(unittest.TestCase):
         self.assertTrue(ahead["fleet"]["times"].endswith("x+"))
         self.assertLess(stops["all_cores"]["at"], ahead["scale_up"]["at"])
         self.assertLess(ahead["scale_up"]["at"], ahead["fleet"]["at"])
-        # The line ends at a million, which a thousand M5 Maxes are past: the
-        # fleet stands at the line's end and is marked as running on.
-        self.assertEqual((ahead["fleet"]["at"], ahead["fleet"].get("past")), (1.0, True))
+        # A thousand M5 Maxes are past a million, where the line ended until
+        # the operator had it run out to ten million (2026-11-24: "maybe
+        # extend timeline out to 10,000,000x"): the fleet stands on the line
+        # at its own place, past the goal and short of the end. A stop past
+        # the end of a line still stands at its end, marked as running on
+        # (`test_the_line_runs_out_past_its_last_goal`).
         self.assertGreater(ahead["fleet"]["multiplier"], LEDGER["goals"][-1]["times"])
-        self.assertNotIn("past", ahead["scale_up"])
+        self.assertLess(ahead["fleet"]["multiplier"], speedup_timeline.end(LEDGER))
+        self.assertLess(shown["goals"][-1]["at"], ahead["fleet"]["at"])
+        self.assertLess(ahead["fleet"]["at"], 1.0)
+        for stop in ahead.values():
+            self.assertNotIn("past", stop)
         self.assertIn('entry.classList.toggle("is-past", !!stop.past);', LANDING)
         # And neither is the page's number: that is the fastest measured stop.
         self.assertEqual(shown["fastest"], "all_cores")
@@ -278,11 +319,14 @@ class Ledger(unittest.TestCase):
         over = {stop["key"]: stop["over"] for stop in LEDGER["projected"]}
         self.assertEqual((over["scale_up"], over["fleet"]), ("all_cores", "all_cores"))
 
-    def test_past_a_game_a_second_a_stop_leads_with_its_games_per_second(self):
+    def test_an_amortized_stop_leads_with_its_games_per_second(self):
         # Operator 2026-11-24: "on the left side of the timeline, at more
         # than 1 game / second, we should also provide the games per second
         # as the standard measure and (time per game amoritized as the
-        # second measure)".
+        # second measure)". And later that day, of the one amortized stop
+        # under a game a second: "lest have m5 max blurb list amortiized
+        # games per second as the primary unit. as this is really
+        # amortiization at play". So every amortized entry leads with them.
         shown = speedup_timeline.timeline(ROOT)
         base = shown["stops"][0]["seconds"]
         entries = shown["stops"] + shown["projected"] + shown["goals"]
@@ -296,14 +340,27 @@ class Ledger(unittest.TestCase):
             games = entry["multiplier"] / base
             self.assertEqual(entry["rate"].replace("+", ""), speedup_timeline.per_second(games), entry["key"])
             self.assertEqual(entry["time"], speedup_timeline.clock(base / entry["multiplier"]), entry["key"])
-            self.assertEqual(entry.get("lead"), "rate" if games > 1 else None, entry["key"])
+            self.assertEqual(entry.get("lead"), "rate", entry["key"])
         led = [entry["key"] for entry in entries if entry.get("lead") == "rate"]
-        self.assertEqual(led, ["m5_max", "scale_up", "fleet", "million"])
-        # The M5 Max as it runs today is short of a game a second, so it
-        # leads with its time, and its games a second are the second measure.
+        self.assertEqual(led, ["all_cores", "m5_max", "scale_up", "fleet", "million"])
+        # The M5 Max as it runs today is short of a game a second and
+        # leads with its games a second all the same: its time per game is
+        # the second measure. Its goal is in the measure it leads with,
+        # the game a second the operator named from the first (2026-11-22:
+        # "Can scale across M5 Max cores to 1 game per second").
         every = next(entry for entry in entries if entry["key"] == "all_cores")
         self.assertLess(every["multiplier"] / base, 1)
         self.assertRegex(every["rate"], r"^0\.\d\d games/s$")
+        self.assertEqual(every["goal"], "goal 1 game/s, 18,000x")
+        # One game on one core is no amortized time, and its goal is a
+        # game's time.
+        alone = next(entry for entry in entries if entry["key"] == "self_play")
+        self.assertEqual(alone["goal"], "goal 10 s, 1,800x")
+        # The page takes the lead from the slot and words the second
+        # measure to match.
+        self.assertIn('const fast = row.amortized && row.lead === "rate";', LANDING)
+        self.assertIn('put(entry, "time", fast ? row.rate : row.time);', LANDING)
+        self.assertIn('put(entry, "second", row.amortized ? "(" + (fast ? row.time + " a game" : row.rate) + ", amortized)" : "");', LANDING)
         # A figure open at its top is open in both measures.
         fleet = next(entry for entry in entries if entry["key"] == "fleet")
         self.assertRegex(fleet["rate"], r"^[\d,]+\+ games/s$")
@@ -325,14 +382,50 @@ class Ledger(unittest.TestCase):
         self.assertEqual(shown["speedup"], fastest["times"])
         self.assertEqual(shown["fastest"], fastest["key"])
         self.assertEqual(shown["reach"], fastest["at"])
-        # The goals are on the line smallest first, and it ends at the last.
+        # The goals are on the line smallest first, each at its own place:
+        # the last a tenfold short of the line's end, six of its seven
+        # tenfolds along (`test_the_line_runs_out_past_its_last_goal`).
         base = shown["stops"][0]["seconds"]
         self.assertEqual([(goal["key"], goal["times"], goal["time"]) for goal in shown["goals"]],
                          [(goal["key"], speedup_timeline.times(goal["times"]), speedup_timeline.clock(base / goal["times"])) for goal in LEDGER["goals"]])
-        self.assertEqual([goal["at"] for goal in shown["goals"]], [1.0])
+        self.assertEqual([goal["at"] for goal in shown["goals"]], [round(6 / 7, 4)])
         self.assertEqual((shown["goals"][-1]["times"], shown["goals"][-1]["time"]), ("1,000,000x", "18 ms"))
-        self.assertEqual(shown["ticks"][-1], {"times": "1 million x", "at": 1.0})
+        self.assertEqual(shown["ticks"][-1], {"times": "10 million x", "at": 1.0})
         self.assertRegex(shown["speedup"], r"^\d{1,3}(,\d{3})*x$")
+
+    def test_the_line_runs_out_past_its_last_goal(self):
+        # Operator 2026-11-24: "maybe extend timeline out to 10,000,000x".
+        # The line's end is the ledger's `line_to`, and no goal: the one
+        # goal is still the million he kept that day, costed as it was.
+        self.assertEqual(LEDGER["line_to"], 10000000)
+        self.assertEqual([goal["key"] for goal in LEDGER["goals"]], ["million"])
+        self.assertEqual(speedup_timeline.end(LEDGER), 10000000)
+        shown = speedup_timeline.timeline(ROOT)
+        self.assertEqual([tick["times"] for tick in shown["ticks"]],
+                         ["1x", "10x", "100x", "1,000x", "10,000x", "100,000x", "1 million x", "10 million x"])
+        self.assertEqual([tick["at"] for tick in shown["ticks"]], [round(power / 7, 4) for power in range(8)])
+        # Every entry stands at its multiplier's place on the longer line,
+        # and nothing of it is past the end.
+        for row in shown["stops"] + shown["projected"] + shown["goals"]:
+            self.assertAlmostEqual(row["at"], math.log10(row["multiplier"]) / 7, places=3, msg=row["key"])
+            self.assertNotIn("past", row)
+        self.assertEqual([goal["key"] for goal in shown["goals"]], ["million"])
+        self.assertIn("an hour in the cloud", shown["goals"][0]["cost"])
+        # A ledger without it ends at its largest goal, as every ledger did
+        # before, and so does one whose `line_to` is short of that goal. A
+        # stop past the end of such a line stands at its end and says so.
+        ledger = json.loads(json.dumps(LEDGER))
+        del ledger["line_to"]
+        self.assertEqual(speedup_timeline.end(ledger), 1000000)
+        runs = json.loads((ROOT / BENCHMARK).read_text(encoding="utf-8"))["runs"]
+        with tempfile.TemporaryDirectory() as scratch:
+            short = speedup_timeline.timeline(tree(scratch, ledger, runs))
+        self.assertEqual([goal["at"] for goal in short["goals"]], [1.0])
+        self.assertEqual(short["ticks"][-1], {"times": "1 million x", "at": 1.0})
+        fleet = {stop["key"]: stop for stop in short["projected"]}["fleet"]
+        self.assertEqual((fleet["at"], fleet.get("past")), (1.0, True))
+        self.assertEqual(speedup_timeline.end(dict(ledger, line_to=1000)), 1000000)
+        self.assertEqual(speedup_timeline.end(dict(ledger, line_to=None)), 1000000)
 
     def test_every_core_follows_the_games_per_minute_record(self):
         # The stop that plays on every core is the record of
@@ -365,7 +458,7 @@ class Following(unittest.TestCase):
         {"taken": "2026-11-26T05:00:00Z", "games_per_minute": 24.0},
     ]
 
-    def test_an_amortized_stop_has_both_measures_and_leads_with_the_larger(self):
+    def test_an_amortized_stop_has_both_measures_and_leads_with_its_games(self):
         ledger = json.loads(json.dumps(self.LEDGER))
         ledger["goals"][0]["amortized"] = True
         ledger["stops"][2]["amortized"] = True
@@ -373,9 +466,14 @@ class Following(unittest.TestCase):
         with tempfile.TemporaryDirectory() as scratch:
             shown = speedup_timeline.timeline(tree(scratch, ledger, self.RUNS))
         stops = {stop["key"]: stop for stop in shown["stops"]}
-        # 30 games a minute is half a game a second: the time leads.
-        self.assertEqual((stops["all_cores"]["time"], stops["all_cores"]["rate"], stops["all_cores"].get("lead")), ("2 s", "0.50 games/s", None))
+        # 30 games a minute is half a game a second, and the games lead
+        # under one a second as they do past it (operator, 2026-11-24, of
+        # the M5 Max's stop: "amortiized games per second as the primary
+        # unit"). Its goal is worded in them.
+        self.assertEqual((stops["all_cores"]["time"], stops["all_cores"]["rate"], stops["all_cores"].get("lead")), ("2 s", "0.50 games/s", "rate"))
         self.assertIs(stops["all_cores"]["amortized"], True)
+        self.assertEqual(stops["all_cores"]["goal"], "goal 1 game/s, 18,000x")
+        self.assertEqual(stops["self_play"]["goal"], "goal 10 s, 1,800x")
         # One game on one core is not amortized, whatever it takes.
         self.assertNotIn("amortized", stops["self_play"])
         self.assertNotIn("rate", stops["self_play"])
@@ -385,13 +483,11 @@ class Following(unittest.TestCase):
         # A million times a five hour game is 55.6 games a second.
         (million,) = shown["goals"]
         self.assertEqual((million["time"], million["rate"], million["lead"], million["amortized"]), ("18 ms", "56 games/s", "rate", True))
-        # At a game a second exactly the time still leads: it is past one
-        # that the games do.
-        row = {}
-        speedup_timeline.amortize(row, 1.0)
-        self.assertEqual(row, {"amortized": True, "rate": "1 game/s"})
-        speedup_timeline.amortize(row, 0.5)
-        self.assertEqual(row, {"amortized": True, "rate": "2 games/s", "lead": "rate"})
+        # At any rate: a game a second, two, or one in a hundred seconds.
+        for seconds, games in ((1.0, "1 game/s"), (0.5, "2 games/s"), (100.0, "0.01 games/s")):
+            row = {}
+            speedup_timeline.amortize(row, seconds)
+            self.assertEqual(row, {"amortized": True, "rate": games, "lead": "rate"})
         # A ledger that marks nothing has no second measure anywhere.
         with tempfile.TemporaryDirectory() as scratch:
             plain = speedup_timeline.timeline(tree(scratch, self.LEDGER, self.RUNS))
@@ -1411,8 +1507,13 @@ class Page(unittest.TestCase):
         # The narrow layout is a list, slowest first, whatever kind an entry
         # is: a stop nothing has played can be slower than a measured one.
         self.assertIn("for (const entry of [...line.children].sort((one, other) => pace(one) - pace(other))) line.append(entry);", LANDING)
-        # No figure is written into the page: every one is the slot's.
+        # No figure is written into the page: every one is the slot's. But
+        # for the operator's note on the first stop, his words as he wrote
+        # them, which name his own five hours: the note's own test holds
+        # that figure to the reading.
         text = re.sub(r"<!--.*?-->", "", section, flags=re.S)
+        text, notes = re.subn(r'<small class="speed-aside">.*?</small>', "", text, flags=re.S)
+        self.assertEqual(notes, 1)
         self.assertIsNone(re.search(r"\d[\d,.]*\s*(x|s|min|h)\b", re.sub(r"<[^>]+>", " ", text)))
         # 1x is at the right end of the line and the largest goal at the left.
         self.assertIn(".speed-stop { position: absolute; right: calc(var(--at) * 100%);", LANDING)

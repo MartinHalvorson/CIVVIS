@@ -263,8 +263,15 @@ class TheSpeedup(unittest.TestCase):
         # The control stop is named as he named it later that day ("lets
         # also call Firaxis computer Control inside CIVVIS->Firaxis computer
         # control"), the arrow drawn as one, here as on the home page.
+        # The first is his own play and says so ("By "Human Player" change
+        # it to "Human Player (me)" with subtitle note: Some are faster,
+        # some are slower. I'm a bit on the slower side but 5h seems
+        # reasonable."): the name here as on the home page, and his note in
+        # what a pointer held over the row says, where this page keeps
+        # every stop's sentence.
         self.assertEqual((ways["hand"], ways["control"], ways["firaxis_self_play"], ways["self_play"], ways["all_cores"]),
-                         ("Human player", "CIVVIS → Firaxis computer control", "Firaxis self-play", "CIVVIS self-play", "Parallel games"))
+                         ("Human Player (me)", "CIVVIS → Firaxis computer control", "Firaxis self-play", "CIVVIS self-play", "Parallel games"))
+        self.assertIn('hand: ["Human Player (me)", "One person plays one game of Civilization VI. The baseline. Some are faster, some are slower. I’m a bit on the slower side but 5h seems reasonable."],', PAGE)
         self.assertEqual(ways["deity_sim"], "CIVVIS against Deity rivals")
         self.assertIn('if (row.worked) name.firstChild.after(" ", el("span", "perf-kind is-estimate", "Worked out, not timed"));', PAGE)
         # Every kind of throughput row, and every basis of a theory, is worded.
@@ -370,7 +377,15 @@ class TheSpeedup(unittest.TestCase):
         script = PAGE[PAGE.index("// ---- How many times faster than a game played by hand"):PAGE.index("// ---- Each way of playing over time")]
         for unsafe in ("innerHTML", "insertAdjacentHTML", "outerHTML"):
             self.assertNotIn(unsafe, script)
-        self.assertIsNone(re.search(r"\d[\d,.]*\s*(x|s|min|h)\b", re.sub(r"//.*", "", script)))
+        # But for the operator's note on his own play, his words as he wrote
+        # them (2026-11-24: "Some are faster, some are slower. I'm a bit on
+        # the slower side but 5h seems reasonable."), in what a pointer held
+        # over the first row says. Its figure is held to that row's reading.
+        note = "Some are faster, some are slower. I’m a bit on the slower side but 5h seems reasonable."
+        self.assertEqual(script.count(note), 1)
+        self.assertIsNone(re.search(r"\d[\d,.]*\s*(x|s|min|h)\b", re.sub(r"//.*", "", script.replace(note, ""))))
+        hand = {row["key"]: row for row in speedup_timeline.worked(ROOT)["games"]}["hand"]
+        self.assertEqual(re.findall(r"\d[\d,.]*\s*(?:x|s|min|h)\b", note), [hand["time"].replace(" ", "")])
 
 
 class EachWayOverTime(unittest.TestCase):

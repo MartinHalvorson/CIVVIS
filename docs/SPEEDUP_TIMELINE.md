@@ -38,7 +38,7 @@ The first stop is the one every other is divided into.
 
 | Stop | What plays the game | How it is timed |
 | --- | --- | --- |
-| Human player (`hand`) | One person, in Civilization VI. | The project owner's own figure for a game: five hours. |
+| Human Player (me) (`hand`) | One person, in Civilization VI: the project owner. | His own figure for a game: five hours. The stop says so under its figures, in his words: "Some are faster, some are slower. I'm a bit on the slower side but 5h seems reasonable." |
 | CIVVIS → Firaxis computer control (`control`) | Civilization VI itself, Firaxis's game, with CIVVIS at the controls of one seat. | The computer control benchmark (`beta/control_times.py`, [`docs/CONTROL_GAME_TIME.md`](CONTROL_GAME_TIME.md)): the middle game of the games played to a victory in the last seven days, each timed end to end, from launching the game to its ending. The stop names it (`"benchmark": "control"`), so a finished game moves the stop with the next publish. A clone without the run ledger shows the newest reading written in the ledger instead. |
 | Firaxis self-play (`firaxis_self_play`) | Civilization VI itself with Firaxis's own AI in every seat. | One game played by the verification lane between two of its own (`tools/civ6_play.py --firaxis-self-play`): the lane's setup at Lv 8, our seat handed to the game's autoplay manager on its first turn. Timed end to end by the harness's run clock, the clock the computer control games are timed by. See [Timing a Firaxis self-play game](#timing-a-firaxis-self-play-game). |
 | CIVVIS self-play (`self_play`) | The simulator, one core: every seat a CIVVIS AI agent. | The mean of twelve games, `gene_screen --jobs 1` with its defaults, from each game's `secs`. |
@@ -67,17 +67,19 @@ game is that fast. The ledger marks those entries `amortized`: the every-core
 stop, the 1,000,000x goal, and a projected stop that plays many games at once.
 A projected stop that multiplies an amortized stop is amortized with it.
 
-An amortized entry has two measures, its time per game and its games per
-second (the multiplier over the baseline's seconds), and the second stands in
-brackets under the first with the word amortized:
+An amortized entry has two measures, its games per second (the multiplier
+over the baseline's seconds) and its time per game. It leads with its games
+per second, and its time per game stands in brackets under them with the word
+amortized: `4.1 games/s`, `(247 ms a game, amortized)`. That holds under a
+game a second as well, so the M5 Max as it runs today reads `0.41 games/s`,
+`(2.5 s a game, amortized)`, and its goal is worded the same way, `goal 1
+game/s`. Until 2026-11-24 an entry under a game a second led with its time;
+the project owner asked for the M5 Max's stop to lead with its games that
+day: "lest have m5 max blurb list amortiized games per second as the primary
+unit. as this is really amortiization at play".
 
-| Games per second | Leads with | Second measure |
-| --- | --- | --- |
-| One or under | The time per game: `2.5 s` | `(0.41 games/s, amortized)` |
-| Past one | The games per second: `4.1 games/s` | `(247 ms a game, amortized)` |
-
-`speedup_timeline.amortize` works both out (`rate`, and `lead` when the games
-lead). Under the line the page says once what the word means. The irreducible
+`speedup_timeline.amortize` works both out (`rate`, and `lead`, which says the
+games lead). Under the line the page says once what the word means. The irreducible
 game, below, is left of CIVVIS self-play and is not amortized: it is one game
 on one core.
 
@@ -139,9 +141,16 @@ give a middle one.
 
 A stop's multiplier is the first stop's seconds over its own. The page's
 number is the largest. The line is a scale of multipliers by tenfolds, 1x at
-its right end and the largest goal at its left, so a stop stands at
-`log(multiplier) / log(largest goal)` of the way across. The marks from a
+its right end and its end at its left, so a stop stands at
+`log(multiplier) / log(end)` of the way across. The marks from a
 million up are worded (`1 million x`), so that ten of them fit along the line.
+
+The line's end is the largest goal, or the ledger's `line_to` where that is
+further out (`speedup_timeline.end`). It is 10,000,000x, a tenfold past the
+one goal, since the project owner asked on 2026-11-24: "maybe extend timeline
+out to 10,000,000x". `line_to` is no goal: nothing is aimed at it and nothing
+is costed to it. It is seven tenfolds of line where there were six, so every
+entry stands a seventh nearer its neighbours.
 
 The line runs far past the fastest stop, so the stops stand in a short
 stretch of it. Words that would meet their neighbour's on the same side of
@@ -192,9 +201,11 @@ line, a stop, a projected stop or a goal, takes its side of the line in turn
 (`speedup_timeline.sides`), so two that stand close together go one over the
 line and one under it. The page's number is never a projected stop: it is the
 fastest stop that was measured, and the line is drawn solid only as far as
-that stop. A thousand M5 Maxes are past the 1,000,000x the line ends at, so
-the fleet stands at the line's end as an arrow that points on from it
-(`past` in the slot), with its own figure beside it.
+that stop. A thousand M5 Maxes are past the 1,000,000x goal and short of the
+10,000,000x the line runs out to, so the fleet stands on the line at its own
+place, left of the goal. Until the line was extended it stood at the line's
+end as an arrow that pointed on from it, and a stop past the end of the line
+still does (`past` in the slot), with its own figure beside it.
 
 A projected stop is an entry of `projected`:
 
@@ -214,7 +225,9 @@ page's tables do not show them.
 
 The ledger's `goals` are the multipliers the line is marked with, each under
 a `key` the pages name it by. There is one: 1,000,000x, a game every 18 ms,
-which is 3,333 games a minute, and it is the line's left end. A billion
+which is 3,333 games a minute. It was the line's left end until the line was
+run out a tenfold past it (see The number), and stands six sevenths of the
+way along now. A billion
 stood beside it from 2026-11-22 until the project owner took it off on
 2026-11-24: "Change the timeline to just scale to 1,000,000x (drop the
 1bX)." Two stops have goals of their own as well, a self-play game in 10 s
