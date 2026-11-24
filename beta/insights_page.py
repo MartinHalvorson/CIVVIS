@@ -36,6 +36,11 @@ are drawn from the same games by construction, read off `results.jsonl` on
 the ledger branch at publish. A level nobody has played is not in the
 record, and the page says so on that level's button.
 
+The page's heading says the turn falls as the level rises, and the page
+draws whatever the games say. So when they stop saying it (`not_falling`), a
+publish says so in its log, as a warning, and the heading is somebody's to
+look at again.
+
 Like the site's other pages this runs inside the script that publishes the
 whole site: what it cannot read costs the page its figures, said on stderr,
 and never the publish.
@@ -94,6 +99,19 @@ def speed(source: pathlib.Path) -> dict | None:
     return {"levels": levels} if levels else None
 
 
+def not_falling(levels: list[dict]) -> list[str]:
+    """Where the first insight does not hold: each pair of levels next to
+    each other in the record whose stronger level's games were not over
+    sooner, as a sentence. Empty while the turn falls with every step up."""
+    ordered = sorted(levels, key=lambda level: level["level"], reverse=True)
+    return [
+        f"Lv {strong['level']} {strong['rung']} games are half over by turn {strong['median']}, "
+        f"no sooner than Lv {weak['level']} {weak['rung']} games (turn {weak['median']})"
+        for strong, weak in zip(ordered, ordered[1:])
+        if not strong["median"] < weak["median"]
+    ]
+
+
 def record(source: pathlib.Path) -> dict | None:
     """The page's record, or `None` when no insight has figures."""
     out: dict = {"turns": research_page.TURNS, "victories": research_page.VICTORIES, "speed": None}
@@ -132,6 +150,8 @@ def main(argv: list[str]) -> int:
     else:
         said = [f"Lv {level['level']} {level['games']}" for level in data["speed"]["levels"]]
         print(f"insights_page: wrote the games against the AI ({', '.join(said)}) into {page}", file=sys.stderr)
+        for sentence in not_falling(data["speed"]["levels"]):
+            print(f"::warning::insights_page: the page says smarter AI picks up speed, and {sentence}")
     return 0
 
 

@@ -345,7 +345,7 @@ class TournamentsPage(unittest.TestCase):
             '<nav class="site-nav" aria-label="CIVVIS sites">\n'
             '      <a class="site-link" href="../home/">Home</a>\n'
             '      <div class="site-folder">\n'
-            '        <a class="site-link" href="../charts/ai-interpretability/" '
+            '        <a class="site-link" href="../charts/ai-insights/" '
             'title="What the games show: charts read off the CIVVIS AI agents&#8217; games.">Charts/</a>\n'
             '        <div class="site-menu">\n',
             PAGE,
@@ -367,11 +367,11 @@ class TournamentsPage(unittest.TestCase):
         # joined between Home and Tournaments the same day as Research; its
         # own test is `research_page_test.py`), each in its own markup.
         for page, pattern in (
-            (LANDING, r'aria-current="page">Home</a>\s*<div class="site-folder">\s*<a class="site-link" href="\.\./charts/ai-interpretability/"[^>]*>Charts/</a>'
+            (LANDING, r'aria-current="page">Home</a>\s*<div class="site-folder">\s*<a class="site-link" href="\.\./charts/ai-insights/"[^>]*>Charts/</a>'
                       r'[\s\S]*?</div>\s*</div>\s*<a class="site-link" href="\.\./tournaments/"[^>]*>Tournaments</a>'
                       r'\s*<a class="site-link" href="\.\./"[^>]*>CIVVIS</a>'),
             (VIEWER, r'id="homelink" href="/home" target="_top">Home</a>\s*'
-                     r'<a class="home-link" id="chartslink" href="/charts/ai-interpretability" target="_top">Charts/</a>\s*'
+                     r'<a class="home-link" id="chartslink" href="/charts/ai-insights" target="_top">Charts/</a>\s*'
                      r'<a class="home-link" id="tourlink" href="/tournaments" target="_top">Tournaments</a>\s*'
                      r'<a class="home-link" id="watchlink" href="\./" target="_top">CIVVIS</a>'),
         ):

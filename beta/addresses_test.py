@@ -17,6 +17,7 @@ or a digit, and a page listed under a folder (Charts/) sits in that folder.
 
     Home                  /home/
     Charts/
+      AI Insights         /charts/ai-insights/
       Win Analytics       /charts/win-analytics/
       ELO Rankings        /charts/elo-rankings/
       Civ Analytics       /charts/civ-analytics/
@@ -190,8 +191,10 @@ class Addresses(unittest.TestCase):
             for classes, href, _, name in site_list(read(source)):
                 if name.endswith("/"):
                     opens.add(lands(ADDRESS[source], href))
-        self.assertEqual(opens, {"charts/ai-interpretability"})
-        self.assertIn('href="/charts/ai-interpretability" target="_top">Charts/</a>', VIEWER)
+        # AI Insights, the folder's first page since 2026-11-24 (operator:
+        # "we want a new ai insights").
+        self.assertEqual(opens, {"charts/ai-insights"})
+        self.assertIn('href="/charts/ai-insights" target="_top">Charts/</a>', VIEWER)
 
     def test_every_relative_link_of_a_page_lands_on_a_page_or_the_viewer(self):
         # The same reading `publish.sh` gives the published pages, given here
@@ -295,8 +298,11 @@ class Moved(unittest.TestCase):
     def test_publish_puts_every_page_where_it_says(self):
         for source in SOURCES:
             name = source[:-len(".html")]
+            # The second word is where the page was before pages stated
+            # their addresses; a page written since has only the one it
+            # states, folder and all.
             self.assertRegex(
-                PUBLISH, rf'\n[a-z]+_at="\$\(address "\${name}_page" [a-z]+\)"\n', source)
+                PUBLISH, rf'\n[a-z]+_at="\$\(address "\${name}_page" [a-z]+(/[a-z-]+)?\)"\n', source)
 
 
 if __name__ == "__main__":

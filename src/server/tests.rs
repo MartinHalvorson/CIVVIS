@@ -2142,7 +2142,7 @@ fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
     assert!(EMBEDDED_INDEX.contains(concat!(
         "<nav class=\"head-links\" id=\"headlinks\" aria-label=\"CIVVIS sites\" hidden>\n",
         "        <a class=\"home-link\" id=\"homelink\" href=\"/home\" target=\"_top\">Home</a>\n",
-        "        <a class=\"home-link\" id=\"chartslink\" href=\"/charts/ai-interpretability\" target=\"_top\">Charts/</a>\n",
+        "        <a class=\"home-link\" id=\"chartslink\" href=\"/charts/ai-insights\" target=\"_top\">Charts/</a>\n",
         "        <a class=\"home-link\" id=\"tourlink\" href=\"/tournaments\" target=\"_top\">Tournaments</a>\n",
         "        <a class=\"home-link\" id=\"watchlink\" href=\"./\" target=\"_top\">CIVVIS</a>\n",
         "        <a class=\"home-link\" id=\"strangelink\" href=\"?mode=strange\" target=\"_top\">Doctor Strange's Civ 6</a>\n",
@@ -2230,13 +2230,16 @@ fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
     let performance = include_str!("../../beta/performance.html");
     // Charts/'s pages in the operator's order (2026-11-24: "move ai
     // interpretablity to the top of the charts/ then civ analytics, win
-    // analytics. elo rankings.. civvis performanc"), and Charts/ opens the
+    // analytics. elo rankings.. civvis performanc", and later that day "we
+    // want a new ai insights", listed over them), and Charts/ opens the
     // first of them.
     assert!(performance.contains(concat!(
         "      <div class=\"site-folder\">\n",
-        "        <a class=\"site-link\" href=\"../ai-interpretability/\" ",
+        "        <a class=\"site-link\" href=\"../ai-insights/\" ",
         "title=\"What the games show: charts read off the CIVVIS AI agents&#8217; games.\">Charts/</a>\n",
         "        <div class=\"site-menu\">\n",
+        "          <a class=\"site-link sub-link\" href=\"../ai-insights/\" ",
+        "title=\"What the games show about AI at large: smarter AI picks up speed.\">AI Insights</a>\n",
         "          <a class=\"site-link sub-link\" href=\"../ai-interpretability/\" ",
         "title=\"How a CIVVIS AI agent decides: one turn step by step, its plan through a game, ",
         "and what each rule is worth in wins.\">AI Interpretability</a>\n",
@@ -2284,12 +2287,15 @@ fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
     assert!(publish.contains("cp \"$performance_page\" \"$out/$performance_at/index.html\""));
     // AI Interpretability was added at the bottom of Charts/ (operator
     // 2026-11-22: "Add a new chart to the bottom of Charts/ called AI
-    // Interpretablity") and moved to its top on 2026-11-24: each page of
-    // Charts/ lists them all in the list Charts/ drops down, with itself
-    // ringed, and Charts/ opens it.
+    // Interpretablity") and moved to its top on 2026-11-24, where AI
+    // Insights was put over it later that day: each page of Charts/ lists
+    // them all in the list Charts/ drops down, with itself ringed, and
+    // Charts/ opens AI Insights.
     let interpretability = include_str!("../../beta/interpretability.html");
     let listed = concat!(
         "        <div class=\"site-menu\">\n",
+        "          <a class=\"site-link sub-link\" href=\"../ai-insights/\" ",
+        "title=\"What the games show about AI at large: smarter AI picks up speed.\">AI Insights</a>\n",
         "          <a class=\"site-link sub-link\" href=\"../ai-interpretability/\" ",
         "title=\"How a CIVVIS AI agent decides: one turn step by step, its plan through a game, ",
         "and what each rule is worth in wins.\">AI Interpretability</a>\n",
@@ -2297,11 +2303,30 @@ fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
     assert!(performance.contains(listed));
     assert!(include_str!("../../beta/research.html").contains(listed));
     assert!(interpretability.contains(concat!(
+        "        <a class=\"site-link\" href=\"../ai-insights/\" ",
+        "title=\"What the games show: charts read off the CIVVIS AI agents&#8217; games.\">Charts/</a>\n",
+        "        <div class=\"site-menu\">\n",
+        "          <a class=\"site-link sub-link\" href=\"../ai-insights/\" ",
+        "title=\"What the games show about AI at large: smarter AI picks up speed.\">AI Insights</a>\n",
+        "          <a class=\"site-link sub-link\" href=\"./\" aria-current=\"page\">AI Interpretability</a>\n",
+    )));
+    // AI Insights itself: the first page under Charts/, ringed in its own
+    // list, with the slot `beta/insights_page.py` fills, at the address its
+    // name makes.
+    let insights = include_str!("../../beta/insights.html");
+    assert!(insights.contains(concat!(
         "        <a class=\"site-link\" href=\"./\" ",
         "title=\"What the games show: charts read off the CIVVIS AI agents&#8217; games.\">Charts/</a>\n",
         "        <div class=\"site-menu\">\n",
-        "          <a class=\"site-link sub-link\" href=\"./\" aria-current=\"page\">AI Interpretability</a>\n",
+        "          <a class=\"site-link sub-link\" href=\"./\" aria-current=\"page\">AI Insights</a>\n",
+        "          <a class=\"site-link sub-link\" href=\"../ai-interpretability/\" ",
     )));
+    assert!(
+        insights.contains("<script type=\"application/json\" id=\"insights-data\">null</script>")
+    );
+    assert!(insights
+        .contains("<link rel=\"canonical\" href=\"https://civvis.ai/charts/ai-insights/\">"));
+    assert!(publish.contains("cp \"$insights_page\" \"$out/$insights_at/index.html\""));
     assert!(interpretability
         .contains("<script type=\"application/json\" id=\"interpretability-data\">null</script>"));
     assert!(interpretability.contains(
@@ -2540,10 +2565,10 @@ fn the_home_page_lists_the_sites_with_itself_ringed() {
             "<nav class=\"site-nav\" aria-label=\"CIVVIS sites\">\n",
             "      <a class=\"site-link\" href=\"./\" aria-current=\"page\">Home</a>\n",
             "      <div class=\"site-folder\">\n",
-            "        <a class=\"site-link\" href=\"../charts/ai-interpretability/\" ",
+            "        <a class=\"site-link\" href=\"../charts/ai-insights/\" ",
             "title=\"What the games show: charts read off the CIVVIS AI agents&#8217; games.\">Charts/</a>\n",
             "        <div class=\"site-menu\">\n",
-            "          <a class=\"site-link sub-link\" href=\"../charts/ai-interpretability/\" ",
+            "          <a class=\"site-link sub-link\" href=\"../charts/ai-insights/\" ",
         ),
         concat!(
             "CIVVIS Performance</a>\n",

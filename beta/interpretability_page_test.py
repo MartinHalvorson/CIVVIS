@@ -316,16 +316,19 @@ class ThePage(unittest.TestCase):
 
 
 class TheSiteList(unittest.TestCase):
-    def test_the_page_is_the_first_under_charts_ringed(self):
+    def test_the_page_is_the_second_under_charts_ringed(self):
         # Operator 2026-11-22: "Add a new chart to the bottom of Charts/
         # called AI Interpretablity"; 2026-11-24: "move ai interpretablity to
-        # the top of the charts/", so Charts/ opens it.
+        # the top of the charts/", so Charts/ opened it, until later that day
+        # ("we want a new ai insights") AI Insights was put over it and
+        # Charts/ opens that.
         nav = PAGE[PAGE.index('<nav class="site-nav"'):PAGE.index("</nav>")]
         self.assertEqual(
             re.findall(r'<a class="([^"]+)" href="([^"]+)"[^>]*>([^<]+)</a>', nav),
             [
                 ("site-link", "../../home/", "Home"),
-                ("site-link", "./", "Charts/"),
+                ("site-link", "../ai-insights/", "Charts/"),
+                ("site-link sub-link", "../ai-insights/", "AI Insights"),
                 ("site-link sub-link", "./", "AI Interpretability"),
                 ("site-link sub-link", "../civ-analytics/", "Civ Analytics"),
                 ("site-link sub-link", "../win-analytics/", "Win Analytics"),
@@ -349,18 +352,21 @@ class TheSiteList(unittest.TestCase):
         header = lambda page: re.sub(r"<!--.*?-->", "", page[page.index('<nav class="utility-nav"'):page.index("</header>")], flags=re.S)
         self.assertEqual(header(PAGE), header(PERFORMANCE))
 
-    def test_charts_drops_it_down_first_on_every_page(self):
-        # The first of Charts/'s pages in the list it drops down, on every
-        # page (operator 2026-11-24: "charts/ can drop down folder style and
-        # the user can pick the right chart", then "move ai interpretablity
-        # to the top of the charts/"); the viewer lists none.
+    def test_charts_drops_it_down_second_on_every_page(self):
+        # The second of Charts/'s pages in the list it drops down, after AI
+        # Insights, on every page (operator 2026-11-24: "charts/ can drop
+        # down folder style and the user can pick the right chart", then
+        # "move ai interpretablity to the top of the charts/", then "we want
+        # a new ai insights"); the viewer lists none.
         listed = ('        <div class="site-menu">\n'
+                  '          <a class="site-link sub-link" href="../ai-insights/" title="What the games show about AI at large: '
+                  'smarter AI picks up speed.">AI Insights</a>\n'
                   '          <a class="site-link sub-link" href="../ai-interpretability/" title="How a CIVVIS AI agent decides: one turn '
                   'step by step, its plan through a game, and what each rule is worth in wins.">AI Interpretability</a>\n')
         for page in (RESEARCH, PERFORMANCE):
             self.assertIn(listed, page)
         for page in (LANDING, TOURNAMENTS):
-            self.assertIn(listed.replace('href="../ai-interpretability/"', 'href="../charts/ai-interpretability/"'), page)
+            self.assertIn(listed.replace('href="../ai-', 'href="../charts/ai-'), page)
         self.assertNotIn("Interpretability</a>", VIEWER)
 
     def test_publishing_builds_the_page_into_a_lane_whose_revision_has_it(self):
