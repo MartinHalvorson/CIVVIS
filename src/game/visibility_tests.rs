@@ -1225,6 +1225,47 @@ fn indirect_fire_still_requires_a_current_friendly_spotter() {
     assert!(game.legal_actions(0).contains(&attack));
 }
 
+/// The turn's sight union adds only the hexes its bits say it lacks. It must
+/// still be every sight of the turn, and the bits must follow the set when
+/// something else edits it: End Turn's clear, or a hand edit.
+#[test]
+fn turn_sight_union_holds_every_sight_through_clears_and_edits() {
+    let (mut game, origin) = controlled_game(91_005);
+    let scout = game.spawn_unit("warrior", 0, origin);
+    let bits_say = |game: &Game| -> BTreeSet<Pos> {
+        let held = &game.players[0].turn_visible_bits;
+        assert_eq!(held.len, game.players[0].turn_visible.len());
+        game.map.tiles.positions(&held.bits).collect()
+    };
+    // The sight the board had when it was set up is in the union already.
+    let mut every_sight = game.players[0].turn_visible.clone();
+    for step in [0, 2, 4, 6, 3] {
+        game.units.get_mut(&scout).unwrap().pos = along(&game, origin, step);
+        game.refresh_player_visibility(0);
+        every_sight.extend(game.player_visibility(0));
+        assert_eq!(game.players[0].turn_visible, every_sight, "step {step}");
+        assert_eq!(bits_say(&game), every_sight, "step {step}");
+    }
+
+    let in_sight = game.player_visibility(0);
+    let taken = *in_sight.iter().next().unwrap();
+    game.players[0].turn_visible.remove(&taken);
+    game.refresh_player_visibility(0);
+    assert!(
+        game.players[0].turn_visible.contains(&taken),
+        "a hex edited out of the union while in sight comes back"
+    );
+    assert_eq!(bits_say(&game), game.players[0].turn_visible);
+
+    game.players[0].turn_visible.clear();
+    game.refresh_player_visibility(0);
+    assert_eq!(
+        game.players[0].turn_visible, in_sight,
+        "after a clear the union starts again from the current sight"
+    );
+    assert_eq!(bits_say(&game), in_sight);
+}
+
 #[test]
 fn shared_exploration_keeps_the_newest_memory_without_copying_units() {
     let (mut game, position) = controlled_game(91_004);

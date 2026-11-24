@@ -1424,7 +1424,28 @@ impl Game {
         player
             .turn_units
             .extend(changed.into_iter().map(|unit| (unit.id, unit)));
-        player.turn_visible.extend(tiles.positions(visible));
+        // Every action reports the seat's whole sight again, and nearly all
+        // of it is in the union already: each hex of it used to be looked up
+        // in the ordered set once an action. The bits answer that instead, so
+        // only the hexes the union lacks are added.
+        let aside: &mut PlayerAside = player;
+        let (union, known) = (&mut aside.turn_visible, &mut aside.turn_visible_bits);
+        if known.len != union.len() {
+            known.bits = TileBits::with_capacity(tiles.len());
+            for index in union
+                .iter()
+                .filter_map(|position| tiles.index_of(*position))
+            {
+                known.bits.insert(index);
+            }
+        }
+        let mut unseen = TileBits::with_capacity(tiles.len());
+        for index in visible.iter().filter(|index| !known.bits.contains(*index)) {
+            unseen.insert(index);
+        }
+        union.extend(tiles.positions(&unseen));
+        known.bits.union_with(&unseen);
+        known.len = union.len();
     }
 
     /// Meet everyone standing in `pid`'s sight.
