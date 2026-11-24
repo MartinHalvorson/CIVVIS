@@ -338,6 +338,19 @@ class Played(unittest.TestCase):
                    "Math.abs(wizardChess.seat.camera.position.x - 2.0) < 0.1 && wizardChess.seat.camera.position.z < 2.2",
                    "the rider is carried to f3", seconds=120)
         self.assertEqual(ev("wizardChess.game.played[0].san"), "Nf3")
+        # Riding into the blow: the knight ridden takes, and as the blow lands
+        # at the rider's side the world's time slows for a moment.
+        ev("wizardChess.opponent.stop(), wizardChess.begin('w', ['g1f3', 'e7e5']), wizardChess.game.turn++; wizardChess.seat.blend = null")
+        slowed = ev("wizardChess.pace.count")
+        self.assertTrue(ev("wizardChess.command('ride takes e5')"))
+        self.until(f"wizardChess.pace.count > {slowed}", "the moment slows as the blow lands", seconds=120)
+        self.until("wizardChess.game.played.length >= 3", "the knight takes", seconds=120)
+        self.assertEqual(ev("wizardChess.game.played[2].san"), "Nxe5")
+        ev("wizardChess.opponent.stop(), wizardChess.game.turn++")
+        # A blow a square away from the knight ridden rocks it, away from the blow.
+        rocked = ev("(w => { const at = w.world.ridden.position.clone(); at.x += 1; w.world.shudder(at, 1); "
+                    "const jolt = w.world.ridden.userData.jolt; return jolt && [jolt.much, jolt.away.x]; })(wizardChess)")
+        self.assertTrue(rocked and rocked[0] > 0.05 and rocked[1] < 0, rocked)
         # A knight on e5 that a pawn can take: the pawn's light turns red.
         ev("wizardChess.opponent.stop(), wizardChess.begin('w', ['g1f3', 'd7d6', 'f3e5']), wizardChess.game.turn++, wizardChess.opponent.stop()")
         self.assertEqual(ev("[wizardChess.seat.mode, wizardChess.world.ridden.userData.square]"), ["ride", 36])

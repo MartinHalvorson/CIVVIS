@@ -860,6 +860,20 @@ class World {
     this.flash.intensity = 60 * force;
     hooks.sound("shatter", force, victim.position);
     hooks.shake(0.16 * force);
+    hooks.impact(victim.position.clone(), force);
+    // A blow beside the knight ridden rocks it, and its rider.
+    if (this.ridden && victim !== this.ridden) this.shudder(victim.position, force);
+  }
+
+  // The knight ridden rocked by a blow at `at`: thrown away from it, and back,
+  // the more the nearer (`regard` plays it out).
+  shudder(at, force = 1) {
+    const prey = this.ridden;
+    if (!prey) return;
+    const away = prey.position.clone().sub(at).setY(0), far = away.length();
+    if (far > 2.4) return;
+    const much = 0.16 * force * (1 - far / 2.4);
+    prey.userData.jolt = {away: far > 1e-3 ? away.normalize() : new THREE.Vector3(0, 0, 1), much: Math.max(much, prey.userData.jolt ? prey.userData.jolt.much : 0), age: 0};
   }
 
   // Dust kicked up off the board, or (`aloft`) a breath at a point in the air.
@@ -971,6 +985,15 @@ class World {
         const body = data.body, aim = look ? Math.atan2(-look.z, look.x) : this.rest(held);
         body.rotation.y += turnBy(body.rotation.y, aim) * Math.min(1, dt * 5);
       }
+    }
+    // The knight ridden rocking from a blow beside it: away, back past
+    // upright, and still, in about a second.
+    const jolt = prey && prey !== moving && prey.userData.jolt;
+    if (jolt) {
+      jolt.age += dt;
+      const swing = jolt.much * Math.exp(-jolt.age * 4.5) * Math.cos(jolt.age * 14);
+      if (jolt.age > 1.2) { prey.userData.jolt = null; prey.quaternion.identity(); }
+      else this.lean(prey, jolt.away, swing);
     }
     if (this.doomed) {
       const shake = this.time * 37;
@@ -1283,6 +1306,7 @@ class Seat {
     this.alarm = null;
     this.follow = true;
     this.shaking = 0;
+    this.punch = 0;
     this.fit = 16;
     this.clock = 0;
     this.ray = new THREE.Raycaster();
@@ -1425,6 +1449,11 @@ class Seat {
   // A rider's head snaps round to a new threat, and holds there a moment.
   glance(point, seconds = 1.8) { this.alarm = point ? {point: point.clone().setY(0.9), until: this.clock + seconds} : null; }
   shake(much) { if (!CALM) this.shaking = Math.max(this.shaking, much); }
+  // A blow close by: the view jars wider for an instant and comes back.
+  kick(much) { if (!CALM) this.punch = Math.max(this.punch, much); }
+  // How near a point is to the eye, 1 at arm's length and 0 from four
+  // squares off.
+  nearness(point) { return Math.max(0, Math.min(1, 1 - (this.camera.position.distanceTo(point) - 1) / 3)); }
 
   // What is under the pointer, nearest first: the square of each piece the
   // line of sight passes through, and then the square of the board it lands
@@ -1480,13 +1509,18 @@ class Seat {
     const alarmed = this.alarm && this.clock < this.alarm.until ? this.alarm.point : null;
     const seen = this.focus || alarmed || (this.watching && this.watching !== this.mounted ? this.watching.position.clone().setY(0.7) : null);
     if (seen && free) {
-      const way = seen.clone().sub(eye);
-      if (way.lengthSq() > 0.25) {
+      const way = seen.clone().sub(eye), across = Math.hypot(way.x, way.z);
+      // What is nearly underneath the eye (the prey of the knight ridden as
+      // it comes down on it) gives no way to face: the head is not pulled to
+      // it, or it would look straight down and spin.
+      if (across > 0.9) {
         const much = this.focus || alarmed ? 0.85 : 0.6;
         yaw += turnBy(yaw, Math.atan2(-way.x, -way.z)) * much;
-        pitch += (Math.atan2(way.y, Math.hypot(way.x, way.z)) - pitch) * much;
+        pitch += (Math.atan2(way.y, across) - pitch) * much;
       }
     }
+    // A head tips so far down and so far up, and no further.
+    pitch = Math.max(-1, Math.min(0.85, pitch));
     if (!this.head) this.head = {yaw, pitch, roll};
     const settle = 1 - Math.exp(-dt * (seen && free ? 3.6 : 7));
     this.head.yaw += turnBy(this.head.yaw, yaw) * settle;
@@ -1528,7 +1562,8 @@ class Seat {
       const toBoard = new THREE.Vector3(0, 0.3, 0).sub(this.stand);
       this.aim(this.stand, Math.atan2(-toBoard.x, -toBoard.z), -0.1, dt);
     }
-    let field = FIELD[this.mode] * (this.mode === "table" ? 1 : this.gaze.field);
+    let field = FIELD[this.mode] * (this.mode === "table" ? 1 : this.gaze.field) * (1 + this.punch);
+    this.punch *= Math.pow(0.002, dt);
     if (this.blend) {
       const blend = this.blend;
       blend.at += dt;
@@ -1596,6 +1631,16 @@ const opponent = new Opponent(new URL("./vendor/stockfish-18-lite-single.js", im
 const voice = new Voice(heard, listening);
 const hooks = {sound: (name, strength, at) => sound.play(name, strength, at), look: point => seat.look(point), shake: much => seat.shake(much),
   moving: piece => { seat.watching = piece; },
+  // A blow landing at the rider's side: the view jars and shakes, and the
+  // world's time slows for a moment (`pace`), so that it is seen.
+  impact: (at, force) => {
+    if (seat.mode === "table") return;
+    const near = seat.nearness(at);
+    if (near <= 0) return;
+    seat.shake(0.22 * near * force);
+    seat.kick(0.09 * near * force);
+    if (near > 0.55 && !CALM) { pace.until = performance.now() + 480; pace.scale = 0.3; pace.count += 1; }
+  },
   thrown: (at, heading) => { game.thrown = true; seat.thrown(at, heading); sound.play("shatter", 1.4); }};
 
 sound.on = kept.sound !== false;
@@ -2192,12 +2237,17 @@ strength();
 begin(game.side, Array.isArray(kept.moves) ? kept.moves : []);
 seat.sit(game.side, true);
 place();
+// The world's time against the clock's: slowed for a moment when a blow lands
+// beside a rider (`hooks.impact`). The seat keeps the clock's time, so a rider
+// can still turn their head while the stone hangs in the air.
+const pace = {scale: 1, until: 0, count: 0};
 let then = performance.now();
 function frame(now) {
   const dt = Math.min(0.05, (now - then) / 1000);
   then = now;
-  advance(dt);
-  world.tick(dt);
+  const slow = performance.now() < pace.until ? pace.scale : 1;
+  advance(dt * slow);
+  world.tick(dt * slow);
   seat.frame(dt);
   sound.hear(seat.camera, seat.mode === "table" ? 14 : 2.2);
   requestAnimationFrame(frame);
@@ -2222,4 +2272,4 @@ function frameCost(count = 120) {
 
 // For the checks (beta/wizard_chess_test.py), and for anyone at the console.
 window.wizardChess = {game, world, seat, sound, opponent, command, begin, takeBack, running, meant, point, choose, make, ride, origins,
-  mountSquare, moveFromUci, peril, settle, frameCost, stir};
+  mountSquare, moveFromUci, peril, settle, frameCost, stir, pace};
