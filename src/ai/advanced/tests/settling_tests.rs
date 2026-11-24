@@ -2652,6 +2652,30 @@ fn settle_sooner_walk_costs_read_terrain_beyond_the_first_turn() {
     assert_eq!(costs[&neighbour], expected);
 }
 
+/// The flood kept on the tile grid answers every tile of the map exactly as
+/// the ordered map does, absent where the walk did not reach, at every radius
+/// the decisions ask for.
+#[test]
+fn settler_walk_flood_reads_every_tile_as_the_ordered_map_does() {
+    let (mut game, home) = camp_bounty_board(93_302);
+    let settler = game.spawn_test_unit("settler", 0, home);
+    for radius in [0, 3, 8, game.map.width + game.map.height] {
+        let flood = AdvancedAi::settle_sooner_walk_flood(&game, settler, radius);
+        let ordered = AdvancedAi::settle_sooner_walk_costs(&game, settler, radius);
+        assert_eq!(ordered.get(&home), Some(&0.0), "radius {radius}");
+        let positions: Vec<Pos> = game.map.tiles.keys().copied().collect();
+        for pos in positions {
+            assert_eq!(
+                flood.get(&game, pos),
+                ordered.get(&pos).copied(),
+                "radius {radius}, {pos:?}"
+            );
+        }
+        // Off the map is never reached.
+        assert_eq!(flood.get(&game, (-1000, -1000)), None);
+    }
+}
+
 #[test]
 fn settle_sooner_never_picks_a_farther_site_and_sometimes_a_nearer_one() {
     let mut nearer = 0;
