@@ -13999,6 +13999,8 @@ impl Game {
 }
 
 #[cfg(test)]
+mod chronicle_tests;
+#[cfg(test)]
 mod production_catalog_tests;
 
 #[cfg(test)]
@@ -14043,8 +14045,6 @@ mod victory_conditions;
 
 #[cfg(test)]
 mod great_work_tests;
-#[cfg(test)]
-mod chronicle_tests;
 
 #[cfg(test)]
 mod government_deck;
