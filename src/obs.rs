@@ -1683,7 +1683,7 @@ fn game_stats_json(g: &Game) -> Value {
 /// own past. A world that keeps no record adds up to nothing.
 fn yield_totals(g: &Game) -> Vec<[f64; 5]> {
     let mut totals = vec![[0.0; 5]; g.players.len()];
-    for row in g.turn_stats.iter() {
+    for row in g.chronicle.turn_stats.iter() {
         if let Some(sum) = totals.get_mut(usize::from(row.player)) {
             let figures = [
                 row.production,

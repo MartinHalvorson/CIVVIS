@@ -2774,6 +2774,7 @@ fn every_civilization_reports_what_it_has_made_so_far() {
             let totals = &frame["players"][player.id]["totals"];
             for (key, figure) in figures {
                 let made: f64 = world
+                    .chronicle
                     .turn_stats
                     .iter()
                     .filter(|row| usize::from(row.player) == player.id)
