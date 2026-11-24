@@ -208,6 +208,9 @@ class Played(unittest.TestCase):
     def test_a_move_is_commanded_and_the_opponent_answers(self):
         self.open()
         ev = self.dev.evaluate
+        # The hall stands round the board: twelve columns, each part of them
+        # (a shaft, a base and a capital) drawn twelve at once.
+        self.assertEqual(ev("wizardChess.world.scene.children.filter(part => part.isInstancedMesh && part.count === 12).length"), 3)
         # The board is set, and the seat is White's.
         self.assertEqual(ev("[wizardChess.world.pieces.size, wizardChess.game.side, wizardChess.game.position.turn]"), [32, "w", "w"])
         # The engine wakes, and the slider is the range it gave.

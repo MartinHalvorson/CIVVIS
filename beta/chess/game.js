@@ -103,6 +103,31 @@ function stoneTexture(base, vein, seed) {
   return texture;
 }
 
+// Night through a tall window: deep blue paling toward the top, a few stars,
+// and the stone bars that hold the glass, drawn once.
+function nightSky() {
+  const canvas = document.createElement("canvas");
+  canvas.width = 128; canvas.height = 384;
+  const pen = canvas.getContext("2d"), sky = pen.createLinearGradient(0, 0, 0, 384);
+  sky.addColorStop(0, "#2a4472");
+  sky.addColorStop(0.55, "#132443");
+  sky.addColorStop(1, "#0a1428");
+  pen.fillStyle = sky;
+  pen.fillRect(0, 0, 128, 384);
+  let n = 17;
+  const dice = () => { n = (n * 1664525 + 1013904223) >>> 0; return n / 4294967296; };
+  for (let star = 0; star < 26; star++) {
+    pen.fillStyle = `rgba(235,240,255,${0.35 + dice() * 0.6})`;
+    pen.fillRect(dice() * 128, dice() * 300, 1 + dice() * 1.6, 1 + dice() * 1.6);
+  }
+  pen.fillStyle = "#17151b";
+  pen.fillRect(60, 0, 8, 384);
+  for (const y of [120, 250]) pen.fillRect(0, y, 128, 6);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
 // The shapes of the six pieces: each a profile turned on a lathe, with what
 // a lathe cannot make set on top (a rook's battlements, a king's cross, a
 // knight's head). One unit is a square; a king stands two of them tall.
@@ -207,6 +232,7 @@ class World {
       scene.add(pillar, bowl, flame, lamp);
       this.flames.push({flame, lamp, phase: x * 1.7 + z});
     }
+    this.vault();
     // Motes in the air, which is what the light is seen by.
     const count = 260, spots = new Float32Array(count * 3);
     for (let at = 0; at < count; at++) {
@@ -219,6 +245,93 @@ class World {
     this.motes = new THREE.Points(motes, new THREE.PointsMaterial({map: this.glow, size: 0.07, color: 0xffd9a0, transparent: true, opacity: 0.5,
       blending: THREE.AdditiveBlending, depthWrite: false}));
     scene.add(this.motes);
+  }
+
+  // The hall the board stands in, for a seat low among the pieces to look up
+  // at: a ring of twelve columns under a dome, a wall beyond them with tall
+  // windows of night, and a shaft of pale light from the dome's eye onto the
+  // board. Far enough out that the seat at the board is inside the ring, and
+  // with no column on the line from either seat to the board. Nothing here
+  // casts or takes a shadow, and the columns are one draw each part.
+  vault() {
+    const scene = this.scene, FLOOR_AT = -0.62, RING = 16, WALL = 20, TALL = 10;
+    const stone = (repeatX, repeatY, seed, base = "#4a4852") => {
+      const map = stoneTexture(base, "rgba(0,0,0,0.3)", seed);
+      map.repeat.set(repeatX, repeatY);
+      return new THREE.MeshStandardMaterial({color: 0x3a3842, roughness: 0.88, metalness: 0.04, map});
+    };
+    // The columns: a shaft, a base and a capital, each twelve at once.
+    const parts = [
+      [new THREE.CylinderGeometry(0.5, 0.58, TALL - 1.1, 18), FLOOR_AT + 0.5 + (TALL - 1.1) / 2],
+      [new THREE.BoxGeometry(1.5, 0.5, 1.5), FLOOR_AT + 0.25],
+      [new THREE.CylinderGeometry(0.95, 0.55, 0.6, 18), FLOOR_AT + TALL - 0.3],
+    ];
+    const columnStone = stone(1, 3, 37), place = new THREE.Object3D();
+    for (const [geometry, y] of parts) {
+      const ring = new THREE.InstancedMesh(geometry, columnStone, 12);
+      for (let at = 0; at < 12; at++) {
+        const round = (at + 0.5) / 12 * TAU;
+        place.position.set(Math.sin(round) * RING, y, Math.cos(round) * RING);
+        place.rotation.set(0, round, 0);
+        place.updateMatrix();
+        ring.setMatrixAt(at, place.matrix);
+      }
+      scene.add(ring);
+    }
+    // The ring the columns carry, and the wall beyond.
+    const band = new THREE.Mesh(new THREE.CylinderGeometry(RING + 1.1, RING + 1.1, 1.3, 64, 1, true), stone(30, 1, 43));
+    band.material.side = THREE.DoubleSide;
+    band.position.y = FLOOR_AT + TALL + 0.65;
+    const wall = new THREE.Mesh(new THREE.CylinderGeometry(WALL, WALL, TALL + 4, 64, 1, true), stone(26, 3, 47, "#3e3c46"));
+    wall.material.side = THREE.BackSide;
+    wall.position.y = FLOOR_AT + (TALL + 4) / 2;
+    scene.add(band, wall);
+    // Tall windows in the wall, between the columns: night beyond them.
+    const arch = new THREE.Shape();
+    arch.moveTo(-1.1, 0);
+    arch.lineTo(1.1, 0);
+    arch.lineTo(1.1, 5.2);
+    arch.absarc(0, 5.2, 1.1, 0, Math.PI, false);
+    arch.lineTo(-1.1, 0);
+    const pane = new THREE.ShapeGeometry(arch, 12);
+    // A shape's texture runs over its own units: map them onto 0..1.
+    const uv = pane.attributes.uv, at = pane.attributes.position;
+    for (let i = 0; i < uv.count; i++) uv.setXY(i, (at.getX(i) + 1.1) / 2.2, at.getY(i) / 6.3);
+    const night = new THREE.MeshBasicMaterial({map: nightSky(), fog: false});
+    for (let at = 0; at < 12; at++) {
+      const round = at / 12 * TAU, window = new THREE.Mesh(pane, night);
+      window.position.set(Math.sin(round) * (WALL - 0.05), FLOOR_AT + 2.4, Math.cos(round) * (WALL - 0.05));
+      window.lookAt(0, FLOOR_AT + 2.4, 0);
+      scene.add(window);
+    }
+    // The dome, its ribs, and its eye.
+    const top = FLOOR_AT + TALL + 4;
+    const dome = new THREE.Mesh(new THREE.SphereGeometry(WALL, 48, 16, 0, TAU, 0, Math.PI / 2), stone(16, 6, 53, "#36343d"));
+    dome.material.side = THREE.BackSide;
+    dome.position.y = top;
+    scene.add(dome);
+    const ribStone = stone(20, 1, 59);
+    for (let at = 0; at < 6; at++) {
+      const rib = new THREE.Mesh(new THREE.TorusGeometry(WALL - 0.2, 0.28, 6, 48, Math.PI), ribStone);
+      rib.position.y = top;
+      rib.rotation.y = at / 6 * Math.PI + Math.PI / 12;
+      scene.add(rib);
+    }
+    const eye = new THREE.Mesh(new THREE.CircleGeometry(2.4, 32), new THREE.MeshBasicMaterial({color: 0xbcd2ff, fog: false}));
+    eye.rotation.x = Math.PI / 2;
+    eye.position.y = top + WALL - 0.4;
+    scene.add(eye);
+    // The light that falls from it: a shaft seen in the dusty air, and the
+    // pale pool it makes on the board.
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(2.3, 4.6, top + WALL + 0.6, 32, 1, true),
+      new THREE.MeshBasicMaterial({color: 0x8fb0ff, transparent: true, opacity: 0.045, blending: THREE.AdditiveBlending,
+        depthWrite: false, side: THREE.DoubleSide, fog: false}));
+    shaft.position.y = (top + WALL + 0.6) / 2 + FLOOR_AT;
+    scene.add(shaft);
+    const moon = new THREE.SpotLight(0xa8c2ff, 420, 60, 0.16, 0.7, 2);
+    moon.position.set(0, top + WALL - 1, 0);
+    moon.target.position.set(0, 0, 0);
+    scene.add(moon, moon.target);
   }
 
   board() {
