@@ -1231,7 +1231,12 @@ impl WorldMap {
     /// first that does. A yes-or-no answer cannot depend on the order the
     /// tiles are asked in, or on asking one twice, so on a flat map the cells
     /// are walked where they lie: no `Vec`, no sort.
-    pub(crate) fn disk_any(&self, center: Pos, radius: i32, mut wanted: impl FnMut(Pos) -> bool) -> bool {
+    pub(crate) fn disk_any(
+        &self,
+        center: Pos,
+        radius: i32,
+        mut wanted: impl FnMut(Pos) -> bool,
+    ) -> bool {
         if self.sphere().is_some() {
             return self.disk(center, radius).into_iter().any(wanted);
         }
@@ -1255,9 +1260,19 @@ impl WorldMap {
     /// depend on the order either. It would count a tile twice if two cells
     /// folded onto it, which needs a disk at least half the world wide; such
     /// a disk, and any globe, is counted off [`Self::disk`] itself.
-    pub(crate) fn disk_count(&self, center: Pos, radius: i32, mut wanted: impl FnMut(Pos) -> bool) -> usize {
-        if self.sphere().is_some() || (self.topology.wraps_east_west() && 2 * radius >= self.width) {
-            return self.disk(center, radius).into_iter().filter(|pos| wanted(*pos)).count();
+    pub(crate) fn disk_count(
+        &self,
+        center: Pos,
+        radius: i32,
+        mut wanted: impl FnMut(Pos) -> bool,
+    ) -> usize {
+        if self.sphere().is_some() || (self.topology.wraps_east_west() && 2 * radius >= self.width)
+        {
+            return self
+                .disk(center, radius)
+                .into_iter()
+                .filter(|pos| wanted(*pos))
+                .count();
         }
         let mut count = 0;
         self.for_each_disk(center, radius, |pos| count += usize::from(wanted(pos)));
