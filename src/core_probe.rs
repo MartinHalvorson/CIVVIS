@@ -43,6 +43,9 @@ pub fn command(args: Vec<String>) {
         Some("ablate") => ablate(&args[2..]),
         Some("strip") => strip(&args[2..]),
         Some("bench") => bench(&args[2..]),
+        Some("agent") => agent(&args[2..]),
+        Some("blank") => blank_file(&args[2..]),
+        Some("diff") => diff_files(&args[2..]),
         _ => {
             eprintln!(
                 "usage: civvis core-probe record <players> <seed> <T> <K> <dir> [budget-seconds] [fog]\n       \
@@ -743,6 +746,48 @@ fn bench(args: &[String]) {
     }
     samples.sort_by(f64::total_cmp);
     let clone_us = samples[4] * 1e6;
+    // A clone is shallow: seats, units and the map are shared until written.
+    // What a search branch really pays is the first write to each, which
+    // copies the whole seat, the unit table or the tile vector, every field
+    // in it read by the game or not.
+    let median = |f: &dyn Fn()| {
+        let mut xs: Vec<f64> = (0..9)
+            .map(|_| {
+                let t = Instant::now();
+                for _ in 0..n {
+                    f();
+                }
+                t.elapsed().as_secs_f64() / n as f64 * 1e6
+            })
+            .collect();
+        xs.sort_by(f64::total_cmp);
+        xs[4] - clone_us
+    };
+    let seats = g.players.len();
+    let seat_cow_us = median(&|| {
+        let mut c = g.clone();
+        for i in 0..seats {
+            c.players[i].gold += 0.0;
+        }
+    }) / seats.max(1) as f64;
+    let first_tile = g.map.tiles.values().next().map(|t| t.pos);
+    let map_cow_us = median(&|| {
+        let mut c = g.clone();
+        if let Some(pos) = first_tile {
+            if let Some(t) = c.map.tiles.get_mut(&pos) {
+                t.road = t.road.wrapping_add(0);
+            }
+        }
+    });
+    let first_unit = g.units.keys().next().copied();
+    let unit_cow_us = median(&|| {
+        let mut c = g.clone();
+        if let Some(id) = first_unit {
+            if let Some(u) = c.units.get_mut(&id) {
+                u.hp += 0;
+            }
+        }
+    });
     let t = Instant::now();
     let reps = 20;
     let mut bytes = 0usize;
@@ -752,7 +797,73 @@ fn bench(args: &[String]) {
     let serialize_ms = t.elapsed().as_secs_f64() / reps as f64 * 1e3;
     println!(
         "{}",
-        serde_json::json!({"bench": path, "clone_us": clone_us, "serialize_ms": serialize_ms,
-            "json_bytes": bytes, "keep": keep})
+        serde_json::json!({"bench": path, "clone_us": clone_us, "seat_cow_us": seat_cow_us,
+            "map_cow_us": map_cow_us, "unit_cow_us": unit_cow_us, "seats": seats,
+            "serialize_ms": serialize_ms, "json_bytes": bytes, "keep": keep})
+    );
+}
+
+/// `agent <save.json> <turns> <out.json> [fog]`: fresh stock agents play on
+/// from a save. Played once from the full save and once from a stripped one,
+/// the difference is what the agents themselves read among the fields the
+/// rules do not.
+fn agent(args: &[String]) {
+    let mut g: Game = serde_json::from_str(&read(&args[0])).unwrap();
+    let turns: u32 = args[1].parse().unwrap();
+    let fog = args.get(3).is_some_and(|a| a == "fog");
+    let mut ais = AdvancedAi::fleet(&g);
+    g.set_fog_memory(fog || ais.iter().any(Ai::uses_player_observation));
+    g.set_war_ledger(false);
+    let end = g.turn + turns;
+    let t = Instant::now();
+    while g.winner.is_none() && g.turn <= g.max_turns && !(g.turn >= end && g.current == 0) {
+        let pid = g.current;
+        ais[pid].take_turn(&mut g, pid);
+        if g.winner.is_none() && g.current == pid {
+            let _ = g.apply(pid, &Action::EndTurn);
+        }
+    }
+    write(&args[2], &serde_json::to_string(&g).unwrap());
+    println!(
+        "{}",
+        serde_json::json!({"agent": &args[0], "turns": turns, "secs": t.elapsed().as_secs_f64(),
+            "log": g.log.len(), "turn": g.turn})
+    );
+}
+
+/// `blank <in.json> <paths-file> <out.json>`: a save with the listed fields
+/// blanked (`path` or `path<TAB>zero` per line), nothing replayed.
+fn blank_file(args: &[String]) {
+    let mut save: Value = serde_json::from_str(&read(&args[0])).unwrap();
+    let mut blanked = 0usize;
+    for line in read(&args[1])
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+    {
+        let (p, zero) = match line.split_once('\t') {
+            Some((p, mode)) => (p, mode == "zero"),
+            None => (line, false),
+        };
+        let how: fn(&Value) -> Value = if zero { zero_like } else { empty_like };
+        if blank(&mut save, &FieldPath::parse(p), how) {
+            blanked += 1;
+        }
+    }
+    write(&args[2], &serde_json::to_string(&save).unwrap());
+    println!(
+        "{}",
+        serde_json::json!({"blank": &args[0], "blanked": blanked})
+    );
+}
+
+/// `diff <a.json> <b.json>`: the fields at which two saves differ.
+fn diff_files(args: &[String]) {
+    let a: Value = serde_json::from_str(&read(&args[0])).unwrap();
+    let b: Value = serde_json::from_str(&read(&args[1])).unwrap();
+    let paths: Vec<String> = diff(&a, &b).into_iter().map(|d| d.show()).collect();
+    println!(
+        "{}",
+        serde_json::json!({"a": &args[0], "b": &args[1], "count": paths.len(), "paths": paths})
     );
 }

@@ -41,15 +41,34 @@ CONFIGS = [
     (4, 201, 60, 40, False),
     (4, 202, 120, 40, False),
     (6, 203, 100, 40, True),
-    (4, 204, 180, 40, False),
+    (4, 209, 150, 40, False),
     (8, 205, 90, 40, False),
     (6, 206, 160, 40, True),
     (4, 207, 205, 40, False),
     (2, 208, 120, 40, False),
 ]
 
+# History and memory: written by the rules, never read by them (round 2,
+# PR #5749). A field whose blanking moves only these feeds a record, not the
+# game, and is scored that way.
+SOFT = (
+    "events",
+    "turn_stats",
+    "concluded_wars",
+    "unit_move_trails",
+    "players[*].combat_ledger",
+    "players[*].unit_lifetimes",
+    "players[*].remembered_tiles",
+    "players[*].remembered_cities",
+    "players[*].turn_units",
+    "players[*].turn_visible",
+    "spies[*].captured_by",
+)
+LEDGER = SOFT[:6] + ("spies[*].captured_by",)
+BELIEF = SOFT[6:10]
+
 PREFIX = "CPROBE "
-RANK = {"core": 4, "inert": 3, "transient": 2, "derived": 1, "untested": 0}
+RANK = {"core": 5, "feeds-record": 4, "inert": 3, "transient": 2, "derived": 1, "untested": 0}
 
 
 def emit(obj):
@@ -101,8 +120,13 @@ def classify(row, base_refused):
         return "untested"
     if "load_error" in row or row.get("load_panic") or "replay_panic_at" in row:
         return "core"
-    if row.get("diverged") or row.get("refused", 0) != base_refused or row.get("legal_differs"):
+    if row.get("refused", 0) != base_refused or row.get("legal_differs"):
         return "core"
+    hard = [d for d in row.get("diverged", []) if not d.startswith(SOFT)]
+    if hard or row.get("diverged_count", 0) > len(row.get("diverged", [])):
+        return "core"
+    if row.get("diverged"):
+        return "feeds-record"
     if row.get("restored_at_checkpoint"):
         return "derived"
     if row.get("restored"):
@@ -136,7 +160,9 @@ def main():
     with cf.ThreadPoolExecutor(a.jobs) as ex:
         for cfg, d, rc, out, err, secs in ex.map(record, CONFIGS):
             meta = json.loads(out.strip().splitlines()[-1]) if rc == 0 and out.strip() else None
-            if meta:
+            # A game won before its window opens replays nothing, which would
+            # make every field look inert.
+            if meta and meta.get("actions_window", 0) > 0:
                 dirs[d] = meta
             emit({"phase": "record", "cfg": cfg, "rc": rc, "secs": round(secs, 1), "meta": meta, "err": err if rc else ""})
 
@@ -241,6 +267,60 @@ def main():
             if os.path.exists(path):
                 rc, out, err, secs = run([a.civvis, "core-probe", "bench", path, "300"], timeout=300)
                 emit({"phase": "bench", "game": os.path.basename(d), "save": name, "rc": rc, "result": json.loads(out.strip().splitlines()[-1]) if rc == 0 and out.strip() else None, "err": err if rc else ""})
+    # 7. Which of the fields the rules ignore do the agents read? Fresh stock
+    # agents play on from the full save, from it again (the control: an agent
+    # must be deterministic), and from saves with one layer blanked.
+    def variant(d, name, paths):
+        listf = os.path.join(d, f"{name}.txt")
+        with open(listf, "w") as f:
+            f.write("\n".join(f"{p}\t{modes.get(p, 'empty')}" for p in paths))
+        out = os.path.join(d, f"{name}.json")
+        run([a.civvis, "core-probe", "blank", os.path.join(d, "state_t.json"), listf, out], timeout=300)
+        return out
+
+    def agents(d):
+        fog = "fog" if dirs[d].get("fog") else "-"
+        blanked = {
+            "full": [],
+            "full_again": [],
+            "no_ledgers": [p for p in final if p.startswith(LEDGER)],
+            "no_beliefs": [p for p in final if p.startswith(BELIEF)],
+            "stripped": strip_paths,
+        }
+        saves = {
+            "full": os.path.join(d, "state_t.json"),
+            "full_again": os.path.join(d, "state_t.json"),
+            "no_ledgers": variant(d, "no_ledgers", blanked["no_ledgers"]),
+            "no_beliefs": variant(d, "no_beliefs", blanked["no_beliefs"]),
+            "stripped": os.path.join(d, "stripped.json"),
+        }
+        outs = {}
+        for name, save in saves.items():
+            out = os.path.join(d, f"agent_{name}.json")
+            rc, o, err, secs = run([a.civvis, "core-probe", "agent", save, "20", out, fog], timeout=900)
+            outs[name] = out if rc == 0 else None
+            emit({"phase": "agent_run", "game": os.path.basename(d), "variant": name, "rc": rc, "secs": round(secs, 1), "err": err if rc else ""})
+        for name, out in outs.items():
+            if name != "full" and out and outs["full"]:
+                rc, o, err, secs = run([a.civvis, "core-probe", "diff", outs["full"], out], timeout=300)
+                res = json.loads(o.strip().splitlines()[-1]) if rc == 0 and o.strip() else None
+                own = tuple(blanked[name])
+                beyond = [q for q in (res or {}).get("paths", []) if not (own and q.startswith(own))]
+                emit({"phase": "agent_diff", "game": os.path.basename(d), "variant": name, "beyond_blanked": beyond, "raw_count": (res or {}).get("count"), "err": err if rc else ""})
+
+    agent_games = [d for d in dirs if dirs[d].get("fog")][:1] + [d for d in dirs if not dirs[d].get("fog")][:2]
+    with cf.ThreadPoolExecutor(max(1, min(a.jobs, len(agent_games)))) as ex:
+        list(ex.map(agents, agent_games))
+
+    # 8. The smallest game's files, so they can be studied off the runner.
+    import base64
+    for d in dirs:
+        if os.path.basename(d).startswith("p2-"):
+            for name in ("state_0.json", "state_t.json", "final.json", "actions_all.json", "actions.json", "stripped.json", "meta.json"):
+                path = os.path.join(d, name)
+                if os.path.exists(path):
+                    with open(path, "rb") as f:
+                        emit({"phase": "blob", "game": os.path.basename(d), "name": name, "b64": base64.b64encode(gzip.compress(f.read(), 9)).decode()})
     emit({"phase": "done", "secs": round(time.time() - start, 1)})
     return 0
 
