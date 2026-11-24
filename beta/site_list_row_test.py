@@ -30,13 +30,15 @@ BETA = pathlib.Path(__file__).resolve().parent
 PUBLISH = (BETA / "publish.sh").read_text(encoding="utf-8")
 SOURCES = sorted(set(re.findall(r'_page="\$source_tree/beta/([a-z_]+\.html)"', PUBLISH)))
 
-#: Charts/'s pages, in the order its list gives them, by address.
+#: Charts/'s pages, in the order its list gives them, by address (operator,
+#: 2026-11-24: "move ai interpretablity to the top of the charts/ then civ
+#: analytics, win analytics. elo rankings.. civvis performanc").
 CHARTS = [
+    ("ai-interpretability", "AI Interpretability"),
+    ("civ-analytics", "Civ Analytics"),
     ("win-analytics", "Win Analytics"),
     ("elo-rankings", "ELO Rankings"),
-    ("civ-analytics", "Civ Analytics"),
     ("civvis-performance", "CIVVIS Performance"),
-    ("ai-interpretability", "AI Interpretability"),
 ]
 LINK = re.compile(r'<a class="(site-link(?: sub-link)?)" href="([^"]*)"([^>]*)>([^<]+)</a>')
 
@@ -100,7 +102,7 @@ class Row(unittest.TestCase):
                     else:
                         self.assertEqual(href, f"../charts/{slug}/")
                 # Charts/ itself opens the folder's first page.
-                self.assertEqual(top.group(2), listed[0][1] if not here.startswith("charts/win-analytics/") else "./")
+                self.assertEqual(top.group(2), listed[0][1])
                 # Nothing but the folder's pages is set in as a sub-link.
                 self.assertEqual(nav.count("sub-link"), len(CHARTS))
 

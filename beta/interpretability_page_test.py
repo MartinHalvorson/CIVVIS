@@ -312,20 +312,21 @@ class ThePage(unittest.TestCase):
 
 
 class TheSiteList(unittest.TestCase):
-    def test_the_page_is_the_last_under_charts_ringed(self):
+    def test_the_page_is_the_first_under_charts_ringed(self):
         # Operator 2026-11-22: "Add a new chart to the bottom of Charts/
-        # called AI Interpretablity."
+        # called AI Interpretablity"; 2026-11-24: "move ai interpretablity to
+        # the top of the charts/", so Charts/ opens it.
         nav = PAGE[PAGE.index('<nav class="site-nav"'):PAGE.index("</nav>")]
         self.assertEqual(
             re.findall(r'<a class="([^"]+)" href="([^"]+)"[^>]*>([^<]+)</a>', nav),
             [
                 ("site-link", "../../home/", "Home"),
-                ("site-link", "../win-analytics/", "Charts/"),
+                ("site-link", "./", "Charts/"),
+                ("site-link sub-link", "./", "AI Interpretability"),
+                ("site-link sub-link", "../civ-analytics/", "Civ Analytics"),
                 ("site-link sub-link", "../win-analytics/", "Win Analytics"),
                 ("site-link sub-link", "../elo-rankings/", "ELO Rankings"),
-                ("site-link sub-link", "../civ-analytics/", "Civ Analytics"),
                 ("site-link sub-link", "../civvis-performance/", "CIVVIS Performance"),
-                ("site-link sub-link", "./", "AI Interpretability"),
                 ("site-link", "../../tournaments/", "Tournaments"),
                 ("site-link", "../../", "CIVVIS"),
                 ("site-link", "../../?mode=strange", "Doctor Strange's Civ 6"),
@@ -345,15 +346,16 @@ class TheSiteList(unittest.TestCase):
         header = lambda page: re.sub(r"<!--.*?-->", "", page[page.index('<nav class="utility-nav"'):page.index("</header>")], flags=re.S)
         self.assertEqual(header(PAGE), header(PERFORMANCE))
 
-    def test_charts_drops_it_down_last_on_every_page(self):
-        # The last of Charts/'s pages in the list it drops down, on every
+    def test_charts_drops_it_down_first_on_every_page(self):
+        # The first of Charts/'s pages in the list it drops down, on every
         # page (operator 2026-11-24: "charts/ can drop down folder style and
-        # the user can pick the right chart"); the viewer lists none.
-        listed = ('<a class="site-link sub-link" href="../ai-interpretability/" title="How a CIVVIS AI agent decides: one turn '
-                  'step by step, its plan through a game, and what each rule is worth in wins.">AI Interpretability</a>\n'
-                  '        </div>\n      </div>\n')
+        # the user can pick the right chart", then "move ai interpretablity
+        # to the top of the charts/"); the viewer lists none.
+        listed = ('        <div class="site-menu">\n'
+                  '          <a class="site-link sub-link" href="../ai-interpretability/" title="How a CIVVIS AI agent decides: one turn '
+                  'step by step, its plan through a game, and what each rule is worth in wins.">AI Interpretability</a>\n')
         for page in (RESEARCH, PERFORMANCE):
-            self.assertIn(listed + '      <a class="site-link" href="../../tournaments/" ', page)
+            self.assertIn(listed, page)
         for page in (LANDING, TOURNAMENTS):
             self.assertIn(listed.replace('href="../ai-interpretability/"', 'href="../charts/ai-interpretability/"'), page)
         self.assertNotIn("Interpretability</a>", VIEWER)

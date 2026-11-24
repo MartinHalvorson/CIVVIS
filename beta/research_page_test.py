@@ -1316,18 +1316,18 @@ class Page(unittest.TestCase):
             '<nav class="site-nav" aria-label="CIVVIS sites">\n'
             '      <a class="site-link" href="../../home/">Home</a>\n'
             '      <div class="site-folder">\n'
-            '        <a class="site-link" href="./" '
+            '        <a class="site-link" href="../ai-interpretability/" '
             'title="What the games show: charts read off the CIVVIS AI agents&#8217; games.">Charts/</a>\n'
             '        <div class="site-menu">\n'
+            '          <a class="site-link sub-link" href="../ai-interpretability/" '
+            'title="How a CIVVIS AI agent decides: one turn step by step, its plan through a game, and what each rule is worth in wins.">AI Interpretability</a>\n'
+            '          <a class="site-link sub-link" href="../civ-analytics/" '
+            'title="How CIVVIS does as each civ, and the early build orders that win against Deity.">Civ Analytics</a>\n'
             '          <a class="site-link sub-link" href="./" aria-current="page">Win Analytics</a>\n'
             '          <a class="site-link sub-link" href="../elo-rankings/" '
             'title="The Civ AI Agents and Civilization VI&#8217;s own AI on one Elo scale, now and over time.">ELO Rankings</a>\n'
-            '          <a class="site-link sub-link" href="../civ-analytics/" '
-            'title="How CIVVIS does as each civ, and the early build orders that win against Deity.">Civ Analytics</a>\n'
             '          <a class="site-link sub-link" href="../civvis-performance/" '
             'title="How fast the simulator plays: the fastest game on video and how long a self-play game takes.">CIVVIS Performance</a>\n'
-            '          <a class="site-link sub-link" href="../ai-interpretability/" '
-            'title="How a CIVVIS AI agent decides: one turn step by step, its plan through a game, and what each rule is worth in wins.">AI Interpretability</a>\n'
             '        </div>\n'
             '      </div>\n'
             '      <a class="site-link" href="../../tournaments/" ',
@@ -1347,8 +1347,9 @@ class Page(unittest.TestCase):
             self.assertEqual(
                 re.findall(r'<a class="site-link sub-link" href="([^"]+)"[^>]*>([^<]+)</a>', nav),
                 [(("./" if listed == name else f"../{at}/"), listed) for at, listed in (
-                    ("win-analytics", "Win Analytics"), ("elo-rankings", "ELO Rankings"), ("civ-analytics", "Civ Analytics"),
-                    ("civvis-performance", "CIVVIS Performance"), ("ai-interpretability", "AI Interpretability"))],
+                    ("ai-interpretability", "AI Interpretability"), ("civ-analytics", "Civ Analytics"),
+                    ("win-analytics", "Win Analytics"), ("elo-rankings", "ELO Rankings"),
+                    ("civvis-performance", "CIVVIS Performance"))],
             )
             self.assertEqual(nav.count('aria-current="page"'), 1)
             self.assertIn(f'<a class="site-link sub-link" href="./" aria-current="page">{name}</a>', nav)
@@ -1362,12 +1363,12 @@ class Page(unittest.TestCase):
             self.assertNotIn(">Musings</a>", page)
             self.assertNotIn(">Charts</a>", page)
         for page, pattern in (
-            (LANDING, r'aria-current="page">Home</a>\s*<div class="site-folder">\s*<a class="site-link" href="\.\./charts/win-analytics/"[^>]*>Charts/</a>'
+            (LANDING, r'aria-current="page">Home</a>\s*<div class="site-folder">\s*<a class="site-link" href="\.\./charts/ai-interpretability/"[^>]*>Charts/</a>'
                       r'[\s\S]*?</div>\s*</div>\s*<a class="site-link" href="\.\./tournaments/"'),
-            (TOURNAMENTS, r'href="\.\./home/">Home</a>\s*<div class="site-folder">\s*<a class="site-link" href="\.\./charts/win-analytics/"[^>]*>Charts/</a>'
+            (TOURNAMENTS, r'href="\.\./home/">Home</a>\s*<div class="site-folder">\s*<a class="site-link" href="\.\./charts/ai-interpretability/"[^>]*>Charts/</a>'
                           r'[\s\S]*?</div>\s*</div>\s*<a class="site-link" href="\./" aria-current="page">Tournaments</a>'),
             (VIEWER, r'id="homelink" href="/home" target="_top">Home</a>\s*'
-                     r'<a class="home-link" id="chartslink" href="/charts/win-analytics" target="_top">Charts/</a>\s*'
+                     r'<a class="home-link" id="chartslink" href="/charts/ai-interpretability" target="_top">Charts/</a>\s*'
                      r'<a class="home-link" id="tourlink" href="/tournaments" target="_top">Tournaments</a>'),
         ):
             self.assertRegex(page, pattern)
