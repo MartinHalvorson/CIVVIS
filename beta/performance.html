@@ -304,6 +304,14 @@
   .perf-tile-clock { display: block; min-height: 1.45em; color: var(--text); font-size: 12px; }
   .perf-tile-say { display: block; color: var(--faint); font-size: 11.5px; line-height: 1.35; }
   .perf-facts { margin: 8px 0 0; color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+  .perf-facts[hidden] { display: none; }
+  /* Computer control, the page's first part: four tiles across, two and
+     two on a phone, the reading's own tile ringed in the series colour. */
+  .perf-control-tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  @media (max-width: 639px) { .perf-control-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .perf-control-tiles .perf-tile-value { font-size: clamp(22px, 3.3vw, 34px); }
+  .perf-control-tiles .perf-tile.is-measured { border-color: var(--series); }
+  .perf-now { fill: #fff; font: 700 12px var(--sans); font-variant-numeric: tabular-nums; }
   .perf-facts b { color: #fff; font-weight: 700; }
 
   /* The page's first part, how many times faster than a game played by hand
@@ -526,8 +534,70 @@
          with neither) shows the one sentence. -->
     <p class="res-empty" id="perf-empty">This copy of the page has no figures. They are written in when the site is published.</p>
     <div class="res-record" id="perf-record" hidden>
+      <!-- CIVVIS computer control, the page's first part and its top chart
+           (operator 2026-11-24: "we should be benchmarking our civvis
+           computer control games time end to end and that number show flow
+           through to a performance chart (civvis comptuer control games
+           speed over time) and be a top chart for civvis performance"). A
+           game's time is everything the machine spends on it, from the
+           launch of Civilization VI to the result written, and the chart is
+           each day's games. `beta/control_times.py` works the record out of
+           the run ledger when the site is published, so a finished game is
+           on it with the next publish (`docs/CONTROL_GAME_TIME.md`). -->
+      <section class="res-section" id="perf-control" aria-labelledby="perf-control-title" hidden>
+        <h2 class="rank-title" id="perf-control-title">CIVVIS computer control: game speed over time</h2>
+        <p class="rank-sub">One game with CIVVIS at the controls of Civilization VI itself, timed end to end: launch, setup, play to a victory, result. Lower is faster.</p>
+        <div class="res-controls">
+          <!-- What the chart times: a whole game, or one turn of it, which
+               does not move with how long the games happened to run. -->
+          <div class="res-control" role="group" aria-label="What the chart times">
+            <span>Time of</span>
+            <div class="res-seg" id="perf-control-measure">
+              <button type="button" data-measure="game" aria-pressed="true">A game</button>
+              <button type="button" data-measure="turn" aria-pressed="false">A turn</button>
+            </div>
+          </div>
+        </div>
+        <div class="perf-tiles perf-control-tiles" id="perf-control-tiles"></div>
+        <p class="perf-facts" id="perf-control-split" hidden></p>
+        <ul class="res-legend" aria-label="What is drawn">
+          <li><span class="res-linekey"></span>The day&#8217;s middle game</li>
+          <li><span class="res-swatch" style="opacity: 0.42"></span>Eight games in ten</li>
+        </ul>
+        <div class="res-plot" id="perf-control-plot"></div>
+        <details class="res-details">
+          <summary>Every day as a table</summary>
+          <div class="res-scroll">
+            <table class="rank-table" id="perf-control-table">
+              <thead>
+                <tr>
+                  <th scope="col">Day</th><th scope="col">Games</th><th scope="col">One in ten faster than</th><th scope="col">Middle game</th>
+                  <th scope="col">One in ten slower than</th><th scope="col">Turns</th><th scope="col">A turn</th><th scope="col">Level</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </details>
+        <!-- What the chart counts, closed until it is pressed, as on every
+             part of the page (operator 2026-11-24: "there is too much text
+             on pages ... should be a more visual experience"). -->
+        <details class="fine">
+          <summary>How it is counted</summary>
+          <div class="rank-note">
+            <p id="perf-control-note"></p>
+          </div>
+        </details>
+        <div class="rank-note">
+          <p>
+            <a href="https://github.com/MartinHalvorson/CIVVIS/blob/main/docs/CONTROL_GAME_TIME.md" target="_blank" rel="noreferrer">How a game is timed</a> ·
+            <a href="https://github.com/MartinHalvorson/CIVVIS/blob/ledger/results.jsonl" target="_blank" rel="noreferrer">Every game&#8217;s result</a>
+          </p>
+        </div>
+      </section>
+
       <!-- How many times faster than a game played by hand, the page's
-           first part (operator 2026-11-22: "at the top of civvis performance
+           second part (operator 2026-11-22: "at the top of civvis performance
            we want to calculate a multiplier on the theoretical and
            experimetnal throughput of the simualtor. and the calculations.
            baeline is 5 hrs for manually played game. please add the deity
@@ -1438,14 +1508,238 @@
       document.getElementById("perf-batches").hidden = false;
     }
 
+    // ---- CIVVIS computer control: game speed over time, the page's first
+    // part (operator 2026-11-24: "be a top chart for civvis performance").
+    // A day is a point: its middle game's time, and the times one game in
+    // ten beats and one in ten runs past. Drawn last in this script because
+    // it uses the time axis the charts above are drawn with.
+    const control = data.control && typeof data.control === "object" ? data.control : null;
+    const three = (value) => Array.isArray(value) && value.length === 3 && value.every((v) => Number(v) > 0);
+    const DAY_ISO = /^\d{4}-\d{2}-\d{2}$/;
+    const CDAYS = (control && Array.isArray(control.days) ? control.days : []).filter((d) => d && DAY_ISO.test(String(d.day)) && three(d.p));
+    let drawControl = null;
+    if (CDAYS.length && control.week && three(control.week.p)) {
+      const week = control.week, first = control.first && three(control.first.p) ? control.first : null, newest = CDAYS[CDAYS.length - 1];
+      const hand = Number(control.by_hand) || 0, window = Number(control.window_days) || 0;
+      const lately = window ? "last " + window + " days" : "lately";
+      // A time as this part words it: seconds under a hundred of them, then
+      // minutes to a tenth, then hours.
+      const span = (x) => (x < 99.5 ? secs(x) : x < 5970 ? (x / 60).toFixed(1) + " min" : (x / 3600).toFixed(1) + " h");
+      const turnTime = (x) => Number(x).toFixed(2) + " s";
+      const faster = (x) => (x < 9.95 ? x.toFixed(1) : fmt(Math.round(x))) + "x";
+      const levels = (d) => (Array.isArray(d.levels) && d.levels.length === 2 ? "Lv " + d.levels[0] + (d.levels[1] !== d.levels[0] ? "–" + d.levels[1] : "") : "");
+      const count = (n) => fmt(n) + (n === 1 ? " game" : " games");
+      // What the chart times, by the button that picks it.
+      const MEASURES = {
+        game: { p: (d) => d.p, words: span, axis: "Time of one game, end to end" },
+        turn: { p: (d) => (three(d.a_turn) ? d.a_turn : null), words: turnTime, axis: "Time of one turn: a game’s time over the turn it ended on" },
+      };
+      const cstate = { measure: "game" };
+
+      // The tiles: the benchmark's reading, the same per turn, the newest
+      // day, and where the record began.
+      const tiles = document.getElementById("perf-control-tiles");
+      const tile = (label, value, clockText, say, cls) => {
+        const node = el("div", "perf-tile" + (cls ? " " + cls : ""));
+        node.append(el("span", "perf-tile-label", label), el("b", "perf-tile-value", value), el("span", "perf-tile-clock", clockText), el("span", "perf-tile-say", say));
+        tiles.append(node);
+      };
+      tile("A game, " + lately, span(week.p[1]), hand ? faster(hand / week.p[1]) + " faster than by hand" : "",
+        count(week.games) + " · " + days(week.from, week.to), "is-measured");
+      if (three(week.a_turn)) {
+        tile("A turn, " + lately, turnTime(week.a_turn[1]), week.turns ? "the middle game runs " + fmt(week.turns) + " turns" : "",
+          "eight in ten between " + turnTime(week.a_turn[0]) + " and " + turnTime(week.a_turn[2]));
+      }
+      tile("Newest day", span(newest.p[1]), day(newest.day), count(newest.games) + (levels(newest) ? " · " + levels(newest) : ""));
+      if (first) {
+        tile("When the record began", span(first.p[1]), "a game is " + faster(first.p[1] / week.p[1]) + " faster now",
+          days(first.from, first.to) + " · " + count(first.games) + (levels(first) ? " · " + levels(first) : ""));
+      }
+
+      // Where a game's time goes, once the games carry the harness's own
+      // clock: the setup, the play, the ending.
+      const parts = Array.isArray(week.split) && week.split.length === 3 && week.split.every((v) => Number(v) >= 0) ? week.split.map(Number) : null;
+      if (parts) {
+        const split = document.getElementById("perf-control-split");
+        split.append("Where the middle game’s time goes: ", el("b", "", span(parts[0])), " to launch Civilization VI and set the game up, ",
+          el("b", "", span(parts[1])), " of play, ", el("b", "", span(parts[2])), " to hold the final screen, quit and write the result.");
+        split.hidden = false;
+      }
+
+      const all = control.all && typeof control.all === "object" ? control.all : {};
+      document.getElementById("perf-control-note").textContent = "The line is each day’s middle game and the band holds eight games in ten. "
+        + "The scale goes by multiples, so the same drop anywhere on it is the same share of the time saved. "
+        + "A game counts when it was played to a victory, ours or a rival’s"
+        + (all.games ? ": " + count(all.games) + (all.from && all.to ? ", " + days(all.from, all.to) : "") : "") + ". "
+        + (control.min_games ? "A day is drawn from " + fmt(control.min_games) + " games. " : "")
+        + "A game is timed by the harness’s own clock where its runs carry one" + (all.clocked ? " (" + count(all.clocked) + " so far)" : "")
+        + ", and otherwise from the launch stamp in its tag to the stamp of its result."
+        + (all.untimed ? " " + count(all.untimed) + " reloaded from an autosave before the clock have no time and are left out." : "");
+
+      // Every day as a table, the newest first.
+      const body = document.querySelector("#perf-control-table tbody");
+      for (const d of CDAYS.slice().reverse()) {
+        const tr = el("tr");
+        tr.append(el("td", "", String(d.day)), el("td", "", fmt(d.games)), el("td", "", span(d.p[0])), el("td", "", span(d.p[1])), el("td", "", span(d.p[2])),
+          el("td", "", d.turns ? fmt(d.turns) : "—"), el("td", "", three(d.a_turn) ? turnTime(d.a_turn[1]) : "—"), el("td", "", levels(d) || "—"));
+        body.append(tr);
+      }
+
+      const DAY_MS = 24 * 60 * 60 * 1000;
+      // Days this close together are one stretch of the line; a longer gap
+      // with no games is a gap in it.
+      const JOINED = 3 * DAY_MS;
+      const at = (iso) => Date.parse(String(iso) + "T00:00:00Z");
+      const drawControlPlot = () => {
+        const plot = document.getElementById("perf-control-plot");
+        plot.replaceChildren();
+        const measure = MEASURES[cstate.measure];
+        const points = CDAYS.filter((d) => measure.p(d));
+        const n = points.length;
+        if (!n) return;
+        const width = Math.max(280, plot.clientWidth), height = 310, m = { l: 48, r: 64, t: 14, b: 44 };
+        const inner = width - m.l - m.r, bottom = height - m.b;
+        const t0 = at(points[0].day), reach = Math.max(DAY_MS, at(points[n - 1].day) - t0);
+        const across = (when) => m.l + ((when - t0) / reach) * inner;
+        const x = (d) => across(at(d.day));
+        // The axis holds every day's middle game with room to spare, and as
+        // much of the band as stands within `REACH` times of one: a day when
+        // a game was left held for hours would otherwise take the chart's
+        // top half. A band that runs past the axis stops at its edge.
+        const REACH = 1.75;
+        const mids = points.map((d) => measure.p(d)[1]);
+        const lo = Math.log10(Math.max(Math.min(...points.map((d) => measure.p(d)[0])), Math.min(...mids) / REACH) / 1.1);
+        const hi = Math.log10(Math.min(Math.max(...points.map((d) => measure.p(d)[2])), Math.max(...mids) * REACH) * 1.1);
+        const y = (s) => Math.max(m.t, Math.min(bottom, m.t + (1 - (Math.log10(s) - lo) / (hi - lo)) * (bottom - m.t)));
+        const root = svg("svg", { width, height, viewBox: "0 0 " + width + " " + height, role: "img" });
+        const opened = points[0], last = points[n - 1];
+        root.setAttribute("aria-label", measure.axis + ", day by day: " + measure.words(measure.p(opened)[1]) + " on " + day(opened.day) + ", "
+          + measure.words(measure.p(last)[1]) + " on " + day(last.day) + ". Every figure is in the table below.");
+        const grid = svg("g", { class: "res-grid" });
+        for (const tick of timeTicks(Math.pow(10, lo), Math.pow(10, hi), y, 24)) {
+          grid.append(svg("line", { x1: m.l, x2: width - m.r, y1: Math.round(tick.at) + 0.5, y2: Math.round(tick.at) + 0.5 }));
+          const label = svg("text", { class: "res-tick", x: m.l - 6, y: tick.at + 3.5, "text-anchor": "end" });
+          label.textContent = timeName(tick.t);
+          root.append(label);
+        }
+        root.append(grid, svg("line", { class: "res-base", x1: m.l, x2: width - m.r, y1: bottom + 0.5, y2: bottom + 0.5 }));
+        // The first of each month under the line, and its fifteenth where
+        // there is room.
+        const dates = [];
+        const opens = new Date(t0);
+        for (let year = opens.getUTCFullYear(), month = opens.getUTCMonth(); Date.UTC(year, month, 1) <= t0 + reach; month = (month + 1) % 12, year += month ? 0 : 1) {
+          for (const date of [1, 15]) {
+            const when = Date.UTC(year, month, date);
+            if (when >= t0 && when <= t0 + reach) dates.push({ when, opening: date === 1, words: MONTHS[month] + " " + date });
+          }
+        }
+        if (!dates.length) dates.push({ when: t0, opening: true, words: day(opened.day) }, { when: t0 + reach, opening: true, words: day(last.day) });
+        const named = [];
+        for (const date of dates.filter((d) => d.opening).concat(dates.filter((d) => !d.opening))) {
+          const px = across(date.when);
+          if (named.some((other) => Math.abs(other - px) < 58)) continue;
+          named.push(px);
+          const label = svg("text", { class: "res-tick", x: px, y: bottom + 15, "text-anchor": "middle" });
+          label.textContent = date.words;
+          root.append(label, svg("line", { class: "res-base", x1: Math.round(px) + 0.5, x2: Math.round(px) + 0.5, y1: bottom, y2: bottom + 4 }));
+        }
+        // The stretches of the line: days with games close together.
+        const runs = [];
+        points.forEach((d, i) => {
+          if (i && at(d.day) - at(points[i - 1].day) <= JOINED) runs[runs.length - 1].push(d);
+          else runs.push([d]);
+        });
+        const place = (d, k) => x(d).toFixed(1) + "," + y(measure.p(d)[k]).toFixed(1);
+        for (const run of runs) {
+          if (run.length < 2) {
+            const d = run[0];
+            const bar = svg("line", { x1: x(d), x2: x(d), y1: y(measure.p(d)[2]), y2: y(measure.p(d)[0]), "stroke-width": 3, "stroke-linecap": "round", opacity: "0.28" });
+            bar.style.stroke = "var(--series)";
+            root.append(bar);
+            continue;
+          }
+          const area = svg("path", { d: "M" + run.map((d) => place(d, 2)).join("L") + "L" + run.map((d) => place(d, 0)).reverse().join("L") + "Z", opacity: "0.28" });
+          area.style.fill = "var(--series)";
+          root.append(area);
+        }
+        for (const run of runs) {
+          if (run.length < 2) {
+            const dot = svg("circle", { cx: x(run[0]), cy: y(measure.p(run[0])[1]), r: 2.5 });
+            dot.style.fill = "var(--series)";
+            root.append(dot);
+            continue;
+          }
+          const line = svg("path", { d: "M" + run.map((d) => place(d, 1)).join("L"), fill: "none", "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round" });
+          line.style.stroke = "var(--series)";
+          root.append(line);
+        }
+        // The newest day is the one point marked and named.
+        const marker = (d, r) => {
+          const dot = svg("circle", { cx: x(d), cy: y(measure.p(d)[1]), r, "stroke-width": 2 });
+          dot.style.fill = "var(--series)";
+          dot.style.stroke = "var(--panel)";
+          return dot;
+        };
+        const now = svg("text", { class: "perf-now", x: x(last) + 9, y: y(measure.p(last)[1]) + 4 });
+        now.textContent = measure.words(measure.p(last)[1]);
+        root.append(marker(last, 4.5), now);
+        const cross = svg("line", { class: "res-cross", y1: m.t, y2: bottom, visibility: "hidden" });
+        const held = marker(last, 4.5);
+        held.setAttribute("visibility", "hidden");
+        root.append(cross, held);
+        const hit = svg("rect", { x: m.l - 6, y: m.t, width: inner + 12, height: bottom - m.t, fill: "transparent" });
+        hit.addEventListener("pointermove", (event) => {
+          const px = event.clientX - root.getBoundingClientRect().left;
+          const d = points.reduce((best, point) => (Math.abs(x(point) - px) < Math.abs(x(best) - px) ? point : best), points[0]);
+          const p = measure.p(d), cx = Math.round(x(d)) + 0.5;
+          cross.setAttribute("x1", cx); cross.setAttribute("x2", cx); cross.setAttribute("visibility", "visible");
+          held.setAttribute("cx", x(d)); held.setAttribute("cy", y(p[1])); held.setAttribute("visibility", "visible");
+          const rows = [
+            { colour: "var(--series)", opacity: "0.42", tall: true, value: measure.words(p[2]), name: "one in ten slower" },
+            { colour: "var(--series)", value: measure.words(p[1]), name: "the middle game" },
+            { colour: "var(--series)", opacity: "0.42", tall: true, value: measure.words(p[0]), name: "one in ten faster" },
+          ];
+          if (cstate.measure === "turn") rows.push({ value: span(d.p[1]), name: "a game" });
+          else if (three(d.a_turn)) rows.push({ value: turnTime(d.a_turn[1]), name: "a turn" });
+          if (d.turns) rows.push({ value: fmt(d.turns), name: "turns in the middle game" });
+          if (levels(d)) rows.push({ value: levels(d), name: Number(d.players) ? Number(d.players) + " players" : "" });
+          showTip(event, day(d.day) + " · " + count(d.games), rows);
+        });
+        hit.addEventListener("pointerleave", () => { cross.setAttribute("visibility", "hidden"); held.setAttribute("visibility", "hidden"); hideTip(); });
+        root.append(hit);
+        const title = svg("text", { class: "res-axis-title", x: m.l + inner / 2, y: height - 4, "text-anchor": "middle" });
+        title.textContent = measure.axis;
+        root.append(title);
+        plot.append(root);
+      };
+
+      const measures = Array.from(document.querySelectorAll("#perf-control-measure button"));
+      for (const button of measures) button.hidden = !MEASURES[button.dataset.measure] || !CDAYS.some((d) => MEASURES[button.dataset.measure].p(d));
+      document.getElementById("perf-control-measure").addEventListener("click", (event) => {
+        const button = event.target.closest("button");
+        if (!button || button.hidden || !MEASURES[button.dataset.measure]) return;
+        for (const b of measures) b.setAttribute("aria-pressed", String(b === button));
+        cstate.measure = button.dataset.measure;
+        hideTip();
+        drawControlPlot();
+      });
+      document.getElementById("perf-control").hidden = false;
+      drawControl = drawControlPlot;
+    }
+
     document.getElementById("perf-empty").hidden = true;
     document.getElementById("perf-record").hidden = false;
-    if (win() && BATCHES.length) {
-      render();
+    // A chart is drawn to the width it has, so each is drawn once the record
+    // shows and again when the window's width changes.
+    const charts = [];
+    if (drawControl) charts.push(drawControl);
+    if (win() && BATCHES.length) { render(); charts.push(draw); }
+    if (drawControl) drawControl();
+    if (charts.length) {
       let queued = 0, lastWidth = document.documentElement.clientWidth;
       window.addEventListener("resize", () => {
         if (document.documentElement.clientWidth === lastWidth || queued) return;
-        queued = requestAnimationFrame(() => { queued = 0; lastWidth = document.documentElement.clientWidth; draw(); });
+        queued = requestAnimationFrame(() => { queued = 0; lastWidth = document.documentElement.clientWidth; for (const chart of charts) chart(); });
       });
     }
   })();
