@@ -150,6 +150,15 @@ strength only within about two squares, so a capture beside the rider is
 loud and on that side, one across the board is far, and one behind is
 behind.
 
+**The pieces alive** (`World.regard`, `World.flinch`). Not only the knight
+ridden: every piece standing watches the piece that is moving, a knight
+turning its head to it and the rest leaning a little its way, less the
+further off. A king in check flinches away from what checks it, shaking,
+until it is out of check. The piece about to be taken trembles from the
+moment the blow is coming until it breaks (`World.doomed`). Who holds
+themselves how is one rule with an order: the threat to the knight ridden
+first, then a king in check, then watching.
+
 **The hall** (`World.vault`). From a knight's back the room is what is
 above the pieces, so it is built to be looked up at: a ring of twelve stone
 columns round the board under a ribbed dome, a wall beyond them with tall
@@ -161,7 +170,7 @@ seat to the board. It is this page's own room, not anyone else's. Nothing in
 it casts a shadow, and each part of the columns is drawn twelve at once: it
 costs a quarter of a millisecond a frame.
 
-**Peril** (`peril`, `World.menace`, `World.loom`, `Seat.glance`, `risks`).
+**Peril** (`peril`, `World.menace`, `World.regard`, `Seat.glance`, `risks`).
 The pieces that could take the knight ridden glow red and pulse, and lean
 toward it as if about to come; a knight among them turns its head to it.
 When the threat is new after the opponent's move it is said ("Your knight is
@@ -212,13 +221,14 @@ loop). The structure that makes that converge rather than wander:
 Done: the rider's seat (#5747); the rider low and beside the head, and
 sound where it happens (#5755); the knight ridden alive (#5757); peril felt
 (#5758); seeing over your own knight, and the frame measured (#5760); the
-hall (#5766).
+hall (#5766); the pieces alive (#5768).
 
 What is next, most felt first:
 
-- **The other pieces alive.** Every piece looks at what moves (a knight
-  turns its head, the rest lean); a king flinches in check; a piece about to
-  be taken trembles. The board, not only your knight, should feel watched.
+- **A voice for the board.** The opponent's pieces answer a command aimed
+  at them ("knight takes queen" said by the player: the queen turns to face
+  it); a piece the player names before it moves stirs (lifts, its light
+  brightens) while the command is still being said.
 - **Riding other pieces.** Any of your pieces, not only knights.
 - **Speed: measured, and there is room.** `wizardChess.frameCost(n)` times
   `n` frames of the world's work and drawing, each finished on the graphics
