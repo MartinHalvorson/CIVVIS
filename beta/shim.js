@@ -36,7 +36,7 @@
     "/state", "/status", "/runtime", "/rules", "/gene-program", "/pedia", "/save", "/saves",
     "/load", "/action", "/step", "/autoplay", "/debug", "/play-on", "/route", "/forecast", "/city-focus", "/city-citizen", "/view", "/fog-honest",
     "/intel", "/spectator-status", "/next-game-settings", "/new",
-    "/supervisor-new", "/pace", "/next-game", "/forks",
+    "/supervisor-new", "/pace", "/next-game", "/forks", "/autosearch",
     "/machine-metrics", "/civ6", "/civ6/start", "/policy-effects", "/map-search-buildings",
     "/live-pause", "/live-new-game",
   ]);

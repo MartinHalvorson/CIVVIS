@@ -1058,44 +1058,84 @@ fraction of the cores of this machine to each run a search up and down the
 timeline. allow a reasonable objective function to be chosen. score or prod
 or city or fpt or gpt".
 
-Autosearch answers one question: from the open turn, which Civ AIs should
-hold the seat, and when, for the seat to have the most of one number a
-chosen count of turns on. Its button stands in the bar after Breakpoints and
-opens a panel with three things to pick:
+Operator, 2026-11-23, pasting a review of it: "don't build a new system.
+Yesterday's Autosearch (#5686) is already this idea with a one-number
+objective. Generalize its objective into your four lists, move the search
+core from JS into Rust, and use the model outside the simulation loop, never
+inside it."
 
-- **Most**: the number to make the most of. They are the seat's own, by the
-  names its row of the standings gives them: Score, Production a turn
-  (PROD), Cities (CITY), Faith a turn (FPT) and net Gold a turn (GPT), and
-  after the operator's five, Science and Culture a turn.
-- **By**: how far ahead to play, 10 to 100 turns. The number is read on that
-  turn.
+Autosearch answers one question: from the open turn, which Civ AIs should
+hold the seat, and when, to meet four lists a chosen count of turns on. Its
+button stands in the bar after Breakpoints and opens a panel with these to
+set:
+
+- **The four lists.** What the seat **Needs**, what it **Must avoid**, what
+  it **Wants** and what it **Doesn't want**. A Need or a Must avoid is a
+  number held to a line (`cities >= 6`), with a *when*: at the end of the
+  line, always, ever, or by a turn. A Want or a Don't want is a number with
+  a weight. Each reads one of the seat's own numbers, by the names its row of
+  the standings gives them (Score, Cities, Population, Production, Science,
+  Culture, Faith and Food a turn, net Gold a turn), or whether it has won
+  the game or lost it (fallen, or beaten by another). The panel opens on win
+  (a Need, at the end), do not lose (a Must avoid, always) and the most
+  Score (a Want); a choice kept from before the lists is its one number,
+  wanted. The engine reads any key of the omniscient observation as well.
+- **By**: how far ahead to play, 10 to 100 turns.
 - **Cores**: one core, or a quarter, half, three quarters or all of the
   cores the browser says this computer has.
+- **Also** and **Genes**: Civ AIs to try beyond the roster's. The seated Civ
+  AI aimed at each victory (six more), and the seated Civ AI with each gene
+  named switched on (one more a gene). See "Lines, and how the search
+  climbs".
 
-A split has a fourth, **From**: which branch the search begins from. What is
-picked is kept for the next visit. The panel is a window like the box's
-others ("Panels are windows"): it is moved by its title, and it is the box's
-own and not the deck's, so a split whose halves are unlocked shows it too,
+A split has one more, **From**: which branch the search begins from. What is
+set is kept for the next visit. The panel is a window like the box's others
+("Panels are windows"): it is moved by its title, and it is the box's own
+and not the deck's, so a split whose halves are unlocked shows it too,
 opened from either half's own Autosearch button.
 
 ### Lines, and how the search climbs
 
 A line is a plan of who holds the seat: one Civ AI from the turn the search
-begins on, and any number of handovers after it, each on a turn. The search
-first plays every Civ AI on offer alone, the one that is seated among them,
-which is what every other line is set against. Then it climbs. It takes the
-best line it has and, at each of a spread of turns along it, hands the rest
-of the line to each other Civ AI, and also just one stride of it. It plays
-those, and the moment one beats the best it lets the others go and begins
-again around that one. The turns are a quarter of the search apart to begin
-with, then half that, down to a turn (and to no finer than a thirtieth of a
-long search). When no handover at the finest stride beats the best line, the
-search is done. It is a climb and not a proof: it finds a line that no single
-handover improves.
+begins on, and any number of handovers after it, each on a turn. A Civ AI is
+a roster name, or one aimed at a victory with gene tags on top,
+`jack@science+no-city-limit` (`strategies::build_named`): the roster has a
+handful of agents, and a gene is a switch an agent reads as it plays, so the
+alphabet a line is written in is as wide as the genes asked for. The engine
+refuses a name it cannot build before any line is played.
 
-Which of two lines is the better: one the seat wins the game on, then one it
-does not lose on, then the more of the number asked for, then the plan with
-fewer handovers.
+The climb is the engine's (`src/server/autosearch.rs`, `Search`), and the
+page asks it for each line to play and tells it what each came to
+(`POST /autosearch`, below). It first plays every Civ AI on offer alone, the
+seated one among them. Then it climbs: around the best line it has, and
+around the rest of the front (below), at each of a spread of turns along a
+line, it hands the rest of the line to each other Civ AI, and also just one
+stride of it. The moment a line passes the best it lets what was waiting go
+and begins again around that one. The turns are a quarter of the search
+apart to begin with, then half that, down to a turn (and to no finer than a
+thirtieth of a long search). When nothing at the finest stride is new, the
+search is done. It is a climb and not a proof.
+
+Which of two lines is the better (`Search::better`): one that meets every
+Need and breaks no Must avoid; then one that fails fewer of them; then the
+more of what is Wanted less what is not; then fewer handovers. A Want counts
+as percent over the seated Civ AI's line alone, times its weight, so a weight
+means the same for Score as for Faith a turn; a Don't want counts the same
+way, the other way round. Every line that no other beats on every term at
+once is kept (the front), and the climb grows from those as well as from the
+best, which takes it past the single handover a climb from one line stops
+at. Every term is read on every turn a copy plays (`objective`, and the
+`terms` of a `play`). A Must avoid held always, ever or by a turn ends a
+line on the turn it is broken, as a breakpoint ends a run; nothing is cut
+on a soft number, because `docs/SUPERHUMAN.md` measured that "any
+within-review pruning discards real signal".
+
+When no line meets every Need, the panel says so: none of these Civ AIs
+does what is needed, which names a behaviour to write a gene for.
+
+Before the four lists the panel made the most of one number, and the ranking
+was fixed: a line the seat wins on, then one it does not lose on, then the
+number, then fewer handovers. The lists it opens on are that ranking.
 
 ### Cores, and up and down the timeline
 
@@ -1164,8 +1204,65 @@ came to 66 while the half that was searched played on to 63. Later in a game
 a turn costs more and a copy weighs more: from turn 40 on nine cores, 85
 turns a second on copies of 128 MB.
 
-Autosearch needs forks, so it runs in the browser build. The desktop
-program's server does not know `/forks`, and there the panel says so.
+Those measurements were of the climb when it was the page's own, with one
+number to make the most of; the climb is the engine's now, and the lines it
+tries are the same lines.
+
+Autosearch in the page needs forks, so it runs in the browser build. The
+desktop program's server does not know `/forks`, and there the panel says
+so; `civvis autosearch` (below) is how a search runs without a browser.
+
+### Without a browser: `civvis autosearch`, and one world is not every world
+
+`civvis autosearch --spec spec.json [--seed N] [--cores N] [--offers
+plans.json] [--robust 101,102,…] [--fog-honest true|false]` runs the same
+climb on this machine's own copies of the engine, one a thread
+(`autosearch::run`). The world is the site's opening world on the seed,
+played by the seated Civ AI up to the turn the search begins on. The spec is
+what the page sends: `{"objective": {"need", "avoid", "want", "dont_want"},
+"from", "turns", "letters", "seated"}`. The report is printed as JSON.
+
+A line found on one world is a fact about that world: `docs/GENOME.md`
+records three effects that "dissolved under decomposition or resampling",
+and that "the only defence is replication on disjoint maps". `--robust`
+plays the best line found, and the seated Civ AI alone, on each of the seeds
+named, from the same turn, judged by the same lists, and says how often the
+best line still met every Need there, how often the seated Civ AI alone did,
+and what the line came to against it on average.
+
+On one core a search goes the same way every time. On several, which line
+comes back first decides what the climb tries next, so two runs may try
+different lines and settle on different ones of equal worth (seed 7, from
+turn 10 for six turns: 72 lines and the same line on one core both times; 80
+lines and then 77 on four, ending on two different lines that both came to
+Score 32).
+
+Measured on this MacBook Air (10 cores) with a release build: the site's
+opening world on seed 7, from turn 20 for 20 turns, eight roster Civ AIs,
+JackOfAllTrades seated, a Need of six cities by turn 40, do not lose, and the
+most Score. On eight cores 1,310 lines in 78 s. No line met the Need. The
+best line, SiegeTheDay, then HolyRoller from turn 35, then ByTheBook from turn
+38, came to Score 105 against 82 for JackOfAllTrades alone (+28%). Played
+again on seeds 11 and 13 (`--robust 11,13`) it came to +1.5% and −4.2%
+against JackOfAllTrades alone there: the +28% was a fact about one world.
+
+### What a model is for, and what it is not
+
+A language model is no part of a turn. A turn costs tens of milliseconds and
+a model's answer seconds, and a model does not answer the same way twice,
+which would break the exact walk back every line rests on. What it can do
+is work from outside the loop. It can put lines in to be played and judged
+like any other (`offer` to `POST /autosearch`, `--offers` to the runner),
+because the simulator verifies what it proposes exactly. It can turn plain
+words into the four lists, which the world then checks key by key before a
+line is played (`objective` refuses a number the seat does not have). And
+when no line meets a Need, it can name the missing behaviour for a gene to
+be written and priced by the gene screen. None of that is wired to a model
+here.
+
+What a term reads is the omniscient observation, the spectator's view of the
+whole table. That is right for a searcher looking at a world, and it says
+nothing about what a fog-honest player could have known ("Fog-honest AI").
 
 ## Fog-honest AI
 
@@ -1257,6 +1354,20 @@ its bar says why. `beta/debugger_test.py` (`check_doctor_strange`) holds the
 layout, the fork, Branch here, going back, following and the narrow window in
 a browser.
 
+## `POST /autosearch`
+
+The climb, for a page that plays its lines on copies of the engine
+(`autosearch::route`; the browser build answers it, from the page's own
+engine). `op` is one of `begin` (a new search: the four lists as
+`objective`, `from`, `end` or `turns`, `letters`, `seated`, `forks`), `next`
+(the line for a copy to play, given the line it holds as `holding` and the
+turn it stands on as `at`, with `from`, the turn they part on, and `done`
+when there will be none), `took` (`plan`, `series`, the `terms` of each turn
+it played, and `last`), `failed` (`plan`), `offer` (`plans`, lines put in
+from outside the climb), `report` and `end`. Every answer but `next`'s is
+the report: the best line, the seated Civ AI's line alone, the front, each
+Civ AI alone, and how many lines meet every Need.
+
 ## `POST /debug`
 
 `{"op": ...}` and the operation's fields. The answer is the state document
@@ -1271,12 +1382,13 @@ operation leaves the world as it was.
 | `goto_save`, `drop_save` | `id` |
 | `room` | `megabytes`: where the memory line is, 128 to 3072 |
 | `step`, `step_action`, `assist` | optional `strategy`, the Civ AI to seat first |
-| `play` | `turns`, 1 to 100: that many `step`s, asked for once; optional `strategy`. It stops early where a run stops (a breakpoint, the end of the game), and the answer carries `readings`: how the seat stood as each turn it played opened, in the keys of a lean answer's `seat` |
+| `play` | `turns`, 1 to 100: that many `step`s, asked for once; optional `strategy`. It stops early where a run stops (a breakpoint, the end of the game, a Must avoid broken for good), and the answer carries `readings`: how the seat stood as each turn it played opened, in the keys of a lean answer's `seat`; and, once an `objective` is set, `terms` and `killed` |
 | `walk` | optional `turn`, the furthest to go; optional `era`: true to stop where a new era begins; optional `strategy`. Goes on along the kept turns the seated Civ AI would only play again, plays nothing, and is never refused: with none to take the world stays where it is |
 | `status` | optional `strategy`: seat that Civ AI and play nothing, which is how the page says a pick |
 | `step_seat`, `finish_round` | none |
 | `reveal` | `on`: true or false |
 | `branch` | none. Lets go of every turn kept ahead of the open one: what a half of a split that is a new branch is asked, so that it begins on the turn it was made on |
+| `objective` | `objective`: the four lists (`{"need", "avoid", "want", "dont_want"}`, each a list of `{"seat", "key", "test", "value", "when", "turn"}` or `{"seat", "key", "weight"}`), or `null` to clear them. Each term is read back off the world first, and one the seat has no number for is refused. From then on a `play` answers with `terms`, what each turn read of each list, and `killed`, the turn a Must avoid broken for good ended the play on (see "Autosearch") |
 | `remember` | none. A half of a split keeps its agents with every turn it marks from here on, and none with the turns it has marked already: what a fork made to search asks of the half it will play (see "Autosearch"). The game itself keeps them already and is asked nothing |
 | `copy` | from a half of a split: `from`, the other half's name |
 | any, from a half of a split | optional `twin`, the other half's name: do it once for both if the two are the same world (see "Identical halves are played once") |
