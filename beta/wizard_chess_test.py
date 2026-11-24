@@ -252,6 +252,18 @@ class Played(unittest.TestCase):
         self.assertTrue(ev("wizardChess.command('pawn takes e4')"))
         self.until("wizardChess.game.played.length >= 4 && wizardChess.world.pieces.size === 31", "the pawn is taken", seconds=60)
         self.assertEqual(ev("wizardChess.game.played[3].san"), "dxe4")
+        # A new game begun while a move is still being played out: the move
+        # was the old game's, and the new board stays as it was set down,
+        # every piece in the world where the game says it is and on the board.
+        ev("wizardChess.opponent.stop(), wizardChess.begin('w'), wizardChess.command('pawn to e4')")
+        self.assertTrue(ev("wizardChess.game.busy"))
+        ev("wizardChess.opponent.stop(), wizardChess.begin('w', ['d2d4']), wizardChess.game.turn++, wizardChess.opponent.stop()")
+        self.until("wizardChess.running.size === 0", "the old move is played out", seconds=90)
+        self.assertEqual(ev("wizardChess.game.played.map(entry => entry.san)"), ["d4"])
+        self.assertEqual(ev("[wizardChess.world.pieces.size, wizardChess.world.pieces.has(28), wizardChess.world.pieces.get(27).userData.piece]"),
+                         [32, False, "P"])
+        self.assertTrue(ev("[...wizardChess.world.pieces].every(([sq, held]) => held.userData.square === sq && !!held.parent && "
+                           "wizardChess.game.position.board[sq] === held.userData.piece)"))
         self.assertEqual(self.dev.console, [], f"the page complained: {self.dev.console}")
 
     def test_a_rider_is_carried_by_their_knight_and_thrown_when_it_is_taken(self):
@@ -297,6 +309,15 @@ class Played(unittest.TestCase):
         # A threat that is new turns the rider's head to it.
         ev("wizardChess.game.threats = ''; wizardChess.peril()")
         self.assertIsNotNone(ev("wizardChess.seat.alarm"))
+        # Turned toward their knight's own head, the rider rises in the saddle
+        # to see over it; turned back, they sit down again.
+        ev("wizardChess.seat.glance(null); Object.assign(wizardChess.seat.gaze, {yaw: 1.4, at: wizardChess.seat.clock})")
+        self.until("wizardChess.seat.camera.position.y > 1.45", "the rider rises to see over the head", seconds=60)
+        ev("wizardChess.seat.straighten()")
+        self.until("wizardChess.seat.camera.position.y < 1.3", "the rider sits down again", seconds=60)
+        # What a frame costs is measured, and says what drew it.
+        cost = ev("wizardChess.frameCost(5)")
+        self.assertTrue(cost["ms"] > 0 and cost["drawnBy"] and cost["seat"] == "ride", cost)
         # Taken: the rider is thrown, and stands at the side of the board.
         ev("(w => w.make(w.moveFromUci(w.game.position, 'd6e5'), 'b'))(wizardChess)")
         self.until("wizardChess.seat.mode === 'aside'", "the rider is thrown and gets up", seconds=120)
