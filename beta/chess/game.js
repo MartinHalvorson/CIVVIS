@@ -1106,6 +1106,25 @@ class World {
 }
 
 // ----------------------------------------------------------------- the sound
+// How a room of stone the hall's size answers a sound: two channels of noise
+// dying away over 2.6 s, darker as it goes (each sample leans on the one
+// before), with the first reflections off the floor and the near columns
+// standing out at its start.
+function hallEcho(audio) {
+  const rate = audio.sampleRate, length = Math.round(rate * 2.6), echo = audio.createBuffer(2, length, rate);
+  for (let channel = 0; channel < 2; channel++) {
+    const data = echo.getChannelData(channel);
+    let dark = 0;
+    for (let at = 0; at < length; at++) {
+      const t = at / rate, fade = Math.exp(-t * 2.4);
+      dark = dark * (0.35 + Math.min(0.55, t * 0.3)) + (Math.random() * 2 - 1) * (1 - 0.35);
+      data[at] = dark * fade * 0.6;
+    }
+    for (const [t, much] of [[0.021, 0.7], [0.043, 0.5], [0.067, 0.42], [0.11, 0.3]]) data[Math.round((t + channel * 0.004) * rate)] += much;
+  }
+  return echo;
+}
+
 // Each piece's own stone (`Sound.play`'s `kind`): `pitch` scales every filter
 // and tone it makes, `mass` its loudness and length, and `ring` the chime a
 // finer stone keeps after it is set down. A pawn scrapes light and high; a
@@ -1125,35 +1144,83 @@ const PLAIN = {pitch: 1, mass: 1, ring: 0, bell: 0};
 // heard from where the seat's eye is (`hear`): from the saddle a capture
 // beside you is loud and on that side, and one behind you is behind you.
 class Sound {
-  constructor() { this.on = true; this.audio = null; this.near = 14; this.heard = []; }
+  constructor() { this.on = true; this.audio = null; this.near = 14; this.heard = []; this.panning = "HRTF"; }
   start() {
     if (this.audio || !this.on) return;
     const Audio = window.AudioContext || window.webkitAudioContext;
     if (!Audio) return;
-    this.audio = new Audio();
-    const seconds = 2, buffer = this.audio.createBuffer(1, this.audio.sampleRate * seconds, this.audio.sampleRate), data = buffer.getChannelData(0);
+    this.wire(new Audio(), true);
+  }
+  // The sound's own room, built on an audio context: noise to make stone of,
+  // the way out, the hall answering (`send`: a stone room's reverberation,
+  // after the time a sound takes to the dome and back), the low breath of
+  // the air, and, on a context that plays (`live`), the braziers burning
+  // where they stand (`hearth`).
+  wire(audio, live = false) {
+    this.audio = audio;
+    const rate = audio.sampleRate, noise = audio.createBuffer(1, rate * 2, rate), data = noise.getChannelData(0);
     for (let at = 0; at < data.length; at++) data[at] = Math.random() * 2 - 1;
-    this.noise = buffer;
-    this.out = this.audio.createGain();
+    this.noise = noise;
+    this.out = audio.createGain();
     this.out.gain.value = 0.9;
-    this.out.connect(this.audio.destination);
-    // The hall: a low breath under everything.
-    const air = this.audio.createBufferSource(), low = this.audio.createBiquadFilter(), quiet = this.audio.createGain();
-    air.buffer = buffer; air.loop = true;
+    this.out.connect(audio.destination);
+    // The hall answers: what is made in it comes back off the dome and the
+    // wall, late and dark, and dies away over two seconds and more.
+    const room = audio.createConvolver(), back = audio.createDelay(0.5), wet = audio.createGain();
+    room.buffer = hallEcho(audio);
+    back.delayTime.value = 0.09;
+    wet.gain.value = 0.34;
+    this.send = audio.createGain();
+    this.send.connect(back).connect(room).connect(wet).connect(this.out);
+    // The air: a low breath under everything.
+    const air = audio.createBufferSource(), low = audio.createBiquadFilter(), quiet = audio.createGain();
+    air.buffer = noise; air.loop = true;
     low.type = "lowpass"; low.frequency.value = 140;
     quiet.gain.value = 0.05;
     air.connect(low).connect(quiet).connect(this.out);
     air.start();
+    this.air = quiet;
+    if (live) this.burn();
+  }
+  // Where the fires are (the braziers' flames, from the world).
+  hearth(points) { this.fires = points.map(point => point.clone()); }
+  // Each brazier burns where it stands: a low roar of its own, and now and
+  // then a crack, heard from wherever the seat is.
+  burn() {
+    const audio = this.audio, fires = (this.fires || []).map(at => {
+      const panner = audio.createPanner();
+      Object.assign(panner, {panningModel: "HRTF", distanceModel: "inverse", refDistance: 4, rolloffFactor: 1.2, maxDistance: 60});
+      if (panner.positionX) { panner.positionX.value = at.x; panner.positionY.value = at.y; panner.positionZ.value = at.z; }
+      else panner.setPosition(at.x, at.y, at.z);
+      panner.connect(this.out);
+      panner.connect(this.send);
+      const roar = audio.createBufferSource(), body = audio.createBiquadFilter(), soft = audio.createGain();
+      roar.buffer = this.noise; roar.loop = true;
+      body.type = "bandpass"; body.frequency.value = 380; body.Q.value = 0.7;
+      soft.gain.value = 0.05;
+      roar.connect(body).connect(soft).connect(panner);
+      roar.start(0, Math.random() * 1.5);
+      return panner;
+    });
+    this.burning = fires;
+    if (!fires.length) return;
+    setInterval(() => {
+      if (!this.on || Math.random() > 0.4) return;
+      const into = fires[Math.floor(Math.random() * fires.length)];
+      this.burst(0.02 + Math.random() * 0.05, "highpass", 2200 + Math.random() * 1800, 3800, 0.05 + Math.random() * 0.1, 1, into);
+    }, 140);
   }
   // A point in the hall to make a sound at. `near` is how close a sound has
   // to be to be heard at its full strength: a rider is among the pieces, and
   // a player at the board is some way off all of them.
   place(at) {
     const audio = this.audio, panner = audio.createPanner();
-    Object.assign(panner, {panningModel: "HRTF", distanceModel: "inverse", refDistance: this.near, rolloffFactor: 1.3, maxDistance: 80});
+    Object.assign(panner, {panningModel: this.panning, distanceModel: "inverse", refDistance: this.near, rolloffFactor: 1.3, maxDistance: 80});
     if (panner.positionX) { panner.positionX.value = at.x; panner.positionY.value = at.y + 0.5; panner.positionZ.value = at.z; }
     else panner.setPosition(at.x, at.y + 0.5, at.z);
     panner.connect(this.out);
+    // and to the hall, which answers it.
+    panner.connect(this.send);
     setTimeout(() => panner.disconnect(), 3000);
     return panner;
   }
@@ -1178,8 +1245,10 @@ class Sound {
     this.tone(1.6, note, note * 0.997, 0.045 * much, "sine", into);
     this.tone(1.1, note * 2.76, note * 2.75, 0.018 * much, "sine", into);
   }
+  // A sound is made on the audio context of where it is going (`into`), so
+  // that one sent somewhere is never made on another context.
   burst(seconds, kind, from, to, loud, q = 1, into = this.out) {
-    const audio = this.audio, now = audio.currentTime;
+    const audio = into.context, now = audio.currentTime;
     const source = audio.createBufferSource(), filter = audio.createBiquadFilter(), gain = audio.createGain();
     source.buffer = this.noise;
     source.loop = true;
@@ -1195,7 +1264,7 @@ class Sound {
     source.stop(now + seconds + 0.05);
   }
   tone(seconds, from, to, loud, wave = "sine", into = this.out) {
-    const audio = this.audio, now = audio.currentTime, voice = audio.createOscillator(), gain = audio.createGain();
+    const audio = into.context, now = audio.currentTime, voice = audio.createOscillator(), gain = audio.createGain();
     voice.type = wave;
     voice.frequency.setValueAtTime(from, now);
     voice.frequency.exponentialRampToValueAtTime(Math.max(20, to), now + seconds);
@@ -1664,6 +1733,7 @@ try {
 }
 world.surround(seat.renderer);
 const sound = new Sound();
+sound.hearth(world.flames.map(fire => fire.lamp.position));
 const opponent = new Opponent(new URL("./vendor/stockfish-18-lite-single.js", import.meta.url).href);
 const voice = new Voice(heard, listening);
 const hooks = {sound: (name, strength, at, kind) => sound.play(name, strength, at, kind), look: point => seat.look(point), shake: much => seat.shake(much),
