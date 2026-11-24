@@ -114,6 +114,20 @@ class Page(unittest.TestCase):
         self.assertIn("https://github.com/official-stockfish/Stockfish", PAGE)
         self.assertIn("https://threejs.org/", PAGE)
 
+    def test_nothing_in_the_game_is_written_twice(self):
+        # A merge of two branches that both carry the same new code can leave
+        # it in twice without a conflict (it did, #5782): the later copy of a
+        # method silently wins. Each method and function is written once.
+        game = (PARTS / "game.js").read_text(encoding="utf-8")
+        # Each class's own methods (two classes may share a name, as World.play
+        # and Sound.play do), and the functions at the top level.
+        scopes = re.split(r"(?m)^class ", game)
+        groups = [(f"class {scope.split()[0]}", re.findall(r"(?m)^  (?:async )?([A-Za-z]+)\([^)]*\) \{$", scope)) for scope in scopes[1:]]
+        groups.append(("the top level", re.findall(r"(?m)^(?:async )?function ([A-Za-z]+)\(", game)))
+        for where, names in groups:
+            twice = sorted({name for name in names if names.count(name) > 1})
+            self.assertEqual(twice, [], f"written twice in {where} of game.js: {twice}")
+
     def test_the_strength_is_the_engines_own_setting(self):
         engine = (PARTS / "engine.js").read_text(encoding="utf-8")
         self.assertIn("setoption name UCI_LimitStrength value ${limited}", engine)
@@ -322,6 +336,8 @@ class Played(unittest.TestCase):
         self.assertTrue(ev("wizardChess.command('pawn takes e4')"))
         self.until("wizardChess.game.played.length >= 4 && wizardChess.world.pieces.size === 31", "the pawn is taken", seconds=60)
         self.assertEqual(ev("wizardChess.game.played[3].san"), "dxe4")
+        # The fallen stay fallen: the pawn taken lies in a heap beside the board.
+        self.assertEqual(ev("wizardChess.world.fallen.children.map(heap => heap.userData.piece)"), ["P"])
         # A piece falling flares the fires, and the hall is a little darker
         # for a board with a piece fewer.
         self.assertGreaterEqual(ev("wizardChess.world.mood.falls"), 1)
@@ -419,6 +435,9 @@ class Played(unittest.TestCase):
         self.assertTrue(ev("document.body.classList.contains('riding')"))
         # "ride to f3" is the knight's move, and the rider goes with it.
         self.assertTrue(ev("wizardChess.command('ride to f3')"))
+        # The rider commands with their hand: the right one points at f3.
+        self.assertGreater(ev("(w => { for (let at = 0; at < 6; at++) w.world.attend(0.1); "
+                              "return w.world.ridden.userData.saddle.userData.hands[1].point; })(wizardChess)"), 0.5)
         self.until("wizardChess.game.played.length >= 1 && wizardChess.world.ridden.userData.square === 21 && "
                    "Math.abs(wizardChess.seat.camera.position.x - 2.0) < 0.1 && wizardChess.seat.camera.position.z < 2.2",
                    "the rider is carried to f3", seconds=120)
