@@ -2551,6 +2551,31 @@ class ResultRowTests(unittest.TestCase):
             self.assertEqual(civ6_ladder.result_row(civ6_ladder.result_entry(case)),
                              civ6_ladder.result_row(civ6_ladder.entry_from(case)), case["tag"])
 
+    def test_a_timed_run_says_how_long_it_took_and_an_untimed_one_says_nothing(self):
+        # The benchmark: the harness's own clock, on the run's line. A run
+        # from before the clock keeps the line it had, key for key.
+        timed = summary("civvis-1", won=True, started_utc="2026-11-24T15:00:35Z",
+                        timing={"seconds": 756.4, "setup_seconds": 48.2,
+                                "play_seconds": 680.1, "end_seconds": 28.1})
+        for project in (civ6_ladder.entry_from, civ6_ladder.result_entry):
+            row = civ6_ladder.result_row(project(timed))
+            self.assertEqual((row["seconds"], row["setup_seconds"], row["play_seconds"]),
+                             (756.4, 48.2, 680.1), project.__name__)
+            self.assertNotIn("end_seconds", row)
+            plain = civ6_ladder.result_row(project(summary("civvis-1", won=True)))
+            self.assertEqual(set(row) - set(plain), set(civ6_ladder.RUN_SECONDS))
+            self.assertFalse(set(plain) & set(civ6_ladder.RUN_SECONDS))
+        # A run stopped during setup has the whole alone; a reading that is
+        # not a time is not carried.
+        self.assertEqual(civ6_ladder.run_seconds({"seconds": 12.0}), {"seconds": 12.0})
+        for odd in (None, "756", [756], {"seconds": None}, {"seconds": True},
+                    {"seconds": "756"}, {"seconds": -1}):
+            self.assertEqual(civ6_ladder.run_seconds(odd), {}, odd)
+        # And it survives the file.
+        rows = {}
+        civ6_ladder.merge_result(rows, civ6_ladder.result_row(civ6_ladder.result_entry(timed)))
+        self.assertEqual(civ6_ladder.parse_results(civ6_ladder.results_text(rows))["civvis-1"]["seconds"], 756.4)
+
     def test_the_file_round_trips_and_a_broken_line_is_refused(self):
         rows = {}
         for tag, stamp in (("b", "2026-08-20T00:00:00Z"), ("a", "2026-08-21T00:00:00Z")):

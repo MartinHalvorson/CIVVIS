@@ -350,10 +350,12 @@ if [ -f "$elo_page" ]; then
 else
   without+=(elo-rankings)
 fi
-# The Performance page (the fastest game on video, how long a self-play game
-# takes at five percentiles, and game time batch by batch) is CIVVIS's own
-# page in the site list. It is filled the same way, from the lane's record
-# videos and the lane's snapshot of the games' times in data/performance/.
+# The Performance page (how long a game takes with CIVVIS at the controls of
+# Civilization VI, day by day; the fastest game on video; how long a
+# self-play game takes at five percentiles, and game time batch by batch) is
+# CIVVIS's own page in the site list. It is filled the same way: the computer
+# control games from the run ledger, the rest from the lane's record videos
+# and the lane's snapshot of the games' times in data/performance/.
 if [ -f "$performance_page" ]; then
   mkdir -p "$out/$performance_at"
   cp "$performance_page" "$out/$performance_at/index.html"
