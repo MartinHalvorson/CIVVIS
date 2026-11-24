@@ -101,8 +101,11 @@ class TheOrderOfThePage(unittest.TestCase):
         self.assertIn("pick.games === \"self\"", PAGE)
         # A belief's bar is drawn: its fill is a block, sized by the width set on it.
         self.assertIn(".civ-row-fill { display: block; height: 100%;", PAGE)
-        # The note says what a Settler first is.
-        self.assertIn("A Settler can come first: the capital needs two citizens to train one", PAGE)
+        # The note says what a dropped step is (operator 2026-11-24: "capital
+        # cant make a settler first - needs 2 pop"): a Scout begun on turn 1
+        # and dropped for a Settler opens the order, marked.
+        self.assertIn("a Scout started on turn 1 and dropped at pop 2 for a Settler reads &#8220;Scout, dropped&#8221;", PAGE)
+        self.assertNotIn("A Settler can come first", PAGE)
 
     def test_the_page_is_one_timeline_of_a_games_decisions(self):
         # Operator 2026-11-24: "rank them into a list chronologically ...
