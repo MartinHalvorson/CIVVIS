@@ -23,7 +23,6 @@ or a digit, and a page listed under a folder (Charts/) sits in that folder.
       CIVVIS Performance  /charts/civvis-performance/
       AI Interpretability /charts/ai-interpretability/
     Tournaments           /tournaments/
-    Wizard Chess          /wizard-chess/
 
 A page states its own address (its `<link rel="canonical">`), `publish.sh`
 puts it there, and every link in it is relative to it. So this reads the
@@ -210,11 +209,6 @@ class Addresses(unittest.TestCase):
                 if where.startswith(f"{ADDRESS['landing.html']}/assets/"):
                     self.assertTrue(
                         (BETA / "assets" / where.split("/assets/", 1)[1]).is_file(), f"{source}: {link}")
-                elif where.startswith(f"{ADDRESS['chess.html']}/chess/"):
-                    # Wizard Chess loads its own scripts from the directory
-                    # `publish.sh` sets beside its page.
-                    self.assertTrue(
-                        (BETA / "chess" / where.split("/chess/", 1)[1]).is_file(), f"{source}: {link}")
                 else:
                     self.assertIn(
                         where, addresses | {"."},
@@ -230,6 +224,22 @@ class Addresses(unittest.TestCase):
         self.assertGreaterEqual(len(linked), 3, linked)
         for address in linked:
             self.assertIn(address, set(ADDRESS.values()), f'the viewer links "/{address}"')
+
+    def test_wizard_chess_is_set_aside_and_is_no_page_of_the_site(self):
+        # Operator, 2026-11-24: "lets set aside wizard chess right now. please
+        # remove from civvis.ai". It was the last name in the list, at
+        # /wizard-chess/, from 2026-11-23. The game stays in the tree
+        # (`beta/chess.html`, `beta/chess/`); `publish.sh` publishes nothing
+        # of it, no published page or the viewer names or links it, and the
+        # publish check knows no such page.
+        self.assertNotIn("chess.html", SOURCES)
+        self.assertEqual(
+            [line for line in PUBLISH.splitlines() if "chess" in line.lower() and not line.lstrip().startswith("#")], [])
+        self.assertNotIn("wizard-chess", set(ADDRESS.values()))
+        self.assertNotIn("wizard-chess", verify.ADDRESSES)
+        for source in SOURCES:
+            self.assertNotRegex(read(source), r"(?i)wizard.chess", source)
+        self.assertNotRegex(VIEWER, r"(?i)wizard.chess|chesslink")
 
 
 class Moved(unittest.TestCase):

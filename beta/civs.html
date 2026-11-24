@@ -187,21 +187,6 @@
   .site-link[href^="https://store.steampowered.com/"] { background: linear-gradient(90deg, #1a44c2 35%, #47bfff); color: #fff; }
   .site-link[href^="https://store.steampowered.com/"]:hover,
   .site-link[href^="https://store.steampowered.com/"]:focus-visible { background: linear-gradient(90deg, #2352d6 35%, #73cfff); color: #fff; }
-  /* Wizard Chess is a chessboard (operator, 2026-11-23: "below civ 6, add
-     wizard chess. the background there can be black and white
-     checkerboard"): black and white squares round a black plate that the
-     name stands on, so that it reads on either. */
-  .site-link[href$="wizard-chess/"] {
-    background: linear-gradient(#0b0b0c, #0b0b0c) center / calc(100% - 16px) calc(100% - 8px) no-repeat,
-      repeating-conic-gradient(#f4f1e8 0 25%, #0b0b0c 0 50%) 0 0 / 8px 8px;
-    color: #f4f1e8;
-  }
-  .site-link[href$="wizard-chess/"]:hover,
-  .site-link[href$="wizard-chess/"]:focus-visible {
-    background: linear-gradient(#26262a, #26262a) center / calc(100% - 16px) calc(100% - 8px) no-repeat,
-      repeating-conic-gradient(#ffffff 0 25%, #0b0b0c 0 50%) 0 0 / 8px 8px;
-    color: #fff;
-  }
   /* Charts/ is a folder of pages and reads "Charts/", with the slash
      (operator, 2026-11-22), and drops down like one (operator,
      2026-11-24: "charts/ can drop down folder style and the user can
@@ -508,7 +493,6 @@
       <a class="site-link" href="../../?mode=strange" title="One world, two timelines: the same game played two ways, side by side, on a timeline that branches.">Doctor Strange's Civ 6</a>
       <a class="site-link" href="../../?mode=play" title="You play one civilization. CIVVIS AI agents play the rest.">AI Debugger</a>
       <a class="site-link" href="https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/" target="_blank" rel="noopener" title="Buy Civilization VI on Steam">Civ 6</a>
-      <a class="site-link" href="../../wizard-chess/" title="Chess where you command and the pieces obey, against an opponent at the Elo you pick.">Wizard Chess</a>
     </nav>
     <script data-site-folder>
     // Charts/ on a touch screen, where nothing points at it: the first tap
@@ -617,15 +601,18 @@
            should be able to click thourgh and see the win rates of all the
            units. we should sort the tree by win rates descending"; and
            2026-11-24: "top chart is build order"). The script lists the
-           first builds of the games against Deity, best win rate first,
-           and a build pressed lists the builds that followed it the same
-           way. -->
+           first steps of the games against Deity, best win rate first, and
+           a step pressed lists the steps that followed it the same way. A
+           step is what the capital finished, or what it dropped unfinished,
+           marked (operator 2026-11-24: "capital cant make a settler first -
+           needs 2 pop"; a Scout taken up on turn 1 and dropped at pop 2 is
+           "Scout, dropped"). -->
       <section class="res-block civ-builds" id="res-side-builds" aria-labelledby="res-title-builds" hidden>
         <header class="res-side-head">
           <div class="res-side-name">
             <p class="civ-step-tag"><span class="civ-step-n">1</span>What the capital builds first &#183; turns 1&#8211;30</p>
             <h2 class="res-side-title" id="res-title-builds">Early build order: win rate against Lv 8 Deity AI</h2>
-            <p class="res-counted" id="res-counted-builds">What the capital built first, second and third against Civilization VI&#8217;s own AI.</p>
+            <p class="res-counted" id="res-counted-builds">What the capital worked on first, second and third against Civilization VI&#8217;s own AI.</p>
           </div>
         </header>
         <p class="civ-step-why">The capital&#8217;s first builds decide how soon the second city goes down and whether the capital can hold off the first attack: a Scout finds the land, a Slinger guards it, a Settler claims it.</p>
@@ -634,10 +621,9 @@
           <ul class="res-builds" id="res-builds" aria-labelledby="res-title-builds"></ul>
         </div>
         <p class="rank-note">
-          What CIVVIS&#8217;s capital finished producing, in the order it finished it. The first builds are listed best win rate first; press one to list what was built second after it, then third, <span id="res-builds-depth">eight</span> builds deep.
-          A row is CIVVIS&#8217;s win rate over the games that opened with exactly the builds down to it and, in brackets, those games.
-          A build is a unit, building, district or wonder the capital&#8217;s production finished; one bought with Gold or Faith is not a build, and an item dropped for another before it was done is not one either.
-          A Settler can come first: the capital needs two citizens to train one, it has them by turn 3 or 4 at Online speed, and in those games CIVVIS dropped what it began on turn 1, a Scout or a Builder, for the Settler.
+          CIVVIS&#8217;s capital&#8217;s build order: what it worked on, in order. A step is a unit, building, district, wonder or project the capital&#8217;s production finished, or one it put production into and dropped unfinished, marked &#8220;dropped&#8221;: a Scout started on turn 1 and dropped at pop 2 for a Settler reads &#8220;Scout, dropped&#8221;, then &#8220;Settler&#8221;, so the first step is always one the capital could start on turn 1. The first steps are listed best win rate first; press one to list the steps after it, then the third, <span id="res-builds-depth">eight</span> steps deep.
+          A row is CIVVIS&#8217;s win rate over the games whose build order opened with exactly the steps down to it and, in brackets, those games.
+          An item bought with Gold or Faith, or handed over (a pantheon&#8217;s free Settler or Builder), is not a step.
           Every finished game against the Deity AI on the run ledger counts, in a tournament or not: a win is a CIVVIS victory; a loss is a rival&#8217;s victory, our elimination, or a game conceded early.
           <span id="res-builds-left"></span>
           A build order only one game played is not opened further.

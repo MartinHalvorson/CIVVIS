@@ -100,17 +100,23 @@ deity games. meaning, when scout was built first, what percentage of those
 games won? when settler was secnod, what percentage of scout-settler won? a
 person should be able to click thourgh and see the win rates of all the
 units. we should sort the tree by win rates descending ... add this chart to
-the top of win analytics"): for the games against Deity, what the capital
-finished producing first, then second after each first, and so on, each with
-CIVVIS's win rate over the games that opened that way and those games,
-listed best win rate first. A game's opening is what
-`civ6_ladder.opening_builds` reads off its first run's events: the capital's
-finished builds in order, a bought item not among them. A run's summary on
-the ledger carries it (`build_order`) from the day the harness began writing
-it, and the games before that are in a snapshot,
-`data/research/build_orders.json`, which `--build-orders` fills from the
-event logs on the ledger branch: a 5 MB log a game is too much to read at
-every publish, and a finished game's opening never changes. Its games are
+the top of win analytics"): for the games against Deity, the capital's first
+step, then the second after each first, and so on, each with CIVVIS's win
+rate over the games that opened that way and those games, listed best win
+rate first. A game's opening is what `civ6_ladder.opening_builds` reads off
+its first run's events: the capital's build order, what its production
+finished and, marked, what it dropped unfinished (operator 2026-11-24:
+"capital cant make a settler first - needs 2 pop": a Scout taken up on turn
+1 and dropped at pop 2 for a Settler is "Scout, dropped", then "Settler"), a
+bought or handed-over item not among them. A run's summary on the ledger
+carries it (`build_order`, and `build_order_reading`, the way it was read),
+and the games before the harness wrote it the way the reader reads now are
+in a snapshot, `data/research/build_orders.json`, which `--build-orders`
+fills from the event logs on the ledger branch: a 5 MB log a game is too
+much to read at every publish, and a finished game's opening never changes.
+A publish reads off their logs the few openings neither holds
+(`BUILD_READ_AT_PUBLISH`): the games played since the snapshot was filled by
+a harness still on an older reader. Its games are
 every finished game against Deity on the run ledger with one CIVVIS agent in
 it, counted as the civ table counts them (a win, or a loss: a rival's
 victory, our elimination, a game conceded early), less the games whose
@@ -206,6 +212,17 @@ BUILD_LEVEL = 8
 BUILD_DEPTH = 8
 BUILD_BRANCH = 2
 
+#: A step of a build order the capital dropped unfinished, as the step's
+#: item stands among a game's builds and in the snapshot's `items`
+#: (`UNIT_SCOUT:dropped`; operator 2026-11-24: show a dropped item, marked).
+DROPPED = ":dropped"
+
+#: How many games' openings a publish reads off their logs when neither the
+#: snapshot nor a run summary holds them as the reader reads now: the games
+#: since the snapshot was last filled whose summaries were written by a
+#: harness still on an older reader, and the few whose opening is in no log.
+BUILD_READ_AT_PUBLISH = 200
+
 #: A build's name where Civilization VI's own is not its type's words: the
 #: buildings and districts the game names otherwise, and the units that
 #: replace another for one civ, whose type leads with the civ.
@@ -222,6 +239,13 @@ BUILD_NAMES = {
     "UNIT_SUMERIAN_WAR_CART": "War-Cart",
     "UNIT_MAYAN_HULCHE": "Hul\u2019che",
     "UNIT_EGYPTIAN_CHARIOT_ARCHER": "Maryannu Chariot Archer",
+    "PROJECT_ENHANCE_DISTRICT_HOLY_SITE": "Holy Site Prayers",
+    "PROJECT_ENHANCE_DISTRICT_CAMPUS": "Campus Research Grants",
+    "PROJECT_ENHANCE_DISTRICT_THEATER": "Theater Square Festival",
+    "PROJECT_ENHANCE_DISTRICT_COMMERCIAL_HUB": "Commercial Hub Investment",
+    "PROJECT_ENHANCE_DISTRICT_HARBOR": "Harbor Shipping",
+    "PROJECT_ENHANCE_DISTRICT_ENCAMPMENT": "Encampment Training",
+    "PROJECT_ENHANCE_DISTRICT_INDUSTRIAL_ZONE": "Industrial Zone Logistics",
 }
 BUILD_CIVS = (
     "AMERICAN", "ARABIAN", "AZTEC", "BABYLONIAN", "BRAZILIAN", "BYZANTINE", "CHINESE", "COLOMBIAN", "CREE",
@@ -506,7 +530,11 @@ def win_rates(games: list[tuple]) -> dict | None:
 
 def build_name(item: str) -> str:
     """A build as the page writes it: `UNIT_SCOUT` is Scout, `DISTRICT_HOLY_SITE`
-    Holy Site, and `UNIT_GREEK_HOPLITE` Hoplite, as the game names it."""
+    Holy Site, and `UNIT_GREEK_HOPLITE` Hoplite, as the game names it; an
+    item the capital dropped (`UNIT_SCOUT:dropped`, `DROPPED`) is
+    "Scout, dropped"."""
+    if item.endswith(DROPPED):
+        return build_name(item[: -len(DROPPED)]) + ", dropped"
     if item in BUILD_NAMES:
         return BUILD_NAMES[item]
     kind, _, words = item.partition("_")
@@ -542,26 +570,55 @@ def build_games(rows: list[dict], level: int = BUILD_LEVEL) -> list[tuple]:
     return out
 
 
+def ladder():
+    """`tools/civ6_ladder.py`, which reads a game's opening off its log
+    (`opening_builds`) and says how it reads (`BUILD_ORDER_READING`)."""
+    tools = str(pathlib.Path(__file__).resolve().parent.parent / "tools")
+    if tools not in sys.path:
+        sys.path.insert(0, tools)
+    import civ6_ladder
+
+    return civ6_ladder
+
+
 def builds_named(order: object) -> list[str] | None:
-    """A run summary's `build_order` (`[[item, turn], ...]`) as its items
-    alone, or `None` when it holds none."""
+    """A run's `build_order` (`[[item, turn], ...]`, a step the capital
+    dropped `[item, turn, "dropped"]`) as its steps alone, a dropped one
+    marked (`UNIT_SCOUT:dropped`), or `None` when it holds none."""
     if not isinstance(order, list):
         return None
-    names = [build[0] for build in order if isinstance(build, list) and build and isinstance(build[0], str)]
+    dropped = ladder().BUILD_DROPPED
+    names = [
+        step[0] + (DROPPED if step[2:3] == [dropped] else "")
+        for step in order
+        if isinstance(step, list) and step and isinstance(step[0], str)
+    ]
     return names or None
 
 
 def openings(source: pathlib.Path, tags: list[str]) -> dict[str, list[str]]:
-    """Each run's opening, the capital's builds in order, from its summary on
-    the ledger branch. A run whose summary carries none (a run from before
-    the harness wrote it, or one that began from a save) is not in the
-    answer."""
-    read = summaries(source, tags, lambda summary: builds_named(summary.get("build_order")))
+    """Each run's opening, the capital's build order, from its summary on
+    the ledger branch, when the summary's was read the way the reader reads
+    now (`build_order_reading`). A run whose summary carries none (a run
+    from before the harness wrote it, or one that began from a save), or
+    one read another way, is not in the answer."""
+    reading = ladder().BUILD_ORDER_READING
+
+    def said(summary: dict) -> list[str] | None:
+        if summary.get("build_order_reading") != reading:
+            return None
+        return builds_named(summary.get("build_order"))
+
+    read = summaries(source, tags, said)
     return {tag: names for tag, names in read.items() if names}
 
 
 def held_openings(snapshot: dict) -> dict[str, list[str]]:
-    """The snapshot's games, each under its key with its builds by name."""
+    """The snapshot's games, each under its key with its build order by
+    name; none when the snapshot was read another way than the reader reads
+    now (its `reading`)."""
+    if snapshot.get("reading") != ladder().BUILD_ORDER_READING:
+        return {}
     items = snapshot.get("items") or []
     return {str(key): [items[at] for at in builds] for key, builds in snapshot.get("games") or []}
 
@@ -672,9 +729,10 @@ def research(source: pathlib.Path) -> dict | None:
     except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:
         print(f"research_page: no win rates over the tournaments' games ({error})", file=sys.stderr)
     # The tree of build orders over the games against Deity: each game's
-    # opening from the snapshot, and from its run's summary for a game the
-    # snapshot does not hold, which is every game played since the harness
-    # began writing it.
+    # opening from the snapshot, from its run's summary for a game the
+    # snapshot does not hold (a game played since the harness began writing
+    # it the way the reader reads now), and off its log for the few neither
+    # holds.
     out["build_orders"] = None
     try:
         if rows:
@@ -685,7 +743,16 @@ def research(source: pathlib.Path) -> dict | None:
                 held = {}
             games = build_games(rows)
             asked = sorted({tag for key, tags, _, _ in games if key not in held for tag in tags})
-            out["build_orders"] = build_orders(games, {**openings(source, asked), **held})
+            known = {**openings(source, asked), **held}
+            unread = [game for game in games if not any(known.get(tag) for tag in game[1])]
+            if len(unread) > BUILD_READ_AT_PUBLISH:
+                print(
+                    f"research_page: {len(unread)} openings neither in the snapshot nor in a summary; "
+                    f"reading {BUILD_READ_AT_PUBLISH} off their logs (refresh with --build-orders)",
+                    file=sys.stderr,
+                )
+            known.update(read_openings(source, unread[:BUILD_READ_AT_PUBLISH]))
+            out["build_orders"] = build_orders(games, known)
     except (ValueError, KeyError, TypeError, AttributeError, IndexError) as error:
         print(f"research_page: no tree of build orders ({error})", file=sys.stderr)
     if not out["self_play"] and not out["levels"] and not out["tournament_rates"] and not out["build_orders"]:
@@ -778,7 +845,7 @@ def written(data: dict) -> str:
 #: Where a run's events sit on the ledger branch, gzipped, and the lines of
 #: them `opening_builds` reads: the boards, the purchases and the map's size.
 EVENTS_REF = "refs/remotes/origin/ledger:runs/{tag}/events.jsonl.gz"
-EVENTS_READ = ('"kind": "state"', '"order_verified"', '"tiles_done"')
+EVENTS_READ = ('"kind": "state"', '"order_verified"', '"tiles_done"', '"turn_verified"')
 
 
 def run_events(source: pathlib.Path, tag: str, read: tuple = EVENTS_READ):
@@ -812,9 +879,7 @@ def run_events(source: pathlib.Path, tag: str, read: tuple = EVENTS_READ):
 def read_opening(source: pathlib.Path, tags: list[str]) -> list[str] | None:
     """A game's opening off its runs' event logs, the first that holds one:
     the game's first run, unless that one was never published."""
-    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "tools"))
-    import civ6_ladder
-
+    civ6_ladder = ladder()
     for tag in tags:
         events = run_events(source, tag)
         try:
@@ -826,46 +891,51 @@ def read_opening(source: pathlib.Path, tags: list[str]) -> list[str] | None:
     return None
 
 
+def read_openings(source: pathlib.Path, games: list[tuple], readers: int = 4) -> dict[str, list[str]]:
+    """The openings of `games` (`build_games`) read off their logs, each
+    under its game's key: a game whose opening is in no log is not in the
+    answer."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    with ThreadPoolExecutor(readers) as pool:
+        read = list(pool.map(lambda game: read_opening(source, game[1]), games))
+    return {key: names for (key, _, _, _), names in zip(games, read) if names}
+
+
 def openings_snapshot(source: pathlib.Path, snapshot: dict | None = None, again: bool = False) -> dict:
     """The snapshot of the openings brought up to the ledger: the games it
     held, and every finished game against Deity it did not, read off the
-    game's event log. A game whose run summary carries its opening is left to
-    the summary, and a game whose opening is in no log is left out, to be
-    asked again next time. The builds' names are kept once, in `items`, and a
-    game is its key and its builds' places there, so a refresh's diff is the
-    games it added.
+    game's event log. A game whose run summary carries its opening as the
+    reader reads now (`build_order_reading`) is left to the summary, and a
+    game whose opening is in no log is left out, to be asked again next
+    time. The steps' names are kept once, in `items`, and a game is its key
+    and its steps' places there, so a refresh's diff is the games it added.
 
-    `again` reads every game afresh, the games the snapshot held and the
-    games whose summaries carry an opening among them: what a change to how
-    an opening is read needs (2026-11-24, `civ6_ladder.opening_builds`
-    reading every pair of boards). The snapshot then holds every game played
-    so far, and since it is read over the summaries, a summary written by
-    the reader before is never read again."""
-    from concurrent.futures import ThreadPoolExecutor
-
-    snapshot = {} if again else snapshot or {}
+    A snapshot read another way than the reader reads now (its `reading`,
+    `civ6_ladder.BUILD_ORDER_READING`) is read again whole, and `again`
+    reads every game afresh, the games whose summaries carry an opening
+    among them."""
+    reading = ladder().BUILD_ORDER_READING
+    snapshot = {} if again or (snapshot or {}).get("reading") != reading else snapshot
     items = list(snapshot.get("items") or [])
     held = {str(key): list(builds) for key, builds in snapshot.get("games") or []}
     games = [game for game in build_games(ranks.results(source) or []) if game[0] not in held]
     if not again:
         carried = openings(source, sorted({tag for _, tags, _, _ in games for tag in tags}))
         games = [game for game in games if not any(tag in carried for tag in game[1])]
-    with ThreadPoolExecutor(8 if again else 4) as readers:
-        read = list(readers.map(lambda game: read_opening(source, game[1]), games))
-    for (key, _, _, _), names in zip(games, read):
-        if not names:
-            continue
+    for key, names in sorted(read_openings(source, games, 8 if again else 4).items()):
         for name in names:
             if name not in items:
                 items.append(name)
         held[key] = [items.index(name) for name in names]
     return {
-        "about": "What the capital finished producing, in order, in each finished game against Lv 8 Deity AI on "
-        "the run ledger: the game's key and its builds as places in `items`. Read off the game's event log by "
-        "`civ6_ladder.opening_builds`, every game afresh on 2026-11-24 when the reader learned to read every "
-        "pair of boards; a game played since whose run summary carries `build_order` is not here. "
-        "Filled by `beta/research_page.py --build-orders`; read by Win Analytics.",
+        "about": "The capital's build order in each finished game against Lv 8 Deity AI on the run ledger: what it "
+        "finished, and what it dropped unfinished marked `:dropped`, in order; the game's key and its steps as "
+        "places in `items`. Read off the game's event log by `civ6_ladder.opening_builds`, the way `reading` names "
+        "(`BUILD_ORDER_READING`); a game whose run summary carries `build_order` read that way is not here. "
+        "Filled by `beta/research_page.py --build-orders`; read by Civ Analytics.",
         "level": BUILD_LEVEL,
+        "reading": reading,
         "taken": datetime.datetime.now(datetime.timezone.utc).date().isoformat(),
         "items": items,
         "games": [[key, builds] for key, builds in sorted(held.items())],
@@ -937,8 +1007,13 @@ def main(argv: list[str]) -> int:
         data = openings_snapshot(pathlib.Path(argv[2]), before, again=argv[4:] == ["--again"])
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(written_openings(data), encoding="utf-8")
-        added = len(data["games"]) - len((before or {}).get("games") or [])
-        print(f"research_page: {len(data['games'])} openings in {out}, {added} of them new", file=sys.stderr)
+        fresh = argv[4:] == ["--again"] or (before or {}).get("reading") != data["reading"]
+        added = len(data["games"]) - (0 if fresh else len((before or {}).get("games") or []))
+        print(
+            f"research_page: {len(data['games'])} openings in {out}, {added} of them "
+            + ("read afresh" if fresh else "new"),
+            file=sys.stderr,
+        )
         return 0
     if len(argv) not in (2, 3):
         print(__doc__, file=sys.stderr)

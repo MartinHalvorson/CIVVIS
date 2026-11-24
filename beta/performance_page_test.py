@@ -603,7 +603,6 @@ class TheSiteList(unittest.TestCase):
                 ("site-link", "../../?mode=strange", "Doctor Strange's Civ 6"),
                 ("site-link", "../../?mode=play", "AI Debugger"),
                 ("site-link", "https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/", "Civ 6"),
-                ("site-link", "../../wizard-chess/", "Wizard Chess"),
             ],
         )
         self.assertEqual(nav.count('aria-current="page"'), 1)

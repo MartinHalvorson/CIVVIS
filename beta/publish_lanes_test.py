@@ -104,8 +104,13 @@ ADDRESSES = {
     "performance": "charts/civvis-performance",
     "interpretability": "charts/ai-interpretability",
     "download": "download",
-    "chess": "wizard-chess",
 }
+
+#: A page the tree has and no lane carries: Wizard Chess, set aside on
+#: 2026-11-24 (operator: "lets set aside wizard chess right now. please remove
+#: from civvis.ai"). It was published at this address from 2026-11-23. Its
+#: page and its parts stay in `beta/`, and `publish.sh` leaves them there.
+SET_ASIDE = {"chess": "wizard-chess"}
 
 SHIM = textwrap.dedent(
     """\
@@ -185,6 +190,11 @@ class Lanes(unittest.TestCase):
         # Main: every script, page and figure has moved on, there are three more
         # pages, and every page says where it lives.
         cls.write_revision("main", pages=tuple(ADDRESSES), addresses=ADDRESSES)
+        # And main still has the page that is set aside, and its parts.
+        for name, address in SET_ASIDE.items():
+            (cls.repo / "beta" / f"{name}.html").write_text(page(name, "main", address), encoding="utf-8")
+            (cls.repo / "beta" / name).mkdir()
+            (cls.repo / "beta" / name / "game.js").write_text("// parts of main\n", encoding="utf-8")
         cls.main = cls.commit("main")
 
         # The two lanes as the deploy builds them: from main's tree, the
@@ -264,7 +274,7 @@ class Lanes(unittest.TestCase):
         self.assertTrue((self.test / "charts" / "ai-interpretability" / "index.html").is_file())
         self.assertFalse((self.stable / "interpretability").exists())
         self.assertFalse((self.stable / "charts").exists())
-        self.assertIn("published without: interpretability civ-analytics elo-rankings wizard-chess", self.stable_said)
+        self.assertIn("published without: interpretability civ-analytics elo-rankings\n", self.stable_said)
         # And each lane says which pages it carries, by address, for the
         # checks and for the router.
         self.assertEqual(
@@ -277,7 +287,7 @@ class Lanes(unittest.TestCase):
             # Civ Analytics, Win Analytics, ELO Rankings, CIVVIS Performance),
             # because the router opens a folder's first page in this list.
             ["home", "tournaments", "charts/ai-interpretability", "charts/civ-analytics", "charts/win-analytics",
-             "charts/elo-rankings", "charts/civvis-performance", "download", "wizard-chess"],
+             "charts/elo-rankings", "charts/civvis-performance", "download"],
         )
         # And the publish check reads each list in the order it was written.
         # It asks a folder for the first page the list has in it, which is
@@ -288,6 +298,21 @@ class Lanes(unittest.TestCase):
         for lane in (self.stable, self.test):
             build = json.loads(self.read(lane, "build.json"))
             self.assertEqual(verify.lane_pages(build), build["pages"])
+
+    def test_a_page_set_aside_is_in_no_lane(self):
+        # Main's tree has Wizard Chess's page and its parts, and neither lane
+        # has anything of them: not the page, not its directory, not its
+        # address in the list the router and the checks read. A lane is not
+        # said to be "without" it either; that is said of a page a revision
+        # does not have yet.
+        for name, address in SET_ASIDE.items():
+            self.assertIn(f"{name} of main", self.git("show", f"{self.main}:beta/{name}.html"))
+            self.assertIn("parts of main", self.git("show", f"{self.main}:beta/{name}/game.js"))
+            for lane, said in ((self.stable, self.stable_said), (self.test, self.test_said)):
+                self.assertFalse((lane / address).exists(), lane.name)
+                self.assertEqual([found for found in lane.rglob("*") if name in found.name], [], lane.name)
+                self.assertNotIn(address, json.loads(self.read(lane, "build.json"))["pages"])
+                self.assertNotIn(address, said)
 
     def test_every_page_of_a_lane_is_its_own_revisions(self):
         for name in ("landing", "download", "tournaments", "research", "performance"):
@@ -305,8 +330,7 @@ class Lanes(unittest.TestCase):
             ["charts/ai-interpretability/index.html",
              "charts/civ-analytics/index.html", "charts/civvis-performance/index.html",
              "charts/elo-rankings/index.html", "charts/win-analytics/index.html",
-             "download/index.html", "home/index.html", "index.html", "tournaments/index.html",
-             "wizard-chess/index.html"],
+             "download/index.html", "home/index.html", "index.html", "tournaments/index.html"],
         )
         self.assertEqual(
             sorted(str(found.relative_to(self.stable)) for found in self.stable.glob("**/index.html")),
