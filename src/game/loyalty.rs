@@ -13,6 +13,9 @@
 use super::*;
 use crate::shared_sort::SharedSort;
 
+/// The melee units a city that revolts over its Loyalty stands up at once.
+const FREE_CITY_DEFENDERS: usize = 2;
+
 impl Game {
     pub(super) fn ensure_free_city_player(&mut self) -> usize {
         if let Some(player) = self.players.iter().find(|player| player.is_free_city) {
@@ -445,7 +448,8 @@ impl Game {
         self.loyalty_change_for_city(city.owner, city.id).delta
     }
 
-    /// Free Cities immediately field two current, generic melee defenders.
+    /// Free Cities immediately field current, generic melee defenders, two for
+    /// a Loyalty revolt ([`FREE_CITY_DEFENDERS`]).
     /// Their shared seat inherits technology before this is called, so later
     /// revolts naturally upgrade from Warriors through the melee line.
     fn free_city_defender(&self, free_cities: usize) -> Option<Name> {
@@ -467,6 +471,34 @@ impl Game {
                     .then_with(|| right_name.cmp(left_name))
             })
             .map(|(unit, _)| *unit)
+    }
+
+    /// A city declares independence: it passes to the hostile Free Cities
+    /// seat with its Loyalty whole, and `defenders` current melee units stand
+    /// up around it. A Loyalty revolt fields [`FREE_CITY_DEFENDERS`]; a
+    /// civilization that breaks up fields more (`game/black_swan.rs`).
+    pub(super) fn revolt_to_free_cities(&mut self, cid: u32, defenders: usize) {
+        let old_owner = self.cities[&cid].owner;
+        let free_cities = self.ensure_free_city_player();
+        // A Free City inherits enough civic/technical knowledge
+        // to retain the infrastructure present when it revolts.
+        let techs = self.players[old_owner].techs.clone();
+        let civics = self.players[old_owner].civics.clone();
+        self.players[free_cities].techs.extend(techs);
+        self.players[free_cities].civics.extend(civics);
+        let position = self.cities[&cid].pos;
+        self.transfer_city(cid, free_cities, false);
+        let city = self.cities.get_mut(&cid).unwrap();
+        city.loyalty = 100.0;
+        city.captured_from = None;
+        city.occupied_from = None;
+        city.free_city_pressure.clear();
+        self.reveal(free_cities, position, 3);
+        if let Some(defender) = self.free_city_defender(free_cities) {
+            for _ in 0..defenders {
+                self.place_city_state_starting_unit(&defender, free_cities, position);
+            }
+        }
     }
 
     /// Apply population pressure and every local Loyalty source. A major city
@@ -555,29 +587,7 @@ impl Game {
 
         for flip in flips {
             match flip {
-                Flip::Revolt(cid) => {
-                    let old_owner = self.cities[&cid].owner;
-                    let free_cities = self.ensure_free_city_player();
-                    // A Free City inherits enough civic/technical knowledge
-                    // to retain the infrastructure present when it revolts.
-                    let techs = self.players[old_owner].techs.clone();
-                    let civics = self.players[old_owner].civics.clone();
-                    self.players[free_cities].techs.extend(techs);
-                    self.players[free_cities].civics.extend(civics);
-                    let position = self.cities[&cid].pos;
-                    self.transfer_city(cid, free_cities, false);
-                    let city = self.cities.get_mut(&cid).unwrap();
-                    city.loyalty = 100.0;
-                    city.captured_from = None;
-                    city.occupied_from = None;
-                    city.free_city_pressure.clear();
-                    self.reveal(free_cities, position, 3);
-                    if let Some(defender) = self.free_city_defender(free_cities) {
-                        for _ in 0..2 {
-                            self.place_city_state_starting_unit(&defender, free_cities, position);
-                        }
-                    }
-                }
+                Flip::Revolt(cid) => self.revolt_to_free_cities(cid, FREE_CITY_DEFENDERS),
                 Flip::Join(cid, new_owner) => {
                     self.transfer_city(cid, new_owner, false);
                     self.add_historic_moment(
