@@ -73,8 +73,8 @@ class TheOrderOfThePage(unittest.TestCase):
         sections = re.findall(r'<section [^>]*id="([a-z0-9-]+)"', record)
         self.assertEqual(sections, [
             "res-side-builds",
-            "civ-filtered", "civ-city2", "civ-city3", "civ-pantheons", "civ-founders", "civ-followers",
-            "civ-invaded",
+            "civ-filtered", "civ-city2", "civ-city3", "civ-cities50", "civ-pantheons", "civ-founders", "civ-followers",
+            "civ-invaded", "civ-science100", "civ-victories",
             "civ-civs", "rank-civs", "rank-civs-self",
         ])
         self.assertIn('<h2 class="res-side-title" id="res-title-builds">Early build order: win rate against Lv 8 Deity AI</h2>', PAGE)
@@ -101,6 +101,57 @@ class TheOrderOfThePage(unittest.TestCase):
         self.assertIn("pick.games === \"self\"", PAGE)
         # The note says what a Settler first is.
         self.assertIn("A Settler can come first: the capital needs two citizens to train one", PAGE)
+
+    def test_the_page_is_one_timeline_of_a_games_decisions(self):
+        # Operator 2026-11-24: "rank them into a list chronologically ...
+        # merge your charts into the civ analytics chart chronologically as
+        # well so the whole thing is really one logic timeline of making
+        # decisions in civ". The index lists the decisions in the order a
+        # game asks them, each a link to its charts, and the charts stand in
+        # the same order, the build orders first and the civs last.
+        index = PAGE[PAGE.index('<nav class="civ-steps"'):PAGE.index("</nav>", PAGE.index('<nav class="civ-steps"'))]
+        rows = re.findall(r'<a href="#([a-z0-9-]+)" style="--from: (\d+); --to: (\d+)"><span class="civ-step-n">(\d)</span>', index)
+        self.assertEqual([row[0] for row in rows], [
+            "res-side-builds", "civ-step-expand", "civ-step-faith", "civ-step-invaded", "civ-step-science", "civ-step-victory"])
+        self.assertEqual([row[3] for row in rows], ["1", "2", "3", "4", "5", "6"])
+        # The turns open, at Online speed, start in game order and lie in
+        # the game's 250.
+        spans = [(int(row[1]), int(row[2])) for row in rows]
+        self.assertEqual(spans, sorted(spans))
+        self.assertTrue(all(1 <= lo < hi <= 250 for lo, hi in spans))
+        body = PAGE[PAGE.index("</nav>"):]
+        at = [body.index(f'id="{row[0]}"') for row in rows] + [body.index('id="civ-civs"')]
+        self.assertEqual(at, sorted(at))
+        # Each decision's head carries its place and the turns the index
+        # gives it; the build orders' and the civs' heads say theirs.
+        for target, lo, hi, n in rows[1:]:
+            head = body[body.index(f'id="{target}"'):body.index("</header>", body.index(f'id="{target}"'))]
+            self.assertIn(f'<span class="civ-step-n">{n}</span>', head)
+            self.assertIn(f"turns {lo}&#8211;{hi}", head)
+        self.assertIn('<span class="civ-step-n">1</span>What the capital builds first &#183; turns 1&#8211;30', PAGE)
+        self.assertIn("Before turn 1 &#183; set by the game&#8217;s setup, not chosen by CIVVIS", PAGE)
+        # The two charts of the marks stand in their decisions, each beside
+        # where CIVVIS stands, and the victories close the filtered charts.
+        self.assertLess(body.index('id="civ-step-expand"'), body.index('id="civ-cities50"'))
+        self.assertLess(body.index('id="civ-cities50"'), body.index('id="civ-step-faith"'))
+        self.assertLess(body.index('id="civ-step-science"'), body.index('id="civ-science100"'))
+        self.assertLess(body.index('id="civ-science100"'), body.index('id="civ-step-victory"'))
+        for chart in ("cities50", "science100"):
+            self.assertIn(f'id="civ-{chart}-stand"', body)
+            self.assertIn(f'chart(document.getElementById("civ-{chart}"), c.{chart}, "{chart}");', PAGE)
+        self.assertIn("A column says what went with winning, not what made the win", PAGE)
+
+    def test_the_spans_of_counts_cover_every_count_once(self):
+        # The cities at turn 50 and the science at turn 100 are counts, not
+        # turns: their spans run on from the first with no gap, the last
+        # with no end.
+        for name in ("cities50", "science100"):
+            listed = json.loads(re.search(name + r": (\[.*?\]\]),", PAGE).group(1))
+            self.assertIsNone(listed[-1][1])
+            for (lo, hi), (after, _) in zip(listed, listed[1:]):
+                self.assertLessEqual(lo, hi)
+                self.assertEqual(after, hi + 1)
+        self.assertIn("span[1] === null || n <= span[1]", PAGE)
 
     def test_the_spans_of_turns_cover_every_turn_once(self):
         spans = re.search(r"const SPANS = \{\s*city2: (\[.*?\]\]),\s*city3: (\[.*?\]\]),\s*invaded: (\[.*?\]\]),", PAGE, re.S)
