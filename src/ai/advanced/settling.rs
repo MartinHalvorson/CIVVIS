@@ -20,6 +20,61 @@ use super::*;
 use crate::game::adjacency::PlotAdjacencies;
 use crate::shared_sort::SharedSort;
 
+/// One Settler's walk flood ([`AdvancedAi::settle_sooner_walk_flood`]):
+/// movement points to every tile the walk reached, kept by tile-grid slot.
+///
+/// The flood reads and writes one tile at a time, and a hashed table cost
+/// most of what the flood itself did not. A slot is an index. A tile the grid
+/// holds outside its own rectangle has no slot (no map the game builds has
+/// one), so it is kept by position beside the slots.
+pub(super) struct WalkCosts {
+    by_slot: Vec<Option<f64>>,
+    unslotted: crate::fast_map::FastMap<Pos, f64>,
+    /// Every tile reached, in the order it was first reached.
+    reached: Vec<Pos>,
+}
+
+impl WalkCosts {
+    fn new(g: &Game) -> WalkCosts {
+        WalkCosts {
+            by_slot: vec![None; g.map.tiles.len()],
+            unslotted: Default::default(),
+            reached: Vec::new(),
+        }
+    }
+
+    /// The walk's movement points to `pos`; `None` where it did not reach.
+    pub(super) fn get(&self, g: &Game, pos: Pos) -> Option<f64> {
+        match g.map.tiles.index_of(pos) {
+            Some(slot) => self.by_slot.get(slot).copied().flatten(),
+            None => self.unslotted.get(&pos).copied(),
+        }
+    }
+
+    fn set(&mut self, g: &Game, pos: Pos, cost: f64) {
+        let first = match g.map.tiles.index_of(pos) {
+            Some(slot) => {
+                if slot >= self.by_slot.len() {
+                    self.by_slot.resize(slot + 1, None);
+                }
+                self.by_slot[slot].replace(cost).is_none()
+            }
+            None => self.unslotted.insert(pos, cost).is_none(),
+        };
+        if first {
+            self.reached.push(pos);
+        }
+    }
+
+    /// Every reached tile and its cost, by position.
+    fn ordered(&self, g: &Game) -> BTreeMap<Pos, f64> {
+        self.reached
+            .iter()
+            .map(|pos| (*pos, self.get(g, *pos).expect("a reached tile has a cost")))
+            .collect()
+    }
+}
+
 impl AdvancedAi {
     /// Does this turn resolve the delay `settler_blocked_turns` measures?
     ///
@@ -776,8 +831,7 @@ impl AdvancedAi {
             let costs = Self::settler_walk_costs_cached(g, uid, radius, walk_costs);
             for (position, value) in candidates.iter_mut() {
                 let movement_cost = costs
-                    .get(position)
-                    .copied()
+                    .get(g, *position)
                     .unwrap_or_else(|| g.wdist(from, *position) as f64 * moves.max(1.0) / 2.0);
                 *value -= Self::settle_sooner_walk_cost(turn_price, movement_cost);
             }
@@ -949,11 +1003,11 @@ impl AdvancedAi {
         uid: u32,
         from: Pos,
         target: Pos,
-        costs: &BTreeMap<Pos, f64>,
+        costs: &WalkCosts,
     ) -> Option<u32> {
         let moves = g.unit_max_moves(uid).max(1.0);
         let by_cost = costs
-            .get(&target)
+            .get(g, target)
             .map(|cost| (cost / moves).ceil() as u32)?;
         Some(by_cost.max(g.wdist(from, target).max(0) as u32))
     }
@@ -974,25 +1028,30 @@ impl AdvancedAi {
     /// into turns, and this reads it. A tile the walk cannot reach is
     /// absent, and the caller prices it by hex distance instead.
     pub(super) fn settle_sooner_walk_costs(g: &Game, uid: u32, radius: i32) -> BTreeMap<Pos, f64> {
+        Self::settle_sooner_walk_flood(g, uid, radius).ordered(g)
+    }
+
+    /// [`Self::settle_sooner_walk_costs`] for a caller that only looks tiles
+    /// up: the costs stay on the tile grid, read by position, and no ordered
+    /// map is built.
+    pub(super) fn settle_sooner_walk_flood(g: &Game, uid: u32, radius: i32) -> WalkCosts {
+        let mut best = WalkCosts::new(g);
         let Some(unit) = g.units.get(&uid) else {
-            return BTreeMap::new();
+            return best;
         };
         let start = unit.pos;
         // `unit_can_traverse`, with the unit's half read once for the flood
         // rather than once per neighbour (see `Game::unit_traversal`).
         let class = g.unit_traversal(uid);
-        // Hashed while the flood runs: it asks and updates one tile at a time,
-        // and the heap, not the map, decides the order tiles are settled in.
-        // The ordered map callers read is built once at the end.
-        let mut best: crate::fast_map::FastMap<Pos, f64> = Default::default();
-        best.insert(start, 0.0);
+        // The heap, not the table, decides the order tiles are settled in.
+        best.set(g, start, 0.0);
         // (cost, pos) min-heap keyed on the cost in thousandths so it orders;
         // `Pos` breaks ties deterministically.
         let key = |cost: f64| (cost * 1000.0).round() as i64;
         let mut frontier = std::collections::BinaryHeap::new();
         frontier.push(std::cmp::Reverse((key(0.0), start)));
         while let Some(std::cmp::Reverse((cost_key, cur))) = frontier.pop() {
-            let cost = best[&cur];
+            let cost = best.get(g, cur).expect("a queued tile has a cost");
             if key(cost) < cost_key {
                 continue;
             }
@@ -1003,13 +1062,13 @@ impl AdvancedAi {
                     continue;
                 }
                 let total = cost + g.step_cost(cur, next);
-                if best.get(&next).is_none_or(|known| total < *known) {
-                    best.insert(next, total);
+                if best.get(g, next).is_none_or(|known| total < known) {
+                    best.set(g, next, total);
                     frontier.push(std::cmp::Reverse((key(total), next)));
                 }
             }
         }
-        best.into_iter().collect()
+        best
     }
 
     /// `settle_sooner_walk_costs` for one Settler decision, built at most
@@ -1030,10 +1089,10 @@ impl AdvancedAi {
         uid: u32,
         radius: i32,
         walk_costs: &'c mut SettlerWalkCosts,
-    ) -> &'c BTreeMap<Pos, f64> {
+    ) -> &'c WalkCosts {
         walk_costs
             .entry(radius)
-            .or_insert_with(|| Self::settle_sooner_walk_costs(g, uid, radius))
+            .or_insert_with(|| Self::settle_sooner_walk_flood(g, uid, radius))
     }
 
     pub(super) fn best_settler_target(
@@ -2313,7 +2372,7 @@ impl AdvancedAi {
                     uid,
                     current,
                     target,
-                    &Self::settle_sooner_walk_costs(g, uid, 3),
+                    &Self::settle_sooner_walk_flood(g, uid, 3),
                 );
                 think!(self.journal(), Expansion, Detail,
                        "Walking the first settler toward {target:?}";
