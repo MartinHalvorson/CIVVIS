@@ -29148,6 +29148,8 @@ end;
 local function onGameCoreTick()
 	if CivvisBoard.restart.deferred then pcall(CivvisBoard.restartFromCore); return; end
 	ensureStarted();
+	-- A Firaxis self-play run plays nothing: see `CivvisSelfPlay`.
+	if cfg.FiraxisSelfPlay == true then CivvisSelfPlay.pulse(false); return; end
 	CivvisTrade.pollPeace();
 	CivvisK.guard(CivvisTrade.askDeferred);
 	CivvisK.guard(CivvisTrade.settleRefused);
@@ -29164,6 +29166,9 @@ local function onLocalPlayerTurnBegin()
 	ensureStarted();
 	pcall(CivvisQueue.startPendingTimescale);
 	pcall(CivvisQueue.timescaleBlock, try(function() return Game.GetCurrentGameTurn(); end, nil));
+	-- Our seat's first turn is where a Firaxis self-play run hands it over,
+	-- after the timescale above: see `CivvisSelfPlay`.
+	if cfg.FiraxisSelfPlay == true then CivvisSelfPlay.pulse(true); return; end
 	CivvisTrade.pollPeace();
 	tick();
 end
@@ -29325,24 +29330,30 @@ local function onTeamVictory(team, victoryType, eventID)
 			return row ~= nil and row.VictoryType or nil;
 		end, nil),
 		local_player = pid, local_team = ourTeam,
-		won = (team == ourTeam),
+		-- No seat is ours in a Firaxis self-play game, whoever the engine
+		-- names as the local player while it observes: see `CivvisSelfPlay`.
+		won = (team == ourTeam) and cfg.FiraxisSelfPlay ~= true,
 		score = try(function()
 			return (pid ~= nil and pid >= 0) and Players[pid]:GetScore() or -1;
 		end, -1),
 		turns_played = turnsPlayed,
+		self_play = cfg.FiraxisSelfPlay == true or nil,
+		majors = cfg.FiraxisSelfPlay == true and CivvisSelfPlay.majors() or nil,
 	});
 end
 
 local function onPlayerDefeat(player, defeat, eventID)
 	local pid = try(function() return Game.GetLocalPlayer(); end, -1);
-	if player == pid then
+	-- A Firaxis self-play game goes on without the seat we handed over.
+	local ours = (player == pid) and cfg.FiraxisSelfPlay ~= true;
+	if ours then
 		finished = true;
 		pcall(CivvisQueue.resetTimescale, "defeated");
 	end
 	emit("defeat", {
 		turn = try(function() return Game.GetCurrentGameTurn(); end, -1),
 		player = player, defeat = defeat, local_player = pid,
-		ours = (player == pid),
+		ours = ours,
 	});
 end
 
@@ -29720,6 +29731,170 @@ CivvisOnAidEmergencyAvailable = function(targetPlayerID, emergencyType)
 	report(submitted and "submitted" or "throw", submitted);
 end;
 
+-- ★★ FIRAXIS SELF-PLAY (`FiraxisSelfPlay`; off unless a run sets it): every
+-- seat played by the game's own AI, so one real all-AI game can be timed
+-- beside ours. Operator 2026-11-24, for the speed timeline: how long one game
+-- takes when Firaxis's AI plays every seat.
+--
+-- The game is set up exactly as a lane game is, with one human slot, ours. On
+-- that seat's first turn this hands it to the engine's autoplay manager with
+-- the four calls the shipped "PlayGame" test makes
+-- (Base/Assets/UI/Automation/Automation_StandardTests.lua:330-334):
+--     AutoplayManager.SetTurns(turnCount);
+--     AutoplayManager.SetReturnAsPlayer(0);
+--     AutoplayManager.SetObserveAsPlayer(observeAs);
+--     AutoplayManager.SetActive(true);
+-- They are reached from this context because the grounding mod reaches them
+-- from one of the same kind (`AddUserInterfaces`, `<Context>InGame</Context>`,
+-- in both .modinfo files; tools/civ6_mod/CivvisGrounding.lua:550-553).
+-- ⚠ Nothing has run them from THIS mod: the first self-play game is the test,
+-- and its `autoplay` row says whether the manager was there and took them.
+--
+-- The run carries `Play = false` as well, so `tick` never runs, and the two
+-- entry points that reach it return here first: no order is issued, no deal
+-- answered, no popup chosen. Only the five events of `EVENTS` are listened to.
+--
+-- What it writes is what the harness reads:
+--   * `autoplay`      once, when the seat is handed over (or could not be);
+--   * `turn`          for every game turn, from `Events.TurnBegin` (the HUD's
+--                     own turn hook, TopPanel.lua:544). No local player's turn
+--                     begins under autoplay: GameCapabilities.lua:18 reads the
+--                     local player as -1 there ("-- Autoplay.");
+--   * `victory`       from `onTeamVictory`, never ours (`won` is false);
+--   * `autoplay_end`  when the manager hands the seat back
+--                     (`LuaEvents.AutoPlayEnd`, "Raised by engine
+--                     AutoPlay_Manager!", ActionPanel.lua:1350).
+--
+-- ★ WHERE THE GAME ENDS. At a victory, as a lane game does. A game nobody wins
+-- ends on Score at its own turn limit (`MaxTurns`, set by `ensureStarted`),
+-- which is a victory row too. The autoplay's own count is set ten turns past
+-- that limit so the game's limit comes first; if the manager stops sooner
+-- anyway, `autoplay_end` ends the run and says on which turn.
+--
+-- ★ OBSERVED AS OUR SEAT (`SetObserveAsPlayer(pid)`) unless the run asks for
+-- nobody (`FiraxisSelfPlayObserve = "none"`, which sends -1). Our seat's view
+-- is what a lane game draws, so the two games ask the same of the renderer,
+-- and 0 is the shipped test's own default parameter
+-- (Automation_StandardTestSupport.lua:36, `"ObserveAs", 0`). ⚠ It has not been
+-- run on this build: the grounding harness's games observed nobody
+-- (`tools/civ6_run.py --observe`, default -1, "the cheapest to render").
+--
+-- ★ AFTER THE TIMESCALE. `onLocalPlayerTurnBegin` applies the lane's debug
+-- timescale and then calls `pulse(true)`, so a self-play game runs at the
+-- scale a lane game does. No local turn ends under autoplay, so nothing
+-- checks that clock afterwards (`checkTimescaleClock`); it is reverted when
+-- the game is over.
+--
+-- A bare global, like `CivvisSeat`: the main chunk has no register to spare
+-- (register_budget_test.lua).
+CivvisSelfPlay = { begun = false, due = false, over = false, lastTurn = -1 };
+CivvisSelfPlay.EVENTS = {
+	LocalPlayerTurnBegin = true, GameCoreEventPublishComplete = true,
+	LoadGameViewStateDone = true, TeamVictory = true, PlayerDefeat = true,
+};
+-- Every major still in the game: the victory row names a team, and this is
+-- who that is.
+function CivvisSelfPlay.majors()
+	local out = {};
+	for _, id in ipairs(try(function() return PlayerManager.GetAliveMajorIDs(); end, {})) do
+		out[#out + 1] = {
+			player = id,
+			team = try(function() return Players[id]:GetTeam(); end, -1),
+			civ = try(function() return PlayerConfigurations[id]:GetCivilizationTypeName(); end, "?"),
+			leader = try(function() return PlayerConfigurations[id]:GetLeaderTypeName(); end, "?"),
+			score = try(function() return Players[id]:GetScore(); end, -1),
+		};
+	end
+	return out;
+end
+-- One `turn` row a game turn. `score` is the seat we handed over, as a lane
+-- game's is its own seat's.
+function CivvisSelfPlay.turnRow()
+	local turn = try(function() return Game.GetCurrentGameTurn(); end, -1);
+	if type(turn) ~= "number" or turn < 0 or turn <= CivvisSelfPlay.lastTurn then return false; end
+	CivvisSelfPlay.lastTurn = turn;
+	turnsPlayed = turnsPlayed + 1;
+	local seat = CivvisSelfPlay.seat;
+	emit("turn", {
+		turn = turn, self_play = true, majors = CivvisSelfPlay.majors(),
+		local_player = try(function() return Game.GetLocalPlayer(); end, -1),
+		score = try(function() return Players[seat]:GetScore(); end, -1),
+	});
+	return true;
+end
+-- Hand our seat to the autoplay manager, once, on its first turn.
+function CivvisSelfPlay.begin()
+	if CivvisSelfPlay.begun or finished then return false; end
+	local pid = try(function() return Game.GetLocalPlayer(); end, -1);
+	local turn = try(function() return Game.GetCurrentGameTurn(); end, -1);
+	if type(pid) ~= "number" or pid < 0 or type(turn) ~= "number" or turn < 1 then
+		return false;
+	end
+	CivvisSelfPlay.begun = true;
+	CivvisSelfPlay.seat = pid;
+	local limit = tonumber(cfg.MaxTurns) or 0;
+	-- 0 is the manager's "no turn limit" (Automation_StandardTests.lua:325).
+	local turns = limit > 0 and (limit + 10) or 0;
+	local observe = cfg.FiraxisSelfPlayObserve == "none" and -1 or pid;
+	local manager = AutoplayManager;
+	local ok, err = false, "AutoplayManager is not available in this context";
+	if manager ~= nil then
+		ok, err = pcall(function()
+			manager.SetTurns(turns);
+			manager.SetReturnAsPlayer(pid);
+			manager.SetObserveAsPlayer(observe);
+			manager.SetActive(true);
+		end);
+	end
+	emit("autoplay", {
+		started = ok, turn = turn, turns = turns, seat = pid, observe = observe,
+		manager = type(manager), error = (not ok) and tostring(err) or nil,
+		scale = CivvisClock.scale, majors = CivvisSelfPlay.majors(),
+	});
+	if ok then CivvisSelfPlay.turnRow(); end
+	return ok;
+end
+-- `localTurn`: our seat's turn has just begun, which is when the load is over
+-- and the timescale is on. Until `ensureStarted` has read the seat back, the
+-- hand-over waits for the next game-core publish.
+function CivvisSelfPlay.pulse(localTurn)
+	if cfg.FiraxisSelfPlay ~= true or CivvisSelfPlay.begun then return; end
+	if localTurn then CivvisSelfPlay.due = true; end
+	if CivvisSelfPlay.due and started then CivvisK.guard(CivvisSelfPlay.begin); end
+end
+function CivvisSelfPlay.onTurnBegin()
+	if CivvisSelfPlay.begun and not CivvisSelfPlay.over then CivvisSelfPlay.turnRow(); end
+end
+function CivvisSelfPlay.onAutoPlayEnd()
+	if not CivvisSelfPlay.begun or CivvisSelfPlay.over then return; end
+	CivvisSelfPlay.over = true;
+	pcall(CivvisQueue.resetTimescale, "autoplay_end");
+	emit("autoplay_end", {
+		turn = try(function() return Game.GetCurrentGameTurn(); end, -1),
+		after_victory = finished, majors = CivvisSelfPlay.majors(),
+		local_player = try(function() return Game.GetLocalPlayer(); end, -1),
+	});
+end
+-- The self-play run's own listeners, added by `Initialize` under the key.
+function CivvisSelfPlay.wire()
+	emit("self_play", { armed = true, manager = type(AutoplayManager) });
+	pcall(function() Events.TurnBegin.Add(function()
+		CivvisK.guard(CivvisSelfPlay.onTurnBegin);
+	end); end);
+	pcall(function() LuaEvents.AutoPlayEnd.Add(function()
+		CivvisK.guard(CivvisSelfPlay.onAutoPlayEnd);
+	end); end);
+	-- The engine's own word that it took the seat (ActionPanel.lua:1349).
+	pcall(function() LuaEvents.AutoPlayStart.Add(function()
+		emit("autoplay_start", { turn = try(function() return Game.GetCurrentGameTurn(); end, -1) });
+	end); end);
+	-- The harness quits through the game's menu when the run is over; the
+	-- stock listener below answers that only while the agent plays.
+	pcall(function() Events.UserRequestClose.Add(function()
+		pcall(function() Events.UserConfirmedClose(); end);
+	end); end);
+end
+
 function Initialize()
 	emit("loaded", { version = 2, play = cfg.Play ~= false,
 		strategic_quote_proposals = 4,
@@ -29818,10 +29993,14 @@ function Initialize()
 		SpyMissionCompleted = CivvisLedger.onSpyMissionCompleted,
 		SpyMissionUpdated = CivvisLedger.flushSpyMissions,
 	}) do
-		pcall(function() Events[name].Add(CivvisSeat.gate(handler)); end);
+		-- A Firaxis self-play run listens to its own short list.
+		if cfg.FiraxisSelfPlay ~= true or CivvisSelfPlay.EVENTS[name] then
+			pcall(function() Events[name].Add(CivvisSeat.gate(handler)); end);
+		end
 	end
 	-- A second listener: an open escape is re-read when our turn begins.
 	pcall(function() Events.LocalPlayerTurnBegin.Add(CivvisSeat.gate(CivvisLedger.flushSpyMissions)); end);
+	if cfg.FiraxisSelfPlay == true then CivvisSelfPlay.wire(); end
 end
 
 Initialize();

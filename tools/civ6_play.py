@@ -54,8 +54,237 @@ from civ6_control.orders import (orders_db_path, request_restart,  # noqa: E402
 # repeated: this harness and the ledger have to agree on what "unreadable"
 # looks like, and a second copy of that fact is a second place for it to rot.
 from civ6_ladder import UNREADABLE, with_diagnostic  # noqa: E402
+from civ6_control import game_speed  # noqa: E402
 
 RUN_ROOT = Path.home() / "civvis-civ6-runs" / "control"
+
+# ★★ FIRAXIS SELF-PLAY (`--firaxis-self-play`): one real game in which the
+# game's own AI plays every seat, timed by this harness. Operator 2026-11-24,
+# for the speed timeline: how long one Civilization VI game takes when Firaxis's
+# AI plays every seat, beside how long ours take.
+#
+# The game is the lane's, set up the way every lane game is (one human slot,
+# ours, on the Create Game screen). The control mod then hands that slot to the
+# engine's autoplay manager on its first turn and issues no order
+# (`CivvisSelfPlay` in `civ6_control/mod/CivvisControlAgent.lua`). So nothing a
+# seat of ours needs is started (no decider, no board export, no order
+# channel), and nothing a result of ours publishes is written: no ladder row,
+# no ledger publish, and no win is ever claimed, so no victory film is held.
+#
+# ★ ITS RUNS LIVE BESIDE `control/`, NOT IN IT. Everything that reads the
+# lane's games finds them by listing `control/`: the ledger's sync
+# (`civ6_ladder.py`, `*/summary.json`), the mirror's follower, the desktop
+# popup clearer's "is a game being played" and the clip keeper. A self-play
+# game in there would be filed, followed and clicked on as one of ours. The
+# wedge watchdog and the supervisor's "played turns" count read `civvis-*`
+# only, which the tag's own prefix already keeps it out of.
+FIRAXIS_SELF_PLAY_PREFIX = "firaxis-selfplay-"
+FIRAXIS_SELF_PLAY_ROOT = RUN_ROOT.parent / "firaxis-selfplay"
+#: What `civ6_civvis_climb.play_command` passes for every lane game and this
+#: harness's own defaults differ from: how long the mod's closers leave a popup
+#: up, and where the window goes. A self-play game takes the lane's values, so
+#: the engine and the renderer are asked for the same things in both games
+#: (`tools/test_civ6_firaxis_self_play.py` holds the two equal).
+FIRAXIS_SELF_PLAY_LANE_FLAGS = {
+    "announcement_seconds": 0.05,
+    "era_announcement_seconds": 0.05,
+    "dialogue_seconds": 0.25,
+    "window_side": "left",
+    "window_frac": 0.5,
+    "window_vfrac": 0.5,
+    "lock_wait": 30.0,
+    "report_every": 10,
+}
+
+
+def firaxis_self_play(args) -> bool:
+    return bool(getattr(args, "firaxis_self_play", False))
+
+
+def run_root(args) -> Path:
+    """Where this run's folder goes: `control/` for a game of ours."""
+    return FIRAXIS_SELF_PLAY_ROOT if firaxis_self_play(args) else RUN_ROOT
+
+
+def apply_firaxis_self_play(args) -> str | None:
+    """Turn the parsed options into a Firaxis self-play run, or say why not.
+
+    Called by `main` straight after parsing, and only under the flag. Returns
+    the refusal, or `None` when `args` now describes the run.
+    """
+    if getattr(args, "load_save", None) or getattr(args, "attach_running", False):
+        return ("--firaxis-self-play starts its own fresh game; it cannot load "
+                "a save or attach to a running game")
+    if args.tag is None:
+        args.tag = FIRAXIS_SELF_PLAY_PREFIX + datetime.now(timezone.utc).strftime(
+            "%Y%m%dT%H%M%SZ")
+    elif not args.tag.startswith(FIRAXIS_SELF_PLAY_PREFIX):
+        # A lane tag would put the run in the lane's own logs and counts.
+        return (f"--firaxis-self-play needs a tag that starts with "
+                f"{FIRAXIS_SELF_PLAY_PREFIX!r} (got {args.tag!r}); leave --tag "
+                "out to have one made")
+    # No seat is ours: no decider, and no board for one.
+    args.civvis_decides = False
+    args.export_state = False
+    args.action_transitions = False
+    args.isolated_action_probes = False
+    # The game's own clock, as the lane sets it: the speed's turn limit, where
+    # a game nobody has won ends on Score.
+    limit = game_speed.turn_limit(args.speed)
+    if limit is None:
+        return f"--speed {args.speed!r} is not a Civilization VI game speed"
+    args.max_turns = limit
+    # A stalled self-play game ends as stalled. The rescue is a click into the
+    # game's window, made for a leader screen that waits on OUR answer.
+    args.stall_rescues = 0
+    for name, value in FIRAXIS_SELF_PLAY_LANE_FLAGS.items():
+        setattr(args, name, value)
+    return None
+
+
+def _event_seconds(text) -> float | None:
+    """An event's receipt stamp (`record`'s `utc`) as seconds, or `None`."""
+    if not isinstance(text, str):
+        return None
+    for shape in ("%Y-%m-%dT%H:%M:%S.%fZ", "%Y-%m-%dT%H:%M:%SZ"):
+        try:
+            return datetime.strptime(text, shape).replace(tzinfo=timezone.utc).timestamp()
+        except ValueError:
+            continue
+    return None
+
+
+def firaxis_self_play_note(reading: dict, event: dict) -> None:
+    """Keep what a self-play run's summary is built from, row by row.
+
+    `reading` is the run's own dict; `event` has been through `record`, so it
+    carries the moment it reached this process as `utc`, beside the mod's own
+    `t`: the second it was written, by the game's wall clock
+    (`Automation.GetTime`, whole Unix seconds). The first `turn` row is the
+    hand-over (the mod writes it as the autoplay manager takes the seat), and
+    the game is over at the first of: a `victory`, or an `autoplay_end` that
+    no victory came before.
+    """
+    kind = event.get("kind")
+    if event.get("ctx") != "agent":
+        return
+    if kind == "autoplay":
+        reading["autoplay"] = {key: event.get(key) for key in (
+            "started", "turn", "turns", "seat", "observe", "manager", "error", "scale")}
+        reading["autoplay"]["utc"] = event.get("utc")
+        if event.get("majors"):
+            reading["majors"] = event["majors"]
+    elif kind == "autoplay_start":
+        reading["engine_confirmed"] = True
+    elif kind == "turn" and event.get("self_play") is True:
+        turn = event.get("turn")
+        if isinstance(turn, int) and "outcome" not in reading:
+            if "first_turn" not in reading:
+                reading["first_turn"], reading["first_turn_utc"] = turn, event.get("utc")
+                reading["first_turn_t"] = event.get("t")
+            reading["last_turn"], reading["last_turn_utc"] = turn, event.get("utc")
+            if event.get("majors"):
+                reading["majors"] = event["majors"]
+    elif kind == "victory" and "outcome" not in reading:
+        reading["outcome"] = {
+            "kind": "victory", "utc": event.get("utc"), "t": event.get("t"),
+            "turn": event.get("turn"),
+            "team": event.get("team"), "victory": event.get("victory"),
+            "victory_type": event.get("victory_type"),
+        }
+        if event.get("majors"):
+            reading["majors"] = event["majors"]
+    elif kind == "autoplay_end":
+        reading["autoplay_end"] = {
+            "utc": event.get("utc"), "turn": event.get("turn"),
+            "after_victory": bool(event.get("after_victory")),
+        }
+        if "outcome" not in reading and not event.get("after_victory"):
+            reading["outcome"] = {"kind": "autoplay_end", "utc": event.get("utc"),
+                                  "t": event.get("t"), "turn": event.get("turn")}
+
+
+def firaxis_self_play_over(event: dict) -> bool:
+    """Whether this row ends a self-play run.
+
+    A victory does, and so does the autoplay manager handing the seat back
+    with nobody having won. A hand-over that did not happen ends it at once:
+    the seat is nobody's then, and the game would sit on turn 1 until the
+    stall clock ran out.
+    """
+    kind = event.get("kind")
+    if event.get("ctx") != "agent":
+        return False
+    if kind == "victory":
+        return True
+    if kind == "autoplay":
+        return event.get("started") is not True
+    if kind == "autoplay_end":
+        return not event.get("after_victory")
+    return False
+
+
+def firaxis_self_play_summary(reading: dict, *, load_start, load_end,
+                              run_seconds: float | None) -> dict:
+    """The self-play block of a run's summary.
+
+    `play_seconds` runs from the first `turn` row (the hand-over, on turn 1)
+    to the row that ended the game. It is read off the mod's own clock, whole
+    seconds written as each row was, because the harness can still be busy
+    with the setup's screenshots when the first turns go by and receives those
+    rows late. `play_seconds_by_receipt` is the same span by the moments the
+    two rows reached this process, to the millisecond, for comparison; it is
+    the one given when a row carries no clock of the mod's. `run_seconds` is
+    the whole run, launch to this summary. `load_start` and `load_end` are the
+    machine's load averages as the run began and ended.
+    """
+    outcome = reading.get("outcome") or {}
+    began = _event_seconds(reading.get("first_turn_utc"))
+    ended = _event_seconds(outcome.get("utc"))
+    by_receipt = (round(ended - began, 1)
+                  if began is not None and ended is not None else None)
+    wrote, done = reading.get("first_turn_t"), outcome.get("t")
+    clocked = all(isinstance(value, (int, float)) and not isinstance(value, bool)
+                  for value in (wrote, done))
+    play = round(float(done - wrote), 1) if clocked and done >= wrote else by_receipt
+    final_turn = outcome.get("turn")
+    if not isinstance(final_turn, int) or isinstance(final_turn, bool) or final_turn < 1:
+        final_turn = reading.get("last_turn")
+    per_turn = (round(play / final_turn, 2)
+                if play is not None and isinstance(final_turn, int) and final_turn > 0
+                else None)
+    majors = reading.get("majors") or []
+    winner = None
+    if outcome.get("kind") == "victory":
+        winner = [{key: major.get(key) for key in ("player", "civ", "leader", "score")}
+                  for major in majors
+                  if isinstance(major, dict) and major.get("team") == outcome.get("team")]
+    autoplay = reading.get("autoplay") or {}
+    return {
+        # Whether the autoplay manager took the seat, by the mod's own call
+        # returning and by the engine's `AutoPlayStart`.
+        "autoplay_started": autoplay.get("started") is True,
+        "autoplay_engine_confirmed": bool(reading.get("engine_confirmed")),
+        "autoplay": autoplay or None,
+        "autoplay_end": reading.get("autoplay_end"),
+        # How the game ended: `victory`, `autoplay_end`, or None for a run
+        # that was stopped (the summary's own `reason` says how).
+        "outcome": outcome.get("kind"),
+        "victory_type": outcome.get("victory_type"),
+        "winner_team": outcome.get("team") if outcome.get("kind") == "victory" else None,
+        "winner": winner,
+        "first_turn": reading.get("first_turn"),
+        "first_turn_utc": reading.get("first_turn_utc"),
+        "outcome_utc": outcome.get("utc"),
+        "final_turn": final_turn,
+        "play_seconds": play,
+        "play_seconds_by_receipt": by_receipt,
+        "seconds_per_turn": per_turn,
+        "run_seconds": run_seconds,
+        "load_start": load_start,
+        "load_end": load_end,
+        "majors": majors or None,
+    }
 
 #: The CIVVIS page this many turns behind the game has stopped keeping up (the
 #: mod capped a wait on it): turns stop waiting for it until it is back within
@@ -2437,6 +2666,13 @@ def build_config(args: argparse.Namespace) -> dict:
     # explicit in the run artefacts and any usable FrontEnd context.
     if args.leader:
         config["Leader"] = args.leader
+    # A Firaxis self-play run: the mod hands our seat to the game's autoplay
+    # and plays nothing (`CivvisSelfPlay`). The keys are absent from every
+    # other run's configuration, not false in it.
+    if firaxis_self_play(args):
+        config["FiraxisSelfPlay"] = True
+        config["FiraxisSelfPlayObserve"] = getattr(args, "firaxis_self_play_observe", "seat")
+        config["Play"] = False
     return config
 
 
@@ -7421,7 +7657,11 @@ def _play(args: argparse.Namespace) -> int:
         religion_lost_wait = RELIGION_LOST_TURNS
     no_capital_from = domination_no_capital_turn(args)
     science_behind, science_behind_from = science_out_of_reach_line(args)
-    run_dir = RUN_ROOT / args.tag
+    # A Firaxis self-play run (`FIRAXIS_SELF_PLAY_PREFIX`): its own folder, and
+    # what its summary is built from. `None` for every game of ours.
+    self_play = ({"load_start": host_load(), "began": time.monotonic()}
+                 if firaxis_self_play(args) else None)
+    run_dir = run_root(args) / args.tag
     run_dir.mkdir(parents=True, exist_ok=True)
     # Bound the corpus before adding to it. See `prune_old_run_screenshots`.
     pruned_runs, freed_bytes = prune_old_run_screenshots()
@@ -7459,6 +7699,11 @@ def _play(args: argparse.Namespace) -> int:
                   "run; restarting it in place instead of relaunching", flush=True)
         elif refused:
             print(f"[restart] not restarting in place: {refused}", flush=True)
+        if handoff is not None and self_play is not None:
+            # A parked game is restarted by the agent that parked it, which
+            # plays. A self-play game starts in a fresh Civilization VI.
+            print("[restart] a Firaxis self-play run launches afresh", flush=True)
+            handoff = None
 
     if handoff is None and not launcher.stop():
         print("could not stop the previous Civilization VI process", file=sys.stderr)
@@ -7671,6 +7916,14 @@ def _play(args: argparse.Namespace) -> int:
         if path.exists():
             return
         partial = with_diagnostic(partial_summary(args.tag, config, state), path)
+        if self_play is not None:
+            # A stopped self-play run still says how far it got, and when.
+            try:
+                partial["firaxis_self_play"] = firaxis_self_play_summary(
+                    self_play, load_start=self_play["load_start"], load_end=host_load(),
+                    run_seconds=round(time.monotonic() - self_play["began"], 1))
+            except Exception:  # noqa: BLE001 - best-effort evidence at exit
+                pass
         # ⭐ A KILLED RUN STILL MEASURED ITS RESEARCH. `killed` and
         # `operator_retired` end most Emperor games (61% in September), so a
         # tech-gap column written only by the finished path would miss the
@@ -7840,6 +8093,8 @@ def _play(args: argparse.Namespace) -> int:
         events.write(json.dumps(event, sort_keys=True) + "\n")
         events.flush()
         kind = event.get("kind")
+        if self_play is not None:
+            firaxis_self_play_note(self_play, event)
         # Deal sessions closed with the rival's reply still owed: the rival
         # turn that hangs behind one is not waited out (`ai_stall_window`).
         hung_rivals.note(event)
@@ -8078,6 +8333,12 @@ def _play(args: argparse.Namespace) -> int:
         another player is eliminated, so only `ours` makes it terminal.
         """
         kind = event.get("kind")
+        if self_play is not None:
+            # No seat is ours, so none of the rules below has a board to read:
+            # the run ends when the game does, or on a game that is not the
+            # one asked for.
+            return (firaxis_self_play_over(event)
+                    or (kind == "seat" and not state["configured"]))
         if is_terminal_result(event):
             return True
         if kind == "retired" and state.get("operator_retire_event"):
@@ -8405,6 +8666,14 @@ def _play(args: argparse.Namespace) -> int:
         GAME_CONFIGURED = True
         if window_layout.frame_for("upper-left", desktop_size() or None):
             place_game(GAME_SIDE, GAME_FRACTION, GAME_VFRACTION)
+    # A Firaxis self-play hand-over that failed while the game was still being
+    # set up reached `record` and not `finished`, like the seat above: nobody
+    # holds the seat, so there is no game to watch.
+    if (self_play is not None and not refused_at_seat
+            and (self_play.get("autoplay") or {}).get("started") is False):
+        print("the autoplay manager did not take the seat; ending the run "
+              f"({(self_play.get('autoplay') or {}).get('error')})", flush=True)
+        refused_at_seat = True
 
     # Unattended upkeep is optional on a shared desktop. Keep processing
     # retirement and game events even when periodic GUI upkeep is disabled.
@@ -8562,6 +8831,10 @@ def _play(args: argparse.Namespace) -> int:
     # orders being ready and the agent applying them -- pure polling, these two
     # 50 ms waits -- 1.75 min of a 15.9 min game.
     read_s = (0.02 if getattr(args, "poll_20ms", False) else 0.05) if args.civvis_decides else None
+    if self_play is not None:
+        # No decider waits on this relay, but the run's receipt stamps are
+        # read the way a lane game's are, so it relays at the lane's pace.
+        poll_s, read_s = 0.25, 0.05
     # ⚠ A STALLED RUN IS DEAD, AND WAITING TEN MINUTES FOR IT COSTS A WHOLE ATTEMPT.
     # Run civvis-20260730T140023Z wedged at turn 87 and burned the full 600 s before the
     # ladder could start the next game. The mod emits at least one event per turn and a
@@ -9004,10 +9277,27 @@ def _play(args: argparse.Namespace) -> int:
                       f"both.", file=sys.stderr)
     except Exception as exc:  # noqa: BLE001 — health must not fail the run
         print(f"bridge-health totals unavailable: {exc}", file=sys.stderr)
+    if self_play is not None:
+        # The whole run by the run clock where the summary has one (`timing`),
+        # else from this function's own start.
+        timing = summary.get("timing") if isinstance(summary.get("timing"), dict) else {}
+        summary["firaxis_self_play"] = firaxis_self_play_summary(
+            self_play, load_start=self_play["load_start"], load_end=host_load(),
+            run_seconds=timing.get(
+                "seconds", round(time.monotonic() - self_play["began"], 1)))
     summary = with_diagnostic(summary, run_dir / "summary.json")
     (run_dir / "summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True))
     end_mark("summary_written")
     print(json.dumps(summary, indent=2, sort_keys=True))
+    if self_play is not None:
+        # Not a result of ours: no ladder row and no ledger publish. The run's
+        # folder is the whole record.
+        reading = summary["firaxis_self_play"]
+        print(f"[self-play] {reading['outcome'] or 'no outcome'} at turn "
+              f"{reading['final_turn']}: {reading['play_seconds']} s from the first "
+              f"turn, {reading['run_seconds']} s the whole run; "
+              f"{run_dir / 'summary.json'}", flush=True)
+        return 0 if reading["outcome"] else 1
 
     # The ladder records itself. This used to be a by-hand step, and the
     # by-hand step simply stopped happening: 211 summaries piled up
@@ -9164,6 +9454,11 @@ def main(argv: list[str] | None = None) -> int:
     ap = build_parser()
     args = ap.parse_args(raw_argv)
     apply_tree_mod_arms(args)
+    if firaxis_self_play(args) and not args.status:
+        refusal = apply_firaxis_self_play(args)
+        if refusal is not None:
+            print(refusal, file=sys.stderr)
+            return 2
     try:
         order_queue_timing_config(args)
     except ValueError as exc:
@@ -9656,6 +9951,20 @@ def build_parser() -> argparse.ArgumentParser:
                     help="seconds between raising the game window (0 disables); "
                          "~/.civvis-shared-desktop also disables periodic raising "
                          "and placement live; setup/recovery may still use the GUI")
+    ap.add_argument("--firaxis-self-play", dest="firaxis_self_play",
+                    action="store_true", default=False,
+                    help="one game with every seat played by the game's own AI, "
+                         "timed: the lane's setup, our seat handed to the autoplay "
+                         "manager on its first turn, no decider, no ladder row and "
+                         "no ledger publish. The run's folder is under "
+                         "~/civvis-civ6-runs/firaxis-selfplay/ and its tag starts "
+                         f"with {FIRAXIS_SELF_PLAY_PREFIX!r}. The lane starts one "
+                         "from ~/.civvis-firaxis-self-play-once "
+                         "(tools/civ6_civvis_climb.py)")
+    ap.add_argument("--firaxis-self-play-observe", dest="firaxis_self_play_observe",
+                    choices=("seat", "none"), default="seat",
+                    help="what a self-play game draws: our seat's view, as a lane "
+                         "game does (seat), or nobody's, the cheapest (none)")
     ap.add_argument("--status", action="store_true")
     return ap
 
