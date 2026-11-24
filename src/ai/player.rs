@@ -202,7 +202,7 @@ pub fn take_turn(ai: &mut AdvancedAi, game: &mut Game, pid: usize) {
     let mut refused: Vec<(u32, Item)> = Vec::new();
     // Re-observe after discovery, combat, or a rejected hypothesis. Never
     // execute the tail of a plan whose actor IDs or tactical facts went stale.
-    for _frame in 0..=REPLAN_FRAMES {
+    for _frame in 0..=replan_frames(ai) {
         if game.current != pid || game.winner.is_some() {
             return;
         }
@@ -286,6 +286,16 @@ pub fn take_turn(ai: &mut AdvancedAi, game: &mut Game, pid: usize) {
 
 /// Every order the authoritative board has refused this seat, as
 /// `execute_observed_action_recorded` counts them.
+/// How many times a turn may re-open for a fresh view and another plan:
+/// `REPLAN_FRAMES`, or one with `one-replan-per-turn`.
+fn replan_frames(ai: &AdvancedAi) -> usize {
+    if ai.one_replan_per_turn_on() {
+        1
+    } else {
+        REPLAN_FRAMES
+    }
+}
+
 fn refusal_count(game: &Game, pid: usize) -> i64 {
     game.players[pid]
         .counters
@@ -569,3 +579,6 @@ mod kept_yields_tests;
 
 #[cfg(test)]
 mod refusals_alone_reopen_tests;
+
+#[cfg(test)]
+mod one_replan_per_turn_tests;
