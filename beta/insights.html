@@ -1,0 +1,915 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#171d25">
+<title>AI Insights · CIVVIS.ai</title>
+<meta name="description" content="CIVVIS AI insights: what thousands of Civilization VI games show about AI at large. First: smarter AI picks up speed, the games against Civilization VI's own AI ending sooner at every level from Lv 5 King to Lv 8 Deity.">
+<link rel="canonical" href="https://civvis.ai/charts/ai-insights/">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23171d25'/%3E%3Ccircle cx='16' cy='16' r='11.5' fill='none' stroke='%2366c0f4'/%3E%3Cpath d='M7 16h18M16 4.5c-4.2 4.1-4.2 18.9 0 23M16 4.5c4.2 4.1 4.2 18.9 0 23' fill='none' stroke='%2366c0f4' stroke-width='1.15'/%3E%3C/svg%3E">
+<style>
+  /* The home page's own palette, header and cards (`beta/landing.html`), as
+     the Tournaments page repeats them: the pages are one site and read as
+     one. Each is a single file with no shared stylesheet, so what they share
+     is repeated here. */
+  :root {
+    color-scheme: dark;
+    --bg: #171d25;
+    --panel: #1f2733;
+    --panel-raised: #242f3d;
+    --border: #2e3a4a;
+    --border-strong: #46566a;
+    --text: #e2e8ef;
+    --muted: #93a3b5;
+    --faint: #67788b;
+    --accent: #66c0f4;
+    --action-bg: #274b66;
+    --action-fg: #a8d8f5;
+    --action-hover: #315d7e;
+    --gold: #d7b66a;
+    --yt: #b3261e;
+    --yt-edge: #d9534a;
+    --yt-mark: #ff6257;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    /* Civilization VI's six victory types, one colour each, the same on
+       every chart of the page and in this order (a stack runs bottom to top
+       in it). The six are a categorical set checked as one against this
+       panel (#1f2733): each at least 3:1 on it, and each pair that stands
+       side by side in a stack apart for every common colour-vision type. */
+    --v-science: #3987e5;
+    --v-culture: #d95926;
+    --v-diplomatic: #199e70;
+    --v-religious: #c98500;
+    --v-domination: #d55181;
+    --v-score: #0ca30c;
+  }
+
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    min-width: 320px;
+    margin: 0;
+    overflow-x: hidden;
+    color: var(--text);
+    background: var(--bg);
+    font: 15px/1.55 var(--sans);
+    -webkit-font-smoothing: antialiased;
+  }
+  /* 1120px, up from 1060px on 2026-11-22: the header's row of links grew
+     when GitHub and YouTube were made to stand out, and at 1060px it no
+     longer fitted on the title's line. */
+  .shell { width: min(1120px, 100%); margin: 0 auto; padding: 0 clamp(16px, 3vw, 32px); }
+  main { padding-bottom: 48px; }
+
+  .site-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    flex-wrap: wrap;
+    padding-top: 26px;
+    padding-bottom: 18px;
+    border-bottom: 1px solid var(--border);
+  }
+  .site-title { margin: 0; color: #fff; font-size: 26px; font-weight: 700; letter-spacing: 0.04em; }
+  .site-title span { color: var(--accent); font-weight: 600; }
+  .site-tagline { margin: 3px 0 0; color: var(--muted); font-size: 13.5px; }
+  .site-tagline span { display: block; }
+  .utility-nav { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: flex-end; gap: 10px; margin-left: auto; }
+  .utility-nav > .utility-link { min-height: 44px; }
+  .utility-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 38px;
+    padding: 0 14px;
+    border: 1px solid var(--border-strong);
+    border-radius: 3px;
+    background: var(--panel);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    text-decoration: none;
+  }
+  .utility-link svg { width: 15px; height: 15px; flex: none; }
+  .utility-link:hover,
+  .utility-link:focus-visible { background: var(--panel-raised); border-color: var(--accent); color: #fff; }
+  .utility-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* The project's two homes stand out from the row (operator, 2026-11-22:
+     "make the GitHub, dev progress stand out a bit more"): GitHub filled in
+     the site's blue, with what it holds under its name ("everything open
+     source, free"), and YouTube in its red. */
+  .utility-link.is-github,
+  .utility-link.is-youtube { min-height: 44px; color: #fff; font-size: 14px; font-weight: 700; }
+  .utility-link.is-github svg,
+  .utility-link.is-youtube svg { width: 20px; height: 20px; }
+  .utility-link.is-github { border-color: var(--accent); background: var(--action-bg); }
+  .utility-link.is-github:hover,
+  .utility-link.is-github:focus-visible { background: var(--action-hover); border-color: #fff; }
+  .utility-link.is-github span { display: grid; line-height: 1.25; }
+  .utility-link.is-github small { color: var(--action-fg); font-size: 11px; font-weight: 500; white-space: nowrap; }
+  .utility-link.is-youtube { border-color: var(--yt-edge); background: var(--yt); }
+  .utility-link.is-youtube:hover,
+  .utility-link.is-youtube:focus-visible { background: #c9342b; border-color: #fff; }
+  /* Under YouTube, the channel's top playlists, one to a line (operator,
+     2026-11-22: "list top playlists under youtube. maybe in a vertical
+     list"). The row's links keep their tops in a line, so the list hangs
+     under its button alone, in the room the site list's height leaves. */
+  .utility-group { display: grid; gap: 5px; }
+  .utility-lists { display: grid; gap: 1px; margin: 0; padding: 0; list-style: none; }
+  .utility-list {
+    display: flex; align-items: center; gap: 6px; padding: 2px 3px; border-radius: 2px;
+    color: var(--text); font-size: 12.5px; font-weight: 600; line-height: 1.35; text-decoration: none; white-space: nowrap;
+  }
+  .utility-list svg { width: 14px; height: 14px; flex: none; color: var(--yt-mark); }
+  .utility-list:hover,
+  .utility-list:focus-visible { color: #fff; text-decoration: underline; }
+  .utility-list:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  /* The site's pages stand in one row across the top of every page, over
+     the title and the project's links (operator, 2026-11-24: "try
+     putting the vertical menu from home... civ across the top
+     instad"); until then they were a column to the left of the title.
+     The row wraps onto a second line on a narrow screen, and every name
+     stands on one line (operator, 2026-11-21: "make sure it fits on one
+     line"). */
+  .site-nav { display: flex; flex: 1 0 100%; flex-wrap: wrap; align-items: center; gap: 6px; }
+  .site-brand { display: flex; align-items: center; gap: 18px; min-width: 0; }
+  .site-lockup { min-width: 0; }
+  .site-link {
+    display: block;
+    padding: 3px 12px 4px;
+    border-radius: 3px;
+    background: var(--action-bg);
+    color: var(--action-fg);
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    line-height: 1.4;
+    white-space: nowrap;
+    text-decoration: none;
+    text-transform: uppercase;
+  }
+  .site-link:hover,
+  .site-link:focus-visible { background: var(--action-hover); color: #fff; }
+  .site-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* A button wears the ground of what it opens (operator, 2026-11-23: "make
+     home, charts/ and auto-tourneys buttons all have a blue background
+     (like the pages do). civvis, ai debugger have a black background (same
+     as simulator)"). The pages are blue and so are their buttons: the rule
+     above. CIVVIS, the simulation itself at the lane's own address, is
+     gold (operator, 2026-11-24: "lets give civvis a gold background on the
+     button, rather than black"), the gold the simulator lights its own
+     button in. AI Debugger, the simulator in play mode, keeps the
+     simulator's black, inside the edge its own buttons have. Civ 6 opens
+     Steam's shop and is the blue of Steam's buttons ("civ 6 can have the
+     steam color of blue"), dark under the name and light at the far end. */
+  .site-link[href$="../"] { background: linear-gradient(145deg, #dec176, #aa7d30); color: #17130c; box-shadow: inset 0 0 0 1px #efd184; }
+  .site-link[href$="../"]:hover, .site-link[href$="../"]:focus-visible { background: linear-gradient(145deg, #f0d68e, #c0913c); color: #000; }
+  .site-link[href$="?mode=play"] { background: #050607; color: #c9cecb; box-shadow: inset 0 0 0 1px #30363a; }
+  .site-link[href$="?mode=play"]:hover, .site-link[href$="?mode=play"]:focus-visible { background: #181c1f; color: #fff; }
+  /* Doctor Strange's Civ 6 (strange mode, the same game shown as a tree of
+     two timelines) stands out in Doctor Strange's own colours (operator,
+     2026-11-23: "highlight dr strange civ 6 button in dr strange colors"):
+     the deep blue of his tunic running into the crimson of his cloak,
+     ringed and lit by the orange of his spells' sparks, the name in their
+     pale gold. */
+  .site-link[href$="?mode=strange"] {
+    background: linear-gradient(135deg, #1c2a7a 30%, #a3122f); color: #ffe3a3;
+    box-shadow: inset 0 0 0 1px #ff9a2e, 0 0 6px rgba(255, 138, 30, 0.6);
+  }
+  .site-link[href$="?mode=strange"]:hover,
+  .site-link[href$="?mode=strange"]:focus-visible {
+    background: linear-gradient(135deg, #2638a0 30%, #c8193d); color: #fff;
+    box-shadow: inset 0 0 0 1px #ffb85c, 0 0 10px rgba(255, 150, 40, 0.85);
+  }
+  .site-link[href^="https://store.steampowered.com/"] { background: linear-gradient(90deg, #1a44c2 35%, #47bfff); color: #fff; }
+  .site-link[href^="https://store.steampowered.com/"]:hover,
+  .site-link[href^="https://store.steampowered.com/"]:focus-visible { background: linear-gradient(90deg, #2352d6 35%, #73cfff); color: #fff; }
+  /* Charts/ is a folder of pages and reads "Charts/", with the slash
+     (operator, 2026-11-22), and drops down like one (operator,
+     2026-11-24: "charts/ can drop down folder style and the user can
+     pick the right chart"): pointing at it, or tabbing to it, opens its
+     six pages under it, and the reader picks one. Charts/ itself still
+     opens the folder's first page, this one, AI Insights (operator,
+     2026-11-24: "we want a new ai insights"). On
+     a touch screen the first tap opens the list (the script after the
+     row). A strip as tall as the gap over the list keeps it open on the
+     pointer's way down to it. */
+  .site-folder { position: relative; }
+  .site-folder > .site-link::after { content: "\25BE"; margin-left: 6px; letter-spacing: 0; }
+  .site-menu {
+    position: absolute; top: calc(100% + 6px); left: 0; z-index: 30;
+    display: none; gap: 4px; width: max-content; min-width: 100%; padding: 6px;
+    border: 1px solid var(--border-strong); border-radius: 4px; background: var(--panel);
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5);
+  }
+  .site-menu::before { content: ""; position: absolute; left: 0; right: 0; top: -7px; height: 7px; }
+  .site-folder:hover > .site-menu,
+  .site-folder:focus-within > .site-menu,
+  .site-folder.is-open > .site-menu { display: grid; }
+  /* The page on screen keeps the colour of what it is and is ringed in
+     white. It was gold until 2026-11-24, when gold became CIVVIS's own
+     (operator: "lets give civvis a gold background on the button, rather
+     than black"). On a page of Charts/ the folder is ringed as well, so
+     the row says where the page is with the list folded. */
+  .site-link[aria-current="page"],
+  .site-folder:has([aria-current="page"]) > .site-link { box-shadow: inset 0 0 0 2px #fff; }
+
+  .intro { max-width: 860px; margin: 18px 0 22px; color: var(--muted); font-size: 14.5px; line-height: 1.6; }
+  .intro a { color: var(--accent); }
+
+  .ins-empty { margin: 0; color: var(--faint); font-size: 13px; }
+  .ins-record { display: grid; gap: 16px; min-width: 0; }
+  .ins-record[hidden], .ins-empty[hidden] { display: none; }
+  /* An insight is a card: what the games say about AI at large in a
+     heading, one line under it, and the chart it is read off. The page is a
+     list of them, the newest idea added under the last. */
+  .ins-insight { min-width: 0; padding: 16px 18px 14px; border: 1px solid var(--border); border-radius: 4px; background: var(--panel); }
+  .ins-kicker { margin: 0; color: var(--gold); font-size: 11.5px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; }
+  .ins-title { margin: 2px 0 0; color: #fff; font-size: clamp(22px, 3.4vw, 30px); font-weight: 800; line-height: 1.2; }
+  .rank-sub.ins-sub { max-width: 760px; margin: 6px 0 0; color: var(--text); font-size: 15px; line-height: 1.5; }
+  .rank-note { margin: 10px 0 0; padding-top: 8px; border-top: 1px solid var(--border); color: var(--faint); font-size: 11.5px; line-height: 1.5; }
+  .rank-note a { color: var(--accent); }
+  /* What a chart counts, closed until it is pressed (operator, 2026-11-24:
+     "there is too much text on pages ... should be a more visual
+     experience"). The words are a visitor's to open; the page is its charts. */
+  .fine { margin-top: 10px; }
+  .fine > summary { width: max-content; max-width: 100%; color: var(--faint); font-size: 11.5px; cursor: pointer; }
+  .fine > summary:hover, .fine[open] > summary { color: var(--accent); }
+  details.fine > .rank-note { max-width: 860px; margin-top: 6px; padding-top: 0; border-top: 0; }
+
+  /* The switch between the levels of Civilization VI's AI (operator,
+     2026-11-24: "switching between lv 8, 7, 6, 5 to highlight that smarter
+     ai picks up speed"). It is the insight as a bar chart: a row per level,
+     Lv 8 Deity first, its bar as long as the turn half of its games were
+     over by, all four from one zero, so the stronger the AI the shorter
+     its bar. A row is a button, and the row pressed is the level the chart
+     under it draws: its bar is white, like the line that marks the same
+     turn on the chart, and the others are grey. */
+  .ins-rows-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 16px; margin: 16px 0 6px; }
+  .ins-rows-title { margin: 0; color: #fff; font-size: 14px; font-weight: 700; }
+  .ins-play {
+    min-height: 28px; padding: 0 12px; border: 1px solid var(--border-strong); border-radius: 3px;
+    background: var(--action-bg); color: #fff; font: 600 12.5px/1 var(--sans); white-space: nowrap; cursor: pointer;
+  }
+  .ins-play:hover { background: var(--action-hover); }
+  .ins-play:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .ins-play[hidden] { display: none; }
+  .ins-levels { display: grid; gap: 3px; }
+  .ins-levels button {
+    display: grid; grid-template-columns: 112px minmax(0, 1fr) auto; align-items: center; gap: 0 12px;
+    min-height: 34px; padding: 4px 10px; border: 1px solid transparent; border-radius: 4px;
+    background: transparent; color: var(--muted); font: 500 13px/1.2 var(--sans); text-align: left; cursor: pointer;
+  }
+  .ins-levels button:hover { background: var(--panel-raised); color: #fff; }
+  .ins-levels button[aria-pressed="true"] { border-color: var(--border-strong); background: var(--panel-raised); color: #fff; }
+  .ins-levels button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .ins-levels button:disabled { color: var(--faint); cursor: default; }
+  .ins-levels button:disabled:hover { background: transparent; color: var(--faint); }
+  .ins-level-name { white-space: nowrap; }
+  .ins-level-name b { margin-right: 5px; font-weight: 700; }
+  /* The bar and, at its end, the turn it stands for. The track keeps 76px
+     back for that figure, so the longest bar's is still inside the row. */
+  .ins-level-track { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .ins-level-bar { flex: none; width: 0; height: 14px; border-radius: 0 4px 4px 0; background: var(--faint); transition: width 0.5s ease; }
+  .ins-levels button[aria-pressed="true"] .ins-level-bar { background: #fff; }
+  .ins-level-turn { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .ins-level-games { color: var(--faint); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  @media (max-width: 479px) {
+    .ins-levels button { grid-template-columns: 96px minmax(0, 1fr); padding: 4px 6px; }
+    .ins-level-games { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) { .ins-level-bar { transition: none; } }
+
+  /* The chart: the games against the level chosen, by the turn they ended
+     and the victory that ended them. It is Win Analytics' chart of the same
+     name, drawn from the same games. The plot is drawn by the script below
+     at the width it is given, and moves from one level's columns to the
+     next's when the level changes, so the eye follows the games' endings
+     across the turns. */
+  .ins-chart { margin-top: 18px; padding-top: 14px; border-top: 2px solid var(--border-strong); }
+  .ins-chart-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 2px 16px; }
+  .ins-chart-name { min-width: 0; }
+  .ins-chart-title { margin: 0; color: #fff; font-size: 17px; font-weight: 700; line-height: 1.3; }
+  .ins-chart-kind { margin: 1px 0 0; color: var(--text); font-size: 13.5px; font-weight: 600; }
+  .ins-counted { margin: 0; color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+  .ins-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 8px 0 2px; padding: 0; list-style: none; color: var(--text); font-size: 12.5px; }
+  .ins-legend li { display: inline-flex; align-items: center; gap: 6px; }
+  .ins-swatch { width: 10px; height: 10px; border-radius: 2px; flex: none; }
+  .ins-plot { position: relative; min-height: 40px; margin-top: 6px; }
+  .ins-plot svg { display: block; overflow: visible; }
+  .ins-grid line { stroke: var(--border); stroke-width: 1; shape-rendering: crispEdges; }
+  .ins-base { stroke: var(--border-strong); stroke-width: 1; shape-rendering: crispEdges; }
+  .ins-tick { fill: var(--muted); font: 11px var(--sans); font-variant-numeric: tabular-nums; }
+  .ins-axis-title { fill: var(--faint); font: 11px var(--sans); }
+  .ins-hover { fill: rgba(255, 255, 255, 0.06); }
+  /* The turn half of the level's games were over by: a white line down the
+     plot, on a dark edge so it reads over the columns, and its figure over
+     it. Each of the four levels has a small mark at its own turn over the
+     plot, so the line is seen to move from one to the next. */
+  .ins-mark-edge { stroke: var(--panel); stroke-width: 5; }
+  .ins-mark-line { stroke: #fff; stroke-width: 1.5; }
+  .ins-mark-label { fill: #fff; font: 700 12.5px var(--sans); font-variant-numeric: tabular-nums; }
+  .ins-ghost line { stroke: var(--faint); stroke-width: 1.5; }
+  .ins-ghost text { fill: var(--faint); font: 600 10.5px var(--sans); }
+  .ins-ghost.is-on line { stroke: #fff; }
+  .ins-ghost.is-on text { fill: #fff; }
+
+  /* One tooltip for the chart: the value first, then what it is. */
+  .ins-tip {
+    position: absolute; z-index: 10; min-width: 180px; max-width: 280px; padding: 7px 9px 6px;
+    border: 1px solid var(--border-strong); border-radius: 4px; background: #121820;
+    color: var(--text); font-size: 12px; line-height: 1.45; pointer-events: none;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35); font-variant-numeric: tabular-nums;
+  }
+  .ins-tip[hidden] { display: none; }
+  .ins-tip p { margin: 0 0 3px; color: var(--muted); font-weight: 600; }
+  .ins-tip div { display: flex; align-items: center; gap: 7px; }
+  .ins-tip b { min-width: 3.4em; color: #fff; font-weight: 700; text-align: right; }
+  .ins-tip span.n { margin-left: auto; padding-left: 8px; color: var(--faint); }
+  .ins-tip .ins-swatch { border-radius: 1px; }
+</style>
+</head>
+<body>
+  <header class="shell site-header">
+    <!-- The site's pages, in the order every one of them lists them, in one
+         row across the top of the page (operator, 2026-11-24: "try putting
+         the vertical menu from home... civ across the top instad"), where
+         until then they stood in a column to the left of the title. Charts/
+         is a folder and drops down like one to its six pages ("charts/ can
+         drop down folder style and the user can pick the right chart"). The
+         page on screen is ringed in white: this is AI Insights, the first
+         page under Charts/, so Charts/ is ringed too and so is this page in
+         its list. Every link is lane-relative (this page lives at
+         <lane>/charts/ai-insights/), so the test lane's page opens the
+         test lane's other pages and viewer. -->
+    <nav class="site-nav" aria-label="CIVVIS sites">
+      <a class="site-link" href="../../home/">Home</a>
+      <div class="site-folder">
+        <a class="site-link" href="./" title="What the games show: charts read off the CIVVIS AI agents&#8217; games.">Charts/</a>
+        <div class="site-menu">
+          <a class="site-link sub-link" href="./" aria-current="page">AI Insights</a>
+          <a class="site-link sub-link" href="../civ-ai-interpretability/" title="How a CIVVIS AI agent decides: one turn step by step, its plan through a game, and what each rule is worth in wins.">Civ AI Interpretability</a>
+          <a class="site-link sub-link" href="../civ-analytics/" title="How CIVVIS does as each civ, and the early build orders that win against Deity.">Civ Analytics</a>
+          <a class="site-link sub-link" href="../win-analytics/" title="Who wins, how and when: the games against Civilization VI&#8217;s own AI beside the CIVVIS self-play games.">Win Analytics</a>
+          <a class="site-link sub-link" href="../elo-rankings/" title="The Civ AI Agents and Civilization VI&#8217;s own AI on one Elo scale, now and over time.">ELO Rankings</a>
+          <a class="site-link sub-link" href="../civvis-performance/" title="How fast the simulator plays: the fastest game on video and how long a self-play game takes.">CIVVIS Performance</a>
+        </div>
+      </div>
+      <a class="site-link" href="../../tournaments/" title="Series of verification games against Civilization VI&#8217;s own AI: running, scheduled and finished.">Tournaments</a>
+      <a class="site-link" href="../../" title="Every civilization is played by a CIVVIS AI agent.">CIVVIS</a>
+      <a class="site-link" href="../../?mode=strange" title="One world, two timelines: the same game played two ways, side by side, on a timeline that branches.">Doctor Strange's Civ 6</a>
+      <a class="site-link" href="../../?mode=play" title="You play one civilization. CIVVIS AI agents play the rest.">AI Debugger</a>
+      <a class="site-link" href="https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/" target="_blank" rel="noopener" title="Buy Civilization VI on Steam">Civ 6</a>
+    </nav>
+    <script data-site-folder>
+    // Charts/ on a touch screen, where nothing points at it: the first tap
+    // drops its list down and a second opens the folder's first page, as
+    // /charts/ does. A tap anywhere else folds the list away.
+    (() => {
+      const folder = document.querySelector(".site-folder");
+      if (!folder) return;
+      folder.firstElementChild.addEventListener("click", (event) => {
+        if (matchMedia("(hover: hover)").matches || folder.classList.contains("is-open")) return;
+        event.preventDefault();
+        folder.classList.add("is-open");
+      });
+      document.addEventListener("click", (event) => {
+        if (!folder.contains(event.target)) folder.classList.remove("is-open");
+      });
+      folder.addEventListener("keydown", (event) => {
+        if (event.key !== "Escape") return;
+        folder.classList.remove("is-open");
+        document.activeElement.blur();
+      });
+    })();
+    </script>
+    <div class="site-brand">
+      <div class="site-lockup">
+        <h1 class="site-title">CIVVIS<span>.ai</span></h1>
+        <p class="site-tagline"><span>An open source Civilization VI Simulator</span> <span>for AI reasoning insights</span></p>
+      </div>
+    </div>
+    <nav class="utility-nav" aria-label="CIVVIS links">
+      <a class="utility-link is-github" href="https://github.com/MartinHalvorson/CIVVIS" target="_blank" rel="noreferrer">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2.2c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1.1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.8 18.3 5.1 18.3 5.1c.6 1.7.2 2.9.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .3z"/></svg>
+        <span>GitHub <small>Everything open source, free</small></span>
+      </a>
+      <div class="utility-group">
+        <a class="utility-link is-youtube" href="https://www.youtube.com/@civvis" target="_blank" rel="noreferrer">
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.6 12 3.6 12 3.6s-7.5 0-9.4.5A3 3 0 0 0 .5 6.2C0 8.1 0 12 0 12s0 3.9.5 5.8a3 3 0 0 0 2.1 2.1c1.9.5 9.4.5 9.4.5s7.5 0 9.4-.5a3 3 0 0 0 2.1-2.1c.5-1.9.5-5.8.5-5.8s0-3.9-.5-5.8zM9.5 15.6V8.4l6.3 3.6-6.3 3.6z"/></svg>
+          YouTube
+        </a>
+        <ul class="utility-lists" aria-label="Top playlists">
+          <li><a class="utility-list" href="https://www.youtube.com/playlist?list=PLWcKlP8e8iy4" target="_blank" rel="noreferrer"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4 6h12v2H4zm0 4h12v2H4zm0 4h8v2H4zm10 0v6l5-3z"/></svg>Lv 8 Deity Wins</a></li>
+          <li><a class="utility-list" href="https://www.youtube.com/playlist?list=PLecirlzIUSSo" target="_blank" rel="noreferrer"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4 6h12v2H4zm0 4h12v2H4zm0 4h8v2H4zm10 0v6l5-3z"/></svg>Lv 1 - 7 Archive</a></li>
+        </ul>
+      </div>
+      <!-- The home page files a report itself, from a dialog; here the same
+           button is GitHub's own form, which needs no script on this page. -->
+      <a class="utility-link" href="https://github.com/MartinHalvorson/CIVVIS/issues/new/choose" target="_blank" rel="noreferrer">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M12 2C6.5 2 2 5.9 2 10.7c0 2.8 1.5 5.3 3.9 6.9L5 22l4.6-2.4c.8.2 1.6.3 2.4.3 5.5 0 10-3.9 10-8.7S17.5 2 12 2zm-1 4.5h2v6h-2v-6zm0 7.5h2v2h-2v-2z"/></svg>
+        Suggest Feature / Report Issue
+      </a>
+    </nav>
+  </header>
+
+  <main class="shell">
+    <!-- One line, as every page of the site opens (operator, 2026-11-24:
+         "there is too much text on pages ... should be a more visual
+         experience. some text ok. just not too much"). -->
+    <p class="intro">
+      What thousands of <cite>Civilization VI</cite> games show about AI at large, one chart at a time.
+    </p>
+
+    <!-- The figures. `beta/publish.sh` fills the slot below, the
+         `insights-data` slot (`beta/insights_page.py`), with the games
+         against Civilization VI's own AI off the run ledger. A page whose
+         slot still reads `null` (this file opened as it is committed, or a
+         build that could not read the ledger) shows the one sentence. -->
+    <p class="ins-empty" id="ins-empty">This copy of the page has no figures. They are written in when the site is published.</p>
+    <div class="ins-record" id="ins-record" hidden>
+      <!-- The first insight (operator, 2026-11-24: "for the first
+           visualization, we should show the civvis vs lv 8 deity ai chart,
+           switching between lv 8, 7, 6, 5 to highlight that smarter ai
+           picks up speed. this is the process of optimization decisions
+           chosen to move fast. as ai gets smarter, expect the pace of
+           progress to speed up"). The chart is Win Analytics' "CIVVIS vs
+           Lv 8 Deity AI", every victory by the turn it landed on, and the
+           switch over it lists the four levels in the order he gave them. -->
+      <section class="ins-insight" id="ins-speed" aria-labelledby="ins-speed-title">
+        <p class="ins-kicker">Insight 1</p>
+        <h2 class="ins-title" id="ins-speed-title">Smarter AI picks up speed</h2>
+        <p class="rank-sub ins-sub">Optimization is choosing the decisions that move fastest. As AI gets smarter, expect the pace of progress to speed up.</p>
+
+        <div class="ins-rows-head">
+          <h3 class="ins-rows-title" id="ins-speed-rows-title">Half the games are over by turn</h3>
+          <button type="button" class="ins-play" id="ins-speed-play" aria-pressed="false" hidden>Play Lv 5 to Lv 8</button>
+        </div>
+        <div class="ins-levels" id="ins-speed-levels" role="group" aria-labelledby="ins-speed-rows-title">
+          <button type="button" data-level="8" data-rung="Deity" aria-pressed="true"><span class="ins-level-name"><b>Lv 8</b>Deity</span><span class="ins-level-track"><span class="ins-level-bar" data-bar></span><span class="ins-level-turn" data-turn></span></span><span class="ins-level-games" data-games></span></button>
+          <button type="button" data-level="7" data-rung="Immortal" aria-pressed="false"><span class="ins-level-name"><b>Lv 7</b>Immortal</span><span class="ins-level-track"><span class="ins-level-bar" data-bar></span><span class="ins-level-turn" data-turn></span></span><span class="ins-level-games" data-games></span></button>
+          <button type="button" data-level="6" data-rung="Emperor" aria-pressed="false"><span class="ins-level-name"><b>Lv 6</b>Emperor</span><span class="ins-level-track"><span class="ins-level-bar" data-bar></span><span class="ins-level-turn" data-turn></span></span><span class="ins-level-games" data-games></span></button>
+          <button type="button" data-level="5" data-rung="King" aria-pressed="false"><span class="ins-level-name"><b>Lv 5</b>King</span><span class="ins-level-track"><span class="ins-level-bar" data-bar></span><span class="ins-level-turn" data-turn></span></span><span class="ins-level-games" data-games></span></button>
+        </div>
+
+        <div class="ins-chart">
+          <!-- The chart's own name is the one it has on Win Analytics
+               (operator, 2026-11-24, of that page's chart: "lets call it:
+               Turn Length and Victory Type Histogram of All Games"). -->
+          <header class="ins-chart-head">
+            <div class="ins-chart-name">
+              <h3 class="ins-chart-title" id="ins-speed-chart-title" data-say="CIVVIS vs {level} AI">CIVVIS vs Lv 8 Deity AI</h3>
+              <p class="ins-chart-kind">Turn Length and Victory Type Histogram of All Games</p>
+            </div>
+            <p class="ins-counted" id="ins-speed-counted"></p>
+          </header>
+          <ul class="ins-legend" id="ins-speed-legend" aria-label="Victory types"></ul>
+          <div class="ins-plot" id="ins-speed-plot"></div>
+        </div>
+        <details class="fine">
+        <summary>How it is counted</summary>
+        <p class="rank-note">
+          Every game that ended in a victory, CIVVIS&#8217;s or the AI&#8217;s, by the turn it ended on and the victory that ended it:
+          one CIVVIS AI agent inside Civilization VI against the game&#8217;s own AI, six players on a Continents map at Online speed, 250 turns.
+          A column is the share of the level&#8217;s games that ended in its five turns, and the turn marked is the median: half the level&#8217;s games were over by it.
+          A higher level is a stronger AI: Civilization VI gives its AI bigger bonuses at each level, not a different way of deciding.
+          <a href="https://github.com/MartinHalvorson/CIVVIS/blob/ledger/results.jsonl" target="_blank" rel="noreferrer">Games against the AI</a> ·
+          <a href="../win-analytics/">The same games on Win Analytics</a>
+        </p>
+        </details>
+      </section>
+    </div>
+  </main>
+  <div class="ins-tip" id="ins-tip" role="presentation" hidden></div>
+
+  <script type="application/json" id="insights-data">null</script>
+  <script>
+  // The first insight, drawn from the slot. Every name and figure arrives
+  // through textContent or an SVG attribute: the slot holds data, never
+  // markup.
+  (() => {
+    let data = null;
+    try { data = JSON.parse(document.getElementById("insights-data").textContent); } catch (_) { return; }
+    const speed = data && data.speed;
+    if (!speed || !Array.isArray(speed.levels) || !speed.levels.length) return;
+    const NAMES = { science: "Science", culture: "Culture", diplomatic: "Diplomatic", religious: "Religious", domination: "Domination", score: "Score" };
+    const TURNS = Number(data.turns) || 250;
+    // A column is five turns: span i is turns i*5+1 to (i+1)*5.
+    const SPAN = 5, SPANS = Math.ceil(TURNS / SPAN);
+    const SVG = "http://www.w3.org/2000/svg";
+    const colour = (v) => "var(--v-" + v + ")";
+    const el = (tag, cls, text) => {
+      const node = document.createElement(tag);
+      if (cls) node.className = cls;
+      if (text != null) node.textContent = text;
+      return node;
+    };
+    const svg = (tag, attrs) => {
+      const node = document.createElementNS(SVG, tag);
+      for (const [k, v] of Object.entries(attrs || {})) node.setAttribute(k, v);
+      return node;
+    };
+    const fmt = (n) => Number(n).toLocaleString("en-US");
+    const pct1 = (x) => (x > 0 && x < 0.0005 ? "<0.1%" : (100 * x).toFixed(1) + "%");
+    const games = (n) => fmt(n) + (n === 1 ? " game" : " games");
+
+    // The levels, by number: per victory type its games in each span, the
+    // spans' totals, and the turn half of the level's games were over by.
+    // The victory types drawn are the ones somebody won at one of the
+    // levels, in the site's order, each in its own colour whatever the
+    // level.
+    const LEVELS = {};
+    for (const level of speed.levels) {
+      if (!level || !(level.games > 0) || !(level.median > 0)) continue;
+      const bins = {};
+      for (const [v, turns] of Object.entries(level.victories || {})) {
+        if (!NAMES[v] || !Array.isArray(turns)) continue;
+        bins[v] = new Array(SPANS).fill(0);
+        turns.forEach((n, i) => { if (i < TURNS) bins[v][Math.floor(i / SPAN)] += Number(n) || 0; });
+      }
+      LEVELS[String(level.level)] = { ...level, bins };
+    }
+    const VICTORIES = (Array.isArray(data.victories) ? data.victories : []).filter((v) => NAMES[v] && Object.values(LEVELS).some((l) => l.bins[v]));
+    const rows = Array.from(document.querySelectorAll("#ins-speed-levels [data-level]"));
+    const RUNGS = Object.fromEntries(rows.map((row) => [row.dataset.level, row.dataset.rung]));
+    const played = rows.map((row) => row.dataset.level).filter((level) => LEVELS[level]);
+    if (!played.length || !VICTORIES.length) return;
+    const share = (level, v, i) => (LEVELS[level].bins[v] ? LEVELS[level].bins[v][i] / LEVELS[level].games : 0);
+    const total = (level, i) => VICTORIES.reduce((sum, v) => sum + (LEVELS[level].bins[v] ? LEVELS[level].bins[v][i] : 0), 0);
+    // One scale for the four levels, the tallest column of any of them, so
+    // a column keeps its meaning from one level to the next.
+    const YMAX = Math.max(...played.flatMap((level) => Array.from({ length: SPANS }, (_, i) => total(level, i) / LEVELS[level].games)));
+
+    // The level drawn, and what stands on the plot this instant: each
+    // victory's share in each span and the turn marked. Between two levels
+    // it is on its way from one's figures to the other's.
+    const state = { level: played[0], playing: 0 };
+    const target = (level) => ({
+      shares: Object.fromEntries(VICTORIES.map((v) => [v, Array.from({ length: SPANS }, (_, i) => share(level, v, i))])),
+      median: LEVELS[level].median,
+    });
+    let shown = target(state.level);
+    const worded = (text) => String(text).replaceAll("{level}", "Lv " + state.level + " " + RUNGS[state.level]).replaceAll("{rung}", RUNGS[state.level]);
+    const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const day = (iso) => { const [, m, d] = String(iso).split("-").map(Number); return MONTHS[m - 1] + " " + d; };
+
+    // ---- The rows: a level's bar is as long as its turn, of the game's 250.
+    for (const row of rows) {
+      const level = LEVELS[row.dataset.level];
+      const name = "Lv " + row.dataset.level + " " + row.dataset.rung;
+      if (!level) {
+        row.disabled = true;
+        row.querySelector("[data-turn]").textContent = "No games yet";
+        row.setAttribute("aria-label", name + ": no games yet");
+        continue;
+      }
+      row.querySelector("[data-bar]").style.width = "calc((100% - 76px) * " + (level.median / TURNS).toFixed(4) + ")";
+      row.querySelector("[data-turn]").textContent = "Turn " + level.median;
+      row.querySelector("[data-games]").textContent = games(level.games);
+      row.setAttribute("aria-label", name + ": half of " + games(level.games) + " were over by turn " + level.median);
+    }
+    const legend = document.getElementById("ins-speed-legend");
+    for (const v of VICTORIES) {
+      const item = el("li");
+      const swatch = el("span", "ins-swatch");
+      swatch.style.background = colour(v);
+      item.append(swatch, NAMES[v]);
+      legend.append(item);
+    }
+
+    const tip = document.getElementById("ins-tip");
+    const showTip = (event, title, lines) => {
+      tip.replaceChildren(el("p", "", title));
+      for (const line of lines) {
+        const row = el("div");
+        const key = el("span", "ins-swatch");
+        key.style.background = line.colour;
+        row.append(key, el("b", "", line.value), el("span", "", line.name), el("span", "n", line.n));
+        tip.append(row);
+      }
+      tip.hidden = false;
+      const pad = 14, w = tip.offsetWidth, h = tip.offsetHeight;
+      let x = event.pageX + pad, y = event.pageY + pad;
+      if (x + w > window.scrollX + document.documentElement.clientWidth - 8) x = event.pageX - w - pad;
+      if (y + h > window.scrollY + window.innerHeight - 8) y = event.pageY - h - pad;
+      tip.style.left = x + "px";
+      tip.style.top = y + "px";
+    };
+    const hideTip = () => { tip.hidden = true; };
+
+    // Clean ticks for a share axis: 0 and up to five steps of 1, 2, 2.5 or 5
+    // in a power of ten.
+    const ticks = (max) => {
+      if (!(max > 0)) return [0];
+      const raw = max / 4, mag = Math.pow(10, Math.floor(Math.log10(raw)));
+      const step = [1, 2, 2.5, 5, 10].map((s) => s * mag).find((s) => s >= raw);
+      const out = [];
+      for (let t = 0; t <= max + step * 0.001; t += step) out.push(+t.toFixed(10));
+      if (out[out.length - 1] < max) out.push(+(out[out.length - 1] + step).toFixed(10));
+      return out;
+    };
+
+    // ---- The chart. `build` lays out what does not move at the width the
+    // plot has: the grid, the axes, each level's mark over the plot and the
+    // spans' hit areas. `paint` draws what does: the columns and the line.
+    const plot = document.getElementById("ins-speed-plot");
+    let paint = () => {};
+    const build = () => {
+      const width = Math.max(280, plot.clientWidth), height = width < 520 ? 250 : 320, m = { l: 40, r: 8, t: 36, b: 38 };
+      const root = svg("svg", { width, height, viewBox: "0 0 " + width + " " + height, role: "img" });
+      const marks = ticks(YMAX), top = marks[marks.length - 1];
+      const x = (turn) => m.l + (turn / TURNS) * (width - m.l - m.r);
+      const y = (v) => height - m.b - (top > 0 ? v / top : 0) * (height - m.t - m.b);
+      // A turn's own place on the axis: the middle of its slot.
+      const at = (turn) => x(turn - 0.5);
+      const grid = svg("g", { class: "ins-grid" });
+      for (const t of marks) {
+        if (t > 0) grid.append(svg("line", { x1: m.l, x2: width - m.r, y1: Math.round(y(t)) + 0.5, y2: Math.round(y(t)) + 0.5 }));
+        const label = svg("text", { class: "ins-tick", x: m.l - 6, y: y(t) + 3.5, "text-anchor": "end" });
+        label.textContent = t === 0 ? "0" : (100 * t).toFixed(t * 100 % 1 ? 1 : 0) + "%";
+        root.append(label);
+      }
+      root.append(grid);
+      const every = width - m.l - m.r < 360 ? 50 : 25;
+      for (let t = 0; t <= TURNS; t += every) {
+        const label = svg("text", { class: "ins-tick", x: x(t), y: height - m.b + 15, "text-anchor": t === 0 ? "start" : t === TURNS ? "end" : "middle" });
+        label.textContent = String(t);
+        root.append(label);
+      }
+      const hover = svg("rect", { class: "ins-hover", y: m.t, height: height - m.t - m.b, width: 0, visibility: "hidden" });
+      const columns = svg("g");
+      root.append(hover, columns);
+      root.append(svg("line", { class: "ins-base", x1: m.l, x2: width - m.r, y1: Math.round(y(0)) + 0.5, y2: Math.round(y(0)) + 0.5 }));
+      // Each level's own turn, marked over the plot. The names stand over
+      // the marks where the marks are far enough apart to take them.
+      const order = played.slice().sort((a, b) => LEVELS[a].median - LEVELS[b].median);
+      const room = order.every((level, i) => !i || at(LEVELS[level].median) - at(LEVELS[order[i - 1]].median) >= 26);
+      const ghosts = {};
+      for (const level of played) {
+        const ghost = svg("g", { class: "ins-ghost" });
+        const gx = at(LEVELS[level].median);
+        ghost.append(svg("line", { x1: gx, x2: gx, y1: m.t - 7, y2: m.t - 1 }));
+        if (room) {
+          const name = svg("text", { x: gx, y: m.t - 11, "text-anchor": "middle" });
+          name.textContent = "Lv " + level;
+          ghost.append(name);
+        }
+        root.append(ghost);
+        ghosts[level] = ghost;
+      }
+      const edge = svg("line", { class: "ins-mark-edge", y1: m.t, y2: y(0) });
+      const line = svg("line", { class: "ins-mark-line", y1: m.t, y2: y(0) });
+      const label = svg("text", { class: "ins-mark-label", y: 11 });
+      root.append(edge, line, label);
+      const slot = x(SPAN) - x(0), barW = Math.min(24, Math.max(1, slot - 2)), gap = 2;
+      for (let i = 0; i < SPANS; i++) {
+        // The hit area is the whole span, the full height of the plot.
+        const hit = svg("rect", { x: x(i * SPAN), y: m.t, width: slot, height: height - m.t - m.b, fill: "transparent" });
+        hit.addEventListener("pointermove", (event) => {
+          const level = LEVELS[state.level], sum = total(state.level, i);
+          hover.setAttribute("x", x(i * SPAN));
+          hover.setAttribute("width", slot);
+          hover.setAttribute("visibility", "visible");
+          const lines = VICTORIES.filter((v) => level.bins[v] && level.bins[v][i] > 0).reverse().map((v) => ({
+            colour: colour(v), value: pct1(level.bins[v][i] / level.games), name: NAMES[v], n: fmt(level.bins[v][i]),
+          }));
+          lines.push({ colour: "transparent", value: pct1(sum / level.games), name: "All games", n: fmt(sum) });
+          showTip(event, "Turns " + (i * SPAN + 1) + "–" + Math.min(TURNS, (i + 1) * SPAN) + " · " + worded("CIVVIS vs {level} AI"), lines);
+        });
+        hit.addEventListener("pointerleave", () => { hover.setAttribute("visibility", "hidden"); hideTip(); });
+        root.append(hit);
+      }
+      const title = svg("text", { class: "ins-axis-title", x: m.l + (width - m.l - m.r) / 2, y: height - 3, "text-anchor": "middle" });
+      title.textContent = "Online game turn · a column is " + SPAN + " turns";
+      root.append(title);
+      plot.replaceChildren(root);
+
+      paint = () => {
+        // The columns: a stack per span, bottom to top in the victories'
+        // order, 2px of the panel between two parts and the top one rounded.
+        const parts = [];
+        for (let i = 0; i < SPANS; i++) {
+          const left = x(i * SPAN) + (slot - barW) / 2;
+          const stack = VICTORIES.filter((v) => shown.shares[v][i] > 0);
+          let base = y(0);
+          stack.forEach((v, k) => {
+            const h = y(0) - y(shown.shares[v][i]);
+            const last = k === stack.length - 1;
+            const drawn = last ? h : Math.max(0, h - gap);
+            const yTop = base - h + (last ? 0 : gap);
+            if (drawn > 0.3) {
+              const r = last ? Math.min(4, barW / 2, drawn) : 0;
+              const d = r > 0
+                ? "M" + left + "," + base + "V" + (yTop + r) + "Q" + left + "," + yTop + " " + (left + r) + "," + yTop
+                  + "H" + (left + barW - r) + "Q" + (left + barW) + "," + yTop + " " + (left + barW) + "," + (yTop + r) + "V" + base + "Z"
+                : "M" + left + "," + base + "V" + yTop + "H" + (left + barW) + "V" + base + "Z";
+              const seg = svg("path", { d });
+              seg.style.fill = colour(v);
+              parts.push(seg);
+            }
+            base -= h;
+          });
+        }
+        columns.replaceChildren(...parts);
+        // The line, at the turn shown, and its figure over its head, kept
+        // inside the plot's two edges where the line stands near one.
+        const mx = at(shown.median);
+        for (const mark of [edge, line]) { mark.setAttribute("x1", mx); mark.setAttribute("x2", mx); }
+        label.setAttribute("x", Math.min(Math.max(mx, m.l + 74), width - m.r - 74));
+        label.setAttribute("text-anchor", "middle");
+        label.textContent = "Half over by turn " + Math.round(shown.median);
+        for (const level of played) ghosts[level].classList.toggle("is-on", level === state.level);
+        const chosen = LEVELS[state.level];
+        root.setAttribute("aria-label", worded("CIVVIS vs {level} AI") + ": " + games(chosen.games)
+          + " by the turn they ended. Half were over by turn " + chosen.median + ".");
+      };
+      paint();
+    };
+
+    // ---- Choosing a level. The rows, the title and the count change at
+    // once; the plot moves to the level's figures over half a second, or at
+    // once for a reader who has asked for less motion. A browser that is
+    // not drawing frames (a tab in the background) is not waited for: a
+    // timer sets the level's figures when the move should have ended, so
+    // the plot never stays on one level under another's name.
+    const still = matchMedia("(prefers-reduced-motion: reduce)");
+    let frame = 0, settle = 0;
+    const said = () => {
+      for (const row of rows) row.setAttribute("aria-pressed", String(row.dataset.level === state.level));
+      for (const node of document.querySelectorAll("#ins-speed [data-say]")) node.textContent = worded(node.dataset.say);
+      const level = LEVELS[state.level];
+      document.getElementById("ins-speed-counted").textContent = games(level.games) + " · "
+        + (level.from === level.to ? day(level.to) : day(level.from) + " to " + day(level.to))
+        + " · " + RUNGS[state.level] + " AI won " + fmt(level.games - level.won) + ", CIVVIS " + fmt(level.won);
+    };
+    const show = (level) => {
+      if (!LEVELS[level] || level === state.level) return;
+      state.level = level;
+      hideTip();
+      said();
+      cancelAnimationFrame(frame);
+      clearTimeout(settle);
+      const from = shown, to = target(level);
+      if (still.matches) { shown = to; paint(); return; }
+      const began = performance.now(), LASTS = 550;
+      const step = (now) => {
+        const t = Math.min(1, (now - began) / LASTS), e = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+        shown = t >= 1 ? to : {
+          shares: Object.fromEntries(VICTORIES.map((v) => [v, from.shares[v].map((a, i) => a + (to.shares[v][i] - a) * e)])),
+          median: from.median + (to.median - from.median) * e,
+        };
+        paint();
+        if (t < 1) frame = requestAnimationFrame(step);
+        else clearTimeout(settle);
+      };
+      frame = requestAnimationFrame(step);
+      settle = setTimeout(() => { cancelAnimationFrame(frame); shown = to; paint(); }, LASTS + 80);
+    };
+
+    // ---- Play: the levels in turn, the weakest first, so the columns and
+    // the line are seen to move earlier as the AI gets stronger. It stops
+    // on the strongest, or at a press of the button or of a row.
+    const play = document.getElementById("ins-speed-play");
+    const climb = played.slice().sort((a, b) => Number(a) - Number(b));
+    const stop = () => {
+      clearTimeout(state.playing);
+      state.playing = 0;
+      play.setAttribute("aria-pressed", "false");
+      play.textContent = "Play Lv " + climb[0] + " to Lv " + climb[climb.length - 1];
+    };
+    const advance = (i) => {
+      show(climb[i]);
+      if (i + 1 >= climb.length) { state.playing = setTimeout(stop, 1500); return; }
+      state.playing = setTimeout(() => advance(i + 1), 1500);
+    };
+    if (climb.length > 1) {
+      play.hidden = false;
+      stop();
+      play.addEventListener("click", () => {
+        if (state.playing) { stop(); return; }
+        play.setAttribute("aria-pressed", "true");
+        play.textContent = "Stop";
+        advance(0);
+      });
+    }
+    document.getElementById("ins-speed-levels").addEventListener("click", (event) => {
+      const row = event.target.closest("[data-level]");
+      if (!row || row.disabled) return;
+      if (state.playing) stop();
+      show(row.dataset.level);
+    });
+
+    let queued = 0, lastWidth = document.documentElement.clientWidth;
+    window.addEventListener("resize", () => {
+      if (document.documentElement.clientWidth === lastWidth || queued) return;
+      queued = requestAnimationFrame(() => { queued = 0; lastWidth = document.documentElement.clientWidth; build(); });
+    });
+
+    document.getElementById("ins-empty").hidden = true;
+    document.getElementById("ins-record").hidden = false;
+    said();
+    build();
+  })();
+  </script>
+  <script data-first-visit>
+  // What a person is told the first time they come to the site, on whichever
+  // page that is (operator, 2026-11-24: "please add a note to the site when
+  // a person first visits", "with an Ack button"). Ack puts it away for
+  // good: the browser keeps that for every page of the site, in both lanes.
+  // Every page carries this same block (beta/first_visit_note_test.py holds
+  // them equal). It shows on the site only, never in a desktop build or a
+  // page under test, and only in the page itself, not in a simulator it
+  // frames.
+  (() => {
+    const KEY = "civvis-first-visit-ack";
+    if (!/(^|\.)civvis\.ai$|\.pages\.dev$/.test(location.hostname)) return;
+    if (window.top !== window) return;
+    try {
+      if (localStorage.getItem(KEY)) return;
+    } catch {
+      // A browser that keeps nothing is told on every visit.
+    }
+    // In a shadow tree, so the note looks the same over the simulator as
+    // over a page: neither's styles reach it.
+    const host = document.createElement("div");
+    host.id = "first-visit-note";
+    const note = document.createElement("dialog");
+    if (typeof note.showModal !== "function") return;
+    note.setAttribute("aria-label", "A note on your first visit");
+    // The operator's words, as written; where a paragraph ends is the page's.
+    const words = [
+      "Everything is a work in progress. Trying to move fast so things are sloppy but I\u2019ll try to fix what I can when I can.",
+      "Currently using Fable 5.2 xhigh and Opus 5.5 xhigh from CLI to build everything. I don\u2019t write the code, I don\u2019t review the code. Just kinda throwing down features and charts and apps.",
+      "I don\u2019t accept code from others because of the increased security risks. Everything is just from building with Claude (and a bit of Gemini, Codex, others) but all should be publicly available, open source, inspectable, free.",
+    ];
+    for (const said of words) {
+      const paragraph = document.createElement("p");
+      paragraph.textContent = said;
+      note.append(paragraph);
+    }
+    const ack = document.createElement("button");
+    ack.type = "button";
+    ack.textContent = "Ack";
+    const style = document.createElement("style");
+    style.textContent = `
+      :host { all: initial; }
+      dialog {
+        box-sizing: border-box;
+        width: min(460px, calc(100vw - 32px));
+        max-height: calc(100vh - 32px);
+        overflow: auto;
+        margin: auto;
+        padding: 20px 22px 18px;
+        border: 1px solid #46566a;
+        border-radius: 6px;
+        background: #1b222c;
+        color: #e2e8ef;
+        font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+        text-align: left;
+        box-shadow: 0 18px 60px rgba(0, 0, 0, 0.55);
+      }
+      dialog::backdrop { background: rgba(6, 9, 13, 0.6); }
+      p { margin: 0 0 12px; }
+      p:last-of-type { margin-bottom: 16px; }
+      button {
+        display: block;
+        min-width: 96px;
+        margin: 0 0 0 auto;
+        padding: 7px 18px 8px;
+        border: 1px solid #efd184;
+        border-radius: 3px;
+        background: linear-gradient(145deg, #dec176, #aa7d30);
+        color: #17130c;
+        font: 700 12px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        cursor: pointer;
+      }
+      button:hover { filter: brightness(1.08); }
+      button:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+    `;
+    note.append(ack);
+    host.attachShadow({ mode: "open" }).append(style, note);
+    ack.addEventListener("click", () => note.close());
+    note.addEventListener("close", () => {
+      try {
+        localStorage.setItem(KEY, new Date().toISOString());
+      } catch {
+        // Nothing kept: see above.
+      }
+      host.remove();
+    });
+    // The simulator listens for keys and the pointer on the whole window;
+    // nothing done to the note is the game's to hear.
+    for (const kind of ["keydown", "keyup", "keypress", "pointerdown", "pointerup", "mousedown", "mouseup", "click", "wheel"]) {
+      host.addEventListener(kind, (event) => event.stopPropagation());
+    }
+    document.body.append(host);
+    note.showModal();
+  })();
+  </script>
+</body>
+</html>
