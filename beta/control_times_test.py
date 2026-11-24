@@ -175,8 +175,28 @@ class TheRecord(unittest.TestCase):
         two = control_times.summary(control_times.game_times(clocked(2))[0])
         three = control_times.summary(control_times.game_times(clocked(3))[0])
         self.assertNotIn("split", two)
+        self.assertNotIn("split_games", two)
         self.assertEqual((three["clocked"], three["split"]), (3, [41, 638, 31]))
         self.assertEqual(control_times.MIN_GAMES, 3)
+        # How many games the parts are the middle of goes with them. On the
+        # clock's first day, 2026-11-24, three clocked games' parts (49 s,
+        # 12.5 min, 44 s: 14.1 min) stood under a tile reading 12.7 min, the
+        # middle of the week's 452, as "the middle game's".
+        self.assertEqual(three["split_games"], 3)
+        unclocked = [run(f"civvis-20261123T{hour:02d}0000Z", f"2026-11-23T{hour:02d}:11:00Z") for hour in range(5)]
+        mixed = control_times.summary(control_times.game_times(clocked(3) + unclocked)[0])
+        self.assertEqual((mixed["games"], mixed["clocked"], mixed["split_games"]), (8, 3, 3))
+
+    def test_the_page_says_how_many_games_the_parts_come_from_while_they_are_few(self):
+        block = SCRIPT[SCRIPT.index("// Where a game's time goes"):SCRIPT.index("const all = control.all")]
+        self.assertIn("drawn = Number(week.split_games) || 0", block)
+        self.assertIn("const lead = drawn && drawn < Number(week.games)\n", block)
+        self.assertIn('? "Where a game’s time goes, in the " + count(drawn) + " timed part by part so far: "', block)
+        self.assertIn(': "Where the middle game’s time goes: ";', block)
+        # The reader rounds the parts to whole seconds, so no tenth is shown.
+        self.assertIn('const part = (x) => (x < 99.5 ? Math.round(x) + " s" : span(x));', block)
+        self.assertEqual(block.count("part(parts["), 3)
+        self.assertNotIn("span(parts[", block)
 
     def test_the_record_is_the_days_the_last_week_and_the_first(self):
         rows = (
