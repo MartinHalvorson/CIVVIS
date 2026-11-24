@@ -242,6 +242,12 @@ class Played(unittest.TestCase):
         self.assertEqual(played[0], ["e4", "w"])
         self.assertEqual(played[1][1], "b")
         self.assertEqual(ev("[wizardChess.game.position.turn, wizardChess.world.pieces.size]"), ["w", 32])
+        # It deliberated: its pieces shifted their weight while it thought,
+        # and the piece it chose was shown before it was played. Thinking
+        # over, the board is still.
+        self.assertGreaterEqual(ev("wizardChess.world.musings"), 1)
+        self.assertEqual(ev("wizardChess.game.foreseen"), ev("wizardChess.game.played[1].move.from"))
+        self.assertEqual(ev("[wizardChess.world.musing, [...wizardChess.world.pieces.values()].some(held => held.userData.stir)]"), [None, False])
         # The piece stands where the game says it does.
         self.assertEqual(ev("wizardChess.world.pieces.get(28).userData.piece"), "P")
         self.assertEqual(ev("[...document.querySelectorAll('#moves b')].map(held => held.textContent)"), [played[0][0], played[1][0]])

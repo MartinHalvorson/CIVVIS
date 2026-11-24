@@ -168,6 +168,13 @@ and not the whole side. When what is said can only be a capture of one
 piece ("knight takes e5"), that piece turns to face what is coming and
 braces. Cleared, or played, the board is still again.
 
+**The opponent deliberates** (`World.muse`, `answer`). While the opponent
+thinks, its pieces shift their weight, each a little and in its own time.
+When it has chosen, there is a breath before the move is played (never less
+than 0.55 s): the piece chosen stirs, what it will take braces, and a
+rider's eye is drawn to it, so that from the saddle the blow is seen
+coming. Then it is said and played.
+
 **The hall** (`World.vault`). From a knight's back the room is what is
 above the pieces, so it is built to be looked up at: a ring of twelve stone
 columns round the board under a ribbed dome, a wall beyond them with tall
@@ -231,13 +238,14 @@ Done: the rider's seat (#5747); the rider low and beside the head, and
 sound where it happens (#5755); the knight ridden alive (#5757); peril felt
 (#5758); seeing over your own knight, and the frame measured (#5760); the
 hall (#5766); the pieces alive (#5768); the board hearing a command as it is
-given (#5771).
+given (#5771); the opponent deliberating (#5772).
 
 What is next, most felt first:
 
-- **The opponent deliberates.** In the breath before the opponent's move
-  is played, the piece it chose stirs and its target braces, so the rider
-  sees it coming; while it thinks, its pieces shift their weight.
+- **Riding into the blow.** When the knight ridden captures, the rider is
+  carried in with it: the camera dips with the knight's descent onto its
+  prey and the rubble passes the rider's eye; a near-miss (a capture beside
+  the rider) rocks the knight.
 - **Riding other pieces.** Any of your pieces, not only knights.
 - **Speed: measured, and there is room.** `wizardChess.frameCost(n)` times
   `n` frames of the world's work and drawing, each finished on the graphics
