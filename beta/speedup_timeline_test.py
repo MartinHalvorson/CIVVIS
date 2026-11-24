@@ -112,6 +112,34 @@ class Ledger(unittest.TestCase):
         self.assertNotIn("billion", json.dumps(LEDGER["goals"]))
         self.assertNotIn('data-goal="billion"', LANDING)
 
+    def test_the_first_stop_carries_the_operator_s_note_on_his_own_play(self):
+        # Operator 2026-11-24: "By "Human Player" change it to "Human Player
+        # (me)" with subtitle note: Some are faster, some are slower. I'm a
+        # bit on the slower side but 5h seems reasonable."
+        stop = re.search(r'<li class="speed-stop" data-stop="hand">(.*?)</li>', LANDING, re.S).group(1)
+        asides = [" ".join(html.unescape(aside).split()) for aside in re.findall(r'<small class="speed-aside">(.*?)</small>', stop, re.S)]
+        self.assertEqual(asides, ["Some are faster, some are slower. I’m a bit on the slower side but 5h seems reasonable."])
+        # The note names his own figure, the one figure on the chart that
+        # the slot does not write. It is held to the stop's reading here,
+        # so the two cannot come apart unseen.
+        hand = {row["key"]: row for row in speedup_timeline.timeline(ROOT)["stops"]}["hand"]
+        self.assertEqual(re.findall(r"\d[\d,.]*\s*(?:x|s|min|h)\b", asides[0]), [hand["time"].replace(" ", "")])
+        # It is his note on his own five hours and on nothing else: no
+        # other entry of the chart has one.
+        self.assertEqual(LANDING.count('class="speed-aside"'), 1)
+        # Under the figures, where a stop's other small lines stand.
+        self.assertLess(stop.index('class="speed-read"'), stop.index('class="speed-aside"'))
+        # Shown, where a stop's sentence is only what a pointer held over
+        # it says: it is not the hidden `speed-what`, and it has a place in
+        # the list and on the line.
+        self.assertIn('<small class="speed-what">One person plays one game of Civilization VI.</small>', stop)
+        self.assertIn("  .speed-aside { grid-column: 1 / -1; grid-row: 4;", LANDING)
+        wide = LANDING[LANDING.index("@media (min-width: 1120px) {"):]
+        self.assertIn("    .speed-aside { display: block; flex: none; width: 200px;", wide[:wide.index("</style>")])
+        # The room over and under the line is measured from every line of
+        # words but the hidden sentence, so the note has its room.
+        self.assertIn('filter((line) => !line.hidden && !line.classList.contains("speed-what"))', LANDING)
+
     def test_the_line_s_stops_are_the_five_the_operator_named(self):
         # Operator 2026-11-24: "we should have: human player 5 hrs, Firaxis
         # Computer control: 10-15mins but we should benchmark this with our
@@ -123,8 +151,10 @@ class Ledger(unittest.TestCase):
         # The control stop as he named it later that day: "lets also call
         # Firaxis computer Control inside CIVVIS->Firaxis computer control".
         # His arrow is drawn as one.
+        # The first is his own play and says so, as he asked that day: "By
+        # "Human Player" change it to "Human Player (me)"".
         self.assertEqual([html.unescape(re.sub(r"<[^>]+>", "", name)) for name in names],
-                         ["Human player", "CIVVIS → Firaxis computer control", "Firaxis self-play", "CIVVIS self-play", "Parallel games, M5 Max, all 18 cores"])
+                         ["Human Player (me)", "CIVVIS → Firaxis computer control", "Firaxis self-play", "CIVVIS self-play", "Parallel games, M5 Max, all 18 cores"])
         stops = {stop["key"]: stop for stop in shown["stops"]}
         self.assertEqual(stops["hand"]["time"], "5 h")
         # His "10-15mins", benchmarked with our own games: the reading
@@ -1411,8 +1441,13 @@ class Page(unittest.TestCase):
         # The narrow layout is a list, slowest first, whatever kind an entry
         # is: a stop nothing has played can be slower than a measured one.
         self.assertIn("for (const entry of [...line.children].sort((one, other) => pace(one) - pace(other))) line.append(entry);", LANDING)
-        # No figure is written into the page: every one is the slot's.
+        # No figure is written into the page: every one is the slot's. But
+        # for the operator's note on the first stop, his words as he wrote
+        # them, which name his own five hours: the note's own test holds
+        # that figure to the reading.
         text = re.sub(r"<!--.*?-->", "", section, flags=re.S)
+        text, notes = re.subn(r'<small class="speed-aside">.*?</small>', "", text, flags=re.S)
+        self.assertEqual(notes, 1)
         self.assertIsNone(re.search(r"\d[\d,.]*\s*(x|s|min|h)\b", re.sub(r"<[^>]+>", " ", text)))
         # 1x is at the right end of the line and the largest goal at the left.
         self.assertIn(".speed-stop { position: absolute; right: calc(var(--at) * 100%);", LANDING)

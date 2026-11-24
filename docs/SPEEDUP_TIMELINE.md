@@ -38,7 +38,7 @@ The first stop is the one every other is divided into.
 
 | Stop | What plays the game | How it is timed |
 | --- | --- | --- |
-| Human player (`hand`) | One person, in Civilization VI. | The project owner's own figure for a game: five hours. |
+| Human Player (me) (`hand`) | One person, in Civilization VI: the project owner. | His own figure for a game: five hours. The stop says so under its figures, in his words: "Some are faster, some are slower. I'm a bit on the slower side but 5h seems reasonable." |
 | CIVVIS → Firaxis computer control (`control`) | Civilization VI itself, Firaxis's game, with CIVVIS at the controls of one seat. | The computer control benchmark (`beta/control_times.py`, [`docs/CONTROL_GAME_TIME.md`](CONTROL_GAME_TIME.md)): the middle game of the games played to a victory in the last seven days, each timed end to end, from launching the game to its ending. The stop names it (`"benchmark": "control"`), so a finished game moves the stop with the next publish. A clone without the run ledger shows the newest reading written in the ledger instead. |
 | Firaxis self-play (`firaxis_self_play`) | Civilization VI itself with Firaxis's own AI in every seat. | One game played by the verification lane between two of its own (`tools/civ6_play.py --firaxis-self-play`): the lane's setup at Lv 8, our seat handed to the game's autoplay manager on its first turn. Timed end to end by the harness's run clock, the clock the computer control games are timed by. See [Timing a Firaxis self-play game](#timing-a-firaxis-self-play-game). |
 | CIVVIS self-play (`self_play`) | The simulator, one core: every seat a CIVVIS AI agent. | The mean of twelve games, `gene_screen --jobs 1` with its defaults, from each game's `secs`. |

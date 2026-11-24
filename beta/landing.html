@@ -355,6 +355,10 @@
      its goal a row further down. */
   .speed-second:not([hidden]) ~ .speed-goal { grid-row: 3; }
   .speed-stop.is-fastest .speed-name { color: #fff; }
+  /* A note of the owner's own on a stop, where he wrote one (2026-11-24, on
+     the first stop: "with subtitle note"). In the list it runs the row's
+     whole width, under the name and the figures beside it. */
+  .speed-aside { grid-column: 1 / -1; grid-row: 4; margin-top: 2px; color: var(--muted); font-size: 11.5px; line-height: 1.4; }
   /* Under the line: what amortized means, and whose estimate the goals'
      cloud cost is. */
   .speed-note { max-width: 860px; margin: 8px 0 0; color: var(--faint); font-size: 12px; line-height: 1.5; }
@@ -440,6 +444,10 @@
     .speed-name { display: block; font-size: 13px; white-space: nowrap; }
     .speed-read { display: block; text-align: inherit; }
     .speed-goal, .speed-second { display: block; text-align: inherit; }
+    /* On the line the note stands under the figures, where a stop's other
+       small lines stand, and is wider than the 150px of the rest: three
+       lines and not five. */
+    .speed-aside { display: block; flex: none; width: 200px; margin: 2px 0 0; line-height: 1.3; }
   }
 
   /* The page is four videos, two by two (operator, 2026-11-22): the
@@ -621,7 +629,14 @@
          once has a second measure in brackets under its figures, which
          says its time is amortized: the slot's `amortized`, with its games
          per second (`rate`), which it leads with past one game a second
-         (`lead`). -->
+         (`lead`).
+
+         The first stop is his own play, and says so in his words of the
+         same day ("By "Human Player" change it to "Human Player (me)" with
+         subtitle note: Some are faster, some are slower. I'm a bit on the
+         slower side but 5h seems reasonable."): the name, and the note
+         under its figures (`speed-aside`), the one small line on the
+         chart that is written here and not by the slot. -->
     <section class="speed" id="speed" aria-labelledby="speed-title" hidden>
       <h2 class="speed-title" id="speed-title">Civ Game Speedup - Synthetic Data Pipeline</h2>
       <div class="speed-head">
@@ -635,9 +650,10 @@
           <li class="speed-stop" data-stop="hand">
             <span class="speed-dot" aria-hidden="true"></span>
             <span class="speed-label">
-              <b class="speed-name">Human player</b>
+              <b class="speed-name">Human Player (me)</b>
               <small class="speed-what">One person plays one game of Civilization VI.</small>
               <span class="speed-read"><b data-speed="time"></b> <i data-speed="times"></i></span>
+              <small class="speed-aside">Some are faster, some are slower. I&#8217;m a bit on the slower side but 5h&#160;seems&#160;reasonable.</small>
               <small class="speed-goal" data-speed="goal" hidden></small>
             </span>
           </li>
