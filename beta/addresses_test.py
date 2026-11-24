@@ -233,8 +233,14 @@ class Addresses(unittest.TestCase):
         # of it, no published page or the viewer names or links it, and the
         # publish check knows no such page.
         self.assertNotIn("chess.html", SOURCES)
+        # The one line of `publish.sh` that names it copies nothing: it is
+        # where a revision from the days the page was on the site pointed
+        # its viewer's link, which is made lane-relative like every other
+        # (left root-absolute it stopped every publish, the stable lane
+        # being pinned to such a revision the hour the page was set aside).
         self.assertEqual(
-            [line for line in PUBLISH.splitlines() if "chess" in line.lower() and not line.lstrip().startswith("#")], [])
+            [line for line in PUBLISH.splitlines() if "chess" in line.lower() and not line.lstrip().startswith("#")],
+            ['set_aside = ["wizard-chess"]'])
         self.assertNotIn("wizard-chess", set(ADDRESS.values()))
         self.assertNotIn("wizard-chess", verify.ADDRESSES)
         for source in SOURCES:
