@@ -4,9 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#171d25">
-<title>Auto-Tourneys · CIVVIS.ai</title>
+<title>Tournaments · CIVVIS.ai</title>
 <meta name="description" content="CIVVIS tournaments: series of verification games against Civilization VI's own AI, running, scheduled and finished.">
-<link rel="canonical" href="https://civvis.ai/auto-tourneys/">
+<link rel="canonical" href="https://civvis.ai/tournaments/">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23171d25'/%3E%3Ccircle cx='16' cy='16' r='11.5' fill='none' stroke='%2366c0f4'/%3E%3Cpath d='M7 16h18M16 4.5c-4.2 4.1-4.2 18.9 0 23M16 4.5c4.2 4.1 4.2 18.9 0 23' fill='none' stroke='%2366c0f4' stroke-width='1.15'/%3E%3C/svg%3E">
 <style>
   /* The home page's own palette, header and cards (`beta/landing.html`): the
@@ -116,7 +116,7 @@
   .utility-list:focus-visible { color: #fff; text-decoration: underline; }
   .utility-list:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   /* The site's pages, listed in the same order on every one of them with
-     the page on screen in gold: Home, Charts, Auto-Tourneys, CIVVIS and AI
+     the page on screen in gold: Home, Charts, Tournaments, CIVVIS and AI
      Debugger, and under them the game they are built on. As on the home page, whose
      header this is, the column stands to the left of the title. */
   .site-brand { display: flex; align-items: center; gap: 18px; min-width: 0; }
@@ -176,8 +176,8 @@
   .site-link[href^="https://store.steampowered.com/"] { background: linear-gradient(90deg, #1a44c2 35%, #47bfff); color: #fff; }
   .site-link[href^="https://store.steampowered.com/"]:hover,
   .site-link[href^="https://store.steampowered.com/"]:focus-visible { background: linear-gradient(90deg, #2352d6 35%, #73cfff); color: #fff; }
-  /* The column is as wide as its longest name, AUTO-TOURNEYS, on one line:
-     145px. Every name stands on one line (operator, 2026-11-21: "make sure
+  /* The column is as wide as AUTO-TOURNEYS on one line, the Tournaments page's
+     name from 2026-11-22 to 2026-11-24: 145px. Every name stands on one line (operator, 2026-11-21: "make sure
      it fits on one line"), down to a 320px phone, where the title beside
      the column still has its room. The list is a tree that keeps its
      branches folded (operator, 2026-11-21: "a somewhat collapsable model
@@ -359,16 +359,19 @@
   <header class="shell site-header">
     <div class="site-brand">
       <!-- The site's pages, in the order every one of them lists them, with
-           the page on screen in gold: this is Auto-Tourneys (named
-           Tournaments until 2026-11-22: operator, "make sure Tournaments
-           changes to Auto-Tourneys"), between Charts and the simulation.
+           the page on screen in gold: this is Tournaments, between Charts
+           and the simulation. It was Auto-Tourneys from 2026-11-22
+           (operator, "make sure Tournaments changes to Auto-Tourneys") until
+           2026-11-24, when it took its first name back (operator: "change
+           auto-outnrye to Tournaments. Auto-tourney suggests some self
+           imrpvoing tourney thing").
            Every link is lane-relative (this page lives at
            <lane>/tournaments/), so the test lane's page opens the test
            lane's home page and viewer. -->
       <nav class="site-nav" aria-label="CIVVIS sites">
         <a class="site-link" href="../home/">Home</a>
         <a class="site-link" href="../charts/win-analytics/" title="What the games show: charts read off the CIVVIS AI agents&#8217; games.">Charts/</a>
-        <a class="site-link" href="./" aria-current="page">Auto-Tourneys</a>
+        <a class="site-link" href="./" aria-current="page">Tournaments</a>
         <a class="site-link" href="../" title="Every civilization is played by a CIVVIS AI agent.">CIVVIS</a>
         <a class="site-link" href="../?mode=strange" title="One world, two timelines: the same game played two ways, side by side, on a timeline that branches.">Doctor Strange's Civ 6</a>
         <a class="site-link" href="../?mode=play" title="You play one civilization. CIVVIS AI agents play the rest.">AI Debugger</a>

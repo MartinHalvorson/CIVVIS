@@ -22,7 +22,7 @@ elo estimations benchmarks for the lv 4 - 8 firaxis civ ai".
 the newest fit, each as the step its ratings took from fit to fit.
 
 **Civilization VI's own AI, Lv 4 Prince to Lv 8 Deity**, is rated from the
-benchmark: every finished game of every tournament on Auto-Tourneys, the
+benchmark: every finished game of every tournament the Tournaments page lists, the
 games the Win Analytics benchmark counts (`research_page.tournament_games`'s
 set, through `home_rankings.tournament_series`), each game a table of six:
 our one seat against five Firaxis AIs at the game's level. A table is fitted

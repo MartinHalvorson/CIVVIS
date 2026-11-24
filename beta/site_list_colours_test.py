@@ -12,7 +12,7 @@ Until then a list was all one colour, the colour of the page it stood on:
 six blue buttons on the pages, six black ones in the simulator. Now a button
 says where it goes, and says the same thing on every page:
 
-    Home, Charts/ and its pages, Auto-Tourneys   the pages' blue
+    Home, Charts/ and its pages, Tournaments     the pages' blue
     CIVVIS, AI Debugger                          the simulator's black
     Doctor Strange's Civ 6                       Doctor Strange's blue and
                                                  crimson, in an orange glow
@@ -114,7 +114,7 @@ def lists() -> dict[str, list[tuple[str, str]]]:
 class Pages(unittest.TestCase):
     def test_the_list_is_found_on_the_pages_that_carry_it(self):
         # Discovered, so a glob that comes up empty is a failure and not a
-        # pass: Home, Auto-Tourneys and the three pages of Charts/.
+        # pass: Home, Tournaments and the pages of Charts/.
         carried = lists()
         self.assertGreaterEqual(len(carried), 5, sorted(carried))
         for source, links in carried.items():
@@ -148,10 +148,10 @@ class Pages(unittest.TestCase):
                 self.assertEqual({name for name, kind in worn.items() if kind == "strange"}, {"Doctor Strange's Civ 6"})
                 self.assertEqual({name for name, kind in worn.items() if kind == "steam"}, {"Civ 6"})
                 blue = {name for name, kind in worn.items() if kind == "blue"}
-                self.assertLessEqual({"Home", "Charts/", "Auto-Tourneys"}, blue)
+                self.assertLessEqual({"Home", "Charts/", "Tournaments"}, blue)
                 # Whatever else is blue is a page of Charts/, set in under it.
                 under = {name for kind, _, _, name in LINK.findall(NAV.search((BETA / source).read_text(encoding="utf-8")).group(1)) if kind.endswith("sub-link")}
-                self.assertEqual(blue - {"Home", "Charts/", "Auto-Tourneys"}, under)
+                self.assertEqual(blue - {"Home", "Charts/", "Tournaments"}, under)
 
     def test_the_simulator_is_never_the_page_on_screen_here(self):
         # A black button is never also the gold one on these pages, so the
@@ -170,7 +170,7 @@ class Simulator(unittest.TestCase):
         for mark, name in (
             ("homelink", "Home"),
             ("chartslink", "Charts/"),
-            ("tourlink", "Auto-Tourneys"),
+            ("tourlink", "Tournaments"),
             ("watchlink", "CIVVIS"),
             ("playlink", "AI Debugger"),
             ("strangelink", "Doctor Strange's Civ 6"),

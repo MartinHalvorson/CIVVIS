@@ -326,7 +326,7 @@ class TheSiteList(unittest.TestCase):
                 ("site-link sub-link", "../civ-analytics/", "Civ Analytics"),
                 ("site-link sub-link", "../civvis-performance/", "CIVVIS Performance"),
                 ("site-link sub-link", "./", "AI Interpretability"),
-                ("site-link", "../../auto-tourneys/", "Auto-Tourneys"),
+                ("site-link", "../../tournaments/", "Tournaments"),
                 ("site-link", "../../", "CIVVIS"),
                 ("site-link", "../../?mode=strange", "Doctor Strange's Civ 6"),
                 ("site-link", "../../?mode=play", "AI Debugger"),
@@ -345,7 +345,7 @@ class TheSiteList(unittest.TestCase):
         self.assertEqual(header(PAGE), header(PERFORMANCE))
 
     def test_only_charts_lists_the_branch(self):
-        listed = '<a class="site-link sub-link" href="../ai-interpretability/" title="How a CIVVIS AI agent decides: one turn step by step, its plan through a game, and what each rule is worth in wins.">AI Interpretability</a>\n        <a class="site-link" href="../../auto-tourneys/" '
+        listed = '<a class="site-link sub-link" href="../ai-interpretability/" title="How a CIVVIS AI agent decides: one turn step by step, its plan through a game, and what each rule is worth in wins.">AI Interpretability</a>\n        <a class="site-link" href="../../tournaments/" '
         for page in (RESEARCH, PERFORMANCE):
             self.assertIn(listed, page)
         for page in (LANDING, TOURNAMENTS, VIEWER):
