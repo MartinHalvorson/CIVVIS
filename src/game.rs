@@ -5351,6 +5351,221 @@ pub struct ObservedPublicEmpireStats {
     pub military_unit_count: Option<usize>,
 }
 
+/// Whether `key` names one of the stock agents' own notes rather than a
+/// tally the rules keep. Every one of these is written from inside an
+/// agent's turn, outside any action. Asked on every counter access, so it is
+/// a pair of `match`es rather than a scan.
+pub fn is_agent_note(key: &str) -> bool {
+    let namespaced = key.split_once(':').is_some_and(|(head, _)| {
+        matches!(
+            head,
+            "air_surge"
+                | "band_hunt"
+                | "campaign"
+                | "city_state_harvest"
+                | "city_state_stone"
+                | "coalition"
+                | "commit"
+                | "contested_land"
+                | "diplo_allies_every_friend"
+                | "edge_unit"
+                | "eoe"
+                | "faith_strike"
+                | "heretic_hunt"
+                | "one_war"
+                | "pad_raid"
+                | "player"
+                | "raid_prize"
+                | "research_alliance"
+        )
+    });
+    namespaced
+        || matches!(
+            key,
+            "culture_heist_posts"
+                | "culture_heists"
+                | "denial_denunciations"
+                | "denial_pillages"
+                | "denial_spies_trained"
+                | "denial_spy_posts"
+                | "denial_wars"
+                | "denunciations_withheld"
+                | "every_pad_disrupts"
+                | "every_pad_posts"
+                | "kristina_plaza_claims"
+                | "plaza_district_claims"
+                | "plaza_tier_claims"
+                | "racer_cover_posts"
+                | "racer_spy_posts"
+                | "racer_spy_searches"
+                | "racer_spy_unrunnable_offers_left"
+                | "raid_wars"
+                | "score_wonder_finishes"
+                | "score_wonder_losses"
+                | "score_wonder_rear_starts"
+                | "score_wonder_rear_turns"
+                | "score_wonder_starts"
+                | "sea_scout_claims"
+                | "sources_before_disrupt"
+                | "space_person_project_claims"
+                | "spy_steals"
+                | "steal_spies_trained"
+                | "wounded_ships_sailed_on"
+        )
+}
+
+/// A seat's named tallies, answering as one map.
+///
+/// The rules keep tallies here that they read back (goody huts claimed,
+/// great works, project effects, historic moments). The stock agents keep
+/// their own notes in the same map (commitments made and abandoned, coalition
+/// offers, raids), written from inside an agent's turn rather than through any
+/// action, so a replay of the game's actions could never reproduce them
+/// (`docs/CORE_STATE.md`, "Leaks"). They are stored apart: `rules` is the
+/// world, `notes` (shared until written) is the agents' memory. Callers use
+/// one map interface and the key decides where it lives (`is_agent_note`), so
+/// every reader and writer is unchanged; a save writes them as one map, as
+/// before.
+#[derive(Clone, Default, PartialEq, Debug)]
+pub struct Counters {
+    rules: BTreeMap<String, i64>,
+    notes: Arc<BTreeMap<String, i64>>,
+}
+
+impl Counters {
+    fn side(&self, key: &str) -> &BTreeMap<String, i64> {
+        if is_agent_note(key) {
+            &self.notes
+        } else {
+            &self.rules
+        }
+    }
+
+    fn side_mut(&mut self, key: &str) -> &mut BTreeMap<String, i64> {
+        if is_agent_note(key) {
+            Arc::make_mut(&mut self.notes)
+        } else {
+            &mut self.rules
+        }
+    }
+
+    pub fn get(&self, key: &str) -> Option<&i64> {
+        self.side(key).get(key)
+    }
+
+    pub fn get_mut(&mut self, key: &str) -> Option<&mut i64> {
+        self.side_mut(key).get_mut(key)
+    }
+
+    pub fn contains_key(&self, key: &str) -> bool {
+        self.side(key).contains_key(key)
+    }
+
+    pub fn insert(&mut self, key: String, value: i64) -> Option<i64> {
+        self.side_mut(&key).insert(key, value)
+    }
+
+    pub fn remove(&mut self, key: &str) -> Option<i64> {
+        self.side_mut(key).remove(key)
+    }
+
+    pub fn entry(&mut self, key: String) -> std::collections::btree_map::Entry<'_, String, i64> {
+        if is_agent_note(&key) {
+            Arc::make_mut(&mut self.notes).entry(key)
+        } else {
+            self.rules.entry(key)
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.rules.len() + self.notes.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.rules.is_empty() && self.notes.is_empty()
+    }
+
+    /// Every tally, rules' and agents' together, in key order.
+    pub fn iter(&self) -> std::vec::IntoIter<(&String, &i64)> {
+        let mut all: Vec<(&String, &i64)> = self.rules.iter().chain(self.notes.iter()).collect();
+        all.sort();
+        all.into_iter()
+    }
+
+    /// Every key, rules' and agents' together, in order.
+    pub fn keys(&self) -> impl Iterator<Item = &String> {
+        self.iter().map(|(key, _)| key)
+    }
+
+    /// Every value, in key order.
+    pub fn values(&self) -> impl Iterator<Item = &i64> {
+        self.iter().map(|(_, value)| value)
+    }
+
+    /// The tallies the rules keep: the part of this map that is the world.
+    pub fn rules(&self) -> &BTreeMap<String, i64> {
+        &self.rules
+    }
+
+    /// The stock agents' own notes.
+    pub fn notes(&self) -> &BTreeMap<String, i64> {
+        &self.notes
+    }
+}
+
+impl<'a> IntoIterator for &'a Counters {
+    type Item = (&'a String, &'a i64);
+    type IntoIter = std::vec::IntoIter<(&'a String, &'a i64)>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+impl std::ops::Index<&str> for Counters {
+    type Output = i64;
+
+    fn index(&self, key: &str) -> &i64 {
+        self.get(key).expect("no such counter")
+    }
+}
+
+impl std::ops::Index<&String> for Counters {
+    type Output = i64;
+
+    fn index(&self, key: &String) -> &i64 {
+        self.get(key).expect("no such counter")
+    }
+}
+
+impl FromIterator<(String, i64)> for Counters {
+    fn from_iter<I: IntoIterator<Item = (String, i64)>>(entries: I) -> Counters {
+        let mut counters = Counters::default();
+        for (key, value) in entries {
+            counters.insert(key, value);
+        }
+        counters
+    }
+}
+
+impl Serialize for Counters {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut map = serializer.serialize_map(Some(self.len()))?;
+        for (key, value) in self.iter() {
+            map.serialize_entry(key, value)?;
+        }
+        map.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for Counters {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Counters, D::Error> {
+        Ok(BTreeMap::<String, i64>::deserialize(deserializer)?
+            .into_iter()
+            .collect())
+    }
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Player {
     pub id: usize,
@@ -5760,8 +5975,11 @@ pub struct Player {
     pub mass_driver_shots: i64,
     #[serde(default)]
     pub envoys: Vec<(usize, i64)>, // (city-state pid, envoys placed)
+    /// Named tallies: the rules' (goody huts claimed, great works, project
+    /// effects, ...) and, stored apart, the stock agents' own notes. See
+    /// [`Counters`].
     #[serde(default)]
-    pub counters: BTreeMap<String, i64>,
+    pub counters: Counters,
     /// Completed military-unit lives by the kind the unit carried when it
     /// left play. Live units are composed with this by
     /// [`Game::unit_lifetime_stats`].
@@ -5895,7 +6113,7 @@ impl Player {
             mass_driver_ore: None,
             mass_driver_shots: 0,
             envoys: Vec::new(),
-            counters: BTreeMap::new(),
+            counters: Counters::default(),
             unit_lifetimes: BTreeMap::new(),
             combat_ledger: CombatLedger::default(),
             great_work_pieces: Vec::new(),
@@ -14022,6 +14240,8 @@ mod movement_zoc_memo_tests;
 #[cfg(test)]
 mod victory_conditions;
 
+#[cfg(test)]
+mod counters_tests;
 #[cfg(test)]
 mod great_work_tests;
 
