@@ -1,0 +1,168 @@
+name: to-prod-auto-6h
+
+# Every six hours, makes what /test is serving the front page of civvis.ai.
+#
+# The operator switched this on on 2026-11-23, "for now". Until then `/` moved
+# only when somebody ran to-prod-manual-only. That workflow is unchanged and
+# still promotes any revision on demand; this one is the same act on a clock.
+# It is a workflow of its own so that it can be switched off on its own:
+#
+#   Actions -> to-prod-auto-6h -> Disable workflow
+#   gh workflow disable to-prod-auto-6h.yml
+#
+# stops the automatic promotions and leaves manual promotion and the /test
+# schedule exactly as they are. Run workflow, here, is "test to prod now".
+#
+# **What it promotes is the commit /test is serving, not the head of main.**
+# That commit has been built, checked and published by to-test-auto-30, and
+# has been there to look at; a commit merged a minute ago has not. So nothing
+# reaches `/` that was never on /test. It only ever moves forward: a /test
+# that does not contain what `/` serves, or does not contain the commit a
+# person last put `site-stable` on, is left alone, and so is a /test serving
+# something that is not on main. When `/` already serves what /test serves,
+# the run ends in seconds and deploys nothing.
+#
+# After moving the tag this runs the ordinary to-test-auto-30 job, as
+# to-prod-manual-only does: one code path, no drift.
+#
+# **Nobody is watching, so a failed promotion undoes itself.** The tag moves
+# before the build, and every later deployment builds the stable lane from
+# the tag: a commit that cannot be deployed as the stable lane would stop
+# both lanes for everyone until a person moved the tag again. So when the
+# deploy fails, the tag goes back to the commit `/` is serving, and the next
+# tick tries again with whatever /test serves then.
+#
+# A deploy that is cancelled is another matter, and the tag stays where it
+# is. The deploy shares to-test-auto-30's queue, which holds one waiting run:
+# a half-hourly tick that arrives while this one waits behind a build takes
+# its place (that is what cancelled the promotion of 2026-11-21). That tick
+# then finds a promotion waiting, `site-stable` naming a commit `/` does not
+# serve, and deploys it itself.
+#
+# The budget: at most four deployments a day, ~120 a month, out of
+# Cloudflare's 500, and none on a tick with nothing to promote. They are
+# counted with every other deployment, so the scheduled /test deploys pace
+# themselves around them and the month still cannot run dry. Each one also
+# republishes /test from the head of main, as every deployment does.
+
+on:
+  schedule:
+    # 00:12, 06:12, 12:12 and 18:12 UTC. Minute 12 is five minutes after a
+    # to-test-auto-30 tick: that tick has decided by then, and when it did
+    # not build, the queue is free for the 25 minutes until the next one.
+    - cron: "12 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  # to-prod-manual-only's group, on purpose: the two move one tag, so they
+  # take turns.
+  group: to-prod-manual-only
+  cancel-in-progress: false
+
+jobs:
+  move-the-tag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      moved: ${{ steps.move.outputs.moved }}
+      sha: ${{ steps.move.outputs.sha }}
+      back: ${{ steps.move.outputs.back }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Point site-stable at what /test serves
+        id: move
+        run: |
+          set -euo pipefail
+          # pages.dev rather than the custom domain, as to-test-auto-30's gate
+          # reads it: a domain hiccup must not look like a lane.
+          serving() {
+            curl -fsS --max-time 10 "https://civvis.pages.dev/$1build.json" \
+              | python3 -c 'import json,sys; print(json.load(sys.stdin)["commit"])' \
+              2>/dev/null || true
+          }
+          stay() {
+            echo "moved=false" >> "$GITHUB_OUTPUT"
+            echo "promoting nothing: $1"
+            echo "### Promoted nothing: $1" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          }
+          known() {
+            [[ "$1" =~ ^[0-9a-f]{40}$ ]] && git cat-file -e "$1^{commit}" 2>/dev/null
+          }
+
+          candidate="$(serving test/)"
+          front="$(serving "")"
+          # Not knowing is not a licence to move the front page: ask again in
+          # six hours.
+          known "$candidate" || stay "could not read which commit /test serves"
+          known "$front" || stay "could not read which commit / serves"
+          tag="$(git rev-parse --verify --quiet 'refs/tags/site-stable^{commit}' || echo "$front")"
+          echo "/test serves $candidate; / serves $front; site-stable names $tag"
+
+          [ "$candidate" != "$front" ] \
+            || stay "/ already serves ${candidate:0:9}, the commit on /test"
+          git merge-base --is-ancestor "$candidate" origin/main \
+            || stay "/test serves ${candidate:0:9}, which is not on main"
+          git merge-base --is-ancestor "$front" "$candidate" \
+            || stay "/test (${candidate:0:9}) does not contain what / serves (${front:0:9}), and this only moves forward"
+          git merge-base --is-ancestor "$tag" "$candidate" \
+            || stay "site-stable names ${tag:0:9}, which /test (${candidate:0:9}) does not contain; it stays where it was put"
+
+          echo "promoting $candidate"
+          git tag -f site-stable "$candidate"
+          git push -f origin refs/tags/site-stable
+          {
+            echo "moved=true"
+            echo "sha=$candidate"
+            echo "back=$front"
+          } >> "$GITHUB_OUTPUT"
+          echo "### Promoted \`$candidate\` to civvis.ai (it served \`$front\`)" >> "$GITHUB_STEP_SUMMARY"
+
+  deploy:
+    needs: move-the-tag
+    if: ${{ needs.move-the-tag.outputs.moved == 'true' }}
+    uses: ./.github/workflows/to-test-auto-30.yml
+    secrets: inherit
+    with:
+      deploy: true
+      # The run is a scheduled one, and to-test-auto-30 gates scheduled runs;
+      # this says the deploy has already been decided.
+      promotion: true
+
+  put-the-tag-back:
+    needs: [move-the-tag, deploy]
+    # A failure only. A cancelled deploy leaves the tag for the next
+    # to-test-auto-30 tick to publish (see the top of this file).
+    if: ${{ always() && needs.move-the-tag.outputs.moved == 'true' && needs.deploy.result == 'failure' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Point site-stable back at what / serves
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ needs.move-the-tag.outputs.sha }}
+          BACK: ${{ needs.move-the-tag.outputs.back }}
+        run: |
+          set -euo pipefail
+          # Only undo this run's own move: if the tag has gone somewhere else
+          # since, somebody chose that.
+          now="$(gh api -H "Accept: application/vnd.github.sha" \
+                 "repos/$GITHUB_REPOSITORY/commits/tags/site-stable")"
+          if [ "$now" != "$SHA" ]; then
+            echo "site-stable names $now, not the $SHA this run set; left alone"
+            exit 0
+          fi
+          gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/site-stable" \
+            -f sha="$BACK" -F force=true > /dev/null
+          echo "site-stable is back on $BACK"
+          {
+            echo "### The promotion of \`$SHA\` did not deploy"
+            echo
+            echo "\`site-stable\` is back on \`$BACK\`, the commit civvis.ai is serving."
+            echo "The next run promotes whatever /test serves then."
+          } >> "$GITHUB_STEP_SUMMARY"
