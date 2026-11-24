@@ -5369,6 +5369,11 @@ pub struct PlayerAside {
     /// until this player's End Turn, then fall back to ordinary fog memory.
     #[serde(default)]
     pub turn_visible: BTreeSet<Pos>,
+    /// `turn_visible` as map-grid bits, so a refresh adds only the hexes the
+    /// union lacks; see `Game::record_turn_visibility`. Never saved: a set
+    /// whose size has moved since they were taken has them rebuilt first.
+    #[serde(skip)]
+    pub turn_visible_bits: TurnSightBits,
     /// Rival units last observed during this active player turn. Unlike the
     /// long-term map memory, these contacts survive only until End Turn.
     #[serde(default, deserialize_with = "numbered_keys")]
@@ -5494,6 +5499,16 @@ where
                 .map_err(|_| serde::de::Error::custom(format!("map key {key:?} is not a number")))
         })
         .collect()
+}
+
+/// [`PlayerAside::turn_visible`] as grid bits, with the size the set had when
+/// they last matched it. A size that has moved since (End Turn's clear, a
+/// load, an edit made anywhere but `Game::record_turn_visibility`) means the
+/// bits are rebuilt from the set before they are trusted.
+#[derive(Clone, Default)]
+pub struct TurnSightBits {
+    bits: TileBits,
+    len: usize,
 }
 
 /// `PlayerAside` behind an `Arc`, saved as its fields so a save reads exactly
