@@ -318,7 +318,7 @@
     // A top window is its own parent, so "a frame of mine" has to say both.
     const framed = event.source && event.source !== window && event.source.parent === window;
     if (data.civvis !== "pane-ask" || !framed) return;
-    if (!/^[ab]-[0-9A-Za-z]{1,22}$/.test(String(data.pane))) return;
+    if (!/^[a-z]-[0-9A-Za-z]{1,22}$/.test(String(data.pane))) return;
     const path = String(data.path);
     const named = `${path}${path.includes("?") ? "&" : "?"}pane=${data.pane}`;
     const reply = (ok, answer, error) => {
