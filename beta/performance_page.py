@@ -12,9 +12,18 @@ CIVVIS's own page in the site list: the entry that
 opens under CIVVIS (operator 2026-11-21: "performance should be a page
 similar to the home/ and other similar pages (musings/research/) etc. we want
 the civvis performance charts there. fastest game video. p1, p10, p50, p90,
-p99 times for games for self-play games."). It carries four things:
+p99 times for games for self-play games."). It carries five things:
 
-- **how many times faster than a game played by hand**, at its top
+- **CIVVIS computer control: game speed over time**, at its top (operator
+  2026-11-24: "we should be benchmarking our civvis computer control games
+  time end to end and that number show flow through to a performance chart
+  (civvis comptuer control games speed over time) and be a top chart for
+  civvis performance"): how long one game takes with CIVVIS at the controls
+  of Civilization VI itself, end to end, day by day. `control_times.control`
+  works it out of the run ledger (`results.jsonl` on the `ledger` branch) as
+  it stands when the site is published, so it moves with every finished game
+  and nothing of it is committed.
+- **how many times faster than a game played by hand**, under it
   (operator 2026-11-22: "at the top of civvis performance we want to
   calculate a multiplier on the theoretical and experimetnal throughput of
   the simualtor. and the calculations. baeline is 5 hrs for manually played
@@ -28,6 +37,21 @@ p99 times for games for self-play games."). It carries four things:
   score from the website"): the processors of
   `data/performance/processors.json`, the one the benchmarks were run on as
   measured and every other worked out from the website's two scores.
+- **each way of playing over time** (operator 2026-11-24: "in civvis
+  performance, we should have charts studying the improvements rates of each
+  of these over time"): a small chart for every stop of the home page's line
+  after the baseline, its readings by the day they were taken and the pace
+  they have kept. `speedup_timeline.history` builds them from the same
+  ledger, with the self-play tournament's batches beside the self-play
+  benchmark.
+- **the path through one game** (operator 2026-11-24: "we should try to
+  reduce the path of civvis through civ 6 down to the computatoinal
+  irreducability and should have a chart tracking the size/num of steps"):
+  the actions of one self-play game from its first turn to its last, counted
+  by `tools/path_steps.py` into `data/performance/path_steps.json`: how many
+  steps, how many bytes, how many of the steps a unit's walk taken as one
+  step would save, and what the same path costs with no agent deciding it.
+  `path` reads the ledger. `docs/PATH_STEPS.md` is the write-up.
 - **the fastest game on video**: the record videos of the site playing a
   complete game in real time, listed in
   `data/performance/fastest_game_videos.json`. The one with the shortest time
@@ -75,12 +99,21 @@ import pathlib
 import re
 import sys
 
+import control_times
 import speedup_timeline
 
 SLOT = re.compile(r'(<script type="application/json" id="performance-data">)(.*?)(</script>)', re.S)
 
 #: The snapshot of the self-play games' times, in the source tree.
 SELF_PLAY = pathlib.Path("data/performance/self_play_times.json")
+
+#: The path through one game, reading by reading, in the source tree
+#: (`tools/path_steps.py --record`).
+PATH = pathlib.Path("data/performance/path_steps.json")
+
+#: How many kinds of step the page's chart of the newest reading names; the
+#: rest stand together under one bar.
+PATH_KINDS = 7
 
 #: The record videos, in the source tree.
 VIDEOS = pathlib.Path("data/performance/fastest_game_videos.json")
@@ -266,13 +299,90 @@ def videos(listed: object) -> list[dict]:
     return sorted(out, key=lambda v: (v["seconds"], [-ord(c) for c in v["posted"]]))
 
 
+def path(source: pathlib.Path) -> dict | None:
+    """The path through one game, for the page: `readings`, oldest first,
+    and the newest reading's steps by kind. `None` when the revision has no
+    ledger, or one that cannot be read.
+
+    A reading has the day it was `taken`, the `build` it was taken on (ten
+    characters of the commit), the `games` it is the mean of, their `turns`,
+    the `steps` of the path and the `bytes` it takes written down, `kept`,
+    the steps there would be with each unit's walk as one step, and `saved`,
+    the steps that would save (`kept + saved` is `steps`). Where the reading
+    has them it has the `instructions` the game took and the
+    `replay_instructions` the same path took with no agent deciding, with
+    `replay_share`, the second over the first.
+
+    `kinds` are the newest reading's steps by kind, most first, the
+    `PATH_KINDS` most common by name and the rest as one row (`rest: true`,
+    with how many `kinds` it stands for). A one-hex move's row is split: the
+    steps that stay (`kept`) and the ones a walk as one step would save
+    (`saved`).
+    """
+    try:
+        book = json.loads((source / PATH).read_text(encoding="utf-8"))
+        readings = []
+        for taken in sorted(book["readings"], key=lambda reading: reading["taken"]):
+            steps, saved = int(taken["steps"]), int(taken["hops"]) - int(taken["walks"])
+            if steps <= 0 or saved < 0 or saved > steps:
+                raise ValueError("a reading whose steps do not add up")
+            row = {
+                "taken": str(taken["taken"])[:10],
+                "build": str(taken.get("build") or "")[:10],
+                "games": int(taken["games"]),
+                "turns": float(taken["turns"]),
+                "steps": steps,
+                "bytes": int(taken["bytes"]),
+                "kept": steps - saved,
+                "saved": saved,
+            }
+            if taken.get("instructions") and taken.get("replay_instructions"):
+                row.update(
+                    instructions=int(taken["instructions"]),
+                    replay_instructions=int(taken["replay_instructions"]),
+                    replay_share=round(taken["replay_instructions"] / taken["instructions"], 4),
+                )
+            readings.append(row)
+        if not readings:
+            return None
+        newest = sorted(book["readings"], key=lambda reading: reading["taken"])[-1]
+        counted = sorted(newest["kinds"].items(), key=lambda pair: -pair[1])
+        kinds = []
+        for kind, count in counted[:PATH_KINDS]:
+            row = {"kind": str(kind), "steps": int(count)}
+            if kind == "move":
+                saved = readings[-1]["saved"]
+                row.update(kept=int(count) - saved, saved=saved)
+            kinds.append(row)
+        rest = counted[PATH_KINDS:]
+        if rest:
+            kinds.append({"rest": True, "kinds": len(rest), "steps": int(sum(count for _, count in rest))})
+        return {"readings": readings, "kinds": kinds, "setup": str(newest.get("setup") or "")}
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        return None
+
+
 def performance(source: pathlib.Path) -> dict | None:
     """The record, or `None` when neither the times, nor a video, nor the
-    speedup can be read."""
+    speedup, nor the computer control games can be read."""
     out: dict = {"percentiles": PERCENTILES, "spans_per_tenfold": SPANS_PER_TENFOLD}
+    # The computer control games are the run ledger's, read as it stands now.
+    # A clone that never fetched the `ledger` branch has none, and anything
+    # odd in the ledger costs the page this one part.
+    try:
+        out["control"] = control_times.control(source)
+    except Exception as error:  # noqa: BLE001 - the ledger is written by every game, the site must still publish
+        print(f"performance_page: the computer control games could not be timed ({error!r})", file=sys.stderr)
+        out["control"] = None
+    if out["control"] is None:
+        print("performance_page: no computer control game times", file=sys.stderr)
     out["speedup"] = speedup_timeline.worked(source)
     if out["speedup"] is None:
         print("performance_page: no speedup readings", file=sys.stderr)
+    out["history"] = speedup_timeline.history(source)
+    out["path"] = path(source)
+    if out["path"] is None:
+        print("performance_page: no path readings", file=sys.stderr)
     try:
         taken = json.loads((source / SELF_PLAY).read_text(encoding="utf-8"))
         windows = {key: taken["windows"][key] for key in WINDOWS if taken["windows"].get(key)}
@@ -289,7 +399,7 @@ def performance(source: pathlib.Path) -> dict | None:
     except (OSError, ValueError, AttributeError) as error:
         print(f"performance_page: no record videos ({error})", file=sys.stderr)
         out["videos"] = []
-    return out if out["windows"] or out["videos"] or out["speedup"] else None
+    return out if out["windows"] or out["videos"] or out["speedup"] or out["control"] else None
 
 
 def fill(page: str, data: dict | None) -> str | None:
@@ -328,9 +438,10 @@ def main(argv: list[str]) -> int:
     else:
         games = data["windows"].get("all", {}).get("games", 0)
         speedup = ((data.get("speedup") or {}).get("answer") or {}).get("all") or "no"
+        control = ((data.get("control") or {}).get("all") or {}).get("games", 0)
         print(
-            f"performance_page: wrote {games} self-play games' times in {len(data['batches'])} batches, {len(data['videos'])} videos"
-            f" and {speedup} speedup into {page}",
+            f"performance_page: wrote {control} computer control games' times, {games} self-play games' times in"
+            f" {len(data['batches'])} batches, {len(data['videos'])} videos and {speedup} speedup into {page}",
             file=sys.stderr,
         )
     return 0

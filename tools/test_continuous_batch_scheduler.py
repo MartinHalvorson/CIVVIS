@@ -329,9 +329,17 @@ class MachineSharing(unittest.TestCase):
     # --- whole workers ---------------------------------------------------
 
     @staticmethod
-    def worker(pid, cpu, *, priority=20, group=77, name="gene_screen"):
-        return scheduler.ProcessRow(pid=pid, group=group, priority=priority, stopped=False,
+    def worker(pid, cpu, *, priority=20, group=77, name="gene_screen", stopped=False):
+        return scheduler.ProcessRow(pid=pid, group=group, priority=priority, stopped=stopped,
                                     cpu_seconds=cpu, name=name)
+
+    @staticmethod
+    def seen(governor, workers):
+        """The workers as the next reading of the process table has them: one
+        the governor holds is stopped, and every other runs."""
+        import dataclasses
+
+        return [dataclasses.replace(row, stopped=row.pid in governor.held) for row in workers]
 
     def test_whole_worker_count_follows_the_room_under_the_ceiling(self):
         count = scheduler.governed_workers
@@ -390,7 +398,7 @@ class MachineSharing(unittest.TestCase):
         self.assertEqual(governor.held, {2, 4})
         del sent[:]
         # Room for one more: the stopped worker with the least CPU time.
-        self.assertEqual(governor._apply_workers(workers, 3, now=12.0), 3)
+        self.assertEqual(governor._apply_workers(self.seen(governor, workers), 3, now=12.0), 3)
         self.assertEqual(sent, [(4, signals.SIGCONT)])
         self.assertEqual(governor.held, {2})
 
@@ -402,16 +410,43 @@ class MachineSharing(unittest.TestCase):
         del sent[:]
         later = [self.worker(1, 900.0), self.worker(2, 1000.0), self.worker(3, 700.0)]
         # Nothing moves before the rotation is due ...
-        governor._apply_workers(later, 2, now=scheduler.WORKER_ROTATE_SECONDS - 1)
+        governor._apply_workers(self.seen(governor, later), 2, now=scheduler.WORKER_ROTATE_SECONDS - 1)
         self.assertEqual(sent, [])
         # ... then the running worker furthest ahead swaps with the held one.
-        governor._apply_workers(later, 2, now=scheduler.WORKER_ROTATE_SECONDS + 1)
+        governor._apply_workers(self.seen(governor, later), 2, now=scheduler.WORKER_ROTATE_SECONDS + 1)
         self.assertEqual(sent, [(2, signals.SIGSTOP), (1, signals.SIGCONT)])
         self.assertEqual(governor.held, {2})
         del sent[:]
         # A swap that would trade places for under a minute of CPU is skipped.
         close = [self.worker(1, 1010.0), self.worker(2, 1000.0), self.worker(3, 1030.0)]
-        governor._apply_workers(close, 2, now=3 * scheduler.WORKER_ROTATE_SECONDS)
+        governor._apply_workers(self.seen(governor, close), 2, now=3 * scheduler.WORKER_ROTATE_SECONDS)
+        self.assertEqual(sent, [])
+
+    def test_a_held_worker_that_something_else_resumed_is_stopped_again(self):
+        # 2026-11-24: a benchmark stopped three running workers for its own
+        # four minutes and resumed them as it left. In between the governor
+        # had cut its target to nought and held all three, so they ran
+        # outside its count for fifty-two minutes.
+        governor, sent, _lifted, signals = self.governor_for_workers()
+        workers = [self.worker(1, 500.0), self.worker(2, 900.0), self.worker(3, 100.0)]
+        self.assertEqual(governor._apply_workers(workers, 0, now=1.0), 0)
+        self.assertEqual(governor.held, {1, 2, 3})
+        del sent[:]
+        # The next reading shows them stopped: nothing to do.
+        self.assertEqual(governor._apply_workers(self.seen(governor, workers), 0, now=2.0), 0)
+        self.assertEqual(sent, [])
+        # Something else resumes 1 and 3. The table shows them running, the
+        # governor still holds them, and both are stopped again at once.
+        resumed = [self.worker(1, 510.0), self.worker(2, 900.0, stopped=True), self.worker(3, 110.0)]
+        self.assertEqual(governor._apply_workers(resumed, 0, now=3.0), 0)
+        self.assertEqual(sorted(sent), [(1, signals.SIGSTOP), (3, signals.SIGSTOP)])
+        self.assertEqual(governor.held, {1, 2, 3})
+        del sent[:]
+        # With room for one, the one it then lets run is not stopped again.
+        self.assertEqual(governor._apply_workers(self.seen(governor, workers), 1, now=4.0), 1)
+        self.assertEqual(sent, [(3, signals.SIGCONT)])
+        del sent[:]
+        self.assertEqual(governor._apply_workers(self.seen(governor, workers), 1, now=5.0), 1)
         self.assertEqual(sent, [])
 
     def test_a_worker_parked_in_the_background_band_is_stopped_and_lifted_when_it_resumes(self):
@@ -424,16 +459,16 @@ class MachineSharing(unittest.TestCase):
         self.assertEqual(sent, [(3, signals.SIGSTOP)])
         self.assertEqual(lifted, [])
         del sent[:]
-        self.assertEqual(governor._apply_workers(workers, 1, now=2.0), 1)
+        self.assertEqual(governor._apply_workers(self.seen(governor, workers), 1, now=2.0), 1)
         self.assertEqual(sent, [(2, signals.SIGSTOP)])
         del sent[:]
         # Back to two: the worker outside the band first, though it is ahead.
-        self.assertEqual(governor._apply_workers(workers, 2, now=3.0), 2)
+        self.assertEqual(governor._apply_workers(self.seen(governor, workers), 2, now=3.0), 2)
         self.assertEqual(sent, [(2, signals.SIGCONT)])
         self.assertEqual(lifted, [])
         del sent[:]
         # Room for the third: it is lifted out of the band as it resumes.
-        self.assertEqual(governor._apply_workers(workers, 3, now=4.0), 3)
+        self.assertEqual(governor._apply_workers(self.seen(governor, workers), 3, now=4.0), 3)
         self.assertEqual(lifted, [3])
         self.assertEqual(sent, [(3, signals.SIGCONT)])
 
