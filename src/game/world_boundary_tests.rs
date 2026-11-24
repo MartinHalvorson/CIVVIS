@@ -240,6 +240,17 @@ fn replay(save: Value, actions: &[(usize, Action)], fog: bool) -> (Value, Vec<Ve
     (as_saved(&g), legal)
 }
 
+/// The seats' counters without the agents' notes: the rules' tallies only.
+fn drop_agent_notes(save: &mut Value) {
+    if let Some(Value::Array(players)) = save.get_mut("players") {
+        for player in players {
+            if let Some(Value::Object(counters)) = player.get_mut("counters") {
+                counters.retain(|key, _| !is_agent_note(key));
+            }
+        }
+    }
+}
+
 fn differing_keys(a: &Value, b: &Value) -> Vec<String> {
     let (a, b) = (a.as_object().unwrap(), b.as_object().unwrap());
     a.keys()
@@ -277,14 +288,15 @@ fn a_save_stripped_to_the_world_replays_the_same_game() {
     );
 
     // The save is enough on its own, too: replaying the window reproduces the
-    // played world. `players[*].counters` is the one known exception — the
-    // stock agents keep their own notes in it outside any action
-    // (docs/CORE_STATE.md, "Leaks") — so it is set aside here until they
-    // move out.
+    // played world. The stock agents write their own notes into the seats'
+    // counters from inside their turns, outside any action; `Counters` keeps
+    // those apart (`is_agent_note`), and every tally the rules keep must
+    // replay exactly. A note namespace missing from `is_agent_note` fails
+    // here, naming the counters.
     let mut played = world_only(game.played, &layers, &zero);
     let mut replayed = full_world;
-    blank(&mut played, "players[*].counters", false);
-    blank(&mut replayed, "players[*].counters", false);
+    drop_agent_notes(&mut played);
+    drop_agent_notes(&mut replayed);
     assert!(
         played == replayed,
         "something other than an action wrote the world: {:?}",
