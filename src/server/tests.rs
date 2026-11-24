@@ -2704,8 +2704,11 @@ fn the_home_page_lists_the_sites_with_itself_ringed() {
         "<ul class=\"utility-lists\" aria-label=\"Top playlists\">",
         "<script type=\"application/json\" id=\"home-videos\">null</script>",
         // Over the videos, the speed timeline: hidden as written, and
-        // shown with the figures publishing writes into its own slot.
-        "<section class=\"speed\" id=\"speed\" aria-label=\"How many times faster than a person a game is played\" hidden>",
+        // shown with the figures publishing writes into its own slot. It
+        // is named by the title over it (operator, 2026-11-24: "lets
+        // title "Civ Game Speedup - Synthetic Data Pipeline"").
+        "<section class=\"speed\" id=\"speed\" aria-labelledby=\"speed-title\" hidden>",
+        "<h2 class=\"speed-title\" id=\"speed-title\">Civ Game Speedup - Synthetic Data Pipeline</h2>",
         "<script type=\"application/json\" id=\"home-speedup\">null</script>",
     ] {
         assert!(landing.contains(piece), "the home page lost {piece}");

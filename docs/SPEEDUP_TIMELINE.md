@@ -1,10 +1,14 @@
 # The speed timeline
 
 How many times faster than a person a game of Civilization VI gets played.
-The home page shows it over its videos: one number, and under it a line with
-five ways of playing one game, each standing at its multiplier. Past them
-stand two stops nothing has played yet:
+The home page shows it over its videos, under the title the project owner
+gave it on 2026-11-24, "Civ Game Speedup - Synthetic Data Pipeline": one
+number, and under it a line with five ways of playing one game, each
+standing at its multiplier. Among and past them stand four stops nothing has
+played yet:
 [The stops past what was measured](#the-stops-past-what-was-measured).
+Left of CIVVIS self-play the games play many at once, and a time there is
+amortized: [Amortized games](#amortized-games).
 
 The readings are `data/performance/speedup_timeline.json`. The page's figures
 are worked out from them by `beta/speedup_timeline.py` when the site is
@@ -35,7 +39,7 @@ The first stop is the one every other is divided into.
 | Stop | What plays the game | How it is timed |
 | --- | --- | --- |
 | Human player (`hand`) | One person, in Civilization VI. | The project owner's own figure for a game: five hours. |
-| Firaxis computer control (`control`) | Civilization VI itself, Firaxis's game, with CIVVIS at the controls of one seat. | The computer control benchmark (`beta/control_times.py`, [`docs/CONTROL_GAME_TIME.md`](CONTROL_GAME_TIME.md)): the middle game of the games played to a victory in the last seven days, each timed end to end, from launching the game to its ending. The stop names it (`"benchmark": "control"`), so a finished game moves the stop with the next publish. A clone without the run ledger shows the newest reading written in the ledger instead. |
+| CIVVIS → Firaxis computer control (`control`) | Civilization VI itself, Firaxis's game, with CIVVIS at the controls of one seat. | The computer control benchmark (`beta/control_times.py`, [`docs/CONTROL_GAME_TIME.md`](CONTROL_GAME_TIME.md)): the middle game of the games played to a victory in the last seven days, each timed end to end, from launching the game to its ending. The stop names it (`"benchmark": "control"`), so a finished game moves the stop with the next publish. A clone without the run ledger shows the newest reading written in the ledger instead. |
 | Firaxis self-play (`firaxis_self_play`) | Civilization VI itself with Firaxis's own AI in every seat. | One game played by the verification lane between two of its own (`tools/civ6_play.py --firaxis-self-play`): the lane's setup at Lv 8, our seat handed to the game's autoplay manager on its first turn. Timed end to end by the harness's run clock, the clock the computer control games are timed by. See [Timing a Firaxis self-play game](#timing-a-firaxis-self-play-game). |
 | CIVVIS self-play (`self_play`) | The simulator, one core: every seat a CIVVIS AI agent. | The mean of twelve games, `gene_screen --jobs 1` with its defaults, from each game's `secs`. |
 | Parallel games, M5 Max, all 18 cores (`all_cores`) | CIVVIS self-play on every core of one machine at once. | Sixty seconds over the record of `data/performance/games_per_minute.json` (`docs/GAMES_PER_MINUTE.md`): the time from one finished game to the next. |
@@ -43,6 +47,39 @@ The first stop is the one every other is divided into.
 The last stop is a rate, not one game's time: eighteen games are in play at
 once and one finishes every few seconds. It is the stop the page's number is
 read from, because it is what one machine delivers.
+
+The second stop's name is the project owner's of later that day: "lets also
+call Firaxis computer Control inside CIVVIS->Firaxis computer control". His
+arrow is drawn as one, on the home page and on CIVVIS Performance.
+
+## Amortized games
+
+The project owner, 2026-11-24: "starting left of CIVVIS self-play (but not
+including that), we should note that estimates are amortized games". And the
+same day: "on the left side of the timeline, at more than 1 game / second, we
+should also provide the games per second as the standard measure and (time
+per game amoritized as the second measure)".
+
+Up to CIVVIS self-play a stop's time is how long one game takes. Left of it
+the games play many at once, and a stop's time is the stopwatch's time over
+the games finished: the time from one finished game to the next. No single
+game is that fast. The ledger marks those entries `amortized`: the every-core
+stop, the 1,000,000x goal, and a projected stop that plays many games at once.
+A projected stop that multiplies an amortized stop is amortized with it.
+
+An amortized entry has two measures, its time per game and its games per
+second (the multiplier over the baseline's seconds), and the second stands in
+brackets under the first with the word amortized:
+
+| Games per second | Leads with | Second measure |
+| --- | --- | --- |
+| One or under | The time per game: `2.5 s` | `(0.41 games/s, amortized)` |
+| Past one | The games per second: `4.1 games/s` | `(247 ms a game, amortized)` |
+
+`speedup_timeline.amortize` works both out (`rate`, and `lead` when the games
+lead). Under the line the page says once what the word means. The irreducible
+game, below, is left of CIVVIS self-play and is not amortized: it is one game
+on one core.
 
 One more stop is kept in the ledger and off the line (`"line": false`):
 `deity_sim`, the simulator on one core with a CIVVIS seat against five Deity
@@ -109,7 +146,10 @@ million up are worded (`1 million x`), so that ten of them fit along the line.
 The line runs far past the fastest stop, so the stops stand in a short
 stretch of it. Words that would meet their neighbour's on the same side of
 the line stand a row further out, at the end of a rule from the stop's point
-(`speedup_timeline.rows`). The line is drawn from a window 1120px wide, where
+(`speedup_timeline.rows`). How far out that is, and how much room each side
+of the line takes, the page measures from the words once they are written in
+(`fit` in `beta/landing.html`): a name is one line or three, and a stop may
+have a second measure and a goal under its figures. The line is drawn from a window 1120px wide, where
 it is at its full length. A narrower window shows the stops as a list.
 
 ## The stops past what was measured
@@ -118,21 +158,39 @@ The project owner, 2026-11-22: "add to out speedup timeline: 10x theoretical
 scale up from local hardware ... hardware scaleup is to the left of m5 max.
 potential distributed RL fleet: up to 1000+x".
 
-The ledger's `projected` are stops nothing has run at. Each is a measured
-stop's multiplier times one figure, so it moves when that stop does.
+And on 2026-11-24: "somewhere to the left of CIVVIS self-play, through down
+Civ 6 Computationl Irreducability - ??? not sure where this is. Maybe just
+guess a 10x improvement? Maybe through down a "M5 Max, Theoretical Max Civ 6
+Throughput" somewhere like 10x to the left of Civ 6 Computational Irr...".
+The same day he renamed the scale-up: "lets change hardware scale-up to
+"Reasonable Local Hardware Scale-up Theoretical".
+
+The ledger's `projected` are stops nothing has run at. Each is another stop's
+multiplier times one figure, so it moves when that stop does. The stop it
+multiplies (`over`) is a measured one, or a projected one listed before it.
 
 | Stop | What it is | The sum |
 | --- | --- | --- |
-| Hardware scale-up (`scale_up`) | Larger hardware of our own than the one M5 Max. Theoretical. | `10 × the M5 Max's multiplier` |
+| Civ 6 Computational Irreducibility (`irreducible`) | One game on one core with nothing left in it that the game does not need. A guess: nobody knows where it is. | `10 × CIVVIS self-play's multiplier` |
+| M5 Max, Theoretical Max Civ 6 Throughput (`m5_max`) | The most games one M5 Max could finish: the irreducible game on every core at once. A guess on a guess, and amortized. | `10 × the irreducible game's multiplier` |
+| Reasonable Local Hardware Scale-up Theoretical (`scale_up`) | Hardware of our own, scaled up within reason past the one M5 Max. Theoretical. | `10 × the M5 Max's multiplier` |
 | Distributed RL fleet (`fleet`) | Many machines playing self-play at once for reinforcement learning. A potential, and open at its top. | `1,000 × the M5 Max's multiplier`, and more |
 
-Both figures are the project owner's and both are over the M5 Max's
-every-core stop. No machine was sized or priced for either. Whether his
-1,000 is over the one M5 Max or over the scaled-up hardware is this page's
-reading of his sentence, and it reads the first.
+Every figure is the project owner's. The last two are over the M5 Max's
+every-core stop as it was measured, and no machine was sized or priced for
+either. Whether his 1,000 is over the one M5 Max or over the scaled-up
+hardware is this page's reading of his sentence, and it reads the first. The
+first two are his guesses and stand on CIVVIS self-play, so the M5 Max's
+theoretical most is a hundred times one self-play game, whatever the M5 Max
+measures today. That leaves it close under the scale-up, which is ten times
+the M5 Max as measured: the two were asked for apart and are not made to agree.
+What a game takes now, in steps and instructions, and the plan for taking
+steps out of it, is [`docs/PATH_STEPS.md`](PATH_STEPS.md).
 
-On the home page they are rings in the line's own colour, under the line and
-to the left of the M5 Max. The page's number is never one of them: it is the
+On the home page they are rings in the line's own colour. Each entry of the
+line, a stop, a projected stop or a goal, takes its side of the line in turn
+(`speedup_timeline.sides`), so two that stand close together go one over the
+line and one under it. The page's number is never a projected stop: it is the
 fastest stop that was measured, and the line is drawn solid only as far as
 that stop. A thousand M5 Maxes are past the 1,000,000x the line ends at, so
 the fleet stands at the line's end as an arrow that points on from it
@@ -354,7 +412,7 @@ other are called steady.
 
 | Stop | What its chart draws |
 | --- | --- |
-| Firaxis computer control | The middle game of every day of the computer control benchmark's record (a day is drawn from three games up). Its pace is from the middle game of the record's first seven days to that of its last seven, because one day is a noisy thing to measure a pace by. A clone without the record draws the readings in the ledger. |
+| CIVVIS → Firaxis computer control | The middle game of every day of the computer control benchmark's record (a day is drawn from three games up). Its pace is from the middle game of the record's first seven days to that of its last seven, because one day is a noisy thing to measure a pace by. A clone without the record draws the readings in the ledger. |
 | Firaxis self-play | The stop's readings in the ledger. |
 | CIVVIS self-play | Its one-core benchmark readings, and beside them the self-play tournament's finished batches, the middle game of each on the day it ended (`data/performance/self_play_times.json`; `"tournament": true` on the stop). The tournament plays the same game seven or more at a time on a busy machine, so it reads slower, and it reaches back to October. A third line is the self-play benchmark hours ([`docs/SELF_PLAY_HOUR.md`](SELF_PLAY_HOUR.md)), each as the processor seconds one game took. |
 | Parallel games | Every run of `data/performance/games_per_minute.json`. The pace is kept over the records among them. A second line is the same benchmark hours as the time from one finished game to the next, which is the rate the machine keeps with the live game and everything else running beside the tournament. |
