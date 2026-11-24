@@ -62,11 +62,13 @@ log is 54 KB gzipped.
   legal action set at the start of the first and middle round is unchanged.
 - **Necessary, per field**: each core field, blanked alone, changed another
   rule-bearing field, got an action refused, changed a seat's legal actions,
-  or stopped the save loading or replaying. Ten of them changed **only** the
-  legal action set (denouncement timers, friendship and open-border
-  expiries, diplomatic favor, incidents, missions, victory points, governor
-  titles, a spy's ready turn, a pending deal's sender): a replay of the
-  actions the agents happened to take cannot see those.
+  or stopped the save loading or replaying. Twelve of them changed **only**
+  the legal action set, in every game where they mattered: the two
+  denouncement timers, friendship expiry, diplomatic favor, incidents,
+  missions, victory points, governor titles spent, a spy's ready turn, a
+  pending deal's sender, a unit's fortified flag, and the map's cliff edges
+  (where a unit may embark). A replay of the actions the agents happened to
+  take cannot see those.
 - **The agents do not need the rest either**: fresh stock agents played 20
   turns from a save are deterministic (two runs from one save, identical),
   and play the same game with history, last-seen memory, derived, expiring,
