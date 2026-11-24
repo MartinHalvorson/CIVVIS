@@ -347,7 +347,8 @@
      the site's blue stepped down to the dark chart band (#3b97d6, OKLCH L
      0.64, checked at 3:1 and more on the panel), its own light blue on
      hover. A column over fewer than `FEW` games is faint. The hairline
-     across is the win rate over every game counted, named at its left.
+     across is the win rate over every game counted, named at its right
+     end, over the late spans, whose columns stand lowest.
      Every column is a target the height of the chart, with the figures in
      a tooltip, and the table under the chart holds them all. */
   .civ-plot { position: relative; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); height: 150px; margin-top: 4px; padding-top: 20px; border-bottom: 1px solid var(--border-strong); }
@@ -359,7 +360,7 @@
   .civ-col.is-few .civ-bar { opacity: 0.4; }
   .civ-col.is-few .civ-cap { color: var(--faint); font-weight: 600; }
   .civ-ref { position: absolute; left: 0; right: 0; height: 0; border-top: 1px solid var(--muted); pointer-events: none; }
-  .civ-ref span { position: absolute; left: 0; bottom: 2px; padding: 0 4px 0 0; background: var(--panel); color: var(--muted); font-size: 10.5px; white-space: nowrap; }
+  .civ-ref span { position: absolute; right: 0; bottom: 2px; padding: 0 0 0 4px; background: var(--panel); color: var(--muted); font-size: 10.5px; white-space: nowrap; }
   .civ-axis { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); margin-top: 4px; }
   .civ-bin { display: grid; justify-items: center; min-width: 0; color: var(--muted); font-size: 11px; line-height: 1.3; text-align: center; font-variant-numeric: tabular-nums; }
   .civ-bin small { color: var(--faint); font-size: 10px; }
@@ -506,7 +507,7 @@
           What CIVVIS&#8217;s capital finished producing, in the order it finished it. The first builds are listed best win rate first; press one to list what was built second after it, then third, <span id="res-builds-depth">eight</span> builds deep.
           A row is CIVVIS&#8217;s win rate over the games that opened with exactly the builds down to it and, in brackets, those games.
           A build is a unit, building, district or wonder the capital&#8217;s production finished; one bought with Gold or Faith is not a build, and an item dropped for another before it was done is not one either.
-          A Settler can come first: the capital needs two citizens to train one, it has them by turn 3 or 4 at Online speed, and in those games CIVVIS dropped the Scout it began on turn 1 for the Settler.
+          A Settler can come first: the capital needs two citizens to train one, it has them by turn 3 or 4 at Online speed, and in those games CIVVIS dropped what it began on turn 1, a Scout or a Builder, for the Settler.
           Every finished game against the Deity AI on the run ledger counts, in a tournament or not: a win is a CIVVIS victory; a loss is a rival&#8217;s victory, our elimination, or a game conceded early.
           <span id="res-builds-left"></span>
           A build order only one game played is not opened further.
