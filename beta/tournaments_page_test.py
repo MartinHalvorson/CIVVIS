@@ -1,18 +1,31 @@
 #!/usr/bin/env python3
-"""The Tournaments page: its record is counted off the ledger, and it fits its slot."""
+"""The Tournaments page: its record is counted off the ledger, and it fits its slot.
+
+The last class here opens the page in a browser, filled with a record, and
+reads the row of game squares as it is drawn: the labels at its two ends and
+where they stand. Set `CIVVIS_TEST_CHROME` to run it with a particular
+browser binary.
+"""
 
 from __future__ import annotations
 
 import contextlib
+import copy
 import io
 import json
+import os
 import pathlib
 import re
+import shutil
+import subprocess
 import tempfile
+import time
 import unittest
+import urllib.request
 
 import home_rankings
 import tournaments_page
+from verify import Devtools, find_chrome, free_port, fresh_profile, tether
 
 BETA = pathlib.Path(__file__).resolve().parent
 ROOT = BETA.parent
@@ -603,6 +616,30 @@ class TournamentsPage(unittest.TestCase):
         for gone in ('el("tr", "is-title")', "tr.is-title", '<th scope="col">Notes</th>', '"is-note", [t.idea'):
             self.assertNotIn(gone, PAGE)
 
+    def test_a_row_of_games_says_where_it_starts_and_ends(self):
+        # Operator 2026-11-24: "in tourneys we should label the first game
+        # and last game in the chart. just like a first and last label to
+        # make the flow clear". `Drawn` below reads the labels off the page
+        # as a browser draws it; these are the page's own lines, held on a
+        # machine with no browser too.
+        for piece in (
+            # A row that starts later than the tournament's first game (an
+            # indefinite one's latest 100) says which game it starts at.
+            '        ended(squares[0], "first", skipped ? "Game " + (skipped + 1) : "First");\n'
+            '        ended(squares[squares.length - 1], "last", "Last");',
+            'square.append(el("span", "tour-end is-" + side, text));',
+            # A label stands in its own square's margin, so a wrapped row
+            # never parts the two.
+            "  .tour-game.is-first { margin-left: var(--lead, 28px); }",
+            "  .tour-game.is-last { margin-right: var(--trail, 28px); }",
+            "  .tour-end.is-first { left: calc(-1 * var(--lead, 28px)); }",
+            # The first square's margin is whole squares, 14px each.
+            '(first ? Math.ceil((wide + 4) / 14) * 14 : Math.ceil(wide + 5)) + "px");',
+        ):
+            self.assertIn(piece, PAGE)
+        # Both lists that draw a row of games draw it through `strip`.
+        self.assertEqual(PAGE.count("strip(t, "), 2)
+
     def test_the_page_draws_three_lists_and_trusts_nothing_as_markup(self):
         for piece in (
             '<section class="tour-section" id="tour-running" hidden aria-labelledby="tour-running-title">',
@@ -645,6 +682,169 @@ class TournamentsPage(unittest.TestCase):
         verify = (BETA / "verify.py").read_text(encoding="utf-8")
         self.assertIn("""    "tournaments": b'id="tournaments-data"',\n""", verify)
         self.assertIn("""    "auto-tourneys": "tournaments",\n""", verify)
+
+
+#: Read off the page as it is drawn: every row of game squares, with where
+#: its squares and its two labels stand, measured from the row's own left
+#: edge. `step` is how far two squares in one line are apart.
+ROWS = """(() => [...document.querySelectorAll(".tour-strip")].map((row) => {
+  const box = row.getBoundingClientRect();
+  const squares = [...row.children].map((square) => square.getBoundingClientRect());
+  const label = (side) => {
+    const node = row.querySelector(".tour-end.is-" + side);
+    if (!node) return null;
+    const at = node.getBoundingClientRect(), square = node.parentNode;
+    return { text: node.textContent, left: at.left - box.left, right: at.right - box.left, top: at.top, bottom: at.bottom,
+      square: [...row.children].indexOf(square), open: square.classList.contains("is-open") };
+  };
+  return {
+    title: row.closest(".tour-card, tbody") ? (row.closest(".tour-card") || row.closest("tr").previousElementSibling).querySelector(".tour-name").textContent : "",
+    width: box.width,
+    squares: squares.map((at) => ({ left: at.left - box.left, right: at.right - box.left, top: at.top, bottom: at.bottom })),
+    lines: new Set(squares.map((at) => Math.round(at.top))).size,
+    first: label("first"), last: label("last"),
+    labels: row.querySelectorAll(".tour-end").length,
+  };
+}))()"""
+
+
+class Drawn(unittest.TestCase):
+    """The row of game squares, drawn in a browser from a filled page."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.stage = pathlib.Path(tempfile.mkdtemp(prefix="civvis-tournaments-"))
+        cls.profile = fresh_profile("civvis-tournaments-profile-")
+        cls.chrome = None
+        # A tournament of each kind the page draws a row for. Running: an
+        # indefinite one with more games than its row draws, and one of a
+        # fixed size with games still to play. Finished: one played out, and
+        # one that ended after a single game.
+        rows = [run(f"civvis-t7-2026112{1 + i // 100}T{i % 100 // 4:02d}{i % 4 * 15:02d}00Z",
+                    "win" if i % 3 == 0 else "rival_victory", "CIVILIZATION_ROME", 0,
+                    utc=f"2026-11-2{1 + i // 100}T{i % 100 // 4:02d}:{i % 4 * 15 + 10:02d}:00Z") for i in range(240)]
+        bench = tournaments_page.record(rows, [{"name": "Bench", "conditions": "c", "start": "civvis-t7-",
+                                                "end": "civvis-t8-", "indefinite": True, "match": MATCH}], ["Rome"])
+        record = TournamentsPage().record()
+        single = copy.deepcopy(record["finished"][0])
+        single.update(name="One game", results=single["results"][:1], games=1, wins=1, losses=0)
+        record["running"] = bench["running"] + record["running"]
+        record["finished"] = record["finished"] + [single]
+        cls.record = record
+        page = cls.stage / "index.html"
+        page.write_text(tournaments_page.fill(PAGE, record), encoding="utf-8")
+        cls.address = page.as_uri()
+        chrome = os.environ.get("CIVVIS_TEST_CHROME") or find_chrome()
+        if not pathlib.Path(chrome).exists() and not shutil.which(chrome):
+            return
+        port = free_port()
+        cls.chrome = subprocess.Popen(
+            [chrome, "--headless=new", f"--remote-debugging-port={port}", f"--user-data-dir={cls.profile}",
+             "--no-first-run", "--disable-gpu", "--window-size=1500,1200", "about:blank"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        tether(cls.chrome)
+        target, deadline = None, time.time() + 60
+        while time.time() < deadline and target is None:
+            try:
+                with urllib.request.urlopen(f"http://127.0.0.1:{port}/json", timeout=2) as answer:
+                    pages = [page for page in json.load(answer) if page.get("type") == "page"]
+                target = next((page for page in pages if page.get("webSocketDebuggerUrl")), None)
+            except OSError:
+                time.sleep(0.2)
+        if target is None:
+            cls.chrome.terminate()
+            cls.chrome = None
+            raise AssertionError("Chrome never offered a debuggable page within 60s")
+        cls.dev = Devtools(target["webSocketDebuggerUrl"])
+        cls.dev.call("Page.enable")
+        cls.dev.call("Runtime.enable")
+
+    @classmethod
+    def tearDownClass(cls):
+        if cls.chrome:
+            cls.chrome.terminate()
+            try:
+                cls.chrome.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                cls.chrome.kill()
+        shutil.rmtree(cls.stage, ignore_errors=True)
+        shutil.rmtree(cls.profile, ignore_errors=True)
+
+    def rows(self, width: int) -> dict:
+        """The page opened in a window `width` wide: its rows, by the name
+        of the tournament each is of."""
+        if not self.chrome:
+            self.skipTest("no Chrome on this machine to open the page in")
+        self.dev.call("Emulation.setDeviceMetricsOverride",
+                      {"width": width, "height": 1200, "deviceScaleFactor": 1, "mobile": False})
+        drawn = "document.readyState === 'complete' && location.href === %s && !!document.querySelector('.tour-end')" % json.dumps(self.address)
+        for attempt in range(1, 5):
+            self.dev.call("Page.navigate", {"url": self.address})
+            deadline = time.time() + 15
+            while time.time() < deadline:
+                try:
+                    if self.dev.evaluate(drawn):
+                        return {row["title"]: row for row in self.dev.evaluate(ROWS)}
+                except Exception:  # noqa: BLE001 - the page may be between two documents
+                    pass
+                time.sleep(0.1)
+            print(f"attempt {attempt}: the page had not drawn its rows after 15s; opening it again.")
+        self.fail(f"the page never drew its rows ({self.dev.console[-5:]})")
+
+    def test_a_row_of_games_is_labelled_first_and_last(self):
+        # Operator 2026-11-24: "in tourneys we should label the first game
+        # and last game in the chart. just like a first and last label to
+        # make the flow clear".
+        rows = self.rows(1500)
+        self.assertEqual(sorted(rows), ["Bench", "First idea", "One game", "Second idea"])
+        for name, row in rows.items():
+            self.assertEqual(row["labels"], 2, name)
+            self.assertEqual((row["first"]["square"], row["last"]["square"]), (0, len(row["squares"]) - 1), name)
+            self.assertEqual(row["last"]["text"], "Last", name)
+        # A tournament played out: its first game and its last.
+        self.assertEqual((rows["First idea"]["first"]["text"], len(rows["First idea"]["squares"])), ("First", 2))
+        # One still being played: "Last" is on its last game, not yet played.
+        running = rows["Second idea"]
+        self.assertEqual((running["first"]["text"], len(running["squares"])), ("First", 5))
+        self.assertEqual((running["first"]["open"], running["last"]["open"]), (False, True))
+        # One game is both.
+        self.assertEqual((rows["One game"]["first"]["text"], rows["One game"]["first"]["square"],
+                          rows["One game"]["last"]["square"]), ("First", 0, 0))
+        # An indefinite tournament's row is its latest 100 games, so it
+        # does not start at the first: it says which game it starts at.
+        self.assertEqual(self.record["running"][0]["games"], 240)
+        self.assertEqual((rows["Bench"]["first"]["text"], len(rows["Bench"]["squares"])), ("Game 141", 100))
+
+    def test_a_label_has_its_room_in_the_row_and_the_squares_keep_their_columns(self):
+        for width in (1500, 700, 420):
+            rows = self.rows(width)
+            for name, row in rows.items():
+                where = f"{name} at {width}px"
+                squares, first, last = row["squares"], row["first"], row["last"]
+                start, end = squares[0], squares[-1]
+                # Each label is in its row, on its square's line, clear of
+                # the square it names by at least the gap between two.
+                self.assertGreaterEqual(first["left"], -0.01, where)
+                self.assertLessEqual(first["right"], start["left"] - 3, where)
+                self.assertGreaterEqual(last["left"], end["right"] + 3, where)
+                self.assertLessEqual(last["right"], row["width"] + 0.01, where)
+                for label, square in ((first, start), (last, end)):
+                    self.assertLess(abs((label["top"] + label["bottom"]) - (square["top"] + square["bottom"])) / 2, 1.5, where)
+                # The first label starts the row, and takes no more room
+                # than the whole squares it needs.
+                self.assertLess(start["left"] - first["right"], 14 + 4, where)
+                # Every square is in a column of the same grid, 14px apart,
+                # in whichever line of a wrapped row it falls.
+                for square in squares:
+                    self.assertAlmostEqual(square["left"] / 14, round(square["left"] / 14), places=2, msg=where)
+                # No square is under a label.
+                for label in (first, last):
+                    for square in squares:
+                        apart = (square["right"] <= label["left"] or square["left"] >= label["right"]
+                                 or square["bottom"] <= label["top"] or square["top"] >= label["bottom"])
+                        self.assertTrue(apart, where)
+            # The long row is wrapped at every one of these widths.
+            self.assertGreater(rows["Bench"]["lines"], 1, width)
 
 
 if __name__ == "__main__":
