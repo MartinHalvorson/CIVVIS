@@ -5308,6 +5308,60 @@ pub struct ObservedPublicEmpireStats {
     pub military_unit_count: Option<usize>,
 }
 
+/// One seat's memory of the world (see `Player::memory`).
+#[derive(Clone, Default, Serialize, Deserialize)]
+pub struct SeatMemory {
+    /// Tiles this civilization has seen at any point during its active player
+    /// turn. Current sight remains authoritative for rules and targeting; this
+    /// short-lived union exists so the map can keep the just-seen frame lit
+    /// until this player's End Turn, then fall back to ordinary fog memory.
+    #[serde(default)]
+    pub turn_visible: BTreeSet<Pos>,
+    /// Rival units last observed during this active player turn. Unlike the
+    /// long-term map memory, these contacts survive only until End Turn.
+    #[serde(default)]
+    pub turn_units: BTreeMap<u32, Unit>,
+    /// Per-tile last-known state. Unlike `explored`, this does not update
+    /// while a tile is under fog, so improvements, ownership, disasters, and
+    /// other changes cannot leak through a player observation.
+    #[serde(default)]
+    pub remembered_tiles: TileMemory,
+    /// Last public City Center state observed by this player.
+    #[serde(default)]
+    pub remembered_cities: BTreeMap<u32, RememberedCity>,
+}
+
+/// `SeatMemory` behind an `Arc`, saved as the memory itself so a save reads
+/// exactly as it did when the fields sat in `Player`.
+#[derive(Clone, Default)]
+pub struct SharedMemory(Arc<SeatMemory>);
+
+impl Serialize for SharedMemory {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.0.as_ref().serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for SharedMemory {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        SeatMemory::deserialize(deserializer).map(|memory| SharedMemory(Arc::new(memory)))
+    }
+}
+
+impl std::ops::Deref for Player {
+    type Target = SeatMemory;
+
+    fn deref(&self) -> &SeatMemory {
+        &self.memory.0
+    }
+}
+
+impl std::ops::DerefMut for Player {
+    fn deref_mut(&mut self) -> &mut SeatMemory {
+        Arc::make_mut(&mut self.memory.0)
+    }
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Player {
     pub id: usize,
@@ -5399,16 +5453,6 @@ pub struct Player {
     #[serde(default)]
     pub co2_emissions: f64,
     pub explored: crate::explored_set::ExploredSet,
-    /// Tiles this civilization has seen at any point during its active player
-    /// turn. Current sight remains authoritative for rules and targeting; this
-    /// short-lived union exists so the map can keep the just-seen frame lit
-    /// until this player's End Turn, then fall back to ordinary fog memory.
-    #[serde(default)]
-    pub turn_visible: BTreeSet<Pos>,
-    /// Rival units last observed during this active player turn. Unlike the
-    /// long-term map memory, these contacts survive only until End Turn.
-    #[serde(default)]
-    pub turn_units: BTreeMap<u32, Unit>,
     /// Whether this civilization's own knowledge has ever run the whole way
     /// round the world — see [`Game::update_world_lap`]. Once a people have
     /// been around they know the shape they live on; until then they do not,
@@ -5424,14 +5468,6 @@ pub struct Player {
     /// Cleared once the lap closes, because the answer can never change back.
     #[serde(default)]
     pub lap_bands: BTreeSet<u32>,
-    /// Per-tile last-known state. Unlike `explored`, this does not update
-    /// while a tile is under fog, so improvements, ownership, disasters, and
-    /// other changes cannot leak through a player observation.
-    #[serde(default)]
-    pub remembered_tiles: TileMemory,
-    /// Last public City Center state observed by this player.
-    #[serde(default)]
-    pub remembered_cities: BTreeMap<u32, RememberedCity>,
     /// Every seat this civilization has made contact with, and never forgets.
     /// A world is full of empires nobody has met yet; until a unit or a city
     /// of theirs has actually been seen, they are not on anybody's ledger,
@@ -5736,6 +5772,15 @@ pub struct Player {
     pub boosted_techs: BTreeSet<Name>,
     #[serde(default)]
     pub boosted_civics: BTreeSet<Name>,
+    /// What this seat has seen of the world: its last-seen tiles and cities,
+    /// and what it saw during its current turn. It is the seat's belief, the
+    /// input to what it observes, and the rules never read it
+    /// (`docs/CORE_STATE.md`), so it is no part of the world: one shared
+    /// pointer that a fork copies only if it writes. Saved flat under the old
+    /// names, and every field still reads as `player.remembered_tiles`
+    /// through `Deref`.
+    #[serde(flatten)]
+    pub memory: SharedMemory,
 }
 
 impl Player {
@@ -5767,12 +5812,9 @@ impl Player {
             power_fuel_consumed: BTreeMap::new(),
             co2_emissions: 0.0,
             explored: Default::default(),
-            turn_visible: BTreeSet::new(),
-            turn_units: BTreeMap::new(),
+            memory: SharedMemory::default(),
             went_around: false,
             lap_bands: BTreeSet::new(),
-            remembered_tiles: TileMemory::default(),
-            remembered_cities: BTreeMap::new(),
             met: BTreeSet::new(),
             alive: true,
             is_minor,
