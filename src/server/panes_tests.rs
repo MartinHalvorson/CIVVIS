@@ -27,7 +27,10 @@ fn a_pane_is_named_by_its_request_or_by_the_page_that_sent_it() {
     );
     assert_eq!(named("/state", None), None);
     assert_eq!(named("/state", Some("http://127.0.0.1:8765/")), None);
-    for stray in ["c-1", "a", "a-", "a-../x", "ab-1", "a-%20"] {
+    // A page with more worlds than two names them on down the alphabet.
+    assert_eq!(named("/state?pane=c-1", None), Some("c-1"));
+    assert_eq!(named("/state?pane=l-k3x", None), Some("l-k3x"));
+    for stray in ["A-1", "1-1", "a", "a-", "a-../x", "ab-1", "a-%20", "é-1"] {
         assert_eq!(
             named(&format!("/state?pane={stray}"), None),
             None,
