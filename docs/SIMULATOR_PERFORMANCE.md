@@ -5,6 +5,70 @@
 This note records the July 2026 simulator profile, the changes kept from that
 work, the production-catalog follow-up, and the next optimization targets.
 
+## 2026-11-24: profile-guided optimization saves 3-5% of the clock in the release build
+
+The 2026-11-15 section below found PGO cut instructions by 9.8% but could not
+see a change in seconds. This measurement counts cycles instead
+(`/usr/bin/time -l`, `cycles elapsed`). Both arms ran together at `nice 19`,
+so host load hits both equally; user seconds tracked the cycles within a
+fraction of a percent on every pair.
+
+Setup:
+
+- `main` at `66a5cfa50a`, `gene_screen` in the real `release` profile (thin
+  LTO, one codegen unit).
+- All three builds come from one source path (`~/civvis-22-main`), each with
+  its own `CARGO_TARGET_DIR`. Cargo's `-C metadata` hash, and with it every
+  mangled symbol, depends on the source path and the profile settings. A
+  profile trained anywhere else matches almost nothing: the earlier
+  fast-profile attempt saved 17.5% of instructions in its own build and
+  −0.8% / +1.9% cycles when carried over to the release build.
+- Training: `RUSTFLAGS=-Cprofile-generate=DIR`, then two games on seeds 7701
+  and 7702, all seats on the deployment genome, then
+  `xcrun llvm-profdata merge`. Apple's LLVM 21 tool reads this toolchain's
+  LLVM 22 profiles.
+- The guided build used `RUSTFLAGS=-Cprofile-use=FILE`. LLVM 22 has no
+  `-pgo-warn-mismatch` option, so passing it fails the build.
+
+Every game in both A/Bs below played identical rows, timing and build header
+aside (checked by md5).
+
+Self-play, all seats on the deployment genome, two rounds per seed:
+
+| seed | cycles, round 1 | cycles, round 2 | instructions |
+| --- | ---: | ---: | ---: |
+| 36 | −3.9% | −4.3% | −13.3% |
+| 37 | −4.8% | −4.8% | −13.9% |
+| 38 | −4.8% | −4.3% | −13.9% |
+
+The gene screen's own draw (no genome flags), the shape the tournament
+plays:
+
+| seed | cycles | instructions |
+| --- | ---: | ---: |
+| 20261009638634 | −3.7% | −12.9% |
+| 20261009638635 | −1.1% | −9.3% |
+| 20261009638636 | −5.6% | −13.3% |
+
+So the clock moves by about a third of what the instruction count promises:
+−4.5% on the deployment genome the profile was trained on, −3.4% on random
+draws. Training on random draws is the obvious way to close that gap, and is
+not measured here.
+
+What adopting it costs. A batch builds its pinned binary in its own source
+worktree (`sources/<commit>`, `ensure_source` in
+`tools/continuous_batch_scheduler.py`). A profile has to be trained at that
+path, so a guided batch needs three steps in that worktree:
+
+1. an instrumented build;
+2. two training games, run in parallel;
+3. the guided build.
+
+Here the builds took 11-14 minutes each at three jobs, so steps 1 and 3 add
+about 25 build-minutes per batch. A 2,000-game batch spends about 13 hours on
+roughly 14 cores, so 3.4% of it is about 6 core-hours. The scheduler is not
+changed here.
+
 ## 2026-11-15: a screen's game is a production player planning on a view
 
 The 2026-11-11 work below priced the world civvis.ai plays and kept city
@@ -198,7 +262,8 @@ copies), and an instruction not executed is time not spent; what a profile
 takes out is mostly calls and jumps, and whether that is time depends on
 what the processor was waiting for. It needs a quiet host and a clock (the
 three builds took 14, 9 and 15 minutes here) before anyone builds a sweep's
-binary this way.
+binary this way. (2026-11-24, at the top of this file: counted in cycles,
+which host load moves for both arms alike, the clock saving is 3-5%.)
 
 ## 2026-11-11: the speed tools could not see the world civvis.ai plays
 
