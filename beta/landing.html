@@ -317,11 +317,14 @@
      games play many at once, so a time there is amortized, the time from
      one finished game to the next, and each stop there says so (operator,
      the same day: "starting left of CIVVIS self-play (but not including
-     that), we should note that estimates are amortized games"). Past one
-     game a second a stop leads with its games per second and its time per
-     game is the second measure, in brackets under it ("at more than 1 game
-     / second, we should also provide the games per second as the standard
-     measure and (time per game amoritized as the second measure)").
+     that), we should note that estimates are amortized games"). Such a
+     stop leads with its games per second and its time per game is the
+     second measure, in brackets under it ("at more than 1 game / second,
+     we should also provide the games per second as the standard measure
+     and (time per game amoritized as the second measure)"; and of the M5
+     Max's stop, which is under a game a second: "lest have m5 max blurb
+     list amortiized games per second as the primary unit. as this is
+     really amortiization at play").
      The figures are the page's
      `home-speedup` slot, written when the site is published
      (`beta/speedup_timeline.py`), and the section stays hidden on a page
@@ -635,8 +638,11 @@
          Synthetic Data Pipeline"". And a stop whose games play many at
          once has a second measure in brackets under its figures, which
          says its time is amortized: the slot's `amortized`, with its games
-         per second (`rate`), which it leads with past one game a second
-         (`lead`).
+         per second (`rate`), which it leads with (`lead`): past one game a
+         second from the first, and under it since he asked it of the M5
+         Max's stop that day ("lest have m5 max blurb list amortiized games
+         per second as the primary unit. as this is really amortiization at
+         play"). That stop's goal is worded in games a second with it.
 
          The first stop is his own play, and says so in his words of the
          same day ("By "Human Player" change it to "Human Player (me)" with
@@ -833,12 +839,15 @@
   //
   // Where the games play many at once a time is amortized (the slot's
   // `amortized`): the time from one finished game to the next. Such a stop
-  // has a second measure in brackets under its figures. Past one game a
-  // second it leads with its games per second and the second measure is its
-  // time per game; under that it leads with its time and the second measure
-  // is its games per second (operator, 2026-11-24: "at more than 1 game /
-  // second, we should also provide the games per second as the standard
-  // measure and (time per game amoritized as the second measure)").
+  // has a second measure in brackets under its figures. Which of the two
+  // it leads with is the slot's say (`lead`), and the slot has every such
+  // stop lead with its games per second, its time per game the second
+  // measure (operator, 2026-11-24: "at more than 1 game / second, we should
+  // also provide the games per second as the standard measure and (time per
+  // game amoritized as the second measure)", and later of the M5 Max's
+  // stop, under a game a second: "amortiized games per second as the
+  // primary unit"). A row the slot does not have lead so leads with its
+  // time, and its games per second are the second measure.
   (() => {
     let data = null;
     try { data = JSON.parse(document.getElementById("home-speedup").textContent); } catch (_) {}

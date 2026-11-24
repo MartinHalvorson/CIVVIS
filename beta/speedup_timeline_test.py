@@ -319,11 +319,14 @@ class Ledger(unittest.TestCase):
         over = {stop["key"]: stop["over"] for stop in LEDGER["projected"]}
         self.assertEqual((over["scale_up"], over["fleet"]), ("all_cores", "all_cores"))
 
-    def test_past_a_game_a_second_a_stop_leads_with_its_games_per_second(self):
+    def test_an_amortized_stop_leads_with_its_games_per_second(self):
         # Operator 2026-11-24: "on the left side of the timeline, at more
         # than 1 game / second, we should also provide the games per second
         # as the standard measure and (time per game amoritized as the
-        # second measure)".
+        # second measure)". And later that day, of the one amortized stop
+        # under a game a second: "lest have m5 max blurb list amortiized
+        # games per second as the primary unit. as this is really
+        # amortiization at play". So every amortized entry leads with them.
         shown = speedup_timeline.timeline(ROOT)
         base = shown["stops"][0]["seconds"]
         entries = shown["stops"] + shown["projected"] + shown["goals"]
@@ -337,14 +340,27 @@ class Ledger(unittest.TestCase):
             games = entry["multiplier"] / base
             self.assertEqual(entry["rate"].replace("+", ""), speedup_timeline.per_second(games), entry["key"])
             self.assertEqual(entry["time"], speedup_timeline.clock(base / entry["multiplier"]), entry["key"])
-            self.assertEqual(entry.get("lead"), "rate" if games > 1 else None, entry["key"])
+            self.assertEqual(entry.get("lead"), "rate", entry["key"])
         led = [entry["key"] for entry in entries if entry.get("lead") == "rate"]
-        self.assertEqual(led, ["m5_max", "scale_up", "fleet", "million"])
-        # The M5 Max as it runs today is short of a game a second, so it
-        # leads with its time, and its games a second are the second measure.
+        self.assertEqual(led, ["all_cores", "m5_max", "scale_up", "fleet", "million"])
+        # The M5 Max as it runs today is short of a game a second and
+        # leads with its games a second all the same: its time per game is
+        # the second measure. Its goal is in the measure it leads with,
+        # the game a second the operator named from the first (2026-11-22:
+        # "Can scale across M5 Max cores to 1 game per second").
         every = next(entry for entry in entries if entry["key"] == "all_cores")
         self.assertLess(every["multiplier"] / base, 1)
         self.assertRegex(every["rate"], r"^0\.\d\d games/s$")
+        self.assertEqual(every["goal"], "goal 1 game/s, 18,000x")
+        # One game on one core is no amortized time, and its goal is a
+        # game's time.
+        alone = next(entry for entry in entries if entry["key"] == "self_play")
+        self.assertEqual(alone["goal"], "goal 10 s, 1,800x")
+        # The page takes the lead from the slot and words the second
+        # measure to match.
+        self.assertIn('const fast = row.amortized && row.lead === "rate";', LANDING)
+        self.assertIn('put(entry, "time", fast ? row.rate : row.time);', LANDING)
+        self.assertIn('put(entry, "second", row.amortized ? "(" + (fast ? row.time + " a game" : row.rate) + ", amortized)" : "");', LANDING)
         # A figure open at its top is open in both measures.
         fleet = next(entry for entry in entries if entry["key"] == "fleet")
         self.assertRegex(fleet["rate"], r"^[\d,]+\+ games/s$")
@@ -442,7 +458,7 @@ class Following(unittest.TestCase):
         {"taken": "2026-11-26T05:00:00Z", "games_per_minute": 24.0},
     ]
 
-    def test_an_amortized_stop_has_both_measures_and_leads_with_the_larger(self):
+    def test_an_amortized_stop_has_both_measures_and_leads_with_its_games(self):
         ledger = json.loads(json.dumps(self.LEDGER))
         ledger["goals"][0]["amortized"] = True
         ledger["stops"][2]["amortized"] = True
@@ -450,9 +466,14 @@ class Following(unittest.TestCase):
         with tempfile.TemporaryDirectory() as scratch:
             shown = speedup_timeline.timeline(tree(scratch, ledger, self.RUNS))
         stops = {stop["key"]: stop for stop in shown["stops"]}
-        # 30 games a minute is half a game a second: the time leads.
-        self.assertEqual((stops["all_cores"]["time"], stops["all_cores"]["rate"], stops["all_cores"].get("lead")), ("2 s", "0.50 games/s", None))
+        # 30 games a minute is half a game a second, and the games lead
+        # under one a second as they do past it (operator, 2026-11-24, of
+        # the M5 Max's stop: "amortiized games per second as the primary
+        # unit"). Its goal is worded in them.
+        self.assertEqual((stops["all_cores"]["time"], stops["all_cores"]["rate"], stops["all_cores"].get("lead")), ("2 s", "0.50 games/s", "rate"))
         self.assertIs(stops["all_cores"]["amortized"], True)
+        self.assertEqual(stops["all_cores"]["goal"], "goal 1 game/s, 18,000x")
+        self.assertEqual(stops["self_play"]["goal"], "goal 10 s, 1,800x")
         # One game on one core is not amortized, whatever it takes.
         self.assertNotIn("amortized", stops["self_play"])
         self.assertNotIn("rate", stops["self_play"])
@@ -462,13 +483,11 @@ class Following(unittest.TestCase):
         # A million times a five hour game is 55.6 games a second.
         (million,) = shown["goals"]
         self.assertEqual((million["time"], million["rate"], million["lead"], million["amortized"]), ("18 ms", "56 games/s", "rate", True))
-        # At a game a second exactly the time still leads: it is past one
-        # that the games do.
-        row = {}
-        speedup_timeline.amortize(row, 1.0)
-        self.assertEqual(row, {"amortized": True, "rate": "1 game/s"})
-        speedup_timeline.amortize(row, 0.5)
-        self.assertEqual(row, {"amortized": True, "rate": "2 games/s", "lead": "rate"})
+        # At any rate: a game a second, two, or one in a hundred seconds.
+        for seconds, games in ((1.0, "1 game/s"), (0.5, "2 games/s"), (100.0, "0.01 games/s")):
+            row = {}
+            speedup_timeline.amortize(row, seconds)
+            self.assertEqual(row, {"amortized": True, "rate": games, "lead": "rate"})
         # A ledger that marks nothing has no second measure anywhere.
         with tempfile.TemporaryDirectory() as scratch:
             plain = speedup_timeline.timeline(tree(scratch, self.LEDGER, self.RUNS))

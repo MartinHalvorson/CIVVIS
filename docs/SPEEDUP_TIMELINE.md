@@ -67,17 +67,19 @@ game is that fast. The ledger marks those entries `amortized`: the every-core
 stop, the 1,000,000x goal, and a projected stop that plays many games at once.
 A projected stop that multiplies an amortized stop is amortized with it.
 
-An amortized entry has two measures, its time per game and its games per
-second (the multiplier over the baseline's seconds), and the second stands in
-brackets under the first with the word amortized:
+An amortized entry has two measures, its games per second (the multiplier
+over the baseline's seconds) and its time per game. It leads with its games
+per second, and its time per game stands in brackets under them with the word
+amortized: `4.1 games/s`, `(247 ms a game, amortized)`. That holds under a
+game a second as well, so the M5 Max as it runs today reads `0.41 games/s`,
+`(2.5 s a game, amortized)`, and its goal is worded the same way, `goal 1
+game/s`. Until 2026-11-24 an entry under a game a second led with its time;
+the project owner asked for the M5 Max's stop to lead with its games that
+day: "lest have m5 max blurb list amortiized games per second as the primary
+unit. as this is really amortiization at play".
 
-| Games per second | Leads with | Second measure |
-| --- | --- | --- |
-| One or under | The time per game: `2.5 s` | `(0.41 games/s, amortized)` |
-| Past one | The games per second: `4.1 games/s` | `(247 ms a game, amortized)` |
-
-`speedup_timeline.amortize` works both out (`rate`, and `lead` when the games
-lead). Under the line the page says once what the word means. The irreducible
+`speedup_timeline.amortize` works both out (`rate`, and `lead`, which says the
+games lead). Under the line the page says once what the word means. The irreducible
 game, below, is left of CIVVIS self-play and is not amortized: it is one game
 on one core.
 

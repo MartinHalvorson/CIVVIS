@@ -52,11 +52,15 @@ finished game to the next, which no single game takes (operator, 2026-11-24:
 "starting left of CIVVIS self-play (but not including that), we should note
 that estimates are amortized games"). The ledger says which stops and goals
 those are (`amortized`), and a projected stop is one when the stop it
-multiplies is. Each has its games per second beside its time, and past a game
-a second it leads with them (operator, the same day: "on the left side of the
-timeline, at more than 1 game / second, we should also provide the games per
-second as the standard measure and (time per game amoritized as the second
-measure)").
+multiplies is. Each has its games per second beside its time and leads with
+them. Past a game a second that was so from the first (operator, the same
+day: "on the left side of the timeline, at more than 1 game / second, we
+should also provide the games per second as the standard measure and (time
+per game amoritized as the second measure)"), and under it since he asked it
+of the M5 Max's stop, the one amortized entry under a game a second, later
+that day: "lest have m5 max blurb list amortiized games per second as the
+primary unit. as this is really amortiization at play". So such a stop's goal
+is worded in games a second as well.
 
 What renting the rest of the way to a goal would cost stands with each goal
 (`cloud`; operator, 2026-11-22: "we should also estimate the cloud cost in $
@@ -193,15 +197,14 @@ def amortize(row: dict, seconds: float, more: str = "") -> None:
     its `time` is the time from one finished game to the next (`seconds`)
     and not what a game takes. It gains its games a second (`rate`, with
     `more` after the figure when the row is open at its top), and `lead`
-    says `rate` when that is past one game a second: there the page leads
-    with the games a second and gives the time per game as the second
-    measure."""
-    games = 1 / seconds
-    figure, unit = per_second(games).split(" ", 1)
+    says `rate`: the page leads with the games a second and gives the time
+    per game as the second measure, at any rate. Until the operator asked
+    it of the M5 Max's stop too (0.41 games a second), a row under one game
+    a second led with its time."""
+    figure, unit = per_second(1 / seconds).split(" ", 1)
     row["amortized"] = True
     row["rate"] = f"{figure}{more} {unit}"
-    if games > 1:
-        row["lead"] = "rate"
+    row["lead"] = "rate"
 
 
 def figure(value: float) -> str:
@@ -585,8 +588,8 @@ def timeline(source: pathlib.Path) -> dict | None:
     number. Every entry has the `side` of the line its words stand on,
     `above` or `below`, taken in turn along the line (see `sides`). A stop, a goal or a
     projected stop whose games play many at once is `amortized`, with its
-    games a second (`rate`), and one past a game a second leads with them
-    (`lead`; see `amortize`). `None` when the revision has no ledger or one
+    games a second (`rate`), which it leads with (`lead`; see `amortize`),
+    and its goal, when it has one, is worded in games a second too. `None` when the revision has no ledger or one
     that cannot be read."""
     try:
         ledger = json.loads((source / LEDGER).read_text(encoding="utf-8"))
@@ -620,7 +623,10 @@ def timeline(source: pathlib.Path) -> dict | None:
             if stop.get("amortized"):
                 amortize(row, now["seconds"])
             if "goal_seconds" in stop:
-                row["goal"] = f"goal {clock(stop['goal_seconds'])}, {times(base / stop['goal_seconds'])}"
+                # In the measure the stop leads with: games a second where
+                # the games play many at once, and a game's time elsewhere.
+                aim = per_second(1 / stop["goal_seconds"]) if stop.get("amortized") else clock(stop["goal_seconds"])
+                row["goal"] = f"goal {aim}, {times(base / stop['goal_seconds'])}"
             if times(base / first["seconds"]) != row["times"]:
                 row["was"] = f"{times(base / first['seconds'])} on {day(first['taken'])}"
             stops.append(row)
