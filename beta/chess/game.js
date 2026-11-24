@@ -495,6 +495,7 @@ class World {
     this.doomed = null;
     this.mood.blaze = 0;
     this.mood.spot = null;
+    this.pointing = null;
     this.era += 1;
     position.board.forEach((piece, sq) => {
       if (!piece) return;
@@ -623,31 +624,40 @@ class World {
     }
   }
 
-  // The rider's two arms in the frame of the piece they ride, each from a
-  // shoulder to a fist: a gauntlet, its cuff, and the forearm between.
-  arms(saddle, pairs) {
-    const made = this.geometry, leather = this.cloth.leather, gold = this.cloth.gold;
-    return pairs.map(([shoulder, hand]) => {
-      const fist = new THREE.Mesh(made.fist, leather), cuff = new THREE.Mesh(made.cuff, gold), forearm = new THREE.Mesh(made.forearm, this.cloth.cloak);
-      fist.scale.set(1.25, 0.85, 1);
-      for (const mesh of [fist, cuff, forearm]) { mesh.castShadow = true; saddle.add(mesh); }
-      const arm = {fist, cuff, forearm, shoulder, hand, grip: 0};
-      this.reach(arm);
-      return arm;
-    });
-  }
-  // An arm laid from its shoulder to its fist, the fist drawn back and
-  // clenched by how hard it grips.
-  reach(arm) {
-    const at = arm.hand.clone().lerp(arm.shoulder, 0.12 * arm.grip).add(new THREE.Vector3(0, 0.02 * arm.grip, 0));
-    const way = at.clone().sub(arm.shoulder), long = way.length(), along = way.clone().normalize();
-    arm.fist.position.copy(at);
-    arm.fist.scale.set(1.25 - 0.2 * arm.grip, 0.85, 1 - 0.1 * arm.grip);
-    arm.cuff.position.copy(at).addScaledVector(along, -0.045);
-    arm.cuff.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), along);
-    arm.forearm.position.copy(arm.shoulder).addScaledVector(along, (long - 0.06) / 2);
-    arm.forearm.scale.set(1, Math.max(0.05, long - 0.06), 1);
-    arm.forearm.quaternion.copy(arm.cuff.quaternion);
+  // The rider points at a square (`at`, a point in the hall) while their
+  // command is obeyed.
+  gesture(at, seconds = 1.4) { this.pointing = {at: at.clone(), until: this.time + seconds}; }
+
+  // The fallen, which stay fallen: each piece taken lies as a heap of its
+  // broken stone on the board's rim, White's along one side and Black's
+  // along the other (as players set taken pieces down beside their board),
+  // for the rest of the game. `taken` is the pieces taken, as letters, in the
+  // order they fell.
+  heaps(taken) {
+    if (!this.fallen) { this.fallen = new THREE.Group(); this.scene.add(this.fallen); }
+    if (this.fallen.userData.taken === taken.join("")) return;
+    this.fallen.userData.taken = taken.join("");
+    for (const heap of [...this.fallen.children]) { this.fallen.remove(heap); heap.dispose(); }
+    const count = {w: 0, b: 0}, place = new THREE.Object3D();
+    for (const piece of taken) {
+      const colour = colourOf(piece), kind = piece.toLowerCase(), at = count[colour]++;
+      const stones = 6 + Math.round(HEIGHTS[kind] * 6), heap = new THREE.InstancedMesh(this.geometry.chunk, this.material[colour], stones);
+      // Where it lies: down the rim from its own side's end, half a square apart.
+      const x = colour === "w" ? 4.96 : -4.96, z = colour === "w" ? -3.6 + at * 0.52 : 3.6 - at * 0.52;
+      let n = (at + 1) * 7919 + kind.charCodeAt(0) * 131 + (colour === "w" ? 17 : 29);
+      const dice = () => { n = (n * 1664525 + 1013904223) >>> 0; return n / 4294967296; };
+      for (let stone = 0; stone < stones; stone++) {
+        const round = dice() * TAU, out = dice() * 0.17 * (1 - stone / stones * 0.5);
+        place.position.set(x + Math.cos(round) * out * 0.6, -0.09 + (stone / stones) * 0.16 * HEIGHTS[kind], z + Math.sin(round) * out);
+        place.rotation.set(dice() * 3, dice() * 3, dice() * 3);
+        place.scale.setScalar(0.7 + dice() * (1.1 - stone / stones * 0.5));
+        place.updateMatrix();
+        heap.setMatrixAt(stone, place.matrix);
+      }
+      heap.castShadow = heap.receiveShadow = true;
+      heap.userData = {piece};
+      this.fallen.add(heap);
+    }
   }
 
   // The rider's two arms in the frame of the piece they ride, each from a
@@ -666,7 +676,9 @@ class World {
   // An arm laid from its shoulder to its fist, the fist drawn back and
   // clenched by how hard it grips.
   reach(arm) {
-    const at = arm.hand.clone().lerp(arm.shoulder, 0.12 * arm.grip).add(new THREE.Vector3(0, 0.02 * arm.grip, 0));
+    const held = arm.hand.clone().lerp(arm.shoulder, 0.12 * arm.grip).add(new THREE.Vector3(0, 0.02 * arm.grip, 0));
+    // A hand that points is thrown out at arm's length toward what it means.
+    const at = arm.point > 0 && arm.toward ? held.lerp(arm.shoulder.clone().addScaledVector(arm.toward, 0.5), arm.point) : held;
     const way = at.clone().sub(arm.shoulder), long = way.length(), along = way.clone().normalize();
     arm.fist.position.copy(at);
     arm.fist.scale.set(1.25 - 0.2 * arm.grip, 0.85, 1 - 0.1 * arm.grip);
@@ -1183,11 +1195,20 @@ class World {
     // The rider's hands grip while their piece moves under them, and ease
     // when it stands.
     const hold = this.moving === this.ridden ? 1 : 0;
-    for (const arm of saddle.userData.hands || []) {
-      const was = arm.grip;
+    // The rider's right hand points at where they have commanded the piece
+    // to go, for as long as the command is being obeyed, and drops after.
+    const pointing = this.pointing && this.time < this.pointing.until ? this.pointing.at : null;
+    (saddle.userData.hands || []).forEach((arm, at) => {
+      const was = arm.grip, aimed = arm.point || 0;
       arm.grip += (hold - arm.grip) * Math.min(1, dt * (hold ? 12 : 3));
-      if (Math.abs(arm.grip - was) > 1e-4) this.reach(arm);
-    }
+      const want = pointing && at === 1 ? 1 : 0;
+      arm.point = aimed + (want - aimed) * Math.min(1, dt * (want ? 9 : 3));
+      if (want) {
+        body.updateWorldMatrix(true, false);
+        arm.toward = body.worldToLocal(pointing.clone()).sub(arm.shoulder).normalize();
+      }
+      if (Math.abs(arm.grip - was) > 1e-4 || Math.abs(arm.point - aimed) > 1e-4 || want) this.reach(arm);
+    });
   }
 
   // What goes on whether or not anyone moves.
@@ -2025,6 +2046,8 @@ function draw() {
   list.scrollTop = list.scrollHeight;
   const taken = {w: [], b: []};
   for (const entry of game.played) if (entry.move.captured) taken[colourOf(entry.move.captured)].push(entry.move.captured);
+  // The fallen lie beside the board, and a piece taken back stands again.
+  world.heaps(game.played.filter(entry => entry.move.captured).map(entry => entry.move.captured));
   const worth = colour => taken[colour].reduce((sum, piece) => sum + WORTH[piece.toLowerCase()], 0);
   const ahead = worth("b") - worth("w");
   const line = (colour, lead) => taken[colour].sort((a, b) => WORTH[b.toLowerCase()] - WORTH[a.toLowerCase()]).map(piece => GLYPH[piece]).join("") + (lead > 0 ? ` +${lead}` : "");
@@ -2306,6 +2329,8 @@ function act(move) {
   game.risky = null;
   el("risk").hidden = true;
   say(`You: ${spoken(game.position, move)}.`);
+  // A rider commands with their hand: it points where the piece is to go.
+  if (world.ridden) world.gesture(sqPoint(move.to).setY(0.4));
   make(move, game.side);
 }
 function settle(go) {
