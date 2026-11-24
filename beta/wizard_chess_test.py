@@ -146,8 +146,11 @@ class Page(unittest.TestCase):
         # a lane, and says why where the block stood. Putting the game back
         # on the site is the revert of the pull request that took it off
         # (docs/WIZARD_CHESS.md names it).
+        # One line names it and copies nothing: the address an older
+        # revision's viewer still links, kept inside that revision's lane.
         self.assertEqual(
-            [line for line in PUBLISH.splitlines() if "chess" in line.lower() and not line.lstrip().startswith("#")], [])
+            [line for line in PUBLISH.splitlines() if "chess" in line.lower() and not line.lstrip().startswith("#")],
+            ['set_aside = ["wizard-chess"]'])
         self.assertIn("# Wizard Chess is set aside and no lane carries it (operator 2026-11-24:\n", PUBLISH)
 
 
