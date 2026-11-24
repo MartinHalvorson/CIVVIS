@@ -4057,6 +4057,7 @@ fn city_state_emergency_votes_form_a_coalition_and_reward_liberation() {
         assert!(!game.players[0].promises.contains_key(&member));
     }
     let coalition_ceasefire = game
+        .chronicle
         .concluded_wars
         .iter()
         .find(|war| pair(war.aggressor, war.defender) == pair(2, 3))
@@ -4233,7 +4234,7 @@ fn a_pending_offer_cannot_settle_a_war_before_its_minimum_turns() {
     game.turn = earliest;
     game.do_accept_deal(1, 401).unwrap();
     assert!(!game.is_at_war(0, 1));
-    assert!(game.concluded_wars.last().unwrap().peace_terms[0]
+    assert!(game.chronicle.concluded_wars.last().unwrap().peace_terms[0]
         .terms
         .iter()
         .any(|term| term.contains("50 Gold")));
@@ -4529,7 +4530,7 @@ fn the_war_ledger_records_a_declaration_its_cost_and_its_peace() {
     game.turn = 52;
     game.do_make_peace(0, 1).unwrap();
     assert!(game.wars.is_empty(), "peace closes the front");
-    let concluded = game.concluded_wars.last().unwrap();
+    let concluded = game.chronicle.concluded_wars.last().unwrap();
     assert_eq!(concluded.ended, Some(52));
     assert_eq!(concluded.highlights.last().unwrap().kind, "peace");
     assert_eq!(concluded.losses_for(1).cities, 1);
@@ -4539,7 +4540,7 @@ fn the_war_ledger_records_a_declaration_its_cost_and_its_peace() {
         .iter()
         .any(|term| term == "Current borders recognized"));
     let restored: Game = serde_json::from_str(&serde_json::to_string(&game).unwrap()).unwrap();
-    let restored_war = restored.concluded_wars.last().unwrap();
+    let restored_war = restored.chronicle.concluded_wars.last().unwrap();
     assert_eq!(restored_war.participants, concluded.participants);
     assert_eq!(restored_war.losses_for(1).unit_kinds["warrior"], 1);
     assert_eq!(restored_war.peace_terms, concluded.peace_terms);
@@ -4738,7 +4739,7 @@ fn war_strength_is_unit_only_and_saw_action_counts_distinct_units() {
 
     game.turn = 50;
     game.do_make_peace(0, 1).unwrap();
-    let concluded = game.concluded_wars.last().unwrap();
+    let concluded = game.chronicle.concluded_wars.last().unwrap();
     let participant = concluded
         .participants
         .iter()
@@ -4911,7 +4912,7 @@ fn a_peace_treaty_binds_for_the_shipped_ten_turns() {
     assert_eq!(game.peace_treaty_until(0, 1), None);
     game.do_declare_war(1, 0).unwrap();
     assert_eq!(
-        game.concluded_wars.len(),
+        game.chronicle.concluded_wars.len(),
         1,
         "the first war is one entry, and the second is its own"
     );
@@ -4975,7 +4976,7 @@ fn a_conquest_closes_the_war_it_ended() {
         game.wars.is_empty(),
         "nobody signs a peace with a civilization that no longer exists"
     );
-    let war = game.concluded_wars.last().unwrap();
+    let war = game.chronicle.concluded_wars.last().unwrap();
     assert_eq!(war.ended, Some(44), "the war ended the turn its loser did");
     let closing = war.highlights.last().unwrap();
     assert_eq!(
@@ -5024,10 +5025,10 @@ fn a_city_state_dragged_in_by_its_suzerain_fights_its_suzerains_war() {
     // relation. This used to add a fresh diplomacy event every AI turn
     // while leaving the city-state at war.
     game.turn = 25;
-    let notes_before = game.events.len();
+    let notes_before = game.chronicle.events.len();
     assert!(game.do_make_peace(city_state, 0).is_err());
     assert!(game.is_at_war(city_state, 0));
-    assert_eq!(game.events.len(), notes_before);
+    assert_eq!(game.chronicle.events.len(), notes_before);
 
     let war = &game.wars[&pair(0, 1)];
     let client = war
@@ -5059,7 +5060,7 @@ fn a_city_state_dragged_in_by_its_suzerain_fights_its_suzerains_war() {
     game.sync_war_log();
     assert!(!game.is_at_war(0, city_state));
     assert_eq!(game.wars.len(), 1);
-    assert!(game.concluded_wars.is_empty());
+    assert!(game.chronicle.concluded_wars.is_empty());
     let client = game.wars[&pair(0, 1)]
         .participants
         .iter()

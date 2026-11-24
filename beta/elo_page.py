@@ -61,6 +61,21 @@ different thing, our stand-in agent with each level's handicap
 (`civ6:<rung>` in `data/strategy_elo.json`, `strategies::monotone_ladder`).
 The page shows that ladder beside the measurement, by name, and the game
 keeps using it.
+
+**Diplomatic victory on and off** (operator 2026-11-24: "add a second elo for
+games with diplo off. we should maintain this because diplo on or off makes a
+big difference"). Every figure above is kept twice: once for games played
+with every victory on, once for games with the Diplomatic victory switched
+off. The agents' second rating is `strategy_elo --no-diplo`'s own fit
+(`data/strategy_elo_no_diplo.json`, its history
+`data/strategy_elo_no_diplo_history.json`), played on the tournament host by
+the same scheduled run as the first. The Firaxis levels' second reading is
+the benchmark's diplo-off games, each rated against the diplo-off fit of our
+seat's twin; a benchmark game's switch is its own run summary's
+(`research_page.switches`, the split Win Analytics' two tables make), and a
+game whose summary does not say is in neither reading. The record is the
+stock reading at the top level and the diplo-off one under `off`, the same
+fields in both.
 """
 
 from __future__ import annotations
@@ -78,9 +93,12 @@ import research_page
 
 SLOT = re.compile(r'(<script type="application/json" id="elo-data">)(.*?)(</script>)', re.S)
 
-#: The fits of the strategy Elo, in the source tree.
+#: The fits of the strategy Elo, in the source tree: the stock game's, and
+#: the one played with the Diplomatic victory off (`strategy_elo --no-diplo`).
 HISTORY = pathlib.Path("data/strategy_elo_history.json")
 PUBLISHED = pathlib.Path("data/strategy_elo.json")
+NO_DIPLO_HISTORY = pathlib.Path("data/strategy_elo_no_diplo_history.json")
+NO_DIPLO_PUBLISHED = pathlib.Path("data/strategy_elo_no_diplo.json")
 
 #: How many agents the graph draws (operator: "the top 10 elo civvis ai agents").
 TOP_AGENTS = 10
@@ -119,15 +137,16 @@ def strength(elo: float) -> float:
     return 10 ** (elo / 400)
 
 
-def history(source: pathlib.Path) -> list[dict]:
+def history(source: pathlib.Path, published_path: pathlib.Path = PUBLISHED,
+            kept: pathlib.Path = HISTORY) -> list[dict]:
     """Every published fit, oldest first, the published file last when the
     history does not end at it yet."""
     try:
-        points = json.loads((source / HISTORY).read_text(encoding="utf-8"))["points"]
+        points = json.loads((source / kept).read_text(encoding="utf-8"))["points"]
     except (OSError, ValueError, KeyError, TypeError):
         points = []
     try:
-        published = json.loads((source / PUBLISHED).read_text(encoding="utf-8"))
+        published = json.loads((source / published_path).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return points
     newest = {
@@ -159,24 +178,34 @@ def twin(target: object) -> str:
     return TWINS.get(str(target or "").lower(), ADAPTIVE)
 
 
-def benchmark_games(source: pathlib.Path, rows: list[dict] | None = None) -> list[dict]:
+def benchmark_games(source: pathlib.Path, rows: list[dict] | None = None, switch=None) -> list[dict]:
     """The benchmark's games at the levels rated: when each began, its level,
-    whether our seat won, and the twin of the lane it played. A table with
-    two of our agents at it (its row names both, `A+B`) is left out: either
-    winning was a win there."""
+    whether our seat won, the twin of the lane it played, and whether the
+    Diplomatic victory was on (`diplo`; `None` when the game's run summary
+    does not say). `switch` answers each run's switch
+    (`research_page.switches`), asked of the run a game ended in and, where
+    that one does not say, of its first, as Win Analytics asks it. A table
+    with two of our agents at it (its row names both, `A+B`) is left out:
+    either winning was a win there."""
     rows = ranks.results(source) if rows is None else rows
     if not rows:
         return []
+    if switch is None:
+        switch = lambda tags: research_page.switches(source, tags)  # noqa: E731
     specs = json.loads((source / research_page.TOURNAMENTS).read_text(encoding="utf-8")).get("tournaments") or []
-    games: dict[str, dict] = {}
+    games: dict[str, tuple] = {}
     for series in ranks.tournament_series(rows, specs, detail=True) or []:
         for key, ending in series["played"]:
             level = ranks.level(ending.get("difficulty"))
             at = research_page.started(key, ending)
             if level in LEVELS and at and "+" not in str(ending.get("civ") or ""):
-                games[key] = {"at": at, "level": level, "won": ending["outcome"] == "win",
-                              "twin": twin(ending.get("target"))}
-    return sorted(games.values(), key=lambda g: g["at"])
+                games[key] = (ending, {"at": at, "level": level, "won": ending["outcome"] == "win",
+                                       "twin": twin(ending.get("target"))})
+    known = switch(sorted({tag for key, (ending, _) in games.items() for tag in (ending.get("tag") or key, key)}))
+    for key, (ending, game) in games.items():
+        on = known.get(ending.get("tag") or key, known.get(key))
+        game["diplo"] = bool(on) if on is not None else None
+    return sorted((game for _, game in games.values()), key=lambda g: g["at"])
 
 
 def fit_level(games: list[tuple[float, float, bool]]) -> dict | None:
@@ -310,22 +339,40 @@ def simulator(points: list[dict]) -> list[dict]:
     return out
 
 
-def record(source: pathlib.Path) -> dict | None:
-    """The record, or `None` when there are no ratings to show."""
-    points = history(source)
-    if not points:
-        return None
-    out: dict = {
-        "strategies": ranks.strategies(source),
+def reading(source: pathlib.Path, points: list[dict], published: pathlib.Path, games: list[dict] | None) -> dict:
+    """One reading of every figure: the agents of one fit's history, its
+    simulator ladder, and the Firaxis levels from the benchmark games played
+    the same way (`games`, already split; `None` when the ledger could not be
+    read)."""
+    return {
+        "strategies": ranks.strategies(source, published),
         "agents": agents(source, points),
         "simulator": simulator(points),
         "fits": len(points),
-        "firaxis": None,
+        "firaxis": firaxis(games, points) if games is not None else None,
     }
+
+
+def record(source: pathlib.Path) -> dict | None:
+    """The record, or `None` when there are no ratings to show: the stock
+    reading (every victory on) at the top level, and under `off` the one with
+    the Diplomatic victory switched off, or `None` for a revision from before
+    that fit was published."""
+    points = history(source)
+    if not points:
+        return None
     try:
-        out["firaxis"] = firaxis(benchmark_games(source), points)
+        games = benchmark_games(source)
     except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:
         print(f"elo_page: no Firaxis levels from the benchmark ({error})", file=sys.stderr)
+        games = None
+    split = {on: [g for g in games if g["diplo"] is on] for on in (True, False)} if games is not None else {}
+    out: dict = reading(source, points, PUBLISHED, split.get(True))
+    off = history(source, NO_DIPLO_PUBLISHED, NO_DIPLO_HISTORY)
+    out["off"] = reading(source, off, NO_DIPLO_PUBLISHED, split.get(False)) if off else None
+    # Benchmark games whose run does not say how the Diplomatic victory was
+    # set: in neither reading.
+    out["unswitched"] = sum(1 for g in games if g["diplo"] is None) if games is not None else 0
     return out
 
 
@@ -355,8 +402,11 @@ def main(argv: list[str]) -> int:
         print(f"elo_page: no figures to write into {page}", file=sys.stderr)
     else:
         levels = (data.get("firaxis") or {}).get("levels") or []
+        off = data.get("off") or {}
         print(f"elo_page: wrote {len(data['agents'])} agents over {data['fits']} fits and "
-              f"{len(levels)} Firaxis levels into {page}", file=sys.stderr)
+              f"{len(levels)} Firaxis levels into {page}; diplo off: {len(off.get('agents') or [])} agents over "
+              f"{off.get('fits', 0)} fits and {len((off.get('firaxis') or {}).get('levels') or [])} levels",
+              file=sys.stderr)
     return 0
 
 

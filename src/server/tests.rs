@@ -2109,7 +2109,7 @@ fn viewer_marks_the_selected_revision_and_its_compact_ages_above_the_minimap() {
 /// "Charts"" and "make sure Tournaments changes to Auto-Tourneys"; Charts
 /// joined between Home and Tournaments as Research, and both pages keep
 /// their addresses), and every one of them lists all five in that order,
-/// with the page on screen in gold and a link to the game they are built on
+/// with the page on screen ringed in white and a link to the game they are built on
 /// under them (operator, 2026-11-19). The viewer is the last two: a watched
 /// simulation lights CIVVIS and a played game lights AI Debugger. The list
 /// is a tree that keeps its branches folded (2026-11-21: "a somewhat
@@ -2138,11 +2138,11 @@ fn viewer_marks_the_selected_revision_and_its_compact_ages_above_the_minimap() {
 /// auto-outnrye to Tournaments. Auto-tourney suggests some self imrpvoing
 /// tourney thing"): Tournaments, at /tournaments.
 #[test]
-fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
+fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
     assert!(EMBEDDED_INDEX.contains(concat!(
         "<nav class=\"head-links\" id=\"headlinks\" aria-label=\"CIVVIS sites\" hidden>\n",
         "        <a class=\"home-link\" id=\"homelink\" href=\"/home\" target=\"_top\">Home</a>\n",
-        "        <a class=\"home-link\" id=\"chartslink\" href=\"/charts/win-analytics\" target=\"_top\">Charts/</a>\n",
+        "        <a class=\"home-link\" id=\"chartslink\" href=\"/charts/ai-interpretability\" target=\"_top\">Charts/</a>\n",
         "        <a class=\"home-link\" id=\"tourlink\" href=\"/tournaments\" target=\"_top\">Tournaments</a>\n",
         "        <a class=\"home-link\" id=\"watchlink\" href=\"./\" target=\"_top\">CIVVIS</a>\n",
         "        <a class=\"home-link\" id=\"strangelink\" href=\"?mode=strange\" target=\"_top\">Doctor Strange's Civ 6</a>\n",
@@ -2177,18 +2177,23 @@ fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
     ));
     assert!(include_str!("../../web/assets/app_debugger.js")
         .contains("document.documentElement.classList.add(\"strange\");"));
-    // The page on screen is the one in gold. `watching-sim` is the
-    // engine's own answer to which of the two this is, and until the first
-    // observation says so (`seat-known`) neither is lit. Every top-level
-    // link is there from the start, so no rule hides one any more.
+    // The page on screen keeps its colour and is ringed in white; it was
+    // gold until 2026-11-24, when gold became CIVVIS's own (operator: "lets
+    // give civvis a gold background on the button, rather than black").
+    // `watching-sim` is the engine's own answer to which of the two this
+    // is, and until the first observation says so (`seat-known`) neither is
+    // ringed. Every top-level link is there from the start, so no rule
+    // hides one any more.
     assert!(EMBEDDED_INDEX.contains(concat!(
         "  body.watching-sim #watchlink,\n",
         "  html.seat-known:not(.strange) body:not(.watching-sim) #playlink,\n",
         "  html.seat-known.strange body:not(.watching-sim) #strangelink {\n",
-        "    color: #17130c; border-color: #efd184;\n",
-        "    background: linear-gradient(145deg, #dec176, #aa7d30);\n",
+        "    border-color: #fff; box-shadow: inset 0 0 0 1px #fff;\n",
         "  }",
     )));
+    assert!(EMBEDDED_INDEX.contains(
+        "  #watchlink { color: #17130c; border-color: #efd184; background: linear-gradient(145deg, #dec176, #aa7d30); }\n"
+    ));
     for hides in [
         "#playlink { display: none; }",
         "#strangelink { display: none; }",
@@ -2204,8 +2209,9 @@ fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
     // CIVVIS has no branch now, so nothing of the machinery that showed
     // one under it from the first paint is left: no Performance link, no
     // rule that unfolds it, and no head script reading the address for it.
-    // The pages of Charts/, Win Analytics, CIVVIS Performance and AI
-    // Interpretability, are listed under it on those three pages.
+    // The pages of Charts/ are listed in the list Charts/ drops down on
+    // the site's pages (operator, 2026-11-24: "charts/ can drop down folder
+    // style and the user can pick the right chart").
     for gone in [
         "perflink",
         "sub-link",
@@ -2219,27 +2225,33 @@ fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
         );
     }
     let performance = include_str!("../../beta/performance.html");
+    // Charts/'s pages in the operator's order (2026-11-24: "move ai
+    // interpretablity to the top of the charts/ then civ analytics, win
+    // analytics. elo rankings.. civvis performanc"), and Charts/ opens the
+    // first of them.
     assert!(performance.contains(concat!(
-        "        <a class=\"site-link\" href=\"../win-analytics/\" ",
+        "      <div class=\"site-folder\">\n",
+        "        <a class=\"site-link\" href=\"../ai-interpretability/\" ",
         "title=\"What the games show: charts read off the CIVVIS AI agents&#8217; games.\">Charts/</a>\n",
-        "        <a class=\"site-link sub-link\" href=\"../win-analytics/\" ",
-        "title=\"Who wins, how and when: the games against Civilization VI&#8217;s own AI ",
-        "beside the CIVVIS self-play games.\">Win Analytics</a>\n",
-        "        <a class=\"site-link sub-link\" href=\"../elo-rankings/\" ",
-        "title=\"The Civ AI Agents and Civilization VI&#8217;s own AI on one Elo scale, ",
-        "now and over time.\">ELO Rankings</a>\n",
-        "        <a class=\"site-link sub-link\" href=\"../civ-analytics/\" ",
+        "        <div class=\"site-menu\">\n",
+        "          <a class=\"site-link sub-link\" href=\"../ai-interpretability/\" ",
+        "title=\"How a CIVVIS AI agent decides: one turn step by step, its plan through a game, ",
+        "and what each rule is worth in wins.\">AI Interpretability</a>\n",
+        "          <a class=\"site-link sub-link\" href=\"../civ-analytics/\" ",
         "title=\"How CIVVIS does as each civ, and the early build orders that win against ",
         "Deity.\">Civ Analytics</a>\n",
-        "        <a class=\"site-link sub-link\" href=\"./\" aria-current=\"page\">CIVVIS Performance</a>\n",
+        "          <a class=\"site-link sub-link\" href=\"../win-analytics/\" ",
+        "title=\"Who wins, how and when: the games against Civilization VI&#8217;s own AI ",
+        "beside the CIVVIS self-play games.\">Win Analytics</a>\n",
+        "          <a class=\"site-link sub-link\" href=\"../elo-rankings/\" ",
+        "title=\"The Civ AI Agents and Civilization VI&#8217;s own AI on one Elo scale, ",
+        "now and over time.\">ELO Rankings</a>\n",
+        "          <a class=\"site-link sub-link\" href=\"./\" aria-current=\"page\">CIVVIS Performance</a>\n",
+        "        </div>\n",
     )));
-    // ELO Rankings and Civ Analytics follow Win Analytics under Charts/
-    // (operator 2026-11-23: "add that to a new page: Charts/ELO Rankings.
-    // this should be after win analytics in the ordering ... add another
-    // page: Civ Analytics").
     assert!(include_str!("../../beta/research.html").contains(concat!(
-        "        <a class=\"site-link sub-link\" href=\"./\" aria-current=\"page\">Win Analytics</a>\n",
-        "        <a class=\"site-link sub-link\" href=\"../elo-rankings/\" ",
+        "          <a class=\"site-link sub-link\" href=\"./\" aria-current=\"page\">Win Analytics</a>\n",
+        "          <a class=\"site-link sub-link\" href=\"../elo-rankings/\" ",
     )));
     for page in [
         include_str!("../../beta/elo.html"),
@@ -2247,7 +2259,7 @@ fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
     ] {
         assert!(page.contains(concat!(
             "\">Civ Analytics</a>\n",
-            "        <a class=\"site-link sub-link\" href=\"../civvis-performance/\" ",
+            "          <a class=\"site-link sub-link\" href=\"../win-analytics/\" ",
         )));
     }
     assert!(performance
@@ -2267,23 +2279,25 @@ fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
     ));
     assert!(publish.contains("performance_at=\"$(address \"$performance_page\" performance)\""));
     assert!(publish.contains("cp \"$performance_page\" \"$out/$performance_at/index.html\""));
-    // AI Interpretability is the last page under Charts/ (operator
+    // AI Interpretability was added at the bottom of Charts/ (operator
     // 2026-11-22: "Add a new chart to the bottom of Charts/ called AI
-    // Interpretablity"): each of the three pages of Charts/ lists all three,
-    // with itself in gold.
+    // Interpretablity") and moved to its top on 2026-11-24: each page of
+    // Charts/ lists them all in the list Charts/ drops down, with itself
+    // ringed, and Charts/ opens it.
     let interpretability = include_str!("../../beta/interpretability.html");
     let listed = concat!(
-        "        <a class=\"site-link sub-link\" href=\"../ai-interpretability/\" ",
+        "        <div class=\"site-menu\">\n",
+        "          <a class=\"site-link sub-link\" href=\"../ai-interpretability/\" ",
         "title=\"How a CIVVIS AI agent decides: one turn step by step, its plan through a game, ",
         "and what each rule is worth in wins.\">AI Interpretability</a>\n",
-        "        <a class=\"site-link\" href=\"../../tournaments/\" ",
     );
     assert!(performance.contains(listed));
     assert!(include_str!("../../beta/research.html").contains(listed));
     assert!(interpretability.contains(concat!(
-        "\">CIVVIS Performance</a>\n",
-        "        <a class=\"site-link sub-link\" href=\"./\" aria-current=\"page\">AI Interpretability</a>\n",
-        "        <a class=\"site-link\" href=\"../../tournaments/\" ",
+        "        <a class=\"site-link\" href=\"./\" ",
+        "title=\"What the games show: charts read off the CIVVIS AI agents&#8217; games.\">Charts/</a>\n",
+        "        <div class=\"site-menu\">\n",
+        "          <a class=\"site-link sub-link\" href=\"./\" aria-current=\"page\">AI Interpretability</a>\n",
     )));
     assert!(interpretability
         .contains("<script type=\"application/json\" id=\"interpretability-data\">null</script>"));
@@ -2485,7 +2499,7 @@ fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
 }
 
 /// The home page is one of the site's five pages and lists all five from
-/// its header, Home, Charts, Tournaments, CIVVIS and AI Debugger, with itself in gold
+/// its header, Home, Charts, Tournaments, CIVVIS and AI Debugger, with itself ringed in white
 /// and the Civ 6 link under them, as the viewer's masthead does; below that
 /// it is one paragraph, the speed timeline (operator, 2026-11-22: how many
 /// times faster than a person each way of playing gets through a game;
@@ -2503,50 +2517,66 @@ fn viewer_masthead_lists_the_sites_with_this_page_in_gold() {
 /// `mode=play`. Both are lane-relative (`../` from the lane's /home), so
 /// the test lane's home page opens the test lane's viewer.
 #[test]
-fn the_home_page_lists_the_sites_with_itself_in_gold() {
+fn the_home_page_lists_the_sites_with_itself_ringed() {
     let landing = include_str!("../../beta/landing.html");
     for piece in [
         // The site's pages in the viewer's order, this one marked as the
         // page on screen, Tournaments saying what it lists and the other
         // two saying in the viewer's own words what they open, then the
-        // game itself. They stand to the left of the title (operator,
-        // 2026-11-21: "on home, lets have the home/civvis/ai debugger/civ 6
-        // button stack on the left side, to the left of civvis.ai"), so the
-        // column is the first thing in the header and the title follows it.
+        // game itself. They stand in one row across the top, over the title
+        // (operator, 2026-11-24: "try putting the vertical menu from home...
+        // civ across the top instead"; from 2026-11-21 they were a column to
+        // the left of it), so the row is the first thing in the header, and
+        // Charts/ drops its pages down ("charts/ can drop down folder style
+        // and the user can pick the right chart").
         concat!(
-            "<div class=\"site-brand\">\n",
-            "      <!-- The site is five pages,",
+            "<header class=\"shell site-header\">\n",
+            "    <!-- The site's pages,",
         ),
         concat!(
             "<nav class=\"site-nav\" aria-label=\"CIVVIS sites\">\n",
-            "        <a class=\"site-link\" href=\"./\" aria-current=\"page\">Home</a>\n",
-            "        <a class=\"site-link\" href=\"../charts/win-analytics/\" ",
+            "      <a class=\"site-link\" href=\"./\" aria-current=\"page\">Home</a>\n",
+            "      <div class=\"site-folder\">\n",
+            "        <a class=\"site-link\" href=\"../charts/ai-interpretability/\" ",
             "title=\"What the games show: charts read off the CIVVIS AI agents&#8217; games.\">Charts/</a>\n",
-            "        <a class=\"site-link\" href=\"../tournaments/\" ",
+            "        <div class=\"site-menu\">\n",
+            "          <a class=\"site-link sub-link\" href=\"../charts/ai-interpretability/\" ",
+        ),
+        concat!(
+            "CIVVIS Performance</a>\n",
+            "        </div>\n",
+            "      </div>\n",
+            "      <a class=\"site-link\" href=\"../tournaments/\" ",
             "title=\"Series of verification games against Civilization VI&#8217;s own AI: ",
             "running, scheduled and finished.\">Tournaments</a>\n",
-            "        <a class=\"site-link\" href=\"../\" ",
+            "      <a class=\"site-link\" href=\"../\" ",
             "title=\"Every civilization is played by a CIVVIS AI agent.\">CIVVIS</a>\n",
-            "        <a class=\"site-link\" href=\"../?mode=strange\" ",
+            "      <a class=\"site-link\" href=\"../?mode=strange\" ",
             "title=\"One world, two timelines: the same game played two ways, side by side, on a timeline that branches.\">Doctor Strange's Civ 6</a>\n",
-            "        <a class=\"site-link\" href=\"../?mode=play\" ",
+            "      <a class=\"site-link\" href=\"../?mode=play\" ",
             "title=\"You play one civilization. CIVVIS AI agents play the rest.\">AI Debugger</a>\n",
-            "        <a class=\"site-link\" ",
+            "      <a class=\"site-link\" ",
             "href=\"https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/\" ",
             "target=\"_blank\" rel=\"noopener\" title=\"Buy Civilization VI on Steam\">Civ 6</a>\n",
-            "        <a class=\"site-link\" href=\"../wizard-chess/\" ",
+            "      <a class=\"site-link\" href=\"../wizard-chess/\" ",
             "title=\"Chess where you command and the pieces obey, against an opponent at the Elo you pick.\">Wizard Chess</a>\n",
-            "      </nav>\n      <div class=\"site-lockup\">\n",
+            "    </nav>\n",
+        ),
+        concat!(
+            "    </script>\n    <div class=\"site-brand\">\n      <div class=\"site-lockup\">\n",
             "        <h1 class=\"site-title\">CIVVIS<span>.ai</span></h1>",
         ),
-        // They read as the viewer's links do, in capitals and one to a
-        // line, and the page on screen is the gold one.
+        // They read as the viewer's links do, in capitals, one row across
+        // the page, and the page on screen is ringed in white: gold is
+        // CIVVIS's (operator, 2026-11-24: "lets give civvis a gold
+        // background on the button, rather than black").
         "    text-transform: uppercase;\n  }\n  .site-link:hover,",
-        ".site-nav { display: grid; flex: none; gap: 4px; }",
+        ".site-nav { display: flex; flex: 1 0 100%; flex-wrap: wrap; align-items: center; gap: 6px; }",
         concat!(
             ".site-link[aria-current=\"page\"],\n",
-            "  .site-link[aria-current=\"page\"]:hover { background: var(--gold); color: #17130c; }",
+            "  .site-folder:has([aria-current=\"page\"]) > .site-link { box-shadow: inset 0 0 0 2px #fff; }",
         ),
+        ".site-link[href$=\"../\"] { background: linear-gradient(145deg, #dec176, #aa7d30); color: #17130c;",
         // The project's own links follow, under the label the publish
         // check finds the page by (`beta/verify.py`).
         "<nav class=\"utility-nav\" aria-label=\"CIVVIS links\">",
@@ -2569,14 +2599,12 @@ fn the_home_page_lists_the_sites_with_itself_in_gold() {
     ] {
         assert!(landing.contains(piece), "the home page lost {piece}");
     }
-    // The column is as wide as AUTO-TOURNEYS on one line, the Tournaments
-    // page's name from 2026-11-22 to 2026-11-24: 145px. While the Debugger's name was STRATEGY DEBUGGER the column was
-    // 178px and a phone under 380px narrowed it to its longest word, which
-    // put the name on two lines. Every name stands on one line down to a
-    // 320px phone with the page no wider than the screen (measured), so no
-    // rule narrows the column. The home page has no pages of its own, so
-    // nothing is folded under it, and it does not list the pages of
-    // Charts/: those show only on Win Analytics and on CIVVIS Performance.
+    // Every name stands on one line (operator, 2026-11-21: "make sure it
+    // fits on one line"): the row wraps between names on a narrow screen,
+    // and no rule narrows a name to its longest word, which put STRATEGY
+    // DEBUGGER on two lines in the column the list was until 2026-11-24.
+    // The pages of Charts/ are in the list Charts/ drops down, here as on
+    // every page.
     assert!(
         !landing.contains("min-content"),
         "the home page narrows its site list again, which puts a name on two lines"
@@ -2589,7 +2617,6 @@ fn the_home_page_lists_the_sites_with_itself_in_gold() {
         ">Auto-Tourneys</a>",
         ">Performance</a>",
         ">Charts</a>",
-        "sub-link",
         "rankings-data",
     ] {
         assert!(!landing.contains(gone), "the home page still says {gone}");
@@ -9045,8 +9072,8 @@ fn browser_names_a_live_games_level_on_the_turn_plate() {
         "return {level: spec.order + 1, of: Object.keys(ladder).length, name: spec.name || titleCase(id)};",
         "const liveLevel = livePause.available ? difficultyLevel(state.difficulty) : null;",
         "const setupLine = [mapRowValue, liveLevel && `Lv ${liveLevel.level}`, speedName]\n    .filter(Boolean).join(\" · \");",
-        "`<div class=\"turn-setting turn-setup-line\" title=\"${escapeAttr(setupTitle)}\">` +\n    `<b>${escapeAttr(setupLine)}</b></div>` +",
-        "#playerhud.turn-plate-wide .turn-setup-line { grid-column: 1 / -1; }",
+        "`<div class=\"turn-setting turn-setup-line\" title=\"${escapeAttr(setupTitle)}\"><b>${escapeAttr(setupLine)}</b></div>` +",
+        "#playerhud.turn-plate-wide .turn-setup-line { grid-column: 1 / -1; grid-row: 2; }",
         "if (livePause.available !== wasAvailable && state) drawPlayerHud();",
     ] {
         assert!(
@@ -9081,10 +9108,12 @@ fn browser_names_a_live_games_level_on_the_turn_plate() {
 /// spectator and for a debugger game with Reveal on, and Single Player for
 /// a played seat or a Watch-as view, whose tooltip names the civilization.
 ///
-/// The two rows open the settings list, above the setup line. Live time and
-/// Max Speed stand above the age and the turn counter: they spent an
-/// afternoon under the counter and the operator moved them "back above age
-/// and turn counter like before", so Max Speed is again a line of its own.
+/// The two rows open the settings list. Live time and Max Speed stand above
+/// the age and the turn counter: they spent an afternoon under the counter
+/// and the operator moved them "back above age and turn counter like
+/// before". The setup line ("6P Continents · Lv 8 · Online") stands directly
+/// under Max Speed (operator 2026-11-24: "these are game settings and so
+/// should be more highly visible"), fitted on its own so it keeps its size.
 ///
 /// A short roster's table ends above the box's last row, so the masthead's
 /// automatic height takes the box's measured content as a floor; a dragged
@@ -9101,13 +9130,15 @@ fn browser_turn_plate_names_the_mode_and_the_point_of_view() {
         "const platePov = (!SPEC && !state.debug?.reveal) || playerView",
         "? [\"Single Player\", `The world as ${identity.civ || \"one civilization\"} sees it, behind its own fog.`]",
         ": [\"Global\", \"The whole world at once, with no civilization's fog.\"];",
-        "frameRow(\"Mode:\", plateMode) + frameRow(\"POV:\", platePov) +\n    `<div class=\"turn-setting turn-setup-line\"",
+        "frameRow(\"Mode:\", plateMode) + frameRow(\"POV:\", platePov) +\n    fogRow +",
         "`mode ${plateMode[0]}; point of view ${platePov[0]}`;",
         // The long Mode name is whole on the narrowest plate at 8px.
         "{selector:\"#playerhud .turn-settings\", min:8, max:12, slack:4},",
-        // Max Speed is a line of its own, fitted and ruled as before.
+        // Max Speed and the setup line are each fitted on their own, and the
+        // rule under the setup line closes their section.
         "{selector:\"#playerhud .turn-pace-line\", min:8.5, max:12, slack:4},",
-        ".has-live-time .turn-pace-line { padding-bottom: 4px; border-bottom: 1px solid #d7b66a24; }",
+        "{selector:\"#playerhud .turn-setup-line\", min:8, max:12, slack:4},",
+        ".has-live-time .turn-setup-line { padding-bottom: 4px; border-bottom: 1px solid #d7b66a24; }",
         "function measureTurnPlateNeed(hud) {",
         "const last = plate?.querySelector(\".turn-settings\")?.lastElementChild;",
         "const plateNeed = measureTurnPlateNeed(hud);",
@@ -9118,7 +9149,8 @@ fn browser_turn_plate_names_the_mode_and_the_point_of_view() {
             "the turn box's Mode and POV rows are missing {piece}"
         );
     }
-    // Live time, Max Speed, age, turn counter, then the list from Mode down.
+    // Live time, Max Speed, the setup line, age, turn counter, then the list
+    // from Mode down.
     let (_, plate) = EMBEDDED_INDEX
         .split_once("function hudTurnPlate() {")
         .expect("the turn plate");
@@ -9128,11 +9160,11 @@ fn browser_turn_plate_names_the_mode_and_the_point_of_view() {
     let order = [
         "<div class=\"turn-live\"",
         "<span>Max Speed:</span>",
+        "turn-setup-line",
         "<span class=\"turn-era\">",
         "<span class=\"turn-label\">Turn</span>",
         "frameRow(\"Mode:\", plateMode)",
         "frameRow(\"POV:\", platePov)",
-        "turn-setup-line",
         "rosterRow(\"Civs:\"",
         "rosterRow(\"City states:\"",
     ]

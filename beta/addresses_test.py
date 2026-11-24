@@ -191,8 +191,8 @@ class Addresses(unittest.TestCase):
             for classes, href, _, name in site_list(read(source)):
                 if name.endswith("/"):
                     opens.add(lands(ADDRESS[source], href))
-        self.assertEqual(opens, {"charts/win-analytics"})
-        self.assertIn('href="/charts/win-analytics" target="_top">Charts/</a>', VIEWER)
+        self.assertEqual(opens, {"charts/ai-interpretability"})
+        self.assertIn('href="/charts/ai-interpretability" target="_top">Charts/</a>', VIEWER)
 
     def test_every_relative_link_of_a_page_lands_on_a_page_or_the_viewer(self):
         # The same reading `publish.sh` gives the published pages, given here

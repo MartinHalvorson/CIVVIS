@@ -386,25 +386,30 @@ fn an_event_breakpoint_reads_what_the_turn_added_to_the_log() {
     assert_eq!(set["error"], Value::Null);
     let mut hit = Value::Null;
     for _ in 0..40 {
-        let before = session.game.events.len();
+        let before = session.game.chronicle.events.len();
         let out = session.debug(&json!({"op": "step"}));
         hit = out["debug"]["stopped"].clone();
         if !hit.is_null() {
             assert!(
-                session.game.events.len() > before,
+                session.game.chronicle.events.len() > before,
                 "a stop names a new event"
             );
             break;
         }
         assert_eq!(
-            session.game.events.len(),
+            session.game.chronicle.events.len(),
             before,
             "a turn that logged something should have stopped"
         );
     }
     assert_eq!(hit["kind"], json!("event"), "forty turns logged nothing");
     let text = hit["text"].as_str().unwrap();
-    assert!(session.game.events.iter().any(|event| event.text == text));
+    assert!(session
+        .game
+        .chronicle
+        .events
+        .iter()
+        .any(|event| event.text == text));
 }
 
 #[test]

@@ -9,6 +9,7 @@ import io
 import json
 import pathlib
 import re
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -1003,6 +1004,73 @@ class Page(unittest.TestCase):
         self.assertEqual([key for key, _ in research_page.WINDOWS], ["7", "30", "all"])
         self.assertEqual(sorted(set(re.findall(r'data-window="(\w+)"', PAGE))), ["30", "7", "all"])
 
+    def test_the_benchmark_says_its_par_in_big_type(self):
+        # Operator 2026-11-24: "add a big note to firaxis civ 6 benchmark
+        # that expected win rate for a 6P game is 1/6 or 16.7%". The note
+        # stands between the benchmark's head and its two tables, in the
+        # benchmark's own block, in type bigger than any title on the page.
+        side = PAGE.index('<section class="res-block" id="res-side-tourney" aria-labelledby="res-title-tourney">')
+        block = PAGE[side : PAGE.index("</section>", side)]
+        par = block.index('<p class="res-bench-par" id="res-bench-par">')
+        self.assertLess(block.index("</header>"), par)
+        self.assertLess(par, block.index('<div class="res-bench-pair">'))
+        self.assertIn('<p class="res-bench-par" id="res-bench-par"><b>Expected win rate in a 6P game: 1/6 = 16.7%</b>', block)
+        self.assertEqual(f"{100 / 6:.1f}%", "16.7%")
+        self.assertEqual(PAGE.count('id="res-bench-par"'), 1)
+        self.assertIn(".res-bench-par b { color: var(--gold); font-size: 26px; font-weight: 800;", PAGE)
+
+    def test_a_benchmark_cell_is_shaded_by_its_rate_against_the_par(self):
+        # Operator 2026-11-24: "we should highlight the winr ate by level.
+        # white for 16.7% - dark green for 100% win rare. white to red for
+        # 16.7 -> 0. bxakground of the cells please. 16.7 is 1/6 expected
+        # win rate." Every cell with games in it takes the shade of its
+        # exact rate as its background, and the text that reads on it; a
+        # cell with no game keeps the page's dark and its dash.
+        self.assertIn("const PAR = 1 / 6, PAR_WHITE = [255, 255, 255], PAR_GREEN = [22, 101, 52], PAR_RED = [220, 38, 38];", PAGE)
+        self.assertIn(
+            '            if (games) {\n'
+            '              td.append(" ", el("small", "", "(" + fmt(games) + ")"));\n'
+            "              Object.assign(td.style, shade(wins / games));\n"
+            "            }\n",
+            PAGE,
+        )
+        # Tiles stand apart, the games in brackets take the tile's text
+        # colour, and the rules stay the benchmark's own.
+        self.assertIn(".res-rates { border-collapse: separate; border-spacing: 3px; }", PAGE)
+        self.assertIn(".res-rates td.is-rate small { color: inherit; opacity: 0.75; }", PAGE)
+        self.assertIn("Its shade is read against the 1/6 par: white at 16.7%, deepening to dark green at 100% and to red at 0%.", PAGE)
+
+    @unittest.skipUnless(shutil.which("node"), "needs node to run the page's shade")
+    def test_the_shade_is_white_at_the_par_dark_green_at_100_and_red_at_0(self):
+        start = PAGE.index("    const PAR = 1 / 6,")
+        script = PAGE[start : PAGE.index("    const BENCH", start)]
+        rates = [0, 0.05, 1 / 6, 0.4, 1]
+        out = subprocess.run(
+            ["node", "-e", script + f"console.log(JSON.stringify({rates}.map(shade)));"],
+            check=True, capture_output=True, text=True,
+        ).stdout
+        red, pink, par, green, deep = json.loads(out)
+        self.assertEqual(red, {"background": "rgb(220, 38, 38)", "color": "#fff"})
+        self.assertEqual(par, {"background": "rgb(255, 255, 255)", "color": "#101820"})
+        self.assertEqual(deep, {"background": "rgb(22, 101, 52)", "color": "#fff"})
+        # Between, the mix is straight: 5% is 70% of the way to red, 40%
+        # 28% of the way to dark green, and both still read in dark text.
+        self.assertEqual(pink, {"background": "rgb(231, 103, 103)", "color": "#101820"})
+        self.assertEqual(green, {"background": "rgb(190, 212, 198)", "color": "#101820"})
+
+    def test_the_self_play_count_is_highlighted(self):
+        # Operator 2026-11-24: "hightlight the civvis self play game count
+        # in the chart. 13k is a very solid number". Self-play's chart puts
+        # its count of games in a highlighted figure, its days after it;
+        # the charts of the games against the AI keep the plain count.
+        self.assertIn(
+            'if (s && chart.kind === "self_play") {\n'
+            '        tally.replaceChildren(el("b", "res-big-count", fmt(s.w.games) + (s.w.games === 1 ? " game" : " games")), " · " + days(s.w));',
+            PAGE,
+        )
+        self.assertIn(".res-kind-title .res-big-count { display: inline-block;", PAGE)
+        self.assertRegex(PAGE, r"\.res-kind-title \.res-big-count \{[^}]*color: #fff; font-size: 20px; font-weight: 800;")
+
     def test_the_benchmark_stands_over_the_graphs_as_two_tables(self):
         # Operator 2026-11-23: "at the top of win analytics, we should have a
         # last 1 day win rate col, last 3 days, last 7 days, last 30 days.
@@ -1070,7 +1138,7 @@ class Page(unittest.TestCase):
         self.assertEqual([name for name, _ in research_page.RATE_TABLES], ["on", "off"])
         self.assertIn('const body = document.querySelector("#res-rates-" + name + " tbody");', PAGE)
         self.assertIn('const td = el("td", games ? "is-rate" : "is-zero", games ? pct(wins / games) : "—");', PAGE)
-        self.assertIn('if (games) td.append(" ", el("small", "", "(" + fmt(games) + ")"));', PAGE)
+        self.assertIn('td.append(" ", el("small", "", "(" + fmt(games) + ")"));', PAGE)
         self.assertIn("const render = () => { notes(); drawRates(); draw(); drawTables(); };", PAGE)
         # A record with no tournament games hides the block, and a hidden
         # block is not drawn (a block is a grid, which `hidden` alone would
@@ -1279,7 +1347,7 @@ class Page(unittest.TestCase):
     def test_every_page_lists_charts_between_home_and_tournaments(self):
         # Operator 2026-11-21: "between home and tournaments, we should add a
         # "Research"." This page lists the site's pages as the others do,
-        # with itself in gold. It was Musings later that day (operator:
+        # with itself marked. It was Musings later that day (operator:
         # "musings (rename research)") and is Charts since 2026-11-22
         # (operator: "Change musings to "Charts". Move performance from under
         # civvis to charts. Charts is where almost all our charts can go");
@@ -1289,28 +1357,34 @@ class Page(unittest.TestCase):
         # charts, we should have at least win analytics, CIVVIS Performance
         # ... We should change just "Charts" to "Charts/" with the
         # intentional slash"): this page is Win Analytics, the first under
-        # it and the one Charts/ opens, and the branch is open here with
-        # this page in gold.
+        # it and the one Charts/ opens. Since 2026-11-24 the list is a row
+        # across the top and Charts/ drops its pages down (operator: "charts/
+        # can drop down folder style and the user can pick the right
+        # chart"), with this page ringed in it.
         self.assertIn(
             '<nav class="site-nav" aria-label="CIVVIS sites">\n'
-            '        <a class="site-link" href="../../home/">Home</a>\n'
-            '        <a class="site-link" href="./" '
+            '      <a class="site-link" href="../../home/">Home</a>\n'
+            '      <div class="site-folder">\n'
+            '        <a class="site-link" href="../ai-interpretability/" '
             'title="What the games show: charts read off the CIVVIS AI agents&#8217; games.">Charts/</a>\n'
-            '        <a class="site-link sub-link" href="./" aria-current="page">Win Analytics</a>\n'
-            '        <a class="site-link sub-link" href="../elo-rankings/" '
-            'title="The Civ AI Agents and Civilization VI&#8217;s own AI on one Elo scale, now and over time.">ELO Rankings</a>\n'
-            '        <a class="site-link sub-link" href="../civ-analytics/" '
-            'title="How CIVVIS does as each civ, and the early build orders that win against Deity.">Civ Analytics</a>\n'
-            '        <a class="site-link sub-link" href="../civvis-performance/" '
-            'title="How fast the simulator plays: the fastest game on video and how long a self-play game takes.">CIVVIS Performance</a>\n'
-            '        <a class="site-link sub-link" href="../ai-interpretability/" '
+            '        <div class="site-menu">\n'
+            '          <a class="site-link sub-link" href="../ai-interpretability/" '
             'title="How a CIVVIS AI agent decides: one turn step by step, its plan through a game, and what each rule is worth in wins.">AI Interpretability</a>\n'
-            '        <a class="site-link" href="../../tournaments/" ',
+            '          <a class="site-link sub-link" href="../civ-analytics/" '
+            'title="How CIVVIS does as each civ, and the early build orders that win against Deity.">Civ Analytics</a>\n'
+            '          <a class="site-link sub-link" href="./" aria-current="page">Win Analytics</a>\n'
+            '          <a class="site-link sub-link" href="../elo-rankings/" '
+            'title="The Civ AI Agents and Civilization VI&#8217;s own AI on one Elo scale, now and over time.">ELO Rankings</a>\n'
+            '          <a class="site-link sub-link" href="../civvis-performance/" '
+            'title="How fast the simulator plays: the fastest game on video and how long a self-play game takes.">CIVVIS Performance</a>\n'
+            '        </div>\n'
+            '      </div>\n'
+            '      <a class="site-link" href="../../tournaments/" ',
             PAGE,
         )
         nav = PAGE[PAGE.index('<nav class="site-nav"'):PAGE.index("</nav>")]
         self.assertEqual(nav.count('aria-current="page"'), 1)
-        self.assertIn(".site-link.sub-link { margin-left: 10px; padding: 2px 6px 3px; font-size: 10px; letter-spacing: 0.03em; }", PAGE)
+        self.assertIn("  .site-folder:hover > .site-menu,\n  .site-folder:focus-within > .site-menu,\n  .site-folder.is-open > .site-menu { display: grid; }\n", PAGE)
         self.assertIn('<a href="../civvis-performance/">CIVVIS Performance</a>.', PAGE)
         # The two pages after it under Charts/ (operator 2026-11-23: "add
         # that to a new page: Charts/ELO Rankings. this should be after win
@@ -1322,27 +1396,28 @@ class Page(unittest.TestCase):
             self.assertEqual(
                 re.findall(r'<a class="site-link sub-link" href="([^"]+)"[^>]*>([^<]+)</a>', nav),
                 [(("./" if listed == name else f"../{at}/"), listed) for at, listed in (
-                    ("win-analytics", "Win Analytics"), ("elo-rankings", "ELO Rankings"), ("civ-analytics", "Civ Analytics"),
-                    ("civvis-performance", "CIVVIS Performance"), ("ai-interpretability", "AI Interpretability"))],
+                    ("ai-interpretability", "AI Interpretability"), ("civ-analytics", "Civ Analytics"),
+                    ("win-analytics", "Win Analytics"), ("elo-rankings", "ELO Rankings"),
+                    ("civvis-performance", "CIVVIS Performance"))],
             )
             self.assertEqual(nav.count('aria-current="page"'), 1)
             self.assertIn(f'<a class="site-link sub-link" href="./" aria-current="page">{name}</a>', nav)
             self.assertIn(f'<link rel="canonical" href="https://civvis.ai/charts/{address}/">', page)
             self.assertIn(f"<title>{name} · CIVVIS.ai</title>", page)
             self.assertEqual(re.findall(r'(?:href|src)="(/[^"]*)"', page), [])
-        self.assertRegex(PAGE, r'<div class="site-brand">\s*<!--[\s\S]*?-->\s*<nav class="site-nav"[^>]*>[\s\S]*?</nav>\s*<div class="site-lockup">')
+        self.assertRegex(PAGE, r'<header class=\"shell site-header\">\s*<!--[\s\S]*?-->\s*<nav class=\"site-nav\"[^>]*>[\s\S]*?</nav>\s*<script data-site-folder>[\s\S]*?</script>\s*<div class=\"site-brand\">\s*<div class=\"site-lockup\">')
         self.assertIn("<title>Win Analytics · CIVVIS.ai</title>", PAGE)
         for page in (PAGE, LANDING, TOURNAMENTS, VIEWER):
             self.assertNotIn(">Research</a>", page)
             self.assertNotIn(">Musings</a>", page)
             self.assertNotIn(">Charts</a>", page)
         for page, pattern in (
-            (LANDING, r'aria-current="page">Home</a>\s*<a class="site-link" href="\.\./charts/win-analytics/"[^>]*>Charts/</a>'
-                      r'\s*<a class="site-link" href="\.\./tournaments/"'),
-            (TOURNAMENTS, r'href="\.\./home/">Home</a>\s*<a class="site-link" href="\.\./charts/win-analytics/"[^>]*>Charts/</a>'
-                          r'\s*<a class="site-link" href="\./" aria-current="page">Tournaments</a>'),
+            (LANDING, r'aria-current="page">Home</a>\s*<div class="site-folder">\s*<a class="site-link" href="\.\./charts/ai-interpretability/"[^>]*>Charts/</a>'
+                      r'[\s\S]*?</div>\s*</div>\s*<a class="site-link" href="\.\./tournaments/"'),
+            (TOURNAMENTS, r'href="\.\./home/">Home</a>\s*<div class="site-folder">\s*<a class="site-link" href="\.\./charts/ai-interpretability/"[^>]*>Charts/</a>'
+                          r'[\s\S]*?</div>\s*</div>\s*<a class="site-link" href="\./" aria-current="page">Tournaments</a>'),
             (VIEWER, r'id="homelink" href="/home" target="_top">Home</a>\s*'
-                     r'<a class="home-link" id="chartslink" href="/charts/win-analytics" target="_top">Charts/</a>\s*'
+                     r'<a class="home-link" id="chartslink" href="/charts/ai-interpretability" target="_top">Charts/</a>\s*'
                      r'<a class="home-link" id="tourlink" href="/tournaments" target="_top">Tournaments</a>'),
         ):
             self.assertRegex(page, pattern)

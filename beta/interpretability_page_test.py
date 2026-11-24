@@ -312,20 +312,21 @@ class ThePage(unittest.TestCase):
 
 
 class TheSiteList(unittest.TestCase):
-    def test_the_page_is_the_last_under_charts_in_gold(self):
+    def test_the_page_is_the_first_under_charts_ringed(self):
         # Operator 2026-11-22: "Add a new chart to the bottom of Charts/
-        # called AI Interpretablity."
+        # called AI Interpretablity"; 2026-11-24: "move ai interpretablity to
+        # the top of the charts/", so Charts/ opens it.
         nav = PAGE[PAGE.index('<nav class="site-nav"'):PAGE.index("</nav>")]
         self.assertEqual(
             re.findall(r'<a class="([^"]+)" href="([^"]+)"[^>]*>([^<]+)</a>', nav),
             [
                 ("site-link", "../../home/", "Home"),
-                ("site-link", "../win-analytics/", "Charts/"),
+                ("site-link", "./", "Charts/"),
+                ("site-link sub-link", "./", "AI Interpretability"),
+                ("site-link sub-link", "../civ-analytics/", "Civ Analytics"),
                 ("site-link sub-link", "../win-analytics/", "Win Analytics"),
                 ("site-link sub-link", "../elo-rankings/", "ELO Rankings"),
-                ("site-link sub-link", "../civ-analytics/", "Civ Analytics"),
                 ("site-link sub-link", "../civvis-performance/", "CIVVIS Performance"),
-                ("site-link sub-link", "./", "AI Interpretability"),
                 ("site-link", "../../tournaments/", "Tournaments"),
                 ("site-link", "../../", "CIVVIS"),
                 ("site-link", "../../?mode=strange", "Doctor Strange's Civ 6"),
@@ -336,7 +337,7 @@ class TheSiteList(unittest.TestCase):
         )
         self.assertEqual(nav.count('aria-current="page"'), 1)
         self.assertIn('<a class="site-link sub-link" href="./" aria-current="page">AI Interpretability</a>', nav)
-        self.assertIn(".site-link.sub-link { margin-left: 10px; padding: 2px 6px 3px; font-size: 10px; letter-spacing: 0.03em; }", PAGE)
+        self.assertIn("  .site-folder:hover > .site-menu,\n  .site-folder:focus-within > .site-menu,\n  .site-folder.is-open > .site-menu { display: grid; }\n", PAGE)
         self.assertIn("<title>AI Interpretability · CIVVIS.ai</title>", PAGE)
         # Every link of the page stays in its lane.
         self.assertEqual(re.findall(r'(?:href|src)="(/[^"]*)"', PAGE), [])
@@ -345,12 +346,19 @@ class TheSiteList(unittest.TestCase):
         header = lambda page: re.sub(r"<!--.*?-->", "", page[page.index('<nav class="utility-nav"'):page.index("</header>")], flags=re.S)
         self.assertEqual(header(PAGE), header(PERFORMANCE))
 
-    def test_only_charts_lists_the_branch(self):
-        listed = '<a class="site-link sub-link" href="../ai-interpretability/" title="How a CIVVIS AI agent decides: one turn step by step, its plan through a game, and what each rule is worth in wins.">AI Interpretability</a>\n        <a class="site-link" href="../../tournaments/" '
+    def test_charts_drops_it_down_first_on_every_page(self):
+        # The first of Charts/'s pages in the list it drops down, on every
+        # page (operator 2026-11-24: "charts/ can drop down folder style and
+        # the user can pick the right chart", then "move ai interpretablity
+        # to the top of the charts/"); the viewer lists none.
+        listed = ('        <div class="site-menu">\n'
+                  '          <a class="site-link sub-link" href="../ai-interpretability/" title="How a CIVVIS AI agent decides: one turn '
+                  'step by step, its plan through a game, and what each rule is worth in wins.">AI Interpretability</a>\n')
         for page in (RESEARCH, PERFORMANCE):
             self.assertIn(listed, page)
-        for page in (LANDING, TOURNAMENTS, VIEWER):
-            self.assertNotIn("Interpretability</a>", page)
+        for page in (LANDING, TOURNAMENTS):
+            self.assertIn(listed.replace('href="../ai-interpretability/"', 'href="../charts/ai-interpretability/"'), page)
+        self.assertNotIn("Interpretability</a>", VIEWER)
 
     def test_publishing_builds_the_page_into_a_lane_whose_revision_has_it(self):
         # The lane's own page, filled by the lane's own script: a lane is one

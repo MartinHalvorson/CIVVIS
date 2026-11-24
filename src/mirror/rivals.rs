@@ -171,7 +171,8 @@ pub(super) fn apply_rival_public_economy(
             .then(|| value.round() as usize)
     };
     {
-        let observed = Arc::make_mut(&mut game.observed_public_empire_stats)
+        let host = Arc::make_mut(&mut game.host);
+        let observed = Arc::make_mut(&mut host.observed_public_empire_stats)
             .entry(owner)
             .or_default();
         // The science lane's own number (`GetNumTechsResearched`) where it
@@ -201,9 +202,9 @@ pub(super) fn apply_rival_public_economy(
             && rival.science_victory_points_needed > 0.0)
             .then_some(rival.science_victory_points_needed);
         if known(rival.tourism) {
-            Arc::make_mut(&mut game.observed_tourism_per_turn).insert(owner, rival.tourism);
+            Arc::make_mut(&mut host.observed_tourism_per_turn).insert(owner, rival.tourism);
         } else {
-            Arc::make_mut(&mut game.observed_tourism_per_turn).remove(&owner);
+            Arc::make_mut(&mut host.observed_tourism_per_turn).remove(&owner);
         }
         // Like `techs`/`civics`: the observed table is rebuilt from each
         // snapshot (`apply_observed_host_metrics` clears it), so absent or
