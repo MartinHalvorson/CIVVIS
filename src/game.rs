@@ -5324,7 +5324,7 @@ pub struct PlayerAside {
     pub turn_visible: BTreeSet<Pos>,
     /// Rival units last observed during this active player turn. Unlike the
     /// long-term map memory, these contacts survive only until End Turn.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "numbered_keys")]
     pub turn_units: BTreeMap<u32, Unit>,
     /// Per-tile last-known state. Unlike `explored`, this does not update
     /// while a tile is under fog, so improvements, ownership, disasters, and
@@ -5332,7 +5332,7 @@ pub struct PlayerAside {
     #[serde(default)]
     pub remembered_tiles: TileMemory,
     /// Last public City Center state observed by this player.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "numbered_keys")]
     pub remembered_cities: BTreeMap<u32, RememberedCity>,
     /// The exact Great Person classes Firaxis is offering right now, when a
     /// live mirror supplied that screen. `None` preserves CIVVIS's native
@@ -5403,7 +5403,7 @@ pub struct PlayerAside {
     /// so without this every rival read as level 0 both ways and the combat
     /// modifier that visibility buys was never priced. Assigned from every
     /// export; empty on every native board.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "numbered_keys")]
     pub observed_visibility: BTreeMap<usize, f64>,
     /// This leader's standing toward each seat AS THE HOST REPORTS IT
     /// (`GetDiplomaticStateIndex`, `DiplomacyActionView.lua:870`), without the
@@ -5413,7 +5413,7 @@ pub struct PlayerAside {
     /// before it asks for one, since the host's leaders value a declared
     /// friendship only from `FRIENDLY`. Assigned from every export; empty on
     /// every native board.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "numbered_keys")]
     pub observed_diplomatic_state: BTreeMap<usize, String>,
     /// Completed military-unit lives by the kind the unit carried when it
     /// left play. Live units are composed with this by
@@ -5424,6 +5424,29 @@ pub struct PlayerAside {
     /// only; absent from a save while empty. See `game/combat_ledger.rs`.
     #[serde(default, skip_serializing_if = "CombatLedger::is_empty")]
     pub combat_ledger: CombatLedger,
+}
+
+/// A map keyed by numbers, read back from a flattened save.
+///
+/// `PlayerAside` is `#[serde(flatten)]` into `Player`, and serde reads a
+/// flattened struct from a buffered copy of the document, where a JSON object
+/// key is only ever a string: the `"5"` that `serde_json` would have turned
+/// into a `u32` stays `"5"` and fails. This reads the keys as text and parses
+/// them, which is what a direct read did.
+fn numbered_keys<'de, D, K, V>(deserializer: D) -> Result<BTreeMap<K, V>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    K: std::str::FromStr + Ord,
+    V: Deserialize<'de>,
+{
+    BTreeMap::<String, V>::deserialize(deserializer)?
+        .into_iter()
+        .map(|(key, value)| {
+            key.parse::<K>()
+                .map(|key| (key, value))
+                .map_err(|_| serde::de::Error::custom(format!("map key {key:?} is not a number")))
+        })
+        .collect()
 }
 
 /// `PlayerAside` behind an `Arc`, saved as its fields so a save reads exactly
@@ -14051,6 +14074,8 @@ mod victory_conditions;
 
 #[cfg(test)]
 mod great_work_tests;
+#[cfg(test)]
+mod player_aside_tests;
 
 #[cfg(test)]
 mod government_deck;
