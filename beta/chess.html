@@ -101,11 +101,9 @@
   .site-link:hover,
   .site-link:focus-visible { background: var(--action-hover); color: #fff; }
   .site-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .site-link[aria-current="page"],
-  .site-link[aria-current="page"]:hover { background: var(--gold); color: #17130c; }
-  .site-link[href$="../"],
+  .site-link[href$="../"] { background: linear-gradient(145deg, #dec176, #aa7d30); color: #17130c; box-shadow: inset 0 0 0 1px #efd184; }
+  .site-link[href$="../"]:hover, .site-link[href$="../"]:focus-visible { background: linear-gradient(145deg, #f0d68e, #c0913c); color: #000; }
   .site-link[href$="?mode=play"] { background: #050607; color: #c9cecb; box-shadow: inset 0 0 0 1px #30363a; }
-  .site-link[href$="../"]:hover, .site-link[href$="../"]:focus-visible,
   .site-link[href$="?mode=play"]:hover, .site-link[href$="?mode=play"]:focus-visible { background: #181c1f; color: #fff; }
   .site-link[href$="?mode=strange"] {
     background: linear-gradient(135deg, #1c2a7a 30%, #a3122f); color: #ffe3a3;
@@ -135,6 +133,12 @@
       repeating-conic-gradient(#ffffff 0 25%, #0b0b0c 0 50%) 0 0 / 8px 8px;
     color: #fff;
   }
+  /* The page on screen keeps the colour of what it is and is ringed in
+     white, as on every page. It was gold until 2026-11-24, when gold
+     became CIVVIS's own (operator: "lets give civvis a gold background
+     on the button, rather than black"). Here the list stays a column
+     behind its button: the board has the top of the screen. */
+  .site-link[aria-current="page"] { box-shadow: inset 0 0 0 2px #fff; }
 
   /* Top right: the opponent and the game. */
   #table { top: 14px; right: 16px; width: 248px; padding: 12px 14px; display: grid; gap: 10px; }
@@ -240,7 +244,7 @@
     <div class="plate" id="sites-list">
     <nav class="site-nav" aria-label="CIVVIS sites">
         <a class="site-link" href="../home/">Home</a>
-        <a class="site-link" href="../charts/win-analytics/" title="What the games show: charts read off the CIVVIS AI agents&#8217; games.">Charts/</a>
+        <a class="site-link" href="../charts/ai-interpretability/" title="What the games show: charts read off the CIVVIS AI agents&#8217; games.">Charts/</a>
         <a class="site-link" href="../tournaments/" title="Series of verification games against Civilization VI&#8217;s own AI: running, scheduled and finished.">Tournaments</a>
         <a class="site-link" href="../" title="Every civilization is played by a CIVVIS AI agent.">CIVVIS</a>
         <a class="site-link" href="../?mode=strange" title="One world, two timelines: the same game played two ways, side by side, on a timeline that branches.">Doctor Strange's Civ 6</a>
