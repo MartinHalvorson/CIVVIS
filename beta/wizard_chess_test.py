@@ -478,6 +478,26 @@ class Played(unittest.TestCase):
         self.assertEqual(ev("[wizardChess.world.ridden.userData.kind, wizardChess.seat.mode, wizardChess.seat.mounted === wizardChess.world.ridden, wizardChess.game.mount]"),
                          ["q", "ride", True, 8])
         ev("wizardChess.opponent.move = wizardChess.heldMove; wizardChess.game.turn++")
+        # Two players at one laptop: no engine; after each move the board is
+        # handed to the side to move, each rides a knight of their own, and the
+        # rider who has moved stays on their piece. A take back is one move,
+        # and the board goes back to whoever made it.
+        ev("wizardChess.versus('person')")
+        self.assertEqual(ev("[wizardChess.game.versus, wizardChess.game.side, wizardChess.world.ridden.userData.square, document.body.classList.contains('two-players')]"),
+                         ["person", "w", 6, True])
+        self.assertTrue(ev("wizardChess.command('ride to f3')"))
+        self.until("wizardChess.game.played.length === 1 && wizardChess.game.side === 'b' && !wizardChess.game.busy", "the board is handed to Black", seconds=120)
+        self.assertEqual(ev("[wizardChess.seat.side, wizardChess.world.ridden.userData.square, wizardChess.game.thinking, "
+                            "!!wizardChess.world.pieces.get(21).userData.saddle]"), ["b", 62, False, True])
+        self.assertTrue(ev("wizardChess.command('ride to f6')"))
+        self.until("wizardChess.game.played.length === 2 && wizardChess.game.side === 'w' && !wizardChess.game.busy", "and back to White", seconds=120)
+        self.assertEqual(ev("[wizardChess.world.ridden.userData.square, !!wizardChess.world.pieces.get(45).userData.saddle]"), [21, True])
+        ev("wizardChess.takeBack()")
+        self.assertEqual(ev("[wizardChess.game.played.length, wizardChess.game.side, wizardChess.world.ridden.userData.square, "
+                            "!!wizardChess.world.pieces.get(21).userData.saddle]"), [1, "b", 62, True])
+        ev("wizardChess.versus('engine')")
+        self.assertEqual(ev("[wizardChess.game.versus, wizardChess.game.side, document.body.classList.contains('two-players')]"), ["engine", "w", False])
+        ev("wizardChess.opponent.stop(), wizardChess.game.turn++")
         # And back to the board.
         ev("wizardChess.ride(false)")
         self.assertEqual(ev("[wizardChess.seat.mode, wizardChess.world.ridden]"), ["table", None])

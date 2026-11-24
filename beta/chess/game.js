@@ -523,12 +523,20 @@ class World {
   // side's colour, and its rider sits behind its ears (where the seat's eye
   // is, `Seat.rider`). `null` is nobody riding.
   ride(held) {
-    if (this.ridden && this.ridden !== held && this.ridden.userData.saddle) {
-      this.ridden.userData.body.remove(this.ridden.userData.saddle);
-      this.ridden.userData.saddle = null;
-    }
+    if (this.ridden && this.ridden !== held) this.undress(this.ridden);
     this.ridden = held || null;
     if (!held) return;
+    this.dress(held);
+    this.face(held);
+  }
+  undress(held) {
+    if (!held.userData.saddle) return;
+    held.userData.body.remove(held.userData.saddle);
+    held.userData.saddle = null;
+  }
+  // A piece with its rider on it, ridden by the seat or not: with two
+  // players at one board each sees the other's rider on their piece.
+  dress(held) {
     if (!held.userData.saddle && held.userData.kind !== "n") {
       // Any other piece is ridden standing on top of it: on a pawn's head, in
       // a rook's battlements, on a bishop's mitre, in a queen's or a king's
@@ -613,7 +621,33 @@ class World {
       held.userData.body.add(saddle);
       held.userData.saddle = saddle;
     }
-    this.face(held);
+  }
+
+  // The rider's two arms in the frame of the piece they ride, each from a
+  // shoulder to a fist: a gauntlet, its cuff, and the forearm between.
+  arms(saddle, pairs) {
+    const made = this.geometry, leather = this.cloth.leather, gold = this.cloth.gold;
+    return pairs.map(([shoulder, hand]) => {
+      const fist = new THREE.Mesh(made.fist, leather), cuff = new THREE.Mesh(made.cuff, gold), forearm = new THREE.Mesh(made.forearm, this.cloth.cloak);
+      fist.scale.set(1.25, 0.85, 1);
+      for (const mesh of [fist, cuff, forearm]) { mesh.castShadow = true; saddle.add(mesh); }
+      const arm = {fist, cuff, forearm, shoulder, hand, grip: 0};
+      this.reach(arm);
+      return arm;
+    });
+  }
+  // An arm laid from its shoulder to its fist, the fist drawn back and
+  // clenched by how hard it grips.
+  reach(arm) {
+    const at = arm.hand.clone().lerp(arm.shoulder, 0.12 * arm.grip).add(new THREE.Vector3(0, 0.02 * arm.grip, 0));
+    const way = at.clone().sub(arm.shoulder), long = way.length(), along = way.clone().normalize();
+    arm.fist.position.copy(at);
+    arm.fist.scale.set(1.25 - 0.2 * arm.grip, 0.85, 1 - 0.1 * arm.grip);
+    arm.cuff.position.copy(at).addScaledVector(along, -0.045);
+    arm.cuff.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), along);
+    arm.forearm.position.copy(arm.shoulder).addScaledVector(along, (long - 0.06) / 2);
+    arm.forearm.scale.set(1, Math.max(0.05, long - 0.06), 1);
+    arm.forearm.quaternion.copy(arm.cuff.quaternion);
   }
 
   // The rider's two arms in the frame of the piece they ride, each from a
@@ -1843,6 +1877,11 @@ const game = {
   // knight stood on when the game began (`origins`), which names it through
   // every move it makes and every move taken back.
   ride: kept.ride === true, mount: Number.isInteger(kept.mount) ? kept.mount : null, thrown: false,
+  // Who plays the other side: the engine, or a person at the same laptop
+  // ("person"), the two taking turns at it. With two, `side` is whoever is to
+  // move, and each side keeps the piece it rides (`mounts`, by origin).
+  versus: kept.versus === "person" ? "person" : "engine",
+  mounts: {w: Number.isInteger(kept.mounts && kept.mounts.w) ? kept.mounts.w : null, b: Number.isInteger(kept.mounts && kept.mounts.b) ? kept.mounts.b : null},
   // How many games have been begun: a move still being played out when the
   // next is begun belongs to the one before (`make`).
   epoch: 0,
@@ -1891,7 +1930,7 @@ seat.follow = kept.follow !== false;
 function keep() {
   try {
     localStorage.setItem(KEPT, JSON.stringify({side: game.side, elo: game.elo, sound: sound.on, speak: voice.speaks, follow: seat.follow,
-      ride: game.ride, mount: game.mount, moves: game.played.map(entry => uci(entry.move))}));
+      ride: game.ride, mount: game.mount, versus: game.versus, mounts: game.mounts, moves: game.played.map(entry => uci(entry.move))}));
   } catch (_) { /* a browser that keeps nothing */ }
 }
 
@@ -1951,6 +1990,9 @@ function draw() {
   el("seat-knight").textContent = game.ride && !world.ridden && knights.length ? "Ride again" : world.ridden ? `On a ${mountName()}` : "On a knight";
   el("seat-knight").disabled = !game.ride && !knights.length;
   el("seat-other").hidden = !(game.ride && world.ridden && knights.length > 1);
+  el("vs-engine").setAttribute("aria-pressed", String(game.versus === "engine"));
+  el("vs-person").setAttribute("aria-pressed", String(game.versus === "person"));
+  document.body.classList.toggle("two-players", game.versus === "person");
   // In the saddle what is written folds to what a rider needs.
   document.body.classList.toggle("riding", game.ride);
   hint();
@@ -2088,9 +2130,8 @@ async function ended(how) {
     world.blaze();
   } else voice.say(title);
   el("ended-title").textContent = title;
-  el("ended-how").textContent = how === "checkmate"
-    ? (game.position.turn === game.side ? `${words} The opponent was playing at Elo ${game.elo}.` : `${words} You beat an opponent playing at Elo ${game.elo}.`)
-    : words;
+  el("ended-how").textContent = how !== "checkmate" || game.versus === "person" ? words
+    : game.position.turn === game.side ? `${words} The opponent was playing at Elo ${game.elo}.` : `${words} You beat an opponent playing at Elo ${game.elo}.`;
   el("ended").hidden = false;
   draw();
 }
@@ -2128,7 +2169,7 @@ async function make(move, by) {
   peril(by === game.side);
   if (how === "check") sound.play("check");
   if (how !== "play" && how !== "check") { await ended(how); return; }
-  if (game.position.turn !== game.side) answer();
+  if (game.position.turn !== game.side) (game.versus === "person" ? pass() : answer());
 }
 
 // The opponent's move. It is asked the moment the board stands still, and
@@ -2261,7 +2302,7 @@ function listening(on, fault) {
 function begin(side = game.side, moves = []) {
   game.turn += 1;
   game.epoch += 1;
-  if (side !== game.side) game.mount = null;
+  if (side !== game.side && game.versus !== "person") game.mount = null;
   opponent.stop();
   opponent.newGame();
   Object.assign(game, {position: fromFen(START), played: [], seen: new Map(), side, busy: false, over: null, chosen: -1, thinking: false});
@@ -2273,6 +2314,12 @@ function begin(side = game.side, moves = []) {
     game.position = play(game.position, move);
     const key = positionKey(game.position);
     game.seen.set(key, (game.seen.get(key) || 0) + 1);
+  }
+  // Two players: whoever is to move sits at the board.
+  if (game.versus === "person") {
+    if (!moves.length) game.mounts = {w: null, b: null};
+    if (game.position.turn !== game.side) { game.mounts[game.side] = game.mount; game.mount = game.mounts[game.position.turn]; }
+    game.side = side = game.position.turn;
   }
   el("ended").hidden = true;
   el("promote").hidden = true;
@@ -2288,11 +2335,12 @@ function begin(side = game.side, moves = []) {
   seat.look(null);
   if (!moves.length) game.mount = null;
   remount();
+  redress();
   keep();
   draw();
   const how = standing(game.position, game.seen);
   if (how !== "play" && how !== "check") { game.over = how; draw(); if (how === "checkmate") world.blaze(); return; }
-  say(game.played.length ? "The game is as you left it." : side === "w" ? "White to move. Command your pieces." : "Black. The opponent moves first.");
+  say(game.played.length ? "The game is as you left it." : game.versus === "person" ? "Two players. White to move." : side === "w" ? "White to move. Command your pieces." : "Black. The opponent moves first.");
   if (game.position.turn !== game.side) answer();
 }
 
@@ -2302,23 +2350,65 @@ function takeBack() {
   opponent.stop();
   game.thinking = false;
   // Back to the player's last move: their own, and the answer if it came.
+  // With two players, the last move, whoever made it, and the board goes back
+  // to them.
   while (game.played.length) {
     const entry = game.played.pop();
     const key = positionKey(game.position);
     game.seen.set(key, (game.seen.get(key) || 1) - 1);
     game.position = entry.before;
-    if (entry.by === game.side) break;
+    if (entry.by === game.side || game.versus === "person") break;
+  }
+  if (game.versus === "person" && game.position.turn !== game.side) {
+    game.mounts[game.side] = game.mount;
+    game.side = game.position.turn;
+    game.mount = game.mounts[game.side];
+    seat.sit(game.side);
+    world.letter(game.side);
   }
   game.over = null;
   el("ended").hidden = true;
   world.muse(null);
   world.set(game.position);
   remount();
+  redress();
   choose(-1);
   keep();
   draw();
   say(world.ridden && seat.mode === "ride" ? "Taken back. You are in the saddle." : "Taken back.");
   if (game.position.turn !== game.side) answer();
+}
+
+// Two players at one laptop: the board is handed to the side to move. The
+// seat goes round to their side (or to the piece they ride), the names on
+// the rim turn to be read from there, and the rider who has just moved stays
+// on their piece, seen from the other side.
+function pass() {
+  const was = game.side, now = game.position.turn, left = world.ridden;
+  game.mounts[was] = game.mount;
+  game.side = now;
+  game.mount = game.mounts[now];
+  seat.sit(now);
+  world.letter(now);
+  remount();
+  if (left && left.parent && left !== world.ridden) world.dress(left);
+  keep();
+  draw();
+  say(`${sideName(now)} to move.`);
+  voice.say(`${sideName(now)} to move.`);
+  // What now threatens the piece this player rides is said to them.
+  game.threats = "";
+  peril();
+}
+// The other player's rider, set back on their piece after the board has
+// been set down afresh.
+function redress() {
+  if (game.versus !== "person" || !game.ride) return;
+  const other = game.side === "w" ? "b" : "w", origin = game.mounts[other];
+  if (origin === null || origin === undefined) return;
+  const began = origins(), sq = game.position.board.findIndex((piece, at) => piece && colourOf(piece) === other && began[at] === origin);
+  const held = sq >= 0 ? world.pieces.get(sq) : null;
+  if (held && held !== world.ridden) world.dress(held);
 }
 
 // A pawn pointed to the last rank is asked what it becomes.
@@ -2459,7 +2549,16 @@ mic.hidden = !voice.can;
 mic.addEventListener("pointerdown", event => { event.preventDefault(); sound.start(); voice.listen(); });
 for (const kind of ["pointerup", "pointerleave", "pointercancel"]) mic.addEventListener(kind, () => voice.done());
 
-el("new-game").addEventListener("click", () => begin(game.side));
+el("new-game").addEventListener("click", () => begin(game.versus === "person" ? "w" : game.side));
+// Who plays the other side. Changing it begins a new game.
+function versus(who) {
+  if (game.versus === who) return;
+  game.versus = who;
+  game.mounts = {w: null, b: null};
+  begin("w");
+}
+el("vs-engine").addEventListener("click", () => versus("engine"));
+el("vs-person").addEventListener("click", () => versus("person"));
 el("seat-board").addEventListener("click", () => { if (game.ride) ride(false); });
 el("seat-knight").addEventListener("click", () => { if (!game.ride || !world.ridden) ride(true); });
 el("seat-other").addEventListener("click", () => ride(true, true));
@@ -2545,4 +2644,4 @@ function frameCost(count = 120) {
 
 // For the checks (beta/wizard_chess_test.py), and for anyone at the console.
 window.wizardChess = {game, world, seat, sound, opponent, command, begin, takeBack, running, meant, point, choose, make, ride, origins,
-  mountSquare, moveFromUci, peril, settle, frameCost, stir, pace, rideSquare};
+  mountSquare, moveFromUci, peril, settle, frameCost, stir, pace, rideSquare, versus};
