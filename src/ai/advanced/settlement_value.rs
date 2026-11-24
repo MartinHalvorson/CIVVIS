@@ -966,23 +966,19 @@ impl AdvancedAi {
     /// major already owns, priced per tile and capped. See
     /// `settlement_safety_penalty`.
     pub(super) fn foreign_border_pressure(&self, g: &Game, pid: usize, pos: Pos) -> f64 {
-        let owned = g
-            .wdisk(pos, FOREIGN_BORDER_RADIUS)
-            .into_iter()
-            .filter(|tile| {
-                g.map
-                    .get(*tile)
-                    .and_then(|t| t.owner_city)
-                    .and_then(|city| g.cities.get(&city))
-                    .map(|city| city.owner)
-                    .is_some_and(|owner| {
-                        owner != pid
-                            && g.players
-                                .get(owner)
-                                .is_some_and(|p| p.alive && !p.is_minor && !p.is_barbarian)
-                    })
-            })
-            .count();
+        let owned = g.map.disk_count(pos, FOREIGN_BORDER_RADIUS, |tile| {
+            g.map
+                .get(tile)
+                .and_then(|t| t.owner_city)
+                .and_then(|city| g.cities.get(&city))
+                .map(|city| city.owner)
+                .is_some_and(|owner| {
+                    owner != pid
+                        && g.players
+                            .get(owner)
+                            .is_some_and(|p| p.alive && !p.is_minor && !p.is_barbarian)
+                })
+        });
         (owned as f64 * FOREIGN_BORDER_TILE_PENALTY).min(FOREIGN_BORDER_PENALTY_CAP)
     }
 
