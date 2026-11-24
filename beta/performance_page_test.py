@@ -189,9 +189,15 @@ class TheSpeedup(unittest.TestCase):
     deity self-play, civvis self-play. how much has civvis self-play speed up
     over my manual 5 hr games? add this info, maybe in tables to the top")."""
 
-    SECTION = PAGE[PAGE.index('<section class="res-section" id="perf-speedup"'):PAGE.index('<section class="res-section" id="perf-video"')]
+    SECTION = PAGE[PAGE.index('<section class="res-section" id="perf-speedup"'):PAGE.index('<section class="res-section" id="perf-history"')]
 
     def test_the_record_carries_the_worked_tables_of_the_home_page_s_ledger(self):
+        # The computer control stop reads its benchmark's record from the
+        # run ledger where the clone holds it, and a bare copy of the
+        # readings holds none: both are read here as a clone without it.
+        held = speedup_timeline.control_times.control
+        speedup_timeline.control_times.control = lambda source: None
+        self.addCleanup(setattr, speedup_timeline.control_times, "control", held)
         with contextlib.redirect_stderr(io.StringIO()):
             record = performance_page.performance(ROOT)
         self.assertEqual(record["speedup"], speedup_timeline.worked(ROOT))
@@ -228,8 +234,10 @@ class TheSpeedup(unittest.TestCase):
     def test_it_is_the_first_part_of_the_page_and_shows_only_when_filled(self):
         record = PAGE[PAGE.index('<div class="res-record" id="perf-record" hidden>'):]
         # Under the computer control chart, the page's top chart since
-        # 2026-11-24 (`control_times_test.py`).
-        self.assertEqual(re.findall(r'<section class="res-section" id="([\w-]+)"', record), ["perf-control", "perf-speedup", "perf-video", "perf-times", "perf-batches"])
+        # 2026-11-24 (`control_times_test.py`). After the tables come each way
+        # of playing over time and the path through one game.
+        self.assertEqual(re.findall(r'<section class="res-section" id="([\w-]+)"', record),
+                         ["perf-control", "perf-speedup", "perf-history", "perf-path", "perf-video", "perf-times", "perf-batches"])
         self.assertIn('<section class="res-section" id="perf-speedup" aria-labelledby="perf-speedup-title" hidden>', PAGE)
         self.assertIn('document.getElementById("perf-speedup").hidden = false;', PAGE)
         # The sentence, the tiles, one game at a time, the machine, the
@@ -245,9 +253,17 @@ class TheSpeedup(unittest.TestCase):
     def test_every_way_of_playing_in_the_readings_has_its_name(self):
         ways = dict(re.findall(r'^      (\w+): \["([^"]+)", "[^"]+"\],$', PAGE, flags=re.M))
         shown = speedup_timeline.worked(ROOT)
-        self.assertEqual(list(ways), [row["key"] for row in shown["games"]])
-        # The operator's own words for his three.
-        self.assertEqual((ways["control"], ways["deity_sim"], ways["self_play"]), ("Deity computer control", "Deity self-play", "CIVVIS self-play"))
+        # Every stop with a row of its own, and the every-core stop, which
+        # the charts of each way of playing over time name.
+        self.assertEqual(list(ways), [row["key"] for row in shown["games"]] + ["all_cores"])
+        # The operator's own words for the stops (2026-11-24: "human player
+        # 5 hrs, Firaxis Computer control ..., Firaxis self-play ..., CIVVIS
+        # self-play, "Parallel games, M5 Max, all 18 cores""). The game
+        # against simulated Deity rivals is not one of them and says so.
+        self.assertEqual((ways["hand"], ways["control"], ways["firaxis_self_play"], ways["self_play"], ways["all_cores"]),
+                         ("Human player", "Firaxis computer control", "Firaxis self-play", "CIVVIS self-play", "Parallel games"))
+        self.assertEqual(ways["deity_sim"], "CIVVIS against Deity rivals")
+        self.assertIn('if (row.worked) name.firstChild.after(" ", el("span", "perf-kind is-estimate", "Worked out, not timed"));', PAGE)
         # Every kind of throughput row, and every basis of a theory, is worded.
         self.assertIn('const KINDS = { measured: "Experimental", theory: "Theoretical", goal: "Goal" };', PAGE)
         told = PAGE[PAGE.index("const TOLD = {"):PAGE.index("const through =")]
@@ -310,8 +326,13 @@ class TheSpeedup(unittest.TestCase):
         # remaining amount (note that this is a Fable 5.2 best estimate of
         # the numbers)".
         shown = speedup_timeline.worked(ROOT)
-        self.assertEqual([goal["words"] for goal in shown["goals"]], ["1 million x", "1 billion x"])
-        script = PAGE[PAGE.index("// ---- How many times faster than a game played by hand"):PAGE.index("// ---- The fastest game on video.")]
+        # The billion went on 2026-11-24: "Change the timeline to just scale
+        # to 1,000,000x (drop the 1bX)."
+        self.assertEqual([goal["words"] for goal in shown["goals"]], ["1 million x"])
+        # A rented machine is taken to reach the share of its cores our own
+        # every-core run reached, and the words over the table say so.
+        self.assertIn('(cloud.scaling ? ". A machine is taken to reach " + text(cloud.scaling) + " of its cores times that, the share our own every-core run reached: "', PAGE)
+        script = PAGE[PAGE.index("// ---- How many times faster than a game played by hand"):PAGE.index("// ---- Each way of playing over time")]
         # A tile for every goal, with what renting the rest of the way costs.
         self.assertIn("for (const goal of goals) {", script)
         self.assertIn('tile("Goal", text(goal.words || goal.times), "a game every " + text(goal.time),', script)
@@ -343,10 +364,152 @@ class TheSpeedup(unittest.TestCase):
         # readings do not, and cannot disagree with the home page's line.
         text = html.unescape(re.sub(r"<[^>]+>", " ", re.sub(r"<!--.*?-->", "", self.SECTION, flags=re.S)))
         self.assertIsNone(re.search(r"\d", text), re.findall(r".{0,20}\d.{0,20}", text)[:3])
-        script = PAGE[PAGE.index("// ---- How many times faster than a game played by hand"):PAGE.index("// ---- The fastest game on video.")]
+        script = PAGE[PAGE.index("// ---- How many times faster than a game played by hand"):PAGE.index("// ---- Each way of playing over time")]
         for unsafe in ("innerHTML", "insertAdjacentHTML", "outerHTML"):
             self.assertNotIn(unsafe, script)
         self.assertIsNone(re.search(r"\d[\d,.]*\s*(x|s|min|h)\b", re.sub(r"//.*", "", script)))
+
+
+class EachWayOverTime(unittest.TestCase):
+    """Operator 2026-11-24: "in civvis performance, we should have charts
+    studying the improvements rates of each of these over time"."""
+
+    SECTION = PAGE[PAGE.index('<section class="res-section" id="perf-history"'):PAGE.index('<section class="res-section" id="perf-path"')]
+    SCRIPT = PAGE[PAGE.index("// ---- Each way of playing over time"):PAGE.index("// ---- The path through one game")]
+
+    def test_the_record_carries_every_stop_s_readings_and_pace(self):
+        shown = performance_page.performance(ROOT)
+        self.assertEqual(shown["history"], speedup_timeline.history(ROOT))
+        self.assertEqual([row["key"] for row in shown["history"]["rows"]], ["control", "firaxis_self_play", "self_play", "all_cores"])
+        with tempfile.TemporaryDirectory() as scratch:
+            # A tree with nothing to read has no charts and no page.
+            with contextlib.redirect_stderr(io.StringIO()):
+                self.assertIsNone(performance_page.performance(pathlib.Path(scratch)))
+
+    def test_it_is_a_small_chart_for_each_stop_shown_only_when_filled(self):
+        self.assertIn('<section class="res-section" id="perf-history" aria-labelledby="perf-history-title" hidden>', PAGE)
+        self.assertIn('<div class="perf-trends" id="perf-trends"></div>', self.SECTION)
+        self.assertIn('document.getElementById("perf-history").hidden = false;', self.SCRIPT)
+        # One chart a stop, each over its own run of days and on its own
+        # scale of seconds; never two scales on one chart.
+        self.assertIn("for (const row of trends) {", self.SCRIPT)
+        self.assertIn("const from = earliest - (earliest === latest ? DAY_MS : 0), to = latest + (earliest === latest ? DAY_MS : 0);", self.SCRIPT)
+        self.assertIn("Math.log10(s)", self.SCRIPT)
+        # Two lines on a chart are told apart by a key as well as colour,
+        # and the second colour is the page's own second, not a new one.
+        self.assertIn('const COLOURS = { readings: "var(--series)", days: "var(--series)", tournament: "var(--series-2)", hours: "var(--series-3)", production: "var(--series-3)" };', self.SCRIPT)
+        self.assertIn("if (row.lines.length > 1) {", self.SCRIPT)
+        self.assertIn("--series-2: #d95926;", PAGE)
+        self.assertIn("--series-3: #199e70;", PAGE)
+        # Every kind of line the record can carry has its name.
+        for kind in ("readings", "days", "tournament", "hours", "production"):
+            self.assertRegex(self.SCRIPT, rf'\b{kind}: "[A-Z][^"]+"')
+        # The pace is said in words, the pointer reads any reading out, and
+        # every reading is in a table for whoever cannot use the chart.
+        for words in ('" faster"', '" slower"', '"Steady over "', '"One reading so far."', '", halving every "'):
+            self.assertIn(words, self.SCRIPT)
+        self.assertIn("showTip(event, day(near.taken),", self.SCRIPT)
+        self.assertIn('<table class="rank-table" id="perf-history-table">', self.SECTION)
+        # A reading worked out and not timed is a ring and says so.
+        self.assertIn('if (newest.worked) now.append(el("small", "", "worked out, not timed"));', self.SCRIPT)
+        # The figure over a chart is the stop's own, as the home page has it.
+        self.assertIn("newest = row.now && row.now.time ? row.now : own.points[own.points.length - 1];", self.SCRIPT)
+        self.assertIn('dot.style.fill = point.worked ? "var(--panel-raised)" : colour;', self.SCRIPT)
+
+    def test_no_figure_is_written_into_the_page(self):
+        text = html.unescape(re.sub(r"<[^>]+>", " ", re.sub(r"<!--.*?-->", "", self.SECTION, flags=re.S)))
+        self.assertIsNone(re.search(r"\d", text), re.findall(r".{0,20}\d.{0,20}", text)[:3])
+        for unsafe in ("innerHTML", "insertAdjacentHTML", "outerHTML"):
+            self.assertNotIn(unsafe, self.SCRIPT)
+
+
+class ThePath(unittest.TestCase):
+    """Operator 2026-11-24: "we should try to reduce the path of civvis
+    through civ 6 down to the computatoinal irreducability and should have a
+    chart tracking the size/num of steps"."""
+
+    SECTION = PAGE[PAGE.index('<section class="res-section" id="perf-path"'):PAGE.index('<section class="res-section" id="perf-video"')]
+    SCRIPT = PAGE[PAGE.index("// ---- The path through one game"):PAGE.index("// ---- The fastest game on video.")]
+
+    READING = {"taken": "2026-11-24", "build": "f55bc3543685cfb88b8728435e03957d8f708792", "games": 3, "turns": 250.0, "steps": 1000, "bytes": 40000,
+               "hops": 700, "walks": 400, "merged": 700, "instructions": 2000, "replay_instructions": 500,
+               "kinds": {"move": 700, "end_turn": 100, "fortify": 60, "produce": 50, "ranged": 30, "attack": 20, "research": 15, "civic": 15, "buy": 10}}
+
+    def book(self, scratch: str, *readings: dict) -> pathlib.Path:
+        source = pathlib.Path(scratch)
+        (source / performance_page.PATH).parent.mkdir(parents=True, exist_ok=True)
+        (source / performance_page.PATH).write_text(json.dumps({"readings": list(readings)}), encoding="utf-8")
+        return source
+
+    def test_a_reading_is_its_steps_and_what_a_walk_as_one_step_would_save(self):
+        older = dict(self.READING, taken="2026-11-20", steps=1200, hops=800, walks=500)
+        with tempfile.TemporaryDirectory() as scratch:
+            shown = performance_page.path(self.book(scratch, self.READING, older))
+        # Oldest first, whatever order the ledger has them in.
+        self.assertEqual([row["taken"] for row in shown["readings"]], ["2026-11-20", "2026-11-24"])
+        newest = shown["readings"][-1]
+        self.assertEqual((newest["steps"], newest["kept"], newest["saved"], newest["bytes"], newest["build"]), (1000, 700, 300, 40000, "f55bc35436"))
+        self.assertEqual(newest["kept"] + newest["saved"], newest["steps"])
+        self.assertEqual((newest["instructions"], newest["replay_instructions"], newest["replay_share"]), (2000, 500, 0.25))
+
+    def test_the_newest_reading_s_steps_are_listed_by_kind_and_the_rest_together(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            shown = performance_page.path(self.book(scratch, self.READING))
+        kinds = shown["kinds"]
+        self.assertEqual(len(kinds), performance_page.PATH_KINDS + 1)
+        # The moves' bar is in its two parts: the walks, and the further
+        # hexes of a walk already begun.
+        self.assertEqual(kinds[0], {"kind": "move", "steps": 700, "kept": 400, "saved": 300})
+        self.assertEqual([row["steps"] for row in kinds[:-1]], sorted((row["steps"] for row in kinds[:-1]), reverse=True))
+        self.assertEqual(kinds[-1], {"rest": True, "kinds": 2, "steps": 25})
+        self.assertEqual(sum(row["steps"] for row in kinds), 1000)
+
+    def test_a_ledger_that_cannot_be_read_or_does_not_add_up_shows_nothing(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            self.assertIsNone(performance_page.path(pathlib.Path(scratch)))
+            self.assertIsNone(performance_page.path(self.book(scratch)))
+            self.assertIsNone(performance_page.path(self.book(scratch, dict(self.READING, walks=900))))
+            without = dict(self.READING)
+            del without["instructions"]
+            shown = performance_page.path(self.book(scratch, without))
+            self.assertNotIn("replay_share", shown["readings"][0])
+
+    def test_the_committed_readings_reach_the_page(self):
+        shown = performance_page.performance(ROOT)["path"]
+        book = json.loads((ROOT / performance_page.PATH).read_text(encoding="utf-8"))
+        self.assertEqual(len(shown["readings"]), len(book["readings"]))
+        newest = shown["readings"][-1]
+        self.assertGreater(newest["steps"], newest["kept"])
+        self.assertLess(newest["replay_instructions"], newest["instructions"])
+        self.assertIn("docs/PATH_STEPS.md", book["about"])
+        self.assertTrue((ROOT / "docs/PATH_STEPS.md").is_file())
+        self.assertTrue((ROOT / "tools/path_steps.py").is_file())
+
+    def test_it_is_tiles_a_column_for_every_reading_and_the_steps_by_kind(self):
+        self.assertIn('<section class="res-section" id="perf-path" aria-labelledby="perf-path-title" hidden>', PAGE)
+        order = ['id="perf-path-tiles"', 'id="perf-path-keys"', 'id="perf-path-plot"', 'id="perf-path-steps"', 'id="perf-path-table"', 'id="perf-path-note"']
+        places = [self.SECTION.index(mark) for mark in order]
+        self.assertEqual(places, sorted(places))
+        self.assertIn('document.getElementById("perf-path").hidden = false;', self.SCRIPT)
+        # Blue is the steps that stay and orange the steps a walk as one
+        # step would save, in the columns and in the bars alike.
+        self.assertIn('const KEYS = [["Steps that stay", ""], ["Steps a walk as one step could save", "is-second"]];', self.SCRIPT)
+        # The saving is an upper bound (a walk that doubles back cannot be
+        # one go-to), and the tile says so.
+        self.assertIn('"up to " + part(newest.saved / newest.steps) + " fewer"', self.SCRIPT)
+        self.assertIn('upper.style.fill = "var(--series-2)";', self.SCRIPT)
+        self.assertIn('const parts = k.saved ? [[k.kept, ""], [k.saved, "is-second"]] : [[k.steps, ""]];', self.SCRIPT)
+        # A column stands on nought, and the pointer reads a reading out.
+        self.assertIn("y = (v) => m.t + (1 - v / ceiling) * (height - m.t - m.b);", self.SCRIPT)
+        self.assertIn('showTip(event, day(r.taken) + (r.build ? " · build " + r.build : ""), [', self.SCRIPT)
+        for link in ("data/performance/path_steps.json", "docs/PATH_STEPS.md", "docs/CORE_STATE.md"):
+            self.assertIn(f'href="https://github.com/MartinHalvorson/CIVVIS/blob/main/{link}"', self.SECTION)
+
+    def test_no_figure_is_written_into_the_page(self):
+        text = html.unescape(re.sub(r"<[^>]+>", " ", re.sub(r"<!--.*?-->", "", self.SECTION, flags=re.S)))
+        self.assertIsNone(re.search(r"\d", text), re.findall(r".{0,20}\d.{0,20}", text)[:3])
+        for unsafe in ("innerHTML", "insertAdjacentHTML", "outerHTML"):
+            self.assertNotIn(unsafe, self.SCRIPT)
 
 
 class ThePage(unittest.TestCase):

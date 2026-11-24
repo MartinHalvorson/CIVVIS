@@ -93,13 +93,62 @@ class Ledger(unittest.TestCase):
         # Nothing derived is kept: a multiplier written here would be a copy.
         self.assertNotIn("multiplier", json.dumps(LEDGER["stops"]))
 
-    def test_the_goals_are_the_operator_s_two(self):
+    def test_the_goal_is_the_operator_s_million(self):
         # Operator 2026-11-22: "1,000,000x speed imrpove would be a huge
-        # achievement", and later that day "Addd 1 billion x to the scaling
-        # scale as well."
-        self.assertEqual([(goal["key"], goal["times"]) for goal in LEDGER["goals"]], [("million", 1000000), ("billion", 1000000000)])
+        # achievement". A billion stood beside it from later that day until
+        # 2026-11-24: "Change the timeline to just scale to 1,000,000x (drop
+        # the 1bX)."
+        self.assertEqual([(goal["key"], goal["times"]) for goal in LEDGER["goals"]], [("million", 1000000)])
         self.assertEqual(speedup_timeline.marked(LEDGER), LEDGER["goals"])
         self.assertNotIn("goal", LEDGER)
+        self.assertNotIn("billion", json.dumps(LEDGER["goals"]))
+        self.assertNotIn('data-goal="billion"', LANDING)
+
+    def test_the_line_s_stops_are_the_five_the_operator_named(self):
+        # Operator 2026-11-24: "we should have: human player 5 hrs, Firaxis
+        # Computer control: 10-15mins but we should benchmark this with our
+        # games, Firaxis self-play (test how long this take), CIVVIS
+        # self-play, "Parallel games, M5 Max, all 18 cores"."
+        shown = speedup_timeline.timeline(ROOT)
+        self.assertEqual([stop["key"] for stop in shown["stops"]], ["hand", "control", "firaxis_self_play", "self_play", "all_cores"])
+        names = re.findall(r'<li class="speed-stop" data-stop="\w+">.*?<b class="speed-name">(.*?)</b>', LANDING, re.S)
+        self.assertEqual([re.sub(r"<[^>]+>", "", name) for name in names],
+                         ["Human player", "Firaxis computer control", "Firaxis self-play", "CIVVIS self-play", "Parallel games, M5 Max, all 18 cores"])
+        stops = {stop["key"]: stop for stop in shown["stops"]}
+        self.assertEqual(stops["hand"]["time"], "5 h")
+        # His "10-15mins", benchmarked with our own games: the reading
+        # written down, and over it the computer control benchmark's own
+        # record where this clone holds it.
+        self.assertTrue(600 <= stops["control"]["seconds"] <= 900, stops["control"]["seconds"])
+        written = next(stop for stop in LEDGER["stops"] if stop["key"] == "control")
+        self.assertEqual(written.get("benchmark"), "control")
+        self.assertIn("our own games", written["readings"][-1]["from"])
+        self.assertTrue("our own games" in stops["control"]["from"] or "computer control benchmark" in stops["control"]["from"])
+        # A stop kept off the line stays in the ledger for the tables.
+        off = [stop["key"] for stop in LEDGER["stops"] if stop.get("line") is False]
+        self.assertEqual(off, ["deity_sim"])
+        self.assertNotIn("deity_sim", stops)
+        self.assertIn("deity_sim", [row["key"] for row in speedup_timeline.worked(ROOT)["games"]])
+
+    def test_a_reading_that_was_worked_out_says_so(self):
+        # No game has been timed yet with Firaxis's AI in every seat: the
+        # reading is worked out from our own games, and the pages mark it.
+        stop = next(stop for stop in LEDGER["stops"] if stop["key"] == "firaxis_self_play")
+        newest = stop["readings"][-1]
+        if not newest.get("worked"):
+            self.skipTest("a timed reading has taken the worked-out one's place")
+        self.assertIn("not timed", newest["from"])
+        shown = {row["key"]: row for row in speedup_timeline.timeline(ROOT)["stops"]}
+        self.assertIs(shown["firaxis_self_play"]["worked"], True)
+        self.assertNotIn("worked", shown["control"])
+        tabled = {row["key"]: row for row in speedup_timeline.worked(ROOT)["games"]}
+        self.assertIs(tabled["firaxis_self_play"]["worked"], True)
+        self.assertIn('put(entry, "worked", stop.worked ? "worked out, not yet timed" : "");', LANDING)
+        self.assertIn('entry.classList.toggle("is-worked", !!stop.worked);', LANDING)
+        self.assertIn(".speed-stop.is-worked .speed-dot { background: var(--bg); border: 2px dashed var(--accent);", LANDING)
+        # It stands between computer control and the simulator.
+        self.assertLess(shown["control"]["multiplier"], shown["firaxis_self_play"]["multiplier"])
+        self.assertLess(shown["firaxis_self_play"]["multiplier"], shown["self_play"]["multiplier"])
 
     def test_the_stops_past_what_was_measured_are_the_operator_s_two(self):
         # Operator 2026-11-22: "add to out speedup timeline: 10x theoretical
@@ -125,7 +174,7 @@ class Ledger(unittest.TestCase):
         self.assertNotIn("multiplier", json.dumps(listed))
         self.assertNotIn("seconds", json.dumps(listed))
         # On the line each is that many times the M5 Max's stop, to its left
-        # (a larger `at` is further left), the fleet past the first goal.
+        # (a larger `at` is further left).
         shown = speedup_timeline.timeline(ROOT)
         stops = {stop["key"]: stop for stop in shown["stops"]}
         ahead = {stop["key"]: stop for stop in shown["projected"]}
@@ -137,7 +186,12 @@ class Ledger(unittest.TestCase):
         self.assertTrue(ahead["fleet"]["times"].endswith("x+"))
         self.assertLess(stops["all_cores"]["at"], ahead["scale_up"]["at"])
         self.assertLess(ahead["scale_up"]["at"], ahead["fleet"]["at"])
-        self.assertLess(shown["goals"][0]["at"], ahead["fleet"]["at"])
+        # The line ends at a million, which a thousand M5 Maxes are past: the
+        # fleet stands at the line's end and is marked as running on.
+        self.assertEqual((ahead["fleet"]["at"], ahead["fleet"].get("past")), (1.0, True))
+        self.assertGreater(ahead["fleet"]["multiplier"], LEDGER["goals"][-1]["times"])
+        self.assertNotIn("past", ahead["scale_up"])
+        self.assertIn('entry.classList.toggle("is-past", !!stop.past);', LANDING)
         # And neither is the page's number: that is the fastest measured stop.
         self.assertEqual(shown["fastest"], "all_cores")
         self.assertNotIn(shown["speedup"], [stop["times"] for stop in ahead.values()])
@@ -162,9 +216,9 @@ class Ledger(unittest.TestCase):
         base = shown["stops"][0]["seconds"]
         self.assertEqual([(goal["key"], goal["times"], goal["time"]) for goal in shown["goals"]],
                          [(goal["key"], speedup_timeline.times(goal["times"]), speedup_timeline.clock(base / goal["times"])) for goal in LEDGER["goals"]])
-        self.assertEqual([goal["at"] for goal in shown["goals"]], [0.6667, 1.0])
-        self.assertEqual((shown["goals"][-1]["times"], shown["goals"][-1]["time"]), ("1,000,000,000x", "18 µs"))
-        self.assertEqual(shown["ticks"][-1], {"times": "1 billion x", "at": 1.0})
+        self.assertEqual([goal["at"] for goal in shown["goals"]], [1.0])
+        self.assertEqual((shown["goals"][-1]["times"], shown["goals"][-1]["time"]), ("1,000,000x", "18 ms"))
+        self.assertEqual(shown["ticks"][-1], {"times": "1 million x", "at": 1.0})
         self.assertRegex(shown["speedup"], r"^\d{1,3}(,\d{3})*x$")
 
     def test_every_core_follows_the_games_per_minute_record(self):
@@ -310,7 +364,15 @@ class Following(unittest.TestCase):
         self.assertEqual(speedup_timeline.rows([0.0, 0.28, 0.42], ["below", "above", "below"]), [False, False, False])
         # In whatever order they are listed, and a third goes back to the
         # row next to the line once there is room for it there.
-        self.assertEqual(speedup_timeline.rows([0.36, 0.1, 0.0, 0.2], ["above"] * 4), [False, True, False, False])
+        self.assertEqual(speedup_timeline.rows([0.4, 0.1, 0.0, 0.25], ["above"] * 4), [False, True, False, False])
+        # At an end of the line the words run inward from the point, so
+        # their middle is half their width inside it: a stop at the very end
+        # is nearer its neighbour than its point is.
+        self.assertAlmostEqual(speedup_timeline.middle(0.0), room / 2)
+        self.assertAlmostEqual(speedup_timeline.middle(1.0), 1 - room / 2)
+        self.assertEqual(speedup_timeline.middle(0.5), 0.5)
+        self.assertEqual(speedup_timeline.rows([0.81, 1.0], ["below", "below"]), [False, True])
+        self.assertEqual(speedup_timeline.rows([0.7, 1.0], ["below", "below"]), [False, False])
         self.assertIn("@media (min-width: 1120px) {", LANDING)
         shown = speedup_timeline.timeline(ROOT)
         entries = shown["stops"] + shown["projected"] + shown["goals"]
@@ -318,7 +380,7 @@ class Following(unittest.TestCase):
         self.assertTrue(all(stop["side"] == "below" for stop in shown["projected"]))
         by_row: dict[tuple[str, bool], list[float]] = {}
         for entry in entries:
-            by_row.setdefault((entry["side"], bool(entry.get("far"))), []).append(entry["at"])
+            by_row.setdefault((entry["side"], bool(entry.get("far"))), []).append(speedup_timeline.middle(entry["at"]))
         for (side, far), places in by_row.items():
             places.sort()
             for near, next_one in zip(places, places[1:]):
@@ -478,8 +540,12 @@ class Worked(unittest.TestCase):
     def test_the_two_pages_read_one_ledger_and_agree(self):
         shown, line = speedup_timeline.worked(ROOT), speedup_timeline.timeline(ROOT)
         stops = {stop["key"]: stop for stop in line["stops"]}
-        for row in shown["games"] + [row for row in shown["throughput"] if row["kind"] == "measured"]:
-            self.assertEqual((row["times"], row["time"]), (stops[row["key"]]["times"], stops[row["key"]]["time"]), row["key"])
+        tabled = shown["games"] + [row for row in shown["throughput"] if row["kind"] == "measured"]
+        for row in tabled:
+            # A stop kept off the line is in the tables alone.
+            if row["key"] in stops:
+                self.assertEqual((row["times"], row["time"]), (stops[row["key"]]["times"], stops[row["key"]]["time"]), row["key"])
+        self.assertLessEqual(set(stops), {row["key"] for row in tabled})
         # The home page's number is the run's.
         self.assertEqual(shown["answer"]["all"], line["speedup"])
         self.assertEqual([(goal["key"], goal["times"], goal["time"]) for goal in shown["goals"]],
@@ -487,12 +553,11 @@ class Worked(unittest.TestCase):
         # Every goal of the line is a row of the throughput table, the run
         # held against it.
         whole = [row for row in shown["throughput"] if row.get("whole")]
-        self.assertEqual([(row["key"], row["times"], row["sum"]) for row in whole],
-                         [("million", "1,000,000x", "a game every 18 ms"), ("billion", "1,000,000,000x", "a game every 18 µs")])
-        self.assertEqual([row["reaches"] for row in whole], ["0.5%", "0.0005%"])
-        # The operator's baseline and his three ways of playing, in the
-        # order he listed them, then the theory and the run for self-play.
-        self.assertEqual([row["key"] for row in shown["games"]], ["hand", "control", "deity_sim", "self_play"])
+        self.assertEqual([(row["key"], row["times"], row["sum"]) for row in whole], [("million", "1,000,000x", "a game every 18 ms")])
+        self.assertRegex(whole[0]["reaches"], r"^\d(\.\d)?%$")
+        # The baseline and the ways of playing one game at a time, in the
+        # ledger's order, then the theory and the run for self-play.
+        self.assertEqual([row["key"] for row in shown["games"]], ["hand", "control", "firaxis_self_play", "deity_sim", "self_play"])
         self.assertEqual(shown["base"]["time"], "5 h")
         self.assertEqual(shown["answer"]["stop"], "self_play")
         kinds = [(row["key"], row["kind"]) for row in shown["throughput"]]
@@ -764,6 +829,23 @@ class Rented(unittest.TestCase):
         self.assertEqual([goal["cost"] for goal in line["goals"]], ["about $335 an hour in the cloud", "about $333,000 an hour in the cloud"])
         self.assertEqual(line["cloud"], {"by": "A Model", "machine": "Rented Hundred", "price": "$5.00", "taken": "11-23"})
 
+    def test_measured_scaling_takes_the_share_of_its_cores_our_own_run_reached(self):
+        # The every-core run: 8 games a minute on 10 cores, whose one core
+        # plays a game in 60 s, so ten would play 10 a minute: it reached
+        # eight tenths. A rented machine is taken to reach the same share.
+        cloud = json.loads(json.dumps(self.CLOUD))
+        cloud[0]["scaling"] = "measured"
+        scaled = self.both(self.ledger(cloud=cloud))[0]["cloud"]
+        whole = self.both(self.ledger())[0]["cloud"]
+        self.assertEqual((scaled["scaling"], scaled["scaling_sum"]), ("80%", "8 games a minute ÷ (10 cores × 60 s ÷ 60 s)"))
+        self.assertAlmostEqual(done_again(scaled["scaling_sum"]), 0.8)
+        self.assertEqual((scaled["times"], scaled["times_sum"]), ("12,000x", "100 cores × 18,000 s ÷ 120 s × 0.8"))
+        self.assertEqual((scaled["a_minute"], scaled["an_hour"], scaled["a_million"]), ("40", "2,400", "$2,080"))
+        self.assertNotIn("scaling", whole)
+        # Fewer games from a machine is more machines for the same goal.
+        self.assertEqual((whole["rows"][0]["machines"], scaled["rows"][0]["machines"]), ("67", "84"))
+        self.assertEqual(scaled["rows"][0]["machines_sum"], "997,600 ÷ 12,000 = 83.1, in whole machines")
+
     def test_a_goal_already_reached_rents_nothing_and_an_estimate_may_have_no_spot_price(self):
         ledger = self.ledger(goals=[{"key": "near", "times": 2000}], cloud=[self.CLOUD[1]])
         cloud = self.both(ledger)[0]["cloud"]
@@ -823,11 +905,21 @@ class Rented(unittest.TestCase):
         # Nothing derived is kept: an entry is the machine, its score and
         # its prices, and no cost is written in the ledger.
         for entry in LEDGER["cloud"]:
-            self.assertLessEqual(set(entry), {"taken", "by", "machine", "cores", "of", "single_thread", "dollars_an_hour", "spot_dollars_an_hour", "from"})
+            self.assertLessEqual(set(entry), {"taken", "by", "machine", "cores", "of", "single_thread", "dollars_an_hour", "spot_dollars_an_hour", "scaling", "from"})
+            self.assertIn(entry.get("scaling", "measured"), ("measured",))
         shown, line = speedup_timeline.worked(ROOT), speedup_timeline.timeline(ROOT)
         self.assertEqual(shown["cloud"]["by"], "Claude Fable 5.2")
         self.assertEqual(line["cloud"]["by"], "Claude Fable 5.2")
-        self.assertEqual([row["key"] for row in shown["cloud"]["rows"]], ["million", "billion"])
+        self.assertEqual([row["key"] for row in shown["cloud"]["rows"]], ["million"])
+        # The estimate worked out again on 2026-11-24 (operator: "reclauclate
+        # the cloud costs to make sure they are accurate") takes a rented
+        # machine to reach the share of its cores that our own every-core
+        # run reached, and shows the sum for that share.
+        self.assertEqual((LEDGER["cloud"][-1]["taken"], LEDGER["cloud"][-1].get("scaling")), ("2026-11-24", "measured"))
+        self.assertRegex(shown["cloud"]["scaling"], r"^\d{2}%$")
+        part = done_again(shown["cloud"]["scaling_sum"])
+        self.assertTrue(0.3 < part <= 1.0, part)
+        self.assertAlmostEqual(part, int(shown["cloud"]["scaling"].rstrip("%")) / 100, delta=0.006)
         # It is the run that is short of the goals, and a larger goal costs more.
         self.assertEqual(shown["cloud"]["have"], shown["answer"]["all"])
         machines = [int(row["machines"].replace(",", "")) for row in shown["cloud"]["rows"]]
@@ -837,10 +929,201 @@ class Rented(unittest.TestCase):
             self.assertRegex(goal["cost"], r"^about \$[\d,.]+( million| billion)? an hour in the cloud$")
 
 
+class History(unittest.TestCase):
+    """Each way of playing over time, for the Performance page's charts
+    (operator 2026-11-24: "in civvis performance, we should have charts
+    studying the improvements rates of each of these over time")."""
+
+    def test_a_pace_is_how_many_times_faster_over_how_long(self):
+        pace = speedup_timeline.pace([{"taken": "2026-10-01", "seconds": 400}, {"taken": "2026-10-15", "seconds": 300}, {"taken": "2026-10-29", "seconds": 100}])
+        self.assertEqual((pace["readings"], pace["days"], pace["over"], pace["times"], pace["factor"]), (3, 28, "4 weeks", "4x", 4.0))
+        # Four times faster in 28 days is a halving every 14.
+        self.assertEqual((pace["halves"], pace["first"], pace["last"]), ("2 weeks", "6.7 min", "1.7 min"))
+        self.assertNotIn("steady", pace)
+        self.assertNotIn("slower", pace)
+
+    def test_a_short_span_has_no_halving_time_and_one_reading_no_pace(self):
+        pace = speedup_timeline.pace([{"taken": "2026-11-22", "seconds": 57.1}, {"taken": "2026-11-24", "seconds": 34.5}])
+        self.assertEqual((pace["days"], pace["over"], pace["times"]), (2, "2 days", "1.66x"))
+        self.assertNotIn("halves", pace)
+        self.assertEqual(speedup_timeline.pace([{"taken": "2026-11-22", "seconds": 57.1}]), {"readings": 1})
+        self.assertEqual(speedup_timeline.pace([]), {"readings": 0})
+        # Two readings on one day are no span of time.
+        self.assertEqual(speedup_timeline.pace([{"taken": "2026-11-22", "seconds": 9}, {"taken": "2026-11-22", "seconds": 8}]), {"readings": 2})
+
+    def test_a_pace_that_has_not_moved_is_steady_and_one_that_slowed_says_so(self):
+        steady = speedup_timeline.pace([{"taken": "2026-11-01", "seconds": 757}, {"taken": "2026-11-15", "seconds": 753}])
+        self.assertIs(steady["steady"], True)
+        slowed = speedup_timeline.pace([{"taken": "2026-11-01", "seconds": 100}, {"taken": "2026-11-15", "seconds": 200}])
+        self.assertEqual((slowed["slower"], slowed["doubles"], slowed["times"]), ("2x", "2 weeks", "0.5x"))
+        self.assertNotIn("halves", slowed)
+        self.assertNotIn("steady", slowed)
+
+    def test_a_stop_s_line_is_every_reading_and_a_follower_s_pace_is_over_its_records(self):
+        ledger = json.loads(json.dumps(Following.LEDGER))
+        ledger["stops"].insert(2, {"key": "aside", "line": False, "readings": [{"taken": "2026-11-22", "seconds": 5, "from": "kept for the tables alone"}]})
+        with tempfile.TemporaryDirectory() as scratch:
+            shown = speedup_timeline.history(tree(scratch, ledger, Following.RUNS))
+        # The baseline and a stop kept off the line have no chart.
+        self.assertEqual([row["key"] for row in shown["rows"]], ["self_play", "all_cores"])
+        self.assertEqual((shown["base"], shown["base_time"], shown["from"], shown["to"]), (18000, "5 h", "2026-11-22", "2026-12-01"))
+        own, run = shown["rows"]
+        self.assertEqual([line["kind"] for line in own["lines"]], ["readings"])
+        self.assertEqual([(point["taken"], point["seconds"], point["time"]) for point in own["lines"][0]["points"]],
+                         [("2026-11-22", 40, "40 s"), ("2026-12-01", 20, "20 s")])
+        self.assertEqual((own["lines"][0]["pace"]["times"], own["lines"][0]["pace"]["days"], own["goal"], own["goal_seconds"]), ("2x", 9, "10 s", 10))
+        # Every run is drawn, the slower ones too, and the pace is from the
+        # first record to the one that stands: 18 a minute to 30.
+        self.assertEqual([point["seconds"] for point in run["lines"][0]["points"]], [round(60 / n, 3) for n in (18.0, 17.0, 30.0, 24.0)])
+        self.assertEqual((run["lines"][0]["pace"]["readings"], run["lines"][0]["pace"]["days"], run["lines"][0]["pace"]["times"]), (2, 3, "1.67x"))
+
+    def test_the_tournament_s_batches_stand_beside_the_stop_whose_game_they_play(self):
+        ledger = json.loads(json.dumps(Following.LEDGER))
+        ledger["stops"][1]["tournament"] = True
+        batches = [
+            {"batch": "20261101T000000Z-aaaa", "began": "2026-10-20", "ended": "2026-11-01", "games": 900, "p": [50, 80, 300.0, 600, 900]},
+            {"batch": "20261122T000000Z-bbbb", "began": "2026-11-21", "ended": "2026-11-22", "games": 1000, "p": [20, 40, 75.0, 150, 300]},
+        ]
+        with tempfile.TemporaryDirectory() as scratch:
+            source = tree(scratch, ledger, Following.RUNS)
+            without = speedup_timeline.history(source)
+            (source / speedup_timeline.SELF_PLAY).write_text(json.dumps({"batches": batches}), encoding="utf-8")
+            shown = speedup_timeline.history(source)
+        # A tree with no snapshot of the batches draws the readings alone.
+        self.assertEqual([line["kind"] for line in without["rows"][0]["lines"]], ["readings"])
+        lines = shown["rows"][0]["lines"]
+        self.assertEqual([line["kind"] for line in lines], ["readings", "tournament"])
+        # The middle game of each batch, on the day the batch ended.
+        self.assertEqual([(point["taken"], point["seconds"], point["games"]) for point in lines[1]["points"]],
+                         [("2026-11-01", 300.0, 900), ("2026-11-22", 75.0, 1000)])
+        self.assertEqual((lines[1]["pace"]["times"], lines[1]["pace"]["over"]), ("4x", "3 weeks"))
+        self.assertEqual(shown["from"], "2026-11-01")
+        # The other stop has no such line.
+        self.assertEqual([line["kind"] for line in shown["rows"][1]["lines"]], ["readings"])
+
+    RECORD = {
+        "days": [
+            {"day": "2026-08-01", "games": 5, "p": [1500, 2000, 2600]},
+            {"day": "2026-08-02", "games": 8, "p": [1400, 1800, 2500]},
+            {"day": "2026-12-05", "games": 60, "p": [400, 480, 700]},
+        ],
+        "first": {"from": "2026-08-01", "to": "2026-08-07", "games": 40, "p": [1450, 2000, 2550]},
+        "week": {"from": "2026-11-29", "to": "2026-12-05", "games": 400, "p": [420, 500, 690]},
+    }
+
+    def patched(self, record, ledger):
+        """What the module works out with the benchmark's record as given."""
+        real = speedup_timeline.control_times.control
+        try:
+            speedup_timeline.control_times.control = lambda source: record
+            with tempfile.TemporaryDirectory() as scratch:
+                source = tree(scratch, ledger, Worked.RUNS)
+                return speedup_timeline.timeline(source), speedup_timeline.worked(source), speedup_timeline.history(source)
+        finally:
+            speedup_timeline.control_times.control = real
+
+    def test_a_stop_that_reads_a_benchmark_shows_its_record_and_falls_back_to_its_readings(self):
+        # Operator 2026-11-24: "we should be benchmarking our civvis computer
+        # cnotrol games time end to end and that number show flow through".
+        ledger = json.loads(json.dumps(Worked.LEDGER))
+        ledger["stops"][1]["benchmark"] = "control"
+        line, tables, charts = self.patched(self.RECORD, ledger)
+        stop = next(stop for stop in line["stops"] if stop["key"] == "control")
+        # The middle game of the record's last seven days is the stop.
+        self.assertEqual((stop["seconds"], stop["time"], stop["times"], stop["taken"]), (500, "8.3 min", "36x", "12-05"))
+        self.assertIn("400 games", stop["from"])
+        self.assertIn("A tenth took under 7 min and a tenth over 11.5 min", stop["from"])
+        # It moved from the reading written down, and both pages say so.
+        self.assertEqual(stop["was"], "24x on 11-22")
+        self.assertEqual(next(row for row in tables["games"] if row["key"] == "control")["times"], "36x")
+        # Its chart is the record's days, and its pace is first week to last.
+        row = next(row for row in charts["rows"] if row["key"] == "control")
+        self.assertEqual([one["kind"] for one in row["lines"]], ["days"])
+        self.assertEqual([(point["taken"], point["seconds"], point["games"]) for point in row["lines"][0]["points"]],
+                         [("2026-08-01", 2000, 5), ("2026-08-02", 1800, 8), ("2026-12-05", 480, 60)])
+        pace = row["lines"][0]["pace"]
+        self.assertEqual((pace["times"], pace["days"], pace["readings"]), ("4x", 120, 3))
+        self.assertEqual(row["now"], {"time": "8.3 min"})
+        # A clone without the record shows the reading written down.
+        for record in (None, {}, {"week": {"to": "2026-12-05", "games": 0, "p": [0, 0, 0]}}):
+            line, _, charts = self.patched(record, ledger)
+            stop = next(stop for stop in line["stops"] if stop["key"] == "control")
+            self.assertEqual((stop["seconds"], stop["taken"]), (750, "11-22"))
+            row = next(row for row in charts["rows"] if row["key"] == "control")
+            self.assertEqual([one["kind"] for one in row["lines"]], ["readings"])
+        # And a record older than the newest reading written down does not
+        # take its place.
+        stale = json.loads(json.dumps(self.RECORD))
+        stale["week"]["to"] = "2026-11-01"
+        line, _, _ = self.patched(stale, ledger)
+        self.assertEqual(next(stop for stop in line["stops"] if stop["key"] == "control")["seconds"], 750)
+        # A stop that names no benchmark never reads one.
+        line, _, _ = self.patched(self.RECORD, Worked.LEDGER)
+        self.assertEqual(next(stop for stop in line["stops"] if stop["key"] == "control")["seconds"], 750)
+
+    def test_the_benchmark_hours_are_a_line_on_self_play_and_on_every_core(self):
+        # The hours are on the `ledger` branch, read by `self_play_hours`;
+        # here they are handed over as that reader gives them.
+        ledger = json.loads(json.dumps(Worked.LEDGER))
+        ledger["stops"][3]["tournament"] = True
+        hours = [
+            {"taken": "2026-11-24T18:00:00Z", "games": 90, "games_an_hour": 90.0, "cpu_a_game": 50.0},
+            {"taken": "2026-11-25T00:00:00Z", "games": 120, "games_an_hour": 120.0, "cpu_a_game": 40.0},
+            {"taken": "2026-11-25T06:00:00Z", "games": 0, "games_an_hour": 0, "cpu_a_game": None},
+        ]
+        real = speedup_timeline.self_play_hours.self_play
+        try:
+            speedup_timeline.self_play_hours.self_play = lambda source: {"hours": hours}
+            with tempfile.TemporaryDirectory() as scratch:
+                shown = speedup_timeline.history(tree(scratch, ledger, Worked.RUNS))
+            speedup_timeline.self_play_hours.self_play = lambda source: None
+            with tempfile.TemporaryDirectory() as scratch:
+                without = speedup_timeline.history(tree(scratch, ledger, Worked.RUNS))
+        finally:
+            speedup_timeline.self_play_hours.self_play = real
+        rows = {row["key"]: row for row in shown["rows"]}
+        # On self-play: the processor seconds one game took, each hour at
+        # its own moment. An hour that finished no game is no point.
+        own = {line["kind"]: line for line in rows["self_play"]["lines"]}
+        self.assertEqual([(point["taken"], point["at"], point["seconds"], point["games"]) for point in own["hours"]["points"]],
+                         [("2026-11-24", "2026-11-24T18:00:00Z", 50.0, 90), ("2026-11-25", "2026-11-25T00:00:00Z", 40.0, 120)])
+        self.assertEqual(own["hours"]["pace"]["times"], "1.25x")
+        # On every core: the time from one finished game to the next.
+        run = {line["kind"]: line for line in rows["all_cores"]["lines"]}
+        self.assertEqual([(point["seconds"], point["time"]) for point in run["production"]["points"]], [(40.0, "40 s"), (30.0, "30 s")])
+        # The other stops have neither line, and nor has a clone without the hours.
+        for key in ("control", "deity_sim"):
+            self.assertEqual([line["kind"] for line in rows[key]["lines"]], ["readings"])
+        for row in without["rows"]:
+            self.assertEqual([line["kind"] for line in row["lines"]], ["readings"])
+
+    def test_the_committed_ledger_has_a_chart_for_every_stop_after_the_baseline(self):
+        shown, line = speedup_timeline.history(ROOT), speedup_timeline.timeline(ROOT)
+        self.assertEqual([row["key"] for row in shown["rows"]], [stop["key"] for stop in line["stops"][1:]])
+        for row, stop in zip(shown["rows"], line["stops"][1:]):
+            own = row["lines"][0]
+            # Its readings, or its benchmark's days where the clone holds
+            # that record.
+            self.assertIn(own["kind"], ("readings", "days"))
+            self.assertEqual(own["kind"] == "days", speedup_timeline.benchmark(ROOT, next(s for s in LEDGER["stops"] if s["key"] == row["key"])) is not None)
+            days = [point["taken"] for point in own["points"]]
+            self.assertEqual(days, sorted(days))
+            # The figure over the chart is the stop's on the line.
+            self.assertEqual(row["now"]["time"], stop["time"])
+            self.assertEqual(bool(row["now"].get("worked")), bool(stop.get("worked")))
+            if own["kind"] == "readings":
+                self.assertLessEqual(stop["seconds"], min(point["seconds"] for point in own["points"]) + 1e-9)
+            self.assertEqual(own["pace"]["readings"] >= 1, True)
+        tournament = [row["key"] for row in shown["rows"] if any(line["kind"] == "tournament" for line in row["lines"])]
+        self.assertEqual(tournament, ["self_play"])
+        with tempfile.TemporaryDirectory() as scratch:
+            self.assertIsNone(speedup_timeline.history(pathlib.Path(scratch)))
+
+
 class Page(unittest.TestCase):
     def test_the_page_has_an_entry_for_every_stop_and_no_figure_of_its_own(self):
         entries = re.findall(r'<li class="speed-stop" data-stop="(\w+)">', LANDING)
-        self.assertEqual(entries, [stop["key"] for stop in LEDGER["stops"]])
+        self.assertEqual(entries, [stop["key"] for stop in LEDGER["stops"] if stop.get("line") is not False])
         self.assertEqual(LANDING.count('<script type="application/json" id="home-speedup">null</script>'), 1)
         # The timeline is over the videos, and hidden until it is filled.
         section = LANDING[LANDING.index('<section class="speed"') : LANDING.index('<section class="watch"')]
