@@ -1206,6 +1206,9 @@ def invasion_reading(events) -> dict | None:
         return None
     invaders = sorted((turn, player) for player, turn in first.items() if player in majors)
     turn, player = invaders[0] if invaders else (None, None)
+    if turn is not None:
+        # A log that ends in the middle of a turn has no board for it.
+        through = max(through, turn)
     return {
         "turn": turn,
         "by": majors.get(player) if player is not None else None,
