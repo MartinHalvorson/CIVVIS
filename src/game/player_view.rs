@@ -197,7 +197,7 @@ impl Game {
         for cid in foreign {
             view.restore_other_defending_districts(cid);
         }
-        view.unseen_city_owners.extend(
+        Arc::make_mut(&mut view.host).unseen_city_owners.extend(
             self.cities
                 .values()
                 .filter(|city| {
@@ -226,10 +226,14 @@ impl Game {
                 tile.owner_city = None;
                 if let Some(owner) = owner.filter(|owner| *owner != pid) {
                     if !self.players[owner].is_minor && !self.players[owner].is_barbarian {
-                        view.unseen_major_borders.insert(tile.pos);
+                        Arc::make_mut(&mut view.host)
+                            .unseen_major_borders
+                            .insert(tile.pos);
                     }
                     if !self.is_at_war(pid, owner) && !self.has_open_borders(pid, owner) {
-                        view.closed_borders.insert(tile.pos);
+                        Arc::make_mut(&mut view.host)
+                            .closed_borders
+                            .insert(tile.pos);
                     }
                 }
             }

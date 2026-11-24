@@ -13,7 +13,8 @@ fn host_envoy_fixture(allowed: bool, war: bool) -> (Game, usize) {
     if war {
         game.at_war.insert((0, minor));
     }
-    Arc::make_mut(&mut game.host_envoy_permissions).insert((0, minor), (game.turn, allowed));
+    Arc::make_mut(&mut Arc::make_mut(&mut game.host).host_envoy_permissions)
+        .insert((0, minor), (game.turn, allowed));
     (game, minor)
 }
 

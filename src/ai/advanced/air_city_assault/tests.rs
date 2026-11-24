@@ -49,9 +49,11 @@ fn cavalry_reveals_a_city_before_the_bombers_and_keeps_an_exit() {
     let city = g.cities.get_mut(&plan.target_city.unwrap()).unwrap();
     city.wall_hp = 400;
     city.hp = 200;
-    std::sync::Arc::make_mut(&mut g.observed_city_max_wall_hp).insert(city.id, 400);
+    std::sync::Arc::make_mut(&mut std::sync::Arc::make_mut(&mut g.host).observed_city_max_wall_hp)
+        .insert(city.id, 400);
     // Give the city enough observed strength that two sorties cannot capture it.
-    std::sync::Arc::make_mut(&mut g.observed_city_strength).insert(city.id, 100.0);
+    std::sync::Arc::make_mut(&mut std::sync::Arc::make_mut(&mut g.host).observed_city_strength)
+        .insert(city.id, 100.0);
     let before = g.log.len();
     let reserved = ai.plan_air_city_assault(&mut g, 0, &plan);
     assert!(reserved.contains(&cavalry));
@@ -193,8 +195,10 @@ fn an_observed_failed_breach_makes_the_cavalry_withdraw() {
     g.relocate(cavalry, (18, 10));
     let cid = plan.target_city.unwrap();
     g.cities.get_mut(&cid).unwrap().wall_hp = 400;
-    std::sync::Arc::make_mut(&mut g.observed_city_max_wall_hp).insert(cid, 400);
-    std::sync::Arc::make_mut(&mut g.observed_city_strength).insert(cid, 100.0);
+    std::sync::Arc::make_mut(&mut std::sync::Arc::make_mut(&mut g.host).observed_city_max_wall_hp)
+        .insert(cid, 400);
+    std::sync::Arc::make_mut(&mut std::sync::Arc::make_mut(&mut g.host).observed_city_strength)
+        .insert(cid, 100.0);
     std::sync::Arc::make_mut(&mut g.observed_city_ranged_strength).insert(cid, 100.0);
     for uid in bombers {
         g.units.get_mut(&uid).unwrap().moves_left = 0.0;
@@ -214,8 +218,10 @@ fn refused_sorties_do_not_prevent_the_observed_cavalry_retreat() {
     g.relocate(cavalry, (18, 10));
     let cid = plan.target_city.unwrap();
     g.cities.get_mut(&cid).unwrap().wall_hp = 400;
-    std::sync::Arc::make_mut(&mut g.observed_city_max_wall_hp).insert(cid, 400);
-    std::sync::Arc::make_mut(&mut g.observed_city_strength).insert(cid, 100.0);
+    std::sync::Arc::make_mut(&mut std::sync::Arc::make_mut(&mut g.host).observed_city_max_wall_hp)
+        .insert(cid, 400);
+    std::sync::Arc::make_mut(&mut std::sync::Arc::make_mut(&mut g.host).observed_city_strength)
+        .insert(cid, 100.0);
     std::sync::Arc::make_mut(&mut g.observed_city_ranged_strength).insert(cid, 100.0);
     for uid in bombers {
         std::sync::Arc::make_mut(&mut g.blocked_strikes).insert((uid, (20, 10)));
@@ -234,8 +240,10 @@ fn the_ordinary_unit_loop_does_not_spend_the_reserved_spotter_again() {
     let (mut g, mut ai, plan, cavalry, _) = fixture();
     let cid = plan.target_city.unwrap();
     g.cities.get_mut(&cid).unwrap().wall_hp = 400;
-    std::sync::Arc::make_mut(&mut g.observed_city_max_wall_hp).insert(cid, 400);
-    std::sync::Arc::make_mut(&mut g.observed_city_strength).insert(cid, 100.0);
+    std::sync::Arc::make_mut(&mut std::sync::Arc::make_mut(&mut g.host).observed_city_max_wall_hp)
+        .insert(cid, 400);
+    std::sync::Arc::make_mut(&mut std::sync::Arc::make_mut(&mut g.host).observed_city_strength)
+        .insert(cid, 100.0);
     ai.advanced_units(&mut g, 0, &plan);
     assert!(ai.planned_air_city_assault().is_some());
     assert_eq!(g.units[&cavalry].pos, (16, 10));
@@ -280,7 +288,8 @@ fn the_strongest_body_in_reach_finishes_the_breach() {
         city.hp = 1;
         city.wall_hp = 0;
     }
-    std::sync::Arc::make_mut(&mut g.observed_city_strength).insert(breached, 90.0);
+    std::sync::Arc::make_mut(&mut std::sync::Arc::make_mut(&mut g.host).observed_city_strength)
+        .insert(breached, 90.0);
     let weak = g.spawn_test_unit("horseman", 0, (25, 10));
     g.units.get_mut(&weak).unwrap().hp = 35;
     let tank = g.spawn_test_unit("tank", 0, (23, 10));
@@ -336,7 +345,8 @@ fn the_wing_bombs_a_visible_city_with_no_cavalry_in_reach() {
     ai.enable_air_surge_2();
     let cid = plan.target_city.unwrap();
     g.cities.get_mut(&cid).unwrap().wall_hp = 400;
-    std::sync::Arc::make_mut(&mut g.observed_city_max_wall_hp).insert(cid, 400);
+    std::sync::Arc::make_mut(&mut std::sync::Arc::make_mut(&mut g.host).observed_city_max_wall_hp)
+        .insert(cid, 400);
     ai.observe_air_assault_frame(BTreeSet::from([(20, 10)]), 2);
     let reserved = ai.plan_air_city_assault(&mut g, 0, &plan);
     for uid in &bombers {
@@ -388,7 +398,8 @@ fn the_wing_holds_its_volley_when_nobody_can_walk_in() {
     ai.enable_air_surge_2();
     let cid = plan.target_city.unwrap();
     g.cities.get_mut(&cid).unwrap().wall_hp = 400;
-    std::sync::Arc::make_mut(&mut g.observed_city_max_wall_hp).insert(cid, 400);
+    std::sync::Arc::make_mut(&mut std::sync::Arc::make_mut(&mut g.host).observed_city_max_wall_hp)
+        .insert(cid, 400);
     // A melee body far from the city: it cannot follow the breach in.
     let far = g.spawn_test_unit("infantry", 0, (6, 10));
     assert!(g.wdist(g.units[&far].pos, (20, 10)) > AIR_ASSAULT_FOLLOWUP_REACH);
@@ -548,7 +559,10 @@ fn a_breached_city_waits_for_a_body_with_a_road_in() {
         let cid = plan.target_city.unwrap();
         let walls = if walled { 400 } else { 0 };
         g.cities.get_mut(&cid).unwrap().wall_hp = walls;
-        std::sync::Arc::make_mut(&mut g.observed_city_max_wall_hp).insert(cid, 400);
+        std::sync::Arc::make_mut(
+            &mut std::sync::Arc::make_mut(&mut g.host).observed_city_max_wall_hp,
+        )
+        .insert(cid, 400);
         let body = g.spawn_test_unit("infantry", 0, (16, 10));
         assert!(g.wdist(g.units[&body].pos, (20, 10)) <= AIR_ASSAULT_FOLLOWUP_REACH);
         // An archer gives the host's sight of the city and is no melee body.
