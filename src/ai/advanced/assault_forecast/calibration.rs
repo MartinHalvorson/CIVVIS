@@ -665,7 +665,7 @@ fn play_world(w: &World, mut ours: AdvancedAi, turns: u32, trace: bool, solvent:
     let mut before: Option<Before> = None;
     // Read before our end of turn, which may hand the moves back.
     let mut fired_now = 0;
-    let mut events_seen = g.events.len();
+    let mut events_seen = g.chronicle.events.len();
     let mut gold_now = (0.0, 0.0);
     let mut struck_now = 0;
     let mut striking_dead = 0;
@@ -874,13 +874,14 @@ fn play_world(w: &World, mut ours: AdvancedAi, turns: u32, trace: bool, solvent:
                     }
                 }
                 round.events.extend(
-                    g.events
+                    g.chronicle
+                        .events
                         .iter()
                         .skip(events_seen)
                         .filter(|event| event.player == 0)
                         .map(|event| event.text.clone()),
                 );
-                events_seen = g.events.len();
+                events_seen = g.chronicle.events.len();
                 let ledger = g.combat_ledger(0).units_lost as usize;
                 round.combat_deaths = ledger.saturating_sub(combat_seen);
                 combat_seen = ledger;

@@ -5025,10 +5025,10 @@ fn a_city_state_dragged_in_by_its_suzerain_fights_its_suzerains_war() {
     // relation. This used to add a fresh diplomacy event every AI turn
     // while leaving the city-state at war.
     game.turn = 25;
-    let notes_before = game.events.len();
+    let notes_before = game.chronicle.events.len();
     assert!(game.do_make_peace(city_state, 0).is_err());
     assert!(game.is_at_war(city_state, 0));
-    assert_eq!(game.events.len(), notes_before);
+    assert_eq!(game.chronicle.events.len(), notes_before);
 
     let war = &game.wars[&pair(0, 1)];
     let client = war

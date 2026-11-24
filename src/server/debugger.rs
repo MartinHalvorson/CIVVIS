@@ -1406,10 +1406,10 @@ impl Session {
             }
             let game = &mark.game;
             let fresh = fresh_events(
-                before.events.len(),
-                before.events.last(),
+                before.chronicle.events.len(),
+                before.chronicle.events.last(),
                 before.turn,
-                &game.events,
+                &game.chronicle.events,
             );
             stopped = if game.is_finished() || !game.players[0].alive {
                 Some(json!({"kind": "end", "turn": game.turn}))
@@ -1532,8 +1532,8 @@ impl Session {
     /// in the timeline for the state document to carry.
     pub fn debug_step(&mut self) -> bool {
         let turn = self.game.turn;
-        let before_len = self.game.events.len();
-        let before_last = self.game.events.last().cloned();
+        let before_len = self.game.chronicle.events.len();
+        let before_last = self.game.chronicle.events.last().cloned();
         let read_before = self
             .debugger
             .read
@@ -1550,7 +1550,12 @@ impl Session {
         } else {
             self.autoplay(1)
         };
-        let fresh = fresh_events(before_len, before_last.as_ref(), turn, &self.game.events);
+        let fresh = fresh_events(
+            before_len,
+            before_last.as_ref(),
+            turn,
+            &self.game.chronicle.events,
+        );
         let over = played == 0 || self.game.is_finished() || !self.game.players[0].alive;
         self.debugger.stopped = if over {
             Some(json!({"kind": "end", "turn": self.game.turn}))

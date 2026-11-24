@@ -1305,13 +1305,13 @@ fn soak_command(args: Vec<String>) {
                 flags.push_str(&format!(
                     " SIEGE blows={} damage={} walls_breached={} cities_reduced={} \
                      left_depleted={} taker_ready={} melee_was_there={}",
-                    g.siege.blows,
-                    g.siege.damage,
-                    g.siege.walls_breached,
-                    g.siege.cities_reduced,
-                    g.siege.left_depleted,
-                    g.siege.depleted_with_a_taker_ready,
-                    g.siege.reduced_with_melee_adjacent,
+                    g.chronicle.siege.blows,
+                    g.chronicle.siege.damage,
+                    g.chronicle.siege.walls_breached,
+                    g.chronicle.siege.cities_reduced,
+                    g.chronicle.siege.left_depleted,
+                    g.chronicle.siege.depleted_with_a_taker_ready,
+                    g.chronicle.siege.reduced_with_melee_adjacent,
                 ));
                 // ⚠ The diplomatic lane is the one that steals most
                 // live games and the one a native game has never been
