@@ -9,6 +9,7 @@ import io
 import json
 import pathlib
 import re
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -1012,6 +1013,45 @@ class Page(unittest.TestCase):
         self.assertEqual(PAGE.count('id="res-bench-par"'), 1)
         self.assertIn(".res-bench-par b { color: var(--gold); font-size: 26px; font-weight: 800;", PAGE)
 
+    def test_a_benchmark_cell_is_shaded_by_its_rate_against_the_par(self):
+        # Operator 2026-11-24: "we should highlight the winr ate by level.
+        # white for 16.7% - dark green for 100% win rare. white to red for
+        # 16.7 -> 0. bxakground of the cells please. 16.7 is 1/6 expected
+        # win rate." Every cell with games in it takes the shade of its
+        # exact rate as its background, and the text that reads on it; a
+        # cell with no game keeps the page's dark and its dash.
+        self.assertIn("const PAR = 1 / 6, PAR_WHITE = [255, 255, 255], PAR_GREEN = [22, 101, 52], PAR_RED = [220, 38, 38];", PAGE)
+        self.assertIn(
+            '            if (games) {\n'
+            '              td.append(" ", el("small", "", "(" + fmt(games) + ")"));\n'
+            "              Object.assign(td.style, shade(wins / games));\n"
+            "            }\n",
+            PAGE,
+        )
+        # Tiles stand apart, the games in brackets take the tile's text
+        # colour, and the rules stay the benchmark's own.
+        self.assertIn(".res-rates { border-collapse: separate; border-spacing: 3px; }", PAGE)
+        self.assertIn(".res-rates td.is-rate small { color: inherit; opacity: 0.75; }", PAGE)
+        self.assertIn("Its shade is read against the 1/6 par: white at 16.7%, deepening to dark green at 100% and to red at 0%.", PAGE)
+
+    @unittest.skipUnless(shutil.which("node"), "needs node to run the page's shade")
+    def test_the_shade_is_white_at_the_par_dark_green_at_100_and_red_at_0(self):
+        start = PAGE.index("    const PAR = 1 / 6,")
+        script = PAGE[start : PAGE.index("    const BENCH", start)]
+        rates = [0, 0.05, 1 / 6, 0.4, 1]
+        out = subprocess.run(
+            ["node", "-e", script + f"console.log(JSON.stringify({rates}.map(shade)));"],
+            check=True, capture_output=True, text=True,
+        ).stdout
+        red, pink, par, green, deep = json.loads(out)
+        self.assertEqual(red, {"background": "rgb(220, 38, 38)", "color": "#fff"})
+        self.assertEqual(par, {"background": "rgb(255, 255, 255)", "color": "#101820"})
+        self.assertEqual(deep, {"background": "rgb(22, 101, 52)", "color": "#fff"})
+        # Between, the mix is straight: 5% is 70% of the way to red, 40%
+        # 28% of the way to dark green, and both still read in dark text.
+        self.assertEqual(pink, {"background": "rgb(231, 103, 103)", "color": "#101820"})
+        self.assertEqual(green, {"background": "rgb(190, 212, 198)", "color": "#101820"})
+
     def test_the_self_play_count_is_highlighted(self):
         # Operator 2026-11-24: "hightlight the civvis self play game count
         # in the chart. 13k is a very solid number". Self-play's chart puts
@@ -1092,7 +1132,7 @@ class Page(unittest.TestCase):
         self.assertEqual([name for name, _ in research_page.RATE_TABLES], ["on", "off"])
         self.assertIn('const body = document.querySelector("#res-rates-" + name + " tbody");', PAGE)
         self.assertIn('const td = el("td", games ? "is-rate" : "is-zero", games ? pct(wins / games) : "—");', PAGE)
-        self.assertIn('if (games) td.append(" ", el("small", "", "(" + fmt(games) + ")"));', PAGE)
+        self.assertIn('td.append(" ", el("small", "", "(" + fmt(games) + ")"));', PAGE)
         self.assertIn("const render = () => { notes(); drawRates(); draw(); drawTables(); };", PAGE)
         # A record with no tournament games hides the block, and a hidden
         # block is not drawn (a block is a grid, which `hidden` alone would

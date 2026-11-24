@@ -31,6 +31,10 @@
     leans in for it.
   - The opponent is Stockfish held to an Elo (chess/engine.js says what the
     number means), and it says its move aloud as it makes it.
+  - The player can ride one of their own knights instead of sitting at the
+    board: the view is from its back, behind its ears, carried through its
+    leaps; the pieces that could take it glow red; and when it is taken the
+    rider is thrown clear and commands from the side of the board.
 
   The world (chess/game.js) is built in squares as its unit and knows
   nothing of the screen it is seen through, so a headset can be given the
@@ -147,7 +151,7 @@
     cursor: pointer; font-size: 12.5px;
   }
   .row button:hover:not(:disabled), .seg button:hover:not(:disabled) { border-color: var(--gold); }
-  .row button:disabled { opacity: 0.4; cursor: default; }
+  .row button:disabled, .seg button:disabled { opacity: 0.4; cursor: default; }
   .row button:focus-visible, .seg button:focus-visible, .toggles input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .seg { display: inline-flex; gap: 0; }
   .seg button { border-radius: 0; margin-left: -1px; }
@@ -178,6 +182,7 @@
   #said { min-height: 20px; text-align: center; font-size: 15px; color: var(--text); }
   #said.wrong { color: #ffb4a6; }
   #said.heard { color: var(--gold); font-style: italic; }
+  #said.peril { color: #ff9a7a; }
   .speak { display: flex; align-items: center; gap: 8px; }
   #mic {
     flex: none; width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--edge); background: rgba(255, 255, 255, 0.05);
@@ -260,6 +265,13 @@
     </span>
     <button type="button" id="new-game" title="Set the pieces up again">New game</button>
     <button type="button" id="take-back" title="Take back your last move, and the answer to it">Take back</button>
+  </div>
+  <div class="row">
+    <span class="seg" role="group" aria-label="Where you sit">
+      <button type="button" id="seat-board" aria-pressed="true" title="Sit at your side of the board and see all of it">At the board</button>
+      <button type="button" id="seat-knight" aria-pressed="false" title="Ride one of your own knights, and play the game from its back">On a knight</button>
+    </span>
+    <button type="button" id="seat-other" hidden title="Ride your other knight">Other knight</button>
   </div>
   <div class="toggles">
     <label title="Stone on stone, and what breaks"><input type="checkbox" id="opt-sound" checked> Sound</label>

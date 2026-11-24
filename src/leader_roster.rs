@@ -198,7 +198,9 @@ fn find_by_civ<'a>(
             return None;
         }
         let leader = &leaders[position as usize - 1];
-        if leader.civ == civ {
+        // Inline, a word at a time: `==` on text calls the C library's
+        // `memcmp`, which for names this short costs more than the compare.
+        if crate::specmap::same_bytes(leader.civ.as_bytes(), civ.as_bytes()) {
             return Some(leader);
         }
         slot = (slot + 1) & mask;

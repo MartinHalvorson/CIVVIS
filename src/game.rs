@@ -10954,17 +10954,26 @@ impl Game {
     /// Whether this player may use content marked unique to `civilization`.
     #[inline]
     pub fn owns_civ_unique(&self, pid: usize, civilization: &str) -> bool {
-        self.uses_civ6_content(pid) && self.players[pid].civ == civilization
+        // The name first: it is one comparison and almost always false,
+        // whereas the roster boundary is a table lookup. Both are pure, so
+        // the order changes only what is paid, never the answer.
+        self.players
+            .get(pid)
+            .is_some_and(|player| player.civ == civilization)
+            && self.uses_civ6_content(pid)
     }
 
     /// Leader/civ ability check (data in civs.json, effects keyed by name).
     pub fn has_ability(&self, pid: usize, ability: &str) -> bool {
-        (self.uses_civ6_content(pid)
-            && self
-                .rules
-                .civs
-                .get(&self.players[pid].civ)
-                .is_some_and(|c| c.ability == ability))
+        // The seat's own ability is read before the roster boundary is
+        // asked: almost every call names some other civilization's ability,
+        // and that comparison is cheaper than the roster lookup it spares.
+        (self
+            .players
+            .get(pid)
+            .and_then(|player| self.rules.civs.get(&player.civ))
+            .is_some_and(|c| c.ability == ability)
+            && self.uses_civ6_content(pid))
             || self.modifier_grants_ability(pid, ability)
     }
 
@@ -10977,16 +10986,20 @@ impl Game {
     /// See `CivSpec::effects` for the vocabulary. Abilities the engine cannot
     /// express as a modifier stay keyed by name in [`Game::has_ability`].
     pub fn civ_effect(&self, pid: usize, effect: &str) -> f64 {
-        if !self.uses_civ6_content(pid) {
-            return 0.0;
-        }
-        self.players
+        // The effect is looked up before the roster boundary is asked: most
+        // civilizations declare no such effect, and then the answer is zero
+        // whatever the roster says.
+        let declared = self
+            .players
             .get(pid)
             .filter(|player| !player.is_minor && !player.is_barbarian)
             .and_then(|player| self.rules.civs.get(player.civ.as_str()))
             .and_then(|civ| civ.effects.get(effect))
-            .copied()
-            .unwrap_or(0.0)
+            .copied();
+        match declared {
+            Some(value) if self.uses_civ6_content(pid) => value,
+            _ => 0.0,
+        }
     }
 
     /// A city that has just grown gains 50 Pressure for its majority religion,

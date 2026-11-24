@@ -5039,7 +5039,7 @@ fn mirrored_ground_keeps_no_generated_disaster_state() {
         tile.drought = true;
         tile.flooded = true;
         tile.submerged = true;
-        tile.storm = Some("hurricane".to_string());
+        tile.storm = Some(crate::name::Name::new("hurricane"));
         tile.fallout_until = 99;
     }
     apply_terrain(&mut game, &snapshot);
