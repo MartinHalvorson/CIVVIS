@@ -139,6 +139,75 @@
      ]
     ]
    }
+  },
+  {
+   "first_minute": 19,
+   "minutes": [
+    26,
+    25,
+    22
+   ],
+   "games_per_minute": 24.33,
+   "best_minute": 26,
+   "games": 73,
+   "turns_per_second": 80.9,
+   "mean_turns": 199.5,
+   "median_game_seconds": 41.6,
+   "games_per_minute_per_worker": 1.352,
+   "taken": "2026-11-24T15:58:49Z",
+   "workers": 18,
+   "machine": {
+    "chip": "Apple M5 Max",
+    "cores": 18,
+    "core_levels": [
+     6,
+     12
+    ],
+    "memory_gb": 128,
+    "os": "Darwin 27.0.0",
+    "power": "mains"
+   },
+   "build": {
+    "commit": "d301d68d0c37a0c4c8e4e2c1bcf94d6937dcb692",
+    "dirty": false,
+    "binary_sha256": "75c8bc9adcdd5d3b47d26e85cb6e6a6c83599cd65533197c031901b4ec2ba744"
+   },
+   "setup": {
+    "players": 6,
+    "width": 74,
+    "height": 46,
+    "map": "continents",
+    "speed": "online",
+    "turns": 250,
+    "city_states": 9
+   },
+   "game_args": [],
+   "seed_base": 20261122000000,
+   "conditions": {
+    "quiesced": true,
+    "load_before": 13.5,
+    "workers_cpu_cores": 15.3,
+    "cpu_speed_limit": null,
+    "others_cpu_cores": 1.6,
+    "top_others": [
+     [
+      "Civ6_Exe_Child",
+      0.5
+     ],
+     [
+      "Google Chrome Helper (Aperitif Renderer)",
+      0.3
+     ],
+     [
+      "Google Chrome Helper (Aperitif GPU)",
+      0.2
+     ],
+     [
+      "top",
+      0.2
+     ]
+    ]
+   }
   }
  ]
 }
