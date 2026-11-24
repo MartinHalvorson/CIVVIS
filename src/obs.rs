@@ -311,6 +311,9 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
             *tourism_by_tile.entry(position).or_default() += amount;
         }
     }
+    // What each civilization has made over the game so far, for the
+    // standings to set beside what it makes a turn.
+    let totals = yield_totals(g);
     let revealed = revealed_resources(g, pid, omniscient);
     let marks_asked = tile_marks_asked();
     let as_marks = marks_asked.is_some();
@@ -1016,6 +1019,11 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
                 "faith": round1(o.faith),
                 "founded_religion_exists": founded_religion_exists,
                 "yields": yields_json(&output),
+                // The yields added up over the turns this world has played.
+                // A mirrored board's rivals are read from the host, which
+                // keeps no such record, so they have none.
+                "totals": (public_stats.is_none() && !o.is_minor && !o.is_barbarian)
+                    .then(|| totals_json(&totals[o.id])),
                 "tourism_per_turn": round1(public_stats
                     .and_then(|stats| stats.tourism_per_turn)
                     .unwrap_or_else(|| g.tourism_per_turn(o.id))),
@@ -1663,6 +1671,39 @@ fn game_stats_json(g: &Game) -> Value {
             "science": science, "culture": culture, "production": production,
             "faith": faith, "gold": gold, "cities": cities,
         })).collect::<Vec<_>>(),
+    })
+}
+
+/// What each civilization has made so far, indexed by player id: its rows of
+/// the result screen's record (`turn_stats`) added up, one row for each turn
+/// it has collected. Production, Science, Culture and Faith as collected;
+/// Gold net of upkeep, as the record keeps it. The record goes back and
+/// branches with the world it is part of, so a world walked back to an
+/// earlier turn, or copied onto another timeline, carries the totals of its
+/// own past. A world that keeps no record adds up to nothing.
+fn yield_totals(g: &Game) -> Vec<[f64; 5]> {
+    let mut totals = vec![[0.0; 5]; g.players.len()];
+    for row in g.chronicle.turn_stats.iter() {
+        if let Some(sum) = totals.get_mut(usize::from(row.player)) {
+            let figures = [
+                row.production,
+                row.science,
+                row.culture,
+                row.gold,
+                row.faith,
+            ];
+            for (total, figure) in sum.iter_mut().zip(figures) {
+                *total += f64::from(figure);
+            }
+        }
+    }
+    totals
+}
+
+fn totals_json(sum: &[f64; 5]) -> Value {
+    json!({
+        "production": round1(sum[0]), "science": round1(sum[1]),
+        "culture": round1(sum[2]), "gold": round1(sum[3]), "faith": round1(sum[4]),
     })
 }
 
