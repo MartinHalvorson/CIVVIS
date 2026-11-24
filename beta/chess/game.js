@@ -141,6 +141,8 @@ class World {
     this.pieces = new Map();
     // The knight the player rides, if they ride one (`ride`).
     this.ridden = null;
+    // The piece that is moving now, if one is (`play`).
+    this.moving = null;
     this.glow = glowTexture();
     this.flames = [];
     this.debris = [];
@@ -284,7 +286,11 @@ class World {
       ring: new THREE.TorusGeometry(0.36, 0.014, 6, 40), chunk: new THREE.DodecahedronGeometry(0.09, 0),
       // What a ridden knight wears: a cloth over its mane, and its rider.
       cloth: new THREE.BoxGeometry(0.2, 0.36, 0.34), trim: new THREE.BoxGeometry(0.21, 0.035, 0.35),
-      cloak: new THREE.ConeGeometry(0.13, 0.5, 14), hood: new THREE.SphereGeometry(0.075, 14, 10)};
+      cloak: new THREE.ConeGeometry(0.13, 0.5, 14), hood: new THREE.SphereGeometry(0.075, 14, 10),
+      // And what makes it a living thing to the one on its back: a mane, two
+      // ears that turn, an eye, a bit and the reins to the rider's hands.
+      tuft: new THREE.ConeGeometry(0.05, 0.17, 5), ear: new THREE.ConeGeometry(0.04, 0.16, 4),
+      eye: new THREE.SphereGeometry(0.032, 12, 8), bit: new THREE.TorusGeometry(0.035, 0.009, 6, 16)};
     this.material = {
       w: new THREE.MeshStandardMaterial({color: 0xe6dcc6, roughness: 0.36, metalness: 0.02, map: stoneTexture("#f1ead9", "rgba(140,120,90,0.3)", 5)}),
       b: new THREE.MeshStandardMaterial({color: 0x3f3b4c, roughness: 0.22, metalness: 0.55, map: stoneTexture("#8a8598", "rgba(160,170,255,0.25)", 9)}),
@@ -296,6 +302,8 @@ class World {
       b: new THREE.MeshStandardMaterial({color: 0x6e1c16, roughness: 0.85, emissive: 0x2a0806, emissiveIntensity: 0.4}),
       gold: new THREE.MeshStandardMaterial({color: 0xc9a04c, roughness: 0.35, metalness: 0.85}),
       cloak: new THREE.MeshStandardMaterial({color: 0x23201f, roughness: 0.95}),
+      leather: new THREE.MeshStandardMaterial({color: 0x3b2416, roughness: 0.7}),
+      eye: {w: new THREE.MeshBasicMaterial({color: 0x9fe4ff}), b: new THREE.MeshBasicMaterial({color: 0xffa25a})},
     };
   }
 
@@ -385,13 +393,45 @@ class World {
       // Over the back of the neck, along the line of the mane.
       part(made.cloth, this.cloth[colour], -0.25, 0.86, 0, -0.38);
       part(made.trim, this.cloth.gold, -0.18, 0.69, 0, -0.38);
+      // The mane, from the cloth up to between the ears, pointing back.
+      [[-0.235, 0.98], [-0.2, 1.07], [-0.165, 1.15], [-0.135, 1.23], [-0.115, 1.3]].forEach(([x, y], at) => {
+        part(made.tuft, this.material[colour], x - 0.03, y, at % 2 ? 0.03 : -0.03, 0.95);
+      });
+      // Ears, each on a pivot so that it can turn toward what it hears.
+      const ears = [-1, 1].map(side => {
+        const pivot = new THREE.Group();
+        pivot.position.set(-0.07, 1.31, side * 0.055);
+        const ear = new THREE.Mesh(made.ear, this.material[colour]);
+        ear.position.y = 0.075;
+        ear.scale.set(1, 1, 0.45);
+        ear.castShadow = true;
+        pivot.add(ear);
+        pivot.rotation.z = 0.25;
+        saddle.add(pivot);
+        return pivot;
+      });
+      // An eye on each side, lit from inside with its side's light.
+      const eyes = [-1, 1].map(side => part(made.eye, this.cloth.eye[colour], 0.19, 1.02, side * 0.112));
+      // The bit, and the reins from it to the rider's hands.
+      const hands = new THREE.Vector3(-0.08, 1.1, 0.34);
+      for (const side of [-1, 1]) {
+        const bit = part(made.bit, this.cloth.gold, 0.33, 0.74, side * 0.115);
+        bit.rotation.y = Math.PI / 2;
+        const from = new THREE.Vector3(0.33, 0.74, side * 0.115);
+        const sag = from.clone().lerp(hands, 0.5).add(new THREE.Vector3(0, -0.12, 0));
+        const rein = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3([from, sag, hands]), 18, 0.009, 5), this.cloth.leather);
+        rein.castShadow = true;
+        saddle.add(rein);
+      }
+      saddle.userData.ears = ears;
+      saddle.userData.eyes = eyes;
       const rider = new THREE.Group();
       const cloak = new THREE.Mesh(made.cloak, this.cloth.cloak);
       cloak.position.set(0, 0.25, 0);
       const hood = new THREE.Mesh(made.hood, this.cloth.cloak);
       hood.position.set(0.02, 0.54, 0);
       for (const mesh of [cloak, hood]) { mesh.castShadow = true; rider.add(mesh); }
-      rider.position.set(-0.42, 0.7, -0.36);
+      rider.position.set(-0.42, 0.7, 0.36);
       saddle.add(rider);
       saddle.userData.rider = rider;
       saddle.traverse(mesh => { mesh.userData.owner = held; });
@@ -490,8 +530,10 @@ class World {
     this.pieces.delete(move.from);
     mover.userData.awake = 1;
     hooks.moving(mover);
-    // A knight with a rider turns to where it is going before it goes.
-    if (mover === this.ridden) await this.turnTo(mover, to.clone().sub(mover.position));
+    this.moving = mover;
+    // A knight with a rider turns to where it is going before it goes, and
+    // the stone groans under them as it turns.
+    if (mover === this.ridden) await this.turnTo(mover, to.clone().sub(mover.position), hooks);
     if (victim) {
       this.pieces.delete(victimAt);
       hooks.look(victim.position.clone().lerp(mover.position, 0.3));
@@ -520,15 +562,17 @@ class World {
     }
     if (move.promo) await this.crown(mover, move, hooks);
     mover.userData.awake = 0;
+    this.moving = null;
     hooks.moving(null);
     hooks.look(null);
   }
 
-  turnTo(piece, way) {
+  turnTo(piece, way, hooks) {
     const body = piece.userData.body, was = body.rotation.y;
     let want = Math.atan2(-way.z, way.x), by = want - was;
     by = ((by + Math.PI) % TAU + TAU) % TAU - Math.PI;
     if (Math.abs(by) < 0.05) return Promise.resolve();
+    if (hooks) hooks.sound("groan", Math.min(1.2, 0.5 + Math.abs(by) * 0.4), piece.position);
     return tween(0.22 + Math.abs(by) * 0.08, t => { body.rotation.y = was + by * t; });
   }
 
@@ -576,6 +620,12 @@ class World {
     hooks.sound("set", piece === this.ridden ? 1.3 : 0.9, to);
     hooks.shake(piece === this.ridden ? 0.12 : 0.05);
     this.dust(to, 0.8);
+    // The knight ridden breathes out as it lands: a puff at its nostrils.
+    if (piece === this.ridden) {
+      const body = piece.userData.body;
+      body.updateWorldMatrix(true, false);
+      this.dust(body.localToWorld(new THREE.Vector3(0.44, 0.68, 0)), 0.3, true);
+    }
     await this.settle(piece);
   }
 
@@ -672,11 +722,12 @@ class World {
     hooks.shake(0.16 * force);
   }
 
-  dust(at, much) {
+  // Dust kicked up off the board, or (`aloft`) a breath at a point in the air.
+  dust(at, much, aloft = false) {
     const count = Math.round(14 * much), spots = new Float32Array(count * 3), drift = [];
     for (let i = 0; i < count; i++) {
-      const round = Math.random() * TAU, out = 0.1 + Math.random() * 0.25;
-      spots.set([at.x + Math.cos(round) * out, 0.05 + Math.random() * 0.2 * much, at.z + Math.sin(round) * out], i * 3);
+      const round = Math.random() * TAU, out = (aloft ? 0.02 : 0.1) + Math.random() * (aloft ? 0.05 : 0.25);
+      spots.set([at.x + Math.cos(round) * out, (aloft ? at.y : 0.05) + Math.random() * 0.2 * much, at.z + Math.sin(round) * out], i * 3);
       drift.push([Math.cos(round) * (0.3 + Math.random() * 0.8) * much, 0.2 + Math.random() * 0.5 * much, Math.sin(round) * (0.3 + Math.random() * 0.8) * much]);
     }
     const cloud = new THREE.BufferGeometry();
@@ -734,6 +785,29 @@ class World {
     hooks.look(null);
   }
 
+  // The knight ridden listens: its ears turn toward the piece that is
+  // moving and prick up, and between moves they drift and twitch. Its eyes
+  // close now and then.
+  attend(dt) {
+    const saddle = this.ridden && this.ridden.userData.saddle;
+    if (!saddle) return;
+    const body = this.ridden.userData.body;
+    let turn = 0.22 * Math.sin(this.time * 0.37) * Math.sin(this.time * 1.3), prick = 0.25;
+    if (this.moving && this.moving !== this.ridden) {
+      body.updateWorldMatrix(true, false);
+      const heard = body.worldToLocal(this.moving.position.clone().setY(1.2));
+      turn = Math.max(-1.2, Math.min(1.2, Math.atan2(-heard.z, heard.x)));
+      prick = -0.1;
+    }
+    const follow = Math.min(1, dt * 7);
+    saddle.userData.ears.forEach((ear, at) => {
+      ear.rotation.y += (turn * (at ? 1 : 0.85) - ear.rotation.y) * follow;
+      ear.rotation.z += (prick - ear.rotation.z) * follow;
+    });
+    const shut = this.time % 4.7 < 0.13;
+    for (const eye of saddle.userData.eyes) eye.scale.y = shut ? 0.12 : 1;
+  }
+
   // What goes on whether or not anyone moves.
   tick(dt) {
     this.time += dt;
@@ -754,6 +828,7 @@ class World {
     }
     const pulse = 0.4 + 0.3 * Math.sin(this.time * 6);
     this.mark.check.material.opacity = pulse;
+    this.attend(dt);
     // Rubble: thrown, falling, coming to rest on the board, and then gone.
     const place = new THREE.Object3D();
     for (const heap of [...this.debris]) {
@@ -879,6 +954,7 @@ class Sound {
     else if (name === "crown") { for (const [at, pitch] of [[0, 523], [90, 659], [180, 784], [300, 1047]]) setTimeout(() => this.on && this.tone(0.7, pitch, pitch, 0.1, "sine", into), at); }
     else if (name === "pick") this.tone(0.22, 880, 880, 0.05, "sine");
     else if (name === "no") this.tone(0.18, 170, 120, 0.12, "square");
+    else if (name === "groan") { this.burst(0.6, "lowpass", 260, 70, 0.32 * s, 2.5, into); this.tone(0.55, 68, 50, 0.2 * s, "triangle", into); }
     else if (name === "peril") { this.tone(0.5, 82, 60, 0.4); setTimeout(() => this.on && this.tone(0.5, 82, 58, 0.32), 210); }
     else if (name === "check") { this.tone(0.7, 196, 185, 0.12, "sawtooth"); this.tone(0.7, 207, 196, 0.1, "sawtooth"); }
   }
@@ -942,11 +1018,12 @@ class Voice {
 // (`thrown`), when that knight is taken under them, and then standing at the
 // side of the board (`aside`), from where they still command.
 // The rider's eye in the mount's own frame (nose toward +x, the board's
-// unit a square): low on its neck and to its left, so that the head is seen
+// unit a square): low on its neck and to its right, so that the head is seen
 // beside them in profile and the pieces stand over them, a pawn near their
-// eye and a king half again its height.
-const EYE = new THREE.Vector3(-0.46, 1.24, -0.5);
-const AHEAD = new THREE.Vector3(1.6, 1.02, -0.5);
+// eye and a king half again its height. On the right, the head is on the
+// left of the screen, where nothing written stands over it.
+const EYE = new THREE.Vector3(-0.46, 1.24, 0.5);
+const AHEAD = new THREE.Vector3(1.6, 1.02, 0.5);
 const FLOOR = -0.62, STANDING = FLOOR + 0.8;
 const FIELD = {table: 36, ride: 64, thrown: 70, aside: 58};
 const turnBy = (from, to) => ((to - from + Math.PI) % TAU + TAU) % TAU - Math.PI;
@@ -1339,6 +1416,8 @@ function draw() {
   el("seat-knight").textContent = game.ride && !world.ridden && knights.length ? "Ride again" : "On a knight";
   el("seat-knight").disabled = !game.ride && !knights.length;
   el("seat-other").hidden = !(game.ride && world.ridden && knights.length > 1);
+  // In the saddle what is written folds to what a rider needs.
+  document.body.classList.toggle("riding", game.ride);
   hint();
 }
 
