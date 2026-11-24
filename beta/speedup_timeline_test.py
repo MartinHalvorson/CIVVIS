@@ -996,6 +996,42 @@ class History(unittest.TestCase):
         # The other stop has no such line.
         self.assertEqual([line["kind"] for line in shown["rows"][1]["lines"]], ["readings"])
 
+    def test_the_benchmark_hours_are_a_line_on_self_play_and_on_every_core(self):
+        # The hours are on the `ledger` branch, read by `self_play_hours`;
+        # here they are handed over as that reader gives them.
+        ledger = json.loads(json.dumps(Worked.LEDGER))
+        ledger["stops"][3]["tournament"] = True
+        hours = [
+            {"taken": "2026-11-24T18:00:00Z", "games": 90, "games_an_hour": 90.0, "cpu_a_game": 50.0},
+            {"taken": "2026-11-25T00:00:00Z", "games": 120, "games_an_hour": 120.0, "cpu_a_game": 40.0},
+            {"taken": "2026-11-25T06:00:00Z", "games": 0, "games_an_hour": 0, "cpu_a_game": None},
+        ]
+        real = speedup_timeline.self_play_hours.self_play
+        try:
+            speedup_timeline.self_play_hours.self_play = lambda source: {"hours": hours}
+            with tempfile.TemporaryDirectory() as scratch:
+                shown = speedup_timeline.history(tree(scratch, ledger, Worked.RUNS))
+            speedup_timeline.self_play_hours.self_play = lambda source: None
+            with tempfile.TemporaryDirectory() as scratch:
+                without = speedup_timeline.history(tree(scratch, ledger, Worked.RUNS))
+        finally:
+            speedup_timeline.self_play_hours.self_play = real
+        rows = {row["key"]: row for row in shown["rows"]}
+        # On self-play: the processor seconds one game took, each hour at
+        # its own moment. An hour that finished no game is no point.
+        own = {line["kind"]: line for line in rows["self_play"]["lines"]}
+        self.assertEqual([(point["taken"], point["at"], point["seconds"], point["games"]) for point in own["hours"]["points"]],
+                         [("2026-11-24", "2026-11-24T18:00:00Z", 50.0, 90), ("2026-11-25", "2026-11-25T00:00:00Z", 40.0, 120)])
+        self.assertEqual(own["hours"]["pace"]["times"], "1.25x")
+        # On every core: the time from one finished game to the next.
+        run = {line["kind"]: line for line in rows["all_cores"]["lines"]}
+        self.assertEqual([(point["seconds"], point["time"]) for point in run["production"]["points"]], [(40.0, "40 s"), (30.0, "30 s")])
+        # The other stops have neither line, and nor has a clone without the hours.
+        for key in ("control", "deity_sim"):
+            self.assertEqual([line["kind"] for line in rows[key]["lines"]], ["readings"])
+        for row in without["rows"]:
+            self.assertEqual([line["kind"] for line in row["lines"]], ["readings"])
+
     def test_the_committed_ledger_has_a_chart_for_every_stop_after_the_baseline(self):
         shown, line = speedup_timeline.history(ROOT), speedup_timeline.timeline(ROOT)
         self.assertEqual([row["key"] for row in shown["rows"]], [stop["key"] for stop in line["stops"][1:]])

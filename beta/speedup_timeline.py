@@ -96,6 +96,8 @@ import pathlib
 import re
 import sys
 
+import self_play_hours
+
 #: The stops and their readings, in the source tree.
 LEDGER = pathlib.Path("data/performance/speedup_timeline.json")
 
@@ -934,6 +936,15 @@ def history(source: pathlib.Path) -> dict | None:
       (`data/performance/self_play_times.json`). It is the same game with
       seven or more played at a time on a busy machine, so it reads slower
       than a one-core benchmark and it reaches back much further.
+    - `hours`, on the same stop: the self-play benchmark hours
+      (`beta/self_play_hours.py`, an hour of the tournament watched every
+      six hours), each as the processor seconds one game took, which a busy
+      machine does not stretch. A point of an hour has `at`, the moment it
+      was taken, so that four hours of one day do not stand on one another.
+    - `production`, on the stop that plays that game on every core: the same
+      hours as the time from one finished game to the next, which is the
+      rate the machine keeps while the live game and everything else run
+      beside the tournament. It is far under a record run's.
 
     `base` is the baseline's seconds, and `from` and `to` the first and last
     day any line has a point on.
@@ -941,6 +952,21 @@ def history(source: pathlib.Path) -> dict | None:
     try:
         ledger = json.loads((source / LEDGER).read_text(encoding="utf-8"))
         base = sorted(ledger["stops"][0]["readings"], key=lambda reading: reading["taken"])[-1]["seconds"]
+        # The benchmark hours, where this clone holds the ledger they are on.
+        try:
+            watched = (self_play_hours.self_play(source) or {}).get("hours") or []
+        except (OSError, ValueError, KeyError, TypeError):
+            watched = []
+        played = {stop["key"] for stop in ledger["stops"] if stop.get("tournament")}
+
+        def hourly(seconds) -> list[dict]:
+            points = []
+            for read in watched:
+                took = seconds(read)
+                if took:
+                    points.append({"taken": read["taken"][:10], "at": read["taken"], "seconds": round(took, 3), "time": clock(took), "games": read["games"]})
+            return points
+
         rows = []
         for stop in ledger["stops"][1:]:
             if stop.get("line") is False:
@@ -972,6 +998,13 @@ def history(source: pathlib.Path) -> dict | None:
                         lines.append({"kind": "tournament", "points": points, "pace": pace(points)})
                 except (OSError, ValueError, KeyError, TypeError, IndexError):
                     pass
+                points = hourly(lambda read: read.get("cpu_a_game"))
+                if points:
+                    lines.append({"kind": "hours", "points": points, "pace": pace(points)})
+            if followed and stop.get("of") in played:
+                points = hourly(lambda read: 3600 / read["games_an_hour"] if read.get("games_an_hour") else None)
+                if points:
+                    lines.append({"kind": "production", "points": points, "pace": pace(points)})
             row = {"key": stop["key"], "lines": lines}
             if "goal_seconds" in stop:
                 row["goal_seconds"] = stop["goal_seconds"]

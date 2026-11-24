@@ -39,8 +39,10 @@
     --series: #3987e5;
     /* A chart's second line or part: the second of the same chart colours,
        an orange checked beside the blue on this panel and the raised one
-       (told apart by every kind of colour vision, 3:1 and over). */
+       (told apart by every kind of colour vision, 3:1 and over), and the
+       third, a green checked beside both. */
     --series-2: #d95926;
+    --series-3: #199e70;
   }
 
   * { box-sizing: border-box; }
@@ -349,6 +351,7 @@
   .perf-keys i { display: inline-block; flex: none; width: 14px; height: 2px; border-radius: 1px; background: var(--series); }
   .perf-keys i.is-block { width: 10px; height: 10px; border-radius: 2px; }
   .perf-keys i.is-second { background: var(--series-2); }
+  .perf-keys i.is-third { background: var(--series-3); }
   .perf-trend-plot { min-height: 170px; margin: 6px 0 0; }
   .perf-trend-plot svg { display: block; overflow: visible; }
   .perf-goal-line { stroke: var(--gold); stroke-width: 1; stroke-dasharray: 4 3; }
@@ -1180,11 +1183,17 @@
       .map((row) => ({ ...row, lines: (Array.isArray(row && row.lines) ? row.lines : []).filter((line) => line && Array.isArray(line.points) && line.points.length) }))
       .filter((row) => row.key && row.lines.length);
     if (trends.length) {
-      const LINES = { readings: "Benchmark readings", tournament: "Tournament, the middle game of a batch" };
-      const COLOURS = { readings: "var(--series)", tournament: "var(--series-2)" };
+      const LINES = {
+        readings: "Benchmark readings", tournament: "Tournament, the middle game of a batch",
+        hours: "Benchmark hour, processor time a game", production: "Benchmark hour, beside the live game",
+      };
+      const COLOURS = { readings: "var(--series)", tournament: "var(--series-2)", hours: "var(--series-3)", production: "var(--series-3)" };
+      const MARKS = { tournament: "is-second", hours: "is-third", production: "is-third" };
       const stamp = (iso) => Date.parse(String(iso).slice(0, 10) + "T00:00:00Z");
+      // A point taken at a moment of its day stands at that moment.
+      const placed = (point) => (point.at && Number.isFinite(Date.parse(point.at)) ? Date.parse(point.at) : stamp(point.taken));
       const DAY_MS = 24 * 60 * 60 * 1000;
-      const from = stamp(past.from), to = Math.max(stamp(past.to), from + DAY_MS);
+      const from = stamp(past.from), to = Math.max(stamp(past.to) + DAY_MS, from + DAY_MS);
       const short = (s) => (s < 0.9995 ? Math.round(s * 1000) + " ms" : s < 60 ? +s.toFixed(1) + " s" : s < 3600 ? +(s / 60).toFixed(1) + " min" : +(s / 3600).toFixed(1) + " h");
       // The marks of a chart's scale of seconds, the roundest first: a mark
       // is kept when it is on the chart and clear of every mark kept before.
@@ -1219,7 +1228,7 @@
         if (row.lines.length > 1) {
           const keys = el("ul", "perf-keys");
           for (const line of row.lines) {
-            const item = el("li"), mark = el("i", line.kind === "tournament" ? "is-second" : "");
+            const item = el("li"), mark = el("i", MARKS[line.kind] || "");
             item.append(mark, LINES[line.kind] || text(line.kind));
             keys.append(item);
           }
@@ -1236,7 +1245,7 @@
             table.append(tr);
           }
         }
-        const all = row.lines.flatMap((line) => line.points.map((point) => ({ ...point, kind: line.kind, at: stamp(point.taken) })));
+        const all = row.lines.flatMap((line) => line.points.map((point) => ({ ...point, kind: line.kind, at: placed(point) })));
         const goal = Number(row.goal_seconds) || 0;
         const seen = all.map((point) => point.seconds).concat(goal ? [goal] : []);
         const lo = Math.log10(Math.min(...seen) / 1.35), hi = Math.log10(Math.max(...seen) * 1.35);
@@ -1274,7 +1283,7 @@
           }
           for (const line of row.lines) {
             const colour = COLOURS[line.kind] || "var(--series)";
-            const points = line.points.map((point) => [x(stamp(point.taken)), y(point.seconds), point]);
+            const points = line.points.map((point) => [x(placed(point)), y(point.seconds), point]);
             if (points.length > 1) {
               const drawn = svg("path", { d: "M" + points.map(([px, py]) => px.toFixed(1) + "," + py.toFixed(1)).join("L"), fill: "none", "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round" });
               drawn.style.stroke = colour;

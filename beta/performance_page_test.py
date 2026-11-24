@@ -384,13 +384,17 @@ class EachWayOverTime(unittest.TestCase):
         # One chart a stop, each on its own scale of seconds and every one
         # on the same run of days; never two scales on one chart.
         self.assertIn("for (const row of trends) {", self.SCRIPT)
-        self.assertIn("const from = stamp(past.from), to = Math.max(stamp(past.to), from + DAY_MS);", self.SCRIPT)
+        self.assertIn("const from = stamp(past.from), to = Math.max(stamp(past.to) + DAY_MS, from + DAY_MS);", self.SCRIPT)
         self.assertIn("Math.log10(s)", self.SCRIPT)
         # Two lines on a chart are told apart by a key as well as colour,
         # and the second colour is the page's own second, not a new one.
-        self.assertIn('const COLOURS = { readings: "var(--series)", tournament: "var(--series-2)" };', self.SCRIPT)
+        self.assertIn('const COLOURS = { readings: "var(--series)", tournament: "var(--series-2)", hours: "var(--series-3)", production: "var(--series-3)" };', self.SCRIPT)
         self.assertIn("if (row.lines.length > 1) {", self.SCRIPT)
         self.assertIn("--series-2: #d95926;", PAGE)
+        self.assertIn("--series-3: #199e70;", PAGE)
+        # Every kind of line the record can carry has its name.
+        for kind in ("readings", "tournament", "hours", "production"):
+            self.assertRegex(self.SCRIPT, rf'\b{kind}: "[A-Z][^"]+"')
         # The pace is said in words, the pointer reads any reading out, and
         # every reading is in a table for whoever cannot use the chart.
         for words in ('" faster"', '" slower"', '"Steady over "', '"One reading so far."', '", halving every "'):
