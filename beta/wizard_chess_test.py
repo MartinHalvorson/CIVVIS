@@ -270,6 +270,20 @@ class Played(unittest.TestCase):
         away = ev("(king => king.userData.check && king.userData.check.toArray())(wizardChess.world.pieces.get(60))")
         self.assertTrue(away and away[0] < 0, away)
         self.until("wizardChess.world.pieces.get(60).quaternion.w < 0.9995", "the king flinches", seconds=60)
+        # The board hears a command as it is given. Typed "knight", the two
+        # knights stir; "knight takes e5", the pawn on e5 turns to face what is
+        # coming and braces; cleared, the board is still again.
+        ev("wizardChess.opponent.stop(), wizardChess.begin('w', ['g1f3', 'e7e5']), wizardChess.game.turn++")
+        typing = "(t => { t.value = %s; t.dispatchEvent(new Event('input')); })(document.getElementById('typed'))"
+        stirred = "[...wizardChess.world.pieces.values()].filter(held => held.userData.stir).map(held => held.userData.square).sort((a, b) => a - b)"
+        ev(typing % "'knight'")
+        self.assertEqual(ev(stirred), [1, 21])
+        ev(typing % "'knight takes e5'")
+        self.assertEqual(ev(stirred), [21])
+        self.assertTrue(ev("!!wizardChess.world.pieces.get(36).userData.brace"))
+        self.until("wizardChess.world.pieces.get(36).quaternion.w < 0.9997", "the pawn braces", seconds=60)
+        ev(typing % "''")
+        self.assertEqual(ev("[...wizardChess.world.pieces.values()].filter(held => held.userData.stir || held.userData.brace).length"), 0)
         # A new game begun while a move is still being played out: the move
         # was the old game's, and the new board stays as it was set down,
         # every piece in the world where the game says it is and on the board.
