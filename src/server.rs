@@ -698,6 +698,14 @@ pub struct Session {
     pub keeps_rival_yields: bool,
     /// The acting seat's own cities as well (`Game::keep_own_yields`).
     pub keeps_own_yields: bool,
+    /// Whether every Civ AI at this table plans on what its civilization can
+    /// see rather than on the whole board (operator 2026-11-23: "we should
+    /// have a fog honest ai play setting in the turn box set to true or
+    /// false. and it should pretty much always be set to true"). On for
+    /// every world a session is given; the turn box can turn it off for the
+    /// world on screen (`POST /fog-honest`), and the next world is on again.
+    /// See [`Session::set_fog_honest`].
+    fog_honest: bool,
     /// The turns a played game can be walked back to, the breakpoints a run
     /// stops on and the decisions lent to the seat's agent (`debugger.rs`).
     debugger: debugger::Timeline,
@@ -2349,6 +2357,7 @@ impl Session {
             last_autoplay_request: None,
             keeps_rival_yields: true,
             keeps_own_yields: true,
+            fog_honest: true,
             human_players,
             mirror: None,
             journal,
@@ -2356,6 +2365,7 @@ impl Session {
             simultaneous_jobs: 1,
             debugger: debugger::Timeline::default(),
         };
+        session.seat_fog();
         session.debugger_begins();
         session
     }
@@ -2472,6 +2482,7 @@ impl Session {
             last_autoplay_request: None,
             keeps_rival_yields: true,
             keeps_own_yields: true,
+            fog_honest: true,
             human_players,
             mirror,
             journal,
@@ -2479,6 +2490,7 @@ impl Session {
             simultaneous_jobs: 1,
             debugger: debugger::Timeline::default(),
         };
+        session.seat_fog();
         session.debugger_begins();
         session
     }
@@ -3000,6 +3012,7 @@ impl Session {
             o["required_victory_types"] = json!(self.game.effective_required_victories());
             o["victories_won"] = json!(self.game.victories_won);
             o["legal_actions"] = json!([]);
+            self.fog_honest_json(&mut o);
             // Lets a long-running spectator notice that its server was
             // rebuilt/restarted between games and reload the latest UI.
             o["server_instance"] = json!(process_identity());
@@ -3061,6 +3074,7 @@ impl Session {
         o["legal_actions"] = offered;
         // Where this world sits on its own timeline, for the debugger's bar.
         o["debug"] = self.debugger_json();
+        self.fog_honest_json(&mut o);
         o["server_instance"] = json!(process_identity());
         o["server_commit"] = json!(runtime_commit("unknown"));
         o["server_commit_time"] = json!(runtime_commit_time());
@@ -3086,6 +3100,54 @@ impl Session {
             .get(seat)
             .map(|agent| agent.site_shortcuts())
             .unwrap_or_default()
+    }
+
+    /// Whether this table's Civ AIs plan on what their civilizations can see.
+    pub fn fog_honest(&self) -> bool {
+        self.fog_honest
+    }
+
+    /// Make every Civ AI at this table plan on what its civilization can see
+    /// (`true`), or on the whole board (`false`), from the next seat to play.
+    ///
+    /// A major played by an `AdvancedAi` (every Civ AI on the roster but
+    /// TrainingWheels) then plans its turn on a fog-redacted copy of the
+    /// board and replays the plan on the board (`ai::player::take_turn`), as
+    /// `gene_screen`'s players do. The scripted `BasicAi` — city-states,
+    /// barbarians and TrainingWheels — reads the board either way. Every
+    /// roster row and the house fleet are built to plan on the board
+    /// (`PlayerStrategy::build`, `enable_site_deployment`); this turns that
+    /// over at the table.
+    pub fn set_fog_honest(&mut self, on: bool) {
+        self.fog_honest = on;
+        self.seat_fog();
+    }
+
+    /// Put the table's setting on every agent seated, including one that was
+    /// just seated or put back with a turn walked back to.
+    fn seat_fog(&mut self) {
+        for agent in &mut self.ais {
+            agent.set_fog_honest(self.fog_honest);
+        }
+    }
+
+    /// The turn box's Fog-honest AI row: the table's setting, and how many
+    /// seats are playing that way. A repainted game of Civilization VI is
+    /// played by its own AIs, and says nothing.
+    fn fog_honest_json(&self, o: &mut Value) {
+        if self.mirror.is_none() {
+            o["fog_honest"] = json!(self.fog_honest);
+            o["fog_honest_seats"] = json!(self.fog_honest_seats());
+        }
+    }
+
+    /// How many of the table's agents say they plan on what their seat can
+    /// see: the read-back of [`Session::set_fog_honest`].
+    pub fn fog_honest_seats(&self) -> usize {
+        self.ais
+            .iter()
+            .filter(|agent| agent.uses_player_observation())
+            .count()
     }
 
     /// Spectator mode: play out exactly one player's turn with its AI.
@@ -3243,6 +3305,7 @@ impl Session {
         // A newly seated agent joins the same record as the rest of the table;
         // without this the seat a player just handed over goes quiet.
         self.ais[seat].attach_journal(self.journal.handle());
+        self.ais[seat].set_fog_honest(self.fog_honest);
         self.autoplay_strategy = Some(row.id.to_string());
         Ok(())
     }
@@ -3264,6 +3327,7 @@ impl Session {
             }
             self.ais[seat] = row.build();
             self.ais[seat].attach_journal(self.journal.handle());
+            self.ais[seat].set_fog_honest(self.fog_honest);
             self.seat_strategies[seat] = Some(row);
         }
         self.rival_strategy = Some(row.id.to_string());
@@ -5671,6 +5735,13 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
             let mut session = lock_or_recover(&sh.session);
             let out = crate::routes::view(&mut session, &parsed);
             drop(session);
+            respond_json(stream, &out);
+        }
+        ("POST", "/fog-honest") => {
+            let mut session = lock_or_recover(&sh.session);
+            let mut out = crate::routes::fog_honest(&mut session, &parsed);
+            drop(session);
+            decorate(&mut out, sh);
             respond_json(stream, &out);
         }
         ("POST", "/spectator-status") => {

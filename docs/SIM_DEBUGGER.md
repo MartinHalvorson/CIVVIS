@@ -1167,6 +1167,25 @@ turns a second on copies of 128 MB.
 Autosearch needs forks, so it runs in the browser build. The desktop
 program's server does not know `/forks`, and there the panel says so.
 
+## Fog-honest AI
+
+The masthead's turn box has a **Fog-honest AI** row, True or False (operator
+2026-11-23: "it should pretty much always be set to true"). True, every Civ
+AI at the table plans its turn on what its own civilization can see and
+remembers, and replays the plan on the board (`ai::player::take_turn`);
+False, it plans on the whole board. Every world the engine deals opens True,
+and False lasts for the world on screen. It is the world's setting
+(`POST /fog-honest`, `Session::set_fog_honest`), so each half of a split
+keeps its own, a half begins with the setting of the world it was copied
+from, and the agents kept with a turn play on under the setting the table
+has now when that turn is walked back to. City-states, barbarians and
+TrainingWheels are scripted and read the board either way.
+
+What a breakpoint or Autosearch reads is not fog-honest and does not claim
+to be: a condition and a search's number are read off the omniscient
+observation, the spectator's view of the whole table. That is the searcher
+looking at the world, not a player looking at it.
+
 ## Doctor Strange's Civ 6
 
 Operator, 2026-11-23: "it will have a scrolling guitar hero setup. where the
