@@ -678,6 +678,20 @@ fn a_black_swan_strikes_the_open_turn_and_lets_go_of_the_turns_ahead() {
     assert_eq!(marked(&struck), [1, 2, 3, 4, 5, 6, 7, 8]);
     assert_eq!(world(&struck), there);
     assert_ne!(prints(&struck)[5..], prints(&spared)[5..]);
+    // The swan is on the line by its own account, not among what is seen
+    // coming, though the seat was told of it on this very turn.
+    assert!(struck
+        .game
+        .events_for(0)
+        .iter()
+        .any(|event| event.turn == 5 && event.important && event.text.starts_with("Black swan: ")));
+    let seen = again["alerts"].as_array().expect("what was seen coming");
+    assert!(
+        !seen.iter().any(|alert| alert["text"]
+            .as_str()
+            .is_some_and(|text| text.contains("Black swan"))),
+        "{seen:?}"
+    );
     // Gone back before it and walked forward along the kept turns, the
     // world on its turn is the world it struck. The line still holds it.
     assert_eq!(struck.debug_jump(4), Ok(4));
@@ -747,6 +761,93 @@ fn a_black_swan_strikes_the_open_turn_and_lets_go_of_the_turns_ahead() {
     assert!(rivals["error"]
         .as_str()
         .is_some_and(|error| error.contains("the rivals are playing")));
+}
+
+/// A world goes on being a game whatever strikes it. Every kind of swan is
+/// struck in turn through the opening of two games, with turns played
+/// between by the agents that were going to play them and the future played
+/// ahead after each, as the page plays it: none of it may leave a world the
+/// rules, the agents or the page's state document cannot go on from.
+#[test]
+fn a_game_is_played_on_through_every_black_swan() {
+    for seed in [20_261_118_u64, 20_261_124] {
+        let mut params = stock_opening_params(seed);
+        params.spectate = false;
+        params.num_players = 3;
+        params.num_city_states = 2;
+        params.width = 30;
+        params.height = 20;
+        params.map_topology = MapTopology::Flat;
+        params.map_script = MapScript::Pangaea;
+        params.game_speed = GameSpeed::Online;
+        params.max_turns = 500;
+        let mut session = Session::new(params);
+        let on = |session: &Session| !session.game.is_finished() && session.game.players[0].alive;
+        for _ in 0..24 {
+            step_as(&mut session, "jack");
+        }
+        let mut struck: Vec<String> = Vec::new();
+        let kinds = [
+            "pandemic",
+            "radiation_leak",
+            "leader_collapse",
+            "microstates",
+            "nuclear_war",
+            "microstates",
+            "nuclear_war",
+        ];
+        for (at, kind) in kinds.iter().enumerate() {
+            if !on(&session) {
+                break;
+            }
+            let answer = session.debug(
+                &json!({"op": "black_swan", "kind": kind, "seed": seed + at as u64, "lean": true}),
+            );
+            // One this world has nothing for is refused, and strikes nothing.
+            match answer["error"].as_str() {
+                None => struck.push(kind.to_string()),
+                Some(why) => assert!(
+                    why.starts_with("no civilization") || why.starts_with("a nuclear war"),
+                    "{kind} on seed {seed}: {why}"
+                ),
+            }
+            let ahead = session
+                .debug(&json!({"op": "ahead", "turns": 4, "strategy": "jack", "lean": true}));
+            assert_eq!(ahead["error"], Value::Null, "{kind} on seed {seed}");
+            for _ in 0..6 {
+                if on(&session) {
+                    step_as(&mut session, "jack");
+                }
+            }
+        }
+        assert!(
+            struck.len() >= 5,
+            "seed {seed} was struck by {struck:?} only"
+        );
+        assert!(struck.contains(&"nuclear_war".to_string()), "{struck:?}");
+        assert_eq!(session.game.black_swans.len(), struck.len());
+        // The world is whole: everything in it belongs to a seat there is,
+        // it saves, and the page is given its state.
+        let game = &session.game;
+        assert!(game
+            .cities
+            .values()
+            .all(|city| city.owner < game.players.len() && city.pop >= 1));
+        assert!(game
+            .units
+            .values()
+            .all(|unit| unit.owner < game.players.len()));
+        assert!(!world(&session).is_empty());
+        let state = session.state();
+        assert_eq!(
+            state["black_swans"].as_array().map(Vec::len),
+            Some(struck.len())
+        );
+        assert_eq!(
+            state["debug"]["swans"].as_array().map(Vec::len),
+            Some(struck.len())
+        );
+    }
 }
 
 /// `play` is a run of steps asked for once: the same turns, the same marks to
@@ -1435,7 +1536,7 @@ fn a_branched_timeline_is_one_until_its_two_worlds_differ() {
     for piece in [
         // A half tells the host the turns it holds and the print of each.
         "const turns = timeline.turns || [], worlds = timeline.worlds || null;",
-        "window.parent.postMessage({civvis: \"pane-marks\", pane: DEBUG_PANE, flags, stops, beyond, eras, turns, worlds, by},",
+        "window.parent.postMessage({civvis: \"pane-marks\", pane: DEBUG_PANE, flags, stops, beyond, eras, turns, worlds, by, swans},",
         // The host reads the branch off the two lists: the last turn both
         // give the same print for, and whether either holds a turn past it
         // (`a_branch_begins_on_the_turn_it_is_made_on`).

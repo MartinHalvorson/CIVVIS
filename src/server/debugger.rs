@@ -1752,12 +1752,30 @@ impl Session {
     /// the played seat was told that was too consequential to scroll past,
     /// and the end of the game. In the order it happened, the first two
     /// dozen.
+    ///
+    /// A black swan is not among them, nor are the devices of an instant
+    /// nuclear war: it is on the line by its own account (`debug.swans`),
+    /// which says all of that once. What comes of one afterwards, a
+    /// microstate firing its device, is something seen coming like any other.
     fn debug_alerts(&self, from: u32) -> Vec<Value> {
         const MOST: usize = 24;
         let game = &self.game;
+        let wars: Vec<u32> = game
+            .black_swans
+            .iter()
+            .filter(|swan| swan.kind == BlackSwanKind::NuclearWar)
+            .map(|swan| swan.turn)
+            .collect();
+        let news: Vec<String> = game
+            .black_swans
+            .iter()
+            .map(|swan| format!("Black swan: {}", swan.text))
+            .collect();
         let mut alerts: Vec<(u32, Value)> = Vec::new();
         for strike in game.chronicle.nuclear_strikes.iter() {
-            if strike.turn < from {
+            if strike.turn < from
+                || (strike.platform == "black_swan" && wars.contains(&strike.turn))
+            {
                 continue;
             }
             let device = if strike.thermonuclear {
@@ -1775,7 +1793,11 @@ impl Session {
             ));
         }
         for event in game.events_for(0) {
-            if event.turn < from || !event.important || event.category == "Nuclear" {
+            if event.turn < from
+                || !event.important
+                || event.category == "Nuclear"
+                || news.contains(&event.text)
+            {
                 continue;
             }
             alerts.push((

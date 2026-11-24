@@ -1497,7 +1497,9 @@ followed one alone, and the narrow window, which has the one timeline
 and says why. The engine's side is `ahead_plays_the_turns_to_come_and_comes_back_to_the_open_turn`
 and `a_black_swan_strikes_the_open_turn_and_lets_go_of_the_turns_ahead`
 (`src/server/debugger_tests.rs`), the pane names in `src/server/panes_tests.rs`,
-and the swans themselves in `src/game/black_swan_tests.rs`.
+and the swans themselves in `src/game/black_swan_tests.rs`. Two games are
+played on through every kind of swan, with the future played ahead after
+each, in `a_game_is_played_on_through_every_black_swan`.
 
 ### Black swans
 

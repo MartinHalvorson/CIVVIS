@@ -500,10 +500,13 @@ impl Game {
                 }
             }
         }
+        let all = if majors.len() == 2 {
+            "Both civilizations".to_string()
+        } else {
+            format!("All {} civilizations", majors.len())
+        };
         swan.text = format!(
-            "Instant nuclear war. All {} civilizations are at war, and {} nuclear devices fell on {} cities",
-            majors.len(),
-            devices,
+            "Instant nuclear war. {all} are at war, and {devices} nuclear devices fell on {} cities",
             struck.len()
         );
     }
@@ -529,9 +532,12 @@ impl Game {
             struck += 1;
         }
         swan.sites.extend(largest.map(|(_, position)| position));
-        swan.text = format!(
-            "Pandemic. {struck} cities lost half their people: {lost} of the world's {before} citizens"
-        );
+        let cities = if struck == 1 {
+            "1 city lost half its people".to_string()
+        } else {
+            format!("{struck} cities lost half their people")
+        };
+        swan.text = format!("Pandemic. {cities}: {lost} of the world's {before} citizens");
     }
 
     /// The ground a leak has reached by its `ring`th turn takes fallout.
@@ -656,10 +662,17 @@ impl Game {
         }
         swan.player = Some(pid);
         swan.until = self.turn + MICROSTATE_ARMED_TURNS;
-        swan.text = format!(
-            "Microstates. {name} has broken up: {} of its cities are hostile Free Cities now, each with an army and a nuclear device, and {name} keeps only {kept}",
-            leaving.len()
-        );
+        let gone = if leaving.len() == 1 {
+            "1 of its cities is a hostile Free City now, with an army and a nuclear device"
+                .to_string()
+        } else {
+            format!(
+                "{} of its cities are hostile Free Cities now, each with an army and a nuclear device",
+                leaving.len()
+            )
+        };
+        swan.text =
+            format!("Microstates. {name} has broken up: {gone}, and {name} keeps only {kept}");
     }
 
     /// One world turn of the swans that are not over: a leak spreads its

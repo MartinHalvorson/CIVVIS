@@ -6220,8 +6220,11 @@ function strangeDraw() {
     const exit = hud.querySelector(`[data-strange="close-${letter}"]`);
     exit.disabled = !idle || !many;
     exit.title = many ? `Delete ${name}: its line goes from the tree and its box from the window` : "The last world stays open";
-    // A black swan that is still going on in this world is said first.
-    const still = strangeSwans(letter).filter(swan => swan.ongoing && swan.turn <= (pane.turn ?? 0)).map(swan => `${STRANGE_SWAN} ${swan.name}`);
+    // A black swan that is still going on in this world is said first: the
+    // latest by name, and how many more there are, because the plate is short.
+    const lasting = strangeSwans(letter).filter(swan => swan.ongoing && swan.turn <= (pane.turn ?? 0));
+    const still = lasting.length === 0 ? []
+      : [`${STRANGE_SWAN} ${lasting[lasting.length - 1].name}${lasting.length > 1 ? ` +${lasting.length - 1}` : ""}`];
     const line = [...still, ...(strange.locked || pane.turn === null ? [] : [`Turn ${pane.turn}`]),
       ...[["score", "Score"], ["cities", "Cities"], ["science", "Science"]]
         .filter(([key]) => typeof numbers[key] === "number")
