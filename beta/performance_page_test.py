@@ -381,10 +381,10 @@ class EachWayOverTime(unittest.TestCase):
         self.assertIn('<section class="res-section" id="perf-history" aria-labelledby="perf-history-title" hidden>', PAGE)
         self.assertIn('<div class="perf-trends" id="perf-trends"></div>', self.SECTION)
         self.assertIn('document.getElementById("perf-history").hidden = false;', self.SCRIPT)
-        # One chart a stop, each on its own scale of seconds and every one
-        # on the same run of days; never two scales on one chart.
+        # One chart a stop, each over its own run of days and on its own
+        # scale of seconds; never two scales on one chart.
         self.assertIn("for (const row of trends) {", self.SCRIPT)
-        self.assertIn("const from = stamp(past.from), to = Math.max(stamp(past.to) + DAY_MS, from + DAY_MS);", self.SCRIPT)
+        self.assertIn("const from = earliest - (earliest === latest ? DAY_MS : 0), to = latest + (earliest === latest ? DAY_MS : 0);", self.SCRIPT)
         self.assertIn("Math.log10(s)", self.SCRIPT)
         # Two lines on a chart are told apart by a key as well as colour,
         # and the second colour is the page's own second, not a new one.

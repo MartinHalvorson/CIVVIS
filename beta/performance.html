@@ -1167,10 +1167,11 @@
 
     // ---- Each way of playing over time (operator 2026-11-24: "charts
     // studying the improvements rates of each of these over time"): a small
-    // chart for each stop of the home page's line, every one on the same
-    // run of days and on its own scale of seconds, which goes by tenfolds
-    // so that a steady pace of improvement is a straight line. A chart is
-    // drawn when its panel is first laid out and again when it changes width.
+    // chart for each stop of the home page's line, each over its own run of
+    // days (one stop has readings since the summer and another since
+    // yesterday) and on its own scale of seconds, which goes by tenfolds so
+    // that a steady pace of improvement is a straight line. A chart is drawn
+    // when its panel is first laid out and again when it changes width.
     const watched = (plot, draw) => {
       let width = 0;
       const again = () => { const now = plot.clientWidth; if (now && now !== width) { width = now; draw(now); } };
@@ -1193,7 +1194,6 @@
       // A point taken at a moment of its day stands at that moment.
       const placed = (point) => (point.at && Number.isFinite(Date.parse(point.at)) ? Date.parse(point.at) : stamp(point.taken));
       const DAY_MS = 24 * 60 * 60 * 1000;
-      const from = stamp(past.from), to = Math.max(stamp(past.to) + DAY_MS, from + DAY_MS);
       const short = (s) => (s < 0.9995 ? Math.round(s * 1000) + " ms" : s < 60 ? +s.toFixed(1) + " s" : s < 3600 ? +(s / 60).toFixed(1) + " min" : +(s / 3600).toFixed(1) + " h");
       // The marks of a chart's scale of seconds, the roundest first: a mark
       // is kept when it is on the chart and clear of every mark kept before.
@@ -1246,6 +1246,12 @@
           }
         }
         const all = row.lines.flatMap((line) => line.points.map((point) => ({ ...point, kind: line.kind, at: placed(point) })));
+        // The chart's own run of days, first reading to last, with a day of
+        // room either side when they are all of one day.
+        const days = all.map((point) => point.taken).sort();
+        const began = days[0], ended = days[days.length - 1];
+        const earliest = Math.min(...all.map((point) => point.at)), latest = Math.max(...all.map((point) => point.at));
+        const from = earliest - (earliest === latest ? DAY_MS : 0), to = latest + (earliest === latest ? DAY_MS : 0);
         const goal = Number(row.goal_seconds) || 0;
         const seen = all.map((point) => point.seconds).concat(goal ? [goal] : []);
         const lo = Math.log10(Math.min(...seen) / 1.35), hi = Math.log10(Math.max(...seen) * 1.35);
@@ -1254,7 +1260,7 @@
           const x = (at) => m.l + ((at - from) / (to - from)) * (width - m.l - m.r);
           const y = (s) => m.t + (1 - (Math.log10(s) - lo) / (hi - lo)) * (height - m.t - m.b);
           const root = svg("svg", { width, height, viewBox: "0 0 " + width + " " + height, role: "img" });
-          root.setAttribute("aria-label", title(row.key) + ", the time one game takes at each reading from " + day(past.from) + " to " + day(past.to)
+          root.setAttribute("aria-label", title(row.key) + ", the time one game takes at each reading from " + day(began) + " to " + day(ended)
             + ". The newest is " + text(newest.time) + ". Every reading is in the table below.");
           const grid = svg("g", { class: "res-grid" });
           const kept = [];
@@ -1270,10 +1276,12 @@
           }
           root.append(grid, svg("line", { class: "res-base", x1: m.l, x2: width - m.r, y1: height - m.b + 0.5, y2: height - m.b + 0.5 }));
           const first = svg("text", { class: "res-tick", x: m.l, y: height - 6, "text-anchor": "start" });
-          first.textContent = day(past.from);
+          first.textContent = day(began);
           const last = svg("text", { class: "res-tick", x: width - m.r, y: height - 6, "text-anchor": "end" });
-          last.textContent = day(past.to);
-          root.append(first, last);
+          last.textContent = day(ended);
+          // One day's readings have one date, under the middle.
+          if (began === ended) { first.setAttribute("x", (m.l + width - m.r) / 2); first.setAttribute("text-anchor", "middle"); root.append(first); }
+          else root.append(first, last);
           // The stop's own goal, a mark across the chart with its name.
           if (goal) {
             root.append(svg("line", { class: "perf-goal-line", x1: m.l, x2: width - m.r, y1: Math.round(y(goal)) + 0.5, y2: Math.round(y(goal)) + 0.5 }));
