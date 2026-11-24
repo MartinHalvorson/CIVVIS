@@ -4,8 +4,8 @@
 #
 # The output is one complete LANE of the site — the viewer at its root with
 # the engine compiled to WebAssembly beside it, the landing page at /home, the
-# pages of Charts/ under /charts (Civ AI Interpretability, Civ Analytics, Win
-# Analytics, ELO Rankings, CIVVIS Performance), the Tournaments page at
+# pages of Charts/ under /charts (AI Insights, Civ AI Interpretability, Civ
+# Analytics, Win Analytics, ELO Rankings, CIVVIS Performance), the Tournaments page at
 # /tournaments and the downloads page at /download — a
 # plain directory of static files with no
 # host-specific anything beyond the two Cloudflare Pages control files, which
@@ -175,6 +175,7 @@ elo_page="$source_tree/beta/elo.html"
 civs_page="$source_tree/beta/civs.html"
 performance_page="$source_tree/beta/performance.html"
 interpretability_page="$source_tree/beta/interpretability.html"
+insights_page="$source_tree/beta/insights.html"
 pages=()
 without=()
 
@@ -219,6 +220,9 @@ elo_at="$(address "$elo_page" elo)"
 civs_at="$(address "$civs_page" civs)"
 performance_at="$(address "$performance_page" performance)"
 interpretability_at="$(address "$interpretability_page" interpretability)"
+# AI Insights was written after pages stated their addresses, so it has no
+# former one: a revision without the page has no page to place.
+insights_at="$(address "$insights_page" charts/ai-insights)"
 download_at="$(address "$download_page" download)"
 
 # A lane built from some other revision than the invoking tree's is pinned:
@@ -289,12 +293,28 @@ if [ -f "$tournaments_page" ]; then
 else
   without+=(tournaments)
 fi
+# AI Insights (what the Civ games show about AI at large, an insight at a
+# time; the first is the games against Civilization VI's own AI ending sooner
+# at each level from Lv 5 to Lv 8) is the first page under Charts/ since
+# 2026-11-24 (operator: "the old ai interpretability should be in the process
+# of being renamed civ ai interpretability. we want a new ai insights"), and
+# so the page /charts opens: the worker opens a folder's first page in the
+# lane's list. It is filled the same way: the games against the AI from the
+# run ledger, counted by the lane's own Win Analytics script.
+if [ -f "$insights_page" ]; then
+  mkdir -p "$out/$insights_at"
+  cp "$insights_page" "$out/$insights_at/index.html"
+  fill insights_page.py "$out/$insights_at/index.html"
+  pages+=("$insights_at")
+else
+  without+=(ai-insights)
+fi
 # The Civ AI Interpretability page (the steps of one turn in order, the plan the
 # seats write down through a game, and every gene with what it is worth in
-# wins) is the first page under Charts/ since 2026-11-24 (operator: "move ai
-# interpretablity to the top of the charts/ then civ analytics, win
-# analytics. elo rankings.. civvis performanc"), and so the page /charts
-# opens: the worker opens a folder's first page in the lane's list. It is
+# wins) is the second page under Charts/, and was the first from 2026-11-24
+# (operator: "move ai interpretablity to the top of the charts/ then civ
+# analytics, win analytics. elo rankings.. civvis performanc") until AI
+# Insights was put over it later that day. It is
 # filled the same way, from the lane's source (the turn's steps, the gene
 # ranking) and the lane's snapshot of the seats' plans in
 # data/interpretability/: the agent as it is in the revision the lane plays.
@@ -306,7 +326,7 @@ if [ -f "$interpretability_page" ]; then
 else
   without+=(interpretability)
 fi
-# Civ Analytics, the second under Charts/ (operator 2026-11-23: "add another
+# Civ Analytics, the third under Charts/ (operator 2026-11-23: "add another
 # page: Civ Analytics. First can be the civ records (pulled from win
 # analytics), then early build order"): both off the run ledger, the tree of build
 # orders as Win Analytics' script reads it.
@@ -318,7 +338,7 @@ if [ -f "$civs_page" ]; then
 else
   without+=(civ-analytics)
 fi
-# Win Analytics, the third page under Charts/ and the first until 2026-11-24
+# Win Analytics, the fourth page under Charts/ and the first until 2026-11-24
 # (when in the game each victory type lands, in self-play and against the
 # Deity AI; `beta/research.html`, by the name the page had first), is filled the same way: the self-play games
 # from the lane's snapshot in data/research/, the Deity games from the run
@@ -335,7 +355,7 @@ if [ -f "$research_page" ]; then
 else
   without+=(research)
 fi
-# ELO Rankings, the fourth page under Charts/ (operator 2026-11-23: "add
+# ELO Rankings, the fifth page under Charts/ (operator 2026-11-23: "add
 # that to a new page: Charts/ELO Rankings. this should be after win
 # analytics in the ordering"): the Civ AI Agents by Elo and Civilization
 # VI's own AI at Lv 4 to Lv 8, now and over time. Filled the same way: the

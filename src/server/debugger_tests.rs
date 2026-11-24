@@ -552,6 +552,61 @@ fn a_lean_answer_gives_the_seat_its_row_of_the_standings() {
     }
 }
 
+/// Operator 2026-11-24: "we can compute (a degree in advance) the futures of
+/// the paths we are on", "we will compute the future of each path".
+///
+/// `ahead` plays on from the end of what the seated Civ AI has played and
+/// comes back: the world on the table is the open turn's as it stood, the
+/// turns played are kept ahead of it to be walked to, and the answer reads
+/// the seat on each and says what was seen coming.
+#[test]
+fn ahead_plays_the_turns_to_come_and_comes_back_to_the_open_turn() {
+    let (mut stepped, mut run) = (played(), played());
+    step_as(&mut stepped, "jack");
+    step_as(&mut run, "jack");
+    let open = world(&run);
+    let answer = run.debug(&json!({"op": "ahead", "turns": 3, "strategy": "jack", "lean": true}));
+    assert_eq!(answer["error"], Value::Null);
+    assert_eq!(answer["turn"], json!(2));
+    assert_eq!(world(&run), open, "the open turn stands as it stood");
+    assert_eq!(marked(&run), [1, 2, 3, 4, 5]);
+    assert_eq!(answer["debug"]["last"], json!(5));
+    let readings = answer["readings"].as_array().expect("a reading a turn");
+    let turns: Vec<_> = readings
+        .iter()
+        .map(|reading| reading["turn"].clone())
+        .collect();
+    assert_eq!(turns, [json!(3), json!(4), json!(5)]);
+    assert!(answer["alerts"].is_array());
+    // Asked again, it goes on from the end of what is kept, not from here.
+    let more = run.debug(&json!({"op": "ahead", "turns": 2, "strategy": "jack", "lean": true}));
+    assert_eq!(more["error"], Value::Null);
+    assert_eq!(more["turn"], json!(2));
+    assert_eq!(world(&run), open);
+    assert_eq!(marked(&run), [1, 2, 3, 4, 5, 6, 7]);
+    assert_eq!(more["readings"][0]["turn"], json!(6));
+    // The turns ahead are the ones stepping plays, and are walked to.
+    for _ in 0..3 {
+        step_as(&mut stepped, "jack");
+    }
+    assert_eq!(run.debug_jump(5), Ok(5));
+    assert_eq!(world(&stepped), world(&run));
+    // It needs a number of turns, as `play` does.
+    let none = run.debug(&json!({"op": "ahead", "strategy": "jack", "lean": true}));
+    assert!(none["error"]
+        .as_str()
+        .is_some_and(|error| error.contains("ahead needs turns")));
+    // A turn the seat has played in is not left: coming back would undo it.
+    let mut acted = played();
+    step_as(&mut acted, "jack");
+    let action = something_to_do(&acted);
+    assert_eq!(acted.act(&action), None);
+    let refused = acted.debug(&json!({"op": "ahead", "turns": 1, "lean": true}));
+    assert!(refused["error"]
+        .as_str()
+        .is_some_and(|error| error.contains("played in")));
+}
+
 /// `play` is a run of steps asked for once: the same turns, the same marks to
 /// walk back to, and how the seat stood as each turn opened. It stops where a
 /// run stops.

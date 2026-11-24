@@ -1294,16 +1294,60 @@ screens."
 
 `?mode=strange` is the split screen above, shown another way. It is listed
 just above AI Debugger in the site list, and it is the same played game: one
-engine, two worlds A and B locked to one turn, a Civ AI in each seat. Nothing
-in the engine knows about it. `beta/shim.js` seats the visitor for
-`mode=strange` as it does for `mode=play`, and the last section of
-`web/assets/app_debugger.js` draws the rest over the split the debugger makes.
+engine, a world for each timeline, a Civ AI in each seat. `beta/shim.js`
+seats the visitor for `mode=strange` as it does for `mode=play`, and the last
+section of `web/assets/app_debugger.js` draws the rest over the split the
+debugger makes.
+
+Operator, 2026-11-24: "instead of random lines, we can compute (a degree in
+advance) the futures of the paths we are on. if there are 2 screens below,
+or 1, or 3. we should be able delete branches and that removes the line and
+the window. we should be able to handle scaling windows to a high number. we
+should also monitor resource usage - maybe track memory used and cpu %
+actively on the screen, in the upper right. the upper right chart and drop
+to the lower right of the upper half of the screen", and "an experience i
+want for example, is maybe to be simulating along 3 paths. 2 different
+player-strategies at the start of the game and 1 branched during the game.
+(also, we should default open doctor strange civ 6 with our top strategy on
+the right and the challenger on the left. you can try to piece together a
+strategy on the left to beat the number 1 on the right). but simulating 3
+paths along their current strategy and we should have for example nuclear
+war visual forecasts out in the future (we will compute the future of each
+path). these should alert on the top section out in the distance."
+
+- **As many worlds as are branched, up to twelve.** A and B are the split's
+  own two. Each world past them is a page this section makes
+  (`strangeWorldOpen`): a frame named by the next letter (`c-<split>`), whose
+  record the split's listener keeps beside A's and B's, and whose world the
+  engine keeps as it keeps a half's (`panes.rs` names a pane by any letter).
+  It begins as the game the split was made from and is made a copy of the
+  world it branches from once it has loaded. The split's own lock joins two
+  halves, so it is left open, every half's own panel is put away, and the
+  worlds are moved by the page's one hand, by name.
+- **The page opens on the top strategy and its challenger.** The picker
+  shows each player strategy's rating before its name; the highest rated is
+  B, on the right, and the next is A, on the left and followed, so that a
+  branch is made from the challenger's side. Where the picker shows no
+  ratings A keeps the page's own choice and B is given another.
+- **What the page costs is in the top right corner** (`strangeMeasure`):
+  processor and memory in use, each with the last two minutes drawn, and how
+  many worlds are open. The engine's host says what it can
+  (`GET /machine-metrics`). A game served by this computer gives the
+  computer's own load and memory in use. The published build's engine cannot
+  see the computer, so its worker adds what it knows (`beta/worker.js`): the
+  memory the engine holds (`engine_bytes`) and the time it has spent
+  answering (`engine_busy_ms`), from which the page reads how much of its one
+  core the engine is using; the page's own memory is added where the browser
+  tells it.
 
 - **The worlds are boxes along the bottom of the window.** Each half puts
-  its standings, tracker and seat boxes away and is a map; the numbers of the
-  two are set side by side in the top right corner. A is on the left and B on
-  the right, each under a name plate with its branch's name, its player
-  strategy's picker and its exit.
+  its standings, tracker, seat boxes and its own panel away and is a map,
+  under a name plate with its branch's name, its player strategy's picker and
+  its exit. Up to three stand in a row, then two rows, then three
+  (`strangeGeometry`). The numbers of the worlds are set side by side on a
+  card that stands on the line of the open turn at the right, in the lower
+  right of the upper half; past three worlds it has room for what each makes
+  a turn and not the totals.
 - **A branch is named by who played it.** Operator, 2026-11-24: "branches
   should be labeled with their series of player strategies. like
   MoonshotMaven-150-JackOfAllTrades-160-MoonshotMaven would mean moonshot
@@ -1324,22 +1368,22 @@ in the engine knows about it. `beta/shim.js` seats the visitor for
   name plate, lights that world's line from the first turn to its last and
   stands the others back ("The cursor over a world on the bottom should
   highlight that world's line").
-- **A box has an exit.** "each box should have an exit to close the box. the
-  boxes should somewhat automatically resize and the divide between the
-  boxes on the bottom and the lines on the top". ✕ lets the box's branch go,
-  which stays on the tree, and the other world has the whole width. The last
-  box stays open. The engine still holds the closed world, as it stood: it is
-  asked for nothing (the lock is opened, so time runs for the open world
-  alone, and that world's own panel is put away as a locked half's is), and
-  the next branch is made in its place and locks the two again.
+- **A box has an exit, which deletes its branch.** "we should be able delete
+  branches and that removes the line and the window". ✕ takes the world's
+  line from the tree and its box from the window, and the boxes that are left
+  share the room. The last world stays. A world past the split's two is let
+  go of, page and all; one of the two is put out of sight, because the split
+  is made of them, and is the next branch's box.
 - **The line of the open turn is the divide** between the tree above and the
   boxes below. The page places it so that a box has the shape of a map,
   three high to five wide, within a share of the window (`strangeGeometry`):
   two boxes are narrower and so shorter, and one box is taller and takes the
   line up with it. It never goes above the cards at the top. It can be
   dragged, and a double-click gives it back to the page. The turn and its
-  era are written on the line, to either side of the board ("Move turn count
-  up to the center line, as that is the current turn").
+  era are written on the line, beside the board ("Move turn count up to the
+  center line, as that is the current turn"). Two boxes have the trunk's
+  column between them. Three or more leave a strip clear under the line
+  where the worlds stand on it, and one box's plate is cut away there.
 - **Each yield is a figure a turn and a total so far.** Operator, 2026-11-23:
   "lets track cumulative prod, science, culture, gold, faith next to the
   current turn yields". The card in the top right gives each world two
@@ -1355,34 +1399,48 @@ in the engine knows about it. `beta/shim.js` seats the visitor for
   worlds, and the turns to come run up from it. A turn near the line is tall
   and one far from it thin, so the whole game is on the board. Playing
   scrolls it: the line follows the followed world's turn.
-- **The highway is a tree.** The turns the two worlds share are the trunk.
-  From the turn they part on (`debugSplitFork`, the engine's own word on
-  which worlds are the same) each has a branch. The followed timeline stands
-  in the middle and the other peels off to its own world's side; either can
-  be followed. A city founded is a gem on the branch that founded it, and an
-  era is named on its first turn.
-- **Only what was played is a line.** "we should also not spew random lines
-  on the timeline". Ahead of the last turn a world has played there is a
-  dashed way straight on and nothing else. (The fan of ways a game might
-  still go, drawn from a dice, is gone.)
-- **B begins with another Civ AI.** Two worlds that seat the same one are one
-  world for ever, so the branch is given the first of a short list that is
-  not A's. Each picker seats another.
+- **The highway is a tree** (`strangeTree`). Which worlds are the same is the
+  engine's own word, as it is for the split's two (`debugSplitFork`): each
+  world says the turns it holds and the engine's print of each. A world is a
+  branch of the older world it shares the most turns with, from the last
+  turn they share, and the oldest is the trunk. The followed timeline stands
+  in the middle and the rest in lanes to its sides, as many lanes away as
+  their boxes are boxes away; any can be followed. A city founded is a gem
+  on the line that founded it, and an era is named on its first turn.
+- **Only what was played is a line, and each world's future is played.**
+  "we should also not spew random lines on the timeline", then "we can
+  compute (a degree in advance) the futures of the paths we are on". Each
+  world is played twelve turns ahead of the open turn along its own player
+  strategy, four turns at a request (`strangeAheadNext`), by the engine's
+  `ahead`: the world plays on from the last turn it holds and comes back to
+  the open one inside the one request, so nothing else finds it away. The
+  turns are kept ahead of the open turn like any turn played and walked back
+  from, so they are the line the tree draws, with the world's name and score
+  where it ends, and time running on is shown them instead of playing them
+  again: while Futures is on, no world is asked for a turn of its own. Ahead
+  of the last turn played there is a dashed way straight on and nothing
+  else. A half keeps no agents with its turns, so the agents sit down anew at
+  the start of each request, as they do after any walk.
+- **What is coming is put up on the line it is coming on.** The engine
+  answers `ahead` with what it saw on the way (`debug_alerts`): every nuclear
+  detonation in the world, whatever the played seat was told that was too
+  consequential to scroll past, and the end of the game. Each is a sign on
+  the world's line at the turn it happens on, out in the distance, which
+  comes down the board as the turns are played: ☢ in red with a ring that
+  beats, always named; the rest named where there is room.
 - **Branch is one step.** Operator, 2026-11-24: "when we branch, we should
   select the player strategy and make the branch. in one step. Branch:
   1100-MoonshotMaven (player strat dropdown)". The Branch control is a
   picker that lists what the branch's name would gain, the open turn and
   each player strategy the followed world does not seat (`150-MoonshotMaven`),
-  and picking one makes the branch (`strangeBranch`): the other world becomes
-  a copy of the followed one on the open turn (`pane-copy`) with that
-  strategy in the seat and a colour of its own. It takes the other box, or
-  opens it if it was closed. The branch that box was on stays on the tree, in
-  its own colour and struck off where it ended, with its name and score, so
-  the tree grows a fork for every branch made. Fourteen are kept.
+  and picking one makes the branch (`strangeBranch`): a new world, in a box
+  of its own beside the one it was made from, which is the followed world on
+  the open turn (`pane-copy`) with that strategy in the seat and a colour of
+  its own.
 - **Play Time and Pause Time.** The play button runs time on from the open
   turn and reads Pause Time while it runs.
 - **Going back** (the step buttons, To the fork, or a press on the highway at
-  a turn's height) puts both worlds back as they stood. The turns they hold
+  a turn's height) puts the worlds back as they stood. The turns they hold
   ahead of the open one stay on the tree, above the line.
 - **Locked, the worlds go through the turns together** (operator
   2026-11-23: "the doctor strange tool should step through turns in sync
@@ -1398,19 +1456,20 @@ in the engine knows about it. `beta/shim.js` seats the visitor for
   timeline is walked to as it stood. Pause stops both on the turn they were
   asked for. A world that cannot play the turn (its game is over) ends the
   run and says so. The worlds differ only in what is chosen for each.
-- **The lock** is a button on the panel, locked to begin with. Unlocked, each
-  world plays and goes back by itself, its name plate says its own turn, and
-  the step buttons move the followed world. Locking again brings the other
-  world to the followed one's turn first.
+- **The lock** is a button on the panel, locked to begin with, and is the
+  page's own (`strange.locked`). Unlocked, each world plays and goes back by
+  itself, its name plate says its own turn, and the step buttons move the
+  followed world. Locking again brings the other worlds to the followed
+  one's turn first.
 
-It is two worlds at a time because the split is two: the tree keeps every
-branch made, and two of them are open as worlds. A window narrower than the
-split needs, or a small device, has the one timeline, which is the AI
-Debugger, and its bar says why. `beta/debugger_test.py`
-(`check_doctor_strange`) holds the layout, the fork, the names and colours of
-the branches, the one-step Branch, the pointer over a box, the divide, a box
-closed and opened again, going back, following and the narrow window in a
-browser.
+`beta/debugger_test.py` (`check_doctor_strange`) holds all of it in a browser
+against the toy engine: the opening seats, the layout, the names and colours,
+the one-step Branch into a third world, the pointer over a box, going back,
+following, the locked run, the divide, deleting a world of each kind and
+opening one again, the meter, the futures and their alerts, time running
+through turns played ahead, and the narrow window, which has the one timeline
+and says why. The engine's side is `ahead_plays_the_turns_to_come_and_comes_back_to_the_open_turn`
+(`src/server/debugger_tests.rs`) and the pane names in `src/server/panes_tests.rs`.
 
 ## `POST /autosearch`
 

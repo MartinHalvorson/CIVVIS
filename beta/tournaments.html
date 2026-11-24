@@ -179,9 +179,9 @@
      (operator, 2026-11-22), and drops down like one (operator,
      2026-11-24: "charts/ can drop down folder style and the user can
      pick the right chart"): pointing at it, or tabbing to it, opens its
-     five pages under it, and the reader picks one. Charts/ itself still
-     opens the folder's first page, Civ AI Interpretability (operator,
-     2026-11-24: "move ai interpretablity to the top of the charts/"). On
+     six pages under it, and the reader picks one. Charts/ itself still
+     opens the folder's first page, AI Insights (operator, 2026-11-24:
+     "we want a new ai insights", over the page he had put first). On
      a touch screen the first tap opens the list (the script after the
      row). A strip as tall as the gap over the list keeps it open on the
      pointer's way down to it. */
@@ -289,6 +289,22 @@
   .tour-game { width: 11px; height: 11px; border-radius: 2px; background: var(--loss); }
   .tour-game.is-win { background: var(--gold); }
   .tour-game.is-open { background: none; box-shadow: inset 0 0 0 1px var(--border-strong); }
+  /* The row says where it starts and where it ends (operator, 2026-11-24:
+     "we should label the first game and last game in the chart. just like
+     a first and last label to make the flow clear"): "First" before its
+     first square and "Last" after its last one. A label is written inside
+     its own square and stands in that square's margin, so it has its room
+     in the row and a wrapped row never parts it from its game. The first
+     square's margin is a whole number of squares (14px each: 11px and the
+     3px between two), so every line of a wrapped row keeps its squares in
+     the same columns. Both margins are measured from the label once it is
+     on the page; these are the two words' own. */
+  .tour-game { position: relative; }
+  .tour-game.is-first { margin-left: var(--lead, 28px); }
+  .tour-game.is-last { margin-right: var(--trail, 28px); }
+  .tour-end { position: absolute; top: 0; color: var(--muted); font-size: 10.5px; font-weight: 600; line-height: 11px; white-space: nowrap; }
+  .tour-end.is-first { left: calc(-1 * var(--lead, 28px)); }
+  .tour-end.is-last { left: calc(100% + 5px); }
   .tour-key { display: inline-block; width: 9px; height: 9px; margin-right: 4px; border-radius: 2px; background: var(--loss); vertical-align: -1px; }
   .tour-key.is-win { background: var(--gold); }
   .tour-legend { margin: 0; color: var(--faint); font-size: 11.5px; line-height: 1.5; }
@@ -385,7 +401,7 @@
          row across the top of the page (operator, 2026-11-24: "try putting
          the vertical menu from home... civ across the top instad"), where
          until then they stood in a column to the left of the title. Charts/
-         is a folder and drops down like one to its five pages ("charts/ can
+         is a folder and drops down like one to its six pages ("charts/ can
          drop down folder style and the user can pick the right chart"). The
          page on screen is ringed in white: this is Tournaments, a page of
          its own. Every link is lane-relative (this page lives at
@@ -394,8 +410,9 @@
     <nav class="site-nav" aria-label="CIVVIS sites">
       <a class="site-link" href="../home/">Home</a>
       <div class="site-folder">
-        <a class="site-link" href="../charts/civ-ai-interpretability/" title="What the games show: charts read off the CIVVIS AI agents&#8217; games.">Charts/</a>
+        <a class="site-link" href="../charts/ai-insights/" title="What the games show: charts read off the CIVVIS AI agents&#8217; games.">Charts/</a>
         <div class="site-menu">
+          <a class="site-link sub-link" href="../charts/ai-insights/" title="What the games show about AI at large: smarter AI picks up speed.">AI Insights</a>
           <a class="site-link sub-link" href="../charts/civ-ai-interpretability/" title="How a CIVVIS AI agent decides: one turn step by step, its plan through a game, and what each rule is worth in wins.">Civ AI Interpretability</a>
           <a class="site-link sub-link" href="../charts/civ-analytics/" title="How CIVVIS does as each civ, and the early build orders that win against Deity.">Civ Analytics</a>
           <a class="site-link sub-link" href="../charts/win-analytics/" title="Who wins, how and when: the games against Civilization VI&#8217;s own AI beside the CIVVIS self-play games.">Win Analytics</a>
@@ -550,9 +567,18 @@
     // level in front when the tournament's games are not all at one level.
     const told = (g, mixed) => [mixed && g.level ? "Lv " + g.level : "", g.civ, g.how, g.turns != null ? "turn " + g.turns : ""]
       .filter(Boolean).join(" · ");
+    // A label at one end of a row of squares, written inside the square
+    // it names: "first" stands before that square, "last" after it.
+    const ended = (square, side, text) => {
+      square.classList.add("is-" + side);
+      square.append(el("span", "tour-end is-" + side, text));
+    };
     // A square per game in the order played, then an outline per game a
     // running tournament has still to play.
     // An indefinite tournament (no size) draws its latest 100 games.
+    // The row is labelled at both ends, "First" and "Last", so it reads
+    // one way. A row that starts later than the tournament's first game
+    // (the latest 100) says which game it starts at instead, "Game 141".
     const strip = (t, open) => {
       const row = el("ol", "tour-strip");
       const mixed = list(t.levels).length > 0;
@@ -567,6 +593,11 @@
         const square = el("li", "tour-game is-open");
         square.title = "Game " + (i + 1) + ": not played yet";
         row.append(square);
+      }
+      const squares = row.children;
+      if (squares.length) {
+        ended(squares[0], "first", skipped ? "Game " + (skipped + 1) : "First");
+        ended(squares[squares.length - 1], "last", "Last");
       }
       row.setAttribute("aria-label", plural(t.wins, "win", "wins") + " and " + plural(t.losses, "loss", "losses") + ", in the order played");
       return row;
@@ -799,6 +830,18 @@
 
     document.getElementById("tour-empty").hidden = true;
     document.getElementById("tour-record").hidden = false;
+
+    // A label's room in its row, measured now the record is on the page.
+    // Before the first square it is the fewest whole squares the label
+    // fits in, 14px each, so a wrapped row keeps its columns; after the
+    // last square it is the label's own width.
+    document.querySelectorAll(".tour-end").forEach((label) => {
+      const wide = label.getBoundingClientRect().width;
+      if (!wide) return;
+      const first = label.classList.contains("is-first");
+      label.parentNode.style.setProperty(first ? "--lead" : "--trail",
+        (first ? Math.ceil((wide + 4) / 14) * 14 : Math.ceil(wide + 5)) + "px");
+    });
   })();
   </script>
   <script data-first-visit>

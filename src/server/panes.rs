@@ -90,11 +90,15 @@ pub(super) fn named<'a>(target: &'a str, referer: Option<&'a str>) -> Option<&'a
         .filter(|pane| well_formed(pane))
 }
 
-/// `a-` or `b-`, then the split's own tag.
+/// A lowercase letter and `-`, then the split's own tag. A split is two
+/// halves, `a-` and `b-`; a page that sets more worlds than two side by side
+/// (Doctor Strange's Civ 6) names the rest on down the alphabet.
 fn well_formed(pane: &str) -> bool {
-    (3..=24).contains(&pane.len())
-        && (pane.starts_with("a-") || pane.starts_with("b-"))
-        && pane[2..].bytes().all(|byte| byte.is_ascii_alphanumeric())
+    let bytes = pane.as_bytes();
+    (3..=24).contains(&bytes.len())
+        && bytes[0].is_ascii_lowercase()
+        && bytes[1] == b'-'
+        && bytes[2..].iter().all(u8::is_ascii_alphanumeric)
 }
 
 /// The other half of `pane`'s split, when `name` is that.
