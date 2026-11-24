@@ -213,6 +213,18 @@ class Played(unittest.TestCase):
         self.assertLess(low, high)
         self.assertEqual(ev("[+document.getElementById('elo').min, +document.getElementById('elo').max]"), [low, high])
         self.assertIn("Stockfish", ev("document.getElementById('elo-about').textContent"))
+        # A press on the board. From the seat the king stands in front of
+        # the pawn behind it, and at the start it cannot move: a press on it
+        # is the pawn's. A press on the chosen piece lets it go, and a press
+        # on an empty square it may go to is the move.
+        self.assertEqual(ev("wizardChess.meant({pieces: [4, 12], floor: 20})"), {"choose": 12, "square": 12})
+        self.assertEqual(ev("wizardChess.meant({pieces: [4], floor: -1})"), {"stuck": 4})
+        ev("wizardChess.point({pieces: [4, 12], floor: 20})")
+        self.assertEqual(ev("[wizardChess.game.chosen, wizardChess.world.dots.filter(held => held.dot.visible).length]"), [12, 2])
+        self.assertEqual(ev("wizardChess.meant({pieces: [12], floor: 20})"), {"letGo": True, "square": 12})
+        self.assertEqual(ev("wizardChess.meant({pieces: [], floor: 28}).square"), 28)
+        ev("wizardChess.point({pieces: [12], floor: 20})")
+        self.assertEqual(ev("wizardChess.game.chosen"), -1)
         # A command that is no move is refused in words, and the board stands.
         self.assertFalse(ev("wizardChess.command('knight to e5')"))
         self.assertIn("not a move that can be played", ev("document.getElementById('said').textContent"))

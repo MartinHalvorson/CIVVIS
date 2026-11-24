@@ -881,17 +881,26 @@ class Seat {
   look(point) { this.focus = point && this.follow ? point.clone() : null; }
   shake(much) { if (!CALM) this.shaking = Math.max(this.shaking, much); }
 
-  // What is under the pointer: a piece, and the square it or the pointer is on.
+  // What is under the pointer, nearest first: the square of each piece the
+  // line of sight passes through, and then the square of the board it lands
+  // on. From a low seat a piece stands in front of the ones behind it, so a
+  // press is taken to mean the first of these that it can mean (`meant`).
   under(event) {
     const box = this.canvas.getBoundingClientRect();
     const at = new THREE.Vector2((event.clientX - box.left) / box.width * 2 - 1, -((event.clientY - box.top) / box.height) * 2 + 1);
     this.ray.setFromCamera(at, this.camera);
-    const hit = this.ray.intersectObjects([...this.world.pieces.values()], true)[0];
-    if (hit && hit.object.userData.owner) return hit.object.userData.owner.userData.square;
-    const floor = new THREE.Vector3();
-    if (!this.ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), floor)) return -1;
-    const file = Math.floor(floor.x + 4), rank = Math.floor(4 - floor.z);
-    return file < 0 || file > 7 || rank < 0 || rank > 7 ? -1 : rank * 8 + file;
+    const pieces = [];
+    for (const hit of this.ray.intersectObjects([...this.world.pieces.values()], true)) {
+      const owner = hit.object.userData.owner;
+      if (owner && !pieces.includes(owner.userData.square)) pieces.push(owner.userData.square);
+    }
+    const spot = new THREE.Vector3();
+    let floor = -1;
+    if (this.ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), spot)) {
+      const file = Math.floor(spot.x + 4), rank = Math.floor(4 - spot.z);
+      if (file >= 0 && file <= 7 && rank >= 0 && rank <= 7) floor = rank * 8 + file;
+    }
+    return {pieces, floor};
   }
 
   frame(dt) {
@@ -1196,16 +1205,45 @@ function askPromotion(moves) {
   box.firstChild.focus();
 }
 
-function point(sq) {
-  if (game.over || game.busy || game.position.turn !== game.side || sq < 0) { choose(-1); return; }
-  const piece = game.position.board[sq];
-  if (game.chosen >= 0) {
-    const moves = legalMoves(game.position).filter(move => move.from === game.chosen && move.to === sq);
-    if (moves.length > 1) { askPromotion(moves); return; }
-    if (moves.length === 1) { say(`You: ${spoken(game.position, moves[0])}.`); make(moves[0], game.side); return; }
+// What a press on the board means, given what is under it (`Seat.under`:
+// the pieces the line of sight passes through, nearest first, and the square
+// of the board it lands on). In order: a piece the chosen one may take; the
+// chosen piece itself, which is let go; a piece of the player's own that has
+// a move; and only then the square of the board behind them all, when the
+// chosen piece may go there. A piece that cannot act does not hide the one
+// behind it, and a press on a piece is never a press on the floor behind it.
+function meant({pieces, floor}) {
+  if (game.over || game.busy || game.position.turn !== game.side) return {};
+  const legal = legalMoves(game.position), going = legal.filter(move => move.from === game.chosen);
+  const own = sq => { const piece = game.position.board[sq]; return !!piece && colourOf(piece) === game.side; };
+  for (const sq of pieces) {
+    const moves = going.filter(move => move.to === sq);
+    if (moves.length) return {moves, square: sq};
+    if (sq === game.chosen) return {letGo: true, square: sq};
+    if (own(sq) && legal.some(move => move.from === sq)) return {choose: sq, square: sq};
   }
-  if (piece && colourOf(piece) === game.side && sq !== game.chosen) { choose(sq); sound.play("pick"); return; }
-  choose(-1);
+  const moves = going.filter(move => move.to === floor);
+  if (moves.length) return {moves, square: floor};
+  return pieces.length && own(pieces[0]) ? {stuck: pieces[0]} : {};
+}
+
+function point(under) {
+  const what = meant(under);
+  if (what.moves) {
+    if (what.moves.length > 1) { askPromotion(what.moves); return; }
+    say(`You: ${spoken(game.position, what.moves[0])}.`);
+    make(what.moves[0], game.side);
+  } else if (what.choose !== undefined) {
+    choose(what.choose);
+    sound.play("pick");
+  } else {
+    choose(-1);
+    // A piece with nowhere to go says so.
+    if (what.stuck !== undefined) {
+      say(`That ${PIECE_NAMES[game.position.board[what.stuck].toLowerCase()]} has no move.`, "wrong");
+      sound.play("no");
+    }
+  }
 }
 
 // ---- what the laptop's own controls do
@@ -1227,11 +1265,9 @@ stage.addEventListener("pointermove", event => {
     }
     return;
   }
-  const sq = seat.under(event), yours = !game.over && !game.busy && game.position.turn === game.side;
-  const piece = sq >= 0 ? game.position.board[sq] : null;
-  const live = yours && ((piece && colourOf(piece) === game.side) || (game.chosen >= 0 && legalMoves(game.position).some(move => move.from === game.chosen && move.to === sq)));
-  stage.classList.toggle("pointing", !!live);
-  world.show("hover", live ? sq : null);
+  const what = meant(seat.under(event));
+  stage.classList.toggle("pointing", what.square !== undefined);
+  world.show("hover", what.square !== undefined ? what.square : null);
 });
 stage.addEventListener("pointerup", event => {
   const was = pressed;
@@ -1336,4 +1372,4 @@ function frame(now) {
 requestAnimationFrame(now => { then = now; el("loading").classList.add("gone"); frame(now); });
 
 // For the checks (beta/wizard_chess_test.py), and for anyone at the console.
-window.wizardChess = {game, world, seat, opponent, command, begin, takeBack, running};
+window.wizardChess = {game, world, seat, opponent, command, begin, takeBack, running, meant, point, choose};

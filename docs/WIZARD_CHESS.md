@@ -55,7 +55,11 @@ it back.
 - *Typed.* Start typing anywhere: the same words, or the way a game is
   written down ("Nf3", "exd5", "O-O", "e8=Q").
 - *Pointed.* Click a piece, which wakes and shows where it may go, and
-  click a square.
+  click a square. From a low seat a piece stands in front of the ones
+  behind it, so a click means the first thing along the line of sight that
+  it can mean (`meant`): a piece that has no move does not hide the one
+  behind it, and a click on a piece is never a click on the square behind
+  it.
 
 All three end in the same place: the command is read against the position
 (`chess/command.js`), and the piece then makes the move itself. What a
