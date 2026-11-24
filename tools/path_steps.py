@@ -22,9 +22,15 @@ and counts the path each one took:
   rules together (macOS `/usr/bin/time -l`; left out where the platform does
   not count them). Unlike seconds it does not move with how busy the host is;
 - **replay instructions**: the same path applied to the same opening world
-  with no agent in the loop (`civvis core-probe strip` with nothing stripped,
-  which replays the window twice, so half of its count). This is what the
-  path costs once nobody has to decide it;
+  with no agent in the loop (`civvis core-probe ablate` stopped at once,
+  which is two replays of the whole game and nothing else, so half of its
+  count). This is what the path costs once nobody has to decide it. The
+  probe holds the first replay against the world the game itself ended on:
+  a reading is recorded only if no action was refused and nothing differs
+  but the agents' own notes among the players' counters, which the agents
+  write outside any action (`players[*].counters`; which keys are notes is
+  the engine's own list, `is_agent_note` in `src/game.rs`, read from the
+  source);
 - **walks**: a unit's consecutive one-hex `move` steps inside one seat's turn
   are one walk. `merged` is the steps there would be if every walk were one
   step, which is the first reduction the log itself shows.
@@ -67,6 +73,39 @@ SEED_BASE = 20261122000000
 SEED_STEP = 100000
 
 RETIRED = re.compile(r"^\s*(\d+)\s+instructions retired\s*$", re.M)
+
+#: The one field a faithful replay may differ in from the game as played:
+#: the players' counters, where the agents keep notes of their own.
+NOTES = "players[*].counters"
+
+
+#: The engine's rule for which counter keys are an agent's notes and not a
+#: tally the rules keep.
+RULE = re.compile(r"pub fn is_agent_note\(key: &str\) -> bool \{(.*?)\n\}", re.S)
+
+
+def agent_notes(root: Path = ROOT) -> frozenset[str]:
+    """The names the engine counts as agents' notes: every name in
+    `is_agent_note` (`src/game.rs`), the heads of the namespaced keys
+    (`commit` for `commit:made`) and the plain keys alike. Empty when the
+    source cannot be read, and then no differing counter passes."""
+    try:
+        body = RULE.search((root / "src" / "game.rs").read_text(encoding="utf-8"))
+    except OSError:
+        return frozenset()
+    return frozenset(re.findall(r'"([^"]+)"', body.group(1))) if body else frozenset()
+
+
+def faithful(baseline: dict[str, Any], notes: frozenset[str]) -> bool:
+    """Whether a replay of the path came out as the game did, from the line
+    the probe prints for it: nothing refused, and nothing different but the
+    agents' notes (`notes`: a key, or the head of a namespaced one) among
+    the players' counters."""
+    if baseline.get("failed") or baseline.get("refused") or baseline.get("first_refusal"):
+        return False
+    if any(field != NOTES for field in baseline.get("differs_from_recorded") or []):
+        return False
+    return all(str(key) in notes or str(key).split(":", 1)[0] in notes for key in baseline.get("counter_keys") or [])
 
 
 def seeds(games: int, base: int = SEED_BASE) -> list[int]:
@@ -131,15 +170,17 @@ def play(binary: Path, seed: int, directory: Path, log) -> dict[str, Any]:
     row["seconds"] = round(float(meta["window_s"]), 2)
     if retired:
         row["instructions"] = retired
-    nothing = directory / "nothing.txt"
-    nothing.write_text("", encoding="utf-8")
-    out, retired = counted([str(binary), "core-probe", "strip", str(directory), str(nothing)], directory)
-    replay = json.loads(out.strip().splitlines()[-1])
-    row["replay_identical"] = bool(
-        replay.get("restored") and not replay.get("diverged_count") and not replay.get("refused") and not replay.get("baseline_failed")
-    )
-    if retired:
-        # `strip` replays the window twice, once as its reference.
+    # A deadline of nought stops the probe after its two replays of the whole
+    # game: the recorded window, then the same from the opening world.
+    out, retired = counted([str(binary), "core-probe", "ablate", str(directory), "0"], directory)
+    printed = [json.loads(line) for line in out.strip().splitlines() if line.startswith("{")]
+    replays = [line for line in printed if "replay_s" in line]
+    baseline = next((line for line in printed if line.get("baseline")), {"failed": True})
+    row["replay_identical"] = faithful(baseline, agent_notes())
+    if not row["replay_identical"]:
+        log(f"seed {seed}: the replay differs: " + json.dumps({key: baseline.get(key) for key in ("failed", "refused", "first_refusal", "differs_from_recorded")})
+            + " counters " + json.dumps(sorted(set(baseline.get("counter_keys") or []) - agent_notes())[:8]))
+    if retired and len(replays) == 2:
         row["replay_instructions"] = retired // 2
     log(
         f"seed {seed}: {row['steps']:,} steps over {row['turns']} turns, {row['bytes']:,} bytes"

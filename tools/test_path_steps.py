@@ -49,6 +49,44 @@ class PathOfTest(unittest.TestCase):
         self.assertEqual(path["merged"], path["steps"] - path["hops"] + path["walks"])
 
 
+class FaithfulTest(unittest.TestCase):
+    """What the probe prints for a replay, read as same world or not."""
+
+    NOTES = frozenset({"commit", "raid_wars"})
+
+    def test_nothing_refused_and_nothing_different_is_the_same_world(self):
+        self.assertTrue(path_steps.faithful({"baseline": True, "refused": 0, "first_refusal": None, "differs_from_recorded": []}, self.NOTES))
+
+    def test_the_agents_own_notes_may_differ(self):
+        line = {"baseline": True, "refused": 0, "differs_from_recorded": ["players[*].counters"], "counter_keys": ["commit:made", "commit:settle:lost", "raid_wars"]}
+        self.assertTrue(path_steps.faithful(line, self.NOTES))
+        # With no list of notes to go by, none passes.
+        self.assertFalse(path_steps.faithful(line, frozenset()))
+
+    def test_a_rules_tally_or_any_other_field_may_not(self):
+        counters = {"baseline": True, "refused": 0, "differs_from_recorded": ["players[*].counters"], "counter_keys": ["commit:made", "diplomatic_favor"]}
+        self.assertFalse(path_steps.faithful(counters, self.NOTES))
+        self.assertFalse(path_steps.faithful({"baseline": True, "refused": 0, "differs_from_recorded": ["units[*].hp"]}, self.NOTES))
+        both = {"baseline": True, "refused": 0, "differs_from_recorded": ["players[*].counters", "cities[*].food"], "counter_keys": []}
+        self.assertFalse(path_steps.faithful(both, self.NOTES))
+
+    def test_a_refused_action_or_a_failed_replay_is_not_the_same_world(self):
+        refused = {"baseline": True, "refused": 2, "first_refusal": [10, "no moves left"], "differs_from_recorded": []}
+        self.assertFalse(path_steps.faithful(refused, self.NOTES))
+        self.assertFalse(path_steps.faithful({"baseline": True, "failed": True}, self.NOTES))
+
+    def test_which_keys_are_notes_is_read_from_the_engine_s_own_rule(self):
+        notes = path_steps.agent_notes()
+        # A namespaced head and a plain key the engine lists, and a rules
+        # tally it does not.
+        self.assertIn("commit", notes)
+        self.assertIn("raid_wars", notes)
+        self.assertNotIn("diplomatic_favor", notes)
+        self.assertGreater(len(notes), 20)
+        with tempfile.TemporaryDirectory() as folder:
+            self.assertEqual(path_steps.agent_notes(Path(folder)), frozenset())
+
+
 class SummariseTest(unittest.TestCase):
     def game(self, steps, **more):
         base = {"seed": 1, "turns": 200, "seats": 17, "won": True, "steps": steps, "bytes": steps * 40, "hops": steps // 2,

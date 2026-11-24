@@ -53,11 +53,14 @@ The path is the same on any machine for a given build and seed. The
 instructions and the seconds belong to the machine. Instructions do not move
 with how busy the machine is, which seconds do.
 
-The path alone is measured with `civvis core-probe strip` and nothing
-stripped. That command replays the game twice, once as its own reference, so
-the figure is half of what it retires. It also checks that the replay ends on
-the same world as the game did, and a reading whose replay differs is not
-recorded.
+The path alone is measured with `civvis core-probe ablate` stopped at once.
+That is two replays of the whole game and nothing else, so the figure is half
+of what it retires. The probe holds the first replay against the world the
+game itself ended on. A reading is recorded only if no action was refused and
+nothing differs but the agents' own notes among the players' counters
+(`commit:made`, `raid_wars` and the like), which the agents write outside any
+action. Which keys are notes is the engine's own list, `is_agent_note` in
+`src/game.rs`, and the tool reads it from the source.
 
 ## The first reading
 

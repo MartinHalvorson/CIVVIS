@@ -16,7 +16,6 @@
    "bytes": 2983094,
    "hops": 56442,
    "walks": 31478,
-   "merged": 50309,
    "kinds": {
     "move": 56442,
     "end_turn": 3747,
@@ -80,9 +79,10 @@
     "coastal_raid": 1,
     "buy_district": 0
    },
-   "instructions": 196365505439,
-   "replay_instructions": 37375160237,
-   "seconds": 19.4,
+   "merged": 50309,
+   "instructions": 196151777861,
+   "replay_instructions": 37542731970,
+   "seconds": 15.9,
    "replay_identical": true
   }
  ]
