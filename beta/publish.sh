@@ -472,7 +472,8 @@ former = ["home", "research", "tournaments", "performance", "interpretability", 
 # to the site root. Nothing of the page is copied; this only names where an
 # older viewer's link pointed.
 set_aside = ["wizard-chess"]
-for address in dict.fromkeys([*carried, *former, *set_aside]):
+former += set_aside
+for address in dict.fromkeys([*carried, *former]):
     needle, replacement = f'href="/{address}"', f'href="{address}/"'
     page = page.replace(needle, replacement)
     for path in scripts:
