@@ -297,6 +297,15 @@ class Played(unittest.TestCase):
         # A threat that is new turns the rider's head to it.
         ev("wizardChess.game.threats = ''; wizardChess.peril()")
         self.assertIsNotNone(ev("wizardChess.seat.alarm"))
+        # Turned toward their knight's own head, the rider rises in the saddle
+        # to see over it; turned back, they sit down again.
+        ev("wizardChess.seat.glance(null); Object.assign(wizardChess.seat.gaze, {yaw: 1.4, at: wizardChess.seat.clock})")
+        self.until("wizardChess.seat.camera.position.y > 1.45", "the rider rises to see over the head", seconds=60)
+        ev("wizardChess.seat.straighten()")
+        self.until("wizardChess.seat.camera.position.y < 1.3", "the rider sits down again", seconds=60)
+        # What a frame costs is measured, and says what drew it.
+        cost = ev("wizardChess.frameCost(5)")
+        self.assertTrue(cost["ms"] > 0 and cost["drawnBy"] and cost["seat"] == "ride", cost)
         # Taken: the rider is thrown, and stands at the side of the board.
         ev("(w => w.make(w.moveFromUci(w.game.position, 'd6e5'), 'b'))(wizardChess)")
         self.until("wizardChess.seat.mode === 'aside'", "the rider is thrown and gets up", seconds=120)

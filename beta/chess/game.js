@@ -1079,6 +1079,7 @@ class Seat {
     this.head = {yaw: 0, pitch: 0, roll: 0};
     this.mounted = null;
     this.stand = null;
+    this.rise = 0;
     this.flight = 0;
     this.blend = null;
     this.focus = null;
@@ -1304,7 +1305,16 @@ class Seat {
   rider(dt) {
     const body = this.mounted.userData.body;
     body.updateWorldMatrix(true, false);
-    const eye = body.localToWorld(EYE.clone()), ahead = body.localToWorld(AHEAD.clone()).sub(eye);
+    const ahead = body.localToWorld(AHEAD.clone()).sub(body.localToWorld(EYE.clone())), forward = Math.atan2(-ahead.x, -ahead.z);
+    // The knight's head is to the rider's left. Turned toward it, they rise
+    // in the saddle and lean in, so as to see over it, the more the further
+    // round they look.
+    const across = this.head ? turnBy(forward, this.head.yaw) : 0;
+    this.rise += (Math.max(0, Math.min(1, (across - 0.3) / 0.8)) - this.rise) * Math.min(1, dt * 5);
+    const seat = EYE.clone();
+    seat.y += 0.42 * this.rise;
+    seat.z -= 0.2 * this.rise;
+    const eye = body.localToWorld(seat);
     // A living thing under you breathes.
     if (!CALM) eye.y += 0.012 * Math.sin(this.clock * 1.7);
     this.aim(eye, Math.atan2(-ahead.x, -ahead.z), Math.atan2(ahead.y, Math.hypot(ahead.x, ahead.z)), dt);
@@ -1955,6 +1965,21 @@ function frame(now) {
 seat.blend = null;
 requestAnimationFrame(now => { then = now; el("loading").classList.add("gone"); frame(now); });
 
+// What a frame costs on this machine, in milliseconds: the world's own work
+// and the drawing, over `count` frames, each one made to finish on the
+// graphics card before the next is begun (a pixel is read back). With the
+// name of what drew it, which says whether that was the machine's card or a
+// browser drawing in software.
+function frameCost(count = 120) {
+  const gl = seat.renderer.getContext(), pixel = new Uint8Array(4), told = gl.getExtension("WEBGL_debug_renderer_info");
+  const finish = () => gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+  for (let at = 0; at < Math.min(10, count); at++) { world.tick(1 / 60); seat.frame(1 / 60); finish(); }
+  const started = performance.now();
+  for (let at = 0; at < count; at++) { world.tick(1 / 60); seat.frame(1 / 60); finish(); }
+  return {ms: (performance.now() - started) / count, drawnBy: told ? gl.getParameter(told.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER),
+    pixels: [seat.renderer.domElement.width, seat.renderer.domElement.height], seat: seat.mode};
+}
+
 // For the checks (beta/wizard_chess_test.py), and for anyone at the console.
 window.wizardChess = {game, world, seat, sound, opponent, command, begin, takeBack, running, meant, point, choose, make, ride, origins,
-  mountSquare, moveFromUci, peril, settle};
+  mountSquare, moveFromUci, peril, settle, frameCost};
