@@ -2914,7 +2914,7 @@ impl Game {
     }
 
     pub(super) fn forget_observed_palaces(&mut self, old: usize, new: usize) {
-        Arc::make_mut(&mut self.observed_city_palaces).retain(|id, _| {
+        Arc::make_mut(&mut Arc::make_mut(&mut self.host).observed_city_palaces).retain(|id, _| {
             self.cities
                 .get(id)
                 .is_some_and(|city| city.owner != old && city.owner != new)

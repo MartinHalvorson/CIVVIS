@@ -266,7 +266,7 @@ impl Game {
                 faith: faith as f32,
                 gold: gold as f32,
             };
-            Arc::make_mut(&mut self.turn_stats).push(row);
+            self.chronicle.turn_stats_mut().push(row);
         }
         self.settle_gold_budget(pid, gold);
         self.players[pid].faith += faith;

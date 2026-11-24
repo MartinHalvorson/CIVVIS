@@ -1915,14 +1915,14 @@ impl Game {
             units_destroyed,
         };
         self.announce_nuclear_strike(&strike, &struck_names);
-        self.nuclear_strikes.push(strike);
+        self.chronicle.nuclear_strikes_mut().push(strike);
         // A client animates the tail of this list and a log describes it; the
         // full history of a long nuclear war is not worth carrying in every
         // frame forever.
         const STRIKES_KEPT: usize = 32;
-        if self.nuclear_strikes.len() > STRIKES_KEPT {
-            let excess = self.nuclear_strikes.len() - STRIKES_KEPT;
-            self.nuclear_strikes.drain(..excess);
+        if self.chronicle.nuclear_strikes.len() > STRIKES_KEPT {
+            let excess = self.chronicle.nuclear_strikes.len() - STRIKES_KEPT;
+            self.chronicle.nuclear_strikes_mut().drain(..excess);
         }
         Ok(())
     }

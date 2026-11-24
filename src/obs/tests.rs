@@ -1566,19 +1566,19 @@ fn move_trails_reach_the_spectator_whole_and_a_seat_through_its_fog() {
         .copied();
     let dark_a = dark.next().expect("fog exists on a fresh map");
     let dark_b = dark.next().expect("fog is wider than one tile");
-    game.unit_move_trails.push(UnitMoveTrail {
+    game.chronicle.unit_move_trails_mut().push(UnitMoveTrail {
         unit: 701,
         owner: 1,
         turn: game.turn,
         path: vec![dark_a, dark_b, home, seen],
     });
-    game.unit_move_trails.push(UnitMoveTrail {
+    game.chronicle.unit_move_trails_mut().push(UnitMoveTrail {
         unit: 702,
         owner: 1,
         turn: game.turn,
         path: vec![dark_a, home, dark_b],
     });
-    game.unit_move_trails.push(UnitMoveTrail {
+    game.chronicle.unit_move_trails_mut().push(UnitMoveTrail {
         unit: 703,
         owner: 0,
         turn: game.turn,
@@ -2667,7 +2667,7 @@ fn a_finished_game_sends_every_civilization_s_history_on_one_turn_axis() {
         observation_spectator(&game, 0)["game_stats"].is_null(),
         "a running game's frames do not carry the history"
     );
-    let rows = game.turn_stats.len();
+    let rows = game.chronicle.turn_stats.len();
     assert!(
         rows >= 10,
         "every played turn of every major leaves a row, got {rows}"
@@ -2681,7 +2681,7 @@ fn a_finished_game_sends_every_civilization_s_history_on_one_turn_axis() {
         .apply(planning.current, &crate::game::Action::EndTurn)
         .unwrap();
     assert_eq!(
-        planning.turn_stats.len(),
+        planning.chronicle.turn_stats.len(),
         rows,
         "a planning copy records nothing"
     );
