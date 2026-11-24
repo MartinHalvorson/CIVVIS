@@ -7009,6 +7009,7 @@ async function boot() {
     // Its failure is this boot's failure, reported where it is awaited below.
     openingRead.catch(() => {});
     RULES = await fetchJSON("/rules");
+    await pageScriptsRan; // app_palette.js: what follows calls into later scripts
     GENE_PROGRAM = await geneProgramRead;
     // The engine's stock opening setup: the single description of the world
     // nobody has decided anything about. The controls below stamp their
@@ -39858,8 +39859,7 @@ resize();
 // Nothing defined in app_setup.js is called here: that file loads after this
 // one, so a load-time call throws and boot() below never runs — the page
 // stays behind the "Joining the live world" veil with viewers 0. Those calls
-// live at the end of app_setup.js, still before the engine's first answer
-// (boot's synchronous prefix ends at its first await).
+// live at the end of app_setup.js; boot waits for it (`pageScriptsRan`).
 boot();
 
 // `?setup=1` lands with the sidebar's Game setup drawer open: the home page's
