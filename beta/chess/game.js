@@ -145,6 +145,10 @@ class World {
     this.ridden = null;
     // The piece that is moving now, if one is (`play`).
     this.moving = null;
+    // How many times the pieces have been set down afresh (`set`). A move
+    // still being played out when they are (a new game begun, a game come
+    // back to) is the old board's, and stops touching this one.
+    this.era = 0;
     this.glow = glowTexture();
     this.flames = [];
     this.debris = [];
@@ -353,6 +357,8 @@ class World {
     for (const held of this.pieces.values()) this.scene.remove(held);
     this.pieces.clear();
     this.ridden = null;
+    this.moving = null;
+    this.era += 1;
     position.board.forEach((piece, sq) => {
       if (!piece) return;
       const held = this.form(piece);
@@ -529,7 +535,9 @@ class World {
   // `hooks` is how the seat hears of it: `sound(name, strength, at)`, and
   // `look(point)` / `look(null)` when there is something to lean in for.
   async play(move, hooks) {
-    const mover = this.pieces.get(move.from), kind = mover.userData.kind;
+    const mover = this.pieces.get(move.from), kind = mover.userData.kind, era = this.era;
+    // Set down afresh while this was being played out: it is not this board's.
+    const gone = () => { if (this.era === era) return false; hooks.moving(null); return true; };
     const to = sqPoint(move.to);
     const victimAt = move.flag === "ep" ? move.to + (mover.userData.colour === "w" ? -8 : 8) : move.to;
     const victim = move.captured ? this.pieces.get(victimAt) : null;
@@ -540,6 +548,7 @@ class World {
     // A knight with a rider turns to where it is going before it goes, and
     // the stone groans under them as it turns.
     if (mover === this.ridden) await this.turnTo(mover, to.clone().sub(mover.position), hooks);
+    if (gone()) return;
     if (victim) {
       this.pieces.delete(victimAt);
       hooks.look(victim.position.clone().lerp(mover.position, 0.3));
@@ -549,6 +558,7 @@ class World {
     } else {
       await this.glide(mover, to, hooks);
     }
+    if (gone()) return;
     mover.userData.square = move.to;
     this.pieces.set(move.to, mover);
     if (kind === "n") {
@@ -563,10 +573,12 @@ class World {
       const rook = this.pieces.get(rookFrom);
       this.pieces.delete(rookFrom);
       await this.leap(rook, sqPoint(rookTo), 1.5, hooks);
+      if (gone()) return;
       rook.userData.square = rookTo;
       this.pieces.set(rookTo, rook);
     }
     if (move.promo) await this.crown(mover, move, hooks);
+    if (gone()) return;
     mover.userData.awake = 0;
     this.moving = null;
     hooks.moving(null);
@@ -756,8 +768,10 @@ class World {
     this.scene.add(flare);
     hooks.sound("crown", 1, at);
     hooks.look(at);
+    const era = this.era;
     await tween(0.35, t => { flare.scale.setScalar(0.2 + t * 4); pawn.scale.setScalar(1 - t * 0.7); });
     this.scene.remove(pawn);
+    if (this.era !== era) { this.scene.remove(flare); return; }
     const made = this.form(move.promo);
     made.position.copy(at);
     made.userData.square = move.to;
@@ -1374,6 +1388,9 @@ const game = {
   // knight stood on when the game began (`origins`), which names it through
   // every move it makes and every move taken back.
   ride: kept.ride === true, mount: Number.isInteger(kept.mount) ? kept.mount : null, thrown: false,
+  // How many games have been begun: a move still being played out when the
+  // next is begun belongs to the one before (`make`).
+  epoch: 0,
 };
 
 // A browser that will not draw in three dimensions is told so, and nothing
@@ -1569,7 +1586,9 @@ async function ended(how) {
   game.over = how;
   if (how === "checkmate") {
     voice.say("Checkmate.");
+    const epoch = game.epoch;
     await world.fall(game.position.turn, hooks);
+    if (epoch !== game.epoch) return;
   } else voice.say(title);
   el("ended-title").textContent = title;
   el("ended-how").textContent = how === "checkmate"
@@ -1583,6 +1602,7 @@ async function ended(how) {
 // game looked at again.
 async function make(move, by) {
   game.busy = true;
+  const epoch = game.epoch;
   choose(-1);
   const before = game.position, text = san(before, move), aloud = spoken(before, move);
   world.show("from", move.from);
@@ -1591,6 +1611,8 @@ async function make(move, by) {
   if (by !== game.side) voice.say(aloud);
   game.thrown = false;
   await world.play(move, hooks);
+  // A new game begun while it was played out: this move was the old game's.
+  if (epoch !== game.epoch) return;
   game.position = play(before, move);
   game.played.push({move, san: text, by, before});
   const key = positionKey(game.position);
@@ -1713,6 +1735,7 @@ function listening(on, fault) {
 
 function begin(side = game.side, moves = []) {
   game.turn += 1;
+  game.epoch += 1;
   if (side !== game.side) game.mount = null;
   opponent.stop();
   opponent.newGame();
