@@ -97,12 +97,104 @@ of the range the limit is taken off. There is no setting under 1320: the
 engine has none, and a weaker player made here would have a number nobody
 had measured.
 
+## Riding a knight
+
+Operator, 2026-11-24 (a `/loop` every 30 minutes): "build wizard chess out
+more and more to be like the real experience of sitting on a knight in the
+harry potter game of wizard chess. optimizz everything. what is tthe optimal
+meta structure for this?"
+
+What sitting on a knight adds to the four parts is being *in* the game
+rather than over it: the pieces are as tall as you, your own knight carries
+you when it moves, the pieces that can take it are the ones you watch, and
+if it is taken you go with it. The set, the hall and everything in them
+stay this page's own; nothing is taken from the film.
+
+**The seat** (`Seat`, modes `table`, `ride`, `thrown`, `aside`). "On a
+knight", top right, puts the player on the back of their king's knight
+("Other knight" changes it). The eye is a point on the knight itself
+(`EYE`, behind its ears, about a rider's height up), so the rider is carried
+through its leap, rears with it as it takes off and lurches as it lands. The
+field of view widens from 36° to 64°. The rider's head turns to what is
+happening: a capture most of all, and any piece that moves. A drag, two
+fingers or an arrow key turn the head instead (take hold of the world and
+pull it), and the head stays where it was put for two seconds. From one seat
+to another the view travels; it does not cut. A rider does not see their own
+cloak.
+
+**The knight ridden** (`World.ride`) wears a cloth over its mane in its
+side's colour, with its rider sitting behind its ears, so that from the
+board it is plain which knight is ridden. It looks straight at the enemy, not
+in toward the middle like the others, and turns to where it is going before
+it goes.
+
+**Peril** (`peril`, `World.menace`). The pieces that could take the knight
+ridden glow red and pulse, and when the threat is new after the opponent's
+move it is said ("Your knight is threatened by the bishop on b4") with a low
+drum.
+
+**Thrown** (`Seat.thrown`). A knight taken under its rider breaks, and the
+rider is thrown on the way the blow came, over the edge of the board,
+tumbles, lies a moment looking up, and gets up at the side of the board,
+eye level with its surface, the pieces towering over them. They command from
+there; "Ride again" mounts their other knight if they have one, and a move
+taken back puts them back in the saddle of the one they lost.
+
+**Commanding your knight.** "Ride to f3", "gallop to e5", "charge d5" are
+the ridden knight's moves (`command.js`, `RIDE`), and when two knights
+could go where a command says, the one ridden is the one meant. A click on
+the ridden knight's ears is a click on what is beyond them; with nothing
+there it chooses (or lets go of) the knight itself.
+
+## How it is built out
+
+The page is built out a slice at a time, every 30 minutes (the operator's
+loop). The structure that makes that converge rather than wander:
+
+1. **One ledger.** This section is it: what the experience is still
+   missing, ranked by how much nearer it brings the feeling of sitting on a
+   knight. Each tick reads it, takes the top item that fits a tick, and
+   rewrites it after.
+2. **One slice per tick, shipped.** A slice is a thing the player can feel
+   (not a refactor on its own): built on its own branch, played in a
+   browser (Chrome for Testing on the shared Mac, never the real Chrome,
+   which the live mirror's follower takes over), looked at in pictures, held
+   by `beta/wizard_chess_test.py`, and merged. Work left in a worktree is
+   not work done.
+3. **Each slice in the lowest layer that can own it.** The world (what is
+   there and how it moves) knows nothing of a laptop, so the headset version
+   later is one more seat, not a second game. Riding is a seat; the cloth,
+   the rider and the threatened pieces' light are the world.
+4. **Measured, not guessed.** Frame time on this Mac's own GPU, the
+   engine's Elo from its own scale, and what a test can see (where the
+   camera is, which pieces glow) rather than "looks right".
+
+What is next, most felt first:
+
+- **Scale.** The pieces are a little taller than the rider. A rider's view
+  wants them two or three times their height: the board and pieces scaled
+  up around a rider of fixed size, with the table seat unchanged.
+- **The mount itself.** From the saddle the knight's head is a slab seen
+  from behind. A mane, ears and a neck that move; a breath of dust at each
+  hoof-fall; the stone groaning under you.
+- **Sound where it happens.** Sounds placed in the hall (Web Audio panner)
+  so a capture behind you is behind you, and loud when it is next to you.
+- **Peril felt.** The threatening piece turns its head toward you; the
+  camera sees it coming; a sacrifice of the ridden knight is said before it
+  is played ("You will be taken there. Ride on?").
+- **The hall.** Walls, columns and a ceiling to be inside of, instead of
+  black: what a low seat looks up at.
+- **Riding other pieces.** Any of your pieces, not only knights.
+- **Speed.** Frame time measured on this Mac's GPU in both seats, shadows
+  and debris budgeted to hold 60 fps.
+- **The headset seat** (`renderer.xr`), which the rider's seat is most of.
+
 ## How it is built
 
 | File | What it is |
 |------|------------|
 | `beta/chess.html` | The page: the board's canvas and what is written at its edges |
-| `beta/chess/game.js` | The world (hall, board, pieces, how a move is played out), the seat (camera, pointer, keyboard), the voice, the sound, and the game |
+| `beta/chess/game.js` | The world (hall, board, pieces, how a move is played out, the knight ridden), the seat (at the board, on a knight, thrown, aside; pointer, keyboard), the voice, the sound, and the game |
 | `beta/chess/rules.js` | The rules of chess: legal moves, the position after one, check, mate and the draws, and a move written (SAN, UCI) and said aloud |
 | `beta/chess/command.js` | A command, said or typed, read as a move |
 | `beta/chess/engine.js` | The opponent: Stockfish in a worker, one move at a time at an Elo |
@@ -127,7 +219,13 @@ it. `beta/wizard_chess_test.py` runs the node checks, holds the page to its
 address and the vendored files to their bytes, and opens the page in a
 browser: the engine wakes and gives its range, a commanded pawn makes its
 move, the opponent answers, a move is taken back, and a capture leaves one
-piece fewer.
+piece fewer. And a rider: the eye is on the king's knight, "ride to f3"
+carries it there, the pawn that can take it glows, the rider is thrown when
+it does and stands at the side of the board, and a take back puts them in
+the saddle again. On this Mac run it with Chrome for Testing (the real
+Chrome's tab is taken over by the live mirror's follower):
+
+    python3 -c 'import runpy,sys; sys.path.insert(0,"beta"); import verify; verify.CHROME_CANDIDATES=[sys.argv[1]]; sys.argv=["wizard_chess_test.py"]; runpy.run_path("beta/wizard_chess_test.py", run_name="__main__")' "<Chrome for Testing binary>"
 
 Measured in headless Chrome on a MacBook Air (M4), the page served from a
 local directory with its files already cached: the board is on screen about
