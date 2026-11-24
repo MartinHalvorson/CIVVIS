@@ -410,6 +410,10 @@ impl AdvancedAi {
         /// Historic Moment, when it closes the Age; see
         /// `advanced/first_ship_closes_the_age.rs`.
         first_ship_closes_the_dark_age => enable_first_ship_closes_the_dark_age, disable_first_ship_closes_the_dark_age;
+        /// Opt-in gene `exploration-replans-need-a-sighting`: explored ground
+        /// re-opens the turn only when it shows a foreign unit or city; see
+        /// `ai::player::take_turn`.
+        exploration_replans_need_a_sighting => enable_exploration_replans_need_a_sighting, disable_exploration_replans_need_a_sighting;
         // ---- append: g-k --------------------------------------------
         /// `gutted-rival-passes-the-edge`: a staged declaration by a Domination
         /// lane passes the peak edge against a target at 60% or less of its
@@ -475,6 +479,9 @@ impl AdvancedAi {
         /// from done keeps its queue against the Settler floors and the
         /// deterrent; see `advanced/nearly_built_keeps_its_queue.rs`.
         nearly_built_keeps_its_queue => enable_nearly_built_keeps_its_queue, disable_nearly_built_keeps_its_queue;
+        /// Opt-in gene `one-replan-per-turn`: a turn re-opens for a fresh
+        /// plan at most once; see `ai::player::take_turn`.
+        one_replan_per_turn => enable_one_replan_per_turn, disable_one_replan_per_turn;
         // ---- append: p-r --------------------------------------------
         /// Opt-in gene `racer-seat-statue-civic-first`; see
         /// `AdvancedAi::diplo_statue_civic_goal`.

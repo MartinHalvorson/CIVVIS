@@ -176,7 +176,7 @@ impl Layer {
 
 /// How a condition's number is held against its line.
 #[derive(Clone, Copy, Debug, PartialEq)]
-enum Test {
+pub(super) enum Test {
     Below,
     AtMost,
     Above,
@@ -198,7 +198,7 @@ impl Test {
         Test::Changes,
     ];
 
-    fn sign(self) -> &'static str {
+    pub(super) fn sign(self) -> &'static str {
         match self {
             Test::Below => "<",
             Test::AtMost => "<=",
@@ -210,11 +210,11 @@ impl Test {
         }
     }
 
-    fn parse(sign: &str) -> Option<Test> {
+    pub(super) fn parse(sign: &str) -> Option<Test> {
         Test::ALL.into_iter().find(|test| test.sign() == sign)
     }
 
-    fn holds(self, now: f64, line: f64) -> bool {
+    pub(super) fn holds(self, now: f64, line: f64) -> bool {
         match self {
             Test::Below => now < line,
             Test::AtMost => now <= line,
@@ -254,7 +254,7 @@ impl Condition {
 }
 
 /// A reading as a number, when it is something that can be held to a line.
-fn as_number(reading: &Value) -> Option<f64> {
+pub(super) fn as_number(reading: &Value) -> Option<f64> {
     match reading {
         Value::Number(number) => number.as_f64(),
         Value::Bool(yes) => Some(f64::from(u8::from(*yes))),
@@ -730,6 +730,10 @@ pub struct Timeline {
     /// always has, so the two halves of a head to head differ only in the
     /// Civ AI each seats.
     forgetful: bool,
+    /// What a search playing this world is asked for (`op: "objective"`,
+    /// `autosearch.rs`): each turn a `play` plays is read for its terms, and
+    /// a Must Avoid broken for good ends the play there.
+    objective: Option<super::autosearch::Objective>,
 }
 
 impl Timeline {
@@ -1151,6 +1155,9 @@ impl Session {
             self.ais[seat] = mind;
             self.ais[seat].attach_journal(self.journal.handle());
         }
+        // A mind kept before the table's fog setting was changed plays on
+        // under the setting the table has now.
+        self.seat_fog();
     }
 
     /// A half that is kept becomes the game itself (`Panes::adopt`), and from
@@ -1228,6 +1235,9 @@ impl Session {
         let resumed = self.resumed_next_game_params.take();
         let (rival_yields, own_yields) = (self.keeps_rival_yields, self.keeps_own_yields);
         let mut next = Session::from_saved_game(self.params.clone(), game);
+        // The world gone back to is this table's: it keeps the table's Fog-honest
+        // AI setting, which every agent seated below takes.
+        next.set_fog_honest(self.fog_honest);
         if let Some(name) = rivals {
             let _ = next.seat_rivals(&name);
         }
@@ -1258,6 +1268,7 @@ impl Session {
     /// is given (`panes.rs`).
     pub(super) fn fork(&self) -> Session {
         let mut next = Session::from_saved_game(self.params.clone(), self.game.clone());
+        next.set_fog_honest(self.fog_honest);
         if let Some(name) = &self.rival_strategy {
             let _ = next.seat_rivals(name);
         }
@@ -1395,10 +1406,10 @@ impl Session {
             }
             let game = &mark.game;
             let fresh = fresh_events(
-                before.events.len(),
-                before.events.last(),
+                before.chronicle.events.len(),
+                before.chronicle.events.last(),
                 before.turn,
-                &game.events,
+                &game.chronicle.events,
             );
             stopped = if game.is_finished() || !game.players[0].alive {
                 Some(json!({"kind": "end", "turn": game.turn}))
@@ -1521,8 +1532,8 @@ impl Session {
     /// in the timeline for the state document to carry.
     pub fn debug_step(&mut self) -> bool {
         let turn = self.game.turn;
-        let before_len = self.game.events.len();
-        let before_last = self.game.events.last().cloned();
+        let before_len = self.game.chronicle.events.len();
+        let before_last = self.game.chronicle.events.last().cloned();
         let read_before = self
             .debugger
             .read
@@ -1539,7 +1550,12 @@ impl Session {
         } else {
             self.autoplay(1)
         };
-        let fresh = fresh_events(before_len, before_last.as_ref(), turn, &self.game.events);
+        let fresh = fresh_events(
+            before_len,
+            before_last.as_ref(),
+            turn,
+            &self.game.chronicle.events,
+        );
         let over = played == 0 || self.game.is_finished() || !self.game.players[0].alive;
         self.debugger.stopped = if over {
             Some(json!({"kind": "end", "turn": self.game.turn}))
@@ -1584,17 +1600,41 @@ impl Session {
     /// (`obs::standing`), which is all that something playing a world
     /// forward to see how it comes out reads of the turns on the way.
     pub fn debug_play(&mut self, turns: u32) -> Vec<Value> {
+        self.debug_play_read(turns).0
+    }
+
+    /// [`Session::debug_play`], with what each turn read for the terms of the
+    /// objective a search set (`autosearch::Objective::read`), and the turn a
+    /// Must Avoid broken for good ended the play on, if one did. A turn that
+    /// breaks one is still played and read: it is where the line ends.
+    fn debug_play_read(
+        &mut self,
+        turns: u32,
+    ) -> (Vec<Value>, Vec<super::autosearch::Reading>, Option<Value>) {
         let mut readings = Vec::new();
+        let mut terms = Vec::new();
+        let mut killed = None;
         for _ in 0..turns {
             if !self.debug_step() {
                 break;
             }
             readings.push(crate::obs::standing(&self.game, 0));
-            if self.debugger.stopped.is_some() {
+            if let Some(objective) = &self.debugger.objective {
+                let reading = objective.read(&self.game);
+                if let Some(at) = objective.kills(&reading) {
+                    killed = Some(json!({
+                        "avoid": at,
+                        "turn": reading.turn,
+                        "key": objective.avoid[at].key,
+                    }));
+                }
+                terms.push(reading);
+            }
+            if self.debugger.stopped.is_some() || killed.is_some() {
                 break;
             }
         }
-        readings
+        (readings, terms, killed)
     }
 
     /// What an agent decides that is not an action: its standing preferences
@@ -1830,8 +1870,11 @@ impl Session {
             }
             _ => Ok(()),
         };
-        // How the seat stood on each turn a `play` played.
+        // How the seat stood on each turn a `play` played, what it read for
+        // a search's terms, and where a Must Avoid ended it.
         let mut readings: Option<Vec<Value>> = None;
+        let mut terms: Option<Vec<super::autosearch::Reading>> = None;
+        let mut killed: Option<Value> = None;
         let result: Result<(), String> = if !self.debuggable() {
             Err("the debugger walks a game with a seat of its own".to_string())
         } else if let Err(error) = seated {
@@ -1904,9 +1947,13 @@ impl Session {
                     .filter(|turns| (1..=u64::from(PLAY_MOST)).contains(turns))
                 {
                     Some(turns) => {
-                        let played = self.debug_play(turns as u32);
+                        let (played, read, ended) = self.debug_play_read(turns as u32);
                         let moved = !played.is_empty();
                         readings = Some(played);
+                        if self.debugger.objective.is_some() {
+                            terms = Some(read);
+                            killed = ended;
+                        }
                         if moved {
                             Ok(())
                         } else {
@@ -1943,6 +1990,20 @@ impl Session {
                         self.debugger.breakpoints = breakpoints;
                     })
                 }
+                // What a search is asked for, read on every turn a `play`
+                // plays from here (`autosearch.rs`). Each term is read back
+                // off this world before it is kept. None clears it.
+                "objective" => match &request["objective"] {
+                    Value::Null => {
+                        self.debugger.objective = None;
+                        Ok(())
+                    }
+                    asked => super::autosearch::Objective::parse(asked).and_then(|objective| {
+                        objective.check(&self.game)?;
+                        self.debugger.objective = Some(objective);
+                        Ok(())
+                    }),
+                },
                 // What a copy of the engine made to search asks of a half
                 // of a split (`debug_remember`).
                 "remember" => {
@@ -1974,6 +2035,10 @@ impl Session {
         };
         if let Some(readings) = readings {
             out["readings"] = json!(readings);
+        }
+        if let Some(terms) = terms {
+            out["terms"] = json!(terms);
+            out["killed"] = killed.unwrap_or(Value::Null);
         }
         out
     }

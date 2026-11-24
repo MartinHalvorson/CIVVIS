@@ -1,0 +1,347 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wizard Chess · CIVVIS</title>
+<meta name="description" content="Chess where you command and the pieces obey: say a move and the piece walks there and smashes what it takes. The opponent plays at the Elo you pick.">
+<link rel="canonical" href="https://civvis.ai/wizard-chess/">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%23f4f1e8'/%3E%3Crect width='8' height='8' fill='%230b0b0c'/%3E%3Crect x='8' y='8' width='8' height='8' fill='%230b0b0c'/%3E%3C/svg%3E">
+<!--
+  Wizard Chess (operator, 2026-11-23: "below civ 6, add wizard chess. the
+  background there can be black and white checkerboard. in it, i want you to
+  build wizard chess. a laptop version and a version for a VR headset (but
+  that can be later). please buid out the laptop version ... i want you to
+  best utilize the screen of the latop to create the experience of a person
+  playing wizard chess ... the chess strategy can be set to a chess elo and
+  the chess will play at that elo").
+
+  The page is the laptop version. What a laptop has is a wide screen, a
+  microphone, speakers, a trackpad and a keyboard, and wizard chess is chess
+  where nobody touches a piece: the player says what is to happen and the
+  piece does it, and smashes what it takes. So:
+
+  - The screen is the player's seat at the board, edge to edge, with no page
+    around it: the board fills the width at its near edge and runs away into
+    a dark hall. What is written on the screen stands at its edges.
+  - A move is a command, given three ways that are one thing: said aloud
+    (hold Space), typed, or pointed at. The piece then moves itself.
+  - The pieces are stone and alive: they glide, the knight leaps, and a
+    capture is a blow that breaks the piece taken into rubble. The view
+    leans in for it.
+  - The opponent is Stockfish held to an Elo (chess/engine.js says what the
+    number means), and it says its move aloud as it makes it.
+  - The player can ride one of their own knights instead of sitting at the
+    board: the view is from its back, behind its ears, carried through its
+    leaps; the pieces that could take it glow red; and when it is taken the
+    rider is thrown clear and commands from the side of the board.
+
+  The world (chess/game.js) is built in squares as its unit and knows
+  nothing of the screen it is seen through, so a headset can be given the
+  same board, pieces and game: docs/WIZARD_CHESS.md.
+-->
+<style>
+  :root {
+    --accent: #66c0f4;
+    --action-bg: #274b66;
+    --action-fg: #a8d8f5;
+    --action-hover: #315d7e;
+    --gold: #d7b66a;
+    --ink: #050507;
+    --text: #e9e3d2;
+    --muted: #a59f90;
+    --panel: rgba(12, 11, 14, 0.78);
+    --edge: rgba(215, 182, 106, 0.32);
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; margin: 0; overflow: hidden; background: var(--ink); color: var(--text); }
+  body { font: 14px/1.4 Georgia, "Iowan Old Style", "Times New Roman", serif; -webkit-font-smoothing: antialiased; }
+  button, input, select { font: inherit; color: inherit; }
+  #stage { position: fixed; inset: 0; width: 100%; height: 100%; display: block; outline: none; touch-action: none; cursor: default; }
+  #stage.pointing { cursor: pointer; }
+  .hud { position: fixed; z-index: 2; pointer-events: none; }
+  .hud > * { pointer-events: auto; }
+  .plate {
+    border: 1px solid var(--edge); border-radius: 12px; background: var(--panel);
+    box-shadow: 0 10px 34px rgba(0, 0, 0, 0.55); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  }
+
+  /* Top left: the name, and the rest of the site behind one button. */
+  #brand { top: 14px; left: 16px; display: flex; align-items: flex-start; gap: 10px; }
+  #brand h1 {
+    margin: 0; font-size: 22px; font-weight: 600; letter-spacing: 0.02em; color: var(--gold);
+    text-shadow: 0 2px 12px rgba(0, 0, 0, 0.9);
+  }
+  #brand p { margin: 2px 0 0; max-width: 300px; color: var(--muted); font-size: 12.5px; text-shadow: 0 1px 8px #000; }
+  #sites { position: relative; }
+  #sites > summary {
+    list-style: none; cursor: pointer; width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center;
+    border: 1px solid var(--edge); background: var(--panel); color: var(--gold); font: 700 16px/1 system-ui, sans-serif;
+  }
+  #sites > summary::-webkit-details-marker { display: none; }
+  #sites > summary:hover, #sites[open] > summary { border-color: var(--gold); }
+  #sites > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  #sites-list { position: absolute; top: 42px; left: 0; padding: 8px; width: 178px; }
+
+  /* The site list, as every page of the site carries it: a button wears the
+     ground of what it opens. */
+  .site-nav { display: grid; gap: 4px; }
+  .site-link {
+    display: block;
+    padding: 3px 12px 4px;
+    border-radius: 3px;
+    background: var(--action-bg);
+    color: var(--action-fg);
+    font: 700 11.5px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+    letter-spacing: 0.12em;
+    text-decoration: none;
+    text-transform: uppercase;
+  }
+  .site-link:hover,
+  .site-link:focus-visible { background: var(--action-hover); color: #fff; }
+  .site-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .site-link[href$="../"] { background: linear-gradient(145deg, #dec176, #aa7d30); color: #17130c; box-shadow: inset 0 0 0 1px #efd184; }
+  .site-link[href$="../"]:hover, .site-link[href$="../"]:focus-visible { background: linear-gradient(145deg, #f0d68e, #c0913c); color: #000; }
+  .site-link[href$="?mode=play"] { background: #050607; color: #c9cecb; box-shadow: inset 0 0 0 1px #30363a; }
+  .site-link[href$="?mode=play"]:hover, .site-link[href$="?mode=play"]:focus-visible { background: #181c1f; color: #fff; }
+  .site-link[href$="?mode=strange"] {
+    background: linear-gradient(135deg, #1c2a7a 30%, #a3122f); color: #ffe3a3;
+    box-shadow: inset 0 0 0 1px #ff9a2e, 0 0 6px rgba(255, 138, 30, 0.6);
+  }
+  .site-link[href$="?mode=strange"]:hover,
+  .site-link[href$="?mode=strange"]:focus-visible {
+    background: linear-gradient(135deg, #2638a0 30%, #c8193d); color: #fff;
+    box-shadow: inset 0 0 0 1px #ffb85c, 0 0 10px rgba(255, 150, 40, 0.85);
+  }
+  .site-link[href$="?mode=strange"] { letter-spacing: 0.02em; }
+  .site-link[href^="https://store.steampowered.com/"] { background: linear-gradient(90deg, #1a44c2 35%, #47bfff); color: #fff; }
+  .site-link[href^="https://store.steampowered.com/"]:hover,
+  .site-link[href^="https://store.steampowered.com/"]:focus-visible { background: linear-gradient(90deg, #2352d6 35%, #73cfff); color: #fff; }
+  /* Wizard Chess is a chessboard (operator, 2026-11-23: "below civ 6, add
+     wizard chess. the background there can be black and white
+     checkerboard"): black and white squares round a black plate that the
+     name stands on, so that it reads on either. */
+  .site-link[href$="wizard-chess/"] {
+    background: linear-gradient(#0b0b0c, #0b0b0c) center / calc(100% - 16px) calc(100% - 8px) no-repeat,
+      repeating-conic-gradient(#f4f1e8 0 25%, #0b0b0c 0 50%) 0 0 / 8px 8px;
+    color: #f4f1e8;
+  }
+  .site-link[href$="wizard-chess/"]:hover,
+  .site-link[href$="wizard-chess/"]:focus-visible {
+    background: linear-gradient(#26262a, #26262a) center / calc(100% - 16px) calc(100% - 8px) no-repeat,
+      repeating-conic-gradient(#ffffff 0 25%, #0b0b0c 0 50%) 0 0 / 8px 8px;
+    color: #fff;
+  }
+  /* The page on screen keeps the colour of what it is and is ringed in
+     white, as on every page. It was gold until 2026-11-24, when gold
+     became CIVVIS's own (operator: "lets give civvis a gold background
+     on the button, rather than black"). Here the list stays a column
+     behind its button: the board has the top of the screen. */
+  .site-link[aria-current="page"] { box-shadow: inset 0 0 0 2px #fff; }
+
+  /* Top right: the opponent and the game. */
+  #table { top: 14px; right: 16px; width: 248px; padding: 12px 14px; display: grid; gap: 10px; }
+  #table h2 { margin: 0; font-size: 12px; font-weight: 400; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); }
+  .elo { display: grid; gap: 4px; }
+  .elo output { font-size: 28px; line-height: 1; color: var(--gold); font-variant-numeric: tabular-nums; }
+  .elo output small { font-size: 12px; color: var(--muted); margin-left: 6px; }
+  .elo input[type=range] { width: 100%; accent-color: var(--gold); margin: 2px 0 0; }
+  .elo .ends { display: flex; justify-content: space-between; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+  .elo p { margin: 0; color: var(--muted); font-size: 11.5px; line-height: 1.35; }
+  .row { display: flex; flex-wrap: wrap; gap: 6px; }
+  .row button, .seg button {
+    padding: 5px 10px; border-radius: 8px; border: 1px solid rgba(233, 227, 210, 0.22); background: rgba(255, 255, 255, 0.04);
+    cursor: pointer; font-size: 12.5px;
+  }
+  .row button:hover:not(:disabled), .seg button:hover:not(:disabled) { border-color: var(--gold); }
+  .row button:disabled, .seg button:disabled { opacity: 0.4; cursor: default; }
+  .row button:focus-visible, .seg button:focus-visible, .toggles input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .seg { display: inline-flex; gap: 0; }
+  .seg button { border-radius: 0; margin-left: -1px; }
+  .seg button:first-child { border-radius: 8px 0 0 8px; margin-left: 0; }
+  .seg button:last-child { border-radius: 0 8px 8px 0; }
+  .seg button[aria-pressed="true"] { background: var(--gold); color: #17130c; border-color: var(--gold); }
+  .toggles { display: grid; gap: 4px; font-size: 12.5px; }
+  .toggles label { display: flex; align-items: center; gap: 7px; cursor: pointer; }
+  .toggles input { accent-color: var(--gold); }
+  #made { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.4; }
+  #made a { color: var(--action-fg); }
+
+  /* Right, under it: the game as it is written down, and what has fallen. */
+  #score { top: 0; right: 16px; width: 248px; padding: 10px 14px; display: grid; gap: 6px; }
+  #fallen { display: grid; gap: 1px; font-size: 19px; line-height: 1.15; letter-spacing: 1px; }
+  #fallen span { display: block; white-space: nowrap; overflow: hidden; }
+  #fallen span:empty { display: none; }
+  #moves {
+    margin: 0; padding: 0; list-style: none; max-height: 30vh; overflow-y: auto; scrollbar-width: thin;
+    display: grid; grid-template-columns: 30px 1fr 1fr; gap: 1px 6px; font: 13px/1.5 ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  #moves i { color: var(--muted); font-style: normal; text-align: right; }
+  #moves b { font-weight: 500; }
+  #moves b.last { color: var(--gold); }
+
+  /* Bottom: the command. */
+  #command { left: 50%; bottom: 16px; transform: translateX(-50%); width: min(660px, calc(100vw - 32px)); padding: 10px 12px; display: grid; gap: 6px; }
+  #said { min-height: 20px; text-align: center; font-size: 15px; color: var(--text); }
+  #said.wrong { color: #ffb4a6; }
+  #said.heard { color: var(--gold); font-style: italic; }
+  #said.peril { color: #ff9a7a; }
+  .speak { display: flex; align-items: center; gap: 8px; }
+  #mic {
+    flex: none; width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--edge); background: rgba(255, 255, 255, 0.05);
+    cursor: pointer; display: grid; place-items: center;
+  }
+  #mic svg { width: 18px; height: 18px; fill: none; stroke: var(--text); stroke-width: 1.8; stroke-linecap: round; }
+  #mic:hover { border-color: var(--gold); }
+  #mic.listening { background: #b3261e; border-color: #ff8a7a; box-shadow: 0 0 0 6px rgba(179, 38, 30, 0.25); }
+  #mic:focus-visible, #typed:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  #typed {
+    flex: 1; min-width: 0; height: 40px; padding: 0 14px; border-radius: 20px; border: 1px solid rgba(233, 227, 210, 0.22);
+    background: rgba(0, 0, 0, 0.45); font-size: 16px;
+  }
+  #typed::placeholder { color: #8d887b; }
+  #hint { text-align: center; color: var(--muted); font-size: 12px; }
+  kbd {
+    font: 600 11px/1 system-ui, sans-serif; padding: 2px 6px; border-radius: 5px; border: 1px solid rgba(233, 227, 210, 0.3);
+    background: rgba(255, 255, 255, 0.06);
+  }
+
+  /* Over the board: a pawn's choice, and the end of the game. */
+  .over { position: fixed; inset: 0; z-index: 5; display: grid; place-items: center; background: rgba(0, 0, 0, 0.42); }
+  .over[hidden] { display: none; }
+  .over .plate { padding: 22px 26px; text-align: center; max-width: min(440px, calc(100vw - 32px)); }
+  .over h2 { margin: 0 0 6px; font-size: 26px; font-weight: 600; color: var(--gold); }
+  .over p { margin: 0 0 14px; color: var(--text); }
+  .over .row { justify-content: center; }
+  .over .row button { font-size: 15px; padding: 8px 16px; }
+  #promote .row button { font-size: 34px; line-height: 1; padding: 8px 14px; }
+  #loading { position: fixed; inset: 0; z-index: 6; display: grid; place-items: center; background: var(--ink); color: var(--muted); transition: opacity 0.6s; }
+  #loading.gone { opacity: 0; pointer-events: none; }
+  #loading b { display: block; color: var(--gold); font-size: 26px; font-weight: 600; margin-bottom: 6px; }
+
+  /* Two players at one laptop: there is no engine to set a strength for. */
+  body.two-players .elo, body.two-players #play-white, body.two-players #play-black { display: none; }
+
+  /* In the saddle the plates fold to what a rider needs and let the hall
+     through: the opponent's strength, the seat, the game. */
+  body.riding .elo p, body.riding #made, body.riding .toggles, body.riding #brand p { display: none; }
+  body.riding .plate { background: rgba(12, 11, 14, 0.5); }
+  body.riding #table { gap: 8px; }
+
+  /* A narrow window keeps the board and the command and folds the rest. */
+  @media (max-width: 860px) {
+    #brand p, #score { display: none; }
+    #table { width: 208px; padding: 10px; }
+    .elo p { display: none; }
+  }
+  @media (max-height: 560px) { #score { display: none; } }
+</style>
+</head>
+<body>
+<canvas id="stage" tabindex="0" aria-label="The chess board. Say, type or click a move."></canvas>
+
+<div class="hud" id="brand">
+  <details id="sites">
+    <summary title="The rest of civvis.ai" aria-label="CIVVIS sites">☰</summary>
+    <div class="plate" id="sites-list">
+    <nav class="site-nav" aria-label="CIVVIS sites">
+        <a class="site-link" href="../home/">Home</a>
+        <a class="site-link" href="../charts/ai-interpretability/" title="What the games show: charts read off the CIVVIS AI agents&#8217; games.">Charts/</a>
+        <a class="site-link" href="../tournaments/" title="Series of verification games against Civilization VI&#8217;s own AI: running, scheduled and finished.">Tournaments</a>
+        <a class="site-link" href="../" title="Every civilization is played by a CIVVIS AI agent.">CIVVIS</a>
+        <a class="site-link" href="../?mode=strange" title="One world, two timelines: the same game played two ways, side by side, on a timeline that branches.">Doctor Strange's Civ 6</a>
+        <a class="site-link" href="../?mode=play" title="You play one civilization. CIVVIS AI agents play the rest.">AI Debugger</a>
+        <a class="site-link" href="https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/" target="_blank" rel="noopener" title="Buy Civilization VI on Steam">Civ 6</a>
+        <a class="site-link" href="./" aria-current="page">Wizard Chess</a>
+    </nav>
+    </div>
+  </details>
+  <div>
+    <h1>Wizard Chess</h1>
+    <p>You command. The pieces obey, and break what they take.</p>
+  </div>
+</div>
+
+<section class="hud plate" id="table" aria-label="The opponent and the game">
+  <h2>Opponent</h2>
+  <div class="row">
+    <span class="seg" role="group" aria-label="Who plays the other side">
+      <button type="button" id="vs-engine" aria-pressed="true" title="Stockfish plays the other side, at the Elo you pick">Stockfish</button>
+      <button type="button" id="vs-person" aria-pressed="false" title="Two players at this laptop, taking turns: the view goes round to whoever is to move">A person here</button>
+    </span>
+  </div>
+  <div class="elo">
+    <output id="elo-said" for="elo">1500<small>Elo</small></output>
+    <input type="range" id="elo" min="1320" max="3190" step="10" value="1500" aria-label="The opponent's Elo">
+    <div class="ends"><span id="elo-min">1320</span><span id="elo-max">3190</span></div>
+    <p id="elo-about">Stockfish, held to this strength. The scale is its own: a computer rating list's Elo, approximately.</p>
+  </div>
+  <div class="row">
+    <span class="seg" role="group" aria-label="The side you play">
+      <button type="button" id="play-white" aria-pressed="true" title="You play White and move first">White</button>
+      <button type="button" id="play-black" aria-pressed="false" title="You play Black: the opponent moves first">Black</button>
+    </span>
+    <button type="button" id="new-game" title="Set the pieces up again">New game</button>
+    <button type="button" id="take-back" title="Take back your last move, and the answer to it">Take back</button>
+  </div>
+  <div class="row">
+    <span class="seg" role="group" aria-label="Where you sit">
+      <button type="button" id="seat-board" aria-pressed="true" title="Sit at your side of the board and see all of it">At the board</button>
+      <button type="button" id="seat-knight" aria-pressed="false" title="Ride one of your own knights, and play the game from its back">On a knight</button>
+    </span>
+    <button type="button" id="seat-other" hidden title="Ride your other knight">Other knight</button>
+    <button type="button" id="enter-vr" hidden title="Put on a headset: stand at the board or ride, and point with the controllers">Enter VR</button>
+  </div>
+  <div class="toggles">
+    <label title="Stone on stone, and what breaks"><input type="checkbox" id="opt-sound" checked> Sound</label>
+    <label title="The opponent's move is said aloud as it is made"><input type="checkbox" id="opt-speak" checked> Moves said aloud</label>
+    <label title="The view leans in when a piece is taken"><input type="checkbox" id="opt-follow" checked> The view follows a capture</label>
+  </div>
+  <p id="made">The opponent is <a href="https://github.com/nmrugg/stockfish.js" target="_blank" rel="noopener">Stockfish.js 18</a>,
+    built from <a href="https://github.com/official-stockfish/Stockfish" target="_blank" rel="noopener">Stockfish</a> (GPL-3.0).
+    Drawn with <a href="https://threejs.org/" target="_blank" rel="noopener">three.js</a> (MIT).</p>
+</section>
+
+<section class="hud plate" id="score" aria-label="The game so far">
+  <div id="fallen" aria-label="Pieces taken"><span id="fallen-b"></span><span id="fallen-w"></span></div>
+  <ol id="moves" aria-label="Moves"></ol>
+</section>
+
+<section class="hud plate" id="command" aria-label="Command the pieces">
+  <div id="said" role="status" aria-live="polite"></div>
+  <div class="speak">
+    <button type="button" id="mic" title="Hold to speak a move (or hold Space)" aria-label="Hold to speak a move">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M8.5 21h7"/></svg>
+    </button>
+    <input type="text" id="typed" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="go"
+      placeholder="knight to f3" aria-label="Type a move">
+  </div>
+  <div id="hint"></div>
+</section>
+
+<div class="over" id="promote" hidden>
+  <div class="plate" role="dialog" aria-label="What the pawn becomes">
+    <p>The pawn has crossed the board. What does it become?</p>
+    <div class="row" id="promote-choices"></div>
+  </div>
+</div>
+<div class="over" id="ended" hidden>
+  <div class="plate" role="dialog" aria-labelledby="ended-title">
+    <h2 id="ended-title"></h2>
+    <p id="ended-how"></p>
+    <div class="row"><button type="button" id="ended-again">Play again</button><button type="button" id="ended-look">Look at the board</button></div>
+  </div>
+</div>
+<div class="over" id="risk" hidden>
+  <div class="plate" role="dialog" aria-labelledby="risk-title" aria-describedby="risk-said">
+    <h2 id="risk-title">Ride on?</h2>
+    <p id="risk-said"></p>
+    <div class="row"><button type="button" id="risk-go">Ride on</button><button type="button" id="risk-stay">Hold your ground</button></div>
+  </div>
+</div>
+<div id="loading"><div><b>Wizard Chess</b>Setting the pieces…</div></div>
+
+<script type="module" src="chess/game.js"></script>
+</body>
+</html>

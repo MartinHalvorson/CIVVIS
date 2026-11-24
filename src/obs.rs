@@ -1314,7 +1314,7 @@ fn world_politics_attitudes(g: &Game, civs: Vec<usize>) -> Value {
 fn wars_json(g: &Game, explored: &BTreeSet<Pos>) -> Vec<Value> {
     const RECENT_CONFLICTS: usize = 12;
     let mut grouped: BTreeMap<u32, Vec<&crate::game::WarRecord>> = BTreeMap::new();
-    for war in g.wars.values().chain(g.concluded_wars.iter()) {
+    for war in g.wars.values().chain(g.chronicle.concluded_wars.iter()) {
         grouped.entry(war.conflict).or_default().push(war);
     }
     let mut conflicts: Vec<Vec<&crate::game::WarRecord>> = grouped.into_values().collect();
@@ -1639,7 +1639,7 @@ fn recent_events(g: &Game, pid: usize, omniscient: bool) -> Vec<Value> {
 /// turn it did not play (not yet founded, or already gone). Whole numbers,
 /// because a graph two hundred turns wide cannot show a tenth.
 fn game_stats_json(g: &Game) -> Value {
-    let rows = g.turn_stats.as_slice();
+    let rows = g.chronicle.turn_stats.as_slice();
     let mut turns: Vec<u32> = rows.iter().map(|row| row.turn).collect();
     turns.sort_unstable();
     turns.dedup();
@@ -1708,7 +1708,8 @@ fn totals_json(sum: &[f64; 5]) -> Value {
 }
 
 fn nuclear_strikes_json(g: &Game) -> Vec<Value> {
-    g.nuclear_strikes
+    g.chronicle
+        .nuclear_strikes
         .iter()
         .map(|strike| {
             json!({
@@ -1749,7 +1750,7 @@ fn unit_move_trails_json(
         })
     };
     let mut out = Vec::new();
-    for trail in &g.unit_move_trails {
+    for trail in g.chronicle.unit_move_trails.iter() {
         if omniscient || trail.owner == pid {
             out.push(trail_json(trail, &trail.path));
             continue;
@@ -1899,7 +1900,7 @@ struct TileDoc<'a> {
     river: bool,
     river_edges: [bool; 6],
     road: u8,
-    storm: &'a Option<String>,
+    storm: &'a Option<Name>,
     submerged: bool,
     terrain: Name,
     tourism: Option<f64>,

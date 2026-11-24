@@ -49,6 +49,21 @@
 //! ```text
 //! strategy_elo --run 2026-11-23-15125c4 --rungs deity --add-rung-games 960
 //! ```
+//!
+//! `--no-diplo` plays every table with the Diplomatic victory switched off,
+//! the other five on, and keeps that rating apart from the stock one: its own
+//! log (`data/strategy_elo_no_diplo_games.jsonl`) and its own published file
+//! (`data/strategy_elo_no_diplo.json`), unless `--log` and `--out` name
+//! others. Each logged table says which game it was (`"diplomatic"`; a line
+//! without the field is from before the switch existed, a stock game), and a
+//! run fits only the tables played its way. Operator 2026-11-24: "add a
+//! second elo for games with diplo off. we should maintain this because diplo
+//! on or off makes a big difference".
+//!
+//! ```text
+//! strategy_elo --no-diplo --run 2026-11-24-d27f49f --add-games 480 \
+//!   --add-rung-games 120 --keep-runs 5 --jobs 6
+//! ```
 use civvis::ai::{Ai, BasicAi};
 use civvis::game::{Action, Game, GameOptions};
 use civvis::parallel;
@@ -62,6 +77,9 @@ use std::io::Write;
 
 const DEFAULT_LOG: &str = "data/strategy_elo_games.jsonl";
 const DEFAULT_OUT: &str = "data/strategy_elo.json";
+/// Where `--no-diplo` logs and publishes, unless `--log` and `--out` say.
+const NO_DIPLO_LOG: &str = "data/strategy_elo_no_diplo_games.jsonl";
+const NO_DIPLO_OUT: &str = "data/strategy_elo_no_diplo.json";
 /// The gene screen's speed and its turn limit, so a rating describes the same
 /// length of game the genes were priced in.
 const SPEED: &str = "online";
@@ -90,6 +108,9 @@ struct Options {
     /// The agent seated as every rung's rivals. Anything but the published
     /// reference is a calibration run and wants its own `--out`.
     reference: String,
+    /// Whether the Diplomatic victory can end a table (`--no-diplo` switches
+    /// it off). The other five victories are always on.
+    diplomatic: bool,
 }
 
 fn text(args: &[String], key: &str) -> Option<String> {
@@ -212,6 +233,7 @@ fn play(options: &Options, plan: &Plan) -> Value {
     );
     setup.speed = SPEED.to_string();
     setup.difficulty = plan.rung.clone();
+    setup.victory_conditions.diplomatic = options.diplomatic;
     setup.human_seats.extend(plan.challengers.iter().copied());
     let mut game = Game::new_with(setup);
     let majors: Vec<usize> = game
@@ -278,6 +300,7 @@ fn play(options: &Options, plan: &Plan) -> Value {
         "players": options.players,
         "turns": options.turns,
         "reference": options.reference,
+        "diplomatic": options.diplomatic,
         "seats": plan.seats,
         "challengers": plan.challengers,
         "winner": winner,
@@ -288,10 +311,11 @@ fn play(options: &Options, plan: &Plan) -> Value {
 }
 
 /// Log lines this run's settings can be rated with. A table played at another
-/// size or length is a different instrument, and so is a rung table whose
-/// rival was another reference agent, or one of the retired shape. A pool
-/// table never seats the reference as such, so it survives a change of
-/// reference.
+/// size or length is a different instrument, and so is one played with the
+/// Diplomatic victory switched the other way (a line from before the switch
+/// was logged is a stock game, every victory on), a rung table whose rival
+/// was another reference agent, or one of the retired shape. A pool table
+/// never seats the reference as such, so it survives a change of reference.
 fn read_log(options: &Options) -> Vec<Value> {
     let Ok(body) = std::fs::read_to_string(&options.log) else {
         return Vec::new();
@@ -301,6 +325,7 @@ fn read_log(options: &Options) -> Vec<Value> {
         .filter(|line| {
             line["players"].as_u64() == Some(options.players as u64)
                 && line["turns"].as_u64() == Some(options.turns as u64)
+                && line["diplomatic"].as_bool().unwrap_or(true) == options.diplomatic
                 && line["kind"] != RETIRED_RUNG_KIND
                 && (line["kind"] == "pool"
                     || line["reference"].as_str() == Some(options.reference.as_str()))
@@ -436,6 +461,8 @@ fn publish(options: &Options) {
         "players": options.players,
         "turns": options.turns,
         "speed": SPEED,
+        // Whether the Diplomatic victory could end these tables.
+        "diplomatic": options.diplomatic,
         "tables": tables.len(),
         "runs": runs
             .iter()
@@ -456,7 +483,16 @@ fn publish(options: &Options) {
             .unwrap_or(0.0)
             .total_cmp(&a.1["elo"].as_f64().unwrap_or(0.0))
     });
-    println!("{} rated tables -> {}", tables.len(), options.out);
+    println!(
+        "{} rated tables{} -> {}",
+        tables.len(),
+        if options.diplomatic {
+            ""
+        } else {
+            ", Diplomatic victory off"
+        },
+        options.out
+    );
     println!("ladder: {}", json!(ladder));
     println!(
         "{:<18} {:>6} {:>5} {:>5} {:>6} {:>5}",
@@ -477,6 +513,12 @@ fn publish(options: &Options) {
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    let diplomatic = !args.iter().any(|arg| arg == "--no-diplo");
+    let (log, out) = if diplomatic {
+        (DEFAULT_LOG, DEFAULT_OUT)
+    } else {
+        (NO_DIPLO_LOG, NO_DIPLO_OUT)
+    };
     let options = Options {
         players: number(&args, "--players", 4).clamp(2, ROSTER.len() as u64) as usize,
         turns: number(&args, "--turns", DEFAULT_TURNS as u64).max(1) as u32,
@@ -493,10 +535,11 @@ fn main() {
                 .map(|rung| rung.trim().to_string())
                 .collect()
         }),
-        log: text(&args, "--log").unwrap_or_else(|| DEFAULT_LOG.to_string()),
-        out: text(&args, "--out").unwrap_or_else(|| DEFAULT_OUT.to_string()),
+        log: text(&args, "--log").unwrap_or_else(|| log.to_string()),
+        out: text(&args, "--out").unwrap_or_else(|| out.to_string()),
         fit_only: args.iter().any(|arg| arg == "--fit-only"),
         reference: text(&args, "--reference").unwrap_or_else(|| CIV6_REFERENCE.to_string()),
+        diplomatic,
     };
     if strategies::find(&options.reference).map(|row| row.id) != Some(options.reference.as_str()) {
         eprintln!("--reference wants a roster id, not {:?}", options.reference);

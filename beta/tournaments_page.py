@@ -4,8 +4,9 @@
     tournaments_page.py <source_tree>              print the record as JSON
     tournaments_page.py <source_tree> <page.html>  write it into the page
 
-The Tournaments page (`beta/tournaments.html`; Auto-Tourneys since 2026-11-22,
-served at `<lane>/auto-tourneys/`, the address it states itself)
+The Tournaments page (`beta/tournaments.html`; named Auto-Tourneys and served
+at `<lane>/auto-tourneys/` from 2026-11-22 to 2026-11-24, at
+`<lane>/tournaments/` since, the address it states itself)
 is the site's page between Home and CIVVIS (operator 2026-11-21: "This is my
 Simulator Experiments page essentially. I have an idea I want to run. I
 schedule in a tournament for it. The AI models just keep working away at

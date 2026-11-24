@@ -968,7 +968,7 @@ fn audit_result(g: &Game, found: &mut Findings) {
     let war_minimum = g.standard_duration(WAR_MIN_TURNS);
     let treaty_minimum = g.standard_duration(WAR_MIN_TURNS);
     let mut previous: BTreeMap<(usize, usize), &WarRecord> = BTreeMap::new();
-    for war in &g.concluded_wars {
+    for war in g.chronicle.concluded_wars.iter() {
         let key = (
             war.aggressor.min(war.defender),
             war.aggressor.max(war.defender),

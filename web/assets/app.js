@@ -3526,8 +3526,9 @@ const RESPONSIVE_TEXT_RULES = [
   // "Mode: Firaxis Civ VI Testing" needs 126px at 8.5px and the narrowest
   // plate has 124, so the floor is 8: smaller type, not a clipped letter.
   {selector:"#playerhud .turn-settings", min:8, max:12, slack:4},
-  // Max Speed sits alone above the age, so it is fitted on its own.
+  // Max Speed and the setup line under it are fitted apart: as a pair, the menu's width shrank both.
   {selector:"#playerhud .turn-pace-line", min:8.5, max:12, slack:4},
+  {selector:"#playerhud .turn-setup-line", min:8, max:12, slack:4},
   {selector:"#victoryhud .hud-section-heading > span", min:8.5, max:12, parentWidth:true},
   // "CIVVIS Arena Stats" is fitted at most widths, where a shorter heading
   // never was, so its run is measured where it lands and not by the ratio.
@@ -8053,7 +8054,7 @@ function paceHeldOpen() {
 // pace select. The sidebar #specspeed lives outside #playerhud and never
 // has this problem.
 function hudPaceHeldOpen() {
-  return [...document.querySelectorAll("[data-hud-pace], [data-hud-fog]")]
+  return [...document.querySelectorAll("[data-hud-pace], [data-hud-fog], [data-hud-fog-honest]")]
     .some(select => document.activeElement === select);
 }
 function paceOffered(select, ms) {
@@ -27872,6 +27873,7 @@ function hudTurnPlate() {
       `<option value="0"${state.tactics.fog ? "" : " selected"}>Off</option>` +
       `</select><span class="turn-pace-caret" aria-hidden="true">⌄</span></span></div>`
     : ``;
+  const fogHonestRow = hudFogHonestRow(); // app_setup.js
   const plateLabel = `${context}; ${ageLabel}; turn ${turn} of ${turnCap}; ` +
     (liveTime ? `live time ${liveTime.spoken}; ` : ``) +
     `max speed ${watchPace}; ` +
@@ -27879,6 +27881,7 @@ function hudTurnPlate() {
     (liveLevel ? `difficulty level ${liveLevel.level}, ${liveLevel.name}; ` : ``) +
     `game speed ${speedName}; ` +
     (fogRow ? `in-game fog ${state.tactics.fog ? "on" : "off"}; ` : ``) +
+    (fogHonestRow ? `fog-honest AI ${state.fog_honest}; ` : ``) +
     `${civCount} civilizations remaining, ${civsLost} eliminated; ` +
     `${cityStateCount} city states remaining, ${cityStatesLost} eliminated; ` +
     `mode ${plateMode[0]}; point of view ${platePov[0]}`;
@@ -27894,10 +27897,10 @@ function hudTurnPlate() {
   const frameRow = (label, [value, title]) => `<div class="turn-setting" title="${escapeAttr(title)}">` +
     `<span>${label}</span><b>${escapeAttr(value)}</b></div>`;
   // The stopwatch is the plate's own top section, above the age (operator
-  // 2026-10-14: "live time can be a very top section above the age"). Max
-  // Speed sits directly under it, still above the age (operator 2026-11-09).
-  // Both spent 2026-11-15 under the turn counter and the operator moved them
-  // "back above age and turn counter like before"; Mode and POV stay below.
+  // 2026-10-14). Max Speed sits directly under it (2026-11-09, restored after
+  // a 2026-11-15 detour under the counter), then the map, level and speed,
+  // game settings too (2026-11-24: "should be more highly visible"). Mode and
+  // POV stay below the turn counter.
   return `<section class="victory-turn${liveTimeText !== null ? " has-live-time" : ""}" ` +
     `title="${escapeAttr(context)}" aria-label="${escapeAttr(plateLabel)}">` +
     hudFoldButton("turnplate", "turn box", "turn-plate-fold") +
@@ -27907,6 +27910,7 @@ function hudTurnPlate() {
         `<b data-live-time data-hundredths="${liveTime.hundredths}">${liveTimeText}</b></div>`
       : ``) +
     `<div class="turn-setting turn-pace-line"><span>Max Speed:</span>${watchPaceValue}</div>` +
+    `<div class="turn-setting turn-setup-line" title="${escapeAttr(setupTitle)}"><b>${escapeAttr(setupLine)}</b></div>` +
     `<span class="turn-era">${ageLabel}</span>` +
     `<div class="${turnCountClasses}"><span class="turn-label">Turn</span>` +
     `<div class="turn-progress"><strong>${reportedTurn()}</strong>` +
@@ -27915,9 +27919,8 @@ function hudTurnPlate() {
     `</div>` +
     `<div class="turn-settings" aria-label="Game setup">` +
     frameRow("Mode:", plateMode) + frameRow("POV:", platePov) +
-    `<div class="turn-setting turn-setup-line" title="${escapeAttr(setupTitle)}">` +
-    `<b>${escapeAttr(setupLine)}</b></div>` +
     fogRow +
+    fogHonestRow +
     rosterRow("Civs:", civCount, civsLost) +
     rosterRow("City states:", cityStateCount, cityStatesLost) +
     `</div></section>`;
@@ -29125,6 +29128,8 @@ hudRibbon.addEventListener("change", ev => {
     fog.blur();
     return;
   }
+  const honest = ev.target.closest?.("[data-hud-fog-honest]");
+  if (honest) { chooseFogHonest(honest.value === "1"); honest.blur(); return; }
   const pace = ev.target.closest?.("[data-hud-pace]");
   if (!pace) return;
   chooseWatchPace(pace.value);
@@ -29137,7 +29142,7 @@ hudRibbon.addEventListener("change", ev => {
 // so the open menu's anchor survives the next snapshot. The moment focus
 // leaves it, paint whatever those held snapshots changed.
 hudRibbon.addEventListener("focusout", ev => {
-  if (ev.target.closest?.("[data-hud-pace], [data-hud-fog]") && state) drawPlayerHud();
+  if (ev.target.closest?.("[data-hud-pace], [data-hud-fog], [data-hud-fog-honest]") && state) drawPlayerHud();
 });
 hudRibbon.addEventListener("mousedown", ev => {
   if (ev.button !== 0) return;

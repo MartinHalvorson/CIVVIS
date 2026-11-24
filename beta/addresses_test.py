@@ -6,7 +6,10 @@ research from the url". Until then four pages answered at addresses that were
 not their names. Win Analytics was at `/research`, what the page was called
 the day it was written, three names ago. CIVVIS Performance and AI
 Interpretability stood beside it at the top of the site, although the list
-keeps them under Charts/. Auto-Tourneys was at `/tournaments`.
+keeps them under Charts/. Auto-Tourneys was at `/tournaments`. On 2026-11-24
+Auto-Tourneys took its first name back, Tournaments (operator: "change
+auto-outnrye to Tournaments"), and with it `/tournaments`; `/auto-tourneys`
+forwards there.
 
 The rule, for every page the site list names: the address is the name as the
 list shows it, in lower case with a hyphen for anything that is not a letter
@@ -15,9 +18,12 @@ or a digit, and a page listed under a folder (Charts/) sits in that folder.
     Home                  /home/
     Charts/
       Win Analytics       /charts/win-analytics/
+      ELO Rankings        /charts/elo-rankings/
+      Civ Analytics       /charts/civ-analytics/
       CIVVIS Performance  /charts/civvis-performance/
       AI Interpretability /charts/ai-interpretability/
-    Auto-Tourneys         /auto-tourneys/
+    Tournaments           /tournaments/
+    Wizard Chess          /wizard-chess/
 
 A page states its own address (its `<link rel="canonical">`), `publish.sh`
 puts it there, and every link in it is relative to it. So this reads the
@@ -59,7 +65,7 @@ TAKEN = {"test", "assets", "report", "beta", "build", "index"}
 
 
 def slug(name: str) -> str:
-    """A name of the site list as an address: `Auto-Tourneys` -> `auto-tourneys`."""
+    """A name of the site list as an address: `CIVVIS Performance` -> `civvis-performance`."""
     return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
 
 
@@ -185,8 +191,8 @@ class Addresses(unittest.TestCase):
             for classes, href, _, name in site_list(read(source)):
                 if name.endswith("/"):
                     opens.add(lands(ADDRESS[source], href))
-        self.assertEqual(opens, {"charts/win-analytics"})
-        self.assertIn('href="/charts/win-analytics" target="_top">Charts/</a>', VIEWER)
+        self.assertEqual(opens, {"charts/ai-interpretability"})
+        self.assertIn('href="/charts/ai-interpretability" target="_top">Charts/</a>', VIEWER)
 
     def test_every_relative_link_of_a_page_lands_on_a_page_or_the_viewer(self):
         # The same reading `publish.sh` gives the published pages, given here
@@ -204,6 +210,11 @@ class Addresses(unittest.TestCase):
                 if where.startswith(f"{ADDRESS['landing.html']}/assets/"):
                     self.assertTrue(
                         (BETA / "assets" / where.split("/assets/", 1)[1]).is_file(), f"{source}: {link}")
+                elif where.startswith(f"{ADDRESS['chess.html']}/chess/"):
+                    # Wizard Chess loads its own scripts from the directory
+                    # `publish.sh` sets beside its page.
+                    self.assertTrue(
+                        (BETA / "chess" / where.split("/chess/", 1)[1]).is_file(), f"{source}: {link}")
                 else:
                     self.assertIn(
                         where, addresses | {"."},
@@ -233,6 +244,23 @@ class Moved(unittest.TestCase):
         moved = self.router_table()
         self.assertEqual(moved, verify.FORMER)
         self.assertGreaterEqual(len(moved), 4)
+        # And one table of the pages back at an address they once left.
+        block = WORKER[WORKER.index("const BETWEEN = {"):]
+        block = block[:block.index("};")]
+        between = dict(re.findall(r'^\s*"?([a-z][a-z0-9/-]*)"?: "([^"]+)",$', block, re.M))
+        self.assertEqual(between, verify.BETWEEN)
+        self.assertEqual(between, {"tournaments": "auto-tourneys"})
+
+    def test_a_page_back_at_an_address_it_left_forwards_from_the_one_in_between(self):
+        # Tournaments was at /auto-tourneys/ from 2026-11-23 to 2026-11-24.
+        # A lane pinned to a revision of those days still has it there, and
+        # /tournaments/ forwards to it, as it did then; in a lane at the
+        # present revision /auto-tourneys/ forwards to /tournaments/.
+        addresses = set(ADDRESS.values())
+        for back, between in verify.BETWEEN.items():
+            self.assertIn(back, addresses)
+            self.assertEqual(verify.FORMER[between], back)
+        self.assertIn("Object.hasOwn(BETWEEN, name)", WORKER)
 
     def test_every_left_address_forwards_to_a_page_that_is_there(self):
         addresses = set(ADDRESS.values())

@@ -707,6 +707,14 @@ pub trait Ai {
         SiteShortcuts::default()
     }
 
+    /// Plan this seat's turns on what its civilization can see (`true`), or
+    /// on the whole board (`false`). An agent with only one way of planning
+    /// ignores it, which is what the default does: the scripted `BasicAi`
+    /// reads the board either way. Read back with
+    /// [`Ai::uses_player_observation`], for the reason `site_shortcuts`
+    /// gives.
+    fn set_fog_honest(&mut self, _on: bool) {}
+
     fn strategy_label(&self) -> Option<&'static str> {
         None
     }
@@ -792,6 +800,10 @@ impl<T: Ai + ?Sized> Ai for Box<T> {
 
     fn site_shortcuts(&self) -> SiteShortcuts {
         (**self).site_shortcuts()
+    }
+
+    fn set_fog_honest(&mut self, on: bool) {
+        (**self).set_fog_honest(on);
     }
 }
 

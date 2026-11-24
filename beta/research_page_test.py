@@ -9,16 +9,22 @@ import io
 import json
 import pathlib
 import re
+import shutil
 import subprocess
 import tempfile
 import unittest
 
+import civs_page
 import home_rankings
 import research_page
 
 BETA = pathlib.Path(__file__).resolve().parent
 ROOT = BETA.parent
 PAGE = (BETA / "research.html").read_text(encoding="utf-8")
+#: Civ Analytics, where the tree of build orders stands since 2026-11-23.
+CIVS = (BETA / "civs.html").read_text(encoding="utf-8")
+#: ELO Rankings, the page after Win Analytics under Charts/.
+ELO = (BETA / "elo.html").read_text(encoding="utf-8")
 LANDING = (BETA / "landing.html").read_text(encoding="utf-8")
 TOURNAMENTS = (BETA / "tournaments.html").read_text(encoding="utf-8")
 VIEWER = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
@@ -286,7 +292,7 @@ class TournamentWinRates(unittest.TestCase):
                 (at("11-22", 4), 8, False, True),
             ],
         )
-        # They are the games the Auto-Tourneys page counts, level by level,
+        # They are the games the Tournaments page counts, level by level,
         # the same series, the same wins and losses, less the one game whose
         # summary does not say which table it stands in.
         series = home_rankings.tournament_series(self.ROWS, self.SPECS, detail=True)
@@ -410,7 +416,7 @@ class TournamentWinRates(unittest.TestCase):
     def test_the_committed_definitions_are_where_the_record_reads_them(self):
         defined = json.loads((ROOT / research_page.TOURNAMENTS).read_text(encoding="utf-8"))
         self.assertTrue(defined["tournaments"])
-        # The same file the Auto-Tourneys page counts its tournaments from.
+        # The same file the Tournaments page counts its tournaments from.
         self.assertIn('path = source / "data" / "tournaments.json"', (BETA / "tournaments_page.py").read_text(encoding="utf-8"))
         self.assertEqual(research_page.TOURNAMENTS, pathlib.Path("data/tournaments.json"))
 
@@ -559,16 +565,22 @@ class BuildOrders(unittest.TestCase):
             said = io.StringIO()
             page = source / "index.html"
             page.write_text(PAGE, encoding="utf-8")
+            civs = source / "civs.html"
+            civs.write_text(CIVS, encoding="utf-8")
             with contextlib.redirect_stderr(said):
                 self.assertEqual(research_page.main(["research_page.py", scratch, str(page)]), 0)
-            written = json.loads(research_page.SLOT.search(page.read_text(encoding="utf-8"))[2])
+                self.assertEqual(civs_page.main(["civs_page.py", scratch, str(civs)]), 0)
+            # Win Analytics has had no tree since 2026-11-23 and is not sent
+            # it; Civ Analytics is sent the record built here.
+            self.assertNotIn("build_orders", json.loads(research_page.SLOT.search(page.read_text(encoding="utf-8"))[2]))
+            written = json.loads(civs_page.SLOT.search(civs.read_text(encoding="utf-8"))[2])
         # Two of the four games have an opening: one win of two, Scout then
         # Settler, then the Slinger of the game won over the Builder.
         self.assertEqual((record["games"], record["wins"], record["finished"]), (2, 1, 4))
         self.assertEqual(record["tree"], [[0, 2, 1, [[1, 2, 1, [[2, 1, 1], [3, 1, 0]]]]]])
         self.assertEqual(record["items"], ["Scout", "Settler", "Slinger", "Builder"])
         self.assertEqual(written["build_orders"], record)
-        self.assertIn("wrote 2 build orders into", said.getvalue())
+        self.assertIn("civs_page: wrote 2 build orders", said.getvalue())
 
     def test_the_snapshot_is_read_off_the_event_logs_on_the_ledger(self):
         import gzip
@@ -614,6 +626,12 @@ class BuildOrders(unittest.TestCase):
             held = {**taken, "items": ["UNIT_WARRIOR", self.SCOUT], "games": [[first, [1, 0]]]}
             again = research_page.openings_snapshot(repo, held)
             self.assertEqual((again["items"], again["games"]), (held["items"], held["games"]))
+            # Read afresh (`--again`, for a change to how an opening is read):
+            # the snapshot's own readings are dropped, and the game whose
+            # summary carries an opening is read off its log too.
+            self.assertEqual(research_page.main(["research_page.py", "--build-orders", scratch, str(out), "--again"]), 0)
+            fresh = json.loads(out.read_text(encoding="utf-8"))
+            self.assertEqual((fresh["items"], fresh["games"]), ([self.SCOUT], [[first, [0]], [third, [0]]]))
             self.assertEqual(research_page.research(repo)["build_orders"]["games"], 1)
 
     def test_the_committed_snapshot_holds_openings_the_tree_can_list(self):
@@ -778,7 +796,7 @@ class Page(unittest.TestCase):
         self.assertIsNone(research_page.for_page(old, None))
         # This revision's page has the picker and is sent the record whole.
         self.assertEqual(PAGE.count(research_page.LEVEL_PICKER), 1)
-        self.assertIs(research_page.for_page(PAGE, data), data)
+        self.assertEqual(research_page.for_page(PAGE, data), data)
         # And that is what publishing writes into each: the same record, in
         # the shape the page on disk reads.
         with tempfile.TemporaryDirectory() as scratch:
@@ -880,7 +898,7 @@ class Page(unittest.TestCase):
         # follow it as the list has them.
         graphs = PAGE.index('<div class="res-graphs">')
         own, ai = PAGE.index('<section class="res-block" id="res-side-self_play"'), PAGE.index('<section class="res-block" id="res-side-ai"')
-        places = [graphs, own, at["self_play"], ai, at["ai"], at["ai-rival"], at["ai-civvis"], PAGE.index('<aside class="res-lists"')]
+        places = [graphs, own, at["self_play"], ai, at["ai"], at["ai-rival"], at["ai-civvis"], PAGE.index('id="res-each"')]
         self.assertEqual(places, sorted(places))
         self.assertEqual(PAGE.index('class="res-kind"'), at["self_play"] + len("<div "))
         # One thing stands over the graphs and the rankings besides the
@@ -890,25 +908,24 @@ class Page(unittest.TestCase):
         # ... a table on the left the is with diplo excluded and a table on
         # the right that allows diplo wins";
         # `test_the_benchmark_stands_over_the_graphs_as_two_tables`): one
-        # block across the page, its two tables side by side. Over it, since
-        # 2026-11-23, is the tree of build orders, a block of one panel
-        # (`test_the_build_orders_stand_first_as_a_tree_a_reader_opens`).
+        # block across the page, its two tables side by side. The tree of
+        # build orders stood over it on 2026-11-23 and is on Civ Analytics
+        # since (`test_the_build_orders_stand_as_a_tree_a_reader_opens_on_civ_analytics`).
         # Nothing else is over the graphs' column, whose first block is
-        # self-play's, and the rankings stand to its right. The key to the
-        # colours and the span of a column are over the first chart, in its
-        # panel.
+        # self-play's. The key to the colours and the span of a column are
+        # over the first chart, in its panel.
         over = PAGE[PAGE.index('<div class="res-record" id="res-record" hidden>') : graphs]
-        self.assertEqual((over.count('class="res-section"'), over.count("<h2"), over.count("<section")), (3, 2, 2))
-        self.assertLess(over.index('<section class="res-block" id="res-side-builds"'), over.index('<section class="res-block" id="res-side-tourney"'))
+        self.assertEqual((over.count('class="res-section"'), over.count("<h2"), over.count("<section")), (2, 1, 1))
+        self.assertNotIn("res-side-builds", PAGE)
         self.assertNotIn("res-kind", over)
         self.assertEqual(PAGE[graphs:own].strip(), '<div class="res-graphs">')
         key = PAGE[own : at["self_play"]]
         self.assertIn('<ul class="res-legend" id="res-legend" aria-label="Victory types"></ul>', key)
         self.assertIn('<div class="res-seg" id="res-span">', key)
-        # The graphs' column is the wide one, twice the rankings', and under
-        # 860px the page is one column, the graphs first.
-        self.assertIn(".res-layout { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 16px; align-items: start; min-width: 0; }", PAGE)
-        self.assertIn("@media (max-width: 859px) { .res-layout { grid-template-columns: minmax(0, 1fr); } }", PAGE)
+        # The graphs' column is the page's width: the rankings that stood to
+        # its right are on ELO Rankings and Civ Analytics since 2026-11-23.
+        self.assertIn(".res-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-items: start; min-width: 0; }", PAGE)
+        self.assertNotIn("res-lists", PAGE)
         for gone in ("res-sides", 'class="res-side"', "res-side-body", 'id="res-when"', "subgrid"):
             self.assertNotIn(gone, PAGE)
         # The two sides' charts are the first one split by who won: what is
@@ -987,6 +1004,73 @@ class Page(unittest.TestCase):
         self.assertEqual([key for key, _ in research_page.WINDOWS], ["7", "30", "all"])
         self.assertEqual(sorted(set(re.findall(r'data-window="(\w+)"', PAGE))), ["30", "7", "all"])
 
+    def test_the_benchmark_says_its_par_in_big_type(self):
+        # Operator 2026-11-24: "add a big note to firaxis civ 6 benchmark
+        # that expected win rate for a 6P game is 1/6 or 16.7%". The note
+        # stands between the benchmark's head and its two tables, in the
+        # benchmark's own block, in type bigger than any title on the page.
+        side = PAGE.index('<section class="res-block" id="res-side-tourney" aria-labelledby="res-title-tourney">')
+        block = PAGE[side : PAGE.index("</section>", side)]
+        par = block.index('<p class="res-bench-par" id="res-bench-par">')
+        self.assertLess(block.index("</header>"), par)
+        self.assertLess(par, block.index('<div class="res-bench-pair">'))
+        self.assertIn('<p class="res-bench-par" id="res-bench-par"><b>Expected win rate in a 6P game: 1/6 = 16.7%</b>', block)
+        self.assertEqual(f"{100 / 6:.1f}%", "16.7%")
+        self.assertEqual(PAGE.count('id="res-bench-par"'), 1)
+        self.assertIn(".res-bench-par b { color: var(--gold); font-size: 26px; font-weight: 800;", PAGE)
+
+    def test_a_benchmark_cell_is_shaded_by_its_rate_against_the_par(self):
+        # Operator 2026-11-24: "we should highlight the winr ate by level.
+        # white for 16.7% - dark green for 100% win rare. white to red for
+        # 16.7 -> 0. bxakground of the cells please. 16.7 is 1/6 expected
+        # win rate." Every cell with games in it takes the shade of its
+        # exact rate as its background, and the text that reads on it; a
+        # cell with no game keeps the page's dark and its dash.
+        self.assertIn("const PAR = 1 / 6, PAR_WHITE = [255, 255, 255], PAR_GREEN = [22, 101, 52], PAR_RED = [220, 38, 38];", PAGE)
+        self.assertIn(
+            '            if (games) {\n'
+            '              td.append(" ", el("small", "", "(" + fmt(games) + ")"));\n'
+            "              Object.assign(td.style, shade(wins / games));\n"
+            "            }\n",
+            PAGE,
+        )
+        # Tiles stand apart, the games in brackets take the tile's text
+        # colour, and the rules stay the benchmark's own.
+        self.assertIn(".res-rates { border-collapse: separate; border-spacing: 3px; }", PAGE)
+        self.assertIn(".res-rates td.is-rate small { color: inherit; opacity: 0.75; }", PAGE)
+        self.assertIn("Its shade is read against the 1/6 par: white at 16.7%, deepening to dark green at 100% and to red at 0%.", PAGE)
+
+    @unittest.skipUnless(shutil.which("node"), "needs node to run the page's shade")
+    def test_the_shade_is_white_at_the_par_dark_green_at_100_and_red_at_0(self):
+        start = PAGE.index("    const PAR = 1 / 6,")
+        script = PAGE[start : PAGE.index("    const BENCH", start)]
+        rates = [0, 0.05, 1 / 6, 0.4, 1]
+        out = subprocess.run(
+            ["node", "-e", script + f"console.log(JSON.stringify({rates}.map(shade)));"],
+            check=True, capture_output=True, text=True,
+        ).stdout
+        red, pink, par, green, deep = json.loads(out)
+        self.assertEqual(red, {"background": "rgb(220, 38, 38)", "color": "#fff"})
+        self.assertEqual(par, {"background": "rgb(255, 255, 255)", "color": "#101820"})
+        self.assertEqual(deep, {"background": "rgb(22, 101, 52)", "color": "#fff"})
+        # Between, the mix is straight: 5% is 70% of the way to red, 40%
+        # 28% of the way to dark green, and both still read in dark text.
+        self.assertEqual(pink, {"background": "rgb(231, 103, 103)", "color": "#101820"})
+        self.assertEqual(green, {"background": "rgb(190, 212, 198)", "color": "#101820"})
+
+    def test_the_self_play_count_is_highlighted(self):
+        # Operator 2026-11-24: "hightlight the civvis self play game count
+        # in the chart. 13k is a very solid number". Self-play's chart puts
+        # its count of games in a highlighted figure, its days after it;
+        # the charts of the games against the AI keep the plain count.
+        self.assertIn(
+            'if (s && chart.kind === "self_play") {\n'
+            '        tally.replaceChildren(el("b", "res-big-count", fmt(s.w.games) + (s.w.games === 1 ? " game" : " games")), " · " + days(s.w));',
+            PAGE,
+        )
+        self.assertIn(".res-kind-title .res-big-count { display: inline-block;", PAGE)
+        self.assertRegex(PAGE, r"\.res-kind-title \.res-big-count \{[^}]*color: #fff; font-size: 20px; font-weight: 800;")
+
     def test_the_benchmark_stands_over_the_graphs_as_two_tables(self):
         # Operator 2026-11-23: "at the top of win analytics, we should have a
         # last 1 day win rate col, last 3 days, last 7 days, last 30 days.
@@ -998,15 +1082,15 @@ class Page(unittest.TestCase):
         # losses. games (n) should be listed after each value. so like 100%
         # (5) or 14% (181). at the top, we should have win rate (total
         # games)".
-        # The benchmark is over the graphs and the rankings alike, the width
-        # of the page, with one block over it: the tree of build orders,
-        # which the operator asked for at the top later the same day.
+        # The benchmark is over the graphs, the width of the page, and the
+        # first thing in the record: the tree of build orders, which stood
+        # over it later that day, is on Civ Analytics since.
         record = PAGE.index('<div class="res-record" id="res-record" hidden>')
         side = PAGE.index('<section class="res-block" id="res-side-tourney" aria-labelledby="res-title-tourney">')
         layout = PAGE.index('<div class="res-layout">')
         self.assertLess(record, side)
         self.assertLess(side, layout)
-        self.assertEqual(re.findall(r'<section class="res-block" id="([^"]+)"', PAGE[record:side]), ["res-side-builds"])
+        self.assertEqual(re.findall(r'<section class="res-block" id="([^"]+)"', PAGE[record:side]), [])
         block = PAGE[side : PAGE.index("</section>", side)]
         self.assertEqual(PAGE[side + len(block) + len("</section>") : layout].strip(), "")
         self.assertIn('<h2 class="res-side-title" id="res-title-tourney">Firaxis Civ 6 AI benchmark: win rate by level</h2>', block)
@@ -1054,7 +1138,7 @@ class Page(unittest.TestCase):
         self.assertEqual([name for name, _ in research_page.RATE_TABLES], ["on", "off"])
         self.assertIn('const body = document.querySelector("#res-rates-" + name + " tbody");', PAGE)
         self.assertIn('const td = el("td", games ? "is-rate" : "is-zero", games ? pct(wins / games) : "—");', PAGE)
-        self.assertIn('if (games) td.append(" ", el("small", "", "(" + fmt(games) + ")"));', PAGE)
+        self.assertIn('td.append(" ", el("small", "", "(" + fmt(games) + ")"));', PAGE)
         self.assertIn("const render = () => { notes(); drawRates(); draw(); drawTables(); };", PAGE)
         # A record with no tournament games hides the block, and a hidden
         # block is not drawn (a block is a grid, which `hidden` alone would
@@ -1069,26 +1153,32 @@ class Page(unittest.TestCase):
         # listed on, which table a game stands in, and what a loss is, as
         # `tournament_games` counts one: every finished game that CIVVIS did
         # not win.
-        self.assertIn('Every finished game of the tournaments on <a href="../../auto-tourneys/">Auto-Tourneys</a>', block)
+        self.assertIn('Every finished game of the tournaments on the <a href="../../tournaments/">Tournaments</a> page', block)
         self.assertIn("The left table holds the games that allowed the Diplomatic victory, the right table the games set up with it switched off.", block)
         self.assertIn("A win is a CIVVIS victory; a loss is a rival&#8217;s victory, our elimination, or a game conceded early.", block)
         self.assertIn("A day is 24 hours, counted back from the newest tournament game.", block)
         self.assertEqual(home_rankings.OUTCOMES, ["win", "defeat", "rival_victory", "abandoned", "unfinished"])
 
-    def test_the_build_orders_stand_first_as_a_tree_a_reader_opens(self):
+    def test_the_build_orders_stand_as_a_tree_a_reader_opens_on_civ_analytics(self):
         # Operator 2026-11-23: "add a tree for the early build order win
         # rates for deity games ... a person should be able to click thourgh
         # and see the win rates of all the units. we should sort the tree by
         # win rates descending. so the very first thing is: the winngest
         # first build, underneath the second winnest first bulid. if etierh
         # is clicked, then the winninest combinations of first build second
-        # build. etc... add this chart to the top of win analytics".
-        # First in the record, the width of the page, over the benchmark.
-        record = PAGE.index('<div class="res-record" id="res-record" hidden>')
-        side = PAGE.index('<section class="res-block" id="res-side-builds" aria-labelledby="res-title-builds" hidden>')
-        self.assertNotIn("<section", PAGE[record:side])
+        # build. etc... add this chart to the top of win analytics". Later
+        # that day it moved to a page of its own (operator: "add another
+        # page: Civ Analytics. First can be the civ records (pulled from win
+        # analytics), then early build order"), and on 2026-11-24 to its top
+        # ("top chart is build order"): the first block of Civ Analytics'
+        # record, the cities and the faith after it.
+        PAGE = CIVS
+        record = PAGE.index('<div class="civ-record" id="civ-record" hidden>')
+        side = PAGE.index('<section class="res-block civ-builds" id="res-side-builds" aria-labelledby="res-title-builds" hidden>')
+        self.assertEqual(re.findall(r'<section [^>]*id="([a-z-]+)"', PAGE[record:side]), [])
         block = PAGE[side : PAGE.index("</section>", side)]
-        self.assertTrue(PAGE[side + len(block) + len("</section>") :].lstrip().startswith('<section class="res-block" id="res-side-tourney"'))
+        after = PAGE[side + len(block) + len("</section>") :]
+        self.assertEqual(re.search(r'<section [^>]*id="([a-z-]+)"', after)[1], "civ-filtered")
         self.assertIn('<h2 class="res-side-title" id="res-title-builds">Early build order: win rate against Lv 8 Deity AI</h2>', block)
         self.assertIn('<p class="res-counted" id="res-counted-builds">', block)
         # One panel: the two headings, then the list the script fills.
@@ -1100,29 +1190,28 @@ class Page(unittest.TestCase):
             "What CIVVIS&#8217;s capital finished producing, in the order it finished it.",
             "The first builds are listed best win rate first; press one to list what was built second after it, then third,",
             "A row is CIVVIS&#8217;s win rate over the games that opened with exactly the builds down to it and, in brackets, those games.",
-            "one bought with Gold or Faith is not a build.",
+            "one bought with Gold or Faith is not a build, and an item dropped for another before it was done is not one either.",
+            "A Settler can come first: the capital needs two citizens to train one, it has them by turn 3 or 4 at Online speed,",
             "Every finished game against the Deity AI on the run ledger counts, in a tournament or not: a win is a CIVVIS victory; a loss is a rival&#8217;s victory, our elimination, or a game conceded early.",
             "A build order only one game played is not opened further.",
         ):
             self.assertIn(sentence, block)
         self.assertIn(f'<span id="res-builds-depth">{["zero", "one", "two", "three", "four", "five", "six", "seven", "eight"][research_page.BUILD_DEPTH]}</span>', block)
         self.assertIn('<span id="res-builds-left"></span>', block)
-        # Hidden until the record holds a tree, drawn once, before the rest:
-        # no control changes its games, and a second drawing would close
-        # what a reader has opened.
+        # Hidden until the record holds a tree, and drawn once: no control
+        # changes its games, and a second drawing would close what a reader
+        # has opened.
         self.assertIn("const BUILDS = data.build_orders && Array.isArray(data.build_orders.tree) && data.build_orders.tree.length ? data.build_orders : null;", PAGE)
-        self.assertIn('document.getElementById("res-side-builds").hidden = !BUILDS;', PAGE)
-        self.assertEqual(PAGE.count("drawBuilds();"), 1)
-        self.assertLess(PAGE.index("drawBuilds();"), PAGE.rindex("render();"))
-        self.assertNotIn("drawBuilds", PAGE[PAGE.index("const render = () =>") : PAGE.index("const choose =")])
-        draw = PAGE[PAGE.index("const drawBuilds = () => {") : PAGE.index("// ---- The tables.")]
+        self.assertIn('    if (BUILDS) {\n      document.getElementById("res-side-builds").hidden = false;', PAGE)
+        self.assertEqual(PAGE.count('document.getElementById("res-builds").replaceChildren('), 1)
+        draw = PAGE[PAGE.index("    if (BUILDS) {") : PAGE.index("    // ---- The cities and the faith")]
         # The record's order is the page's: best win rate first, as sent.
         self.assertIn('document.getElementById("res-builds").replaceChildren(...BUILDS.tree.map((node) => row(node, [])));', draw)
         self.assertNotIn(".sort(", draw)
         # A row: its place in the order, its name, then `14% (181)`.
         self.assertIn('el("span", "res-build-place", String(path.length)),', draw)
         self.assertIn('el("span", "res-build-name", name(item)),', draw)
-        self.assertIn('figures.append(el("span", "res-build-rate", n ? pct((Number(won) || 0) / n) : "—"), el("span", "res-build-games", "(" + fmt(n) + ")"));', draw)
+        self.assertIn('figures.append(el("span", "res-build-rate", n ? pct((Number(won) || 0) / n) : "\\u2014"), el("span", "res-build-games", "(" + fmt(n) + ")"));', draw)
         # A build with builds after it is a button that opens them under it
         # and closes them again; one with none is a plain row.
         self.assertIn('const line = el(opens ? "button" : "div", "res-build");', draw)
@@ -1145,9 +1234,16 @@ class Page(unittest.TestCase):
         # stand one over the other and a name may wrap.
         self.assertIn(".res-builds ul { margin-left: 5px; padding-left: 6px; }", PAGE)
         self.assertIn(".res-build-figures { display: grid; justify-items: end; min-width: 40px; line-height: 1.25; }", PAGE)
-        # A page from before the tree is not sent it.
+        # A page from before the tree is not sent it, nor is Win Analytics
+        # since the tree left it.
         old = '<html><script type="application/json" id="research-data">null</script></html>'
         self.assertNotIn("build_orders", research_page.for_page(old, {"levels": {}, "build_orders": {"tree": []}}))
+        self.assertNotIn("build_orders", research_page.for_page(globals()["PAGE"], {"levels": {}, "build_orders": {"tree": []}}))
+        self.assertIn("build_orders", research_page.for_page(
+            research_page.LEVEL_PICKER + research_page.BUILD_TREE, {"levels": {}, "build_orders": {"tree": []}}))
+        # The page's filler takes it from the record Win Analytics' script builds.
+        self.assertIn('(research_page.research(source) or {}).get("build_orders")', (BETA / "civs_page.py").read_text(encoding="utf-8"))
+        self.assertIn('fill civs_page.py "$out/$civs_at/index.html"', PUBLISH)
 
     def test_a_level_picks_the_games_against_the_ai(self):
         # Operator 2026-11-21: "on the civvis vs deity ai chart, lets have an
@@ -1248,10 +1344,10 @@ class Page(unittest.TestCase):
         self.assertIn("const CHARTS = [", script)
         self.assertEqual(re.findall(r'"[^"\n]*Deity[^"\n]*"', script), [])
 
-    def test_every_page_lists_charts_between_home_and_auto_tourneys(self):
+    def test_every_page_lists_charts_between_home_and_tournaments(self):
         # Operator 2026-11-21: "between home and tournaments, we should add a
         # "Research"." This page lists the site's pages as the others do,
-        # with itself in gold. It was Musings later that day (operator:
+        # with itself marked. It was Musings later that day (operator:
         # "musings (rename research)") and is Charts since 2026-11-22
         # (operator: "Change musings to "Charts". Move performance from under
         # civvis to charts. Charts is where almost all our charts can go");
@@ -1261,39 +1357,68 @@ class Page(unittest.TestCase):
         # charts, we should have at least win analytics, CIVVIS Performance
         # ... We should change just "Charts" to "Charts/" with the
         # intentional slash"): this page is Win Analytics, the first under
-        # it and the one Charts/ opens, and the branch is open here with
-        # this page in gold.
+        # it and the one Charts/ opens. Since 2026-11-24 the list is a row
+        # across the top and Charts/ drops its pages down (operator: "charts/
+        # can drop down folder style and the user can pick the right
+        # chart"), with this page ringed in it.
         self.assertIn(
             '<nav class="site-nav" aria-label="CIVVIS sites">\n'
-            '        <a class="site-link" href="../../home/">Home</a>\n'
-            '        <a class="site-link" href="./" '
+            '      <a class="site-link" href="../../home/">Home</a>\n'
+            '      <div class="site-folder">\n'
+            '        <a class="site-link" href="../ai-interpretability/" '
             'title="What the games show: charts read off the CIVVIS AI agents&#8217; games.">Charts/</a>\n'
-            '        <a class="site-link sub-link" href="./" aria-current="page">Win Analytics</a>\n'
-            '        <a class="site-link sub-link" href="../civvis-performance/" '
-            'title="How fast the simulator plays: the fastest game on video and how long a self-play game takes.">CIVVIS Performance</a>\n'
-            '        <a class="site-link sub-link" href="../ai-interpretability/" '
+            '        <div class="site-menu">\n'
+            '          <a class="site-link sub-link" href="../ai-interpretability/" '
             'title="How a CIVVIS AI agent decides: one turn step by step, its plan through a game, and what each rule is worth in wins.">AI Interpretability</a>\n'
-            '        <a class="site-link" href="../../auto-tourneys/" ',
+            '          <a class="site-link sub-link" href="../civ-analytics/" '
+            'title="How CIVVIS does as each civ, and the early build orders that win against Deity.">Civ Analytics</a>\n'
+            '          <a class="site-link sub-link" href="./" aria-current="page">Win Analytics</a>\n'
+            '          <a class="site-link sub-link" href="../elo-rankings/" '
+            'title="The Civ AI Agents and Civilization VI&#8217;s own AI on one Elo scale, now and over time.">ELO Rankings</a>\n'
+            '          <a class="site-link sub-link" href="../civvis-performance/" '
+            'title="How fast the simulator plays: the fastest game on video and how long a self-play game takes.">CIVVIS Performance</a>\n'
+            '        </div>\n'
+            '      </div>\n'
+            '      <a class="site-link" href="../../tournaments/" ',
             PAGE,
         )
         nav = PAGE[PAGE.index('<nav class="site-nav"'):PAGE.index("</nav>")]
         self.assertEqual(nav.count('aria-current="page"'), 1)
-        self.assertIn(".site-link.sub-link { margin-left: 10px; padding: 2px 6px 3px; font-size: 10px; letter-spacing: 0.03em; }", PAGE)
+        self.assertIn("  .site-folder:hover > .site-menu,\n  .site-folder:focus-within > .site-menu,\n  .site-folder.is-open > .site-menu { display: grid; }\n", PAGE)
         self.assertIn('<a href="../civvis-performance/">CIVVIS Performance</a>.', PAGE)
-        self.assertRegex(PAGE, r'<div class="site-brand">\s*<!--[\s\S]*?-->\s*<nav class="site-nav"[^>]*>[\s\S]*?</nav>\s*<div class="site-lockup">')
+        # The two pages after it under Charts/ (operator 2026-11-23: "add
+        # that to a new page: Charts/ELO Rankings. this should be after win
+        # analytics in the ordering ... add another page: Civ Analytics")
+        # list the same branch with themselves in gold, at the addresses
+        # their names make.
+        for page, name, address in ((ELO, "ELO Rankings", "elo-rankings"), (CIVS, "Civ Analytics", "civ-analytics")):
+            nav = page[page.index('<nav class="site-nav"'):page.index("</nav>")]
+            self.assertEqual(
+                re.findall(r'<a class="site-link sub-link" href="([^"]+)"[^>]*>([^<]+)</a>', nav),
+                [(("./" if listed == name else f"../{at}/"), listed) for at, listed in (
+                    ("ai-interpretability", "AI Interpretability"), ("civ-analytics", "Civ Analytics"),
+                    ("win-analytics", "Win Analytics"), ("elo-rankings", "ELO Rankings"),
+                    ("civvis-performance", "CIVVIS Performance"))],
+            )
+            self.assertEqual(nav.count('aria-current="page"'), 1)
+            self.assertIn(f'<a class="site-link sub-link" href="./" aria-current="page">{name}</a>', nav)
+            self.assertIn(f'<link rel="canonical" href="https://civvis.ai/charts/{address}/">', page)
+            self.assertIn(f"<title>{name} · CIVVIS.ai</title>", page)
+            self.assertEqual(re.findall(r'(?:href|src)="(/[^"]*)"', page), [])
+        self.assertRegex(PAGE, r'<header class=\"shell site-header\">\s*<!--[\s\S]*?-->\s*<nav class=\"site-nav\"[^>]*>[\s\S]*?</nav>\s*<script data-site-folder>[\s\S]*?</script>\s*<div class=\"site-brand\">\s*<div class=\"site-lockup\">')
         self.assertIn("<title>Win Analytics · CIVVIS.ai</title>", PAGE)
         for page in (PAGE, LANDING, TOURNAMENTS, VIEWER):
             self.assertNotIn(">Research</a>", page)
             self.assertNotIn(">Musings</a>", page)
             self.assertNotIn(">Charts</a>", page)
         for page, pattern in (
-            (LANDING, r'aria-current="page">Home</a>\s*<a class="site-link" href="\.\./charts/win-analytics/"[^>]*>Charts/</a>'
-                      r'\s*<a class="site-link" href="\.\./auto-tourneys/"'),
-            (TOURNAMENTS, r'href="\.\./home/">Home</a>\s*<a class="site-link" href="\.\./charts/win-analytics/"[^>]*>Charts/</a>'
-                          r'\s*<a class="site-link" href="\./" aria-current="page">Auto-Tourneys</a>'),
+            (LANDING, r'aria-current="page">Home</a>\s*<div class="site-folder">\s*<a class="site-link" href="\.\./charts/ai-interpretability/"[^>]*>Charts/</a>'
+                      r'[\s\S]*?</div>\s*</div>\s*<a class="site-link" href="\.\./tournaments/"'),
+            (TOURNAMENTS, r'href="\.\./home/">Home</a>\s*<div class="site-folder">\s*<a class="site-link" href="\.\./charts/ai-interpretability/"[^>]*>Charts/</a>'
+                          r'[\s\S]*?</div>\s*</div>\s*<a class="site-link" href="\./" aria-current="page">Tournaments</a>'),
             (VIEWER, r'id="homelink" href="/home" target="_top">Home</a>\s*'
-                     r'<a class="home-link" id="chartslink" href="/charts/win-analytics" target="_top">Charts/</a>\s*'
-                     r'<a class="home-link" id="tourlink" href="/auto-tourneys" target="_top">Auto-Tourneys</a>'),
+                     r'<a class="home-link" id="chartslink" href="/charts/ai-interpretability" target="_top">Charts/</a>\s*'
+                     r'<a class="home-link" id="tourlink" href="/tournaments" target="_top">Tournaments</a>'),
         ):
             self.assertRegex(page, pattern)
 

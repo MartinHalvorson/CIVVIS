@@ -433,7 +433,7 @@ class ThePage(unittest.TestCase):
 
 
 class TheSiteList(unittest.TestCase):
-    def test_performance_stands_under_charts_on_this_page_in_gold(self):
+    def test_performance_stands_under_charts_on_this_page_ringed(self):
         # Operator 2026-11-21: "a submenu appears under civvis 'Performance'
         # only when CIVVIS is selected", then "performance should be a page
         # similar to the home/ and other similar pages"; 2026-11-22: "Move
@@ -445,37 +445,53 @@ class TheSiteList(unittest.TestCase):
             re.findall(r'<a class="([^"]+)" href="([^"]+)"[^>]*>([^<]+)</a>', nav),
             [
                 ("site-link", "../../home/", "Home"),
-                ("site-link", "../win-analytics/", "Charts/"),
-                ("site-link sub-link", "../win-analytics/", "Win Analytics"),
-                ("site-link sub-link", "./", "CIVVIS Performance"),
+                ("site-link", "../ai-interpretability/", "Charts/"),
                 ("site-link sub-link", "../ai-interpretability/", "AI Interpretability"),
-                ("site-link", "../../auto-tourneys/", "Auto-Tourneys"),
+                ("site-link sub-link", "../civ-analytics/", "Civ Analytics"),
+                ("site-link sub-link", "../win-analytics/", "Win Analytics"),
+                ("site-link sub-link", "../elo-rankings/", "ELO Rankings"),
+                ("site-link sub-link", "./", "CIVVIS Performance"),
+                ("site-link", "../../tournaments/", "Tournaments"),
                 ("site-link", "../../", "CIVVIS"),
                 ("site-link", "../../?mode=strange", "Doctor Strange's Civ 6"),
                 ("site-link", "../../?mode=play", "AI Debugger"),
                 ("site-link", "https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/", "Civ 6"),
+                ("site-link", "../../wizard-chess/", "Wizard Chess"),
             ],
         )
         self.assertEqual(nav.count('aria-current="page"'), 1)
         self.assertIn('<a class="site-link sub-link" href="./" aria-current="page">CIVVIS Performance</a>', nav)
-        self.assertIn(".site-link.sub-link { margin-left: 10px; padding: 2px 6px 3px; font-size: 10px; letter-spacing: 0.03em; }", PAGE)
+        self.assertIn("  .site-folder:hover > .site-menu,\n  .site-folder:focus-within > .site-menu,\n  .site-folder.is-open > .site-menu { display: grid; }\n", PAGE)
         self.assertIn("<title>CIVVIS Performance · CIVVIS.ai</title>", PAGE)
         # Every link of the page stays in its lane.
         self.assertEqual(re.findall(r'(?:href|src)="(/[^"]*)"', PAGE), [])
 
-    def test_only_charts_lists_the_branch(self):
-        # A branch is folded unless one of its pages is on screen: Win
-        # Analytics, the page Charts/ opens, lists every page of Charts/
-        # under it as this page does, and Home, Auto-Tourneys and the viewer
-        # (CIVVIS and AI Debugger, the two tools) list none of them.
+    def test_charts_drops_its_pages_down_on_every_page(self):
+        # Charts/ is a folder that drops down to its pages (operator
+        # 2026-11-24: "charts/ can drop down folder style and the user can
+        # pick the right chart"), on Home and Tournaments as on its own
+        # pages. Until then a branch was folded unless one of its pages was
+        # on screen. Its order is the operator's of the same day: "move ai
+        # interpretablity to the top of the charts/ then civ analytics, win
+        # analytics. elo rankings.. civvis performanc". The viewer (CIVVIS and
+        # AI Debugger, the two tools) still lists none of them.
         self.assertIn(
             '<a class="site-link sub-link" href="./" aria-current="page">Win Analytics</a>\n'
-            '        <a class="site-link sub-link" href="../civvis-performance/" ',
+            '          <a class="site-link sub-link" href="../elo-rankings/" ',
             RESEARCH,
         )
-        for page in (LANDING, TOURNAMENTS, VIEWER):
-            self.assertNotIn("Performance</a>", page.replace(">CIVVIS Performance</a></figcaption>", ""))
-            self.assertNotIn(">Win Analytics</a>", page)
+        self.assertIn('          <a class="site-link sub-link" href="../civvis-performance/" ', RESEARCH)
+        for page in (LANDING, TOURNAMENTS):
+            menu = page[page.index('<div class="site-menu">'):]
+            menu = menu[:menu.index("</div>")]
+            self.assertEqual(
+                re.findall(r'<a class="site-link sub-link" href="\.\./charts/([^"]+)/"[^>]*>([^<]+)</a>', menu),
+                [("ai-interpretability", "AI Interpretability"), ("civ-analytics", "Civ Analytics"), ("win-analytics", "Win Analytics"),
+                 ("elo-rankings", "ELO Rankings"), ("civvis-performance", "CIVVIS Performance")],
+            )
+        self.assertNotIn("Performance</a>", VIEWER)
+        for name in (">Win Analytics</a>", ">ELO Rankings</a>", ">Civ Analytics</a>"):
+            self.assertNotIn(name, VIEWER)
         for gone in ("perflink", "under-watch", "opens-watching", "sub-link"):
             self.assertNotIn(gone, VIEWER)
 

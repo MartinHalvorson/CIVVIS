@@ -1,0 +1,1380 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#171d25">
+<title>Civ Analytics · CIVVIS.ai</title>
+<meta name="description" content="CIVVIS civ analytics: the decisions of a game of Civilization VI in the order it asks them, from the first builds to the victory raced, with CIVVIS's win rate by what it did at each, and as each civilization.">
+<link rel="canonical" href="https://civvis.ai/charts/civ-analytics/">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23171d25'/%3E%3Ccircle cx='16' cy='16' r='11.5' fill='none' stroke='%2366c0f4'/%3E%3Cpath d='M7 16h18M16 4.5c-4.2 4.1-4.2 18.9 0 23M16 4.5c4.2 4.1 4.2 18.9 0 23' fill='none' stroke='%2366c0f4' stroke-width='1.15'/%3E%3C/svg%3E">
+<style>
+  /* The home page's own palette, header and cards (`beta/landing.html`), as
+     the Tournaments page repeats them: the pages are one site and read as
+     one. Each is a single file with no shared stylesheet, so what they share
+     is repeated here. */
+  :root {
+    color-scheme: dark;
+    --bg: #171d25;
+    --panel: #1f2733;
+    --panel-raised: #242f3d;
+    --border: #2e3a4a;
+    --border-strong: #46566a;
+    --text: #e2e8ef;
+    --muted: #93a3b5;
+    --faint: #67788b;
+    --accent: #66c0f4;
+    --action-bg: #274b66;
+    --action-fg: #a8d8f5;
+    --action-hover: #315d7e;
+    --gold: #d7b66a;
+    --yt: #b3261e;
+    --yt-edge: #d9534a;
+    --yt-mark: #ff6257;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    /* Civilization VI's six victory types, one colour each, the same on
+       every chart of the page and in this order (a stack runs bottom to top
+       in it). The six are a categorical set checked as one against this
+       panel (#1f2733): each at least 3:1 on it, and each pair that stands
+       side by side in a stack apart for every common colour-vision type. */
+    --v-science: #3987e5;
+    --v-culture: #d95926;
+    --v-diplomatic: #199e70;
+    --v-religious: #c98500;
+    --v-domination: #d55181;
+    --v-score: #0ca30c;
+  }
+
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    min-width: 320px;
+    margin: 0;
+    overflow-x: hidden;
+    color: var(--text);
+    background: var(--bg);
+    font: 15px/1.55 var(--sans);
+    -webkit-font-smoothing: antialiased;
+  }
+  /* 1120px, up from 1060px on 2026-11-22: the header's row of links grew
+     when GitHub and YouTube were made to stand out, and at 1060px it no
+     longer fitted on the title's line. */
+  .shell { width: min(1120px, 100%); margin: 0 auto; padding: 0 clamp(16px, 3vw, 32px); }
+  main { padding-bottom: 48px; }
+
+  .site-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    flex-wrap: wrap;
+    padding-top: 26px;
+    padding-bottom: 18px;
+    border-bottom: 1px solid var(--border);
+  }
+  .site-title { margin: 0; color: #fff; font-size: 26px; font-weight: 700; letter-spacing: 0.04em; }
+  .site-title span { color: var(--accent); font-weight: 600; }
+  .site-tagline { margin: 3px 0 0; color: var(--muted); font-size: 13.5px; }
+  .site-tagline span { display: block; }
+  .utility-nav { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: flex-end; gap: 10px; margin-left: auto; }
+  .utility-nav > .utility-link { min-height: 44px; }
+  .utility-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 38px;
+    padding: 0 14px;
+    border: 1px solid var(--border-strong);
+    border-radius: 3px;
+    background: var(--panel);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    text-decoration: none;
+  }
+  .utility-link svg { width: 15px; height: 15px; flex: none; }
+  .utility-link:hover,
+  .utility-link:focus-visible { background: var(--panel-raised); border-color: var(--accent); color: #fff; }
+  .utility-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* The project's two homes stand out from the row (operator, 2026-11-22:
+     "make the GitHub, dev progress stand out a bit more"): GitHub filled in
+     the site's blue, with what it holds under its name ("everything open
+     source, free"), and YouTube in its red. */
+  .utility-link.is-github,
+  .utility-link.is-youtube { min-height: 44px; color: #fff; font-size: 14px; font-weight: 700; }
+  .utility-link.is-github svg,
+  .utility-link.is-youtube svg { width: 20px; height: 20px; }
+  .utility-link.is-github { border-color: var(--accent); background: var(--action-bg); }
+  .utility-link.is-github:hover,
+  .utility-link.is-github:focus-visible { background: var(--action-hover); border-color: #fff; }
+  .utility-link.is-github span { display: grid; line-height: 1.25; }
+  .utility-link.is-github small { color: var(--action-fg); font-size: 11px; font-weight: 500; white-space: nowrap; }
+  .utility-link.is-youtube { border-color: var(--yt-edge); background: var(--yt); }
+  .utility-link.is-youtube:hover,
+  .utility-link.is-youtube:focus-visible { background: #c9342b; border-color: #fff; }
+  /* Under YouTube, the channel's top playlists, one to a line (operator,
+     2026-11-22: "list top playlists under youtube. maybe in a vertical
+     list"). The row's links keep their tops in a line, so the list hangs
+     under its button alone, in the room the site list's height leaves. */
+  .utility-group { display: grid; gap: 5px; }
+  .utility-lists { display: grid; gap: 1px; margin: 0; padding: 0; list-style: none; }
+  .utility-list {
+    display: flex; align-items: center; gap: 6px; padding: 2px 3px; border-radius: 2px;
+    color: var(--text); font-size: 12.5px; font-weight: 600; line-height: 1.35; text-decoration: none; white-space: nowrap;
+  }
+  .utility-list svg { width: 14px; height: 14px; flex: none; color: var(--yt-mark); }
+  .utility-list:hover,
+  .utility-list:focus-visible { color: #fff; text-decoration: underline; }
+  .utility-list:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  /* The site's pages stand in one row across the top of every page, over
+     the title and the project's links (operator, 2026-11-24: "try
+     putting the vertical menu from home... civ across the top
+     instad"); until then they were a column to the left of the title.
+     The row wraps onto a second line on a narrow screen, and every name
+     stands on one line (operator, 2026-11-21: "make sure it fits on one
+     line"). */
+  .site-nav { display: flex; flex: 1 0 100%; flex-wrap: wrap; align-items: center; gap: 6px; }
+  .site-brand { display: flex; align-items: center; gap: 18px; min-width: 0; }
+  .site-lockup { min-width: 0; }
+  .site-link {
+    display: block;
+    padding: 3px 12px 4px;
+    border-radius: 3px;
+    background: var(--action-bg);
+    color: var(--action-fg);
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    line-height: 1.4;
+    white-space: nowrap;
+    text-decoration: none;
+    text-transform: uppercase;
+  }
+  .site-link:hover,
+  .site-link:focus-visible { background: var(--action-hover); color: #fff; }
+  .site-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* A button wears the ground of what it opens (operator, 2026-11-23: "make
+     home, charts/ and auto-tourneys buttons all have a blue background
+     (like the pages do). civvis, ai debugger have a black background (same
+     as simulator)"). The pages are blue and so are their buttons: the rule
+     above. CIVVIS, the simulation itself at the lane's own address, is
+     gold (operator, 2026-11-24: "lets give civvis a gold background on the
+     button, rather than black"), the gold the simulator lights its own
+     button in. AI Debugger, the simulator in play mode, keeps the
+     simulator's black, inside the edge its own buttons have. Civ 6 opens
+     Steam's shop and is the blue of Steam's buttons ("civ 6 can have the
+     steam color of blue"), dark under the name and light at the far end. */
+  .site-link[href$="../"] { background: linear-gradient(145deg, #dec176, #aa7d30); color: #17130c; box-shadow: inset 0 0 0 1px #efd184; }
+  .site-link[href$="../"]:hover, .site-link[href$="../"]:focus-visible { background: linear-gradient(145deg, #f0d68e, #c0913c); color: #000; }
+  .site-link[href$="?mode=play"] { background: #050607; color: #c9cecb; box-shadow: inset 0 0 0 1px #30363a; }
+  .site-link[href$="?mode=play"]:hover, .site-link[href$="?mode=play"]:focus-visible { background: #181c1f; color: #fff; }
+  /* Doctor Strange's Civ 6 (strange mode, the same game shown as a tree of
+     two timelines) stands out in Doctor Strange's own colours (operator,
+     2026-11-23: "highlight dr strange civ 6 button in dr strange colors"):
+     the deep blue of his tunic running into the crimson of his cloak,
+     ringed and lit by the orange of his spells' sparks, the name in their
+     pale gold. */
+  .site-link[href$="?mode=strange"] {
+    background: linear-gradient(135deg, #1c2a7a 30%, #a3122f); color: #ffe3a3;
+    box-shadow: inset 0 0 0 1px #ff9a2e, 0 0 6px rgba(255, 138, 30, 0.6);
+  }
+  .site-link[href$="?mode=strange"]:hover,
+  .site-link[href$="?mode=strange"]:focus-visible {
+    background: linear-gradient(135deg, #2638a0 30%, #c8193d); color: #fff;
+    box-shadow: inset 0 0 0 1px #ffb85c, 0 0 10px rgba(255, 150, 40, 0.85);
+  }
+  .site-link[href^="https://store.steampowered.com/"] { background: linear-gradient(90deg, #1a44c2 35%, #47bfff); color: #fff; }
+  .site-link[href^="https://store.steampowered.com/"]:hover,
+  .site-link[href^="https://store.steampowered.com/"]:focus-visible { background: linear-gradient(90deg, #2352d6 35%, #73cfff); color: #fff; }
+  /* Wizard Chess is a chessboard (operator, 2026-11-23: "below civ 6, add
+     wizard chess. the background there can be black and white
+     checkerboard"): black and white squares round a black plate that the
+     name stands on, so that it reads on either. */
+  .site-link[href$="wizard-chess/"] {
+    background: linear-gradient(#0b0b0c, #0b0b0c) center / calc(100% - 16px) calc(100% - 8px) no-repeat,
+      repeating-conic-gradient(#f4f1e8 0 25%, #0b0b0c 0 50%) 0 0 / 8px 8px;
+    color: #f4f1e8;
+  }
+  .site-link[href$="wizard-chess/"]:hover,
+  .site-link[href$="wizard-chess/"]:focus-visible {
+    background: linear-gradient(#26262a, #26262a) center / calc(100% - 16px) calc(100% - 8px) no-repeat,
+      repeating-conic-gradient(#ffffff 0 25%, #0b0b0c 0 50%) 0 0 / 8px 8px;
+    color: #fff;
+  }
+  /* Charts/ is a folder of pages and reads "Charts/", with the slash
+     (operator, 2026-11-22), and drops down like one (operator,
+     2026-11-24: "charts/ can drop down folder style and the user can
+     pick the right chart"): pointing at it, or tabbing to it, opens its
+     five pages under it, and the reader picks one. Charts/ itself still
+     opens the folder's first page, AI Interpretability (operator,
+     2026-11-24: "move ai interpretablity to the top of the charts/"). On
+     a touch screen the first tap opens the list (the script after the
+     row). A strip as tall as the gap over the list keeps it open on the
+     pointer's way down to it. */
+  .site-folder { position: relative; }
+  .site-folder > .site-link::after { content: "\25BE"; margin-left: 6px; letter-spacing: 0; }
+  .site-menu {
+    position: absolute; top: calc(100% + 6px); left: 0; z-index: 30;
+    display: none; gap: 4px; width: max-content; min-width: 100%; padding: 6px;
+    border: 1px solid var(--border-strong); border-radius: 4px; background: var(--panel);
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5);
+  }
+  .site-menu::before { content: ""; position: absolute; left: 0; right: 0; top: -7px; height: 7px; }
+  .site-folder:hover > .site-menu,
+  .site-folder:focus-within > .site-menu,
+  .site-folder.is-open > .site-menu { display: grid; }
+  /* The page on screen keeps the colour of what it is and is ringed in
+     white. It was gold until 2026-11-24, when gold became CIVVIS's own
+     (operator: "lets give civvis a gold background on the button, rather
+     than black"). On a page of Charts/ the folder is ringed as well, so
+     the row says where the page is with the list folded. */
+  .site-link[aria-current="page"],
+  .site-folder:has([aria-current="page"]) > .site-link { box-shadow: inset 0 0 0 2px #fff; }
+
+  .intro { max-width: 860px; margin: 18px 0 22px; color: var(--muted); font-size: 14.5px; line-height: 1.6; }
+  .intro a { color: var(--accent); }
+
+  .civ-empty { margin: 0; color: var(--faint); font-size: 13px; }
+  .civ-record[hidden], .civ-empty[hidden], .res-block[hidden], .rank-card[hidden], .civ-part[hidden] { display: none; }
+  .res-section { min-width: 0; padding: 12px 14px 12px; border: 1px solid var(--border); border-radius: 4px; background: var(--panel); }
+  .rank-title { margin: 0; color: #fff; font-size: 13.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+  .rank-sub { margin: 2px 0 8px; color: var(--faint); font-size: 12px; line-height: 1.45; }
+  .rank-note { margin: 10px 0 0; padding-top: 8px; border-top: 1px solid var(--border); color: var(--faint); font-size: 11.5px; line-height: 1.5; }
+  .rank-note a { color: var(--accent); }
+
+  /* The page from the top (operator, 2026-11-24: "top chart is build
+     order", "move winngest civs to the bottom"): the tree of build orders,
+     then the charts of cities and faith under the one row of filters that
+     scopes them, then the winningest civs. Each part is a block of its own,
+     one under the other, with room between. */
+  .civ-record { display: grid; gap: 34px; min-width: 0; }
+  .civ-part { display: grid; gap: 12px; min-width: 0; }
+  .civ-builds { max-width: 760px; }
+  .civ-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-items: start; }
+  .civ-trio { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; align-items: start; }
+  @media (max-width: 979px) { .civ-trio { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 719px) { .civ-pair, .civ-trio { grid-template-columns: minmax(0, 1fr); } }
+  .civ-sub-title { margin: 8px 0 0; color: #fff; font-size: 15px; font-weight: 700; }
+
+  .rank-day { white-space: nowrap; }
+  .rank-list { margin: 0; padding: 0; list-style: none; }
+  .rank-row {
+    display: grid;
+    grid-template-columns: 18px minmax(0, 1fr) auto;
+    gap: 8px;
+    align-items: baseline;
+    padding: 4px 0;
+    border-top: 1px solid var(--border);
+    font-size: 13px;
+    line-height: 1.4;
+  }
+  .rank-n { color: var(--faint); font-size: 11.5px; font-variant-numeric: tabular-nums; text-align: right; }
+  .rank-name { min-width: 0; overflow: hidden; color: var(--text); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+  .rank-name small { margin-left: 6px; color: var(--muted); font-size: 11.5px; font-weight: 400; }
+  .rank-value { color: #fff; font-variant-numeric: tabular-nums; font-weight: 700; white-space: nowrap; }
+  .rank-value small { margin-left: 4px; color: var(--faint); font-size: 11px; font-weight: 400; }
+  .rank-more { margin-top: 6px; padding: 4px 10px; border: 1px solid var(--border-strong); border-radius: 3px; background: none; color: var(--muted); font: inherit; font-size: 12px; cursor: pointer; }
+  .rank-more:hover, .rank-more:focus-visible { border-color: var(--accent); color: #fff; }
+  /* Why a civ wins (operator, 2026-11-24: "add a note that winningest civs
+     is just due to whatever modifications and chosen for the civ and how
+     well the ai straetgy handles that"): said once, over both tables. */
+  .civ-why { max-width: 860px; margin: 0; color: var(--muted); font-size: 13.5px; line-height: 1.55; }
+
+  /* The decisions of a game in the order it asks them (operator,
+     2026-11-24: "the whole thing is really one logic timeline of making
+     decisions in civ"): a row per decision, its place, its name, its turns,
+     and those turns as a bar on the game's 250 at Online speed, under a
+     turn scale that shares the bars' column. A row is a link to the
+     decision's charts. The bars are one series in the site's blue; the
+     scale and the names are text tokens. */
+  .civ-steps { margin: 0 0 22px; padding: 12px 14px 10px; border: 1px solid var(--border); border-radius: 4px; background: var(--panel); }
+  .civ-steps-title { margin: 0 0 4px; color: #fff; font-size: 13.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+  .civ-steps-list { margin: 0; padding: 0; list-style: none; }
+  .civ-steps-list a,
+  .civ-steps-axis { display: grid; grid-template-columns: 22px minmax(0, 300px) 92px minmax(0, 1fr); align-items: center; gap: 0 10px; }
+  .civ-steps-list a { padding: 6px 0; border-top: 1px solid var(--border); color: var(--text); font-size: 14px; line-height: 1.35; text-decoration: none; }
+  .civ-steps-list li:first-child a { border-top: 0; }
+  .civ-steps-list a:hover { background: var(--panel-raised); }
+  .civ-steps-list a:hover .civ-step-name,
+  .civ-steps-list a:focus-visible .civ-step-name { color: #fff; text-decoration: underline; }
+  .civ-steps-list a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .civ-step-n { display: inline-grid; place-items: center; min-width: 20px; height: 18px; margin-right: 8px; padding: 0 4px; border: 1px solid var(--border-strong); border-radius: 3px; color: var(--muted); font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1; }
+  .civ-steps-list .civ-step-n { margin-right: 0; }
+  .civ-step-name { min-width: 0; overflow: hidden; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+  .civ-step-turns { color: var(--muted); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .civ-step-track { position: relative; height: 8px; border-radius: 4px; background: var(--border); }
+  .civ-step-bar { position: absolute; top: 0; bottom: 0; left: calc((var(--from) - 1) / 250 * 100%); width: calc((var(--to) - var(--from) + 1) / 250 * 100%); border-radius: 4px; background: var(--accent); }
+  .civ-steps-axis { margin-top: 2px; color: var(--faint); font-size: 11px; font-variant-numeric: tabular-nums; }
+  .civ-steps-ticks { position: relative; grid-column: 4; height: 15px; }
+  .civ-steps-ticks span { position: absolute; left: calc((var(--at) - 1) / 250 * 100%); transform: translateX(-50%); white-space: nowrap; }
+  .civ-steps-ticks span:first-child { transform: none; }
+  .civ-steps-ticks span:last-child { transform: translateX(-100%); }
+  .civ-steps-note { margin: 8px 0 0; padding-top: 8px; border-top: 1px solid var(--border); color: var(--faint); font-size: 11.5px; line-height: 1.5; }
+  .civ-steps-note a { color: var(--accent); }
+  /* On a narrow window the name and its turns share a line and the bar
+     takes the next, under them, with the scale under the last bar. */
+  @media (max-width: 639px) {
+    .civ-steps-list a,
+    .civ-steps-axis { grid-template-columns: 22px minmax(0, 1fr) auto; row-gap: 5px; }
+    .civ-step-track, .civ-steps-ticks { grid-column: 2 / -1; }
+    .civ-step-name { white-space: normal; }
+  }
+  /* A decision's head inside the filtered charts: its place, its name and
+     its turns, and why it matters, over its charts; and on the two sections
+     outside them, the same place and turns over their own titles. */
+  .civ-step { display: grid; gap: 4px; margin-top: 10px; padding-top: 12px; border-top: 2px solid var(--border-strong); }
+  .civ-step-title { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: baseline; gap: 0 10px; margin: 0; color: #fff; font-size: 16px; font-weight: 700; line-height: 1.3; }
+  .civ-step-title .civ-step-n { margin-right: 0; transform: translateY(-1px); }
+  .civ-step-title .civ-step-turns { margin-left: 8px; }
+  .civ-step-why { max-width: 860px; margin: 0; color: var(--muted); font-size: 13.5px; line-height: 1.55; }
+  .civ-step-tag { display: flex; align-items: center; margin: 0 0 4px; color: var(--muted); font-size: 12px; font-weight: 600; }
+  .civ-step, #res-side-builds, #civ-civs { scroll-margin-top: 12px; }
+  /* Where CIVVIS stands at a mark, beside the chart of it: two tiles, one
+     over the other, and side by side once the chart stands over them. */
+  .civ-tiles.civ-stand { grid-template-columns: minmax(0, 1fr); align-content: start; }
+  @media (max-width: 719px) { .civ-tiles.civ-stand { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 479px) { .civ-tiles.civ-stand { grid-template-columns: minmax(0, 1fr); } }
+
+  .res-block { display: grid; gap: 8px; min-width: 0; }
+  .res-side-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 6px 16px; padding: 0 2px 6px; border-bottom: 2px solid var(--border-strong); }
+  .res-side-name { min-width: 0; }
+  .res-side-title { margin: 0; color: #fff; font-size: 17px; font-weight: 700; line-height: 1.3; }
+  .res-counted { margin: 1px 0 0; color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+  .res-block .rank-note { margin-top: 4px; }
+  /* The tree of build orders (operator, 2026-11-23:
+     "add a tree for the early build order win rates for deity games ... a
+     person should be able to click thourgh and see the win rates of all the
+     units. we should sort the tree by win rates descending. so the very
+     first thing is: the winngest first build, underneath the second winnest
+     first bulid. if etierh is clicked, then the winninest combinations of
+     first build second build. etc... add this chart to the top of win
+     analytics"). A row is a build: the mark that it opens, its place in the
+     order (1 for a first build), its name, and at the right the win rate
+     and its games as the benchmark's cells write them, `14% (181)`. The two
+     figures keep their widths, so they stand in columns down the whole
+     tree however deep a row is set in. A build that opens is a button;
+     pressing it lists the builds after it one step in, under a rule that
+     ties them to it. A build nothing is listed under is a plain row. */
+  .res-builds-head { display: flex; justify-content: space-between; gap: 12px; padding: 0 2px 5px 0; border-bottom: 1px solid var(--border); color: var(--muted); font-size: 12px; font-weight: 700; }
+  .res-builds, .res-builds ul { margin: 0; padding: 0; list-style: none; }
+  .res-builds ul { margin-left: 6px; padding-left: 14px; border-left: 1px solid var(--border-strong); }
+  .res-builds ul[hidden] { display: none; }
+  .res-build { display: grid; grid-template-columns: 12px auto minmax(0, 1fr) 52px 58px; align-items: center; gap: 0 8px; width: 100%; margin: 0; padding: 6px 2px 6px 0; border: 0; border-top: 1px solid var(--border); border-radius: 0; background: none; color: var(--text); font: inherit; font-size: 14.5px; font-variant-numeric: tabular-nums; line-height: 1.3; text-align: left; }
+  .res-builds > li:first-child > .res-build { border-top: 0; }
+  button.res-build { cursor: pointer; }
+  button.res-build:hover { background: var(--panel-raised); }
+  button.res-build:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .res-build-mark { width: 0; height: 0; justify-self: center; border: 4px solid transparent; border-right: 0; border-left: 6px solid var(--muted); }
+  .res-build[aria-expanded="true"] > .res-build-mark { border-left-color: var(--accent); transform: rotate(90deg); }
+  .res-build-place { min-width: 20px; padding: 0 4px; border: 1px solid var(--border-strong); border-radius: 3px; color: var(--muted); font-size: 11px; font-weight: 700; line-height: 16px; text-align: center; }
+  .res-build-name { overflow: hidden; color: #fff; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+  .res-build-figures { display: contents; }
+  .res-build-rate { color: #fff; font-weight: 700; text-align: right; }
+  .res-build-games { color: var(--muted); font-size: 12.5px; }
+  /* On a phone a step in is half as deep. Under 360px the two figures
+     stand one over the other, as the benchmark's cells do on a phone, and
+     a name may take a second line, so the eighth build still reads whole
+     at 320px. */
+  @media (max-width: 479px) {
+    .res-builds ul { margin-left: 5px; padding-left: 6px; }
+    .res-build { grid-template-columns: 10px auto minmax(0, 1fr) 44px 50px; gap: 0 5px; font-size: 13.5px; }
+    .res-build-games { font-size: 11.5px; }
+  }
+  @media (max-width: 359px) {
+    .res-build { grid-template-columns: 10px auto minmax(0, 1fr) auto; }
+    .res-build-figures { display: grid; justify-items: end; min-width: 40px; line-height: 1.25; }
+    .res-build-name { white-space: normal; }
+  }
+
+  /* The filters (operator, 2026-11-23: "filterable by the typical stuff
+     (lvs, etc)"): one row above the charts they scope, which games (a level
+     of Civilization VI's AI, Lv 8 Deity first picked, or CIVVIS
+     self-play), the Diplomatic victory on or off, and how many days back.
+     Each is a row of buttons, the one picked filled. */
+  .civ-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 22px; }
+  .civ-filter { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+  .civ-filter-name { color: var(--muted); font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+  .civ-seg { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--border-strong); border-radius: 3px; overflow: hidden; }
+  .civ-seg button { min-height: 30px; padding: 0 11px; border: 0; border-left: 1px solid var(--border-strong); background: var(--panel); color: var(--text); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+  .civ-seg button:first-child { border-left: 0; }
+  .civ-seg button:hover { background: var(--panel-raised); color: #fff; }
+  .civ-seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .civ-seg button[aria-pressed="true"] { background: var(--action-bg); color: #fff; box-shadow: inset 0 -2px 0 var(--accent); }
+  .civ-seg button:disabled { color: var(--faint); cursor: default; background: var(--panel); box-shadow: none; }
+
+  /* A chart of win rate by turn (operator, 2026-11-23: "a 2nd city down vs
+     win rate graph by lv default lv 8 and 3rd city down turn win rate"): a
+     column per span of turns, in turn order and "never" last, its height
+     CIVVIS's win rate over the games whose city went down in it, the rate
+     on its cap and the games under its span. One measure, so one colour:
+     the site's blue stepped down to the dark chart band (#3b97d6, OKLCH L
+     0.64, checked at 3:1 and more on the panel), its own light blue on
+     hover. A column over fewer than `FEW` games is faint. The hairline
+     across is the win rate over every game counted, named at its right
+     end, over the late spans, whose columns stand lowest.
+     Every column is a target the height of the chart, with the figures in
+     a tooltip, and the table under the chart holds them all. */
+  .civ-plot { position: relative; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); height: 150px; margin-top: 4px; padding-top: 20px; border-bottom: 1px solid var(--border-strong); }
+  .civ-col { display: flex; flex-direction: column; justify-content: flex-end; align-items: center; min-width: 0; height: 100%; outline: none; cursor: default; }
+  .civ-cap { margin-bottom: 3px; color: #fff; font-size: 11.5px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .civ-bar { width: min(24px, 72%); min-height: 1px; border-radius: 4px 4px 0 0; background: #3b97d6; }
+  .civ-col:hover .civ-bar, .civ-col:focus-visible .civ-bar { background: var(--accent); }
+  .civ-col:focus-visible .civ-cap { text-decoration: underline; }
+  .civ-col.is-few .civ-bar { opacity: 0.4; }
+  .civ-col.is-few .civ-cap { color: var(--faint); font-weight: 600; }
+  .civ-ref { position: absolute; left: 0; right: 0; height: 0; border-top: 1px solid var(--muted); pointer-events: none; }
+  .civ-ref span { position: absolute; right: 0; bottom: 2px; padding: 0 0 0 4px; background: var(--panel); color: var(--muted); font-size: 10.5px; white-space: nowrap; }
+  .civ-axis { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); margin-top: 4px; }
+  .civ-bin { display: grid; justify-items: center; min-width: 0; color: var(--muted); font-size: 11px; line-height: 1.3; text-align: center; font-variant-numeric: tabular-nums; }
+  .civ-bin small { color: var(--faint); font-size: 10px; }
+  .civ-axis-name { margin: 3px 0 0; color: var(--faint); font-size: 11px; text-align: center; }
+  /* On a phone a span's name stands on two lines, its first turn over its
+     last, the caps are a size smaller, and the games under each span are
+     left to the tooltip and the table: side by side they ran together. */
+  @media (max-width: 559px) {
+    .civ-bin-name { display: grid; }
+    .civ-bin small, .civ-axis-games { display: none; }
+    .civ-cap { font-size: 10px; }
+  }
+  .civ-none { margin: 8px 0 0; color: var(--faint); font-size: 12.5px; }
+  .civ-table { margin-top: 8px; color: var(--muted); font-size: 12px; }
+  .civ-table summary { width: max-content; cursor: pointer; color: var(--muted); }
+  .civ-table summary:hover, .civ-table summary:focus-visible { color: #fff; }
+  .civ-table table { width: 100%; margin-top: 4px; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  .civ-table th, .civ-table td { padding: 3px 6px; border-top: 1px solid var(--border); text-align: right; }
+  .civ-table th:first-child, .civ-table td:first-child { text-align: left; }
+  .civ-table th { color: var(--faint); font-weight: 600; }
+
+  /* Religion founded or not (operator: "a religion founded win rate and a
+     no religion win rate"): two figures side by side, each a win rate over
+     its games. */
+  .civ-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+  @media (max-width: 479px) { .civ-tiles { grid-template-columns: minmax(0, 1fr); } }
+  .civ-tile { display: grid; gap: 2px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 4px; background: var(--panel); }
+  .civ-tile-label { color: var(--muted); font-size: 13px; font-weight: 600; }
+  .civ-tile-value { color: #fff; font-size: 30px; font-weight: 600; line-height: 1.15; font-variant-numeric: tabular-nums; }
+  .civ-tile-sub { color: var(--faint); font-size: 12px; font-variant-numeric: tabular-nums; }
+
+  /* A win rate per belief (operator: "a win rate for each pantheon belief
+     and a win rate for each religion first belief"): a row per belief, best
+     win rate first, its name, a bar of its rate against the list's best,
+     and the rate with its games. */
+  .civ-row { display: grid; grid-template-columns: minmax(0, 1fr) 56px 76px; gap: 8px; align-items: center; padding: 4px 0; border-top: 1px solid var(--border); font-size: 13px; line-height: 1.35; outline: none; }
+  .civ-row:hover .civ-row-fill, .civ-row:focus-visible .civ-row-fill { background: var(--accent); }
+  .civ-row:focus-visible .civ-row-name { text-decoration: underline; }
+  .civ-row-name { min-width: 0; overflow: hidden; color: var(--text); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+  .civ-row-track { height: 6px; border-radius: 0 3px 3px 0; background: var(--border); overflow: hidden; }
+  .civ-row-fill { display: block; height: 100%; border-radius: 0 3px 3px 0; background: #3b97d6; }
+  .civ-row-value { color: #fff; font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+  .civ-row-value small { margin-left: 3px; color: var(--faint); font-size: 11px; font-weight: 400; }
+  .civ-row.is-few .civ-row-fill { opacity: 0.4; }
+  .civ-row.is-few .civ-row-value { color: var(--muted); font-weight: 600; }
+
+  /* The one tooltip: the figure first and strong, what it is under it. */
+  .civ-tip { position: fixed; z-index: 10; max-width: 260px; padding: 7px 10px; border: 1px solid var(--border-strong); border-radius: 4px; background: #0f141a; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45); color: var(--muted); font-size: 12px; line-height: 1.4; pointer-events: none; }
+  .civ-tip[hidden] { display: none; }
+  .civ-tip strong { display: block; color: #fff; font-size: 15px; font-variant-numeric: tabular-nums; }
+
+</style>
+</head>
+<body>
+  <header class="shell site-header">
+    <!-- The site's pages, in the order every one of them lists them, in one
+         row across the top of the page (operator, 2026-11-24: "try putting
+         the vertical menu from home... civ across the top instad"), where
+         until then they stood in a column to the left of the title. Charts/
+         is a folder and drops down like one to its five pages ("charts/ can
+         drop down folder style and the user can pick the right chart"). The
+         page on screen is ringed in white: this is Civ Analytics, under
+         Charts/, so Charts/ is ringed too and so is this page in its list.
+         Every link is lane-relative (this page lives at
+         <lane>/charts/civ-analytics/), so the test lane's page opens the
+         test lane's other pages and viewer. -->
+    <nav class="site-nav" aria-label="CIVVIS sites">
+      <a class="site-link" href="../../home/">Home</a>
+      <div class="site-folder">
+        <a class="site-link" href="../ai-interpretability/" title="What the games show: charts read off the CIVVIS AI agents&#8217; games.">Charts/</a>
+        <div class="site-menu">
+          <a class="site-link sub-link" href="../ai-interpretability/" title="How a CIVVIS AI agent decides: one turn step by step, its plan through a game, and what each rule is worth in wins.">AI Interpretability</a>
+          <a class="site-link sub-link" href="./" aria-current="page">Civ Analytics</a>
+          <a class="site-link sub-link" href="../win-analytics/" title="Who wins, how and when: the games against Civilization VI&#8217;s own AI beside the CIVVIS self-play games.">Win Analytics</a>
+          <a class="site-link sub-link" href="../elo-rankings/" title="The Civ AI Agents and Civilization VI&#8217;s own AI on one Elo scale, now and over time.">ELO Rankings</a>
+          <a class="site-link sub-link" href="../civvis-performance/" title="How fast the simulator plays: the fastest game on video and how long a self-play game takes.">CIVVIS Performance</a>
+        </div>
+      </div>
+      <a class="site-link" href="../../tournaments/" title="Series of verification games against Civilization VI&#8217;s own AI: running, scheduled and finished.">Tournaments</a>
+      <a class="site-link" href="../../" title="Every civilization is played by a CIVVIS AI agent.">CIVVIS</a>
+      <a class="site-link" href="../../?mode=strange" title="One world, two timelines: the same game played two ways, side by side, on a timeline that branches.">Doctor Strange's Civ 6</a>
+      <a class="site-link" href="../../?mode=play" title="You play one civilization. CIVVIS AI agents play the rest.">AI Debugger</a>
+      <a class="site-link" href="https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/" target="_blank" rel="noopener" title="Buy Civilization VI on Steam">Civ 6</a>
+      <a class="site-link" href="../../wizard-chess/" title="Chess where you command and the pieces obey, against an opponent at the Elo you pick.">Wizard Chess</a>
+    </nav>
+    <script data-site-folder>
+    // Charts/ on a touch screen, where nothing points at it: the first tap
+    // drops its list down and a second opens the folder's first page, as
+    // /charts/ does. A tap anywhere else folds the list away.
+    (() => {
+      const folder = document.querySelector(".site-folder");
+      if (!folder) return;
+      folder.firstElementChild.addEventListener("click", (event) => {
+        if (matchMedia("(hover: hover)").matches || folder.classList.contains("is-open")) return;
+        event.preventDefault();
+        folder.classList.add("is-open");
+      });
+      document.addEventListener("click", (event) => {
+        if (!folder.contains(event.target)) folder.classList.remove("is-open");
+      });
+      folder.addEventListener("keydown", (event) => {
+        if (event.key !== "Escape") return;
+        folder.classList.remove("is-open");
+        document.activeElement.blur();
+      });
+    })();
+    </script>
+    <div class="site-brand">
+      <div class="site-lockup">
+        <h1 class="site-title">CIVVIS<span>.ai</span></h1>
+        <p class="site-tagline"><span>An open source Civilization VI Simulator</span> <span>for AI reasoning insights</span></p>
+      </div>
+    </div>
+    <nav class="utility-nav" aria-label="CIVVIS links">
+      <a class="utility-link is-github" href="https://github.com/MartinHalvorson/CIVVIS" target="_blank" rel="noreferrer">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2.2c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1.1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.8 18.3 5.1 18.3 5.1c.6 1.7.2 2.9.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .3z"/></svg>
+        <span>GitHub <small>Everything open source, free</small></span>
+      </a>
+      <div class="utility-group">
+        <a class="utility-link is-youtube" href="https://www.youtube.com/@civvis" target="_blank" rel="noreferrer">
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.6 12 3.6 12 3.6s-7.5 0-9.4.5A3 3 0 0 0 .5 6.2C0 8.1 0 12 0 12s0 3.9.5 5.8a3 3 0 0 0 2.1 2.1c1.9.5 9.4.5 9.4.5s7.5 0 9.4-.5a3 3 0 0 0 2.1-2.1c.5-1.9.5-5.8.5-5.8s0-3.9-.5-5.8zM9.5 15.6V8.4l6.3 3.6-6.3 3.6z"/></svg>
+          YouTube
+        </a>
+        <ul class="utility-lists" aria-label="Top playlists">
+          <li><a class="utility-list" href="https://www.youtube.com/playlist?list=PLWcKlP8e8iy4" target="_blank" rel="noreferrer"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4 6h12v2H4zm0 4h12v2H4zm0 4h8v2H4zm10 0v6l5-3z"/></svg>Lv 8 Deity Wins</a></li>
+          <li><a class="utility-list" href="https://www.youtube.com/playlist?list=PLecirlzIUSSo" target="_blank" rel="noreferrer"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4 6h12v2H4zm0 4h12v2H4zm0 4h8v2H4zm10 0v6l5-3z"/></svg>Lv 1 - 7 Archive</a></li>
+        </ul>
+      </div>
+      <!-- The home page files a report itself, from a dialog; here the same
+           button is GitHub's own form, which needs no script on this page. -->
+      <a class="utility-link" href="https://github.com/MartinHalvorson/CIVVIS/issues/new/choose" target="_blank" rel="noreferrer">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M12 2C6.5 2 2 5.9 2 10.7c0 2.8 1.5 5.3 3.9 6.9L5 22l4.6-2.4c.8.2 1.6.3 2.4.3 5.5 0 10-3.9 10-8.7S17.5 2 12 2zm-1 4.5h2v6h-2v-6zm0 7.5h2v2h-2v-2z"/></svg>
+        Suggest Feature / Report Issue
+      </a>
+    </nav>
+  </header>
+
+  <main class="shell">
+    <p class="intro">
+      A game of <cite>Sid Meier&#8217;s Civilization VI</cite> asks a few
+      decisions that matter more than the rest, and asks them in the same
+      order every game. This page follows them from the first turn to the
+      last and charts, at each one, CIVVIS&#8217;s win rate by what it did,
+      in its games against the game&#8217;s own AI and in CIVVIS self-play.
+      Who wins and when is charted on <a href="../win-analytics/">Win
+      Analytics</a>, and how every agent rates on
+      <a href="../elo-rankings/">ELO Rankings</a>.
+    </p>
+
+    <!-- The decisions of a game, in the order it asks them (operator
+         2026-11-24: "reflect on the top most important decisions a civ
+         player has to make throughout the game. rank them into a list
+         chronologically. make a top chart or two that shows monitors the
+         problem. merge your charts into the civ analytics chart
+         chronologically as well so the whole thing is really one logic
+         timeline of making decisions in civ"). A row is a decision: its
+         place, its name, the turns it is open at Online speed, and those
+         turns as a bar on the game's 250, each a link to its charts below,
+         which stand in the same order. The civ is set before turn 1, by
+         the game's setup and not by CIVVIS, so its record closes the page,
+         where the operator put it ("move winngest civs to the bottom"). -->
+    <nav class="civ-steps" aria-labelledby="civ-steps-title">
+      <h2 class="civ-steps-title" id="civ-steps-title">The decisions of a game, in the order it asks them</h2>
+      <ol class="civ-steps-list">
+        <li><a href="#res-side-builds" style="--from: 1; --to: 30"><span class="civ-step-n">1</span><span class="civ-step-name">What the capital builds first</span><span class="civ-step-turns">Turns 1&#8211;30</span><span class="civ-step-track" aria-hidden="true"><span class="civ-step-bar"></span></span></a></li>
+        <li><a href="#civ-step-expand" style="--from: 1; --to: 50"><span class="civ-step-n">2</span><span class="civ-step-name">How fast and how wide to expand</span><span class="civ-step-turns">Turns 1&#8211;50</span><span class="civ-step-track" aria-hidden="true"><span class="civ-step-bar"></span></span></a></li>
+        <li><a href="#civ-step-faith" style="--from: 10; --to: 60"><span class="civ-step-n">3</span><span class="civ-step-name">A pantheon, and a religion or none</span><span class="civ-step-turns">Turns 10&#8211;60</span><span class="civ-step-track" aria-hidden="true"><span class="civ-step-bar"></span></span></a></li>
+        <li><a href="#civ-step-invaded" style="--from: 30; --to: 150"><span class="civ-step-n">4</span><span class="civ-step-name">Holding the land when a neighbour invades</span><span class="civ-step-turns">Turns 30&#8211;150</span><span class="civ-step-track" aria-hidden="true"><span class="civ-step-bar"></span></span></a></li>
+        <li><a href="#civ-step-science" style="--from: 50; --to: 150"><span class="civ-step-n">5</span><span class="civ-step-name">Keeping up with the leader&#8217;s science</span><span class="civ-step-turns">Turns 50&#8211;150</span><span class="civ-step-track" aria-hidden="true"><span class="civ-step-bar"></span></span></a></li>
+        <li><a href="#civ-step-victory" style="--from: 100; --to: 250"><span class="civ-step-n">6</span><span class="civ-step-name">Which victory to race for</span><span class="civ-step-turns">Turns 100&#8211;250</span><span class="civ-step-track" aria-hidden="true"><span class="civ-step-bar"></span></span></a></li>
+      </ol>
+      <div class="civ-steps-axis" aria-hidden="true"><span class="civ-steps-ticks"><span style="--at: 1">Turn 1</span><span style="--at: 50">50</span><span style="--at: 100">100</span><span style="--at: 150">150</span><span style="--at: 200">200</span><span style="--at: 250">250</span></span></div>
+      <p class="civ-steps-note">Turns at Online speed, a game of 250. The civ itself is set before turn 1 by the game&#8217;s setup, not chosen by CIVVIS: its record <a href="#civ-civs">closes the page</a>.</p>
+    </nav>
+
+    <!-- The figures: `beta/publish.sh` fills the slot below
+         (`beta/civs_page.py`) with the tree of build orders (the openings
+         from the run summaries and `data/research/build_orders.json`), a
+         row per game against the AI with its cities and faith (the run
+         summaries and `data/research/game_marks.json`), the self-play seats
+         (`data/research/self_play_seats.json`) and the civ records off the
+         run ledger. A page whose slot still reads `null` shows the one
+         sentence. -->
+    <p class="civ-empty" id="civ-empty">This copy of the page has no figures. They are written in when the site is published.</p>
+    <div class="civ-record" id="civ-record" hidden>
+      <!-- First, the tree of build orders (operator 2026-11-23: "add a tree
+           for the early build order win rates for deity games. meaning, when
+           scout was built first, what percentage of those games won? when
+           settler was secnod, what percentage of scout-settler won? a person
+           should be able to click thourgh and see the win rates of all the
+           units. we should sort the tree by win rates descending"; and
+           2026-11-24: "top chart is build order"). The script lists the
+           first builds of the games against Deity, best win rate first,
+           and a build pressed lists the builds that followed it the same
+           way. -->
+      <section class="res-block civ-builds" id="res-side-builds" aria-labelledby="res-title-builds" hidden>
+        <header class="res-side-head">
+          <div class="res-side-name">
+            <p class="civ-step-tag"><span class="civ-step-n">1</span>What the capital builds first &#183; turns 1&#8211;30</p>
+            <h2 class="res-side-title" id="res-title-builds">Early build order: win rate against Lv 8 Deity AI</h2>
+            <p class="res-counted" id="res-counted-builds">What the capital built first, second and third against Civilization VI&#8217;s own AI.</p>
+          </div>
+        </header>
+        <p class="civ-step-why">The capital&#8217;s first builds decide how soon the second city goes down and whether the capital can hold off the first attack: a Scout finds the land, a Slinger guards it, a Settler claims it.</p>
+        <div class="res-section">
+          <div class="res-builds-head" aria-hidden="true"><span>Build order</span><span>Win rate (total games)</span></div>
+          <ul class="res-builds" id="res-builds" aria-labelledby="res-title-builds"></ul>
+        </div>
+        <p class="rank-note">
+          What CIVVIS&#8217;s capital finished producing, in the order it finished it. The first builds are listed best win rate first; press one to list what was built second after it, then third, <span id="res-builds-depth">eight</span> builds deep.
+          A row is CIVVIS&#8217;s win rate over the games that opened with exactly the builds down to it and, in brackets, those games.
+          A build is a unit, building, district or wonder the capital&#8217;s production finished; one bought with Gold or Faith is not a build, and an item dropped for another before it was done is not one either.
+          A Settler can come first: the capital needs two citizens to train one, it has them by turn 3 or 4 at Online speed, and in those games CIVVIS dropped what it began on turn 1, a Scout or a Builder, for the Settler.
+          Every finished game against the Deity AI on the run ledger counts, in a tournament or not: a win is a CIVVIS victory; a loss is a rival&#8217;s victory, our elimination, or a game conceded early.
+          <span id="res-builds-left"></span>
+          A build order only one game played is not opened further.
+        </p>
+      </section>
+
+      <!-- Then the cities and the faith (operator 2026-11-23: "i also want
+           to see a 2nd city down vs win rate graph by lv default lv 8 and
+           3rd city down turn win rate"; "a religion founded win rate and a
+           no religion win rate, filterable by the typical stuff (lvs, etc).
+           we should have a win rate for each pantheon belief and a win rate
+           for each religion first belief"), under the one row of filters
+           that scopes all of them. The script counts the games the filters
+           pick. -->
+      <section class="civ-part" id="civ-filtered" aria-labelledby="civ-filtered-title" hidden>
+        <header class="res-side-head">
+          <div class="res-side-name">
+            <h2 class="res-side-title" id="civ-filtered-title">Decisions 2 to 6: win rate by what CIVVIS did</h2>
+            <p class="res-counted" id="civ-counted"></p>
+          </div>
+        </header>
+        <div class="civ-filters">
+          <div class="civ-filter" role="group" aria-labelledby="civ-f-games-name">
+            <span class="civ-filter-name" id="civ-f-games-name">Games</span>
+            <div class="civ-seg" id="civ-f-games"></div>
+          </div>
+          <div class="civ-filter" role="group" aria-labelledby="civ-f-diplo-name">
+            <span class="civ-filter-name" id="civ-f-diplo-name">Diplomatic victory</span>
+            <div class="civ-seg" id="civ-f-diplo">
+              <button type="button" data-value="any" aria-pressed="true">Any</button>
+              <button type="button" data-value="on" aria-pressed="false">On</button>
+              <button type="button" data-value="off" aria-pressed="false">Off</button>
+            </div>
+          </div>
+          <div class="civ-filter" role="group" aria-labelledby="civ-f-days-name">
+            <span class="civ-filter-name" id="civ-f-days-name">Days</span>
+            <div class="civ-seg" id="civ-f-days">
+              <button type="button" data-value="7" aria-pressed="false">Last 7</button>
+              <button type="button" data-value="30" aria-pressed="false">Last 30</button>
+              <button type="button" data-value="all" aria-pressed="true">All</button>
+            </div>
+          </div>
+        </div>
+        <header class="civ-step" id="civ-step-expand">
+          <h3 class="civ-step-title"><span class="civ-step-n">2</span><span>How fast and how wide to expand <span class="civ-step-turns">turns 1&#8211;50</span></span></h3>
+          <p class="civ-step-why">A city founded early yields for the rest of the game, and the land runs out fast against the Deity AI&#8217;s extra Settlers: how soon the second and third cities go down, and how many stand at turn 50.</p>
+        </header>
+        <div class="civ-pair">
+          <section class="res-section" id="civ-city2" aria-labelledby="civ-city2-title">
+            <h3 class="rank-title" id="civ-city2-title">2nd city founded</h3>
+            <p class="rank-sub" data-sub></p>
+            <div data-chart></div>
+          </section>
+          <section class="res-section" id="civ-city3" aria-labelledby="civ-city3-title">
+            <h3 class="rank-title" id="civ-city3-title">3rd city founded</h3>
+            <p class="rank-sub" data-sub></p>
+            <div data-chart></div>
+          </section>
+        </div>
+        <!-- How many cities CIVVIS held at turn 50, beside where it stands
+             against the best rival it had met (operator 2026-11-24: "make a
+             top chart or two that shows monitors the problem"). -->
+        <div class="civ-pair">
+          <section class="res-section" id="civ-cities50" aria-labelledby="civ-cities50-title">
+            <h3 class="rank-title" id="civ-cities50-title">Cities at turn 50</h3>
+            <p class="rank-sub" data-sub></p>
+            <div data-chart></div>
+          </section>
+          <div class="civ-tiles civ-stand" id="civ-cities50-stand" aria-label="Where CIVVIS stands at turn 50"></div>
+        </div>
+        <header class="civ-step" id="civ-step-faith">
+          <h3 class="civ-step-title"><span class="civ-step-n">3</span><span>A pantheon, and a religion or none <span class="civ-step-turns">turns 10&#8211;60</span></span></h3>
+          <p class="civ-step-why">Great Prophets run out early at Deity. A religion founded in time keeps the Religious victory open and pays Faith all game; a Holy Site that loses the race is production spent for nothing.</p>
+        </header>
+        <div class="civ-tiles" id="civ-religion"></div>
+        <div class="civ-trio">
+          <section class="res-section" id="civ-pantheons" aria-labelledby="civ-pantheons-title">
+            <h3 class="rank-title" id="civ-pantheons-title">Pantheon belief</h3>
+            <p class="rank-sub">Win rate by the pantheon CIVVIS founded.</p>
+            <div data-list></div>
+          </section>
+          <section class="res-section" id="civ-founders" aria-labelledby="civ-founders-title">
+            <h3 class="rank-title" id="civ-founders-title">Founder belief</h3>
+            <p class="rank-sub">Win rate by the founder belief chosen when CIVVIS founded its religion.</p>
+            <div data-list></div>
+          </section>
+          <section class="res-section" id="civ-followers" aria-labelledby="civ-followers-title">
+            <h3 class="rank-title" id="civ-followers-title">Follower belief</h3>
+            <p class="rank-sub">Win rate by the follower belief chosen with it.</p>
+            <div data-list></div>
+          </section>
+        </div>
+        <!-- Operator 2026-11-24: "make a chart of the win odds by the turn
+             that a civ is first invaded by another civ and add to civ
+             analytics". -->
+        <header class="civ-step" id="civ-step-invaded">
+          <h3 class="civ-step-title"><span class="civ-step-n">4</span><span>Holding the land when a neighbour invades <span class="civ-step-turns">turns 30&#8211;150</span></span></h3>
+          <p class="civ-step-why">The Deity AI fields armies early. Walls, units and friends decide whether the cities CIVVIS founded stay its own, and whether it can keep building while it defends.</p>
+        </header>
+        <section class="res-section" id="civ-invaded" aria-labelledby="civ-invaded-title">
+          <h3 class="rank-title" id="civ-invaded-title">First invaded by another civ</h3>
+          <p class="rank-sub" data-sub></p>
+          <div data-chart></div>
+        </section>
+        <header class="civ-step" id="civ-step-science">
+          <h3 class="civ-step-title"><span class="civ-step-n">5</span><span>Keeping up with the leader&#8217;s science <span class="civ-step-turns">turns 50&#8211;150</span></span></h3>
+          <p class="civ-step-why">Campuses, libraries and the cities to put them in: through the middle of the game every victory but the Religious one runs on science, and a civ far behind the leader at turn 100 seldom catches up.</p>
+        </header>
+        <!-- CIVVIS's science at turn 100 as a share of the best rival's,
+             beside where it stands (operator 2026-11-24: "make a top chart
+             or two that shows monitors the problem"). -->
+        <div class="civ-pair">
+          <section class="res-section" id="civ-science100" aria-labelledby="civ-science100-title">
+            <h3 class="rank-title" id="civ-science100-title">Science at turn 100, against the leader</h3>
+            <p class="rank-sub" data-sub></p>
+            <div data-chart></div>
+          </section>
+          <div class="civ-tiles civ-stand" id="civ-science100-stand" aria-label="Where CIVVIS stands at turn 100"></div>
+        </div>
+        <header class="civ-step" id="civ-step-victory">
+          <h3 class="civ-step-title"><span class="civ-step-n">6</span><span>Which victory to race for <span class="civ-step-turns">turns 100&#8211;250</span></span></h3>
+          <p class="civ-step-why">By turn 100 the map shows which victory is in reach, and the rest of the game is a race to close it before a rival closes its own. Each game&#8217;s seat is set to aim for one; this is how often CIVVIS won aiming for each.</p>
+        </header>
+        <div class="civ-pair">
+          <section class="res-section" id="civ-victories" aria-labelledby="civ-victories-title">
+            <h3 class="rank-title" id="civ-victories-title">Victory aimed for</h3>
+            <p class="rank-sub">Win rate by the victory the game&#8217;s seat was set to aim for. A win of any kind counts.</p>
+            <div data-list></div>
+          </section>
+        </div>
+        <p class="rank-note" id="civ-filtered-note">
+          Against the AI, a game counts once however many runs it took: a win is a CIVVIS victory; a loss is a rival&#8217;s victory, our elimination, or a game conceded early.
+          A city is one CIVVIS founded, not one it took, on the turn it went down.
+          A religion&#8217;s founder and follower beliefs are the two chosen when it was founded; the beliefs added when it is enhanced are not counted.
+          A game is first invaded on the first turn another civilization&#8217;s unit fights CIVVIS on its own ground: it attacks one of our cities or districts, or one of our units while it or its attacker stands on our land. A barbarian&#8217;s or a city-state&#8217;s attack does not count, and neither does a fight past our borders. Never means no civ invaded us before the game ended, however early that was.
+          Cities at turn 50 and science at turn 100 are read on the first board of that turn, off the run&#8217;s summary: CIVVIS&#8217;s own, and the most any rival it had met held. A game that ended before the turn, or whose summary does not hold it, is not in that chart.
+          A column says what went with winning, not what made the win: a game that is going well also founds more cities and keeps up in science.
+          In self-play every seat is a CIVVIS AI agent and one in six wins, so a seat&#8217;s par is 16.7%; a self-play seat records its cities and whether it founded a religion, not its pantheon, beliefs, invasions, marks at turns 50 and 100 or the victory it aimed for, and its cities from 2026-11-20 on.
+          A figure over fewer than ten games is faint.
+          <span id="civ-left"></span>
+        </p>
+      </section>
+
+      <!-- Last, the winningest civs (operator 2026-11-24: "move winngest
+           civs to the bottom ... we should have a chart for deity games
+           firaxis and one for civvis self play"): the games against Deity,
+           as Win Analytics listed them until 2026-11-23, and beside them the
+           self-play seats. -->
+      <section class="civ-part" id="civ-civs" aria-labelledby="civ-civs-title" hidden>
+        <header class="res-side-head">
+          <div class="res-side-name">
+            <p class="civ-step-tag">Before turn 1 &#183; set by the game&#8217;s setup, not chosen by CIVVIS</p>
+            <h2 class="res-side-title" id="civ-civs-title">Winningest civs</h2>
+          </div>
+        </header>
+        <p class="civ-why">
+          A civ&#8217;s win rate says as much about the civ as about the AI playing it. Each civ plays
+          with the bonuses Civilization VI gives it (its abilities, unique units, buildings and
+          districts), and its record is how well the AI&#8217;s strategy makes use of them.
+        </p>
+        <div class="civ-pair">
+          <section class="res-section rank-card" id="rank-civs" hidden aria-labelledby="rank-civs-title">
+            <h3 class="rank-title" id="rank-civs-title">Against Lv 8 Deity AI</h3>
+            <p class="rank-sub">Our AI&#8217;s win rate as each civ, in verification games against Civilization VI&#8217;s own AI.</p>
+            <ol class="rank-list"></ol>
+            <p class="rank-note">
+              <span data-rank-note></span>
+              <a href="https://github.com/MartinHalvorson/CIVVIS/blob/ledger/results.jsonl" target="_blank" rel="noreferrer">Every game</a>
+            </p>
+          </section>
+          <section class="res-section rank-card" id="rank-civs-self" hidden aria-labelledby="rank-civs-self-title">
+            <h3 class="rank-title" id="rank-civs-self-title">CIVVIS self-play</h3>
+            <p class="rank-sub">A seat&#8217;s win rate as each civ, every seat a CIVVIS AI agent.</p>
+            <ol class="rank-list"></ol>
+            <button type="button" class="rank-more" hidden></button>
+            <p class="rank-note" data-rank-note></p>
+          </section>
+        </div>
+      </section>
+    </div>
+  </main>
+  <div class="civ-tip" id="civ-tip" role="tooltip" hidden></div>
+
+  <script type="application/json" id="civ-data">null</script>
+  <script>
+  // Every figure arrives through textContent: the slot holds names and
+  // sentences from the repository's own files and the run ledger, and none
+  // of it is trusted as markup.
+  (() => {
+    let data = null;
+    try { data = JSON.parse(document.getElementById("civ-data").textContent); } catch (_) { return; }
+    if (!data) return;
+    const el = (tag, cls, text) => {
+      const node = document.createElement(tag);
+      if (cls) node.className = cls;
+      if (text != null) node.textContent = text;
+      return node;
+    };
+    const fmt = (n) => Number(n).toLocaleString("en-US");
+    // A share as Win Analytics prints it: whole percents from 10%, a
+    // decimal under, "0%" for none, and "<0.1%" for a share that is not
+    // nothing but rounds to it.
+    const pct = (x) => (x > 0 && x < 0.0005 ? "<0.1%" : (100 * x).toFixed(x >= 0.1 || !x ? 0 : 1) + "%");
+    const plural = (n, one, many) => fmt(n) + " " + (n === 1 ? one : many);
+    const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const day = (iso) => { const [, m, d] = String(iso).split("-").map(Number); return MONTHS[m - 1] + " " + d; };
+    // "Nov 18\u201321", or "Oct 25\u2013Nov 21" across a month.
+    const days = (w) => {
+      if (w.from === w.to) return day(w.to);
+      const [from, to] = [day(w.from), day(w.to)];
+      return from.split(" ")[0] === to.split(" ")[0] ? from + "\u2013" + to.split(" ")[1] : from + "\u2013" + to;
+    };
+    const RUNGS = { 4: "Prince", 5: "King", 6: "Emperor", 7: "Immortal", 8: "Deity" };
+    const levelName = (lv) => "Lv " + lv + (RUNGS[lv] ? " " + RUNGS[lv] : "");
+    const shown = [];
+
+    // ---- The one tooltip, for a column or a row under the pointer or the
+    // keyboard: the figure first, then what it counts.
+    const tip = document.getElementById("civ-tip");
+    const showTip = (node, x, y) => {
+      tip.replaceChildren(el("strong", "", node.dataset.tipValue), document.createTextNode(node.dataset.tipText));
+      tip.hidden = false;
+      const box = tip.getBoundingClientRect();
+      const left = Math.min(Math.max(8, x + 12), window.innerWidth - box.width - 8);
+      const top = y - box.height - 12 < 8 ? y + 16 : y - box.height - 12;
+      tip.style.left = left + "px";
+      tip.style.top = top + "px";
+    };
+    const tipped = (node, value, text) => {
+      node.dataset.tipValue = value;
+      node.dataset.tipText = text;
+      node.tabIndex = 0;
+      node.setAttribute("aria-label", value + ": " + text);
+      node.addEventListener("pointermove", (e) => showTip(node, e.clientX, e.clientY));
+      node.addEventListener("pointerleave", () => { tip.hidden = true; });
+      node.addEventListener("focus", () => { const r = node.getBoundingClientRect(); showTip(node, r.left + r.width / 2, r.top); });
+      node.addEventListener("blur", () => { tip.hidden = true; });
+      return node;
+    };
+    window.addEventListener("scroll", () => { tip.hidden = true; }, { passive: true });
+
+    // ---- The tree of build orders. The record's `tree` is the first
+    // builds, already best win rate first, and a node is [item, games, wins]
+    // with, where the builds after it are listed, a fourth entry that is
+    // their list in the same order. `item` is a place in `items`, the
+    // builds' names. A row is drawn when its list is first opened, so the
+    // page carries the rows a reader asked for.
+    const BUILDS = data.build_orders && Array.isArray(data.build_orders.tree) && data.build_orders.tree.length ? data.build_orders : null;
+    if (BUILDS) {
+      document.getElementById("res-side-builds").hidden = false;
+      shown.push("builds");
+      const NUMBERS = ["no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
+      const games = Number(BUILDS.games) || 0, wins = Number(BUILDS.wins) || 0;
+      const level = levelName(BUILDS.level);
+      document.getElementById("res-title-builds").textContent = "Early build order: win rate against " + level + " AI";
+      document.getElementById("res-counted-builds").textContent = fmt(games) + (games === 1 ? " game" : " games") + " against " + level + " AI"
+        + (BUILDS.from && BUILDS.to ? " \u00b7 " + days(BUILDS) : "") + " \u00b7 CIVVIS won " + fmt(wins) + (games ? " (" + pct(wins / games) + ")" : "");
+      document.getElementById("res-builds-depth").textContent = NUMBERS[BUILDS.depth] || String(BUILDS.depth);
+      const left = (Number(BUILDS.finished) || games) - games;
+      document.getElementById("res-builds-left").textContent = left > 0
+        ? fmt(left) + " of the " + fmt(games + left) + " are left out: " + (left === 1 ? "its" : "their") + " opening is in no log, the game having been reloaded from a save whose first run was not published."
+        : "";
+      const name = (item) => String(Array.isArray(BUILDS.items) && BUILDS.items[item] != null ? BUILDS.items[item] : "?");
+      const row = (node, before) => {
+        const [item, played, won, next] = node;
+        const n = Number(played) || 0, opens = Array.isArray(next) && next.length > 0;
+        const path = before.concat(name(item));
+        const li = el("li");
+        const line = el(opens ? "button" : "div", "res-build");
+        const figures = el("span", "res-build-figures");
+        figures.append(el("span", "res-build-rate", n ? pct((Number(won) || 0) / n) : "\u2014"), el("span", "res-build-games", "(" + fmt(n) + ")"));
+        line.append(
+          el("span", opens ? "res-build-mark" : ""),
+          el("span", "res-build-place", String(path.length)),
+          el("span", "res-build-name", name(item)),
+          figures,
+        );
+        // The whole order down to this build, for the pointer and for a
+        // reader that hears the row.
+        const said = path.join(", then ") + ": CIVVIS won " + (n ? pct((Number(won) || 0) / n) : "none") + " of " + fmt(n) + (n === 1 ? " game" : " games");
+        line.title = said;
+        li.append(line);
+        if (opens) {
+          line.type = "button";
+          line.setAttribute("aria-expanded", "false");
+          line.setAttribute("aria-label", said);
+          let below = null;
+          line.addEventListener("click", () => {
+            const open = line.getAttribute("aria-expanded") !== "true";
+            line.setAttribute("aria-expanded", String(open));
+            if (open && !below) {
+              below = el("ul");
+              below.append(...next.map((child) => row(child, path)));
+              li.append(below);
+            }
+            if (below) below.hidden = !open;
+          });
+        }
+        return li;
+      };
+      document.getElementById("res-builds").replaceChildren(...BUILDS.tree.map((node) => row(node, [])));
+    }
+
+    // ---- The cities and the faith, counted for the games the filters
+    // pick. `GAMES.rows` is a game against the AI per row, its fields named
+    // by `GAMES.fields`: the level, the Diplomatic victory (1 on, 0 off, 2
+    // unsaid), whether CIVVIS won, the day it began (days after
+    // `GAMES.first`), the turns of its second and third cities (0 for
+    // never), and its pantheon, founder belief and follower belief as places
+    // in `GAMES.names` counted from 1 (0 for none). `SELF.batches` is the
+    // self-play seats batch by batch, already counted: per turn of the
+    // second and third city and per religion founded or not, [seats, wins].
+    const GAMES = data.games && Array.isArray(data.games.rows) && data.games.rows.length ? data.games : null;
+    const SELF = data.self_play && Array.isArray(data.self_play.batches) && data.self_play.batches.length ? data.self_play : null;
+    // The spans of turns each chart counts, at Online speed: a span is
+    // [first turn, last turn], and 0 is a city never founded or a game
+    // never invaded. About a tenth of the Deity games invaded fall in each
+    // span of `invaded` (2026-11-24: first invasions at turns 29, 38, 47,
+    // 58, 72, 87, 103, 125 and 149 mark the tenths); a quarter of the games
+    // were never invaded.
+    // cities50 and science100 are not turns: the cities CIVVIS held at turn 50,
+    // and its science at turn 100 as a whole percent of the best rival's. A
+    // span ending in `null` has no end.
+    const SPANS = {
+      city2: [[1, 10], [11, 13], [14, 16], [17, 19], [20, 23], [24, 29], [30, 39], [40, 250], [0, 0]],
+      city3: [[1, 17], [18, 21], [22, 25], [26, 29], [30, 34], [35, 41], [42, 54], [55, 250], [0, 0]],
+      invaded: [[1, 30], [31, 45], [46, 60], [61, 75], [76, 90], [91, 110], [111, 130], [131, 150], [151, 250], [0, 0]],
+      cities50: [[1, 1], [2, 2], [3, 3], [4, 4], [5, 5], [6, 6], [7, null]],
+      science100: [[0, 24], [25, 49], [50, 74], [75, null]],
+    };
+    const FEW = 10;
+    const spanName = ([lo, hi]) => (lo === 0 ? "Never" : hi === 250 ? lo + "+" : lo === 1 ? "\u2264" + hi : lo + "\u2013" + hi);
+    if (GAMES || SELF) {
+      document.getElementById("civ-filtered").hidden = false;
+      shown.push("filtered");
+      const F = (name) => GAMES ? GAMES.fields.indexOf(name) : -1;
+      const [LEVEL, DIPLO, WON, DAY, CITY2, CITY3, PANTHEON, FOUNDER, FOLLOWER, INVADED] =
+        ["level", "diplo", "won", "day", "city2", "city3", "pantheon", "founder", "follower", "invaded"].map(F);
+      // Where the game stood at turns 50 and 100, and the victory it aimed
+      // for: -1 is a mark no summary holds, and 0 no target.
+      const [CITIES50, RIVAL50, SCIENCE100, VICTORY] = ["cities50", "rival_cities50", "science100", "victory"].map(F);
+      const levels = GAMES ? [...new Set(GAMES.rows.map((r) => r[LEVEL]))].sort((a, b) => b - a) : [];
+      const pick = {
+        games: levels.includes(Number(GAMES && GAMES.level)) ? String(GAMES.level) : levels.length ? String(levels[0]) : "self",
+        diplo: "any",
+        days: "all",
+      };
+      // The game picker: Deity first, down to Prince, then self-play.
+      const gamesBox = document.getElementById("civ-f-games");
+      for (const lv of levels) {
+        const b = el("button", "", "Lv " + lv + (lv === 8 ? " Deity" : ""));
+        b.type = "button";
+        b.dataset.value = String(lv);
+        gamesBox.append(b);
+      }
+      if (SELF) {
+        const b = el("button", "", "Self-play");
+        b.type = "button";
+        b.dataset.value = "self";
+        gamesBox.append(b);
+      }
+      const isoDay = (iso) => Date.UTC(...String(iso).split("-").map((v, i) => Number(v) - (i === 1 ? 1 : 0))) / 864e5;
+
+      // A tally is {key: [games, wins]}; `add` counts one game into it.
+      const add = (tally, key, won, games = 1) => {
+        const t = tally[key] || (tally[key] = [0, 0]);
+        t[0] += games;
+        t[1] += won;
+      };
+      // The games the filters pick, counted.
+      const counted = () => {
+        const out = { city2: {}, city3: {}, invaded: {}, religion: {}, pantheon: {}, founder: {}, follower: {}, games: 0, wins: 0, beliefs: !!GAMES, from: null, to: null };
+        // The marks counted, and where CIVVIS stood at them: its cities at
+        // turn 50 and the best rival's, the games level with that rival or
+        // ahead, its science at turn 100 as a share of the best rival's, and
+        // the games at half of it or more.
+        Object.assign(out, { cities50: {}, science100: {}, victory: {}, stand: { cities: [], rivals: [], paired: 0, level: 0, science: [], half: 0 } });
+        if (pick.games === "self") {
+          out.beliefs = false;
+          const batches = SELF.batches;
+          const newest = Math.max(...batches.map((b) => isoDay(b.to)));
+          const kept = pick.days === "all" ? batches : batches.filter((b) => isoDay(b.to) > newest - Number(pick.days));
+          for (const b of kept) {
+            out.games += b.seats;
+            for (const key of ["city2", "city3"]) {
+              for (const [turn, [seats, wins]] of Object.entries(b[key] || {})) add(out[key], turn, wins, seats);
+            }
+            for (const [founded, [seats, wins]] of Object.entries(b.religion || {})) add(out.religion, founded === "1" ? "yes" : "no", wins, seats);
+          }
+          out.wins = kept.reduce((s, b) => s + Object.values(b.religion || {}).reduce((w, t) => w + t[1], 0), 0);
+          out.batches = kept.length;
+          out.from = kept.length ? kept.map((b) => b.from).sort()[0] : null;
+          out.to = kept.length ? kept.map((b) => b.to).sort().slice(-1)[0] : null;
+          return out;
+        }
+        const lv = Number(pick.games);
+        let rows = GAMES.rows.filter((r) => r[LEVEL] === lv);
+        const newest = Math.max(...rows.map((r) => r[DAY]));
+        if (pick.days !== "all") rows = rows.filter((r) => r[DAY] > newest - Number(pick.days));
+        if (pick.diplo !== "any") rows = rows.filter((r) => r[DIPLO] === (pick.diplo === "on" ? 1 : 0));
+        for (const r of rows) {
+          const won = r[WON];
+          out.games += 1;
+          out.wins += won;
+          add(out.city2, r[CITY2], won);
+          add(out.city3, r[CITY3], won);
+          const founded = r[FOUNDER] > 0 || r[FOLLOWER] > 0;
+          add(out.religion, founded ? "yes" : "no", won);
+          add(out.pantheon, r[PANTHEON], won);
+          if (r[FOUNDER] > 0) add(out.founder, r[FOUNDER], won);
+          if (r[FOLLOWER] > 0) add(out.follower, r[FOLLOWER], won);
+          // -1: no log or summary says when, or whether, it was invaded.
+          if (INVADED >= 0 && r[INVADED] >= 0) add(out.invaded, r[INVADED], won);
+          if (CITIES50 >= 0 && r[CITIES50] >= 0) {
+            add(out.cities50, r[CITIES50], won);
+            out.stand.cities.push(r[CITIES50]);
+            if (r[RIVAL50] >= 0) {
+              out.stand.rivals.push(r[RIVAL50]);
+              out.stand.paired += 1;
+              out.stand.level += r[CITIES50] >= r[RIVAL50] ? 1 : 0;
+            }
+          }
+          if (SCIENCE100 >= 0 && r[SCIENCE100] >= 0) {
+            add(out.science100, r[SCIENCE100], won);
+            out.stand.science.push(r[SCIENCE100]);
+            out.stand.half += r[SCIENCE100] >= 50 ? 1 : 0;
+          }
+          if (VICTORY >= 0 && r[VICTORY] > 0) add(out.victory, r[VICTORY], won);
+        }
+        if (rows.length) {
+          const first = isoDay(GAMES.first);
+          const iso = (d) => new Date((first + d) * 864e5).toISOString().slice(0, 10);
+          out.from = iso(Math.min(...rows.map((r) => r[DAY])));
+          out.to = iso(Math.max(...rows.map((r) => r[DAY])));
+        }
+        return out;
+      };
+
+      const what = () => (pick.games === "self" ? ["seat", "seats"] : ["game", "games"]);
+      // What each chart of turns says: under its title, of a span in its tip,
+      // under its axis, and when it has nothing to draw.
+      const cityWords = (nth) => {
+        const City = nth[0].toUpperCase() + nth.slice(1) + " city";
+        return {
+          sub: "Win rate by the turn CIVVIS founded its " + nth + " city",
+          when: ([lo, hi]) => (lo === 0 ? "No " + nth + " city" : hi === 250 ? City + " on turn " + lo + " or later" : City + " on turns " + lo + "\u2013" + hi),
+          axis: "Turn the " + nth + " city was founded",
+          none: (self) => (self
+            ? "No self-play batch in these days recorded its cities: a seat records them from 2026-11-20 on."
+            : "No game here has its cities on record."),
+        };
+      };
+      const WORDS = {
+        city2: cityWords("second"),
+        city3: cityWords("third"),
+        invaded: {
+          sub: "Win rate by the turn another civ first invaded CIVVIS",
+          when: ([lo, hi]) => (lo === 0 ? "Never invaded" : hi === 250 ? "First invaded on turn " + lo + " or later" : "First invaded on turns " + lo + "\u2013" + hi),
+          axis: "Turn another civ first invaded",
+          none: (self) => (self ? "A self-play seat does not record when it was invaded." : "No game here has its invasions on record."),
+        },
+        // Two charts of a count, not a turn: each names its spans (`name`)
+        // and its table's first column (`column`) itself.
+        cities50: {
+          sub: "Win rate by the cities CIVVIS held at turn 50",
+          when: ([lo, hi]) => (hi === null ? lo + " or more cities at turn 50" : lo + (lo === 1 ? " city" : " cities") + " at turn 50"),
+          axis: "Cities at turn 50",
+          name: ([lo, hi]) => (hi === null ? lo + "+" : String(lo)),
+          column: "Cities",
+          none: (self) => (self ? "A self-play seat does not record its cities at turn 50." : "No game here has its turn 50 on record."),
+        },
+        science100: {
+          sub: "Win rate by CIVVIS\u2019s science a turn at turn 100, as a share of the best rival\u2019s",
+          when: ([lo, hi]) => "Science at turn 100 " + (hi === null ? lo + "% or more" : lo === 0 ? "under " + (hi + 1) + "%" : lo + "\u2013" + hi + "%") + " of the best rival\u2019s",
+          axis: "Science at turn 100, share of the best rival\u2019s",
+          name: ([lo, hi]) => (hi === null ? lo + "%+" : lo === 0 ? "<" + (hi + 1) + "%" : lo + "\u2013" + hi + "%"),
+          column: "Share",
+          none: (self) => (self ? "A self-play seat does not record its science at turn 100." : "No game here has its turn 100 on record."),
+        },
+      };
+      // A chart of win rate by turn span: a column per span.
+      const chart = (box, tally, city) => {
+        const host = box.querySelector("[data-chart]");
+        const sub = box.querySelector("[data-sub]");
+        const [one, many] = what();
+        const spans = SPANS[city].map((span) => {
+          const [g, w] = Object.entries(tally).reduce((t, [turn, [tg, tw]]) => {
+            const n = Number(turn);
+            // The last span is named "151+": it holds a game played past
+            // turn 250 too, at a slower speed.
+            return (span[1] === 0 ? n === 0 : n >= span[0] && (span[1] === null || n <= span[1] || span[1] === 250)) ? [t[0] + tg, t[1] + tw] : t;
+          }, [0, 0]);
+          return { span, games: g, wins: w };
+        });
+        const total = spans.reduce((s, b) => s + b.games, 0), won = spans.reduce((s, b) => s + b.wins, 0);
+        const words = WORDS[city];
+        sub.textContent = words.sub + ", over " + plural(total, one, many) + ".";
+        if (!total) {
+          host.replaceChildren(el("p", "civ-none", words.none(pick.games === "self")));
+          return;
+        }
+        const rates = spans.map((b) => (b.games ? b.wins / b.games : 0));
+        const steady = spans.filter((b) => b.games >= FEW).map((b) => b.wins / b.games);
+        const all = won / total;
+        // The top of the scale: the highest rate over enough games (or over
+        // any, when none has enough), and the rate over every game, with a
+        // little room, so a faint column of one won game does not flatten
+        // the rest. A column over the top stands at the top.
+        const top = Math.max(all, ...(steady.length ? steady : rates)) * 1.12 || 1;
+        const plot = el("div", "civ-plot");
+        const axis = el("div", "civ-axis");
+        const table = el("table");
+        const head = el("tr");
+        head.append(el("th", "", words.column || "Turn"), el("th", "", "Games"), el("th", "", "Wins"), el("th", "", "Win rate"));
+        table.append(head);
+        spans.forEach((b, i) => {
+          const col = el("div", "civ-col" + (b.games < FEW ? " is-few" : ""));
+          const name = (words.name || spanName)(b.span);
+          col.append(el("span", "civ-cap", b.games ? pct(rates[i]) : "\u2014"));
+          const bar = el("span", "civ-bar");
+          bar.style.height = b.games ? Math.min(100, (100 * rates[i]) / top).toFixed(1) + "%" : "0";
+          col.append(bar);
+          tipped(col, b.games ? pct(rates[i]) : "No " + many, words.when(b.span) + ": CIVVIS won " + fmt(b.wins) + " of " + plural(b.games, one, many) + ".");
+          plot.append(col);
+          const bin = el("span", "civ-bin");
+          const binName = el("span", "civ-bin-name");
+          const dash = name.indexOf("\u2013");
+          if (dash > 0) binName.append(el("span", "", name.slice(0, dash + 1)), el("span", "", name.slice(dash + 1)));
+          else binName.textContent = name;
+          bin.append(binName, el("small", "", fmt(b.games)));
+          axis.append(bin);
+          const tr = el("tr");
+          tr.append(el("td", "", name), el("td", "", fmt(b.games)), el("td", "", fmt(b.wins)), el("td", "", b.games ? pct(rates[i]) : "\u2014"));
+          table.append(tr);
+        });
+        // The hairline at the rate over every game: `bottom` is measured on
+        // the plot's padding box, 20px taller than the columns it rises in.
+        const ref = el("div", "civ-ref");
+        ref.style.bottom = "calc(" + Math.min(1, all / top).toFixed(4) + " * (100% - 20px))";
+        ref.append(el("span", "", "All " + pct(all)));
+        plot.append(ref);
+        const details = el("details", "civ-table");
+        details.append(el("summary", "", "Table"), table);
+        const axisName = el("p", "civ-axis-name", words.axis);
+        axisName.append(el("span", "civ-axis-games", " \u00b7 " + many + " under each span"));
+        host.replaceChildren(plot, axis, axisName, details);
+      };
+      // A list of win rates, best first: [name, games, wins] rows.
+      const list = (box, rows, none) => {
+        const host = box.querySelector("[data-list]");
+        if (!rows.length) {
+          host.replaceChildren(el("p", "civ-none", none));
+          return;
+        }
+        const [one, many] = what();
+        rows.sort((a, b) => b[2] / b[1] - a[2] / a[1] || b[1] - a[1] || a[0].localeCompare(b[0]));
+        const steady = rows.filter((r) => r[1] >= FEW).map((r) => r[2] / r[1]);
+        const top = Math.max(...(steady.length ? steady : rows.map((r) => r[2] / r[1]))) || 1;
+        const ol = el("ol", "rank-list");
+        for (const [name, games, wins] of rows) {
+          const li = el("li", "civ-row" + (games < FEW ? " is-few" : ""));
+          const track = el("span", "civ-row-track");
+          const fill = el("span", "civ-row-fill");
+          fill.style.width = Math.min(100, (100 * wins / games) / top).toFixed(1) + "%";
+          track.append(fill);
+          const value = el("span", "civ-row-value", pct(wins / games));
+          value.append(el("small", "", "(" + fmt(games) + ")"));
+          li.append(el("span", "civ-row-name", name), track, value);
+          tipped(li, pct(wins / games), name + ": CIVVIS won " + fmt(wins) + " of " + plural(games, one, many) + ".");
+          ol.append(li);
+        }
+        host.replaceChildren(ol);
+      };
+      const named = (tally, empty) => Object.entries(tally).map(([at, [g, w]]) => [
+        Number(at) > 0 ? String(GAMES.names[Number(at) - 1] ?? "?") : empty, g, w]);
+      const targeted = (tally) => Object.entries(tally).map(([at, [g, w]]) => [
+        String((GAMES.targets || [])[Number(at) - 1] ?? "?"), g, w]);
+      // Where CIVVIS stands at a mark, beside the chart of it: tiles of a
+      // label, a figure and what the figure counts.
+      const median = (xs) => {
+        if (!xs.length) return null;
+        const v = [...xs].sort((a, b) => a - b), m = v.length >> 1;
+        return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2;
+      };
+      const num = (x) => (Number.isInteger(x) ? String(x) : x.toFixed(1));
+      const tile = (label, value, sub) => {
+        const t = el("div", "civ-tile");
+        t.append(el("span", "civ-tile-label", label), el("span", "civ-tile-value", value), el("span", "civ-tile-sub", sub));
+        return t;
+      };
+      const stand = (c) => {
+        const [, many] = what();
+        const self = pick.games === "self";
+        const s = c.stand, ours = median(s.cities), theirs = median(s.rivals), share = median(s.science);
+        const unsaid = (thing) => (self ? "A self-play seat does not record " + thing + "." : "No game here has it on record.");
+        document.getElementById("civ-cities50-stand").replaceChildren(
+          tile("CIVVIS\u2019s cities at turn 50", ours === null ? "\u2014" : num(ours),
+            ours === null ? unsaid("its cities at turn 50") : "median over " + plural(s.cities.length, "game", "games")
+              + (theirs === null ? "" : " \u00b7 the best rival it had met held " + num(theirs))),
+          tile("Level with the best rival or ahead", s.paired ? pct(s.level / s.paired) : "\u2014",
+            s.paired ? fmt(s.level) + " of " + fmt(s.paired) + " " + many + " held as many cities as the best rival at turn 50" : unsaid("its rivals\u2019 cities")),
+        );
+        document.getElementById("civ-science100-stand").replaceChildren(
+          tile("CIVVIS\u2019s science at turn 100", share === null ? "\u2014" : num(share) + "%",
+            share === null ? unsaid("its science at turn 100") : "of the best rival\u2019s, median over " + plural(s.science.length, "game", "games")),
+          tile("At half the leader\u2019s science or more", s.science.length ? pct(s.half / s.science.length) : "\u2014",
+            s.science.length ? fmt(s.half) + " of " + fmt(s.science.length) + " " + many + " at turn 100" : unsaid("its science at turn 100")),
+        );
+      };
+
+      const render = () => {
+        for (const [id, key] of [["civ-f-games", "games"], ["civ-f-diplo", "diplo"], ["civ-f-days", "days"]]) {
+          for (const b of document.getElementById(id).querySelectorAll("button")) b.setAttribute("aria-pressed", String(b.dataset.value === pick[key]));
+        }
+        // Self-play is played with every victory on: no switch to pick.
+        for (const b of document.getElementById("civ-f-diplo").querySelectorAll("button")) {
+          b.disabled = pick.games === "self";
+          b.title = b.disabled ? "Every self-play game is played with the Diplomatic victory on." : "";
+        }
+        const c = counted();
+        const [one, many] = what();
+        const span = c.from && c.to ? " \u00b7 " + days(c) : "";
+        document.getElementById("civ-counted").textContent = pick.games === "self"
+          ? plural(c.games, "self-play seat", "self-play seats") + " in " + plural(c.batches, "batch", "batches") + span + " \u00b7 par 16.7%, one seat in six"
+          : plural(c.games, "game", "games") + " against " + levelName(Number(pick.games)) + " AI" + span
+            + (pick.diplo === "any" ? "" : " \u00b7 Diplomatic victory " + pick.diplo)
+            + " \u00b7 CIVVIS won " + fmt(c.wins) + (c.games ? " (" + pct(c.wins / c.games) + ")" : "");
+        chart(document.getElementById("civ-city2"), c.city2, "city2");
+        chart(document.getElementById("civ-city3"), c.city3, "city3");
+        chart(document.getElementById("civ-invaded"), c.invaded, "invaded");
+        chart(document.getElementById("civ-cities50"), c.cities50, "cities50");
+        chart(document.getElementById("civ-science100"), c.science100, "science100");
+        stand(c);
+        list(document.getElementById("civ-victories"), c.beliefs ? targeted(c.victory) : [],
+          c.beliefs ? "No game here has the victory it aimed for on record." : "A self-play seat records no victory it aimed for.");
+        const tiles = document.getElementById("civ-religion");
+        tiles.replaceChildren(...[["yes", "Founded a religion"], ["no", "No religion"]].map(([key, label]) => {
+          const [g, w] = c.religion[key] || [0, 0];
+          const tile = el("div", "civ-tile");
+          tile.append(el("span", "civ-tile-label", label), el("span", "civ-tile-value", g ? pct(w / g) : "\u2014"),
+            el("span", "civ-tile-sub", "CIVVIS won " + fmt(w) + " of " + plural(g, one, many)));
+          return tile;
+        }));
+        const noBeliefs = "A self-play seat records whether it founded a religion, not its pantheon or beliefs.";
+        list(document.getElementById("civ-pantheons"), c.beliefs ? named(c.pantheon, "No pantheon") : [], c.beliefs ? "No game here founded a pantheon." : noBeliefs);
+        list(document.getElementById("civ-founders"), c.beliefs ? named(c.founder, "") : [], c.beliefs ? "No game here founded a religion." : noBeliefs);
+        list(document.getElementById("civ-followers"), c.beliefs ? named(c.follower, "") : [], c.beliefs ? "No game here founded a religion." : noBeliefs);
+        // The finished games at this level whose cities and faith are in no
+        // log, said over every day and either switch, where the count of
+        // finished games holds.
+        const leftOut = document.getElementById("civ-left");
+        leftOut.textContent = "";
+        if (pick.games !== "self" && pick.days === "all" && pick.diplo === "any" && GAMES.finished) {
+          const finished = Number(GAMES.finished[pick.games]) || 0, missing = finished - c.games;
+          if (missing > 0) leftOut.textContent = fmt(missing) + " of the " + fmt(finished) + " finished games at this level are left out: no published log holds their opening turns.";
+        }
+      };
+      for (const [id, key] of [["civ-f-games", "games"], ["civ-f-diplo", "diplo"], ["civ-f-days", "days"]]) {
+        document.getElementById(id).addEventListener("click", (e) => {
+          const b = e.target.closest("button");
+          if (!b || b.disabled || pick[key] === b.dataset.value) return;
+          pick[key] = b.dataset.value;
+          render();
+        });
+      }
+      render();
+    }
+
+    // ---- The winningest civs, best win rate first: a row is a civ's win
+    // rate with its record, wins then losses, beside it. Hovering lists what
+    // it won. The slot says which games were counted, one level (`level`)
+    // from one day on (`since`), and the line under the title repeats it; a
+    // table over every level names the highest level a civ has won at
+    // beside it instead.
+    const civRow = (i, name, wins, losses, title) => {
+      const item = el("li", "rank-row");
+      item.title = title;
+      item.append(el("span", "rank-n", String(i + 1)));
+      const label = el("span", "rank-name", name);
+      const figure = el("span", "rank-value", (100 * wins / (wins + losses)).toFixed(1) + "%");
+      figure.append(el("small", "", fmt(wins) + "\u2013" + fmt(losses)));
+      item.append(label, figure);
+      return item;
+    };
+    const civs = data.civs;
+    if (civs && Array.isArray(civs.rows) && civs.rows.length) {
+      const card = document.getElementById("rank-civs");
+      const rows = civs.rows.map((c, i) => {
+        const item = civRow(i, c.name, c.wins, c.losses, c.name + ": " + plural(c.wins, "win", "wins") + ", " + plural(c.losses, "loss", "losses")
+          + (Array.isArray(c.won) && c.won.length ? ". Won: " + c.won.join(", ") : ""));
+        if (!civs.level && c.best) item.querySelector(".rank-name").append(el("small", "", "Lv " + c.best));
+        return item;
+      });
+      card.querySelector(".rank-list").append(...rows);
+      card.querySelector(".rank-title").textContent = civs.level ? "Against " + levelName(civs.level) + " AI" : "Against Civilization VI\u2019s AI";
+      const sub = card.querySelector(".rank-sub");
+      sub.textContent = "Our AI\u2019s win rate as each civ, in " + (civs.level ? "Lv " + civs.level + " " : "")
+        + "verification games against Civilization VI\u2019s own AI" + (civs.since ? " since " : "");
+      if (civs.since) sub.append(el("span", "rank-day", civs.since));
+      sub.append(".");
+      card.querySelector("[data-rank-note]").textContent = plural(civs.games, "finished game", "finished games")
+        + (civs.through ? " through " + civs.through : "") + "; "
+        + civs.winners + " of " + plural(civs.played, "civ", "civs") + " played have won."
+        + " A loss is a rival\u2019s victory, our elimination, or a game conceded early;"
+        + " a game stopped any other way is not counted."
+        + (civs.unattributed_wins ? " " + plural(civs.unattributed_wins, "win is", "wins are")
+          + " not listed: the game did not record its civ." : "");
+      card.hidden = false;
+    }
+    const selfCivs = data.self_play && data.self_play.civs && Array.isArray(data.self_play.civs.rows) && data.self_play.civs.rows.length ? data.self_play.civs : null;
+    if (selfCivs) {
+      const card = document.getElementById("rank-civs-self");
+      const TOP = 25;
+      const rows = selfCivs.rows.map(([name, seats, wins], i) => civRow(i, name, wins, seats - wins,
+        name + ": " + plural(wins, "win", "wins") + " in " + plural(seats, "seat", "seats")));
+      const listBox = card.querySelector(".rank-list");
+      listBox.append(...rows.slice(0, TOP));
+      const more = card.querySelector(".rank-more");
+      if (rows.length > TOP) {
+        more.hidden = false;
+        more.textContent = "Show all " + rows.length;
+        more.addEventListener("click", () => { listBox.append(...rows.slice(TOP)); more.hidden = true; });
+      }
+      card.querySelector("[data-rank-note]").textContent = plural(selfCivs.seats, "seat", "seats") + " in "
+        + plural(selfCivs.batches, "batch", "batches") + (selfCivs.from && selfCivs.to ? ", " + days(selfCivs) : "")
+        + ". One seat in six wins, so a civ\u2019s par is 16.7%.";
+      card.hidden = false;
+    }
+    if (!document.getElementById("rank-civs").hidden || selfCivs) {
+      document.getElementById("civ-civs").hidden = false;
+      shown.push("civs");
+    }
+
+    if (!shown.length) return;
+    document.getElementById("civ-empty").hidden = true;
+    document.getElementById("civ-record").hidden = false;
+  })();
+  </script>
+</body>
+</html>

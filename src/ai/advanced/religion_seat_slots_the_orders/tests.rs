@@ -45,13 +45,15 @@ fn board() -> (Game, AdvancedAi, u32) {
     .collect();
     let apostle = g.spawn_unit("apostle", 0, pos);
     g.units.get_mut(&apostle).unwrap().religion = Some("Buddhism".into());
-    g.host_policy_windows.insert(
-        0,
-        crate::game::HostPolicyWindow {
-            turn: g.turn,
-            open: true,
-        },
-    );
+    std::sync::Arc::make_mut(&mut g.host)
+        .host_policy_windows
+        .insert(
+            0,
+            crate::game::HostPolicyWindow {
+                turn: g.turn,
+                open: true,
+            },
+        );
     let mut ai = AdvancedAi::targeting(VictoryTarget::Religion);
     ai.research_economy = true;
     ai.urban_planning_fills_the_slot = true;

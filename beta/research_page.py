@@ -5,9 +5,11 @@
     research_page.py <source_tree> <page.html>  write it into the page
     research_page.py --self-play <batches_dir> <out.json>
                                                 rebuild the self-play snapshot
-    research_page.py --build-orders <source_tree> <out.json>
+    research_page.py --build-orders <source_tree> <out.json> [--again]
                                                 add the games played since to
                                                 the snapshot of the openings
+                                                (with --again, read every game
+                                                afresh)
 
 The Research page (`beta/research.html`; Win Analytics since 2026-11-22,
 served at `<lane>/charts/win-analytics/`, the address it states itself) is
@@ -78,7 +80,7 @@ per window, the last 1, 3, 7 and 30 days, a cell being CIVVIS's win rate and
 the games it is a share of. The games with it on are the left table (later on
 2026-11-23, reversing the sides first asked for: "put diplo victory allowed
 to the left of no diplo victory"). Its games are the tournaments' own, every
-finished game of every tournament the Auto-Tourneys page lists
+finished game of every tournament the Tournaments page lists
 (`data/tournaments.json`, counted by `home_rankings.tournament_series`), so
 the two pages agree: a win is CIVVIS's victory and anything else a finished
 game ended in is a loss, a rival's victory, our elimination or a game
@@ -92,7 +94,7 @@ with every level and every window, and `to`, the newest tournament game's
 start, which every window is measured back from in whole days of 24 hours,
 so every cell of both tables is the same days' games.
 
-Over the benchmark, first on the page, stands the tree of build orders
+The record also holds the tree of build orders
 (operator 2026-11-23: "add a tree for the early build order win rates for
 deity games. meaning, when scout was built first, what percentage of those
 games won? when settler was secnod, what percentage of scout-settler won? a
@@ -114,6 +116,13 @@ it, counted as the civ table counts them (a win, or a loss: a rival's
 victory, our elimination, a game conceded early), less the games whose
 opening is in no log (a game reloaded from a save whose first run was never
 published). The record holds it under `build_orders`.
+
+The tree stood on this page for one day. It moved to Civ Analytics
+(`beta/civs.html`) on 2026-11-23 (operator: "add another page: Civ
+Analytics. First can be the civ records (pulled from win analytics), then
+early build order"), whose filler (`beta/civs_page.py`) takes it from the
+record built here, so it is read one way for both. A page with no place for
+it, Win Analytics since then, is not sent it (`for_page`).
 
 Like the home page's tables this runs inside the script that publishes the
 whole site, so what it cannot read costs the page its figures, said on
@@ -445,7 +454,7 @@ def tournament_games(rows: list[dict], specs: list[dict], switch=lambda tags: {}
     when it began, the level the game's AI played at, whether CIVVIS won it,
     and whether it was played with the Diplomatic victory on. The games and
     their endings are `home_rankings.tournament_series`'s own, the count the
-    Auto-Tourneys page shows; a game counts once, whatever series it stands
+    Tournaments page shows; a game counts once, whatever series it stands
     in. `switch` answers each run's Diplomatic victory (`switches`), asked of
     the run a game ended in and, where that run does not say, of the game's
     first; a game neither says it for stands in neither table and is left
@@ -653,7 +662,7 @@ def research(source: pathlib.Path) -> dict | None:
         print(f"research_page: no figures against the game's AI ({error})", file=sys.stderr)
         out["levels"] = {}
     # The win rate at each level over the tournaments' games, off the same
-    # result lines and the definitions the Auto-Tourneys page reads, each
+    # result lines and the definitions the Tournaments page reads, each
     # game in the table of its own Diplomatic switch.
     out["tournament_rates"] = None
     try:
@@ -772,11 +781,12 @@ EVENTS_REF = "refs/remotes/origin/ledger:runs/{tag}/events.jsonl.gz"
 EVENTS_READ = ('"kind": "state"', '"order_verified"', '"tiles_done"')
 
 
-def run_events(source: pathlib.Path, tag: str):
-    """A run's events off the ledger branch, in order, the kinds in
-    `EVENTS_READ` alone. The log is read as it is asked for, so a reader that
-    stops after the opening has read a few turns of a 5 MB log; closing the
-    generator stops the read. A run with no log on the branch has no events."""
+def run_events(source: pathlib.Path, tag: str, read: tuple = EVENTS_READ):
+    """A run's events off the ledger branch, in order, the lines holding one
+    of `read` (the kinds in `EVENTS_READ` unless asked otherwise) alone. The
+    log is read as it is asked for, so a reader that stops after the opening
+    has read a few turns of a 5 MB log; closing the generator stops the read.
+    A run with no log on the branch has no events."""
     import gzip
 
     show = subprocess.Popen(
@@ -787,7 +797,7 @@ def run_events(source: pathlib.Path, tag: str):
     try:
         with gzip.open(show.stdout, "rt", encoding="utf-8", errors="replace") as lines:
             for line in lines:
-                if any(mark in line for mark in EVENTS_READ):
+                if any(mark in line for mark in read):
                     try:
                         yield json.loads(line)
                     except ValueError:
@@ -816,23 +826,31 @@ def read_opening(source: pathlib.Path, tags: list[str]) -> list[str] | None:
     return None
 
 
-def openings_snapshot(source: pathlib.Path, snapshot: dict | None = None) -> dict:
+def openings_snapshot(source: pathlib.Path, snapshot: dict | None = None, again: bool = False) -> dict:
     """The snapshot of the openings brought up to the ledger: the games it
     held, and every finished game against Deity it did not, read off the
     game's event log. A game whose run summary carries its opening is left to
     the summary, and a game whose opening is in no log is left out, to be
     asked again next time. The builds' names are kept once, in `items`, and a
     game is its key and its builds' places there, so a refresh's diff is the
-    games it added."""
+    games it added.
+
+    `again` reads every game afresh, the games the snapshot held and the
+    games whose summaries carry an opening among them: what a change to how
+    an opening is read needs (2026-11-24, `civ6_ladder.opening_builds`
+    reading every pair of boards). The snapshot then holds every game played
+    so far, and since it is read over the summaries, a summary written by
+    the reader before is never read again."""
     from concurrent.futures import ThreadPoolExecutor
 
-    snapshot = snapshot or {}
+    snapshot = {} if again else snapshot or {}
     items = list(snapshot.get("items") or [])
     held = {str(key): list(builds) for key, builds in snapshot.get("games") or []}
     games = [game for game in build_games(ranks.results(source) or []) if game[0] not in held]
-    carried = openings(source, sorted({tag for _, tags, _, _ in games for tag in tags}))
-    games = [game for game in games if not any(tag in carried for tag in game[1])]
-    with ThreadPoolExecutor(4) as readers:
+    if not again:
+        carried = openings(source, sorted({tag for _, tags, _, _ in games for tag in tags}))
+        games = [game for game in games if not any(tag in carried for tag in game[1])]
+    with ThreadPoolExecutor(8 if again else 4) as readers:
         read = list(readers.map(lambda game: read_opening(source, game[1]), games))
     for (key, _, _, _), names in zip(games, read):
         if not names:
@@ -844,7 +862,8 @@ def openings_snapshot(source: pathlib.Path, snapshot: dict | None = None) -> dic
     return {
         "about": "What the capital finished producing, in order, in each finished game against Lv 8 Deity AI on "
         "the run ledger: the game's key and its builds as places in `items`. Read off the game's event log by "
-        "`civ6_ladder.opening_builds`; a game whose run summary carries `build_order` is not here. "
+        "`civ6_ladder.opening_builds`, every game afresh on 2026-11-24 when the reader learned to read every "
+        "pair of boards; a game played since whose run summary carries `build_order` is not here. "
         "Filled by `beta/research_page.py --build-orders`; read by Win Analytics.",
         "level": BUILD_LEVEL,
         "taken": datetime.datetime.now(datetime.timezone.utc).date().isoformat(),
@@ -867,6 +886,10 @@ def written_openings(data: dict) -> str:
 #: Deity games alone and reads them under `deity`, not `levels`.
 LEVEL_PICKER = 'id="res-level"'
 
+#: The tree of build orders as a page carries it: Win Analytics did on
+#: 2026-11-23 only, and Civ Analytics since.
+BUILD_TREE = 'id="res-builds"'
+
 
 def for_page(page: str, data: dict | None) -> dict | None:
     """The record in the shape this page reads.
@@ -876,9 +899,12 @@ def for_page(page: str, data: dict | None) -> dict | None:
     script filling it, as the stable lane's was while both lanes were filled
     by head's. Sent `levels`, a page from before the picker would find no
     `deity` and show its Deity charts empty, so it is sent the Deity games
-    where it looks for them and nothing it has no place for."""
-    if data is None or LEVEL_PICKER in page:
+    where it looks for them and nothing it has no place for. A page with no
+    tree of build orders is not sent one."""
+    if data is None:
         return data
+    if LEVEL_PICKER in page:
+        return data if BUILD_TREE in page else {key: value for key, value in data.items() if key != "build_orders"}
     out = {key: value for key, value in data.items() if key not in ("levels", "level", "tournament_rates", "build_orders")}
     deity = data.get("levels", {}).get(str(ranks.CIV6_RUNGS.index("deity") + 1))
     out["deity"] = {**deity, "name": "CIVVIS vs Deity AI"} if deity else None
@@ -902,13 +928,13 @@ def main(argv: list[str]) -> int:
         games = sum(b["games"] for b in data["batches"])
         print(f"research_page: {games} self-play games in {len(data['batches'])} batches into {out}", file=sys.stderr)
         return 0
-    if len(argv) == 4 and argv[1] == "--build-orders":
+    if len(argv) in (4, 5) and argv[1] == "--build-orders" and argv[4:] in ([], ["--again"]):
         out = pathlib.Path(argv[3])
         try:
             before = json.loads(out.read_text(encoding="utf-8"))
         except OSError:
             before = None
-        data = openings_snapshot(pathlib.Path(argv[2]), before)
+        data = openings_snapshot(pathlib.Path(argv[2]), before, again=argv[4:] == ["--again"])
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(written_openings(data), encoding="utf-8")
         added = len(data["games"]) - len((before or {}).get("games") or [])

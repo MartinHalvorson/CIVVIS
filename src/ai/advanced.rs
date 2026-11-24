@@ -1833,9 +1833,13 @@ const SETTLER_THREAT_DETOUR_TURNS: u32 = 6;
 /// few next-best sites before deciding there is no safe detour; this work runs
 /// only when a visible blocker has already stopped the preferred route.
 const SETTLER_THREAT_DETOUR_RETRIES: usize = 12;
-/// One Settler decision's `settle_sooner_walk_costs` floods, by radius; see
+/// One Settler decision's `settle_sooner_walk_flood` floods, by radius; see
 /// `AdvancedAi::settler_walk_costs_cached`.
-type SettlerWalkCosts = BTreeMap<i32, BTreeMap<Pos, f64>>;
+type SettlerWalkCosts = BTreeMap<i32, settling::WalkCosts>;
+
+/// One site's Loyalty forecast, filled the first time a verdict asks for it.
+/// See [`AdvancedAi::site_forecast_revolt`].
+pub(super) type SiteForecast = std::cell::OnceCell<Option<(f64, f64)>>;
 
 /// The read-only answers one settlement scan shares with the next scan of
 /// the same board for the same seat. `map_settlement_room` scans from every
@@ -7980,6 +7984,12 @@ pub struct AdvancedAi {
     /// 2-point Historic Moment. See `advanced/first_ship_closes_the_age.rs`.
     /// Off by default.
     first_ship_closes_the_dark_age: bool,
+    /// `exploration-replans-need-a-sighting`: ground an order explored
+    /// re-opens the turn for a fresh view and another plan only when the
+    /// foreign units and cities in the seat's sight changed with it. A strike,
+    /// a new unit or city and a refusal still re-open it. See
+    /// `ai::player::take_turn`. Off by default.
+    exploration_replans_need_a_sighting: bool,
     // ---- append: g-k ------------------------------------------------
     /// `guru-walks-to-the-wounded`: a Guru with nothing to heal this turn
     /// walks to the wounded of its faith instead of at the nearest rival. See
@@ -9073,6 +9083,12 @@ pub struct AdvancedAi {
     /// holdable-land Settler and the near rival's deterrent. See
     /// `advanced/nearly_built_keeps_its_queue.rs`. Off by default.
     nearly_built_keeps_its_queue: bool,
+    /// `one-replan-per-turn`: a turn re-opens for a fresh view and a second
+    /// plan at most once, not twice. The first re-plan still answers the
+    /// ground the orders explored, a strike's outcome or a refusal; the
+    /// second, a third plan of the same turn, is not asked. See
+    /// `ai::player::take_turn`. Off by default.
+    one_replan_per_turn: bool,
     // ---- append: p-r ------------------------------------------------
     /// `racer-seat-statue-civic-first`: Civil Engineering as the civic goal of
     /// a Science, Culture or Religious seat that reaches for the Statue of
@@ -13735,6 +13751,18 @@ impl AdvancedAi {
     /// seat's frame executor (`ai/player.rs`).
     pub(crate) fn refusals_alone_reopen_the_turn_on(&self) -> bool {
         self.refusals_alone_reopen_the_turn
+    }
+
+    /// Whether `one-replan-per-turn` is on, for the observed seat's frame
+    /// loop (`ai/player.rs`).
+    pub(crate) fn one_replan_per_turn_on(&self) -> bool {
+        self.one_replan_per_turn
+    }
+
+    /// Whether `exploration-replans-need-a-sighting` is on, for the observed
+    /// seat's frame executor (`ai/player.rs`).
+    pub(crate) fn exploration_replans_need_a_sighting_on(&self) -> bool {
+        self.exploration_replans_need_a_sighting
     }
 
     pub fn current_plan(&self) -> Option<&StrategicPlan> {
@@ -24999,11 +25027,23 @@ impl AdvancedAi {
         pid: usize,
         site: Pos,
     ) -> Option<String> {
+        self.settle_site_frontier_loyalty_verdict_with(g, pid, site, &SiteForecast::new())
+    }
+
+    /// [`Self::settle_site_frontier_loyalty_verdict`] sharing `forecast`, the
+    /// site's Loyalty forecast, with a caller that asks for it again.
+    pub(super) fn settle_site_frontier_loyalty_verdict_with(
+        &self,
+        g: &Game,
+        pid: usize,
+        site: Pos,
+        forecast: &SiteForecast,
+    ) -> Option<String> {
         // A measured native contribution is stronger evidence than the modeled
         // rate behind `loyalty-rate-alarm`. Honor it on the ordinary live path
         // even when no rival city is visible, including move-and-found batches.
         if g.native_settlement_pressure(pid, site).is_some() {
-            if let Some((per_turn, turns)) = Self::settle_site_forecast_revolt(g, pid, site) {
+            if let Some((per_turn, turns)) = Self::site_forecast_revolt(g, pid, site, forecast) {
                 return Some(format!(
                     "the native nearby-city pressure would leave the city losing {:.1} Loyalty a turn and revolting in about {:.0} turns",
                     -per_turn, turns.ceil()
@@ -25049,7 +25089,7 @@ impl AdvancedAi {
         // radius used for an unresolved major border.
         if self.frontier_loyalty && Self::visible_major_city_near(g, pid, site) {
             if let Some((loyalty_per_turn, turns_to_flip)) =
-                Self::settle_site_forecast_revolt(g, pid, site)
+                Self::site_forecast_revolt(g, pid, site, forecast)
             {
                 return Some(format!(
                     "it is within five tiles of a visible rival city and would lose \
@@ -25072,6 +25112,21 @@ impl AdvancedAi {
                 && !g.players[city.owner].is_barbarian
                 && g.wdist(city.pos, site) <= UNRESOLVED_MAJOR_BORDER_RADIUS
         })
+    }
+
+    /// [`Self::settle_site_forecast_revolt`], computed at most once per
+    /// `forecast`. The forecast founds a city on a clone of the board, which
+    /// is the dearest thing a settle verdict does, and one site's verdicts
+    /// used to ask it up to three times over the same `&Game`: the frontier
+    /// floor, the rate check after it, and the stranded-settler hold. The
+    /// board is borrowed throughout, so the answer cannot have changed.
+    pub(super) fn site_forecast_revolt(
+        g: &Game,
+        pid: usize,
+        site: Pos,
+        forecast: &SiteForecast,
+    ) -> Option<(f64, f64)> {
+        *forecast.get_or_init(|| Self::settle_site_forecast_revolt(g, pid, site))
     }
 
     /// The live mirror's prospective Loyalty result for a city founded at
@@ -25112,9 +25167,9 @@ impl AdvancedAi {
         }
         // Fog is asked out to the loyalty model's own nine-tile pressure radius:
         // that is how far an unseen rival city can press the site.
-        g.wdisk(site, 9)
-            .into_iter()
-            .any(|pos| g.map.tiles.contains_key(&pos) && !g.players[pid].explored.contains(&pos))
+        g.map.disk_any(site, 9, |pos| {
+            g.map.tiles.contains_key(&pos) && !g.players[pid].explored.contains(&pos)
+        })
     }
 
     /// Snapshot visible Barbarian capture envelopes once for a Builder
@@ -26974,6 +27029,14 @@ impl Ai for AdvancedAi {
 
     fn site_shortcuts(&self) -> crate::ai::SiteShortcuts {
         self.base.site_shortcuts()
+    }
+
+    /// The one difference between [`AdvancedAi::enable_engine_repairs`] and
+    /// [`AdvancedAi::enable_native_deployment`]: a major plans its turn on a
+    /// fog-redacted copy of the board and replays the plan on the board
+    /// (`player::take_turn`), or plans on the board itself.
+    fn set_fog_honest(&mut self, on: bool) {
+        self.observed_player = on;
     }
 
     fn strategy_label(&self) -> Option<&'static str> {
