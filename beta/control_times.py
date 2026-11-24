@@ -216,7 +216,9 @@ def summary(games: list[dict]) -> dict:
     length in `turns`, the `levels` played (lowest and highest), the number of
     `players` most of them had, how many were `clocked`, and from
     `MIN_GAMES` clocked games with their parts the middle `split` of one:
-    setup, play, the ending."""
+    setup, play, the ending, with `split_games`, how many games that is the
+    middle of. While the clock is new that is far fewer than `games`, and the
+    three parts need not add up to the middle game of them all."""
     seconds = sorted(game["seconds"] for game in games)
     a_turn = sorted(game["seconds"] / game["turns"] for game in games if game["turns"])
     turns = sorted(game["turns"] for game in games if game["turns"])
@@ -234,6 +236,7 @@ def summary(games: list[dict]) -> dict:
     parts = [game["split"] for game in games if game["split"]]
     if len(parts) >= MIN_GAMES:
         out["split"] = [round(percentile(sorted(part[i] for part in parts), 50)) for i in range(3)]
+        out["split_games"] = len(parts)
     return out
 
 
