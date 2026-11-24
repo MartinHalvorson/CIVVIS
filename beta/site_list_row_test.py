@@ -14,8 +14,9 @@ and a list of all its pages, the same on every page, drops down from it when
 it is pointed at, tabbed to or, on a touch screen, tapped. The page on screen
 is ringed in white, and on a page of Charts/ so is the folder.
 
-Wizard Chess and the simulator keep their list behind a button in a column:
-the board and the map have the top of the screen.
+The simulator keeps its list behind a button in a column: the map has the
+top of the screen. (So does Wizard Chess's page, which is set aside since
+2026-11-24 and is not published.)
 
     python3 beta/site_list_row_test.py
 """
