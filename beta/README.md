@@ -184,6 +184,7 @@ to be movable.
 | `beta/promotion_test.py` | Runs to-prod-auto-6h's own tag step against a small repository (the two lanes' `build.json` stood in for) and holds what it promotes and what it leaves alone, that its deployments are counted against the month, and that it and to-prod-manual-only take turns. Run on every pull request. |
 | `beta/publish.sh` | Assembles one complete lane into `beta/dist/` from a named revision and from nothing else — viewer at the root, the pages that revision has beside it, each at the address it states and filled by that revision's script, every inter-page link lane-relative and landing on something the lane has. |
 | `beta/addresses_test.py` | Holds every page to the address rule (the page's name in the site list), every relative link of every page to landing on a page or the viewer, and the router's table of left addresses to the publish check's and to the pages. Run on every pull request. |
+| `beta/first_visit_note_test.py` | Holds every page a lane publishes, and the simulator, to carrying the first-visit note as one block that is the same in all of them, the note to the operator's words and its Ack button, and the block to what it does when run: shown once on the site, put away for good by Ack, never shown off the site or inside a frame. Run on every pull request. |
 | `beta/publish_lanes_test.py` | Publishes lanes from a small two-commit repository with `publish.sh` as it ships (the engine build stood in for) and holds the lane rule: a lane's pages, scripts, figures and data are its own commit's, and only the serving shell is the invoking tree's. Run on every pull request. |
 | `beta/verify.py` | Holds a lane to the pages its `build.json` lists (each present and answering at its address, every other page a 404 there), then opens the assembled bundle in a real browser, watches it play, and walks through the password door. |
 | `beta/worker_test.py` | Calls `_worker.js` directly — the forward, the password, the headers — needing only Chrome. |
@@ -216,6 +217,21 @@ server opened at 2 turns/s until 2026-11-15); a cap the visitor picked by hand
 (5, 2, 1, 0.5, 0.25 or 0.1 turns/s) is remembered and wins, and a Tactics
 battle still opens at 2 turns/s. The lobby is right there for anyone who
 wants to play a seat instead.
+
+**The first time a person comes to the site they are shown one note**, on
+whichever page that is, the simulator included (operator 2026-11-24: "please
+add a note to the site when a person first visits", "with an Ack button"):
+that everything is a work in progress, how the site is built (Claude from
+the command line, code he neither writes nor reviews, none accepted from
+others) and that all of it should be open source and free; his words are in
+the block, set as three paragraphs. Ack (or Escape) puts it away, and
+the browser keeps that under `civvis-first-visit-ack` for every page and both
+lanes, so it is shown once. The game goes on behind it. Each page carries the
+note as the same block of script at the end of its body; it shows on the site
+only (the simulator's own `CIVVIS_PUBLISHED_SITE` test of the host name), so a
+desktop build, a page under test and a game being filmed never show it, and
+never inside a frame, so Doctor Strange's two simulators show none of their
+own.
 
 The lower-left build marker names the pinned revision and its commit time, then
 ages the exact artifact in the browser. Source and packaging time stay visibly
