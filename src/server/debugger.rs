@@ -61,6 +61,7 @@ use serde_json::{json, Value};
 use super::Session;
 use crate::ai::Ai;
 use crate::game::{Action, Event, Game};
+use crate::shared_sort::SharedSort;
 
 /// The newest marks are kept one a turn when older ones have to go, for as
 /// long as there is room for twice as many.
@@ -1735,7 +1736,7 @@ impl Session {
                 json!({"turn": game.turn, "kind": kind, "text": text}),
             ));
         }
-        alerts.sort_by_key(|(turn, _)| *turn);
+        alerts.sort_by_key_shared(|(turn, _)| *turn);
         alerts
             .into_iter()
             .take(MOST)
