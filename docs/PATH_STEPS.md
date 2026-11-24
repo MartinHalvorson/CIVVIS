@@ -75,7 +75,7 @@ Taken 2026-11-24 on build `f55bc35436`, the mean of three games.
 | One-hex moves | 56,442, in 31,478 walks |
 | A walk as one step | 50,309 steps, 33% fewer |
 | Instructions to play | 196 billion |
-| Instructions for the path alone | 37 billion, 19% of playing it |
+| Instructions for the path alone | 37.5 billion, 19% of playing it |
 
 Three quarters of the path is units walking one hex at a time:
 
@@ -123,7 +123,7 @@ Nothing has been removed yet. This is the plan the first reading supports.
 
 The instructions tell the other half. Four fifths of the work of a game is
 the agents deciding what to do, and one fifth is the rules doing it. So the
-path itself costs about 37 billion instructions, and fewer steps and cheaper
+path itself costs about 37.5 billion instructions, and fewer steps and cheaper
 rules lower that. The deciding is a separate lever: it is what the speed work
 in [`docs/SIMULATOR_PERFORMANCE.md`](SIMULATOR_PERFORMANCE.md) pushes on.
 

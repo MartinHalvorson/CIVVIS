@@ -1423,7 +1423,7 @@
     if (walked.length) {
       const newest = walked[walked.length - 1];
       const part = (x) => (100 * x).toFixed(x < 0.0995 ? 1 : 0) + "%";
-      const billions = (n) => (n >= 9.95e9 ? Math.round(n / 1e9) : +(n / 1e9).toFixed(1)) + " billion";
+      const billions = (n) => (n >= 99.5e9 ? Math.round(n / 1e9) : +(n / 1e9).toFixed(1)) + " billion";
       const size = (n) => (n >= 999500 ? +(n / 1e6).toFixed(2) + " MB" : Math.round(n / 1000) + " kB");
       const tiles = document.getElementById("perf-path-tiles");
       const tile = (label, value, under, say) => {
