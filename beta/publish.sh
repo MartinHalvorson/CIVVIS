@@ -171,6 +171,8 @@ landing_assets="$source_tree/beta/assets"
 download_page="$source_tree/beta/download.html"
 tournaments_page="$source_tree/beta/tournaments.html"
 research_page="$source_tree/beta/research.html"
+elo_page="$source_tree/beta/elo.html"
+civs_page="$source_tree/beta/civs.html"
 performance_page="$source_tree/beta/performance.html"
 interpretability_page="$source_tree/beta/interpretability.html"
 pages=()
@@ -210,6 +212,8 @@ address() {
 home_at="$(address "$landing_page" home)"
 tournaments_at="$(address "$tournaments_page" tournaments)"
 research_at="$(address "$research_page" research)"
+elo_at="$(address "$elo_page" charts/elo-rankings)"
+civs_at="$(address "$civs_page" charts/civ-analytics)"
 performance_at="$(address "$performance_page" performance)"
 interpretability_at="$(address "$interpretability_page" interpretability)"
 download_at="$(address "$download_page" download)"
@@ -291,15 +295,40 @@ if [ -f "$research_page" ]; then
   mkdir -p "$out/$research_at"
   cp "$research_page" "$out/$research_at/index.html"
   fill research_page.py "$out/$research_at/index.html"
-  # The two rankings stand on this page since 2026-11-22, the winningest civs
-  # under the games against the AI and the Civ AI Agents by Elo under
-  # self-play. They are derived as they were for the home page: the civs
-  # from the run ledger, the agents from the lane's own revision. A page that
-  # predates the move has no slot for them and is left as it is.
+  # The two rankings stood on this page from 2026-11-22 until they moved to
+  # ELO Rankings and Civ Analytics on 2026-11-23. A page of a revision that
+  # still has their slot is filled as it was; one without it is left as it is.
   fill home_rankings.py "$out/$research_at/index.html"
   pages+=("$research_at")
 else
   without+=(research)
+fi
+# ELO Rankings, the second page under Charts/ (operator 2026-11-23: "add
+# that to a new page: Charts/ELO Rankings. this should be after win
+# analytics in the ordering"): the Civ AI Agents by Elo and Civilization
+# VI's own AI at Lv 4 to Lv 8, now and over time. Filled the same way: the
+# agents from the lane's own data/strategy_elo.json and the history of its
+# fits, the Firaxis levels from the benchmark games on the run ledger, so
+# they move with every finished game.
+if [ -f "$elo_page" ]; then
+  mkdir -p "$out/$elo_at"
+  cp "$elo_page" "$out/$elo_at/index.html"
+  fill elo_page.py "$out/$elo_at/index.html"
+  pages+=("$elo_at")
+else
+  without+=(elo-rankings)
+fi
+# Civ Analytics, the third (operator, the same evening: "add another page:
+# Civ Analytics. First can be the civ records (pulled from win analytics),
+# then early build order"): both off the run ledger, the tree of build
+# orders as Win Analytics' script reads it.
+if [ -f "$civs_page" ]; then
+  mkdir -p "$out/$civs_at"
+  cp "$civs_page" "$out/$civs_at/index.html"
+  fill civs_page.py "$out/$civs_at/index.html"
+  pages+=("$civs_at")
+else
+  without+=(civ-analytics)
 fi
 # The Performance page (the fastest game on video, how long a self-play game
 # takes at five percentiles, and game time batch by batch) is CIVVIS's own

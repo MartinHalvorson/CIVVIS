@@ -1,0 +1,739 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#171d25">
+<title>ELO Rankings · CIVVIS.ai</title>
+<meta name="description" content="CIVVIS ELO rankings: every Civ AI Agent and Civilization VI's own AI at Lv 4 to Lv 8 on one Elo scale, now and over time. The Firaxis levels are rated from the benchmark games against the real AI.">
+<link rel="canonical" href="https://civvis.ai/charts/elo-rankings/">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23171d25'/%3E%3Ccircle cx='16' cy='16' r='11.5' fill='none' stroke='%2366c0f4'/%3E%3Cpath d='M7 16h18M16 4.5c-4.2 4.1-4.2 18.9 0 23M16 4.5c4.2 4.1 4.2 18.9 0 23' fill='none' stroke='%2366c0f4' stroke-width='1.15'/%3E%3C/svg%3E">
+<style>
+  /* The home page's own palette, header and cards (`beta/landing.html`), as
+     the Auto-Tourneys page repeats them: the pages are one site and read as
+     one. Each is a single file with no shared stylesheet, so what they share
+     is repeated here. */
+  :root {
+    color-scheme: dark;
+    --bg: #171d25;
+    --panel: #1f2733;
+    --panel-raised: #242f3d;
+    --border: #2e3a4a;
+    --border-strong: #46566a;
+    --text: #e2e8ef;
+    --muted: #93a3b5;
+    --faint: #67788b;
+    --accent: #66c0f4;
+    --action-bg: #274b66;
+    --action-fg: #a8d8f5;
+    --action-hover: #315d7e;
+    --gold: #d7b66a;
+    --yt: #b3261e;
+    --yt-edge: #d9534a;
+    --yt-mark: #ff6257;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    /* Civilization VI's six victory types, one colour each, the same on
+       every chart of the page and in this order (a stack runs bottom to top
+       in it). The six are a categorical set checked as one against this
+       panel (#1f2733): each at least 3:1 on it, and each pair that stands
+       side by side in a stack apart for every common colour-vision type. */
+    --v-science: #3987e5;
+    --v-culture: #d95926;
+    --v-diplomatic: #199e70;
+    --v-religious: #c98500;
+    --v-domination: #d55181;
+    --v-score: #0ca30c;
+  }
+
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    min-width: 320px;
+    margin: 0;
+    overflow-x: hidden;
+    color: var(--text);
+    background: var(--bg);
+    font: 15px/1.55 var(--sans);
+    -webkit-font-smoothing: antialiased;
+  }
+  /* 1120px, up from 1060px on 2026-11-22: the header's row of links grew
+     when GitHub and YouTube were made to stand out, and at 1060px it no
+     longer fitted on the title's line. */
+  .shell { width: min(1120px, 100%); margin: 0 auto; padding: 0 clamp(16px, 3vw, 32px); }
+  main { padding-bottom: 48px; }
+
+  .site-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    flex-wrap: wrap;
+    padding-top: 26px;
+    padding-bottom: 18px;
+    border-bottom: 1px solid var(--border);
+  }
+  .site-title { margin: 0; color: #fff; font-size: 26px; font-weight: 700; letter-spacing: 0.04em; }
+  .site-title span { color: var(--accent); font-weight: 600; }
+  .site-tagline { margin: 3px 0 0; color: var(--muted); font-size: 13.5px; }
+  .site-tagline span { display: block; }
+  .utility-nav { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: flex-end; gap: 10px; margin-left: auto; }
+  .utility-nav > .utility-link { min-height: 44px; }
+  .utility-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 38px;
+    padding: 0 14px;
+    border: 1px solid var(--border-strong);
+    border-radius: 3px;
+    background: var(--panel);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    text-decoration: none;
+  }
+  .utility-link svg { width: 15px; height: 15px; flex: none; }
+  .utility-link:hover,
+  .utility-link:focus-visible { background: var(--panel-raised); border-color: var(--accent); color: #fff; }
+  .utility-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* The project's two homes stand out from the row (operator, 2026-11-22:
+     "make the GitHub, dev progress stand out a bit more"): GitHub filled in
+     the site's blue, with what it holds under its name ("everything open
+     source, free"), and YouTube in its red. */
+  .utility-link.is-github,
+  .utility-link.is-youtube { min-height: 44px; color: #fff; font-size: 14px; font-weight: 700; }
+  .utility-link.is-github svg,
+  .utility-link.is-youtube svg { width: 20px; height: 20px; }
+  .utility-link.is-github { border-color: var(--accent); background: var(--action-bg); }
+  .utility-link.is-github:hover,
+  .utility-link.is-github:focus-visible { background: var(--action-hover); border-color: #fff; }
+  .utility-link.is-github span { display: grid; line-height: 1.25; }
+  .utility-link.is-github small { color: var(--action-fg); font-size: 11px; font-weight: 500; white-space: nowrap; }
+  .utility-link.is-youtube { border-color: var(--yt-edge); background: var(--yt); }
+  .utility-link.is-youtube:hover,
+  .utility-link.is-youtube:focus-visible { background: #c9342b; border-color: #fff; }
+  /* Under YouTube, the channel's top playlists, one to a line (operator,
+     2026-11-22: "list top playlists under youtube. maybe in a vertical
+     list"). The row's links keep their tops in a line, so the list hangs
+     under its button alone, in the room the site list's height leaves. */
+  .utility-group { display: grid; gap: 5px; }
+  .utility-lists { display: grid; gap: 1px; margin: 0; padding: 0; list-style: none; }
+  .utility-list {
+    display: flex; align-items: center; gap: 6px; padding: 2px 3px; border-radius: 2px;
+    color: var(--text); font-size: 12.5px; font-weight: 600; line-height: 1.35; text-decoration: none; white-space: nowrap;
+  }
+  .utility-list svg { width: 14px; height: 14px; flex: none; color: var(--yt-mark); }
+  .utility-list:hover,
+  .utility-list:focus-visible { color: #fff; text-decoration: underline; }
+  .utility-list:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  /* The site's pages, listed in the same order on every one of them with
+     the page on screen in gold: Home, Charts, Auto-Tourneys, CIVVIS and AI
+     Debugger, and under them the game they are built on. As on the home
+     page, whose header this is, the column stands to the left of the title. */
+  .site-brand { display: flex; align-items: center; gap: 18px; min-width: 0; }
+  .site-lockup { min-width: 0; }
+  .site-nav { display: grid; flex: none; gap: 4px; }
+  .site-link {
+    display: block;
+    padding: 3px 12px 4px;
+    border-radius: 3px;
+    background: var(--action-bg);
+    color: var(--action-fg);
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    line-height: 1.4;
+    text-decoration: none;
+    text-transform: uppercase;
+  }
+  .site-link:hover,
+  .site-link:focus-visible { background: var(--action-hover); color: #fff; }
+  .site-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .site-link[aria-current="page"],
+  .site-link[aria-current="page"]:hover { background: var(--gold); color: #17130c; }
+  /* A button wears the ground of what it opens (operator, 2026-11-23: "make
+     home, charts/ and auto-tourneys buttons all have a blue background
+     (like the pages do). civvis, ai debugger have a black background (same
+     as simulator)"). The pages are blue and so are their buttons: the rule
+     above. The simulator is the lane's own address, bare for CIVVIS and in
+     play mode for AI Debugger, so a link that ends there is the
+     simulator's black, inside the edge its own buttons have. Civ 6 opens
+     Steam's shop and is the blue of Steam's buttons ("civ 6 can have the
+     steam color of blue"), dark under the name and light at the far end.
+     The page on screen is still the one in gold. */
+  .site-link[href$="../"],
+  .site-link[href$="?mode=play"] { background: #050607; color: #c9cecb; box-shadow: inset 0 0 0 1px #30363a; }
+  .site-link[href$="../"]:hover, .site-link[href$="../"]:focus-visible,
+  .site-link[href$="?mode=play"]:hover, .site-link[href$="?mode=play"]:focus-visible { background: #181c1f; color: #fff; }
+  /* Doctor Strange's Civ 6 (strange mode, the same game shown as a tree of
+     two timelines) stands out in Doctor Strange's own colours (operator,
+     2026-11-23: "highlight dr strange civ 6 button in dr strange colors"):
+     the deep blue of his tunic running into the crimson of his cloak,
+     ringed and lit by the orange of his spells' sparks, the name in their
+     pale gold. */
+  .site-link[href$="?mode=strange"] {
+    background: linear-gradient(135deg, #1c2a7a 30%, #a3122f); color: #ffe3a3;
+    box-shadow: inset 0 0 0 1px #ff9a2e, 0 0 6px rgba(255, 138, 30, 0.6);
+  }
+  .site-link[href$="?mode=strange"]:hover,
+  .site-link[href$="?mode=strange"]:focus-visible {
+    background: linear-gradient(135deg, #2638a0 30%, #c8193d); color: #fff;
+    box-shadow: inset 0 0 0 1px #ffb85c, 0 0 10px rgba(255, 150, 40, 0.85);
+  }
+  /* Doctor Strange's Civ 6 is the one name longer than the column. It does
+     not widen it: the name takes two lines in the column as it stands,
+     set a little closer so that each line fits. */
+  .site-link[href$="?mode=strange"] { box-sizing: border-box; width: 0; min-width: 100%; letter-spacing: 0.02em; }
+  .site-link[href^="https://store.steampowered.com/"] { background: linear-gradient(90deg, #1a44c2 35%, #47bfff); color: #fff; }
+  .site-link[href^="https://store.steampowered.com/"]:hover,
+  .site-link[href^="https://store.steampowered.com/"]:focus-visible { background: linear-gradient(90deg, #2352d6 35%, #73cfff); color: #fff; }
+  /* The column is as wide as its longest name, AUTO-TOURNEYS, on one line:
+     145px. Every name stands on one line (operator, 2026-11-21: "make sure
+     it fits on one line"), down to a 320px phone, where the title beside
+     the column still has its room. The list is a tree that keeps its
+     branches folded (operator, 2026-11-21: "a somewhat collapsable model
+     for the info"): a page's own pages are listed under it only on that
+     page and on those pages. Charts is a folder of pages and reads
+     "Charts/", with the slash (operator, 2026-11-22: "change just "Charts"
+     to "Charts/" with the intentional slash"). This is one of its pages,
+     so its branch is open: Win Analytics, this page, and CIVVIS
+     Performance stand under it, set in from the rest (operator: "in
+     charts, we should have at least win analytics, CIVVIS Performance").
+     Under Charts/ the column is as wide as CIVVIS PERFORMANCE on one
+     line. */
+  /* A page under Charts/: set in, and in smaller type, so that the longest
+     of them, CIVVIS PERFORMANCE, is as wide on its one line as
+     AUTO-TOURNEYS is on its own (145px), and the column is the same width
+     on every page. */
+  .site-link.sub-link { margin-left: 10px; padding: 2px 6px 3px; font-size: 10px; letter-spacing: 0.03em; }
+
+  .intro { max-width: 860px; margin: 18px 0 22px; color: var(--muted); font-size: 14.5px; line-height: 1.6; }
+  .intro a { color: var(--accent); }
+
+  .elo-empty { margin: 0; color: var(--faint); font-size: 13px; }
+  .elo-record { display: grid; gap: 16px; min-width: 0; }
+  .elo-record[hidden], .elo-empty[hidden], [data-elo-card][hidden] { display: none; }
+  .res-section { min-width: 0; padding: 12px 14px 12px; border: 1px solid var(--border); border-radius: 4px; background: var(--panel); }
+  .rank-title { margin: 0; color: #fff; font-size: 13.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+  .rank-sub { margin: 2px 0 8px; color: var(--faint); font-size: 12px; line-height: 1.45; }
+  .rank-note { margin: 10px 0 0; padding-top: 8px; border-top: 1px solid var(--border); color: var(--faint); font-size: 11.5px; line-height: 1.5; }
+  .rank-note a { color: var(--accent); }
+  .rank-note p { margin: 0 0 4px; }
+
+  /* At the top, the player strategies as Win Analytics listed them until
+     2026-11-23 (operator: "at the top of this page is the player
+     straetgies, pulled from win analytics"), and beside them the two
+     readings of Civilization VI's own AI at each level. A window too narrow
+     for two columns stacks them, the strategies first. */
+  .elo-top { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; min-width: 0; }
+  @media (max-width: 859px) { .elo-top { grid-template-columns: minmax(0, 1fr); } }
+  .rank-day { white-space: nowrap; }
+  .rank-list { margin: 0; padding: 0; list-style: none; }
+  .rank-row {
+    display: grid;
+    grid-template-columns: 18px minmax(0, 1fr) auto;
+    gap: 8px;
+    align-items: baseline;
+    padding: 4px 0;
+    border-top: 1px solid var(--border);
+    font-size: 13px;
+    line-height: 1.4;
+  }
+  .rank-n { color: var(--faint); font-size: 11.5px; font-variant-numeric: tabular-nums; text-align: right; }
+  .rank-name { min-width: 0; overflow: hidden; color: var(--text); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+  .rank-name small { margin-left: 6px; color: var(--muted); font-size: 11.5px; font-weight: 400; }
+  .rank-value { color: #fff; font-variant-numeric: tabular-nums; font-weight: 700; white-space: nowrap; }
+  .rank-value small { margin-left: 4px; color: var(--faint); font-size: 11px; font-weight: 400; }
+  /* Civilization VI's own AI at a level: a landmark on the scale, not an entrant. */
+  .rank-row.is-rung .rank-name,
+  .rank-row.is-rung .rank-value { color: var(--faint); font-size: 12px; font-weight: 500; }
+  .rank-swatch { display: inline-block; width: 12px; height: 0; margin-right: 6px; border-top: 2px solid; vertical-align: 3px; }
+  .rank-swatch.is-dotted { border-top-style: dotted; }
+  .rank-swatch.is-dashed { border-top-style: dashed; }
+
+  .rank-table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+  .rank-table th { padding: 4px 12px 4px 0; color: var(--faint); font-size: 11.5px; font-weight: 500; text-align: right; white-space: nowrap; vertical-align: bottom; }
+  .rank-table th:first-child, .rank-table td:first-child { text-align: left; }
+  .rank-table td { padding: 6px 12px 6px 0; border-top: 1px solid var(--border); color: var(--text); text-align: right; white-space: nowrap; }
+  .rank-table td:first-child { color: #fff; font-weight: 600; }
+  .rank-table td.is-elo { color: #fff; font-weight: 700; }
+  .rank-table td small { margin-left: 3px; color: var(--muted); font-size: 11.5px; font-weight: 400; }
+  .rank-table td.is-sim { color: var(--muted); }
+  .rank-table th:last-child, .rank-table td:last-child { padding-right: 2px; }
+  @media (max-width: 479px) { .rank-table th, .rank-table td { padding-right: 7px; } .rank-table td small { display: block; margin-left: 0; } }
+
+  /* The graph: every agent's rating from fit to fit and every Firaxis level
+     day by day, on one Elo axis. */
+  .elo-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 8px 0 2px; padding: 0; list-style: none; color: var(--text); font-size: 12.5px; }
+  .elo-legend li { display: inline-flex; align-items: center; gap: 6px; cursor: default; }
+  .elo-legend li[data-dim] { opacity: 0.4; }
+  .elo-plot { position: relative; min-height: 40px; margin-top: 8px; }
+  .elo-plot svg { display: block; overflow: visible; }
+  .elo-grid line { stroke: var(--border); stroke-width: 1; shape-rendering: crispEdges; }
+  .elo-tick { fill: var(--muted); font: 11px var(--sans); font-variant-numeric: tabular-nums; }
+  .elo-axis-title { fill: var(--faint); font: 11px var(--sans); }
+  .elo-line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+  .elo-line.is-level { stroke-width: 1.5; }
+  .elo-line[data-dim] { opacity: 0.15; }
+  .elo-label { font: 600 11px var(--sans); fill: var(--text); }
+  .elo-label.is-level { fill: var(--muted); font-weight: 500; }
+  .elo-label[data-dim] { opacity: 0.25; }
+  .elo-leader { stroke: var(--border-strong); stroke-width: 1; }
+  .elo-cross { stroke: var(--muted); stroke-width: 1; shape-rendering: crispEdges; }
+  .elo-dot { stroke: var(--panel); stroke-width: 2; }
+  .elo-tip {
+    position: absolute; z-index: 10; min-width: 200px; max-width: 300px; padding: 7px 9px 6px;
+    border: 1px solid var(--border-strong); border-radius: 4px; background: #121820;
+    color: var(--text); font-size: 12px; line-height: 1.45; pointer-events: none;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35); font-variant-numeric: tabular-nums;
+  }
+  .elo-tip[hidden] { display: none; }
+  .elo-tip p { margin: 0 0 3px; color: var(--muted); font-weight: 600; }
+  .elo-tip div { display: flex; align-items: center; gap: 7px; }
+  .elo-tip b { min-width: 3.2em; color: #fff; font-weight: 700; text-align: right; }
+  .elo-tip span.n { margin-left: auto; padding-left: 8px; color: var(--faint); }
+  .elo-details { margin-top: 10px; }
+  .elo-details summary { color: var(--accent); font-size: 12.5px; font-weight: 600; cursor: pointer; }
+  .elo-scroll { overflow-x: auto; }
+  .elo-details .rank-table th:first-child,
+  .elo-details .rank-table td:first-child { position: sticky; left: 0; background: var(--panel); }
+</style>
+</head>
+<body>
+  <header class="shell site-header">
+    <div class="site-brand">
+      <!-- The site's pages, in the order every one of them lists them, with
+           the page on screen in gold: this is ELO Rankings, the second page
+           under Charts/, after Win Analytics (operator 2026-11-23: "add that
+           to a new page: Charts/ELO Rankings. this should be after win
+           analytics in the ordering"), then Civ Analytics, CIVVIS
+           Performance and AI Interpretability.
+           Every link is lane-relative (this page lives at
+           <lane>/charts/elo-rankings/), so the test lane's page opens the
+           test lane's other pages and viewer. -->
+      <nav class="site-nav" aria-label="CIVVIS sites">
+        <a class="site-link" href="../../home/">Home</a>
+        <a class="site-link" href="../win-analytics/" title="What the games show: charts read off the CIVVIS AI agents&#8217; games.">Charts/</a>
+        <a class="site-link sub-link" href="../win-analytics/" title="Who wins, how and when: the games against Civilization VI&#8217;s own AI beside the CIVVIS self-play games.">Win Analytics</a>
+        <a class="site-link sub-link" href="./" aria-current="page">ELO Rankings</a>
+        <a class="site-link sub-link" href="../civ-analytics/" title="How CIVVIS does as each civ, and the early build orders that win against Deity.">Civ Analytics</a>
+        <a class="site-link sub-link" href="../civvis-performance/" title="How fast the simulator plays: the fastest game on video and how long a self-play game takes.">CIVVIS Performance</a>
+        <a class="site-link sub-link" href="../ai-interpretability/" title="How a CIVVIS AI agent decides: one turn step by step, its plan through a game, and what each rule is worth in wins.">AI Interpretability</a>
+        <a class="site-link" href="../../auto-tourneys/" title="Series of verification games against Civilization VI&#8217;s own AI: running, scheduled and finished.">Auto-Tourneys</a>
+        <a class="site-link" href="../../" title="Every civilization is played by a CIVVIS AI agent.">CIVVIS</a>
+        <a class="site-link" href="../../?mode=strange" title="One world, two timelines: the same game played two ways, side by side, on a timeline that branches.">Doctor Strange's Civ 6</a>
+        <a class="site-link" href="../../?mode=play" title="You play one civilization. CIVVIS AI agents play the rest.">AI Debugger</a>
+        <a class="site-link" href="https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/" target="_blank" rel="noopener" title="Buy Civilization VI on Steam">Civ 6</a>
+      </nav>
+      <div class="site-lockup">
+        <h1 class="site-title">CIVVIS<span>.ai</span></h1>
+        <p class="site-tagline"><span>An open source Civilization VI Simulator</span> <span>for AI strategy development</span></p>
+      </div>
+    </div>
+    <nav class="utility-nav" aria-label="CIVVIS links">
+      <a class="utility-link is-github" href="https://github.com/MartinHalvorson/CIVVIS" target="_blank" rel="noreferrer">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2.2c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1.1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.8 18.3 5.1 18.3 5.1c.6 1.7.2 2.9.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .3z"/></svg>
+        <span>GitHub <small>Everything open source, free</small></span>
+      </a>
+      <div class="utility-group">
+        <a class="utility-link is-youtube" href="https://www.youtube.com/@civvis" target="_blank" rel="noreferrer">
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.6 12 3.6 12 3.6s-7.5 0-9.4.5A3 3 0 0 0 .5 6.2C0 8.1 0 12 0 12s0 3.9.5 5.8a3 3 0 0 0 2.1 2.1c1.9.5 9.4.5 9.4.5s7.5 0 9.4-.5a3 3 0 0 0 2.1-2.1c.5-1.9.5-5.8.5-5.8s0-3.9-.5-5.8zM9.5 15.6V8.4l6.3 3.6-6.3 3.6z"/></svg>
+          YouTube
+        </a>
+        <ul class="utility-lists" aria-label="Top playlists">
+          <li><a class="utility-list" href="https://www.youtube.com/playlist?list=PLWcKlP8e8iy4" target="_blank" rel="noreferrer"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4 6h12v2H4zm0 4h12v2H4zm0 4h8v2H4zm10 0v6l5-3z"/></svg>Lv 8 Deity Wins</a></li>
+          <li><a class="utility-list" href="https://www.youtube.com/playlist?list=PLecirlzIUSSo" target="_blank" rel="noreferrer"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4 6h12v2H4zm0 4h12v2H4zm0 4h8v2H4zm10 0v6l5-3z"/></svg>Lv 1 - 7 Archive</a></li>
+        </ul>
+      </div>
+      <!-- The home page files a report itself, from a dialog; here the same
+           button is GitHub's own form, which needs no script on this page. -->
+      <a class="utility-link" href="https://github.com/MartinHalvorson/CIVVIS/issues/new/choose" target="_blank" rel="noreferrer">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M12 2C6.5 2 2 5.9 2 10.7c0 2.8 1.5 5.3 3.9 6.9L5 22l4.6-2.4c.8.2 1.6.3 2.4.3 5.5 0 10-3.9 10-8.7S17.5 2 12 2zm-1 4.5h2v6h-2v-6zm0 7.5h2v2h-2v-2z"/></svg>
+        Suggest Feature / Report Issue
+      </a>
+    </nav>
+  </header>
+
+  <main class="shell">
+    <p class="intro">
+      Every Civ AI Agent and Civilization VI&#8217;s own AI on one Elo scale.
+      The agents are rated against each other in the simulator; each Firaxis
+      level is rated from the benchmark&#8217;s games against it in
+      <cite>Sid Meier&#8217;s Civilization VI</cite>, our one seat against
+      five of its AIs, so the levels move with every finished game. How the
+      games went is charted on <a href="../win-analytics/">Win Analytics</a>.
+    </p>
+
+    <!-- The figures: `beta/publish.sh` fills the slot below
+         (`beta/elo_page.py`) with the published fits, the history of every
+         fit before them, and the Firaxis levels read off the run ledger. A
+         page whose slot still reads `null` shows the one sentence. -->
+    <p class="elo-empty" id="elo-empty">This copy of the page has no figures. They are written in when the site is published.</p>
+    <div class="elo-record" id="elo-record" hidden>
+      <div class="elo-top">
+        <section class="res-section" id="rank-strategies" data-elo-card hidden aria-labelledby="rank-strategies-title">
+          <h2 class="rank-title" id="rank-strategies-title">Player strategies</h2>
+          <p class="rank-sub">Civ AI Agents by Elo, and Civilization VI&#8217;s own AI at each level as the benchmark measures it. Our stand-in for Prince is 1000.</p>
+          <ol class="rank-list"></ol>
+          <p class="rank-note">
+            <span data-rank-note></span>
+            <a href="https://github.com/MartinHalvorson/CIVVIS/blob/main/docs/ELO.md" target="_blank" rel="noreferrer">How the Elo works</a>
+          </p>
+        </section>
+        <section class="res-section" id="elo-levels" data-elo-card hidden aria-labelledby="elo-levels-title">
+          <h2 class="rank-title" id="elo-levels-title">Firaxis Civ 6 AI: Elo by level</h2>
+          <p class="rank-sub" id="elo-levels-sub">Two readings of each level: the benchmark&#8217;s games against the real AI, and the simulator&#8217;s Difficulty dial.</p>
+          <div class="elo-scroll">
+            <table class="rank-table" id="elo-levels-table" aria-labelledby="elo-levels-title">
+              <thead><tr><th scope="col">Level</th><th scope="col">Benchmark Elo</th><th scope="col">Our wins (games)</th><th scope="col">Simulator dial</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <p class="rank-note" id="elo-levels-note"></p>
+        </section>
+      </div>
+
+      <section class="res-section" id="elo-over-time" data-elo-card hidden aria-labelledby="elo-over-time-title">
+        <h2 class="rank-title" id="elo-over-time-title">Elo over time</h2>
+        <p class="rank-sub" id="elo-over-time-sub">The top 10 Civ AI Agents at every published fit, and Civilization VI&#8217;s own AI at Lv 4 to Lv 8 day by day.</p>
+        <ul class="elo-legend" id="elo-legend" aria-label="Lines"></ul>
+        <div class="elo-plot" id="elo-plot"></div>
+        <details class="elo-details">
+          <summary>Every point as a table</summary>
+          <div class="elo-scroll">
+            <table class="rank-table" id="elo-points"><thead></thead><tbody></tbody></table>
+          </div>
+        </details>
+        <p class="rank-note" id="elo-over-time-note"></p>
+      </section>
+    </div>
+  </main>
+  <div class="elo-tip" id="elo-tip" role="presentation" hidden></div>
+
+  <script type="application/json" id="elo-data">null</script>
+  <script>
+  // Every figure arrives through textContent: the slot holds names and
+  // sentences from the repository's own files and the run ledger, and none
+  // of it is trusted as markup.
+  (() => {
+    let data = null;
+    try { data = JSON.parse(document.getElementById("elo-data").textContent); } catch (_) { return; }
+    if (!data) return;
+    const el = (tag, cls, text) => {
+      const node = document.createElement(tag);
+      if (cls) node.className = cls;
+      if (text != null) node.textContent = text;
+      return node;
+    };
+    const svg = (tag, attrs) => {
+      const node = document.createElementNS("http://www.w3.org/2000/svg", tag);
+      for (const [k, v] of Object.entries(attrs || {})) node.setAttribute(k, v);
+      return node;
+    };
+    const count = (n) => Number(n).toLocaleString("en-US");
+    // An entrant that never lost is rated "at least", one that never won "at most".
+    const elo = (r) => (r.bound === "upper" ? "≤" : "") + Math.round(r.elo) + (r.bound === "lower" ? "+" : "");
+    const pm = (m) => (m ? "±" + Math.round(m) : "");
+    const day = (iso) => new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+
+    // Each agent's colour follows the agent, never its place: the victory
+    // it plays wears that victory's colour on Win Analytics (Science blue,
+    // Culture orange, Diplomatic aqua, Religious yellow, Domination
+    // magenta), and the others the palette's next slots. The palette's
+    // eight are checked as one against this panel (#1f2733); the two
+    // agents past eight repeat a colour with a dotted line, and every line
+    // is named at its end.
+    const COLOURS = {
+      moonshot: ["#3987e5", ""], tourist: ["#d95926", ""], swing: ["#199e70", ""], holy: ["#c98500", ""],
+      siege: ["#d55181", ""], jack: ["#0ca30c", ""], forward: ["#9085e9", ""], stock: ["#e66767", ""],
+      oldguard: ["#9085e9", "2 3"], wheels: ["#e66767", "2 3"],
+    };
+    const SPARE = [["#3987e5", "2 3"], ["#d95926", "2 3"], ["#199e70", "2 3"], ["#c98500", "2 3"]];
+    const LEVEL_INK = "#b8c2ce", LEVEL_DASH = "7 4";
+    const agents = Array.isArray(data.agents) ? data.agents : [];
+    agents.forEach((a, i) => { a.colour = COLOURS[a.id] || SPARE[i % SPARE.length]; });
+    const firaxis = data.firaxis && Array.isArray(data.firaxis.levels) ? data.firaxis : null;
+    const levels = firaxis ? firaxis.levels : [];
+    const levelName = (l) => l.level + " " + l.name + " AI Firaxis";
+    // The record is shown first: the graph is drawn at the width its card
+    // is given, and a hidden card has none.
+    document.getElementById("elo-empty").hidden = true;
+    document.getElementById("elo-record").hidden = false;
+
+    // ---- Player strategies: the agents by Elo, the Firaxis levels among them.
+    const strategies = data.strategies;
+    const list = document.getElementById("rank-strategies");
+    if (strategies && Array.isArray(strategies.rows)) {
+      const rows = strategies.rows.filter((r) => r.kind === "agent").map((r) => ({ ...r }));
+      for (const l of levels) {
+        if (l.now) rows.push({ kind: "level", name: levelName(l), elo: l.now.elo, margin: l.now.margin, bound: l.now.bound,
+                               games: l.now.games, wins: l.now.wins });
+      }
+      rows.sort((a, b) => b.elo - a.elo || (a.kind === "agent" ? -1 : 1));
+      let place = 0;
+      const items = rows.map((r) => {
+        const item = el("li", "rank-row" + (r.kind === "level" ? " is-rung" : ""));
+        const interval = r.margin ? "; 95% interval " + Math.round(r.elo - r.margin) + "–" + Math.round(r.elo + r.margin) : "";
+        item.title = r.kind === "level"
+          ? r.name + ": our seat won " + r.wins + " of " + r.games + " benchmark games against five of it" + interval
+          : r.name + ": won " + r.wins + " of " + r.games + " rated tables" + interval;
+        item.append(el("span", "rank-n", r.kind === "level" ? "" : String(++place)));
+        const label = el("span", "rank-name");
+        const agent = agents.find((a) => a.id === r.id);
+        if (agent) {
+          const key = el("span", "rank-swatch" + (agent.colour[1] ? " is-dotted" : ""));
+          key.style.borderTopColor = agent.colour[0];
+          label.append(key);
+        } else if (r.kind === "level") {
+          const key = el("span", "rank-swatch is-dashed");
+          key.style.borderTopColor = LEVEL_INK;
+          label.append(key);
+        }
+        label.append(document.createTextNode(r.name));
+        if (r.tilt) label.append(el("small", "", r.tilt));
+        const figure = el("span", "rank-value", elo(r));
+        if (r.margin) figure.append(el("small", "", pm(r.margin)));
+        item.append(label, figure);
+        return item;
+      });
+      list.querySelector(".rank-list").append(...items);
+      list.querySelector("[data-rank-note]").textContent =
+        (strategies.tables ? count(strategies.tables) + " " : "") + (strategies.players === 4 ? "four-player " : "")
+        + "simulator tables" + (strategies.turns ? " of " + strategies.turns + " turns" : "")
+        + (strategies.runs > 1 ? " over the last " + strategies.runs + " rating runs" : "")
+        + (strategies.latest_run ? ", newest " + strategies.latest_run : "") + "."
+        + (firaxis ? " The Firaxis levels: " + count(firaxis.games) + " benchmark games of the last "
+          + firaxis.days + " days, through " + day(firaxis.to) + "." : "")
+        + " ± is the 95% margin of error.";
+      list.hidden = false;
+    }
+
+    // ---- The two readings of each level.
+    const sim = Object.fromEntries((data.simulator || []).map((s) => [s.level, s]));
+    const levelRows = [8, 7, 6, 5, 4].map((n) => ({ n, measured: levels.find((l) => l.level === n), sim: sim[n] }))
+      .filter((r) => r.measured || r.sim);
+    if (levelRows.length) {
+      const body = document.querySelector("#elo-levels-table tbody");
+      for (const r of levelRows) {
+        const tr = el("tr");
+        const name = r.measured ? r.measured.name : r.sim.name;
+        tr.append(el("td", "", "Lv " + r.n + " " + name));
+        const now = r.measured && r.measured.now;
+        const cell = el("td", "is-elo", now ? elo(now) : "–");
+        if (now && now.margin) cell.append(el("small", "", pm(now.margin)));
+        tr.append(cell);
+        const games = el("td", "", now ? count(now.wins) : "–");
+        if (now) games.append(el("small", "", "(" + count(now.games) + ")"));
+        tr.append(games);
+        const dial = el("td", "is-sim", r.sim ? Math.round(r.sim.elo) : "–");
+        if (r.sim && r.sim.margin) dial.append(el("small", "", pm(r.sim.margin)));
+        tr.append(dial);
+        body.append(tr);
+      }
+      document.getElementById("elo-levels-note").textContent =
+        "Benchmark Elo: Civilization VI’s own AI, rated from our seat’s games against five of it at each level"
+        + (firaxis ? " over the last " + firaxis.days + " days" : "")
+        + ", with our seat rated as the agent that plays its victory lane in the simulator (a Science game is MoonshotMaven’s,"
+        + " a Religious one HolyRoller’s). ≤ is a level we have never lost to in the window: it is at most that."
+        + " Simulator dial: the simulator’s Difficulty setting, our stand-in agent playing with that level’s"
+        + " handicap, which is what the simulator’s games at that level are played against.";
+      document.getElementById("elo-levels").hidden = false;
+    }
+
+    // ---- Elo over time.
+    const lines = [];
+    const parse = (iso) => Date.parse(iso);
+    for (const a of agents) {
+      const points = (a.series || []).map((p) => ({ t: parse(p[0]), elo: p[1], margin: p[2], bound: p[3] })).filter((p) => !isNaN(p.t));
+      if (points.length) lines.push({ key: a.id, name: a.name, colour: a.colour[0], dash: a.colour[1], step: true, points, agent: true });
+    }
+    for (const l of levels) {
+      const points = (l.series || []).map((p) => ({ t: parse(p[0]), elo: p[1], margin: p[2], bound: p[3], games: p[4] })).filter((p) => !isNaN(p.t));
+      if (points.length) lines.push({ key: "lv" + l.level, name: levelName(l), short: "Lv " + l.level + " " + l.name, colour: LEVEL_INK, dash: LEVEL_DASH, step: false, points, agent: false });
+    }
+    const card = document.getElementById("elo-over-time");
+    if (lines.length) {
+      card.hidden = false;
+      const all = lines.flatMap((l) => l.points);
+      const t0 = Math.min(...all.map((p) => p.t));
+      const t1 = Math.max(...all.map((p) => p.t));
+      const lo = Math.floor((Math.min(...all.map((p) => p.elo)) - 40) / 100) * 100;
+      const hi = Math.ceil((Math.max(...all.map((p) => p.elo)) + 40) / 100) * 100;
+      // An agent's rating holds from its fit to the next one, and the
+      // newest holds to the right edge.
+      const at = (line, t) => {
+        let found = null;
+        for (const p of line.points) { if (p.t <= t) found = p; else break; }
+        if (!line.step && found && line.points[line.points.length - 1] !== found && t > found.t) {
+          const next = line.points[line.points.indexOf(found) + 1];
+          return { ...found, elo: found.elo + (next.elo - found.elo) * (t - found.t) / (next.t - found.t), between: true };
+        }
+        return found;
+      };
+      const legend = document.getElementById("elo-legend");
+      for (const line of lines) {
+        const li = el("li");
+        li.dataset.key = line.key;
+        const key = el("span", "rank-swatch" + (line.dash === LEVEL_DASH ? " is-dashed" : line.dash ? " is-dotted" : ""));
+        key.style.borderTopColor = line.colour;
+        li.append(key, document.createTextNode(line.short || line.name));
+        legend.append(li);
+        line.legend = li;
+      }
+      const plot = document.getElementById("elo-plot");
+      const tip = document.getElementById("elo-tip");
+      let focus = null;
+      const dim = () => {
+        for (const line of lines) {
+          const off = focus && focus !== line.key;
+          for (const node of [line.path, line.label, line.legend]) if (node) node.toggleAttribute("data-dim", !!off);
+        }
+      };
+      for (const line of lines) {
+        line.legend.addEventListener("mouseenter", () => { focus = line.key; dim(); });
+        line.legend.addEventListener("mouseleave", () => { focus = null; dim(); });
+      }
+      const draw = () => {
+        plot.textContent = "";
+        const width = Math.max(280, plot.clientWidth);
+        const narrow = width < 560;
+        const height = narrow ? 300 : 380;
+        const m = { top: 10, right: narrow ? 92 : 150, bottom: 28, left: 44 };
+        const w = width - m.left - m.right, h = height - m.top - m.bottom;
+        const x = (t) => m.left + (t1 === t0 ? w : (t - t0) / (t1 - t0) * w);
+        const y = (v) => m.top + (hi - v) / (hi - lo) * h;
+        const root = svg("svg", { width, height, viewBox: "0 0 " + width + " " + height, role: "img",
+          "aria-label": "Elo over time of " + lines.map((l) => l.name).join(", ") });
+        const grid = svg("g", { class: "elo-grid" });
+        const step = (hi - lo) > 1000 ? 200 : 100;
+        for (let v = lo; v <= hi; v += step) {
+          grid.append(svg("line", { x1: m.left, x2: m.left + w, y1: y(v), y2: y(v) }));
+          const label = svg("text", { class: "elo-tick", x: m.left - 6, y: y(v) + 4, "text-anchor": "end" });
+          label.textContent = v;
+          root.append(label);
+        }
+        root.prepend(grid);
+        // A tick a day when the span is short, else a tick every few days.
+        const dayMs = 86400000;
+        const span = (t1 - t0) / dayMs;
+        const every = span <= 8 ? 1 : span <= 20 ? 2 : span <= 45 ? 7 : 14;
+        const first = Math.ceil(t0 / dayMs) * dayMs;
+        let last = -Infinity;
+        for (let t = first; t <= t1; t += every * dayMs) {
+          if (x(t) - last < 46) continue;
+          last = x(t);
+          const tick = svg("text", { class: "elo-tick", x: x(t), y: m.top + h + 18, "text-anchor": "middle" });
+          tick.textContent = day(new Date(t).toISOString());
+          root.append(tick);
+        }
+        const title = svg("text", { class: "elo-axis-title", x: m.left, y: m.top - 2 > 8 ? m.top - 2 : 9 });
+        title.textContent = "Elo";
+        root.append(title);
+        // Lines: an agent's as steps (a rating holds until the next fit),
+        // a level's point to point.
+        const ends = [];
+        for (const line of lines) {
+          let d = "";
+          line.points.forEach((p, i) => {
+            if (!i) d += "M" + x(p.t) + "," + y(p.elo);
+            else d += line.step ? "H" + x(p.t) + "V" + y(p.elo) : "L" + x(p.t) + "," + y(p.elo);
+          });
+          const tail = line.points[line.points.length - 1];
+          if (line.step) d += "H" + x(t1);
+          const path = svg("path", { class: "elo-line" + (line.agent ? "" : " is-level"), d, stroke: line.colour });
+          if (line.dash) path.setAttribute("stroke-dasharray", line.dash);
+          root.append(path);
+          line.path = path;
+          if (line.points.length === 1 && !line.step) {
+            root.append(svg("circle", { cx: x(tail.t), cy: y(tail.elo), r: 4, fill: line.colour, class: "elo-dot" }));
+          }
+          ends.push({ line, x: line.step ? x(t1) : x(tail.t), y: y(tail.elo), at: y(tail.elo) });
+        }
+        // Every line named at its end. Labels that would overlap are set
+        // apart and tied back to their line.
+        ends.sort((a, b) => a.y - b.y);
+        const gap = 12.5;
+        for (let i = 1; i < ends.length; i++) ends[i].y = Math.max(ends[i].y, ends[i - 1].y + gap);
+        const overflow = ends.length ? ends[ends.length - 1].y - (m.top + h) : 0;
+        if (overflow > 0) for (const e of ends) e.y -= overflow;
+        for (let i = ends.length - 2; i >= 0; i--) ends[i].y = Math.min(ends[i].y, ends[i + 1].y - gap);
+        const lx = m.left + w + 14;
+        for (const e of ends) {
+          if (Math.abs(e.y - e.at) > 1 || e.x < m.left + w) {
+            root.append(svg("line", { class: "elo-leader", x1: e.x + 2, y1: e.at, x2: lx - 3, y2: e.y }));
+          }
+          const label = svg("text", { class: "elo-label" + (e.line.agent ? "" : " is-level"), x: lx, y: e.y + 4 });
+          label.textContent = narrow ? (e.line.short || e.line.name).replace(" AI Firaxis", "") : (e.line.short || e.line.name);
+          root.append(label);
+          e.line.label = label;
+        }
+        // The hover layer: a crosshair and every line's value at that moment.
+        const cross = svg("line", { class: "elo-cross", y1: m.top, y2: m.top + h, visibility: "hidden" });
+        root.append(cross);
+        const hit = svg("rect", { x: m.left, y: m.top, width: w, height: h, fill: "transparent" });
+        root.append(hit);
+        const move = (event) => {
+          const box = root.getBoundingClientRect();
+          const px = Math.min(Math.max(event.clientX - box.left, m.left), m.left + w);
+          const t = t0 + (px - m.left) / w * (t1 - t0);
+          cross.setAttribute("x1", px); cross.setAttribute("x2", px); cross.setAttribute("visibility", "visible");
+          tip.textContent = "";
+          tip.append(el("p", "", new Date(t).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "UTC" }) + " UTC"));
+          const shown = lines.map((line) => ({ line, p: at(line, t) })).filter((s) => s.p).sort((a, b) => b.p.elo - a.p.elo);
+          for (const { line, p } of shown) {
+            const row = el("div");
+            const key = el("span", "rank-swatch" + (line.dash === LEVEL_DASH ? " is-dashed" : line.dash ? " is-dotted" : ""));
+            key.style.borderTopColor = line.colour;
+            row.append(el("b", "", (p.bound === "upper" ? "≤" : "") + Math.round(p.elo)), key, el("span", "", line.short || line.name));
+            if (!p.between) row.append(el("span", "n", pm(p.margin) + (p.games ? " · " + p.games + " g" : "")));
+            tip.append(row);
+          }
+          tip.hidden = !shown.length;
+          const page = plot.getBoundingClientRect();
+          const left = window.scrollX + page.left + px + 14;
+          tip.style.left = Math.min(left, window.scrollX + document.documentElement.clientWidth - tip.offsetWidth - 8) + "px";
+          tip.style.top = window.scrollY + page.top + m.top + "px";
+        };
+        hit.addEventListener("pointermove", move);
+        hit.addEventListener("pointerleave", () => { tip.hidden = true; cross.setAttribute("visibility", "hidden"); });
+        plot.append(root);
+        dim();
+      };
+      draw();
+      let lastWidth = document.documentElement.clientWidth, queued = 0;
+      window.addEventListener("resize", () => {
+        if (document.documentElement.clientWidth === lastWidth || queued) return;
+        queued = requestAnimationFrame(() => { queued = 0; lastWidth = document.documentElement.clientWidth; draw(); });
+      });
+
+      // Every point as a table: a row per moment a line has a point, a
+      // column per line, so no figure needs a hover.
+      const times = [...new Set(lines.flatMap((l) => l.points.map((p) => p.t)))].sort((a, b) => a - b);
+      const head = el("tr");
+      head.append(el("th", "", "When (UTC)"));
+      for (const line of lines) head.append(el("th", "", line.short || line.name));
+      document.querySelector("#elo-points thead").append(head);
+      const tbody = document.querySelector("#elo-points tbody");
+      for (const t of times) {
+        const tr = el("tr");
+        tr.append(el("td", "", new Date(t).toISOString().slice(0, 16).replace("T", " ")));
+        for (const line of lines) {
+          const p = line.points.find((q) => q.t === t);
+          const td = el("td", "", p ? (p.bound === "upper" ? "≤" : "") + Math.round(p.elo) : "");
+          if (p && p.margin) td.append(el("small", "", pm(p.margin)));
+          tr.append(td);
+        }
+        tbody.append(tr);
+      }
+      document.getElementById("elo-over-time-note").textContent =
+        "An agent’s line steps at each published fit of the simulator’s rating tables (" + count(data.fits)
+        + " so far) and holds until the next. A Firaxis level’s line is a point a day, each fitted over the benchmark games of the "
+        + (firaxis ? firaxis.days : 7) + " days before it, drawn when they number at least three; the levels are rated from "
+        + (firaxis ? count(firaxis.all_games) : "the") + " benchmark games in all. Hover a name in the key to pick its line out.";
+    }
+
+  })();
+  </script>
+</body>
+</html>
