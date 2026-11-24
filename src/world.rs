@@ -592,6 +592,25 @@ fn hex_disk_cells(radius: i32) -> u64 {
     1 + 3 * radius * (radius + 1)
 }
 
+/// The cells of [`hex::ring`] in ascending order. Read down each column of
+/// the disk, the first and last columns lie wholly on the ring, and every
+/// column between touches it only at its two ends.
+fn ascending_ring(center: Pos, radius: i32) -> impl Iterator<Item = Pos> {
+    let radius = radius.max(0);
+    (-radius..=radius).flat_map(move |dq| {
+        let lo = (-radius).max(-dq - radius);
+        let hi = radius.min(-dq + radius);
+        let step = if dq.abs() == radius {
+            1
+        } else {
+            (hi - lo) as usize
+        };
+        (lo..=hi)
+            .step_by(step)
+            .map(move |dr| (center.0 + dq, center.1 + dr))
+    })
+}
+
 #[cfg(test)]
 mod write_log_tests;
 
@@ -621,6 +640,74 @@ mod tests {
                             world.disk((x, y), radius),
                             reference,
                             "({x}, {y}) r{radius}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /// `ring` generates its cells in ascending order and sorts only after a
+    /// wrap fold; on a wrapping and a walled map it returns exactly the
+    /// folded, on-map, sorted, de-duplicated cells of `hex::ring`, past twice
+    /// the width.
+    #[test]
+    fn a_ring_is_the_sorted_folded_cells_with_or_without_a_wrap() {
+        for radius in -1..24 {
+            let mut cells: Vec<Pos> = ascending_ring((3, 4), radius).collect();
+            assert!(cells.is_sorted(), "r{radius} is generated in order");
+            let mut walked = hex::ring((3, 4), radius);
+            walked.sort_unstable();
+            cells.dedup();
+            assert_eq!(cells, walked, "r{radius} is the same set of cells");
+        }
+        for world in [WorldMap::new(9, 7), WorldMap::arena(9, 7)] {
+            for x in -2..11 {
+                for y in -2..9 {
+                    for radius in 0..24 {
+                        let mut reference: Vec<Pos> = hex::ring((x, y), radius)
+                            .into_iter()
+                            .map(|pos| world.fold(pos))
+                            .filter(|pos| world.tiles.index_of(*pos).is_some())
+                            .collect();
+                        reference.sort_unstable();
+                        reference.dedup();
+                        assert_eq!(
+                            world.ring((x, y), radius),
+                            reference,
+                            "({x}, {y}) r{radius}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /// `disk_any` and `disk_count` answer exactly what the sorted disk does,
+    /// on a wrapping map past half its width (where cells fold onto each
+    /// other), on a walled map, and on a globe.
+    #[test]
+    fn disk_any_and_count_agree_with_the_sorted_disk() {
+        for world in [
+            WorldMap::new(9, 7),
+            WorldMap::arena(9, 7),
+            WorldMap::globe(3),
+        ] {
+            let centers: Vec<Pos> = world.tiles.keys().copied().step_by(7).take(6).collect();
+            for center in centers {
+                for radius in [0, 1, 3, 4, 5, 9, 13] {
+                    let disk = world.disk(center, radius);
+                    for modulus in [1, 2, 3, 5, 64] {
+                        let wanted = |pos: Pos| (pos.0 * 7 + pos.1 * 3).rem_euclid(modulus) == 0;
+                        assert_eq!(
+                            world.disk_count(center, radius, wanted),
+                            disk.iter().filter(|pos| wanted(**pos)).count(),
+                            "{center:?} r{radius} mod {modulus}"
+                        );
+                        assert_eq!(
+                            world.disk_any(center, radius, wanted),
+                            disk.iter().any(|pos| wanted(*pos)),
+                            "{center:?} r{radius} mod {modulus}"
                         );
                     }
                 }
@@ -1140,22 +1227,69 @@ impl WorldMap {
         }
     }
 
+    /// Whether any tile of [`Self::disk`] satisfies `wanted`, stopping at the
+    /// first that does. A yes-or-no answer cannot depend on the order the
+    /// tiles are asked in, or on asking one twice, so on a flat map the cells
+    /// are walked where they lie: no `Vec`, no sort.
+    pub(crate) fn disk_any(&self, center: Pos, radius: i32, mut wanted: impl FnMut(Pos) -> bool) -> bool {
+        if self.sphere().is_some() {
+            return self.disk(center, radius).into_iter().any(wanted);
+        }
+        if radius < 0 {
+            return false;
+        }
+        for dq in -radius..=radius {
+            let lo = (-radius).max(-dq - radius);
+            let hi = radius.min(-dq + radius);
+            for dr in lo..=hi {
+                let pos = self.fold((center.0 + dq, center.1 + dr));
+                if self.tiles.index_of(pos).is_some() && wanted(pos) {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    /// How many tiles of [`Self::disk`] satisfy `wanted`. A count does not
+    /// depend on the order either. It would count a tile twice if two cells
+    /// folded onto it, which needs a disk at least half the world wide; such
+    /// a disk, and any globe, is counted off [`Self::disk`] itself.
+    pub(crate) fn disk_count(&self, center: Pos, radius: i32, mut wanted: impl FnMut(Pos) -> bool) -> usize {
+        if self.sphere().is_some() || (self.topology.wraps_east_west() && 2 * radius >= self.width) {
+            return self.disk(center, radius).into_iter().filter(|pos| wanted(*pos)).count();
+        }
+        let mut count = 0;
+        self.for_each_disk(center, radius, |pos| count += usize::from(wanted(pos)));
+        count
+    }
+
     /// Every in-map tile exactly `radius` steps from `center`, sorted.
     ///
     /// Globe rings outside the small shared geometry table are found as a
     /// breadth-first boundary, rather than materializing and sorting every
     /// inner tile in the corresponding disk.
+    ///
+    /// The cells are generated in ascending order, as [`Self::disk`]'s are,
+    /// so only a wrap fold, which can move a cell out of order or onto
+    /// another, needs the sort and de-duplication.
     pub fn ring(&self, center: Pos, radius: i32) -> Vec<Pos> {
         if let Some(sphere) = self.sphere() {
             return sphere.ring(center, radius);
         }
-        let mut out: Vec<Pos> = hex::ring(center, radius)
-            .into_iter()
-            .map(|pos| self.fold(pos))
+        let mut folded = false;
+        let mut out: Vec<Pos> = ascending_ring(center, radius)
+            .map(|pos| {
+                let canonical = self.fold(pos);
+                folded |= canonical != pos;
+                canonical
+            })
             .filter_map(|pos| self.tiles.index_of(pos).map(|_| pos))
             .collect();
-        out.sort_unstable();
-        out.dedup();
+        if folded {
+            out.sort_unstable();
+            out.dedup();
+        }
         out
     }
 
