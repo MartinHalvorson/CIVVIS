@@ -11,9 +11,18 @@
 //! hashed copy that answers [`ExploredSet::contains`]. There is deliberately
 //! no `DerefMut`: every write goes through a method here that updates both, so
 //! the copy can never drift from the set it mirrors.
+//!
+//! Both live behind one `Arc`, shared until written. A `Player` is copied
+//! whenever a shared seat is first written — a look-ahead clone tallying a
+//! kill, the Loyalty forecast noting a historic moment — and that copy used
+//! to deep-clone thousands of explored tiles twice over, then free them node
+//! by node. Now it bumps a count; the first write to a shared set copies it
+//! once, as the eager clone always did, and a write that changes nothing
+//! (inserting a tile already seen) copies nothing at all.
 
 use std::collections::{BTreeSet, HashSet};
 use std::hash::BuildHasherDefault;
+use std::sync::Arc;
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
@@ -22,6 +31,11 @@ use crate::Pos;
 
 #[derive(Clone, Default)]
 pub struct ExploredSet {
+    sets: Arc<Sets>,
+}
+
+#[derive(Clone, Default)]
+struct Sets {
     ordered: BTreeSet<Pos>,
     index: HashSet<Pos, BuildHasherDefault<FastHasher>>,
 }
@@ -33,35 +47,41 @@ impl ExploredSet {
 
     #[inline]
     pub fn contains(&self, pos: &Pos) -> bool {
-        self.index.contains(pos)
+        self.sets.index.contains(pos)
     }
 
     pub fn insert(&mut self, pos: Pos) -> bool {
-        if self.ordered.insert(pos) {
-            self.index.insert(pos);
-            true
-        } else {
-            false
+        // Asked on the shared copy first, so a tile already seen — most of
+        // what a visibility refresh inserts — never unshares the set.
+        if self.sets.index.contains(&pos) {
+            return false;
         }
+        let sets = Arc::make_mut(&mut self.sets);
+        sets.ordered.insert(pos);
+        sets.index.insert(pos);
+        true
     }
 
     pub fn remove(&mut self, pos: &Pos) -> bool {
-        if self.ordered.remove(pos) {
-            self.index.remove(pos);
-            true
-        } else {
-            false
+        if !self.sets.index.contains(pos) {
+            return false;
         }
+        let sets = Arc::make_mut(&mut self.sets);
+        sets.ordered.remove(pos);
+        sets.index.remove(pos);
+        true
     }
 
     pub fn clear(&mut self) {
-        self.ordered.clear();
-        self.index.clear();
+        if !self.sets.ordered.is_empty() {
+            self.sets = Arc::default();
+        }
     }
 
     pub fn retain(&mut self, mut keep: impl FnMut(&Pos) -> bool) {
-        let index = &mut self.index;
-        self.ordered.retain(|pos| {
+        let sets = Arc::make_mut(&mut self.sets);
+        let index = &mut sets.index;
+        sets.ordered.retain(|pos| {
             let kept = keep(pos);
             if !kept {
                 index.remove(pos);
@@ -72,7 +92,7 @@ impl ExploredSet {
 
     /// The ordered set, for callers that need a `BTreeSet` by value.
     pub fn to_btree(&self) -> BTreeSet<Pos> {
-        self.ordered.clone()
+        self.sets.ordered.clone()
     }
 }
 
@@ -80,14 +100,16 @@ impl std::ops::Deref for ExploredSet {
     type Target = BTreeSet<Pos>;
 
     fn deref(&self) -> &BTreeSet<Pos> {
-        &self.ordered
+        &self.sets.ordered
     }
 }
 
 impl From<BTreeSet<Pos>> for ExploredSet {
     fn from(ordered: BTreeSet<Pos>) -> Self {
         let index = ordered.iter().copied().collect();
-        Self { ordered, index }
+        Self {
+            sets: Arc::new(Sets { ordered, index }),
+        }
     }
 }
 
@@ -118,13 +140,13 @@ impl<'a> IntoIterator for &'a ExploredSet {
     type IntoIter = std::collections::btree_set::Iter<'a, Pos>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.ordered.iter()
+        self.sets.ordered.iter()
     }
 }
 
 impl PartialEq for ExploredSet {
     fn eq(&self, other: &Self) -> bool {
-        self.ordered == other.ordered
+        Arc::ptr_eq(&self.sets, &other.sets) || self.sets.ordered == other.sets.ordered
     }
 }
 
@@ -132,13 +154,13 @@ impl Eq for ExploredSet {}
 
 impl std::fmt::Debug for ExploredSet {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.ordered.fmt(f)
+        self.sets.ordered.fmt(f)
     }
 }
 
 impl Serialize for ExploredSet {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        self.ordered.serialize(serializer)
+        self.sets.ordered.serialize(serializer)
     }
 }
 
@@ -172,6 +194,24 @@ mod tests {
         );
         set.clear();
         assert!(!set.contains(&(1, 1)));
+    }
+
+    #[test]
+    fn a_copy_is_shared_until_either_side_writes() {
+        let mut original: ExploredSet = [(1, 1), (2, 2)].into_iter().collect();
+        let mut copy = original.clone();
+        assert!(std::sync::Arc::ptr_eq(&original.sets, &copy.sets));
+        // A tile already seen changes nothing, so it unshares nothing.
+        assert!(!copy.insert((1, 1)));
+        assert!(!copy.remove(&(9, 9)));
+        assert!(std::sync::Arc::ptr_eq(&original.sets, &copy.sets));
+        assert!(copy.insert((3, 3)));
+        assert!(!std::sync::Arc::ptr_eq(&original.sets, &copy.sets));
+        assert!(copy.contains(&(3, 3)) && !original.contains(&(3, 3)));
+        assert!(original.remove(&(2, 2)));
+        assert!(copy.contains(&(2, 2)) && !original.contains(&(2, 2)));
+        assert_eq!(copy.iter().count(), 3);
+        assert_eq!(original.iter().copied().collect::<Vec<_>>(), vec![(1, 1)]);
     }
 
     #[test]
