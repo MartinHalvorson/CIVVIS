@@ -33,8 +33,10 @@ SOURCES = sorted(set(re.findall(r'_page="\$source_tree/beta/([a-z_]+\.html)"', P
 
 #: Charts/'s pages, in the order its list gives them, by address (operator,
 #: 2026-11-24: "move ai interpretablity to the top of the charts/ then civ
-#: analytics, win analytics. elo rankings.. civvis performanc").
+#: analytics, win analytics. elo rankings.. civvis performanc"; and, later
+#: that day, "we want a new ai insights", which is listed over them).
 CHARTS = [
+    ("ai-insights", "AI Insights"),
     ("civ-ai-interpretability", "Civ AI Interpretability"),
     ("civ-analytics", "Civ Analytics"),
     ("win-analytics", "Win Analytics"),
@@ -63,7 +65,7 @@ class Row(unittest.TestCase):
         # Discovered, so an empty glob fails rather than passes.
         self.assertGreaterEqual(set(headed()), {
             "landing.html", "tournaments.html", "research.html", "elo.html",
-            "civs.html", "performance.html", "interpretability.html",
+            "civs.html", "performance.html", "interpretability.html", "insights.html",
         })
 
     def test_the_list_is_first_in_the_header_over_the_title(self):
