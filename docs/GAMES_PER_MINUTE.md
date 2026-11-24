@@ -79,6 +79,21 @@ everything back when the run ends, however it ends:
   continued. The tournament's scheduler also pauses its own games while the
   host is over its 60 % ceiling.
 
+That last pair overlaps, and on 2026-11-24 it went wrong. The harness
+stopped the three tournament workers that were running and continued them
+four minutes later. In between, the tournament's CPU governor had cut its own
+count to nought and marked those three as stopped by itself. It signals only
+when its count changes, so after the harness continued them they ran outside
+its count, beside the live game, for fifty-two minutes until another session
+noticed. The governor now reads each worker's state from the process table
+every window and stops again any worker it holds that it finds running
+(`CpuGovernor._apply_workers` in `tools/continuous_batch_scheduler.py`). A
+tournament whose scheduler was started before that change does not have it:
+after a `--quiesce` run beside one, compare the workers that are running
+(`ps -Ao pid,pgid,stat`, the scheduler's process group) with
+`governor.workers_running` in its `status.json`, and stop any beyond that
+count.
+
 Each step is written to `quiesce.json` in the run directory before it is
 taken. If the harness itself is killed, this undoes it:
 
@@ -101,16 +116,35 @@ A record run is: `--quiesce`, mains power, a clean build of a commit on
 
 ## The record
 
-**18 games per minute on an M5 Max** (MacBook Pro, 18 cores, 128 GB, mains
-power), build `a57ffc68c6`, the build the self-play tournament was playing.
-Two runs on 2026-11-22, both `--quiesce --minutes 3`, 18 workers:
+**24 games per minute on an M5 Max** (MacBook Pro, 18 cores, 128 GB, mains
+power), build `d301d68d0c`, main of 2026-11-24. One run that day,
+`--quiesce --minutes 3`, 18 workers. Before it the record was 18, from two
+runs on 2026-11-22 on build `a57ffc68c6`, the build the self-play tournament
+was playing then.
 
-| Taken (UTC) | Games per minute | Measured minutes | Best minute | First minute | Turns a second | Cores the workers had |
-| --- | ---: | --- | ---: | ---: | ---: | ---: |
-| 05:32 | 18.33 | 17, 18, 20 | 20 | 8 | 59.5 | about 14.7 (sampled) |
-| 05:37 | 18.00 | 17, 18, 19 | 19 | 6 | 58.3 | 14.18 |
+| Taken (UTC) | Build | Games per minute | Measured minutes | Best minute | First minute | Turns a second | Cores the workers had |
+| --- | --- | ---: | --- | ---: | ---: | ---: | ---: |
+| 11-22 05:32 | `a57ffc68c6` | 18.33 | 17, 18, 20 | 20 | 8 | 59.5 | about 14.7 (sampled) |
+| 11-22 05:37 | `a57ffc68c6` | 18.00 | 17, 18, 19 | 19 | 6 | 58.3 | 14.18 |
+| 11-24 15:58 | `d301d68d0c` | 24.33 | 26, 25, 22 | 26 | 19 | 80.9 | 15.3 |
 
-What the two runs say:
+What the run of 2026-11-24 says:
+
+- **The simulator got faster, and the record with it, by less.** One game on
+  one core went from 57.1 s to 34.5 s between the two builds, 1.66 times
+  faster. The record went from 18.33 to 24.33, 1.33 times. Eighteen cores
+  times one core's 34.5 s would be 31.3 games a minute, so the run reaches
+  78 % of that, where the first record reached 97 % of its own. The cloud
+  cost on the Performance page takes a rented machine to reach the same
+  share.
+- **A worker finishes a game in about 42 s** (the median on its worker; the
+  games averaged 199.5 turns), and the cold first minute already finished 19.
+- **The workers had 15.3 of the 18 cores.** The held Civilization VI window,
+  the mirror page and the rest took about 1.6.
+- It is one run. The second and third measured minutes fell (26, 25, 22), so
+  another run could move the headline by a game a minute either way.
+
+What the two runs of 2026-11-22 said:
 
 - **It repeats.** The 60 games finished in both runs ended on the same turn
   with the same victory in each. Run 2 played each game a median 3.8 % slower
