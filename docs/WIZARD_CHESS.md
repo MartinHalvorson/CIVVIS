@@ -159,6 +159,15 @@ moment the blow is coming until it breaks (`World.doomed`). Who holds
 themselves how is one rule with an order: the threat to the knight ridden
 first, then a king in check, then watching.
 
+**The board hears a command as it is given** (`candidates`, `World.stir`,
+`stir`). While a command is still being typed, or said (the recognizer's
+first guesses, before it is sure), the board listens: the pieces it could
+be meant for stir, lifting a little with their light brightening ("knight":
+both knights; "ride": the knight ridden), as long as that is a few of them
+and not the whole side. When what is said can only be a capture of one
+piece ("knight takes e5"), that piece turns to face what is coming and
+braces. Cleared, or played, the board is still again.
+
 **The hall** (`World.vault`). From a knight's back the room is what is
 above the pieces, so it is built to be looked up at: a ring of twelve stone
 columns round the board under a ribbed dome, a wall beyond them with tall
@@ -221,14 +230,14 @@ loop). The structure that makes that converge rather than wander:
 Done: the rider's seat (#5747); the rider low and beside the head, and
 sound where it happens (#5755); the knight ridden alive (#5757); peril felt
 (#5758); seeing over your own knight, and the frame measured (#5760); the
-hall (#5766); the pieces alive (#5768).
+hall (#5766); the pieces alive (#5768); the board hearing a command as it is
+given (#5771).
 
 What is next, most felt first:
 
-- **A voice for the board.** The opponent's pieces answer a command aimed
-  at them ("knight takes queen" said by the player: the queen turns to face
-  it); a piece the player names before it moves stirs (lifts, its light
-  brightens) while the command is still being said.
+- **The opponent deliberates.** In the breath before the opponent's move
+  is played, the piece it chose stirs and its target braces, so the rider
+  sees it coming; while it thinks, its pieces shift their weight.
 - **Riding other pieces.** Any of your pieces, not only knights.
 - **Speed: measured, and there is room.** `wizardChess.frameCost(n)` times
   `n` frames of the world's work and drawing, each finished on the graphics
@@ -252,7 +261,7 @@ What is next, most felt first:
 | `beta/chess.html` | The page: the board's canvas and what is written at its edges |
 | `beta/chess/game.js` | The world (hall, board, pieces, how a move is played out, the knight ridden), the seat (at the board, on a knight, thrown, aside; pointer, keyboard), the voice, the sound, and the game |
 | `beta/chess/rules.js` | The rules of chess: legal moves, the position after one, check, mate and the draws, and a move written (SAN, UCI) and said aloud |
-| `beta/chess/command.js` | A command, said or typed, read as a move |
+| `beta/chess/command.js` | A command, said or typed, read as a move, and the moves a command not yet finished could still mean |
 | `beta/chess/engine.js` | The opponent: Stockfish in a worker, one move at a time at an Elo |
 | `beta/chess/vendor/` | three.js r160 (MIT) and Stockfish.js 18, lite and single-threaded (GPL-3.0, this repository's license), as published; its README names versions and sources |
 
