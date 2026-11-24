@@ -233,12 +233,20 @@ def lane_pages(build: dict) -> list:
     page was written is published without it, and a page that only main has
     must not answer on the front page. `publish.sh` writes the list as
     `pages`; a bundle from before it did carried every page there was, at the
-    addresses they had then."""
+    addresses they had then.
+
+    In the lane's own order, which is the site list's: the router opens a
+    folder (`/charts`) at the first page this list has in it, so the check of
+    that has to read the list as the router does. Until 2026-11-24 this
+    returned them in `PAGES`' order instead. The two agreed until Charts/ was
+    reordered that day (#5751), and from then the check asked `/charts` for
+    Win Analytics while the router opened AI Interpretability, and every
+    publish failed."""
     listed = build.get("pages")
     if listed is None:
         then = {new: old for old, new in FORMER.items() if new not in BETWEEN}
         return [then.get(name, name) for name in PAGES]
-    return [address for address in ADDRESSES if address in listed]
+    return [address for address in listed if address in ADDRESSES]
 
 
 def pages_left_out(carried: list) -> list:

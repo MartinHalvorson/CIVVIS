@@ -1858,7 +1858,7 @@ struct TileDoc<'a> {
     river: bool,
     river_edges: [bool; 6],
     road: u8,
-    storm: &'a Option<String>,
+    storm: &'a Option<Name>,
     submerged: bool,
     terrain: Name,
     tourism: Option<f64>,

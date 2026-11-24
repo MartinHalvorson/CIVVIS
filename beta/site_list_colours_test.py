@@ -6,14 +6,16 @@ a blue background (like the pages do). civvis, ai debugger have a black
 background (same as simulator)", and of the sixth button: "civ 6 can have the
 steam color of blue. the background can be styled how you think steam is".
 Later the same day, of Doctor Strange's Civ 6: "highlight dr strange civ 6
-button in dr strange colors".
+button in dr strange colors". On 2026-11-24, of CIVVIS: "lets give civvis a
+gold background on the button, rather than black".
 
 Until then a list was all one colour, the colour of the page it stood on:
 six blue buttons on the pages, six black ones in the simulator. Now a button
 says where it goes, and says the same thing on every page:
 
     Home, Charts/ and its pages, Tournaments     the pages' blue
-    CIVVIS, AI Debugger                          the simulator's black
+    CIVVIS                                       gold
+    AI Debugger                                  the simulator's black
     Doctor Strange's Civ 6                       Doctor Strange's blue and
                                                  crimson, in an orange glow
     Civ 6                                        the blue of Steam's buttons
@@ -23,7 +25,8 @@ says where it goes, and says the same thing on every page:
                                                  there can be black and
                                                  white checkerboard")
 
-and the page on screen is still the one in gold.
+and the page on screen keeps its colour and is ringed in white (it was gold
+until gold became CIVVIS's).
 
 The pages do it without a word in the markup, which a dozen tests pin as it
 stands: a link that ends at the lane's own address (`../`, or two up from a
@@ -61,14 +64,20 @@ BLUE = (
     "    --action-fg: #a8d8f5;\n"
     "    --action-hover: #315d7e;\n"
 )
-#: The simulator's black is its ground (`--ink` in `web/index.html`), inside
-#: the edge its own buttons have (`--line`).
+#: CIVVIS, the simulation at the lane's own address, is the gold the
+#: simulator lit the page on screen in: the same gold on every page.
+GOLD = (
+    '  .site-link[href$="../"] { background: linear-gradient(145deg, #dec176, #aa7d30); color: #17130c; box-shadow: inset 0 0 0 1px #efd184; }\n'
+    '  .site-link[href$="../"]:hover, .site-link[href$="../"]:focus-visible { background: linear-gradient(145deg, #f0d68e, #c0913c); color: #000; }\n'
+)
+#: AI Debugger is the simulator's black, its ground (`--ink` in
+#: `web/index.html`), inside the edge its own buttons have (`--line`).
 BLACK = (
-    '  .site-link[href$="../"],\n'
     '  .site-link[href$="?mode=play"] { background: #050607; color: #c9cecb; box-shadow: inset 0 0 0 1px #30363a; }\n'
-    '  .site-link[href$="../"]:hover, .site-link[href$="../"]:focus-visible,\n'
     '  .site-link[href$="?mode=play"]:hover, .site-link[href$="?mode=play"]:focus-visible { background: #181c1f; color: #fff; }\n'
 )
+#: The page on screen: its own colour, ringed in white.
+RING = '  .site-link[aria-current="page"]'
 #: Doctor Strange's own colours: the deep blue of his tunic into the crimson
 #: of his cloak, ringed and lit by the orange of his spells' sparks, the name
 #: in their pale gold. The simulator states the same colours by name.
@@ -107,7 +116,9 @@ def ground(href: str) -> str:
     `$=` is "ends with" and `^=` "starts with"."""
     if href.endswith("wizard-chess/"):
         return "board"
-    if href.endswith("../") or href.endswith("?mode=play"):
+    if href.endswith("../"):
+        return "gold"
+    if href.endswith("?mode=play"):
         return "black"
     if href.endswith("?mode=strange"):
         return "strange"
@@ -146,27 +157,32 @@ class Pages(unittest.TestCase):
             with self.subTest(page=source):
                 self.assertIn(BLUE, page)
                 self.assertIn("    background: var(--action-bg);\n    color: var(--action-fg);\n", page)
+                self.assertEqual(page.count(GOLD), 1)
                 self.assertEqual(page.count(BLACK), 1)
                 self.assertEqual(page.count(STRANGE), 1)
                 self.assertEqual(page.count(STEAM), 1)
                 self.assertEqual(page.count(BOARD), 1)
                 # The strange rule comes after the black, so nothing from
                 # the simulator's black is left on it at equal weight.
+                self.assertLess(page.index(GOLD), page.index(BLACK))
                 self.assertLess(page.index(BLACK), page.index(STRANGE))
-                # The page on screen is gold over whatever it would wear.
-                self.assertIn('.site-link[aria-current="page"]:hover { background: var(--gold); color: #17130c; }', page)
+                # The page on screen keeps what it would wear, ringed in
+                # white, and the ring is the last rule, so it wins.
+                self.assertNotIn("var(--gold)", page[page.index("  .site-link {"):page.index(RING)])
+                ring = page[page.index(RING):]
+                self.assertIn("{ box-shadow: inset 0 0 0 2px #fff; }\n", ring[:ring.index("}") + 2])
+                self.assertLess(page.index(BOARD), page.index(RING))
 
     def test_a_button_wears_the_ground_of_what_it_opens(self):
         for source, links in lists().items():
             worn = {name: ground(href) for name, href in links}
             with self.subTest(page=source):
-                self.assertEqual(
-                    {name for name, kind in worn.items() if kind == "black"},
-                    {"CIVVIS", "AI Debugger"})
+                self.assertEqual({name for name, kind in worn.items() if kind == "gold"}, {"CIVVIS"})
+                self.assertEqual({name for name, kind in worn.items() if kind == "black"}, {"AI Debugger"})
                 self.assertEqual({name for name, kind in worn.items() if kind == "strange"}, {"Doctor Strange's Civ 6"})
                 self.assertEqual({name for name, kind in worn.items() if kind == "steam"}, {"Civ 6"})
                 # Wizard Chess is the board everywhere but on its own page,
-                # where its link is the page on screen and is gold.
+                # where its link is `./`, the page on screen, and is blue.
                 page = (BETA / source).read_text(encoding="utf-8")
                 here = set(re.findall(r'aria-current="page">([^<]+)</a>', NAV.search(page).group(1)))
                 self.assertEqual({name for name, kind in worn.items() if kind == "board"}, {"Wizard Chess"} - here)
@@ -178,8 +194,7 @@ class Pages(unittest.TestCase):
                 self.assertEqual(blue - {"Home", "Charts/", "Tournaments"}, under)
 
     def test_the_simulator_is_never_the_page_on_screen_here(self):
-        # A black button is never also the gold one on these pages, so the
-        # two rules, which weigh the same, never meet on one link.
+        # The page on screen here is always one of the blue pages.
         for source in lists():
             page = (BETA / source).read_text(encoding="utf-8")
             current = re.findall(r'href="([^"]*)" aria-current="page"', NAV.search(page).group(1))
@@ -247,25 +262,38 @@ class Simulator(unittest.TestCase):
         self.assertEqual(len(coloured), 3, coloured)
         self.assertIn("html.seat-known.strange body:not(.watching-sim) #strangelink", coloured[-1])
 
-    def test_its_own_two_links_keep_the_black(self):
-        # CIVVIS and AI Debugger wear the list's own rule, the simulator's
-        # panel inside its line, and nothing recolours either of them but
-        # the gold of the page on screen.
+    def test_civvis_is_gold(self):
+        # The same gold as on the pages, by name.
+        self.assertIn("  #watchlink { color: #17130c; border-color: #efd184; "
+                      "background: linear-gradient(145deg, #dec176, #aa7d30); }\n", VIEWER)
+        self.assertIn("  #watchlink:hover { color: #000; border-color: #fff3c9; "
+                      "background: linear-gradient(145deg, #f0d68e, #c0913c); }\n", VIEWER)
+        self.assertIn(GOLD.split(" { ", 1)[1].split(";", 1)[0], VIEWER)
+
+    def test_the_page_on_screen_is_ringed_in_white(self):
+        # Whichever of its three pages this is keeps its own colour and is
+        # ringed in white; nothing here is lit gold for being on screen.
+        self.assertIn(
+            "  body.watching-sim #watchlink,\n"
+            "  html.seat-known:not(.strange) body:not(.watching-sim) #playlink,\n"
+            "  html.seat-known.strange body:not(.watching-sim) #strangelink {\n"
+            "    border-color: #fff; box-shadow: inset 0 0 0 1px #fff;\n"
+            "  }\n",
+            VIEWER,
+        )
+
+    def test_ai_debugger_keeps_the_black(self):
+        # AI Debugger wears the list's own rule, the simulator's panel
+        # inside its line, and nothing recolours it.
         rule = VIEWER.split("  .home-link {\n", 1)[1].split("  }\n", 1)[0]
         self.assertIn("border: 1px solid var(--line); border-radius: 6px; background: var(--panel-2);", rule)
         self.assertIn("    --panel-2: #111416;\n", VIEWER)
         rules = [chunk.rpartition("{") for chunk in VIEWER.split("}")]
-        for mark in ("watchlink", "playlink"):
-            coloured = [
-                selector for selector, _, body in rules
-                if f"#{mark}" in selector and ("color" in body or "background" in body)
-            ]
-            self.assertEqual(len(coloured), 1, mark)
-            self.assertIn(
-                "body.watching-sim #watchlink,\n"
-                "  html.seat-known:not(.strange) body:not(.watching-sim) #playlink,\n"
-                "  html.seat-known.strange body:not(.watching-sim) #strangelink",
-                coloured[0])
+        coloured = [
+            selector for selector, _, body in rules
+            if "#playlink" in selector and ("background" in body or "color:" in body.replace("border-color:", ""))
+        ]
+        self.assertEqual(coloured, [], coloured)
         # The ground the pages' black buttons are set in is this page's own.
         self.assertIn("    --ink: #050607;\n", VIEWER)
         self.assertIn("    --line: #30363a;\n", VIEWER)
