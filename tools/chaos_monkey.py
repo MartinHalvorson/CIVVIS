@@ -31,8 +31,10 @@ the record the Chaos Monkey page draws (`beta/chaos.html`, filled by
   wins, a calm world and its stormy twin seldom on the same turn, and a
   world that played forty turns longer has forty turns more of everything.
 - **factors**, the differences between civilizations that went with keeping
-  more of their people under the storm (the frequencies in `STORM`), each as
-  two groups split at the middle.
+  more of their people under the storm (`STORM` and over), each as two halves
+  split at the middle, read against the same split in the mild worlds, and
+  drawn only when it holds up as the worlds are drawn again (`factors()`).
+  `factors_tried` names every difference compared, sure or not.
 - **lessons**, what the games say, each a figure and a sentence written from
   the record's own numbers by a rule that says when it holds. A lesson the
   games do not bear out is not written, so the page cannot say something its
@@ -47,6 +49,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+import random
 import statistics
 import sys
 
@@ -251,6 +254,16 @@ def at_turn(game: dict, turn: int) -> int:
 #: (its gold, its Aqueducts, its wars) is as much the storm's doing as its
 #: own, and says nothing about what protects.
 EARLY = 50
+#: A difference as a few words, for the sentence that lists what was compared.
+TRIED = {
+    "coast": "the coast",
+    "rivers": "floodplains",
+    "spread": "more cities",
+    "leaders": "a lead in the calm world",
+    "builders": "early Builders",
+    "army": "an early army",
+    "treasury": "early gold",
+}
 FACTORS = [
     (
         "coast",
@@ -359,6 +372,19 @@ def share(rows: list[tuple]) -> float:
     return now / max(1e-9, then)
 
 
+#: How many times the worlds are drawn again, with replacement, to see how
+#: far a difference between civilizations moves by the luck of which worlds
+#: were played.
+REDRAWS = 400
+
+
+def edge(stormy: list[tuple], mild: list[tuple], place) -> tuple[float, float, float, float]:
+    """One difference's four shares: the half with more and the half with
+    less under the storm, then the same two where the storm does no harm."""
+    under, beside = halves(stormy, place), halves(mild, place)
+    return share(under[True]), share(under[False]), share(beside[True]), share(beside[False])
+
+
 def factors(games: list[dict]) -> list[dict]:
     """Each difference as two halves of the civilizations under the storm,
     with the share of their calm selves' people each half still has.
@@ -367,15 +393,34 @@ def factors(games: list[dict]) -> list[dict]:
     harm (`mild`). A civilization that led its calm world falls back in any
     replay, storm or none, and a half that is simply luckier is luckier
     there as well: what the storm adds is the gap under the storm less the
-    gap in the mild worlds (`edge`). Widest edge first."""
+    gap in the mild worlds (`edge`).
+
+    And a gap that is there in these worlds may not be there in the next
+    two dozen. The worlds are drawn again `REDRAWS` times, whole worlds at a
+    time, and `interval` is where nine in ten of the redrawn edges fall. A
+    difference is `sure` when that interval does not hold zero; one that is
+    not says nothing, however wide it happens to stand. Widest edge first."""
     stormy, mild = pairs(games, storm=True), pairs(games, storm=False)
+    seeds = sorted({game["seed"] for _, _, game, _ in stormy} & {game["seed"] for _, _, game, _ in mild})
+    of_seed = lambda paired: {seed: [row for row in paired if row[2]["seed"] == seed] for seed in seeds}
+    stormy_by, mild_by = of_seed(stormy), of_seed(mild)
+    draw = random.Random(20261125)
+    redraws = [[draw.choice(seeds) for _ in seeds] for _ in range(REDRAWS)] if seeds else []
     out = []
     for key, name, of, (more_label, fewer_label), place in FACTORS:
-        under, beside = halves(stormy, place), halves(mild, place)
+        under = halves(stormy, place)
+        beside = halves(mild, place)
         if min(len(under[True]), len(under[False]), len(beside[True]), len(beside[False])) < 12:
             continue
-        more, fewer = share(under[True]), share(under[False])
-        mild_more, mild_fewer = share(beside[True]), share(beside[False])
+        more, fewer, mild_more, mild_fewer = edge(stormy, mild, place)
+        redrawn = []
+        for sample in redraws:
+            a, b, c, d = edge(
+                [row for seed in sample for row in stormy_by[seed]], [row for seed in sample for row in mild_by[seed]], place
+            )
+            redrawn.append((a - b) - (c - d))
+        redrawn.sort()
+        low, high = redrawn[len(redrawn) // 20], redrawn[-1 - len(redrawn) // 20]
         out.append(
             {
                 "key": key,
@@ -385,6 +430,8 @@ def factors(games: list[dict]) -> list[dict]:
                 "fewer": {"label": fewer_label, "kept": round(fewer, 4), "n": len(under[False])},
                 "mild": {"more": round(mild_more, 4), "fewer": round(mild_fewer, 4)},
                 "edge": round((more - fewer) - (mild_more - mild_fewer), 4),
+                "interval": [round(low, 4), round(high, 4)],
+                "sure": low > 0 or high < 0,
             }
         )
     out.sort(key=lambda factor: -abs(factor["edge"]))
@@ -416,10 +463,12 @@ MEASURES = {
 }
 
 
-def lessons(doses: list[dict], found: list[dict]) -> list[dict]:
+def lessons(doses: list[dict], found: list[dict], tried: list[str] | None = None) -> list[dict]:
     """What the games say. Each lesson is written only when its own rule
     holds on the record, from the record's own figures, so the list is as
-    long as the games bear out and no longer."""
+    long as the games bear out and no longer. `found` is the differences
+    between civilizations the games are sure of, `tried` the names of all
+    that were compared."""
     out: list[dict] = []
     if len(doses) < 2 or doses[0]["frequency"] != 1:
         return out
@@ -534,8 +583,18 @@ def lessons(doses: list[dict], found: list[dict]) -> list[dict]:
             "The cost is what never gets built",
             "A world busy rebuilding does not reach the stars. It runs out the clock.",
         )
-    # 9. Who comes through: the difference between civilizations the storm
-    # itself widens most, over the same split where the storm does no harm.
+    # 9. Who comes through. Either a difference between civilizations the
+    # games are sure of, or, when they are sure of none, that: saying which
+    # of several noisy halves stood widest would be reading tea leaves.
+    if tried and not found:
+        say(
+            "luck",
+            f"0 of {len(tried)}",
+            "differences between civilizations tell who comes through",
+            "No shelter we could measure",
+            f"{', '.join(tried)[:1].upper()}{', '.join(tried)[1:]}: none can be told from chance in "
+            f"{doses[0]['games']} worlds. What decides is how hard the storm is.",
+        )
     if found and abs(found[0]["edge"]) >= 0.08:
         top = found[0]
         sides = ("more", "fewer") if top["edge"] > 0 else ("fewer", "more")
@@ -562,7 +621,9 @@ def record(games: list[dict], played: dict | None = None) -> dict | None:
     limit = max(game["max_turns"] for game in games)
     turns = [1, *range(10, limit + 1, 10)]
     doses = [dose([g for g in games if float(g["frequency"]) == f], calm, turns) for f in frequencies]
-    found = factors(games)
+    compared = factors(games)
+    found = [factor for factor in compared if factor["sure"]]
+    tried = [TRIED[factor["key"]] for factor in sorted(compared, key=lambda factor: [f[0] for f in FACTORS].index(factor["key"]))]
     seeds = sorted({game["seed"] for game in games})
     first = games[0]
     setup = (
@@ -579,12 +640,19 @@ def record(games: list[dict], played: dict | None = None) -> dict | None:
         "turns": turns,
         "doses": doses,
         "outcomes": drawn,
+        # Only the differences the games are sure of are drawn. `tried`
+        # names every one that was compared, so a page with none drawn can
+        # say what was looked for and not found.
         "factors": found[:5],
+        "factors_tried": tried,
         "factors_of": (
             f"Civilizations at {times(STORM)} and over, in two halves by one difference at a time: the share of "
             f"their calm selves' people each half still has."
+            if found
+            else f"{len(tried)} differences between civilizations were compared at {times(STORM)} and over. None "
+            f"can be told from chance in {doses[0]['games']} worlds: {', '.join(tried)}."
         ),
-        "lessons": lessons(doses, found),
+        "lessons": lessons(doses, found, tried),
     }
 
 

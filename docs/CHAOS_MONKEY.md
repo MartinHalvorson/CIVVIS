@@ -93,8 +93,13 @@ record the page draws:
   that lost half their people or were wiped out, cities that changed hands,
   wars, nuclear strikes), how the games ended, and the world turn by turn;
 - the differences between civilizations that went with keeping more of
-  their people under the storm, each as two halves split at the middle
-  within a frequency;
+  their people under the storm: only ones settled before the damage (the
+  land and the empire a start grows in the calm world, what it had on turn
+  50), each as two halves split at the middle within a frequency, read
+  against the same split at 10x and 30x where the storm does no harm (a
+  calm-world leader falls back in any replay), and drawn only when it holds
+  up as the worlds are drawn again 400 times. In the first 24 worlds none
+  of the seven compared did, and the page says so;
 - the lessons. Each is written by a rule in `lessons()` from the record's
   own figures, and only when the rule holds. A lesson the games stop bearing
   out is not written, and `tools/test_chaos_monkey.py` fails a record whose

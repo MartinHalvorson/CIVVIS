@@ -175,6 +175,35 @@ class WhoComesThrough(unittest.TestCase):
             self.assertAlmostEqual(factor["edge"], under - beside, places=3)
         edges = [abs(factor["edge"]) for factor in found]
         self.assertEqual(edges, sorted(edges, reverse=True))
+        # Rome keeps a fixed tenth more of its people than Mali in every
+        # world, mild or stormy, so however the worlds are drawn again the
+        # edge hardly moves: the games are sure of it, and its interval sits
+        # close around it.
+        self.assertTrue(spread["sure"])
+        low, high = spread["interval"]
+        self.assertLessEqual(low, high)
+        self.assertLess(abs(low - spread["edge"]), 0.02)
+        self.assertLess(abs(high - spread["edge"]), 0.02)
+
+    def test_a_difference_the_worlds_do_not_agree_on_is_not_sure(self):
+        # Half the worlds favour the civilization with the cities and half
+        # the other one, by as much: redrawn, the edge falls on both sides
+        # of nothing.
+        games = batch(seeds=16)
+        for game in games:
+            if game["frequency"] > 1.0 and game["seed"] % 2:
+                rome, mali = game["civs"]
+                rome["series"]["pop"], mali["series"]["pop"] = mali["series"]["pop"], rome["series"]["pop"]
+        spread = next(factor for factor in chaos_monkey.factors(games) if factor["key"] == "spread")
+        low, high = spread["interval"]
+        self.assertLess(low, 0)
+        self.assertGreater(high, 0)
+        self.assertFalse(spread["sure"])
+        # Then nothing is drawn, the record says what was compared, and the
+        # lesson is that nothing told.
+        data = chaos_monkey.record(games)
+        self.assertNotIn("spread", [factor["key"] for factor in data["factors"]])
+        self.assertIn("more cities", data["factors_tried"])
 
     def test_only_what_is_settled_before_the_damage_is_compared(self):
         # What a civilization has at the end of a storm is the storm's doing
@@ -231,7 +260,16 @@ class TheRecordInTheTree(unittest.TestCase):
         cls.data = json.loads(chaos_monkey.RECORD.read_text(encoding="utf-8"))
 
     def test_its_lessons_are_the_ones_its_figures_give(self):
-        self.assertEqual(self.data["lessons"], chaos_monkey.lessons(self.data["doses"], self.data["factors"]))
+        self.assertEqual(
+            self.data["lessons"],
+            chaos_monkey.lessons(self.data["doses"], self.data["factors"], self.data["factors_tried"]),
+        )
+        # A difference between civilizations is drawn, and a lesson rests on
+        # it, only when the games are sure of it.
+        for factor in self.data["factors"]:
+            self.assertTrue(factor["sure"], factor["key"])
+            low, high = factor["interval"]
+            self.assertTrue(low > 0 or high < 0, factor["key"])
         self.assertGreaterEqual(len(self.data["lessons"]), 3)
 
     def test_every_world_has_its_calm_self(self):

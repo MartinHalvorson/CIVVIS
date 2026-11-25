@@ -561,7 +561,7 @@
             A figure a game is the mean over the games at that frequency. A world is read against its calm self on the last tenth turn both games reached, because a game ends when somebody wins and the two seldom end together: the share is the total over the chaos games divided by the total over the same seeds at 1x. A line turn by turn is the mean over the games still being played, and stops when half are over. A civilization has lost half its people when its population falls to half its own earlier peak or less. The agents do not know the dial was turned.
           </p>
           <p class="rank-note">
-            &#8220;Who comes through&#8221; splits the civilizations at 100x and over into two halves by one difference at a time, within a frequency, and compares each half&#8217;s people with their calm selves&#8217;. Only differences settled before the damage are compared: the land and the empire a start grows in the calm world, and what a civilization had on turn 50. The same split at 10x and 30x, where the storm does no harm, is the control: a leader falls back in any replay. It shows what went together in these games, not what caused what. All of it is one game&#8217;s rules and one set of agents: how this system gives way under shocks, not a forecast of ours.
+            &#8220;Who comes through&#8221; splits the civilizations at 100x and over into two halves by one difference at a time, within a frequency, and compares each half&#8217;s people with their calm selves&#8217;. Only differences settled before the damage are compared: the land and the empire a start grows in the calm world, and what a civilization had on turn 50. The same split at 10x and 30x, where the storm does no harm, is the control: a leader falls back in any replay. A difference is drawn only if it holds when the worlds are drawn again 400 times, whole worlds at a time; one that does not says nothing, however wide it stands. It shows what went together in these games, not what caused what. All of it is one game&#8217;s rules and one set of agents: how this system gives way under shocks, not a forecast of ours.
           </p>
           <p class="rank-note">
             <a href="https://github.com/MartinHalvorson/CIVVIS/blob/main/docs/CHAOS_MONKEY.md" target="_blank" rel="noreferrer">How it is built and how to run it</a> ·
@@ -925,8 +925,10 @@
       const host = document.getElementById("cm-factors");
       host.replaceChildren();
       const factors = data.factors || [];
-      if (!factors.length) { document.getElementById("cm-who").hidden = true; return; }
+      // With no difference the games are sure of, the card says what was
+      // compared and that nothing told the civilizations apart.
       document.getElementById("cm-who-sub").textContent = data.factors_of || "";
+      if (!factors.length) { document.getElementById("cm-who").hidden = !data.factors_of; return; }
       const most = Math.max(1, ...factors.flatMap((factor) => [factor.more.kept, factor.fewer.kept]));
       for (const factor of factors) {
         const row = el("div", "cm-factor");
