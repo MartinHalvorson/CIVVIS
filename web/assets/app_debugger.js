@@ -3616,7 +3616,8 @@ window.addEventListener("message", event => {
     // A world a black swan was struck on, for the page that asked for it.
     if (STRANGE) strangeSwanDone(letter, data);
   } else if (data.civvis === "pane-planned") {
-    if (debugSearch && debugSearch.playing === letter) debugSearchPlayed(debugSearch, data.done);
+    if (STRANGE) strangeSearchPlanned(letter, data.done);
+    else if (debugSearch && debugSearch.playing === letter) debugSearchPlayed(debugSearch, data.done);
   }
 });
 
@@ -4169,6 +4170,13 @@ function debugSearchCores() {
 function debugSearchRoot() {
   const timeline = debugTimeline();
   if (!timeline || DEBUG_PANE !== null) return null;
+  // Doctor Strange's Civ 6 searches from the base timeline, the world that
+  // is followed, which is the one Branch branches from.
+  if (STRANGE && debugSplit) {
+    const letter = strange.follow, pane = debugSplit.panes[letter];
+    if (!pane || !strangeOpen().includes(letter) || pane.turn === null || pane.turn === undefined) return null;
+    return {letter, pane: pane.id, turn: pane.turn, seated: pane.strategy || "", idle: strangeIdle()};
+  }
   if (debugSplit) {
     const letter = debugSearchSet.half === "b" ? "b" : "a", pane = debugSplit.panes[letter];
     if (pane.turn === null) return null;
@@ -4237,7 +4245,10 @@ async function debugSearchStart() {
     search.report = begun;
     let made;
     try {
-      made = await debugSearchPost("/forks", {count: search.cores});
+      // In Doctor Strange's Civ 6 each world is played on an engine of its
+      // own (`beta/shim.js`), so the copies are made of the base timeline's.
+      made = STRANGE && search.pane ? await debugSearchPost("/forks", {count: search.cores, pane: search.pane})
+        : await debugSearchPost("/forks", {count: search.cores});
     } catch (error) {
       made = {error: String(error.message || error)};
     }
@@ -4463,6 +4474,7 @@ function debugSearchWire(bar) {
       if (debugSearch && debugSearch.live) debugSearchEnd(debugSearch, "stopped");
       else debugSearchStart();
     } else if (action === "play") debugSearchPlay(button.value);
+    else if (action === "branch" && STRANGE) strangeSearchBranch();
     else if (action === "add" || action === "remove") {
       const lists = debugSearchTidyLists(debugSearchSet.lists), list = button.dataset.list || button.value;
       if (!lists[list]) return;
@@ -4698,12 +4710,22 @@ function debugDrawSearch(bar) {
   const count = live ? `${search.futures}` : "";
   const counted = document.getElementById("dbg-search-count");
   if (counted.textContent !== count) counted.textContent = count;
+  // Doctor Strange's Civ 6 has its own button, on its deck, and the bar's is unseen.
+  const mine = STRANGE && strange.hud ? strange.hud.querySelector('[data-strange="search"]') : null;
+  if (mine) {
+    mine.classList.toggle("on", shown || live);
+    mine.setAttribute("aria-expanded", shown ? "true" : "false");
+    const lines = mine.querySelector("[data-strange-search-count]"), words = live ? `· ${search.futures}` : "";
+    if (lines.textContent !== words) lines.textContent = words;
+  }
   panel.hidden = !shown;
   if (!shown) return;
   // A window like the box's other panels: where its title was dragged to,
   // or under its own button. With the deck put away (a split whose halves
   // are unlocked) it has no button to stand under, and opens under the box.
-  if (debugWindowPlace[debugWindowKey(panel)] || open.getBoundingClientRect().width > 0) debugPlaceWindow(panel, bar, open);
+  // Doctor Strange's opens beside the card its button is on, over the tree.
+  if (mine) strangeSearchPlace(panel, bar);
+  else if (debugWindowPlace[debugWindowKey(panel)] || open.getBoundingClientRect().width > 0) debugPlaceWindow(panel, bar, open);
   else { panel.style.left = "8px"; panel.style.top = ""; }
   // As tall as the window has room for under it, and what does not fit scrolls.
   panel.style.maxHeight = `${Math.max(160, window.innerHeight - panel.getBoundingClientRect().top - 8)}px`;
@@ -4746,7 +4768,8 @@ function debugDrawSearch(bar) {
     return [letter, `${letter.toUpperCase()}${pane.turn === null ? "" : ` · turn ${pane.turn}`}${pane.strategy ? ` · ${debugAgentName(pane.strategy)}` : ""}`];
   }) : [];
   offer("dbg-search-half", halves, live && search.letter ? search.letter : debugSearchSet.half);
-  document.getElementById("dbg-search-half").hidden = document.getElementById("dbg-search-half-word").hidden = !debugSplit;
+  // Doctor Strange's searches from the base timeline, which is picked on its deck.
+  document.getElementById("dbg-search-half").hidden = document.getElementById("dbg-search-half-word").hidden = !debugSplit || STRANGE;
   const targets = document.getElementById("dbg-search-targets"), genes = document.getElementById("dbg-search-genes");
   targets.checked = debugSearchSet.targets;
   targets.disabled = genes.disabled = locked;
@@ -4756,6 +4779,9 @@ function debugDrawSearch(bar) {
   // line is played from the top of the turn.
   const acted = !debugSplit && (debugTimeline().acted || 0) > 0;
   text("dbg-search-about", from === null ? "The branch has no turn open yet."
+    : STRANGE ? `From the base timeline, ${letter.toUpperCase()}, on turn ${from}: which player strategies should hold the seat, and when, ` +
+      `to meet these lists by turn ${from + turns}. Each core plays paths on a copy of ${letter.toUpperCase()}, so the worlds are left as they are, ` +
+      "and the best path found can be made a branch."
     : `From ${acted ? "the top of " : ""}turn ${from}${letter ? ` of ${letter.toUpperCase()}` : ""}: which Civ AIs should hold the seat, and when, ` +
       `to meet these lists by turn ${from + turns}. This game is left as it is while the cores search.`);
   const go = panel.querySelector('[data-dbg-search="go"]');
@@ -4837,6 +4863,8 @@ function debugDrawSearch(bar) {
     return `<span${held ? ' class="dbg-top"' : ""} title="${name} alone from turn ${search.from}${held ? ": the Civ AI that is seated" : ""}${line.feasible ? "" : ". It does not meet every Need"}">${name}</span>` +
       `<span class="dbg-v">${reads}</span>`;
   }).join(""));
+  // Doctor Strange's makes it a branch instead (`strangeSearchBranch`).
+  if (STRANGE) { strangeSearchOffer(search, best, live); return; }
   // Playing it: on the one timeline, or in either half of a split. A line is
   // played on the world it was found in, so a timeline branched or closed
   // since the search has to be searched again.
@@ -5275,6 +5303,22 @@ const STRANGE_STYLE = `
     background: #14231f; border-color: ${STRANGE_GOLD}99; text-overflow: ellipsis;
   }
   #strange-hud .strange-deck .strange-branch:disabled { opacity: .38; cursor: default; }
+  /* Autosearch, from the base timeline, under Branch (operator 2026-11-25:
+     "add the autosearch stuff to doctor strange's civ 6. we should be able
+     to efficiently search paths to try to find a desirable path"). A size
+     larger than the buttons beside it and in gold, as in the AI Debugger;
+     lit while a search runs, with the lines it has played counted. */
+  #strange-hud .strange-deck .strange-search {
+    grid-column: 1 / -1; height: 32px; display: flex; align-items: center; justify-content: center; gap: 6px;
+    font-size: 13.5px; font-weight: 700; color: ${STRANGE_GOLD}; border-color: ${STRANGE_GOLD}; font-variant-numeric: tabular-nums;
+  }
+  #strange-hud .strange-deck .strange-search svg { display: block; flex: none; }
+  /* Its words are the button's colour, not the card's for what it says. */
+  #strange-hud .strange-deck .strange-search span { display: inline; margin: 0; color: inherit; }
+  #strange-hud .strange-deck .strange-search.on { color: #10140f; background: ${STRANGE_GOLD}; border-color: transparent; }
+  /* Its panel is the AI Debugger's, which is the bar's own, and the bar is
+     unseen here: the panel alone is shown, a window over the tree. */
+  html.strange.dbg-split-open #debugbar #dbg-search { visibility: visible !important; pointer-events: auto !important; }
   #strange-hud .strange-deck .strange-lock.on { color: #3a1d00; background: #ffd23f; border-color: #fff3b0; font-weight: 700; }
   #strange-hud .strange-deck .strange-futures { grid-column: 1 / -1; }
   #strange-hud .strange-deck .strange-futures.on { color: #10140f; background: #9ad0ff; border-color: transparent; font-weight: 700; }
@@ -5416,6 +5460,9 @@ const strange = {
   // The worlds being taken through the turns together (`strangeAsk`):
   // {end, at, asked, stop, play, letters}. Null when they are not.
   run: null,
+  // A branch playing a path Autosearch found (`strangeSearchBranch`):
+  // {letter, from, search}. Null when none is.
+  planning: null,
   // Whether the controls were last drawn as free to press.
   idleWas: null,
 };
@@ -5487,7 +5534,8 @@ function strangeLimit() {
 // Whether the worlds can be asked for something now.
 function strangeIdle() {
   const split = debugSplit;
-  if (!split || !split.shown || split.busy || split.running > 0 || strange.run || strange.lockWanted || strange.swan) return false;
+  if (!split || !split.shown || split.busy || split.running > 0 || strange.run || strange.lockWanted || strange.swan ||
+    strange.planning) return false;
   const open = strangeOpen();
   return open.length > 0 && open.every(letter => split.panes[letter].turn !== null && !split.panes[letter].born);
 }
@@ -5705,21 +5753,26 @@ function strangeSpare() {
 // from: the followed world as it stands on the open turn, with that strategy
 // in the seat and a colour of its own. The two are one world until one of
 // them plays a turn.
-function strangeBranch(name) {
-  if (!strangeIdle() || !name) return;
-  const split = debugSplit, from = strange.follow;
+//
+// A branch may also be made from a path Autosearch found (`plan`, from
+// `strangeSearchBranch`): the world is born with the path's first strategy
+// in the seat and then plays the path.
+function strangeBranch(name, from = strange.follow, plan = null) {
+  if (!strangeIdle() || !name) return null;
+  const split = debugSplit;
   const letter = [...STRANGE_LETTERS].find(free => !strange.order.includes(free));
-  if (!letter) { strangeSay(`${STRANGE_LETTERS.length} worlds are open, which is the most. Delete one to branch again`); return; }
+  if (!letter) { strangeSay(`${STRANGE_LETTERS.length} worlds are open, which is the most. Delete one to branch again`); return null; }
   strange.order.splice(strange.order.indexOf(from) + 1, 0, letter);
   strange.born[letter] = strange.births++;
   strange.tint[letter] = strangeInk();
   strange.lanes[letter] = strange.lanes[from] ?? 0;
-  const born = {from, name}, there = !!split.panes[letter];
+  const born = {from, name, plan}, there = !!split.panes[letter];
   strangeWorldOpen(letter, born);
   // One of the split's own two is there already, out of sight, and is made
   // the branch at once; a new page is, once it has loaded (`strangeStep`).
   if (there) { split.panes[letter].born = born; if (split.panes[letter].turn !== null) strangeBear(letter); }
   strangeSay(`Branch ${split.panes[from].turn}-${strangeHandle(name)} is world ${letter.toUpperCase()}, from ${from.toUpperCase()}`);
+  return letter;
 }
 // A world that is there is made what it was opened to be: the world it
 // branches from, as that stands, with its own strategy in the seat.
@@ -5733,6 +5786,9 @@ function strangeBear(letter) {
     debugSplitTell(letter, {civvis: "pane-copy", from: split.panes[born.from].id});
   }
   debugSplitSeat(letter, born.name);
+  // A path Autosearch found is played in it next, from the turn it was
+  // found on: the world's page does each in the order it is told them.
+  if (born.plan) debugSplitTell(letter, {civvis: "pane-plan", plan: born.plan});
 }
 // A branch is deleted: its line goes from the tree and its box from the
 // window, and the boxes that are left share the room (operator 2026-11-24:
@@ -5837,7 +5893,7 @@ function strangeRunOver(run, note = "") {
   if (strange.run !== run) return;
   strange.run = null;
   strangeShow();
-  strangeSay(note || (run.stop ? `Paused on turn ${run.at}` : ""));
+  strangeSay(note || (run.stop ? `Paused on turn ${run.at}` : run.said || ""));
   // The worlds stand still again: their futures are played out from here.
   strangeAheadNext();
 }
@@ -5944,6 +6000,8 @@ function strangeAheadNext(between = false) {
   if (!split || !split.shown || split.busy || split.running > 0 || strange.lockWanted || !strange.futures) return;
   if (strange.run && !between) return;
   for (const letter of strangeOpen()) {
+    // A world playing a path Autosearch found is asked for nothing else.
+    if (strange.planning && strange.planning.letter === letter) continue;
     const turns = strangeAheadOwed(letter, split.panes[letter].turn, between ? STRANGE_AHEAD_RUNNING : STRANGE_AHEAD_CHUNK);
     if (turns === 0) continue;
     strange.peeks[letter] = {turns, since: performance.now()};
@@ -6067,6 +6125,10 @@ function strangeSightStale(letter) {
 function strangeForesee() {
   const split = debugSplit;
   if (!split || !split.shown || !strange.futures || !strange.hud) return;
+  // While Autosearch runs it has the cores it was given, and no future is
+  // begun beside it: one on its way plays its stretch out, and the rest
+  // carry on when the search is over.
+  if (debugSearch && debugSearch.live) return;
   const open = strangeOpen(), own = strangeScouts(), now = performance.now();
   if (!own && (!strangeIdle() || Object.keys(strange.peeks).length > 0)) return;
   const most = Math.max(1, (navigator.hardwareConcurrency || 4) - (own ? open.length : 0) - 1);
@@ -6075,6 +6137,7 @@ function strangeForesee() {
     if (out >= most) break;
     const pane = split.panes[letter];
     if (!pane || !open.includes(letter) || pane.born || pane.turn === null || pane.turn === undefined || strange.seeing[letter]) continue;
+    if (strange.planning && strange.planning.letter === letter) continue;
     // A world that has not said who holds its seat is not asked yet: its
     // future is that player strategy's.
     if (pane.strategy === undefined) continue;
@@ -6306,6 +6369,120 @@ function strangeLock() {
   strangeDraw();
 }
 
+// ---- autosearch
+//
+// Operator 2026-11-25: "add the autosearch stuff to doctor strange's civ 6.
+// we should be able to efficiently search paths to try to find a desirable
+// path".
+//
+// A path is what a branch's name says: which player strategy held the seat
+// from which turn. That is what the AI Debugger's Autosearch searches for
+// (`debugSearch*`, and the engine's climb, `src/server/autosearch.rs`), so it
+// is the same search here: its button is on the deck under Branch, its panel
+// is the AI Debugger's, and it searches from the base timeline on its open
+// turn (`debugSearchRoot`). Each core given to it plays paths on a copy of
+// that world's own engine (`POST /forks` naming the world, `beta/shim.js`),
+// so the worlds stand as they were while it runs, and no world's future is
+// begun beside it (`strangeForesee`): the cores it was given are its own.
+//
+// The path it found is made a branch (`strangeSearchBranch`): a new world, a
+// copy of the base timeline, plays the path from the turn the search began
+// on to its last turn, as the copies played it, and says what it came to
+// beside what the search read. It is named for the strategies that played
+// it, and the sign over its far end says how the game goes on from there.
+// Locked, the other worlds then play on to that turn too, each with its own
+// player strategy, so all of them stand on one turn again with the path
+// beside them, as a half locked to one that plays a found line does in the
+// AI Debugger. It is not walked back to the turn it was branched on: a world
+// walks forward only along turns its seated strategy played, so a path of
+// several would be played again from its first handover.
+
+// The panel opens beside the card its button is on, over the tree, unless
+// it was dragged somewhere else.
+function strangeSearchPlace(panel, bar) {
+  if (debugWindowPlace[debugWindowKey(panel)]) { debugPlaceWindow(panel, bar, null); return; }
+  const frame = bar.getBoundingClientRect(), card = strange.hud.querySelector(".strange-title").getBoundingClientRect();
+  const left = Math.max(8, Math.min(card.right + 10, window.innerWidth - panel.offsetWidth - 8));
+  panel.style.left = `${Math.round(left - frame.left)}px`;
+  panel.style.top = `${Math.round(card.top - frame.top)}px`;
+}
+// A path as a branch's name says it (`strangeSeries`): MoonshotMaven-150-
+// JackOfAllTrades is MoonshotMaven up to turn 149 and JackOfAllTrades from 150.
+function strangeSearchPath(plan, last) {
+  const stretches = debugPlanStretches(plan, last);
+  return stretches.map((stretch, at) => at === 0 ? strangeHandle(stretch.name) : `${stretch.from}-${strangeHandle(stretch.name)}`).join("-");
+}
+// What the search found, made a branch: the button, and why it cannot be
+// pressed when it cannot. The search was of one world on one turn, so that
+// world has to be open and on that turn still.
+function strangeSearchOffer(search, best, live) {
+  const split = debugSplit, base = split ? split.panes[search.letter] : null, name = String(search.letter || "").toUpperCase();
+  const gone = !base || base.id !== search.pane || !strangeOpen().includes(search.letter);
+  const moved = !gone && base.turn !== search.from;
+  const same = !gone && best.plan.length === 1 && best.plan[0][1] === base.strategy;
+  const full = strangeOpen().length >= STRANGE_LETTERS.length;
+  const path = strangeSearchPath(best.plan, best.last);
+  const off = live || !!search.playing || gone || moved || same || full || !strangeIdle();
+  const note = gone ? `${name}, the world searched, is closed: search again to branch a path.`
+    : moved ? `${name} is no longer on turn ${search.from}, where the search began: take the worlds back to turn ${search.from}, or search again.`
+    : live ? "Stop the search to branch the best path so far."
+    : search.said ? search.said
+    : same ? `That is ${name}'s own path: nothing beat the strategy it seats.`
+    : full ? `${STRANGE_LETTERS.length} worlds are open, which is the most. Delete one to branch this path.`
+    : `${path}, from turn ${search.from}.`;
+  const title = `Branch it: a new world, a copy of ${name} on turn ${search.from}, plays ${path} to turn ${best.last}` +
+    (strange.locked ? `, and the other worlds play on to turn ${best.last} beside it` : "");
+  debugDrawn(document.getElementById("dbg-search-play"),
+    `<button data-dbg-search="branch" title="${escapeAttr(title)}"${off ? " disabled" : ""}>⑂ Branch it</button>` +
+    `<span class="dbg-search-status">${escapeAttr(note)}</span>`);
+}
+function strangeSearchBranch() {
+  const search = debugSearch, best = search && search.report ? search.report.best : null;
+  if (!search || search.live || search.playing || !best || !strangeIdle() || !debugSplit) return;
+  const base = debugSplit.panes[search.letter];
+  if (!base || base.id !== search.pane || !strangeOpen().includes(search.letter) || base.turn !== search.from) return;
+  const first = search.objective.want[0];
+  const plan = {from: search.from, print: search.print, want: first ? first.key : null,
+    value: best.verdict && best.verdict.want ? best.verdict.want[0] : null,
+    stretches: debugPlanStretches(best.plan, best.last)};
+  if (!plan.stretches.length) return;
+  const path = strangeSearchPath(best.plan, best.last);
+  const letter = strangeBranch(plan.stretches[0].name, search.letter, plan);
+  if (!letter) return;
+  strange.planning = {letter, from: search.from, path, search};
+  search.playing = letter;
+  search.said = `World ${letter.toUpperCase()} is playing ${path} from turn ${search.from}…`;
+  strangeSay(`World ${letter.toUpperCase()} is the path found from ${search.letter.toUpperCase()}: ${path}. Playing it from turn ${search.from}…`);
+  drawDebugBar(false);
+}
+// The branch has played the path (`pane-planned`, from the split's
+// listener), or stopped short and says why. Played, and locked, the other
+// worlds are taken to the turn it ended on, as time is (`strangeAsk`), each
+// playing on with its own player strategy; the branch is not asked to move.
+function strangeSearchPlanned(letter, done) {
+  const planning = strange.planning;
+  if (!planning || planning.letter !== letter) return;
+  strange.planning = null;
+  const search = planning.search, split = debugSplit, pane = split ? split.panes[letter] : null;
+  if (search === debugSearch) debugSearchPlayed(search, done);
+  if (!pane) return;
+  const name = letter.toUpperCase(), played = !!(done && done.ok), end = played && typeof done.turn === "number" ? done.turn : null;
+  const behind = end === null ? [] : strangeOpen().filter(other => other !== letter && (split.panes[other].turn ?? end) < end);
+  const said = played ? `World ${name} is the path found, ${planning.path}. ${done.note}`
+    : `World ${name} did not play the path out: ${(done && done.note) || "its page did not say why"}`;
+  if (!strange.locked || behind.length === 0) { strangeSay(said); return; }
+  strangeSay(`${said}. The other worlds play on to turn ${end} beside it…`);
+  // What is said when they are there is what the branch came to.
+  strange.run = {end, at: planning.from, asked: null, stop: false, play: false, letters: behind, said};
+  strangeAsk(strange.run);
+}
+// A branch whose page has gone is not waited on.
+function strangeSearchWatch() {
+  const planning = strange.planning;
+  if (!planning || (debugSplit && debugSplit.panes[planning.letter] && strange.order.includes(planning.letter))) return;
+  strangeSearchPlanned(planning.letter, {ok: false, note: "the world was closed"});
+}
+
 // ---- black swans
 //
 // Operator 2026-11-24: "add a 'Generate Black Swan' - this will be a random,
@@ -6484,7 +6661,7 @@ function strangeMount() {
   Object.assign(strange, {follow: "a", cam: null, lanes: {a: 0, b: 1}, order: ["a", "b"], born: {a: 0, b: 1}, births: 2,
     tint: {a: STRANGE_INKS[0], b: STRANGE_INKS[1]}, inks: 2, tree: null, parted: {}, locked: true, lockWanted: false,
     divide: null, over: null, peek: null, run: null, swan: null, omen: null, said: "", drawn: "", meter: [], metered: null,
-    seeing: {}, fates: [], fateMode: "full"});
+    seeing: {}, fates: [], fateMode: "full", planning: null});
   const canvas = document.createElement("canvas");
   canvas.id = "strange-sky";
   canvas.setAttribute("role", "img");
@@ -6504,6 +6681,7 @@ function strangeMount() {
         </div>
         <label class="strange-base"><span>Base timeline</span><select data-strange="base" aria-label="Base timeline: the world a branch is made from"></select></label>
         <select class="strange-branch" data-strange="branch" aria-label="Branch the base timeline here, played by"></select>
+        <button class="strange-search" data-strange="search" aria-expanded="false" aria-label="Autosearch" title="Autosearch: from the base timeline on its open turn, find which player strategies should hold the seat, and when, to meet what you ask for. A share of this computer's cores each plays paths up and down the timeline on a copy of that world, and the best path found can be made a branch"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="6.5" cy="6.5" r="4.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M10 10l4.5 4.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span>Autosearch</span><span data-strange-search-count></span></button>
         <button data-strange="fork"></button>
         <button class="strange-lock" data-strange="lock" aria-pressed="true"></button>
         <button class="strange-futures" data-strange="futures" aria-pressed="true"></button>
@@ -6536,6 +6714,7 @@ function strangeMount() {
     else if (action === "lock") strangeLock();
     else if (action === "futures") { strange.futures = !strange.futures; strangeAheadNext(); strangeForesee(); strangeDraw(); }
     else if (action === "fork") strangeGoTo((strange.tree || strangeTree()).splits);
+    else if (action === "search") debugSearchShow(!debugSearchShown);
     else if (action === "swan") strangeSwan(hud.querySelector('[data-strange="swan-kind"]').value);
     else if (action === "omen") { strange.omen = null; strangeDraw(); }
     else if (action.startsWith("follow-")) { strange.follow = action.slice(7); strangeDraw(); }
@@ -6601,7 +6780,7 @@ function strangeMount() {
   strange.stale = true;
   strangeLayout();
   clearInterval(strange.meterTimer);
-  strange.meterTimer = setInterval(() => { strangeAheadWatch(); strangeSwanWatch(); strangeForesee(); strangeMeasure(); }, STRANGE_METER_MS);
+  strange.meterTimer = setInterval(() => { strangeAheadWatch(); strangeSwanWatch(); strangeSearchWatch(); strangeForesee(); strangeMeasure(); }, STRANGE_METER_MS);
   strangeMeasure();
   requestAnimationFrame(strangePaint);
 }
@@ -6878,6 +7057,8 @@ function strangeDraw() {
   const shape = `${open.join("")}|${wide}|${hud.querySelector('[data-strange="say"]').textContent}|${omen.dataset.drawn}`;
   if (shape !== strange.shape) { strange.shape = shape; strange.stale = true; }
   strangeLayout();
+  // Autosearch's panel says what can be done with the worlds as they stand.
+  if (debugSearchShown || (debugSearch && debugSearch.live)) debugSearchDrawSoon();
 }
 
 // One frame of the highway.

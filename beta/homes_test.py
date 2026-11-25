@@ -23,6 +23,8 @@ What is checked:
     of its own and the world hears nothing of it; a new one is forked from
     the world as it then stands, it is counted with the engines, and it is
     let go when the page says it is done or the world's page has gone;
+  * Autosearch's copies of a world it names are forks of that world's
+    engine, and with none named of the page's;
   * a world whose page has gone has its engine let go;
   * the split closed onto a world makes that world's engine the page's.
 
@@ -172,6 +174,20 @@ def check_homes(dev: Devtools, origin: str) -> None:
     assert said('(await ask(world("a-t1"), "/status")).n') == on(a_then, 1)
     assert said('(await said("/machine-metrics")).engine_threads') == 4
     print("a world's scout is a fork of the world's own engine, counted with the engines and let go when it is done.")
+    # Autosearch's copies, asked for with a world named (`POST /forks` with
+    # `pane`), are forks of that world's own engine: each carries on from
+    # the world's count, and the world hears nothing of them. Asked for with
+    # none named, they are forks of the page's engine, as off this page.
+    b_now = said('(await ask(world("b-t1"), "/status")).n')
+    assert said('(await said("/forks", {count: 2, pane: "b-t1"})).forks') == 2
+    copies = said('[(await said("/debug?fork=1&pane=b-t1", {op: "status"})).n, (await said("/debug?fork=2&pane=b-t1", {op: "status"})).n]')
+    assert copies == [on(b_now, 1), on(b_now, 1)], (b_now, copies)
+    assert said('(await ask(world("b-t1"), "/status")).n') == on(b_now, 1)
+    page_now = said('(await said("/status")).n')
+    assert said('(await said("/forks", {count: 1})).forks') == 1
+    assert said('(await said("/debug?fork=1", {op: "status"})).n') == on(page_now, 1)
+    assert said('(await said("/forks", {count: 0})).forks') == 0
+    print("Autosearch's copies are of the world it names, and of the page's engine when it names none.")
 
     # A world whose page has gone has its engine let go, and its scout.
     said('(document.querySelector(\'iframe[data-world="b-t1"]\').remove(), true)')

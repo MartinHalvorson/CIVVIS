@@ -343,7 +343,11 @@ function forkEngines(count) {
     const worlds = {"": worldOf(engine)};
     for (const frame of frames) {
       const pane = new URL(frame.src, location.href).searchParams.get("pane");
-      if (pane) worlds[pane] = worldOf(frame.contentWindow.eval("engine"));
+      // A page still loading (Doctor Strange's next branch, made ahead of
+      // time) holds no world yet.
+      let held = null;
+      try { held = frame.contentWindow.eval("typeof engine === 'object' ? engine : null"); } catch (_) {}
+      if (pane && held) worlds[pane] = worldOf(held);
     }
     return worlds;
   });
@@ -3499,7 +3503,7 @@ def check_doctor_strange(bar: Bar, address: str) -> None:
     # its letter and its name. Each box has its exit.
     assert said == {"play": ["▶ Play Time", False], "back10": ["−10", True], "back1": ["−1", True], "on1": ["+1", False],
                     "on10": ["+10", False], "base": ["A · StockB · Jack", False],
-                    "branch": ["⑂ Branch: 1-(player strategy)1-Jack", False],
+                    "branch": ["⑂ Branch: 1-(player strategy)1-Jack", False], "search": ["Autosearch", False],
                     "fork": ["⏮ To the fork", True], "lock": ["🔒 Locked", False], "futures": ["🔮 Futures: off", False],
                     "swan": ["🦢 Generate Black Swan", False], "swan-kind": ["AnyPandemicInstant nuclear war", False],
                     "omen": ["", False],
@@ -3987,6 +3991,134 @@ def check_doctor_strange(bar: Bar, address: str) -> None:
     assert not bar.dev.console, f"the page complained: {bar.dev.console}"
 
 
+def check_doctor_strange_autosearch(bar: Bar, address: str) -> None:
+    """Doctor Strange's Civ 6 has Autosearch: it searches from the base timeline on copies of that world, and the path found is made a branch.
+
+    Operator, 2026-11-25: "add the autosearch stuff to doctor strange's civ
+    6. we should be able to efficiently search paths to try to find a
+    desirable path".
+
+    The toy's score rises by two a turn under `stock` and by one under
+    `jack`, so from B, which seats jack, the best path is stock alone.
+    """
+    turns = lambda letters, turn: " && ".join(f"debugSplit.panes.{letter}.turn === {turn}" for letter in letters)
+    ready = "typeof drawDebugBar === 'function' && typeof engineState === 'function'"
+    # What an earlier search's panel was set to is read as the page loads.
+    bar.ev("localStorage.removeItem('civvis-debug-search-v1'), localStorage.removeItem('civvis-debug-search-v2'), true")
+    bar.dev.call("Page.navigate", {"url": f"{address}?mode=strange"})
+    bar.until(f"{ready} && location.search === '?mode=strange' && state === null", "Doctor Strange's Civ 6, loaded again")
+    bar.ev("engine.scores = {1: 0}, strange.futures = false, render(engineState()), true")
+    bar.settled()
+    bar.until(f"debugSplit && debugSplit.shown && {turns('ab', 1)} && strangeIdle()", "its two worlds are there")
+    for turn in (2, 3):
+        bar.click('#strange-hud [data-strange="on1"]')
+        bar.until(f"{turns('ab', turn)} && strangeIdle()", f"the worlds play turn {turn}")
+    half = "debugSplit.panes.{}.frame.contentWindow.eval({})".format
+    score = lambda letter: bar.ev(half(letter, "'engine.score'"))
+    playing = "['step', 'jump', 'play', 'copy', 'ahead', 'walk', 'back', 'forward']"
+    sent = lambda letter: bar.ev(half(letter, json.dumps(
+        f"engine.sent.filter(call => call.path === '/debug' && {playing}.includes(call.body.op))"
+        ".map(call => [call.body.op, call.body.strategy ?? call.body.from ?? null])")))
+    # B is the base timeline: it seats jack, which stock beats.
+    bar.ev("(() => { const base = document.querySelector('#strange-hud [data-strange=\"base\"]'); base.value = 'b';"
+           " base.dispatchEvent(new Event('change', {bubbles: true})); return true; })()")
+    assert bar.ev("[strange.follow, debugSplit.panes.b.strategy]") == ["b", "jack"]
+    start, base, other, b = 3, score("b"), score("a"), bar.ev("debugSplit.panes.b.id")
+
+    # The button is on the deck, under Branch, a size larger than the deck's
+    # other buttons but Play Time, and opens the AI Debugger's own panel,
+    # shown over the tree beside the card though the bar is unseen.
+    button = '#strange-hud [data-strange="search"]'
+    sizes = bar.ev(f"(() => {{ const mine = document.querySelector('{button}'), branch = document.querySelector('#strange-hud [data-strange=\"branch\"]');"
+                   " const tall = held => held.getBoundingClientRect().height, type = held => parseFloat(getComputedStyle(held).fontSize);"
+                   " const others = [...document.querySelectorAll('#strange-hud .strange-deck button')].filter(held => held !== mine && !held.classList.contains('strange-play'));"
+                   " return [tall(mine) > Math.max(...others.map(tall)), type(mine) > Math.max(...others.map(type)), mine.previousElementSibling === branch]; })()")
+    assert sizes == [True, True, True], sizes
+    shown = "!document.getElementById('dbg-search').hidden"
+    bar.click(button)
+    assert bar.ev(f"[{shown}, getComputedStyle(document.getElementById('dbg-search')).visibility, getComputedStyle(debugBar).visibility,"
+                  f" document.querySelector('{button}').classList.contains('on'), document.querySelector('{button}').getAttribute('aria-expanded')]") == \
+        [True, "visible", "hidden", True, "true"]
+    # Lit, its words are dark on gold, as its own colour says, and not the card's.
+    assert bar.ev(f"(() => {{ const mine = document.querySelector('{button}'), word = mine.querySelector('span');"
+                  " return [getComputedStyle(mine).backgroundColor, getComputedStyle(word).color]; })()") == ["rgb(243, 210, 122)", "rgb(16, 20, 15)"]
+    place = bar.ev("(() => { const at = document.getElementById('dbg-search').getBoundingClientRect(),"
+                   " card = document.querySelector('#strange-hud .strange-title').getBoundingClientRect();"
+                   " const hit = document.elementFromPoint(at.left + 20, at.top + 20);"
+                   " return [Math.round(at.left - card.right), Math.round(at.top - card.top), !!hit && !!hit.closest('#dbg-search')]; })()")
+    assert abs(place[0] - 10) <= 1 and place[1:] == [0, True], place
+    # It searches from the base timeline: the deck picks it, so the panel
+    # has no picker of its own.
+    about = bar.ev("document.getElementById('dbg-search-about').textContent")
+    assert about.startswith(f"From the base timeline, B, on turn {start}: which player strategies should hold the seat, and when, "
+                            f"to meet these lists by turn {start + 30}."), about
+    assert bar.ev("document.getElementById('dbg-search-half').hidden") is True
+    pick = lambda field, value: bar.ev(
+        f"(() => {{ const held = document.getElementById('dbg-search-{field}'); held.value = '{value}';"
+        " held.dispatchEvent(new Event('change', {bubbles: true})); return true; })()")
+    pick("turns", 10)
+    pick("cores", 0.25)
+    cores = bar.ev("Math.min(64, navigator.hardwareConcurrency || 4)")
+    asked = max(1, int(cores * 0.25 + 0.5))
+
+    # A search: on copies of B's own engine, each asked to keep its agents.
+    # No world is asked anything while it runs.
+    for letter in "ab":
+        bar.ev(half(letter, "'engine.sent.length = 0, true'"))
+    bar.ev("engine.sent.length = 0, true")
+    bar.click('#dbg-search [data-dbg-search="go"]')
+    bar.until("!!debugSearch && !debugSearch.live", "the search from B ends", seconds=60)
+    found = bar.ev("[debugSearch.state, debugSearch.letter, debugSearch.pane, debugSearch.seated, debugSearch.report.best.plan,"
+                   " debugSearch.report.best.verdict.want[0], debugSearch.report.best.last]")
+    assert found == ["done", "b", b, "jack", [[start, "stock"]], base + 20, start + 10], (found, bar.ev("debugSearch.note"))
+    assert bar.ev("engine.sent.filter(call => call.path === '/forks').map(call => call.body)") == [{"count": asked, "pane": b}, {"count": 0}]
+    forked = "engine.sent.filter(call => call.path.startsWith('/debug?fork='))"
+    assert bar.ev(f"{forked}.every(call => call.path.endsWith('&pane=' + {json.dumps(b)}))")
+    assert bar.ev(f"{forked}.filter(call => call.body.op === 'remember').length") == asked
+    assert sent("a") == [] and sent("b") == [], (sent("a"), sent("b"))
+    assert bar.ev(f"[{turns('ab', start)}, strange.order.join('')]") == [True, "ab"]
+
+    # The path found is made a branch: C, a copy of B, plays it from the
+    # turn the search began on and comes to what the search read; locked,
+    # A and B then play on to that turn beside it, each with its own.
+    offer = "[...document.querySelectorAll('#dbg-search-play button')].map(held => [held.dataset.dbgSearch, held.textContent, held.disabled])"
+    note = "document.querySelector('#dbg-search-play .dbg-search-status').textContent"
+    assert bar.ev(offer) == [["branch", "⑂ Branch it", False]], bar.ev(offer)
+    assert bar.ev(note) == f"Stock, from turn {start}."
+    bar.click('#dbg-search [data-dbg-search="branch"]')
+    bar.until(f"strange.order.length === 3 && strange.planning === null && debugSearch.playing === null && strange.run === null"
+              f" && {turns('abc', start + 10)} && strangeIdle()", "the path is a branch, and the worlds stand on its last turn", seconds=60)
+    assert bar.ev("[strange.order.join(''), debugSplit.panes.c.strategy, document.querySelector('[data-strange-name=\"c\"]').textContent]") == \
+        ["abc", "stock", f"Jack-{start}-Stock"]
+    assert [score(letter) for letter in "abc"] == [other + 20, base + 10, base + 20]
+    played = sent("c")
+    assert played[0] == ["copy", b] and ["jump", "stock"] in played and [op for op in played if op[0] == "step"] == [["step", "stock"]] * 10, played
+    done = f"Played to turn {start + 10}: SCORE {base + 20}, as found"
+    assert bar.ev("[debugSearch.said, document.querySelector('#strange-hud [data-strange=\"say\"]').textContent]") == \
+        [done, f"World C is the path found, Stock. {done}"]
+    # B has moved on since: the search was of B on turn 3, so it is not branched again.
+    assert bar.ev(offer) == [["branch", "⑂ Branch it", True]], bar.ev(offer)
+    assert bar.ev(note).startswith(f"B is no longer on turn {start}, where the search began"), bar.ev(note)
+
+    # While a search runs no world's future is begun beside it: the cores
+    # are the search's. The button counts the paths played.
+    bar.ev("window.__civvisBeta = {scouts: 0}, strange.futures = true, forks.wait = 40, true")
+    bar.click('#dbg-search [data-dbg-search="go"]')
+    bar.until("debugSearch.state === 'running' && debugSearch.futures > 0", "a slowed search is on its way", seconds=60)
+    assert bar.ev(f"document.querySelector('{button}').textContent").startswith("Autosearch· "), bar.ev(f"document.querySelector('{button}').textContent")
+    made = bar.ev("strangeSightDrop('a'), strangeSightDrop('b'), strangeSightDrop('c'), strangeForesee(), scouts.made")
+    assert bar.ev("[Object.keys(strange.seeing).length, scouts.made]") == [0, made]
+    bar.click('#dbg-search [data-dbg-search="go"]')
+    assert bar.ev("[debugSearch.live, debugSearch.state]") == [False, "stopped"]
+    bar.ev("forks.wait = 0, true")
+    bar.until(f"scouts.made > {made}", "the futures carry on once the search is over", seconds=30)
+    bar.ev("document.getElementById('dbg-search').dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', bubbles: true})), true")
+    assert bar.ev(f"[{shown}, document.querySelector('{button}').classList.contains('on')]") == [False, False]
+    bar.until("Object.keys(strange.seeing).length === 0", "the futures asked for are answered", seconds=30)
+    bar.ev("delete window.__civvisBeta, true")
+    assert not bar.dev.console, f"the page complained: {bar.dev.console}"
+
+
 def check_edge_of_tomorrow(bar: Bar, address: str) -> None:
     """Edge of Tomorrow: the played game with a jump back.
 
@@ -4387,6 +4519,12 @@ def main() -> int:
               "world and on the followed one alone unlocked, any drawn by a seed or the one picked, says what struck, "
               "marks it in the line's name and has each struck world's future played again; a narrow "
               "window has the one timeline and says why.")
+        check_doctor_strange_autosearch(bar, f"http://127.0.0.1:{port}/")
+        print("Doctor Strange's Civ 6 has Autosearch on its deck under Branch, a size larger than the deck's other "
+              "buttons; it opens the AI Debugger's panel over the tree and searches from the base timeline on copies "
+              "of that world's own engine, asking no world anything; the path found is made a branch, a copy of "
+              "the base that plays it to what the search read, the other worlds locked to it play on to the same "
+              "turn, and no world's future is begun while a search runs.")
         check_edge_of_tomorrow(bar, f"http://127.0.0.1:{port}/")
         print("Edge of Tomorrow is the played game on the Civilization VI screen with a bar of its own where the "
               "debugger's stands and the seat left to the person; Jump back asks the engine for the turn woken on "
