@@ -1040,6 +1040,42 @@ kept), so many forks late in a long game are counted in gigabytes; `room`
 lowers what the timeline keeps before the forks are made. The desktop
 program has no forks yet: its server does not know `/forks`.
 
+### A world's own engine (Doctor Strange's Civ 6)
+
+On `?mode=strange` the page holds up to a dozen worlds, and one engine held
+them all, so a turn of every world, and the futures played ahead of them,
+went one world after another on one thread (operator 2026-11-24: "we want
+the doctor strange's civ 6 search across the timeline(s) to be blazingly
+fast"). There the shim gives each world an engine of its own: a fork of the
+page's engine made behind the world's first request, which answers
+everything the world asks from then on. A copy of a world on another engine
+(a branch, `op: "copy"`) is given a fork of that world's engine with the copy
+made in it; a `twin` on another engine is dropped, so the twin's page asks
+for its own turn as when the two are apart; a world whose page has gone has
+its engine let go; and the split closed onto a world makes that world's
+engine the page's. Outside Doctor Strange nothing changes. Each worker puts
+what its engine holds and has spent on every answer, so `/machine-metrics`
+adds them up (`engine_threads` says how many) without waiting on a world
+that is busy, and the page's meter reads the processor as a share of the
+computer's cores. `beta/homes_test.py` checks all of it on a toy engine.
+
+Measured on published build `45e3410` with the real engine:
+
+- in node (six seats, seed 7, warm code), three worlds each played twelve
+  turns ahead in four-turn `ahead` requests: from turn 5, 869 ms on one
+  engine and 316 ms on three; from turn 60, 4,022 ms and 1,515 ms. Every
+  world's twelve readings were the same on its own engine as on the shared
+  one, byte for byte;
+- on the page (Chrome for Testing, three worlds from turn 1, an 18-core
+  computer busy with other work): all three asked for twelve turns at once
+  answered in 645 ms on one engine and 216 ms on three; twenty seconds of
+  Play Time with the futures off went from turn 1 to 57 on one engine and to
+  97 on three.
+
+What it costs is memory: a world's engine holds its world and a copy of the
+page's engine as it stood when the world was seated, which on this page is
+the opening turns.
+
 ## What a search costs
 
 A search plays many futures of one world and reads how each came out. These
