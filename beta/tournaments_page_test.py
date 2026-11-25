@@ -115,9 +115,11 @@ class TournamentsPage(unittest.TestCase):
         # of it. The old runs that merely sort past it retire nothing (above).
         later = run("civvis-t7-20261121T120000Z", "unfinished", None, 0, utc="2026-11-21T12:10:00Z")
         self.assertEqual(self.record(later)["scheduled"], [])
-        # The totals count every game of every tournament begun.
-        self.assertEqual(record["totals"], {"tournaments": 2, "games": 5, "wins": 2, "losses": 3})
+        # The totals count every game of every experiment begun, through
+        # the last of them. No definition here is the benchmark.
+        self.assertEqual(record["totals"], {"experiments": 2, "games": 5, "wins": 2, "losses": 3, "through": "2026-11-21 10:55"})
         self.assertEqual(record["through"], "2026-11-21 10:55")
+        self.assertIsNone(record["benchmark"])
 
     def test_dates_are_plain_and_a_series_carries_its_wall_time_and_run_time(self):
         # Operator 2026-11-21: "for all start and end dates, lets use
@@ -234,6 +236,75 @@ class TournamentsPage(unittest.TestCase):
                       'el("p", "tour-latest-title", "Win rate by level")'):
             self.assertIn(piece, PAGE)
 
+    def test_the_benchmark_is_not_an_experiment(self):
+        # Operator 2026-11-25: "tourney 7 is benchmark. please remove from
+        # experiments and make the official benchmark for now." The
+        # definition marked `benchmark` is drawn on its own, with no number;
+        # the experiments are numbered without it, so one begun after it and
+        # one scheduled after that are 3 and 4, not 4 and 5.
+        specs = [
+            {"name": "First idea", "conditions": "c", "start": "civvis-20261121T100000Z",
+             "end": "civvis-20261121T102000Z", "series_size": 2, "match": MATCH},
+            {"name": "Bench", "benchmark": True, "description": "Official Benchmark", "conditions": "c",
+             "start": "civvis-t7-", "end": "civvis-t8-", "indefinite": True, "match": MATCH,
+             "hyperparameters": {"Games": "Indefinite"}},
+            {"name": "After the bench", "conditions": "c", "start": "civvis-t8-", "end": "civvis-t9-",
+             "series_size": 2, "match": MATCH},
+            {"name": "Waiting", "conditions": "c", "start": "civvis-t9-", "series_size": 3, "match": MATCH},
+        ]
+        rows = [
+            run("civvis-20261121T100000Z", "win", "CIVILIZATION_ROME", 5),
+            run("civvis-20261121T101000Z", "defeat", "CIVILIZATION_ROME", 15),
+            run("civvis-t7-20261121T110000Z", "win", "CIVILIZATION_ROME", 0, utc="2026-11-21T11:30:00Z"),
+            run("civvis-t7-20261121T120000Z", "defeat", "CIVILIZATION_ROME", 0, utc="2026-11-21T12:30:00Z"),
+            run("civvis-t8-20261121T130000Z", "win", "CIVILIZATION_ROME", 0, utc="2026-11-21T13:30:00Z"),
+        ]
+        # The file's lines are by an experiment's number: "2" is the second
+        # experiment's, never the benchmark's, though the benchmark began
+        # second.
+        descriptions = {"1": "One", "2": "Two", "3": "Three"}
+        listed = {"2": {"Games": "Two's"}}
+        record = tournaments_page.record(rows, specs, ["Rome"], {"2": "https://youtu.be/an7y2IlGhU0"}, descriptions, listed)
+        experiments = record["finished"] + record["running"]
+        self.assertEqual(sorted((t["id"], t["name"], t["description"]) for t in experiments),
+                         [(1, "First idea", "One"), (2, "After the bench", "Two")])
+        self.assertEqual(record["running"][0]["hyperparameters"], [["Games", "Two's"]])
+        self.assertEqual(record["running"][0]["video"], "https://www.youtube.com/watch?v=an7y2IlGhU0")
+        self.assertEqual([(t["id"], t["name"], t["description"]) for t in record["scheduled"]], [(3, "Waiting", "Three")])
+        bench = record["benchmark"]
+        self.assertEqual((bench["id"], bench["name"], bench["description"], bench["games"], bench["size"]),
+                         (None, "Bench", "Official Benchmark", 2, None))
+        self.assertEqual((bench["hyperparameters"], bench["video"], bench["last"]), ([["Games", "Indefinite"]], "", "2026-11-21 12:30"))
+        self.assertIn("benchmark", bench)   # its win rate by level
+        # The totals are the experiments' own games, through the last of
+        # them; the page's `through` is every game's.
+        self.assertEqual(record["totals"], {"experiments": 2, "games": 3, "wins": 2, "losses": 1, "through": "2026-11-21 13:30"})
+        # It is never scheduled, games or none.
+        self.assertIsNone(tournaments_page.record([], specs[1:2], ["Rome"])["benchmark"])
+        self.assertEqual(tournaments_page.record([], specs[1:2], ["Rome"])["scheduled"], [])
+        # The committed definitions: the last is the benchmark, with its own
+        # title line and its own hyperparameters, and the six before it are
+        # Experiments 1 to 6.
+        defined = json.loads((ROOT / "data" / "tournaments.json").read_text(encoding="utf-8"))
+        marked = [spec for spec in defined["tournaments"] if spec.get("benchmark")]
+        self.assertEqual([(spec["name"], spec["description"], spec["start"]) for spec in marked],
+                         [("Lv 4 to Lv 8 against the Firaxis AI, 1 CIVVIS agent + 5 AI", "Official Benchmark", "civvis-t7-")])
+        self.assertNotIn("7", defined["descriptions"])
+        self.assertNotIn("7", defined["hyperparameters"])
+        # The page draws it in the right-hand column, under Scheduled.
+        side = PAGE[PAGE.index('<div class="tour-side">'):PAGE.index('<p class="tour-legend">')]
+        self.assertLess(side.index('id="tour-scheduled"'), side.index('id="tour-benchmark"'))
+        for piece in (
+            '<section class="tour-section" id="tour-benchmark" hidden aria-labelledby="tour-benchmark-title">',
+            '<h2 class="rank-title" id="tour-benchmark-title">Benchmark</h2>',
+            "const benchmark = data.benchmark;",
+            'benchBox.querySelector("[data-cards]").append(playing(benchmark));',
+            'line.append(el("span", "tour-no", t.description || "Benchmark"));',
+            '"Our official benchmark against the Firaxis AI, played whenever no experiment is"',
+            '"Nothing is scheduled. Until something is, the agents play the benchmark."',
+        ):
+            self.assertIn(piece, PAGE)
+
     def test_the_counting_is_the_home_tables_own(self):
         # The page, the live mirror's Mode line and an older home page's
         # table count one set of series: the detail the page asks for adds
@@ -309,7 +380,7 @@ class TournamentsPage(unittest.TestCase):
                 self.assertEqual(tournaments_page.main(["tournaments_page.py", empty, str(page)]), 0)
             self.assertEqual(page.read_text(encoding="utf-8"), "<html>no slot</html>")
         # The unfilled page shows one sentence and keeps the record hidden.
-        self.assertIn('<p class="tour-empty" id="tour-empty">This copy of the page has no tournament record.', PAGE)
+        self.assertIn('<p class="tour-empty" id="tour-empty">This copy of the page has no record of the experiments.', PAGE)
         self.assertIn('<div class="tour-record" id="tour-record" hidden>', PAGE)
         self.assertIn("if (!data) return;", PAGE)
 
@@ -428,7 +499,7 @@ class TournamentsPage(unittest.TestCase):
             said = io.StringIO()
             with contextlib.redirect_stderr(said):
                 self.assertEqual(self.record()["finished"][0]["video"], "")
-            self.assertIn("Tournament 1's video is not a YouTube link", said.getvalue())
+            self.assertIn("Experiment 1's video is not a YouTube link", said.getvalue())
         self.videos = ["not", "a", "map"]
         self.assertEqual(self.record()["finished"][0]["video"], "")
         # The page links it with the tournament's games, in a tab of its
@@ -480,7 +551,7 @@ class TournamentsPage(unittest.TestCase):
         # The page writes it on the title line after the number, the same
         # line in all three lists, with the definition's name under it.
         for piece in (
-            'line.append(el("span", "tour-no", "Tournament " + t.id + (t.description ? ":" : "")));',
+            'line.append(el("span", "tour-no", "Experiment " + t.id + (t.description ? ":" : "")));',
             'if (t.description) line.append(" " + t.description);',
             'ident.append(titled(t, "h3"), el("p", "tour-name", t.name));',
             # The largest line a tournament has, the number in gold.
@@ -503,9 +574,10 @@ class TournamentsPage(unittest.TestCase):
         for gone in ("tour-number", 'el("b", "", "Tournament " + t.id)', "td.is-name b"):
             self.assertNotIn(gone, PAGE)
         # The definitions carry the operator's descriptions, word for word,
-        # and no tournament from the first to the last described is left
-        # out. The seventh is his name for it (2026-11-23: "Call our
-        # Indefinite Tourney the "Indefinite Benchmarking Tourney"").
+        # and no experiment from the first to the last described is left
+        # out. The benchmark, which was the seventh ("Indefinite
+        # Benchmarking Tourney", 2026-11-23), is not an experiment since
+        # 2026-11-25 and carries its own on its definition.
         defined = json.loads((ROOT / "data" / "tournaments.json").read_text(encoding="utf-8"))
         self.assertEqual(defined["descriptions"], {
             "1": "Proof of concept, 10 game series",
@@ -514,10 +586,10 @@ class TournamentsPage(unittest.TestCase):
             "4": "50 game series",
             "5": "Repeat 50 game series but with 2/6 CIVVIS AI Agents (2nd half no Diplo allowed)",
             "6": "Benchmarking across levels: 5 games at each level (no Diplo allowed)",
-            "7": "Indefinite Benchmarking Tourney",
         })
         self.assertEqual(list(defined["descriptions"]), [str(n) for n in range(1, len(defined["descriptions"]) + 1)])
-        self.assertGreaterEqual(len(defined["descriptions"]), len(defined["tournaments"]))
+        experiments = [spec for spec in defined["tournaments"] if not spec.get("benchmark")]
+        self.assertGreaterEqual(len(defined["descriptions"]), len(experiments))
 
     def test_every_tournament_spells_out_its_hyperparameters(self):
         # Operator 2026-11-23: "please spell out the tourney hyperparameters
@@ -554,19 +626,23 @@ class TournamentsPage(unittest.TestCase):
             "Turn limit", "Ruleset", "Played in", "Game end", "CIVVIS agent",
         ))
         self.assertEqual(list(defined["hyperparameters"]), [str(n) for n in range(1, len(defined["hyperparameters"]) + 1)])
-        self.assertGreaterEqual(len(defined["hyperparameters"]), len(defined["tournaments"]) + 1)   # T4 and T5 share one
+        experiments = [spec for spec in defined["tournaments"] if not spec.get("benchmark")]
+        self.assertGreaterEqual(len(defined["hyperparameters"]), len(experiments) + 1)   # 4 and 5 share one
         for number, given in defined["hyperparameters"].items():
             self.assertEqual(tuple(given), tournaments_page.HYPERPARAMETERS, number)
             self.assertEqual(tournaments_page.hyperparameters(defined["hyperparameters"], int(number), {}),
                              [[name, value] for name, value in given.items()], number)
+        # The benchmark's are on its definition, all thirteen.
+        (bench,) = [spec for spec in defined["tournaments"] if spec.get("benchmark")]
+        self.assertEqual(tuple(bench["hyperparameters"]), tournaments_page.HYPERPARAMETERS)
         # What the ledger shows, spelled out where it differs from the rest.
-        hp = defined["hyperparameters"]
+        hp = {**defined["hyperparameters"], "benchmark": bench["hyperparameters"]}
         self.assertEqual({n: hp[n]["Map"] for n in hp}, {n: "Continents, Small, 9 city-states, a new map each game" for n in hp})
         self.assertEqual({hp[n]["Game speed"] for n in hp} | {hp[n]["Turn limit"] for n in hp}, {"Online", "250"})
         self.assertIn("all but Diplomatic", hp["5"]["Victory types"])
         self.assertTrue(hp["6"]["Victory types"].startswith("All but Diplomatic"))
         self.assertIn("hotseat for games 1-7", hp["6"]["Played in"])
-        self.assertIn("Lv 8 Deity 1 game in 2", hp["7"]["AI level"])
+        self.assertIn("Lv 8 Deity 1 game in 2", hp["benchmark"]["AI level"])
         # The page draws them in all three lists, a name and its value to a
         # line, as text.
         for piece in (
@@ -575,10 +651,10 @@ class TournamentsPage(unittest.TestCase):
             'box.append(el("p", "tour-latest-title", "Hyperparameters"), dl);',
             "  .tour-hyper { display: grid; grid-template-columns: max-content minmax(0, 1fr);",
             "  .tour-hyper > div { display: contents; }",
-            "Hyperparameters are the settings every game of a tournament was played under.",
+            "Hyperparameters are the settings every game of an experiment was played under.",
         ):
             self.assertIn(piece, PAGE)
-        self.assertEqual(PAGE.count("const settings = hyper(t);"), 3)   # running, scheduled and finished
+        self.assertEqual(PAGE.count("const settings = hyper(t);"), 3)   # a series being played, scheduled and finished
 
     def test_a_tournament_is_its_name_on_the_left_third_and_the_rest_on_the_right(self):
         # Operator 2026-11-22: "lets have The tournaments structure to be
@@ -609,7 +685,7 @@ class TournamentsPage(unittest.TestCase):
             # Finished: the left third is the cell that runs down beside a
             # tournament's figures and its games, and everything else, the
             # notes too, is to its right.
-            '<th scope="col" class="is-ident">Tournament</th>',
+            '<th scope="col" class="is-ident">Experiment</th>',
             "  .rank-table .is-ident { width: 33.333%; padding-right: 24px; white-space: normal; }",
             "const ident = identity(t, \"td\");",
             "ident.rowSpan = 2;",
@@ -659,7 +735,7 @@ class TournamentsPage(unittest.TestCase):
             '<section class="tour-section" id="tour-finished" hidden aria-labelledby="tour-finished-title">',
             # The table that stood on the home page, with the win rate added
             # and, after the two dates, the two durations.
-            '<th scope="col" class="is-ident">Tournament</th><th scope="col">Start</th><th scope="col">End</th>'
+            '<th scope="col" class="is-ident">Experiment</th><th scope="col">Start</th><th scope="col">End</th>'
             '<th scope="col" title="From the first game starting to the last game ending">Wall time</th>'
             '<th scope="col" title="The time the games were in play, added up">Run time</th>'
             '<th scope="col">Games</th>'
@@ -668,16 +744,15 @@ class TournamentsPage(unittest.TestCase):
             't.wall ? "wall time " + t.wall : "", t.run ? "run time " + t.run : ""',
             # What the bare dates and the two durations mean, said once.
             "Dates are UTC, on the 24-hour clock.",
-            "Wall time is from a tournament&#8217;s first game starting to its last game ending.",
+            "Wall time is from an experiment&#8217;s first game starting to its last game ending.",
             "Run time is the time its games were in play, added up, without the time between them.",
-            # What is scheduled stands in a column of its own on the right
-            # (operator 2026-11-21: "lets have schedule in a col off on the
-            # right"), from the width at which the table still fits beside
-            # it; narrower, the three lists are one under another.
-            "  @media (min-width: 1420px) {\n"
-            "    .tour-record { grid-template-columns: minmax(0, 1fr) 300px; align-items: start; }\n"
-            "    .tour-record > * { grid-column: 1; }\n"
-            "    .tour-record > #tour-scheduled { grid-column: 2; grid-row: 1 / span 3; }\n"
+            # The experiments are the left 60%, and what is scheduled and
+            # the benchmark the right 40% (operator 2026-11-25: "put the
+            # experiments list on the left 60%. the scheduled games &
+            # benchmark can be on the right"); narrower, one column.
+            "  @media (min-width: 1100px) {\n"
+            "    .tour-record { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); align-items: start; }\n"
+            "    .tour-record > :not(.tour-main):not(.tour-side) { grid-column: 1 / -1; }\n"
             "  }",
             "const running = list(data.running);",
             "const scheduled = list(data.scheduled);",
@@ -729,19 +804,20 @@ class Drawn(unittest.TestCase):
         cls.stage = pathlib.Path(tempfile.mkdtemp(prefix="civvis-tournaments-"))
         cls.profile = fresh_profile("civvis-tournaments-profile-")
         cls.chrome = None
-        # A tournament of each kind the page draws a row for. Running: an
-        # indefinite one with more games than its row draws, and one of a
-        # fixed size with games still to play. Finished: one played out, and
-        # one that ended after a single game.
+        # A series of each kind the page draws a row for. The benchmark, in
+        # the right-hand column: indefinite, with more games than its row
+        # draws. Running: an experiment of a fixed size with games still to
+        # play. Finished: one played out, and one that ended after a single
+        # game.
         rows = [run(f"civvis-t7-2026112{1 + i // 100}T{i % 100 // 4:02d}{i % 4 * 15:02d}00Z",
                     "win" if i % 3 == 0 else "rival_victory", "CIVILIZATION_ROME", 0,
                     utc=f"2026-11-2{1 + i // 100}T{i % 100 // 4:02d}:{i % 4 * 15 + 10:02d}:00Z") for i in range(240)]
-        bench = tournaments_page.record(rows, [{"name": "Bench", "conditions": "c", "start": "civvis-t7-",
+        bench = tournaments_page.record(rows, [{"name": "Bench", "benchmark": True, "conditions": "c", "start": "civvis-t7-",
                                                 "end": "civvis-t8-", "indefinite": True, "match": MATCH}], ["Rome"])
         record = TournamentsPage().record()
         single = copy.deepcopy(record["finished"][0])
         single.update(name="One game", results=single["results"][:1], games=1, wins=1, losses=0)
-        record["running"] = bench["running"] + record["running"]
+        record["benchmark"] = bench["benchmark"]
         record["finished"] = record["finished"] + [single]
         cls.record = record
         page = cls.stage / "index.html"
@@ -825,7 +901,7 @@ class Drawn(unittest.TestCase):
                           rows["One game"]["last"]["square"]), ("First", 0, 0))
         # An indefinite tournament's row is its latest 100 games, so it
         # does not start at the first: it says which game it starts at.
-        self.assertEqual(self.record["running"][0]["games"], 240)
+        self.assertEqual(self.record["benchmark"]["games"], 240)
         self.assertEqual((rows["Bench"]["first"]["text"], len(rows["Bench"]["squares"])), ("Game 141", 100))
 
     def test_a_label_has_its_room_in_the_row_and_the_squares_keep_their_columns(self):

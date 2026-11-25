@@ -1,6 +1,7 @@
 {
   "_doc": [
-    "Tournaments shown on the Tournaments page (beta/tournaments_page.py, beta/tournaments.html); the home page",
+    "Experiments shown on the Experiments page (beta/tournaments_page.py, beta/tournaments.html; the page was named Tournaments",
+    "until 2026-11-25, and each series on it was \"Tournament N\"); the home page",
     "(beta/home_rankings.py, beta/landing.html) carried them as a table until 2026-11-21.",
     "Each runs from its first game (`start`, a run tag; every game with a later tag",
     "that matches `match` counts) in series of `series_size` finished games, read off",
@@ -80,7 +81,15 @@
     "plays under its own tag prefix, and the benchmark resumes when it is done. Each finished benchmark game is read by Claude",
     "Opus 5.5 on the host (bench/review_bench.py), which lists the mistakes it finds; a mistake seen in several games is handed",
     "to an Opus 5.5 session that fixes it in code as an opt-in gene, ships it and arms it, and the benchmark's win rates measure",
-    "the change."
+    "the change.",
+    "Operator 2026-11-25 ~05:40Z: \"REplace tournament with experiment inside experiments/. that is really what they are. isn't",
+    "about winning. trying to learn.\": each series is \"Experiment N\" on the page.",
+    "Operator 2026-11-25 ~05:50Z: \"put the experiments list on the left 60%. the scheduled games & benchmark can be on the right.",
+    "tourney 7 is benchmark. please remove from experiments and make the official benchmark for now\": the definition marked",
+    "`benchmark` is not an experiment. The page draws it on its own, as the Official Benchmark, in the right-hand column under",
+    "Scheduled, and numbers the experiments without it, so the next one scheduled is Experiment 7. A number in `descriptions`,",
+    "`videos` and `hyperparameters` is an experiment's number; the benchmark carries its own `description` and",
+    "`hyperparameters` on its definition. Its tags (`civvis-t7-`) and the host's bench conductor are unchanged."
   ],
   "descriptions": {
     "1": "Proof of concept, 10 game series",
@@ -88,8 +97,7 @@
     "3": "30 game series",
     "4": "50 game series",
     "5": "Repeat 50 game series but with 2/6 CIVVIS AI Agents (2nd half no Diplo allowed)",
-    "6": "Benchmarking across levels: 5 games at each level (no Diplo allowed)",
-    "7": "Indefinite Benchmarking Tourney"
+    "6": "Benchmarking across levels: 5 games at each level (no Diplo allowed)"
   },
   "hyperparameters": {
     "1": {
@@ -98,7 +106,7 @@
       "Players": "6: 1 CIVVIS agent + 5 Firaxis AI",
       "Victory types": "All six: Science, Culture, Domination, Religious, Diplomatic, Score",
       "Civ": "Random each game",
-      "Strategy": "Probably random among our top ~5, as in Tournament 2 (unconfirmed)",
+      "Strategy": "Probably random among our top ~5, as in Experiment 2 (unconfirmed)",
       "Map": "Continents, Small, 9 city-states, a new map each game",
       "Game speed": "Online",
       "Turn limit": "250",
@@ -153,7 +161,7 @@
       "CIVVIS agent": "The newest build when each game launched: 15 builds over 50 games"
     },
     "5": {
-      "Games": "50 planned; ended at 49 when Tournament 6 began",
+      "Games": "50 planned; ended at 49 when Experiment 6 began",
       "AI level": "Lv 8 Deity",
       "Players": "6: 1 CIVVIS agent + 5 Firaxis AI (the ledger has one CIVVIS civ in each of the 49 games)",
       "Victory types": "Games 1-25: all six (Science, Culture, Domination, Religious, Diplomatic, Score). Games 26-49: all but Diplomatic",
@@ -181,21 +189,6 @@
       "Played in": "Civ VI hotseat for games 1-7, single player from game 8",
       "Game end": "Played out: a victory, our elimination or turn 250",
       "CIVVIS agent": "The newest build when each game launched: 6 builds over games 8-25"
-    },
-    "7": {
-      "Games": "Indefinite: played whenever no scheduled tourney runs; a scheduled tourney pauses it and it resumes after",
-      "AI level": "Since 2026-11-23 04:43: Lv 8 Deity 1 game in 2; Lv 4 Prince, Lv 5 King, Lv 6 Emperor and Lv 7 Immortal 1 in 8 each, dealt in shuffled blocks of 16. Before: Lv 6, Lv 7, Lv 8, Lv 8 in turn",
-      "Players": "6: 1 CIVVIS agent + 5 Firaxis AI",
-      "Victory types": "Since 2026-11-23 04:43: Diplomatic allowed in half of each level's games and off in the other half; Science, Culture, Domination, Religious and Score always on. Before: all but Diplomatic",
-      "Civ": "Random each game",
-      "Strategy": "Our best strategy for the civ drawn",
-      "Map": "Continents, Small, 9 city-states, a new map each game",
-      "Game speed": "Online",
-      "Turn limit": "250",
-      "Ruleset": "Gathering Storm",
-      "Played in": "Civ VI single player",
-      "Game end": "Played out: a victory, our elimination or turn 250",
-      "CIVVIS agent": "The newest build when each game launched; Claude Opus 5.5 reviews every game, and a mistake it finds in several games is fixed in code and armed, so the agent keeps changing as the tourney runs"
     }
   },
   "videos": {
@@ -212,7 +205,7 @@
       "series_size": 10,
       "match": {"difficulty": "DIFFICULTY_DEITY", "players": 6, "map": "Continents.lua"},
       "end": "civvis-20261119T204058Z",
-      "note": "Probably affected like Tournament 2: civ and strategy likely both picked at random (unconfirmed)."
+      "note": "Probably affected like Experiment 2: civ and strategy likely both picked at random (unconfirmed)."
     },
     {
       "name": "Lv 8 Deity 30-game series",
@@ -229,7 +222,7 @@
       "start": "civvis-20261119T223800Z",
       "series_size": 30,
       "match": {"difficulty": "DIFFICULTY_DEITY", "players": 6, "map": "Continents.lua"},
-      "note": "A random civ playing our best strategy for that civ (the fix for Tournament 2).",
+      "note": "A random civ playing our best strategy for that civ (the fix for Experiment 2).",
       "end": "civvis-20261120T045254Z"
     },
     {
@@ -253,14 +246,30 @@
     },
     {
       "name": "Lv 4 to Lv 8 against the Firaxis AI, 1 CIVVIS agent + 5 AI",
-      "description": "Indefinite Benchmarking Tourney",
-      "idea": "Benchmark games, played whenever no scheduled tourney is: one CIVVIS agent against five Firaxis AI, half the games at Lv 8 and an eighth at each of Lv 4, 5, 6 and 7, half of each level's games with the Diplomatic victory allowed. A scheduled tourney pauses it, and it resumes when that tourney is done. Its win rate at each level is our primary benchmark against the Firaxis AI, tracked over time here and on Win Analytics. Claude Opus 5.5 reviews every game for our mistakes, and a mistake that recurs is fixed in code, so the agent improves as the tourney runs.",
+      "benchmark": true,
+      "description": "Official Benchmark",
+      "idea": "Benchmark games, played whenever no experiment is: one CIVVIS agent against five Firaxis AI, half the games at Lv 8 and an eighth at each of Lv 4, 5, 6 and 7, half of each level's games with the Diplomatic victory allowed. A scheduled experiment pauses it, and it resumes when that experiment is done. Its win rate at each level is our primary benchmark against the Firaxis AI, tracked over time here and on Win Analytics. Claude Opus 5.5 reviews every game for our mistakes, and a mistake that recurs is fixed in code, so the agent improves as the benchmark runs.",
       "conditions": "Lv 8 one game in two, Lv 4-7 one in eight each, 6P Continents Online, 1 CIVVIS + 5 AI, Diplomatic victory on in half the games",
       "note": "Until 2026-11-23 its games were Lv 6, Lv 7, Lv 8 and Lv 8 in turn, all with the Diplomatic victory off.",
       "start": "civvis-t7-",
       "end": "civvis-t8-",
       "indefinite": true,
-      "match": {"players": 6, "map": "Continents.lua"}
+      "match": {"players": 6, "map": "Continents.lua"},
+      "hyperparameters": {
+        "Games": "Indefinite: played whenever no experiment runs; a scheduled experiment pauses it and it resumes after",
+        "AI level": "Since 2026-11-23 04:43: Lv 8 Deity 1 game in 2; Lv 4 Prince, Lv 5 King, Lv 6 Emperor and Lv 7 Immortal 1 in 8 each, dealt in shuffled blocks of 16. Before: Lv 6, Lv 7, Lv 8, Lv 8 in turn",
+        "Players": "6: 1 CIVVIS agent + 5 Firaxis AI",
+        "Victory types": "Since 2026-11-23 04:43: Diplomatic allowed in half of each level's games and off in the other half; Science, Culture, Domination, Religious and Score always on. Before: all but Diplomatic",
+        "Civ": "Random each game",
+        "Strategy": "Our best strategy for the civ drawn",
+        "Map": "Continents, Small, 9 city-states, a new map each game",
+        "Game speed": "Online",
+        "Turn limit": "250",
+        "Ruleset": "Gathering Storm",
+        "Played in": "Civ VI single player",
+        "Game end": "Played out: a victory, our elimination or turn 250",
+        "CIVVIS agent": "The newest build when each game launched; Claude Opus 5.5 reviews every game, and a mistake it finds in several games is fixed in code and armed, so the agent keeps changing as the benchmark runs"
+      }
     }
   ]
 }
