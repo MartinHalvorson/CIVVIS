@@ -369,7 +369,7 @@ fn the_two_trees_are_priced_against_their_own_rate() {
     // against culture instead of science would be an order out.
     let chases = opening.eureka_chases(&game, 0);
     assert!(!chases.is_empty());
-    for chase in &chases {
+    for chase in chases.iter() {
         let is_tech = game.rules.techs.contains_key(&chase.node);
         assert_eq!(
             is_tech,

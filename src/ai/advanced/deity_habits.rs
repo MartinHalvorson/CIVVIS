@@ -85,15 +85,17 @@ impl EurekaChase {
 /// every Builder job and every queue item priced this turn.
 #[derive(Clone, Default)]
 pub(super) struct EurekaChaseCache {
-    entries: RefCell<Option<(u32, usize, Vec<EurekaChase>)>>,
+    entries: RefCell<Option<(u32, usize, std::sync::Arc<[EurekaChase]>)>>,
 }
 
 impl AdvancedAi {
     /// Every unresearched, unboosted technology or civic within
     /// `EUREKA_CHASE_ERA_REACH` eras whose boost an improvement, a unit, a
     /// building or a district can still complete, with the steps left and the
-    /// research at stake. Memoised per turn and player.
-    pub(super) fn eureka_chases(&self, g: &Game, pid: usize) -> Vec<EurekaChase> {
+    /// research at stake. Memoised per turn and player, and handed out
+    /// shared: a hit used to copy every chase, trigger text and all, and the
+    /// boost pricing asks for the list for every node it weighs.
+    pub(super) fn eureka_chases(&self, g: &Game, pid: usize) -> std::sync::Arc<[EurekaChase]> {
         {
             let cached = self.eureka_chase_cache.entries.borrow();
             if let Some((turn, owner, entries)) = cached.as_ref() {
@@ -102,7 +104,7 @@ impl AdvancedAi {
                 }
             }
         }
-        let entries = self.eureka_chases_uncached(g, pid);
+        let entries: std::sync::Arc<[EurekaChase]> = self.eureka_chases_uncached(g, pid).into();
         *self.eureka_chase_cache.entries.borrow_mut() = Some((g.turn, pid, entries.clone()));
         entries
     }
