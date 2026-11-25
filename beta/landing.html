@@ -389,6 +389,11 @@
   .watch-tile figcaption { display: flex; flex-wrap: wrap; align-items: baseline; gap: 1px 12px; margin-bottom: 8px; }
   .watch-tile figcaption b { color: #fff; font-size: 20px; font-weight: 700; line-height: 1.3; }
   .watch-tile figcaption span { order: 3; flex-basis: 100%; min-width: 0; color: var(--text); font-size: 15px; line-height: 1.4; }
+  /* The fastest game's time is part of its title, in the title's type.
+     A title too long for its row beside the link (that one, since it has
+     its time) wraps there, and the link keeps its place on the right. */
+  .watch-tile figcaption b [data-watch-time] { color: inherit; font-size: inherit; line-height: inherit; }
+  .watch-tile figcaption b { flex: 1 1 0; }
   .watch-tile figcaption a { flex: none; margin-left: auto; color: var(--accent); font-size: 13px; text-decoration: none; white-space: nowrap; }
   .watch-tile figcaption a:hover { text-decoration: underline; }
 </style>
@@ -558,7 +563,11 @@
          the right, of the second row now, with the science win at its
          left, and the AI Debugger's video is at the left of the third.
          Each has its title over it, and a title that says everything has
-         no second line under it. The videos
+         no second line under it. The fastest game's title ends with its
+         time, "<6s" (operator, 2026-11-25: "throw a time on fastest recorded
+         civvis game home/.:: <6s"), and the culture win's names the civ
+         first, as the science win's does ("swap culture, maya to Maya,
+         Culture"). The videos
          are YouTube's: a tile shows the video's picture, and its player
          takes the picture's place when the tile is on screen, playing
          without sound (operator: "please have the videos autoplay if
@@ -574,7 +583,8 @@
          record on the day it was written. Its second line is the game
          that record played (the record's `setup` in that file), and a
          record that does not say what it played shows its video's title
-         there instead. The section has no heading of
+         there instead. The time on its title is the record's too: "<6s"
+         for a game played "under 6 seconds", "9s" for one in 9. The section has no heading of
          its own (operator: "Drop "watch" title or whatever from this
          section"), and the channel's top playlists are in the header,
          under YouTube. The two rankings that stood here are on Charts
@@ -583,7 +593,7 @@
     <section class="watch" id="watch" aria-label="Videos">
       <div class="watch-grid">
         <figure class="watch-tile" id="watch-fastest" data-video="iHlUWPIqr5g">
-          <figcaption><b>Fastest recorded CIVVIS self-play game</b> <span data-watch-title>4P Tennis Ball, Online</span> <a href="../charts/civvis-performance/">CIVVIS Performance</a></figcaption>
+          <figcaption><b>Fastest recorded CIVVIS self-play game:&#160;<span data-watch-time>&lt;6s</span></b> <span data-watch-title>4P Tennis Ball, Online</span> <a href="../charts/civvis-performance/">CIVVIS Performance</a></figcaption>
           <a class="watch-poster" href="https://www.youtube.com/watch?v=iHlUWPIqr5g" target="_blank" rel="noreferrer">
             <img alt="" width="1280" height="720" decoding="async" referrerpolicy="no-referrer" src="https://i.ytimg.com/vi_webp/iHlUWPIqr5g/hq720.webp">
             <span class="watch-play" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span>
@@ -604,7 +614,7 @@
           </a>
         </figure>
         <figure class="watch-tile" id="watch-culture" data-video="6PCd4R08UPM">
-          <figcaption><b>Lv 8 Deity Win - Culture, Maya</b> <a href="https://www.youtube.com/playlist?list=PLWcKlP8e8iy4" target="_blank" rel="noreferrer">Lv 8 Deity Wins</a></figcaption>
+          <figcaption><b>Lv 8 Deity Win - Maya, Culture</b> <a href="https://www.youtube.com/playlist?list=PLWcKlP8e8iy4" target="_blank" rel="noreferrer">Lv 8 Deity Wins</a></figcaption>
           <a class="watch-poster" href="https://www.youtube.com/watch?v=6PCd4R08UPM" target="_blank" rel="noreferrer">
             <img alt="" width="1280" height="720" decoding="async" referrerpolicy="no-referrer" src="https://i.ytimg.com/vi_webp/6PCd4R08UPM/hq720.webp">
             <span class="watch-play" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span>
@@ -701,7 +711,8 @@
   // The video tiles. A tile's video is its `data-video`, and the fastest
   // game's is the record the slot names, when the page was published with
   // one, with the game that record played as the tile's second line (the
-  // record's `setup`; its video's title when it does not say). A tile on
+  // record's `setup`; its video's title when it does not say) and the time
+  // it played it in at the end of its title ("<6s"). A tile on
   // screen gives its picture's place to the video's player, which plays
   // without sound: a browser lets a video start by itself only muted. A picture pressed before that plays with its sound, and a press
   // that asks for a new tab or window is the link it is, to YouTube. A
@@ -721,6 +732,7 @@
         tile.querySelector("img").src = "https://i.ytimg.com/vi_webp/" + fastest.id + "/hq720.webp";
       }
       if (fastest.setup || fastest.title) tile.querySelector("[data-watch-title]").textContent = fastest.setup || fastest.title;
+      if (fastest.short) tile.querySelector("[data-watch-time]").textContent = fastest.short;
     }
     // Whoever asked their system for less motion keeps the pictures, and
     // plays a video by pressing it.
