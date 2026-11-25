@@ -154,7 +154,11 @@ self.onmessage = async (event) => {
     let answer = request(method, path, body, seed);
     busyMs += performance.now() - began;
     if (String(path).split("?")[0] === "/machine-metrics") answer = metered(answer);
-    self.postMessage({ id, ok: true, answer }, [answer.buffer]);
+    // What this engine holds and has spent rides on every answer, so a page
+    // with many engines can read them all without asking one that is busy
+    // (`shim.js`, "a world's own engine").
+    const meter = { bytes: engine.memory.buffer.byteLength, busy: Math.round(busyMs) };
+    self.postMessage({ id, ok: true, answer, meter }, [answer.buffer]);
   } catch (error) {
     const reported = String((error && error.message) || error);
     const panic = engine ? lastPanic() : null;
