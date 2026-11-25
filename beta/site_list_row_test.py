@@ -7,7 +7,7 @@ the top instad. charts/ can drop down folder style and the user can pick the
 right chart". Until then the list stood in a column to the left of the title,
 and the pages of Charts/ were listed under it only on those pages.
 
-So every page `publish.sh` publishes with a header (Home, Tournaments and the
+So every page `publish.sh` publishes with a header (Home, Experiments and the
 pages of Charts/) carries the list first in its header, over the title, and
 in it Charts/ is a folder: its own link still opens the folder's first page,
 and a list of all its pages, the same on every page, drops down from it when
@@ -96,7 +96,7 @@ class Row(unittest.TestCase):
                 self.assertTrue(all(cls == "site-link sub-link" for cls, _, _, _ in listed))
                 # Each entry is lane-relative and lands on its page: `./` on
                 # the page itself, a sibling from a page of Charts/, and
-                # down into charts/ from Home and Tournaments.
+                # down into charts/ from Home and Experiments.
                 for (_, href, rest, name), (slug, _) in zip(listed, CHARTS):
                     if here == f"charts/{slug}/":
                         self.assertEqual((href, rest), ("./", ' aria-current="page"'))

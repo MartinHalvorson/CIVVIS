@@ -386,7 +386,7 @@ def tournament_series(rows: list[dict], tournaments: list[dict], detail: bool = 
     its `end` only bounds the tags it counts. A tournament played between its
     games (a tag past that `end`) pauses it, it does not close it.
 
-    With `detail` each series also carries what the Tournaments page
+    With `detail` each series also carries what the Experiments page
     (`beta/tournaments_page.py`) draws beyond the table: the place of its
     definition in the list (`definition`) and its games in the order they were
     played (`played`, each a game's tag and the result line of its best run).
@@ -474,7 +474,7 @@ def rankings(source: pathlib.Path) -> dict:
 
 
 #: The home page's Tournaments card as pages up to 2026-11-21 carried it. The
-#: table lives on the Tournaments page now (`beta/tournaments.html`, filled by
+#: table lives on the Experiments page now (`beta/tournaments.html`, filled by
 #: `beta/tournaments_page.py`), and only a page that still has the card is
 #: sent its rows: a lane pinned to an older revision keeps the table it shows.
 TOURNAMENTS_CARD = 'id="rank-tournaments"'
