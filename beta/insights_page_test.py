@@ -224,6 +224,33 @@ class ThePage(unittest.TestCase):
         # It is the page's only insight so far, and each is a section of its own.
         self.assertEqual(PAGE.count('<section class="ins-insight"'), 1)
 
+    def test_the_first_insight_carries_his_two_notes(self):
+        # Operator 2026-11-24: "add to insight one, Note 1: Strong AI could
+        # block other AIs more effectively, delaying the game. Note 2: Lots of
+        # the real world speedup from AI I would guess will come from removing
+        # the human from the decision making loop, not necessarily from more
+        # optimized decisions in pursuit of some goal."
+        first = PAGE[PAGE.index('<section class="ins-insight" id="ins-speed"'):]
+        first = first[:first.index("</section>")]
+        notes = re.findall(r'<p class="ins-note"><b>(.*?)</b><span>(.*?)</span></p>', first)
+        self.assertEqual(
+            notes,
+            [
+                ("Note 1", "Strong AI could block other AIs more effectively, delaying the game."),
+                (
+                    "Note 2",
+                    "Lots of the real world speedup from AI I would guess will come from removing the human from "
+                    "the decision making loop, not necessarily from more optimized decisions in pursuit of some goal.",
+                ),
+            ],
+        )
+        # They are in the open, under the chart and over the closed note of
+        # what the chart counts: a visitor reads them without pressing.
+        self.assertLess(first.index('id="ins-speed-plot"'), first.index('<div class="ins-notes"'))
+        self.assertLess(first.index('<div class="ins-notes"'), first.index('<details class="fine">'))
+        self.assertEqual(first.count('<div class="ins-notes"'), 1)
+        self.assertIn("  .ins-note {", PAGE)
+
     def test_the_switch_lists_lv_8_7_6_5_and_opens_on_deity(self):
         # "we should show the civvis vs lv 8 deity ai chart, switching
         # between lv 8, 7, 6, 5": four rows in that order, each a button,
