@@ -187,6 +187,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `exploration-replans-need-a-sighting` | off (unmeasured) | Opt-in gene `exploration-replans-need-a-sighting`: explored ground re-opens the turn only when it shows a foreign unit or city; see `ai::player::take_turn`. | 1 \| 1 |
 | `one-replan-per-turn` | off (unmeasured) | Opt-in gene `one-replan-per-turn`: a turn re-opens for a fresh plan at most once; see `ai::player::take_turn`. | 1 \| 1 |
 | `raiders-holding-a-settler-are-hunted` | off (unmeasured) | Opt-in gene `raiders-holding-a-settler-are-hunted`: the board hunts the hostiles that hold a Settler of ours in the field; see `advanced/raiders_holding_a_settler.rs`. | 1 \| 1 |
+| `science-core-ends-expansion` | off (unmeasured) | Opt-in gene `science-core-ends-expansion`: an assigned Science lane leaves the Expansion half at its core of cities; see `advanced/science_core_ends_expansion.rs`. | 1 \| 1 |
 | `science-seat-campus-before-the-settler` | off (unmeasured) | Opt-in gene `science-seat-campus-before-the-settler`: a Science seat's first Campus goes ahead of the floor's Settler; see `advanced/science_seat_campus_before_the_settler.rs`. | 1 \| 1 |
 | `settler-brake-counts-the-wanderer` | off (unmeasured) | Opt-in gene `settler-brake-counts-the-wanderer`: a wandering Settler closes the pipeline; see `advanced/settler_brake_counts_the_wanderer.rs`. | 1 \| 1 |
 
