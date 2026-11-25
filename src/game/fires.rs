@@ -131,6 +131,7 @@ impl Game {
         }
         let position = sources[rng.below(sources.len())];
         self.ignite(position, kind);
+        self.tally_disaster(class);
         let text = match kind {
             FireKind::Forest => "a forest fire broke out",
             FireKind::Jungle => "a rainforest fire broke out",
@@ -230,11 +231,13 @@ impl Game {
         });
         if pillage {
             self.map.tiles.get_mut(&position).unwrap().pillaged = true;
+            self.tally_disaster_tile(position);
         }
         for unit_id in self.units_at(position) {
             let Some(unit) = self.units.get(&unit_id) else {
                 continue;
             };
+            let owner = unit.owner;
             let civilian = self
                 .rules
                 .units
@@ -242,6 +245,7 @@ impl Game {
                 .is_some_and(|spec| spec.class == "civilian");
             let hp = unit.hp - rng.randint(UNIT_DAMAGE.0, UNIT_DAMAGE.1);
             if civilian || hp <= 0 {
+                self.tally_disaster_loss(owner, |losses| losses.units += 1);
                 self.remove_unit(unit_id);
             } else {
                 self.units.get_mut(&unit_id).unwrap().hp = hp;

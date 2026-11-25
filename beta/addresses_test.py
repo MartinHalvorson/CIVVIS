@@ -28,6 +28,7 @@ or a digit, and a page listed under a folder (Charts/) sits in that folder.
       ELO Rankings             /charts/elo-rankings/
       CIVVIS Performance       /charts/civvis-performance/
     Experiments                /experiments/
+    Chaos Monkey               /chaos-monkey/
 
 A page states its own address (its `<link rel="canonical">`), `publish.sh`
 puts it there, and every link in it is relative to it. So this reads the
@@ -375,8 +376,10 @@ class Moved(unittest.TestCase):
             # The second word is where the page was before pages stated
             # their addresses; a page written since has only the one it
             # states, folder and all.
+            # A name of two words has its hyphen at either level
+            # (`chaos-monkey`, `charts/ai-insights`).
             self.assertRegex(
-                PUBLISH, rf'\n[a-z]+_at="\$\(address "\${name}_page" [a-z]+(/[a-z-]+)?\)"\n', source)
+                PUBLISH, rf'\n[a-z]+_at="\$\(address "\${name}_page" [a-z-]+(/[a-z-]+)?\)"\n', source)
 
 
 if __name__ == "__main__":

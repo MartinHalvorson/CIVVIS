@@ -182,6 +182,7 @@ def fresh_profile(prefix: str) -> str:
 PAGES = {
     "home": b'aria-label="CIVVIS links"',
     "experiments": b'id="tournaments-data"',
+    "chaos-monkey": b'id="chaos-data"',
     "charts/win-analytics": b'id="research-data"',
     "charts/elo-rankings": b'id="elo-data"',
     "charts/civ-analytics": b'id="civ-data"',

@@ -603,6 +603,11 @@ pub struct Params {
     /// A lifecycle supervisor, rather than the browser countdown, owns the
     /// transition after a completed spectator game.
     pub supervised: bool,
+    /// Chaos Monkey's dial for every world this session deals: how many
+    /// times as often disasters strike as the game ships them
+    /// (`Game::disaster_frequency`). One unless the launch (`--chaos`) or
+    /// the page (`POST /chaos`) turned it.
+    pub disaster_frequency: f64,
 }
 
 /// A game of Civilization VI this session repaints (`civvis play --mirror`,
@@ -2327,6 +2332,7 @@ impl Session {
         game.victory_conditions = params.victory_conditions;
         game.mercy_rule = params.mercy_rule;
         game.required_victory_types = params.required_victory_types;
+        game.set_disaster_frequency(params.disaster_frequency);
         // The hierarchical agent is the stock major-civilization default.
         // Minors/barbarians retain the cheaper baseline because they do not
         // need empire-level planning.
@@ -3014,6 +3020,12 @@ impl Session {
             o["victories_won"] = json!(self.game.victories_won);
             o["legal_actions"] = json!([]);
             self.fog_honest_json(&mut o);
+            // The turn box's Chaos Monkey row: the dial of the world on
+            // screen. Only a watched world has the row; see
+            // [`Session::set_disaster_frequency`].
+            if self.mirror.is_none() {
+                o["disaster_frequency"] = json!(self.game.disaster_frequency());
+            }
             // Lets a long-running spectator notice that its server was
             // rebuilt/restarted between games and reload the latest UI.
             o["server_instance"] = json!(process_identity());
@@ -3130,6 +3142,22 @@ impl Session {
         for agent in &mut self.ais {
             agent.set_fog_honest(self.fog_honest);
         }
+    }
+
+    /// Turn Chaos Monkey's dial: natural disasters `frequency` times as
+    /// often as the game ships them, in the world on screen from its next
+    /// turn and in every world this session deals after it.
+    ///
+    /// Only a watched world takes it. The Sim debugger keeps turns ahead of
+    /// the one on screen, played under the dial as it stood, and a repainted
+    /// game of Civilization VI rolls its own weather.
+    pub fn set_disaster_frequency(&mut self, frequency: f64) -> Result<(), String> {
+        if !self.params.spectate || self.mirror.is_some() {
+            return Err("Chaos Monkey turns the dial on a watched CIVVIS world".to_string());
+        }
+        self.game.set_disaster_frequency(frequency);
+        self.params.disaster_frequency = self.game.disaster_frequency();
+        Ok(())
     }
 
     /// The turn box's Fog-honest AI row: the table's setting, and how many
@@ -4242,6 +4270,7 @@ fn stock_opening_params(seed: u64) -> Params {
         leader_pool: LeaderPool::Civ6,
         civs: Vec::new(),
         supervised: false,
+        disaster_frequency: crate::game::DEFAULT_DISASTER_FREQUENCY,
     }
 }
 
@@ -4321,6 +4350,11 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
     }
     if let Some(v) = request["seed"].as_u64() {
         p.seed = v;
+    }
+    if let Some(v) = request["disaster_frequency"].as_f64() {
+        if v.is_finite() {
+            p.disaster_frequency = v.clamp(0.0, crate::game::MAX_DISASTER_FREQUENCY);
+        }
     }
     if let Some(v) = request["base_ruleset"]
         .as_str()
@@ -5758,6 +5792,13 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
         ("POST", "/fog-honest") => {
             let mut session = lock_or_recover(&sh.session);
             let mut out = crate::routes::fog_honest(&mut session, &parsed);
+            drop(session);
+            decorate(&mut out, sh);
+            respond_json(stream, &out);
+        }
+        ("POST", "/chaos") => {
+            let mut session = lock_or_recover(&sh.session);
+            let mut out = crate::routes::chaos(&mut session, &parsed);
             drop(session);
             decorate(&mut out, sh);
             respond_json(stream, &out);

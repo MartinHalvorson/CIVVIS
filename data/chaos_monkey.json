@@ -1,0 +1,813 @@
+{
+ "played": {
+  "games": 144,
+  "seeds": [
+   1,
+   24
+  ],
+  "setup": "6 civilizations, every seat a CIVVIS AI agent, 250 turns, seeds 1 to 24, each played at 1x, 10x, 30x, 100x, 300x, 1,000x",
+  "commit": "7142bd5a6a",
+  "date": "2026-11-25",
+  "command": "civvis chaos-monkey --players 6 --map continents --speed online --start-seed 1 --games 24 --frequencies 1,10,30,100,300,1000"
+ },
+ "turns": [
+  1,
+  10,
+  20,
+  30,
+  40,
+  50,
+  60,
+  70,
+  80,
+  90,
+  100,
+  110,
+  120,
+  130,
+  140,
+  150,
+  160,
+  170,
+  180,
+  190,
+  200,
+  210,
+  220,
+  230,
+  240,
+  250
+ ],
+ "doses": [
+  {
+   "frequency": 1,
+   "games": 24,
+   "disasters": 55.2,
+   "classes": {
+    "blizzard": 6.04,
+    "drought": 4.88,
+    "dust_storm": 5.83,
+    "forest_fire": 6.46,
+    "hurricane": 7.12,
+    "jungle_fire": 5.62,
+    "river_flood": 10.5,
+    "tornado": 6.38,
+    "volcanic_eruption": 2.37
+   },
+   "lost": {
+    "citizens": 0.8,
+    "tiles": 25.0,
+    "units": 1.4
+   },
+   "end": {
+    "people": 445.0,
+    "cities": 35.8,
+    "science": 341.3,
+    "army": 130.2,
+    "land": 562.1
+   },
+   "ended": 241,
+   "kept": {
+    "people": 1.0,
+    "cities": 1.0,
+    "science": 1.0,
+    "army": 1.0,
+    "land": 1.0
+   },
+   "same_winner": 1.0,
+   "outcomes": {
+    "collapsed": 0.0417,
+    "eliminated": 0.0278,
+    "captures": 3.62,
+    "wars": 7.17,
+    "nukes": 0.0,
+    "leader": 0.2612,
+    "climate": 0.67
+   },
+   "victories": {
+    "science": 8,
+    "culture": 3,
+    "diplomatic": 1,
+    "religious": 2,
+    "score": 10
+   },
+   "series": {
+    "people": [
+     0.0,
+     12.1,
+     20.5,
+     33.7,
+     49.2,
+     65.8,
+     83.0,
+     100.8,
+     118.4,
+     136.9,
+     154.2,
+     170.9,
+     187.9,
+     202.0,
+     220.8,
+     236.5,
+     254.6,
+     274.3,
+     295.2,
+     317.8,
+     344.4,
+     370.0,
+     392.8,
+     421.6,
+     449.0
+    ],
+    "wrecked": [
+     0.0,
+     0.0,
+     0.0254,
+     0.0373,
+     0.0524,
+     0.0534,
+     0.0521,
+     0.044,
+     0.0368,
+     0.0343,
+     0.0324,
+     0.0293,
+     0.028,
+     0.0278,
+     0.0257,
+     0.0256,
+     0.0255,
+     0.0242,
+     0.0249,
+     0.0243,
+     0.0257,
+     0.0266,
+     0.0309,
+     0.0335,
+     0.0298
+    ]
+   }
+  },
+  {
+   "frequency": 10,
+   "games": 24,
+   "disasters": 553.8,
+   "classes": {
+    "blizzard": 57.96,
+    "drought": 47.79,
+    "dust_storm": 59.62,
+    "forest_fire": 55.88,
+    "hurricane": 76.62,
+    "jungle_fire": 55.54,
+    "river_flood": 114.96,
+    "tornado": 58.5,
+    "volcanic_eruption": 26.92
+   },
+   "lost": {
+    "citizens": 8.9,
+    "tiles": 198.6,
+    "units": 15.0
+   },
+   "end": {
+    "people": 488.9,
+    "cities": 35.7,
+    "science": 350.5,
+    "army": 124.4,
+    "land": 513.0
+   },
+   "ended": 246,
+   "kept": {
+    "people": 1.1014,
+    "cities": 1.0084,
+    "science": 1.0257,
+    "army": 0.9515,
+    "land": 0.9213
+   },
+   "same_winner": 0.3333,
+   "outcomes": {
+    "collapsed": 0.0556,
+    "eliminated": 0.0347,
+    "captures": 3.29,
+    "wars": 6.46,
+    "nukes": 0.0,
+    "leader": 0.2654,
+    "climate": 0.62
+   },
+   "victories": {
+    "science": 11,
+    "culture": 3,
+    "religious": 1,
+    "score": 9
+   },
+   "series": {
+    "people": [
+     0.0,
+     12.1,
+     20.7,
+     33.2,
+     49.1,
+     65.8,
+     83.5,
+     102.0,
+     121.5,
+     141.3,
+     161.4,
+     180.3,
+     197.9,
+     215.8,
+     238.3,
+     257.9,
+     277.1,
+     299.5,
+     323.4,
+     348.0,
+     375.5,
+     403.5,
+     432.0,
+     466.0,
+     497.1
+    ],
+    "wrecked": [
+     0.0,
+     0.0,
+     0.0531,
+     0.0804,
+     0.1025,
+     0.089,
+     0.0883,
+     0.0803,
+     0.0748,
+     0.0743,
+     0.0705,
+     0.081,
+     0.0784,
+     0.0732,
+     0.0838,
+     0.0907,
+     0.0963,
+     0.104,
+     0.1111,
+     0.1108,
+     0.1089,
+     0.1151,
+     0.1126,
+     0.1152,
+     0.1165
+    ]
+   }
+  },
+  {
+   "frequency": 30,
+   "games": 24,
+   "disasters": 1572.4,
+   "classes": {
+    "blizzard": 164.12,
+    "drought": 136.42,
+    "dust_storm": 162.54,
+    "forest_fire": 161.08,
+    "hurricane": 215.25,
+    "jungle_fire": 160.79,
+    "river_flood": 324.88,
+    "tornado": 165.38,
+    "volcanic_eruption": 81.92
+   },
+   "lost": {
+    "citizens": 26.4,
+    "tiles": 466.4,
+    "units": 47.2
+   },
+   "end": {
+    "people": 503.8,
+    "cities": 35.6,
+    "science": 344.8,
+    "army": 114.8,
+    "land": 434.9
+   },
+   "ended": 236,
+   "kept": {
+    "people": 1.2354,
+    "cities": 1.0488,
+    "science": 1.0768,
+    "army": 0.9198,
+    "land": 0.867
+   },
+   "same_winner": 0.25,
+   "outcomes": {
+    "collapsed": 0.0208,
+    "eliminated": 0.0069,
+    "captures": 2.88,
+    "wars": 6.54,
+    "nukes": 0.08,
+    "leader": 0.241,
+    "climate": 0.67
+   },
+   "victories": {
+    "science": 10,
+    "culture": 3,
+    "diplomatic": 1,
+    "religious": 2,
+    "score": 8
+   },
+   "series": {
+    "people": [
+     0.0,
+     12.2,
+     21.0,
+     35.7,
+     52.9,
+     73.0,
+     95.9,
+     118.7,
+     141.0,
+     163.6,
+     185.8,
+     204.7,
+     222.1,
+     239.3,
+     263.5,
+     286.9,
+     309.5,
+     332.6,
+     357.6,
+     386.8,
+     421.0,
+     452.1,
+     486.1,
+     515.7
+    ],
+    "wrecked": [
+     0.0,
+     0.0,
+     0.039,
+     0.1086,
+     0.1322,
+     0.1424,
+     0.1352,
+     0.1384,
+     0.1401,
+     0.1448,
+     0.1439,
+     0.1642,
+     0.1707,
+     0.1739,
+     0.1843,
+     0.195,
+     0.2051,
+     0.2098,
+     0.2102,
+     0.2143,
+     0.2139,
+     0.2282,
+     0.2284,
+     0.2421
+    ]
+   }
+  },
+  {
+   "frequency": 100,
+   "games": 24,
+   "disasters": 5415.9,
+   "classes": {
+    "blizzard": 563.58,
+    "drought": 466.5,
+    "dust_storm": 561.58,
+    "forest_fire": 558.17,
+    "hurricane": 746.04,
+    "jungle_fire": 558.62,
+    "river_flood": 1121.83,
+    "tornado": 560.88,
+    "volcanic_eruption": 278.71
+   },
+   "lost": {
+    "citizens": 92.6,
+    "tiles": 1078.0,
+    "units": 187.9
+   },
+   "end": {
+    "people": 507.4,
+    "cities": 35.3,
+    "science": 340.9,
+    "army": 84.5,
+    "land": 301.5
+   },
+   "ended": 244,
+   "kept": {
+    "people": 1.1866,
+    "cities": 1.0,
+    "science": 1.0324,
+    "army": 0.6632,
+    "land": 0.5823
+   },
+   "same_winner": 0.2083,
+   "outcomes": {
+    "collapsed": 0.0486,
+    "eliminated": 0.0347,
+    "captures": 2.58,
+    "wars": 6.08,
+    "nukes": 0.12,
+    "leader": 0.2534,
+    "climate": 0.25
+   },
+   "victories": {
+    "science": 9,
+    "culture": 2,
+    "diplomatic": 2,
+    "religious": 1,
+    "score": 10
+   },
+   "series": {
+    "people": [
+     0.0,
+     11.6,
+     21.1,
+     36.2,
+     57.8,
+     82.1,
+     108.8,
+     134.9,
+     162.0,
+     186.2,
+     207.2,
+     225.4,
+     241.9,
+     256.2,
+     277.7,
+     295.8,
+     316.8,
+     337.0,
+     357.8,
+     379.6,
+     411.7,
+     448.0,
+     483.5,
+     506.6,
+     520.4
+    ],
+    "wrecked": [
+     0.0,
+     0.0208,
+     0.0619,
+     0.1872,
+     0.2286,
+     0.2591,
+     0.2462,
+     0.2616,
+     0.2579,
+     0.2685,
+     0.2998,
+     0.3201,
+     0.3378,
+     0.3477,
+     0.3742,
+     0.3946,
+     0.4017,
+     0.4083,
+     0.4118,
+     0.4195,
+     0.4252,
+     0.43,
+     0.4421,
+     0.4591,
+     0.4777
+    ]
+   }
+  },
+  {
+   "frequency": 300,
+   "games": 24,
+   "disasters": 17294.4,
+   "classes": {
+    "blizzard": 1789.5,
+    "drought": 1491.0,
+    "dust_storm": 1792.29,
+    "forest_fire": 1786.96,
+    "hurricane": 2385.37,
+    "jungle_fire": 1787.54,
+    "river_flood": 3576.75,
+    "tornado": 1789.83,
+    "volcanic_eruption": 895.17
+   },
+   "lost": {
+    "citizens": 296.2,
+    "tiles": 1877.9,
+    "units": 507.2
+   },
+   "end": {
+    "people": 415.6,
+    "cities": 32.8,
+    "science": 301.8,
+    "army": 50.5,
+    "land": 164.6
+   },
+   "ended": 250,
+   "kept": {
+    "people": 0.9008,
+    "cities": 0.9111,
+    "science": 0.8566,
+    "army": 0.4036,
+    "land": 0.2962
+   },
+   "same_winner": 0.2083,
+   "outcomes": {
+    "collapsed": 0.0139,
+    "eliminated": 0.0,
+    "captures": 1.62,
+    "wars": 4.83,
+    "nukes": 0.0,
+    "leader": 0.2344,
+    "climate": 0.0
+   },
+   "victories": {
+    "science": 1,
+    "culture": 1,
+    "score": 22
+   },
+   "series": {
+    "people": [
+     0.0,
+     11.8,
+     20.7,
+     37.1,
+     57.2,
+     80.7,
+     105.9,
+     128.2,
+     150.9,
+     173.1,
+     192.5,
+     209.1,
+     221.7,
+     232.2,
+     245.4,
+     258.1,
+     270.0,
+     281.0,
+     294.3,
+     305.8,
+     325.3,
+     343.5,
+     359.1,
+     380.5,
+     400.1,
+     414.0
+    ],
+    "wrecked": [
+     0.0,
+     0.0417,
+     0.2672,
+     0.4177,
+     0.4641,
+     0.4525,
+     0.4382,
+     0.446,
+     0.4469,
+     0.4538,
+     0.4709,
+     0.4996,
+     0.5297,
+     0.5597,
+     0.5577,
+     0.5808,
+     0.5729,
+     0.5845,
+     0.5918,
+     0.6065,
+     0.6149,
+     0.6225,
+     0.636,
+     0.6353,
+     0.6346,
+     0.6576
+    ]
+   }
+  },
+  {
+   "frequency": 1000,
+   "games": 24,
+   "disasters": 54997.4,
+   "classes": {
+    "blizzard": 5806.0,
+    "drought": 4838.33,
+    "dust_storm": 5806.0,
+    "forest_fire": 5806.0,
+    "hurricane": 7741.33,
+    "jungle_fire": 4678.71,
+    "river_flood": 11612.0,
+    "tornado": 5806.0,
+    "volcanic_eruption": 2903.0
+   },
+   "lost": {
+    "citizens": 602.3,
+    "tiles": 1726.3,
+    "units": 681.1
+   },
+   "end": {
+    "people": 164.3,
+    "cities": 20.2,
+    "science": 192.6,
+    "army": 23.7,
+    "land": 46.4
+   },
+   "ended": 250,
+   "kept": {
+    "people": 0.3868,
+    "cities": 0.5818,
+    "science": 0.5664,
+    "army": 0.1845,
+    "land": 0.088
+   },
+   "same_winner": 0.2917,
+   "outcomes": {
+    "collapsed": 0.0278,
+    "eliminated": 0.0,
+    "captures": 0.46,
+    "wars": 1.17,
+    "nukes": 0.0,
+    "leader": 0.2628,
+    "climate": 0.0
+   },
+   "victories": {
+    "culture": 2,
+    "score": 22
+   },
+   "series": {
+    "people": [
+     0.0,
+     10.7,
+     19.2,
+     30.6,
+     42.2,
+     53.3,
+     66.1,
+     77.5,
+     89.3,
+     99.9,
+     110.1,
+     120.8,
+     128.1,
+     133.8,
+     140.2,
+     145.7,
+     150.9,
+     150.7,
+     155.5,
+     156.3,
+     159.0,
+     161.5,
+     163.5,
+     163.4,
+     167.5,
+     167.7
+    ],
+    "wrecked": [
+     0.0,
+     0.0625,
+     0.5091,
+     0.6546,
+     0.7083,
+     0.7218,
+     0.6874,
+     0.6922,
+     0.6899,
+     0.6945,
+     0.6895,
+     0.7101,
+     0.7122,
+     0.7252,
+     0.7272,
+     0.7391,
+     0.7238,
+     0.7459,
+     0.7327,
+     0.7431,
+     0.7325,
+     0.736,
+     0.7471,
+     0.7507,
+     0.7477,
+     0.7813
+    ]
+   }
+  }
+ ],
+ "outcomes": [
+  {
+   "key": "collapsed",
+   "name": "Lost half their people",
+   "of": "share of civilizations",
+   "unit": "share"
+  },
+  {
+   "key": "eliminated",
+   "name": "Wiped out",
+   "of": "share of civilizations",
+   "unit": "share"
+  },
+  {
+   "key": "captures",
+   "name": "Cities that changed hands",
+   "of": "a game",
+   "unit": "count"
+  },
+  {
+   "key": "wars",
+   "name": "Wars started",
+   "of": "a game",
+   "unit": "count"
+  },
+  {
+   "key": "nukes",
+   "name": "Nuclear strikes",
+   "of": "a game",
+   "unit": "count"
+  },
+  {
+   "key": "leader",
+   "name": "The largest civilization's share",
+   "of": "of the world's people",
+   "unit": "share"
+  },
+  {
+   "key": "climate",
+   "name": "Climate change",
+   "of": "phases of warming reached",
+   "unit": "count"
+  }
+ ],
+ "factors": [],
+ "factors_tried": [
+  "the coast",
+  "floodplains",
+  "more cities",
+  "a lead in the calm world",
+  "early Builders",
+  "an early army",
+  "early gold"
+ ],
+ "factors_of": "7 differences between civilizations were compared at 100x and over. None can be told from chance in 24 worlds: the coast, floodplains, more cities, a lead in the calm world, early Builders, an early army, early gold.",
+ "lessons": [
+  {
+   "key": "absorbs",
+   "figure": "300x",
+   "of": "the disasters, and the world has 90% of the people of its calm self",
+   "title": "A world absorbs far more than it is ever dealt",
+   "text": "17,294 disasters a game instead of 55. Ordinary shocks are already priced in."
+  },
+  {
+   "key": "pays",
+   "figure": "+24%",
+   "of": "more people at 30x than in the same worlds played calm",
+   "title": "Shocks that leave something behind can pay",
+   "text": "Floods leave silt and eruptions leave soil. What is rebuilt on richer ground outgrows what was lost."
+  },
+  {
+   "key": "breaks",
+   "figure": "1,000x",
+   "of": "is where it gives: 61% fewer people than the calm world",
+   "title": "Then repair falls behind, and it breaks",
+   "text": "At 300x it still had 90%. By now 78% of the improved land lies wrecked: damage outruns rebuilding."
+  },
+  {
+   "key": "first",
+   "figure": "9% / 58%",
+   "of": "of the working land and of the cities left at 1,000x",
+   "title": "Working land goes first; cities hold",
+   "text": "What needs upkeep every turn is lost first; what is founded or learned once goes last."
+  },
+  {
+   "key": "survive",
+   "figure": "0%",
+   "of": "of civilizations wiped out at 1,000x, against 3% in the calm worlds",
+   "title": "Disasters cripple; they do not finish",
+   "text": "Only 3% ever lose half the people they had. The horrible outcome is a world that never grows, not one that ends."
+  },
+  {
+   "key": "war",
+   "figure": "-84%",
+   "of": "1.2 wars a game at 1,000x, against 7.2 calm",
+   "title": "A battered world fights less",
+   "text": "Armies go early (18% left). A civilization rebuilding its farms has none to send."
+  },
+  {
+   "key": "winner",
+   "figure": "26%",
+   "of": "of worlds under any storm are won by the civilization that wins them calm",
+   "title": "Who wins is decided by the weather",
+   "text": "Same map, same start, same players. Even at 10x it is 33%. One in six would be pure chance."
+  },
+  {
+   "key": "progress",
+   "figure": "8% / 58%",
+   "of": "of games end in a victory somebody reached at 1,000x, and calm",
+   "title": "The cost is what never gets built",
+   "text": "A world busy rebuilding does not reach the stars. It runs out the clock."
+  },
+  {
+   "key": "luck",
+   "figure": "0 of 7",
+   "of": "differences between civilizations tell who comes through",
+   "title": "No shelter we could measure",
+   "text": "The coast, floodplains, more cities, a lead in the calm world, early Builders, an early army, early gold: none can be told from chance in 24 worlds. What decides is how hard the storm is."
+  }
+ ]
+}

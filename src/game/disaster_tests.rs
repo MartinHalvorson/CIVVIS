@@ -1051,3 +1051,176 @@ fn every_disaster_covers_the_tile_count_its_hexes_column_ships() {
         }
     }
 }
+
+/// Every class of random disaster the ruleset ships.
+const CLASSES: [&str; 9] = [
+    "volcanic_eruption",
+    "river_flood",
+    "drought",
+    "hurricane",
+    "tornado",
+    "blizzard",
+    "dust_storm",
+    "forest_fire",
+    "jungle_fire",
+];
+
+/// Chaos Monkey's dial (operator 2026-11-25: "Here we can run civvis sims
+/// with a very high frequency of natural disasters") multiplies how often
+/// every class strikes and changes nothing else. At one it is the shipped
+/// game to the bit, so no world played without it moved.
+#[test]
+fn the_dial_multiplies_every_rate_and_at_one_is_the_shipped_game() {
+    let mut game = quiet_game();
+    assert_eq!(game.disaster_frequency(), super::DEFAULT_DISASTER_FREQUENCY);
+    let shipped: Vec<f64> = CLASSES
+        .iter()
+        .map(|class| game.disaster_rate(class))
+        .collect();
+    assert!(shipped.iter().all(|rate| *rate > 0.0));
+    game.set_disaster_frequency(30.0);
+    for (class, shipped) in CLASSES.iter().zip(&shipped) {
+        assert_eq!(game.disaster_rate(class), shipped * 30.0, "{class}");
+    }
+    // The lobby's "no disasters" still means none, whatever the dial says.
+    game.disaster_intensity = 0;
+    assert_eq!(game.disaster_rate("river_flood"), 0.0);
+    game.disaster_intensity = DEFAULT_DISASTER_INTENSITY;
+    game.set_disaster_frequency(1.0);
+    for (class, shipped) in CLASSES.iter().zip(&shipped) {
+        assert_eq!(
+            game.disaster_rate(class).to_bits(),
+            shipped.to_bits(),
+            "{class}"
+        );
+    }
+}
+
+#[test]
+fn the_dial_is_held_between_nothing_and_its_limit() {
+    let mut game = quiet_game();
+    game.set_disaster_frequency(-5.0);
+    assert_eq!(game.disaster_frequency(), 0.0);
+    game.set_disaster_frequency(1.0e9);
+    assert_eq!(game.disaster_frequency(), super::MAX_DISASTER_FREQUENCY);
+    game.set_disaster_frequency(f64::NAN);
+    assert_eq!(game.disaster_frequency(), super::DEFAULT_DISASTER_FREQUENCY);
+}
+
+/// The shipped game never expects a whole disaster of one class in a turn,
+/// so it rolls once. The dial can ask for several: the whole part strikes
+/// for certain, and the remainder is the roll.
+#[test]
+fn a_class_expecting_several_a_turn_strikes_that_many() {
+    // Six tornadoes a game over 500 turns is 0.012 a turn; at 250 times
+    // that is exactly three, every turn, with nothing left over to roll.
+    let mut game = quiet_game();
+    game.set_disaster_frequency(250.0);
+    assert_eq!(
+        game.disaster_rate("tornado") / f64::from(game.max_turns),
+        3.0
+    );
+    // The world turn's own step, turn by turn: every class is striking at
+    // this frequency, and whether the two wandering settlers live through
+    // it is not what is being counted.
+    let weather = |game: &mut Game, turns: u32| {
+        for _ in 0..turns {
+            game.turn += 1;
+            game.process_disasters();
+        }
+    };
+    weather(&mut game, 10);
+    assert_eq!(game.chronicle.disasters.events.get("tornado"), Some(&30));
+    // Each is a storm of its own on the map, not one storm counted thrice.
+    let tornadoes = game
+        .storms
+        .iter()
+        .filter(|storm| storm.kind == "tornado")
+        .count();
+    assert!(
+        tornadoes >= 6,
+        "three a turn lasting three turns left only {tornadoes} on the map"
+    );
+    // Turned back, the next turns are the shipped game's again: a class
+    // rolls at most once.
+    game.set_disaster_frequency(1.0);
+    weather(&mut game, 10);
+    let struck = game.chronicle.disasters.events["tornado"];
+    assert!(
+        (30..=40).contains(&struck),
+        "ten shipped turns added {} tornadoes",
+        struck - 30
+    );
+}
+
+/// The shipped game rolls each class once a turn, even in a game so short
+/// that its budget comes to more than one a turn. Only the dial buys a
+/// second strike, so no world played without it gained a disaster.
+#[test]
+fn a_short_game_at_the_shipped_dial_still_rolls_each_class_once() {
+    // Six tornadoes budgeted over five turns: more than one a turn.
+    let mut game = Game::new_full(2, 30, 18, 4243, 5, 0, false);
+    assert!(game.disaster_rate("tornado") / f64::from(game.max_turns) > 1.0);
+    for _ in 0..3 {
+        game.turn += 1;
+        game.process_disasters();
+    }
+    assert_eq!(game.chronicle.disasters.events.get("tornado"), Some(&3));
+}
+
+/// What Chaos Monkey reads afterwards: what a disaster took, from whom.
+#[test]
+fn the_census_counts_what_disasters_took_from_a_civilization() {
+    let mut game = game_with_capitals();
+    let capital = game.player_city_ids(0)[0];
+    let center = game.cities[&capital].pos;
+    game.cities.get_mut(&capital).unwrap().pop = 5;
+    game.disaster_population_loss(center, 2);
+    assert_eq!(game.chronicle.disasters.losses[&0].citizens, 2);
+    // A city never falls below one citizen, and only those lost are counted.
+    game.disaster_population_loss(center, 9);
+    assert_eq!(game.cities[&capital].pop, 1);
+    assert_eq!(game.chronicle.disasters.losses[&0].citizens, 4);
+
+    // An improvement left pillaged is counted once, however often the
+    // ground is struck again before anyone repairs it.
+    let farm = game.cities[&capital]
+        .owned_tiles
+        .iter()
+        .copied()
+        .find(|position| *position != center && !game.rules.is_water(&game.map.tiles[position]))
+        .expect("a capital owns land beside itself");
+    game.map.tiles.get_mut(&farm).unwrap().improvement = Some(crate::name!("farm"));
+    game.damage_disaster_tile(farm, 20);
+    game.damage_disaster_tile(farm, 20);
+    assert_eq!(game.chronicle.disasters.losses[&0].tiles, 1);
+    // The other civilization lost nothing, so it has no row.
+    assert!(!game.chronicle.disasters.losses.contains_key(&1));
+
+    // A unit a disaster kills is its owner's loss.
+    let warrior = game
+        .player_unit_ids(1)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "warrior")
+        .expect("each major starts with a warrior");
+    let stands = game.units[&warrior].pos;
+    game.damage_disaster_tile(stands, 1_000);
+    assert_eq!(game.chronicle.disasters.losses[&1].units, 1);
+}
+
+#[test]
+fn a_save_carries_the_dial_only_when_it_was_turned() {
+    let mut game = quiet_game();
+    let shipped = serde_json::to_value(&game).unwrap();
+    assert!(
+        shipped.get("disaster_frequency").is_none(),
+        "a world nobody turned the dial on saves as it always did"
+    );
+    game.set_disaster_frequency(30.0);
+    let turned = serde_json::to_value(&game).unwrap();
+    assert_eq!(turned["disaster_frequency"], 30.0);
+    let restored: Game = serde_json::from_value(turned).unwrap();
+    assert_eq!(restored.disaster_frequency(), 30.0);
+    let restored: Game = serde_json::from_value(shipped).unwrap();
+    assert_eq!(restored.disaster_frequency(), 1.0);
+}

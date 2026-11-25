@@ -350,12 +350,15 @@
     display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); flex: 0 0 100%; gap: 3px; margin-top: 8px;
   }
   .head-links[hidden] { display: none; }
-  /* Two by two a link is half its row, except on the second row: there
-     EXPERIMENTS takes six tenths and CIVVIS four. The six tenths were
-     measured for AUTO-TOURNEYS, its name from 2026-11-22 to 2026-11-24: in
-     this type that name is 91px and half a row holds 84px at its narrowest
-     (a 195px band), and six tenths of it 104px; CIVVIS is 36px in the 64px
-     left to it. Every
+  /* Two by two a link is half its row, except beside CIVVIS: there
+     CHAOS MONKEY takes six tenths and CIVVIS four, and EXPERIMENTS, over
+     them, has a row of its own. Chaos Monkey stands between Experiments
+     and CIVVIS since 2026-11-25 (operator: "above civvis add "Chaos
+     Monkey""), and its name is as long as AUTO-TOURNEYS was, the name the
+     six tenths were measured for (Experiments' own from 2026-11-22 to
+     2026-11-24): in this type that is 91px, half a row holds 84px at its
+     narrowest (a 195px band), and six tenths of it 104px; CIVVIS is 36px
+     in the 64px left to it. Every
      name stands on one line (operator, 2026-11-21: "make sure it fits on
      one line"). The list is a tree that keeps its branches folded
      (operator, 2026-11-21: "a somewhat collapsable model for the info"): a
@@ -366,15 +369,16 @@
      Civ 6 and Edge of Tomorrow, lists the eight top-level names and no
      branch. */
   .head-links > .home-link { grid-column: span 5; }
-  .head-links > #tourlink { grid-column: span 6; }
+  .head-links > #chaoslink { grid-column: span 6; }
   .head-links > #watchlink { grid-column: span 4; }
   /* Doctor Strange's Civ 6 (operator, 2026-11-23: "lest move dr strange civ
      6 above ai debugger", after CIVVIS) is the one name longer than half a
      row and has a row of its own. AI Debugger and Civ 6 keep the rows of
      their own they had beside it, and Edge of Tomorrow (operator,
      2026-11-25: "above civ 6 and below ai debugger add: Edge of Tomorrow"),
-     the second longest name, has one between them. */
-  .head-links > #playlink, .head-links > #strangelink, .head-links > #tomorrowlink, .head-links > #civ6link { grid-column: 1 / -1; }
+     the second longest name, has one between them. Experiments has a row
+     of its own too since Chaos Monkey took the place beside CIVVIS. */
+  .head-links > #tourlink, .head-links > #playlink, .head-links > #strangelink, .head-links > #tomorrowlink, .head-links > #civ6link { grid-column: 1 / -1; }
   /* A name stands on one line wherever it fits, and every one of them
      does in the typefaces measured. In a wider one a name of two words
      takes two lines, a word to each, and the link beside it in a row is as
@@ -399,8 +403,8 @@
      pages set their own lists in, and Civ 6, which opens Steam's shop, is
      the blue of Steam's buttons ("civ 6 can have the steam color of
      blue"), dark under the name and light at the far end. */
-  #homelink, #chartslink, #tourlink { color: #a8d8f5; border-color: #3b6788; background: #274b66; }
-  #homelink:hover, #chartslink:hover, #tourlink:hover { color: #fff; border-color: #66c0f4; background: #315d7e; }
+  #homelink, #chartslink, #tourlink, #chaoslink { color: #a8d8f5; border-color: #3b6788; background: #274b66; }
+  #homelink:hover, #chartslink:hover, #tourlink:hover, #chaoslink:hover { color: #fff; border-color: #66c0f4; background: #315d7e; }
   #watchlink { color: #12171d; border-color: #cfd6dd; background: #fff; }
   #watchlink:hover { color: #000; border-color: #fff; background: #e3e8ee; }
   #civ6link {
@@ -1120,6 +1124,10 @@
   /* Neither half of a row gives up width, and nothing here ellipsizes: a
      setting is shown whole or the block is drawn a quarter-point smaller. */
   .turn-setting > span, .turn-setting > b, .turn-setting > .turn-pace-choice { flex: 0 0 auto; }
+  /* Chaos Monkey turned up: the row's name in the amber of a warning, so a
+     world under extra disasters says so at a glance. Off, it is a row like
+     the rest. */
+  .turn-setting.turn-chaos-on > span:first-child { color: #ffb347; }
   /* Max Speed and the setup line under it ("6P Continents · Lv 8 · Online")
      sit between the stopwatch and the age, in the settings block's type.
      `safe` starts an overflowing row at its left edge, so the type fitter's
@@ -6693,6 +6701,7 @@
         <a class="home-link" id="homelink" href="/home" target="_top">Home</a>
         <a class="home-link" id="chartslink" href="/charts/ai-insights" target="_top">Charts/</a>
         <a class="home-link" id="tourlink" href="/experiments" target="_top">Experiments</a>
+        <a class="home-link" id="chaoslink" href="/chaos-monkey" target="_top">Chaos Monkey</a>
         <a class="home-link" id="watchlink" href="./" target="_top">CIVVIS</a>
         <a class="home-link" id="strangelink" href="?mode=strange" target="_top">Doctor Strange's Civ 6</a>
         <a class="home-link" id="playlink" href="?mode=play" target="_top">AI Debugger</a>
