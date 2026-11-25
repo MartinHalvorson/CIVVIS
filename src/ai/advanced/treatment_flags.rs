@@ -684,6 +684,10 @@ impl AdvancedAi {
         /// Settler closes the pipeline; see
         /// `advanced/settler_brake_counts_the_wanderer.rs`.
         settler_brake_counts_the_wanderer => enable_settler_brake_counts_the_wanderer, disable_settler_brake_counts_the_wanderer;
+        /// Opt-in gene `science-core-ends-expansion`: an assigned Science
+        /// lane leaves the Expansion half at its core of cities; see
+        /// `advanced/science_core_ends_expansion.rs`.
+        science_core_ends_expansion => enable_science_core_ends_expansion, disable_science_core_ends_expansion;
         // ---- append: t-z --------------------------------------------
         /// Opt-in gene `theology-fights-count-the-host-edge`; see
         /// `advanced/theology_fights.rs`.
