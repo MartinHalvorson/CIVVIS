@@ -9755,6 +9755,10 @@ pub struct AdvancedAi {
     /// the field, priced with the Settler. See
     /// `advanced/raiders_holding_a_settler.rs`. Off by default.
     raiders_holding_a_settler_are_hunted: bool,
+    /// `religion-core-ends-expansion`: a Religion lane that has founded its
+    /// religion leaves the Expansion half once it holds its core of cities.
+    /// See `advanced/religion_core_ends_expansion.rs`. Off by default.
+    religion_core_ends_expansion: bool,
     // ---- append: s-s ------------------------------------------------
     /// `score-seat-raises-wonders`: a Score seat keeps a wonder going in its
     /// capital from turn 40 (Online) and in a second city from turn 90, as a
@@ -11560,6 +11564,8 @@ mod live_gp_commitment;
 /// unescorted Settlers and Builders, unpillaged tiles — taken by movement
 /// and closed by peace. See `advanced/opportunistic_war.rs`.
 mod opportunistic_war;
+/// `religion-core-ends-expansion`: see `advanced/religion_core_ends_expansion.rs`.
+mod religion_core_ends_expansion;
 /// The religion lane: the Prophet race, what a founder builds, and Faith
 /// spending. See `advanced/religion_lane.rs`.
 mod religion_lane;

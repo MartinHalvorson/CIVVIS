@@ -686,6 +686,15 @@ impl AdvancedAi {
                 // same city target. False with the gene off. See
                 // `advanced/science_core_ends_expansion.rs`.
                 && !self.science_core_ends_expansion_for(Some(target), cities.len())
+                // `religion-core-ends-expansion`: a Religion lane that has
+                // founded and holds its core of cities follows the lane; the
+                // Settlers read the same city target. False with the gene
+                // off. See `advanced/religion_core_ends_expansion.rs`.
+                && !self.religion_core_ends_expansion_for(
+                    Some(target),
+                    g.players[pid].religion.is_some(),
+                    cities.len(),
+                )
                 // `domination-lane-hands-over`: a conquest lane with the opening
                 // band's cities in hand goes to war; it does not wait for a city
                 // target the map cannot meet.
