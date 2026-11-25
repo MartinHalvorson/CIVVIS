@@ -8055,7 +8055,7 @@ function paceHeldOpen() {
 // pace select. The sidebar #specspeed lives outside #playerhud and never
 // has this problem.
 function hudPaceHeldOpen() {
-  return [...document.querySelectorAll("[data-hud-pace], [data-hud-fog], [data-hud-fog-honest]")]
+  return [...document.querySelectorAll("[data-hud-pace], [data-hud-fog], [data-hud-fog-honest], [data-hud-chaos]")]
     .some(select => document.activeElement === select);
 }
 function paceOffered(select, ms) {
@@ -27875,6 +27875,8 @@ function hudTurnPlate() {
       `</select><span class="turn-pace-caret" aria-hidden="true">⌄</span></span></div>`
     : ``;
   const fogHonestRow = hudFogHonestRow(); // app_setup.js
+  const chaosRow = hudChaosRow(); // app_setup.js
+  askAddressChaos(); // app_setup.js: `?chaos=N`, once
   const plateLabel = `${context}; ${ageLabel}; turn ${turn} of ${turnCap}; ` +
     (liveTime ? `live time ${liveTime.spoken}; ` : ``) +
     `max speed ${watchPace}; ` +
@@ -27883,6 +27885,7 @@ function hudTurnPlate() {
     `game speed ${speedName}; ` +
     (fogRow ? `in-game fog ${state.tactics.fog ? "on" : "off"}; ` : ``) +
     (fogHonestRow ? `fog-honest AI ${state.fog_honest}; ` : ``) +
+    (chaosRow ? `chaos monkey ${chaosFrequencyName(Number(state.disaster_frequency))}; ` : ``) +
     `${civCount} civilizations remaining, ${civsLost} eliminated; ` +
     `${cityStateCount} city states remaining, ${cityStatesLost} eliminated; ` +
     `mode ${plateMode[0]}; point of view ${platePov[0]}`;
@@ -27922,6 +27925,7 @@ function hudTurnPlate() {
     frameRow("Mode:", plateMode) + frameRow("POV:", platePov) +
     fogRow +
     fogHonestRow +
+    chaosRow +
     rosterRow("Civs:", civCount, civsLost) +
     rosterRow("City states:", cityStateCount, cityStatesLost) +
     `</div></section>`;
@@ -29131,6 +29135,8 @@ hudRibbon.addEventListener("change", ev => {
   }
   const honest = ev.target.closest?.("[data-hud-fog-honest]");
   if (honest) { chooseFogHonest(honest.value === "1"); honest.blur(); return; }
+  const chaos = ev.target.closest?.("[data-hud-chaos]");
+  if (chaos) { chooseChaos(Number(chaos.value)); chaos.blur(); return; }
   const pace = ev.target.closest?.("[data-hud-pace]");
   if (!pace) return;
   chooseWatchPace(pace.value);
@@ -29143,7 +29149,7 @@ hudRibbon.addEventListener("change", ev => {
 // so the open menu's anchor survives the next snapshot. The moment focus
 // leaves it, paint whatever those held snapshots changed.
 hudRibbon.addEventListener("focusout", ev => {
-  if (ev.target.closest?.("[data-hud-pace], [data-hud-fog], [data-hud-fog-honest]") && state) drawPlayerHud();
+  if (ev.target.closest?.("[data-hud-pace], [data-hud-fog], [data-hud-fog-honest], [data-hud-chaos]") && state) drawPlayerHud();
 });
 hudRibbon.addEventListener("mousedown", ev => {
   if (ev.button !== 0) return;

@@ -379,9 +379,10 @@ class TheSiteList(unittest.TestCase):
         self.assertNotIn('"$repo_root/beta/insights', PUBLISH)
         # `/charts` opens the folder's first page in the lane's list, which
         # is the order the pages are added in: this one before every other
-        # page of Charts/.
+        # page of Charts/. (Chaos Monkey, a page of its own beside
+        # Experiments, is added between; it is no page of the folder.)
         added = re.findall(r'pages\+=\("\$([a-z]+)_at"\)', PUBLISH)
-        self.assertEqual(added[:3], ["home", "tournaments", "insights"])
+        self.assertEqual(added[:4], ["home", "tournaments", "chaos", "insights"])
         # And the publish check knows the page by the slot that is filled.
         self.assertEqual(verify.PAGES["charts/ai-insights"], b'id="insights-data"')
 

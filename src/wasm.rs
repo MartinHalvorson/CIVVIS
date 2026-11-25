@@ -555,6 +555,12 @@ fn route_unversioned(method: &str, target: &str, body: &str) -> Value {
             out
         }),
 
+        ("POST", "/chaos") => with_session(|session| {
+            let mut out = crate::routes::chaos(session, &parsed);
+            decorate_browser(&mut out);
+            out
+        }),
+
         ("POST", "/spectator-status") => with_session(|session| {
             let out = crate::routes::spectator_status(session, &parsed);
             if out["ok"] == json!(true) {

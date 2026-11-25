@@ -33,6 +33,7 @@ fn params() -> Params {
         leader_pool: LeaderPool::Civ6,
         civs: Vec::new(),
         supervised: false,
+        disaster_frequency: crate::game::DEFAULT_DISASTER_FREQUENCY,
     }
 }
 

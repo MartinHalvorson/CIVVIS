@@ -790,6 +790,7 @@ fn main() {
     match cmd {
         "simulate" => simulate_command(args),
         "soak" => soak_command(args),
+        "chaos-monkey" => chaos_monkey_command(args),
         // Would ending decided games early change who wins? 62% of audited
         // league games ran to the turn cap, where the winner is whoever is
         // biggest — most of that tail is compute spent on a settled outcome.
@@ -1062,6 +1063,67 @@ fn simulate_command(args: Vec<String>) {
         println!("{}", census.summary());
     }
     standings(&g);
+}
+
+/// `--chaos N` for `play`: Chaos Monkey's dial, one (the game as shipped)
+/// when the flag is absent.
+fn chaos_arg(args: &[String]) -> f64 {
+    let text = arg_text(args, "--chaos", "1");
+    let frequency = text.trim().parse::<f64>().unwrap_or(f64::NAN);
+    if !(0.0..=civvis::game::MAX_DISASTER_FREQUENCY).contains(&frequency) {
+        eprintln!(
+            "--chaos takes a number from 0 to {}, got {text:?}",
+            civvis::game::MAX_DISASTER_FREQUENCY
+        );
+        std::process::exit(2);
+    }
+    frequency
+}
+
+/// `civvis chaos-monkey`: play each seed at each disaster frequency and print
+/// one JSON record a game (`civvis::chaos_monkey::play`), as it finishes.
+///
+/// `--frequencies 1,10,30,100,300,1000` is the dial's ladder: one is the game as
+/// shipped at the `--disasters` intensity, and every seed is played once at
+/// each, so a world under chaos has its own calm self to be read against.
+/// Every other setup flag means what it means to `simulate`.
+fn chaos_monkey_command(args: Vec<String>) {
+    let players = arg(&args, "--players", 6);
+    let games = arg(&args, "--games", 4).max(1) as usize;
+    let start = arg(&args, "--start-seed", 1);
+    let jobs = jobs_arg(&args);
+    let listed = arg_text(&args, "--frequencies", "1,10,30,100,300,1000");
+    let frequencies: Vec<f64> = listed
+        .split(',')
+        .map(|text| {
+            let frequency = text.trim().parse::<f64>().unwrap_or(f64::NAN);
+            if !(0.0..=civvis::game::MAX_DISASTER_FREQUENCY).contains(&frequency) {
+                eprintln!(
+                    "--frequencies takes numbers from 0 to {}, got {text:?}",
+                    civvis::game::MAX_DISASTER_FREQUENCY
+                );
+                std::process::exit(2);
+            }
+            frequency
+        })
+        .collect();
+    let cells = games * frequencies.len();
+    civvis::parallel::map(cells, jobs, |index| {
+        let seed = start + (index / frequencies.len()) as i64;
+        let frequency = frequencies[index % frequencies.len()];
+        let options = game_options(
+            &args,
+            players,
+            seed as u64,
+            setup::TurnStructure::Sequential,
+        );
+        let t0 = Instant::now();
+        let mut record = civvis::chaos_monkey::play(options, frequency);
+        record["seconds"] = serde_json::json!((t0.elapsed().as_secs_f64() * 10.0).round() / 10.0);
+        // One record a line, written whole: `println!` holds the lock for
+        // the line, so games finishing together never interleave.
+        println!("{record}");
+    });
 }
 
 /// `civvis soak`: play many games and report what they did.
@@ -2029,6 +2091,10 @@ fn play_command(args: Vec<String>) {
             leader_pool: play_options.leader_pool,
             civs: play_options.civs,
             supervised: args.iter().any(|a| a == "--supervised"),
+            // Chaos Monkey's dial for the worlds this session deals:
+            // `--chaos 30` is natural disasters thirty times as often as
+            // the game ships them. The turn box's row turns it afterwards.
+            disaster_frequency: chaos_arg(&args),
         },
         match (mirrored, resumed) {
             (Some(game), _) => civvis::server::Opening::Mirror(game),
@@ -2077,7 +2143,7 @@ fn validate_command(args: Vec<String>) {
 /// The usage line, for `help` and anything unrecognised.
 fn print_usage() {
     println!(
-        "usage: civvis <simulate|soak|odds-audit|benchmark|site-bench|autosearch|play|evolve|validate|pedia> \
+        "usage: civvis <simulate|soak|chaos-monkey|odds-audit|benchmark|site-bench|autosearch|play|evolve|validate|pedia> \
               [--players N] [--seed N] [--turns N] [--width N] [--height N] \
               [--city-states N] [--games N] [--port N] [--no-open] \
               [--map land_only|lakes|inland_sea|tenins_ball|grand_canals|grand_canals_2|pangaea|earth|true_start_earth|continents|small_continents|fjords|islands|water_world|battlefield|tactics_planet|tactics_ocean|trafalgar] \
@@ -2086,6 +2152,8 @@ fn print_usage() {
               [--barbarian-difficulty <the same ladder; the barbarian seat's own rung, emperor by default>] \
               [--speed online|quick|standard|epic|marathon] \
               [--disasters 0|1|2|3|4] [--barbarians on|off] \
+              [--chaos N (play: natural disasters N times as often as shipped, 1 by default)] \
+              [--frequencies 1,10,30,100,300,1000 (chaos-monkey: every seed is played at each)] \
               [--turn-structure sequential|simultaneous (everything defaults to \
                sequential; simultaneous is a research regime)] \
               [--game-modes apocalypse,secret_societies] \

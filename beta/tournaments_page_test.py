@@ -351,6 +351,8 @@ class TournamentsPage(unittest.TestCase):
         self.assertIn(
             '      </div>\n'
             '      <a class="site-link" href="./" aria-current="page">Experiments</a>\n'
+            '      <a class="site-link" href="../chaos-monkey/" '
+            'title="The same worlds replayed with natural disasters up to 100 times as often: what breaks, and what holds.">Chaos Monkey</a>\n'
             '      <a class="site-link" href="../" title="Every civilization is played by a CIVVIS AI agent.">CIVVIS</a>\n'
             '      <a class="site-link" href="../?mode=strange" '
             'title="One world, two timelines: the same game played two ways, side by side, on a timeline that branches.">Doctor Strange\'s Civ 6</a>\n'
@@ -390,10 +392,12 @@ class TournamentsPage(unittest.TestCase):
         for page, pattern in (
             (LANDING, r'aria-current="page">Home</a>\s*<div class="site-folder">\s*<a class="site-link" href="\.\./charts/ai-insights/"[^>]*>Charts/</a>'
                       r'[\s\S]*?</div>\s*</div>\s*<a class="site-link" href="\.\./experiments/"[^>]*>Experiments</a>'
+                      r'\s*<a class="site-link" href="\.\./chaos-monkey/"[^>]*>Chaos Monkey</a>'
                       r'\s*<a class="site-link" href="\.\./"[^>]*>CIVVIS</a>'),
             (VIEWER, r'id="homelink" href="/home" target="_top">Home</a>\s*'
                      r'<a class="home-link" id="chartslink" href="/charts/ai-insights" target="_top">Charts/</a>\s*'
                      r'<a class="home-link" id="tourlink" href="/experiments" target="_top">Experiments</a>\s*'
+                     r'<a class="home-link" id="chaoslink" href="/chaos-monkey" target="_top">Chaos Monkey</a>\s*'
                      r'<a class="home-link" id="watchlink" href="\./" target="_top">CIVVIS</a>'),
         ):
             self.assertRegex(page, pattern)

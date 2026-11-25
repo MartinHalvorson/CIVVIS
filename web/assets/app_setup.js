@@ -127,6 +127,66 @@ async function chooseFogHonest(on) {
   }
   if (state) drawPlayerHud();
 }
+// The turn box's Chaos Monkey row (`hudTurnPlate` in app.js): how many times
+// as often natural disasters strike the world on screen as Civilization VI
+// ships them (operator 2026-11-25: "Here we can run civvis sims with a very
+// high frequency of natural disasters"). Off is the game as shipped; the
+// lobby's own top setting, hyperreal, is under 3x, and the row goes to
+// 1,000x: the steps the Chaos Monkey page's worlds were played at, where a
+// world shrugs off 10x and is only broken near the top.
+// Only a watched CIVVIS world carries the figure, so only it has the row.
+// The dial is the engine's (`Game::disaster_frequency`) and turns from the
+// next turn; the worlds dealt after this one keep it.
+const CHAOS_FREQUENCIES = [1, 10, 30, 100, 300, 1000];
+function chaosFrequencyName(frequency) {
+  return frequency === 1 ? "Off" : `${frequency.toLocaleString("en-US")}x disasters`;
+}
+function hudChaosRow() {
+  const now = Number(state.disaster_frequency);
+  if (!Number.isFinite(now) || livePause.available) return "";
+  // A figure the row does not list (an address asked for it) is listed too.
+  const offered = CHAOS_FREQUENCIES.includes(now) ? CHAOS_FREQUENCIES
+    : [...CHAOS_FREQUENCIES, now].sort((a, b) => a - b);
+  return `<div class="turn-setting${now > 1 ? " turn-chaos-on" : ""}" title="Chaos Monkey: natural disasters this ` +
+    `many times as often as Civilization VI ships them, from the next turn of this world and in the worlds after it. ` +
+    `Floods, droughts, storms, eruptions and fires, the same ones, only more of them.">` +
+    `<span>Chaos Monkey:</span><span class="turn-pace-choice"><select data-hud-chaos ` +
+    `aria-label="Chaos Monkey">` +
+    offered.map(frequency => `<option value="${frequency}"${frequency === now ? " selected" : ""}>` +
+      `${chaosFrequencyName(frequency)}</option>`).join("") +
+    `</select><span class="turn-pace-caret" aria-hidden="true">⌄</span></span></div>`;
+}
+// The row, turned. As with Fog-honest AI the engine answers with the state
+// and only what the row reads is taken from it.
+async function chooseChaos(frequency) {
+  try {
+    const answer = await fetchJSON("/chaos", {method: "POST",
+      headers: {"Content-Type": "application/json"}, body: JSON.stringify({frequency})});
+    if (answer && answer.error) throw new Error(answer.error);
+    if (state && answer && typeof answer.disaster_frequency === "number") {
+      state.disaster_frequency = answer.disaster_frequency;
+    }
+  } catch (e) {
+    const errEl = document.getElementById("err");
+    errEl.textContent = `Could not turn Chaos Monkey: ${e.message}`;
+    errEl.style.display = "block";
+    setTimeout(() => errEl.style.display = "none", 2500);
+  }
+  if (state) drawPlayerHud();
+}
+// `?chaos=30` in the address opens the world already under the dial: the
+// Chaos Monkey page's "run a world" links are such addresses. It is asked
+// once, of the first watched world this page shows, and the row says what
+// the engine made of it.
+let chaosAsked = false;
+function askAddressChaos() {
+  if (chaosAsked || !state || typeof state.disaster_frequency !== "number") return;
+  chaosAsked = true;
+  let asked = NaN;
+  try { asked = Number(new URLSearchParams(location.search).get("chaos")); } catch (_) { return; }
+  if (!Number.isFinite(asked) || asked <= 0 || asked === state.disaster_frequency) return;
+  chooseChaos(asked);
+}
 document.getElementById("specspeed").onchange = event => chooseWatchPace(event.currentTarget.value);
 restorePace();
 document.getElementById("between-game-countdown").onchange = () =>

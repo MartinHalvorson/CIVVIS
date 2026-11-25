@@ -176,6 +176,7 @@ civs_page="$source_tree/beta/civs.html"
 performance_page="$source_tree/beta/performance.html"
 interpretability_page="$source_tree/beta/interpretability.html"
 insights_page="$source_tree/beta/insights.html"
+chaos_page="$source_tree/beta/chaos.html"
 pages=()
 without=()
 
@@ -226,6 +227,8 @@ interpretability_at="$(address "$interpretability_page" interpretability)"
 # AI Insights was written after pages stated their addresses, so it has no
 # former one: a revision without the page has no page to place.
 insights_at="$(address "$insights_page" charts/ai-insights)"
+# Chaos Monkey likewise: written on 2026-11-25, with its address stated.
+chaos_at="$(address "$chaos_page" chaos-monkey)"
 download_at="$(address "$download_page" download)"
 
 # A lane built from some other revision than the invoking tree's is pinned:
@@ -298,6 +301,23 @@ if [ -f "$tournaments_page" ]; then
   pages+=("$tournaments_at")
 else
   without+=(experiments)
+fi
+# Chaos Monkey (the same worlds replayed with natural disasters up to 100
+# times as often, and what they teach) stands in the site list between
+# Experiments and CIVVIS (operator 2026-11-25: "above civvis add "Chaos
+# Monkey". Here we can run civvis sims with a very high frequency of natural
+# disasteres. what can we learn about avoiding horrible outcomes?"). Its
+# figures are the lane's own snapshot, data/chaos_monkey.json, which
+# tools/chaos_monkey.py writes from the games `civvis chaos-monkey` played:
+# a batch somebody played, not the run ledger, so the page of one revision
+# reads the same at every build of it.
+if [ -f "$chaos_page" ]; then
+  mkdir -p "$out/$chaos_at"
+  cp "$chaos_page" "$out/$chaos_at/index.html"
+  fill chaos_page.py "$out/$chaos_at/index.html"
+  pages+=("$chaos_at")
+else
+  without+=(chaos-monkey)
 fi
 # AI Insights (what the Civ games show about AI at large, an insight at a
 # time; the first is the games against Civilization VI's own AI ending sooner
