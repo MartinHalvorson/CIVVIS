@@ -48,22 +48,24 @@ class TheRecord(unittest.TestCase):
         doses = data["doses"]
         self.assertGreaterEqual(len(doses), 2)
         self.assertEqual(doses[0]["frequency"], 1)
+        # Every frequency has the five shares and the three figures a game
+        # the page draws, and every one past 1x its range and whether the
+        # games settle it.
         for dose in doses:
-            for key in ("games", "disasters", "classes", "lost", "end", "kept", "outcomes", "victories", "series"):
+            for key in ("games", "disasters", "kept", "wars", "captures", "won"):
                 self.assertIn(key, dose)
-            # A line turn by turn stops where half the frequency's games
-            # were over, so it is no longer than the turns and never empty.
-            for series in dose["series"].values():
-                self.assertLessEqual(len(series), len(data["turns"]))
-                self.assertGreater(len(series), len(data["turns"]) // 2)
-        # Every outcome the page is told to draw has a figure at every
-        # frequency, and every lesson its four parts.
-        for outcome in data["outcomes"]:
-            for dose in doses:
-                self.assertIsInstance(dose["outcomes"][outcome["key"]], (int, float))
+            measured = [*dose["kept"].values(), dose["wars"], dose["captures"], dose["won"]]
+            self.assertEqual(len(measured), 8)
+            for figure in measured:
+                self.assertIsInstance(figure["value"], (int, float))
+                if dose is not doses[0]:
+                    self.assertLessEqual(figure["low"], figure["high"])
+                    self.assertIsInstance(figure["sure"], bool)
+        # Every lesson has its parts, its range among them.
         for lesson in data["lessons"]:
-            for key in ("figure", "of", "title", "text"):
+            for key in ("figure", "of", "range", "title"):
                 self.assertTrue(lesson[key])
+        self.assertEqual(data["tested"]["figures"], 8 * (len(doses) - 1))
 
     def test_no_record_is_no_figures_and_never_an_error(self):
         err = io.StringIO()
@@ -114,17 +116,37 @@ class ThePage(unittest.TestCase):
     def test_it_opens_on_what_the_worlds_teach(self):
         # Operator 2026-11-25: "what can we learn about avoiding horrible
         # outcomes?" The lessons come first, then what they are read off.
-        order = [PAGE.index(f'id="{section}"') for section in ("cm-learned", "cm-dose", "cm-gives", "cm-time", "cm-bad", "cm-who", "cm-method")]
+        order = [PAGE.index(f'id="{section}"') for section in ("cm-learned", "cm-gives", "cm-war", "cm-method")]
         self.assertEqual(order, sorted(order))
         self.assertIn('<h2 class="cm-title" id="cm-learned-title">What the broken worlds teach</h2>', PAGE)
-        self.assertIn('<h2 class="cm-title" id="cm-bad-title">The horrible outcomes</h2>', PAGE)
+        self.assertIn('<h2 class="cm-title" id="cm-war-title">War and victory</h2>', PAGE)
 
-    def test_the_dial_opens_a_world_at_the_frequency_chosen(self):
+    def test_it_draws_only_what_the_statistics_back(self):
+        # Operator 2026-11-25: "clean up the chaos engineering stuf ffor now
+        # please. the charts specifically. only things that are highly
+        # backed by statistics". Gone: the dial with its tiles and kinds of
+        # disaster, the world turn by turn, the outcomes no test could tell
+        # from chance (lost half their people, wiped out, nuclear strikes,
+        # the largest civilization's share, climate change), the six ways the
+        # games ended, and who comes through.
+        for gone in ("cm-dose", "cm-dial", "cm-tiles", "cm-kinds", "cm-time", "cm-people-plot", "cm-wreck-plot",
+                     "cm-bad", "cm-ends", "cm-who", "cm-factors"):
+            self.assertNotIn(f'id="{gone}"', PAGE)
+        for gone in ("collapsed", "eliminated", "nukes", "climate", "same_winner", "factors"):
+            self.assertNotIn(gone, PAGE)
+        # Every figure under chaos is drawn with its 95% range, and hollow
+        # where the games do not settle it.
+        self.assertIn("const counts = (dose, measured) => dose === calm || Boolean(measured && measured.sure);", PAGE)
+        self.assertIn('{ class: "cm-dot is-hollow", cx: px(at), cy: y(measured.value), r: 4, style: `stroke: ${line.colour}` }', PAGE)
+        self.assertIn(': { fill: "transparent", stroke: colourOf(dose), "stroke-width": 1.5, d: shape }));', PAGE)
+        self.assertEqual(PAGE.count('class: "cm-whisker"'), 6)
+        self.assertIn('item.append(el("p", "cm-lesson-range", `95% range: ${lesson.range}`));', PAGE)
+
+    def test_the_white_button_opens_a_world_under_the_storm(self):
         # "Here we can run civvis sims with a very high frequency of natural
         # disasters": the white button opens the lane's own simulator with
         # the dial already turned.
         self.assertIn('<a class="cm-run-link" id="cm-run-link" href="../?chaos=100">Run a 100x world</a>', PAGE)
-        self.assertIn("runLink.href = `../?chaos=${live.frequency}`;", PAGE)
         # The page's frequencies are the ones the simulator's row offers.
         offered = json.loads(re.search(r"const CHAOS_FREQUENCIES = (\[[^\]]+\]);", SETUP)[1])
         self.assertEqual([dose["frequency"] for dose in RECORD["doses"]], offered)

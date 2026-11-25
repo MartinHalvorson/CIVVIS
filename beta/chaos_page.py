@@ -17,11 +17,10 @@ Its record is the lane's own `data/chaos_monkey.json`, which
 `tools/chaos_monkey.py` writes from the games `civvis chaos-monkey` played:
 every seed once at each disaster frequency, by the same agents, so a world
 under chaos has its own calm self to be read against. The record holds, per
-frequency, what struck and what it cost, the world at its end as a share of
-the same world played calm, the horrible outcomes and how the games ended,
-then the differences between the civilizations that kept their people and
-those that did not, and the lessons, each written from those figures by a
-rule that says when it holds.
+frequency, the disasters a game, the world as a share of the same world
+played calm, wars, cities that changed hands and games won outright, each
+figure with its 95% range and whether an exact test settles it, and the
+lessons, written from the settled figures alone.
 
 Unlike the pages that count the run ledger at every publish, this record is
 a snapshot in the tree: the games are a batch somebody played, not a stream,
