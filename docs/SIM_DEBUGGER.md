@@ -1681,6 +1681,17 @@ path). these should alert on the top section out in the distance."
   of its own beside the one it was made from, which is the followed world on
   the open turn (`pane-copy`) with that strategy in the seat and a colour of
   its own.
+- **The base timeline is picked before Branch.** Operator, 2026-11-25: "the
+  option to branch in the simulator should be preceded by a selection of the
+  base timeline". Over the Branch picker, a Base timeline picker lists every
+  open world, left to right, by its letter and its name (`C ·
+  Stock-60-JackOfAllTrades`), and wears the colour of the one picked. The
+  base is the followed world: picking one there follows it, which puts its
+  line in the middle of the tree, and a box's Follow button picks it there.
+  Branch then offers what the base does not seat and makes the branch from
+  it. It costs the title card a row (33 px): in a short window (the test's,
+  1400 by 757) the line of the open turn stands on the card's floor with two
+  boxes as well as with one.
 - **Play Time and Pause Time.** The play button runs time on from the open
   turn and reads Pause Time while it runs.
 - **Going back** (the step buttons, To the fork, or a press on the highway at

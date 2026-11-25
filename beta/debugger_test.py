@@ -3495,9 +3495,11 @@ def check_doctor_strange(bar: Bar, address: str) -> None:
     words = "[...document.querySelectorAll('#strange-hud [data-strange]')].map(held => [held.dataset.strange, held.textContent.trim(), !!held.disabled])"
     said = {name: [text, off] for name, text, off in bar.ev(words) if name != "numbers"}
     # Branch is a picker: the open turn and each player strategy the followed
-    # world does not seat. Each box has its exit.
+    # world does not seat. Before it, the base timeline: every open world, by
+    # its letter and its name. Each box has its exit.
     assert said == {"play": ["▶ Play Time", False], "back10": ["−10", True], "back1": ["−1", True], "on1": ["+1", False],
-                    "on10": ["+10", False], "branch": ["⑂ Branch: 1-(player strategy)1-Jack", False],
+                    "on10": ["+10", False], "base": ["A · StockB · Jack", False],
+                    "branch": ["⑂ Branch: 1-(player strategy)1-Jack", False],
                     "fork": ["⏮ To the fork", True], "lock": ["🔒 Locked", False], "futures": ["🔮 Futures: off", False],
                     "swan": ["🦢 Generate Black Swan", False], "swan-kind": ["AnyPandemicInstant nuclear war", False],
                     "omen": ["", False],
@@ -3505,6 +3507,18 @@ def check_doctor_strange(bar: Bar, address: str) -> None:
                     "follow-a": ["Following", True], "follow-b": ["Follow", False],
                     "close-a": ["✕", False], "close-b": ["✕", False],
                     "turn": ["1", False], "limit": ["", False], "era": ["Ancient era", False]}, said
+    # The base timeline is picked before Branch (operator 2026-11-25: "the
+    # option to branch in the simulator should be preceded by a selection of
+    # the base timeline"): its picker stands right over Branch's, on the
+    # followed world, in that world's colour, and says what it is.
+    base = ("(() => { const base = document.querySelector('#strange-hud [data-strange=\"base\"]'),"
+            " branch = document.querySelector('#strange-hud [data-strange=\"branch\"]');"
+            " const [over, under] = [base.getBoundingClientRect(), branch.getBoundingClientRect()];"
+            " return [base.value, [...base.options].map(option => option.textContent), base.style.getPropertyValue('--strange-base'),"
+            " getComputedStyle(base).borderLeftColor, base.closest('label').textContent.startsWith('Base timeline'),"
+            " !!(base.compareDocumentPosition(branch) & Node.DOCUMENT_POSITION_FOLLOWING), over.bottom <= under.top, under.top - over.bottom < 12,"
+            " Math.round(over.left) >= Math.round(under.left), Math.round(over.right) === Math.round(under.right)]; })()")
+    assert bar.ev(base) == ["a", ["A · Stock", "B · Jack"], "#ff8f6b", "rgb(255, 143, 107)", True, True, True, True, True, True], bar.ev(base)
     # A branch is named by who plays it, and its box is in its colour. The
     # turn is written on the line of the open turn, not at the foot of the window.
     names = "strange.order.map(letter => document.querySelector(`#strange-hud [data-strange-name=\"${letter}\"]`).textContent)"
@@ -3584,10 +3598,22 @@ def check_doctor_strange(bar: Bar, address: str) -> None:
     # A turn back is every world, as they stood.
     bar.click('#strange-hud [data-strange="back1"]')
     bar.until(f"{turns('abc', 1)} && strangeIdle()", "the worlds go back a turn")
-    # Following C puts its timeline in the middle: a branch is then made from C.
+    # Following C puts its timeline in the middle: a branch is then made from
+    # C, which the base timeline's picker says, in C's colour.
     bar.click('#strange-hud [data-strange="follow-c"]')
     assert bar.ev("[strange.follow, document.querySelector('#strange-hud [data-strange=\"branch\"]').textContent]") == \
         ["c", "⑂ Branch: 1-(player strategy)1-Stock"]
+    held = bar.ev(base)
+    assert held[0] == "c" and held[1] == [f"{letter} · {name}" for letter, name in zip("ACB", bar.ev(names))] and held[2] == "#b79cff", held
+    # Picking the base timeline there is the same: B is followed, and Branch
+    # offers what B does not seat. C again, for what follows.
+    rebase = ("(letter => { const base = document.querySelector('#strange-hud [data-strange=\"base\"]'); base.value = letter;"
+              " base.dispatchEvent(new Event('change', {bubbles: true})); return [strange.follow, base.value,"
+              " document.querySelector(`#strange-hud [data-strange=\"follow-${letter}\"]`).textContent,"
+              " document.querySelector('#strange-hud [data-strange=\"branch\"]').textContent]; })('%s')")
+    assert bar.ev(rebase % "b") == ["b", "b", "Following", "⑂ Branch: 1-(player strategy)1-Stock"], bar.ev(rebase % "b")
+    assert bar.ev("debugSplit.panes.b.strategy") == "jack"
+    assert bar.ev(rebase % "c") == ["c", "c", "Following", "⑂ Branch: 1-(player strategy)1-Stock"]
     # A press on the highway goes to the turn that height stands for: one
     # ahead of the last played is played to.
     bar.ev("(() => { const g = strangeGeometry(); strange.canvas.dispatchEvent(new MouseEvent('click',"
@@ -3672,7 +3698,12 @@ def check_doctor_strange(bar: Bar, address: str) -> None:
     })()""")
     assert shut == {"follow": "b", "wide": [0, True, True], "hangs": True, "notch": True, "line": shut["line"],
                     "gone": [None, "hidden"], "exit": True, "lock": True, "say": "Stock deleted"}, shut
-    assert shut["line"] < paired, (shut["line"], paired)
+    # One box takes the line up, as far as the cards at the top let it. In
+    # this window (757 high) the floor under the title card holds two boxes'
+    # line as well, since the base timeline's picker made the card a row
+    # taller: then the two stand on the same line.
+    floor = bar.ev("Math.ceil(Math.min(strange.floor, innerHeight * .6))")
+    assert shut["line"] < paired or shut["line"] == paired == floor, (shut["line"], paired, floor)
     stood = bar.ev("[debugSplit.panes.a.turn, debugSplit.panes.b.turn]")
     bar.click('#strange-hud [data-strange="on1"]')
     bar.until(f"debugSplit.panes.b.turn === {stood[1] + 1} && strangeIdle()", "time runs for the open world")
@@ -4339,7 +4370,7 @@ def main() -> int:
               "opens on the top rated player strategy on the right and its challenger on the left; the open turn is "
               "the line across the window, which is the divide between the tree and the boxes and has the turn "
               "written on it; a branch is named by the player strategies that played it, its box is in its colour, "
-              "and Branch is a picker that makes one in a step, a third world in a third box; the pointer over a box "
+              "and Branch is a picker that makes one in a step, a third world in a third box, from the base timeline picked over it; the pointer over a box "
               "picks out its line, the divide is dragged, and a box's exit deletes its branch, line and window; "
               "locked, the worlds go through the turns together, never seen a turn apart, and Play Time and Pause "
               "Time start and stop them, and unlocked they go by themselves until locked again; what the page costs "
