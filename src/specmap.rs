@@ -121,6 +121,64 @@ pub(crate) fn same_bytes(a: &[u8], b: &[u8]) -> bool {
         && last(a) == last(b)
 }
 
+/// What a [`SpecMap`] can be asked by. Text is hashed and its hit confirmed
+/// byte for byte; an interned [`Name`] is one array read. Most of the engine
+/// holds names (a city's buildings, a player's beliefs and cards), and before
+/// this a `&Name` passed to `get` was turned into its text and hashed like
+/// any string. Both paths find the same entry: a name's id is its text's.
+pub trait SpecKey {
+    fn position_in<T>(self, map: &SpecMap<T>) -> Option<usize>;
+}
+
+impl SpecKey for &str {
+    #[inline]
+    fn position_in<T>(self, map: &SpecMap<T>) -> Option<usize> {
+        map.position(self)
+    }
+}
+
+impl SpecKey for &&str {
+    #[inline]
+    fn position_in<T>(self, map: &SpecMap<T>) -> Option<usize> {
+        map.position(self)
+    }
+}
+
+impl SpecKey for &String {
+    #[inline]
+    fn position_in<T>(self, map: &SpecMap<T>) -> Option<usize> {
+        map.position(self)
+    }
+}
+
+impl SpecKey for &&String {
+    #[inline]
+    fn position_in<T>(self, map: &SpecMap<T>) -> Option<usize> {
+        map.position(self)
+    }
+}
+
+impl SpecKey for Name {
+    #[inline]
+    fn position_in<T>(self, map: &SpecMap<T>) -> Option<usize> {
+        map.position_of(self)
+    }
+}
+
+impl SpecKey for &Name {
+    #[inline]
+    fn position_in<T>(self, map: &SpecMap<T>) -> Option<usize> {
+        map.position_of(*self)
+    }
+}
+
+impl SpecKey for &&Name {
+    #[inline]
+    fn position_in<T>(self, map: &SpecMap<T>) -> Option<usize> {
+        map.position_of(**self)
+    }
+}
+
 impl<T> Default for SpecMap<T> {
     fn default() -> Self {
         SpecMap {
@@ -223,25 +281,25 @@ impl<T> SpecMap<T> {
     }
 
     #[inline]
-    pub fn get(&self, key: &str) -> Option<&T> {
-        self.position(key).map(|index| &self.values[index])
+    pub fn get(&self, key: impl SpecKey) -> Option<&T> {
+        key.position_in(self).map(|index| &self.values[index])
     }
 
     /// Return the existing interned key alongside its value without interning again.
     #[inline]
-    pub fn get_key_value(&self, key: &str) -> Option<(&Name, &T)> {
-        self.position(key)
+    pub fn get_key_value(&self, key: impl SpecKey) -> Option<(&Name, &T)> {
+        key.position_in(self)
             .map(|index| (&self.keys[index], &self.values[index]))
     }
 
     #[inline]
-    pub fn get_mut(&mut self, key: &str) -> Option<&mut T> {
-        self.position(key).map(|index| &mut self.values[index])
+    pub fn get_mut(&mut self, key: impl SpecKey) -> Option<&mut T> {
+        key.position_in(self).map(|index| &mut self.values[index])
     }
 
     #[inline]
-    pub fn contains_key(&self, key: &str) -> bool {
-        self.position(key).is_some()
+    pub fn contains_key(&self, key: impl SpecKey) -> bool {
+        key.position_in(self).is_some()
     }
 
     pub fn insert(&mut self, key: String, value: T) -> Option<T> {
@@ -524,5 +582,38 @@ mod tests {
             assert_eq!(map.get(key), Some(&index), "{key:?}");
         }
         assert_eq!(map.get("Zabc"), None);
+    }
+
+    /// A name and its text find the same entry through every lookup, so a
+    /// caller that holds a `Name` and now skips the hash reads exactly what
+    /// it read by text. A name interned after the table was built, or one
+    /// the table never held, misses by both routes.
+    #[test]
+    // The borrows are the point: each key type takes its own path.
+    #[allow(clippy::needless_borrows_for_generic_args)]
+    fn a_name_and_its_text_find_the_same_entry() {
+        let mut map: SpecMap<usize> = SpecMap::new();
+        for (index, text) in ["campus", "campus_x", "theater", "theater2", "a"]
+            .into_iter()
+            .enumerate()
+        {
+            map.insert(text.to_string(), index);
+        }
+        for text in ["campus", "campus_x", "theater", "theater2", "a", "missing"] {
+            let name = Name::new(text);
+            let owned = text.to_string();
+            assert_eq!(map.get(name), map.get(text), "{text}");
+            assert_eq!(map.get(&name), map.get(&owned), "{text}");
+            assert_eq!(map.get(&&name), map.get(&text), "{text}");
+            assert_eq!(map.get_key_value(name), map.get_key_value(text), "{text}");
+            assert_eq!(map.contains_key(&name), map.contains_key(text), "{text}");
+        }
+        let late = Name::new("interned_after_the_table_was_built");
+        assert_eq!(map.get(late), None);
+        assert!(!map.contains_key(late));
+        if let Some(value) = map.get_mut(Name::new("theater")) {
+            *value = 40;
+        }
+        assert_eq!(map["theater"], 40);
     }
 }
