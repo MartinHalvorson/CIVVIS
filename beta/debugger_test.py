@@ -3749,12 +3749,21 @@ def check_doctor_strange(bar: Bar, address: str) -> None:
     # world, in turns from the open one, with the world era it comes in, and
     # under it the next war. B's world has a nuclear war five turns on; A's
     # has none to the end of its game, and a war in thirty turns.
+    # Over what it says, "On current path," (operator 2026-11-25: "add to
+    # message: on current path, no nuclear war..."), all three lines whole
+    # inside the sign.
     signs = ("[...document.querySelectorAll('#strange-hud .strange-fate')].map(sign => [sign.dataset.strangeFate, sign.dataset.fate,"
-             " sign.querySelector('strong').textContent, sign.querySelector('span').textContent]).sort()")
+             " sign.querySelector('small').textContent, sign.querySelector('strong').textContent, sign.querySelector('span').textContent]).sort()")
     assert bar.ev(signs) == [
-        ["a", "clear", "☮ No nuclear war", "⚔ War in 30 turns: Rome on Greece"],
-        ["b", "coming", "☢ Nuclear war in 5 turns (Atomic Era)", "No wars ahead · 🏁 The game ends, turn 400"]], bar.ev(signs)
-    assert "Turn %d: Greece detonates a nuclear device" % (here + 5) in bar.ev("document.querySelector('#strange-hud [data-strange-fate=\"b\"]').title")
+        ["a", "clear", "On current path,", "☮ No nuclear war", "⚔ War in 30 turns: Rome on Greece"],
+        ["b", "coming", "On current path,", "☢ Nuclear war in 5 turns (Atomic Era)", "No wars ahead · 🏁 The game ends, turn 400"]], bar.ev(signs)
+    whole = bar.ev("[...document.querySelectorAll('#strange-hud .strange-fate')].map(sign => { const box = sign.getBoundingClientRect();"
+                   " return [...sign.querySelectorAll('small, strong, span')].map(line => { const at = line.getBoundingClientRect();"
+                   "  return at.height > 0 && at.top >= box.top && at.bottom <= box.bottom - 1 && line.scrollWidth <= line.clientWidth; }); })")
+    assert whole == [[True, True, True], [True, True, True]], whole
+    told = bar.ev("document.querySelector('#strange-hud [data-strange-fate=\"b\"]').title")
+    assert told.startswith("World B: on current path, nuclear war in 5 turns (Atomic Era)\n"), told
+    assert "Turn %d: Greece detonates a nuclear device" % (here + 5) in told, told
     # Each stands over the far end of its own branch, between the cards at
     # the top and under the black swan's button, and none on another.
     placed = bar.ev("(() => { const box = name => { const at = document.querySelector(name).getBoundingClientRect(); return [at.left, at.top, at.right, at.bottom]; };"
@@ -3807,8 +3816,8 @@ def check_doctor_strange(bar: Bar, address: str) -> None:
     bar.until("scouts.done >= 4 && Object.keys(scouts.held).length === 0", "and their engines let go of")
     bar.ev("delete window.__civvisBeta, delete navigator.hardwareConcurrency, scouts.wait = 0, true")
     assert bar.ev(signs) == [
-        ["a", "clear", "☮ No nuclear war", "⚔ War in 30 turns: Rome on Greece"],
-        ["b", "coming", "☢ Nuclear war in 5 turns (Atomic Era)", "No wars ahead · 🏁 The game ends, turn 400"]], bar.ev(signs)
+        ["a", "clear", "On current path,", "☮ No nuclear war", "⚔ War in 30 turns: Rome on Greece"],
+        ["b", "coming", "On current path,", "☢ Nuclear war in 5 turns (Atomic Era)", "No wars ahead · 🏁 The game ends, turn 400"]], bar.ev(signs)
     assert not bar.dev.console, f"the page complained: {bar.dev.console}"
     # Time running on is shown the turns that were played ahead, and none is
     # played again: the worlds are asked for more of their futures as they

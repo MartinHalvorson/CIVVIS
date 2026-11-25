@@ -1648,7 +1648,10 @@ path). these should alert on the top section out in the distance."
     the world era it comes in (one that has begun says since which turn);
     **No nuclear war**, when the future has been played to the end of the
     game with none; **No nuclear war in the next N turns**, as far as the
-    future has been played so far, N growing as it is played on. Under it
+    future has been played so far, N growing as it is played on. Over it
+    **On current path,** (operator, 2026-11-25: "add to message: on current
+    path, no nuclear war..."): what it says is the future of the world's
+    line under the player strategies seated now. Under it
     the next war to be declared, in how many turns and by whom on whom, and
     how many more follow, or that there are none ahead and how the game
     ends. A bar along its foot is how much of the game has been played
