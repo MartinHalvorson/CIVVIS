@@ -5942,8 +5942,9 @@ function strangeAheadDone(letter, data) {
 // engine of its own, forked from the world's (`beta/shim.js`, "a world's
 // scout"): the worlds and their futures are all played at once on as many
 // cores, and a world's turn never waits behind its future. A game served by
-// this computer plays a world's future on the world itself, so there it is
-// played a world at a time while the worlds stand still.
+// this computer plays a world's future on the world itself, each world
+// behind a lock of its own, so there the futures of all the worlds are
+// played at once while the worlds stand still.
 //
 // It is always being built: a world is asked the moment it is open, asked
 // again each time it answers until its game has ended, and asked anew when
@@ -5990,16 +5991,19 @@ function strangeSightStale(letter) {
   return sight.stale;
 }
 // Every world whose future has not been played to its end is asked for more
-// of it: all of them at once where each has an engine for it, as many as
-// there are cores to spare, the followed world first. Without one a world
-// plays its own future, so one world is asked at a time, and only while the
-// worlds stand still with nothing else asked of them.
+// of it, all of them at once and as many as there are cores to spare, the
+// followed world first. Where each has an engine for it those are the cores
+// the worlds and the page leave. Without one a world plays its own future:
+// a game served by this computer holds each world behind a lock of its own
+// (`panes.rs`), so the worlds' futures are still played side by side, but a
+// world asked for its future is not free to play a turn, and so they are
+// asked only while the worlds stand still with nothing else asked of them.
 function strangeForesee() {
   const split = debugSplit;
   if (!split || !split.shown || !strange.futures || !strange.hud) return;
   const open = strangeOpen(), own = strangeScouts(), now = performance.now();
   if (!own && (!strangeIdle() || Object.keys(strange.peeks).length > 0)) return;
-  const most = own ? Math.max(1, (navigator.hardwareConcurrency || 4) - open.length - 1) : 1;
+  const most = Math.max(1, (navigator.hardwareConcurrency || 4) - (own ? open.length : 0) - 1);
   let out = Object.keys(strange.seeing).length;
   for (const letter of [strange.follow, ...open.filter(name => name !== strange.follow)]) {
     if (out >= most) break;
