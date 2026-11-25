@@ -10,7 +10,9 @@ button in dr strange colors". On 2026-11-24, of CIVVIS: "lets give civvis a
 gold background on the button, rather than black", and on 2026-11-25: "make
 the civvis color white". Edge of Tomorrow joined the list that day ("above
 civ 6 and below ai debugger add: Edge of Tomorrow"): it opens the simulator,
-so it has the simulator's black.
+so it had the simulator's black, until later that day: "also, highlight the
+edge of tomorrow button in the appropriate edge of tomorrow colors. maybe
+like the movie poster vibe".
 
 Until then a list was all one colour, the colour of the page it stood on:
 six blue buttons on the pages, six black ones in the simulator. Now a button
@@ -18,9 +20,11 @@ says where it goes, and says the same thing on every page:
 
     Home, Charts/ and its pages, Experiments     the pages' blue
     CIVVIS                                       white
-    AI Debugger, Edge of Tomorrow                the simulator's black
+    AI Debugger                                  the simulator's black
     Doctor Strange's Civ 6                       Doctor Strange's blue and
                                                  crimson, in an orange glow
+    Edge of Tomorrow                             the film poster's gunmetal
+                                                 into ember, ringed in steel
     Civ 6                                        the blue of Steam's buttons
 
 and the page on screen keeps its colour and is ringed in white (it was gold
@@ -34,7 +38,7 @@ link into the simulator, one that ends `?mode=strange` is Doctor Strange's
 Civ 6 (the same game shown as a tree of two timelines), one that ends
 `?mode=tomorrow` is Edge of Tomorrow (the same game with a jump back), and a
 link to Steam's shop is Civ 6. So this reads every page `publish.sh`
-publishes and holds each list to it: the five rules are there, and they catch
+publishes and holds each list to it: the six rules are there, and they catch
 those links and no other. The simulator's own
 list names its links, and is held to the same colours by name.
 
@@ -79,11 +83,23 @@ BLACK = (
     '  .site-link[href$="?mode=play"] { background: #050607; color: #c9cecb; box-shadow: inset 0 0 0 1px #30363a; }\n'
     '  .site-link[href$="?mode=play"]:hover, .site-link[href$="?mode=play"]:focus-visible { background: #181c1f; color: #fff; }\n'
 )
-#: Edge of Tomorrow, the simulator played with a jump back, is the same black,
-#: by a rule of its own after AI Debugger's.
+#: Edge of Tomorrow, the simulator played with a jump back, is in the film
+#: poster's colours (the lane's reading of "the movie poster vibe"): the
+#: gunmetal of the exosuits under a smoky slate sky into the ember of the
+#: burning beach, ringed in steel and lit by the fire, the name in the
+#: title's silver-white. A rule of its own after AI Debugger's; the simulator
+#: states the same colours by name.
+GUNMETAL, EMBER, STEEL, SILVER = "#1e2a33", "#b04a18", "#8fa3b5", "#eef2f5"
 TOMORROW = (
-    '  .site-link[href$="?mode=tomorrow"] { background: #050607; color: #c9cecb; box-shadow: inset 0 0 0 1px #30363a; }\n'
-    '  .site-link[href$="?mode=tomorrow"]:hover, .site-link[href$="?mode=tomorrow"]:focus-visible { background: #181c1f; color: #fff; }\n'
+    '  .site-link[href$="?mode=tomorrow"] {\n'
+    f'    background: linear-gradient(135deg, {GUNMETAL} 35%, {EMBER}); color: {SILVER};\n'
+    f'    box-shadow: inset 0 0 0 1px {STEEL}, 0 0 6px rgba(255, 120, 40, 0.5);\n'
+    '  }\n'
+    '  .site-link[href$="?mode=tomorrow"]:hover,\n'
+    '  .site-link[href$="?mode=tomorrow"]:focus-visible {\n'
+    '    background: linear-gradient(135deg, #2b3b47 35%, #c2541a); color: #fff;\n'
+    '    box-shadow: inset 0 0 0 1px #b9c8d6, 0 0 10px rgba(255, 130, 50, 0.8);\n'
+    '  }\n'
 )
 #: The page on screen: its own colour, ringed in white.
 RING = '  .site-link[aria-current="page"]'
@@ -120,8 +136,10 @@ def ground(href: str) -> str:
     `$=` is "ends with" and `^=` "starts with"."""
     if href.endswith("../"):
         return "white"
-    if href.endswith("?mode=play") or href.endswith("?mode=tomorrow"):
+    if href.endswith("?mode=play"):
         return "black"
+    if href.endswith("?mode=tomorrow"):
+        return "tomorrow"
     if href.endswith("?mode=strange"):
         return "strange"
     if href.startswith("https://store.steampowered.com/"):
@@ -170,8 +188,8 @@ class Pages(unittest.TestCase):
                 self.assertLess(page.index(WHITE), page.index(BLACK))
                 self.assertLess(page.index(BLACK), page.index(TOMORROW))
                 self.assertLess(page.index(TOMORROW), page.index(STRANGE))
-                # Edge of Tomorrow's black is AI Debugger's, colour for colour.
-                self.assertEqual(TOMORROW.replace("?mode=tomorrow", "?mode=play"), BLACK)
+                # Edge of Tomorrow no longer wears AI Debugger's black.
+                self.assertNotIn("#050607", TOMORROW)
                 # The page on screen keeps what it would wear, ringed in
                 # white, and the ring is the last rule, so it wins.
                 rules = page[page.index("  .site-link {"):page.index(RING)]
@@ -188,7 +206,8 @@ class Pages(unittest.TestCase):
             worn = {name: ground(href) for name, href in links}
             with self.subTest(page=source):
                 self.assertEqual({name for name, kind in worn.items() if kind == "white"}, {"CIVVIS"})
-                self.assertEqual({name for name, kind in worn.items() if kind == "black"}, {"AI Debugger", "Edge of Tomorrow"})
+                self.assertEqual({name for name, kind in worn.items() if kind == "black"}, {"AI Debugger"})
+                self.assertEqual({name for name, kind in worn.items() if kind == "tomorrow"}, {"Edge of Tomorrow"})
                 # Edge of Tomorrow stands between AI Debugger and Civ 6
                 # (operator 2026-11-25: "above civ 6 and below ai debugger").
                 self.assertEqual(list(worn)[-3:], ["AI Debugger", "Edge of Tomorrow", "Civ 6"])
@@ -274,6 +293,38 @@ class Simulator(unittest.TestCase):
         self.assertEqual(len(coloured), 3, coloured)
         self.assertIn("html.seat-known.strange body:not(.watching-sim) #strangelink", coloured[-1])
 
+    def test_edge_of_tomorrow_is_in_its_colours(self):
+        # Operator 2026-11-25: "also, highlight the edge of tomorrow button
+        # in the appropriate edge of tomorrow colors. maybe like the movie
+        # poster vibe". The same colours as on the pages, by name; the white
+        # ring of the page on screen, which weighs more, still marks it in
+        # tomorrow mode, over the ember glow it keeps.
+        self.assertIn(
+            "  #tomorrowlink {\n"
+            f"    color: {SILVER}; border-color: {STEEL};\n"
+            f"    background: linear-gradient(135deg, {GUNMETAL} 35%, {EMBER}) border-box;\n"
+            "    box-shadow: 0 0 6px rgba(255, 120, 40, 0.5);\n"
+            "  }\n",
+            VIEWER,
+        )
+        self.assertIn("  #tomorrowlink:hover { color: #fff; border-color: #b9c8d6; "
+                      "background: linear-gradient(135deg, #2b3b47 35%, #c2541a) border-box; "
+                      "box-shadow: 0 0 10px rgba(255, 130, 50, 0.8); }\n", VIEWER)
+        for said in (f"linear-gradient(135deg, {GUNMETAL} 35%, {EMBER})", "linear-gradient(135deg, #2b3b47 35%, #c2541a)"):
+            self.assertIn(said, TOMORROW)
+        rules = [chunk.rpartition("{") for chunk in VIEWER.split("}")]
+        coloured = [selector.strip() for selector, _, body in rules
+                    if "#tomorrowlink" in selector and ("color" in body or "background" in body)]
+        self.assertEqual(len(coloured), 3, coloured)
+        self.assertIn("html.seat-known.tomorrow body:not(.watching-sim) #tomorrowlink", coloured[-1])
+        glow = ("  html.seat-known.tomorrow body:not(.watching-sim) #tomorrowlink "
+                "{ box-shadow: inset 0 0 0 1px #fff, 0 0 6px rgba(255, 120, 40, 0.5); }\n")
+        self.assertEqual(VIEWER.count(glow), 1)
+        self.assertLess(VIEWER.index("  #tomorrowlink {\n"), VIEWER.index(glow))
+        # It does not borrow Doctor Strange's: none of his colours is on it.
+        for colour in (TUNIC, CLOAK, SPARK, NAME):
+            self.assertNotIn(colour, TOMORROW)
+
     def test_civvis_is_white(self):
         # Operator 2026-11-25: "make the civvis color white". The same white
         # as on the pages, by name, with the same dark name on it.
@@ -323,13 +374,6 @@ class Simulator(unittest.TestCase):
         coloured = [
             selector for selector, _, body in rules
             if "#playlink" in selector and ("background" in body or "color:" in body.replace("border-color:", ""))
-        ]
-        self.assertEqual(coloured, [], coloured)
-        # Edge of Tomorrow opens this page too and wears the same rule:
-        # nothing colours its link but the ring of the page on screen.
-        coloured = [
-            selector for selector, _, body in rules
-            if "#tomorrowlink" in selector and ("background" in body or "color:" in body.replace("border-color:", ""))
         ]
         self.assertEqual(coloured, [], coloured)
         # The ground the pages' black buttons are set in is this page's own.
