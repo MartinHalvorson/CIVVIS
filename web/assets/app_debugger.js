@@ -5998,15 +5998,20 @@ async function strangeMeasure() {
   const sample = {cpu: null, cpuOf: "", memory: null, memoryOf: "", bytes: false};
   if (number(told.cpu_percent)) { sample.cpu = told.cpu_percent; sample.cpuOf = "this computer, all of its cores"; }
   else if (number(told.engine_busy_ms)) {
+    // Each world may play on an engine of its own (`beta/shim.js`), and the
+    // time they have all spent is added up: a share of the computer's cores.
+    const engines = number(told.engine_threads) && told.engine_threads > 1 ? told.engine_threads : 1;
+    const cores = engines > 1 ? Math.max(engines, navigator.hardwareConcurrency || engines) : 1;
     if (was && was.busy !== null && now > was.at)
-      sample.cpu = Math.max(0, Math.min(100, (told.engine_busy_ms - was.busy) / (now - was.at) * 100));
-    sample.cpuOf = "the engine, of the one core it plays on";
+      sample.cpu = Math.max(0, Math.min(100, (told.engine_busy_ms - was.busy) / (now - was.at) * 100 / cores));
+    sample.cpuOf = engines > 1 ? `the ${engines} engines, of this computer's ${cores} cores` : "the engine, of the one core it plays on";
   }
   const heap = performance.memory && number(performance.memory.usedJSHeapSize) ? performance.memory.usedJSHeapSize : null;
   if (number(told.memory_percent)) { sample.memory = told.memory_percent; sample.memoryOf = "this computer, of all it has"; }
   else if (number(told.engine_bytes)) {
     sample.memory = told.engine_bytes + (heap ?? 0); sample.bytes = true;
-    sample.memoryOf = heap === null ? "the engine" : "the engine and this page";
+    const engines = number(told.engine_threads) && told.engine_threads > 1 ? `the ${told.engine_threads} engines` : "the engine";
+    sample.memoryOf = heap === null ? engines : `${engines} and this page`;
   } else if (heap !== null) { sample.memory = heap; sample.bytes = true; sample.memoryOf = "this page"; }
   strange.metered = {at: now, busy: number(told.engine_busy_ms) ? told.engine_busy_ms : null};
   strange.meter.push(sample);
