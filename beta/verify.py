@@ -174,13 +174,14 @@ def fresh_profile(prefix: str) -> str:
 # A page is named here by its address in the lane, which follows its name in
 # the site list (operator 2026-11-23: "clean up the URL please. standardized.
 # please remove research from the url"): the pages of Charts/ under charts/,
-# Tournaments at tournaments (at auto-tourneys while it was named
-# Auto-Tourneys, 2026-11-23 to 2026-11-24), Civ AI Interpretability at
+# Experiments at experiments (at tournaments while it was named Tournaments,
+# until 2026-11-25, but for 2026-11-23 to 2026-11-24, when it was named
+# Auto-Tourneys and at auto-tourneys), Civ AI Interpretability at
 # charts/civ-ai-interpretability (at charts/ai-interpretability until it took
 # that name on 2026-11-24).
 PAGES = {
     "home": b'aria-label="CIVVIS links"',
-    "tournaments": b'id="tournaments-data"',
+    "experiments": b'id="tournaments-data"',
     "charts/win-analytics": b'id="research-data"',
     "charts/elo-rankings": b'id="elo-data"',
     "charts/civ-analytics": b'id="civ-data"',
@@ -202,21 +203,27 @@ PAGES = {
 # Interpretability went from interpretability to charts/ai-interpretability
 # with the others, and on 2026-11-24 took the name Civ AI Interpretability
 # (operator: "please change AI interpretability to "Civ AI
-# Interpretability"") and the address that goes with it. An address is
-# followed move by move (`moves_from`) to wherever a lane has the page.
+# Interpretability"") and the address that goes with it. Tournaments went
+# to auto-tourneys and back (`BETWEEN`), and on 2026-11-25 took the name
+# Experiments (operator: "rename tournaments to experiments") and the
+# address that goes with it. An address is followed move by move
+# (`moves_from`) to wherever a lane has the page.
 FORMER = {
     "auto-tourneys": "tournaments",
+    "tournaments": "experiments",
     "research": "charts/win-analytics",
     "performance": "charts/civvis-performance",
     "interpretability": "charts/ai-interpretability",
     "charts/ai-interpretability": "charts/civ-ai-interpretability",
 }
 
-# A page back at an address it once left (Tournaments, at auto-tourneys from
-# 2026-11-23 to 2026-11-24 while it was named Auto-Tourneys), and the address
-# it had in between. A lane pinned to a revision from in between carries the
-# page there, and the address it is back at forwards to it (`BETWEEN` in
-# `beta/_worker.js`, which a test holds to this table).
+# A page that went back to an address it had left (Tournaments, at
+# auto-tourneys from 2026-11-23 to 2026-11-24 while it was named
+# Auto-Tourneys), by that address, and the address it had in between. A lane
+# pinned to a revision from in between carries the page there, and the
+# address it went back to forwards to it (`BETWEEN` in `beta/_worker.js`,
+# which a test holds to this table). The page has left tournaments again
+# since, so its moves from there are followed first.
 BETWEEN = {
     "tournaments": "auto-tourneys",
 }
@@ -245,11 +252,19 @@ def left_by(name: str) -> list:
 def forwards_to(address: str, carried: list):
     """Where an address a lane does not carry forwards in it, as the router
     does: to the first address the lane has the page at, following its moves,
-    or from an address a page is back at to the one it had in between."""
-    if address in FORMER:
-        return next((now for now in moves_from(address) if now in carried), None)
+    or from an address a page went back to, to the one it had in between."""
+    onward = next((now for now in moves_from(address) if now in carried), None)
+    if onward is not None:
+        return onward
     between = BETWEEN.get(address)
     return between if between in carried else None
+
+
+def first_address(name: str) -> str:
+    """The address a page had first: the one it left first, unless that was
+    only where it was in between two stays at another, which is then the one."""
+    first = (left_by(name) or [name])[-1]
+    return next((back for back, between in BETWEEN.items() if between == first), first)
 
 
 # Every address a page can answer at, in the site list's order, a page's
@@ -275,9 +290,7 @@ def lane_pages(build: dict) -> list:
     publish failed."""
     listed = build.get("pages")
     if listed is None:
-        # The address each page had first: the one it left first, unless it
-        # is back at its first.
-        return [name if name in BETWEEN else (left_by(name) or [name])[-1] for name in PAGES]
+        return [first_address(name) for name in PAGES]
     return [address for address in listed if address in ADDRESSES]
 
 

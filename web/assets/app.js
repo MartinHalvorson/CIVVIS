@@ -27769,7 +27769,7 @@ function hudTurnPlate() {
   // Who is playing, and whose eyes the map is drawn through (operator
   // 2026-11-15: a "Mode:" and a "POV:" on the turn box).
   const plateMode = livePause.available && livePause.mode
-    ? [livePause.mode, "A live Firaxis Civilization VI game in a tournament series: its record so far, wins\u2013losses, as on the home page's Tournaments table."]
+    ? [livePause.mode, "A live Firaxis Civilization VI game in a tournament series: its record so far, wins\u2013losses, as on the Experiments page."]
     : livePause.available
     ? ["Firaxis Civ VI Testing", "A live Firaxis Civilization VI game under test, mirrored here turn by turn."]
     : SPEC ? ["CIVVIS Self-play", "Every civilization is played by a CIVVIS AI agent. Nobody holds a seat."]

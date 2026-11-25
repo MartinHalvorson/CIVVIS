@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
-"""The Tournaments page's record, read from the definitions and the run ledger.
+"""The Experiments page's record, read from the definitions and the run ledger.
 
     tournaments_page.py <source_tree>              print the record as JSON
     tournaments_page.py <source_tree> <page.html>  write it into the page
 
-The Tournaments page (`beta/tournaments.html`; named Auto-Tourneys and served
-at `<lane>/auto-tourneys/` from 2026-11-22 to 2026-11-24, at
-`<lane>/tournaments/` since, the address it states itself)
+The Experiments page (`beta/tournaments.html`; named Tournaments and served
+at `<lane>/tournaments/` until 2026-11-25, but for 2026-11-22 to 2026-11-24,
+when it was Auto-Tourneys at `<lane>/auto-tourneys/`; at `<lane>/experiments/`
+since, the address it states itself; operator 2026-11-25: "rename
+tournaments to experiments")
 is the site's page between Home and CIVVIS (operator 2026-11-21: "This is my
 Simulator Experiments page essentially. I have an idea I want to run. I
 schedule in a tournament for it. The AI models just keep working away at
