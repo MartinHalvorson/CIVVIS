@@ -2281,6 +2281,44 @@ fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
     // wake point was moved to.
     assert!(include_str!("../../beta/shim.js")
         .contains("else if (mode === \"tomorrow\") payload.spectate = false;"));
+    // Each opens on a world of its own (operator, 2026-11-25: "lets use 4p
+    // pangaea maps for doctor strange's civ 6. 2p Duel maps for edge of
+    // tomorrow"), and a link's own players, map or shape still wins.
+    assert!(include_str!("../../beta/shim.js").contains(concat!(
+        "    const MODE_WORLDS = {\n",
+        "      strange: {num_players: 4, map_script: \"pangaea\", map_topology: \"flat\"},\n",
+        "      tomorrow: {num_players: 2, map_script: \"continents\", map_topology: \"flat\"},\n",
+        "    };\n",
+        "    for (const [setting, value] of Object.entries(MODE_WORLDS[mode] || {})) {\n",
+        "      if (!(setting in payload)) payload[setting] = value;\n",
+        "    }\n",
+    )));
+    // The worlds those settings make: a Pangaea of four is a Tiny world, and
+    // two seats are a Duel's, both laid flat.
+    let stock = stock_opening_params(11);
+    let strange = new_game_params(
+        &stock,
+        &json!({"num_players": 4, "map_script": "pangaea", "map_topology": "flat", "spectate": false}),
+    );
+    assert_eq!(strange.num_players, 4);
+    assert_eq!(strange.map_script, MapScript::Pangaea);
+    assert_eq!(strange.map_topology, MapTopology::Flat);
+    assert_eq!(
+        MapSize::from_dimensions(strange.width, strange.height).map(|size| size.id),
+        Some("tiny")
+    );
+    let tomorrow = new_game_params(
+        &stock,
+        &json!({"num_players": 2, "map_script": "continents", "map_topology": "flat", "spectate": false}),
+    );
+    assert_eq!(tomorrow.num_players, 2);
+    assert_eq!(tomorrow.map_script, MapScript::Continents);
+    assert_eq!(tomorrow.map_topology, MapTopology::Flat);
+    assert_eq!((tomorrow.width, tomorrow.height), (44, 26));
+    assert_eq!(
+        MapSize::from_dimensions(tomorrow.width, tomorrow.height).map(|size| size.id),
+        Some("duel")
+    );
     let debugger = include_str!("../../web/assets/app_debugger.js");
     assert!(debugger.contains(
         "return DEBUG_PANE === null && new URLSearchParams(location.search).get(\"mode\") === \"tomorrow\";"
