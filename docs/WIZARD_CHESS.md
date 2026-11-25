@@ -385,7 +385,7 @@ What is next, most felt first:
 | `beta/chess/rules.js` | The rules of chess: legal moves, the position after one, check, mate and the draws, and a move written (SAN, UCI) and said aloud |
 | `beta/chess/command.js` | A command, said or typed, read as a move, and the moves a command not yet finished could still mean |
 | `beta/chess/engine.js` | The opponent: Stockfish in a worker, one move at a time at an Elo |
-| `beta/chess/vendor/` | three.js r160 (MIT) and Stockfish.js 18, lite and single-threaded (GPL-3.0, this repository's license), as published; its README names versions and sources |
+| `beta/chess/vendor/` | three.js r160 (MIT) and Stockfish.js 18, lite and single-threaded (GPL-3.0, its own license, kept beside it as `stockfish.LICENSE`), as published; its README names versions and sources |
 
 Two things were not written here, on purpose. The board is drawn with
 three.js because it gives shadows and reflections now and a headset later.
