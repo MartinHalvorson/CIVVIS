@@ -427,6 +427,8 @@ class TournamentsPage(unittest.TestCase):
             'title="One world, two timelines: the same game played two ways, side by side, on a timeline that branches.">Doctor Strange\'s Civ 6</a>\n'
             '      <a class="site-link" href="../?mode=play" '
             'title="You play one civilization. CIVVIS AI agents play the rest.">AI Debugger</a>\n'
+            '      <a class="site-link" href="../?mode=tomorrow" '
+            'title="You play one civilization, with a jump back: the world returns to the turn you woke on, as it stood.">Edge of Tomorrow</a>\n'
             '      <a class="site-link" href="https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/" '
             'target="_blank" rel="noopener" title="Buy Civilization VI on Steam">Civ 6</a>\n'
             "    </nav>",
