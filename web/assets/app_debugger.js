@@ -87,6 +87,8 @@ const DEBUG_BAR_STYLE = `
   }
   /* Hidden is hidden, whatever a later rule says the thing is laid out as. */
   #debugbar[hidden], #debugbar [hidden] { display: none !important; }
+  /* Edge of Tomorrow has a bar of its own and none of the debugger's tools. */
+  html.tomorrow #debugbar { display: none !important; }
   /* While the screen is split the box stays up, over the two halves, and has
      the window's whole width: the halves cover the left panel. */
   html.dbg-split-open #debugbar { z-index: 100001; left: 0; }
@@ -848,6 +850,19 @@ function debugForgetStandingOrders(turn) {
   noticeLog = [];
   noticeDismissed = new Set();
   noticeSeenTurn = Math.max(0, turn - 1);
+  // The banners compare each turn with the one before it (`rivalMoments`,
+  // `boostMoments` in app_moments.js). A turn walked to is not the turn
+  // after the one that was left, so they take attendance again: going back
+  // from a war to before it began used to announce a peace.
+  // The banners still up or waiting are of the turn that was left, and
+  // go with it.
+  if (typeof rivalsWorld !== "undefined") rivalsWorld = null;
+  if (typeof boostsWorld !== "undefined") boostsWorld = null;
+  if (typeof momentQueue !== "undefined") momentQueue.length = 0;
+  if (typeof momentsShowing !== "undefined") {
+    for (const card of document.querySelectorAll("#moments .moment")) card.remove();
+    momentsShowing = 0;
+  }
 }
 const DEBUG_TRAVEL_OPS = new Set(["back", "forward", "jump", "walk", "restart", "undo", "copy", "goto_save"]);
 // `run` is a run's own: the request it has out for its next turn (`ahead`)
@@ -2182,10 +2197,11 @@ function debugMapLeft() {
 // (`STRANGE_STYLE`, `STRANGE_PANE_STYLE`); every measure here makes the
 // browser lay the whole page out again, and with each world saying a dozen
 // things a turn that was a fifth of all the page did while time ran. The
-// bar is measured again when it is back in sight.
+// bar is measured again when it is back in sight. Edge of Tomorrow never
+// shows it (`html.tomorrow #debugbar`).
 function debugBarUnseen() {
   const page = document.documentElement.classList;
-  return page.contains("strange-pane") || (page.contains("strange") && debugSplit !== null);
+  return page.contains("strange-pane") || page.contains("tomorrow") || (page.contains("strange") && debugSplit !== null);
 }
 function debugDock(bar) {
   if (debugBarUnseen()) return;
@@ -2509,8 +2525,9 @@ function debugOpenTheGame() {
   if (debugOpenedGame === game) return;
   // A game in the middle of something is opened when it is next drawn idle.
   if (debugBusy || debugRunning || autoplaying || turnAdvancePending) return;
-  // Doctor Strange's Civ 6 seats its own worlds.
-  if (!debugOpenedOnBest && !STRANGE) {
+  // Doctor Strange's Civ 6 seats its own worlds, and in Edge of Tomorrow the
+  // seat is the person's, with the Civ AI they last picked beside it.
+  if (!debugOpenedOnBest && !STRANGE && !TOMORROW) {
     debugOpenedOnBest = true;
     const best = debugBestAgent();
     // The engine is told, and the game is opened when it has answered.
@@ -5053,6 +5070,18 @@ const STRANGE_PANE = (() => {
   try { return DEBUG_PANE !== null && new URLSearchParams(window.parent.location.search).get("mode") === "strange"; }
   catch (_) { return false; }
 })();
+// Whether this page is Edge of Tomorrow (`?mode=tomorrow`, the last section
+// of this file). It is said here, before anything is drawn: the page is the
+// Civilization VI screen from its first frame, whatever view the AI Debugger
+// was last left in, and that choice is not kept for the AI Debugger to find.
+const TOMORROW = (() => {
+  try { return DEBUG_PANE === null && new URLSearchParams(location.search).get("mode") === "tomorrow"; }
+  catch (_) { return false; }
+})();
+if (TOMORROW) {
+  document.documentElement.classList.add("tomorrow");
+  SOLO_UI = true;
+}
 // The player strategies the second world is given when the picker shows no
 // rating to rank them by, in the order they are tried.
 const STRANGE_RIVALS = ["siege", "moonshot", "holy", "tourist", "forward", "swing", "jack", "stock"];
@@ -7333,3 +7362,508 @@ window.addEventListener("resize", () => { if (debugTimeline()) drawDebugBar(); }
 // `render` of ours yet: draw the bar now, and a half of a split says where it
 // stands, or its host would wait for a report until something moved.
 if (state) { drawDebugBar(); debugPaneReport(); debugPaneNumbers(); debugOpenTheGame(); }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Edge of Tomorrow
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Operator 2026-11-25: "above civ 6 and below ai debugger add: Edge of
+// Tomorrow. This should be civ 6 with a jump back (like the concept from the
+// movie)".
+//
+// `?mode=tomorrow` is a played game with the seat in the person's own hands,
+// on the Civilization VI screen, and one thing that game does not have: a
+// jump back. The world goes back to the turn the person woke on, exactly as
+// it stood, and they play it again knowing what they saw. Each time round is
+// a loop, and the loops are counted.
+//
+// A jump back comes two ways. The person asks for one (Jump back, in the bar
+// across the top), or the game is lost: the seat's civilization falls, or
+// somebody else wins. A lost game does not end here. Its card says how the
+// loop ended and counts down to the jump.
+//
+// The world a jump goes back to is the engine's own mark of that turn
+// (`server/debugger.rs`, `jump`), so nothing is played again to get there.
+// The engine is deterministic and keeps the agents beside each mark, so the
+// rivals play the same game again until the person plays a different one,
+// which is what makes what was seen worth keeping. The bar keeps it: its
+// line is the whole game, with where each earlier loop ended and, ahead of
+// the open turn, what earlier loops saw done to the seat (a war declared on
+// it, a city of its taken), read from the game's own record of its wars
+// (`state.wars`).
+//
+// The turn woken on is the first until the person moves it (Wake here). The
+// world as it stands is then kept as a save point of the engine's
+// (`save_point`), which is never thinned away as an old turn's mark may be,
+// and a jump back goes to that (`goto_save`).
+//
+// Nothing here is the engine's. It is this page counting, over the timeline
+// every played game keeps, and it is gone with the page, as save points are.
+// The debugger's own bar is out of sight (`html.tomorrow #debugbar`), and
+// the seat's Auto-play, which that bar takes over in the AI Debugger, stays
+// where a played game has it, in the left panel.
+
+// The name the wake point is kept under among the engine's save points. It
+// is one name: a world kept under it again replaces the one before.
+const TOMORROW_SAVE = "Edge of Tomorrow";
+// How long a lost loop's card stands before the jump back, in seconds.
+const TOMORROW_COUNT = 8;
+// What is done to the seat in a war, as the game records it
+// (`WarHighlight::kind`): the sign and the colour of its mark on the line,
+// and the words for it.
+const TOMORROW_SEEN = {
+  declared: ["⚔", "#ffb347", (actor, seat) => `${actor} declared war on ${seat}`],
+  city_captured: ["⌂", "#ff8f6b", (actor, seat, city) => `${actor} captured ${city || `a city of ${seat}`}`],
+  capital_captured: ["♛", "#ff5a4d", (actor, seat, city) => `${actor} captured ${city ? `${city}, ` : ""}the capital of ${seat}`],
+  city_razed: ["✹", "#ff5a4d", (actor, seat, city) => `${actor} razed ${city || `a city of ${seat}`}`],
+  nuclear_strike: ["☢", "#ff5a4d", (actor, seat, city) => `${actor} struck ${city || seat} with a nuclear weapon`],
+  conquest: ["✕", "#ff5a4d", (actor, seat) => `${actor} conquered ${seat}`],
+};
+
+const TOMORROW_STYLE = `
+  /* The bar stands where the debugger's does: across the top of the window
+     from where the map area begins (measured, --tmr-left) to the right
+     edge, with the map area beneath it by the height it takes (--tmr-top). */
+  html.tmr-docked #maparea { margin-top: var(--tmr-top, 0px); }
+  html.tmr-docked #moments, html.tmr-docked #site-pick { margin-top: var(--tmr-top, 0px); }
+  @media (max-width: 720px) { html.tmr-docked #side { margin-top: var(--tmr-top, 0px); } }
+  #tomorrowbar {
+    position: fixed; z-index: 8000; inset: 0 0 auto var(--tmr-left, 0px);
+    display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 6px 16px;
+    padding: 8px 12px; color: #dfe6ec; font-size: 12px; line-height: 1.2; user-select: none;
+    background: linear-gradient(180deg, #131b23, #0a0f14); border-bottom: 1px solid #44525f; border-left: 1px solid #2b3742;
+    box-shadow: 0 6px 18px #0008;
+  }
+  #tomorrowbar[hidden] { display: none !important; }
+  /* The name, and under it the loop this is. */
+  #tomorrowbar .tmr-name { display: grid; gap: 3px; white-space: nowrap; }
+  #tomorrowbar .tmr-name b { color: #9fb0bf; font-size: 10px; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; }
+  #tomorrowbar .tmr-loop { display: flex; align-items: baseline; gap: 6px; color: #9fb0bf; font-size: 10px; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; }
+  #tomorrowbar .tmr-loop i { color: #f5a742; font: 700 24px/1 Georgia, serif; font-style: normal; letter-spacing: 0; font-variant-numeric: tabular-nums; }
+  /* The line is the whole game, its first turn at the left end. */
+  #tomorrowbar .tmr-track { display: grid; gap: 4px; min-width: 0; }
+  #tomorrowbar .tmr-rail { position: relative; height: 38px; border-radius: 7px; background: #0a1118; border: 1px solid #2f3d4a; }
+  #tomorrowbar .tmr-rail > * { position: absolute; }
+  /* What earlier loops lived through, from the turn woken on to the furthest
+     any of them reached, and along its foot what this loop has played. */
+  #tomorrowbar .tmr-lived { top: 0; bottom: 0; border-radius: 6px; background: repeating-linear-gradient(135deg, #1b3144 0 6px, #16283a 6px 12px); }
+  #tomorrowbar .tmr-done { bottom: 0; height: 4px; border-radius: 0 2px 2px 6px; background: linear-gradient(90deg, #8a5a18, #f5a742); }
+  #tomorrowbar .tmr-tick { top: 0; bottom: 0; padding: 1px 0 0 3px; border-left: 1px solid #ffffff1a; color: #8493a0; font-size: 9px; font-variant-numeric: tabular-nums; pointer-events: none; }
+  /* What earlier loops saw coming stands in the upper half of the line, and
+     where an earlier loop ended in the lower, so that a loop that ended in
+     the war it saw shows both, one over the other. */
+  #tomorrowbar .tmr-end, #tomorrowbar .tmr-mem {
+    width: 16px; height: 16px; margin-left: -8px; display: grid; place-items: center;
+    font-style: normal; font-size: 15px; line-height: 1; text-shadow: 0 0 2px #000, 0 0 4px #000; cursor: default;
+  }
+  #tomorrowbar .tmr-mem { top: 1px; }
+  #tomorrowbar .tmr-end { bottom: 4px; color: #ff6b5e; font-weight: 800; }
+  #tomorrowbar .tmr-end.tmr-by-hand { color: #c3ced7; }
+  /* Where a jump back wakes, and the turn that is open. */
+  #tomorrowbar .tmr-wake { top: -4px; bottom: -4px; width: 4px; margin-left: -2px; border-radius: 2px; background: #eef3f7; box-shadow: 0 0 6px #eef3f7aa; }
+  #tomorrowbar .tmr-now {
+    top: 50%; min-width: 30px; height: 22px; padding: 0 6px; transform: translate(-50%, -50%); display: grid; place-items: center;
+    color: #1a1206; background: #f5a742; border: 1px solid #ffd9a0; border-radius: 11px;
+    font: 800 12px/1 system-ui, sans-serif; font-variant-numeric: tabular-nums; box-shadow: 0 2px 8px #000a;
+  }
+  #tomorrowbar .tmr-said { min-height: 14px; color: #9fb0bf; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #tomorrowbar .tmr-said b { color: #dfe6ec; font-weight: 700; }
+  /* Jump back is the one thing this page adds to the game, and is the
+     largest thing on the bar for it. */
+  #tomorrowbar .tmr-acts { display: flex; align-items: center; gap: 8px; }
+  #tomorrowbar button { font: inherit; cursor: pointer; white-space: nowrap; }
+  #tomorrowbar button:disabled { cursor: default; opacity: .38; }
+  #tmr-jump {
+    display: grid; justify-items: center; gap: 1px; min-width: 132px; height: 44px; padding: 0 16px; border-radius: 10px;
+    color: #1a1206; background: linear-gradient(180deg, #f9b858, #d98a1e); border: 1px solid #ffd9a0;
+    box-shadow: 0 2px 10px #f5a74233;
+  }
+  #tmr-jump span { align-self: end; font-size: 14px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+  #tmr-jump small { align-self: start; font-size: 10px; font-weight: 700; letter-spacing: .04em; opacity: .8; }
+  #tmr-jump:hover:not(:disabled) { background: linear-gradient(180deg, #ffc978, #e89a2c); }
+  #tmr-jump:disabled { filter: grayscale(.7); box-shadow: none; }
+  /* A lost loop that is being looked around waits on this button. */
+  #tmr-jump.tmr-due { animation: tmr-due 1.4s ease-in-out infinite; }
+  @keyframes tmr-due { 50% { box-shadow: 0 0 0 4px #f5a74255, 0 2px 14px #f5a74288; } }
+  @media (prefers-reduced-motion: reduce) { #tmr-jump.tmr-due { animation: none; box-shadow: 0 0 0 3px #f5a74266; } }
+  #tmr-wake {
+    height: 44px; padding: 0 12px; border-radius: 10px; color: #c9d2da; background: #141c24; border: 1px solid #44525f;
+    font-size: 11px; font-weight: 700; letter-spacing: .04em;
+  }
+  #tmr-wake:hover:not(:disabled) { color: #fff; border-color: #eef3f7; }
+  /* With little room the name goes over the line, beside the buttons. */
+  @media (max-width: 900px) {
+    #tomorrowbar { grid-template-columns: minmax(0, 1fr) auto; }
+    #tomorrowbar .tmr-name { grid-auto-flow: column; justify-content: start; align-items: baseline; gap: 12px; }
+    #tomorrowbar .tmr-track { grid-column: 1 / -1; grid-row: 2; }
+    #tmr-jump { min-width: 0; height: 36px; padding: 0 12px; }
+    #tmr-jump span { font-size: 12px; }
+    #tmr-wake { height: 36px; padding: 0 9px; }
+  }
+  /* The card of a lost loop: the result card's own shape, with the jump
+     where a new game was offered. */
+  #winner .tmr-card .winner-actions { grid-template-columns: minmax(0, 1fr); justify-items: center; }
+  #winner .tmr-card .winner-actions .winner-again { width: auto; }
+  html.tmr-looking #winner { display: none !important; }
+`;
+
+const tomorrow = {
+  // The game the loops are of, by its server and its seed, and the turn it
+  // was last seen on. A turn that goes back unasked is another game.
+  game: null, turn: 0,
+  loop: 1,
+  // Where a jump back wakes: the turn, the engine's save point for it (none
+  // while it is the first turn kept), and how much of that turn was played.
+  wake: {turn: 1, save: null, acted: 0},
+  // The furthest turn any loop has reached.
+  far: 1,
+  // How each earlier loop ended: {loop, turn, how, words}.
+  ends: [],
+  // What earlier loops saw done to the seat, and what this one has so far:
+  // {turn, kind, text, loop}, by turn, kind, who did it and to which city.
+  seen: new Map(), now: new Map(),
+  // A jump is on its way to the engine.
+  jumping: false,
+  // The end this loop has met ({how, words}), the count to the jump back,
+  // and whether the person asked to look around first.
+  fate: null, count: null, looking: false,
+  // What the bar was last told to say, and the turn it was said on.
+  said: null,
+};
+let tomorrowBar = null;
+
+function tomorrowIdle() {
+  return !debugBusy && !autoplaying && !turnAdvancePending && !tomorrow.jumping;
+}
+function tomorrowCiv(id) {
+  return ((state.players || [])[id] || {}).civ || "A rival";
+}
+function tomorrowSay(text) {
+  tomorrow.said = text ? {text, turn: state ? state.turn : 0} : null;
+}
+// How the game has gone for the seat on the world shown: it fell, it lost,
+// it won, or (null) the game is still its to play.
+function tomorrowFate() {
+  const me = (state.players || [])[0];
+  if (!me) return null;
+  if (!gameFinished(state)) return me.alive === false ? {how: "fell", words: `${me.civ} has been defeated`} : null;
+  const winners = Array.isArray(state.winners) && state.winners.length ? state.winners
+    : state.winner !== null && state.winner !== undefined ? [state.winner] : [];
+  if (winners.includes(0)) return {how: "won", words: `${me.civ} won`};
+  if (!winners.length) return {how: "lost", words: "The game ended with no winner"};
+  return {how: "lost",
+    words: `${winners.map(tomorrowCiv).join(" + ")} won: ${victoryVerdict(state.victory_type, state.victory_label)}`};
+}
+// Whether there is anything to jump back from: a turn past the one woken on,
+// something done in that turn, or a game that is over.
+function tomorrowCanJump() {
+  const t = tomorrow, timeline = debugTimeline();
+  return !!timeline && (state.turn > t.wake.turn || (timeline.acted || 0) !== t.wake.acted || !!t.fate);
+}
+// The state that was just drawn, read for what the loops are made of.
+function tomorrowWatch() {
+  const t = tomorrow, timeline = debugTimeline();
+  if (!timeline) return;
+  const game = `${state.server_instance ?? ""}|${state.seed ?? ""}`;
+  if (t.game !== game || (state.turn < t.turn && !t.jumping)) {
+    tomorrowCountOff();
+    Object.assign(t, {game, loop: 1, wake: {turn: timeline.first ?? state.turn, save: null, acted: 0}, far: state.turn,
+      ends: [], seen: new Map(), now: new Map(), fate: null, looking: false, said: null});
+  }
+  // A wake point whose save point the engine no longer holds (a saved game
+  // was loaded over this one) is the first turn again.
+  if (t.wake.save !== null && !(timeline.saves || []).some(save => save.id === t.wake.save))
+    t.wake = {turn: timeline.first ?? state.turn, save: null, acted: 0};
+  t.turn = state.turn;
+  t.far = Math.max(t.far, state.turn);
+  for (const war of state.wars || []) {
+    for (const seen of war.highlights || []) {
+      const how = TOMORROW_SEEN[seen.kind];
+      if (!how || seen.subject !== 0 || seen.turn < t.wake.turn) continue;
+      const key = `${seen.turn}|${seen.kind}|${seen.actor}|${seen.city || ""}`;
+      if (!t.now.has(key)) t.now.set(key, {turn: seen.turn, kind: seen.kind, loop: t.loop,
+        text: how[2](tomorrowCiv(seen.actor), tomorrowCiv(0), seen.city)});
+    }
+  }
+  const fate = tomorrowFate(), card = document.getElementById("winner");
+  if (!fate) {
+    tomorrowCountOff();
+    t.fate = null; t.looking = false;
+    document.documentElement.classList.remove("tmr-looking");
+    if (card) delete card.dataset.tomorrow;
+    return;
+  }
+  if (!t.fate) {
+    t.fate = fate;
+    if (fate.how !== "won" && !t.jumping) tomorrowCountOn();
+  }
+  tomorrowCard();
+}
+// A lost loop counts down to its jump back. The jump waits for whatever the
+// page is in the middle of.
+function tomorrowCountOn() {
+  tomorrowCountOff();
+  tomorrow.count = {left: TOMORROW_COUNT, timer: setInterval(() => {
+    const count = tomorrow.count;
+    if (!count) return;
+    if (count.left > 0) count.left -= 1;
+    tomorrowCardCount();
+    if (count.left <= 0 && tomorrowIdle()) tomorrowJump();
+  }, 1000)};
+}
+function tomorrowCountOff() {
+  if (tomorrow.count) clearInterval(tomorrow.count.timer);
+  tomorrow.count = null;
+}
+function tomorrowCardCount() {
+  const button = document.getElementById("tmr-card-jump");
+  if (!button) return;
+  const count = tomorrow.count;
+  button.textContent = `Jump back to turn ${tomorrow.wake.turn}${count ? ` (${count.left})` : ""}`;
+}
+// The result card, when the game is over. A game the seat won keeps the
+// card it has, which then says which loop won it. A game it lost is not the
+// end of this one: the page's count to a new game is stopped, and the card
+// is the loop's, with the jump back where a new game was offered. The page
+// draws its own card again whenever the result's signature changes, so this
+// is asked after every state.
+function tomorrowCard() {
+  const t = tomorrow, card = document.getElementById("winner");
+  if (!card || !t.fate) return;
+  const drawn = card.dataset.signature || "";
+  if (card.dataset.tomorrow === drawn && card.querySelector(".tmr-card, .tmr-won")) return;
+  card.dataset.tomorrow = drawn;
+  if (t.fate.how === "won") {
+    const turn = card.querySelector(".winner-content > .winner-meta:not(.winner-player)");
+    if (turn) turn.insertAdjacentHTML("afterend", `<span class="winner-meta tmr-won">Won on loop ${t.loop}</span>`);
+    return;
+  }
+  clearFinaleCountdown();
+  card.innerHTML = `<div class="winner-content tmr-card">
+    <span class="winner-kicker">Loop ${t.loop} ends · Turn ${escapeAttr(String(reportedTurn(state)))}</span>
+    <span class="winner-mark" aria-hidden="true">↺</span>
+    <strong class="winner-title">${escapeAttr(t.fate.words)}</strong>
+    <span class="winner-verdict">The world goes back to turn ${t.wake.turn}, as it stood</span>
+    ${reignSummary(state)}
+    <span class="winner-actions">
+      <button class="primary winner-again" id="tmr-card-jump" type="button"
+        title="Go back now. The count does it when it reaches zero."></button>
+      <button class="winner-again winner-playon" id="tmr-card-stay" type="button"
+        title="Stop the count and put this card away, to look at the world as it ended. Jump back is in the bar across the top.">Look around first</button>
+    </span>
+  </div>`;
+  tomorrowCardCount();
+}
+// Where the page says a game that is over is followed by another (the End
+// Turn button and the Next action panel, `drawTurnLoop` and
+// `paintActionCorner` in app.js), a lost loop is followed by the jump back.
+function tomorrowWords() {
+  const t = tomorrow;
+  if (!t.fate || t.fate.how === "won") return;
+  const hint = document.querySelector("#endturn .endturn-hint");
+  if (hint && hint.textContent === "Start another below") hint.textContent = "Jump back, in the bar above";
+  const sub = document.querySelector("#actionhead .action-sub");
+  if (sub && sub.textContent === "Start another from the deck.") sub.textContent = "Jump back, in the bar above.";
+}
+// The jump back: the world as it stood on the turn woken on, and the next
+// loop. What this loop saw done to the seat goes with the person.
+async function tomorrowJump() {
+  const t = tomorrow;
+  if (!debugTimeline() || !tomorrowIdle() || !tomorrowCanJump()) return null;
+  tomorrowCountOff();
+  const ended = {loop: t.loop, turn: reportedTurn(state) ?? state.turn, how: t.fate ? t.fate.how : "jumped",
+    words: t.fate ? t.fate.words : "jumped back by hand"};
+  t.jumping = true;
+  tomorrowDraw(false);
+  let next = null;
+  try {
+    next = await debugOp(t.wake.save !== null ? {op: "goto_save", id: t.wake.save} : {op: "jump", turn: t.wake.turn});
+  } finally {
+    t.jumping = false;
+  }
+  if (!next || next.error) {
+    tomorrowSay(next && next.error ? `The jump back did not happen: ${next.error}` : "The jump back did not happen. Try again");
+    tomorrowDraw();
+    return null;
+  }
+  t.ends.push(ended);
+  for (const [key, seen] of t.now) t.seen.set(key, seen);
+  t.now = new Map();
+  t.loop += 1;
+  t.fate = null; t.looking = false;
+  document.documentElement.classList.remove("tmr-looking");
+  tomorrowSay(`Loop ${ended.loop} ended on turn ${ended.turn}: ${ended.words}`);
+  tomorrowWatch();
+  // As the top of a turn does, the next unit waiting for orders is taken up.
+  if (typeof advanceToNextActionUnit === "function" && !sel && !selCity) advanceToNextActionUnit(true);
+  tomorrowDraw();
+  return next;
+}
+// Wake here: from now on a jump back wakes on the world as it stands. Asked
+// while standing on a wake point that was moved, it is moved back to the
+// first turn instead, so a wake point set by mistake is not for good.
+async function tomorrowWakeHere() {
+  const t = tomorrow, timeline = debugTimeline();
+  if (!timeline || !tomorrowIdle() || t.fate) return;
+  const first = timeline.first ?? state.turn;
+  const standing = state.turn === t.wake.turn && (timeline.acted || 0) === t.wake.acted;
+  if (standing && t.wake.save === null) return;
+  if (standing) {
+    const next = await debugOp({op: "drop_save", id: t.wake.save});
+    if (!next || next.error) { tomorrowSay("The wake point could not be moved. Try again"); tomorrowDraw(); return; }
+    t.wake = {turn: first, save: null, acted: 0};
+    tomorrowSay(`A jump back wakes on turn ${first} again`);
+  } else {
+    const next = await debugOp({op: "save_point", name: TOMORROW_SAVE});
+    const kept = next && !next.error ? (((next.debug || {}).saves) || []).find(save => save.name === TOMORROW_SAVE) : null;
+    if (!kept) {
+      tomorrowSay(next && next.error ? `This turn was not kept: ${next.error}` : "This turn was not kept. Try again");
+      tomorrowDraw();
+      return;
+    }
+    t.wake = {turn: kept.turn, save: kept.id, acted: kept.acted || 0};
+    for (const [key, seen] of t.seen) if (seen.turn < t.wake.turn) t.seen.delete(key);
+    tomorrowSay(`A jump back now wakes here, on turn ${kept.turn}`);
+  }
+  tomorrowDraw();
+}
+function tomorrowMount() {
+  const style = document.createElement("style");
+  style.id = "tomorrow-style";
+  style.textContent = TOMORROW_STYLE;
+  document.head.appendChild(style);
+  const bar = document.createElement("div");
+  bar.id = "tomorrowbar";
+  bar.hidden = true;
+  bar.setAttribute("role", "toolbar");
+  bar.setAttribute("aria-label", "Edge of Tomorrow");
+  bar.innerHTML = `
+    <div class="tmr-name"><b>Edge of Tomorrow</b><span class="tmr-loop">Loop <i id="tmr-loop">1</i></span></div>
+    <div class="tmr-track">
+      <div class="tmr-rail" id="tmr-rail" role="img"></div>
+      <div class="tmr-said" id="tmr-said" role="status"></div>
+    </div>
+    <div class="tmr-acts">
+      <button type="button" id="tmr-jump"></button>
+      <button type="button" id="tmr-wake"></button>
+    </div>`;
+  document.body.appendChild(bar);
+  bar.querySelector("#tmr-jump").addEventListener("click", () => { tomorrowJump(); });
+  bar.querySelector("#tmr-wake").addEventListener("click", () => { tomorrowWakeHere(); });
+  // The lost loop's card is drawn into the page's own result box.
+  const card = document.getElementById("winner");
+  if (card) card.addEventListener("click", event => {
+    const pressed = event.target instanceof Element ? event.target : null;
+    if (!pressed) return;
+    if (pressed.closest("#tmr-card-jump")) tomorrowJump();
+    else if (pressed.closest("#tmr-card-stay")) {
+      tomorrowCountOff();
+      tomorrow.looking = true;
+      document.documentElement.classList.add("tmr-looking");
+      tomorrowDraw();
+    }
+  });
+  tomorrowBar = bar;
+  return bar;
+}
+// The bar stands over the map area, as the debugger's does (`debugDock`).
+let tomorrowDocked = -1, tomorrowDockedLeft = -1;
+function tomorrowDock(bar) {
+  const root = document.documentElement;
+  const left = bar.hidden ? 0 : debugMapLeft();
+  if (left !== tomorrowDockedLeft) {
+    tomorrowDockedLeft = left;
+    root.style.setProperty("--tmr-left", `${left}px`);
+  }
+  const height = bar.hidden ? 0 : Math.ceil(bar.getBoundingClientRect().height);
+  if (height === tomorrowDocked) return;
+  tomorrowDocked = height;
+  root.classList.toggle("tmr-docked", height > 0);
+  root.style.setProperty("--tmr-top", `${height}px`);
+  window.dispatchEvent(new Event("resize"));
+}
+// `measure` is whether the bar may have changed size: a drawing that only
+// follows the turn's standing (`drawTurnLoop`) does not measure the page.
+function tomorrowDraw(measure = true) {
+  const bar = tomorrowBar || tomorrowMount();
+  const t = tomorrow, timeline = debugTimeline();
+  bar.hidden = !timeline;
+  if (!timeline) { tomorrowDock(bar); return; }
+  const idle = tomorrowIdle(), turn = state.turn, wake = t.wake.turn;
+  const first = timeline.first ?? turn;
+  // The line runs from the first turn to the last the game may have. A game
+  // with no last turn has room ahead of the furthest turn reached.
+  const limit = Number.isFinite(state.turn_limit) && state.turn_limit > 0 ? state.turn_limit : null;
+  const lo = Math.min(first, wake, turn);
+  const hi = Math.max(limit ?? Math.ceil((Math.max(t.far, turn) + 25) / 50) * 50, t.far, turn, lo + 1);
+  const along = at => 100 * (Math.max(lo, Math.min(hi, at)) - lo) / (hi - lo);
+  const place = at => `left:${along(at).toFixed(2)}%`;
+  const span = (from, to) => `${place(from)};width:${Math.max(0, along(to) - along(from)).toFixed(2)}%`;
+  const step = hi - lo > 300 ? 100 : hi - lo > 120 ? 50 : hi - lo > 40 ? 25 : 10;
+  const ahead = [...t.seen.values()].filter(seen => seen.turn > turn).sort((one, other) => one.turn - other.turn);
+  // Drawn in this order, each over the one before: what was lived, the
+  // turns counted along it, the marks, and the open turn over them all.
+  let rail = `<span class="tmr-lived" style="${span(wake, t.far)}"></span><span class="tmr-done" style="${span(wake, turn)}"></span>`;
+  for (let at = Math.ceil((lo + 1) / step) * step; at < hi; at += step)
+    rail += `<span class="tmr-tick" style="${place(at)}">${at}</span>`;
+  for (const end of t.ends) {
+    if (end.turn < wake) continue;
+    rail += `<i class="tmr-end${end.how === "jumped" ? " tmr-by-hand" : ""}" style="${place(end.turn)}" ` +
+      `title="${escapeAttr(`Loop ${end.loop} ended on turn ${end.turn}: ${end.words}`)}">${end.how === "jumped" ? "↺" : "✕"}</i>`;
+  }
+  for (const seen of ahead) {
+    const [sign, colour] = TOMORROW_SEEN[seen.kind];
+    rail += `<i class="tmr-mem" style="${place(seen.turn)};color:${colour}" ` +
+      `title="${escapeAttr(`Loop ${seen.loop}, turn ${seen.turn}: ${seen.text}`)}">${sign}</i>`;
+  }
+  rail += `<b class="tmr-wake" style="${place(wake)}" title="A jump back wakes here: turn ${wake}"></b>` +
+    `<b class="tmr-now" style="${place(turn)}" title="Turn ${turn} of loop ${t.loop}">${turn}</b>`;
+  const railBox = bar.querySelector("#tmr-rail");
+  debugDrawn(railBox, rail);
+  railBox.setAttribute("aria-label", `Loop ${t.loop}, turn ${turn}. A jump back wakes on turn ${wake}`);
+  debugDrawn(bar.querySelector("#tmr-loop"), String(t.loop));
+  // What the bar says: what it was just told, then what is remembered of the
+  // turns ahead, then how the last loop ended.
+  const last = t.ends[t.ends.length - 1];
+  let said = "";
+  if (t.said && t.said.turn === turn) said = escapeAttr(t.said.text);
+  else if (ahead.length) {
+    said = `Seen in loop ${ahead[0].loop}: <b>turn ${ahead[0].turn}</b>, ${escapeAttr(ahead[0].text)}` +
+      (ahead.length > 1 ? ` · and ${ahead.length - 1} more ahead` : "");
+  } else if (last) said = escapeAttr(`Loop ${last.loop} ended on turn ${last.turn}: ${last.words}`);
+  else said = `Jump back returns the world to turn ${wake}, as it stood. What you saw of it stays on this line`;
+  debugDrawn(bar.querySelector("#tmr-said"), said);
+  const jump = bar.querySelector("#tmr-jump");
+  debugDrawn(jump, `<span>↺ Jump back</span><small>to turn ${wake}</small>`);
+  jump.disabled = !idle || !tomorrowCanJump();
+  jump.classList.toggle("tmr-due", !!t.fate && t.fate.how !== "won" && t.looking);
+  jump.title = `Go back to turn ${wake} as the world stood then, and begin loop ${t.loop + 1}. ` +
+    "The rivals play the same game again until you play a different one";
+  const here = bar.querySelector("#tmr-wake");
+  const standing = turn === wake && (timeline.acted || 0) === t.wake.acted;
+  const back = standing && t.wake.save !== null;
+  debugDrawn(here, back ? `Wake on turn ${first}` : "Wake here");
+  here.disabled = !idle || !!t.fate || (standing && !back);
+  here.title = back ? `Move the wake point back: a jump back wakes on turn ${first} again`
+    : `From now on a jump back wakes here: turn ${turn}, as it stands`;
+  if (measure) tomorrowDock(bar);
+}
+
+if (TOMORROW) {
+  // Behind `render` and `drawTurnLoop`, as the debugger's bar is: every
+  // state is read for the loops, and the buttons follow the turn's standing.
+  const drawState = render;
+  render = function (st, ...rest) {
+    const drawn = drawState(st, ...rest);
+    try { tomorrowWatch(); tomorrowDraw(); tomorrowWords(); } catch (error) { console.error("edge of tomorrow", error); }
+    return drawn;
+  };
+  const drawLoop = drawTurnLoop;
+  drawTurnLoop = function (...rest) {
+    const drawn = drawLoop(...rest);
+    try { tomorrowDraw(false); tomorrowWords(); } catch (error) { console.error("edge of tomorrow", error); }
+    return drawn;
+  };
+  window.addEventListener("resize", () => { if (debugTimeline()) tomorrowDraw(); });
+  if (state) { tomorrowWatch(); tomorrowDraw(); tomorrowWords(); }
+}

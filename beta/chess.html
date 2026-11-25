@@ -105,6 +105,11 @@
   .site-link[href$="../"]:hover, .site-link[href$="../"]:focus-visible { background: #e3e8ee; color: #000; }
   .site-link[href$="?mode=play"] { background: #050607; color: #c9cecb; box-shadow: inset 0 0 0 1px #30363a; }
   .site-link[href$="?mode=play"]:hover, .site-link[href$="?mode=play"]:focus-visible { background: #181c1f; color: #fff; }
+  /* Edge of Tomorrow (operator, 2026-11-25: "above civ 6 and below ai
+     debugger add: Edge of Tomorrow"), the simulator played with a jump
+     back, is the simulator's black too. */
+  .site-link[href$="?mode=tomorrow"] { background: #050607; color: #c9cecb; box-shadow: inset 0 0 0 1px #30363a; }
+  .site-link[href$="?mode=tomorrow"]:hover, .site-link[href$="?mode=tomorrow"]:focus-visible { background: #181c1f; color: #fff; }
   .site-link[href$="?mode=strange"] {
     background: linear-gradient(135deg, #1c2a7a 30%, #a3122f); color: #ffe3a3;
     box-shadow: inset 0 0 0 1px #ff9a2e, 0 0 6px rgba(255, 138, 30, 0.6);
@@ -252,6 +257,7 @@
         <a class="site-link" href="../" title="Every civilization is played by a CIVVIS AI agent.">CIVVIS</a>
         <a class="site-link" href="../?mode=strange" title="One world, two timelines: the same game played two ways, side by side, on a timeline that branches.">Doctor Strange's Civ 6</a>
         <a class="site-link" href="../?mode=play" title="You play one civilization. CIVVIS AI agents play the rest.">AI Debugger</a>
+        <a class="site-link" href="../?mode=tomorrow" title="You play one civilization, with a jump back: the world returns to the turn you woke on, as it stood.">Edge of Tomorrow</a>
         <a class="site-link" href="https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/" target="_blank" rel="noopener" title="Buy Civilization VI on Steam">Civ 6</a>
         <a class="site-link" href="./" aria-current="page">Wizard Chess</a>
     </nav>
