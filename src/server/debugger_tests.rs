@@ -833,6 +833,33 @@ fn foresee_plays_the_future_to_the_end_of_the_game_and_leaves_the_world_where_it
     assert!(none["error"]
         .as_str()
         .is_some_and(|error| error.contains("foresee needs turns")));
+    // The page keeps what it is told (`strangeSeen`), and reads nothing off
+    // an answer that the answer does not give.
+    let page = super::super::EMBEDDED_APP_DEBUGGER_JS;
+    let reader = page
+        .split_once("\nfunction strangeSeen(")
+        .and_then(|(_, rest)| rest.split_once("\nfunction "))
+        .expect("the page keeps what a forecast says")
+        .0;
+    let mut read = BTreeSet::new();
+    for (at, _) in reader.match_indices("seen.") {
+        let before = reader[..at].chars().next_back();
+        if before.is_some_and(|before| before == '.' || before.is_ascii_alphanumeric()) {
+            continue;
+        }
+        let key: String = reader[at + 5..]
+            .chars()
+            .take_while(|letter| letter.is_ascii_lowercase() || *letter == '_')
+            .collect();
+        read.insert(key);
+    }
+    assert!(read.len() >= 12, "{read:?}");
+    for key in &read {
+        assert!(
+            last.get(key.as_str()).is_some(),
+            "the page reads `{key}`, which a forecast does not say"
+        );
+    }
 }
 
 /// A forecast is the future of one line. It goes on being that while the
@@ -1965,7 +1992,7 @@ fn a_branched_timeline_is_one_until_its_two_worlds_differ() {
     for piece in [
         // A half tells the host the turns it holds and the print of each.
         "const turns = timeline.turns || [], worlds = timeline.worlds || null;",
-        "window.parent.postMessage({civvis: \"pane-marks\", pane: DEBUG_PANE, flags, stops, beyond, eras, turns, worlds, by, swans},",
+        "window.parent.postMessage({civvis: \"pane-marks\", pane: DEBUG_PANE, flags, stops, beyond, eras, turns, worlds, by, swans, seat},",
         // The host reads the branch off the two lists: the last turn both
         // give the same print for, and whether either holds a turn past it
         // (`a_branch_begins_on_the_turn_it_is_made_on`).
