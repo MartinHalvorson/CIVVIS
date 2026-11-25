@@ -681,6 +681,11 @@ impl AdvancedAi {
             } else if !specialization_active
                 && cities.len() < desired_cities
                 && has_site
+                // `science-core-ends-expansion`: a Science lane holding its
+                // core of cities follows the lane; the Settlers read the
+                // same city target. False with the gene off. See
+                // `advanced/science_core_ends_expansion.rs`.
+                && !self.science_core_ends_expansion_for(Some(target), cities.len())
                 // `domination-lane-hands-over`: a conquest lane with the opening
                 // band's cities in hand goes to war; it does not wait for a city
                 // target the map cannot meet.

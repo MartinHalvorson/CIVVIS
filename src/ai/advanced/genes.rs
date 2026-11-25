@@ -6589,6 +6589,12 @@ pub const GENES: &[Gene] = &[
     // 15 turns without founding closes the pipeline from three cities. Opt-in;
     // see `advanced/settler_brake_counts_the_wanderer.rs`.
     Gene { tag: "settler-brake-counts-the-wanderer", field: "settler_brake_counts_the_wanderer", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_brake_counts_the_wanderer, disable: AdvancedAi::disable_settler_brake_counts_the_wanderer },
+    // An assigned Science lane read Expansion from t1 to t84-t88 in 11 of 40
+    // reviewed tourney games (2026-11-24), science 8-15 against the rival's
+    // 22-82 at t50, while the Expansion half held 4 cities anyway. At 4
+    // cities the plan follows its lane; settling is unchanged. Opt-in; see
+    // `advanced/science_core_ends_expansion.rs`.
+    Gene { tag: "science-core-ends-expansion", field: "science_core_ends_expansion", kind: Kind::OptIn, enable: AdvancedAi::enable_science_core_ends_expansion, disable: AdvancedAi::disable_science_core_ends_expansion },
     // ---- append: t-z ------------------------------------------------
     // Host previews of our religious strikes, 11-09: rival defenders carry +4
     // for difficulty (68 of 75) and +3/+6 Intel (55 of 75), which the fight
