@@ -6005,6 +6005,9 @@ function strangeForesee() {
     if (out >= most) break;
     const pane = split.panes[letter];
     if (!pane || !open.includes(letter) || pane.born || pane.turn === null || pane.turn === undefined || strange.seeing[letter]) continue;
+    // A world that has not said who holds its seat is not asked yet: its
+    // future is that player strategy's.
+    if (pane.strategy === undefined) continue;
     // A future that is no longer the world's is begun again, and not more
     // than once in a while: a world that is still changing is left to.
     if (pane.sight && strangeSightStale(letter)) { pane.sight = null; pane.sightAfter = Math.max(pane.sightAfter || 0, (pane.sightBegan || 0) + STRANGE_SEE_ANEW_MS); }
@@ -6047,10 +6050,11 @@ async function strangeSee(letter) {
 function strangeSeen(letter, told, how) {
   const pane = debugSplit.panes[letter], seen = told && !told.error ? told.foresight : null;
   if (!seen || typeof seen.turn !== "number" || typeof seen.from !== "number") {
-    // Asked again in a while, and each time it fails in a longer one.
+    // Asked again in a while, and each time it fails in a longer one. What
+    // was seen so far is kept: the engine goes on from where it was, or
+    // says that it has begun again.
     pane.sightTries = (pane.sightTries || 0) + 1;
     pane.sightAfter = performance.now() + Math.min(60000, STRANGE_SEE_AGAIN_MS * 2 ** Math.min(5, pane.sightTries - 1));
-    pane.sight = null;
     return;
   }
   pane.sightTries = 0; pane.sightAfter = 0;
@@ -6131,7 +6135,8 @@ function strangeFate(letter) {
   const pace = sight.pace > 0 ? ` at ${(1000 / sight.pace).toFixed(sight.pace > 100 ? 1 : 0)} turns a second` : "";
   const title = [`World ${letter.toUpperCase()}: ${head.replace(/^[☢☮] /, "")}`,
     ...sight.seen.filter(seen => seen.kind === "nuclear" && seen.turn >= turn).slice(0, 6).map(seen => `☢ Turn ${seen.turn}: ${seen.text}`),
-    ...(coming.length > 0 ? coming.slice(0, 8).map(seen => `⚔ Turn ${seen.turn}: ${seen.text}`) : [wars]),
+    ...(coming.length > 0 ? coming.slice(0, 8).map(seen => `⚔ Turn ${seen.turn}: ${seen.text}`)
+      : [sight.done ? "No wars ahead" : wars]),
     ...(coming.length > 8 ? [`⚔ and ${coming.length - 8} more wars`] : []),
     ...(over ? [`${over}${sight.victory ? ` (${titleCase(String(sight.victory))})` : ""}`] : []),
     sight.done ? `Its future is played to the end of the game, turn ${sight.turn}${typeof sight.took === "number" ? `, in ${(sight.took / 1000).toFixed(1)} s` : ""}`
@@ -6964,7 +6969,11 @@ function strangePaint(time) {
   for (const letter of lined) {
     const tip = worlds[letter].last, sight = split.panes[letter].sight;
     const seen = sight && typeof sight.turn === "number" ? Math.max(tip, Math.min(sight.turn, end)) : tip;
-    if (seen > tip && path(tip, Math.min(seen, high), where(letter))) stroke(colour[letter], 2, over === null || over === letter ? .7 : .3);
+    if (seen > tip && path(tip, Math.min(seen, high), where(letter))) {
+      pen.strokeStyle = colour[letter]; pen.lineWidth = 1.75; pen.globalAlpha = over === null || over === letter ? .7 : .3;
+      pen.stroke();
+      pen.globalAlpha = 1;
+    }
     if ((sight && sight.done) || seen >= end || seen > high) continue;
     pen.setLineDash([3, 7]);
     pen.lineDashOffset = -(time / 60) % 10;
@@ -7026,6 +7035,10 @@ function strangePaint(time) {
     // left out: a nuclear detonation never is.
     const coming = [...(split.panes[letter].alerts || []).filter(alert => alert.turn < tip),
       ...(sight ? sight.seen.filter(seen => seen.turn >= tip) : [])];
+    // Up among the signs over the branches nothing is named: the sign over
+    // the branch says what is first to come, and the rest is named as it
+    // comes down the board.
+    const band = Math.max(STRANGE_FATE_TOP, ...strange.fates.map(sign => sign.top + sign.tall)) + 10;
     const stood = {};
     for (const alert of coming) {
       if (alert.turn < cam - .5 || alert.turn > high) continue;
@@ -7044,9 +7057,10 @@ function strangePaint(time) {
       pen.fillStyle = tint; pen.textAlign = "center";
       pen.fillText(sign, px, py + .5);
       const side = strange.lanes[letter] > 0 || (strange.lanes[letter] === 0 && named.length % 2 === 1) ? 1 : -1;
-      if (grave || !named.some(([taken, sided]) => sided === side && Math.abs(taken - py) < 14)) {
+      if (py > band && (grave || !named.some(([taken, sided]) => sided === side && Math.abs(taken - py) < 14))) {
         named.push([py, side]);
-        write(`Turn ${alert.turn} · ${alert.text || alert.kind}`, px + side * 4, py, side, tint, quiet(letter), false);
+        const said = alert.kind === "war" ? `War: ${String(alert.text || "").replace(" declares war on ", " on ")}` : alert.text || alert.kind;
+        write(`Turn ${alert.turn} · ${said}`, px + side * 4, py, side, tint, quiet(letter), false);
       }
       pen.globalAlpha = 1;
     }

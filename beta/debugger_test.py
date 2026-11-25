@@ -3751,13 +3751,19 @@ def check_doctor_strange(bar: Bar, address: str) -> None:
     bar.until("debugSplit.panes.a.strategy === 'stock' && debugSplit.panes.a.sight && debugSplit.panes.a.sight.asked === 'stock' && debugSplit.panes.a.sight.done"
               f" && strangeIdle() && {quiet} && {held}", "and again under the one it had")
     # Where each world's future has an engine of its own (the published
-    # build's scouts), every world is asked at once, and an engine whose
-    # game has ended is let go of.
-    assert bar.ev("(() => { window.__civvisBeta = {scouts: 0}; scouts.wait = 30; strangeSightDrop('a'); strangeSightDrop('b'); strangeForesee();"
-                  " return [strangeScouts(), Object.keys(strange.seeing).sort().join('')]; })()") == [True, "ab"]
+    # build's scouts), every world is asked at once, as many as the computer
+    # has cores to spare beside the worlds and the page, and an engine whose
+    # game has ended is let go of. With four cores and two worlds one core is
+    # to spare, and the followed world is asked first.
+    cores = ("Object.defineProperty(navigator, 'hardwareConcurrency', {{value: {0}, configurable: true}});"
+             " window.__civvisBeta = {{scouts: 0}}; scouts.wait = 30; strangeSightDrop('a'); strangeSightDrop('b'); strangeForesee();"
+             " return [strangeScouts(), Object.keys(strange.seeing).sort().join('')];").format
+    assert bar.ev(f"(() => {{ {cores(4)} }})()") == [True, bar.ev("strange.follow")]
+    bar.until(seen, "the futures are played out, one after the other")
+    assert bar.ev(f"(() => {{ {cores(16)} }})()") == [True, "ab"]
     bar.until(seen, "both futures are played out at once")
-    bar.until("scouts.done >= 2 && Object.keys(scouts.held).length === 0", "and their engines let go of")
-    bar.ev("delete window.__civvisBeta, scouts.wait = 0, true")
+    bar.until("scouts.done >= 4 && Object.keys(scouts.held).length === 0", "and their engines let go of")
+    bar.ev("delete window.__civvisBeta, delete navigator.hardwareConcurrency, scouts.wait = 0, true")
     assert bar.ev(signs) == [
         ["a", "clear", "☮ No nuclear war", "⚔ War in 30 turns: Rome on Greece"],
         ["b", "coming", "☢ Nuclear war in 5 turns (Atomic Era)", "No wars ahead · 🏁 The game ends, turn 400"]], bar.ev(signs)
