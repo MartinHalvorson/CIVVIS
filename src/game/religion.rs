@@ -610,7 +610,7 @@ impl Game {
                 "MOMENT_RELIGION_FOUNDED"
             },
         );
-        self.players[pid].religion_beliefs = vec![follower.to_string(), founder.to_string()];
+        self.players[pid].religion_beliefs = vec![Name::new(follower), Name::new(founder)];
         for cid in holy_site_cities {
             self.cities
                 .get_mut(&cid)
@@ -1083,7 +1083,7 @@ impl Game {
         {
             return Err("belief already taken".into());
         }
-        self.players[pid].religion_beliefs.push(belief.to_string());
+        self.players[pid].religion_beliefs.push(Name::new(belief));
         if self.religion_belief_count(pid) == 4 {
             self.first_historic_moment(
                 pid,

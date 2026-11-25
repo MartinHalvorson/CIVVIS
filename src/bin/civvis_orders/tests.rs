@@ -5420,10 +5420,10 @@ fn firaxis_religion_state_reaches_a_found_religion_order() {
     assert_eq!(mirror.game.max_religions(), 4);
     assert!(mirror.game.players[1]
         .religion_beliefs
-        .contains(&"work_ethic".to_string()));
+        .contains(&"work_ethic".into()));
     assert!(mirror.game.players[1]
         .religion_beliefs
-        .contains(&"tithe".to_string()));
+        .contains(&"tithe".into()));
     let action = mirror
         .game
         .legal_actions(0)
