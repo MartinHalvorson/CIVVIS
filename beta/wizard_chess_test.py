@@ -84,8 +84,8 @@ class Page(unittest.TestCase):
         nav = PAGE[PAGE.index('<nav class="site-nav" aria-label="CIVVIS sites">'):]
         nav = nav[:nav.index("</nav>")]
         names = re.findall(r">([^<]+)</a>", nav)
-        self.assertEqual(names, ["Home", "Charts/", "Experiments", "CIVVIS", "Doctor Strange's Civ 6", "AI Debugger",
-                                 "Civ 6", "Wizard Chess"])
+        self.assertEqual(names, ["Home", "Charts/", "Experiments", "Chaos Monkey", "CIVVIS", "Doctor Strange's Civ 6",
+                                 "AI Debugger", "Edge of Tomorrow", "Civ 6", "Wizard Chess"])
         self.assertIn('<a class="site-link" href="./" aria-current="page">Wizard Chess</a>', nav)
 
     def test_it_is_a_board_a_command_and_an_opponent(self):

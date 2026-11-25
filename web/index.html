@@ -365,16 +365,20 @@
      page's own pages are listed under it only on that page. Performance is
      Charts' (operator, 2026-11-22: "Move performance from under civvis to
      charts ... This keeps AI Debugger as a clean tool. CIVVIS as a clean
-     tool"), so this page, which is CIVVIS, AI Debugger and Doctor Strange's
-     Civ 6, lists the seven top-level names and no branch. */
+     tool"), so this page, which is CIVVIS, AI Debugger, Doctor Strange's
+     Civ 6 and Edge of Tomorrow, lists the eight top-level names and no
+     branch. */
   .head-links > .home-link { grid-column: span 5; }
   .head-links > #chaoslink { grid-column: span 6; }
   .head-links > #watchlink { grid-column: span 4; }
   /* Doctor Strange's Civ 6 (operator, 2026-11-23: "lest move dr strange civ
      6 above ai debugger", after CIVVIS) is the one name longer than half a
      row and has a row of its own. AI Debugger and Civ 6 keep the rows of
-     their own they had beside it. */
-  .head-links > #tourlink, .head-links > #playlink, .head-links > #strangelink, .head-links > #civ6link { grid-column: 1 / -1; }
+     their own they had beside it, and Edge of Tomorrow (operator,
+     2026-11-25: "above civ 6 and below ai debugger add: Edge of Tomorrow"),
+     the second longest name, has one between them. Experiments has a row
+     of its own too since Chaos Monkey took the place beside CIVVIS. */
+  .head-links > #tourlink, .head-links > #playlink, .head-links > #strangelink, .head-links > #tomorrowlink, .head-links > #civ6link { grid-column: 1 / -1; }
   /* A name stands on one line wherever it fits, and every one of them
      does in the typefaces measured. In a wider one a name of two words
      takes two lines, a word to each, and the link beside it in a row is as
@@ -392,7 +396,8 @@
      home, charts/ and auto-tourneys buttons all have a blue background
      (like the pages do). civvis, ai debugger have a black background (same
      as simulator)"). The rule above is this page's black, which AI
-     Debugger keeps. CIVVIS is white (operator, 2026-11-25: "make the
+     Debugger keeps, and Edge of Tomorrow, which opens this page too, has
+     it as well. CIVVIS is white (operator, 2026-11-25: "make the
      civvis color white"; gold from 2026-11-24, black before), the same
      white on every page. Home, Charts/ and Experiments are the blue those
      pages set their own lists in, and Civ 6, which opens Steam's shop, is
@@ -420,16 +425,18 @@
   #strangelink:hover { color: #fff; border-color: #ffb85c; background: linear-gradient(135deg, #2638a0 30%, #c8193d) border-box; box-shadow: 0 0 10px rgba(255, 150, 40, 0.85); }
   /* The page on screen keeps the colour of what it is and is ringed in
      white, as on the pages. It was gold until 2026-11-24. This page is
-     three of them:
+     four of them:
      CIVVIS while it watches a simulation, AI Debugger while somebody holds a
-     seat, and Doctor Strange's Civ 6 while that game is shown as its tree of
+     seat, Doctor Strange's Civ 6 while that game is shown as its tree of
      two timelines (`?mode=strange`, which `app_debugger.js` marks on the
-     root as `strange`).
-     Which of the two is known once the first observation arrives
-     (`seat-known`); until then neither is lit. */
+     root as `strange`), and Edge of Tomorrow while it is played with a jump
+     back (`?mode=tomorrow`, marked on the root as `tomorrow`).
+     Which of them is known once the first observation arrives
+     (`seat-known`); until then none is lit. */
   body.watching-sim #watchlink,
-  html.seat-known:not(.strange) body:not(.watching-sim) #playlink,
-  html.seat-known.strange body:not(.watching-sim) #strangelink {
+  html.seat-known:not(.strange):not(.tomorrow) body:not(.watching-sim) #playlink,
+  html.seat-known.strange body:not(.watching-sim) #strangelink,
+  html.seat-known.tomorrow body:not(.watching-sim) #tomorrowlink {
     border-color: #fff; box-shadow: inset 0 0 0 1px #fff;
   }
   html.seat-known.strange body:not(.watching-sim) #strangelink { box-shadow: inset 0 0 0 1px #fff, 0 0 6px rgba(255, 138, 30, 0.6); }
@@ -471,15 +478,16 @@
       grid-column: 1; grid-row: 1; grid-template-columns: minmax(0, 1fr);
       align-content: center; justify-self: stretch; margin-top: 0;
     }
-    /* Seven to the column, a name to a line but for Doctor Strange's Civ 6,
-       which is longer than the column and takes two. The column is 92px with 7px
+    /* Eight to the column, a name to a line but for Doctor Strange's Civ 6
+       and Edge of Tomorrow, which are longer than the column and take two
+       each. The column is 92px with 7px
        gutters, the size it took for STRAT DEBUGGER (83px in this type
        against the 86px inside the column) while that was the Debugger's
        name here, and it keeps that size, so neither width at which the
        lockup changes shape has moved. AUTO-TOURNEYS, the Experiments
        page's name from 2026-11-22 to 2026-11-24, was the longest name,
        80px. Each link is one track here, wherever it stands two by
-       two. Six one-line links and the one of two lines make it 141px. */
+       two. Six one-line links and the two of two lines make it 171px. */
     #side .brand:has(> .head-links:not([hidden])) .home-link {
       grid-column: auto; padding: 1px 2px 2px; font-size: 8.5px; letter-spacing: .02em;
     }
@@ -6678,6 +6686,11 @@
            is that same played game shown another way (`?mode=strange`): two
            worlds in the lower quarters of the window and their timeline a
            tree up the middle of it, drawn by `assets/app_debugger.js`.
+           Edge of Tomorrow, listed between AI Debugger and Civ 6 since
+           2026-11-25, is the played game with a jump back
+           (`?mode=tomorrow`): the seat on the Civilization VI screen, and
+           the world returned to the turn woken on whenever it is asked
+           for or the game is lost, drawn by the same script.
            Only the published site has a /home, a /research (the Charts
            page, which kept its address through two renames) and a
            /experiments (the Experiments page, named Tournaments until 2026-11-25) to go to
@@ -6692,6 +6705,7 @@
         <a class="home-link" id="watchlink" href="./" target="_top">CIVVIS</a>
         <a class="home-link" id="strangelink" href="?mode=strange" target="_top">Doctor Strange's Civ 6</a>
         <a class="home-link" id="playlink" href="?mode=play" target="_top">AI Debugger</a>
+        <a class="home-link" id="tomorrowlink" href="?mode=tomorrow" target="_top">Edge of Tomorrow</a>
         <a class="home-link" id="civ6link" href="https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/" target="_blank" rel="noopener" title="Buy Civilization VI on Steam">Civ 6</a>
       </nav>
     </div>

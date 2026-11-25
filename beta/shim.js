@@ -229,6 +229,8 @@
     const mode = word("mode");
     if (mode === "play") payload.spectate = false;
     else if (mode === "strange") payload.spectate = false;
+    // Edge of Tomorrow is a played game too: the same seat, with a jump back.
+    else if (mode === "tomorrow") payload.spectate = false;
     else if (mode === "watch") payload.spectate = true;
     // A battlefield's dimensions are their own setting — no seat count
     // implies an arena size — so they travel as the one token the lobby's
