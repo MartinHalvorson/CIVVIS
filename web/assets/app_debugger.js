@@ -3717,13 +3717,18 @@ async function debugPlayAhead(turns, held = state) {
         body: JSON.stringify({op: "ahead", turns: +turns || 1, strategy: debugStrategy(), lean: true})},
         AUTOPLAY_BATCH_TIMEOUT_MS);
       said.error = next.error || null;
-      if (next.debug && next.turn === state.turn) {
-        state.debug = next.debug;
+      if (next.debug) {
+        // What was played is the world's line wherever the page stands on
+        // it. What the debugger holds is this page's only while the page is
+        // on the turn the answer came back to.
         said.readings = next.readings || [];
         said.alerts = next.alerts || [];
-        said.last = Math.max(state.debug.last ?? state.turn, state.turn);
-        drawDebugBar();
-        debugPaneNumbers();
+        said.last = Math.max(next.debug.last ?? next.turn, next.turn);
+        if (next.turn === state.turn) {
+          state.debug = next.debug;
+          drawDebugBar();
+          debugPaneNumbers();
+        }
       }
     }
   } catch (error) { said.error = String(error.message || error); }
