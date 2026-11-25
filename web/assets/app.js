@@ -29675,7 +29675,7 @@ const POLICY_MEASURES = [
 const POLICY_LEDGER_RETRY_MS = 30000, POLICY_LEDGER_QUIET_MS = 350;
 let policyLedger = null, policyLedgerAsked = "", policyLedgerFailedAt = 0, policyLedgerTimer = 0;
 function policyLedgerKey() {
-  if (!state || !state.me) return "";
+  if (!state || !state.me || document.documentElement.classList.contains("strange-pane")) return "";
   const me = state.me;
   return [state.turn, state.view_player ?? "", me.government || "", me.anarchy_turns || 0,
     [...(me.policies || [])].sort().join(",")].join("|");
@@ -29685,8 +29685,8 @@ function policyLedgerKey() {
 // one arrives there is none; one read earlier in the same deck's life is
 // close enough to keep showing meanwhile. It is asked for once the turn has
 // stood a moment with no run playing: the engine reads the empire once per
-// sub-deck (2^n readings, 0.6 s of it at nine cards), and a turn passed
-// through was priced for nothing while the next turn waited behind it.
+// sub-deck (2^n readings, 0.6 s at nine cards), and a turn passed through was
+// priced for nothing. A world of Doctor Strange's Civ 6 shows no deck: no key.
 function currentPolicyLedger() {
   const key = policyLedgerKey();
   if (!key) return null;

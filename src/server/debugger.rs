@@ -742,6 +742,30 @@ pub struct Timeline {
     /// `autosearch.rs`): each turn a `play` plays is read for its terms, and
     /// a Must Avoid broken for good ends the play there.
     objective: Option<super::autosearch::Objective>,
+    /// The agents left at the end of the turns played ahead of the open one
+    /// (`Session::debug_ahead`), for the next of them to be played by.
+    scouts: Option<Scouts>,
+}
+
+/// The agents that played a world ahead of its open turn, as they sat on the
+/// last turn they opened, and which world that was.
+///
+/// A half of a split keeps no agents with its marks, so the world it walks to
+/// at the end of its line is seated with agents that have just sat down, and
+/// those play another game than the ones that had been playing it (`Minds`).
+/// They also play it slowly: an agent that has just sat down works out again
+/// everything one that lived through the turn before still holds, and a turn
+/// played ahead by one cost twice what the same turn costs in a run (38 ms
+/// against 77 at turn 100, measured 2026-11-24). Kept here, the agents that
+/// played the last turn ahead play the next, so a future played a turn at a
+/// time is the one played in one go.
+#[derive(Clone)]
+struct Scouts {
+    turn: u32,
+    /// The print of the world they were left on (`Mark::world`): a line that
+    /// has since been played to that turn another way is not theirs.
+    world: u64,
+    minds: Minds,
 }
 
 impl Timeline {
@@ -749,6 +773,7 @@ impl Timeline {
     fn begin(&mut self, game: &Game) {
         self.marks.clear();
         self.saves.clear();
+        self.scouts = None;
         self.stopped = None;
         self.assisted = 0;
         // What an earlier game grew the memory to says nothing about this
@@ -1689,16 +1714,37 @@ impl Session {
             return Err("the open turn is not kept to come back to".to_string());
         };
         let last = self.debug_line().last().map_or(here, |mark| mark.turn);
+        // The agents that played the line to its end play on from it, where
+        // the world there is still the one they were left on (`Scouts`).
+        let scouts = self.debugger.scouts.take();
         if last > here {
             self.debug_jump(last)?;
+            let world = self.debugger.mark(last).map(|mark| mark.world);
+            if let Some(scouts) =
+                scouts.filter(|kept| kept.turn == last && Some(kept.world) == world)
+            {
+                self.debug_seat_minds(&scouts.minds);
+            }
         }
         let from = self.game.turn;
         let (played, _, _) = self.debug_play_read(turns);
         let alerts = self.debug_alerts(from);
+        // And are kept as they sit on the last turn they opened. A game that
+        // keeps its agents with every mark has them there already.
+        let end = self.game.turn;
+        let scouts = match self.debugger.mark(end) {
+            Some(mark) if self.debugger.forgetful && end > here => Some(Scouts {
+                turn: end,
+                world: mark.world,
+                minds: self.debug_minds(),
+            }),
+            _ => None,
+        };
         // Home: the open turn's own mark where it is still kept, and the
         // world it held where the marks ahead have thinned it away.
         let home = self.debugger.mark(here).cloned().unwrap_or(home);
         self.debug_put(home.game, home.minds);
+        self.debugger.scouts = scouts;
         // Why the play ahead stopped is not why the open turn would.
         self.debugger.stopped = None;
         self.debugger.read = None;
