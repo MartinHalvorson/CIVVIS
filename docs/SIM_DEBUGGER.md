@@ -1812,6 +1812,17 @@ and 136 -> 100 ms of the thread a turn; four worlds 182 -> 129 ms (83% -> 64%
 of the thread) and the turn 220 -> 202 ms. From three worlds on the turn
 waits on the worlds' engines again, not on the page.
 
+Then a played seat's chores at the top of each turn, for a box nobody plays
+by hand: picking the unit that wants orders and flying the map to it
+(`advanceToNextActionUnit`, a second draw of the map every turn), and the
+leader ribbon and pause control a box never shows (`drawSoloHud`,
+`paintLivePause`, `placeLivePause`). Profiled with six worlds they were about
+30 of the 76 ms a turn the worlds' pages spent. Paired with four worlds and
+the futures on (the 4-player Pangaea Doctor Strange opens on): 5.04 and 4.90
+turns a second before, 5.61 and 5.96 after, the thread 75-76% busy before and
+65-68% after. Six worlds kept pace with three (4.5 turns a second, every
+world's future 11-12 turns ahead) with the thread 71% busy before this.
+
 These were measured in pairs, the page before and after one after the other
 on the same pinned world, because the computer's other work moves a single
 reading by a fifth: a change that looked like a third off once came to nothing
