@@ -166,9 +166,26 @@ class WhoComesThrough(unittest.TestCase):
         self.assertEqual((spread["more"]["n"], spread["fewer"]["n"]), (16, 16))
         # Rome has the cities and keeps more of its people.
         self.assertGreater(spread["more"]["kept"], spread["fewer"]["kept"])
-        # Widest gap first.
-        gaps = [abs(factor["more"]["kept"] - factor["fewer"]["kept"]) for factor in found]
-        self.assertEqual(gaps, sorted(gaps, reverse=True))
+        # The same split where the storm does no harm (10x here) is the
+        # control, and what the storm adds is the gap under it less the gap
+        # there. Widest edge first.
+        for factor in found:
+            under = factor["more"]["kept"] - factor["fewer"]["kept"]
+            beside = factor["mild"]["more"] - factor["mild"]["fewer"]
+            self.assertAlmostEqual(factor["edge"], under - beside, places=3)
+        edges = [abs(factor["edge"]) for factor in found]
+        self.assertEqual(edges, sorted(edges, reverse=True))
+
+    def test_only_what_is_settled_before_the_damage_is_compared(self):
+        # What a civilization has at the end of a storm is the storm's doing
+        # as much as its own: no difference is read off the end of the game
+        # under the storm.
+        import inspect
+        for key, _, of, _, place in chaos_monkey.FACTORS:
+            source = inspect.getsource(place)
+            self.assertNotIn('now["shelter"]', source, key)
+            self.assertNotIn('now["war_turns"]', source, key)
+            self.assertTrue("calm world" in of or f"turn {chaos_monkey.EARLY}" in of, key)
 
     def test_too_few_civilizations_is_no_difference(self):
         self.assertEqual(chaos_monkey.factors(batch(seeds=2)), [])

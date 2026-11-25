@@ -51,8 +51,11 @@ class TheRecord(unittest.TestCase):
         for dose in doses:
             for key in ("games", "disasters", "classes", "lost", "end", "kept", "outcomes", "victories", "series"):
                 self.assertIn(key, dose)
+            # A line turn by turn stops where half the frequency's games
+            # were over, so it is no longer than the turns and never empty.
             for series in dose["series"].values():
-                self.assertEqual(len(series), len(data["turns"]))
+                self.assertLessEqual(len(series), len(data["turns"]))
+                self.assertGreater(len(series), len(data["turns"]) // 2)
         # Every outcome the page is told to draw has a figure at every
         # frequency, and every lesson its four parts.
         for outcome in data["outcomes"]:
