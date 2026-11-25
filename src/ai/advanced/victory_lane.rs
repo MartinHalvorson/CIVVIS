@@ -869,6 +869,9 @@ mod tests {
         // Exercise the recovery gate at the host's quoted price, independent
         // of which pricing policy the deployment batch currently selects.
         ai.enable_engine_faith_price();
+        // This test pins the recovery gate's own purchase; the conversion
+        // reservation gene takes over the faith pass when it is on.
+        ai.disable_culture_faith_reservation();
         g.players[0].faith = 500.0;
         g.players[0].civics.insert(crate::name!("cold_war"));
         assert!(

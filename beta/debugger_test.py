@@ -3591,27 +3591,57 @@ def check_doctor_strange(bar: Bar, address: str) -> None:
     # what the engine saw coming is kept with the world for its line. In B's
     # world a device goes off five turns on.
     here = stood[1] + 1
-    aheads = "debugSplit.panes.{0}.frame.contentWindow.eval('engine.sent.filter(call => call.path === \"/debug\" && call.body.op === \"ahead\").length')".format
+    aheads = "debugSplit.panes.{0}.frame.contentWindow.eval('engine.sent.filter(call => call.path === \"/debug\" && call.body.op === \"ahead\").map(call => call.body.turns)')".format
     bar.ev(f"debugSplit.panes.b.frame.contentWindow.eval('engine.nukes = [{here + 5}]'), true")
-    bar.click('#strange-hud [data-strange="futures"]')
+    # Every world is asked at once, each for its own: none waits for another
+    # to answer first.
+    asked = bar.ev("(() => { document.querySelector('#strange-hud [data-strange=\"futures\"]').click();"
+                   " return [strange.futures, Object.keys(strange.peeks).sort().join(''), Object.values(strange.peeks).map(peek => peek.turns)]; })()")
+    assert asked == [True, "ab", [4, 4]], asked
     held = "['a', 'b'].every(letter => strangeKept(letter) - debugSplit.panes[letter].turn >= STRANGE_AHEAD)"
-    bar.until(f"strange.futures && !strange.peek && {held}", "each world's future is played ahead of the open turn")
+    quiet = "Object.keys(strange.peeks).length === 0"
+    bar.until(f"strange.futures && {quiet} && {held}", "each world's future is played ahead of the open turn")
     future = bar.ev(f"[debugSplit.panes.a.turn, debugSplit.panes.b.turn, {aheads('a')}, {aheads('b')}, strangeTree().worlds.a.last, strangeTree().worlds.b.last,"
                     " debugSplit.panes.a.alerts, debugSplit.panes.b.alerts, debugSplit.panes.b.ahead.size,"
                     " document.querySelector('#strange-hud [data-strange=\"futures\"]').textContent]")
-    assert future == [here, here, 3, 3, here + 12, here + 12, [],
+    assert future == [here, here, [4, 4, 4], [4, 4, 4], here + 12, here + 12, [],
                       [{"turn": here + 5, "kind": "nuclear", "text": "Greece detonates a nuclear device"}], 12,
                       "🔮 Futures: 12 turns ahead"], future
     # Time running on is shown the turns that were played ahead, and none is
     # played again: the worlds are asked for more of their futures as they
     # use them up, and never for a turn of their own.
+    #
+    # Operator 2026-11-24, later: "Right now Doctor Strange's Civ 6 goes 4
+    # turns and pauses. This should not happen. It should be a continuous
+    # effort. and blazingly fast." Time stopped every fourth turn while each
+    # world in turn was played four turns on. Now a world is asked for the
+    # one turn that each turn it is shown takes from what it holds: a turn
+    # asked for, for every turn time ran, and never four with time held for
+    # them. A world never asked for a turn of its own (`steps`) was never
+    # short of the next turn, which is all that time waits on.
+    #
+    # And the page is not laid out again each time a world speaks, which is a
+    # dozen times a turn: the bar is out of sight under the worlds, and in a
+    # world there is none, so neither is measured, and the cards are measured
+    # when one has changed its shape (what the title's card says, here), not
+    # for every figure that changes on them.
     stepped = bar.ev(f"[{steps('a')}, {steps('b')}]")
+    bar.ev("(() => { window.measured = {cards: 0, bar: 0, pane: 0};"
+           " const cards = strangeCards; strangeCards = function () { measured.cards++; return cards(); };"
+           " const left = debugMapLeft; debugMapLeft = function () { measured.bar++; return left(); };"
+           " const pane = debugSplit.panes.a.frame.contentWindow, paneLeft = pane.debugMapLeft;"
+           " pane.debugMapLeft = function () { measured.pane++; return paneLeft(); }; return true; })()")
+    assert bar.ev("[debugBarUnseen(), debugSplit.panes.a.frame.contentWindow.debugBarUnseen()]") == [True, True]
     bar.click('#strange-hud [data-strange="play"]')
     bar.until(f"debugSplit.panes.b.turn >= {here + 6}", "time runs on through the turns played ahead")
     bar.click('#strange-hud [data-strange="play"]')
-    bar.until(f"strange.run === null && strangeIdle() && !strange.peek && {held}", "paused, with the futures played out again")
-    ran = bar.ev(f"[debugSplit.panes.a.turn === debugSplit.panes.b.turn, {steps('a')}, {steps('b')}, {aheads('a')} > 3, {aheads('b')} > 3]")
-    assert ran == [True, stepped[0], stepped[1], True, True], ran
+    bar.until(f"strange.run === null && strangeIdle() && {quiet} && {held}", "paused, with the futures played out again")
+    ran = bar.ev(f"[debugSplit.panes.a.turn === debugSplit.panes.b.turn, {steps('a')}, {steps('b')}, debugSplit.panes.a.turn - {here}, {aheads('a')}, {aheads('b')}]")
+    assert ran[:3] == [True, stepped[0], stepped[1]] and ran[3] >= 6, ran
+    assert ran[4] == ran[5] == [4, 4, 4] + [1] * ran[3], ran
+    assert bar.ev("typeof STRANGE_DWELL_MS") == "undefined", "a turn is held on the screen for no longer than the next takes"
+    measured = bar.ev("measured")
+    assert measured["bar"] == 0 and measured["pane"] == 0 and measured["cards"] < 2 * ran[3], (measured, ran[3])
     assert not bar.dev.console, f"the page complained: {bar.dev.console}"
 
     # Black swans (operator 2026-11-24: "add a 'Generate Black Swan' - this
@@ -3649,7 +3679,7 @@ def check_doctor_strange(bar: Bar, address: str) -> None:
     # the future that was played ahead of it is let go of and played again,
     # and the worlds still stand on the turn they stood on. The swan is in
     # each line's name, on the turn it struck.
-    bar.until(f"strangeIdle() && !strange.peek && {held}", "each struck world's future is played again")
+    bar.until(f"strangeIdle() && {quiet} && {held}", "each struck world's future is played again")
     after = bar.ev(f"[{names}, {scores}, debugSplit.panes.a.turn, debugSplit.panes.b.turn]")
     assert after == [[f"{name}-🦢{now}" for name in before[0]], [score // 2 for score in before[1]], now, now], (before, after)
     swans = bar.ev("['a', 'b'].map(letter => strangeSwans(letter).map(swan => [swan.turn, swan.kind, swan.name, swan.ongoing]))")
@@ -3674,7 +3704,7 @@ def check_doctor_strange(bar: Bar, address: str) -> None:
     bar.until(f"{both(now - 1)} && strangeIdle()", "the worlds go back before the swan")
     assert bar.ev(f"[{names}, strangeSwans('{lead}').length]") == [after[0], 1]
     bar.click('#strange-hud [data-strange="on1"]')
-    bar.until(f"{both(now)} && strangeIdle() && !strange.peek && {held}", "and forward onto its turn again")
+    bar.until(f"{both(now)} && strangeIdle() && {quiet} && {held}", "and forward onto its turn again")
     assert bar.ev(f"[{scores}, {steps('a')}, {steps('b')}]") == [after[1], stepped[0], stepped[1]]
     # Unlocked, the one picked strikes the followed world alone, which parts
     # from the other there.
@@ -3690,7 +3720,7 @@ def check_doctor_strange(bar: Bar, address: str) -> None:
                    f" strangeTree().worlds.{rest}.parent || strangeTree().worlds.{lead}.parent, Math.max(strangeTree().worlds.a.fork, strangeTree().worlds.b.fork)]")
     assert alone[:3] == [[f"{name}-🦢{now}" + (f"-🦢{now}" if letter == lead else "") for letter, name in zip(order, before[0])], 1,
                          ["Instant nuclear war", f"The score is {score[lead] // 4} now", f"World {lead.upper()}"]], alone
-    bar.until(f"strangeIdle() && !strange.peek && {held}", "its future is played again")
+    bar.until(f"strangeIdle() && {quiet} && {held}", "its future is played again")
     bar.click('#strange-hud [data-strange="lock"]')
     bar.until("strange.locked && strangeIdle()", "the worlds are locked again")
     assert not bar.dev.console, f"the page complained: {bar.dev.console}"
@@ -3843,8 +3873,10 @@ def main() -> int:
               "picks out its line, the divide is dragged, and a box's exit deletes its branch, line and window; "
               "locked, the worlds go through the turns together, never seen a turn apart, and Play Time and Pause "
               "Time start and stop them, and unlocked they go by themselves until locked again; what the page costs "
-              "is read and shown; each world's future is played ahead of the open turn and kept, what was seen "
-              "coming is kept with it, and time running on is shown those turns and plays none again; "
+              "is read and shown; each world's future is played ahead of the open turn and kept, every world asked "
+              "at once, what was seen coming is kept with it, and time running on is shown those turns and plays "
+              "none again, each world asked for one turn more for each turn it is shown and time never held for "
+              "four, with nothing measured that is out of sight; "
               "Generate Black Swan, at the top of the sky, strikes the same event nothing saw coming on every locked "
               "world and on the followed one alone unlocked, any drawn by a seed or the one picked, says what struck, "
               "marks it in the line's name and has each struck world's future played again; a narrow "

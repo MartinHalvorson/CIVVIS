@@ -2742,3 +2742,71 @@ class TheResultScreenIsAScreenOfCharts(unittest.TestCase):
         # Drawn again whenever the card is given a different size.
         self.assertIn("gameStatsObserver = new ResizeObserver(gameStatsFit);", moments)
         self.assertIn("queueMicrotask(gameStatsMount);", moments)
+
+
+A_WORLD_ASKS_ONLY_FOR_ITS_TURNS = r"""
+const asked = [], timers = [];
+let pane = false;
+const group = {style: {}};
+const document = {
+  documentElement: {classList: {contains: name => pane && name === "strange-pane"}},
+  getElementById: () => group,
+};
+const SPEC = false, readSetting = () => "single", escapeAttr = text => String(text), titleCase = text => String(text);
+const fetchJSON = async path => { asked.push(path); return {saves: [], cards: []}; };
+const setTimeout = (work, ms) => { timers.push(work); return timers.length; }, clearTimeout = () => {};
+let state = {turn: 7, view_player: 0, me: {government: "chiefdom", policies: ["discipline"]}};
+let autoplaying = false;
+const paintLiveTracker = () => {}, empireOpen = () => false;
+let savesKnown = null;
+__SAVES__
+__LEDGER__
+(async () => {
+  const check = (held, why) => { if (!held) { console.error(why); process.exit(1); } };
+  // A page of the game reads its saves when a turn opens, and prices the
+  // deck once the turn has stood a moment.
+  await refreshSaves();
+  check(asked.join() === "/saves", `a page of the game reads its saves: ${asked}`);
+  check(currentPolicyLedger() === null && timers.length === 1, "the deck is priced once the turn has stood");
+  timers[0]();
+  await null;
+  check(asked.join() === "/saves,/policy-effects", `and asks the engine for it: ${asked}`);
+  // A world of Doctor Strange's Civ 6 is a map: no lobby to list saves in,
+  // no deck in sight. Each turn it is shown it asks for nothing but the turn.
+  pane = true; asked.length = 0; timers.length = 0; state = {...state, turn: 8};
+  await refreshSaves();
+  check(currentPolicyLedger() === null, "a world of Doctor Strange's Civ 6 has no ledger");
+  check(asked.length === 0 && timers.length === 0, `and asks for neither: ${asked}, ${timers.length} waiting`);
+  console.log("a world asks only for its turns");
+})();
+"""
+
+
+@unittest.skipUnless(NODE, "no node on this host; CI runners have one")
+class AWorldOfDoctorStrangeAsksOnlyForItsTurns(unittest.TestCase):
+    """Operator, 2026-11-24: "Right now Doctor Strange's Civ 6 goes 4 turns and
+    pauses. This should not happen. It should be a continuous effort. and
+    blazingly fast." Each world is a whole page of the game, and on every
+    turn it was shown it read every save again for a lobby it does not show
+    (184 requests in 30 s of two worlds, measured on the published page), and
+    had the engine price a deck of policy cards nobody can see whenever a
+    turn stood for a third of a second (0.6 s of the one engine at nine
+    cards), which is what a turn waiting on the engine does."""
+
+    def test_a_world_reads_no_saves_and_prices_no_deck(self):
+        setup = (ASSETS / "app_setup.js").read_text(encoding="utf-8")
+        saves = setup[setup.index("async function refreshSaves() {"):]
+        saves = saves[:saves.index("\n}\n") + 3]
+        app = (ASSETS / "app.js").read_text(encoding="utf-8")
+        ledger = app[app.index("const POLICY_LEDGER_RETRY_MS ="):]
+        ledger = ledger[:ledger.index("\n}\n", ledger.index("function currentPolicyLedger() {")) + 3]
+        script = A_WORLD_ASKS_ONLY_FOR_ITS_TURNS.replace("__SAVES__", saves).replace("__LEDGER__", ledger)
+        done = subprocess.run([NODE, "-e", script], capture_output=True, text=True, timeout=60)
+        self.assertEqual(done.returncode, 0, done.stderr.strip())
+        self.assertIn("a world asks only for its turns", done.stdout)
+
+    def test_the_page_is_a_world_before_any_turn_opens(self):
+        # The page says it is a world as its last script loads, which is
+        # before it is given a state to draw.
+        debugger = (ASSETS / "app_debugger.js").read_text(encoding="utf-8")
+        self.assertIn('if (STRANGE_PANE) {\n  document.documentElement.classList.add("strange-pane");', debugger)
