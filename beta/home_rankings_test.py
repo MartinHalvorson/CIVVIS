@@ -461,7 +461,7 @@ class HomeRankings(unittest.TestCase):
         # readable", "have the home upper right video start at 6 seconds in".
         tiles = re.findall(
             r'<figure class="watch-tile" id="(watch-[a-z]+)" data-video="([\w-]{11})"( data-start="\d+")?>\s*'
-            r"<figcaption><b>([^<]+)</b> (?:<span data-watch-title>([^<]+)</span> )?<a [^>]+>[^<]+</a></figcaption>\s*"
+            r"<figcaption><b>([^<]+(?:<span data-watch-time>[^<]+</span>)?)</b> (?:<span data-watch-title>([^<]+)</span> )?<a [^>]+>[^<]+</a></figcaption>\s*"
             r'<a class="watch-poster" href="https://www\.youtube\.com/watch\?v=([\w-]{11})((?:&amp;t=\d+s)?)" target="_blank" rel="noreferrer">\s*'
             r'<img alt="" width="1280" height="720" decoding="async" referrerpolicy="no-referrer" '
             r'src="https://i\.ytimg\.com/vi_webp/([\w-]{11})/hq720\.webp">',
@@ -473,13 +473,17 @@ class HomeRankings(unittest.TestCase):
         # title that says everything has no second line: the two victories
         # are titled as he wrote them, and so is Doctor Strange's Civ 6. The
         # culture win is still at the right (2026-11-22), of the second row.
+        # Since 2026-11-25 the fastest game's title ends with its time
+        # ("throw a time on fastest recorded civvis game home/.:: <6s") and
+        # the culture win names the civ first ("swap culture, maya to Maya,
+        # Culture"), as the science win does.
         self.assertEqual(
             [(ident, video, label, title) for ident, video, _, label, title, _, _, _ in tiles],
             [
-                ("watch-fastest", "iHlUWPIqr5g", "Fastest recorded CIVVIS self-play game", "4P Tennis Ball, Online"),
+                ("watch-fastest", "iHlUWPIqr5g", "Fastest recorded CIVVIS self-play game:&#160;<span data-watch-time>&lt;6s</span>", "4P Tennis Ball, Online"),
                 ("watch-pov", "9c8m87e3rCg", "Single player POV", "A full Civ 6 match in 14 seconds"),
                 ("watch-science", "rVDor7Xb4Mg", "Lv 8 Deity Win - France, Science", ""),
-                ("watch-culture", "6PCd4R08UPM", "Lv 8 Deity Win - Culture, Maya", ""),
+                ("watch-culture", "6PCd4R08UPM", "Lv 8 Deity Win - Maya, Culture", ""),
                 ("watch-debugger", "6W5t0hcR_N4", "AI Debugger", "Multiverse, Time Travel"),
                 ("watch-strange", "H50wfMantkY", "Doctor Strange's Civ 6", ""),
             ],
@@ -575,11 +579,16 @@ class HomeRankings(unittest.TestCase):
         # the tile's second line (operator 2026-11-24: "first video can be
         # "Fastest recorded CIVVIS self-play game" subtitle 4P Tennis Ball,
         # Online").
-        fastest = {"fastest": {**{key: records[0][key] for key in ("id", "title", "time")}, "setup": "4P Tennis Ball, Online"}}
+        fastest = {"fastest": {**{key: records[0][key] for key in ("id", "title", "time")}, "short": "<6s", "setup": "4P Tennis Ball, Online"}}
         self.assertEqual(home_rankings.videos(ROOT), fastest)
         listed = json.loads((ROOT / performance_page.VIDEOS).read_text(encoding="utf-8"))["videos"]
         self.assertEqual([entry["video"][-11:] for entry in listed if entry.get("setup")], [records[0]["id"]])
         self.assertIn("<span data-watch-title>4P Tennis Ball, Online</span>", LANDING)
+        # And its time, at the end of the tile's title: the record's, as
+        # the page is written with it ("under 6 seconds").
+        self.assertEqual(records[0]["time"], "under 6 seconds")
+        self.assertIn("<b>Fastest recorded CIVVIS self-play game:&#160;<span data-watch-time>&lt;6s</span></b>", LANDING)
+        self.assertIn(".watch-tile figcaption b [data-watch-time] { color: inherit; font-size: inherit; line-height: inherit; }", LANDING)
         self.assertEqual(records[0]["seconds"], min(v["seconds"] for v in records))
         with tempfile.TemporaryDirectory() as scratch:
             page = pathlib.Path(scratch) / "index.html"
@@ -598,7 +607,7 @@ class HomeRankings(unittest.TestCase):
             (pathlib.Path(scratch) / performance_page.VIDEOS).parent.mkdir(parents=True)
             (pathlib.Path(scratch) / performance_page.VIDEOS).write_text(
                 json.dumps({"videos": [{"video": "https://www.youtube.com/watch?v=" + "a" * 11, "seconds": 5, "title": "A faster one"}]}), encoding="utf-8")
-            self.assertEqual(home_rankings.videos(pathlib.Path(scratch))["fastest"], {"id": "a" * 11, "title": "A faster one", "time": "5 seconds"})
+            self.assertEqual(home_rankings.videos(pathlib.Path(scratch))["fastest"], {"id": "a" * 11, "title": "A faster one", "time": "5 seconds", "short": "5s"})
             (pathlib.Path(scratch) / performance_page.VIDEOS).unlink()
             # A revision with no list of records: the slot says so, and the
             # tile stays the video it is written with.
@@ -612,6 +621,7 @@ class HomeRankings(unittest.TestCase):
             "if (fastest && VIDEO_ID.test(fastest.id)) {",
             "tile.dataset.video = fastest.id;",
             'if (fastest.setup || fastest.title) tile.querySelector("[data-watch-title]").textContent = fastest.setup || fastest.title;',
+            'if (fastest.short) tile.querySelector("[data-watch-time]").textContent = fastest.short;',
         ):
             self.assertIn(line, LANDING)
 

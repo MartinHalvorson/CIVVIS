@@ -500,8 +500,11 @@ def videos(source: pathlib.Path) -> dict | None:
     record played, when its line in the list says (`setup`, "4P Tennis Ball,
     Online"): the tile's second line (operator 2026-11-24: "first video can
     be "Fastest recorded CIVVIS self-play game" subtitle 4P Tennis Ball,
-    Online"). `None` when the revision has no list of records or the list
-    has no video."""
+    Online"). And the record's time, short, for the end of the tile's
+    title (operator 2026-11-25: "throw a time on fastest recorded civvis
+    game home/.:: <6s"): `short`, "<6s" for a game the list says was played
+    "under 6 seconds", "9s" for one in 9. `None` when the revision has no
+    list of records or the list has no video."""
     try:
         listed = json.loads((source / performance_page.VIDEOS).read_text(encoding="utf-8"))["videos"]
     except (OSError, ValueError, KeyError, TypeError):
@@ -510,6 +513,7 @@ def videos(source: pathlib.Path) -> dict | None:
     if not records:
         return None
     fastest = {key: records[0][key] for key in ("id", "title", "time")}
+    fastest["short"] = ("<" if fastest["time"].startswith("under ") else "") + f"{records[0]['seconds']:g}s"
     for entry in listed:
         if isinstance(entry, dict) and entry.get("setup") and str(entry.get("video") or "").endswith("v=" + fastest["id"]):
             fastest["setup"] = str(entry["setup"])
