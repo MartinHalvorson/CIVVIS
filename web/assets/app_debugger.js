@@ -5231,6 +5231,14 @@ const STRANGE_STYLE = `
     grid-column: 1 / -1; height: 32px; font-size: 14px; font-weight: 700;
     color: #10140f; background: ${STRANGE_GOLD}; border-color: transparent;
   }
+  /* The base timeline, picked before Branch: the world the branch is made
+     from, in its own colour, by its letter and its name. */
+  #strange-hud .strange-deck .strange-base { grid-column: 1 / -1; display: flex; align-items: center; gap: 7px; min-width: 0; }
+  #strange-hud .strange-deck .strange-base span { flex: none; margin: 0; color: #9fb3ab; font-size: 11px; }
+  #strange-hud .strange-deck .strange-base select {
+    flex: 1; width: 0; height: 28px; font-weight: 700; color: var(--strange-base, #e8e3d2);
+    border-color: var(--strange-base, #35504a); border-left-width: 6px; text-overflow: ellipsis;
+  }
   /* A branch is made by picking who plays it: the picker is the button. */
   #strange-hud .strange-deck .strange-branch {
     grid-column: 1 / -1; width: 100%; height: 30px; font-weight: 700; color: ${STRANGE_GOLD};
@@ -6454,7 +6462,8 @@ function strangeMount() {
           <button data-strange="on1" title="The worlds play a turn, each with its own player strategy">+1</button>
           <button data-strange="on10" title="The worlds play ten turns, each with its own player strategy">+10</button>
         </div>
-        <select class="strange-branch" data-strange="branch" aria-label="Branch here, played by"></select>
+        <label class="strange-base"><span>Base timeline</span><select data-strange="base" aria-label="Base timeline: the world a branch is made from"></select></label>
+        <select class="strange-branch" data-strange="branch" aria-label="Branch the base timeline here, played by"></select>
         <button data-strange="fork"></button>
         <button class="strange-lock" data-strange="lock" aria-pressed="true"></button>
         <button class="strange-futures" data-strange="futures" aria-pressed="true"></button>
@@ -6494,6 +6503,13 @@ function strangeMount() {
   });
   hud.addEventListener("change", event => {
     if (!debugSplit) return;
+    // The base timeline picked is the world followed: Branch branches from it.
+    if (event.target.dataset.strange === "base") {
+      const letter = event.target.value;
+      event.target.blur();
+      if (strangeOpen().includes(letter)) { strange.follow = letter; strangeDraw(); }
+      return;
+    }
     // Picking who plays a branch makes it. The picker is a button again.
     if (event.target.dataset.strange === "branch") {
       const name = event.target.value;
@@ -6698,9 +6714,22 @@ function strangeDraw() {
   for (const [name, off] of [["back10", turn <= first], ["back1", turn <= first],
     ["on1", limit !== null && turn >= limit], ["on10", limit !== null && turn >= limit]])
     hud.querySelector(`[data-strange="${name}"]`).disabled = !idle || off;
+  // Before Branch, the base timeline: the world the branch is made from
+  // (operator 2026-11-25: "the option to branch in the simulator should be
+  // preceded by a selection of the base timeline"). Every open world is on
+  // offer, left to right, by its letter and its name, and the picker wears
+  // the colour of the one picked. The base is the followed world: picking
+  // one here is Follow, and Follow on a box picks it here.
+  const base = hud.querySelector('[data-strange="base"]');
+  const bases = open.map(letter => `<option value="${letter}">${letter.toUpperCase()} · ${escapeAttr(strangeSeries(letter, tree))}</option>`).join("");
+  if (base.dataset.drawn !== bases && document.activeElement !== base) { base.dataset.drawn = bases; base.innerHTML = bases; }
+  if (base.value !== follow && [...base.options].some(option => option.value === follow)) base.value = follow;
+  if (base.style.getPropertyValue("--strange-base") !== strange.tint[follow]) base.style.setProperty("--strange-base", strange.tint[follow]);
+  base.title = many ? `The base timeline: Branch makes its branch from ${follow.toUpperCase()}, as it stands on turn ${turn}. Pick another world to branch from it`
+    : `The base timeline: ${follow.toUpperCase()} is the one world open, and Branch makes its branch from it`;
   // Branch is a picker of who plays the branch, and picking makes it. Each
   // choice is what the branch's name gains: the open turn and the strategy.
-  // The one the followed world seats is not offered: that is the same world.
+  // The one the base timeline seats is not offered: that is the same world.
   const full = open.length >= STRANGE_LETTERS.length;
   const branch = hud.querySelector('[data-strange="branch"]');
   const offers = `<option value="">⑂ Branch: ${turn}-(player strategy)</option>` + strangeAgents().filter(name => name !== panes[follow].strategy)
@@ -6712,7 +6741,7 @@ function strangeDraw() {
   }
   branch.disabled = !idle || full;
   branch.title = full ? `${STRANGE_LETTERS.length} worlds are open, which is the most. Delete one to branch again`
-    : `Branch from ${follow.toUpperCase()} on turn ${turn}: pick the player strategy that plays the branch from here, and it is made, a world of its own in a box of its own`;
+    : `Branch the base timeline, ${follow.toUpperCase()}, on turn ${turn}: pick the player strategy that plays the branch from here, and it is made, a world of its own in a box of its own`;
   const back = set("fork", one ? "⏮ To the fork" : `⏮ To the fork · ${tree.splits}`);
   back.disabled = !idle || one || turn === tree.splits;
   back.title = !many ? "One world is open" : one ? "The worlds are one world so far" : `The worlds go back to turn ${tree.splits}, the last they all share`;
@@ -6752,7 +6781,7 @@ function strangeDraw() {
     button.classList.toggle("on", on);
     button.disabled = on;
     button.title = on ? `${name} is the timeline in the middle`
-      : `Put ${name}'s timeline in the middle: Branch then branches from ${name}`;
+      : `Put ${name}'s timeline in the middle: it is the base timeline, and Branch then branches from ${name}`;
   }
   // The sign over each branch: as much of what is coming as there is room
   // for (`strangeFates`), and all of it when the pointer is on it.
