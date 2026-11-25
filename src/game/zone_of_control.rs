@@ -14,7 +14,7 @@ use super::*;
 
 impl Game {
     pub(super) fn unit_shares_escort_movement(&self, unit: &Unit) -> bool {
-        self.promotion_effect(unit, "escort_mobility") > 0.0
+        self.promotion_effect(unit, crate::name!("escort_mobility")) > 0.0
             || self.rules.units[unit.kind]
                 .effects
                 .get("escort_mobility")
@@ -28,7 +28,7 @@ impl Game {
         // Embarkation does not remove a land unit's ZOC. Its native domain
         // still limits projection to land tiles, which is handled by the
         // caller when comparing the target tile's domain.
-        spec.zone_of_control || self.promotion_effect(u, "zone_of_control") > 0.0
+        spec.zone_of_control || self.promotion_effect(u, crate::name!("zone_of_control")) > 0.0
     }
 
     /// Cavalry, Naval Raiders, the Viking Longship, and air units ignore

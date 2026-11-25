@@ -128,7 +128,7 @@ impl Game {
             .map(|v| *v as f64)
             .unwrap_or(current)
             .max(3.0);
-        base + self.policy_effect(owner, "city_ranged")
+        base + self.policy_effect(owner, crate::name!("city_ranged"))
     }
 
     pub fn city_strength(&self, cid: u32) -> f64 {
@@ -172,8 +172,8 @@ impl Game {
         if self.city_has_palace(city) {
             s += 3.0;
         }
-        s += self.policy_effect(city.owner, "city_defense");
-        s += self.governor_effect(city.owner, city.id, "garrison_strength");
+        s += self.policy_effect(city.owner, crate::name!("city_defense"));
+        s += self.governor_effect(city.owner, city.id, crate::name!("garrison_strength"));
         s += city_state_bonus;
         let damaged_penalty = (10.0 - city.hp.clamp(0, 200) as f64 / 20.0).round();
         (s - damaged_penalty).max(0.0)
@@ -192,7 +192,7 @@ impl Game {
     /// neighbors count as sealed sides of the siege ring.
     pub(super) fn city_under_siege(&self, cid: u32) -> bool {
         let city = &self.cities[&cid];
-        self.governor_effect(city.owner, cid, "city_siege_immunity") <= 0.0
+        self.governor_effect(city.owner, cid, crate::name!("city_siege_immunity")) <= 0.0
             && self.district_under_siege(city.owner, city.pos)
     }
 
@@ -1358,7 +1358,8 @@ impl Game {
         // shipped text moves from "Charming or better" to "Breathtaking" with
         // it. Modelling the cache's requirement set alone would have paid this
         // on twice the map.
-        let breathtaking_faith = self.pantheon_effect(pid, "breathtaking_appeal_faith");
+        let breathtaking_faith =
+            self.pantheon_effect(pid, crate::name!("breathtaking_appeal_faith"));
         // A positive-zero bonus pays nothing at any appeal. Keep -0.0 on
         // the original conditional path so its floating-point sign is retained.
         yields.faith += if breathtaking_faith.to_bits() != 0 && self.tile_appeal(pos) >= 4 {
@@ -1387,7 +1388,8 @@ impl Game {
         }
 
         if !tile.pillaged && tile.improvement.is_none() && tile.feature.is_some() {
-            yields.gold += self.governor_effect(pid, city.id, "unimproved_feature_gold");
+            yields.gold +=
+                self.governor_effect(pid, city.id, crate::name!("unimproved_feature_gold"));
         }
         if !tile.pillaged
             && matches!(
@@ -1395,7 +1397,7 @@ impl Game {
                 Some("wind_farm" | "solar_farm" | "offshore_wind_farm" | "geothermal_plant")
             )
         {
-            yields.gold += self.governor_effect(pid, city.id, "renewable_gold");
+            yields.gold += self.governor_effect(pid, city.id, crate::name!("renewable_gold"));
         }
 
         if !tile.pillaged {
@@ -1415,12 +1417,14 @@ impl Game {
                             .get("adjacent_sea_resource_food")
                             .copied()
                             .unwrap_or(0.0);
-                    if self.governor_effect(pid, city.id, "fishery") > 0.0 {
+                    if self.governor_effect(pid, city.id, crate::name!("fishery")) > 0.0 {
                         yields.production +=
                             effects.get("liang_production").copied().unwrap_or(0.0);
                     }
                 }
-                Some("city_park") if self.governor_effect(pid, city.id, "city_park") > 0.0 => {
+                Some("city_park")
+                    if self.governor_effect(pid, city.id, crate::name!("city_park")) > 0.0 =>
+                {
                     let spec = &self.rules.improvements["city_park"];
                     let total = spec
                         .effects
@@ -1507,12 +1511,14 @@ impl Game {
         // Tile-changing wonder effects. City-scoped keys apply only in the
         // constructing city; empire keys apply to every owned worked tile.
         if matches!(tile.feature.as_deref(), Some("marsh")) {
-            yields.science += self.empire_wonder_effect(pid, "empire_marsh_science");
-            yields.production += self.empire_wonder_effect(pid, "empire_marsh_production");
+            yields.science += self.empire_wonder_effect(pid, crate::name!("empire_marsh_science"));
+            yields.production +=
+                self.empire_wonder_effect(pid, crate::name!("empire_marsh_production"));
         }
         if tile.terrain == "lake" {
-            yields.food += self.empire_wonder_effect(pid, "empire_lake_food");
-            yields.production += self.empire_wonder_effect(pid, "empire_lake_production");
+            yields.food += self.empire_wonder_effect(pid, crate::name!("empire_lake_food"));
+            yields.production +=
+                self.empire_wonder_effect(pid, crate::name!("empire_lake_production"));
         }
         let city_wonder_effect = |effect: &str| {
             city.wonders
@@ -2127,7 +2133,7 @@ impl Game {
         let employed = citizen_plan.worked_tiles.len() + citizen_plan.specialists.len();
         // Collectivism's COLLECTIVISM_FARM_FOOD_MODIFIER is a plot yield on
         // Farm plots, so it is paid where a citizen works one.
-        let farm_food = self.policy_effect(city.owner, "farm_food");
+        let farm_food = self.policy_effect(city.owner, crate::name!("farm_food"));
         for pos in citizen_plan.worked_tiles {
             ys.add(self.workable_tile_yields(pos));
             if farm_food != 0.0 {
@@ -2204,8 +2210,9 @@ impl Game {
         };
         // Reliquaries: `MODIFIER_SINGLE_CITY_ADJUST_GREATWORK_YIELD` on Relics,
         // ScalingFactor 300 — triple Faith in a city following the religion.
-        let relic_faith =
-            relic_faith * (1.0 + self.city_religion_belief_effect(city, "relic_faith_pct") / 100.0);
+        let relic_faith = relic_faith
+            * (1.0
+                + self.city_religion_belief_effect(city, crate::name!("relic_faith_pct")) / 100.0);
         if let Some(works) = self.housed_great_works(city.owner).get(&cid) {
             for (kind, count) in works {
                 let count = *count as f64;
@@ -2236,18 +2243,18 @@ impl Game {
         ys.culture += 0.3 * city.pop as f64;
         if self.city_has_palace(city) {
             ys.add(self.rules.buildings["palace"].yields);
-            ys.gold += self.policy_effect(city.owner, "capital_gold");
-            ys.faith += self.policy_effect(city.owner, "capital_faith");
+            ys.gold += self.policy_effect(city.owner, crate::name!("capital_gold"));
+            ys.faith += self.policy_effect(city.owner, crate::name!("capital_faith"));
         }
-        ys.production += self.policy_effect(city.owner, "city_production");
+        ys.production += self.policy_effect(city.owner, crate::name!("city_production"));
         // A civilization whose signature ability is a flat yield in every city
         // pays it here, once per city, alongside the policy that does the same.
-        ys.food += self.civ_effect(city.owner, "city_food");
-        ys.production += self.civ_effect(city.owner, "city_production");
-        ys.gold += self.civ_effect(city.owner, "city_gold");
-        ys.science += self.civ_effect(city.owner, "city_science");
-        ys.culture += self.civ_effect(city.owner, "city_culture");
-        ys.faith += self.civ_effect(city.owner, "city_faith");
+        ys.food += self.civ_effect(city.owner, crate::name!("city_food"));
+        ys.production += self.civ_effect(city.owner, crate::name!("city_production"));
+        ys.gold += self.civ_effect(city.owner, crate::name!("city_gold"));
+        ys.science += self.civ_effect(city.owner, crate::name!("city_science"));
+        ys.culture += self.civ_effect(city.owner, crate::name!("city_culture"));
+        ys.faith += self.civ_effect(city.owner, crate::name!("city_faith"));
         if self.grants_city_state_unique_bonus(city.owner, "Johannesburg") {
             let improved_resources: BTreeSet<Name> = city
                 .owned_tiles
@@ -2298,16 +2305,20 @@ impl Game {
             {
                 continue;
             }
-            ys.gold += self.policy_effect(city.owner, "neighborhood_gold");
+            ys.gold += self.policy_effect(city.owner, crate::name!("neighborhood_gold"));
             let appeal = self.tile_appeal(*position);
             if appeal >= 2 {
-                ys.food += self.policy_effect(city.owner, "neighborhood_food");
-                ys.production += self.policy_effect(city.owner, "neighborhood_production");
+                ys.food += self.policy_effect(city.owner, crate::name!("neighborhood_food"));
+                ys.production +=
+                    self.policy_effect(city.owner, crate::name!("neighborhood_production"));
             }
             if appeal >= 4 {
-                ys.food += self.policy_effect(city.owner, "neighborhood_breathtaking_food");
-                ys.production +=
-                    self.policy_effect(city.owner, "neighborhood_breathtaking_production");
+                ys.food +=
+                    self.policy_effect(city.owner, crate::name!("neighborhood_breathtaking_food"));
+                ys.production += self.policy_effect(
+                    city.owner,
+                    crate::name!("neighborhood_breathtaking_production"),
+                );
             }
         }
         // Merchant Confederation's Gold per Envoy, an Emergency's Gold per
@@ -2353,9 +2364,12 @@ impl Game {
                 iys.food += government.allied_suzerain_trade_food;
                 iys.production += government.allied_suzerain_trade_production;
                 // ...and the destination half, paid to the city receiving it.
-                iys.food += self.policy_effect(route.owner, "allied_suzerain_trade_food");
-                iys.production +=
-                    self.policy_effect(route.owner, "allied_suzerain_trade_production");
+                iys.food +=
+                    self.policy_effect(route.owner, crate::name!("allied_suzerain_trade_food"));
+                iys.production += self.policy_effect(
+                    route.owner,
+                    crate::name!("allied_suzerain_trade_production"),
+                );
             }
             if let Some(alliance) = self.alliance_with(city.owner, route.owner) {
                 match alliance.kind.as_str() {
@@ -2371,7 +2385,11 @@ impl Game {
             }
         }
         iys.gold += incoming_foreign_routes
-            * self.governor_effect(city.owner, city.id, "incoming_foreign_trade_gold");
+            * self.governor_effect(
+                city.owner,
+                city.id,
+                crate::name!("incoming_foreign_trade_gold"),
+            );
         // World Congress Trade Policy A. The resolution's text says the SENDER
         // earns +4 Gold; what Firaxis ships is `INCREASES_TRADE_TO_GOLD`, an
         // `EFFECT_ADJUST_TRADE_ROUTE_YIELD_FROM_OTHERS` (Amount 4) attached to
@@ -2404,9 +2422,10 @@ impl Game {
             ys.add(self.envoy_yields(city.owner, city));
         }
         if self.city_religion(city).is_some() {
-            let choral_music = self.city_religion_belief_effect(city, "holy_building_culture");
-            let shrine_food = self.city_religion_belief_effect(city, "shrine_food");
-            let temple_food = self.city_religion_belief_effect(city, "temple_food");
+            let choral_music =
+                self.city_religion_belief_effect(city, crate::name!("holy_building_culture"));
+            let shrine_food = self.city_religion_belief_effect(city, crate::name!("shrine_food"));
+            let temple_food = self.city_religion_belief_effect(city, crate::name!("temple_food"));
             for building in city.buildings.iter().filter(|building| {
                 !city.pillaged_buildings.contains(*building)
                     && self.building_district_is_active(city, building)
@@ -2425,12 +2444,14 @@ impl Game {
             // host and 23 in the model until this line: three Wonders, twelve
             // Faith (run civvis-20260816T123936Z t231-239), and Ostia's
             // Mausoleum the same four more.
-            let wonder_faith = self.city_religion_belief_effect(city, "wonder_faith");
+            let wonder_faith = self.city_religion_belief_effect(city, crate::name!("wonder_faith"));
             if wonder_faith > 0.0 {
                 ys.faith += wonder_faith * city.wonders.len() as f64;
             }
-            let work_ethic =
-                self.city_religion_belief_effect(city, "holy_site_production_from_adjacency");
+            let work_ethic = self.city_religion_belief_effect(
+                city,
+                crate::name!("holy_site_production_from_adjacency"),
+            );
             if work_ethic > 0.0 {
                 ys.production += city
                     .districts
@@ -2508,27 +2529,30 @@ impl Game {
                     })
                     .count() as f64
             };
-        let pasture_culture = self.pantheon_effect(city.owner, "pasture_culture");
+        let pasture_culture = self.pantheon_effect(city.owner, crate::name!("pasture_culture"));
         ys.culture += pasture_culture * active_improvements("pasture", pasture_culture);
-        let fishing_boats_production = self.pantheon_effect(city.owner, "fishing_boats_production");
+        let fishing_boats_production =
+            self.pantheon_effect(city.owner, crate::name!("fishing_boats_production"));
         ys.production += fishing_boats_production
             * active_improvements("fishing_boats", fishing_boats_production);
         // Goddess of the Hunt: GODDESS_OF_THE_HUNT_CAMP_{FOOD,PRODUCTION}_MODIFIER,
         // +1 each on PLOT_HAS_CAMP_REQUIREMENTS.
-        let camp_food = self.pantheon_effect(city.owner, "camp_food");
+        let camp_food = self.pantheon_effect(city.owner, crate::name!("camp_food"));
         ys.food += camp_food * active_improvements("camp", camp_food);
-        let camp_production = self.pantheon_effect(city.owner, "camp_production");
+        let camp_production = self.pantheon_effect(city.owner, crate::name!("camp_production"));
         ys.production += camp_production * active_improvements("camp", camp_production);
         // Stone Circles: STONE_CIRCLES_QUARRY_FAITH_MODIFIER, +2 on a Quarry.
-        let quarry_faith = self.pantheon_effect(city.owner, "quarry_faith");
+        let quarry_faith = self.pantheon_effect(city.owner, crate::name!("quarry_faith"));
         ys.faith += quarry_faith * active_improvements("quarry", quarry_faith);
         // Goddess of Festivals: the expansion deletes the base game's
         // PLANTATION_TAG_FOOD row and grants Culture instead.
-        let plantation_culture = self.pantheon_effect(city.owner, "plantation_culture");
+        let plantation_culture =
+            self.pantheon_effect(city.owner, crate::name!("plantation_culture"));
         ys.culture += plantation_culture * active_improvements("plantation", plantation_culture);
         // Religious Idols: two modifiers, BONUS_MINE and LUXURY_MINE, +2 Faith
         // each — one effect here because a plot carries one resource.
-        let resource_mine_faith = self.pantheon_effect(city.owner, "resource_mine_faith");
+        let resource_mine_faith =
+            self.pantheon_effect(city.owner, crate::name!("resource_mine_faith"));
         ys.faith += resource_mine_faith
             * improved_resource_tiles(
                 Some("mine"),
@@ -2538,8 +2562,9 @@ impl Game {
         // God of Craftsmen: the expansion deletes STRATEGIC_MINE_PRODUCTION and
         // pays on any improved Strategic resource, Production and Faith alike.
         let strategic_production =
-            self.pantheon_effect(city.owner, "strategic_improved_production");
-        let strategic_faith = self.pantheon_effect(city.owner, "strategic_improved_faith");
+            self.pantheon_effect(city.owner, crate::name!("strategic_improved_production"));
+        let strategic_faith =
+            self.pantheon_effect(city.owner, crate::name!("strategic_improved_faith"));
         let improved_strategics = improved_resource_tiles(
             None,
             &["strategic"],
@@ -2599,11 +2624,12 @@ impl Game {
             ys.faith += eff.governor_faith_per_pop * city.pop as f64;
         }
         ys.culture += eff.culture_per_district * self.city_specialty_district_count(city) as f64;
-        ys.science +=
-            self.governor_effect(city.owner, city.id, "science_per_pop") * city.pop as f64;
-        ys.culture +=
-            self.governor_effect(city.owner, city.id, "culture_per_pop") * city.pop as f64;
-        ys.gold += self.governor_effect(city.owner, city.id, "gold_per_pop") * city.pop as f64;
+        ys.science += self.governor_effect(city.owner, city.id, crate::name!("science_per_pop"))
+            * city.pop as f64;
+        ys.culture += self.governor_effect(city.owner, city.id, crate::name!("culture_per_pop"))
+            * city.pop as f64;
+        ys.gold += self.governor_effect(city.owner, city.id, crate::name!("gold_per_pop"))
+            * city.pop as f64;
         let active_specialty_districts = city
             .districts
             .iter()
@@ -2612,8 +2638,11 @@ impl Game {
                     && self.district_is_active(city, district, **position)
             })
             .count() as f64;
-        ys.faith += self.governor_effect(city.owner, city.id, "specialty_district_faith")
-            * active_specialty_districts;
+        ys.faith += self.governor_effect(
+            city.owner,
+            city.id,
+            crate::name!("specialty_district_faith"),
+        ) * active_specialty_districts;
         if city.buildings.iter().any(|building| {
             matches!(
                 building.as_str(),
@@ -2621,10 +2650,11 @@ impl Game {
             ) && !city.pillaged_buildings.contains(building)
                 && self.building_district_is_active(city, building)
         }) {
-            ys.production += self.governor_effect(city.owner, city.id, "power_plant_production");
+            ys.production +=
+                self.governor_effect(city.owner, city.id, crate::name!("power_plant_production"));
         }
         if self.city_has_active_building_family(city, crate::name!("hydroelectric_dam")) {
-            ys.gold += self.governor_effect(city.owner, city.id, "renewable_gold");
+            ys.gold += self.governor_effect(city.owner, city.id, crate::name!("renewable_gold"));
         }
         if self.city_has_palace(city) {
             ys.add(eff.capital_yields);
@@ -2674,17 +2704,18 @@ impl Game {
         if self.city_has_established_governor(city.owner, city.id) {
             pct.gold += eff.governor_gold_pct;
         }
-        pct.science += self.governor_effect(city.owner, city.id, "science_pct");
-        pct.culture += self.governor_effect(city.owner, city.id, "culture_pct");
+        pct.science += self.governor_effect(city.owner, city.id, crate::name!("science_pct"));
+        pct.culture += self.governor_effect(city.owner, city.id, crate::name!("culture_pct"));
         // Dark Age cards buy their strength with an empire-wide penalty.
-        pct.science += self.policy_effect(city.owner, "city_science_pct");
-        pct.culture += self.policy_effect(city.owner, "city_culture_pct");
+        pct.science += self.policy_effect(city.owner, crate::name!("city_science_pct"));
+        pct.culture += self.policy_effect(city.owner, crate::name!("city_culture_pct"));
         // Monasticism (shipped GS `PolicyModifiers`): MONASTICISM_HOLYSITE_SCIENCE
         // is +75% Science under CITY_HAS_HOLY_SITE; MONASTICISM_CULTURE_MODIFIER
         // is -25% Culture with NO requirement set — every city, Holy Site or
         // not — and so rides the plain `city_culture_pct` term above.
         if self.city_has_active_district_family(city, crate::name!("holy_site")) {
-            pct.science += self.policy_effect(city.owner, "holy_site_city_science_pct");
+            pct.science +=
+                self.policy_effect(city.owner, crate::name!("holy_site_city_science_pct"));
         }
         // Robber Barons, as the shipped rows read: ROBBERBARONS_STOCKEXCHANGE_GOLD
         // (+50% Gold) requires BUILDING_IS_STOCK_EXCHANGE and
@@ -2692,10 +2723,12 @@ impl Game {
         // BUILDING_IS_FACTORY. There is no Bank-or-Shipyard set anywhere in
         // the Expansion data; the note this code used to carry was wrong.
         if self.city_has_active_building_family(city, crate::name!("stock_exchange")) {
-            pct.gold += self.policy_effect(city.owner, "stock_exchange_city_gold_pct");
+            pct.gold +=
+                self.policy_effect(city.owner, crate::name!("stock_exchange_city_gold_pct"));
         }
         if self.city_has_active_building_family(city, crate::name!("factory")) {
-            pct.production += self.policy_effect(city.owner, "factory_city_production_pct");
+            pct.production +=
+                self.policy_effect(city.owner, crate::name!("factory_city_production_pct"));
         }
         let local_wonder_effect = |effect: &str| {
             city.wonders
@@ -2716,14 +2749,18 @@ impl Game {
         if self.city_governor_active(city.owner, city.id)
             && self.on_foreign_continent(city.owner, city.pos)
         {
-            let abroad =
-                self.empire_wonder_effect(city.owner, "governor_foreign_continent_yields_pct");
+            let abroad = self.empire_wonder_effect(
+                city.owner,
+                crate::name!("governor_foreign_continent_yields_pct"),
+            );
             pct.production += abroad;
             pct.gold += abroad;
             pct.faith += abroad;
         }
-        let mut science_pct = self.empire_wonder_effect(city.owner, "empire_science_pct");
-        let mut production_pct = self.empire_wonder_effect(city.owner, "empire_production_pct");
+        let mut science_pct =
+            self.empire_wonder_effect(city.owner, crate::name!("empire_science_pct"));
+        let mut production_pct =
+            self.empire_wonder_effect(city.owner, crate::name!("empire_production_pct"));
         if let Some(source) = self
             .cities
             .values()
@@ -2768,13 +2805,16 @@ impl Game {
                 .cities
                 .values()
                 .filter(|source| source.owner == city.owner)
-                .map(|source| self.city_building_effect(source, "capture_city_production_pct"))
+                .map(|source| {
+                    self.city_building_effect(source, crate::name!("capture_city_production_pct"))
+                })
                 .sum::<f64>();
             pct.production += capture_pct;
         }
         if self.on_foreign_continent(city.owner, city.pos) {
-            pct.gold += self.policy_effect(city.owner, "foreign_continent_gold_pct");
-            pct.production += self.policy_effect(city.owner, "foreign_continent_production_pct");
+            pct.gold += self.policy_effect(city.owner, crate::name!("foreign_continent_gold_pct"));
+            pct.production +=
+                self.policy_effect(city.owner, crate::name!("foreign_continent_production_pct"));
         }
         let suzerains = self
             .players
@@ -2785,8 +2825,10 @@ impl Game {
                     && self.suzerain_of(minor.id) == Some(city.owner)
             })
             .count() as f64;
-        pct.science += suzerains * self.policy_effect(city.owner, "science_pct_per_suzerain");
-        pct.culture += suzerains * self.policy_effect(city.owner, "culture_pct_per_suzerain");
+        pct.science +=
+            suzerains * self.policy_effect(city.owner, crate::name!("science_pct_per_suzerain"));
+        pct.culture +=
+            suzerains * self.policy_effect(city.owner, crate::name!("culture_pct_per_suzerain"));
         let economic_yields = self.city_resource_industry_effects(city).city_yield_pct;
         pct.add(economic_yields);
         // No age multiplies yields. Gathering Storm's `Modifiers` carry no
@@ -2802,8 +2844,10 @@ impl Game {
         // are terms in Civ VI's one additive percentage sum, not a chained
         // multiplier over the ordinary +10% / +20% Happiness bonus.
         let scottish_happiness = self.scottish_enlightenment_happiness_scale(city);
-        pct.science += scottish_happiness * self.civ_effect(city.owner, "happy_science_pct");
-        pct.production += scottish_happiness * self.civ_effect(city.owner, "happy_production_pct");
+        pct.science +=
+            scottish_happiness * self.civ_effect(city.owner, crate::name!("happy_science_pct"));
+        pct.production +=
+            scottish_happiness * self.civ_effect(city.owner, crate::name!("happy_production_pct"));
         // Loyalty bands the non-Food yields only. `LoyaltyLevels.YieldChange`
         // (-25% / -50% / -100%) never reaches Food; the level's `GrowthChange`
         // (0.75 / 0.25 / 0) is what a disloyal city pays, and
@@ -3384,7 +3428,9 @@ impl Game {
             owner != pid
                 && (self.is_at_war(pid, owner)
                     || (!self.has_open_borders(pid, owner)
-                        && self.empire_wonder_effect(pid, "archaeologist_open_borders") <= 0.0))
+                        && self
+                            .empire_wonder_effect(pid, crate::name!("archaeologist_open_borders"))
+                            <= 0.0))
         }) {
             return None;
         }
@@ -3405,10 +3451,11 @@ impl Game {
             return BTreeMap::new();
         };
         let progress = self.game_progress_ratio(pid);
-        let city_multiplier = 1.0 + self.governor_effect(pid, cid, "great_people_pct") / 100.0;
+        let city_multiplier =
+            1.0 + self.governor_effect(pid, cid, crate::name!("great_people_pct")) / 100.0;
         let empire_multiplier = 1.0
             + (self.gov_effects(pid).great_people_pct
-                + self.policy_effect(pid, "great_people_pct"))
+                + self.policy_effect(pid, crate::name!("great_people_pct")))
                 / 100.0;
         spec.completion_gpp
             .iter()

@@ -174,7 +174,7 @@ impl Game {
         reading.tourism = self.tourism_per_turn_model(pid);
         // Only a card's share: the government's and the buildings' influence
         // are the same either side of any card and cancel in every difference.
-        reading.influence = self.policy_effect(pid, "influence_per_turn");
+        reading.influence = self.policy_effect(pid, crate::name!("influence_per_turn"));
         let mut fighters = 0.0;
         let mut strength = 0.0;
         for uid in self.player_unit_ids(pid) {

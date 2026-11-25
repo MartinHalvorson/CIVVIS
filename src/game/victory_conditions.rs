@@ -1760,7 +1760,7 @@ fn the_hosts_route_posts_replace_the_straight_line_walk() {
     let dest = g.player_city_ids(1)[0];
     let walked = g.trading_post_route_gold(0, origin, dest);
     std::sync::Arc::make_mut(&mut g.observed_route_posts).insert((origin, dest), (2, 1));
-    let own = g.civ_effect(0, "own_trading_post_route_gold");
+    let own = g.civ_effect(0, crate::name!("own_trading_post_route_gold"));
     assert!(own > 0.0, "the fixture is Roman");
     assert_eq!(g.trading_post_route_gold(0, origin, dest), 2.0 * own + 1.0);
     // Only that route: nothing is known about the reverse one.
@@ -2564,7 +2564,7 @@ fn great_work_tourism_uses_tree_and_slotted_policy_modifiers() {
     assert!(
         (heritage - printing - 6.0).abs() < 1e-9,
         "printing={printing}, heritage={heritage}, policy={}, art={}, global={}, housed={:?}",
-        g.policy_effect(0, "art_artifact_tourism_pct"),
+        g.policy_effect(0, crate::name!("art_artifact_tourism_pct")),
         g.great_work_tourism(0, "art"),
         g.tree_effect(0, "tourism_pct") + g.monopoly_bonuses(0).1,
         g.housed_great_works(0),

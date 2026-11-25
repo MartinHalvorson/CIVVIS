@@ -930,8 +930,14 @@ fn pingala_executes_population_gpp_space_and_curator_effects() {
     }
     let with_yields = game.city_yields(city);
     let without_yields = without_population.city_yields(city);
-    assert_eq!(game.governor_effect(0, city, "science_per_pop"), 1.0);
-    assert_eq!(game.governor_effect(0, city, "culture_per_pop"), 1.0);
+    assert_eq!(
+        game.governor_effect(0, city, crate::name!("science_per_pop")),
+        1.0
+    );
+    assert_eq!(
+        game.governor_effect(0, city, crate::name!("culture_per_pop")),
+        1.0
+    );
     assert!(with_yields.science > without_yields.science);
     assert!(with_yields.culture > without_yields.culture);
 
@@ -2058,13 +2064,22 @@ fn base_governor_abilities_arrive_with_the_appointment() {
     let city = found_capital(&mut game, 0);
     appoint_established(&mut game, 0, "reyna", city, &[]);
     appoint_established(&mut game, 0, "pingala", city, &[]);
-    assert_eq!(game.governor_effect(0, city, "border_growth_pct"), 20.0);
     assert_eq!(
-        game.governor_effect(0, city, "incoming_foreign_trade_gold"),
+        game.governor_effect(0, city, crate::name!("border_growth_pct")),
+        20.0
+    );
+    assert_eq!(
+        game.governor_effect(0, city, crate::name!("incoming_foreign_trade_gold")),
         3.0
     );
-    assert_eq!(game.governor_effect(0, city, "science_pct"), 15.0);
-    assert_eq!(game.governor_effect(0, city, "culture_pct"), 15.0);
+    assert_eq!(
+        game.governor_effect(0, city, crate::name!("science_pct")),
+        15.0
+    );
+    assert_eq!(
+        game.governor_effect(0, city, crate::name!("culture_pct")),
+        15.0
+    );
 
     // Every governor carries exactly the five promotions the shipped
     // promotion set holds beside its base ability.
@@ -2116,7 +2131,7 @@ fn reyna_executes_routes_borders_adjacency_forestry_purchases_and_renewables() {
     let mut no_reyna = base_reyna.clone();
     no_reyna.players[0].governor_roster.clear();
     assert_eq!(
-        base_reyna.governor_effect(0, city, "incoming_foreign_trade_gold"),
+        base_reyna.governor_effect(0, city, crate::name!("incoming_foreign_trade_gold")),
         3.0
     );
     assert!(base_reyna.city_yields(city).gold > no_reyna.city_yields(city).gold);
@@ -2134,7 +2149,10 @@ fn reyna_executes_routes_borders_adjacency_forestry_purchases_and_renewables() {
         .unwrap()
         .promotions
         .remove("tax_collector");
-    assert_eq!(game.governor_effect(0, city, "gold_per_pop"), 2.0);
+    assert_eq!(
+        game.governor_effect(0, city, crate::name!("gold_per_pop")),
+        2.0
+    );
     assert!(game.city_yields(city).gold > without_tax.city_yields(city).gold);
 
     let center = game.cities[&city].pos;

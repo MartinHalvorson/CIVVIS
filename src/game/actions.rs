@@ -1013,7 +1013,7 @@ impl Game {
             || self.tree_effect(pid, "airport_transfer") <= 0.0
             || !self.district_is_family(Name::new(&origin_district), crate::name!("aerodrome"))
             || !self.district_is_active(origin, origin_district, unit.pos)
-            || self.city_building_effect(origin, "airlift") <= 0.0
+            || self.city_building_effect(origin, crate::name!("airlift")) <= 0.0
         {
             return vec![];
         }
@@ -1022,7 +1022,7 @@ impl Game {
             .filter_map(|city| {
                 if city.owner != pid
                     || city.id == origin.id
-                    || self.city_building_effect(city, "airlift") <= 0.0
+                    || self.city_building_effect(city, crate::name!("airlift")) <= 0.0
                 {
                     return None;
                 }
@@ -1243,7 +1243,8 @@ impl Game {
     }
 
     pub(super) fn consume_unit_attack(&mut self, uid: u32) {
-        let move_after = self.promotion_effect(&self.units[&uid], "move_after_attack") > 0.0;
+        let move_after =
+            self.promotion_effect(&self.units[&uid], crate::name!("move_after_attack")) > 0.0;
         let unit = self.units.get_mut(&uid).unwrap();
         unit.attacks_left = (unit.attacks_left - 1).max(0);
         if unit.attacks_left == 0 && !move_after {
@@ -1356,7 +1357,7 @@ impl Game {
         if !self.can_found_city(uid) {
             return Err("cannot found city here".into());
         }
-        if self.policy_effect(pid, "no_settling") > 0.0 {
+        if self.policy_effect(pid, crate::name!("no_settling")) > 0.0 {
             return Err("Isolationism forbids settling new cities".into());
         }
         let cid = self.found_city_for(pid, u.pos, None);
@@ -1460,7 +1461,7 @@ impl Game {
             city.pop = 3;
         }
         if let Some(religion) = self.players[pid].religion.clone() {
-            if self.religion_belief_effect(&religion, "new_city_religion") > 0.0 {
+            if self.religion_belief_effect(&religion, crate::name!("new_city_religion")) > 0.0 {
                 city.pressure.insert(religion, 1000.0);
             }
         }
@@ -1734,7 +1735,7 @@ impl Game {
             return Vec::new();
         };
         let scale = self.builder_harvest_scale(pid)
-            * (1.0 + self.governor_effect(pid, cid, "harvest_pct") / 100.0);
+            * (1.0 + self.governor_effect(pid, cid, crate::name!("harvest_pct")) / 100.0);
         // The host pays a clearing's Production at the production bonus of
         // whatever the owning city is building. Measured on live Deity games,
         // 2026-11-09/10: with no card a Forest paid exactly the plain rule (5
@@ -2480,7 +2481,8 @@ impl Game {
         // Goes to 11 adds Tourism to each distinct nearby civilization. Price
         // the known audience, as the concert below already does for its actual
         // recipients; unrevealed cities must not inform an AI's venue choice.
-        let nearby_pct = self.promotion_effect(unit, "rock_nearby_tourism_pct") / 100.0;
+        let nearby_pct =
+            self.promotion_effect(unit, crate::name!("rock_nearby_tourism_pct")) / 100.0;
         let host = self.cities[&host_city].owner;
         let nearby = if nearby_pct > 0.0 {
             self.cities
@@ -2721,7 +2723,8 @@ impl Game {
             Some("MOMENT_UNIT_TOURISM_BOMB_FIRST_IN_WORLD"),
         );
 
-        let nearby_pct = self.promotion_effect(&band, "rock_nearby_tourism_pct") / 100.0;
+        let nearby_pct =
+            self.promotion_effect(&band, crate::name!("rock_nearby_tourism_pct")) / 100.0;
         if nearby_pct > 0.0 {
             let nearby: BTreeSet<usize> = self
                 .cities
@@ -2740,13 +2743,15 @@ impl Game {
                 self.add_targeted_tourism(pid, target, tourism * nearby_pct);
             }
         }
-        self.players[pid].gold += tourism * self.promotion_effect(&band, "rock_gold_pct") / 100.0;
-        let loyalty_loss = self.promotion_effect(&band, "rock_loyalty_loss");
+        self.players[pid].gold +=
+            tourism * self.promotion_effect(&band, crate::name!("rock_gold_pct")) / 100.0;
+        let loyalty_loss = self.promotion_effect(&band, crate::name!("rock_loyalty_loss"));
         if loyalty_loss > 0.0 {
             let loyalty = (self.cities[&host_city].loyalty - loyalty_loss).max(0.0);
             self.cities.get_mut(&host_city).unwrap().loyalty = loyalty;
         }
-        let converts_religion = self.promotion_effect(&band, "rock_convert_city") > 0.0;
+        let converts_religion =
+            self.promotion_effect(&band, crate::name!("rock_convert_city")) > 0.0;
         if converts_religion {
             if let Some(religion) = self.players[pid].religion.clone() {
                 // The promotion converts the host city outright, so the
@@ -2885,7 +2890,7 @@ impl Game {
         }
         self.game_speed.scale(base)
             * (self.world_era as f64 + 1.0)
-            * (1.0 + self.policy_effect(pid, "pillage_yield_pct") / 100.0)
+            * (1.0 + self.policy_effect(pid, crate::name!("pillage_yield_pct")) / 100.0)
     }
 
     pub(super) fn grant_pillage_yield(
@@ -2960,7 +2965,7 @@ impl Game {
         // Loot is a flat Standard-speed +50 Gold from every coastal raid; it
         // is not a percentage of a Gold reward and also applies to heal raids.
         if coastal {
-            let loot = self.promotion_effect(&self.units[&uid], "coastal_raid_gold");
+            let loot = self.promotion_effect(&self.units[&uid], crate::name!("coastal_raid_gold"));
             self.players[pid].gold += self.game_speed.scale(loot);
         }
     }
@@ -3147,7 +3152,9 @@ impl Game {
             .unit_ids_at(pos)
             .iter()
             .filter(|id| self.units[id].owner == pid && self.units[id].kind == "aircraft_carrier")
-            .map(|id| 2 + self.promotion_effect(&self.units[id], "aircraft_slots") as i32)
+            .map(|id| {
+                2 + self.promotion_effect(&self.units[id], crate::name!("aircraft_slots")) as i32
+            })
             .sum::<i32>();
         capacity
     }
@@ -3225,7 +3232,9 @@ impl Game {
                         .get(city_id)
                         .is_some_and(|city| city.owner == unit.owner)
                 })
-                .map(|city_id| self.governor_effect(unit.owner, city_id, "air_defense"))
+                .map(|city_id| {
+                    self.governor_effect(unit.owner, city_id, crate::name!("air_defense"))
+                })
                 .unwrap_or(0.0)
         } else {
             0.0
@@ -3253,8 +3262,8 @@ impl Game {
 
     pub(super) fn air_matchup_bonus(&self, unit: &Unit, opponent: &Unit) -> f64 {
         match self.rules.units[opponent.kind].promotion_class.as_str() {
-            "air_fighter" => self.promotion_effect(unit, "vs_air_fighter"),
-            "air_bomber" => self.promotion_effect(unit, "vs_air_bomber"),
+            "air_fighter" => self.promotion_effect(unit, crate::name!("vs_air_fighter")),
+            "air_bomber" => self.promotion_effect(unit, crate::name!("vs_air_bomber")),
             _ => 0.0,
         }
     }
@@ -3497,7 +3506,7 @@ impl Game {
             .get(pid)
             .and_then(|player| player.religion.as_deref())
             .is_some_and(|religion| {
-                self.religion_belief_effect(religion, "warrior_monk_purchase") > 0.0
+                self.religion_belief_effect(religion, crate::name!("warrior_monk_purchase")) > 0.0
             })
     }
 
@@ -3587,7 +3596,9 @@ impl Game {
                 return host.filter(|_| !self.purchase_is_blocked(cid, &plain));
             }
         }
-        if unit == "settler" && (city.pop < 2 || self.policy_effect(pid, "no_settling") > 0.0) {
+        if unit == "settler"
+            && (city.pop < 2 || self.policy_effect(pid, crate::name!("no_settling")) > 0.0)
+        {
             return None;
         }
 
@@ -3660,7 +3671,10 @@ impl Game {
                             .values()
                             .filter(|city| city.owner == pid)
                             .map(|city| {
-                                self.city_building_effect(city, "faith_purchase_land_units")
+                                self.city_building_effect(
+                                    city,
+                                    crate::name!("faith_purchase_land_units"),
+                                )
                             })
                             .sum::<f64>()
                             > 0.0);
@@ -3687,15 +3701,18 @@ impl Game {
         // normal price: live civvis-20261110T192354Z held the card t171-185
         // and the band's Faith quote kept its +50 step (450 to 650).
         if unit != "rock_band" {
-            purchase_discount -= self.policy_effect(pid, "unit_purchase_cost_pct");
+            purchase_discount -= self.policy_effect(pid, crate::name!("unit_purchase_cost_pct"));
         }
         if religious && currency == "faith" {
             if let Some(religion) = self.city_religion(city) {
-                purchase_discount +=
-                    self.religion_belief_effect(religion, "religious_unit_faith_discount_pct");
+                purchase_discount += self.religion_belief_effect(
+                    religion,
+                    crate::name!("religious_unit_faith_discount_pct"),
+                );
             }
             if unit == "guru" {
-                purchase_discount += self.empire_wonder_effect(pid, "guru_purchase_discount_pct");
+                purchase_discount +=
+                    self.empire_wonder_effect(pid, crate::name!("guru_purchase_discount_pct"));
             }
         }
         if currency == "faith"
@@ -3888,7 +3905,7 @@ impl Game {
         }
         // Isolationism closes the frontier to Gold and Faith as well as to
         // Production, which is what makes it a real cost rather than a detour.
-        if unit == "settler" && self.policy_effect(pid, "no_settling") > 0.0 {
+        if unit == "settler" && self.policy_effect(pid, crate::name!("no_settling")) > 0.0 {
             return Err("Isolationism forbids buying Settlers".into());
         }
         if rock_band || naturalist {
@@ -3964,7 +3981,10 @@ impl Game {
                             .values()
                             .filter(|city| city.owner == pid)
                             .map(|city| {
-                                self.city_building_effect(city, "faith_purchase_land_units")
+                                self.city_building_effect(
+                                    city,
+                                    crate::name!("faith_purchase_land_units"),
+                                )
                             })
                             .sum::<f64>()
                             > 0.0);
@@ -4040,15 +4060,18 @@ impl Game {
             // spawn_unit applies a building bonus only at a city center.
             // A purchase always takes that bonus from its source city,
             // including when district placement or overflow moves it away.
-            let source_bonus = self
-                .city_building_effect(&self.cities[&cid], "religious_unit_spread_charges")
-                as i32;
+            let source_bonus = self.city_building_effect(
+                &self.cities[&cid],
+                crate::name!("religious_unit_spread_charges"),
+            ) as i32;
             let spawned_bonus = self
                 .city_at(self.units[&placed].pos)
                 .filter(|city| self.cities[city].owner == pid)
                 .map_or(0, |city| {
-                    self.city_building_effect(&self.cities[&city], "religious_unit_spread_charges")
-                        as i32
+                    self.city_building_effect(
+                        &self.cities[&city],
+                        crate::name!("religious_unit_spread_charges"),
+                    ) as i32
                 });
             self.units.get_mut(&placed).unwrap().charges += source_bonus - spawned_bonus;
         }
@@ -4056,7 +4079,7 @@ impl Game {
         self.apply_training_district_effects(cid, placed);
         if unit == "builder" {
             self.units.get_mut(&placed).unwrap().charges +=
-                self.governor_effect(pid, cid, "builder_charges") as i32;
+                self.governor_effect(pid, cid, crate::name!("builder_charges")) as i32;
         }
         if religious || warrior_monk {
             self.units.get_mut(&placed).unwrap().religion =
@@ -4261,7 +4284,10 @@ impl Game {
             })
         });
         let jesuit = religion.is_some_and(|religion| {
-            self.religion_belief_effect(religion, "faith_purchase_science_culture_buildings") > 0.0
+            self.religion_belief_effect(
+                religion,
+                crate::name!("faith_purchase_science_culture_buildings"),
+            ) > 0.0
                 && matches!(district.as_str(), "campus" | "theater_square")
         });
         let religious_requirements = spec
@@ -4348,8 +4374,10 @@ impl Game {
             return Err("not your city".into());
         }
         let allowed = match currency {
-            "faith" => self.governor_effect(pid, cid, "faith_purchase_districts") > 0.0,
-            "gold" => self.governor_effect(pid, cid, "gold_purchase_districts") > 0.0,
+            "faith" => {
+                self.governor_effect(pid, cid, crate::name!("faith_purchase_districts")) > 0.0
+            }
+            "gold" => self.governor_effect(pid, cid, crate::name!("gold_purchase_districts")) > 0.0,
             _ => false,
         };
         if !allowed {
@@ -4526,7 +4554,8 @@ impl Game {
                 .copied()
                 .unwrap_or(0.0);
         let rock_band = unit.kind == "rock_band";
-        let promotion_keeps_moves = self.civ_effect(pid, "promote_no_finish_moves") > 0.0;
+        let promotion_keeps_moves =
+            self.civ_effect(pid, crate::name!("promote_no_finish_moves")) > 0.0;
         let distinguished = {
             let unit = self.units.get_mut(&uid).unwrap();
             let extra_first_promotion = unit.extra_first_promotion;
@@ -5790,7 +5819,7 @@ impl Game {
             _ => 1.0,
         };
         let surcharge = if self.rules.units[unit.kind].class == "military" {
-            self.policy_effect(pid, "unit_maintenance_surcharge")
+            self.policy_effect(pid, crate::name!("unit_maintenance_surcharge"))
         } else {
             0.0
         };
@@ -5807,7 +5836,8 @@ impl Game {
             Some(bill) => bill.max(0.0),
             None => self.rules.units[unit.kind].maintenance * formation,
         };
-        (base - self.policy_effect(pid, "unit_maintenance_discount")).max(0.0) + surcharge
+        (base - self.policy_effect(pid, crate::name!("unit_maintenance_discount"))).max(0.0)
+            + surcharge
     }
 
     pub(crate) fn unit_gold_maintenance(&self, pid: usize) -> f64 {
@@ -5915,7 +5945,8 @@ impl Game {
             .max(0) as f64;
         (self.rules.wmds["nuclear_device"].maintenance * nuclear
             + self.rules.wmds["thermonuclear_device"].maintenance * thermonuclear)
-            * (1.0 - self.policy_effect(pid, "nuclear_maintenance_discount_pct") / 100.0)
+            * (1.0
+                - self.policy_effect(pid, crate::name!("nuclear_maintenance_discount_pct")) / 100.0)
     }
 
     pub(super) fn contracted_gold_per_turn(&self, pid: usize) -> f64 {
@@ -7049,11 +7080,11 @@ impl Game {
             .unwrap_or(0.0);
         let mut influence = (base_influence
             + economic_alliance_influence
-            + self.policy_effect(pid, "influence_per_turn")
+            + self.policy_effect(pid, crate::name!("influence_per_turn"))
             + building_effect("influence_points"))
             * (1.0 + self.gov_effects(pid).influence_pct / 100.0);
         // Rogue State: ROGUESTATE_DISABLE_INFLUENCE — no points, no Envoys.
-        if self.policy_effect(pid, "no_influence") > 0.0 {
+        if self.policy_effect(pid, crate::name!("no_influence")) > 0.0 {
             influence = 0.0;
         }
         let player = &mut self.players[pid];
@@ -7089,7 +7120,7 @@ impl Game {
             || !self.enforces_borders(territory_owner)
             || (self.players[territory_owner].is_minor
                 && (self.suzerain_of(territory_owner) == Some(mover)
-                    || self.policy_effect(mover, "open_city_state_borders") > 0.0
+                    || self.policy_effect(mover, crate::name!("open_city_state_borders")) > 0.0
                     // João III's Porta do Cerco is folded into Portugal's
                     // modeled Casa da Índia ability record.
                     || self.has_ability(mover, "casa_da_india")))

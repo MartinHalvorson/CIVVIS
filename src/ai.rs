@@ -8107,16 +8107,17 @@ impl BasicAi {
     }
 
     fn civ_building(g: &Game, pid: usize, cid: u32, family: &str) -> Option<Item> {
-        let base = Item::Building {
-            building: Name::new(family),
-        };
+        // Interned once: the search below asks it of every building in the
+        // ruleset, and interning takes the registry's lock and a hash.
+        let family = Name::new(family);
+        let base = Item::Building { building: family };
         if g.can_produce(pid, cid, &base) {
             return Some(base);
         }
         g.rules
             .buildings
             .iter()
-            .filter(|(_, spec)| spec.replaces == Some(Name::new(family)))
+            .filter(|(_, spec)| spec.replaces == Some(family))
             .map(|(name, _)| Item::Building { building: *name })
             .find(|item| g.can_produce(pid, cid, item))
     }

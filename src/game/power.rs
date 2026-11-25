@@ -69,17 +69,23 @@ impl Game {
                     improvement.as_str(),
                     "wind_farm" | "solar_farm" | "offshore_wind_farm" | "geothermal_plant"
                 ) {
-                    renewable += self.governor_effect(city.owner, city.id, "renewable_power_bonus");
+                    renewable += self.governor_effect(
+                        city.owner,
+                        city.id,
+                        crate::name!("renewable_power_bonus"),
+                    );
                 }
             }
         }
         if self.city_has_district_family(city, crate::name!("spaceport")) {
-            renewable += self.policy_effect(city.owner, "spaceport_power");
+            renewable += self.policy_effect(city.owner, crate::name!("spaceport_power"));
         }
         if self.city_has_active_building_family(city, crate::name!("hydroelectric_dam")) {
-            renewable += self.governor_effect(city.owner, city.id, "renewable_power_bonus");
+            renewable +=
+                self.governor_effect(city.owner, city.id, crate::name!("renewable_power_bonus"));
         }
-        renewable *= 1.0 + self.empire_wonder_effect(city.owner, "renewable_power_pct") / 100.0;
+        renewable *= 1.0
+            + self.empire_wonder_effect(city.owner, crate::name!("renewable_power_pct")) / 100.0;
         renewable + self.gov_effects(city.owner).power_per_city
     }
 
@@ -175,7 +181,11 @@ impl Game {
                             )
                             .filter(|position| self.wdist(*position, city.pos) <= 6)
                             .map(|_| {
-                                self.governor_effect(pid, source.id, "power_per_resource_bonus")
+                                self.governor_effect(
+                                    pid,
+                                    source.id,
+                                    crate::name!("power_per_resource_bonus"),
+                                )
                             })
                         })
                         .fold(None::<f64>, |best, candidate| {
