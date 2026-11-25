@@ -564,3 +564,88 @@ fn halves_say_up_to_which_turn_they_hold_the_same_world() {
         prints_of(&mut panes, &main, "b-x")
     );
 }
+
+/// Doctor Strange's Civ 6 keeps a dozen worlds as halves of one split, and
+/// the socket server answers each page on a thread of its own. A request a
+/// half answers alone holds that half and nothing else (`Panes::alone`), so
+/// the worlds play at the same time; anything that concerns two halves, or a
+/// half not yet seated, is answered as before, holding them all.
+#[test]
+fn a_half_asked_something_of_its_own_is_answered_alone() {
+    let main = small_table();
+    let mut panes = super::Panes::default();
+    fn asked<'a>(method: &'a str, path: &'a str, parsed: &'a Value) -> super::Asked<'a> {
+        super::Asked {
+            method,
+            path,
+            target: path,
+            parsed,
+        }
+    }
+    let nothing = Value::Null;
+    let step = json!({"op": "step"});
+    let copy = json!({"op": "copy", "from": "a-z"});
+    let twin = json!({"op": "step", "twin": "b-z"});
+
+    // A half not yet seated is seated holding the main session.
+    assert!(panes
+        .alone("a-z", &asked("GET", "/state", &nothing))
+        .is_none());
+    asked_of(&mut panes, &main, "a-z", "GET", "/state", &Value::Null);
+    asked_of(&mut panes, &main, "b-z", "GET", "/state", &Value::Null);
+    assert!(
+        panes.alike("a-z", "b-z"),
+        "both are the main session as it stood"
+    );
+
+    // Reading is answered alone, and leaves the two alike.
+    assert!(panes
+        .alone("a-z", &asked("GET", "/state", &nothing))
+        .is_some());
+    assert!(panes.alike("a-z", "b-z"));
+    // Playing one of two alike halves parts them first, which is `serve`'s.
+    assert!(panes
+        .alone("a-z", &asked("POST", "/debug", &step))
+        .is_none());
+    // So are a copy and a request that names its twin.
+    assert!(panes
+        .alone("b-z", &asked("POST", "/debug", &copy))
+        .is_none());
+    assert!(panes
+        .alone("a-z", &asked("POST", "/debug", &twin))
+        .is_none());
+
+    // Once apart, a half that plays is answered alone, and is put on a line
+    // of its own as `serve` would put it.
+    asked_of(
+        &mut panes,
+        &main,
+        "a-z",
+        "POST",
+        "/debug",
+        &json!({"op": "step"}),
+    );
+    assert!(!panes.alike("a-z", "b-z"));
+    let session = panes
+        .alone("b-z", &asked("POST", "/debug", &step))
+        .expect("a half of its own is answered alone");
+    let played = super::answer(
+        &mut super::held(&session),
+        &asked("POST", "/debug", &step),
+        None,
+    )
+    .expect("a world request")
+    .0;
+    assert_eq!(played["turn"], json!(2));
+    assert!(!panes.alike("a-z", "b-z"));
+    assert_eq!(
+        asked_of(&mut panes, &main, "b-z", "GET", "/state", &Value::Null)["turn"],
+        json!(2)
+    );
+
+    // A half answered alone still closes the split as any other does.
+    drop(session);
+    let mut main = main;
+    assert_eq!(panes.adopt("b-z", &mut main), Ok(()));
+    assert_eq!(main.game.turn, 2);
+}

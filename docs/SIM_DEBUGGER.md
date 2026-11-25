@@ -1622,6 +1622,21 @@ and the swans themselves in `src/game/black_swan_tests.rs`. Two games are
 played on through every kind of swan, with the future played ahead after
 each, in `a_game_is_played_on_through_every_black_swan`.
 
+### Many worlds on the desktop program
+
+The desktop program's server answers each page on a thread of its own, but a
+half of a split was answered holding the lock on every half and the lock on
+the main game for the whole of its turn: Doctor Strange's worlds played one
+after another there, and the page's own requests waited behind each turn.
+Each half now has a lock of its own (`Half::session`). A request to a half
+that is already seated, that copies nothing, names no twin and does not part
+it from a half it is alike with, takes the halves' lock only to find its half
+and is answered holding that half alone (`Panes::alone`, `socket::route`), so
+the worlds play at the same time and the main game is free. Seating a half,
+a copy, a twin and a save are answered as before. Closing the split waits for
+the kept half's last answer (`Panes::adopt`). The published build's engines
+each hold one world already ("A world's own engine" under Forks).
+
 ### What a turn of many worlds costs the page
 
 Every world is a page in a frame of the same site, so all of them, and the
