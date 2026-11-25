@@ -251,10 +251,12 @@
   /* The switch between the levels of Civilization VI's AI (operator,
      2026-11-24: "switching between lv 8, 7, 6, 5 to highlight that smarter
      ai picks up speed"). It is the insight as a bar chart: a row per level,
-     Lv 8 Deity first, its bar as long as the turn half of its games were
+     Lv 5 King first and at the top, and the one the page opens on (operator,
+     2026-11-25: "list 5 6 7 8. default to 5 at the top"; Lv 8 Deity stood
+     first until then), its bar as long as the turn half of its games were
      over by, all four from one zero, so the stronger the AI the shorter
-     its bar. A row is a button, and the row pressed is the level the chart
-     under it draws: its bar is white, like the line that marks the same
+     its bar, and the bars shorten down the list. A row is a button, and
+     the row pressed is the level the chart under it draws: its bar is white, like the line that marks the same
      turn on the chart, and the others are grey. */
   .ins-rows-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 16px; margin: 16px 0 6px; }
   .ins-rows-title { margin: 0; color: #fff; font-size: 14px; font-weight: 700; }
@@ -446,7 +448,11 @@
            chosen to move fast. as ai gets smarter, expect the pace of
            progress to speed up"). The chart is Win Analytics' "CIVVIS vs
            Lv 8 Deity AI", every victory by the turn it landed on, and the
-           switch over it lists the four levels in the order he gave them. -->
+           switch over it lists the four levels from the weakest up, Lv 5
+           first and shown as the page opens (operator, 2026-11-25: "in
+           smart ai picks up speed, list 5 6 7 8. default to 5 at the
+           top"), so reading down the list is the AI getting smarter and
+           the games ending sooner. -->
       <section class="ins-insight" id="ins-speed" aria-labelledby="ins-speed-title">
         <p class="ins-kicker">Insight 1</p>
         <h2 class="ins-title" id="ins-speed-title">Smarter AI picks up speed</h2>
@@ -457,10 +463,10 @@
           <button type="button" class="ins-play" id="ins-speed-play" aria-pressed="false" hidden>Play Lv 5 to Lv 8</button>
         </div>
         <div class="ins-levels" id="ins-speed-levels" role="group" aria-labelledby="ins-speed-rows-title">
-          <button type="button" data-level="8" data-rung="Deity" aria-pressed="true"><span class="ins-level-name"><b>Lv 8</b>Deity</span><span class="ins-level-track"><span class="ins-level-bar" data-bar></span><span class="ins-level-turn" data-turn></span></span><span class="ins-level-games" data-games></span></button>
-          <button type="button" data-level="7" data-rung="Immortal" aria-pressed="false"><span class="ins-level-name"><b>Lv 7</b>Immortal</span><span class="ins-level-track"><span class="ins-level-bar" data-bar></span><span class="ins-level-turn" data-turn></span></span><span class="ins-level-games" data-games></span></button>
+          <button type="button" data-level="5" data-rung="King" aria-pressed="true"><span class="ins-level-name"><b>Lv 5</b>King</span><span class="ins-level-track"><span class="ins-level-bar" data-bar></span><span class="ins-level-turn" data-turn></span></span><span class="ins-level-games" data-games></span></button>
           <button type="button" data-level="6" data-rung="Emperor" aria-pressed="false"><span class="ins-level-name"><b>Lv 6</b>Emperor</span><span class="ins-level-track"><span class="ins-level-bar" data-bar></span><span class="ins-level-turn" data-turn></span></span><span class="ins-level-games" data-games></span></button>
-          <button type="button" data-level="5" data-rung="King" aria-pressed="false"><span class="ins-level-name"><b>Lv 5</b>King</span><span class="ins-level-track"><span class="ins-level-bar" data-bar></span><span class="ins-level-turn" data-turn></span></span><span class="ins-level-games" data-games></span></button>
+          <button type="button" data-level="7" data-rung="Immortal" aria-pressed="false"><span class="ins-level-name"><b>Lv 7</b>Immortal</span><span class="ins-level-track"><span class="ins-level-bar" data-bar></span><span class="ins-level-turn" data-turn></span></span><span class="ins-level-games" data-games></span></button>
+          <button type="button" data-level="8" data-rung="Deity" aria-pressed="false"><span class="ins-level-name"><b>Lv 8</b>Deity</span><span class="ins-level-track"><span class="ins-level-bar" data-bar></span><span class="ins-level-turn" data-turn></span></span><span class="ins-level-games" data-games></span></button>
         </div>
 
         <div class="ins-chart">
@@ -469,7 +475,7 @@
                Turn Length and Victory Type Histogram of All Games"). -->
           <header class="ins-chart-head">
             <div class="ins-chart-name">
-              <h3 class="ins-chart-title" id="ins-speed-chart-title" data-say="CIVVIS vs {level} AI">CIVVIS vs Lv 8 Deity AI</h3>
+              <h3 class="ins-chart-title" id="ins-speed-chart-title" data-say="CIVVIS vs {level} AI">CIVVIS vs Lv 5 King AI</h3>
               <p class="ins-chart-kind">Turn Length and Victory Type Histogram of All Games</p>
             </div>
             <p class="ins-counted" id="ins-speed-counted"></p>
