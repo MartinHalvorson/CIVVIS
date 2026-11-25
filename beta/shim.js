@@ -368,8 +368,11 @@
   const homes = new Map();
   const moving = new Map();
   // The engine each world's future is played out on, by the world's pane
-  // name (`askScout`): {engine, making}.
+  // name (`askScout`): {engine, making}. How many there are is in the report
+  // on this page alone (`window.__civvisBeta.scouts`), which is how the page
+  // knows a world's future has an engine of its own to be played on.
   const scouts = new Map();
+  if (HOMES) report.scouts = 0;
   // What each engine last said it holds and has spent (`worker.js` puts it on
   // every answer), for the page's own reading of what it all costs.
   const meters = new Map();
@@ -389,7 +392,7 @@
   // report (`window.__civvisBeta.homes`).
   function counted() {
     report.homes = new Set(homes.values()).size;
-    report.scouts = scouts.size;
+    if (HOMES) report.scouts = scouts.size;
   }
 
   // A new engine that is `from` as it stands: its memory between two of its

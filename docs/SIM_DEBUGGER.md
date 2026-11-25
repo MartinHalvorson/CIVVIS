@@ -1076,6 +1076,26 @@ What it costs is memory: a world's engine holds its world and a copy of the
 page's engine as it stood when the world was seated, which on this page is
 the opening turns.
 
+A world's whole future is played on one more engine, its scout (operator
+2026-11-24: "each branch in doctor strange's civ 6 should simulate out to
+the end of the branch. we can multithread this across the processor to
+help"). The page asks for it by the world's name:
+
+| request | what the shim does |
+|---|---|
+| `<engine request>?pane=<world>&scout=new` | forks the world's engine as it stands, in place of any scout the world had, and has the fork answer |
+| `<engine request>?pane=<world>&scout=1` | has the world's scout answer, or a new one where it has none |
+| `<engine request>?pane=<world>&scout=done` | lets the scout go, and asks no engine anything |
+
+A scout holds the world as it stood when it was forked, so the page asks
+for a new one when the world's line has been played another way. One whose
+world's page has gone is let go with it, the split closed onto a world lets
+them all go, and `/machine-metrics` counts a scout with the engines
+(`window.__civvisBeta.scouts` says how many there are, on this page only).
+A scout is the world's engine's memory over again for as long as its game
+takes to play out. Off the published build `scout` means nothing: the same
+request is answered by the world itself.
+
 ## What a search costs
 
 A search plays many futures of one world and reads how each came out. These
@@ -1549,6 +1569,62 @@ path). these should alert on the top section out in the distance."
   the world's line at the turn it happens on, out in the distance, which
   comes down the board as the turns are played: ☢ in red with a ring that
   beats, always named; the rest named where there is room.
+- **Each branch is played out to the end of its game.** Operator,
+  2026-11-24: "each branch in doctor strange's civ 6 should simulate out to
+  the end of the branch. we can multithread this across the processor to
+  help. The top of each branch should have either: no nuclear war in the
+  next N turns, no nuclear war, or nuclear war in N turns (Era). we should
+  note wars as well. we should optimize the simulation speed so we simulate
+  out pretty quickly. Can build out the most likely paths at all time."
+  - *The whole future.* Past the dozen turns a world holds, its future is
+    played to the end of its game by the engine's `foresee`
+    (`Session::debug_foresee`, `Seer`): a copy of the world at the end of
+    its line, seated with the agents that play on from there, played on a
+    stretch a request. It is the future the world itself goes on to play:
+    the engine is deterministic, and every turn foreseen carries the print
+    the world's own turn is given (`debug.worlds`), which is how the page
+    knows a future is still its world's (`strangeSightStale`).
+  - *Fast, because it keeps nothing.* A turn played ahead (`ahead`) keeps a
+    mark, megabytes of the world copied wherever the next turn writes to
+    it, so that it can be shown and walked back to. The copy keeps no turn:
+    it is the only holder of what it holds and a turn writes to it in
+    place. It reads nothing of the seat on the way and is given no state
+    document. What it keeps is what a forecast says: each nuclear
+    detonation and each war declared, with the turn and the world era it
+    happens in, how the game ends, and the print of each turn.
+  - *On every core.* On the published build each world's future is played
+    on an engine of its own, a scout (`beta/shim.js`, "a world's scout"): a
+    fork of the world's engine as it stands, on a thread of its own, asked
+    nothing else. The page asks every world's scout at once, as many as
+    there are cores to spare (`strangeForesee`), so the futures of all the
+    worlds are played side by side and a world's own turn never waits
+    behind its future. A scout is let go when its game has ended. A game
+    served by this computer has one process for every world, so there a
+    world's future is played by the world itself, one world at a time while
+    the worlds stand still.
+  - *Always.* A world is asked the moment it is open and again each time it
+    answers, until its game has ended; and anew, from the end of its line
+    as it then is, when its line has been played another way: another
+    player strategy in its seat, a black swan, a branch.
+  - *The sign over each branch* (`strangeFate`, `.strange-fate`), over the
+    far end of its line at the top of the tree, in the branch's colour,
+    says one of three things, in turns from the open one so that it counts
+    down as time runs: **Nuclear war in N turns (Atomic Era)**, red, with
+    the world era it comes in (one that has begun says since which turn);
+    **No nuclear war**, when the future has been played to the end of the
+    game with none; **No nuclear war in the next N turns**, as far as the
+    future has been played so far, N growing as it is played on. Under it
+    the next war to be declared, in how many turns and by whom on whom, and
+    how many more follow, or that there are none ahead and how the game
+    ends. A bar along its foot is how much of the game has been played
+    through, and the pointer on it lists every detonation and war ahead and
+    how fast it is being played. With many worlds open the signs say less
+    and stand in two rows (`strangeFates`).
+  - *On the line.* Past the turns a world holds, its line is drawn thin as
+    far as its future has been played, and stops where the game ends in it;
+    the dashes go on only where nothing has been played. The detonations,
+    wars and the end foreseen are signs on it at their turns, as the ones
+    seen in the turns held are.
 - **Branch is one step.** Operator, 2026-11-24: "when we branch, we should
   select the player strategy and make the branch. in one step. Branch:
   1100-MoonshotMaven (player strat dropdown)". The Branch control is a
@@ -1612,10 +1688,17 @@ path). these should alert on the top section out in the distance."
 against the toy engine: the opening seats, the layout, the names and colours,
 the one-step Branch into a third world, the pointer over a box, going back,
 following, the locked run, the divide, deleting a world of each kind and
-opening one again, the meter, the futures and their alerts, time running
+opening one again, the meter, the futures and their alerts, each world's
+future played to the end of its game with the sign over each branch saying
+what is coming (a world at a time, and every world at once where each has a
+scout), time running
 through turns played ahead, a black swan on every locked world and on the
 followed one alone, and the narrow window, which has the one timeline
-and says why. The engine's side is `ahead_plays_the_turns_to_come_and_comes_back_to_the_open_turn`
+and says why. `beta/homes_test.py` holds what a scout is on the shim as it
+ships. The engine's side is `ahead_plays_the_turns_to_come_and_comes_back_to_the_open_turn`,
+`foresee_plays_the_future_to_the_end_of_the_game_and_leaves_the_world_where_it_is`,
+`a_forecast_is_kept_along_its_line_and_made_again_off_it`,
+`a_forecast_notes_the_detonations_and_the_wars_declared_on_the_way`
 and `a_black_swan_strikes_the_open_turn_and_lets_go_of_the_turns_ahead`
 (`src/server/debugger_tests.rs`), the pane names in `src/server/panes_tests.rs`,
 and the swans themselves in `src/game/black_swan_tests.rs`. Two games are
@@ -1742,6 +1825,7 @@ operation leaves the world as it was.
 | `play` | `turns`, 1 to 100: that many `step`s, asked for once; optional `strategy`. It stops early where a run stops (a breakpoint, the end of the game, a Must avoid broken for good), and the answer carries `readings`: how the seat stood as each turn it played opened, in the keys of a lean answer's `seat`; and, once an `objective` is set, `terms` and `killed` |
 | `walk` | optional `turn`, the furthest to go; optional `era`: true to stop where a new era begins; optional `strategy`. Goes on along the kept turns the seated Civ AI would only play again, plays nothing, and is never refused: with none to take the world stays where it is |
 | `status` | optional `strategy`: seat that Civ AI and play nothing, which is how the page says a pick |
+| `foresee` | `turns`, 0 to 100; optional `strategy`, `anew`, `known`. Plays the world's future on towards the end of its game, that many turns of it, on a copy the world keeps for it (`Seer`): the world at the end of the seat's line, with the agents that play on from there, which keeps none of the turns it plays. The world and its kept turns are left as they stand. The first request makes the copy and each one after plays it further; it is made again when it is no longer this world's future (another Civ AI seated, a turn of the line that is another world than the one foreseen, something done in the open turn it was made on) or the request says `anew`. The answer carries `foresight`: `from` and `base` (the turn it was made on and that world's print), `seat`, `turn` (how far it has been played), `done` (the game has ended in it), `limit`, `played`, `worlds` (the print of each turn it opened, as `debug.worlds` gives a mark's), `eras`, `seen` (each detonation and each war declared, on record when it was made or seen since, and how the game ends: `turn`, `kind` of `nuclear`, `war`, `won` or `over`, `text`, `era`, `era_name`), `detonations`, `victory` and `anew` (this request made it). `known` is the turn the page was last told it stood on: `worlds` and `seen` then leave out what it was told before, and `since` says so. No turns only reads. Refused in the middle of a round |
 | `black_swan` | optional `kind`, one of `debug.swan_kinds` by its `id`; optional `seed`. Strikes a black swan on the world as it stands (see "Black swans"): the one named, or one drawn by the seed among those the world has something for; a request with no seed is given one off the world's own random stream. The open turn is marked again and the turns kept ahead of it are let go of. The answer carries `black_swan`: its `turn`, `kind`, `name`, `text` (what happened, with its numbers), `sites`, the `player` it struck where it struck one, `until` and whether it is still `ongoing`. Refused in the middle of a round, and where the world has nothing for the swan named |
 | `step_seat`, `finish_round` | none |
 | `reveal` | `on`: true or false |

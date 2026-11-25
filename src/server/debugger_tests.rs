@@ -691,7 +691,10 @@ fn a_future_played_a_turn_at_a_time_is_the_one_played_in_one_go() {
 fn foreseen(session: &mut Session, request: Value) -> Value {
     let answer = session.debug(&request);
     assert_eq!(answer["error"], Value::Null);
-    assert!(answer["foresight"].is_object(), "the answer says what is seen");
+    assert!(
+        answer["foresight"].is_object(),
+        "the answer says what is seen"
+    );
     answer["foresight"].clone()
 }
 
@@ -817,7 +820,10 @@ fn foresee_plays_the_future_to_the_end_of_the_game_and_leaves_the_world_where_it
     }
     assert!(run.game.is_finished());
     assert_eq!(last["turn"].as_u64(), Some(u64::from(run.game.turn)));
-    let winner = run.game.winner.map(|seat| run.game.players[seat].civ.clone());
+    let winner = run
+        .game
+        .winner
+        .map(|seat| run.game.players[seat].civ.clone());
     match winner {
         Some(civ) => assert_eq!(end["text"], json!(format!("{civ} wins the game"))),
         None => assert_eq!(end["kind"], json!("over")),
@@ -861,13 +867,13 @@ fn a_forecast_is_kept_along_its_line_and_made_again_off_it() {
         session.debug(&json!({"op": "ahead", "turns": 4, "strategy": "jack", "lean": true}));
     assert_eq!(ahead["error"], Value::Null);
     let along = ask(&mut session, "jack");
-    assert_eq!((&along["anew"], &along["from"]), (&json!(false), &json!(10)));
+    assert_eq!(
+        (&along["anew"], &along["from"]),
+        (&json!(false), &json!(10))
+    );
     assert_eq!(along["turn"], json!(16));
     // The turns the world has since played ahead are the ones foreseen.
-    let line: Vec<(u64, u64)> = marked(&session)
-        .into_iter()
-        .zip(prints(&session))
-        .collect();
+    let line: Vec<(u64, u64)> = marked(&session).into_iter().zip(prints(&session)).collect();
     let seen = foreseen_prints(&foreseen(
         &mut session,
         json!({"op": "foresee", "turns": 0, "strategy": "jack", "lean": true}),
@@ -936,7 +942,12 @@ fn a_forecast_notes_the_detonations_and_the_wars_declared_on_the_way() {
         json!({"op": "foresee", "turns": 2, "strategy": "jack", "lean": true}),
     );
     assert_eq!(quiet["detonations"], json!(0));
-    let mut seer = session.debugger.seer.0.take().expect("the forecast is kept");
+    let mut seer = session
+        .debugger
+        .seer
+        .0
+        .take()
+        .expect("the forecast is kept");
     let wars_before = seer.conflicts.len();
     let mut struck = None;
     for _ in 0..40 {
@@ -984,7 +995,9 @@ fn a_forecast_notes_the_detonations_and_the_wars_declared_on_the_way() {
             .as_array()
             .unwrap()
             .iter()
-            .filter(|seen| seen["kind"] == json!(kind) && seen["turn"].as_u64() == Some(u64::from(struck)))
+            .filter(|seen| {
+                seen["kind"] == json!(kind) && seen["turn"].as_u64() == Some(u64::from(struck))
+            })
             .count()
     };
     assert_eq!(again("nuclear"), nuclear.len());

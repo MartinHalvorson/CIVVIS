@@ -1025,7 +1025,11 @@ impl Seer {
             self.world = print_on(game, Some((self.world, self.actions)));
             self.actions = game.log.len();
             self.prints.push((game.turn, self.world));
-            if self.eras.last().is_none_or(|(_, last)| *last != game.world_era) {
+            if self
+                .eras
+                .last()
+                .is_none_or(|(_, last)| *last != game.world_era)
+            {
                 self.eras.push((game.turn, game.world_era));
             }
         }

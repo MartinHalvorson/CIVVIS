@@ -3529,7 +3529,7 @@ window.addEventListener("message", event => {
     debugSplit.panes[letter].marks = {flags: Array.isArray(data.flags) ? data.flags : [],
       stops: Array.isArray(data.stops) ? data.stops : [], beyond: data.beyond || null,
       eras: Array.isArray(data.eras) ? data.eras : [], by: Array.isArray(data.by) ? data.by : [],
-      swans: Array.isArray(data.swans) ? data.swans : [],
+      swans: Array.isArray(data.swans) ? data.swans : [], seat: data.seat ?? null,
       turns: Array.isArray(data.turns) ? data.turns : null, worlds: Array.isArray(data.worlds) ? data.worlds : null};
     // The branch has let go of the turns that were ahead of it.
     if (letter === "b" && debugSplit.branches && Array.isArray(data.turns) && !data.beyond &&
@@ -3652,10 +3652,14 @@ function debugPaneMarks(timeline) {
   const by = timeline.played_by || [];
   // And the black swans that have struck the line, for the host to mark on it.
   const swans = timeline.swans || [];
-  const said = JSON.stringify([flags, stops, beyond, eras, turns, worlds, by, swans]);
+  // And the Civ AI whose line those turns are, as the engine names it: the
+  // host holds a future played out for that line against them
+  // (`strangeSightStale`).
+  const seat = timeline.seat ?? null;
+  const said = JSON.stringify([flags, stops, beyond, eras, turns, worlds, by, swans, seat]);
   if (said === debugMarksSaid) return;
   debugMarksSaid = said;
-  window.parent.postMessage({civvis: "pane-marks", pane: DEBUG_PANE, flags, stops, beyond, eras, turns, worlds, by, swans},
+  window.parent.postMessage({civvis: "pane-marks", pane: DEBUG_PANE, flags, stops, beyond, eras, turns, worlds, by, swans, seat},
     location.origin);
 }
 // What the host tells a half to do after the other is done one thing at a
@@ -5077,10 +5081,11 @@ const STRANGE_AHEAD = 12, STRANGE_AHEAD_CHUNK = 4, STRANGE_AHEAD_RUNNING = 2;
 const STRANGE_AHEAD_WAIT_MS = 90000;
 // A world's whole future is played to the end of its game a stretch at a
 // time (`strangeForesee`): how long a stretch is meant to take, the turns the
-// first is asked for and the most any is, how long one is waited on, and how
-// long a world that could not be asked is left before it is asked again.
+// first is asked for and the most any is, how long one is waited on, how
+// long a world that could not be asked is left before it is asked again, and
+// the least time between two futures begun for one world.
 const STRANGE_SEE_MS = 400, STRANGE_SEE_FIRST = 4, STRANGE_SEE_MOST = 40;
-const STRANGE_SEE_WAIT_MS = 120000, STRANGE_SEE_AGAIN_MS = 3000;
+const STRANGE_SEE_WAIT_MS = 120000, STRANGE_SEE_AGAIN_MS = 3000, STRANGE_SEE_ANEW_MS = 1000;
 // The sign over the far end of each branch (`strangeFate`): how wide and how
 // tall it is where there is room for all of it, for its first line, and for
 // a word of it; the room left between two, and where the first row stands.
@@ -5958,7 +5963,7 @@ function strangeSightDrop(letter, gone = false) {
   delete strange.seeing[letter];
   if (!pane) return;
   pane.sight = null;
-  pane.sightAfter = 0; pane.sightTries = 0;
+  pane.sightAfter = 0; pane.sightTries = 0; pane.sightBegan = 0;
   if (gone && strangeScouts())
     fetchJSON(`/debug?pane=${encodeURIComponent(pane.id)}&scout=done`, {method: "POST", headers: {"Content-Type": "application/json"},
       body: JSON.stringify({op: "status", lean: true})}).catch(() => {});
@@ -5966,8 +5971,11 @@ function strangeSightDrop(letter, gone = false) {
 // Whether what was seen is no longer this world's future: another player
 // strategy holds the seat, or a turn the world holds on its line is another
 // world than the one foreseen on that turn (the engine's print of each,
-// `debug.worlds`). Worked out again only when the world has said anew what
-// it holds.
+// `debug.worlds`). The world's page says what it holds a moment after the
+// world is given another strategy, so the turns are held against what was
+// seen only when they are the line of the Civ AI it was seen for, as the
+// engine names both. Worked out again only when the world has said anew
+// what it holds.
 function strangeSightStale(letter) {
   const pane = debugSplit.panes[letter], sight = pane.sight;
   if (!sight) return false;
@@ -5976,7 +5984,8 @@ function strangeSightStale(letter) {
   if (sight.read === marks) return sight.stale;
   sight.read = marks;
   sight.stale = false;
-  if (marks && Array.isArray(marks.turns) && Array.isArray(marks.worlds) && marks.turns.length === marks.worlds.length)
+  if (marks && (marks.seat ?? null) === sight.seat && Array.isArray(marks.turns) && Array.isArray(marks.worlds) &&
+      marks.turns.length === marks.worlds.length)
     sight.stale = marks.turns.some((turn, at) => sight.prints.has(turn) && sight.prints.get(turn) !== marks.worlds[at]);
   return sight.stale;
 }
@@ -5996,8 +6005,11 @@ function strangeForesee() {
     if (out >= most) break;
     const pane = split.panes[letter];
     if (!pane || !open.includes(letter) || pane.born || pane.turn === null || pane.turn === undefined || strange.seeing[letter]) continue;
-    if (pane.sight && strangeSightStale(letter)) pane.sight = null;
+    // A future that is no longer the world's is begun again, and not more
+    // than once in a while: a world that is still changing is left to.
+    if (pane.sight && strangeSightStale(letter)) { pane.sight = null; pane.sightAfter = Math.max(pane.sightAfter || 0, (pane.sightBegan || 0) + STRANGE_SEE_ANEW_MS); }
     if ((pane.sight && pane.sight.done) || now < (pane.sightAfter || 0)) continue;
+    if (!pane.sight) pane.sightBegan = now;
     strangeSee(letter);
     out++;
   }
@@ -6045,8 +6057,8 @@ function strangeSeen(letter, told, how) {
   let sight = pane.sight;
   const whole = typeof seen.since !== "number";
   if (!sight || whole || seen.anew === true || sight.from !== seen.from || sight.base !== seen.base)
-    sight = pane.sight = {from: seen.from, base: seen.base, asked: how.asked, prints: new Map(), seen: [], began: performance.now(),
-      pace: 20, read: undefined, stale: false};
+    sight = pane.sight = {from: seen.from, base: seen.base, asked: how.asked, seat: seen.seat ?? null, prints: new Map(), seen: [],
+      began: performance.now(), pace: 20, read: undefined, stale: false};
   else sight.seen = sight.seen.filter(event => event.turn < seen.since);
   for (const pair of Array.isArray(seen.worlds) ? seen.worlds : [])
     if (Array.isArray(pair) && typeof pair[0] === "number") sight.prints.set(pair[0], pair[1]);
@@ -6128,31 +6140,28 @@ function strangeFate(letter) {
   return {state, head, line, word, wars, seen: share, title};
 }
 // Where the signs stand: each over the far end of its own branch, in rows
-// between the cards at the top, as much of each as there is room for. One
-// that would stand on another is moved along its row, and to the next row
-// when that would take it far from its branch.
+// between the cards at the top, as much of each as there is room for. Signs
+// that would stand on one another are moved apart along their row, and
+// where a row has not the room for all of them they take turns at two.
 function strangeFates(g, open) {
   const follow = open.includes(strange.follow) ? strange.follow : open[0];
   const [title, meter] = strange.cards;
-  const least = title ? title.right + 8 : 8, most = meter ? meter.left - 8 : g.W - 8;
-  const room = Math.max(120, most - least);
-  const mode = ["full", "line", "word"].find(name =>
-    Math.ceil(open.length / Math.max(1, Math.floor((room + STRANGE_FATE_GAP) / (STRANGE_FATES[name][0] + STRANGE_FATE_GAP)))) <= (name === "word" ? 9 : 2)) || "word";
-  const [wide, tall] = [Math.min(STRANGE_FATES[mode][0], room), STRANGE_FATES[mode][1]];
-  const rows = [], put = [];
+  const least = title ? title.right + 8 : 8, most = Math.max(least + 120, meter ? meter.left - 8 : g.W - 8);
+  const room = most - least, gap = STRANGE_FATE_GAP;
+  const fits = name => Math.max(1, Math.floor((room + gap) / (Math.min(STRANGE_FATES[name][0], room) + gap)));
+  const mode = ["full", "line"].find(name => Math.ceil(open.length / fits(name)) <= 2) || "word";
+  const wide = Math.min(STRANGE_FATES[mode][0], room), tall = STRANGE_FATES[mode][1];
+  const rows = Math.ceil(open.length / fits(mode));
   const wanted = open.map(letter => ({letter, at: g.cx + (open.indexOf(letter) - open.indexOf(follow)) * g.far}))
     .sort((one, other) => one.at - other.at);
-  for (const {letter, at} of wanted) {
-    const ideal = Math.max(least, Math.min(most - wide, at - wide / 2));
-    let row = 0, left = ideal;
-    for (; ; row++) {
-      const taken = rows[row] ?? -Infinity;
-      left = Math.max(ideal, taken + STRANGE_FATE_GAP);
-      if (taken === -Infinity || (left + wide <= most && left - ideal <= wide / 2) || row >= 8) break;
-    }
-    left = Math.max(least, Math.min(most - wide, left));
-    rows[row] = left + wide;
-    put.push({letter, left, top: STRANGE_FATE_TOP + row * (tall + STRANGE_FATE_GAP), wide, tall});
+  const put = [];
+  for (let row = 0; row < rows; row++) {
+    const held = wanted.filter((_, at) => at % rows === row);
+    const lefts = held.map(sign => Math.max(least, Math.min(most - wide, sign.at - wide / 2)));
+    for (let at = 1; at < lefts.length; at++) lefts[at] = Math.max(lefts[at], lefts[at - 1] + wide + gap);
+    for (let at = lefts.length - 1; at >= 0; at--)
+      lefts[at] = Math.min(lefts[at], at === lefts.length - 1 ? most - wide : lefts[at + 1] - wide - gap);
+    held.forEach((sign, at) => put.push({letter: sign.letter, left: lefts[at], top: STRANGE_FATE_TOP + row * (tall + gap), wide, tall}));
   }
   return {mode, put};
 }

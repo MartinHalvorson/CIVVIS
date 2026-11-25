@@ -18,6 +18,11 @@ What is checked:
   * a `twin` on another engine is dropped from the request, and kept where
     the two are on one engine;
   * what the engines hold is read as one, with how many there are;
+  * a world's scout, which the page asks for the world's future, is a fork
+    of that world's engine: it carries on from the world's count on a thread
+    of its own and the world hears nothing of it; a new one is forked from
+    the world as it then stands, it is counted with the engines, and it is
+    let go when the page says it is done or the world's page has gone;
   * a world whose page has gone has its engine let go;
   * the split closed onto a world makes that world's engine the page's.
 
@@ -94,6 +99,9 @@ def check_homes(dev: Devtools, origin: str) -> None:
     shared = said('[(await ask(world("a-t1"), "/status")).n, (await ask(world("b-t1"), "/status")).n, (await said("/status")).n]')
     assert shared == [on(here, 1), on(here, 2), on(here, 3)], (here, shared)
     assert said('window.__civvisBeta.homes || 0') == 0
+    # And there are no scouts: a request that names one is the world's own.
+    assert said('window.__civvisBeta.scouts === undefined') is True
+    assert said('(await said("/debug?pane=a-t1&scout=new", {op: "status"})).n') == on(here, 4)
     print("outside Doctor Strange every world is answered by the page's one engine.")
 
     # On it, each world counts by itself from its first request on.
@@ -136,14 +144,43 @@ def check_homes(dev: Devtools, origin: str) -> None:
     assert metrics["engine_bytes"] > alone, (metrics, alone)
     print("what the engines hold is read as one.")
 
-    # A world whose page has gone has its engine let go.
+    # A world's scout (`?pane=<world>&scout=...`, asked by the page): a fork
+    # of the world's own engine, so it carries on from the world's count,
+    # and it counts on by itself while the world hears nothing of it.
+    assert said('window.__civvisBeta.scouts') == 0
+    a_now = said('(await ask(world("a-t1"), "/status")).n')
+    scout = said('(await said("/debug?pane=a-t1&scout=new", {op: "foresee", turns: 1})).n')
+    assert scout == on(a_now, 1), (a_now, scout)
+    scout_next = said('(await said("/debug?pane=a-t1&scout=1", {op: "foresee", turns: 1})).n')
+    assert scout_next == on(scout, 1), (scout, scout_next)
+    assert said('window.__civvisBeta.scouts') == 1
+    a_then = said('(await ask(world("a-t1"), "/status")).n')
+    assert a_then == on(a_now, 1), (a_now, a_then)
+    # Counted with the engines: the page's, both worlds' and the scout.
+    assert said('(await said("/machine-metrics")).engine_threads') == 4
+    # A new one is forked from the world as it stands now.
+    anew = said('(await said("/debug?pane=a-t1&scout=new", {op: "foresee", turns: 1})).n')
+    assert anew == on(a_then, 1), (a_then, anew)
+    assert said('window.__civvisBeta.scouts') == 1
+    # Asked for where there is none, one is made; done lets it go, and asks
+    # no engine anything.
+    b_now = said('(await ask(world("b-t1"), "/status")).n')
+    assert said('(await said("/debug?pane=b-t1&scout=1", {op: "foresee", turns: 1})).n') == on(b_now, 1)
+    assert said('window.__civvisBeta.scouts') == 2
+    assert said('await said("/debug?pane=a-t1&scout=done", {op: "status"})') == {"error": None, "scout": "done"}
+    assert said('window.__civvisBeta.scouts') == 1
+    assert said('(await ask(world("a-t1"), "/status")).n') == on(a_then, 1)
+    assert said('(await said("/machine-metrics")).engine_threads') == 4
+    print("a world's scout is a fork of the world's own engine, counted with the engines and let go when it is done.")
+
+    # A world whose page has gone has its engine let go, and its scout.
     said('(document.querySelector(\'iframe[data-world="b-t1"]\').remove(), true)')
     deadline = time.time() + 15
-    while said('window.__civvisBeta.homes') != 1:
+    while said('[window.__civvisBeta.homes, window.__civvisBeta.scouts]') != [1, 0]:
         if time.time() > deadline:
-            raise AssertionError(f"B's engine was kept: {said('window.__civvisBeta.homes')} engines")
+            raise AssertionError(f"B's engines were kept: {said('[window.__civvisBeta.homes, window.__civvisBeta.scouts]')}")
         time.sleep(0.25)
-    print("a world whose page has gone has its engine let go.")
+    print("a world whose page has gone has its engine let go, and its scout with it.")
 
     # The split closed onto A: A's engine answers, and is the page's from then on.
     a_now = said('(await ask(world("a-t1"), "/status")).n')

@@ -330,6 +330,39 @@ async function forkAnswer(number, path, body) {
     hold(mine);
   }
 }
+// ---- a world's scout, as the published build keeps one for each world of
+// Doctor Strange's Civ 6 (`beta/shim.js`): a copy of that half's engine as
+// it stood when the scout was asked for, which plays the world's future
+// (`foresee`) and is asked nothing else. `made` and `done` count the scouts
+// made and let go of, and `wait` slows every answer.
+const scouts = {held: {}, made: 0, done: 0, wait: 0};
+async function scoutAnswer(pane, how, body) {
+  if (scouts.wait) await new Promise(done => setTimeout(done, scouts.wait));
+  if (how === "done") {
+    if (scouts.held[pane]) scouts.done += 1;
+    delete scouts.held[pane];
+    return {error: null, scout: "done"};
+  }
+  if (how === "new" || !scouts.held[pane]) {
+    const frame = [...document.querySelectorAll("iframe")].find(held => held.src.includes(`pane=${pane}`));
+    if (!frame) return {error: "that world is not there"};
+    scouts.held[pane] = worldOf(frame.contentWindow.eval("engine"));
+    scouts.made += 1;
+  }
+  const mine = {...engine};
+  const hold = held => {
+    for (const key of Object.keys(engine)) delete engine[key];
+    Object.assign(engine, held);
+  };
+  hold({...JSON.parse(JSON.stringify(scouts.held[pane])), sent: [], wait: 0});
+  try {
+    const answer = engineDebug(body);
+    scouts.held[pane] = worldOf(engine);
+    return answer;
+  } finally {
+    hold(mine);
+  }
+}
 async function fetchJSON(path, init = {}) {
   const body = init.body ? JSON.parse(init.body) : null;
   engine.sent.push({path, body});
@@ -342,6 +375,8 @@ async function fetchJSON(path, init = {}) {
   if (path === "/autosearch") return toyClimb(body);
   const forked = /^\/debug\?fork=(\d+)/.exec(path);
   if (forked) return forkAnswer(+forked[1], path, body);
+  const scouted = /^\/debug\?pane=([a-z]-\w+)&scout=(\w+)$/.exec(path);
+  if (scouted) return scoutAnswer(scouted[1], scouted[2], body);
   if (path !== "/debug") return {error: null};
   // A slowed engine, so that a run can be seen on its way.
   if (engine.wait) await new Promise(done => setTimeout(done, engine.wait));
@@ -382,7 +417,7 @@ function engineDebug(body) {
   if (engine.current !== 0 && (body.op === "step" || body.op === "finish_round")) opens();
   const marks = engineLine(), at = marks.indexOf(engine.turn);
   const others = engine.marks[marks.length];
-  let error = null, readings = null, terms = null, alerts = null, swan = null;
+  let error = null, readings = null, terms = null, alerts = null, swan = null, foresight = null;
   // One whole turn by the Civ AI seated.
   const step = () => {
     engine.turn += 1;
@@ -437,6 +472,42 @@ function engineDebug(body) {
     engine.turn = home;
     engine.score = stood;
     engine.stopped = null;
+  } else if (body.op === "foresee") {
+    // The world's future, played on a copy from the end of the seat's line
+    // to the end of the game, a stretch a request (`debug_foresee`). The
+    // world itself is left as it stands. Each turn foreseen has the print
+    // the world's own turn is given when the same Civ AI plays it. What is
+    // seen coming is the test's to say: `engine.nukes` and `engine.wars`,
+    // the turns a device goes off and a war is declared on. The ones on
+    // record already when the copy is made are told with it.
+    const last = engine.limit || 400, step = engine.seat === "stock" ? 2 : engine.seat ? 1 : 3;
+    const noted = turn => [
+      ...((engine.nukes || []).includes(turn) ? [{turn, kind: "nuclear", text: "Greece detonates a nuclear device", era: 6, era_name: "atomic"}] : []),
+      ...((engine.wars || []).includes(turn) ? [{turn, kind: "war", text: "Rome declares war on Greece", era: 0, era_name: "ancient"}] : [])];
+    let made = false;
+    if (body.anew || !engine.seer || engine.seer.seat !== engine.seat) {
+      const from = marks[marks.length - 1];
+      made = true;
+      engine.seer = {from, base: engine.worlds[from], seat: engine.seat, turn: from, world: engine.worlds[from],
+        prints: [[from, engine.worlds[from]]], ended: false,
+        seen: [...new Set([...(engine.nukes || []), ...(engine.wars || [])])].filter(turn => turn < from).sort((one, other) => one - other).flatMap(noted)};
+    }
+    const seer = engine.seer;
+    let played = 0;
+    while (played < body.turns && seer.turn < last) {
+      seer.seen.push(...noted(seer.turn));
+      seer.turn += 1;
+      played += 1;
+      seer.world = (seer.world * 31 + step) % 2147483647;
+      seer.prints.push([seer.turn, seer.world]);
+    }
+    const done = seer.turn >= last;
+    if (done && !seer.ended) { seer.ended = true; seer.seen.push({turn: seer.turn, kind: "over", text: "The game ends", era: 0, era_name: "ancient"}); }
+    const known = !made && typeof body.known === "number" ? body.known : null;
+    foresight = {from: seer.from, base: seer.base, seat: seer.seat, turn: seer.turn, done, limit: engine.limit || null, played,
+      since: known, anew: made, worlds: seer.prints.filter(([turn]) => known === null || turn > known),
+      eras: [{turn: seer.from, era: 0, name: "ancient"}], seen: seer.seen.filter(seen => known === null || seen.turn >= known),
+      detonations: seer.seen.filter(seen => seen.kind === "nuclear").length, victory: null};
   } else if (body.op === "black_swan") {
     // A black swan strikes the open turn's world (`debug_black_swan`): the
     // turns kept ahead of it are let go of, the open turn is marked again
@@ -530,6 +601,7 @@ function engineDebug(body) {
   if (readings !== null) answer.readings = readings;
   if (alerts !== null) answer.alerts = alerts;
   if (swan !== null) answer.black_swan = swan;
+  if (foresight !== null) answer.foresight = foresight;
   if (terms !== null) { answer.terms = terms; answer.killed = null; }
   // Played once for both: the twin is made a copy of what this half holds.
   if (twin !== null) {
@@ -3606,7 +3678,90 @@ def check_doctor_strange(bar: Bar, address: str) -> None:
                     " document.querySelector('#strange-hud [data-strange=\"futures\"]').textContent]")
     assert future == [here, here, [4, 4, 4], [4, 4, 4], here + 12, here + 12, [],
                       [{"turn": here + 5, "kind": "nuclear", "text": "Greece detonates a nuclear device"}], 12,
-                      "🔮 Futures: 12 turns ahead"], future
+                      "🔮 Futures: to the end of the game"], future
+
+    # The whole of each world's future (operator 2026-11-24: "each branch in
+    # doctor strange's civ 6 should simulate out to the end of the branch",
+    # "The top of each branch should have either: no nuclear war in the next
+    # N turns, no nuclear war, or nuclear war in N turns (Era). we should
+    # note wars as well", "Can build out the most likely paths at all time").
+    # Past the turns a world holds, its future is played to the end of its
+    # game on a copy (the engine's `foresee`), asked for a stretch at a time
+    # by the page itself and never of the world's own page. This engine has
+    # none of its own for it, so one world is asked at a time, while the
+    # worlds stand still. In A's world a war is declared thirty turns on.
+    seen = "['a', 'b'].every(letter => debugSplit.panes[letter].sight && debugSplit.panes[letter].sight.done)"
+    began = bar.ev(f"(() => {{ debugSplit.panes.a.frame.contentWindow.eval('engine.wars = [{here + 30}]');"
+                   " const stood = [scouts.made, engine.sent.length]; strangeSightDrop('a'); strangeSightDrop('b'); strangeForesee();"
+                   " return [...stood, strangeScouts(), Object.keys(strange.seeing).join(''), strange.follow]; })()")
+    assert began[2] is False and began[3] == began[4], began
+    foreseen = f"engine.sent.slice({began[1]}).filter(call => /^\\/debug\\?pane=/.test(call.path) && call.body.op === 'foresee')"
+    bar.until(seen, "each world's future is played to the end of its game")
+    told = bar.ev(f"[{foreseen}.map(call => call.path.split('&scout=')[1]).filter(how => how === 'new').length, scouts.made - {began[0]},"
+                  f" {foreseen}.every(call => call.body.lean === true && call.body.turns >= 1 && call.body.turns <= STRANGE_SEE_MOST),"
+                  " ['a', 'b'].map(letter => debugSplit.panes[letter].frame.contentWindow.eval('engine.sent.filter(call => call.body && call.body.op === \"foresee\").length')),"
+                  " ['a', 'b'].map(letter => [debugSplit.panes[letter].sight.from, debugSplit.panes[letter].sight.turn, debugSplit.panes[letter].sight.asked]),"
+                  " ['a', 'b'].map(letter => strangeSightStale(letter))]")
+    assert told == [2, 2, True, [0, 0], [[here + 12, 400, "stock"], [here + 12, 400, "jack"]], [False, False]], told
+    # The sign over the far end of each branch says what is coming in its
+    # world, in turns from the open one, with the world era it comes in, and
+    # under it the next war. B's world has a nuclear war five turns on; A's
+    # has none to the end of its game, and a war in thirty turns.
+    signs = ("[...document.querySelectorAll('#strange-hud .strange-fate')].map(sign => [sign.dataset.strangeFate, sign.dataset.fate,"
+             " sign.querySelector('strong').textContent, sign.querySelector('span').textContent]).sort()")
+    assert bar.ev(signs) == [
+        ["a", "clear", "☮ No nuclear war", "⚔ War in 30 turns: Rome on Greece"],
+        ["b", "coming", "☢ Nuclear war in 5 turns (Atomic Era)", "No wars ahead · 🏁 The game ends, turn 400"]], bar.ev(signs)
+    assert "Turn %d: Greece detonates a nuclear device" % (here + 5) in bar.ev("document.querySelector('#strange-hud [data-strange-fate=\"b\"]').title")
+    # Each stands over the far end of its own branch, between the cards at
+    # the top and under the black swan's button, and none on another.
+    placed = bar.ev("(() => { const box = name => { const at = document.querySelector(name).getBoundingClientRect(); return [at.left, at.top, at.right, at.bottom]; };"
+                    " return {a: box('#strange-hud [data-strange-fate=\"a\"]'), b: box('#strange-hud [data-strange-fate=\"b\"]'),"
+                    " title: box('#strange-hud .strange-title'), meter: box('#strange-hud .strange-meter'), swans: box('#strange-hud .strange-swans'),"
+                    " line: strangeGeometry().cy, mode: strange.fateMode,"
+                    " over: Object.fromEntries(['a', 'b'].map(letter => [letter, strangeGeometry().cx +"
+                    "  (strange.order.indexOf(letter) - strange.order.indexOf(strange.follow)) * strangeGeometry().far]))}; })()")
+    assert placed["mode"] == "full", placed
+    for letter in "ab":
+        sign = placed[letter]
+        assert placed["title"][2] < sign[0] and sign[2] < placed["meter"][0] and placed["swans"][3] < sign[1] and sign[3] < placed["line"] - 60, placed
+        assert abs((sign[0] + sign[2]) / 2 - placed["over"][letter]) <= 150, placed
+    left, right = sorted((placed["a"], placed["b"]))
+    assert left[2] <= right[0] and left[1] == right[1], placed
+    # Until a future has been played to the end, the sign says how far it
+    # has been played with no nuclear war in it: the three things it says.
+    said = bar.ev("(() => { const pane = debugSplit.panes.a, kept = pane.sight, turn = pane.turn;"
+                  " const head = sight => { pane.sight = {...kept, ...sight}; return strangeFate('a').head; };"
+                  " const heads = [head({done: false, turn: turn + 46, seen: []}), head({done: true, seen: []}),"
+                  "  head({done: false, turn: turn + 90, seen: [{turn: turn + 83, kind: 'nuclear', text: 'x', era: 6, era_name: 'atomic'}]}),"
+                  "  head({done: true, seen: [{turn: turn - 3, kind: 'nuclear', text: 'x', era: 5, era_name: 'modern'}]}),"
+                  "  head({done: false, turn: turn + 1, seen: []})];"
+                  " pane.sight = kept; return heads; })()")
+    assert said == ["No nuclear war in the next 46 turns", "☮ No nuclear war", "☢ Nuclear war in 83 turns (Atomic Era)",
+                    "☢ Nuclear war since turn %d (Modern Era)" % (here - 3), "No nuclear war in the next 1 turn"], said
+    # It is the future of the line it was played from. A world given another
+    # player strategy has another, which is played out in its place, and the
+    # one that kept its strategy keeps what was seen.
+    kept = bar.ev("debugSplit.panes.b.sight.base")
+    bar.ev("debugSplitSeat('a', 'jack'), true")
+    bar.until("debugSplit.panes.a.strategy === 'jack' && debugSplit.panes.a.sight && debugSplit.panes.a.sight.asked === 'jack' && debugSplit.panes.a.sight.done",
+              "A's future is played out again under its new player strategy")
+    assert bar.ev(f"[scouts.made - {began[0]}, debugSplit.panes.b.sight.base, debugSplit.panes.b.sight.done]") == [3, kept, True]
+    bar.ev("debugSplitSeat('a', 'stock'), true")
+    bar.until("debugSplit.panes.a.strategy === 'stock' && debugSplit.panes.a.sight && debugSplit.panes.a.sight.asked === 'stock' && debugSplit.panes.a.sight.done"
+              f" && strangeIdle() && {quiet} && {held}", "and again under the one it had")
+    # Where each world's future has an engine of its own (the published
+    # build's scouts), every world is asked at once, and an engine whose
+    # game has ended is let go of.
+    assert bar.ev("(() => { window.__civvisBeta = {scouts: 0}; scouts.wait = 30; strangeSightDrop('a'); strangeSightDrop('b'); strangeForesee();"
+                  " return [strangeScouts(), Object.keys(strange.seeing).sort().join('')]; })()") == [True, "ab"]
+    bar.until(seen, "both futures are played out at once")
+    bar.until("scouts.done >= 2 && Object.keys(scouts.held).length === 0", "and their engines let go of")
+    bar.ev("delete window.__civvisBeta, scouts.wait = 0, true")
+    assert bar.ev(signs) == [
+        ["a", "clear", "☮ No nuclear war", "⚔ War in 30 turns: Rome on Greece"],
+        ["b", "coming", "☢ Nuclear war in 5 turns (Atomic Era)", "No wars ahead · 🏁 The game ends, turn 400"]], bar.ev(signs)
+    assert not bar.dev.console, f"the page complained: {bar.dev.console}"
     # Time running on is shown the turns that were played ahead, and none is
     # played again: the worlds are asked for more of their futures as they
     # use them up, and never for a turn of their own.
@@ -3626,6 +3781,10 @@ def check_doctor_strange(bar: Bar, address: str) -> None:
     # when one has changed its shape (what the title's card says, here), not
     # for every figure that changes on them.
     stepped = bar.ev(f"[{steps('a')}, {steps('b')}]")
+    # What each world was asked for to hold its dozen turns: B once, and A
+    # again under each player strategy it was given above.
+    filled = bar.ev(f"[{aheads('a')}, {aheads('b')}]")
+    assert filled == [[4, 4, 4] * 3, [4, 4, 4]], filled
     bar.ev("(() => { window.measured = {cards: 0, bar: 0, pane: 0};"
            " const cards = strangeCards; strangeCards = function () { measured.cards++; return cards(); };"
            " const left = debugMapLeft; debugMapLeft = function () { measured.bar++; return left(); };"
@@ -3638,7 +3797,7 @@ def check_doctor_strange(bar: Bar, address: str) -> None:
     bar.until(f"strange.run === null && strangeIdle() && {quiet} && {held}", "paused, with the futures played out again")
     ran = bar.ev(f"[debugSplit.panes.a.turn === debugSplit.panes.b.turn, {steps('a')}, {steps('b')}, debugSplit.panes.a.turn - {here}, {aheads('a')}, {aheads('b')}]")
     assert ran[:3] == [True, stepped[0], stepped[1]] and ran[3] >= 6, ran
-    assert ran[4] == ran[5] == [4, 4, 4] + [1] * ran[3], ran
+    assert ran[4] == filled[0] + [1] * ran[3] and ran[5] == filled[1] + [1] * ran[3], ran
     assert bar.ev("typeof STRANGE_DWELL_MS") == "undefined", "a turn is held on the screen for no longer than the next takes"
     measured = bar.ev("measured")
     assert measured["bar"] == 0 and measured["pane"] == 0 and measured["cards"] < 2 * ran[3], (measured, ran[3])
@@ -3874,7 +4033,12 @@ def main() -> int:
               "locked, the worlds go through the turns together, never seen a turn apart, and Play Time and Pause "
               "Time start and stop them, and unlocked they go by themselves until locked again; what the page costs "
               "is read and shown; each world's future is played ahead of the open turn and kept, every world asked "
-              "at once, what was seen coming is kept with it, and time running on is shown those turns and plays "
+              "at once, what was seen coming is kept with it; past those turns each world's future is played to the "
+              "end of its game on a copy, a world at a time or every world at once where each has an engine for it, "
+              "and the sign over the far end of each branch says the nuclear war that is coming, in how many turns "
+              "and in which era, or that there is none, to the end or as far as has been played, with the next war "
+              "under it, and is played out again for a world given another player strategy; "
+              "time running on is shown the turns held and plays "
               "none again, each world asked for one turn more for each turn it is shown and time never held for "
               "four, with nothing measured that is out of sight; "
               "Generate Black Swan, at the top of the sky, strikes the same event nothing saw coming on every locked "
