@@ -647,6 +647,13 @@
   //
   //   POST /forks {"count": N}   N forks of the engine as it stands now, in
   //                              place of any there were; 0 lets them all go.
+  //   POST /forks {"count": N, "pane": "<world>"}   the same, of that world's
+  //                              own engine on Doctor Strange's page, where
+  //                              each world has one (`homes`): its Autosearch
+  //                              searches the base timeline, and the page's
+  //                              own engine holds that world as it stood
+  //                              when the world was given an engine. Where
+  //                              one engine holds every world it is that one.
   //   <any engine request>?fork=K   answered by fork K (1..N) instead.
   //
   // A fork costs the engine's memory over again and a copy of it takes a few
@@ -676,7 +683,7 @@
     }
   }
 
-  async function forkEngine(count) {
+  async function forkEngine(count, pane = null) {
     if (!worker) throw new Error("only the page that holds the engine can fork it");
     if (!Number.isInteger(count) || count < 0 || count > FORKS_MOST) {
       throw new Error(`a count of forks is 0 to ${FORKS_MOST}`);
@@ -684,9 +691,16 @@
     const started = performance.now();
     while (forks.length > count) release(forks.pop(), "that fork was let go");
     if (count === 0) return { forks: 0 };
+    // The engine the forks are made of: a world's own, once it has been
+    // given one and whatever it was asked before has been answered.
+    let source = worker;
+    if (HOMES && typeof pane === "string" && pane) {
+      await (moving.get(pane) || null);
+      source = homeOf(pane);
+    }
     // Asked before any fork is started: the engine answers in turn, so this
     // is its memory between two requests and never part-way through one.
-    const { module, memory } = await tell(worker, { fork: "leave", wasmUrl: WASM_URL }, [], "/forks", true);
+    const { module, memory } = await tell(source, { fork: "leave", wasmUrl: WASM_URL }, [], "/forks", true);
     const bytes = memory.byteLength;
     while (forks.length < count) {
       const fork = new Worker(WORKER_URL);
@@ -1364,7 +1378,8 @@
       }
       if (path === "/forks") {
         dropAhead(false);
-        return forkEngine(safeParse(options_.body || "{}").count).then(json);
+        const wanted = safeParse(options_.body || "{}");
+        return forkEngine(wanted.count, wanted.pane).then(json);
       }
       return serve(method, relative, options_.body || "");
     };

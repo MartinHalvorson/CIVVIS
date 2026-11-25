@@ -1015,6 +1015,7 @@ The published build has them (`beta/shim.js`, `beta/worker.js`):
 | Request | What it does |
 |---------|--------------|
 | `POST /forks` `{"count": N}` | N forks (0 to 64) of the engine as it stands now, in place of any there were. Answers `forks`, `memory_bytes` (one engine's memory) and `ms`. A count of 0 lets them all go. |
+| `POST /forks` `{"count": N, "pane": "<world>"}` | The same, of that world's own engine on Doctor Strange's page, where each world has one (below): what its Autosearch searches. Elsewhere one engine holds every world, and the name changes nothing. |
 | any engine request with `?fork=K` | Answered by fork K (1 to N) instead of the page's engine: `POST /debug?fork=2` steps, jumps and reads fork 2. |
 
 The engine imports nothing and keeps everything it knows in its own memory,
@@ -1825,6 +1826,43 @@ branch is made ahead of time, out of sight, once the worlds have stood still
 for a second and a half (`strangeSpare`); the branch opens on it as on a box
 closed before, and only the copy of the world it branches from is left to
 wait for: 0.27 to 0.42 s at turn 60. One page waits at a time.
+
+### Autosearch: a path found is a branch
+
+Operator 2026-11-25: "add the autosearch stuff to doctor strange's civ 6. we
+should be able to efficiently search paths to try to find a desirable path".
+
+A path is what a branch's name says, which player strategy held the seat
+from which turn, and that is what [Autosearch](#autosearch) searches for. So
+it is the same search, from the same panel. Its button is on the deck under
+Branch, a size larger than the deck's other buttons but Play Time and in
+gold, and lit with the paths played counted while a search runs. The panel
+is the AI Debugger's own, shown over the tree beside the deck's card (the bar
+it belongs to stays unseen); it is moved by its title like any of them.
+
+It searches from the base timeline, the world followed and picked over
+Branch, on its open turn. Each world plays on an engine of its own, so the
+copies are made of that world's (`POST /forks` naming it) and every request
+to them names it; each is asked to keep its agents with its turns
+(`remember`), as a half of a split is. No world is asked anything while it
+runs, and no world's future is begun beside it (`strangeForesee`): the
+cores it was given are its own, and the futures carry on when it is over.
+
+**Branch it** makes the best path a branch: a new world, a copy of the base
+timeline on the turn the search began on, with the path's first strategy in
+the seat. It plays the path from there as the copies did (`debugPlayPlan`,
+each stretch seating its strategy), and says what it came to beside what the
+search read ("SCORE 71, as found"). Its name is the path's
+(`JackOfAllTrades-40-MoonshotMaven`), its box is in a colour of its own and
+the sign over its far end says how the game goes on from its last turn.
+Locked, the other worlds then play on to that turn too, each with its own
+player strategy, so all of them stand on one turn again with the path beside
+them, as a half locked to one that plays a found line does. The branch is
+not walked back to the turn it was made on: a world walks forward only along
+turns its seated strategy played, so a path of several would be played
+again from its first handover. A search is of one world on one turn, so the
+button waits for that world to stand on that turn; nothing beats a base
+timeline playing its own strategy alone, it says so and makes no branch.
 
 ### Black swans
 
