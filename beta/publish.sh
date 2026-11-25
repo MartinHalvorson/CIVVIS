@@ -274,10 +274,10 @@ if [ -f "$landing_page" ]; then
   # home page from before 2026-11-22 carries the two rankings instead (the
   # winningest civs of the verification games, the Civ AI Agents by Elo) and
   # is filled with those, the civs from the run ledger and the agents from
-  # the lane's own revision; a page with neither slot is left as it is. The
-  # same run writes the speed timeline over the videos (how many times faster
-  # than a person each way of playing gets through a game) from the lane's
-  # data/performance/speedup_timeline.json, by beta/speedup_timeline.py.
+  # the lane's own revision; a page with neither slot is left as it is. A
+  # home page from before the speed timeline went to CIVVIS Performance
+  # (2026-11-24) still carries it, and its own revision's copy of the script
+  # fills it; since then it is written with that page's record, below.
   fill home_rankings.py "$out/$home_at/index.html"
   pages+=("$home_at")
 else

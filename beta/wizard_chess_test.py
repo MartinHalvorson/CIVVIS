@@ -115,6 +115,12 @@ class Page(unittest.TestCase):
         for word in ("three@0.160.1", "stockfish@18.0.8", "GPL-3.0", "MIT"):
             self.assertIn(word, said)
         self.assertTrue((PARTS / "vendor" / "three.LICENSE").is_file())
+        # Stockfish is GPL-3.0 whatever the repository around it says of
+        # itself, so the text travels with the engine, not at the root.
+        licence = (PARTS / "vendor" / "stockfish.LICENSE").read_text(encoding="utf-8")
+        self.assertIn("GNU GENERAL PUBLIC LICENSE", licence)
+        self.assertIn("Version 3, 29 June 2007", licence)
+        self.assertIn("`stockfish.LICENSE`", said)
         # And the page says whose work the opponent and the drawing are.
         self.assertIn("https://github.com/official-stockfish/Stockfish", PAGE)
         self.assertIn("https://threejs.org/", PAGE)
