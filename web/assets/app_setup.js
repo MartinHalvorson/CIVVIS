@@ -1268,6 +1268,9 @@ function syncEarthShape() {
 // does not show the group, rather than showing one that cannot work.
 let savesKnown = null;
 async function refreshSaves() {
+  // A world of Doctor Strange's Civ 6 is a map with no lobby to list saves
+  // in, and it was reading every save again on each turn it was shown.
+  if (document.documentElement.classList.contains("strange-pane")) return;
   const group = document.getElementById("saves-group");
   const browsingSaves = () => !SPEC || readSetting("humanplayers") === "single";
   if (!group || !browsingSaves()) { if (group) group.style.display = "none"; return; }

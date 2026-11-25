@@ -607,6 +607,86 @@ fn ahead_plays_the_turns_to_come_and_comes_back_to_the_open_turn() {
         .is_some_and(|error| error.contains("played in")));
 }
 
+/// Operator 2026-11-24: "Right now Doctor Strange's Civ 6 goes 4 turns and
+/// pauses. This should not happen. It should be a continuous effort. and
+/// blazingly fast."
+///
+/// So that time runs on without stopping, a world's future is played a turn
+/// at a time as its turns are shown, and each of those is another `ahead`. A
+/// half of a split keeps no agents with its marks, so every one of them used
+/// to be played by agents that had just sat down: another game than a run
+/// plays, and each turn of it twice the work. The agents that played the
+/// last turn ahead are kept to play the next (`Scouts`), so a future played
+/// a turn at a time is the one played in one go, which is the one a run
+/// plays.
+#[test]
+fn a_future_played_a_turn_at_a_time_is_the_one_played_in_one_go() {
+    fn ahead(half: &mut Session, turns: u32, agent: &str) {
+        let answer =
+            half.debug(&json!({"op": "ahead", "turns": turns, "strategy": agent, "lean": true}));
+        assert_eq!(answer["error"], Value::Null);
+        assert_eq!(
+            answer["readings"].as_array().map(Vec::len),
+            Some(turns as usize)
+        );
+    }
+    let mut session = played();
+    for _ in 0..24 {
+        step_as(&mut session, "jack");
+    }
+    let (mut whole, mut piecewise, mut run) = (session.fork(), session.fork(), session.fork());
+    let open = world(&piecewise);
+    ahead(&mut whole, 8, "jack");
+    for _ in 0..8 {
+        ahead(&mut piecewise, 1, "jack");
+        assert_eq!(world(&piecewise), open, "the open turn stands as it stood");
+    }
+    for _ in 0..8 {
+        step_as(&mut run, "jack");
+    }
+    assert_eq!(marked(&piecewise), marked(&whole));
+    assert_eq!(prints(&piecewise), prints(&whole));
+    assert_eq!(prints(&piecewise), prints(&run));
+
+    // Time runs on: the open turn moves a turn along the line, and the line
+    // is played a turn further from its end by the same agents.
+    for turn in 26..=28 {
+        assert_eq!(piecewise.debug_jump(turn), Ok(turn));
+        ahead(&mut piecewise, 1, "jack");
+        step_as(&mut run, "jack");
+        assert_eq!(prints(&piecewise), prints(&run));
+    }
+
+    // A line that comes to the same turn through another world is not
+    // theirs to play on from. The seat does something by hand and the turns
+    // ahead are played again from that; walked back, what is ahead is played
+    // on by agents that have just sat down, as in a half that kept none.
+    let (mut kept, mut none) = (session.fork(), session.fork());
+    ahead(&mut kept, 3, "jack");
+    let action = something_to_do(&kept);
+    for half in [&mut kept, &mut none] {
+        assert_eq!(half.act(&action), None);
+        for _ in 0..3 {
+            step_as(half, "jack");
+        }
+        assert_eq!(half.debug_jump(26), Ok(26));
+    }
+    assert_eq!(prints(&kept), prints(&none));
+    assert_ne!(prints(&kept)[..28], prints(&whole)[..28], "another world");
+    ahead(&mut kept, 2, "jack");
+    ahead(&mut none, 2, "jack");
+    assert_eq!(prints(&kept), prints(&none));
+
+    // Another Civ AI in the seat plays its own line from the open turn, and
+    // the agents kept from the first one's are let go of.
+    let (mut swapped, mut fresh) = (session.fork(), session.fork());
+    ahead(&mut swapped, 3, "jack");
+    ahead(&mut swapped, 2, "moonshot");
+    ahead(&mut swapped, 2, "moonshot");
+    ahead(&mut fresh, 4, "moonshot");
+    assert_eq!(prints(&swapped), prints(&fresh));
+}
+
 /// Operator 2026-11-24: "add a 'Generate Black Swan' - this will be a random,
 /// unpredicted event that spawns and changes the game". `black_swan` strikes
 /// one on the world as it stands (`game/black_swan.rs`): the turns kept

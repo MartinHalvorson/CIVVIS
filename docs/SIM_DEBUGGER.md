@@ -1474,16 +1474,74 @@ path). these should alert on the top section out in the distance."
   "we should also not spew random lines on the timeline", then "we can
   compute (a degree in advance) the futures of the paths we are on". Each
   world is played twelve turns ahead of the open turn along its own player
-  strategy, four turns at a request (`strangeAheadNext`), by the engine's
-  `ahead`: the world plays on from the last turn it holds and comes back to
-  the open one inside the one request, so nothing else finds it away. The
-  turns are kept ahead of the open turn like any turn played and walked back
-  from, so they are the line the tree draws, with the world's name and score
-  where it ends, and time running on is shown them instead of playing them
-  again: while Futures is on, no world is asked for a turn of its own. Ahead
-  of the last turn played there is a dashed way straight on and nothing
-  else. A half keeps no agents with its turns, so the agents sit down anew at
-  the start of each request, as they do after any walk.
+  strategy (`strangeAheadNext`), by the engine's `ahead`: the world plays on
+  from the last turn it holds and comes back to the open one inside the one
+  request, so nothing else finds it away. The turns are kept ahead of the
+  open turn like any turn played and walked back from, so they are the line
+  the tree draws, with the world's name and score where it ends, and time
+  running on is shown them instead of playing them again: while Futures is
+  on, no world is asked for a turn of its own. Ahead of the last turn played
+  there is a dashed way straight on and nothing else.
+- **Time runs on without stopping.** Operator, 2026-11-24: "Right now Doctor
+  Strange's Civ 6 goes 4 turns and pauses. This should not happen. It should
+  be a continuous effort. and blazingly fast." It did: the futures were
+  played four turns at a request, one world after another, with time held
+  until each had answered, and every turn between was kept on the screen for
+  160 ms. Measured on the published page with two worlds, 30 s of Play Time
+  from turn 1: every fourth turn stood for 0.4 s by turn 10, 0.8 s by turn
+  50 and 1.2 s by turn 90, and the worlds came to turn 93. Four things were
+  the matter, and each is put right where it was:
+  - *Time waited for the future.* Now every world is asked at once, each
+    for its own (`strange.peeks`, one request out a world), and time waits
+    only for a world that does not hold the next turn (`strangeAsk`). A
+    world that holds it is shown it.
+  - *The future was played in fours.* Each turn a world is shown takes one
+    from what it holds, so as it is shown the turn it is asked for one more
+    (`strangeShow`, `strangeAheadOwed`: the `pane-show` carries `ahead`), and
+    its engine plays that while the page draws the turn (`debugPlayAhead`).
+    What a world holds stays twelve turns deep, and time runs at the pace
+    the worlds are played at. A world that holds fewer, one just branched
+    or one whose future a black swan let go of, is asked for two a turn
+    until it holds twelve. While the worlds stand still they are asked for
+    four at a time, as before, so that whatever is asked of a world next
+    waits no longer than that.
+  - *The future was not the game the player strategy plays.* A half keeps
+    no agents with its turns, so each `ahead` was played by agents that had
+    just sat down, with none of what they had planned, and that is another
+    game within a turn (`Minds`). Played to turn 100 from the opening turn
+    by JackOfAllTrades, a run comes to a score of 149 with seven cities; the
+    future in fours, which is what time running showed, came to 112 with
+    five, and held the run's world on 5 turns of the 100. It was also slow:
+    an agent that has just sat down works out again what one that lived
+    through the turn before still holds, and a turn at a time the future
+    cost 1.4 times what a run does (43 ms a turn against 34 at turn 80, the
+    engine by itself on this Mac). The engine now keeps the agents that
+    played a world's last turn ahead, with the print of the world they were
+    left on, and they play its next (`Session::debug_ahead`, `Scouts`). The
+    future in fours and a turn at a time are both the run's world on 100
+    turns of 100, at the run's cost
+    (`a_future_played_a_turn_at_a_time_is_the_one_played_in_one_go`).
+  - *The page was laid out again a dozen times a turn.* Each world says a
+    dozen things a turn, and for each the page measured its bar, which is
+    out of sight under the worlds, and its cards. A measure makes the
+    browser lay the whole page out: 3.8 s of 12 s of the page's own thread
+    while time ran. The bar is not measured while it cannot be seen
+    (`debugBarUnseen`, and a world has none), and the cards are measured
+    when one changes its shape (`strangeCards`): 0.3 s of 12. A world also
+    read every save again on each turn it was shown, for a lobby it does
+    not show, and had the engine price a deck of policy cards nobody sees
+    whenever a turn stood for a third of a second; it asks for neither.
+
+  What came of it, two worlds and 30 s of Play Time from turn 1. On the
+  published engine with only the page changed: no turn stood longer than
+  0.67 s in three runs, where every fourth stood up to 1.27 s. On this Mac's
+  own engine
+  with all of it: a turn every 88 ms through turn 60, where it was every
+  208 to 225 ms, and the longest any turn stood was 0.46 s against 0.82 s.
+  From there the worlds are the larger game a run plays, and a turn of it
+  is more to play. What sets the pace now is the engine playing one turn
+  of each world for each turn shown; a world's own engine
+  (`beta/shim.js`) plays those side by side.
 - **What is coming is put up on the line it is coming on.** The engine
   answers `ahead` with what it saw on the way (`debug_alerts`): every nuclear
   detonation in the world, whatever the played seat was told that was too
