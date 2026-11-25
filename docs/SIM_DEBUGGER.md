@@ -1642,8 +1642,24 @@ turn, and the turns ran at about 300 ms. Where it went (Chrome for Testing,
   in hidden panels. A world's page no longer does (`STRANGE_PANE`).
 
 Together the thread went from about 268 to about 160 ms a turn and the turns
-from about 300 to about 230 ms, with the same worlds on the same turns. What
-is left is mostly the worlds' own maps and charts.
+from about 300 to about 230 ms, with the same worlds on the same turns.
+
+Then the worlds' own motion. At four or five turns a second a turn's units,
+floating numbers, labels and camera flight never finish before the next turn
+begins, so every world kept its animation running all the time and drew its
+map seven or eight times a turn and its chart two or three. While the worlds
+move, a world now draws a turn once, when it is handed it, and its camera is
+at once where it is going (the page's reduced-motion path); standing still it
+moves as any page does, and a person moving a world's map keeps its frames.
+Paired runs, each measured against the page before it: three worlds 107 -> 85
+and 136 -> 100 ms of the thread a turn; four worlds 182 -> 129 ms (83% -> 64%
+of the thread) and the turn 220 -> 202 ms. From three worlds on the turn
+waits on the worlds' engines again, not on the page.
+
+These were measured in pairs, the page before and after one after the other
+on the same pinned world, because the computer's other work moves a single
+reading by a fifth: a change that looked like a third off once came to nothing
+in pairs.
 
 ### Black swans
 
