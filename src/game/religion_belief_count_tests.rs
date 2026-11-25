@@ -30,9 +30,7 @@ fn apostle(game: &mut Game, pos: Pos) -> u32 {
 #[test]
 fn pantheon_leaves_the_fourth_belief_legal_and_executable() {
     let (mut game, pos) = founder();
-    game.players[0]
-        .religion_beliefs
-        .push("holy_order".into());
+    game.players[0].religion_beliefs.push("holy_order".into());
     let unit = apostle(&mut game, pos);
     let fourth = Action::EvangelizeBelief {
         unit,
@@ -91,9 +89,7 @@ fn pantheon_does_not_award_full_development_at_three_religion_beliefs() {
 #[test]
 fn pantheon_does_not_relax_taken_belief_or_category_guards() {
     let (mut game, pos) = founder();
-    game.players[0]
-        .religion_beliefs
-        .push("holy_order".into());
+    game.players[0].religion_beliefs.push("holy_order".into());
     game.players[1].religion_beliefs.push("mosque".into());
     let unit = apostle(&mut game, pos);
     for belief in ["mosque", "scripture"] {

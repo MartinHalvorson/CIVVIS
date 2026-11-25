@@ -6054,19 +6054,14 @@ fn apostles_complete_one_worship_and_one_enhancer_belief_for_the_plan() {
     game.players[0].religion = Some("Planned Faith".to_string());
     // Native mirrors retain the pantheon as well as the two founding beliefs.
     game.players[0].pantheon = Some("divine_spark".to_string());
-    game.players[0].religion_beliefs = vec![
-        "divine_spark".into(),
-        "work_ethic".into(),
-        "tithe".into(),
-    ];
+    game.players[0].religion_beliefs =
+        vec!["divine_spark".into(), "work_ethic".into(), "tithe".into()];
     let ai = AdvancedAi::targeting(VictoryTarget::Science);
 
     let first = game.spawn_test_unit("apostle", 0, game.cities[&city].pos);
     game.units.get_mut(&first).unwrap().religion = Some("Planned Faith".to_string());
     assert!(ai.advanced_religious_step(&mut game, 0, first, false));
-    assert!(game.players[0]
-        .religion_beliefs
-        .contains(&"wat".into()));
+    assert!(game.players[0].religion_beliefs.contains(&"wat".into()));
 
     let second = game.spawn_test_unit("apostle", 0, game.cities[&city].pos);
     game.units.get_mut(&second).unwrap().religion = Some("Planned Faith".to_string());
@@ -9958,11 +9953,7 @@ fn faith_spending_buys_the_victory_aligned_worship_building() {
     game.cities.get_mut(&city).unwrap().buildings =
         vec![crate::name!("shrine"), crate::name!("temple")];
     game.players[0].religion = Some("Scholastic Faith".to_string());
-    game.players[0].religion_beliefs = vec![
-        "work_ethic".into(),
-        "tithe".into(),
-        "wat".into(),
-    ];
+    game.players[0].religion_beliefs = vec!["work_ethic".into(), "tithe".into(), "wat".into()];
     game.cities
         .get_mut(&city)
         .unwrap()

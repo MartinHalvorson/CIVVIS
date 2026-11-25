@@ -1372,7 +1372,10 @@ fn every_district_pays_the_route_yields_its_shipped_row_names() {
 fn establish_religion(game: &mut Game, city: u32, beliefs: &[&str]) -> String {
     let religion = "Test Faith".to_string();
     game.players[0].religion = Some(religion.clone());
-    game.players[0].religion_beliefs = beliefs.iter().map(|belief| crate::name::Name::new(belief)).collect();
+    game.players[0].religion_beliefs = beliefs
+        .iter()
+        .map(|belief| crate::name::Name::new(belief))
+        .collect();
     game.cities
         .get_mut(&city)
         .unwrap()
