@@ -1528,6 +1528,29 @@ and the swans themselves in `src/game/black_swan_tests.rs`. Two games are
 played on through every kind of swan, with the future played ahead after
 each, in `a_game_is_played_on_through_every_black_swan`.
 
+### What a turn of many worlds costs the page
+
+Every world is a page in a frame of the same site, so all of them, and the
+page that holds them, draw on one thread. Once each world plays on an engine
+of its own ("A world's own engine" under Forks), that thread is what a turn
+waits on: three worlds from turn 30 kept it 85-90% busy, about 268 ms of it a
+turn, and the turns ran at about 300 ms. Where it went (Chrome for Testing,
+`Profiler` and `Performance.getMetrics`, a pinned world `?mode=strange&game=7`):
+
+- the host was drawn again for every word a world said, about 21 a turn, and
+  each drawing measured the page. The split and the highway are now drawn once
+  a frame; what the worlds do next is still worked out at once (`strangeStep`);
+- each world framing its own seat's ground at the start of a turn sent its
+  camera to every other world, which drew its map again. Only a look the
+  person gave a world is shared now, and each world frames its own ground;
+- each world drew and measured what its box never shows: the debugger's bar,
+  the civilizations' panel, the corner boxes' heights and the fitting of type
+  in hidden panels. A world's page no longer does (`STRANGE_PANE`).
+
+Together the thread went from about 268 to about 160 ms a turn and the turns
+from about 300 to about 230 ms, with the same worlds on the same turns. What
+is left is mostly the worlds' own maps and charts.
+
 ### Black swans
 
 A black swan is an event nothing in the world saw coming. No rule of the game
