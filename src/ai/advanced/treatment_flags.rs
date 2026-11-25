@@ -581,6 +581,10 @@ impl AdvancedAi {
         /// hunts the hostiles that hold a Settler of ours in the field; see
         /// `advanced/raiders_holding_a_settler.rs`.
         raiders_holding_a_settler_are_hunted => enable_raiders_holding_a_settler_are_hunted, disable_raiders_holding_a_settler_are_hunted;
+        /// Opt-in gene `religion-core-ends-expansion`: a founded Religion
+        /// lane follows its lane at its core of cities; see
+        /// `advanced/religion_core_ends_expansion.rs`.
+        religion_core_ends_expansion => enable_religion_core_ends_expansion, disable_religion_core_ends_expansion;
         // ---- append: s-s --------------------------------------------
         /// Opt-in gene `siege-goes-on-the-forecast`: the siege train goes,
         /// holds and stands down on the capture forecast, and Siege rows rank
