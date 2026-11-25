@@ -1645,6 +1645,15 @@ Together the thread went from about 268 to about 160 ms a turn and the turns
 from about 300 to about 230 ms, with the same worlds on the same turns. What
 is left is mostly the worlds' own maps and charts.
 
+A branch is a new world's page, and a page is the whole viewer again: it took
+about half a second of the shared thread to make, so a branch waited for it
+(0.6 to 0.8 s from the pick until the new world stood on its turn at turn
+60) and, with time running, so did every other world. Now a page for the next
+branch is made ahead of time, out of sight, once the worlds have stood still
+for a second and a half (`strangeSpare`); the branch opens on it as on a box
+closed before, and only the copy of the world it branches from is left to
+wait for: 0.27 to 0.42 s at turn 60. One page waits at a time.
+
 ### Black swans
 
 A black swan is an event nothing in the world saw coming. No rule of the game
