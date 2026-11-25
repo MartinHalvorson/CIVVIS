@@ -1791,6 +1791,11 @@ pub struct Rules {
     /// spec to find a civilization's replacement, once per unit kind per
     /// city whenever production was listed; `replaces` is fixed at load.
     pub unit_replacements: SpecMap<Vec<Name>>,
+    /// Each Great Person class's people, earliest era first and by id within
+    /// an era: the order `Game::current_great_person` takes the next one in.
+    /// It walked every Great Person in the ruleset comparing class names,
+    /// several times a turn per seat; the classes are fixed at load.
+    pub great_people_by_kind: SpecMap<Vec<Name>>,
 }
 
 /// What a district adjacency key (`DistrictSpec::adjacency`) counts among
@@ -2985,6 +2990,7 @@ impl Rules {
             effect_index: EffectIndex::default(),
             district_adjacency_counts: SpecMap::default(),
             unit_replacements: SpecMap::default(),
+            great_people_by_kind: SpecMap::default(),
         };
         let effects: TreeEffectsData = take(&mut files, "tree_effects")?;
         for (node, values) in effects.techs {
@@ -3042,6 +3048,7 @@ impl Rules {
         rules.effect_index = rules.build_effect_index();
         rules.district_adjacency_counts = rules.build_district_adjacency_counts();
         rules.unit_replacements = rules.build_unit_replacements();
+        rules.great_people_by_kind = rules.build_great_people_by_kind();
         Ok(rules)
     }
 
@@ -3097,6 +3104,23 @@ impl Rules {
             }
         }
         replacements
+    }
+
+    /// [`Rules::great_people_by_kind`].
+    fn build_great_people_by_kind(&self) -> SpecMap<Vec<Name>> {
+        let mut by_kind: SpecMap<Vec<Name>> = SpecMap::new();
+        for (id, spec) in self.great_people.iter() {
+            match by_kind.get_mut(spec.kind.as_str()) {
+                Some(people) => people.push(*id),
+                None => {
+                    by_kind.insert(spec.kind.clone(), vec![*id]);
+                }
+            }
+        }
+        for people in by_kind.values_mut() {
+            people.sort_by_key_shared(|id| (self.great_people[*id].era, *id));
+        }
+        by_kind
     }
 
     fn build_district_adjacency_counts(&self) -> SpecMap<Vec<AdjacencyCount>> {
