@@ -636,8 +636,9 @@ mod tests {
         // Whatever the archer trigger completes on this board, ask for it.
         let chase = ai
             .eureka_chases(&g, 0)
-            .into_iter()
-            .find(|chase| chase.trigger == "units_of:archer");
+            .iter()
+            .find(|chase| chase.trigger == "units_of:archer")
+            .cloned();
         let Some(chase) = chase else {
             return; // no archer boost on this ruleset; the other tests cover the path
         };
