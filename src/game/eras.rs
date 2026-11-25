@@ -222,7 +222,7 @@ impl Game {
             return false;
         };
         let bonus = if amount >= 2 {
-            self.empire_wonder_effect(pid, "historic_moment_bonus") as i64
+            self.empire_wonder_effect(pid, crate::name!("historic_moment_bonus")) as i64
         } else {
             0
         };
@@ -401,7 +401,7 @@ impl Game {
             .entry(trigger.to_string())
             .or_insert(0) += count;
         if matches!(self.players[pid].age.as_str(), "golden" | "heroic")
-            && self.civ_effect(pid, "golden_dedication_era_score") <= 0.0
+            && self.civ_effect(pid, crate::name!("golden_dedication_era_score")) <= 0.0
         {
             return;
         }

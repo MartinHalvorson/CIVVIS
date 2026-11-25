@@ -55,13 +55,13 @@ impl Game {
     /// siege shots, the host refused 75 of 76, and the exemption left guns
     /// marched into a city's reach to fire shots that never came.
     pub(crate) fn siege_may_attack_after_moving(&self, unit: &Unit) -> bool {
-        self.promotion_effect(unit, "attack_after_move") > 0.0
+        self.promotion_effect(unit, crate::name!("attack_after_move")) > 0.0
     }
 
     pub(super) fn unit_max_attacks(&self, uid: u32) -> i32 {
         self.units
             .get(&uid)
-            .map(|unit| 1 + self.promotion_effect(unit, "extra_attacks") as i32)
+            .map(|unit| 1 + self.promotion_effect(unit, crate::name!("extra_attacks")) as i32)
             .unwrap_or(1)
     }
 
@@ -172,7 +172,9 @@ impl Game {
                     .get(city_id)
                     .is_some_and(|city| city.owner == unit.owner)
             })
-            .map(|city_id| self.governor_effect(unit.owner, city_id, "city_unit_defense"))
+            .map(|city_id| {
+                self.governor_effect(unit.owner, city_id, crate::name!("city_unit_defense"))
+            })
             .unwrap_or(0.0)
     }
 
@@ -200,7 +202,7 @@ impl Game {
             + self.congress_military_strength_bonus(u)
             + self.religious_combat_belief_bonus(u)
             + (10.0 - u.hp.clamp(0, 100) as f64 / 10.0).round()
-                * self.policy_effect(u.owner, "wounded_penalty_reduction_pct")
+                * self.policy_effect(u.owner, crate::name!("wounded_penalty_reduction_pct"))
                 / 100.0
             + if self.has_ability(u.owner, "gifts_for_the_tlatoani") {
                 self.empire_luxuries(u.owner) as f64
@@ -228,7 +230,7 @@ impl Game {
             + self.congress_military_strength_bonus(u)
             + self.religious_combat_belief_bonus(u)
             + (10.0 - u.hp.clamp(0, 100) as f64 / 10.0).round()
-                * self.policy_effect(u.owner, "wounded_penalty_reduction_pct")
+                * self.policy_effect(u.owner, crate::name!("wounded_penalty_reduction_pct"))
                 / 100.0
             + if self.has_ability(u.owner, "gifts_for_the_tlatoani") {
                 self.empire_luxuries(u.owner) as f64
@@ -246,7 +248,8 @@ impl Game {
         city.wall_hp > 0
             && (!city.struck
                 || city.extra_strikes_used
-                    < self.governor_effect(city.owner, city.id, "city_extra_strike") as i32)
+                    < self.governor_effect(city.owner, city.id, crate::name!("city_extra_strike"))
+                        as i32)
         // Ranged strikes require standing walls; Embrasure supplies one more.
     }
 
@@ -430,7 +433,7 @@ impl Game {
         let unit = &self.units[&uid];
         let spec = &self.rules.units[unit.kind];
         spec.range.max(1)
-            + self.promotion_effect(unit, "range") as i32
+            + self.promotion_effect(unit, crate::name!("range")) as i32
             // CLASS_FORWARD_OBSERVER belongs to ground siege. `siege` also
             // marks Bombers for city-targeting, but they receive no Balloon
             // or Drone range bonus (Base Units.xml:611-623).
@@ -659,7 +662,7 @@ impl Game {
     }
 
     pub fn rock_band_choose_any_promotion(&self, pid: usize) -> bool {
-        self.policy_effect(pid, "rock_band_any_promotion") > 0.0
+        self.policy_effect(pid, crate::name!("rock_band_any_promotion")) > 0.0
     }
 
     /// Apply unit-specific experience modifiers, then round to the nearest
@@ -675,9 +678,9 @@ impl Game {
             multiplier += 0.2;
         }
         if spec.promotion_class == "recon" {
-            multiplier += self.policy_effect(owner, "recon_xp_pct") / 100.0;
+            multiplier += self.policy_effect(owner, crate::name!("recon_xp_pct")) / 100.0;
         }
-        multiplier += self.policy_effect(owner, "unit_xp_pct") / 100.0;
+        multiplier += self.policy_effect(owner, crate::name!("unit_xp_pct")) / 100.0;
         // To Arms! pays its Golden Age half in two parts: POLICY_TO_ARMS_GA_XP
         // is +50% experience beside POLICY_TO_ARMS_GA_PRODUCTION's +25%
         // Production. Only the Production half was modelled, and at 15%.
@@ -688,7 +691,7 @@ impl Game {
         if spec.promotion_class == "ranged" && self.has_ability(owner, "ta_seti") {
             multiplier += 0.5;
         }
-        multiplier += self.civ_effect(owner, "unit_xp_pct") / 100.0;
+        multiplier += self.civ_effect(owner, crate::name!("unit_xp_pct")) / 100.0;
         (amt * multiplier).round() as i64
     }
 
@@ -730,17 +733,14 @@ impl Game {
         hash
     }
 
-    pub(crate) fn promotion_effect(&self, unit: &Unit, effect: &str) -> f64 {
+    pub(crate) fn promotion_effect(
+        &self,
+        unit: &Unit,
+        effect: impl crate::effect_map::EffectKey,
+    ) -> f64 {
         unit.promotions
             .iter()
-            .filter_map(|name| {
-                self.rules
-                    .promotions
-                    .get(name)?
-                    .effects
-                    .get(effect)
-                    .copied()
-            })
+            .filter_map(|name| effect.in_effects(&self.rules.promotions.get(name)?.effects))
             .sum()
     }
 
@@ -843,7 +843,7 @@ impl Game {
             return true;
         }
         if spec.domain.as_deref() == Some("sea")
-            && self.civ_effect(pid, "naval_formation_civic_mercantilism") > 0.0
+            && self.civ_effect(pid, crate::name!("naval_formation_civic_mercantilism")) > 0.0
         {
             return self.players[pid]
                 .civics
@@ -851,13 +851,16 @@ impl Game {
         }
         if !matches!(spec.domain.as_deref(), Some("sea" | "air")) {
             return match formation {
-                1 if self.civ_effect(pid, "land_corps_civic_mercenaries") > 0.0 => self.players
-                    [pid]
-                    .civics
-                    .contains(&crate::name!("mercenaries")),
-                2 if self.civ_effect(pid, "land_army_civic_nationalism") > 0.0 => self.players[pid]
-                    .civics
-                    .contains(&crate::name!("nationalism")),
+                1 if self.civ_effect(pid, crate::name!("land_corps_civic_mercenaries")) > 0.0 => {
+                    self.players[pid]
+                        .civics
+                        .contains(&crate::name!("mercenaries"))
+                }
+                2 if self.civ_effect(pid, crate::name!("land_army_civic_nationalism")) > 0.0 => {
+                    self.players[pid]
+                        .civics
+                        .contains(&crate::name!("nationalism"))
+                }
                 _ => false,
             };
         }
@@ -876,7 +879,7 @@ impl Game {
                 Some("sea" | "air")
             )
         {
-            base + self.civ_effect(unit.owner, "formation_combat_strength")
+            base + self.civ_effect(unit.owner, crate::name!("formation_combat_strength"))
         } else {
             base
         }
@@ -902,7 +905,7 @@ impl Game {
     /// Discipline: +5 combat strength when fighting barbarians.
     pub(super) fn vs_bonus(&self, owner: usize, opponent: usize) -> f64 {
         if self.players[opponent].is_barbarian {
-            self.policy_effect(owner, "barbarian_combat")
+            self.policy_effect(owner, crate::name!("barbarian_combat"))
         } else if self.players[owner]
             .alliances
             .iter()

@@ -3675,7 +3675,7 @@ fn naval_raider_promotions_apply_strength_and_victory_gold() {
     let victim = g.spawn_unit("galley", 1, target);
     g.units.get_mut(&victim).unwrap().hp = 1;
     assert_eq!(
-        g.promotion_effect(&g.units[&raider], "ranged_vs_naval"),
+        g.promotion_effect(&g.units[&raider], crate::name!("ranged_vs_naval")),
         10.0
     );
     let gold = g.players[0].gold;

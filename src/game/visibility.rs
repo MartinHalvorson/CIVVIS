@@ -772,7 +772,7 @@ impl Game {
     pub fn unit_sight(&self, uid: u32) -> i32 {
         let unit = &self.units[&uid];
         let spec = &self.rules.units[unit.kind];
-        spec.sight + self.promotion_effect(unit, "sight") as i32
+        spec.sight + self.promotion_effect(unit, crate::name!("sight")) as i32
     }
 
     /// Terrain-aware tiles currently observed by one unit. Air units ignore
@@ -2077,7 +2077,7 @@ impl Game {
             return true;
         }
         let raider = self.rules.units[unit.kind].promotion_class == "naval_raider";
-        let camouflaged = self.promotion_effect(unit, "camouflage") > 0.0;
+        let camouflaged = self.promotion_effect(unit, crate::name!("camouflage")) > 0.0;
         if !raider && !camouflaged {
             return true;
         }

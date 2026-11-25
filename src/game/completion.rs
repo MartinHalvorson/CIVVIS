@@ -269,11 +269,13 @@ impl Game {
                     .strategic_resource_commitments
                     .remove(&Self::item_progress_key(item));
                 self.apply_training_district_effects(cid, placed);
-                let science_pct =
-                    self.city_building_effect(&self.cities[&cid], "science_per_unit_cost_pct");
+                let science_pct = self.city_building_effect(
+                    &self.cities[&cid],
+                    crate::name!("science_per_unit_cost_pct"),
+                );
                 self.players[pid].research_overflow += self.item_cost(item) * science_pct / 100.0;
                 if self.rules.units[unit].domain.as_deref() == Some("sea")
-                    && self.empire_wonder_effect(pid, "duplicate_naval_units") > 0.0
+                    && self.empire_wonder_effect(pid, crate::name!("duplicate_naval_units")) > 0.0
                 {
                     if let Some(second) = self.place_new_unit(unit, pid, pos) {
                         self.set_unit_formation(second, *formation);
@@ -322,7 +324,7 @@ impl Game {
                 self.apply_training_district_effects(cid, placed);
                 if unit == "builder" {
                     self.units.get_mut(&placed).unwrap().charges +=
-                        self.governor_effect(pid, cid, "builder_charges") as i32;
+                        self.governor_effect(pid, cid, crate::name!("builder_charges")) as i32;
                 }
                 if unit == "settler" && self.settler_consumes_population(pid, cid) {
                     self.cities.get_mut(&cid).unwrap().pop -= 1;
@@ -332,13 +334,15 @@ impl Game {
                     self.rules.units[unit].class.as_str(),
                     "military" | "support"
                 ) {
-                    let science_pct =
-                        self.city_building_effect(&self.cities[&cid], "science_per_unit_cost_pct");
+                    let science_pct = self.city_building_effect(
+                        &self.cities[&cid],
+                        crate::name!("science_per_unit_cost_pct"),
+                    );
                     self.players[pid].research_overflow +=
                         self.rules.units[unit].cost * science_pct / 100.0;
                 }
                 if self.rules.units[unit].domain.as_deref() == Some("sea")
-                    && self.empire_wonder_effect(pid, "duplicate_naval_units") > 0.0
+                    && self.empire_wonder_effect(pid, crate::name!("duplicate_naval_units")) > 0.0
                 {
                     if let Some(second) = self.place_new_unit(unit, pid, pos) {
                         self.apply_training_district_effects(cid, second);
@@ -463,7 +467,7 @@ impl Game {
                         .retain(|candidate| !repaired_buildings.contains(candidate));
                 }
                 let completion_faith = spec.cost
-                    * self.governor_effect(pid, cid, "building_completion_faith_pct")
+                    * self.governor_effect(pid, cid, crate::name!("building_completion_faith_pct"))
                     / 100.0;
                 self.players[pid].faith += completion_faith;
                 true
@@ -544,7 +548,10 @@ impl Game {
                         .religion
                         .as_deref()
                         .is_some_and(|religion| {
-                            self.religion_belief_effect(religion, "holy_site_culture_bomb") > 0.0
+                            self.religion_belief_effect(
+                                religion,
+                                crate::name!("holy_site_culture_bomb"),
+                            ) > 0.0
                         })
                         && self.district_is_family(district, crate::name!("holy_site"));
                 if spec.effects.get("culture_bomb").copied().unwrap_or(0.0) > 0.0
@@ -812,31 +819,31 @@ impl Game {
             spec.promotion_class.as_str(),
             "melee" | "anti_cavalry" | "ranged"
         ) {
-            self.city_building_effect(city, "melee_anti_cavalry_ranged_xp_pct")
+            self.city_building_effect(city, crate::name!("melee_anti_cavalry_ranged_xp_pct"))
         } else if spec.cavalry || spec.siege {
-            self.city_building_effect(city, "cavalry_siege_xp_pct")
+            self.city_building_effect(city, crate::name!("cavalry_siege_xp_pct"))
         } else {
             0.0
         };
         if spec.domain.as_deref() == Some("air") {
-            xp_pct += self.city_building_effect(city, "air_unit_xp_pct");
+            xp_pct += self.city_building_effect(city, crate::name!("air_unit_xp_pct"));
         }
         if spec.domain.as_deref() == Some("sea") && spec.class == "military" {
-            xp_pct += self.city_building_effect(city, "naval_unit_xp_pct");
+            xp_pct += self.city_building_effect(city, crate::name!("naval_unit_xp_pct"));
         }
         if spec.domain.as_deref().is_none() && spec.class == "military" {
-            xp_pct += self.city_building_effect(city, "all_land_unit_xp_pct");
+            xp_pct += self.city_building_effect(city, crate::name!("all_land_unit_xp_pct"));
         }
         let cavalry_movement = if spec.cavalry {
-            self.city_building_effect(city, "cavalry_movement")
+            self.city_building_effect(city, crate::name!("cavalry_movement"))
         } else {
             0.0
         };
         let patron_saint = matches!(self.units[&uid].kind.as_str(), "apostle" | "warrior_monk")
-            && self.governor_effect(city.owner, cid, "apostle_extra_promotion") > 0.0;
+            && self.governor_effect(city.owner, cid, crate::name!("apostle_extra_promotion")) > 0.0;
         let embrasure_promotion = spec.class == "military"
             && !spec.promotion_class.is_empty()
-            && self.governor_effect(city.owner, cid, "military_free_promotion") > 0.0;
+            && self.governor_effect(city.owner, cid, crate::name!("military_free_promotion")) > 0.0;
         // ALLIANCE_FREE_UNIT_UPGRADE is named for something it does not do. Its
         // collection is COLLECTION_ALLIANCE_TRAINED_UNITS and its effect is
         // ADJUST_UNIT_GRANT_EXPERIENCE at -1 -- the same amount every row named

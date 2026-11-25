@@ -303,7 +303,11 @@ impl Game {
         };
         let city = &self.cities[&cid];
         let discount = self
-            .governor_effect(city.owner, cid, "strategic_resource_discount_pct")
+            .governor_effect(
+                city.owner,
+                cid,
+                crate::name!("strategic_resource_discount_pct"),
+            )
             .clamp(0.0, 100.0);
         spec.resource_cost * multiplier * (100.0 - discount) / 100.0
     }
@@ -390,7 +394,8 @@ impl Game {
         // than an AI preference so captured, granted, and externally commanded
         // minor Settlers cannot turn it into an ordinary empire.
         if unit == "settler"
-            && (self.players[pid].is_minor || self.policy_effect(pid, "no_settling") > 0.0)
+            && (self.players[pid].is_minor
+                || self.policy_effect(pid, crate::name!("no_settling")) > 0.0)
         {
             return false;
         }

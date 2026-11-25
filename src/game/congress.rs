@@ -50,7 +50,7 @@ impl Game {
     /// major civilization's turn. Országház multiplies this source, so every
     /// consumer of a prospective suzerainty reads the same rate as upkeep.
     pub(crate) fn suzerain_diplomatic_favor_per_turn(&self, pid: usize) -> f64 {
-        1.0 + self.empire_wonder_effect(pid, "suzerain_diplomatic_favor_pct") / 100.0
+        1.0 + self.empire_wonder_effect(pid, crate::name!("suzerain_diplomatic_favor_pct")) / 100.0
     }
 
     fn congress_choice_key(outcome: &str, target: &str) -> String {

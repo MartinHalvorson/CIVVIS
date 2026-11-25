@@ -715,15 +715,16 @@ impl Game {
         // (`EFFECT_ADJUST_PLAYER_HEALING_FROM_DISPERSAL`, Amount 100) is added
         // by `Expansion2_Beliefs.xml` — "the unit that cleared the Barbarian
         // Outpost heals +100 HP". Neither id is in `Expansion2_RemoveData.xml`.
-        self.players[owner].faith += self.pantheon_effect(owner, "camp_cleared_faith");
-        let camp_heal = self.pantheon_effect(owner, "camp_cleared_heal");
+        self.players[owner].faith +=
+            self.pantheon_effect(owner, crate::name!("camp_cleared_faith"));
+        let camp_heal = self.pantheon_effect(owner, crate::name!("camp_cleared_heal"));
         if camp_heal > 0.0 {
             if let Some(unit) = self.units.get_mut(&uid) {
                 unit.hp = (unit.hp + camp_heal.round() as i32).min(100);
             }
         }
         if coastal {
-            let loot = self.promotion_effect(&self.units[&uid], "coastal_raid_gold");
+            let loot = self.promotion_effect(&self.units[&uid], crate::name!("coastal_raid_gold"));
             self.players[owner].gold += self.game_speed.scale(loot);
         }
         let near_city = self
@@ -753,7 +754,7 @@ impl Game {
         if apostle.kind != "apostle"
             || apostle.moves_left <= 0.0
             || apostle.charges <= 0
-            || self.promotion_effect(&apostle, "convert_barbarians") <= 0.0
+            || self.promotion_effect(&apostle, crate::name!("convert_barbarians")) <= 0.0
         {
             return Err("Apostle cannot convert Barbarians".into());
         }

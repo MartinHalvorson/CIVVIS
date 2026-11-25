@@ -168,7 +168,7 @@ impl Game {
     /// runtime player attachments. Policy rules remain data-driven while
     /// callers provide the game context (unit class, district family, city
     /// state, and so on). Anarchy suppresses cards but not external modifiers.
-    pub fn policy_effect(&self, pid: usize, effect: &str) -> f64 {
+    pub fn policy_effect(&self, pid: usize, effect: impl crate::effect_map::EffectKey) -> f64 {
         // A runtime attachment can carry any key at all, and the table it
         // comes from is swapped in after the ruleset is indexed, so the
         // index only settles this for a seat carrying no attachments.
@@ -184,7 +184,7 @@ impl Game {
         if granted {
             // A key no card in the ruleset grants cannot be a card's key, so
             // a trace loses nothing by recording only the ones that are.
-            self.note_policy_effect_read(effect);
+            self.note_policy_effect_read(effect.text());
         }
         if !granted && self.has_no_attachments(pid) {
             return 0.0;
@@ -194,7 +194,7 @@ impl Game {
         // `policy_effect_for_unit`, where the subject is known.
         let attached = self.player_modifier_effect_in_collections(
             pid,
-            effect,
+            effect.text(),
             &[ModifierCollection::Player, ModifierCollection::PlayerCities],
         );
         if self.in_anarchy(pid) {
@@ -210,7 +210,7 @@ impl Game {
                         Some(named) => effects.get_name(named),
                         // Only a seat with attachments gets here, for a key
                         // no card in the ruleset grants.
-                        None => effects.get(effect).copied(),
+                        None => effect.in_effects(effects),
                     }
                 })
                 .sum::<f64>()

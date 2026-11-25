@@ -57,7 +57,7 @@ impl Game {
     /// not heal this army. No id in this belief appears in
     /// `Expansion2_RemoveData.xml`.
     pub(super) fn pantheon_holy_site_heal(&self, unit: &Unit) -> i32 {
-        let amount = self.pantheon_effect(unit.owner, "holy_site_heal");
+        let amount = self.pantheon_effect(unit.owner, crate::name!("holy_site_heal"));
         if amount == 0.0 {
             return 0;
         }
@@ -95,7 +95,11 @@ impl Game {
             .count()
     }
 
-    pub(super) fn pantheon_effect(&self, pid: usize, effect: &str) -> f64 {
+    pub(super) fn pantheon_effect(
+        &self,
+        pid: usize,
+        effect: impl crate::effect_map::EffectKey,
+    ) -> f64 {
         // The effect index holds every key a belief of any kind declares, so
         // an effect it lacks is zero for every pantheon, and one it holds
         // comes back interned: the pantheon's effects are then searched by
@@ -235,7 +239,11 @@ impl Game {
             .map(|p| p.id)
     }
 
-    pub(super) fn religion_belief_effect(&self, religion: &str, effect: &str) -> f64 {
+    pub(super) fn religion_belief_effect(
+        &self,
+        religion: &str,
+        effect: impl crate::effect_map::EffectKey,
+    ) -> f64 {
         // See `pantheon_effect`: absent from the index is zero, and present
         // comes back interned.
         let Some((&effect, _)) = self.rules.effect_index.beliefs.get_key_value(effect) else {
@@ -260,7 +268,11 @@ impl Game {
             .sum()
     }
 
-    pub(super) fn city_religion_belief_effect(&self, city: &City, effect: &str) -> f64 {
+    pub(super) fn city_religion_belief_effect(
+        &self,
+        city: &City,
+        effect: impl crate::effect_map::EffectKey,
+    ) -> f64 {
         self.city_religion(city)
             .map(|religion| self.religion_belief_effect(religion, effect))
             .unwrap_or(0.0)
@@ -424,9 +436,9 @@ impl Game {
                 .get(&city.owner)
                 .is_some_and(|until| *until > self.turn);
         if friendly {
-            self.religion_belief_effect(religion, "friendly_city_combat_strength")
+            self.religion_belief_effect(religion, crate::name!("friendly_city_combat_strength"))
         } else {
-            self.religion_belief_effect(religion, "foreign_city_combat_strength")
+            self.religion_belief_effect(religion, crate::name!("foreign_city_combat_strength"))
         }
     }
 
@@ -440,7 +452,10 @@ impl Game {
             .filter_map(|city| {
                 let religion = self.city_religion(city)?;
                 let founder = self.religion_founder(religion)?;
-                (self.religion_belief_effect(religion, "envoy_first_city_state_conversion") > 0.0)
+                (self.religion_belief_effect(
+                    religion,
+                    crate::name!("envoy_first_city_state_conversion"),
+                ) > 0.0)
                     .then_some((founder, city.owner))
             })
             .collect();
@@ -607,7 +622,11 @@ impl Game {
     }
 
     pub(super) fn city_ignores_foreign_religion(&self, city: &City, religion: &str) -> bool {
-        self.governor_effect(city.owner, city.id, "ignore_foreign_religious_pressure") > 0.0
+        self.governor_effect(
+            city.owner,
+            city.id,
+            crate::name!("ignore_foreign_religious_pressure"),
+        ) > 0.0
             && self.players[city.owner].religion.as_deref() != Some(religion)
     }
 
@@ -621,7 +640,10 @@ impl Game {
     ) {
         let pressure_loss = (1.0
             - self
-                .religion_belief_effect(loser, "theological_combat_loss_reduction_pct")
+                .religion_belief_effect(
+                    loser,
+                    crate::name!("theological_combat_loss_reduction_pct"),
+                )
                 .clamp(0.0, 100.0)
                 / 100.0)
             .max(0.0);
@@ -667,10 +689,10 @@ impl Game {
 
     pub(super) fn theological_strength(&self, unit: &Unit) -> f64 {
         let mut strength = self.rules.units[unit.kind].religious_strength
-            + self.promotion_effect(unit, "religious_strength");
+            + self.promotion_effect(unit, crate::name!("religious_strength"));
         strength += self.adjacent_friendly_unit_effect(unit, "adjacent_religious_strength");
         strength += self.gov_effects(unit.owner).religious_strength;
-        strength += self.policy_effect(unit.owner, "religious_strength");
+        strength += self.policy_effect(unit.owner, crate::name!("religious_strength"));
         strength += self.taxis_holy_city_strength(unit.owner);
         if self
             .map
@@ -679,7 +701,7 @@ impl Game {
             .and_then(|city_id| self.cities.get(&city_id))
             .is_some_and(|city| city.owner == unit.owner)
         {
-            strength += self.policy_effect(unit.owner, "home_religious_strength");
+            strength += self.policy_effect(unit.owner, crate::name!("home_religious_strength"));
         }
         strength += self.religious_combat_belief_bonus(unit);
         if let Some(city) = self
@@ -689,7 +711,8 @@ impl Game {
             .and_then(|city_id| self.cities.get(&city_id))
             .filter(|city| city.owner == unit.owner)
         {
-            strength += self.governor_effect(unit.owner, city.id, "theological_strength");
+            strength +=
+                self.governor_effect(unit.owner, city.id, crate::name!("theological_strength"));
         }
         if self.wdisk(unit.pos, 1).into_iter().any(|position| {
             self.unit_ids_at(position).iter().any(|other| {
@@ -698,7 +721,8 @@ impl Game {
                     && self.units[other].religion == unit.religion
             })
         }) {
-            strength += self.empire_wonder_effect(unit.owner, "guru_adjacent_religious_strength");
+            strength += self
+                .empire_wonder_effect(unit.owner, crate::name!("guru_adjacent_religious_strength"));
         }
         let Some(religion) = unit.religion.as_deref() else {
             return strength;
@@ -959,7 +983,7 @@ impl Game {
         let attacker_dead = self.units[&uid].hp <= 0;
         let defender_dead = self.units[&defender_id].hp <= 0;
         if defender_dead {
-            if self.promotion_effect(&defender, "relic_on_death") > 0.0 {
+            if self.promotion_effect(&defender, crate::name!("relic_on_death")) > 0.0 {
                 let (owner, era) = (defender.owner, self.world_era);
                 self.grant_great_work(owner, "relic", era, "martyr");
             }
@@ -973,7 +997,7 @@ impl Game {
             );
         }
         if attacker_dead {
-            if self.promotion_effect(&attacker, "relic_on_death") > 0.0 {
+            if self.promotion_effect(&attacker, crate::name!("relic_on_death")) > 0.0 {
                 let (owner, era) = (attacker.owner, self.world_era);
                 self.grant_great_work(owner, "relic", era, "martyr");
             }
