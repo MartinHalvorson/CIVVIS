@@ -5089,9 +5089,10 @@ const STRANGE_AHEAD_WAIT_MS = 90000;
 const STRANGE_SEE_MS = 400, STRANGE_SEE_FIRST = 4, STRANGE_SEE_MOST = 40;
 const STRANGE_SEE_WAIT_MS = 120000, STRANGE_SEE_AGAIN_MS = 3000, STRANGE_SEE_ANEW_MS = 1000;
 // The sign over the far end of each branch (`strangeFate`): how wide and how
-// tall it is where there is room for all of it, for its first line, and for
-// a word of it; the room left between two, and where the first row stands.
-const STRANGE_FATES = {full: [292, 42], line: [178, 24], word: [88, 24]};
+// tall it is where there is room for all of it ("On current path," over
+// what is coming, and the wars under it), for its first line, and for a word
+// of it; the room left between two, and where the first row stands.
+const STRANGE_FATES = {full: [292, 56], line: [178, 24], word: [88, 24]};
 const STRANGE_FATE_GAP = 6, STRANGE_FATE_TOP = 50;
 // How often what the page costs is read, and how many readings are drawn.
 const STRANGE_METER_MS = 2000, STRANGE_METER_KEPT = 60;
@@ -5282,6 +5283,11 @@ const STRANGE_STYLE = `
     background: #07110fe6; font-variant-numeric: tabular-nums; cursor: default;
   }
   #strange-hud .strange-fate > b { position: absolute; left: 9px; top: 2px; font: 700 15px/18px Georgia, serif; color: var(--strange-tint); }
+  /* "On current path," (operator 2026-11-25: "add to message: on current
+     path, no nuclear war..."): what is coming is what comes if the world
+     keeps to its line. Over what it says, where there is room for it. */
+  #strange-hud .strange-fate small { display: block; font-size: 11px; line-height: 13px; color: #9fb3ab; overflow: hidden; text-overflow: ellipsis; }
+  #strange-hud .strange-fate small:empty, #strange-hud .strange-fate.strange-fate-slim small { display: none; }
   #strange-hud .strange-fate strong { display: block; font-size: 12px; line-height: 17px; overflow: hidden; text-overflow: ellipsis; }
   #strange-hud .strange-fate span { display: block; font-size: 11px; line-height: 15px; color: #bccac4; overflow: hidden; text-overflow: ellipsis; }
   #strange-hud .strange-fate span:empty, #strange-hud .strange-fate.strange-fate-slim span { display: none; }
@@ -5583,7 +5589,7 @@ function strangeWorldOpen(letter, born = null) {
   fate.className = "strange-fate";
   fate.dataset.strangeFate = letter;
   fate.setAttribute("role", "status");
-  fate.innerHTML = `<b>${name}</b><strong></strong><span></span><i></i>`;
+  fate.innerHTML = `<b>${name}</b><small></small><strong></strong><span></span><i></i>`;
   hud.insertBefore(fate, hud.querySelector(".strange-now"));
   const plate = document.createElement("div");
   plate.className = "strange-world";
@@ -6119,14 +6125,17 @@ function strangeSeen(letter, told, how) {
 //   - none is as far as the future has been played yet: none in the next N
 //     turns, and N grows as it is played on.
 // Under it the next war to be declared, and how many more there are after
-// it. `state` is which of those it is (`coming`, `begun`, `clear`, `so-far`,
-// `none`), `head` and `wars` the two lines, `line` and `word` the first said
-// in less room, `seen` how much of the game the future has been played
-// through, and `title` all of it.
+// it. Over it, "On current path," (operator 2026-11-25: "add to message: on
+// current path, no nuclear war..."): it is the future of the world's line as
+// it stands, under the player strategies it has now. `state` is which of
+// those it is (`coming`, `begun`, `clear`, `so-far`, `none`), `path`, `head`
+// and `wars` the three lines (`path` empty while there is nothing seen yet),
+// `line` and `word` the first said in less room, `seen` how much of the game
+// the future has been played through, and `title` all of it.
 function strangeFate(letter) {
   const pane = debugSplit.panes[letter], sight = pane.sight, turn = pane.turn;
   const turns = count => `${count} turn${count === 1 ? "" : "s"}`;
-  const none = (head, word, title) => ({state: "none", head, line: head, word, wars: "", seen: 0, title});
+  const none = (head, word, title) => ({state: "none", path: "", head, line: head, word, wars: "", seen: 0, title});
   if (!strange.futures && !sight) return none("Futures off", "off", "Futures are off: this world's future is not being played out");
   if (!sight || typeof turn !== "number" || typeof sight.turn !== "number")
     return none("Looking ahead…", "…", "This world's future is being played out to the end of its game");
@@ -6162,7 +6171,9 @@ function strangeFate(letter) {
   const last = sight.done ? sight.turn : limit;
   const share = sight.done ? 1 : last && last > sight.from ? Math.max(0, Math.min(1, (sight.turn - sight.from) / (last - sight.from))) : 0;
   const pace = sight.pace > 0 ? ` at ${(1000 / sight.pace).toFixed(sight.pace > 100 ? 1 : 0)} turns a second` : "";
-  const title = [`World ${letter.toUpperCase()}: ${head.replace(/^[☢☮] /, "")}`,
+  const path = "On current path,";
+  const said = head.replace(/^[☢☮] /, "");
+  const title = [`World ${letter.toUpperCase()}: ${path.toLowerCase()} ${said.charAt(0).toLowerCase()}${said.slice(1)}`,
     ...sight.seen.filter(seen => seen.kind === "nuclear" && seen.turn >= turn).slice(0, 6).map(seen => `☢ Turn ${seen.turn}: ${seen.text}`),
     ...(coming.length > 0 ? coming.slice(0, 8).map(seen => `⚔ Turn ${seen.turn}: ${seen.text}`)
       : [sight.done ? "No wars ahead" : wars]),
@@ -6171,7 +6182,7 @@ function strangeFate(letter) {
     sight.done ? `Its future is played to the end of the game, turn ${sight.turn}${typeof sight.took === "number" ? `, in ${(sight.took / 1000).toFixed(1)} s` : ""}`
       : `Its future is played to turn ${sight.turn}${limit ? ` of ${limit}` : ""}${pace}, and is being played on`]
     .filter(Boolean).join("\n");
-  return {state, head, line, word, wars, seen: share, title};
+  return {state, path, head, line, word, wars, seen: share, title};
 }
 // Where the signs stand: each over the far end of its own branch, in rows
 // between the cards at the top, as much of each as there is room for. Signs
@@ -6760,8 +6771,9 @@ function strangeDraw() {
   for (const letter of open) {
     const sign = hud.querySelector(`[data-strange-fate="${letter}"]`);
     if (!sign) continue;
-    const fate = strangeFate(letter), [head, wars] = [sign.querySelector("strong"), sign.querySelector("span")];
+    const fate = strangeFate(letter), [path, head, wars] = [sign.querySelector("small"), sign.querySelector("strong"), sign.querySelector("span")];
     const words = mode === "full" ? fate.head : mode === "line" ? fate.line : fate.word;
+    if (path.textContent !== fate.path) path.textContent = fate.path;
     if (head.textContent !== words) head.textContent = words;
     if (wars.textContent !== fate.wars) wars.textContent = fate.wars;
     if (sign.dataset.fate !== fate.state) sign.dataset.fate = fate.state;
