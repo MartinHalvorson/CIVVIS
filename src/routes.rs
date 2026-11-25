@@ -385,6 +385,24 @@ pub fn fog_honest(session: &mut Session, parsed: &Value) -> Value {
     session.state()
 }
 
+/// `POST /chaos` — `{"frequency": 30}` turns Chaos Monkey's dial: natural
+/// disasters that many times as often as the game ships them, from the next
+/// turn of the world on screen and in the worlds dealt after it
+/// (`Session::set_disaster_frequency`). The answer is the state, which says
+/// what the dial is set to, with `error` when the world is not one the dial
+/// turns.
+pub fn chaos(session: &mut Session, parsed: &Value) -> Value {
+    let refused = match parsed["frequency"].as_f64() {
+        Some(frequency) => session.set_disaster_frequency(frequency).err(),
+        None => Some("chaos needs a frequency".to_string()),
+    };
+    let mut out = session.state();
+    if let Some(error) = refused {
+        out["error"] = json!(error);
+    }
+    out
+}
+
 /// The shared answer from `POST /step`. Native uses `advanced` to publish a
 /// spectator frame after the lock is released; the browser uses the answer
 /// directly and advances its frame sequence in its own single-threaded loop.

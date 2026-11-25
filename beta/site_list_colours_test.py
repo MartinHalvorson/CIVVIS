@@ -199,10 +199,12 @@ class Pages(unittest.TestCase):
                 self.assertEqual(list(worn)[-1], "Civ 6")
                 self.assertNotIn("Wizard Chess", worn)
                 blue = {name for name, kind in worn.items() if kind == "blue"}
-                self.assertLessEqual({"Home", "Charts/", "Experiments"}, blue)
+                # Chaos Monkey is a page (2026-11-25), so its button is the
+                # pages' blue like the three before it.
+                self.assertLessEqual({"Home", "Charts/", "Experiments", "Chaos Monkey"}, blue)
                 # Whatever else is blue is a page of Charts/, set in under it.
                 under = {name for kind, _, _, name in LINK.findall(NAV.search((BETA / source).read_text(encoding="utf-8")).group(1)) if kind.endswith("sub-link")}
-                self.assertEqual(blue - {"Home", "Charts/", "Experiments"}, under)
+                self.assertEqual(blue - {"Home", "Charts/", "Experiments", "Chaos Monkey"}, under)
 
     def test_the_simulator_is_never_the_page_on_screen_here(self):
         # The page on screen here is always one of the blue pages.
@@ -221,6 +223,7 @@ class Simulator(unittest.TestCase):
             ("homelink", "Home"),
             ("chartslink", "Charts/"),
             ("tourlink", "Experiments"),
+            ("chaoslink", "Chaos Monkey"),
             ("watchlink", "CIVVIS"),
             ("playlink", "AI Debugger"),
             ("strangelink", "Doctor Strange's Civ 6"),
@@ -231,8 +234,8 @@ class Simulator(unittest.TestCase):
 
     def test_the_pages_are_blue_and_civ_6_is_steam(self):
         # The same blue as the pages' own lists, and the same Steam blue.
-        self.assertIn("  #homelink, #chartslink, #tourlink { color: #a8d8f5; border-color: #3b6788; background: #274b66; }\n", VIEWER)
-        self.assertIn("  #homelink:hover, #chartslink:hover, #tourlink:hover { color: #fff; border-color: #66c0f4; background: #315d7e; }\n", VIEWER)
+        self.assertIn("  #homelink, #chartslink, #tourlink, #chaoslink { color: #a8d8f5; border-color: #3b6788; background: #274b66; }\n", VIEWER)
+        self.assertIn("  #homelink:hover, #chartslink:hover, #tourlink:hover, #chaoslink:hover { color: #fff; border-color: #66c0f4; background: #315d7e; }\n", VIEWER)
         self.assertIn(
             "  #civ6link {\n"
             "    color: #fff; border-color: transparent;\n"
@@ -242,13 +245,13 @@ class Simulator(unittest.TestCase):
         )
 
     def test_wizard_chess_is_set_aside(self):
-        # The list is the eight names above and ends at Civ 6; nothing in
+        # The list is the nine names above and ends at Civ 6; nothing in
         # the simulator names Wizard Chess or the link it had.
         nav = VIEWER[VIEWER.index('<nav class="head-links" id="headlinks"'):]
         nav = nav[:nav.index("</nav>")]
         self.assertEqual(
             re.findall(r'<a class="home-link" id="([a-z0-9]+)"', nav),
-            ["homelink", "chartslink", "tourlink", "watchlink", "strangelink", "playlink", "tomorrowlink", "civ6link"])
+            ["homelink", "chartslink", "tourlink", "chaoslink", "watchlink", "strangelink", "playlink", "tomorrowlink", "civ6link"])
         self.assertNotRegex(VIEWER, SET_ASIDE)
 
     def test_doctor_strange_is_in_his_colours(self):

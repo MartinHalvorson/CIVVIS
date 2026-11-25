@@ -2214,7 +2214,7 @@ fn viewer_marks_the_selected_revision_and_its_compact_ages_above_the_minimap() {
 /// just "Charts" to "Charts/" with the intentional slash"), holding Win
 /// Analytics, the page it opens, and CIVVIS Performance ("in charts, we
 /// should have at least win analytics, CIVVIS Performance").
-/// Pinned as one literal because the list is the contract: eight links in
+/// Pinned as one literal because the list is the contract: nine links in
 /// this order, inside a list that only the hosts serving a /home, a
 /// /charts and an /experiments reveal. The addresses follow the names in
 /// the list since 2026-11-23 (operator: "clean up the URL please.
@@ -2226,7 +2226,10 @@ fn viewer_marks_the_selected_revision_and_its_compact_ages_above_the_minimap() {
 /// tourney thing"): Tournaments, at /tournaments. On 2026-11-25 it was named
 /// Experiments (operator: "rename tournaments to experiments"), and is at
 /// /experiments; the link keeps the id it had (`tourlink`), which the
-/// rules that size and colour it are written for.
+/// rules that size and colour it are written for. The same day Chaos
+/// Monkey, the page of worlds replayed under a very high frequency of
+/// natural disasters, joined between Experiments and CIVVIS (operator:
+/// "above civvis add "Chaos Monkey""), at /chaos-monkey: nine links.
 #[test]
 fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
     assert!(EMBEDDED_INDEX.contains(concat!(
@@ -2234,6 +2237,7 @@ fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
         "        <a class=\"home-link\" id=\"homelink\" href=\"/home\" target=\"_top\">Home</a>\n",
         "        <a class=\"home-link\" id=\"chartslink\" href=\"/charts/ai-insights\" target=\"_top\">Charts/</a>\n",
         "        <a class=\"home-link\" id=\"tourlink\" href=\"/experiments\" target=\"_top\">Experiments</a>\n",
+        "        <a class=\"home-link\" id=\"chaoslink\" href=\"/chaos-monkey\" target=\"_top\">Chaos Monkey</a>\n",
         "        <a class=\"home-link\" id=\"watchlink\" href=\"./\" target=\"_top\">CIVVIS</a>\n",
         "        <a class=\"home-link\" id=\"strangelink\" href=\"?mode=strange\" target=\"_top\">Doctor Strange's Civ 6</a>\n",
         "        <a class=\"home-link\" id=\"playlink\" href=\"?mode=play\" target=\"_top\">AI Debugger</a>\n",
@@ -2514,22 +2518,24 @@ fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
         "for address in dict.fromkeys([*carried, *former]):\n",
         "    needle, replacement = f'href=\"/{address}\"', f'href=\"{address}/\"'\n",
     )));
-    // Two by two, a link is half its row, except on the second row: there
-    // EXPERIMENTS takes six tenths and CIVVIS four, the room AUTO-TOURNEYS (its
-    // name from 2026-11-22 to 2026-11-24) needed. Measured in Chrome in
-    // the system face, AUTO-TOURNEYS is 91.3px in this type and half a row
-    // holds 84px at its narrowest (a 195px band), six tenths 103.8px;
-    // CIVVIS is 36px in the 64.2px left to it.
+    // Two by two, a link is half its row, except beside CIVVIS: there
+    // CHAOS MONKEY takes six tenths and CIVVIS four, the room AUTO-TOURNEYS
+    // (Experiments' name from 2026-11-22 to 2026-11-24, and as long a
+    // name) needed. Measured in Chrome in the system face, AUTO-TOURNEYS
+    // is 91.3px in this type and half a row holds 84px at its narrowest (a
+    // 195px band), six tenths 103.8px; CIVVIS is 36px in the 64.2px left
+    // to it.
     assert!(EMBEDDED_INDEX.contains(concat!(
         "  .head-links > .home-link { grid-column: span 5; }\n",
-        "  .head-links > #tourlink { grid-column: span 6; }\n",
+        "  .head-links > #chaoslink { grid-column: span 6; }\n",
         "  .head-links > #watchlink { grid-column: span 4; }\n",
     )));
-    // Doctor Strange's Civ 6 is the one name longer than half a row and has
-    // a row of its own, AI Debugger and Civ 6 keep theirs, and Edge of
-    // Tomorrow has one between those two.
+    // Experiments, over those two, has a row of its own since Chaos Monkey
+    // took the place beside CIVVIS. Doctor Strange's Civ 6 is the one name
+    // longer than half a row and has a row too, AI Debugger and Civ 6 keep
+    // theirs, and Edge of Tomorrow has one between those two.
     assert!(EMBEDDED_INDEX.contains(
-        "  .head-links > #playlink, .head-links > #strangelink, .head-links > #tomorrowlink, .head-links > #civ6link { grid-column: 1 / -1; }\n"
+        "  .head-links > #tourlink, .head-links > #playlink, .head-links > #strangelink, .head-links > #tomorrowlink, .head-links > #civ6link { grid-column: 1 / -1; }\n"
     ));
     for gone in [
         ".head-links > :last-child:nth-child(odd)",
@@ -2739,6 +2745,9 @@ fn the_home_page_lists_the_sites_with_itself_ringed() {
             "      <a class=\"site-link\" href=\"../experiments/\" ",
             "title=\"Series of verification games against Civilization VI&#8217;s own AI: ",
             "running, scheduled and finished.\">Experiments</a>\n",
+            "      <a class=\"site-link\" href=\"../chaos-monkey/\" ",
+            "title=\"The same worlds replayed with natural disasters up to 1,000 times as often: ",
+            "what breaks, and what holds.\">Chaos Monkey</a>\n",
             "      <a class=\"site-link\" href=\"../\" ",
             "title=\"Every civilization is played by a CIVVIS AI agent.\">CIVVIS</a>\n",
             "      <a class=\"site-link\" href=\"../?mode=strange\" ",
@@ -5011,6 +5020,57 @@ fn the_map_menus_split_worlds_from_battlefields() {
     assert!(EMBEDDED_INDEX.contains("box.checked = id === \"domination\";"));
 }
 
+/// Chaos Monkey's dial at the table (operator 2026-11-25: "Here we can run
+/// civvis sims with a very high frequency of natural disasters"): `POST
+/// /chaos` turns it on the watched world, the state says what it stands at,
+/// and the world dealt after this one keeps it. A played game is the Sim
+/// debugger's, which keeps turns ahead of the one on screen, so the dial is
+/// not its to turn and its state carries no such figure.
+#[test]
+fn chaos_turns_the_dial_on_a_watched_world_and_the_next_world_keeps_it() {
+    let mut watched = Session::new(Params {
+        spectate: true,
+        ..current()
+    });
+    assert_eq!(watched.state()["disaster_frequency"], 1.0);
+    let out = crate::routes::chaos(&mut watched, &json!({"frequency": 30}));
+    assert!(out.get("error").is_none(), "{}", out["error"]);
+    assert_eq!(out["disaster_frequency"], 30.0);
+    assert_eq!(watched.game.disaster_frequency(), 30.0);
+    // Past the limit is the limit, and the state says what was made of it.
+    let out = crate::routes::chaos(&mut watched, &json!({"frequency": 1.0e9}));
+    assert_eq!(
+        out["disaster_frequency"],
+        crate::game::MAX_DISASTER_FREQUENCY
+    );
+    // A request that names no frequency changes nothing and says so.
+    let out = crate::routes::chaos(&mut watched, &json!({"frequency": 30}));
+    assert_eq!(out["disaster_frequency"], 30.0);
+    let out = crate::routes::chaos(&mut watched, &json!({}));
+    assert_eq!(out["error"], "chaos needs a frequency");
+    assert_eq!(watched.game.disaster_frequency(), 30.0);
+    // The next world is dealt from the session's setup, which holds it.
+    let next = new_game_params(&watched.params, &json!({}));
+    assert_eq!(Session::new(next).game.disaster_frequency(), 30.0);
+    // And a new-game request may ask for another.
+    let asked = new_game_params(&watched.params, &json!({"disaster_frequency": 100}));
+    assert_eq!(Session::new(asked).game.disaster_frequency(), 100.0);
+
+    let mut played = Session::new(current());
+    let out = crate::routes::chaos(&mut played, &json!({"frequency": 30}));
+    assert_eq!(
+        out["error"],
+        "Chaos Monkey turns the dial on a watched CIVVIS world"
+    );
+    assert_eq!(played.game.disaster_frequency(), 1.0);
+    assert!(played.state().get("disaster_frequency").is_none());
+    // The viewer asks through the one route, native and published alike.
+    assert!(EMBEDDED_APP_SETUP_JS.contains("fetchJSON(\"/chaos\", {method: \"POST\","));
+    assert!(
+        include_str!("../wasm.rs").contains("(\"POST\", \"/chaos\") => with_session(|session| {")
+    );
+}
+
 fn current() -> Params {
     Params {
         map_topology: MapTopology::Flat,
@@ -5038,6 +5098,7 @@ fn current() -> Params {
         leader_pool: LeaderPool::Civ6,
         civs: Vec::new(),
         supervised: false,
+        disaster_frequency: crate::game::DEFAULT_DISASTER_FREQUENCY,
     }
 }
 
@@ -8263,9 +8324,9 @@ fn browser_orders_controls_interface_setup_and_logs() {
     ));
     assert!(EMBEDDED_INDEX.contains("function hudPaceHeldOpen()"));
     // The moment focus leaves a held select — watch pace, the arena's
-    // in-game fog or Fog-honest AI — the held snapshots paint.
+    // in-game fog, Fog-honest AI or Chaos Monkey — the held snapshots paint.
     assert!(EMBEDDED_INDEX.contains(
-        "if (ev.target.closest?.(\"[data-hud-pace], [data-hud-fog], [data-hud-fog-honest]\") && state) drawPlayerHud();"
+        "if (ev.target.closest?.(\"[data-hud-pace], [data-hud-fog], [data-hud-fog-honest], [data-hud-chaos]\") && state) drawPlayerHud();"
     ));
     // The bars are placed from the rendered heading, so they cannot drift
     // from the columns they name.

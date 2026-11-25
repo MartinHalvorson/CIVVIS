@@ -100,6 +100,7 @@
 "current": "presumed core",
 "decided": "presumed core",
 "difficulty": "setup",
+"disaster_frequency": "setup",
 "disaster_intensity": "setup",
 "droughts[*].ends": "core",
 "droughts[*].severity": "presumed core",

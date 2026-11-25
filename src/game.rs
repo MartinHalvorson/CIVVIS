@@ -4905,6 +4905,53 @@ pub struct SiegeCensus {
     pub reduced_with_melee_adjacent: u64,
 }
 
+/// What the game's disasters did, by class and by the civilization hit.
+/// Losses count everything nobody caused: the random disasters, the sea
+/// rising over a coast, and a reactor accident.
+///
+/// A disaster tells the civilization it lands on and nobody else
+/// (`Game::note_disaster`), and a finished world keeps only the scars that
+/// were never repaired, so neither says how hard a game was hit. Chaos
+/// Monkey (`src/chaos_monkey.rs`) plays the same world at several disaster
+/// frequencies and needs exactly that: how many of each class struck, and
+/// what each civilization lost to them. Counted where the damage is done
+/// and, like [`SiegeCensus`], read by evaluators only: no rule reads it and
+/// a save does not carry it.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DisasterCensus {
+    /// Disasters that struck, by class (`volcanic_eruption`, `river_flood`,
+    /// `drought`, the four storms, the two fires). A roll that found nowhere
+    /// to land is not counted.
+    pub events: BTreeMap<String, u32>,
+    /// What each civilization lost, by player index.
+    pub losses: BTreeMap<usize, DisasterLosses>,
+}
+
+/// The protections a city has against disasters
+/// (`Game::city_disaster_shelter`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct DisasterShelter {
+    /// Liang's Reinforced Materials: nothing a disaster does touches it.
+    pub immune: bool,
+    /// A Dam or the Great Bath holds its river.
+    pub flood: bool,
+    /// An Aqueduct, a Bath or a Dam keeps its Food through a drought.
+    pub drought: bool,
+    /// A Flood Barrier keeps the sea off its lowlands.
+    pub coast: bool,
+}
+
+/// One civilization's losses to disasters over a game.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DisasterLosses {
+    /// Citizens killed in its cities.
+    pub citizens: u32,
+    /// Times one of its improvements or districts was left pillaged.
+    pub tiles: u32,
+    /// Units destroyed.
+    pub units: u32,
+}
+
 /// What one belligerent has had taken from it in a war — never what it
 /// inflicted, so the two sides of a war read as two columns of the same
 /// ledger rather than two versions of it.
@@ -5044,6 +5091,8 @@ pub struct Chronicle {
     pub events: EventLog,
     /// What has actually landed on cities this game, for evaluators.
     pub siege: SiegeCensus,
+    /// What disasters did this game, for evaluators.
+    pub disasters: DisasterCensus,
 }
 
 impl Chronicle {
@@ -8255,6 +8304,14 @@ pub struct Game {
     /// The lobby's disaster-intensity setting, 0 (none) to 4 (hyperreal).
     #[serde(default = "default_disaster_intensity")]
     pub disaster_intensity: u8,
+    /// Chaos Monkey's dial: how many times as often every class of random
+    /// disaster strikes as the intensity setting alone would have it. One is
+    /// the game as Gathering Storm ships it; the lobby's top setting,
+    /// hyperreal, is 2.75 times standard, and this goes on from there
+    /// (`Game::disaster_rate`). It is read on every turn's roll, so it may be
+    /// turned mid-game, and a save carries it only when it is not one.
+    #[serde(default = "default_disaster_frequency")]
+    pub disaster_frequency: f64,
     /// The New Frontier game modes this lobby switched on. Empty is the stock
     /// Gathering Storm ruleset, which is what a tournament lobby plays.
     #[serde(default)]
@@ -8433,6 +8490,23 @@ pub const DEFAULT_DISASTER_INTENSITY: u8 = 2;
 
 fn default_disaster_intensity() -> u8 {
     DEFAULT_DISASTER_INTENSITY
+}
+
+/// Disasters as often as the intensity setting says, and no more: the game
+/// as shipped. See [`Game::disaster_frequency`].
+pub const DEFAULT_DISASTER_FREQUENCY: f64 = 1.0;
+
+/// The most Chaos Monkey's dial may ask for. At a thousand times the
+/// standard game a 250-turn world takes over two hundred disasters a turn,
+/// which is past anything worth watching and still a bounded turn.
+pub const MAX_DISASTER_FREQUENCY: f64 = 1000.0;
+
+fn default_disaster_frequency() -> f64 {
+    DEFAULT_DISASTER_FREQUENCY
+}
+
+fn is_default_disaster_frequency(frequency: &f64) -> bool {
+    *frequency == DEFAULT_DISASTER_FREQUENCY
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -8643,6 +8717,11 @@ struct GameSer {
     meteor_strikes: u32,
     #[serde(default = "default_disaster_intensity")]
     disaster_intensity: u8,
+    #[serde(
+        default = "default_disaster_frequency",
+        skip_serializing_if = "is_default_disaster_frequency"
+    )]
+    disaster_frequency: f64,
     #[serde(default)]
     game_modes: BTreeSet<String>,
     #[serde(default)]
@@ -8784,6 +8863,7 @@ impl From<GameSer> for Game {
             chronicle: Chronicle {
                 events: s.events.into(),
                 siege: SiegeCensus::default(),
+                disasters: DisasterCensus::default(),
                 concluded_wars: Arc::new(s.concluded_wars),
                 nuclear_strikes: Arc::new(s.nuclear_strikes),
                 turn_stats: Arc::new(s.turn_stats),
@@ -8805,6 +8885,7 @@ impl From<GameSer> for Game {
             climate_phase: s.climate_phase,
             meteor_strikes: s.meteor_strikes,
             disaster_intensity: s.disaster_intensity,
+            disaster_frequency: s.disaster_frequency,
             game_modes: s.game_modes,
             storms: s.storms,
             droughts: s.droughts,
@@ -9163,6 +9244,7 @@ impl From<Game> for GameSer {
             climate_phase: g.climate_phase,
             meteor_strikes: g.meteor_strikes,
             disaster_intensity: g.disaster_intensity,
+            disaster_frequency: g.disaster_frequency,
             game_modes: g.game_modes,
             storms: g.storms,
             droughts: g.droughts,
@@ -9620,6 +9702,7 @@ impl Game {
             climate_phase: 0,
             meteor_strikes: 0,
             disaster_intensity,
+            disaster_frequency: DEFAULT_DISASTER_FREQUENCY,
             game_modes,
             storms: Vec::new(),
             droughts: Vec::new(),

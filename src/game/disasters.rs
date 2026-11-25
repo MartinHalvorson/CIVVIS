@@ -11,6 +11,11 @@
 //! disaster takes, and the turn's `process_disasters`. Forest and jungle
 //! fires roll here too and burn in `game/fires.rs`.
 //!
+//! Chaos Monkey: `disaster_frequency` multiplies every class's rate past the
+//! lobby's five settings (`set_disaster_frequency`, `disaster_rate`), and
+//! `chronicle.disasters` counts what struck and what each civilization lost
+//! (`tally_disaster`, `tally_disaster_loss`).
+//!
 //! Climate: CO2 emissions and climate points, the climate phase
 //! (`apply_climate_phase`, the live mirror's `mirror_set_climate_phase`),
 //! coastal lowlands, barriers, flooding and submerging them, and the
@@ -38,6 +43,8 @@ impl Game {
         for unit_id in self.units_at(position) {
             let hp = self.units[&unit_id].hp - unit_damage;
             if hp <= 0 {
+                let owner = self.units[&unit_id].owner;
+                self.tally_disaster_loss(owner, |losses| losses.units += 1);
                 self.remove_unit(unit_id);
             } else {
                 self.units.get_mut(&unit_id).unwrap().hp = hp;
@@ -61,6 +68,10 @@ impl Game {
         let district = tile.district;
         let damageable = tile.improvement.is_some() || district.is_some();
         if damageable {
+            // Nobody caused it: a disaster, not a detonation.
+            if culprit.is_none() && !tile.pillaged {
+                self.tally_disaster_tile(position);
+            }
             self.map.tiles.get_mut(&position).unwrap().pillaged = true;
         }
         if let (Some(city_id), Some(district)) = (owner_city, district) {
@@ -104,6 +115,8 @@ impl Game {
                 if let Some(killer) = culprit {
                     self.record_war_unit_loss(killer, owner, &kind, formation, position);
                     self.tally_combat_removal(killer, owner, kind);
+                } else {
+                    self.tally_disaster_loss(owner, |losses| losses.units += 1);
                 }
                 self.remove_unit(unit_id);
             } else {
@@ -188,6 +201,23 @@ impl Game {
         }
     }
 
+    /// How one city stands against disasters, for evaluators: which of the
+    /// four protections the rules give it are in place. Chaos Monkey reads it
+    /// to ask whether the sheltered cities are the ones that kept their
+    /// people.
+    pub fn city_disaster_shelter(&self, city_id: u32) -> DisasterShelter {
+        let Some(city) = self.cities.get(&city_id) else {
+            return DisasterShelter::default();
+        };
+        DisasterShelter {
+            immune: self.governor_effect(city.owner, city.id, "disaster_immunity") > 0.0,
+            flood: self.city_wonder_effect(city, "flood_immunity") > 0.0
+                || self.city_district_effect(city, "flood_protection") > 0.0,
+            drought: self.city_district_effect(city, "drought_protection") > 0.0,
+            coast: self.city_building_effect(city, "protect_coastal_lowlands") > 0.0,
+        }
+    }
+
     pub(super) fn city_disaster_protected(&self, city: &City, district_effect: &str) -> bool {
         self.governor_effect(city.owner, city.id, "disaster_immunity") > 0.0
             || self.city_district_effect(city, district_effect) > 0.0
@@ -259,7 +289,11 @@ impl Game {
                     Some("farm" | "camp" | "plantation" | "pasture")
                 )
             {
+                let fresh = !tile.pillaged;
                 tile.pillaged = true;
+                if fresh {
+                    self.tally_disaster_tile(position);
+                }
             }
         }
     }
@@ -280,6 +314,60 @@ impl Game {
     /// change rather than a random event.
     pub fn disaster_intensity(&self) -> u8 {
         self.disaster_intensity.min(4)
+    }
+
+    /// Chaos Monkey's dial, as the rolls read it: never negative, never past
+    /// [`MAX_DISASTER_FREQUENCY`], and one for anything that is not a number.
+    pub fn disaster_frequency(&self) -> f64 {
+        if self.disaster_frequency.is_finite() {
+            self.disaster_frequency.clamp(0.0, MAX_DISASTER_FREQUENCY)
+        } else {
+            DEFAULT_DISASTER_FREQUENCY
+        }
+    }
+
+    /// Turn Chaos Monkey's dial. It takes effect on the next turn's rolls;
+    /// storms, droughts and fires already on the map run their course.
+    pub fn set_disaster_frequency(&mut self, frequency: f64) {
+        self.disaster_frequency = frequency;
+        self.disaster_frequency = self.disaster_frequency();
+    }
+
+    /// Count a disaster that struck.
+    pub(super) fn tally_disaster(&mut self, class: &str) {
+        *self
+            .chronicle
+            .disasters
+            .events
+            .entry(class.to_string())
+            .or_default() += 1;
+    }
+
+    /// Count something a major civilization lost to a disaster. City-states,
+    /// barbarians and the Free Cities are hit too and are not counted: the
+    /// census is read per civilization that can win or lose the game.
+    pub(super) fn tally_disaster_loss(
+        &mut self,
+        owner: usize,
+        count: impl FnOnce(&mut DisasterLosses),
+    ) {
+        if self.players.get(owner).is_none_or(|player| player.is_minor) {
+            return;
+        }
+        count(self.chronicle.disasters.losses.entry(owner).or_default());
+    }
+
+    /// Count a tile a disaster has just left pillaged, for whoever owns it.
+    pub(super) fn tally_disaster_tile(&mut self, position: Pos) {
+        let owner = self
+            .map
+            .get(position)
+            .and_then(|tile| tile.owner_city)
+            .and_then(|city_id| self.cities.get(&city_id))
+            .map(|city| city.owner);
+        if let Some(owner) = owner {
+            self.tally_disaster_loss(owner, |losses| losses.tiles += 1);
+        }
     }
 
     /// Whether this class of random disaster may strike a world of this
@@ -311,13 +399,17 @@ impl Game {
         };
         let setting = self.disaster_intensity() as usize;
         let climate = 1.0 + CLIMATE_DISASTER_SCALE * f64::from(self.climate_phase);
+        // Chaos Monkey's dial comes last and multiplies whatever the setting
+        // and the warming came to. At one, the shipped game, the product is
+        // the same number bit for bit.
+        let frequency = self.disaster_frequency();
         // A class with the shipped per-setting rows reads them as written: the
         // fires' 4, 6, 10 and 15 are not the generic ladder's 3, 6, 10.5 and
         // 16.5.
         if let Some(per_game) = spec.per_intensity.get(setting) {
-            return per_game * climate;
+            return per_game * climate * frequency;
         }
-        spec.per_game * DISASTER_INTENSITY_SCALE[setting] * climate
+        spec.per_game * DISASTER_INTENSITY_SCALE[setting] * climate * frequency
     }
 
     /// Disasters draw from a turn-keyed stream of their own so that adding or
@@ -406,7 +498,9 @@ impl Game {
         let city = self.cities.get_mut(&city_id).unwrap();
         let before = city.pop;
         city.pop = (city.pop - loss).max(1);
+        let killed = (before - city.pop).max(0) as u32;
         if city.pop < before {
+            self.tally_disaster_loss(owner, |losses| losses.citizens += killed);
             self.open_native_aid_request(
                 owner,
                 NativeCompetitionTrigger::RandomDisasterPopulationLoss,
@@ -507,6 +601,7 @@ impl Game {
                 tile.feature = Some(crate::name!("volcanic_soil"));
             }
         }
+        self.tally_disaster("volcanic_eruption");
         self.note_disaster(volcano, "a volcano erupted".to_string());
     }
 
@@ -563,6 +658,7 @@ impl Game {
         for position in &reach {
             self.disaster_population_loss(*position, spec.population_loss(severity));
         }
+        self.tally_disaster("river_flood");
         self.note_disaster(source, "a river flooded".to_string());
     }
 
@@ -602,6 +698,7 @@ impl Game {
             severity,
             ends: self.turn + spec.duration(severity).max(1),
         });
+        self.tally_disaster("drought");
         self.note_disaster(source, "a drought set in".to_string());
     }
 
@@ -644,6 +741,7 @@ impl Game {
             severity,
             ends: self.turn + spec.duration(severity).max(1),
         };
+        self.tally_disaster(class);
         self.note_disaster(storm.pos, format!("{} formed", pretty(class)));
         self.strike_storm(&storm, &spec);
         self.storms.push(storm);
@@ -699,21 +797,38 @@ impl Game {
         }
         let classes: Vec<Name> = self.rules.disasters.iter().map(|(name, _)| *name).collect();
         for class in classes {
-            let chance = self.disaster_rate(&class) / f64::from(self.max_turns);
-            let mut rng = self.disaster_rng(&class, 0);
-            if !rng.chance(chance) {
-                continue;
-            }
-            let Some(spec) = self.rules.disasters.get(&class).cloned() else {
-                continue;
+            // What a class expects this turn. The shipped game rolls for it
+            // once: twelve floods a game is one turn in twenty, and even a
+            // game so short that its budget comes to more than one a turn
+            // gets the one roll and no more. Chaos Monkey's dial, turned
+            // past one, can ask for several: the whole part then strikes for
+            // certain and the remainder is the roll, each strike on a stream
+            // of its own. With the dial where it ships, this is the single
+            // roll it always was, on the stream it always drew from.
+            let expected = self.disaster_rate(&class) / f64::from(self.max_turns);
+            let turned = self.disaster_frequency() > DEFAULT_DISASTER_FREQUENCY;
+            let certain = if turned {
+                expected.floor().max(0.0)
+            } else {
+                0.0
             };
-            let severity = self.roll_severity(&spec, &mut rng);
-            match class.as_str() {
-                "volcanic_eruption" => self.trigger_eruption(severity, &mut rng),
-                "river_flood" => self.trigger_river_flood(severity, &mut rng),
-                "drought" => self.trigger_drought(severity, &mut rng),
-                "forest_fire" | "jungle_fire" => self.trigger_fire(&class, &mut rng),
-                _ => self.trigger_storm(&class, severity, &mut rng),
+            let strikes = certain as u64;
+            for strike in 0..=strikes {
+                let mut rng = self.disaster_rng(&class, strike);
+                if strike == strikes && !rng.chance(expected - certain) {
+                    continue;
+                }
+                let Some(spec) = self.rules.disasters.get(&class).cloned() else {
+                    continue;
+                };
+                let severity = self.roll_severity(&spec, &mut rng);
+                match class.as_str() {
+                    "volcanic_eruption" => self.trigger_eruption(severity, &mut rng),
+                    "river_flood" => self.trigger_river_flood(severity, &mut rng),
+                    "drought" => self.trigger_drought(severity, &mut rng),
+                    "forest_fire" | "jungle_fire" => self.trigger_fire(&class, &mut rng),
+                    _ => self.trigger_storm(&class, severity, &mut rng),
+                }
             }
         }
     }
