@@ -4,7 +4,7 @@
 //
 //   /              the STABLE lane — the promoted build, deliberately chosen:
 //                  the viewer at /, the landing page at /home, the pages of
-//                  Charts/ under /charts, Tournaments at /tournaments,
+//                  Charts/ under /charts, Experiments at /experiments,
 //                  the native binaries at /download
 //   /test/...      the HEAD lane — the same pages, republished automatically
 //                  from the latest main: /test, /test/home, /test/download
@@ -286,7 +286,12 @@ const PAGE_ADDRESS =
 // 2026-11-23, and on 2026-11-24 it took its first name back, and with it
 // its first address (operator: "change auto-outnrye to Tournaments.
 // Auto-tourney suggests some self imrpvoing tourney thing"). So
-// /auto-tourneys is an address it has left like the others.
+// /auto-tourneys is an address it has left like the others. On 2026-11-25
+// the page was named Experiments (operator: "rename tournaments to
+// experiments") and its address followed the name, so /tournaments is one
+// more it has left: /auto-tourneys is followed to /tournaments in a lane
+// that still has the page there, and on to /experiments in one that has it
+// under its new name.
 //
 // AI Interpretability was named Civ AI Interpretability on 2026-11-24
 // (operator: "please change AI interpretability to "Civ AI
@@ -301,14 +306,16 @@ const MOVED = {
   interpretability: "charts/ai-interpretability",
   "charts/ai-interpretability": "charts/civ-ai-interpretability",
   "auto-tourneys": "tournaments",
+  tournaments: "experiments",
 };
 
-// A page back at an address it once left, by that address, and the address
-// it had in between. A lane pinned to a revision from in between (the front
-// page, until a promotion carries the change there) has the page at the
-// address in between, and the address the page is back at forwards to it,
-// as it did then. Once no lane can be pinned to such a revision the entry can
-// go.
+// A page that went back to an address it had left, by that address, and the
+// address it had in between. A lane pinned to a revision from in between has
+// the page at the address in between, and the address the page went back to
+// forwards to it, as it did then. The page has since left /tournaments again
+// (it is Experiments), so this is asked only where following its moves on
+// from /tournaments finds the lane has it at none of them. Once no lane can
+// be pinned to such a revision the entry can go.
 const BETWEEN = {
   tournaments: "auto-tourneys",
 };
@@ -370,7 +377,8 @@ async function pageAnswer(request, env, url) {
       now = MOVED[now];
       if (pages.includes(now)) return { moved: `${lane}/${now}/` };
     }
-    return { absent: true };
+    // Or the lane is from the days between two stays at this address.
+    if (!Object.hasOwn(BETWEEN, name)) return { absent: true };
   }
   const now = Object.hasOwn(BETWEEN, name)
     ? BETWEEN[name]

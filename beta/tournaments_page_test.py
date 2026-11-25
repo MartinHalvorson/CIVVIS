@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The Tournaments page: its record is counted off the ledger, and it fits its slot.
+"""The Experiments page: its record is counted off the ledger, and it fits its slot.
 
 The last class here opens the page in a browser, filled with a record, and
 reads the row of game squares as it is drawn: the labels at its two ends and
@@ -286,8 +286,11 @@ class TournamentsPage(unittest.TestCase):
         ):
             self.assertIn(line, PUBLISH)
         # The address follows the page's name in the site list (operator
-        # 2026-11-23: "clean up the URL please. standardized.").
-        self.assertIn('<link rel="canonical" href="https://civvis.ai/tournaments/">', PAGE)
+        # 2026-11-23: "clean up the URL please. standardized."), and the
+        # page is Experiments (operator 2026-11-25: "rename tournaments to
+        # experiments").
+        self.assertIn('<link rel="canonical" href="https://civvis.ai/experiments/">', PAGE)
+        self.assertNotIn("civvis.ai/tournaments/", PAGE)
         # The page is authored lane-relative: nothing in it links the site root.
         self.assertEqual(re.findall(r'(?:href|src)="(/[^"]*)"', PAGE), [])
 
@@ -334,7 +337,11 @@ class TournamentsPage(unittest.TestCase):
         # Auto-Tourneys") and at /auto-tourneys/ from 2026-11-23, and took
         # its first name and address back on 2026-11-24 ("change
         # auto-outnrye to Tournaments. Auto-tourney suggests some self
-        # imrpvoing tourney thing"): Tournaments, at /tournaments/. As on the home
+        # imrpvoing tourney thing"): Tournaments, at /tournaments/. On
+        # 2026-11-25 it was named Experiments ("rename tournaments to
+        # experiments"), in the list, on the tab and in its address,
+        # /experiments/; a series on it is still a tournament, with the title
+        # it had ("Tournament 4: 50 game series"). As on the home
         # page, the list is a row across the top, over the title (operator
         # 2026-11-24: "try putting the vertical menu from home... civ across
         # the top instead"; from 2026-11-21 it stood to the left of the
@@ -343,7 +350,7 @@ class TournamentsPage(unittest.TestCase):
         self.assertRegex(LANDING, r'<header class=\"shell site-header\">\s*<!--[\s\S]*?-->\s*<nav class=\"site-nav\"[^>]*>[\s\S]*?</nav>\s*<script data-site-folder>[\s\S]*?</script>\s*<div class=\"site-brand\">\s*<div class=\"site-lockup\">')
         self.assertIn(
             '      </div>\n'
-            '      <a class="site-link" href="./" aria-current="page">Tournaments</a>\n'
+            '      <a class="site-link" href="./" aria-current="page">Experiments</a>\n'
             '      <a class="site-link" href="../" title="Every civilization is played by a CIVVIS AI agent.">CIVVIS</a>\n'
             '      <a class="site-link" href="../?mode=strange" '
             'title="One world, two timelines: the same game played two ways, side by side, on a timeline that branches.">Doctor Strange\'s Civ 6</a>\n'
@@ -364,7 +371,8 @@ class TournamentsPage(unittest.TestCase):
             PAGE,
         )
         self.assertIn('  .site-link[aria-current="page"],\n  .site-folder:has([aria-current="page"]) > .site-link { box-shadow: inset 0 0 0 2px #fff; }\n', PAGE)
-        self.assertIn("<title>Tournaments · CIVVIS.ai</title>", PAGE)
+        self.assertIn("<title>Experiments · CIVVIS.ai</title>", PAGE)
+        self.assertIn('<meta name="description" content="CIVVIS experiments: series of verification games ', PAGE)
         # The Debugger is AI Debugger in this list again (operator
         # 2026-11-21: "AI Debugger (rename plz)", after a day as Strategy
         # Debugger and Strat Debugger), and every name stands on one line
@@ -377,25 +385,29 @@ class TournamentsPage(unittest.TestCase):
         for page in (PAGE, LANDING):
             self.assertNotIn("min-content", page)
         # The home page and the viewer name it third, after Charts (which
-        # joined between Home and Tournaments the same day as Research; its
+        # joined between Home and this page the same day as Research; its
         # own test is `research_page_test.py`), each in its own markup.
         for page, pattern in (
             (LANDING, r'aria-current="page">Home</a>\s*<div class="site-folder">\s*<a class="site-link" href="\.\./charts/ai-insights/"[^>]*>Charts/</a>'
-                      r'[\s\S]*?</div>\s*</div>\s*<a class="site-link" href="\.\./tournaments/"[^>]*>Tournaments</a>'
+                      r'[\s\S]*?</div>\s*</div>\s*<a class="site-link" href="\.\./experiments/"[^>]*>Experiments</a>'
                       r'\s*<a class="site-link" href="\.\./"[^>]*>CIVVIS</a>'),
             (VIEWER, r'id="homelink" href="/home" target="_top">Home</a>\s*'
                      r'<a class="home-link" id="chartslink" href="/charts/ai-insights" target="_top">Charts/</a>\s*'
-                     r'<a class="home-link" id="tourlink" href="/tournaments" target="_top">Tournaments</a>\s*'
+                     r'<a class="home-link" id="tourlink" href="/experiments" target="_top">Experiments</a>\s*'
                      r'<a class="home-link" id="watchlink" href="\./" target="_top">CIVVIS</a>'),
         ):
             self.assertRegex(page, pattern)
         for page in (PAGE, LANDING, VIEWER):
             self.assertNotIn(">Auto-Tourneys</a>", page)
             self.assertNotIn("auto-tourneys/", page)
+            # Nor is it listed by the name it had until 2026-11-25, or linked
+            # at the address it had.
+            self.assertNotIn(">Tournaments</a>", page)
+            self.assertEqual(re.findall(r'href="[./]*/?tournaments/?"', page), [])
         # The viewer's link is root-absolute as written and lane-relative as
         # published: `publish.sh` turns a root link to any page the lane
         # carries into the lane's own.
-        self.assertIn('href="/tournaments"', VIEWER)
+        self.assertIn('href="/experiments"', VIEWER)
         self.assertIn("""needle, replacement = f'href="/{address}"', f'href="{address}/"'""", PUBLISH)
 
     def test_a_tournament_links_its_result_video_on_youtube(self):
@@ -680,8 +692,9 @@ class TournamentsPage(unittest.TestCase):
         for unsafe in ("innerHTML", "insertAdjacentHTML", "document.write"):
             self.assertNotIn(unsafe, PAGE)
         verify = (BETA / "verify.py").read_text(encoding="utf-8")
-        self.assertIn("""    "tournaments": b'id="tournaments-data"',\n""", verify)
+        self.assertIn("""    "experiments": b'id="tournaments-data"',\n""", verify)
         self.assertIn("""    "auto-tourneys": "tournaments",\n""", verify)
+        self.assertIn("""    "tournaments": "experiments",\n""", verify)
 
 
 #: Read off the page as it is drawn: every row of game squares, with where
