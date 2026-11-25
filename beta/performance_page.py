@@ -43,7 +43,11 @@ p99 times for games for self-play games."). It carries eight things:
   videos, until 2026-11-24 (operator: "move the civvis performance timeline
   thing from home/ to the civvis performance section. middle of the page or
   so"). `speedup_timeline.timeline` works it out of the same ledger and it
-  is the record's `timeline`.
+  is the record's `timeline`. Under the line it says why the simulator's
+  stop is so far from the real game's (operator 2026-11-24: "what is the
+  main reason civvis is so much faster than firaxis civ 6? please try to
+  explain that gap in the chart/timeline"): the two games as bars to one
+  scale, the record's `timeline.gap`.
 - **each way of playing over time** (operator 2026-11-24: "in civvis
   performance, we should have charts studying the improvements rates of each
   of these over time"): a small chart for every stop of that line

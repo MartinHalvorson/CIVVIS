@@ -140,6 +140,112 @@ It is one game. A game's length moves with the turn it is won on (our own
 Lv 8 games end between turn 135 and turn 219), so a few more games would
 give a middle one.
 
+## Why CIVVIS self-play is faster than Firaxis self-play
+
+The project owner, 2026-11-24: "what is the main reason civvis is so much
+faster than firaxis civ 6? please try to explain that gap in the
+chart/timeline".
+
+The two stops stand 9.6 times apart: 331.9 s for a real game with Firaxis's
+AI in every seat, 34.5 s for a simulator game. On the line the stretch
+between them is drawn in gold with that figure on it, and the figure is a
+link to the part under the line, where the two games are bars to one scale.
+The real game's bar is in three parts. Each accounts for a factor of the gap,
+and the three multiply to it:
+
+| Part of the real game | Seconds | Left without it | Factor |
+| --- | ---: | ---: | ---: |
+| Launching Civilization VI, its menus, loading the map, and the ending | 56.7 | 275.2 | 1.2x |
+| The play, its game thread off the processor | 130.0 | 145.2 | 1.9x |
+| The play, its game thread on a processor | 145.2 | the simulator's 34.5 | 4.2x |
+
+So the main reason is the turn itself. Firaxis's game thread is on a
+processor for 0.85 s of an average 1.61 s turn, and the simulator's whole
+turn, six AI seats and the rules, takes 0.178 s. The second reason is that
+the same thread is off the processor for nearly half of the play: it is one
+thread of an application, parked until the rest of it wakes it. The third is
+that a real game has to be launched, set up and loaded, and a simulator game
+begins at once.
+
+Three pairs of figures stand under the bars:
+
+| | Firaxis self-play | CIVVIS self-play |
+| --- | ---: | ---: |
+| One turn | 1.61 s | 178 ms |
+| Processors kept busy while it plays | 3.2 | 1 |
+| Game thread on a processor | 53% of the play | 99% |
+
+The second is why the last stop of the line is so far from this one: a
+simulator game needs one core, so eighteen play at once on the M5 Max, where
+one real game keeps more than three busy.
+
+### How it is read
+
+The real game's source is not ours, so its time is read from outside the
+process as it plays, by `tools/civ6_thread_time.py`:
+
+```bash
+touch ~/.civvis-firaxis-self-play-once                  # the lane plays one at its next game boundary
+tools/civ6_thread_time.py record PID > threads.jsonl    # PID of Civ6_Exe_Child, as soon as it is up
+sample PID 5 1 -file stacks-1.txt                       # a few times while it plays
+tools/civ6_thread_time.py read threads.jsonl ~/civvis-civ6-runs/firaxis-selfplay/<tag>
+tools/civ6_thread_time.py stacks stacks-*.txt
+```
+
+`record` asks the kernel once a second how much processor time each thread
+has used so far. Those are running totals, exact over any stretch, and
+reading them does not stop the game. `read` takes the stretch from the first
+turn the recording covers to the last. The game names its own threads:
+`Game Core` plays the rules and the AI, `WinMain` is the window's, which
+draws the frame and runs the interface, and the `TBB` threads are workers
+either hands jobs to. `stacks` reads macOS's `sample` and says in how many
+samples a thread was parked until woken and in how many it was passing its
+turn while it waited on a job. The second is counted as processor time and
+is not work.
+
+The reading is the ledger's `gap.threads`, from the run
+`firaxis-selfplay-20261125T034803Z` (2026-11-25, the lane's setup as for the
+first game, a science victory on turn 188), over turns 30 to 188:
+
+| Over 491.1 s of play | Processor seconds | Of one processor |
+| --- | ---: | ---: |
+| The whole process | 1,592.9 | 324% |
+| Game Core | 259.1 | 53% |
+| WinMain | 407.4 | 83% |
+| Four TBB workers | 739.2 | 151% |
+
+In three five-second samples of the stacks, on turns 46, 102 and 179, the
+game thread was parked until woken in 1,338 of 4,489 samples (30%) and
+passing its turn in 238 (5%). The window's thread was never parked and was
+passing its turn in 2,457 of its 4,489 (55%), so half of its 83% is waiting
+on jobs too.
+
+What the page draws from it (`speedup_timeline.gap`, the record's
+`timeline.gap`): the slower stop's newest reading gives the times (its
+`parts`: 48.0 s to the first turn, 275.2 s of play, 8.7 s of ending, and its
+`turns`), and `gap.threads` gives the game thread's share of the play,
+259.1 / 491.1. The simulator's reading gives its `turns` and its
+`cpu_seconds`. No share and no factor is written in the ledger.
+
+### What it does not say
+
+- **Why Firaxis's turn takes that much more work.** The two are not the same
+  program doing the same sums: the simulator is its own engine with its own
+  agents, following the game's rules. The measurement says how much
+  processor time each spends on a turn and not what Firaxis's is spent on.
+- **The share on a quiet host.** The second game was not a timing. The host
+  was busier than for the first (load 22 to 25, where the first had 13) and
+  the game was sampled as it played: it took 600.3 s, 63.5 s to its first
+  turn, 529.0 s of play at 2.81 s a turn and 7.8 s of ending. A busy host
+  also keeps a thread off a processor, so some of the 47% is waiting for a
+  core and not for the application. The stacks put the waiting to be woken
+  at 30%. With that in place of 47% the factors would be 1.2x, 1.4x and
+  5.6x: the turn itself is the main reason either way.
+- **The first 29 turns.** The recording began on turn 30.
+
+A newer reading of either stop moves the bars with it. A new thread reading
+replaces `gap.threads`.
+
 ## The number
 
 A stop's multiplier is the first stop's seconds over its own. The page's
