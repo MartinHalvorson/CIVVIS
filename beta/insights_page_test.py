@@ -94,8 +94,10 @@ SHORT = ("civvis-20261122T120000Z",)
 
 class TheRecord(unittest.TestCase):
     def test_the_levels_are_the_four_he_named_in_his_order(self):
-        # Operator 2026-11-24: "switching between lv 8, 7, 6, 5".
-        self.assertEqual(insights_page.LEVELS, [8, 7, 6, 5])
+        # Operator 2026-11-24: "switching between lv 8, 7, 6, 5", and on
+        # 2026-11-25: "in smart ai picks up speed, list 5 6 7 8. default to
+        # 5 at the top".
+        self.assertEqual(insights_page.LEVELS, [5, 6, 7, 8])
         for level in insights_page.LEVELS:
             self.assertIn(level, research_page.LEVELS)
 
@@ -105,9 +107,10 @@ class TheRecord(unittest.TestCase):
         self.assertEqual(data["turns"], 250)
         self.assertEqual(data["victories"], research_page.VICTORIES)
         levels = data["speed"]["levels"]
-        # Strongest first, and a level nobody has played is not there.
-        self.assertEqual([(level["level"], level["rung"]) for level in levels], [(8, "Deity"), (7, "Immortal"), (5, "King")])
-        deity, immortal, king = levels
+        # Weakest first, as he listed them, and a level nobody has played
+        # is not there.
+        self.assertEqual([(level["level"], level["rung"]) for level in levels], [(5, "King"), (7, "Immortal"), (8, "Deity")])
+        king, immortal, deity = levels
         self.assertEqual((deity["games"], deity["won"], deity["from"], deity["to"]), (4, 1, "2026-11-20", "2026-11-22"))
         # Of 171, 180, 184 and 190, half were over by 180 (the lower middle).
         self.assertEqual(deity["median"], 180)
@@ -190,7 +193,7 @@ class TheRecord(unittest.TestCase):
             # Nothing but the slot moved.
             self.assertEqual(insights_page.SLOT.sub(r"\1null\3", page.read_text(encoding="utf-8")), PAGE)
         self.assertEqual(out.getvalue(), "")
-        self.assertIn("insights_page: wrote the games against the AI (Lv 8 4, Lv 7 2, Lv 5 3) into ", err.getvalue())
+        self.assertIn("insights_page: wrote the games against the AI (Lv 5 3, Lv 7 2, Lv 8 4) into ", err.getvalue())
         # A name or a sentence cannot close the script element.
         self.assertIn("\\u003c", insights_page.fill(PAGE, {"speed": "</script>"}))
         self.assertIsNone(insights_page.fill("<p>no slot</p>", {}))
@@ -251,32 +254,36 @@ class ThePage(unittest.TestCase):
         self.assertEqual(first.count('<div class="ins-notes"'), 1)
         self.assertIn("  .ins-note {", PAGE)
 
-    def test_the_switch_lists_lv_8_7_6_5_and_opens_on_deity(self):
+    def test_the_switch_lists_lv_5_6_7_8_and_opens_on_lv_5(self):
         # "we should show the civvis vs lv 8 deity ai chart, switching
-        # between lv 8, 7, 6, 5": four rows in that order, each a button,
-        # with Deity's pressed as the page opens.
+        # between lv 8, 7, 6, 5", and the next day "in smart ai picks up
+        # speed, list 5 6 7 8. default to 5 at the top": four rows, Lv 5 at
+        # the top and Lv 8 at the foot, each a button, with Lv 5's pressed
+        # as the page opens and the chart named for it.
         switch = PAGE[PAGE.index('<div class="ins-levels" id="ins-speed-levels"'):]
         switch = switch[:switch.index("</div>")]
         rows = re.findall(r'<button type="button" data-level="(\d)" data-rung="([A-Za-z]+)" aria-pressed="(true|false)">'
                           r'<span class="ins-level-name"><b>Lv (\d)</b>([A-Za-z]+)</span>', switch)
+        self.assertEqual([int(level) for level, *_ in rows], [5, 6, 7, 8])
         self.assertEqual([int(level) for level, *_ in rows], insights_page.LEVELS)
         self.assertEqual(len(rows), switch.count("<button"))
         for level, rung, pressed, shown, name in rows:
             # A row names its level as the site does everywhere.
             self.assertEqual(rung, home_rankings.CIV6_RUNGS[int(level) - 1].title())
             self.assertEqual((shown, name), (level, rung))
-            self.assertEqual(pressed, "true" if level == "8" else "false")
+            self.assertEqual(pressed, "true" if level == "5" else "false")
             self.assertEqual(research_page.level_name(int(level)), f"Lv {level} {rung}")
         # Every row has a bar, the turn it stands for and the games counted.
         for part in ("data-bar", "data-turn", "data-games"):
             self.assertEqual(switch.count(part), len(rows))
         # The chart is named as Win Analytics names it, for the level chosen.
-        self.assertIn('<h3 class="ins-chart-title" id="ins-speed-chart-title" data-say="CIVVIS vs {level} AI">CIVVIS vs Lv 8 Deity AI</h3>', PAGE)
+        self.assertIn('<h3 class="ins-chart-title" id="ins-speed-chart-title" data-say="CIVVIS vs {level} AI">CIVVIS vs Lv 5 King AI</h3>', PAGE)
         self.assertIn('data-say="CIVVIS vs {level} AI">CIVVIS vs Lv 8 Deity AI</h2>', RESEARCH)
         # And by the name he gave that chart there the same day: "lets call
         # it: Turn Length and Victory Type Histogram of All Games".
         self.assertIn('<p class="ins-chart-kind">Turn Length and Victory Type Histogram of All Games</p>', PAGE)
         self.assertIn("<span data-title>Turn Length and Victory Type Histogram of All Games</span>", RESEARCH)
+        # The level drawn first is the first row's, whichever that is.
         self.assertIn("const state = { level: played[0], playing: 0 };", PAGE)
 
     def test_a_bar_is_the_turn_from_zero_and_the_chart_is_the_whole_game(self):
