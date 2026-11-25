@@ -43,6 +43,7 @@
 //! router.
 
 use std::collections::BTreeMap;
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use serde_json::{json, Value};
 
@@ -59,8 +60,14 @@ pub(super) struct Asked<'a> {
 }
 
 /// One half of a split: its session, and the line it is on.
+///
+/// The session has a lock of its own. Doctor Strange's Civ 6 keeps up to a
+/// dozen worlds as halves of one split, and the socket server answers each
+/// page on a thread of its own: a request that plays one world holds that
+/// world alone (`socket::route`), so the worlds play at the same time, and
+/// the page that holds them is not kept waiting behind a world's turn.
 struct Half {
-    session: Session,
+    session: Arc<Mutex<Session>>,
     /// `UNTOUCHED` for a half that is still the main session as it stood
     /// when the screen was split. Otherwise the number the last request that
     /// may have changed this half was given, or the number of the half this
@@ -73,6 +80,19 @@ struct Half {
 
 /// The line of a half nothing has been asked to change since it was forked.
 const UNTOUCHED: u64 = 0;
+
+/// A half's session, held. A request that panicked part-way left the world
+/// as it stood, which is what the next request is answered from.
+fn held(session: &Mutex<Session>) -> MutexGuard<'_, Session> {
+    session
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// A half's own session, kept behind a lock of its own.
+fn kept(session: Session) -> Arc<Mutex<Session>> {
+    Arc::new(Mutex::new(session))
+}
 
 /// The sessions kept beside the main one, by pane name.
 #[derive(Default)]
@@ -149,7 +169,11 @@ impl Panes {
     /// been asked to change the first: that is the main session as it stood
     /// when the screen was split, and it makes the two halves the same world
     /// whatever the main session has been asked since.
-    pub(super) fn seat(&mut self, pane: &str, main: &Session) -> Result<&mut Session, String> {
+    pub(super) fn seat(
+        &mut self,
+        pane: &str,
+        main: &Session,
+    ) -> Result<Arc<Mutex<Session>>, String> {
         if !self.halves.contains_key(pane) {
             if main.params.spectate {
                 return Err("a split forks a game with a seat of its own".to_string());
@@ -157,7 +181,7 @@ impl Panes {
             let split = &pane[2..];
             self.halves.retain(|name, _| &name[2..] == split);
             let begun = match self.halves.values().find(|half| half.line == UNTOUCHED) {
-                Some(first) => first.session.fork(),
+                Some(first) => held(&first.session).fork(),
                 None => main.fork(),
             };
             // A first half that has already been played is not this world.
@@ -169,17 +193,46 @@ impl Panes {
             self.halves.insert(
                 pane.to_string(),
                 Half {
-                    session: begun,
+                    session: kept(begun),
                     line,
                     fresh: true,
                 },
             );
         }
-        Ok(&mut self
+        Ok(Arc::clone(
+            &self
+                .halves
+                .get(pane)
+                .expect("the pane was just seated")
+                .session,
+        ))
+    }
+
+    /// The session of a half that a request may be answered from with
+    /// nothing else held: the half is seated, the request copies nothing and
+    /// names no twin, and nothing about it parts this half from another.
+    /// A request that may change the half puts it on a line of its own here,
+    /// as `serve` does once it has answered.
+    fn alone(&mut self, pane: &str, asked: &Asked) -> Option<Arc<Mutex<Session>>> {
+        let (method, path, parsed) = (asked.method, asked.path, asked.parsed);
+        let line = self.halves.get(pane)?.line;
+        if (method, path) == ("POST", "/debug")
+            && (parsed["op"] == json!("copy") || parsed["twin"].is_string())
+        {
+            return None;
+        }
+        let changes = !only_reads(method, path);
+        let shared = self
             .halves
-            .get_mut(pane)
-            .expect("the pane was just seated")
-            .session)
+            .iter()
+            .any(|(name, half)| name != pane && half.line == line);
+        if changes && shared {
+            return None;
+        }
+        if changes {
+            self.changed(pane);
+        }
+        self.halves.get(pane).map(|half| Arc::clone(&half.session))
     }
 
     /// A line number no half is on.
@@ -213,7 +266,8 @@ impl Panes {
         }
         for half in self.halves.values_mut() {
             if half.line == line && !half.fresh {
-                half.session = half.session.fork();
+                let again = held(&half.session).fork();
+                half.session = kept(again);
                 half.fresh = true;
             }
         }
@@ -240,7 +294,7 @@ impl Panes {
             return Err("the other half of this split has not started".to_string());
         };
         let copied = Half {
-            session: source.session.fork(),
+            session: kept(held(&source.session).fork()),
             line: source.line,
             fresh: true,
         };
@@ -252,10 +306,26 @@ impl Panes {
     /// the main one, with every turn it can walk back to, and the other half
     /// is let go.
     pub(super) fn adopt(&mut self, pane: &str, main: &mut Session) -> Result<(), String> {
-        let Some(kept) = self.halves.remove(pane) else {
+        let Some(half) = self.halves.remove(pane) else {
             return Err("no half of a split is called that".to_string());
         };
-        *main = kept.session;
+        // A request this half is still being answered on holds it until
+        // that answer is given; nothing can find the half here any more.
+        let mut session = half.session;
+        *main = loop {
+            match Arc::try_unwrap(session) {
+                Ok(only) => {
+                    break only
+                        .into_inner()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner())
+                }
+                Err(shared) => {
+                    session = shared;
+                    #[cfg(not(target_arch = "wasm32"))]
+                    std::thread::sleep(std::time::Duration::from_millis(2));
+                }
+            }
+        };
         main.debug_remembers();
         self.halves.clear();
         Ok(())
@@ -380,7 +450,7 @@ pub(super) fn serve(
         let copied = panes.copy(parsed["from"].as_str().unwrap_or(""), pane);
         return Some(match (copied, panes.halves.get(pane)) {
             (Ok(()), Some(half)) => {
-                let mut out = half.session.state();
+                let mut out = held(&half.session).state();
                 out["error"] = Value::Null;
                 (out, true)
             }
@@ -401,7 +471,7 @@ pub(super) fn serve(
         panes.part(pane);
     }
     let mut answered = match panes.seat(pane, main) {
-        Ok(session) => answer(session, asked, server_instance),
+        Ok(session) => answer(&mut held(&session), asked, server_instance),
         Err(error) => return Some((json!({"error": error}), false)),
     };
     if changes {
@@ -454,14 +524,30 @@ pub(super) mod socket {
             ("POST", "/load") => parsed["name"].is_string(),
             _ => false,
         };
+        // A half that is there, asked something of its own alone, is
+        // answered holding that half and nothing else: another world's turn,
+        // and the page's own requests, go on beside it.
+        if !named_save {
+            if let Some(session) = panes.alone(pane, asked) {
+                drop(panes);
+                let (mut out, whole) =
+                    super::answer(&mut super::held(&session), asked, Some(process_identity()))?;
+                if whole {
+                    decorate(&mut out, sh);
+                }
+                return Some(out);
+            }
+        }
         let (mut out, whole) = if named_save {
-            let session = {
+            let seated = {
                 let main = lock_or_recover(&sh.session);
                 match panes.seat(pane, &main) {
                     Ok(session) => session,
                     Err(error) => return Some(json!({"error": error})),
                 }
             };
+            let mut session = super::held(&seated);
+            let session = &mut *session;
             let name = parsed["name"].as_str().unwrap_or("");
             if path == "/save" {
                 let answer = match save_path(name) {
