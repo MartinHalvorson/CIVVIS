@@ -14,9 +14,9 @@ fn founder() -> (Game, Pos) {
     game.players[0].religion = Some("Buddhism".to_string());
     game.players[0].pantheon = Some("divine_spark".to_string());
     game.players[0].religion_beliefs = vec![
-        "divine_spark".to_string(),
-        "work_ethic".to_string(),
-        "pilgrimage".to_string(),
+        "divine_spark".into(),
+        "work_ethic".into(),
+        "pilgrimage".into(),
     ];
     (game, pos)
 }
@@ -32,7 +32,7 @@ fn pantheon_leaves_the_fourth_belief_legal_and_executable() {
     let (mut game, pos) = founder();
     game.players[0]
         .religion_beliefs
-        .push("holy_order".to_string());
+        .push("holy_order".into());
     let unit = apostle(&mut game, pos);
     let fourth = Action::EvangelizeBelief {
         unit,
@@ -44,7 +44,7 @@ fn pantheon_leaves_the_fourth_belief_legal_and_executable() {
     assert_eq!(game.religion_belief_count(0), 4);
     assert!(game.players[0]
         .religion_beliefs
-        .contains(&"divine_spark".to_string()));
+        .contains(&"divine_spark".into()));
 
     let extra = apostle(&mut game, pos);
     assert!(!game.legal_actions(0).iter().any(|action| {
@@ -93,8 +93,8 @@ fn pantheon_does_not_relax_taken_belief_or_category_guards() {
     let (mut game, pos) = founder();
     game.players[0]
         .religion_beliefs
-        .push("holy_order".to_string());
-    game.players[1].religion_beliefs.push("mosque".to_string());
+        .push("holy_order".into());
+    game.players[1].religion_beliefs.push("mosque".into());
     let unit = apostle(&mut game, pos);
     for belief in ["mosque", "scripture"] {
         let action = Action::EvangelizeBelief {

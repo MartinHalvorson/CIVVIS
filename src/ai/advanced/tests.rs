@@ -5849,7 +5849,7 @@ fn apostle_launches_inquisition_before_evangelizing_when_core_is_lost() {
     game.current = 0;
     game.players[0].religion = Some("Home Faith".to_string());
     game.players[0].holy_city = Some(holy_city);
-    game.players[0].religion_beliefs = vec!["work_ethic".to_string(), "tithe".to_string()];
+    game.players[0].religion_beliefs = vec!["work_ethic".into(), "tithe".into()];
     game.cities
         .get_mut(&holy_city)
         .unwrap()
@@ -6055,9 +6055,9 @@ fn apostles_complete_one_worship_and_one_enhancer_belief_for_the_plan() {
     // Native mirrors retain the pantheon as well as the two founding beliefs.
     game.players[0].pantheon = Some("divine_spark".to_string());
     game.players[0].religion_beliefs = vec![
-        "divine_spark".to_string(),
-        "work_ethic".to_string(),
-        "tithe".to_string(),
+        "divine_spark".into(),
+        "work_ethic".into(),
+        "tithe".into(),
     ];
     let ai = AdvancedAi::targeting(VictoryTarget::Science);
 
@@ -6066,7 +6066,7 @@ fn apostles_complete_one_worship_and_one_enhancer_belief_for_the_plan() {
     assert!(ai.advanced_religious_step(&mut game, 0, first, false));
     assert!(game.players[0]
         .religion_beliefs
-        .contains(&"wat".to_string()));
+        .contains(&"wat".into()));
 
     let second = game.spawn_test_unit("apostle", 0, game.cities[&city].pos);
     game.units.get_mut(&second).unwrap().religion = Some("Planned Faith".to_string());
@@ -9959,9 +9959,9 @@ fn faith_spending_buys_the_victory_aligned_worship_building() {
         vec![crate::name!("shrine"), crate::name!("temple")];
     game.players[0].religion = Some("Scholastic Faith".to_string());
     game.players[0].religion_beliefs = vec![
-        "work_ethic".to_string(),
-        "tithe".to_string(),
-        "wat".to_string(),
+        "work_ethic".into(),
+        "tithe".into(),
+        "wat".into(),
     ];
     game.cities
         .get_mut(&city)

@@ -1372,7 +1372,7 @@ fn every_district_pays_the_route_yields_its_shipped_row_names() {
 fn establish_religion(game: &mut Game, city: u32, beliefs: &[&str]) -> String {
     let religion = "Test Faith".to_string();
     game.players[0].religion = Some(religion.clone());
-    game.players[0].religion_beliefs = beliefs.iter().map(|belief| belief.to_string()).collect();
+    game.players[0].religion_beliefs = beliefs.iter().map(|belief| crate::name::Name::new(belief)).collect();
     game.cities
         .get_mut(&city)
         .unwrap()
@@ -1734,7 +1734,7 @@ fn follower_beliefs_execute_building_adjacency_amenity_and_route_effects() {
     let baseline_housing = game.city_housing(&game.cities[&cities[0]]);
     let baseline_worked_food = worked_food(&game);
     let baseline_worked_culture = worked_culture(&game);
-    game.players[0].religion_beliefs = vec!["feed_the_world".to_string()];
+    game.players[0].religion_beliefs = vec!["feed_the_world".into()];
     assert_eq!(
         game.city_yields(cities[0]).food - worked_food(&game),
         baseline_yields.food - baseline_worked_food + 6.0
@@ -1744,7 +1744,7 @@ fn follower_beliefs_execute_building_adjacency_amenity_and_route_effects() {
         baseline_housing + 4.0
     );
 
-    game.players[0].religion_beliefs = vec!["choral_music".to_string()];
+    game.players[0].religion_beliefs = vec!["choral_music".into()];
     assert!(
         (game.city_yields(cities[0]).culture
             - worked_culture(&game)
@@ -1753,7 +1753,7 @@ fn follower_beliefs_execute_building_adjacency_amenity_and_route_effects() {
             < 1e-9
     );
 
-    game.players[0].religion_beliefs = vec!["work_ethic".to_string()];
+    game.players[0].religion_beliefs = vec!["work_ethic".into()];
     let holy_site_adjacency = game
         .district_yields(crate::name!("holy_site"), holy_site)
         .faith;
@@ -1767,7 +1767,7 @@ fn follower_beliefs_execute_building_adjacency_amenity_and_route_effects() {
 
     let baseline_amenities = game.city_local_amenities(&game.cities[&cities[0]]);
     place_district(&mut game, cities[0], "campus");
-    game.players[0].religion_beliefs = vec!["zen_meditation".to_string()];
+    game.players[0].religion_beliefs = vec!["zen_meditation".into()];
     assert_eq!(
         game.city_local_amenities(&game.cities[&cities[0]]),
         baseline_amenities + 1
@@ -1781,7 +1781,7 @@ fn follower_beliefs_execute_building_adjacency_amenity_and_route_effects() {
     });
     game.players[0].religion_beliefs.clear();
     let baseline_route_gold = game.city_yields(cities[0]).gold;
-    game.players[0].religion_beliefs = vec!["religious_community".to_string()];
+    game.players[0].religion_beliefs = vec!["religious_community".into()];
     assert!((game.city_yields(cities[0]).gold - baseline_route_gold - 6.0).abs() < 1e-9);
 }
 
@@ -2032,13 +2032,13 @@ fn the_army_combat_beliefs_do_not_reach_an_apostle() {
     game.units.get_mut(&apostle).unwrap().religion = Some(religion.clone());
     let bare = game.theological_strength(&game.units[&apostle]);
 
-    game.players[0].religion_beliefs = vec!["just_war".to_string()];
+    game.players[0].religion_beliefs = vec!["just_war".into()];
     assert_eq!(
         game.theological_strength(&game.units[&apostle]),
         bare,
         "Just War is an army belief"
     );
-    game.players[0].religion_beliefs = vec!["defender_of_the_faith".to_string()];
+    game.players[0].religion_beliefs = vec!["defender_of_the_faith".into()];
     assert_eq!(
         game.theological_strength(&game.units[&apostle]),
         bare,
@@ -2049,7 +2049,7 @@ fn the_army_combat_beliefs_do_not_reach_an_apostle() {
     // blanket removal.
     let warrior = game.spawn_unit("warrior", 0, foreign);
     let plain = game.unit_unembarked_strength(&game.units[&warrior]);
-    game.players[0].religion_beliefs = vec!["just_war".to_string()];
+    game.players[0].religion_beliefs = vec!["just_war".into()];
     assert_eq!(
         game.unit_unembarked_strength(&game.units[&warrior]),
         plain + 10.0
@@ -2070,11 +2070,11 @@ fn founder_unity_combat_and_loyalty_beliefs_use_runtime_city_state() {
         city.atheist_pressure = 0.0;
     }
 
-    game.players[0].religion_beliefs = vec!["tithe".to_string()];
+    game.players[0].religion_beliefs = vec!["tithe".into()];
     assert_eq!(game.founder_belief_yields(0).gold, 6.0);
-    game.players[0].religion_beliefs = vec!["world_church".to_string()];
+    game.players[0].religion_beliefs = vec!["world_church".into()];
     assert_eq!(game.founder_belief_yields(0).culture, 1.0);
-    game.players[0].religion_beliefs = vec!["pilgrimage".to_string()];
+    game.players[0].religion_beliefs = vec!["pilgrimage".into()];
     assert_eq!(game.founder_belief_yields(0).faith, 4.0);
 
     // Lay Ministry: +1 Faith per Holy Site and +1 Culture per Theater
@@ -2094,7 +2094,7 @@ fn founder_unity_combat_and_loyalty_beliefs_use_runtime_city_state() {
         .unwrap()
         .districts
         .insert(crate::name!("holy_site"), holy_site);
-    game.players[0].religion_beliefs = vec!["lay_ministry".to_string()];
+    game.players[0].religion_beliefs = vec!["lay_ministry".into()];
     assert_eq!(game.founder_belief_yields(0).faith, 1.0);
     assert_eq!(game.founder_belief_yields(0).culture, 0.0);
     let second_center = game.cities[&cities[1]].pos;
@@ -2103,7 +2103,7 @@ fn founder_unity_combat_and_loyalty_beliefs_use_runtime_city_state() {
         .unwrap()
         .wonders
         .insert(crate::name!("stonehenge"), second_center);
-    game.players[0].religion_beliefs = vec!["sacred_places".to_string()];
+    game.players[0].religion_beliefs = vec!["sacred_places".into()];
     let sacred = game.founder_belief_yields(0);
     assert_eq!(
         (sacred.faith, sacred.culture, sacred.science, sacred.gold),
@@ -2111,18 +2111,18 @@ fn founder_unity_combat_and_loyalty_beliefs_use_runtime_city_state() {
     );
     // Divine Inspiration is a follower belief: +4 Faith per Wonder in the
     // city that follows, paid in that city's own yields — even a rival's.
-    game.players[0].religion_beliefs = vec!["divine_inspiration".to_string()];
+    game.players[0].religion_beliefs = vec!["divine_inspiration".into()];
     let without = {
         game.players[0].religion_beliefs.clear();
         game.city_yields(cities[1]).faith
     };
-    game.players[0].religion_beliefs = vec!["divine_inspiration".to_string()];
+    game.players[0].religion_beliefs = vec!["divine_inspiration".into()];
     assert_eq!(game.city_yields(cities[1]).faith, without + 4.0);
     // Reliquaries triples a Relic's Faith in a following city.
     game.players[0].religion_beliefs.clear();
     game.grant_great_work(1, "relic", 0, "test");
     let plain_relic = game.city_yields(cities[1]).faith;
-    game.players[0].religion_beliefs = vec!["reliquaries".to_string()];
+    game.players[0].religion_beliefs = vec!["reliquaries".into()];
     let housed = game
         .housed_great_works(1)
         .get(&cities[1])
@@ -2138,16 +2138,16 @@ fn founder_unity_combat_and_loyalty_beliefs_use_runtime_city_state() {
     );
 
     game.players[1].is_minor = true;
-    game.players[0].religion_beliefs = vec!["religious_unity".to_string()];
+    game.players[0].religion_beliefs = vec!["religious_unity".into()];
     game.award_religious_unity_envoys();
     game.award_religious_unity_envoys();
     assert_eq!(game.players[0].envoys, vec![(1, 1)]);
 
     let warrior = game.spawn_unit("warrior", 0, game.cities[&cities[1]].pos);
-    game.players[0].religion_beliefs = vec!["just_war".to_string()];
+    game.players[0].religion_beliefs = vec!["just_war".into()];
     assert_eq!(game.unit_unembarked_strength(&game.units[&warrior]), 30.0);
     game.relocate(warrior, game.cities[&cities[0]].pos);
-    game.players[0].religion_beliefs = vec!["defender_of_the_faith".to_string()];
+    game.players[0].religion_beliefs = vec!["defender_of_the_faith".into()];
     assert_eq!(game.unit_unembarked_strength(&game.units[&warrior]), 25.0);
 
     let target_position = game
@@ -2184,7 +2184,7 @@ fn stewardship_pays_science_and_gold_for_following_districts() {
     let religion = establish_religion(&mut game, cities[0], &[]);
     place_district(&mut game, cities[0], "campus");
     place_district(&mut game, cities[0], "commercial_hub");
-    game.players[0].religion_beliefs = vec!["stewardship".to_string()];
+    game.players[0].religion_beliefs = vec!["stewardship".into()];
 
     let yields = game.founder_belief_yields(0);
     assert_eq!(game.players[0].religion.as_deref(), Some(religion.as_str()));
@@ -2227,7 +2227,7 @@ fn papal_primacy_adds_religious_pressure_when_an_envoy_is_sent() {
     let minor_city = game.player_city_ids(minor)[0];
     game.record_contact(0, minor);
     game.players[0].religion = Some("Test Faith".to_string());
-    game.players[0].religion_beliefs = vec!["papal_primacy".to_string()];
+    game.players[0].religion_beliefs = vec!["papal_primacy".into()];
     game.players[0].envoys_free = 1;
     game.cities.get_mut(&minor_city).unwrap().pressure =
         BTreeMap::from([("Other Faith".to_string(), 100.0)]);
@@ -2477,7 +2477,7 @@ fn holy_waters_heals_only_matching_religious_units_near_a_following_holy_site() 
     }
 
     let bare = [on, next_to, away, warrior].map(|uid| game.unit_heal_rate(uid));
-    game.players[0].religion_beliefs = vec!["holy_waters".to_string()];
+    game.players[0].religion_beliefs = vec!["holy_waters".into()];
     let healed = [on, next_to, away, warrior].map(|uid| game.unit_heal_rate(uid));
     assert_eq!(healed[0] - bare[0], 10, "the district's own plot counts");
     assert_eq!(healed[1] - bare[1], 10, "and its adjacent ring");
