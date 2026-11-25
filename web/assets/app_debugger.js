@@ -2610,6 +2610,8 @@ function debugDrawDeck(bar, deck) {
     debugRoomAskedAt = Date.now();
     debugOp({op: "room", megabytes: 384});
   }
+  // A world of Doctor Strange's Civ 6 keeps its share of the room instead.
+  if (DEBUG_PANE !== null && idle) strangePaneRoom(timeline);
 
   const layersOn = timeline.layers.filter(layer => layer.on).length;
   document.getElementById("dbg-layer-count").textContent = layersOn ? `${layersOn}` : "";
@@ -5559,6 +5561,27 @@ function strangeFrame(letter, born = null) {
   split.history[letter] = new Map();
   frame.src = `${location.pathname}?pane=${pane.id}`;
   return pane;
+}
+// The room a world's turns are kept in. Each world plays on an engine of its
+// own (`beta/shim.js`), and an engine keeps its turns up to its memory line
+// (`room`, 1 GB unless told): where one engine held every world under that
+// line, a dozen engines would hold a dozen, about 600 MB a world by the end
+// of a six-seat game and a full copy of it for every branch made from it.
+// The worlds share STRANGE_ROOM_MB between them instead (less on a small
+// device), each told its part as worlds are opened and deleted, and never
+// under the engine's least. Past its line a world gives back its oldest
+// turns first, as one engine did.
+const STRANGE_ROOM_MB = 2048, STRANGE_ROOM_SMALL_MB = 384, STRANGE_ROOM_LEAST_MB = 128;
+let strangeRoomTold = null;
+function strangePaneRoom(timeline) {
+  if (!STRANGE_PANE) return;
+  let worlds = 1;
+  try { worlds = Math.max(1, window.parent.strangeOpen().length); } catch (_) { return; }
+  const room = DEBUG_SMALL_DEVICE ? STRANGE_ROOM_SMALL_MB : STRANGE_ROOM_MB;
+  const megabytes = Math.max(STRANGE_ROOM_LEAST_MB, Math.floor(room / worlds));
+  if (timeline.memory_line === megabytes || strangeRoomTold === megabytes) return;
+  strangeRoomTold = megabytes;
+  debugOp({op: "room", megabytes});
 }
 // A page for the next branch is made ahead of time, out of sight, while the
 // worlds stand still. A world's page is the whole viewer again, and making
