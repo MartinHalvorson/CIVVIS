@@ -232,6 +232,23 @@
     // Edge of Tomorrow is a played game too: the same seat, with a jump back.
     else if (mode === "tomorrow") payload.spectate = false;
     else if (mode === "watch") payload.spectate = true;
+    // Two of the played pages open on a world of their own, and a link that
+    // names its own players, map or shape still has those. Doctor Strange's
+    // Civ 6 is four civilizations on a Pangaea (operator, 2026-11-25: "lets
+    // use 4p pangaea maps for doctor strange's civ 6"), which is a Tiny
+    // world. Edge of Tomorrow is a Duel, the visitor and one Civ AI ("2p
+    // Duel maps for edge of tomorrow ... Goal of Edge of Tomorrow is to try
+    // to 1v1 beat an AI given a back button"): two seats are what make the
+    // engine lay a Duel-sized world, on Continents, Civilization VI's own
+    // first map type. Both are laid flat, as Civilization VI lays its maps,
+    // rather than on the stock world's globe.
+    const MODE_WORLDS = {
+      strange: {num_players: 4, map_script: "pangaea", map_topology: "flat"},
+      tomorrow: {num_players: 2, map_script: "continents", map_topology: "flat"},
+    };
+    for (const [setting, value] of Object.entries(MODE_WORLDS[mode] || {})) {
+      if (!(setting in payload)) payload[setting] = value;
+    }
     // A battlefield's dimensions are their own setting — no seat count
     // implies an arena size — so they travel as the one token the lobby's
     // size control uses to name them: `arena=20x20`.

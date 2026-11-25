@@ -289,14 +289,20 @@ page's four game quadrants and its battle picker are exactly these links:
 2026-11-23 (operator: "lest move dr strange civ 6 above ai debugger"): the
 played game of `mode=play` with its two timelines drawn as a
 tree up the middle of the window and the two worlds under it
-(`docs/SIM_DEBUGGER.md`).
+(`docs/SIM_DEBUGGER.md`). It opens on four civilizations on a flat Pangaea
+(operator, 2026-11-25: "lets use 4p pangaea maps for doctor strange's civ 6").
 
 `/?mode=tomorrow` is Edge of Tomorrow, listed between AI Debugger and Civ 6
 since 2026-11-25 (operator: "above civ 6 and below ai debugger add: Edge of
 Tomorrow. This should be civ 6 with a jump back (like the concept from the
 movie)"): the played game of `mode=play` on the Civilization VI screen, with
 a jump back to the turn woken on, by hand or whenever the game is lost, and
-the loops counted (`docs/SIM_DEBUGGER.md`).
+the loops counted (`docs/SIM_DEBUGGER.md`). It opens on a Duel: the visitor and one
+Civ AI on a flat Continents world, the size two seats make (operator,
+2026-11-25: "2p Duel maps for edge of tomorrow ... Goal of Edge of Tomorrow is
+to try to 1v1 beat an AI given a back button (which effectively reveals the
+map)"). For both, a link's own `players`, `map` or `shape` still wins
+(`MODE_WORLDS` in `shim.js`).
 
 ### One property worth knowing
 

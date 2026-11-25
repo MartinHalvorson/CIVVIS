@@ -1391,6 +1391,15 @@ seats the visitor for `mode=strange` as it does for `mode=play`, and the last
 section of `web/assets/app_debugger.js` draws the rest over the split the
 debugger makes.
 
+Operator, 2026-11-25: "lets use 4p pangaea maps for doctor strange's civ 6".
+On the published build the page opens on four civilizations on a flat
+Pangaea, a Tiny world (`MODE_WORLDS` in `beta/shim.js`); a link naming its
+own `players`, `map` or `shape` keeps those. New games after it keep the
+world on screen, as the setup controls read it back. The desktop build
+(`civvis play`) plays whatever world it was started on:
+`civvis play --players 4 --map pangaea --shape flat` is the same world
+there.
+
 Operator, 2026-11-24: "instead of random lines, we can compute (a degree in
 advance) the futures of the paths we are on. if there are 2 screens below,
 or 1, or 3. we should be able delete branches and that removes the line and
@@ -1858,6 +1867,16 @@ it again knowing what they saw. Each time round is a loop, and the loops are
 counted. `beta/shim.js` seats the visitor for `mode=tomorrow` as it does for
 `mode=play`, and the last section of `web/assets/app_debugger.js` is the
 rest. Nothing in the engine is new.
+
+Operator, 2026-11-25: "2p Duel maps for edge of tomorrow being built out.
+Goal of Edge of Tomorrow is to try to 1v1 beat an AI given a back button
+(which effectively reveals the map)". On the published build the page opens
+on a Duel: the person and one Civ AI, on the Duel-sized world two seats make
+(44 by 26), laid flat, on Continents, Civilization VI's own first map type
+(`MODE_WORLDS` in `beta/shim.js`). A link's own `players`, `map` or `shape`
+still wins, and new games keep the world on screen. On the desktop build,
+`civvis play --players 2 --map continents --shape flat` is the
+Duel.
 
 - **The page is the Civilization VI screen from its first frame** (`SOLO_UI`),
   whatever view the AI Debugger was last left in, and does not keep that
