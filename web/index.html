@@ -389,17 +389,16 @@
      home, charts/ and auto-tourneys buttons all have a blue background
      (like the pages do). civvis, ai debugger have a black background (same
      as simulator)"). The rule above is this page's black, which AI
-     Debugger keeps. CIVVIS is gold (operator, 2026-11-24: "lets give
-     civvis a gold background on the button, rather than black"), the gold
-     this list lit the page on screen in until then, and the same gold on
-     every page. Home, Charts/ and Experiments are the blue those
+     Debugger keeps. CIVVIS is white (operator, 2026-11-25: "make the
+     civvis color white"; gold from 2026-11-24, black before), the same
+     white on every page. Home, Charts/ and Experiments are the blue those
      pages set their own lists in, and Civ 6, which opens Steam's shop, is
      the blue of Steam's buttons ("civ 6 can have the steam color of
      blue"), dark under the name and light at the far end. */
   #homelink, #chartslink, #tourlink { color: #a8d8f5; border-color: #3b6788; background: #274b66; }
   #homelink:hover, #chartslink:hover, #tourlink:hover { color: #fff; border-color: #66c0f4; background: #315d7e; }
-  #watchlink { color: #17130c; border-color: #efd184; background: linear-gradient(145deg, #dec176, #aa7d30); }
-  #watchlink:hover { color: #000; border-color: #fff3c9; background: linear-gradient(145deg, #f0d68e, #c0913c); }
+  #watchlink { color: #12171d; border-color: #cfd6dd; background: #fff; }
+  #watchlink:hover { color: #000; border-color: #fff; background: #e3e8ee; }
   #civ6link {
     color: #fff; border-color: transparent;
     background: linear-gradient(90deg, #1a44c2 35%, #47bfff) border-box;
@@ -417,8 +416,8 @@
   }
   #strangelink:hover { color: #fff; border-color: #ffb85c; background: linear-gradient(135deg, #2638a0 30%, #c8193d) border-box; box-shadow: 0 0 10px rgba(255, 150, 40, 0.85); }
   /* The page on screen keeps the colour of what it is and is ringed in
-     white, as on the pages. It was gold until 2026-11-24, when gold
-     became CIVVIS's own. This page is three of them:
+     white, as on the pages. It was gold until 2026-11-24. This page is
+     three of them:
      CIVVIS while it watches a simulation, AI Debugger while somebody holds a
      seat, and Doctor Strange's Civ 6 while that game is shown as its tree of
      two timelines (`?mode=strange`, which `app_debugger.js` marks on the
@@ -431,6 +430,10 @@
     border-color: #fff; box-shadow: inset 0 0 0 1px #fff;
   }
   html.seat-known.strange body:not(.watching-sim) #strangelink { box-shadow: inset 0 0 0 1px #fff, 0 0 6px rgba(255, 138, 30, 0.6); }
+  /* CIVVIS's button is white all over, and a white ring on it would not
+     show: while it is the page on screen its ring is the simulator's own
+     black, inside its white edge. */
+  body.watching-sim #watchlink { box-shadow: inset 0 0 0 2px #111416; }
   /* With 233px or more across the band the links leave the lockup's foot and
      stand in a column on its left, at the box's left edge, with the globe
      and the wordmark to the right of it (operator, 2026-11-21: the list goes
