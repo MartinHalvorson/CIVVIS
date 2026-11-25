@@ -1,10 +1,13 @@
 # The speed timeline
 
 How many times faster than a person a game of Civilization VI gets played.
-The home page shows it over its videos, under the title the project owner
-gave it on 2026-11-24, "Civ Game Speedup - Synthetic Data Pipeline": one
-number, and under it a line with five ways of playing one game, each
-standing at its multiplier. Among and past them stand four stops nothing has
+CIVVIS Performance shows it in the middle of the page, under its tables of
+sums and over its charts of each stop over time, under the title the project
+owner gave it on 2026-11-24, "Civ Game Speedup - Synthetic Data Pipeline":
+one number, and under it a line with five ways of playing one game, each
+standing at its multiplier. It stood on the home page, over the videos, until
+later that day ("move the civvis performance timeline thing from home/ to the
+civvis performance section. middle of the page or so"). Among and past them stand four stops nothing has
 played yet:
 [The stops past what was measured](#the-stops-past-what-was-measured).
 Left of CIVVIS self-play the games play many at once, and a time there is
@@ -50,7 +53,7 @@ read from, because it is what one machine delivers.
 
 The second stop's name is the project owner's of later that day: "lets also
 call Firaxis computer Control inside CIVVIS->Firaxis computer control". His
-arrow is drawn as one, on the home page and on CIVVIS Performance.
+arrow is drawn as one, on the line and in the tables over it.
 
 ## Amortized games
 
@@ -93,8 +96,8 @@ rivals".
 ### A reading that was worked out
 
 A reading with `"worked": true` was worked out from other measurements and
-not timed itself. The home page draws its stop as a broken ring and says
-"worked out, not yet timed", and the Performance page marks its row. A timed
+not timed itself. The line draws its stop as a broken ring and says
+"worked out, not yet timed", and the tables over it mark its row. A timed
 reading added after it takes its place, and the mark goes with it.
 
 Firaxis self-play began as such a reading on 2026-11-24, 549 s, worked out
@@ -157,9 +160,11 @@ stretch of it. Words that would meet their neighbour's on the same side of
 the line stand a row further out, at the end of a rule from the stop's point
 (`speedup_timeline.rows`). How far out that is, and how much room each side
 of the line takes, the page measures from the words once they are written in
-(`fit` in `beta/landing.html`): a name is one line or three, and a stop may
+(`fit` in `beta/performance.html`): a name is one line or three, and a stop may
 have a second measure and a goal under its figures. The line is drawn from a window 1120px wide, where
-it is at its full length. A narrower window shows the stops as a list.
+the panel it stands in is 1000px or more inside, the length the words were
+given their room on (`speedup_timeline.ROOM`). A narrower window shows the
+stops as a list.
 
 ## The stops past what was measured
 
@@ -196,7 +201,7 @@ the M5 Max as measured: the two were asked for apart and are not made to agree.
 What a game takes now, in steps and instructions, and the plan for taking
 steps out of it, is [`docs/PATH_STEPS.md`](PATH_STEPS.md).
 
-On the home page they are rings in the line's own colour. Each entry of the
+On the line they are rings in the line's own colour. Each entry of the
 line, a stop, a projected stop or a goal, takes its side of the line in turn
 (`speedup_timeline.sides`), so two that stand close together go one over the
 line and one under it. The page's number is never a projected stop: it is the
@@ -205,7 +210,7 @@ that stop. A thousand M5 Maxes are past the 1,000,000x goal and short of the
 10,000,000x the line runs out to, so the fleet stands on the line at its own
 place, left of the goal. Until the line was extended it stood at the line's
 end as an arrow that pointed on from it, and a stop past the end of the line
-still does (`past` in the slot), with its own figure beside it.
+still does (`past` in the record), with its own figure beside it.
 
 A projected stop is an entry of `projected`:
 
@@ -287,8 +292,8 @@ fleet, and it assumes the price holds for the machines it counts.
 
 To change the estimate, add a newer entry to `cloud` after the ones there:
 another machine, a price read again, or a score with more samples behind it.
-A goal is added to `goals` with a key, and an entry for it to the home
-page's line (`beta/landing.html`, by `data-goal`).
+A goal is added to `goals` with a key, and an entry for it to the
+page's line (`beta/performance.html`, by `data-goal`).
 
 ## The tables on CIVVIS Performance
 
@@ -442,7 +447,7 @@ the one shown. The older ones stay: they are the track of how far a stop has
 been pushed, and the page says where a stop started once it has moved.
 
 `all_cores` has no readings to add. Record a run with
-`tools/games_per_minute.py --record` and the home page follows it when it is
+`tools/games_per_minute.py --record` and the page follows it when it is
 a record.
 
 `control` needs none either: every computer control game is timed, and the
@@ -473,6 +478,6 @@ A game alone on the machine is one more reading, in the stop's `alone`: one
 `gene_screen --jobs 1` game with nothing else running, its turns and its
 seconds. One seed is a thin reading; the mean of several is a better one.
 
-`python3 beta/speedup_timeline.py .` prints what the home page will show, and
-`python3 beta/speedup_timeline.py --worked .` the Performance page's tables,
+`python3 beta/speedup_timeline.py .` prints what the line will show, and
+`python3 beta/speedup_timeline.py --worked .` the tables over it,
 the processors among them.

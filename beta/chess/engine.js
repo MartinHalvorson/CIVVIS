@@ -3,7 +3,7 @@
 //
 // The engine is Stockfish 18 as built for the browser by Stockfish.js
 // (`vendor/stockfish-18-lite-single.js` and its `.wasm`: the lite network,
-// one thread, GPL-3.0 like this repository). It speaks UCI, a line of text
+// one thread, GPL-3.0: `vendor/stockfish.LICENSE`). It speaks UCI, a line of text
 // each way, so this file is the whole of what Wizard Chess knows about it.
 //
 // Strength is Stockfish's own setting, not one made here: `UCI_LimitStrength`

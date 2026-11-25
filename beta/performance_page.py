@@ -12,7 +12,7 @@ CIVVIS's own page in the site list: the entry that
 opens under CIVVIS (operator 2026-11-21: "performance should be a page
 similar to the home/ and other similar pages (musings/research/) etc. we want
 the civvis performance charts there. fastest game video. p1, p10, p50, p90,
-p99 times for games for self-play games."). It carries five things:
+p99 times for games for self-play games."). It carries eight things:
 
 - **CIVVIS computer control: game speed over time**, at its top (operator
   2026-11-24: "we should be benchmarking our civvis computer control games
@@ -28,7 +28,7 @@ p99 times for games for self-play games."). It carries five things:
   calculate a multiplier on the theoretical and experimetnal throughput of
   the simualtor. and the calculations. baeline is 5 hrs for manually played
   game."): the readings of `data/performance/speedup_timeline.json`, the
-  ledger the home page's speed timeline is drawn from, as two tables with
+  ledger the speed timeline under them is drawn from, as two tables with
   the sum beside every figure. `speedup_timeline.worked` works them out;
   nothing of them is written in the page. Under them the same benchmarks
   stand processor by processor (operator 2026-11-22: "we should have a
@@ -37,9 +37,16 @@ p99 times for games for self-play games."). It carries five things:
   score from the website"): the processors of
   `data/performance/processors.json`, the one the benchmarks were run on as
   measured and every other worked out from the website's two scores.
+- **the speed timeline**, the same figures as a line: each way of playing
+  where its multiplier puts it, 1x at the right end, with the stops nothing
+  has played yet and the goal past them. It was the home page's, over the
+  videos, until 2026-11-24 (operator: "move the civvis performance timeline
+  thing from home/ to the civvis performance section. middle of the page or
+  so"). `speedup_timeline.timeline` works it out of the same ledger and it
+  is the record's `timeline`.
 - **each way of playing over time** (operator 2026-11-24: "in civvis
   performance, we should have charts studying the improvements rates of each
-  of these over time"): a small chart for every stop of the home page's line
+  of these over time"): a small chart for every stop of that line
   after the baseline, its readings by the day they were taken and the pace
   they have kept. `speedup_timeline.history` builds them from the same
   ledger, with the self-play tournament's batches beside the self-play
@@ -379,6 +386,8 @@ def performance(source: pathlib.Path) -> dict | None:
     out["speedup"] = speedup_timeline.worked(source)
     if out["speedup"] is None:
         print("performance_page: no speedup readings", file=sys.stderr)
+    # The same readings as a line, under the tables. It is `None` with them.
+    out["timeline"] = speedup_timeline.timeline(source)
     out["history"] = speedup_timeline.history(source)
     out["path"] = path(source)
     if out["path"] is None:
