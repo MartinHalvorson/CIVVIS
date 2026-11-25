@@ -1855,6 +1855,80 @@ earlier turn and walked forward along the kept turns, the world on the swan's
 turn is the world it struck; played forward again from an earlier turn, the
 turn is played over and no swan has struck it.
 
+## Edge of Tomorrow
+
+Operator, 2026-11-25: "above civ 6 and below ai debugger add: Edge of
+Tomorrow. This should be civ 6 with a jump back (like the concept from the
+movie)".
+
+`?mode=tomorrow` is the played game once more, listed between AI Debugger and
+Civ 6 in the site list. The seat is in the person's own hands, on the
+Civilization VI screen, and the page adds one thing: a jump back. The world
+goes back to the turn the person woke on, exactly as it stood, and they play
+it again knowing what they saw. Each time round is a loop, and the loops are
+counted. `beta/shim.js` seats the visitor for `mode=tomorrow` as it does for
+`mode=play`, and the last section of `web/assets/app_debugger.js` is the
+rest. Nothing in the engine is new.
+
+- **The page is the Civilization VI screen from its first frame** (`SOLO_UI`),
+  whatever view the AI Debugger was last left in, and does not keep that
+  choice for the AI Debugger to find. The debugger's own bar is out of sight
+  (`html.tomorrow #debugbar`) and is not measured (`debugBarUnseen`). No Civ
+  AI is seated when the game opens: the seat's Auto-play stays in the left
+  panel, where a played game has it, with the Civ AI last picked.
+- **The bar** stands where the debugger's does, across the top of the window
+  from where the map area begins, with the map area beneath it (`--tmr-left`,
+  `--tmr-top`). It has the name and the loop this is, a line that is the
+  whole game, Jump back and Wake here. With little room the line goes under
+  the other two.
+- **Jump back** asks the engine for the turn woken on (`op: "jump"`), so
+  nothing is played again to get there. The engine is deterministic and keeps
+  the agents beside each mark (`Minds`), so the rivals play the same game
+  again until the person plays a different one. The turns that were ahead
+  stay marked, as after any step back, until the first turn played replaces
+  them.
+- **A lost game jumps back by itself.** When the seat's civilization falls,
+  or the game is over and somebody else won it, the page's result card would
+  offer another game and count down to one. Here that count is called off
+  (`clearFinaleCountdown`) and the card is the loop's: how it ended, the turn
+  the world goes back to, a count of `TOMORROW_COUNT` seconds to the jump,
+  and Look around first, which stops the count and puts the card away until
+  Jump back is pressed in the bar. The page draws its own card again
+  whenever the result's signature changes, so the loop's card is put back
+  after every state (`tomorrowCard`). A game the seat won keeps the page's
+  own card, which then says which loop won it.
+- **What was seen stays on the line.** The line runs from the first turn to
+  the last the game may have. On it are the turn woken on, the open turn,
+  how far any loop has reached, where each earlier loop ended (✕ a lost one,
+  ↺ one jumped back from by hand) and, ahead of the open turn, what earlier
+  loops saw done to the seat: a war declared on it, a city of its taken or
+  razed, a nuclear strike, its conquest. Those are read from the game's own
+  record of its wars (`state.wars`, each war's `highlights` whose `subject`
+  is the seat), not from the event log, which is mostly the seat's own
+  doing. The bar says the next of them in words.
+- **Wake here** moves the turn woken on to the world as it stands. That
+  world is kept as a save point of the engine's under the page's one name
+  (`op: "save_point"`, `TOMORROW_SAVE`), which is never thinned away as an
+  old turn's mark may be, and a jump back goes to it (`op: "goto_save"`).
+  Pressed while standing on a wake point that was moved, the button moves it
+  back to the first turn (`op: "drop_save"`), so one set by mistake is not
+  for good. A wake point whose save point the engine no longer holds is the
+  first turn again.
+- **A step back takes attendance again.** The banners over the map compare
+  each turn with the one before it (`rivalMoments`, `boostMoments` in
+  `app_moments.js`). Going back from a war to before it began announced a
+  peace, in this page and in the AI Debugger's Single player view alike;
+  `debugForgetStandingOrders` now has them start over on the turn gone to,
+  and takes down the banners still up or waiting, which are of the turn
+  that was left.
+
+The loops, the wake point and what was seen are this page's own count over
+the timeline every played game keeps. They are gone with the page, as save
+points are, and another game begins at loop 1.
+
+`beta/debugger_test.py` (`check_edge_of_tomorrow`) drives all of it in a
+browser against the toy engine.
+
 ## `POST /autosearch`
 
 The climb, for a page that plays its lines on copies of the engine

@@ -55,9 +55,11 @@ PAGE = r"""<!doctype html><html><head><meta charset="utf-8"><title>bar</title>
 body { display: flex; }
 #side { order: -1; flex: 0 0 200px; height: 100%; }
 #maparea { flex: 1; min-width: 0; }
+/* The viewer's result card is there only while a game is over. */
+#winner { display: none; } #winner.visible { display: block; }
 </style></head>
 <body>
-<div id="maparea"></div>
+<div id="maparea"><div id="winner"></div><div id="moments"></div></div>
 <div id="side">
   <div id="humanfooter" style="display:grid">the left panel's own auto-play</div>
   <select id="autoplaystrategy"><option value="jack">1211 - JackOfAllTrades</option><option value="stock">1000 - ByTheBook</option></select>
@@ -83,8 +85,38 @@ function centerOn() {}
 function refreshSaves() {}
 function loadSave() {}
 function togglePanel() {}
-function gameFinished() { return false; }
+function gameFinished(st = state) { return !!(st && st.finished); }
+function reportedTurn(st) { return (st || state).turn; }
+function victoryVerdict(type) { return titleCase(type || "score") + " victory"; }
+function reignSummary() { return ""; }
 function drawTurnLoop() {}
+// What the viewer's banners compare each turn with (`app_moments.js`), the
+// banners waiting to be shown, and how many are up (in `#moments`).
+let rivalsWorld = null, boostsWorld = null, momentsShowing = 0;
+const momentQueue = [];
+// The viewer's own result card, as far as Edge of Tomorrow reads it: a card
+// in `#winner` while the seat has fallen or the game is over, drawn again
+// only when the result's signature changes, offering another game and
+// counting down to it. `finale` is how often that count was started and
+// how often it was called off (`clearFinaleCountdown`).
+const finale = {armed: 0, cleared: 0};
+function clearFinaleCountdown() { finale.cleared += 1; }
+function drawResult() {
+  const card = document.getElementById("winner"), me = state.players[0];
+  const fallen = !state.finished && me.alive === false;
+  if (!fallen && !state.finished) {
+    card.classList.remove("visible");
+    if (card.dataset.signature) { delete card.dataset.signature; card.replaceChildren(); }
+    return;
+  }
+  const signature = fallen ? `fallen|${state.seed}|${state.turn}` : `${state.seed}|${state.winner}|${state.turn}`;
+  card.classList.add("visible");
+  if (card.dataset.signature === signature) return;
+  card.dataset.signature = signature;
+  card.innerHTML = `<div class="winner-content"><span class="winner-kicker">${fallen || state.winner !== 0 ? "Defeat" : "Victory"}</span>` +
+    `<span class="winner-meta">Turn ${state.turn}</span><button id="finale-restart">Start another game</button></div>`;
+  finale.armed += 1;
+}
 // The page's two views of a held seat, and what the Single player switch asks
 // the page to paint again or put away. `painted` is the record of it.
 let SOLO_UI = false;
@@ -94,7 +126,7 @@ for (const name of ["drawSoloHud", "drawLaunchBar", "drawPlayerHud", "drawSide",
   window[name] = () => { painted.push(name); };
 // How many debugger requests had been sent each time a world was drawn.
 const drawn = [];
-function render(next) { state = next; drawn.push(engine.sent.filter(call => call.path === "/debug").length); }
+function render(next) { state = next; drawn.push(engine.sent.filter(call => call.path === "/debug").length); drawResult(); }
 // Each time the page was told to price the policy deck on screen (the viewer's
 // own `currentPolicyLedger`), and whether a turn was still being played.
 const priced = [];
@@ -185,10 +217,19 @@ function engineSeat() {
 }
 function engineState(error = null) {
   const marks = engineLine(), kept = engine.marks, seat = engineSeat();
+  // How a game goes against the seat is the test's to say: `engine.raids`,
+  // the turns Greece declares war on it; `engine.falls`, the turn it has
+  // fallen by; and `engine.over`, the turn the game is over by and who won.
+  const fell = typeof engine.falls === "number" && engine.turn >= engine.falls;
+  const over = engine.over && engine.turn >= engine.over.turn ? engine.over : null;
   return {error, turn: engine.turn, seed: engine.seed, current: engine.current, units: [], cities: [],
     world_era: engine.eras.filter(era => era.turn <= engine.turn).pop().era,
     ...(engine.limit ? {turn_limit: engine.limit} : {}), seat,
-    players: [{id: 0, civ: "rome", score: seat.score, cities: seat.cities, population: seat.population, military: 1,
+    wars: (engine.raids || []).filter(turn => turn <= engine.turn)
+      .map(turn => ({highlights: [{turn, kind: "declared", actor: 1, subject: 0, city: null}]})),
+    ...(over ? {finished: true, winner: over.winner, winners: [over.winner], victory_type: "science"} : {}),
+    players: [{id: 0, civ: "rome", ...(fell ? {alive: false} : {}),
+      score: seat.score, cities: seat.cities, population: seat.population, military: 1,
       gold_per_turn: seat.gold_per_turn, yields: seat.yields,
       // What the seat has made so far grows with the score, so two worlds
       // played by different Civ AIs have different totals.
@@ -3937,6 +3978,260 @@ def check_doctor_strange(bar: Bar, address: str) -> None:
     assert not bar.dev.console, f"the page complained: {bar.dev.console}"
 
 
+def check_edge_of_tomorrow(bar: Bar, address: str) -> None:
+    """Edge of Tomorrow: the played game with a jump back.
+
+    Operator, 2026-11-25: "above civ 6 and below ai debugger add: Edge of
+    Tomorrow. This should be civ 6 with a jump back (like the concept from
+    the movie)".
+    """
+    ready = "typeof drawDebugBar === 'function' && typeof engineState === 'function'"
+    # The view the AI Debugger was left in is its own, and this page, which
+    # is always the Civilization VI screen, does not write over it.
+    view = bar.ev("localStorage.getItem('civvis-debugger-view-v1')")
+    bar.dev.call("Page.navigate", {"url": f"{address}?mode=tomorrow"})
+    bar.until(f"{ready} && location.search === '?mode=tomorrow' && state === null", "the page, asked for as Edge of Tomorrow")
+    assert bar.ev("[TOMORROW, STRANGE, SOLO_UI, document.documentElement.classList.contains('tomorrow')]") == \
+        [True, False, True, True]
+
+    def play(turns: int) -> int:
+        """Turns played, whoever played them: the seat's turn opens again each time."""
+        return bar.ev("(async () => { for (let n = 0; n < %d; n++) render(await fetchJSON('/debug', {method: 'POST',"
+                      " body: JSON.stringify({op: 'step', strategy: 'jack'})})); return state.turn; })()" % turns)
+
+    def rail() -> dict:
+        return bar.ev("""(() => {
+          const marks = kind => [...document.querySelectorAll(`#tmr-rail .${kind}`)].map(mark =>
+            ({left: mark.style.left, width: mark.style.width, title: mark.title, text: mark.textContent, hand: mark.classList.contains('tmr-by-hand')}));
+          const jump = document.getElementById('tmr-jump'), wake = document.getElementById('tmr-wake');
+          return {now: marks('tmr-now'), wake: marks('tmr-wake'), lived: marks('tmr-lived'), done: marks('tmr-done'),
+            ends: marks('tmr-end'), mem: marks('tmr-mem'), loop: document.getElementById('tmr-loop').textContent,
+            said: document.getElementById('tmr-said').textContent,
+            jump: {off: jump.disabled, to: jump.querySelector('small').textContent, due: jump.classList.contains('tmr-due')},
+            here: {off: wake.disabled, says: wake.textContent}};
+        })()""")
+
+    # A game of forty turns in which Greece declares war on the seat on turn 4.
+    bar.ev("engine.limit = 40, engine.raids = [4], render(engineState()), true")
+    bar.until("document.getElementById('tomorrowbar') && !document.getElementById('tomorrowbar').hidden",
+              "the bar of Edge of Tomorrow is there")
+    # The bar stands where the debugger's does, across the top from where the
+    # map area begins, with the map area beneath it. The debugger's own bar
+    # is out of sight and holds no room, and the seat's Auto-play, which that
+    # bar takes over in the AI Debugger, stays in the left panel.
+    shape = bar.ev("""(() => {
+      const box = id => { const r = document.getElementById(id).getBoundingClientRect();
+        return {left: Math.round(r.left), top: Math.round(r.top), right: Math.round(r.right), height: Math.round(r.height)}; };
+      const root = document.documentElement, debug = document.getElementById('debugbar');
+      return {bar: box('tomorrowbar'), area: box('maparea'), wide: innerWidth, docked: root.classList.contains('tmr-docked'),
+        top: getComputedStyle(root).getPropertyValue('--tmr-top').trim(),
+        debug: debug ? getComputedStyle(debug).display : 'none', debugDocked: root.classList.contains('dbg-docked'),
+        footer: getComputedStyle(document.getElementById('humanfooter')).display};
+    })()""")
+    assert shape["bar"]["left"] == 200 and shape["bar"]["top"] == 0 and shape["bar"]["right"] == shape["wide"], shape
+    assert shape["bar"]["height"] > 40 and shape["area"]["top"] == shape["bar"]["height"], shape
+    assert shape["docked"] is True and shape["top"] == f"{shape['bar']['height']}px", shape
+    assert shape["debug"] == "none" and shape["debugDocked"] is False and shape["footer"] == "grid", shape
+    # The seat is the person's: nothing is asked of the engine to open the
+    # game, where the AI Debugger seats its best Civ AI.
+    assert bar.sent() == [], bar.sent()
+    # Loop 1, on the first turn: there is nothing to jump back from and the
+    # wake point is where it is.
+    seen = rail()
+    assert seen["loop"] == "1" and [mark["text"] for mark in seen["now"]] == ["1"], seen
+    assert seen["jump"] == {"off": True, "to": "to turn 1", "due": False}, seen
+    assert seen["here"] == {"off": True, "says": "Wake here"}, seen
+    assert seen["ends"] == [] and seen["mem"] == [], seen
+    assert "Jump back returns the world to turn 1" in seen["said"], seen
+
+    # Five turns on. The line is the whole game, turn 1 to turn 40: the open
+    # turn stands 5 of its 39 turns along, with this loop's turns drawn up to
+    # it from the turn woken on. The war of turn 4 is behind, and is this
+    # loop's own to have seen.
+    assert play(5) == 6
+    seen = rail()
+    assert seen["now"][0]["text"] == "6" and seen["now"][0]["left"] == "12.82%", seen
+    assert seen["wake"][0]["left"] == "0%" and seen["done"][0]["width"] == "12.82%", seen
+    assert seen["jump"]["off"] is False and seen["here"] == {"off": False, "says": "Wake here"}, seen
+    assert seen["mem"] == [] and seen["ends"] == [], seen
+    assert bar.ev("[...tomorrow.now.values()]") == \
+        [{"turn": 4, "kind": "declared", "loop": 1, "text": "greece declared war on rome"}]
+
+    # Jump back. The engine is asked for the turn woken on, by name, once.
+    # It is loop 2, the next unit waiting for orders is taken up as at the
+    # top of any turn, and the banners take attendance again: they compare a
+    # turn with the one before it, and announced a peace for a war not begun.
+    # A banner that is up or waiting is of the turn that was left, and goes.
+    bar.forget()
+    bar.ev("""painted.length = 0, rivalsWorld = 7, boostsWorld = 7, momentQueue.push('a banner'), momentsShowing = 1,
+      document.getElementById('moments').innerHTML = '<button class="moment">A new age</button>', true""")
+    bar.click("#tmr-jump")
+    bar.until("state.turn === 1 && tomorrow.loop === 2 && tomorrowIdle()", "the world is back on the turn woken on, in loop 2")
+    assert bar.sent() == [{"op": "jump", "turn": 1}], bar.sent()
+    assert bar.ev("[painted.includes('advanceToNextActionUnit'), rivalsWorld, boostsWorld, momentQueue.length, momentsShowing,"
+                  " document.querySelectorAll('#moments .moment').length]") == [True, None, None, 0, 0, 0]
+    # Where loop 1 ended is on the line, as an end by hand, and what it saw
+    # done to the seat is ahead of the open turn: the war, on turn 4.
+    seen = rail()
+    assert seen["loop"] == "2" and seen["now"][0]["text"] == "1", seen
+    assert seen["ends"] == [{"left": "12.82%", "width": "", "title": "Loop 1 ended on turn 6: jumped back by hand", "text": "↺", "hand": True}], seen
+    assert seen["mem"] == [{"left": "7.69%", "width": "", "title": "Loop 1, turn 4: greece declared war on rome", "text": "⚔", "hand": False}], seen
+    assert seen["lived"][0]["width"] == "12.82%" and seen["done"][0]["width"] == "0%", seen
+    assert seen["said"] == "Loop 1 ended on turn 6: jumped back by hand", seen
+    assert seen["jump"]["off"] is True and seen["here"]["off"] is True, seen
+    # A turn on, the bar says what is remembered of the turns ahead.
+    assert play(1) == 2
+    assert rail()["said"] == "Seen in loop 1: turn 4, greece declared war on rome"
+
+    # Wake here, on turn 3: the world as it stands is kept as a save point of
+    # the engine's under the page's one name, and a jump back wakes there.
+    assert play(1) == 3
+    bar.forget()
+    bar.click("#tmr-wake")
+    bar.until("tomorrow.wake.turn === 3 && tomorrowIdle()", "the wake point is moved to the open turn")
+    assert bar.sent() == [{"op": "save_point", "name": "Edge of Tomorrow"}], bar.sent()
+    kept = bar.ev("tomorrow.wake")
+    assert kept["save"] == bar.ev("engine.saves.find(save => save.name === 'Edge of Tomorrow').id") and kept["acted"] == 0, kept
+    seen = rail()
+    assert seen["wake"][0]["left"] == "5.13%" and seen["jump"] == {"off": True, "to": "to turn 3", "due": False}, seen
+    # Standing on a wake point that was moved, the button moves it back.
+    assert seen["here"] == {"off": False, "says": "Wake on turn 1"}, seen
+    assert seen["said"] == "A jump back now wakes here, on turn 3", seen
+    # Past turn 4 nothing remembered is ahead any more.
+    assert play(2) == 5
+    assert rail()["mem"] == []
+
+    # The seat falls. The page draws its own result card, offering another
+    # game and counting down to one; a lost game is not the end of this one,
+    # so the count is called off and the card is the loop's, with the jump
+    # back where the new game was offered and a count of its own.
+    cleared = bar.ev("finale.cleared")
+    bar.ev("engine.falls = 5, render(engineState()), true")
+    bar.until("document.querySelector('#winner .tmr-card') && tomorrow.count", "a lost loop has its card and its count")
+    card = bar.ev("""(() => { const card = document.getElementById('winner');
+      return {text: card.textContent.replace(/\s+/g, ' ').trim(), restart: !!document.getElementById('finale-restart'),
+        visible: card.classList.contains('visible'), jump: document.getElementById('tmr-card-jump').textContent,
+        left: tomorrow.count.left, cleared: finale.cleared, fate: tomorrow.fate}; })()""")
+    assert card["visible"] is True and card["restart"] is False and card["cleared"] == cleared + 1, card
+    assert "Loop 2 ends · Turn 5" in card["text"] and "rome has been defeated" in card["text"], card
+    assert "The world goes back to turn 3, as it stood" in card["text"], card
+    assert card["jump"] == "Jump back to turn 3 (8)" and card["left"] == 8, card
+    assert card["fate"] == {"how": "fell", "words": "rome has been defeated"}, card
+    assert rail()["here"]["off"] is True
+    # The page draws its card again whenever the result's signature changes,
+    # and the loop's card takes its place again, the count to a new game
+    # called off again. The count to the jump goes on as it was.
+    bar.ev("document.getElementById('winner').dataset.signature = 'another', render(engineState()), true")
+    assert bar.ev("[!!document.querySelector('#winner .tmr-card'), !!document.getElementById('finale-restart'), finale.cleared, !!tomorrow.count]") == \
+        [True, False, cleared + 2, True]
+    # Look around first: the count stops and the card is put away, and the
+    # bar's Jump back waits, lit.
+    bar.click("#tmr-card-stay")
+    looking = bar.ev("""[tomorrow.count, tomorrow.looking, document.documentElement.classList.contains('tmr-looking'),
+      getComputedStyle(document.getElementById('winner')).display]""")
+    assert looking == [None, True, True, "none"], looking
+    assert rail()["jump"] == {"off": False, "to": "to turn 3", "due": True}
+    # Jump back from the bar: to the save point the wake point is kept as.
+    bar.forget()
+    bar.click("#tmr-jump")
+    bar.until("state.turn === 3 && tomorrow.loop === 3 && tomorrowIdle()", "the world is back on the moved wake point, in loop 3")
+    assert bar.sent() == [{"op": "goto_save", "id": kept["save"]}], bar.sent()
+    gone = bar.ev("""[document.getElementById('winner').classList.contains('visible'), document.getElementById('winner').children.length,
+      document.documentElement.classList.contains('tmr-looking'), tomorrow.fate, tomorrow.looking]""")
+    assert gone == [False, 0, False, None, False], gone
+    seen = rail()
+    # Loop 1's end, by hand on turn 6, and loop 2's, a defeat on turn 5.
+    assert [(end["title"], end["text"], end["hand"]) for end in seen["ends"]] == [
+        ("Loop 1 ended on turn 6: jumped back by hand", "↺", True),
+        ("Loop 2 ended on turn 5: rome has been defeated", "✕", False)], seen
+    assert seen["loop"] == "3" and seen["jump"]["due"] is False, seen
+
+    # Left alone, a lost loop jumps back when its count runs out.
+    assert play(2) == 5
+    bar.until("tomorrow.count && tomorrow.count.left === 8", "the next defeat counts down again")
+    bar.forget()
+    bar.ev("tomorrow.count.left = 1, true")
+    bar.until("state.turn === 3 && tomorrow.loop === 4 && tomorrowIdle()", "the count ran out and the world went back", seconds=10)
+    assert bar.sent() == [{"op": "goto_save", "id": kept["save"]}], bar.sent()
+    assert bar.ev("tomorrow.count") is None
+
+    # Somebody else wins: that is a lost loop too, and its card says who
+    # won and how. The card's own button jumps at once.
+    bar.ev("engine.falls = null, engine.over = {turn: 4, winner: 1}, true")
+    assert play(1) == 4
+    bar.until("document.querySelector('#winner .tmr-card') && tomorrow.count", "a game somebody else won is a lost loop")
+    assert "greece won: Science victory" in bar.ev("document.getElementById('winner').textContent")
+    bar.click("#tmr-card-jump")
+    bar.until("state.turn === 3 && tomorrow.loop === 5 && tomorrowIdle()", "the card's button jumps back")
+
+    # The seat wins: the page's own card stands, another game on offer, and
+    # says which loop won it. Nothing counts down to a jump, and the count
+    # to another game is the page's own to keep. Jump back is still there.
+    cleared = bar.ev("finale.cleared")
+    bar.ev("engine.over = {turn: 4, winner: 0}, true")
+    assert play(1) == 4
+    won = bar.ev("""[!!document.getElementById('finale-restart'), !!document.querySelector('#winner .tmr-card'),
+      [...document.querySelectorAll('#winner .tmr-won')].map(line => line.textContent), tomorrow.count, finale.cleared,
+      tomorrow.fate, document.getElementById('tmr-jump').disabled]""")
+    assert won == [True, False, ["Won on loop 5"], None, cleared, {"how": "won", "words": "rome won"}, False], won
+    # Drawn again, the card says it once.
+    bar.ev("render(engineState()), true")
+    assert bar.ev("document.querySelectorAll('#winner .tmr-won').length") == 1
+
+    # Back on the moved wake point, the button moves the wake point to the
+    # first turn again: the save point is let go of, and a jump goes there.
+    bar.ev("engine.over = null, true")
+    bar.click("#tmr-jump")
+    bar.until("state.turn === 3 && tomorrow.loop === 6 && tomorrowIdle()", "a won game is jumped back from too")
+    # A wake point is only as good as the save point the engine holds for
+    # it: with that gone from the engine, a jump back wakes on turn 1.
+    held = bar.ev("JSON.stringify(engine.saves)")
+    bar.ev("engine.saves = [], render(engineState()), true")
+    assert bar.ev("tomorrow.wake") == {"turn": 1, "save": None, "acted": 0}
+    assert rail()["jump"]["to"] == "to turn 1"
+    bar.ev(f"engine.saves = {held}, tomorrow.wake = {json.dumps(kept)}, render(engineState()), true")
+    assert rail()["here"] == {"off": False, "says": "Wake on turn 1"}
+    bar.forget()
+    bar.click("#tmr-wake")
+    bar.until("tomorrow.wake.save === null && tomorrowIdle()", "the wake point is back on the first turn")
+    assert bar.sent() == [{"op": "drop_save", "id": kept["save"]}], bar.sent()
+    assert bar.ev("tomorrow.wake") == {"turn": 1, "save": None, "acted": 0}
+    seen = rail()
+    assert seen["jump"] == {"off": False, "to": "to turn 1", "due": False} and seen["here"] == {"off": False, "says": "Wake here"}, seen
+    bar.forget()
+    bar.click("#tmr-jump")
+    bar.until("state.turn === 1 && tomorrow.loop === 7 && tomorrowIdle()", "and a jump back wakes on turn 1")
+    assert bar.sent() == [{"op": "jump", "turn": 1}], bar.sent()
+
+    # With little room the line goes under the name and the buttons, nothing
+    # is cut off, and the map area is still beneath the whole bar.
+    bar.dev.call("Emulation.setDeviceMetricsOverride", {"width": 760, "height": 800, "deviceScaleFactor": 1, "mobile": False})
+    bar.until("innerWidth === 760", "the window is narrow")
+    bar.ev("window.dispatchEvent(new Event('resize')), true")
+    narrow = bar.ev("""(() => { const top = pick => Math.round(document.querySelector(pick).getBoundingClientRect().top);
+      const box = document.getElementById('tomorrowbar'), rect = box.getBoundingClientRect();
+      return {name: top('#tomorrowbar .tmr-name'), acts: top('#tomorrowbar .tmr-acts'), track: top('#tomorrowbar .tmr-track'),
+        fits: box.scrollWidth <= box.clientWidth, right: Math.round(rect.right), wide: innerWidth,
+        jump: Math.round(document.getElementById('tmr-wake').getBoundingClientRect().right),
+        area: Math.round(document.getElementById('maparea').getBoundingClientRect().top), height: Math.round(rect.height)}; })()""")
+    assert narrow["track"] > narrow["name"] and narrow["track"] > narrow["acts"], narrow
+    assert narrow["fits"] is True and narrow["jump"] <= narrow["right"] == narrow["wide"], narrow
+    assert narrow["area"] == narrow["height"], narrow
+    bar.dev.call("Emulation.clearDeviceMetricsOverride")
+    bar.until("innerWidth > 760", "the window is wide again")
+    bar.ev("window.dispatchEvent(new Event('resize')), true")
+
+    # Another game is loop 1 again, with nothing remembered and the wake
+    # point on its first turn.
+    bar.ev("""engine.seed = 8, engine.turn = 1, engine.marks = [1], engine.worlds = {1: 1}, engine.by = {}, engine.saves = [],
+      engine.raids = [], render(engineState()), true""")
+    seen = rail()
+    assert seen["loop"] == "1" and seen["ends"] == [] and seen["mem"] == [] and seen["jump"]["off"] is True, seen
+    assert bar.ev("[tomorrow.loop, tomorrow.ends.length, tomorrow.seen.size, tomorrow.wake.turn, tomorrow.wake.save]") == [1, 0, 0, 1, None]
+    # And the AI Debugger's view is as it was left.
+    assert bar.ev("localStorage.getItem('civvis-debugger-view-v1')") == view
+
+
 def main() -> int:
     here = pathlib.Path(__file__).resolve().parent
     stage = pathlib.Path(tempfile.mkdtemp(prefix="civvis-debugger-"))
@@ -4083,6 +4378,15 @@ def main() -> int:
               "world and on the followed one alone unlocked, any drawn by a seed or the one picked, says what struck, "
               "marks it in the line's name and has each struck world's future played again; a narrow "
               "window has the one timeline and says why.")
+        check_edge_of_tomorrow(bar, f"http://127.0.0.1:{port}/")
+        print("Edge of Tomorrow is the played game on the Civilization VI screen with a bar of its own where the "
+              "debugger's stands and the seat left to the person; Jump back asks the engine for the turn woken on "
+              "and begins the next loop, with where each loop ended and what it saw done to the seat kept on the "
+              "line; Wake here keeps the open turn as the engine's save point and a jump goes there, and moves "
+              "back to the first turn when asked on it; a lost game, the seat fallen or somebody else the winner, "
+              "has the loop's card in place of the offer of another game, counts down to the jump and jumps, or "
+              "is looked around first; a won game keeps its own card and says which loop won it; another game "
+              "is loop 1 again, and a narrow window has the line under the buttons.")
         return 0
     finally:
         chrome.terminate()

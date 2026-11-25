@@ -338,6 +338,7 @@ class TheSiteList(unittest.TestCase):
                 ("site-link", "../../", "CIVVIS"),
                 ("site-link", "../../?mode=strange", "Doctor Strange's Civ 6"),
                 ("site-link", "../../?mode=play", "AI Debugger"),
+                ("site-link", "../../?mode=tomorrow", "Edge of Tomorrow"),
                 ("site-link", "https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/", "Civ 6"),
             ],
         )
