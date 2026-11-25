@@ -589,6 +589,8 @@ mod tests {
     /// it read by text. A name interned after the table was built, or one
     /// the table never held, misses by both routes.
     #[test]
+    // The borrows are the point: each key type takes its own path.
+    #[allow(clippy::needless_borrows_for_generic_args)]
     fn a_name_and_its_text_find_the_same_entry() {
         let mut map: SpecMap<usize> = SpecMap::new();
         for (index, text) in ["campus", "campus_x", "theater", "theater2", "a"]
