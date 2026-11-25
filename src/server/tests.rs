@@ -2614,11 +2614,12 @@ fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
 /// The home page is one of the site's five pages and lists all five from
 /// its header, Home, Charts, Tournaments, CIVVIS and AI Debugger, with itself ringed in white
 /// and the Civ 6 link under them, as the viewer's masthead does; below that
-/// it is one paragraph, the speed timeline (operator, 2026-11-22: how many
-/// times faster than a person each way of playing gets through a game;
-/// `beta/speedup_timeline_test.py` pins it) and four videos, two by two
-/// (operator, 2026-11-22;
-/// `beta/home_rankings_test.py` pins them). The rankings that stood there
+/// it is one paragraph, the Firaxis Civ 6 AI benchmark and six videos, two
+/// by two (operator, 2026-11-22 and 2026-11-24;
+/// `beta/home_rankings_test.py` pins them). The speed timeline that stood
+/// over them went to CIVVIS Performance on 2026-11-24 (operator: "move the
+/// civvis performance timeline thing from home/ to the civvis performance
+/// section"; `beta/speedup_timeline_test.py` pins it there). The rankings that stood there
 /// moved to Win Analytics under Charts/ the same day, and the Tournaments
 /// table that stood above them to the Auto-Tourneys page (operator, 2026-11-21;
 /// `beta/tournaments_page_test.py` pins that page). The two-card game menu that stood there, the
@@ -2711,15 +2712,13 @@ fn the_home_page_lists_the_sites_with_itself_ringed() {
         // The channel's top playlists are a list under the YouTube button.
         "<ul class=\"utility-lists\" aria-label=\"Top playlists\">",
         "<script type=\"application/json\" id=\"home-videos\">null</script>",
-        // Over the videos, the speed timeline: hidden as written, and
-        // shown with the figures publishing writes into its own slot. It
-        // is named by the title over it (operator, 2026-11-24: "lets
-        // title "Civ Game Speedup - Synthetic Data Pipeline"").
-        "<section class=\"speed\" id=\"speed\" aria-labelledby=\"speed-title\" hidden>",
-        "<h2 class=\"speed-title\" id=\"speed-title\">Civ Game Speedup - Synthetic Data Pipeline</h2>",
-        "<script type=\"application/json\" id=\"home-speedup\">null</script>",
     ] {
         assert!(landing.contains(piece), "the home page lost {piece}");
+    }
+    // The speed timeline is CIVVIS Performance's since 2026-11-24, and its
+    // slot went with it.
+    for gone in ["id=\"speed\"", "id=\"home-speedup\""] {
+        assert!(!landing.contains(gone), "the home page kept {gone}");
     }
     // Every name stands on one line (operator, 2026-11-21: "make sure it
     // fits on one line"): the row wraps between names on a narrow screen,
