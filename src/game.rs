@@ -1659,7 +1659,8 @@ type GreatWorkPiecesByCity = BTreeMap<u32, Vec<GreatWorkPiece>>;
 type HousedPiecesByPlayer = crate::fast_map::FastMap<usize, Arc<GreatWorkPiecesByCity>>;
 type GreatWorkSlotsByPlayer = crate::fast_map::FastMap<usize, Vec<(u32, String)>>;
 type GreatWorkHousing = crate::fast_map::FastMap<(usize, String, usize), bool>;
-type WonderEffectsByPlayer = crate::fast_map::FastMap<usize, BTreeMap<String, f64>>;
+type WonderEffectsByPlayer =
+    crate::fast_map::FastMap<usize, crate::fast_map::FastMap<crate::name::Name, f64>>;
 type NationalParksByPlayer = crate::fast_map::FastMap<usize, Vec<(u32, [Pos; 4])>>;
 type RegionalSlotsByPlayer = crate::fast_map::FastMap<usize, Arc<Vec<RegionalSlot>>>;
 
@@ -12502,18 +12503,21 @@ impl Game {
             .as_ref()
             .and_then(|all| all.get(&pid))
         {
-            return aggregate.get(effect.text()).copied().unwrap_or(0.0);
+            return aggregate.get(&effect_name).copied().unwrap_or(0.0);
         }
 
-        let mut aggregate = BTreeMap::<String, f64>::new();
+        // Keyed by interned name: every later read in the scope is a hash of
+        // an integer, where a text key compared strings down a tree. Each
+        // key's sum adds the same values in the same order either way.
+        let mut aggregate = crate::fast_map::FastMap::<crate::name::Name, f64>::default();
         for city in self.cities.values().filter(|city| city.owner == pid) {
             for wonder in city.wonders.keys() {
-                for (name, value) in &self.rules.wonders[wonder].effects {
-                    *aggregate.entry(name.clone()).or_default() += *value;
+                for (name, value) in self.rules.wonders[wonder].effects.iter_named() {
+                    *aggregate.entry(name).or_default() += value;
                 }
             }
         }
-        let value = aggregate.get(effect.text()).copied().unwrap_or(0.0);
+        let value = aggregate.get(&effect_name).copied().unwrap_or(0.0);
         self.query_memo
             .wonder_effects
             .borrow_mut()

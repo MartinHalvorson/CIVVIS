@@ -56,11 +56,17 @@ impl Game {
                 Self::add_powered_building_yields(building, &mut yields);
             }
             for (family, counter) in [
-                ("library", "great_person:library_science"),
-                ("university", "great_person:university_science"),
-                ("research_lab", "great_person:research_lab_science"),
+                (crate::name!("library"), "great_person:library_science"),
+                (
+                    crate::name!("university"),
+                    "great_person:university_science",
+                ),
+                (
+                    crate::name!("research_lab"),
+                    "great_person:research_lab_science",
+                ),
             ] {
-                if self.building_is_family(b, Name::new(family)) {
+                if self.building_is_family(b, family) {
                     yields.science += self.players[city.owner]
                         .counters
                         .get(counter)

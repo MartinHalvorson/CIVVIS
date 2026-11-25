@@ -85,29 +85,36 @@ impl Game {
                 .filter(|building| self.rules.buildings[building].worship_belief.is_some())
                 .count();
         }
-        let families: &[&str] = match (kind, tier) {
-            ("scientific", 1) => &["library"],
-            ("scientific", 2) => &["university"],
-            ("scientific", 3) => &["research_lab"],
-            ("cultural", 1) => &["amphitheater"],
-            ("cultural", 2) => &["art_museum", "archaeological_museum"],
-            ("cultural", 3) => &["broadcast_center"],
-            ("religious", 1) => &["shrine"],
-            ("religious", 2) => &["temple"],
-            ("militaristic", 1) => &["barracks", "stable"],
-            ("militaristic", 2) => &["armory"],
-            ("militaristic", 3) => &["military_academy"],
-            ("industrial", 1) => &["workshop"],
-            ("industrial", 2) => &["factory"],
-            ("industrial", 3) => &["coal_power_plant", "oil_power_plant", "nuclear_power_plant"],
-            ("trade", 1) => &["market", "lighthouse"],
-            ("trade", 2) => &["bank", "shipyard"],
-            ("trade", 3) => &["stock_exchange", "seaport"],
+        let families: &[Name] = match (kind, tier) {
+            ("scientific", 1) => &[crate::name!("library")],
+            ("scientific", 2) => &[crate::name!("university")],
+            ("scientific", 3) => &[crate::name!("research_lab")],
+            ("cultural", 1) => &[crate::name!("amphitheater")],
+            ("cultural", 2) => &[
+                crate::name!("art_museum"),
+                crate::name!("archaeological_museum"),
+            ],
+            ("cultural", 3) => &[crate::name!("broadcast_center")],
+            ("religious", 1) => &[crate::name!("shrine")],
+            ("religious", 2) => &[crate::name!("temple")],
+            ("militaristic", 1) => &[crate::name!("barracks"), crate::name!("stable")],
+            ("militaristic", 2) => &[crate::name!("armory")],
+            ("militaristic", 3) => &[crate::name!("military_academy")],
+            ("industrial", 1) => &[crate::name!("workshop")],
+            ("industrial", 2) => &[crate::name!("factory")],
+            ("industrial", 3) => &[
+                crate::name!("coal_power_plant"),
+                crate::name!("oil_power_plant"),
+                crate::name!("nuclear_power_plant"),
+            ],
+            ("trade", 1) => &[crate::name!("market"), crate::name!("lighthouse")],
+            ("trade", 2) => &[crate::name!("bank"), crate::name!("shipyard")],
+            ("trade", 3) => &[crate::name!("stock_exchange"), crate::name!("seaport")],
             _ => &[],
         };
         families
             .iter()
-            .filter(|family| self.city_has_active_building_family(city, Name::new(family)))
+            .filter(|family| self.city_has_active_building_family(city, **family))
             .count()
     }
 

@@ -103,7 +103,8 @@ pub struct EffectMap {
     /// In ascending key order, as the `BTreeMap` iterated.
     entries: Vec<(String, f64)>,
     /// `Name::id` of each key, index for index.
-    ids: Vec<u32>,
+    /// Each key interned, index for index with `entries`.
+    names: Vec<Name>,
 }
 
 impl EffectMap {
@@ -146,10 +147,9 @@ impl EffectMap {
     /// The value for an interned key: one integer comparison per entry.
     #[inline]
     pub fn get_name(&self, key: Name) -> Option<f64> {
-        let id = key.id();
-        self.ids
+        self.names
             .iter()
-            .position(|entry| *entry == id)
+            .position(|entry| *entry == key)
             .map(|index| self.entries[index].1)
     }
 
@@ -160,7 +160,7 @@ impl EffectMap {
         {
             Ok(index) => Some(std::mem::replace(&mut self.entries[index].1, value)),
             Err(index) => {
-                self.ids.insert(index, Name::new(&key).id());
+                self.names.insert(index, Name::new(&key));
                 self.entries.insert(index, (key, value));
                 None
             }
@@ -169,12 +169,20 @@ impl EffectMap {
 
     pub fn remove(&mut self, key: &str) -> Option<f64> {
         let index = self.position(key)?;
-        self.ids.remove(index);
+        self.names.remove(index);
         Some(self.entries.remove(index).1)
     }
 
     pub fn iter(&self) -> impl DoubleEndedIterator<Item = (&String, &f64)> + ExactSizeIterator {
         self.entries.iter().map(|(key, value)| (key, value))
+    }
+
+    /// Every entry by its interned key, in key order.
+    pub fn iter_named(&self) -> impl Iterator<Item = (Name, f64)> + '_ {
+        self.names
+            .iter()
+            .zip(&self.entries)
+            .map(|(name, (_, value))| (*name, *value))
     }
 
     pub fn keys(&self) -> impl DoubleEndedIterator<Item = &String> + ExactSizeIterator {
@@ -200,10 +208,10 @@ impl<'a> IntoIterator for &'a EffectMap {
 
 impl From<BTreeMap<String, f64>> for EffectMap {
     fn from(map: BTreeMap<String, f64>) -> Self {
-        let ids = map.keys().map(|key| Name::new(key).id()).collect();
+        let names = map.keys().map(|key| Name::new(key)).collect();
         EffectMap {
             entries: map.into_iter().collect(),
-            ids,
+            names,
         }
     }
 }
