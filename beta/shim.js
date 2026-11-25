@@ -119,12 +119,15 @@
     return pane && window.parent !== window ? pane : null;
   })();
 
-  const worker = PANE === null ? new Worker(WORKER_URL) : null;
+  // `let`: Doctor Strange's split closed onto a world with an engine of its
+  // own makes that engine the page's (`adoptHome`).
+  let worker = PANE === null ? new Worker(WORKER_URL) : null;
   const pending = new Map();
   let nextId = 1;
 
   const answered = (event) => {
-    const { id, ok, answer, error } = event.data;
+    const { id, ok, answer, error, meter } = event.data;
+    if (meter && event.target && event.target !== window) meters.set(event.target, meter);
     const waiting = pending.get(id);
     if (!waiting) return;
     pending.delete(id);
@@ -327,9 +330,197 @@
           { civvis: "pane-answer", id: data.id, ok, answer, error }, window.location.origin);
       } catch (_) { /* the half was closed while its request was out */ }
     };
-    ask(String(data.method), named, String(data.body || ""), true)
+    askPane(String(data.pane), String(data.method), named, String(data.body || ""))
       .then((bytes) => reply(true, bytes, null), (error) => reply(false, null, String(error.message || error)));
   });
+
+  // ------------------------------------------------------- a world's own engine
+  //
+  // Doctor Strange's Civ 6 (`?mode=strange`) holds up to a dozen worlds, each
+  // a half of one split, and one engine held them all. An engine is one
+  // thread, so a turn of three worlds, or the futures played ahead of them,
+  // took three turns' time one after another while the computer's other cores
+  // sat idle: three worlds played twelve turns ahead at turn 60 took 4.0 s on
+  // the one engine and 1.5 s on an engine each, to the same futures byte for
+  // byte (operator 2026-11-24: "we want the doctor strange's civ 6 search
+  // across the timeline(s) to be blazingly fast").
+  //
+  // So on that page each world is given an engine of its own (`homes`): a
+  // fork of the engine that held it, made the first time the world asks
+  // anything, and every request the world makes from then on is answered
+  // there. The engines run on threads of their own, so the worlds play at
+  // the same time. Each still holds the split as it stood when it was made;
+  // only its own world is ever asked of it again.
+  //
+  // What one engine did across its worlds is done across engines here:
+  //   - a world made a copy of another (`op: "copy"`, a branch) is given a
+  //     fork of that other world's engine, and the copy is made there;
+  //   - a request naming another world as its `twin` is played once for both
+  //     only where both are on one engine, so the name is dropped otherwise
+  //     and the twin's own page asks for its own turn, as when two are apart;
+  //   - the split closed onto one world (`op: "adopt"`) makes that world's
+  //     engine the page's own;
+  //   - a world whose page has gone (a deleted branch, an earlier split) has
+  //     its engine let go, once whatever it was asked has been answered.
+  const HOMES = PANE === null && new URL(window.location.href).searchParams.get("mode") === "strange";
+  // A world's engine, by the world's pane name, and the making of one under
+  // way: a world's requests wait for its engine to be made or changed.
+  const homes = new Map();
+  const moving = new Map();
+  // What each engine last said it holds and has spent (`worker.js` puts it on
+  // every answer), for the page's own reading of what it all costs.
+  const meters = new Map();
+  // The time engines let go of had spent, so what is added up never falls.
+  let retiredBusy = 0;
+  function retire(home) {
+    const known = meters.get(home);
+    if (known) retiredBusy += known.busy;
+    meters.delete(home);
+  }
+
+  function homeOf(pane) {
+    return homes.get(pane) || worker;
+  }
+
+  // How many worlds have an engine of their own, for anyone reading the
+  // report (`window.__civvisBeta.homes`).
+  function counted() {
+    report.homes = new Set(homes.values()).size;
+  }
+
+  // A new engine that is `from` as it stands: its memory between two of its
+  // requests, so it is everything `from` was asked before this, and nothing
+  // asked after.
+  async function forkOf(from) {
+    const { module, memory } = await tell(from, { fork: "leave", wasmUrl: WASM_URL }, [], "/forks", true);
+    const home = new Worker(WORKER_URL);
+    home.onmessage = answered;
+    home.onerror = (event) => release(home, event.message || "a world's engine stopped");
+    await tell(home, { fork: "adopt", module, memory }, [memory], "/forks", true);
+    return home;
+  }
+
+  // An engine no world needs is let go of once it has answered what it was
+  // asked: the cheapest question there is goes in behind all of that.
+  function letGo(home) {
+    if (!home || home === worker || [...homes.values()].includes(home)) return;
+    retire(home);
+    const done = () => release(home, "that world's engine was let go");
+    tell(home, { method: "GET", path: "/runtime", body: "", wasmUrl: WASM_URL, seed: OPENING_SEED }, [], "/runtime", true)
+      .then(done, done);
+  }
+
+  // A world's request, answered by its own engine.
+  function askHome(home, method, path, body) {
+    if (home === worker) return ask(method, path, body, true);
+    return tell(home, { method, path, body: body || "", wasmUrl: WASM_URL, seed: OPENING_SEED }, [], path, true);
+  }
+
+  // Each world's engine is changed by one thing at a time, and its requests
+  // wait for that.
+  function changing(pane, made) {
+    const settled = made.then(() => null, () => null);
+    moving.set(pane, settled);
+    settled.then(() => { if (moving.get(pane) === settled) moving.delete(pane); });
+    return made;
+  }
+
+  function askPane(pane, method, path, body) {
+    if (!HOMES) return ask(method, path, body, true);
+    const go = () => {
+      const parsed = method === "POST" && path.split("?")[0] === "/debug" ? safeParse(body) : null;
+      // A copy of a world on another engine: a fork of that engine, with the
+      // copy made in it, is this world's engine from now on.
+      const from = parsed && parsed.op === "copy" && typeof parsed.from === "string" ? parsed.from : null;
+      if (from !== null && from !== pane) {
+        return changing(pane, (async () => {
+          await (moving.get(from) || null);
+          const source = homeOf(from);
+          if (source === homeOf(pane)) return askHome(source, method, path, body);
+          const home = await forkOf(source);
+          const was = homes.get(pane);
+          homes.set(pane, home);
+          counted();
+          letGo(was);
+          return askHome(home, method, path, body);
+        })());
+      }
+      if (parsed && typeof parsed.twin === "string" && homeOf(parsed.twin) !== homeOf(pane)) {
+        delete parsed.twin;
+        body = JSON.stringify(parsed);
+      }
+      const home = homes.get(pane);
+      const answer = askHome(homeOf(pane), method, path, body);
+      // The first thing a world asks seats it on the page's engine; the
+      // engine is forked behind that request and the fork is the world's.
+      if (!home) changing(pane, forkOf(worker).then((made) => { homes.set(pane, made); counted(); }));
+      return answer;
+    };
+    const waiting = moving.get(pane);
+    return waiting ? waiting.then(go) : go();
+  }
+
+  // The split closed onto a world that has an engine of its own: that engine
+  // is asked, and is the page's engine from then on.
+  async function adoptHome(pane, body) {
+    await (moving.get(pane) || null);
+    const home = homes.get(pane);
+    if (!home) return ask("POST", "/debug", body);
+    const answer = await tell(home, { method: "POST", path: "/debug", body, wasmUrl: WASM_URL, seed: OPENING_SEED }, [], "/debug", false);
+    if (answer && !answer.error) {
+      const was = worker;
+      home.onerror = was.onerror;
+      worker = home;
+      const rest = [...homes.values()];
+      homes.clear();
+      moving.clear();
+      counted();
+      // The engine that is the page's now answers `/machine-metrics` itself.
+      meters.delete(home);
+      for (const other of [was, ...rest]) if (other !== home) {
+        retire(other);
+        const done = () => release(other, "the split was closed onto another world");
+        tell(other, { method: "GET", path: "/runtime", body: "", wasmUrl: WASM_URL, seed: OPENING_SEED }, [], "/runtime", true)
+          .then(done, done);
+      }
+    }
+    return answer;
+  }
+
+  // A world whose page has gone is not asked anything again.
+  if (HOMES) {
+    setInterval(() => {
+      const shown = new Set([...document.querySelectorAll("iframe")].map((frame) => {
+        try { return new URL(frame.src, window.location.href).searchParams.get("pane"); } catch (_) { return null; }
+      }));
+      for (const [pane, home] of [...homes]) {
+        if (shown.has(pane) || moving.has(pane)) continue;
+        homes.delete(pane);
+        counted();
+        letGo(home);
+      }
+    }, 5000);
+  }
+
+  // What the engines hold and have spent, added together: the page's engine
+  // answers for itself and the worlds' engines are read from their last
+  // answers, so a reading never waits behind a world's turn.
+  function meteredHomes(answer) {
+    if (!HOMES || !answer || typeof answer !== "object" || typeof answer.engine_bytes !== "number") return answer;
+    const engines = new Set(homes.values());
+    engines.delete(worker);
+    let bytes = answer.engine_bytes, busy = (answer.engine_busy_ms || 0) + retiredBusy;
+    for (const home of engines) {
+      const known = meters.get(home);
+      if (!known) continue;
+      bytes += known.bytes;
+      busy += known.busy;
+    }
+    answer.engine_bytes = bytes;
+    answer.engine_busy_ms = busy;
+    answer.engine_threads = 1 + engines.size;
+    return answer;
+  }
 
   // ------------------------------------------------------------------- forks
   //
@@ -946,6 +1137,7 @@
     // result is on screen; those answers have no `winner` field and used to
     // clear the countdown on every poll, leaving the finished world forever.
     if (path === "/state") answer = await withFinale(answer);
+    if (path === "/machine-metrics") answer = meteredHomes(answer);
 
     // Civ 6 autosaves at the top of every turn and so does the desktop build.
     // The engine cannot, so it says when one is due and the page keeps it.
@@ -1046,6 +1238,12 @@
       // A fork answers for itself, and making forks is this file's own
       // work: neither is a request to the page's engine.
       if (fork !== null) return askFork(fork, method, options_.body || "").then(json);
+      if (HOMES && path === "/debug" && method === "POST") {
+        const parsed = safeParse(options_.body || "{}");
+        if (parsed.op === "adopt" && homes.has(String(parsed.pane))) {
+          return adoptHome(String(parsed.pane), options_.body).then(json);
+        }
+      }
       if (path === "/forks") {
         dropAhead(false);
         return forkEngine(safeParse(options_.body || "{}").count).then(json);

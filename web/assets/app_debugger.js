@@ -3528,7 +3528,11 @@ window.addEventListener("message", event => {
     debugSplit.panes[letter].painted = true;
     debugSplitReady();
   } else if (data.civvis === "pane-camera") {
-    if (debugSplit.view)
+    // In Doctor Strange each world frames its own seat's ground as it plays,
+    // and only a look the person gave one of them is shared: each world's
+    // own framing, every turn, had every other world draw its map again.
+    const shared = !STRANGE || (data.view && data.view.own === true);
+    if (debugSplit.view && shared)
       for (const name of Object.keys(debugSplit.panes))
         if (name !== letter) debugSplitTell(name, {civvis: "pane-look", view: data.view});
   } else if (data.civvis === "pane-numbers") {
@@ -5940,15 +5944,20 @@ async function strangeMeasure() {
   const sample = {cpu: null, cpuOf: "", memory: null, memoryOf: "", bytes: false};
   if (number(told.cpu_percent)) { sample.cpu = told.cpu_percent; sample.cpuOf = "this computer, all of its cores"; }
   else if (number(told.engine_busy_ms)) {
+    // Each world may play on an engine of its own (`beta/shim.js`), and the
+    // time they have all spent is added up: a share of the computer's cores.
+    const engines = number(told.engine_threads) && told.engine_threads > 1 ? told.engine_threads : 1;
+    const cores = engines > 1 ? Math.max(engines, navigator.hardwareConcurrency || engines) : 1;
     if (was && was.busy !== null && now > was.at)
-      sample.cpu = Math.max(0, Math.min(100, (told.engine_busy_ms - was.busy) / (now - was.at) * 100));
-    sample.cpuOf = "the engine, of the one core it plays on";
+      sample.cpu = Math.max(0, Math.min(100, (told.engine_busy_ms - was.busy) / (now - was.at) * 100 / cores));
+    sample.cpuOf = engines > 1 ? `the ${engines} engines, of this computer's ${cores} cores` : "the engine, of the one core it plays on";
   }
   const heap = performance.memory && number(performance.memory.usedJSHeapSize) ? performance.memory.usedJSHeapSize : null;
   if (number(told.memory_percent)) { sample.memory = told.memory_percent; sample.memoryOf = "this computer, of all it has"; }
   else if (number(told.engine_bytes)) {
     sample.memory = told.engine_bytes + (heap ?? 0); sample.bytes = true;
-    sample.memoryOf = heap === null ? "the engine" : "the engine and this page";
+    const engines = number(told.engine_threads) && told.engine_threads > 1 ? `the ${told.engine_threads} engines` : "the engine";
+    sample.memoryOf = heap === null ? engines : `${engines} and this page`;
   } else if (heap !== null) { sample.memory = heap; sample.bytes = true; sample.memoryOf = "this page"; }
   strange.metered = {at: now, busy: number(told.engine_busy_ms) ? told.engine_busy_ms : null};
   strange.meter.push(sample);
@@ -6679,6 +6688,19 @@ if (STRANGE_PANE) {
   style.id = "strange-pane-style";
   style.textContent = STRANGE_PANE_STYLE;
   document.head.appendChild(style);
+  // A world's box shows its map and its chart and nothing else of the page
+  // (`STRANGE_PANE_STYLE` puts the rest away), and every world draws on the
+  // one thread of the page that holds them. What is out of sight is not
+  // drawn or measured: the debugger's bar (its deck and marks are still
+  // worked out and told to the host, `drawDebugBar`), the civilizations'
+  // panel, the heights the corner boxes publish, and the fitting of type in
+  // panels nobody sees. Three worlds spent about a fifth of the thread on
+  // these, every turn.
+  // (The viewer's own, where the page has them.)
+  debugDock = () => {};
+  if (typeof drawPlayerHud === "function") drawPlayerHud = () => {};
+  if (typeof publishSoloHeight === "function") publishSoloHeight = () => {};
+  if (typeof responsiveTypeMutationObserver !== "undefined") responsiveTypeMutationObserver.disconnect();
 }
 if (STRANGE) {
   document.documentElement.classList.add("strange");
@@ -6691,11 +6713,27 @@ if (STRANGE) {
     if (debugSplit && debugSplit !== before) strangeMount();
     return opened;
   };
+  // What the worlds do next is worked out at once, every time; the split
+  // and the highway are drawn once a frame. Each world says several things
+  // a turn (its turn, its marks, its numbers, that it followed, that it is
+  // ready), the host was drawn again for every one of them, and every
+  // drawing measures the page: with three worlds that was a score of
+  // layouts a turn on the one thread all of them draw on. A tab out of
+  // sight paints no frames, so a short timer draws it as well.
   const draw = drawDebugSplit;
-  drawDebugSplit = function (...given) {
-    const drawn = draw(...given);
-    try { strangeStep(); strangeDraw(); } catch (error) { console.error("doctor strange", error); }
-    return drawn;
+  let drawing = null;
+  drawDebugSplit = function () {
+    try { strangeStep(); } catch (error) { console.error("doctor strange", error); }
+    if (drawing) return;
+    const now = () => {
+      if (!drawing) return;
+      cancelAnimationFrame(drawing.frame);
+      clearTimeout(drawing.timer);
+      drawing = null;
+      draw();
+      try { strangeDraw(); } catch (error) { console.error("doctor strange", error); }
+    };
+    drawing = {frame: requestAnimationFrame(now), timer: setTimeout(now, 50)};
   };
   // With no room for two worlds (a small device, a narrow window) the game
   // stays on its one timeline, which is the AI Debugger, and the bar says so.

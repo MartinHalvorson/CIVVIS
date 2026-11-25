@@ -1040,6 +1040,42 @@ kept), so many forks late in a long game are counted in gigabytes; `room`
 lowers what the timeline keeps before the forks are made. The desktop
 program has no forks yet: its server does not know `/forks`.
 
+### A world's own engine (Doctor Strange's Civ 6)
+
+On `?mode=strange` the page holds up to a dozen worlds, and one engine held
+them all, so a turn of every world, and the futures played ahead of them,
+went one world after another on one thread (operator 2026-11-24: "we want
+the doctor strange's civ 6 search across the timeline(s) to be blazingly
+fast"). There the shim gives each world an engine of its own: a fork of the
+page's engine made behind the world's first request, which answers
+everything the world asks from then on. A copy of a world on another engine
+(a branch, `op: "copy"`) is given a fork of that world's engine with the copy
+made in it; a `twin` on another engine is dropped, so the twin's page asks
+for its own turn as when the two are apart; a world whose page has gone has
+its engine let go; and the split closed onto a world makes that world's
+engine the page's. Outside Doctor Strange nothing changes. Each worker puts
+what its engine holds and has spent on every answer, so `/machine-metrics`
+adds them up (`engine_threads` says how many) without waiting on a world
+that is busy, and the page's meter reads the processor as a share of the
+computer's cores. `beta/homes_test.py` checks all of it on a toy engine.
+
+Measured on published build `45e3410` with the real engine:
+
+- in node (six seats, seed 7, warm code), three worlds each played twelve
+  turns ahead in four-turn `ahead` requests: from turn 5, 869 ms on one
+  engine and 316 ms on three; from turn 60, 4,022 ms and 1,515 ms. Every
+  world's twelve readings were the same on its own engine as on the shared
+  one, byte for byte;
+- on the page (Chrome for Testing, three worlds from turn 1, an 18-core
+  computer busy with other work): all three asked for twelve turns at once
+  answered in 645 ms on one engine and 216 ms on three; twenty seconds of
+  Play Time with the futures off went from turn 1 to 57 on one engine and to
+  97 on three.
+
+What it costs is memory: a world's engine holds its world and a copy of the
+page's engine as it stood when the world was seated, which on this page is
+the opening turns.
+
 ## What a search costs
 
 A search plays many futures of one world and reads how each came out. These
@@ -1527,6 +1563,29 @@ and `a_black_swan_strikes_the_open_turn_and_lets_go_of_the_turns_ahead`
 and the swans themselves in `src/game/black_swan_tests.rs`. Two games are
 played on through every kind of swan, with the future played ahead after
 each, in `a_game_is_played_on_through_every_black_swan`.
+
+### What a turn of many worlds costs the page
+
+Every world is a page in a frame of the same site, so all of them, and the
+page that holds them, draw on one thread. Once each world plays on an engine
+of its own ("A world's own engine" under Forks), that thread is what a turn
+waits on: three worlds from turn 30 kept it 85-90% busy, about 268 ms of it a
+turn, and the turns ran at about 300 ms. Where it went (Chrome for Testing,
+`Profiler` and `Performance.getMetrics`, a pinned world `?mode=strange&game=7`):
+
+- the host was drawn again for every word a world said, about 21 a turn, and
+  each drawing measured the page. The split and the highway are now drawn once
+  a frame; what the worlds do next is still worked out at once (`strangeStep`);
+- each world framing its own seat's ground at the start of a turn sent its
+  camera to every other world, which drew its map again. Only a look the
+  person gave a world is shared now, and each world frames its own ground;
+- each world drew and measured what its box never shows: the debugger's bar,
+  the civilizations' panel, the corner boxes' heights and the fitting of type
+  in hidden panels. A world's page no longer does (`STRANGE_PANE`).
+
+Together the thread went from about 268 to about 160 ms a turn and the turns
+from about 300 to about 230 ms, with the same worlds on the same turns. What
+is left is mostly the worlds' own maps and charts.
 
 ### Black swans
 
