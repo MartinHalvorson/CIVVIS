@@ -21,12 +21,18 @@ impl Game {
             return (
                 0.0,
                 resources
-                    * (1.0 - self.policy_effect(pid, "upgrade_resource_discount_pct") / 100.0),
+                    * (1.0
+                        - self.policy_effect(pid, crate::name!("upgrade_resource_discount_pct"))
+                            / 100.0),
             );
         }
         (
-            gold * (1.0 - self.policy_effect(pid, "upgrade_gold_discount_pct") / 100.0),
-            resources * (1.0 - self.policy_effect(pid, "upgrade_resource_discount_pct") / 100.0),
+            gold * (1.0
+                - self.policy_effect(pid, crate::name!("upgrade_gold_discount_pct")) / 100.0),
+            resources
+                * (1.0
+                    - self.policy_effect(pid, crate::name!("upgrade_resource_discount_pct"))
+                        / 100.0),
         )
     }
 

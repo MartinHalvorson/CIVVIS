@@ -16,12 +16,12 @@ impl Game {
         amenities: i64,
     ) -> f64 {
         let mut growth_bonus = self.empire_building_sum(pid, |b| b.growth_pct);
-        growth_bonus += self.empire_wonder_effect(pid, "empire_growth_pct");
-        growth_bonus += self.governor_effect(pid, cid, "growth_pct");
+        growth_bonus += self.empire_wonder_effect(pid, crate::name!("empire_growth_pct"));
+        growth_bonus += self.governor_effect(pid, cid, crate::name!("growth_pct"));
         if self.on_foreign_continent(pid, self.cities[&cid].pos) {
-            growth_bonus += self.policy_effect(pid, "foreign_continent_growth_pct");
+            growth_bonus += self.policy_effect(pid, crate::name!("foreign_continent_growth_pct"));
         }
-        growth_bonus += self.pantheon_effect(pid, "growth_pct");
+        growth_bonus += self.pantheon_effect(pid, crate::name!("growth_pct"));
         if self.grants_city_state_unique_bonus(pid, "Mitla")
             && self.city_has_active_district_family(&self.cities[&cid], crate::name!("campus"))
         {

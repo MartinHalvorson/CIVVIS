@@ -22,12 +22,89 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::name::Name;
 
+/// An effect's key as the effect lookups (`Game::policy_effect`,
+/// `governor_effect`, `city_building_effect`, …) take it: its text, or the
+/// [`Name`] that text interns to. A call site that writes
+/// `crate::name!("shrine_food")` interns its literal once, and every lookup
+/// after that is by integer: the effect index answers with one array read
+/// (see [`crate::specmap::SpecKey`]) and an [`EffectMap`] compares ids, where
+/// the text was hashed, probed and compared byte for byte on every call. A
+/// name's id is its text's, so both find the same entry.
+pub trait EffectKey: crate::specmap::SpecKey + Copy {
+    /// The key's text, for the paths that are still keyed by it (runtime
+    /// modifier bundles, read traces, per-turn aggregates).
+    fn text(&self) -> &str;
+    /// This key's value in `effects`.
+    fn in_effects(self, effects: &EffectMap) -> Option<f64>;
+}
+
+impl EffectKey for &str {
+    #[inline]
+    fn text(&self) -> &str {
+        self
+    }
+
+    #[inline]
+    fn in_effects(self, effects: &EffectMap) -> Option<f64> {
+        effects.get(self).copied()
+    }
+}
+
+impl EffectKey for &String {
+    #[inline]
+    fn text(&self) -> &str {
+        self.as_str()
+    }
+
+    #[inline]
+    fn in_effects(self, effects: &EffectMap) -> Option<f64> {
+        effects.get(self).copied()
+    }
+}
+
+impl EffectKey for &&str {
+    #[inline]
+    fn text(&self) -> &str {
+        self
+    }
+
+    #[inline]
+    fn in_effects(self, effects: &EffectMap) -> Option<f64> {
+        effects.get(self).copied()
+    }
+}
+
+impl EffectKey for Name {
+    #[inline]
+    fn text(&self) -> &str {
+        self.as_str()
+    }
+
+    #[inline]
+    fn in_effects(self, effects: &EffectMap) -> Option<f64> {
+        effects.get_name(self)
+    }
+}
+
+impl EffectKey for &Name {
+    #[inline]
+    fn text(&self) -> &str {
+        self.as_str()
+    }
+
+    #[inline]
+    fn in_effects(self, effects: &EffectMap) -> Option<f64> {
+        effects.get_name(*self)
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct EffectMap {
     /// In ascending key order, as the `BTreeMap` iterated.
     entries: Vec<(String, f64)>,
     /// `Name::id` of each key, index for index.
-    ids: Vec<u32>,
+    /// Each key interned, index for index with `entries`.
+    names: Vec<Name>,
 }
 
 impl EffectMap {
@@ -70,10 +147,9 @@ impl EffectMap {
     /// The value for an interned key: one integer comparison per entry.
     #[inline]
     pub fn get_name(&self, key: Name) -> Option<f64> {
-        let id = key.id();
-        self.ids
+        self.names
             .iter()
-            .position(|entry| *entry == id)
+            .position(|entry| *entry == key)
             .map(|index| self.entries[index].1)
     }
 
@@ -84,7 +160,7 @@ impl EffectMap {
         {
             Ok(index) => Some(std::mem::replace(&mut self.entries[index].1, value)),
             Err(index) => {
-                self.ids.insert(index, Name::new(&key).id());
+                self.names.insert(index, Name::new(&key));
                 self.entries.insert(index, (key, value));
                 None
             }
@@ -93,12 +169,20 @@ impl EffectMap {
 
     pub fn remove(&mut self, key: &str) -> Option<f64> {
         let index = self.position(key)?;
-        self.ids.remove(index);
+        self.names.remove(index);
         Some(self.entries.remove(index).1)
     }
 
     pub fn iter(&self) -> impl DoubleEndedIterator<Item = (&String, &f64)> + ExactSizeIterator {
         self.entries.iter().map(|(key, value)| (key, value))
+    }
+
+    /// Every entry by its interned key, in key order.
+    pub fn iter_named(&self) -> impl Iterator<Item = (Name, f64)> + '_ {
+        self.names
+            .iter()
+            .zip(&self.entries)
+            .map(|(name, (_, value))| (*name, *value))
     }
 
     pub fn keys(&self) -> impl DoubleEndedIterator<Item = &String> + ExactSizeIterator {
@@ -124,10 +208,10 @@ impl<'a> IntoIterator for &'a EffectMap {
 
 impl From<BTreeMap<String, f64>> for EffectMap {
     fn from(map: BTreeMap<String, f64>) -> Self {
-        let ids = map.keys().map(|key| Name::new(key).id()).collect();
+        let names = map.keys().map(|key| Name::new(key)).collect();
         EffectMap {
             entries: map.into_iter().collect(),
-            ids,
+            names,
         }
     }
 }

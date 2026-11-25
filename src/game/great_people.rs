@@ -104,8 +104,10 @@ impl Game {
         match currency {
             "gold" => Some(200.0 + 15.0 * missing.floor()),
             "faith" => {
-                let discount =
-                    self.empire_wonder_effect(pid, "great_person_faith_patronage_discount_pct");
+                let discount = self.empire_wonder_effect(
+                    pid,
+                    crate::name!("great_person_faith_patronage_discount_pct"),
+                );
                 Some((150.0 + 10.0 * missing.floor()) * (1.0 - discount / 100.0))
             }
             _ => None,
@@ -233,12 +235,18 @@ impl Game {
                         "campus" => {
                             *city_earn.entry("scientist".to_string()).or_insert(0.0) +=
                                 scottish_happiness
-                                    * self.civ_effect(pid, "happy_campus_scientist_gpp");
+                                    * self.civ_effect(
+                                        pid,
+                                        crate::name!("happy_campus_scientist_gpp"),
+                                    );
                         }
                         "industrial_zone" => {
                             *city_earn.entry("engineer".to_string()).or_insert(0.0) +=
                                 scottish_happiness
-                                    * self.civ_effect(pid, "happy_industrial_engineer_gpp");
+                                    * self.civ_effect(
+                                        pid,
+                                        crate::name!("happy_industrial_engineer_gpp"),
+                                    );
                         }
                         _ => {}
                     }
@@ -309,27 +317,27 @@ impl Game {
                     "art_museum" => add(
                         &mut city_earn,
                         "artist",
-                        self.policy_effect(pid, "gpp_artist_per_art_museum"),
+                        self.policy_effect(pid, crate::name!("gpp_artist_per_art_museum")),
                     ),
                     "workshop" => add(
                         &mut city_earn,
                         "engineer",
-                        self.policy_effect(pid, "gpp_engineer_per_workshop"),
+                        self.policy_effect(pid, crate::name!("gpp_engineer_per_workshop")),
                     ),
                     "broadcast_center" => add(
                         &mut city_earn,
                         "musician",
-                        self.policy_effect(pid, "gpp_musician_per_broadcast_center"),
+                        self.policy_effect(pid, crate::name!("gpp_musician_per_broadcast_center")),
                     ),
                     "armory" => add(
                         &mut city_earn,
                         "general",
-                        self.policy_effect(pid, "gpp_general_per_armory"),
+                        self.policy_effect(pid, crate::name!("gpp_general_per_armory")),
                     ),
                     "military_academy" => add(
                         &mut city_earn,
                         "general",
-                        self.policy_effect(pid, "gpp_general_per_military_academy"),
+                        self.policy_effect(pid, crate::name!("gpp_general_per_military_academy")),
                     ),
                     _ => {}
                 }
@@ -339,49 +347,49 @@ impl Game {
                     add(
                         &mut city_earn,
                         "merchant",
-                        self.policy_effect(pid, "gpp_merchant_per_bank"),
+                        self.policy_effect(pid, crate::name!("gpp_merchant_per_bank")),
                     );
                 }
                 if b.as_str() == "stock_exchange" {
                     add(
                         &mut city_earn,
                         "merchant",
-                        self.policy_effect(pid, "gpp_merchant_per_stock_exchange"),
+                        self.policy_effect(pid, crate::name!("gpp_merchant_per_stock_exchange")),
                     );
                 }
                 if b.as_str() == "shipyard" {
                     add(
                         &mut city_earn,
                         "admiral",
-                        self.policy_effect(pid, "gpp_admiral_per_shipyard"),
+                        self.policy_effect(pid, crate::name!("gpp_admiral_per_shipyard")),
                     );
                 }
                 if b.as_str() == "seaport" {
                     add(
                         &mut city_earn,
                         "admiral",
-                        self.policy_effect(pid, "gpp_admiral_per_seaport"),
+                        self.policy_effect(pid, crate::name!("gpp_admiral_per_seaport")),
                     );
                 }
                 if b.as_str() == "university" {
                     add(
                         &mut city_earn,
                         "scientist",
-                        self.policy_effect(pid, "gpp_scientist_per_university"),
+                        self.policy_effect(pid, crate::name!("gpp_scientist_per_university")),
                     );
                 }
                 if b.as_str() == "research_lab" {
                     add(
                         &mut city_earn,
                         "scientist",
-                        self.policy_effect(pid, "gpp_scientist_per_research_lab"),
+                        self.policy_effect(pid, crate::name!("gpp_scientist_per_research_lab")),
                     );
                 }
                 if b.as_str() == "factory" {
                     add(
                         &mut city_earn,
                         "engineer",
-                        self.policy_effect(pid, "gpp_engineer_per_factory"),
+                        self.policy_effect(pid, crate::name!("gpp_engineer_per_factory")),
                     );
                 }
                 if matches!(
@@ -391,7 +399,7 @@ impl Game {
                     add(
                         &mut city_earn,
                         "engineer",
-                        self.policy_effect(pid, "gpp_engineer_per_power_plant"),
+                        self.policy_effect(pid, crate::name!("gpp_engineer_per_power_plant")),
                     );
                 }
             }
@@ -400,7 +408,8 @@ impl Game {
                     *city_earn.entry(kind.clone()).or_insert(0.0) += *points;
                 }
             }
-            let city_multiplier = 1.0 + self.governor_effect(pid, c.id, "great_people_pct") / 100.0;
+            let city_multiplier =
+                1.0 + self.governor_effect(pid, c.id, crate::name!("great_people_pct")) / 100.0;
             for (kind, amount) in city_earn {
                 *earn.entry(kind).or_insert(0.0) += amount * city_multiplier;
             }
@@ -432,7 +441,7 @@ impl Game {
         if self.dedication_active(pid, "exodus_of_the_evangelists") {
             *earn.entry("prophet".to_string()).or_insert(0.0) += 4.0;
         }
-        let divine_spark = self.pantheon_effect(pid, "district_gpp");
+        let divine_spark = self.pantheon_effect(pid, crate::name!("district_gpp"));
         if divine_spark > 0.0 {
             for c in self.cities.values().filter(|c| c.owner == pid) {
                 for (district, building, kind) in [
@@ -445,8 +454,9 @@ impl Game {
                             self.city_has_active_building_family(c, Name::new(building))
                         })
                     {
-                        let city_multiplier =
-                            1.0 + self.governor_effect(pid, c.id, "great_people_pct") / 100.0;
+                        let city_multiplier = 1.0
+                            + self.governor_effect(pid, c.id, crate::name!("great_people_pct"))
+                                / 100.0;
                         *earn.entry(kind.to_string()).or_insert(0.0) +=
                             divine_spark * city_multiplier;
                     }
@@ -455,7 +465,7 @@ impl Game {
         }
         let mult = 1.0
             + (self.gov_effects(pid).great_people_pct
-                + self.policy_effect(pid, "great_people_pct"))
+                + self.policy_effect(pid, crate::name!("great_people_pct")))
                 / 100.0;
         for (t, amt) in earn.iter_mut() {
             let congress_mult = if self.congress_effect_active("patronage", "A", t) {
@@ -792,7 +802,7 @@ impl Game {
         bump(&mut self.players[pid], "great_people");
         let activations = spec.charges
             + if kind == "engineer" {
-                self.empire_wonder_effect(pid, "great_engineer_charges") as usize
+                self.empire_wonder_effect(pid, crate::name!("great_engineer_charges")) as usize
             } else {
                 0
             };

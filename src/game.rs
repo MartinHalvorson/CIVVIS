@@ -1659,7 +1659,8 @@ type GreatWorkPiecesByCity = BTreeMap<u32, Vec<GreatWorkPiece>>;
 type HousedPiecesByPlayer = crate::fast_map::FastMap<usize, Arc<GreatWorkPiecesByCity>>;
 type GreatWorkSlotsByPlayer = crate::fast_map::FastMap<usize, Vec<(u32, String)>>;
 type GreatWorkHousing = crate::fast_map::FastMap<(usize, String, usize), bool>;
-type WonderEffectsByPlayer = crate::fast_map::FastMap<usize, BTreeMap<String, f64>>;
+type WonderEffectsByPlayer =
+    crate::fast_map::FastMap<usize, crate::fast_map::FastMap<crate::name::Name, f64>>;
 type NationalParksByPlayer = crate::fast_map::FastMap<usize, Vec<(u32, [Pos; 4])>>;
 type RegionalSlotsByPlayer = crate::fast_map::FastMap<usize, Arc<Vec<RegionalSlot>>>;
 
@@ -2174,14 +2175,14 @@ struct StepTerms {
     woods_move_cost: f64,
     /// `unit_effect(unit, "hills_move_cost")`.
     hills_move_cost: f64,
-    /// `promotion_effect(unit, "amphibious")`.
+    /// `promotion_effect(unit, crate::name!("amphibious"))`.
     amphibious: f64,
 }
 
 /// The terms of `Game::unit_base_max_moves_at` that do not read the tile.
 #[derive(Clone, Copy)]
 struct MoveTerms {
-    /// `promotion_effect(unit, "movement")`.
+    /// `promotion_effect(unit, crate::name!("movement"))`.
     promotion_movement: f64,
     civilization_movement: f64,
     /// A religious unit standing beside a Guru of its own religion. The wonder
@@ -2212,7 +2213,7 @@ struct NavalMoveTerms {
     embarked_movement_tree: f64,
     /// `has_ability(unit.owner, "mana")`.
     mana: bool,
-    /// `empire_wonder_effect(unit.owner, "naval_movement")`.
+    /// `empire_wonder_effect(unit.owner, crate::name!("naval_movement"))`.
     naval_movement_wonder: f64,
 }
 
@@ -11213,7 +11214,7 @@ impl Game {
         let speed_scaled = self.game_speed.scale(progressed);
         let rounded = (speed_scaled / 5.0 + 1e-9).floor() * 5.0;
         let discount = self
-            .policy_effect(pid, "tile_purchase_discount_pct")
+            .policy_effect(pid, crate::name!("tile_purchase_discount_pct"))
             .clamp(0.0, 100.0);
         rounded * (1.0 - discount / 100.0)
     }
@@ -11273,10 +11274,10 @@ impl Game {
     }
 
     pub fn war_weariness_multiplier(&self, pid: usize, home_territory: bool) -> f64 {
-        let reduction = self.policy_effect(pid, "war_weariness_reduction_pct")
+        let reduction = self.policy_effect(pid, crate::name!("war_weariness_reduction_pct"))
             + self.gov_effects(pid).war_weariness_reduction_pct
             + if home_territory {
-                self.policy_effect(pid, "home_war_weariness_reduction_pct")
+                self.policy_effect(pid, crate::name!("home_war_weariness_reduction_pct"))
             } else {
                 0.0
             };
@@ -11380,7 +11381,7 @@ impl Game {
     ///
     /// See `CivSpec::effects` for the vocabulary. Abilities the engine cannot
     /// express as a modifier stay keyed by name in [`Game::has_ability`].
-    pub fn civ_effect(&self, pid: usize, effect: &str) -> f64 {
+    pub fn civ_effect(&self, pid: usize, effect: impl crate::effect_map::EffectKey) -> f64 {
         // The effect is looked up before the roster boundary is asked: most
         // civilizations declare no such effect, and then the answer is zero
         // whatever the roster says.
@@ -11389,8 +11390,7 @@ impl Game {
             .get(pid)
             .filter(|player| !player.is_minor && !player.is_barbarian)
             .and_then(|player| self.rules.civs.get(player.civ.as_str()))
-            .and_then(|civ| civ.effects.get(effect))
-            .copied();
+            .and_then(|civ| effect.in_effects(&civ.effects));
         match declared {
             Some(value) if self.uses_civ6_content(pid) => value,
             _ => 0.0,
@@ -11451,9 +11451,10 @@ impl Game {
             "missionary" => 0.10,
             _ => 0.0,
         };
-        eviction = eviction.max(self.promotion_effect(&u, "rival_pressure_removed_pct") / 100.0);
+        eviction = eviction
+            .max(self.promotion_effect(&u, crate::name!("rival_pressure_removed_pct")) / 100.0);
         let foreign_multiplier = if foreign {
-            1.0 + self.promotion_effect(&u, "foreign_spread_pct") / 100.0
+            1.0 + self.promotion_effect(&u, crate::name!("foreign_spread_pct")) / 100.0
         } else {
             1.0
         };
@@ -11473,7 +11474,8 @@ impl Game {
         let converted = previous_religion.as_deref() != Some(religion.as_str())
             && self.city_religion(&self.cities[&cid]) == Some(religion.as_str());
         if converted {
-            self.players[pid].gold += self.promotion_effect(&u, "gold_per_conversion");
+            self.players[pid].gold +=
+                self.promotion_effect(&u, crate::name!("gold_per_conversion"));
             self.break_promises_on_conversion(pid, target_owner);
             if self.grants_city_state_unique_bonus(pid, "Fez")
                 && self.players[pid].religion.as_deref() == Some(religion.as_str())
@@ -11651,12 +11653,20 @@ impl Game {
                         boost *= 4.0;
                     }
                     let strength = boost
-                        * (1.0 + self.religion_belief_effect(r, "pressure_strength_pct") / 100.0)
                         * (1.0
-                            + self.governor_effect(c.owner, c.id, "religious_pressure_pct")
-                                / 100.0);
+                            + self
+                                .religion_belief_effect(r, crate::name!("pressure_strength_pct"))
+                                / 100.0)
+                        * (1.0
+                            + self.governor_effect(
+                                c.owner,
+                                c.id,
+                                crate::name!("religious_pressure_pct"),
+                            ) / 100.0);
                     let range = (10.0
-                        * (1.0 + self.religion_belief_effect(r, "pressure_range_pct") / 100.0))
+                        * (1.0
+                            + self.religion_belief_effect(r, crate::name!("pressure_range_pct"))
+                                / 100.0))
                         .floor() as i32;
                     (c.pos, r.to_string(), strength, range)
                 })
@@ -11704,7 +11714,7 @@ impl Game {
                                         + self.governor_effect(
                                             city.owner,
                                             city.id,
-                                            "religious_pressure_pct",
+                                            crate::name!("religious_pressure_pct"),
                                         ) / 100.0),
                             )
                         })
@@ -11866,7 +11876,7 @@ impl Game {
             return yields;
         }
         let envoys: i64 = player.envoys.iter().map(|(_, count)| *count).sum();
-        yields.gold += envoys as f64 * self.policy_effect(pid, "gold_per_envoy");
+        yields.gold += envoys as f64 * self.policy_effect(pid, crate::name!("gold_per_envoy"));
         yields.gold += envoys as f64
             * player
                 .counters
@@ -11880,7 +11890,7 @@ impl Game {
                 minor.is_minor && !minor.is_barbarian && self.suzerain_of(minor.id) == Some(pid)
             })
             .count() as f64;
-        let raj = suzerains * self.policy_effect(pid, "suzerain_all_yields");
+        let raj = suzerains * self.policy_effect(pid, crate::name!("suzerain_all_yields"));
         yields.gold += raj;
         yields.science += raj;
         yields.culture += raj;
@@ -11915,7 +11925,7 @@ impl Game {
                 let spec = &self.rules.units[unit];
                 bonus += self.gov_effects(pid).unit_production_pct / 100.0;
                 // Flower Power's ADJUST_UNIT_PRODUCTION_MODIFIER (-100).
-                bonus += self.policy_effect(pid, "unit_production_pct") / 100.0;
+                bonus += self.policy_effect(pid, crate::name!("unit_production_pct")) / 100.0;
                 if spec.class == "military" {
                     bonus += economic.military_unit_production_pct / 100.0;
                 }
@@ -11955,19 +11965,23 @@ impl Game {
                     bonus += 0.25;
                 }
                 if unit == "builder" {
-                    bonus += self.policy_effect(pid, "builder_production_pct") / 100.0;
+                    bonus +=
+                        self.policy_effect(pid, crate::name!("builder_production_pct")) / 100.0;
                 }
                 if unit == "settler" {
-                    bonus += self.policy_effect(pid, "settler_production_pct") / 100.0;
-                    bonus += self
-                        .city_building_effect(&self.cities[&cid], "settler_production_pct")
-                        / 100.0;
+                    bonus +=
+                        self.policy_effect(pid, crate::name!("settler_production_pct")) / 100.0;
+                    bonus += self.city_building_effect(
+                        &self.cities[&cid],
+                        crate::name!("settler_production_pct"),
+                    ) / 100.0;
                 }
                 if spec.domain.as_deref() == Some("sea") {
                     bonus += self.policy_effect_for_unit(pid, "naval_production_pct", unit) / 100.0;
-                    bonus += self
-                        .city_building_effect(&self.cities[&cid], "naval_unit_production_pct")
-                        / 100.0;
+                    bonus += self.city_building_effect(
+                        &self.cities[&cid],
+                        crate::name!("naval_unit_production_pct"),
+                    ) / 100.0;
                 }
                 if spec.promotion_class == "naval_ranged" {
                     bonus += self.players[pid]
@@ -12001,19 +12015,22 @@ impl Game {
                         self.policy_effect_for_unit(pid, "infantry_production_pct", unit) / 100.0;
                 }
                 if spec.promotion_class == "anti_cavalry" {
-                    bonus += self.empire_wonder_effect(pid, "anti_cavalry_production_pct") / 100.0;
+                    bonus += self
+                        .empire_wonder_effect(pid, crate::name!("anti_cavalry_production_pct"))
+                        / 100.0;
                 }
                 if unit == "giant_death_robot" {
-                    bonus += self.policy_effect(pid, "gdr_production_pct") / 100.0;
+                    bonus += self.policy_effect(pid, crate::name!("gdr_production_pct")) / 100.0;
                     if self.dedication_active(pid, "automaton_warfare") {
                         bonus += 0.50;
                     }
                 }
                 if unit == "aircraft_carrier" {
-                    bonus += self.policy_effect(pid, "carrier_production_pct") / 100.0;
+                    bonus +=
+                        self.policy_effect(pid, crate::name!("carrier_production_pct")) / 100.0;
                 }
                 if unit == "spy" {
-                    bonus += self.policy_effect(pid, "spy_production_pct") / 100.0;
+                    bonus += self.policy_effect(pid, crate::name!("spy_production_pct")) / 100.0;
                 }
                 if spec.ranged_strength > 0.0
                     && spec.class == "military"
@@ -12034,7 +12051,9 @@ impl Game {
                     })
                     .unwrap_or(0);
                 if spec.class == "military" && unit_era <= 1 {
-                    bonus += self.pantheon_effect(pid, "early_military_production_pct") / 100.0;
+                    bonus += self
+                        .pantheon_effect(pid, crate::name!("early_military_production_pct"))
+                        / 100.0;
                 }
                 if matches!(item, Some(Item::Formation { .. })) {
                     let effect = if spec.domain.as_deref() == Some("sea") {
@@ -12076,7 +12095,7 @@ impl Game {
                     return 0.0;
                 }
                 if spec.outer_defense > 0 {
-                    bonus += self.policy_effect(pid, "wall_production_pct") / 100.0;
+                    bonus += self.policy_effect(pid, crate::name!("wall_production_pct")) / 100.0;
                 }
                 if spec.district.is_some_and(|district| {
                     matches!(
@@ -12084,7 +12103,8 @@ impl Game {
                         "encampment" | "harbor"
                     )
                 }) {
-                    bonus += self.policy_effect(pid, "military_port_production_pct") / 100.0;
+                    bonus += self.policy_effect(pid, crate::name!("military_port_production_pct"))
+                        / 100.0;
                 }
                 // Several Governor promotions speed the buildings of one
                 // district family alongside their headline effect.
@@ -12094,7 +12114,8 @@ impl Game {
             }
             Some(Item::District { district, .. }) => {
                 let family = self.district_family(*district);
-                bonus += self.governor_effect(pid, cid, "district_production_pct") / 100.0;
+                bonus +=
+                    self.governor_effect(pid, cid, crate::name!("district_production_pct")) / 100.0;
                 bonus += self.gov_effects(pid).district_production_pct / 100.0;
                 // City Patron Goddess: CITY_PATRON_GODDESS_DISTRICT_PRODUCTION_MODIFIER,
                 // `EFFECT_ADJUST_ALL_DISTRICT_PRODUCTION_MODIFIER` Amount 25,
@@ -12105,16 +12126,19 @@ impl Game {
                 // one still under construction has not been placed yet and does
                 // not. No id in this belief appears in `Expansion2_RemoveData.xml`.
                 if self.city_specialty_district_count(&self.cities[&cid]) == 0 {
-                    bonus += self.pantheon_effect(pid, "first_district_production_pct") / 100.0;
+                    bonus += self
+                        .pantheon_effect(pid, crate::name!("first_district_production_pct"))
+                        / 100.0;
                 }
                 if matches!(family.as_str(), "encampment" | "harbor") {
-                    bonus += self.policy_effect(pid, "military_port_production_pct") / 100.0;
+                    bonus += self.policy_effect(pid, crate::name!("military_port_production_pct"))
+                        / 100.0;
                 }
                 bonus += self.civ_effect(pid, &format!("{family}_district_production_pct")) / 100.0;
                 bonus += self.city_state_district_production_pct(pid, family.as_str()) / 100.0;
             }
             Some(Item::Wonder { wonder, pos }) => {
-                bonus += self.policy_effect(pid, "wonder_production_pct") / 100.0;
+                bonus += self.policy_effect(pid, crate::name!("wonder_production_pct")) / 100.0;
                 bonus += self.gov_effects(pid).wonder_production_pct / 100.0;
                 // ADJUST_WONDER_ERA_PRODUCTION carries a StartEra/EndEra window,
                 // and two of the three cards using it are named after a window
@@ -12124,7 +12148,9 @@ impl Game {
                 // shipped row starts at ANCIENT, so only the end ever varies.
                 let era = self.wonder_era(wonder);
                 if era <= 1 {
-                    bonus += self.policy_effect(pid, "classical_wonder_production_pct") / 100.0;
+                    bonus += self
+                        .policy_effect(pid, crate::name!("classical_wonder_production_pct"))
+                        / 100.0;
                     // Monument to the Gods rides the same window:
                     // MONUMENT_TO_THE_GODS_ANCIENTCLASSICALWONDER_MODIFIER is
                     // `MODIFIER_PLAYER_CITIES_ADJUST_WONDER_ERA_PRODUCTION`,
@@ -12132,11 +12158,15 @@ impl Game {
                     // — the identical StartEra/EndEra pair the policy cards
                     // above already reduce to `era <= 1`. Not in
                     // `Expansion2_RemoveData.xml`.
-                    bonus += self.pantheon_effect(pid, "ancient_classical_wonder_production_pct")
-                        / 100.0;
+                    bonus += self.pantheon_effect(
+                        pid,
+                        crate::name!("ancient_classical_wonder_production_pct"),
+                    ) / 100.0;
                 }
                 if era <= 3 {
-                    bonus += self.policy_effect(pid, "renaissance_wonder_production_pct") / 100.0;
+                    bonus += self
+                        .policy_effect(pid, crate::name!("renaissance_wonder_production_pct"))
+                        / 100.0;
                 }
                 if self.has_ability(pid, "iteru") && self.map.tiles[pos].has_river() {
                     bonus += 0.15; // Egypt: Iteru (river cities)
@@ -12165,8 +12195,11 @@ impl Game {
                     project.as_str(),
                     "build_nuclear_device" | "build_thermonuclear_device"
                 ) {
-                    bonus +=
-                        self.governor_effect(pid, cid, "nuclear_armament_production_pct") / 100.0;
+                    bonus += self.governor_effect(
+                        pid,
+                        cid,
+                        crate::name!("nuclear_armament_production_pct"),
+                    ) / 100.0;
                 }
                 // Rogue State: the four ROGUESTATE_*_PRODUCTION rows.
                 if matches!(
@@ -12176,17 +12209,23 @@ impl Game {
                         | "build_nuclear_device"
                         | "build_thermonuclear_device"
                 ) {
-                    bonus += self.policy_effect(pid, "nuclear_project_production_pct") / 100.0;
+                    bonus += self
+                        .policy_effect(pid, crate::name!("nuclear_project_production_pct"))
+                        / 100.0;
                 }
                 // Automated Workforce: ADJUST_ALL_PROJECTS_PRODUCTION.
-                bonus += self.policy_effect(pid, "project_production_pct") / 100.0;
+                bonus += self.policy_effect(pid, crate::name!("project_production_pct")) / 100.0;
                 if self.congress_effect_active("public_works_program", "A", project) {
                     bonus += 1.0;
                 } else if self.congress_effect_active("public_works_program", "B", project) {
                     bonus -= 0.5;
                 }
                 if self.rules.projects[project].district == Some(crate::name!("spaceport")) {
-                    bonus += self.governor_effect(pid, cid, "space_project_production_pct") / 100.0;
+                    bonus += self.governor_effect(
+                        pid,
+                        cid,
+                        crate::name!("space_project_production_pct"),
+                    ) / 100.0;
                 }
                 if self.rules.projects[project].district == Some(crate::name!("spaceport"))
                     && (self.city_has_building_family(
@@ -12195,7 +12234,8 @@ impl Game {
                     ) || self
                         .city_has_building_family(&self.cities[&cid], crate::name!("seaport")))
                 {
-                    bonus += self.policy_effect(pid, "space_project_production_pct") / 100.0;
+                    bonus += self.policy_effect(pid, crate::name!("space_project_production_pct"))
+                        / 100.0;
                 }
                 let completions = self.players[pid]
                     .counters
@@ -12222,15 +12262,21 @@ impl Game {
         // its own here.
         bonus += match item {
             Some(Item::Unit { unit }) | Some(Item::Formation { unit, .. }) => {
-                let mut pct = self.civ_effect(pid, "unit_production_pct");
+                let mut pct = self.civ_effect(pid, crate::name!("unit_production_pct"));
                 if unit == "settler" {
-                    pct += self.civ_effect(pid, "settler_production_pct");
+                    pct += self.civ_effect(pid, crate::name!("settler_production_pct"));
                 }
                 pct
             }
-            Some(Item::Building { .. }) => self.civ_effect(pid, "building_production_pct"),
-            Some(Item::District { .. }) => self.civ_effect(pid, "district_production_pct"),
-            Some(Item::Wonder { .. }) => self.civ_effect(pid, "wonder_production_pct"),
+            Some(Item::Building { .. }) => {
+                self.civ_effect(pid, crate::name!("building_production_pct"))
+            }
+            Some(Item::District { .. }) => {
+                self.civ_effect(pid, crate::name!("district_production_pct"))
+            }
+            Some(Item::Wonder { .. }) => {
+                self.civ_effect(pid, crate::name!("wonder_production_pct"))
+            }
             _ => 0.0,
         } / 100.0;
         let kilwa_kind = match item {
@@ -12275,17 +12321,17 @@ impl Game {
             }
             s += self.governor_unit_defense_bonus(u);
             s += 3.0 * u.fortify_turns.clamp(0, 2) as f64;
-            s += self.promotion_effect(u, "defend_all");
+            s += self.promotion_effect(u, crate::name!("defend_all"));
             let tile = &self.map.tiles[&u.pos];
             if self.city_at(u.pos).is_some() || tile.district.is_some() {
-                s += self.promotion_effect(u, "district_defense");
+                s += self.promotion_effect(u, crate::name!("district_defense"));
             }
             if tile.hills || matches!(tile.feature.as_deref(), Some("forest" | "jungle" | "marsh"))
             {
-                s += self.promotion_effect(u, "rough_defense");
+                s += self.promotion_effect(u, crate::name!("rough_defense"));
             }
             if u.linked_to.is_some() {
-                s += self.promotion_effect(u, "formation_combat");
+                s += self.promotion_effect(u, crate::name!("formation_combat"));
             }
         }
         s
@@ -12399,7 +12445,7 @@ impl Game {
             .sum()
     }
 
-    fn city_building_effect(&self, city: &City, effect: &str) -> f64 {
+    fn city_building_effect(&self, city: &City, effect: impl crate::effect_map::EffectKey) -> f64 {
         // The index both rules the effect out and names it: every building's
         // effect map is then asked by interned name, an integer comparison per
         // entry, where it was asked by text once per building in the city.
@@ -12423,7 +12469,7 @@ impl Game {
             .sum()
     }
 
-    fn empire_wonder_effect(&self, pid: usize, effect: &str) -> f64 {
+    fn empire_wonder_effect(&self, pid: usize, effect: impl crate::effect_map::EffectKey) -> f64 {
         // No wonder in the ruleset grants anything towards this, so no
         // arrangement of built wonders can either — and the alternative is
         // walking every city in the world to reach that same zero.
@@ -12457,18 +12503,21 @@ impl Game {
             .as_ref()
             .and_then(|all| all.get(&pid))
         {
-            return aggregate.get(effect).copied().unwrap_or(0.0);
+            return aggregate.get(&effect_name).copied().unwrap_or(0.0);
         }
 
-        let mut aggregate = BTreeMap::<String, f64>::new();
+        // Keyed by interned name: every later read in the scope is a hash of
+        // an integer, where a text key compared strings down a tree. Each
+        // key's sum adds the same values in the same order either way.
+        let mut aggregate = crate::fast_map::FastMap::<crate::name::Name, f64>::default();
         for city in self.cities.values().filter(|city| city.owner == pid) {
             for wonder in city.wonders.keys() {
-                for (name, value) in &self.rules.wonders[wonder].effects {
-                    *aggregate.entry(name.clone()).or_default() += *value;
+                for (name, value) in self.rules.wonders[wonder].effects.iter_named() {
+                    *aggregate.entry(name).or_default() += value;
                 }
             }
         }
-        let value = aggregate.get(effect).copied().unwrap_or(0.0);
+        let value = aggregate.get(&effect_name).copied().unwrap_or(0.0);
         self.query_memo
             .wonder_effects
             .borrow_mut()
@@ -12521,7 +12570,8 @@ impl Game {
             && !city.encampment_pillaged
             && (!city.encampment_struck
                 || city.encampment_extra_strikes_used
-                    < self.governor_effect(city.owner, city.id, "city_extra_strike") as i32)
+                    < self.governor_effect(city.owner, city.id, crate::name!("city_extra_strike"))
+                        as i32)
     }
 
     pub fn available_techs(&self, pid: usize) -> Vec<Name> {
@@ -12762,7 +12812,7 @@ impl Game {
             .filter_map(|city| self.cities.get(&city))
             .filter(|city| self.city_religion(city) == Some(religion))
             .count() as f64;
-        converted * self.civ_effect(pid, "holy_city_combat_strength")
+        converted * self.civ_effect(pid, crate::name!("holy_city_combat_strength"))
     }
 
     /// Aircraft rebase up to twice their printed Movement. This deliberately
@@ -13116,7 +13166,12 @@ impl Game {
             .then_some((city_id, city.owner))
     }
 
-    pub(crate) fn governor_effect(&self, pid: usize, cid: u32, effect: &str) -> f64 {
+    pub(crate) fn governor_effect(
+        &self,
+        pid: usize,
+        cid: u32,
+        effect: impl crate::effect_map::EffectKey,
+    ) -> f64 {
         // Deciding whether a Governor is established walks the roster and the
         // city; no title or promotion granting this makes that moot.
         let Some((&effect, _)) = self.rules.effect_index.governors.get_key_value(effect) else {
@@ -13148,7 +13203,7 @@ impl Game {
     /// coupled investment. Keeping the decision here prevents those paths
     /// from drifting apart as governor promotions evolve.
     pub fn settler_consumes_population(&self, pid: usize, cid: u32) -> bool {
-        self.governor_effect(pid, cid, "settler_no_population") <= 0.0
+        self.governor_effect(pid, cid, crate::name!("settler_no_population")) <= 0.0
     }
 
     fn sync_governor_cities(&mut self, pid: usize) {
@@ -14338,7 +14393,7 @@ impl Game {
         }
         if !self.players[victim.owner].is_barbarian && self.has_ability(pid, "taxis") {
             if let Some(religion) = self.players[pid].religion.clone() {
-                let pressure = self.civ_effect(pid, "unit_kill_religious_pressure");
+                let pressure = self.civ_effect(pid, crate::name!("unit_kill_religious_pressure"));
                 let targets: Vec<u32> = self
                     .cities
                     .values()

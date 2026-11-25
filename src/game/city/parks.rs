@@ -45,7 +45,9 @@ impl Game {
             .and_then(|city_id| self.cities.get(&city_id))
             .map(|city| city.owner);
         let biosphere = owner
-            .map(|pid| self.empire_wonder_effect(pid, "rainforest_marsh_adjacent_appeal"))
+            .map(|pid| {
+                self.empire_wonder_effect(pid, crate::name!("rainforest_marsh_adjacent_appeal"))
+            })
             .unwrap_or(0.0) as i32;
         let mut appeal = i32::from(tile.has_river());
         for neighbor in self.nbrs(position) {
@@ -69,7 +71,8 @@ impl Game {
             {
                 if let Some(city_id) = owner_city_id {
                     if let Some(city) = self.cities.get(&city_id) {
-                        appeal += self.governor_effect(city.owner, city.id, "appeal") as i32;
+                        appeal += self.governor_effect(city.owner, city.id, crate::name!("appeal"))
+                            as i32;
                     }
                 }
             }
@@ -103,7 +106,7 @@ impl Game {
             }
         }
         if let Some(owner) = owner {
-            appeal += self.empire_wonder_effect(owner, "empire_appeal") as i32;
+            appeal += self.empire_wonder_effect(owner, crate::name!("empire_appeal")) as i32;
         }
         if let Some(city) = tile
             .owner_city

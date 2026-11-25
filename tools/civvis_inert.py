@@ -263,18 +263,47 @@ def _where(path: str, text: str, offset: int) -> str:
 
 
 def name_literals(sources: dict[str, str]) -> dict[str, list[str]]:
-    """Every ``name!("x")`` in shipping code, with where it is."""
+    """Every ``name!("x")`` in shipping code, with where it is — except an
+    effect accessor's key (``policy_effect(pid, name!("x"))``), which
+    [`effect_reads`] audits against its own waivers."""
     found: dict[str, list[str]] = collections.defaultdict(list)
     for path, text in sources.items():
         for match in NAME_MACRO.finditer(text):
+            if _is_effect_argument(text, match.start()):
+                continue
             found[match.group(1)].append(_where(path, text, match.start()))
     return found
 
 
+def _is_effect_accessor(prefix: str) -> bool:
+    """Whether ``prefix`` ends with the name of an effect accessor being called."""
+    match = re.search(r"\b(fn\s+)?([a-z_]*effect[a-z_]*)\s*$", prefix)
+    return bool(match) and not match.group(1) and match.group(2) not in NOT_EFFECT_ACCESSORS
+
+
+def _is_effect_argument(text: str, offset: int) -> bool:
+    """Whether the ``name!`` at ``offset`` sits directly inside a call to an
+    effect accessor. Bounded like `_first_text_argument`."""
+    depth = 0
+    index = offset - 1
+    limit = max(0, offset - 400)
+    while index >= limit:
+        char = text[index]
+        if char in ")]}":
+            depth += 1
+        elif char in "([{":
+            if depth == 0:
+                return char == "(" and _is_effect_accessor(text[max(0, index - 80) : index])
+            depth -= 1
+        index -= 1
+    return False
+
+
 def _first_text_argument(text: str, start: int) -> str | None:
     """The first string literal directly inside the call whose body opens at
-    ``start``, or None if the call has none. Bounded, so a bad parse is a miss
-    rather than a walk over the whole file."""
+    ``start`` — or inside a ``name!(…)`` directly inside it, the way a hot
+    call site interns its key — or None if the call has none. Bounded, so a
+    bad parse is a miss rather than a walk over the whole file."""
     depth = 1
     index = start
     limit = min(len(text), start + 400)
@@ -288,6 +317,10 @@ def _first_text_argument(text: str, start: int) -> str | None:
                 return text[index + 1 : end]
             index = end + 1
             continue
+        if char == "(" and depth == 1 and text[max(0, index - 5) : index] == "name!":
+            inner = NAME_MACRO.match(text, index - 5)
+            if inner:
+                return inner.group(1)
         if char in "([{":
             depth += 1
         elif char in ")]}":

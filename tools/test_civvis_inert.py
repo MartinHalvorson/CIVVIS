@@ -96,6 +96,31 @@ class EffectReads(unittest.TestCase):
     def test_a_format_string_is_skipped_not_misread(self):
         self.assertEqual(self.reads('g.policy_effect(0, "{} bonus")'), [])
 
+    def test_a_key_interned_at_the_call_site(self):
+        self.assertEqual(
+            self.reads('self.governor_effect(o, id,\n    crate::name!("canal_dam_amenity"),\n)'),
+            ["canal_dam_amenity"],
+        )
+
+    def test_a_name_inside_a_nested_call_is_not_the_key(self):
+        self.assertEqual(self.reads('self.policy_effect(lookup(name!("nope")), other)'), [])
+
+
+class NameLiterals(unittest.TestCase):
+    def names(self, text):
+        return sorted(inert.name_literals({"src/x.rs": text}))
+
+    def test_a_name_is_read(self):
+        self.assertEqual(self.names('g.building_is_family(b, crate::name!("library"))'), ["library"])
+
+    def test_an_effect_key_is_left_to_the_effect_audit(self):
+        self.assertEqual(self.names('self.policy_effect(pid, crate::name!("city_amenities"))'), [])
+
+    def test_a_name_beside_a_call_to_a_resolution_is_still_a_name(self):
+        self.assertEqual(
+            self.names('g.congress_effect_active(name!("luxury_policy"))'), ["luxury_policy"]
+        )
+
 
 class AuditNames(unittest.TestCase):
     def test_an_unknown_name_is_a_problem(self):

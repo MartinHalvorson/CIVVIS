@@ -65,7 +65,7 @@ impl Game {
         if self.city_has_palace(city) {
             strength += 3.0;
         }
-        strength += self.policy_effect(city.owner, "city_defense");
+        strength += self.policy_effect(city.owner, crate::name!("city_defense"));
         strength += self.city_state_envoy_strength(city.owner);
         let damaged = (10.0 - hp.clamp(0, 100) as f64 / 10.0).round();
         (strength - damaged).max(0.0)
@@ -667,8 +667,10 @@ impl Game {
                 }
             }
             if owner.is_some_and(|pid| {
-                self.empire_wonder_effect(pid, "mountain_commercial_industrial_theater_adjacency")
-                    > 0.0
+                self.empire_wonder_effect(
+                    pid,
+                    crate::name!("mountain_commercial_industrial_theater_adjacency"),
+                ) > 0.0
             }) {
                 let mountains = count(AdjacencyCount::Mountain);
                 let mut paid = Yields::default();
@@ -745,7 +747,10 @@ impl Game {
                     let woods = count(AdjacencyCount::Forest);
                     let paid = Yields {
                         faith: woods as f64
-                            * self.city_building_effect(city, "holy_site_woods_adjacency"),
+                            * self.city_building_effect(
+                                city,
+                                crate::name!("holy_site_woods_adjacency"),
+                            ),
                         ..Yields::default()
                     };
                     adj.add(paid);
@@ -765,18 +770,27 @@ impl Game {
             // The six adjacency-card families include unique replacements.
             if let Some(pid) = owner {
                 let mut percent = match family.as_str() {
-                    "campus" => self.policy_effect(pid, "campus_adjacency_pct"),
-                    "holy_site" => self.policy_effect(pid, "holy_site_adjacency_pct"),
-                    "commercial_hub" => self.policy_effect(pid, "commercial_hub_adjacency_pct"),
-                    "harbor" => self.policy_effect(pid, "harbor_adjacency_pct"),
-                    "theater_square" => self.policy_effect(pid, "theater_square_adjacency_pct"),
-                    "industrial_zone" => self.policy_effect(pid, "industrial_zone_adjacency_pct"),
+                    "campus" => self.policy_effect(pid, crate::name!("campus_adjacency_pct")),
+                    "holy_site" => self.policy_effect(pid, crate::name!("holy_site_adjacency_pct")),
+                    "commercial_hub" => {
+                        self.policy_effect(pid, crate::name!("commercial_hub_adjacency_pct"))
+                    }
+                    "harbor" => self.policy_effect(pid, crate::name!("harbor_adjacency_pct")),
+                    "theater_square" => {
+                        self.policy_effect(pid, crate::name!("theater_square_adjacency_pct"))
+                    }
+                    "industrial_zone" => {
+                        self.policy_effect(pid, crate::name!("industrial_zone_adjacency_pct"))
+                    }
                     _ => 0.0,
                 };
                 if matches!(family.as_str(), "commercial_hub" | "harbor") {
                     if let Some(city) = owner_city {
-                        percent +=
-                            self.governor_effect(pid, city.id, "commercial_harbor_adjacency_pct");
+                        percent += self.governor_effect(
+                            pid,
+                            city.id,
+                            crate::name!("commercial_harbor_adjacency_pct"),
+                        );
                     }
                 }
                 if family == crate::name!("theater_square")

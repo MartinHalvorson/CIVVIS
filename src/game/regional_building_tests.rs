@@ -4,7 +4,7 @@ use super::*;
 fn original_regional_effects(game: &Game, city: &City) -> (Yields, f64) {
     let mut groups: BTreeMap<&str, (Yields, f64)> = BTreeMap::new();
     let integrate_industry =
-        game.governor_effect(city.owner, city.id, "regional_industry_all") > 0.0;
+        game.governor_effect(city.owner, city.id, crate::name!("regional_industry_all")) > 0.0;
     let mexico_city_regional_range = game.grants_city_state_unique_bonus(city.owner, "Mexico City");
     for source in game
         .cities

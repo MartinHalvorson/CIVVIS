@@ -1060,7 +1060,7 @@ impl Game {
             }
             // Cyber Warfare's DISABLE_GRIEVANCE_DECAY: what others hold
             // against its bearer never wears off.
-            if self.policy_effect(offender, "no_grievance_decay") > 0.0 {
+            if self.policy_effect(offender, crate::name!("no_grievance_decay")) > 0.0 {
                 continue;
             }
             let occupation_modifier = |founder: usize, occupier: usize| {
@@ -1260,8 +1260,8 @@ impl Game {
             + suzerains * suzerain_multiplier
             + alliance_favor
             + buildings
-            + self.policy_effect(pid, "diplomatic_favor_per_turn")
-            + self.policy_effect(pid, "favor_per_broadcast_center")
+            + self.policy_effect(pid, crate::name!("diplomatic_favor_per_turn"))
+            + self.policy_effect(pid, crate::name!("favor_per_broadcast_center"))
                 * self
                     .cities
                     .values()

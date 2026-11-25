@@ -52,7 +52,10 @@ fn an_attachment_reaches_engine_consumers_and_detaches_cleanly() {
         game.player_modifier_effect(0, "builder_production_pct"),
         25.0
     );
-    assert_eq!(game.policy_effect(0, "builder_production_pct"), 25.0);
+    assert_eq!(
+        game.policy_effect(0, crate::name!("builder_production_pct")),
+        25.0
+    );
     assert_eq!(
         game.item_prod_mult(0, city, Some(&builder)),
         baseline + 0.25
@@ -116,11 +119,11 @@ fn conditional_collections_follow_player_state_without_leaking_scope() {
     // Requirements are live facts, not an attach-time snapshot. Before the
     // government exists none of the three bundles contributes.
     assert_eq!(game.player_modifier_effect(0, "city_gold"), 0.0);
-    assert_eq!(game.policy_effect(0, "city_production"), 0.0);
+    assert_eq!(game.policy_effect(0, crate::name!("city_production")), 0.0);
 
     game.players[0].government = Some("democracy".to_string());
     assert_eq!(game.player_modifier_effect(0, "city_gold"), 3.0);
-    assert_eq!(game.policy_effect(0, "city_production"), 7.0);
+    assert_eq!(game.policy_effect(0, crate::name!("city_production")), 7.0);
     assert_eq!(game.player_modifier_effect(0, "city_production"), 0.0);
 
     let warrior = Item::Unit {
@@ -139,7 +142,7 @@ fn conditional_collections_follow_player_state_without_leaking_scope() {
 
     game.players[0].government = Some("oligarchy".to_string());
     assert_eq!(game.player_modifier_effect(0, "city_gold"), 0.0);
-    assert_eq!(game.policy_effect(0, "city_production"), 0.0);
+    assert_eq!(game.policy_effect(0, crate::name!("city_production")), 0.0);
     let after = game.item_prod_mult(0, city, Some(&warrior));
     assert!(
         (after - baseline).abs() < 1e-9,

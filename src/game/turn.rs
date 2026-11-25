@@ -95,9 +95,9 @@ impl Game {
                 .and_then(|city| self.cities.get(&city))
                 .map(|city| city.owner);
             let territory_bonus = if start_owner == Some(pid) {
-                self.policy_effect(pid, "friendly_start_movement")
+                self.policy_effect(pid, crate::name!("friendly_start_movement"))
             } else if start_owner.is_some_and(|owner| owner != pid) {
-                self.policy_effect(pid, "enemy_start_movement")
+                self.policy_effect(pid, crate::name!("enemy_start_movement"))
             } else {
                 0.0
             };
@@ -109,9 +109,14 @@ impl Game {
             let heal = if hp < 100
                 && (!acted
                     || (attacks_left < attacks
-                        && self.promotion_effect(&self.units[&uid], "heal_after_attack") > 0.0)
+                        && self.promotion_effect(
+                            &self.units[&uid],
+                            crate::name!("heal_after_attack"),
+                        ) > 0.0)
                     || (air_patrol
-                        && self.promotion_effect(&self.units[&uid], "heal_on_patrol") > 0.0))
+                        && self
+                            .promotion_effect(&self.units[&uid], crate::name!("heal_on_patrol"))
+                            > 0.0))
             {
                 self.unit_heal_rate(uid)
             } else {
@@ -585,8 +590,8 @@ impl Game {
         {
             let owned = self.cities[&cid].owned_tiles.len() as i32;
             let border_mult = 1.0
-                + (self.pantheon_effect(pid, "border_growth_pct")
-                    + self.governor_effect(pid, cid, "border_growth_pct"))
+                + (self.pantheon_effect(pid, crate::name!("border_growth_pct"))
+                    + self.governor_effect(pid, cid, crate::name!("border_growth_pct")))
                     / 100.0;
             let city = self.cities.get_mut(&cid).unwrap();
             // Borders grow on the city's Culture, and the next plot costs the

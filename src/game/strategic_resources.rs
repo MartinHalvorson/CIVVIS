@@ -82,27 +82,36 @@ impl Game {
                     }) {
                         government_improved += 1.0;
                     }
-                    governor_accumulation +=
-                        self.governor_effect(pid, c.id, "strategic_resource_accumulation");
+                    governor_accumulation += self.governor_effect(
+                        pid,
+                        c.id,
+                        crate::name!("strategic_resource_accumulation"),
+                    );
                 }
             }
         }
         let extra = match res {
-            "horses" | "iron" => self.policy_effect(pid, "early_strategic_resource_rate"),
-            "niter" | "coal" => self.policy_effect(pid, "industrial_strategic_resource_rate"),
-            "oil" | "aluminum" => self.policy_effect(pid, "modern_strategic_resource_rate"),
+            "horses" | "iron" => {
+                self.policy_effect(pid, crate::name!("early_strategic_resource_rate"))
+            }
+            "niter" | "coal" => {
+                self.policy_effect(pid, crate::name!("industrial_strategic_resource_rate"))
+            }
+            "oil" | "aluminum" => {
+                self.policy_effect(pid, crate::name!("modern_strategic_resource_rate"))
+            }
             _ => 0.0,
         };
         let spaceport = if res == "aluminum"
             && self.cities.values().any(|city| {
                 city.owner == pid && self.city_has_district_family(city, crate::name!("spaceport"))
             }) {
-            self.policy_effect(pid, "spaceport_aluminum")
+            self.policy_effect(pid, crate::name!("spaceport_aluminum"))
         } else {
             0.0
         };
         let wonder = if res == "iron" {
-            self.empire_wonder_effect(pid, "iron_per_turn")
+            self.empire_wonder_effect(pid, crate::name!("iron_per_turn"))
         } else {
             0.0
         };
@@ -116,7 +125,9 @@ impl Game {
                     self.tile_connects_resource(tile, resource, *position == city.pos)
                 })
             })
-            .map(|city| self.city_building_effect(city, "strategic_resource_accumulation"))
+            .map(|city| {
+                self.city_building_effect(city, crate::name!("strategic_resource_accumulation"))
+            })
             .sum::<f64>();
         // Gathering Storm sources do not all accumulate at one unit per turn:
         // Horses/Iron/Niter/Aluminum produce 2, while Coal/Oil/Uranium produce 3.

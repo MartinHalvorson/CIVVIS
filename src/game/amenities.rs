@@ -126,7 +126,7 @@ impl Game {
         // long as the `&self` borrow, so both sources outlive the map.
         let mut groups: BTreeMap<&str, (Yields, f64)> = BTreeMap::new();
         let integrate_industry =
-            self.governor_effect(city.owner, city.id, "regional_industry_all") > 0.0;
+            self.governor_effect(city.owner, city.id, crate::name!("regional_industry_all")) > 0.0;
         for slot in self.regional_slots(city.owner).iter() {
             if self.wdist(slot.origin, city.pos) > slot.range {
                 continue;
@@ -276,7 +276,7 @@ impl Game {
     }
 
     pub(super) fn city_local_amenities_uncached(&self, city: &City) -> i64 {
-        let mut supply = self.policy_effect(city.owner, "city_amenities");
+        let mut supply = self.policy_effect(city.owner, crate::name!("city_amenities"));
         supply += if self.city_has_palace(city) {
             self.rules.buildings["palace"].amenity
         } else {
@@ -286,7 +286,11 @@ impl Game {
             if self.district_is_active(city, district, *position) {
                 supply += self.district_amenity(district, *position);
                 if matches!(self.district_family(*district).as_str(), "canal" | "dam") {
-                    supply += self.governor_effect(city.owner, city.id, "canal_dam_amenity");
+                    supply += self.governor_effect(
+                        city.owner,
+                        city.id,
+                        crate::name!("canal_dam_amenity"),
+                    );
                 }
                 if self.district_family(*district) == "commercial_hub"
                     && self.grants_city_state_unique_bonus(city.owner, "Muscat")
@@ -303,7 +307,7 @@ impl Game {
             {
                 supply += spec.amenity;
                 if b == "stadium" {
-                    supply += self.policy_effect(city.owner, "stadium_amenity");
+                    supply += self.policy_effect(city.owner, crate::name!("stadium_amenity"));
                 }
                 if let Some(&powered_amenity) = spec.effects.get("powered_amenity") {
                     if self.city_is_powered(city) {
@@ -321,7 +325,7 @@ impl Game {
             }
         }
         if self.city_governor_active(city.owner, city.id) {
-            supply += self.city_building_effect(city, "governor_city_amenity");
+            supply += self.city_building_effect(city, crate::name!("governor_city_amenity"));
         }
         for position in &city.owned_tiles {
             let Some(feature) = self.map.tiles[position].feature.as_deref() else {
@@ -345,7 +349,8 @@ impl Game {
                 supply += adjacent;
             }
         }
-        let geothermal = self.city_building_effect(city, "geothermal_fissure_amenity");
+        let geothermal =
+            self.city_building_effect(city, crate::name!("geothermal_fissure_amenity"));
         if geothermal != 0.0
             && city.owned_tiles.iter().any(|position| {
                 self.map.tiles[position].feature.as_deref() == Some("geothermal_fissure")
@@ -353,7 +358,7 @@ impl Game {
         {
             supply += geothermal;
         }
-        let per_luxury = self.city_building_effect(city, "city_luxury_amenity");
+        let per_luxury = self.city_building_effect(city, crate::name!("city_luxury_amenity"));
         if per_luxury != 0.0 {
             let luxuries: BTreeSet<&str> = city
                 .owned_tiles
@@ -465,7 +470,7 @@ impl Game {
             })
             .count();
         if active_specialty_districts >= 2 {
-            supply += self.city_religion_belief_effect(city, "amenity_two_specialty");
+            supply += self.city_religion_belief_effect(city, crate::name!("amenity_two_specialty"));
         }
         for (source_city, positions) in self.established_national_parks(city.owner) {
             let effects = &self.rules.improvements["national_park"].effects;
@@ -504,7 +509,7 @@ impl Game {
             }
         }
         if city.pop >= 10 {
-            supply += self.policy_effect(city.owner, "large_city_amenity");
+            supply += self.policy_effect(city.owner, crate::name!("large_city_amenity"));
         }
         let government = self.gov_effects(city.owner);
         supply += government.amenity;
@@ -516,17 +521,17 @@ impl Game {
             o.owner == city.owner && self.rules.units[o.kind].class == "military"
         });
         if garrison {
-            supply += self.policy_effect(city.owner, "garrison_amenity");
+            supply += self.policy_effect(city.owner, crate::name!("garrison_amenity"));
         }
         let specialty_districts = self.city_specialty_district_count(city);
         if specialty_districts >= 2 {
-            supply += self.policy_effect(city.owner, "amenity_at_2_districts");
+            supply += self.policy_effect(city.owner, crate::name!("amenity_at_2_districts"));
         }
         if specialty_districts >= 3 {
-            supply += self.policy_effect(city.owner, "amenity_at_3_districts");
+            supply += self.policy_effect(city.owner, crate::name!("amenity_at_3_districts"));
         }
         if self.city_governor_active(city.owner, city.id) {
-            supply += self.policy_effect(city.owner, "governor_amenity");
+            supply += self.policy_effect(city.owner, crate::name!("governor_amenity"));
         }
         // War Weariness "is applied to every city you own as a negative
         // Amenity" — it is empire-wide, not a property of the cities doing
