@@ -3067,7 +3067,12 @@ impl Game {
     /// two scans the whole map for a job (`special_improver_step`), and
     /// deciding every improvement in the ruleset on every tile to keep one
     /// was most of that scan.
-    pub fn valid_improvements_among(&self, pid: usize, pos: Pos, only: Option<&[Name]>) -> Vec<Name> {
+    pub fn valid_improvements_among(
+        &self,
+        pid: usize,
+        pos: Pos,
+        only: Option<&[Name]>,
+    ) -> Vec<Name> {
         // Ground the host engine has already refused to improve. Empty unless CIVVIS
         // is driving one; see `blocked_improvement_sites`. Gated here because this is
         // the single chokepoint every improvement decision passes through, so one
@@ -3105,7 +3110,8 @@ impl Game {
         if !natural_wonder {
             if let Some(excavation) = self.valid_excavation(pid, pos) {
                 let excavation = Name::new(&excavation);
-                if host_refused(&excavation) || only.is_some_and(|only| !only.contains(&excavation)) {
+                if host_refused(&excavation) || only.is_some_and(|only| !only.contains(&excavation))
+                {
                     return vec![];
                 }
                 return vec![excavation];
