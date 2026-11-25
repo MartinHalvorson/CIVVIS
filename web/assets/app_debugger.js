@@ -5059,6 +5059,9 @@ const STRANGE_INKS = [DEBUG_VERSUS_COLOURS.a, DEBUG_VERSUS_COLOURS.b, "#b79cff",
 // The worlds that may be open at once, by name. Each is a whole page and a
 // world of its own in the engine (`panes.rs` names a pane by a letter).
 const STRANGE_LETTERS = "abcdefghijkl";
+// How long the worlds stand still before a page for the next branch is made
+// (`strangeSpare`), and how often that is looked at.
+const STRANGE_SPARE_STILL_MS = 1500, STRANGE_SPARE_EVERY_MS = 1000;
 // How tall a world's name plate is, the least room a box is left, and the
 // strip left clear under the line of the open turn where no column between
 // the boxes shows where the worlds stand on it.
@@ -5523,17 +5526,7 @@ function strangeTree() {
 // made from, and is made what it is to be once it is there (`born`).
 function strangeWorldOpen(letter, born = null) {
   const split = debugSplit, hud = strange.hud, name = letter.toUpperCase();
-  let pane = split.panes[letter];
-  if (!pane) {
-    const frame = document.createElement("iframe");
-    frame.dataset.dbgFrame = letter;
-    frame.title = `Simulator ${name}`;
-    split.host.insertBefore(frame, hud);
-    pane = split.panes[letter] = {frame, id: `${letter}-${split.panes.a.id.slice(2)}`, turn: null, first: null, last: null,
-      deck: null, told: null, strategy: born ? born.name : undefined, agreed: false, painted: false, born};
-    split.history[letter] = new Map();
-    frame.src = `${location.pathname}?pane=${pane.id}`;
-  }
+  const pane = split.panes[letter] || strangeFrame(letter, born);
   pane.frame.classList.remove("strange-shut");
   pane.alerts = []; pane.ahead = new Map(); pane.spent = null;
   if (hud.querySelector(`[data-strange-world="${letter}"]`)) return;
@@ -5554,6 +5547,37 @@ function strangeWorldOpen(letter, born = null) {
     held.addEventListener("mouseleave", () => { if (strange.over === letter) { strange.over = null; strangeLayout(); } });
   }
   pane.heard = true;
+}
+// A world's page, and its record beside A's and B's.
+function strangeFrame(letter, born = null) {
+  const split = debugSplit, frame = document.createElement("iframe");
+  frame.dataset.dbgFrame = letter;
+  frame.title = `Simulator ${letter.toUpperCase()}`;
+  split.host.insertBefore(frame, strange.hud);
+  const pane = split.panes[letter] = {frame, id: `${letter}-${split.panes.a.id.slice(2)}`, turn: null, first: null, last: null,
+    deck: null, told: null, strategy: born ? born.name : undefined, agreed: false, painted: false, born};
+  split.history[letter] = new Map();
+  frame.src = `${location.pathname}?pane=${pane.id}`;
+  return pane;
+}
+// A page for the next branch is made ahead of time, out of sight, while the
+// worlds stand still. A world's page is the whole viewer again, and making
+// one took about half a second of the thread every world draws on, so a
+// branch waited for it (0.85 to 1 s from the pick to the world on its turn)
+// and, with time running, so did every other world. The branch now opens on
+// the page that is waiting, as it does on a box closed before (`there` in
+// `strangeBranch`), and the next is made once the worlds stand still again.
+// One waits at a time, and none where a closed box is already waiting.
+function strangeSpare() {
+  const split = debugSplit;
+  if (!split || !split.shown || !strange.hud || !strangeIdle()) { strange.stillSince = null; return; }
+  const now = performance.now();
+  if (strange.stillSince === null || strange.stillSince === undefined) strange.stillSince = now;
+  if (now - strange.stillSince < STRANGE_SPARE_STILL_MS) return;
+  if (Object.keys(split.panes).some(letter => !strange.order.includes(letter))) return;
+  const letter = [...STRANGE_LETTERS].find(free => !strange.order.includes(free));
+  if (!letter) return;
+  strangeFrame(letter).frame.classList.add("strange-shut");
 }
 // A branch, made in one step by picking the player strategy that plays it
 // (operator 2026-11-24: "when we branch, we should select the player
@@ -6831,6 +6855,7 @@ if (STRANGE) {
     if (debugSplit && debugSplit !== before) strangeMount();
     return opened;
   };
+  setInterval(() => { try { strangeSpare(); } catch (error) { console.error("doctor strange", error); } }, STRANGE_SPARE_EVERY_MS);
   // What the worlds do next is worked out at once, every time; the split
   // and the highway are drawn once a frame. Each world says several things
   // a turn (its turn, its marks, its numbers, that it followed, that it is

@@ -1676,6 +1676,15 @@ on the same pinned world, because the computer's other work moves a single
 reading by a fifth: a change that looked like a third off once came to nothing
 in pairs.
 
+A branch is a new world's page, and a page is the whole viewer again: it took
+about half a second of the shared thread to make, so a branch waited for it
+(0.6 to 0.8 s from the pick until the new world stood on its turn at turn
+60) and, with time running, so did every other world. Now a page for the next
+branch is made ahead of time, out of sight, once the worlds have stood still
+for a second and a half (`strangeSpare`); the branch opens on it as on a box
+closed before, and only the copy of the world it branches from is left to
+wait for: 0.27 to 0.42 s at turn 60. One page waits at a time.
+
 ### Black swans
 
 A black swan is an event nothing in the world saw coming. No rule of the game
