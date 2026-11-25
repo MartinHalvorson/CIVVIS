@@ -367,6 +367,12 @@
   // way: a world's requests wait for its engine to be made or changed.
   const homes = new Map();
   const moving = new Map();
+  // The engine each world's future is played out on, by the world's pane
+  // name (`askScout`): {engine, making}. How many there are is in the report
+  // on this page alone (`window.__civvisBeta.scouts`), which is how the page
+  // knows a world's future has an engine of its own to be played on.
+  const scouts = new Map();
+  if (HOMES) report.scouts = 0;
   // What each engine last said it holds and has spent (`worker.js` puts it on
   // every answer), for the page's own reading of what it all costs.
   const meters = new Map();
@@ -386,6 +392,7 @@
   // report (`window.__civvisBeta.homes`).
   function counted() {
     report.homes = new Set(homes.values()).size;
+    if (HOMES) report.scouts = scouts.size;
   }
 
   // A new engine that is `from` as it stands: its memory between two of its
@@ -474,6 +481,8 @@
       const rest = [...homes.values()];
       homes.clear();
       moving.clear();
+      for (const held of scouts.values()) dropScout(held);
+      scouts.clear();
       counted();
       // The engine that is the page's now answers `/machine-metrics` itself.
       meters.delete(home);
@@ -485,6 +494,86 @@
       }
     }
     return answer;
+  }
+
+  // ------------------------------------------------------- a world's scout
+  //
+  // Operator 2026-11-24: "each branch in doctor strange's civ 6 should
+  // simulate out to the end of the branch. we can multithread this across
+  // the processor to help."
+  //
+  // A world's future is played to the end of its game by the engine's
+  // `foresee` (`src/server/debugger.rs`): a copy of the world played on, a
+  // stretch a request, with nothing kept but what was seen coming. That is a
+  // game's worth of turns, and a world's own engine is one thread with the
+  // world's own turns to play. So the page asks for it on a scout: a fork of
+  // the world's engine as it stands, on a thread of its own, that is asked
+  // nothing else. Every world has its own, so the futures of all of them are
+  // played at once on cores the worlds are not using, and a world's turn
+  // never waits behind its future.
+  //
+  // The page names the world and says what it wants of its scout:
+  //   <engine request>?pane=<world>&scout=new   a new scout, forked from the
+  //                         world's engine now, in place of any there was;
+  //   <engine request>?pane=<world>&scout=1     the scout there is, or a new
+  //                         one where there is none;
+  //   <engine request>?pane=<world>&scout=done  the scout is let go, and
+  //                         nothing is asked of any engine.
+  // A scout holds the world as it stood when it was made, so the page asks
+  // for a new one when the world has been played another way since. One
+  // whose world's page has gone is let go with it. On the desktop build,
+  // where one process holds every world, `scout` means nothing and the same
+  // request is answered by the world itself.
+
+  function dropScout(held) {
+    const gone = () => {
+      if (!held.engine) return;
+      retire(held.engine);
+      release(held.engine, "that world's scout was let go");
+    };
+    if (held.engine) gone(); else if (held.making) held.making.then(gone, gone);
+  }
+
+  // Which world's scout a request names, what it wants of it, and the
+  // request without that word.
+  function scoutNamed(target) {
+    if (!HOMES) return null;
+    const url = new URL(target, window.location.href);
+    const how = url.searchParams.get("scout"), pane = url.searchParams.get("pane");
+    if (how === null || !/^[a-z]-[0-9A-Za-z]{1,22}$/.test(String(pane))) return null;
+    url.searchParams.delete("scout");
+    return { pane, how, target: url.pathname + url.search };
+  }
+
+  async function askScout(named, method, body) {
+    const { pane, how, target } = named;
+    let held = scouts.get(pane);
+    if (held && (how === "done" || how === "new")) {
+      scouts.delete(pane);
+      dropScout(held);
+      held = undefined;
+      counted();
+    }
+    if (how === "done") return { error: null, scout: "done" };
+    if (!held) {
+      held = { engine: null, making: null };
+      scouts.set(pane, held);
+      counted();
+      held.making = (async () => {
+        await (moving.get(pane) || null);
+        held.engine = await forkOf(homeOf(pane));
+      })();
+    }
+    try {
+      await held.making;
+    } catch (error) {
+      if (scouts.get(pane) === held) { scouts.delete(pane); counted(); }
+      throw error;
+    }
+    if (scouts.get(pane) !== held) throw new Error("that world's scout was let go");
+    return tell(held.engine, {
+      method, path: target, body: body || "", wasmUrl: WASM_URL, seed: OPENING_SEED,
+    }, [], target, false);
   }
 
   // A world whose page has gone is not asked anything again.
@@ -499,6 +588,12 @@
         counted();
         letGo(home);
       }
+      for (const [pane, held] of [...scouts]) {
+        if (shown.has(pane)) continue;
+        scouts.delete(pane);
+        counted();
+        dropScout(held);
+      }
     }, 5000);
   }
 
@@ -508,6 +603,7 @@
   function meteredHomes(answer) {
     if (!HOMES || !answer || typeof answer !== "object" || typeof answer.engine_bytes !== "number") return answer;
     const engines = new Set(homes.values());
+    for (const held of scouts.values()) if (held.engine) engines.add(held.engine);
     engines.delete(worker);
     let bytes = answer.engine_bytes, busy = (answer.engine_busy_ms || 0) + retiredBusy;
     for (const home of engines) {
@@ -1238,6 +1334,9 @@
       // A fork answers for itself, and making forks is this file's own
       // work: neither is a request to the page's engine.
       if (fork !== null) return askFork(fork, method, options_.body || "").then(json);
+      // A world's scout answers for the world it was forked from.
+      const scout = scoutNamed(relative);
+      if (scout !== null) return askScout(scout, method, options_.body || "").then(json);
       if (HOMES && path === "/debug" && method === "POST") {
         const parsed = safeParse(options_.body || "{}");
         if (parsed.op === "adopt" && homes.has(String(parsed.pane))) {

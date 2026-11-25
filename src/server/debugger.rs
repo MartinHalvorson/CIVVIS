@@ -42,6 +42,12 @@
 //!   the turns kept ahead of it, which were played in a world this did not
 //!   happen in, are let go of.
 //!
+//! * **foresee** plays a copy of the world on from the end of the seat's
+//!   line to the end of its game, a stretch a request, and says what is
+//!   coming: every nuclear detonation, every war declared, and how the game
+//!   ends (`Seer`). The copy keeps none of the turns it plays, so the whole
+//!   of a game's future costs one world and not a mark a turn.
+//!
 //! A mark is a clone of the game. The game shares what a turn did not change
 //! with its clones, so a mark costs what its turn changed rather than the
 //! world. That is still megabytes (`ROOMY_MARKS` has the measurement), so
@@ -82,6 +88,11 @@ const MAX_CONDITIONS: usize = 16;
 /// The most turns one `play` plays. The engine answers nothing else until it
 /// is done, so a longer run is asked for in pieces.
 const PLAY_MOST: u32 = 100;
+/// The most things seen coming one forecast keeps (`Seer::seen`). A game
+/// that ends in a nuclear exchange has a detonation for every city on the
+/// map; the first of them, every war and the end of the game are what the
+/// page puts a sign up for, and those are never the ones let go of.
+const FORESEEN_MOST: usize = 160;
 
 /// One rung of handing the seat to its agent.
 ///
@@ -592,9 +603,23 @@ impl std::fmt::Write for Print {
 /// halves of a split share that mark as they share every turn behind the
 /// split, by having been copied from one session.
 fn world_print(game: &Game, earlier: Option<&Mark>) -> u64 {
+    print_on(
+        game,
+        earlier
+            .filter(|mark| game.log.continues(&mark.game.log))
+            .map(|mark| (mark.world, mark.actions)),
+    )
+}
+
+/// [`world_print`], from what it takes of the mark the world was played on
+/// from: that mark's print, and how long the action log was then. `None`
+/// starts a print of its own. A world played forward with no marks kept
+/// (`Seer`) carries the two along itself, and so gives each turn the print
+/// its mark would have been given.
+fn print_on(game: &Game, earlier: Option<(u64, usize)>) -> u64 {
     use std::fmt::Write;
-    let (mut print, since) = match earlier.filter(|mark| game.log.continues(&mark.game.log)) {
-        Some(mark) => (Print(mark.world), mark.actions),
+    let (mut print, since) = match earlier {
+        Some((world, actions)) => (Print(world), actions),
         None => (Print(Print::START), game.log.len()),
     };
     // Writing to a print cannot fail.
@@ -745,6 +770,333 @@ pub struct Timeline {
     /// The agents left at the end of the turns played ahead of the open one
     /// (`Session::debug_ahead`), for the next of them to be played by.
     scouts: Option<Scouts>,
+    /// The world being played on to the end of its game to see how it comes
+    /// out (`Session::debug_foresee`).
+    seer: Foresight,
+}
+
+/// Where a timeline keeps its `Seer`. A copy of a timeline has none: what is
+/// seen coming is a world of its own being played, and a copy (a half of a
+/// split, a branch) foresees for itself, from where it stands and with the
+/// Civ AI it seats.
+#[derive(Default)]
+struct Foresight(Option<Box<Seer>>);
+
+impl Clone for Foresight {
+    fn clone(&self) -> Self {
+        Foresight(None)
+    }
+}
+
+/// A world played on to the end of its game, to say what is coming
+/// (operator 2026-11-24: "each branch in doctor strange's civ 6 should
+/// simulate out to the end of the branch", "the top of each branch should
+/// have either: no nuclear war in the next N turns, no nuclear war, or
+/// nuclear war in N turns (Era). we should note wars as well").
+///
+/// It is a session of its own on a copy of the world at the end of the
+/// seat's line, seated with the agents that play on from there, and it is
+/// only ever played forward. So it keeps no turn it plays: no mark, no
+/// reading of the seat, nothing to walk back to. A mark a turn was the cost
+/// of a future played ahead (`debug_ahead`): megabytes each, a world copied
+/// again wherever the next turn wrote to it. Here the world is the only
+/// holder of what it holds and a turn writes to it in place, which is why
+/// the whole of a game's future can be played where a dozen turns were.
+///
+/// What it does keep is what a forecast says: the nuclear detonations and
+/// the wars declared on the way, each with the turn and the world era it
+/// happens in, how the game ends, and the print of every turn it opened
+/// (`world_print`). The prints say whose future this is. The engine is
+/// deterministic, so the world it was copied from plays these same turns
+/// for as long as nothing else is asked of it, and gives each the same
+/// print; a turn of that world's line with another print is another world,
+/// whose future this is not (`Seer::of`).
+struct Seer {
+    session: Session,
+    /// The turn it was made on, and the print of that turn's world.
+    from: u32,
+    base: u64,
+    /// How long the action log was when it was made from a turn the seat
+    /// had played in: the world it was made from is that turn only for as
+    /// long as nothing more is done in it.
+    acted: Option<usize>,
+    /// The print of the last turn it opened and how long the action log was
+    /// then, which the next turn's print is carried on from.
+    world: u64,
+    actions: usize,
+    /// The print of every turn it has opened, the one it was made on first.
+    prints: Vec<(u32, u64)>,
+    /// The world era of the turn it was made on, and each one come into
+    /// since with the turn that opened in it.
+    eras: Vec<(u32, usize)>,
+    /// The detonations and the wars declared, in the order they happen:
+    /// first the ones on the world's record when this was made, which a
+    /// world walked back along its line has ahead of it again, then the
+    /// ones seen coming, and last how the game ends.
+    seen: Vec<Foreseen>,
+    /// How many detonations that is in all, the ones no longer kept too.
+    detonations: u32,
+    /// The last detonation counted, by its id, and the wars already noted,
+    /// by the declaration each front was opened by.
+    struck: Option<u32>,
+    conflicts: BTreeSet<u32>,
+}
+
+/// One thing seen coming: the turn it happens on, the world era that turn is
+/// in, what kind of thing it is (`nuclear`, `war`, `won`, `over`) and what
+/// to say of it.
+struct Foreseen {
+    turn: u32,
+    era: usize,
+    kind: &'static str,
+    text: String,
+}
+
+impl Seer {
+    /// The print it gave a turn it has opened.
+    fn print(&self, turn: u32) -> Option<u64> {
+        let at = turn.checked_sub(self.from)? as usize;
+        self.prints
+            .get(at)
+            .filter(|(opened, _)| *opened == turn)
+            .map(|(_, print)| *print)
+    }
+
+    /// Whether this is still the future of `world`: the same Civ AIs are
+    /// seated, some turn of the seat's line there is one this has opened,
+    /// and every such turn is the world this opened it as. A line that was
+    /// played on another way from a turn this passed through (another
+    /// strategy, a black swan, something done by hand) has another print
+    /// there; one that no longer reaches the turn this was made on has let
+    /// go of the turns it was made from.
+    fn of(&self, world: &Session) -> bool {
+        if self.session.autoplay_strategy != world.autoplay_strategy
+            || self.session.rival_strategy != world.rival_strategy
+        {
+            return false;
+        }
+        // Made from the open turn as it stood: anything done in it since is
+        // not in the print of its mark.
+        if self
+            .acted
+            .is_some_and(|acted| world.game.turn == self.from && world.game.log.len() != acted)
+        {
+            return false;
+        }
+        let mut held = false;
+        for mark in world.debug_line() {
+            match self.print(mark.turn) {
+                Some(print) if print == mark.world => held = true,
+                Some(_) => return false,
+                None => {}
+            }
+        }
+        held
+    }
+
+    /// Whether there is no turn left for it to play: the game is decided,
+    /// the seat is out of it, or its last turn has been played.
+    fn over(&self) -> bool {
+        let game = &self.session.game;
+        game.is_finished()
+            || !game.players[0].alive
+            || game.turn_limit().is_some_and(|limit| game.turn > limit)
+    }
+
+    fn name(&self, seat: usize) -> &str {
+        self.session
+            .game
+            .players
+            .get(seat)
+            .map_or("A civilization", |player| player.civ.as_str())
+    }
+
+    fn note(&mut self, seen: Foreseen) {
+        // The first detonation, every war and the end are always kept; past
+        // the most, the detonations after the first are only counted.
+        if seen.kind == "nuclear"
+            && self.seen.len() >= FORESEEN_MOST
+            && self.seen.iter().any(|kept| kept.kind == "nuclear")
+        {
+            return;
+        }
+        self.seen.push(seen);
+    }
+
+    /// Note every detonation and every war on the world's record that has
+    /// not been noted yet, each on the turn it happened: a line for each
+    /// civilization that fired on a turn and each kind of device it fired,
+    /// and a line for each declaration of war, once for all the fronts it
+    /// opened. `era` is the world era a turn was in.
+    fn gather(&mut self, era: impl Fn(u32) -> usize) {
+        let fresh: Vec<(u32, usize, bool, Option<String>)> = self
+            .session
+            .game
+            .chronicle
+            .nuclear_strikes
+            .iter()
+            .filter(|strike| self.struck.is_none_or(|last| strike.id > last))
+            .map(|strike| {
+                (
+                    strike.turn,
+                    strike.attacker,
+                    strike.thermonuclear,
+                    strike.cities.first().cloned(),
+                )
+            })
+            .collect();
+        if let Some(last) = self.session.game.chronicle.nuclear_strikes.last() {
+            self.struck = Some(last.id);
+        }
+        let mut fired: Vec<(u32, usize, bool, u32, Option<String>)> = Vec::new();
+        for (turn, attacker, thermonuclear, city) in fresh {
+            match fired
+                .iter_mut()
+                .find(|(at, by, kind, _, _)| (*at, *by, *kind) == (turn, attacker, thermonuclear))
+            {
+                Some((_, _, _, count, _)) => *count += 1,
+                None => fired.push((turn, attacker, thermonuclear, 1, city)),
+            }
+        }
+        let mut noted: Vec<Foreseen> = Vec::new();
+        for (turn, attacker, thermonuclear, count, city) in fired {
+            let device = if thermonuclear {
+                "thermonuclear device"
+            } else {
+                "nuclear device"
+            };
+            let who = self.name(attacker);
+            let text = match (count, city) {
+                (1, Some(city)) => format!("{who} detonates a {device} on {city}"),
+                (1, None) => format!("{who} detonates a {device}"),
+                (count, _) => format!("{who} detonates {count} {device}s"),
+            };
+            self.detonations += count;
+            noted.push(Foreseen {
+                turn,
+                era: era(turn),
+                kind: "nuclear",
+                text,
+            });
+        }
+        let declared: Vec<(u32, u32, usize, usize)> = {
+            let game = &self.session.game;
+            game.wars
+                .values()
+                .chain(game.chronicle.concluded_wars.iter())
+                .filter(|war| !self.conflicts.contains(&war.conflict))
+                .map(|war| (war.conflict, war.started, war.declarer, war.target))
+                .collect()
+        };
+        for (conflict, started, declarer, target) in declared {
+            if !self.conflicts.insert(conflict) {
+                continue;
+            }
+            let text = format!(
+                "{} declares war on {}",
+                self.name(declarer),
+                self.name(target)
+            );
+            noted.push(Foreseen {
+                turn: started,
+                era: era(started),
+                kind: "war",
+                text,
+            });
+        }
+        noted.sort_by_key_shared(|seen| seen.turn);
+        for seen in noted {
+            self.note(seen);
+        }
+    }
+
+    /// Play one round, and note what it brought. `false` when there was no
+    /// turn left to play.
+    fn play(&mut self) -> bool {
+        if self.over() {
+            return false;
+        }
+        let (turn, era) = (self.session.game.turn, self.session.game.world_era);
+        self.session.autoplay_round();
+        self.gather(|_| era);
+        // The turn that opened is given the print its mark would be given.
+        let game = &self.session.game;
+        if game.turn > turn && game.current == 0 {
+            self.world = print_on(game, Some((self.world, self.actions)));
+            self.actions = game.log.len();
+            self.prints.push((game.turn, self.world));
+            if self
+                .eras
+                .last()
+                .is_none_or(|(_, last)| *last != game.world_era)
+            {
+                self.eras.push((game.turn, game.world_era));
+            }
+        }
+        if self.over() {
+            self.ends();
+        }
+        true
+    }
+
+    /// Note how the game ends, on the world it has ended on.
+    fn ends(&mut self) {
+        let game = &self.session.game;
+        let (kind, text) = match game.winner {
+            Some(0) => ("won", format!("{} wins the game", self.name(0))),
+            Some(winner) => ("over", format!("{} wins the game", self.name(winner))),
+            None if !game.players[0].alive => {
+                ("over", format!("{} is out of the game", self.name(0)))
+            }
+            None => ("over", "The game ends".to_string()),
+        };
+        let (turn, era) = (game.turn, game.world_era);
+        self.note(Foreseen {
+            turn,
+            era,
+            kind,
+            text,
+        });
+    }
+
+    /// What it has seen, for the page. `known` is the turn the page was last
+    /// told this stood on: it is told again only of what has been played
+    /// since. `None` tells it everything.
+    fn json(&self, played: u32, known: Option<u32>) -> Value {
+        let game = &self.session.game;
+        let era_name = |era: usize| crate::rules::ERA_NAMES.get(era).copied();
+        let since = known.unwrap_or(0);
+        json!({
+            "from": self.from,
+            "base": self.base >> PRINT_SHIFT,
+            "seat": self.session.autoplay_strategy,
+            "turn": game.turn,
+            "done": self.over(),
+            "limit": game.turn_limit(),
+            "played": played,
+            "since": known,
+            // The print of each turn it has opened (`world_print`), as the
+            // page is given a mark's.
+            "worlds": self.prints.iter()
+                .filter(|(turn, _)| known.is_none_or(|known| *turn > known))
+                .map(|(turn, print)| json!([turn, print >> PRINT_SHIFT]))
+                .collect::<Vec<_>>(),
+            "eras": self.eras.iter().map(|(turn, era)| json!({
+                "turn": turn,
+                "era": era,
+                "name": era_name(*era),
+            })).collect::<Vec<_>>(),
+            "seen": self.seen.iter().filter(|seen| seen.turn >= since).map(|seen| json!({
+                "turn": seen.turn,
+                "kind": seen.kind,
+                "text": seen.text,
+                "era": seen.era,
+                "era_name": era_name(seen.era),
+            })).collect::<Vec<_>>(),
+            "detonations": self.detonations,
+            "victory": game.victory_type.as_deref().filter(|_| game.winner.is_some()),
+        })
+    }
 }
 
 /// The agents that played a world ahead of its open turn, as they sat on the
@@ -774,6 +1126,7 @@ impl Timeline {
         self.marks.clear();
         self.saves.clear();
         self.scouts = None;
+        self.seer = Foresight(None);
         self.stopped = None;
         self.assisted = 0;
         // What an earlier game grew the memory to says nothing about this
@@ -1751,6 +2104,147 @@ impl Session {
         Ok((played, alerts))
     }
 
+    /// Play the world's future on towards the end of its game, `turns` of
+    /// it at most, and say what has been seen coming so far (`Seer`;
+    /// operator 2026-11-24: "each branch in doctor strange's civ 6 should
+    /// simulate out to the end of the branch", "we should optimize the
+    /// simulation speed so we simulate out pretty quickly").
+    ///
+    /// The world on the table is not touched, and neither are its marks: the
+    /// future is played on a copy this keeps, made the first time it is
+    /// asked and played a stretch further each time after, so the whole of
+    /// it is asked for in pieces as a long `play` is. The copy is let go of
+    /// and made again where it is no longer this world's future
+    /// (`Seer::of`), or the request says so (`anew`).
+    ///
+    /// `known` is the turn the page was last told the copy stood on; the
+    /// answer then leaves out what it was told before (`Seer::json`). A copy
+    /// made by this request is told whole, and says so (`anew`).
+    pub fn debug_foresee(
+        &mut self,
+        turns: u32,
+        anew: bool,
+        known: Option<u32>,
+    ) -> Result<Value, String> {
+        if self.debug_mid_round() {
+            return Err(
+                "the rivals are playing; what is coming is played from the seat's own turn"
+                    .to_string(),
+            );
+        }
+        let kept = self
+            .debugger
+            .seer
+            .0
+            .take()
+            .filter(|seer| !anew && seer.of(self));
+        let made = kept.is_none();
+        let mut seer = match kept {
+            Some(seer) => seer,
+            None => Box::new(self.debug_seer()?),
+        };
+        let mut played = 0;
+        while played < turns && seer.play() {
+            played += 1;
+        }
+        let mut seen = seer.json(played, known.filter(|_| !made));
+        seen["anew"] = json!(made);
+        self.debugger.seer = Foresight(Some(seer));
+        Ok(seen)
+    }
+
+    /// A copy of the world to play on to the end of its game: the world at
+    /// the end of the seat's line, with the agents that play on from there.
+    ///
+    /// Those are the agents `debug_ahead` plays the next turn of the line
+    /// with, so what this plays is what the line goes on to be: the agents
+    /// as they sit, where the line ends on the open turn, and otherwise the
+    /// ones kept from the last turn played ahead (`Scouts`) or with the mark
+    /// (`Minds`), or new ones where a half kept none.
+    fn debug_seer(&self) -> Result<Seer, String> {
+        let here = self.game.turn;
+        let ahead = self.debug_line().last().filter(|mark| mark.turn > here);
+        let (game, minds, base, actions, acted) = match ahead {
+            Some(mark) => {
+                let minds = self
+                    .debugger
+                    .scouts
+                    .as_ref()
+                    .filter(|kept| kept.turn == mark.turn && kept.world == mark.world)
+                    .map(|kept| kept.minds.clone())
+                    .or_else(|| mark.minds.clone().filter(|_| !self.debugger.forgetful));
+                (mark.game.clone(), minds, mark.world, mark.actions, None)
+            }
+            None => {
+                let Some(mark) = self.debugger.mark(here) else {
+                    return Err("the open turn is not kept to play on from".to_string());
+                };
+                (
+                    self.game.clone(),
+                    Some(self.debug_minds()),
+                    mark.world,
+                    mark.actions,
+                    Some(self.game.log.len()),
+                )
+            }
+        };
+        let mut session = Session::from_saved_game(self.params.clone(), game);
+        session.set_fog_honest(self.fog_honest);
+        if let Some(name) = &self.rival_strategy {
+            let _ = session.seat_rivals(name);
+        }
+        if let Some(name) = &self.autoplay_strategy {
+            let _ = session.seat_strategy_at(0, name);
+        }
+        if !self.human_players.is_empty() {
+            session.human_players = self.human_players.clone();
+        }
+        session.view_player = self.view_player;
+        session.keeps_rival_yields = self.keeps_rival_yields;
+        session.keeps_own_yields = self.keeps_own_yields;
+        if let Some(minds) = &minds {
+            session.debug_seat_minds(minds);
+        }
+        // It keeps no turn. The mark a session's timeline begins with would
+        // hold the world it was made on, and everything the first turns
+        // write to would be copied to leave that as it was.
+        session.debugger = Timeline::default();
+        let (from, era) = (session.game.turn, session.game.world_era);
+        let mut seer = Seer {
+            from,
+            base,
+            acted,
+            world: base,
+            actions,
+            prints: vec![(from, base)],
+            eras: vec![(from, era)],
+            seen: Vec::new(),
+            detonations: 0,
+            struck: None,
+            conflicts: BTreeSet::new(),
+            session,
+        };
+        // What is on the world's record already, each in the era the line
+        // was in on that turn, as nearly as the turns it keeps say.
+        let eras: Vec<(u32, usize)> = self
+            .debug_line()
+            .iter()
+            .map(|mark| (mark.turn, mark.game.world_era))
+            .collect();
+        seer.gather(|turn| {
+            eras.iter()
+                .rev()
+                .find(|(marked, _)| *marked <= turn)
+                .or(eras.first())
+                .map_or(era, |(_, era)| *era)
+        });
+        // A world with no turn left to play has its end to say already.
+        if seer.over() {
+            seer.ends();
+        }
+        Ok(seer)
+    }
+
     /// Strike a black swan on the world as it stands (operator 2026-11-24:
     /// "add a 'Generate Black Swan' - this will be a random, unpredicted
     /// event that spawns and changes the game"; `Game::black_swan`). `kind`
@@ -2123,6 +2617,8 @@ impl Session {
         let mut alerts: Option<Vec<Value>> = None;
         // The black swan that struck (`debug_black_swan`).
         let mut swan: Option<BlackSwan> = None;
+        // What the world's future, played on, has shown (`debug_foresee`).
+        let mut foresight: Option<Value> = None;
         let result: Result<(), String> = if !self.debuggable() {
             Err("the debugger walks a game with a seat of its own".to_string())
         } else if let Err(error) = seated {
@@ -2221,6 +2717,24 @@ impl Session {
                         alerts = Some(seen);
                     }),
                     None => Err(format!("ahead needs turns, 1 to {PLAY_MOST}")),
+                },
+                // The world's future played on towards the end of its game,
+                // on a copy, with the world left where it is
+                // (`debug_foresee`). No turns only reads what was seen.
+                "foresee" => match request["turns"]
+                    .as_u64()
+                    .filter(|turns| *turns <= u64::from(PLAY_MOST))
+                {
+                    Some(turns) => self
+                        .debug_foresee(
+                            turns as u32,
+                            request["anew"] == json!(true),
+                            request["known"]
+                                .as_u64()
+                                .and_then(|turn| u32::try_from(turn).ok()),
+                        )
+                        .map(|seen| foresight = Some(seen)),
+                    None => Err(format!("foresee needs turns, 0 to {PLAY_MOST}")),
                 },
                 // An event nothing saw coming, struck on the world as it
                 // stands (`debug_black_swan`). Which one is named, or drawn
@@ -2321,6 +2835,9 @@ impl Session {
         }
         if let Some(swan) = swan {
             out["black_swan"] = swan.json(self.game.turn);
+        }
+        if let Some(foresight) = foresight {
+            out["foresight"] = foresight;
         }
         if let Some(terms) = terms {
             out["terms"] = json!(terms);
