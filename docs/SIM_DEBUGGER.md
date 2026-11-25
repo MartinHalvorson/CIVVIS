@@ -1627,12 +1627,16 @@ path). these should alert on the top section out in the distance."
     worlds are played side by side and a world's own turn never waits
     behind its future. A scout is let go when its game has ended. A game
     served by this computer has one process for every world, so there a
-    world's future is played by the world itself, one world at a time while
-    the worlds stand still: on the page over `civvis play --players 4
-    --seed 11` (Chrome for Testing, the same busy computer), the followed
-    world's future was played from turn 13 to its end on turn 335 in 39.2 s
-    and then the other's to its end on turn 220 in 16.5 s, each sign saying
-    how far its world was clear of a nuclear war as it went.
+    world's future is played by the world itself. Each world is behind a
+    lock of its own on that server (`panes.rs`), so the futures of all the
+    worlds are still played at once, as many as there are cores to spare;
+    but a world asked for its future is not free to play a turn, so they
+    are asked only while the worlds stand still. On the page over `civvis
+    play --players 4 --seed 11` (Chrome for Testing, the same busy
+    computer), the two worlds' futures were played from turn 13 to their
+    ends, on turn 335 and turn 220, in 30.4 s side by side, where one after
+    the other they had taken 57.2 s, each sign saying how far its world was
+    clear of a nuclear war as it went.
   - *Always.* A world is asked the moment it is open and again each time it
     answers, until its game has ended; and anew, from the end of its line
     as it then is, when its line has been played another way: another
@@ -1721,8 +1725,8 @@ the one-step Branch into a third world, the pointer over a box, going back,
 following, the locked run, the divide, deleting a world of each kind and
 opening one again, the meter, the futures and their alerts, each world's
 future played to the end of its game with the sign over each branch saying
-what is coming (a world at a time, and every world at once where each has a
-scout), time running
+what is coming (every world at once, on the world itself and where each
+has a scout), time running
 through turns played ahead, a black swan on every locked world and on the
 followed one alone, and the narrow window, which has the one timeline
 and says why. `beta/homes_test.py` holds what a scout is on the shim as it

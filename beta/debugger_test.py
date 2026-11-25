@@ -3729,13 +3729,14 @@ def check_doctor_strange(bar: Bar, address: str) -> None:
     # Past the turns a world holds, its future is played to the end of its
     # game on a copy (the engine's `foresee`), asked for a stretch at a time
     # by the page itself and never of the world's own page. This engine has
-    # none of its own for it, so one world is asked at a time, while the
-    # worlds stand still. In A's world a war is declared thirty turns on.
+    # none of its own for it, so each world plays its own, every world asked
+    # at once, while the worlds stand still. In A's world a war is declared
+    # thirty turns on.
     seen = "['a', 'b'].every(letter => debugSplit.panes[letter].sight && debugSplit.panes[letter].sight.done)"
     began = bar.ev(f"(() => {{ debugSplit.panes.a.frame.contentWindow.eval('engine.wars = [{here + 30}]');"
                    " const stood = [scouts.made, engine.sent.length]; strangeSightDrop('a'); strangeSightDrop('b'); strangeForesee();"
-                   " return [...stood, strangeScouts(), Object.keys(strange.seeing).join(''), strange.follow]; })()")
-    assert began[2] is False and began[3] == began[4], began
+                   " return [...stood, strangeScouts(), Object.keys(strange.seeing).sort().join('')]; })()")
+    assert began[2:] == [False, "ab"], began
     foreseen = f"engine.sent.slice({began[1]}).filter(call => /^\\/debug\\?pane=/.test(call.path) && call.body.op === 'foresee')"
     bar.until(seen, "each world's future is played to the end of its game")
     told = bar.ev(f"[{foreseen}.map(call => call.path.split('&scout=')[1]).filter(how => how === 'new').length, scouts.made - {began[0]},"
@@ -4328,7 +4329,7 @@ def main() -> int:
               "Time start and stop them, and unlocked they go by themselves until locked again; what the page costs "
               "is read and shown; each world's future is played ahead of the open turn and kept, every world asked "
               "at once, what was seen coming is kept with it; past those turns each world's future is played to the "
-              "end of its game on a copy, a world at a time or every world at once where each has an engine for it, "
+              "end of its game on a copy, every world at once, on the world itself or on an engine of its own, "
               "and the sign over the far end of each branch says the nuclear war that is coming, in how many turns "
               "and in which era, or that there is none, to the end or as far as has been played, with the next war "
               "under it, and is played out again for a world given another player strategy; "
