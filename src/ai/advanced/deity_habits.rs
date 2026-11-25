@@ -81,11 +81,14 @@ impl EurekaChase {
     }
 }
 
+/// The chases one seat had on one turn: `(turn, seat, chases)`.
+type HeldChases = (u32, usize, std::sync::Arc<[EurekaChase]>);
+
 /// The per-turn memo behind both eureka genes: the table is the same for
 /// every Builder job and every queue item priced this turn.
 #[derive(Clone, Default)]
 pub(super) struct EurekaChaseCache {
-    entries: RefCell<Option<(u32, usize, std::sync::Arc<[EurekaChase]>)>>,
+    entries: RefCell<Option<HeldChases>>,
 }
 
 impl AdvancedAi {
