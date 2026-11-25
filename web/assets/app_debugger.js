@@ -876,7 +876,13 @@ async function debugOp(body, timeoutMs = 20000, run = null) {
     if (next.error) { debugSay(next.error); return next; }
     if (run && run.more(next)) run.ahead = ask();
     debugTwinned = led && !!(next.debug && next.debug.twinned);
-    if (debugHolding && next.turn !== before) await debugHoldTurn(next.turn);
+    if (debugHolding && next.turn !== before) {
+      // Shown, a half may be asked in the same breath to play its world on
+      // ahead (`debugPlayAhead`): the engine does that while this page draws
+      // the turn, where it used to wait for the drawing to be done.
+      const ahead = await debugHoldTurn(next.turn);
+      if (ahead > 0) debugPlayAhead(ahead, next);
+    }
     if (DEBUG_TRAVEL_OPS.has(body.op) || body.op === "step" || body.op === "step_action" ||
         body.op === "step_seat" || body.op === "finish_round") {
       sel = null; selCity = null;
@@ -2171,7 +2177,18 @@ function debugMapLeft() {
   const area = document.getElementById("maparea");
   return area && !debugSplit ? Math.max(0, Math.round(area.getBoundingClientRect().left)) : 0;
 }
+// A bar that cannot be seen is not measured. Doctor Strange's Civ 6 keeps
+// its bar out of sight under the worlds, and a world of it has none
+// (`STRANGE_STYLE`, `STRANGE_PANE_STYLE`); every measure here makes the
+// browser lay the whole page out again, and with each world saying a dozen
+// things a turn that was a fifth of all the page did while time ran. The
+// bar is measured again when it is back in sight.
+function debugBarUnseen() {
+  const page = document.documentElement.classList;
+  return page.contains("strange-pane") || (page.contains("strange") && debugSplit !== null);
+}
 function debugDock(bar) {
+  if (debugBarUnseen()) return;
   const left = bar.hidden ? 0 : debugMapLeft();
   if (left !== debugDockedLeft) {
     debugDockedLeft = left;
@@ -3678,11 +3695,39 @@ function debugPaneNumbers() {
 let debugHolding = false, debugShow = null;
 function debugHoldTurn(turn) {
   return new Promise(go => {
-    const shown = () => { if (debugShow === shown) debugShow = null; go(); };
+    const shown = ahead => { if (debugShow === shown) debugShow = null; go(+ahead || 0); };
     debugShow = shown;
     window.parent.postMessage({civvis: "pane-ready", pane: DEBUG_PANE, turn}, location.origin);
     setTimeout(shown, 120000);
   });
+}
+// This half's world is played on from the last turn it holds and comes back
+// to the open one, in one request (the engine's `ahead`). The page goes on
+// showing the turn it showed and now holds more turns ahead of it, so only
+// what the debugger holds is new: the answer is asked for lean, and the host
+// is told what was seen on the way. `held` is the world the page stands on:
+// the one it is about to draw, where this is asked as a held turn is shown.
+async function debugPlayAhead(turns, held = state) {
+  const said = {civvis: "pane-ahead-done", pane: DEBUG_PANE, readings: [], alerts: [], error: null};
+  try {
+    if (!held || !held.debug || debugRunning || autoplaying || gameFinished(held)) said.error = "this world cannot be played ahead now";
+    else {
+      said.from = Math.max(held.debug.last ?? held.turn, held.turn);
+      const next = await fetchJSON("/debug", {method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({op: "ahead", turns: +turns || 1, strategy: debugStrategy(), lean: true})},
+        AUTOPLAY_BATCH_TIMEOUT_MS);
+      said.error = next.error || null;
+      if (next.debug && next.turn === state.turn) {
+        state.debug = next.debug;
+        said.readings = next.readings || [];
+        said.alerts = next.alerts || [];
+        said.last = Math.max(state.debug.last ?? state.turn, state.turn);
+        drawDebugBar();
+        debugPaneNumbers();
+      }
+    }
+  } catch (error) { said.error = String(error.message || error); }
+  window.parent.postMessage(said, location.origin);
 }
 async function debugFollow(turn, how, hold = false) {
   debugFollowWanted = {turn, how};
@@ -3772,7 +3817,7 @@ if (DEBUG_PANE !== null) {
     const data = event.data;
     if (!data || typeof data.civvis !== "string") return;
     if (data.civvis === "pane-follow") debugInTurn(() => debugFollow(data.turn, data.how, data.hold));
-    else if (data.civvis === "pane-show") { if (debugShow) debugShow(); }
+    else if (data.civvis === "pane-show") { if (debugShow) debugShow(data.ahead); }
     else if (data.civvis === "pane-lock") {
       debugPaneLocked = data.on === true;
       debugTwin = typeof data.twin === "string" ? data.twin : null;
@@ -3842,33 +3887,9 @@ if (DEBUG_PANE !== null) {
       });
     }
     else if (data.civvis === "pane-ahead") {
-      // This half's world is played on from the last turn it holds and comes
-      // back to the open one, in one request (the engine's `ahead`). The
-      // page goes on showing the turn it showed and now holds more turns
-      // ahead of it, so only what the debugger holds is new: the answer is
-      // asked for lean, and the host is told what was seen on the way.
-      debugInTurn(async () => {
-        const said = {civvis: "pane-ahead-done", pane: DEBUG_PANE, readings: [], alerts: [], error: null};
-        try {
-          if (!debugTimeline() || debugRunning || autoplaying || gameFinished(state)) said.error = "this world cannot be played ahead now";
-          else {
-            said.from = Math.max(state.debug.last ?? state.turn, state.turn);
-            const next = await fetchJSON("/debug", {method: "POST", headers: {"Content-Type": "application/json"},
-              body: JSON.stringify({op: "ahead", turns: +data.turns || 1, strategy: debugStrategy(), lean: true})},
-              AUTOPLAY_BATCH_TIMEOUT_MS);
-            said.error = next.error || null;
-            if (next.debug && next.turn === state.turn) {
-              state.debug = next.debug;
-              said.readings = next.readings || [];
-              said.alerts = next.alerts || [];
-              said.last = Math.max(state.debug.last ?? state.turn, state.turn);
-              drawDebugBar();
-              debugPaneNumbers();
-            }
-          }
-        } catch (error) { said.error = String(error.message || error); }
-        window.parent.postMessage(said, location.origin);
-      });
+      // Asked while the worlds stand still, it takes its turn among what
+      // this half was told to do.
+      debugInTurn(() => debugPlayAhead(data.turns, debugTimeline() ? state : null));
     }
     else if (data.civvis === "pane-swan") {
       // A black swan strikes this half's world as it stands (the engine's
@@ -5035,11 +5056,13 @@ const STRANGE_LETTERS = "abcdefghijkl";
 const STRANGE_HEAD = 34, STRANGE_BOX_LEAST = 120, STRANGE_SILL = 30;
 // The longest a branch's name is written on the tree, where room is short.
 const STRANGE_NAME_MOST = 36;
-// How far ahead of the open turn each world's future is played, and how many
-// turns of it are asked for at once (`strangeAheadNext`).
-const STRANGE_AHEAD = 12, STRANGE_AHEAD_CHUNK = 4;
-// The least a turn is shown for while time runs through turns already played.
-const STRANGE_DWELL_MS = 160;
+// How far ahead of the open turn each world's future is played, and the most
+// turns of it a world is asked for at once (`strangeAheadNext`): while the
+// worlds stand still, and between the turns of time running, where the next
+// turn is shown only once what was asked for has been played.
+const STRANGE_AHEAD = 12, STRANGE_AHEAD_CHUNK = 4, STRANGE_AHEAD_RUNNING = 2;
+// How long a world asked for its future is waited on to answer.
+const STRANGE_AHEAD_WAIT_MS = 90000;
 // How often what the page costs is read, and how many readings are drawn.
 const STRANGE_METER_MS = 2000, STRANGE_METER_KEPT = 60;
 // What is seen coming on a world's future, by kind: its sign and its colour.
@@ -5268,13 +5291,16 @@ const strange = {
   locked: true, lockWanted: false,
   // Where the line of the open turn was dragged to, as a share of the
   // window's height; null while the page places it. `floor` is the least it
-  // may be, under the cards at the top, and `cards` where the cards are.
-  divide: null, floor: 0, cards: [],
+  // may be, under the cards at the top, and `cards` where the cards are:
+  // measured again once they have changed (`stale`, `watch`, `strangeCards`).
+  divide: null, floor: 0, cards: [], stale: true, shape: "", watch: null, resized: false,
   // The world whose box the pointer is over.
   over: null,
   // Whether each world's future is played ahead of the open turn, and the
-  // world being asked for more of its own now: {letter, turns, since}.
-  futures: true, peek: null,
+  // worlds being asked for more of their own now, by name: {turns, since}.
+  // Every world is asked at once, and none for more while it has yet to
+  // answer.
+  futures: true, peeks: {},
   // The black swan being struck: {kind, seed, first, waiting, rest, struck,
   // failed, since}, null when none is (`strangeSwan`). And the one that last
   // struck, for as long as the page says so: {swan, letters, since}.
@@ -5286,7 +5312,7 @@ const strange = {
   // Whether the bar has said there is no room for the worlds.
   sorry: false,
   // The worlds being taken through the turns together (`strangeAsk`):
-  // {end, at, asked, since, stop, play, letters}. Null when they are not.
+  // {end, at, asked, stop, play, letters}. Null when they are not.
   run: null,
   // Whether the controls were last drawn as free to press.
   idleWas: null,
@@ -5568,7 +5594,7 @@ function strangeClose(letter) {
   strange.order.splice(at, 1);
   if (strange.follow === letter) strange.follow = strange.order[Math.max(0, at - 1)];
   if (strange.over === letter) strange.over = null;
-  if (strange.peek && strange.peek.letter === letter) strange.peek = null;
+  delete strange.peeks[letter];
   const plate = strange.hud.querySelector(`[data-strange-world="${letter}"]`);
   if (plate) plate.remove();
   if (letter === "a" || letter === "b") split.panes[letter].frame.classList.add("strange-shut");
@@ -5601,7 +5627,7 @@ function strangeTravel(end, play = false) {
     else debugSplitGoTo(strange.follow, String(end));
     return;
   }
-  strange.run = {end, at, asked: null, since: 0, stop: false, play, letters: strangeOpen()};
+  strange.run = {end, at, asked: null, stop: false, play, letters: strangeOpen()};
   strangeAsk(strange.run);
 }
 // The last turn a world holds on its own line.
@@ -5617,16 +5643,20 @@ function strangeAsk(run) {
   if (run.stop || run.at === run.end || run.letters.length === 0) { strangeRunOver(run); return; }
   const next = run.end < run.at ? run.end
     : run.play ? run.at + 1 : Math.min(run.end, Math.max(run.at + 1, Math.min(...run.letters.map(strangeKept))));
-  // While time runs, a world's turns are played ahead of it and it is shown
-  // them as it comes to them (`strangeAheadNext`): the next turn waits for a
-  // world that has none ahead to be given some.
+  // While time runs, each world's future is played on ahead of it as it goes
+  // (`strangeAheadNext`), and a world is shown the turns it holds as it
+  // comes to them. Time waits on that only for a world that does not hold
+  // the next turn yet: one that does is asked for more and shown the turn it
+  // holds meanwhile, so time does not stop to look ahead.
   if (strange.futures && run.play && next > run.at) {
-    const short = run.letters.find(letter => strangeKept(letter) < next && !strangeSpent(letter));
-    if (!strange.peek) { if (short) strangeAheadAsk(short); else strangeAheadNext(true); }
-    if (strange.peek) { run.asked = null; strangeDraw(); return; }
+    strangeAheadNext(true);
+    if (run.letters.some(letter => strange.peeks[letter] && strangeKept(letter) < next)) {
+      run.asked = null;
+      strangeDraw();
+      return;
+    }
   }
   run.asked = next;
-  run.since = performance.now();
   run.shown = false;
   for (const letter of run.letters) {
     split.panes[letter].settled = null;
@@ -5635,18 +5665,23 @@ function strangeAsk(run) {
   }
   strangeDraw();
 }
-// The worlds holding a turn are shown it, at once.
+// The worlds holding a turn are shown it, at once. While time runs each is
+// asked in the same breath for the turn of its future that showing this one
+// takes from what it holds (`strangeAheadOwed`), so its engine plays that
+// while the page draws the turn, and is never left with nothing to do.
 function strangeShow() {
+  const run = strange.run, running = !!run && run.play && !run.stop && strange.futures;
   for (const letter of strangeOpen()) {
     const pane = debugSplit.panes[letter];
     if (pane.ready === null || pane.ready === undefined) continue;
+    const ahead = running ? strangeAheadOwed(letter, pane.ready, STRANGE_AHEAD_RUNNING) : 0;
     pane.ready = null;
-    debugSplitTell(letter, {civvis: "pane-show"});
+    if (ahead > 0) strange.peeks[letter] = {turns: ahead, since: performance.now()};
+    debugSplitTell(letter, ahead > 0 ? {civvis: "pane-show", ahead} : {civvis: "pane-show"});
   }
 }
 function strangeRunOver(run, note = "") {
   if (strange.run !== run) return;
-  clearTimeout(run.timer);
   strange.run = null;
   strangeShow();
   strangeSay(note || (run.stop ? `Paused on turn ${run.at}` : ""));
@@ -5684,13 +5719,8 @@ function strangeStep() {
   if (!run.shown && letters.every(ready)) { run.shown = true; strangeShow(); }
   const there = letter => split.panes[letter].turn === run.asked;
   if (letters.every(there)) {
-    // Time runs no faster than a turn can be seen.
-    const wait = run.play ? STRANGE_DWELL_MS - (performance.now() - run.since) : 0;
-    if (wait > 0 && !run.stop) {
-      clearTimeout(run.timer);
-      run.timer = setTimeout(() => { if (strange.run === run) { strangeStep(); strangeDraw(); } }, wait);
-      return;
-    }
+    // Time runs as fast as the worlds are played and drawn: a turn is on
+    // the screen for as long as the next takes, and no longer.
     run.at = run.asked;
     run.asked = null;
     strangeAsk(run);
@@ -5720,6 +5750,19 @@ function strangeStep() {
 // again. What the engine saw coming on the way (a nuclear detonation, a
 // war, the end of the game) is kept with the world and put up on its line
 // at the turn it happens on.
+//
+// Operator 2026-11-24, later: "Right now Doctor Strange's Civ 6 goes 4 turns
+// and pauses. This should not happen. It should be a continuous effort. and
+// blazingly fast." Time used to stop every fourth turn while each world in
+// turn was played four turns on (0.4 s at turn 10 and 1.2 s by turn 90, two
+// worlds, measured on the published page), and every turn between was held
+// on the screen for a sixth of a second. Now every world is asked at once
+// and time does not wait for the answer: a world holds the next turns
+// already, so it is shown them while its future is played on behind them.
+// Each turn shown, a world is asked for the turn that showing it took from
+// what it holds, so what it holds stays `STRANGE_AHEAD` turns deep and time
+// runs at the pace the worlds are played at. The engine keeps the agents
+// that played a world's last turn ahead to play its next (`debug_ahead`).
 
 // Whether a world has no more turns to be played ahead: it was asked for
 // some and played fewer, and holds the same line under the same strategy.
@@ -5727,48 +5770,52 @@ function strangeSpent(letter) {
   const pane = debugSplit.panes[letter];
   return !!pane.spent && pane.spent.seat === pane.strategy && pane.spent.last === strangeKept(letter);
 }
-function strangeAheadAsk(letter, most = STRANGE_AHEAD_CHUNK) {
-  const turns = Math.max(1, Math.min(most, (strangeLimit() ?? Infinity) - strangeKept(letter)));
-  strange.peek = {letter, turns, since: performance.now()};
-  debugSplitTell(letter, {civvis: "pane-ahead", turns});
+// How many turns of its future a world standing on `turn` is asked for now,
+// `most` at most: none while it has yet to answer the last time it was
+// asked, has none left to play, or holds `STRANGE_AHEAD` of them already.
+function strangeAheadOwed(letter, turn, most) {
+  const pane = debugSplit.panes[letter];
+  if (strange.peeks[letter] || turn === null || turn === undefined || pane.born || strangeSpent(letter)) return 0;
+  const kept = Math.max(strangeKept(letter), turn), limit = strangeLimit() ?? Infinity;
+  return Math.max(0, Math.min(most, STRANGE_AHEAD - (kept - turn), limit - kept));
 }
-// The world that holds the fewest turns ahead of where it stands is asked
-// for more, one world at a time, until each holds `STRANGE_AHEAD`. Nothing
-// is asked while the worlds are being moved, except between the turns of
-// time running (`between`).
+// Every world that holds fewer than `STRANGE_AHEAD` turns ahead of where it
+// stands is asked for more, all of them at once and each for its own: a
+// world answers when it has played them and is then asked again, until it
+// holds them all. Nothing is asked while the worlds are being moved, except
+// between the turns of time running (`between`), where a world is asked for
+// a turn or two at a time so that the next turn is not long in coming.
 function strangeAheadNext(between = false) {
   const split = debugSplit;
   if (!split || !split.shown || split.busy || split.running > 0 || strange.lockWanted || !strange.futures) return;
   if (strange.run && !between) return;
-  if (strange.peek) return;
-  const limit = strangeLimit() ?? Infinity;
-  let pick = null, least = Infinity;
   for (const letter of strangeOpen()) {
-    const pane = split.panes[letter];
-    if (pane.turn === null || pane.born || strangeSpent(letter)) continue;
-    const kept = strangeKept(letter), ahead = kept - pane.turn;
-    if (ahead >= STRANGE_AHEAD || kept >= limit || ahead >= least) continue;
-    least = ahead; pick = letter;
+    const turns = strangeAheadOwed(letter, split.panes[letter].turn, between ? STRANGE_AHEAD_RUNNING : STRANGE_AHEAD_CHUNK);
+    if (turns === 0) continue;
+    strange.peeks[letter] = {turns, since: performance.now()};
+    debugSplitTell(letter, {civvis: "pane-ahead", turns});
   }
-  // Between the turns of time running a world is topped up only when it has
-  // room for all that is asked for at once.
-  if (pick !== null && !(between && least > STRANGE_AHEAD - STRANGE_AHEAD_CHUNK))
-    strangeAheadAsk(pick, Math.min(STRANGE_AHEAD_CHUNK, STRANGE_AHEAD - least));
 }
 // A world that was asked for its future and never answered is not waited on
-// for ever: time that was waiting on it runs on, and the rest are asked.
+// for ever: time that was waiting on it runs on, and it is asked again.
 function strangeAheadWatch() {
-  if (!strange.peek || (strange.order.includes(strange.peek.letter) && performance.now() - strange.peek.since < 90000)) return;
-  strange.peek = null;
+  const now = performance.now();
+  const lost = Object.keys(strange.peeks).filter(letter =>
+    !strange.order.includes(letter) || now - strange.peeks[letter].since >= STRANGE_AHEAD_WAIT_MS);
+  if (lost.length === 0) return;
+  for (const letter of lost) delete strange.peeks[letter];
   if (strange.run && strange.run.asked === null) strangeAsk(strange.run);
   else strangeAheadNext();
 }
 // A world has played ahead (`pane-ahead-done`, from the split's listener):
 // what it saw coming is kept from the turn it played on from, and how it
-// stood on each turn. Time that was waiting on it runs on.
+// stood on each turn. Time that was waiting on it runs on. An answer nobody
+// is waiting for is from a world that has since been deleted, or one that
+// took too long, and says nothing of the world that is there now.
 function strangeAheadDone(letter, data) {
-  const split = debugSplit, pane = split ? split.panes[letter] : null, peek = strange.peek;
-  if (peek && peek.letter === letter) strange.peek = null;
+  const split = debugSplit, pane = split ? split.panes[letter] : null, peek = strange.peeks[letter];
+  if (!peek) return;
+  delete strange.peeks[letter];
   if (pane) {
     const readings = Array.isArray(data.readings) ? data.readings : [];
     const from = typeof data.from === "number" ? data.from : pane.turn ?? 0;
@@ -5778,7 +5825,7 @@ function strangeAheadDone(letter, data) {
     for (const turn of [...pane.ahead.keys()]) if (turn > from) pane.ahead.delete(turn);
     for (const reading of readings) if (reading && typeof reading.turn === "number") pane.ahead.set(reading.turn, reading);
     if (typeof data.last === "number") pane.last = Math.max(pane.last ?? 0, data.last);
-    pane.spent = data.error || readings.length < (peek ? peek.turns : 1) ? {seat: pane.strategy, last: strangeKept(letter)} : null;
+    pane.spent = data.error || readings.length < peek.turns ? {seat: pane.strategy, last: strangeKept(letter)} : null;
   }
   if (strange.run && strange.run.asked === null) strangeAsk(strange.run);
   else strangeAheadNext();
@@ -5790,8 +5837,14 @@ function strangeAheadDone(letter, data) {
 function strangePlay(until = null) {
   const split = debugSplit;
   if (!split || split.busy || !split.shown) return;
-  // Paused, the worlds stop on the same turn: the one they were asked for.
-  if (strange.run) { strange.run.stop = true; strangeStep(); strangeDraw(); return; }
+  // Paused, the worlds stop on the same turn: the one they were asked for,
+  // or the one they stand on while time waits on a world's future.
+  if (strange.run) {
+    strange.run.stop = true;
+    if (strange.run.asked === null) strangeRunOver(strange.run); else strangeStep();
+    strangeDraw();
+    return;
+  }
   if (split.running > 0) {
     for (const letter of strangeOpen()) debugSplitTell(letter, {civvis: "pane-stop"});
     split.running = 0;
@@ -6105,6 +6158,16 @@ function strangeMount() {
   strange.canvas = canvas; strange.hud = hud;
   strange.then = 0;
   for (const letter of strange.order) strangeWorldOpen(letter);
+  // A card that has changed its size is measured once the browser has laid
+  // the page out, which is when it says so.
+  if (strange.watch) strange.watch.disconnect();
+  strange.watch = typeof ResizeObserver === "function" ? new ResizeObserver(() => { strange.stale = true; strangeLayout(); }) : null;
+  if (strange.watch) for (const name of STRANGE_CARDS) strange.watch.observe(hud.querySelector(name));
+  if (!strange.resized) {
+    strange.resized = true;
+    window.addEventListener("resize", () => { strange.stale = true; strangeLayout(); });
+  }
+  strange.stale = true;
   strangeLayout();
   clearInterval(strange.meterTimer);
   strange.meterTimer = setInterval(() => { strangeAheadWatch(); strangeSwanWatch(); strangeMeasure(); }, STRANGE_METER_MS);
@@ -6114,11 +6177,20 @@ function strangeMount() {
 // Where things stand in the window: the line of the open turn, which is the
 // divide between the tree and the boxes, each open world's box, and the
 // colour of each.
-function strangeLayout() {
-  const split = debugSplit, hud = strange.hud;
-  if (!split || !hud || !hud.isConnected) return;
-  // The cards at the top keep their room: the line stays under them, with
-  // the worlds' own card standing on it, and a name on the tree keeps off them.
+// Where the cards stand. The cards at the top keep their room: the line
+// stays under them, with the worlds' own card standing on it, and a name on
+// the tree keeps off them.
+//
+// Measuring makes the browser lay the page out, so the cards are measured
+// when one has changed its shape, and not each time a world speaks, which is
+// a dozen times a turn and was an eighth of all the page did while time ran.
+// What is drawn says when it has put something else on a card (`strangeDraw`,
+// `strange.shape`), the line moving moves the worlds' card with it, and a
+// card that has grown by itself, a number gaining a figure, is seen by the
+// browser once it has laid the page out anyway (`strangeMount`).
+const STRANGE_CARDS = [".strange-title", ".strange-meter", ".strange-versus", ".strange-swans", ".strange-omen"];
+function strangeCards() {
+  const hud = strange.hud;
   const box = name => hud.querySelector(name).getBoundingClientRect();
   const title = box(".strange-title"), meter = box(".strange-meter"), versus = box(".strange-versus");
   strange.floor = Math.ceil(Math.max(title.bottom + 46, meter.bottom + versus.height + 30));
@@ -6131,9 +6203,20 @@ function strangeLayout() {
     const said = held.getBoundingClientRect();
     strange.cards.push({left: said.left, right: said.right, top: said.top, bottom: said.bottom, side: 1});
   }
+  strange.stale = false;
+}
+function strangeLayout() {
+  const split = debugSplit, hud = strange.hud;
+  if (!split || !hud || !hud.isConnected) return;
+  if (strange.stale) strangeCards();
   const g = strangeGeometry(), host = split.host, open = strangeOpen();
-  const put = (held, name, value) => { if (held.style.getPropertyValue(name) !== value) held.style.setProperty(name, value); };
-  put(host, "--strange-line", `${g.cy}px`);
+  const put = (held, name, value) => {
+    if (held.style.getPropertyValue(name) === value) return false;
+    held.style.setProperty(name, value);
+    return true;
+  };
+  // The worlds' card stands on the line, and has moved if the line has.
+  if (put(host, "--strange-line", `${g.cy}px`)) strangeCards();
   put(host, "--strange-board", `${Math.round(strangeBoard(g) + 6)}px`);
   for (const letter of open) {
     const at = g.boxes[letter], pane = split.panes[letter], plate = hud.querySelector(`[data-strange-world="${letter}"]`);
@@ -6315,6 +6398,10 @@ function strangeDraw() {
   const count = `${open.length} world${open.length === 1 ? "" : "s"} open`;
   const said = hud.querySelector("[data-strange-worlds]");
   if (said.textContent !== count) said.textContent = count;
+  // What gives a card another shape: the worlds on the worlds' card, what
+  // the title's card says, and a black swan's news.
+  const shape = `${open.join("")}|${wide}|${hud.querySelector('[data-strange="say"]').textContent}|${omen.dataset.drawn}`;
+  if (shape !== strange.shape) { strange.shape = shape; strange.stale = true; }
   strangeLayout();
 }
 
@@ -6336,6 +6423,7 @@ function strangePaint(time) {
     canvas.width = Math.round(g.W * ratio);
     canvas.height = Math.round(g.H * ratio);
     // A window of another size has its line elsewhere.
+    strange.stale = true;
     strangeLayout();
     g = strangeGeometry();
   }
