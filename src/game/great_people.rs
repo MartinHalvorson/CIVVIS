@@ -17,27 +17,47 @@ impl Game {
         &self,
         kind: &str,
     ) -> Option<(&str, &crate::rules::GreatPersonSpec)> {
-        // The class's people are listed at load in the order this takes
-        // them (`Rules::great_people_by_kind`): the first not yet retired is
-        // the earliest-era, lowest-id one the walk below would choose. A
-        // ruleset assembled without the loader has no list, and walks.
+        // The class's people are listed at load in the order this takes them
+        // (`Rules::great_people_by_kind`): the first not yet retired is the
+        // earliest-era, lowest-id one the walk over the whole ruleset would
+        // choose. A ruleset edited after load (tests trim it with `retain` or
+        // add to it with `insert`) no longer matches its lists — the totals
+        // differ, or a listed person is gone — and is walked as before.
         let rules = &self.rules;
-        if rules.great_people_by_kind.is_empty() && !rules.great_people.is_empty() {
-            return rules
-                .great_people
-                .iter()
-                .filter(|(id, spec)| {
-                    spec.kind == kind && !self.retired_great_people.contains(id.as_str())
-                })
-                .min_by_key(|(id, spec)| (spec.era, *id))
-                .map(|(id, spec)| (id.as_str(), spec));
+        let listed = rules
+            .great_people_by_kind
+            .values()
+            .map(Vec::len)
+            .sum::<usize>();
+        if listed == rules.great_people.len() {
+            let people = rules
+                .great_people_by_kind
+                .get(kind)
+                .map_or(&[][..], Vec::as_slice);
+            let mut current = None;
+            let mut stale = false;
+            for id in people {
+                if self.retired_great_people.contains(id.as_str()) {
+                    continue;
+                }
+                match rules.great_people.get(*id) {
+                    Some(spec) => current = Some((id.as_str(), spec)),
+                    None => stale = true,
+                }
+                break;
+            }
+            if !stale {
+                return current;
+            }
         }
         rules
-            .great_people_by_kind
-            .get(kind)?
+            .great_people
             .iter()
-            .find(|id| !self.retired_great_people.contains(id.as_str()))
-            .map(|id| (id.as_str(), &rules.great_people[*id]))
+            .filter(|(id, spec)| {
+                spec.kind == kind && !self.retired_great_people.contains(id.as_str())
+            })
+            .min_by_key(|(id, spec)| (spec.era, *id))
+            .map(|(id, spec)| (id.as_str(), spec))
     }
 
     /// Standard-speed base price plus the stock ahead-of-era surcharge. Art

@@ -1294,8 +1294,47 @@ fn great_people_listed_by_kind_offer_who_the_walk_offers() {
     }
     assert_eq!(offered, game.rules.great_people.len());
 
-    // A ruleset put together without the loader carries no lists, and walks.
+    // A ruleset edited after load no longer matches its lists, and walks:
+    // trimmed, added to, and with one person swapped for another (the
+    // totals agree, a listed person is gone).
     game.retired_great_people.clear();
+    let loaded = game.rules.clone();
+    let first = |game: &Game, kind: &str| walk(game, kind).expect("the class has somebody");
+    let scientist = first(&game, "scientist");
+    let removed = scientist.clone();
+    let swapped = scientist.clone();
+    let edits: Vec<Box<dyn Fn(&mut crate::rules::Rules)>> = vec![
+        Box::new(move |rules| rules.great_people.retain(|id, _| id != removed.as_str())),
+        Box::new(|rules| {
+            let mut early = rules.great_people.values().next().unwrap().clone();
+            early.kind = "scientist".to_string();
+            early.era = 0;
+            rules
+                .great_people
+                .insert("aaa_first_scientist".to_string(), early);
+        }),
+        Box::new(move |rules| {
+            let mut early = rules.great_people[swapped.as_str()].clone();
+            early.era = 0;
+            rules.great_people.remove(swapped.as_str());
+            rules
+                .great_people
+                .insert("aaa_swapped_scientist".to_string(), early);
+        }),
+    ];
+    for (index, edit) in edits.iter().enumerate() {
+        game.rules = loaded.clone();
+        edit(std::sync::Arc::make_mut(&mut game.rules));
+        for kind in &kinds {
+            let asked = game
+                .current_great_person(kind)
+                .map(|(id, _)| id.to_string());
+            assert_eq!(asked, walk(&game, kind), "edit {index}, {kind}");
+        }
+    }
+
+    // A ruleset put together without the loader carries no lists, and walks.
+    game.rules = loaded;
     std::sync::Arc::make_mut(&mut game.rules).great_people_by_kind = Default::default();
     for kind in &kinds {
         let walked = game
