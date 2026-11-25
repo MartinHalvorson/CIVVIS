@@ -410,7 +410,7 @@ pub(super) fn apply_player_religion(
             }
         }
     }
-    game.players[0].religion_beliefs = local.clone();
+    game.players[0].religion_beliefs = local.iter().map(|belief| Name::new(belief)).collect();
 
     // With the host's per-religion list, every religion's beliefs sit on its
     // founder's seat and nowhere else: a city following Catholicism then reads
@@ -489,7 +489,8 @@ pub(super) fn apply_player_religion(
             if seat != 0 {
                 game.players[seat].religion = Some(name);
             }
-            game.players[seat].religion_beliefs = beliefs;
+            game.players[seat].religion_beliefs =
+                beliefs.iter().map(|belief| Name::new(belief)).collect();
         }
         return;
     }
@@ -505,7 +506,10 @@ pub(super) fn apply_player_religion(
                 }
             }
         }
-        game.players[1].religion_beliefs = claimed_elsewhere;
+        game.players[1].religion_beliefs = claimed_elsewhere
+            .iter()
+            .map(|belief| Name::new(belief))
+            .collect();
     }
 }
 

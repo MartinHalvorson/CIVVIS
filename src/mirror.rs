@@ -7843,8 +7843,9 @@ pub fn rebuild_from_state(
         if game.players[0].pantheon.is_none() {
             game.players[0].pantheon = Some(name.clone());
         }
-        if !game.players[0].religion_beliefs.contains(&name) {
-            game.players[0].religion_beliefs.push(name);
+        let belief = Name::new(&name);
+        if !game.players[0].religion_beliefs.contains(&belief) {
+            game.players[0].religion_beliefs.push(belief);
         }
     }
     if let Some(civ6) = &state.government {
@@ -9367,8 +9368,9 @@ impl LiveMirror {
                 .unwrap_or(civ6)
                 .to_ascii_lowercase();
             self.game.players[0].pantheon = Some(name.clone());
-            if !self.game.players[0].religion_beliefs.contains(&name) {
-                self.game.players[0].religion_beliefs.push(name);
+            let belief = Name::new(&name);
+            if !self.game.players[0].religion_beliefs.contains(&belief) {
+                self.game.players[0].religion_beliefs.push(belief);
             }
         }
         let mut policies = std::collections::BTreeSet::new();

@@ -5974,7 +5974,7 @@ pub struct Player {
     #[serde(default)]
     pub holy_city: Option<u32>,
     #[serde(default)]
-    pub religion_beliefs: Vec<String>,
+    pub religion_beliefs: Vec<Name>,
     /// Optional Secret Societies game-mode membership. The three society
     /// replacement buildings in this ruleset are gated by this choice.
     #[serde(default)]
