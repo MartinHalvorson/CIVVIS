@@ -820,10 +820,7 @@ impl BasicAi {
         if builds.is_empty() {
             return Vec::new();
         }
-        g.valid_improvements(pid, pos)
-            .into_iter()
-            .filter(|improvement| builds.contains(improvement))
-            .collect()
+        g.valid_improvements_among(pid, pos, Some(builds))
     }
 
     /// Spend a unique military unit's improvement charge when that is a real

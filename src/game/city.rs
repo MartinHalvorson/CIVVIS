@@ -3057,6 +3057,17 @@ impl Game {
     }
 
     pub fn valid_improvements(&self, pid: usize, pos: Pos) -> Vec<Name> {
+        self.valid_improvements_among(pid, pos, None)
+    }
+
+    /// [`Game::valid_improvements`] ∩ `only`, in the same (sorted) order,
+    /// without deciding the improvements outside `only`: each one is a
+    /// separate set of pure reads of this tile and the empire, so skipping
+    /// it changes nothing about the rest. A unit with a build list of one or
+    /// two scans the whole map for a job (`special_improver_step`), and
+    /// deciding every improvement in the ruleset on every tile to keep one
+    /// was most of that scan.
+    pub fn valid_improvements_among(&self, pid: usize, pos: Pos, only: Option<&[Name]>) -> Vec<Name> {
         // Ground the host engine has already refused to improve. Empty unless CIVVIS
         // is driving one; see `blocked_improvement_sites`. Gated here because this is
         // the single chokepoint every improvement decision passes through, so one
@@ -3094,7 +3105,7 @@ impl Game {
         if !natural_wonder {
             if let Some(excavation) = self.valid_excavation(pid, pos) {
                 let excavation = Name::new(&excavation);
-                if host_refused(&excavation) {
+                if host_refused(&excavation) || only.is_some_and(|only| !only.contains(&excavation)) {
                     return vec![];
                 }
                 return vec![excavation];
@@ -3142,7 +3153,7 @@ impl Game {
         let mut artifact_home: Option<bool> = None;
         let mut out = Vec::new();
         for (name, spec) in &self.rules.improvements {
-            if host_refused(name) {
+            if only.is_some_and(|only| !only.contains(name)) || host_refused(name) {
                 continue;
             }
             if *name == crate::name!("national_park") {
