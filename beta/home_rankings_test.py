@@ -588,10 +588,9 @@ class HomeRankings(unittest.TestCase):
             self.assertIn("the fastest game's video", said.getvalue())
             filled = page.read_text(encoding="utf-8")
             self.assertEqual(json.loads(home_rankings.VIDEOS_SLOT.search(filled)[2]), fastest)
-            # Nothing but the page's slots moved: this one, the Firaxis AI
-            # benchmark's, and the speed timeline's
-            # (`beta/speedup_timeline_test.py` reads that one).
-            bare = lambda text: home_rankings.speedup_timeline.SLOT.sub("", home_rankings.BENCHMARK_SLOT.sub("", home_rankings.VIDEOS_SLOT.sub("", text)))  # noqa: E731
+            # Nothing but the page's slots moved: this one and the Firaxis
+            # AI benchmark's.
+            bare = lambda text: home_rankings.BENCHMARK_SLOT.sub("", home_rankings.VIDEOS_SLOT.sub("", text))  # noqa: E731
             self.assertEqual(bare(filled), bare(LANDING))
             # A record that does not say what game it played: no setup in
             # the slot, and the tile's second line is its video's title.
@@ -619,12 +618,18 @@ class HomeRankings(unittest.TestCase):
         # Operator 2026-11-24: "above the videos, lets copy the Firaxis Civ 6
         # Benchmarks showing our win rate (both diplo on and off), same as
         # the chart is now. then the videos below".
+        # It is the page's first part since the speed timeline that stood
+        # over it went to CIVVIS Performance, later that day ("move the
+        # civvis performance timeline thing from home/ to the civvis
+        # performance section"; `beta/speedup_timeline_test.py`).
         places = [LANDING.index(mark) for mark in (
-            '<section class="speed"',
+            '<p class="intro">',
             '<section class="res-block home-bench" id="bench" aria-labelledby="res-title-tourney" hidden>',
             '<section class="watch"',
         )]
         self.assertEqual(places, sorted(places))
+        main = LANDING[LANDING.index('<main class="shell">'):LANDING.index("</main>")]
+        self.assertEqual(re.findall(r"<section [^>]*\bid=\"([\w-]+)\"", main), ["bench", "watch"])
         section = LANDING[places[1]:places[2]]
         bare = lambda text: [line.strip() for line in text.strip().split("\n")]  # noqa: E731
         # Its title and the line under it are Win Analytics' own, and so is

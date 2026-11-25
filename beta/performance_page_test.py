@@ -189,9 +189,9 @@ class TheSpeedup(unittest.TestCase):
     deity self-play, civvis self-play. how much has civvis self-play speed up
     over my manual 5 hr games? add this info, maybe in tables to the top")."""
 
-    SECTION = PAGE[PAGE.index('<section class="res-section" id="perf-speedup"'):PAGE.index('<section class="res-section" id="perf-history"')]
+    SECTION = PAGE[PAGE.index('<section class="res-section" id="perf-speedup"'):PAGE.index('<section class="res-section" id="perf-line"')]
 
-    def test_the_record_carries_the_worked_tables_of_the_home_page_s_ledger(self):
+    def test_the_record_carries_the_worked_tables_and_the_line_of_one_ledger(self):
         # The computer control stop reads its benchmark's record from the
         # run ledger where the clone holds it, and a bare copy of the
         # readings holds none: both are read here as a clone without it.
@@ -201,7 +201,11 @@ class TheSpeedup(unittest.TestCase):
         with contextlib.redirect_stderr(io.StringIO()):
             record = performance_page.performance(ROOT)
         self.assertEqual(record["speedup"], speedup_timeline.worked(ROOT))
-        self.assertEqual(record["speedup"]["answer"]["all"], speedup_timeline.timeline(ROOT)["speedup"])
+        # And the same readings as a line, the part under the tables
+        # (`beta/speedup_timeline_test.py` pins it): its number is the
+        # tables'.
+        self.assertEqual(record["timeline"], speedup_timeline.timeline(ROOT))
+        self.assertEqual(record["speedup"]["answer"]["all"], record["timeline"]["speedup"])
         # A revision with the readings and nothing else still has its page.
         with tempfile.TemporaryDirectory() as scratch, contextlib.redirect_stderr(io.StringIO()) as said:
             root = pathlib.Path(scratch)
@@ -234,10 +238,13 @@ class TheSpeedup(unittest.TestCase):
     def test_it_is_the_first_part_of_the_page_and_shows_only_when_filled(self):
         record = PAGE[PAGE.index('<div class="res-record" id="perf-record" hidden>'):]
         # Under the computer control chart, the page's top chart since
-        # 2026-11-24 (`control_times_test.py`). After the tables come each way
+        # 2026-11-24 (`control_times_test.py`). After the tables come the
+        # same figures as a line, which was Home's until that day (operator:
+        # "move the civvis performance timeline thing from home/ to the
+        # civvis performance section. middle of the page or so"), each way
         # of playing over time and the path through one game.
         self.assertEqual(re.findall(r'<section class="res-section" id="([\w-]+)"', record),
-                         ["perf-control", "perf-speedup", "perf-history", "perf-path", "perf-video", "perf-times", "perf-batches"])
+                         ["perf-control", "perf-speedup", "perf-line", "perf-history", "perf-path", "perf-video", "perf-times", "perf-batches"])
         self.assertIn('<section class="res-section" id="perf-speedup" aria-labelledby="perf-speedup-title" hidden>', PAGE)
         self.assertIn('document.getElementById("perf-speedup").hidden = false;', PAGE)
         # The sentence, the tiles, one game at a time, the machine, the
@@ -262,12 +269,12 @@ class TheSpeedup(unittest.TestCase):
         # against simulated Deity rivals is not one of them and says so.
         # The control stop is named as he named it later that day ("lets
         # also call Firaxis computer Control inside CIVVIS->Firaxis computer
-        # control"), the arrow drawn as one, here as on the home page.
+        # control"), the arrow drawn as one, here as on the line under them.
         # The first is his own play and says so ("By "Human Player" change
         # it to "Human Player (me)" with subtitle note: Some are faster,
         # some are slower. I'm a bit on the slower side but 5h seems
-        # reasonable."): the name here as on the home page, and his note in
-        # what a pointer held over the row says, where this page keeps
+        # reasonable."): the name here as on the line, and his note in
+        # what a pointer held over the row says, where the tables keep
         # every stop's sentence.
         self.assertEqual((ways["hand"], ways["control"], ways["firaxis_self_play"], ways["self_play"], ways["all_cores"]),
                          ("Human Player (me)", "CIVVIS → Firaxis computer control", "Firaxis self-play", "CIVVIS self-play", "Parallel games"))
@@ -342,7 +349,7 @@ class TheSpeedup(unittest.TestCase):
         # A rented machine is taken to reach the share of its cores our own
         # every-core run reached, and the words over the table say so.
         self.assertIn('(cloud.scaling ? ". A machine is taken to reach " + text(cloud.scaling) + " of its cores times that, the share our own every-core run reached: "', PAGE)
-        script = PAGE[PAGE.index("// ---- How many times faster than a game played by hand"):PAGE.index("// ---- Each way of playing over time")]
+        script = PAGE[PAGE.index("// ---- How many times faster than a game played by hand"):PAGE.index("// ---- The same figures as a line")]
         # A tile for every goal, with what renting the rest of the way costs.
         self.assertIn("for (const goal of goals) {", script)
         self.assertIn('tile("Goal", text(goal.words || goal.times), "a game every " + text(goal.time),', script)
@@ -371,10 +378,10 @@ class TheSpeedup(unittest.TestCase):
 
     def test_no_figure_is_written_into_the_page(self):
         # Every one is the slot's, so the page cannot say a figure the
-        # readings do not, and cannot disagree with the home page's line.
+        # readings do not, and cannot disagree with the line under it.
         text = html.unescape(re.sub(r"<[^>]+>", " ", re.sub(r"<!--.*?-->", "", self.SECTION, flags=re.S)))
         self.assertIsNone(re.search(r"\d", text), re.findall(r".{0,20}\d.{0,20}", text)[:3])
-        script = PAGE[PAGE.index("// ---- How many times faster than a game played by hand"):PAGE.index("// ---- Each way of playing over time")]
+        script = PAGE[PAGE.index("// ---- How many times faster than a game played by hand"):PAGE.index("// ---- The same figures as a line")]
         for unsafe in ("innerHTML", "insertAdjacentHTML", "outerHTML"):
             self.assertNotIn(unsafe, script)
         # But for the operator's note on his own play, his words as he wrote
@@ -430,7 +437,7 @@ class EachWayOverTime(unittest.TestCase):
         self.assertIn('<table class="rank-table" id="perf-history-table">', self.SECTION)
         # A reading worked out and not timed is a ring and says so.
         self.assertIn('if (newest.worked) now.append(el("small", "", "worked out, not timed"));', self.SCRIPT)
-        # The figure over a chart is the stop's own, as the home page has it.
+        # The figure over a chart is the stop's own, as the line has it.
         self.assertIn("newest = row.now && row.now.time ? row.now : own.points[own.points.length - 1];", self.SCRIPT)
         self.assertIn('dot.style.fill = point.worked ? "var(--panel-raised)" : colour;', self.SCRIPT)
 

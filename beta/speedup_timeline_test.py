@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
-"""The home page's speed timeline: the ledger of readings, what
-`speedup_timeline.py` works out from it, and the page that shows it."""
+"""The speed timeline of CIVVIS Performance: the ledger of readings, what
+`speedup_timeline.py` works out from it, and the page that shows it. The line
+was the home page's until 2026-11-24 (operator: "move the civvis performance
+timeline thing from home/ to the civvis performance section. middle of the
+page or so")."""
 
 from __future__ import annotations
 
@@ -18,9 +21,11 @@ import unittest
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 import home_rankings  # noqa: E402
+import performance_page  # noqa: E402
 import speedup_timeline  # noqa: E402
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+PAGE = (ROOT / "beta/performance.html").read_text(encoding="utf-8")
 LANDING = (ROOT / "beta/landing.html").read_text(encoding="utf-8")
 LEDGER = json.loads((ROOT / speedup_timeline.LEDGER).read_text(encoding="utf-8"))
 BENCHMARK = "data/performance/games_per_minute.json"
@@ -111,13 +116,13 @@ class Ledger(unittest.TestCase):
         self.assertEqual(speedup_timeline.marked(LEDGER), LEDGER["goals"])
         self.assertNotIn("goal", LEDGER)
         self.assertNotIn("billion", json.dumps(LEDGER["goals"]))
-        self.assertNotIn('data-goal="billion"', LANDING)
+        self.assertNotIn('data-goal="billion"', PAGE)
 
     def test_the_first_stop_carries_the_operator_s_note_on_his_own_play(self):
         # Operator 2026-11-24: "By "Human Player" change it to "Human Player
         # (me)" with subtitle note: Some are faster, some are slower. I'm a
         # bit on the slower side but 5h seems reasonable."
-        stop = re.search(r'<li class="speed-stop" data-stop="hand">(.*?)</li>', LANDING, re.S).group(1)
+        stop = re.search(r'<li class="speed-stop" data-stop="hand">(.*?)</li>', PAGE, re.S).group(1)
         asides = [" ".join(html.unescape(aside).split()) for aside in re.findall(r'<small class="speed-aside">(.*?)</small>', stop, re.S)]
         self.assertEqual(asides, ["Some are faster, some are slower. I’m a bit on the slower side but 5h seems reasonable."])
         # The note names his own figure, the one figure on the chart that
@@ -127,22 +132,22 @@ class Ledger(unittest.TestCase):
         self.assertEqual(re.findall(r"\d[\d,.]*\s*(?:x|s|min|h)\b", asides[0]), [hand["time"].replace(" ", "")])
         # It is his note on his own five hours and on nothing else: no
         # other entry of the chart has one.
-        self.assertEqual(LANDING.count('class="speed-aside"'), 1)
+        self.assertEqual(PAGE.count('class="speed-aside"'), 1)
         # Under the figures, where a stop's other small lines stand.
         self.assertLess(stop.index('class="speed-read"'), stop.index('class="speed-aside"'))
         # Shown, where a stop's sentence is only what a pointer held over
         # it says: it is not the hidden `speed-what`, and it has a place in
         # the list and on the line.
         self.assertIn('<small class="speed-what">One person plays one game of Civilization VI.</small>', stop)
-        self.assertIn("  .speed-aside { grid-column: 1 / -1; grid-row: 4;", LANDING)
-        wide = LANDING[LANDING.index("@media (min-width: 1120px) {"):]
+        self.assertIn("  .speed-aside { grid-column: 1 / -1; grid-row: 4;", PAGE)
+        wide = PAGE[PAGE.index("@media (min-width: 1120px) {"):]
         # On the line it wraps in the 150px every stop's words have: the
         # slot keeps two stops' words that far apart and no further.
         self.assertIn("    .speed-aside { display: block; margin: 2px 0 0; line-height: 1.3; }", wide[:wide.index("</style>")])
-        self.assertNotRegex(LANDING, r"\.speed-aside \{[^}]*\bwidth:")
+        self.assertNotRegex(PAGE, r"\.speed-aside \{[^}]*\bwidth:")
         # The room over and under the line is measured from every line of
         # words but the hidden sentence, so the note has its room.
-        self.assertIn('filter((line) => !line.hidden && !line.classList.contains("speed-what"))', LANDING)
+        self.assertIn('filter((line) => !line.hidden && !line.classList.contains("speed-what"))', PAGE)
 
     def test_the_line_s_stops_are_the_five_the_operator_named(self):
         # Operator 2026-11-24: "we should have: human player 5 hrs, Firaxis
@@ -151,7 +156,7 @@ class Ledger(unittest.TestCase):
         # self-play, "Parallel games, M5 Max, all 18 cores"."
         shown = speedup_timeline.timeline(ROOT)
         self.assertEqual([stop["key"] for stop in shown["stops"]], ["hand", "control", "firaxis_self_play", "self_play", "all_cores"])
-        names = re.findall(r'<li class="speed-stop" data-stop="\w+">.*?<b class="speed-name">(.*?)</b>', LANDING, re.S)
+        names = re.findall(r'<li class="speed-stop" data-stop="\w+">.*?<b class="speed-name">(.*?)</b>', PAGE, re.S)
         # The control stop as he named it later that day: "lets also call
         # Firaxis computer Control inside CIVVIS->Firaxis computer control".
         # His arrow is drawn as one.
@@ -214,9 +219,9 @@ class Ledger(unittest.TestCase):
         self.assertNotIn("worked", shown["control"])
         tabled = {row["key"]: row for row in speedup_timeline.worked(ROOT)["games"]}
         self.assertIs(tabled["firaxis_self_play"]["worked"], True)
-        self.assertIn('put(entry, "worked", stop.worked ? "worked out, not yet timed" : "");', LANDING)
-        self.assertIn('entry.classList.toggle("is-worked", !!stop.worked);', LANDING)
-        self.assertIn(".speed-stop.is-worked .speed-dot { background: var(--bg); border: 2px dashed var(--accent);", LANDING)
+        self.assertIn('put(entry, "worked", stop.worked ? "worked out, not yet timed" : "");', PAGE)
+        self.assertIn('entry.classList.toggle("is-worked", !!stop.worked);', PAGE)
+        self.assertIn(".speed-stop.is-worked .speed-dot { background: var(--panel); border: 2px dashed var(--accent);", PAGE)
         # It stands between computer control and the simulator.
         self.assertLess(shown["control"]["multiplier"], shown["firaxis_self_play"]["multiplier"])
         self.assertLess(shown["firaxis_self_play"]["multiplier"], shown["self_play"]["multiplier"])
@@ -294,7 +299,7 @@ class Ledger(unittest.TestCase):
         self.assertLess(ahead["fleet"]["at"], 1.0)
         for stop in ahead.values():
             self.assertNotIn("past", stop)
-        self.assertIn('entry.classList.toggle("is-past", !!stop.past);', LANDING)
+        self.assertIn('entry.classList.toggle("is-past", !!stop.past);', PAGE)
         # And neither is the page's number: that is the fastest measured stop.
         self.assertEqual(shown["fastest"], "all_cores")
         self.assertNotIn(shown["speedup"], [stop["times"] for stop in ahead.values()])
@@ -358,9 +363,9 @@ class Ledger(unittest.TestCase):
         self.assertEqual(alone["goal"], "goal 10 s, 1,800x")
         # The page takes the lead from the slot and words the second
         # measure to match.
-        self.assertIn('const fast = row.amortized && row.lead === "rate";', LANDING)
-        self.assertIn('put(entry, "time", fast ? row.rate : row.time);', LANDING)
-        self.assertIn('put(entry, "second", row.amortized ? "(" + (fast ? row.time + " a game" : row.rate) + ", amortized)" : "");', LANDING)
+        self.assertIn('const fast = row.amortized && row.lead === "rate";', PAGE)
+        self.assertIn('put(entry, "time", fast ? row.rate : row.time);', PAGE)
+        self.assertIn('put(entry, "second", row.amortized ? "(" + (fast ? row.time + " a game" : row.rate) + ", amortized)" : "");', PAGE)
         # A figure open at its top is open in both measures.
         fleet = next(entry for entry in entries if entry["key"] == "fleet")
         self.assertRegex(fleet["rate"], r"^[\d,]+\+ games/s$")
@@ -620,14 +625,14 @@ class Following(unittest.TestCase):
 
     def test_words_that_would_meet_on_one_side_stand_a_row_out(self):
         # A line that runs to a far goal holds the stops in a short stretch
-        # of it. Words are 150px wide on a line of at least 1040px.
+        # of it. Words are 150px wide on a line of at least 1000px.
         room = speedup_timeline.ROOM
-        self.assertAlmostEqual(room, 150 / 1040)
+        self.assertAlmostEqual(room, 150 / 1000)
         self.assertEqual(speedup_timeline.rows([0.0, 0.28, 0.42], ["below", "below", "below"]), [False, False, True])
         self.assertEqual(speedup_timeline.rows([0.0, 0.28, 0.42], ["below", "above", "below"]), [False, False, False])
         # In whatever order they are listed, and a third goes back to the
         # row next to the line once there is room for it there.
-        self.assertEqual(speedup_timeline.rows([0.4, 0.1, 0.0, 0.25], ["above"] * 4), [False, True, False, False])
+        self.assertEqual(speedup_timeline.rows([0.41, 0.1, 0.0, 0.25], ["above"] * 4), [False, True, False, False])
         # At an end of the line the words run inward from the point, so
         # their middle is half their width inside it: a stop at the very end
         # is nearer its neighbour than its point is.
@@ -636,7 +641,18 @@ class Following(unittest.TestCase):
         self.assertEqual(speedup_timeline.middle(0.5), 0.5)
         self.assertEqual(speedup_timeline.rows([0.81, 1.0], ["below", "below"]), [False, True])
         self.assertEqual(speedup_timeline.rows([0.7, 1.0], ["below", "below"]), [False, False])
-        self.assertIn("@media (min-width: 1120px) {", LANDING)
+        # The line is drawn from 1120px of window, in a panel of the page,
+        # and is then no shorter than the words were given room for: the
+        # window less a scrollbar, the page's own margins, and the panel's
+        # border and padding, each as the page's rules have them.
+        self.assertEqual(PAGE.count("@media (min-width: 1120px) {"), 1)
+        shell = re.search(r"^  \.shell \{ width: min\((\d+)px, 100%\); margin: 0 auto; padding: 0 clamp\(\d+px, \d+vw, (\d+)px\); \}$", PAGE, re.M)
+        panel = re.search(r"^  \.res-section \{ min-width: 0; padding: \d+px (\d+)px \d+px; border: (\d+)px solid var\(--border\);", PAGE, re.M)
+        widest, margin, padding, border = int(shell[1]), int(shell[2]), int(panel[1]), int(panel[2])
+        self.assertEqual(widest, 1120)
+        scrollbar = 17
+        shortest = widest - scrollbar - 2 * margin - 2 * padding - 2 * border
+        self.assertGreaterEqual(shortest, 150 / room, "the line can be drawn shorter than its words were given room for")
         shown = speedup_timeline.timeline(ROOT)
         entries = shown["stops"] + shown["projected"] + shown["goals"]
         # Every entry takes its side in turn along the line, whatever kind
@@ -808,7 +824,7 @@ class Worked(unittest.TestCase):
         with tempfile.TemporaryDirectory() as scratch:
             self.assertIsNone(speedup_timeline.worked(tree(scratch, {"goals": [{"key": "million", "times": 1000000}], "stops": []})))
 
-    def test_the_two_pages_read_one_ledger_and_agree(self):
+    def test_the_line_and_the_tables_read_one_ledger_and_agree(self):
         shown, line = speedup_timeline.worked(ROOT), speedup_timeline.timeline(ROOT)
         stops = {stop["key"]: stop for stop in line["stops"]}
         tabled = shown["games"] + [row for row in shown["throughput"] if row["kind"] == "measured"]
@@ -817,7 +833,7 @@ class Worked(unittest.TestCase):
             if row["key"] in stops:
                 self.assertEqual((row["times"], row["time"]), (stops[row["key"]]["times"], stops[row["key"]]["time"]), row["key"])
         self.assertLessEqual(set(stops), {row["key"] for row in tabled})
-        # The home page's number is the run's.
+        # The line's number is the run's.
         self.assertEqual(shown["answer"]["all"], line["speedup"])
         self.assertEqual([(goal["key"], goal["times"], goal["time"]) for goal in shown["goals"]],
                          [(goal["key"], goal["times"], goal["time"]) for goal in line["goals"]])
@@ -1392,32 +1408,41 @@ class History(unittest.TestCase):
 
 
 class Page(unittest.TestCase):
+    SECTION = PAGE[PAGE.index('<section class="res-section" id="perf-line"') : PAGE.index('<section class="res-section" id="perf-history"')]
+    SCRIPT = PAGE[PAGE.index("// ---- The same figures as a line"):PAGE.index("// ---- Each way of playing over time")]
+
     def test_the_page_has_an_entry_for_every_stop_and_no_figure_of_its_own(self):
-        entries = re.findall(r'<li class="speed-stop" data-stop="(\w+)">', LANDING)
+        entries = re.findall(r'<li class="speed-stop" data-stop="(\w+)">', PAGE)
         self.assertEqual(entries, [stop["key"] for stop in LEDGER["stops"] if stop.get("line") is not False])
-        self.assertEqual(LANDING.count('<script type="application/json" id="home-speedup">null</script>'), 1)
-        # The timeline is over the videos, and hidden until it is filled.
-        section = LANDING[LANDING.index('<section class="speed"') : LANDING.index('<section class="watch"')]
+        # Its figures are the page's one slot's, the record's `timeline`.
+        self.assertEqual(PAGE.count('<script type="application/json" id="performance-data">null</script>'), 1)
+        self.assertIn('const line = data.timeline && typeof data.timeline === "object" ? data.timeline : null;', PAGE)
+        self.assertIn("const fitLine = !line || !Array.isArray(line.stops) ? null : (() => {", PAGE)
+        # The timeline is a part of CIVVIS Performance, between the tables
+        # of sums and each way of playing over time, and hidden until it is
+        # filled.
+        section = self.SECTION
         # It has the operator's title over it (2026-11-24: "great new chart
         # for lets title "Civ Game Speedup - Synthetic Data Pipeline""), and
-        # the title is the section's name.
-        self.assertIn('<section class="speed" id="speed" aria-labelledby="speed-title" hidden>\n'
-                      '      <h2 class="speed-title" id="speed-title">Civ Game Speedup - Synthetic Data Pipeline</h2>\n'
-                      '      <div class="speed-head">', section)
-        self.assertEqual(LANDING.count("Civ Game Speedup - Synthetic Data Pipeline</h2>"), 1)
-        self.assertIn("section.hidden = false;", LANDING)
+        # the title is the section's name, set as every part's is here.
+        self.assertIn('<section class="res-section" id="perf-line" aria-labelledby="perf-line-title" hidden>\n'
+                      '        <h2 class="rank-title" id="perf-line-title">Civ Game Speedup - Synthetic Data Pipeline</h2>\n'
+                      '        <div class="speed">\n'
+                      '          <div class="speed-head">', section)
+        self.assertEqual(PAGE.count("Civ Game Speedup - Synthetic Data Pipeline</h2>"), 1)
+        self.assertIn("section.hidden = false;", self.SCRIPT)
         for place in ("speedup", "was", "cloud-by"):
             self.assertEqual(section.count(f'data-speed="{place}"'), 1, place)
-        # The machine rented and its price are CIVVIS Performance's to say,
-        # where the note's link goes: Home says whose estimate it is and no
-        # more (operator, 2026-11-24: "there is too much text on pages,
-        # particualrly home/ and charts/").
+        # The machine rented and its price are the cloud's table's to say,
+        # two tables up, where the note's link goes: the line says whose
+        # estimate it is and no more (operator, 2026-11-24: "there is too
+        # much text on pages, particualrly home/ and charts/").
         for place in ("cloud-machine", "cloud-price"):
-            self.assertNotIn(f'data-speed="{place}"', LANDING)
+            self.assertNotIn(f'data-speed="{place}"', PAGE)
         # The goals are the line's last entries, one for each in the ledger,
         # smallest first, and each stands at its own place as a stop does:
         # the largest is the line's left end.
-        goals = re.findall(r'<li class="speed-stop speed-finish" data-goal="(\w+)">', LANDING)
+        goals = re.findall(r'<li class="speed-stop speed-finish" data-goal="(\w+)">', PAGE)
         self.assertEqual(goals, [goal["key"] for goal in speedup_timeline.marked(LEDGER)])
         self.assertLess(section.rindex('data-stop="'), section.index('data-goal="'))
         # On this page each of them is named Theoretical (operator,
@@ -1426,15 +1451,15 @@ class Page(unittest.TestCase):
         # A stop's own goal, the small line under its time, keeps the word.
         named = re.findall(r'<li class="speed-stop speed-finish" data-goal="\w+">.*?<b class="speed-name">([^<]+)</b>', section, re.S)
         self.assertEqual(named, ["Theoretical"] * len(goals))
-        self.assertNotIn('<b class="speed-name">Goal</b>', LANDING)
+        self.assertNotIn('<b class="speed-name">Goal</b>', PAGE)
         self.assertNotIn("to a goal", re.sub(r"<!--.*?-->", "", section, flags=re.S))
-        self.assertNotIn(".speed-finish { right:", LANDING)
-        self.assertIn('entry.style.setProperty("--at", goal.at);', LANDING)
+        self.assertNotIn(".speed-finish { right:", PAGE)
+        self.assertIn('entry.style.setProperty("--at", goal.at);', PAGE)
         # Between the stops and the goals, the stops past what was measured
         # (operator, 2026-11-22: "hardware scaleup is to the left of m5
         # max"): one for each in the ledger, a ring like a goal's, and how
         # many times the M5 Max it is comes from the slot.
-        ahead = re.findall(r'<li class="speed-stop speed-ahead" data-ahead="(\w+)">', LANDING)
+        ahead = re.findall(r'<li class="speed-stop speed-ahead" data-ahead="(\w+)">', PAGE)
         self.assertEqual(ahead, [stop["key"] for stop in LEDGER["projected"]])
         self.assertLess(section.rindex('data-stop="'), section.index('data-ahead="'))
         self.assertLess(section.rindex('data-ahead="'), section.index('data-goal="'))
@@ -1453,10 +1478,14 @@ class Page(unittest.TestCase):
         self.assertIn('<small class="speed-goal"><span data-speed="by"></span> the M5 Max</small>', section)
         self.assertIn('<small class="speed-goal">potential, up to <span data-speed="by"></span></small>', section)
         self.assertEqual(section.count('data-speed="by"'), len(ahead))
-        self.assertIn(".speed-ahead .speed-dot { background: var(--bg); border: 2px solid var(--accent);", LANDING)
-        self.assertIn('entry.style.setProperty("--at", stop.at);', LANDING)
+        # A ring is hollow in the colour of the panel it stands on.
+        self.assertIn(".speed-ahead .speed-dot { background: var(--panel); border: 2px solid var(--accent);", PAGE)
+        self.assertIn(".speed-finish .speed-dot { background: var(--panel); border: 2px solid var(--gold);", PAGE)
+        rules = PAGE[PAGE.index("  .speed { margin:"):PAGE.index("  /* One tooltip for both charts")]
+        self.assertNotIn("var(--bg)", rules)
+        self.assertIn('entry.style.setProperty("--at", stop.at);', PAGE)
         # A goal stands on the side the slot gives it, as every entry does.
-        self.assertIn('entry.classList.add(goal.side === "below" ? "is-below" : "is-above");', LANDING)
+        self.assertIn('entry.classList.add(goal.side === "below" ? "is-below" : "is-above");', PAGE)
         for place in ("time", "times"):
             self.assertEqual(section.count(f'data-speed="{place}"'), len(entries) + len(ahead) + len(goals), place)
         self.assertEqual(section.count('data-speed="goal"'), len(entries))
@@ -1474,39 +1503,45 @@ class Page(unittest.TestCase):
         for key, block in blocks:
             if key in marked:
                 self.assertIn('<span class="speed-read"><b data-speed="time"></b> <i data-speed="times"></i></span>\n'
-                              '              <small class="speed-second" data-speed="second" hidden></small>', block, key)
-        self.assertIn('const fast = row.amortized && row.lead === "rate";', LANDING)
-        self.assertIn('put(entry, "time", fast ? row.rate : row.time);', LANDING)
-        self.assertIn('put(entry, "second", row.amortized ? "(" + (fast ? row.time + " a game" : row.rate) + ", amortized)" : "");', LANDING)
+                              '                  <small class="speed-second" data-speed="second" hidden></small>', block, key)
+        self.assertIn('const fast = row.amortized && row.lead === "rate";', PAGE)
+        self.assertIn('put(entry, "time", fast ? row.rate : row.time);', PAGE)
+        self.assertIn('put(entry, "second", row.amortized ? "(" + (fast ? row.time + " a game" : row.rate) + ", amortized)" : "");', PAGE)
         # And once under the line, what the word means: shown when any
         # entry is amortized.
         self.assertIn('<p class="speed-note" id="speed-amortized" hidden>Amortized: many games play at once, and the time is from one finished game to the next.</p>', section)
-        self.assertIn('document.getElementById("speed-amortized").hidden = !amortized;', LANDING)
+        self.assertIn('document.getElementById("speed-amortized").hidden = !amortized;', PAGE)
         # Under the line, whose estimate a goal's cloud cost is (operator
         # 2026-11-22: "note that this is a Fable 5.2 best estimate of the
         # numbers"): hidden until the slot names one, and the name is the
         # slot's.
         self.assertIn('<p class="speed-note" id="speed-note" hidden>', section)
         self.assertIn('Cloud cost: a best estimate by <span data-speed="cloud-by"></span>, not a quote.', section)
-        self.assertIn('<a href="../charts/civvis-performance/#perf-cloud">How it is worked out</a>', section)
-        self.assertIn('document.getElementById("speed-note").hidden = false;', LANDING)
+        self.assertIn('<a href="#perf-cloud">How it is worked out</a>', section)
+        self.assertEqual(PAGE.count('id="perf-cloud"'), 1)
+        self.assertIn('document.getElementById("speed-note").hidden = false;', PAGE)
         self.assertNotIn("Fable", section)
         # Words that would meet their neighbour's stand a row out, and how
         # far out, with the room each side of the line takes, is measured
         # from the words as they are written in: a name is one line or
         # three, and a stop may have a second measure and a goal.
-        self.assertIn('entry.classList.toggle("is-far", !!stop.far);', LANDING)
-        self.assertIn('entry.classList.toggle("is-far", !!goal.far);', LANDING)
-        self.assertIn(".speed-stop.is-far.is-above .speed-label { bottom: var(--out, 69px); }", LANDING)
-        self.assertIn(".speed-stop.is-far.is-below .speed-label { top: var(--out, 87px); }", LANDING)
-        self.assertIn('own.entry.style.setProperty("--out", out + "px");', LANDING)
-        self.assertIn('track.style.setProperty(side === "above" ? "--over" : "--under", Math.ceil(reach + 6) + "px");', LANDING)
-        for again in ("fit();", 'wide.addEventListener("change", fit);', 'window.addEventListener("resize", fit);'):
-            self.assertIn(again, LANDING)
-        self.assertNotIn("is-tall-", LANDING)
+        self.assertIn('entry.classList.toggle("is-far", !!stop.far);', PAGE)
+        self.assertIn('entry.classList.toggle("is-far", !!goal.far);', PAGE)
+        self.assertIn(".speed-stop.is-far.is-above .speed-label { bottom: var(--out, 69px); }", PAGE)
+        self.assertIn(".speed-stop.is-far.is-below .speed-label { top: var(--out, 87px); }", PAGE)
+        self.assertIn('own.entry.style.setProperty("--out", out + "px");', PAGE)
+        self.assertIn('track.style.setProperty(side === "above" ? "--over" : "--under", Math.ceil(reach + 6) + "px");', PAGE)
+        # The words are measured, so the first fit waits for the record to
+        # show: the part's script gives `fit` back and the page calls it
+        # once nothing is hidden, and again when the window changes.
+        for again in ("return fit;", 'wide.addEventListener("change", fit);', 'window.addEventListener("resize", fit);'):
+            self.assertIn(again, self.SCRIPT)
+        shown_at = PAGE.index('document.getElementById("perf-record").hidden = false;')
+        self.assertIn("if (fitLine) fitLine();", PAGE[shown_at:])
+        self.assertNotIn("is-tall-", PAGE)
         # The narrow layout is a list, slowest first, whatever kind an entry
         # is: a stop nothing has played can be slower than a measured one.
-        self.assertIn("for (const entry of [...line.children].sort((one, other) => pace(one) - pace(other))) line.append(entry);", LANDING)
+        self.assertIn("for (const entry of [...list.children].sort((one, other) => pace(one) - pace(other))) list.append(entry);", PAGE)
         # No figure is written into the page: every one is the slot's. But
         # for the operator's note on the first stop, his words as he wrote
         # them, which name his own five hours: the note's own test holds
@@ -1516,33 +1551,61 @@ class Page(unittest.TestCase):
         self.assertEqual(notes, 1)
         self.assertIsNone(re.search(r"\d[\d,.]*\s*(x|s|min|h)\b", re.sub(r"<[^>]+>", " ", text)))
         # 1x is at the right end of the line and the largest goal at the left.
-        self.assertIn(".speed-stop { position: absolute; right: calc(var(--at) * 100%);", LANDING)
-        self.assertIn("width: calc(var(--reach, 0) * 100%);", LANDING)
-        self.assertIn('entry.style.setProperty("--at", stop.at);', LANDING)
-        self.assertNotIn("innerHTML", LANDING)
+        self.assertIn(".speed-stop { position: absolute; right: calc(var(--at) * 100%);", PAGE)
+        self.assertIn("width: calc(var(--reach, 0) * 100%);", PAGE)
+        self.assertIn('entry.style.setProperty("--at", stop.at);', PAGE)
+        for unsafe in ("innerHTML", "insertAdjacentHTML", "outerHTML"):
+            self.assertNotIn(unsafe, self.SCRIPT)
 
-    def test_publishing_writes_the_timeline_into_its_slot(self):
+    def test_it_stands_in_the_middle_of_civvis_performance_and_home_has_none_of_it(self):
+        # Operator 2026-11-24: "move the civvis performance timeline thing
+        # from home/ to the civvis performance section. middle of the page
+        # or so". It is the page's third part of eight, under the tables
+        # that work its figures out and over the charts of each of its stops
+        # over time: with the page's figures in it, about two fifths of the
+        # way down.
+        parts = re.findall(r'<section class="res-section" id="([\w-]+)"', PAGE)
+        at = parts.index("perf-line")
+        self.assertEqual(parts[at - 1 : at + 2], ["perf-speedup", "perf-line", "perf-history"])
+        self.assertGreaterEqual(at, 2)
+        self.assertGreaterEqual(len(parts) - 1 - at, 2)
+        # The tables' link to the line is to this page's own part.
+        self.assertIn('<a href="#perf-line">The same figures as a line</a>', PAGE)
+        self.assertNotIn("home/#speed", PAGE)
+        # Home has none of it left: no entry, no rule, no script, no slot.
+        for gone in ('class="speed', "speed-stop", "speed-track", "data-speed=", "home-speedup", "Civ Game Speedup"):
+            self.assertNotIn(gone, LANDING, gone)
+        self.assertFalse(hasattr(speedup_timeline, "SLOT"))
+        self.assertFalse(hasattr(home_rankings, "speedup_timeline"))
+
+    def test_publishing_writes_the_timeline_into_the_page_s_record(self):
         shown = speedup_timeline.timeline(ROOT)
+        self.assertTrue(shown["stops"])
         with tempfile.TemporaryDirectory() as scratch:
             page = pathlib.Path(scratch) / "index.html"
-            page.write_text(LANDING, encoding="utf-8")
-            with contextlib.redirect_stderr(io.StringIO()) as said:
-                self.assertEqual(home_rankings.main(["home_rankings.py", str(ROOT), str(page)]), 0)
-            self.assertIn("the speed timeline", said.getvalue())
+            page.write_text(PAGE, encoding="utf-8")
+            with contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(performance_page.main(["performance_page.py", str(ROOT), str(page)]), 0)
             filled = page.read_text(encoding="utf-8")
-            self.assertEqual(json.loads(speedup_timeline.SLOT.search(filled)[2]), shown)
-            # Nothing but the page's slots moved: this one, the videos' and
-            # the Firaxis AI benchmark's (`beta/home_rankings_test.py`
-            # reads those two).
-            bare = lambda text: home_rankings.BENCHMARK_SLOT.sub("", home_rankings.VIDEOS_SLOT.sub("", speedup_timeline.SLOT.sub("", text)))  # noqa: E731
-            self.assertEqual(bare(filled), bare(LANDING))
-            # A revision with no ledger: the slot says so and the section
-            # stays hidden.
-            page.write_text(LANDING, encoding="utf-8")
-            with contextlib.redirect_stderr(io.StringIO()) as said:
-                self.assertEqual(home_rankings.main(["home_rankings.py", scratch, str(page)]), 0)
-            self.assertIn("no speed timeline", said.getvalue())
-            self.assertIn('<script type="application/json" id="home-speedup">null</script>', page.read_text(encoding="utf-8"))
+            self.assertEqual(json.loads(performance_page.SLOT.search(filled)[2])["timeline"], shown)
+            # Nothing but the page's slot moved.
+            bare = lambda text: performance_page.SLOT.sub("", text)  # noqa: E731
+            self.assertEqual(bare(filled), bare(PAGE))
+            # Home's script no longer writes it: a page with a slot of the
+            # old name is left as it is.
+            old = pathlib.Path(scratch) / "old.html"
+            old.write_text('<script type="application/json" id="home-speedup">null</script>', encoding="utf-8")
+            with contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(home_rankings.main(["home_rankings.py", str(ROOT), str(old)]), 0)
+            self.assertEqual(old.read_text(encoding="utf-8"), '<script type="application/json" id="home-speedup">null</script>')
+        # A revision with no ledger has no line: a record it has for
+        # another reason says so, and the part stays hidden.
+        with tempfile.TemporaryDirectory() as scratch, contextlib.redirect_stderr(io.StringIO()):
+            self.assertIsNone(speedup_timeline.timeline(pathlib.Path(scratch)))
+            self.assertIsNone(performance_page.performance(pathlib.Path(scratch)))
+            (pathlib.Path(scratch) / performance_page.VIDEOS).parent.mkdir(parents=True)
+            (pathlib.Path(scratch) / performance_page.VIDEOS).write_text((ROOT / performance_page.VIDEOS).read_text(encoding="utf-8"), encoding="utf-8")
+            self.assertIsNone(performance_page.performance(pathlib.Path(scratch))["timeline"])
 
 
 if __name__ == "__main__":

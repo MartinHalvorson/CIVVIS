@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
-"""The home page's speed timeline: five ways one game of Civilization VI gets
-played, and how many times faster each is than a person playing it by hand.
+"""The speed timeline of CIVVIS Performance: five ways one game of
+Civilization VI gets played, and how many times faster each is than a person
+playing it by hand. It was the home page's, over the videos, until 2026-11-24
+(operator: "move the civvis performance timeline thing from home/ to the
+civvis performance section. middle of the page or so"); it is now a part of
+`beta/performance.html`, under the tables this module works out for it.
 
     speedup_timeline.py <source_tree>            print the timeline as JSON
     speedup_timeline.py --worked <source_tree>   print the worked tables as JSON
@@ -20,15 +24,15 @@ takes and how that was measured), oldest first. The newest reading is the one
 the page shows and the older ones are the track of how far a stop has been
 pushed. A stop with `follows` keeps no readings of its own: it is read from
 the games-per-minute ledger (`tools/games_per_minute.py --record`), one
-reading for every run that set a record, so a new record there moves the home
+reading for every run that set a record, so a new record there moves the
 page with no second edit.
 
 A stop's multiplier is the first stop's seconds over its own, and the page's
 one number is the largest of them. Nothing derived is written in the ledger:
 the multipliers, the texts and each stop's place on the line are worked out
-here when the site is published (`beta/home_rankings.py` writes the result
-into the home page's `home-speedup` slot), so the page cannot say a figure the
-ledger does not.
+here when the site is published (`beta/performance_page.py` writes the result
+into the page's slot as the record's `timeline`), so the page cannot say a
+figure the ledger does not.
 
 The line is a scale of multipliers by tenfolds, 1x at its right end and its
 end at its left: a stop stands at `log(multiplier) / log(end)` of the way
@@ -111,7 +115,6 @@ from __future__ import annotations
 import json
 import math
 import pathlib
-import re
 import sys
 
 import control_times
@@ -127,9 +130,6 @@ PROCESSORS = pathlib.Path("data/performance/processors.json")
 #: The self-play tournament's finished batches, a snapshot in the source
 #: tree (`beta/performance_page.py --self-play` rebuilds it).
 SELF_PLAY = pathlib.Path("data/performance/self_play_times.json")
-
-#: The home page's slot for the timeline.
-SLOT = re.compile(r'(<script type="application/json" id="home-speedup">)(.*?)(</script>)', re.S)
 
 #: The ledgers a stop may follow, by the name it follows them under, each
 #: with what turns one of its runs into a reading's seconds and its `from`.
@@ -332,13 +332,16 @@ def sides(places: list[float]) -> list[str]:
 
 
 #: How far apart along the line two stops' words must stand to share a row,
-#: as a share of the line: the words are 150px wide, and the line is 1040px
-#: long or longer wherever the page draws it.
-ROOM = 150 / 1040
+#: as a share of the line: the words are 150px wide, and the line is 1000px
+#: long or longer wherever the page draws it. That is the inside of a panel
+#: of CIVVIS Performance from 1120px of window, where the line is drawn:
+#: 1026px, or 1009px with a scrollbar's 17px taken. It was 1040px while the
+#: line stood on Home, in no panel.
+ROOM = 150 / 1000
 
 
 #: A stop this near an end of the line has its words begin or end at its
-#: point, where the others' are centred on theirs (the home page's `is-end`
+#: point, where the others' are centred on theirs (the page's `is-end`
 #: under this share of the line and `is-start` past one less it).
 EDGE = 0.08
 
@@ -573,7 +576,7 @@ def projected(ledger: dict, measured: list[tuple[dict, list[dict]]], base: float
 
 
 def timeline(source: pathlib.Path) -> dict | None:
-    """What the home page shows: the stops in the ledger's order, each with
+    """What the page's line shows: the stops in the ledger's order, each with
     its newest reading as a time and a multiplier, its goal when it has one,
     where it started when it has moved, and its place on the line; the largest
     multiplier, which is the page's number; and the `goals`, smallest first,
@@ -808,7 +811,7 @@ def worked(source: pathlib.Path) -> dict | None:
     has one, from a game played with the machine to itself (`basis:
     "alone"`). A theory row of a stop with a measured run says what share of
     it that run `reaches`. Last come the goals the runs are held against
-    (`kind: "goal"`): each measured run's own, and the goals the home page's
+    (`kind: "goal"`): each measured run's own, and the goals the page's
     line is marked with (`whole`, under the goal's own key). `goals` are
     those goals by themselves, smallest first. `answer` is the page's opening
     sentence in figures: the self-play stop one game at a time, on every
@@ -1057,7 +1060,7 @@ def history(source: pathlib.Path) -> dict | None:
     over time"). `None` when the revision has no ledger or one that cannot
     be read.
 
-    `rows` are the stops of the home page's line after the baseline, in its
+    `rows` are the stops of the page's line after the baseline, in its
     order. A row has `lines`, each a run of dated points (`taken`, `seconds`,
     and `time` as it is worded) with the `pace` it has kept (see `pace`):
 
@@ -1085,7 +1088,7 @@ def history(source: pathlib.Path) -> dict | None:
       rate the machine keeps while the live game and everything else run
       beside the tournament. It is far under a record run's.
 
-    A row's `now` is the stop's figure as the home page's line shows it:
+    A row's `now` is the stop's figure as the page's line shows it:
     the `time`, and `worked` when it was worked out and not timed. `base` is
     the baseline's seconds, and `from` and `to` the first and last day any
     line has a point on.
