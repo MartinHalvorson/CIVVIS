@@ -879,6 +879,20 @@ impl Game {
     /// execute together, not a list of places the unit may be left standing.
     /// `Action::MoveTo` is the only thing that may execute it.
     pub(crate) fn path_to(&self, uid: u32, to: Pos) -> Option<Vec<Pos>> {
+        self.path_to_in(uid, to, &mut None)
+    }
+
+    /// [`Game::path_to`], keeping the unit's flood in `flood` for the next
+    /// target. The flood covers the unit's whole remaining movement and
+    /// does not depend on the target, so a caller asking one unit on one
+    /// board for paths to many targets floods once instead of once a target.
+    /// Every per-target check runs as before, in the same order.
+    fn path_to_in(
+        &self,
+        uid: u32,
+        to: Pos,
+        flood: &mut Option<crate::fast_map::FastMap<Pos, Pos>>,
+    ) -> Option<Vec<Pos>> {
         let (start, moves) = {
             let u = self.units.get(&uid)?;
             (u.pos, u.moves_left)
@@ -898,22 +912,27 @@ impl Game {
         if self.formation_movement_locked_by_zoc(uid) {
             return None;
         }
-        let _memo = self.query_memo();
-        let mut parent: crate::fast_map::FastMap<Pos, Pos> = crate::fast_map::FastMap::default();
-        // Run for its parents: `f64` is the zone-of-control rule `flow` uses,
-        // which is what this path has always been read against. What the
-        // flood reached is not read, so it is not kept; the parents are only
-        // ever asked one tile at a time, so they are hashed.
-        self.relax_movement_into::<f64, _, _, _>(
-            uid,
-            start,
-            moves,
-            self.neighbor_passer(uid, false),
-            |n, cur| {
-                parent.insert(n, cur);
-            },
-            &mut DiscardReached,
-        );
+        let parent = flood.get_or_insert_with(|| {
+            let _memo = self.query_memo();
+            let mut parent: crate::fast_map::FastMap<Pos, Pos> =
+                crate::fast_map::FastMap::default();
+            // Run for its parents: `f64` is the zone-of-control rule `flow`
+            // uses, which is what this path has always been read against.
+            // What the flood reached is not read, so it is not kept; the
+            // parents are only ever asked one tile at a time, so they are
+            // hashed.
+            self.relax_movement_into::<f64, _, _, _>(
+                uid,
+                start,
+                moves,
+                self.neighbor_passer(uid, false),
+                |n, cur| {
+                    parent.insert(n, cur);
+                },
+                &mut DiscardReached,
+            );
+            parent
+        });
         parent.get(&to)?;
         let mut path = vec![to];
         let mut cur = to;
@@ -1144,10 +1163,13 @@ impl Game {
             .filter(|(distance, _)| *distance < here && *distance >= stop_range)
             .collect();
         candidates.sort_unstable();
+        // One flood for every candidate: the unit and the board are the same
+        // for each, and only the walk back from the candidate differs.
+        let mut flood = None;
         candidates
             .into_iter()
             .find(|(_, pos)| {
-                self.path_to(uid, *pos)
+                self.path_to_in(uid, *pos, &mut flood)
                     .is_some_and(|path| path.iter().any(|step| !self.can_stop(uid, *step)))
             })
             .map(|(_, pos)| pos)
