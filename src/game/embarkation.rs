@@ -101,7 +101,7 @@ impl Game {
         let mut s = self.rules.units[u.kind].strength.max(1.0)
             + self.government_combat_bonus(u, true)
             + self.unit_formation_bonus(u)
-            + self.promotion_effect(u, "combat_all")
+            + self.promotion_effect(u, crate::name!("combat_all"))
             + self.congress_military_strength_bonus(u)
             + self.religious_combat_belief_bonus(u)
             + self.handicap_combat_strength(u.owner);
@@ -115,7 +115,7 @@ impl Game {
         if self.has_ability(u.owner, "gifts_for_the_tlatoani") {
             s += self.empire_luxuries(u.owner) as f64; // Montezuma
         }
-        s += self.civ_effect(u.owner, "combat_strength");
+        s += self.civ_effect(u.owner, crate::name!("combat_strength"));
         s += self.mongolian_cavalry_strength(u);
         if u.kind == "nihang" {
             let encampment_buildings = ["barracks", "armory", "military_academy"]
@@ -128,10 +128,10 @@ impl Game {
                 })
                 .count() as f64;
             s += 15.0 * encampment_buildings;
-            if self.promotion_effect(u, "lahore_suzerain_combat") > 0.0
+            if self.promotion_effect(u, crate::name!("lahore_suzerain_combat")) > 0.0
                 && self.grants_city_state_unique_bonus(u.owner, "Lahore")
             {
-                s += self.promotion_effect(u, "lahore_suzerain_combat");
+                s += self.promotion_effect(u, crate::name!("lahore_suzerain_combat"));
             }
         }
         // Foreign Ministry: "City State units gain +4 Combat Strength if you
@@ -178,13 +178,15 @@ impl Game {
                     .is_some_and(|city| city.owner == u.owner)
             });
         if friendly {
-            s += self.policy_effect(u.owner, "friendly_combat");
+            s += self.policy_effect(u.owner, crate::name!("friendly_combat"));
         }
         let wounded_penalty = (10.0 - u.hp.clamp(0, 100) as f64 / 10.0).round();
-        if self.promotion_effect(u, "no_wounded_penalty") > 0.0 {
+        if self.promotion_effect(u, crate::name!("no_wounded_penalty")) > 0.0 {
             s += wounded_penalty;
         }
-        s += wounded_penalty * self.policy_effect(u.owner, "wounded_penalty_reduction_pct") / 100.0;
+        s += wounded_penalty
+            * self.policy_effect(u.owner, crate::name!("wounded_penalty_reduction_pct"))
+            / 100.0;
         s
     }
 

@@ -210,16 +210,17 @@ impl Game {
             return DisasterShelter::default();
         };
         DisasterShelter {
-            immune: self.governor_effect(city.owner, city.id, "disaster_immunity") > 0.0,
+            immune: self.governor_effect(city.owner, city.id, crate::name!("disaster_immunity"))
+                > 0.0,
             flood: self.city_wonder_effect(city, "flood_immunity") > 0.0
                 || self.city_district_effect(city, "flood_protection") > 0.0,
             drought: self.city_district_effect(city, "drought_protection") > 0.0,
-            coast: self.city_building_effect(city, "protect_coastal_lowlands") > 0.0,
+            coast: self.city_building_effect(city, crate::name!("protect_coastal_lowlands")) > 0.0,
         }
     }
 
     pub(super) fn city_disaster_protected(&self, city: &City, district_effect: &str) -> bool {
-        self.governor_effect(city.owner, city.id, "disaster_immunity") > 0.0
+        self.governor_effect(city.owner, city.id, crate::name!("disaster_immunity")) > 0.0
             || self.city_district_effect(city, district_effect) > 0.0
     }
 
@@ -247,7 +248,8 @@ impl Game {
             let district_protection = self.city_district_effect(city, "flood_protection") > 0.0;
             let protected = great_bath
                 || district_protection
-                || self.governor_effect(city.owner, city.id, "disaster_immunity") > 0.0;
+                || self.governor_effect(city.owner, city.id, crate::name!("disaster_immunity"))
+                    > 0.0;
             if protected {
                 if great_bath || district_protection {
                     protected_by_infrastructure.insert(city.owner);
@@ -277,7 +279,8 @@ impl Game {
                 .and_then(|tile| tile.owner_city)
                 .and_then(|city_id| self.cities.get(&city_id))
                 .is_some_and(|city| {
-                    self.governor_effect(city.owner, city.id, "disaster_immunity") > 0.0
+                    self.governor_effect(city.owner, city.id, crate::name!("disaster_immunity"))
+                        > 0.0
                 });
             let Some(tile) = self.map.tiles.get_mut(&position) else {
                 continue;
@@ -477,7 +480,7 @@ impl Game {
         else {
             return false;
         };
-        if self.governor_effect(city.owner, city.id, "disaster_immunity") > 0.0 {
+        if self.governor_effect(city.owner, city.id, crate::name!("disaster_immunity")) > 0.0 {
             return true;
         }
         district_effect.is_some_and(|effect| self.city_district_effect(city, effect) > 0.0)
@@ -491,7 +494,12 @@ impl Game {
         let Some(city_id) = self.city_at(position) else {
             return;
         };
-        if self.governor_effect(self.cities[&city_id].owner, city_id, "disaster_immunity") > 0.0 {
+        if self.governor_effect(
+            self.cities[&city_id].owner,
+            city_id,
+            crate::name!("disaster_immunity"),
+        ) > 0.0
+        {
             return;
         }
         let owner = self.cities[&city_id].owner;
@@ -851,11 +859,16 @@ impl Game {
         let mut protected_by_barrier = BTreeSet::new();
         for city_id in city_ids {
             let lowlands = self.coastal_lowland_tiles(&self.cities[&city_id]);
-            let barrier =
-                self.city_building_effect(&self.cities[&city_id], "protect_coastal_lowlands") > 0.0;
+            let barrier = self.city_building_effect(
+                &self.cities[&city_id],
+                crate::name!("protect_coastal_lowlands"),
+            ) > 0.0;
             let protected = barrier
-                || self.governor_effect(self.cities[&city_id].owner, city_id, "disaster_immunity")
-                    > 0.0;
+                || self.governor_effect(
+                    self.cities[&city_id].owner,
+                    city_id,
+                    crate::name!("disaster_immunity"),
+                ) > 0.0;
             if protected {
                 if barrier && !lowlands.is_empty() {
                     protected_by_barrier.insert(self.cities[&city_id].owner);
@@ -912,7 +925,9 @@ impl Game {
             .get(position)
             .and_then(|tile| tile.owner_city)
             .and_then(|city| self.cities.get(&city))
-            .is_some_and(|city| self.city_building_effect(city, "protect_coastal_lowlands") > 0.0)
+            .is_some_and(|city| {
+                self.city_building_effect(city, crate::name!("protect_coastal_lowlands")) > 0.0
+            })
     }
 
     fn flood_lowland_band(&mut self, band: u8) {
@@ -1082,7 +1097,8 @@ impl Game {
         let Some(city) = self.cities.get(&city_id) else {
             return 0.0;
         };
-        if self.city_building_effect(city, "reactor_accident_risk") <= 0.0 || city.reactor_age <= 10
+        if self.city_building_effect(city, crate::name!("reactor_accident_risk")) <= 0.0
+            || city.reactor_age <= 10
         {
             return 0.0;
         }
@@ -1131,7 +1147,10 @@ impl Game {
             .player_city_ids(pid)
             .into_iter()
             .filter(|city_id| {
-                self.city_building_effect(&self.cities[city_id], "reactor_accident_risk") > 0.0
+                self.city_building_effect(
+                    &self.cities[city_id],
+                    crate::name!("reactor_accident_risk"),
+                ) > 0.0
             })
             .collect();
         for city_id in reactors {

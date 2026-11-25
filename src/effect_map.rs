@@ -22,6 +22,82 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::name::Name;
 
+/// An effect's key as the effect lookups (`Game::policy_effect`,
+/// `governor_effect`, `city_building_effect`, …) take it: its text, or the
+/// [`Name`] that text interns to. A call site that writes
+/// `crate::name!("shrine_food")` interns its literal once, and every lookup
+/// after that is by integer: the effect index answers with one array read
+/// (see [`crate::specmap::SpecKey`]) and an [`EffectMap`] compares ids, where
+/// the text was hashed, probed and compared byte for byte on every call. A
+/// name's id is its text's, so both find the same entry.
+pub trait EffectKey: crate::specmap::SpecKey + Copy {
+    /// The key's text, for the paths that are still keyed by it (runtime
+    /// modifier bundles, read traces, per-turn aggregates).
+    fn text(&self) -> &str;
+    /// This key's value in `effects`.
+    fn in_effects(self, effects: &EffectMap) -> Option<f64>;
+}
+
+impl EffectKey for &str {
+    #[inline]
+    fn text(&self) -> &str {
+        self
+    }
+
+    #[inline]
+    fn in_effects(self, effects: &EffectMap) -> Option<f64> {
+        effects.get(self).copied()
+    }
+}
+
+impl EffectKey for &String {
+    #[inline]
+    fn text(&self) -> &str {
+        self.as_str()
+    }
+
+    #[inline]
+    fn in_effects(self, effects: &EffectMap) -> Option<f64> {
+        effects.get(self).copied()
+    }
+}
+
+impl EffectKey for &&str {
+    #[inline]
+    fn text(&self) -> &str {
+        self
+    }
+
+    #[inline]
+    fn in_effects(self, effects: &EffectMap) -> Option<f64> {
+        effects.get(self).copied()
+    }
+}
+
+impl EffectKey for Name {
+    #[inline]
+    fn text(&self) -> &str {
+        self.as_str()
+    }
+
+    #[inline]
+    fn in_effects(self, effects: &EffectMap) -> Option<f64> {
+        effects.get_name(self)
+    }
+}
+
+impl EffectKey for &Name {
+    #[inline]
+    fn text(&self) -> &str {
+        self.as_str()
+    }
+
+    #[inline]
+    fn in_effects(self, effects: &EffectMap) -> Option<f64> {
+        effects.get_name(*self)
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct EffectMap {
     /// In ascending key order, as the `BTreeMap` iterated.

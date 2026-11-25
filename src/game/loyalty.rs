@@ -260,20 +260,23 @@ impl Game {
             delta -= 4.0;
         }
         if self.city_governor_active(pid, cid) {
-            delta += 8.0 + self.policy_effect(pid, "governor_loyalty");
+            delta += 8.0 + self.policy_effect(pid, crate::name!("governor_loyalty"));
         } else {
             delta += self
                 .cities
                 .values()
                 .filter(|source| source.owner == pid)
-                .map(|source| self.city_building_effect(source, "no_governor_loyalty"))
+                .map(|source| {
+                    self.city_building_effect(source, crate::name!("no_governor_loyalty"))
+                })
                 .sum::<f64>();
         }
         if let Some(victor_city) = self.established_governor_city(pid, "victor") {
             if self.wdist(self.cities[&victor_city].pos, cpos) <= 9 {
                 // Gathering Storm applies the aura to Victor's own city too,
                 // despite the Civilopedia saying "other cities."
-                delta += self.governor_effect(pid, victor_city, "nearby_city_loyalty");
+                delta +=
+                    self.governor_effect(pid, victor_city, crate::name!("nearby_city_loyalty"));
             }
         }
         let garrison_formation = self
@@ -287,11 +290,11 @@ impl Game {
             .max();
         let garrisoned = garrison_formation.is_some();
         if let Some(formation) = garrison_formation {
-            delta += self.policy_effect(pid, "garrison_loyalty");
+            delta += self.policy_effect(pid, crate::name!("garrison_loyalty"));
             delta += if formation > 0 {
-                self.civ_effect(pid, "formation_garrison_loyalty")
+                self.civ_effect(pid, crate::name!("formation_garrison_loyalty"))
             } else {
-                self.civ_effect(pid, "garrison_loyalty")
+                self.civ_effect(pid, crate::name!("garrison_loyalty"))
             };
         }
         // Occupation. Rise & Fall charged a flat -1 to -5; Gathering Storm
@@ -332,8 +335,9 @@ impl Game {
             .filter(|diplomat| *diplomat != pid)
             .filter_map(|diplomat| {
                 let source = self.established_governor_city(diplomat, "amani")?;
-                (self.wdist(self.cities.get(&source)?.pos, cpos) <= 9)
-                    .then(|| self.governor_effect(diplomat, source, "foreign_city_loyalty"))
+                (self.wdist(self.cities.get(&source)?.pos, cpos) <= 9).then(|| {
+                    self.governor_effect(diplomat, source, crate::name!("foreign_city_loyalty"))
+                })
             })
             .sum::<f64>();
         delta += city
@@ -353,7 +357,7 @@ impl Game {
                     }
             })
             .sum::<f64>();
-        delta += self.city_building_effect(city, "loyalty_per_turn");
+        delta += self.city_building_effect(city, crate::name!("loyalty_per_turn"));
         // Preslav, as the expansions rewrote it: `ADJUST_IDENTITY_PER_TURN` 2
         // for its Suzerain, one row for a Barracks or a Stable (`TEST_ANY`),
         // one for an Armory and one for a Military Academy.
@@ -402,10 +406,10 @@ impl Game {
                 .sum::<f64>();
         }
         if self.on_foreign_continent(pid, cpos) {
-            delta += self.policy_effect(pid, "foreign_continent_city_loyalty");
+            delta += self.policy_effect(pid, crate::name!("foreign_continent_city_loyalty"));
         }
         // Automated Workforce's ADJUST_IDENTITY_PER_TURN (-5), every city.
-        delta += self.policy_effect(pid, "city_loyalty");
+        delta += self.policy_effect(pid, crate::name!("city_loyalty"));
         delta += self
             .cities
             .values()

@@ -26,7 +26,7 @@ impl Game {
     pub fn builder_charges(&self, owner: usize) -> i32 {
         let mut charges = self.rules.units["builder"].charges;
         charges += self.empire_building_sum(owner, |b| b.builder_charges as f64) as i32;
-        charges += self.empire_wonder_effect(owner, "builder_charges") as i32;
+        charges += self.empire_wonder_effect(owner, crate::name!("builder_charges")) as i32;
         if self.has_policy(owner, "serfdom") {
             charges += 2;
         }
@@ -60,12 +60,13 @@ impl Game {
             spec.charges
         };
         if spec.religious_spread > 0.0 {
-            charges += self.empire_wonder_effect(owner, "religious_spread_charges") as i32;
+            charges +=
+                self.empire_wonder_effect(owner, crate::name!("religious_spread_charges")) as i32;
             if let Some(city_id) = self.city_at(pos) {
                 if self.cities[&city_id].owner == owner {
                     charges += self.city_building_effect(
                         &self.cities[&city_id],
-                        "religious_unit_spread_charges",
+                        crate::name!("religious_unit_spread_charges"),
                     ) as i32;
                 }
             }
@@ -102,7 +103,7 @@ impl Game {
             hp: 100,
             damage_dealt: 0,
             production_cost: spec.cost,
-            moves_left: spec.moves + self.civ_effect(owner, "unit_movement"),
+            moves_left: spec.moves + self.civ_effect(owner, crate::name!("unit_movement")),
             charges,
             xp: 0,
             album_sales: 0,
@@ -139,7 +140,9 @@ impl Game {
         {
             u.xp = u.xp.max(Self::promotion_threshold(u.level));
         }
-        if kind == "apostle" && self.empire_wonder_effect(owner, "apostles_gain_martyr") > 0.0 {
+        if kind == "apostle"
+            && self.empire_wonder_effect(owner, crate::name!("apostles_gain_martyr")) > 0.0
+        {
             u.promotions.insert(crate::name!("martyr"));
         }
         self.next_id += 1;

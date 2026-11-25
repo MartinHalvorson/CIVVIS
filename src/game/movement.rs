@@ -159,11 +159,12 @@ impl Game {
         let terms = StepTerms {
             religious_flat_movement: spec.class == "religious"
                 && unit.religion.as_deref().is_some_and(|religion| {
-                    self.religion_belief_effect(religion, "religious_flat_movement") > 0.0
+                    self.religion_belief_effect(religion, crate::name!("religious_flat_movement"))
+                        > 0.0
                 }),
             woods_move_cost: self.unit_effect(unit, "woods_move_cost"),
             hills_move_cost: self.unit_effect(unit, "hills_move_cost"),
-            amphibious: self.promotion_effect(unit, "amphibious"),
+            amphibious: self.promotion_effect(unit, crate::name!("amphibious")),
         };
         if let Some(memo) = self.query_memo.movement.borrow_mut().as_mut() {
             memo.entry(unit.id).or_default().step = Some(terms);
@@ -189,8 +190,8 @@ impl Game {
         }
         let spec = &self.rules.units[unit.kind];
         let terms = MoveTerms {
-            promotion_movement: self.promotion_effect(unit, "movement"),
-            civilization_movement: self.civ_effect(unit.owner, "unit_movement"),
+            promotion_movement: self.promotion_effect(unit, crate::name!("movement")),
+            civilization_movement: self.civ_effect(unit.owner, crate::name!("unit_movement")),
             guru_adjacent: spec.class == "religious"
                 // The tile and its neighbours, without building the disk's Vec.
                 && std::iter::once(unit.pos).chain(self.nbrs(unit.pos)).any(|position| {
@@ -229,7 +230,8 @@ impl Game {
             naval_movement_tree: self.tree_effect(unit.owner, "naval_movement"),
             embarked_movement_tree: self.tree_effect(unit.owner, "embarked_movement"),
             mana: self.has_ability(unit.owner, "mana"),
-            naval_movement_wonder: self.empire_wonder_effect(unit.owner, "naval_movement"),
+            naval_movement_wonder: self
+                .empire_wonder_effect(unit.owner, crate::name!("naval_movement")),
         };
         if let Some(memo) = self.query_memo.movement.borrow_mut().as_mut() {
             memo.entry(unit.id).or_default().naval = Some(terms);
@@ -473,7 +475,7 @@ impl Game {
         };
         self.map.tiles[&from].wonder.as_deref() == Some("golden_gate_bridge")
             || self.map.tiles[&to].wonder.as_deref() == Some("golden_gate_bridge")
-            || self.promotion_effect(unit, "scale_cliffs") > 0.0
+            || self.promotion_effect(unit, crate::name!("scale_cliffs")) > 0.0
             || self.embarkation_facility_at(water_side)
     }
 
@@ -514,7 +516,8 @@ impl Game {
             moves += naval.naval_movement_wonder;
         }
         if terms.guru_adjacent {
-            moves += self.empire_wonder_effect(u.owner, "guru_adjacent_religious_movement");
+            moves += self
+                .empire_wonder_effect(u.owner, crate::name!("guru_adjacent_religious_movement"));
         }
         if u.kind == "giant_death_robot" {
             moves += self.tree_effect(u.owner, "gdr_movement");
@@ -687,7 +690,7 @@ impl Game {
             return false;
         }
         if u.attacks_left < self.unit_max_attacks(uid)
-            && self.promotion_effect(u, "move_after_attack") == 0.0
+            && self.promotion_effect(u, crate::name!("move_after_attack")) == 0.0
         {
             return false;
         }
@@ -737,7 +740,9 @@ impl Game {
             || unit.kind == "trader"
             || unit.kind == "rock_band"
             || (unit.kind == "archaeologist"
-                && self.empire_wonder_effect(unit.owner, "archaeologist_open_borders") > 0.0)
+                && self
+                    .empire_wonder_effect(unit.owner, crate::name!("archaeologist_open_borders"))
+                    > 0.0)
     }
 
     /// The complete territory gate shared by immediate movement, future route
@@ -765,7 +770,7 @@ impl Game {
     /// rival's policies.
     pub(crate) fn bars_foreign_rock_bands(&self, host: usize, owner: usize) -> bool {
         host != owner
-            && (self.policy_effect(host, "block_foreign_rock_bands") > 0.0
+            && (self.policy_effect(host, crate::name!("block_foreign_rock_bands")) > 0.0
                 || self.rock_band_barred_hosts.contains(&(owner, host)))
     }
 

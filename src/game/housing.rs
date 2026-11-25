@@ -252,10 +252,12 @@ impl Game {
         }
         if self.city_religion(city).is_some() {
             if self.city_has_active_building_family(city, crate::name!("shrine")) {
-                s.buildings += self.city_religion_belief_effect(city, "shrine_housing");
+                s.buildings +=
+                    self.city_religion_belief_effect(city, crate::name!("shrine_housing"));
             }
             if self.city_has_active_building_family(city, crate::name!("temple")) {
-                s.buildings += self.city_religion_belief_effect(city, "temple_housing");
+                s.buildings +=
+                    self.city_religion_belief_effect(city, crate::name!("temple_housing"));
             }
         }
         for (district, position) in &city.districts {
@@ -265,26 +267,29 @@ impl Game {
                     self.district_family(*district).as_str(),
                     "neighborhood" | "aqueduct"
                 ) {
-                    s.districts +=
-                        self.governor_effect(city.owner, city.id, "neighborhood_aqueduct_housing");
+                    s.districts += self.governor_effect(
+                        city.owner,
+                        city.id,
+                        crate::name!("neighborhood_aqueduct_housing"),
+                    );
                 }
             }
         }
         for wonder in city.wonders.keys() {
             s.buildings += self.rules.wonders[wonder].housing;
         }
-        s.buildings += self.empire_wonder_effect(city.owner, "empire_housing");
+        s.buildings += self.empire_wonder_effect(city.owner, crate::name!("empire_housing"));
         // Collectivism's COLLECTIVISM_ADD_HOUSING: +2 in every city.
-        s.civics += self.policy_effect(city.owner, "city_housing");
+        s.civics += self.policy_effect(city.owner, crate::name!("city_housing"));
         let specialty_districts = self.city_specialty_district_count(city);
         if specialty_districts >= 2 {
-            s.civics += self.policy_effect(city.owner, "housing_at_2_districts");
+            s.civics += self.policy_effect(city.owner, crate::name!("housing_at_2_districts"));
         }
         if specialty_districts >= 3 {
-            s.civics += self.policy_effect(city.owner, "housing_at_3_districts");
+            s.civics += self.policy_effect(city.owner, crate::name!("housing_at_3_districts"));
         }
         if self.city_governor_active(city.owner, city.id) {
-            s.civics += self.policy_effect(city.owner, "governor_housing");
+            s.civics += self.policy_effect(city.owner, crate::name!("governor_housing"));
         }
         s.other += self.city_resource_industry_effects(city).housing;
         let government = self.gov_effects(city.owner);

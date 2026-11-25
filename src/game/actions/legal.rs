@@ -65,7 +65,8 @@ impl Game {
                         && u.attacks_left > 0
                         && !self.strike_blocked(uid, target)
                         && (u.hp >= 50
-                            || self.promotion_effect(u, "air_pillage_at_low_health") > 0.0)
+                            || self.promotion_effect(u, crate::name!("air_pillage_at_low_health"))
+                                > 0.0)
                         && self.air_pillageable_at(pid, target)
                     {
                         actions.push(Action::AirPillage { unit: uid, target });
@@ -199,8 +200,10 @@ impl Game {
             }
         }
 
-        let faith_districts = self.governor_effect(pid, cid, "faith_purchase_districts") > 0.0;
-        let gold_districts = self.governor_effect(pid, cid, "gold_purchase_districts") > 0.0;
+        let faith_districts =
+            self.governor_effect(pid, cid, crate::name!("faith_purchase_districts")) > 0.0;
+        let gold_districts =
+            self.governor_effect(pid, cid, crate::name!("gold_purchase_districts")) > 0.0;
         if faith_districts || gold_districts {
             let producible = self.producible_items(pid, cid);
             for item in &producible {
@@ -629,7 +632,10 @@ impl Game {
                             && u.attacks_left > 0
                             && !self.strike_blocked(uid, target)
                             && (u.hp >= 50
-                                || self.promotion_effect(&u, "air_pillage_at_low_health") > 0.0)
+                                || self.promotion_effect(
+                                    &u,
+                                    crate::name!("air_pillage_at_low_health"),
+                                ) > 0.0)
                             && self.sees(current_visibility, target)
                             && self.air_pillageable_at(pid, target)
                         {
@@ -939,7 +945,7 @@ impl Game {
             if u.kind == "apostle"
                 && u.moves_left > 0.0
                 && u.charges > 0
-                && self.promotion_effect(&u, "convert_barbarians") > 0.0
+                && self.promotion_effect(&u, crate::name!("convert_barbarians")) > 0.0
                 && self.barb_pid.is_some_and(|barbarian| {
                     self.wdisk(u.pos, 1)
                         .into_iter()
@@ -1001,8 +1007,10 @@ impl Game {
                     }
                 }
             }
-            let faith_districts = self.governor_effect(pid, cid, "faith_purchase_districts") > 0.0;
-            let gold_districts = self.governor_effect(pid, cid, "gold_purchase_districts") > 0.0;
+            let faith_districts =
+                self.governor_effect(pid, cid, crate::name!("faith_purchase_districts")) > 0.0;
+            let gold_districts =
+                self.governor_effect(pid, cid, crate::name!("gold_purchase_districts")) > 0.0;
             if faith_districts || gold_districts {
                 for item in &producible {
                     if let Item::District { district, pos } = item {
@@ -1782,7 +1790,10 @@ impl Game {
         self.rock_concert_venue_details(pid, Some(unit), unit.pos)
             .map(|(tourism, _, _)| {
                 // Flower Power: ROCK_BAND_TOURISM_BOMB_VALUE_PEACE +50%.
-                tourism * (1.0 + self.policy_effect(pid, "rock_band_concert_tourism_pct") / 100.0)
+                tourism
+                    * (1.0
+                        + self.policy_effect(pid, crate::name!("rock_band_concert_tourism_pct"))
+                            / 100.0)
             })
     }
 

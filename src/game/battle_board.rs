@@ -36,13 +36,13 @@ impl Game {
         let mut att = self.unit_ranged_attack_strength(shooter)
             + self.matchup_bonus(uid, defender, true)
             + if defender_is_sea {
-                self.promotion_effect(shooter, "ranged_vs_units")
-                    + self.promotion_effect(shooter, "ranged_vs_naval")
-                    + self.promotion_effect(shooter, "siege_vs_naval")
+                self.promotion_effect(shooter, crate::name!("ranged_vs_units"))
+                    + self.promotion_effect(shooter, crate::name!("ranged_vs_naval"))
+                    + self.promotion_effect(shooter, crate::name!("siege_vs_naval"))
             } else {
-                self.promotion_effect(shooter, "ranged_vs_land")
-                    + self.promotion_effect(shooter, "ranged_vs_units")
-                    + self.promotion_effect(shooter, "siege_vs_land")
+                self.promotion_effect(shooter, crate::name!("ranged_vs_land"))
+                    + self.promotion_effect(shooter, crate::name!("ranged_vs_units"))
+                    + self.promotion_effect(shooter, crate::name!("siege_vs_land"))
             }
             + self.vs_bonus(shooter.owner, defender.owner);
         if (spec.bombard_strength > 0.0 && !defender_is_sea)
@@ -67,7 +67,7 @@ impl Game {
         let spec = &self.rules.units[unit.kind];
         let melee = self.unit_unembarked_strength(unit) + self.vs_bonus(unit.owner, city.owner);
         let mut ranged = self.unit_ranged_attack_strength(unit)
-            + self.promotion_effect(unit, "ranged_vs_district")
+            + self.promotion_effect(unit, crate::name!("ranged_vs_district"))
             + self.gdr_siege_bonus(unit)
             + self.vs_bonus(unit.owner, city.owner);
         if spec.ranged_strength > 0.0 && spec.domain.as_deref() != Some("sea") {

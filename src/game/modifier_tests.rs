@@ -485,7 +485,7 @@ fn the_unit_promotion_rows_reach_the_unit() {
     let sight = game.unit_sight(unit);
     let attacks = game.unit_max_attacks(unit);
     assert_eq!(
-        game.promotion_effect(&game.units[&unit], "move_after_attack"),
+        game.promotion_effect(&game.units[&unit], crate::name!("move_after_attack")),
         0.0
     );
 
@@ -510,7 +510,7 @@ fn the_unit_promotion_rows_reach_the_unit() {
         .insert(crate::name!("sweeping_wind"));
     assert_eq!(game.unit_max_attacks(unit) - attacks, 2);
     assert_eq!(
-        game.promotion_effect(&game.units[&unit], "move_after_attack"),
+        game.promotion_effect(&game.units[&unit], crate::name!("move_after_attack")),
         1.0
     );
 
@@ -519,7 +519,10 @@ fn the_unit_promotion_rows_reach_the_unit() {
         .unwrap()
         .promotions
         .insert(crate::name!("long_range"));
-    assert_eq!(game.promotion_effect(&game.units[&unit], "range"), 2.0);
+    assert_eq!(
+        game.promotion_effect(&game.units[&unit], crate::name!("range")),
+        2.0
+    );
 
     game.units
         .get_mut(&unit)
@@ -532,7 +535,7 @@ fn the_unit_promotion_rows_reach_the_unit() {
         .promotions
         .insert(crate::name!("hangar_deck"));
     assert_eq!(
-        game.promotion_effect(&game.units[&unit], "aircraft_slots"),
+        game.promotion_effect(&game.units[&unit], crate::name!("aircraft_slots")),
         2.0
     );
 }

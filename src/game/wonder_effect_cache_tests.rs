@@ -58,11 +58,11 @@ fn per_player_wonder_effect_aggregate_matches_the_scalar_path() {
         .unwrap()
         .wonders
         .remove(&crate::name!("taj_mahal"));
-    let without_taj = game.empire_wonder_effect(0, "historic_moment_bonus");
+    let without_taj = game.empire_wonder_effect(0, crate::name!("historic_moment_bonus"));
     assert_eq!(without_taj, 0.0);
     let with_new_memo = {
         let _memo = game.query_memo();
-        game.empire_wonder_effect(0, "historic_moment_bonus")
+        game.empire_wonder_effect(0, crate::name!("historic_moment_bonus"))
     };
     assert_eq!(with_new_memo, without_taj);
 }

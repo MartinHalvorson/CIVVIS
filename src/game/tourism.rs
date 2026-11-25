@@ -136,12 +136,12 @@ impl Game {
         target: usize,
         religious: bool,
     ) -> f64 {
-        let mut percent = self.policy_effect(target, "incoming_tourism_pct");
+        let mut percent = self.policy_effect(target, crate::name!("incoming_tourism_pct"));
         if self.tourism_open_borders(source, target) {
             percent += 25.0;
         }
         if self.has_tourism_trade_route(source, target) {
-            percent += 25.0 + self.policy_effect(source, "trade_partner_tourism_pct");
+            percent += 25.0 + self.policy_effect(source, crate::name!("trade_partner_tourism_pct"));
         }
         if self.players[source].government != self.players[target].government {
             percent -= self.government_tourism_intolerance(source)
@@ -154,7 +154,9 @@ impl Game {
             {
                 percent -= 50.0;
             }
-            let cristo = self.empire_wonder_effect(source, "religious_tourism_unreduced") > 0.0;
+            let cristo = self
+                .empire_wonder_effect(source, crate::name!("religious_tourism_unreduced"))
+                > 0.0;
             if !cristo {
                 percent += self.tree_effect(target, "incoming_religious_tourism_pct");
             }
@@ -199,13 +201,14 @@ impl Game {
 
     fn great_work_local_multiplier(&self, city: &City, kind: &str) -> f64 {
         let mut multiplier = if self.world_era >= 5 {
-            1.0 + self.city_building_effect(city, "modern_civ_tourism_pct") / 100.0
+            1.0 + self.city_building_effect(city, crate::name!("modern_civ_tourism_pct")) / 100.0
         } else {
             1.0
         };
         if kind == "relic" {
             // Reliquaries triples a Relic's Tourism as it triples its Faith.
-            multiplier *= 1.0 + self.city_religion_belief_effect(city, "relic_tourism_pct") / 100.0;
+            multiplier *= 1.0
+                + self.city_religion_belief_effect(city, crate::name!("relic_tourism_pct")) / 100.0;
         }
         if kind == "relic"
             && city
@@ -495,9 +498,11 @@ impl Game {
             .filter(|city| self.cities.get(city).is_some_and(|city| city.owner == pid))
         {
             holy_city_tourism += 8.0;
-            film_studio_bonus += 8.0
-                * self.city_building_effect(&self.cities[&city_id], "modern_civ_tourism_pct")
-                / 100.0;
+            film_studio_bonus +=
+                8.0 * self.city_building_effect(
+                    &self.cities[&city_id],
+                    crate::name!("modern_civ_tourism_pct"),
+                ) / 100.0;
         }
 
         let mut relic_tourism = 0.0;
@@ -518,8 +523,9 @@ impl Game {
                         / 100.0;
             }
             relic_tourism += value;
-            film_studio_bonus +=
-                value * self.city_building_effect(city, "modern_civ_tourism_pct") / 100.0;
+            film_studio_bonus += value
+                * self.city_building_effect(city, crate::name!("modern_civ_tourism_pct"))
+                / 100.0;
         }
         (
             (holy_city_tourism + relic_tourism) * global_multiplier,
@@ -595,12 +601,17 @@ impl Game {
                     kind.as_str(),
                     "writing" | "art" | "religious_art" | "music" | "any"
                 ) {
-                    value *=
-                        1.0 + self.governor_effect(pid, city.id, "great_work_tourism_pct") / 100.0;
+                    value *= 1.0
+                        + self.governor_effect(
+                            pid,
+                            city.id,
+                            crate::name!("great_work_tourism_pct"),
+                        ) / 100.0;
                 }
                 if kind == "relic" {
-                    value *=
-                        1.0 + self.city_religion_belief_effect(city, "relic_tourism_pct") / 100.0;
+                    value *= 1.0
+                        + self.city_religion_belief_effect(city, crate::name!("relic_tourism_pct"))
+                            / 100.0;
                 }
                 if kind == "relic"
                     && city
@@ -806,8 +817,10 @@ impl Game {
                         * effects.get("adjacent_reef_tourism").copied().unwrap_or(0.0);
                 }
                 if improvement == "seaside_resort" {
-                    improvement_tourism *=
-                        1.0 + self.empire_wonder_effect(pid, "seaside_resort_tourism_pct") / 100.0;
+                    improvement_tourism *= 1.0
+                        + self
+                            .empire_wonder_effect(pid, crate::name!("seaside_resort_tourism_pct"))
+                            / 100.0;
                 }
                 if city
                     .wonders
@@ -832,15 +845,18 @@ impl Game {
                     improvement,
                     "wind_farm" | "solar_farm" | "offshore_wind_farm" | "geothermal_plant"
                 ) {
-                    renewable_power += self.governor_effect(pid, city.id, "renewable_power_bonus");
+                    renewable_power +=
+                        self.governor_effect(pid, city.id, crate::name!("renewable_power_bonus"));
                 }
                 Self::add_tourism_source(
                     &mut tourism,
                     &mut by_tile,
                     *pos,
                     renewable_power
-                        * (1.0 + self.empire_wonder_effect(pid, "renewable_power_pct") / 100.0)
-                        * self.empire_wonder_effect(pid, "renewable_power_tourism"),
+                        * (1.0
+                            + self.empire_wonder_effect(pid, crate::name!("renewable_power_pct"))
+                                / 100.0)
+                        * self.empire_wonder_effect(pid, crate::name!("renewable_power_tourism")),
                 );
                 if self.tree_effect(pid, "improvement_culture_tourism") > 0.0 {
                     let improved = self.player_tile_yields(pid, *pos, &self.map.tiles[pos]);
@@ -872,18 +888,20 @@ impl Game {
                 .sum::<f64>();
             if self.city_has_active_building_family(city, crate::name!("hydroelectric_dam")) {
                 building_renewable_power +=
-                    self.governor_effect(pid, city.id, "renewable_power_bonus");
+                    self.governor_effect(pid, city.id, crate::name!("renewable_power_bonus"));
             }
             Self::add_tourism_source(
                 &mut tourism,
                 &mut by_tile,
                 city.pos,
                 building_renewable_power
-                    * (1.0 + self.empire_wonder_effect(pid, "renewable_power_pct") / 100.0)
-                    * self.empire_wonder_effect(pid, "renewable_power_tourism"),
+                    * (1.0
+                        + self.empire_wonder_effect(pid, crate::name!("renewable_power_pct"))
+                            / 100.0)
+                    * self.empire_wonder_effect(pid, crate::name!("renewable_power_tourism")),
             );
             film_studio_bonus += (tourism - city_tourism_start)
-                * self.city_building_effect(city, "modern_civ_tourism_pct")
+                * self.city_building_effect(city, crate::name!("modern_civ_tourism_pct"))
                 / 100.0;
         }
 
@@ -911,9 +929,11 @@ impl Game {
         {
             holy_city_tourism += 8.0;
             Self::record_tourism_source(&mut by_tile, self.cities[&city_id].pos, 8.0);
-            film_studio_bonus += 8.0
-                * self.city_building_effect(&self.cities[&city_id], "modern_civ_tourism_pct")
-                / 100.0;
+            film_studio_bonus +=
+                8.0 * self.city_building_effect(
+                    &self.cities[&city_id],
+                    crate::name!("modern_civ_tourism_pct"),
+                ) / 100.0;
         }
         let global_multiplier = 1.0
             + (self.tree_effect(pid, "tourism_pct")
@@ -973,10 +993,16 @@ impl Game {
         let base = match kind {
             "writing" => 2.0 * (1.0 + self.tree_effect(pid, "writing_tourism_pct") / 100.0),
             "art" | "religious_art" => {
-                2.0 * (1.0 + self.policy_effect(pid, "art_artifact_tourism_pct") / 100.0)
+                2.0 * (1.0
+                    + self.policy_effect(pid, crate::name!("art_artifact_tourism_pct")) / 100.0)
             }
-            "artifact" => 3.0 * (1.0 + self.policy_effect(pid, "art_artifact_tourism_pct") / 100.0),
-            "music" => 4.0 * (1.0 + self.policy_effect(pid, "music_tourism_pct") / 100.0),
+            "artifact" => {
+                3.0 * (1.0
+                    + self.policy_effect(pid, crate::name!("art_artifact_tourism_pct")) / 100.0)
+            }
+            "music" => {
+                4.0 * (1.0 + self.policy_effect(pid, crate::name!("music_tourism_pct")) / 100.0)
+            }
             "any" => 4.0,
             "relic" => 8.0,
             _ => 0.0,

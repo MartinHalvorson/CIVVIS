@@ -47,7 +47,7 @@ impl Game {
         let attacker = self.units.get(&uid)?;
         let defender = self.units.get(&did)?;
         let target = defender.pos;
-        let unamphibious = self.promotion_effect(attacker, "amphibious") == 0.0;
+        let unamphibious = self.promotion_effect(attacker, crate::name!("amphibious")) == 0.0;
         let mut att_base = self.unit_unembarked_strength(attacker)
             + self.matchup_bonus(uid, defender, true)
             + self.flanking_bonus(uid, target)
@@ -92,13 +92,13 @@ impl Game {
         let mut att_base = self.unit_ranged_attack_strength(shooter)
             + self.matchup_bonus(uid, defender, true)
             + if defender_is_sea {
-                self.promotion_effect(shooter, "ranged_vs_units")
-                    + self.promotion_effect(shooter, "ranged_vs_naval")
-                    + self.promotion_effect(shooter, "siege_vs_naval")
+                self.promotion_effect(shooter, crate::name!("ranged_vs_units"))
+                    + self.promotion_effect(shooter, crate::name!("ranged_vs_naval"))
+                    + self.promotion_effect(shooter, crate::name!("siege_vs_naval"))
             } else {
-                self.promotion_effect(shooter, "ranged_vs_land")
-                    + self.promotion_effect(shooter, "ranged_vs_units")
-                    + self.promotion_effect(shooter, "siege_vs_land")
+                self.promotion_effect(shooter, crate::name!("ranged_vs_land"))
+                    + self.promotion_effect(shooter, crate::name!("ranged_vs_units"))
+                    + self.promotion_effect(shooter, crate::name!("siege_vs_land"))
             }
             + self.vs_bonus(shooter.owner, defender.owner);
         if (spec.bombard_strength > 0.0 && !defender_is_sea)
@@ -151,12 +151,12 @@ impl Game {
             && self.players[opponent.owner].religion.is_some()
             && self.players[u.owner].religion != self.players[opponent.owner].religion
         {
-            bonus += self.policy_effect(u.owner, "different_religion_combat");
+            bonus += self.policy_effect(u.owner, crate::name!("different_religion_combat"));
         }
         // Cyber Warfare: CYBER_WARFARE_INFO_FUTURE_BUFF, +10 against a
         // civilization in the Information Era or later.
         if self.player_era(opponent.owner) >= 7 {
-            bonus += self.policy_effect(u.owner, "combat_vs_information_era");
+            bonus += self.policy_effect(u.owner, crate::name!("combat_vs_information_era"));
         }
         if spec.promotion_class == "anti_cavalry"
             && (matches!(
@@ -189,59 +189,59 @@ impl Game {
         }
         if attacking {
             if matches!(other.promotion_class.as_str(), "melee" | "ranged") {
-                bonus += self.promotion_effect(u, "attack_vs_melee_ranged");
+                bonus += self.promotion_effect(u, crate::name!("attack_vs_melee_ranged"));
             }
             if other.promotion_class == "melee" {
-                bonus += self.promotion_effect(u, "vs_melee");
+                bonus += self.promotion_effect(u, crate::name!("vs_melee"));
             }
             if other.promotion_class == "anti_cavalry" {
-                bonus += self.promotion_effect(u, "vs_anti_cavalry");
+                bonus += self.promotion_effect(u, crate::name!("vs_anti_cavalry"));
             }
             if matches!(
                 other.promotion_class.as_str(),
                 "light_cavalry" | "heavy_cavalry"
             ) {
-                bonus += self.promotion_effect(u, "vs_cavalry");
+                bonus += self.promotion_effect(u, crate::name!("vs_cavalry"));
             }
             if matches!(other.promotion_class.as_str(), "ranged" | "siege") {
-                bonus += self.promotion_effect(u, "attack_vs_ranged_siege");
+                bonus += self.promotion_effect(u, crate::name!("attack_vs_ranged_siege"));
             }
             if other.promotion_class == "siege" {
-                bonus += self.promotion_effect(u, "vs_siege");
+                bonus += self.promotion_effect(u, crate::name!("vs_siege"));
             }
             if other.promotion_class == "heavy_cavalry" {
-                bonus += self.promotion_effect(u, "vs_heavy_cavalry");
+                bonus += self.promotion_effect(u, crate::name!("vs_heavy_cavalry"));
             }
             if opponent.hp < 100 {
-                bonus += self.promotion_effect(u, "vs_damaged");
+                bonus += self.promotion_effect(u, crate::name!("vs_damaged"));
             }
             if opponent.fortify_turns > 0 {
-                bonus += self.promotion_effect(u, "vs_fortified");
+                bonus += self.promotion_effect(u, crate::name!("vs_fortified"));
             }
             let tile = &self.map.tiles[&opponent.pos];
             if self.city_at(opponent.pos).is_some() || tile.district.is_some() {
-                bonus += self.promotion_effect(u, "vs_unit_in_district");
-                bonus += self.promotion_effect(u, "district_melee");
+                bonus += self.promotion_effect(u, crate::name!("vs_unit_in_district"));
+                bonus += self.promotion_effect(u, crate::name!("district_melee"));
             }
             if other.domain.as_deref() == Some("sea") {
-                bonus += self.promotion_effect(u, "vs_naval");
+                bonus += self.promotion_effect(u, crate::name!("vs_naval"));
             }
             if other.promotion_class == "naval_raider" {
-                bonus += self.promotion_effect(u, "vs_naval_raider");
+                bonus += self.promotion_effect(u, crate::name!("vs_naval_raider"));
             }
         } else {
             if other.promotion_class == "melee" {
-                bonus += self.promotion_effect(u, "defend_melee");
+                bonus += self.promotion_effect(u, crate::name!("defend_melee"));
             }
             if matches!(
                 other.promotion_class.as_str(),
                 "heavy_cavalry" | "anti_cavalry"
             ) {
-                bonus += self.promotion_effect(u, "defend_heavy_anti");
+                bonus += self.promotion_effect(u, crate::name!("defend_heavy_anti"));
             }
             let tile = &self.map.tiles[&u.pos];
             if self.city_at(u.pos).is_some() || tile.district.is_some() {
-                bonus += self.promotion_effect(u, "district_melee");
+                bonus += self.promotion_effect(u, crate::name!("district_melee"));
             }
         }
         if matches!(
@@ -257,7 +257,9 @@ impl Game {
                     ally.owner == u.owner
                         && self.rules.units[ally.kind].promotion_class != spec.promotion_class
                 })
-                .map(|id| self.promotion_effect(&self.units[id], "adjacent_vs_cavalry"))
+                .map(|id| {
+                    self.promotion_effect(&self.units[id], crate::name!("adjacent_vs_cavalry"))
+                })
                 .sum::<f64>();
         }
         bonus
@@ -296,10 +298,10 @@ impl Game {
             })
             .unwrap_or(0);
         if self.player_era(attacker.owner) > defeated_era {
-            let pct = self.policy_effect(attacker.owner, "earlier_era_kill_gold_pct");
+            let pct = self.policy_effect(attacker.owner, crate::name!("earlier_era_kill_gold_pct"));
             self.players[attacker.owner].gold += defeated_spec.strength * pct / 100.0;
         }
-        let faith_pct = self.promotion_effect(attacker, "faith_on_kill_strength_pct");
+        let faith_pct = self.promotion_effect(attacker, crate::name!("faith_on_kill_strength_pct"));
         if faith_pct > 0.0 {
             self.players[attacker.owner].faith += defeated_spec.strength * faith_pct / 100.0;
         }
@@ -317,7 +319,10 @@ impl Game {
         // pays as well as our own. And the text ends "(on Standard Speed)",
         // Civilization VI's marker for a one-off yield that scales with the
         // game speed, which `GameSpeed::scale` is.
-        let war_pct = self.pantheon_effect(attacker.owner, "faith_on_kill_near_holy_site_pct");
+        let war_pct = self.pantheon_effect(
+            attacker.owner,
+            crate::name!("faith_on_kill_near_holy_site_pct"),
+        );
         if war_pct > 0.0 && defeated_spec.class == "military" {
             let strength = defeated_spec.strength;
             let near_a_holy_site = self
@@ -336,7 +341,7 @@ impl Game {
             }
         }
         if self.rules.units[defeated.kind].domain.as_deref() == Some("sea") {
-            let pct = self.promotion_effect(attacker, "gold_from_naval_kill_pct");
+            let pct = self.promotion_effect(attacker, crate::name!("gold_from_naval_kill_pct"));
             if pct > 0.0 {
                 let strength = self.rules.units[defeated.kind].strength;
                 self.players[attacker.owner].gold += strength * pct / 100.0;
@@ -346,14 +351,14 @@ impl Game {
             .cities
             .values()
             .filter(|city| city.owner == attacker.owner)
-            .map(|city| self.city_building_effect(city, "heal_on_unit_kill"))
+            .map(|city| self.city_building_effect(city, crate::name!("heal_on_unit_kill")))
             .sum::<f64>() as i32;
         if heal > 0 {
             if let Some(unit) = self.units.get_mut(&attacker.id) {
                 unit.hp = (unit.hp + heal).min(100);
             }
         }
-        let pressure = self.promotion_effect(attacker, "religious_pressure_on_kill");
+        let pressure = self.promotion_effect(attacker, crate::name!("religious_pressure_on_kill"));
         if pressure > 0.0 {
             if let Some(religion) = attacker.religion.as_ref() {
                 let cities: Vec<u32> = self
@@ -409,7 +414,7 @@ impl Game {
             })
             .count();
         let tegh = if additional > 0 {
-            self.promotion_effect(&self.units[&uid], "flanking_combat_strength")
+            self.promotion_effect(&self.units[&uid], crate::name!("flanking_combat_strength"))
         } else {
             0.0
         };
@@ -417,7 +422,7 @@ impl Game {
             return tegh;
         }
         let multiplier = self
-            .promotion_effect(&self.units[&uid], "flanking_multiplier")
+            .promotion_effect(&self.units[&uid], crate::name!("flanking_multiplier"))
             .max(1.0);
         let naval_multiplier =
             if self.rules.units[self.units[&uid].kind].domain.as_deref() == Some("sea") {
@@ -447,7 +452,7 @@ impl Game {
             })
             .count();
         let multiplier = self
-            .promotion_effect(defender, "support_multiplier")
+            .promotion_effect(defender, crate::name!("support_multiplier"))
             .max(1.0);
         2.0 * adjacent as f64 * multiplier
     }
@@ -504,12 +509,12 @@ impl Game {
         let spec = self.rules.units[attacker.kind].clone();
         let mut attack_base =
             self.unit_unembarked_strength(&attacker) + self.vs_bonus(pid, self.cities[&cid].owner);
-        if embarked && self.promotion_effect(&attacker, "amphibious") == 0.0 {
+        if embarked && self.promotion_effect(&attacker, crate::name!("amphibious")) == 0.0 {
             attack_base -= 10.0;
         }
         let mut defense = self.defending_district_strength(cid, target);
         if self.crosses_river(attacker.pos, target)
-            && self.promotion_effect(&attacker, "amphibious") == 0.0
+            && self.promotion_effect(&attacker, crate::name!("amphibious")) == 0.0
         {
             defense += 5.0;
         }
@@ -619,7 +624,7 @@ impl Game {
         let spec = self.rules.units[attacker.kind].clone();
         let mut attack_base = self.unit_ranged_attack_strength(&attacker)
             + self.vs_bonus(pid, self.cities[&cid].owner)
-            + self.promotion_effect(&attacker, "ranged_vs_district")
+            + self.promotion_effect(&attacker, crate::name!("ranged_vs_district"))
             + self.gdr_siege_bonus(&attacker);
         if spec.ranged_strength > 0.0 && spec.domain.as_deref() != Some("sea") {
             attack_base -= 17.0;
@@ -1172,7 +1177,7 @@ impl Game {
             return Err("unit cannot pillage".into());
         }
         self.pillage_tile(pid, uid, unit.pos, false, true)?;
-        let cost = if self.promotion_effect(&unit, "pillage_cost") > 0.0 {
+        let cost = if self.promotion_effect(&unit, crate::name!("pillage_cost")) > 0.0 {
             1.0
         } else {
             3.0
@@ -1214,9 +1219,9 @@ impl Game {
         let defender_spec = &self.rules.units[defender.kind];
         let mut bonus = self.air_matchup_bonus(attacker, defender);
         if defender_spec.domain.as_deref() == Some("sea") {
-            bonus += self.promotion_effect(attacker, "air_vs_naval");
+            bonus += self.promotion_effect(attacker, crate::name!("air_vs_naval"));
         } else if defender_spec.domain.as_deref() != Some("air") {
-            bonus += self.promotion_effect(attacker, "air_vs_land");
+            bonus += self.promotion_effect(attacker, crate::name!("air_vs_land"));
         }
         if attacker_spec.promotion_class == "air_fighter"
             && matches!(
@@ -1224,11 +1229,11 @@ impl Game {
                 "light_cavalry" | "heavy_cavalry"
             )
         {
-            bonus += self.promotion_effect(attacker, "vs_cavalry");
+            bonus += self.promotion_effect(attacker, crate::name!("vs_cavalry"));
         } else if attacker_spec.promotion_class == "air_fighter"
             && defender_spec.domain.as_deref() != Some("air")
         {
-            bonus += self.promotion_effect(attacker, "vs_non_cavalry");
+            bonus += self.promotion_effect(attacker, crate::name!("vs_non_cavalry"));
         }
         bonus
     }
@@ -1338,10 +1343,12 @@ impl Game {
             self.record_war_unit_participation(&interceptor, current_attacker.owner);
             let mut defense = self.unit_unembarked_strength(&current_attacker);
             if air_interceptor {
-                defense += self.promotion_effect(&current_attacker, "defend_air_fighter")
+                defense += self
+                    .promotion_effect(&current_attacker, crate::name!("defend_air_fighter"))
                     + self.air_matchup_bonus(&current_attacker, &self.units[&interceptor_id]);
             } else {
-                defense += self.promotion_effect(&current_attacker, "defend_anti_air");
+                defense +=
+                    self.promotion_effect(&current_attacker, crate::name!("defend_anti_air"));
             }
             let incoming = damage(
                 effective_strength(strength, self.units[&interceptor_id].hp),
@@ -1467,7 +1474,7 @@ impl Game {
             let defender = self.units[&defender_id].clone();
             self.record_war_unit_participation(&attacker, defender.owner);
             self.record_war_unit_participation(&defender, attacker.owner);
-            let anti_air = self.promotion_effect(&defender, "defend_air");
+            let anti_air = self.promotion_effect(&defender, crate::name!("defend_air"));
             let defender_spec = &self.rules.units[defender.kind];
             let defense_base = if defender_spec.anti_air_strength > 0.0 {
                 self.unit_anti_air_strength(&defender)
@@ -1522,7 +1529,7 @@ impl Game {
             || bomber.attacks_left <= 0
             || self.strike_blocked(uid, target)
             || (bomber.hp < 50
-                && self.promotion_effect(&bomber, "air_pillage_at_low_health") <= 0.0)
+                && self.promotion_effect(&bomber, crate::name!("air_pillage_at_low_health")) <= 0.0)
             || self.wdist(self.air_operation_origin(uid), target) > self.unit_attack_range(uid)
             || !self.player_can_see(pid, target)
             || !self.air_pillageable_at(pid, target)
@@ -1535,7 +1542,8 @@ impl Game {
             return Ok(());
         }
         if self.units[&uid].hp < 50
-            && self.promotion_effect(&self.units[&uid], "air_pillage_at_low_health") <= 0.0
+            && self.promotion_effect(&self.units[&uid], crate::name!("air_pillage_at_low_health"))
+                <= 0.0
         {
             // The official operation resolves interception before checking
             // whether an ordinary bomber still has the required 50 HP.
@@ -1584,7 +1592,7 @@ impl Game {
     /// Isibongo upgrades the unit which actually takes a city to the highest
     /// formation tier Shaka's current civics permit.
     pub(in crate::game) fn apply_capture_formation_upgrade(&mut self, pid: usize, uid: u32) {
-        if self.civ_effect(pid, "capture_formation_upgrade") <= 0.0 {
+        if self.civ_effect(pid, crate::name!("capture_formation_upgrade")) <= 0.0 {
             return;
         }
         let Some(unit) = self.units.get(&uid) else {
@@ -2137,7 +2145,7 @@ impl Game {
         let city = self.cities.get(&cid)?;
         let spec = &self.rules.units[shooter.kind];
         let mut attack = self.unit_ranged_attack_strength(shooter)
-            + self.promotion_effect(shooter, "ranged_vs_district")
+            + self.promotion_effect(shooter, crate::name!("ranged_vs_district"))
             + self.gdr_siege_bonus(shooter)
             + self.vs_bonus(shooter.owner, city.owner);
         if spec.ranged_strength > 0.0 && spec.domain.as_deref() != Some("sea") {
@@ -2155,7 +2163,7 @@ impl Game {
     pub(crate) fn city_melee_exchange_strengths(&self, uid: u32, cid: u32) -> Option<(f64, f64)> {
         let attacker = self.units.get(&uid)?;
         let city = self.cities.get(&cid)?;
-        let unamphibious = self.promotion_effect(attacker, "amphibious") == 0.0;
+        let unamphibious = self.promotion_effect(attacker, crate::name!("amphibious")) == 0.0;
         let mut attack =
             self.unit_unembarked_strength(attacker) + self.vs_bonus(attacker.owner, city.owner);
         if self.is_embarked(attacker) && unamphibious {

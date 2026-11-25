@@ -32,10 +32,14 @@ impl Game {
         if any > 0 && self.has_ability(pid, "platos_republic") {
             slots.wildcard += 1; // Greece: Plato's Republic
         }
-        slots.military += self.empire_wonder_effect(pid, "military_policy_slots") as i64;
-        slots.economic += self.empire_wonder_effect(pid, "economic_policy_slots") as i64;
-        slots.diplomatic += self.empire_wonder_effect(pid, "diplomatic_policy_slots") as i64;
-        slots.wildcard += self.empire_wonder_effect(pid, "wildcard_policy_slots") as i64;
+        slots.military +=
+            self.empire_wonder_effect(pid, crate::name!("military_policy_slots")) as i64;
+        slots.economic +=
+            self.empire_wonder_effect(pid, crate::name!("economic_policy_slots")) as i64;
+        slots.diplomatic +=
+            self.empire_wonder_effect(pid, crate::name!("diplomatic_policy_slots")) as i64;
+        slots.wildcard +=
+            self.empire_wonder_effect(pid, crate::name!("wildcard_policy_slots")) as i64;
         if let Some(government) = self.players[pid].government.as_deref() {
             if self.congress_effect_active("world_ideology", "A", government) {
                 slots.wildcard += 1;

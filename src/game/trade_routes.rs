@@ -52,8 +52,8 @@ impl Game {
                     .unwrap_or(0.0) as i64;
             }
         }
-        cap += self.empire_wonder_effect(pid, "trade_route_capacity") as i64;
-        cap += self.policy_effect(pid, "policy_trade_route_capacity") as i64;
+        cap += self.empire_wonder_effect(pid, crate::name!("trade_route_capacity")) as i64;
+        cap += self.policy_effect(pid, crate::name!("policy_trade_route_capacity")) as i64;
         cap += self.gov_effects(pid).trade_route_capacity as i64;
         cap += p
             .counters
@@ -517,7 +517,7 @@ impl Game {
         } else {
             1.0
         };
-        let own_post_gold = self.civ_effect(owner, "own_trading_post_route_gold");
+        let own_post_gold = self.civ_effect(owner, crate::name!("own_trading_post_route_gold"));
         // Where the host has told the mirror which posts its own path
         // crosses, that answer stands in for the walk below: the pathfinder
         // follows roads (Ostia -> Aquileia by way of Cumae, run
@@ -525,7 +525,7 @@ impl Game {
         if let Some(&(own, foreign)) = self.observed_route_posts.get(&(origin, dest)) {
             return own as f64 * own_post_gold + foreign as f64 * foreign_post_gold;
         }
-        let free_own_posts = self.civ_effect(owner, "free_trading_posts") > 0.0;
+        let free_own_posts = self.civ_effect(owner, crate::name!("free_trading_posts")) > 0.0;
         let mut gold = 0.0;
         for cid in self.route_path_cities(origin_city.pos, dest_city.pos) {
             let Some(city) = self.cities.get(&cid) else {

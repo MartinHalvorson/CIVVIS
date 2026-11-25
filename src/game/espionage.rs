@@ -19,9 +19,9 @@ impl Game {
     /// bonus, and unrestricted-promotion flag for the espionage layer.
     pub fn spy_modifiers(&self, pid: usize) -> (f64, f64, i64, i64, i64, bool) {
         (
-            1.0 + self.policy_effect(pid, "spy_production_pct") / 100.0,
-            1.0 + self.policy_effect(pid, "spy_time_pct") / 100.0,
-            (self.policy_effect(pid, "offensive_spy_level")
+            1.0 + self.policy_effect(pid, crate::name!("spy_production_pct")) / 100.0,
+            1.0 + self.policy_effect(pid, crate::name!("spy_time_pct")) / 100.0,
+            (self.policy_effect(pid, crate::name!("offensive_spy_level"))
                 + self.empire_building_sum(pid, |building| {
                     building
                         .effects
@@ -29,9 +29,9 @@ impl Game {
                         .copied()
                         .unwrap_or(0.0)
                 })) as i64,
-            self.policy_effect(pid, "enemy_spy_level") as i64,
-            self.policy_effect(pid, "spy_tech_boost_bonus") as i64,
-            self.policy_effect(pid, "spy_any_promotion") > 0.0,
+            self.policy_effect(pid, crate::name!("enemy_spy_level")) as i64,
+            self.policy_effect(pid, crate::name!("spy_tech_boost_bonus")) as i64,
+            self.policy_effect(pid, crate::name!("spy_any_promotion")) > 0.0,
         )
     }
 
@@ -103,7 +103,9 @@ impl Game {
                 source.id == city.id
                     || self.city_has_active_district_family(city, crate::name!("encampment"))
             })
-            .map(|source| self.city_building_effect(source, "enemy_spy_level_reduction"))
+            .map(|source| {
+                self.city_building_effect(source, crate::name!("enemy_spy_level_reduction"))
+            })
             .sum::<f64>();
         levels += protected_by_consulate;
         levels as i64
@@ -504,7 +506,7 @@ impl Game {
             return level;
         }
         level += self.spy_modifiers(city.owner).3;
-        level += self.governor_effect(city.owner, city.id, "enemy_spy_level") as i64;
+        level += self.governor_effect(city.owner, city.id, crate::name!("enemy_spy_level")) as i64;
         level -= self.spy_defense_level(city.id, mission.target);
         level -= self.counterspy_promotion_effect(city.owner, "enemy_spy_level") as i64;
         if let Some(counterspy) = self.defending_counterspy(city.owner, city.id, mission.target) {

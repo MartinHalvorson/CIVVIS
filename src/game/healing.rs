@@ -77,7 +77,7 @@ impl Game {
         let Some(religion) = unit.religion.as_deref() else {
             return 0;
         };
-        let amount = self.religion_belief_effect(religion, "holy_waters_heal");
+        let amount = self.religion_belief_effect(religion, crate::name!("holy_waters_heal"));
         if amount == 0.0 {
             return 0;
         }
@@ -153,7 +153,8 @@ impl Game {
             .and_then(|city_id| self.cities.get(&city_id))
             .is_some_and(|city| {
                 city.owner == unit.owner
-                    && self.governor_effect(unit.owner, city.id, "unit_heal_full") > 0.0
+                    && self.governor_effect(unit.owner, city.id, crate::name!("unit_heal_full"))
+                        > 0.0
             })
         {
             return 100;
@@ -210,7 +211,9 @@ impl Game {
                 .into_iter()
                 .flat_map(|position| self.unit_ids_at(position).iter().copied())
                 .filter(|other| self.units[other].owner == unit.owner)
-                .map(|other| self.promotion_effect(&self.units[&other], "adjacent_heal"))
+                .map(|other| {
+                    self.promotion_effect(&self.units[&other], crate::name!("adjacent_heal"))
+                })
                 .fold(0.0, f64::max);
             best = best.max(chaplain);
             return best.round() as i32 + holy_site_heal + holy_waters_heal;
@@ -267,10 +270,10 @@ impl Game {
                 // 10 in neutral.
                 let promoted = match location {
                     HealingLocation::EnemyTerritory => {
-                        self.promotion_effect(unit, "heal_enemy_territory")
+                        self.promotion_effect(unit, crate::name!("heal_enemy_territory"))
                     }
                     HealingLocation::NeutralTerritory => {
-                        self.promotion_effect(unit, "heal_neutral_territory")
+                        self.promotion_effect(unit, crate::name!("heal_neutral_territory"))
                     }
                     _ => 0.0,
                 } as i32;

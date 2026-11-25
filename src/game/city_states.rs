@@ -187,7 +187,7 @@ impl Game {
             0.0
         };
         let empire = if count >= 2 {
-            self.empire_wonder_effect(pid, "suzerain_type_empire_bonus_pct")
+            self.empire_wonder_effect(pid, crate::name!("suzerain_type_empire_bonus_pct"))
         } else {
             0.0
         };
@@ -232,9 +232,9 @@ impl Game {
         if self.cities.get(&city).map(|city| city.owner) != Some(minor) {
             return none;
         }
-        let messenger = self.governor_effect(pid, city, "city_state_envoys");
+        let messenger = self.governor_effect(pid, city, crate::name!("city_state_envoys"));
         let multiplier = self
-            .governor_effect(pid, city, "city_state_envoys_multiplier")
+            .governor_effect(pid, city, crate::name!("city_state_envoys_multiplier"))
             .max(1.0);
         (messenger, multiplier)
     }
@@ -385,7 +385,7 @@ impl Game {
         // virtual Envoys do not consume that one-time trigger.
         let existing = self.raw_envoys_at(pid, minor);
         let first_bonus = if existing == 0 {
-            self.policy_effect(pid, "first_envoy_bonus") as i64
+            self.policy_effect(pid, crate::name!("first_envoy_bonus")) as i64
         } else {
             0
         };
@@ -393,7 +393,9 @@ impl Game {
             .suzerain_of_uncached(minor)
             .filter(|leader| *leader != pid)
             .filter(|leader| self.players[*leader].government != self.players[pid].government)
-            .map(|_| self.policy_effect(pid, "different_government_envoy_bonus") as i64)
+            .map(|_| {
+                self.policy_effect(pid, crate::name!("different_government_envoy_bonus")) as i64
+            })
             .unwrap_or(0);
         // Tamar: `ADJUST_DUPLICATE_INFLUENCE_TOKEN_WHEN_SAME_RELIGION` 1. An
         // Envoy counts double at a city-state following your religion.
@@ -405,13 +407,15 @@ impl Game {
                     .first()
                     .is_some_and(|city| self.city_religion(&self.cities[city]) == Some(*religion))
             })
-            .map(|_| self.civ_effect(pid, "same_religion_envoy_bonus") as i64)
+            .map(|_| self.civ_effect(pid, crate::name!("same_religion_envoy_bonus")) as i64)
             .unwrap_or(0);
         let amount = 1 + first_bonus + different_government_bonus + same_religion_bonus;
         let papal_religion = self.players[pid].religion.clone();
         let papal_pressure = papal_religion
             .as_deref()
-            .map(|religion| self.religion_belief_effect(religion, "envoy_religious_pressure"))
+            .map(|religion| {
+                self.religion_belief_effect(religion, crate::name!("envoy_religious_pressure"))
+            })
             .unwrap_or(0.0);
         let p = &mut self.players[pid];
         p.envoys_free -= 1;
@@ -506,7 +510,7 @@ impl Game {
                 .get("levy_discount_pct")
                 .copied()
                 .unwrap_or(0.0)
-        }) + self.civ_effect(pid, "levy_discount_pct");
+        }) + self.civ_effect(pid, crate::name!("levy_discount_pct"));
         Some(base * (1.0 - discount / 100.0).max(0.0))
     }
 
@@ -735,12 +739,12 @@ impl Game {
             // Match do_send_envoy: the first *raw* placement gets League;
             // Containment stops when we tie or displace the foreign Suzerain.
             let first = if raw == 0 {
-                self.policy_effect(pid, "first_envoy_bonus") as i64
+                self.policy_effect(pid, crate::name!("first_envoy_bonus")) as i64
             } else {
                 0
             };
             let foreign = if foreign_government && previous < rival {
-                self.policy_effect(pid, "different_government_envoy_bonus") as i64
+                self.policy_effect(pid, crate::name!("different_government_envoy_bonus")) as i64
             } else {
                 0
             };

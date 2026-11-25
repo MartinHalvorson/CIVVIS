@@ -721,10 +721,10 @@ impl Game {
         }
         if self.city_religion(city).is_some() {
             if self.city_has_active_building_family(city, crate::name!("shrine")) {
-                food += self.city_religion_belief_effect(city, "shrine_food");
+                food += self.city_religion_belief_effect(city, crate::name!("shrine_food"));
             }
             if self.city_has_active_building_family(city, crate::name!("temple")) {
-                food += self.city_religion_belief_effect(city, "temple_food");
+                food += self.city_religion_belief_effect(city, crate::name!("temple_food"));
             }
         }
         food += cands

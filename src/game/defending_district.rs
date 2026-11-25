@@ -175,7 +175,8 @@ impl Game {
             && !state.pillaged
             && (!state.struck
                 || state.extra_strikes_used
-                    < self.governor_effect(city.owner, city.id, "city_extra_strike") as i32)
+                    < self.governor_effect(city.owner, city.id, crate::name!("city_extra_strike"))
+                        as i32)
     }
 
     pub(crate) fn defending_district_strike_action(

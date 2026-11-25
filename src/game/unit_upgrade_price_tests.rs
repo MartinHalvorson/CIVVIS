@@ -130,7 +130,7 @@ fn the_upgrade_discount_is_taken_before_the_floor_and_the_rounding() {
         .policies
         .insert(crate::name!("professional_army"));
     assert_eq!(
-        game.policy_effect(0, "upgrade_gold_discount_pct"),
+        game.policy_effect(0, crate::name!("upgrade_gold_discount_pct")),
         50.0,
         "Professional Army is the shipped 50% upgrade discount"
     );

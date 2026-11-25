@@ -42,7 +42,10 @@ fn promote(game: &mut Game, unit: u32) -> Result<(), String> {
 #[test]
 fn gran_colombia_keeps_its_remaining_turn_after_healing_promotion() {
     let (mut game, unit) = fixture("Gran Colombia");
-    assert_eq!(game.civ_effect(0, "promote_no_finish_moves"), 1.0);
+    assert_eq!(
+        game.civ_effect(0, crate::name!("promote_no_finish_moves")),
+        1.0
+    );
     promote(&mut game, unit).unwrap();
     let soldier = &game.units[&unit];
     assert_eq!(soldier.hp, 76);
@@ -83,7 +86,10 @@ fn promotion_does_not_refill_spent_movement_or_attacks() {
 #[test]
 fn ordinary_promotions_still_finish_the_units_turn() {
     let (mut game, unit) = fixture("Rome");
-    assert_eq!(game.civ_effect(0, "promote_no_finish_moves"), 0.0);
+    assert_eq!(
+        game.civ_effect(0, crate::name!("promote_no_finish_moves")),
+        0.0
+    );
     promote(&mut game, unit).unwrap();
     assert_eq!(game.units[&unit].hp, 76);
     assert_eq!(game.units[&unit].moves_left, 0.0);

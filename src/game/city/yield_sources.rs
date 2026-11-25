@@ -210,7 +210,8 @@ impl Game {
                 b.as_str(),
                 "military_academy" | "seaport" | "renaissance_walls"
             ) {
-                yields.science += self.policy_effect(city.owner, "late_military_building_science");
+                yields.science +=
+                    self.policy_effect(city.owner, crate::name!("late_military_building_science"));
             }
             if matches!(
                 b.as_str(),
@@ -220,8 +221,9 @@ impl Game {
                     | "oil_power_plant"
                     | "nuclear_power_plant"
             ) {
-                yields.culture += self.policy_effect(city.owner, "late_building_culture");
-                yields.gold += self.policy_effect(city.owner, "late_building_gold");
+                yields.culture +=
+                    self.policy_effect(city.owner, crate::name!("late_building_culture"));
+                yields.gold += self.policy_effect(city.owner, crate::name!("late_building_gold"));
             }
             yields.science += building
                 .effects
@@ -313,22 +315,27 @@ impl Game {
                         .sum::<f64>();
                     rys.gold += district_gold * (route_multiplier - 1.0);
                 }
-                rys.gold += self.policy_effect(city.owner, "trade_gold");
-                rys.food += self.policy_effect(city.owner, "trade_food");
-                rys.production += self.policy_effect(city.owner, "trade_production");
+                rys.gold += self.policy_effect(city.owner, crate::name!("trade_gold"));
+                rys.food += self.policy_effect(city.owner, crate::name!("trade_food"));
+                rys.production += self.policy_effect(city.owner, crate::name!("trade_production"));
                 if domestic {
                     // Isolationism pays only at home, and pays all three.
-                    rys.food += self.policy_effect(city.owner, "domestic_trade_food");
+                    rys.food += self.policy_effect(city.owner, crate::name!("domestic_trade_food"));
                     // Isolationism's rows carry `Intercontinental=0`: only a
                     // domestic route that stays on one continent pays them.
                     if self.same_continent(city.pos, dc.pos) {
-                        rys.food +=
-                            self.policy_effect(city.owner, "domestic_same_continent_trade_food");
-                        rys.production += self
-                            .policy_effect(city.owner, "domestic_same_continent_trade_production");
+                        rys.food += self.policy_effect(
+                            city.owner,
+                            crate::name!("domestic_same_continent_trade_food"),
+                        );
+                        rys.production += self.policy_effect(
+                            city.owner,
+                            crate::name!("domestic_same_continent_trade_production"),
+                        );
                     }
-                    rys.production += self.policy_effect(city.owner, "domestic_trade_production");
-                    rys.gold += self.policy_effect(city.owner, "domestic_trade_gold");
+                    rys.production +=
+                        self.policy_effect(city.owner, crate::name!("domestic_trade_production"));
+                    rys.gold += self.policy_effect(city.owner, crate::name!("domestic_trade_gold"));
                 }
                 if !domestic {
                     if self.grants_city_state_unique_bonus(city.owner, "Venice") {
@@ -344,21 +351,26 @@ impl Game {
                     }
                     rys.gold += self.trading_dome_origin_route_gold(cid);
                     // E-Commerce pays only on international routes.
-                    rys.gold += self.policy_effect(city.owner, "international_trade_gold");
-                    rys.production +=
-                        self.policy_effect(city.owner, "international_trade_production");
+                    rys.gold +=
+                        self.policy_effect(city.owner, crate::name!("international_trade_gold"));
+                    rys.production += self
+                        .policy_effect(city.owner, crate::name!("international_trade_production"));
                     // Trade Confederation and Market Economy both ship as
                     // ADJUST_TRADE_ROUTE_YIELD_FOR_INTERNATIONAL, and they are
                     // the only owners of these two yields anywhere in the
                     // policy tree, so no domestic route earns either.
-                    rys.culture += self.policy_effect(city.owner, "international_trade_culture");
-                    rys.science += self.policy_effect(city.owner, "international_trade_science");
+                    rys.culture +=
+                        self.policy_effect(city.owner, crate::name!("international_trade_culture"));
+                    rys.science +=
+                        self.policy_effect(city.owner, crate::name!("international_trade_science"));
                     // Market Economy's Gold is not a flat amount: it ships as
                     // PER_DESTINATION_LUXURY_RESOURCE and
                     // PER_DESTINATION_STRATEGIC_RESOURCE, one Gold each, so it
                     // is worth what the far city actually owns.
-                    let luxury = self.policy_effect(city.owner, "international_luxury_gold");
-                    let strategic = self.policy_effect(city.owner, "international_strategic_gold");
+                    let luxury =
+                        self.policy_effect(city.owner, crate::name!("international_luxury_gold"));
+                    let strategic = self
+                        .policy_effect(city.owner, crate::name!("international_strategic_gold"));
                     if luxury != 0.0 || strategic != 0.0 {
                         let owned = |class: &str| {
                             dc.owned_tiles
@@ -373,13 +385,16 @@ impl Game {
                         rys.gold += luxury * owned("luxury") + strategic * owned("strategic");
                     }
                 }
-                rys.faith += self.policy_effect(city.owner, "trade_faith");
-                rys.food += self.governor_effect(dc.owner, dc.id, "incoming_trade_food");
+                rys.faith += self.policy_effect(city.owner, crate::name!("trade_faith"));
+                rys.food +=
+                    self.governor_effect(dc.owner, dc.id, crate::name!("incoming_trade_food"));
                 if !domestic
                     && self.city_has_active_district_family(city, crate::name!("holy_site"))
                 {
-                    let religious_community =
-                        self.city_religion_belief_effect(city, "trade_gold_per_holy_building");
+                    let religious_community = self.city_religion_belief_effect(
+                        city,
+                        crate::name!("trade_gold_per_holy_building"),
+                    );
                     if religious_community > 0.0 {
                         let holy_site_buildings = city
                             .buildings
@@ -416,7 +431,8 @@ impl Game {
                     }
                 }
                 if self.players[dc.owner].is_minor {
-                    rys.gold += self.policy_effect(city.owner, "city_state_route_gold");
+                    rys.gold +=
+                        self.policy_effect(city.owner, crate::name!("city_state_route_gold"));
                     rys.gold += self.players[city.owner]
                         .counters
                         .get("emergency_city_state_route_gold")
@@ -424,10 +440,11 @@ impl Game {
                         .unwrap_or(0) as f64;
                 }
                 if domestic {
-                    rys.gold += self.city_building_effect(city, "domestic_route_gold");
+                    rys.gold +=
+                        self.city_building_effect(city, crate::name!("domestic_route_gold"));
                 } else {
-                    rys.production +=
-                        self.city_building_effect(city, "international_route_production");
+                    rys.production += self
+                        .city_building_effect(city, crate::name!("international_route_production"));
                 }
                 if dc
                     .wonders
@@ -504,9 +521,12 @@ impl Game {
                     // ships the same eight rows, ORIGIN and DESTINATION halves
                     // of _FOR_ALLY_ROUTE and _FOR_SUZERAIN_ROUTE. This is the
                     // origin half, paid to the city sending the route.
-                    rys.food += self.policy_effect(city.owner, "allied_suzerain_trade_food");
-                    rys.production +=
-                        self.policy_effect(city.owner, "allied_suzerain_trade_production");
+                    rys.food +=
+                        self.policy_effect(city.owner, crate::name!("allied_suzerain_trade_food"));
+                    rys.production += self.policy_effect(
+                        city.owner,
+                        crate::name!("allied_suzerain_trade_production"),
+                    );
                 }
                 // Where the host has said what THIS route pays its origin
                 // (`observed_route_yields`, from `CalculateOriginYields…` the

@@ -452,7 +452,7 @@ impl Game {
             .cities
             .values()
             .filter(|city| city.owner == conqueror)
-            .map(|city| self.city_building_effect(city, "capture_city_duration"))
+            .map(|city| self.city_building_effect(city, crate::name!("capture_city_duration")))
             .fold(0.0, f64::max) as i64;
         if duration > 0 {
             self.players[conqueror].counters.insert(

@@ -441,16 +441,25 @@ fn isolationism_closes_the_frontier_and_pays_at_home() {
     // continent (`Intercontinental=0`), and nothing else — no Gold, no
     // route capacity.
     assert_eq!(
-        game.policy_effect(0, "domestic_same_continent_trade_food"),
+        game.policy_effect(0, crate::name!("domestic_same_continent_trade_food")),
         2.0
     );
     assert_eq!(
-        game.policy_effect(0, "domestic_same_continent_trade_production"),
+        game.policy_effect(0, crate::name!("domestic_same_continent_trade_production")),
         2.0
     );
-    assert_eq!(game.policy_effect(0, "domestic_trade_food"), 0.0);
-    assert_eq!(game.policy_effect(0, "domestic_trade_gold"), 0.0);
-    assert_eq!(game.policy_effect(0, "policy_trade_route_capacity"), 0.0);
+    assert_eq!(
+        game.policy_effect(0, crate::name!("domestic_trade_food")),
+        0.0
+    );
+    assert_eq!(
+        game.policy_effect(0, crate::name!("domestic_trade_gold")),
+        0.0
+    );
+    assert_eq!(
+        game.policy_effect(0, crate::name!("policy_trade_route_capacity")),
+        0.0
+    );
 }
 
 #[test]
