@@ -6701,6 +6701,31 @@ if (STRANGE_PANE) {
   if (typeof drawPlayerHud === "function") drawPlayerHud = () => {};
   if (typeof publishSoloHeight === "function") publishSoloHeight = () => {};
   if (typeof responsiveTypeMutationObserver !== "undefined") responsiveTypeMutationObserver.disconnect();
+  // While the worlds move, a world draws a turn once, when it is handed it
+  // (`render`), and plays none of the motion in between. At four or five
+  // turns a second a turn's units, floating numbers, labels and camera
+  // flight never finish before the next turn begins, so every world kept
+  // its animation running all the time and drew its map seven or eight
+  // times a turn, as if the thread were its own: with three worlds a
+  // quarter of the thread they all share. Its camera is meanwhile where it
+  // is going at once, as for a page that asked for reduced motion. Standing
+  // still, a world moves as any page does, and a person moving a world's
+  // map keeps its frames.
+  const moving = () => { try { return !window.parent.strangeIdle(); } catch (_) { return false; } };
+  if (typeof REDUCED_MOTION_QUERY !== "undefined") {
+    const asked = Object.getOwnPropertyDescriptor(MediaQueryList.prototype, "matches").get;
+    Object.defineProperty(REDUCED_MOTION_QUERY, "matches", {get: () => moving() || asked.call(REDUCED_MOTION_QUERY)});
+  }
+  if (typeof animTick === "function") {
+    let touched = -Infinity;
+    const touch = event => { if (event.type !== "pointermove" || event.buttons) touched = performance.now(); };
+    for (const kind of ["pointerdown", "pointermove", "wheel", "keydown"]) addEventListener(kind, touch, {capture: true, passive: true});
+    const tick = animTick;
+    animTick = function (now) {
+      if (now - touched > 1500 && moving()) { requestAnimationFrame(animTick); return; }
+      return tick(now);
+    };
+  }
 }
 if (STRANGE) {
   document.documentElement.classList.add("strange");
