@@ -1303,7 +1303,8 @@ fn great_people_listed_by_kind_offer_who_the_walk_offers() {
     let scientist = first(&game, "scientist");
     let removed = scientist.clone();
     let swapped = scientist.clone();
-    let edits: Vec<Box<dyn Fn(&mut crate::rules::Rules)>> = vec![
+    type Edit = Box<dyn Fn(&mut crate::rules::Rules)>;
+    let edits: Vec<Edit> = vec![
         Box::new(move |rules| rules.great_people.retain(|id, _| id != removed.as_str())),
         Box::new(|rules| {
             let mut early = rules.great_people.values().next().unwrap().clone();
