@@ -1,0 +1,191 @@
+{
+ "about": "The forecast each winning seat of the newest finished gene-screen batch made of the turn it would win, against the turn it won, by how far ahead the forecast was made. Rebuilt by `beta/forecasting_page.py --self-play`; read by the AI Forecasting page.",
+ "setup": "6 players, Continents, Online speed, 250 turns, every seat a CIVVIS AI agent",
+ "taken": "2026-11-25",
+ "batch": "20261123T202653Z-b999",
+ "began": "2026-11-23",
+ "band": 10,
+ "places": [
+  0.1,
+  0.25,
+  0.5,
+  0.75,
+  0.9
+ ],
+ "commit": "6126321",
+ "games": 2010,
+ "seats": 12060,
+ "forecasting": 2994,
+ "winners": 515,
+ "bands": [
+  {
+   "from": 0,
+   "points": 436,
+   "with": 389,
+   "early": 30,
+   "late": [
+    0.0,
+    1.0,
+    10.0,
+    18.0,
+    32.0
+   ]
+  },
+  {
+   "from": 10,
+   "points": 419,
+   "with": 332,
+   "early": 4,
+   "late": [
+    0.0,
+    4.0,
+    9.0,
+    19.0,
+    45.8
+   ]
+  },
+  {
+   "from": 20,
+   "points": 464,
+   "with": 366,
+   "early": 31,
+   "late": [
+    0.0,
+    0.0,
+    10.0,
+    27.8,
+    71.5
+   ]
+  },
+  {
+   "from": 30,
+   "points": 347,
+   "with": 249,
+   "early": 19,
+   "late": [
+    0.0,
+    3.9,
+    12.5,
+    27.0,
+    62.0
+   ]
+  },
+  {
+   "from": 40,
+   "points": 495,
+   "with": 363,
+   "early": 21,
+   "late": [
+    0.0,
+    9.5,
+    29.0,
+    72.0,
+    94.0
+   ]
+  },
+  {
+   "from": 50,
+   "points": 303,
+   "with": 188,
+   "early": 9,
+   "late": [
+    5.9,
+    11.4,
+    26.0,
+    59.3,
+    80.9
+   ]
+  },
+  {
+   "from": 60,
+   "points": 378,
+   "with": 264,
+   "early": 5,
+   "late": [
+    14.3,
+    32.1,
+    60.0,
+    80.0,
+    120.0
+   ]
+  },
+  {
+   "from": 70,
+   "points": 286,
+   "with": 169,
+   "early": 1,
+   "late": [
+    24.1,
+    47.3,
+    66.9,
+    86.0,
+    124.5
+   ]
+  },
+  {
+   "from": 80,
+   "points": 329,
+   "with": 211,
+   "early": 1,
+   "late": [
+    40.0,
+    60.0,
+    71.0,
+    102.1,
+    160.0
+   ]
+  },
+  {
+   "from": 90,
+   "points": 358,
+   "with": 229,
+   "early": 0,
+   "late": [
+    60.0,
+    64.0,
+    132.5,
+    260.0,
+    265.0
+   ]
+  },
+  {
+   "from": 100,
+   "points": 281,
+   "with": 148,
+   "early": 0,
+   "late": [
+    60.0,
+    80.0,
+    140.0,
+    245.5,
+    260.0
+   ]
+  },
+  {
+   "from": 110,
+   "points": 379,
+   "with": 223,
+   "early": 0,
+   "late": [
+    115.7,
+    240.0,
+    243.0,
+    267.7,
+    640.0
+   ]
+  }
+ ],
+ "beyond": {
+  "from": 120,
+  "points": 1862,
+  "with": 402,
+  "early": 0,
+  "late": [
+   203.1,
+   319.2,
+   1105.9,
+   3313.5,
+   5696.0
+  ]
+ }
+}
