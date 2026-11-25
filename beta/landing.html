@@ -149,14 +149,14 @@
      (like the pages do). civvis, ai debugger have a black background (same
      as simulator)"). The pages are blue and so are their buttons: the rule
      above. CIVVIS, the simulation itself at the lane's own address, is
-     gold (operator, 2026-11-24: "lets give civvis a gold background on the
-     button, rather than black"), the gold the simulator lights its own
-     button in. AI Debugger, the simulator in play mode, keeps the
+     white (operator, 2026-11-25: "make the civvis color white"; it was
+     gold from 2026-11-24 and black before), the white the simulator sets
+     its own button in. AI Debugger, the simulator in play mode, keeps the
      simulator's black, inside the edge its own buttons have. Civ 6 opens
      Steam's shop and is the blue of Steam's buttons ("civ 6 can have the
      steam color of blue"), dark under the name and light at the far end. */
-  .site-link[href$="../"] { background: linear-gradient(145deg, #dec176, #aa7d30); color: #17130c; box-shadow: inset 0 0 0 1px #efd184; }
-  .site-link[href$="../"]:hover, .site-link[href$="../"]:focus-visible { background: linear-gradient(145deg, #f0d68e, #c0913c); color: #000; }
+  .site-link[href$="../"] { background: #fff; color: #12171d; box-shadow: inset 0 0 0 1px #cfd6dd; }
+  .site-link[href$="../"]:hover, .site-link[href$="../"]:focus-visible { background: #e3e8ee; color: #000; }
   .site-link[href$="?mode=play"] { background: #050607; color: #c9cecb; box-shadow: inset 0 0 0 1px #30363a; }
   .site-link[href$="?mode=play"]:hover, .site-link[href$="?mode=play"]:focus-visible { background: #181c1f; color: #fff; }
   /* Doctor Strange's Civ 6 (strange mode, the same game shown as a tree of
@@ -200,10 +200,10 @@
   .site-folder:focus-within > .site-menu,
   .site-folder.is-open > .site-menu { display: grid; }
   /* The page on screen keeps the colour of what it is and is ringed in
-     white. It was gold until 2026-11-24, when gold became CIVVIS's own
-     (operator: "lets give civvis a gold background on the button, rather
-     than black"). On a page of Charts/ the folder is ringed as well, so
-     the row says where the page is with the list folded. */
+     white. It was gold until 2026-11-24. CIVVIS's button is white all
+     over since 2026-11-25 and is never the page on screen here, so the
+     two are not confused. On a page of Charts/ the folder is ringed as
+     well, so the row says where the page is with the list folded. */
   .site-link[aria-current="page"],
   .site-folder:has([aria-current="page"]) > .site-link { box-shadow: inset 0 0 0 2px #fff; }
 

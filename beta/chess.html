@@ -101,8 +101,8 @@
   .site-link:hover,
   .site-link:focus-visible { background: var(--action-hover); color: #fff; }
   .site-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .site-link[href$="../"] { background: linear-gradient(145deg, #dec176, #aa7d30); color: #17130c; box-shadow: inset 0 0 0 1px #efd184; }
-  .site-link[href$="../"]:hover, .site-link[href$="../"]:focus-visible { background: linear-gradient(145deg, #f0d68e, #c0913c); color: #000; }
+  .site-link[href$="../"] { background: #fff; color: #12171d; box-shadow: inset 0 0 0 1px #cfd6dd; }
+  .site-link[href$="../"]:hover, .site-link[href$="../"]:focus-visible { background: #e3e8ee; color: #000; }
   .site-link[href$="?mode=play"] { background: #050607; color: #c9cecb; box-shadow: inset 0 0 0 1px #30363a; }
   .site-link[href$="?mode=play"]:hover, .site-link[href$="?mode=play"]:focus-visible { background: #181c1f; color: #fff; }
   .site-link[href$="?mode=strange"] {
@@ -134,10 +134,10 @@
     color: #fff;
   }
   /* The page on screen keeps the colour of what it is and is ringed in
-     white, as on every page. It was gold until 2026-11-24, when gold
-     became CIVVIS's own (operator: "lets give civvis a gold background
-     on the button, rather than black"). Here the list stays a column
-     behind its button: the board has the top of the screen. */
+     white, as on every page. It was gold until 2026-11-24; CIVVIS's
+     button is white since 2026-11-25 (operator: "make the civvis color
+     white") and is never the page on screen here. The list stays a
+     column behind its button: the board has the top of the screen. */
   .site-link[aria-current="page"] { box-shadow: inset 0 0 0 2px #fff; }
 
   /* Top right: the opponent and the game. */
