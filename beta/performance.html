@@ -807,9 +807,9 @@
            civvis self-play speed up over my manual 5 hr games? add this
            info, maybe in tables to the top"). No figure is written here:
            the readings are `data/performance/speedup_timeline.json`, the
-           ledger the home page's speed timeline is drawn from, and
+           ledger the speed timeline under the tables is drawn from, and
            `beta/speedup_timeline.py` works out every multiplier and the sum
-           shown beside it, so the two pages cannot disagree. -->
+           shown beside it, so the tables and the line cannot disagree. -->
       <section class="res-section" id="perf-speedup" aria-labelledby="perf-speedup-title" hidden>
         <h2 class="rank-title" id="perf-speedup-title">Speedup over a game played by hand</h2>
         <p class="perf-speed-lede" id="perf-speed-lede"></p>
@@ -1115,7 +1115,7 @@
       <!-- Each way of playing over time (operator 2026-11-24: "in civvis
            performance, we should have charts studying the improvements
            rates of each of these over time"). A small chart for each stop
-           of the home page's line after the baseline: its readings by the
+           of the line over them after the baseline: its readings by the
            day they were taken, and the pace they have kept. The readings
            are the same ledger's, worked out by `speedup_timeline.history`;
            the self-play chart also draws the tournament's batches. No
@@ -1369,7 +1369,7 @@
       hand: ["Human Player (me)", "One person plays one game of Civilization VI. The baseline. Some are faster, some are slower. I’m a bit on the slower side but 5h seems reasonable."],
       control: ["CIVVIS → Firaxis computer control", "Civilization VI itself, Firaxis’s game, with CIVVIS at the controls of one seat."],
       firaxis_self_play: ["Firaxis self-play", "Civilization VI itself with Firaxis’s own AI in every seat."],
-      deity_sim: ["CIVVIS against Deity rivals", "The simulator, one core: a CIVVIS seat against five Deity rivals that play as Civilization VI’s AI does. Not on the home page’s line."],
+      deity_sim: ["CIVVIS against Deity rivals", "The simulator, one core: a CIVVIS seat against five Deity rivals that play as Civilization VI’s AI does. Not on the line under the tables."],
       self_play: ["CIVVIS self-play", "The simulator, one core: every seat a CIVVIS AI agent."],
       all_cores: ["Parallel games", "CIVVIS self-play on every core of one machine at once: the time from one finished game to the next."],
     };
@@ -1785,7 +1785,7 @@
 
     // ---- Each way of playing over time (operator 2026-11-24: "charts
     // studying the improvements rates of each of these over time"): a small
-    // chart for each stop of the home page's line, each over its own run of
+    // chart for each stop of the line over them, each over its own run of
     // days (one stop has readings since the summer and another since
     // yesterday) and on its own scale of seconds, which goes by tenfolds so
     // that a steady pace of improvement is a straight line. A chart is drawn
@@ -1831,7 +1831,7 @@
       const table = document.querySelector("#perf-history-table tbody");
       for (const row of trends) {
         const panel = el("div", "perf-trend"), head = el("div", "perf-trend-head");
-        // The stop's figure as the home page's line has it.
+        // The stop's figure as the line over the charts has it.
         const own = row.lines[0], newest = row.now && row.now.time ? row.now : own.points[own.points.length - 1];
         const now = el("span", "perf-trend-now", text(newest.time));
         if (newest.worked) now.append(el("small", "", "worked out, not timed"));
