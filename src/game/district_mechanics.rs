@@ -1130,7 +1130,7 @@ fn warrior_monks_culture_bomb_when_a_holy_site_completes() {
     let city = game.found_city_for(0, game.units[&settler].pos, None);
     game.players[0].techs.insert(crate::name!("astrology"));
     game.players[0].religion = Some("Home Faith".to_string());
-    game.players[0].religion_beliefs = vec!["warrior_monks".to_string()];
+    game.players[0].religion_beliefs = vec!["warrior_monks".into()];
     let site = game
         .district_sites(city, crate::name!("holy_site"))
         .into_iter()

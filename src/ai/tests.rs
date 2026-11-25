@@ -7331,9 +7331,9 @@ fn pending_prophet_after_preferred_beliefs_are_taken() -> Game {
         game.found_city_for(pid, position, None);
     }
     game.players[0].religion = Some("First Faith".to_string());
-    game.players[0].religion_beliefs = vec!["work_ethic".to_string(), "tithe".to_string()];
+    game.players[0].religion_beliefs = vec!["work_ethic".into(), "tithe".into()];
     game.players[1].religion = Some("Second Faith".to_string());
-    game.players[1].religion_beliefs = vec!["choral_music".to_string(), "world_church".to_string()];
+    game.players[1].religion_beliefs = vec!["choral_music".into(), "world_church".into()];
 
     let holy_city = game.player_city_ids(2)[0];
     let center = game.cities[&holy_city].pos;
