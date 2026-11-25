@@ -17,14 +17,27 @@ impl Game {
         &self,
         kind: &str,
     ) -> Option<(&str, &crate::rules::GreatPersonSpec)> {
-        self.rules
-            .great_people
+        // The class's people are listed at load in the order this takes
+        // them (`Rules::great_people_by_kind`): the first not yet retired is
+        // the earliest-era, lowest-id one the walk below would choose. A
+        // ruleset assembled without the loader has no list, and walks.
+        let rules = &self.rules;
+        if rules.great_people_by_kind.is_empty() && !rules.great_people.is_empty() {
+            return rules
+                .great_people
+                .iter()
+                .filter(|(id, spec)| {
+                    spec.kind == kind && !self.retired_great_people.contains(id.as_str())
+                })
+                .min_by_key(|(id, spec)| (spec.era, *id))
+                .map(|(id, spec)| (id.as_str(), spec));
+        }
+        rules
+            .great_people_by_kind
+            .get(kind)?
             .iter()
-            .filter(|(id, spec)| {
-                spec.kind == kind && !self.retired_great_people.contains(id.as_str())
-            })
-            .min_by_key(|(id, spec)| (spec.era, *id))
-            .map(|(id, spec)| (id.as_str(), spec))
+            .find(|id| !self.retired_great_people.contains(id.as_str()))
+            .map(|id| (id.as_str(), &rules.great_people[*id]))
     }
 
     /// Standard-speed base price plus the stock ahead-of-era surcharge. Art

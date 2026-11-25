@@ -1255,3 +1255,53 @@ fn the_opening_offer_of_every_class_is_pinned() {
         );
     }
 }
+
+/// The class lists built at load name, at every step, the person the walk
+/// over the whole ruleset names: for every class, retiring its people one at
+/// a time in the order offered, and with a ruleset that has no lists at all.
+#[test]
+fn great_people_listed_by_kind_offer_who_the_walk_offers() {
+    let (mut game, _, _) = scientist_game(7);
+    let walk = |game: &Game, kind: &str| {
+        game.rules
+            .great_people
+            .iter()
+            .filter(|(id, spec)| {
+                spec.kind == kind && !game.retired_great_people.contains(id.as_str())
+            })
+            .min_by_key(|(id, spec)| (spec.era, *id))
+            .map(|(id, _)| id.as_str().to_string())
+    };
+    let kinds: std::collections::BTreeSet<String> = game
+        .rules
+        .great_people
+        .values()
+        .map(|spec| spec.kind.clone())
+        .collect();
+    assert!(kinds.len() >= 9, "{kinds:?}");
+    assert!(!game.rules.great_people_by_kind.is_empty());
+    let mut offered = 0;
+    for kind in kinds.iter().map(String::as_str).chain(["no_such_class"]) {
+        loop {
+            let listed = game
+                .current_great_person(kind)
+                .map(|(id, _)| id.to_string());
+            assert_eq!(listed, walk(&game, kind), "{kind}");
+            let Some(id) = listed else { break };
+            game.retired_great_people.insert(id);
+            offered += 1;
+        }
+    }
+    assert_eq!(offered, game.rules.great_people.len());
+
+    // A ruleset put together without the loader carries no lists, and walks.
+    game.retired_great_people.clear();
+    std::sync::Arc::make_mut(&mut game.rules).great_people_by_kind = Default::default();
+    for kind in &kinds {
+        let walked = game
+            .current_great_person(kind)
+            .map(|(id, _)| id.to_string());
+        assert_eq!(walked, walk(&game, kind), "{kind}");
+        assert!(walked.is_some(), "{kind}");
+    }
+}
