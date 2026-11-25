@@ -399,7 +399,7 @@ impl AdvancedAi {
         let science = Self::research_rate(g, pid, true);
         let culture = Self::research_rate(g, pid, false);
         let mut opened: Vec<f64> = Vec::new();
-        for chase in self.eureka_chases(g, pid) {
+        for chase in self.eureka_chases(g, pid).iter() {
             if !self.opens_the_trigger(g, pid, node, techs, &chase.trigger) {
                 continue;
             }

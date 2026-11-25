@@ -218,6 +218,7 @@ impl Game {
         for c in self.cities.values().filter(|c| c.owner == pid) {
             let mut city_earn: BTreeMap<String, f64> = BTreeMap::new();
             let scottish_happiness = self.scottish_enlightenment_happiness_scale(c);
+            let mut cultural_alliance_route: Option<bool> = None;
             for position in &c.owned_tiles {
                 let tile = &self.map.tiles[position];
                 if !tile.pillaged && tile.improvement.as_deref() == Some("industry") {
@@ -235,15 +236,22 @@ impl Game {
                 }
                 for (kind, points) in &self.rules.districts[d].great_person_points {
                     *city_earn.entry(kind.clone()).or_insert(0.0) += *points;
-                    let cultural_alliance_route = self.routes.iter().any(|route| {
-                        route.origin == c.id
-                            && self.cities.get(&route.dest).is_some_and(|destination| {
-                                self.alliance_with(pid, destination.owner)
-                                    .is_some_and(|alliance| {
-                                        alliance.kind == "cultural" && alliance.level >= 2
+                    // The same for every district and class of this city:
+                    // asked on first need, not once a class (it walks every
+                    // trade route in the world).
+                    let cultural_alliance_route =
+                        *cultural_alliance_route.get_or_insert_with(|| {
+                            self.routes.iter().any(|route| {
+                                route.origin == c.id
+                                    && self.cities.get(&route.dest).is_some_and(|destination| {
+                                        self.alliance_with(pid, destination.owner).is_some_and(
+                                            |alliance| {
+                                                alliance.kind == "cultural" && alliance.level >= 2
+                                            },
+                                        )
                                     })
                             })
-                    });
+                        });
                     if cultural_alliance_route {
                         *city_earn.entry(kind.clone()).or_insert(0.0) += 1.0;
                     }
@@ -447,18 +455,18 @@ impl Game {
                 *earn.entry(kind).or_insert(0.0) += amount * city_multiplier;
             }
         }
-        for kind in [
-            "general",
-            "admiral",
-            "scientist",
-            "prophet",
-            "writer",
-            "artist",
-            "engineer",
-            "merchant",
-            "musician",
+        for (kind, effect) in [
+            ("general", crate::name!("gpp_general")),
+            ("admiral", crate::name!("gpp_admiral")),
+            ("scientist", crate::name!("gpp_scientist")),
+            ("prophet", crate::name!("gpp_prophet")),
+            ("writer", crate::name!("gpp_writer")),
+            ("artist", crate::name!("gpp_artist")),
+            ("engineer", crate::name!("gpp_engineer")),
+            ("merchant", crate::name!("gpp_merchant")),
+            ("musician", crate::name!("gpp_musician")),
         ] {
-            let amount = self.policy_effect(pid, &format!("gpp_{kind}"));
+            let amount = self.policy_effect(pid, effect);
             if amount != 0.0 {
                 *earn.entry(kind.to_string()).or_insert(0.0) += amount;
             }

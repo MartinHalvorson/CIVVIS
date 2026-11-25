@@ -129,8 +129,9 @@ impl AdvancedAi {
     /// The open chase for `node`, if its boost is still earnable.
     pub(super) fn chase_for(&self, g: &Game, pid: usize, node: &str) -> Option<EurekaChase> {
         self.eureka_chases(g, pid)
-            .into_iter()
+            .iter()
             .find(|chase| chase.node.as_str() == node)
+            .cloned()
     }
 
     /// Is this chase one actionable step from firing: exactly one trigger
