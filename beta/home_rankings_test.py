@@ -423,12 +423,13 @@ class HomeRankings(unittest.TestCase):
         # The Tournaments table stood above the two lists until the operator
         # gave tournaments their own page (2026-11-21: "The tournament tables
         # on home right now can move to Tournaments"). Nothing of it came
-        # along but the link to that page (`tournaments_page_test.py`).
+        # along but the link to that page (`tournaments_page_test.py`), which
+        # is named Experiments since 2026-11-25.
         for gone in ("rank-tournaments", "is-wide", "data.tournaments", "toursShown"):
             for name, page in PAGES.items():
                 self.assertNotIn(gone, page, name)
         for page in (CHARTS, ELO, CIVS):
-            self.assertIn('<a class="site-link" href="../../tournaments/"', page)
+            self.assertIn('<a class="site-link" href="../../experiments/"', page)
         # Every game behind the civ table is one click away, on the branch
         # the table is read from.
         self.assertIn(
@@ -934,7 +935,7 @@ class HomeRankings(unittest.TestCase):
                              {"civs": None, "strategies": None})
 
     def test_only_a_page_with_the_tournaments_card_is_sent_its_rows(self):
-        # The table lives on the Tournaments page now. A lane pinned to a home
+        # The table lives on the Experiments page now. A lane pinned to a home
         # page that still has the card is published by this script too and
         # keeps its table; head's page has no card and is not sent the rows.
         data = {"civs": None, "strategies": None, "tournaments": [{"id": 1}]}

@@ -14,7 +14,7 @@ Until then a list was all one colour, the colour of the page it stood on:
 six blue buttons on the pages, six black ones in the simulator. Now a button
 says where it goes, and says the same thing on every page:
 
-    Home, Charts/ and its pages, Tournaments     the pages' blue
+    Home, Charts/ and its pages, Experiments     the pages' blue
     CIVVIS                                       white
     AI Debugger                                  the simulator's black
     Doctor Strange's Civ 6                       Doctor Strange's blue and
@@ -134,7 +134,7 @@ def lists() -> dict[str, list[tuple[str, str]]]:
 class Pages(unittest.TestCase):
     def test_the_list_is_found_on_the_pages_that_carry_it(self):
         # Discovered, so a glob that comes up empty is a failure and not a
-        # pass: Home, Tournaments and the pages of Charts/.
+        # pass: Home, Experiments and the pages of Charts/.
         carried = lists()
         self.assertGreaterEqual(len(carried), 5, sorted(carried))
         for source, links in carried.items():
@@ -182,10 +182,10 @@ class Pages(unittest.TestCase):
                 self.assertEqual(list(worn)[-1], "Civ 6")
                 self.assertNotIn("Wizard Chess", worn)
                 blue = {name for name, kind in worn.items() if kind == "blue"}
-                self.assertLessEqual({"Home", "Charts/", "Tournaments"}, blue)
+                self.assertLessEqual({"Home", "Charts/", "Experiments"}, blue)
                 # Whatever else is blue is a page of Charts/, set in under it.
                 under = {name for kind, _, _, name in LINK.findall(NAV.search((BETA / source).read_text(encoding="utf-8")).group(1)) if kind.endswith("sub-link")}
-                self.assertEqual(blue - {"Home", "Charts/", "Tournaments"}, under)
+                self.assertEqual(blue - {"Home", "Charts/", "Experiments"}, under)
 
     def test_the_simulator_is_never_the_page_on_screen_here(self):
         # The page on screen here is always one of the blue pages.
@@ -203,7 +203,7 @@ class Simulator(unittest.TestCase):
         for mark, name in (
             ("homelink", "Home"),
             ("chartslink", "Charts/"),
-            ("tourlink", "Tournaments"),
+            ("tourlink", "Experiments"),
             ("watchlink", "CIVVIS"),
             ("playlink", "AI Debugger"),
             ("strangelink", "Doctor Strange's Civ 6"),

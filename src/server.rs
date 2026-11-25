@@ -3442,24 +3442,7 @@ impl Session {
             }
             let turn = self.game.turn;
             let whole = self.debugger_turn_stands();
-            self.ais[0].take_turn(&mut self.game, 0);
-            if self.game.current == 0 && !self.game.is_finished() {
-                let _ = self.game.apply(0, &Action::EndTurn);
-            }
-            let g = &mut self.game;
-            let mut guard = 0;
-            while !g.is_finished()
-                && g.current != 0
-                && g.players[0].alive
-                && guard < 2 * g.players.len()
-            {
-                let pid = g.current;
-                self.ais[pid].take_turn(g, pid);
-                if g.current == pid && !g.is_finished() {
-                    let _ = g.apply(pid, &Action::EndTurn);
-                }
-                guard += 1;
-            }
+            self.autoplay_round();
             played += 1;
             // The agent played the whole turn, so the one it opens is marked
             // as its work, and the layers are not asked: there is no person
@@ -3469,6 +3452,34 @@ impl Session {
         }
         played
     }
+
+    /// One round as `autoplay` plays it: the played seat's agent takes its
+    /// turn, then every other seat takes its own, until the round comes back
+    /// to the played seat or the game is over. Nothing of the debugger's is
+    /// touched: the turn that opens is not marked here, so a world that is
+    /// only played forward to see how it comes out (`debugger.rs`, `Seer`)
+    /// plays the very rounds a run does and keeps none of them.
+    fn autoplay_round(&mut self) {
+        self.ais[0].take_turn(&mut self.game, 0);
+        if self.game.current == 0 && !self.game.is_finished() {
+            let _ = self.game.apply(0, &Action::EndTurn);
+        }
+        let g = &mut self.game;
+        let mut guard = 0;
+        while !g.is_finished()
+            && g.current != 0
+            && g.players[0].alive
+            && guard < 2 * g.players.len()
+        {
+            let pid = g.current;
+            self.ais[pid].take_turn(g, pid);
+            if g.current == pid && !g.is_finished() {
+                let _ = g.apply(pid, &Action::EndTurn);
+            }
+            guard += 1;
+        }
+    }
+
     /// "One more turn": put the decided world back into play.
     ///
     /// A victory can be declared in the middle of a round, which leaves the

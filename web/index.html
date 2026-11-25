@@ -340,7 +340,7 @@
      and the text fitter shrinks the type into the lane instead of wrapping. */
   .tagline span { display: block; white-space: nowrap; }
   .tagline span + span { color: #bccac4; }
-  /* The site's pages from the top down: Home, Charts, Tournaments, CIVVIS
+  /* The site's pages from the top down: Home, Charts, Experiments, CIVVIS
      and AI Debugger, and under them the game all five are built on. The block below is how they stand
      when there is no room beside the lockup, or no way to ask whether they
      are showing (`:has`): two by two under the tagline. `display: grid`
@@ -351,7 +351,7 @@
   }
   .head-links[hidden] { display: none; }
   /* Two by two a link is half its row, except on the second row: there
-     TOURNAMENTS takes six tenths and CIVVIS four. The six tenths were
+     EXPERIMENTS takes six tenths and CIVVIS four. The six tenths were
      measured for AUTO-TOURNEYS, its name from 2026-11-22 to 2026-11-24: in
      this type that name is 91px and half a row holds 84px at its narrowest
      (a 195px band), and six tenths of it 104px; CIVVIS is 36px in the 64px
@@ -391,7 +391,7 @@
      as simulator)"). The rule above is this page's black, which AI
      Debugger keeps. CIVVIS is white (operator, 2026-11-25: "make the
      civvis color white"; gold from 2026-11-24, black before), the same
-     white on every page. Home, Charts/ and Tournaments are the blue those
+     white on every page. Home, Charts/ and Experiments are the blue those
      pages set their own lists in, and Civ 6, which opens Steam's shop, is
      the blue of Steam's buttons ("civ 6 can have the steam color of
      blue"), dark under the name and light at the far end. */
@@ -473,7 +473,7 @@
        gutters, the size it took for STRAT DEBUGGER (83px in this type
        against the 86px inside the column) while that was the Debugger's
        name here, and it keeps that size, so neither width at which the
-       lockup changes shape has moved. AUTO-TOURNEYS, the Tournaments
+       lockup changes shape has moved. AUTO-TOURNEYS, the Experiments
        page's name from 2026-11-22 to 2026-11-24, was the longest name,
        80px. Each link is one track here, wherever it stands two by
        two. Six one-line links and the one of two lines make it 141px. */
@@ -6660,7 +6660,7 @@
         <h1>CIVVIS<span class="brand-suffix">.ai</span></h1>
         <div class="tagline"><span>A <i>Civilization VI</i> Simulator</span><span>for AI reasoning insights</span></div>
       </div>
-      <!-- The site is five pages, Home, Charts, Tournaments, CIVVIS and AI
+      <!-- The site is five pages, Home, Charts, Experiments, CIVVIS and AI
            Debugger, and every one of them lists all five in that order with
            the one on screen ringed in white. This page is the last two: `./` is the simulation
            the AIs play and `?mode=play` the same game with a seat of your
@@ -6673,14 +6673,14 @@
            tree up the middle of it, drawn by `assets/app_debugger.js`.
            Only the published site has a /home, a /research (the Charts
            page, which kept its address through two renames) and a
-           /tournaments (the Tournaments page, back at its first address) to go to
+           /experiments (the Experiments page, named Tournaments until 2026-11-25) to go to
            (`beta/publish.sh` makes the three links lane-relative); the head
            script unhides the list on the hosts that serve them. Performance
            is Charts' own page and is listed under it there, not here. -->
       <nav class="head-links" id="headlinks" aria-label="CIVVIS sites" hidden>
         <a class="home-link" id="homelink" href="/home" target="_top">Home</a>
         <a class="home-link" id="chartslink" href="/charts/ai-insights" target="_top">Charts/</a>
-        <a class="home-link" id="tourlink" href="/tournaments" target="_top">Tournaments</a>
+        <a class="home-link" id="tourlink" href="/experiments" target="_top">Experiments</a>
         <a class="home-link" id="watchlink" href="./" target="_top">CIVVIS</a>
         <a class="home-link" id="strangelink" href="?mode=strange" target="_top">Doctor Strange's Civ 6</a>
         <a class="home-link" id="playlink" href="?mode=play" target="_top">AI Debugger</a>

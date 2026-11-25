@@ -12,7 +12,7 @@ Codex, others) but all should be publicly available, open source,
 inspectable, free. with an Ack button."
 
 A first visit can be to any page: the simulator at the lane's own address,
-Home, a page of Charts/, Tournaments, the downloads. So every page carries
+Home, a page of Charts/, Experiments, the downloads. So every page carries
 the note, as one block of script that is the same in each of them (the site
 has no script its pages share), and the browser keeps the Ack for all of
 them at once. This holds:

@@ -18,8 +18,8 @@ should show the civvis vs lv 8 deity ai chart, switching between lv 8, 7, 6,
 optimization decisions chosen to move fast. as ai gets smarter, expect the
 pace of progress to speed up") is under `speed`:
 
-- **levels**, the games against Civilization VI's own AI at Lv 8 Deity, Lv 7
-  Immortal, Lv 6 Emperor and Lv 5 King, in that order (`LEVELS`, the order
+- **levels**, the games against Civilization VI's own AI at Lv 5 King, Lv 6
+  Emperor, Lv 7 Immortal and Lv 8 Deity, in that order (`LEVELS`, the order
   the page's switch lists them). Each is the level's every counted game: its
   number and name, the games, CIVVIS's wins among them, the days of its
   first and newest game, and per victory type the count on each turn from 1
@@ -58,9 +58,12 @@ import research_page
 
 SLOT = re.compile(r'(<script type="application/json" id="insights-data">)(.*?)(</script>)', re.S)
 
-#: The levels the first insight switches between, in the order the page
-#: lists them (operator 2026-11-24: "switching between lv 8, 7, 6, 5").
-LEVELS = [8, 7, 6, 5]
+#: The levels the first insight switches between (operator 2026-11-24:
+#: "switching between lv 8, 7, 6, 5"), in the order the page lists them: from
+#: the weakest up, and the first is the one the page opens on (operator
+#: 2026-11-25: "in smart ai picks up speed, list 5 6 7 8. default to 5 at
+#: the top").
+LEVELS = [5, 6, 7, 8]
 
 
 def speed(source: pathlib.Path) -> dict | None:

@@ -642,7 +642,7 @@ class TheSiteList(unittest.TestCase):
                 ("site-link sub-link", "../win-analytics/", "Win Analytics"),
                 ("site-link sub-link", "../elo-rankings/", "ELO Rankings"),
                 ("site-link sub-link", "./", "CIVVIS Performance"),
-                ("site-link", "../../tournaments/", "Tournaments"),
+                ("site-link", "../../experiments/", "Experiments"),
                 ("site-link", "../../", "CIVVIS"),
                 ("site-link", "../../?mode=strange", "Doctor Strange's Civ 6"),
                 ("site-link", "../../?mode=play", "AI Debugger"),
@@ -659,7 +659,7 @@ class TheSiteList(unittest.TestCase):
     def test_charts_drops_its_pages_down_on_every_page(self):
         # Charts/ is a folder that drops down to its pages (operator
         # 2026-11-24: "charts/ can drop down folder style and the user can
-        # pick the right chart"), on Home and Tournaments as on its own
+        # pick the right chart"), on Home and Experiments as on its own
         # pages. Until then a branch was folded unless one of its pages was
         # on screen. Its order is the operator's of the same day: "move ai
         # interpretablity to the top of the charts/ then civ analytics, win
