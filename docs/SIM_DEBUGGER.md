@@ -1584,14 +1584,32 @@ path). these should alert on the top section out in the distance."
     the engine is deterministic, and every turn foreseen carries the print
     the world's own turn is given (`debug.worlds`), which is how the page
     knows a future is still its world's (`strangeSightStale`).
-  - *Fast, because it keeps nothing.* A turn played ahead (`ahead`) keeps a
-    mark, megabytes of the world copied wherever the next turn writes to
-    it, so that it can be shown and walked back to. The copy keeps no turn:
-    it is the only holder of what it holds and a turn writes to it in
-    place. It reads nothing of the seat on the way and is given no state
-    document. What it keeps is what a forecast says: each nuclear
-    detonation and each war declared, with the turn and the world era it
-    happens in, how the game ends, and the print of each turn.
+  - *It costs the turns and nothing else.* A turn played ahead (`ahead`)
+    keeps a mark, megabytes of the world copied wherever the next turn
+    writes to it, so that it can be shown and walked back to. The copy keeps
+    no turn: it is the only holder of what it holds and a turn writes to it
+    in place, so the whole of a game's future takes the memory of one world
+    where a mark a turn would take hundreds. It reads nothing of the seat on
+    the way and is given no state document. What it keeps is what a
+    forecast says: each nuclear detonation and each war declared, with the
+    turn and the world era it happens in, how the game ends, and the print
+    of each turn.
+
+    Measured 2026-11-24 on the desktop build (`civvis play --players 6
+    --seed 11`, JackOfAllTrades in the seat, an 18-core computer busy with
+    other work and the job at the lowest priority): a world's whole future
+    from turn 1, 380 turns to the win, was foreseen in 84.9 s in twenty-turn
+    requests, and the same game played as a run with every turn kept took
+    87.8 s. All 380 turns were the same world in both, print for print, and
+    both ended on the same turn. A turn cost 15 ms by turn 20, 64 by 100,
+    209 by 200 and 336 by 300. A sample of the process through turns 170 to
+    260 has all of a forecast's time in the seats' own turns
+    (`Session::autoplay_round`): the agents' planning
+    (`AdvancedAi::plan_observed_turn`) 54%, the view each plans on
+    (`Game::player_decision_view`) 19%, the city-states and barbarians 8%,
+    and the copy's own keeping (the prints, what was seen) too little to
+    show. A forecast is as fast as the game is played: what makes it come
+    sooner is a core of its own, below, and whatever makes a turn cheaper.
   - *On every core.* On the published build each world's future is played
     on an engine of its own, a scout (`beta/shim.js`, "a world's scout"): a
     fork of the world's engine as it stands, on a thread of its own, asked
@@ -1601,7 +1619,11 @@ path). these should alert on the top section out in the distance."
     behind its future. A scout is let go when its game has ended. A game
     served by this computer has one process for every world, so there a
     world's future is played by the world itself, one world at a time while
-    the worlds stand still.
+    the worlds stand still: on the page over `civvis play --players 4
+    --seed 11` (Chrome for Testing, the same busy computer), the followed
+    world's future was played from turn 13 to its end on turn 335 in 39.2 s
+    and then the other's to its end on turn 220 in 16.5 s, each sign saying
+    how far its world was clear of a nuclear war as it went.
   - *Always.* A world is asked the moment it is open and again each time it
     answers, until its game has ended; and anew, from the end of its line
     as it then is, when its line has been played another way: another

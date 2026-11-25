@@ -6127,9 +6127,11 @@ function strangeFate(letter) {
   const coming = sight.seen.filter(seen => seen.kind === "war" && seen.turn >= turn);
   const short = text => String(text || "").replace(" declares war on ", " on ");
   const over = !end ? "" : `${end.kind === "won" ? "★" : "🏁"} ${end.text}, turn ${end.turn}`;
+  // Said in fewer words on the sign, where the line is short.
+  const brief = over.replace(" wins the game,", " wins,").replace(" is out of the game,", " is out,");
   const wars = coming.length > 0
     ? `⚔ War ${coming[0].turn === turn ? "this turn" : `in ${turns(coming[0].turn - turn)}`}: ${short(coming[0].text)}${coming.length > 1 ? ` · ${coming.length - 1} more` : ""}`
-    : sight.done ? `No wars ahead${over ? ` · ${over}` : ""}` : reach > 0 ? `No war in the next ${turns(reach)}` : "";
+    : sight.done ? `No wars ahead${brief ? ` · ${brief}` : ""}` : reach > 0 ? `No war in the next ${turns(reach)}` : "";
   const last = sight.done ? sight.turn : limit;
   const share = sight.done ? 1 : last && last > sight.from ? Math.max(0, Math.min(1, (sight.turn - sight.from) / (last - sight.from))) : 0;
   const pace = sight.pace > 0 ? ` at ${(1000 / sight.pace).toFixed(sight.pace > 100 ? 1 : 0)} turns a second` : "";
