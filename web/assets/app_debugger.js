@@ -7570,6 +7570,10 @@ function tomorrowWatch() {
     Object.assign(t, {game, loop: 1, wake: {turn: timeline.first ?? state.turn, save: null, acted: 0}, far: state.turn,
       ends: [], seen: new Map(), now: new Map(), fate: null, looking: false, said: null});
   }
+  // A wake point whose save point the engine no longer holds (a saved game
+  // was loaded over this one) is the first turn again.
+  if (t.wake.save !== null && !(timeline.saves || []).some(save => save.id === t.wake.save))
+    t.wake = {turn: timeline.first ?? state.turn, save: null, acted: 0};
   t.turn = state.turn;
   t.far = Math.max(t.far, state.turn);
   for (const war of state.wars || []) {

@@ -1901,7 +1901,8 @@ rest. Nothing in the engine is new.
   old turn's mark may be, and a jump back goes to it (`op: "goto_save"`).
   Pressed while standing on a wake point that was moved, the button moves it
   back to the first turn (`op: "drop_save"`), so one set by mistake is not
-  for good.
+  for good. A wake point whose save point the engine no longer holds is the
+  first turn again.
 - **A step back takes attendance again.** The banners over the map compare
   each turn with the one before it (`rivalMoments`, `boostMoments` in
   `app_moments.js`). Going back from a war to before it began announced a

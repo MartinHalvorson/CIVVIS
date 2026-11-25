@@ -4152,6 +4152,13 @@ def check_edge_of_tomorrow(bar: Bar, address: str) -> None:
     bar.ev("engine.over = null, true")
     bar.click("#tmr-jump")
     bar.until("state.turn === 3 && tomorrow.loop === 6 && tomorrowIdle()", "a won game is jumped back from too")
+    # A wake point is only as good as the save point the engine holds for
+    # it: with that gone from the engine, a jump back wakes on turn 1.
+    held = bar.ev("JSON.stringify(engine.saves)")
+    bar.ev("engine.saves = [], render(engineState()), true")
+    assert bar.ev("tomorrow.wake") == {"turn": 1, "save": None, "acted": 0}
+    assert rail()["jump"]["to"] == "to turn 1"
+    bar.ev(f"engine.saves = {held}, tomorrow.wake = {json.dumps(kept)}, render(engineState()), true")
     assert rail()["here"] == {"off": False, "says": "Wake on turn 1"}
     bar.forget()
     bar.click("#tmr-wake")
