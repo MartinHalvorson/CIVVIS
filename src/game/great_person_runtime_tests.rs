@@ -1255,3 +1255,93 @@ fn the_opening_offer_of_every_class_is_pinned() {
         );
     }
 }
+
+/// The class lists built at load name, at every step, the person the walk
+/// over the whole ruleset names: for every class, retiring its people one at
+/// a time in the order offered, and with a ruleset that has no lists at all.
+#[test]
+fn great_people_listed_by_kind_offer_who_the_walk_offers() {
+    let (mut game, _, _) = scientist_game(7);
+    let walk = |game: &Game, kind: &str| {
+        game.rules
+            .great_people
+            .iter()
+            .filter(|(id, spec)| {
+                spec.kind == kind && !game.retired_great_people.contains(id.as_str())
+            })
+            .min_by_key(|(id, spec)| (spec.era, *id))
+            .map(|(id, _)| id.as_str().to_string())
+    };
+    let kinds: std::collections::BTreeSet<String> = game
+        .rules
+        .great_people
+        .values()
+        .map(|spec| spec.kind.clone())
+        .collect();
+    assert!(kinds.len() >= 9, "{kinds:?}");
+    assert!(!game.rules.great_people_by_kind.is_empty());
+    let mut offered = 0;
+    for kind in kinds.iter().map(String::as_str).chain(["no_such_class"]) {
+        loop {
+            let listed = game
+                .current_great_person(kind)
+                .map(|(id, _)| id.to_string());
+            assert_eq!(listed, walk(&game, kind), "{kind}");
+            let Some(id) = listed else { break };
+            game.retired_great_people.insert(id);
+            offered += 1;
+        }
+    }
+    assert_eq!(offered, game.rules.great_people.len());
+
+    // A ruleset edited after load no longer matches its lists, and walks:
+    // trimmed, added to, and with one person swapped for another (the
+    // totals agree, a listed person is gone).
+    game.retired_great_people.clear();
+    let loaded = game.rules.clone();
+    let first = |game: &Game, kind: &str| walk(game, kind).expect("the class has somebody");
+    let scientist = first(&game, "scientist");
+    let removed = scientist.clone();
+    let swapped = scientist.clone();
+    type Edit = Box<dyn Fn(&mut crate::rules::Rules)>;
+    let edits: Vec<Edit> = vec![
+        Box::new(move |rules| rules.great_people.retain(|id, _| id != removed.as_str())),
+        Box::new(|rules| {
+            let mut early = rules.great_people.values().next().unwrap().clone();
+            early.kind = "scientist".to_string();
+            early.era = 0;
+            rules
+                .great_people
+                .insert("aaa_first_scientist".to_string(), early);
+        }),
+        Box::new(move |rules| {
+            let mut early = rules.great_people[swapped.as_str()].clone();
+            early.era = 0;
+            rules.great_people.remove(swapped.as_str());
+            rules
+                .great_people
+                .insert("aaa_swapped_scientist".to_string(), early);
+        }),
+    ];
+    for (index, edit) in edits.iter().enumerate() {
+        game.rules = loaded.clone();
+        edit(std::sync::Arc::make_mut(&mut game.rules));
+        for kind in &kinds {
+            let asked = game
+                .current_great_person(kind)
+                .map(|(id, _)| id.to_string());
+            assert_eq!(asked, walk(&game, kind), "edit {index}, {kind}");
+        }
+    }
+
+    // A ruleset put together without the loader carries no lists, and walks.
+    game.rules = loaded;
+    std::sync::Arc::make_mut(&mut game.rules).great_people_by_kind = Default::default();
+    for kind in &kinds {
+        let walked = game
+            .current_great_person(kind)
+            .map(|(id, _)| id.to_string());
+        assert_eq!(walked, walk(&game, kind), "{kind}");
+        assert!(walked.is_some(), "{kind}");
+    }
+}
