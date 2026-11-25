@@ -352,7 +352,7 @@ class TournamentsPage(unittest.TestCase):
             '      </div>\n'
             '      <a class="site-link" href="./" aria-current="page">Experiments</a>\n'
             '      <a class="site-link" href="../chaos-monkey/" '
-            'title="The same worlds replayed with natural disasters up to 100 times as often: what breaks, and what holds.">Chaos Monkey</a>\n'
+            'title="The same worlds replayed with natural disasters up to 1,000 times as often: what breaks, and what holds.">Chaos Monkey</a>\n'
             '      <a class="site-link" href="../" title="Every civilization is played by a CIVVIS AI agent.">CIVVIS</a>\n'
             '      <a class="site-link" href="../?mode=strange" '
             'title="One world, two timelines: the same game played two ways, side by side, on a timeline that branches.">Doctor Strange\'s Civ 6</a>\n'

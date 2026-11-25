@@ -151,16 +151,19 @@ class TheRecord(unittest.TestCase):
 
     def test_an_outcome_nobody_met_is_not_drawn(self):
         data = chaos_monkey.record(batch())
-        self.assertEqual([outcome["key"] for outcome in data["outcomes"]], ["wars"])
+        # Nobody was halved, wiped out, captured or struck in these games:
+        # what is left to draw is the wars and how the people are shared.
+        self.assertEqual([outcome["key"] for outcome in data["outcomes"]], ["wars", "leader"])
+        self.assertEqual(data["doses"][0]["outcomes"]["climate"], 0.0)
 
 
 class WhoComesThrough(unittest.TestCase):
     def test_a_difference_is_two_halves_of_the_storm_worlds(self):
         found = chaos_monkey.factors(batch(seeds=16))
         spread = next(factor for factor in found if factor["key"] == "spread")
-        # 16 seeds, two storm frequencies, two civilizations: 64 pairs, half
-        # of them on each side, split within a frequency.
-        self.assertEqual((spread["more"]["n"], spread["fewer"]["n"]), (32, 32))
+        # 16 seeds, the one frequency of the three that is a storm (100x),
+        # two civilizations: 32 pairs, half of them on each side.
+        self.assertEqual((spread["more"]["n"], spread["fewer"]["n"]), (16, 16))
         # Rome has the cities and keeps more of its people.
         self.assertGreater(spread["more"]["kept"], spread["fewer"]["kept"])
         # Widest gap first.
@@ -169,6 +172,10 @@ class WhoComesThrough(unittest.TestCase):
 
     def test_too_few_civilizations_is_no_difference(self):
         self.assertEqual(chaos_monkey.factors(batch(seeds=2)), [])
+
+    def test_a_world_that_shrugs_the_disasters_off_is_not_read(self):
+        # 10x is under the storm line: only the 100x worlds are paired.
+        self.assertEqual({game["frequency"] for _, _, game, _ in chaos_monkey.pairs(batch())}, {100.0})
 
 
 class TheLessons(unittest.TestCase):

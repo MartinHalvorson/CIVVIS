@@ -797,15 +797,21 @@ impl Game {
         }
         let classes: Vec<Name> = self.rules.disasters.iter().map(|(name, _)| *name).collect();
         for class in classes {
-            // What a class expects this turn. The shipped game keeps it far
-            // under one (twelve floods a game is one turn in twenty), so it
-            // is a single roll. Chaos Monkey's dial can take it past one: the
-            // whole part then strikes for certain and the remainder is the
-            // roll, each strike on a stream of its own. The first strike's
-            // stream is the one the single roll always drew from, so a game
-            // with the dial at one is the game it was.
+            // What a class expects this turn. The shipped game rolls for it
+            // once: twelve floods a game is one turn in twenty, and even a
+            // game so short that its budget comes to more than one a turn
+            // gets the one roll and no more. Chaos Monkey's dial, turned
+            // past one, can ask for several: the whole part then strikes for
+            // certain and the remainder is the roll, each strike on a stream
+            // of its own. With the dial where it ships, this is the single
+            // roll it always was, on the stream it always drew from.
             let expected = self.disaster_rate(&class) / f64::from(self.max_turns);
-            let certain = expected.floor().max(0.0);
+            let turned = self.disaster_frequency() > DEFAULT_DISASTER_FREQUENCY;
+            let certain = if turned {
+                expected.floor().max(0.0)
+            } else {
+                0.0
+            };
             let strikes = certain as u64;
             for strike in 0..=strikes {
                 let mut rng = self.disaster_rng(&class, strike);

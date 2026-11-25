@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#171d25">
 <title>Chaos Monkey · CIVVIS.ai</title>
-<meta name="description" content="CIVVIS Chaos Monkey: chaos engineering for a civilization. The same Civilization VI worlds replayed with natural disasters up to 100 times as often, to learn what breaks, what holds and what avoids the worst outcomes.">
+<meta name="description" content="CIVVIS Chaos Monkey: chaos engineering for a civilization. The same Civilization VI worlds replayed with natural disasters up to 1,000 times as often, to learn what breaks, what holds and what avoids the worst outcomes.">
 <link rel="canonical" href="https://civvis.ai/chaos-monkey/">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23171d25'/%3E%3Ccircle cx='16' cy='16' r='11.5' fill='none' stroke='%2366c0f4'/%3E%3Cpath d='M7 16h18M16 4.5c-4.2 4.1-4.2 18.9 0 23M16 4.5c4.2 4.1 4.2 18.9 0 23' fill='none' stroke='%2366c0f4' stroke-width='1.15'/%3E%3C/svg%3E">
 <style>
@@ -269,9 +269,9 @@
   /* The dial: the five frequencies every world was played at. A button is
      a frequency; the one pressed is the one the tiles under it count, and
      the one lit in every chart below. */
-  .cm-dial { display: flex; flex-wrap: wrap; gap: 6px; margin: 14px 0 0; }
+  .cm-dial { display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 6px; margin: 14px 0 0; }
   .cm-dial button {
-    display: grid; gap: 1px; min-width: 92px; min-height: 48px; padding: 6px 12px; border: 1px solid var(--border-strong); border-radius: 4px;
+    display: grid; align-content: start; gap: 1px; min-width: 0; min-height: 48px; padding: 6px 12px; border: 1px solid var(--border-strong); border-radius: 4px;
     background: transparent; color: var(--muted); font: 500 12px/1.25 var(--sans); text-align: left; cursor: pointer;
   }
   .cm-dial button b { color: var(--text); font-size: 18px; font-weight: 800; }
@@ -464,7 +464,7 @@
          "there is too much text on pages ... should be a more visual
          experience. some text ok. just not too much"). -->
     <p class="intro">
-      Chaos engineering for a civilization: the same worlds replayed with natural disasters up to 100 times as often, to learn what breaks without living through it.
+      Chaos engineering for a civilization: the same worlds replayed with natural disasters up to 1,000 times as often, to learn what breaks without living through it.
     </p>
 
     <!-- The figures. `beta/publish.sh` fills the slot below, the
@@ -510,7 +510,7 @@
 
       <section class="cm-card" id="cm-gives" aria-labelledby="cm-gives-title">
         <h2 class="cm-title" id="cm-gives-title">What gives way first</h2>
-        <p class="rank-sub">A world at the end of its game, as a share of the same world played calm.</p>
+        <p class="rank-sub">What a world has, as a share of the same world played calm, on the same turn.</p>
         <ul class="cm-legend" id="cm-gives-legend"></ul>
         <div class="cm-plot" id="cm-gives-plot"></div>
       </section>
@@ -551,7 +551,10 @@
             Every seed is played once at each frequency by the same CIVVIS AI agents on every seat, so the worlds at one seed differ in their disasters only. 1x is Civilization VI as shipped at standard disaster intensity; the game&#8217;s own top setting, hyperreal, is 2.75x. The disasters are the game&#8217;s own nine kinds with their own damage; only how often they strike changes.
           </p>
           <p class="rank-note">
-            A figure a game is the mean over the games at that frequency. &#8220;Share of the calm world&#8221; divides the total over the chaos games by the total over the same seeds played at 1x. A civilization has lost half its people when its population falls to half its own earlier peak or less. The agents do not know the dial was turned: they play as they always do.
+            A figure a game is the mean over the games at that frequency. A world is read against its calm self on the last tenth turn both games reached, because a game ends when somebody wins and the two seldom end together: the share is the total over the chaos games divided by the total over the same seeds at 1x. A line turn by turn is the mean over the games still being played, and stops when half are over. A civilization has lost half its people when its population falls to half its own earlier peak or less. The agents do not know the dial was turned.
+          </p>
+          <p class="rank-note">
+            &#8220;Who comes through&#8221; splits the civilizations at 100x and over into two halves by one difference at a time, within a frequency, and compares each half&#8217;s people with their calm selves&#8217;. It shows what went together in these games, not what caused what. All of it is one game&#8217;s rules and one set of agents: how this system gives way under shocks, not a forecast of ours.
           </p>
           <p class="rank-note">
             <a href="https://github.com/MartinHalvorson/CIVVIS/blob/main/docs/CHAOS_MONKEY.md" target="_blank" rel="noreferrer">How it is built and how to run it</a> ·
@@ -604,6 +607,8 @@
     const figure = (n) => (Math.abs(n) >= 100 ? whole(n) : Math.abs(n) >= 10 ? n.toFixed(1).replace(/\.0$/, "") : n.toFixed(Math.abs(n) >= 1 ? 1 : 2).replace(/\.?0+$/, "")) || "0";
     const percent = (share) => Math.round(share * 100) + "%";
     const times = (frequency) => Number(frequency).toLocaleString("en-US") + "x";
+    // Under a column a sixth of a small chart wide, a thousand is "1kx".
+    const short = (frequency) => (frequency >= 1000 ? frequency / 1000 + "kx" : frequency + "x");
     // A frequency's own colour: the game as shipped is grey, and each step
     // up the dial is the next step of the one orange ramp. The ramp has five
     // steps for the dial's five; a record with other frequencies takes them
@@ -677,8 +682,9 @@
         tile("Citizens killed by them", whole(chosen.lost.citizens), againstCalm(chosen.lost.citizens, calm.lost.citizens)),
         tile("Improvements wrecked", whole(chosen.lost.tiles), againstCalm(chosen.lost.tiles, calm.lost.tiles)),
         tile("Units destroyed", whole(chosen.lost.units), againstCalm(chosen.lost.units, calm.lost.units)),
-        tile("People alive at the end", whole(chosen.end.people),
-          chosen === calm ? "in the world, all civilizations" : `${percent(chosen.kept.people)} of the calm world's ${whole(calm.end.people)}`),
+        chosen === calm
+          ? tile("People alive at the end", whole(chosen.end.people), "in the world, all civilizations")
+          : tile("People, against the calm world", percent(chosen.kept.people), "the same worlds on the same turn"),
       );
       kinds.replaceChildren();
       const struck = Object.entries(chosen.classes || {}).sort((a, b) => b[1] - a[1]);
@@ -714,9 +720,12 @@
     // `xs` are the positions along the bottom, `lines` the series over
     // them. A crosshair finds the nearest position and one tooltip says
     // every line there. `on` is the line drawn heavier, if any.
-    const lineChart = (host, { xs, place, tick, ticks, xTitle, lines, top, format, tipTitle, labelEnds, on }) => {
+    const lineChart = (host, { xs, place, tick, ticks, xTitle, lines, top, steps = 4, mark, format, tipTitle, labelEnds, on }) => {
       host.replaceChildren();
       const width = Math.max(280, host.clientWidth), height = 250;
+      // On a phone the names at the lines' ends would take half the plot:
+      // there the legend over it names them.
+      labelEnds = labelEnds && width >= 560;
       const ends = labelEnds ? Math.min(150, Math.max(...lines.map((line) => line.name.length)) * 6.6 + 14) : 14;
       const pad = { left: 44, right: ends, top: 12, bottom: 34 };
       const plotW = width - pad.left - pad.right, plotH = height - pad.top - pad.bottom;
@@ -724,24 +733,29 @@
       const y = (value) => pad.top + plotH - (value / top) * plotH;
       const root = svg("svg", { width, height, viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": tipTitle("") });
       const grid = svg("g", { class: "cm-grid" });
-      for (let step = 0; step <= 4; step++) {
-        const value = (top * step) / 4;
+      for (let step = 0; step <= steps; step++) {
+        const value = (top * step) / steps;
         grid.append(svg("line", { x1: pad.left, x2: pad.left + plotW, y1: y(value), y2: y(value) }));
         root.append(svg("text", { class: "cm-tick", x: pad.left - 7, y: y(value) + 3.5, "text-anchor": "end" }, format(value)));
       }
       root.append(grid, svg("line", { class: "cm-base", x1: pad.left, x2: pad.left + plotW, y1: y(0), y2: y(0) }));
+      // A level the lines are read against (the calm world's 100%).
+      if (mark != null) root.append(svg("line", { class: "cm-base", x1: pad.left, x2: pad.left + plotW, y1: y(mark), y2: y(mark) }));
       for (const value of ticks) {
         root.append(svg("text", { class: "cm-tick", x: x(value), y: pad.top + plotH + 15, "text-anchor": "middle" }, tick(value)));
       }
-      root.append(svg("text", { class: "cm-axis-title", x: pad.left + plotW / 2, y: height - 3, "text-anchor": "middle" }, xTitle));
+      root.append(svg("text", { class: "cm-axis-title", x: pad.left + plotW / 2, y: height - 3, "text-anchor": "middle" }, width >= 560 ? xTitle : xTitle.split(",")[0]));
       const cross = svg("line", { class: "cm-cross", y1: pad.top, y2: pad.top + plotH, visibility: "hidden" });
       root.append(cross);
       const labelled = [];
       for (const line of lines) {
-        const points = xs.map((value, at) => `${x(value).toFixed(1)},${y(line.values[at]).toFixed(1)}`).join(" ");
+        // A line stops where its figures do: past that turn most of its
+        // games were over.
+        const drawn = xs.slice(0, line.values.length);
+        const points = drawn.map((value, at) => `${x(value).toFixed(1)},${y(line.values[at]).toFixed(1)}`).join(" ");
         const path = svg("polyline", { class: "cm-line" + (on ? (line === on ? " is-on" : " is-dim") : ""), points, stroke: line.colour });
         root.append(path);
-        const last = xs.length - 1;
+        const last = drawn.length - 1;
         root.append(svg("circle", { class: "cm-dot", cx: x(xs[last]), cy: y(line.values[last]), r: 4, fill: line.colour, opacity: on && line !== on ? 0.45 : 1 }));
         if (labelEnds) labelled.push({ line, at: y(line.values[last]) });
       }
@@ -766,9 +780,9 @@
         cross.setAttribute("x1", x(xs[at]));
         cross.setAttribute("x2", x(xs[at]));
         cross.setAttribute("visibility", "visible");
-        dots.replaceChildren(...lines.map((line) => svg("circle", { class: "cm-dot", cx: x(xs[at]), cy: y(line.values[at]), r: 4, fill: line.colour })));
-        const rows = lines.map((line) => [line.colour, format(line.values[at]), line.name]);
-        showTip(event, tipTitle(xs[at]), rows.sort((a, b) => parseFloat(b[1].replace(/,/g, "")) - parseFloat(a[1].replace(/,/g, ""))));
+        const there = lines.filter((line) => at < line.values.length).sort((a, b) => b.values[at] - a.values[at]);
+        dots.replaceChildren(...there.map((line) => svg("circle", { class: "cm-dot", cx: x(xs[at]), cy: y(line.values[at]), r: 4, fill: line.colour })));
+        showTip(event, tipTitle(xs[at]), there.map((line) => [line.colour, format(line.values[at]), line.name]));
       });
       hit.addEventListener("pointerleave", () => { cross.setAttribute("visibility", "hidden"); dots.replaceChildren(); hideTip(); });
       root.append(hit);
@@ -797,7 +811,8 @@
       const lines = KEPT.filter(([key]) => doses.every((dose) => dose.kept && typeof dose.kept[key] === "number"))
         .map(([key, name, colour]) => ({ name, colour, values: doses.map((dose) => dose.kept[key] * 100) }));
       legend(document.getElementById("cm-gives-legend"), lines.map((line) => [line.name, line.colour]), true);
-      const most = Math.max(100, ...lines.flatMap((line) => line.values));
+      // Up the side in quarters of the calm world, as far as the best line goes.
+      const top = Math.ceil(Math.max(100, ...lines.flatMap((line) => line.values)) / 25) * 25;
       lineChart(document.getElementById("cm-gives-plot"), {
         xs: doses.map((dose) => dose.frequency),
         place: (frequency) => doses.findIndex((dose) => dose.frequency === frequency) / (doses.length - 1),
@@ -805,7 +820,9 @@
         ticks: doses.map((dose) => dose.frequency),
         xTitle: "Disasters, times as often as Civilization VI ships them",
         lines,
-        top: most > 100 ? niceTop(most) : 100,
+        top,
+        steps: top / 25,
+        mark: 100,
         format: (value) => Math.round(value) + "%",
         tipTitle: (frequency) => (frequency ? `At ${times(frequency)} · share of the calm world` : "What is left of a world at each disaster frequency, as a share of the same world played calm"),
         labelEnds: true,
@@ -861,7 +878,7 @@
           const r = Math.min(4, tall);
           column.append(svg("path", { fill: colourOf(dose), d: `M${left},${base}V${base - tall + r}q0,${-r} ${r},${-r}h${wide - 2 * r}q${r},0 ${r},${r}V${base}z` }));
           column.append(svg("text", { class: "cm-col-value", x: left + wide / 2, y: base - tall - 4, "text-anchor": "middle" }, say(values[at])));
-          column.append(svg("text", { class: "cm-tick", x: left + wide / 2, y: base + 14, "text-anchor": "middle" }, times(dose.frequency)));
+          column.append(svg("text", { class: "cm-tick", x: left + wide / 2, y: base + 14, "text-anchor": "middle" }, short(dose.frequency)));
           const hit = svg("rect", { x: at * band, y: 0, width: band, height, fill: "transparent" });
           hit.addEventListener("pointermove", (event) => showTip(event, `${outcome.name} · ${times(dose.frequency)}`, [[colourOf(dose), say(values[at]), outcome.of]]));
           hit.addEventListener("pointerleave", hideTip);
@@ -943,6 +960,8 @@
         ["Improvements wrecked", (dose) => figure(dose.lost.tiles)],
         ["Units destroyed", (dose) => figure(dose.lost.units)],
         ["People alive at the end", (dose) => whole(dose.end.people)],
+        ["Turn the game ended, median", (dose) => whole(dose.ended)],
+        ["Won by the calm world's winner", (dose) => (typeof dose.same_winner === "number" ? percent(dose.same_winner) : "")],
         ...KEPT.map(([key, name]) => [`${name}, share of the calm world`, (dose) => (dose.kept && typeof dose.kept[key] === "number" ? percent(dose.kept[key]) : "")]),
         ...(data.outcomes || []).map((outcome) => [outcome.name, (dose) => {
           const value = dose.outcomes ? dose.outcomes[outcome.key] : null;

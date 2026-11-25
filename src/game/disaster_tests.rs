@@ -1153,6 +1153,21 @@ fn a_class_expecting_several_a_turn_strikes_that_many() {
     );
 }
 
+/// The shipped game rolls each class once a turn, even in a game so short
+/// that its budget comes to more than one a turn. Only the dial buys a
+/// second strike, so no world played without it gained a disaster.
+#[test]
+fn a_short_game_at_the_shipped_dial_still_rolls_each_class_once() {
+    // Six tornadoes budgeted over five turns: more than one a turn.
+    let mut game = Game::new_full(2, 30, 18, 4243, 5, 0, false);
+    assert!(game.disaster_rate("tornado") / f64::from(game.max_turns) > 1.0);
+    for _ in 0..3 {
+        game.turn += 1;
+        game.process_disasters();
+    }
+    assert_eq!(game.chronicle.disasters.events.get("tornado"), Some(&3));
+}
+
 /// What Chaos Monkey reads afterwards: what a disaster took, from whom.
 #[test]
 fn the_census_counts_what_disasters_took_from_a_civilization() {

@@ -302,7 +302,7 @@ if [ -f "$tournaments_page" ]; then
 else
   without+=(experiments)
 fi
-# Chaos Monkey (the same worlds replayed with natural disasters up to 100
+# Chaos Monkey (the same worlds replayed with natural disasters up to 1,000
 # times as often, and what they teach) stands in the site list between
 # Experiments and CIVVIS (operator 2026-11-25: "above civvis add "Chaos
 # Monkey". Here we can run civvis sims with a very high frequency of natural

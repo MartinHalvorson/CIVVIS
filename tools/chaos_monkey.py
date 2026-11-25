@@ -22,9 +22,14 @@ the record the Chaos Monkey page draws (`beta/chaos.html`, filled by
 `beta/chaos_page.py`):
 
 - **doses**, one per frequency, lowest first: the games, the disasters a game
-  and by kind, what the civilizations lost to them, the world at its end,
-  that end as a share of the same seeds played calm (`kept`), the horrible
-  outcomes (`outcomes`), how the games ended, and the world turn by turn.
+  and by kind, what the civilizations lost to them, the world as a share of
+  the same seeds played calm (`kept`), the horrible outcomes (`outcomes`),
+  how the games ended, and the world turn by turn.
+
+  A world is read against its calm self **at the same turn**: the last
+  tenth turn both games reached (`common_turn`). Games end when somebody
+  wins, a calm world and its stormy twin seldom on the same turn, and a
+  world that played forty turns longer has forty turns more of everything.
 - **factors**, the differences between civilizations that went with keeping
   more of their people under the storm (the frequencies in `STORM`), each as
   two groups split at the middle.
@@ -49,8 +54,9 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 RECORD = ROOT / "data" / "chaos_monkey.json"
 
 #: The frequencies at which a world is under the storm: where the factors are
-#: read. Below them the disasters are too few to tell civilizations apart.
-STORM = 10.0
+#: read. Below it a world shrugs the disasters off (it has as many people at
+#: 30x as calm), so there is nothing yet to tell civilizations apart by.
+STORM = 100.0
 
 #: A civilization counts as having had people to lose once it reached this
 #: many, so a capital that never grew is not a collapse.
@@ -64,6 +70,8 @@ OUTCOMES = [
     ("captures", "Cities that changed hands", "a game", "count"),
     ("wars", "Wars started", "a game", "count"),
     ("nukes", "Nuclear strikes", "a game", "count"),
+    ("leader", "The largest civilization's share", "of the world's people", "share"),
+    ("climate", "Climate change", "phases of warming reached", "count"),
 ]
 
 VICTORIES = ["science", "culture", "diplomatic", "religious", "domination", "score"]
@@ -112,9 +120,17 @@ def mean(values) -> float:
     return sum(values) / len(values) if values else 0.0
 
 
-def end(game: dict) -> dict:
-    """The world as the game ended: its last sample, summed."""
-    last = len(game["sample_turns"]) - 1
+def common_turn(game: dict, calm: dict) -> int:
+    """The last sampled turn both a game and its calm twin reached: the turn
+    the two worlds are compared on."""
+    turn = min(game["ended"], calm["ended"])
+    return max(1, turn // 10 * 10)
+
+
+def end(game: dict, turn: int | None = None) -> dict:
+    """The world as the game ended, or as it stood on a turn: one sample,
+    summed over its civilizations."""
+    last = len(game["sample_turns"]) - 1 if turn is None else at_turn(game, turn)
     improved = world(game, "improved", last)
     pillaged = world(game, "pillaged", last)
     return {
@@ -128,6 +144,26 @@ def end(game: dict) -> dict:
     }
 
 
+def running(games: list[dict], turns: list[int], read, digits: int) -> list[float]:
+    """A figure a listed turn, the mean over the games still being played on
+    it, for as long as at least half of them are. A game that somebody has
+    won is not carried on as a world standing still."""
+    out = []
+    for turn in turns:
+        playing = [game for game in games if game["ended"] >= turn]
+        if len(playing) * 2 < len(games):
+            break
+        out.append(round(mean(read(game, at_turn(game, turn)) for game in playing), digits))
+    return out
+
+
+def leader_share(game: dict) -> float:
+    """The largest civilization's share of the world's people as the game
+    ended."""
+    people = [civ["series"]["pop"][-1] for civ in game["civs"]]
+    return max(people) / max(1, sum(people))
+
+
 def victory(game: dict) -> str:
     label = (game.get("victory") or "").lower()
     for kind in VICTORIES:
@@ -139,7 +175,11 @@ def victory(game: dict) -> str:
 def dose(games: list[dict], calm: dict[int, dict], turns: list[int]) -> dict:
     """One frequency's games, summed up. `calm` is the 1x game by seed."""
     ends = [end(game) for game in games]
-    twins = [(end(game), end(calm[game["seed"]])) for game in games if game["seed"] in calm]
+    twins = [
+        (end(game, common_turn(game, calm[game["seed"]])), end(calm[game["seed"]], common_turn(game, calm[game["seed"]])))
+        for game in games
+        if game["seed"] in calm
+    ]
     kept = {
         key: round(sum(now[key] for now, _ in twins) / max(1e-9, sum(then[key] for _, then in twins)), 4)
         for key in ("people", "cities", "science", "army", "land")
@@ -166,17 +206,23 @@ def dose(games: list[dict], calm: dict[int, dict], turns: list[int]) -> dict:
         "end": {key: round(mean(e[key] for e in ends), 1) for key in ("people", "cities", "science", "army", "land")},
         "ended": int(statistics.median(game["ended"] for game in games)),
         "kept": kept,
+        # How often the civilization that wins the calm world wins this one.
+        "same_winner": round(
+            mean(game.get("winner") == calm[game["seed"]].get("winner") for game in games if game["seed"] in calm), 4
+        ),
         "outcomes": {
             "collapsed": round(mean(collapsed(civ) for civ in civs), 4),
             "eliminated": round(mean(not civ["alive"] for civ in civs), 4),
             "captures": round(mean(sum(civ["cities_lost"] for civ in game["civs"]) for game in games), 2),
             "wars": round(mean(game["wars"] for game in games), 2),
             "nukes": round(mean(game["nuclear_strikes"] for game in games), 2),
+            "leader": round(mean(leader_share(game) for game in games), 4),
+            "climate": round(mean(game["climate_phase"] for game in games), 2),
         },
         "victories": {kind: victories[kind] for kind in [*VICTORIES, "none"] if kind in victories},
         "series": {
-            "people": [round(mean(column), 1) for column in zip(*(grid(g, turns, lambda at, g=g: world(g, "pop", at)) for g in games))],
-            "wrecked": [round(mean(column), 4) for column in zip(*(grid(g, turns, lambda at, g=g: wrecked(g, at)) for g in games))],
+            "people": running(games, turns, lambda game, at: world(game, "pop", at), 1),
+            "wrecked": running(games, turns, wrecked, 4),
         },
     }
 
@@ -241,7 +287,15 @@ FACTORS = [
         "Led the calm world",
         "score at the end of the same world played calm",
         ("the stronger half", "the weaker half"),
-        lambda now, then, game, calm: then["series"]["score"][-1],
+        lambda now, then, game, calm: then["series"]["score"][at_turn(calm, common_turn(game, calm))],
+    ),
+    (
+        "shelter",
+        "Built shelter",
+        "Dams, Aqueducts, Baths, Flood Barriers and Reinforced Materials a city, at the end under the storm",
+        ("more shelter", "less shelter"),
+        lambda now, then, game, calm: sum(now["shelter"][kind] for kind in ("immune", "flood", "drought", "coast"))
+        / max(1, now["shelter"]["cities"]),
     ),
     (
         "coast",
@@ -260,6 +314,11 @@ FACTORS = [
 ]
 
 
+def people(civ: dict, game: dict, turn: int) -> int:
+    """A civilization's people on a turn of its game."""
+    return civ["series"]["pop"][at_turn(game, turn)]
+
+
 def pairs(games: list[dict]) -> list[tuple[dict, dict, dict, dict]]:
     """Every civilization under the storm with its calm twin: the same
     civilization in the same seed's 1x game."""
@@ -271,7 +330,7 @@ def pairs(games: list[dict]) -> list[tuple[dict, dict, dict, dict]]:
         twins = {civ["civ"]: civ for civ in calm[game["seed"]]["civs"]}
         for civ in game["civs"]:
             then = twins.get(civ["civ"])
-            if then and then["series"]["pop"][-1] >= PEOPLE_TO_LOSE:
+            if then and people(then, calm[game["seed"]], common_turn(game, calm[game["seed"]])) >= PEOPLE_TO_LOSE:
                 out.append((civ, then, game, calm[game["seed"]]))
     return out
 
@@ -283,7 +342,7 @@ def factors(games: list[dict]) -> list[dict]:
     paired = pairs(games)
     out = []
     for key, name, of, (more_label, fewer_label), place in FACTORS:
-        groups: dict[bool, list[tuple[dict, dict]]] = {True: [], False: []}
+        groups: dict[bool, list[tuple[dict, dict, dict, dict]]] = {True: [], False: []}
         for frequency in sorted({float(game["frequency"]) for _, _, game, _ in paired}):
             rows = [row for row in paired if float(row[2]["frequency"]) == frequency]
             placed = sorted(((place(*row), index) for index, row in enumerate(rows)), key=lambda item: item[0])
@@ -292,12 +351,19 @@ def factors(games: list[dict]) -> list[dict]:
             # in the middle belongs to neither.
             for rank, (_, index) in enumerate(placed):
                 if rank < half:
-                    groups[False].append(rows[index][:2])
+                    groups[False].append(rows[index])
                 elif rank >= len(placed) - half:
-                    groups[True].append(rows[index][:2])
+                    groups[True].append(rows[index])
         if min(len(groups[True]), len(groups[False])) < 12:
             continue
-        share = lambda rows: sum(now["series"]["pop"][-1] for now, _ in rows) / max(1e-9, sum(then["series"]["pop"][-1] for _, then in rows))
+        # Each civilization against its calm self on the turn both worlds
+        # reached, summed over the group.
+        def share(rows):
+            turn = lambda game, calm: common_turn(game, calm)
+            now = sum(people(civ, game, turn(game, calm)) for civ, _, game, calm in rows)
+            then = sum(people(twin, calm, turn(game, calm)) for _, twin, game, calm in rows)
+            return now / max(1e-9, then)
+
         out.append(
             {
                 "key": key,
@@ -318,118 +384,150 @@ def pct(share: float) -> str:
 
 
 def times(frequency) -> str:
-    return f"{frequency:g}x"
+    return f"{frequency:,g}x"
 
 
 def count(value: float) -> str:
     return f"{value:,.0f}" if value >= 10 else f"{value:.1f}".rstrip("0").rstrip(".")
 
 
+#: The five things measured in a world, as a lesson names them: the noun,
+#: and whether it is plural ("armies go", "science goes").
+MEASURES = {
+    "people": ("people", True),
+    "cities": ("cities", True),
+    "science": ("science", False),
+    "army": ("armies", True),
+    "land": ("working land", False),
+}
+
+
 def lessons(doses: list[dict], found: list[dict]) -> list[dict]:
     """What the games say. Each lesson is written only when its own rule
-    holds on the record, from the record's own figures."""
-    out = []
-    calm, worst = doses[0], doses[-1]
-    chaos = doses[1:]
-    if calm["frequency"] != 1 or not chaos:
+    holds on the record, from the record's own figures, so the list is as
+    long as the games bear out and no longer."""
+    out: list[dict] = []
+    if len(doses) < 2 or doses[0]["frequency"] != 1:
         return out
+    calm, chaos, worst = doses[0], doses[1:], doses[-1]
     kept = lambda d, key: d["kept"][key]
+    say = lambda key, figure, of, title, text: out.append({"key": key, "figure": figure, "of": of, "title": title, "text": text})
 
-    # 1. How much disaster a world absorbs: the highest frequency that still
-    # leaves it nine tenths of its people.
-    absorbed = [d for d in chaos if kept(d, "people") >= 0.9]
+    # 1. How much disaster a world takes without losing a tenth of its
+    # people: the highest frequency below which every step holds.
+    absorbed = None
+    for d in chaos:
+        if kept(d, "people") < 0.9:
+            break
+        absorbed = d
     if absorbed:
-        most = absorbed[-1]
-        out.append(
-            {
-                "key": "absorbs",
-                "figure": times(most["frequency"]),
-                "of": f"disasters, and the world still ends with {pct(kept(most, 'people'))} of its people",
-                "title": "A world absorbs far more than it is ever dealt",
-                "text": f"{count(most['disasters'])} disasters a game instead of {count(calm['disasters'])} and the world is "
-                f"nearly whole. Routine shocks are already priced in.",
-            }
+        say(
+            "absorbs",
+            times(absorbed["frequency"]),
+            f"the disasters, and the world has {pct(kept(absorbed, 'people'))} of the people of its calm self",
+            "A world absorbs far more than it is ever dealt",
+            f"{count(absorbed['disasters'])} disasters a game instead of {count(calm['disasters'])}. Ordinary shocks "
+            f"are already priced in.",
         )
-    # 2. Where it breaks: the first frequency that costs a quarter of the people.
-    broken = [d for d in chaos if kept(d, "people") <= 0.75]
+    # 2. Disasters that pay: a frequency at which the world has more people
+    # than its calm self.
+    richest = max(chaos, key=lambda d: kept(d, "people"))
+    if kept(richest, "people") >= 1.05:
+        say(
+            "pays",
+            f"+{pct(kept(richest, 'people') - 1)}",
+            f"more people at {times(richest['frequency'])} than in the same worlds played calm",
+            "Shocks that leave something behind can pay",
+            "Floods leave silt and eruptions leave soil. What is rebuilt on richer ground outgrows what was lost.",
+        )
+    # 3. Where it breaks: the first frequency that costs a quarter of the people.
+    broken = next((d for d in chaos if kept(d, "people") <= 0.75), None)
     if broken:
-        first = broken[0]
-        before = doses[doses.index(first) - 1]
-        out.append(
-            {
-                "key": "breaks",
-                "figure": times(first["frequency"]),
-                "of": f"is where it gives: {pct(1 - kept(first, 'people'))} of the people are gone by the end",
-                "title": "Then it falls off an edge",
-                "text": f"At {times(before['frequency'])} the world keeps {pct(kept(before, 'people'))} of its people; at "
-                f"{times(first['frequency'])}, {pct(kept(first, 'people'))}. The damage is not in proportion to the dose: "
-                f"repair keeps up until it cannot.",
-            }
+        before = doses[doses.index(broken) - 1]
+        say(
+            "breaks",
+            times(broken["frequency"]),
+            f"is where it gives: {pct(1 - kept(broken, 'people'))} fewer people than the calm world",
+            "Then repair falls behind, and it breaks",
+            f"At {times(before['frequency'])} it still had {pct(kept(before, 'people'))}. By now "
+            f"{pct(broken['series']['wrecked'][-1])} of the improved land lies wrecked: damage outruns rebuilding.",
         )
-    # 3. What gives way first and what holds, at the highest frequency.
-    names = {"people": "people", "cities": "cities", "science": "science", "army": "armies", "land": "working land"}
-    ranked = sorted(names, key=lambda key: kept(worst, key))
+    # 4. What gives way first and what holds, at the highest frequency.
+    ranked = sorted(MEASURES, key=lambda key: kept(worst, key))
     weakest, strongest = ranked[0], ranked[-1]
     if kept(worst, strongest) - kept(worst, weakest) >= 0.15:
-        out.append(
-            {
-                "key": "first",
-                "figure": pct(kept(worst, weakest)),
-                "of": f"of the {names[weakest]} are left at {times(worst['frequency'])}, against {pct(kept(worst, strongest))} of the {names[strongest]}",
-                "title": f"The {names[weakest]} go first; the {names[strongest]} hold",
-                "text": f"What a society has built is not equally fragile. Under the worst storm the {names[strongest]} "
-                f"are the last thing lost and the {names[weakest]} the first.",
-            }
+        (weak, weak_plural), (strong, strong_plural) = MEASURES[weakest], MEASURES[strongest]
+        say(
+            "first",
+            f"{pct(kept(worst, weakest))} / {pct(kept(worst, strongest))}",
+            f"of the {weak} and of the {strong} left at {times(worst['frequency'])}",
+            f"{weak.capitalize()} {'go' if weak_plural else 'goes'} first; {strong} {'hold' if strong_plural else 'holds'}",
+            "What needs upkeep every turn is lost first; what is founded or learned once goes last.",
         )
-    # 4. Disasters do not finish a civilization; nobody is wiped out more often.
-    if worst["outcomes"]["eliminated"] <= calm["outcomes"]["eliminated"] + 0.02 and worst["outcomes"]["collapsed"] >= calm["outcomes"]["collapsed"] + 0.1:
-        out.append(
-            {
-                "key": "survive",
-                "figure": pct(worst["outcomes"]["collapsed"]),
-                "of": f"of civilizations lose half their people at {times(worst['frequency'])}; {pct(worst['outcomes']['eliminated'])} are wiped out",
-                "title": "Disasters cripple; they do not finish",
-                "text": f"Even at {times(worst['frequency'])} no more civilizations die than in a calm world "
-                f"({pct(calm['outcomes']['eliminated'])}). The horrible outcome is the long poverty, not the end.",
-            }
+    # 5. Disasters cripple; they do not finish. Nobody is wiped out more
+    # often, however many are halved.
+    if worst["outcomes"]["eliminated"] <= calm["outcomes"]["eliminated"] + 0.02:
+        say(
+            "survive",
+            pct(worst["outcomes"]["eliminated"]),
+            f"of civilizations wiped out at {times(worst['frequency'])}, against {pct(calm['outcomes']['eliminated'])} in the calm worlds",
+            "Disasters cripple; they do not finish",
+            f"{pct(worst['outcomes']['collapsed'])} lose half their people at {times(worst['frequency'])}. The horrible "
+            f"outcome is a long poverty, not an ending.",
         )
-    # 5. War: does the storm bring more of it, or less?
-    wars = [d["outcomes"]["wars"] for d in doses]
+    # 6. War: does the storm bring more of it, or less?
     if calm["outcomes"]["wars"] > 0:
         change = worst["outcomes"]["wars"] / calm["outcomes"]["wars"]
+        figures = f"{count(worst['outcomes']['wars'])} wars a game at {times(worst['frequency'])}, against {count(calm['outcomes']['wars'])} calm"
         if change >= 1.25:
-            out.append(
-                {
-                    "key": "war",
-                    "figure": f"{change:.1f}x",
-                    "of": f"the wars at {times(worst['frequency'])}: {count(worst['outcomes']['wars'])} a game against {count(calm['outcomes']['wars'])}",
-                    "title": "A battered world fights more",
-                    "text": "Weakened neighbours are targets. The disaster is the first blow; the second comes from next door.",
-                }
+            say(
+                "war",
+                f"{change:.1f}x",
+                figures,
+                "A battered world fights more",
+                "A weakened neighbour is a target: the second blow comes from next door.",
             )
         elif change <= 0.8:
-            out.append(
-                {
-                    "key": "war",
-                    "figure": pct(1 - change),
-                    "of": f"fewer wars at {times(worst['frequency'])}: {count(worst['outcomes']['wars'])} a game against {count(calm['outcomes']['wars'])}",
-                    "title": "A battered world fights less",
-                    "text": "Armies are among the first things a storm takes, and a civilization rebuilding has none to spare.",
-                }
+            say(
+                "war",
+                f"-{pct(1 - change)}",
+                figures,
+                "A battered world fights less",
+                f"Armies go early ({pct(kept(worst, 'army'))} left). A civilization rebuilding its farms has none to send.",
             )
-    # 6. Who comes through: the widest difference between civilizations.
+    # 7. History turns on the weather: how often the calm world's winner
+    # still wins.
+    turned = min(chaos, key=lambda d: d["same_winner"])
+    if turned["same_winner"] <= 0.6:
+        say(
+            "winner",
+            pct(turned["same_winner"]),
+            f"of worlds at {times(turned['frequency'])} are won by the civilization that wins them calm",
+            "Who wins is decided by the weather",
+            "Same map, same start, same players. One in six would be pure chance.",
+        )
+    # 8. The price is paid in progress: games that end in a victory somebody
+    # earned, not at the clock.
+    earned = lambda d: 1 - (d["victories"].get("score", 0) + d["victories"].get("none", 0)) / d["games"]
+    if earned(calm) - earned(worst) >= 0.25:
+        say(
+            "progress",
+            f"{pct(earned(worst))} / {pct(earned(calm))}",
+            f"of games end in a victory somebody reached at {times(worst['frequency'])}, and calm",
+            "The cost is what never gets built",
+            "A world busy rebuilding does not reach the stars. It runs out the clock.",
+        )
+    # 9. Who comes through: the widest difference between civilizations.
     if found:
         top = found[0]
         better, worse = (top["more"], top["fewer"]) if top["more"]["kept"] >= top["fewer"]["kept"] else (top["fewer"], top["more"])
         if better["kept"] - worse["kept"] >= 0.08:
-            out.append(
-                {
-                    "key": "who",
-                    "figure": f"{pct(better['kept'])} vs {pct(worse['kept'])}",
-                    "of": f"of their people kept under the storm: civilizations with {better['label']}, against {worse['label']}",
-                    "title": f"What went with coming through: {better['label']}",
-                    "text": f"Counted as {top['of']}. Of everything compared, this separated the survivors most.",
-                }
+            say(
+                "who",
+                f"{pct(better['kept'])} / {pct(worse['kept'])}",
+                f"of their people kept under the storm by civilizations with {better['label']}, and with {worse['label']}",
+                f"What went with coming through: {better['label']}",
+                f"Counted as {top['of']}.",
             )
     return out
 

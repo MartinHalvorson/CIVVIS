@@ -139,7 +139,7 @@ async function chooseFogHonest(on) {
 // next turn; the worlds dealt after this one keep it.
 const CHAOS_FREQUENCIES = [1, 10, 30, 100, 300, 1000];
 function chaosFrequencyName(frequency) {
-  return frequency === 1 ? "Off" : `${frequency.toLocaleString("en-US")}x disasters`;
+  return frequency === 1 ? "Off" : `${frequency.toLocaleString("en-US")}x`;
 }
 function hudChaosRow() {
   const now = Number(state.disaster_frequency);

@@ -2677,7 +2677,7 @@ fn the_home_page_lists_the_sites_with_itself_ringed() {
             "title=\"Series of verification games against Civilization VI&#8217;s own AI: ",
             "running, scheduled and finished.\">Experiments</a>\n",
             "      <a class=\"site-link\" href=\"../chaos-monkey/\" ",
-            "title=\"The same worlds replayed with natural disasters up to 100 times as often: ",
+            "title=\"The same worlds replayed with natural disasters up to 1,000 times as often: ",
             "what breaks, and what holds.\">Chaos Monkey</a>\n",
             "      <a class=\"site-link\" href=\"../\" ",
             "title=\"Every civilization is played by a CIVVIS AI agent.\">CIVVIS</a>\n",

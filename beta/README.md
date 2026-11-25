@@ -20,11 +20,13 @@ civvis.ai/charts/win-analytics        Win Analytics: who wins, how and when
 civvis.ai/charts/elo-rankings         ELO Rankings: the agents and the Firaxis AI at Lv 4-8 on one Elo scale, now and over time
 civvis.ai/charts/civvis-performance   CIVVIS Performance: the fastest game on video and how long a self-play game takes
 civvis.ai/experiments                 Experiments: series of verification games, running, scheduled and finished
+civvis.ai/chaos-monkey                Chaos Monkey: the same worlds replayed with natural disasters up to 1,000 times as often, and what they teach
 civvis.ai/download                    its native-binaries page, from the latest GitHub release
 civvis.ai/test                        the HEAD lane — latest main, republished automatically
 civvis.ai/test/home                   head's landing page
 civvis.ai/test/charts/...             head's pages of Charts/, by the same six names
 civvis.ai/test/experiments            head's Experiments page
+civvis.ai/test/chaos-monkey           head's Chaos Monkey page
 civvis.ai/test/download               head's binaries page
 ```
 

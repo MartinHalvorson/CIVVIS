@@ -1,8 +1,8 @@
 # Chaos Monkey
 
-Chaos Monkey: CIVVIS worlds played under a very high frequency of natural
-disasters, to learn what breaks a society, what holds, and what avoids the
-worst outcomes, without living through any of it.
+CIVVIS worlds played under a very high frequency of natural disasters, to
+learn what breaks a society, what holds, and what avoids the worst outcomes,
+without living through any of it.
 
 Operator, 2026-11-25: "A great thought today is chaos engineering society in
 simulation to try to learn any lessons we can, without having to go othrough

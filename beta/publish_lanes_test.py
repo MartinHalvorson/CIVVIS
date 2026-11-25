@@ -75,6 +75,7 @@ FILLERS = (
     "performance_page.py",
     "interpretability_page.py",
     "insights_page.py",
+    "chaos_page.py",
 )
 
 #: A filler's page, for the fillers of pages a revision may not have yet.
@@ -83,6 +84,7 @@ FILLED = {
     "elo_page.py": "elo",
     "civs_page.py": "civs",
     "insights_page.py": "insights",
+    "chaos_page.py": "chaos",
 }
 
 #: The viewer, as little of it as the script's own checks ask for: one
@@ -105,6 +107,7 @@ VIEWER = textwrap.dedent(
 ADDRESSES = {
     "landing": "home",
     "tournaments": "experiments",
+    "chaos": "chaos-monkey",
     "research": "charts/win-analytics",
     "elo": "charts/elo-rankings",
     "civs": "charts/civ-analytics",
@@ -183,7 +186,8 @@ class Lanes(unittest.TestCase):
         cls.git("init", "--quiet", str(cls.repo), cwd=cls.scratch)
 
         # The promoted revision: five pages, and no ELO Rankings, Civ
-        # Analytics, Civ AI Interpretability or AI Insights page.
+        # Analytics, Civ AI Interpretability, AI Insights or Chaos Monkey
+        # page.
         # Its Performance script is one that fails.
         # Its pages are from before a page stated its address.
         cls.write_revision("promoted", pages=("landing", "download", "tournaments", "research", "performance"),
@@ -302,7 +306,9 @@ class Lanes(unittest.TestCase):
         self.assertTrue((self.test / "charts" / "ai-insights" / "index.html").is_file())
         self.assertFalse((self.stable / "interpretability").exists())
         self.assertFalse((self.stable / "charts").exists())
-        self.assertIn("published without: ai-insights interpretability civ-analytics elo-rankings\n", self.stable_said)
+        self.assertTrue((self.test / "chaos-monkey" / "index.html").is_file())
+        self.assertFalse((self.stable / "chaos-monkey").exists())
+        self.assertIn("published without: chaos-monkey ai-insights interpretability civ-analytics elo-rankings\n", self.stable_said)
         # And each lane says which pages it carries, by address, for the
         # checks and for the router.
         self.assertEqual(
@@ -315,7 +321,7 @@ class Lanes(unittest.TestCase):
             # Interpretability, Civ Analytics, Win Analytics, ELO Rankings,
             # CIVVIS Performance), because the router opens a folder's first
             # page in this list.
-            ["home", "experiments", "charts/ai-insights", "charts/civ-ai-interpretability", "charts/civ-analytics",
+            ["home", "experiments", "chaos-monkey", "charts/ai-insights", "charts/civ-ai-interpretability", "charts/civ-analytics",
              "charts/win-analytics", "charts/elo-rankings", "charts/civvis-performance", "download"],
         )
         # And the publish check reads each list in the order it was written.
@@ -381,7 +387,8 @@ class Lanes(unittest.TestCase):
         # were written for, with nothing of main's layout beside them.
         self.assertEqual(
             sorted(str(found.relative_to(self.test)) for found in self.test.glob("**/index.html")),
-            ["charts/ai-insights/index.html", "charts/civ-ai-interpretability/index.html",
+            ["chaos-monkey/index.html",
+             "charts/ai-insights/index.html", "charts/civ-ai-interpretability/index.html",
              "charts/civ-analytics/index.html", "charts/civvis-performance/index.html",
              "charts/elo-rankings/index.html", "charts/win-analytics/index.html",
              "download/index.html", "experiments/index.html", "home/index.html", "index.html"],
@@ -435,6 +442,8 @@ class Lanes(unittest.TestCase):
                       self.read(self.test, "charts/civ-ai-interpretability/index.html"))
         self.assertIn("<!-- insights_page.py: script main, data main -->",
                       self.read(self.test, "charts/ai-insights/index.html"))
+        self.assertIn("<!-- chaos_page.py: script main, data main -->",
+                      self.read(self.test, "chaos-monkey/index.html"))
         # Nothing of main's is in the promoted lane's pages.
         for filled in self.stable.glob("**/index.html"):
             self.assertNotIn("main", filled.read_text(encoding="utf-8"), filled)
