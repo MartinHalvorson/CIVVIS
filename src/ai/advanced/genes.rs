@@ -6377,6 +6377,13 @@ pub const GENES: &[Gene] = &[
     // was not on the board at all, and a Destroy row was priced at the
     // raiders' own worth. Opt-in; see `advanced/raiders_holding_a_settler.rs`.
     Gene { tag: "raiders-holding-a-settler-are-hunted", field: "raiders_holding_a_settler_are_hunted", kind: Kind::OptIn, enable: AdvancedAi::enable_raiders_holding_a_settler_are_hunted, disable: AdvancedAi::disable_raiders_holding_a_settler_are_hunted },
+    // A Religion lane that founded at t17-t27 read Expansion ("the first half
+    // is reserved for expansion and defense") until t106-t136 in 9 of 40
+    // reviewed tourney games (2026-11-24): 2-12 spreads in t51-100, 0
+    // converted at t100, and still 2 cities at t31-t57. At 3 cities a founded
+    // Religion lane follows its lane; settling is unchanged. Opt-in; see
+    // `advanced/religion_core_ends_expansion.rs`.
+    Gene { tag: "religion-core-ends-expansion", field: "religion_core_ends_expansion", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_core_ends_expansion, disable: AdvancedAi::disable_religion_core_ends_expansion },
     // ---- append: s-s ------------------------------------------------
     // Kristina Deity 11-10 reached Nationalism at t122 with 8 cities on three
     // terrain classes and built no Open-Air Museum by t150 (+48 Culture and

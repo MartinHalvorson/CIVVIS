@@ -159,14 +159,14 @@
      (like the pages do). civvis, ai debugger have a black background (same
      as simulator)"). The pages are blue and so are their buttons: the rule
      above. CIVVIS, the simulation itself at the lane's own address, is
-     gold (operator, 2026-11-24: "lets give civvis a gold background on the
-     button, rather than black"), the gold the simulator lights its own
-     button in. AI Debugger, the simulator in play mode, keeps the
+     white (operator, 2026-11-25: "make the civvis color white"; it was
+     gold from 2026-11-24 and black before), the white the simulator sets
+     its own button in. AI Debugger, the simulator in play mode, keeps the
      simulator's black, inside the edge its own buttons have. Civ 6 opens
      Steam's shop and is the blue of Steam's buttons ("civ 6 can have the
      steam color of blue"), dark under the name and light at the far end. */
-  .site-link[href$="../"] { background: linear-gradient(145deg, #dec176, #aa7d30); color: #17130c; box-shadow: inset 0 0 0 1px #efd184; }
-  .site-link[href$="../"]:hover, .site-link[href$="../"]:focus-visible { background: linear-gradient(145deg, #f0d68e, #c0913c); color: #000; }
+  .site-link[href$="../"] { background: #fff; color: #12171d; box-shadow: inset 0 0 0 1px #cfd6dd; }
+  .site-link[href$="../"]:hover, .site-link[href$="../"]:focus-visible { background: #e3e8ee; color: #000; }
   .site-link[href$="?mode=play"] { background: #050607; color: #c9cecb; box-shadow: inset 0 0 0 1px #30363a; }
   .site-link[href$="?mode=play"]:hover, .site-link[href$="?mode=play"]:focus-visible { background: #181c1f; color: #fff; }
   /* Doctor Strange's Civ 6 (strange mode, the same game shown as a tree of
@@ -210,10 +210,10 @@
   .site-folder:focus-within > .site-menu,
   .site-folder.is-open > .site-menu { display: grid; }
   /* The page on screen keeps the colour of what it is and is ringed in
-     white. It was gold until 2026-11-24, when gold became CIVVIS's own
-     (operator: "lets give civvis a gold background on the button, rather
-     than black"). On a page of Charts/ the folder is ringed as well, so
-     the row says where the page is with the list folded. */
+     white. It was gold until 2026-11-24. CIVVIS's button is white all
+     over since 2026-11-25 and is never the page on screen here, so the
+     two are not confused. On a page of Charts/ the folder is ringed as
+     well, so the row says where the page is with the list folded. */
   .site-link[aria-current="page"],
   .site-folder:has([aria-current="page"]) > .site-link { box-shadow: inset 0 0 0 2px #fff; }
 
@@ -530,6 +530,44 @@
   .speed-note + .speed-note { margin-top: 2px; }
   .speed-note a { color: var(--accent); text-decoration: none; white-space: nowrap; }
   .speed-note a:hover { text-decoration: underline; }
+  /* Why one stop is so many times faster than the one before it: under the
+     line, the two games as bars to one scale. The slower game's bar is in
+     the parts its time goes to and runs the whole width but the room its
+     time is written in; the faster game's is as long as its share of that.
+     A part is one of the page's three chart colours, with the panel showing
+     between two parts, and its time is written on it where it fits (dark,
+     which reads on all three). On the line itself the stretch between the
+     two stops is marked only where the line is drawn, further down. */
+  .speed-between { display: none; }
+  .speed-gap { margin: 14px 0 0; padding: 12px 0 0; border-top: 1px solid var(--border); }
+  .speed-gap-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 10px; margin: 0; color: var(--text); font-size: 15px; }
+  .speed-gap-head b { color: var(--gold); font-size: 24px; font-weight: 700; line-height: 1.2; }
+  .speed-gap-why { max-width: 860px; margin: 2px 0 0; color: var(--muted); font-size: 12.5px; line-height: 1.45; }
+  .speed-gap-bars { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 8px 12px; align-items: center; margin: 12px 0 0; font-size: 13px; }
+  .speed-gap-name { color: var(--text); font-weight: 600; }
+  .speed-gap-track { display: flex; align-items: center; gap: 2px; min-width: 0; height: 24px; }
+  .speed-gap-part {
+    flex: none; width: calc((100% - 66px) * var(--share) - 2px); min-width: 2px; height: 22px; padding: 0 7px; overflow: hidden;
+    background: var(--series); color: #0d131a; font-size: 12px; font-weight: 700; line-height: 22px; white-space: nowrap; font-variant-numeric: tabular-nums;
+  }
+  .speed-gap-part.is-short { padding: 0; }
+  .speed-gap-part.is-waits { background: var(--series-2); }
+  .speed-gap-part.is-outside { background: var(--series-3); }
+  .speed-gap-part.is-last { border-radius: 0 4px 4px 0; }
+  .speed-gap-part:hover, .speed-gap-part:focus-visible { filter: brightness(1.15); outline: none; }
+  #speed-gap-keys { margin-top: 8px; color: var(--text); }
+  #speed-gap-keys b { margin-left: 2px; color: var(--gold); font-weight: 700; font-variant-numeric: tabular-nums; }
+  .speed-gap-sign { margin-right: 6px; color: var(--faint); }
+  .speed-gap-total { flex: none; margin-left: 6px; color: #fff; font-size: 14px; font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .speed-gap-facts { grid-template-columns: repeat(3, minmax(0, 1fr)); max-width: 760px; margin-top: 12px; }
+  .speed-gap-pair { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-top: 2px; }
+  .speed-gap-pair small { color: var(--muted); font-size: 12px; }
+  .speed-gap-pair b { color: #fff; font-size: 19px; font-weight: 700; white-space: nowrap; }
+  @media (max-width: 639px) {
+    .speed-gap-bars { grid-template-columns: minmax(0, 1fr); gap: 3px 0; }
+    .speed-gap-track { margin-bottom: 6px; }
+    .speed-gap-facts { grid-template-columns: minmax(0, 1fr); }
+  }
   /* A stop is its name and its figures at every width. Its sentence is
      what a pointer held over it says, and what a screen reader reads. */
   @media (min-width: 1120px) {
@@ -615,6 +653,22 @@
        given: the slot keeps two stops' words that far apart, so no wider
        line is sure of its room. */
     .speed-aside { display: block; margin: 2px 0 0; line-height: 1.3; }
+    /* The stretch of the line between the two stops the part under the
+       line explains: gold where the line is blue, from the slower stop's
+       point (`--from`) to the faster one's (`--to`), with how many times
+       faster in a ring at its middle. The stops' points are drawn over its
+       ends, and the ring is as tall as the room between the words over the
+       line and the scale's marks under it. */
+    .speed-between {
+      display: block; position: absolute; right: calc(var(--from) * 100%); width: calc((var(--to) - var(--from)) * 100%);
+      top: var(--over); height: 2px; background: var(--gold); text-decoration: none;
+    }
+    .speed-between[hidden] { display: none; }
+    .speed-between b {
+      position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); padding: 0 6px; border: 1px solid var(--gold); border-radius: 8px;
+      background: var(--panel); color: var(--gold); font-size: 11px; font-weight: 700; line-height: 14px; white-space: nowrap; font-variant-numeric: tabular-nums;
+    }
+    .speed-between:hover b, .speed-between:focus-visible b { background: var(--gold); color: #10161d; }
   }
 
   /* One tooltip for both charts: the value first, then what it is. */
@@ -1004,6 +1058,7 @@
           </div>
           <div class="speed-track">
             <div class="speed-axis" aria-hidden="true"></div>
+            <a class="speed-between" id="speed-between" href="#speed-gap" hidden></a>
             <ol class="speed-line">
               <li class="speed-stop" data-stop="hand">
                 <span class="speed-dot" aria-hidden="true"></span>
@@ -1109,6 +1164,31 @@
             Cloud cost: a best estimate by <span data-speed="cloud-by"></span>, not a quote.
             <a href="#perf-cloud">How it is worked out</a>
           </p>
+          <!-- Why the simulator's stop is so far from the real game's
+               (operator, 2026-11-24: "what is the main reason civvis is so
+               much faster than firaxis civ 6? please try to explain that gap
+               in the chart/timeline"). On the line the stretch between the
+               two stops is drawn in gold with how many times faster on it
+               (`speed-between`, which is a link to here). Under the line the
+               two games are drawn as bars to one scale, the real game's in
+               the parts its time goes to and the simulator's in its one,
+               with three pairs of figures under them. Which two stops, and
+               every figure, are the record's `timeline.gap`
+               (`speedup_timeline.gap`), read from the ledger's readings:
+               the real game's time by the harness's clock, and its threads'
+               processor time as `tools/civ6_thread_time.py` read it while
+               the game played. Nothing is shown until the record has it. -->
+          <div class="speed-gap" id="speed-gap" hidden>
+            <p class="speed-gap-head"><b id="speed-gap-times"></b> <span id="speed-gap-title"></span></p>
+            <p class="speed-gap-why">The simulator is the rules and the AI with no application around them: a turn takes it far less work, its one thread never waits on another, and there is nothing to launch or draw.</p>
+            <div class="speed-gap-bars" id="speed-gap-bars"></div>
+            <ul class="perf-keys" id="speed-gap-keys" aria-label="What the bars&#8217; colours are"></ul>
+            <div class="perf-tiles speed-gap-facts" id="speed-gap-facts"></div>
+            <details class="fine">
+              <summary>How it is counted</summary>
+              <p class="rank-note" id="speed-gap-counted"></p>
+            </details>
+          </div>
         </div>
       </section>
 
@@ -1717,6 +1797,113 @@
         entry.classList.toggle("is-past", !!stop.past);
         entry.title = [entry.querySelector(".speed-what").textContent, shared, stop.past && "It is past the end of this line.", stop.from].filter(Boolean).join(" ");
       }
+      // Why one stop is so many times faster than another (operator,
+      // 2026-11-24: "what is the main reason civvis is so much faster than
+      // firaxis civ 6? please try to explain that gap in the chart/timeline"):
+      // the record's `gap`, which names the two stops. On the line the
+      // stretch between them is marked with how many times faster, and the
+      // mark is a link to the part under the line. There the two games are
+      // bars to one scale: the slower one's in the parts its time goes to,
+      // the work first so that the faster game's one part stands under it
+      // from the same start, each part with its time on it where that fits
+      // and the rest of what it is in the tooltip. Under the bars, the same
+      // two games as pairs of figures. Every figure is the record's; a part
+      // or a pair this page has no name for is not drawn, and with no bars
+      // neither the mark nor the part is shown.
+      const between = line.gap && typeof line.gap === "object" && named.has(line.gap.slow) && named.has(line.gap.fast)
+        && Array.isArray(line.gap.bars) && line.gap.bars.length ? line.gap : null;
+      const PARTS = {
+        works: ["Game thread at work", "var(--series)", ""],
+        waits: ["Game thread waiting", "var(--series-2)", " is-second"],
+        outside: ["Launching, menus, loading, ending", "var(--series-3)", " is-third"],
+        play: ["Playing the turns", "var(--series)", ""],
+      };
+      const FACTS = { turn: "One turn", cores: "Processors kept busy", busy: "Game thread on a processor" };
+      const pieces = [];
+      if (between) {
+        const mark = document.getElementById("speed-between");
+        mark.style.setProperty("--from", between.from);
+        mark.style.setProperty("--to", between.to);
+        mark.append(el("b", "", text(between.times)));
+        mark.title = way(between.fast) + " is " + text(between.times) + " faster than " + way(between.slow) + ". Why is under the line.";
+        mark.hidden = false;
+        document.getElementById("speed-gap-times").textContent = text(between.times);
+        document.getElementById("speed-gap-title").textContent = "Why " + way(between.fast) + " is that much faster than " + way(between.slow);
+        const bars = document.getElementById("speed-gap-bars"), keys = document.getElementById("speed-gap-keys"), listed = new Set();
+        for (const bar of between.bars) {
+          const kept = (Array.isArray(bar.parts) ? bar.parts : []).filter((part) => part && PARTS[part.key]);
+          const track = el("div", "speed-gap-track");
+          track.setAttribute("role", "img");
+          track.setAttribute("aria-label", way(bar.key) + ", " + text(bar.time) + ": " + kept.map((part) => PARTS[part.key][0].toLowerCase() + " " + text(part.time)).join(", "));
+          kept.forEach((part, index) => {
+            const [name, colour, cls] = PARTS[part.key];
+            const piece = el("span", "speed-gap-part is-" + part.key + (index === kept.length - 1 ? " is-last" : ""));
+            piece.style.setProperty("--share", part.share);
+            // A bar of one part has its time beside it and not on it twice.
+            piece.dataset.time = kept.length > 1 ? text(part.time) : "";
+            piece.tabIndex = 0;
+            const rows = [{ colour, tall: true, value: text(part.time), name: "of " + way(bar.key) + "’s " + text(bar.time) }];
+            if (part.times) rows.push({ value: text(part.times), name: "of the " + text(between.times) + " is this" });
+            piece.addEventListener("pointermove", (event) => showTip(event, name, rows));
+            piece.addEventListener("pointerleave", hideTip);
+            piece.addEventListener("focus", () => {
+              const box = piece.getBoundingClientRect();
+              showTip({ pageX: box.left + window.scrollX, pageY: box.bottom + window.scrollY - 8 }, name, rows);
+            });
+            piece.addEventListener("blur", hideTip);
+            pieces.push(piece);
+            track.append(piece);
+            // The key names the colour and says how many times of the gap
+            // that part of the slower game is: the parts' factors multiply
+            // to the gap, and the key is written as that sum.
+            if (!listed.has(part.key)) {
+              const key = el("li");
+              if (part.times && listed.size) key.append(el("span", "speed-gap-sign", "×"));
+              listed.add(part.key);
+              key.append(el("i", "is-block" + cls), name);
+              if (part.times) key.append(el("b", "", text(part.times)));
+              keys.append(key);
+            }
+          });
+          track.append(el("b", "speed-gap-total", text(bar.time)));
+          bars.append(el("div", "speed-gap-name", way(bar.key)), track);
+        }
+        if (keys.querySelector("b")) {
+          const sum = el("li");
+          sum.append(el("span", "speed-gap-sign", "="), el("b", "", text(between.times)));
+          keys.append(sum);
+        }
+        const facts = document.getElementById("speed-gap-facts");
+        for (const fact of Array.isArray(between.facts) ? between.facts : []) {
+          if (!fact || !FACTS[fact.key]) continue;
+          const tile = el("div", "perf-tile");
+          tile.append(el("span", "perf-tile-label", FACTS[fact.key]));
+          for (const [who, value] of [[between.slow, fact.slow], [between.fast, fact.fast]]) {
+            const pair = el("span", "speed-gap-pair");
+            pair.append(el("small", "", way(who)), el("b", "", text(value)));
+            tile.append(pair);
+          }
+          facts.append(tile);
+        }
+        facts.hidden = !facts.children.length;
+        const counted = document.getElementById("speed-gap-counted");
+        counted.textContent = text(between.counted);
+        counted.parentElement.hidden = !between.counted;
+        document.getElementById("speed-gap").hidden = false;
+      }
+      // A part's time is written on it where the part is wide enough to
+      // hold it, at whatever width the page is; a narrower part has it in
+      // its tooltip and in the account under the bars.
+      const fitGap = () => {
+        for (const piece of pieces) {
+          piece.classList.remove("is-short");
+          piece.textContent = piece.dataset.time;
+          if (piece.scrollWidth > piece.clientWidth) {
+            piece.textContent = "";
+            piece.classList.add("is-short");
+          }
+        }
+      };
       // The narrow layout is a list, slowest first, and a stop nothing has
       // played yet can be slower than one that was measured: the entries are
       // put in the order of their multipliers, whatever kind each is. On the
@@ -1758,6 +1945,7 @@
       const track = section.querySelector(".speed-track");
       const wide = window.matchMedia("(min-width: 1120px)");
       const fit = () => {
+        fitGap();
         if (!wide.matches) return;
         for (const [side, near, least, floor] of [["above", 11, 69, 16], ["below", 29, 87, 30]]) {
           const span = (entry) => {

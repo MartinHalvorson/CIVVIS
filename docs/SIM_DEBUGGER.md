@@ -1074,7 +1074,16 @@ Measured on published build `45e3410` with the real engine:
 
 What it costs is memory: a world's engine holds its world and a copy of the
 page's engine as it stood when the world was seated, which on this page is
-the opening turns.
+the opening turns. A world's turns grow its engine by about 4.5 MB a turn
+late in a six-seat game (55 MB at turn 30, 199 MB at 100, 623 MB at 195 with
+every turn kept), and an engine keeps turns up to its memory line (`room`,
+1 GB unless told). One engine held every world under one line; an engine a
+world would hold a line each. So each world tells its engine its share of
+2 GB (384 MB on a small device), never under 128 MB, again whenever a world
+is opened or deleted (`strangePaneRoom`): two worlds 1024 MB each, three 682.
+Past its line a world gives back its oldest turns first: told 256 MB, one
+world's engine stood at 274 MB by turn 150 and 283 MB at the end (turn 195),
+keeping 49 of its turns, in the same time as keeping all of them.
 
 A world's whole future is played on one more engine, its scout (operator
 2026-11-24: "each branch in doctor strange's civ 6 should simulate out to
