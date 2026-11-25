@@ -16,17 +16,31 @@ games."). It carries one empty slot,
 `<script type="application/json" id="tournaments-data">null</script>`, and
 `beta/publish.sh` fills it with what this prints.
 
-A tournament is one idea played out: a fixed number of verification games
+An experiment is one idea played out: a fixed number of verification games
 under fixed conditions, our AI inside Civilization VI against the game's own
-AI. `data/tournaments.json` defines them, in the order they are to be played,
-and the games are counted off the ledger's `results.jsonl` exactly as
-`home_rankings.tournament_series` counts them for the live mirror's Mode
-line. The page shows three lists:
+AI. Each series is "Experiment N" on the page, where it was "Tournament N"
+until 2026-11-25 (operator: "REplace tournament with experiment inside
+experiments/. that is really what they are. isn't about winning. trying to
+learn."). `data/tournaments.json` defines them, in the order they are to be
+played, and the games are counted off the ledger's `results.jsonl` exactly
+as `home_rankings.tournament_series` counts them for the live mirror's Mode
+line. The page shows three lists of experiments:
 
 - **running**: a series that has games and no end yet.
 - **scheduled**: a definition none of whose games has finished, in the order
-  the file lists them. Scheduling a tournament is adding its definition.
+  the file lists them. Scheduling an experiment is adding its definition.
 - **finished**: every series that has ended, newest first.
+
+and, beside them, the **benchmark** (operator 2026-11-25: "tourney 7 is
+benchmark. please remove from experiments and make the official benchmark
+for now"): the series of the definition marked `benchmark`, the Official
+Benchmark, which is not an experiment. It has no number, and the
+experiments are numbered without it, from 1 in the order they began, so
+the series `tournament_series` counts as 7 is the benchmark and the next
+experiment scheduled is Experiment 7. The definitions file's `videos`,
+`descriptions` and `hyperparameters` are listed by an experiment's number;
+the benchmark carries its own `description` and `hyperparameters` on its
+definition. It is never scheduled: it plays whenever no experiment does.
 
 Each series carries its games in the order they were played (the civ, how
 the game ended, the turn), the wins by victory type, the losses by how they
@@ -42,32 +56,32 @@ games were in play, each from its start to its result, added up; the time
 between games (a restart, a wait, a night the machine was off) is in the
 first and not in the second.
 
-A tournament whose result video is on the CIVVIS YouTube channel links it
+An experiment whose result video is on the CIVVIS YouTube channel links it
 (operator 2026-11-21: "we can link to the youtube tournament result
 videos"). The definitions file lists them under `videos`, by the
-tournament's number as the page shows it, and a series carries its link as
+experiment's number as the page shows it, and a series carries its link as
 `video`. Only a YouTube watch link is carried; anything else is left out and
 said on stderr.
 
-Every tournament has a short description, a few words on what it was
+Every experiment has a short description, a few words on what it was
 (operator 2026-11-21: "for each tournament, we should have a short
 description ... the descriptions can be on the title line"). The
-definitions file lists them under `descriptions`, by the tournament's
-number like the videos, and a tournament carries its own as `description`;
-the page writes it on the tournament's title line, "Tournament 4: 50 game
+definitions file lists them under `descriptions`, by the experiment's
+number like the videos, and an experiment carries its own as `description`;
+the page writes it on the experiment's title line, "Experiment 4: 50 game
 series". A definition may carry a `description` of its own, used when the
 list has no line for its number.
 
-Every tournament spells out its hyperparameters, the settings all its
+Every experiment spells out its hyperparameters, the settings all its
 games were played under (operator 2026-11-23: "please spell out the
 tourney hyperparameters for each tourney clearly"): how many games, the
 AI level, the players at the table, the victory types, how the civ and
 its strategy were picked, the map, the game speed, the turn limit, the
 ruleset, where the games were played, how a game ended and which build
 of the agent played it. The definitions file lists them under
-`hyperparameters`, by the tournament's number like the descriptions, and
-a tournament carries them as `hyperparameters`, a list of `[name, value]`
-pairs in the order of `HYPERPARAMETERS`, the same for every tournament so
+`hyperparameters`, by the experiment's number like the descriptions, and
+an experiment carries them as `hyperparameters`, a list of `[name, value]`
+pairs in the order of `HYPERPARAMETERS`, the same for every experiment so
 two of them read side by side. A definition may carry its own, used when
 the list has no line for its number.
 
@@ -77,9 +91,9 @@ definition or a line it cannot count costs the page its record, said on
 stderr, and never costs the site its publish; the page then says it has no
 record. A lane is filled by its own revision's copy of this script from its
 own revision's definitions (`fill` in `beta/publish.sh`), and both lanes
-count the games off the run ledger as of the build. So a tournament added on
+count the games off the run ledger as of the build. So an experiment added on
 main is listed on /test at once and on the front page once it is promoted,
-while the games of a tournament the front page already lists keep counting
+while the games of an experiment the front page already lists keep counting
 there.
 """
 
@@ -103,29 +117,31 @@ SLOT = re.compile(
 VIDEO = re.compile(r"https://(?:www\.youtube\.com/watch\?v=|youtu\.be/)([\w-]{11})(?:[?&#].*)?")
 
 
-def video(videos: dict, number: int) -> str:
-    """A tournament's result video as its YouTube watch page, or `""`."""
-    listed = videos.get(str(number))
+def video(videos: dict, number: int | None) -> str:
+    """An experiment's result video as its YouTube watch page, or `""`.
+    The benchmark has no number and so no video."""
+    listed = videos.get(str(number)) if number is not None else None
     if not listed:
         return ""
     found = VIDEO.fullmatch(str(listed))
     if not found:
-        print(f"tournaments_page: Tournament {number}'s video is not a YouTube link; left out", file=sys.stderr)
+        print(f"tournaments_page: Experiment {number}'s video is not a YouTube link; left out", file=sys.stderr)
         return ""
     return f"https://www.youtube.com/watch?v={found[1]}"
 
 
-def description(descriptions: dict, number: int, spec: dict) -> str:
-    """A tournament's short description, the few words after its number on
+def description(descriptions: dict, number: int | None, spec: dict) -> str:
+    """An experiment's short description, the few words after its number on
     its title line, or `""`. The line listed for its number is the one
-    shown; without one, its definition's own `description` is."""
-    for listed in (descriptions.get(str(number)), spec.get("description")):
+    shown; without one, its definition's own `description` is. The
+    benchmark has no number: its definition's is its title line."""
+    for listed in (descriptions.get(str(number)) if number is not None else None, spec.get("description")):
         if isinstance(listed, str) and listed.strip():
             return " ".join(listed.split())
     return ""
 
 
-#: A tournament's hyperparameters, in the order the page lists them. A
+#: An experiment's hyperparameters, in the order the page lists them. A
 #: name the definitions file adds outside this list follows them, in the
 #: file's order.
 HYPERPARAMETERS = (
@@ -145,13 +161,14 @@ HYPERPARAMETERS = (
 )
 
 
-def hyperparameters(listed: dict, number: int, spec: dict) -> list[list[str]]:
-    """A tournament's hyperparameters as `[name, value]` pairs in the order
+def hyperparameters(listed: dict, number: int | None, spec: dict) -> list[list[str]]:
+    """An experiment's hyperparameters as `[name, value]` pairs in the order
     of `HYPERPARAMETERS`, or `[]`. The ones listed for its number are the
-    ones shown; without them, its definition's own are. A name or a value
-    that is not a few words is left out."""
+    ones shown; without them, its definition's own are (the benchmark's,
+    which has no number, always are). A name or a value that is not a few
+    words is left out."""
     rank = {name: place for place, name in enumerate(HYPERPARAMETERS)}
-    for given in (listed.get(str(number)), spec.get("hyperparameters")):
+    for given in (listed.get(str(number)) if number is not None else None, spec.get("hyperparameters")):
         if not isinstance(given, dict):
             continue
         pairs = [[" ".join(name.split()), " ".join(value.split())] for name, value in given.items()
@@ -264,7 +281,7 @@ def wilson(wins: int, games: int, z: float = 1.96) -> list[int] | None:
 
 
 def benchmark(played: list, days: int = 7) -> dict:
-    """An indefinite tournament's win rate by level (operator 2026-11-22:
+    """An indefinite series' win rate by level (operator 2026-11-22:
     "benchmark our win rates roughly for these games over time"): over every
     game, with its 95% range, and day by day (UTC, the day a game ended) over
     the last `days` days that had games. A level's day is `[wins, games]`."""
@@ -285,17 +302,20 @@ def benchmark(played: list, days: int = 7) -> dict:
     return {"days": [day[5:] for day in recent], "levels": levels}
 
 
-def series_view(row: dict, spec: dict, names: list[str], videos: dict, descriptions: dict, listed: dict) -> dict:
-    """A series as the page draws it: the table's row and its games."""
+def series_view(row: dict, spec: dict, number: int | None, names: list[str], videos: dict, descriptions: dict,
+                listed: dict) -> dict:
+    """A series as the page draws it: the table's row and its games.
+    `number` is the experiment's, or `None` for the benchmark."""
     games = [game(result, names) for _, result in row["played"]]
     levels = sorted({g["level"] for g in games if g["level"]})
     wall, run = durations(row["played"])
+    last = max((str(result.get("utc") or "") for _, result in row["played"]), default="")
     return {
-        "id": row["id"],
-        "description": description(descriptions, row["id"], spec),
+        "id": number,
+        "description": description(descriptions, number, spec),
         "name": row["tournament"],
         "idea": spec.get("idea") or "",
-        "hyperparameters": hyperparameters(listed, row["id"], spec),
+        "hyperparameters": hyperparameters(listed, number, spec),
         "conditions": row["conditions"],
         "note": row["note"],
         "start": plain(row["start"]),
@@ -303,7 +323,9 @@ def series_view(row: dict, spec: dict, names: list[str], videos: dict, descripti
         # A running series' two durations run to its last finished game.
         "wall": wall,
         "run": run,
-        "video": video(videos, row["id"]),
+        # When its last game finished, as the page writes a date.
+        "last": last[:16].replace("T", " ") if last else None,
+        "video": video(videos, number),
         "games": row["games"],
         "size": row["size"],
         "wins": row["wins"],
@@ -343,22 +365,32 @@ def passed_over(spec: dict, rows: list[dict]) -> bool:
 
 def record(rows: list[dict], specs: list[dict], names: list[str], videos: dict | None = None,
            descriptions: dict | None = None, listed: dict | None = None) -> dict:
-    """The page's three lists and the totals over every game counted.
-    `videos`, `descriptions` and `listed` are the definitions file's own: a
-    result video's address, a short description and the hyperparameters, by
-    the number of their tournament."""
+    """The page's three lists of experiments, the benchmark, and the totals
+    over every experiment's games. `videos`, `descriptions` and `listed` are
+    the definitions file's own: a result video's address, a short
+    description and the hyperparameters, by the number of their experiment."""
     series = ranks.tournament_series(rows, specs, detail=True) or []
     started = {row["definition"] for row in series}
     videos = videos if isinstance(videos, dict) else {}
     descriptions = descriptions if isinstance(descriptions, dict) else {}
     listed = listed if isinstance(listed, dict) else {}
-    views = [series_view(row, specs[row["definition"]], names, videos, descriptions, listed) for row in series]
-    number = max((view["id"] for view in views), default=0)
+    benched = lambda row: bool(specs[row["definition"]].get("benchmark"))
+    # The experiments, numbered from 1 in the order they began, the
+    # benchmark's series left out of the count (`series` is newest first).
+    numbers = {row["id"]: place for place, row in enumerate(
+        sorted((row for row in series if not benched(row)), key=lambda row: row["id"]), 1)}
+    views = [series_view(row, specs[row["definition"]], numbers[row["id"]], names, videos, descriptions, listed)
+             for row in series if not benched(row)]
+    # The benchmark: its newest series (an indefinite definition has one).
+    bench = next((series_view(row, specs[row["definition"]], None, names, videos, descriptions, listed)
+                  for row in series if benched(row)), None)
+    number = len(numbers)
     scheduled = []
     for place, spec in enumerate(specs):
         # A definition with no finished game is still to be played, unless
-        # the queue has moved on past its `end`.
-        if place in started or passed_over(spec, rows):
+        # the queue has moved on past its `end`. The benchmark is never
+        # scheduled: it plays whenever no experiment does.
+        if place in started or spec.get("benchmark") or passed_over(spec, rows):
             continue
         number += 1
         scheduled.append({
@@ -377,11 +409,15 @@ def record(rows: list[dict], specs: list[dict], names: list[str], videos: dict |
         "running": [view for view in views if view["end"] is None],
         "scheduled": scheduled,
         "finished": [view for view in views if view["end"] is not None],
+        "benchmark": bench,
         "totals": {
-            "tournaments": len(views),
+            "experiments": len(views),
             "games": sum(view["games"] for view in views),
             "wins": sum(view["wins"] for view in views),
             "losses": sum(view["losses"] for view in views),
+            # The last of the experiments' own games: the benchmark's
+            # played since are not theirs.
+            "through": max((view["last"] for view in views if view["last"]), default=None),
         },
     }
 
@@ -434,7 +470,8 @@ def main(argv: list[str]) -> int:
     else:
         print(
             f"tournaments_page: wrote {len(data['running'])} running, {len(data['scheduled'])} scheduled "
-            f"and {len(data['finished'])} finished into {page}",
+            f"and {len(data['finished'])} finished experiments"
+            f"{' and the benchmark' if data.get('benchmark') else ''} into {page}",
             file=sys.stderr,
         )
     return 0
