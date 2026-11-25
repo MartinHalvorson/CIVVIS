@@ -3528,7 +3528,11 @@ window.addEventListener("message", event => {
     debugSplit.panes[letter].painted = true;
     debugSplitReady();
   } else if (data.civvis === "pane-camera") {
-    if (debugSplit.view)
+    // In Doctor Strange each world frames its own seat's ground as it plays,
+    // and only a look the person gave one of them is shared: each world's
+    // own framing, every turn, had every other world draw its map again.
+    const shared = !STRANGE || (data.view && data.view.own === true);
+    if (debugSplit.view && shared)
       for (const name of Object.keys(debugSplit.panes))
         if (name !== letter) debugSplitTell(name, {civvis: "pane-look", view: data.view});
   } else if (data.civvis === "pane-numbers") {
@@ -6684,6 +6688,19 @@ if (STRANGE_PANE) {
   style.id = "strange-pane-style";
   style.textContent = STRANGE_PANE_STYLE;
   document.head.appendChild(style);
+  // A world's box shows its map and its chart and nothing else of the page
+  // (`STRANGE_PANE_STYLE` puts the rest away), and every world draws on the
+  // one thread of the page that holds them. What is out of sight is not
+  // drawn or measured: the debugger's bar (its deck and marks are still
+  // worked out and told to the host, `drawDebugBar`), the civilizations'
+  // panel, the heights the corner boxes publish, and the fitting of type in
+  // panels nobody sees. Three worlds spent about a fifth of the thread on
+  // these, every turn.
+  // (The viewer's own, where the page has them.)
+  debugDock = () => {};
+  if (typeof drawPlayerHud === "function") drawPlayerHud = () => {};
+  if (typeof publishSoloHeight === "function") publishSoloHeight = () => {};
+  if (typeof responsiveTypeMutationObserver !== "undefined") responsiveTypeMutationObserver.disconnect();
 }
 if (STRANGE) {
   document.documentElement.classList.add("strange");
@@ -6696,11 +6713,27 @@ if (STRANGE) {
     if (debugSplit && debugSplit !== before) strangeMount();
     return opened;
   };
+  // What the worlds do next is worked out at once, every time; the split
+  // and the highway are drawn once a frame. Each world says several things
+  // a turn (its turn, its marks, its numbers, that it followed, that it is
+  // ready), the host was drawn again for every one of them, and every
+  // drawing measures the page: with three worlds that was a score of
+  // layouts a turn on the one thread all of them draw on. A tab out of
+  // sight paints no frames, so a short timer draws it as well.
   const draw = drawDebugSplit;
-  drawDebugSplit = function (...given) {
-    const drawn = draw(...given);
-    try { strangeStep(); strangeDraw(); } catch (error) { console.error("doctor strange", error); }
-    return drawn;
+  let drawing = null;
+  drawDebugSplit = function () {
+    try { strangeStep(); } catch (error) { console.error("doctor strange", error); }
+    if (drawing) return;
+    const now = () => {
+      if (!drawing) return;
+      cancelAnimationFrame(drawing.frame);
+      clearTimeout(drawing.timer);
+      drawing = null;
+      draw();
+      try { strangeDraw(); } catch (error) { console.error("doctor strange", error); }
+    };
+    drawing = {frame: requestAnimationFrame(now), timer: setTimeout(now, 50)};
   };
   // With no room for two worlds (a small device, a narrow window) the game
   // stays on its one timeline, which is the AI Debugger, and the bar says so.
