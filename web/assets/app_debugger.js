@@ -7277,6 +7277,15 @@ if (STRANGE_PANE) {
   debugDock = () => {};
   if (typeof drawPlayerHud === "function") drawPlayerHud = () => {};
   if (typeof publishSoloHeight === "function") publishSoloHeight = () => {};
+  // Nor are a played seat's chores at the top of a turn done for a box
+  // nobody plays by hand: picking the unit that wants orders and flying the
+  // map to it (`advanceToNextActionUnit`, which drew the map a second time
+  // every turn), and the leader ribbon and the pause control a box never
+  // shows (`drawSoloHud`, `paintLivePause`, `placeLivePause`). With six
+  // worlds these were about a third of what the worlds' pages spent on a
+  // turn; four worlds played 11 to 22% more turns a second without them.
+  for (const name of ["advanceToNextActionUnit", "drawSoloHud", "paintLivePause", "placeLivePause"])
+    if (typeof window[name] === "function") window[name] = () => {};
   if (typeof responsiveTypeMutationObserver !== "undefined") responsiveTypeMutationObserver.disconnect();
   // While the worlds move, a world draws a turn once, when it is handed it
   // (`render`), and plays none of the motion in between. At four or five
