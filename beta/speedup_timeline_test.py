@@ -1407,6 +1407,159 @@ class History(unittest.TestCase):
             self.assertIsNone(speedup_timeline.history(pathlib.Path(scratch)))
 
 
+class Gap(unittest.TestCase):
+    """Why one stop is so many times faster than another (operator,
+    2026-11-24: "what is the main reason civvis is so much faster than
+    firaxis civ 6? please try to explain that gap in the chart/timeline")."""
+
+    #: A real game of 300 s (30 s to its first turn, 250 s of play over 100
+    #: turns, 20 s of ending) whose game thread is on a processor for three
+    #: fifths of its play, and a simulator game of 25 s over 125 turns.
+    LEDGER = {
+        "goals": [{"key": "million", "times": 1000000}],
+        "gap": {"slow": "real", "fast": "sim", "threads": {"play_seconds": 200.0, "cpu_seconds": 640.0, "game_seconds": 120.0, "note": "How the threads were read.", "from": "The whole account."}},
+        "stops": [
+            {"key": "hand", "readings": [{"taken": "2026-11-22", "seconds": 18000, "from": "By hand."}]},
+            {"key": "real", "readings": [{"taken": "2026-11-24", "seconds": 300, "turns": 100, "parts": {"setup": 30, "play": 250, "ending": 20}, "from": "Timed."}]},
+            {"key": "sim", "readings": [{"taken": "2026-11-24", "seconds": 25, "turns": 125, "cpu_seconds": 24.5, "from": "Twelve games."}]},
+        ],
+    }
+
+    def shown(self, change=None) -> dict | None:
+        ledger = json.loads(json.dumps(self.LEDGER))
+        if change:
+            change(ledger)
+        with tempfile.TemporaryDirectory() as scratch:
+            return speedup_timeline.timeline(tree(scratch, ledger))
+
+    def test_the_gap_is_the_slower_stop_s_time_over_the_faster_s_between_their_places(self):
+        line = self.shown()
+        between = line["gap"]
+        self.assertEqual((between["slow"], between["fast"], between["times"]), ("real", "sim", "12x"))
+        places = {stop["key"]: stop["at"] for stop in line["stops"]}
+        self.assertEqual((between["from"], between["to"]), (places["real"], places["sim"]))
+        self.assertLess(between["from"], between["to"])
+
+    def test_the_slower_game_is_in_the_parts_its_time_goes_to_and_they_multiply_to_the_gap(self):
+        between = self.shown()["gap"]
+        slow, fast = between["bars"]
+        self.assertEqual((slow["key"], slow["time"], slow["share"]), ("real", "5 min", 1))
+        # From the bars' shared start: the game thread at work (three fifths
+        # of 250 s), the same thread waiting, and the time outside the turns.
+        self.assertEqual(slow["parts"], [
+            {"key": "works", "time": "2.5 min", "share": 0.5, "times": "6x"},
+            {"key": "waits", "time": "1.7 min", "share": 0.3333, "times": "1.7x"},
+            {"key": "outside", "time": "50 s", "share": 0.1667, "times": "1.2x"},
+        ])
+        self.assertAlmostEqual(sum(part["share"] for part in slow["parts"]), 1, places=3)
+        # 300 s to 250 s, to 150 s, to 25 s: the three factors are the gap.
+        self.assertAlmostEqual((300 / 250) * (250 / 150) * (150 / 25), 300 / 25)
+        # The faster game is one part, at work, and as long as its share.
+        self.assertEqual(fast, {"key": "sim", "time": "25 s", "share": 0.0833, "parts": [{"key": "works", "time": "25 s", "share": 0.0833}]})
+
+    def test_the_two_games_stand_side_by_side_as_pairs_of_figures(self):
+        between = self.shown()["gap"]
+        self.assertEqual(between["facts"], [
+            # 250 s over 100 turns, and 25 s over 125.
+            {"key": "turn", "slow": "2.5 s", "fast": "200 ms", "times": "12x"},
+            # 640 processor seconds in 200 s of play, and 24.5 in 25.
+            {"key": "cores", "slow": "3.2", "fast": "1"},
+            # The game thread's 120 s of those 200, and the simulator's one
+            # thread's 24.5 s of its 25.
+            {"key": "busy", "slow": "60%", "fast": "98%"},
+        ])
+        for said in ("5 min", "30 s", "4.2 min", "20 s", "100 turns", "125", "60%", "3.2 processors", "How the threads were read."):
+            self.assertIn(said, between["counted"])
+        # The page is given the few words, not the whole account.
+        self.assertNotIn("The whole account.", between["counted"])
+
+    def test_without_the_threads_the_play_is_one_part(self):
+        def bare(ledger):
+            del ledger["gap"]["threads"]
+        between = self.shown(bare)["gap"]
+        self.assertEqual([part["key"] for part in between["bars"][0]["parts"]], ["play", "outside"])
+        self.assertEqual([part["times"] for part in between["bars"][0]["parts"]], ["10x", "1.2x"])
+        self.assertEqual(between["bars"][1]["parts"][0]["key"], "play")
+        self.assertEqual([fact["key"] for fact in between["facts"]], ["turn"])
+
+    def test_without_the_parts_there_is_the_gap_and_nothing_under_it(self):
+        def bare(ledger):
+            del ledger["stops"][1]["readings"][0]["parts"]
+        between = self.shown(bare)["gap"]
+        self.assertEqual(set(between), {"slow", "fast", "times", "from", "to"})
+
+    def test_a_newer_reading_of_the_slower_stop_is_the_one_it_is_drawn_from(self):
+        def newer(ledger):
+            ledger["stops"][1]["readings"].append({"taken": "2026-11-26", "seconds": 400, "turns": 150, "parts": {"setup": 30, "play": 350, "ending": 20}, "from": "Timed again."})
+        between = self.shown(newer)["gap"]
+        self.assertEqual((between["times"], between["bars"][0]["time"]), ("16x", "6.7 min"))
+        # The threads' share of the play is the ledger's one measurement of
+        # it, whichever game's play it is taken of.
+        self.assertEqual(between["bars"][0]["parts"][0], {"key": "works", "time": "3.5 min", "share": 0.525, "times": "8.4x"})
+
+    def test_a_gap_the_line_cannot_draw_is_not_shown(self):
+        def unknown(ledger):
+            ledger["gap"]["fast"] = "nobody"
+        def backwards(ledger):
+            ledger["gap"]["slow"], ledger["gap"]["fast"] = "sim", "real"
+        def off_the_line(ledger):
+            ledger["stops"][2]["line"] = False
+        def none(ledger):
+            del ledger["gap"]
+        def broken(ledger):
+            ledger["gap"]["threads"] = {"play_seconds": 0}
+        for change in (unknown, backwards, off_the_line, none, broken):
+            line = self.shown(change)
+            self.assertIsNotNone(line, change.__name__)
+            self.assertNotIn("gap", line, change.__name__)
+
+    def test_the_committed_ledger_explains_civvis_self_play_over_firaxis_self_play(self):
+        asked = LEDGER["gap"]
+        self.assertEqual((asked["slow"], asked["fast"]), ("firaxis_self_play", "self_play"))
+        stops = {stop["key"]: stop for stop in LEDGER["stops"]}
+        slow, fast = stops[asked["slow"]]["readings"][-1], stops[asked["fast"]]["readings"][-1]
+        # The slower game's parts are its whole time, and its turns are said.
+        self.assertAlmostEqual(sum(slow["parts"].values()), slow["seconds"], places=1)
+        self.assertEqual(set(slow["parts"]), {"setup", "play", "ending"})
+        self.assertGreater(slow["turns"], 0)
+        # The faster game's processor time is no more than its one core's.
+        self.assertGreater(fast["turns"], 0)
+        self.assertLessEqual(fast["cpu_seconds"], fast["seconds"])
+        self.assertGreater(fast["cpu_seconds"], 0.9 * fast["seconds"])
+        # The threads were read of a real game: a thread cannot be on a
+        # processor for longer than the clock ran, the process's time is at
+        # least its named threads', and the reading says how it was taken.
+        threads = asked["threads"]
+        self.assertRegex(threads["taken"], r"^\d{4}-\d{2}-\d{2}$")
+        self.assertRegex(threads["run"], r"^firaxis-selfplay-\d{8}T\d{6}Z$")
+        for key in ("game_seconds", "window_seconds"):
+            self.assertLessEqual(threads[key], threads["play_seconds"], key)
+        self.assertGreaterEqual(threads["cpu_seconds"], threads["game_seconds"] + threads["window_seconds"] + threads["workers_seconds"])
+        self.assertLess(threads["from_turn"], threads["to_turn"])
+        self.assertIn("tools/civ6_thread_time.py", threads["from"])
+        self.assertLessEqual(len(threads["note"].split()), 60)
+        # The samples of the stacks: a thread is parked or passing its turn
+        # in no more of them than were taken.
+        stacks = threads["stacks"]
+        self.assertLessEqual(stacks["game_parked"] + stacks["game_yielding"], stacks["samples"])
+        self.assertLessEqual(stacks["window_yielding"], stacks["samples"])
+        self.assertTrue(all(threads["from_turn"] <= turn <= threads["to_turn"] for turn in stacks["turns"]))
+        # What the page is given of it.
+        line = speedup_timeline.timeline(ROOT)
+        between = line["gap"]
+        places = {stop["key"]: stop["at"] for stop in line["stops"]}
+        self.assertEqual((between["from"], between["to"]), (places["firaxis_self_play"], places["self_play"]))
+        self.assertEqual(between["times"], speedup_timeline.times(slow["seconds"] / fast["seconds"]))
+        self.assertEqual([part["key"] for part in between["bars"][0]["parts"]], ["works", "waits", "outside"])
+        self.assertEqual([fact["key"] for fact in between["facts"]], ["turn", "cores", "busy"])
+        # Nothing derived is kept in the ledger: no share, no factor.
+        def keys(value):
+            if isinstance(value, dict):
+                return set(value) | {key for inner in value.values() for key in keys(inner)}
+            return set()
+        self.assertFalse(keys(asked) & {"share", "times", "multiplier", "busy", "cores"})
+
+
 class Page(unittest.TestCase):
     SECTION = PAGE[PAGE.index('<section class="res-section" id="perf-line"') : PAGE.index('<section class="res-section" id="perf-history"')]
     SCRIPT = PAGE[PAGE.index("// ---- The same figures as a line"):PAGE.index("// ---- Each way of playing over time")]
@@ -1556,6 +1709,66 @@ class Page(unittest.TestCase):
         self.assertIn('entry.style.setProperty("--at", stop.at);', PAGE)
         for unsafe in ("innerHTML", "insertAdjacentHTML", "outerHTML"):
             self.assertNotIn(unsafe, self.SCRIPT)
+
+    def test_the_gap_between_two_stops_is_marked_on_the_line_and_explained_under_it(self):
+        # Operator 2026-11-24: "what is the main reason civvis is so much
+        # faster than firaxis civ 6? please try to explain that gap in the
+        # chart/timeline". On the line: the stretch between the two stops,
+        # drawn over the scale and under the stops' points, with how many
+        # times faster on it, and it is a link to the part under the line.
+        section, script = self.SECTION, self.SCRIPT
+        self.assertIn('            <div class="speed-axis" aria-hidden="true"></div>\n'
+                      '            <a class="speed-between" id="speed-between" href="#speed-gap" hidden></a>\n'
+                      '            <ol class="speed-line">', section)
+        self.assertIn(".speed-between { display: none; }", PAGE)
+        self.assertIn("display: block; position: absolute; right: calc(var(--from) * 100%); width: calc((var(--to) - var(--from)) * 100%);", PAGE)
+        self.assertIn('mark.style.setProperty("--from", between.from);', script)
+        self.assertIn('mark.style.setProperty("--to", between.to);', script)
+        self.assertIn('mark.append(el("b", "", text(between.times)));', script)
+        # Under the line, after the line's own notes: the two games as bars
+        # to one scale, what each colour is, and pairs of figures. It is
+        # hidden until the record has the bars, and with it the mark.
+        self.assertLess(section.index('id="speed-note"'), section.index('<div class="speed-gap" id="speed-gap" hidden>'))
+        for place in ("speed-gap-times", "speed-gap-title", "speed-gap-bars", "speed-gap-keys", "speed-gap-facts", "speed-gap-counted"):
+            self.assertEqual(section.count(f'id="{place}"'), 1, place)
+        self.assertIn("&& Array.isArray(line.gap.bars) && line.gap.bars.length ? line.gap : null;", script)
+        self.assertIn('document.getElementById("speed-gap").hidden = false;', script)
+        # The two stops are the record's, named as the tables name them.
+        self.assertIn('"Why " + way(between.fast) + " is that much faster than " + way(between.slow)', script)
+        # A bar is as long as its share of the slower game, less the room
+        # its time is written in, and a part as wide as its own share, with
+        # the panel showing between two parts.
+        self.assertIn("flex: none; width: calc((100% - 66px) * var(--share) - 2px);", PAGE)
+        self.assertIn(".speed-gap-track { display: flex; align-items: center; gap: 2px;", PAGE)
+        self.assertIn('piece.style.setProperty("--share", part.share);', script)
+        # The parts the page can name, each in one of the page's three chart
+        # colours, the work in the first: the faster game's bar is that one.
+        for key, colour in (("works", "var(--series)"), ("waits", "var(--series-2)"), ("outside", "var(--series-3)"), ("play", "var(--series)")):
+            self.assertRegex(script, rf'{key}: \["[^"]+", "{re.escape(colour)}", "[^"]*"\],')
+        self.assertIn(".speed-gap-part.is-waits { background: var(--series-2); }", PAGE)
+        self.assertIn(".speed-gap-part.is-outside { background: var(--series-3); }", PAGE)
+        # Every part and every pair the record can give has a name here.
+        between = speedup_timeline.timeline(ROOT)["gap"]
+        for bar in between["bars"]:
+            for part in bar["parts"]:
+                self.assertRegex(script, rf'\b{part["key"]}: \["')
+        for fact in between["facts"]:
+            self.assertRegex(script, rf'\b{fact["key"]}: "')
+        # A part's time is written on it only where it fits, measured again
+        # whenever the page is fitted, at any width; a part can be reached
+        # by the keyboard and says what it is under a pointer or on focus.
+        self.assertIn("const fit = () => {\n        fitGap();\n        if (!wide.matches) return;", script)
+        self.assertIn("if (piece.scrollWidth > piece.clientWidth) {", script)
+        for heard in ('"pointermove"', '"pointerleave"', '"focus"', '"blur"'):
+            self.assertIn(f"piece.addEventListener({heard},", script)
+        self.assertIn("piece.tabIndex = 0;", script)
+        # What the figures are counted from is closed until it is pressed.
+        self.assertIn('<details class="fine">\n              <summary>How it is counted</summary>\n'
+                      '              <p class="rank-note" id="speed-gap-counted"></p>', section)
+        # The one sentence over the bars has no figure in it and is short.
+        why = re.search(r'<p class="speed-gap-why">(.*?)</p>', section, re.S)[1]
+        self.assertLessEqual(len(re.sub(r"&#?\w+;", "x", why).split()), 35)
+        self.assertIsNone(re.search(r"\d", re.sub(r"&#\d+;", "", why)))
 
     def test_it_stands_in_the_middle_of_civvis_performance_and_home_has_none_of_it(self):
         # Operator 2026-11-24: "move the civvis performance timeline thing
