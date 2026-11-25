@@ -137,11 +137,17 @@ async function chooseFogHonest(on) {
 // Only a watched CIVVIS world carries the figure, so only it has the row.
 // The dial is the engine's (`Game::disaster_frequency`) and turns from the
 // next turn; the worlds dealt after this one keep it.
+//
+// The row, its words for the plate's spoken label and its listener are all
+// here rather than in app.js, which only places the row: that script is held
+// under 40,000 lines (`tools/test_web_assets.py`) and stood one line short
+// of it the day this was written.
 const CHAOS_FREQUENCIES = [1, 10, 30, 100, 300, 1000];
 function chaosFrequencyName(frequency) {
   return frequency === 1 ? "Off" : `${frequency.toLocaleString("en-US")}x`;
 }
 function hudChaosRow() {
+  askAddressChaos(); // `?chaos=N`, once, of the first watched world drawn
   const now = Number(state.disaster_frequency);
   if (!Number.isFinite(now) || livePause.available) return "";
   // A figure the row does not list (an address asked for it) is listed too.
@@ -156,6 +162,16 @@ function hudChaosRow() {
       `${chaosFrequencyName(frequency)}</option>`).join("") +
     `</select><span class="turn-pace-caret" aria-hidden="true">⌄</span></span></div>`;
 }
+// What the plate's spoken label says of the row, or nothing without one.
+function hudChaosLabel(row) {
+  return row ? `chaos monkey ${chaosFrequencyName(Number(state.disaster_frequency))}; ` : ``;
+}
+// The row's own listener: the turn box's other selects are handled where the
+// plate is drawn, and this one is handled here beside the row it belongs to.
+hudRibbon.addEventListener("change", ev => {
+  const chaos = ev.target.closest?.("[data-hud-chaos]");
+  if (chaos) { chooseChaos(Number(chaos.value)); chaos.blur(); }
+});
 // The row, turned. As with Fog-honest AI the engine answers with the state
 // and only what the row reads is taken from it.
 async function chooseChaos(frequency) {

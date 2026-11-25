@@ -27874,9 +27874,7 @@ function hudTurnPlate() {
       `<option value="0"${state.tactics.fog ? "" : " selected"}>Off</option>` +
       `</select><span class="turn-pace-caret" aria-hidden="true">⌄</span></span></div>`
     : ``;
-  const fogHonestRow = hudFogHonestRow(); // app_setup.js
-  const chaosRow = hudChaosRow(); // app_setup.js
-  askAddressChaos(); // app_setup.js: `?chaos=N`, once
+  const fogHonestRow = hudFogHonestRow(), chaosRow = hudChaosRow(); // app_setup.js
   const plateLabel = `${context}; ${ageLabel}; turn ${turn} of ${turnCap}; ` +
     (liveTime ? `live time ${liveTime.spoken}; ` : ``) +
     `max speed ${watchPace}; ` +
@@ -27884,8 +27882,7 @@ function hudTurnPlate() {
     (liveLevel ? `difficulty level ${liveLevel.level}, ${liveLevel.name}; ` : ``) +
     `game speed ${speedName}; ` +
     (fogRow ? `in-game fog ${state.tactics.fog ? "on" : "off"}; ` : ``) +
-    (fogHonestRow ? `fog-honest AI ${state.fog_honest}; ` : ``) +
-    (chaosRow ? `chaos monkey ${chaosFrequencyName(Number(state.disaster_frequency))}; ` : ``) +
+    (fogHonestRow ? `fog-honest AI ${state.fog_honest}; ` : ``) + hudChaosLabel(chaosRow) +
     `${civCount} civilizations remaining, ${civsLost} eliminated; ` +
     `${cityStateCount} city states remaining, ${cityStatesLost} eliminated; ` +
     `mode ${plateMode[0]}; point of view ${platePov[0]}`;
@@ -27924,8 +27921,7 @@ function hudTurnPlate() {
     `<div class="turn-settings" aria-label="Game setup">` +
     frameRow("Mode:", plateMode) + frameRow("POV:", platePov) +
     fogRow +
-    fogHonestRow +
-    chaosRow +
+    fogHonestRow + chaosRow +
     rosterRow("Civs:", civCount, civsLost) +
     rosterRow("City states:", cityStateCount, cityStatesLost) +
     `</div></section>`;
@@ -29135,8 +29131,6 @@ hudRibbon.addEventListener("change", ev => {
   }
   const honest = ev.target.closest?.("[data-hud-fog-honest]");
   if (honest) { chooseFogHonest(honest.value === "1"); honest.blur(); return; }
-  const chaos = ev.target.closest?.("[data-hud-chaos]");
-  if (chaos) { chooseChaos(Number(chaos.value)); chaos.blur(); return; }
   const pace = ev.target.closest?.("[data-hud-pace]");
   if (!pace) return;
   chooseWatchPace(pace.value);

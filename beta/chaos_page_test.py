@@ -205,8 +205,12 @@ class TheDialInTheSimulator(unittest.TestCase):
         self.assertIn("function hudChaosRow() {", SETUP)
         self.assertIn("<span>Chaos Monkey:</span>", SETUP)
         self.assertIn("<select data-hud-chaos ", SETUP)
-        self.assertIn("    chaosRow +\n", APP)
-        self.assertIn('  if (chaos) { chooseChaos(Number(chaos.value)); chaos.blur(); return; }\n', APP)
+        # app.js only places the row; the row, its label and its listener
+        # are app_setup.js's, because app.js is held under 40,000 lines.
+        self.assertIn("  const fogHonestRow = hudFogHonestRow(), chaosRow = hudChaosRow(); // app_setup.js\n", APP)
+        self.assertIn("    fogHonestRow + chaosRow +\n", APP)
+        self.assertIn('  if (chaos) { chooseChaos(Number(chaos.value)); chaos.blur(); }\n', SETUP)
+        self.assertNotIn("chooseChaos", APP)
 
     def test_the_row_asks_the_engine_and_the_published_engine_answers(self):
         self.assertIn('const answer = await fetchJSON("/chaos", {method: "POST",', SETUP)
@@ -218,7 +222,7 @@ class TheDialInTheSimulator(unittest.TestCase):
 
     def test_an_address_can_ask_for_the_dial(self):
         self.assertIn('asked = Number(new URLSearchParams(location.search).get("chaos"));', SETUP)
-        self.assertIn("  askAddressChaos(); // app_setup.js: `?chaos=N`, once\n", APP)
+        self.assertIn("  askAddressChaos(); // `?chaos=N`, once, of the first watched world drawn\n", SETUP)
 
 
 if __name__ == "__main__":
