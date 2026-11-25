@@ -2267,8 +2267,10 @@ fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
     assert!(include_str!("../../web/assets/app_debugger.js")
         .contains("document.documentElement.classList.add(\"strange\");"));
     // The page on screen keeps its colour and is ringed in white; it was
-    // gold until 2026-11-24, when gold became CIVVIS's own (operator: "lets
-    // give civvis a gold background on the button, rather than black").
+    // gold until 2026-11-24. CIVVIS's own button was gold from that day
+    // (operator: "lets give civvis a gold background on the button, rather
+    // than black") and is white since 2026-11-25 ("make the civvis color
+    // white"), so while it is the page on screen its ring is black.
     // `watching-sim` is the engine's own answer to which of the two this
     // is, and until the first observation says so (`seat-known`) neither is
     // ringed. Every top-level link is there from the start, so no rule
@@ -2280,9 +2282,10 @@ fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
         "    border-color: #fff; box-shadow: inset 0 0 0 1px #fff;\n",
         "  }",
     )));
-    assert!(EMBEDDED_INDEX.contains(
-        "  #watchlink { color: #17130c; border-color: #efd184; background: linear-gradient(145deg, #dec176, #aa7d30); }\n"
-    ));
+    assert!(EMBEDDED_INDEX
+        .contains("  #watchlink { color: #12171d; border-color: #cfd6dd; background: #fff; }\n"));
+    assert!(EMBEDDED_INDEX
+        .contains("  body.watching-sim #watchlink { box-shadow: inset 0 0 0 2px #111416; }\n"));
     for hides in [
         "#playlink { display: none; }",
         "#strangelink { display: none; }",
@@ -2682,16 +2685,16 @@ fn the_home_page_lists_the_sites_with_itself_ringed() {
             "        <h1 class=\"site-title\">CIVVIS<span>.ai</span></h1>",
         ),
         // They read as the viewer's links do, in capitals, one row across
-        // the page, and the page on screen is ringed in white: gold is
-        // CIVVIS's (operator, 2026-11-24: "lets give civvis a gold
-        // background on the button, rather than black").
+        // the page, and the page on screen is ringed in white. CIVVIS's
+        // own button is white all over (operator, 2026-11-25: "make the
+        // civvis color white"; gold from 2026-11-24 until then).
         "    text-transform: uppercase;\n  }\n  .site-link:hover,",
         ".site-nav { display: flex; flex: 1 0 100%; flex-wrap: wrap; align-items: center; gap: 6px; }",
         concat!(
             ".site-link[aria-current=\"page\"],\n",
             "  .site-folder:has([aria-current=\"page\"]) > .site-link { box-shadow: inset 0 0 0 2px #fff; }",
         ),
-        ".site-link[href$=\"../\"] { background: linear-gradient(145deg, #dec176, #aa7d30); color: #17130c;",
+        ".site-link[href$=\"../\"] { background: #fff; color: #12171d;",
         // The project's own links follow, under the label the publish
         // check finds the page by (`beta/verify.py`).
         "<nav class=\"utility-nav\" aria-label=\"CIVVIS links\">",

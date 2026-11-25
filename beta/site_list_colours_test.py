@@ -7,21 +7,23 @@ background (same as simulator)", and of the sixth button: "civ 6 can have the
 steam color of blue. the background can be styled how you think steam is".
 Later the same day, of Doctor Strange's Civ 6: "highlight dr strange civ 6
 button in dr strange colors". On 2026-11-24, of CIVVIS: "lets give civvis a
-gold background on the button, rather than black".
+gold background on the button, rather than black", and on 2026-11-25: "make
+the civvis color white".
 
 Until then a list was all one colour, the colour of the page it stood on:
 six blue buttons on the pages, six black ones in the simulator. Now a button
 says where it goes, and says the same thing on every page:
 
     Home, Charts/ and its pages, Experiments     the pages' blue
-    CIVVIS                                       gold
+    CIVVIS                                       white
     AI Debugger                                  the simulator's black
     Doctor Strange's Civ 6                       Doctor Strange's blue and
                                                  crimson, in an orange glow
     Civ 6                                        the blue of Steam's buttons
 
 and the page on screen keeps its colour and is ringed in white (it was gold
-until gold became CIVVIS's).
+until 2026-11-24). CIVVIS's white button is the page on screen only in the
+simulator, where its ring is the simulator's black instead.
 
 The pages do it without a word in the markup, which a dozen tests pin as it
 stands: a link that ends at the lane's own address (`../`, or two up from a
@@ -59,12 +61,14 @@ BLUE = (
     "    --action-fg: #a8d8f5;\n"
     "    --action-hover: #315d7e;\n"
 )
-#: CIVVIS, the simulation at the lane's own address, is the gold the
-#: simulator lit the page on screen in: the same gold on every page.
-GOLD = (
-    '  .site-link[href$="../"] { background: linear-gradient(145deg, #dec176, #aa7d30); color: #17130c; box-shadow: inset 0 0 0 1px #efd184; }\n'
-    '  .site-link[href$="../"]:hover, .site-link[href$="../"]:focus-visible { background: linear-gradient(145deg, #f0d68e, #c0913c); color: #000; }\n'
+#: CIVVIS, the simulation at the lane's own address, is white: the same
+#: white on every page (gold from 2026-11-24 to 2026-11-25).
+WHITE = (
+    '  .site-link[href$="../"] { background: #fff; color: #12171d; box-shadow: inset 0 0 0 1px #cfd6dd; }\n'
+    '  .site-link[href$="../"]:hover, .site-link[href$="../"]:focus-visible { background: #e3e8ee; color: #000; }\n'
 )
+#: The gold it wore, which no page's list is to carry again.
+GOLD = ("#dec176", "#aa7d30", "#efd184")
 #: AI Debugger is the simulator's black, its ground (`--ink` in
 #: `web/index.html`), inside the edge its own buttons have (`--line`).
 BLACK = (
@@ -105,7 +109,7 @@ def ground(href: str) -> str:
     """What the three rules make of a link, read as the browser reads them:
     `$=` is "ends with" and `^=` "starts with"."""
     if href.endswith("../"):
-        return "gold"
+        return "white"
     if href.endswith("?mode=play"):
         return "black"
     if href.endswith("?mode=strange"):
@@ -145,18 +149,23 @@ class Pages(unittest.TestCase):
             with self.subTest(page=source):
                 self.assertIn(BLUE, page)
                 self.assertIn("    background: var(--action-bg);\n    color: var(--action-fg);\n", page)
-                self.assertEqual(page.count(GOLD), 1)
+                self.assertEqual(page.count(WHITE), 1)
                 self.assertEqual(page.count(BLACK), 1)
                 self.assertEqual(page.count(STRANGE), 1)
                 self.assertEqual(page.count(STEAM), 1)
                 self.assertNotRegex(page, SET_ASIDE)
                 # The strange rule comes after the black, so nothing from
                 # the simulator's black is left on it at equal weight.
-                self.assertLess(page.index(GOLD), page.index(BLACK))
+                self.assertLess(page.index(WHITE), page.index(BLACK))
                 self.assertLess(page.index(BLACK), page.index(STRANGE))
                 # The page on screen keeps what it would wear, ringed in
                 # white, and the ring is the last rule, so it wins.
-                self.assertNotIn("var(--gold)", page[page.index("  .site-link {"):page.index(RING)])
+                rules = page[page.index("  .site-link {"):page.index(RING)]
+                self.assertNotIn("var(--gold)", rules)
+                # Nor is any button of the list gold any more: CIVVIS's was,
+                # from 2026-11-24 until it was made white the next day.
+                for colour in GOLD:
+                    self.assertNotIn(colour, rules)
                 ring = page[page.index(RING):]
                 self.assertIn("{ box-shadow: inset 0 0 0 2px #fff; }\n", ring[:ring.index("}") + 2])
 
@@ -164,7 +173,7 @@ class Pages(unittest.TestCase):
         for source, links in lists().items():
             worn = {name: ground(href) for name, href in links}
             with self.subTest(page=source):
-                self.assertEqual({name for name, kind in worn.items() if kind == "gold"}, {"CIVVIS"})
+                self.assertEqual({name for name, kind in worn.items() if kind == "white"}, {"CIVVIS"})
                 self.assertEqual({name for name, kind in worn.items() if kind == "black"}, {"AI Debugger"})
                 self.assertEqual({name for name, kind in worn.items() if kind == "strange"}, {"Doctor Strange's Civ 6"})
                 self.assertEqual({name for name, kind in worn.items() if kind == "steam"}, {"Civ 6"})
@@ -244,13 +253,29 @@ class Simulator(unittest.TestCase):
         self.assertEqual(len(coloured), 3, coloured)
         self.assertIn("html.seat-known.strange body:not(.watching-sim) #strangelink", coloured[-1])
 
-    def test_civvis_is_gold(self):
-        # The same gold as on the pages, by name.
-        self.assertIn("  #watchlink { color: #17130c; border-color: #efd184; "
-                      "background: linear-gradient(145deg, #dec176, #aa7d30); }\n", VIEWER)
-        self.assertIn("  #watchlink:hover { color: #000; border-color: #fff3c9; "
-                      "background: linear-gradient(145deg, #f0d68e, #c0913c); }\n", VIEWER)
-        self.assertIn(GOLD.split(" { ", 1)[1].split(";", 1)[0], VIEWER)
+    def test_civvis_is_white(self):
+        # Operator 2026-11-25: "make the civvis color white". The same white
+        # as on the pages, by name, with the same dark name on it.
+        self.assertIn("  #watchlink { color: #12171d; border-color: #cfd6dd; background: #fff; }\n", VIEWER)
+        self.assertIn("  #watchlink:hover { color: #000; border-color: #fff; background: #e3e8ee; }\n", VIEWER)
+        for said in ("background: #fff; color: #12171d;", "background: #e3e8ee; color: #000;"):
+            self.assertIn(said, WHITE)
+        # And nothing of the gold it wore is left on the link.
+        rules = [chunk.rpartition("{") for chunk in VIEWER.split("}")]
+        worn = " ".join(body for selector, _, body in rules if "#watchlink" in selector)
+        for colour in GOLD:
+            self.assertNotIn(colour, worn)
+        self.assertNotIn("gradient", worn)
+
+    def test_the_white_button_is_ringed_in_black_while_it_is_on_screen(self):
+        # A white ring on a white button would not show, so CIVVIS, while
+        # it is the page on screen, is ringed in the simulator's black
+        # inside its white edge. The rule stands after the one that rings
+        # the three in white, so it is the one that holds.
+        ring = "  body.watching-sim #watchlink { box-shadow: inset 0 0 0 2px #111416; }\n"
+        self.assertEqual(VIEWER.count(ring), 1)
+        self.assertLess(VIEWER.index("    border-color: #fff; box-shadow: inset 0 0 0 1px #fff;\n"), VIEWER.index(ring))
+        self.assertIn("    --panel-2: #111416;\n", VIEWER)
 
     def test_the_page_on_screen_is_ringed_in_white(self):
         # Whichever of its three pages this is keeps its own colour and is
