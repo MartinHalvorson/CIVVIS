@@ -575,6 +575,101 @@ def projected(ledger: dict, measured: list[tuple[dict, list[dict]]], base: float
     return rows
 
 
+def gap(ledger: dict, measured: list[tuple[dict, list[dict]]], base: float, goal: float) -> dict | None:
+    """Why one stop of the line is so many times faster than another, for
+    the stops as read (`measured`), the baseline's seconds (`base`) and the
+    multiplier the line ends at (`goal`): the ledger's `gap` names the two
+    (`slow` and `fast`; operator, 2026-11-24: "what is the main reason civvis
+    is so much faster than firaxis civ 6? please try to explain that gap in
+    the chart/timeline"). `None` for a ledger that names none, a stop it
+    names that is not on the line, or two that are the wrong way round.
+
+    What it gives is how many times faster (`times`) and where on the line
+    the stretch between the two runs (`from` and `to`, the two stops' own
+    places), and then as much as the readings say of where the slower
+    game's time goes:
+
+    - `bars`, the two games drawn to one scale, the slower first, each with
+      its time and the `share` of the slower game's time it is. The slower
+      game is in parts where its newest reading has `parts` (its seconds as
+      `setup`, `play` and `ending`): the time outside its turns (`outside`),
+      and its play. The play is split where the ledger's `gap` has `threads`
+      (what `tools/civ6_thread_time.py` read of that game's process as it
+      played) into the time its game thread was on a processor (`works`)
+      and the time it was not (`waits`), by that thread's share of the play
+      it was read over. Each part has the factor of the gap it accounts for
+      (`times`): the time outside the turns is taken away, then the
+      waiting, and the work that is left is so many times the faster game's
+      whole time, so the factors multiply to the gap. The faster game is
+      one part, at work: its reading's `cpu_seconds` are all but all of it.
+    - `facts`, the same two games as pairs of figures: what one turn takes
+      (`turn`, where both readings have their `turns`), and where there are
+      `threads` and the faster reading has its `cpu_seconds`, how many
+      processors each keeps busy as it plays (`cores`) and what share of
+      the play each one's game thread is on a processor (`busy`).
+    - `counted`, the account of those figures a visitor can open, which ends
+      on the few words the ledger keeps for the page of how the threads were
+      read (`note`; the whole account is the ledger's `from`).
+    """
+    asked = ledger.get("gap")
+    if not asked:
+        return None
+    shown = {stop["key"]: taken[-1] for stop, taken in measured if stop.get("line") is not False}
+    slow, fast = shown.get(asked.get("slow")), shown.get(asked.get("fast"))
+    if not slow or not fast or not fast["seconds"] < slow["seconds"]:
+        return None
+
+    def place(seconds: float) -> float:
+        return round(min(1.0, max(0.0, math.log(base / seconds) / math.log(goal))), 4)
+
+    whole, quick = slow["seconds"], fast["seconds"]
+    row = {"slow": asked["slow"], "fast": asked["fast"], "times": times(whole / quick), "from": place(whole), "to": place(quick)}
+    parts, threads = slow.get("parts"), asked.get("threads")
+    if not parts:
+        return row
+    play = parts["play"]
+    busy = threads["game_seconds"] / threads["play_seconds"] if threads else None
+    # The slower game's time, a part taken away at a time until the faster
+    # game's is left: each part's seconds, and the seconds left once it is
+    # gone.
+    steps = [("outside", whole - play, play)]
+    steps += [("waits", play * (1 - busy), play * busy), ("works", play * busy, quick)] if threads else [("play", play, quick)]
+    cut, left = [], whole
+    for key, seconds, after in steps:
+        cut.append({"key": key, "time": clock(seconds), "share": round(seconds / whole, 4), "times": times(left / after)})
+        left = after
+    row["bars"] = [
+        # From the bars' shared start, the work first: the faster game's one
+        # part stands under it and is held against it.
+        {"key": asked["slow"], "time": clock(whole), "share": 1, "parts": cut[::-1]},
+        {"key": asked["fast"], "time": clock(quick), "share": round(quick / whole, 4), "parts": [{"key": cut[-1]["key"], "time": clock(quick), "share": round(quick / whole, 4)}]},
+    ]
+    counted = [
+        f"The slower game, {clock(whole)}: {clock(parts['setup'])} from launching it to its first turn, {clock(play)} of play and {clock(parts['ending'])} of ending."
+    ]
+    facts = []
+    if slow.get("turns") and fast.get("turns"):
+        one, other = play / slow["turns"], quick / fast["turns"]
+        facts.append({"key": "turn", "slow": clock(one), "fast": clock(other), "times": times(one / other)})
+        counted.append(f"Its play was {figure(slow['turns'])} turns, and the faster game's {clock(quick)} were {figure(fast['turns'])}.")
+    if threads:
+        cores = threads["cpu_seconds"] / threads["play_seconds"]
+        if fast.get("cpu_seconds"):
+            alone = fast["cpu_seconds"] / quick
+            facts.append({"key": "cores", "slow": f"{cores:.1f}", "fast": f"{alone:.1f}".replace(".0", "")})
+            facts.append({"key": "busy", "slow": share(busy), "fast": share(alone)})
+        counted.append(
+            f"Its threads were read over {clock(threads['play_seconds'])} of a game's play: the game thread was on a processor for {share(busy)} of that,"
+            f" and the whole process for {cores:.1f} processors' worth."
+        )
+        if threads.get("note"):
+            counted.append(threads["note"])
+    if facts:
+        row["facts"] = facts
+    row["counted"] = " ".join(counted)
+    return row
+
+
 def timeline(source: pathlib.Path) -> dict | None:
     """What the page's line shows: the stops in the ledger's order, each with
     its newest reading as a time and a multiplier, its goal when it has one,
@@ -672,6 +767,14 @@ def timeline(source: pathlib.Path) -> dict | None:
         shown["was"] = fastest["was"]
     if ahead:
         shown["projected"] = ahead
+    # Why one stop is so many times faster than another, where the ledger
+    # asks for it and the two are on the line.
+    try:
+        between = gap(ledger, measured, base, goal)
+    except (KeyError, TypeError, ValueError, ZeroDivisionError):
+        between = None
+    if between:
+        shown["gap"] = between
     cloud = rented(source, ledger, measured, base)
     if cloud:
         costs = {row["key"]: row["an_hour"] for row in cloud["rows"]}
