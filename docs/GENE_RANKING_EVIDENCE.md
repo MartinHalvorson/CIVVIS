@@ -187,6 +187,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `exploration-replans-need-a-sighting` | off (unmeasured) | Opt-in gene `exploration-replans-need-a-sighting`: explored ground re-opens the turn only when it shows a foreign unit or city; see `ai::player::take_turn`. | 1 \| 1 |
 | `one-replan-per-turn` | off (unmeasured) | Opt-in gene `one-replan-per-turn`: a turn re-opens for a fresh plan at most once; see `ai::player::take_turn`. | 1 \| 1 |
 | `raiders-holding-a-settler-are-hunted` | off (unmeasured) | Opt-in gene `raiders-holding-a-settler-are-hunted`: the board hunts the hostiles that hold a Settler of ours in the field; see `advanced/raiders_holding_a_settler.rs`. | 1 \| 1 |
+| `science-core-ends-expansion` | off (unmeasured) | Opt-in gene `science-core-ends-expansion`: an assigned Science lane leaves the Expansion half at its core of cities; see `advanced/science_core_ends_expansion.rs`. | 1 \| 1 |
 
 ## Removed from the code
 

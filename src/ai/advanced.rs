@@ -10732,6 +10732,10 @@ pub struct AdvancedAi {
     /// which a Settler has been out with no city founded, and the city count
     /// then. Keyed to no unit, so a remapped id cannot restart it.
     settlers_out_since: Option<(u32, usize)>,
+    /// `science-core-ends-expansion`: an assigned Science lane leaves the
+    /// Expansion half once it holds its core of cities. See
+    /// `advanced/science_core_ends_expansion.rs`. Off by default.
+    science_core_ends_expansion: bool,
     // ---- append: t-z ------------------------------------------------
     /// `world-religion-condemns-the-faith`: our soldiers condemn a faith
     /// World Religion's option B names, at peace, and the agent's ballot asks
@@ -12251,6 +12255,8 @@ mod opening_settlement;
 /// `quest-boost`. See `advanced/city_state_quests.rs`.
 pub(crate) mod city_state_quests;
 
+/// `science-core-ends-expansion`: see `advanced/science_core_ends_expansion.rs`.
+mod science_core_ends_expansion;
 /// `science-specializes-earlier`: see `advanced/science_specializes_earlier.rs`.
 mod science_specializes_earlier;
 /// A known Galápagos or Bermuda science job just beyond the ordinary
@@ -13388,6 +13394,7 @@ impl AdvancedAi {
             space_people_call_the_projects: false,
             sea_scout_claims_the_queue_2: false,
             spies_price_the_science_head: false,
+            science_core_ends_expansion: false,
             // ---- append: t-z ----------------------------------------
             world_religion_condemns_the_faith: false,
             wounded_ship_sails_on: false,
