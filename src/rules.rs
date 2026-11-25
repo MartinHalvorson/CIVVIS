@@ -3118,7 +3118,7 @@ impl Rules {
             }
         }
         for people in by_kind.values_mut() {
-            people.sort_by_key(|id| (self.great_people[*id].era, *id));
+            people.sort_by_key_shared(|id| (self.great_people[*id].era, *id));
         }
         by_kind
     }
