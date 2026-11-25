@@ -159,7 +159,7 @@ fn warrior_monks_require_the_belief_and_temple_and_use_faith() {
     let (mut game, city) = founded_two_cities();
     enable_faith_purchase(&mut game, city);
     game.players[0].religion = Some("Home Faith".to_string());
-    game.players[0].religion_beliefs = vec!["warrior_monks".to_string()];
+    game.players[0].religion_beliefs = vec!["warrior_monks".into()];
     game.cities
         .get_mut(&city)
         .unwrap()
@@ -195,7 +195,7 @@ fn warrior_monks_require_the_belief_and_temple_and_use_faith() {
         game.unit_purchase_cost(0, city, "warrior_monk", "faith"),
         None
     );
-    game.players[0].religion_beliefs = vec!["warrior_monks".to_string()];
+    game.players[0].religion_beliefs = vec!["warrior_monks".into()];
     game.cities.get_mut(&city).unwrap().buildings.clear();
     assert_eq!(
         game.unit_purchase_cost(0, city, "warrior_monk", "faith"),
