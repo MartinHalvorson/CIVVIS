@@ -2205,12 +2205,16 @@ fn viewer_marks_the_selected_revision_and_its_compact_ages_above_the_minimap() {
 /// and AI Debugger (operator: "add below civvis and above ai debugger "Doctor
 /// Strange's Civ 6"", then "lets actually place the ai debugger above this",
 /// then "lest move dr strange civ 6 above ai debugger"), the played game
-/// shown as a tree of two timelines. Later
+/// shown as a tree of two timelines, and eight since Edge of Tomorrow joined
+/// between AI Debugger and Civ 6 on 2026-11-25 (operator: "above civ 6 and
+/// below ai debugger add: Edge of Tomorrow. This should be civ 6 with a jump
+/// back (like the concept from the movie)"), the played game with a jump
+/// back. Later
 /// that day Charts became a folder of pages, named with its slash ("change
 /// just "Charts" to "Charts/" with the intentional slash"), holding Win
 /// Analytics, the page it opens, and CIVVIS Performance ("in charts, we
 /// should have at least win analytics, CIVVIS Performance").
-/// Pinned as one literal because the list is the contract: seven links in
+/// Pinned as one literal because the list is the contract: eight links in
 /// this order, inside a list that only the hosts serving a /home, a
 /// /charts and an /experiments reveal. The addresses follow the names in
 /// the list since 2026-11-23 (operator: "clean up the URL please.
@@ -2233,6 +2237,7 @@ fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
         "        <a class=\"home-link\" id=\"watchlink\" href=\"./\" target=\"_top\">CIVVIS</a>\n",
         "        <a class=\"home-link\" id=\"strangelink\" href=\"?mode=strange\" target=\"_top\">Doctor Strange's Civ 6</a>\n",
         "        <a class=\"home-link\" id=\"playlink\" href=\"?mode=play\" target=\"_top\">AI Debugger</a>\n",
+        "        <a class=\"home-link\" id=\"tomorrowlink\" href=\"?mode=tomorrow\" target=\"_top\">Edge of Tomorrow</a>\n",
         "        <a class=\"home-link\" id=\"civ6link\" ",
         "href=\"https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/\" ",
         "target=\"_blank\" rel=\"noopener\" title=\"Buy Civilization VI on Steam\">Civ 6</a>\n",
@@ -2266,6 +2271,30 @@ fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
     ));
     assert!(include_str!("../../web/assets/app_debugger.js")
         .contains("document.documentElement.classList.add(\"strange\");"));
+    // Edge of Tomorrow (operator, 2026-11-25: "above civ 6 and below ai
+    // debugger add: Edge of Tomorrow. This should be civ 6 with a jump back
+    // (like the concept from the movie)") is the played game once more: the
+    // shim seats the visitor for it, and the same script reads the word,
+    // marks the page (`tomorrow` on the root, which is what lights its
+    // link) and puts the seat on the Civilization VI screen. The jump back
+    // is the engine's own walk to a kept turn, or to the save point the
+    // wake point was moved to.
+    assert!(include_str!("../../beta/shim.js")
+        .contains("else if (mode === \"tomorrow\") payload.spectate = false;"));
+    let debugger = include_str!("../../web/assets/app_debugger.js");
+    assert!(debugger.contains(
+        "return DEBUG_PANE === null && new URLSearchParams(location.search).get(\"mode\") === \"tomorrow\";"
+    ));
+    assert!(debugger.contains(concat!(
+        "if (TOMORROW) {\n",
+        "  document.documentElement.classList.add(\"tomorrow\");\n",
+        "  SOLO_UI = true;\n",
+        "}\n",
+    )));
+    assert!(debugger.contains(
+        "next = await debugOp(t.wake.save !== null ? {op: \"goto_save\", id: t.wake.save} : {op: \"jump\", turn: t.wake.turn});"
+    ));
+    assert!(debugger.contains("  html.tomorrow #debugbar { display: none !important; }\n"));
     // The page on screen keeps its colour and is ringed in white; it was
     // gold until 2026-11-24. CIVVIS's own button was gold from that day
     // (operator: "lets give civvis a gold background on the button, rather
@@ -2277,8 +2306,9 @@ fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
     // hides one any more.
     assert!(EMBEDDED_INDEX.contains(concat!(
         "  body.watching-sim #watchlink,\n",
-        "  html.seat-known:not(.strange) body:not(.watching-sim) #playlink,\n",
-        "  html.seat-known.strange body:not(.watching-sim) #strangelink {\n",
+        "  html.seat-known:not(.strange):not(.tomorrow) body:not(.watching-sim) #playlink,\n",
+        "  html.seat-known.strange body:not(.watching-sim) #strangelink,\n",
+        "  html.seat-known.tomorrow body:not(.watching-sim) #tomorrowlink {\n",
         "    border-color: #fff; box-shadow: inset 0 0 0 1px #fff;\n",
         "  }",
     )));
@@ -2289,6 +2319,7 @@ fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
     for hides in [
         "#playlink { display: none; }",
         "#strangelink { display: none; }",
+        "#tomorrowlink { display: none; }",
         "#watchlink { display: none; }",
     ] {
         assert!(
@@ -2457,9 +2488,10 @@ fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
         "  .head-links > #watchlink { grid-column: span 4; }\n",
     )));
     // Doctor Strange's Civ 6 is the one name longer than half a row and has
-    // a row of its own, and AI Debugger and Civ 6 keep theirs.
+    // a row of its own, AI Debugger and Civ 6 keep theirs, and Edge of
+    // Tomorrow has one between those two.
     assert!(EMBEDDED_INDEX.contains(
-        "  .head-links > #playlink, .head-links > #strangelink, .head-links > #civ6link { grid-column: 1 / -1; }\n"
+        "  .head-links > #playlink, .head-links > #strangelink, .head-links > #tomorrowlink, .head-links > #civ6link { grid-column: 1 / -1; }\n"
     ));
     for gone in [
         ".head-links > :last-child:nth-child(odd)",
@@ -2675,6 +2707,8 @@ fn the_home_page_lists_the_sites_with_itself_ringed() {
             "title=\"One world, two timelines: the same game played two ways, side by side, on a timeline that branches.\">Doctor Strange's Civ 6</a>\n",
             "      <a class=\"site-link\" href=\"../?mode=play\" ",
             "title=\"You play one civilization. CIVVIS AI agents play the rest.\">AI Debugger</a>\n",
+            "      <a class=\"site-link\" href=\"../?mode=tomorrow\" ",
+            "title=\"You play one civilization, with a jump back: the world returns to the turn you woke on, as it stood.\">Edge of Tomorrow</a>\n",
             "      <a class=\"site-link\" ",
             "href=\"https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/\" ",
             "target=\"_blank\" rel=\"noopener\" title=\"Buy Civilization VI on Steam\">Civ 6</a>\n",

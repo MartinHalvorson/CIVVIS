@@ -854,9 +854,15 @@ function debugForgetStandingOrders(turn) {
   // `boostMoments` in app_moments.js). A turn walked to is not the turn
   // after the one that was left, so they take attendance again: going back
   // from a war to before it began used to announce a peace.
+  // The banners still up or waiting are of the turn that was left, and
+  // go with it.
   if (typeof rivalsWorld !== "undefined") rivalsWorld = null;
   if (typeof boostsWorld !== "undefined") boostsWorld = null;
   if (typeof momentQueue !== "undefined") momentQueue.length = 0;
+  if (typeof momentsShowing !== "undefined") {
+    for (const card of document.querySelectorAll("#moments .moment")) card.remove();
+    momentsShowing = 0;
+  }
 }
 const DEBUG_TRAVEL_OPS = new Set(["back", "forward", "jump", "walk", "restart", "undo", "copy", "goto_save"]);
 // `run` is a run's own: the request it has out for its next turn (`ahead`)
@@ -7432,7 +7438,7 @@ const TOMORROW_STYLE = `
   #tomorrowbar .tmr-loop i { color: #f5a742; font: 700 24px/1 Georgia, serif; font-style: normal; letter-spacing: 0; font-variant-numeric: tabular-nums; }
   /* The line is the whole game, its first turn at the left end. */
   #tomorrowbar .tmr-track { display: grid; gap: 4px; min-width: 0; }
-  #tomorrowbar .tmr-rail { position: relative; height: 32px; border-radius: 7px; background: #0a1118; border: 1px solid #2f3d4a; }
+  #tomorrowbar .tmr-rail { position: relative; height: 38px; border-radius: 7px; background: #0a1118; border: 1px solid #2f3d4a; }
   #tomorrowbar .tmr-rail > * { position: absolute; }
   /* What earlier loops lived through, from the turn woken on to the furthest
      any of them reached, and along its foot what this loop has played. */
@@ -7441,14 +7447,14 @@ const TOMORROW_STYLE = `
   #tomorrowbar .tmr-tick { top: 0; bottom: 0; padding: 1px 0 0 3px; border-left: 1px solid #ffffff1a; color: #8493a0; font-size: 9px; font-variant-numeric: tabular-nums; pointer-events: none; }
   /* What earlier loops saw coming stands in the upper half of the line, and
      where an earlier loop ended in the lower, so that a loop that ended in
-     the war it saw shows both. */
+     the war it saw shows both, one over the other. */
   #tomorrowbar .tmr-end, #tomorrowbar .tmr-mem {
     width: 16px; height: 16px; margin-left: -8px; display: grid; place-items: center;
-    font-style: normal; font-size: 11px; line-height: 1; border-radius: 50%; background: #0a1118e6; cursor: default;
+    font-style: normal; font-size: 15px; line-height: 1; text-shadow: 0 0 2px #000, 0 0 4px #000; cursor: default;
   }
-  #tomorrowbar .tmr-mem { top: 1px; box-shadow: 0 0 0 1px currentColor; }
-  #tomorrowbar .tmr-end { bottom: 2px; color: #ff6b5e; font-weight: 800; }
-  #tomorrowbar .tmr-end.tmr-by-hand { color: #a9b6c1; }
+  #tomorrowbar .tmr-mem { top: 1px; }
+  #tomorrowbar .tmr-end { bottom: 4px; color: #ff6b5e; font-weight: 800; }
+  #tomorrowbar .tmr-end.tmr-by-hand { color: #c3ced7; }
   /* Where a jump back wakes, and the turn that is open. */
   #tomorrowbar .tmr-wake { top: -4px; bottom: -4px; width: 4px; margin-left: -2px; border-radius: 2px; background: #eef3f7; box-shadow: 0 0 6px #eef3f7aa; }
   #tomorrowbar .tmr-now {
@@ -7787,10 +7793,11 @@ function tomorrowDraw(measure = true) {
   const span = (from, to) => `${place(from)};width:${Math.max(0, along(to) - along(from)).toFixed(2)}%`;
   const step = hi - lo > 300 ? 100 : hi - lo > 120 ? 50 : hi - lo > 40 ? 25 : 10;
   const ahead = [...t.seen.values()].filter(seen => seen.turn > turn).sort((one, other) => one.turn - other.turn);
-  let rail = "";
+  // Drawn in this order, each over the one before: what was lived, the
+  // turns counted along it, the marks, and the open turn over them all.
+  let rail = `<span class="tmr-lived" style="${span(wake, t.far)}"></span><span class="tmr-done" style="${span(wake, turn)}"></span>`;
   for (let at = Math.ceil((lo + 1) / step) * step; at < hi; at += step)
     rail += `<span class="tmr-tick" style="${place(at)}">${at}</span>`;
-  rail += `<span class="tmr-lived" style="${span(wake, t.far)}"></span><span class="tmr-done" style="${span(wake, turn)}"></span>`;
   for (const end of t.ends) {
     if (end.turn < wake) continue;
     rail += `<i class="tmr-end${end.how === "jumped" ? " tmr-by-hand" : ""}" style="${place(end.turn)}" ` +

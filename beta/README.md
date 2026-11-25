@@ -284,6 +284,13 @@ played game of `mode=play` with its two timelines drawn as a
 tree up the middle of the window and the two worlds under it
 (`docs/SIM_DEBUGGER.md`).
 
+`/?mode=tomorrow` is Edge of Tomorrow, listed between AI Debugger and Civ 6
+since 2026-11-25 (operator: "above civ 6 and below ai debugger add: Edge of
+Tomorrow. This should be civ 6 with a jump back (like the concept from the
+movie)"): the played game of `mode=play` on the Civilization VI screen, with
+a jump back to the turn woken on, by hand or whenever the game is lost, and
+the loops counted (`docs/SIM_DEBUGGER.md`).
+
 ### One property worth knowing
 
 On a socket, a spectated turn is played by a stepper thread and *delivered* to
