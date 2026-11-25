@@ -9,7 +9,7 @@ use super::{
     Layer, Mark, Timeline, COARSEST_STRIDE, DENSE_MARKS, MAX_SAVE_POINTS, MEMORY_LINE,
     MEMORY_STEPS, MIN_MARKS, ROOMY_MARKS,
 };
-use crate::game::Action;
+use crate::game::{Action, BlackSwanKind};
 use crate::setup::{GameSpeed, MapScript, MapTopology};
 
 /// A small world with a person at seat zero.
@@ -685,6 +685,377 @@ fn a_future_played_a_turn_at_a_time_is_the_one_played_in_one_go() {
     ahead(&mut swapped, 2, "moonshot");
     ahead(&mut fresh, 4, "moonshot");
     assert_eq!(prints(&swapped), prints(&fresh));
+}
+
+/// What `foresee` answered was seen coming.
+fn foreseen(session: &mut Session, request: Value) -> Value {
+    let answer = session.debug(&request);
+    assert_eq!(answer["error"], Value::Null);
+    assert!(
+        answer["foresight"].is_object(),
+        "the answer says what is seen"
+    );
+    answer["foresight"].clone()
+}
+
+/// The turn and print of each turn a forecast says it opened.
+fn foreseen_prints(seen: &Value) -> Vec<(u64, u64)> {
+    seen["worlds"]
+        .as_array()
+        .expect("a forecast gives the print of each turn it opened")
+        .iter()
+        .map(|pair| (pair[0].as_u64().unwrap(), pair[1].as_u64().unwrap()))
+        .collect()
+}
+
+/// Operator 2026-11-24: "each branch in doctor strange's civ 6 should
+/// simulate out to the end of the branch."
+///
+/// `foresee` plays the world's future on a copy: the world on the table and
+/// the turns it keeps are as they stood, the copy goes a stretch further
+/// each time it is asked, and it comes to the end of the game. The turns it
+/// plays are the ones the world itself goes on to play, which is what makes
+/// what it saw a forecast of this world: turn for turn the print it gives is
+/// the one the world's own mark is given.
+#[test]
+fn foresee_plays_the_future_to_the_end_of_the_game_and_leaves_the_world_where_it_is() {
+    let short = || {
+        let mut params = stock_opening_params(20_261_118);
+        params.spectate = false;
+        params.num_players = 2;
+        params.num_city_states = 1;
+        params.width = 20;
+        params.height = 14;
+        params.map_topology = MapTopology::Flat;
+        params.map_script = MapScript::Pangaea;
+        params.game_speed = GameSpeed::Standard;
+        params.max_turns = 30;
+        Session::new(params)
+    };
+    let (mut session, mut run) = (short(), short());
+    for world in [&mut session, &mut run] {
+        for _ in 0..4 {
+            step_as(world, "jack");
+        }
+    }
+    let (open, kept) = (world(&session), marked(&session));
+    let first = foreseen(
+        &mut session,
+        json!({"op": "foresee", "turns": 6, "strategy": "jack", "lean": true}),
+    );
+    assert_eq!(world(&session), open, "the world stands where it stood");
+    assert_eq!(marked(&session), kept, "and keeps the turns it kept");
+    assert_eq!(first["anew"], json!(true));
+    assert_eq!(first["from"], json!(5));
+    assert_eq!(first["turn"], json!(11));
+    assert_eq!(first["played"], json!(6));
+    assert_eq!(first["done"], json!(false));
+    assert_eq!(first["seat"], json!("jack"));
+    assert_eq!(first["limit"], json!(30));
+    assert_eq!(first["eras"][0]["turn"], json!(5));
+    assert!(first["eras"][0]["name"].is_string());
+    // The turns it played are the turns a run plays from here.
+    for _ in 0..6 {
+        step_as(&mut run, "jack");
+    }
+    let line: Vec<(u64, u64)> = marked(&run).into_iter().zip(prints(&run)).collect();
+    assert_eq!(foreseen_prints(&first), line[4..]);
+    assert_eq!(first["base"].as_u64(), Some(line[4].1));
+
+    // Asked again it goes on from where it stood, and says only what is new
+    // to a page that says how far it was told.
+    let more = foreseen(
+        &mut session,
+        json!({"op": "foresee", "turns": 3, "known": 11, "strategy": "jack", "lean": true}),
+    );
+    assert_eq!(more["anew"], json!(false));
+    assert_eq!(more["turn"], json!(14));
+    let turns: Vec<u64> = foreseen_prints(&more)
+        .iter()
+        .map(|(turn, _)| *turn)
+        .collect();
+    assert_eq!(turns, [12, 13, 14]);
+    // No turns reads what has been seen and plays nothing.
+    let read = foreseen(
+        &mut session,
+        json!({"op": "foresee", "turns": 0, "strategy": "jack", "lean": true}),
+    );
+    assert_eq!(read["turn"], json!(14));
+    assert_eq!(read["played"], json!(0));
+    assert_eq!(foreseen_prints(&read).len(), 10, "told whole");
+
+    // To the end of the game, which is where it stops for good.
+    let mut last = read;
+    for _ in 0..4 {
+        last = foreseen(
+            &mut session,
+            json!({"op": "foresee", "turns": 100, "strategy": "jack", "lean": true}),
+        );
+        if last["done"] == json!(true) {
+            break;
+        }
+    }
+    assert_eq!(last["done"], json!(true));
+    let seen = last["seen"].as_array().expect("what was seen coming");
+    let end = seen.last().expect("the end of the game is seen coming");
+    assert!(
+        end["kind"] == json!("won") || end["kind"] == json!("over"),
+        "{end}"
+    );
+    assert!(end["era_name"].is_string());
+    let after = foreseen(
+        &mut session,
+        json!({"op": "foresee", "turns": 5, "strategy": "jack", "lean": true}),
+    );
+    assert_eq!(after["played"], json!(0));
+    assert_eq!(after["turn"], last["turn"]);
+    assert_eq!(world(&session), open);
+    assert_eq!(marked(&session), kept);
+    // The game it came to the end of is the one a run comes to the end of.
+    for _ in 0..40 {
+        if run.game.is_finished() {
+            break;
+        }
+        let _ = run.debug(&json!({"op": "step", "strategy": "jack", "lean": true}));
+    }
+    assert!(run.game.is_finished());
+    assert_eq!(last["turn"].as_u64(), Some(u64::from(run.game.turn)));
+    let winner = run
+        .game
+        .winner
+        .map(|seat| run.game.players[seat].civ.clone());
+    match winner {
+        Some(civ) => assert_eq!(end["text"], json!(format!("{civ} wins the game"))),
+        None => assert_eq!(end["kind"], json!("over")),
+    }
+    // It needs to be told how many turns, none or more.
+    let none = session.debug(&json!({"op": "foresee", "strategy": "jack", "lean": true}));
+    assert!(none["error"]
+        .as_str()
+        .is_some_and(|error| error.contains("foresee needs turns")));
+    // The page keeps what it is told (`strangeSeen`), and reads nothing off
+    // an answer that the answer does not give.
+    let page = super::super::EMBEDDED_APP_DEBUGGER_JS;
+    let reader = page
+        .split_once("\nfunction strangeSeen(")
+        .and_then(|(_, rest)| rest.split_once("\nfunction "))
+        .expect("the page keeps what a forecast says")
+        .0;
+    let mut read = BTreeSet::new();
+    for (at, _) in reader.match_indices("seen.") {
+        let before = reader[..at].chars().next_back();
+        if before.is_some_and(|before| before == '.' || before.is_ascii_alphanumeric()) {
+            continue;
+        }
+        let key: String = reader[at + 5..]
+            .chars()
+            .take_while(|letter| letter.is_ascii_lowercase() || *letter == '_')
+            .collect();
+        read.insert(key);
+    }
+    assert!(read.len() >= 12, "{read:?}");
+    for key in &read {
+        assert!(
+            last.get(key.as_str()).is_some(),
+            "the page reads `{key}`, which a forecast does not say"
+        );
+    }
+}
+
+/// A forecast is the future of one line. It goes on being that while the
+/// world walks along the line and plays it further, and is made again, from
+/// the end of the line as it then is, once the line is played another way:
+/// another Civ AI in the seat, a black swan, something done by hand. A copy
+/// of the world has none, and foresees for itself.
+#[test]
+fn a_forecast_is_kept_along_its_line_and_made_again_off_it() {
+    fn ask(session: &mut Session, agent: &str) -> Value {
+        foreseen(
+            session,
+            json!({"op": "foresee", "turns": 2, "strategy": agent, "lean": true}),
+        )
+    }
+    let mut session = played();
+    for _ in 0..6 {
+        step_as(&mut session, "jack");
+    }
+    // Made from the end of the line: the last turn played ahead.
+    let ahead =
+        session.debug(&json!({"op": "ahead", "turns": 3, "strategy": "jack", "lean": true}));
+    assert_eq!(ahead["error"], Value::Null);
+    let first = ask(&mut session, "jack");
+    assert_eq!((&first["anew"], &first["from"]), (&json!(true), &json!(10)));
+    assert_eq!(first["turn"], json!(12));
+    // The world walks its line and plays it on: the same future.
+    assert_eq!(session.debug_jump(5), Ok(5));
+    assert_eq!(ask(&mut session, "jack")["anew"], json!(false));
+    assert_eq!(session.debug_jump(9), Ok(9));
+    let ahead =
+        session.debug(&json!({"op": "ahead", "turns": 4, "strategy": "jack", "lean": true}));
+    assert_eq!(ahead["error"], Value::Null);
+    let along = ask(&mut session, "jack");
+    assert_eq!(
+        (&along["anew"], &along["from"]),
+        (&json!(false), &json!(10))
+    );
+    assert_eq!(along["turn"], json!(16));
+    // The turns the world has since played ahead are the ones foreseen.
+    let line: Vec<(u64, u64)> = marked(&session).into_iter().zip(prints(&session)).collect();
+    let seen = foreseen_prints(&foreseen(
+        &mut session,
+        json!({"op": "foresee", "turns": 0, "strategy": "jack", "lean": true}),
+    ));
+    for turn in 10..=13 {
+        let held = line.iter().find(|(at, _)| *at == turn).expect("kept");
+        let told = seen.iter().find(|(at, _)| *at == turn).expect("foreseen");
+        assert_eq!(held, told, "turn {turn}");
+    }
+
+    // A copy foresees for itself.
+    let mut copy = session.fork();
+    assert_eq!(ask(&mut copy, "jack")["anew"], json!(true));
+    // Asked for anew, it is made again.
+    let again = foreseen(
+        &mut session,
+        json!({"op": "foresee", "turns": 1, "anew": true, "strategy": "jack", "lean": true}),
+    );
+    assert_eq!((&again["anew"], &again["from"]), (&json!(true), &json!(14)));
+    assert_eq!(again["turn"], json!(15));
+    // Another Civ AI in the seat plays another future, from the open turn:
+    // the turns ahead are the first one's.
+    let other = ask(&mut session, "moonshot");
+    assert_eq!((&other["anew"], &other["from"]), (&json!(true), &json!(9)));
+    assert_eq!(other["seat"], json!("moonshot"));
+    assert_eq!(ask(&mut session, "moonshot")["anew"], json!(false));
+    // Something done by hand in the open turn is not in the future foreseen.
+    let action = something_to_do(&session);
+    assert_eq!(session.act(&action), None);
+    let acted = ask(&mut session, "moonshot");
+    assert_eq!((&acted["anew"], &acted["from"]), (&json!(true), &json!(9)));
+    assert_eq!(ask(&mut session, "moonshot")["anew"], json!(false));
+    // A black swan makes the open turn another world.
+    let swan = session.debug(&json!({"op": "black_swan", "kind": "leader_collapse", "seed": 7}));
+    assert_eq!(swan["error"], Value::Null);
+    assert_eq!(ask(&mut session, "moonshot")["anew"], json!(true));
+}
+
+/// Operator 2026-11-24: "the top of each branch should have either: no
+/// nuclear war in the next N turns, no nuclear war, or nuclear war in N turns
+/// (Era). we should note wars as well."
+///
+/// What is seen coming is every detonation and every war declared in the
+/// turns played, each on the turn it happens with the world era of that
+/// turn, and none of what was there before the forecast was made. A nuclear
+/// war is struck on the copy as it stands here, which is the surest way to
+/// have both in a short game.
+#[test]
+fn a_forecast_notes_the_detonations_and_the_wars_declared_on_the_way() {
+    let mut params = stock_opening_params(20_261_118);
+    params.spectate = false;
+    params.num_players = 3;
+    params.num_city_states = 2;
+    params.width = 30;
+    params.height = 20;
+    params.map_topology = MapTopology::Flat;
+    params.map_script = MapScript::Pangaea;
+    params.game_speed = GameSpeed::Online;
+    params.max_turns = 500;
+    let mut session = Session::new(params);
+    for _ in 0..24 {
+        step_as(&mut session, "jack");
+    }
+    let quiet = foreseen(
+        &mut session,
+        json!({"op": "foresee", "turns": 2, "strategy": "jack", "lean": true}),
+    );
+    assert_eq!(quiet["detonations"], json!(0));
+    let mut seer = session
+        .debugger
+        .seer
+        .0
+        .take()
+        .expect("the forecast is kept");
+    let wars_before = seer.conflicts.len();
+    let mut struck = None;
+    for _ in 0..40 {
+        if seer
+            .session
+            .game
+            .black_swan(Some(BlackSwanKind::NuclearWar), 11)
+            .is_ok()
+        {
+            struck = Some(seer.session.game.turn);
+            break;
+        }
+        assert!(seer.play(), "the game goes on");
+    }
+    let struck = struck.expect("a nuclear war is struck within forty turns");
+    assert!(seer.play());
+    let told = seer.json(1, None);
+    let seen = told["seen"].as_array().expect("what was seen coming");
+    let of = |kind: &str| -> Vec<&Value> {
+        seen.iter()
+            .filter(|seen| seen["kind"] == json!(kind))
+            .collect()
+    };
+    let (nuclear, wars) = (of("nuclear"), of("war"));
+    assert!(!nuclear.is_empty(), "{seen:?}");
+    assert!(told["detonations"].as_u64().is_some_and(|count| count >= 1));
+    assert!(seer.conflicts.len() > wars_before);
+    assert!(!wars.is_empty(), "{seen:?}");
+    for noted in nuclear.iter().chain(wars.iter()) {
+        assert_eq!(noted["turn"].as_u64(), Some(u64::from(struck)));
+        assert!(noted["era_name"].is_string());
+    }
+    assert!(nuclear.iter().all(|noted| noted["text"]
+        .as_str()
+        .is_some_and(|text| text.contains("detonates"))));
+    assert!(wars.iter().all(|noted| noted["text"]
+        .as_str()
+        .is_some_and(|text| text.contains(" declares war on "))));
+    // Each is said once: the next turn notes neither again.
+    let (counted, noted) = (told["detonations"].clone(), seen.len());
+    assert!(seer.play());
+    let later = seer.json(1, None);
+    let again = |kind: &str| {
+        later["seen"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|seen| {
+                seen["kind"] == json!(kind) && seen["turn"].as_u64() == Some(u64::from(struck))
+            })
+            .count()
+    };
+    assert_eq!(again("nuclear"), nuclear.len());
+    assert_eq!(again("war"), wars.len());
+    assert!(later["seen"].as_array().unwrap().len() >= noted);
+    assert!(later["detonations"].as_u64() >= counted.as_u64());
+    // A forecast made on a world a nuclear war has already struck has it on
+    // record, on the turn it struck: a world walked back along its line has
+    // that ahead of it again.
+    seer.session.debugger_begins();
+    let after = seer
+        .session
+        .debug(&json!({"op": "foresee", "turns": 0, "lean": true}));
+    assert_eq!(after["error"], Value::Null);
+    let record = after["foresight"]["seen"]
+        .as_array()
+        .expect("what is on record");
+    let on_record = |kind: &str| {
+        record
+            .iter()
+            .filter(|seen| {
+                seen["kind"] == json!(kind) && seen["turn"].as_u64() == Some(u64::from(struck))
+            })
+            .count()
+    };
+    assert_eq!(on_record("nuclear"), nuclear.len());
+    assert!(on_record("war") >= wars.len());
+    assert_eq!(after["foresight"]["detonations"], later["detonations"]);
+    assert!(record
+        .iter()
+        .all(|seen| seen["turn"].as_u64() <= after["foresight"]["from"].as_u64()));
 }
 
 /// Operator 2026-11-24: "add a 'Generate Black Swan' - this will be a random,
@@ -1621,7 +1992,7 @@ fn a_branched_timeline_is_one_until_its_two_worlds_differ() {
     for piece in [
         // A half tells the host the turns it holds and the print of each.
         "const turns = timeline.turns || [], worlds = timeline.worlds || null;",
-        "window.parent.postMessage({civvis: \"pane-marks\", pane: DEBUG_PANE, flags, stops, beyond, eras, turns, worlds, by, swans},",
+        "window.parent.postMessage({civvis: \"pane-marks\", pane: DEBUG_PANE, flags, stops, beyond, eras, turns, worlds, by, swans, seat},",
         // The host reads the branch off the two lists: the last turn both
         // give the same print for, and whether either holds a turn past it
         // (`a_branch_begins_on_the_turn_it_is_made_on`).

@@ -3529,7 +3529,7 @@ window.addEventListener("message", event => {
     debugSplit.panes[letter].marks = {flags: Array.isArray(data.flags) ? data.flags : [],
       stops: Array.isArray(data.stops) ? data.stops : [], beyond: data.beyond || null,
       eras: Array.isArray(data.eras) ? data.eras : [], by: Array.isArray(data.by) ? data.by : [],
-      swans: Array.isArray(data.swans) ? data.swans : [],
+      swans: Array.isArray(data.swans) ? data.swans : [], seat: data.seat ?? null,
       turns: Array.isArray(data.turns) ? data.turns : null, worlds: Array.isArray(data.worlds) ? data.worlds : null};
     // The branch has let go of the turns that were ahead of it.
     if (letter === "b" && debugSplit.branches && Array.isArray(data.turns) && !data.beyond &&
@@ -3652,10 +3652,14 @@ function debugPaneMarks(timeline) {
   const by = timeline.played_by || [];
   // And the black swans that have struck the line, for the host to mark on it.
   const swans = timeline.swans || [];
-  const said = JSON.stringify([flags, stops, beyond, eras, turns, worlds, by, swans]);
+  // And the Civ AI whose line those turns are, as the engine names it: the
+  // host holds a future played out for that line against them
+  // (`strangeSightStale`).
+  const seat = timeline.seat ?? null;
+  const said = JSON.stringify([flags, stops, beyond, eras, turns, worlds, by, swans, seat]);
   if (said === debugMarksSaid) return;
   debugMarksSaid = said;
-  window.parent.postMessage({civvis: "pane-marks", pane: DEBUG_PANE, flags, stops, beyond, eras, turns, worlds, by, swans},
+  window.parent.postMessage({civvis: "pane-marks", pane: DEBUG_PANE, flags, stops, beyond, eras, turns, worlds, by, swans, seat},
     location.origin);
 }
 // What the host tells a half to do after the other is done one thing at a
@@ -5075,6 +5079,18 @@ const STRANGE_NAME_MOST = 36;
 const STRANGE_AHEAD = 12, STRANGE_AHEAD_CHUNK = 4, STRANGE_AHEAD_RUNNING = 2;
 // How long a world asked for its future is waited on to answer.
 const STRANGE_AHEAD_WAIT_MS = 90000;
+// A world's whole future is played to the end of its game a stretch at a
+// time (`strangeForesee`): how long a stretch is meant to take, the turns the
+// first is asked for and the most any is, how long one is waited on, how
+// long a world that could not be asked is left before it is asked again, and
+// the least time between two futures begun for one world.
+const STRANGE_SEE_MS = 400, STRANGE_SEE_FIRST = 4, STRANGE_SEE_MOST = 40;
+const STRANGE_SEE_WAIT_MS = 120000, STRANGE_SEE_AGAIN_MS = 3000, STRANGE_SEE_ANEW_MS = 1000;
+// The sign over the far end of each branch (`strangeFate`): how wide and how
+// tall it is where there is room for all of it, for its first line, and for
+// a word of it; the room left between two, and where the first row stands.
+const STRANGE_FATES = {full: [292, 42], line: [178, 24], word: [88, 24]};
+const STRANGE_FATE_GAP = 6, STRANGE_FATE_TOP = 50;
 // How often what the page costs is read, and how many readings are drawn.
 const STRANGE_METER_MS = 2000, STRANGE_METER_KEPT = 60;
 // What is seen coming on a world's future, by kind: its sign and its colour.
@@ -5252,6 +5268,31 @@ const STRANGE_STYLE = `
   #strange-hud .strange-omen strong { display: block; margin-top: 3px; font: 700 21px/1.15 Georgia, serif; color: #fff; }
   #strange-hud .strange-omen span { display: block; margin-top: 5px; }
   #strange-hud .strange-omen em { display: block; margin-top: 5px; font-style: normal; font-size: 11px; color: #bdb6d6; }
+  /* The sign over the far end of each branch: what is coming in its world
+     (operator 2026-11-24: "the top of each branch should have either: no
+     nuclear war in the next N turns, no nuclear war, or nuclear war in N
+     turns (Era). we should note wars as well"). In the branch's colour, and
+     red where a nuclear war is coming. Where each stands is the page's to
+     say (\`strangeLayout\`). */
+  #strange-hud .strange-fate {
+    position: absolute; box-sizing: border-box; padding: 3px 9px 4px 29px; overflow: hidden; white-space: nowrap;
+    border: 1px solid #35504a; border-top: 3px solid var(--strange-tint); border-radius: 0 0 10px 10px;
+    background: #07110fe6; font-variant-numeric: tabular-nums; cursor: default;
+  }
+  #strange-hud .strange-fate > b { position: absolute; left: 9px; top: 2px; font: 700 15px/18px Georgia, serif; color: var(--strange-tint); }
+  #strange-hud .strange-fate strong { display: block; font-size: 12px; line-height: 17px; overflow: hidden; text-overflow: ellipsis; }
+  #strange-hud .strange-fate span { display: block; font-size: 11px; line-height: 15px; color: #bccac4; overflow: hidden; text-overflow: ellipsis; }
+  #strange-hud .strange-fate span:empty, #strange-hud .strange-fate.strange-fate-slim span { display: none; }
+  /* How much of the game its future has been played through. */
+  #strange-hud .strange-fate i { position: absolute; left: 0; bottom: 0; height: 2px; width: var(--strange-seen, 0%); background: var(--strange-tint); opacity: .85; }
+  #strange-hud .strange-fate[data-fate="coming"], #strange-hud .strange-fate[data-fate="begun"] {
+    border-color: #ff5a4d; border-top-color: var(--strange-tint); box-shadow: 0 0 18px -5px #ff5a4d;
+  }
+  #strange-hud .strange-fate[data-fate="coming"] strong, #strange-hud .strange-fate[data-fate="begun"] strong { color: #ff8f85; }
+  #strange-hud .strange-fate[data-fate="clear"] strong { color: #8fe07a; }
+  #strange-hud .strange-fate[data-fate="none"] strong { color: #9fb3ab; font-weight: 400; }
+  #strange-hud .strange-fate.strange-over { background: color-mix(in srgb, var(--strange-tint) 22%, #07110f); }
+  #strange-hud .strange-swans, #strange-hud .strange-omen { z-index: 1; }
   #strange-hud .strange-steps { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; }
   #strange-hud .strange-steps button { padding: 0; font-variant-numeric: tabular-nums; }
   #strange-hud .strange-title .strange-say { margin-top: 7px; color: #9fb3ab; font-size: 11px; min-height: 2.5em; }
@@ -5313,6 +5354,10 @@ const strange = {
   // Every world is asked at once, and none for more while it has yet to
   // answer.
   futures: true, peeks: {},
+  // The worlds asked for more of their whole future now, by name: {token,
+  // since} (`strangeSee`), the tokens handed out, and where the signs over
+  // the branches stand and how much each says (`strangeFates`).
+  seeing: {}, sights: 0, fates: [], fateMode: "full",
   // The black swan being struck: {kind, seed, first, waiting, rest, struck,
   // failed, since}, null when none is (`strangeSwan`). And the one that last
   // struck, for as long as the page says so: {swan, letters, since}.
@@ -5529,7 +5574,15 @@ function strangeWorldOpen(letter, born = null) {
   const pane = split.panes[letter] || strangeFrame(letter, born);
   pane.frame.classList.remove("strange-shut");
   pane.alerts = []; pane.ahead = new Map(); pane.spent = null;
+  strangeSightDrop(letter);
   if (hud.querySelector(`[data-strange-world="${letter}"]`)) return;
+  // The sign over the far end of its branch (`strangeFate`).
+  const fate = document.createElement("div");
+  fate.className = "strange-fate";
+  fate.dataset.strangeFate = letter;
+  fate.setAttribute("role", "status");
+  fate.innerHTML = `<b>${name}</b><strong></strong><span></span><i></i>`;
+  hud.insertBefore(fate, hud.querySelector(".strange-now"));
   const plate = document.createElement("div");
   plate.className = "strange-world";
   plate.dataset.strangeWorld = letter;
@@ -5542,7 +5595,7 @@ function strangeWorldOpen(letter, born = null) {
       <button class="strange-exit" data-strange="close-${letter}" aria-label="Delete ${name}">✕</button>`;
   hud.insertBefore(plate, hud.querySelector(".strange-now"));
   // The pointer over a world's box, or its name plate, picks out its line.
-  for (const held of [plate, ...(pane.heard ? [] : [pane.frame])]) {
+  for (const held of [plate, fate, ...(pane.heard ? [] : [pane.frame])]) {
     held.addEventListener("mouseenter", () => { strange.over = letter; strangeLayout(); });
     held.addEventListener("mouseleave", () => { if (strange.over === letter) { strange.over = null; strangeLayout(); } });
   }
@@ -5607,6 +5660,7 @@ function strangeBranch(name) {
 function strangeBear(letter) {
   const split = debugSplit, pane = split.panes[letter], born = pane.born;
   pane.born = null;
+  strangeSightDrop(letter);
   if (split.panes[born.from]) {
     split.history[letter] = new Map(split.history[born.from]);
     pane.settled = null;
@@ -5628,8 +5682,8 @@ function strangeClose(letter) {
   if (strange.follow === letter) strange.follow = strange.order[Math.max(0, at - 1)];
   if (strange.over === letter) strange.over = null;
   delete strange.peeks[letter];
-  const plate = strange.hud.querySelector(`[data-strange-world="${letter}"]`);
-  if (plate) plate.remove();
+  strangeSightDrop(letter, true);
+  for (const held of strange.hud.querySelectorAll(`[data-strange-world="${letter}"], [data-strange-fate="${letter}"]`)) held.remove();
   if (letter === "a" || letter === "b") split.panes[letter].frame.classList.add("strange-shut");
   else {
     split.panes[letter].frame.remove();
@@ -5726,6 +5780,7 @@ function strangeRunOver(run, note = "") {
 function strangeStep() {
   const split = debugSplit, run = strange.run;
   if (!split) { strange.run = null; return; }
+  strangeForesee();
   // The split's own lock joins its two halves and no others. Here every
   // world is moved by this page, by name, so the split is left unlocked.
   if (split.shown && split.locked && !split.busy && split.running === 0) { debugSplitLock(false); return; }
@@ -5865,6 +5920,259 @@ function strangeAheadDone(letter, data) {
   strangeDraw();
 }
 
+// ---- the whole of a world's future
+//
+// Operator 2026-11-24: "each branch in doctor strange's civ 6 should simulate
+// out to the end of the branch. we can multithread this across the processor
+// to help. The top of each branch should have either: no nuclear war in the
+// next N turns, no nuclear war, or nuclear war in N turns (Era). we should
+// note wars as well. we should optimize the simulation speed so we simulate
+// out pretty quickly. Can build out the most likely paths at all time."
+//
+// The turns a world holds ahead (`strangeAheadNext`) are a dozen, each kept
+// whole to be shown the moment time comes to it. Past them the world's
+// future is played to the end of its game by the engine's `foresee`: a copy
+// of the world at the end of its line, with the agents that play on from
+// there, played on a stretch a request and keeping nothing but what it saw
+// coming. That is the future this world goes on to play: the engine is
+// deterministic, and each turn foreseen carries the print the world's own
+// turn will carry (`strangeSightStale`).
+//
+// Where the engine is the browser's, each world's future is played on an
+// engine of its own, forked from the world's (`beta/shim.js`, "a world's
+// scout"): the worlds and their futures are all played at once on as many
+// cores, and a world's turn never waits behind its future. A game served by
+// this computer plays a world's future on the world itself, so there it is
+// played a world at a time while the worlds stand still.
+//
+// It is always being built: a world is asked the moment it is open, asked
+// again each time it answers until its game has ended, and asked anew when
+// its line has been played another way (another player strategy, a black
+// swan, a branch). What was seen is put up on the world's line at the turn
+// it happens on, and summed up on the sign over the far end of its branch
+// (`strangeFate`).
+
+// Whether a world's future has an engine of its own to be played on.
+function strangeScouts() {
+  return !!window.__civvisBeta && typeof window.__civvisBeta.scouts === "number";
+}
+// What is seen of a world's future is let go of: it is another world now.
+// `gone` is a world that is closed, whose engine is let go of with it.
+function strangeSightDrop(letter, gone = false) {
+  const pane = debugSplit ? debugSplit.panes[letter] : null;
+  delete strange.seeing[letter];
+  if (!pane) return;
+  pane.sight = null;
+  pane.sightAfter = 0; pane.sightTries = 0; pane.sightBegan = 0;
+  if (gone && strangeScouts())
+    fetchJSON(`/debug?pane=${encodeURIComponent(pane.id)}&scout=done`, {method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({op: "status", lean: true})}).catch(() => {});
+}
+// Whether what was seen is no longer this world's future: another player
+// strategy holds the seat, or a turn the world holds on its line is another
+// world than the one foreseen on that turn (the engine's print of each,
+// `debug.worlds`). The world's page says what it holds a moment after the
+// world is given another strategy, so the turns are held against what was
+// seen only when they are the line of the Civ AI it was seen for, as the
+// engine names both. Worked out again only when the world has said anew
+// what it holds.
+function strangeSightStale(letter) {
+  const pane = debugSplit.panes[letter], sight = pane.sight;
+  if (!sight) return false;
+  if (sight.asked !== (pane.strategy || null)) return true;
+  const marks = pane.marks || null;
+  if (sight.read === marks) return sight.stale;
+  sight.read = marks;
+  sight.stale = false;
+  if (marks && (marks.seat ?? null) === sight.seat && Array.isArray(marks.turns) && Array.isArray(marks.worlds) &&
+      marks.turns.length === marks.worlds.length)
+    sight.stale = marks.turns.some((turn, at) => sight.prints.has(turn) && sight.prints.get(turn) !== marks.worlds[at]);
+  return sight.stale;
+}
+// Every world whose future has not been played to its end is asked for more
+// of it: all of them at once where each has an engine for it, as many as
+// there are cores to spare, the followed world first. Without one a world
+// plays its own future, so one world is asked at a time, and only while the
+// worlds stand still with nothing else asked of them.
+function strangeForesee() {
+  const split = debugSplit;
+  if (!split || !split.shown || !strange.futures || !strange.hud) return;
+  const open = strangeOpen(), own = strangeScouts(), now = performance.now();
+  if (!own && (!strangeIdle() || Object.keys(strange.peeks).length > 0)) return;
+  const most = own ? Math.max(1, (navigator.hardwareConcurrency || 4) - open.length - 1) : 1;
+  let out = Object.keys(strange.seeing).length;
+  for (const letter of [strange.follow, ...open.filter(name => name !== strange.follow)]) {
+    if (out >= most) break;
+    const pane = split.panes[letter];
+    if (!pane || !open.includes(letter) || pane.born || pane.turn === null || pane.turn === undefined || strange.seeing[letter]) continue;
+    // A world that has not said who holds its seat is not asked yet: its
+    // future is that player strategy's.
+    if (pane.strategy === undefined) continue;
+    // A future that is no longer the world's is begun again, and not more
+    // than once in a while: a world that is still changing is left to.
+    if (pane.sight && strangeSightStale(letter)) { pane.sight = null; pane.sightAfter = Math.max(pane.sightAfter || 0, (pane.sightBegan || 0) + STRANGE_SEE_ANEW_MS); }
+    if ((pane.sight && pane.sight.done) || now < (pane.sightAfter || 0)) continue;
+    if (!pane.sight) pane.sightBegan = now;
+    strangeSee(letter);
+    out++;
+  }
+}
+// One stretch of a world's future: as many turns as the last took the time
+// of `STRANGE_SEE_MS` to play, so that the page hears how it is going a few
+// times a second however long a turn has become.
+async function strangeSee(letter) {
+  const split = debugSplit, pane = split.panes[letter], sight = pane.sight || null;
+  const token = ++strange.sights, asked = pane.strategy || null, since = performance.now();
+  const turns = !sight ? STRANGE_SEE_FIRST
+    : Math.max(1, Math.min(STRANGE_SEE_MOST, Math.round(STRANGE_SEE_MS / Math.max(1, sight.pace))));
+  strange.seeing[letter] = {token, since};
+  let told;
+  try {
+    told = await fetchJSON(`/debug?pane=${encodeURIComponent(pane.id)}&scout=${sight ? "1" : "new"}`,
+      {method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({op: "foresee", turns, lean: true, ...(asked ? {strategy: asked} : {}),
+          ...(sight ? {known: sight.turn} : {anew: true})})}, STRANGE_SEE_WAIT_MS);
+  } catch (error) { told = {error: String(error.message || error)}; }
+  // An answer nobody is waiting for is of a world that has since been let
+  // go of, or played another way.
+  const seeing = strange.seeing[letter];
+  if (!seeing || seeing.token !== token) return;
+  delete strange.seeing[letter];
+  if (debugSplit !== split || split.panes[letter] !== pane) return;
+  strangeSeen(letter, told, {asked, took: performance.now() - since});
+  strangeForesee();
+}
+// What a world's future has shown so far is kept with the world: the print
+// of each turn foreseen, what is coming and when, how far it has been played
+// and whether that is the end of the game. An answer says only what is new
+// since the turn the page said it knew of, unless it is of a future begun
+// again (`anew`), which is told whole.
+function strangeSeen(letter, told, how) {
+  const pane = debugSplit.panes[letter], seen = told && !told.error ? told.foresight : null;
+  if (!seen || typeof seen.turn !== "number" || typeof seen.from !== "number") {
+    // Asked again in a while, and each time it fails in a longer one. What
+    // was seen so far is kept: the engine goes on from where it was, or
+    // says that it has begun again.
+    pane.sightTries = (pane.sightTries || 0) + 1;
+    pane.sightAfter = performance.now() + Math.min(60000, STRANGE_SEE_AGAIN_MS * 2 ** Math.min(5, pane.sightTries - 1));
+    return;
+  }
+  pane.sightTries = 0; pane.sightAfter = 0;
+  let sight = pane.sight;
+  const whole = typeof seen.since !== "number";
+  if (!sight || whole || seen.anew === true || sight.from !== seen.from || sight.base !== seen.base)
+    sight = pane.sight = {from: seen.from, base: seen.base, asked: how.asked, seat: seen.seat ?? null, prints: new Map(), seen: [],
+      began: performance.now(), pace: 20, read: undefined, stale: false};
+  else sight.seen = sight.seen.filter(event => event.turn < seen.since);
+  for (const pair of Array.isArray(seen.worlds) ? seen.worlds : [])
+    if (Array.isArray(pair) && typeof pair[0] === "number") sight.prints.set(pair[0], pair[1]);
+  sight.seen.push(...(Array.isArray(seen.seen) ? seen.seen : []).filter(event => event && typeof event.turn === "number"));
+  Object.assign(sight, {turn: seen.turn, done: seen.done === true, limit: typeof seen.limit === "number" ? seen.limit : null,
+    eras: Array.isArray(seen.eras) ? seen.eras : [], detonations: seen.detonations || 0, victory: seen.victory || null,
+    // The world may have said what it holds while this was out.
+    read: undefined});
+  if (seen.played > 0) sight.pace = how.took / seen.played;
+  if (sight.done) {
+    sight.took = performance.now() - sight.began;
+    // The game has ended in it: its engine has nothing more to play.
+    if (strangeScouts())
+      fetchJSON(`/debug?pane=${encodeURIComponent(pane.id)}&scout=done`, {method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({op: "status", lean: true})}).catch(() => {});
+  }
+  strangeDraw();
+}
+// What the sign over a world's branch says (operator 2026-11-24: "the top of
+// each branch should have either: no nuclear war in the next N turns, no
+// nuclear war, or nuclear war in N turns (Era). we should note wars as
+// well"). Turns are counted from the world's open turn, so the sign counts
+// down as time runs:
+//   - a nuclear war is coming: in how many turns, and the world era it
+//     comes in; one that has begun says since when;
+//   - none is, in a future played to the end of the game: no nuclear war;
+//   - none is as far as the future has been played yet: none in the next N
+//     turns, and N grows as it is played on.
+// Under it the next war to be declared, and how many more there are after
+// it. `state` is which of those it is (`coming`, `begun`, `clear`, `so-far`,
+// `none`), `head` and `wars` the two lines, `line` and `word` the first said
+// in less room, `seen` how much of the game the future has been played
+// through, and `title` all of it.
+function strangeFate(letter) {
+  const pane = debugSplit.panes[letter], sight = pane.sight, turn = pane.turn;
+  const turns = count => `${count} turn${count === 1 ? "" : "s"}`;
+  const none = (head, word, title) => ({state: "none", head, line: head, word, wars: "", seen: 0, title});
+  if (!strange.futures && !sight) return none("Futures off", "off", "Futures are off: this world's future is not being played out");
+  if (!sight || typeof turn !== "number" || typeof sight.turn !== "number")
+    return none("Looking ahead…", "…", "This world's future is being played out to the end of its game");
+  const era = seen => typeof seen.era === "number" || seen.era_name ? debugEraName({era: seen.era, name: seen.era_name}) : "";
+  const reach = sight.turn - turn, limit = sight.limit ?? strangeLimit();
+  const first = sight.seen.find(seen => seen.kind === "nuclear") || null;
+  const end = sight.done ? [...sight.seen].reverse().find(seen => seen.kind === "won" || seen.kind === "over") || null : null;
+  let state, head, line, word;
+  if (first && first.turn < turn) {
+    state = "begun";
+    head = `☢ Nuclear war since turn ${first.turn}${era(first) ? ` (${era(first)} Era)` : ""}`;
+    line = `☢ Since turn ${first.turn}`; word = `☢ t${first.turn}`;
+  } else if (first) {
+    const away = first.turn - turn;
+    state = "coming";
+    head = `☢ Nuclear war ${away === 0 ? "this turn" : `in ${turns(away)}`}${era(first) ? ` (${era(first)} Era)` : ""}`;
+    line = away === 0 ? "☢ Nuclear war this turn" : `☢ In ${turns(away)}${era(first) ? ` · ${era(first)}` : ""}`;
+    word = `☢ ${away}t`;
+  } else if (sight.done) {
+    state = "clear"; head = line = "☮ No nuclear war"; word = "☮ None";
+  } else if (reach > 0) {
+    state = "so-far"; head = `No nuclear war in the next ${turns(reach)}`; line = `None in next ${turns(reach)}`; word = `✓ ${reach}t`;
+  } else return none("Looking ahead…", "…", "This world's future is being played out to the end of its game");
+  // The wars still to be declared, the next first.
+  const coming = sight.seen.filter(seen => seen.kind === "war" && seen.turn >= turn);
+  const short = text => String(text || "").replace(" declares war on ", " on ");
+  const over = !end ? "" : `${end.kind === "won" ? "★" : "🏁"} ${end.text}, turn ${end.turn}`;
+  // Said in fewer words on the sign, where the line is short.
+  const brief = over.replace(" wins the game,", " wins,").replace(" is out of the game,", " is out,");
+  const wars = coming.length > 0
+    ? `⚔ War ${coming[0].turn === turn ? "this turn" : `in ${turns(coming[0].turn - turn)}`}: ${short(coming[0].text)}${coming.length > 1 ? ` · ${coming.length - 1} more` : ""}`
+    : sight.done ? `No wars ahead${brief ? ` · ${brief}` : ""}` : reach > 0 ? `No war in the next ${turns(reach)}` : "";
+  const last = sight.done ? sight.turn : limit;
+  const share = sight.done ? 1 : last && last > sight.from ? Math.max(0, Math.min(1, (sight.turn - sight.from) / (last - sight.from))) : 0;
+  const pace = sight.pace > 0 ? ` at ${(1000 / sight.pace).toFixed(sight.pace > 100 ? 1 : 0)} turns a second` : "";
+  const title = [`World ${letter.toUpperCase()}: ${head.replace(/^[☢☮] /, "")}`,
+    ...sight.seen.filter(seen => seen.kind === "nuclear" && seen.turn >= turn).slice(0, 6).map(seen => `☢ Turn ${seen.turn}: ${seen.text}`),
+    ...(coming.length > 0 ? coming.slice(0, 8).map(seen => `⚔ Turn ${seen.turn}: ${seen.text}`)
+      : [sight.done ? "No wars ahead" : wars]),
+    ...(coming.length > 8 ? [`⚔ and ${coming.length - 8} more wars`] : []),
+    ...(over ? [`${over}${sight.victory ? ` (${titleCase(String(sight.victory))})` : ""}`] : []),
+    sight.done ? `Its future is played to the end of the game, turn ${sight.turn}${typeof sight.took === "number" ? `, in ${(sight.took / 1000).toFixed(1)} s` : ""}`
+      : `Its future is played to turn ${sight.turn}${limit ? ` of ${limit}` : ""}${pace}, and is being played on`]
+    .filter(Boolean).join("\n");
+  return {state, head, line, word, wars, seen: share, title};
+}
+// Where the signs stand: each over the far end of its own branch, in rows
+// between the cards at the top, as much of each as there is room for. Signs
+// that would stand on one another are moved apart along their row, and
+// where a row has not the room for all of them they take turns at two.
+function strangeFates(g, open) {
+  const follow = open.includes(strange.follow) ? strange.follow : open[0];
+  const [title, meter] = strange.cards;
+  const least = title ? title.right + 8 : 8, most = Math.max(least + 120, meter ? meter.left - 8 : g.W - 8);
+  const room = most - least, gap = STRANGE_FATE_GAP;
+  const fits = name => Math.max(1, Math.floor((room + gap) / (Math.min(STRANGE_FATES[name][0], room) + gap)));
+  const mode = ["full", "line"].find(name => Math.ceil(open.length / fits(name)) <= 2) || "word";
+  const wide = Math.min(STRANGE_FATES[mode][0], room), tall = STRANGE_FATES[mode][1];
+  const rows = Math.ceil(open.length / fits(mode));
+  const wanted = open.map(letter => ({letter, at: g.cx + (open.indexOf(letter) - open.indexOf(follow)) * g.far}))
+    .sort((one, other) => one.at - other.at);
+  const put = [];
+  for (let row = 0; row < rows; row++) {
+    const held = wanted.filter((_, at) => at % rows === row);
+    const lefts = held.map(sign => Math.max(least, Math.min(most - wide, sign.at - wide / 2)));
+    for (let at = 1; at < lefts.length; at++) lefts[at] = Math.max(lefts[at], lefts[at - 1] + wide + gap);
+    for (let at = lefts.length - 1; at >= 0; at--)
+      lefts[at] = Math.min(lefts[at], at === lefts.length - 1 ? most - wide : lefts[at + 1] - wide - gap);
+    held.forEach((sign, at) => put.push({letter: sign.letter, left: lefts[at], top: STRANGE_FATE_TOP + row * (tall + gap), wide, tall}));
+  }
+  return {mode, put};
+}
+
 // Time runs on from the open turn, each world with its own player strategy,
 // or stops.
 function strangePlay(until = null) {
@@ -5963,6 +6271,7 @@ function strangeSwanDone(letter, data) {
     for (const turn of [...split.history[letter].keys()]) if (turn > swan.turn) split.history[letter].delete(turn);
     pane.last = swan.turn;
     pane.spent = null;
+    strangeSightDrop(letter);
   } else swanning.failed.push({letter, error: data.error || "it could not be struck"});
   if (letter === swanning.first) {
     // The rest are struck by the one the first drew. If it drew none, none is.
@@ -6099,7 +6408,8 @@ function strangeMount() {
   else split.panes.b.strategy = ranked.names.find(name => name !== split.panes.a.strategy) || split.panes.a.strategy;
   Object.assign(strange, {follow: "a", cam: null, lanes: {a: 0, b: 1}, order: ["a", "b"], born: {a: 0, b: 1}, births: 2,
     tint: {a: STRANGE_INKS[0], b: STRANGE_INKS[1]}, inks: 2, tree: null, parted: {}, locked: true, lockWanted: false,
-    divide: null, over: null, peek: null, run: null, swan: null, omen: null, said: "", drawn: "", meter: [], metered: null});
+    divide: null, over: null, peek: null, run: null, swan: null, omen: null, said: "", drawn: "", meter: [], metered: null,
+    seeing: {}, fates: [], fateMode: "full"});
   const canvas = document.createElement("canvas");
   canvas.id = "strange-sky";
   canvas.setAttribute("role", "img");
@@ -6148,7 +6458,7 @@ function strangeMount() {
     else if (action === "on1") strangeGoTo(now + 1);
     else if (action === "on10") strangeGoTo(now + 10);
     else if (action === "lock") strangeLock();
-    else if (action === "futures") { strange.futures = !strange.futures; strangeAheadNext(); strangeDraw(); }
+    else if (action === "futures") { strange.futures = !strange.futures; strangeAheadNext(); strangeForesee(); strangeDraw(); }
     else if (action === "fork") strangeGoTo((strange.tree || strangeTree()).splits);
     else if (action === "swan") strangeSwan(hud.querySelector('[data-strange="swan-kind"]').value);
     else if (action === "omen") { strange.omen = null; strangeDraw(); }
@@ -6208,7 +6518,7 @@ function strangeMount() {
   strange.stale = true;
   strangeLayout();
   clearInterval(strange.meterTimer);
-  strange.meterTimer = setInterval(() => { strangeAheadWatch(); strangeSwanWatch(); strangeMeasure(); }, STRANGE_METER_MS);
+  strange.meterTimer = setInterval(() => { strangeAheadWatch(); strangeSwanWatch(); strangeForesee(); strangeMeasure(); }, STRANGE_METER_MS);
   strangeMeasure();
   requestAnimationFrame(strangePaint);
 }
@@ -6270,6 +6580,20 @@ function strangeLayout() {
     put(pane.frame, "height", `${Math.max(0, Math.round(at.y + at.h) - Math.round(at.y) - STRANGE_HEAD)}px`);
     plate.classList.toggle("strange-notch", open.length === 1);
   }
+  // The sign over the far end of each branch.
+  const fates = strangeFates(g, open);
+  strange.fateMode = fates.mode;
+  strange.fates = fates.put;
+  for (const at of fates.put) {
+    const sign = hud.querySelector(`[data-strange-fate="${at.letter}"]`);
+    if (!sign) continue;
+    put(sign, "--strange-tint", strange.tint[at.letter]);
+    put(sign, "left", `${Math.round(at.left)}px`);
+    put(sign, "top", `${Math.round(at.top)}px`);
+    put(sign, "width", `${Math.round(at.wide)}px`);
+    put(sign, "height", `${at.tall}px`);
+    sign.classList.toggle("strange-over", strange.over === at.letter);
+  }
 }
 
 // What is written on the highway, drawn from the split's record whenever the
@@ -6305,12 +6629,12 @@ function strangeDraw() {
     : strange.locked
     ? "Locked: the worlds go through the turns together and always stand on the same turn. They differ only in what is chosen for each, such as its player strategy. Click to let each go its own way"
     : `Unlocked: each world plays and goes back by itself. Click to lock them on ${follow.toUpperCase()}'s turn`;
-  const futures = set("futures", strange.futures ? `🔮 Futures: ${STRANGE_AHEAD} turns ahead` : "🔮 Futures: off");
+  const futures = set("futures", strange.futures ? "🔮 Futures: to the end of the game" : "🔮 Futures: off");
   futures.classList.toggle("on", strange.futures);
   futures.setAttribute("aria-pressed", strange.futures ? "true" : "false");
   futures.title = strange.futures
-    ? `Each world is played ${STRANGE_AHEAD} turns ahead of the open turn along its own player strategy, and what is coming is put up on its line. Click to play only what is shown`
-    : "Each world plays a turn when it is shown it. Click to play each world's future ahead of the open turn";
+    ? `Each world's future is played out to the end of its game along its own player strategy. What is coming (a nuclear war, a war, how the game ends) is put up on its line and summed up over the far end of its branch, and its next ${STRANGE_AHEAD} turns are kept to be shown the moment time comes to them. Click to play only what is shown`
+    : "Each world plays a turn when it is shown it. Click to play each world's future out to the end of its game";
   // Generate Black Swan, and which: any, drawn at random, or one by name.
   // The engine says which there are (`debug.swan_kinds`).
   const struck = strange.locked && many ? open : [follow];
@@ -6402,6 +6726,22 @@ function strangeDraw() {
     button.disabled = on;
     button.title = on ? `${name} is the timeline in the middle`
       : `Put ${name}'s timeline in the middle: Branch then branches from ${name}`;
+  }
+  // The sign over each branch: as much of what is coming as there is room
+  // for (`strangeFates`), and all of it when the pointer is on it.
+  const mode = strangeFates(strangeGeometry(), open).mode;
+  for (const letter of open) {
+    const sign = hud.querySelector(`[data-strange-fate="${letter}"]`);
+    if (!sign) continue;
+    const fate = strangeFate(letter), [head, wars] = [sign.querySelector("strong"), sign.querySelector("span")];
+    const words = mode === "full" ? fate.head : mode === "line" ? fate.line : fate.word;
+    if (head.textContent !== words) head.textContent = words;
+    if (wars.textContent !== fate.wars) wars.textContent = fate.wars;
+    if (sign.dataset.fate !== fate.state) sign.dataset.fate = fate.state;
+    if (sign.title !== fate.title) sign.title = fate.title;
+    sign.classList.toggle("strange-fate-slim", mode !== "full");
+    const share = `${Math.round(fate.seen * 100)}%`;
+    if (sign.style.getPropertyValue("--strange-seen") !== share) sign.style.setProperty("--strange-seen", share);
   }
   // Each world has two columns: where it stands now (for a yield, what it
   // makes a turn), and beside a yield what it has made so far, in whole
@@ -6625,12 +6965,21 @@ function strangePaint(time) {
   // What has not been played is not drawn as if it had been (operator
   // 2026-11-24: "we should also not spew random lines on the timeline").
   // From each world's last turn there is only the way straight on, dashed.
+  // Between the two is what was foreseen: the world's future as it has been
+  // played out so far on a copy (`strangeForesee`), a thin line as far as
+  // that has come, which stops where the game ends in it.
   for (const letter of lined) {
-    const tip = worlds[letter].last;
-    if (tip >= end || tip > high) continue;
+    const tip = worlds[letter].last, sight = split.panes[letter].sight;
+    const seen = sight && typeof sight.turn === "number" ? Math.max(tip, Math.min(sight.turn, end)) : tip;
+    if (seen > tip && path(tip, Math.min(seen, high), where(letter))) {
+      pen.strokeStyle = colour[letter]; pen.lineWidth = 1.75; pen.globalAlpha = over === null || over === letter ? .7 : .3;
+      pen.stroke();
+      pen.globalAlpha = 1;
+    }
+    if ((sight && sight.done) || seen >= end || seen > high) continue;
     pen.setLineDash([3, 7]);
     pen.lineDashOffset = -(time / 60) % 10;
-    if (path(tip, Math.min(end, high), where(letter))) stroke(colour[letter], 1.5, over === null || over === letter ? .55 : .25);
+    if (path(seen, Math.min(end, high), where(letter))) stroke(colour[letter], 1.5, over === null || over === letter ? .55 : .25);
     pen.setLineDash([]);
   }
 
@@ -6681,12 +7030,25 @@ function strangePaint(time) {
   pen.font = "700 11px system-ui, sans-serif";
   const named = [];
   for (const letter of open) {
-    const tip = worlds[letter].last;
-    for (const alert of split.panes[letter].alerts || []) {
-      if (alert.turn < cam - .5 || alert.turn >= tip || alert.turn > high) continue;
+    const tip = worlds[letter].last, sight = split.panes[letter].sight;
+    // What the turns it holds saw, and past them what its future played out
+    // to the end has seen (`strangeForesee`). Far off, where the turns are
+    // close together, a sign that would stand on the last of its kind is
+    // left out: a nuclear detonation never is.
+    const coming = [...(split.panes[letter].alerts || []).filter(alert => alert.turn < tip),
+      ...(sight ? sight.seen.filter(seen => seen.turn >= tip) : [])];
+    // Up among the signs over the branches nothing is named: the sign over
+    // the branch says what is first to come, and the rest is named as it
+    // comes down the board.
+    const band = Math.max(STRANGE_FATE_TOP, ...strange.fates.map(sign => sign.top + sign.tall)) + 10;
+    const stood = {};
+    for (const alert of coming) {
+      if (alert.turn < cam - .5 || alert.turn > high) continue;
       const at = alert.turn + .5, px = x(letter, at), py = y(at);
       if (py > g.cy - 6 || py < 14) continue;
       const [sign, tint] = STRANGE_SIGNS[alert.kind] || ["!", STRANGE_GOLD], grave = alert.kind === "nuclear";
+      if (stood[alert.kind] !== undefined && Math.abs(stood[alert.kind] - py) < (grave ? 3 : 16)) continue;
+      stood[alert.kind] = py;
       if (grave) {
         pen.strokeStyle = tint; pen.lineWidth = 2; pen.globalAlpha = .25 + .35 * (.5 + .5 * Math.sin(time / 220));
         pen.beginPath(); pen.arc(px, py, 15 + 3 * Math.sin(time / 220), 0, Math.PI * 2); pen.stroke();
@@ -6697,9 +7059,10 @@ function strangePaint(time) {
       pen.fillStyle = tint; pen.textAlign = "center";
       pen.fillText(sign, px, py + .5);
       const side = strange.lanes[letter] > 0 || (strange.lanes[letter] === 0 && named.length % 2 === 1) ? 1 : -1;
-      if (grave || !named.some(([taken, sided]) => sided === side && Math.abs(taken - py) < 14)) {
+      if (py > band && (grave || !named.some(([taken, sided]) => sided === side && Math.abs(taken - py) < 14))) {
         named.push([py, side]);
-        write(`Turn ${alert.turn} · ${alert.text || alert.kind}`, px + side * 4, py, side, tint, quiet(letter), false);
+        const said = alert.kind === "war" ? `War: ${String(alert.text || "").replace(" declares war on ", " on ")}` : alert.text || alert.kind;
+        write(`Turn ${alert.turn} · ${said}`, px + side * 4, py, side, tint, quiet(letter), false);
       }
       pen.globalAlpha = 1;
     }
