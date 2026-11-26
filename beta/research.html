@@ -209,7 +209,7 @@
      (operator, 2026-11-22), and drops down like one (operator,
      2026-11-24: "charts/ can drop down folder style and the user can
      pick the right chart"): pointing at it, or tabbing to it, opens its
-     six pages under it, and the reader picks one. Charts/ itself still
+     seven pages under it, and the reader picks one. Charts/ itself still
      opens the folder's first page, AI Insights (operator, 2026-11-24:
      "we want a new ai insights", over the page he had put first). On
      a touch screen the first tap opens the list (the script after the
@@ -242,11 +242,8 @@
   .res-record { display: grid; gap: 16px; min-width: 0; }
   .res-record[hidden], .res-empty[hidden], .res-kind[hidden], .res-block[hidden] { display: none; }
   .res-section { min-width: 0; padding: 12px 14px 12px; border: 1px solid var(--border); border-radius: 4px; background: var(--panel); }
-  .rank-title { margin: 0; color: #fff; font-size: 13.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
-  .rank-sub { margin: 2px 0 8px; color: var(--faint); font-size: 12px; line-height: 1.45; }
   .rank-note { margin: 10px 0 0; padding-top: 8px; border-top: 1px solid var(--border); color: var(--faint); font-size: 11.5px; line-height: 1.5; }
   .rank-note a { color: var(--accent); }
-  .rank-note p { margin: 0 0 4px; }
   /* What a chart counts, closed until it is pressed (operator, 2026-11-24:
      "there is too much text on pages ... should be a more visual
      experience"). The words are a visitor's to open; the page is its charts. */
@@ -327,7 +324,6 @@
   .res-legend li { display: inline-flex; align-items: center; gap: 6px; }
   .res-swatch { width: 10px; height: 10px; border-radius: 2px; flex: none; }
   .res-linekey { width: 16px; height: 2px; border-radius: 1px; flex: none; }
-  .res-linekey.is-wash { height: 8px; border-radius: 1px; border-top: 2px solid; }
 
   /* A chart: its title, the counts it is drawn from, and the plot. The plot
      is drawn by the script below at the width it is given. */
@@ -346,7 +342,6 @@
   .res-tick { fill: var(--muted); font: 11px var(--sans); font-variant-numeric: tabular-nums; }
   .res-axis-title { fill: var(--faint); font: 11px var(--sans); }
   .res-hover { fill: rgba(255, 255, 255, 0.06); }
-  .res-cross { stroke: var(--muted); stroke-width: 1; shape-rendering: crispEdges; }
 
   /* The page's first screen (operator, 2026-11-22: "at the very top, we
      should have a wide civvis self play graph. below it, the civvis vs lv 8
@@ -375,20 +370,7 @@
   .res-key .res-legend { margin: 0; }
   .res-block .rank-note { margin-top: 12px; }
 
-  /* Each victory on its own: a small chart per type, the two kinds of game
-     as two lines over the same turns. */
-  .res-timing { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 290px), 1fr)); gap: 14px 18px; margin-top: 10px; }
-  .res-panel { min-width: 0; }
-  .res-panel h3 { display: flex; align-items: center; gap: 7px; margin: 0; color: #fff; font-size: 14px; font-weight: 700; }
-  /* Room for three lines of figures, so the charts of a row stand level
-     when one panel's figures wrap and another's do not. */
-  .res-panel dl { display: grid; align-content: start; gap: 1px; min-height: calc(3 * 1.45em + 2px); margin: 3px 0 4px; font-size: 12px; line-height: 1.45; font-variant-numeric: tabular-nums; }
-  .res-panel dl div { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
-  .res-panel dt .res-linekey { display: inline-block; vertical-align: 3px; }
-  .res-panel dt { flex: none; color: var(--muted); }
-  .res-panel dd { min-width: 0; margin: 0; color: var(--text); }
-
-  /* The figures as a table: every number the charts draw, without hovering. */
+  /* A table of figures: the benchmark's two, whose own rules follow. */
   .res-scroll { overflow-x: auto; }
   .rank-table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
   .rank-table th { padding: 4px 12px 4px 0; color: var(--faint); font-size: 11.5px; font-weight: 500; text-align: right; white-space: nowrap; }
@@ -396,7 +378,6 @@
   .rank-table th.is-group { padding-bottom: 0; color: var(--muted); font-weight: 700; text-align: center; }
   .rank-table td { padding: 5px 12px 5px 0; border-top: 1px solid var(--border); color: var(--text); text-align: right; white-space: nowrap; }
   .rank-table td:first-child { color: #fff; font-weight: 600; }
-  .rank-table td .res-swatch { display: inline-block; margin-right: 7px; vertical-align: -1px; }
   .rank-table .is-zero { color: var(--faint); }
   /* Over everything else, the benchmark against the game's own AI
      (operator, 2026-11-23: "at the top of win analytics, we should have a
@@ -452,13 +433,6 @@
     .res-rates td small { display: block; font-size: 11.5px; }
     .res-rates .res-wide { display: none; }
   }
-  .res-details { margin-top: 10px; }
-  .res-details summary { color: var(--accent); font-size: 12.5px; font-weight: 600; cursor: pointer; }
-  .res-details .rank-table td:first-child { font-weight: 500; }
-  /* The table of spans is a group of six columns per column chart, wider
-     than the page: its first column, the turns, stays in view as it scrolls. */
-  .res-details .rank-table th:first-child,
-  .res-details .rank-table td:first-child { position: sticky; left: 0; background: var(--panel); }
 
   /* One tooltip for every chart: the value first, then what it is. */
   .res-tip {
@@ -481,7 +455,7 @@
          row across the top of the page (operator, 2026-11-24: "try putting
          the vertical menu from home... civ across the top instad"), where
          until then they stood in a column to the left of the title. Charts/
-         is a folder and drops down like one to its six pages ("charts/ can
+         is a folder and drops down like one to its seven pages ("charts/ can
          drop down folder style and the user can pick the right chart"). The
          page on screen is ringed in white: this is Win Analytics, under
          Charts/, so Charts/ is ringed too and so is this page in its list.
@@ -499,6 +473,7 @@
           <a class="site-link sub-link" href="./" aria-current="page">Win Analytics</a>
           <a class="site-link sub-link" href="../elo-rankings/" title="The Civ AI Agents and Civilization VI&#8217;s own AI on one Elo scale, now and over time.">ELO Rankings</a>
           <a class="site-link sub-link" href="../civvis-performance/" title="How fast the simulator plays: the fastest game on video and how long a self-play game takes.">CIVVIS Performance</a>
+          <a class="site-link sub-link" href="../random-ai-charts/" title="Charts the AI agents added on their own, kept here until they are asked for or talked over.">Random AI Charts</a>
         </div>
       </div>
       <a class="site-link" href="../../experiments/" title="Series of verification games against Civilization VI&#8217;s own AI: running, scheduled and finished.">Experiments</a>
@@ -721,11 +696,10 @@
                  slider at the top. defaults to 8. but people can change the
                  level if they want"; 2026-11-23: "ai level in charts can go
                  from lv 4 to lv 8"). It picks the games against the AI
-                 everywhere on the page: the three column charts, the line
-                 in each small chart, and the tables. The page opens on
-                 Deity, where most of the games were played. The slider is
-                 the control; the names under it are its scale, and a press
-                 on one moves the slider there. -->
+                 everywhere on the page: the three column charts. The page
+                 opens on Deity, where most of the games were played. The
+                 slider is the control; the names under it are its scale, and
+                 a press on one moves the slider there. -->
             <div class="res-level">
               <label for="res-level">AI level</label>
               <div class="res-level-scale">
@@ -780,52 +754,6 @@
         </section>
         </div>
       </div>
-
-      <section class="res-section" id="res-each" aria-labelledby="res-each-title">
-        <h2 class="rank-title" id="res-each-title">Each victory&#8217;s timing</h2>
-        <p class="rank-sub">Every line adds up to 100%: a peak is when that victory lands, however rare it is.</p>
-        <ul class="res-legend">
-          <li><span class="res-linekey" style="background: var(--text)"></span><span data-say="CIVVIS vs {level} AI">CIVVIS vs Lv 8 Deity AI</span></li>
-          <li><span class="res-linekey is-wash" style="border-color: var(--muted); background: rgba(147, 163, 181, 0.16)"></span>CIVVIS self-play (in the victory&#8217;s colour)</li>
-        </ul>
-        <div class="res-timing" id="res-timing"></div>
-      </section>
-
-      <section class="res-section" id="res-table" aria-labelledby="res-table-title">
-        <h2 class="rank-title" id="res-table-title">The figures</h2>
-        <div class="res-scroll">
-          <table class="rank-table" id="res-summary">
-            <thead>
-              <tr><th></th><th class="is-group" colspan="6" data-say="CIVVIS vs {level} AI">CIVVIS vs Lv 8 Deity AI</th><th class="is-group" colspan="4">CIVVIS self-play</th></tr>
-              <tr>
-                <th scope="col">Victory</th>
-                <th scope="col">Games</th><th scope="col">Share</th><th scope="col" data-say="{rung} AI won">Deity AI won</th><th scope="col">CIVVIS won</th><th scope="col">Median turn</th><th scope="col">Busiest span</th>
-                <th scope="col">Games</th><th scope="col">Share</th><th scope="col">Median turn</th><th scope="col">Busiest span</th>
-              </tr>
-            </thead>
-            <tbody></tbody>
-          </table>
-        </div>
-        <details class="res-details">
-          <summary>Every span of turns as a table</summary>
-          <div class="res-scroll">
-            <table class="rank-table" id="res-spans"><thead></thead><tbody></tbody></table>
-          </div>
-        </details>
-        <details class="fine">
-        <summary>How it is counted</summary>
-        <div class="rank-note">
-          <p id="res-note-ai"></p>
-          <p id="res-note-self"></p>
-          <p>
-            A window counts back from the newest game of its kind, and against the AI of its level.
-            Self-play&#8217;s last 1 day and last 3 days are the 24 and 72 hours before its newest game finished.
-            <a href="https://github.com/MartinHalvorson/CIVVIS/blob/ledger/results.jsonl" target="_blank" rel="noreferrer">Games against the AI</a> ·
-            <a href="https://github.com/MartinHalvorson/CIVVIS/blob/main/data/research/self_play_endings.json" target="_blank" rel="noreferrer">Self-play games</a>
-          </p>
-        </div>
-        </details>
-      </section>
     </div>
   </main>
   <div class="res-tip" id="res-tip" role="presentation" hidden></div>
@@ -841,9 +769,6 @@
     const NAMES = { science: "Science", culture: "Culture", diplomatic: "Diplomatic", religious: "Religious", domination: "Domination", score: "Score" };
     const VICTORIES = (Array.isArray(data.victories) ? data.victories : []).filter((v) => NAMES[v]);
     const TURNS = Number(data.turns) || 250;
-    // The order the two kinds are listed in, everywhere on the page: the
-    // games against the game's AI first (operator 2026-11-21).
-    const KINDS = ["ai", "self_play"];
     // The games against the AI are a kind per level, under the level's
     // number, and the level chosen is the one drawn (operator 2026-11-21:
     // "an option to select by level too"). The levels and their names are
@@ -857,8 +782,8 @@
     // just the deity ai wins, then the civvis wins, then the civvis self
     // play stuff"). `side` is whose victories a chart counts: every one,
     // the AI's, or CIVVIS's. `short` heads its hover box and `total` names
-    // the box's last row. `label` is a chart's whole name, for the table of
-    // spans and for a reader that hears the chart, and `head` its title on
+    // the box's last row. `label` is a chart's whole name, for a reader
+    // that hears the chart, and `head` its title on
     // the page, where it stands under its side's name. `{level}` and
     // `{rung}` are the level chosen, as `worded` writes them.
     const CHARTS = [
@@ -877,7 +802,6 @@
     // A sentence for the level chosen: `{level}` is "Lv 4 Prince" and
     // `{rung}` is "Prince".
     const worded = (text) => String(text).replaceAll("{level}", "Lv " + state.level + " " + RUNGS[state.level]).replaceAll("{rung}", RUNGS[state.level]);
-    const LABEL = { self_play: "CIVVIS self-play", ai: "CIVVIS vs {level} AI" };
     const SVG = "http://www.w3.org/2000/svg";
     const colour = (v) => "var(--v-" + v + ")";
 
@@ -932,11 +856,6 @@
       return all.map((n, i) => Math.max(0, (Number(n) || 0) - (Number(won[i]) || 0)));
     };
     const spanName = (i, span) => "Turns " + (i * span + 1) + "–" + Math.min(TURNS, (i + 1) * span);
-    const busiest = (bins, span) => {
-      let best = -1, at = -1;
-      bins.forEach((n, i) => { if (n > best) { best = n; at = i; } });
-      return best > 0 ? (at * span + 1) + "–" + Math.min(TURNS, (at + 1) * span) : "—";
-    };
     // Clean ticks for a share axis: 0 and up to five steps of 1, 2, 2.5 or 5
     // in a power of ten.
     const ticks = (max) => {
@@ -1045,7 +964,7 @@
       const root = svg("svg", { width, height, viewBox: "0 0 " + width + " " + height, role: "img" });
       const top = VICTORIES.map((v) => NAMES[v] + " " + pct1(s.bins[v].reduce((sum, n) => sum + n, 0) / s.w.games)).join(", ");
       root.setAttribute("aria-label", worded(chart.label) + ": " + fmt(s.games) + (chart.side === "all" ? "" : " of " + fmt(s.w.games))
-        + " games by the turn they ended, " + top + (chart.side === "all" ? "" : " of the games") + ". Every figure is in the tables below.");
+        + " games by the turn they ended, " + top + (chart.side === "all" ? "" : " of the games") + ".");
       const { x, y } = frame(root, width, height, m, ymax, (t) => (t === 0 ? "0" : (100 * t).toFixed(t * 100 % 1 ? 1 : 0) + "%"));
       const hover = svg("rect", { class: "res-hover", y: m.t, height: height - m.t - m.b, width: 0, visibility: "hidden" });
       root.append(hover);
@@ -1090,95 +1009,6 @@
       title.textContent = "Online game turn · a column is " + state.span + " turns";
       root.append(title);
       plot.append(root);
-    };
-
-    // ---- Each victory's timing: a small chart per type, a line per kind.
-    const timing = document.getElementById("res-timing");
-    const drawTiming = () => {
-      timing.replaceChildren();
-      for (const v of VICTORIES) {
-        const panel = el("article", "res-panel");
-        const head = el("h3");
-        const swatch = el("span", "res-swatch");
-        swatch.style.background = colour(v);
-        head.append(swatch, NAMES[v]);
-        const facts = el("dl");
-        const series = [];
-        for (const kind of KINDS) {
-          const w = win(kind);
-          const vic = w && w.victories ? w.victories[v] : null;
-          const dt = el("dt");
-          const key = el("span", "res-linekey");
-          key.style.background = kind === "self_play" ? colour(v) : "var(--text)";
-          dt.append(key);
-          const brief = kind === "ai" ? RUNGS[state.level] : "Self-play";
-          let said;
-          if (!w || !w.games) said = worded(LABEL[kind]) + ": no games";
-          else if (!vic || !vic.games) said = brief + ": none in " + fmt(w.games) + (w.games === 1 ? " game" : " games");
-          else {
-            said = brief + ": " + fmt(vic.games) + (vic.games === 1 ? " game, " : " games, ") + pct(vic.games / w.games) + " · median turn " + vic.median
-              + (kind === "ai" ? " · CIVVIS won " + fmt(vic.won) : "");
-            const bins = binned(vic.turns, state.span);
-            series.push({ kind, bins, total: vic.games, share: bins.map((n) => n / vic.games) });
-          }
-          const row = el("div");
-          row.append(dt, el("dd", "", said));
-          facts.append(row);
-        }
-        panel.append(head, facts);
-        const plot = el("div", "res-plot");
-        panel.append(plot);
-        timing.append(panel);
-        if (!series.length) { plot.append(el("p", "is-none", "No " + NAMES[v] + " victories in the window.")); continue; }
-        const width = Math.max(240, plot.clientWidth), height = 140, m = { l: 36, r: 6, t: 6, b: 22 };
-        const ymax = Math.max(...series.flatMap((s) => s.share));
-        const root = svg("svg", { width, height, viewBox: "0 0 " + width + " " + height, role: "img" });
-        root.setAttribute("aria-label", NAMES[v] + " victories by the turn they ended: " + series.map((s) => worded(LABEL[s.kind]) + " busiest " + busiest(s.bins, state.span)).join("; ") + ".");
-        const { x, y } = frame(root, width, height, m, ymax, (t) => (t === 0 ? "0" : Math.round(100 * t) + "%"));
-        const mid = (i) => x((i + 0.5) * state.span);
-        for (const s of series.slice().sort((a) => (a.kind === "self_play" ? -1 : 1))) {
-          const points = s.share.map((p, i) => mid(i).toFixed(1) + "," + y(p).toFixed(1));
-          if (s.kind === "self_play") {
-            const area = svg("path", { d: "M" + mid(0).toFixed(1) + "," + y(0) + "L" + points.join("L") + "L" + mid(s.share.length - 1).toFixed(1) + "," + y(0) + "Z", opacity: "0.14" });
-            area.style.fill = colour(v);
-            root.append(area);
-          }
-          const line = svg("path", { d: "M" + points.join("L"), fill: "none", "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round" });
-          line.style.stroke = s.kind === "self_play" ? colour(v) : "var(--text)";
-          root.append(line);
-        }
-        const cross = svg("line", { class: "res-cross", y1: m.t, y2: height - m.b, visibility: "hidden" });
-        root.append(cross);
-        const dots = series.map((s) => {
-          const dot = svg("circle", { r: 4, "stroke-width": 2, visibility: "hidden" });
-          dot.style.fill = s.kind === "self_play" ? colour(v) : "var(--text)";
-          dot.style.stroke = "var(--panel)";
-          root.append(dot);
-          return dot;
-        });
-        const hit = svg("rect", { x: m.l, y: m.t, width: width - m.l - m.r, height: height - m.t - m.b, fill: "transparent" });
-        hit.addEventListener("pointermove", (event) => {
-          const box = root.getBoundingClientRect();
-          const turn = ((event.clientX - box.left - m.l) / (width - m.l - m.r)) * TURNS;
-          const i = Math.max(0, Math.min(series[0].bins.length - 1, Math.floor(turn / state.span)));
-          const cx = mid(i);
-          cross.setAttribute("x1", cx); cross.setAttribute("x2", cx); cross.setAttribute("visibility", "visible");
-          series.forEach((s, k) => { dots[k].setAttribute("cx", cx); dots[k].setAttribute("cy", y(s.share[i])); dots[k].setAttribute("visibility", "visible"); });
-          showTip(event, spanName(i, state.span) + " · " + NAMES[v], series.map((s) => ({
-            colour: s.kind === "self_play" ? colour(v) : "var(--text)",
-            value: pct1(s.share[i]),
-            name: worded(LABEL[s.kind]),
-            n: fmt(s.bins[i]) + " of " + fmt(s.total),
-          })));
-        });
-        hit.addEventListener("pointerleave", () => {
-          cross.setAttribute("visibility", "hidden");
-          dots.forEach((d) => d.setAttribute("visibility", "hidden"));
-          hideTip();
-        });
-        root.append(hit);
-        plot.append(root);
-      }
     };
 
     // ---- The benchmark: the win rate against each level, over the
@@ -1240,61 +1070,6 @@
       }
     };
 
-    // ---- The tables.
-    const drawTables = () => {
-      const body = document.querySelector("#res-summary tbody");
-      body.replaceChildren();
-      for (const v of VICTORIES) {
-        const tr = el("tr");
-        const name = el("td");
-        const swatch = el("span", "res-swatch");
-        swatch.style.background = colour(v);
-        name.append(swatch, NAMES[v]);
-        tr.append(name);
-        for (const kind of KINDS) {
-          const w = win(kind);
-          const vic = w && w.victories ? w.victories[v] || {} : {};
-          const n = vic.games || 0;
-          const cells = [fmt(n), w && w.games ? pct1(n / w.games) : "—"];
-          if (kind === "ai") cells.push(n ? fmt(n - (vic.won || 0)) : "—", n ? fmt(vic.won || 0) : "—");
-          cells.push(n ? String(vic.median) : "—", n ? busiest(binned(vic.turns, state.span), state.span) : "—");
-          cells.forEach((text) => tr.append(el("td", n ? "" : "is-zero", text)));
-        }
-        body.append(tr);
-      }
-      // Every span with an ending in either kind: its counts per victory,
-      // a group of columns per column chart and in the charts' order.
-      const table = document.getElementById("res-spans");
-      const head = table.querySelector("thead"), rows = table.querySelector("tbody");
-      head.replaceChildren(); rows.replaceChildren();
-      const group = el("tr");
-      group.append(el("th"));
-      const cols = el("tr");
-      cols.append(el("th", "", "Turns"));
-      const bins = {};
-      for (const chart of CHARTS) {
-        const th = el("th", "is-group", worded(chart.label));
-        th.colSpan = VICTORIES.length;
-        group.append(th);
-        const w = win(chart.kind);
-        bins[chart.id] = {};
-        for (const v of VICTORIES) {
-          cols.append(el("th", "", NAMES[v]));
-          bins[chart.id][v] = binned(sided(w && w.victories ? w.victories[v] : null, chart.side), state.span);
-        }
-      }
-      head.append(group, cols);
-      const count = Math.ceil(TURNS / state.span);
-      for (let i = 0; i < count; i++) {
-        const values = CHARTS.flatMap((chart) => VICTORIES.map((v) => bins[chart.id][v][i]));
-        if (!values.some(Boolean)) continue;
-        const tr = el("tr");
-        tr.append(el("td", "", (i * state.span + 1) + "–" + Math.min(TURNS, (i + 1) * state.span)));
-        values.forEach((n) => tr.append(el("td", n ? "" : "is-zero", fmt(n))));
-        rows.append(tr);
-      }
-    };
-
     const notes = () => {
       // Every heading and key that names the games against the AI names the
       // level chosen.
@@ -1311,13 +1086,6 @@
         rate.append(el("b", "", "CIVVIS won " + fmt(won) + " (" + pct(won / w.games) + ")"),
           worded(", {rung} AI won ") + fmt(w.games - won) + " (" + pct((w.games - won) / w.games) + ")");
       }
-      document.getElementById("res-note-self").textContent = "Self-play: every seat a CIVVIS AI agent, in the simulator; these are the "
-        + "tournament batches the agents' rules are screened in, a game counted once whichever seat won it"
-        + (data.self_play_taken ? ", from a snapshot taken " + day(data.self_play_taken) : "") + ".";
-      document.getElementById("res-note-ai").textContent = "Against the AI: one CIVVIS AI agent inside Civilization VI against the game's own AI "
-        + "at the level chosen, the verification games. A victory by either side counts; an elimination or a stopped game has no "
-        + "victory and is left out, and so is a game played to a turn limit short of 250. "
-        + "The win rate is CIVVIS's wins as a share of the games counted.";
     };
 
     const draw = () => {
@@ -1333,9 +1101,8 @@
         ymax[chart.kind] = Math.max(ymax[chart.kind] || 0, s ? Math.max(...s.totals) / s.w.games : 0);
       }
       for (const chart of CHARTS) drawStacks(chart, ymax[chart.kind]);
-      drawTiming();
     };
-    const render = () => { notes(); drawRates(); draw(); drawTables(); };
+    const render = () => { notes(); drawRates(); draw(); };
 
     const choose = (groupId, attr, apply) => {
       const group = document.getElementById(groupId);

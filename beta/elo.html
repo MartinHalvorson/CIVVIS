@@ -209,7 +209,7 @@
      (operator, 2026-11-22), and drops down like one (operator,
      2026-11-24: "charts/ can drop down folder style and the user can
      pick the right chart"): pointing at it, or tabbing to it, opens its
-     six pages under it, and the reader picks one. Charts/ itself still
+     seven pages under it, and the reader picks one. Charts/ itself still
      opens the folder's first page, AI Insights (operator, 2026-11-24:
      "we want a new ai insights", over the page he had put first). On
      a touch screen the first tap opens the list (the script after the
@@ -258,11 +258,12 @@
 
   /* At the top, the player strategies as Win Analytics listed them until
      2026-11-23 (operator: "at the top of this page is the player
-     straetgies, pulled from win analytics"), and beside them the two
-     readings of Civilization VI's own AI at each level. A window too narrow
-     for two columns stacks them, the strategies first. */
-  .elo-top { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; min-width: 0; }
-  @media (max-width: 859px) { .elo-top { grid-template-columns: minmax(0, 1fr); } }
+     straetgies, pulled from win analytics"). The two readings of
+     Civilization VI's own AI at each level stood beside them until
+     2026-11-26, when they went to Random AI Charts with the other charts
+     an agent had added on its own (operator: "please move all the ai
+     generated charts that i havent approved of or we have discussed to
+     here"). */
   .rank-day { white-space: nowrap; }
   .rank-list { margin: 0; padding: 0; list-style: none; }
   /* Two Elo columns (operator 2026-11-24: "add a second elo for games with
@@ -305,14 +306,9 @@
   .rank-table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
   .rank-table th { padding: 4px 12px 4px 0; color: var(--faint); font-size: 11.5px; font-weight: 500; text-align: right; white-space: nowrap; vertical-align: bottom; }
   .rank-table th:first-child, .rank-table td:first-child { text-align: left; }
-  .rank-table th.is-group { padding-bottom: 0; color: var(--muted); font-weight: 600; text-align: center; }
-  .rank-table th.is-group span { display: block; padding-bottom: 2px; border-bottom: 1px solid var(--border-strong); }
-  .rank-table .is-split { padding-left: 14px; }
   .rank-table td { padding: 6px 12px 6px 0; border-top: 1px solid var(--border); color: var(--text); text-align: right; white-space: nowrap; }
   .rank-table td:first-child { color: #fff; font-weight: 600; }
-  .rank-table td.is-elo { color: #fff; font-weight: 700; }
   .rank-table td small { margin-left: 3px; color: var(--muted); font-size: 11.5px; font-weight: 400; }
-  .rank-table td.is-sim { color: var(--muted); }
   .rank-table th:last-child, .rank-table td:last-child { padding-right: 2px; }
   @media (max-width: 479px) { .rank-table th, .rank-table td { padding-right: 7px; } .rank-table td small { display: block; margin-left: 0; } }
 
@@ -371,7 +367,7 @@
          row across the top of the page (operator, 2026-11-24: "try putting
          the vertical menu from home... civ across the top instad"), where
          until then they stood in a column to the left of the title. Charts/
-         is a folder and drops down like one to its six pages ("charts/ can
+         is a folder and drops down like one to its seven pages ("charts/ can
          drop down folder style and the user can pick the right chart"). The
          page on screen is ringed in white: this is ELO Rankings, under
          Charts/, so Charts/ is ringed too and so is this page in its list.
@@ -389,6 +385,7 @@
           <a class="site-link sub-link" href="../win-analytics/" title="Who wins, how and when: the games against Civilization VI&#8217;s own AI beside the CIVVIS self-play games.">Win Analytics</a>
           <a class="site-link sub-link" href="./" aria-current="page">ELO Rankings</a>
           <a class="site-link sub-link" href="../civvis-performance/" title="How fast the simulator plays: the fastest game on video and how long a self-play game takes.">CIVVIS Performance</a>
+          <a class="site-link sub-link" href="../random-ai-charts/" title="Charts the AI agents added on their own, kept here until they are asked for or talked over.">Random AI Charts</a>
         </div>
       </div>
       <a class="site-link" href="../../experiments/" title="Series of verification games against Civilization VI&#8217;s own AI: running, scheduled and finished.">Experiments</a>
@@ -468,42 +465,23 @@
          page whose slot still reads `null` shows the one sentence. -->
     <p class="elo-empty" id="elo-empty">This copy of the page has no figures. They are written in when the site is published.</p>
     <div class="elo-record" id="elo-record" hidden>
-      <div class="elo-top">
-        <section class="res-section" id="rank-strategies" data-elo-card hidden aria-labelledby="rank-strategies-title">
-          <h2 class="rank-title" id="rank-strategies-title">Player strategies</h2>
-          <p class="rank-sub">Our stand-in for Prince is 1000.</p>
-          <div class="rank-row rank-head">
-            <span></span><span></span>
-            <button type="button" class="rank-sort" data-sort="on" aria-pressed="true" title="Every victory on. Sort by this column">Diplo on</button>
-            <button type="button" class="rank-sort" data-sort="off" aria-pressed="false" title="The Diplomatic victory switched off. Sort by this column">Diplo off</button>
-          </div>
-          <ol class="rank-list"></ol>
-          <details class="fine">
-            <summary>How it is counted</summary>
-            <p class="rank-note">
-              <span data-rank-note></span>
-              <a href="https://github.com/MartinHalvorson/CIVVIS/blob/main/docs/ELO.md" target="_blank" rel="noreferrer">How the Elo works</a>
-            </p>
-          </details>
-        </section>
-        <section class="res-section" id="elo-levels" data-elo-card hidden aria-labelledby="elo-levels-title">
-          <h2 class="rank-title" id="elo-levels-title">Firaxis Civ 6 AI: Elo by level</h2>
-          <p class="rank-sub" id="elo-levels-sub">Benchmark: our games against the real AI. Simulator: its Difficulty setting.</p>
-          <div class="elo-scroll">
-            <table class="rank-table" id="elo-levels-table" aria-labelledby="elo-levels-title">
-              <thead>
-                <tr><th scope="col" rowspan="2">Level</th><th scope="colgroup" colspan="2" class="is-group"><span>Diplo on</span></th><th scope="colgroup" colspan="2" class="is-group is-split"><span>Diplo off</span></th></tr>
-                <tr><th scope="col">Benchmark</th><th scope="col">Simulator</th><th scope="col" class="is-split">Benchmark</th><th scope="col">Simulator</th></tr>
-              </thead>
-              <tbody></tbody>
-            </table>
-          </div>
-          <details class="fine">
-            <summary>How it is counted</summary>
-            <p class="rank-note" id="elo-levels-note"></p>
-          </details>
-        </section>
-      </div>
+      <section class="res-section" id="rank-strategies" data-elo-card hidden aria-labelledby="rank-strategies-title">
+        <h2 class="rank-title" id="rank-strategies-title">Player strategies</h2>
+        <p class="rank-sub">Our stand-in for Prince is 1000.</p>
+        <div class="rank-row rank-head">
+          <span></span><span></span>
+          <button type="button" class="rank-sort" data-sort="on" aria-pressed="true" title="Every victory on. Sort by this column">Diplo on</button>
+          <button type="button" class="rank-sort" data-sort="off" aria-pressed="false" title="The Diplomatic victory switched off. Sort by this column">Diplo off</button>
+        </div>
+        <ol class="rank-list"></ol>
+        <details class="fine">
+          <summary>How it is counted</summary>
+          <p class="rank-note">
+            <span data-rank-note></span>
+            <a href="https://github.com/MartinHalvorson/CIVVIS/blob/main/docs/ELO.md" target="_blank" rel="noreferrer">How the Elo works</a>
+          </p>
+        </details>
+      </section>
 
       <section class="res-section" id="elo-over-time" data-elo-card hidden aria-labelledby="elo-over-time-title">
         <h2 class="rank-title" id="elo-over-time-title">Elo over time</h2>
@@ -682,46 +660,6 @@
             .map((side) => count(VIEWS[side].firaxis.games) + " with the Diplomatic victory " + side).join(" and ") + "." : "")
         + " \u00b1 is the 95% margin of error.";
       list.hidden = false;
-    }
-
-    // ---- The two readings of each level, each with the Diplomatic victory on and off.
-    const dials = Object.fromEntries(SIDES.map((side) =>
-      [side, Object.fromEntries(((VIEWS[side] && VIEWS[side].simulator) || []).map((s) => [s.level, s]))]));
-    const measured = (side, n) => (VIEWS[side] ? VIEWS[side].levels.find((l) => l.level === n) : null);
-    const levelRows = [8, 7, 6, 5, 4]
-      .map((n) => ({ n, on: measured("on", n), off: measured("off", n), dial: { on: dials.on[n], off: dials.off[n] } }))
-      .filter((r) => r.on || r.off || r.dial.on || r.dial.off);
-    if (levelRows.length) {
-      const body = document.querySelector("#elo-levels-table tbody");
-      for (const r of levelRows) {
-        const tr = el("tr");
-        const named = r.on || r.off || r.dial.on || r.dial.off;
-        tr.append(el("td", "", "Lv " + r.n + " " + named.name));
-        for (const side of SIDES) {
-          const now = r[side] && r[side].now;
-          const cell = el("td", "is-elo" + (side === "off" ? " is-split" : ""), now ? elo(now) : "\u2013");
-          if (now) {
-            cell.append(el("small", "", (now.margin ? pm(now.margin) + " " : "") + "(" + count(now.games) + ")"));
-            cell.title = SIDE_NAME[side] + ": our seat won " + now.wins + " of " + now.games + " games";
-          }
-          tr.append(cell);
-          const sim = r.dial[side];
-          const dial = el("td", "is-sim", sim ? Math.round(sim.elo) : "\u2013");
-          if (sim && sim.margin) dial.append(el("small", "", pm(sim.margin)));
-          tr.append(dial);
-        }
-        body.append(tr);
-      }
-      const days = (VIEWS.on.firaxis || (VIEWS.off && VIEWS.off.firaxis) || {}).days;
-      document.getElementById("elo-levels-note").textContent =
-        "Benchmark: Civilization VI\u2019s own AI, rated from our seat\u2019s games against five of it at each level"
-        + (days ? " over the last " + days + " days" : "") + ", (n) the games. Our seat is rated as the agent that plays its"
-        + " victory lane in the simulator (a Science game is MoonshotMaven\u2019s, a Religious one HolyRoller\u2019s), in the"
-        + " simulator\u2019s tables played the same way: a diplo-off game against the agent\u2019s diplo-off rating."
-        + " \u2264 is a level we have never lost to in the window: it is at most that."
-        + " Simulator: the simulator\u2019s Difficulty setting, our stand-in agent playing with that level\u2019s"
-        + " handicap, which is what the simulator\u2019s games at that level are played against.";
-      document.getElementById("elo-levels").hidden = false;
     }
 
     // ---- Elo over time, one reading at a time: the switch over the key

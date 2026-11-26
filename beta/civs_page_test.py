@@ -74,9 +74,18 @@ class TheOrderOfThePage(unittest.TestCase):
         self.assertEqual(sections, [
             "res-side-builds",
             "civ-filtered", "civ-city2", "civ-city3", "civ-cities50", "civ-pantheons", "civ-founders", "civ-followers",
-            "civ-invaded", "civ-science100", "civ-victories",
+            "civ-invaded", "civ-science100",
             "civ-civs", "rank-civs", "rank-civs-self",
         ])
+        # The chart of the victory aimed for is on Random AI Charts (operator
+        # 2026-11-25: "please move all the ai generated charts that i havent
+        # approved of or we have discussed to here"); decision 6 stays, its
+        # card a link to the chart there.
+        self.assertNotIn('id="civ-victories"', PAGE)
+        self.assertNotIn("Victory aimed for", PAGE)
+        self.assertNotIn("targeted(", PAGE)
+        card = PAGE[PAGE.index('id="civ-step-victory"'):PAGE.index("</details>", PAGE.index('id="civ-step-victory"'))]
+        self.assertIn('<p class="rank-sub"><a href="../random-ai-charts/#civ-victories">Its chart is on Random AI Charts.</a></p>', card)
         self.assertIn('<h2 class="res-side-title" id="res-title-builds">Early build order: win rate against Lv 8 Deity AI</h2>', PAGE)
         self.assertIn('<h2 class="res-side-title" id="civ-civs-title">Winningest civs</h2>', PAGE)
         # Two tables of civs: against Deity, and the self-play seats.
@@ -136,7 +145,7 @@ class TheOrderOfThePage(unittest.TestCase):
         self.assertIn('<span class="civ-step-n">1</span>What the capital builds first &#183; turns 1&#8211;30', PAGE)
         self.assertIn("Before turn 1 &#183; set by the game&#8217;s setup, not chosen by CIVVIS", PAGE)
         # The two charts of the marks stand in their decisions, each beside
-        # where CIVVIS stands, and the victories close the filtered charts.
+        # where CIVVIS stands, and decision 6 closes the filtered charts.
         self.assertLess(body.index('id="civ-step-expand"'), body.index('id="civ-cities50"'))
         self.assertLess(body.index('id="civ-cities50"'), body.index('id="civ-step-faith"'))
         self.assertLess(body.index('id="civ-step-science"'), body.index('id="civ-science100"'))

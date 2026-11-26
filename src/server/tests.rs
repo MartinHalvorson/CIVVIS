@@ -2415,6 +2415,12 @@ fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
         "title=\"The Civ AI Agents and Civilization VI&#8217;s own AI on one Elo scale, ",
         "now and over time.\">ELO Rankings</a>\n",
         "          <a class=\"site-link sub-link\" href=\"./\" aria-current=\"page\">CIVVIS Performance</a>\n",
+        // And, last (2026-11-26: "please add another chart to the end of
+        // charts/ called random ai charts"), the charts an agent added on
+        // its own.
+        "          <a class=\"site-link sub-link\" href=\"../random-ai-charts/\" ",
+        "title=\"Charts the AI agents added on their own, kept here until they are asked for ",
+        "or talked over.\">Random AI Charts</a>\n",
         "        </div>\n",
     )));
     assert!(include_str!("../../beta/research.html").contains(concat!(
@@ -2740,6 +2746,9 @@ fn the_home_page_lists_the_sites_with_itself_ringed() {
         ),
         concat!(
             "CIVVIS Performance</a>\n",
+            "          <a class=\"site-link sub-link\" href=\"../charts/random-ai-charts/\" ",
+            "title=\"Charts the AI agents added on their own, kept here until they are asked for ",
+            "or talked over.\">Random AI Charts</a>\n",
             "        </div>\n",
             "      </div>\n",
             "      <a class=\"site-link\" href=\"../experiments/\" ",

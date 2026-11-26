@@ -34,7 +34,9 @@ SOURCES = sorted(set(re.findall(r'_page="\$source_tree/beta/([a-z_]+\.html)"', P
 #: Charts/'s pages, in the order its list gives them, by address (operator,
 #: 2026-11-24: "move ai interpretablity to the top of the charts/ then civ
 #: analytics, win analytics. elo rankings.. civvis performanc"; and, later
-#: that day, "we want a new ai insights", which is listed over them).
+#: that day, "we want a new ai insights", which is listed over them; and,
+#: 2026-11-26, "please add another chart to the end of charts/ called random
+#: ai charts", the last).
 CHARTS = [
     ("ai-insights", "AI Insights"),
     ("civ-ai-interpretability", "Civ AI Interpretability"),
@@ -42,6 +44,7 @@ CHARTS = [
     ("win-analytics", "Win Analytics"),
     ("elo-rankings", "ELO Rankings"),
     ("civvis-performance", "CIVVIS Performance"),
+    ("random-ai-charts", "Random AI Charts"),
 ]
 LINK = re.compile(r'<a class="(site-link(?: sub-link)?)" href="([^"]*)"([^>]*)>([^<]+)</a>')
 

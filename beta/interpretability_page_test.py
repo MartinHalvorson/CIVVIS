@@ -334,6 +334,7 @@ class TheSiteList(unittest.TestCase):
                 ("site-link sub-link", "../win-analytics/", "Win Analytics"),
                 ("site-link sub-link", "../elo-rankings/", "ELO Rankings"),
                 ("site-link sub-link", "../civvis-performance/", "CIVVIS Performance"),
+                ("site-link sub-link", "../random-ai-charts/", "Random AI Charts"),
                 ("site-link", "../../experiments/", "Experiments"),
                 ("site-link", "../../chaos-monkey/", "Chaos Monkey"),
                 ("site-link", "../../", "CIVVIS"),

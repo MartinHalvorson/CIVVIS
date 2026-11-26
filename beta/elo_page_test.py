@@ -321,20 +321,21 @@ class Page(unittest.TestCase):
         # straetgies, pulled from win analytics".
         record = PAGE[PAGE.index('<div class="elo-record" id="elo-record" hidden>'):]
         sections = re.findall(r'<section [^>]*id="([a-z-]+)"', record)
-        self.assertEqual(sections, ["rank-strategies", "elo-levels", "elo-over-time"])
+        # The two readings of each Firaxis level stood beside the strategies
+        # until 2026-11-26, and are on Random AI Charts since (operator:
+        # "please move all the ai generated charts that i havent approved of
+        # or we have discussed to here"); `random_page_test.py` holds them.
+        self.assertEqual(sections, ["rank-strategies", "elo-over-time"])
+        self.assertNotIn('id="elo-levels"', PAGE)
         self.assertIn('<h2 class="rank-title" id="rank-strategies-title">Player strategies</h2>', PAGE)
         self.assertIn('<h2 class="rank-title" id="elo-over-time-title">Elo over time</h2>', PAGE)
 
     def test_every_figure_is_shown_with_the_diplomatic_victory_on_and_off(self):
         # Player strategies: a column for each, its head sorting the list.
-        strategies = PAGE[PAGE.index('id="rank-strategies"'):PAGE.index('id="elo-levels"')]
+        strategies = PAGE[PAGE.index('id="rank-strategies"'):PAGE.index('id="elo-over-time"')]
         self.assertEqual(re.findall(r'data-sort="(\w+)" aria-pressed="(\w+)"[^>]*>([^<]+)<', strategies),
                          [("on", "true", "Diplo on"), ("off", "false", "Diplo off")])
         self.assertIn("item.append(label, value(r, \"on\"), value(r, \"off\"));", PAGE)
-        # The levels: each reading's benchmark and simulator side by side.
-        levels = PAGE[PAGE.index('id="elo-levels-table"'):PAGE.index("</thead>", PAGE.index('id="elo-levels-table"'))]
-        self.assertEqual(re.findall(r"<span>(Diplo o\w+)</span>", levels), ["Diplo on", "Diplo off"])
-        self.assertEqual(re.findall(r'<th scope="col"[^>]*>(\w+)</th>', levels), ["Level", "Benchmark", "Simulator", "Benchmark", "Simulator"])
         # The graph: one reading at a time, switched over the key.
         graph = PAGE[PAGE.index('id="elo-over-time"'):PAGE.index('id="elo-legend"')]
         self.assertEqual(re.findall(r'data-diplo="(\w+)" aria-pressed="(\w+)">([^<]+)<', graph),
