@@ -2248,7 +2248,12 @@ fn viewer_marks_the_selected_revision_and_its_compact_ages_above_the_minimap() {
 /// is named Civ: Edge of Tomorrow since 2026-11-26 (operator: "change edge
 /// of tomorrow to - Civ: edge of tomorrow"), and stands just above AI
 /// Debugger since later that day (operator: "lets move civvis: edge of
-/// tomorrow above civvis ai debugger in the ordering").
+/// tomorrow above civvis ai debugger in the ordering"). The simulator's own pages are
+/// at addresses of their own since 2026-11-26 (operator: "maybe change the
+/// url for this to be of the form: civvis.ai/edge-of-tomorrow. the others
+/// can be civvis.ai/debugger and civvis.ai/doctor-strange"), where they
+/// were the viewer's address with `?mode=strange`, `?mode=play` and
+/// `?mode=tomorrow`.
 #[test]
 fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
     assert!(EMBEDDED_INDEX.contains(concat!(
@@ -2257,9 +2262,9 @@ fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
         "        <a class=\"home-link\" id=\"chartslink\" href=\"/charts/ai-insights\" target=\"_top\">Charts/</a>\n",
         "        <a class=\"home-link\" id=\"tourlink\" href=\"/tournaments\" target=\"_top\">Tournaments</a>\n",
         "        <a class=\"home-link\" id=\"watchlink\" href=\"./\" target=\"_top\">CIVVIS</a>\n",
-        "        <a class=\"home-link\" id=\"strangelink\" href=\"?mode=strange\" target=\"_top\">Doctor Strange's CIVVIS</a>\n",
-        "        <a class=\"home-link\" id=\"tomorrowlink\" href=\"?mode=tomorrow\" target=\"_top\">CIVVIS: Edge of Tomorrow</a>\n",
-        "        <a class=\"home-link\" id=\"playlink\" href=\"?mode=play\" target=\"_top\">CIVVIS AI Debugger</a>\n",
+        "        <a class=\"home-link\" id=\"strangelink\" href=\"doctor-strange\" target=\"_top\">Doctor Strange's CIVVIS</a>\n",
+        "        <a class=\"home-link\" id=\"tomorrowlink\" href=\"edge-of-tomorrow\" target=\"_top\">CIVVIS: Edge of Tomorrow</a>\n",
+        "        <a class=\"home-link\" id=\"playlink\" href=\"debugger\" target=\"_top\">CIVVIS AI Debugger</a>\n",
         "        <a class=\"home-link\" id=\"civ6link\" ",
         "href=\"https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/\" ",
         "target=\"_blank\" rel=\"noopener\" title=\"Buy Civilization VI on Steam\">Civ 6</a>\n",
@@ -2294,9 +2299,19 @@ fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
     // marks the page (`strange` on the root, which is what lights its link).
     assert!(include_str!("../../beta/shim.js")
         .contains("else if (mode === \"strange\") payload.spectate = false;"));
-    assert!(include_str!("../../web/assets/app_debugger.js").contains(
-        "return DEBUG_PANE === null && new URLSearchParams(location.search).get(\"mode\") === \"strange\";"
-    ));
+    assert!(include_str!("../../web/assets/app_debugger.js")
+        .contains("return DEBUG_PANE === null && window.CIVVIS_PAGE_MODE === \"strange\";"));
+    // Which page it is, the address says: the head script reads the
+    // simulator's page off it, or an old link's `?mode=`, and the shim, which
+    // runs before it, reads the same table.
+    let table = "const SIMULATOR_PAGES = {debugger: \"play\", \"doctor-strange\": \"strange\", \"edge-of-tomorrow\": \"tomorrow\"};";
+    assert!(EMBEDDED_INDEX.contains(table));
+    assert!(include_str!("../../beta/shim.js").contains(table));
+    assert!(include_str!("../../beta/_worker.js").contains(table));
+    assert!(EMBEDDED_INDEX.contains(concat!(
+        "    window.CIVVIS_PAGE_MODE = (Object.hasOwn(SIMULATOR_PAGES, page) ? SIMULATOR_PAGES[page] : null) ||\n",
+        "      new URLSearchParams(location.search).get(\"mode\");\n",
+    )));
     assert!(include_str!("../../web/assets/app_debugger.js")
         .contains("document.documentElement.classList.add(\"strange\");"));
     // Edge of Tomorrow (operator, 2026-11-25: "above civ 6 and below ai
@@ -2356,9 +2371,8 @@ fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
         Some("duel")
     );
     let debugger = include_str!("../../web/assets/app_debugger.js");
-    assert!(debugger.contains(
-        "return DEBUG_PANE === null && new URLSearchParams(location.search).get(\"mode\") === \"tomorrow\";"
-    ));
+    assert!(debugger
+        .contains("return DEBUG_PANE === null && window.CIVVIS_PAGE_MODE === \"tomorrow\";"));
     assert!(debugger.contains(concat!(
         "if (TOMORROW) {\n",
         "  document.documentElement.classList.add(\"tomorrow\");\n",
@@ -2756,9 +2770,9 @@ fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
 /// and so is everything the Tactics row took with it before them.
 ///
 /// The links are pinned by their destinations: CIVVIS is the lane's stock
-/// exhibition and Debugger seats the visitor through the shim's
-/// `mode=play`. Both are lane-relative (`../` from the lane's /home), so
-/// the test lane's home page opens the test lane's viewer.
+/// exhibition and the AI Debugger, at /debugger, seats the visitor through
+/// the shim (once `?mode=play`). Both are lane-relative (`../` from the
+/// lane's /home), so the test lane's home page opens the test lane's viewer.
 #[test]
 fn the_home_page_lists_the_sites_with_itself_ringed() {
     let landing = include_str!("../../beta/landing.html");
@@ -2797,11 +2811,11 @@ fn the_home_page_lists_the_sites_with_itself_ringed() {
             "running, scheduled and finished.\">Tournaments</a>\n",
             "      <a class=\"site-link\" href=\"../\" ",
             "title=\"Every civilization is played by a CIVVIS AI agent.\">CIVVIS</a>\n",
-            "      <a class=\"site-link\" href=\"../?mode=strange\" ",
+            "      <a class=\"site-link\" href=\"../doctor-strange\" ",
             "title=\"One world, two timelines: the same game played two ways, side by side, on a timeline that branches.\">Doctor Strange's CIVVIS</a>\n",
-            "      <a class=\"site-link\" href=\"../?mode=tomorrow\" ",
+            "      <a class=\"site-link\" href=\"../edge-of-tomorrow\" ",
             "title=\"You play one civilization, with a jump back: the world returns to the turn you woke on, as it stood.\">CIVVIS: Edge of Tomorrow</a>\n",
-            "      <a class=\"site-link\" href=\"../?mode=play\" ",
+            "      <a class=\"site-link\" href=\"../debugger\" ",
             "title=\"You play one civilization. CIVVIS AI agents play the rest.\">CIVVIS AI Debugger</a>\n",
             "      <a class=\"site-link\" ",
             "href=\"https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/\" ",
@@ -2963,8 +2977,9 @@ fn the_home_page_lists_the_sites_with_itself_ringed() {
             .exists(),
         "tools/landing_battles.py regenerates a block the home page no longer carries"
     );
-    // And the shim knows the word the Debugger link spends: `mode=play`
-    // seats the visitor, `mode=watch` leaves the world to its AIs.
+    // And the shim knows what the Debugger's page means: `play` (its
+    // address, /debugger, or an old link's `mode=play`) seats the visitor,
+    // `mode=watch` leaves the world to its AIs.
     let shim = include_str!("../../beta/shim.js");
     assert!(shim.contains("if (mode === \"play\") payload.spectate = false;"));
     assert!(shim.contains("else if (mode === \"watch\") payload.spectate = true;"));
@@ -12145,6 +12160,19 @@ fn native_channel_routes_to_the_embedded_page() {
     assert!(viewer_path("/rust/"));
     assert!(viewer_path(request_path("/rust?instance=9232&game=17")));
     assert!(!viewer_path("/wasm"));
+}
+
+/// The simulator's own pages are the viewer at addresses of their own
+/// (operator, 2026-11-26: "maybe change the url for this to be of the form:
+/// civvis.ai/edge-of-tomorrow. the others can be civvis.ai/debugger and
+/// civvis.ai/doctor-strange"), on a desktop build as on the site.
+#[test]
+fn the_simulators_pages_route_to_the_embedded_page() {
+    for page in ["/debugger", "/doctor-strange", "/edge-of-tomorrow"] {
+        assert!(viewer_path(page), "{page} is not the viewer");
+    }
+    assert!(viewer_path(request_path("/edge-of-tomorrow?instance=9232")));
+    assert!(!viewer_path("/doctor-strange-2"));
 }
 
 #[test]

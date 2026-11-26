@@ -713,6 +713,12 @@ translations = {
 # (https:, data:, mailto:) leaves the site, and one a script puts together
 # (quotes, `${...}`) is not an address until the script has run.
 PLAIN = re.compile(r"[A-Za-z0-9._~/?#=&%+-]+")
+# The simulator's own pages are the viewer at addresses of their own
+# (beta/_worker.js, `SIMULATOR_PAGES`): no file stands at them, and the lane
+# has them when its viewer reads which page it is off its address.
+viewer = out / "index.html"
+SIMULATOR = ({"debugger", "doctor-strange", "edge-of-tomorrow"}
+             if viewer.is_file() and "CIVVIS_PAGE_MODE" in viewer.read_text(encoding="utf-8") else set())
 
 
 def lands(address, link):
@@ -724,7 +730,7 @@ def lands(address, link):
         return True  # the lane's root: the viewer
     if where == ".." or where.startswith("../"):
         return False  # out of the lane
-    return where in carried or (out / where).is_file()
+    return where in carried or where in SIMULATOR or (out / where).is_file()
 
 
 for address in carried:
@@ -806,6 +812,15 @@ bundle_bytes=$(find "$out" -type f ! -name '*.br' -exec wc -c {} + | tail -1 | a
 # another revision cannot be slipped into a lane, and a lane cannot lose one.
 pages_json=""
 for page in ${pages[@]+"${pages[@]}"}; do pages_json="$pages_json${pages_json:+, }\"$page\""; done
+# `simulator_pages`: the addresses of the simulator's own pages, which are the
+# viewer itself (beta/_worker.js, `SIMULATOR_PAGES`), when this revision's
+# viewer reads which page it is off its address (`CIVVIS_PAGE_MODE`). A
+# revision from before that is reached by `?mode=` alone, and its lane leaves
+# the list out, so the worker forwards the new addresses there to the old.
+simulator_json=""
+if grep -q "CIVVIS_PAGE_MODE" "$source_tree/web/index.html"; then
+  simulator_json='  "simulator_pages": ["debugger", "doctor-strange", "edge-of-tomorrow"],'
+fi
 cat > "$out/build.json" <<JSON
 {
   "commit": "$commit",
@@ -813,6 +828,7 @@ cat > "$out/build.json" <<JSON
   "commit_time": "$commit_time",
   "built_at": "$built_at",
   "pages": [$pages_json],
+${simulator_json}
   "wasm_bytes": $wasm_bytes,
   "download_bytes": $download_bytes,
   "bundle_bytes": $bundle_bytes

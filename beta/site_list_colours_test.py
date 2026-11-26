@@ -37,10 +37,12 @@ until gold became CIVVIS's).
 
 The pages do it without a word in the markup, which a dozen tests pin as it
 stands: a link that ends at the lane's own address (`../`, or two up from a
-page of Charts/, bare for CIVVIS and with `?mode=play` for AI Debugger) is a
-link into the simulator, one that ends `?mode=strange` is Doctor Strange's
-Civ 6 (the same game shown as a tree of two timelines), one that ends
-`?mode=tomorrow` is Edge of Tomorrow (the same game with a jump back), and a
+page of Charts/) is CIVVIS, one that ends `/debugger` is AI Debugger (the
+simulator with a seat of your own), one that ends `/doctor-strange` is Doctor
+Strange's Civ 6 (the same game shown as a tree of two timelines), one that
+ends `/edge-of-tomorrow` is Edge of Tomorrow (the same game with a jump back;
+the three are the simulator at addresses of their own since 2026-11-26, and
+were `?mode=play`, `?mode=strange` and `?mode=tomorrow` until then), and a
 link to Steam's shop is Civ 6. So this reads every page `publish.sh`
 publishes and holds each list to it: the six rules are there, and they catch
 those links and no other. The simulator's own
@@ -87,8 +89,8 @@ BUG_GREEN = "%2345d16a"
 #: AI Debugger is the simulator's black, its ground (`--ink` in
 #: `web/index.html`), inside the edge its own buttons have (`--line`).
 BLACK = (
-    '  .site-link[href$="?mode=play"] { background: #050607; color: #c9cecb; box-shadow: inset 0 0 0 1px #30363a; }\n'
-    '  .site-link[href$="?mode=play"]:hover, .site-link[href$="?mode=play"]:focus-visible { background: #181c1f; color: #fff; }\n'
+    '  .site-link[href$="/debugger"] { background: #050607; color: #c9cecb; box-shadow: inset 0 0 0 1px #30363a; }\n'
+    '  .site-link[href$="/debugger"]:hover, .site-link[href$="/debugger"]:focus-visible { background: #181c1f; color: #fff; }\n'
 )
 #: Edge of Tomorrow, the simulator played with a jump back, is in the film
 #: poster's colours (the lane's reading of "the movie poster vibe"): the
@@ -98,12 +100,12 @@ BLACK = (
 #: states the same colours by name.
 GUNMETAL, EMBER, STEEL, SILVER = "#1e2a33", "#b04a18", "#8fa3b5", "#eef2f5"
 TOMORROW = (
-    '  .site-link[href$="?mode=tomorrow"] {\n'
+    '  .site-link[href$="/edge-of-tomorrow"] {\n'
     f'    background: linear-gradient(135deg, {GUNMETAL} 35%, {EMBER}); color: {SILVER};\n'
     f'    box-shadow: inset 0 0 0 1px {STEEL}, 0 0 6px rgba(255, 120, 40, 0.5);\n'
     '  }\n'
-    '  .site-link[href$="?mode=tomorrow"]:hover,\n'
-    '  .site-link[href$="?mode=tomorrow"]:focus-visible {\n'
+    '  .site-link[href$="/edge-of-tomorrow"]:hover,\n'
+    '  .site-link[href$="/edge-of-tomorrow"]:focus-visible {\n'
     '    background: linear-gradient(135deg, #2b3b47 35%, #c2541a); color: #fff;\n'
     '    box-shadow: inset 0 0 0 1px #b9c8d6, 0 0 10px rgba(255, 130, 50, 0.8);\n'
     '  }\n'
@@ -115,12 +117,12 @@ RING = '  .site-link[aria-current="page"]'
 #: in their pale gold. The simulator states the same colours by name.
 TUNIC, CLOAK, SPARK, NAME = "#1c2a7a", "#a3122f", "#ff9a2e", "#ffe3a3"
 STRANGE = (
-    '  .site-link[href$="?mode=strange"] {\n'
+    '  .site-link[href$="/doctor-strange"] {\n'
     f'    background: linear-gradient(135deg, {TUNIC} 30%, {CLOAK}); color: {NAME};\n'
     f'    box-shadow: inset 0 0 0 1px {SPARK}, 0 0 6px rgba(255, 138, 30, 0.6);\n'
     '  }\n'
-    '  .site-link[href$="?mode=strange"]:hover,\n'
-    '  .site-link[href$="?mode=strange"]:focus-visible {\n'
+    '  .site-link[href$="/doctor-strange"]:hover,\n'
+    '  .site-link[href$="/doctor-strange"]:focus-visible {\n'
     '    background: linear-gradient(135deg, #2638a0 30%, #c8193d); color: #fff;\n'
     '    box-shadow: inset 0 0 0 1px #ffb85c, 0 0 10px rgba(255, 150, 40, 0.85);\n'
     '  }\n'
@@ -143,11 +145,11 @@ def ground(href: str) -> str:
     `$=` is "ends with" and `^=` "starts with"."""
     if href.endswith("../"):
         return "gold"
-    if href.endswith("?mode=play"):
+    if href.endswith("/debugger"):
         return "black"
-    if href.endswith("?mode=tomorrow"):
+    if href.endswith("/edge-of-tomorrow"):
         return "tomorrow"
-    if href.endswith("?mode=strange"):
+    if href.endswith("/doctor-strange"):
         return "strange"
     if href.startswith("https://store.steampowered.com/"):
         return "steam"
@@ -205,7 +207,7 @@ class Pages(unittest.TestCase):
                 for colour in WHITE:
                     self.assertNotIn(colour, rules)
                 # AI Debugger ends in its green bug, drawn after the name.
-                bug = '  .site-link[href$="?mode=play"]::after {\n'
+                bug = '  .site-link[href$="/debugger"]::after {\n'
                 self.assertEqual(page.count(bug), 1)
                 self.assertLess(page.index(BLACK), page.index(bug))
                 self.assertIn(BUG_GREEN, page[page.index(bug):page.index("  }\n", page.index(bug))])
