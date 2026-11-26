@@ -14970,7 +14970,8 @@ fn the_debugger_opens_on_the_debugger_view_and_single_player_is_a_switch() {
         // reads as it does for a watcher, and the seat's rail and launch
         // bar stay off.
         "if (SPEC || debuggerView()) sel = null;",
-        "const waiting = debuggerView() ? [] : unitsNeedingOrders();",
+        // Nor in Edge of Tomorrow, whose seat is moved only by Auto-play.
+        "const waiting = debuggerView() || window.civvisSeatHandsOff ? [] : unitsNeedingOrders();",
         "if (!state || SPEC || debuggerView()) { rail.classList.remove(\"on\"); return; }",
         // The keys that play the seat wait for Single player too: a stray
         // Enter must not end a turn that was only being read.
