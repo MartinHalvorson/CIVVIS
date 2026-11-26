@@ -609,7 +609,7 @@ a game drawn under the debugger is branched where it stands, as Branch does
 it, with nothing pressed and nothing asked, both tracks on the one Civ AI.
 That is given once a game (`debugOpenTheGame`, by the game's seed): a branch
 that is dropped leaves the one timeline, which stays one until Branch makes
-another or a new game begins. Doctor Strange's Civ 6 is two worlds and
+another or a new game begins. Doctor Strange's CIVVIS is two worlds and
 opens on them, unless it is asked for with `tracks=1`. A window under 900px
 wide, a small device, and a seat being played by hand in the Single player
 view open on the one timeline whatever was asked.
@@ -716,7 +716,7 @@ from. Then the one picture takes the other's place in one move
   the first frame and nothing moves after it, and B is already seated with
   the Civ AI picked for it. A half that never arrives is not waited on for ever:
   after 6 s the two are shown as they are.
-- **A game that opens on two tracks** (`tracks=2`, Doctor Strange's Civ 6) is not shown on one screen first.
+- **A game that opens on two tracks** (`tracks=2`, Doctor Strange's CIVVIS) is not shown on one screen first.
   In the task that draws its first state the window goes under a veil, and
   the veil lifts on the two screens.
 - **Drop A, Drop B, a branch's ✕.** The two screens stay as they are, with
@@ -750,7 +750,7 @@ to 1920 wide; the longer times with the host busy).
 A split's timeline is one up to the turn it was branched on, and two from
 there, from the moment Branch makes it (operator 2026-11-26: "please take
 more of a doctor strange's civ 6 approach. branches should split from 1 to
-2... not 2 to 1"), as Doctor Strange's Civ 6 draws its worlds parting.
+2... not 2 to 1"), as Doctor Strange's CIVVIS draws its worlds parting.
 Two halves that go on playing the same moves are still two branches, each
 with its own Civ AI. Until then the timeline stayed one rail for as long as
 the halves held the same world (operator 2026-11-21: "branching the
@@ -1038,7 +1038,7 @@ kept), so many forks late in a long game are counted in gigabytes; `room`
 lowers what the timeline keeps before the forks are made. The desktop
 program has no forks yet: its server does not know `/forks`.
 
-### A world's own engine (Doctor Strange's Civ 6)
+### A world's own engine (Doctor Strange's CIVVIS)
 
 On `?mode=strange` the page holds up to a dozen worlds, and one engine held
 them all, so a turn of every world, and the futures played ahead of them,
@@ -1377,7 +1377,7 @@ to be: a condition and a search's number are read off the omniscient
 observation, the spectator's view of the whole table. That is the searcher
 looking at the world, not a player looking at it.
 
-## Doctor Strange's Civ 6
+## Doctor Strange's CIVVIS
 
 Operator, 2026-11-23: "it will have a scrolling guitar hero setup. where the
 timeline we are on and following is center screen. forward in time is up.
