@@ -978,7 +978,7 @@ pub fn live_pause_status() -> Value {
 
 /// The lane's tournament label (`{"label": "Tourney 8: 17% win rate (46 games, 46% done)"}`),
 /// written beside the other live files by the lane's tournament tracker from the same
-/// ledger count as the Experiments page (operator 2026-11-19: the Mode reads the
+/// ledger count as the Tournaments page (operator 2026-11-19: the Mode reads the
 /// tournament's record and matches the table). The page shows "<name>: <record>" as
 /// two lines, the name on the Mode row and the record under it (operator 2026-11-26).
 fn live_mode_path() -> PathBuf {
