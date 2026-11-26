@@ -687,7 +687,28 @@ def check_gate(dist: pathlib.Path) -> list[str]:
                         f"{prefix}/{folder}/ answers from {landed}; it is meant to open "
                         f"{prefix}/{first}/")
 
+        # The simulator's own pages (operator 2026-11-26: "maybe change the
+        # url for this to be of the form: civvis.ai/edge-of-tomorrow. the
+        # others can be civvis.ai/debugger and civvis.ai/doctor-strange")
+        # are the lane's viewer at addresses of their own, in a lane whose
+        # build says it has them (`SIMULATOR_PAGES` in beta/_worker.js).
+        def simulator_routes(prefix, which, build):
+            for name in build.get("simulator_pages") or []:
+                address = f"{prefix}/{name}"
+                try:
+                    answer = get(address)
+                    body = answer.read()
+                except urllib.error.HTTPError as answer:
+                    problems.append(f"{which}'s {name} page answers HTTP {answer.code} at {address}")
+                    continue
+                landed = urllib.parse.urlsplit(answer.geturl()).path
+                if landed != address:
+                    problems.append(f"{address} answers from {landed} rather than from itself")
+                elif b"shim.js" not in body:
+                    problems.append(f"{address} is not serving {which}'s viewer")
+
         lane_routes("", "the stable lane", lane_pages(json.loads((dist / "build.json").read_text())))
+        simulator_routes("", "the stable lane", json.loads((dist / "build.json").read_text()))
 
         # And so is the test lane — when this directory carries one. A
         # standalone publish.sh build is a single lane and has no /test; the
@@ -707,6 +728,7 @@ def check_gate(dist: pathlib.Path) -> list[str]:
             lane_routes(
                 "/test", "the test lane",
                 lane_pages(json.loads((dist / "test" / "build.json").read_text())))
+            simulator_routes("/test", "the test lane", json.loads((dist / "test" / "build.json").read_text()))
         else:
             print("    (single-lane build: no /test to route)")
 

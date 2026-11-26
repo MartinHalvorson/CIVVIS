@@ -58,6 +58,18 @@ import verify  # noqa: E402
 PUBLISH = (BETA / "publish.sh").read_text(encoding="utf-8")
 WORKER = (BETA / "_worker.js").read_text(encoding="utf-8")
 VIEWER = (BETA.parent / "web" / "index.html").read_text(encoding="utf-8")
+#: The simulator's own pages, by the name the list shows, and the address
+#: each opens (operator 2026-11-26: "maybe change the url for this to be of
+#: the form: civvis.ai/edge-of-tomorrow. the others can be civvis.ai/debugger
+#: and civvis.ai/doctor-strange"). They are the viewer at addresses of their
+#: own, which the router serves (`SIMULATOR_PAGES` in _worker.js); the
+#: operator named these two short, where the rule above would spell the
+#: whole name.
+SIMULATOR = {
+    "Doctor Strange's CIVVIS": "doctor-strange",
+    "CIVVIS AI Debugger": "debugger",
+    "CIVVIS: Edge of Tomorrow": "edge-of-tomorrow",
+}
 
 #: The pages `publish.sh` publishes, found in the script rather than listed
 #: here: a page added to a lane is held to the rule the day it is added.
@@ -185,11 +197,21 @@ class Addresses(unittest.TestCase):
                         self.assertEqual(where, opens, f"{source}: {name} -> {href}")
                     else:
                         self.assertIn(where, firsts[slug(name)], f"{source}: {name} -> {href}")
+                elif name in SIMULATOR:
+                    # The simulator's own pages, at addresses of their own.
+                    self.assertEqual(where, SIMULATOR[name], f"{source}: {name} -> {href}")
                 else:
-                    # CIVVIS and AI Debugger: the viewer, at the lane's root.
+                    # CIVVIS: the viewer, at the lane's root.
                     self.assertEqual(where, ".", f"{source}: {name} -> {href}")
                 checked += 1
         self.assertGreaterEqual(checked, 25)
+
+    def test_the_router_serves_the_simulators_pages_where_the_list_links_them(self):
+        table = re.search(r"const SIMULATOR_PAGES = \{([^}]*)\};", WORKER).group(1)
+        served = set(re.findall(r'"?([a-z][a-z-]*)"?\s*:', table))
+        self.assertEqual(served, set(SIMULATOR.values()))
+        # And the publish check knows no file stands at them.
+        self.assertIn('{"debugger", "doctor-strange", "edge-of-tomorrow"}', PUBLISH)
 
     def test_the_folder_opens_the_same_page_from_everywhere(self):
         opens = set()
@@ -220,7 +242,7 @@ class Addresses(unittest.TestCase):
                         (BETA / "assets" / where.split("/assets/", 1)[1]).is_file(), f"{source}: {link}")
                 else:
                     self.assertIn(
-                        where, addresses | {"."},
+                        where, addresses | {"."} | set(SIMULATOR.values()),
                         f"{source}, at {ADDRESS[source]}/, links {link}, which is no page of the site")
                 checked += 1
         self.assertGreaterEqual(checked, 30)

@@ -3936,8 +3936,21 @@ fn request_path(target: &str) -> &str {
     target.split_once('?').map_or(target, |(path, _)| path)
 }
 
+/// The viewer's addresses: the root, and the simulator's own pages, which are
+/// the viewer at addresses of their own (operator 2026-11-26: "maybe change
+/// the url for this to be of the form: civvis.ai/edge-of-tomorrow. the others
+/// can be civvis.ai/debugger and civvis.ai/doctor-strange"). The page reads
+/// which one it is off its address (`CIVVIS_PAGE_MODE` in web/index.html).
 fn viewer_path(path: &str) -> bool {
-    matches!(path, "/" | "/index.html" | "/rust" | "/rust/")
+    matches!(
+        path,
+        "/" | "/index.html"
+            | "/rust"
+            | "/rust/"
+            | "/debugger"
+            | "/doctor-strange"
+            | "/edge-of-tomorrow"
+    )
 }
 
 /// One parameter out of a request target's query, or `None` if the request

@@ -119,6 +119,21 @@
     return pane && window.parent !== window ? pane : null;
   })();
 
+  // Which of the simulator's pages this is (operator 2026-11-26: "maybe
+  // change the url for this to be of the form: civvis.ai/edge-of-tomorrow.
+  // the others can be civvis.ai/debugger and civvis.ai/doctor-strange"): the
+  // address names it, or an old link's `mode=` does. The page's head script
+  // reads the same (`CIVVIS_PAGE_MODE`, web/index.html), after this has run,
+  // and beta/_worker.js serves the viewer at those addresses; the three hold
+  // one table (`SIMULATOR_PAGES`).
+  const SIMULATOR_PAGES = {debugger: "play", "doctor-strange": "strange", "edge-of-tomorrow": "tomorrow"};
+  const PAGE_MODE = (() => {
+    const page = window.location.pathname.replace(/\/(?:index\.html)?$/, "").split("/").pop();
+    if (Object.hasOwn(SIMULATOR_PAGES, page)) return SIMULATOR_PAGES[page];
+    const asked = (new URL(window.location.href).searchParams.get("mode") || "").trim().toLowerCase();
+    return /^[a-z0-9_]+$/.test(asked) ? asked : null;
+  })();
+
   // `let`: Doctor Strange's split closed onto a world with an engine of its
   // own makes that engine the page's (`adoptHome`).
   let worker = PANE === null ? new Worker(WORKER_URL) : null;
@@ -221,12 +236,13 @@
     if (era) payload.tactics_era = era;
     const turns = whole("turns");
     if (turns) payload.max_turns = turns;
-    // Who is at the keyboard. `mode=play` seats the visitor in the first
-    // chair — a single-player game on the settings the link names — and
-    // `mode=watch` leaves the world to its AIs. Anything else leaves the
-    // stock setting standing, which is the spectated exhibition. This is
-    // how the home page's "Play" quadrants differ from its "Watch" ones.
-    const mode = word("mode");
+    // Who is at the keyboard. The AI Debugger (`/debugger`, once `mode=play`)
+    // seats the visitor in the first chair — a single-player game on the
+    // settings the link names — and `mode=watch` leaves the world to its AIs.
+    // Anything else leaves the stock setting standing, which is the spectated
+    // exhibition. This is how the home page's "Play" quadrants differ from
+    // its "Watch" ones.
+    const mode = PAGE_MODE;
     if (mode === "play") payload.spectate = false;
     else if (mode === "strange") payload.spectate = false;
     // Edge of Tomorrow is a played game too: the same seat, with a jump back.
@@ -358,7 +374,7 @@
 
   // ------------------------------------------------------- a world's own engine
   //
-  // Doctor Strange's Civ 6 (`?mode=strange`) holds up to a dozen worlds, each
+  // Doctor Strange's Civ 6 (`/doctor-strange`) holds up to a dozen worlds, each
   // a half of one split, and one engine held them all. An engine is one
   // thread, so a turn of three worlds, or the futures played ahead of them,
   // took three turns' time one after another while the computer's other cores
@@ -384,7 +400,7 @@
   //     engine the page's own;
   //   - a world whose page has gone (a deleted branch, an earlier split) has
   //     its engine let go, once whatever it was asked has been answered.
-  const HOMES = PANE === null && new URL(window.location.href).searchParams.get("mode") === "strange";
+  const HOMES = PANE === null && PAGE_MODE === "strange";
   // A world's engine, by the world's pane name, and the making of one under
   // way: a world's requests wait for its engine to be made or changed.
   const homes = new Map();
