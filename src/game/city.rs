@@ -1782,6 +1782,18 @@ impl Game {
         self.query_memo.own_yields.borrow_mut().clear();
     }
 
+    /// The acting seat wrote its own governor settings (`citizen_food_bias`,
+    /// `city_directives`) without an action. Drops what is kept for its own
+    /// cities, which read those settings, and leaves its rivals' standing:
+    /// no city of another seat reads them. A production seat writes them back
+    /// from its plan every frame, and with [`Game::board_written`] there that
+    /// threw away every rival yield the next frame's decision view could have
+    /// reused — the session game kept rival yields for every seat's turn and
+    /// answered none of them from what it kept.
+    pub fn own_settings_written(&mut self) {
+        self.query_memo.own_yields.borrow_mut().clear();
+    }
+
     /// Run `what_if`, which may rearrange the board in place and must put it
     /// back exactly as it found it, then hand back what
     /// [`Game::keep_rival_yields`] held before it, with the tile epoch and

@@ -221,7 +221,7 @@ pub fn take_turn(ai: &mut AdvancedAi, game: &mut Game, pid: usize) {
         // Governor preferences are player decisions, not predicted resources.
         game.players[pid].citizen_food_bias = view.players[pid].citizen_food_bias;
         game.players[pid].city_directives = view.players[pid].city_directives.clone();
-        game.board_written();
+        game.own_settings_written();
         let mut executed_movement = Vec::new();
         let refusals_before = refusal_count(game, pid);
         // `districts-price-the-improvement`: like the live bridge, which sends
