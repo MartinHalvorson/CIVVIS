@@ -5250,6 +5250,8 @@ const STRANGE_NAME_MOST = 36;
 // have (we can say top 10 for now)"), and how long it waits for their worlds
 // to be there before it lets time run on without the rest.
 const STRANGE_ALL_TOP = 10, STRANGE_ALL_WAIT_MS = 90000;
+// How many worlds Branch 5 Next Best makes (`strangeNext`).
+const STRANGE_NEXT_MANY = 5;
 // How far ahead of the open turn each world's future is played, and the most
 // turns of it a world is asked for at once (`strangeAheadNext`): while the
 // worlds stand still, and between the turns of time running, where the next
@@ -5528,6 +5530,17 @@ const STRANGE_STYLE = `
     background: #14231f; border-color: ${STRANGE_GOLD}99; text-overflow: ellipsis;
   }
   #strange-hud .strange-deck .strange-branch:disabled { opacity: .38; cursor: default; }
+  /* Over Branch, the next best (operator 2026-11-26: "in doctor strange's
+     civvis, above the branch button, Branch Next Best and "Branch 5 Next
+     Best" on the right"): a row across the deck between Following and Create
+     Branch, its two halves the two buttons, in Create Branch's gold on its
+     dark, a line thinner. */
+  #strange-hud .strange-deck .strange-nexts { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; }
+  #strange-hud .strange-deck .strange-next {
+    height: 28px; font-weight: 700; color: ${STRANGE_GOLD}; background: #14231f; border-color: ${STRANGE_GOLD}66;
+  }
+  #strange-hud .strange-deck .strange-next:hover:not(:disabled) { border-color: ${STRANGE_GOLD}; }
+  #strange-hud .strange-deck .strange-next:disabled { opacity: .38; cursor: default; }
   /* Autosearch, from the base timeline, under Branch (operator 2026-11-25:
      "add the autosearch stuff to doctor strange's civ 6. we should be able
      to efficiently search paths to try to find a desirable path"). A size
@@ -5678,6 +5691,10 @@ const strange = {
   // the order they were made in: an older world is what a newer one is a
   // branch of (`strangeTree`).
   order: ["a", "b"], born: {a: 0, b: 1}, births: 2,
+  // Where each branch was made: the world it is a branch of and that
+  // world's turn then ({from, turn}). Until it stands on that turn its copy
+  // is on its way, and it is the same world as the one it came from.
+  made: {},
   // The colour of each world's branch, and how many colours have been
   // handed out.
   tint: {a: STRANGE_INKS[0], b: STRANGE_INKS[1]}, inks: 2,
@@ -6068,6 +6085,7 @@ function strangeMake(name, from, after = from, plan = null) {
   if (!letter) return null;
   strange.order.splice(strange.order.indexOf(after) + 1, 0, letter);
   strange.born[letter] = strange.births++;
+  strange.made[letter] = {from, turn: split.panes[from] ? split.panes[from].turn : null};
   strange.tint[letter] = strangeInk();
   strange.lanes[letter] = strange.lanes[from] ?? 0;
   const born = {from, name, plan}, there = !!split.panes[letter];
@@ -6098,18 +6116,68 @@ function strangeMake(name, from, after = from, plan = null) {
 // worlds that can be open, the best are branched and the page says how many
 // were left out.
 
-// The player strategies All branches the base timeline for, best first.
-function strangeAllNames(base = strange.follow) {
+// The player strategies that have a world of their own on the base
+// timeline's open turn: the one it seats, and each seated in a world that is
+// still the same world as the base on this turn.
+function strangeSeated(base) {
   const split = debugSplit, pane = split.panes[base], turn = pane.turn;
   const print = letter => {
     const marks = split.panes[letter].marks || {}, at = Array.isArray(marks.turns) ? marks.turns.indexOf(turn) : -1;
     return at >= 0 && Array.isArray(marks.worlds) ? marks.worlds[at] : undefined;
   };
   const mine = print(base);
-  const seated = new Set([pane.strategy, ...strangeOpen().filter(letter => letter !== base && split.panes[letter].turn === turn &&
-    mine !== undefined && print(letter) === mine).map(letter => split.panes[letter].strategy)]);
-  const offered = strangeAgents();
+  // A branch made from the base on this turn whose copy has not landed yet
+  // is the base's world too (`strange.made`), or a quick second press would
+  // branch its strategy again.
+  const coming = letter => { const made = strange.made[letter]; return !!made && made.from === base && made.turn === turn && split.panes[letter].turn !== turn; };
+  return new Set([pane.strategy, ...strangeOpen().filter(letter => letter !== base && (coming(letter) || split.panes[letter].turn === turn &&
+    mine !== undefined && print(letter) === mine)).map(letter => split.panes[letter].strategy)]);
+}
+// The player strategies All branches the base timeline for, best first.
+function strangeAllNames(base = strange.follow) {
+  const seated = strangeSeated(base), offered = strangeAgents();
   return strangeRanked().names.filter(name => offered.includes(name)).slice(0, STRANGE_ALL_TOP).filter(name => !seated.has(name));
+}
+
+// ---- Branch Next Best
+//
+// Operator 2026-11-26: "in doctor strange's civvis, above the branch button,
+// Branch Next Best and "Branch 5 Next Best" on the right".
+//
+// Each branches the base timeline on its open turn for the best-rated player
+// strategies that have no world of their own there yet (by All's rule,
+// `strangeSeated`), best first: one, or five, each a world in a box of its
+// own beside the base. Pressed again, each takes the next ones down the
+// ranking, since the worlds just made are the base's own world on this turn.
+// Like Branch, they make the worlds and leave time as it is, and past the
+// most worlds that can be open the best are made and the page says how many
+// were left out.
+
+// Every player strategy without a world of its own on the base's open turn,
+// best first.
+function strangeNextNames(base = strange.follow) {
+  const seated = strangeSeated(base), offered = strangeAgents();
+  return strangeRanked().names.filter(name => offered.includes(name) && !seated.has(name));
+}
+function strangeNext(count) {
+  const split = debugSplit;
+  if (!split || !strangeIdle() || strange.all) return [];
+  const base = strange.follow, turn = split.panes[base].turn, names = strangeNextNames(base).slice(0, count);
+  const room = STRANGE_LETTERS.length - strangeOpen().length;
+  if (names.length === 0) { strangeSay(`Every player strategy has a world of its own on turn ${turn} already`); return []; }
+  if (room <= 0) { strangeSay(`${STRANGE_LETTERS.length} worlds are open, which is the most. Delete one to branch again`); return []; }
+  const letters = [];
+  for (const name of names.slice(0, room)) {
+    const letter = strangeMake(name, base, letters.length ? letters[letters.length - 1] : base);
+    if (!letter) break;
+    letters.push(letter);
+  }
+  const short = names.length - letters.length;
+  const made = letters.map((letter, at) => `${letter.toUpperCase()} ${turn}-${strangeHandle(names[at])}`).join(", ");
+  strangeSay(count === 1 && letters.length === 1
+    ? `Branch ${turn}-${strangeHandle(names[0])} is world ${letters[0].toUpperCase()}, from ${base.toUpperCase()}: the best player strategy without a world there`
+    : `Branch ${count} Next Best: ${made}, from ${base.toUpperCase()}${short > 0 ? `. ${short} more did not fit: ${STRANGE_LETTERS.length} worlds is the most` : ""}`);
+  return letters;
 }
 function strangeAll() {
   const split = debugSplit;
@@ -7200,7 +7268,7 @@ function strangeMount() {
   const ranked = strangeRanked();
   if (ranked.rated && ranked.names.length > 1) { split.panes.b.strategy = ranked.names[0]; split.panes.a.strategy = ranked.names[1]; }
   else split.panes.b.strategy = ranked.names.find(name => name !== split.panes.a.strategy) || split.panes.a.strategy;
-  Object.assign(strange, {follow: "a", cam: null, lanes: {a: 0, b: 1}, order: ["a", "b"], born: {a: 0, b: 1}, births: 2,
+  Object.assign(strange, {follow: "a", cam: null, lanes: {a: 0, b: 1}, order: ["a", "b"], born: {a: 0, b: 1}, births: 2, made: {},
     tint: {a: STRANGE_INKS[0], b: STRANGE_INKS[1]}, inks: 2, tree: null, parted: {}, locked: true, lockWanted: false,
     divide: null, over: null, peek: null, run: null, swan: null, omen: null, said: "", drawn: "", meter: [], metered: null,
     seeing: {}, fates: [], fateMode: "full", planning: null, all: null});
@@ -7231,6 +7299,10 @@ function strangeMount() {
       <div class="strange-say" data-strange="say" role="status"></div>
       <div class="strange-deck strange-branching" role="group" aria-label="Branch">
         <label class="strange-row strange-base"><span>Following:</span><select data-strange="base" aria-label="Following: the world a branch is made from"></select></label>
+        <div class="strange-nexts" role="group" aria-label="Branch the next best">
+          <button class="strange-next" data-strange="next1">Branch Next Best</button>
+          <button class="strange-next" data-strange="next5">Branch 5 Next Best</button>
+        </div>
         <label class="strange-row strange-create"><span>Create Branch:</span><select class="strange-branch" data-strange="branch" aria-label="Create Branch: from the timeline followed, here, played by"></select></label>
         <button class="strange-search" data-strange="search" aria-expanded="false" aria-label="Autosearch" title="Autosearch: from the timeline followed, on its open turn, find which player strategies should hold the seat, and when, to meet what you ask for. A share of this computer's cores each plays paths up and down the timeline on a copy of that world, and the best path found can be made a branch"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="6.5" cy="6.5" r="4.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M10 10l4.5 4.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span>Autosearch</span><span data-strange-search-count></span></button>
       </div>
@@ -7267,6 +7339,8 @@ function strangeMount() {
     else if (action === "fork") strangeGoTo((strange.tree || strangeTree()).splits);
     else if (action === "search") debugSearchShow(!debugSearchShown);
     else if (action === "all") strangeAll();
+    else if (action === "next1") strangeNext(1);
+    else if (action === "next5") strangeNext(STRANGE_NEXT_MANY);
     else if (action === "swan") strangeSwan(hud.querySelector('[data-strange="swan-kind"]').value);
     else if (action === "omen") { strange.omen = null; strangeDraw(); }
     else if (action.startsWith("follow-")) { strange.follow = action.slice(7); strangeDraw(); }
@@ -7533,6 +7607,19 @@ function strangeDraw() {
     : `Every player strategy (the top ${STRANGE_ALL_TOP} for now) branches the timeline followed, ${follow.toUpperCase()}, on ` +
       `${going ? "the turn time stops on" : `turn ${turn}`}, each in a window of its own, and time runs on for all the worlds to the end of the game` +
       (!going && fresh.length <= room ? `: ${fresh.length} new world${fresh.length === 1 ? "" : "s"}` : !going ? `: the best ${room}, as many as there is room for` : "");
+  // Branch Next Best and Branch 5 Next Best, over Branch (`strangeNext`): the
+  // best player strategies without a world of their own on this turn.
+  const nextBest = strangeNextNames(follow);
+  for (const [action, count] of [["next1", 1], ["next5", STRANGE_NEXT_MANY]]) {
+    const button = hud.querySelector(`[data-strange="${action}"]`), take = nextBest.slice(0, Math.min(count, room));
+    button.disabled = !idle || full || waiting || nextBest.length === 0;
+    button.title = full ? `${STRANGE_LETTERS.length} worlds are open, which is the most. Delete one to branch again`
+      : nextBest.length === 0 ? `Every player strategy has a world of its own on turn ${turn} already`
+      : `Branch the timeline followed, ${follow.toUpperCase()}, on turn ${turn} for the ` +
+        (count === 1 ? "best player strategy without a world of its own there, a world" : `${count} best player strategies without a world of their own there, each a world`) +
+        ` in a box of its own: ${take.map(name => `${turn}-${strangeHandle(name)}`).join(", ")}` +
+        (take.length < Math.min(count, nextBest.length) ? ` (room for ${take.length})` : "");
+  }
   const back = set("fork", one ? "⏮ To the fork" : `⏮ To the fork · ${tree.splits}`);
   back.disabled = !idle || one || turn === tree.splits;
   back.title = !many ? "One world is open" : one ? "The worlds are one world so far" : `The worlds go back to turn ${tree.splits}, the last they all share`;
