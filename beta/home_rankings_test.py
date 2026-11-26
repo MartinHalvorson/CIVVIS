@@ -663,8 +663,13 @@ class HomeRankings(unittest.TestCase):
         for page in (LANDING, CHARTS):
             self.assertNotIn("res-bench-par", page)
             self.assertNotIn("Expected win rate", page)
-        self.assertIn(">Diplomatic victory allowed · 6P Continents Online <small", ours)
-        self.assertIn(">Diplomatic victory off · 6P Continents Online, Diplo Off <small", ours)
+        # And the titles are only the games they count (operator, later on
+        # 2026-11-26: "remove the diplo vicotry alloewd and diplo vicotry off
+        # parts of the title. leave diplo off at the end of the second").
+        self.assertNotIn("Diplomatic victory allowed ·", ours)
+        self.assertNotIn("Diplomatic victory off ·", ours)
+        self.assertIn(">6P Continents Online <small", ours)
+        self.assertIn(">6P Continents Online, Diplo Off <small", ours)
         self.assertEqual(ours.count("<table"), 2)
         self.assertLess(ours.index('id="res-rates-on"'), ours.index('id="res-rates-off"'))
         # How the games are counted stays on Win Analytics, a link away.
