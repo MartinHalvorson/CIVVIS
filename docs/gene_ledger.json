@@ -439,6 +439,7 @@
       "war-target-prices-the-walls",
       "wonder-ring-recon-2"
     ],
+    "retained_selection_note": "Evidence-floor reselection (operator /goal 2026-11-18; operator 2026-11-13: include beneficial genes, exclude harmful ones, no drastic changes): the recorded +3 latest-three reselection proposed +260/-80; over the newest 12 reports (15,638 games) this publication turns on only flips with window win z >= 2 (10 on), and turns off only flips with z <= -2 or a family swap to a sibling at z >= 2 (2 off). Compute charge (operator 2026-11-22): a gene whose window compute cost is resolved at z >= 2 is charged 0.25 pp of win per 1% of compute per seat before those tests (22 genes charged), and an incumbent costing at least 1% per seat whose charged z is <= -2 is ripped out, at most 2 a publication (0 this time).",
     "batch_columns": {
       "acropolis-before-the-deterrent": [
         -4,
