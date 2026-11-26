@@ -811,10 +811,12 @@ let debugNoteText = "", debugNotePos = null;
 // where the hand has it until the hand lets go.
 let debugScrubbing = null, debugSliderHeld = false;
 // Which half of a split this page is: "a-…" or "b-…" inside the host's frame,
-// and null for an ordinary page.
+// and null for an ordinary page. A half's address is `?pane#<name>`
+// (`debugPaneAddress`); `?pane=<name>` is read too.
 const DEBUG_PANE = (() => {
   try {
-    const pane = new URLSearchParams(location.search).get("pane");
+    const asked = new URLSearchParams(location.search);
+    const pane = asked.get("pane") || (asked.has("pane") ? decodeURIComponent(location.hash.slice(1)) : "");
     return pane && window.parent !== window ? pane : null;
   } catch (_) { return null; }
 })();
@@ -3415,8 +3417,15 @@ function debugSplitOpen(dir, versus = null, seat = null, fresh = false) {
 // the folder this page is in, whichever of the simulator's pages holds the
 // split (`/test/doctor-strange` and `/test/debugger` are both the viewer at
 // `/test/`), so a half asks nothing of the page that holds it by its address.
+// Every half is at the one address `?pane`, its name after `#`, which a
+// browser neither sends nor files a cached page under: each half loads the
+// copy already held, revalidated with a 304, where `?pane=<name>` (a name
+// with the time in it) was a new address each visit, downloaded whole for
+// each half (operator 2026-11-26: "civivs seems slow switching between
+// civvis and dr strange"). The query stays so the address is never the
+// holding page's own, which a browser will not load in a frame of itself.
 function debugPaneAddress(id) {
-  return `${new URL("./", location.href).pathname}?pane=${id}`;
+  return `${new URL("./", location.href).pathname}?pane#${id}`;
 }
 // Which Civ AI plays a half's seat is the host's to say: it keeps the choice
 // and tells the half, from the strip or from the head of the half's lane.

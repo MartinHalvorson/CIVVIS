@@ -659,7 +659,14 @@ agents, and the timeline behind it. So a half can step back to turns played
 before the screen was split, and nothing is lost when the halves change
 places.
 
-A half names itself in its address (`?pane=a-<split>`):
+A half names itself in its address (`?pane#a-<split>`; `?pane=a-<split>` is read
+too). The name is after `#`, which a browser neither sends nor files a cached
+page under, so every half on every visit is the one address `?pane`: the copy
+of the viewer already held, revalidated with a 304 where the page carries a
+validator, instead of a new address downloaded whole for each half (operator
+2026-11-26: "civivs seems slow switching between civvis and dr strange"). The
+query stays so the address is never the holding page's own, which a browser
+will not load in a frame of itself:
 
 - On a socket server every request its page makes carries that in `Referer`,
   with the page doing nothing, and the server answers it from the half's
