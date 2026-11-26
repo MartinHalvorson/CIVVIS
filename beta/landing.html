@@ -346,10 +346,6 @@
   @media (max-width: 859px) { .res-bench-pair { grid-template-columns: minmax(0, 1fr); } }
   .res-bench-title { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 12px; margin: 0 0 8px; color: #fff; font-size: 15px; font-weight: 700; line-height: 1.3; }
   .res-bench-title small { color: var(--muted); font-size: 12px; font-weight: 400; font-variant-numeric: tabular-nums; }
-  .res-bench-par { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; margin: 0 0 14px; padding: 12px 16px; border: 1px solid var(--gold); border-left-width: 6px; border-radius: 6px; background: rgba(215, 182, 106, 0.1); }
-  .res-bench-par b { color: var(--gold); font-size: 26px; font-weight: 800; line-height: 1.2; font-variant-numeric: tabular-nums; }
-  .res-bench-par span { color: var(--text); font-size: 13.5px; line-height: 1.4; }
-  @media (max-width: 479px) { .res-bench-par b { font-size: 21px; } }
   .res-rates { border-collapse: separate; border-spacing: 3px; }
   .res-rates th { padding-right: 8px; vertical-align: bottom; }
   .res-rates th.is-group { padding: 0 2px 3px 0; border-bottom: 1px solid var(--border); font-size: 12px; text-align: center; }
@@ -520,12 +516,15 @@
          whose figures it draws (operator: "move the civvis performance
          timeline thing from home/ to the civvis performance section. middle
          of the page or so"): `beta/performance.html`, `#perf-line`. It is the
-         chart Win Analytics opens on, copied: its yardstick in big type, and
-         the two tables, the games that allowed the Diplomatic victory at
-         the left and the games with it off at the right, a row per level
-         from Lv 8 Deity down to Lv 4 Prince and a column per window. From
-         the yardstick to the end of the tables the markup is that page's
-         own, and so are the script that fills it and the shade of a cell
+         chart Win Analytics opens on, copied: the two tables, the games
+         that allowed the Diplomatic victory at the left and the games with
+         it off at the right, each titled with the games it counts ("6P
+         Continents Online", and ", Diplo Off" for the right; operator,
+         2026-11-26, in place of the note of the 1/6 par that stood over
+         them), a row per level from Lv 8 Deity down to Lv 4 Prince and a
+         column per window. From the pair's opening to the end of the
+         tables the markup is that page's own, and so are the script that
+         fills it and the shade of a cell
          (`beta/home_rankings_test.py` holds the two pages to each other).
          The record is the page's `home-benchmark` slot, the one Win
          Analytics is given as `tournament_rates`
@@ -541,10 +540,9 @@
         </div>
         <p class="home-bench-more"><a href="../charts/win-analytics/">Win Analytics</a></p>
       </header>
-      <p class="res-bench-par" id="res-bench-par"><b>Expected win rate in a 6P game: 1/6 = 16.7%</b> <span>A rate above 16.7% beats the Firaxis AI.</span></p>
       <div class="res-bench-pair">
         <div class="res-section" id="res-bench-on">
-          <h3 class="res-bench-title" id="res-title-rates-on">Diplomatic victory allowed <small id="res-rates-count-on"></small></h3>
+          <h3 class="res-bench-title" id="res-title-rates-on">Diplomatic victory allowed · 6P Continents Online <small id="res-rates-count-on"></small></h3>
           <div class="res-scroll">
             <table class="rank-table res-rates" id="res-rates-on" aria-labelledby="res-title-rates-on">
               <thead>
@@ -556,7 +554,7 @@
           </div>
         </div>
         <div class="res-section" id="res-bench-off">
-          <h3 class="res-bench-title" id="res-title-rates-off">Diplomatic victory off <small id="res-rates-count-off"></small></h3>
+          <h3 class="res-bench-title" id="res-title-rates-off">Diplomatic victory off · 6P Continents Online, Diplo Off <small id="res-rates-count-off"></small></h3>
           <div class="res-scroll">
             <table class="rank-table res-rates" id="res-rates-off" aria-labelledby="res-title-rates-off">
               <thead>

@@ -644,19 +644,27 @@ class HomeRankings(unittest.TestCase):
         section = LANDING[places[1]:places[2]]
         bare = lambda text: [line.strip() for line in text.strip().split("\n")]  # noqa: E731
         # Its title and the line under it are Win Analytics' own, and so is
-        # everything from the yardstick to the end of the two tables: the
-        # games that allowed the Diplomatic victory at the left, the games
-        # with it off at the right, the four windows as columns.
+        # everything from the pair's opening to the end of the two tables:
+        # the games that allowed the Diplomatic victory at the left, the
+        # games with it off at the right, each titled with the games it
+        # counts, the four windows as columns.
         for line in (
             '<h2 class="res-side-title" id="res-title-tourney">Firaxis Civ 6 AI benchmark: win rate by level</h2>',
             '<p class="res-counted" id="res-counted-tourney">Tournament games against Civilization VI&#8217;s own AI.</p>',
         ):
             self.assertIn(line, section)
             self.assertIn(line, CHARTS)
-        par = '<p class="res-bench-par" id="res-bench-par">'
-        theirs = CHARTS[CHARTS.index(par) : CHARTS.index('<details class="fine">', CHARTS.index(par))]
-        ours = section[section.index(par) : section.index("</section>")]
+        pair = '<div class="res-bench-pair">'
+        theirs = CHARTS[CHARTS.index(pair) : CHARTS.index('<details class="fine">', CHARTS.index(pair))]
+        ours = section[section.index(pair) : section.index("</section>")]
         self.assertEqual(bare(ours), bare(theirs))
+        # The note of the 1/6 par is gone from the copy too (operator,
+        # 2026-11-26: "drop the expected win rate thing warning message").
+        for page in (LANDING, CHARTS):
+            self.assertNotIn("res-bench-par", page)
+            self.assertNotIn("Expected win rate", page)
+        self.assertIn(">Diplomatic victory allowed · 6P Continents Online <small", ours)
+        self.assertIn(">Diplomatic victory off · 6P Continents Online, Diplo Off <small", ours)
         self.assertEqual(ours.count("<table"), 2)
         self.assertLess(ours.index('id="res-rates-on"'), ours.index('id="res-rates-off"'))
         # How the games are counted stays on Win Analytics, a link away.
