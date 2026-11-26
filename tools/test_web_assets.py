@@ -2822,8 +2822,13 @@ class TheResultScreenIsAScreenOfCharts(unittest.TestCase):
         block = moments[moments.index("const GAME_STATS_SERIES = ["):moments.index("// Hover: one turn cursor")]
         start = app.index("function compactStat(")
         compact = app[start:app.index("\n}\n", start)] + "\n}\n"
+        # A chart's caption names its civilization by three letters
+        # (`civShort`, in the script that loads before app.js).
+        standings = (ASSETS / "app_standings.js").read_text(encoding="utf-8")
+        short = standings[standings.index("const CIV_SHORT = {"):
+                          standings.index("\n}\n", standings.index("function civShort(")) + 3]
         done = subprocess.run(
-            [NODE, "-e", GAME_STATS_SCENARIOS.replace("__COMPACT__", compact).replace("__BLOCK__", block)],
+            [NODE, "-e", GAME_STATS_SCENARIOS.replace("__COMPACT__", short + compact).replace("__BLOCK__", block)],
             capture_output=True, text=True, timeout=120)
         self.assertEqual(done.returncode, 0, done.stderr.strip()[-3000:])
         self.assertIn("game stats checks passed", done.stdout)

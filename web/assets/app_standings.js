@@ -55,6 +55,25 @@ function averageTitle(name, value, signed = true) {
   return n === null ? `${name}: not shown to this view`
     : `${name}: ${signed && n > 0 ? "+" : ""}${n} per city`;
 }
+// A civilization by three letters, where a name is a label rather than part
+// of a sentence: the standings' CIV column, the victory tracker, the war
+// log's names and the game's result graphs (operator 2026-11-26: "maybe use 3
+// letter abbreviations for the civs. in player hud and in other places, like
+// victory tracker. lets use the 3 letter abbreviation most places"). The full
+// name stays in every tooltip and every sentence. Most are their first three
+// letters; where two of the 105 civilizations would share them, and where
+// the first three read as nothing, the country's own code is used instead.
+const CIV_SHORT = {
+  America: "USA", Australia: "AUS", Austria: "AUT", Bengal: "BGL", Benin: "BEN", "Gran Colombia": "COL",
+  "Great Zimbabwe": "ZIM", Greece: "GRE", India: "IND", Indonesia: "IDN", Netherlands: "NED", Romania: "ROU", Rome: "ROM",
+};
+function civShort(civ) {
+  const name = String(civ ?? ""), titled = name.charAt(0).toUpperCase() + name.slice(1);
+  if (CIV_SHORT[titled]) return CIV_SHORT[titled];
+  const letters = name.replace(/[^A-Za-z]/g, "");
+  return letters.length >= 3 ? letters.slice(0, 3).toUpperCase() : name;
+}
+
 // P10 HAP: the tenth percentile of the civ's city happiness (amenities over
 // need), and its cell points at the city standing there (operator 2026-11-26:
 // "change min hap to p10 hap", after "to the left of hap, add min hap which is
