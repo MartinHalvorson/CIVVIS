@@ -1693,7 +1693,14 @@ path). these should alert on the top section out in the distance."
     war coming (later first); the game lost (later first); not yet seen.
     The worlds' numbers go across the top between the title's card and the
     column, a row a world, each yield's total under it; the tree is drawn
-    under them (`strange.treeTop`). The column scrolls when it is taller
+    under them (`strange.treeTop`). The most of each number is lit, gold on
+    a chip of gold, for every world that has it unless they all do
+    (operator 2026-11-26: "highlight the top value in each row. so the
+    branch with the top score, most cities, etc."), and each row begins
+    with an ✕ that deletes its world as the ✕ on its box does ("we should
+    also be able to exit branches. maybe from the top, have an option to
+    close branches"). Either ✕ works while time runs as well, the rest
+    going on without the world (`strangeCanClose`); the last world stays. The column scrolls when it is taller
     than the room above the line. The line itself is dragged anywhere
     across its width (a grip in the middle shows it), and a double-click
     lets the page place it again.
