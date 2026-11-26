@@ -537,7 +537,40 @@ async function asset(request, env, gated) {
     // them again or decode them to re-encode at a weaker setting.
     return new Response(response.body, { status: response.status, headers, encodeBody: "manual" });
   }
+  // A page is a few hundred kilobytes of HTML that changes only when a build
+  // is published, and every move between the site's pages fetched it again
+  // whole (operator 2026-11-26: "civivs seems slow switching between civvis
+  // and dr strange and civvis and other stuff. can we speed this up?"): the
+  // asset layer gives a page no validator, so `must-revalidate` had nothing to
+  // revalidate with. A page is given a weak ETag of its own bytes (the edge
+  // re-encodes every text/html response and keeps a weak tag through that,
+  // where it drops a strong one), and a browser that already holds those bytes
+  // is answered 304, with none. Doctor Strange's page and each of its worlds'
+  // boxes are such pages.
+  if (!absent && response.status === 200 && (request.method === "GET" || request.method === "HEAD") &&
+      /text\/html/.test(headers.get("Content-Type") || "")) {
+    const bytes = await response.arrayBuffer();
+    const digest = new Uint8Array(await crypto.subtle.digest("SHA-1", bytes));
+    const tag = `W/"${[...digest.slice(0, 12)].map((byte) => byte.toString(16).padStart(2, "0")).join("")}"`;
+    headers.set("ETag", tag);
+    headers.delete("Content-Length");
+    if (pageStillHeld(request, tag)) {
+      headers.delete("Content-Encoding");
+      return new Response(null, { status: 304, headers });
+    }
+    return new Response(request.method === "HEAD" ? null : bytes, { status: 200, headers });
+  }
   return new Response(response.body, { status: absent ? 404 : response.status, headers });
+}
+
+/// Whether the browser asking already holds the page `tag` names: one of the
+/// tags in its `If-None-Match` is the same, weakly compared (a `W/` prefix is
+/// not part of the comparison), or it asks with `*`.
+function pageStillHeld(request, tag) {
+  const asked = request.headers.get("If-None-Match");
+  if (!asked) return false;
+  const bare = (one) => one.trim().replace(/^W\//, "");
+  return asked.split(",").some((one) => one.trim() === "*" || bare(one) === bare(tag));
 }
 
 export default {

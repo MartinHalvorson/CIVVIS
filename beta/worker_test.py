@@ -181,11 +181,12 @@ const listingEnv = (listed, simulator = {}) => ({
   },
 });
 
-window.hit = async ({ path, method = "GET", body, json, cookie, env: overrides, accepts, compressed, listed, simulator }) => {
+window.hit = async ({ path, method = "GET", body, json, cookie, env: overrides, accepts, compressed, listed, simulator, ifNoneMatch }) => {
   const init = { method, redirect: "manual" };
   if (body) init.body = new URLSearchParams(body);
   if (json !== undefined) init.body = JSON.stringify(json);
   if (cookie) init.headers = { Cookie: cookie };
+  if (ifNoneMatch) init.headers = { ...(init.headers || {}), "If-None-Match": ifNoneMatch };
   const request = new Request("https://civvis.ai" + path, init);
   if (accepts) Object.defineProperty(request, "cf", { value: { clientAcceptEncoding: accepts } });
   const response = await worker.fetch(
@@ -201,6 +202,7 @@ window.hit = async ({ path, method = "GET", body, json, cookie, env: overrides, 
     cacheControl: response.headers.get("Cache-Control"),
     contentEncoding: response.headers.get("Content-Encoding"),
     vary: response.headers.get("Vary"),
+    etag: response.headers.get("ETag"),
     body: await response.text(),
   };
 };
@@ -394,6 +396,32 @@ def main(argv: list[str] | None = None) -> int:
                   f"got {page['body']!r} {page['contentEncoding']!r}")
             check(problems, f"{door} is still revalidated on every visit",
                   "must-revalidate" in (page["cacheControl"] or ""), f"got {page['cacheControl']!r}")
+        # And a page can be revalidated: a weak ETag of its bytes (the edge
+        # keeps a weak tag through its re-encoding), and 304 with no body to
+        # a browser that holds those bytes (operator 2026-11-26: "civivs seems
+        # slow switching between civvis and dr strange and civvis and other
+        # stuff"). Another page's tag, or none, gets the page.
+        for door in ("/test/", "/test/?pane=a-x1", "/home/", "/test/charts/win-analytics/"):
+            first = hit(path=door, accepts="br")
+            tag = first["etag"] or ""
+            check(problems, f"{door} carries a weak ETag",
+                  first["status"] == 200 and tag.startswith('W/"') and tag.endswith('"') and len(tag) > 10,
+                  f"got {first['status']} {tag!r}")
+            again = hit(path=door, accepts="br", ifNoneMatch=tag)
+            check(problems, f"{door} is 304 to a browser holding it",
+                  again["status"] == 304 and again["body"] == "" and again["etag"] == tag
+                  and "must-revalidate" in (again["cacheControl"] or ""),
+                  f"got {again['status']} {again['body'][:40]!r} {again['etag']!r} {again['cacheControl']!r}")
+            strong = hit(path=door, accepts="br", ifNoneMatch=tag[2:])
+            check(problems, f"{door} compares its tag weakly", strong["status"] == 304, f"got {strong['status']}")
+            other = hit(path=door, accepts="br", ifNoneMatch='W/"0000", W/"1111"')
+            check(problems, f"{door} is sent whole to a browser holding something else",
+                  other["status"] == 200 and other["body"] == first["body"], f"got {other['status']}")
+        two = (hit(path="/test/")["etag"], hit(path="/home/")["etag"])
+        check(problems, "two pages' bytes have two tags", two[0] != two[1], f"got {two}")
+        script = hit(path="/test/assets/app.js?v=abc", accepts="br", compressed=True)
+        check(problems, "a script keeps the asset layer's own validator, and gets none from the worker",
+              script["etag"] is None and script["body"] == "asset:/test/assets/app.js.br", f"got {script['etag']!r}")
         art = hit(path="/test/assets/civ6-unit-flags.webp?v=abc", accepts="br", compressed=True)
         check(problems, "images, already compressed, look for no copy",
               art["body"] == "asset:/test/assets/civ6-unit-flags.webp", f"got {art['body']!r}")
@@ -527,6 +555,13 @@ def main(argv: list[str] | None = None) -> int:
                   f"got {page['status']} {page['body'][:60]!r} {page['cacheControl']!r}")
         check(problems, "and the test lane's are not for search engines",
               hit(path="/test/debugger", listed=lanes, simulator=both)["robots"] == "noindex")
+        # Each is revalidated as the viewer is: 304 to a browser holding it.
+        for address in ("/doctor-strange", "/test/doctor-strange", "/test/debugger"):
+            held = hit(path=address, listed=lanes, simulator=both)
+            again = hit(path=address, listed=lanes, simulator=both, ifNoneMatch=held["etag"] or "")
+            check(problems, f"{address} is 304 to a browser holding it",
+                  (held["etag"] or "").startswith('W/"') and again["status"] == 304 and again["body"] == "",
+                  f"got {held['etag']!r} {again['status']}")
         # No slash ends the address: the viewer's paths are lane-relative, and
         # are the lane's only from the address without one.
         for asked, to in (("/edge-of-tomorrow/", "/edge-of-tomorrow"),

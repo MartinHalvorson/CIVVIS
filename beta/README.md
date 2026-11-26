@@ -169,7 +169,13 @@ lists, at the file and at the address, and every address a page has left to
 forwarding where the lane has the page.
 
 Repeat visitors cannot be left on an earlier deployment. Each lane's HTML is a
-moving pointer and revalidates on every visit. The publisher gives `shim.js`,
+moving pointer and revalidates on every visit. `_worker.js` gives every page a
+weak ETag of its bytes and answers a browser that holds them with 304 and no
+body, so moving between the site's pages costs a round trip, not the page's
+121 KB (2026-11-26, "civivs seems slow switching between civvis and dr strange
+and civvis and other stuff"): the asset layer sends a page no validator, and
+the edge, which re-encodes every text/html response, keeps a weak tag where it
+drops a strong one. The publisher gives `shim.js`,
 `worker.js`, `civvis.wasm`, and every referenced atlas a query version derived
 from that file's bytes. A changed file therefore has a new URL and is fetched
 after the fresh page arrives; an unchanged file keeps its URL and can be reused
