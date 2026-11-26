@@ -75,7 +75,6 @@ FILLERS = (
     "performance_page.py",
     "interpretability_page.py",
     "insights_page.py",
-    "chaos_page.py",
 )
 
 #: A filler's page, for the fillers of pages a revision may not have yet.
@@ -84,7 +83,6 @@ FILLED = {
     "elo_page.py": "elo",
     "civs_page.py": "civs",
     "insights_page.py": "insights",
-    "chaos_page.py": "chaos",
 }
 
 #: The viewer, as little of it as the script's own checks ask for: one
@@ -107,7 +105,6 @@ VIEWER = textwrap.dedent(
 ADDRESSES = {
     "landing": "home",
     "tournaments": "experiments",
-    "chaos": "chaos-monkey",
     "research": "charts/win-analytics",
     "elo": "charts/elo-rankings",
     "civs": "charts/civ-analytics",
@@ -122,6 +119,12 @@ ADDRESSES = {
 #: from civvis.ai"). It was published at this address from 2026-11-23. Its
 #: page and its parts stay in `beta/`, and `publish.sh` leaves them there.
 SET_ASIDE = {"chess": "wizard-chess"}
+#: A page taken off the site and out of the tree: Chaos Monkey, published at
+#: this address on 2026-11-25 and taken off on 2026-11-26 (operator: "remove
+#: chaos monkey for now"). Main has no such page; a revision from that day
+#: has it, and the front page is pinned to such a revision until the next
+#: promotion.
+TAKEN_OFF = {"chaos": "chaos-monkey"}
 
 SHIM = textwrap.dedent(
     """\
@@ -186,8 +189,7 @@ class Lanes(unittest.TestCase):
         cls.git("init", "--quiet", str(cls.repo), cwd=cls.scratch)
 
         # The promoted revision: five pages, and no ELO Rankings, Civ
-        # Analytics, Civ AI Interpretability, AI Insights or Chaos Monkey
-        # page.
+        # Analytics, Civ AI Interpretability or AI Insights page.
         # Its Performance script is one that fails.
         # Its pages are from before a page stated its address.
         cls.write_revision("promoted", pages=("landing", "download", "tournaments", "research", "performance"),
@@ -214,6 +216,17 @@ class Lanes(unittest.TestCase):
             landing = cls.repo / "beta" / "landing.html"
             landing.write_text(
                 landing.read_text(encoding="utf-8") + f'<a href="../{address}/">Wizard Chess</a>\n', encoding="utf-8")
+        # And Chaos Monkey, which main has taken out of the tree, is on the
+        # site in that revision too: its page, its button in the viewer and
+        # on the home page.
+        for name, address in TAKEN_OFF.items():
+            (cls.repo / "beta" / f"{name}.html").write_text(page(name, "listed", address), encoding="utf-8")
+            viewer = cls.repo / "web" / "index.html"
+            viewer.write_text(viewer.read_text(encoding="utf-8").replace(
+                "</a>\n<script", f'</a> <a href="/{address}" target="_top">Chaos Monkey</a>\n<script'), encoding="utf-8")
+            landing = cls.repo / "beta" / "landing.html"
+            landing.write_text(
+                landing.read_text(encoding="utf-8") + f'<a href="../{address}/">Chaos Monkey</a>\n', encoding="utf-8")
         cls.listed_revision = cls.commit("Wizard Chess is on the site")
         # Main: every script, page and figure has moved on, there are four more
         # pages, and every page says where it lives.
@@ -306,9 +319,7 @@ class Lanes(unittest.TestCase):
         self.assertTrue((self.test / "charts" / "ai-insights" / "index.html").is_file())
         self.assertFalse((self.stable / "interpretability").exists())
         self.assertFalse((self.stable / "charts").exists())
-        self.assertTrue((self.test / "chaos-monkey" / "index.html").is_file())
-        self.assertFalse((self.stable / "chaos-monkey").exists())
-        self.assertIn("published without: chaos-monkey ai-insights interpretability civ-analytics elo-rankings\n", self.stable_said)
+        self.assertIn("published without: ai-insights interpretability civ-analytics elo-rankings\n", self.stable_said)
         # And each lane says which pages it carries, by address, for the
         # checks and for the router.
         self.assertEqual(
@@ -321,7 +332,7 @@ class Lanes(unittest.TestCase):
             # Interpretability, Civ Analytics, Win Analytics, ELO Rankings,
             # CIVVIS Performance), because the router opens a folder's first
             # page in this list.
-            ["home", "experiments", "chaos-monkey", "charts/ai-insights", "charts/civ-ai-interpretability", "charts/civ-analytics",
+            ["home", "experiments", "charts/ai-insights", "charts/civ-ai-interpretability", "charts/civ-analytics",
              "charts/win-analytics", "charts/elo-rankings", "charts/civvis-performance", "download"],
         )
         # And the publish check reads each list in the order it was written.
@@ -372,7 +383,30 @@ class Lanes(unittest.TestCase):
             self.assertFalse((self.listed / address).exists())
             self.assertEqual([found for found in self.listed.rglob("*") if name in found.name], [])
             self.assertNotIn(address, json.loads(self.read(self.listed, "build.json"))["pages"])
-            self.assertIn(f"::warning::home/index.html links ../{address}/, which this lane does not have", said)
+            warned = re.search(r"::warning::home/index\.html links (.*), which this lane does not have", said)
+            self.assertIsNotNone(warned, said)
+            self.assertIn(f"../{address}/", warned.group(1).split(", "))
+
+    def test_a_lane_pinned_to_a_revision_with_a_page_taken_off_is_published(self):
+        # Chaos Monkey's page is out of main's tree, and main's publish.sh
+        # copies nothing of it whatever the revision has. A lane pinned to a
+        # revision from the day it was on the site is still published: its
+        # viewer's button stays in the lane and reaches the 404, and the home
+        # page's is reported, like a page set aside.
+        code, said = self.listed_said
+        self.assertEqual(code, 0, said)
+        for name, address in TAKEN_OFF.items():
+            self.assertNotIn(f"beta/{name}.html", self.git("ls-tree", "-r", "--name-only", self.main, "beta").split())
+            self.assertIn(f"{name} of listed", self.git("show", f"{self.listed_revision}:beta/{name}.html"))
+            viewer = self.read(self.listed, "index.html")
+            self.assertIn(f'<a href="{address}/" target="_top">Chaos Monkey</a>', viewer)
+            self.assertEqual(re.findall(r'(?:href|src)="(/[^"]*)"', viewer), [])
+            for lane in (self.listed, self.stable, self.test):
+                self.assertFalse((lane / address).exists(), lane.name)
+                self.assertNotIn(address, json.loads(self.read(lane, "build.json"))["pages"])
+            warned = re.search(r"::warning::home/index\.html links (.*), which this lane does not have", said)
+            self.assertIsNotNone(warned, said)
+            self.assertIn(f"../{address}/", warned.group(1).split(", "))
 
     def test_every_page_of_a_lane_is_its_own_revisions(self):
         for name in ("landing", "download", "tournaments", "research", "performance"):
@@ -387,8 +421,7 @@ class Lanes(unittest.TestCase):
         # were written for, with nothing of main's layout beside them.
         self.assertEqual(
             sorted(str(found.relative_to(self.test)) for found in self.test.glob("**/index.html")),
-            ["chaos-monkey/index.html",
-             "charts/ai-insights/index.html", "charts/civ-ai-interpretability/index.html",
+            ["charts/ai-insights/index.html", "charts/civ-ai-interpretability/index.html",
              "charts/civ-analytics/index.html", "charts/civvis-performance/index.html",
              "charts/elo-rankings/index.html", "charts/win-analytics/index.html",
              "download/index.html", "experiments/index.html", "home/index.html", "index.html"],
@@ -442,8 +475,6 @@ class Lanes(unittest.TestCase):
                       self.read(self.test, "charts/civ-ai-interpretability/index.html"))
         self.assertIn("<!-- insights_page.py: script main, data main -->",
                       self.read(self.test, "charts/ai-insights/index.html"))
-        self.assertIn("<!-- chaos_page.py: script main, data main -->",
-                      self.read(self.test, "chaos-monkey/index.html"))
         # Nothing of main's is in the promoted lane's pages.
         for filled in self.stable.glob("**/index.html"):
             self.assertNotIn("main", filled.read_text(encoding="utf-8"), filled)

@@ -28,7 +28,6 @@ or a digit, and a page listed under a folder (Charts/) sits in that folder.
       ELO Rankings             /charts/elo-rankings/
       CIVVIS Performance       /charts/civvis-performance/
     Experiments                /experiments/
-    Chaos Monkey               /chaos-monkey/
 
 A page states its own address (its `<link rel="canonical">`), `publish.sh`
 puts it there, and every link in it is relative to it. So this reads the
@@ -248,12 +247,30 @@ class Addresses(unittest.TestCase):
         # being pinned to such a revision the hour the page was set aside).
         self.assertEqual(
             [line for line in PUBLISH.splitlines() if "chess" in line.lower() and not line.lstrip().startswith("#")],
-            ['set_aside = ["wizard-chess"]'])
+            ['set_aside = ["wizard-chess", "chaos-monkey"]'])
         self.assertNotIn("wizard-chess", set(ADDRESS.values()))
         self.assertNotIn("wizard-chess", verify.ADDRESSES)
         for source in SOURCES:
             self.assertNotRegex(read(source), r"(?i)wizard.chess", source)
         self.assertNotRegex(VIEWER, r"(?i)wizard.chess|chesslink")
+
+    def test_chaos_monkey_is_off_the_site(self):
+        # Operator, 2026-11-26: "remove chaos monkey for now". It stood
+        # between Experiments and CIVVIS, at /chaos-monkey/, on 2026-11-25.
+        # Its page is out of the tree, `publish.sh` publishes nothing of it,
+        # no page or the viewer names or links it, and the publish check
+        # knows no such page. The one line of `publish.sh` that names it is
+        # where an older revision's viewer pointed its link (see above).
+        self.assertFalse((BETA / "chaos.html").exists())
+        self.assertNotIn("chaos.html", SOURCES)
+        self.assertEqual(
+            [line for line in PUBLISH.splitlines() if "chaos" in line.lower() and not line.lstrip().startswith("#")],
+            ['set_aside = ["wizard-chess", "chaos-monkey"]'])
+        self.assertNotIn("chaos-monkey", set(ADDRESS.values()))
+        self.assertNotIn("chaos-monkey", verify.ADDRESSES)
+        for source in SOURCES:
+            self.assertNotRegex(read(source), r"(?i)chaos.monkey", source)
+        self.assertNotRegex(VIEWER, r"(?i)chaos.monkey|chaoslink")
 
 
 class Moved(unittest.TestCase):
@@ -376,10 +393,8 @@ class Moved(unittest.TestCase):
             # The second word is where the page was before pages stated
             # their addresses; a page written since has only the one it
             # states, folder and all.
-            # A name of two words has its hyphen at either level
-            # (`chaos-monkey`, `charts/ai-insights`).
             self.assertRegex(
-                PUBLISH, rf'\n[a-z]+_at="\$\(address "\${name}_page" [a-z-]+(/[a-z-]+)?\)"\n', source)
+                PUBLISH, rf'\n[a-z]+_at="\$\(address "\${name}_page" [a-z]+(/[a-z-]+)?\)"\n', source)
 
 
 if __name__ == "__main__":

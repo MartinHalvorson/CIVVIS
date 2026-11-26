@@ -84,8 +84,8 @@ class Page(unittest.TestCase):
         nav = PAGE[PAGE.index('<nav class="site-nav" aria-label="CIVVIS sites">'):]
         nav = nav[:nav.index("</nav>")]
         names = re.findall(r">([^<]+)</a>", nav)
-        self.assertEqual(names, ["Home", "Charts/", "Experiments", "Chaos Monkey", "CIVVIS", "Doctor Strange's Civ 6",
-                                 "AI Debugger", "Edge of Tomorrow", "Civ 6", "Wizard Chess"])
+        self.assertEqual(names, ["Home", "Charts/", "Experiments", "CIVVIS", "Doctor Strange's Civ 6", "AI Debugger",
+                                 "Civ: Edge of Tomorrow", "Civ 6", "Wizard Chess"])
         self.assertIn('<a class="site-link" href="./" aria-current="page">Wizard Chess</a>', nav)
 
     def test_it_is_a_board_a_command_and_an_opponent(self):
@@ -156,7 +156,7 @@ class Page(unittest.TestCase):
         # revision's viewer still links, kept inside that revision's lane.
         self.assertEqual(
             [line for line in PUBLISH.splitlines() if "chess" in line.lower() and not line.lstrip().startswith("#")],
-            ['set_aside = ["wizard-chess"]'])
+            ['set_aside = ["wizard-chess", "chaos-monkey"]'])
         self.assertIn("# Wizard Chess is set aside and no lane carries it (operator 2026-11-24:\n", PUBLISH)
 
 

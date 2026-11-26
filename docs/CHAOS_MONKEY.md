@@ -10,6 +10,13 @@ the event ourselves to learn. above civvis add "Chaos Monkey". Here we can
 run civvis sims with a very high frequency of natural disasteres. what can we
 learn about avoiding horrible outcomes?"
 
+**Off the site since 2026-11-26** (operator: "remove chaos monkey for now").
+The page at `/chaos-monkey/`, its button in the site list and the simulator's
+turn-box row are gone (the PR that took them out says what it removed;
+reverting it puts them back). The engine's dial, `civvis play --chaos`,
+`POST /chaos`, `civvis chaos-monkey`, `tools/chaos_monkey.py` and the record
+`data/chaos_monkey.json` stay.
+
 Chaos engineering breaks a running system on purpose, on a schedule nobody
 chose, to find out where it is fragile before a real failure does. Here the
 system is a world of civilizations, and the breakage is the game's own
@@ -43,21 +50,13 @@ carry it.
 
 ## Running a world under it
 
-In the simulator, the turn box has a **Chaos Monkey** row on a watched world:
-Off, 10x, 30x, 100x, 300x, 1,000x. It turns the dial from the next turn, and the worlds
-dealt after this one keep it. An address says it too:
-
-```
-https://civvis.ai/?chaos=30
-```
-
 From the command line:
 
 ```bash
 civvis play --chaos 30            # a watched world at 30x
 ```
 
-The row asks the engine with `POST /chaos {"frequency": 30}`
+A running server turns it with `POST /chaos {"frequency": 30}`
 (`routes::chaos`). Only a watched CIVVIS world takes it: the Sim debugger
 keeps turns ahead of the one on screen, played under the dial as it stood,
 and a repainted game of Civilization VI rolls its own weather.
@@ -108,10 +107,10 @@ record the page draws:
 The same seeds on the same commit give the same games, so the record names
 the commit and the seeds rather than keeping the games.
 
-## The page
+## The page (off the site since 2026-11-26)
 
 `beta/chaos.html`, at `/chaos-monkey/`, between Experiments and CIVVIS in
-the site list. `beta/chaos_page.py` writes the lane's own
+the site list, from 2026-11-25 to 2026-11-26. `beta/chaos_page.py` writes the lane's own
 `data/chaos_monkey.json` into it at publish. It opens on the lessons, then
 the dial with what each frequency does, what gives way first, the world turn
 by turn, the horrible outcomes, who comes through, and a button that opens
