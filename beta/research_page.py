@@ -117,7 +117,9 @@ its first run's events: the capital's build order, what its production
 finished and, marked, what it dropped unfinished (operator 2026-11-24:
 "capital cant make a settler first - needs 2 pop": a Scout taken up on turn
 1 and dropped at pop 2 for a Settler is "Scout, dropped", then "Settler"), a
-bought or handed-over item not among them. A run's summary on the ledger
+bought or handed-over item not among them. The tree the page shows leaves
+the dropped steps out (operator 2026-11-26: "lets also not list the dropped
+in the trie for Capital Build ORder"); the record keeps them. A run's summary on the ledger
 carries it (`build_order`, and `build_order_reading`, the way it was read),
 and the games before the harness wrote it the way the reader reads now are
 in a snapshot, `data/research/build_orders.json`, which `--build-orders`
@@ -653,12 +655,16 @@ def build_orders(
     underneath the second winnest first bulid"), a tie going to the build
     with more games, the same rate over more of them, then to its name. A
     game with fewer builds than the tree is deep ends at its last, so the
-    nodes under a build can hold fewer games than it does. `None` when no
-    game's opening is on record."""
+    nodes under a build can hold fewer games than it does. A build the
+    capital dropped unfinished (`DROPPED`) is not a node: the game's builds
+    close up over it (operator 2026-11-26: "lets also not list the dropped in
+    the trie for Capital Build ORder"). `None` when no game's opening is on
+    record."""
     root: dict = {"games": 0, "wins": 0, "next": {}}
     days = []
     for key, tags, won, day in games:
         builds = next((known[tag] for tag in tags if known.get(tag)), None)
+        builds = [item for item in builds or [] if not item.endswith(DROPPED)]
         if not builds:
             continue
         days.append(day)

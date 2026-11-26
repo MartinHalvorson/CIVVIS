@@ -615,7 +615,7 @@
     <nav class="civ-steps" aria-labelledby="civ-steps-title">
       <h2 class="civ-steps-title" id="civ-steps-title">The decisions of a game, in the order it asks them</h2>
       <ol class="civ-steps-list">
-        <li><a href="#res-side-builds" style="--from: 1; --to: 30"><span class="civ-step-n">1</span><span class="civ-step-name">What the capital builds first</span><span class="civ-step-turns">Turns 1&#8211;30</span><span class="civ-step-track" aria-hidden="true"><span class="civ-step-bar"></span></span></a></li>
+        <li><a href="#res-side-builds" style="--from: 1; --to: 30"><span class="civ-step-n">1</span><span class="civ-step-name">Capital Build Order</span><span class="civ-step-turns">Turns 1&#8211;30</span><span class="civ-step-track" aria-hidden="true"><span class="civ-step-bar"></span></span></a></li>
         <li><a href="#civ-step-expand" style="--from: 1; --to: 50"><span class="civ-step-n">2</span><span class="civ-step-name">How fast and how wide to expand</span><span class="civ-step-turns">Turns 1&#8211;50</span><span class="civ-step-track" aria-hidden="true"><span class="civ-step-bar"></span></span></a></li>
         <li><a href="#civ-step-faith" style="--from: 10; --to: 60"><span class="civ-step-n">3</span><span class="civ-step-name">A pantheon, and a religion or none</span><span class="civ-step-turns">Turns 10&#8211;60</span><span class="civ-step-track" aria-hidden="true"><span class="civ-step-bar"></span></span></a></li>
         <li><a href="#civ-step-invaded" style="--from: 30; --to: 150"><span class="civ-step-n">4</span><span class="civ-step-name">Holding the land when a neighbour invades</span><span class="civ-step-turns">Turns 30&#8211;150</span><span class="civ-step-track" aria-hidden="true"><span class="civ-step-bar"></span></span></a></li>
@@ -645,16 +645,16 @@
            2026-11-24: "top chart is build order"). The script lists the
            first steps of the games against Deity, best win rate first, and
            a step pressed lists the steps that followed it the same way. A
-           step is what the capital finished, or what it dropped unfinished,
-           marked (operator 2026-11-24: "capital cant make a settler first -
-           needs 2 pop"; a Scout taken up on turn 1 and dropped at pop 2 is
-           "Scout, dropped"). -->
+           step is what the capital finished. What it dropped unfinished is
+           not listed (operator 2026-11-26: "change "what the capital build
+           fist" to "Capital Build Order"", then "lets also not list the
+           dropped in the trie for Capital Build ORder"). -->
       <section class="res-block civ-builds" id="res-side-builds" aria-labelledby="res-title-builds" hidden>
         <header class="res-side-head">
           <div class="res-side-name">
-            <p class="civ-step-tag"><span class="civ-step-n">1</span>What the capital builds first &#183; turns 1&#8211;30</p>
+            <p class="civ-step-tag"><span class="civ-step-n">1</span>Capital Build Order &#183; turns 1&#8211;30</p>
             <h2 class="res-side-title" id="res-title-builds">Early build order: win rate against Lv 8 Deity AI</h2>
-            <p class="res-counted" id="res-counted-builds">What the capital worked on first, second and third against Civilization VI&#8217;s own AI.</p>
+            <p class="res-counted" id="res-counted-builds">What the capital finished first, second and third against Civilization VI&#8217;s own AI.</p>
           </div>
         </header>
         <p class="civ-step-why">A Scout finds the land, a Slinger guards it, a Settler claims it.</p>
@@ -665,7 +665,7 @@
         <details class="fine">
         <summary>How it is counted</summary>
         <p class="rank-note">
-          CIVVIS&#8217;s capital&#8217;s build order: what it worked on, in order. A step is a unit, building, district, wonder or project the capital&#8217;s production finished, or one it put production into and dropped unfinished, marked &#8220;dropped&#8221;: a Scout started on turn 1 and dropped at pop 2 for a Settler reads &#8220;Scout, dropped&#8221;, then &#8220;Settler&#8221;, so the first step is always one the capital could start on turn 1. The first steps are listed best win rate first; press one to list the steps after it, then the third, <span id="res-builds-depth">eight</span> steps deep.
+          CIVVIS&#8217;s capital&#8217;s build order: what it finished, in order. A step is a unit, building, district, wonder or project the capital&#8217;s production finished; one it put production into and dropped unfinished is not listed. The first steps are listed best win rate first; press one to list the steps after it, then the third, <span id="res-builds-depth">eight</span> steps deep.
           A row is CIVVIS&#8217;s win rate over the games whose build order opened with exactly the steps down to it and, in brackets, those games.
           An item bought with Gold or Faith, or handed over (a pantheon&#8217;s free Settler or Builder), is not a step.
           Every finished game against the Deity AI on the run ledger counts, in a tournament or not: a win is a CIVVIS victory; a loss is a rival&#8217;s victory, our elimination, or a game conceded early.

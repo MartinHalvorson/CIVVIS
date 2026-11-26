@@ -110,10 +110,10 @@ class TheOrderOfThePage(unittest.TestCase):
         self.assertIn("pick.games === \"self\"", PAGE)
         # A belief's bar is drawn: its fill is a block, sized by the width set on it.
         self.assertIn(".civ-row-fill { display: block; height: 100%;", PAGE)
-        # The note says what a dropped step is (operator 2026-11-24: "capital
-        # cant make a settler first - needs 2 pop"): a Scout begun on turn 1
-        # and dropped for a Settler opens the order, marked.
-        self.assertIn("a Scout started on turn 1 and dropped at pop 2 for a Settler reads &#8220;Scout, dropped&#8221;", PAGE)
+        # A step dropped unfinished is not listed (operator 2026-11-26: "lets
+        # also not list the dropped in the trie for Capital Build ORder").
+        self.assertIn("one it put production into and dropped unfinished is not listed.", PAGE)
+        self.assertNotIn("&#8220;Scout, dropped&#8221;", PAGE)
         self.assertNotIn("A Settler can come first", PAGE)
 
     def test_the_page_is_one_timeline_of_a_games_decisions(self):
@@ -142,7 +142,11 @@ class TheOrderOfThePage(unittest.TestCase):
             head = body[body.index(f'id="{target}"'):body.index("</header>", body.index(f'id="{target}"'))]
             self.assertIn(f'<span class="civ-step-n">{n}</span>', head)
             self.assertIn(f"turns {lo}&#8211;{hi}", head)
-        self.assertIn('<span class="civ-step-n">1</span>What the capital builds first &#183; turns 1&#8211;30', PAGE)
+        # Operator 2026-11-26: "change "what the capital build fist" to
+        # "Capital Build Order"".
+        self.assertIn('<span class="civ-step-n">1</span>Capital Build Order &#183; turns 1&#8211;30', PAGE)
+        self.assertIn('<span class="civ-step-name">Capital Build Order</span>', PAGE)
+        self.assertNotIn("What the capital builds first", PAGE)
         self.assertIn("Before turn 1 &#183; set by the game&#8217;s setup, not chosen by CIVVIS", PAGE)
         # The two charts of the marks stand in their decisions, each beside
         # where CIVVIS stands, and decision 6 closes the filtered charts.
