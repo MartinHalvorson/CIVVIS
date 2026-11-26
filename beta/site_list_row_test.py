@@ -78,7 +78,7 @@ class Row(unittest.TestCase):
                 self.assertRegex(header, r'^<header class="shell site-header">\s*<!--[\s\S]*?-->\s*<nav class="site-nav"')
                 self.assertLess(header.index('<nav class="site-nav"'), header.index('<div class="site-brand">'))
                 self.assertLess(header.index('<div class="site-brand">'), header.index('<h1 class="site-title">'))
-                self.assertIn("  .site-nav { display: flex; flex: 1 0 100%; flex-wrap: wrap; align-items: center; gap: 6px; }\n", page)
+                self.assertIn("  .site-nav { display: flex; flex: 1 0 100%; flex-wrap: wrap; align-items: center; gap: 5px; }\n", page)
                 # Every name on one line, and nothing left of the column.
                 self.assertIn("    white-space: nowrap;\n", page[page.index("  .site-link {"):])
                 self.assertNotIn(".site-nav { display: grid", page)

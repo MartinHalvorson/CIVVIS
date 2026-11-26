@@ -484,8 +484,8 @@ class HomeRankings(unittest.TestCase):
                 ("watch-pov", "9c8m87e3rCg", "Single player POV", "A full Civ 6 match in 14 seconds"),
                 ("watch-science", "rVDor7Xb4Mg", "Lv 8 Deity Win - France, Science", ""),
                 ("watch-culture", "6PCd4R08UPM", "Lv 8 Deity Win - Maya, Culture", ""),
-                ("watch-debugger", "6W5t0hcR_N4", "AI Debugger", "Multiverse, Time Travel"),
-                ("watch-strange", "H50wfMantkY", "Doctor Strange's Civ 6", ""),
+                ("watch-debugger", "6W5t0hcR_N4", "CIVVIS AI Debugger", "Multiverse, Time Travel"),
+                ("watch-strange", "H50wfMantkY", "Doctor Strange's CIVVIS", ""),
             ],
         )
         for _, video, _, _, _, link, _, picture in tiles:
@@ -499,10 +499,10 @@ class HomeRankings(unittest.TestCase):
             ("watch-pov", "../charts/civvis-performance/", "CIVVIS Performance"),
             ("watch-science", "https://www.youtube.com/playlist?list=PLWcKlP8e8iy4", "Lv 8 Deity Wins"),
             ("watch-culture", "https://www.youtube.com/playlist?list=PLWcKlP8e8iy4", "Lv 8 Deity Wins"),
-            ("watch-debugger", "../?mode=play", "AI Debugger"),
-            ("watch-strange", "../?mode=strange", "Doctor Strange's Civ 6"),
+            ("watch-debugger", "../?mode=play", "CIVVIS AI Debugger"),
+            ("watch-strange", "../?mode=strange", "Doctor Strange's CIVVIS"),
         ])
-        for href, name in (("../?mode=play", "AI Debugger"), ("../?mode=strange", "Doctor Strange's Civ 6")):
+        for href, name in (("../?mode=play", "CIVVIS AI Debugger"), ("../?mode=strange", "Doctor Strange's CIVVIS")):
             self.assertRegex(LANDING, rf'<a class="site-link" href="{re.escape(href)}"[^>]*>{re.escape(name)}</a>')
         # The single player's game starts 6 seconds in, on the page and on
         # YouTube; the other five start at their start.

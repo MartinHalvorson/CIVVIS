@@ -6681,7 +6681,7 @@ function strangeMount() {
   hud.id = "strange-hud";
   hud.innerHTML = `
     <div class="strange-title strange-card">
-      <b title="One world, many timelines. Forward in time is up: the line across the window is the open turn, what was played runs down from it and each world's future is played out ahead">Doctor Strange's Civ 6</b>
+      <b title="One world, many timelines. Forward in time is up: the line across the window is the open turn, what was played runs down from it and each world's future is played out ahead">Doctor Strange's CIVVIS</b>
       <div class="strange-deck" role="toolbar" aria-label="Timeline">
         <button class="strange-play" data-strange="play"></button>
         <div class="strange-steps">
@@ -6698,7 +6698,7 @@ function strangeMount() {
         <button class="strange-futures" data-strange="futures" aria-pressed="true"></button>
       </div>
       <div class="strange-say" data-strange="say" role="status"></div>
-      <nav aria-label="CIVVIS sites"><a href="./" target="_top">CIVVIS</a><a href="?mode=play" target="_top">AI Debugger</a></nav>
+      <nav aria-label="CIVVIS sites"><a href="./" target="_top">CIVVIS</a><a href="?mode=play" target="_top">CIVVIS AI Debugger</a></nav>
     </div>
     <div class="strange-meter strange-card" aria-label="What this page costs">
       <i>CPU</i><b data-strange-gauge="cpu">–</b><canvas data-strange-trace="cpu" width="264" height="44"></canvas>
@@ -7547,7 +7547,7 @@ if (STRANGE) {
     const opened = tracks(...given);
     if (!debugSplit && !strange.sorry && debugOpenedGame !== null && debugTimeline()) {
       strange.sorry = true;
-      debugSay("Doctor Strange's Civ 6 sets two worlds side by side and needs a wider window. This is the AI Debugger, on one timeline");
+      debugSay("Doctor Strange's CIVVIS sets two worlds side by side and needs a wider window. This is the CIVVIS AI Debugger, on one timeline");
     }
     return opened;
   };
@@ -8009,9 +8009,9 @@ function tomorrowMount() {
   bar.id = "tomorrowbar";
   bar.hidden = true;
   bar.setAttribute("role", "toolbar");
-  bar.setAttribute("aria-label", "Civ: Edge of Tomorrow");
+  bar.setAttribute("aria-label", "CIVVIS: Edge of Tomorrow");
   bar.innerHTML = `
-    <div class="tmr-name"><b>Civ: Edge of Tomorrow</b><span class="tmr-loop">Loop <i id="tmr-loop">1</i></span></div>
+    <div class="tmr-name"><b>CIVVIS: Edge of Tomorrow</b><span class="tmr-loop">Loop <i id="tmr-loop">1</i></span></div>
     <div class="tmr-track">
       <div class="tmr-rail" id="tmr-rail" role="img"></div>
       <div class="tmr-said" id="tmr-said" role="status"></div>

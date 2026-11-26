@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Each world of Doctor Strange's Civ 6 on an engine of its own, in a real browser.
+"""Each world of Doctor Strange's CIVVIS on an engine of its own, in a real browser.
 
 `beta/shim.js` and `beta/worker.js` are loaded as they ship, over the toy
 engine of `forks_test.py`: a module that counts the requests it has answered
@@ -247,7 +247,7 @@ def main() -> int:
         dev.call("Runtime.enable")
         dev.call("Page.enable")
         check_homes(dev, f"http://127.0.0.1:{port}")
-        print("each world of Doctor Strange's Civ 6 plays on an engine of its own.")
+        print("each world of Doctor Strange's CIVVIS plays on an engine of its own.")
         return 0
     finally:
         chrome.terminate()
