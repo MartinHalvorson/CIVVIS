@@ -394,6 +394,52 @@ async function pageAnswer(request, env, url) {
   return { absent: true };
 }
 
+// A page's validator: the build its lane was published from.
+//
+// A page is a moving pointer (`max-age=0, must-revalidate`), so a browser
+// asks for it again on every visit. It went out with nothing to ask about:
+// the edge drops the asset layer's `ETag` from every text/html response (it
+// rewrites them), so each visit downloaded the whole page again, ~120 KB
+// over the wire, 477 KB of it raw, before the browser could find what the
+// page loads. Nothing about a page changes between publishes, so the lane's
+// build is what it is: one build, one validator, for every page of the lane.
+//
+// A page asked about with the validator it went out with is answered `304`.
+// Only an exact match counts: a lane can be promoted back to an older build,
+// and an `If-Modified-Since` later than that build is not proof the copy the
+// browser holds is still the one served.
+async function laneStamp(env, url) {
+  const lane = url.pathname === "/test" || url.pathname.startsWith("/test/") ? "/test" : "";
+  try {
+    const shipped = await env.ASSETS.fetch(new Request(new URL(`${lane}/build.json`, url)));
+    if (!shipped.ok) return null;
+    const build = await shipped.json();
+    const id = String(build.commit || build.short || "").slice(0, 12);
+    const at = Date.parse(build.built_at || "");
+    if (!id && !Number.isFinite(at)) return null;
+    const when = Number.isFinite(at) ? Math.floor(at / 1000) : null;
+    return {
+      etag: `W/"${[lane.slice(1) || "stable", id, when === null ? "" : when.toString(36)].filter(Boolean).join("-")}"`,
+      lastModified: when === null ? null : new Date(when * 1000).toUTCString(),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/// Whether the browser's copy is the page this build serves: its
+/// `If-None-Match` names the lane's validator (weakly compared, as a GET may
+/// be) or, when it sends none, its `If-Modified-Since` is the build's own date.
+function unchanged(request, stamp) {
+  const tags = request.headers.get("If-None-Match");
+  if (tags !== null) {
+    const bare = (tag) => tag.trim().replace(/^W\//, "");
+    return tags.trim() === "*" || tags.split(",").some((tag) => bare(tag) === bare(stamp.etag));
+  }
+  const since = request.headers.get("If-Modified-Since");
+  return Boolean(since && stamp.lastModified && since.trim() === stamp.lastModified);
+}
+
 /// Serve a file, with the headers a `_headers` file would have carried — that
 /// file is ignored once a `_worker.js` exists, so the rules live here instead.
 async function asset(request, env, gated) {
@@ -455,6 +501,20 @@ async function asset(request, env, gated) {
     // `manual`: these bytes are already encoded, so the runtime must not encode
     // them again or decode them to re-encode at a weaker setting.
     return new Response(response.body, { status: response.status, headers, encodeBody: "manual" });
+  }
+  const page = /text\/html/.test(headers.get("Content-Type") || "");
+  if (page && !absent && response.status === 200 && (request.method === "GET" || request.method === "HEAD")) {
+    const stamp = await laneStamp(env, url);
+    if (stamp) {
+      headers.set("ETag", stamp.etag);
+      if (stamp.lastModified) headers.set("Last-Modified", stamp.lastModified);
+      if (unchanged(request, stamp)) {
+        await response.body?.cancel();
+        headers.delete("Content-Length");
+        headers.delete("Content-Encoding");
+        return new Response(null, { status: 304, headers });
+      }
+    }
   }
   return new Response(response.body, { status: absent ? 404 : response.status, headers });
 }
