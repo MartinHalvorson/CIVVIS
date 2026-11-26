@@ -626,6 +626,43 @@ class QuickDealsEndsTheLaunchBar(unittest.TestCase):
                       "  body.civ6-frame #launchbar > #tradebtn { display: grid; }\n", self.page)
 
 
+class AWatchedResultReadsTurnThenWinnerAndHow(unittest.TestCase):
+    """A watched game's result card: the turn, then "Civ ✦ Science", then who played it.
+
+    Operator 2026-11-26: "on the final civvis game screen, at top is turn.
+    remove the word "victory". lets just go civ <star symbol> "Science" or
+    whatever the win is. then the player line". A played game's card keeps
+    its Victory or Defeat, its "wins" and its verdict.
+    """
+
+    def setUp(self):
+        self.app = (ASSETS / "app.js").read_text(encoding="utf-8")
+        self.page = INDEX.read_text(encoding="utf-8")
+
+    def test_the_card_is_turn_winner_star_kind_then_player(self):
+        headline = self.app[self.app.index("      const headline = SPEC ? "):self.app.index("      w.innerHTML = `<div class=\"winner-content\">\n        ${headline}")]
+        watched, played = headline.split("\n        : `", 1)
+        self.assertLess(watched.index('class="winner-meta winner-turn">Turn ${reportedTurn(st)}'), watched.index('class="winner-title"'))
+        self.assertIn('${winnerName} <span class="winner-mark" aria-hidden="true">✦</span> '
+                      '<span class="winner-kind">${verdict.replace(/ victory$/, "")}</span></strong>', watched)
+        self.assertNotIn("winner-kicker", watched)
+        self.assertNotIn("winner-verdict", watched)
+        for kept in ('<span class="winner-kicker">${kicker}</span>', '" wins"', '<span class="winner-verdict">${verdict}</span>'):
+            self.assertIn(kept, played)
+        card = self.app[self.app.index("        ${headline}"):self.app.index("${SPEC ? `<span class=\"winner-countdown\"", self.app.index("        ${headline}"))]
+        self.assertLess(card.index("${headline}"), card.index("winner-player"))
+        self.assertIn('${SPEC ? `` : `<span class="winner-meta">Turn ${reportedTurn(st)}</span>`}', card)
+
+    def test_the_star_rides_in_the_line_and_the_band_follows(self):
+        self.assertIn("  .winner-content > .winner-turn { margin: 0 0 12px; }\n", self.page)
+        self.assertIn("  .winner-title .winner-mark { display: inline;", self.page)
+        # With the charts open the verdict folds into a band: the turn and
+        # the line on top, who played it under them.
+        self.assertIn('      "turn   title  title  title   count actions"\n'
+                      '      "player player player player  count choice"\n', self.page)
+        self.assertNotIn('"kicker mark   title  verdict count actions"', self.page)
+
+
 class TheDedicatedDisplayShowsTheHud(unittest.TestCase):
     """The window the keeper opens beside a live game exists to show the player
     HUD. Its Chrome profile keeps this page's localStorage across launches, so
