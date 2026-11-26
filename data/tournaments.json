@@ -89,7 +89,16 @@
     "`benchmark` is not an experiment. The page draws it on its own, as the Official Benchmark, in the right-hand column under",
     "Scheduled, and numbers the experiments without it, so the next one scheduled is Experiment 7. A number in `descriptions`,",
     "`videos` and `hyperparameters` is an experiment's number; the benchmark carries its own `description` and",
-    "`hyperparameters` on its definition. Its tags (`civvis-t7-`) and the host's bench conductor are unchanged."
+    "`hyperparameters` on its definition. Its tags (`civvis-t7-`) and the host's bench conductor are unchanged.",
+    "Operator 2026-11-26: \"please add a tournament with 100 lv 8 deity games, no diplo. lets really work on the self improvement",
+    "and optimization of the algorithm. our victory rate here should be much higher.\": Experiment 7, the definition after the",
+    "benchmark's, is 100 games at Lv 8 Deity, one CIVVIS agent and five Firaxis AI on Continents, the Diplomatic victory off in",
+    "every game. Its games are tagged `civvis-t8-` (the benchmark's `end`, so none of them counts in the benchmark) and the host's",
+    "conductor plays them from the moment it was scheduled, pausing the benchmark until 100 have finished. Unlike the benchmark,",
+    "the conductor picks each game's victory lane by Thompson sampling over Religious, Science and Culture, on the results of every",
+    "Lv 8 Diplomatic-off game in each lane (the benchmark's and the experiment's), so the lane that wins is played more, and then",
+    "draws the civ among the civs suited to that lane. The newest build plays each game; Claude Opus 5.5 reviews every one, as it",
+    "does the benchmark's, and a mistake that recurs is fixed in code as a gene and armed, so the agent improves during the experiment."
   ],
   "descriptions": {
     "1": "Proof of concept, 10 game series",
@@ -97,7 +106,8 @@
     "3": "30 game series",
     "4": "50 game series",
     "5": "Repeat 50 game series but with 2/6 CIVVIS AI Agents (2nd half no Diplo allowed)",
-    "6": "Benchmarking across levels: 5 games at each level (no Diplo allowed)"
+    "6": "Benchmarking across levels: 5 games at each level (no Diplo allowed)",
+    "7": "100 Lv 8 Deity games, no Diplo allowed"
   },
   "hyperparameters": {
     "1": {
@@ -189,6 +199,21 @@
       "Played in": "Civ VI hotseat for games 1-7, single player from game 8",
       "Game end": "Played out: a victory, our elimination or turn 250",
       "CIVVIS agent": "The newest build when each game launched: 6 builds over games 8-25"
+    },
+    "7": {
+      "Games": "100",
+      "AI level": "Lv 8 Deity",
+      "Players": "6: 1 CIVVIS agent + 5 Firaxis AI",
+      "Victory types": "All but Diplomatic: Science, Culture, Domination, Religious, Score",
+      "Civ": "Random each game, among the civs suited to the victory lane chosen for it",
+      "Strategy": "The victory lane is chosen each game by Thompson sampling over Religious, Science and Culture, on the results of every Lv 8 Diplomatic-off game in each lane (the benchmark's and this experiment's), so the lane that wins is played more. On the ledger when it was scheduled: Religious 3 wins in 29 benchmark games, Science 0 in 68, Culture never played",
+      "Map": "Continents, Small, 9 city-states, a new map each game",
+      "Game speed": "Online",
+      "Turn limit": "250",
+      "Ruleset": "Gathering Storm",
+      "Played in": "Civ VI single player",
+      "Game end": "Played out: a victory, our elimination or turn 250",
+      "CIVVIS agent": "The newest build when each game launched; Claude Opus 5.5 reviews every game, and a mistake it finds in several games is fixed in code as a gene and armed, so the agent improves during the experiment"
     }
   },
   "videos": {
@@ -270,6 +295,15 @@
         "Game end": "Played out: a victory, our elimination or turn 250",
         "CIVVIS agent": "The newest build when each game launched; Claude Opus 5.5 reviews every game, and a mistake it finds in several games is fixed in code and armed, so the agent keeps changing as the benchmark runs"
       }
+    },
+    {
+      "name": "Lv 8 Deity, Diplomatic victory off, 100 games",
+      "idea": "One hundred games against the Lv 8 Deity AI with the Diplomatic victory off, to raise our Deity win rate: each game's victory lane is picked by Thompson sampling over Religious, Science and Culture, so the lane that wins is played more, and the civ is drawn among those suited to it. Claude Opus 5.5 reviews every game, and a mistake that recurs is fixed in code, so the agent improves as the experiment runs.",
+      "conditions": "Lv 8 6P Continents Online, 1 CIVVIS + 5 AI, no Diplomatic victory",
+      "start": "civvis-t8-",
+      "end": "civvis-t9-",
+      "series_size": 100,
+      "match": {"difficulty": "DIFFICULTY_DEITY", "players": 6, "map": "Continents.lua"}
     }
   ]
 }
