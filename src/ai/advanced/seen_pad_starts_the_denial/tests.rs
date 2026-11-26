@@ -231,7 +231,7 @@ fn nothing_against_a_racer_we_lead() {
     let ai = seat(true);
     let (mut g, _, second, _) = board();
     give_pad(&mut g, second);
-    assert_eq!(racers(&ai, &g), vec![1], "they out-research us: answered");
+    assert_eq!(racers(&ai, &g), [1], "they out-research us: answered");
     // We have landed a project and they have not.
     let (mut ahead, _, second, _) = board();
     give_pad(&mut ahead, second);
@@ -250,7 +250,7 @@ fn nothing_against_a_racer_we_lead() {
     give_pad(&mut behind, second);
     land(&mut behind, 1, 1);
     set_science(&mut behind, 0, 900.0);
-    assert_eq!(racers(&ai, &behind), vec![1]);
+    assert_eq!(racers(&ai, &behind), [1]);
 }
 
 #[test]
@@ -260,7 +260,7 @@ fn a_racer_with_no_seen_pad_takes_no_spy() {
     land(&mut g, 1, 2);
     assert!(racers(&ai, &g).is_empty(), "no pad seen");
     let pad = give_pad(&mut g, second);
-    assert_eq!(racers(&ai, &g), vec![1]);
+    assert_eq!(racers(&ai, &g), [1]);
     g.map.tiles.get_mut(&pad).unwrap().pillaged = true;
     assert!(racers(&ai, &g).is_empty(), "a pillaged pad is not standing");
     g.map.tiles.get_mut(&pad).unwrap().pillaged = false;
@@ -279,11 +279,7 @@ fn a_launched_racer_yields_its_pads_to_the_next() {
     g.players[2].techs.insert(crate::name!("rocketry"));
     land(&mut g, 1, 4);
     land(&mut g, 2, 3);
-    assert_eq!(
-        racers(&ai, &g),
-        vec![2],
-        "the launched racer is passed over"
-    );
+    assert_eq!(racers(&ai, &g), [2], "the launched racer is passed over");
 }
 
 #[test]
@@ -296,13 +292,9 @@ fn the_racer_ahead_comes_first_and_one_two_behind_not_at_all() {
     land(&mut g, 2, 1);
     // 340 Science a turn is short of 1.25 times 300: no edge.
     set_science(&mut g, 2, 300.0);
-    assert_eq!(racers(&ai, &g), vec![2, 1], "projects first");
+    assert_eq!(racers(&ai, &g), [2, 1], "projects first");
     land(&mut g, 2, 2);
-    assert_eq!(
-        racers(&ai, &g),
-        vec![2],
-        "two projects behind: not answered"
-    );
+    assert_eq!(racers(&ai, &g), [2], "two projects behind: not answered");
     // An idle Spy at home goes to the racer ahead.
     let home = g.player_city_ids(0)[0];
     let agent = spy(&mut g, home, true);
@@ -391,8 +383,8 @@ fn a_racer_a_project_behind_with_the_science_edge_comes_first() {
     g.players[2].techs.insert(crate::name!("rocketry"));
     land(&mut g, 2, 1);
     set_science(&mut g, 2, 270.0);
-    assert_eq!(racers(&ai, &g), vec![1, 2], "340 is 1.25 times 270");
+    assert_eq!(racers(&ai, &g), [1, 2], "340 is 1.25 times 270");
     // Level on projects, Science decides.
     land(&mut g, 1, 1);
-    assert_eq!(racers(&ai, &g), vec![1, 2]);
+    assert_eq!(racers(&ai, &g), [1, 2]);
 }
