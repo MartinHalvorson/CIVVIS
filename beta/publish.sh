@@ -176,7 +176,6 @@ civs_page="$source_tree/beta/civs.html"
 performance_page="$source_tree/beta/performance.html"
 interpretability_page="$source_tree/beta/interpretability.html"
 insights_page="$source_tree/beta/insights.html"
-chaos_page="$source_tree/beta/chaos.html"
 pages=()
 without=()
 
@@ -227,8 +226,6 @@ interpretability_at="$(address "$interpretability_page" interpretability)"
 # AI Insights was written after pages stated their addresses, so it has no
 # former one: a revision without the page has no page to place.
 insights_at="$(address "$insights_page" charts/ai-insights)"
-# Chaos Monkey likewise: written on 2026-11-25, with its address stated.
-chaos_at="$(address "$chaos_page" chaos-monkey)"
 download_at="$(address "$download_page" download)"
 
 # A lane built from some other revision than the invoking tree's is pinned:
@@ -301,23 +298,6 @@ if [ -f "$tournaments_page" ]; then
   pages+=("$tournaments_at")
 else
   without+=(experiments)
-fi
-# Chaos Monkey (the same worlds replayed with natural disasters up to 1,000
-# times as often, and what they teach) stands in the site list between
-# Experiments and CIVVIS (operator 2026-11-25: "above civvis add "Chaos
-# Monkey". Here we can run civvis sims with a very high frequency of natural
-# disasteres. what can we learn about avoiding horrible outcomes?"). Its
-# figures are the lane's own snapshot, data/chaos_monkey.json, which
-# tools/chaos_monkey.py writes from the games `civvis chaos-monkey` played:
-# a batch somebody played, not the run ledger, so the page of one revision
-# reads the same at every build of it.
-if [ -f "$chaos_page" ]; then
-  mkdir -p "$out/$chaos_at"
-  cp "$chaos_page" "$out/$chaos_at/index.html"
-  fill chaos_page.py "$out/$chaos_at/index.html"
-  pages+=("$chaos_at")
-else
-  without+=(chaos-monkey)
 fi
 # AI Insights (what the Civ games show about AI at large, an insight at a
 # time; the first is the games against Civilization VI's own AI ending sooner
@@ -426,6 +406,10 @@ fi
 # "lets set aside wizard chess right now. please remove from civvis.ai"). It
 # was published at /wizard-chess from 2026-11-23. The game stays in the tree
 # (beta/chess.html, beta/chess/, docs/WIZARD_CHESS.md); nothing here copies it.
+# Chaos Monkey likewise (operator 2026-11-26: "remove chaos monkey for now").
+# It was published at /chaos-monkey on 2026-11-25. Its page is gone from the
+# tree; the engine's dial, `civvis chaos-monkey`, tools/chaos_monkey.py and
+# its record data/chaos_monkey.json stay, so putting it back is a revert.
 if [ "${#without[@]}" -gt 0 ]; then
   echo "   $short does not have every page, and its lane is published without: ${without[*]}"
 fi
@@ -518,8 +502,9 @@ former = ["home", "research", "tournaments", "performance", "interpretability", 
 # publish from the hour the page was set aside (#5793): the front page was
 # pinned to such a revision, and the guard below stops a publish on any link
 # to the site root. Nothing of the page is copied; this only names where an
-# older viewer's link pointed.
-set_aside = ["wizard-chess"]
+# older viewer's link pointed. Chaos Monkey, at /chaos-monkey on 2026-11-25,
+# was taken off the site on 2026-11-26 the same way.
+set_aside = ["wizard-chess", "chaos-monkey"]
 former += set_aside
 for address in dict.fromkeys([*carried, *former]):
     needle, replacement = f'href="/{address}"', f'href="{address}/"'
