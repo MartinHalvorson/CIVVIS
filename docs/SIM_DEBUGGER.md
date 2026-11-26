@@ -1359,12 +1359,16 @@ nothing about what a fog-honest player could have known ("Fog-honest AI").
 
 ## Fog-honest AI
 
-The masthead's turn box has a **Fog-honest AI** row, True or False (operator
-2026-11-23: "it should pretty much always be set to true"). True, every Civ
-AI at the table plans its turn on what its own civilization can see and
-remembers, and replays the plan on the board (`ai::player::take_turn`);
-False, it plans on the whole board. Every world the engine deals opens True,
-and False lasts for the world on screen. It is the world's setting
+Every Civ AI at a site table is fog-honest, always (operator 2026-11-23: "it
+should pretty much always be set to true"; 2026-11-26: "remove fog honest ai
+from turn box (this should alawys be true)"). It plans its turn on what its
+own civilization can see and remembers, and replays the plan on the board
+(`ai::player::take_turn`). The turn box offered a **Fog-honest AI** row, True
+or False, from 2026-11-23 until 2026-11-26; the page has no way to turn it
+off since. The engine still has the other setting, False, in which a Civ AI
+plans on the whole board, for the tools and tests that compare the two. Every
+world the engine deals opens True, and False lasts for the world on screen.
+It is the world's setting
 (`POST /fog-honest`, `Session::set_fog_honest`), so each half of a split
 keeps its own, a half begins with the setting of the world it was copied
 from, and the agents kept with a turn play on under the setting the table
