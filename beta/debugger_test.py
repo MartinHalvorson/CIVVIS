@@ -253,7 +253,7 @@ function engineState(error = null) {
     ...(engine.limit ? {turn_limit: engine.limit} : {}), seat,
     wars: (engine.raids || []).filter(turn => turn <= engine.turn)
       .map(turn => ({highlights: [{turn, kind: "declared", actor: 1, subject: 0, city: null}]})),
-    ...(over ? {finished: true, winner: over.winner, winners: [over.winner], victory_type: "science"} : {}),
+    ...(over ? {finished: true, winner: over.winner, winners: [over.winner], victory_type: "science", victory_turn: over.turn} : {}),
     players: [{id: 0, civ: "rome", ...(fell ? {alive: false} : {}),
       score: seat.score, cities: seat.cities, population: seat.population, military: 1,
       gold_per_turn: seat.gold_per_turn, yields: seat.yields,
@@ -512,6 +512,9 @@ function engineDebug(body) {
   } else if (body.op === "step" && engine.turn >= 400) {
     // A run nobody stopped must still end.
     error = "this game has no turn left to play";
+  } else if (["step", "play", "ahead"].includes(body.op) && engine.over && engine.turn >= engine.over.turn) {
+    // Nor is a turn played past the end of a game that is over.
+    error = "the game is over";
   } else if (body.op === "step") {
     step();
   } else if (body.op === "play") {
@@ -520,7 +523,7 @@ function engineDebug(body) {
     // stops where a run stops.
     readings = [];
     terms = engine.objective ? [] : null;
-    while (readings.length < body.turns && engine.turn < 400 && !engine.stopped) {
+    while (readings.length < body.turns && engine.turn < 400 && !engine.stopped && !(engine.over && engine.turn >= engine.over.turn)) {
       step();
       readings.push(engineSeat());
       if (terms) terms.push(engineTerms(engine.objective));
@@ -4288,6 +4291,68 @@ def check_doctor_strange_all(bar: Bar, address: str) -> None:
         bar.ev("localStorage.removeItem('civvis-toy-strategies'), true")
 
 
+def check_doctor_strange_world_ends(bar: Bar, address: str) -> None:
+    """Doctor Strange's CIVVIS: a world whose game is over says how in its own box, and time runs on for the rest.
+
+    Operator, 2026-11-26: "for doctor strange, when a screen finishes it
+    should not halt the game (unless the final screen). we should make a
+    quikc summary screen to describe the outcome, with maybe a "view map"
+    and a "close" option".
+    """
+    ready = "typeof drawDebugBar === 'function' && typeof engineState === 'function'"
+    said = "document.querySelector('#strange-hud [data-strange=\"say\"]').textContent"
+    pane = lambda letter, code: f"debugSplit.panes.{letter}.frame.contentWindow.eval({json.dumps(code)})"
+    card = lambda letter: bar.ev(pane(letter, """(() => {
+      const card = document.getElementById('strange-result'), chip = document.getElementById('strange-result-chip');
+      if (!card) return null;
+      const text = name => (card.querySelector(name) || {}).textContent || '';
+      return {shown: !card.hidden, chip: chip.hidden ? null : chip.textContent, kicker: text('.sr-kicker'), title: text('.sr-title'),
+        verdict: text('.sr-verdict'), meta: text('.sr-meta'), buttons: [...card.querySelectorAll('button')].map(b => [b.textContent, b.disabled]),
+        winner: getComputedStyle(document.getElementById('winner')).display};
+    })()"""))
+    press = lambda letter, what: bar.ev(pane(letter, f"document.querySelector({json.dumps(what)}).click(), true"))
+    bar.dev.call("Page.navigate", {"url": f"{address}?mode=strange"})
+    bar.until(f"{ready} && location.search === '?mode=strange' && state === null", "Doctor Strange's CIVVIS")
+    bar.ev("engine.scores = {1: 0}, strange.futures = false, render(engineState()), true")
+    bar.settled()
+    bar.until("debugSplit && debugSplit.shown && debugSplit.panes.a.turn === 1 && debugSplit.panes.b.turn === 1 && strangeIdle()",
+              "its two worlds are there")
+    # B's game is won on turn 4. Time runs on for A past it; B stays where its
+    # game ended, and its box says so: who won, how, on which turn, with what.
+    # B is the world followed, and the turn written on the line is time's, not
+    # the turn B's game stopped on.
+    bar.ev(pane("b", "engine.over = {turn: 4, winner: 0}, true"))
+    bar.ev("strange.follow = 'b', strangeDraw(), true")
+    bar.click('#strange-hud [data-strange="play"]')
+    bar.until("debugSplit.panes.a.turn >= 8 && strange.run !== null", "time runs on for A after B's game is over", seconds=30)
+    assert bar.ev("[debugSplit.panes.b.turn, debugSplit.panes.b.over]") == [4, {"turn": 4, "how": "won"}]
+    bar.until("+document.querySelector('#strange-hud [data-strange=\"turn\"]').textContent >= 8", "the line says time's turn")
+    won = card("b")
+    assert won == {"shown": True, "chip": None, "kicker": "Victory", "title": "rome won", "verdict": "Science victory",
+                   "meta": won["meta"], "buttons": [["View map", False], ["Close", False]], "winner": "none"}, won
+    assert won["meta"].startswith("Turn 4 · Score "), won
+    # View map puts the card away and leaves a chip that brings it back.
+    press("b", "#strange-result [data-sr=map]")
+    assert card("b")["shown"] is False and card("b")["chip"] == "★ Victory · turn 4", card("b")
+    press("b", "#strange-result-chip")
+    assert card("b")["shown"] is True and card("b")["chip"] is None
+    # Close deletes the world while time runs on for the other.
+    press("b", "#strange-result [data-sr=close]")
+    bar.until("strange.order.join('') === 'a' && debugSplit.panes.b.frame.classList.contains('strange-shut')", "Close deletes B")
+    went = bar.ev("debugSplit.panes.a.turn")
+    bar.until(f"debugSplit.panes.a.turn >= {went + 2} && strange.run !== null", "and time runs on for A", seconds=30)
+    # The last world's game is over: now time stops, and its card says so.
+    end = bar.ev("debugSplit.panes.a.turn") + 2
+    bar.ev(pane("a", f"engine.over = {{turn: {end}, winner: 1}}, true"))
+    bar.until("strange.run === null", "time stops when the last world's game is over", seconds=30)
+    assert bar.ev("debugSplit.panes.a.turn") == end
+    assert bar.ev(said) == f"A's game is over on turn {end}", bar.ev(said)
+    lost = card("a")
+    assert [lost["shown"], lost["kicker"], lost["title"], lost["buttons"]] == \
+        [True, "Defeat", "greece won", [["View map", False], ["Close", True]]], lost
+    assert not bar.dev.console, f"the page complained: {bar.dev.console}"
+
+
 def check_edge_of_tomorrow(bar: Bar, address: str) -> None:
     """Edge of Tomorrow: the played game with a jump back.
 
@@ -4771,6 +4836,11 @@ def main() -> int:
               "the base that plays it to what the search read, the other worlds locked to it play on to the same "
               "turn, and no world's future is begun while a search runs.")
         check_doctor_strange_all(bar, f"http://127.0.0.1:{port}/")
+        check_doctor_strange_world_ends(bar, f"http://127.0.0.1:{port}/")
+        print("Doctor Strange's CIVVIS goes on when one world's game is over: that world stays on the turn it "
+              "ended on with a card in its box (who won, how, the turn, the score), View map puts the card away "
+              "behind a chip that brings it back, Close deletes the world while time runs on for the rest, and "
+              "time stops only when the last world's game is over.")
         print("Doctor Strange's CIVVIS has All 14,000,605 at the foot of the tree on the left: it branches the base "
               "timeline once for each of the top ten player strategies that has no world of its own there, each a "
               "world in a window of its own beside the base, best first, and time runs on for every world together; "

@@ -3620,6 +3620,12 @@ window.addEventListener("message", event => {
   } else if (data.civvis === "pane-ahead-done") {
     // A world played ahead of its open turn, for the page that asked it to.
     if (STRANGE) strangeAheadDone(letter, data);
+  } else if (data.civvis === "pane-over") {
+    // A world whose game is over, or is again not (`strangePaneResult`).
+    if (STRANGE) strangeOver(letter, data.over);
+  } else if (data.civvis === "pane-close") {
+    // Close, pressed on the card of a world whose game is over.
+    if (STRANGE) strangeClose(letter);
   } else if (data.civvis === "pane-swan-done") {
     // A world a black swan was struck on, for the page that asked for it.
     if (STRANGE) strangeSwanDone(letter, data);
@@ -3722,6 +3728,91 @@ function debugPaneNumbers() {
   debugNumbersSaid = said;
   window.parent.postMessage({civvis: "pane-numbers", pane: DEBUG_PANE, numbers, turn: state.turn, first, last,
     strategy: debugStrategy() || ""}, location.origin);
+}
+// A world of Doctor Strange's whose game is over says so in its own box, in a
+// short card, and time runs on for the other worlds (operator 2026-11-26:
+// "for doctor strange, when a screen finishes it should not halt the game
+// (unless the final screen). we should make a quikc summary screen to
+// describe the outcome, with maybe a "view map" and a "close" option"). The
+// host is told the turn the game ended on (`pane-over`) and leaves the world
+// out of the turns past it (`strangeEnded`). View map puts the card away and
+// leaves a chip in the corner to bring it back; Close deletes the world
+// (`pane-close`, `strangeClose`), as its ✕ does. A seat that has fallen gets
+// the card too, though its world plays on. The viewer's own result card,
+// and the countdown to a new game it carries, are not this page's: a new
+// game would end the world (`STRANGE_PANE_STYLE`, `finaleHoldsForTheReader`).
+let strangeResultSaid = "null", strangeResultViewed = "";
+function strangeWorldFate() {
+  const me = (state.players || [])[0];
+  if (!me) return null;
+  const civ = id => ((state.players || [])[id] || {}).civ || "A rival";
+  const verdict = victoryVerdict(state.victory_type, state.victory_label);
+  if (!gameFinished(state))
+    return me.alive === false ? {how: "fell", turn: state.turn, kicker: "Defeat", title: `${me.civ} has been defeated`,
+      verdict: "Its world plays on without it"} : null;
+  const turn = state.victory_turn ?? state.turn;
+  const winners = Array.isArray(state.winners) && state.winners.length ? state.winners
+    : state.winner !== null && state.winner !== undefined ? [state.winner] : [];
+  if (winners.includes(0)) return {how: "won", turn, kicker: "Victory", title: `${me.civ} won`, verdict};
+  if (!winners.length) return {how: "over", turn, kicker: "Game over", title: "No one won",
+    verdict: state.draw === true ? "Turn limit reached" : ""};
+  return {how: "lost", turn, kicker: "Defeat", title: `${winners.map(civ).join(" + ")} won`, verdict};
+}
+function strangePaneResult() {
+  if (!STRANGE_PANE || !state) return;
+  const fate = strangeWorldFate();
+  const over = fate && fate.how !== "fell" ? {turn: fate.turn, how: fate.how} : null;
+  const said = JSON.stringify(over);
+  if (said !== strangeResultSaid) {
+    strangeResultSaid = said;
+    window.parent.postMessage({civvis: "pane-over", pane: DEBUG_PANE, over}, location.origin);
+  }
+  strangeResultDraw(fate);
+}
+function strangeResultDraw(fate) {
+  let card = document.getElementById("strange-result"), chip = document.getElementById("strange-result-chip");
+  if (!fate) {
+    if (card) card.hidden = true;
+    if (chip) chip.hidden = true;
+    strangeResultViewed = "";
+    return;
+  }
+  if (!card) {
+    card = Object.assign(document.createElement("div"), {id: "strange-result", hidden: true});
+    card.setAttribute("role", "dialog");
+    chip = Object.assign(document.createElement("button"), {id: "strange-result-chip", type: "button", hidden: true});
+    document.body.append(card, chip);
+    card.addEventListener("click", event => {
+      const button = event.target.closest("[data-sr]");
+      if (!button || button.disabled) return;
+      if (button.dataset.sr === "map") { strangeResultViewed = card.dataset.key; strangeResultDraw(strangeWorldFate()); }
+      else window.parent.postMessage({civvis: "pane-close", pane: DEBUG_PANE}, location.origin);
+    });
+    chip.addEventListener("click", () => { strangeResultViewed = ""; strangeResultDraw(strangeWorldFate()); });
+  }
+  const key = `${state.seed}|${fate.how}|${fate.turn}`, me = (state.players || [])[0] || {};
+  if (card.dataset.key !== key) {
+    const count = value => Math.round(+value || 0).toLocaleString();
+    card.className = chip.className = `strange-result ${fate.how}`;
+    card.setAttribute("aria-label", `${fate.kicker}: ${fate.title}`);
+    card.innerHTML = `<span class="sr-kicker">${fate.kicker}</span>` +
+      `<strong class="sr-title">${escapeAttr(fate.title)}</strong>` +
+      (fate.verdict ? `<span class="sr-verdict">${escapeAttr(fate.verdict)}</span>` : "") +
+      `<span class="sr-meta">Turn ${fate.turn} · Score ${count(me.score)} · ${count(me.cities)} cities</span>` +
+      `<div class="sr-actions"><button type="button" data-sr="map">View map</button>` +
+      `<button type="button" data-sr="close">Close</button></div>`;
+    chip.textContent = `${fate.how === "won" ? "★" : "✕"} ${fate.kicker} · turn ${fate.turn}`;
+    chip.title = "Show this world's result again";
+    card.dataset.key = key;
+  }
+  // The last world open stays, as it does for its ✕.
+  let many = false;
+  try { many = window.parent.strangeOpen().length > 1; } catch (_) {}
+  const close = card.querySelector('[data-sr="close"]');
+  close.disabled = !many;
+  close.title = many ? "Delete this world: its line goes from the tree and its box from the window" : "The last world stays open";
+  card.hidden = strangeResultViewed === key;
+  chip.hidden = !card.hidden;
 }
 // Reach the turn the other pane is on, the way it got there: walked along
 // the timeline, stepped by the Civ AI, or by ending the turn as it stands.
@@ -5526,7 +5617,30 @@ const STRANGE_PANE_STYLE = `
   html.strange-pane #moments, html.strange-pane #site-pick, html.strange-pane #buildmark,
   html.strange-pane #debugbar, html.strange-pane #humanfooter,
   html.strange-pane .minimap-frame, html.strange-pane #map-controls-dock,
-  html.strange-pane #lens-picker { display: none !important; }
+  html.strange-pane #lens-picker, html.strange-pane #winner { display: none !important; }
+  #strange-result {
+    position: fixed; left: 50%; top: 50%; z-index: 40; transform: translate(-50%, -50%);
+    width: min(290px, calc(100vw - 24px)); display: grid; gap: 4px; justify-items: center;
+    padding: 14px 16px 12px; text-align: center; color: #eef2ee;
+    background: #08100eeb; border: 1px solid var(--sr-ink); border-radius: 12px; box-shadow: 0 18px 50px #000b;
+    font: 500 12px/1.4 var(--font-ui);
+  }
+  #strange-result[hidden], #strange-result-chip[hidden] { display: none; }
+  .strange-result.won { --sr-ink: #8fe07a; }
+  .strange-result.lost, .strange-result.fell { --sr-ink: #ff8f7e; }
+  .strange-result.over { --sr-ink: #c9d2cd; }
+  #strange-result .sr-kicker { color: var(--sr-ink); font-size: 11px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
+  #strange-result .sr-title { font-size: 17px; font-weight: 750; }
+  #strange-result .sr-verdict { color: #d3dcd7; }
+  #strange-result .sr-meta { color: #9fb0a8; font-size: 11px; }
+  #strange-result .sr-actions { display: flex; gap: 8px; margin-top: 8px; }
+  #strange-result button, #strange-result-chip {
+    padding: 7px 12px; color: #eef2ee; background: #16211e; border: 1px solid #4a5a54; border-radius: 7px;
+    font: 700 12px/1 var(--font-ui); cursor: pointer;
+  }
+  #strange-result button[data-sr="map"] { color: #0b120f; background: var(--sr-ink); border-color: transparent; }
+  #strange-result button:disabled { opacity: .45; cursor: default; }
+  #strange-result-chip { position: fixed; left: 10px; top: 10px; z-index: 40; color: var(--sr-ink); background: #08100ee6; border-color: var(--sr-ink); }
 `;
 
 // The host's record of the highway, beside the split's own.
@@ -5790,7 +5904,7 @@ function strangeWorldOpen(letter, born = null) {
   const split = debugSplit, hud = strange.hud, name = letter.toUpperCase();
   const pane = split.panes[letter] || strangeFrame(letter, born);
   pane.frame.classList.remove("strange-shut");
-  pane.alerts = []; pane.ahead = new Map(); pane.spent = null;
+  pane.alerts = []; pane.ahead = new Map(); pane.spent = null; pane.over = null;
   strangeSightDrop(letter);
   if (hud.querySelector(`[data-strange-world="${letter}"]`)) return;
   // The sign over the far end of its branch (`strangeFate`).
@@ -6035,7 +6149,7 @@ function strangeBear(letter) {
 // split is made of them, and is the next branch's box.
 function strangeClose(letter) {
   const split = debugSplit;
-  if (!strangeIdle() || !strange.order.includes(letter) || strange.order.length < 2) return;
+  if (!(strangeIdle() || strangeEndedHere(letter)) || !strange.order.includes(letter) || strange.order.length < 2) return;
   const name = strangeSeries(letter), at = strange.order.indexOf(letter);
   strange.order.splice(at, 1);
   if (strange.follow === letter) strange.follow = strange.order[Math.max(0, at - 1)];
@@ -6067,7 +6181,7 @@ function strangeClose(letter) {
 // far at once as every world has already played.
 function strangeTravel(end, play = false) {
   const split = debugSplit;
-  const at = split.panes[strange.follow].turn;
+  const at = strangeNow();
   if (!strange.locked) {
     if (end > Math.max(split.panes[strange.follow].last ?? 0, at)) debugSplitRun(end, [strange.follow]);
     else debugSplitGoTo(strange.follow, String(end));
@@ -6075,6 +6189,14 @@ function strangeTravel(end, play = false) {
   }
   strange.run = {end, at, asked: null, stop: false, play, letters: strangeOpen()};
   strangeAsk(strange.run);
+}
+// The turn the worlds stand on: the followed world's, unless the worlds are
+// locked and its game ended before the others' did, and time went on for
+// them (`strangeEnded`): then theirs, the furthest any world stands on.
+function strangeNow() {
+  const split = debugSplit, follow = split.panes[strange.follow];
+  if (!strange.locked || !follow.over || follow.turn !== follow.over.turn) return follow.turn;
+  return Math.max(follow.turn ?? 0, ...strangeOpen().map(letter => split.panes[letter].turn ?? 0));
 }
 // The last turn a world holds on its own line.
 function strangeKept(letter) {
@@ -6089,6 +6211,11 @@ function strangeAsk(run) {
   if (run.stop || run.at === run.end || run.letters.length === 0) { strangeRunOver(run); return; }
   const next = run.end < run.at ? run.end
     : run.play ? run.at + 1 : Math.min(run.end, Math.max(run.at + 1, Math.min(...run.letters.map(strangeKept))));
+  // A world whose game is over by then stays on the turn it ended on, and
+  // time goes on for the rest; it stops only when every world's game is over
+  // (`strangeEnded`). Gone back to before its end, a world is in again.
+  const live = run.letters.filter(letter => !strangeEnded(letter, next));
+  if (live.length === 0) { strangeRunOver(run, strangeOverNote()); return; }
   // While time runs, each world's future is played on ahead of it as it goes
   // (`strangeAheadNext`), and a world is shown the turns it holds as it
   // comes to them. Time waits on that only for a world that does not hold
@@ -6096,7 +6223,7 @@ function strangeAsk(run) {
   // holds meanwhile, so time does not stop to look ahead.
   if (strange.futures && run.play && next > run.at) {
     strangeAheadNext(true);
-    if (run.letters.some(letter => strange.peeks[letter] && strangeKept(letter) < next)) {
+    if (live.some(letter => strange.peeks[letter] && strangeKept(letter) < next)) {
       run.asked = null;
       strangeDraw();
       return;
@@ -6104,7 +6231,7 @@ function strangeAsk(run) {
   }
   run.asked = next;
   run.shown = false;
-  for (const letter of run.letters) {
+  for (const letter of live) {
     split.panes[letter].settled = null;
     split.panes[letter].ready = null;
     debugSplitTell(letter, {civvis: "pane-follow", turn: run.asked, how: "travel", hold: true});
@@ -6125,6 +6252,38 @@ function strangeShow() {
     if (ahead > 0) strange.peeks[letter] = {turns: ahead, since: performance.now()};
     debugSplitTell(letter, ahead > 0 ? {civvis: "pane-show", ahead} : {civvis: "pane-show"});
   }
+}
+// Whether a world's game is over before `turn`: it ended on an earlier one
+// (`pane-over`). Its world cannot be taken to `turn`, and is not waited on.
+function strangeEnded(letter, turn) {
+  const over = debugSplit && debugSplit.panes[letter] ? debugSplit.panes[letter].over : null;
+  return !!over && typeof turn === "number" && turn > over.turn;
+}
+// A world has said its game is over, or is again not. Time that was waiting
+// on its turn goes on without it (`strangeStep`, from the split's drawing).
+function strangeOver(letter, over) {
+  const pane = debugSplit && debugSplit.panes[letter];
+  if (!pane) return;
+  pane.over = over && typeof over.turn === "number" ? {turn: over.turn, how: over.how} : null;
+  drawDebugSplit();
+}
+// What is said when time stops because no world has a game left to play.
+function strangeOverNote() {
+  const open = strangeOpen();
+  if (open.length === 1) {
+    const over = debugSplit.panes[open[0]].over;
+    return `${open[0].toUpperCase()}'s game is over${over ? ` on turn ${over.turn}` : ""}`;
+  }
+  return "Every world's game is over";
+}
+// Whether a world whose game is over may be deleted now, while time runs on
+// for the others: it stands on the turn its game ended on, is not part of
+// what is moving, and nothing else is being done to the worlds.
+function strangeEndedHere(letter) {
+  const split = debugSplit, pane = split && split.panes[letter], run = strange.run;
+  if (!pane || !pane.over || pane.turn !== pane.over.turn) return false;
+  if (!split.shown || split.busy || split.running > 0 || strange.lockWanted || strange.swan || strange.planning) return false;
+  return !run || strangeEnded(letter, run.asked ?? run.at + 1);
 }
 function strangeRunOver(run, note = "") {
   if (strange.run !== run) return;
@@ -6163,7 +6322,8 @@ function strangeStep() {
     const pane = split.panes[letter];
     return pane.ready === run.asked || (pane.turn === run.asked && !!pane.settled && pane.settled.wanted === run.asked);
   };
-  const letters = run.letters.filter(letter => split.panes[letter]);
+  const letters = run.letters.filter(letter => split.panes[letter] && !strangeEnded(letter, run.asked));
+  if (letters.length === 0) { strangeRunOver(run, strangeOverNote()); return; }
   if (!run.shown && letters.every(ready)) { run.shown = true; strangeShow(); }
   const there = letter => split.panes[letter].turn === run.asked;
   if (letters.every(there)) {
@@ -6676,7 +6836,7 @@ function strangePlay(until = null) {
     return;
   }
   if (!strangeIdle()) return;
-  const reached = split.panes[strange.follow].turn ?? 0;
+  const reached = strangeNow() ?? 0;
   const end = until ?? strangeLimit() ?? reached + 250;
   if (end <= reached) return;
   strangeSay("");
@@ -6692,7 +6852,7 @@ function strangeGoTo(turn) {
   const split = debugSplit, limit = strangeLimit();
   const first = Math.max(...strangeOpen().map(letter => split.panes[letter].first ?? 1));
   const to = Math.max(first, Math.min(limit ?? Infinity, Math.round(turn)));
-  if (to === split.panes[strange.follow].turn) return;
+  if (to === strangeNow()) return;
   strangeSay("");
   strangeTravel(to);
 }
@@ -7054,7 +7214,7 @@ function strangeMount() {
   hud.addEventListener("click", event => {
     const button = event.target.closest("[data-strange]");
     if (!button || button.disabled || !debugSplit) return;
-    const action = button.dataset.strange, now = debugSplit.panes[strange.follow].turn ?? 1;
+    const action = button.dataset.strange, now = strangeNow() ?? 1;
     if (action === "play") strangePlay();
     else if (action === "back10") strangeGoTo(now - 10);
     else if (action === "back1") strangeGoTo(now - 1);
@@ -7232,7 +7392,7 @@ function strangeDraw() {
   if (!open.includes(strange.follow)) strange.follow = open[0];
   const tree = strange.tree = strangeTree(), panes = split.panes, follow = strange.follow;
   const idle = strangeIdle(), many = open.length > 1, one = !Number.isFinite(tree.splits);
-  const turn = panes[follow].turn ?? tree.from, limit = strangeLimit();
+  const turn = strangeNow() ?? tree.from, limit = strangeLimit();
   const set = (name, text) => { const held = hud.querySelector(`[data-strange="${name}"]`); if (held.textContent !== text) held.textContent = text; return held; };
   set("turn", String(turn));
   set("limit", limit ? `/ ${limit}` : "");
@@ -7357,7 +7517,7 @@ function strangeDraw() {
     const series = strangeSeries(letter, tree), named = hud.querySelector(`[data-strange-name="${letter}"]`);
     if (named.textContent !== series) { named.textContent = series; named.title = `Branch ${series}: the player strategies that played it, and the turn each took the seat on. ${STRANGE_SWAN} is a black swan, on the turn it struck`; }
     const exit = hud.querySelector(`[data-strange="close-${letter}"]`);
-    exit.disabled = !idle || !many;
+    exit.disabled = !(idle || strangeEndedHere(letter)) || !many;
     exit.title = many ? `Delete ${name}: its line goes from the tree and its box from the window` : "The last world stays open";
     // A black swan that is still going on in this world is said first: the
     // latest by name, and how many more there are, because the plate is short.
@@ -7850,6 +8010,9 @@ if (STRANGE_PANE) {
   // (The viewer's own, where the page has them.)
   debugDock = () => {};
   if (typeof drawPlayerHud === "function") drawPlayerHud = () => {};
+  // A world whose game is over is not started again on a countdown: that
+  // would end the world (`strangeWorldFate`).
+  if (typeof finaleHoldsForTheReader === "function") finaleHoldsForTheReader = () => true;
   if (typeof publishSoloHeight === "function") publishSoloHeight = () => {};
   // Nor are a played seat's chores at the top of a turn done for a box
   // nobody plays by hand: picking the unit that wants orders and flying the
@@ -7943,7 +8106,7 @@ if (STRANGE) {
   const drawState = render;
   render = function (st, ...rest) {
     const drawn = drawState(st, ...rest);
-    try { drawDebugBar(); debugPaneReport(); debugPaneNumbers(); debugOpenTheGame(); } catch (error) { console.error("debugger bar", error); }
+    try { drawDebugBar(); debugPaneReport(); debugPaneNumbers(); strangePaneResult(); debugOpenTheGame(); } catch (error) { console.error("debugger bar", error); }
     return drawn;
   };
   // In the middle of a round stepped a seat at a time the turn is not the
@@ -7986,7 +8149,7 @@ window.addEventListener("resize", () => { if (debugTimeline()) drawDebugBar(); }
 // A page whose first state was drawn before this script arrived has had no
 // `render` of ours yet: draw the bar now, and a half of a split says where it
 // stands, or its host would wait for a report until something moved.
-if (state) { drawDebugBar(); debugPaneReport(); debugPaneNumbers(); debugOpenTheGame(); }
+if (state) { drawDebugBar(); debugPaneReport(); debugPaneNumbers(); strangePaneResult(); debugOpenTheGame(); }
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Edge of Tomorrow
