@@ -5117,6 +5117,10 @@ if (TOMORROW) {
 // focus of its own for the seat. Auto-play, Jump back and Wake here go to the
 // engine by their own routes.
 window.civvisSeatHandsOff = TOMORROW;
+// And it shows the seat's research box (governors, research, civic,
+// government and policies; `liveTrackerShown` in app.js), as the Debugger
+// view does, and opens on the standings and the victory tracker.
+window.civvisSeatTracker = TOMORROW;
 // The player strategies the second world is given when the picker shows no
 // rating to rank them by, in the order they are tried.
 const STRANGE_RIVALS = ["siege", "moonshot", "holy", "tourist", "forward", "swing", "jack", "stock"];
@@ -7883,7 +7887,7 @@ if (state) { drawDebugBar(); debugPaneReport(); debugPaneNumbers(); debugOpenThe
 // a loop, and the loops are counted.
 //
 // A jump back comes two ways. The person asks for one (Jump back, in the bar
-// across the top), or the game is lost: the seat's civilization falls, or
+// across the bottom), or the game is lost: the seat's civilization falls, or
 // somebody else wins. A lost game does not end here. Its card says how the
 // loop ended and counts down to the jump.
 //
@@ -7926,18 +7930,26 @@ const TOMORROW_SEEN = {
 };
 
 const TOMORROW_STYLE = `
-  /* The bar stands where the debugger's does: across the top of the window
-     from where the map area begins (measured, --tmr-left) to the right
-     edge, with the map area beneath it by the height it takes (--tmr-top). */
-  html.tmr-docked #maparea { margin-top: var(--tmr-top, 0px); }
-  html.tmr-docked #moments, html.tmr-docked #site-pick { margin-top: var(--tmr-top, 0px); }
-  @media (max-width: 720px) { html.tmr-docked #side { margin-top: var(--tmr-top, 0px); } }
+  /* Operator 2026-11-26: "lets move the civvis: edge of tomorrow top bar to
+     the bottom of the screen. the yield bar and other stuff can stay on
+     top". The bar stands across the foot of the window from where the map
+     area begins (measured, --tmr-left) to the right edge, and the map area
+     ends above it by the height it takes (--tmr-bottom): the body is a row
+     of flex items, so a margin at the foot of the map area takes that much
+     off its height, and whatever stands at the map area's foot stands on
+     the bar. On a narrow window the map area is a block a whole window
+     tall, and the floating deck stops above the bar. */
+  html.tmr-docked #maparea { margin-bottom: var(--tmr-bottom, 0px); }
+  @media (max-width: 720px) {
+    html.tmr-docked #maparea { height: calc(100% - var(--tmr-bottom, 0px)); margin-bottom: 0; }
+    html.tmr-docked #side { bottom: calc(8px + var(--tmr-bottom, 0px)); max-height: calc(100dvh - 140px - var(--tmr-bottom, 0px)); }
+  }
   #tomorrowbar {
-    position: fixed; z-index: 8000; inset: 0 0 auto var(--tmr-left, 0px);
+    position: fixed; z-index: 8000; inset: auto 0 0 var(--tmr-left, 0px);
     display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 6px 16px;
     padding: 8px 12px; color: #dfe6ec; font-size: 12px; line-height: 1.2; user-select: none;
-    background: linear-gradient(180deg, #131b23, #0a0f14); border-bottom: 1px solid #44525f; border-left: 1px solid #2b3742;
-    box-shadow: 0 6px 18px #0008;
+    background: linear-gradient(180deg, #131b23, #0a0f14); border-top: 1px solid #44525f; border-left: 1px solid #2b3742;
+    box-shadow: 0 -6px 18px #0008;
   }
   #tomorrowbar[hidden] { display: none !important; }
   /* The name, and under it the loop this is. */
@@ -7973,13 +7985,31 @@ const TOMORROW_STYLE = `
   }
   #tomorrowbar .tmr-said { min-height: 14px; color: #9fb0bf; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   #tomorrowbar .tmr-said b { color: #dfe6ec; font-weight: 700; }
-  /* Jump back is the one thing this page adds to the game, and is the
-     largest thing on the bar for it. */
-  #tomorrowbar .tmr-acts { display: flex; align-items: center; gap: 8px; }
+  /* Operator 2026-11-26: "on the right, the biuttons shold be: (top row):
+     turns, civ ai (bottom row): jump back, auto-play N turns, wake here. new
+     game remains in the left panel." The left panel's Auto-play (its two
+     pickers, its button and its note, \`#autoplaybar\`) is moved in here
+     whole by \`tomorrowMount\`, so the page drives it as it always has; its
+     boxes give way (\`display: contents\`) and each piece takes its place in
+     the grid: Turns over Jump back, Civ AI over Auto-play and Wake here. */
+  #tomorrowbar .tmr-acts {
+    display: grid; grid-template-columns: auto auto auto; align-items: center; gap: 6px 8px;
+    grid-template-areas: "turns ai ai" "jump auto wake";
+  }
+  #tomorrowbar #autoplaybar, #tomorrowbar .autoplay-fields { display: contents; }
+  #tomorrowbar .autoplay-field { display: flex; align-items: center; gap: 7px; min-width: 0; }
+  #tomorrowbar .autoplay-field > span { flex: none; color: #9fb0bf; font-size: 10px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
+  #tomorrowbar .autoplay-field select { flex: 1; min-width: 0; height: 28px; padding: 0 6px; font-size: 12px; }
+  #tomorrowbar .tmr-turns { grid-area: turns; }
+  #tomorrowbar .tmr-ai { grid-area: ai; }
+  #tomorrowbar #autoplaybtn { grid-area: auto; width: auto; height: 40px; padding: 0 14px; border-radius: 10px; font-size: 13px; }
+  #tomorrowbar #autoplaynote { display: none; }
+  #tmr-jump { grid-area: jump; }
+  #tmr-wake { grid-area: wake; }
   #tomorrowbar button { font: inherit; cursor: pointer; white-space: nowrap; }
   #tomorrowbar button:disabled { cursor: default; opacity: .38; }
   #tmr-jump {
-    display: grid; justify-items: center; gap: 1px; min-width: 132px; height: 44px; padding: 0 16px; border-radius: 10px;
+    display: grid; justify-items: center; gap: 1px; min-width: 132px; height: 40px; padding: 0 16px; border-radius: 10px;
     color: #1a1206; background: linear-gradient(180deg, #f9b858, #d98a1e); border: 1px solid #ffd9a0;
     box-shadow: 0 2px 10px #f5a74233;
   }
@@ -7992,7 +8022,7 @@ const TOMORROW_STYLE = `
   @keyframes tmr-due { 50% { box-shadow: 0 0 0 4px #f5a74255, 0 2px 14px #f5a74288; } }
   @media (prefers-reduced-motion: reduce) { #tmr-jump.tmr-due { animation: none; box-shadow: 0 0 0 3px #f5a74266; } }
   #tmr-wake {
-    height: 44px; padding: 0 12px; border-radius: 10px; color: #c9d2da; background: #141c24; border: 1px solid #44525f;
+    height: 40px; padding: 0 12px; border-radius: 10px; color: #c9d2da; background: #141c24; border: 1px solid #44525f;
     font-size: 11px; font-weight: 700; letter-spacing: .04em;
   }
   #tmr-wake:hover:not(:disabled) { color: #fff; border-color: #eef3f7; }
@@ -8004,6 +8034,7 @@ const TOMORROW_STYLE = `
     #tmr-jump { min-width: 0; height: 36px; padding: 0 12px; }
     #tmr-jump span { font-size: 12px; }
     #tmr-wake { height: 36px; padding: 0 9px; }
+    #tomorrowbar #autoplaybtn { height: 36px; padding: 0 10px; font-size: 12px; }
   }
   /* The card of a lost loop: the result card's own shape, with the jump
      where a new game was offered. */
@@ -8040,6 +8071,20 @@ const TOMORROW_STYLE = `
      only by Auto-play (\`civvisSeatHandsOff\`). */
   html.tomorrow #ubar, html.tomorrow #actionpanel, html.tomorrow #worldtracker,
   html.tomorrow #notify .notice.tone-action { display: none !important; }
+  /* Operator 2026-11-26: "civvis: edge of tomortrow should not have the
+     world minimap or <...(spin)x thing showing". The minimap and the map's
+     controls (deck, compass, zoom, spin, close) are put away, and the map is
+     still moved by drag and wheel. Auto-play has left the left panel for the
+     bar, so its empty place there goes too. */
+  html.tomorrow .minimap-frame, html.tomorrow #map-controls-dock,
+  html.tomorrow #humanfooter { display: none !important; }
+  /* Operator 2026-11-26: "we should also have the victory tracker and player
+     hud showing for this. and the governors / tech / policy screen". The
+     standings and the victory tracker open with the game (the Civilization
+     VI screen's Rankings, which still folds them), and the seat's research
+     box stands as it does in the Debugger view (\`civvisSeatTracker\`),
+     without the live mirror's Pause and New game. */
+  html.tomorrow .livepause-buttons, html.tomorrow #livepause-note { display: none !important; }
 `;
 
 const tomorrow = {
@@ -8184,7 +8229,7 @@ function tomorrowCard() {
       <button class="primary winner-again" id="tmr-card-jump" type="button"
         title="Go back now. The count does it when it reaches zero."></button>
       <button class="winner-again winner-playon" id="tmr-card-stay" type="button"
-        title="Stop the count and put this card away, to look at the world as it ended. Jump back is in the bar across the top.">Look around first</button>
+        title="Stop the count and put this card away, to look at the world as it ended. Jump back is in the bar across the bottom.">Look around first</button>
     </span>
   </div>`;
   tomorrowCardCount();
@@ -8285,6 +8330,24 @@ function tomorrowMount() {
   document.body.appendChild(bar);
   bar.querySelector("#tmr-jump").addEventListener("click", () => { tomorrowJump(); });
   bar.querySelector("#tmr-wake").addEventListener("click", () => { tomorrowWakeHere(); });
+  // The left panel's Auto-play comes into the bar whole: the same pickers
+  // and button, so the page's own Auto-play reads and drives them where they
+  // stand (`autoplay`, `syncAutoplayLabel`). Each picker's field is named
+  // for its place on the bar, and what its note says is said on the bar.
+  const autoplay = document.getElementById("autoplaybar");
+  if (autoplay) {
+    bar.querySelector(".tmr-acts").prepend(autoplay);
+    for (const [picker, place] of [["autoplayturns", "tmr-turns"], ["autoplaystrategy", "tmr-ai"]]) {
+      const field = document.getElementById(picker)?.closest(".autoplay-field");
+      if (field) field.classList.add(place);
+    }
+    const note = document.getElementById("autoplaynote");
+    if (note && typeof MutationObserver === "function") new MutationObserver(() => {
+      if (!note.textContent) return;
+      tomorrowSay(note.textContent);
+      tomorrowDraw(false);
+    }).observe(note, {childList: true, characterData: true, subtree: true});
+  }
   // The lost loop's card is drawn into the page's own result box.
   const card = document.getElementById("winner");
   if (card) card.addEventListener("click", event => {
@@ -8301,7 +8364,7 @@ function tomorrowMount() {
   tomorrowBar = bar;
   return bar;
 }
-// The bar stands over the map area, as the debugger's does (`debugDock`).
+// The bar stands under the map area, from where it begins to the right edge.
 let tomorrowDocked = -1, tomorrowDockedLeft = -1;
 function tomorrowDock(bar) {
   const root = document.documentElement;
@@ -8314,7 +8377,7 @@ function tomorrowDock(bar) {
   if (height === tomorrowDocked) return;
   tomorrowDocked = height;
   root.classList.toggle("tmr-docked", height > 0);
-  root.style.setProperty("--tmr-top", `${height}px`);
+  root.style.setProperty("--tmr-bottom", `${height}px`);
   window.dispatchEvent(new Event("resize"));
 }
 // `measure` is whether the bar may have changed size: a drawing that only
@@ -8385,10 +8448,17 @@ function tomorrowDraw(measure = true) {
 }
 
 if (TOMORROW) {
+  // The standings and the victory tracker open with the game: the Civilization
+  // VI screen's Rankings are opened before its first state is drawn, and the
+  // choice a played game keeps between visits (`settleSoloRankings`) is not
+  // read. Rankings still folds them for a look at the map.
+  soloRankingsSettled = true;
+  let ranked = false;
   // Behind `render` and `drawTurnLoop`, as the debugger's bar is: every
   // state is read for the loops, and the buttons follow the turn's standing.
   const drawState = render;
   render = function (st, ...rest) {
+    if (!ranked) { ranked = true; toggleRankingsReport(true, false); }
     const drawn = drawState(st, ...rest);
     try { tomorrowWatch(); tomorrowDraw(); tomorrowWords(); } catch (error) { console.error("edge of tomorrow", error); }
     return drawn;
