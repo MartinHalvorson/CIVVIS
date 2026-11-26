@@ -377,7 +377,7 @@ def check_a_split_pane_asks_its_hosts_engine(dev) -> None:
         """(async () => {
           const before = window.workerCalls.length;
           const frame = document.createElement("iframe");
-          frame.src = "index.html?pane=a-t1";
+          frame.src = "index.html?pane#a-t1";
           document.body.appendChild(frame);
           // The harness freezes performance.now; Date is the real clock.
           const deadline = Date.now() + 10000;

@@ -114,8 +114,15 @@
   // name on each, and are answered there from a session kept for that half
   // (`src/server/panes.rs`). One engine holds every half, so a half can be
   // forked, copied and kept with all the turns behind it.
+  // A half's name, from its address: `?pane#<name>` (`debugPaneAddress`, so
+  // every half loads the viewer's one cached page), or `?pane=<name>`.
+  function paneNamed(address) {
+    const url = new URL(address, window.location.href);
+    return url.searchParams.get("pane") ||
+      (url.searchParams.has("pane") ? decodeURIComponent(url.hash.slice(1)) : "") || null;
+  }
   const PANE = (() => {
-    const pane = new URL(window.location.href).searchParams.get("pane");
+    const pane = paneNamed(window.location.href);
     return pane && window.parent !== window ? pane : null;
   })();
 
@@ -618,7 +625,7 @@
   if (HOMES) {
     setInterval(() => {
       const shown = new Set([...document.querySelectorAll("iframe")].map((frame) => {
-        try { return new URL(frame.src, window.location.href).searchParams.get("pane"); } catch (_) { return null; }
+        try { return paneNamed(frame.src); } catch (_) { return null; }
       }));
       for (const [pane, home] of [...homes]) {
         if (shown.has(pane) || moving.has(pane)) continue;
