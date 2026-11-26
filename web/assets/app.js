@@ -2170,8 +2170,8 @@ const PLAYER_HUD_COLUMNS = [
   // meaning of, at nought until somebody builds a device.
   ...[["cities", "Cities"], ["loyalty", "Average loyalty", worldStandingsInPlay], // app_standings.js
       ["population", "Population", worldStandingsInPlay], ["housing", "Average housing surplus", worldStandingsInPlay],
-      ["food", "Average food surplus", worldStandingsInPlay], ["happiness", "Average happiness", worldStandingsInPlay],
-      ["production", "Production"],
+      ["food", "Average food surplus", worldStandingsInPlay], ["min_happiness", "Least happy city", worldStandingsInPlay],
+      ["happiness", "Average happiness", worldStandingsInPlay], ["production", "Production"],
       ["science", "Science", worldStandingsInPlay],
       ["culture", "Culture", worldStandingsInPlay],
       // Tourism stands beside the Culture it is the export of: the pressure a
@@ -2251,7 +2251,7 @@ try {
     if (!known.includes("lock"))
       merged = ["lock", ...merged.filter(key => key !== "lock")];
     for (const [key, before] of [["win_delta", "win"], ["win_start", "win_delta"], ["loyalty", "population"],
-      ["housing", "food"], ["happiness", "production"]])
+      ["housing", "food"], ["happiness", "production"], ["min_happiness", "happiness"]])
       if (!known.includes(key)) {
         const rest = merged.filter(other => other !== key);
         const at = rest.indexOf(before);
@@ -2431,7 +2431,7 @@ function playerHudJerseySpan(visibleColumns) {
 // that a fresh table lacks is never shed, because they asked for it.
 const PLAYER_HUD_SHED_ORDER = [
   "player", "leader", "win_start", "win_delta", "age", "nukes", "suzerain", "wonders", "closest_victory",
-  "happiness", "housing", "loyalty", "food", "population", "rank", "tourism", "faith", "gold",
+  "min_happiness", "happiness", "housing", "loyalty", "food", "population", "rank", "tourism", "faith", "gold",
   "culture", "units",
 ];
 // At a table of rated Civ AI Agents the players are the contest: which agent
@@ -2780,7 +2780,8 @@ const PLAYER_HUD_HEAD_LABELS = {
   closest_victory:["CLOSEST", "Closest victory and the estimated turns to it"],
   cities:["CITY", "Cities controlled"], loyalty:["LOY", "Average city loyalty"],
   population:["POP", "Total population"], housing:["HOUS", "Average housing surplus"],
-  food:["FOOD", "Average food surplus"], happiness:["HAP", "Average happiness"], production:["PROD", "Production per turn"],
+  food:["FOOD", "Average food surplus"], min_happiness:["MIN HAP", "Least happy city"],
+  happiness:["HAP", "Average happiness"], production:["PROD", "Production per turn"],
   science:["SCI", "Science per turn"], culture:["CUL", "Culture per turn"],
   tourism:["TOUR", "Tourism per turn"],
   faith:["FPT", "Faith per turn"], gold:["GPT", "Net Gold per turn"],
@@ -28264,6 +28265,7 @@ function playerHudStats(player, rank) {
     ["population", "POP", player.population, `Total population: ${exactStat(player.population)}`],
     averageRow("housing", "HOUS", player.avg_housing_surplus, "Average housing surplus"),
     averageRow("food", "FOOD", player.avg_food_surplus, "Average food surplus", true, ` · ${exactStat(y.food)} Food per turn in all`),
+    leastHappyRow("min_happiness", player),
     averageRow("happiness", "HAP", player.avg_amenity_surplus, "Average happiness"),
     ["production", "PROD", y.production, `Production: ${exactStat(y.production)} per turn`],
     ["science", "SCI", y.science, `Science: ${exactStat(y.science)} per turn`],
@@ -28695,6 +28697,7 @@ function drawPlayerHud() {
             `aria-label="${label}; ${open ? "hide" : "list"} the cities of ${escapeAttr(p.civ)}">` +
             `<b>${ribbonStat(value)}</b><span class="hud-city-caret" aria-hidden="true">${open ? "▾" : "▸"}</span></button>`;
         }
+        if (kind === "min_happiness") return leastHappyCell(p, value, label, isLeader); // app_standings.js
         // The marker is a sibling of the figure, not a child of it: inside
         // <b> its absolute box still counts toward that element's scrollWidth,
         // so the type fitter shrank the number to make room for a mark that
