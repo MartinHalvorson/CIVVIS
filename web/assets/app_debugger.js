@@ -5402,10 +5402,14 @@ const STRANGE_STYLE = `
 // A half of it is a map: the standings, the tracker and the seat's own boxes
 // are put away, and so is its own panel, because every world is moved by the
 // page's one hand. The numbers of the worlds are set side by side by the host.
+// The world minimap and the map's controls (deck, compass, lenses, zoom) are
+// put away too: a world's box is its map alone, still moved by drag and wheel.
 const STRANGE_PANE_STYLE = `
   html.strange-pane #playerhud, html.strange-pane #victoryhud, html.strange-pane #livepause,
   html.strange-pane #moments, html.strange-pane #site-pick, html.strange-pane #buildmark,
-  html.strange-pane #debugbar, html.strange-pane #humanfooter { display: none !important; }
+  html.strange-pane #debugbar, html.strange-pane #humanfooter,
+  html.strange-pane .minimap-frame, html.strange-pane #map-controls-dock,
+  html.strange-pane #lens-picker { display: none !important; }
 `;
 
 // The host's record of the highway, beside the split's own.
@@ -7464,7 +7468,8 @@ if (STRANGE_PANE) {
   // shows (`drawSoloHud`, `paintLivePause`, `placeLivePause`). With six
   // worlds these were about a third of what the worlds' pages spent on a
   // turn; four worlds played 11 to 22% more turns a second without them.
-  for (const name of ["advanceToNextActionUnit", "drawSoloHud", "paintLivePause", "placeLivePause"])
+  // Nor is the minimap a box no longer shows drawn (`drawMini`).
+  for (const name of ["advanceToNextActionUnit", "drawSoloHud", "paintLivePause", "placeLivePause", "drawMini"])
     if (typeof window[name] === "function") window[name] = () => {};
   if (typeof responsiveTypeMutationObserver !== "undefined") responsiveTypeMutationObserver.disconnect();
   // While the worlds move, a world draws a turn once, when it is handed it
