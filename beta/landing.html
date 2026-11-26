@@ -357,6 +357,7 @@
   .res-rates td:first-child { padding-left: 0; }
   .res-rates td.is-rate { color: #fff; font-weight: 700; }
   .res-rates td.is-zero { box-shadow: inset 0 0 0 1px var(--border); }
+  .res-rates td.is-few { background: rgba(147, 163, 181, 0.14); color: var(--muted); }
   .res-rates td small { color: var(--muted); font-size: 12.5px; font-weight: 400; }
   .res-rates td.is-rate small { color: inherit; opacity: 0.75; }
   @media (max-width: 479px) {
@@ -677,7 +678,8 @@
   // highest first, and in a row a cell per window: the wins as a share of
   // the cell's games, then the games in brackets, on a background that is
   // white at the 1/6 par of a 6-player game, dark green at 100% and red at
-  // 0%. The helpers, the shade and the loop that fills the tables are that
+  // 0%; a cell of fewer than 5 games is a grey tile with no rate. The
+  // helpers, the shade and the loop that fills the tables are that
   // page's own lines (`beta/home_rankings_test.py` holds them to it). A
   // level's name is the slot's (`rungs`). With no slot the section stays
   // hidden.
@@ -698,6 +700,11 @@
     const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
     const day = (iso) => { const [, m, d] = String(iso).split("-").map(Number); return MONTHS[m - 1] + " " + d; };
     const PAR = 1 / 6, PAR_WHITE = [255, 255, 255], PAR_GREEN = [22, 101, 52], PAR_RED = [220, 38, 38];
+    // A cell of fewer than 5 games is left out of the results (operator
+    // 2026-11-26: "lets exclude cells with sample size less than 5 from
+    // results. can show the box grayed out"): a grey tile with no rate and
+    // no shade, only its games in brackets.
+    const MIN_GAMES = 5;
     const shade = (rate) => {
       const [to, t] = rate >= PAR ? [PAR_GREEN, (rate - PAR) / (1 - PAR)] : [PAR_RED, (PAR - rate) / PAR];
       const rgb = PAR_WHITE.map((c, i) => Math.round(c + (to[i] - c) * Math.min(1, Math.max(0, t))));
@@ -722,12 +729,11 @@
           if (RUNGS[row.level]) level.append(el("span", "res-wide", " " + RUNGS[row.level]));
           tr.append(level);
           for (const w of Array.isArray(row.windows) ? row.windows : []) {
-            const games = Number(w.games) || 0, wins = Number(w.wins) || 0;
-            const td = el("td", games ? "is-rate" : "is-zero", games ? pct(wins / games) : "—");
-            if (games) {
-              td.append(" ", el("small", "", "(" + fmt(games) + ")"));
-              Object.assign(td.style, shade(wins / games));
-            }
+            const games = Number(w.games) || 0, wins = Number(w.wins) || 0, rated = games >= MIN_GAMES;
+            const td = el("td", rated ? "is-rate" : games ? "is-few" : "is-zero", rated ? pct(wins / games) : "—");
+            if (games) td.append(" ", el("small", "", "(" + fmt(games) + ")"));
+            if (rated) Object.assign(td.style, shade(wins / games));
+            else if (games) td.title = "Fewer than " + MIN_GAMES + " games: left out, too few to rate";
             tr.append(td);
           }
           body.append(tr);
