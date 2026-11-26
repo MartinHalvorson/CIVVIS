@@ -938,7 +938,12 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
                     round1(sum / city_ids.len() as f64)
                 })
             };
-            let avg_loyalty = city_mean(&|city| city.loyalty);
+            // Loyalty is the change each city's loyalty takes per turn, the
+            // signed figure Civ VI shows beside it (operator 2026-11-26: "loy
+            // should be the avg change in loyalty (often like +20 or +5 ot
+            // -7). avg of those"). It is the whole rate, not clipped where a
+            // city already at 100 cannot climb further.
+            let avg_loyalty_per_turn = city_mean(&|city| g.city_loyalty_per_turn(city));
             let avg_housing_surplus = city_mean(&|city| g.city_housing_headroom(city));
             // Happiness is read once a city, for the average and for P10 HAP,
             // the tenth percentile of the civ's city happiness (operator
@@ -1033,7 +1038,7 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
                 "score": g.score(o.id),
                 "cities": city_count,
                 "population": total_population,
-                "avg_loyalty": avg_loyalty,
+                "avg_loyalty_per_turn": avg_loyalty_per_turn,
                 "avg_housing_surplus": avg_housing_surplus,
                 "avg_food_surplus": avg_food_surplus,
                 "avg_amenity_surplus": avg_amenity_surplus,
