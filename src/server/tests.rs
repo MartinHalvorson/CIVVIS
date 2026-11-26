@@ -2560,31 +2560,40 @@ fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
     // With room beside the lockup the list is a column on its left
     // (operator, 2026-11-21: the list goes "to the left side" of the
     // civvis.ai title, as it is on Home): the first track of the lockup's
-    // grid, one link to a line, with the globe and the wordmark to the
-    // right of it and the tagline under all three. The list is still the
-    // last thing in the lockup's markup, so each of the three is given its
-    // track by name. It applies only while the list is showing, so a
-    // desktop build's lockup keeps the whole band. The column is 92px,
-    // which with its type holds every name on one line (below).
+    // grid, one link to a line. Right of it the rest of the lockup stands
+    // one over the other and centred, the globe on top and large, then the
+    // wordmark, then the tagline (operator, 2026-11-26: "maybe put the
+    // globe on top and bigger, then civvis.ai, the a civ.... but centered
+    // better"), with rows over and under the three that take what the
+    // column's height leaves. The list is still the last thing in the
+    // lockup's markup, so each is given its track by name. It applies only
+    // while the list is showing, so a desktop build's lockup keeps the whole
+    // band. The column is 92px, which with its type holds every name on one
+    // line (below).
     assert!(EMBEDDED_INDEX.contains(concat!(
         "  @container (min-width: 233px) {\n",
         "    #side .brand:has(> .head-links:not([hidden])) {\n",
-        "      --site-rail: 92px; --site-mark: clamp(40px, 19cqw, 72px);\n",
-        "      display: grid; grid-template-columns: var(--site-rail) auto minmax(0, 1fr);\n",
-        "      align-items: center; gap: 7px;\n",
+        "      --site-rail: 92px; --site-mark: clamp(64px, 34cqw, 112px);\n",
+        "      display: grid; grid-template-columns: var(--site-rail) minmax(0, 1fr);\n",
+        "      grid-template-rows: 1fr auto auto 1fr auto;\n",
+        "      align-items: center; gap: 6px 7px;\n",
     )));
     assert!(EMBEDDED_INDEX.contains(concat!(
         "    #side .brand:has(> .head-links:not([hidden])) .head-links {\n",
-        "      grid-column: 1; grid-row: 1; grid-template-columns: minmax(0, 1fr);\n",
+        "      grid-column: 1; grid-row: 1 / span 4; grid-template-columns: minmax(0, 1fr);\n",
     )));
     assert!(EMBEDDED_INDEX.contains(concat!(
         "    #side .brand:has(> .head-links:not([hidden])) .brand-mark {\n",
-        "      grid-column: 2; grid-row: 1; flex: none;",
+        "      grid-column: 2; grid-row: 2; flex: none;",
     )));
     assert!(EMBEDDED_INDEX.contains(concat!(
         "    #side .brand:has(> .head-links:not([hidden])) h1 {\n",
-        "      grid-column: 3; grid-row: 1;\n",
+        "      grid-column: 2; grid-row: 3; justify-self: center; text-align: center;\n",
     )));
+    // The globe and the wordmark no longer stand side by side there.
+    assert!(
+        !EMBEDDED_INDEX.contains("grid-template-columns: var(--site-rail) auto minmax(0, 1fr);")
+    );
     // The column is not on the right any more.
     assert!(!EMBEDDED_INDEX.contains("auto minmax(0, 1fr) var(--site-rail)"));
     // Every name in the column stands on one line (operator, 2026-11-21:
@@ -2621,18 +2630,18 @@ fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
         "a site's name is held to one line by rule again, which cuts a name too wide for its box"
     );
     // A little wider and the tagline fits beside the column as well, under
-    // the globe and the wordmark, and the column then runs the whole height
-    // of the lockup.
+    // the wordmark, and the column then runs the whole height of the
+    // lockup.
     assert!(EMBEDDED_INDEX.contains(concat!(
         "  @container (min-width: 246px) {\n",
-        "    #side .brand:has(> .head-links:not([hidden])) .tagline { grid-column: 2 / 4; }\n",
-        "    #side .brand:has(> .head-links:not([hidden])) .head-links { grid-row: 1 / span 2; }\n",
+        "    #side .brand:has(> .head-links:not([hidden])) { grid-template-rows: 1fr auto auto auto 1fr; }\n",
+        "    #side .brand:has(> .head-links:not([hidden])) .tagline { grid-column: 2; grid-row: 4; }\n",
+        "    #side .brand:has(> .head-links:not([hidden])) .head-links { grid-row: 1 / -1; }\n",
         "  }",
     )));
     // The wordmark is sized from the lane the column leaves it, and the
     // tagline's two lines are fitted as one so they stay one size in it.
-    assert!(EMBEDDED_INDEX
-        .contains("calc((100cqw - var(--site-rail) - var(--site-mark) - 14px) / 4.85)"));
+    assert!(EMBEDDED_INDEX.contains("calc((100cqw - var(--site-rail) - 7px) / 4.85)"));
     assert!(EMBEDDED_APP_JS.contains(
         "{selector:\"#side[data-type-size=compact] .tagline span\", min:10, max:12, together:true},"
     ));
