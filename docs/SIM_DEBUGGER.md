@@ -1880,6 +1880,43 @@ again from its first handover. A search is of one world on one turn, so the
 button waits for that world to stand on that turn; nothing beats a base
 timeline playing its own strategy alone, it says so and makes no branch.
 
+### All 14,000,605
+
+Operator 2026-11-26: "add a button to the left side top half but the bottom
+of it in doctor strange that says "All 14,000,605" and when clicked every
+ai-strategy we have (we can say top 10 for now) spawns from the current point
+and all start simulating towards the end. time carries forward for all. spawn
+a window for each".
+
+The button stands at the foot of the tree on the left, 12 px over the line of
+the open turn as the worlds' numbers stand on the right, in Doctor Strange's
+colours (his button's in the site list). Where the turn written on the line
+would be under it, it stands over the turn instead (`--strange-all-lift`), and
+the line is kept under it (`strange.floor`).
+
+Pressed, the base timeline is branched on its open turn once for each of the
+best `STRANGE_ALL_TOP` (10) player strategies, best first by the picker's
+rating, each a world in a box of its own beside the base (`strangeAll`,
+`strangeMake`). A strategy that already has its world there is left out: the
+one the base seats, and one seated in a world that is still the same world as
+the base on that turn (the engine's print of the turn is the same). Once every
+new world stands on the base's turn (its copy is done), time runs on for all
+the open worlds to the end of the game, as Play Time does. Pressed while time
+runs, time stops first and the worlds branch from the turn it stops on. At 12
+worlds open there is no more room: the best that fit are branched and the page
+says how many were left out, and the button waits for a world to be deleted.
+
+On the real engine (civvis.ai/test, 1600x1000, 10 strategies rated, 11-26):
+from turn 11, nine worlds opened and time ran 1.8 s after the press; the 11
+worlds then went from turn 13 to turn 142 in 45 s, never more than a turn
+apart, each named `TouristTrap-11-<Strategy>`.
+
+A world tells its engine its share of the room (`strangePaneRoom`, `room`)
+in turn with what the page tells it (`debugInTurn`). Sent on its own, the op
+could be in flight when a follow asked for its next step, the step was
+dropped, and the world stopped short the moment time ran on after worlds
+were opened.
+
 ### Black swans
 
 A black swan is an event nothing in the world saw coming. No rule of the game
