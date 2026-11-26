@@ -4342,9 +4342,13 @@ def check_doctor_strange_world_ends(bar: Bar, address: str) -> None:
     went = bar.ev("debugSplit.panes.a.turn")
     bar.until(f"debugSplit.panes.a.turn >= {went + 2} && strange.run !== null", "and time runs on for A", seconds=30)
     # The last world's game is over: now time stops, and its card says so.
-    end = bar.ev("debugSplit.panes.a.turn") + 2
+    # (Time is paused while its end is set, so the end is a turn still ahead.)
+    bar.click('#strange-hud [data-strange="play"]')
+    bar.until("strange.run === null && strangeIdle()", "Pause stops A", seconds=30)
+    end = bar.ev("debugSplit.panes.a.turn") + 3
     bar.ev(pane("a", f"engine.over = {{turn: {end}, winner: 1}}, true"))
-    bar.until("strange.run === null", "time stops when the last world's game is over", seconds=30)
+    bar.click('#strange-hud [data-strange="play"]')
+    bar.until(f"strange.run === null && debugSplit.panes.a.turn === {end}", "time stops when the last world's game is over", seconds=30)
     assert bar.ev("debugSplit.panes.a.turn") == end
     assert bar.ev(said) == f"A's game is over on turn {end}", bar.ev(said)
     lost = card("a")
