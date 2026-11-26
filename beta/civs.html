@@ -217,7 +217,7 @@
      (operator, 2026-11-22), and drops down like one (operator,
      2026-11-24: "charts/ can drop down folder style and the user can
      pick the right chart"): pointing at it, or tabbing to it, opens its
-     six pages under it, and the reader picks one. Charts/ itself still
+     seven pages under it, and the reader picks one. Charts/ itself still
      opens the folder's first page, AI Insights (operator, 2026-11-24:
      "we want a new ai insights", over the page he had put first). On
      a touch screen the first tap opens the list (the script after the
@@ -253,6 +253,7 @@
   .rank-sub { margin: 2px 0 8px; color: var(--faint); font-size: 12px; line-height: 1.45; }
   .rank-note { margin: 10px 0 0; padding-top: 8px; border-top: 1px solid var(--border); color: var(--faint); font-size: 11.5px; line-height: 1.5; }
   .rank-note a { color: var(--accent); }
+  .rank-sub a { color: var(--accent); }
   /* What a chart or a list counts, closed until it is pressed (operator,
      2026-11-24: "there is too much text on pages ... should be a more
      visual experience"). The words are a visitor's to open; the page is its
@@ -503,7 +504,7 @@
          row across the top of the page (operator, 2026-11-24: "try putting
          the vertical menu from home... civ across the top instad"), where
          until then they stood in a column to the left of the title. Charts/
-         is a folder and drops down like one to its six pages ("charts/ can
+         is a folder and drops down like one to its seven pages ("charts/ can
          drop down folder style and the user can pick the right chart"). The
          page on screen is ringed in white: this is Civ Analytics, under
          Charts/, so Charts/ is ringed too and so is this page in its list.
@@ -521,6 +522,7 @@
           <a class="site-link sub-link" href="../win-analytics/" title="Who wins, how and when: the games against Civilization VI&#8217;s own AI beside the CIVVIS self-play games.">Win Analytics</a>
           <a class="site-link sub-link" href="../elo-rankings/" title="The Civ AI Agents and Civilization VI&#8217;s own AI on one Elo scale, now and over time.">ELO Rankings</a>
           <a class="site-link sub-link" href="../civvis-performance/" title="How fast the simulator plays: the fastest game on video and how long a self-play game takes.">CIVVIS Performance</a>
+          <a class="site-link sub-link" href="../random-ai-charts/" title="Charts the AI agents added on their own, kept here until they are asked for or talked over.">Random AI Charts</a>
         </div>
       </div>
       <a class="site-link" href="../../experiments/" title="Series of verification games against Civilization VI&#8217;s own AI: running, scheduled and finished.">Experiments</a>
@@ -786,13 +788,12 @@
           <h3 class="civ-step-title"><span class="civ-step-n">6</span><span>Which victory to race for <span class="civ-step-turns">turns 100&#8211;250</span></span></h3>
           <p class="civ-step-why">By turn 100 the map shows which victory is in reach.</p>
         </header>
-        <div class="civ-pair">
-          <section class="res-section" id="civ-victories" aria-labelledby="civ-victories-title">
-            <h3 class="rank-title" id="civ-victories-title">Victory aimed for</h3>
-            <p class="rank-sub">Win rate (games). A win of any kind counts.</p>
-            <div data-list></div>
-          </section>
-        </div>
+        <!-- Its chart, the win rate by the victory aimed for, is on Random AI
+             Charts (operator, 2026-11-25: "please move all the ai generated
+             charts that i havent approved of or we have discussed to here"):
+             an agent added it beyond the "chart or two" asked for. The
+             decision stays in the timeline. -->
+        <p class="rank-sub"><a href="../random-ai-charts/#civ-victories">Its chart is on Random AI Charts.</a></p>
         <details class="fine">
         <summary>How it is counted</summary>
         <p class="rank-note" id="civ-filtered-note">
@@ -802,7 +803,7 @@
           A game is first invaded on the first turn another civilization&#8217;s unit fights CIVVIS on its own ground: it attacks one of our cities or districts, or one of our units while it or its attacker stands on our land. A barbarian&#8217;s or a city-state&#8217;s attack does not count, and neither does a fight past our borders. Never means no civ invaded us before the game ended, however early that was.
           Cities at turn 50 and science at turn 100 are read on the first board of that turn, off the run&#8217;s summary: CIVVIS&#8217;s own, and the most any rival it had met held. A game that ended before the turn, or whose summary does not hold it, is not in that chart.
           A column says what went with winning, not what made the win: a game that is going well also founds more cities and keeps up in science.
-          In self-play every seat is a CIVVIS AI agent and one in six wins, so a seat&#8217;s par is 16.7%; a self-play seat records its cities and whether it founded a religion, not its pantheon, beliefs, invasions, marks at turns 50 and 100 or the victory it aimed for, and its cities from 2026-11-20 on.
+          In self-play every seat is a CIVVIS AI agent and one in six wins, so a seat&#8217;s par is 16.7%; a self-play seat records its cities and whether it founded a religion, not its pantheon, beliefs, invasions or marks at turns 50 and 100, and its cities from 2026-11-20 on.
           A figure over fewer than ten games is faint.
           <span id="civ-left"></span>
         </p>
@@ -1008,9 +1009,10 @@
       const F = (name) => GAMES ? GAMES.fields.indexOf(name) : -1;
       const [LEVEL, DIPLO, WON, DAY, CITY2, CITY3, PANTHEON, FOUNDER, FOLLOWER, INVADED] =
         ["level", "diplo", "won", "day", "city2", "city3", "pantheon", "founder", "follower", "invaded"].map(F);
-      // Where the game stood at turns 50 and 100, and the victory it aimed
-      // for: -1 is a mark no summary holds, and 0 no target.
-      const [CITIES50, RIVAL50, SCIENCE100, VICTORY] = ["cities50", "rival_cities50", "science100", "victory"].map(F);
+      // Where the game stood at turns 50 and 100: -1 is a mark no summary
+      // holds. (The victory it aimed for, the row's last field, is counted
+      // on Random AI Charts.)
+      const [CITIES50, RIVAL50, SCIENCE100] = ["cities50", "rival_cities50", "science100"].map(F);
       const levels = GAMES ? [...new Set(GAMES.rows.map((r) => r[LEVEL]))].sort((a, b) => b - a) : [];
       const pick = {
         games: levels.includes(Number(GAMES && GAMES.level)) ? String(GAMES.level) : levels.length ? String(levels[0]) : "self",
@@ -1046,7 +1048,7 @@
         // turn 50 and the best rival's, the games level with that rival or
         // ahead, its science at turn 100 as a share of the best rival's, and
         // the games at half of it or more.
-        Object.assign(out, { cities50: {}, science100: {}, victory: {}, stand: { cities: [], rivals: [], paired: 0, level: 0, science: [], half: 0 } });
+        Object.assign(out, { cities50: {}, science100: {}, stand: { cities: [], rivals: [], paired: 0, level: 0, science: [], half: 0 } });
         if (pick.games === "self") {
           out.beliefs = false;
           const batches = SELF.batches;
@@ -1097,7 +1099,6 @@
             out.stand.science.push(r[SCIENCE100]);
             out.stand.half += r[SCIENCE100] >= 50 ? 1 : 0;
           }
-          if (VICTORY >= 0 && r[VICTORY] > 0) add(out.victory, r[VICTORY], won);
         }
         if (rows.length) {
           const first = isoDay(GAMES.first);
@@ -1245,8 +1246,6 @@
       };
       const named = (tally, empty) => Object.entries(tally).map(([at, [g, w]]) => [
         Number(at) > 0 ? String(GAMES.names[Number(at) - 1] ?? "?") : empty, g, w]);
-      const targeted = (tally) => Object.entries(tally).map(([at, [g, w]]) => [
-        String((GAMES.targets || [])[Number(at) - 1] ?? "?"), g, w]);
       // Where CIVVIS stands at a mark, beside the chart of it: tiles of a
       // label, a figure and what the figure counts.
       const median = (xs) => {
@@ -1303,8 +1302,6 @@
         chart(document.getElementById("civ-cities50"), c.cities50, "cities50");
         chart(document.getElementById("civ-science100"), c.science100, "science100");
         stand(c);
-        list(document.getElementById("civ-victories"), c.beliefs ? targeted(c.victory) : [],
-          c.beliefs ? "No game here has the victory it aimed for on record." : "A self-play seat records no victory it aimed for.");
         const tiles = document.getElementById("civ-religion");
         tiles.replaceChildren(...[["yes", "Founded a religion"], ["no", "No religion"]].map(([key, label]) => {
           const [g, w] = c.religion[key] || [0, 0];
