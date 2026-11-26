@@ -9,6 +9,12 @@ import urllib.parse
 
 
 
+# Operator 2026-11-26: "maybe change the url for this to be of the form:
+# civvis.ai/edge-of-tomorrow. the others can be civvis.ai/debugger and
+# civvis.ai/doctor-strange".
+SIMULATOR_PAGES = ("/debugger", "/doctor-strange", "/edge-of-tomorrow")
+
+
 def channel_path(path):
     """Map the local /wasm channel onto the published viewer.
 
@@ -23,6 +29,15 @@ def channel_path(path):
     elif parsed.path.startswith("/wasm/"):
         mapped = "/" + parsed.path.removeprefix("/wasm/")
     else:
+        mapped = parsed.path
+    # The simulator's own pages are the viewer at addresses of their own, as
+    # beta/_worker.js serves them (`SIMULATOR_PAGES`): the page reads which
+    # one it is off the address the browser holds, and is the root's file
+    # (the file itself, not the folder, which would be answered with a
+    # forward to an address with a slash on the end).
+    if mapped in SIMULATOR_PAGES:
+        mapped = "/index.html"
+    if mapped == parsed.path:
         return path
     return urllib.parse.urlunsplit(("", "", mapped, parsed.query, parsed.fragment))
 

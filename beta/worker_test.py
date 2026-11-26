@@ -161,13 +161,17 @@ const compressedEnv = {
 // Every other address is the same stand-in as above, which is the point: the
 // stand-in answers anything, as the asset layer answers a page it kept from
 // an earlier deployment.
-const listingEnv = (listed) => ({
+// `simulator` is, per lane, whether its build says it has the simulator's own
+// pages at addresses of their own (`simulator_pages`).
+const listingEnv = (listed, simulator = {}) => ({
   ASSETS: {
     fetch: (request) => {
       const path = new URL(request.url).pathname;
       if (path in laneBuilds) {
         const lane = path.slice(0, -"/build.json".length);
-        return new Response(JSON.stringify({ short: laneBuilds[path], pages: listed[lane] }), {
+        const build = { short: laneBuilds[path], pages: listed[lane] };
+        if (simulator[lane]) build.simulator_pages = ["debugger", "doctor-strange", "edge-of-tomorrow"];
+        return new Response(JSON.stringify(build), {
           status: 200,
           headers: { "Content-Type": "application/json" },
         });
@@ -177,7 +181,7 @@ const listingEnv = (listed) => ({
   },
 });
 
-window.hit = async ({ path, method = "GET", body, json, cookie, env: overrides, accepts, compressed, listed }) => {
+window.hit = async ({ path, method = "GET", body, json, cookie, env: overrides, accepts, compressed, listed, simulator }) => {
   const init = { method, redirect: "manual" };
   if (body) init.body = new URLSearchParams(body);
   if (json !== undefined) init.body = JSON.stringify(json);
@@ -186,7 +190,7 @@ window.hit = async ({ path, method = "GET", body, json, cookie, env: overrides, 
   if (accepts) Object.defineProperty(request, "cf", { value: { clientAcceptEncoding: accepts } });
   const response = await worker.fetch(
     request,
-    { ...env, ...(compressed ? compressedEnv : {}), ...(listed ? listingEnv(listed) : {}), ...(overrides || {}) },
+    { ...env, ...(compressed ? compressedEnv : {}), ...(listed ? listingEnv(listed, simulator) : {}), ...(overrides || {}) },
   );
   return {
     status: response.status,
@@ -506,6 +510,54 @@ def main(argv: list[str] | None = None) -> int:
             check(problems, f"{address} is a 404: Wizard Chess is set aside and no lane lists it",
                   gone["status"] == 404 and gone["body"].strip() == "asset:/__no-such-page__",
                   f"got {gone['status']} {gone['body'][:60]!r}")
+        # Operator, 2026-11-26: "maybe change the url for this to be of the
+        # form: civvis.ai/edge-of-tomorrow. the others can be
+        # civvis.ai/debugger and civvis.ai/doctor-strange". Each is its
+        # lane's viewer, served at its own address, in a lane whose build
+        # says it has them.
+        print("==> the simulator's own pages are the viewer at addresses of their own")
+        both = {"": True, "/test": True}
+        for address, viewer in (("/edge-of-tomorrow", "/"), ("/debugger", "/"), ("/doctor-strange", "/"),
+                                ("/test/edge-of-tomorrow", "/test/"), ("/test/debugger", "/test/"),
+                                ("/test/doctor-strange", "/test/"), ("/test/edge-of-tomorrow?seed=4", "/test/")):
+            page = hit(path=address, listed=lanes, simulator=both)
+            check(problems, f"{address} is the viewer at {viewer}",
+                  page["status"] == 200 and page["body"].strip() == f"asset:{viewer}"
+                  and "max-age=0" in (page["cacheControl"] or ""),
+                  f"got {page['status']} {page['body'][:60]!r} {page['cacheControl']!r}")
+        check(problems, "and the test lane's are not for search engines",
+              hit(path="/test/debugger", listed=lanes, simulator=both)["robots"] == "noindex")
+        # No slash ends the address: the viewer's paths are lane-relative, and
+        # are the lane's only from the address without one.
+        for asked, to in (("/edge-of-tomorrow/", "/edge-of-tomorrow"),
+                          ("/test/doctor-strange/index.html", "/test/doctor-strange"),
+                          ("/test/debugger/?seed=4", "/test/debugger?seed=4")):
+            moved = hit(path=asked, listed=lanes, simulator=both)
+            check(problems, f"{asked} forwards to {to}", moved["status"] == 301 and moved["location"] == to,
+                  f"got {moved['status']} {moved['location']!r}")
+        # The old addresses are in links this site does not control: each
+        # forwards to the new one, with whatever else was asked.
+        for asked, to in (("/?mode=tomorrow", "/edge-of-tomorrow"), ("/test/?mode=strange", "/test/doctor-strange"),
+                          ("/test/?mode=play&seed=4", "/test/debugger?seed=4"),
+                          ("/test/index.html?seed=4&mode=tomorrow", "/test/edge-of-tomorrow?seed=4")):
+            moved = hit(path=asked, listed=lanes, simulator=both)
+            check(problems, f"{asked} forwards to {to}", moved["status"] == 301 and moved["location"] == to,
+                  f"got {moved['status']} {moved['location']!r}")
+        for asked, viewer in (("/test/?mode=watch", "/test/"), ("/?players=6", "/")):
+            page = hit(path=asked, listed=lanes, simulator=both)
+            check(problems, f"{asked} is the viewer, as it was",
+                  page["status"] == 200 and page["body"].strip() == f"asset:{viewer}",
+                  f"got {page['status']} {page['body'][:60]!r}")
+        # A lane built before its viewer read them: the new address forwards
+        # to the old, for now, and the old is served as it was.
+        older = {"": False, "/test": True}
+        moved = hit(path="/edge-of-tomorrow?seed=4", listed=lanes, simulator=older)
+        check(problems, "on a lane from before, /edge-of-tomorrow forwards to its old address for now",
+              moved["status"] == 302 and moved["location"] == "/?seed=4&mode=tomorrow",
+              f"got {moved['status']} {moved['location']!r}")
+        page = hit(path="/?mode=tomorrow", listed=lanes, simulator=older)
+        check(problems, "and its old address is served there",
+              page["status"] == 200 and page["body"].strip() == "asset:/", f"got {page['status']} {page['body'][:60]!r}")
         # An address a page has left forwards to the page, in a lane that has
         # the page at its new address. The old ones are in links this site
         # does not control, and nothing a visitor was sent should go dead.
