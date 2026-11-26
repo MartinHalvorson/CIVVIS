@@ -2178,6 +2178,20 @@ The loops, the wake point and what was seen are this page's own count over
 the timeline every played game keeps. They are gone with the page, as save
 points are, and another game begins at loop 1.
 
+The map is framed on the ground the screen leaves open (operator 2026-11-26:
+"please try to center edge of tomorrow map a bit bettter , consider what is on
+the screen"). The Civilization VI screen lays its top strip (`#civtop`), its
+launch buttons (`#launchbar`) and its tools (`#hooksbar`) over the map, and the
+live tracker (`#livepause`) stands in the lower right. An overlay along a third
+or more of an edge moves that edge in; a box in a corner, smaller than that both
+ways, stands on the ground (`tomorrowOpenGround`, in place of the viewer's
+`openBesideBox`, which gave up the whole lower strip for the tracker and none
+of the top). An automatic frame fits into the same open ground, without the
+room the viewer keeps for a minimap and map controls this page puts away
+(`observedFrameRect`). At 1600x1000 the seat's ground went from (822, 443) on
+turn 1, under the launch buttons, and (698, 515) on turn 11, to (786, 564) and
+(786, 573), the middle of x 288-1284, y 231-897.
+
 `beta/debugger_test.py` (`check_edge_of_tomorrow`) drives all of it in a
 browser against the toy engine.
 

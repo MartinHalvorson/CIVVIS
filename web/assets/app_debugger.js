@@ -8977,7 +8977,53 @@ function tomorrowDraw(measure = true) {
   if (measure) tomorrowDock(bar);
 }
 
+// Where the map is open on Edge of Tomorrow's screen, for the camera to
+// centre on and fit into (operator 2026-11-26: "please try to center edge of
+// tomorrow map a bit bettter , consider what is on the screen"). The
+// Civilization VI screen lays its top strip (`#civtop`), its launch buttons
+// (`#launchbar`) and its tools (`#hooksbar`) over the map, and the live
+// tracker (`#livepause`) stands in the lower right. The viewer framed on the
+// whole canvas, but for that tracker, which it cleared by giving up the whole
+// lower strip, so the seat sat high, under the launch buttons. Here an
+// overlay along a good part of an edge (a third of it or more) moves that
+// edge in, and one in a corner, smaller than that both ways, stands on the
+// ground as the map runs under it. In place of the viewer's `openBesideBox`,
+// which both the camera's focus (`mapFocusBounds`) and an automatic frame's
+// stage (`observedFrameRect`) go through, so the two agree. Canvas-local.
+const TOMORROW_OVER_MAP = ["civtop", "launchbar", "hooksbar"];
+function tomorrowOverMap(element, origin) {
+  if (!element || element.hidden) return null;
+  const seen = getComputedStyle(element);
+  if (seen.display === "none" || seen.visibility === "hidden") return null;
+  const rect = element.getBoundingClientRect();
+  if (!rect.width || !rect.height) return null;
+  return {left:rect.left - origin.left, right:rect.right - origin.left, top:rect.top - origin.top, bottom:rect.bottom - origin.top};
+}
+function tomorrowOpenGround(bounds, box) {
+  const origin = cv.getBoundingClientRect();
+  const over = TOMORROW_OVER_MAP.map(id => tomorrowOverMap(document.getElementById(id), origin)).concat([box]).filter(Boolean);
+  const open = {...bounds};
+  for (const part of over) {
+    const across = (Math.min(part.right, open.right) - Math.max(part.left, open.left)) / Math.max(1, open.right - open.left);
+    const down = (Math.min(part.bottom, open.bottom) - Math.max(part.top, open.top)) / Math.max(1, open.bottom - open.top);
+    if (across <= 0 || down <= 0 || (across < 1 / 3 && down < 1 / 3)) continue;
+    if (across >= down) {
+      if ((part.top + part.bottom) / 2 < (open.top + open.bottom) / 2) open.top = Math.max(open.top, part.bottom);
+      else open.bottom = Math.min(open.bottom, part.top);
+    } else if ((part.left + part.right) / 2 < (open.left + open.right) / 2) open.left = Math.max(open.left, part.right);
+    else open.right = Math.min(open.right, part.left);
+  }
+  // A screen too crowded to leave a stage keeps the one it was given.
+  return open.right - open.left >= 160 && open.bottom - open.top >= 140 ? open : bounds;
+}
+
 if (TOMORROW) {
+  if (typeof openBesideBox === "function") openBesideBox = tomorrowOpenGround;
+  // And an automatic frame fits into that same open ground. The viewer's
+  // frame keeps fixed room for a world minimap in the lower left and map
+  // controls under it, which this page puts away (`TOMORROW_STYLE`): kept,
+  // they narrowed the stage a fitted empire is zoomed to by a quarter.
+  if (typeof observedFrameRect === "function" && typeof mapFocusBounds === "function") observedFrameRect = () => mapFocusBounds();
   // The standings and the victory tracker open with the game: the Civilization
   // VI screen's Rankings are opened before its first state is drawn, and the
   // choice a played game keeps between visits (`settleSoloRankings`) is not
