@@ -1929,6 +1929,31 @@ again from its first handover. A search is of one world on one turn, so the
 button waits for that world to stand on that turn; nothing beats a base
 timeline playing its own strategy alone, it says so and makes no branch.
 
+### A world whose game is over
+
+Operator 2026-11-26: "for doctor strange, when a screen finishes it should not
+halt the game (unless the final screen). we should make a quikc summary screen
+to describe the outcome, with maybe a "view map" and a "close" option".
+
+A world whose game ends stays on the turn it ended on, and time goes on for
+the others: its page tells the host the turn (`pane-over`, from
+`strangePaneResult`), and a run leaves it out of every turn past that
+(`strangeEnded` in `strangeAsk` and `strangeStep`). Time stops only when no
+open world has a game left ("A's game is over on turn N", or "Every world's
+game is over"). Gone back to before its end, the world is in again. While
+time runs on, the turn on the line is time's, not the stopped world's, even
+when that world is the one followed (`strangeNow`).
+
+In its own box the world shows a card: Victory, Defeat or Game over; who won,
+and how; the turn, the seat's score and its cities. **View map** puts the card
+away and leaves a chip in the box's corner that brings it back. **Close**
+deletes the world (`pane-close` → `strangeClose`), as its ✕ does, and both
+work while time runs on for the others (`strangeEndedHere`); the last world
+open stays. A seat that has fallen gets the card too, though its world plays
+on. The viewer's own result card is put away in a world's box, and so is the
+countdown to a new game it would start on a native server
+(`finaleHoldsForTheReader`), which would end the world.
+
 ### All 14,000,605
 
 Operator 2026-11-26: "add a button to the left side top half but the bottom
@@ -2123,6 +2148,16 @@ Duel.
   `debugForgetStandingOrders` now has them start over on the turn gone to,
   and takes down the banners still up or waiting, which are of the turn
   that was left.
+
+- **The yield strip under the standings.** Operator, 2026-11-26: "on civvis
+  edge of tomorrow the top bar with science, cul yields, etc should move
+  below the player hud". While the standings are open they take the top of
+  the window and Civ 6's yield strip (`#civtop`) runs across under them, at
+  `--tmr-civtop-top` (a gap and `--solo-masthead`). `--solo-bar-top` counts
+  the strip after the standings rather than before them, so the launch bar,
+  the hooks and the tracker still begin under both. Folded away, the strip
+  is at the top again. The rest of the Civilization VI screen keeps the
+  strip on top.
 
 The loops, the wake point and what was seen are this page's own count over
 the timeline every played game keeps. They are gone with the page, as save
