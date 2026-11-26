@@ -5111,6 +5111,12 @@ if (TOMORROW) {
   document.documentElement.classList.add("tomorrow");
   SOLO_UI = true;
 }
+// In Edge of Tomorrow the seat's only decisions are Auto-play and the jump
+// (operator, 2026-11-26: "a player's only controls are the auto play stuff
+// and the jump back / wake here"): the page sends no action, citizen or
+// focus of its own for the seat. Auto-play, Jump back and Wake here go to the
+// engine by their own routes.
+window.civvisSeatHandsOff = TOMORROW;
 // The player strategies the second world is given when the picker shows no
 // rating to rank them by, in the order they are tried.
 const STRANGE_RIVALS = ["siege", "moonshot", "holy", "tourist", "forward", "swing", "jack", "stock"];
@@ -7855,6 +7861,17 @@ const TOMORROW_STYLE = `
   html.tomorrow .autoplay-bar #autoplaybtn:hover {
     color: #120f09; background: linear-gradient(135deg, #e2c26f, #c18f3e); border-color: #e2c370;
   }
+  /* Operator 2026-11-26: "for edge of tomorrow, remove all the on screen
+     controls. a player's only controls are the auto play stuff and the jump
+     back / wake here. i guess we should leave the top stuff that is
+     providing info. the bottom stuff that player make decisions we gotta
+     remove." The unit's commands, the turn's action panel (its choices and
+     End turn), the research and civic prompts under the launch bar, and the
+     notices that ask for a decision are gone. The top panel, the launch and
+     report buttons, the map and the left panel stay, and the seat is moved
+     only by Auto-play (\`civvisSeatHandsOff\`). */
+  html.tomorrow #ubar, html.tomorrow #actionpanel, html.tomorrow #worldtracker,
+  html.tomorrow #notify .notice.tone-action { display: none !important; }
 `;
 
 const tomorrow = {

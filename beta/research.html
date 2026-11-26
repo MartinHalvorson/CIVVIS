@@ -408,14 +408,6 @@
   @media (max-width: 859px) { .res-bench-pair { grid-template-columns: minmax(0, 1fr); } }
   .res-bench-title { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 12px; margin: 0 0 8px; color: #fff; font-size: 15px; font-weight: 700; line-height: 1.3; }
   .res-bench-title small { color: var(--muted); font-size: 12px; font-weight: 400; font-variant-numeric: tabular-nums; }
-  /* What a cell is measured against, over both tables in big type: in a
-     6-player game an even player wins one game in six (operator
-     2026-11-24: "add a big note ... expected win rate for a 6P game is 1/6
-     or 16.7%"). */
-  .res-bench-par { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; margin: 0 0 14px; padding: 12px 16px; border: 1px solid var(--gold); border-left-width: 6px; border-radius: 6px; background: rgba(215, 182, 106, 0.1); }
-  .res-bench-par b { color: var(--gold); font-size: 26px; font-weight: 800; line-height: 1.2; font-variant-numeric: tabular-nums; }
-  .res-bench-par span { color: var(--text); font-size: 13.5px; line-height: 1.4; }
-  @media (max-width: 479px) { .res-bench-par b { font-size: 21px; } }
   /* A cell with games in it is a tile shaded by its rate against the 1/6
      par (operator 2026-11-24: "white for 16.7% - dark green for 100% win
      rare. white to red for 16.7 -> 0. bxakground of the cells please"):
@@ -608,13 +600,15 @@
             <p class="res-counted" id="res-counted-tourney">Tournament games against Civilization VI&#8217;s own AI.</p>
           </div>
         </header>
-        <!-- The yardstick for every cell under it, in big type (operator
-             2026-11-24: "add a big note to firaxis civ 6 benchmark that
-             expected win rate for a 6P game is 1/6 or 16.7%"). -->
-        <p class="res-bench-par" id="res-bench-par"><b>Expected win rate in a 6P game: 1/6 = 16.7%</b> <span>A rate above 16.7% beats the Firaxis AI.</span></p>
+        <!-- Each table's title names the games it counts (operator
+             2026-11-26: "drop the expected win rate thing warning message
+             and just add to the title: 6P Continents Online for the first.
+             2nd is 6P Continents Online, Diplo Off"). The note of the 1/6
+             par that stood here in big type from 2026-11-24 is gone; the
+             par still shades every cell. -->
         <div class="res-bench-pair">
           <div class="res-section" id="res-bench-on">
-            <h3 class="res-bench-title" id="res-title-rates-on">Diplomatic victory allowed <small id="res-rates-count-on"></small></h3>
+            <h3 class="res-bench-title" id="res-title-rates-on">Diplomatic victory allowed · 6P Continents Online <small id="res-rates-count-on"></small></h3>
             <div class="res-scroll">
               <table class="rank-table res-rates" id="res-rates-on" aria-labelledby="res-title-rates-on">
                 <thead>
@@ -626,7 +620,7 @@
             </div>
           </div>
           <div class="res-section" id="res-bench-off">
-            <h3 class="res-bench-title" id="res-title-rates-off">Diplomatic victory off <small id="res-rates-count-off"></small></h3>
+            <h3 class="res-bench-title" id="res-title-rates-off">Diplomatic victory off · 6P Continents Online, Diplo Off <small id="res-rates-count-off"></small></h3>
             <div class="res-scroll">
               <table class="rank-table res-rates" id="res-rates-off" aria-labelledby="res-title-rates-off">
                 <thead>

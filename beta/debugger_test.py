@@ -800,6 +800,8 @@ def check_the_bar(bar: Bar) -> None:
     bar.ev("render(engineState()), true")
     assert bar.ev("!document.getElementById('debugbar').hidden"), "the bar is hidden on a played game"
     assert bar.ev("document.getElementById('dbg-turn').value") == "1"
+    # The AI Debugger's seat takes orders by hand; only Edge of Tomorrow's does not.
+    assert bar.ev("window.civvisSeatHandsOff") is False
 
     # The header box stands at the top of the window beside the left panel:
     # it begins at the panel's right side and runs to the window's right
@@ -4230,6 +4232,28 @@ def check_edge_of_tomorrow(bar: Bar, address: str) -> None:
     assert paint["fresh"].startswith("linear-gradient(rgb(35, 39, 42)"), paint
     # The seat is the person's: nothing is asked of the engine to open the
     # game, where the AI Debugger seats its best Civ AI.
+    assert bar.sent() == [], bar.sent()
+    # And its only decisions are Auto-play and the jump (operator,
+    # 2026-11-26: "a player's only controls are the auto play stuff and the
+    # jump back / wake here ... the bottom stuff that player make decisions
+    # we gotta remove"): the unit's commands, the turn's action panel, the
+    # research and civic prompts are not shown, and End turn sent by hand
+    # (a key, a tree) asks the engine nothing and leaves the turn open.
+    hands = bar.ev("""(async () => {
+      const gone = id => { const held = document.getElementById(id); return held ? getComputedStyle(held).display === 'none' : 'absent'; };
+      const turn = state.turn;
+      await send({type: 'end_turn'});
+      // The stand-in page has no Civilization VI screen, so the rule that
+      // takes it away is read from the page's styles.
+      const hidden = [...document.styleSheets].flatMap(sheet => { try { return [...sheet.cssRules]; } catch (_) { return []; } })
+        .filter(rule => rule.style && rule.style.display === 'none' && rule.style.getPropertyPriority('display') === 'important')
+        .flatMap(rule => rule.selectorText.split(',').map(part => part.trim()));
+      return {off: window.civvisSeatHandsOff, same: state.turn === turn, pending: turnAdvancePending,
+              autoplay: gone('autoplaybtn') === false,
+              gone: ['#ubar', '#actionpanel', '#worldtracker', '#notify .notice.tone-action'].filter(part => hidden.includes('html.tomorrow ' + part))};
+    })()""")
+    assert hands == {"off": True, "same": True, "pending": False, "autoplay": True,
+                     "gone": ["#ubar", "#actionpanel", "#worldtracker", "#notify .notice.tone-action"]}, hands
     assert bar.sent() == [], bar.sent()
     # Loop 1, on the first turn: there is nothing to jump back from and the
     # wake point is where it is.
