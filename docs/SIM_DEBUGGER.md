@@ -1987,13 +1987,32 @@ Duel.
   whatever view the AI Debugger was last left in, and does not keep that
   choice for the AI Debugger to find. The debugger's own bar is out of sight
   (`html.tomorrow #debugbar`) and is not measured (`debugBarUnseen`). No Civ
-  AI is seated when the game opens: the seat's Auto-play stays in the left
-  panel, where a played game has it, with the Civ AI last picked.
-- **The bar** stands where the debugger's does, across the top of the window
-  from where the map area begins, with the map area beneath it (`--tmr-left`,
-  `--tmr-top`). It has the name and the loop this is, a line that is the
-  whole game, Jump back and Wake here. With little room the line goes under
-  the other two.
+  AI is seated when the game opens: the seat's Auto-play keeps the Civ AI
+  last picked.
+- **The bar** stands across the foot of the window from where the map area
+  begins, with the map area ending above it (`--tmr-left`, `--tmr-bottom`);
+  the yield strip and the rest of the top stay where they are. Operator,
+  2026-11-26: "lets move the civvis: edge of tomorrow top bar to the bottom
+  of the screen. the yield bar and other stuff can stay on top. on the
+  right, the biuttons shold be: (top row): turns, civ ai (bottom row): jump
+  back, auto-play N turns, wake here. new game remains in the left panel."
+  It has the name and the loop this is, a line that is the whole game, and
+  on the right the left panel's Auto-play, moved in whole (`#autoplaybar`,
+  so the page's own `autoplay` drives it where it stands): Turns and Civ AI
+  over Jump back, Auto-play and Wake here. What Auto-play's note says is
+  said on the bar. Start new game stays in the left panel. With little room
+  the line goes under the other two.
+- **The screen** has no minimap and no map controls (operator, 2026-11-26:
+  "should not have the world minimap or <...(spin)x thing showing"); the map
+  is still moved by drag and wheel. It opens on the standings and the victory
+  tracker (the Civilization VI screen's Rankings, opened before the first
+  state is drawn, with a played game's kept choice of them left unread;
+  Rankings still folds them), and shows the seat's research box (governors,
+  research, civic, government and policy cards), as the Debugger view does
+  (`window.civvisSeatTracker`, read by `liveTrackerShown` in `app.js`),
+  without the live mirror's Pause and New game. Operator, 2026-11-26: "we
+  should also have the victory tracker and player hud showing for this. and
+  the governors / tech / policy screen".
 - **Jump back** asks the engine for the turn woken on (`op: "jump"`), so
   nothing is played again to get there. The engine is deterministic and keeps
   the agents beside each mark (`Minds`), so the rivals play the same game

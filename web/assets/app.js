@@ -7356,11 +7356,12 @@ function liveTrackerHtml(me) {
     net +
     (cards.length ? `<div class="lt-cards">${cards.join("")}</div>` : `<div class="lt-row">${none("no policy cards slotted")}</div>`);
 }
+function liveTrackerShown() { return livePause.available || debuggerView() || (!!window.civvisSeatTracker && playingSolo()); } // Edge of Tomorrow asks too (app_debugger.js)
 function paintLiveTracker() {
   const panel = document.getElementById("livetracker");
   const body = document.getElementById("livetracker-body");
   if (!panel || !body) return;
-  const me = (livePause.available || debuggerView()) && state && state.me;
+  const me = liveTrackerShown() && state && state.me;
   panel.hidden = !me;
   if (!me) return;
   const html = liveTrackerHtml(me);
@@ -7428,7 +7429,7 @@ function setLiveTrackerScale(scale, persist = false) {
 function paintLivePause() {
   const box = document.getElementById("livepause");
   if (!box) return;
-  box.hidden = !(livePause.available || debuggerView());
+  box.hidden = !liveTrackerShown();
   document.body.classList.toggle("live-pause-available", livePause.available);
   paintLiveTracker();
   if (!livePause.available) { placeLivePause(); return; }
