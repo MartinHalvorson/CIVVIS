@@ -151,8 +151,9 @@ const DEBUG_BAR_STYLE = `
      listing, so the Elo and the whole name are read without opening it. */
   #debugbar #dbg-turns { width: 80px; }
   #debugbar .dbg-deck select:disabled, #debugbar select.dbg-agent:disabled { opacity: .5; cursor: default; }
-  /* Wide enough for a count, so the row does not move as it plays. */
-  #debugbar [data-dbg="autoplay"] { min-width: 112px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  /* Wide enough for a count, so the row does not move as it plays. 60%
+     deeper than the other tools (26px), at the operator's word. */
+  #debugbar [data-dbg="autoplay"] { min-width: 112px; height: 42px; font-weight: 700; font-variant-numeric: tabular-nums; }
   #debugbar.dbg-tight [data-dbg="autoplay"] { min-width: 74px; }
   #debugbar #dbg-run-count:empty { display: none; }
   #debugbar:not(.dbg-tight) #dbg-run-count::before { content: "· "; }
@@ -782,9 +783,10 @@ const DEBUG_THUMB_HALF = 7;
 // buttons, and stacks them. One half of a split has no timeline to stand
 // under, and stacks sooner.
 const DEBUG_STACKED_UNDER = 720, DEBUG_PANE_STACKED_UNDER = 1000;
-// The tools at each end may wrap to two rows of 26px buttons; taller than
-// this, they have wrapped to three, and the words on them go.
-const DEBUG_DECK_ROWS = 70;
+// The tools at each end may wrap to two rows of 26px buttons, one row as
+// deep as Auto-play's 42px; taller than this, they have wrapped to three,
+// and the words on them go.
+const DEBUG_DECK_ROWS = 86;
 // What Auto-play offers, in the order the picker lists it: a number of turns,
 // Era (until a new era begins) and Indefinite (until it is stopped, a
 // breakpoint stops it or the game ends). An era is held open 27 to 40 turns
