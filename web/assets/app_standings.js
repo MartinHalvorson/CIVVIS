@@ -53,6 +53,32 @@ function averageTitle(name, value, signed = true) {
   return n === null ? `${name}: not shown to this view`
     : `${name}: ${signed && n > 0 ? "+" : ""}${n} per city`;
 }
+// MIN HAP: amenities over need in the civ's least happy city, and its cell
+// points at that city (operator 2026-11-26: "to the left of hap, add min hap
+// which is the least happy city. clicking on a civ's min hap should point at
+// that's civs least happy city"). It answers with the `city` action the city
+// list's names use (`focusHudCity`): the map goes to the city and the
+// spectator's side panel opens on it. A view that is not shown the city, or a
+// page that has not got it, keeps the watch action every other figure has.
+function leastHappyCity(player) {
+  const id = player.min_amenity_city;
+  return Number.isInteger(id) ? (state?.cities || []).find(city => city.id === id) || null : null;
+}
+function leastHappyRow(key, player) {
+  const value = averageStat(player.min_amenity_surplus), city = leastHappyCity(player);
+  return [key, "MIN HAP", value, value === null ? "Least happy city: not shown to this view"
+    : `Least happy city: ${city?.name || "a city"}, ${value > 0 ? "+" : ""}${value} amenities over need`];
+}
+function leastHappyCell(player, value, label, isLeader) {
+  const city = leastHappyCity(player), civ = escapeAttr(player.civ);
+  const [action, verb] = city
+    ? [`data-hud-action="city" data-hud-city="${city.id}"`, `Go to ${escapeAttr(city.name || "the city")}`]
+    : [`data-hud-action="watch"`, `Watch ${civ}`];
+  return `<button class="ribbon-stat min_happiness${isLeader ? " category-leader" : ""}" data-hud-col="min_happiness" ` +
+    `${action} data-hud-civ="${player.id}" title="${escapeAttr(label)} · ${verb}" ` +
+    `aria-label="${escapeAttr(label)}; ${verb.toLowerCase()}"><b>${ribbonAverage("min_happiness", value)}</b></button>`;
+}
+
 // One standings row for an average: [key, heading, figure, tooltip].
 function averageRow(key, label, value, name, signed = true, extra = "") {
   return [key, label, averageStat(value), averageTitle(name, value, signed) + extra];
@@ -68,6 +94,7 @@ const PLAYER_HUD_HEAD_EXPLAIN = {
   population:"Citizens across all its cities.",
   housing:"Average spare housing per city. Near 0 or below, cities grow slowly.",
   food:"Average food left per city after feeding its citizens. More means faster growth.",
+  min_happiness:"Amenities beyond need in its least happy city. Click a cell to go to that city.",
   happiness:"Average amenities beyond what each city needs. 3 or more is happy; below 0 hurts.",
   production:"Production per turn, all cities.", science:"Science per turn.",
   culture:"Culture per turn.", tourism:"Tourism per turn: its culture's pull on other civs.",
