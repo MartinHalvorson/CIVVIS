@@ -8328,10 +8328,10 @@ fn browser_orders_controls_interface_setup_and_logs() {
         "if (html === hudHtml || hudLayoutGesture?.name === \"players\" || playerHudColumnGesture\n      || playerHudReorderGesture || hudPaceHeldOpen()) {"
     ));
     assert!(EMBEDDED_INDEX.contains("function hudPaceHeldOpen()"));
-    // The moment focus leaves a held select — watch pace, the arena's
-    // in-game fog or Fog-honest AI — the held snapshots paint.
+    // The moment focus leaves a held select — watch pace or the arena's
+    // in-game fog — the held snapshots paint.
     assert!(EMBEDDED_INDEX.contains(
-        "if (ev.target.closest?.(\"[data-hud-pace], [data-hud-fog], [data-hud-fog-honest]\") && state) drawPlayerHud();"
+        "if (ev.target.closest?.(\"[data-hud-pace], [data-hud-fog]\") && state) drawPlayerHud();"
     ));
     // The bars are placed from the rendered heading, so they cannot drift
     // from the columns they name.
@@ -17862,11 +17862,14 @@ fn no_two_page_scripts_declare_the_same_function() {
 /// Operator 2026-11-23: "we should have a fog honest ai play setting in the
 /// turn box set to true or false. and it should pretty much always be set to
 /// true." Every world a session is dealt opens with its Civ AIs planning on
-/// what their civilizations can see. The turn box turns that over for the
-/// world on screen, and a copy of the world (each half of a split is one)
-/// keeps what it was set to.
+/// what their civilizations can see. The engine's route turns that over for
+/// the world on screen, and a copy of the world (each half of a split is one)
+/// keeps what it was set to. The turn box offered it as a row until
+/// 2026-11-26 (operator: "remove fog honest ai from turn box (this should
+/// alawys be true)"): the page has no way to turn it off since, so every
+/// world on the site plays fog-honest.
 #[test]
-fn a_table_plays_fog_honest_until_the_turn_box_says_otherwise() {
+fn a_table_plays_fog_honest_until_the_route_says_otherwise() {
     let mut session = Session::new(current());
     let majors = session
         .game
@@ -17889,7 +17892,7 @@ fn a_table_plays_fog_honest_until_the_turn_box_says_otherwise() {
     session.seat_strategy_at(0, "holy").unwrap();
     assert_eq!(session.fog_honest_seats(), majors);
 
-    // The turn box turns it off, over the route the page uses...
+    // The route turns it off (the tools that compare the two use it)...
     let off = crate::routes::fog_honest(&mut session, &json!({"on": false}));
     assert_eq!(off["fog_honest"], json!(false));
     assert_eq!(off["fog_honest_seats"], json!(0));
@@ -17926,8 +17929,9 @@ fn a_table_plays_fog_honest_until_the_turn_box_says_otherwise() {
     watched.set_fog_honest(false);
     assert_eq!(watched.state()["fog_honest"], json!(false));
 
-    assert!(EMBEDDED_INDEX.contains("<select data-hud-fog-honest "));
-    assert!(EMBEDDED_INDEX.contains("fetchJSON(\"/fog-honest\""));
+    // ...and the page offers no way to: no row, and no call of the route.
+    assert!(!EMBEDDED_INDEX.contains("data-hud-fog-honest"));
+    assert!(!EMBEDDED_INDEX.contains("fetchJSON(\"/fog-honest\""));
 }
 
 /// The setting is read back from the game, not only from the agents: a
