@@ -1217,20 +1217,26 @@ class Page(unittest.TestCase):
             PAGE,
         )
 
-    def test_the_benchmark_says_its_par_in_big_type(self):
-        # Operator 2026-11-24: "add a big note to firaxis civ 6 benchmark
-        # that expected win rate for a 6P game is 1/6 or 16.7%". The note
-        # stands between the benchmark's head and its two tables, in the
-        # benchmark's own block, in type bigger than any title on the page.
+    def test_the_benchmark_tables_name_their_games_and_no_par_note_stands_over_them(self):
+        # Operator 2026-11-26: "drop the expected win rate thing warning
+        # message and just add to the title: 6P Continents Online for the
+        # first. 2nd is 6P Continents Online, Diplo Off". The big note of the
+        # 1/6 par (operator 2026-11-24: "add a big note to firaxis civ 6
+        # benchmark that expected win rate for a 6P game is 1/6 or 16.7%")
+        # is gone, rule and all; nothing stands between the benchmark's head
+        # and its two tables, and each table's title ends with the games it
+        # counts. The par still shades every cell (the test after this one).
         side = PAGE.index('<section class="res-block" id="res-side-tourney" aria-labelledby="res-title-tourney">')
         block = PAGE[side : PAGE.index("</section>", side)]
-        par = block.index('<p class="res-bench-par" id="res-bench-par">')
-        self.assertLess(block.index("</header>"), par)
-        self.assertLess(par, block.index('<div class="res-bench-pair">'))
-        self.assertIn('<p class="res-bench-par" id="res-bench-par"><b>Expected win rate in a 6P game: 1/6 = 16.7%</b>', block)
-        self.assertEqual(f"{100 / 6:.1f}%", "16.7%")
-        self.assertEqual(PAGE.count('id="res-bench-par"'), 1)
-        self.assertIn(".res-bench-par b { color: var(--gold); font-size: 26px; font-weight: 800;", PAGE)
+        between = block[block.index("</header>") + len("</header>") : block.index('<div class="res-bench-pair">')]
+        self.assertEqual(re.sub(r"<!--.*?-->", "", between, flags=re.S).strip(), "")
+        for gone in ("res-bench-par", "Expected win rate", "beats the Firaxis AI"):
+            self.assertNotIn(gone, PAGE)
+        for name, title in (
+            ("on", "Diplomatic victory allowed · 6P Continents Online"),
+            ("off", "Diplomatic victory off · 6P Continents Online, Diplo Off"),
+        ):
+            self.assertIn(f'<h3 class="res-bench-title" id="res-title-rates-{name}">{title} <small id="res-rates-count-{name}"></small></h3>', block)
 
     def test_a_benchmark_cell_is_shaded_by_its_rate_against_the_par(self):
         # Operator 2026-11-24: "we should highlight the winr ate by level.
@@ -1321,7 +1327,10 @@ class Page(unittest.TestCase):
         self.assertEqual(block[pair + len('<div class="res-bench-pair">') : on].strip(), "")
         self.assertIn(".res-bench-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; min-width: 0; }", PAGE)
         self.assertIn("@media (max-width: 859px) { .res-bench-pair { grid-template-columns: minmax(0, 1fr); } }", PAGE)
-        for name, title in (("on", "Diplomatic victory allowed"), ("off", "Diplomatic victory off")):
+        for name, title in (
+            ("on", "Diplomatic victory allowed · 6P Continents Online"),
+            ("off", "Diplomatic victory off · 6P Continents Online, Diplo Off"),
+        ):
             self.assertIn(
                 f'<h3 class="res-bench-title" id="res-title-rates-{name}">{title} <small id="res-rates-count-{name}"></small></h3>', block
             )
