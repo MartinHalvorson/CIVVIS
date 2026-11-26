@@ -218,12 +218,14 @@ class ThePage(unittest.TestCase):
         # as ai gets smarter, expect the pace of progress to speed up".
         first = PAGE[PAGE.index('<section class="ins-insight" id="ins-speed"'):]
         first = first[:first.index("</section>")]
-        self.assertIn('<h2 class="ins-title" id="ins-speed-title">Smarter AI picks up speed</h2>', first)
+        # Then 2026-11-26: "chnge to: Smarter AI accelerates faster through
+        # the game (drop the description thing optimiation is...)".
         self.assertIn(
-            '<p class="rank-sub ins-sub">Optimization is choosing the decisions that move fastest. '
-            "As AI gets smarter, expect the pace of progress to speed up.</p>",
+            '<h2 class="ins-title" id="ins-speed-title">Smarter AI accelerates faster through the game</h2>',
             first,
         )
+        self.assertNotIn("ins-sub", first)
+        self.assertNotIn("Optimization is choosing", PAGE)
         # It is the page's only insight so far, and each is a section of its own.
         self.assertEqual(PAGE.count('<section class="ins-insight"'), 1)
 
