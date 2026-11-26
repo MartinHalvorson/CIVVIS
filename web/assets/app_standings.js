@@ -13,9 +13,12 @@
 // player hud, to the right of city let's track avg loyalty. to the right of
 // pop, lets track avg housing surplus. . to the right of food, lets track avg
 // happiness. have all default on", then "lets change food to avg food
-// surplus"). `src/obs.rs` sends them on each player: `avg_loyalty`,
+// surplus"). `src/obs.rs` sends them on each player: `avg_loyalty_per_turn`,
 // `avg_housing_surplus`, `avg_food_surplus` and `avg_amenity_surplus`
 // (happiness is amenities over need, the number Civ VI's moods are cut from).
+// LOY is the change in loyalty a turn, signed, not the loyalty itself
+// (operator 2026-11-26: "loy should be the avg change in loyalty (often like
+// +20 or +5 ot -7). avg of those").
 // FOOD keeps its key, so a saved layout or sort carries over to the new figure.
 
 // Every unit a civilization fields, of any kind. A world that does not say —
@@ -44,7 +47,6 @@ function averageStat(value) {
 }
 function ribbonAverage(kind, value) {
   if (value === null) return "—";
-  if (kind === "loyalty") return String(Math.round(value));
   const text = Math.abs(value) < 10 ? value.toFixed(1).replace(/\.0$/, "") : String(Math.round(value));
   return value > 0 ? `+${text}` : text;
 }
@@ -92,7 +94,7 @@ function averageRow(key, label, value, name, signed = true, extra = "") {
 // explanations short and simple though").
 const PLAYER_HUD_HEAD_EXPLAIN = {
   cities:"How many cities this civ holds.",
-  loyalty:"Average loyalty of its cities, 0 to 100. A city at 0 breaks away.",
+  loyalty:"Average change in its cities' loyalty per turn. Below 0, cities slide toward breaking away.",
   population:"Citizens across all its cities.",
   housing:"Average spare housing per city. Near 0 or below, cities grow slowly.",
   food:"Average food left per city after feeding its citizens. More means faster growth.",
