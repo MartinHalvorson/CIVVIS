@@ -1003,8 +1003,10 @@ class Page(unittest.TestCase):
     def test_the_page_draws_from_data_and_trusts_none_of_it_as_markup(self):
         self.assertNotIn("innerHTML", PAGE)
         self.assertNotIn("insertAdjacentHTML", PAGE)
-        # The two kinds of game, the two charts and the tables.
-        for piece in ('id="res-kind-self_play"', 'id="res-kind-ai"', 'id="res-timing"', 'id="res-summary"', 'id="res-spans"'):
+        # The two kinds of game's charts. Each victory's timing and the
+        # figures moved to Random AI Charts on 2026-11-26
+        # (`test_each_victorys_timing_and_the_figures_moved_to_random_ai_charts`).
+        for piece in ('id="res-kind-self_play"', 'id="res-kind-ai"'):
             self.assertIn(piece, PAGE)
 
     def worded(self, text: str, level: int = research_page.OPENING_LEVEL) -> str:
@@ -1017,9 +1019,9 @@ class Page(unittest.TestCase):
         # Operator 2026-11-21: "on civvis vs deity ai, start with all
         # victories by type along timeline, then just the deity ai wins, then
         # the civvis wins, then the civvis self play stuff".
-        # The script draws its column charts, and the groups of the table of
-        # spans, off one list in that order. The three charts of the games
-        # against the AI are named for the level chosen.
+        # The script draws its column charts off one list in that order. The
+        # three charts of the games against the AI are named for the level
+        # chosen.
         charts = re.findall(r'\{ id: "([\w-]+)", kind: "(\w+)", side: "(\w+)", label: "([^"]+)"', PAGE)
         self.assertEqual(
             charts,
@@ -1033,10 +1035,8 @@ class Page(unittest.TestCase):
         # The charts of one kind share a scale, so the two sides' charts
         # stand against the first; self-play has its own.
         self.assertIn("for (const chart of CHARTS) drawStacks(chart, ymax[chart.kind]);", PAGE)
-        self.assertIn("for (const chart of CHARTS) {\n        const th = el(\"th\", \"is-group\", worded(chart.label));", PAGE)
         # On the page a chart stands under its kind's name, so its title
-        # there is the short one, `head`; `label`, the whole name, heads its
-        # columns in the table of spans.
+        # there is the short one, `head`; `label` is the whole name.
         heads = re.findall(r'\{ id: "([\w-]+)", kind: "\w+", side: "\w+", label: "[^"]+", head: "([^"]+)"', PAGE)
         self.assertEqual(
             heads,
@@ -1067,7 +1067,7 @@ class Page(unittest.TestCase):
         # follow it as the list has them.
         graphs = PAGE.index('<div class="res-graphs">')
         own, ai = PAGE.index('<section class="res-block" id="res-side-self_play"'), PAGE.index('<section class="res-block" id="res-side-ai"')
-        places = [graphs, own, at["self_play"], ai, at["ai"], at["ai-rival"], at["ai-civvis"], PAGE.index('id="res-each"')]
+        places = [graphs, own, at["self_play"], ai, at["ai"], at["ai-rival"], at["ai-civvis"]]
         self.assertEqual(places, sorted(places))
         self.assertEqual(PAGE.index('class="res-kind"'), at["self_play"] + len("<div "))
         # One thing stands over the graphs and the rankings besides the
@@ -1104,39 +1104,29 @@ class Page(unittest.TestCase):
         self.assertIn("return all.map((n, i) => Math.max(0, (Number(n) || 0) - (Number(won[i]) || 0)));", PAGE)
         self.assertIn("const h = y(0) - y(s.bins[v][i] / s.w.games);", PAGE)
 
-    def test_the_games_against_the_ai_are_listed_before_the_self_play_games(self):
-        # Operator 2026-11-21: "list the civvis vs deity ai stuff before the
-        # civvis self-play. still side by side, just swap the ordering".
-        # The script lists per kind in this order: the counts, the figures
-        # above each small chart, the hover rows and both tables' rows.
-        # (The column charts at the top of the page are the other way about
-        # since 2026-11-22, self-play's first: see the test above.)
-        self.assertIn('const KINDS = ["ai", "self_play"];', PAGE)
-        # And the markup the script fills, in the same order: the line key,
-        # the notes and their sources.
-        for first, second in (
-            (">CIVVIS vs Lv 8 Deity AI</span></li>", "</span>CIVVIS self-play (in the victory"),
-            ('id="res-note-ai"', 'id="res-note-self"'),
-            (">Games against the AI</a>", ">Self-play games</a>"),
+    def test_each_victorys_timing_and_the_figures_moved_to_random_ai_charts(self):
+        # Operator 2026-11-25: "please add another chart to the end of
+        # charts/ called random ai charts. please move all the ai generated
+        # charts that i havent approved of or we have discussed to here."
+        # Each victory's timing (a small chart per victory, the games against
+        # the AI and self-play as two lines) and the figures (a table per
+        # victory, every span of turns as a table, and how they are counted)
+        # stood under the graphs here; they are on Random AI Charts now, read
+        # off the same record (`research_page.py` still writes it whole).
+        # Nothing of them is left on Win Analytics: not their markup, their
+        # rules or their script.
+        for gone in (
+            'id="res-each"', 'id="res-timing"', "Each victory&#8217;s timing", "res-panel", "res-cross", "is-wash",
+            'id="res-table"', 'id="res-summary"', 'id="res-spans"', 'id="res-note-ai"', 'id="res-note-self"',
+            "res-details", "Every span of turns as a table", "Median turn", "Busiest span",
+            "drawTiming", "drawTables", "const KINDS", "const LABEL", "busiest",
         ):
-            self.assertEqual((PAGE.count(first), PAGE.count(second)), (1, 1), (first, second))
-            self.assertLess(PAGE.index(first), PAGE.index(second), (first, second))
-        # The figures table keeps the two side by side, the AI's columns on
-        # the left with the two columns self-play has no use for: who won,
-        # the AI before CIVVIS as the charts stand.
-        self.assertIn(
-            '<tr><th></th><th class="is-group" colspan="6" data-say="CIVVIS vs {level} AI">CIVVIS vs Lv 8 Deity AI</th>'
-            '<th class="is-group" colspan="4">CIVVIS self-play</th></tr>',
-            PAGE,
-        )
-        self.assertRegex(
-            PAGE,
-            r'<th scope="col">Victory</th>\s*'
-            r'<th scope="col">Games</th><th scope="col">Share</th><th scope="col" data-say="\{rung\} AI won">Deity AI won</th><th scope="col">CIVVIS won</th>'
-            r'<th scope="col">Median turn</th><th scope="col">Busiest span</th>\s*'
-            r'<th scope="col">Games</th><th scope="col">Share</th>'
-            r'<th scope="col">Median turn</th><th scope="col">Busiest span</th>\s*</tr>',
-        )
+            self.assertNotIn(gone, PAGE)
+        # The column charts no longer point a reader at tables below them.
+        self.assertNotIn("in the tables below", PAGE)
+        # What the graphs read still counts what the moved charts read.
+        for kept in ("const win = (kind) => {", "const binned = (turns, span) => {", "const sided = (vic, side) => {"):
+            self.assertIn(kept, PAGE)
 
     def test_each_kind_of_game_counts_a_window_of_its_own_and_the_ai_games_open_on_30_days(self):
         # Operator 2026-11-22: "default civvis vs ai stuff to last 30 days.
@@ -1362,7 +1352,7 @@ class Page(unittest.TestCase):
         self.assertIn('const body = document.querySelector("#res-rates-" + name + " tbody");', PAGE)
         self.assertIn('const td = el("td", games ? "is-rate" : "is-zero", games ? pct(wins / games) : "—");', PAGE)
         self.assertIn('td.append(" ", el("small", "", "(" + fmt(games) + ")"));', PAGE)
-        self.assertIn("const render = () => { notes(); drawRates(); draw(); drawTables(); };", PAGE)
+        self.assertIn("const render = () => { notes(); drawRates(); draw(); };", PAGE)
         # A record with no tournament games hides the block, and a hidden
         # block is not drawn (a block is a grid, which `hidden` alone would
         # not hide).
@@ -1546,7 +1536,7 @@ class Page(unittest.TestCase):
         said = re.findall(r'data-say="([^"]+)">([^<]+)<', PAGE)
         self.assertEqual(
             [template for template, _ in said],
-            ["CIVVIS vs {level} AI", "CIVVIS vs {level} AI", "CIVVIS vs {level} AI", "{rung} AI won"],
+            ["CIVVIS vs {level} AI"],
         )
         for template, text in said:
             self.assertEqual(text, self.worded(template))
@@ -1606,6 +1596,8 @@ class Page(unittest.TestCase):
             'title="The Civ AI Agents and Civilization VI&#8217;s own AI on one Elo scale, now and over time.">ELO Rankings</a>\n'
             '          <a class="site-link sub-link" href="../civvis-performance/" '
             'title="How fast the simulator plays: the fastest game on video and how long a self-play game takes.">CIVVIS Performance</a>\n'
+            '          <a class="site-link sub-link" href="../random-ai-charts/" '
+            'title="Charts the AI agents added on their own, kept here until they are asked for or talked over.">Random AI Charts</a>\n'
             '        </div>\n'
             '      </div>\n'
             '      <a class="site-link" href="../../experiments/" ',
@@ -1635,7 +1627,7 @@ class Page(unittest.TestCase):
                     ("ai-insights", "AI Insights"),
                     ("civ-ai-interpretability", "Civ AI Interpretability"), ("civ-analytics", "Civ Analytics"),
                     ("win-analytics", "Win Analytics"), ("elo-rankings", "ELO Rankings"),
-                    ("civvis-performance", "CIVVIS Performance"))],
+                    ("civvis-performance", "CIVVIS Performance"), ("random-ai-charts", "Random AI Charts"))],
             )
             self.assertEqual(nav.count('aria-current="page"'), 1)
             self.assertIn(f'<a class="site-link sub-link" href="./" aria-current="page">{name}</a>', nav)

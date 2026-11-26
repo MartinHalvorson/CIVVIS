@@ -217,7 +217,7 @@
      (operator, 2026-11-22), and drops down like one (operator,
      2026-11-24: "charts/ can drop down folder style and the user can
      pick the right chart"): pointing at it, or tabbing to it, opens its
-     six pages under it, and the reader picks one. Charts/ itself still
+     seven pages under it, and the reader picks one. Charts/ itself still
      opens the folder's first page, AI Insights (operator, 2026-11-24:
      "we want a new ai insights", over the page he had put first). On
      a touch screen the first tap opens the list (the script after the
@@ -398,16 +398,6 @@
   .perf-trend-plot svg { display: block; overflow: visible; }
   .perf-goal-line { stroke: var(--gold); stroke-width: 1; stroke-dasharray: 4 3; }
 
-  /* The path through one game: the newest reading's steps by kind, a bar
-     for each, the longest the whole width. */
-  .perf-steps { display: grid; grid-template-columns: max-content minmax(0, 1fr) max-content; gap: 7px 12px; align-items: center; margin: 10px 0 0; font-size: 13px; }
-  .perf-step-name { color: var(--text); }
-  .perf-step-track { display: flex; gap: 2px; height: 14px; }
-  .perf-step-track i { display: block; flex: none; height: 100%; min-width: 2px; border-radius: 0 4px 4px 0; background: var(--series); }
-  .perf-step-track i.is-second { background: var(--series-2); }
-  .perf-step-track i:not(:last-child) { border-radius: 0; }
-  .perf-step-count { color: var(--text); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
-  .perf-step-count small { margin-left: 6px; color: var(--faint); }
   .perf-cloud-sub b { color: #fff; font-weight: 700; }
   .perf-sum-table tr.is-measured td:first-child { box-shadow: inset 2px 0 0 var(--series); padding-left: 8px; }
   /* The sums table is wider than a phone: its first column stays in view. */
@@ -432,7 +422,7 @@
   .perf-from dt span { color: var(--faint); font-weight: 400; }
   .perf-from dd { max-width: 900px; margin: 0; color: var(--muted); overflow-wrap: anywhere; }
 
-  /* The key of the batch chart: the line and its two bands, as they are drawn. */
+  /* The key of a chart: the line and its band, as they are drawn. */
   .res-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 10px 0 2px; padding: 0; list-style: none; color: var(--text); font-size: 12.5px; }
   .res-legend li { display: inline-flex; align-items: center; gap: 6px; }
   .res-swatch { width: 14px; height: 10px; border-radius: 2px; flex: none; background: var(--series); }
@@ -448,13 +438,8 @@
   .res-base { stroke: var(--border-strong); stroke-width: 1; shape-rendering: crispEdges; }
   .res-tick { fill: var(--muted); font: 11px var(--sans); font-variant-numeric: tabular-nums; }
   .res-axis-title { fill: var(--faint); font: 11px var(--sans); }
-  .res-hover { fill: rgba(255, 255, 255, 0.06); }
   .res-cross { stroke: var(--muted); stroke-width: 1; shape-rendering: crispEdges; }
-  .perf-mark { stroke: var(--text); stroke-width: 1; shape-rendering: crispEdges; }
-  .perf-mark-name { fill: var(--text); font: 600 11px var(--sans); }
   .perf-end { fill: var(--muted); font: 600 11px var(--sans); }
-  .perf-tail { margin: 4px 0 0; color: var(--faint); font-size: 11.5px; }
-  .perf-tail[hidden] { display: none; }
 
   /* The figures as tables: every number the charts draw, without hovering. */
   .res-scroll { overflow-x: auto; }
@@ -465,15 +450,9 @@
   .rank-table td:first-child { color: #fff; font-weight: 600; }
   .rank-table td a { color: var(--accent); text-decoration: none; }
   .rank-table td a:hover { text-decoration: underline; }
-  .rank-table tr.is-counted td:first-child { box-shadow: inset 2px 0 0 var(--series); padding-left: 8px; }
   .res-details { margin-top: 10px; }
   .res-details summary { color: var(--accent); font-size: 12.5px; font-weight: 600; cursor: pointer; }
   .res-details .rank-table td:first-child { font-weight: 500; }
-  .perf-batches-table { margin-top: 10px; }
-  /* The batch table is wider than a phone: its first column, when the batch
-     began, stays in view as it scrolls. */
-  .perf-batches-table .rank-table th:first-child,
-  .perf-batches-table .rank-table td:first-child { position: sticky; left: 0; background: var(--panel); }
 
   /* The speed timeline, the part under the tables of sums: the same
      figures as a line (operator, 2026-11-22: "lets have a timeline: right
@@ -718,7 +697,7 @@
          row across the top of the page (operator, 2026-11-24: "try putting
          the vertical menu from home... civ across the top instad"), where
          until then they stood in a column to the left of the title. Charts/
-         is a folder and drops down like one to its six pages ("charts/ can
+         is a folder and drops down like one to its seven pages ("charts/ can
          drop down folder style and the user can pick the right chart"). The
          page on screen is ringed in white: this is CIVVIS Performance, under
          Charts/, so Charts/ is ringed too and so is this page in its list.
@@ -736,6 +715,7 @@
           <a class="site-link sub-link" href="../win-analytics/" title="Who wins, how and when: the games against Civilization VI&#8217;s own AI beside the CIVVIS self-play games.">Win Analytics</a>
           <a class="site-link sub-link" href="../elo-rankings/" title="The Civ AI Agents and Civilization VI&#8217;s own AI on one Elo scale, now and over time.">ELO Rankings</a>
           <a class="site-link sub-link" href="./" aria-current="page">CIVVIS Performance</a>
+          <a class="site-link sub-link" href="../random-ai-charts/" title="Charts the AI agents added on their own, kept here until they are asked for or talked over.">Random AI Charts</a>
         </div>
       </div>
       <a class="site-link" href="../../experiments/" title="Series of verification games against Civilization VI&#8217;s own AI: running, scheduled and finished.">Experiments</a>
@@ -1258,10 +1238,6 @@
           <ul class="perf-keys" id="perf-path-keys"></ul>
           <div class="res-plot" id="perf-path-plot"></div>
         </div>
-        <div class="res-kind">
-          <h3 class="res-kind-title">Where the steps are</h3>
-          <div class="perf-steps" id="perf-path-steps"></div>
-        </div>
         <details class="res-details">
           <summary>Every reading as a table</summary>
           <div class="res-scroll">
@@ -1315,10 +1291,10 @@
         <h2 class="rank-title" id="perf-times-title">How long a self-play game takes</h2>
         <p class="rank-sub">Six CIVVIS AI agents, a Continents map, Online speed, 250 turns. A tournament&#8217;s times, not a benchmark&#8217;s.</p>
         <div class="res-controls">
-          <!-- Which games the tiles and the chart under them count. It opens
-               on the newest finished batch, the games of the newest build:
-               the simulator gets faster build by build, and a longer window
-               mixes the old builds' times into the new one's. -->
+          <!-- Which games the tiles count. It opens on the newest finished
+               batch, the games of the newest build: the simulator gets
+               faster build by build, and a longer window mixes the old
+               builds' times into the new one's. -->
           <div class="res-control" role="group" aria-label="Games counted">
             <span>Games</span>
             <div class="res-seg" id="perf-window">
@@ -1331,53 +1307,12 @@
         <p class="res-counted" id="perf-counted"></p>
         <div class="perf-tiles" id="perf-tiles"></div>
         <p class="perf-facts" id="perf-facts"></p>
-        <div class="res-kind">
-          <h3 class="res-kind-title">The games by how long they took</h3>
-          <div class="res-plot" id="perf-spans-plot"></div>
-          <p class="perf-tail" id="perf-tail" hidden></p>
-        </div>
-        <details class="res-details">
-          <summary>Every span of time as a table</summary>
-          <div class="res-scroll">
-            <table class="rank-table" id="perf-spans-table">
-              <thead><tr><th scope="col">Game time</th><th scope="col">Games</th><th scope="col">Share</th><th scope="col">Share so far</th></tr></thead>
-              <tbody></tbody>
-            </table>
-          </div>
-        </details>
-      </section>
-
-      <!-- Game time batch by batch (operator 2026-11-21: "we want the civvis
-           performance charts there"). -->
-      <section class="res-section" id="perf-batches" aria-labelledby="perf-batches-title" hidden>
-        <h2 class="rank-title" id="perf-batches-title">Game time, batch by batch</h2>
-        <p class="rank-sub">One batch is one build&#8217;s self-play games, oldest on the left. <span id="perf-batches-counted"></span></p>
-        <ul class="res-legend" aria-label="What is drawn">
-          <li><span class="res-linekey"></span>p50, the middle game</li>
-          <li><span class="res-swatch" style="opacity: 0.42"></span>p10 to p90</li>
-          <li><span class="res-swatch" style="opacity: 0.2"></span>p1 to p99</li>
-        </ul>
-        <div class="res-plot" id="perf-batches-plot"></div>
-        <div class="res-scroll perf-batches-table">
-          <table class="rank-table" id="perf-batches-table">
-            <thead>
-              <tr>
-                <th scope="col">Batch began</th><th scope="col">Build</th><th scope="col">Games</th>
-                <th scope="col">p1</th><th scope="col">p10</th><th scope="col">p50</th><th scope="col">p90</th><th scope="col">p99</th>
-                <th scope="col">Fastest</th><th scope="col">Middle game</th><th scope="col">A turn</th>
-              </tr>
-            </thead>
-            <tbody></tbody>
-          </table>
-        </div>
         <details class="fine">
           <summary>How it is counted</summary>
           <div class="rank-note">
             <p>
               A time is one game&#8217;s wall-clock seconds, start to victory, in the simulator with nothing drawn.
               Seven games are played at once on one MacBook Pro (M5 Max) that is doing other work too, so a time moves with the machine&#8217;s load as well as with the code.
-              In the chart of batches the darker band holds eight games in ten, and the lighter band all but the fastest and the slowest one in a hundred.
-              Its scale goes by multiples, so the same drop anywhere on it is the same share of the time saved.
             </p>
             <p id="perf-note"></p>
           </div>
@@ -1416,7 +1351,6 @@
       return node;
     };
     const fmt = (n) => Number(n).toLocaleString("en-US");
-    const pct1 = (x) => (x > 0 && x < 0.0005 ? "<0.1%" : (100 * x).toFixed(1) + "%");
     // A time in seconds, the unit the five percentiles are compared in: a
     // tenth under 100 seconds, whole seconds from there.
     const secs = (x) => (x < 99.95 ? Number(x).toFixed(1) : fmt(Math.round(x))) + " s";
@@ -2165,9 +2099,10 @@
     // ---- The path through one game (operator 2026-11-24: "we should try
     // to reduce the path of civvis through civ 6 down to the computatoinal
     // irreducability and should have a chart tracking the size/num of
-    // steps"): the tiles, a column for every reading, and the newest
-    // reading's steps by kind. Blue is the steps that stay and orange the
-    // steps that a unit's walk taken as one step would save, in both charts.
+    // steps"): the tiles and a column for every reading. Blue is the steps
+    // that stay and orange the steps that a unit's walk taken as one step
+    // would save. The newest reading's steps by kind are on Random AI
+    // Charts since 2026-11-25.
     const trail = data.path && typeof data.path === "object" ? data.path : null;
     const walked = (trail && Array.isArray(trail.readings) ? trail.readings : []).filter((r) => r && r.taken && Number(r.steps) > 0);
     if (walked.length) {
@@ -2263,37 +2198,6 @@
         root.append(svg("line", { class: "res-base", x1: m.l, x2: width - m.r, y1: Math.round(y(0)) + 0.5, y2: Math.round(y(0)) + 0.5 }));
         plot.replaceChildren(root);
       });
-      // The newest reading's steps by kind, most first: a bar for each, and
-      // the bar of the one-hex moves in its two parts.
-      const KINDS = {
-        move: "One-hex moves", end_turn: "End of turn", fortify: "Fortify", produce: "Choose what a city builds", slot_policy: "Slot a policy",
-        unslot_policy: "Take a policy out", ranged: "Ranged attacks", attack: "Attacks", improve: "Improve a tile", spread: "Spread religion",
-        move_to: "Go to a tile", research: "Choose research", civic: "Choose a civic", buy: "Buy a unit",
-      };
-      const kinds = (Array.isArray(trail.kinds) ? trail.kinds : []).filter((k) => k && Number(k.steps) > 0);
-      const most = Math.max(1, ...kinds.map((k) => k.steps));
-      const steps = document.getElementById("perf-path-steps");
-      for (const k of kinds) {
-        const name = k.rest ? "Every other kind (" + fmt(k.kinds) + ")" : KINDS[k.kind] || text(k.kind).replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
-        const track = el("div", "perf-step-track"), count = el("div", "perf-step-count", fmt(k.steps));
-        count.append(el("small", "", part(k.steps / newest.steps)));
-        const parts = k.saved ? [[k.kept, ""], [k.saved, "is-second"]] : [[k.steps, ""]];
-        for (const [value, cls] of parts) {
-          const piece = el("i", cls);
-          piece.style.width = "calc(" + (100 * value / most).toFixed(2) + "% - " + (parts.length > 1 ? 1 : 0) + "px)";
-          track.append(piece);
-        }
-        const rows = k.saved
-          ? [{ value: fmt(k.steps), name: "steps" }, { colour: "var(--series-2)", tall: true, value: fmt(k.saved), name: "further hexes of a walk already begun" },
-            { colour: "var(--series)", tall: true, value: fmt(k.kept), name: "walks" }]
-          : [{ colour: "var(--series)", tall: true, value: fmt(k.steps), name: part(k.steps / newest.steps) + " of the path" }];
-        for (const cell of [track, count]) {
-          cell.addEventListener("pointermove", (event) => showTip(event, name, rows));
-          cell.addEventListener("pointerleave", hideTip);
-        }
-        steps.append(el("div", "perf-step-name", name), track, count);
-      }
-      steps.parentElement.hidden = !kinds.length;
       document.getElementById("perf-path-note").textContent = (trail.setup ? "One game: " + text(trail.setup) + ". " : "")
         + "A reading is the mean of " + fmt(newest.games) + " games on fixed seeds, so two builds are counted on the same worlds.";
       document.getElementById("perf-path").hidden = false;
@@ -2361,7 +2265,6 @@
     const BATCHES = (Array.isArray(data.batches) ? data.batches : []).filter((b) => b && Array.isArray(b.p) && b.p.length === 5);
     const PERCENTILES = [1, 10, 50, 90, 99];
     const SAID = ["1 game in 100 is faster", "1 game in 10 is faster", "the middle game", "1 game in 10 is slower", "1 game in 100 is slower"];
-    const PER = Number(data.spans_per_tenfold) || 20;
     const windowButtons = Array.from(document.querySelectorAll("#perf-window button"));
     for (const button of windowButtons) button.hidden = !WINDOWS[button.dataset.window];
     const state = { window: (windowButtons.find((b) => !b.hidden) || { dataset: {} }).dataset.window };
@@ -2376,17 +2279,6 @@
       return link;
     };
 
-    // Clean ticks for a share axis: 0 and up to five steps of 1, 2, 2.5 or 5
-    // in a power of ten.
-    const ticks = (max) => {
-      if (!(max > 0)) return [0];
-      const raw = max / 4, mag = Math.pow(10, Math.floor(Math.log10(raw)));
-      const step = [1, 2, 2.5, 5, 10].map((s) => s * mag).find((s) => s >= raw);
-      const out = [];
-      for (let t = 0; t <= max + step * 0.001; t += step) out.push(+t.toFixed(10));
-      if (out[out.length - 1] < max) out.push(+(out[out.length - 1] + step).toFixed(10));
-      return out;
-    };
     // The times a time axis may name, the roundest first: a tick is kept
     // when it is inside the axis and clear of every tick kept before it.
     const TIMES = [10, 60, 600, 3600, 36000, 1, 30, 300, 1800, 18000, 5, 120, 1200, 7200, 2, 20, 15, 45, 90, 180, 900, 2700, 10800];
@@ -2428,228 +2320,6 @@
         + fmt(w.turns) + " turns, at " + Number(w.a_turn).toFixed(2) + " s a turn.");
     };
 
-    // ---- The games by how long they took: a column per span of time.
-    const drawSpans = () => {
-      const plot = document.getElementById("perf-spans-plot"), w = win();
-      plot.replaceChildren();
-      const counts = Object.fromEntries(Object.entries(w.spans || {}).map(([i, n]) => [Number(i), Number(n) || 0]));
-      const filled = Object.keys(counts).map(Number);
-      if (!filled.length) return;
-      const width = Math.max(280, plot.clientWidth), height = 236, m = { l: 44, r: 12, t: 24, b: 40 };
-      const inner = width - m.l - m.r;
-      // The axis runs from the fastest game to the slowest, but no further
-      // than a little past four times the p99: a handful of games ran for
-      // hours (a machine asleep, a game left stopped), and an axis that
-      // reached them would give the games themselves a third of its width.
-      // What is off the right is counted under the chart.
-      let lo = Math.min(...filled), hi = Math.min(Math.max(...filled), Math.floor(PER * Math.log10(Number(w.p[4]))) + 12);
-      const off = filled.filter((i) => i > hi).reduce((sum, i) => sum + counts[i], 0);
-      // A span is a column; where a column would be a hairline (a phone),
-      // spans are counted two or four to a column.
-      const group = [1, 2, 4].find((g) => inner / ((hi - lo + 1) / g) >= 7) || 4;
-      lo = Math.floor(lo / group) * group;
-      hi = Math.ceil((hi + 1) / group) * group - 1;
-      const cols = [];
-      for (let i = lo; i <= hi; i += group) {
-        let n = 0;
-        for (let k = 0; k < group; k++) n += counts[i + k] || 0;
-        cols.push({ from: i, n });
-      }
-      const x = (log) => m.l + ((log - lo / PER) / ((hi + 1 - lo) / PER)) * inner;
-      const marks = ticks(Math.max(...cols.map((c) => c.n)) / w.games), top = marks[marks.length - 1];
-      const y = (v) => height - m.b - (top > 0 ? v / top : 0) * (height - m.t - m.b);
-      const root = svg("svg", { width, height, viewBox: "0 0 " + width + " " + height, role: "img" });
-      root.setAttribute("aria-label", fmt(w.games) + " self-play games by how long they took: "
-        + PERCENTILES.map((p, i) => "p" + p + " " + secs(Number(w.p[i]))).join(", ") + ". Every figure is in the table below.");
-      const grid = svg("g", { class: "res-grid" });
-      for (const t of marks) {
-        if (t > 0) grid.append(svg("line", { x1: m.l, x2: width - m.r, y1: Math.round(y(t)) + 0.5, y2: Math.round(y(t)) + 0.5 }));
-        const label = svg("text", { class: "res-tick", x: m.l - 6, y: y(t) + 3.5, "text-anchor": "end" });
-        label.textContent = t === 0 ? "0" : (100 * t).toFixed((t * 100) % 1 ? 1 : 0) + "%";
-        root.append(label);
-      }
-      root.append(grid);
-      for (const tick of timeTicks(Math.pow(10, lo / PER), Math.pow(10, (hi + 1) / PER), (t) => x(Math.log10(t)), 52)) {
-        const label = svg("text", { class: "res-tick", x: tick.at, y: height - m.b + 15, "text-anchor": "middle" });
-        label.textContent = timeName(tick.t);
-        root.append(label, svg("line", { class: "res-base", x1: Math.round(tick.at) + 0.5, x2: Math.round(tick.at) + 0.5, y1: height - m.b, y2: height - m.b + 4 }));
-      }
-      root.append(svg("line", { class: "res-base", x1: m.l, x2: width - m.r, y1: Math.round(y(0)) + 0.5, y2: Math.round(y(0)) + 0.5 }));
-      const hover = svg("rect", { class: "res-hover", y: m.t, height: height - m.t - m.b, width: 0, visibility: "hidden" });
-      root.append(hover);
-      const slot = x((lo + group) / PER) - x(lo / PER), barW = Math.min(24, Math.max(1, slot - 2));
-      const spanName = (c) => clock(Math.pow(10, c.from / PER)) + " to " + clock(Math.pow(10, (c.from + group) / PER));
-      const hits = [];
-      for (const c of cols) {
-        const left = x(c.from / PER) + (slot - barW) / 2, base = y(0), yTop = y(c.n / w.games);
-        if (base - yTop > 0.3) {
-          const r = Math.min(4, barW / 2, base - yTop);
-          const bar = svg("path", { d: "M" + left + "," + base + "V" + (yTop + r) + "Q" + left + "," + yTop + " " + (left + r) + "," + yTop
-            + "H" + (left + barW - r) + "Q" + (left + barW) + "," + yTop + " " + (left + barW) + "," + (yTop + r) + "V" + base + "Z" });
-          bar.style.fill = "var(--series)";
-          root.append(bar);
-        }
-        // The hit area is the whole span, the full height of the plot.
-        const hit = svg("rect", { x: x(c.from / PER), y: m.t, width: slot, height: height - m.t - m.b, fill: "transparent" });
-        hit.addEventListener("pointermove", (event) => {
-          hover.setAttribute("x", x(c.from / PER));
-          hover.setAttribute("width", slot);
-          hover.setAttribute("visibility", "visible");
-          showTip(event, spanName(c), [{ colour: "var(--series)", value: pct1(c.n / w.games), name: "of the games", n: fmt(c.n) }]);
-        });
-        hit.addEventListener("pointerleave", () => { hover.setAttribute("visibility", "hidden"); hideTip(); });
-        hits.push(hit);
-      }
-      // The five percentiles, a hairline each with its name over the plot.
-      // The middle one is named first, then the pair around it, then the
-      // outer pair, and a name that would run into one already there is left
-      // to the tiles above.
-      const named = [];
-      for (const i of [2, 1, 3, 0, 4]) {
-        const at = x(Math.log10(Number(w.p[i])));
-        if (!(at >= m.l && at <= width - m.r)) continue;
-        root.append(svg("line", { class: "perf-mark", x1: Math.round(at) + 0.5, x2: Math.round(at) + 0.5, y1: m.t - 4, y2: height - m.b }));
-        if (named.some((n) => Math.abs(n - at) < 30)) continue;
-        named.push(at);
-        const name = svg("text", { class: "perf-mark-name", x: at, y: m.t - 8, "text-anchor": "middle" });
-        name.textContent = "p" + PERCENTILES[i];
-        root.append(name);
-      }
-      root.append(...hits);
-      const title = svg("text", { class: "res-axis-title", x: m.l + inner / 2, y: height - 4, "text-anchor": "middle" });
-      title.textContent = inner < 420 ? "Game time · share of the games" : "Game time · a column is the share of the games that took that long";
-      root.append(title);
-      plot.append(root);
-      const tail = document.getElementById("perf-tail");
-      tail.hidden = !off;
-      if (off) {
-        tail.textContent = fmt(off) + (off === 1 ? " game" : " games") + " (" + pct1(off / w.games) + ") ran longer than "
-          + clock(Math.pow(10, (hi + 1) / PER)) + " and " + (off === 1 ? "is" : "are") + " off the right of the chart; the slowest took " + clock(Number(w.slowest)) + ".";
-      }
-      // The same counts as a table, a row per span as the chart was built
-      // from them, the spans off the chart included.
-      const body = document.querySelector("#perf-spans-table tbody");
-      body.replaceChildren();
-      let seen = 0;
-      for (const i of filled.sort((a, b) => a - b)) {
-        seen += counts[i];
-        const tr = el("tr");
-        tr.append(
-          el("td", "", clock(Math.pow(10, i / PER)) + " to " + clock(Math.pow(10, (i + 1) / PER))),
-          el("td", "", fmt(counts[i])), el("td", "", pct1(counts[i] / w.games)), el("td", "", pct1(seen / w.games)),
-        );
-        body.append(tr);
-      }
-    };
-
-    // ---- Game time batch by batch: the middle game as a line, the other
-    // four percentiles as two bands around it.
-    const drawBatches = () => {
-      const plot = document.getElementById("perf-batches-plot"), w = win();
-      plot.replaceChildren();
-      const n = BATCHES.length;
-      if (!n) return;
-      const width = Math.max(280, plot.clientWidth), height = 270, m = { l: 48, r: 36, t: 10, b: 34 };
-      const inner = width - m.l - m.r, slot = inner / n;
-      const lo = Math.log10(Math.min(...BATCHES.map((b) => b.p[0])) / 1.3), hi = Math.log10(Math.max(...BATCHES.map((b) => b.p[4])) * 1.3);
-      const x = (i) => m.l + (i + 0.5) * slot;
-      const y = (s) => m.t + (1 - (Math.log10(s) - lo) / (hi - lo)) * (height - m.t - m.b);
-      const root = svg("svg", { width, height, viewBox: "0 0 " + width + " " + height, role: "img" });
-      const first = BATCHES[0], last = BATCHES[n - 1];
-      root.setAttribute("aria-label", "The middle self-play game's time, batch by batch: " + secs(first.p[2]) + " in the batch begun "
-        + day(first.began) + ", " + secs(last.p[2]) + " in the batch begun " + day(last.began) + ". Every figure is in the table below.");
-      // The batches the tiles above count stand on a wash.
-      const counted = BATCHES.map((b, i) => (w.batches.includes(b.batch) ? i : -1)).filter((i) => i >= 0);
-      if (counted.length && counted.length < n) {
-        root.append(svg("rect", { class: "res-hover", x: x(counted[0]) - slot / 2, y: m.t, width: slot * (counted[counted.length - 1] - counted[0] + 1), height: height - m.t - m.b }));
-      }
-      const grid = svg("g", { class: "res-grid" });
-      for (const tick of timeTicks(Math.pow(10, lo), Math.pow(10, hi), y, 22)) {
-        grid.append(svg("line", { x1: m.l, x2: width - m.r, y1: Math.round(tick.at) + 0.5, y2: Math.round(tick.at) + 0.5 }));
-        const label = svg("text", { class: "res-tick", x: m.l - 6, y: tick.at + 3.5, "text-anchor": "end" });
-        label.textContent = timeName(tick.t);
-        root.append(label);
-      }
-      root.append(grid);
-      root.append(svg("line", { class: "res-base", x1: m.l, x2: width - m.r, y1: height - m.b + 0.5, y2: height - m.b + 0.5 }));
-      // A date under the first batch begun on each day, where it has room.
-      let edge = -Infinity;
-      BATCHES.forEach((b, i) => {
-        if (i && BATCHES[i - 1].began === b.began) return;
-        const text = day(b.began), half = text.length * 3.1;
-        if (x(i) - half < edge + 8) return;
-        edge = x(i) + half;
-        const label = svg("text", { class: "res-tick", x: x(i), y: height - m.b + 15, "text-anchor": "middle" });
-        label.textContent = text;
-        root.append(label);
-      });
-      const band = (a, b, opacity) => {
-        if (n < 2) return;
-        const up = BATCHES.map((bt, i) => x(i).toFixed(1) + "," + y(bt.p[b]).toFixed(1));
-        const down = BATCHES.map((bt, i) => x(i).toFixed(1) + "," + y(bt.p[a]).toFixed(1)).reverse();
-        const area = svg("path", { d: "M" + up.join("L") + "L" + down.join("L") + "Z", opacity });
-        area.style.fill = "var(--series)";
-        root.append(area);
-      };
-      band(0, 4, "0.2");
-      band(1, 3, "0.28");
-      const line = svg("path", { d: "M" + BATCHES.map((b, i) => x(i).toFixed(1) + "," + y(b.p[2]).toFixed(1)).join("L"), fill: "none", "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round" });
-      line.style.stroke = "var(--series)";
-      root.append(line);
-      BATCHES.forEach((b, i) => {
-        const dot = svg("circle", { cx: x(i), cy: y(b.p[2]), r: 4, "stroke-width": 2 });
-        dot.style.fill = "var(--series)";
-        dot.style.stroke = "var(--panel)";
-        root.append(dot);
-      });
-      // Each percentile is named once, at the newest batch's end of it; a
-      // name that would sit on another's is left to the key above.
-      const ends = [];
-      for (const i of [2, 1, 3, 0, 4]) {
-        const at = y(last.p[i]);
-        if (ends.some((e) => Math.abs(e - at) < 12)) continue;
-        ends.push(at);
-        const name = svg("text", { class: "perf-end", x: x(n - 1) + 10, y: at + 3.5 });
-        name.textContent = "p" + PERCENTILES[i];
-        root.append(name);
-      }
-      const cross = svg("line", { class: "res-cross", y1: m.t, y2: height - m.b, visibility: "hidden" });
-      root.append(cross);
-      const hit = svg("rect", { x: m.l, y: m.t, width: inner, height: height - m.t - m.b, fill: "transparent" });
-      hit.addEventListener("pointermove", (event) => {
-        const box = root.getBoundingClientRect();
-        const i = Math.max(0, Math.min(n - 1, Math.floor((event.clientX - box.left - m.l) / slot)));
-        const b = BATCHES[i];
-        cross.setAttribute("x1", Math.round(x(i)) + 0.5); cross.setAttribute("x2", Math.round(x(i)) + 0.5); cross.setAttribute("visibility", "visible");
-        const key = [{ opacity: "0.2", tall: true }, { opacity: "0.42", tall: true }, {}, { opacity: "0.42", tall: true }, { opacity: "0.2", tall: true }];
-        const rows = [4, 3, 2, 1, 0].map((k) => ({ colour: "var(--series)", ...key[k], value: secs(b.p[k]), name: "p" + PERCENTILES[k], n: b.p[k] >= 59.95 ? clock(b.p[k]) : null }));
-        showTip(event, "Batch begun " + began(b) + " · " + fmt(b.games) + " games", rows);
-      });
-      hit.addEventListener("pointerleave", () => { cross.setAttribute("visibility", "hidden"); hideTip(); });
-      root.append(hit);
-      plot.append(root);
-    };
-
-    const drawBatchTable = () => {
-      const w = win();
-      const body = document.querySelector("#perf-batches-table tbody");
-      body.replaceChildren();
-      for (const b of BATCHES.slice().reverse()) {
-        const tr = el("tr", w.batches.includes(b.batch) && w.batches.length < BATCHES.length ? "is-counted" : "");
-        const made = el("td");
-        made.append(build(b.commit));
-        tr.append(el("td", "", began(b)), made, el("td", "", fmt(b.games)));
-        b.p.forEach((value) => tr.append(el("td", "", secs(Number(value)))));
-        tr.append(el("td", "", secs(Number((b.fastest || {}).secs))), el("td", "", fmt(b.turns) + " turns"), el("td", "", Number(b.a_turn).toFixed(2) + " s"));
-        body.append(tr);
-      }
-      const said = { latest: "The batch on the wash, and marked in the table, is the one counted above.", "7": "The batches on the wash, and marked in the table, are the ones counted above.", all: "" };
-      document.getElementById("perf-batches-counted").textContent = w.batches.length < BATCHES.length ? said[state.window] || "" : "";
-    };
-
-    const draw = () => { drawSpans(); drawBatches(); };
-    const render = () => { drawTiles(); draw(); drawBatchTable(); };
-
     if (win() && BATCHES.length) {
       const group = document.getElementById("perf-window");
       for (const button of windowButtons) button.setAttribute("aria-pressed", String(button.dataset.window === state.window));
@@ -2658,15 +2328,13 @@
         if (!button || !WINDOWS[button.dataset.window]) return;
         for (const b of windowButtons) b.setAttribute("aria-pressed", String(b === button));
         state.window = button.dataset.window;
-        hideTip();
-        render();
+        drawTiles();
       });
       document.getElementById("perf-note").textContent = "A batch counts once it is finished; the one still being played is left out. "
         + "A percentile is read off the games themselves: p10 is the time one game in ten beats. "
         + "“Last 7 days” counts back from the newest batch’s last game"
         + (data.taken ? ", and the times are a snapshot taken " + day(data.taken) : "") + ".";
       document.getElementById("perf-times").hidden = false;
-      document.getElementById("perf-batches").hidden = false;
     }
 
     // ---- CIVVIS computer control: game speed over time, the page's first
@@ -2905,7 +2573,7 @@
     // shows and again when the window's width changes.
     const charts = [];
     if (drawControl) charts.push(drawControl);
-    if (win() && BATCHES.length) { render(); charts.push(draw); }
+    if (win() && BATCHES.length) drawTiles();
     if (drawControl) drawControl();
     if (charts.length) {
       let queued = 0, lastWidth = document.documentElement.clientWidth;

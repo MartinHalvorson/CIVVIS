@@ -176,6 +176,7 @@ civs_page="$source_tree/beta/civs.html"
 performance_page="$source_tree/beta/performance.html"
 interpretability_page="$source_tree/beta/interpretability.html"
 insights_page="$source_tree/beta/insights.html"
+random_page="$source_tree/beta/random.html"
 pages=()
 without=()
 
@@ -226,6 +227,8 @@ interpretability_at="$(address "$interpretability_page" interpretability)"
 # AI Insights was written after pages stated their addresses, so it has no
 # former one: a revision without the page has no page to place.
 insights_at="$(address "$insights_page" charts/ai-insights)"
+# Random AI Charts likewise: written on 2026-11-26, with its address stated.
+random_at="$(address "$random_page" charts/random-ai-charts)"
 download_at="$(address "$download_page" download)"
 
 # A lane built from some other revision than the invoking tree's is pinned:
@@ -389,6 +392,25 @@ if [ -f "$performance_page" ]; then
   pages+=("$performance_at")
 else
   without+=(performance)
+fi
+# Random AI Charts, the last page under Charts/ (operator 2026-11-26:
+# "please add another chart to the end of charts/ called random ai charts.
+# please move all the ai generated charts that i havent approved of or we
+# have discussed to here"): the charts an agent added to the other pages on
+# its own, each moved here with its markup and its drawing. Their figures
+# are the same records the pages they came from are filled with, by the same
+# scripts, written into slots of the same names here: each script fills its
+# own slot and leaves a page without one as it is, so a chart reads exactly
+# what it read where it was.
+if [ -f "$random_page" ]; then
+  mkdir -p "$out/$random_at"
+  cp "$random_page" "$out/$random_at/index.html"
+  for filler in civs_page.py research_page.py elo_page.py performance_page.py; do
+    fill "$filler" "$out/$random_at/index.html"
+  done
+  pages+=("$random_at")
+else
+  without+=(random-ai-charts)
 fi
 # The home page carries no art of its own any more, so there is usually no
 # directory to ship; a pinned revision from when it had photographs still does.
