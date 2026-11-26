@@ -1692,8 +1692,16 @@ path). these should alert on the top section out in the distance."
     first); no nuclear war and nothing lost (higher score first); a nuclear
     war coming (later first); the game lost (later first); not yet seen.
     The worlds' numbers go across the top between the title's card and the
-    column, a row a world, each yield's total under it; the tree is drawn
-    under them (`strange.treeTop`). The column scrolls when it is taller
+    column; the tree is drawn under them (`strange.treeTop`). Since
+    2026-11-26 ("swap the x and y for the top table. cols should roughly
+    align in order with the below lines. can merge equivalent states. mabye
+    notation A,B") the band is a column a world and a row a number, the
+    columns left to right in the order the worlds' lines stand under them
+    (each yield's total beside it while there are three columns or fewer).
+    Worlds that are the same world on the same turn, by the engine's print
+    for that turn as the tree reads it (`strangeSame`), share one column
+    headed `A,C`, each letter in its world's colour; gold marks the most of
+    a row where one column has it alone. The column scrolls when it is taller
     than the room above the line. The line itself is dragged anywhere
     across its width (a grip in the middle shows it), and a double-click
     lets the page place it again.
@@ -1711,6 +1719,19 @@ path). these should alert on the top section out in the distance."
   of its own beside the one it was made from, which is the followed world on
   the open turn (`pane-copy`) with that strategy in the seat and a colour of
   its own.
+- **The left card, top to bottom** (operator 2026-11-26: "to the top of dr
+  strange game, above the title, lets add home, civvis, new game buttons.
+  new game can be gold", then "move "to the fork" up to be below the title
+  on the left. move futures up to be right of this. then the -10, -1, 1, 10
+  line. then play time.then "B stopped on turn 185..." drop locked. should
+  always be locked. drop the civvis and civvis ai debugger things"): Home,
+  CIVVIS and New game (gold); the title; To the fork with Futures beside
+  it; −10, −1, +1, +10; Play Time; what the page says; then Following,
+  Create Branch and Autosearch. Home and CIVVIS are relative links (`home`,
+  `./`), so the `/test` lane keeps its own. New game loads the page again
+  at its own address without `?game=` (`strangeNewGame`): the published
+  page opens each visit on a seed of its own (`OPENING_SEED`,
+  `beta/shim.js`), so that is a new world, one timeline again.
 - **The base timeline is picked before Branch.** Operator, 2026-11-25: "the
   option to branch in the simulator should be preceded by a selection of the
   base timeline". Over the Branch picker, a Base timeline picker lists every
@@ -1721,7 +1742,12 @@ path). these should alert on the top section out in the distance."
   Branch then offers what the base does not seat and makes the branch from
   it. It costs the title card a row (33 px): in a short window (the test's,
   1400 by 757) the line of the open turn stands on the card's floor with two
-  boxes as well as with one.
+  boxes as well as with one. Since 2026-11-26 ("change base timeline to
+  "following:"" and "change "branch: ..." to "Create Branch: then the
+  button. don't need "branch" on the button"), the picker is labelled
+  **Following:** and the Branch picker **Create Branch:**, its prompt the
+  open turn and `(player strategy)` alone (`⑂ 60-(player strategy)`); the
+  page's words say "the timeline followed" for the base timeline.
 - **Play Time and Pause Time.** The play button runs time on from the open
   turn and reads Pause Time while it runs.
 - **Going back** (the step buttons, To the fork, or a press on the highway at
@@ -1741,11 +1767,10 @@ path). these should alert on the top section out in the distance."
   timeline is walked to as it stood. Pause stops both on the turn they were
   asked for. A world that cannot play the turn (its game is over) ends the
   run and says so. The worlds differ only in what is chosen for each.
-- **The lock** is a button on the panel, locked to begin with, and is the
-  page's own (`strange.locked`). Unlocked, each world plays and goes back by
-  itself, its name plate says its own turn, and the step buttons move the
-  followed world. Locking again brings the other worlds to the followed
-  one's turn first.
+- **Always locked** (operator 2026-11-26: "drop locked. should always be
+  locked."). The lock button and `strangeLock` are gone, and
+  `strange.locked` stays true; the code it guarded for unlocked worlds is
+  left in place, unreachable.
 - **Generate Black Swan.** Operator, 2026-11-24: "add a 'Generate Black
   Swan' - this will be a random, unpredicted event that spawns and changes
   the game. Could be instant nuclear war. Bio risk could collapse the
