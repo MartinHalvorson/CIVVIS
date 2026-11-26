@@ -237,7 +237,7 @@ class Ledger(unittest.TestCase):
         # like 10x to the left of Civ 6 Computational Irr...".
         listed = LEDGER["projected"]
         self.assertEqual([(stop["key"], stop["over"]) for stop in listed],
-                         [("irreducible", "self_play"), ("m5_max", "irreducible"), ("scale_up", "all_cores"), ("fleet", "all_cores")])
+                         [("irreducible", "self_play"), ("m5_max", "irreducible"), ("scale_up", "m5_max"), ("fleet", "all_cores")])
         measured = {stop["key"] for stop in LEDGER["stops"]}
         known = set(measured)
         for stop in listed:
@@ -280,8 +280,15 @@ class Ledger(unittest.TestCase):
         self.assertLess(stops["self_play"]["at"], ahead["irreducible"]["at"])
         self.assertLess(ahead["irreducible"]["at"], ahead["m5_max"]["at"])
         self.assertAlmostEqual(ahead["m5_max"]["at"] - ahead["irreducible"]["at"], ahead["irreducible"]["at"] - stops["self_play"]["at"], places=3)
+        # The scale-up is ten times the M5 Max's theoretical most, to its
+        # left (operator, 2026-11-26: "reasonable local hardware scale-up
+        # theoretical should be 10x left of m5 max theoretical max civ 6
+        # thorugh").
+        most = ahead["m5_max"]["multiplier"]
+        self.assertAlmostEqual(ahead["scale_up"]["multiplier"], 10 * most, delta=0.01 * most)
+        self.assertLess(ahead["m5_max"]["at"], ahead["scale_up"]["at"])
+        self.assertAlmostEqual(ahead["scale_up"]["at"] - ahead["m5_max"]["at"], ahead["m5_max"]["at"] - ahead["irreducible"]["at"], places=3)
         under = stops["all_cores"]["multiplier"]
-        self.assertAlmostEqual(ahead["scale_up"]["multiplier"], 10 * under, delta=0.01 * under)
         self.assertAlmostEqual(ahead["fleet"]["multiplier"], 1000 * under, delta=under)
         self.assertEqual((ahead["scale_up"]["by"], ahead["fleet"]["by"]), ("10x", "1,000x+"))
         self.assertTrue(ahead["fleet"]["times"].endswith("x+"))
@@ -322,7 +329,7 @@ class Ledger(unittest.TestCase):
         self.assertEqual([entry["key"] for entry in entries if entry.get("amortized")], ["all_cores", "m5_max", "scale_up", "fleet", "million"])
         # A stop so many times an amortized stop is amortized with it.
         over = {stop["key"]: stop["over"] for stop in LEDGER["projected"]}
-        self.assertEqual((over["scale_up"], over["fleet"]), ("all_cores", "all_cores"))
+        self.assertEqual((over["scale_up"], over["fleet"]), ("m5_max", "all_cores"))
 
     def test_an_amortized_stop_leads_with_its_games_per_second(self):
         # Operator 2026-11-24: "on the left side of the timeline, at more
@@ -344,7 +351,10 @@ class Ledger(unittest.TestCase):
             # seconds, and its time is still the time per game.
             games = entry["multiplier"] / base
             self.assertEqual(entry["rate"].replace("+", ""), speedup_timeline.per_second(games), entry["key"])
-            self.assertEqual(entry["time"], speedup_timeline.clock(base / entry["multiplier"]), entry["key"])
+            # The multiplier is kept to the cent, so a time that falls on a
+            # half (the scale-up's 34.5 ms) may be worded either side of it.
+            near = {speedup_timeline.clock(base / (entry["multiplier"] + cent)) for cent in (-0.005, 0, 0.005)}
+            self.assertIn(entry["time"], near, entry["key"])
             self.assertEqual(entry.get("lead"), "rate", entry["key"])
         led = [entry["key"] for entry in entries if entry.get("lead") == "rate"]
         self.assertEqual(led, ["all_cores", "m5_max", "scale_up", "fleet", "million"])
@@ -1628,7 +1638,7 @@ class Page(unittest.TestCase):
         self.assertNotIn("Hardware scale-up", section)
         self.assertIn('<small class="speed-goal">a guess, <span data-speed="by"></span> self-play</small>', section)
         self.assertIn('<small class="speed-goal">a guess, <span data-speed="by"></span> irreducibility</small>', section)
-        self.assertIn('<small class="speed-goal"><span data-speed="by"></span> the M5 Max</small>', section)
+        self.assertIn('<small class="speed-goal"><span data-speed="by"></span> M5 Max theoretical</small>', section)
         self.assertIn('<small class="speed-goal">potential, up to <span data-speed="by"></span></small>', section)
         self.assertEqual(section.count('data-speed="by"'), len(ahead))
         # A ring is hollow in the colour of the panel it stands on.
