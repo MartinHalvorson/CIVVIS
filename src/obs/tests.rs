@@ -2862,13 +2862,14 @@ fn player_standings_average_each_civilizations_cities() {
     );
 }
 
-/// MIN HAP (operator 2026-11-26: "to the left of hap, add min hap which is the
-/// least happy city. clicking on a civ's min hap should point at that's civs
-/// least happy city"): each civilization's city furthest short of the
-/// amenities it needs, by id, so the standings can point at it. A rival's is
-/// its own to see, like the averages beside it.
+/// P10 HAP (operator 2026-11-26: "change min hap to p10 hap", after "to the
+/// left of hap, add min hap which is the least happy city. clicking on a civ's
+/// min hap should point at that's civs least happy city"): each
+/// civilization's tenth percentile of city happiness and the city standing at
+/// it, by id, so the standings can point at it. A rival's is its own to see,
+/// like the averages beside it.
 #[test]
-fn player_standings_name_each_civilizations_least_happy_city() {
+fn player_standings_give_each_civilizations_tenth_percentile_happiness() {
     let mut game = Game::new_full(2, 24, 16, 91_806, 200, 0, false);
     for pid in 0..2 {
         let settler = game
@@ -2894,21 +2895,66 @@ fn player_standings_name_each_civilizations_least_happy_city() {
     // Eight more citizens than the capital ask for four more amenities.
     game.cities.get_mut(&crowded).unwrap().pop = 9;
     let surplus = |game: &Game, city: u32| game.city_amenity_surplus(&game.cities[&city]);
-    assert!(surplus(&game, crowded) < surplus(&game, capital));
+    let (low, high) = (surplus(&game, crowded), surplus(&game, capital));
+    assert!(low < high);
 
     let observed = observation_spectator(&game, 0);
     let rival = &observed["players"][1];
-    assert_eq!(rival["min_amenity_city"], json!(crowded));
-    assert_eq!(rival["min_amenity_surplus"], json!(surplus(&game, crowded)));
+    // Two cities: a tenth of the way from the less happy one to the other,
+    // and the less happy one is the city it points at.
+    assert_eq!(rival["p10_amenity_city"], json!(crowded));
+    assert_eq!(
+        rival["p10_amenity_surplus"],
+        json!(((low as f64 + 0.1 * (high - low) as f64) * 10.0).round() / 10.0)
+    );
 
     game.players[0].met.insert(1);
     game.players[1].met.insert(0);
     let seat = observation(&game, 0);
-    assert_eq!(seat["players"][1]["min_amenity_city"], Value::Null);
-    assert_eq!(seat["players"][1]["min_amenity_surplus"], Value::Null);
+    assert_eq!(seat["players"][1]["p10_amenity_city"], Value::Null);
+    assert_eq!(seat["players"][1]["p10_amenity_surplus"], Value::Null);
     assert_eq!(
-        seat["players"][0]["min_amenity_city"],
+        seat["players"][0]["p10_amenity_city"],
         json!(game.player_city_ids(0)[0]),
-        "a seat is pointed at its own least happy city"
+        "a seat is pointed at its own city"
+    );
+}
+
+/// The tenth percentile is the inclusive one, interpolated, and its city is
+/// the nearest one, the unhappier at an even split, ties in the civ's order.
+#[test]
+fn tenth_percentile_interpolates_and_names_the_nearest_city() {
+    assert_eq!(tenth_percentile(Vec::new()), None);
+    assert_eq!(tenth_percentile(vec![(4, -2)]), Some((4, -2.0)));
+    // Three cities: a fifth of the way from -3 to 0.
+    assert_eq!(
+        tenth_percentile(vec![(2, 0), (1, -3), (3, 2)]),
+        Some((1, -2.4))
+    );
+    // Six cities: halfway from the least happy to the next, the unhappier city.
+    assert_eq!(
+        tenth_percentile(vec![(1, 5), (2, 1), (3, 3), (4, -1), (5, 4), (6, 2)]),
+        Some((4, 0.0))
+    );
+    // Seven cities: past halfway, so the second least happy city.
+    assert_eq!(
+        tenth_percentile(vec![
+            (1, 5),
+            (2, 1),
+            (3, 3),
+            (4, -1),
+            (5, 4),
+            (6, 2),
+            (7, 6)
+        ]),
+        Some((2, 0.2))
+    );
+    // Twelve cities, 0 to 11: one tenth past the second least happy.
+    let twelve: Vec<(u32, i64)> = (0..12).rev().map(|n| (100 + n as u32, n)).collect();
+    assert_eq!(tenth_percentile(twelve), Some((101, 1.1)));
+    // Equal happiness keeps the civ's own order.
+    assert_eq!(
+        tenth_percentile(vec![(5, -1), (6, -1), (7, 4)]),
+        Some((5, -1.0))
     );
 }
