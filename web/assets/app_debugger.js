@@ -8488,6 +8488,26 @@ const TOMORROW_STYLE = `
      overflow, would fold to nothing and the turn's numeral ride up over it),
      and the box's own edge covers the rest. */
   html.tomorrow #playerhud .victory-turn > :not(.turn-settings) { min-height: min-content; }
+  /* Operator 2026-11-26: "on civvis edge of tomorrow the top bar with
+     science, cul yields, etc should move below the player hud". The
+     standings take the top of the window and Civ 6's yield strip
+     (\`#civtop\`) runs across under them; the launch bar, the hooks and the
+     tracker still begin under both (\`--solo-bar-top\` counts the strip
+     after the standings rather than before them). With the standings folded
+     away the strip is at the top again. */
+  html.tomorrow body.civ6-frame #maparea {
+    --tmr-civtop-top: 0px;
+    --solo-bar-top: calc(var(--tmr-civtop-top) + var(--civtop-height) + var(--panel-gap));
+  }
+  html.tomorrow body.civ6-frame.rankings-open:not(.overlay-players-hidden) #maparea {
+    --tmr-civtop-top: calc(var(--panel-gap) + var(--solo-masthead));
+  }
+  html.tomorrow body.civ6-frame #civtop { top: var(--tmr-civtop-top); }
+  html.tomorrow body.civ6-frame.rankings-open #playerhud,
+  html.tomorrow body.civ6-frame.rankings-open #maparea.player-hud-compact #playerhud { top: var(--panel-gap); }
+  html.tomorrow body.civ6-frame.rankings-open #maparea.player-hud-compact #victoryhud {
+    top: calc(2 * var(--panel-gap) + min(var(--player-hud-height, 106px), var(--player-hud-max-height)));
+  }
 `;
 
 const tomorrow = {
