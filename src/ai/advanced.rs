@@ -2024,7 +2024,6 @@ impl SettlementAtlas {
     fn matches(&self, g: &Game, pid: usize) -> bool {
         self.turn == Some(g.turn) && self.map_epoch == g.map.tiles.epoch() && self.pid == pid
     }
-
 }
 
 /// One hostile as it stood at the start of the turn. See
@@ -10740,6 +10739,11 @@ pub struct AdvancedAi {
     /// Expansion half once it holds its core of cities. See
     /// `advanced/science_core_ends_expansion.rs`. Off by default.
     science_core_ends_expansion: bool,
+    /// `spreaders-spread-before-they-chart`: a spreader held short of a
+    /// city it can still reach waits for it instead of charting, and the
+    /// corps' scouts leave the under-charted rivals to their seekers. See
+    /// `advanced/spreaders_spread_before_they_chart.rs`. Off by default.
+    spreaders_spread_before_they_chart: bool,
     // ---- append: t-z ------------------------------------------------
     /// `world-religion-condemns-the-faith`: our soldiers condemn a faith
     /// World Religion's option B names, at peace, and the agent's ballot asks
@@ -12501,6 +12505,9 @@ mod spears_answer_the_horse;
 mod spies_price_the_science_head;
 /// `spies-steal-the-lead`: see `advanced/spies_steal_the_lead.rs`.
 mod spies_steal_the_lead;
+/// `spreaders-spread-before-they-chart`: see
+/// `advanced/spreaders_spread_before_they_chart.rs`.
+mod spreaders_spread_before_they_chart;
 /// `spy-civics-come-first`: the Spy-slot civics sooner. See
 /// `advanced/spy_civics_come_first.rs`.
 mod spy_civics_come_first;

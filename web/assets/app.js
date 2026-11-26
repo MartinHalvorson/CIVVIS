@@ -2872,35 +2872,32 @@ function syncPlayerHudColumns(placeGrips = true) {
 // The widest of these cells' texts at `typeSize`, with the inset and divider
 // of the field each one sits in: what a grid track must hold to show every
 // one of them whole. The fields live inside the track, so their inset is
-// part of the answer.
+// part of the answer. Every style is read before any probe is written, and
+// all the probes are laid out together: one layout for the column, where a
+// probe restyled and read per cell cost one each, on every repaint.
+const HUD_PROBE_FACE = ["fontFamily", "fontWeight", "fontStyle", "fontStretch", "fontVariant",
+  "fontKerning", "fontOpticalSizing", "fontVariantNumeric", "letterSpacing"];
 function widestPlayerHudText(cells, typeSize) {
-  const probe = document.createElement("span");
-  probe.style.cssText = "position:fixed; visibility:hidden; inset:auto; display:inline-block; " +
-    "width:max-content; min-width:max-content; max-width:none; overflow:visible; " +
-    "white-space:nowrap; pointer-events:none; line-height:1;";
-  document.body.append(probe);
-  let widest = 0;
-  for (const cell of cells) {
-    const style = getComputedStyle(cell);
-    probe.style.fontFamily = style.fontFamily;
-    probe.style.fontWeight = style.fontWeight;
-    probe.style.fontStyle = style.fontStyle;
-    probe.style.fontStretch = style.fontStretch;
-    probe.style.fontVariant = style.fontVariant;
-    probe.style.fontKerning = style.fontKerning;
-    probe.style.fontOpticalSizing = style.fontOpticalSizing;
-    probe.style.fontVariantNumeric = style.fontVariantNumeric;
-    probe.style.letterSpacing = style.letterSpacing;
+  const read = cells.map(cell => {
+    const style = getComputedStyle(cell), fieldStyle = getComputedStyle(cell.parentElement);
+    const inset = (parseFloat(fieldStyle.paddingLeft) || 0) + (parseFloat(fieldStyle.paddingRight) || 0) +
+      (parseFloat(fieldStyle.borderLeftWidth) || 0) + (parseFloat(fieldStyle.borderRightWidth) || 0);
+    return {face: HUD_PROBE_FACE.map(name => style[name]), text: cell.textContent, inset};
+  });
+  const probes = read.map(({face, text}) => {
+    const probe = document.createElement("span");
+    probe.style.cssText = "position:fixed; visibility:hidden; inset:auto; display:inline-block; " +
+      "width:max-content; min-width:max-content; max-width:none; overflow:visible; " +
+      "white-space:nowrap; pointer-events:none; line-height:1;";
+    HUD_PROBE_FACE.forEach((name, at) => { probe.style[name] = face[at]; });
     probe.style.fontSize = `${typeSize}px`;
-    probe.textContent = cell.textContent;
-    const fieldStyle = getComputedStyle(cell.parentElement);
-    const inset = (parseFloat(fieldStyle.paddingLeft) || 0) +
-      (parseFloat(fieldStyle.paddingRight) || 0) +
-      (parseFloat(fieldStyle.borderLeftWidth) || 0) +
-      (parseFloat(fieldStyle.borderRightWidth) || 0);
-    widest = Math.max(widest, Math.ceil(probe.getBoundingClientRect().width + inset + 1));
-  }
-  probe.remove();
+    probe.textContent = text;
+    return probe;
+  });
+  document.body.append(...probes);
+  const widest = probes.reduce((most, probe, at) =>
+    Math.max(most, Math.ceil(probe.getBoundingClientRect().width + read[at].inset + 1)), 0);
+  probes.forEach(probe => probe.remove());
   return widest;
 }
 
@@ -7175,7 +7172,7 @@ async function boot() {
 // submitting another action against the old turn while that request runs.
 let turnAdvancePending = false;
 async function send(action) {
-  if (SPEC || turnAdvancePending) return;
+  if (SPEC || turnAdvancePending || window.civvisSeatHandsOff) return;
   const advancing = action.type === "end_turn";
   if (advancing) {
     turnAdvancePending = true;
@@ -31240,7 +31237,7 @@ function beginCitizenPick(cityId, said) {
   modeline(); draw(); drawUbar();
   return true;
 }
-async function toggleCitizenLock(cityId, pos) {
+async function toggleCitizenLock(cityId, pos) { if (window.civvisSeatHandsOff) return;
   const city = state.cities.find(candidate => candidate.id === cityId);
   const held = new Set(((city && city.citizens && city.citizens.locked) || []).map(key));
   const site = sitePick && sitePick.sites.get(key(pos));
@@ -31489,7 +31486,7 @@ function pickSiteFromCity(event, cityId, itemId) {
 // exact order is used when the engine still offers it, so a district keeps
 // the tile it was given; an item with one remaining site takes that one.
 async function resumeCityQueues() {
-  if (!state || SPEC) return;
+  if (!state || SPEC || window.civvisSeatHandsOff) return;
   let changed = false;
   for (const cityId of [...cityQueues.keys()].sort((first, second) => first - second)) {
     const city = state.cities.find(candidate => candidate.id === cityId && candidate.owner === 0);
@@ -31548,7 +31545,7 @@ function cityFocusOutcome(kind, stance, before, after) {
 }
 let cityFocusPending = false;
 async function cycleCityFocus(cityId, kind) {
-  if (SPEC || turnAdvancePending || cityFocusPending) return;
+  if (SPEC || turnAdvancePending || cityFocusPending || window.civvisSeatHandsOff) return;
   const city = state.cities.find(candidate => candidate.id === cityId);
   const now = cityFocusStance(Number(city?.citizens?.emphasis?.[kind]) || 0);
   const stance = now === "favoured" ? -1 : now === "disfavoured" ? 0 : 1;
@@ -38347,7 +38344,7 @@ function closestActionUnit(candidates, origin) {
   })[0];
 }
 function advanceToNextActionUnit(force = false) {
-  const waiting = debuggerView() ? [] : unitsNeedingOrders();
+  const waiting = debuggerView() || window.civvisSeatHandsOff ? [] : unitsNeedingOrders();
   if (!waiting.length) { sel = null; draw(); drawSide(); drawUbar(); drawTurnLoop(); return; }
   if (!force && sel && unitNeedsOrders(sel)) { drawTurnLoop(); return; }
   resetNextActionVisitsForCurrentTurn();
@@ -38414,7 +38411,7 @@ const TRAVEL_PATIENCE = 3;
 // with the unit no further along than it started.
 async function resumeTravel(unitId) {
   const held = unitOrders.get(unitId);
-  if (!held || held.order !== "goto" || SPEC) return false;
+  if (!held || held.order !== "goto" || SPEC || window.civvisSeatHandsOff) return false;
   const origin = state.units.find(candidate => candidate.id === unitId);
   if (!origin) { unitOrders.delete(unitId); return false; }
   const startedAt = origin.pos;

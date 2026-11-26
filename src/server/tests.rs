@@ -2255,9 +2255,9 @@ fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
         "        <a class=\"home-link\" id=\"chartslink\" href=\"/charts/ai-insights\" target=\"_top\">Charts/</a>\n",
         "        <a class=\"home-link\" id=\"tourlink\" href=\"/tournaments\" target=\"_top\">Tournaments</a>\n",
         "        <a class=\"home-link\" id=\"watchlink\" href=\"./\" target=\"_top\">CIVVIS</a>\n",
-        "        <a class=\"home-link\" id=\"strangelink\" href=\"?mode=strange\" target=\"_top\">Doctor Strange's Civ 6</a>\n",
-        "        <a class=\"home-link\" id=\"playlink\" href=\"?mode=play\" target=\"_top\">AI Debugger</a>\n",
-        "        <a class=\"home-link\" id=\"tomorrowlink\" href=\"?mode=tomorrow\" target=\"_top\">Civ: Edge of Tomorrow</a>\n",
+        "        <a class=\"home-link\" id=\"strangelink\" href=\"?mode=strange\" target=\"_top\">Doctor Strange's CIVVIS</a>\n",
+        "        <a class=\"home-link\" id=\"playlink\" href=\"?mode=play\" target=\"_top\">CIVVIS AI Debugger</a>\n",
+        "        <a class=\"home-link\" id=\"tomorrowlink\" href=\"?mode=tomorrow\" target=\"_top\">CIVVIS: Edge of Tomorrow</a>\n",
         "        <a class=\"home-link\" id=\"civ6link\" ",
         "href=\"https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/\" ",
         "target=\"_blank\" rel=\"noopener\" title=\"Buy Civilization VI on Steam\">Civ 6</a>\n",
@@ -2312,6 +2312,7 @@ fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
     // tomorrow"), and a link's own players, map or shape still wins.
     assert!(include_str!("../../beta/shim.js").contains(concat!(
         "    const MODE_WORLDS = {\n",
+        "      play: {map_topology: \"flat\"},\n",
         "      strange: {num_players: 4, map_script: \"pangaea\", map_topology: \"flat\"},\n",
         "      tomorrow: {num_players: 2, map_script: \"continents\", map_topology: \"flat\"},\n",
         "    };\n",
@@ -2320,8 +2321,15 @@ fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
         "    }\n",
     )));
     // The worlds those settings make: a Pangaea of four is a Tiny world, and
-    // two seats are a Duel's, both laid flat.
+    // two seats are a Duel's, both laid flat. The AI Debugger (operator,
+    // 2026-11-26: "lets use flat map on debugger") is the stock world laid
+    // flat: its four seats and its map, on a flat world's dimensions.
     let stock = stock_opening_params(11);
+    let debugged = new_game_params(&stock, &json!({"map_topology": "flat", "spectate": false}));
+    assert_eq!(debugged.num_players, stock.num_players);
+    assert_eq!(debugged.map_script, stock.map_script);
+    assert_eq!(debugged.map_topology, MapTopology::Flat);
+    assert_eq!(stock.map_topology, MapTopology::Planet);
     let strange = new_game_params(
         &stock,
         &json!({"num_players": 4, "map_script": "pangaea", "map_topology": "flat", "spectate": false}),
@@ -2786,11 +2794,11 @@ fn the_home_page_lists_the_sites_with_itself_ringed() {
             "      <a class=\"site-link\" href=\"../\" ",
             "title=\"Every civilization is played by a CIVVIS AI agent.\">CIVVIS</a>\n",
             "      <a class=\"site-link\" href=\"../?mode=strange\" ",
-            "title=\"One world, two timelines: the same game played two ways, side by side, on a timeline that branches.\">Doctor Strange's Civ 6</a>\n",
+            "title=\"One world, two timelines: the same game played two ways, side by side, on a timeline that branches.\">Doctor Strange's CIVVIS</a>\n",
             "      <a class=\"site-link\" href=\"../?mode=play\" ",
-            "title=\"You play one civilization. CIVVIS AI agents play the rest.\">AI Debugger</a>\n",
+            "title=\"You play one civilization. CIVVIS AI agents play the rest.\">CIVVIS AI Debugger</a>\n",
             "      <a class=\"site-link\" href=\"../?mode=tomorrow\" ",
-            "title=\"You play one civilization, with a jump back: the world returns to the turn you woke on, as it stood.\">Civ: Edge of Tomorrow</a>\n",
+            "title=\"You play one civilization, with a jump back: the world returns to the turn you woke on, as it stood.\">CIVVIS: Edge of Tomorrow</a>\n",
             "      <a class=\"site-link\" ",
             "href=\"https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/\" ",
             "target=\"_blank\" rel=\"noopener\" title=\"Buy Civilization VI on Steam\">Civ 6</a>\n",
@@ -2807,7 +2815,7 @@ fn the_home_page_lists_the_sites_with_itself_ringed() {
         // from 2026-11-25, gold again since 2026-11-26: "return civvis to a
         // gold highlight").
         "    text-transform: uppercase;\n  }\n  .site-link:hover,",
-        ".site-nav { display: flex; flex: 1 0 100%; flex-wrap: wrap; align-items: center; gap: 6px; }",
+        ".site-nav { display: flex; flex: 1 0 100%; flex-wrap: wrap; align-items: center; gap: 5px; }",
         concat!(
             ".site-link[aria-current=\"page\"],\n",
             "  .site-folder:has([aria-current=\"page\"]) > .site-link { box-shadow: inset 0 0 0 2px #fff; }",
@@ -14970,7 +14978,8 @@ fn the_debugger_opens_on_the_debugger_view_and_single_player_is_a_switch() {
         // reads as it does for a watcher, and the seat's rail and launch
         // bar stay off.
         "if (SPEC || debuggerView()) sel = null;",
-        "const waiting = debuggerView() ? [] : unitsNeedingOrders();",
+        // Nor in Edge of Tomorrow, whose seat is moved only by Auto-play.
+        "const waiting = debuggerView() || window.civvisSeatHandsOff ? [] : unitsNeedingOrders();",
         "if (!state || SPEC || debuggerView()) { rail.classList.remove(\"on\"); return; }",
         // The keys that play the seat wait for Single player too: a stray
         // Enter must not end a turn that was only being read.

@@ -692,6 +692,9 @@ impl AdvancedAi {
         /// lane leaves the Expansion half at its core of cities; see
         /// `advanced/science_core_ends_expansion.rs`.
         science_core_ends_expansion => enable_science_core_ends_expansion, disable_science_core_ends_expansion;
+        /// Opt-in gene `spreaders-spread-before-they-chart`; see
+        /// `advanced/spreaders_spread_before_they_chart.rs`.
+        spreaders_spread_before_they_chart => enable_spreaders_spread_before_they_chart, disable_spreaders_spread_before_they_chart;
         // ---- append: t-z --------------------------------------------
         /// Opt-in gene `theology-fights-count-the-host-edge`; see
         /// `advanced/theology_fights.rs`.

@@ -484,8 +484,8 @@ class HomeRankings(unittest.TestCase):
                 ("watch-pov", "9c8m87e3rCg", "Single player POV", "A full Civ 6 match in 14 seconds"),
                 ("watch-science", "rVDor7Xb4Mg", "Lv 8 Deity Win - France, Science", ""),
                 ("watch-culture", "6PCd4R08UPM", "Lv 8 Deity Win - Maya, Culture", ""),
-                ("watch-debugger", "6W5t0hcR_N4", "AI Debugger", "Multiverse, Time Travel"),
-                ("watch-strange", "H50wfMantkY", "Doctor Strange's Civ 6", ""),
+                ("watch-debugger", "6W5t0hcR_N4", "CIVVIS AI Debugger", "Multiverse, Time Travel"),
+                ("watch-strange", "H50wfMantkY", "Doctor Strange's CIVVIS", ""),
             ],
         )
         for _, video, _, _, _, link, _, picture in tiles:
@@ -499,10 +499,10 @@ class HomeRankings(unittest.TestCase):
             ("watch-pov", "../charts/civvis-performance/", "CIVVIS Performance"),
             ("watch-science", "https://www.youtube.com/playlist?list=PLWcKlP8e8iy4", "Lv 8 Deity Wins"),
             ("watch-culture", "https://www.youtube.com/playlist?list=PLWcKlP8e8iy4", "Lv 8 Deity Wins"),
-            ("watch-debugger", "../?mode=play", "AI Debugger"),
-            ("watch-strange", "../?mode=strange", "Doctor Strange's Civ 6"),
+            ("watch-debugger", "../?mode=play", "CIVVIS AI Debugger"),
+            ("watch-strange", "../?mode=strange", "Doctor Strange's CIVVIS"),
         ])
-        for href, name in (("../?mode=play", "AI Debugger"), ("../?mode=strange", "Doctor Strange's Civ 6")):
+        for href, name in (("../?mode=play", "CIVVIS AI Debugger"), ("../?mode=strange", "Doctor Strange's CIVVIS")):
             self.assertRegex(LANDING, rf'<a class="site-link" href="{re.escape(href)}"[^>]*>{re.escape(name)}</a>')
         # The single player's game starts 6 seconds in, on the page and on
         # YouTube; the other five start at their start.
@@ -644,19 +644,27 @@ class HomeRankings(unittest.TestCase):
         section = LANDING[places[1]:places[2]]
         bare = lambda text: [line.strip() for line in text.strip().split("\n")]  # noqa: E731
         # Its title and the line under it are Win Analytics' own, and so is
-        # everything from the yardstick to the end of the two tables: the
-        # games that allowed the Diplomatic victory at the left, the games
-        # with it off at the right, the four windows as columns.
+        # everything from the pair's opening to the end of the two tables:
+        # the games that allowed the Diplomatic victory at the left, the
+        # games with it off at the right, each titled with the games it
+        # counts, the four windows as columns.
         for line in (
             '<h2 class="res-side-title" id="res-title-tourney">Firaxis Civ 6 AI benchmark: win rate by level</h2>',
             '<p class="res-counted" id="res-counted-tourney">Tournament games against Civilization VI&#8217;s own AI.</p>',
         ):
             self.assertIn(line, section)
             self.assertIn(line, CHARTS)
-        par = '<p class="res-bench-par" id="res-bench-par">'
-        theirs = CHARTS[CHARTS.index(par) : CHARTS.index('<details class="fine">', CHARTS.index(par))]
-        ours = section[section.index(par) : section.index("</section>")]
+        pair = '<div class="res-bench-pair">'
+        theirs = CHARTS[CHARTS.index(pair) : CHARTS.index('<details class="fine">', CHARTS.index(pair))]
+        ours = section[section.index(pair) : section.index("</section>")]
         self.assertEqual(bare(ours), bare(theirs))
+        # The note of the 1/6 par is gone from the copy too (operator,
+        # 2026-11-26: "drop the expected win rate thing warning message").
+        for page in (LANDING, CHARTS):
+            self.assertNotIn("res-bench-par", page)
+            self.assertNotIn("Expected win rate", page)
+        self.assertIn(">Diplomatic victory allowed · 6P Continents Online <small", ours)
+        self.assertIn(">Diplomatic victory off · 6P Continents Online, Diplo Off <small", ours)
         self.assertEqual(ours.count("<table"), 2)
         self.assertLess(ours.index('id="res-rates-on"'), ours.index('id="res-rates-off"'))
         # How the games are counted stays on Win Analytics, a link away.

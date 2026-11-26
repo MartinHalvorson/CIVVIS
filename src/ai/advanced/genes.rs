@@ -6602,6 +6602,13 @@ pub const GENES: &[Gene] = &[
     // cities the plan follows its lane; settling is unchanged. Opt-in; see
     // `advanced/science_core_ends_expansion.rs`.
     Gene { tag: "science-core-ends-expansion", field: "science_core_ends_expansion", kind: Kind::OptIn, enable: AdvancedAi::enable_science_core_ends_expansion, disable: AdvancedAi::disable_science_core_ends_expansion },
+    // Religion seats' spreaders charted while known cities were still owed in
+    // 13 of 40 reviewed Lv 8 tourney games (2026-11-26): a spreader held
+    // outside a rival Apostle's reach fell through to charting, and the
+    // seekers and the scouts took a quarter of the corps each for the same
+    // rivals. The held spreader waits; the scouts leave those rivals to the
+    // seekers. Opt-in; see `advanced/spreaders_spread_before_they_chart.rs`.
+    Gene { tag: "spreaders-spread-before-they-chart", field: "spreaders_spread_before_they_chart", kind: Kind::OptIn, enable: AdvancedAi::enable_spreaders_spread_before_they_chart, disable: AdvancedAi::disable_spreaders_spread_before_they_chart },
     // ---- append: t-z ------------------------------------------------
     // Host previews of our religious strikes, 11-09: rival defenders carry +4
     // for difficulty (68 of 75) and +3/+6 Intel (55 of 75), which the fight

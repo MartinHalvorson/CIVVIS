@@ -289,6 +289,13 @@ impl AdvancedAi {
                 return true;
             }
         }
+        // `spreaders-spread-before-they-chart`: a city it was sent to is
+        // still on its road, so the march was held, not finished: it waits
+        // for that city. False off. See
+        // `advanced/spreaders_spread_before_they_chart.rs`.
+        if self.held_spreader_waits_for_its_city(g, uid, &religion, &sites) {
+            return false;
+        }
         // `religion-seat-charts-the-rivals`: nothing in sight to convert, so
         // walk into an under-charted rival's ground. False off.
         self.religion_seat_spreader_charts(g, pid, uid, &religion, offensive)
