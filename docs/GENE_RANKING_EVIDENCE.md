@@ -189,6 +189,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `raiders-holding-a-settler-are-hunted` | off (unmeasured) | Opt-in gene `raiders-holding-a-settler-are-hunted`: the board hunts the hostiles that hold a Settler of ours in the field; see `advanced/raiders_holding_a_settler.rs`. | 1 \| 1 |
 | `religion-core-ends-expansion` | off (unmeasured) | Opt-in gene `religion-core-ends-expansion`: a founded Religion lane follows its lane at its core of cities; see `advanced/religion_core_ends_expansion.rs`. | 1 \| 1 |
 | `science-core-ends-expansion` | off (unmeasured) | Opt-in gene `science-core-ends-expansion`: an assigned Science lane leaves the Expansion half at its core of cities; see `advanced/science_core_ends_expansion.rs`. | 1 \| 1 |
+| `trade-district-before-the-library` | off (unmeasured) | Opt-in gene `trade-district-before-the-library`; see `advanced/trade_district_follows_the_campus.rs`. | 1 \| 1 |
 
 ## Removed from the code
 
