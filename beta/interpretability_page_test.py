@@ -335,7 +335,7 @@ class TheSiteList(unittest.TestCase):
                 ("site-link sub-link", "../elo-rankings/", "ELO Rankings"),
                 ("site-link sub-link", "../civvis-performance/", "CIVVIS Performance"),
                 ("site-link sub-link", "../random-ai-charts/", "Random AI Charts"),
-                ("site-link", "../../experiments/", "Experiments"),
+                ("site-link", "../../tournaments/", "Tournaments"),
                 ("site-link", "../../", "CIVVIS"),
                 ("site-link", "../../?mode=strange", "Doctor Strange's Civ 6"),
                 ("site-link", "../../?mode=play", "AI Debugger"),

@@ -2185,7 +2185,7 @@ fn viewer_marks_the_selected_revision_and_its_compact_ages_above_the_minimap() {
     assert!(EMBEDDED_INDEX.contains("position: fixed; z-index: 16;\n    right:"));
 }
 
-/// The site is five pages, Home, Charts, Experiments, CIVVIS and AI
+/// The site is five pages, Home, Charts, Tournaments, CIVVIS and AI
 /// Debugger (the operator's names in this list: "home, musings (rename
 /// research), tournaments, civvis, AI Debugger (rename plz), Civ 6 at the
 /// top level" on 2026-11-21, then on 2026-11-22 "Change musings to
@@ -2216,7 +2216,7 @@ fn viewer_marks_the_selected_revision_and_its_compact_ages_above_the_minimap() {
 /// should have at least win analytics, CIVVIS Performance").
 /// Pinned as one literal because the list is the contract: eight links in
 /// this order, inside a list that only the hosts serving a /home, a
-/// /charts and an /experiments reveal. The addresses follow the names in
+/// /charts and a /tournaments reveal. The addresses follow the names in
 /// the list since 2026-11-23 (operator: "clean up the URL please.
 /// standardized. please remove research from the url"): Charts/ opens Win
 /// Analytics at /charts/win-analytics, where it was /research, and
@@ -2224,9 +2224,11 @@ fn viewer_marks_the_selected_revision_and_its_compact_ages_above_the_minimap() {
 /// its first name and address back on 2026-11-24 (operator: "change
 /// auto-outnrye to Tournaments. Auto-tourney suggests some self imrpvoing
 /// tourney thing"): Tournaments, at /tournaments. On 2026-11-25 it was named
-/// Experiments (operator: "rename tournaments to experiments"), and is at
-/// /experiments; the link keeps the id it had (`tourlink`), which the
-/// rules that size and colour it are written for. Chaos Monkey stood
+/// Experiments (operator: "rename tournaments to experiments"), at
+/// /experiments, and on 2026-11-26 it took its name and /tournaments back
+/// (operator: "change experiments back to tournaments"); the link has kept
+/// its id (`tourlink`) throughout, which the rules that size and colour it
+/// are written for. Chaos Monkey stood
 /// between Experiments and CIVVIS, at /chaos-monkey, from that day until
 /// 2026-11-26 (operator: "remove chaos monkey for now"). Edge of Tomorrow
 /// is named Civ: Edge of Tomorrow since 2026-11-26 (operator: "change edge
@@ -2237,7 +2239,7 @@ fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
         "<nav class=\"head-links\" id=\"headlinks\" aria-label=\"CIVVIS sites\" hidden>\n",
         "        <a class=\"home-link\" id=\"homelink\" href=\"/home\" target=\"_top\">Home</a>\n",
         "        <a class=\"home-link\" id=\"chartslink\" href=\"/charts/ai-insights\" target=\"_top\">Charts/</a>\n",
-        "        <a class=\"home-link\" id=\"tourlink\" href=\"/experiments\" target=\"_top\">Experiments</a>\n",
+        "        <a class=\"home-link\" id=\"tourlink\" href=\"/tournaments\" target=\"_top\">Tournaments</a>\n",
         "        <a class=\"home-link\" id=\"watchlink\" href=\"./\" target=\"_top\">CIVVIS</a>\n",
         "        <a class=\"home-link\" id=\"strangelink\" href=\"?mode=strange\" target=\"_top\">Doctor Strange's Civ 6</a>\n",
         "        <a class=\"home-link\" id=\"playlink\" href=\"?mode=play\" target=\"_top\">AI Debugger</a>\n",
@@ -2524,7 +2526,7 @@ fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
         .contains("#side[data-type-size=\"compact\"] .head-links {\n    grid-column: 1 / -1;"));
     // The viewer's links to the other pages leave the lane-relative rewrite
     // to `beta/publish.sh`, which turns a root link to any page the lane
-    // carries (`/home`, `/charts/win-analytics`, `/experiments`) into the
+    // carries (`/home`, `/charts/win-analytics`, `/tournaments`) into the
     // lane's own page and refuses to publish a root link it does not know.
     assert!(include_str!("../../beta/publish.sh").contains(concat!(
         "for address in dict.fromkeys([*carried, *former]):\n",
@@ -2713,7 +2715,7 @@ fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
 }
 
 /// The home page is one of the site's five pages and lists all five from
-/// its header, Home, Charts, Experiments, CIVVIS and AI Debugger, with itself ringed in white
+/// its header, Home, Charts, Tournaments, CIVVIS and AI Debugger, with itself ringed in white
 /// and the Civ 6 link under them, as the viewer's masthead does; below that
 /// it is one paragraph, the Firaxis Civ 6 AI benchmark and six videos, two
 /// by two (operator, 2026-11-22 and 2026-11-24;
@@ -2722,7 +2724,7 @@ fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
 /// civvis performance timeline thing from home/ to the civvis performance
 /// section"; `beta/speedup_timeline_test.py` pins it there). The rankings that stood there
 /// moved to Win Analytics under Charts/ the same day, and the Tournaments
-/// table that stood above them to the page that is now Experiments (operator, 2026-11-21;
+/// table that stood above them to the Tournaments page (operator, 2026-11-21;
 /// `beta/tournaments_page_test.py` pins that page). The two-card game menu that stood there, the
 /// world picker the cards opened and the photographs they carried are gone,
 /// and so is everything the Tactics row took with it before them.
@@ -2736,7 +2738,7 @@ fn the_home_page_lists_the_sites_with_itself_ringed() {
     let landing = include_str!("../../beta/landing.html");
     for piece in [
         // The site's pages in the viewer's order, this one marked as the
-        // page on screen, Experiments saying what it lists and the other
+        // page on screen, Tournaments saying what it lists and the other
         // two saying in the viewer's own words what they open, then the
         // game itself. They stand in one row across the top, over the title
         // (operator, 2026-11-24: "try putting the vertical menu from home...
@@ -2764,9 +2766,9 @@ fn the_home_page_lists_the_sites_with_itself_ringed() {
             "or talked over.\">Random AI Charts</a>\n",
             "        </div>\n",
             "      </div>\n",
-            "      <a class=\"site-link\" href=\"../experiments/\" ",
+            "      <a class=\"site-link\" href=\"../tournaments/\" ",
             "title=\"Series of verification games against Civilization VI&#8217;s own AI: ",
-            "running, scheduled and finished.\">Experiments</a>\n",
+            "running, scheduled and finished.\">Tournaments</a>\n",
             "      <a class=\"site-link\" href=\"../\" ",
             "title=\"Every civilization is played by a CIVVIS AI agent.\">CIVVIS</a>\n",
             "      <a class=\"site-link\" href=\"../?mode=strange\" ",
@@ -2845,9 +2847,11 @@ fn the_home_page_lists_the_sites_with_itself_ringed() {
         ">Musings</a>",
         ">Auto-Tourneys</a>",
         // Named Experiments on 2026-11-25 (operator: "rename tournaments to
-        // experiments"), and linked at the address that follows the name.
-        ">Tournaments</a>",
-        "../tournaments/",
+        // experiments") and Tournaments again on 2026-11-26 (operator:
+        // "change experiments back to tournaments"), linked at the address
+        // that follows the name.
+        ">Experiments</a>",
+        "../experiments/",
         ">Performance</a>",
         ">Charts</a>",
         "rankings-data",

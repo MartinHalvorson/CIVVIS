@@ -4,7 +4,7 @@
 //
 //   /              the STABLE lane — the promoted build, deliberately chosen:
 //                  the viewer at /, the landing page at /home, the pages of
-//                  Charts/ under /charts, Experiments at /experiments,
+//                  Charts/ under /charts, Tournaments at /tournaments,
 //                  the native binaries at /download
 //   /test/...      the HEAD lane — the same pages, republished automatically
 //                  from the latest main: /test, /test/home, /test/download
@@ -288,10 +288,10 @@ const PAGE_ADDRESS =
 // Auto-tourney suggests some self imrpvoing tourney thing"). So
 // /auto-tourneys is an address it has left like the others. On 2026-11-25
 // the page was named Experiments (operator: "rename tournaments to
-// experiments") and its address followed the name, so /tournaments is one
-// more it has left: /auto-tourneys is followed to /tournaments in a lane
-// that still has the page there, and on to /experiments in one that has it
-// under its new name.
+// experiments") and its address followed the name, to /experiments, and on
+// 2026-11-26 it took its name and its address back once more (operator:
+// "change experiments back to tournaments"). So /experiments is one more
+// address it has left, and /tournaments is where it is.
 //
 // AI Interpretability was named Civ AI Interpretability on 2026-11-24
 // (operator: "please change AI interpretability to "Civ AI
@@ -305,19 +305,22 @@ const MOVED = {
   performance: "charts/civvis-performance",
   interpretability: "charts/ai-interpretability",
   "charts/ai-interpretability": "charts/civ-ai-interpretability",
+  experiments: "tournaments",
   "auto-tourneys": "tournaments",
-  tournaments: "experiments",
 };
 
 // A page that went back to an address it had left, by that address, and the
-// address it had in between. A lane pinned to a revision from in between has
-// the page at the address in between, and the address the page went back to
-// forwards to it, as it did then. The page has since left /tournaments again
-// (it is Experiments), so this is asked only where following its moves on
-// from /tournaments finds the lane has it at none of them. Once no lane can
-// be pinned to such a revision the entry can go.
+// addresses it had in between: Tournaments was at /auto-tourneys from
+// 2026-11-23 to 2026-11-24 and at /experiments from 2026-11-25 to
+// 2026-11-26. A lane pinned to a revision from in between has the page at
+// the address it had then, and the address the page went back to forwards
+// to it, as it did then: the front page, until the name is promoted, has the
+// page at /experiments. This is asked of the address an address's moves end
+// at, once the lane has the page at none of them, so /auto-tourneys reaches
+// /experiments in such a lane as well. Once no lane can be pinned to such a
+// revision the entry can go.
 const BETWEEN = {
-  tournaments: "auto-tourneys",
+  tournaments: ["auto-tourneys", "experiments"],
 };
 
 // An address no deployment has ever had a file at, so what the asset layer
@@ -350,7 +353,8 @@ const NO_SUCH_PAGE = "/__no-such-page__";
 /// An address the lane does not list is then one of three things. An address
 /// its page has left (`MOVED`) forwards to the page, when this lane has the
 /// page at an address it moved to since: the first one it lists, following
-/// the moves in order. A folder of the site list (`/charts`) opens the first page the
+/// the moves in order, or else at one it had in between two stays at the
+/// address the moves end at (`BETWEEN`). A folder of the site list (`/charts`) opens the first page the
 /// lane lists in it, as Charts/ does in the list itself: the folder has no
 /// page of its own. Anything else is a page the lane does not have.
 async function pageAnswer(request, env, url) {
@@ -368,22 +372,25 @@ async function pageAnswer(request, env, url) {
     return null;
   }
   if (!Array.isArray(pages) || pages.includes(name)) return null;
+  let now = name;
   if (Object.hasOwn(MOVED, name)) {
     // Move by move, to the first address this lane has the page at. No
     // address is in the table twice over (a test holds it to that), so the
     // walk ends; the count is only so that a mistake here cannot spin.
-    let now = name;
     for (let moves = 0; Object.hasOwn(MOVED, now) && moves < 16; moves += 1) {
       now = MOVED[now];
       if (pages.includes(now)) return { moved: `${lane}/${now}/` };
     }
-    // Or the lane is from the days between two stays at this address.
-    if (!Object.hasOwn(BETWEEN, name)) return { absent: true };
   }
-  const now = Object.hasOwn(BETWEEN, name)
-    ? BETWEEN[name]
-    : pages.find((page) => typeof page === "string" && page.startsWith(`${name}/`));
-  if (now && pages.includes(now)) return { moved: `${lane}/${now}/` };
+  // Or the lane is from days between two stays at the address the moves end
+  // at (the address asked, when it has none): the page is where it was then.
+  if (Object.hasOwn(BETWEEN, now)) {
+    const away = BETWEEN[now].find((page) => pages.includes(page));
+    return away ? { moved: `${lane}/${away}/` } : { absent: true };
+  }
+  if (now !== name) return { absent: true };
+  const first = pages.find((page) => typeof page === "string" && page.startsWith(`${name}/`));
+  if (first) return { moved: `${lane}/${first}/` };
   return { absent: true };
 }
 

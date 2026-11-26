@@ -13,7 +13,7 @@
 
 The Research page (`beta/research.html`; Win Analytics since 2026-11-22,
 served at `<lane>/charts/win-analytics/`, the address it states itself) is
-the site's page between Home and Experiments. Its first chart (operator
+the site's page between Home and Tournaments. Its first chart (operator
 2026-11-21: "a civvis self play and civvis play against deity ai
 distribution victory types over online game turn. so when each victory type
 spikes in the game") sets two kinds of game side by side, both six players
@@ -89,7 +89,7 @@ per window, the last 1, 3, 7 and 30 days, a cell being CIVVIS's win rate and
 the games it is a share of. The games with it on are the left table (later on
 2026-11-23, reversing the sides first asked for: "put diplo victory allowed
 to the left of no diplo victory"). Its games are the tournaments' own, every
-finished game of every tournament the Experiments page lists
+finished game of every tournament the Tournaments page lists
 (`data/tournaments.json`, counted by `home_rankings.tournament_series`), so
 the two pages agree: a win is CIVVIS's victory and anything else a finished
 game ended in is a loss, a rival's victory, our elimination or a game
@@ -493,7 +493,7 @@ def tournament_games(rows: list[dict], specs: list[dict], switch=lambda tags: {}
     when it began, the level the game's AI played at, whether CIVVIS won it,
     and whether it was played with the Diplomatic victory on. The games and
     their endings are `home_rankings.tournament_series`'s own, the count the
-    Experiments page shows; a game counts once, whatever series it stands
+    Tournaments page shows; a game counts once, whatever series it stands
     in. `switch` answers each run's Diplomatic victory (`switches`), asked of
     the run a game ended in and, where that run does not say, of the game's
     first; a game neither says it for stands in neither table and is left
@@ -740,7 +740,7 @@ def recent_windows(snapshot: dict) -> dict:
 def tournament_rates(source: pathlib.Path, rows: list[dict] | None) -> dict | None:
     """The Firaxis Civ 6 AI benchmark: CIVVIS's win rate at each level over
     the tournaments' games (`win_rates`), for the run ledger's result lines
-    (`rows`, `home_rankings.results`) and the definitions the Experiments
+    (`rows`, `home_rankings.results`) and the definitions the Tournaments
     page reads. `None` when the lines or the definitions cannot be read, or
     hold no game. Win Analytics shows it as its first thing, and the home
     page shows the same record over its videos (operator 2026-11-24: "above
@@ -782,7 +782,7 @@ def research(source: pathlib.Path) -> dict | None:
         print(f"research_page: no figures against the game's AI ({error})", file=sys.stderr)
         out["levels"] = {}
     # The win rate at each level over the tournaments' games, off the same
-    # result lines and the definitions the Experiments page reads, each
+    # result lines and the definitions the Tournaments page reads, each
     # game in the table of its own Diplomatic switch.
     out["tournament_rates"] = tournament_rates(source, rows)
     # The tree of build orders over the games against Deity: each game's
