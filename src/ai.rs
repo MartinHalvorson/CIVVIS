@@ -3589,11 +3589,24 @@ impl BasicAi {
     /// Repeatable Future technologies are deliberately excluded from the
     /// floor, so completing the ordinary tree still leaves them selectable.
     pub(crate) fn era_window_techs(g: &Game, pid: usize) -> Vec<Name> {
+        // The rules table and the seat's owned set both iterate in `Name`
+        // order (the text's), so one walk down the owned set answers every
+        // "already researched?" below, where a tree search per tech made
+        // this 0.6% of a deployment-genome game.
+        debug_assert!(
+            g.rules.techs.keys().is_sorted(),
+            "SpecMap keys are in Name order"
+        );
+        let mut owned = g.players[pid].techs.iter().peekable();
         let earliest_incomplete_era = g
             .rules
             .techs
             .iter()
-            .filter(|(tech, spec)| !spec.repeatable && !g.players[pid].techs.contains(*tech))
+            .filter(|(tech, spec)| {
+                while owned.next_if(|have| *have < *tech).is_some() {}
+                let researched = owned.next_if(|have| *have == *tech).is_some();
+                !spec.repeatable && !researched
+            })
             .map(|(_, spec)| spec.era)
             .min();
         let latest_allowed_era = earliest_incomplete_era
