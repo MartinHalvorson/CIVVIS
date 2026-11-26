@@ -6602,6 +6602,15 @@ pub const GENES: &[Gene] = &[
     // cities the plan follows its lane; settling is unchanged. Opt-in; see
     // `advanced/science_core_ends_expansion.rs`.
     Gene { tag: "science-core-ends-expansion", field: "science_core_ends_expansion", kind: Kind::OptIn, enable: AdvancedAi::enable_science_core_ends_expansion, disable: AdvancedAi::disable_science_core_ends_expansion },
+    // Lv 8 Deity, Diplomatic Victory off (Tournament 7, 11-25): from the turn
+    // we first saw the winning racer's completed Spaceport to our first
+    // Disrupt Rocketry on it took 1-22 turns (mean 11) in the six losses where
+    // a pad was seen before its Exoplanet launch; Macedon's first pad fell on
+    // its launch turn. 64% of Spy-turns between the winner's Satellite and its
+    // launch went to other cities. A racer's seen pad (not its first launch)
+    // takes a Spy, which disrupts it ahead of training and stealing. Opt-in;
+    // see `advanced/seen_pad_starts_the_denial.rs`.
+    Gene { tag: "seen-pad-starts-the-denial", field: "seen_pad_starts_the_denial", kind: Kind::OptIn, enable: AdvancedAi::enable_seen_pad_starts_the_denial, disable: AdvancedAi::disable_seen_pad_starts_the_denial },
     // Religion seats' spreaders charted while known cities were still owed in
     // 13 of 40 reviewed Lv 8 tourney games (2026-11-26): a spreader held
     // outside a rival Apostle's reach fell through to charting, and the
