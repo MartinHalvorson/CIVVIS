@@ -5234,10 +5234,28 @@ const STRANGE_STYLE = `
   /* The worlds' numbers, side by side: in the lower right of the upper half,
      on the line of the open turn ("the upper right chart and drop to the
      lower right of the upper half of the screen"). */
+  #strange-hud .strange-right {
+    position: absolute; right: 14px; bottom: calc(100% - var(--strange-line) + 12px);
+    display: flex; align-items: flex-end; gap: 8px; pointer-events: none;
+  }
+  #strange-hud .strange-right > * { pointer-events: auto; }
   #strange-hud .strange-versus {
-    position: absolute; right: 14px; bottom: calc(100% - var(--strange-line) + 12px); padding: 8px 12px 9px; display: grid; gap: 2px 0;
+    padding: 8px 12px 9px; display: grid; gap: 2px 0;
     align-items: baseline; font-variant-numeric: tabular-nums;
   }
+  /* The defeat tracker (operator 2026-11-26: "add an inverse victory tracker
+     - track progress to a nuclear war and losing. Same format as the victory
+     track. we can call this defeat tracker. track turns away from a nuclear
+     war"): the victory tracker's own paths, rows and meters, one row a world,
+     beside the worlds' numbers, on the line, so the line stands no lower for
+     it. A meter fills as the world nears it. */
+  #strange-hud .strange-defeat { box-sizing: border-box; width: 230px; padding: 6px 9px 7px; }
+  #strange-hud .strange-defeat:empty { display: none; }
+  #strange-hud .strange-defeat .hud-section-heading { margin: 0 0 3px; color: #e8e3d2; font-weight: 800; font-size: 11px;
+    letter-spacing: .12em; text-transform: uppercase; }
+  #strange-hud .strange-defeat .victory-track { padding: 4px 2px 5px; }
+  #strange-hud .strange-defeat .victory-civ { pointer-events: none; }
+  #strange-hud .strange-defeat .victory-meter { height: 4.5px; margin: 1px 0 0 10px; border-radius: 3px; }
   #strange-hud .strange-versus i { font-style: normal; color: #9fb3ab; }
   #strange-hud .strange-versus b { font-weight: 400; text-align: right; min-width: 3.2em; padding-left: 12px; }
   #strange-hud .strange-versus b.strange-total { min-width: 3.6em; padding-left: 8px; color: #bccac4; }
@@ -6289,6 +6307,66 @@ function strangeFate(letter) {
     .filter(Boolean).join("\n");
   return {state, path, head, line, word, wars, seen: share, title};
 }
+// How near a world is to defeat, read from the same future as its sign: the
+// turns until a nuclear war and until the game is lost (another civilization
+// wins it or the seat is out of it). `fill` is how near, against the turns
+// the game has left: full when it is here, empty when none is coming.
+function strangeDefeat(letter) {
+  const pane = debugSplit.panes[letter], sight = pane.sight, turn = pane.turn;
+  const turns = count => `${count} turn${count === 1 ? "" : "s"}`;
+  if (!strange.futures && !sight) {
+    const off = {value: "Off", fill: 0, title: "Futures are off: this world's future is not being played out"};
+    return {nuclear: off, losing: off};
+  }
+  if (!sight || typeof turn !== "number" || typeof sight.turn !== "number") {
+    const looking = {value: "…", fill: 0, title: "This world's future is being played out to the end of its game"};
+    return {nuclear: looking, losing: looking};
+  }
+  const limit = sight.limit ?? strangeLimit(), left = limit ? Math.max(1, limit - turn) : null;
+  const near = away => left ? Math.max(0, Math.min(1, 1 - away / left)) : 0;
+  const reach = Math.max(0, sight.turn - turn);
+  const first = sight.seen.find(seen => seen.kind === "nuclear") || null;
+  const end = sight.done ? [...sight.seen].reverse().find(seen => seen.kind === "won" || seen.kind === "over") || null : null;
+  const nuclear = first && first.turn < turn
+    ? {value: "Now", fill: 1, title: `A nuclear war since turn ${first.turn}`}
+    : first ? {value: `${first.turn - turn}t`, fill: near(first.turn - turn),
+      title: `A nuclear war ${first.turn === turn ? "this turn" : `in ${turns(first.turn - turn)}`}, turn ${first.turn}: ${first.text}`}
+    : sight.done ? {value: "None", fill: 0, title: "No nuclear war before the game ends"}
+    : {value: `>${reach}t`, fill: 0, title: `No nuclear war in the next ${turns(reach)}, as far as its future is played`};
+  const lost = end && end.kind === "over" && end.text !== "The game ends";
+  const losing = lost ? {value: `${end.turn - turn}t`, fill: near(end.turn - turn),
+      title: `Lost ${end.turn === turn ? "this turn" : `in ${turns(end.turn - turn)}`}: ${end.text}, turn ${end.turn}`}
+    : end && end.kind === "won" ? {value: "Wins", fill: 0, title: `Not lost: ${end.text}, turn ${end.turn}`}
+    : end ? {value: "None", fill: 0, title: `Not lost: ${end.text}, turn ${end.turn}`}
+    : {value: `>${reach}t`, fill: 0, title: `Not lost in the next ${turns(reach)}, as far as its future is played`};
+  return {nuclear, losing};
+}
+// The defeat tracker: the victory tracker's format, with a path for a
+// nuclear war and one for losing, each counting the turns away.
+const STRANGE_DEFEAT_PATHS = [["nuclear", "Nuclear war", "#ff8a3d"], ["losing", "Losing", "#e2574c"]];
+function strangeDefeatDraw(hud, open, tree) {
+  const card = hud.querySelector("[data-strange-defeat]");
+  if (!card) return;
+  const read = Object.fromEntries(open.map(letter => [letter, strangeDefeat(letter)]));
+  const html = `<div class="hud-section-heading"><span>Defeat tracker</span></div>` +
+    STRANGE_DEFEAT_PATHS.map(([key, label, colour]) =>
+      `<section class="victory-track" data-defeat="${key}" style="--track:${colour}" aria-label="${label}: turns away, each world">` +
+      `<div class="victory-heading"><b>${label}</b><div class="victory-subheading"><span>Turns away</span></div></div>` +
+      `<div class="victory-body"><div class="victory-list">` + open.map(letter => {
+        const at = read[letter][key], name = `${letter.toUpperCase()} · ${strangeSeries(letter, tree)}`;
+        return `<div class="victory-entry" data-defeat-world="${letter}" style="--civ:${strange.tint[letter]}" title="${escapeAttr(`${name}: ${at.title}`)}">` +
+          `<div class="victory-line"><span class="victory-civ-dot"></span><span class="victory-civ">${escapeAttr(name)}</span>` +
+          `<span class="victory-value">${escapeAttr(at.value)}</span></div>` +
+          `<div class="victory-meter"><b style="width:${Math.round(at.fill * 100)}%"></b></div></div>`;
+      }).join("") + `</div></div></section>`).join("");
+  if (card.dataset.drawn !== html) {
+    const grew = card.dataset.rows !== String(open.length);
+    card.dataset.drawn = html;
+    card.dataset.rows = String(open.length);
+    card.innerHTML = html;
+    if (grew) strange.stale = true;
+  }
+}
 // Where the signs stand: each over the far end of its own branch, in rows
 // between the cards at the top, as much of each as there is room for. Signs
 // that would stand on one another are moved apart along their row, and
@@ -6699,7 +6777,10 @@ function strangeMount() {
       <i>Memory</i><b data-strange-gauge="memory">–</b><canvas data-strange-trace="memory" width="264" height="44"></canvas>
       <em data-strange-worlds></em>
     </div>
-    <div class="strange-versus strange-card" data-strange="numbers"></div>
+    <div class="strange-right">
+      <section class="strange-defeat strange-card" data-strange-defeat aria-label="Defeat tracker: how near each world is to a nuclear war and to losing the game"></section>
+      <div class="strange-versus strange-card" data-strange="numbers"></div>
+    </div>
     <div class="strange-swans" role="group" aria-label="Black swan">
       <button class="strange-swan" data-strange="swan"></button>
       <select data-strange="swan-kind" aria-label="Which black swan"></select>
@@ -6808,10 +6889,12 @@ function strangeCards() {
   const hud = strange.hud;
   const box = name => hud.querySelector(name).getBoundingClientRect();
   const title = box(".strange-title"), meter = box(".strange-meter"), versus = box(".strange-versus");
-  strange.floor = Math.ceil(Math.max(title.bottom + 46, meter.bottom + versus.height + 30));
+  const defeat = box(".strange-defeat");
+  strange.floor = Math.ceil(Math.max(title.bottom + 46, meter.bottom + Math.max(versus.height, defeat.height) + 30));
   strange.cards = [{left: title.left, right: title.right, top: title.top, bottom: title.bottom, side: -1},
     {left: meter.left, right: meter.right, top: meter.top, bottom: meter.bottom, side: 1},
-    {left: versus.left, right: versus.right, top: versus.top, bottom: versus.bottom, side: 1}];
+    {left: versus.left, right: versus.right, top: versus.top, bottom: versus.bottom, side: 1},
+    ...(defeat.height > 0 ? [{left: defeat.left, right: defeat.right, top: defeat.top, bottom: defeat.bottom, side: 1}] : [])];
   // And off the black swan's button, and what it says while it says it.
   for (const held of [hud.querySelector(".strange-swans"), hud.querySelector(".strange-omen")]) {
     if (held.hidden) continue;
@@ -7054,6 +7137,7 @@ function strangeDraw() {
     card.style.gridTemplateColumns = `repeat(${1 + open.length * (wide ? 2 : 1)}, auto)`;
     card.innerHTML = table;
   }
+  strangeDefeatDraw(hud, open, tree);
   const count = `${open.length} world${open.length === 1 ? "" : "s"} open`;
   const said = hud.querySelector("[data-strange-worlds]");
   if (said.textContent !== count) said.textContent = count;
@@ -7289,7 +7373,17 @@ function strangePaint(time) {
     if (py > g.cy - 30) continue;
     const there = (split.panes[letter].ahead || new Map()).get(worlds[letter].last) || split.history[letter].get(worlds[letter].last);
     const score = there && typeof there.score === "number" ? ` · ${Math.round(there.score)}` : "";
-    write(`${strangeSeries(letter, tree)}${score}`, x(letter, tip), py - 12, strange.lanes[letter] > 0 ? 1 : -1, colour[letter], quiet(letter));
+    const side = strange.lanes[letter] > 0 ? 1 : -1;
+    write(`${strangeSeries(letter, tree)}${score}`, x(letter, tip), py - 12, side, colour[letter], quiet(letter));
+    // Over the name, how many turns of this line are played ahead of its
+    // world's open turn (operator 2026-11-26: "add precomputed notes to the
+    // map above holy roller (17 precomputed)").
+    const ahead = worlds[letter].last - (split.panes[letter].turn ?? tree.from);
+    if (ahead > 0) {
+      pen.font = "600 10px system-ui, sans-serif";
+      write(`${ahead} precomputed`, x(letter, tip), py - 25, side, colour[letter], quiet(letter) * .8, false);
+      pen.font = "700 11px system-ui, sans-serif";
+    }
   }
   // A city founded is a gem on the line that founded it.
   for (const letter of lined) {

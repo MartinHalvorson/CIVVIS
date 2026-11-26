@@ -3841,6 +3841,35 @@ def check_doctor_strange(bar: Bar, address: str) -> None:
                   " pane.sight = kept; return heads; })()")
     assert said == ["No nuclear war in the next 46 turns", "☮ No nuclear war", "☢ Nuclear war in 83 turns (Atomic Era)",
                     "☢ Nuclear war since turn %d (Modern Era)" % (here - 3), "No nuclear war in the next 1 turn"], said
+    # The defeat tracker reads the same future (operator 2026-11-26: "add an
+    # inverse victory tracker - track progress to a nuclear war and losing.
+    # Same format as the victory track. we can call this defeat tracker.
+    # track turns away from a nuclear war"): turns away from a nuclear war and
+    # from losing the game, and a meter that fills as it nears.
+    near = bar.ev("(() => { const pane = debugSplit.panes.a, kept = pane.sight, turn = pane.turn;"
+                  " const read = sight => { pane.sight = {...kept, limit: turn + 200, ...sight}; const at = strangeDefeat('a');"
+                  "  return [at.nuclear.value, at.losing.value, Math.round(at.nuclear.fill * 100), Math.round(at.losing.fill * 100)]; };"
+                  " const out = [read({done: false, turn: turn + 46, seen: []}),"
+                  "  read({done: true, turn: turn + 90, seen: [{turn: turn + 40, kind: 'nuclear', text: 'x', era: 6},"
+                  "   {turn: turn + 90, kind: 'over', text: 'Brazil wins the game', era: 7}]}),"
+                  "  read({done: true, turn: turn + 120, seen: [{turn: turn - 3, kind: 'nuclear', text: 'x', era: 5},"
+                  "   {turn: turn + 120, kind: 'won', text: 'Rome wins the game', era: 8}]}),"
+                  "  read({done: true, turn: turn + 200, seen: [{turn: turn + 200, kind: 'over', text: 'The game ends', era: 8}]})];"
+                  " pane.sight = kept; return out; })()")
+    # 200 turns left in the game: a nuclear war 40 turns away is 80% near,
+    # a loss 90 turns away 55%.
+    assert near == [[">46t", ">46t", 0, 0], ["40t", "90t", 80, 55], ["Now", "Wins", 100, 0], ["None", "None", 0, 0]], near
+    card = bar.ev("(() => { const held = document.querySelector('#strange-hud [data-strange-defeat]'), box = held.getBoundingClientRect(),"
+                  " versus = document.querySelector('#strange-hud .strange-versus').getBoundingClientRect();"
+                  " return {title: held.querySelector('.hud-section-heading').textContent,"
+                  "  paths: [...held.querySelectorAll('.victory-track')].map(path => [path.dataset.defeat, path.querySelector('.victory-heading b').textContent,"
+                  "   path.querySelector('.victory-subheading').textContent, [...path.querySelectorAll('[data-defeat-world]')].map(row => row.dataset.defeatWorld)]),"
+                  "  beside: box.right <= versus.left && Math.abs(box.bottom - versus.bottom) <= 1,"
+                  "  kept: strange.cards.some(card => card.top === box.top && card.left === box.left), open: strangeOpen()}; })()")
+    # A row a world, in the order the worlds stand.
+    assert card == {"title": "Defeat tracker", "paths": [["nuclear", "Nuclear war", "Turns away", card["open"]],
+                                                       ["losing", "Losing", "Turns away", card["open"]]],
+                    "beside": True, "kept": True, "open": card["open"]} and sorted(card["open"]) == ["a", "b"], card
     # It is the future of the line it was played from. A world given another
     # player strategy has another, which is played out in its place, and the
     # one that kept its strategy keeps what was seen.
