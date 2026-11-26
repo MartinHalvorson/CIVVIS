@@ -2597,7 +2597,7 @@ fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
     assert!(EMBEDDED_INDEX.contains(concat!(
         "  @container (min-width: 233px) {\n",
         "    #side .brand:has(> .head-links:not([hidden])) {\n",
-        "      --site-rail: 92px; --site-mark: clamp(64px, 34cqw, 112px);\n",
+        "      --site-rail: 92px; --site-mark: clamp(56px, 29cqw, 96px);\n",
         "      display: grid; grid-template-columns: var(--site-rail) minmax(0, 1fr);\n",
         "      grid-template-rows: 1fr auto auto 1fr auto;\n",
         "      align-items: center; gap: 6px 7px;\n",
@@ -2665,7 +2665,9 @@ fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
     )));
     // The wordmark is sized from the lane the column leaves it, and the
     // tagline's two lines are fitted as one so they stay one size in it.
-    assert!(EMBEDDED_INDEX.contains("calc((100cqw - var(--site-rail) - 7px) / 4.85)"));
+    // A size smaller since 2026-11-26 (operator: "civvis.ai title and globe a
+    // bit smaller").
+    assert!(EMBEDDED_INDEX.contains("calc((100cqw - var(--site-rail) - 7px) / 5.6)"));
     assert!(EMBEDDED_APP_JS.contains(
         "{selector:\"#side[data-type-size=compact] .tagline span\", min:10, max:12, together:true},"
     ));
