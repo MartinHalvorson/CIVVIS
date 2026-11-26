@@ -711,6 +711,9 @@ impl AdvancedAi {
         /// Opt-in gene `trade-district-before-the-library`; see
         /// `advanced/trade_district_follows_the_campus.rs`.
         trade_district_before_the_library => enable_trade_district_before_the_library, disable_trade_district_before_the_library;
+        /// Opt-in gene `watched-capital-keeps-its-defender-gold`; see
+        /// `advanced/watched_capital_keeps_its_defender_gold.rs`.
+        watched_capital_keeps_its_defender_gold => enable_watched_capital_keeps_its_defender_gold, disable_watched_capital_keeps_its_defender_gold;
         /// Opt-in gene `tribute-buys-the-friendship-2`; see
         /// `advanced/tribute_buys_the_friendship.rs`.
         tribute_buys_the_friendship_2 => enable_tribute_buys_the_friendship_2, disable_tribute_buys_the_friendship_2;

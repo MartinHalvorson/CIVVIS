@@ -107,9 +107,11 @@ impl AdvancedAi {
     /// with the hostile memory; the wall or Slinger-upgrade policy can ask
     /// for this observation without enabling the other policy's actions.
     pub(super) fn remember_capital_watch_sightings(&mut self, g: &Game, pid: usize) {
-        // `near-rival-deterrence-opens-early` reads the same watch.
+        // `near-rival-deterrence-opens-early` and
+        // `watched-capital-keeps-its-defender-gold` read the same watch.
         if !self.capital_walls_before_the_surprise
             && !self.capital_watch_arms_the_slinger
+            && !self.watched_capital_keeps_its_defender_gold
             && !self.capital_archers_on()
             && !self.near_rival_deterrence_opens_early
         {
@@ -233,7 +235,7 @@ impl AdvancedAi {
     }
 
     /// Our land soldiers within [`CAPITAL_GARRISON_TILES`] of the capital.
-    fn capital_garrison(g: &Game, pid: usize, capital: u32) -> usize {
+    pub(super) fn capital_garrison(g: &Game, pid: usize, capital: u32) -> usize {
         let at = g.cities[&capital].pos;
         g.units
             .values()
@@ -288,6 +290,32 @@ impl AdvancedAi {
         true
     }
 
+    /// Whether `name` is a land soldier (no scout) `capital` can train and
+    /// may buy (the host has not refused it lately).
+    pub(super) fn capital_defender_kind(g: &Game, pid: usize, capital: u32, name: Name) -> bool {
+        let spec = &g.rules.units[name];
+        let item = Item::Unit { unit: name };
+        spec.class == "military"
+            && spec.domain.as_deref().is_none_or(|domain| domain == "land")
+            && spec.promotion_class != "recon"
+            && (spec.is_melee_capable() || spec.has_ranged_attack())
+            && g.can_produce(pid, capital, &item)
+            && !g.purchase_is_blocked(capital, &item)
+    }
+
+    /// The Gold price of `name` in `capital` when it is a land soldier (no
+    /// scout) the capital can train and buy now; `None` otherwise.
+    pub(super) fn capital_defender_price(
+        g: &Game,
+        pid: usize,
+        capital: u32,
+        name: Name,
+    ) -> Option<f64> {
+        Self::capital_defender_kind(g, pid, capital, name)
+            .then(|| g.unit_purchase_cost(pid, capital, name.as_str(), "gold"))
+            .flatten()
+    }
+
     /// The strongest land soldier (no scout: `buy_gold_military` would take
     /// one, and 040735Z's replay spent 60 Gold on a Scout at turn 23 when the
     /// host's menu held no Warrior) `capital` sells for Gold leaving `floor`
@@ -301,20 +329,7 @@ impl AdvancedAi {
         let budget = g.players[pid].gold - floor;
         let mut best: Option<(f64, f64, Name)> = None;
         for (name, spec) in &g.rules.units {
-            let item = Item::Unit { unit: *name };
-            if spec.class != "military"
-                || spec
-                    .domain
-                    .as_deref()
-                    .is_some_and(|domain| domain != "land")
-                || spec.promotion_class == "recon"
-                || !(spec.is_melee_capable() || spec.has_ranged_attack())
-                || !g.can_produce(pid, capital, &item)
-                || g.purchase_is_blocked(capital, &item)
-            {
-                continue;
-            }
-            let Some(price) = g.unit_purchase_cost(pid, capital, name.as_str(), "gold") else {
+            let Some(price) = Self::capital_defender_price(g, pid, capital, *name) else {
                 continue;
             };
             if price > budget + 1e-9 {

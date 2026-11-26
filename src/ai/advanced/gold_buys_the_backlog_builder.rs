@@ -106,7 +106,11 @@ impl AdvancedAi {
         let Some((quota, held)) = self.backlog_builder_shortfall(g, pid, plan) else {
             return false;
         };
-        let budget = g.players[pid].gold - self.purchase_upkeep_floor(g, pid, 0.0);
+        // `watched-capital-keeps-its-defender-gold`: the capital's missing
+        // defenders keep their price in the bank. Zero with the gene off.
+        let budget = g.players[pid].gold
+            - self.purchase_upkeep_floor(g, pid, 0.0)
+            - self.watched_capital_defender_reserve(g, pid);
         if budget <= 0.0 {
             return false;
         }
