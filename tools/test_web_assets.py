@@ -601,6 +601,31 @@ class EachColumnFromEloRightMarksItsLeader(unittest.TestCase):
         self.assertLess(self.page.index("  #playerhud .ribbon-stat:hover,"), self.page.index(rule))
 
 
+class QuickDealsEndsTheLaunchBar(unittest.TestCase):
+    """Quick Deals is the last button of the launch bar, not one of the hooks.
+
+    Operator 2026-11-26: "quickdeals should technically be on the right end of
+    the left menu". The mod that adds Quick Deals to Civilization VI puts its
+    button at the right end of the launch bar (upper left); it stood among the
+    partial-screen hooks (upper right) here.
+    """
+
+    def setUp(self):
+        self.page = INDEX.read_text(encoding="utf-8")
+
+    def test_the_button_follows_the_launch_tabs_and_left_the_hooks(self):
+        bar = self.page[self.page.index('<div id="launchbar"'):self.page.index('<div id="livepause"')]
+        hooks = self.page[self.page.index('<div id="hooksbar"'):self.page.index('<div id="leaderribbon"')]
+        self.assertLess(bar.index('<div id="launchtabs"></div>'), bar.index('id="tradebtn"'))
+        self.assertEqual(self.page.count('id="tradebtn"'), 1)
+        self.assertNotIn("tradebtn", hooks)
+        self.assertIn('id="diplomacybtn"', hooks)
+        # Only the Civilization VI screen shows it, as only that screen shows
+        # the hooks: a watched world's launch bar keeps its two trees alone.
+        self.assertIn("  #launchbar > #tradebtn { display: none; }\n"
+                      "  body.civ6-frame #launchbar > #tradebtn { display: grid; }\n", self.page)
+
+
 class TheDedicatedDisplayShowsTheHud(unittest.TestCase):
     """The window the keeper opens beside a live game exists to show the player
     HUD. Its Chrome profile keeps this page's localStorage across launches, so

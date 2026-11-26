@@ -5777,11 +5777,19 @@
   /* A battlefield has no empire and so no screens: the bar has nothing on
      it and paints nothing, rather than an empty pill. */
   body.civ6-frame #launchbar:has(#launchtabs:empty) { display: none; }
+  /* Quick Deals stands at the right end of the launch bar, where the mod
+     that adds it to Civilization VI puts its button (operator 2026-11-26:
+     "quickdeals should technically be on the right end of the left menu");
+     it stood among the hooks before. Only this screen shows it, as only this
+     screen showed the hooks: a watched world's bar keeps its two trees. */
+  #launchbar > #tradebtn { display: none; }
+  body.civ6-frame #launchbar > #tradebtn { display: grid; }
   /* ---- the hooks (PartialScreenHooks.xml) --------------------------- */
   /* Upper right, the same band, read right to left: Reports, Era progress,
-     Trade routes, City-States, Espionage; then the two rooms where the empire
-     deals with anyone else; then ☗, which folds the standings masthead and
-     the arena rail away for a look at the map. */
+     Trade routes, City-States, Espionage; then Diplomacy, the room where the
+     empire deals with anyone else (Quick Deals is on the launch bar since
+     2026-11-26); then ☗, which folds the standings masthead and the arena
+     rail away for a look at the map. */
   body.civ6-frame #hooksbar {
     position: absolute; z-index: 8;
     right: var(--panel-edge); top: var(--solo-bar-top);
@@ -6608,6 +6616,9 @@
   <div id="worldtracker" aria-label="Research and civics"></div>
   <div id="launchbar" aria-label="Empire screens">
     <div id="launchtabs"></div>
+    <button class="launch" id="tradebtn"
+      title="Quick Deals — every mutually acceptable offer" aria-label="Quick Deals">⚖<span
+      class="launch-badge" hidden></span></button>
   </div>
   <!-- The live game's Pause / Resume and New game. Hidden unless this page is
        the mirror beside a Civilization VI verification game; see
@@ -6627,10 +6638,11 @@
   </div>
   <!-- Civ 6's partial-screen hooks (PartialScreenHooks.xml): upper right, read
        right to left — Reports, Era progress, Trade routes, City-States,
-       Espionage — then the two rooms where the empire deals with anyone else,
+       Espionage — then Diplomacy, where the empire deals with anyone else,
        and ☗, which folds the standings masthead and the arena rail away for a
-       look at the map. `drawLaunchBar` paints the tabs; the three buttons
-       here are markup because their handlers are bound by id. -->
+       look at the map. `drawLaunchBar` paints the tabs; the two buttons here
+       are markup because their handlers are bound by id, as is Quick Deals at
+       the launch bar's right end. -->
   <div id="hooksbar" aria-label="World reports and foreign affairs">
     <button class="launch launch-rankings" id="rankingsbtn" aria-pressed="false"
       onclick="toggleRankingsReport()"
@@ -6639,9 +6651,6 @@
     <div class="launch-rule" aria-hidden="true"></div>
     <button class="launch" id="diplomacybtn"
       title="Diplomacy — leaders, agendas, war and peace" aria-label="Diplomacy">⚭<span
-      class="launch-badge" hidden></span></button>
-    <button class="launch" id="tradebtn"
-      title="Quick Deals — every mutually acceptable offer" aria-label="Quick Deals">⚖<span
       class="launch-badge" hidden></span></button>
     <div id="hooktabs"></div>
   </div>
