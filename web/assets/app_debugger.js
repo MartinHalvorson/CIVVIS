@@ -5421,10 +5421,12 @@ const STRANGE_STYLE = `
      and "change "branch: ..." to "Create Branch: then the button. don't need
      "branch" on the button""), in its own colour, by its letter and its
      name. Each of the two says what it is on its left, and the two pickers
-     start at one edge. */
-  #strange-hud .strange-deck .strange-row { grid-column: 1 / -1; display: flex; align-items: center; gap: 7px; min-width: 0; }
-  #strange-hud .strange-deck .strange-row > span { flex: none; min-width: 82px; margin: 0; color: #9fb3ab; font-size: 11px; }
-  #strange-hud .strange-deck .strange-row > select { flex: 1; width: 0; }
+     start at one edge whatever the words measure in the font at hand: the
+     labels are the deck's first column, the pickers its second. */
+  #strange-hud .strange-deck.strange-branching { grid-template-columns: max-content minmax(0, 1fr); align-items: center; column-gap: 7px; }
+  #strange-hud .strange-deck .strange-row { display: contents; }
+  #strange-hud .strange-deck .strange-row > span { margin: 0; color: #9fb3ab; font-size: 11px; white-space: nowrap; }
+  #strange-hud .strange-deck .strange-row > select { width: 100%; min-width: 0; }
   #strange-hud .strange-deck .strange-base select {
     height: 28px; font-weight: 700; color: var(--strange-base, #e8e3d2);
     border-color: var(--strange-base, #35504a); border-left-width: 6px; text-overflow: ellipsis;
@@ -7067,7 +7069,7 @@ function strangeMount() {
         <button class="strange-play" data-strange="play"></button>
       </div>
       <div class="strange-say" data-strange="say" role="status"></div>
-      <div class="strange-deck" role="group" aria-label="Branch">
+      <div class="strange-deck strange-branching" role="group" aria-label="Branch">
         <label class="strange-row strange-base"><span>Following:</span><select data-strange="base" aria-label="Following: the world a branch is made from"></select></label>
         <label class="strange-row strange-create"><span>Create Branch:</span><select class="strange-branch" data-strange="branch" aria-label="Create Branch: from the timeline followed, here, played by"></select></label>
         <button class="strange-search" data-strange="search" aria-expanded="false" aria-label="Autosearch" title="Autosearch: from the timeline followed, on its open turn, find which player strategies should hold the seat, and when, to meet what you ask for. A share of this computer's cores each plays paths up and down the timeline on a copy of that world, and the best path found can be made a branch"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="6.5" cy="6.5" r="4.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M10 10l4.5 4.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span>Autosearch</span><span data-strange-search-count></span></button>
