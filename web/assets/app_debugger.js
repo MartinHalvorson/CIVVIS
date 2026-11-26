@@ -5441,7 +5441,7 @@ const STRANGE_STYLE = `
   }
   #strange-hud .strange-versus .strange-row-exit {
     width: 15px; height: 15px; margin-right: 3px; padding: 0; border-radius: 4px; vertical-align: 1px;
-    font-size: 8px; color: #9fb3ab; background: transparent; border-color: #35504a;
+    font-size: 9px; color: #9fb3ab; background: transparent; border-color: #35504a;
   }
   #strange-hud .strange-versus .strange-row-exit::before { content: "✕"; }
   #strange-hud .strange-versus .strange-row-exit:hover:not(:disabled) { color: #10140f; background: ${STRANGE_GOLD}; }
