@@ -3173,14 +3173,19 @@ def check_autosearch(bar: Bar, address: str) -> None:
     over = "!!debugSearch && !debugSearch.live"
 
     # The button stands with Layers and Breakpoints, after them, and is a
-    # size larger than any other tool at either end of the deck.
+    # size larger than any other tool at either end of the deck. Auto-play
+    # is the one exception in depth: the operator made it 60% deeper than the
+    # tools (2026-11-26: "make the autoplay button 60% deeper please"), 42px,
+    # and its type stays the deck's.
     sizes = bar.ev("(() => { const mine = document.querySelector('[data-dbg-search=\"open\"]');"
+                   " const run = document.querySelector('#debugbar [data-dbg=\"autoplay\"]');"
                    " const tools = [...document.querySelectorAll('#debugbar .dbg-cluster button')].filter(held => held !== mine && held.offsetParent);"
                    " const tall = held => held.getBoundingClientRect().height, type = held => parseFloat(getComputedStyle(held).fontSize);"
-                   " return {mine: [tall(mine), type(mine)], most: [Math.max(...tools.map(tall)), Math.max(...tools.map(type))],"
-                   " word: mine.textContent.trim(), after: mine.previousElementSibling.dataset.dbgPop,"
+                   " return {mine: [tall(mine), type(mine)], most: [Math.max(...tools.filter(held => held !== run).map(tall)), Math.max(...tools.map(type))],"
+                   " run: tall(run), word: mine.textContent.trim(), after: mine.previousElementSibling.dataset.dbgPop,"
                    " side: !!mine.closest('.dbg-left .dbg-cluster')}; })()")
     assert sizes["mine"][0] > sizes["most"][0] and sizes["mine"][1] > sizes["most"][1], sizes
+    assert round(sizes["run"]) == 42, sizes
     assert (sizes["word"], sizes["after"], sizes["side"]) == ("Autosearch", "breaks", True), sizes
 
     # Its panel: what to make the most of, in the operator's order first, how
