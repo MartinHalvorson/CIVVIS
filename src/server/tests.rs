@@ -8066,14 +8066,18 @@ fn browser_orders_controls_interface_setup_and_logs() {
     );
     // All three render-time lists must stay in one reading order: the
     // column model lays out and drags the cells, the heading names them,
-    // and playerHudStats supplies their figures. Total population comes
-    // from the player payload, while food comes from the existing public
-    // yield payload rather than a separate request.
+    // and playerHudStats supplies their figures. Total population and the
+    // per-city averages (loyalty after City, housing after Pop, food
+    // surplus, then happiness; operator 2026-11-26) come from the player
+    // payload rather than a separate request.
     fn assert_hud_stat_order(source: &str, section: &str) {
         let expected = [
             "cities",
+            "loyalty",
             "population",
+            "housing",
             "food",
+            "happiness",
             "production",
             "science",
             "culture",
@@ -8124,8 +8128,11 @@ fn browser_orders_controls_interface_setup_and_logs() {
         // walks `key:[` anchors rather than quoted keys.
         let expected = [
             "cities",
+            "loyalty",
             "population",
+            "housing",
             "food",
+            "happiness",
             "production",
             "science",
             "culture",
@@ -10246,6 +10253,13 @@ fn a_game_has_a_start_a_pause_and_its_payoffs() {
         .find(r#"<script src="/assets/app_clock.js?instance=7"></script>"#)
         .expect("the stopwatch script is served under the instance");
     assert!(clock < renderer, "app_clock.js loads before app.js");
+    // And the standings' figures, headings and hover explanations, which the
+    // renderer's standings call when they draw.
+    assert!(super::EMBEDDED_APP_STANDINGS_JS.starts_with("\"use strict\";"));
+    let standings = served
+        .find(r#"<script src="/assets/app_standings.js?instance=7"></script>"#)
+        .expect("the standings script is served under the instance");
+    assert!(standings < renderer, "app_standings.js loads before app.js");
     for id in [
         "moments",
         "fd-pause",
@@ -17924,6 +17938,7 @@ fn no_two_page_scripts_declare_the_same_function() {
         ("app_arena.js", super::EMBEDDED_APP_ARENA_JS),
         ("app_launches.js", super::EMBEDDED_APP_LAUNCHES_JS),
         ("app_clock.js", super::EMBEDDED_APP_CLOCK_JS),
+        ("app_standings.js", super::EMBEDDED_APP_STANDINGS_JS),
         ("app.js", EMBEDDED_APP_JS),
         ("app_setup.js", EMBEDDED_APP_SETUP_JS),
         ("app_moments.js", EMBEDDED_APP_MOMENTS_JS),
