@@ -2861,3 +2861,50 @@ fn player_standings_average_each_civilizations_cities() {
         rival["avg_food_surplus"]
     );
 }
+
+/// MIN HAP (operator 2026-11-26: "to the left of hap, add min hap which is the
+/// least happy city. clicking on a civ's min hap should point at that's civs
+/// least happy city"): each civilization's city furthest short of the
+/// amenities it needs, by id, so the standings can point at it. A rival's is
+/// its own to see, like the averages beside it.
+#[test]
+fn player_standings_name_each_civilizations_least_happy_city() {
+    let mut game = Game::new_full(2, 24, 16, 91_806, 200, 0, false);
+    for pid in 0..2 {
+        let settler = game
+            .player_unit_ids(pid)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .expect("every seat starts with a Settler");
+        game.found_city_for(pid, game.units[&settler].pos, None);
+        game.remove_unit(settler);
+    }
+    let capital = game.player_city_ids(1)[0];
+    let outpost_tile = game
+        .player_unit_ids(1)
+        .into_iter()
+        .map(|unit| game.units[&unit].pos)
+        .find(|&pos| pos != game.cities[&capital].pos)
+        .expect("the rival fields a unit off its capital");
+    let crowded = game.found_city_for(1, outpost_tile, None);
+    // Eight more citizens than the capital ask for four more amenities.
+    game.cities.get_mut(&crowded).unwrap().pop = 9;
+    let surplus = |game: &Game, city: u32| game.city_amenity_surplus(&game.cities[&city]);
+    assert!(surplus(&game, crowded) < surplus(&game, capital));
+
+    let observed = observation_spectator(&game, 0);
+    let rival = &observed["players"][1];
+    assert_eq!(rival["min_amenity_city"], json!(crowded));
+    assert_eq!(rival["min_amenity_surplus"], json!(surplus(&game, crowded)));
+
+    game.players[0].met.insert(1);
+    game.players[1].met.insert(0);
+    let seat = observation(&game, 0);
+    assert_eq!(seat["players"][1]["min_amenity_city"], Value::Null);
+    assert_eq!(seat["players"][1]["min_amenity_surplus"], Value::Null);
+    assert_eq!(
+        seat["players"][0]["min_amenity_city"],
+        json!(game.player_city_ids(0)[0]),
+        "a seat is pointed at its own least happy city"
+    );
+}

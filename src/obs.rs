@@ -940,7 +940,25 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
             };
             let avg_loyalty = city_mean(&|city| city.loyalty);
             let avg_housing_surplus = city_mean(&|city| g.city_housing_headroom(city));
-            let avg_amenity_surplus = city_mean(&|city| g.city_amenity_surplus(city) as f64);
+            // Happiness is read once a city, for the average and for the least
+            // happy city, the one furthest short of the amenities it needs
+            // (operator 2026-11-26: "to the left of hap, add min hap which is
+            // the least happy city. clicking on a civ's min hap should point
+            // at that's civs least happy city"). A tie goes to the first city
+            // in the civ's own order.
+            let happiness: Vec<(u32, i64)> = if city_detail_visible {
+                city_ids
+                    .iter()
+                    .map(|&cid| (cid, g.city_amenity_surplus(&g.cities[&cid])))
+                    .collect()
+            } else {
+                Vec::new()
+            };
+            let avg_amenity_surplus = (!happiness.is_empty()).then(|| {
+                let sum: i64 = happiness.iter().map(|&(_, surplus)| surplus).sum();
+                round1(sum as f64 / happiness.len() as f64)
+            });
+            let least_happy = happiness.iter().copied().min_by_key(|&(_, surplus)| surplus);
             // A finished device is an empire-scale fact of the same kind as
             // military strength, and it goes on the public ledger for the same
             // reason: the standings ribbon compares empires somebody has met.
@@ -1020,6 +1038,8 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
                 "avg_housing_surplus": avg_housing_surplus,
                 "avg_food_surplus": avg_food_surplus,
                 "avg_amenity_surplus": avg_amenity_surplus,
+                "min_amenity_surplus": least_happy.map(|(_, surplus)| surplus),
+                "min_amenity_city": least_happy.map(|(city, _)| city),
                 "suzerain_count": public_stats
                     .and_then(|stats| stats.suzerain_count)
                     .unwrap_or_else(|| g.players.iter()
