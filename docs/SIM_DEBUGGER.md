@@ -1991,6 +1991,27 @@ could be in flight when a follow asked for its next step, the step was
 dropped, and the world stopped short the moment time ran on after worlds
 were opened.
 
+### Branch Next Best
+
+Operator 2026-11-26: "in doctor strange's civvis, above the branch button,
+Branch Next Best and "Branch 5 Next Best" on the right".
+
+A row of two buttons stands across the branching deck between Following and
+Create Branch, in Create Branch's gold: Branch Next Best on the left, Branch 5
+Next Best on the right (`strangeNext`). Each branches the base timeline on its open turn for
+the best-rated player strategies that have no world of their own there yet,
+by All 14,000,605's rule (`strangeSeated`): one, or `STRANGE_NEXT_MANY` (5),
+best first, each a world in a box of its own beside the base. A branch whose
+copy has not landed yet counts as the base's world too (`strange.made`), so a
+quick second press takes the next ones down the ranking rather than the same
+strategy again. Like Branch, they leave time as it is. At 12 worlds open the
+best that fit are made and the page says how many were left out; with no
+strategy left without a world, or no room, both wait, and their titles say
+why. On the real engine (civvis.ai/test, 10 strategies rated, 11-26) Branch
+Next Best from A (TouristTrap) on turn 1 made C with JackOfAllTrades, and
+Branch 5 Next Best then made ForwardSettle, SiegeTheDay, MoonshotMaven,
+SwingVote and ByTheBook, in that order.
+
 ### Black swans
 
 A black swan is an event nothing in the world saw coming. No rule of the game
