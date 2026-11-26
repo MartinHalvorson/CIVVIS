@@ -2826,7 +2826,16 @@ fn player_standings_average_each_civilizations_cities() {
     let observed = observation_spectator(&game, 0);
     let rival = &observed["players"][1];
     let city = &game.cities[&rival_city];
-    assert_eq!(rival["avg_loyalty"], json!(62.0));
+    // LOY is the change in loyalty a turn ("loy should be the avg change in
+    // loyalty (often like +20 or +5 ot -7)"), not the loyalty itself.
+    let rate = game.city_loyalty_per_turn(city);
+    assert_ne!(rate, 62.0, "the test must tell the rate from the level");
+    assert_eq!(rival["avg_loyalty_per_turn"], json!(round1(rate)));
+    assert_eq!(
+        rival["avg_loyalty"],
+        Value::Null,
+        "the level is no longer sent"
+    );
     assert_eq!(
         rival["avg_housing_surplus"],
         json!(round1(game.city_housing_headroom(city)))
@@ -2845,7 +2854,11 @@ fn player_standings_average_each_civilizations_cities() {
     game.players[0].met.insert(1);
     game.players[1].met.insert(0);
     let seat = observation(&game, 0);
-    for hidden in ["avg_loyalty", "avg_housing_surplus", "avg_amenity_surplus"] {
+    for hidden in [
+        "avg_loyalty_per_turn",
+        "avg_housing_surplus",
+        "avg_amenity_surplus",
+    ] {
         assert_eq!(
             seat["players"][1][hidden],
             Value::Null,

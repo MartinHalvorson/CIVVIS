@@ -2168,7 +2168,7 @@ const PLAYER_HUD_COLUMNS = [
   // and military remain: an arena can seat a city, and the fight is the point.
   // The nuclear stockpile stands beside the military strength it changes the
   // meaning of, at nought until somebody builds a device.
-  ...[["cities", "Cities"], ["loyalty", "Average loyalty", worldStandingsInPlay], // app_standings.js
+  ...[["cities", "Cities"], ["loyalty", "Average loyalty per turn", worldStandingsInPlay], // app_standings.js
       ["population", "Population", worldStandingsInPlay], ["housing", "Average housing surplus", worldStandingsInPlay],
       ["food", "Average food surplus", worldStandingsInPlay], ["min_happiness", "Least happy city", worldStandingsInPlay],
       ["happiness", "Average happiness", worldStandingsInPlay], ["production", "Production"],
@@ -2778,7 +2778,7 @@ const PLAYER_HUD_HEAD_LABELS = {
   win:["NOW", "Current win odds", "numeric"],
   age:["AGE", "Civilization age"], plan:["PLAN", "AI active strategy"],
   closest_victory:["CLOSEST", "Closest victory and the estimated turns to it"],
-  cities:["CITY", "Cities controlled"], loyalty:["LOY", "Average city loyalty"],
+  cities:["CITY", "Cities controlled"], loyalty:["LOY", "Average loyalty per turn"],
   population:["POP", "Total population"], housing:["HOUS", "Average housing surplus"],
   food:["FOOD", "Average food surplus"], min_happiness:["MIN HAP", "Least happy city"],
   happiness:["HAP", "Average happiness"], production:["PROD", "Production per turn"],
@@ -28261,7 +28261,7 @@ function playerHudStats(player, rank) {
   const goldPerTurn = Number.isFinite(+player.gold_per_turn) ? +player.gold_per_turn : +(y.gold || 0);
   return [
     ["cities", "CITY", player.cities, `Cities controlled: ${exactStat(player.cities)}`],
-    averageRow("loyalty", "LOY", player.avg_loyalty, "Average loyalty", false),
+    averageRow("loyalty", "LOY", player.avg_loyalty_per_turn, "Average loyalty per turn"),
     ["population", "POP", player.population, `Total population: ${exactStat(player.population)}`],
     averageRow("housing", "HOUS", player.avg_housing_surplus, "Average housing surplus"),
     averageRow("food", "FOOD", player.avg_food_surplus, "Average food surplus", true, ` · ${exactStat(y.food)} Food per turn in all`),
