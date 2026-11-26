@@ -131,9 +131,10 @@
     },
     {
       "key": "scale_up",
-      "over": "all_cores",
+      "over": "m5_max",
       "estimates": [
-        {"taken": "2026-11-22", "times": 10, "from": "The project owner's figure, 2026-11-22: \"10x theoretical scale up from local hardware\". Ten times what the one M5 Max delivers with a game on every core, from larger hardware of our own. A calculation and not a run: no larger machine has played a game."}
+        {"taken": "2026-11-22", "times": 10, "from": "The project owner's figure, 2026-11-22: \"10x theoretical scale up from local hardware\". Ten times what the one M5 Max delivers with a game on every core, from larger hardware of our own. A calculation and not a run: no larger machine has played a game."},
+        {"taken": "2026-11-26", "times": 10, "from": "The project owner's figure, 2026-11-26: \"reasonable local hardware scale-up theoretical should be 10x left of m5 max theoretical max civ 6 thorugh\". Ten times the M5 Max's theoretical most (the stop it now stands on, in place of the M5 Max as measured with a game on every core), from larger hardware of our own. A calculation and not a run: no larger machine has played a game."}
       ]
     },
     {

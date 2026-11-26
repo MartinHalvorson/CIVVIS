@@ -283,7 +283,9 @@ Civ 6 Computationl Irreducability - ??? not sure where this is. Maybe just
 guess a 10x improvement? Maybe through down a "M5 Max, Theoretical Max Civ 6
 Throughput" somewhere like 10x to the left of Civ 6 Computational Irr...".
 The same day he renamed the scale-up: "lets change hardware scale-up to
-"Reasonable Local Hardware Scale-up Theoretical".
+"Reasonable Local Hardware Scale-up Theoretical". And on 2026-11-26 he moved
+it onto the M5 Max's theoretical most: "reasonable local hardware scale-up
+theoretical should be 10x left of m5 max theoretical max civ 6 thorugh".
 
 The ledger's `projected` are stops nothing has run at. Each is another stop's
 multiplier times one figure, so it moves when that stop does. The stop it
@@ -293,17 +295,18 @@ multiplies (`over`) is a measured one, or a projected one listed before it.
 | --- | --- | --- |
 | Civ 6 Computational Irreducibility (`irreducible`) | One game on one core with nothing left in it that the game does not need. A guess: nobody knows where it is. | `10 × CIVVIS self-play's multiplier` |
 | M5 Max, Theoretical Max Civ 6 Throughput (`m5_max`) | The most games one M5 Max could finish: the irreducible game on every core at once. A guess on a guess, and amortized. | `10 × the irreducible game's multiplier` |
-| Reasonable Local Hardware Scale-up Theoretical (`scale_up`) | Hardware of our own, scaled up within reason past the one M5 Max. Theoretical. | `10 × the M5 Max's multiplier` |
+| Reasonable Local Hardware Scale-up Theoretical (`scale_up`) | Hardware of our own, scaled up within reason past the one M5 Max. Theoretical. | `10 × the M5 Max theoretical's multiplier` |
 | Distributed RL fleet (`fleet`) | Many machines playing self-play at once for reinforcement learning. A potential, and open at its top. | `1,000 × the M5 Max's multiplier`, and more |
 
-Every figure is the project owner's. The last two are over the M5 Max's
-every-core stop as it was measured, and no machine was sized or priced for
-either. Whether his 1,000 is over the one M5 Max or over the scaled-up
-hardware is this page's reading of his sentence, and it reads the first. The
-first two are his guesses and stand on CIVVIS self-play, so the M5 Max's
-theoretical most is a hundred times one self-play game, whatever the M5 Max
-measures today. That leaves it close under the scale-up, which is ten times
-the M5 Max as measured: the two were asked for apart and are not made to agree.
+Every figure is the project owner's. The first two are his guesses and stand
+on CIVVIS self-play, so the M5 Max's theoretical most is a hundred times one
+self-play game, whatever the M5 Max measures today. The scale-up is ten times
+that theoretical most (until 2026-11-26 it was ten times the M5 Max as
+measured, which left it close over the theoretical stop). The fleet is over
+the M5 Max's every-core stop as it was measured. No machine was sized or
+priced for either. Whether his 1,000 is over the one M5 Max or over the
+scaled-up hardware is this page's reading of his sentence, and it reads the
+first.
 What a game takes now, in steps and instructions, and the plan for taking
 steps out of it, is [`docs/PATH_STEPS.md`](PATH_STEPS.md).
 
