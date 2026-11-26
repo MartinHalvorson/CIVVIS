@@ -506,7 +506,8 @@ def load_limited(target: int, *, running: int, projected: float, ceiling: float)
 
 
 def governed_workers(*, ceiling: float, cores: int, busy: float, group_cores: float,
-                     running: int, total: int, rest_peak: float | None = None) -> int:
+                     running: int, total: int, rest_peak: float | None = None,
+                     background_cores: float = 0.0) -> int:
     """How many whole one-thread workers may run in the next window.
 
     The rest of the machine is ``busy * cores - group_cores``, as in
@@ -524,8 +525,12 @@ def governed_workers(*, ceiling: float, cores: int, busy: float, group_cores: fl
     ``running`` workers that received fewer cores than there are of them are
     not fed: none is added, and those queued more than one deep are stopped
     (:data:`WORKER_FED_SLACK_CORES`).
+
+    ``background_cores`` is what other processes in the darwin-background band
+    burned (:func:`background_cores_between`). It is not rest: every thread
+    there yields to the workers, so it only ever had cores nobody else wanted.
     """
-    rest = max(0.0, busy * cores - group_cores)
+    rest = max(0.0, busy * cores - group_cores - background_cores)
     allowed = ceiling * cores - rest
     room = ceiling * cores - max(rest, rest_peak or 0.0)
     fed = group_cores >= running - WORKER_FED_SLACK_CORES
@@ -540,6 +545,29 @@ def governed_workers(*, ceiling: float, cores: int, busy: float, group_cores: fl
         # core and stop the rest. See WORKER_FED_SLACK_CORES.
         target = min(target, max(1, math.ceil(group_cores + WORKER_FED_SLACK_CORES)))
     return max(0, min(total, target))
+
+
+def background_cores_between(before: dict[int, float] | None, after: dict[int, float] | None,
+                             window: float) -> float:
+    """Cores the darwin-background band burned over ``window`` seconds.
+
+    ``before`` and ``after`` map pid to CPU seconds for the processes outside
+    the games' group that sat in the band at each probe. Only a process in the
+    band at both counts, and only for what it burned between them: one that
+    just entered the band (or just started) would otherwise bring its whole
+    lifetime with it.
+
+    Why (2026-11-26, mbp-m5-max-128): macOS's media analysis of the recorded
+    game clips ran at 1.4-1.6 cores in the background band for hours. The
+    governor read it as other work and held the games at 0 of 13 workers
+    beside the live game (36 games an hour for a day), although every one of
+    those threads would have yielded to a worker.
+    """
+    if not before or not after or window <= 0:
+        return 0.0
+    burned = sum(max(0.0, seconds - before[pid]) for pid, seconds in after.items()
+                 if pid in before)
+    return burned / window
 
 
 def governed_duty(*, ceiling: float, cores: int, busy: float, group_cores: float,
@@ -688,6 +716,8 @@ class CpuGovernor:
         self.standing_load: float | None = None
         # Only macOS has the band; elsewhere no priority means "parked".
         self.background_priority = BACKGROUND_PRIORITY if sys.platform == "darwin" else None
+        # pid -> CPU seconds of the band outside the games, at the last probe.
+        self.background_cpu: dict[int, float] | None = None
         # Re-entrant: the SIGTERM handler releases from the main thread, which
         # may be interrupted while it already holds the lock.
         self.lock = threading.RLock()
@@ -759,6 +789,11 @@ class CpuGovernor:
         if table is not None:
             ours = [row for row in table if row.group == group]
             workers = [row for row in ours if row.name == GAME_WORKER_NAME]
+            if self.background_priority is not None:
+                self.background_cpu = {
+                    row.pid: row.cpu_seconds for row in table
+                    if row.group != group and not row.stopped
+                    and row.priority <= self.background_priority}
             if ours:
                 cpu = sum(row.cpu_seconds for row in ours)
             now = time.monotonic()
@@ -950,6 +985,7 @@ class CpuGovernor:
             window = time.monotonic() - started
             # The window's closing sample opens the next one: two probes per
             # window would double the ``ps`` cost for no information.
+            background_before = self.background_cpu
             host_after, cpu_after, workers_after, foreground_after = self._probe(group)
             busy = (busy_fraction(host_before, host_after)
                     if host_after is not None else None)
@@ -959,8 +995,11 @@ class CpuGovernor:
             if busy is None or cpu_after is None or window <= 0:
                 continue
             group_cores = max(0.0, cpu_after - cpu_before_window) / window
+            background = min(max(0.0, busy * self.cores - group_cores),
+                             background_cores_between(background_before,
+                                                      self.background_cpu, window))
             closed = time.monotonic()
-            rest_seen.append((closed, max(0.0, busy * self.cores - group_cores)))
+            rest_seen.append((closed, max(0.0, busy * self.cores - group_cores - background)))
             while rest_seen and closed - rest_seen[0][0] > GOVERNOR_PEAK_SECONDS:
                 rest_seen.popleft()
             rest_peak = max(rest for _at, rest in rest_seen)
@@ -971,6 +1010,7 @@ class CpuGovernor:
                 "ceiling_percent": round(ceiling * 100, 1),
                 "host_busy_percent": round(busy * 100, 1),
                 "games_cores": round(group_cores, 2),
+                "background_cores": round(background, 2),
                 "on_battery": self.on_battery,
             }
             if foreground_now is not None:
@@ -978,7 +1018,8 @@ class CpuGovernor:
             if whole:
                 worker_target = governed_workers(
                     ceiling=ceiling, cores=self.cores, busy=busy, group_cores=group_cores,
-                    running=ran, total=len(workers), rest_peak=rest_peak)
+                    running=ran, total=len(workers), rest_peak=rest_peak,
+                    background_cores=background)
                 ran_seen.append((closed, ran))
                 while ran_seen and closed - ran_seen[0][0] > LOAD_MEMORY_SECONDS:
                     ran_seen.popleft()
@@ -1049,6 +1090,7 @@ class ProgressLog:
         if governor:
             parts.append(
                 f"host_cpu={governor['host_busy_percent']}% games_cores={governor['games_cores']} "
+                f"background_cores={governor.get('background_cores', 0.0)} "
                 f"duty={governor['applied_duty']}")
             if governor.get("workers") is not None:
                 parts.append(f"workers={governor['workers_running']}/{governor['workers']}")
