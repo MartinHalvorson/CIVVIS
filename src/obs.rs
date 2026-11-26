@@ -938,14 +938,18 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
                     round1(sum / city_ids.len() as f64)
                 })
             };
-            let avg_loyalty = city_mean(&|city| city.loyalty);
+            // Loyalty is the change each city's loyalty takes per turn, the
+            // signed figure Civ VI shows beside it (operator 2026-11-26: "loy
+            // should be the avg change in loyalty (often like +20 or +5 ot
+            // -7). avg of those"). It is the whole rate, not clipped where a
+            // city already at 100 cannot climb further.
+            let avg_loyalty_per_turn = city_mean(&|city| g.city_loyalty_per_turn(city));
             let avg_housing_surplus = city_mean(&|city| g.city_housing_headroom(city));
-            // Happiness is read once a city, for the average and for the least
-            // happy city, the one furthest short of the amenities it needs
-            // (operator 2026-11-26: "to the left of hap, add min hap which is
-            // the least happy city. clicking on a civ's min hap should point
-            // at that's civs least happy city"). A tie goes to the first city
-            // in the civ's own order.
+            // Happiness is read once a city, for the average and for P10 HAP,
+            // the tenth percentile of the civ's city happiness (operator
+            // 2026-11-26: "change min hap to p10 hap", after "to the left of
+            // hap, add min hap which is the least happy city. clicking on a
+            // civ's min hap should point at that's civs least happy city").
             let happiness: Vec<(u32, i64)> = if city_detail_visible {
                 city_ids
                     .iter()
@@ -958,7 +962,7 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
                 let sum: i64 = happiness.iter().map(|&(_, surplus)| surplus).sum();
                 round1(sum as f64 / happiness.len() as f64)
             });
-            let least_happy = happiness.iter().copied().min_by_key(|&(_, surplus)| surplus);
+            let p10_happiness = tenth_percentile(happiness);
             // A finished device is an empire-scale fact of the same kind as
             // military strength, and it goes on the public ledger for the same
             // reason: the standings ribbon compares empires somebody has met.
@@ -1034,12 +1038,12 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
                 "score": g.score(o.id),
                 "cities": city_count,
                 "population": total_population,
-                "avg_loyalty": avg_loyalty,
+                "avg_loyalty_per_turn": avg_loyalty_per_turn,
                 "avg_housing_surplus": avg_housing_surplus,
                 "avg_food_surplus": avg_food_surplus,
                 "avg_amenity_surplus": avg_amenity_surplus,
-                "min_amenity_surplus": least_happy.map(|(_, surplus)| surplus),
-                "min_amenity_city": least_happy.map(|(city, _)| city),
+                "p10_amenity_surplus": p10_happiness.map(|(_, surplus)| surplus),
+                "p10_amenity_city": p10_happiness.map(|(city, _)| city),
                 "suzerain_count": public_stats
                     .and_then(|stats| stats.suzerain_count)
                     .unwrap_or_else(|| g.players.iter()
@@ -2492,6 +2496,25 @@ pub(crate) fn standing(g: &Game, pid: usize) -> Value {
 
 fn round1(v: f64) -> f64 {
     (v * 10.0).round() / 10.0
+}
+
+/// The tenth percentile of a civ's city readings, `(city, reading)` in the
+/// civ's own city order, and the city that stands at it: P10 HAP. It is the
+/// usual inclusive reading (Excel's PERCENTILE, numpy's default), so with ten
+/// cities or fewer it falls between the least happy city and the next and
+/// one unhappy outlier no longer sets the figure alone. The city is the one
+/// nearest that point, the unhappier one at an even split; equal readings
+/// keep the civ's order. `None` when there is no city to read.
+fn tenth_percentile(mut readings: Vec<(u32, i64)>) -> Option<(u32, f64)> {
+    let last = readings.len().checked_sub(1)?;
+    readings.sort_by_key_shared(|&(_, reading)| reading);
+    let at = 0.1 * last as f64;
+    let low = at.floor() as usize;
+    let part = at - low as f64;
+    let high = (low + 1).min(last);
+    let value = readings[low].1 as f64 + part * (readings[high].1 - readings[low].1) as f64;
+    let city = readings[if part > 0.5 { high } else { low }].0;
+    Some((city, round1(value)))
 }
 
 fn yields_json(ys: &crate::rules::Yields) -> Value {

@@ -13,9 +13,12 @@
 // player hud, to the right of city let's track avg loyalty. to the right of
 // pop, lets track avg housing surplus. . to the right of food, lets track avg
 // happiness. have all default on", then "lets change food to avg food
-// surplus"). `src/obs.rs` sends them on each player: `avg_loyalty`,
+// surplus"). `src/obs.rs` sends them on each player: `avg_loyalty_per_turn`,
 // `avg_housing_surplus`, `avg_food_surplus` and `avg_amenity_surplus`
 // (happiness is amenities over need, the number Civ VI's moods are cut from).
+// LOY is the change in loyalty a turn, signed, not the loyalty itself
+// (operator 2026-11-26: "loy should be the avg change in loyalty (often like
+// +20 or +5 ot -7). avg of those").
 // FOOD keeps its key, so a saved layout or sort carries over to the new figure.
 
 // Every unit a civilization fields, of any kind. A world that does not say —
@@ -44,7 +47,6 @@ function averageStat(value) {
 }
 function ribbonAverage(kind, value) {
   if (value === null) return "—";
-  if (kind === "loyalty") return String(Math.round(value));
   const text = Math.abs(value) < 10 ? value.toFixed(1).replace(/\.0$/, "") : String(Math.round(value));
   return value > 0 ? `+${text}` : text;
 }
@@ -72,30 +74,32 @@ function civShort(civ) {
   return letters.length >= 3 ? letters.slice(0, 3).toUpperCase() : name;
 }
 
-// MIN HAP: amenities over need in the civ's least happy city, and its cell
-// points at that city (operator 2026-11-26: "to the left of hap, add min hap
-// which is the least happy city. clicking on a civ's min hap should point at
-// that's civs least happy city"). It answers with the `city` action the city
-// list's names use (`focusHudCity`): the map goes to the city and the
+// P10 HAP: the tenth percentile of the civ's city happiness (amenities over
+// need), and its cell points at the city standing there (operator 2026-11-26:
+// "change min hap to p10 hap", after "to the left of hap, add min hap which is
+// the least happy city. clicking on a civ's min hap should point at that's civs
+// least happy city"). The engine reads the percentile and names the city
+// (`tenth_percentile` in src/obs.rs). The cell answers with the `city` action
+// the city list's names use (`focusHudCity`): the map goes to the city and the
 // spectator's side panel opens on it. A view that is not shown the city, or a
 // page that has not got it, keeps the watch action every other figure has.
-function leastHappyCity(player) {
-  const id = player.min_amenity_city;
+function p10HappinessCity(player) {
+  const id = player.p10_amenity_city;
   return Number.isInteger(id) ? (state?.cities || []).find(city => city.id === id) || null : null;
 }
-function leastHappyRow(key, player) {
-  const value = averageStat(player.min_amenity_surplus), city = leastHappyCity(player);
-  return [key, "MIN HAP", value, value === null ? "Least happy city: not shown to this view"
-    : `Least happy city: ${city?.name || "a city"}, ${value > 0 ? "+" : ""}${value} amenities over need`];
+function p10HappinessRow(key, player) {
+  const value = averageStat(player.p10_amenity_surplus), city = p10HappinessCity(player);
+  return [key, "P10 HAP", value, value === null ? "10th percentile happiness: not shown to this view"
+    : `10th percentile happiness: ${value > 0 ? "+" : ""}${value} amenities over need · ${city?.name || "a city"} stands there`];
 }
-function leastHappyCell(player, value, label, isLeader) {
-  const city = leastHappyCity(player), civ = escapeAttr(player.civ);
+function p10HappinessCell(player, value, label, isLeader) {
+  const city = p10HappinessCity(player), civ = escapeAttr(player.civ);
   const [action, verb] = city
     ? [`data-hud-action="city" data-hud-city="${city.id}"`, `Go to ${escapeAttr(city.name || "the city")}`]
     : [`data-hud-action="watch"`, `Watch ${civ}`];
-  return `<button class="ribbon-stat min_happiness${isLeader ? " category-leader" : ""}" data-hud-col="min_happiness" ` +
+  return `<button class="ribbon-stat p10_happiness${isLeader ? " category-leader" : ""}" data-hud-col="p10_happiness" ` +
     `${action} data-hud-civ="${player.id}" title="${escapeAttr(label)} · ${verb}" ` +
-    `aria-label="${escapeAttr(label)}; ${verb.toLowerCase()}"><b>${ribbonAverage("min_happiness", value)}</b></button>`;
+    `aria-label="${escapeAttr(label)}; ${verb.toLowerCase()}"><b>${ribbonAverage("p10_happiness", value)}</b></button>`;
 }
 
 // One standings row for an average: [key, heading, figure, tooltip].
@@ -109,11 +113,11 @@ function averageRow(key, label, value, name, signed = true, extra = "") {
 // explanations short and simple though").
 const PLAYER_HUD_HEAD_EXPLAIN = {
   cities:"How many cities this civ holds.",
-  loyalty:"Average loyalty of its cities, 0 to 100. A city at 0 breaks away.",
+  loyalty:"Average change in its cities' loyalty per turn. Below 0, cities slide toward breaking away.",
   population:"Citizens across all its cities.",
   housing:"Average spare housing per city. Near 0 or below, cities grow slowly.",
   food:"Average food left per city after feeding its citizens. More means faster growth.",
-  min_happiness:"Amenities beyond need in its least happy city. Click a cell to go to that city.",
+  p10_happiness:"Happiness near the bottom of its cities (10th percentile), so one unhappy city does not set it. Click a cell to go to the city there.",
   happiness:"Average amenities beyond what each city needs. 3 or more is happy; below 0 hurts.",
   production:"Production per turn, all cities.", science:"Science per turn.",
   culture:"Culture per turn.", tourism:"Tourism per turn: its culture's pull on other civs.",
