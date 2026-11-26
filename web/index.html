@@ -1591,6 +1591,12 @@
   .ribbon-stat.nukes { --stat-color: #ffb04a; }
   .ribbon-stat.cities { --stat-color: #d6c49b; }
   .ribbon-stat.population { --stat-color: #d8a36d; }
+  /* The per-city averages beside City, Pop and Food (operator 2026-11-26),
+     each in a colour of its own: loyalty aqua, spare housing sage, happiness
+     peach. */
+  .ribbon-stat.loyalty { --stat-color: #a7d8d0; }
+  .ribbon-stat.housing { --stat-color: #b9c98f; }
+  .ribbon-stat.happiness { --stat-color: #f7c49a; }
   .ribbon-stat.suzerain { --stat-color: #8dd6b1; }
   .ribbon-stat.wonders { --stat-color: #e9d88e; }
   .ribbon-stat.score { --stat-color: var(--gold-bright); }
@@ -4260,6 +4266,20 @@
   /* The stat gutters separate these columns, so the heads do not also need a
      rule between every pair — twelve hairlines over twelve short words read
      as a fence. */
+  /* A standings heading's meaning, in a box under it while the pointer rests
+     there or it has focus (operator 2026-11-26: "expand on hover
+     explanations. keep the explanations short and simple"). Built by
+     `showHudExplain` in app.js; it takes no pointer, so it never stands in
+     the way of a sort or a drag. */
+  #hudexplain {
+    position: fixed; z-index: 60; max-width: 230px; padding: 7px 10px;
+    color: var(--text); background: #080a0bf2; border: 1px solid var(--line); border-radius: 8px;
+    box-shadow: var(--shadow); pointer-events: none;
+    font: 500 11px/1.45 var(--font-ui); letter-spacing: 0; text-transform: none;
+  }
+  #hudexplain[hidden] { display: none; }
+  #hudexplain b { display: block; margin-bottom: 2px; color: var(--gold-bright); font-weight: 750; }
+  #hudexplain small { display: block; margin-top: 4px; color: var(--muted); font-size: 10px; }
   .hud-head-stat {
     display: grid; place-items: center; border-left: 0;
     font-size: var(--type-caption); letter-spacing: .015em;
@@ -7626,6 +7646,7 @@
 <script src="/assets/app_arena.js"></script>
 <script src="/assets/app_launches.js"></script>
 <script src="/assets/app_clock.js"></script>
+<script src="/assets/app_standings.js"></script>
 <script src="/assets/app.js"></script>
 <script src="/assets/app_setup.js"></script>
 <script src="/assets/app_moments.js"></script>
