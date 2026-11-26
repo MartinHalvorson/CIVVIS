@@ -2775,7 +2775,7 @@ __LEDGER__
   // no deck in sight. Each turn it is shown it asks for nothing but the turn.
   pane = true; asked.length = 0; timers.length = 0; state = {...state, turn: 8};
   await refreshSaves();
-  check(currentPolicyLedger() === null, "a world of Doctor Strange's Civ 6 has no ledger");
+  check(currentPolicyLedger() === null, "a world of Doctor Strange's CIVVIS has no ledger");
   check(asked.length === 0 && timers.length === 0, `and asks for neither: ${asked}, ${timers.length} waiting`);
   console.log("a world asks only for its turns");
 })();

@@ -3430,7 +3430,7 @@ def check_autosearch(bar: Bar, address: str) -> None:
 
 
 def check_doctor_strange(bar: Bar, address: str) -> None:
-    """Doctor Strange's Civ 6: the same split, shown as two worlds under the tree of their timeline.
+    """Doctor Strange's CIVVIS: the same split, shown as two worlds under the tree of their timeline.
 
     Operator, 2026-11-23: "it will have a scrolling guitar hero setup. where
     the timeline we are on and following is center screen. forward in time is
@@ -3453,7 +3453,7 @@ def check_doctor_strange(bar: Bar, address: str) -> None:
     both = lambda turn: turns("ab", turn)
     ready = "typeof drawDebugBar === 'function' && typeof engineState === 'function'"
     bar.dev.call("Page.navigate", {"url": f"{address}?mode=strange"})
-    bar.until(f"{ready} && location.search === '?mode=strange' && state === null", "the page, asked for as Doctor Strange's Civ 6")
+    bar.until(f"{ready} && location.search === '?mode=strange' && state === null", "the page, asked for as Doctor Strange's CIVVIS")
     assert bar.ev("[STRANGE, STRANGE_PANE, document.documentElement.classList.contains('strange')]") == [True, False, True]
     # The toy keeps each turn's score, as the engine keeps each turn's world.
     # The first part of this is the page with no future played ahead, so
@@ -3843,6 +3843,35 @@ def check_doctor_strange(bar: Bar, address: str) -> None:
                   " pane.sight = kept; return heads; })()")
     assert said == ["No nuclear war in the next 46 turns", "☮ No nuclear war", "☢ Nuclear war in 83 turns (Atomic Era)",
                     "☢ Nuclear war since turn %d (Modern Era)" % (here - 3), "No nuclear war in the next 1 turn"], said
+    # The defeat tracker reads the same future (operator 2026-11-26: "add an
+    # inverse victory tracker - track progress to a nuclear war and losing.
+    # Same format as the victory track. we can call this defeat tracker.
+    # track turns away from a nuclear war"): turns away from a nuclear war and
+    # from losing the game, and a meter that fills as it nears.
+    near = bar.ev("(() => { const pane = debugSplit.panes.a, kept = pane.sight, turn = pane.turn;"
+                  " const read = sight => { pane.sight = {...kept, limit: turn + 200, ...sight}; const at = strangeDefeat('a');"
+                  "  return [at.nuclear.value, at.losing.value, Math.round(at.nuclear.fill * 100), Math.round(at.losing.fill * 100)]; };"
+                  " const out = [read({done: false, turn: turn + 46, seen: []}),"
+                  "  read({done: true, turn: turn + 90, seen: [{turn: turn + 40, kind: 'nuclear', text: 'x', era: 6},"
+                  "   {turn: turn + 90, kind: 'over', text: 'Brazil wins the game', era: 7}]}),"
+                  "  read({done: true, turn: turn + 120, seen: [{turn: turn - 3, kind: 'nuclear', text: 'x', era: 5},"
+                  "   {turn: turn + 120, kind: 'won', text: 'Rome wins the game', era: 8}]}),"
+                  "  read({done: true, turn: turn + 200, seen: [{turn: turn + 200, kind: 'over', text: 'The game ends', era: 8}]})];"
+                  " pane.sight = kept; return out; })()")
+    # 200 turns left in the game: a nuclear war 40 turns away is 80% near,
+    # a loss 90 turns away 55%.
+    assert near == [[">46t", ">46t", 0, 0], ["40t", "90t", 80, 55], ["Now", "Wins", 100, 0], ["None", "None", 0, 0]], near
+    card = bar.ev("(() => { const held = document.querySelector('#strange-hud [data-strange-defeat]'), box = held.getBoundingClientRect(),"
+                  " versus = document.querySelector('#strange-hud .strange-versus').getBoundingClientRect();"
+                  " return {title: held.querySelector('.hud-section-heading').textContent,"
+                  "  paths: [...held.querySelectorAll('.victory-track')].map(path => [path.dataset.defeat, path.querySelector('.victory-heading b').textContent,"
+                  "   path.querySelector('.victory-subheading').textContent, [...path.querySelectorAll('[data-defeat-world]')].map(row => row.dataset.defeatWorld)]),"
+                  "  beside: box.right <= versus.left && Math.abs(box.bottom - versus.bottom) <= 1,"
+                  "  kept: strange.cards.some(card => card.top === box.top && card.left === box.left), open: strangeOpen()}; })()")
+    # A row a world, in the order the worlds stand.
+    assert card == {"title": "Defeat tracker", "paths": [["nuclear", "Nuclear war", "Turns away", card["open"]],
+                                                       ["losing", "Losing", "Turns away", card["open"]]],
+                    "beside": True, "kept": True, "open": card["open"]} and sorted(card["open"]) == ["a", "b"], card
     # It is the future of the line it was played from. A world given another
     # player strategy has another, which is played out in its place, and the
     # one that kept its strategy keeps what was seen.
@@ -4003,14 +4032,14 @@ def check_doctor_strange(bar: Bar, address: str) -> None:
     bar.ev("render(engineState()), true")
     bar.until("debugOpenedGame !== null && strange.sorry", "a narrow window is told why it has one timeline")
     assert bar.ev("[debugSplit, getComputedStyle(debugBar).visibility]") == [None, "visible"]
-    assert bar.note().startswith("Doctor Strange's Civ 6 sets two worlds side by side and needs a wider window"), bar.note()
+    assert bar.note().startswith("Doctor Strange's CIVVIS sets two worlds side by side and needs a wider window"), bar.note()
     bar.dev.call("Emulation.clearDeviceMetricsOverride")
     bar.until("innerWidth > 1000", "the window is its own size again")
     assert not bar.dev.console, f"the page complained: {bar.dev.console}"
 
 
 def check_doctor_strange_autosearch(bar: Bar, address: str) -> None:
-    """Doctor Strange's Civ 6 has Autosearch: it searches from the base timeline on copies of that world, and the path found is made a branch.
+    """Doctor Strange's CIVVIS has Autosearch: it searches from the base timeline on copies of that world, and the path found is made a branch.
 
     Operator, 2026-11-25: "add the autosearch stuff to doctor strange's civ
     6. we should be able to efficiently search paths to try to find a
@@ -4024,7 +4053,7 @@ def check_doctor_strange_autosearch(bar: Bar, address: str) -> None:
     # What an earlier search's panel was set to is read as the page loads.
     bar.ev("localStorage.removeItem('civvis-debug-search-v1'), localStorage.removeItem('civvis-debug-search-v2'), true")
     bar.dev.call("Page.navigate", {"url": f"{address}?mode=strange"})
-    bar.until(f"{ready} && location.search === '?mode=strange' && state === null", "Doctor Strange's Civ 6, loaded again")
+    bar.until(f"{ready} && location.search === '?mode=strange' && state === null", "Doctor Strange's CIVVIS, loaded again")
     bar.ev("engine.scores = {1: 0}, strange.futures = false, render(engineState()), true")
     bar.settled()
     bar.until(f"debugSplit && debugSplit.shown && {turns('ab', 1)} && strangeIdle()", "its two worlds are there")
@@ -4548,7 +4577,7 @@ def main() -> int:
               "page's game alone, finds the best line and lets its copies go; the line is played on the "
               "one timeline or in either half of a split, and says what it came to beside what was found.")
         check_doctor_strange(bar, f"http://127.0.0.1:{port}/")
-        print("Doctor Strange's Civ 6 is the split shown as worlds in boxes under the tree of their timelines: it "
+        print("Doctor Strange's CIVVIS is the split shown as worlds in boxes under the tree of their timelines: it "
               "opens on the top rated player strategy on the right and its challenger on the left; the open turn is "
               "the line across the window, which is the divide between the tree and the boxes and has the turn "
               "written on it; a branch is named by the player strategies that played it, its box is in its colour, "
@@ -4570,7 +4599,7 @@ def main() -> int:
               "marks it in the line's name and has each struck world's future played again; a narrow "
               "window has the one timeline and says why.")
         check_doctor_strange_autosearch(bar, f"http://127.0.0.1:{port}/")
-        print("Doctor Strange's Civ 6 has Autosearch on its deck under Branch, a size larger than the deck's other "
+        print("Doctor Strange's CIVVIS has Autosearch on its deck under Branch, a size larger than the deck's other "
               "buttons; it opens the AI Debugger's panel over the tree and searches from the base timeline on copies "
               "of that world's own engine, asking no world anything; the path found is made a branch, a copy of "
               "the base that plays it to what the search read, the other worlds locked to it play on to the same "

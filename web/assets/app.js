@@ -2872,35 +2872,32 @@ function syncPlayerHudColumns(placeGrips = true) {
 // The widest of these cells' texts at `typeSize`, with the inset and divider
 // of the field each one sits in: what a grid track must hold to show every
 // one of them whole. The fields live inside the track, so their inset is
-// part of the answer.
+// part of the answer. Every style is read before any probe is written, and
+// all the probes are laid out together: one layout for the column, where a
+// probe restyled and read per cell cost one each, on every repaint.
+const HUD_PROBE_FACE = ["fontFamily", "fontWeight", "fontStyle", "fontStretch", "fontVariant",
+  "fontKerning", "fontOpticalSizing", "fontVariantNumeric", "letterSpacing"];
 function widestPlayerHudText(cells, typeSize) {
-  const probe = document.createElement("span");
-  probe.style.cssText = "position:fixed; visibility:hidden; inset:auto; display:inline-block; " +
-    "width:max-content; min-width:max-content; max-width:none; overflow:visible; " +
-    "white-space:nowrap; pointer-events:none; line-height:1;";
-  document.body.append(probe);
-  let widest = 0;
-  for (const cell of cells) {
-    const style = getComputedStyle(cell);
-    probe.style.fontFamily = style.fontFamily;
-    probe.style.fontWeight = style.fontWeight;
-    probe.style.fontStyle = style.fontStyle;
-    probe.style.fontStretch = style.fontStretch;
-    probe.style.fontVariant = style.fontVariant;
-    probe.style.fontKerning = style.fontKerning;
-    probe.style.fontOpticalSizing = style.fontOpticalSizing;
-    probe.style.fontVariantNumeric = style.fontVariantNumeric;
-    probe.style.letterSpacing = style.letterSpacing;
+  const read = cells.map(cell => {
+    const style = getComputedStyle(cell), fieldStyle = getComputedStyle(cell.parentElement);
+    const inset = (parseFloat(fieldStyle.paddingLeft) || 0) + (parseFloat(fieldStyle.paddingRight) || 0) +
+      (parseFloat(fieldStyle.borderLeftWidth) || 0) + (parseFloat(fieldStyle.borderRightWidth) || 0);
+    return {face: HUD_PROBE_FACE.map(name => style[name]), text: cell.textContent, inset};
+  });
+  const probes = read.map(({face, text}) => {
+    const probe = document.createElement("span");
+    probe.style.cssText = "position:fixed; visibility:hidden; inset:auto; display:inline-block; " +
+      "width:max-content; min-width:max-content; max-width:none; overflow:visible; " +
+      "white-space:nowrap; pointer-events:none; line-height:1;";
+    HUD_PROBE_FACE.forEach((name, at) => { probe.style[name] = face[at]; });
     probe.style.fontSize = `${typeSize}px`;
-    probe.textContent = cell.textContent;
-    const fieldStyle = getComputedStyle(cell.parentElement);
-    const inset = (parseFloat(fieldStyle.paddingLeft) || 0) +
-      (parseFloat(fieldStyle.paddingRight) || 0) +
-      (parseFloat(fieldStyle.borderLeftWidth) || 0) +
-      (parseFloat(fieldStyle.borderRightWidth) || 0);
-    widest = Math.max(widest, Math.ceil(probe.getBoundingClientRect().width + inset + 1));
-  }
-  probe.remove();
+    probe.textContent = text;
+    return probe;
+  });
+  document.body.append(...probes);
+  const widest = probes.reduce((most, probe, at) =>
+    Math.max(most, Math.ceil(probe.getBoundingClientRect().width + read[at].inset + 1)), 0);
+  probes.forEach(probe => probe.remove());
   return widest;
 }
 
