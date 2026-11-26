@@ -4897,6 +4897,30 @@ def check_edge_of_tomorrow(bar: Bar, address: str) -> None:
     # And the AI Debugger's view is as it was left.
     assert bar.ev("localStorage.getItem('civvis-debugger-view-v1')") == view
 
+    # The map is framed on the ground the screen leaves open (operator
+    # 2026-11-26: "please try to center edge of tomorrow map a bit bettter ,
+    # consider what is on the screen"). A strip along a third or more of an
+    # edge moves it in: the top strip and the launch buttons the top, the
+    # tools the right. A box in a corner, smaller than that both ways, does
+    # not cost the map a whole strip. (Overlays at fixed places, measured
+    # against a canvas at the page's corner.)
+    ground = bar.ev("""(() => {
+      const had = window.cv; window.cv = document.documentElement;
+      const made = [['civtop', 0, 10, 1000, 40], ['launchbar', 10, 50, 480, 110], ['hooksbar', 940, 50, 1000, 400]].map(([id, l, t, r, b]) => {
+        let el = document.getElementById(id); const fresh = !el;
+        if (fresh) { el = document.createElement('div'); el.id = id; document.body.append(el); }
+        const was = el.getAttribute('style');
+        el.setAttribute('style', `position:fixed;display:block;visibility:visible;left:${l}px;top:${t}px;width:${r - l}px;height:${b - t}px`);
+        return [el, fresh, was]; });
+      const corner = {left: 800, right: 1000, top: 650, bottom: 760};
+      const open = tomorrowOpenGround({left: 0, right: 1000, top: 0, bottom: 800}, corner);
+      const tall = tomorrowOpenGround({left: 0, right: 1000, top: 0, bottom: 800}, {left: 900, right: 1000, top: 300, bottom: 760});
+      for (const [el, fresh, was] of made) { if (fresh) el.remove(); else if (was === null) el.removeAttribute('style'); else el.setAttribute('style', was); }
+      window.cv = had;
+      return [[open.left, open.right, open.top, open.bottom], [tall.left, tall.right, tall.top, tall.bottom], typeof openBesideBox === 'undefined' || openBesideBox === tomorrowOpenGround];
+    })()""")
+    assert ground == [[0, 940, 110, 800], [0, 900, 110, 800], True], ground
+
 
 def main() -> int:
     here = pathlib.Path(__file__).resolve().parent
