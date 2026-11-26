@@ -3465,7 +3465,7 @@ const RESPONSIVE_TEXT_RULES = [
   // measure for real and shrink the run instead of letting it fold, `together`
   // so the two lines stay one size. The split keeps the compact band's smaller
   // ceiling and retires a stale fitted size left when the deck changes band.
-  {selector:"#side:not([data-type-size=compact]) .tagline span", min:12, max:15, together:true},
+  {selector:"#side:not([data-type-size=compact]) .tagline span", min:12, max:16, together:true},
   {selector:"#side[data-type-size=compact] .tagline span", min:10, max:12, together:true},
   {selector:"#side .section-title > span:last-child", min:10, max:13},
   {selector:"#side .event-scope", min:9, max:12},
