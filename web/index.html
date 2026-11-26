@@ -463,37 +463,44 @@
   html.seat-known.strange body:not(.watching-sim) #strangelink { box-shadow: inset 0 0 0 1px #fff, 0 0 6px rgba(255, 138, 30, 0.6); }
   html.seat-known.tomorrow body:not(.watching-sim) #tomorrowlink { box-shadow: inset 0 0 0 1px #fff, 0 0 6px rgba(255, 120, 40, 0.5); }
   /* With 233px or more across the band the links leave the lockup's foot and
-     stand in a column on its left, at the box's left edge, with the globe
-     and the wordmark to the right of it (operator, 2026-11-21: the list goes
-     "to the left side" of the civvis.ai title, as it is on Home) and the
-     tagline across the band under all three. The column is the first track
-     of the lockup's grid though the list is the last thing in the markup,
-     so the narrower layouts still find it under the tagline. The lockup
-     gives the column its width (`--site-rail`) and the wordmark's
-     lane is the band less the column, the globe and the two 7px gutters. The
-     CIVVIS.ai run is 4.65em wide (4.85 leaves fallback-font slack), so
-     dividing the lane by that fills it without tripping the ellipsis. Under
-     233px that leaves the wordmark too small to be the page's name. */
+     stand in a column on its left, at the box's left edge (operator,
+     2026-11-21: the list goes "to the left side" of the civvis.ai title, as
+     it is on Home). Right of the column the rest of the lockup stands one
+     over the other and centred: the globe on top and large, then the
+     wordmark, then the tagline (operator, 2026-11-26: "maybe put the globe
+     on top and bigger, then civvis.ai, the a civ.... but centered better").
+     The rows over and under the three take what the column's height leaves,
+     so the three keep together in the middle of it. The column is the first
+     track of the lockup's grid though the list is the last thing in the
+     markup, so the narrower layouts still find it under the tagline. The
+     lockup gives the column its width (`--site-rail`) and the wordmark its
+     lane, the band less the column and its 7px gutter. The CIVVIS.ai run is
+     4.65em wide (4.85 leaves fallback-font slack), so dividing the lane by
+     that fills it without tripping the ellipsis. Under 233px that leaves the
+     wordmark too small to be the page's name. Under 246px the tagline's two
+     lines do not fit beside the column, and it stands across the band under
+     all of it. */
   @container (min-width: 233px) {
     #side .brand:has(> .head-links:not([hidden])) {
-      --site-rail: 92px; --site-mark: clamp(40px, 19cqw, 72px);
-      display: grid; grid-template-columns: var(--site-rail) auto minmax(0, 1fr);
-      align-items: center; gap: 7px;
+      --site-rail: 92px; --site-mark: clamp(64px, 34cqw, 112px);
+      display: grid; grid-template-columns: var(--site-rail) minmax(0, 1fr);
+      grid-template-rows: 1fr auto auto 1fr auto;
+      align-items: center; gap: 6px 7px;
     }
     #side .brand:has(> .head-links:not([hidden])) .brand-copy { display: contents; }
     #side .brand:has(> .head-links:not([hidden])) .brand-mark {
-      grid-column: 2; grid-row: 1; flex: none; width: var(--site-mark); height: var(--site-mark);
+      grid-column: 2; grid-row: 2; flex: none; width: var(--site-mark); height: var(--site-mark); justify-self: center;
     }
     #side .brand:has(> .head-links:not([hidden])) .brand-mark svg { width: 91%; height: 91%; }
     #side .brand:has(> .head-links:not([hidden])) h1 {
-      grid-column: 3; grid-row: 1;
-      font-size: clamp(15px, calc((100cqw - var(--site-rail) - var(--site-mark) - 14px) / 4.85), 36px);
+      grid-column: 2; grid-row: 3; justify-self: center; text-align: center;
+      font-size: clamp(15px, calc((100cqw - var(--site-rail) - 7px) / 4.85), 36px);
     }
     #side .brand:has(> .head-links:not([hidden])) .tagline {
-      grid-column: 1 / -1; grid-row: 2; margin-top: 0;
+      grid-column: 1 / -1; grid-row: 5; margin-top: 0; text-align: center;
     }
     #side .brand:has(> .head-links:not([hidden])) .head-links {
-      grid-column: 1; grid-row: 1; grid-template-columns: minmax(0, 1fr);
+      grid-column: 1; grid-row: 1 / span 4; grid-template-columns: minmax(0, 1fr);
       align-content: center; justify-self: stretch; margin-top: 0;
     }
     /* Eight to the column, a name to a line but for Doctor Strange's Civ 6
@@ -511,11 +518,12 @@
     }
   }
   /* From 246px the tagline's two lines fit beside the column too, under the
-     globe and the wordmark, so the column runs the whole height of the
-     lockup and the box is no taller than the six links. */
+     wordmark, so the column runs the whole height of the lockup and the box
+     is no taller than the links. */
   @container (min-width: 246px) {
-    #side .brand:has(> .head-links:not([hidden])) .tagline { grid-column: 2 / 4; }
-    #side .brand:has(> .head-links:not([hidden])) .head-links { grid-row: 1 / span 2; }
+    #side .brand:has(> .head-links:not([hidden])) { grid-template-rows: 1fr auto auto auto 1fr; }
+    #side .brand:has(> .head-links:not([hidden])) .tagline { grid-column: 2; grid-row: 4; }
+    #side .brand:has(> .head-links:not([hidden])) .head-links { grid-row: 1 / -1; }
   }
   /* A split-screen deck cannot afford the landing-page-sized mark and title.
      The compact band preserves both, but reflows the lockup: the copy column
