@@ -69,7 +69,6 @@ class Row(unittest.TestCase):
         self.assertGreaterEqual(set(headed()), {
             "landing.html", "tournaments.html", "research.html", "elo.html",
             "civs.html", "performance.html", "interpretability.html", "insights.html",
-            "chaos.html",
         })
 
     def test_the_list_is_first_in_the_header_over_the_title(self):

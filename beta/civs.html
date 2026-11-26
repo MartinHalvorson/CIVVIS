@@ -159,16 +159,24 @@
      (like the pages do). civvis, ai debugger have a black background (same
      as simulator)"). The pages are blue and so are their buttons: the rule
      above. CIVVIS, the simulation itself at the lane's own address, is
-     white (operator, 2026-11-25: "make the civvis color white"; it was
-     gold from 2026-11-24 and black before), the white the simulator sets
-     its own button in. AI Debugger, the simulator in play mode, keeps the
+     gold (operator, 2026-11-26: "return civvis to a gold highlight"; gold
+     from 2026-11-24, white for a day from 2026-11-25), the gold the
+     simulator lights its own button in. AI Debugger, the simulator in play mode, keeps the
      simulator's black, inside the edge its own buttons have. Civ 6 opens
      Steam's shop and is the blue of Steam's buttons ("civ 6 can have the
      steam color of blue"), dark under the name and light at the far end. */
-  .site-link[href$="../"] { background: #fff; color: #12171d; box-shadow: inset 0 0 0 1px #cfd6dd; }
-  .site-link[href$="../"]:hover, .site-link[href$="../"]:focus-visible { background: #e3e8ee; color: #000; }
+  .site-link[href$="../"] { background: linear-gradient(145deg, #dec176, #aa7d30); color: #17130c; box-shadow: inset 0 0 0 1px #efd184; }
+  .site-link[href$="../"]:hover, .site-link[href$="../"]:focus-visible { background: linear-gradient(145deg, #f0d68e, #c0913c); color: #000; }
   .site-link[href$="?mode=play"] { background: #050607; color: #c9cecb; box-shadow: inset 0 0 0 1px #30363a; }
   .site-link[href$="?mode=play"]:hover, .site-link[href$="?mode=play"]:focus-visible { background: #181c1f; color: #fff; }
+  /* AI Debugger ends in a little green bug (operator, 2026-11-26: "maybe
+     add a green little bug to the end of ai debugger if theres space"). It
+     is drawn here rather than written in the link, so the link's name is
+     still "AI Debugger" to a screen reader and to whatever reads the list. */
+  .site-link[href$="?mode=play"]::after {
+    content: ""; display: inline-block; width: 1.1em; height: 1.1em; margin-left: 0.3em; vertical-align: -0.22em;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M6.6 3 5.2 1.2M9.4 3l1.4-1.8M4.4 7.6 1.9 6.4M11.6 7.6l2.5-1.2M4 10.4H1.4M12 10.4h2.6M4.5 13l-2.2 1.8M11.5 13l2.2 1.8' stroke='%2345d16a' stroke-width='1.4' stroke-linecap='round' fill='none'/%3E%3Ccircle cx='8' cy='4.6' r='2.2' fill='%2345d16a'/%3E%3Cellipse cx='8' cy='10.3' rx='4.1' ry='4.9' fill='%2345d16a'/%3E%3Cpath d='M8 6.6v8.4' stroke='%23050607' stroke-width='1'/%3E%3C/svg%3E") center / contain no-repeat;
+  }
   /* Edge of Tomorrow (operator, 2026-11-25: "above civ 6 and below ai
      debugger add: Edge of Tomorrow"), the simulator played with a jump
      back, stands out in the film's own colours (operator, 2026-11-25:
@@ -228,10 +236,10 @@
   .site-folder:focus-within > .site-menu,
   .site-folder.is-open > .site-menu { display: grid; }
   /* The page on screen keeps the colour of what it is and is ringed in
-     white. It was gold until 2026-11-24. CIVVIS's button is white all
-     over since 2026-11-25 and is never the page on screen here, so the
-     two are not confused. On a page of Charts/ the folder is ringed as
-     well, so the row says where the page is with the list folded. */
+     white. It was gold until 2026-11-24, when gold became CIVVIS's own;
+     CIVVIS is never the page on screen here. On a page of Charts/ the
+     folder is ringed as well, so the row says where the page is with the
+     list folded. */
   .site-link[aria-current="page"],
   .site-folder:has([aria-current="page"]) > .site-link { box-shadow: inset 0 0 0 2px #fff; }
 
@@ -518,11 +526,10 @@
         </div>
       </div>
       <a class="site-link" href="../../experiments/" title="Series of verification games against Civilization VI&#8217;s own AI: running, scheduled and finished.">Experiments</a>
-      <a class="site-link" href="../../chaos-monkey/" title="The same worlds replayed with natural disasters up to 1,000 times as often: what breaks, and what holds.">Chaos Monkey</a>
       <a class="site-link" href="../../" title="Every civilization is played by a CIVVIS AI agent.">CIVVIS</a>
       <a class="site-link" href="../../?mode=strange" title="One world, two timelines: the same game played two ways, side by side, on a timeline that branches.">Doctor Strange's Civ 6</a>
       <a class="site-link" href="../../?mode=play" title="You play one civilization. CIVVIS AI agents play the rest.">AI Debugger</a>
-      <a class="site-link" href="../../?mode=tomorrow" title="You play one civilization, with a jump back: the world returns to the turn you woke on, as it stood.">Edge of Tomorrow</a>
+      <a class="site-link" href="../../?mode=tomorrow" title="You play one civilization, with a jump back: the world returns to the turn you woke on, as it stood.">Civ: Edge of Tomorrow</a>
       <a class="site-link" href="https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/" target="_blank" rel="noopener" title="Buy Civilization VI on Steam">Civ 6</a>
     </nav>
     <script data-site-folder>
@@ -1395,103 +1402,6 @@
     if (!shown.length) return;
     document.getElementById("civ-empty").hidden = true;
     document.getElementById("civ-record").hidden = false;
-  })();
-  </script>
-  <script data-first-visit>
-  // What a person is told the first time they come to the site, on whichever
-  // page that is (operator, 2026-11-24: "please add a note to the site when
-  // a person first visits", "with an Ack button"). Ack puts it away for
-  // good: the browser keeps that for every page of the site, in both lanes.
-  // Every page carries this same block (beta/first_visit_note_test.py holds
-  // them equal). It shows on the site only, never in a desktop build or a
-  // page under test, and only in the page itself, not in a simulator it
-  // frames.
-  (() => {
-    const KEY = "civvis-first-visit-ack";
-    if (!/(^|\.)civvis\.ai$|\.pages\.dev$/.test(location.hostname)) return;
-    if (window.top !== window) return;
-    try {
-      if (localStorage.getItem(KEY)) return;
-    } catch {
-      // A browser that keeps nothing is told on every visit.
-    }
-    // In a shadow tree, so the note looks the same over the simulator as
-    // over a page: neither's styles reach it.
-    const host = document.createElement("div");
-    host.id = "first-visit-note";
-    const note = document.createElement("dialog");
-    if (typeof note.showModal !== "function") return;
-    note.setAttribute("aria-label", "A note on your first visit");
-    // The operator's words, as written; where a paragraph ends is the page's.
-    const words = [
-      "Everything is a work in progress. Trying to move fast so things are sloppy but I\u2019ll try to fix what I can when I can.",
-      "Currently using Fable 5.2 xhigh and Opus 5.5 xhigh from CLI to build everything. I don\u2019t write the code, I don\u2019t review the code. Just kinda throwing down features and charts and apps.",
-      "I don\u2019t accept code from others because of the increased security risks. Everything is just from building with Claude (and a bit of Gemini, Codex, others) but all should be publicly available, open source, inspectable, free.",
-    ];
-    for (const said of words) {
-      const paragraph = document.createElement("p");
-      paragraph.textContent = said;
-      note.append(paragraph);
-    }
-    const ack = document.createElement("button");
-    ack.type = "button";
-    ack.textContent = "Ack";
-    const style = document.createElement("style");
-    style.textContent = `
-      :host { all: initial; }
-      dialog {
-        box-sizing: border-box;
-        width: min(460px, calc(100vw - 32px));
-        max-height: calc(100vh - 32px);
-        overflow: auto;
-        margin: auto;
-        padding: 20px 22px 18px;
-        border: 1px solid #46566a;
-        border-radius: 6px;
-        background: #1b222c;
-        color: #e2e8ef;
-        font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
-        text-align: left;
-        box-shadow: 0 18px 60px rgba(0, 0, 0, 0.55);
-      }
-      dialog::backdrop { background: rgba(6, 9, 13, 0.6); }
-      p { margin: 0 0 12px; }
-      p:last-of-type { margin-bottom: 16px; }
-      button {
-        display: block;
-        min-width: 96px;
-        margin: 0 0 0 auto;
-        padding: 7px 18px 8px;
-        border: 1px solid #efd184;
-        border-radius: 3px;
-        background: linear-gradient(145deg, #dec176, #aa7d30);
-        color: #17130c;
-        font: 700 12px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
-        letter-spacing: 0.12em;
-        text-transform: uppercase;
-        cursor: pointer;
-      }
-      button:hover { filter: brightness(1.08); }
-      button:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
-    `;
-    note.append(ack);
-    host.attachShadow({ mode: "open" }).append(style, note);
-    ack.addEventListener("click", () => note.close());
-    note.addEventListener("close", () => {
-      try {
-        localStorage.setItem(KEY, new Date().toISOString());
-      } catch {
-        // Nothing kept: see above.
-      }
-      host.remove();
-    });
-    // The simulator listens for keys and the pointer on the whole window;
-    // nothing done to the note is the game's to hear.
-    for (const kind of ["keydown", "keyup", "keypress", "pointerdown", "pointerup", "mousedown", "mouseup", "click", "wheel"]) {
-      host.addEventListener(kind, (event) => event.stopPropagation());
-    }
-    document.body.append(host);
-    note.showModal();
   })();
   </script>
 </body>
