@@ -2246,7 +2246,9 @@ fn viewer_marks_the_selected_revision_and_its_compact_ages_above_the_minimap() {
 /// between Experiments and CIVVIS, at /chaos-monkey, from that day until
 /// 2026-11-26 (operator: "remove chaos monkey for now"). Edge of Tomorrow
 /// is named Civ: Edge of Tomorrow since 2026-11-26 (operator: "change edge
-/// of tomorrow to - Civ: edge of tomorrow"). The simulator's own pages are
+/// of tomorrow to - Civ: edge of tomorrow"), and stands just above AI
+/// Debugger since later that day (operator: "lets move civvis: edge of
+/// tomorrow above civvis ai debugger in the ordering"). The simulator's own pages are
 /// at addresses of their own since 2026-11-26 (operator: "maybe change the
 /// url for this to be of the form: civvis.ai/edge-of-tomorrow. the others
 /// can be civvis.ai/debugger and civvis.ai/doctor-strange"), where they
@@ -2261,8 +2263,8 @@ fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
         "        <a class=\"home-link\" id=\"tourlink\" href=\"/tournaments\" target=\"_top\">Tournaments</a>\n",
         "        <a class=\"home-link\" id=\"watchlink\" href=\"./\" target=\"_top\">CIVVIS</a>\n",
         "        <a class=\"home-link\" id=\"strangelink\" href=\"doctor-strange\" target=\"_top\">Doctor Strange's CIVVIS</a>\n",
-        "        <a class=\"home-link\" id=\"playlink\" href=\"debugger\" target=\"_top\">CIVVIS AI Debugger</a>\n",
         "        <a class=\"home-link\" id=\"tomorrowlink\" href=\"edge-of-tomorrow\" target=\"_top\">CIVVIS: Edge of Tomorrow</a>\n",
+        "        <a class=\"home-link\" id=\"playlink\" href=\"debugger\" target=\"_top\">CIVVIS AI Debugger</a>\n",
         "        <a class=\"home-link\" id=\"civ6link\" ",
         "href=\"https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/\" ",
         "target=\"_blank\" rel=\"noopener\" title=\"Buy Civilization VI on Steam\">Civ 6</a>\n",
@@ -2811,10 +2813,10 @@ fn the_home_page_lists_the_sites_with_itself_ringed() {
             "title=\"Every civilization is played by a CIVVIS AI agent.\">CIVVIS</a>\n",
             "      <a class=\"site-link\" href=\"../doctor-strange\" ",
             "title=\"One world, two timelines: the same game played two ways, side by side, on a timeline that branches.\">Doctor Strange's CIVVIS</a>\n",
-            "      <a class=\"site-link\" href=\"../debugger\" ",
-            "title=\"You play one civilization. CIVVIS AI agents play the rest.\">CIVVIS AI Debugger</a>\n",
             "      <a class=\"site-link\" href=\"../edge-of-tomorrow\" ",
             "title=\"You play one civilization, with a jump back: the world returns to the turn you woke on, as it stood.\">CIVVIS: Edge of Tomorrow</a>\n",
+            "      <a class=\"site-link\" href=\"../debugger\" ",
+            "title=\"You play one civilization. CIVVIS AI agents play the rest.\">CIVVIS AI Debugger</a>\n",
             "      <a class=\"site-link\" ",
             "href=\"https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/\" ",
             "target=\"_blank\" rel=\"noopener\" title=\"Buy Civilization VI on Steam\">Civ 6</a>\n",
