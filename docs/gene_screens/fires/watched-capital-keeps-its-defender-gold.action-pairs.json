@@ -1,0 +1,25 @@
+{
+ "kind": "captured_native_action_pairs_v1",
+ "tag": "watched-capital-keeps-its-defender-gold",
+ "scope": "Recorded proposal activation on captured live input only, not host execution or strength. 14 boards from seven live T7/T8 benchmark games of 2026-11-25/26 (Deity 6p, Online) whose capital or first cities fell to an early war (civvis-t8-20261126T071255Z Byzantium t9 t16 t17 t18 t22, -T085118Z Byzantium t11 t19 t24, -T080505Z Ethiopia t36, -T081944Z Arabia t29, civvis-t7-20261125T144136Z Maya t37 t41, civvis-t8-20261126T094623Z Russia t58, civvis-t7-20261125T140045Z Mali t13): the turns the live game bought a border tile, plus early controls. Each board is the run's events.jsonl cut after turn N+1 and replayed at turn N. Both arms run one frozen ci-profile civvis_orders --resumed built from the branch with the run's own requested genome (why.log line 1 forced); the on arm adds --with watched-capital-keeps-its-defender-gold. 14 of 14 boards completed in both arms; orders differ on 1: Mali t13 (Ethiopia 6.7x near the unwalled capital, two defenders missing; Gao's 40-Gold border tile is withheld, 140 Gold reserved). The on arms journal 2 'watched-capital-keeps-its-defender-gold:' lines (Mali t13, Byzantium t22 at 5.1x with 0 Gold in the bank), the off arms 0. The replayed off arm re-bought only 1 of the live tiles (the state row's bank is read after the live turn's purchases), and in Byzantium t9-t18 no rival soldier stood within 8 tiles of the capital yet, so the watch did not read.",
+ "archive": {
+  "path": "docs/eval/2026-11-26-watched-capital-keeps-its-defender-gold.native-queries.tar.xz",
+  "sha256": "987438be1fefa9a40a957c21f0215dadf06d7a49277643e6cbf24c548f8b0f13"
+ },
+ "members": [
+  "native-queries-01/0000/result.json",
+  "native-queries-01/0001/result.json",
+  "native-queries-01/0002/result.json",
+  "native-queries-01/0003/result.json",
+  "native-queries-01/0004/result.json",
+  "native-queries-01/0005/result.json",
+  "native-queries-01/0006/result.json",
+  "native-queries-01/0007/result.json",
+  "native-queries-01/0008/result.json",
+  "native-queries-01/0009/result.json",
+  "native-queries-01/0010/result.json",
+  "native-queries-01/0011/result.json",
+  "native-queries-01/0012/result.json",
+  "native-queries-01/0013/result.json"
+ ]
+}
