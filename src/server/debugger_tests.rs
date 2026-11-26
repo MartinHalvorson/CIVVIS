@@ -2762,7 +2762,7 @@ fn a_branch_begins_on_the_turn_it_is_made_on() {
         // best strategy). players can branch if they want (they should
         // choose the new strategy when they branch)"). Two tracks at once
         // is what a page asks for by name, and Doctor Strange's Civ 6.
-        "try { drawDebugBar(); debugPaneReport(); debugPaneNumbers(); debugOpenTheGame(); }",
+        "try { drawDebugBar(); debugPaneReport(); debugPaneNumbers(); strangePaneResult(); debugOpenTheGame(); }",
         "if (best === null || Number(entry.elo) > Number(best.elo)) best = entry;",
         "const told = best && best !== debugStrategy() ? debugSwitchSeat(best) : null;",
         "const two = DEBUG_TRACKS_ASKED === null ? STRANGE : DEBUG_TRACKS_ASKED === 2;",
