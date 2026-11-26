@@ -497,6 +497,19 @@ class BuildOrders(unittest.TestCase):
         self.assertEqual(named(second[1][3]), [("Settler", 2, 0)])
         self.assertEqual(tree["items"], ["Settler", "Slinger", "Scout", "Builder"])
 
+    def test_a_build_the_capital_dropped_is_not_in_the_tree(self):
+        # Operator 2026-11-26: "lets also not list the dropped in the trie
+        # for Capital Build ORder". The game's builds close up over it.
+        dropped = self.SCOUT + research_page.DROPPED
+        played = [("a", True, [dropped, self.SETTLER, self.SLINGER]), ("b", False, [self.SETTLER, self.SLINGER]),
+                  ("c", True, [dropped])]
+        games = [(key, [key], won, "2026-11-20") for key, won, _ in played]
+        tree = research_page.build_orders(games, {key: builds for key, _, builds in played})
+        self.assertEqual(tree["tree"], [[0, 2, 1, [[1, 2, 1]]]])
+        self.assertEqual(tree["items"], ["Settler", "Slinger"])
+        # A game that dropped all it began has no opening to count.
+        self.assertEqual((tree["games"], tree["finished"]), (2, 3))
+
     def test_a_tie_goes_to_the_build_more_games_played_then_to_its_name(self):
         played = [("a", True, [self.SCOUT]), ("b", False, [self.SCOUT]), ("c", True, [self.SLINGER]), ("d", False, [self.SLINGER]),
                   ("e", True, [self.SETTLER]), ("f", False, [self.SETTLER]), ("g", True, [self.SETTLER]), ("h", False, [self.SETTLER])]
@@ -1449,11 +1462,10 @@ class Page(unittest.TestCase):
         self.assertIn('<div class="res-builds-head" aria-hidden="true"><span>Build order</span><span>Win rate (total games)</span></div>', block)
         self.assertIn('<ul class="res-builds" id="res-builds" aria-labelledby="res-title-builds"></ul>', block)
         # The note says what a step is, which games count and what a row is
-        # (operator 2026-11-24: an item dropped unfinished is a step, marked).
+        # (operator 2026-11-26: a step dropped unfinished is not listed).
         for sentence in (
-            "CIVVIS&#8217;s capital&#8217;s build order: what it worked on, in order.",
-            "or one it put production into and dropped unfinished, marked &#8220;dropped&#8221;",
-            "so the first step is always one the capital could start on turn 1.",
+            "CIVVIS&#8217;s capital&#8217;s build order: what it finished, in order.",
+            "one it put production into and dropped unfinished is not listed.",
             "The first steps are listed best win rate first; press one to list the steps after it, then the third,",
             "A row is CIVVIS&#8217;s win rate over the games whose build order opened with exactly the steps down to it and, in brackets, those games.",
             "An item bought with Gold or Faith, or handed over (a pantheon&#8217;s free Settler or Builder), is not a step.",
