@@ -2856,5 +2856,8 @@ fn player_standings_average_each_civilizations_cities() {
             "a seat reads its own {hidden}"
         );
     }
-    assert_eq!(seat["players"][1]["avg_food_surplus"], rival["avg_food_surplus"]);
+    assert_eq!(
+        seat["players"][1]["avg_food_surplus"],
+        rival["avg_food_surplus"]
+    );
 }
