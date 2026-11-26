@@ -11156,6 +11156,13 @@ pub struct AdvancedAi {
     /// claims its Market or Lighthouse. See
     /// `advanced/trade_district_follows_the_campus.rs`. Off by default.
     trade_district_follows_the_campus: bool,
+    /// `trade-district-before-the-library`: on any seat at peace, while the
+    /// empire holds fewer Commercial Hubs or Harbors than one for every
+    /// three cities, the trade claim names a calm city's Hub or Harbor
+    /// without waiting for its Campus and Library, and a standing Hub or
+    /// Harbor claims its Market or Lighthouse. See
+    /// `advanced/trade_district_follows_the_campus.rs`. Off by default.
+    trade_district_before_the_library: bool,
     /// `tribute-buys-the-friendship-2`: version one's tribute, aimed past
     /// the line where the host must turn an Unfriendly leader Neutral and
     /// paid from the whole treasury. See
