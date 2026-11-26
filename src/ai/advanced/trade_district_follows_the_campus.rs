@@ -128,6 +128,33 @@
 //! 1 / 2 / 3+ into 5 / 9.5 / 18.5 great works, 31 / 41 / 80 tourism a turn
 //! and 1 / 1 / 3 rivals reached by a route (each +25% tourism). The day's
 //! one Culture win held capacity 4 on 124 Gold a turn at turn 150.
+//!
+//! ## `trade-district-before-the-library`
+//!
+//! The same claim on any seat, under its own opt-in flag, while the empire
+//! holds or has queued fewer Commercial Hubs and Harbors (one per city)
+//! than one for every [`TRADE_FLOOR_CITIES_PER_DISTRICT`] cities, from three
+//! cities ([`AdvancedAi::trade_floor_open`]). Below that floor a calm city
+//! claims its Hub or Harbor without the seat's anchor pair, and on a seat
+//! with no anchor (Religion, Domination, Score) the claim runs at all; a
+//! standing Hub or Harbor claims its Market or Lighthouse on any seat with
+//! the flag. At and above the floor the seat's own gene (or none) decides,
+//! as before. Every other rule of the claim (peace, calm city, the early
+//! Settler floor, the Granary, one district a turn, the heads that may wait)
+//! is unchanged. Grep the journal for `trade-district-before-the-library:`.
+//!
+//! Why (T7 benchmark, 2026-11-25, Immortal-Deity 6p, Online): seven of the
+//! last 40 reviewed games held trade capacity 1 at turns 50, 75 and 100 with
+//! 9-11 cities, and 7-9 only by turn 150 (one stayed at 1 to turn 150). In
+//! `civvis-t7-20261125T141505Z` (Byzantium, Religion) and `T153358Z` (Mali,
+//! Religion) no city held a Commercial Hub or Harbor at turn 100: every slot
+//! went to Holy Sites, Hippodromes, Campuses and Industrial Zones, and the
+//! one Hub step (`commercial-hub-and-traders`) asks only a city with a free
+//! slot. On the five Science seats, where `trade-district-follows-the-campus`
+//! was armed, the first claim came at turns 67, 77, 93, 98 and 107, each
+//! city waiting for its Library, and the Market a further 4-25 turns, so
+//! capacity was still 1-2 at turn 100 (`T143044Z`: Hubs in Rome and
+//! Aquileia stood at turn 100 without their Markets).
 
 use super::*;
 
@@ -137,6 +164,11 @@ const SCIENCE_TRADE_ANCHOR: (&str, &str) = ("campus", "library");
 
 /// The same pair on a Culture seat (`culture-trade-district-follows-the-theater`).
 pub(super) const CULTURE_TRADE_ANCHOR: (&str, &str) = ("theater_square", "amphitheater");
+
+/// Cities per Commercial Hub or Harbor below which
+/// `trade-district-before-the-library` waives the anchor: one trade district
+/// for every three cities, the first at three.
+pub(super) const TRADE_FLOOR_CITIES_PER_DISTRICT: usize = 3;
 
 /// The slowest a city may build the claimed district or building.
 pub(crate) const TRADE_CLAIM_MAX_TURNS: f64 = 20.0;
@@ -189,10 +221,13 @@ impl AdvancedAi {
     }
 
     /// Whether the claim runs this turn: a seat with an anchor
-    /// ([`AdvancedAi::trade_claim_anchor`]) and no major at war with us.
+    /// ([`AdvancedAi::trade_claim_anchor`]), or any seat with
+    /// `trade-district-before-the-library`, and no major at war with us.
     pub(super) fn trade_district_claims_open(&self, g: &Game, pid: usize) -> bool {
-        (self.trade_district_follows_the_campus || self.culture_trade_district_follows_the_theater)
-            && self.trade_claim_anchor(g).is_some()
+        (self.trade_district_follows_the_campus
+            || self.culture_trade_district_follows_the_theater
+            || self.trade_district_before_the_library)
+            && (self.trade_claim_anchor(g).is_some() || self.trade_district_before_the_library)
             && !g.players.iter().any(|other| {
                 other.id != pid
                     && other.alive
@@ -200,6 +235,46 @@ impl AdvancedAi {
                     && !other.is_minor
                     && g.is_at_war(pid, other.id)
             })
+    }
+
+    /// Whether `cid` holds a Commercial Hub or Harbor, the foundation of
+    /// one, or has one anywhere in its queue.
+    fn trade_district_held_or_queued(g: &Game, cid: u32) -> bool {
+        let Some(city) = g.cities.get(&cid) else {
+            return false;
+        };
+        city.queue
+            .iter()
+            .any(|item| Self::is_trade_district(g, item))
+            || ["commercial_hub", "harbor"].into_iter().any(|family| {
+                let family = Name::new(family);
+                g.city_has_district_family(city, family)
+                    || city.owned_tiles.iter().any(|pos| {
+                        g.map
+                            .get(*pos)
+                            .and_then(|tile| tile.district_foundation.as_ref())
+                            .is_some_and(|foundation| {
+                                g.district_family(foundation.district) == family
+                            })
+                    })
+            })
+    }
+
+    /// `trade-district-before-the-library`: whether the empire holds or has
+    /// queued fewer Commercial Hubs and Harbors (one per city) than one for
+    /// every [`TRADE_FLOOR_CITIES_PER_DISTRICT`] cities. Always false with
+    /// the gene off and below three cities.
+    pub(super) fn trade_floor_open(&self, g: &Game, pid: usize) -> bool {
+        if !self.trade_district_before_the_library {
+            return false;
+        }
+        let cities = g.player_city_ids(pid);
+        let floor = cities.len() / TRADE_FLOOR_CITIES_PER_DISTRICT;
+        let held = cities
+            .iter()
+            .filter(|cid| Self::trade_district_held_or_queued(g, **cid))
+            .count();
+        held < floor
     }
 
     /// Whether `item` is a Commercial Hub or Harbor district.
@@ -260,7 +335,13 @@ impl AdvancedAi {
     /// (a Campus and its Library, or a Theater Square and its Amphitheater)
     /// and neither trade district standing or founded, the Hub on its best
     /// site or the Harbor where the Harbor's site pays more Gold.
-    fn trade_claim_district(g: &Game, pid: usize, cid: u32, anchor: (&str, &str)) -> Option<Item> {
+    /// `anchor` is `None` when `trade-district-before-the-library` waives it.
+    fn trade_claim_district(
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        anchor: Option<(&str, &str)>,
+    ) -> Option<Item> {
         let city = g.cities.get(&cid)?;
         if let Some(queued) = city
             .queue
@@ -281,8 +362,10 @@ impl AdvancedAi {
         };
         if held("commercial_hub")
             || held("harbor")
-            || !g.city_has_district_family(city, Name::new(anchor.0))
-            || BasicAi::civ_building(g, pid, cid, anchor.1).is_some()
+            || anchor.is_some_and(|anchor| {
+                !g.city_has_district_family(city, Name::new(anchor.0))
+                    || BasicAi::civ_building(g, pid, cid, anchor.1).is_some()
+            })
         {
             return None;
         }
@@ -322,7 +405,11 @@ impl AdvancedAi {
         if !self.trade_district_claims_open(g, pid) {
             return None;
         }
-        let anchor = self.trade_claim_anchor(g)?;
+        // `trade-district-before-the-library`: below the empire's trade
+        // floor the anchor is waived; above it a seat without one claims
+        // only the Market or Lighthouse of a standing district.
+        let floor = self.trade_floor_open(g, pid);
+        let anchor = self.trade_claim_anchor(g);
         let city = g.cities.get(&cid)?;
         if city.owner != pid
             || plan.threatened_city == Some(cid)
@@ -333,10 +420,28 @@ impl AdvancedAi {
         }
         let (item, kind) = match Self::trade_claim_building(g, pid, cid) {
             Some(building) => (building, TradeClaim::Building),
-            None => (
-                Self::trade_claim_district(g, pid, cid, anchor)?,
-                TradeClaim::District,
-            ),
+            None => {
+                let anchor = match (floor, anchor) {
+                    (true, _) => None,
+                    (false, Some(anchor)) => Some(anchor),
+                    // The trade district this gene queued keeps its claim
+                    // once the floor it filled has closed.
+                    (false, None)
+                        if self.trade_district_before_the_library
+                            && city
+                                .queue
+                                .iter()
+                                .any(|item| Self::is_trade_district(g, item)) =>
+                    {
+                        None
+                    }
+                    (false, None) => return None,
+                };
+                (
+                    Self::trade_claim_district(g, pid, cid, anchor)?,
+                    TradeClaim::District,
+                )
+            }
         };
         if !g.can_produce(pid, cid, &item) {
             return None;
@@ -357,7 +462,9 @@ impl AdvancedAi {
         plan: &StrategicPlan,
         item: &Item,
     ) -> bool {
-        (self.trade_district_follows_the_campus || self.culture_trade_district_follows_the_theater)
+        (self.trade_district_follows_the_campus
+            || self.culture_trade_district_follows_the_theater
+            || self.trade_district_before_the_library)
             && self
                 .trade_claim_item(g, pid, cid, plan)
                 .is_some_and(|(claimed, _, _)| claimed == *item)
@@ -439,7 +546,10 @@ impl AdvancedAi {
         let n_cities = city_ids.len();
         let settlers = self.counts(g, pid).settlers;
         let culture = self.trade_claim_anchor(g) == Some(CULTURE_TRADE_ANCHOR);
-        let (tag, after) = if culture {
+        let floor = self.trade_floor_open(g, pid);
+        let (tag, after) = if floor || self.trade_claim_anchor(g).is_none() {
+            ("trade-district-before-the-library", "")
+        } else if culture {
             (
                 "culture-trade-district-follows-the-theater",
                 "Theater Square",
@@ -512,7 +622,14 @@ impl AdvancedAi {
                 || "an idle queue".to_string(),
                 |item| format!("{} (it keeps its progress)", Self::plain_item(&item)),
             );
-            if is_district {
+            if is_district && after.is_empty() {
+                think!(self.journal(), Cities, Decision,
+                       "{name} claims its {label} for the empire's trade floor";
+                       "{tag}: {turns:.1} turns, ahead of {ahead}; fewer than one \
+                        Commercial Hub or Harbor for every \
+                        {TRADE_FLOOR_CITIES_PER_DISTRICT} cities, and its Market or \
+                        Lighthouse opens a trade route slot");
+            } else if is_district {
                 think!(self.journal(), Cities, Decision,
                        "{name} claims its {label} after the {after}";
                        "{tag}: {turns:.1} turns, ahead of {ahead}; \
