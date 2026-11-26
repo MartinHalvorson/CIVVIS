@@ -328,6 +328,72 @@ const BETWEEN = {
 // deployment.
 const NO_SUCH_PAGE = "/__no-such-page__";
 
+// The simulator's own pages, by address, and the mode each is (operator
+// 2026-11-26: "maybe change the url for this to be of the form:
+// civvis.ai/edge-of-tomorrow. the others can be civvis.ai/debugger and
+// civvis.ai/doctor-strange. adopt this notatin please going forwad"). Until
+// then each was the viewer's own address with a mode asked of it:
+// `?mode=play`, `?mode=strange`, `?mode=tomorrow`.
+//
+// Each is its lane's viewer, served at its own address as it stands, and the
+// page reads which one it is off that address (`CIVVIS_PAGE_MODE`, in
+// web/index.html and beta/shim.js, which hold this same table; a test holds
+// the three to one another). No slash ends the address: the viewer's paths
+// are lane-relative, and from `/test/edge-of-tomorrow` they are the lane's
+// (`/test/assets/...`) where from `/test/edge-of-tomorrow/` they would not be,
+// so an address asked with one forwards to the address without.
+//
+// A lane says it has these addresses (`simulator_pages` in its build.json):
+// one built before its viewer read them has not, and there each forwards to
+// the old address, which is that viewer's way to the page. An old address
+// forwards the other way, in a lane that has the new one: the old addresses
+// are in links this site does not control.
+const SIMULATOR_PAGES = {debugger: "play", "doctor-strange": "strange", "edge-of-tomorrow": "tomorrow"};
+const SIMULATOR_ADDRESS = /^(\/test)?\/(debugger|doctor-strange|edge-of-tomorrow)(\/(?:index\.html)?)?$/;
+const VIEWER_ADDRESS = /^(\/test)?\/(?:index\.html)?$/;
+
+/// What one of the simulator's pages answers, asked at its address or at the
+/// old one: `{ moved, status }` for a forward, `{ viewer }` for the lane's
+/// viewer to be served as it stands, and `null` for everything else.
+async function simulatorAnswer(request, env, url) {
+  if (request.method !== "GET" && request.method !== "HEAD") return null;
+  const asked = SIMULATOR_ADDRESS.exec(url.pathname);
+  const rest = new URLSearchParams(url.search);
+  let lane, name;
+  if (asked) {
+    [, lane = "", name] = asked;
+  } else {
+    const root = VIEWER_ADDRESS.exec(url.pathname);
+    if (!root) return null;
+    lane = root[1] || "";
+    const mode = rest.get("mode");
+    name = Object.keys(SIMULATOR_PAGES).find((page) => SIMULATOR_PAGES[page] === mode);
+    if (!name) return null;
+    rest.delete("mode");
+  }
+  let carried = false;
+  try {
+    const shipped = await env.ASSETS.fetch(new Request(new URL(`${lane}/build.json`, url)));
+    if (shipped.ok) carried = Array.isArray((await shipped.json()).simulator_pages);
+  } catch {
+    carried = false;
+  }
+  const query = (params) => (String(params) ? `?${params}` : "");
+  if (!asked) {
+    // The old address, in a lane that has the new one. A permanent move.
+    return carried ? { moved: `${lane}/${name}${query(rest)}`, status: 301 } : null;
+  }
+  if (!carried) {
+    // A lane from before: its viewer finds the page by the old address. Not
+    // permanent, because the lane's next build will have the new one.
+    const old = new URLSearchParams(url.search);
+    old.set("mode", SIMULATOR_PAGES[name]);
+    return { moved: `${lane}/${query(old)}`, status: 302 };
+  }
+  if (asked[3]) return { moved: `${lane}/${name}${url.search}`, status: 301 };
+  return { viewer: `${lane}/` };
+}
+
 /// What a page address answers in its lane, when it is not simply the file
 /// there: `{ absent: true }` for a page the lane does not carry, `{ moved:
 /// "<path>" }` for an address whose page the lane has somewhere else, and
@@ -398,6 +464,21 @@ async function pageAnswer(request, env, url) {
 /// file is ignored once a `_worker.js` exists, so the rules live here instead.
 async function asset(request, env, gated) {
   let url = new URL(request.url);
+  // One of the simulator's pages is the lane's viewer, at an address of its
+  // own (`SIMULATOR_PAGES`), or a forward to or from that address.
+  const simulator = await simulatorAnswer(request, env, url);
+  if (simulator?.moved) {
+    const headers = new Headers({
+      Location: simulator.moved,
+      "Cache-Control": "public, max-age=0, must-revalidate",
+    });
+    if (gated) headers.set("X-Robots-Tag", "noindex");
+    return new Response(null, { status: simulator.status, headers });
+  }
+  if (simulator?.viewer) {
+    url = new URL(simulator.viewer, url);
+    request = new Request(url, { method: request.method, headers: request.headers });
+  }
   const answer = await pageAnswer(request, env, url);
   // An address whose page has moved forwards to it, query and all (a
   // fragment never reaches a server; the browser carries it across). It is

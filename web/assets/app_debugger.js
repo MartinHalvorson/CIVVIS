@@ -3408,8 +3408,15 @@ function debugSplitOpen(dir, versus = null, seat = null, fresh = false) {
   drawDebugSplit();
   for (const letter of ["a", "b"]) {
     const pane = debugSplit.panes[letter];
-    pane.frame.src = `${location.pathname}?pane=${pane.id}`;
+    pane.frame.src = debugPaneAddress(pane.id);
   }
+}
+// A half's page: the viewer's own address with the half's name. The viewer is
+// the folder this page is in, whichever of the simulator's pages holds the
+// split (`/test/doctor-strange` and `/test/debugger` are both the viewer at
+// `/test/`), so a half asks nothing of the page that holds it by its address.
+function debugPaneAddress(id) {
+  return `${new URL("./", location.href).pathname}?pane=${id}`;
 }
 // Which Civ AI plays a half's seat is the host's to say: it keeps the choice
 // and tells the half, from the strip or from the head of the half's lane.
@@ -5005,7 +5012,7 @@ async function debugPlayPlan(plan, copy = null) {
 // for this demo. the ai debugger we will make to scale to any number of
 // screens."
 //
-// `?mode=strange` is a played game under the debugger, shown another way. It
+// `/doctor-strange` is a played game under the debugger, shown another way. It
 // began as the same split: one engine, two worlds A and B, locked to one
 // turn, each with a Civ AI of its own in the seat. What changes is the
 // picture. The worlds are boxes along the bottom of the window, map and
@@ -5091,20 +5098,25 @@ async function debugPlayPlan(plan, copy = null) {
 // bar is still there, unseen, because half A's deck is drawn from it.
 
 // Whether this page is Doctor Strange's Civ 6, and whether it is a half of one.
+// Which of the simulator's pages a page is, its address says
+// (`CIVVIS_PAGE_MODE`, set by the head script of web/index.html from
+// `/doctor-strange`, `/debugger` or `/edge-of-tomorrow`, or from an old
+// link's `?mode=`); a half asks the page that holds it.
 const STRANGE = (() => {
-  try { return DEBUG_PANE === null && new URLSearchParams(location.search).get("mode") === "strange"; }
+  try { return DEBUG_PANE === null && window.CIVVIS_PAGE_MODE === "strange"; }
   catch (_) { return false; }
 })();
 const STRANGE_PANE = (() => {
-  try { return DEBUG_PANE !== null && new URLSearchParams(window.parent.location.search).get("mode") === "strange"; }
+  try { return DEBUG_PANE !== null && window.parent.CIVVIS_PAGE_MODE === "strange"; }
   catch (_) { return false; }
 })();
-// Whether this page is Edge of Tomorrow (`?mode=tomorrow`, the last section
-// of this file). It is said here, before anything is drawn: the page is the
-// Civilization VI screen from its first frame, whatever view the AI Debugger
-// was last left in, and that choice is not kept for the AI Debugger to find.
+// Whether this page is Edge of Tomorrow (`/edge-of-tomorrow`, the last
+// section of this file). It is said here, before anything is drawn: the page
+// is the Civilization VI screen from its first frame, whatever view the AI
+// Debugger was last left in, and that choice is not kept for the AI Debugger
+// to find.
 const TOMORROW = (() => {
-  try { return DEBUG_PANE === null && new URLSearchParams(location.search).get("mode") === "tomorrow"; }
+  try { return DEBUG_PANE === null && window.CIVVIS_PAGE_MODE === "tomorrow"; }
   catch (_) { return false; }
 })();
 if (TOMORROW) {
@@ -5759,7 +5771,7 @@ function strangeFrame(letter, born = null) {
   const pane = split.panes[letter] = {frame, id: `${letter}-${split.panes.a.id.slice(2)}`, turn: null, first: null, last: null,
     deck: null, told: null, strategy: born ? born.name : undefined, agreed: false, painted: false, born};
   split.history[letter] = new Map();
-  frame.src = `${location.pathname}?pane=${pane.id}`;
+  frame.src = debugPaneAddress(pane.id);
   return pane;
 }
 // The room a world's turns are kept in. Each world plays on an engine of its
@@ -6917,7 +6929,7 @@ function strangeMount() {
         <button class="strange-futures" data-strange="futures" aria-pressed="true"></button>
       </div>
       <div class="strange-say" data-strange="say" role="status"></div>
-      <nav aria-label="CIVVIS sites"><a href="./" target="_top">CIVVIS</a><a href="?mode=play" target="_top">CIVVIS AI Debugger</a></nav>
+      <nav aria-label="CIVVIS sites"><a href="./" target="_top">CIVVIS</a><a href="debugger" target="_top">CIVVIS AI Debugger</a></nav>
     </div>
     <div class="strange-meter strange-card" aria-label="What this page costs">
       <i>CPU</i><b data-strange-gauge="cpu">–</b><canvas data-strange-trace="cpu" width="264" height="44"></canvas>
@@ -7876,7 +7888,7 @@ if (state) { drawDebugBar(); debugPaneReport(); debugPaneNumbers(); debugOpenThe
 // Tomorrow. This should be civ 6 with a jump back (like the concept from the
 // movie)".
 //
-// `?mode=tomorrow` is a played game with the seat in the person's own hands,
+// `/edge-of-tomorrow` is a played game with the seat in the person's own hands,
 // on the Civilization VI screen, and one thing that game does not have: a
 // jump back. The world goes back to the turn the person woke on, exactly as
 // it stood, and they play it again knowing what they saw. Each time round is

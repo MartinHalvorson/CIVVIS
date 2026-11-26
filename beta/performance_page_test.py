@@ -650,9 +650,9 @@ class TheSiteList(unittest.TestCase):
                 ("site-link sub-link", "../random-ai-charts/", "Random AI Charts"),
                 ("site-link", "../../tournaments/", "Tournaments"),
                 ("site-link", "../../", "CIVVIS"),
-                ("site-link", "../../?mode=strange", "Doctor Strange's CIVVIS"),
-                ("site-link", "../../?mode=play", "CIVVIS AI Debugger"),
-                ("site-link", "../../?mode=tomorrow", "CIVVIS: Edge of Tomorrow"),
+                ("site-link", "../../doctor-strange", "Doctor Strange's CIVVIS"),
+                ("site-link", "../../debugger", "CIVVIS AI Debugger"),
+                ("site-link", "../../edge-of-tomorrow", "CIVVIS: Edge of Tomorrow"),
                 ("site-link", "https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/", "Civ 6"),
             ],
         )

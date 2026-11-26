@@ -1040,7 +1040,7 @@ program has no forks yet: its server does not know `/forks`.
 
 ### A world's own engine (Doctor Strange's CIVVIS)
 
-On `?mode=strange` the page holds up to a dozen worlds, and one engine held
+On `/doctor-strange` the page holds up to a dozen worlds, and one engine held
 them all, so a turn of every world, and the futures played ahead of them,
 went one world after another on one thread (operator 2026-11-24: "we want
 the doctor strange's civ 6 search across the timeline(s) to be blazingly
@@ -1386,7 +1386,7 @@ quad, roughly are our world to compare. 2 simulatoins. this is limited at 2
 for this demo. the ai debugger we will make to scale to any number of
 screens."
 
-`?mode=strange` is the split screen above, shown another way. It is listed
+`/doctor-strange` (once `?mode=strange`) is the split screen above, shown another way. It is listed
 just above AI Debugger in the site list, and it is the same played game: one
 engine, a world for each timeline, a Civ AI in each seat. `beta/shim.js`
 seats the visitor for `mode=strange` as it does for `mode=play`, and the last
@@ -1964,7 +1964,7 @@ Operator, 2026-11-25: "above civ 6 and below ai debugger add: Edge of
 Tomorrow. This should be civ 6 with a jump back (like the concept from the
 movie)".
 
-`?mode=tomorrow` is the played game once more, listed between AI Debugger and
+`/edge-of-tomorrow` (once `?mode=tomorrow`) is the played game once more, listed between AI Debugger and
 Civ 6 in the site list. The seat is in the person's own hands, on the
 Civilization VI screen, and the page adds one thing: a jump back. The world
 goes back to the turn the person woke on, exactly as it stood, and they play

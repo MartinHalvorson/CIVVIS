@@ -69,6 +69,11 @@ body { display: flex; }
 <script>
 "use strict";
 // ---- what the viewer gives the bar
+// Which of the simulator's pages this is, as the viewer's head script says
+// it: the address names it (/debugger, /doctor-strange, /edge-of-tomorrow),
+// or an old link's `?mode=` does, which is how this page is asked.
+window.CIVVIS_PAGE_MODE = ({debugger: "play", "doctor-strange": "strange", "edge-of-tomorrow": "tomorrow"})[
+  location.pathname.replace(/\/(?:index\.html)?$/, "").split("/").pop()] || new URLSearchParams(location.search).get("mode");
 let state = null, sel = null, selCity = null;
 let SPEC = false, autoplaying = false, turnAdvancePending = false;
 const AUTOPLAY_BATCH_TIMEOUT_MS = 60000;

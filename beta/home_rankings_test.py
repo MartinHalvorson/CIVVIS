@@ -499,10 +499,10 @@ class HomeRankings(unittest.TestCase):
             ("watch-pov", "../charts/civvis-performance/", "CIVVIS Performance"),
             ("watch-science", "https://www.youtube.com/playlist?list=PLWcKlP8e8iy4", "Lv 8 Deity Wins"),
             ("watch-culture", "https://www.youtube.com/playlist?list=PLWcKlP8e8iy4", "Lv 8 Deity Wins"),
-            ("watch-debugger", "../?mode=play", "CIVVIS AI Debugger"),
-            ("watch-strange", "../?mode=strange", "Doctor Strange's CIVVIS"),
+            ("watch-debugger", "../debugger", "CIVVIS AI Debugger"),
+            ("watch-strange", "../doctor-strange", "Doctor Strange's CIVVIS"),
         ])
-        for href, name in (("../?mode=play", "CIVVIS AI Debugger"), ("../?mode=strange", "Doctor Strange's CIVVIS")):
+        for href, name in (("../debugger", "CIVVIS AI Debugger"), ("../doctor-strange", "Doctor Strange's CIVVIS")):
             self.assertRegex(LANDING, rf'<a class="site-link" href="{re.escape(href)}"[^>]*>{re.escape(name)}</a>')
         # The single player's game starts 6 seconds in, on the page and on
         # YouTube; the other five start at their start.
