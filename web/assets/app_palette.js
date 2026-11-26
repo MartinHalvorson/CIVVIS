@@ -610,3 +610,23 @@ function contrastRatio(one, other) {
   });
   return (Math.max(a, b) + .05) / (Math.min(a, b) + .05);
 }
+
+// ── The leaders of the player HUD's columns ───────────────────────────────
+// Each column from Elo rightward marks its highest value (operator
+// 2026-11-26: "for each from elo right or so in player hud, lets highlight
+// the highest value in the col. to give a quick sense of the rough eladers
+// in each col nonzero ties can all highlight. zero ties can have no
+// highlight"). These are the figures among the identity facts; the stat
+// columns past them (Cities to Score) always took part. Plan, Closest
+// victory and Age are words or a road, not amounts, so they have no highest.
+const PLAYER_HUD_LEADER_FACTS = ["elo", "elo_delta", "win_start", "win_delta", "win"];
+// The highest value of each column over the rows given, which `valueOf(row)`
+// lists as [column, value] pairs. A column whose highest is zero, or that
+// no row has a value in, has no entry, so none of its cells is marked.
+function playerHudColumnHighs(rows, valueOf) {
+  const highs = new Map();
+  for (const row of rows) for (const [key, value] of valueOf(row))
+    if (Number.isFinite(value) && !(highs.get(key) >= value)) highs.set(key, value);
+  for (const [key, value] of highs) if (value === 0) highs.delete(key);
+  return highs;
+}
