@@ -59,7 +59,7 @@ body { display: flex; }
 #winner { display: none; } #winner.visible { display: block; }
 </style></head>
 <body>
-<div id="maparea"><div id="winner"></div><div id="moments"></div></div>
+<div id="maparea"><div id="winner"></div><div id="moments"></div><div class="minimap-frame"></div><div id="map-controls-dock"></div></div>
 <div id="side">
   <div id="humanfooter" style="display:grid">the left panel's own auto-play</div>
   <select id="autoplaystrategy"><option value="jack">1211 - JackOfAllTrades</option><option value="stock">1000 - ByTheBook</option></select>
@@ -3465,7 +3465,10 @@ def check_doctor_strange(bar: Bar, address: str) -> None:
     # tree and the boxes, and each box hangs from it under its name plate.
     # The sky they stand on is the whole window, the bar is unseen and the
     # strip between the halves is gone. Each half knows what it is a half
-    # of, which is what puts its panels away, its own bar among them. What
+    # of, which is what puts its panels away, its own bar among them, and
+    # its world minimap (not drawn either) and map controls (operator
+    # 2026-11-26: "lets drop the minimap and controls thing from the maps
+    # doctor stranges civ 6"). What
     # the page costs is in the top right corner, and the worlds' numbers
     # stand on the line under it, in the lower right of the upper half.
     layout = bar.ev("""(() => {
@@ -3484,12 +3487,14 @@ def check_doctor_strange(bar: Bar, address: str) -> None:
         meter: [meter.top < 40, meter.right > innerWidth - 40],
         versus: [versus.bottom <= line, versus.bottom > line - 40, versus.right > innerWidth - 40, versus.top > meter.bottom],
         halves: ["a", "b"].map(letter => debugSplit.panes[letter].frame.contentWindow.eval(
-          "[STRANGE, STRANGE_PANE, document.documentElement.classList.contains('strange-pane'), getComputedStyle(debugBar).display]")),
+          "[STRANGE, STRANGE_PANE, document.documentElement.classList.contains('strange-pane'), getComputedStyle(debugBar).display," +
+          " ...['.minimap-frame', '#map-controls-dock'].map(s => getComputedStyle(document.querySelector(s)).display)," +
+          " !String(drawMini).includes('function drawMini')]")),
       };
     })()""")
     assert layout == {"a": [True] * 4, "b": [True] * 4, "alike": True, "roomy": True, "sky": [0, 0, True, True],
                       "bar": "hidden", "strip": "none", "meter": [True, True], "versus": [True] * 4,
-                      "halves": [[False, True, True, "none"]] * 2}, layout
+                      "halves": [[False, True, True, "none", "none", "none", True]] * 2}, layout
     # The highway is painted: the open turn is the line across the window,
     # which is where the followed world's turn is put.
     bar.until("strange.canvas.width === Math.round(innerWidth * Math.min(2, devicePixelRatio || 1)) && strange.cam === 1",

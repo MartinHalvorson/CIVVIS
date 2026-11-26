@@ -1427,6 +1427,10 @@ path). these should alert on the top section out in the distance."
   world it branches from once it has loaded. The split's own lock joins two
   halves, so it is left open, every half's own panel is put away, and the
   worlds are moved by the page's one hand, by name.
+- **A world's box is its map alone.** Its world minimap and the map's
+  controls (deck, compass, lenses, zoom) are put away, and the minimap is
+  not drawn (`STRANGE_PANE_STYLE`, `drawMini`). Each map still pans by drag
+  and zooms by wheel.
 - **The page opens on the top strategy and its challenger.** The picker
   shows each player strategy's rating before its name; the highest rated is
   B, on the right, and the next is A, on the left and followed, so that a
