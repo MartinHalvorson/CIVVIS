@@ -134,12 +134,14 @@
      The row wraps onto a second line on a narrow screen, and every name
      stands on one line (operator, 2026-11-21: "make sure it fits on one
      line"). */
-  .site-nav { display: flex; flex: 1 0 100%; flex-wrap: wrap; align-items: center; gap: 6px; }
+  .site-nav { display: flex; flex: 1 0 100%; flex-wrap: wrap; align-items: center; gap: 5px; }
   .site-brand { display: flex; align-items: center; gap: 18px; min-width: 0; }
   .site-lockup { min-width: 0; }
   .site-link {
     display: block;
-    padding: 3px 12px 4px;
+    /* 8px a side, not 12, and 5px between, not 6: with CIVVIS in three of
+       the names (2026-11-26) the row is one line again on a desktop screen. */
+    padding: 3px 8px 4px;
     border-radius: 3px;
     background: var(--action-bg);
     color: var(--action-fg);
@@ -172,7 +174,7 @@
   /* AI Debugger ends in a little green bug (operator, 2026-11-26: "maybe
      add a green little bug to the end of ai debugger if theres space"). It
      is drawn here rather than written in the link, so the link's name is
-     still "AI Debugger" to a screen reader and to whatever reads the list. */
+     still "CIVVIS AI Debugger" to a screen reader and to whatever reads the list. */
   .site-link[href$="?mode=play"]::after {
     content: ""; display: inline-block; width: 1.1em; height: 1.1em; margin-left: 0.3em; vertical-align: -0.22em;
     background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M6.6 3 5.2 1.2M9.4 3l1.4-1.8M4.4 7.6 1.9 6.4M11.6 7.6l2.5-1.2M4 10.4H1.4M12 10.4h2.6M4.5 13l-2.2 1.8M11.5 13l2.2 1.8' stroke='%2345d16a' stroke-width='1.4' stroke-linecap='round' fill='none'/%3E%3Ccircle cx='8' cy='4.6' r='2.2' fill='%2345d16a'/%3E%3Cellipse cx='8' cy='10.3' rx='4.1' ry='4.9' fill='%2345d16a'/%3E%3Cpath d='M8 6.6v8.4' stroke='%23050607' stroke-width='1'/%3E%3C/svg%3E") center / contain no-repeat;
@@ -397,9 +399,9 @@
       </div>
       <a class="site-link" href="../../tournaments/" title="Series of verification games against Civilization VI&#8217;s own AI: running, scheduled and finished.">Tournaments</a>
       <a class="site-link" href="../../" title="Every civilization is played by a CIVVIS AI agent.">CIVVIS</a>
-      <a class="site-link" href="../../?mode=strange" title="One world, two timelines: the same game played two ways, side by side, on a timeline that branches.">Doctor Strange's Civ 6</a>
-      <a class="site-link" href="../../?mode=play" title="You play one civilization. CIVVIS AI agents play the rest.">AI Debugger</a>
-      <a class="site-link" href="../../?mode=tomorrow" title="You play one civilization, with a jump back: the world returns to the turn you woke on, as it stood.">Civ: Edge of Tomorrow</a>
+      <a class="site-link" href="../../?mode=strange" title="One world, two timelines: the same game played two ways, side by side, on a timeline that branches.">Doctor Strange's CIVVIS</a>
+      <a class="site-link" href="../../?mode=play" title="You play one civilization. CIVVIS AI agents play the rest.">CIVVIS AI Debugger</a>
+      <a class="site-link" href="../../?mode=tomorrow" title="You play one civilization, with a jump back: the world returns to the turn you woke on, as it stood.">CIVVIS: Edge of Tomorrow</a>
       <a class="site-link" href="https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/" target="_blank" rel="noopener" title="Buy Civilization VI on Steam">Civ 6</a>
     </nav>
     <script data-site-folder>
