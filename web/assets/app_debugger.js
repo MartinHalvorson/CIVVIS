@@ -5126,7 +5126,7 @@ if (TOMORROW) {
 // In Edge of Tomorrow the seat's only decisions are Auto-play and the jump
 // (operator, 2026-11-26: "a player's only controls are the auto play stuff
 // and the jump back / wake here"): the page sends no action, citizen or
-// focus of its own for the seat. Auto-play, Jump back and Wake here go to the
+// focus of its own for the seat. Auto-play, Jump back and Checkpoint here go to the
 // engine by their own routes.
 window.civvisSeatHandsOff = TOMORROW;
 // And it shows the seat's research box (governors, research, civic,
@@ -8100,7 +8100,7 @@ if (state) { drawDebugBar(); debugPaneReport(); debugPaneNumbers(); debugOpenThe
 // it, a city of its taken), read from the game's own record of its wars
 // (`state.wars`).
 //
-// The turn woken on is the first until the person moves it (Wake here). The
+// The turn woken on is the first until the person moves it (Checkpoint here). The
 // world as it stands is then kept as a save point of the engine's
 // (`save_point`), which is never thinned away as an old turn's mark may be,
 // and a jump back goes to that (`goto_save`).
@@ -8190,30 +8190,42 @@ const TOMORROW_STYLE = `
      pickers, its button and its note, \`#autoplaybar\`) is moved in here
      whole by \`tomorrowMount\`, so the page drives it as it always has; its
      boxes give way (\`display: contents\`) and each piece takes its place in
-     the grid: Turns over Jump back, Civ AI over Auto-play and Wake here. */
+     the grid: Turns over Jump back, CIVVIS AI over Auto-play and Checkpoint
+     here.
+     Operator 2026-11-26: "lets make sure the buttons in the lower right
+     aren't moving around when simming". The columns are fixed: Auto-play's
+     words change as it plays ("Stop · 27 turns left", then "1 turn left"),
+     and a column as wide as its words moved every button and picker beside
+     it a few pixels each turn. Each button now fills its column, its words
+     centred in it, so nothing moves. And "make the turn selection and
+     (rename to CIVVIS AI:) things a bit large/taller": the two pickers are
+     36px tall in 14px type, their names 11px. */
   #tomorrowbar .tmr-acts {
-    display: grid; grid-template-columns: auto auto auto; align-items: center; gap: 6px 8px;
+    display: grid; grid-template-columns: 150px 204px 150px; align-items: center; gap: 6px 8px;
     grid-template-areas: "turns ai ai" "jump auto wake";
   }
   #tomorrowbar #autoplaybar, #tomorrowbar .autoplay-fields { display: contents; }
   #tomorrowbar .autoplay-field { display: flex; align-items: center; gap: 7px; min-width: 0; }
-  #tomorrowbar .autoplay-field > span { flex: none; color: #9fb0bf; font-size: 10px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
-  #tomorrowbar .autoplay-field select { flex: 1; min-width: 0; height: 28px; padding: 0 6px; font-size: 12px; }
+  #tomorrowbar .autoplay-field > span { flex: none; color: #9fb0bf; font-size: 11px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
+  #tomorrowbar .autoplay-field select { flex: 1; min-width: 0; height: 36px; padding: 0 8px; font-size: 14px; }
   #tomorrowbar .tmr-turns { grid-area: turns; }
   #tomorrowbar .tmr-ai { grid-area: ai; }
-  #tomorrowbar #autoplaybtn { grid-area: auto; width: auto; height: 40px; padding: 0 14px; border-radius: 10px; font-size: 13px; }
+  #tomorrowbar #autoplaybtn {
+    grid-area: auto; width: 100%; min-width: 0; height: 40px; padding: 0 10px; border-radius: 10px; font-size: 13px;
+    overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums;
+  }
   #tomorrowbar #autoplaynote { display: none; }
   #tmr-jump { grid-area: jump; }
   #tmr-wake { grid-area: wake; }
   #tomorrowbar button { font: inherit; cursor: pointer; white-space: nowrap; }
   #tomorrowbar button:disabled { cursor: default; opacity: .38; }
   #tmr-jump {
-    display: grid; justify-items: center; gap: 1px; min-width: 132px; height: 40px; padding: 0 16px; border-radius: 10px;
+    display: grid; justify-items: center; gap: 1px; width: 100%; min-width: 0; height: 40px; padding: 0 12px; border-radius: 10px;
     color: #1a1206; background: linear-gradient(180deg, #f9b858, #d98a1e); border: 1px solid #ffd9a0;
     box-shadow: 0 2px 10px #f5a74233;
   }
   #tmr-jump span { align-self: end; font-size: 14px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
-  #tmr-jump small { align-self: start; font-size: 10px; font-weight: 700; letter-spacing: .04em; opacity: .8; }
+  #tmr-jump small { align-self: start; font-size: 10px; font-weight: 700; letter-spacing: .04em; opacity: .8; font-variant-numeric: tabular-nums; }
   #tmr-jump:hover:not(:disabled) { background: linear-gradient(180deg, #ffc978, #e89a2c); }
   #tmr-jump:disabled { filter: grayscale(.7); box-shadow: none; }
   /* A lost loop that is being looked around waits on this button. */
@@ -8221,8 +8233,8 @@ const TOMORROW_STYLE = `
   @keyframes tmr-due { 50% { box-shadow: 0 0 0 4px #f5a74255, 0 2px 14px #f5a74288; } }
   @media (prefers-reduced-motion: reduce) { #tmr-jump.tmr-due { animation: none; box-shadow: 0 0 0 3px #f5a74266; } }
   #tmr-wake {
-    height: 40px; padding: 0 12px; border-radius: 10px; color: #c9d2da; background: #141c24; border: 1px solid #44525f;
-    font-size: 11px; font-weight: 700; letter-spacing: .04em;
+    width: 100%; min-width: 0; height: 40px; padding: 0 10px; border-radius: 10px; color: #c9d2da; background: #141c24; border: 1px solid #44525f;
+    font-size: 11px; font-weight: 700; letter-spacing: .04em; overflow: hidden; text-overflow: ellipsis;
   }
   #tmr-wake:hover:not(:disabled) { color: #fff; border-color: #eef3f7; }
   /* With little room the name goes over the line, beside the buttons. */
@@ -8230,10 +8242,11 @@ const TOMORROW_STYLE = `
     #tomorrowbar { grid-template-columns: minmax(0, 1fr) auto; }
     #tomorrowbar .tmr-name { grid-auto-flow: column; justify-content: start; align-items: baseline; gap: 12px; }
     #tomorrowbar .tmr-track { grid-column: 1 / -1; grid-row: 2; }
-    #tmr-jump { min-width: 0; height: 36px; padding: 0 12px; }
+    #tomorrowbar .tmr-acts { grid-template-columns: 124px 172px 124px; }
+    #tmr-jump { height: 36px; padding: 0 8px; }
     #tmr-jump span { font-size: 12px; }
-    #tmr-wake { height: 36px; padding: 0 9px; }
-    #tomorrowbar #autoplaybtn { height: 36px; padding: 0 10px; font-size: 12px; }
+    #tmr-wake { height: 36px; padding: 0 6px; }
+    #tomorrowbar #autoplaybtn { height: 36px; padding: 0 6px; font-size: 12px; }
   }
   /* The card of a lost loop: the result card's own shape, with the jump
      where a new game was offered. */
@@ -8284,6 +8297,33 @@ const TOMORROW_STYLE = `
      box stands as it does in the Debugger view (\`civvisSeatTracker\`),
      without the live mirror's Pause and New game. */
   html.tomorrow .livepause-buttons, html.tomorrow #livepause-note { display: none !important; }
+  /* Operator 2026-11-26: "move the menu with quick deals and other stuff
+     inside, to the left of the victory tracker". While the Rankings are
+     open, Civ 6's upper-right hooks (Rankings, Diplomacy, Reports, Era,
+     Trade routes, City-States, Espionage) stand in a column down the
+     tracker's left side, and the tracker climbs into the band they took
+     under the standings. The notifications step inboard of the column. A
+     map area narrow enough to stack the Rankings into one band keeps the
+     hooks where they were. */
+  html.tomorrow body.civ6-frame.rankings-open #maparea:not(.player-hud-compact) #hooksbar {
+    top: var(--solo-bar-top); right: calc(var(--panel-edge) + var(--victory-hud-width) + var(--panel-gap));
+    max-width: none; max-height: calc(100% - var(--solo-bar-top) - var(--panel-edge));
+    flex-direction: column; overflow: hidden auto;
+  }
+  html.tomorrow body.civ6-frame.rankings-open #maparea:not(.player-hud-compact) #hooktabs { flex-direction: column; }
+  html.tomorrow body.civ6-frame.rankings-open #maparea:not(.player-hud-compact) #hooksbar .launch-rule {
+    width: 26px; height: 1px; margin: 3px 0; background: linear-gradient(90deg, transparent, #77978b, transparent);
+  }
+  html.tomorrow body.civ6-frame.rankings-open #maparea:not(.player-hud-compact) #victoryhud { top: var(--solo-bar-top); }
+  html.tomorrow body.civ6-frame.rankings-open #maparea:not(.player-hud-compact) #notify {
+    right: calc(var(--panel-edge) + var(--victory-hud-width) + 2 * var(--panel-gap) + 62px);
+  }
+  /* The standings open short here (\`measureTurnPlateNeed\`, below), so the
+     turn box is shorter than what it lists. Its rows down to the turn count
+     keep their own height rather than giving way (the age, which hides its
+     overflow, would fold to nothing and the turn's numeral ride up over it),
+     and the box's own edge covers the rest. */
+  html.tomorrow #playerhud .victory-turn > :not(.turn-settings) { min-height: min-content; }
 `;
 
 const tomorrow = {
@@ -8478,9 +8518,11 @@ async function tomorrowJump() {
   tomorrowDraw();
   return next;
 }
-// Wake here: from now on a jump back wakes on the world as it stands. Asked
-// while standing on a wake point that was moved, it is moved back to the
-// first turn instead, so a wake point set by mistake is not for good.
+// Checkpoint here (operator 2026-11-26: "Change "wake here" to "Checkpoint
+// here""; it was Wake here): from now on a jump back wakes on the world as
+// it stands. Asked while standing on a checkpoint that was set, it is
+// cleared, and a jump back wakes on the first turn again, so a checkpoint
+// set by mistake is not for good.
 async function tomorrowWakeHere() {
   const t = tomorrow, timeline = debugTimeline();
   if (!timeline || !tomorrowIdle() || t.fate) return;
@@ -8489,9 +8531,9 @@ async function tomorrowWakeHere() {
   if (standing && t.wake.save === null) return;
   if (standing) {
     const next = await debugOp({op: "drop_save", id: t.wake.save});
-    if (!next || next.error) { tomorrowSay("The wake point could not be moved. Try again"); tomorrowDraw(); return; }
+    if (!next || next.error) { tomorrowSay("The checkpoint could not be cleared. Try again"); tomorrowDraw(); return; }
     t.wake = {turn: first, save: null, acted: 0};
-    tomorrowSay(`A jump back wakes on turn ${first} again`);
+    tomorrowSay(`Checkpoint cleared: a jump back returns to turn ${first} again`);
   } else {
     const next = await debugOp({op: "save_point", name: TOMORROW_SAVE});
     const kept = next && !next.error ? (((next.debug || {}).saves) || []).find(save => save.name === TOMORROW_SAVE) : null;
@@ -8502,7 +8544,7 @@ async function tomorrowWakeHere() {
     }
     t.wake = {turn: kept.turn, save: kept.id, acted: kept.acted || 0};
     for (const [key, seen] of t.seen) if (seen.turn < t.wake.turn) t.seen.delete(key);
-    tomorrowSay(`A jump back now wakes here, on turn ${kept.turn}`);
+    tomorrowSay(`Checkpoint on turn ${kept.turn}: a jump back now returns here`);
   }
   tomorrowDraw();
 }
@@ -8540,6 +8582,10 @@ function tomorrowMount() {
       const field = document.getElementById(picker)?.closest(".autoplay-field");
       if (field) field.classList.add(place);
     }
+    // The agent picker's name is CIVVIS AI here (operator 2026-11-26:
+    // "rename to CIVVIS AI:"); the left panel of the other pages says Civ AI.
+    const named = document.querySelector("#autoplaybar .tmr-ai > span");
+    if (named) named.textContent = "CIVVIS AI";
     const note = document.getElementById("autoplaynote");
     if (note && typeof MutationObserver === "function") new MutationObserver(() => {
       if (!note.textContent) return;
@@ -8613,11 +8659,11 @@ function tomorrowDraw(measure = true) {
     rail += `<i class="tmr-mem" style="${place(seen.turn)};color:${colour}" ` +
       `title="${escapeAttr(`Loop ${seen.loop}, turn ${seen.turn}: ${seen.text}`)}">${sign}</i>`;
   }
-  rail += `<b class="tmr-wake" style="${place(wake)}" title="A jump back wakes here: turn ${wake}"></b>` +
+  rail += `<b class="tmr-wake" style="${place(wake)}" title="Checkpoint: a jump back returns to turn ${wake}"></b>` +
     `<b class="tmr-now" style="${place(turn)}" title="Turn ${turn} of loop ${t.loop}">${turn}</b>`;
   const railBox = bar.querySelector("#tmr-rail");
   debugDrawn(railBox, rail);
-  railBox.setAttribute("aria-label", `Loop ${t.loop}, turn ${turn}. A jump back wakes on turn ${wake}`);
+  railBox.setAttribute("aria-label", `Loop ${t.loop}, turn ${turn}. A jump back returns to turn ${wake}`);
   debugDrawn(bar.querySelector("#tmr-loop"), String(t.loop));
   // What the bar says: what it was just told, then what is remembered of the
   // turns ahead, then how the last loop ended.
@@ -8639,10 +8685,10 @@ function tomorrowDraw(measure = true) {
   const here = bar.querySelector("#tmr-wake");
   const standing = turn === wake && (timeline.acted || 0) === t.wake.acted;
   const back = standing && t.wake.save !== null;
-  debugDrawn(here, back ? `Wake on turn ${first}` : "Wake here");
+  debugDrawn(here, back ? "Clear checkpoint" : "Checkpoint here");
   here.disabled = !idle || !!t.fate || (standing && !back);
-  here.title = back ? `Move the wake point back: a jump back wakes on turn ${first} again`
-    : `From now on a jump back wakes here: turn ${turn}, as it stands`;
+  here.title = back ? `Clear the checkpoint: a jump back returns to turn ${first} again`
+    : `Checkpoint here: from now on a jump back returns to turn ${turn}, as it stands`;
   if (measure) tomorrowDock(bar);
 }
 
@@ -8669,5 +8715,18 @@ if (TOMORROW) {
     return drawn;
   };
   window.addEventListener("resize", () => { if (debugTimeline()) tomorrowDraw(); });
+  // Operator 2026-11-26: "lets start with the player hud a more minimized
+  // size. turn count should completely show. the stuff below it can be
+  // covered by the minimiziation". The standings open as tall as the turn
+  // box needs for its turn count, and no taller: what the box lists under it
+  // (Mode, POV, the civilizations and city-states left) is covered until the
+  // box is pulled taller. The roster's own floor still holds every seat.
+  if (typeof measureTurnPlateNeed === "function") measureTurnPlateNeed = function (hud) {
+    const plate = hud.querySelector(".victory-turn"), count = plate?.querySelector(".turn-count");
+    const box = plate?.getBoundingClientRect();
+    if (!count || !box.height) return 0;
+    // 8px: the plate's own bottom padding and border, under its turn count.
+    return Math.ceil(count.getBoundingClientRect().bottom - box.top + 8 + hud.getBoundingClientRect().height - box.height);
+  };
   if (state) { tomorrowWatch(); tomorrowDraw(); tomorrowWords(); }
 }

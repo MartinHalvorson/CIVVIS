@@ -115,6 +115,9 @@ function reignSummary() { return ""; }
 // has been read.
 let rankingsReportOpen = false, soloRankingsSettled = false;
 function toggleRankingsReport(open) { rankingsReportOpen = open === undefined ? !rankingsReportOpen : !!open; }
+// What the standings ask of the turn box for their height (app.js's, which
+// Edge of Tomorrow measures again to its turn count).
+function measureTurnPlateNeed(hud) { return 0; }
 function drawTurnLoop() {}
 // What the viewer's banners compare each turn with (`app_moments.js`), the
 // banners waiting to be shown, and how many are up (in `#moments`).
@@ -4451,6 +4454,51 @@ def check_edge_of_tomorrow(bar: Bar, address: str) -> None:
     assert acts["turns"]["right"] <= acts["ai"]["left"], acts
     assert acts["jump"]["right"] <= acts["autoplay"]["left"] and acts["autoplay"]["right"] <= acts["wake"]["left"], acts
     assert acts["turns"]["left"] == acts["jump"]["left"] and acts["ai"]["right"] == acts["wake"]["right"], acts
+    # Operator, 2026-11-26: "lets make sure the buttons in the lower right
+    # aren't moving around when simming". The three buttons fill fixed
+    # columns, so the words Auto-play takes as it plays move nothing: not
+    # the buttons, not the pickers over them. And "make the turn selection
+    # and (rename to CIVVIS AI:) things a bit large/taller".
+    steady = bar.ev("""(() => {
+      const spot = () => JSON.stringify(['tmr-jump', 'autoplaybtn', 'tmr-wake', 'autoplayturns', 'autoplaystrategy'].map(id => {
+        const r = document.getElementById(id).getBoundingClientRect(); return [Math.round(r.left), Math.round(r.top), Math.round(r.width)]; }));
+      const button = document.getElementById('autoplaybtn'), words = button.innerHTML, widths = () =>
+        ['tmr-jump', 'autoplaybtn', 'tmr-wake'].map(id => Math.round(document.getElementById(id).getBoundingClientRect().width));
+      const before = spot(), wide = widths();
+      button.textContent = '⏹ Stop · 1 turn left'; const short = spot();
+      button.textContent = '▶▶ Auto-play 250 turns'; const long = spot();
+      button.innerHTML = words;
+      return {same: before === short && short === long, widths: wide,
+        name: document.querySelector('#autoplaybar .tmr-ai > span').textContent,
+        tall: ['autoplayturns', 'autoplaystrategy'].map(id => Math.round(document.getElementById(id).getBoundingClientRect().height))};
+    })()""")
+    assert steady == {"same": True, "widths": [150, 204, 150], "name": "CIVVIS AI", "tall": [36, 36]}, steady
+    # Operator, 2026-11-26: "move the menu with quick deals and other stuff
+    # inside, to the left of the victory tracker", and "lets start with the
+    # player hud a more minimized size. turn count should completely show.
+    # the stuff below it can be covered by the minimiziation". The stand-in
+    # page has no Civilization VI screen, so the rules that stand the hooks
+    # in a column beside the tracker, and the tracker up in their band, are
+    # read from the page's styles. The standings are sized to the turn count:
+    # on a turn box of its shape the height asked for ends 8px under it.
+    placed = bar.ev("""(() => {
+      const rules = [...document.styleSheets].flatMap(sheet => { try { return [...sheet.cssRules]; } catch (_) { return []; } })
+        .filter(rule => rule.style);
+      const lead = 'html.tomorrow body.civ6-frame.rankings-open #maparea:not(.player-hud-compact) ';
+      const at = pick => rules.find(rule => rule.selectorText === lead + pick) || {style: {}};
+      const hooks = at('#hooksbar').style;
+      const hud = document.createElement('div');
+      hud.style.cssText = 'position: fixed; top: 100px; left: 0; width: 200px; height: 300px; padding: 6px; box-sizing: border-box';
+      hud.innerHTML = '<section class="victory-turn" style="display: block; height: 288px; margin: 0; padding: 0; box-sizing: border-box">' +
+        '<div style="height: 40px"></div><div class="turn-count" style="height: 30px; margin: 0"></div>' +
+        '<div class="turn-settings"><div style="height: 50px"></div></div></section>';
+      document.body.append(hud);
+      const need = measureTurnPlateNeed(hud);
+      hud.remove();
+      return {column: hooks.flexDirection, top: hooks.top, beside: String(hooks.right).includes('--victory-hud-width'),
+        tracker: at('#victoryhud').style.top, need};
+    })()""")
+    assert placed == {"column": "column", "top": "var(--solo-bar-top)", "beside": True, "tracker": "var(--solo-bar-top)", "need": 90}, placed
     # What Auto-play's note says is said on the bar.
     bar.ev("document.getElementById('autoplaynote').textContent = 'Stopped · 3 turns unplayed', true")
     bar.until("document.getElementById('tmr-said').textContent === 'Stopped · 3 turns unplayed'", "the note is said on the bar")
@@ -4513,7 +4561,7 @@ def check_edge_of_tomorrow(bar: Bar, address: str) -> None:
     seen = rail()
     assert seen["loop"] == "1" and [mark["text"] for mark in seen["now"]] == ["1"], seen
     assert seen["jump"] == {"off": True, "to": "to turn 1", "due": False}, seen
-    assert seen["here"] == {"off": True, "says": "Wake here"}, seen
+    assert seen["here"] == {"off": True, "says": "Checkpoint here"}, seen
     assert seen["ends"] == [] and seen["mem"] == [], seen
     assert "Jump back returns the world to turn 1" in seen["said"], seen
 
@@ -4525,7 +4573,7 @@ def check_edge_of_tomorrow(bar: Bar, address: str) -> None:
     seen = rail()
     assert seen["now"][0]["text"] == "6" and seen["now"][0]["left"] == "12.82%", seen
     assert seen["wake"][0]["left"] == "0%" and seen["done"][0]["width"] == "12.82%", seen
-    assert seen["jump"]["off"] is False and seen["here"] == {"off": False, "says": "Wake here"}, seen
+    assert seen["jump"]["off"] is False and seen["here"] == {"off": False, "says": "Checkpoint here"}, seen
     assert seen["mem"] == [] and seen["ends"] == [], seen
     assert bar.ev("[...tomorrow.now.values()]") == \
         [{"turn": 4, "kind": "declared", "loop": 1, "text": "greece declared war on rome"}]
@@ -4556,8 +4604,9 @@ def check_edge_of_tomorrow(bar: Bar, address: str) -> None:
     assert play(1) == 2
     assert rail()["said"] == "Seen in loop 1: turn 4, greece declared war on rome"
 
-    # Wake here, on turn 3: the world as it stands is kept as a save point of
-    # the engine's under the page's one name, and a jump back wakes there.
+    # Checkpoint here, on turn 3 (operator, 2026-11-26: "Change "wake here"
+    # to "Checkpoint here""): the world as it stands is kept as a save point
+    # of the engine's under the page's one name, and a jump back wakes there.
     assert play(1) == 3
     bar.forget()
     bar.click("#tmr-wake")
@@ -4567,9 +4616,9 @@ def check_edge_of_tomorrow(bar: Bar, address: str) -> None:
     assert kept["save"] == bar.ev("engine.saves.find(save => save.name === 'Edge of Tomorrow').id") and kept["acted"] == 0, kept
     seen = rail()
     assert seen["wake"][0]["left"] == "5.13%" and seen["jump"] == {"off": True, "to": "to turn 3", "due": False}, seen
-    # Standing on a wake point that was moved, the button moves it back.
-    assert seen["here"] == {"off": False, "says": "Wake on turn 1"}, seen
-    assert seen["said"] == "A jump back now wakes here, on turn 3", seen
+    # Standing on the checkpoint, the button clears it.
+    assert seen["here"] == {"off": False, "says": "Clear checkpoint"}, seen
+    assert seen["said"] == "Checkpoint on turn 3: a jump back now returns here", seen
     # Past turn 4 nothing remembered is ahead any more.
     assert play(2) == 5
     assert rail()["mem"] == []
@@ -4663,14 +4712,14 @@ def check_edge_of_tomorrow(bar: Bar, address: str) -> None:
     assert bar.ev("tomorrow.wake") == {"turn": 1, "save": None, "acted": 0}
     assert rail()["jump"]["to"] == "to turn 1"
     bar.ev(f"engine.saves = {held}, tomorrow.wake = {json.dumps(kept)}, render(engineState()), true")
-    assert rail()["here"] == {"off": False, "says": "Wake on turn 1"}
+    assert rail()["here"] == {"off": False, "says": "Clear checkpoint"}
     bar.forget()
     bar.click("#tmr-wake")
     bar.until("tomorrow.wake.save === null && tomorrowIdle()", "the wake point is back on the first turn")
     assert bar.sent() == [{"op": "drop_save", "id": kept["save"]}], bar.sent()
     assert bar.ev("tomorrow.wake") == {"turn": 1, "save": None, "acted": 0}
     seen = rail()
-    assert seen["jump"] == {"off": False, "to": "to turn 1", "due": False} and seen["here"] == {"off": False, "says": "Wake here"}, seen
+    assert seen["jump"] == {"off": False, "to": "to turn 1", "due": False} and seen["here"] == {"off": False, "says": "Checkpoint here"}, seen
     bar.forget()
     bar.click("#tmr-jump")
     bar.until("state.turn === 1 && tomorrow.loop === 7 && tomorrowIdle()", "and a jump back wakes on turn 1")
@@ -4871,13 +4920,15 @@ def main() -> int:
               "makes as many as fit in the twelve.")
         check_edge_of_tomorrow(bar, f"http://127.0.0.1:{port}/")
         print("Edge of Tomorrow is the played game on the Civilization VI screen with a bar of its own across the "
-              "foot of the window, the map area ending above it, the left panel's Auto-play in it (Turns and Civ AI "
-              "over Jump back, Auto-play and Wake here) and Start new game left in the left panel, no minimap or map "
-              "controls, the standings, victory tracker and research box asked for, and the seat's only decisions "
+              "foot of the window, the map area ending above it, the left panel's Auto-play in it (Turns and CIVVIS AI, "
+              "36px tall, over Jump back, Auto-play and Checkpoint here, in fixed columns that the words Auto-play "
+              "takes as it plays do not move) and Start new game left in the left panel, no minimap or map "
+              "controls, the standings (opened as tall as the turn count), the victory tracker with the hooks in a "
+              "column beside it, and the research box asked for, and the seat's only decisions "
               "Auto-play's; Jump back asks the engine for the turn woken on "
               "and begins the next loop, with where each loop ended and what it saw done to the seat kept on the "
-              "line; Wake here keeps the open turn as the engine's save point and a jump goes there, and moves "
-              "back to the first turn when asked on it; a lost game, the seat fallen or somebody else the winner, "
+              "line; Checkpoint here keeps the open turn as the engine's save point and a jump goes there, and "
+              "Clear checkpoint on it goes back to the first turn; a lost game, the seat fallen or somebody else the winner, "
               "has the loop's card in place of the offer of another game, counts down to the jump and jumps, or "
               "is looked around first; a won game keeps its own card and says which loop won it; another game "
               "is loop 1 again, and a narrow window has the line under the buttons.")
