@@ -440,8 +440,14 @@ class HomeRankings(unittest.TestCase):
         for gone in ("rankings-data", "rank-civs", "rank-strategies", "rank-list", 'id="rankings"'):
             self.assertNotIn(gone, LANDING)
 
-    def test_the_home_page_is_six_videos_two_by_two_by_two(self):
-        # Operator 2026-11-24: "on home, first video can be "Fastest recorded
+    def test_the_home_page_is_eight_videos_two_to_a_row(self):
+        # Operator 2026-11-26: "swap video 5 on home for
+        # https://youtu.be/U0iwoVTK5q8. vid 5 (ai debugger) can be vid 6. 7 is
+        # https://youtu.be/kcDyO_tOpmQ. 8 is https://youtu.be/11wYuujdddk."
+        # Those are CIVVIS.ai, CIVVIS: Edge of Tomorrow and a newer Doctor
+        # Strange's CIVVIS, titled as YouTube titles them.
+        #
+        # Six of them stood there from 2026-11-24: "on home, first video can be "Fastest recorded
         # CIVVIS self-play game" subtitle 4P Tennis Ball, Online. Single
         # Player POV is great as is. Space 3 we can insert a Lv 8 scienec win
         # - https://www.youtube.com/watch?v=rVDor7Xb4Mg. space 4 is culture
@@ -468,10 +474,11 @@ class HomeRankings(unittest.TestCase):
             LANDING,
         )
         # Two columns, so document order reads left then right, row by
-        # row: his spaces 1 to 6. A tile's title is the first thing in it,
+        # row: his spaces 1 to 8. A tile's title is the first thing in it,
         # over its video, which the pattern above reads in that order. A
         # title that says everything has no second line: the two victories
-        # are titled as he wrote them, and so is Doctor Strange's Civ 6. The
+        # are titled as he wrote them, and so are CIVVIS.ai, Edge of
+        # Tomorrow and Doctor Strange's CIVVIS. The
         # culture win is still at the right (2026-11-22), of the second row.
         # Since 2026-11-25 the fastest game's title ends with its time
         # ("throw a time on fastest recorded civvis game home/.:: <6s") and
@@ -484,31 +491,41 @@ class HomeRankings(unittest.TestCase):
                 ("watch-pov", "9c8m87e3rCg", "Single player POV", "A full Civ 6 match in 14 seconds"),
                 ("watch-science", "rVDor7Xb4Mg", "Lv 8 Deity Win - France, Science", ""),
                 ("watch-culture", "6PCd4R08UPM", "Lv 8 Deity Win - Maya, Culture", ""),
+                ("watch-civvis", "U0iwoVTK5q8", "CIVVIS.ai", ""),
                 ("watch-debugger", "6W5t0hcR_N4", "CIVVIS AI Debugger", "Multiverse, Time Travel"),
-                ("watch-strange", "H50wfMantkY", "Doctor Strange's CIVVIS", ""),
+                ("watch-tomorrow", "kcDyO_tOpmQ", "CIVVIS: Edge of Tomorrow", ""),
+                ("watch-strange", "11wYuujdddk", "Doctor Strange's CIVVIS", ""),
             ],
         )
         for _, video, _, _, _, link, _, picture in tiles:
             self.assertEqual((link, picture), (video, video))
         # Where there is more of each: the two victories lead to the
-        # playlist of them, the debugger and Doctor Strange's Civ 6 to the
-        # modes themselves, as the site list names them.
+        # playlist of them, CIVVIS.ai to the simulator, and the debugger,
+        # Edge of Tomorrow and Doctor Strange's CIVVIS to the modes
+        # themselves, as the site list names them.
         more = re.findall(r'<figure class="watch-tile" id="(watch-[a-z]+)".*?<figcaption>.*?<a href="([^"]+)"[^>]*>([^<]+)</a></figcaption>', LANDING, re.S)
         self.assertEqual(more, [
             ("watch-fastest", "../charts/civvis-performance/", "CIVVIS Performance"),
             ("watch-pov", "../charts/civvis-performance/", "CIVVIS Performance"),
             ("watch-science", "https://www.youtube.com/playlist?list=PLWcKlP8e8iy4", "Lv 8 Deity Wins"),
             ("watch-culture", "https://www.youtube.com/playlist?list=PLWcKlP8e8iy4", "Lv 8 Deity Wins"),
+            ("watch-civvis", "../", "CIVVIS"),
             ("watch-debugger", "../debugger", "CIVVIS AI Debugger"),
+            ("watch-tomorrow", "../edge-of-tomorrow", "CIVVIS: Edge of Tomorrow"),
             ("watch-strange", "../doctor-strange", "Doctor Strange's CIVVIS"),
         ])
-        for href, name in (("../debugger", "CIVVIS AI Debugger"), ("../doctor-strange", "Doctor Strange's CIVVIS")):
+        for href, name in (
+            ("../", "CIVVIS"),
+            ("../debugger", "CIVVIS AI Debugger"),
+            ("../edge-of-tomorrow", "CIVVIS: Edge of Tomorrow"),
+            ("../doctor-strange", "Doctor Strange's CIVVIS"),
+        ):
             self.assertRegex(LANDING, rf'<a class="site-link" href="{re.escape(href)}"[^>]*>{re.escape(name)}</a>')
         # The single player's game starts 6 seconds in, on the page and on
-        # YouTube; the other five start at their start.
+        # YouTube; the other seven start at their start.
         self.assertEqual(
             [(start, at) for _, _, start, _, _, _, at, _ in tiles],
-            [("", ""), (' data-start="6"', "&amp;t=6s")] + [("", "")] * 4,
+            [("", ""), (' data-start="6"', "&amp;t=6s")] + [("", "")] * 6,
         )
         # A tile with no second line is named by its title alone.
         self.assertIn('const second = tile.querySelector("[data-watch-title]");', LANDING)
@@ -524,7 +541,7 @@ class HomeRankings(unittest.TestCase):
         self.assertIn('<section class="watch" id="watch" aria-label="Videos">\n      <div class="watch-grid">', LANDING)
         for gone in ('id="watch-title"', 'class="watch-title"', "aria-labelledby=\"watch", "watch-head", ">Watch<"):
             self.assertNotIn(gone, LANDING)
-        self.assertEqual(LANDING.count('class="watch-tile"'), 6)
+        self.assertEqual(LANDING.count('class="watch-tile"'), 8)
         self.assertIn(".watch-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));", LANDING)
         self.assertIn("@media (max-width: 639px) { .watch-grid { grid-template-columns: minmax(0, 1fr); } }", LANDING)
         # The single player's game is one of the Performance page's records.
