@@ -7740,6 +7740,25 @@ const TOMORROW_STYLE = `
   #winner .tmr-card .winner-actions { grid-template-columns: minmax(0, 1fr); justify-items: center; }
   #winner .tmr-card .winner-actions .winner-again { width: auto; }
   html.tmr-looking #winner { display: none !important; }
+  /* Operator 2026-11-26: "civ autoplay should be gold and new game grey. in
+     civ edge of tomorrow". The left panel's two buttons trade places: the
+     seat's Auto-play takes the page's gold (its \`button.primary\`), and
+     Start new game, here and at the foot of Game Setup, the page's plain
+     grey (its \`button\`). Auto-play stays gold while it runs, as Stop. */
+  html.tomorrow .spec-controls #restart-sim.primary, html.tomorrow #setup-start.primary {
+    color: #c7ccca; background: linear-gradient(180deg, #23272a, #171a1d); border-color: #42484c; box-shadow: none;
+  }
+  html.tomorrow .spec-controls #restart-sim.primary:hover, html.tomorrow #setup-start.primary:hover {
+    color: var(--text); background: linear-gradient(180deg, #2d3236, #202428); border-color: #5b6368;
+  }
+  html.tomorrow .spec-controls #restart-sim.primary .sub { color: var(--muted); }
+  html.tomorrow .autoplay-bar #autoplaybtn {
+    color: #17130c; background: linear-gradient(135deg, #d8b663, #b58435); border-color: #d8b763;
+    box-shadow: 0 7px 22px #0006, inset 0 1px #fff4; font-weight: 850;
+  }
+  html.tomorrow .autoplay-bar #autoplaybtn:hover {
+    color: #120f09; background: linear-gradient(135deg, #e2c26f, #c18f3e); border-color: #e2c370;
+  }
 `;
 
 const tomorrow = {

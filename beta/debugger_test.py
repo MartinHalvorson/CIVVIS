@@ -61,7 +61,9 @@ body { display: flex; }
 <body>
 <div id="maparea"><div id="winner"></div><div id="moments"></div><div class="minimap-frame"></div><div id="map-controls-dock"></div></div>
 <div id="side">
-  <div id="humanfooter" style="display:grid">the left panel's own auto-play</div>
+  <div class="spec-controls"><button id="restart-sim" class="primary human-start">Start new game</button></div>
+  <div id="humanfooter" style="display:grid">the left panel's own auto-play
+    <div class="autoplay-bar"><button id="autoplaybtn">Auto-play 10 turns</button></div></div>
   <select id="autoplaystrategy"><option value="jack">1211 - JackOfAllTrades</option><option value="stock">1000 - ByTheBook</option></select>
 </div>
 <script>
@@ -4182,6 +4184,16 @@ def check_edge_of_tomorrow(bar: Bar, address: str) -> None:
     assert shape["bar"]["height"] > 40 and shape["area"]["top"] == shape["bar"]["height"], shape
     assert shape["docked"] is True and shape["top"] == f"{shape['bar']['height']}px", shape
     assert shape["debug"] == "none" and shape["debugDocked"] is False and shape["footer"] == "grid", shape
+    # Operator, 2026-11-26: "civ autoplay should be gold and new game grey.
+    # in civ edge of tomorrow". The left panel's Auto-play wears the gold and
+    # its Start new game the plain grey, where the page's own rules have them
+    # the other way round.
+    paint = bar.ev("""(() => {
+      const look = id => getComputedStyle(document.getElementById(id)).backgroundImage;
+      return {autoplay: look('autoplaybtn'), fresh: look('restart-sim')};
+    })()""")
+    assert paint["autoplay"].startswith("linear-gradient(135deg, rgb(216, 182, 99)"), paint
+    assert paint["fresh"].startswith("linear-gradient(rgb(35, 39, 42)"), paint
     # The seat is the person's: nothing is asked of the engine to open the
     # game, where the AI Debugger seats its best Civ AI.
     assert bar.sent() == [], bar.sent()

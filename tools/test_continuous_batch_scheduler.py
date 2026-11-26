@@ -364,6 +364,29 @@ class MachineSharing(unittest.TestCase):
         self.assertEqual(count(ceiling=1.0, cores=18, busy=0.1, group_cores=1.8,
                                running=3, total=3), 3)
 
+    def test_background_band_work_is_not_rest_of_the_host(self):
+        count = scheduler.governed_workers
+        # 60% of 18 cores is 10.8. A host 62% busy (11.16 cores) with no games
+        # running leaves no room ...
+        self.assertEqual(count(ceiling=0.6, cores=18, busy=11.16 / 18, group_cores=0.0,
+                               running=0, total=13), 0)
+        # ... until 1.5 of those cores are media analysis in the background
+        # band, which yields to every worker: rest 9.66, room 1.14, one worker.
+        self.assertEqual(count(ceiling=0.6, cores=18, busy=11.16 / 18, group_cores=0.0,
+                               running=0, total=13, background_cores=1.5), 1)
+
+    def test_background_cores_count_only_what_the_band_burned_between_probes(self):
+        between = scheduler.background_cores_between
+        # 30 s of CPU over a 20 s window is 1.5 cores.
+        self.assertAlmostEqual(between({760: 100.0}, {760: 130.0}, 20.0), 1.5)
+        # A process that only now entered the band brings none of its past.
+        self.assertAlmostEqual(between({760: 100.0}, {760: 130.0, 85: 5000.0}, 20.0), 1.5)
+        # One that left the band (or exited) counts nothing.
+        self.assertAlmostEqual(between({760: 100.0, 85: 10.0}, {85: 12.0}, 20.0), 0.1)
+        # No reading on either side: nothing is subtracted.
+        self.assertEqual(between(None, {760: 130.0}, 20.0), 0.0)
+        self.assertEqual(between({760: 100.0}, {760: 130.0}, 0.0), 0.0)
+
     def test_process_table_names_a_row_by_the_last_part_of_its_path(self):
         rows = scheduler.parse_process_table(
             "  14687 14683  20 RN     64:33.53 /Users/a/sources/abc/target/release/gene_screen\n"
