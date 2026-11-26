@@ -2880,12 +2880,16 @@ fn player_standings_name_each_civilizations_least_happy_city() {
         game.remove_unit(settler);
     }
     let capital = game.player_city_ids(1)[0];
+    let home = game.cities[&capital].pos;
     let outpost_tile = game
-        .player_unit_ids(1)
+        .wdisk(home, 4)
         .into_iter()
-        .map(|unit| game.units[&unit].pos)
-        .find(|&pos| pos != game.cities[&capital].pos)
-        .expect("the rival fields a unit off its capital");
+        .find(|&pos| {
+            game.wdist(home, pos) == 4
+                && game.map.tiles.contains_key(&pos)
+                && !game.rules.is_water(&game.map.tiles[&pos])
+        })
+        .expect("land four tiles from the rival's capital");
     let crowded = game.found_city_for(1, outpost_tile, None);
     // Eight more citizens than the capital ask for four more amenities.
     game.cities.get_mut(&crowded).unwrap().pop = 9;
