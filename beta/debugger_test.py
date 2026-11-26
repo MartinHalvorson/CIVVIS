@@ -4411,6 +4411,22 @@ def check_edge_of_tomorrow(bar: Bar, address: str) -> None:
         tracker: at('#victoryhud').style.top, need};
     })()""")
     assert placed == {"column": "column", "top": "var(--solo-bar-top)", "beside": True, "tracker": "var(--solo-bar-top)", "need": 90}, placed
+    # The yield strip runs under the standings (operator 2026-11-26: "on
+    # civvis edge of tomorrow the top bar with science, cul yields, etc should
+    # move below the player hud"): the standings at the top, the strip under
+    # them, and the bars still under both; folded away, the strip is at the top.
+    strip = bar.ev("""(() => {
+      const rules = [...document.styleSheets].flatMap(sheet => { try { return [...sheet.cssRules]; } catch (_) { return []; } })
+        .filter(rule => rule.style);
+      const at = pick => (rules.find(rule => rule.selectorText === pick) || {style: {getPropertyValue: () => '', top: ''}}).style;
+      const area = at('html.tomorrow body.civ6-frame #maparea'), open = at('html.tomorrow body.civ6-frame.rankings-open:not(.overlay-players-hidden) #maparea');
+      return {strip: at('html.tomorrow body.civ6-frame #civtop').top, folded: area.getPropertyValue('--tmr-civtop-top').trim(),
+        bars: area.getPropertyValue('--solo-bar-top').trim(), open: open.getPropertyValue('--tmr-civtop-top').trim(),
+        hud: at('html.tomorrow body.civ6-frame.rankings-open #playerhud, html.tomorrow body.civ6-frame.rankings-open #maparea.player-hud-compact #playerhud').top};
+    })()""")
+    assert strip == {"strip": "var(--tmr-civtop-top)", "folded": "0px",
+                     "bars": "calc(var(--tmr-civtop-top) + var(--civtop-height) + var(--panel-gap))",
+                     "open": "calc(var(--panel-gap) + var(--solo-masthead))", "hud": "var(--panel-gap)"}, strip
     # What Auto-play's note says is said on the bar.
     bar.ev("document.getElementById('autoplaynote').textContent = 'Stopped · 3 turns unplayed', true")
     bar.until("document.getElementById('tmr-said').textContent === 'Stopped · 3 turns unplayed'", "the note is said on the bar")

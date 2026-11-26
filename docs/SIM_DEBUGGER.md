@@ -2078,6 +2078,16 @@ Duel.
   and takes down the banners still up or waiting, which are of the turn
   that was left.
 
+- **The yield strip under the standings.** Operator, 2026-11-26: "on civvis
+  edge of tomorrow the top bar with science, cul yields, etc should move
+  below the player hud". While the standings are open they take the top of
+  the window and Civ 6's yield strip (`#civtop`) runs across under them, at
+  `--tmr-civtop-top` (a gap and `--solo-masthead`). `--solo-bar-top` counts
+  the strip after the standings rather than before them, so the launch bar,
+  the hooks and the tracker still begin under both. Folded away, the strip
+  is at the top again. The rest of the Civilization VI screen keeps the
+  strip on top.
+
 The loops, the wake point and what was seen are this page's own count over
 the timeline every played game keeps. They are gone with the page, as save
 points are, and another game begins at loop 1.
