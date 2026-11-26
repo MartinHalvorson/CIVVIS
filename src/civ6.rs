@@ -976,10 +976,11 @@ pub fn live_pause_status() -> Value {
     status
 }
 
-/// The lane's tournament label (`{"label": "Tournament 1: 2-3"}`), written
-/// beside the other live files by the lane's tournament tracker from the same
-/// ledger count as the home page's Tournaments table (operator 2026-11-19:
-/// the Mode reads "Tournament 1: <wins>-<loses>" and matches the table).
+/// The lane's tournament label (`{"label": "Tourney 8: 17% win rate (46 games, 46% done)"}`),
+/// written beside the other live files by the lane's tournament tracker from the same
+/// ledger count as the Experiments page (operator 2026-11-19: the Mode reads the
+/// tournament's record and matches the table). The page shows "<name>: <record>" as
+/// two lines, the name on the Mode row and the record under it (operator 2026-11-26).
 fn live_mode_path() -> PathBuf {
     std::env::var_os("CIVVIS_TOURNAMENT_FILE")
         .map(PathBuf::from)
@@ -1232,6 +1233,14 @@ mod tests {
             (
                 r#"{"label": "  Tournament 12: 0-0 "}"#,
                 Some("Tournament 12: 0-0"),
+            ),
+            (
+                r#"{"label": "Tourney 8: 17% win rate (46 games, 46% done)"}"#,
+                Some("Tourney 8: 17% win rate (46 games, 46% done)"),
+            ),
+            (
+                r#"{"label": "Official Benchmark: 40% win rate (339 games)"}"#,
+                Some("Official Benchmark: 40% win rate (339 games)"),
             ),
             (r#"{"label": ""}"#, None),
             (r#"{"label": "a<b>"}"#, None),
