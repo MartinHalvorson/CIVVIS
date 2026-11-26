@@ -981,6 +981,68 @@ class SourcePreparation(unittest.TestCase):
             )
 
 
+class ProfileGuidedBuild(unittest.TestCase):
+    """The pinned gene_screen is built with a profile of its own games."""
+
+    BUILD = ["cargo", "build", "--release", "--locked", "--features", "developer-tools", "--bin", "gene_screen"]
+
+    def test_an_instrumented_build_plays_then_the_release_build_reads_the_profile(self):
+        with tempfile.TemporaryDirectory() as raw:
+            source = Path(raw)
+            calls = []
+
+            def run(command, **kwargs):
+                calls.append((list(command), kwargs.get("env") or {}, kwargs.get("description")))
+                return SimpleNamespace(stdout="")
+
+            with mock.patch.object(scheduler, "run_checked", side_effect=run):
+                built = scheduler.build_gene_screen(source, 3, profdata=Path("/tools/llvm-profdata"))
+            self.assertEqual(built, "pgo")
+            work = source / "target" / "pgo"
+            self.assertEqual([description for _, _, description in calls], [
+                "build instrumented gene_screen", "play gene_screen's training games",
+                "merge gene_screen's profile", "build pinned gene_screen"])
+            self.assertEqual(calls[0][0], [*self.BUILD, "--jobs", "3"])
+            self.assertEqual(calls[0][1], {"RUSTFLAGS": f"-Cprofile-generate={work / 'raw'}",
+                                           "CARGO_TARGET_DIR": str(work / "instrumented")})
+            self.assertEqual(calls[1][0][0], str(work / "instrumented" / "release" / "gene_screen"))
+            self.assertIn("--quiet", calls[1][0])
+            self.assertEqual(calls[2][0], ["/tools/llvm-profdata", "merge", "-o", str(work / "merged.profdata"),
+                                           str(work / "raw")])
+            # The binary the batch pins is the ordinary path, built from the profile.
+            self.assertEqual(calls[3][0], [*self.BUILD, "--jobs", "3"])
+            self.assertEqual(calls[3][1], {"RUSTFLAGS": f"-Cprofile-use={work / 'merged.profdata'}"})
+
+    def test_a_failed_step_falls_back_to_the_plain_build(self):
+        with tempfile.TemporaryDirectory() as raw:
+            calls = []
+
+            def run(command, **kwargs):
+                calls.append((list(command), kwargs.get("env"), kwargs.get("description")))
+                if kwargs.get("description") == "play gene_screen's training games":
+                    raise scheduler.SchedulerError("the training game crashed")
+                return SimpleNamespace(stdout="")
+
+            with mock.patch.object(scheduler, "run_checked", side_effect=run), \
+                    mock.patch("builtins.print"):
+                built = scheduler.build_gene_screen(Path(raw), None, profdata=Path("/tools/llvm-profdata"))
+            self.assertEqual(built, "plain")
+            self.assertEqual(calls[-1], (self.BUILD, None, "build pinned gene_screen"))
+
+    def test_without_the_tool_it_is_the_plain_build(self):
+        with tempfile.TemporaryDirectory() as raw:
+            calls = []
+
+            def run(command, **kwargs):
+                calls.append((list(command), kwargs.get("env")))
+                return SimpleNamespace(stdout="")
+
+            with mock.patch.object(scheduler, "run_checked", side_effect=run), \
+                    mock.patch.object(scheduler, "llvm_profdata", return_value=None):
+                built = scheduler.build_gene_screen(Path(raw), 2)
+            self.assertEqual((built, calls), ("plain", [([*self.BUILD, "--jobs", "2"], None)]))
+
+
 class ValidatedRows(unittest.TestCase):
     def test_scheduler_counts_one_game_from_six_seat_rows(self):
         with tempfile.TemporaryDirectory() as temporary:
