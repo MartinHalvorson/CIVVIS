@@ -328,16 +328,21 @@
   h1 .brand-suffix {
     font-size: .58em; letter-spacing: .025em; text-transform: lowercase;
   }
+  /* The globe and the title a size smaller, the tagline brighter and a
+     touch larger (operator, 2026-11-26: "civvis.ai title and globe a bit
+     smaller. subtitle a bit bigger, or at least more readable"): no extra
+     tracking and a lighter weight let the fitter set it larger in the same
+     lane, and both lines are nearer white. */
   .tagline {
-    margin-top: 9px; color: #dde6e2; font-size: var(--type-body);
-    font-weight: 650; letter-spacing: .015em; line-height: 1.36;
+    margin-top: 9px; color: #f0f2ee; font-size: var(--type-body);
+    font-weight: 600; letter-spacing: 0; line-height: 1.36;
   }
   /* The lockup is always the same two lines: the simulator's name, then its
      purpose. Each phrase owns exactly one line at every band — never joined
      into a sentence, never folded mid-phrase — so the spans are unbreakable
      and the text fitter shrinks the type into the lane instead of wrapping. */
   .tagline span { display: block; white-space: nowrap; }
-  .tagline span + span { color: #bccac4; }
+  .tagline span + span { color: #d6ddd9; }
   /* The site's pages from the top down: Home, Charts, Tournaments, CIVVIS
      and AI Debugger, and under them the game all five are built on. The block below is how they stand
      when there is no room beside the lockup, or no way to ask whether they
@@ -487,7 +492,7 @@
      all of it. */
   @container (min-width: 233px) {
     #side .brand:has(> .head-links:not([hidden])) {
-      --site-rail: 92px; --site-mark: clamp(64px, 34cqw, 112px);
+      --site-rail: 92px; --site-mark: clamp(56px, 29cqw, 96px);
       display: grid; grid-template-columns: var(--site-rail) minmax(0, 1fr);
       grid-template-rows: 1fr auto auto 1fr auto;
       align-items: center; gap: 6px 7px;
@@ -499,7 +504,7 @@
     #side .brand:has(> .head-links:not([hidden])) .brand-mark svg { width: 91%; height: 91%; }
     #side .brand:has(> .head-links:not([hidden])) h1 {
       grid-column: 2; grid-row: 3; justify-self: center; text-align: center;
-      font-size: clamp(15px, calc((100cqw - var(--site-rail) - 7px) / 4.85), 36px);
+      font-size: clamp(14px, calc((100cqw - var(--site-rail) - 7px) / 5.6), 31px);
     }
     #side .brand:has(> .head-links:not([hidden])) .tagline {
       grid-column: 1 / -1; grid-row: 5; margin-top: 0; text-align: center;
@@ -5390,8 +5395,8 @@
   #brand-land stop:nth-child(1) { stop-color: #e0c274; }
   #brand-land stop:nth-child(2) { stop-color: #bf9644; }
   #brand-land stop:nth-child(3) { stop-color: #76581f; }
-  .tagline { color: #e1e3df; }
-  .tagline span + span { color: #b8bdb9; }
+  .tagline { color: #f0f2ee; }
+  .tagline span + span { color: #d6ddd9; }
 
   .side-scroll {
     scrollbar-color: #3d4346 transparent;
