@@ -538,6 +538,69 @@ if __name__ == "__main__":
     unittest.main()
 
 
+@unittest.skipUnless(NODE, "no node on this host; CI runners have one")
+class EachColumnFromEloRightMarksItsLeader(unittest.TestCase):
+    """The highest value of each standings column stands out.
+
+    Operator 2026-11-26: "for each from elo right or so in player hud, lets
+    highlight the highest value in the col. to give a quick sense of the rough
+    eladers in each col nonzero ties can all highlight. zero ties can have no
+    highlight." The figures from Elo to Win odds now join the stat columns,
+    which always carried `.category-leader` but never showed it: the HUD's
+    bare-cell rule wiped its wash.
+    """
+
+    def setUp(self):
+        self.palette = (ASSETS / "app_palette.js").read_text(encoding="utf-8")
+        self.app = (ASSETS / "app.js").read_text(encoding="utf-8")
+        self.page = INDEX.read_text(encoding="utf-8")
+
+    def test_a_column_s_highest_ties_included_and_none_at_zero(self):
+        start = self.palette.index("const PLAYER_HUD_LEADER_FACTS =")
+        code = self.palette[start:self.palette.index("\n}\n", start) + 3]
+        rows = [
+            {"elo": 1200, "elo_delta": 0, "win_delta": -3, "win": None, "nukes": 0, "score": 300},
+            {"elo": 1374, "elo_delta": 0, "win_delta": -8, "win": None, "nukes": 2, "score": 500},
+            {"elo": 1374, "elo_delta": 0, "win_delta": None, "win": None, "nukes": 0, "score": 420},
+        ]
+        done = subprocess.run(
+            [NODE, "-e", code + f"const rows = {json.dumps(rows)};\n"
+             "console.log(JSON.stringify(Object.fromEntries(playerHudColumnHighs(rows, row => Object.entries(row)))));"],
+            capture_output=True, text=True, timeout=60)
+        self.assertEqual(done.returncode, 0, done.stderr[-2000:])
+        # Two seats tied on top both lead; a column all at nought, or with no
+        # value in it, leads with nobody; the highest of a column below zero
+        # is still its highest.
+        self.assertEqual(json.loads(done.stdout), {"elo": 1374, "win_delta": -3, "nukes": 2, "score": 500})
+
+    def test_the_figures_from_elo_to_win_odds_take_part(self):
+        keys = re.findall(r'\{key:"(\w+)"', self.app[self.app.index("const PLAYER_HUD_COLUMNS = ["):
+                                                     self.app.index("const PLAYER_HUD_COLUMN_BY_KEY")])
+        facts = re.search(r"const PLAYER_HUD_LEADER_FACTS = \[([^\]]*)\];", self.palette).group(1)
+        self.assertEqual(re.findall(r'"(\w+)"', facts), keys[keys.index("elo"):keys.index("win") + 1])
+        # Each column's highest is worked out once a paint, over the stat
+        # columns and those figures together, and a cell is marked when its
+        # value is its column's highest.
+        self.assertIn("const highestByStat = playerHudColumnHighs(scoreRankedMajors, p => [", self.app)
+        self.assertIn("...PLAYER_HUD_LEADER_FACTS.map(key => [key, playerHudSortValue(p, key, statsByPlayer.get(p.id), rankById)])]);", self.app)
+        self.assertIn('const leads = key => playerHudSortValue(p, key, stats, rankById) === highestByStat.get(key) ? " category-leader" : "";', self.app)
+        for key in re.findall(r'"(\w+)"', facts):
+            self.assertIn(f'`<button class="diplomacy-identity${{leads("{key}")}}" data-hud-col="{key}" ${{dossierAttrs}}>`', self.app)
+        self.assertIn('class="ribbon-stat ${kind}${isLeader ? " category-leader" : ""}"', self.app)
+
+    def test_a_leader_is_a_dark_tile_the_bare_cell_rule_does_not_wipe(self):
+        rule = ("  #playerhud .ribbon-stat.category-leader,\n"
+                "  #playerhud .diplomacy-identity.category-leader .diplomacy-identity-field {\n"
+                "    border-radius: 4px; background: #000000a6;\n"
+                "    box-shadow: inset 0 0 0 1.5px var(--stat-color, currentColor);\n"
+                "  }\n")
+        self.assertIn(rule, self.page)
+        # It comes after the rule that strips the HUD's cells bare, and after
+        # their hover, at the same weight, so it is the one that holds.
+        self.assertLess(self.page.index("  #playerhud .ribbon-stat {\n"), self.page.index(rule))
+        self.assertLess(self.page.index("  #playerhud .ribbon-stat:hover,"), self.page.index(rule))
+
+
 class TheDedicatedDisplayShowsTheHud(unittest.TestCase):
     """The window the keeper opens beside a live game exists to show the player
     HUD. Its Chrome profile keeps this page's localStorage across launches, so

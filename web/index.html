@@ -4680,6 +4680,18 @@
   #playerhud .ribbon-stat:focus-visible {
     outline: 1px solid var(--gold-bright); outline-offset: -1px;
   }
+  /* The highest figure of each column from Elo rightward (operator
+     2026-11-26: "lets highlight the highest value in the col. to give a
+     quick sense of the rough eladers in each col"; drawPlayerHud() marks
+     it, ties included, none where the highest is zero): a dark tile ringed
+     in the column's own colour. It reads on every civilization's wash, and
+     it only darkens the ground under the figure. The bare cell above used
+     to wipe out the quiet `.category-leader` wash here, so no leader showed. */
+  #playerhud .ribbon-stat.category-leader,
+  #playerhud .diplomacy-identity.category-leader .diplomacy-identity-field {
+    border-radius: 4px; background: #000000a6;
+    box-shadow: inset 0 0 0 1.5px var(--stat-color, currentColor);
+  }
   /* A truncated name still reads; a truncated number lies. The identity column
      is allowed to ellipsize and gives up width first, so every Elo score stays whole
      down to a narrow desktop. */
