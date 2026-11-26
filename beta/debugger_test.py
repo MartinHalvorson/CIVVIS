@@ -62,9 +62,16 @@ body { display: flex; }
 <div id="maparea"><div id="winner"></div><div id="moments"></div><div class="minimap-frame"></div><div id="map-controls-dock"></div></div>
 <div id="side">
   <div class="spec-controls"><button id="restart-sim" class="primary human-start">Start new game</button></div>
-  <div id="humanfooter" style="display:grid">the left panel's own auto-play
-    <div class="autoplay-bar"><button id="autoplaybtn">Auto-play 10 turns</button></div></div>
-  <select id="autoplaystrategy"><option value="jack">1211 - JackOfAllTrades</option><option value="stock">1000 - ByTheBook</option></select>
+  <div id="humanfooter" style="display:grid">
+    <div class="autoplay-bar" id="autoplaybar">
+      <div class="autoplay-fields">
+        <label class="autoplay-field"><span>Civ AI</span><select id="autoplaystrategy"><option value="jack">1211 - JackOfAllTrades</option><option value="stock">1000 - ByTheBook</option></select></label>
+        <label class="autoplay-field"><span>Turns</span><select id="autoplayturns"><option value="10" selected>10</option><option value="all">All</option></select></label>
+      </div>
+      <button id="autoplaybtn">Auto-play 10 turns</button>
+      <div class="autoplay-note" id="autoplaynote"></div>
+    </div>
+  </div>
 </div>
 <script>
 "use strict";
@@ -98,6 +105,11 @@ function gameFinished(st = state) { return !!(st && st.finished); }
 function reportedTurn(st) { return (st || state).turn; }
 function victoryVerdict(type) { return titleCase(type || "score") + " victory"; }
 function reignSummary() { return ""; }
+// The Civilization VI screen's Rankings: whether the standings and the
+// victory tracker are open, and whether a played game's kept choice of it
+// has been read.
+let rankingsReportOpen = false, soloRankingsSettled = false;
+function toggleRankingsReport(open) { rankingsReportOpen = open === undefined ? !rankingsReportOpen : !!open; }
 function drawTurnLoop() {}
 // What the viewer's banners compare each turn with (`app_moments.js`), the
 // banners waiting to be shown, and how many are up (in `#moments`).
@@ -4300,23 +4312,66 @@ def check_edge_of_tomorrow(bar: Bar, address: str) -> None:
     bar.ev("engine.limit = 40, engine.raids = [4], render(engineState()), true")
     bar.until("document.getElementById('tomorrowbar') && !document.getElementById('tomorrowbar').hidden",
               "the bar of Edge of Tomorrow is there")
-    # The bar stands where the debugger's does, across the top from where the
-    # map area begins, with the map area beneath it. The debugger's own bar
-    # is out of sight and holds no room, and the seat's Auto-play, which that
-    # bar takes over in the AI Debugger, stays in the left panel.
+    # Operator, 2026-11-26: "lets move the civvis: edge of tomorrow top bar
+    # to the bottom of the screen". The bar stands across the foot of the
+    # window from where the map area begins, with the map area ending above
+    # it. The debugger's own bar is out of sight and holds no room.
     shape = bar.ev("""(() => {
       const box = id => { const r = document.getElementById(id).getBoundingClientRect();
-        return {left: Math.round(r.left), top: Math.round(r.top), right: Math.round(r.right), height: Math.round(r.height)}; };
+        return {left: Math.round(r.left), top: Math.round(r.top), right: Math.round(r.right), bottom: Math.round(r.bottom), height: Math.round(r.height)}; };
       const root = document.documentElement, debug = document.getElementById('debugbar');
-      return {bar: box('tomorrowbar'), area: box('maparea'), wide: innerWidth, docked: root.classList.contains('tmr-docked'),
-        top: getComputedStyle(root).getPropertyValue('--tmr-top').trim(),
-        debug: debug ? getComputedStyle(debug).display : 'none', debugDocked: root.classList.contains('dbg-docked'),
-        footer: getComputedStyle(document.getElementById('humanfooter')).display};
+      return {bar: box('tomorrowbar'), area: box('maparea'), wide: innerWidth, tall: innerHeight, docked: root.classList.contains('tmr-docked'),
+        foot: getComputedStyle(root).getPropertyValue('--tmr-bottom').trim(),
+        debug: debug ? getComputedStyle(debug).display : 'none', debugDocked: root.classList.contains('dbg-docked')};
     })()""")
-    assert shape["bar"]["left"] == 200 and shape["bar"]["top"] == 0 and shape["bar"]["right"] == shape["wide"], shape
-    assert shape["bar"]["height"] > 40 and shape["area"]["top"] == shape["bar"]["height"], shape
-    assert shape["docked"] is True and shape["top"] == f"{shape['bar']['height']}px", shape
-    assert shape["debug"] == "none" and shape["debugDocked"] is False and shape["footer"] == "grid", shape
+    assert shape["bar"]["left"] == 200 and shape["bar"]["bottom"] == shape["tall"] and shape["bar"]["right"] == shape["wide"], shape
+    assert shape["bar"]["height"] > 40 and shape["area"]["top"] == 0 and shape["area"]["bottom"] == shape["bar"]["top"], shape
+    assert shape["docked"] is True and shape["foot"] == f"{shape['bar']['height']}px", shape
+    assert shape["debug"] == "none" and shape["debugDocked"] is False, shape
+    # Operator, 2026-11-26: "on the right, the biuttons shold be: (top row):
+    # turns, civ ai (bottom row): jump back, auto-play N turns, wake here. new
+    # game remains in the left panel." The left panel's Auto-play is in the
+    # bar, its pickers over the buttons, and its place in the left panel is
+    # gone; Start new game stays there.
+    acts = bar.ev("""(() => {
+      const box = el => { const r = el.getBoundingClientRect(); return {left: Math.round(r.left), right: Math.round(r.right), top: Math.round(r.top), bottom: Math.round(r.bottom)}; };
+      const field = id => box(document.getElementById(id).closest('label'));
+      const button = id => box(document.getElementById(id));
+      const inBar = id => !!document.getElementById(id).closest('#tomorrowbar .tmr-acts');
+      return {turns: field('autoplayturns'), ai: field('autoplaystrategy'),
+        jump: button('tmr-jump'), autoplay: button('autoplaybtn'), wake: button('tmr-wake'),
+        inBar: ['autoplayturns', 'autoplaystrategy', 'autoplaybtn', 'autoplaynote'].every(inBar),
+        footer: getComputedStyle(document.getElementById('humanfooter')).display,
+        fresh: !!document.getElementById('restart-sim').closest('#side')};
+    })()""")
+    assert acts["inBar"] is True and acts["footer"] == "none" and acts["fresh"] is True, acts
+    top, low = (acts["turns"], acts["ai"]), (acts["jump"], acts["autoplay"], acts["wake"])
+    assert max(box["bottom"] for box in top) <= min(box["top"] for box in low), acts
+    assert acts["turns"]["right"] <= acts["ai"]["left"], acts
+    assert acts["jump"]["right"] <= acts["autoplay"]["left"] and acts["autoplay"]["right"] <= acts["wake"]["left"], acts
+    assert acts["turns"]["left"] == acts["jump"]["left"] and acts["ai"]["right"] == acts["wake"]["right"], acts
+    # What Auto-play's note says is said on the bar.
+    bar.ev("document.getElementById('autoplaynote').textContent = 'Stopped · 3 turns unplayed', true")
+    bar.until("document.getElementById('tmr-said').textContent === 'Stopped · 3 turns unplayed'", "the note is said on the bar")
+    bar.ev("document.getElementById('autoplaynote').textContent = '', tomorrowSay(''), tomorrowDraw(false), true")
+    # Operator, 2026-11-26: "civvis: edge of tomortrow should not have the
+    # world minimap or <...(spin)x thing showing", and "we should also have
+    # the victory tracker and player hud showing for this. and the governors
+    # / tech / policy screen". The minimap and the map's controls are put
+    # away; the Rankings (the standings and the victory tracker) were opened
+    # before the first state was drawn, with the kept choice left unread; and
+    # the seat's research box is asked for, without the live mirror's Pause
+    # and New game.
+    shown = bar.ev("""(() => {
+      const hidden = [...document.styleSheets].flatMap(sheet => { try { return [...sheet.cssRules]; } catch (_) { return []; } })
+        .filter(rule => rule.style && rule.style.display === 'none' && rule.style.getPropertyPriority('display') === 'important')
+        .flatMap(rule => rule.selectorText.split(',').map(part => part.trim()));
+      return {map: ['.minimap-frame', '#map-controls-dock'].map(pick => getComputedStyle(document.querySelector(pick)).display),
+        ranked: [rankingsReportOpen, soloRankingsSettled], tracker: window.civvisSeatTracker,
+        live: ['.livepause-buttons', '#livepause-note'].filter(part => hidden.includes('html.tomorrow ' + part))};
+    })()""")
+    assert shown == {"map": ["none", "none"], "ranked": [True, True], "tracker": True,
+                     "live": [".livepause-buttons", "#livepause-note"]}, shown
     # Operator, 2026-11-26: "civ autoplay should be gold and new game grey.
     # in civ edge of tomorrow". The left panel's Auto-play wears the gold and
     # its Start new game the plain grey, where the page's own rules have them
@@ -4521,7 +4576,7 @@ def check_edge_of_tomorrow(bar: Bar, address: str) -> None:
     assert bar.sent() == [{"op": "jump", "turn": 1}], bar.sent()
 
     # With little room the line goes under the name and the buttons, nothing
-    # is cut off, and the map area is still beneath the whole bar.
+    # is cut off, and the map area still ends above the whole bar.
     bar.dev.call("Emulation.setDeviceMetricsOverride", {"width": 760, "height": 800, "deviceScaleFactor": 1, "mobile": False})
     bar.until("innerWidth === 760", "the window is narrow")
     bar.ev("window.dispatchEvent(new Event('resize')), true")
@@ -4530,10 +4585,11 @@ def check_edge_of_tomorrow(bar: Bar, address: str) -> None:
       return {name: top('#tomorrowbar .tmr-name'), acts: top('#tomorrowbar .tmr-acts'), track: top('#tomorrowbar .tmr-track'),
         fits: box.scrollWidth <= box.clientWidth, right: Math.round(rect.right), wide: innerWidth,
         jump: Math.round(document.getElementById('tmr-wake').getBoundingClientRect().right),
-        area: Math.round(document.getElementById('maparea').getBoundingClientRect().top), height: Math.round(rect.height)}; })()""")
+        area: Math.round(document.getElementById('maparea').getBoundingClientRect().bottom), top: Math.round(rect.top),
+        bottom: Math.round(rect.bottom), tall: innerHeight}; })()""")
     assert narrow["track"] > narrow["name"] and narrow["track"] > narrow["acts"], narrow
     assert narrow["fits"] is True and narrow["jump"] <= narrow["right"] == narrow["wide"], narrow
-    assert narrow["area"] == narrow["height"], narrow
+    assert narrow["area"] == narrow["top"] and narrow["bottom"] == narrow["tall"], narrow
     bar.dev.call("Emulation.clearDeviceMetricsOverride")
     bar.until("innerWidth > 760", "the window is wide again")
     bar.ev("window.dispatchEvent(new Event('resize')), true")
@@ -4708,8 +4764,11 @@ def main() -> int:
               "pressed while time runs it stops time, branches from that turn as many as there is room for, says "
               "how many did not fit, and runs time on again.")
         check_edge_of_tomorrow(bar, f"http://127.0.0.1:{port}/")
-        print("Edge of Tomorrow is the played game on the Civilization VI screen with a bar of its own where the "
-              "debugger's stands and the seat left to the person; Jump back asks the engine for the turn woken on "
+        print("Edge of Tomorrow is the played game on the Civilization VI screen with a bar of its own across the "
+              "foot of the window, the map area ending above it, the left panel's Auto-play in it (Turns and Civ AI "
+              "over Jump back, Auto-play and Wake here) and Start new game left in the left panel, no minimap or map "
+              "controls, the standings, victory tracker and research box asked for, and the seat's only decisions "
+              "Auto-play's; Jump back asks the engine for the turn woken on "
               "and begins the next loop, with where each loop ended and what it saw done to the seat kept on the "
               "line; Wake here keeps the open turn as the engine's save point and a jump goes there, and moves "
               "back to the first turn when asked on it; a lost game, the seat fallen or somebody else the winner, "
