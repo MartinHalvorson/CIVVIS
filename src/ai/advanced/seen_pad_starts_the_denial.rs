@@ -13,21 +13,22 @@
 //! which starts at t179.)
 //!
 //! What came late was the first Disrupt Rocketry against the rival that won.
-//! The host offers the operation only against a completed Spaceport, and from
-//! the turn we first saw the winner's completed Spaceport to our first Disrupt
-//! Rocketry against it took 9 turns (Kongo, 065313Z), 22 (Macedon, 094034Z),
-//! 9 (Germany, 095636Z), 18 (Russia, 122122Z), 5 (Canada, 152046Z) and 1
-//! (Scotland, 092547Z). Macedon's first pad was pillaged on the turn it
+//! The host offers the operation only against a completed Spaceport, and the
+//! board files a foreign district only under a city we know. From the turn the
+//! winner's completed pad and its city were both known to our first Disrupt
+//! Rocketry against it took 9 turns (Kongo, 065313Z), 1 (Scotland, 092547Z),
+//! 6 (Macedon, 094034Z), 8 (Germany, 095636Z), 18 (Russia, 122122Z) and 5
+//! (Canada, 152046Z). Macedon's first pad was pillaged on the turn it
 //! launched the Exoplanet Expedition (t168), Germany's two turns after
 //! (t156); nothing at a pad stops a launched expedition. Meanwhile, between
 //! the winner's Earth Satellite and its expedition, 319 of 496 Spy-turns (64%)
 //! were spent outside the winner's cities: 191 with another racer within a
 //! project of the lead (which did not win), 88 with racers further back, 40 at
 //! home. In Macedon's game two Spies stood in Cahokia and Alexandria Troas,
-//! cities with no Spaceport, stealing Eurekas six times from t133 to t158
-//! while Pella's pad stood from t142; in Germany's, a Spy ran Listening Posts
-//! in Ulm from t124 to t146 while Dortmund's pad stood from t143. The pad
-//! search (`racer-spies-search-for-the-pad`) and the green Spy's disruption
+//! cities with no Spaceport, stealing Eurekas six times from t133 to t158; in
+//! Germany's, a Spy ran Listening Posts and a steal in Ulm from t124 to t146
+//! while Dortmund's pad stood from t144. The pad search
+//! (`racer-spies-search-for-the-pad`) and the green Spy's disruption
 //! (`disrupt-before-the-sources`) wait for the racer's first project, and the
 //! cover (`denial-spies-cover-every-racer`) gives every racer within a project
 //! one Spy before any gets a second.
