@@ -692,6 +692,10 @@ impl AdvancedAi {
         /// lane leaves the Expansion half at its core of cities; see
         /// `advanced/science_core_ends_expansion.rs`.
         science_core_ends_expansion => enable_science_core_ends_expansion, disable_science_core_ends_expansion;
+        /// Opt-in gene `seen-pad-starts-the-denial`: a racer's seen Spaceport
+        /// takes a Spy that disrupts it before the first launch; see
+        /// `advanced/seen_pad_starts_the_denial.rs`.
+        seen_pad_starts_the_denial => enable_seen_pad_starts_the_denial, disable_seen_pad_starts_the_denial;
         /// Opt-in gene `spreaders-spread-before-they-chart`; see
         /// `advanced/spreaders_spread_before_they_chart.rs`.
         spreaders_spread_before_they_chart => enable_spreaders_spread_before_they_chart, disable_spreaders_spread_before_they_chart;

@@ -3383,6 +3383,22 @@ impl AdvancedAi {
         // answers `racer_spy_leader`. See
         // `advanced/denial_spies_cover_every_racer.rs`.
         let racer_cover = self.racer_cover_co_leaders(g, &racer_spy_racers);
+        // `seen-pad-starts-the-denial`: the racers whose seen, standing
+        // Spaceports take a Spy, best first, less the pad cities where the
+        // host refused us the disruption with the pad standing. Empty with the
+        // gene off. See `advanced/seen_pad_starts_the_denial.rs`.
+        let mut seen_pad_racers = self.seen_pad_racers(g, pid);
+        if !seen_pad_racers.is_empty() {
+            let mut seen_pads: BTreeSet<u32> = seen_pad_racers
+                .iter()
+                .flat_map(|entry| entry.pads.iter().copied())
+                .collect();
+            self.every_pad_drop_refused(g, pid, &mut seen_pads);
+            for entry in &mut seen_pad_racers {
+                entry.pads.retain(|cid| seen_pads.contains(cid));
+            }
+            seen_pad_racers.retain(|entry| !entry.pads.is_empty());
+        }
         let racer_spy_stays: BTreeSet<usize> = if racer_spy_racers.is_empty() {
             BTreeSet::new()
         } else {
@@ -3447,6 +3463,9 @@ impl AdvancedAi {
             // `racer-keeps-the-spies`: …unless it stands in a racer's city
             // that is no longer the leader's, running only a Listening Post
             // or Gain Sources. Never taken with the gene off.
+            // `seen-pad-starts-the-denial`: …nor one running only a Listening
+            // Post or Gain Sources that a racer's seen pad can take. Never
+            // taken with the gene off.
             if self.spy_mission_patience
                 && self.spy_orders_until.contains_key(&spy_id)
                 && !Self::racer_spy_moves_on(
@@ -3455,6 +3474,13 @@ impl AdvancedAi {
                     racer_spy_leader,
                     &racer_spy_racers,
                     self.racer_spy_search(),
+                )
+                && !Self::seen_pad_releases(
+                    g,
+                    pid,
+                    spy_id,
+                    &seen_pad_racers,
+                    &culture_heist_targets,
                 )
             {
                 continue;
@@ -3570,6 +3596,35 @@ impl AdvancedAi {
                     self.spy_orders_until.insert(
                         spy_id,
                         g.turn + g.standard_duration(SPY_MISSION_ORDER_PATIENCE),
+                    );
+                    continue;
+                }
+            }
+            // `seen-pad-starts-the-denial`: a Spy outside every racer's seen
+            // pad cities goes to the best-ranked racer's free one, ahead of
+            // every other post. Never taken with the gene off.
+            if let Some((pad_city, racer)) = Self::seen_pad_post(
+                g,
+                pid,
+                spy_id,
+                current_city,
+                &seen_pad_racers,
+                &culture_heist_targets,
+                &legal,
+            ) {
+                if let Some(action) = legal.iter().find(
+                    |action| matches!(action, Action::AssignSpy { city, .. } if *city == pad_city),
+                ) {
+                    if g.apply(pid, action).is_ok() {
+                        *g.players[pid]
+                            .counters
+                            .entry("seen_pad_posts".to_string())
+                            .or_insert(0) += 1;
+                        self.seen_pad_note(g, pad_city, racer, false);
+                    }
+                    self.spy_orders_until.insert(
+                        spy_id,
+                        g.turn + g.standard_duration(SPY_TRAVEL_ORDER_PATIENCE),
                     );
                     continue;
                 }
@@ -3822,6 +3877,33 @@ impl AdvancedAi {
                             .entry("sources_before_disrupt".to_string())
                             .or_insert(0) += 1;
                         self.journal_sources_before_the_disrupt(g, spy_id);
+                    }
+                    self.spy_orders_until.insert(
+                        spy_id,
+                        g.turn + g.standard_duration(SPY_MISSION_ORDER_PATIENCE),
+                    );
+                    continue;
+                }
+                // `seen-pad-starts-the-denial`: in a racer's seen pad city,
+                // Disrupt Rocketry before the training step and the steal, from
+                // the first seen pad on. `None` with the gene off.
+                let seen_pad_disrupt = if self.disrupt_held_for_the_match_point(g, spy_id) {
+                    None
+                } else {
+                    Self::seen_pad_disrupt(g, pid, spy_id, &seen_pad_racers)
+                };
+                if let Some(action) = seen_pad_disrupt {
+                    if g.apply(pid, &action).is_ok() {
+                        *g.players[pid]
+                            .counters
+                            .entry("seen_pad_disrupts".to_string())
+                            .or_insert(0) += 1;
+                        if let Some((cid, racer)) = current_city.and_then(|cid| {
+                            Self::seen_pad_racer_at(&seen_pad_racers, Some(cid))
+                                .map(|racer| (cid, racer))
+                        }) {
+                            self.seen_pad_note(g, cid, racer, true);
+                        }
                     }
                     self.spy_orders_until.insert(
                         spy_id,
