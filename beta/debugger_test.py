@@ -4288,6 +4288,87 @@ def check_doctor_strange_all(bar: Bar, address: str) -> None:
         bar.ev("localStorage.removeItem('civvis-toy-strategies'), true")
 
 
+def check_doctor_strange_next_best(bar: Bar, address: str) -> None:
+    """Doctor Strange's CIVVIS has Branch Next Best and Branch 5 Next Best over Branch.
+
+    Operator, 2026-11-26: "in doctor strange's civvis, above the branch
+    button, Branch Next Best and "Branch 5 Next Best" on the right".
+
+    The toy's roster is made fourteen long: Jack, Stock, then s3 to s14, so
+    that the twelve worlds run out before the strategies do.
+    """
+    more = [[f"s{rank}", 1000 - 10 * (rank - 2)] for rank in range(3, 15)]
+    ready = "typeof drawDebugBar === 'function' && typeof engineState === 'function'"
+    one, five = '#strange-hud [data-strange="next1"]', '#strange-hud [data-strange="next5"]'
+    said = "document.querySelector('#strange-hud [data-strange=\"say\"]').textContent"
+    seats = "strange.order.map(letter => debugSplit.panes[letter].strategy)"
+    settled = lambda count: (f"strange.order.length === {count} && strangeIdle() && "
+                             "strange.order.every(letter => debugSplit.panes[letter].turn === debugSplit.panes.a.turn)")
+    def press(pick: str) -> None:
+        """Pressed in the tick it is found pressable: the deck is drawn often, and a press waits as a hand would."""
+        found = bar.ev(f"(async () => {{ const held = document.querySelector({json.dumps(pick)});"
+                       " for (let n = 0; n < 200 && held.disabled; n++) await new Promise(done => setTimeout(done, 50));"
+                       " if (held.disabled) return 'disabled'; held.click(); return 'ok'; })()")
+        assert found == "ok", f"{pick}: {found}"
+    bar.ev(f"localStorage.setItem('civvis-toy-strategies', {json.dumps(json.dumps(more))}), true")
+    try:
+        bar.dev.call("Page.navigate", {"url": f"{address}?mode=strange"})
+        bar.until(f"{ready} && location.search === '?mode=strange' && state === null", "Doctor Strange's CIVVIS, with fourteen strategies")
+        bar.ev("engine.scores = {1: 0}, strange.futures = false, render(engineState()), true")
+        bar.settled()
+        bar.until("debugSplit && debugSplit.shown && debugSplit.panes.a.turn === 1 && debugSplit.panes.b.turn === 1 && strangeIdle()",
+                  "its two worlds are there")
+        assert bar.ev(f"[{seats}, strange.follow]") == [["stock", "jack"], "a"]
+        # The two stand side by side in the deck, over Branch and under the
+        # base timeline: Branch Next Best on the left, Branch 5 Next Best on
+        # the right, the pair as wide as Branch.
+        place = bar.ev(f"""(() => {{
+          const box = pick => document.querySelector(pick).getBoundingClientRect();
+          const a = box('{one}'), b = box('{five}'), branch = box('#strange-hud [data-strange="branch"]');
+          const base = box('#strange-hud .strange-base');
+          return [document.querySelector('{one}').textContent, document.querySelector('{five}').textContent,
+            Math.round(a.top) === Math.round(b.top), Math.round(a.left) === Math.round(branch.left), Math.round(b.right) === Math.round(branch.right),
+            a.right < b.left, a.bottom <= branch.top, base.bottom <= a.top,
+            document.querySelector('{one}').disabled, document.querySelector('{five}').disabled];
+        }})()""")
+        assert place == ["Branch Next Best", "Branch 5 Next Best", True, True, True, True, True, True, False, False], place
+        # A seats Stock, the base, and B seats Jack, still the same world on
+        # turn 1: the next best are s3 down, and the titles name them.
+        assert bar.ev("strangeNextNames()") == [name for name, _ in more]
+        assert bar.ev(f"document.querySelector('{one}').title").endswith("best player strategy without a world of its own there, a world in a box of its own: 1-s3")
+        assert bar.ev(f"document.querySelector('{five}').title").endswith("5 best player strategies without a world of their own there, each a world in a box of its own: 1-s3, 1-s4, 1-s5, 1-s6, 1-s7")
+        # Branch Next Best: one world, s3's, beside the base, and time is left
+        # as it was.
+        press(one)
+        bar.until(settled(3), "Branch Next Best made its world", seconds=60)
+        assert bar.ev("strange.order.join('')") == "acb"
+        assert bar.ev(seats) == ["stock", "s3", "jack"]
+        assert bar.ev("strange.run") is None and bar.ev("debugSplit.running") == 0
+        assert bar.ev(said) == "Branch 1-s3 is world C, from A: the best player strategy without a world there", bar.ev(said)
+        # Branch 5 Next Best: the next five down the ranking, best first, each
+        # a world of its own after the base.
+        assert bar.ev("strangeNextNames()") == [name for name, _ in more[1:]]
+        press(five)
+        bar.until(settled(8), "Branch 5 Next Best made five worlds", seconds=60)
+        assert bar.ev("strange.order.join('')") == "adefghcb"
+        assert bar.ev(seats) == ["stock", "s4", "s5", "s6", "s7", "s8", "s3", "jack"]
+        assert bar.ev(said) == "Branch 5 Next Best: D 1-s4, E 1-s5, F 1-s6, G 1-s7, H 1-s8, from A", bar.ev(said)
+        bar.until("strange.order.slice(1, 6).every(letter => debugSplit.panes[letter].frame.contentWindow.eval('engine.seat') === debugSplit.panes[letter].strategy)",
+                  "each new world is seated with its own strategy")
+        # Twelve worlds is the most: with eight open, the next five make four,
+        # the best of them, and the page says one did not fit. Then both are
+        # spent, and say why.
+        press(five)
+        bar.until(settled(12), "Branch 5 Next Best filled the room", seconds=60)
+        assert bar.ev("strange.order.join('')") == "aijkldefghcb"
+        assert bar.ev(seats) == ["stock", "s9", "s10", "s11", "s12", "s4", "s5", "s6", "s7", "s8", "s3", "jack"]
+        assert bar.ev(said) == "Branch 5 Next Best: I 1-s9, J 1-s10, K 1-s11, L 1-s12, from A. 1 more did not fit: 12 worlds is the most", bar.ev(said)
+        spent = bar.ev(f"[document.querySelector('{one}').disabled, document.querySelector('{five}').disabled, document.querySelector('{five}').title]")
+        assert spent == [True, True, "12 worlds are open, which is the most. Delete one to branch again"], spent
+    finally:
+        bar.ev("localStorage.removeItem('civvis-toy-strategies'), true")
+
+
 def check_edge_of_tomorrow(bar: Bar, address: str) -> None:
     """Edge of Tomorrow: the played game with a jump back.
 
@@ -4776,6 +4857,11 @@ def main() -> int:
               "world in a window of its own beside the base, best first, and time runs on for every world together; "
               "pressed while time runs it stops time, branches from that turn as many as there is room for, says "
               "how many did not fit, and runs time on again.")
+        check_doctor_strange_next_best(bar, f"http://127.0.0.1:{port}/")
+        print("Doctor Strange's CIVVIS has Branch Next Best and Branch 5 Next Best side by side over Branch: each "
+              "branches the base timeline on its open turn for the best player strategies without a world of their "
+              "own there, one or five, best first, leaves time as it is, takes the next ones when pressed again, and "
+              "makes as many as fit in the twelve.")
         check_edge_of_tomorrow(bar, f"http://127.0.0.1:{port}/")
         print("Edge of Tomorrow is the played game on the Civilization VI screen with a bar of its own across the "
               "foot of the window, the map area ending above it, the left panel's Auto-play in it (Turns and Civ AI "
