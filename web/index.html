@@ -346,11 +346,17 @@
     margin-top: 9px; color: #f0f2ee; font-size: var(--type-body);
     font-weight: 600; letter-spacing: 0; line-height: 1.36;
   }
-  /* The lockup is always the same two lines: the simulator's name, then its
-     purpose. Each phrase owns exactly one line at every band — never joined
-     into a sentence, never folded mid-phrase — so the spans are unbreakable
-     and the text fitter shrinks the type into the lane instead of wrapping. */
+  /* The lockup is the simulator's name, then its purpose. Each phrase owns
+     its own line, never joined into a sentence, so the spans are unbreakable
+     and the text fitter shrinks the type into the lane instead of wrapping.
+     The one exception: a phrase that still overflows at the fitter's floor
+     breaks at a word instead of being cut short (operator, 2026-11-26, when
+     the purpose became "for interpretability & forecasting insights", which
+     overflows a 195px lane at the compact band's 10px floor). The fitter
+     measures with the clipped mark removed, so the fold never feeds back into
+     the size it picks. */
   .tagline span { display: block; white-space: nowrap; }
+  .tagline span[data-fit-clipped="true"] { white-space: normal; overflow: visible; text-overflow: clip; }
   .tagline span + span { color: #d6ddd9; }
   /* The site's pages from the top down: Home, Charts, Tournaments, CIVVIS
      and AI Debugger, and under them the game all five are built on. The block below is how they stand

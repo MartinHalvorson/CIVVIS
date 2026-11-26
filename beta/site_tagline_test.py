@@ -59,6 +59,17 @@ class SiteTaglineTest(unittest.TestCase):
         self.assertEqual(len(taglines), 1)
         self.assertIn(f"<span>{PURPOSE}</span>", taglines[0])
 
+    def test_the_simulator_lockup_folds_rather_than_clips(self) -> None:
+        # The phrase is unbreakable while the fitter can shrink it, and on a
+        # 195px lane it still overflows at the compact band's 10px floor: there
+        # it breaks at a word instead of being cut short, overriding the
+        # ellipsis every other clipped run gets.
+        self.assertIn(".tagline span { display: block; white-space: nowrap; }", VIEWER)
+        self.assertIn(
+            '.tagline span[data-fit-clipped="true"] { white-space: normal; overflow: visible; text-overflow: clip; }',
+            VIEWER,
+        )
+
     def test_no_page_keeps_an_earlier_wording(self) -> None:
         pages = sorted(BETA.glob("*.html")) + [ROOT / "web" / "index.html"]
         for path in pages:
