@@ -3551,9 +3551,12 @@ def check_doctor_strange(bar: Bar, address: str) -> None:
     said = {name: [text, off] for name, text, off in bar.ev(words) if name != "numbers"}
     # Branch is a picker: the open turn and each player strategy the followed
     # world does not seat. Before it, the base timeline: every open world, by
-    # its letter and its name. Each box has its exit.
+    # its letter and its name, and Branch Next Best and Branch 5 Next Best,
+    # which wait here: both of the toy's two strategies have a world on turn
+    # 1 already. Each box has its exit.
     assert said == {"play": ["▶ Play Time", False], "back10": ["−10", True], "back1": ["−1", True], "on1": ["+1", False],
                     "on10": ["+10", False], "base": ["A · StockB · Jack", False],
+                    "next1": ["Branch Next Best", True], "next5": ["Branch 5 Next Best", True],
                     "branch": ["⑂ Branch: 1-(player strategy)1-Jack", False], "search": ["Autosearch", False],
                     "fork": ["⏮ To the fork", True], "lock": ["🔒 Locked", False], "futures": ["🔮 Futures: off", False],
                     "swan": ["🦢 Generate Black Swan", False], "swan-kind": ["AnyPandemicInstant nuclear war", False],
@@ -3564,14 +3567,18 @@ def check_doctor_strange(bar: Bar, address: str) -> None:
                     "turn": ["1", False], "limit": ["", False], "era": ["Ancient era", False]}, said
     # The base timeline is picked before Branch (operator 2026-11-25: "the
     # option to branch in the simulator should be preceded by a selection of
-    # the base timeline"): its picker stands right over Branch's, on the
-    # followed world, in that world's colour, and says what it is.
+    # the base timeline"): its picker stands over Branch's, with only Branch
+    # Next Best and Branch 5 Next Best between (operator 2026-11-26: "above
+    # the branch button"), on the followed world, in that world's colour, and
+    # says what it is.
     base = ("(() => { const base = document.querySelector('#strange-hud [data-strange=\"base\"]'),"
             " branch = document.querySelector('#strange-hud [data-strange=\"branch\"]');"
             " const [over, under] = [base.getBoundingClientRect(), branch.getBoundingClientRect()];"
+            " const pair = document.querySelector('#strange-hud [data-strange=\"next1\"]').getBoundingClientRect();"
             " return [base.value, [...base.options].map(option => option.textContent), base.style.getPropertyValue('--strange-base'),"
             " getComputedStyle(base).borderLeftColor, base.closest('label').textContent.startsWith('Base timeline'),"
-            " !!(base.compareDocumentPosition(branch) & Node.DOCUMENT_POSITION_FOLLOWING), over.bottom <= under.top, under.top - over.bottom < 12,"
+            " !!(base.compareDocumentPosition(branch) & Node.DOCUMENT_POSITION_FOLLOWING), over.bottom <= pair.top && pair.bottom <= under.top,"
+            " pair.top - over.bottom < 12 && under.top - pair.bottom < 12,"
             " Math.round(over.left) >= Math.round(under.left), Math.round(over.right) === Math.round(under.right)]; })()")
     assert bar.ev(base) == ["a", ["A · Stock", "B · Jack"], "#ff8f6b", "rgb(255, 143, 107)", True, True, True, True, True, True], bar.ev(base)
     # A branch is named by who plays it, and its box is in its colour. The
