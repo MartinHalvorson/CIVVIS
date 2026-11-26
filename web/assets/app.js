@@ -7175,7 +7175,7 @@ async function boot() {
 // submitting another action against the old turn while that request runs.
 let turnAdvancePending = false;
 async function send(action) {
-  if (SPEC || turnAdvancePending) return;
+  if (SPEC || turnAdvancePending || window.civvisSeatHandsOff) return;
   const advancing = action.type === "end_turn";
   if (advancing) {
     turnAdvancePending = true;
@@ -31240,7 +31240,7 @@ function beginCitizenPick(cityId, said) {
   modeline(); draw(); drawUbar();
   return true;
 }
-async function toggleCitizenLock(cityId, pos) {
+async function toggleCitizenLock(cityId, pos) { if (window.civvisSeatHandsOff) return;
   const city = state.cities.find(candidate => candidate.id === cityId);
   const held = new Set(((city && city.citizens && city.citizens.locked) || []).map(key));
   const site = sitePick && sitePick.sites.get(key(pos));
@@ -31489,7 +31489,7 @@ function pickSiteFromCity(event, cityId, itemId) {
 // exact order is used when the engine still offers it, so a district keeps
 // the tile it was given; an item with one remaining site takes that one.
 async function resumeCityQueues() {
-  if (!state || SPEC) return;
+  if (!state || SPEC || window.civvisSeatHandsOff) return;
   let changed = false;
   for (const cityId of [...cityQueues.keys()].sort((first, second) => first - second)) {
     const city = state.cities.find(candidate => candidate.id === cityId && candidate.owner === 0);
@@ -31548,7 +31548,7 @@ function cityFocusOutcome(kind, stance, before, after) {
 }
 let cityFocusPending = false;
 async function cycleCityFocus(cityId, kind) {
-  if (SPEC || turnAdvancePending || cityFocusPending) return;
+  if (SPEC || turnAdvancePending || cityFocusPending || window.civvisSeatHandsOff) return;
   const city = state.cities.find(candidate => candidate.id === cityId);
   const now = cityFocusStance(Number(city?.citizens?.emphasis?.[kind]) || 0);
   const stance = now === "favoured" ? -1 : now === "disfavoured" ? 0 : 1;
@@ -38347,7 +38347,7 @@ function closestActionUnit(candidates, origin) {
   })[0];
 }
 function advanceToNextActionUnit(force = false) {
-  const waiting = debuggerView() ? [] : unitsNeedingOrders();
+  const waiting = debuggerView() || window.civvisSeatHandsOff ? [] : unitsNeedingOrders();
   if (!waiting.length) { sel = null; draw(); drawSide(); drawUbar(); drawTurnLoop(); return; }
   if (!force && sel && unitNeedsOrders(sel)) { drawTurnLoop(); return; }
   resetNextActionVisitsForCurrentTurn();
@@ -38414,7 +38414,7 @@ const TRAVEL_PATIENCE = 3;
 // with the unit no further along than it started.
 async function resumeTravel(unitId) {
   const held = unitOrders.get(unitId);
-  if (!held || held.order !== "goto" || SPEC) return false;
+  if (!held || held.order !== "goto" || SPEC || window.civvisSeatHandsOff) return false;
   const origin = state.units.find(candidate => candidate.id === unitId);
   if (!origin) { unitOrders.delete(unitId); return false; }
   const startedAt = origin.pos;
