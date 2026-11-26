@@ -65,7 +65,7 @@ window.world = (name) => document.querySelector(`iframe[data-world="${name}"]`).
 window.frame = (name) => new Promise((done) => {
   const made = document.createElement("iframe");
   made.dataset.world = name;
-  made.src = `index.html?pane=${name}`;
+  made.src = `index.html?pane#${name}`;
   made.onload = () => {
     // A page's first request also sends its opening settings (`/pace`):
     // asked here, so that what the checks count is only their own.
