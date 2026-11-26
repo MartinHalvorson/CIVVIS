@@ -35,7 +35,7 @@
 //! Pillaging the winner's pads does slow it: from Earth Satellite to
 //! Exoplanet Expedition took 28-40 turns in the four games where we pillaged
 //! its pads two to six times before the launch, against 16-36 (mean 26) in
-//! the six where we pillaged none.
+//! the six where we pillaged them once or not at all.
 //!
 //! ## What the gene does
 //!
@@ -45,13 +45,25 @@
 //!
 //! - have not launched the Exoplanet Expedition (nothing at a pad stops a
 //!   launched one),
-//! - are within [`RACER_COVER_STEP`] of the space progress of the best racer
-//!   that has not launched (projects landed; Science a turn breaks a tie), and
+//! - are within one project of the racer that has landed the most and has
+//!   not launched, and
 //! - lead us in the space race: more space progress than ours, or as much and
 //!   more Science a turn. Racers we lead are not answered.
 //!
+//! They are ranked by projects landed, a racer one project behind counting
+//! level when it makes [`RACER_SCIENCE_EDGE`] times the Science a turn of the
+//! best racer ahead, and then by Science a turn. Over the 228 race-turns of
+//! the 10 losses above with two or more such racers, that ranking named the
+//! eventual winner first on 179 (79%): projects then Science, the cover's
+//! order, 161 (71%); the edge then Production, `racer-keeps-the-spies`'
+//! leader, 154 (68%); Production alone 108 (47%). Russia (122122Z) landed
+//! its Satellite at t149, a project behind Vietnam and the Inca, at 377
+//! Science a turn against Vietnam's 276, and won; our Spies searched the
+//! Inca's cities and stood in Vietnam's until the first Disrupt Rocketry on
+//! St. Petersburg at t163.
+//!
 //! Every rule reads nothing when the Science Victory is off. Against those
-//! racers, ranked by space progress and then Science a turn:
+//! racers, in that order:
 //!
 //! 1. **Post.** A Spy standing outside every racer's pad cities (at home or
 //!    abroad, but not in a culture racer's city, where the heist keeps it)
@@ -66,8 +78,8 @@
 //!    launch. A long-odds disruption still waits for its sources under
 //!    `disrupt-waits-for-the-sources`, which runs first.
 //!
-//! The trigger is the brief's "a rival with a Spaceport or its first launch":
-//! a completed pad is the first thing a Spy can act on. It reads the same in
+//! The trigger is a rival with a seen Spaceport or its first launch: a
+//! completed pad is the first thing a Spy can act on. It reads the same in
 //! every lane; Religious and Culture seats lose to the same launches.
 //!
 //! `Kind::OptIn`. With the gene off [`AdvancedAi::seen_pad_racers`] is empty
@@ -75,9 +87,10 @@
 
 use std::collections::BTreeSet;
 
-use super::denial_spies_cover_every_racer::RACER_COVER_STEP;
+use super::racer_keeps_the_spies::RACER_SCIENCE_EDGE;
 use super::AdvancedAi;
 use crate::game::{Action, Game};
+use crate::shared_sort::SharedSort;
 use crate::think;
 
 /// Operations a running order may be that the post interrupts: the ones that
@@ -118,7 +131,7 @@ impl AdvancedAi {
             pads.retain(|cid| !self.science_denial_refused_pads.contains_key(cid));
             pads
         };
-        let racers: BTreeSet<usize> = g
+        let racers: Vec<usize> = g
             .players
             .iter()
             .filter(|rival| {
@@ -135,20 +148,43 @@ impl AdvancedAi {
                 Self::science_denial_stages(g, *rival) >= 1 || !pads_of(*rival).is_empty()
             })
             .collect();
-        let ranked = Self::racer_cover_ranked(g, &racers);
-        let Some(top) = ranked
-            .first()
-            .map(|leader| Self::racer_space_progress(g, *leader))
-        else {
+        let stages = |racer: usize| Self::science_denial_stages(g, racer);
+        let science = |racer: usize| Self::seat_science_per_turn(g, racer);
+        let Some(top) = racers.iter().map(|racer| stages(*racer)).max() else {
             return Vec::new();
         };
+        let top_science = racers
+            .iter()
+            .filter(|racer| stages(**racer) == top)
+            .map(|racer| science(*racer))
+            .fold(0.0_f64, f64::max);
+        // A racer one project behind with the Science edge counts level.
+        let level = |racer: usize| {
+            let landed = stages(racer);
+            if landed + 1 == top
+                && top_science > 0.0
+                && science(racer) >= RACER_SCIENCE_EDGE * top_science
+            {
+                top
+            } else {
+                landed
+            }
+        };
+        let mut ranked: Vec<(usize, usize, f64)> = racers
+            .into_iter()
+            .filter(|racer| stages(*racer) + 1 >= top && !Self::seen_pad_we_lead(g, pid, *racer))
+            .map(|racer| (racer, level(racer), science(racer)))
+            .collect();
+        ranked.sort_by_shared(|left, right| {
+            right
+                .1
+                .cmp(&left.1)
+                .then_with(|| right.2.total_cmp(&left.2))
+                .then_with(|| left.0.cmp(&right.0))
+        });
         ranked
             .into_iter()
-            .filter(|racer| {
-                Self::racer_space_progress(g, *racer) >= top - RACER_COVER_STEP - 1e-9
-                    && !Self::seen_pad_we_lead(g, pid, *racer)
-            })
-            .filter_map(|racer| {
+            .filter_map(|(racer, _, _)| {
                 let pads = pads_of(racer);
                 (!pads.is_empty()).then_some(SeenPadRacer { racer, pads })
             })

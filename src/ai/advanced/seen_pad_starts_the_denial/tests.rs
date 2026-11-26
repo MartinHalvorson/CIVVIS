@@ -97,10 +97,10 @@ fn give_pad(g: &mut Game, cid: u32) -> Pos {
     pad
 }
 
-/// A Spy of seat 0 at `level` standing in `city`, free to act. With
-/// `sourced` its sources there are already gained; without, the board offers
-/// it the Gain Sources training.
-fn spy(g: &mut Game, city: u32, level: i64, sourced: bool) -> u32 {
+/// A level-0 Spy of seat 0 standing in `city`, free to act (a levelled Spy
+/// owes a promotion first). With `sourced` its sources there are already
+/// gained; without, the board offers it the Gain Sources training.
+fn spy(g: &mut Game, city: u32, sourced: bool) -> u32 {
     let id = g.next_id;
     g.next_id += 1;
     g.spies.insert(
@@ -108,7 +108,7 @@ fn spy(g: &mut Game, city: u32, level: i64, sourced: bool) -> u32 {
         crate::game::Spy {
             id,
             owner: 0,
-            level,
+            level: 0,
             promotions: BTreeSet::new(),
             city: Some(city),
             ready_turn: g.turn,
@@ -184,7 +184,7 @@ fn a_spy_goes_to_the_racers_seen_pad_before_its_first_launch() {
     let run = |gene: bool| {
         let (mut g, _, second, rival) = board();
         give_pad(&mut g, second);
-        let agent = spy(&mut g, rival, 1, true);
+        let agent = spy(&mut g, rival, true);
         let mut ai = seat(gene);
         ai.advanced_spies(&mut g, 0, &religion_plan());
         (g.spies[&agent].city, second, g.players[0].counters.clone())
@@ -201,7 +201,7 @@ fn a_green_spy_at_the_seen_pad_disrupts_before_it_trains() {
     let run = |gene: bool| {
         let (mut g, _, second, _) = board();
         give_pad(&mut g, second);
-        let agent = spy(&mut g, second, 0, false);
+        let agent = spy(&mut g, second, false);
         let mut ai = seat(gene);
         ai.advanced_spies(&mut g, 0, &religion_plan());
         mission(&g, agent)
@@ -219,7 +219,7 @@ fn nothing_when_the_science_victory_is_off() {
     let (mut g, _, second, rival) = board();
     give_pad(&mut g, second);
     g.victory_conditions.science = false;
-    let agent = spy(&mut g, rival, 1, true);
+    let agent = spy(&mut g, rival, true);
     let mut ai = seat(true);
     assert!(ai.seen_pad_racers(&g, 0).is_empty());
     ai.advanced_spies(&mut g, 0, &religion_plan());
@@ -294,6 +294,8 @@ fn the_racer_ahead_comes_first_and_one_two_behind_not_at_all() {
     give_pad(&mut g, rival);
     g.players[2].techs.insert(crate::name!("rocketry"));
     land(&mut g, 2, 1);
+    // 340 Science a turn is short of 1.25 times 300: no edge.
+    set_science(&mut g, 2, 300.0);
     assert_eq!(racers(&ai, &g), vec![2, 1], "projects first");
     land(&mut g, 2, 2);
     assert_eq!(
@@ -303,7 +305,7 @@ fn the_racer_ahead_comes_first_and_one_two_behind_not_at_all() {
     );
     // An idle Spy at home goes to the racer ahead.
     let home = g.player_city_ids(0)[0];
-    let agent = spy(&mut g, home, 1, true);
+    let agent = spy(&mut g, home, true);
     let racers = ai.seen_pad_racers(&g, 0);
     let legal = g.legal_spy_actions(0, agent);
     assert_eq!(
@@ -317,7 +319,7 @@ fn a_listening_post_gives_way_to_a_free_seen_pad() {
     let run = |gene: bool| {
         let (mut g, _, second, rival) = board();
         give_pad(&mut g, second);
-        let agent = spy(&mut g, rival, 1, true);
+        let agent = spy(&mut g, rival, true);
         Arc::make_mut(&mut g.host_unit_facts).insert(
             agent,
             HostUnitFacts {
@@ -342,8 +344,8 @@ fn a_held_pad_and_a_culture_racers_city_keep_their_spies() {
     let ai = seat(true);
     let (mut g, _, second, rival) = board();
     give_pad(&mut g, second);
-    let first = spy(&mut g, second, 1, true);
-    let other = spy(&mut g, rival, 1, true);
+    let first = spy(&mut g, second, true);
+    let other = spy(&mut g, rival, true);
     let racers = ai.seen_pad_racers(&g, 0);
     let none = BTreeSet::new();
     let legal = g.legal_spy_actions(0, first);
@@ -376,4 +378,21 @@ fn a_held_pad_and_a_culture_racers_city_keep_their_spies() {
         None,
         "a culture racer's city keeps its Spy for the heist"
     );
+}
+
+#[test]
+fn a_racer_a_project_behind_with_the_science_edge_comes_first() {
+    // Russia 122122Z at t150: its Satellite landed, a project behind Vietnam,
+    // at 377 Science a turn against Vietnam's 276. Russia won.
+    let ai = seat(true);
+    let (mut g, _, second, rival) = board();
+    give_pad(&mut g, second);
+    give_pad(&mut g, rival);
+    g.players[2].techs.insert(crate::name!("rocketry"));
+    land(&mut g, 2, 1);
+    set_science(&mut g, 2, 270.0);
+    assert_eq!(racers(&ai, &g), vec![1, 2], "340 is 1.25 times 270");
+    // Level on projects, Science decides.
+    land(&mut g, 1, 1);
+    assert_eq!(racers(&ai, &g), vec![1, 2]);
 }
