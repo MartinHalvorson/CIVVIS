@@ -402,7 +402,7 @@ class HomeRankings(unittest.TestCase):
         at = [
             CHARTS.index(piece)
             for piece in ('<div class="res-layout">', '<div class="res-graphs">', 'id="res-kind-self_play"',
-                          'id="res-kind-ai-civvis"', 'id="res-each"', 'id="res-table"')
+                          'id="res-kind-ai-civvis"')
         ]
         self.assertEqual(at, sorted(at))
         self.assertIn(".res-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-items: start; min-width: 0; }", CHARTS)

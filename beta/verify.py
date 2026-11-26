@@ -188,6 +188,9 @@ PAGES = {
     "charts/civvis-performance": b'id="performance-data"',
     "charts/civ-ai-interpretability": b'id="interpretability-data"',
     "charts/ai-insights": b'id="insights-data"',
+    # Its figures arrive in the slots of the pages its charts came from, so it
+    # is known by its own record of where each chart came from instead.
+    "charts/random-ai-charts": b'id="random-moved"',
     "download": b"releases/latest/download/",
 }
 

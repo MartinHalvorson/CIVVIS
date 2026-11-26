@@ -111,6 +111,7 @@ ADDRESSES = {
     "performance": "charts/civvis-performance",
     "interpretability": "charts/civ-ai-interpretability",
     "insights": "charts/ai-insights",
+    "random": "charts/random-ai-charts",
     "download": "download",
 }
 
@@ -319,7 +320,7 @@ class Lanes(unittest.TestCase):
         self.assertTrue((self.test / "charts" / "ai-insights" / "index.html").is_file())
         self.assertFalse((self.stable / "interpretability").exists())
         self.assertFalse((self.stable / "charts").exists())
-        self.assertIn("published without: ai-insights interpretability civ-analytics elo-rankings\n", self.stable_said)
+        self.assertIn("published without: ai-insights interpretability civ-analytics elo-rankings random-ai-charts\n", self.stable_said)
         # And each lane says which pages it carries, by address, for the
         # checks and for the router.
         self.assertEqual(
@@ -330,10 +331,10 @@ class Lanes(unittest.TestCase):
             json.loads(self.read(self.test, "build.json"))["pages"],
             # In the order of Charts/ (since 2026-11-24: AI Insights, Civ AI
             # Interpretability, Civ Analytics, Win Analytics, ELO Rankings,
-            # CIVVIS Performance), because the router opens a folder's first
-            # page in this list.
+            # CIVVIS Performance; Random AI Charts last since 2026-11-26),
+            # because the router opens a folder's first page in this list.
             ["home", "experiments", "charts/ai-insights", "charts/civ-ai-interpretability", "charts/civ-analytics",
-             "charts/win-analytics", "charts/elo-rankings", "charts/civvis-performance", "download"],
+             "charts/win-analytics", "charts/elo-rankings", "charts/civvis-performance", "charts/random-ai-charts", "download"],
         )
         # And the publish check reads each list in the order it was written.
         # It asks a folder for the first page the list has in it, which is
@@ -423,7 +424,8 @@ class Lanes(unittest.TestCase):
             sorted(str(found.relative_to(self.test)) for found in self.test.glob("**/index.html")),
             ["charts/ai-insights/index.html", "charts/civ-ai-interpretability/index.html",
              "charts/civ-analytics/index.html", "charts/civvis-performance/index.html",
-             "charts/elo-rankings/index.html", "charts/win-analytics/index.html",
+             "charts/elo-rankings/index.html", "charts/random-ai-charts/index.html",
+             "charts/win-analytics/index.html",
              "download/index.html", "experiments/index.html", "home/index.html", "index.html"],
         )
         self.assertEqual(
