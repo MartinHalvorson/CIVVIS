@@ -7967,9 +7967,9 @@ function tomorrowMount() {
   bar.id = "tomorrowbar";
   bar.hidden = true;
   bar.setAttribute("role", "toolbar");
-  bar.setAttribute("aria-label", "Edge of Tomorrow");
+  bar.setAttribute("aria-label", "Civ: Edge of Tomorrow");
   bar.innerHTML = `
-    <div class="tmr-name"><b>Edge of Tomorrow</b><span class="tmr-loop">Loop <i id="tmr-loop">1</i></span></div>
+    <div class="tmr-name"><b>Civ: Edge of Tomorrow</b><span class="tmr-loop">Loop <i id="tmr-loop">1</i></span></div>
     <div class="tmr-track">
       <div class="tmr-rail" id="tmr-rail" role="img"></div>
       <div class="tmr-said" id="tmr-said" role="status"></div>

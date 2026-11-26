@@ -2214,7 +2214,7 @@ fn viewer_marks_the_selected_revision_and_its_compact_ages_above_the_minimap() {
 /// just "Charts" to "Charts/" with the intentional slash"), holding Win
 /// Analytics, the page it opens, and CIVVIS Performance ("in charts, we
 /// should have at least win analytics, CIVVIS Performance").
-/// Pinned as one literal because the list is the contract: nine links in
+/// Pinned as one literal because the list is the contract: eight links in
 /// this order, inside a list that only the hosts serving a /home, a
 /// /charts and an /experiments reveal. The addresses follow the names in
 /// the list since 2026-11-23 (operator: "clean up the URL please.
@@ -2226,10 +2226,11 @@ fn viewer_marks_the_selected_revision_and_its_compact_ages_above_the_minimap() {
 /// tourney thing"): Tournaments, at /tournaments. On 2026-11-25 it was named
 /// Experiments (operator: "rename tournaments to experiments"), and is at
 /// /experiments; the link keeps the id it had (`tourlink`), which the
-/// rules that size and colour it are written for. The same day Chaos
-/// Monkey, the page of worlds replayed under a very high frequency of
-/// natural disasters, joined between Experiments and CIVVIS (operator:
-/// "above civvis add "Chaos Monkey""), at /chaos-monkey: nine links.
+/// rules that size and colour it are written for. Chaos Monkey stood
+/// between Experiments and CIVVIS, at /chaos-monkey, from that day until
+/// 2026-11-26 (operator: "remove chaos monkey for now"). Edge of Tomorrow
+/// is named Civ: Edge of Tomorrow since 2026-11-26 (operator: "change edge
+/// of tomorrow to - Civ: edge of tomorrow").
 #[test]
 fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
     assert!(EMBEDDED_INDEX.contains(concat!(
@@ -2237,11 +2238,10 @@ fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
         "        <a class=\"home-link\" id=\"homelink\" href=\"/home\" target=\"_top\">Home</a>\n",
         "        <a class=\"home-link\" id=\"chartslink\" href=\"/charts/ai-insights\" target=\"_top\">Charts/</a>\n",
         "        <a class=\"home-link\" id=\"tourlink\" href=\"/experiments\" target=\"_top\">Experiments</a>\n",
-        "        <a class=\"home-link\" id=\"chaoslink\" href=\"/chaos-monkey\" target=\"_top\">Chaos Monkey</a>\n",
         "        <a class=\"home-link\" id=\"watchlink\" href=\"./\" target=\"_top\">CIVVIS</a>\n",
         "        <a class=\"home-link\" id=\"strangelink\" href=\"?mode=strange\" target=\"_top\">Doctor Strange's Civ 6</a>\n",
         "        <a class=\"home-link\" id=\"playlink\" href=\"?mode=play\" target=\"_top\">AI Debugger</a>\n",
-        "        <a class=\"home-link\" id=\"tomorrowlink\" href=\"?mode=tomorrow\" target=\"_top\">Edge of Tomorrow</a>\n",
+        "        <a class=\"home-link\" id=\"tomorrowlink\" href=\"?mode=tomorrow\" target=\"_top\">Civ: Edge of Tomorrow</a>\n",
         "        <a class=\"home-link\" id=\"civ6link\" ",
         "href=\"https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/\" ",
         "target=\"_blank\" rel=\"noopener\" title=\"Buy Civilization VI on Steam\">Civ 6</a>\n",
@@ -2251,7 +2251,13 @@ fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
     // and was set aside on 2026-11-24 (operator: "lets set aside wizard
     // chess right now. please remove from civvis.ai"). The list ends at
     // Civ 6, and nothing of its link or its name is left in the viewer.
-    for gone in ["chesslink", "wizard-chess", "Wizard Chess"] {
+    for gone in [
+        "chesslink",
+        "wizard-chess",
+        "Wizard Chess",
+        "chaoslink",
+        "/chaos-monkey",
+    ] {
         assert!(
             !EMBEDDED_INDEX.contains(gone),
             "the viewer still says {gone}"
@@ -2338,10 +2344,10 @@ fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
     ));
     assert!(debugger.contains("  html.tomorrow #debugbar { display: none !important; }\n"));
     // The page on screen keeps its colour and is ringed in white; it was
-    // gold until 2026-11-24. CIVVIS's own button was gold from that day
-    // (operator: "lets give civvis a gold background on the button, rather
-    // than black") and is white since 2026-11-25 ("make the civvis color
-    // white"), so while it is the page on screen its ring is black.
+    // gold until 2026-11-24, when gold became CIVVIS's own (operator: "lets
+    // give civvis a gold background on the button, rather than black").
+    // It was white for a day from 2026-11-25 and is gold again since
+    // 2026-11-26 ("return civvis to a gold highlight").
     // `watching-sim` is the engine's own answer to which of the two this
     // is, and until the first observation says so (`seat-known`) neither is
     // ringed. Every top-level link is there from the start, so no rule
@@ -2354,10 +2360,10 @@ fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
         "    border-color: #fff; box-shadow: inset 0 0 0 1px #fff;\n",
         "  }",
     )));
-    assert!(EMBEDDED_INDEX
-        .contains("  #watchlink { color: #12171d; border-color: #cfd6dd; background: #fff; }\n"));
-    assert!(EMBEDDED_INDEX
-        .contains("  body.watching-sim #watchlink { box-shadow: inset 0 0 0 2px #111416; }\n"));
+    assert!(EMBEDDED_INDEX.contains(
+        "  #watchlink { color: #17130c; border-color: #efd184; background: linear-gradient(145deg, #dec176, #aa7d30); }\n"
+    ));
+    assert!(!EMBEDDED_INDEX.contains("body.watching-sim #watchlink { box-shadow"));
     for hides in [
         "#playlink { display: none; }",
         "#strangelink { display: none; }",
@@ -2518,24 +2524,22 @@ fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
         "for address in dict.fromkeys([*carried, *former]):\n",
         "    needle, replacement = f'href=\"/{address}\"', f'href=\"{address}/\"'\n",
     )));
-    // Two by two, a link is half its row, except beside CIVVIS: there
-    // CHAOS MONKEY takes six tenths and CIVVIS four, the room AUTO-TOURNEYS
-    // (Experiments' name from 2026-11-22 to 2026-11-24, and as long a
-    // name) needed. Measured in Chrome in the system face, AUTO-TOURNEYS
-    // is 91.3px in this type and half a row holds 84px at its narrowest (a
-    // 195px band), six tenths 103.8px; CIVVIS is 36px in the 64.2px left
-    // to it.
+    // Two by two, a link is half its row, except on the second row: there
+    // EXPERIMENTS takes six tenths and CIVVIS four, the room AUTO-TOURNEYS (its
+    // name from 2026-11-22 to 2026-11-24) needed. Measured in Chrome in
+    // the system face, AUTO-TOURNEYS is 91.3px in this type and half a row
+    // holds 84px at its narrowest (a 195px band), six tenths 103.8px;
+    // CIVVIS is 36px in the 64.2px left to it.
     assert!(EMBEDDED_INDEX.contains(concat!(
         "  .head-links > .home-link { grid-column: span 5; }\n",
-        "  .head-links > #chaoslink { grid-column: span 6; }\n",
+        "  .head-links > #tourlink { grid-column: span 6; }\n",
         "  .head-links > #watchlink { grid-column: span 4; }\n",
     )));
-    // Experiments, over those two, has a row of its own since Chaos Monkey
-    // took the place beside CIVVIS. Doctor Strange's Civ 6 is the one name
-    // longer than half a row and has a row too, AI Debugger and Civ 6 keep
-    // theirs, and Edge of Tomorrow has one between those two.
+    // Doctor Strange's Civ 6 is the one name longer than half a row and has
+    // a row of its own, AI Debugger and Civ 6 keep theirs, and Edge of
+    // Tomorrow has one between those two.
     assert!(EMBEDDED_INDEX.contains(
-        "  .head-links > #tourlink, .head-links > #playlink, .head-links > #strangelink, .head-links > #tomorrowlink, .head-links > #civ6link { grid-column: 1 / -1; }\n"
+        "  .head-links > #playlink, .head-links > #strangelink, .head-links > #tomorrowlink, .head-links > #civ6link { grid-column: 1 / -1; }\n"
     ));
     for gone in [
         ".head-links > :last-child:nth-child(odd)",
@@ -2745,9 +2749,6 @@ fn the_home_page_lists_the_sites_with_itself_ringed() {
             "      <a class=\"site-link\" href=\"../experiments/\" ",
             "title=\"Series of verification games against Civilization VI&#8217;s own AI: ",
             "running, scheduled and finished.\">Experiments</a>\n",
-            "      <a class=\"site-link\" href=\"../chaos-monkey/\" ",
-            "title=\"The same worlds replayed with natural disasters up to 1,000 times as often: ",
-            "what breaks, and what holds.\">Chaos Monkey</a>\n",
             "      <a class=\"site-link\" href=\"../\" ",
             "title=\"Every civilization is played by a CIVVIS AI agent.\">CIVVIS</a>\n",
             "      <a class=\"site-link\" href=\"../?mode=strange\" ",
@@ -2755,7 +2756,7 @@ fn the_home_page_lists_the_sites_with_itself_ringed() {
             "      <a class=\"site-link\" href=\"../?mode=play\" ",
             "title=\"You play one civilization. CIVVIS AI agents play the rest.\">AI Debugger</a>\n",
             "      <a class=\"site-link\" href=\"../?mode=tomorrow\" ",
-            "title=\"You play one civilization, with a jump back: the world returns to the turn you woke on, as it stood.\">Edge of Tomorrow</a>\n",
+            "title=\"You play one civilization, with a jump back: the world returns to the turn you woke on, as it stood.\">Civ: Edge of Tomorrow</a>\n",
             "      <a class=\"site-link\" ",
             "href=\"https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/\" ",
             "target=\"_blank\" rel=\"noopener\" title=\"Buy Civilization VI on Steam\">Civ 6</a>\n",
@@ -2766,16 +2767,18 @@ fn the_home_page_lists_the_sites_with_itself_ringed() {
             "        <h1 class=\"site-title\">CIVVIS<span>.ai</span></h1>",
         ),
         // They read as the viewer's links do, in capitals, one row across
-        // the page, and the page on screen is ringed in white. CIVVIS's
-        // own button is white all over (operator, 2026-11-25: "make the
-        // civvis color white"; gold from 2026-11-24 until then).
+        // the page, and the page on screen is ringed in white: gold is
+        // CIVVIS's (operator, 2026-11-24: "lets give civvis a gold
+        // background on the button, rather than black"; white for a day
+        // from 2026-11-25, gold again since 2026-11-26: "return civvis to a
+        // gold highlight").
         "    text-transform: uppercase;\n  }\n  .site-link:hover,",
         ".site-nav { display: flex; flex: 1 0 100%; flex-wrap: wrap; align-items: center; gap: 6px; }",
         concat!(
             ".site-link[aria-current=\"page\"],\n",
             "  .site-folder:has([aria-current=\"page\"]) > .site-link { box-shadow: inset 0 0 0 2px #fff; }",
         ),
-        ".site-link[href$=\"../\"] { background: #fff; color: #12171d;",
+        ".site-link[href$=\"../\"] { background: linear-gradient(145deg, #dec176, #aa7d30); color: #17130c;",
         // The project's own links follow, under the label the publish
         // check finds the page by (`beta/verify.py`).
         "<nav class=\"utility-nav\" aria-label=\"CIVVIS links\">",
@@ -5064,8 +5067,10 @@ fn chaos_turns_the_dial_on_a_watched_world_and_the_next_world_keeps_it() {
     );
     assert_eq!(played.game.disaster_frequency(), 1.0);
     assert!(played.state().get("disaster_frequency").is_none());
-    // The viewer asks through the one route, native and published alike.
-    assert!(EMBEDDED_APP_SETUP_JS.contains("fetchJSON(\"/chaos\", {method: \"POST\","));
+    // The engine answers it through the one route, native and published
+    // alike. The turn box's row that asked it is off the site since
+    // 2026-11-26 (operator: "remove chaos monkey for now").
+    assert!(!EMBEDDED_APP_SETUP_JS.contains("data-hud-chaos"));
     assert!(
         include_str!("../wasm.rs").contains("(\"POST\", \"/chaos\") => with_session(|session| {")
     );
@@ -8324,9 +8329,9 @@ fn browser_orders_controls_interface_setup_and_logs() {
     ));
     assert!(EMBEDDED_INDEX.contains("function hudPaceHeldOpen()"));
     // The moment focus leaves a held select — watch pace, the arena's
-    // in-game fog, Fog-honest AI or Chaos Monkey — the held snapshots paint.
+    // in-game fog or Fog-honest AI — the held snapshots paint.
     assert!(EMBEDDED_INDEX.contains(
-        "if (ev.target.closest?.(\"[data-hud-pace], [data-hud-fog], [data-hud-fog-honest], [data-hud-chaos]\") && state) drawPlayerHud();"
+        "if (ev.target.closest?.(\"[data-hud-pace], [data-hud-fog], [data-hud-fog-honest]\") && state) drawPlayerHud();"
     ));
     // The bars are placed from the rendered heading, so they cannot drift
     // from the columns they name.
