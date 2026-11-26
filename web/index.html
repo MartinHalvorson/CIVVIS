@@ -520,12 +520,12 @@
        page's name from 2026-11-22 to 2026-11-24, was the longest name,
        80px. Each link is one track here, wherever it stands two by
        two. Six one-line links and the two of two lines make it 171px. */
-    #side .brand:has(> .head-links:not([hidden])) .home-link {
-      grid-column: auto; padding: 1px 2px 2px; font-size: 8.5px; letter-spacing: .02em;
-    }
     /* AI Debugger's 30%, against this column's one-line link: 1px and 2px
        of padding here. */
     #side .brand:has(> .head-links:not([hidden])) #playlink { min-height: calc((1.3em + 5px) * 1.3); }
+    #side .brand:has(> .head-links:not([hidden])) .home-link {
+      grid-column: auto; padding: 1px 2px 2px; font-size: 8.5px; letter-spacing: .02em;
+    }
   }
   /* From 246px the tagline's two lines fit beside the column too, under the
      wordmark, so the column runs the whole height of the lockup and the box
