@@ -1,7 +1,7 @@
 {
   "_doc": [
-    "Experiments shown on the Experiments page (beta/tournaments_page.py, beta/tournaments.html; the page was named Tournaments",
-    "until 2026-11-25, and each series on it was \"Tournament N\"); the home page",
+    "Tournaments shown on the Tournaments page (beta/tournaments_page.py, beta/tournaments.html; the page was named Experiments",
+    "from 2026-11-25 to 2026-11-26, and each series on it \"Experiment N\"); the home page",
     "(beta/home_rankings.py, beta/landing.html) carried them as a table until 2026-11-21.",
     "Each runs from its first game (`start`, a run tag; every game with a later tag",
     "that matches `match` counts) in series of `series_size` finished games, read off",
@@ -83,22 +83,24 @@
     "to an Opus 5.5 session that fixes it in code as an opt-in gene, ships it and arms it, and the benchmark's win rates measure",
     "the change.",
     "Operator 2026-11-25 ~05:40Z: \"REplace tournament with experiment inside experiments/. that is really what they are. isn't",
-    "about winning. trying to learn.\": each series is \"Experiment N\" on the page.",
+    "about winning. trying to learn.\": each series was \"Experiment N\" on the page until 2026-11-26.",
     "Operator 2026-11-25 ~05:50Z: \"put the experiments list on the left 60%. the scheduled games & benchmark can be on the right.",
     "tourney 7 is benchmark. please remove from experiments and make the official benchmark for now\": the definition marked",
-    "`benchmark` is not an experiment. The page draws it on its own, as the Official Benchmark, in the right-hand column under",
-    "Scheduled, and numbers the experiments without it, so the next one scheduled is Experiment 7. A number in `descriptions`,",
-    "`videos` and `hyperparameters` is an experiment's number; the benchmark carries its own `description` and",
+    "`benchmark` stands apart from the tournaments. The page draws it on its own, as the Official Benchmark, in the right-hand",
+    "column under Scheduled, and numbers the tournaments without it, so the next one scheduled is Tournament 7. A number in",
+    "`descriptions`, `videos` and `hyperparameters` is a tournament's number; the benchmark carries its own `description` and",
     "`hyperparameters` on its definition. Its tags (`civvis-t7-`) and the host's bench conductor are unchanged.",
     "Operator 2026-11-26: \"please add a tournament with 100 lv 8 deity games, no diplo. lets really work on the self improvement",
-    "and optimization of the algorithm. our victory rate here should be much higher.\": Experiment 7, the definition after the",
+    "and optimization of the algorithm. our victory rate here should be much higher.\": Tournament 7, the definition after the",
     "benchmark's, is 100 games at Lv 8 Deity, one CIVVIS agent and five Firaxis AI on Continents, the Diplomatic victory off in",
     "every game. Its games are tagged `civvis-t8-` (the benchmark's `end`, so none of them counts in the benchmark) and the host's",
     "conductor plays them from the moment it was scheduled, pausing the benchmark until 100 have finished. Unlike the benchmark,",
     "the conductor picks each game's victory lane by Thompson sampling over Religious, Science and Culture, on the results of every",
-    "Lv 8 Diplomatic-off game in each lane (the benchmark's and the experiment's), so the lane that wins is played more, and then",
+    "Lv 8 Diplomatic-off game in each lane (the benchmark's and the tournament's), so the lane that wins is played more, and then",
     "draws the civ among the civs suited to that lane. The newest build plays each game; Claude Opus 5.5 reviews every one, as it",
-    "does the benchmark's, and a mistake that recurs is fixed in code as a gene and armed, so the agent improves during the experiment."
+    "does the benchmark's, and a mistake that recurs is fixed in code as a gene and armed, so the agent improves during the tournament.",
+    "Operator 2026-11-26: \"change experiments back to tournaments\": the page is Tournaments again, at /tournaments/, and each",
+    "series on it \"Tournament N\", numbered as before without the benchmark; the benchmark stays apart on the right."
   ],
   "descriptions": {
     "1": "Proof of concept, 10 game series",
@@ -116,7 +118,7 @@
       "Players": "6: 1 CIVVIS agent + 5 Firaxis AI",
       "Victory types": "All six: Science, Culture, Domination, Religious, Diplomatic, Score",
       "Civ": "Random each game",
-      "Strategy": "Probably random among our top ~5, as in Experiment 2 (unconfirmed)",
+      "Strategy": "Probably random among our top ~5, as in Tournament 2 (unconfirmed)",
       "Map": "Continents, Small, 9 city-states, a new map each game",
       "Game speed": "Online",
       "Turn limit": "250",
@@ -171,7 +173,7 @@
       "CIVVIS agent": "The newest build when each game launched: 15 builds over 50 games"
     },
     "5": {
-      "Games": "50 planned; ended at 49 when Experiment 6 began",
+      "Games": "50 planned; ended at 49 when Tournament 6 began",
       "AI level": "Lv 8 Deity",
       "Players": "6: 1 CIVVIS agent + 5 Firaxis AI (the ledger has one CIVVIS civ in each of the 49 games)",
       "Victory types": "Games 1-25: all six (Science, Culture, Domination, Religious, Diplomatic, Score). Games 26-49: all but Diplomatic",
@@ -206,14 +208,14 @@
       "Players": "6: 1 CIVVIS agent + 5 Firaxis AI",
       "Victory types": "All but Diplomatic: Science, Culture, Domination, Religious, Score",
       "Civ": "Random each game, among the civs suited to the victory lane chosen for it",
-      "Strategy": "The victory lane is chosen each game by Thompson sampling over Religious, Science and Culture, on the results of every Lv 8 Diplomatic-off game in each lane (the benchmark's and this experiment's), so the lane that wins is played more. On the ledger when it was scheduled: Religious 3 wins in 29 benchmark games, Science 0 in 68, Culture never played",
+      "Strategy": "The victory lane is chosen each game by Thompson sampling over Religious, Science and Culture, on the results of every Lv 8 Diplomatic-off game in each lane (the benchmark's and this tournament's), so the lane that wins is played more. On the ledger when it was scheduled: Religious 3 wins in 29 benchmark games, Science 0 in 68, Culture never played",
       "Map": "Continents, Small, 9 city-states, a new map each game",
       "Game speed": "Online",
       "Turn limit": "250",
       "Ruleset": "Gathering Storm",
       "Played in": "Civ VI single player",
       "Game end": "Played out: a victory, our elimination or turn 250",
-      "CIVVIS agent": "The newest build when each game launched; Claude Opus 5.5 reviews every game, and a mistake it finds in several games is fixed in code as a gene and armed, so the agent improves during the experiment"
+      "CIVVIS agent": "The newest build when each game launched; Claude Opus 5.5 reviews every game, and a mistake it finds in several games is fixed in code as a gene and armed, so the agent improves during the tournament"
     }
   },
   "videos": {
@@ -230,7 +232,7 @@
       "series_size": 10,
       "match": {"difficulty": "DIFFICULTY_DEITY", "players": 6, "map": "Continents.lua"},
       "end": "civvis-20261119T204058Z",
-      "note": "Probably affected like Experiment 2: civ and strategy likely both picked at random (unconfirmed)."
+      "note": "Probably affected like Tournament 2: civ and strategy likely both picked at random (unconfirmed)."
     },
     {
       "name": "Lv 8 Deity 30-game series",
@@ -247,7 +249,7 @@
       "start": "civvis-20261119T223800Z",
       "series_size": 30,
       "match": {"difficulty": "DIFFICULTY_DEITY", "players": 6, "map": "Continents.lua"},
-      "note": "A random civ playing our best strategy for that civ (the fix for Experiment 2).",
+      "note": "A random civ playing our best strategy for that civ (the fix for Tournament 2).",
       "end": "civvis-20261120T045254Z"
     },
     {
@@ -273,7 +275,7 @@
       "name": "Lv 4 to Lv 8 against the Firaxis AI, 1 CIVVIS agent + 5 AI",
       "benchmark": true,
       "description": "Official Benchmark",
-      "idea": "Benchmark games, played whenever no experiment is: one CIVVIS agent against five Firaxis AI, half the games at Lv 8 and an eighth at each of Lv 4, 5, 6 and 7, half of each level's games with the Diplomatic victory allowed. A scheduled experiment pauses it, and it resumes when that experiment is done. Its win rate at each level is our primary benchmark against the Firaxis AI, tracked over time here and on Win Analytics. Claude Opus 5.5 reviews every game for our mistakes, and a mistake that recurs is fixed in code, so the agent improves as the benchmark runs.",
+      "idea": "Benchmark games, played whenever no tournament is: one CIVVIS agent against five Firaxis AI, half the games at Lv 8 and an eighth at each of Lv 4, 5, 6 and 7, half of each level's games with the Diplomatic victory allowed. A scheduled tournament pauses it, and it resumes when that tournament is done. Its win rate at each level is our primary benchmark against the Firaxis AI, tracked over time here and on Win Analytics. Claude Opus 5.5 reviews every game for our mistakes, and a mistake that recurs is fixed in code, so the agent improves as the benchmark runs.",
       "conditions": "Lv 8 one game in two, Lv 4-7 one in eight each, 6P Continents Online, 1 CIVVIS + 5 AI, Diplomatic victory on in half the games",
       "note": "Until 2026-11-23 its games were Lv 6, Lv 7, Lv 8 and Lv 8 in turn, all with the Diplomatic victory off.",
       "start": "civvis-t7-",
@@ -281,7 +283,7 @@
       "indefinite": true,
       "match": {"players": 6, "map": "Continents.lua"},
       "hyperparameters": {
-        "Games": "Indefinite: played whenever no experiment runs; a scheduled experiment pauses it and it resumes after",
+        "Games": "Indefinite: played whenever no tournament runs; a scheduled tournament pauses it and it resumes after",
         "AI level": "Since 2026-11-23 04:43: Lv 8 Deity 1 game in 2; Lv 4 Prince, Lv 5 King, Lv 6 Emperor and Lv 7 Immortal 1 in 8 each, dealt in shuffled blocks of 16. Before: Lv 6, Lv 7, Lv 8, Lv 8 in turn",
         "Players": "6: 1 CIVVIS agent + 5 Firaxis AI",
         "Victory types": "Since 2026-11-23 04:43: Diplomatic allowed in half of each level's games and off in the other half; Science, Culture, Domination, Religious and Score always on. Before: all but Diplomatic",
@@ -298,7 +300,7 @@
     },
     {
       "name": "Lv 8 Deity, Diplomatic victory off, 100 games",
-      "idea": "One hundred games against the Lv 8 Deity AI with the Diplomatic victory off, to raise our Deity win rate: each game's victory lane is picked by Thompson sampling over Religious, Science and Culture, so the lane that wins is played more, and the civ is drawn among those suited to it. Claude Opus 5.5 reviews every game, and a mistake that recurs is fixed in code, so the agent improves as the experiment runs.",
+      "idea": "One hundred games against the Lv 8 Deity AI with the Diplomatic victory off, to raise our Deity win rate: each game's victory lane is picked by Thompson sampling over Religious, Science and Culture, so the lane that wins is played more, and the civ is drawn among those suited to it. Claude Opus 5.5 reviews every game, and a mistake that recurs is fixed in code, so the agent improves as the tournament runs.",
       "conditions": "Lv 8 6P Continents Online, 1 CIVVIS + 5 AI, no Diplomatic victory",
       "start": "civvis-t8-",
       "end": "civvis-t9-",
