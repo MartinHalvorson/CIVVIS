@@ -2758,6 +2758,14 @@
   .winner-title { color: var(--gold-bright); font: 600 32px/1.05 Georgia, serif; }
   .winner-verdict { margin-top: 8px; color: #f3e5bd; font: 600 17px/1.2 Georgia, serif; }
   .winner-meta { margin-top: 13px; }
+  /* A watched result (operator 2026-11-26: "on the final civvis game screen,
+     at top is turn. remove the word "victory". lets just go civ <star
+     symbol> "Science" or whatever the win is. then the player line"): the
+     turn stands where Victory did, and the winner, the star in its colour
+     and the kind of win are one line. */
+  .winner-content > .winner-turn { margin: 0 0 12px; }
+  .winner-title .winner-mark { display: inline; margin: 0 .12em; font-size: .62em; vertical-align: .14em; }
+  .winner-title .winner-kind { color: #f3e5bd; }
   .reign {
     display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; width: 100%;
     margin-top: 14px; padding: 10px 6px; border-block: 1px solid #d7b66a33;
@@ -2794,8 +2802,8 @@
   #winner:has(.game-stats) .winner-content:has(> .winner-actions-sim) {
     grid-template-rows: auto auto minmax(0, 1fr);
     grid-template-areas:
-      "kicker mark   title  verdict count actions"
-      "turn   player player player  count choice"
+      "turn   title  title  title   count actions"
+      "player player player player  count choice"
       "stats  stats  stats  stats   stats stats";
   }
   #winner:has(.game-stats) .winner-content > :not(.game-stats) { min-width: 0; margin: 0; }

@@ -9039,14 +9039,19 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
           <button class="winner-again winner-playon" id="play-on-indefinite"
             onclick="playOnPastVictory('indefinite', false)"
             title="Keep playing this world without a turn limit and ignore every later victory.">To infinity and beyond</button>${gameStatsButton(st)}`;
-      w.innerHTML = `<div class="winner-content">
-        <span class="winner-kicker">${kicker}</span>
+      // A watched result reads the turn, then who won and how in one line, then who played it (operator
+      // 2026-11-26: "at top is turn. remove the word "victory". lets just go civ <star symbol> "Science"").
+      const headline = SPEC ? `<span class="winner-meta winner-turn">Turn ${reportedTurn(st)}</span>
+        <strong class="winner-title">${winnerName} <span class="winner-mark" aria-hidden="true">✦</span> <span class="winner-kind">${verdict.replace(/ victory$/, "")}</span></strong>`
+        : `<span class="winner-kicker">${kicker}</span>
         <span class="winner-mark" aria-hidden="true">✦</span>
-        <strong class="winner-title">${winnerName}${!SPEC && !winnerIds.includes(0) ? " wins" : ""}</strong>
-        <span class="winner-verdict">${verdict}</span>
+        <strong class="winner-title">${winnerName}${!winnerIds.includes(0) ? " wins" : ""}</strong>
+        <span class="winner-verdict">${verdict}</span>`;
+      w.innerHTML = `<div class="winner-content">
+        ${headline}
         ${winnerPlayers.length
           ? `<span class="winner-meta winner-player">Played by ${winnerPlayers.join(" + ")}</span>` : ``}
-        <span class="winner-meta">Turn ${reportedTurn(st)}</span>
+        ${SPEC ? `` : `<span class="winner-meta">Turn ${reportedTurn(st)}</span>`}
         ${SPEC ? `<span class="winner-countdown" id="respawn" role="timer"></span>` : ``}
         ${reignSummary(st)}
         <span class="winner-actions${SPEC ? " winner-actions-sim" : ""}">
