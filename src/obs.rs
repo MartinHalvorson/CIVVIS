@@ -916,6 +916,31 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
                     (Some(all), Some(fighting))
                 }
             };
+            // Four per-city averages for the standings (operator 2026-11-26:
+            // "to the right of city let's track avg loyalty. to the right of
+            // pop, lets track avg housing surplus. . to the right of food,
+            // lets track avg happiness", then "lets change food to avg food
+            // surplus"). Food surplus is what the cities grow less the two
+            // Food each citizen eats, Civ VI's Food Surplus before growth
+            // modifiers, read off the same public figures FOOD always was, so
+            // a mirrored rival has it too. Loyalty, spare housing and
+            // amenities over need (happiness) are city details Civ VI shows
+            // only to the city's owner: a seat reads its own, the spectator
+            // reads everyone's, and a mirrored board, whose host does not send
+            // them, leaves the cells empty rather than averaging a fogged one.
+            let avg_food_surplus = (city_count > 0).then(|| {
+                round1((output.food - 2.0 * f64::from(total_population)) / city_count as f64)
+            });
+            let city_detail_visible = (omniscient || o.id == pid) && public_stats.is_none();
+            let city_mean = |reading: &dyn Fn(&crate::game::City) -> f64| {
+                (city_detail_visible && !city_ids.is_empty()).then(|| {
+                    let sum: f64 = city_ids.iter().map(|cid| reading(&g.cities[cid])).sum();
+                    round1(sum / city_ids.len() as f64)
+                })
+            };
+            let avg_loyalty = city_mean(&|city| city.loyalty);
+            let avg_housing_surplus = city_mean(&|city| g.city_housing_headroom(city));
+            let avg_amenity_surplus = city_mean(&|city| g.city_amenity_surplus(city) as f64);
             // A finished device is an empire-scale fact of the same kind as
             // military strength, and it goes on the public ledger for the same
             // reason: the standings ribbon compares empires somebody has met.
@@ -991,6 +1016,10 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
                 "score": g.score(o.id),
                 "cities": city_count,
                 "population": total_population,
+                "avg_loyalty": avg_loyalty,
+                "avg_housing_surplus": avg_housing_surplus,
+                "avg_food_surplus": avg_food_surplus,
+                "avg_amenity_surplus": avg_amenity_surplus,
                 "suzerain_count": public_stats
                     .and_then(|stats| stats.suzerain_count)
                     .unwrap_or_else(|| g.players.iter()

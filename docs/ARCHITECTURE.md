@@ -66,10 +66,11 @@ CLI / HTTP server / browser / WASM / evaluation tools
   scripts intentionally: inline controls and renderer callbacks keep their
   existing global contract while setup work no longer conflicts with map
   rendering edits. Native, beta, and WASM delivery all serve the same pair,
-  plus `web/assets/app_palette.js`, `web/assets/app_arena.js` and
-  `web/assets/app_clock.js` (the map's palette, the Arena Stats record between
-  games, and the turn plate's Live time stopwatch; all carved out of
-  `app.js` and loaded ahead of it), `web/assets/app_moments.js` (sound and payoff banners, which only read
+  plus `web/assets/app_palette.js`, `web/assets/app_arena.js`,
+  `web/assets/app_clock.js` and `web/assets/app_standings.js` (the map's
+  palette, the Arena Stats record between games, the turn plate's Live time
+  stopwatch, and the player standings' per-city averages and heading
+  explanations; all carved out of `app.js` and loaded ahead of it), `web/assets/app_moments.js` (sound and payoff banners, which only read
   the turn's events, and the result card's per-civ game stats graphs drawn from
   `/state` `game_stats`) and `web/assets/app_frontdoor.js`, the main menu, Create
   Game and game menu screens that only the published site shows. The site lands

@@ -526,6 +526,7 @@ static EMBEDDED_INDEX: std::sync::LazyLock<String> = std::sync::LazyLock::new(||
     page.push_str(EMBEDDED_APP_ARENA_JS);
     page.push_str(EMBEDDED_APP_LAUNCHES_JS);
     page.push_str(EMBEDDED_APP_CLOCK_JS);
+    page.push_str(EMBEDDED_APP_STANDINGS_JS);
     page.push_str(EMBEDDED_APP_JS);
     page.push_str(EMBEDDED_APP_SETUP_JS);
     page.push_str(EMBEDDED_APP_MOMENTS_JS);
@@ -536,6 +537,7 @@ static EMBEDDED_INDEX: std::sync::LazyLock<String> = std::sync::LazyLock::new(||
 const EMBEDDED_APP_ARENA_JS: &str = include_str!("../web/assets/app_arena.js");
 const EMBEDDED_APP_LAUNCHES_JS: &str = include_str!("../web/assets/app_launches.js");
 const EMBEDDED_APP_CLOCK_JS: &str = include_str!("../web/assets/app_clock.js");
+const EMBEDDED_APP_STANDINGS_JS: &str = include_str!("../web/assets/app_standings.js");
 const EMBEDDED_APP_SETUP_JS: &str = include_str!("../web/assets/app_setup.js");
 const EMBEDDED_APP_FRONTDOOR_JS: &str = include_str!("../web/assets/app_frontdoor.js");
 const EMBEDDED_APP_MOMENTS_JS: &str = include_str!("../web/assets/app_moments.js");
@@ -3575,6 +3577,7 @@ const APP_PALETTE_JS_TAG: &str = r#"<script src="/assets/app_palette.js"></scrip
 const APP_ARENA_JS_TAG: &str = r#"<script src="/assets/app_arena.js"></script>"#;
 const APP_LAUNCHES_JS_TAG: &str = r#"<script src="/assets/app_launches.js"></script>"#;
 const APP_CLOCK_JS_TAG: &str = r#"<script src="/assets/app_clock.js"></script>"#;
+const APP_STANDINGS_JS_TAG: &str = r#"<script src="/assets/app_standings.js"></script>"#;
 const APP_JS_TAG: &str = r#"<script src="/assets/app.js"></script>"#;
 const APP_SETUP_JS_TAG: &str = r#"<script src="/assets/app_setup.js"></script>"#;
 const APP_FRONTDOOR_JS_TAG: &str = r#"<script src="/assets/app_frontdoor.js"></script>"#;
@@ -3594,6 +3597,8 @@ fn index_with_app_instance(page: &str, instance: u32) -> Vec<u8> {
     let launches_tag =
         format!(r#"<script src="/assets/app_launches.js?instance={instance}"></script>"#);
     let clock_tag = format!(r#"<script src="/assets/app_clock.js?instance={instance}"></script>"#);
+    let standings_tag =
+        format!(r#"<script src="/assets/app_standings.js?instance={instance}"></script>"#);
     let app_tag = format!(r#"<script src="/assets/app.js?instance={instance}"></script>"#);
     let setup_tag = format!(r#"<script src="/assets/app_setup.js?instance={instance}"></script>"#);
     let frontdoor_tag =
@@ -3606,6 +3611,7 @@ fn index_with_app_instance(page: &str, instance: u32) -> Vec<u8> {
         .replacen(APP_ARENA_JS_TAG, &arena_tag, 1)
         .replacen(APP_LAUNCHES_JS_TAG, &launches_tag, 1)
         .replacen(APP_CLOCK_JS_TAG, &clock_tag, 1)
+        .replacen(APP_STANDINGS_JS_TAG, &standings_tag, 1)
         .replacen(APP_JS_TAG, &app_tag, 1)
         .replacen(APP_SETUP_JS_TAG, &setup_tag, 1)
         .replacen(APP_FRONTDOOR_JS_TAG, &frontdoor_tag, 1)
@@ -3654,6 +3660,11 @@ fn app_launches_js() -> Vec<u8> {
 fn app_clock_js() -> Vec<u8> {
     std::fs::read("web/assets/app_clock.js")
         .unwrap_or_else(|_| EMBEDDED_APP_CLOCK_JS.as_bytes().to_vec())
+}
+
+fn app_standings_js() -> Vec<u8> {
+    std::fs::read("web/assets/app_standings.js")
+        .unwrap_or_else(|_| EMBEDDED_APP_STANDINGS_JS.as_bytes().to_vec())
 }
 
 fn app_moments_js() -> Vec<u8> {
@@ -5133,6 +5144,14 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                 "200 OK",
                 "text/javascript; charset=utf-8",
                 &app_clock_js(),
+            );
+        }
+        ("GET", "/assets/app_standings.js") => {
+            respond(
+                stream,
+                "200 OK",
+                "text/javascript; charset=utf-8",
+                &app_standings_js(),
             );
         }
         ("GET", "/assets/app.js") => {
