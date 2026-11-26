@@ -5138,6 +5138,11 @@ const STRANGE_SPARE_STILL_MS = 1500, STRANGE_SPARE_EVERY_MS = 1000;
 const STRANGE_HEAD = 34, STRANGE_BOX_LEAST = 120, STRANGE_SILL = 30;
 // The longest a branch's name is written on the tree, where room is short.
 const STRANGE_NAME_MOST = 36;
+// All 14,000,605 (`strangeAll`): how many of the best player strategies it
+// branches the base timeline for (operator 2026-11-26: "every ai-strategy we
+// have (we can say top 10 for now)"), and how long it waits for their worlds
+// to be there before it lets time run on without the rest.
+const STRANGE_ALL_TOP = 10, STRANGE_ALL_WAIT_MS = 90000;
 // How far ahead of the open turn each world's future is played, and the most
 // turns of it a world is asked for at once (`strangeAheadNext`): while the
 // worlds stand still, and between the turns of time running, where the next
@@ -5257,6 +5262,24 @@ const STRANGE_STYLE = `
   }
   #strange-hud .strange-versus em.strange-total { padding-left: 8px; }
   #strange-hud .strange-versus em.strange-pair { padding-left: 20px; }
+  /* All 14,000,605 (operator 2026-11-26: "add a button to the left side top
+     half but the bottom of it"): at the foot of the tree on the left, where
+     the worlds' numbers stand on the right, and over the turn written on the
+     line when that would be under it (\`--strange-all-lift\`). In Doctor
+     Strange's colours, as his button in the site list is. */
+  #strange-hud .strange-all {
+    position: absolute; left: 14px; bottom: calc(100% - var(--strange-line) + 12px + var(--strange-all-lift, 0px));
+    box-sizing: border-box; width: min(250px, 30vw); height: 36px; padding: 0 14px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    font: 700 15px/1 Georgia, serif; letter-spacing: .03em; font-variant-numeric: tabular-nums;
+    color: #ffe3a3; background: linear-gradient(135deg, #1c2a7a 30%, #a3122f); border: 1px solid #ff9a2e;
+    box-shadow: 0 0 6px rgba(255, 138, 30, .6);
+  }
+  #strange-hud .strange-all:hover:not(:disabled) {
+    color: #fff; background: linear-gradient(135deg, #2638a0 30%, #c8193d); border-color: #ffb85c;
+    box-shadow: 0 0 10px rgba(255, 138, 30, .6);
+  }
+  #strange-hud .strange-all.on, #strange-hud .strange-all.on:disabled { opacity: 1; cursor: progress; box-shadow: 0 0 18px rgba(255, 138, 30, .9); }
   /* The divide between the tree and the boxes is the line of the open turn,
      and is taken hold of there. */
   #strange-hud .strange-divide {
@@ -5474,6 +5497,10 @@ const strange = {
   // A branch playing a path Autosearch found (`strangeSearchBranch`):
   // {letter, from, search}. Null when none is.
   planning: null,
+  // All 14,000,605 under way (`strangeAll`): {base, turn, letters, short,
+  // since}, with `turn` null while time is still stopping for it. Null when
+  // it is not.
+  all: null,
   // Whether the controls were last drawn as free to press.
   idleWas: null,
 };
@@ -5736,7 +5763,12 @@ function strangePaneRoom(timeline) {
   const megabytes = Math.max(STRANGE_ROOM_LEAST_MB, Math.floor(room / worlds));
   if (timeline.memory_line === megabytes || strangeRoomTold === megabytes) return;
   strangeRoomTold = megabytes;
-  debugOp({op: "room", megabytes});
+  // Told in turn with what the host tells this world (`debugInTurn`), never
+  // between two of its steps: an op of the world's own in flight there is
+  // what the next step of a follow finds, and that step is dropped, so the
+  // world stopped short the moment time ran on after worlds were opened
+  // (All 14,000,605 does that at once).
+  debugInTurn(async () => { if (strangeRoomTold === megabytes) await debugOp({op: "room", megabytes}); });
 }
 // A page for the next branch is made ahead of time, out of sight, while the
 // worlds stand still. A world's page is the whole viewer again, and making
@@ -5770,10 +5802,18 @@ function strangeSpare() {
 // in the seat and then plays the path.
 function strangeBranch(name, from = strange.follow, plan = null) {
   if (!strangeIdle() || !name) return null;
+  const letter = strangeMake(name, from, from, plan);
+  if (!letter) { strangeSay(`${STRANGE_LETTERS.length} worlds are open, which is the most. Delete one to branch again`); return null; }
+  strangeSay(`Branch ${debugSplit.panes[from].turn}-${strangeHandle(name)} is world ${letter.toUpperCase()}, from ${from.toUpperCase()}`);
+  return letter;
+}
+// A branch's world is made, in a box beside `after`: the next free letter,
+// or null when every one is taken.
+function strangeMake(name, from, after = from, plan = null) {
   const split = debugSplit;
   const letter = [...STRANGE_LETTERS].find(free => !strange.order.includes(free));
-  if (!letter) { strangeSay(`${STRANGE_LETTERS.length} worlds are open, which is the most. Delete one to branch again`); return null; }
-  strange.order.splice(strange.order.indexOf(from) + 1, 0, letter);
+  if (!letter) return null;
+  strange.order.splice(strange.order.indexOf(after) + 1, 0, letter);
   strange.born[letter] = strange.births++;
   strange.tint[letter] = strangeInk();
   strange.lanes[letter] = strange.lanes[from] ?? 0;
@@ -5782,8 +5822,105 @@ function strangeBranch(name, from = strange.follow, plan = null) {
   // One of the split's own two is there already, out of sight, and is made
   // the branch at once; a new page is, once it has loaded (`strangeStep`).
   if (there) { split.panes[letter].born = born; if (split.panes[letter].turn !== null) strangeBear(letter); }
-  strangeSay(`Branch ${split.panes[from].turn}-${strangeHandle(name)} is world ${letter.toUpperCase()}, from ${from.toUpperCase()}`);
   return letter;
+}
+
+// ---- All 14,000,605
+//
+// Operator 2026-11-26: "add a button to the left side top half but the
+// bottom of it in doctor strange that says "All 14,000,605" and when clicked
+// every ai-strategy we have (we can say top 10 for now) spawns from the
+// current point and all start simulating towards the end. time carries
+// forward for all. spawn a window for each".
+//
+// So the button stands at the foot of the tree on the left, where the
+// worlds' numbers stand on the right. Pressed, the base timeline is branched
+// on its open turn once for each of the best `STRANGE_ALL_TOP` player
+// strategies, best first, each a world in a box of its own, and once they
+// are all there time runs on for every open world, to the end of the game.
+// A strategy that already has its world there is not given another: the
+// one the base timeline seats, and one seated in a world that is still the
+// same world as the base on this turn. Time already running is stopped
+// first and the worlds branch from the turn it stops on. Past the most
+// worlds that can be open, the best are branched and the page says how many
+// were left out.
+
+// The player strategies All branches the base timeline for, best first.
+function strangeAllNames(base = strange.follow) {
+  const split = debugSplit, pane = split.panes[base], turn = pane.turn;
+  const print = letter => {
+    const marks = split.panes[letter].marks || {}, at = Array.isArray(marks.turns) ? marks.turns.indexOf(turn) : -1;
+    return at >= 0 && Array.isArray(marks.worlds) ? marks.worlds[at] : undefined;
+  };
+  const mine = print(base);
+  const seated = new Set([pane.strategy, ...strangeOpen().filter(letter => letter !== base && split.panes[letter].turn === turn &&
+    mine !== undefined && print(letter) === mine).map(letter => split.panes[letter].strategy)]);
+  const offered = strangeAgents();
+  return strangeRanked().names.filter(name => offered.includes(name)).slice(0, STRANGE_ALL_TOP).filter(name => !seated.has(name));
+}
+function strangeAll() {
+  const split = debugSplit;
+  if (!split || strange.all) return;
+  const going = split.running > 0 || strange.run !== null;
+  if (going) {
+    // Time stops first, and the worlds branch from the turn it stops on.
+    strange.all = {base: strange.follow, turn: null, letters: [], short: 0, since: performance.now()};
+    if (!(strange.run && strange.run.stop)) strangePlay();
+    strangeDraw();
+    return;
+  }
+  if (!strangeIdle()) return;
+  strangeAllSpawn(strange.follow);
+}
+function strangeAllSpawn(base) {
+  const split = debugSplit, names = strangeAllNames(base), turn = split.panes[base].turn;
+  const room = STRANGE_LETTERS.length - strangeOpen().length;
+  if (names.length === 0 || room <= 0) {
+    strange.all = null;
+    strangeSay(names.length === 0 ? `Each of the top ${STRANGE_ALL_TOP} player strategies has a world of its own on turn ${turn} already`
+      : `${STRANGE_LETTERS.length} worlds are open, which is the most. Delete some to branch them all`);
+    return;
+  }
+  // Making a world draws the split, which looks here again (`strangeStep`):
+  // until the last is made, there is nothing to do yet.
+  const all = strange.all = {base, turn, letters: [], short: 0, since: performance.now(), making: true};
+  try {
+    for (const name of names.slice(0, room)) {
+      const letter = strangeMake(name, base, all.letters.length ? all.letters[all.letters.length - 1] : base);
+      if (!letter) break;
+      all.letters.push(letter);
+    }
+  } finally { all.making = false; }
+  all.short = names.length - all.letters.length;
+  strangeSay(`All 14,000,605: ${all.letters.length} world${all.letters.length === 1 ? "" : "s"} branch ${base.toUpperCase()} on turn ${turn}…`);
+}
+// Each time the split is drawn, and now and then besides: once time has
+// stopped, the worlds are branched, and once they are all there, time runs.
+function strangeAllWatch() {
+  const all = strange.all, split = debugSplit;
+  if (!all || all.making || !split) return;
+  const late = performance.now() - all.since > STRANGE_ALL_WAIT_MS;
+  if (all.turn === null) {
+    if (split.running > 0 || strange.run !== null || !strangeIdle()) {
+      if (late) { strange.all = null; strangeSay("The worlds did not stop, so nothing was branched"); }
+      return;
+    }
+    strangeAllSpawn(strangeOpen().includes(all.base) ? all.base : strange.follow);
+    return;
+  }
+  // Time was set running by hand meanwhile, which is what was to be done.
+  if (split.running > 0 || strange.run !== null) { strange.all = null; strangeDraw(); return; }
+  if (!strangeIdle()) {
+    if (late) { strange.all = null; strangeSay("Not every branch has opened yet: press Play Time once they have"); }
+    return;
+  }
+  strange.all = null;
+  const made = all.letters.filter(letter => strangeOpen().includes(letter)).length, open = strangeOpen().length;
+  strangePlay();
+  const runs = split.running > 0 || strange.run !== null;
+  const left = all.short > 0 ? ` ${all.short} more did not fit: ${STRANGE_LETTERS.length} worlds is the most.` : "";
+  strangeSay(`All 14,000,605: ${made} branch${made === 1 ? "" : "es"} of ${all.base.toUpperCase()} from turn ${all.turn}` +
+    `${runs ? `, and time runs on for all ${open} worlds, to the end.` : "."}${left}`);
 }
 // A world that is there is made what it was opened to be: the world it
 // branches from, as that stands, with its own strategy in the seat.
@@ -5929,6 +6066,7 @@ function strangeStep() {
       strangeSay(`${short.toUpperCase()} could not come to turn ${turn}, so the worlds stay unlocked`);
     }
   }
+  if (strange.all) strangeAllWatch();
   if (!run || run.asked === null) { strangeAheadNext(); return; }
   // Each world holds the turn it has played until the rest have played
   // their own; one that was there already holds nothing.
@@ -6672,7 +6810,7 @@ function strangeMount() {
   Object.assign(strange, {follow: "a", cam: null, lanes: {a: 0, b: 1}, order: ["a", "b"], born: {a: 0, b: 1}, births: 2,
     tint: {a: STRANGE_INKS[0], b: STRANGE_INKS[1]}, inks: 2, tree: null, parted: {}, locked: true, lockWanted: false,
     divide: null, over: null, peek: null, run: null, swan: null, omen: null, said: "", drawn: "", meter: [], metered: null,
-    seeing: {}, fates: [], fateMode: "full", planning: null});
+    seeing: {}, fates: [], fateMode: "full", planning: null, all: null});
   const canvas = document.createElement("canvas");
   canvas.id = "strange-sky";
   canvas.setAttribute("role", "img");
@@ -6706,6 +6844,7 @@ function strangeMount() {
       <em data-strange-worlds></em>
     </div>
     <div class="strange-versus strange-card" data-strange="numbers"></div>
+    <button class="strange-all" data-strange="all">All 14,000,605</button>
     <div class="strange-swans" role="group" aria-label="Black swan">
       <button class="strange-swan" data-strange="swan"></button>
       <select data-strange="swan-kind" aria-label="Which black swan"></select>
@@ -6726,6 +6865,7 @@ function strangeMount() {
     else if (action === "futures") { strange.futures = !strange.futures; strangeAheadNext(); strangeForesee(); strangeDraw(); }
     else if (action === "fork") strangeGoTo((strange.tree || strangeTree()).splits);
     else if (action === "search") debugSearchShow(!debugSearchShown);
+    else if (action === "all") strangeAll();
     else if (action === "swan") strangeSwan(hud.querySelector('[data-strange="swan-kind"]').value);
     else if (action === "omen") { strange.omen = null; strangeDraw(); }
     else if (action.startsWith("follow-")) { strange.follow = action.slice(7); strangeDraw(); }
@@ -6791,7 +6931,7 @@ function strangeMount() {
   strange.stale = true;
   strangeLayout();
   clearInterval(strange.meterTimer);
-  strange.meterTimer = setInterval(() => { strangeAheadWatch(); strangeSwanWatch(); strangeSearchWatch(); strangeForesee(); strangeMeasure(); }, STRANGE_METER_MS);
+  strange.meterTimer = setInterval(() => { strangeAheadWatch(); strangeSwanWatch(); strangeSearchWatch(); strangeAllWatch(); strangeForesee(); strangeMeasure(); }, STRANGE_METER_MS);
   strangeMeasure();
   requestAnimationFrame(strangePaint);
 }
@@ -6809,12 +6949,18 @@ function strangeMount() {
 // `strange.shape`), the line moving moves the worlds' card with it, and a
 // card that has grown by itself, a number gaining a figure, is seen by the
 // browser once it has laid the page out anyway (`strangeMount`).
-const STRANGE_CARDS = [".strange-title", ".strange-meter", ".strange-versus", ".strange-swans", ".strange-omen"];
+const STRANGE_CARDS = [".strange-title", ".strange-meter", ".strange-versus", ".strange-swans", ".strange-omen", ".strange-all"];
 function strangeCards() {
   const hud = strange.hud;
   const box = name => hud.querySelector(name).getBoundingClientRect();
   const title = box(".strange-title"), meter = box(".strange-meter"), versus = box(".strange-versus");
-  strange.floor = Math.ceil(Math.max(title.bottom + 46, meter.bottom + versus.height + 30));
+  // All 14,000,605 stands at the foot of the tree on the left, on the line
+  // as the worlds' numbers do on the right, unless the turn written on the
+  // line would be under it there: then it stands over the turn.
+  const turn = box(".strange-turn"), foot = box(".strange-all");
+  const lift = turn.right > foot.left - 10 && turn.left < foot.right + 10 ? Math.ceil(turn.height) + 8 : 0;
+  if (hud.style.getPropertyValue("--strange-all-lift") !== `${lift}px`) hud.style.setProperty("--strange-all-lift", `${lift}px`);
+  strange.floor = Math.ceil(Math.max(title.bottom + 46, title.bottom + 10 + foot.height + 12 + lift, meter.bottom + versus.height + 30));
   strange.cards = [{left: title.left, right: title.right, top: title.top, bottom: title.bottom, side: -1},
     {left: meter.left, right: meter.right, top: meter.top, bottom: meter.bottom, side: 1},
     {left: versus.left, right: versus.right, top: versus.top, bottom: versus.bottom, side: 1}];
@@ -6824,6 +6970,8 @@ function strangeCards() {
     const said = held.getBoundingClientRect();
     strange.cards.push({left: said.left, right: said.right, top: said.top, bottom: said.bottom, side: 1});
   }
+  const all = box(".strange-all");
+  strange.cards.push({left: all.left, right: all.right, top: all.top, bottom: all.bottom, side: -1});
   strange.stale = false;
 }
 function strangeLayout() {
@@ -6838,7 +6986,8 @@ function strangeLayout() {
   };
   // The worlds' card stands on the line, and has moved if the line has.
   if (put(host, "--strange-line", `${g.cy}px`)) strangeCards();
-  put(host, "--strange-board", `${Math.round(strangeBoard(g) + 6)}px`);
+  // The turn on the line moves with the board, and All 14,000,605 with it.
+  if (put(host, "--strange-board", `${Math.round(strangeBoard(g) + 6)}px`)) strangeCards();
   for (const letter of open) {
     const at = g.boxes[letter], pane = split.panes[letter], plate = hud.querySelector(`[data-strange-world="${letter}"]`);
     if (!at || !plate) continue;
@@ -6972,6 +7121,20 @@ function strangeDraw() {
   branch.disabled = !idle || full;
   branch.title = full ? `${STRANGE_LETTERS.length} worlds are open, which is the most. Delete one to branch again`
     : `Branch the base timeline, ${follow.toUpperCase()}, on turn ${turn}: pick the player strategy that plays the branch from here, and it is made, a world of its own in a box of its own`;
+  // All 14,000,605: the best player strategies, each branched from the base
+  // timeline on this turn, and time run on for every world (`strangeAll`).
+  // Time running is stopped for it first, so it can be pressed then too.
+  const everyone = hud.querySelector('[data-strange="all"]'), fresh = strangeAllNames(follow);
+  const room = STRANGE_LETTERS.length - open.length, waiting = !!strange.all;
+  everyone.classList.toggle("on", waiting);
+  everyone.setAttribute("aria-busy", waiting ? "true" : "false");
+  everyone.disabled = waiting || room <= 0 || (!idle && !going) || split.busy || !!(strange.run && strange.run.stop) || (!going && fresh.length === 0);
+  everyone.title = waiting ? "Branching the best player strategies from the base timeline, then time runs on for all of them"
+    : room <= 0 ? `${STRANGE_LETTERS.length} worlds are open, which is the most. Delete some to branch every player strategy`
+    : !going && fresh.length === 0 ? `Each of the top ${STRANGE_ALL_TOP} player strategies has a world of its own on turn ${turn} already`
+    : `Every player strategy (the top ${STRANGE_ALL_TOP} for now) branches the base timeline, ${follow.toUpperCase()}, on ` +
+      `${going ? "the turn time stops on" : `turn ${turn}`}, each in a window of its own, and time runs on for all the worlds to the end of the game` +
+      (!going && fresh.length <= room ? `: ${fresh.length} new world${fresh.length === 1 ? "" : "s"}` : !going ? `: the best ${room}, as many as there is room for` : "");
   const back = set("fork", one ? "⏮ To the fork" : `⏮ To the fork · ${tree.splits}`);
   back.disabled = !idle || one || turn === tree.splits;
   back.title = !many ? "One world is open" : one ? "The worlds are one world so far" : `The worlds go back to turn ${tree.splits}, the last they all share`;
@@ -7065,7 +7228,8 @@ function strangeDraw() {
   if (said.textContent !== count) said.textContent = count;
   // What gives a card another shape: the worlds on the worlds' card, what
   // the title's card says, and a black swan's news.
-  const shape = `${open.join("")}|${wide}|${hud.querySelector('[data-strange="say"]').textContent}|${omen.dataset.drawn}`;
+  const shape = `${open.join("")}|${wide}|${hud.querySelector('[data-strange="say"]').textContent}|${omen.dataset.drawn}|` +
+    `${String(turn).length}|${hud.querySelector('[data-strange="era"]').textContent}`;
   if (shape !== strange.shape) { strange.shape = shape; strange.stale = true; }
   strangeLayout();
   // Autosearch's panel says what can be done with the worlds as they stand.

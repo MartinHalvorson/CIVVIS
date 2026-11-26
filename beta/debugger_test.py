@@ -74,6 +74,13 @@ let SPEC = false, autoplaying = false, turnAdvancePending = false;
 const AUTOPLAY_BATCH_TIMEOUT_MS = 60000;
 // The roster the viewer reads the Civ AIs' names from, and where it keeps its choice.
 const RULES = {strategies: [{name: "jack", username: "Jack", elo: 1211}, {name: "stock", username: "Stock", elo: 1000}]};
+// More rated strategies, below these two, for a check that wants a roster as
+// long as the real one: [[name, elo], ...] kept where every page of the
+// origin reads it, the worlds' pages too.
+for (const [name, elo] of JSON.parse(localStorage.getItem("civvis-toy-strategies") || "[]")) {
+  RULES.strategies.push({name, username: name, elo});
+  document.getElementById("autoplaystrategy").insertAdjacentHTML("beforeend", `<option value="${name}">${elo} - ${name}</option>`);
+}
 const AUTOPLAY_STRATEGY_KEY = "civvis-autoplay-strategy-v1";
 const unitOrders = new Map(), cityQueues = new Map();
 let noticeLog = [], noticeDismissed = new Set(), noticeSeenTurn = 0;
@@ -3524,7 +3531,7 @@ def check_doctor_strange(bar: Bar, address: str) -> None:
                     "branch": ["⑂ Branch: 1-(player strategy)1-Jack", False], "search": ["Autosearch", False],
                     "fork": ["⏮ To the fork", True], "lock": ["🔒 Locked", False], "futures": ["🔮 Futures: off", False],
                     "swan": ["🦢 Generate Black Swan", False], "swan-kind": ["AnyPandemicInstant nuclear war", False],
-                    "omen": ["", False],
+                    "omen": ["", False], "all": ["All 14,000,605", True],
                     "say": ["One world so far. Play, and each player strategy takes it its own way", False],
                     "follow-a": ["Following", True], "follow-b": ["Follow", False],
                     "close-a": ["✕", False], "close-b": ["✕", False],
@@ -4137,6 +4144,95 @@ def check_doctor_strange_autosearch(bar: Bar, address: str) -> None:
     assert not bar.dev.console, f"the page complained: {bar.dev.console}"
 
 
+def check_doctor_strange_all(bar: Bar, address: str) -> None:
+    """Doctor Strange's CIVVIS has All 14,000,605: the best player strategies branched from the base timeline at once, and time run on for all.
+
+    Operator, 2026-11-26: "add a button to the left side top half but the
+    bottom of it in doctor strange that says "All 14,000,605" and when
+    clicked every ai-strategy we have (we can say top 10 for now) spawns from
+    the current point and all start simulating towards the end. time carries
+    forward for all. spawn a window for each".
+
+    The toy's roster is made eleven long here, rated below Jack and Stock,
+    so the top ten leave one out.
+    """
+    more = [[f"s{rank}", 1000 - 10 * (rank - 2)] for rank in range(3, 12)]
+    ready = "typeof drawDebugBar === 'function' && typeof engineState === 'function'"
+    button = '#strange-hud [data-strange="all"]'
+    said = "document.querySelector('#strange-hud [data-strange=\"say\"]').textContent"
+    seats = "strange.order.map(letter => debugSplit.panes[letter].strategy)"
+    together = lambda turn: f"strange.order.every(letter => debugSplit.panes[letter].turn >= {turn})"
+    bar.ev(f"localStorage.setItem('civvis-toy-strategies', {json.dumps(json.dumps(more))}), true")
+    try:
+        bar.dev.call("Page.navigate", {"url": f"{address}?mode=strange"})
+        bar.until(f"{ready} && location.search === '?mode=strange' && state === null", "Doctor Strange's CIVVIS, with eleven strategies")
+        bar.ev("engine.scores = {1: 0}, strange.futures = false, render(engineState()), true")
+        bar.settled()
+        bar.until("debugSplit && debugSplit.shown && debugSplit.panes.a.turn === 1 && debugSplit.panes.b.turn === 1 && strangeIdle()",
+                  "its two worlds are there")
+        assert bar.ev("strangeRanked().names") == ["jack", "stock"] + [name for name, _ in more]
+        assert bar.ev(f"[{seats}, strange.follow]") == [["stock", "jack"], "a"]
+        # At the foot of the tree on the left, standing on the line as the
+        # worlds' numbers do on the right: under the title's card, clear of
+        # the turn written on the line, with the line under all of it.
+        place = bar.ev(f"""(() => {{
+          const box = name => document.querySelector(`#strange-hud ${{name}}`).getBoundingClientRect();
+          const all = box('[data-strange="all"]'), title = box('.strange-title'), turn = box('.strange-turn'), versus = box('.strange-versus');
+          const line = strangeGeometry().cy;
+          return [Math.round(all.left) === 14, Math.round(all.bottom) === line - 12, Math.round(all.bottom) === Math.round(versus.bottom),
+            all.top > title.bottom, all.right < turn.left, all.right < innerWidth / 2, line >= strange.floor,
+            strange.cards.some(card => card.side < 0 && Math.round(card.top) === Math.round(all.top))];
+        }})()""")
+        assert place == [True] * 8, place
+        # Its words are the operator's, in Doctor Strange's colours. The base,
+        # A, seats Stock, and B seats Jack and is still the same world on
+        # turn 1: of the top ten that leaves eight to branch.
+        look = bar.ev(f"(() => {{ const held = document.querySelector('{button}'), seen = getComputedStyle(held);"
+                      " return [held.textContent, held.disabled, seen.color, seen.borderTopColor, seen.backgroundImage.startsWith('linear-gradient'), held.title]; })()")
+        assert look[:5] == ["All 14,000,605", False, "rgb(255, 227, 163)", "rgb(255, 154, 46)", True], look
+        assert look[5].endswith("each in a window of its own, and time runs on for all the worlds to the end of the game: 8 new worlds"), look[5]
+        assert bar.ev("strangeAllNames()") == [name for name, _ in more[:8]]
+        # Pressed: a world for each, in a box of its own beside the base, best
+        # first, each a copy of A on turn 1 with its own strategy in the seat;
+        # then time runs on for all ten, together.
+        bar.click(button)
+        bar.until(f"strange.order.length === 10 && strange.all === null && strange.run !== null", "every strategy is a world, and time runs",
+                  seconds=60)
+        assert bar.ev("strange.order.join('')") == "acdefghijb"
+        assert bar.ev(seats) == ["stock"] + [name for name, _ in more[:8]] + ["jack"]
+        assert bar.ev(said) == "All 14,000,605: 8 branches of A from turn 1, and time runs on for all 10 worlds, to the end.", bar.ev(said)
+        assert bar.ev("document.querySelectorAll('#debugsplit iframe:not(.strange-shut)').length") == 10
+        bar.until("strange.order.slice(1, 9).every(letter => debugSplit.panes[letter].frame.contentWindow.eval('engine.seat') === debugSplit.panes[letter].strategy)",
+                  "each new world is seated with its own strategy")
+        copies = bar.ev("strange.order.slice(1, 9).map(letter => debugSplit.panes[letter].frame.contentWindow.eval("
+                        "'engine.sent.filter(call => call.path === \"/debug\" && call.body.op === \"copy\").length'))")
+        assert copies == [1] * 8, copies
+        bar.ev("window.strangeGaps = []; window.strangeWatch = setInterval(() => { const turns = strange.order.map(letter => debugSplit.panes[letter].turn);"
+               " strangeGaps.push(Math.max(...turns) - Math.min(...turns)); }, 4); true")
+        bar.until(together(4), "time carries forward for all ten", seconds=60)
+        gaps = bar.ev("clearInterval(strangeWatch), strangeGaps")
+        assert gaps and max(gaps) <= 1, gaps
+        # Pressed while time runs: time stops, the best of those without a
+        # world of their own on that turn branch A there, as many as fit in
+        # the twelve, and time runs on again for all.
+        bar.click(button)
+        bar.until("strange.order.length === 12 && strange.all === null && strange.run !== null", "pressed again while time runs", seconds=60)
+        assert bar.ev("strange.order.join('')") == "aklcdefghijb"
+        assert bar.ev(seats)[:3] == ["stock", "jack", "s3"]
+        turn = bar.ev("strangeTree().worlds.k.fork")
+        assert bar.ev(said) == (f"All 14,000,605: 2 branches of A from turn {turn}, and time runs on for all 12 worlds, to the end. "
+                                "7 more did not fit: 12 worlds is the most."), (bar.ev(said), turn)
+        assert bar.ev(f"[document.querySelector('{button}').disabled, document.querySelector('{button}').title]") == \
+            [True, "12 worlds are open, which is the most. Delete some to branch every player strategy"]
+        bar.until(together(turn + 2), "time carries forward for all twelve", seconds=60)
+        bar.click('#strange-hud [data-strange="play"]')
+        bar.until("strange.run === null && strangeIdle()", "Pause stops the worlds", seconds=30)
+        assert len(set(bar.ev("strange.order.map(letter => debugSplit.panes[letter].turn)"))) == 1
+        assert not bar.dev.console, f"the page complained: {bar.dev.console}"
+    finally:
+        bar.ev("localStorage.removeItem('civvis-toy-strategies'), true")
+
+
 def check_edge_of_tomorrow(bar: Bar, address: str) -> None:
     """Edge of Tomorrow: the played game with a jump back.
 
@@ -4575,6 +4671,12 @@ def main() -> int:
               "of that world's own engine, asking no world anything; the path found is made a branch, a copy of "
               "the base that plays it to what the search read, the other worlds locked to it play on to the same "
               "turn, and no world's future is begun while a search runs.")
+        check_doctor_strange_all(bar, f"http://127.0.0.1:{port}/")
+        print("Doctor Strange's CIVVIS has All 14,000,605 at the foot of the tree on the left: it branches the base "
+              "timeline once for each of the top ten player strategies that has no world of its own there, each a "
+              "world in a window of its own beside the base, best first, and time runs on for every world together; "
+              "pressed while time runs it stops time, branches from that turn as many as there is room for, says "
+              "how many did not fit, and runs time on again.")
         check_edge_of_tomorrow(bar, f"http://127.0.0.1:{port}/")
         print("Edge of Tomorrow is the played game on the Civilization VI screen with a bar of its own where the "
               "debugger's stands and the seat left to the person; Jump back asks the engine for the turn woken on "
