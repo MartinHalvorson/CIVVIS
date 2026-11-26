@@ -88,121 +88,13 @@ function chooseTacticsFog(on) {
   if (select) select.value = on ? "1" : "0";
   setPace({tactics_fog: on});
 }
-// The turn box's Fog-honest AI row (`hudTurnPlate` in app.js): whether the
-// Civ AIs plan on what their civilizations can see (operator 2026-11-23: "we
-// should have a fog honest ai play setting in the turn box set to true or
-// false. and it should pretty much always be set to true"). Every world the
-// engine deals opens True; False is for the world on screen, and the next
-// world is True again. A live Civilization VI game is played by
-// Civilization VI's own AIs, so it has no such row.
-function hudFogHonestRow() {
-  if (typeof state.fog_honest !== "boolean" || livePause.available) return "";
-  const on = state.fog_honest;
-  return `<div class="turn-setting" title="True: every Civ AI plans its turn on what its own civilization can see, ` +
-    `and remembers what it has seen, as a person would. False: it plans on the whole board, fog and all. ` +
-    `City-states, barbarians and TrainingWheels are scripted and read the whole board either way. ` +
-    `Every new world starts True.">` +
-    `<span>Fog-honest AI:</span><span class="turn-pace-choice"><select data-hud-fog-honest ` +
-    `aria-label="Fog-honest AI">` +
-    `<option value="1"${on ? " selected" : ""}>True</option>` +
-    `<option value="0"${on ? "" : " selected"}>False</option>` +
-    `</select><span class="turn-pace-caret" aria-hidden="true">⌄</span></span></div>`;
-}
-// The row, turned. The engine answers with the state, and only what the row
-// reads is taken from it: a spectated world is moving on underneath, and its
-// frames are the stepper's to paint.
-async function chooseFogHonest(on) {
-  try {
-    const answer = await fetchJSON("/fog-honest", {method: "POST",
-      headers: {"Content-Type": "application/json"}, body: JSON.stringify({on})});
-    if (state && answer && typeof answer.fog_honest === "boolean") {
-      state.fog_honest = answer.fog_honest;
-      state.fog_honest_seats = answer.fog_honest_seats;
-    }
-  } catch (e) {
-    const errEl = document.getElementById("err");
-    errEl.textContent = `Could not change Fog-honest AI: ${e.message}`;
-    errEl.style.display = "block";
-    setTimeout(() => errEl.style.display = "none", 2500);
-  }
-  if (state) drawPlayerHud();
-}
-// The turn box's Chaos Monkey row (`hudTurnPlate` in app.js): how many times
-// as often natural disasters strike the world on screen as Civilization VI
-// ships them (operator 2026-11-25: "Here we can run civvis sims with a very
-// high frequency of natural disasters"). Off is the game as shipped; the
-// lobby's own top setting, hyperreal, is under 3x, and the row goes to
-// 1,000x: the steps the Chaos Monkey page's worlds were played at, where a
-// world shrugs off 10x and is only broken near the top.
-// Only a watched CIVVIS world carries the figure, so only it has the row.
-// The dial is the engine's (`Game::disaster_frequency`) and turns from the
-// next turn; the worlds dealt after this one keep it.
-//
-// The row, its words for the plate's spoken label and its listener are all
-// here rather than in app.js, which only places the row: that script is held
-// under 40,000 lines (`tools/test_web_assets.py`) and stood one line short
-// of it the day this was written.
-const CHAOS_FREQUENCIES = [1, 10, 30, 100, 300, 1000];
-function chaosFrequencyName(frequency) {
-  return frequency === 1 ? "Off" : `${frequency.toLocaleString("en-US")}x`;
-}
-function hudChaosRow() {
-  askAddressChaos(); // `?chaos=N`, once, of the first watched world drawn
-  const now = Number(state.disaster_frequency);
-  if (!Number.isFinite(now) || livePause.available) return "";
-  // A figure the row does not list (an address asked for it) is listed too.
-  const offered = CHAOS_FREQUENCIES.includes(now) ? CHAOS_FREQUENCIES
-    : [...CHAOS_FREQUENCIES, now].sort((a, b) => a - b);
-  return `<div class="turn-setting${now > 1 ? " turn-chaos-on" : ""}" title="Chaos Monkey: natural disasters this ` +
-    `many times as often as Civilization VI ships them, from the next turn of this world and in the worlds after it. ` +
-    `Floods, droughts, storms, eruptions and fires, the same ones, only more of them.">` +
-    `<span>Chaos Monkey:</span><span class="turn-pace-choice"><select data-hud-chaos ` +
-    `aria-label="Chaos Monkey">` +
-    offered.map(frequency => `<option value="${frequency}"${frequency === now ? " selected" : ""}>` +
-      `${chaosFrequencyName(frequency)}</option>`).join("") +
-    `</select><span class="turn-pace-caret" aria-hidden="true">⌄</span></span></div>`;
-}
-// What the plate's spoken label says of the row, or nothing without one.
-function hudChaosLabel(row) {
-  return row ? `chaos monkey ${chaosFrequencyName(Number(state.disaster_frequency))}; ` : ``;
-}
-// The row's own listener: the turn box's other selects are handled where the
-// plate is drawn, and this one is handled here beside the row it belongs to.
-hudRibbon.addEventListener("change", ev => {
-  const chaos = ev.target.closest?.("[data-hud-chaos]");
-  if (chaos) { chooseChaos(Number(chaos.value)); chaos.blur(); }
-});
-// The row, turned. As with Fog-honest AI the engine answers with the state
-// and only what the row reads is taken from it.
-async function chooseChaos(frequency) {
-  try {
-    const answer = await fetchJSON("/chaos", {method: "POST",
-      headers: {"Content-Type": "application/json"}, body: JSON.stringify({frequency})});
-    if (answer && answer.error) throw new Error(answer.error);
-    if (state && answer && typeof answer.disaster_frequency === "number") {
-      state.disaster_frequency = answer.disaster_frequency;
-    }
-  } catch (e) {
-    const errEl = document.getElementById("err");
-    errEl.textContent = `Could not turn Chaos Monkey: ${e.message}`;
-    errEl.style.display = "block";
-    setTimeout(() => errEl.style.display = "none", 2500);
-  }
-  if (state) drawPlayerHud();
-}
-// `?chaos=30` in the address opens the world already under the dial: the
-// Chaos Monkey page's "run a world" links are such addresses. It is asked
-// once, of the first watched world this page shows, and the row says what
-// the engine made of it.
-let chaosAsked = false;
-function askAddressChaos() {
-  if (chaosAsked || !state || typeof state.disaster_frequency !== "number") return;
-  chaosAsked = true;
-  let asked = NaN;
-  try { asked = Number(new URLSearchParams(location.search).get("chaos")); } catch (_) { return; }
-  if (!Number.isFinite(asked) || asked <= 0 || asked === state.disaster_frequency) return;
-  chooseChaos(asked);
-}
+// The turn box has no Fog-honest AI row since 2026-11-26 (operator: "remove
+// fog honest ai from turn box (this should alawys be true)"). Every world the
+// engine deals opens with its Civ AIs planning on what their civilizations
+// can see (operator 2026-11-23: "it should pretty much always be set to
+// true"), and with no row to turn it off, every world on the site stays so.
+// The engine keeps the setting (`/fog-honest`, `Session::set_fog_honest`) for
+// the tools and tests that compare the two.
 document.getElementById("specspeed").onchange = event => chooseWatchPace(event.currentTarget.value);
 restorePace();
 document.getElementById("between-game-countdown").onchange = () =>

@@ -1,0 +1,35 @@
+{
+ "kind": "captured_native_action_pairs_v1",
+ "tag": "trade-district-before-the-library",
+ "scope": "Recorded proposal activation on captured live input only, not host execution or strength. 24 boards from four live T7 benchmark games of 2026-11-25 (Immortal-Deity 6p, Online) whose trade capacity stood at one through turn 100 with 7-10 cities (civvis-t7-20261125T141505Z Byzantium Religion, -T153358Z Mali Religion, -T070805Z Khmer Science, -T143044Z Rome Science), every tenth turn from t50 to t100, each the run's events.jsonl cut after turn N+1 and replayed at turn N. Both arms run one frozen ci-profile civvis_orders --resumed built from the branch with the run's own requested genome (why.log line 1 forced); the on arm adds --with trade-district-before-the-library. 24 of 24 boards completed in both arms; orders differ on 3: Rome t50 (Ostia's Commercial Hub replaces Walls as its order) and t80 (Cumae claims its Harbor), Mali t100 (Kirina claims its Suguba). The on arms journal 3 'trade-district-before-the-library:' lines, the off arms 0. The t80 and t100 claims lose the queue later in the same frame to a sea-scout Quadrireme. In the Byzantine game every city had spent both district slots on a Holy Site and a Hippodrome by t90, so there was no slot to claim; the Khmer boards had no claimable calm city with a free slot within 20 turns.",
+ "archive": {
+  "path": "docs/eval/2026-11-25-trade-district-before-the-library.native-queries.tar.xz",
+  "sha256": "9f1b4ab574c535851211302023b9cf14a2f0a2e63c61954e9a3a0871c115d257"
+ },
+ "members": [
+  "native-queries-01/0000/result.json",
+  "native-queries-01/0001/result.json",
+  "native-queries-01/0002/result.json",
+  "native-queries-01/0003/result.json",
+  "native-queries-01/0004/result.json",
+  "native-queries-01/0005/result.json",
+  "native-queries-01/0006/result.json",
+  "native-queries-01/0007/result.json",
+  "native-queries-01/0008/result.json",
+  "native-queries-01/0009/result.json",
+  "native-queries-01/0010/result.json",
+  "native-queries-01/0011/result.json",
+  "native-queries-01/0012/result.json",
+  "native-queries-01/0013/result.json",
+  "native-queries-01/0014/result.json",
+  "native-queries-01/0015/result.json",
+  "native-queries-01/0016/result.json",
+  "native-queries-01/0017/result.json",
+  "native-queries-01/0018/result.json",
+  "native-queries-01/0019/result.json",
+  "native-queries-01/0020/result.json",
+  "native-queries-01/0021/result.json",
+  "native-queries-01/0022/result.json",
+  "native-queries-01/0023/result.json"
+ ]
+}

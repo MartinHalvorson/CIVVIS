@@ -282,15 +282,49 @@ class TournamentsPage(unittest.TestCase):
         # It is never scheduled, games or none.
         self.assertIsNone(tournaments_page.record([], specs[1:2], ["Rome"])["benchmark"])
         self.assertEqual(tournaments_page.record([], specs[1:2], ["Rome"])["scheduled"], [])
-        # The committed definitions: the last is the benchmark, with its own
-        # title line and its own hyperparameters, and the six before it are
-        # Experiments 1 to 6.
+        # The committed definitions: one is the benchmark, with its own
+        # title line and its own hyperparameters; the five before it are
+        # Experiments 1 to 6 (the fourth is Experiments 4 and 5).
         defined = json.loads((ROOT / "data" / "tournaments.json").read_text(encoding="utf-8"))
         marked = [spec for spec in defined["tournaments"] if spec.get("benchmark")]
         self.assertEqual([(spec["name"], spec["description"], spec["start"]) for spec in marked],
                          [("Lv 4 to Lv 8 against the Firaxis AI, 1 CIVVIS agent + 5 AI", "Official Benchmark", "civvis-t7-")])
-        self.assertNotIn("7", defined["descriptions"])
-        self.assertNotIn("7", defined["hyperparameters"])
+        # Operator 2026-11-26: "please add a tournament with 100 lv 8 deity
+        # games, no diplo." The definition after the benchmark's is
+        # Experiment 7: its line in `descriptions` and `hyperparameters` is
+        # by that number, every one of the thirteen hyperparameters listed.
+        self.assertEqual(defined["descriptions"]["7"], "100 Lv 8 Deity games, no Diplo allowed")
+        self.assertEqual(list(defined["hyperparameters"]["7"]), list(tournaments_page.HYPERPARAMETERS))
+        self.assertNotIn("8", defined["descriptions"])
+        # One game in each committed experiment's range (51 in the fourth
+        # definition's, so it is Experiments 4 and 5) and one benchmark game.
+        def game(tag: str, **more) -> dict:
+            stamp = re.search(r"(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})", tag)
+            return run(tag, "rival_victory", "CIVILIZATION_ROME", 0,
+                       utc=f"{stamp[1]}-{stamp[2]}-{stamp[3]}T{stamp[4]}:{stamp[5]}:30Z", **more)
+        committed = defined["tournaments"]
+        rows = [game("civvis-20261119T190000Z"), game("civvis-20261119T210000Z"), game("civvis-20261120T000000Z")]
+        rows += [game(f"civvis-20261120T06{minute:02d}00Z") for minute in range(51)]
+        rows += [game("civvis-t6-20261122T010000Z", difficulty="DIFFICULTY_KING"),
+                 game("civvis-t7-20261126T010000Z", difficulty="DIFFICULTY_PRINCE")]
+        listed = lambda rows: tournaments_page.record(rows, committed, ["Rome"], defined["videos"],
+                                                      defined["descriptions"], defined["hyperparameters"])
+        before = listed(rows)
+        self.assertEqual(sorted(t["id"] for t in before["running"] + before["finished"]), [1, 2, 3, 4, 5, 6])
+        self.assertEqual(before["benchmark"]["games"], 1)
+        self.assertEqual([(t["id"], t["description"], t["size"]) for t in before["scheduled"]],
+                         [(7, "100 Lv 8 Deity games, no Diplo allowed", 100)])
+        self.assertEqual([name for name, _ in before["scheduled"][0]["hyperparameters"]],
+                         list(tournaments_page.HYPERPARAMETERS))
+        # Its first game (tagged `civvis-t8-`, the benchmark's `end`) makes
+        # it the experiment running, still number 7, and the benchmark's
+        # count does not take it; a game below Deity is not one of its own.
+        during = listed(rows + [game("civvis-t8-20261126T070000Z"),
+                                game("civvis-t8-20261126T080000Z", difficulty="DIFFICULTY_IMMORTAL")])
+        self.assertEqual(during["scheduled"], [])
+        self.assertEqual([(t["id"], t["description"], t["games"], t["size"]) for t in during["running"]],
+                         [(7, "100 Lv 8 Deity games, no Diplo allowed", 1, 100)])
+        self.assertEqual(during["benchmark"]["games"], 1)
         # The page draws it in the right-hand column, under Scheduled.
         side = PAGE[PAGE.index('<div class="tour-side">'):PAGE.index('<p class="tour-legend">')]
         self.assertLess(side.index('id="tour-scheduled"'), side.index('id="tour-benchmark"'))
@@ -422,15 +456,13 @@ class TournamentsPage(unittest.TestCase):
         self.assertIn(
             '      </div>\n'
             '      <a class="site-link" href="./" aria-current="page">Experiments</a>\n'
-            '      <a class="site-link" href="../chaos-monkey/" '
-            'title="The same worlds replayed with natural disasters up to 1,000 times as often: what breaks, and what holds.">Chaos Monkey</a>\n'
             '      <a class="site-link" href="../" title="Every civilization is played by a CIVVIS AI agent.">CIVVIS</a>\n'
             '      <a class="site-link" href="../?mode=strange" '
             'title="One world, two timelines: the same game played two ways, side by side, on a timeline that branches.">Doctor Strange\'s Civ 6</a>\n'
             '      <a class="site-link" href="../?mode=play" '
             'title="You play one civilization. CIVVIS AI agents play the rest.">AI Debugger</a>\n'
             '      <a class="site-link" href="../?mode=tomorrow" '
-            'title="You play one civilization, with a jump back: the world returns to the turn you woke on, as it stood.">Edge of Tomorrow</a>\n'
+            'title="You play one civilization, with a jump back: the world returns to the turn you woke on, as it stood.">Civ: Edge of Tomorrow</a>\n'
             '      <a class="site-link" href="https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/" '
             'target="_blank" rel="noopener" title="Buy Civilization VI on Steam">Civ 6</a>\n'
             "    </nav>",
@@ -465,12 +497,10 @@ class TournamentsPage(unittest.TestCase):
         for page, pattern in (
             (LANDING, r'aria-current="page">Home</a>\s*<div class="site-folder">\s*<a class="site-link" href="\.\./charts/ai-insights/"[^>]*>Charts/</a>'
                       r'[\s\S]*?</div>\s*</div>\s*<a class="site-link" href="\.\./experiments/"[^>]*>Experiments</a>'
-                      r'\s*<a class="site-link" href="\.\./chaos-monkey/"[^>]*>Chaos Monkey</a>'
                       r'\s*<a class="site-link" href="\.\./"[^>]*>CIVVIS</a>'),
             (VIEWER, r'id="homelink" href="/home" target="_top">Home</a>\s*'
                      r'<a class="home-link" id="chartslink" href="/charts/ai-insights" target="_top">Charts/</a>\s*'
                      r'<a class="home-link" id="tourlink" href="/experiments" target="_top">Experiments</a>\s*'
-                     r'<a class="home-link" id="chaoslink" href="/chaos-monkey" target="_top">Chaos Monkey</a>\s*'
                      r'<a class="home-link" id="watchlink" href="\./" target="_top">CIVVIS</a>'),
         ):
             self.assertRegex(page, pattern)
@@ -583,7 +613,8 @@ class TournamentsPage(unittest.TestCase):
         # and no experiment from the first to the last described is left
         # out. The benchmark, which was the seventh ("Indefinite
         # Benchmarking Tourney", 2026-11-23), is not an experiment since
-        # 2026-11-25 and carries its own on its definition.
+        # 2026-11-25 and carries its own on its definition. Experiment 7 is
+        # the one the operator scheduled on 2026-11-26.
         defined = json.loads((ROOT / "data" / "tournaments.json").read_text(encoding="utf-8"))
         self.assertEqual(defined["descriptions"], {
             "1": "Proof of concept, 10 game series",
@@ -592,6 +623,7 @@ class TournamentsPage(unittest.TestCase):
             "4": "50 game series",
             "5": "Repeat 50 game series but with 2/6 CIVVIS AI Agents (2nd half no Diplo allowed)",
             "6": "Benchmarking across levels: 5 games at each level (no Diplo allowed)",
+            "7": "100 Lv 8 Deity games, no Diplo allowed",
         })
         self.assertEqual(list(defined["descriptions"]), [str(n) for n in range(1, len(defined["descriptions"]) + 1)])
         experiments = [spec for spec in defined["tournaments"] if not spec.get("benchmark")]

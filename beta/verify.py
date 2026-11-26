@@ -182,13 +182,15 @@ def fresh_profile(prefix: str) -> str:
 PAGES = {
     "home": b'aria-label="CIVVIS links"',
     "experiments": b'id="tournaments-data"',
-    "chaos-monkey": b'id="chaos-data"',
     "charts/win-analytics": b'id="research-data"',
     "charts/elo-rankings": b'id="elo-data"',
     "charts/civ-analytics": b'id="civ-data"',
     "charts/civvis-performance": b'id="performance-data"',
     "charts/civ-ai-interpretability": b'id="interpretability-data"',
     "charts/ai-insights": b'id="insights-data"',
+    # Its figures arrive in the slots of the pages its charts came from, so it
+    # is known by its own record of where each chart came from instead.
+    "charts/random-ai-charts": b'id="random-moved"',
     "download": b"releases/latest/download/",
 }
 

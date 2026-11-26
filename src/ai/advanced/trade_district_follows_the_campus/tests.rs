@@ -470,3 +470,106 @@ fn the_culture_gene_gates_its_own_seat() {
         );
     }
 }
+
+// ---- `trade-district-before-the-library` ----
+
+/// A seat on `target` with `trade-district-before-the-library` alone.
+fn floor_controller(target: VictoryTarget) -> AdvancedAi {
+    let mut ai = controller(target, false);
+    ai.enable_trade_district_before_the_library();
+    ai
+}
+
+#[test]
+fn trade_district_before_the_library_is_an_opt_in_off_in_both_controllers() {
+    crate::ai::advanced::test_support::opt_in_off_in_both_controllers(
+        "trade-district-before-the-library",
+        |ai| ai.trade_district_before_the_library,
+    );
+}
+
+/// No city holds its Library. Off, and with the Science gene alone, nothing
+/// moves. With the gene a Religion seat claims one Hub or Harbor a turn up
+/// to the floor (two for six cities) and then stops, and the claimed
+/// districts hold once the floor has closed.
+#[test]
+fn the_trade_floor_claims_before_the_library_on_any_seat() {
+    let soldier = unit("crossbowman");
+    let (mut game, ranked) = empire("TRADEFLOOR", &soldier);
+    for cid in &ranked {
+        game.cities
+            .get_mut(cid)
+            .unwrap()
+            .buildings
+            .retain(|built| *built != "library");
+    }
+    let before = heads(&game, &ranked);
+    for (label, ai) in [
+        ("off", controller(VictoryTarget::Religion, false)),
+        ("science gene", controller(VictoryTarget::Science, true)),
+    ] {
+        let mut board = game.clone();
+        for _ in 0..3 {
+            ai.claim_trade_district(&mut board, 0, &plan());
+        }
+        assert_eq!(heads(&board, &ranked), before, "{label}");
+        assert!(!ai.trade_floor_open(&game, 0), "{label}");
+    }
+    let ai = floor_controller(VictoryTarget::Religion);
+    assert!(ai.trade_floor_open(&game, 0));
+    ai.claim_trade_district(&mut game, 0, &plan());
+    assert_eq!(
+        trade_districts(&game, &heads(&game, &ranked)).len(),
+        1,
+        "one district a turn"
+    );
+    for _ in 0..3 {
+        ai.claim_trade_district(&mut game, 0, &plan());
+    }
+    let after = heads(&game, &ranked);
+    let claimed = trade_districts(&game, &after);
+    assert_eq!(
+        claimed.len(),
+        ranked.len() / TRADE_FLOOR_CITIES_PER_DISTRICT,
+        "the floor's districts and no more: {after:?}"
+    );
+    assert!(!ai.trade_floor_open(&game, 0));
+    for rank in &claimed {
+        assert!(
+            ai.trade_district_claim_holds(
+                &game,
+                0,
+                ranked[*rank],
+                &plan(),
+                after[*rank].as_ref().unwrap()
+            ),
+            "rank {rank}: the claimed district holds once the floor closes"
+        );
+    }
+    for rank in (0..ranked.len()).filter(|rank| !claimed.contains(rank)) {
+        assert_eq!(after[rank].as_ref(), Some(&soldier), "rank {rank}");
+    }
+}
+
+/// With the floor met, a Religion seat's standing Hubs claim their Markets
+/// and no further district is claimed.
+#[test]
+fn a_religion_seats_standing_hub_claims_its_market_above_the_floor() {
+    let soldier = unit("crossbowman");
+    let (mut game, ranked) = empire("TRADEFLOORMARKET", &soldier);
+    install_test_district(&mut game, ranked[1], "commercial_hub");
+    install_test_district(&mut game, ranked[2], "commercial_hub");
+    let ai = floor_controller(VictoryTarget::Religion);
+    assert!(!ai.trade_floor_open(&game, 0));
+    ai.claim_trade_district(&mut game, 0, &plan());
+    let after = heads(&game, &ranked);
+    assert_eq!(after[1], Some(building("market")), "{after:?}");
+    assert_eq!(after[2], Some(building("market")), "{after:?}");
+    for rank in [0, 3, 4, 5] {
+        assert_eq!(
+            after[rank].as_ref(),
+            Some(&soldier),
+            "rank {rank}: {after:?}"
+        );
+    }
+}

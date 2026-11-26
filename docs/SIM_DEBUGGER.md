@@ -31,25 +31,27 @@ pick was said to the engine at once and that every one of them played, with
 the Civ AI picked, where the turns ahead were another one's.
 It then splits the screen head to head, each half the same page with a toy
 engine of its own: a Civ AI is picked for each half, from the strip and from
-the head of its row, both are played to a turn locked and then unlocked,
+the end of its branch, both are played to a turn locked and then unlocked,
 each half and then both are moved by the sliders in the host's box, and the
 test reads which Civ AI each half's steps named, the numbers set side by
 side (open as the split opens), a copy, and a branch dropped by its name. It
 reads the timeline as it is
-drawn at each step: one rail and one marker while the two halves hold the
-same worlds, a branch for each from the last turn they do, and one rail
-again when one is made a copy of the other. A part holds the lock: that
-Branch opens the split at once, that the lock stands between the two
-rows and closes only on one turn, that the host's deck is the one panel of a
+drawn at each step: one rail up to the turn of the split and a branch for
+each from there, from the moment it opens, whether the two halves hold the
+same worlds or not, a copy included. A part holds the lock: that
+Branch opens the split at once, that the lock stands at the root of the
+tree and closes only on one turn, that the host's deck is the one panel of a
 locked split and plays both halves, that each half shows its own panel again
-when the lock opens, that two identical halves are asked for once and stay
-one timeline, that a half playing ahead by itself has a branch of its own
-until the other plays the same turn, and that the timeline shows each half's
-breakpoint turns and save points and goes to the one that is clicked. A last
+when the lock opens, that two identical halves are asked for once, that a
+half playing ahead by itself reaches further along its branch, and that the
+timeline shows each half's breakpoint turns and save points and goes to the
+one that is clicked. A last
 part holds the branch: that Branch stands under the marker and moves with
 it, that a branch made behind the last turn played forks the timeline on
-that turn with the branch holding nothing past it, that each branch is named
-on itself and has an ✕ after its right end, that closing the timeline as it
+that turn with the branch holding nothing past it, that the tree grows from
+the left with nothing of either branch left of the trunk, that each branch is
+named on itself and ends in its letter, its picker and its ✕, that closing
+the timeline as it
 was leaves the branch as the timeline, and that each stretch is named by the
 Civ AI that played it. Two more parts hold what the box asks (Switch or
 Branch for another Civ AI picked on the one timeline, and which Civ AI plays
@@ -300,10 +302,11 @@ name as well. The words under the pointer say whose play opened the turn
 there.
 
 A branch of a split is named on itself (operator 2026-11-22: "lets label the
-branches themselves"): once the tree has forked, the name on a branch's
-first stretch begins with the branch's letter, "A · JackOfAllTrades". A
-branch nothing has been played on yet is named by the Civ AI seated in it,
-the one that will play it.
+branches themselves"): the name on a branch's first stretch in its own row
+begins with the branch's letter, "A · JackOfAllTrades". A stretch that is
+all on the branch's slant from the trunk to its row, where no word is drawn,
+is named nowhere. A branch nothing has been played on yet is named by the
+Civ AI seated in it, the one that will play it.
 
 The engine says it in `debug.played_by`: for every kept turn, the ones ahead
 that another Civ AI played too, a list of `from`, `to` and `by`. A stretch
@@ -618,12 +621,12 @@ page offers, as the picker lists them, Elo first and the best at the top,
 with the one this timeline has marked "plays this timeline". A press on one
 makes the branch for it in one step: B begins seated with it, and A keeps
 its own. The timeline's own Civ AI may be picked too, and then the two are
-one world until one of them is played another way. Nothing is done until
+one world until one of them is played another way, and still two branches. Nothing is done until
 one is picked: Cancel, Escape, a press anywhere else, or Branch pressed
 again leaves the one timeline as it was, and nothing is said to the engine.
 A branch made from the Switch or Branch question above was made for a Civ
 AI the same way. Two screens are asked nothing: each branch's picker, at the
-head of its lane, seats another Civ AI in it. (From 2026-11-22 until
+end of its branch, seats another Civ AI in it. (From 2026-11-22 until
 2026-11-24 Branch split the screen first, with B on A's Civ AI, and asked
 afterwards.) A game that opens on two tracks is asked nothing either, since
 nobody pressed Branch for it (operator 2026-11-22: "branch b should only ask
@@ -742,38 +745,30 @@ How long Branch holds the window is how long the halves take: about 0.7 to
 1.5 s on the published engine (2026-11-22, headless Chrome in windows 1440
 to 1920 wide; the longer times with the host busy).
 
-### One timeline until the worlds differ
+### One timeline into two, on the turn of the branch
 
-The timeline stays one for as long as the two halves hold the same world,
-and forks in two from the last turn they do (operator 2026-11-21:
-"branching the timeline should keep 1 timeline where they share the timeline
-and then branch to 2 when they actually diverge in simulated worlds", and
-later that day "a branch should fork the tree appropriate (1 timeline into 2
-at the branch)").
+A split's timeline is one up to the turn it was branched on, and two from
+there, from the moment Branch makes it (operator 2026-11-26: "please take
+more of a doctor strange's civ 6 approach. branches should split from 1 to
+2... not 2 to 1"), as Doctor Strange's Civ 6 draws its worlds parting.
+Two halves that go on playing the same moves are still two branches, each
+with its own Civ AI. Until then the timeline stayed one rail for as long as
+the halves held the same world (operator 2026-11-21: "branching the
+timeline should keep 1 timeline where they share the timeline and then
+branch to 2 when they actually diverge in simulated worlds"), so a branch
+whose Civ AI played as A's did showed two pickers joined into one timeline.
 
-- **One world**: one rail in the middle of the box, between the two halves'
-  rows, the turns played in gold across it, and one marker ringed in both
-  halves' colours. This is how a split opens, and how it stays while the
-  halves are played alike: twins played once, or each played by itself to
-  the same worlds. Two different Civ AIs that play the same opening are one
-  timeline until the first turn they play differently.
-- **Two worlds**: the rail ends on the last turn the halves hold as one
-  world, and from there each half has a rail of its own in its row, with
-  its turns in its own colour and its own marker. Two halves that both
-  stand on a turn of the trunk have one marker there. The two are drawn as a
-  tree ("A tree on its side", below).
-- **One half ahead**: turns that only one half holds are that half's own,
-  and the timeline forks on the last turn the two hold as one, with a rail
-  for each from there and nothing yet on the other's. This is what a branch
-  made behind the last turn played looks like at once: A's rail carries the
-  turns A holds past the fork, and B's is empty. If the other half then
-  plays those turns to the same worlds, the fork moves on with them, and the
-  timeline is one again when neither holds a turn the other does not.
-- **In the middle of a move**: two locked halves are played one after the
-  other, so one is a turn ahead for a moment on every turn of a run. That
-  does not fork a timeline that was one: while a split is moving (a run, a
-  locked half still following, a request out), a half that is only ahead
-  forks the timeline if it was forked already, and not otherwise.
+- **The fork** is on the turn the branch was made on. It is earlier only
+  where the halves' worlds part earlier: when one was walked back behind
+  that turn and played on from there differently. Which worlds are the same
+  is the engine's word (`debug.worlds`), as before.
+- **Each branch** has a rail of its own in its row from the fork, with the
+  turns it has played since the split in its own colour and its own marker.
+  Two halves that both stand on a turn of the trunk, or on the fork itself,
+  have one marker there. The two are drawn as a tree ("A tree on its side",
+  below).
+- **A branch made behind the last turn played** forks there at once: A's
+  rail carries the turns A holds past the fork, and B's is empty.
 
 ### A tree on its side
 
@@ -782,11 +777,13 @@ A split's timeline is drawn as a tree lying on its side (operator
 or h like (the one can be between the 2). but more of a tree like timeline
 please"):
 
-- **The trunk** is the one timeline of two halves that are the same world.
-  It is a slim rail in the middle of the box. A's row is over it and B's row
-  under it, each at the end of its own picker, and the lock stands where the
-  two rows meet, with the trunk leaving it.
-- **The fork** is on the last turn the two share. A branch leaves the trunk
+- **The trunk** is the one timeline up to the turn of the branch. It is a
+  slim rail in the middle of the box, with the lock and the game's first
+  turn at its root. A's row is over it and B's row under it, and nothing of
+  either stands left of it: the tree grows from the left, one timeline into
+  two. Each branch ends at the right in what is its own: its letter, the
+  Civ AI that plays it and its ✕.
+- **The fork** is on the turn of the branch. A branch leaves the trunk
   there for each half, A's slanting up to A's row and B's down to B's, and a
   little further along each is a rail in its own row, with the box's dark
   between the two all the way to the end of the game. Where the branches
@@ -899,7 +896,7 @@ half A's, and a press or a change on it is passed to A's own deck
 (`pane-press`, `pane-change`), which does what it would have done had it
 been pressed there; B follows. So every control on the panel means what it
 means for one world, and applies to both. The Civ AI is not on the panel: it
-is picked at the head of each row, one for each half. Saves to the device
+is picked at the end of each branch, one for each half. Saves to the device
 are one world's and are kept from a half's own panel, unlocked.
 
 When two halves are locked after playing apart, B takes A's layers,
@@ -1359,12 +1356,16 @@ nothing about what a fog-honest player could have known ("Fog-honest AI").
 
 ## Fog-honest AI
 
-The masthead's turn box has a **Fog-honest AI** row, True or False (operator
-2026-11-23: "it should pretty much always be set to true"). True, every Civ
-AI at the table plans its turn on what its own civilization can see and
-remembers, and replays the plan on the board (`ai::player::take_turn`);
-False, it plans on the whole board. Every world the engine deals opens True,
-and False lasts for the world on screen. It is the world's setting
+Every Civ AI at a site table is fog-honest, always (operator 2026-11-23: "it
+should pretty much always be set to true"; 2026-11-26: "remove fog honest ai
+from turn box (this should alawys be true)"). It plans its turn on what its
+own civilization can see and remembers, and replays the plan on the board
+(`ai::player::take_turn`). The turn box offered a **Fog-honest AI** row, True
+or False, from 2026-11-23 until 2026-11-26; the page has no way to turn it
+off since. The engine still has the other setting, False, in which a Civ AI
+plans on the whole board, for the tools and tests that compare the two. Every
+world the engine deals opens True, and False lasts for the world on screen.
+It is the world's setting
 (`POST /fog-honest`, `Session::set_fog_honest`), so each half of a split
 keeps its own, a half begins with the setting of the world it was copied
 from, and the agents kept with a turn play on under the setting the table

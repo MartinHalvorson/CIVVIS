@@ -244,7 +244,7 @@ class TheSpeedup(unittest.TestCase):
         # civvis performance section. middle of the page or so"), each way
         # of playing over time and the path through one game.
         self.assertEqual(re.findall(r'<section class="res-section" id="([\w-]+)"', record),
-                         ["perf-control", "perf-speedup", "perf-line", "perf-history", "perf-path", "perf-video", "perf-times", "perf-batches"])
+                         ["perf-control", "perf-speedup", "perf-line", "perf-history", "perf-path", "perf-video", "perf-times"])
         self.assertIn('<section class="res-section" id="perf-speedup" aria-labelledby="perf-speedup-title" hidden>', PAGE)
         self.assertIn('document.getElementById("perf-speedup").hidden = false;', PAGE)
         # The sentence, the tiles, one game at a time, the machine, the
@@ -510,20 +510,19 @@ class ThePath(unittest.TestCase):
         self.assertTrue((ROOT / "docs/PATH_STEPS.md").is_file())
         self.assertTrue((ROOT / "tools/path_steps.py").is_file())
 
-    def test_it_is_tiles_a_column_for_every_reading_and_the_steps_by_kind(self):
+    def test_it_is_tiles_and_a_column_for_every_reading(self):
         self.assertIn('<section class="res-section" id="perf-path" aria-labelledby="perf-path-title" hidden>', PAGE)
-        order = ['id="perf-path-tiles"', 'id="perf-path-keys"', 'id="perf-path-plot"', 'id="perf-path-steps"', 'id="perf-path-table"', 'id="perf-path-note"']
+        order = ['id="perf-path-tiles"', 'id="perf-path-keys"', 'id="perf-path-plot"', 'id="perf-path-table"', 'id="perf-path-note"']
         places = [self.SECTION.index(mark) for mark in order]
         self.assertEqual(places, sorted(places))
         self.assertIn('document.getElementById("perf-path").hidden = false;', self.SCRIPT)
         # Blue is the steps that stay and orange the steps a walk as one
-        # step would save, in the columns and in the bars alike.
+        # step would save.
         self.assertIn('const KEYS = [["Steps that stay", ""], ["Steps a walk as one step could save", "is-second"]];', self.SCRIPT)
         # The saving is an upper bound (a walk that doubles back cannot be
         # one go-to), and the tile says so.
         self.assertIn('"up to " + part(newest.saved / newest.steps) + " fewer"', self.SCRIPT)
         self.assertIn('upper.style.fill = "var(--series-2)";', self.SCRIPT)
-        self.assertIn('const parts = k.saved ? [[k.kept, ""], [k.saved, "is-second"]] : [[k.steps, ""]];', self.SCRIPT)
         # A column stands on nought, and the pointer reads a reading out.
         self.assertIn("y = (v) => m.t + (1 - v / ceiling) * (height - m.t - m.b);", self.SCRIPT)
         self.assertIn('showTip(event, day(r.taken) + (r.build ? " · build " + r.build : ""), [', self.SCRIPT)
@@ -566,7 +565,7 @@ class ThePage(unittest.TestCase):
         self.assertIn('<p class="res-empty" id="perf-empty">This copy of the page has no figures.', PAGE)
         self.assertIn('<div class="res-record" id="perf-record" hidden>', PAGE)
         # Each part shows only when its own figures arrived.
-        for part in ("perf-control", "perf-video", "perf-times", "perf-batches"):
+        for part in ("perf-control", "perf-video", "perf-times"):
             self.assertRegex(PAGE, rf'<section class="res-section" id="{part}" aria-labelledby="{part}-title" hidden>')
 
     def test_a_snapshot_taken_with_other_percentiles_is_not_drawn(self):
@@ -609,10 +608,16 @@ class ThePage(unittest.TestCase):
         self.assertIn('<a class="perf-poster" id="perf-poster" target="_blank" rel="noreferrer">', PAGE)
         self.assertIn("poster.href = watch(record);", PAGE)
 
-    def test_the_three_parts_stand_in_order_with_one_control_over_the_times(self):
-        order = ['id="perf-video"', 'id="perf-times"', 'id="perf-window"', 'id="perf-tiles"', 'id="perf-spans-plot"', 'id="perf-batches"', 'id="perf-batches-plot"', 'id="perf-batches-table"']
+    def test_the_video_then_the_times_with_one_control_over_them(self):
+        order = ['id="perf-video"', 'id="perf-times"', 'id="perf-window"', 'id="perf-tiles"', 'id="perf-note"']
         places = [PAGE.index(mark) for mark in order]
         self.assertEqual(places, sorted(places))
+        # The steps by kind, the games by how long they took and game time
+        # batch by batch are on Random AI Charts since 2026-11-26 (operator:
+        # "please move all the ai generated charts that i havent approved of
+        # or we have discussed to here").
+        for gone in ('id="perf-path-steps"', 'id="perf-spans-plot"', 'id="perf-spans-table"', 'id="perf-batches"', "drawSpans", "drawBatches"):
+            self.assertNotIn(gone, PAGE)
         # The page opens on the newest finished batch.
         buttons = re.findall(r'<button type="button" data-window="(\w+)" aria-pressed="(\w+)">([^<]+)</button>', PAGE)
         self.assertEqual(buttons, [("latest", "true", "Latest batch"), ("7", "false", "Last 7 days"), ("all", "false", "Every game")])
@@ -642,12 +647,12 @@ class TheSiteList(unittest.TestCase):
                 ("site-link sub-link", "../win-analytics/", "Win Analytics"),
                 ("site-link sub-link", "../elo-rankings/", "ELO Rankings"),
                 ("site-link sub-link", "./", "CIVVIS Performance"),
+                ("site-link sub-link", "../random-ai-charts/", "Random AI Charts"),
                 ("site-link", "../../experiments/", "Experiments"),
-                ("site-link", "../../chaos-monkey/", "Chaos Monkey"),
                 ("site-link", "../../", "CIVVIS"),
                 ("site-link", "../../?mode=strange", "Doctor Strange's Civ 6"),
                 ("site-link", "../../?mode=play", "AI Debugger"),
-                ("site-link", "../../?mode=tomorrow", "Edge of Tomorrow"),
+                ("site-link", "../../?mode=tomorrow", "Civ: Edge of Tomorrow"),
                 ("site-link", "https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/", "Civ 6"),
             ],
         )
@@ -680,7 +685,8 @@ class TheSiteList(unittest.TestCase):
             self.assertEqual(
                 re.findall(r'<a class="site-link sub-link" href="\.\./charts/([^"]+)/"[^>]*>([^<]+)</a>', menu),
                 [("ai-insights", "AI Insights"), ("civ-ai-interpretability", "Civ AI Interpretability"), ("civ-analytics", "Civ Analytics"),
-                 ("win-analytics", "Win Analytics"), ("elo-rankings", "ELO Rankings"), ("civvis-performance", "CIVVIS Performance")],
+                 ("win-analytics", "Win Analytics"), ("elo-rankings", "ELO Rankings"), ("civvis-performance", "CIVVIS Performance"),
+                 ("random-ai-charts", "Random AI Charts")],
             )
         self.assertNotIn("Performance</a>", VIEWER)
         for name in (">Win Analytics</a>", ">ELO Rankings</a>", ">Civ Analytics</a>", ">AI Insights</a>"):
