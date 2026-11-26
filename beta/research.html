@@ -10,7 +10,7 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23171d25'/%3E%3Ccircle cx='16' cy='16' r='11.5' fill='none' stroke='%2366c0f4'/%3E%3Cpath d='M7 16h18M16 4.5c-4.2 4.1-4.2 18.9 0 23M16 4.5c4.2 4.1 4.2 18.9 0 23' fill='none' stroke='%2366c0f4' stroke-width='1.15'/%3E%3C/svg%3E">
 <style>
   /* The home page's own palette, header and cards (`beta/landing.html`), as
-     the Experiments page repeats them: the pages are one site and read as
+     the Tournaments page repeats them: the pages are one site and read as
      one. Each is a single file with no shared stylesheet, so what they share
      is repeated here. */
   :root {
@@ -134,12 +134,14 @@
      The row wraps onto a second line on a narrow screen, and every name
      stands on one line (operator, 2026-11-21: "make sure it fits on one
      line"). */
-  .site-nav { display: flex; flex: 1 0 100%; flex-wrap: wrap; align-items: center; gap: 6px; }
+  .site-nav { display: flex; flex: 1 0 100%; flex-wrap: wrap; align-items: center; gap: 5px; }
   .site-brand { display: flex; align-items: center; gap: 18px; min-width: 0; }
   .site-lockup { min-width: 0; }
   .site-link {
     display: block;
-    padding: 3px 12px 4px;
+    /* 8px a side, not 12, and 5px between, not 6: with CIVVIS in three of
+       the names (2026-11-26) the row is one line again on a desktop screen. */
+    padding: 3px 8px 4px;
     border-radius: 3px;
     background: var(--action-bg);
     color: var(--action-fg);
@@ -172,7 +174,7 @@
   /* AI Debugger ends in a little green bug (operator, 2026-11-26: "maybe
      add a green little bug to the end of ai debugger if theres space"). It
      is drawn here rather than written in the link, so the link's name is
-     still "AI Debugger" to a screen reader and to whatever reads the list. */
+     still "CIVVIS AI Debugger" to a screen reader and to whatever reads the list. */
   .site-link[href$="?mode=play"]::after {
     content: ""; display: inline-block; width: 1.1em; height: 1.1em; margin-left: 0.3em; vertical-align: -0.22em;
     background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M6.6 3 5.2 1.2M9.4 3l1.4-1.8M4.4 7.6 1.9 6.4M11.6 7.6l2.5-1.2M4 10.4H1.4M12 10.4h2.6M4.5 13l-2.2 1.8M11.5 13l2.2 1.8' stroke='%2345d16a' stroke-width='1.4' stroke-linecap='round' fill='none'/%3E%3Ccircle cx='8' cy='4.6' r='2.2' fill='%2345d16a'/%3E%3Cellipse cx='8' cy='10.3' rx='4.1' ry='4.9' fill='%2345d16a'/%3E%3Cpath d='M8 6.6v8.4' stroke='%23050607' stroke-width='1'/%3E%3C/svg%3E") center / contain no-repeat;
@@ -408,14 +410,6 @@
   @media (max-width: 859px) { .res-bench-pair { grid-template-columns: minmax(0, 1fr); } }
   .res-bench-title { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 12px; margin: 0 0 8px; color: #fff; font-size: 15px; font-weight: 700; line-height: 1.3; }
   .res-bench-title small { color: var(--muted); font-size: 12px; font-weight: 400; font-variant-numeric: tabular-nums; }
-  /* What a cell is measured against, over both tables in big type: in a
-     6-player game an even player wins one game in six (operator
-     2026-11-24: "add a big note ... expected win rate for a 6P game is 1/6
-     or 16.7%"). */
-  .res-bench-par { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; margin: 0 0 14px; padding: 12px 16px; border: 1px solid var(--gold); border-left-width: 6px; border-radius: 6px; background: rgba(215, 182, 106, 0.1); }
-  .res-bench-par b { color: var(--gold); font-size: 26px; font-weight: 800; line-height: 1.2; font-variant-numeric: tabular-nums; }
-  .res-bench-par span { color: var(--text); font-size: 13.5px; line-height: 1.4; }
-  @media (max-width: 479px) { .res-bench-par b { font-size: 21px; } }
   /* A cell with games in it is a tile shaded by its rate against the 1/6
      par (operator 2026-11-24: "white for 16.7% - dark green for 100% win
      rare. white to red for 16.7 -> 0. bxakground of the cells please"):
@@ -484,11 +478,11 @@
           <a class="site-link sub-link" href="../random-ai-charts/" title="Charts the AI agents added on their own, kept here until they are asked for or talked over.">Random AI Charts</a>
         </div>
       </div>
-      <a class="site-link" href="../../experiments/" title="Series of verification games against Civilization VI&#8217;s own AI: running, scheduled and finished.">Experiments</a>
+      <a class="site-link" href="../../tournaments/" title="Series of verification games against Civilization VI&#8217;s own AI: running, scheduled and finished.">Tournaments</a>
       <a class="site-link" href="../../" title="Every civilization is played by a CIVVIS AI agent.">CIVVIS</a>
-      <a class="site-link" href="../../?mode=strange" title="One world, two timelines: the same game played two ways, side by side, on a timeline that branches.">Doctor Strange's Civ 6</a>
-      <a class="site-link" href="../../?mode=play" title="You play one civilization. CIVVIS AI agents play the rest.">AI Debugger</a>
-      <a class="site-link" href="../../?mode=tomorrow" title="You play one civilization, with a jump back: the world returns to the turn you woke on, as it stood.">Civ: Edge of Tomorrow</a>
+      <a class="site-link" href="../../?mode=strange" title="One world, two timelines: the same game played two ways, side by side, on a timeline that branches.">Doctor Strange's CIVVIS</a>
+      <a class="site-link" href="../../?mode=play" title="You play one civilization. CIVVIS AI agents play the rest.">CIVVIS AI Debugger</a>
+      <a class="site-link" href="../../?mode=tomorrow" title="You play one civilization, with a jump back: the world returns to the turn you woke on, as it stood.">CIVVIS: Edge of Tomorrow</a>
       <a class="site-link" href="https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/" target="_blank" rel="noopener" title="Buy Civilization VI on Steam">Civ 6</a>
     </nav>
     <script data-site-folder>
@@ -608,13 +602,15 @@
             <p class="res-counted" id="res-counted-tourney">Tournament games against Civilization VI&#8217;s own AI.</p>
           </div>
         </header>
-        <!-- The yardstick for every cell under it, in big type (operator
-             2026-11-24: "add a big note to firaxis civ 6 benchmark that
-             expected win rate for a 6P game is 1/6 or 16.7%"). -->
-        <p class="res-bench-par" id="res-bench-par"><b>Expected win rate in a 6P game: 1/6 = 16.7%</b> <span>A rate above 16.7% beats the Firaxis AI.</span></p>
+        <!-- Each table's title names the games it counts (operator
+             2026-11-26: "drop the expected win rate thing warning message
+             and just add to the title: 6P Continents Online for the first.
+             2nd is 6P Continents Online, Diplo Off"). The note of the 1/6
+             par that stood here in big type from 2026-11-24 is gone; the
+             par still shades every cell. -->
         <div class="res-bench-pair">
           <div class="res-section" id="res-bench-on">
-            <h3 class="res-bench-title" id="res-title-rates-on">Diplomatic victory allowed <small id="res-rates-count-on"></small></h3>
+            <h3 class="res-bench-title" id="res-title-rates-on">Diplomatic victory allowed · 6P Continents Online <small id="res-rates-count-on"></small></h3>
             <div class="res-scroll">
               <table class="rank-table res-rates" id="res-rates-on" aria-labelledby="res-title-rates-on">
                 <thead>
@@ -626,7 +622,7 @@
             </div>
           </div>
           <div class="res-section" id="res-bench-off">
-            <h3 class="res-bench-title" id="res-title-rates-off">Diplomatic victory off <small id="res-rates-count-off"></small></h3>
+            <h3 class="res-bench-title" id="res-title-rates-off">Diplomatic victory off · 6P Continents Online, Diplo Off <small id="res-rates-count-off"></small></h3>
             <div class="res-scroll">
               <table class="rank-table res-rates" id="res-rates-off" aria-labelledby="res-title-rates-off">
                 <thead>
@@ -641,7 +637,7 @@
         <details class="fine">
         <summary>How it is counted</summary>
         <p class="rank-note">
-          Every finished game of the tournaments on the <a href="../../experiments/">Experiments</a> page, by the level Civilization VI&#8217;s own AI played at.
+          Every finished game of the tournaments on the <a href="../../tournaments/">Tournaments</a> page, by the level Civilization VI&#8217;s own AI played at.
           The left table holds the games that allowed the Diplomatic victory, the right table the games set up with it switched off.
           A cell is CIVVIS&#8217;s win rate and, in brackets, the games it is a share of.
           Its shade is read against the 1/6 par: white at 16.7%, deepening to dark green at 100% and to red at 0%.

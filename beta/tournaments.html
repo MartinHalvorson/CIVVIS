@@ -4,9 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#171d25">
-<title>Experiments · CIVVIS.ai</title>
-<meta name="description" content="CIVVIS experiments: series of verification games against Civilization VI's own AI, running, scheduled and finished.">
-<link rel="canonical" href="https://civvis.ai/experiments/">
+<title>Tournaments · CIVVIS.ai</title>
+<meta name="description" content="CIVVIS tournaments: series of verification games against Civilization VI's own AI, running, scheduled and finished.">
+<link rel="canonical" href="https://civvis.ai/tournaments/">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23171d25'/%3E%3Ccircle cx='16' cy='16' r='11.5' fill='none' stroke='%2366c0f4'/%3E%3Cpath d='M7 16h18M16 4.5c-4.2 4.1-4.2 18.9 0 23M16 4.5c4.2 4.1 4.2 18.9 0 23' fill='none' stroke='%2366c0f4' stroke-width='1.15'/%3E%3C/svg%3E">
 <style>
   /* The home page's own palette, header and cards (`beta/landing.html`): the
@@ -122,12 +122,14 @@
      The row wraps onto a second line on a narrow screen, and every name
      stands on one line (operator, 2026-11-21: "make sure it fits on one
      line"). */
-  .site-nav { display: flex; flex: 1 0 100%; flex-wrap: wrap; align-items: center; gap: 6px; }
+  .site-nav { display: flex; flex: 1 0 100%; flex-wrap: wrap; align-items: center; gap: 5px; }
   .site-brand { display: flex; align-items: center; gap: 18px; min-width: 0; }
   .site-lockup { min-width: 0; }
   .site-link {
     display: block;
-    padding: 3px 12px 4px;
+    /* 8px a side, not 12, and 5px between, not 6: with CIVVIS in three of
+       the names (2026-11-26) the row is one line again on a desktop screen. */
+    padding: 3px 8px 4px;
     border-radius: 3px;
     background: var(--action-bg);
     color: var(--action-fg);
@@ -160,7 +162,7 @@
   /* AI Debugger ends in a little green bug (operator, 2026-11-26: "maybe
      add a green little bug to the end of ai debugger if theres space"). It
      is drawn here rather than written in the link, so the link's name is
-     still "AI Debugger" to a screen reader and to whatever reads the list. */
+     still "CIVVIS AI Debugger" to a screen reader and to whatever reads the list. */
   .site-link[href$="?mode=play"]::after {
     content: ""; display: inline-block; width: 1.1em; height: 1.1em; margin-left: 0.3em; vertical-align: -0.22em;
     background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M6.6 3 5.2 1.2M9.4 3l1.4-1.8M4.4 7.6 1.9 6.4M11.6 7.6l2.5-1.2M4 10.4H1.4M12 10.4h2.6M4.5 13l-2.2 1.8M11.5 13l2.2 1.8' stroke='%2345d16a' stroke-width='1.4' stroke-linecap='round' fill='none'/%3E%3Ccircle cx='8' cy='4.6' r='2.2' fill='%2345d16a'/%3E%3Cellipse cx='8' cy='10.3' rx='4.1' ry='4.9' fill='%2345d16a'/%3E%3Cpath d='M8 6.6v8.4' stroke='%23050607' stroke-width='1'/%3E%3C/svg%3E") center / contain no-repeat;
@@ -234,13 +236,13 @@
   .intro { max-width: 860px; margin: 18px 0 22px; color: var(--muted); font-size: 14.5px; line-height: 1.6; }
   .intro a { color: var(--accent); }
 
-  /* The record: the experiments running and finished, what is scheduled,
+  /* The record: the tournaments running and finished, what is scheduled,
      and the benchmark. Its figures are not written here. `beta/publish.sh`
      fills the `tournaments-data` slot below (`beta/tournaments_page.py`);
      until it is filled the record stays hidden and one sentence says so. */
   .tour-record { display: grid; gap: 16px; min-width: 0; }
   .tour-main, .tour-side { display: grid; gap: 16px; align-content: start; min-width: 0; }
-  /* With the room for it, the experiments are the left 60% and what is
+  /* With the room for it, the tournaments are the left 60% and what is
      scheduled and the benchmark are the right 40%, one over the other
      (operator, 2026-11-25: "put the experiments list on the left 60%. the
      scheduled games & benchmark can be on the right"). Scheduled stood in a
@@ -260,7 +262,7 @@
   .rank-note { margin: 8px 0 0; padding-top: 8px; border-top: 1px solid var(--border); color: var(--faint); font-size: 11.5px; line-height: 1.5; }
   .rank-note a { color: var(--accent); }
 
-  /* Every experiment reads the same way in all three lists, and the
+  /* Every tournament reads the same way in all three lists, and the
      benchmark as they do (operator, 2026-11-22: "lets have The tournaments
      structure to be tournament number, name, and description on the left
      third. and everything else moved to the right two thirds"): on the left
@@ -278,17 +280,17 @@
     .tour-split { grid-template-columns: 33.333% minmax(0, 1fr); }
     .tour-split > .tour-ident { padding-right: 24px; }
   }
-  /* An experiment in full, or the benchmark. */
+  /* A tournament in full, or the benchmark. */
   .tour-card { padding: 10px 0 4px; border-top: 1px solid var(--border); }
   .tour-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
   .tour-head > div:first-child { min-width: 0; }
-  /* An experiment's title line: its number in gold and, after a colon, its
-     short description, "Experiment 4: 50 game series" (operator,
+  /* A tournament's title line: its number in gold and, after a colon, its
+     short description, "Tournament 4: 50 game series" (operator,
      2026-11-21: "the descriptions can be on the title line. please make
-     title line bigger too"; 2026-11-25: "REplace tournament with experiment
-     inside experiments/", where it read "Tournament 4"). It is the largest
-     line an experiment has, the same in all three lists; the definition's
-     name is a small line under it. An experiment with no description yet
+     title line bigger too"; it read "Experiment 4" from 2026-11-25 to
+     2026-11-26, while the page was named Experiments). It is the largest
+     line a tournament has, the same in all three lists; the definition's
+     name is a small line under it. A tournament with no description yet
      has its number alone. The benchmark has no number: its title line is
      its description in gold, "Official Benchmark". */
   .tour-title { margin: 0; color: #fff; font-size: 19px; font-weight: 700; line-height: 1.3; }
@@ -296,7 +298,7 @@
   .tour-name { margin: 2px 0 0; color: var(--muted); font-size: 13px; font-weight: 400; line-height: 1.4; }
   .tour-idea { margin: 0; color: var(--text); font-size: 13.5px; line-height: 1.5; }
   .tour-meta { margin: 0; color: var(--muted); font-size: 12.5px; line-height: 1.5; }
-  /* An experiment's result video on YouTube, linked with its games when the
+  /* A tournament's result video on YouTube, linked with its games when the
      channel has one. */
   .tour-video { display: inline-block; justify-self: start; margin-top: 4px; color: var(--accent); font-size: 12.5px; font-weight: 600; text-decoration: none; white-space: nowrap; }
   .tour-video::before { content: "\25B6\FE0E"; margin-right: 5px; font-size: 10px; vertical-align: 1px; }
@@ -348,7 +350,7 @@
 
   /* The counts under the squares, a line each: wins by victory, losses by
      how they were lost, the record per level when the levels differ, and
-     for a finished experiment its notes. */
+     for a finished tournament its notes. */
   .tour-counts { display: grid; gap: 2px; margin: 0; font-size: 12.5px; line-height: 1.5; }
   .tour-counts div { display: flex; flex-wrap: wrap; gap: 0 10px; }
   .tour-counts dt { flex: none; min-width: 52px; color: var(--faint); }
@@ -356,11 +358,11 @@
   .tour-counts dd.is-note { color: var(--muted); font-variant-numeric: normal; }
   .tour-counts dd b { color: #fff; font-weight: 700; }
 
-  /* An experiment's hyperparameters, the settings every one of its games
+  /* A tournament's hyperparameters, the settings every one of its games
      was played under (operator, 2026-11-23: "please spell out the tourney
      hyperparameters for each tourney clearly"): a name and its value to a
-     line, the same names in the same order for every experiment, so two
-     experiments read side by side. The names stand in a column as wide as
+     line, the same names in the same order for every tournament, so two
+     tournaments read side by side. The names stand in a column as wide as
      the longest of them; a long value wraps in its own column. */
   .tour-hyper-box { display: grid; gap: 4px; }
   .tour-hyper { display: grid; grid-template-columns: max-content minmax(0, 1fr); margin: 0; font-size: 12.5px; line-height: 1.45; }
@@ -394,11 +396,11 @@
   .tour-queue .tour-title { font-size: 16px; }
   .tour-queue .tour-size { margin: 0; color: #fff; font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
 
-  /* The finished experiments: the table that stood on the home page. An
-     experiment is two rows: its figures, with the cell of its title line
+  /* The finished tournaments: the table that stood on the home page. A
+     tournament is two rows: its figures, with the cell of its title line
      and name on their left running down beside both, then its games, its
      counts and its notes under the figures. The line between two
-     experiments is drawn over the figures, so the games under them have
+     tournaments is drawn over the figures, so the games under them have
      none. */
   .tour-scroll { overflow-x: auto; }
   .rank-table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
@@ -413,7 +415,7 @@
   .rank-table tr.is-games .tour-counts { margin-top: 5px; }
   .rank-table tr.is-games .tour-hyper-box { margin-bottom: 8px; }
   /* Narrower than the two parts and the figures' one line need, an
-     experiment is its title line and name, then its figures side by side,
+     tournament is its title line and name, then its figures side by side,
      each under its own label, then its games. */
   @container tour (max-width: 899px) {
     .rank-table, .rank-table tbody, .rank-table tr, .rank-table td { display: block; }
@@ -434,14 +436,15 @@
          until then they stood in a column to the left of the title. Charts/
          is a folder and drops down like one to its seven pages ("charts/ can
          drop down folder style and the user can pick the right chart"). The
-         page on screen is ringed in white: this is Experiments, a page of
-         its own (named Tournaments until 2026-11-25; operator: "rename
+         page on screen is ringed in white: this is Tournaments, a page of
+         its own. It was named Experiments from 2026-11-25 (operator: "rename
          tournaments to experiments", then "REplace tournament with
-         experiment inside experiments/": each series on it is "Experiment 4:
-         50 game series", where it was "Tournament 4"). Every link is
-         lane-relative (this
-         page lives at <lane>/experiments/), so the test lane's page opens
-         the test lane's other pages and viewer. -->
+         experiment inside experiments/", when each series on it read
+         "Experiment 4: 50 game series") and took its name back on
+         2026-11-26 (operator: "change experiments back to tournaments"), so
+         each series is "Tournament 4: 50 game series" again. Every link is
+         lane-relative (this page lives at <lane>/tournaments/), so the test
+         lane's page opens the test lane's other pages and viewer. -->
     <nav class="site-nav" aria-label="CIVVIS sites">
       <a class="site-link" href="../home/">Home</a>
       <div class="site-folder">
@@ -456,11 +459,11 @@
           <a class="site-link sub-link" href="../charts/random-ai-charts/" title="Charts the AI agents added on their own, kept here until they are asked for or talked over.">Random AI Charts</a>
         </div>
       </div>
-      <a class="site-link" href="./" aria-current="page">Experiments</a>
+      <a class="site-link" href="./" aria-current="page">Tournaments</a>
       <a class="site-link" href="../" title="Every civilization is played by a CIVVIS AI agent.">CIVVIS</a>
-      <a class="site-link" href="../?mode=strange" title="One world, two timelines: the same game played two ways, side by side, on a timeline that branches.">Doctor Strange's Civ 6</a>
-      <a class="site-link" href="../?mode=play" title="You play one civilization. CIVVIS AI agents play the rest.">AI Debugger</a>
-      <a class="site-link" href="../?mode=tomorrow" title="You play one civilization, with a jump back: the world returns to the turn you woke on, as it stood.">Civ: Edge of Tomorrow</a>
+      <a class="site-link" href="../?mode=strange" title="One world, two timelines: the same game played two ways, side by side, on a timeline that branches.">Doctor Strange's CIVVIS</a>
+      <a class="site-link" href="../?mode=play" title="You play one civilization. CIVVIS AI agents play the rest.">CIVVIS AI Debugger</a>
+      <a class="site-link" href="../?mode=tomorrow" title="You play one civilization, with a jump back: the world returns to the turn you woke on, as it stood.">CIVVIS: Edge of Tomorrow</a>
       <a class="site-link" href="https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/" target="_blank" rel="noopener" title="Buy Civilization VI on Steam">Civ 6</a>
     </nav>
     <script data-site-folder>
@@ -519,26 +522,26 @@
     <!-- One line, where a paragraph stood until 2026-11-24 (operator:
          "there is too much text on pages, particualrly home/ and charts/.
          should be a more visual experience. some text ok. just not too
-         much"). Each experiment's own description and its hyperparameters
+         much"). Each tournament's own description and its hyperparameters
          are as he asked for them; the page's notes on how a game is counted
-         are under "How it is counted", closed until it is pressed. An
-         experiment tests an idea (operator, 2026-11-25: "that is really what
+         are under "How it is counted", closed until it is pressed. A
+         tournament tests an idea (operator, 2026-11-25: "that is really what
          they are. isn't about winning. trying to learn."). -->
     <p class="intro">
-      Each experiment tests an idea over a series of games: a CIVVIS AI agent inside <cite>Civilization VI</cite>, against the game&#8217;s own AI.
+      Each tournament tests an idea over a series of games: a CIVVIS AI agent inside <cite>Civilization VI</cite>, against the game&#8217;s own AI.
     </p>
 
     <!-- The record, all read from the run ledger and the definitions in
          `data/tournaments.json` when the site is published
-         (`beta/tournaments_page.py`). On the left, the experiments: the one
+         (`beta/tournaments_page.py`). On the left, the tournaments: the one
          being played and the ones that have finished. On the right, the
-         ones scheduled and the benchmark, which is not an experiment
+         ones scheduled and the benchmark, which is not a tournament
          (operator, 2026-11-25: "tourney 7 is benchmark. please remove from
          experiments and make the official benchmark for now"). The script
          below builds them from the `tournaments-data` slot; a page whose
          slot still reads `null` (this file opened as it is committed, or a
          build with no ledger) shows the one sentence instead. -->
-    <p class="tour-empty" id="tour-empty">This copy of the page has no record of the experiments. It is written in when the site is published.</p>
+    <p class="tour-empty" id="tour-empty">This copy of the page has no tournament record. It is written in when the site is published.</p>
     <div class="tour-record" id="tour-record" hidden>
       <div class="tour-main">
       <section class="tour-section" id="tour-running" hidden aria-labelledby="tour-running-title">
@@ -551,7 +554,7 @@
         <p class="rank-sub" data-sub></p>
         <div class="tour-scroll">
           <table class="rank-table">
-            <thead><tr><th scope="col" class="is-ident">Experiment</th><th scope="col">Start</th><th scope="col">End</th><th scope="col" title="From the first game starting to the last game ending">Wall time</th><th scope="col" title="The time the games were in play, added up">Run time</th><th scope="col">Games</th><th scope="col">Record</th><th scope="col">Won</th><th scope="col">Conditions</th></tr></thead>
+            <thead><tr><th scope="col" class="is-ident">Tournament</th><th scope="col">Start</th><th scope="col">End</th><th scope="col" title="From the first game starting to the last game ending">Wall time</th><th scope="col" title="The time the games were in play, added up">Run time</th><th scope="col">Games</th><th scope="col">Record</th><th scope="col">Won</th><th scope="col">Conditions</th></tr></thead>
             <tbody></tbody>
           </table>
         </div>
@@ -586,9 +589,9 @@
           A win is any victory. A loss is a rival&#8217;s victory, our elimination, or a game conceded early.
           A launch that never reached a board is not a game.
           Dates are UTC, on the 24-hour clock.
-          Wall time is from an experiment&#8217;s first game starting to its last game ending.
+          Wall time is from a tournament&#8217;s first game starting to its last game ending.
           Run time is the time its games were in play, added up, without the time between them.
-          Hyperparameters are the settings every game of an experiment was played under.
+          Hyperparameters are the settings every game of a tournament was played under.
         </p>
       </details>
     </div>
@@ -615,7 +618,7 @@
     const rate = (t) => (t.games ? (100 * t.wins / t.games).toFixed(1) + "%" : "");
 
     // A game in words: "Rome · Diplomatic victory · turn 153", with its
-    // level in front when the experiment's games are not all at one level.
+    // level in front when the tournament's games are not all at one level.
     const told = (g, mixed) => [mixed && g.level ? "Lv " + g.level : "", g.civ, g.how, g.turns != null ? "turn " + g.turns : ""]
       .filter(Boolean).join(" · ");
     // A label at one end of a row of squares, written inside the square
@@ -625,7 +628,7 @@
       square.append(el("span", "tour-end is-" + side, text));
     };
     // A square per game in the order played, then an outline per game a
-    // running experiment has still to play.
+    // running tournament has still to play.
     // An indefinite series (no size: the benchmark) draws its latest 100
     // games. The row is labelled at both ends, "First" and "Last", so it
     // reads one way. A row that starts later than the series' first game
@@ -715,7 +718,7 @@
       return box;
     };
 
-    // An experiment's hyperparameters (operator 2026-11-23: "please spell
+    // A tournament's hyperparameters (operator 2026-11-23: "please spell
     // out the tourney hyperparameters for each tourney clearly"): every
     // setting its games were played under, a name and its value to a line,
     // in the order the definitions file's `hyperparameters` are put in
@@ -734,7 +737,7 @@
       return box;
     };
 
-    // An experiment's result video, when the channel has one: a link to
+    // A tournament's result video, when the channel has one: a link to
     // its page on YouTube, in a tab of its own. The address was written at
     // publish as a YouTube watch page; one that is anything else is not
     // linked.
@@ -744,11 +747,11 @@
       link.href = t.video;
       link.target = "_blank";
       link.rel = "noreferrer";
-      link.title = "Experiment " + t.id + "’s result video on YouTube";
+      link.title = "Tournament " + t.id + "’s result video on YouTube";
       return link;
     };
 
-    // An experiment's title line: "Experiment 4: 50 game series", the
+    // A tournament's title line: "Tournament 4: 50 game series", the
     // number and then its short description. One with no description yet
     // is its number alone. The benchmark has no number, and its title line
     // is its description alone, "Official Benchmark".
@@ -758,19 +761,19 @@
         line.append(el("span", "tour-no", t.description || "Benchmark"));
         return line;
       }
-      line.append(el("span", "tour-no", "Experiment " + t.id + (t.description ? ":" : "")));
+      line.append(el("span", "tour-no", "Tournament " + t.id + (t.description ? ":" : "")));
       if (t.description) line.append(" " + t.description);
       return line;
     };
 
-    // An experiment's left third: its title line and the definition's name.
+    // A tournament's left third: its title line and the definition's name.
     const identity = (t, tag) => {
       const ident = el(tag, "tour-ident");
       ident.append(titled(t, "h3"), el("p", "tour-name", t.name));
       return ident;
     };
 
-    // A series being played, in full: a running experiment, or the
+    // A series being played, in full: a running tournament, or the
     // benchmark.
     const playing = (t) => {
       const card = el("article", "tour-card tour-split");
@@ -807,24 +810,24 @@
       return card;
     };
 
-    // Running: the experiment being played.
+    // Running: the tournament being played.
     const running = list(data.running);
     const runningBox = document.getElementById("tour-running");
     for (const t of running) runningBox.querySelector("[data-cards]").append(playing(t));
     if (running.length) {
       runningBox.querySelector("[data-sub]").textContent = "The agents are playing "
-        + (running.length === 1 ? "this experiment" : "these experiments") + " now"
+        + (running.length === 1 ? "this tournament" : "these tournaments") + " now"
         + (data.through ? ". Last game finished " + data.through : "") + ".";
       runningBox.hidden = false;
     }
 
-    // The benchmark, on the right under Scheduled: not an experiment, and
-    // played whenever no experiment is.
+    // The benchmark, on the right under Scheduled: not a tournament, and
+    // played whenever no tournament is.
     const benchmark = data.benchmark;
     const benchBox = document.getElementById("tour-benchmark");
     if (benchmark) {
       benchBox.querySelector("[data-cards]").append(playing(benchmark));
-      benchBox.querySelector("[data-sub]").textContent = "Our official benchmark against the Firaxis AI, played whenever no experiment is"
+      benchBox.querySelector("[data-sub]").textContent = "Our official benchmark against the Firaxis AI, played whenever no tournament is"
         + (benchmark.last ? ". Last game finished " + benchmark.last : "") + ".";
       benchBox.hidden = false;
     }
@@ -840,16 +843,16 @@
       if (t.idea) body.append(el("p", "tour-idea", t.idea));
       const settings = hyper(t);
       if (settings) body.append(settings);
-      body.append(el("p", "tour-meta", [t.conditions, before ? "after Experiment " + before : "next to start", t.note].filter(Boolean).join(" · ")));
+      body.append(el("p", "tour-meta", [t.conditions, before ? "after Tournament " + before : "next to start", t.note].filter(Boolean).join(" · ")));
       item.append(identity(t, "div"), body);
       queueBox.querySelector(".tour-queue").append(item);
       before = t.id;
     }
     queueBox.querySelector("[data-sub]").textContent = scheduled.length
-      ? plural(scheduled.length, "experiment is", "experiments are") + " waiting, in the order " + (scheduled.length === 1 ? "it" : "they") + " will be played."
+      ? plural(scheduled.length, "tournament is", "tournaments are") + " waiting, in the order " + (scheduled.length === 1 ? "it" : "they") + " will be played."
       : "Nothing is scheduled. Until something is, the agents play the benchmark.";
 
-    // Finished: the table, newest first. An experiment is its figures, with
+    // Finished: the table, newest first. A tournament is its figures, with
     // its title line and name in the cell on their left that runs down
     // beside its games too, then its games, counts and notes.
     const finished = list(data.finished);
@@ -889,10 +892,10 @@
         body.append(tr, games);
       }
       const totals = data.totals || {};
-      finishedBox.querySelector("[data-sub]").textContent = "Newest first. Each experiment’s games are under its figures"
+      finishedBox.querySelector("[data-sub]").textContent = "Newest first. Each tournament’s games are under its figures"
         + (finished.some(video) ? ", with its result video where there is one." : ".");
       finishedBox.querySelector("[data-rank-note]").textContent = totals.games
-        ? "Every experiment so far: " + plural(totals.games, "game", "games") + ", "
+        ? "Every tournament so far: " + plural(totals.games, "game", "games") + ", "
           + totals.wins + "–" + totals.losses + " (" + (100 * totals.wins / totals.games).toFixed(1) + "% won)"
           + (totals.through ? ", through " + totals.through : "") + "."
         : "";

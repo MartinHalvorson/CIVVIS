@@ -1925,19 +1925,21 @@ fn prints(session: &Session) -> Vec<u64> {
     worlds
 }
 
-/// Operator 2026-11-21: "branching the timeline should keep 1 timeline where
-/// they share the timeline and then branch to 2 when they actually diverge
-/// in simulated worlds".
+/// Operator 2026-11-26: "please take more of a doctor strange's civ 6
+/// approach. branches should split from 1 to 2... not 2 to 1". A split's
+/// timeline forks on the turn it was branched on, from the moment it is
+/// made, and earlier only where the two worlds part earlier: one half walked
+/// back behind that turn and played on another way. (From 2026-11-21 it
+/// stayed one timeline for as long as the two held the same world.)
 ///
 /// Which turns are the same world in two sessions is read off the print
 /// every mark carries (`world_print`). What the two halves of a split say of
 /// theirs is held by `panes_tests.rs`
 /// (`halves_say_up_to_which_turn_they_hold_the_same_world`), and what the
 /// timeline then looks like in a browser by `beta/debugger_test.py`
-/// (`one_timeline`, `branched`). This holds what a print is, and the pieces
-/// to the page.
+/// (`branched`). This holds what a print is, and the pieces to the page.
 #[test]
-fn a_branched_timeline_is_one_until_its_two_worlds_differ() {
+fn a_branched_timeline_forks_on_the_turn_it_was_branched_on() {
     // A print is a turn's own, and carries the turns before it.
     let mut session = played();
     for _ in 0..3 {
@@ -1993,13 +1995,13 @@ fn a_branched_timeline_is_one_until_its_two_worlds_differ() {
         // A half tells the host the turns it holds and the print of each.
         "const turns = timeline.turns || [], worlds = timeline.worlds || null;",
         "window.parent.postMessage({civvis: \"pane-marks\", pane: DEBUG_PANE, flags, stops, beyond, eras, turns, worlds, by, swans, seat},",
-        // The host reads the branch off the two lists: the last turn both
-        // give the same print for, and whether either holds a turn past it
+        // The host reads off the two lists the last turn both give the same
+        // print for, and the timeline forks there or on the turn of the
+        // split, whichever is first, from the moment it is made
         // (`a_branch_begins_on_the_turn_it_is_made_on`).
         "function debugSplitFork() {",
         "if (theirs.get(lines.a.turns[at]) !== lines.a.worlds[at]) continue;",
-        "const apart = Math.min(last.a, last.b) > shared, ahead = Math.max(last.a, last.b) > shared;",
-        "return {turn: shared, forked: apart || (ahead && (!moving || debugSplit.forked === true)), first, last};",
+        "return {turn: Math.min(shared, from), forked: true, first, last};",
         // The timeline is drawn from that: the trunk up to the turn, a rail
         // for each half from it, and one marker for two halves on one turn
         // of the trunk.
@@ -2074,8 +2076,10 @@ fn a_branched_timeline_is_drawn_as_a_tree() {
         "if (lane.axis) debugDrawn(lane.axis, tree ? debugAxisMarkup(lo, hi, tree, at, travel) : \"\");",
         // The turn it forks on is said between the two branches.
         "position: absolute; z-index: 2; top: 50%; transform: translate(calc(var(--dbg-run) + 3px), -50%); padding: 2px 7px; border-radius: 999px;",
-        // The lock stands where the two rows meet, and the trunk leaves it.
-        "border: 2px dashed #6f8a80; border-left: 0; border-radius: 0 9px 9px 0;",
+        // The lock stands at the root of the tree, and the trunk leaves it:
+        // nothing of either branch is left of the trunk (operator,
+        // 2026-11-26: "branches should split from 1 to 2... not 2 to 1").
+        "display: block; grid-column: 1; grid-row: 1 / span 2; align-self: stretch; position: relative;",
     ] {
         assert!(page.contains(piece), "the tree is missing {piece}");
     }
@@ -2737,14 +2741,16 @@ fn a_branch_begins_on_the_turn_it_is_made_on() {
         "if (letter === \"b\" && debugSplit.branches) debugSplitTell(\"b\", {civvis: \"pane-op\", body: {op: \"branch\"}});",
         // Until it says it holds none of them, they are left out of its line.
         "const cut = letter === \"b\" && debugSplit.branches ? from : Infinity;",
-        // The ✕ of a branch closes it: the other is kept. It stands past
-        // the right end of its branch's row (operator, 2026-11-22: "move x
+        // The ✕ of a branch closes it: the other is kept. It stands at the
+        // right end of its branch's row (operator, 2026-11-22: "move x
         // deletes over to the right side please, right after each closable
-        // timeline ends"), and the strip between the halves drops a branch
-        // by the same name ("Should have Drop A and Drop B over Keep").
+        // timeline ends"), past the branch's letter and Civ AI, and the
+        // strip between the halves drops a branch by the same name ("Should
+        // have Drop A and Drop B over Keep").
         "<button class=\"dbg-close\" data-dbg-close=\"${key}\"",
         "if (debugSplit && !closed.disabled) debugSplitClose(closed.dataset.dbgClose === \"a\" ? \"b\" : \"a\");",
-        "#debugbar.dbg-split-on .dbg-rail { grid-column: 5; }\n  #debugbar.dbg-split-on .dbg-close { grid-column: 6; }",
+        "#debugbar.dbg-split-on .dbg-rail { grid-column: 3; }",
+        "#debugbar.dbg-split-on .dbg-lane select.dbg-agent { grid-column: 5; }\n  #debugbar.dbg-split-on .dbg-close { grid-column: 6; }",
         "else if (action === \"drop-a\") debugSplitClose(\"b\");\n    else if (action === \"drop-b\") debugSplitClose(\"a\");",
         // Two branches are the most there are.
         "#debugbar.dbg-split-on .dbg-branch, #debugbar.dbg-split-on .dbg-who { display: none; }",

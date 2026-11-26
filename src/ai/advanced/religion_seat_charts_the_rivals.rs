@@ -388,7 +388,13 @@ impl AdvancedAi {
         let surplus = Self::campaign_charges_known(g, pid, religion).map_or(0, |demand| {
             (supply.saturating_sub(SURPLUS_COVER * demand) / CHARGES_PER_SPREADER) as usize
         });
-        let scouts = under_charted.min(corps.len() / SCOUT_SHARE).max(surplus);
+        // `spreaders-spread-before-they-chart`: the rivals that already have
+        // a seeker of their own need no scout as well. Zero off.
+        let seeking = self.scouts_left_to_the_seekers(g, pid, religion, offensive);
+        let scouts = under_charted
+            .min(corps.len() / SCOUT_SHARE)
+            .saturating_sub(seeking)
+            .max(surplus);
         if !corps.iter().take(scouts).any(|(_, id)| *id == uid) {
             return false;
         }

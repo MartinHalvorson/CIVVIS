@@ -5,8 +5,8 @@
 # The output is one complete LANE of the site — the viewer at its root with
 # the engine compiled to WebAssembly beside it, the landing page at /home, the
 # pages of Charts/ under /charts (AI Insights, Civ AI Interpretability, Civ
-# Analytics, Win Analytics, ELO Rankings, CIVVIS Performance), the Experiments page at
-# /experiments and the downloads page at /download — a
+# Analytics, Win Analytics, ELO Rankings, CIVVIS Performance), the Tournaments page at
+# /tournaments and the downloads page at /download — a
 # plain directory of static files with no
 # host-specific anything beyond the two Cloudflare Pages control files, which
 # any other host simply ignores. Every link between the pages is
@@ -191,7 +191,9 @@ without=()
 # it its first address (operator: "change auto-outnrye to Tournaments.
 # Auto-tourney suggests some self imrpvoing tourney thing"). On 2026-11-25 it
 # was named Experiments and went to experiments (operator: "rename
-# tournaments to experiments"). The page's file and its record keep the
+# tournaments to experiments"), and on 2026-11-26 it took the name
+# Tournaments and the address tournaments back (operator: "change
+# experiments back to tournaments"). The page's file and its record keep the
 # names they were written under (beta/tournaments.html, data/tournaments.json).
 # Every link inside a page is relative, so a page works at one depth only,
 # and this script, which is the invoking tree's, lays out both lanes. A page
@@ -289,9 +291,9 @@ if [ -f "$landing_page" ]; then
 else
   without+=(home)
 fi
-# The Experiments page (running, scheduled and finished series of the
+# The Tournaments page (running, scheduled and finished series of the
 # verification games) is filled the same way: the definitions in the lane's
-# data/tournaments.json, the games from the run ledger. An experiment
+# data/tournaments.json, the games from the run ledger. A tournament
 # scheduled on main is listed on /test at once and on the front page when it
 # is promoted.
 if [ -f "$tournaments_page" ]; then
@@ -300,7 +302,7 @@ if [ -f "$tournaments_page" ]; then
   fill tournaments_page.py "$out/$tournaments_at/index.html"
   pages+=("$tournaments_at")
 else
-  without+=(experiments)
+  without+=(tournaments)
 fi
 # AI Insights (what the Civ games show about AI at large, an insight at a
 # time; the first is the games against Civilization VI's own AI ending sooner

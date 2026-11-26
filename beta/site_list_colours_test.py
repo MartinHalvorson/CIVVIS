@@ -5,7 +5,7 @@ Operator, 2026-11-23: "make home, charts/ and auto-tourneys buttons all have
 a blue background (like the pages do). civvis, ai debugger have a black
 background (same as simulator)", and of the sixth button: "civ 6 can have the
 steam color of blue. the background can be styled how you think steam is".
-Later the same day, of Doctor Strange's Civ 6: "highlight dr strange civ 6
+Later the same day, of Doctor Strange's CIVVIS: "highlight dr strange civ 6
 button in dr strange colors". On 2026-11-24, of CIVVIS: "lets give civvis a
 gold background on the button, rather than black"; it was white for a day
 from 2026-11-25, and on 2026-11-26: "return civvis to a gold highlight". Edge
@@ -22,13 +22,13 @@ Until then a list was all one colour, the colour of the page it stood on:
 six blue buttons on the pages, six black ones in the simulator. Now a button
 says where it goes, and says the same thing on every page:
 
-    Home, Charts/ and its pages, Experiments     the pages' blue
+    Home, Charts/ and its pages, Tournaments     the pages' blue
     CIVVIS                                       gold
     AI Debugger                                  the simulator's black, and
                                                  a green bug after the name
-    Doctor Strange's Civ 6                       Doctor Strange's blue and
+    Doctor Strange's CIVVIS                       Doctor Strange's blue and
                                                  crimson, in an orange glow
-    Civ: Edge of Tomorrow                        the film poster's gunmetal
+    CIVVIS: Edge of Tomorrow                        the film poster's gunmetal
                                                  into ember, ringed in steel
     Civ 6                                        the blue of Steam's buttons
 
@@ -169,7 +169,7 @@ def lists() -> dict[str, list[tuple[str, str]]]:
 class Pages(unittest.TestCase):
     def test_the_list_is_found_on_the_pages_that_carry_it(self):
         # Discovered, so a glob that comes up empty is a failure and not a
-        # pass: Home, Experiments and the pages of Charts/.
+        # pass: Home, Tournaments and the pages of Charts/.
         carried = lists()
         self.assertGreaterEqual(len(carried), 5, sorted(carried))
         for source, links in carried.items():
@@ -217,25 +217,25 @@ class Pages(unittest.TestCase):
             worn = {name: ground(href) for name, href in links}
             with self.subTest(page=source):
                 self.assertEqual({name for name, kind in worn.items() if kind == "gold"}, {"CIVVIS"})
-                self.assertEqual({name for name, kind in worn.items() if kind == "black"}, {"AI Debugger"})
-                self.assertEqual({name for name, kind in worn.items() if kind == "tomorrow"}, {"Civ: Edge of Tomorrow"})
+                self.assertEqual({name for name, kind in worn.items() if kind == "black"}, {"CIVVIS AI Debugger"})
+                self.assertEqual({name for name, kind in worn.items() if kind == "tomorrow"}, {"CIVVIS: Edge of Tomorrow"})
                 # Edge of Tomorrow stands between AI Debugger and Civ 6
                 # (operator 2026-11-25: "above civ 6 and below ai debugger").
-                self.assertEqual(list(worn)[-3:], ["AI Debugger", "Civ: Edge of Tomorrow", "Civ 6"])
-                self.assertEqual({name for name, kind in worn.items() if kind == "strange"}, {"Doctor Strange's Civ 6"})
+                self.assertEqual(list(worn)[-3:], ["CIVVIS AI Debugger", "CIVVIS: Edge of Tomorrow", "Civ 6"])
+                self.assertEqual({name for name, kind in worn.items() if kind == "strange"}, {"Doctor Strange's CIVVIS"})
                 self.assertEqual({name for name, kind in worn.items() if kind == "steam"}, {"Civ 6"})
                 # The list ends at Civ 6: Wizard Chess, which stood below
                 # it, is set aside.
                 self.assertEqual(list(worn)[-1], "Civ 6")
                 self.assertNotIn("Wizard Chess", worn)
                 blue = {name for name, kind in worn.items() if kind == "blue"}
-                self.assertLessEqual({"Home", "Charts/", "Experiments"}, blue)
+                self.assertLessEqual({"Home", "Charts/", "Tournaments"}, blue)
                 # Chaos Monkey stood between Experiments and CIVVIS on
                 # 2026-11-25 and is off the site since 2026-11-26.
                 self.assertNotIn("Chaos Monkey", worn)
                 # Whatever else is blue is a page of Charts/, set in under it.
                 under = {name for kind, _, _, name in LINK.findall(NAV.search((BETA / source).read_text(encoding="utf-8")).group(1)) if kind.endswith("sub-link")}
-                self.assertEqual(blue - {"Home", "Charts/", "Experiments"}, under)
+                self.assertEqual(blue - {"Home", "Charts/", "Tournaments"}, under)
 
     def test_the_simulator_is_never_the_page_on_screen_here(self):
         # The page on screen here is always one of the blue pages.
@@ -253,11 +253,11 @@ class Simulator(unittest.TestCase):
         for mark, name in (
             ("homelink", "Home"),
             ("chartslink", "Charts/"),
-            ("tourlink", "Experiments"),
+            ("tourlink", "Tournaments"),
             ("watchlink", "CIVVIS"),
-            ("playlink", "AI Debugger"),
-            ("strangelink", "Doctor Strange's Civ 6"),
-            ("tomorrowlink", "Civ: Edge of Tomorrow"),
+            ("playlink", "CIVVIS AI Debugger"),
+            ("strangelink", "Doctor Strange's CIVVIS"),
+            ("tomorrowlink", "CIVVIS: Edge of Tomorrow"),
             ("civ6link", "Civ 6"),
         ):
             self.assertRegex(VIEWER, rf'<a class="home-link" id="{mark}" [^>]*>{re.escape(name)}</a>')
@@ -357,12 +357,17 @@ class Simulator(unittest.TestCase):
         # Operator 2026-11-26: "maybe add a green little bug to the end of ai
         # debugger if theres space". The link is a grid, so the bug is a
         # second column after the name, and the name is still its words.
-        self.assertIn("  #playlink { grid-auto-flow: column; justify-content: start; align-items: center; column-gap: .3em; }\n", VIEWER)
+        self.assertIn("  #playlink {\n"
+                      "    grid-auto-flow: column; justify-content: start; align-items: center; column-gap: .3em;\n", VIEWER)
+        # Operator 2026-11-26: "make the debugger button 30% taller. make the
+        # bug bigger too": 1.3 times a one-line link's border box, and the
+        # bug grown from 1.15em to fill it.
+        self.assertIn("    min-height: calc((1.3em + 7px) * 1.3);\n", VIEWER)
         bug = VIEWER[VIEWER.index("  #playlink::after {\n"):]
         bug = bug[:bug.index("  }\n")]
-        self.assertIn('content: "";', bug)
+        self.assertIn('content: ""; width: 1.6em; height: 1.6em;', bug)
         self.assertIn(BUG_GREEN, bug)
-        self.assertRegex(VIEWER, r'<a class="home-link" id="playlink" [^>]*>AI Debugger</a>')
+        self.assertRegex(VIEWER, r'<a class="home-link" id="playlink" [^>]*>CIVVIS AI Debugger</a>')
 
     def test_the_page_on_screen_is_ringed_in_white(self):
         # Whichever of its four pages this is keeps its own colour and is

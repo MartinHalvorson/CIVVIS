@@ -123,13 +123,15 @@
      The row wraps onto a second line on a narrow screen, and every name
      stands on one line (operator, 2026-11-21: "make sure it fits on one
      line"). */
-  .site-nav { display: flex; flex: 1 0 100%; flex-wrap: wrap; align-items: center; gap: 6px; }
+  .site-nav { display: flex; flex: 1 0 100%; flex-wrap: wrap; align-items: center; gap: 5px; }
   .site-brand { display: flex; align-items: center; gap: 18px; min-width: 0; }
   .site-lockup { min-width: 0; }
   .site-tagline span { display: block; }
   .site-link {
     display: block;
-    padding: 3px 12px 4px;
+    /* 8px a side, not 12, and 5px between, not 6: with CIVVIS in three of
+       the names (2026-11-26) the row is one line again on a desktop screen. */
+    padding: 3px 8px 4px;
     border-radius: 3px;
     background: var(--action-bg);
     color: var(--action-fg);
@@ -162,7 +164,7 @@
   /* AI Debugger ends in a little green bug (operator, 2026-11-26: "maybe
      add a green little bug to the end of ai debugger if theres space"). It
      is drawn here rather than written in the link, so the link's name is
-     still "AI Debugger" to a screen reader and to whatever reads the list. */
+     still "CIVVIS AI Debugger" to a screen reader and to whatever reads the list. */
   .site-link[href$="?mode=play"]::after {
     content: ""; display: inline-block; width: 1.1em; height: 1.1em; margin-left: 0.3em; vertical-align: -0.22em;
     background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M6.6 3 5.2 1.2M9.4 3l1.4-1.8M4.4 7.6 1.9 6.4M11.6 7.6l2.5-1.2M4 10.4H1.4M12 10.4h2.6M4.5 13l-2.2 1.8M11.5 13l2.2 1.8' stroke='%2345d16a' stroke-width='1.4' stroke-linecap='round' fill='none'/%3E%3Ccircle cx='8' cy='4.6' r='2.2' fill='%2345d16a'/%3E%3Cellipse cx='8' cy='10.3' rx='4.1' ry='4.9' fill='%2345d16a'/%3E%3Cpath d='M8 6.6v8.4' stroke='%23050607' stroke-width='1'/%3E%3C/svg%3E") center / contain no-repeat;
@@ -346,10 +348,6 @@
   @media (max-width: 859px) { .res-bench-pair { grid-template-columns: minmax(0, 1fr); } }
   .res-bench-title { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 12px; margin: 0 0 8px; color: #fff; font-size: 15px; font-weight: 700; line-height: 1.3; }
   .res-bench-title small { color: var(--muted); font-size: 12px; font-weight: 400; font-variant-numeric: tabular-nums; }
-  .res-bench-par { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; margin: 0 0 14px; padding: 12px 16px; border: 1px solid var(--gold); border-left-width: 6px; border-radius: 6px; background: rgba(215, 182, 106, 0.1); }
-  .res-bench-par b { color: var(--gold); font-size: 26px; font-weight: 800; line-height: 1.2; font-variant-numeric: tabular-nums; }
-  .res-bench-par span { color: var(--text); font-size: 13.5px; line-height: 1.4; }
-  @media (max-width: 479px) { .res-bench-par b { font-size: 21px; } }
   .res-rates { border-collapse: separate; border-spacing: 3px; }
   .res-rates th { padding-right: 8px; vertical-align: bottom; }
   .res-rates th.is-group { padding: 0 2px 3px 0; border-bottom: 1px solid var(--border); font-size: 12px; text-align: center; }
@@ -444,11 +442,11 @@
           <a class="site-link sub-link" href="../charts/random-ai-charts/" title="Charts the AI agents added on their own, kept here until they are asked for or talked over.">Random AI Charts</a>
         </div>
       </div>
-      <a class="site-link" href="../experiments/" title="Series of verification games against Civilization VI&#8217;s own AI: running, scheduled and finished.">Experiments</a>
+      <a class="site-link" href="../tournaments/" title="Series of verification games against Civilization VI&#8217;s own AI: running, scheduled and finished.">Tournaments</a>
       <a class="site-link" href="../" title="Every civilization is played by a CIVVIS AI agent.">CIVVIS</a>
-      <a class="site-link" href="../?mode=strange" title="One world, two timelines: the same game played two ways, side by side, on a timeline that branches.">Doctor Strange's Civ 6</a>
-      <a class="site-link" href="../?mode=play" title="You play one civilization. CIVVIS AI agents play the rest.">AI Debugger</a>
-      <a class="site-link" href="../?mode=tomorrow" title="You play one civilization, with a jump back: the world returns to the turn you woke on, as it stood.">Civ: Edge of Tomorrow</a>
+      <a class="site-link" href="../?mode=strange" title="One world, two timelines: the same game played two ways, side by side, on a timeline that branches.">Doctor Strange's CIVVIS</a>
+      <a class="site-link" href="../?mode=play" title="You play one civilization. CIVVIS AI agents play the rest.">CIVVIS AI Debugger</a>
+      <a class="site-link" href="../?mode=tomorrow" title="You play one civilization, with a jump back: the world returns to the turn you woke on, as it stood.">CIVVIS: Edge of Tomorrow</a>
       <a class="site-link" href="https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/" target="_blank" rel="noopener" title="Buy Civilization VI on Steam">Civ 6</a>
     </nav>
     <script data-site-folder>
@@ -520,12 +518,15 @@
          whose figures it draws (operator: "move the civvis performance
          timeline thing from home/ to the civvis performance section. middle
          of the page or so"): `beta/performance.html`, `#perf-line`. It is the
-         chart Win Analytics opens on, copied: its yardstick in big type, and
-         the two tables, the games that allowed the Diplomatic victory at
-         the left and the games with it off at the right, a row per level
-         from Lv 8 Deity down to Lv 4 Prince and a column per window. From
-         the yardstick to the end of the tables the markup is that page's
-         own, and so are the script that fills it and the shade of a cell
+         chart Win Analytics opens on, copied: the two tables, the games
+         that allowed the Diplomatic victory at the left and the games with
+         it off at the right, each titled with the games it counts ("6P
+         Continents Online", and ", Diplo Off" for the right; operator,
+         2026-11-26, in place of the note of the 1/6 par that stood over
+         them), a row per level from Lv 8 Deity down to Lv 4 Prince and a
+         column per window. From the pair's opening to the end of the
+         tables the markup is that page's own, and so are the script that
+         fills it and the shade of a cell
          (`beta/home_rankings_test.py` holds the two pages to each other).
          The record is the page's `home-benchmark` slot, the one Win
          Analytics is given as `tournament_rates`
@@ -541,10 +542,9 @@
         </div>
         <p class="home-bench-more"><a href="../charts/win-analytics/">Win Analytics</a></p>
       </header>
-      <p class="res-bench-par" id="res-bench-par"><b>Expected win rate in a 6P game: 1/6 = 16.7%</b> <span>A rate above 16.7% beats the Firaxis AI.</span></p>
       <div class="res-bench-pair">
         <div class="res-section" id="res-bench-on">
-          <h3 class="res-bench-title" id="res-title-rates-on">Diplomatic victory allowed <small id="res-rates-count-on"></small></h3>
+          <h3 class="res-bench-title" id="res-title-rates-on">Diplomatic victory allowed · 6P Continents Online <small id="res-rates-count-on"></small></h3>
           <div class="res-scroll">
             <table class="rank-table res-rates" id="res-rates-on" aria-labelledby="res-title-rates-on">
               <thead>
@@ -556,7 +556,7 @@
           </div>
         </div>
         <div class="res-section" id="res-bench-off">
-          <h3 class="res-bench-title" id="res-title-rates-off">Diplomatic victory off <small id="res-rates-count-off"></small></h3>
+          <h3 class="res-bench-title" id="res-title-rates-off">Diplomatic victory off · 6P Continents Online, Diplo Off <small id="res-rates-count-off"></small></h3>
           <div class="res-scroll">
             <table class="rank-table res-rates" id="res-rates-off" aria-labelledby="res-title-rates-off">
               <thead>
@@ -643,14 +643,14 @@
           </a>
         </figure>
         <figure class="watch-tile" id="watch-debugger" data-video="6W5t0hcR_N4">
-          <figcaption><b>AI Debugger</b> <span data-watch-title>Multiverse, Time Travel</span> <a href="../?mode=play">AI Debugger</a></figcaption>
+          <figcaption><b>CIVVIS AI Debugger</b> <span data-watch-title>Multiverse, Time Travel</span> <a href="../?mode=play">CIVVIS AI Debugger</a></figcaption>
           <a class="watch-poster" href="https://www.youtube.com/watch?v=6W5t0hcR_N4" target="_blank" rel="noreferrer">
             <img alt="" width="1280" height="720" decoding="async" referrerpolicy="no-referrer" src="https://i.ytimg.com/vi_webp/6W5t0hcR_N4/hq720.webp">
             <span class="watch-play" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span>
           </a>
         </figure>
         <figure class="watch-tile" id="watch-strange" data-video="H50wfMantkY">
-          <figcaption><b>Doctor Strange's Civ 6</b> <a href="../?mode=strange">Doctor Strange's Civ 6</a></figcaption>
+          <figcaption><b>Doctor Strange's CIVVIS</b> <a href="../?mode=strange">Doctor Strange's CIVVIS</a></figcaption>
           <a class="watch-poster" href="https://www.youtube.com/watch?v=H50wfMantkY" target="_blank" rel="noreferrer">
             <img alt="" width="1280" height="720" decoding="async" referrerpolicy="no-referrer" src="https://i.ytimg.com/vi_webp/H50wfMantkY/hq720.webp">
             <span class="watch-play" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span>

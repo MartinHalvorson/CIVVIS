@@ -319,28 +319,31 @@
      tripping the ellipsis. */
   h1 {
     width: auto; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis;
-    color: var(--gold-bright);
+    color: #eef0ec;
     font: 650 36px/.95 "Iowan Old Style", "Palatino Linotype", Georgia, serif;
     font-size: clamp(22px, calc((64cqw - 15px) / 4.85), 36px);
     letter-spacing: .08em; text-transform: uppercase;
-    background: linear-gradient(100deg, #f6dfaa 8%, #d7b66a 66%, #a9823b);
-    -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
     text-shadow: 0 4px 16px #0008;
   }
   h1 .brand-suffix {
     font-size: .58em; letter-spacing: .025em; text-transform: lowercase;
   }
+  /* The globe and the title a size smaller, the tagline brighter and a
+     touch larger (operator, 2026-11-26: "civvis.ai title and globe a bit
+     smaller. subtitle a bit bigger, or at least more readable"): no extra
+     tracking and a lighter weight let the fitter set it larger in the same
+     lane, and both lines are nearer white. */
   .tagline {
-    margin-top: 9px; color: #dde6e2; font-size: var(--type-body);
-    font-weight: 650; letter-spacing: .015em; line-height: 1.36;
+    margin-top: 9px; color: #f0f2ee; font-size: var(--type-body);
+    font-weight: 600; letter-spacing: 0; line-height: 1.36;
   }
   /* The lockup is always the same two lines: the simulator's name, then its
      purpose. Each phrase owns exactly one line at every band — never joined
      into a sentence, never folded mid-phrase — so the spans are unbreakable
      and the text fitter shrinks the type into the lane instead of wrapping. */
   .tagline span { display: block; white-space: nowrap; }
-  .tagline span + span { color: #bccac4; }
-  /* The site's pages from the top down: Home, Charts, Experiments, CIVVIS
+  .tagline span + span { color: #d6ddd9; }
+  /* The site's pages from the top down: Home, Charts, Tournaments, CIVVIS
      and AI Debugger, and under them the game all five are built on. The block below is how they stand
      when there is no room beside the lockup, or no way to ask whether they
      are showing (`:has`): two by two under the tagline. `display: grid`
@@ -395,7 +398,7 @@
      Debugger keeps. CIVVIS is gold (operator, 2026-11-26: "return civvis
      to a gold highlight"; gold from 2026-11-24, white for a day from
      2026-11-25), the same gold on every page. Home, Charts/ and
-     Experiments are the blue those
+     Tournaments are the blue those
      pages set their own lists in, and Civ 6, which opens Steam's shop, is
      the blue of Steam's buttons ("civ 6 can have the steam color of
      blue"), dark under the name and light at the far end. */
@@ -411,12 +414,19 @@
   /* AI Debugger ends in a little green bug (operator, 2026-11-26: "maybe
      add a green little bug to the end of ai debugger if theres space"), the
      same bug as on the pages. It is drawn here rather than written in the
-     link, so the link's name is still "AI Debugger" to a screen reader and
+     link, so the link's name is still "CIVVIS AI Debugger" to a screen reader and
      to whatever reads the list. The link is a grid, so the bug is a second
      column beside the name. */
-  #playlink { grid-auto-flow: column; justify-content: start; align-items: center; column-gap: .3em; }
+  /* 30% taller than a one-line link (its 1.3em line, 5px of padding and
+     2px of border; border-box), with the bug grown to fill it (operator,
+     2026-11-26: "make the debugger button 30% taller. make the bug bigger
+     too"). */
+  #playlink {
+    grid-auto-flow: column; justify-content: start; align-items: center; column-gap: .3em;
+    min-height: calc((1.3em + 7px) * 1.3);
+  }
   #playlink::after {
-    content: ""; width: 1.15em; height: 1.15em;
+    content: ""; width: 1.6em; height: 1.6em;
     background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M6.6 3 5.2 1.2M9.4 3l1.4-1.8M4.4 7.6 1.9 6.4M11.6 7.6l2.5-1.2M4 10.4H1.4M12 10.4h2.6M4.5 13l-2.2 1.8M11.5 13l2.2 1.8' stroke='%2345d16a' stroke-width='1.4' stroke-linecap='round' fill='none'/%3E%3Ccircle cx='8' cy='4.6' r='2.2' fill='%2345d16a'/%3E%3Cellipse cx='8' cy='10.3' rx='4.1' ry='4.9' fill='%2345d16a'/%3E%3Cpath d='M8 6.6v8.4' stroke='%23050607' stroke-width='1'/%3E%3C/svg%3E") center / contain no-repeat;
   }
   /* Doctor Strange's Civ 6 stands out in Doctor Strange's own colours
@@ -463,37 +473,44 @@
   html.seat-known.strange body:not(.watching-sim) #strangelink { box-shadow: inset 0 0 0 1px #fff, 0 0 6px rgba(255, 138, 30, 0.6); }
   html.seat-known.tomorrow body:not(.watching-sim) #tomorrowlink { box-shadow: inset 0 0 0 1px #fff, 0 0 6px rgba(255, 120, 40, 0.5); }
   /* With 233px or more across the band the links leave the lockup's foot and
-     stand in a column on its left, at the box's left edge, with the globe
-     and the wordmark to the right of it (operator, 2026-11-21: the list goes
-     "to the left side" of the civvis.ai title, as it is on Home) and the
-     tagline across the band under all three. The column is the first track
-     of the lockup's grid though the list is the last thing in the markup,
-     so the narrower layouts still find it under the tagline. The lockup
-     gives the column its width (`--site-rail`) and the wordmark's
-     lane is the band less the column, the globe and the two 7px gutters. The
-     CIVVIS.ai run is 4.65em wide (4.85 leaves fallback-font slack), so
-     dividing the lane by that fills it without tripping the ellipsis. Under
-     233px that leaves the wordmark too small to be the page's name. */
+     stand in a column on its left, at the box's left edge (operator,
+     2026-11-21: the list goes "to the left side" of the civvis.ai title, as
+     it is on Home). Right of the column the rest of the lockup stands one
+     over the other and centred: the globe on top and large, then the
+     wordmark, then the tagline (operator, 2026-11-26: "maybe put the globe
+     on top and bigger, then civvis.ai, the a civ.... but centered better").
+     The rows over and under the three take what the column's height leaves,
+     so the three keep together in the middle of it. The column is the first
+     track of the lockup's grid though the list is the last thing in the
+     markup, so the narrower layouts still find it under the tagline. The
+     lockup gives the column its width (`--site-rail`) and the wordmark its
+     lane, the band less the column and its 7px gutter. The CIVVIS.ai run is
+     4.65em wide (4.85 leaves fallback-font slack), so dividing the lane by
+     that fills it without tripping the ellipsis. Under 233px that leaves the
+     wordmark too small to be the page's name. Under 246px the tagline's two
+     lines do not fit beside the column, and it stands across the band under
+     all of it. */
   @container (min-width: 233px) {
     #side .brand:has(> .head-links:not([hidden])) {
-      --site-rail: 92px; --site-mark: clamp(40px, 19cqw, 72px);
-      display: grid; grid-template-columns: var(--site-rail) auto minmax(0, 1fr);
-      align-items: center; gap: 7px;
+      --site-rail: 92px; --site-mark: clamp(56px, 29cqw, 96px);
+      display: grid; grid-template-columns: var(--site-rail) minmax(0, 1fr);
+      grid-template-rows: 1fr auto auto 1fr auto;
+      align-items: center; gap: 6px 7px;
     }
     #side .brand:has(> .head-links:not([hidden])) .brand-copy { display: contents; }
     #side .brand:has(> .head-links:not([hidden])) .brand-mark {
-      grid-column: 2; grid-row: 1; flex: none; width: var(--site-mark); height: var(--site-mark);
+      grid-column: 2; grid-row: 2; flex: none; width: var(--site-mark); height: var(--site-mark); justify-self: center;
     }
     #side .brand:has(> .head-links:not([hidden])) .brand-mark svg { width: 91%; height: 91%; }
     #side .brand:has(> .head-links:not([hidden])) h1 {
-      grid-column: 3; grid-row: 1;
-      font-size: clamp(15px, calc((100cqw - var(--site-rail) - var(--site-mark) - 14px) / 4.85), 36px);
+      grid-column: 2; grid-row: 3; justify-self: center; text-align: center;
+      font-size: clamp(14px, calc((100cqw - var(--site-rail) - 7px) / 5.6), 31px);
     }
     #side .brand:has(> .head-links:not([hidden])) .tagline {
-      grid-column: 1 / -1; grid-row: 2; margin-top: 0;
+      grid-column: 1 / -1; grid-row: 5; margin-top: 0; text-align: center;
     }
     #side .brand:has(> .head-links:not([hidden])) .head-links {
-      grid-column: 1; grid-row: 1; grid-template-columns: minmax(0, 1fr);
+      grid-column: 1; grid-row: 1 / span 4; grid-template-columns: minmax(0, 1fr);
       align-content: center; justify-self: stretch; margin-top: 0;
     }
     /* Eight to the column, a name to a line but for Doctor Strange's Civ 6
@@ -502,20 +519,24 @@
        gutters, the size it took for STRAT DEBUGGER (83px in this type
        against the 86px inside the column) while that was the Debugger's
        name here, and it keeps that size, so neither width at which the
-       lockup changes shape has moved. AUTO-TOURNEYS, the Experiments
+       lockup changes shape has moved. AUTO-TOURNEYS, the Tournaments
        page's name from 2026-11-22 to 2026-11-24, was the longest name,
        80px. Each link is one track here, wherever it stands two by
        two. Six one-line links and the two of two lines make it 171px. */
+    /* AI Debugger's 30%, against this column's one-line link: 1px and 2px
+       of padding here. */
+    #side .brand:has(> .head-links:not([hidden])) #playlink { min-height: calc((1.3em + 5px) * 1.3); }
     #side .brand:has(> .head-links:not([hidden])) .home-link {
       grid-column: auto; padding: 1px 2px 2px; font-size: 8.5px; letter-spacing: .02em;
     }
   }
   /* From 246px the tagline's two lines fit beside the column too, under the
-     globe and the wordmark, so the column runs the whole height of the
-     lockup and the box is no taller than the six links. */
+     wordmark, so the column runs the whole height of the lockup and the box
+     is no taller than the links. */
   @container (min-width: 246px) {
-    #side .brand:has(> .head-links:not([hidden])) .tagline { grid-column: 2 / 4; }
-    #side .brand:has(> .head-links:not([hidden])) .head-links { grid-row: 1 / span 2; }
+    #side .brand:has(> .head-links:not([hidden])) { grid-template-rows: 1fr auto auto auto 1fr; }
+    #side .brand:has(> .head-links:not([hidden])) .tagline { grid-column: 2; grid-row: 4; }
+    #side .brand:has(> .head-links:not([hidden])) .head-links { grid-row: 1 / -1; }
   }
   /* A split-screen deck cannot afford the landing-page-sized mark and title.
      The compact band preserves both, but reflows the lockup: the copy column
@@ -5374,12 +5395,8 @@
   #brand-land stop:nth-child(1) { stop-color: #e0c274; }
   #brand-land stop:nth-child(2) { stop-color: #bf9644; }
   #brand-land stop:nth-child(3) { stop-color: #76581f; }
-  h1 {
-    background: linear-gradient(100deg, #e4c67e 8%, #c8a052 66%, #89672c);
-    -webkit-background-clip: text; background-clip: text;
-  }
-  .tagline { color: #e1e3df; }
-  .tagline span + span { color: #b8bdb9; }
+  .tagline { color: #f0f2ee; }
+  .tagline span + span { color: #d6ddd9; }
 
   .side-scroll {
     scrollbar-color: #3d4346 transparent;
@@ -6689,14 +6706,14 @@
         <h1>CIVVIS<span class="brand-suffix">.ai</span></h1>
         <div class="tagline"><span>A <i>Civilization VI</i> Simulator</span><span>for AI reasoning insights</span></div>
       </div>
-      <!-- The site is five pages, Home, Charts, Experiments, CIVVIS and AI
+      <!-- The site is five pages, Home, Charts, Tournaments, CIVVIS and AI
            Debugger, and every one of them lists all five in that order with
            the one on screen ringed in white. This page is the last two: `./` is the simulation
            the AIs play and `?mode=play` the same game with a seat of your
            own. Both are relative, so they stay in whichever lane they were
            clicked in, and all five leave a split's frame for the whole
            window. Under them is the game itself, on the shop page that sells
-           it. Doctor Strange's Civ 6, listed just above AI Debugger since 2026-11-23,
+           it. Doctor Strange's CIVVIS, listed just above AI Debugger since 2026-11-23,
            is that same played game shown another way (`?mode=strange`): two
            worlds in the lower quarters of the window and their timeline a
            tree up the middle of it, drawn by `assets/app_debugger.js`.
@@ -6707,18 +6724,19 @@
            for or the game is lost, drawn by the same script.
            Only the published site has a /home, a /research (the Charts
            page, which kept its address through two renames) and a
-           /experiments (the Experiments page, named Tournaments until 2026-11-25) to go to
+           /tournaments (the Tournaments page, named Experiments and at
+           /experiments from 2026-11-25 to 2026-11-26) to go to
            (`beta/publish.sh` makes the three links lane-relative); the head
            script unhides the list on the hosts that serve them. Performance
            is Charts' own page and is listed under it there, not here. -->
       <nav class="head-links" id="headlinks" aria-label="CIVVIS sites" hidden>
         <a class="home-link" id="homelink" href="/home" target="_top">Home</a>
         <a class="home-link" id="chartslink" href="/charts/ai-insights" target="_top">Charts/</a>
-        <a class="home-link" id="tourlink" href="/experiments" target="_top">Experiments</a>
+        <a class="home-link" id="tourlink" href="/tournaments" target="_top">Tournaments</a>
         <a class="home-link" id="watchlink" href="./" target="_top">CIVVIS</a>
-        <a class="home-link" id="strangelink" href="?mode=strange" target="_top">Doctor Strange's Civ 6</a>
-        <a class="home-link" id="playlink" href="?mode=play" target="_top">AI Debugger</a>
-        <a class="home-link" id="tomorrowlink" href="?mode=tomorrow" target="_top">Civ: Edge of Tomorrow</a>
+        <a class="home-link" id="strangelink" href="?mode=strange" target="_top">Doctor Strange's CIVVIS</a>
+        <a class="home-link" id="playlink" href="?mode=play" target="_top">CIVVIS AI Debugger</a>
+        <a class="home-link" id="tomorrowlink" href="?mode=tomorrow" target="_top">CIVVIS: Edge of Tomorrow</a>
         <a class="home-link" id="civ6link" href="https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/" target="_blank" rel="noopener" title="Buy Civilization VI on Steam">Civ 6</a>
       </nav>
     </div>

@@ -377,15 +377,18 @@ fn boot_waits_for_every_script_of_the_page_before_it_calls_into_them() {
     assert!(wait < at("syncTeams();"));
     assert!(EMBEDDED_APP_SETUP_JS.contains("\nfunction syncTeams() {"));
     assert!(!EMBEDDED_APP_JS.contains("function syncTeams("));
-    // What is waited for: the page's scripts are parser-run, so
-    // DOMContentLoaded follows the last of them; a boot begun later (a
-    // retry, a reconnect) waits for nothing.
+    // What is waited for: the page's scripts are parser-run, so the document
+    // leaves "loading" right after the last of them. Not DOMContentLoaded,
+    // which also waits for deferred and module scripts, and civvis.ai's edge
+    // injects one (Cloudflare's analytics beacon) that held the first world
+    // back up to 2.9 s on 2026-11-26. A boot begun later (a retry, a
+    // reconnect) waits for nothing.
     // It is declared in the page's first script, ahead of app.js, where a
     // name can never be read before its declaration has run (and app.js is
     // three lines short of the size test_web_assets.py holds it under).
     assert!(include_str!("../../web/assets/app_palette.js").contains(concat!(
         "const pageScriptsRan = document.readyState === \"loading\"\n",
-        "  ? new Promise(resolve => document.addEventListener(\"DOMContentLoaded\", resolve, {once: true}))\n",
+        "  ? new Promise(resolve => document.addEventListener(\"readystatechange\", resolve, {once: true}))\n",
         "  : Promise.resolve();\n",
     )));
     assert!(!EMBEDDED_APP_JS.contains("const pageScriptsRan"));
@@ -394,6 +397,17 @@ fn boot_waits_for_every_script_of_the_page_before_it_calls_into_them() {
             .find(&format!("<script src=\"/assets/{name}\"></script>"))
             .unwrap_or_else(|| panic!("the page no longer loads {name}"))
     };
+    // Which holds only while every script of the page is a plain parser-run
+    // one: a deferred or module script runs after the document leaves
+    // "loading", and boot would call into it before it had run.
+    for tag in EMBEDDED_INDEX_HTML.match_indices("<script").map(|(at, _)| {
+        &EMBEDDED_INDEX_HTML[at..at + EMBEDDED_INDEX_HTML[at..].find('>').expect("script tag")]
+    }) {
+        assert!(
+            !tag.contains("defer") && !tag.contains("async") && !tag.contains("module"),
+            "{tag}"
+        );
+    }
     assert!(loads("app_palette.js") < loads("app.js"));
     assert!(loads("app.js") < loads("app_setup.js"));
     // And nothing of a later script is called before it.
@@ -2185,7 +2199,7 @@ fn viewer_marks_the_selected_revision_and_its_compact_ages_above_the_minimap() {
     assert!(EMBEDDED_INDEX.contains("position: fixed; z-index: 16;\n    right:"));
 }
 
-/// The site is five pages, Home, Charts, Experiments, CIVVIS and AI
+/// The site is five pages, Home, Charts, Tournaments, CIVVIS and AI
 /// Debugger (the operator's names in this list: "home, musings (rename
 /// research), tournaments, civvis, AI Debugger (rename plz), Civ 6 at the
 /// top level" on 2026-11-21, then on 2026-11-22 "Change musings to
@@ -2216,7 +2230,7 @@ fn viewer_marks_the_selected_revision_and_its_compact_ages_above_the_minimap() {
 /// should have at least win analytics, CIVVIS Performance").
 /// Pinned as one literal because the list is the contract: eight links in
 /// this order, inside a list that only the hosts serving a /home, a
-/// /charts and an /experiments reveal. The addresses follow the names in
+/// /charts and a /tournaments reveal. The addresses follow the names in
 /// the list since 2026-11-23 (operator: "clean up the URL please.
 /// standardized. please remove research from the url"): Charts/ opens Win
 /// Analytics at /charts/win-analytics, where it was /research, and
@@ -2224,9 +2238,11 @@ fn viewer_marks_the_selected_revision_and_its_compact_ages_above_the_minimap() {
 /// its first name and address back on 2026-11-24 (operator: "change
 /// auto-outnrye to Tournaments. Auto-tourney suggests some self imrpvoing
 /// tourney thing"): Tournaments, at /tournaments. On 2026-11-25 it was named
-/// Experiments (operator: "rename tournaments to experiments"), and is at
-/// /experiments; the link keeps the id it had (`tourlink`), which the
-/// rules that size and colour it are written for. Chaos Monkey stood
+/// Experiments (operator: "rename tournaments to experiments"), at
+/// /experiments, and on 2026-11-26 it took its name and /tournaments back
+/// (operator: "change experiments back to tournaments"); the link has kept
+/// its id (`tourlink`) throughout, which the rules that size and colour it
+/// are written for. Chaos Monkey stood
 /// between Experiments and CIVVIS, at /chaos-monkey, from that day until
 /// 2026-11-26 (operator: "remove chaos monkey for now"). Edge of Tomorrow
 /// is named Civ: Edge of Tomorrow since 2026-11-26 (operator: "change edge
@@ -2237,11 +2253,11 @@ fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
         "<nav class=\"head-links\" id=\"headlinks\" aria-label=\"CIVVIS sites\" hidden>\n",
         "        <a class=\"home-link\" id=\"homelink\" href=\"/home\" target=\"_top\">Home</a>\n",
         "        <a class=\"home-link\" id=\"chartslink\" href=\"/charts/ai-insights\" target=\"_top\">Charts/</a>\n",
-        "        <a class=\"home-link\" id=\"tourlink\" href=\"/experiments\" target=\"_top\">Experiments</a>\n",
+        "        <a class=\"home-link\" id=\"tourlink\" href=\"/tournaments\" target=\"_top\">Tournaments</a>\n",
         "        <a class=\"home-link\" id=\"watchlink\" href=\"./\" target=\"_top\">CIVVIS</a>\n",
-        "        <a class=\"home-link\" id=\"strangelink\" href=\"?mode=strange\" target=\"_top\">Doctor Strange's Civ 6</a>\n",
-        "        <a class=\"home-link\" id=\"playlink\" href=\"?mode=play\" target=\"_top\">AI Debugger</a>\n",
-        "        <a class=\"home-link\" id=\"tomorrowlink\" href=\"?mode=tomorrow\" target=\"_top\">Civ: Edge of Tomorrow</a>\n",
+        "        <a class=\"home-link\" id=\"strangelink\" href=\"?mode=strange\" target=\"_top\">Doctor Strange's CIVVIS</a>\n",
+        "        <a class=\"home-link\" id=\"playlink\" href=\"?mode=play\" target=\"_top\">CIVVIS AI Debugger</a>\n",
+        "        <a class=\"home-link\" id=\"tomorrowlink\" href=\"?mode=tomorrow\" target=\"_top\">CIVVIS: Edge of Tomorrow</a>\n",
         "        <a class=\"home-link\" id=\"civ6link\" ",
         "href=\"https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/\" ",
         "target=\"_blank\" rel=\"noopener\" title=\"Buy Civilization VI on Steam\">Civ 6</a>\n",
@@ -2296,6 +2312,7 @@ fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
     // tomorrow"), and a link's own players, map or shape still wins.
     assert!(include_str!("../../beta/shim.js").contains(concat!(
         "    const MODE_WORLDS = {\n",
+        "      play: {map_topology: \"flat\"},\n",
         "      strange: {num_players: 4, map_script: \"pangaea\", map_topology: \"flat\"},\n",
         "      tomorrow: {num_players: 2, map_script: \"continents\", map_topology: \"flat\"},\n",
         "    };\n",
@@ -2304,8 +2321,15 @@ fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
         "    }\n",
     )));
     // The worlds those settings make: a Pangaea of four is a Tiny world, and
-    // two seats are a Duel's, both laid flat.
+    // two seats are a Duel's, both laid flat. The AI Debugger (operator,
+    // 2026-11-26: "lets use flat map on debugger") is the stock world laid
+    // flat: its four seats and its map, on a flat world's dimensions.
     let stock = stock_opening_params(11);
+    let debugged = new_game_params(&stock, &json!({"map_topology": "flat", "spectate": false}));
+    assert_eq!(debugged.num_players, stock.num_players);
+    assert_eq!(debugged.map_script, stock.map_script);
+    assert_eq!(debugged.map_topology, MapTopology::Flat);
+    assert_eq!(stock.map_topology, MapTopology::Planet);
     let strange = new_game_params(
         &stock,
         &json!({"num_players": 4, "map_script": "pangaea", "map_topology": "flat", "spectate": false}),
@@ -2524,7 +2548,7 @@ fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
         .contains("#side[data-type-size=\"compact\"] .head-links {\n    grid-column: 1 / -1;"));
     // The viewer's links to the other pages leave the lane-relative rewrite
     // to `beta/publish.sh`, which turns a root link to any page the lane
-    // carries (`/home`, `/charts/win-analytics`, `/experiments`) into the
+    // carries (`/home`, `/charts/win-analytics`, `/tournaments`) into the
     // lane's own page and refuses to publish a root link it does not know.
     assert!(include_str!("../../beta/publish.sh").contains(concat!(
         "for address in dict.fromkeys([*carried, *former]):\n",
@@ -2560,31 +2584,40 @@ fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
     // With room beside the lockup the list is a column on its left
     // (operator, 2026-11-21: the list goes "to the left side" of the
     // civvis.ai title, as it is on Home): the first track of the lockup's
-    // grid, one link to a line, with the globe and the wordmark to the
-    // right of it and the tagline under all three. The list is still the
-    // last thing in the lockup's markup, so each of the three is given its
-    // track by name. It applies only while the list is showing, so a
-    // desktop build's lockup keeps the whole band. The column is 92px,
-    // which with its type holds every name on one line (below).
+    // grid, one link to a line. Right of it the rest of the lockup stands
+    // one over the other and centred, the globe on top and large, then the
+    // wordmark, then the tagline (operator, 2026-11-26: "maybe put the
+    // globe on top and bigger, then civvis.ai, the a civ.... but centered
+    // better"), with rows over and under the three that take what the
+    // column's height leaves. The list is still the last thing in the
+    // lockup's markup, so each is given its track by name. It applies only
+    // while the list is showing, so a desktop build's lockup keeps the whole
+    // band. The column is 92px, which with its type holds every name on one
+    // line (below).
     assert!(EMBEDDED_INDEX.contains(concat!(
         "  @container (min-width: 233px) {\n",
         "    #side .brand:has(> .head-links:not([hidden])) {\n",
-        "      --site-rail: 92px; --site-mark: clamp(40px, 19cqw, 72px);\n",
-        "      display: grid; grid-template-columns: var(--site-rail) auto minmax(0, 1fr);\n",
-        "      align-items: center; gap: 7px;\n",
+        "      --site-rail: 92px; --site-mark: clamp(56px, 29cqw, 96px);\n",
+        "      display: grid; grid-template-columns: var(--site-rail) minmax(0, 1fr);\n",
+        "      grid-template-rows: 1fr auto auto 1fr auto;\n",
+        "      align-items: center; gap: 6px 7px;\n",
     )));
     assert!(EMBEDDED_INDEX.contains(concat!(
         "    #side .brand:has(> .head-links:not([hidden])) .head-links {\n",
-        "      grid-column: 1; grid-row: 1; grid-template-columns: minmax(0, 1fr);\n",
+        "      grid-column: 1; grid-row: 1 / span 4; grid-template-columns: minmax(0, 1fr);\n",
     )));
     assert!(EMBEDDED_INDEX.contains(concat!(
         "    #side .brand:has(> .head-links:not([hidden])) .brand-mark {\n",
-        "      grid-column: 2; grid-row: 1; flex: none;",
+        "      grid-column: 2; grid-row: 2; flex: none;",
     )));
     assert!(EMBEDDED_INDEX.contains(concat!(
         "    #side .brand:has(> .head-links:not([hidden])) h1 {\n",
-        "      grid-column: 3; grid-row: 1;\n",
+        "      grid-column: 2; grid-row: 3; justify-self: center; text-align: center;\n",
     )));
+    // The globe and the wordmark no longer stand side by side there.
+    assert!(
+        !EMBEDDED_INDEX.contains("grid-template-columns: var(--site-rail) auto minmax(0, 1fr);")
+    );
     // The column is not on the right any more.
     assert!(!EMBEDDED_INDEX.contains("auto minmax(0, 1fr) var(--site-rail)"));
     // Every name in the column stands on one line (operator, 2026-11-21:
@@ -2621,18 +2654,20 @@ fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
         "a site's name is held to one line by rule again, which cuts a name too wide for its box"
     );
     // A little wider and the tagline fits beside the column as well, under
-    // the globe and the wordmark, and the column then runs the whole height
-    // of the lockup.
+    // the wordmark, and the column then runs the whole height of the
+    // lockup.
     assert!(EMBEDDED_INDEX.contains(concat!(
         "  @container (min-width: 246px) {\n",
-        "    #side .brand:has(> .head-links:not([hidden])) .tagline { grid-column: 2 / 4; }\n",
-        "    #side .brand:has(> .head-links:not([hidden])) .head-links { grid-row: 1 / span 2; }\n",
+        "    #side .brand:has(> .head-links:not([hidden])) { grid-template-rows: 1fr auto auto auto 1fr; }\n",
+        "    #side .brand:has(> .head-links:not([hidden])) .tagline { grid-column: 2; grid-row: 4; }\n",
+        "    #side .brand:has(> .head-links:not([hidden])) .head-links { grid-row: 1 / -1; }\n",
         "  }",
     )));
     // The wordmark is sized from the lane the column leaves it, and the
     // tagline's two lines are fitted as one so they stay one size in it.
-    assert!(EMBEDDED_INDEX
-        .contains("calc((100cqw - var(--site-rail) - var(--site-mark) - 14px) / 4.85)"));
+    // A size smaller since 2026-11-26 (operator: "civvis.ai title and globe a
+    // bit smaller").
+    assert!(EMBEDDED_INDEX.contains("calc((100cqw - var(--site-rail) - 7px) / 5.6)"));
     assert!(EMBEDDED_APP_JS.contains(
         "{selector:\"#side[data-type-size=compact] .tagline span\", min:10, max:12, together:true},"
     ));
@@ -2704,7 +2739,7 @@ fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
 }
 
 /// The home page is one of the site's five pages and lists all five from
-/// its header, Home, Charts, Experiments, CIVVIS and AI Debugger, with itself ringed in white
+/// its header, Home, Charts, Tournaments, CIVVIS and AI Debugger, with itself ringed in white
 /// and the Civ 6 link under them, as the viewer's masthead does; below that
 /// it is one paragraph, the Firaxis Civ 6 AI benchmark and six videos, two
 /// by two (operator, 2026-11-22 and 2026-11-24;
@@ -2713,7 +2748,7 @@ fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
 /// civvis performance timeline thing from home/ to the civvis performance
 /// section"; `beta/speedup_timeline_test.py` pins it there). The rankings that stood there
 /// moved to Win Analytics under Charts/ the same day, and the Tournaments
-/// table that stood above them to the page that is now Experiments (operator, 2026-11-21;
+/// table that stood above them to the Tournaments page (operator, 2026-11-21;
 /// `beta/tournaments_page_test.py` pins that page). The two-card game menu that stood there, the
 /// world picker the cards opened and the photographs they carried are gone,
 /// and so is everything the Tactics row took with it before them.
@@ -2727,7 +2762,7 @@ fn the_home_page_lists_the_sites_with_itself_ringed() {
     let landing = include_str!("../../beta/landing.html");
     for piece in [
         // The site's pages in the viewer's order, this one marked as the
-        // page on screen, Experiments saying what it lists and the other
+        // page on screen, Tournaments saying what it lists and the other
         // two saying in the viewer's own words what they open, then the
         // game itself. They stand in one row across the top, over the title
         // (operator, 2026-11-24: "try putting the vertical menu from home...
@@ -2755,17 +2790,17 @@ fn the_home_page_lists_the_sites_with_itself_ringed() {
             "or talked over.\">Random AI Charts</a>\n",
             "        </div>\n",
             "      </div>\n",
-            "      <a class=\"site-link\" href=\"../experiments/\" ",
+            "      <a class=\"site-link\" href=\"../tournaments/\" ",
             "title=\"Series of verification games against Civilization VI&#8217;s own AI: ",
-            "running, scheduled and finished.\">Experiments</a>\n",
+            "running, scheduled and finished.\">Tournaments</a>\n",
             "      <a class=\"site-link\" href=\"../\" ",
             "title=\"Every civilization is played by a CIVVIS AI agent.\">CIVVIS</a>\n",
             "      <a class=\"site-link\" href=\"../?mode=strange\" ",
-            "title=\"One world, two timelines: the same game played two ways, side by side, on a timeline that branches.\">Doctor Strange's Civ 6</a>\n",
+            "title=\"One world, two timelines: the same game played two ways, side by side, on a timeline that branches.\">Doctor Strange's CIVVIS</a>\n",
             "      <a class=\"site-link\" href=\"../?mode=play\" ",
-            "title=\"You play one civilization. CIVVIS AI agents play the rest.\">AI Debugger</a>\n",
+            "title=\"You play one civilization. CIVVIS AI agents play the rest.\">CIVVIS AI Debugger</a>\n",
             "      <a class=\"site-link\" href=\"../?mode=tomorrow\" ",
-            "title=\"You play one civilization, with a jump back: the world returns to the turn you woke on, as it stood.\">Civ: Edge of Tomorrow</a>\n",
+            "title=\"You play one civilization, with a jump back: the world returns to the turn you woke on, as it stood.\">CIVVIS: Edge of Tomorrow</a>\n",
             "      <a class=\"site-link\" ",
             "href=\"https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/\" ",
             "target=\"_blank\" rel=\"noopener\" title=\"Buy Civilization VI on Steam\">Civ 6</a>\n",
@@ -2782,7 +2817,7 @@ fn the_home_page_lists_the_sites_with_itself_ringed() {
         // from 2026-11-25, gold again since 2026-11-26: "return civvis to a
         // gold highlight").
         "    text-transform: uppercase;\n  }\n  .site-link:hover,",
-        ".site-nav { display: flex; flex: 1 0 100%; flex-wrap: wrap; align-items: center; gap: 6px; }",
+        ".site-nav { display: flex; flex: 1 0 100%; flex-wrap: wrap; align-items: center; gap: 5px; }",
         concat!(
             ".site-link[aria-current=\"page\"],\n",
             "  .site-folder:has([aria-current=\"page\"]) > .site-link { box-shadow: inset 0 0 0 2px #fff; }",
@@ -2836,9 +2871,11 @@ fn the_home_page_lists_the_sites_with_itself_ringed() {
         ">Musings</a>",
         ">Auto-Tourneys</a>",
         // Named Experiments on 2026-11-25 (operator: "rename tournaments to
-        // experiments"), and linked at the address that follows the name.
-        ">Tournaments</a>",
-        "../tournaments/",
+        // experiments") and Tournaments again on 2026-11-26 (operator:
+        // "change experiments back to tournaments"), linked at the address
+        // that follows the name.
+        ">Experiments</a>",
+        "../experiments/",
         ">Performance</a>",
         ">Charts</a>",
         "rankings-data",
@@ -8337,10 +8374,10 @@ fn browser_orders_controls_interface_setup_and_logs() {
         "if (html === hudHtml || hudLayoutGesture?.name === \"players\" || playerHudColumnGesture\n      || playerHudReorderGesture || hudPaceHeldOpen()) {"
     ));
     assert!(EMBEDDED_INDEX.contains("function hudPaceHeldOpen()"));
-    // The moment focus leaves a held select — watch pace, the arena's
-    // in-game fog or Fog-honest AI — the held snapshots paint.
+    // The moment focus leaves a held select — watch pace or the arena's
+    // in-game fog — the held snapshots paint.
     assert!(EMBEDDED_INDEX.contains(
-        "if (ev.target.closest?.(\"[data-hud-pace], [data-hud-fog], [data-hud-fog-honest]\") && state) drawPlayerHud();"
+        "if (ev.target.closest?.(\"[data-hud-pace], [data-hud-fog]\") && state) drawPlayerHud();"
     ));
     // The bars are placed from the rendered heading, so they cannot drift
     // from the columns they name.
@@ -14943,7 +14980,8 @@ fn the_debugger_opens_on_the_debugger_view_and_single_player_is_a_switch() {
         // reads as it does for a watcher, and the seat's rail and launch
         // bar stay off.
         "if (SPEC || debuggerView()) sel = null;",
-        "const waiting = debuggerView() ? [] : unitsNeedingOrders();",
+        // Nor in Edge of Tomorrow, whose seat is moved only by Auto-play.
+        "const waiting = debuggerView() || window.civvisSeatHandsOff ? [] : unitsNeedingOrders();",
         "if (!state || SPEC || debuggerView()) { rail.classList.remove(\"on\"); return; }",
         // The keys that play the seat wait for Single player too: a stray
         // Enter must not end a turn that was only being read.
@@ -17871,11 +17909,14 @@ fn no_two_page_scripts_declare_the_same_function() {
 /// Operator 2026-11-23: "we should have a fog honest ai play setting in the
 /// turn box set to true or false. and it should pretty much always be set to
 /// true." Every world a session is dealt opens with its Civ AIs planning on
-/// what their civilizations can see. The turn box turns that over for the
-/// world on screen, and a copy of the world (each half of a split is one)
-/// keeps what it was set to.
+/// what their civilizations can see. The engine's route turns that over for
+/// the world on screen, and a copy of the world (each half of a split is one)
+/// keeps what it was set to. The turn box offered it as a row until
+/// 2026-11-26 (operator: "remove fog honest ai from turn box (this should
+/// alawys be true)"): the page has no way to turn it off since, so every
+/// world on the site plays fog-honest.
 #[test]
-fn a_table_plays_fog_honest_until_the_turn_box_says_otherwise() {
+fn a_table_plays_fog_honest_until_the_route_says_otherwise() {
     let mut session = Session::new(current());
     let majors = session
         .game
@@ -17898,7 +17939,7 @@ fn a_table_plays_fog_honest_until_the_turn_box_says_otherwise() {
     session.seat_strategy_at(0, "holy").unwrap();
     assert_eq!(session.fog_honest_seats(), majors);
 
-    // The turn box turns it off, over the route the page uses...
+    // The route turns it off (the tools that compare the two use it)...
     let off = crate::routes::fog_honest(&mut session, &json!({"on": false}));
     assert_eq!(off["fog_honest"], json!(false));
     assert_eq!(off["fog_honest_seats"], json!(0));
@@ -17935,8 +17976,9 @@ fn a_table_plays_fog_honest_until_the_turn_box_says_otherwise() {
     watched.set_fog_honest(false);
     assert_eq!(watched.state()["fog_honest"], json!(false));
 
-    assert!(EMBEDDED_INDEX.contains("<select data-hud-fog-honest "));
-    assert!(EMBEDDED_INDEX.contains("fetchJSON(\"/fog-honest\""));
+    // ...and the page offers no way to: no row, and no call of the route.
+    assert!(!EMBEDDED_INDEX.contains("data-hud-fog-honest"));
+    assert!(!EMBEDDED_INDEX.contains("fetchJSON(\"/fog-honest\""));
 }
 
 /// The setting is read back from the game, not only from the agents: a

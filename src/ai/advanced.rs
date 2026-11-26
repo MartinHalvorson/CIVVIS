@@ -2024,7 +2024,6 @@ impl SettlementAtlas {
     fn matches(&self, g: &Game, pid: usize) -> bool {
         self.turn == Some(g.turn) && self.map_epoch == g.map.tiles.epoch() && self.pid == pid
     }
-
 }
 
 /// One hostile as it stood at the start of the turn. See
@@ -10740,6 +10739,11 @@ pub struct AdvancedAi {
     /// Expansion half once it holds its core of cities. See
     /// `advanced/science_core_ends_expansion.rs`. Off by default.
     science_core_ends_expansion: bool,
+    /// `spreaders-spread-before-they-chart`: a spreader held short of a
+    /// city it can still reach waits for it instead of charting, and the
+    /// corps' scouts leave the under-charted rivals to their seekers. See
+    /// `advanced/spreaders_spread_before_they_chart.rs`. Off by default.
+    spreaders_spread_before_they_chart: bool,
     /// `seen-pad-starts-the-denial`: a space racer's completed Spaceport we
     /// have seen starts the Spy denial before its first launch: a Spy goes to
     /// the pad city and disrupts there ahead of training and stealing. See
@@ -11168,6 +11172,12 @@ pub struct AdvancedAi {
     /// Harbor claims its Market or Lighthouse. See
     /// `advanced/trade_district_follows_the_campus.rs`. Off by default.
     trade_district_before_the_library: bool,
+    /// `watched-capital-keeps-its-defender-gold`: while the capital watch
+    /// reads at an unwalled original capital short of its garrison, the
+    /// tile, Trader and Builder buys leave the missing defenders' price in
+    /// the bank. See `advanced/watched_capital_keeps_its_defender_gold.rs`.
+    /// Off by default.
+    watched_capital_keeps_its_defender_gold: bool,
     /// `tribute-buys-the-friendship-2`: version one's tribute, aimed past
     /// the line where the host must turn an Unfriendly leader Neutral and
     /// paid from the whole treasury. See
@@ -11633,6 +11643,9 @@ mod war_defense_spends_the_runway;
 mod war_plans;
 /// `war-target-prices-the-walls`: see `advanced/war_target_walls.rs`.
 mod war_target_walls;
+/// `watched-capital-keeps-its-defender-gold`: see
+/// `advanced/watched_capital_keeps_its_defender_gold.rs`.
+mod watched_capital_keeps_its_defender_gold;
 
 /// `centre-keeps-its-garrison`: see `advanced/centre_keeps_its_garrison.rs`.
 mod centre_keeps_its_garrison;
@@ -12499,6 +12512,9 @@ mod spears_answer_the_horse;
 mod spies_price_the_science_head;
 /// `spies-steal-the-lead`: see `advanced/spies_steal_the_lead.rs`.
 mod spies_steal_the_lead;
+/// `spreaders-spread-before-they-chart`: see
+/// `advanced/spreaders_spread_before_they_chart.rs`.
+mod spreaders_spread_before_they_chart;
 /// `spy-civics-come-first`: the Spy-slot civics sooner. See
 /// `advanced/spy_civics_come_first.rs`.
 mod spy_civics_come_first;
@@ -27593,6 +27609,10 @@ impl AdvancedAi {
             // `gold-buys-the-production-tile`: then a border tile of two or
             // more Production beside a city working a poorer one. See
             // `advanced/gold_buys_the_production_tile.rs`.
+            // `watched-capital-keeps-its-defender-gold`: the buys around
+            // here leave the capital's missing defenders' price. See
+            // `advanced/watched_capital_keeps_its_defender_gold.rs`.
+            self.note_watched_capital_defender_reserve(g, pid);
             self.production_tile_purchase(g, pid, &plan);
             self.idle_trader_purchase(g, pid, &plan);
             // `culture-digs-every-site`: an Archaeologist whose queue is slow.

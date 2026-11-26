@@ -696,6 +696,9 @@ impl AdvancedAi {
         /// takes a Spy that disrupts it before the first launch; see
         /// `advanced/seen_pad_starts_the_denial.rs`.
         seen_pad_starts_the_denial => enable_seen_pad_starts_the_denial, disable_seen_pad_starts_the_denial;
+        /// Opt-in gene `spreaders-spread-before-they-chart`; see
+        /// `advanced/spreaders_spread_before_they_chart.rs`.
+        spreaders_spread_before_they_chart => enable_spreaders_spread_before_they_chart, disable_spreaders_spread_before_they_chart;
         // ---- append: t-z --------------------------------------------
         /// Opt-in gene `theology-fights-count-the-host-edge`; see
         /// `advanced/theology_fights.rs`.
@@ -715,6 +718,9 @@ impl AdvancedAi {
         /// Opt-in gene `trade-district-before-the-library`; see
         /// `advanced/trade_district_follows_the_campus.rs`.
         trade_district_before_the_library => enable_trade_district_before_the_library, disable_trade_district_before_the_library;
+        /// Opt-in gene `watched-capital-keeps-its-defender-gold`; see
+        /// `advanced/watched_capital_keeps_its_defender_gold.rs`.
+        watched_capital_keeps_its_defender_gold => enable_watched_capital_keeps_its_defender_gold, disable_watched_capital_keeps_its_defender_gold;
         /// Opt-in gene `tribute-buys-the-friendship-2`; see
         /// `advanced/tribute_buys_the_friendship.rs`.
         tribute_buys_the_friendship_2 => enable_tribute_buys_the_friendship_2, disable_tribute_buys_the_friendship_2;

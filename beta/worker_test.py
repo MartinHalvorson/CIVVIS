@@ -420,7 +420,7 @@ def main(argv: list[str] | None = None) -> int:
             home["status"] == 200 and home["body"].strip() == "asset:/home",
             f"got {home['status']} {home['body'][:60]!r}",
         )
-        # So are the pages of Charts/, in their folder, and Experiments. An
+        # So are the pages of Charts/, in their folder, and Tournaments. An
         # address follows the name in the site list (operator 2026-11-23:
         # "clean up the URL please. standardized. please remove research from
         # the url"), so a page of Charts/ is two names deep.
@@ -432,7 +432,7 @@ def main(argv: list[str] | None = None) -> int:
             ("/charts/civ-ai-interpretability/", "Civ AI Interpretability"),
             ("/charts/ai-insights/", "AI Insights"),
             ("/charts/random-ai-charts/", "Random AI Charts"),
-            ("/experiments/", "Experiments"),
+            ("/tournaments/", "Tournaments"),
         ):
             passed = hit(path=address)
             check(
@@ -634,56 +634,67 @@ def main(argv: list[str] | None = None) -> int:
               moved["status"] == 301 and moved["location"] == "/test/tournaments/",
               f"got {moved['status']} {moved['location']!r}")
         # On 2026-11-25 the page was named Experiments (operator: "rename
-        # tournaments to experiments") and its address followed, so it has
-        # had four: /tournaments/, /auto-tourneys/, /tournaments/ again and
-        # /experiments/. A lane built from main has it at the last, and both
-        # the others forward there; the front page, pinned to a revision
-        # from before the name until a promotion, still has it at
-        # /tournaments/ and serves it there, and has no /experiments/ yet.
-        named = ["home", "experiments", "charts/ai-insights", "charts/civ-ai-interpretability", "charts/civ-analytics",
-                 "charts/win-analytics", "charts/elo-rankings", "charts/civvis-performance", "download"]
-        before_name = ["home", "tournaments", "charts/ai-insights", "charts/civ-ai-interpretability",
-                       "charts/civ-analytics", "charts/win-analytics", "charts/elo-rankings",
-                       "charts/civvis-performance", "download"]
-        renamed = {"": before_name, "/test": named}
-        page = hit(path="/test/experiments/", listed=renamed)
-        check(problems, "/test/experiments/ is the page in a lane that has the new name",
-              page["status"] == 200 and page["body"].strip() == "asset:/test/experiments/",
+        # tournaments to experiments") and its address followed, and on
+        # 2026-11-26 it took both back (operator: "change experiments back
+        # to tournaments"). So it has had five: /tournaments/,
+        # /auto-tourneys/, /tournaments/ again, /experiments/ and
+        # /tournaments/ once more. A lane built from main has it at the last,
+        # and the others forward there; the front page, pinned to a revision
+        # from while it was Experiments until a promotion, still has it at
+        # /experiments/ and serves it there, and every other address it had
+        # forwards to that.
+        back = ["home", "tournaments", "charts/ai-insights", "charts/civ-ai-interpretability", "charts/civ-analytics",
+                "charts/win-analytics", "charts/elo-rankings", "charts/civvis-performance", "download"]
+        named = ["home", "experiments", "charts/ai-insights", "charts/civ-ai-interpretability",
+                 "charts/civ-analytics", "charts/win-analytics", "charts/elo-rankings",
+                 "charts/civvis-performance", "download"]
+        renamed = {"": named, "/test": back}
+        page = hit(path="/test/tournaments/", listed=renamed)
+        check(problems, "/test/tournaments/ is the page in a lane that has the name back",
+              page["status"] == 200 and page["body"].strip() == "asset:/test/tournaments/",
               f"got {page['status']} {page['location']!r} {page['body'][:60]!r}")
         for old, new in (
-            ("/test/tournaments/", "/test/experiments/"),
-            ("/test/tournaments", "/test/experiments/"),
-            ("/test/tournaments/?series=7", "/test/experiments/?series=7"),
-            # Followed move by move, through the address it has left since.
-            ("/test/auto-tourneys/", "/test/experiments/"),
+            ("/test/experiments/", "/test/tournaments/"),
+            ("/test/experiments", "/test/tournaments/"),
+            ("/test/experiments/?series=7", "/test/tournaments/?series=7"),
+            ("/test/auto-tourneys/", "/test/tournaments/"),
         ):
             moved = hit(path=old, listed=renamed)
             check(problems, f"{old} forwards to {new}",
                   moved["status"] == 301 and moved["location"] == new and moved["body"] == "",
                   f"got {moved['status']} {moved['location']!r} {moved['body'][:60]!r}")
-        still = hit(path="/tournaments/", listed=renamed)
-        check(problems, "/tournaments/ is still the page on a front page from before the name",
-              still["status"] == 200 and still["body"].strip() == "asset:/tournaments/",
+        still = hit(path="/experiments/", listed=renamed)
+        check(problems, "/experiments/ is still the page on a front page from while it was Experiments",
+              still["status"] == 200 and still["body"].strip() == "asset:/experiments/",
               f"got {still['status']} {still['location']!r} {still['body'][:60]!r}")
-        back = hit(path="/auto-tourneys/", listed=renamed)
-        check(problems, "where /auto-tourneys/ forwards to /tournaments/, the first address that lane has the page at",
-              back["status"] == 301 and back["location"] == "/tournaments/",
-              f"got {back['status']} {back['location']!r}")
-        ahead = hit(path="/experiments/", listed=renamed)
-        check(problems, "and /experiments/ is a 404 until the name is promoted",
-              ahead["status"] == 404 and not ahead["location"] and ahead["body"].strip() == "asset:/__no-such-page__",
-              f"got {ahead['status']} {ahead['location']!r} {ahead['body'][:60]!r}")
-        promoted = hit(path="/tournaments/", listed={"": named, "/test": named})
-        check(problems, "/tournaments/ forwards to /experiments/ once the name is promoted",
-              promoted["status"] == 301 and promoted["location"] == "/experiments/" and promoted["robots"] is None,
+        for old, new in (
+            ("/tournaments/", "/experiments/"),
+            ("/tournaments/?series=7", "/experiments/?series=7"),
+            # Its moves end at /tournaments/, which that lane has not got,
+            # and the page was at /experiments/ in between.
+            ("/auto-tourneys/", "/experiments/"),
+        ):
+            moved = hit(path=old, listed=renamed)
+            check(problems, f"{old} forwards to {new} on that front page",
+                  moved["status"] == 301 and moved["location"] == new and moved["robots"] is None,
+                  f"got {moved['status']} {moved['location']!r} {moved['robots']!r}")
+        promoted = hit(path="/experiments/", listed={"": back, "/test": back})
+        check(problems, "/experiments/ forwards to /tournaments/ once the name is promoted",
+              promoted["status"] == 301 and promoted["location"] == "/tournaments/" and promoted["robots"] is None,
               f"got {promoted['status']} {promoted['location']!r} {promoted['robots']!r}")
-        # And a lane pinned to the days in between still has the page at
-        # /auto-tourneys/, where /tournaments/ forwards to it as it did then,
-        # though the page has left /tournaments/ again since.
-        moved = hit(path="/tournaments/", listed={"": between, "/test": named})
-        check(problems, "/tournaments/ still forwards to /auto-tourneys/ on a front page pinned while the page was there",
-              moved["status"] == 301 and moved["location"] == "/auto-tourneys/",
-              f"got {moved['status']} {moved['location']!r}")
+        # And a lane pinned to the days it was Auto-Tourneys still has the
+        # page at /auto-tourneys/, where /tournaments/ forwards to it as it
+        # did then, and so does /experiments/, an address it had later.
+        for old in ("/tournaments/", "/experiments/"):
+            moved = hit(path=old, listed={"": between, "/test": back})
+            check(problems, f"{old} forwards to /auto-tourneys/ on a front page pinned while the page was there",
+                  moved["status"] == 301 and moved["location"] == "/auto-tourneys/",
+                  f"got {moved['status']} {moved['location']!r}")
+        # A name that is no address any page has had is still a 404.
+        nowhere = hit(path="/test/experiment/", listed=renamed)
+        check(problems, "/test/experiment/ is a 404",
+              nowhere["status"] == 404 and not nowhere["location"],
+              f"got {nowhere['status']} {nowhere['location']!r}")
         # Once that revision is promoted the front page forwards too, and
         # there the forward is one a search engine should follow.
         promoted = hit(path="/research/", listed={"": after, "/test": after})
@@ -750,7 +761,7 @@ def main(argv: list[str] | None = None) -> int:
         check(problems, "the test landing page is not indexed",
               test_home["robots"] == "noindex", f"got {test_home['robots']!r}")
         for address, name in (
-            ("/test/experiments/", "Experiments"),
+            ("/test/tournaments/", "Tournaments"),
             ("/test/charts/win-analytics/", "Win Analytics"),
             ("/test/charts/civvis-performance/", "CIVVIS Performance"),
             ("/test/charts/civ-ai-interpretability/", "Civ AI Interpretability"),
