@@ -2665,7 +2665,9 @@ fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
     )));
     // The wordmark is sized from the lane the column leaves it, and the
     // tagline's two lines are fitted as one so they stay one size in it.
-    assert!(EMBEDDED_INDEX.contains("calc((100cqw - var(--site-rail) - 7px) / 4.85)"));
+    // A size smaller since 2026-11-26 (operator: "civvis.ai title and globe a
+    // bit smaller").
+    assert!(EMBEDDED_INDEX.contains("calc((100cqw - var(--site-rail) - 7px) / 5.6)"));
     assert!(EMBEDDED_APP_JS.contains(
         "{selector:\"#side[data-type-size=compact] .tagline span\", min:10, max:12, together:true},"
     ));
