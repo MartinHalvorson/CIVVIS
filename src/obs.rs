@@ -2502,7 +2502,7 @@ fn round1(v: f64) -> f64 {
 /// keep the civ's order. `None` when there is no city to read.
 fn tenth_percentile(mut readings: Vec<(u32, i64)>) -> Option<(u32, f64)> {
     let last = readings.len().checked_sub(1)?;
-    readings.sort_by_key(|&(_, reading)| reading);
+    readings.sort_by_key_shared(|&(_, reading)| reading);
     let at = 0.1 * last as f64;
     let low = at.floor() as usize;
     let part = at - low as f64;
