@@ -692,6 +692,10 @@ impl AdvancedAi {
         /// lane leaves the Expansion half at its core of cities; see
         /// `advanced/science_core_ends_expansion.rs`.
         science_core_ends_expansion => enable_science_core_ends_expansion, disable_science_core_ends_expansion;
+        /// Opt-in gene `seen-pad-starts-the-denial`: a racer's seen Spaceport
+        /// takes a Spy that disrupts it before the first launch; see
+        /// `advanced/seen_pad_starts_the_denial.rs`.
+        seen_pad_starts_the_denial => enable_seen_pad_starts_the_denial, disable_seen_pad_starts_the_denial;
         // ---- append: t-z --------------------------------------------
         /// Opt-in gene `theology-fights-count-the-host-edge`; see
         /// `advanced/theology_fights.rs`.

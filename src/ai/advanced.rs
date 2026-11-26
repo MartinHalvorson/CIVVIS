@@ -10740,6 +10740,11 @@ pub struct AdvancedAi {
     /// Expansion half once it holds its core of cities. See
     /// `advanced/science_core_ends_expansion.rs`. Off by default.
     science_core_ends_expansion: bool,
+    /// `seen-pad-starts-the-denial`: a space racer's completed Spaceport we
+    /// have seen starts the Spy denial before its first launch: a Spy goes to
+    /// the pad city and disrupts there ahead of training and stealing. See
+    /// `advanced/seen_pad_starts_the_denial.rs`. Off by default.
+    seen_pad_starts_the_denial: bool,
     // ---- append: t-z ------------------------------------------------
     /// `world-religion-condemns-the-faith`: our soldiers condemn a faith
     /// World Religion's option B names, at peace, and the agent's ballot asks
@@ -11935,6 +11940,8 @@ mod science_heads_keep_their_queue;
 /// `science-universities-pass-the-claims`: see
 /// `advanced/science_universities_pass_the_claims.rs`.
 mod science_universities_pass_the_claims;
+/// `seen-pad-starts-the-denial`: see `advanced/seen_pad_starts_the_denial.rs`.
+mod seen_pad_starts_the_denial;
 mod seowon_protection;
 use district_planning::DistrictPlanCache;
 /// Coalition before war: alliances with the target's neighbours, envoys to
