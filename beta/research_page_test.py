@@ -1250,10 +1250,8 @@ class Page(unittest.TestCase):
         # cell with no game keeps the page's dark and its dash.
         self.assertIn("const PAR = 1 / 6, PAR_WHITE = [255, 255, 255], PAR_GREEN = [22, 101, 52], PAR_RED = [220, 38, 38];", PAGE)
         self.assertIn(
-            '            if (games) {\n'
-            '              td.append(" ", el("small", "", "(" + fmt(games) + ")"));\n'
-            "              Object.assign(td.style, shade(wins / games));\n"
-            "            }\n",
+            '            if (games) td.append(" ", el("small", "", "(" + fmt(games) + ")"));\n'
+            "            if (rated) Object.assign(td.style, shade(wins / games));\n",
             PAGE,
         )
         # Tiles stand apart, the games in brackets take the tile's text
@@ -1279,6 +1277,46 @@ class Page(unittest.TestCase):
         # 28% of the way to dark green, and both still read in dark text.
         self.assertEqual(pink, {"background": "rgb(231, 103, 103)", "color": "#101820"})
         self.assertEqual(green, {"background": "rgb(190, 212, 198)", "color": "#101820"})
+
+    def test_a_cell_of_fewer_than_5_games_is_grey_and_has_no_rate(self):
+        # Operator 2026-11-26: "for the firaxis civ 6 ai benchmark, lets
+        # exclude cells with sample size less than 5 from results. can show
+        # the box grayed out or blued out like existing or something". A cell
+        # of 1 to 4 games shows no rate and no shade, only its games in
+        # brackets, on a grey tile; 5 games or more is rated as before.
+        self.assertIn("    const MIN_GAMES = 5;\n", PAGE)
+        self.assertIn('const games = Number(w.games) || 0, wins = Number(w.wins) || 0, rated = games >= MIN_GAMES;', PAGE)
+        self.assertIn('else if (games) td.title = "Fewer than " + MIN_GAMES + " games: left out, too few to rate";', PAGE)
+        self.assertIn(".res-rates td.is-few { background: rgba(147, 163, 181, 0.14); color: var(--muted); }", PAGE)
+        self.assertIn("A cell of fewer than 5 games is left out: a grey tile with no rate, only its games in brackets.", PAGE)
+
+    @unittest.skipUnless(shutil.which("node"), "needs node to run the page's table loop")
+    def test_the_table_loop_rates_only_cells_of_5_games_or_more(self):
+        # The page's own loop over a row's windows, run in node on a stand-in
+        # for the DOM: no games, 1, 4 (all won), 5 and 30.
+        start = PAGE.index("    const PAR = 1 / 6,")
+        helpers = PAGE[start : PAGE.index("    const BENCH", start)]
+        at = PAGE.index("          for (const w of Array.isArray(row.windows) ? row.windows : []) {")
+        loop = PAGE[at : PAGE.index("            tr.append(td);\n          }\n", at) + len("            tr.append(td);\n          }\n")]
+        stand_in = (
+            "const el = (tag, cls, text) => ({ tag, className: cls, kids: text == null ? [] : [text], style: {}, title: '',"
+            " append(...k) { this.kids.push(...k); } });\n"
+            "const fmt = (n) => String(n);\n"
+            + "const pct = " + PAGE[PAGE.index("const pct = (x) =>") + len("const pct = ") : PAGE.index('"%");', PAGE.index("const pct = (x) =>")) + len('"%");')] + "\n"
+            + "const tr = { cells: [], append(td) { this.cells.push(td); } };\n"
+            + "const row = { windows: [{ games: 0, wins: 0 }, { games: 1, wins: 1 }, { games: 4, wins: 4 }, { games: 5, wins: 1 }, { games: 30, wins: 3 }] };\n"
+        )
+        show = (
+            "console.log(JSON.stringify(tr.cells.map((td) => ({ cls: td.className, text: td.kids.map((k) => typeof k === 'string' ? k : k.kids.join('')).join(''),"
+            " shaded: 'background' in td.style, title: td.title }))));"
+        )
+        out = subprocess.run(["node", "-e", helpers + stand_in + loop + show], check=True, capture_output=True, text=True).stdout
+        none, one, four, five, thirty = json.loads(out)
+        self.assertEqual(none, {"cls": "is-zero", "text": "—", "shaded": False, "title": ""})
+        for cell, n in ((one, 1), (four, 4)):
+            self.assertEqual(cell, {"cls": "is-few", "text": f"— ({n})", "shaded": False, "title": "Fewer than 5 games: left out, too few to rate"})
+        self.assertEqual(five, {"cls": "is-rate", "text": "20% (5)", "shaded": True, "title": ""})
+        self.assertEqual(thirty, {"cls": "is-rate", "text": "10% (30)", "shaded": True, "title": ""})
 
     def test_the_self_play_count_is_highlighted(self):
         # Operator 2026-11-24: "hightlight the civvis self play game count
@@ -1362,7 +1400,7 @@ class Page(unittest.TestCase):
         self.assertIn('for (const name of ["on", "off"]) {', PAGE)
         self.assertEqual([name for name, _ in research_page.RATE_TABLES], ["on", "off"])
         self.assertIn('const body = document.querySelector("#res-rates-" + name + " tbody");', PAGE)
-        self.assertIn('const td = el("td", games ? "is-rate" : "is-zero", games ? pct(wins / games) : "—");', PAGE)
+        self.assertIn('const td = el("td", rated ? "is-rate" : games ? "is-few" : "is-zero", rated ? pct(wins / games) : "—");', PAGE)
         self.assertIn('td.append(" ", el("small", "", "(" + fmt(games) + ")"));', PAGE)
         self.assertIn("const render = () => { notes(); drawRates(); draw(); };", PAGE)
         # A record with no tournament games hides the block, and a hidden
