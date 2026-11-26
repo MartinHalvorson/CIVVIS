@@ -6,6 +6,7 @@ import pathlib
 import tempfile
 import threading
 import unittest
+import urllib.parse
 import urllib.request
 
 
@@ -32,6 +33,13 @@ class ChannelTests(unittest.TestCase):
             with urllib.request.urlopen(origin + "/wasm/") as response:
                 self.assertEqual(response.read(), b"wasm")
                 self.assertIn("no-store", response.headers["Cache-Control"])
+
+            # The simulator's own pages are the viewer at addresses of their
+            # own, without a slash on the end, as the site serves them.
+            for page in ("/debugger", "/doctor-strange", "/edge-of-tomorrow?seed=4", "/wasm/edge-of-tomorrow"):
+                with urllib.request.urlopen(origin + page) as response:
+                    self.assertEqual(response.read(), b"wasm")
+                    self.assertEqual(urllib.parse.urlsplit(response.geturl()).path, page.split("?")[0])
 
 
 if __name__ == "__main__":
