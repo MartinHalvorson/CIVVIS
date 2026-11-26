@@ -7387,8 +7387,9 @@ function strangeDraw() {
   }
   // The worlds' numbers across the top, a row a world: where it stands now
   // (for a yield, what it makes a turn) and, under a yield, what it has made
-  // so far, in whole numbers. The most of a column, where one world has it
-  // alone, is in gold.
+  // so far, in whole numbers; past three worlds, where it stands now alone,
+  // so that every world's row is in the band. The most of a column, where
+  // one world has it alone, is in gold.
   const wide = open.length <= 3;
   const lead = (key, letter) => {
     const value = (panes[letter].numbers || {})[key];
@@ -7398,14 +7399,14 @@ function strangeDraw() {
   const cell = (key, letter) => {
     const value = (panes[letter].numbers || {})[key];
     const made = (panes[letter].numbers || {})[`${key}_total`];
-    const total = !STRANGE_TOTALS.includes(key) ? ""
+    const total = !wide || !STRANGE_TOTALS.includes(key) ? ""
       : `<small${lead(`${key}_total`, letter) ? ' class="lead"' : ""}>${typeof made === "number" && Number.isFinite(made) ? (Math.round(made) || 0).toLocaleString("en-US") : "–"}</small>`;
     return `<b${lead(key, letter) ? ' class="lead"' : ""}>${debugVersusNumber(value)}${total}</b>`;
   };
   const table = `<i></i>` + STRANGE_VERSUS_ROWS.map(([key, label, title]) => {
     const summed = STRANGE_TOTALS.includes(key);
     const short = STRANGE_VERSUS_SHORT[key] || label;
-    return `<em title="${summed ? `${title}: a turn, and under it made over the game so far${key === "gold" ? " (net of upkeep)" : ""}` : title}">` +
+    return `<em title="${summed && wide ? `${title}: a turn, and under it made over the game so far${key === "gold" ? " (net of upkeep)" : ""}` : title}">` +
       `<span class="strange-long">${label}</span><span class="strange-short">${short}</span></em>`;
   }).join("") + open.map(letter =>
     `<span class="strange-letter" style="color:${strange.tint[letter]}">${letter.toUpperCase()}</span>` +
