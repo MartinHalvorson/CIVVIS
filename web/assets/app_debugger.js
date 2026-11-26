@@ -5179,6 +5179,9 @@ const STRANGE_SEE_WAIT_MS = 120000, STRANGE_SEE_AGAIN_MS = 3000, STRANGE_SEE_ANE
 // of it; the room left between two, and where the first row stands.
 const STRANGE_FATES = {full: [292, 56], line: [178, 24], word: [88, 24]};
 const STRANGE_FATE_GAP = 6, STRANGE_FATE_TOP = 50;
+// The right-hand column at the top: what the page costs, the predicted paths
+// and the defeat tracker.
+const STRANGE_RIGHT_WIDE = 300;
 // How often what the page costs is read, and how many readings are drawn.
 const STRANGE_METER_MS = 2000, STRANGE_METER_KEPT = 60;
 // What is seen coming on a world's future, by kind: its sign and its colour.
@@ -5198,6 +5201,8 @@ const STRANGE_VERSUS_ROWS = [
   ["production", "Production", "Production"], ...DEBUG_VERSUS_ROWS.filter(([key]) => !["score", "cities", "population"].includes(key)),
 ];
 const STRANGE_TOTALS = ["production", "science", "culture", "gold", "faith"];
+// The band's heads where it is narrow.
+const STRANGE_VERSUS_SHORT = {population: "Pop", production: "Prod", science: "Sci", culture: "Cul", military: "Mil"};
 
 const STRANGE_STYLE = `
   /* The bar is the split's one panel, so it stays where it is, unseen and deaf. */
@@ -5251,32 +5256,73 @@ const STRANGE_STYLE = `
      should also monitor resource usage - maybe track memory used and cpu %
      actively on the screen, in the upper right"). */
   #strange-hud .strange-meter {
-    position: absolute; right: 14px; top: 12px; padding: 8px 12px 8px; display: grid; gap: 4px 10px;
+    flex: none; padding: 8px 12px 8px; display: grid; gap: 4px 10px;
     grid-template-columns: auto auto 132px; align-items: center; font-variant-numeric: tabular-nums;
   }
   #strange-hud .strange-meter i { font-style: normal; color: #9fb3ab; }
   #strange-hud .strange-meter b { text-align: right; min-width: 4.4em; color: ${STRANGE_GOLD}; }
   #strange-hud .strange-meter canvas { width: 132px; height: 22px; display: block; }
   #strange-hud .strange-meter em { grid-column: 1 / -1; font-style: normal; font-size: 11px; color: #7f958d; }
-  /* The worlds' numbers, side by side: in the lower right of the upper half,
-     on the line of the open turn ("the upper right chart and drop to the
-     lower right of the upper half of the screen"). */
+  /* The top of the page (operator 2026-11-26: "for doctor strange's civvis,
+     lets list the computed outcomes on the right side of the top scetion of
+     the screen, ranked from best to worst. cpu and memory can go at the top.
+     then: "Predicted Paths". The numbers table can go across the top, from
+     the right side of the upper left box to the left side of the
+     resources/predicted paths box i described. lets truncate the timelines
+     map below this"): a column on the right, from the top down to the line
+     (what the page costs, the black swan, the predicted paths, the defeat
+     tracker; it scrolls when it is taller than the room), and the worlds'
+     numbers across the top between it and the title. The tree is drawn
+     under the numbers. */
   #strange-hud .strange-right {
-    position: absolute; right: 14px; bottom: calc(100% - var(--strange-line) + 12px);
-    display: flex; align-items: flex-end; gap: 8px; pointer-events: none;
+    position: absolute; right: 14px; top: 12px; width: ${STRANGE_RIGHT_WIDE}px; box-sizing: border-box;
+    max-height: calc(var(--strange-line) - 24px); display: flex; flex-direction: column; gap: 8px;
+    overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin;
   }
-  #strange-hud .strange-right > * { pointer-events: auto; }
   #strange-hud .strange-versus {
-    padding: 8px 12px 9px; display: grid; gap: 2px 0;
-    align-items: baseline; font-variant-numeric: tabular-nums;
+    position: absolute; top: 12px; left: calc(14px + min(330px, 34vw) + 12px);
+    right: calc(14px + ${STRANGE_RIGHT_WIDE}px + 12px); box-sizing: border-box; max-height: 34vh; overflow: auto;
+    padding: 8px 12px 9px; display: grid; gap: 3px 0; align-items: baseline; font-variant-numeric: tabular-nums;
   }
+  #strange-hud .strange-versus { container-type: inline-size; }
+  #strange-hud .strange-versus em { font-style: normal; font-size: 11px; color: #9fb3ab; text-align: right; padding-left: 10px; white-space: nowrap; }
+  #strange-hud .strange-versus em .strange-short { display: none; }
+  @container (max-width: 760px) {
+    #strange-hud .strange-versus em .strange-long { display: none; }
+    #strange-hud .strange-versus em .strange-short { display: inline; }
+  }
+  #strange-hud .strange-versus b small { display: block; font-size: 10.5px; font-weight: 400; color: #8fa39b; }
+  #strange-hud .strange-versus b small.lead { color: ${STRANGE_GOLD}; font-weight: 700; }
+  /* The predicted paths: each world's future as it has been played out
+     ("Futures: to the end of the game"), one to a row, the best first. */
+  #strange-hud .strange-paths { flex: none; padding: 7px 10px 8px; }
+  #strange-hud .strange-paths:empty { display: none; }
+  #strange-hud .strange-paths h3 {
+    margin: 0 0 6px; font: 800 11px/1.2 system-ui, sans-serif; letter-spacing: .12em; text-transform: uppercase; color: #e8e3d2;
+  }
+  #strange-hud .strange-paths ol { margin: 0; padding: 0; list-style: none; display: grid; gap: 5px; }
+  #strange-hud .strange-paths li {
+    display: grid; grid-template-columns: 16px minmax(0, 1fr); column-gap: 7px; padding: 4px 7px 5px;
+    border-left: 3px solid var(--strange-tint); border-radius: 6px; background: #ffffff07;
+  }
+  #strange-hud .strange-paths li > b { grid-row: span 3; font: 700 14px/18px Georgia, serif; color: #9fb3ab; }
+  #strange-hud .strange-paths li > span, #strange-hud .strange-paths li > strong {
+    min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  #strange-hud .strange-paths li > span { font-size: 11.5px; font-weight: 700; color: var(--strange-tint); }
+  #strange-hud .strange-paths li > strong { font-size: 12px; line-height: 16px; }
+  #strange-hud .strange-paths li > small { min-width: 0; font-size: 11px; line-height: 14px; color: #9fb3ab; }
+  #strange-hud .strange-paths li[data-outcome="won"] > strong { color: ${STRANGE_GOLD}; }
+  #strange-hud .strange-paths li[data-outcome="lost"] > strong { color: #ff8a80; }
+  /* The outcomes are listed there now, not signed over each branch. */
+  #strange-hud .strange-fate { display: none !important; }
   /* The defeat tracker (operator 2026-11-26: "add an inverse victory tracker
      - track progress to a nuclear war and losing. Same format as the victory
      track. we can call this defeat tracker. track turns away from a nuclear
      war"): the victory tracker's own paths, rows and meters, one row a world,
      beside the worlds' numbers, on the line, so the line stands no lower for
      it. A meter fills as the world nears it. */
-  #strange-hud .strange-defeat { box-sizing: border-box; width: 230px; padding: 6px 9px 7px; }
+  #strange-hud .strange-defeat { flex: none; box-sizing: border-box; padding: 6px 9px 7px; }
   #strange-hud .strange-defeat:empty { display: none; }
   #strange-hud .strange-defeat .hud-section-heading { margin: 0 0 3px; color: #e8e3d2; font-weight: 800; font-size: 11px;
     letter-spacing: .12em; text-transform: uppercase; }
@@ -5317,8 +5363,16 @@ const STRANGE_STYLE = `
   /* The divide between the tree and the boxes is the line of the open turn,
      and is taken hold of there. */
   #strange-hud .strange-divide {
-    position: absolute; left: 0; right: 0; top: calc(var(--strange-line) - 5px); height: 10px; cursor: row-resize;
+    position: absolute; z-index: 5; left: 0; right: 0; top: calc(var(--strange-line) - 5px); height: 10px; cursor: row-resize;
   }
+  /* A grip in the middle says it can be moved (operator 2026-11-26: "lets
+     also make sure the dividing line beteen the bottom worlds and the top
+     sectoin is moveable"). The whole width takes hold of it. */
+  #strange-hud .strange-divide::after {
+    content: ""; position: absolute; left: 50%; top: 2px; width: 64px; height: 6px; margin-left: -32px; box-sizing: border-box;
+    border-radius: 3px; background: #9fb3ab55; border: 1px solid #9fb3ab88;
+  }
+  #strange-hud .strange-divide:hover::after, html.strange #debugsplit.strange-dragging .strange-divide::after { background: ${STRANGE_GOLD}; border-color: ${STRANGE_GOLD}; }
   /* A world's name plate, across the top of its box: the box's upper edge,
      in the colour of its branch. */
   #strange-hud .strange-world {
@@ -5390,10 +5444,8 @@ const STRANGE_STYLE = `
      out of the blue. So it is struck from over the far end of the tree, at
      the top of the sky, between the cards: the button, and beside it which.
      Nothing is drawn up there but the far tips of the lines. */
-  #strange-hud .strange-swans {
-    position: absolute; left: 50%; top: 12px; transform: translateX(-50%); display: flex; gap: 5px;
-    max-width: calc(100% - 2 * min(330px, 34vw) - 64px);
-  }
+  #strange-hud .strange-swans { flex: none; display: flex; gap: 5px; min-width: 0; }
+  #strange-hud .strange-swans .strange-swan { flex: 1 1 auto; }
   #strange-hud .strange-swans .strange-swan {
     flex: 0 1 auto; min-width: 0; height: 32px; padding: 0 14px; font-size: 13px; font-weight: 700;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -5401,12 +5453,12 @@ const STRANGE_STYLE = `
   }
   #strange-hud .strange-swans .strange-swan:hover:not(:disabled) { border-color: #fff; box-shadow: 0 0 16px -2px ${STRANGE_SWAN_INK}; }
   #strange-hud .strange-swans select {
-    flex: 0 2 auto; width: auto; max-width: 168px; height: 32px; color: ${STRANGE_SWAN_INK}; background: #000;
+    flex: 0 0 92px; width: 92px; height: 32px; color: ${STRANGE_SWAN_INK}; background: #000;
     border-color: ${STRANGE_SWAN_INK}66;
   }
   /* What struck, under the button for as long as it is news. */
   #strange-hud .strange-omen {
-    position: absolute; left: 50%; top: 52px; transform: translateX(-50%); box-sizing: border-box;
+    position: absolute; left: 50%; top: calc(var(--strange-band, 40px) + 10px); transform: translateX(-50%); box-sizing: border-box;
     width: max-content; max-width: min(470px, calc(100% - 2 * min(330px, 34vw) - 64px)); padding: 9px 14px 10px;
     text-align: center; cursor: pointer; color: ${STRANGE_SWAN_INK}; background: #000000eb;
     border: 1px solid ${STRANGE_SWAN_INK}; border-radius: 12px; box-shadow: 0 0 34px -4px ${STRANGE_SWAN_INK}99;
@@ -5650,7 +5702,7 @@ function strangeGeometry() {
   // How far to either side of the followed world the others stand, in lanes.
   const mine = Math.max(0, open.indexOf(strange.follow));
   const reach = Math.max(1, mine, open.length - 1 - mine);
-  return {W, H, gutter, lane, sill, boxes, reach, cx: W / 2, cy, up: cy - 16, down: H - cy - 12, tauUp: 26, tauDown: 20,
+  return {W, H, gutter, lane, sill, boxes, reach, cx: W / 2, cy, up: Math.max(60, cy - (strange.treeTop ?? 16)), down: H - cy - 12, tauUp: 26, tauDown: 20,
     // How far apart two lanes stand: on the line, and at the far end.
     near: Math.min(42, lane / 2 - 34, (W * .44) / reach), far: Math.min(300, W * .15, (W / 2 - 90) / reach)};
 }
@@ -6504,6 +6556,52 @@ function strangeDefeat(letter) {
     : {value: `>${reach}t`, fill: 0, title: `Not lost in the next ${turns(reach)}, as far as its future is played`};
   return {nuclear, losing};
 }
+// A world's predicted path, from the same future as its sign: what it
+// comes to, and where it stands among the others. Best first: the seat
+// wins (sooner is better); no nuclear war and nothing lost (the higher
+// score is better); a nuclear war coming but the game not lost (later is
+// better); the game lost (later is better); a future not yet seen.
+function strangeOutcome(letter) {
+  const pane = debugSplit.panes[letter], sight = pane.sight, turn = pane.turn;
+  const score = Number((pane.numbers || {}).score) || 0;
+  const fate = strangeFate(letter);
+  if (!sight || typeof turn !== "number" || typeof sight.turn !== "number")
+    return {rank: [4, 0], outcome: "unknown", head: fate.head, wars: "", title: fate.title};
+  const turns = count => `${count} turn${count === 1 ? "" : "s"}`;
+  const first = sight.seen.find(seen => seen.kind === "nuclear") || null;
+  const end = sight.done ? [...sight.seen].reverse().find(seen => seen.kind === "won" || seen.kind === "over") || null : null;
+  const lost = !!end && end.kind === "over" && end.text !== "The game ends";
+  const won = !!end && end.kind === "won";
+  const reach = Math.max(0, sight.turn - turn);
+  const rank = won ? [0, end.turn] : lost ? [3, -end.turn] : first ? [2, -first.turn] : [1, -score];
+  const said = end ? String(end.text).replace(" wins the game", " wins").replace(" is out of the game", " is out") : "";
+  const head = won ? `★ ${said}, turn ${end.turn}` : lost ? `✗ ${said}, turn ${end.turn}`
+    : end ? `🏁 ${said}, turn ${end.turn}` : `Not decided in the next ${turns(reach)}`;
+  const coming = sight.seen.filter(seen => seen.kind === "war" && seen.turn >= turn);
+  const wars = coming.length > 0
+    ? `⚔ War ${coming[0].turn === turn ? "this turn" : `in ${turns(coming[0].turn - turn)}`}: ${String(coming[0].text || "").replace(" declares war on ", " on ")}${coming.length > 1 ? ` · ${coming.length - 1} more` : ""}`
+    : sight.done ? "No wars ahead" : `No war in the next ${turns(reach)}`;
+  return {rank, outcome: won ? "won" : lost ? "lost" : first ? "nuclear" : "clear", head, nuclear: fate.head, wars, title: fate.title};
+}
+function strangePathsDraw(hud, open, tree) {
+  const card = hud.querySelector("[data-strange-paths]");
+  if (!card) return;
+  const read = open.map(letter => ({letter, ...strangeOutcome(letter)}))
+    .sort((one, other) => one.rank[0] - other.rank[0] || one.rank[1] - other.rank[1] || open.indexOf(one.letter) - open.indexOf(other.letter));
+  const html = `<h3>Predicted Paths</h3><ol>` + read.map((path, at) => {
+    const name = `${path.letter.toUpperCase()} · ${strangeSeries(path.letter, tree)}`;
+    return `<li data-path-world="${path.letter}" data-outcome="${path.outcome}" style="--strange-tint:${strange.tint[path.letter]}" title="${escapeAttr(path.title)}">` +
+      `<b>${at + 1}</b><span>${escapeAttr(name)}</span><strong>${escapeAttr(path.head)}</strong>` +
+      `<small>${escapeAttr([path.nuclear, path.wars].filter(Boolean).join(" · "))}</small></li>`;
+  }).join("") + `</ol>`;
+  if (card.dataset.drawn !== html) {
+    const grew = card.dataset.rows !== String(open.length);
+    card.dataset.drawn = html;
+    card.dataset.rows = String(open.length);
+    card.innerHTML = html;
+    if (grew) strange.stale = true;
+  }
+}
 // The defeat tracker: the victory tracker's format, with a path for a
 // nuclear war and one for losing, each counting the turns away.
 const STRANGE_DEFEAT_PATHS = [["nuclear", "Nuclear war", "#ff8a3d"], ["losing", "Losing", "#e2574c"]];
@@ -6935,20 +7033,21 @@ function strangeMount() {
       <div class="strange-say" data-strange="say" role="status"></div>
       <nav aria-label="CIVVIS sites"><a href="./" target="_top">CIVVIS</a><a href="debugger" target="_top">CIVVIS AI Debugger</a></nav>
     </div>
-    <div class="strange-meter strange-card" aria-label="What this page costs">
-      <i>CPU</i><b data-strange-gauge="cpu">–</b><canvas data-strange-trace="cpu" width="264" height="44"></canvas>
-      <i>Memory</i><b data-strange-gauge="memory">–</b><canvas data-strange-trace="memory" width="264" height="44"></canvas>
-      <em data-strange-worlds></em>
-    </div>
     <div class="strange-right">
+      <div class="strange-meter strange-card" aria-label="What this page costs">
+        <i>CPU</i><b data-strange-gauge="cpu">–</b><canvas data-strange-trace="cpu" width="264" height="44"></canvas>
+        <i>Memory</i><b data-strange-gauge="memory">–</b><canvas data-strange-trace="memory" width="264" height="44"></canvas>
+        <em data-strange-worlds></em>
+      </div>
+      <div class="strange-swans" role="group" aria-label="Black swan">
+        <button class="strange-swan" data-strange="swan"></button>
+        <select data-strange="swan-kind" aria-label="Which black swan"></select>
+      </div>
+      <section class="strange-paths strange-card" data-strange-paths aria-label="Predicted paths: each world's computed outcome, best first"></section>
       <section class="strange-defeat strange-card" data-strange-defeat aria-label="Defeat tracker: how near each world is to a nuclear war and to losing the game"></section>
-      <div class="strange-versus strange-card" data-strange="numbers"></div>
     </div>
+    <div class="strange-versus strange-card" data-strange="numbers"></div>
     <button class="strange-all" data-strange="all">All 14,000,605</button>
-    <div class="strange-swans" role="group" aria-label="Black swan">
-      <button class="strange-swan" data-strange="swan"></button>
-      <select data-strange="swan-kind" aria-label="Which black swan"></select>
-    </div>
     <div class="strange-omen" data-strange="omen" role="alert" title="Click to put away" hidden></div>
     <div class="strange-divide" title="Drag to give the tree or the worlds more room. Double-click to let the page place it"></div>
     <div class="strange-now strange-turn"><span>TURN</span><b data-strange="turn"></b><span data-strange="limit"></span><span class="strange-era" data-strange="era"></span></div>`;
@@ -7049,26 +7148,28 @@ function strangeMount() {
 // `strange.shape`), the line moving moves the worlds' card with it, and a
 // card that has grown by itself, a number gaining a figure, is seen by the
 // browser once it has laid the page out anyway (`strangeMount`).
-const STRANGE_CARDS = [".strange-title", ".strange-meter", ".strange-versus", ".strange-swans", ".strange-omen", ".strange-all"];
+const STRANGE_CARDS = [".strange-title", ".strange-right", ".strange-versus", ".strange-omen", ".strange-all"];
 function strangeCards() {
   const hud = strange.hud;
   const box = name => hud.querySelector(name).getBoundingClientRect();
-  const title = box(".strange-title"), meter = box(".strange-meter"), versus = box(".strange-versus");
-  const defeat = box(".strange-defeat");
+  const title = box(".strange-title"), versus = box(".strange-versus"), column = box(".strange-right");
+  // The tree is drawn under the worlds' numbers, and the line stands low
+  // enough to leave it room.
+  strange.treeTop = Math.ceil(versus.bottom + 14);
+  if (hud.style.getPropertyValue("--strange-band") !== `${Math.ceil(versus.bottom)}px`)
+    hud.style.setProperty("--strange-band", `${Math.ceil(versus.bottom)}px`);
   // All 14,000,605 stands at the foot of the tree on the left, on the line
   // as the worlds' numbers do on the right, unless the turn written on the
   // line would be under it there: then it stands over the turn.
   const turn = box(".strange-turn"), foot = box(".strange-all");
   const lift = turn.right > foot.left - 10 && turn.left < foot.right + 10 ? Math.ceil(turn.height) + 8 : 0;
   if (hud.style.getPropertyValue("--strange-all-lift") !== `${lift}px`) hud.style.setProperty("--strange-all-lift", `${lift}px`);
-  strange.floor = Math.ceil(Math.max(title.bottom + 46, title.bottom + 10 + foot.height + 12 + lift,
-    meter.bottom + Math.max(versus.height, defeat.height) + 30));
+  strange.floor = Math.ceil(Math.max(title.bottom + 46, title.bottom + 10 + foot.height + 12 + lift, versus.bottom + 170));
   strange.cards = [{left: title.left, right: title.right, top: title.top, bottom: title.bottom, side: -1},
-    {left: meter.left, right: meter.right, top: meter.top, bottom: meter.bottom, side: 1},
-    {left: versus.left, right: versus.right, top: versus.top, bottom: versus.bottom, side: 1},
-    ...(defeat.height > 0 ? [{left: defeat.left, right: defeat.right, top: defeat.top, bottom: defeat.bottom, side: 1}] : [])];
-  // And off the black swan's button, and what it says while it says it.
-  for (const held of [hud.querySelector(".strange-swans"), hud.querySelector(".strange-omen")]) {
+    {left: column.left, right: column.right, top: column.top, bottom: column.bottom, side: 1},
+    {left: versus.left, right: versus.right, top: versus.top, bottom: versus.bottom, side: 1}];
+  // And off what the black swan says while it says it.
+  for (const held of [hud.querySelector(".strange-omen")]) {
     if (held.hidden) continue;
     const said = held.getBoundingClientRect();
     strange.cards.push({left: said.left, right: said.right, top: said.top, bottom: said.bottom, side: 1});
@@ -7296,36 +7397,39 @@ function strangeDraw() {
     const share = `${Math.round(fate.seen * 100)}%`;
     if (sign.style.getPropertyValue("--strange-seen") !== share) sign.style.setProperty("--strange-seen", share);
   }
-  // Each world has two columns: where it stands now (for a yield, what it
-  // makes a turn), and beside a yield what it has made so far, in whole
-  // numbers. Past three worlds there is room for the first only. The most
-  // of each row, where one world has it alone, is in gold.
+  // The worlds' numbers across the top, a row a world: where it stands now
+  // (for a yield, what it makes a turn) and, under a yield, what it has made
+  // so far, in whole numbers; past three worlds, where it stands now alone,
+  // so that every world's row is in the band. The most of a column, where
+  // one world has it alone, is in gold.
   const wide = open.length <= 3;
-  const cell = (key, letter, classes, total) => {
+  const lead = (key, letter) => {
     const value = (panes[letter].numbers || {})[key];
     const rest = open.filter(other => other !== letter).map(other => (panes[other].numbers || {})[key]);
-    const lead = typeof value === "number" && rest.length > 0 && rest.every(other => typeof other === "number" && value > other);
-    const named = [...classes, ...(lead ? ["lead"] : [])];
-    const text = !total ? debugVersusNumber(value)
-      : typeof value === "number" && Number.isFinite(value) ? (Math.round(value) || 0).toLocaleString("en-US") : "–";
-    return `<b${named.length ? ` class="${named.join(" ")}"` : ""}>${text}</b>`;
+    return typeof value === "number" && rest.length > 0 && rest.every(other => typeof other === "number" && value > other);
   };
-  const pair = at => at > 0 ? ["strange-pair"] : [];
-  const table = `<i></i>` + open.map((letter, at) =>
-    `<span class="${["strange-letter", ...pair(at)].join(" ")}" style="color:${strange.tint[letter]};grid-column:span ${wide ? 2 : 1}">${letter.toUpperCase()}</span>`).join("") +
-    (wide ? `<i></i>` + open.map((_, at) => `<em${at > 0 ? ' class="strange-pair"' : ""}>Now</em><em class="strange-total">Total</em>`).join("") : "") +
-    STRANGE_VERSUS_ROWS.map(([key, label, title]) => {
-      const summed = STRANGE_TOTALS.includes(key);
-      return `<i title="${summed ? `${title}: a turn, and made over the game so far${key === "gold" ? " (net of upkeep)" : ""}` : title}">${label}</i>` +
-        open.map((letter, at) => cell(key, letter, pair(at), false) +
-          (!wide ? "" : summed ? cell(`${key}_total`, letter, ["strange-total"], true) : `<b class="strange-total"></b>`)).join("");
-    }).join("");
+  const cell = (key, letter) => {
+    const value = (panes[letter].numbers || {})[key];
+    const made = (panes[letter].numbers || {})[`${key}_total`];
+    const total = !wide || !STRANGE_TOTALS.includes(key) ? ""
+      : `<small${lead(`${key}_total`, letter) ? ' class="lead"' : ""}>${typeof made === "number" && Number.isFinite(made) ? (Math.round(made) || 0).toLocaleString("en-US") : "–"}</small>`;
+    return `<b${lead(key, letter) ? ' class="lead"' : ""}>${debugVersusNumber(value)}${total}</b>`;
+  };
+  const table = `<i></i>` + STRANGE_VERSUS_ROWS.map(([key, label, title]) => {
+    const summed = STRANGE_TOTALS.includes(key);
+    const short = STRANGE_VERSUS_SHORT[key] || label;
+    return `<em title="${summed && wide ? `${title}: a turn, and under it made over the game so far${key === "gold" ? " (net of upkeep)" : ""}` : title}">` +
+      `<span class="strange-long">${label}</span><span class="strange-short">${short}</span></em>`;
+  }).join("") + open.map(letter =>
+    `<span class="strange-letter" style="color:${strange.tint[letter]}">${letter.toUpperCase()}</span>` +
+    STRANGE_VERSUS_ROWS.map(([key]) => cell(key, letter)).join("")).join("");
   if (strange.drawn !== table) {
     strange.drawn = table;
     const card = hud.querySelector('[data-strange="numbers"]');
-    card.style.gridTemplateColumns = `repeat(${1 + open.length * (wide ? 2 : 1)}, auto)`;
+    card.style.gridTemplateColumns = `auto repeat(${STRANGE_VERSUS_ROWS.length}, minmax(0, 1fr))`;
     card.innerHTML = table;
   }
+  strangePathsDraw(hud, open, tree);
   strangeDefeatDraw(hud, open, tree);
   const count = `${open.length} world${open.length === 1 ? "" : "s"} open`;
   const said = hud.querySelector("[data-strange-worlds]");
@@ -7604,15 +7708,15 @@ function strangePaint(time) {
     // left out: a nuclear detonation never is.
     const coming = [...(split.panes[letter].alerts || []).filter(alert => alert.turn < tip),
       ...(sight ? sight.seen.filter(seen => seen.turn >= tip) : [])];
-    // Up among the signs over the branches nothing is named: the sign over
-    // the branch says what is first to come, and the rest is named as it
-    // comes down the board.
-    const band = Math.max(STRANGE_FATE_TOP, ...strange.fates.map(sign => sign.top + sign.tall)) + 10;
+    // Up at the top of the tree, under the worlds' numbers, nothing is
+    // named: the predicted paths say what is to come, and the rest is named
+    // as it comes down the board.
+    const band = (strange.treeTop ?? STRANGE_FATE_TOP) + 10;
     const stood = {};
     for (const alert of coming) {
       if (alert.turn < cam - .5 || alert.turn > high) continue;
       const at = alert.turn + .5, px = x(letter, at), py = y(at);
-      if (py > g.cy - 6 || py < 14) continue;
+      if (py > g.cy - 6 || py < (strange.treeTop ?? 14)) continue;
       const [sign, tint] = STRANGE_SIGNS[alert.kind] || ["!", STRANGE_GOLD], grave = alert.kind === "nuclear";
       if (stood[alert.kind] !== undefined && Math.abs(stood[alert.kind] - py) < (grave ? 3 : 16)) continue;
       stood[alert.kind] = py;

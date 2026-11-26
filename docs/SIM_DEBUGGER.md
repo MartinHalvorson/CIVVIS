@@ -1673,6 +1673,30 @@ path). these should alert on the top section out in the distance."
     through, and the pointer on it lists every detonation and war ahead and
     how fast it is being played. With many worlds open the signs say less
     and stand in two rows (`strangeFates`).
+  - *Predicted Paths* (`strangePathsDraw`, `strangeOutcome`,
+    `[data-strange-paths]`). Operator, 2026-11-26: "for doctor strange's
+    civvis, lets list the computed outcomes on the right side of the top
+    scetion of the screen, ranked from best to worst. cpu and memory can go
+    at the top. then: "Predicted Paths". The numbers table can go across
+    the top, from the right side of the upper left box to the left side of
+    the resources/predicted paths box i described. lets truncate the
+    timelines map below this. lets also make sure the dividing line beteen
+    the bottom worlds and the top sectoin is moveable". The signs over the
+    branches are no longer shown; what they said is listed in a column down
+    the right of the upper half (`.strange-right`): what the page costs,
+    the black swan, then **Predicted Paths**, a row a world, best first,
+    then the defeat tracker. A row is the world's letter and player
+    strategy, what its future comes to (★ the seat wins, ✗ it loses, 🏁 the
+    game ends, or how far it has been played undecided), and under it the
+    sign's nuclear war and next war. Best first: the seat wins (sooner
+    first); no nuclear war and nothing lost (higher score first); a nuclear
+    war coming (later first); the game lost (later first); not yet seen.
+    The worlds' numbers go across the top between the title's card and the
+    column, a row a world, each yield's total under it; the tree is drawn
+    under them (`strange.treeTop`). The column scrolls when it is taller
+    than the room above the line. The line itself is dragged anywhere
+    across its width (a grip in the middle shows it), and a double-click
+    lets the page place it again.
   - *On the line.* Past the turns a world holds, its line is drawn thin as
     far as its future has been played, and stops where the game ends in it;
     the dashes go on only where nothing has been played. The detonations,
@@ -1753,8 +1777,8 @@ against the toy engine: the opening seats, the layout, the names and colours,
 the one-step Branch into a third world, the pointer over a box, going back,
 following, the locked run, the divide, deleting a world of each kind and
 opening one again, the meter, the futures and their alerts, each world's
-future played to the end of its game with the sign over each branch saying
-what is coming (every world at once, on the world itself and where each
+future played to the end of its game with the predicted paths saying
+what is coming, best first (every world at once, on the world itself and where each
 has a scout), time running
 through turns played ahead, a black swan on every locked world and on the
 followed one alone, and the narrow window, which has the one timeline
