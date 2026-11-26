@@ -219,9 +219,11 @@ class Pages(unittest.TestCase):
                 self.assertEqual({name for name, kind in worn.items() if kind == "gold"}, {"CIVVIS"})
                 self.assertEqual({name for name, kind in worn.items() if kind == "black"}, {"CIVVIS AI Debugger"})
                 self.assertEqual({name for name, kind in worn.items() if kind == "tomorrow"}, {"CIVVIS: Edge of Tomorrow"})
-                # Edge of Tomorrow stands between AI Debugger and Civ 6
-                # (operator 2026-11-25: "above civ 6 and below ai debugger").
-                self.assertEqual(list(worn)[-3:], ["CIVVIS AI Debugger", "CIVVIS: Edge of Tomorrow", "Civ 6"])
+                # Edge of Tomorrow stands just above AI Debugger, and Civ 6
+                # ends the list (operator 2026-11-26: "lets move civvis: edge
+                # of tomorrow above civvis ai debugger in the ordering"; it
+                # was below AI Debugger from 2026-11-25).
+                self.assertEqual(list(worn)[-3:], ["CIVVIS: Edge of Tomorrow", "CIVVIS AI Debugger", "Civ 6"])
                 self.assertEqual({name for name, kind in worn.items() if kind == "strange"}, {"Doctor Strange's CIVVIS"})
                 self.assertEqual({name for name, kind in worn.items() if kind == "steam"}, {"Civ 6"})
                 # The list ends at Civ 6: Wizard Chess, which stood below
@@ -282,7 +284,7 @@ class Simulator(unittest.TestCase):
         nav = nav[:nav.index("</nav>")]
         self.assertEqual(
             re.findall(r'<a class="home-link" id="([a-z0-9]+)"', nav),
-            ["homelink", "chartslink", "tourlink", "watchlink", "strangelink", "playlink", "tomorrowlink", "civ6link"])
+            ["homelink", "chartslink", "tourlink", "watchlink", "strangelink", "tomorrowlink", "playlink", "civ6link"])
         self.assertNotRegex(VIEWER, SET_ASIDE)
 
     def test_doctor_strange_is_in_his_colours(self):
