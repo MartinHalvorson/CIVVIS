@@ -1163,6 +1163,19 @@
   /* Neither half of a row gives up width, and nothing here ellipsizes: a
      setting is shown whole or the block is drawn a quarter-point smaller. */
   .turn-setting > span, .turn-setting > b, .turn-setting > .turn-pace-choice { flex: 0 0 auto; }
+  /* A tourney's Mode is two lines (operator 2026-11-26): its name on the Mode
+     row, its record ("17% win rate (46 games, 46% done)") on a row of its own
+     under it, starting under "Mode:", across the whole block. `contain: inline-size`
+     keeps the record out of the block's track, so it is fitted on its own
+     (`.turn-mode-record` in the type fitter) and the other rows keep their
+     size. On a wide plate it spans both columns, and `dense` keeps POV beside
+     Mode above it. */
+  .turn-mode-record {
+    contain: inline-size; overflow-x: clip; margin-top: -2px; text-align: left; white-space: nowrap;
+  }
+  .turn-mode-record b { color: #dce6e1; font-weight: 900; font-variant-numeric: tabular-nums; }
+  #playerhud.turn-plate-wide .turn-mode-record { grid-column: 1 / -1; }
+  #playerhud.turn-plate-wide .turn-settings { grid-auto-flow: row dense; }
   /* Max Speed and the setup line under it ("6P Continents · Lv 8 · Online")
      sit between the stopwatch and the age, in the settings block's type.
      `safe` starts an overflowing row at its left edge, so the type fitter's

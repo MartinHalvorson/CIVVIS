@@ -9437,11 +9437,26 @@ fn browser_names_a_live_games_level_on_the_turn_plate() {
 /// A short roster's table ends above the box's last row, so the masthead's
 /// automatic height takes the box's measured content as a floor; a dragged
 /// height is still the viewer's own.
+///
+/// A tourney's Mode is two lines (operator 2026-11-26: "change mode to (2
+/// lines): Tourney 8 /n 17% win rate (46 games, 24% done)"): the lane's label
+/// "<name>: <record>" is split at its first ": ", the name on the Mode row and
+/// the record on a row of its own under it, fitted on its own across the block
+/// and kept out of the block's track, so a long record never draws the other
+/// rows smaller or pushes their values off a 140px box.
 #[test]
 fn browser_turn_plate_names_the_mode_and_the_point_of_view() {
     for piece in [
         "const plateMode = livePause.available && livePause.mode",
-        "? [livePause.mode, \"A live Firaxis Civilization VI game in a tournament series:",
+        "const [modeName, modeRecord] = (livePause.mode || \"\").split(/: (.+)/);",
+        "? [modeName, \"A live Firaxis Civilization VI game in a tournament series:",
+        "how far through the series it is.\", modeRecord]",
+        "const frameRow = (label, [value, title, record]) =>",
+        "(record ? `<div class=\"turn-mode-record\" title=\"${escapeAttr(title)}\"><b>${escapeAttr(record)}</b></div>` : ``);",
+        "{selector:\"#playerhud .turn-mode-record\", min:6, max:12, slack:2, parentWidth:true},",
+        "contain: inline-size; overflow-x: clip; margin-top: -2px; text-align: left; white-space: nowrap;",
+        "#playerhud.turn-plate-wide .turn-mode-record { grid-column: 1 / -1; }",
+        "#playerhud.turn-plate-wide .turn-settings { grid-auto-flow: row dense; }",
         "livePause.mode = typeof status.mode === \"string\" && status.mode ? status.mode : null;",
         "? [\"Firaxis Civ VI Testing\", \"A live Firaxis Civilization VI game under test, mirrored here turn by turn.\"]",
         ": SPEC ? [\"CIVVIS Self-play\", \"Every civilization is played by a CIVVIS AI agent. Nobody holds a seat.\"]",
@@ -9450,7 +9465,7 @@ fn browser_turn_plate_names_the_mode_and_the_point_of_view() {
         "? [\"Single Player\", `The world as ${identity.civ || \"one civilization\"} sees it, behind its own fog.`]",
         ": [\"Global\", \"The whole world at once, with no civilization's fog.\"];",
         "frameRow(\"Mode:\", plateMode) + frameRow(\"POV:\", platePov) +\n    fogRow +",
-        "`mode ${plateMode[0]}; point of view ${platePov[0]}`;",
+        "`mode ${plateMode[0]}${plateMode[2] ? `, ${plateMode[2]}` : \"\"}; point of view ${platePov[0]}`;",
         // The long Mode name is whole on the narrowest plate at 8px.
         "{selector:\"#playerhud .turn-settings\", min:8, max:12, slack:4},",
         // Max Speed and the setup line are each fitted on their own, and the

@@ -3523,6 +3523,8 @@ const RESPONSIVE_TEXT_RULES = [
   // "Mode: Firaxis Civ VI Testing" needs 126px at 8.5px and the narrowest
   // plate has 124, so the floor is 8: smaller type, not a clipped letter.
   {selector:"#playerhud .turn-settings", min:8, max:12, slack:4},
+  // A tourney's record, under its Mode, is fitted on its own across the block, so it never shrinks the block.
+  {selector:"#playerhud .turn-mode-record", min:6, max:12, slack:2, parentWidth:true},
   // Max Speed and the setup line under it are fitted apart: as a pair, the menu's width shrank both.
   {selector:"#playerhud .turn-pace-line", min:8.5, max:12, slack:4},
   {selector:"#playerhud .turn-setup-line", min:8, max:12, slack:4},
@@ -7591,7 +7593,7 @@ function adoptLivePause(status) {
   if (!status || typeof status !== "object") return;
   const wasAvailable = livePause.available;
   livePause.available = status.available === true;
-  // A tournament series names itself in the Mode ("Tournament 1: 2-3").
+  // A tournament series names itself in the Mode ("Tourney 8: 17% win rate (46 games, 46% done)").
   livePause.mode = typeof status.mode === "string" && status.mode ? status.mode : null;
   livePause.requested = status.requested === true;
   livePause.held = status.held === true;
@@ -27765,8 +27767,11 @@ function hudTurnPlate() {
   const viewLabel = playerView ? "Player view" : SPEC ? "Observing" : "Your empire";
   // Who is playing, and whose eyes the map is drawn through (operator
   // 2026-11-15: a "Mode:" and a "POV:" on the turn box).
+  // A tourney's label is "<name>: <record>": the name on the Mode row, the record a line under it
+  // (operator 2026-11-26: "change mode to (2 lines): Tourney 8 /n 17% win rate (46 games, 24% done)").
+  const [modeName, modeRecord] = (livePause.mode || "").split(/: (.+)/);
   const plateMode = livePause.available && livePause.mode
-    ? [livePause.mode, "A live Firaxis Civilization VI game in a tournament series: its record so far, wins\u2013losses, as on the Tournaments page."]
+    ? [modeName, "A live Firaxis Civilization VI game in a tournament series: the share of its games won so far, the games played and how far through the series it is.", modeRecord]
     : livePause.available
     ? ["Firaxis Civ VI Testing", "A live Firaxis Civilization VI game under test, mirrored here turn by turn."]
     : SPEC ? ["CIVVIS Self-play", "Every civilization is played by a CIVVIS AI agent. Nobody holds a seat."]
@@ -27880,7 +27885,7 @@ function hudTurnPlate() {
     (fogRow ? `in-game fog ${state.tactics.fog ? "on" : "off"}; ` : ``) +
     `${civCount} civilizations remaining, ${civsLost} eliminated; ` +
     `${cityStateCount} city states remaining, ${cityStatesLost} eliminated; ` +
-    `mode ${plateMode[0]}; point of view ${platePov[0]}`;
+    `mode ${plateMode[0]}${plateMode[2] ? `, ${plateMode[2]}` : ""}; point of view ${platePov[0]}`;
   // A count and the toll it was taken out of are one reading, so they share a
   // row: the survivors keep the value's weight and colour, the fallen follow in
   // the label's own ink so the eye lands on the living number first.
@@ -27890,8 +27895,9 @@ function hudTurnPlate() {
   const rosterRow = (label, alive, lost) =>
     `<div class="turn-setting"><span>${label}</span>` +
     `<b>${alive}<small class="turn-toll">(${lost} eliminated)</small></b></div>`;
-  const frameRow = (label, [value, title]) => `<div class="turn-setting" title="${escapeAttr(title)}">` +
-    `<span>${label}</span><b>${escapeAttr(value)}</b></div>`;
+  const frameRow = (label, [value, title, record]) => `<div class="turn-setting" title="${escapeAttr(title)}">` +
+    `<span>${label}</span><b>${escapeAttr(value)}</b></div>` +
+    (record ? `<div class="turn-mode-record" title="${escapeAttr(title)}"><b>${escapeAttr(record)}</b></div>` : ``);
   // The stopwatch is the plate's own top section, above the age (operator
   // 2026-10-14). Max Speed sits directly under it (2026-11-09, restored after
   // a 2026-11-15 detour under the counter), then the map, level and speed,
