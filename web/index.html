@@ -503,7 +503,7 @@
      all of it. */
   @container (min-width: 233px) {
     #side .brand:has(> .head-links:not([hidden])) {
-      --site-rail: 92px; --site-mark: clamp(56px, 29cqw, 96px);
+      --site-rail: 100px; --site-mark: clamp(56px, 29cqw, 96px);
       display: grid; grid-template-columns: var(--site-rail) minmax(0, 1fr);
       grid-template-rows: 1fr auto auto 1fr auto;
       align-items: center; gap: 6px 7px;
@@ -524,16 +524,16 @@
       grid-column: 1; grid-row: 1 / span 4; grid-template-columns: minmax(0, 1fr);
       align-content: center; justify-self: stretch; margin-top: 0;
     }
-    /* Eight to the column, a name to a line but for Doctor Strange's Civ 6
-       and Edge of Tomorrow, which are longer than the column and take two
-       each. The column is 92px with 7px
-       gutters, the size it took for STRAT DEBUGGER (83px in this type
-       against the 86px inside the column) while that was the Debugger's
-       name here, and it keeps that size, so neither width at which the
-       lockup changes shape has moved. AUTO-TOURNEYS, the Tournaments
-       page's name from 2026-11-22 to 2026-11-24, was the longest name,
-       80px. Each link is one track here, wherever it stands two by
-       two. Six one-line links and the two of two lines make it 171px. */
+    /* Eight to the column, every name on one line or two (operator,
+       2026-11-26: "make the vertical rows of buttons (home... civ 6) a bit
+       wider. wide enough that all button text fits on 2 lines"). At 92px,
+       the size it took for STRAT DEBUGGER, DOCTOR STRANGE'S CIVVIS took
+       three; from 94px it takes two (DOCTOR STRANGE'S over CIVVIS), and the
+       column is 100px so a slightly wider face keeps it there. CIVVIS AI
+       DEBUGGER and CIVVIS: EDGE OF TOMORROW take two, the rest one. The
+       widths at which the lockup changes shape have not moved: the wordmark
+       and tagline beside the column are 8px narrower and fitted to it. Each
+       link is one track here, wherever it stands two by two. */
     /* AI Debugger's 30%, against this column's one-line link: 1px and 2px
        of padding here. */
     #side .brand:has(> .head-links:not([hidden])) #playlink { min-height: calc((1.3em + 5px) * 1.3); }

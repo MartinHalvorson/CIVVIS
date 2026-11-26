@@ -2608,12 +2608,12 @@ fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
     // column's height leaves. The list is still the last thing in the
     // lockup's markup, so each is given its track by name. It applies only
     // while the list is showing, so a desktop build's lockup keeps the whole
-    // band. The column is 92px, which with its type holds every name on one
-    // line (below).
+    // band. The column is 100px, which with its type holds every name on
+    // one line or two (below).
     assert!(EMBEDDED_INDEX.contains(concat!(
         "  @container (min-width: 233px) {\n",
         "    #side .brand:has(> .head-links:not([hidden])) {\n",
-        "      --site-rail: 92px; --site-mark: clamp(56px, 29cqw, 96px);\n",
+        "      --site-rail: 100px; --site-mark: clamp(56px, 29cqw, 96px);\n",
         "      display: grid; grid-template-columns: var(--site-rail) minmax(0, 1fr);\n",
         "      grid-template-rows: 1fr auto auto 1fr auto;\n",
         "      align-items: center; gap: 6px 7px;\n",
@@ -2636,21 +2636,21 @@ fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
     );
     // The column is not on the right any more.
     assert!(!EMBEDDED_INDEX.contains("auto minmax(0, 1fr) var(--site-rail)"));
-    // Every name in the column stands on one line (operator, 2026-11-21:
-    // "make sure it fits on one line"). The column keeps the size it took
-    // for STRAT DEBUGGER while that was the Debugger's name: 92px, 8.5px
-    // type at .02em, 86px inside it, and 7px gutters, so the column and its
-    // gutter take 99px of the band and neither width at which the lockup
-    // changes shape has moved. Measured in Chrome in the system face:
-    // AUTO-TOURNEYS, the longest name until 2026-11-24, is 80.2px and AI DEBUGGER
-    // 62.8px. Each link is one track in the column wherever it stands two
-    // by two.
+    // Every name in the column stands on one line or two (operator,
+    // 2026-11-26: "make the vertical rows of buttons (home... civ 6) a bit
+    // wider. wide enough that all button text fits on 2 lines"). At 92px,
+    // the size it took for STRAT DEBUGGER, DOCTOR STRANGE'S CIVVIS took
+    // three lines; from 94px it takes two, and the column is 100px so a
+    // slightly wider face keeps it there: 8.5px type at .02em and 7px
+    // gutters. Neither width at which the lockup changes shape has moved.
+    // Each link is one track in the column wherever it stands two by two.
     assert!(EMBEDDED_INDEX.contains(concat!(
         "    #side .brand:has(> .head-links:not([hidden])) .home-link {\n",
         "      grid-column: auto; padding: 1px 2px 2px; font-size: 8.5px; letter-spacing: .02em;\n",
         "    }\n  }\n",
     )));
     assert!(!EMBEDDED_INDEX.contains("--site-rail: 88px"));
+    assert!(!EMBEDDED_INDEX.contains("--site-rail: 92px"));
     // The links still do not hold their text to one line by rule: in a
     // typeface wider than the ones measured a name of two words takes two
     // lines, each link centring its name so the one beside it in a row
