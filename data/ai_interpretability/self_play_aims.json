@@ -1,0 +1,277 @@
+{
+ "about": "How many seats of the newest finished gene-screen batch a reader named the aim of, at every 25th turn, from seven numbers about the seat's empire. Rebuilt by `beta/ai_interpretability_page.py --self-play`; read by the AI Interpretability page.",
+ "setup": "6 players, Continents, Online speed, 250 turns, every seat a CIVVIS AI agent",
+ "taken": "2026-11-25",
+ "batch": "20261123T202653Z-b999",
+ "began": "2026-11-23",
+ "aims": [
+  "science",
+  "culture",
+  "religious",
+  "diplomatic",
+  "domination",
+  "score"
+ ],
+ "features": [
+  "cities",
+  "techs",
+  "civics",
+  "science",
+  "culture",
+  "military",
+  "wars"
+ ],
+ "commit": "6126321",
+ "games": 2010,
+ "seats": 10324,
+ "read": [
+  {
+   "turn": 25,
+   "seats": 10322,
+   "right": 2203,
+   "aims": {
+    "science": [
+     1737,
+     55
+    ],
+    "culture": [
+     1708,
+     462
+    ],
+    "religious": [
+     1690,
+     549
+    ],
+    "diplomatic": [
+     1731,
+     193
+    ],
+    "domination": [
+     1736,
+     774
+    ],
+    "score": [
+     1720,
+     170
+    ]
+   }
+  },
+  {
+   "turn": 50,
+   "seats": 10322,
+   "right": 2710,
+   "aims": {
+    "science": [
+     1737,
+     444
+    ],
+    "culture": [
+     1708,
+     621
+    ],
+    "religious": [
+     1690,
+     775
+    ],
+    "diplomatic": [
+     1731,
+     205
+    ],
+    "domination": [
+     1736,
+     504
+    ],
+    "score": [
+     1720,
+     161
+    ]
+   }
+  },
+  {
+   "turn": 75,
+   "seats": 10322,
+   "right": 3501,
+   "aims": {
+    "science": [
+     1737,
+     885
+    ],
+    "culture": [
+     1708,
+     833
+    ],
+    "religious": [
+     1690,
+     669
+    ],
+    "diplomatic": [
+     1731,
+     297
+    ],
+    "domination": [
+     1736,
+     288
+    ],
+    "score": [
+     1720,
+     529
+    ]
+   }
+  },
+  {
+   "turn": 100,
+   "seats": 10322,
+   "right": 3534,
+   "aims": {
+    "science": [
+     1737,
+     747
+    ],
+    "culture": [
+     1708,
+     944
+    ],
+    "religious": [
+     1690,
+     700
+    ],
+    "diplomatic": [
+     1731,
+     194
+    ],
+    "domination": [
+     1736,
+     271
+    ],
+    "score": [
+     1720,
+     678
+    ]
+   }
+  },
+  {
+   "turn": 125,
+   "seats": 10246,
+   "right": 4034,
+   "aims": {
+    "science": [
+     1719,
+     816
+    ],
+    "culture": [
+     1690,
+     1063
+    ],
+    "religious": [
+     1676,
+     743
+    ],
+    "diplomatic": [
+     1722,
+     251
+    ],
+    "domination": [
+     1727,
+     430
+    ],
+    "score": [
+     1712,
+     731
+    ]
+   }
+  },
+  {
+   "turn": 150,
+   "seats": 9935,
+   "right": 4358,
+   "aims": {
+    "science": [
+     1668,
+     953
+    ],
+    "culture": [
+     1609,
+     1095
+    ],
+    "religious": [
+     1634,
+     723
+    ],
+    "diplomatic": [
+     1680,
+     379
+    ],
+    "domination": [
+     1683,
+     378
+    ],
+    "score": [
+     1661,
+     830
+    ]
+   }
+  },
+  {
+   "turn": 175,
+   "seats": 8839,
+   "right": 3703,
+   "aims": {
+    "science": [
+     1489,
+     712
+    ],
+    "culture": [
+     1343,
+     904
+    ],
+    "religious": [
+     1451,
+     664
+    ],
+    "diplomatic": [
+     1522,
+     424
+    ],
+    "domination": [
+     1535,
+     297
+    ],
+    "score": [
+     1499,
+     702
+    ]
+   }
+  },
+  {
+   "turn": 200,
+   "seats": 5141,
+   "right": 2012,
+   "aims": {
+    "science": [
+     801,
+     321
+    ],
+    "culture": [
+     686,
+     391
+    ],
+    "religious": [
+     864,
+     362
+    ],
+    "diplomatic": [
+     922,
+     287
+    ],
+    "domination": [
+     934,
+     187
+    ],
+    "score": [
+     934,
+     464
+    ]
+   }
+  }
+ ]
+}
