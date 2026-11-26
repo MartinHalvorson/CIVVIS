@@ -11167,6 +11167,12 @@ pub struct AdvancedAi {
     /// Harbor claims its Market or Lighthouse. See
     /// `advanced/trade_district_follows_the_campus.rs`. Off by default.
     trade_district_before_the_library: bool,
+    /// `watched-capital-keeps-its-defender-gold`: while the capital watch
+    /// reads at an unwalled original capital short of its garrison, the
+    /// tile, Trader and Builder buys leave the missing defenders' price in
+    /// the bank. See `advanced/watched_capital_keeps_its_defender_gold.rs`.
+    /// Off by default.
+    watched_capital_keeps_its_defender_gold: bool,
     /// `tribute-buys-the-friendship-2`: version one's tribute, aimed past
     /// the line where the host must turn an Unfriendly leader Neutral and
     /// paid from the whole treasury. See
@@ -11632,6 +11638,9 @@ mod war_defense_spends_the_runway;
 mod war_plans;
 /// `war-target-prices-the-walls`: see `advanced/war_target_walls.rs`.
 mod war_target_walls;
+/// `watched-capital-keeps-its-defender-gold`: see
+/// `advanced/watched_capital_keeps_its_defender_gold.rs`.
+mod watched_capital_keeps_its_defender_gold;
 
 /// `centre-keeps-its-garrison`: see `advanced/centre_keeps_its_garrison.rs`.
 mod centre_keeps_its_garrison;
@@ -27593,6 +27602,10 @@ impl AdvancedAi {
             // `gold-buys-the-production-tile`: then a border tile of two or
             // more Production beside a city working a poorer one. See
             // `advanced/gold_buys_the_production_tile.rs`.
+            // `watched-capital-keeps-its-defender-gold`: the buys around
+            // here leave the capital's missing defenders' price. See
+            // `advanced/watched_capital_keeps_its_defender_gold.rs`.
+            self.note_watched_capital_defender_reserve(g, pid);
             self.production_tile_purchase(g, pid, &plan);
             self.idle_trader_purchase(g, pid, &plan);
             // `culture-digs-every-site`: an Archaeologist whose queue is slow.
