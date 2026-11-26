@@ -4238,7 +4238,8 @@ def check_doctor_strange_all(bar: Bar, address: str) -> None:
         assert copies == [1] * 8, copies
         bar.ev("window.strangeGaps = []; window.strangeWatch = setInterval(() => { const turns = strange.order.map(letter => debugSplit.panes[letter].turn);"
                " strangeGaps.push(Math.max(...turns) - Math.min(...turns)); }, 4); true")
-        bar.until(together(4), "time carries forward for all ten", seconds=60)
+        bar.until(together(bar.ev("Math.max(...strange.order.map(letter => debugSplit.panes[letter].turn))") + 3),
+                  "time carries forward for all ten", seconds=60)
         gaps = bar.ev("clearInterval(strangeWatch), strangeGaps")
         assert gaps and max(gaps) <= 1, gaps
         # Pressed while time runs: time stops, the best of those without a

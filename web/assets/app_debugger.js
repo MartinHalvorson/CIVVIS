@@ -5928,8 +5928,11 @@ function strangeAllWatch() {
   }
   // Time was set running by hand meanwhile, which is what was to be done.
   if (split.running > 0 || strange.run !== null) { strange.all = null; strangeDraw(); return; }
-  if (!strangeIdle()) {
-    if (late) { strange.all = null; strangeSay("Not every branch has opened yet: press Play Time once they have"); }
+  // A new world's page opens on the game's first turn and is a copy of the
+  // base once it says it stands on the base's turn: time runs from there.
+  const copied = all.letters.every(letter => !strange.order.includes(letter) || !split.panes[letter] || split.panes[letter].turn === all.turn);
+  if (!strangeIdle() || (!copied && !late)) {
+    if (late && !strangeIdle()) { strange.all = null; strangeSay("Not every branch has opened yet: press Play Time once they have"); }
     return;
   }
   strange.all = null;
