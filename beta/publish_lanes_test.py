@@ -14,7 +14,7 @@ nobody having promoted it.
 The same holds for where a page is served. Since 2026-11-23 an address
 follows the page's name in the site list (operator: "clean up the URL please.
 standardized. please remove research from the url"), so the pages of Charts/
-sit under `charts/` and Experiments at `experiments`. Each page states its
+sit under `charts/` and Tournaments at `tournaments`. Each page states its
 own address and every link in it is relative to that, so the promoted revision
 here is one from before the move, and its lane has to keep the layout its
 pages were written for while main's takes the new one.
@@ -104,7 +104,7 @@ VIEWER = textwrap.dedent(
 #: said so, and its lane keeps the addresses the script knew them by.
 ADDRESSES = {
     "landing": "home",
-    "tournaments": "experiments",
+    "tournaments": "tournaments",
     "research": "charts/win-analytics",
     "elo": "charts/elo-rankings",
     "civs": "charts/civ-analytics",
@@ -333,7 +333,7 @@ class Lanes(unittest.TestCase):
             # Interpretability, Civ Analytics, Win Analytics, ELO Rankings,
             # CIVVIS Performance; Random AI Charts last since 2026-11-26),
             # because the router opens a folder's first page in this list.
-            ["home", "experiments", "charts/ai-insights", "charts/civ-ai-interpretability", "charts/civ-analytics",
+            ["home", "tournaments", "charts/ai-insights", "charts/civ-ai-interpretability", "charts/civ-analytics",
              "charts/win-analytics", "charts/elo-rankings", "charts/civvis-performance", "charts/random-ai-charts", "download"],
         )
         # And the publish check reads each list in the order it was written.
@@ -426,7 +426,7 @@ class Lanes(unittest.TestCase):
              "charts/civ-analytics/index.html", "charts/civvis-performance/index.html",
              "charts/elo-rankings/index.html", "charts/random-ai-charts/index.html",
              "charts/win-analytics/index.html",
-             "download/index.html", "experiments/index.html", "home/index.html", "index.html"],
+             "download/index.html", "home/index.html", "index.html", "tournaments/index.html"],
         )
         self.assertEqual(
             sorted(str(found.relative_to(self.stable)) for found in self.stable.glob("**/index.html")),

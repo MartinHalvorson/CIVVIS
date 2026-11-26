@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The Experiments page: its record is counted off the ledger, and it fits its slot.
+"""The Tournaments page: its record is counted off the ledger, and it fits its slot.
 
 The last class here opens the page in a browser, filled with a record, and
 reads the row of game squares as it is drawn: the labels at its two ends and
@@ -115,9 +115,9 @@ class TournamentsPage(unittest.TestCase):
         # of it. The old runs that merely sort past it retire nothing (above).
         later = run("civvis-t7-20261121T120000Z", "unfinished", None, 0, utc="2026-11-21T12:10:00Z")
         self.assertEqual(self.record(later)["scheduled"], [])
-        # The totals count every game of every experiment begun, through
+        # The totals count every game of every tournament begun, through
         # the last of them. No definition here is the benchmark.
-        self.assertEqual(record["totals"], {"experiments": 2, "games": 5, "wins": 2, "losses": 3, "through": "2026-11-21 10:55"})
+        self.assertEqual(record["totals"], {"tournaments": 2, "games": 5, "wins": 2, "losses": 3, "through": "2026-11-21 10:55"})
         self.assertEqual(record["through"], "2026-11-21 10:55")
         self.assertIsNone(record["benchmark"])
 
@@ -240,7 +240,7 @@ class TournamentsPage(unittest.TestCase):
         # Operator 2026-11-25: "tourney 7 is benchmark. please remove from
         # experiments and make the official benchmark for now." The
         # definition marked `benchmark` is drawn on its own, with no number;
-        # the experiments are numbered without it, so one begun after it and
+        # the tournaments are numbered without it, so one begun after it and
         # one scheduled after that are 3 and 4, not 4 and 5.
         specs = [
             {"name": "First idea", "conditions": "c", "start": "civvis-20261121T100000Z",
@@ -259,14 +259,14 @@ class TournamentsPage(unittest.TestCase):
             run("civvis-t7-20261121T120000Z", "defeat", "CIVILIZATION_ROME", 0, utc="2026-11-21T12:30:00Z"),
             run("civvis-t8-20261121T130000Z", "win", "CIVILIZATION_ROME", 0, utc="2026-11-21T13:30:00Z"),
         ]
-        # The file's lines are by an experiment's number: "2" is the second
-        # experiment's, never the benchmark's, though the benchmark began
+        # The file's lines are by a tournament's number: "2" is the second
+        # tournament's, never the benchmark's, though the benchmark began
         # second.
         descriptions = {"1": "One", "2": "Two", "3": "Three"}
         listed = {"2": {"Games": "Two's"}}
         record = tournaments_page.record(rows, specs, ["Rome"], {"2": "https://youtu.be/an7y2IlGhU0"}, descriptions, listed)
-        experiments = record["finished"] + record["running"]
-        self.assertEqual(sorted((t["id"], t["name"], t["description"]) for t in experiments),
+        tournaments = record["finished"] + record["running"]
+        self.assertEqual(sorted((t["id"], t["name"], t["description"]) for t in tournaments),
                          [(1, "First idea", "One"), (2, "After the bench", "Two")])
         self.assertEqual(record["running"][0]["hyperparameters"], [["Games", "Two's"]])
         self.assertEqual(record["running"][0]["video"], "https://www.youtube.com/watch?v=an7y2IlGhU0")
@@ -276,28 +276,28 @@ class TournamentsPage(unittest.TestCase):
                          (None, "Bench", "Official Benchmark", 2, None))
         self.assertEqual((bench["hyperparameters"], bench["video"], bench["last"]), ([["Games", "Indefinite"]], "", "2026-11-21 12:30"))
         self.assertIn("benchmark", bench)   # its win rate by level
-        # The totals are the experiments' own games, through the last of
+        # The totals are the tournaments' own games, through the last of
         # them; the page's `through` is every game's.
-        self.assertEqual(record["totals"], {"experiments": 2, "games": 3, "wins": 2, "losses": 1, "through": "2026-11-21 13:30"})
+        self.assertEqual(record["totals"], {"tournaments": 2, "games": 3, "wins": 2, "losses": 1, "through": "2026-11-21 13:30"})
         # It is never scheduled, games or none.
         self.assertIsNone(tournaments_page.record([], specs[1:2], ["Rome"])["benchmark"])
         self.assertEqual(tournaments_page.record([], specs[1:2], ["Rome"])["scheduled"], [])
         # The committed definitions: one is the benchmark, with its own
         # title line and its own hyperparameters; the five before it are
-        # Experiments 1 to 6 (the fourth is Experiments 4 and 5).
+        # Tournaments 1 to 6 (the fourth is Tournaments 4 and 5).
         defined = json.loads((ROOT / "data" / "tournaments.json").read_text(encoding="utf-8"))
         marked = [spec for spec in defined["tournaments"] if spec.get("benchmark")]
         self.assertEqual([(spec["name"], spec["description"], spec["start"]) for spec in marked],
                          [("Lv 4 to Lv 8 against the Firaxis AI, 1 CIVVIS agent + 5 AI", "Official Benchmark", "civvis-t7-")])
         # Operator 2026-11-26: "please add a tournament with 100 lv 8 deity
         # games, no diplo." The definition after the benchmark's is
-        # Experiment 7: its line in `descriptions` and `hyperparameters` is
+        # Tournament 7: its line in `descriptions` and `hyperparameters` is
         # by that number, every one of the thirteen hyperparameters listed.
         self.assertEqual(defined["descriptions"]["7"], "100 Lv 8 Deity games, no Diplo allowed")
         self.assertEqual(list(defined["hyperparameters"]["7"]), list(tournaments_page.HYPERPARAMETERS))
         self.assertNotIn("8", defined["descriptions"])
-        # One game in each committed experiment's range (51 in the fourth
-        # definition's, so it is Experiments 4 and 5) and one benchmark game.
+        # One game in each committed tournament's range (51 in the fourth
+        # definition's, so it is Tournaments 4 and 5) and one benchmark game.
         def game(tag: str, **more) -> dict:
             stamp = re.search(r"(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})", tag)
             return run(tag, "rival_victory", "CIVILIZATION_ROME", 0,
@@ -317,7 +317,7 @@ class TournamentsPage(unittest.TestCase):
         self.assertEqual([name for name, _ in before["scheduled"][0]["hyperparameters"]],
                          list(tournaments_page.HYPERPARAMETERS))
         # Its first game (tagged `civvis-t8-`, the benchmark's `end`) makes
-        # it the experiment running, still number 7, and the benchmark's
+        # it the tournament running, still number 7, and the benchmark's
         # count does not take it; a game below Deity is not one of its own.
         during = listed(rows + [game("civvis-t8-20261126T070000Z"),
                                 game("civvis-t8-20261126T080000Z", difficulty="DIFFICULTY_IMMORTAL")])
@@ -334,7 +334,7 @@ class TournamentsPage(unittest.TestCase):
             "const benchmark = data.benchmark;",
             'benchBox.querySelector("[data-cards]").append(playing(benchmark));',
             'line.append(el("span", "tour-no", t.description || "Benchmark"));',
-            '"Our official benchmark against the Firaxis AI, played whenever no experiment is"',
+            '"Our official benchmark against the Firaxis AI, played whenever no tournament is"',
             '"Nothing is scheduled. Until something is, the agents play the benchmark."',
         ):
             self.assertIn(piece, PAGE)
@@ -392,10 +392,11 @@ class TournamentsPage(unittest.TestCase):
             self.assertIn(line, PUBLISH)
         # The address follows the page's name in the site list (operator
         # 2026-11-23: "clean up the URL please. standardized."), and the
-        # page is Experiments (operator 2026-11-25: "rename tournaments to
-        # experiments").
-        self.assertIn('<link rel="canonical" href="https://civvis.ai/experiments/">', PAGE)
-        self.assertNotIn("civvis.ai/tournaments/", PAGE)
+        # page is Tournaments again (operator 2026-11-26: "change
+        # experiments back to tournaments"; it was Experiments from
+        # 2026-11-25, "rename tournaments to experiments").
+        self.assertIn('<link rel="canonical" href="https://civvis.ai/tournaments/">', PAGE)
+        self.assertNotIn("civvis.ai/experiments/", PAGE)
         # The page is authored lane-relative: nothing in it links the site root.
         self.assertEqual(re.findall(r'(?:href|src)="(/[^"]*)"', PAGE), [])
 
@@ -414,7 +415,7 @@ class TournamentsPage(unittest.TestCase):
                 self.assertEqual(tournaments_page.main(["tournaments_page.py", empty, str(page)]), 0)
             self.assertEqual(page.read_text(encoding="utf-8"), "<html>no slot</html>")
         # The unfilled page shows one sentence and keeps the record hidden.
-        self.assertIn('<p class="tour-empty" id="tour-empty">This copy of the page has no record of the experiments.', PAGE)
+        self.assertIn('<p class="tour-empty" id="tour-empty">This copy of the page has no tournament record.', PAGE)
         self.assertIn('<div class="tour-record" id="tour-record" hidden>', PAGE)
         self.assertIn("if (!data) return;", PAGE)
 
@@ -445,8 +446,10 @@ class TournamentsPage(unittest.TestCase):
         # imrpvoing tourney thing"): Tournaments, at /tournaments/. On
         # 2026-11-25 it was named Experiments ("rename tournaments to
         # experiments"), in the list, on the tab and in its address,
-        # /experiments/; a series on it is still a tournament, with the title
-        # it had ("Tournament 4: 50 game series"). As on the home
+        # /experiments/, and each series on it "Experiment 4: 50 game
+        # series"; on 2026-11-26 it took its name, its address and the
+        # series' titles back ("change experiments back to tournaments"):
+        # "Tournament 4: 50 game series". As on the home
         # page, the list is a row across the top, over the title (operator
         # 2026-11-24: "try putting the vertical menu from home... civ across
         # the top instead"; from 2026-11-21 it stood to the left of the
@@ -455,7 +458,7 @@ class TournamentsPage(unittest.TestCase):
         self.assertRegex(LANDING, r'<header class=\"shell site-header\">\s*<!--[\s\S]*?-->\s*<nav class=\"site-nav\"[^>]*>[\s\S]*?</nav>\s*<script data-site-folder>[\s\S]*?</script>\s*<div class=\"site-brand\">\s*<div class=\"site-lockup\">')
         self.assertIn(
             '      </div>\n'
-            '      <a class="site-link" href="./" aria-current="page">Experiments</a>\n'
+            '      <a class="site-link" href="./" aria-current="page">Tournaments</a>\n'
             '      <a class="site-link" href="../" title="Every civilization is played by a CIVVIS AI agent.">CIVVIS</a>\n'
             '      <a class="site-link" href="../?mode=strange" '
             'title="One world, two timelines: the same game played two ways, side by side, on a timeline that branches.">Doctor Strange\'s Civ 6</a>\n'
@@ -478,8 +481,8 @@ class TournamentsPage(unittest.TestCase):
             PAGE,
         )
         self.assertIn('  .site-link[aria-current="page"],\n  .site-folder:has([aria-current="page"]) > .site-link { box-shadow: inset 0 0 0 2px #fff; }\n', PAGE)
-        self.assertIn("<title>Experiments · CIVVIS.ai</title>", PAGE)
-        self.assertIn('<meta name="description" content="CIVVIS experiments: series of verification games ', PAGE)
+        self.assertIn("<title>Tournaments · CIVVIS.ai</title>", PAGE)
+        self.assertIn('<meta name="description" content="CIVVIS tournaments: series of verification games ', PAGE)
         # The Debugger is AI Debugger in this list again (operator
         # 2026-11-21: "AI Debugger (rename plz)", after a day as Strategy
         # Debugger and Strat Debugger), and every name stands on one line
@@ -496,25 +499,25 @@ class TournamentsPage(unittest.TestCase):
         # own test is `research_page_test.py`), each in its own markup.
         for page, pattern in (
             (LANDING, r'aria-current="page">Home</a>\s*<div class="site-folder">\s*<a class="site-link" href="\.\./charts/ai-insights/"[^>]*>Charts/</a>'
-                      r'[\s\S]*?</div>\s*</div>\s*<a class="site-link" href="\.\./experiments/"[^>]*>Experiments</a>'
+                      r'[\s\S]*?</div>\s*</div>\s*<a class="site-link" href="\.\./tournaments/"[^>]*>Tournaments</a>'
                       r'\s*<a class="site-link" href="\.\./"[^>]*>CIVVIS</a>'),
             (VIEWER, r'id="homelink" href="/home" target="_top">Home</a>\s*'
                      r'<a class="home-link" id="chartslink" href="/charts/ai-insights" target="_top">Charts/</a>\s*'
-                     r'<a class="home-link" id="tourlink" href="/experiments" target="_top">Experiments</a>\s*'
+                     r'<a class="home-link" id="tourlink" href="/tournaments" target="_top">Tournaments</a>\s*'
                      r'<a class="home-link" id="watchlink" href="\./" target="_top">CIVVIS</a>'),
         ):
             self.assertRegex(page, pattern)
         for page in (PAGE, LANDING, VIEWER):
             self.assertNotIn(">Auto-Tourneys</a>", page)
             self.assertNotIn("auto-tourneys/", page)
-            # Nor is it listed by the name it had until 2026-11-25, or linked
-            # at the address it had.
-            self.assertNotIn(">Tournaments</a>", page)
-            self.assertEqual(re.findall(r'href="[./]*/?tournaments/?"', page), [])
+            # Nor is it listed by the name it had from 2026-11-25 to
+            # 2026-11-26, or linked at the address it had.
+            self.assertNotIn(">Experiments</a>", page)
+            self.assertEqual(re.findall(r'href="[./]*/?experiments/?"', page), [])
         # The viewer's link is root-absolute as written and lane-relative as
         # published: `publish.sh` turns a root link to any page the lane
         # carries into the lane's own.
-        self.assertIn('href="/experiments"', VIEWER)
+        self.assertIn('href="/tournaments"', VIEWER)
         self.assertIn("""needle, replacement = f'href="/{address}"', f'href="{address}/"'""", PUBLISH)
 
     def test_a_tournament_links_its_result_video_on_youtube(self):
@@ -535,7 +538,7 @@ class TournamentsPage(unittest.TestCase):
             said = io.StringIO()
             with contextlib.redirect_stderr(said):
                 self.assertEqual(self.record()["finished"][0]["video"], "")
-            self.assertIn("Experiment 1's video is not a YouTube link", said.getvalue())
+            self.assertIn("Tournament 1's video is not a YouTube link", said.getvalue())
         self.videos = ["not", "a", "map"]
         self.assertEqual(self.record()["finished"][0]["video"], "")
         # The page links it with the tournament's games, in a tab of its
@@ -587,7 +590,7 @@ class TournamentsPage(unittest.TestCase):
         # The page writes it on the title line after the number, the same
         # line in all three lists, with the definition's name under it.
         for piece in (
-            'line.append(el("span", "tour-no", "Experiment " + t.id + (t.description ? ":" : "")));',
+            'line.append(el("span", "tour-no", "Tournament " + t.id + (t.description ? ":" : "")));',
             'if (t.description) line.append(" " + t.description);',
             'ident.append(titled(t, "h3"), el("p", "tour-name", t.name));',
             # The largest line a tournament has, the number in gold.
@@ -610,10 +613,10 @@ class TournamentsPage(unittest.TestCase):
         for gone in ("tour-number", 'el("b", "", "Tournament " + t.id)', "td.is-name b"):
             self.assertNotIn(gone, PAGE)
         # The definitions carry the operator's descriptions, word for word,
-        # and no experiment from the first to the last described is left
+        # and no tournament from the first to the last described is left
         # out. The benchmark, which was the seventh ("Indefinite
-        # Benchmarking Tourney", 2026-11-23), is not an experiment since
-        # 2026-11-25 and carries its own on its definition. Experiment 7 is
+        # Benchmarking Tourney", 2026-11-23), is not a tournament since
+        # 2026-11-25 and carries its own on its definition. Tournament 7 is
         # the one the operator scheduled on 2026-11-26.
         defined = json.loads((ROOT / "data" / "tournaments.json").read_text(encoding="utf-8"))
         self.assertEqual(defined["descriptions"], {
@@ -626,8 +629,8 @@ class TournamentsPage(unittest.TestCase):
             "7": "100 Lv 8 Deity games, no Diplo allowed",
         })
         self.assertEqual(list(defined["descriptions"]), [str(n) for n in range(1, len(defined["descriptions"]) + 1)])
-        experiments = [spec for spec in defined["tournaments"] if not spec.get("benchmark")]
-        self.assertGreaterEqual(len(defined["descriptions"]), len(experiments))
+        tournaments = [spec for spec in defined["tournaments"] if not spec.get("benchmark")]
+        self.assertGreaterEqual(len(defined["descriptions"]), len(tournaments))
 
     def test_every_tournament_spells_out_its_hyperparameters(self):
         # Operator 2026-11-23: "please spell out the tourney hyperparameters
@@ -664,8 +667,8 @@ class TournamentsPage(unittest.TestCase):
             "Turn limit", "Ruleset", "Played in", "Game end", "CIVVIS agent",
         ))
         self.assertEqual(list(defined["hyperparameters"]), [str(n) for n in range(1, len(defined["hyperparameters"]) + 1)])
-        experiments = [spec for spec in defined["tournaments"] if not spec.get("benchmark")]
-        self.assertGreaterEqual(len(defined["hyperparameters"]), len(experiments) + 1)   # 4 and 5 share one
+        tournaments = [spec for spec in defined["tournaments"] if not spec.get("benchmark")]
+        self.assertGreaterEqual(len(defined["hyperparameters"]), len(tournaments) + 1)   # 4 and 5 share one
         for number, given in defined["hyperparameters"].items():
             self.assertEqual(tuple(given), tournaments_page.HYPERPARAMETERS, number)
             self.assertEqual(tournaments_page.hyperparameters(defined["hyperparameters"], int(number), {}),
@@ -689,7 +692,7 @@ class TournamentsPage(unittest.TestCase):
             'box.append(el("p", "tour-latest-title", "Hyperparameters"), dl);',
             "  .tour-hyper { display: grid; grid-template-columns: max-content minmax(0, 1fr);",
             "  .tour-hyper > div { display: contents; }",
-            "Hyperparameters are the settings every game of an experiment was played under.",
+            "Hyperparameters are the settings every game of a tournament was played under.",
         ):
             self.assertIn(piece, PAGE)
         self.assertEqual(PAGE.count("const settings = hyper(t);"), 3)   # a series being played, scheduled and finished
@@ -723,7 +726,7 @@ class TournamentsPage(unittest.TestCase):
             # Finished: the left third is the cell that runs down beside a
             # tournament's figures and its games, and everything else, the
             # notes too, is to its right.
-            '<th scope="col" class="is-ident">Experiment</th>',
+            '<th scope="col" class="is-ident">Tournament</th>',
             "  .rank-table .is-ident { width: 33.333%; padding-right: 24px; white-space: normal; }",
             "const ident = identity(t, \"td\");",
             "ident.rowSpan = 2;",
@@ -773,7 +776,7 @@ class TournamentsPage(unittest.TestCase):
             '<section class="tour-section" id="tour-finished" hidden aria-labelledby="tour-finished-title">',
             # The table that stood on the home page, with the win rate added
             # and, after the two dates, the two durations.
-            '<th scope="col" class="is-ident">Experiment</th><th scope="col">Start</th><th scope="col">End</th>'
+            '<th scope="col" class="is-ident">Tournament</th><th scope="col">Start</th><th scope="col">End</th>'
             '<th scope="col" title="From the first game starting to the last game ending">Wall time</th>'
             '<th scope="col" title="The time the games were in play, added up">Run time</th>'
             '<th scope="col">Games</th>'
@@ -782,9 +785,9 @@ class TournamentsPage(unittest.TestCase):
             't.wall ? "wall time " + t.wall : "", t.run ? "run time " + t.run : ""',
             # What the bare dates and the two durations mean, said once.
             "Dates are UTC, on the 24-hour clock.",
-            "Wall time is from an experiment&#8217;s first game starting to its last game ending.",
+            "Wall time is from a tournament&#8217;s first game starting to its last game ending.",
             "Run time is the time its games were in play, added up, without the time between them.",
-            # The experiments are the left 60%, and what is scheduled and
+            # The tournaments are the left 60%, and what is scheduled and
             # the benchmark the right 40% (operator 2026-11-25: "put the
             # experiments list on the left 60%. the scheduled games &
             # benchmark can be on the right"); narrower, one column.
@@ -805,9 +808,9 @@ class TournamentsPage(unittest.TestCase):
         for unsafe in ("innerHTML", "insertAdjacentHTML", "document.write"):
             self.assertNotIn(unsafe, PAGE)
         verify = (BETA / "verify.py").read_text(encoding="utf-8")
-        self.assertIn("""    "experiments": b'id="tournaments-data"',\n""", verify)
+        self.assertIn("""    "tournaments": b'id="tournaments-data"',\n""", verify)
         self.assertIn("""    "auto-tourneys": "tournaments",\n""", verify)
-        self.assertIn("""    "tournaments": "experiments",\n""", verify)
+        self.assertIn("""    "experiments": "tournaments",\n""", verify)
 
 
 #: Read off the page as it is drawn: every row of game squares, with where
@@ -844,7 +847,7 @@ class Drawn(unittest.TestCase):
         cls.chrome = None
         # A series of each kind the page draws a row for. The benchmark, in
         # the right-hand column: indefinite, with more games than its row
-        # draws. Running: an experiment of a fixed size with games still to
+        # draws. Running: a tournament of a fixed size with games still to
         # play. Finished: one played out, and one that ended after a single
         # game.
         rows = [run(f"civvis-t7-2026112{1 + i // 100}T{i % 100 // 4:02d}{i % 4 * 15:02d}00Z",

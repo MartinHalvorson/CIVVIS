@@ -13,7 +13,9 @@ forwards there. The same day AI Interpretability was named Civ AI
 Interpretability (operator: "please change AI interpretability to "Civ AI
 Interpretability""), and `/charts/ai-interpretability` forwards to where it
 is now. On 2026-11-25 Tournaments was named Experiments (operator: "rename
-tournaments to experiments"), and `/tournaments` forwards to `/experiments`.
+tournaments to experiments"), at `/experiments`, and on 2026-11-26 it took
+its name and `/tournaments` back (operator: "change experiments back to
+tournaments"); `/experiments` forwards there.
 
 The rule, for every page the site list names: the address is the name as the
 list shows it, in lower case with a hyphen for anything that is not a letter
@@ -27,7 +29,7 @@ or a digit, and a page listed under a folder (Charts/) sits in that folder.
       Win Analytics            /charts/win-analytics/
       ELO Rankings             /charts/elo-rankings/
       CIVVIS Performance       /charts/civvis-performance/
-    Experiments                /experiments/
+    Tournaments                /tournaments/
 
 A page states its own address (its `<link rel="canonical">`), `publish.sh`
 puts it there, and every link in it is relative to it. So this reads the
@@ -288,50 +290,59 @@ class Moved(unittest.TestCase):
         # And one table of the pages back at an address they once left.
         block = WORKER[WORKER.index("const BETWEEN = {"):]
         block = block[:block.index("};")]
-        between = dict(re.findall(r'^\s*"?([a-z][a-z0-9/-]*)"?: "([^"]+)",$', block, re.M))
+        between = {back: re.findall(r'"([^"]+)"', away)
+                   for back, away in re.findall(r'^\s*"?([a-z][a-z0-9/-]*)"?: \[([^\]]*)\],$', block, re.M)}
         self.assertEqual(between, verify.BETWEEN)
-        self.assertEqual(between, {"tournaments": "auto-tourneys"})
+        self.assertEqual(between, {"tournaments": ["auto-tourneys", "experiments"]})
 
     def test_a_page_back_at_an_address_it_left_forwards_from_the_one_in_between(self):
-        # Tournaments was at /auto-tourneys/ from 2026-11-23 to 2026-11-24.
-        # A lane pinned to a revision of those days still has it there, and
-        # /tournaments/ forwards to it, as it did then; in a lane from after
-        # them /auto-tourneys/ forwards to /tournaments/.
+        # Tournaments was at /auto-tourneys/ from 2026-11-23 to 2026-11-24,
+        # and at /experiments/ from 2026-11-25 to 2026-11-26. A lane pinned
+        # to a revision of those days still has it there, and /tournaments/
+        # forwards to it, as it did then; in a lane from after them both
+        # forward to /tournaments/.
         for back, between in verify.BETWEEN.items():
             self.assertIn(back, verify.ADDRESSES)
-            self.assertEqual(verify.FORMER[between], back)
-        self.assertIn("Object.hasOwn(BETWEEN, name)", WORKER)
+            for away in between:
+                self.assertEqual(verify.FORMER[away], back)
+        self.assertIn("Object.hasOwn(BETWEEN, now)", WORKER)
 
     def test_a_page_renamed_again_is_found_from_every_address_it_had(self):
-        # Operator, 2026-11-25: "rename tournaments to experiments". The page
-        # has been at /tournaments/, /auto-tourneys/, /tournaments/ again and
-        # now /experiments/, and a lane has it wherever its revision did.
-        self.assertEqual(ADDRESS["tournaments.html"], "experiments")
-        self.assertEqual(verify.FORMER["tournaments"], "experiments")
-        self.assertEqual(verify.left_by("experiments"), ["tournaments", "auto-tourneys"])
-        named = ["home", "experiments"]          # a lane with the new name
-        before = ["home", "tournaments"]         # one pinned before it: the front page, until a promotion
+        # Operator, 2026-11-25: "rename tournaments to experiments", and
+        # 2026-11-26: "change experiments back to tournaments". The page has
+        # been at /tournaments/, /auto-tourneys/, /tournaments/ again,
+        # /experiments/ and /tournaments/ once more, and a lane has it
+        # wherever its revision did.
+        self.assertEqual(ADDRESS["tournaments.html"], "tournaments")
+        self.assertEqual(verify.FORMER["experiments"], "tournaments")
+        self.assertEqual(verify.FORMER["auto-tourneys"], "tournaments")
+        self.assertNotIn("tournaments", verify.FORMER)
+        self.assertEqual(verify.left_by("tournaments"), ["experiments", "auto-tourneys"])
+        back = ["home", "tournaments"]           # a lane with the name back, or one from before either
+        named = ["home", "experiments"]          # one pinned while it was Experiments: the front page, until a promotion
         between = ["home", "auto-tourneys"]      # one pinned to the days it was Auto-Tourneys
         asked = {address: [verify.forwards_to(address, lane) if address not in lane else address
-                           for lane in (named, before, between)]
-                 for address in ("experiments", "tournaments", "auto-tourneys")}
+                           for lane in (back, named, between)]
+                 for address in ("tournaments", "experiments", "auto-tourneys")}
         self.assertEqual(asked, {
-            "experiments": ["experiments", None, None],
-            "tournaments": ["experiments", "tournaments", "auto-tourneys"],
-            "auto-tourneys": ["experiments", "tournaments", "auto-tourneys"],
+            "tournaments": ["tournaments", "experiments", "auto-tourneys"],
+            "experiments": ["tournaments", "experiments", "auto-tourneys"],
+            "auto-tourneys": ["tournaments", "experiments", "auto-tourneys"],
         })
         # The router asks the same way: an address that has moved on is
         # followed first, and where the lane has the page at none of those,
-        # the address it had in between is.
+        # an address the page had in between two stays where they end is.
         walk = WORKER[WORKER.index("  if (Object.hasOwn(MOVED, name)) {"):]
-        walk = walk[:walk.index("  if (now && pages.includes(now))")]
-        self.assertIn("    if (!Object.hasOwn(BETWEEN, name)) return { absent: true };\n  }\n", walk)
-        self.assertLess(walk.index("now = MOVED[now];"), walk.index("Object.hasOwn(BETWEEN, name)) return"))
+        walk = walk[:walk.index("  if (now !== name) return { absent: true };")]
+        self.assertIn("  if (Object.hasOwn(BETWEEN, now)) {\n"
+                      "    const away = BETWEEN[now].find((page) => pages.includes(page));\n", walk)
+        self.assertLess(walk.index("now = MOVED[now];"), walk.index("Object.hasOwn(BETWEEN, now)"))
         # A bundle from before lanes listed their pages had it at its first
-        # address, which is not the one at the far end of its moves.
-        self.assertEqual(verify.first_address("experiments"), "tournaments")
+        # address, which is where it is again.
+        self.assertEqual(verify.first_address("tournaments"), "tournaments")
         self.assertIn("tournaments", verify.lane_pages({}))
         self.assertNotIn("auto-tourneys", verify.lane_pages({}))
+        self.assertNotIn("experiments", verify.lane_pages({}))
 
     def test_a_page_that_moved_twice_is_followed_move_by_move(self):
         # Each line of the table is one move, and a page can have made more

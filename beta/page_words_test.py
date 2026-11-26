@@ -52,7 +52,7 @@ def paragraphs(markup: str) -> list[tuple[str, str]]:
 
 class PageWords(unittest.TestCase):
     def test_the_pages_are_found(self):
-        # Home, Experiments (Tournaments then) and the five pages of Charts/ on the day this was
+        # Home, Tournaments and the five pages of Charts/ on the day this was
         # written; fewer means the glob or the intro's markup moved.
         self.assertGreaterEqual(len(PAGES), 7, sorted(PAGES))
         for name in ("landing.html", "research.html", "civs.html", "elo.html", "performance.html", "interpretability.html", "tournaments.html"):
