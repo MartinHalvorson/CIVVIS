@@ -3549,28 +3549,33 @@ def check_doctor_strange(bar: Bar, address: str) -> None:
     assert geometry == [True, True, True, 37, 3, True], geometry
     words = "[...document.querySelectorAll('#strange-hud [data-strange]')].map(held => [held.dataset.strange, held.textContent.trim(), !!held.disabled])"
     said = {name: [text, off] for name, text, off in bar.ev(words) if name != "numbers"}
-    # Branch is a picker: the open turn and each player strategy the followed
-    # world does not seat. Before it, the base timeline: every open world, by
-    # its letter and its name. Each box has its exit.
-    assert said == {"play": ["▶ Play Time", False], "back10": ["−10", True], "back1": ["−1", True], "on1": ["+1", False],
+    # Create Branch is a picker: the open turn and each player strategy the
+    # followed world does not seat. Before it, Following: every open world,
+    # by its letter and its name. Each box has its exit. Over the title,
+    # Home, CIVVIS and New game.
+    assert said == {"new": ["New game", False], "play": ["▶ Play Time", False], "back10": ["−10", True], "back1": ["−1", True], "on1": ["+1", False],
                     "on10": ["+10", False], "base": ["A · StockB · Jack", False],
-                    "branch": ["⑂ Branch: 1-(player strategy)1-Jack", False], "search": ["Autosearch", False],
-                    "fork": ["⏮ To the fork", True], "lock": ["🔒 Locked", False], "futures": ["🔮 Futures: off", False],
+                    "branch": ["⑂ 1-(player strategy)1-Jack", False], "search": ["Autosearch", False],
+                    "fork": ["⏮ To the fork", True], "futures": ["🔮 Futures: off", False],
                     "swan": ["🦢 Generate Black Swan", False], "swan-kind": ["AnyPandemicInstant nuclear war", False],
                     "omen": ["", False], "all": ["All 14,000,605", True],
                     "say": ["One world so far. Play, and each player strategy takes it its own way", False],
                     "follow-a": ["Following", True], "follow-b": ["Follow", False],
                     "close-a": ["✕", False], "close-b": ["✕", False],
                     "turn": ["1", False], "limit": ["", False], "era": ["Ancient era", False]}, said
-    # The base timeline is picked before Branch (operator 2026-11-25: "the
-    # option to branch in the simulator should be preceded by a selection of
-    # the base timeline"): its picker stands right over Branch's, on the
-    # followed world, in that world's colour, and says what it is.
+    # The timeline followed is picked before Create Branch (operator
+    # 2026-11-25: "the option to branch in the simulator should be preceded
+    # by a selection of the base timeline"; 2026-11-26: "change base timeline
+    # to "following:"" and "change "branch: ..." to "Create Branch: then the
+    # button. don't need "branch" on the button""): its picker stands right
+    # over Create Branch's, on the followed world, in that world's colour,
+    # and each says what it is on its left.
     base = ("(() => { const base = document.querySelector('#strange-hud [data-strange=\"base\"]'),"
             " branch = document.querySelector('#strange-hud [data-strange=\"branch\"]');"
             " const [over, under] = [base.getBoundingClientRect(), branch.getBoundingClientRect()];"
             " return [base.value, [...base.options].map(option => option.textContent), base.style.getPropertyValue('--strange-base'),"
-            " getComputedStyle(base).borderLeftColor, base.closest('label').textContent.startsWith('Base timeline'),"
+            " getComputedStyle(base).borderLeftColor, base.closest('label').textContent.startsWith('Following:')"
+            "  && branch.closest('label').textContent.startsWith('Create Branch:'),"
             " !!(base.compareDocumentPosition(branch) & Node.DOCUMENT_POSITION_FOLLOWING), over.bottom <= under.top, under.top - over.bottom < 12,"
             " Math.round(over.left) >= Math.round(under.left), Math.round(over.right) === Math.round(under.right)]; })()")
     assert bar.ev(base) == ["a", ["A · Stock", "B · Jack"], "#ff8f6b", "rgb(255, 143, 107)", True, True, True, True, True, True], bar.ev(base)
@@ -3578,6 +3583,15 @@ def check_doctor_strange(bar: Bar, address: str) -> None:
     # turn is written on the line of the open turn, not at the foot of the window.
     names = "strange.order.map(letter => document.querySelector(`#strange-hud [data-strange-name=\"${letter}\"]`).textContent)"
     assert bar.ev(names) == ["Stock", "Jack"]
+    # Home, CIVVIS and New game stand over the title (operator 2026-11-26:
+    # "to the top of dr strange game, above the title, lets add home, civvis,
+    # new game buttons. new game can be gold"), New game in the gold of Play.
+    top = bar.ev("(() => { const card = document.querySelector('#strange-hud .strange-title'), row = card.querySelector('.strange-top'),"
+                 " title = card.querySelector(':scope > b'), play = card.querySelector('[data-strange=\"play\"]');"
+                 " return [[...row.children].map(held => [held.tagName, held.textContent, held.getAttribute('href'), held.target || null]),"
+                 " row.getBoundingClientRect().bottom <= title.getBoundingClientRect().top,"
+                 " getComputedStyle(row.querySelector('.strange-new')).backgroundColor === getComputedStyle(play).backgroundColor]; })()")
+    assert top == [[["A", "Home", "home", "_top"], ["A", "CIVVIS", "./", "_top"], ["BUTTON", "New game", None, None]], True, True], top
     inks = ("strange.order.map(letter => [strange.tint[letter], getComputedStyle(debugSplit.panes[letter].frame).borderLeftColor,"
             " getComputedStyle(document.querySelector(`#strange-hud [data-strange-world=\"${letter}\"]`)).borderTopColor])")
     assert bar.ev(inks) == [["#ff8f6b", "rgb(255, 143, 107)", "rgb(255, 143, 107)"], ["#6fd3e0", "rgb(111, 211, 224)", "rgb(111, 211, 224)"]]
@@ -3593,25 +3607,27 @@ def check_doctor_strange(bar: Bar, address: str) -> None:
         ["A and B parted on turn 1", "⏮ To the fork · 1", "a"]
     # The band sets each yield a turn over what the world has made so far
     # (operator 2026-11-23: "lets track cumulative prod, science, culture,
-    # gold, faith next to the current turn yields"), a row a world across the
-    # top (2026-11-26), the totals in whole numbers, the greater of each in gold.
+    # gold, faith next to the current turn yields"), a column a world and a
+    # row a number (2026-11-26: "swap the x and y for the top table"), the
+    # totals in whole numbers, the greater of each in gold.
     bar.until("debugSplit.panes.a.numbers.production_total !== debugSplit.panes.b.numbers.production_total",
               "the two worlds' totals part with them")
     scores = bar.ev("[debugSplit.panes.a.numbers.score, debugSplit.panes.b.numbers.score]")
     band = bar.ev("""(() => { const card = document.querySelector('#strange-hud [data-strange="numbers"]');
       const heads = [...card.querySelectorAll('em .strange-long')].map(held => held.textContent);
-      const rows = {}; let world = null;
-      for (const held of card.children) {
-        if (held.classList.contains('strange-letter')) { world = held.textContent; rows[world] = []; continue; }
-        if (held.tagName !== 'B' || !world) continue;
+      const letters = [...card.querySelectorAll('.strange-letter')].map(held => held.textContent);
+      const cells = [...card.children].filter(held => held.tagName === 'B').map(held => {
         const small = held.querySelector('small');
-        rows[world].push([held.firstChild ? held.firstChild.textContent : '', small ? small.textContent : null,
-          held.className, small ? small.className : null]);
-      }
-      return {heads, rows}; })()""")
+        return [held.firstChild ? held.firstChild.textContent : '', small ? small.textContent : null,
+          held.className, small ? small.className : null]; });
+      // A world's figures are its column: the cell under its letters in each row.
+      const rows = Object.fromEntries(letters.map((world, at) => [world, heads.map((_, row) => cells[row * letters.length + at])]));
+      return {heads, rows, shape: [...card.children].map(held => held.tagName).join(' ')}; })()""")
     assert band["heads"] == ["Score", "Cities", "Population", "Production", "Science", "Culture", "Gold", "Faith",
                              "Military"], band
     assert list(band["rows"]) == ["A", "B"], band
+    # The letters across the top, then a row a number: its name, a cell a world.
+    assert band["shape"] == " ".join(["I", "SPAN", "SPAN"] + ["EM", "B", "B"] * len(band["heads"])), band
     col = band["heads"].index
     row_a, row_b = band["rows"]["A"], band["rows"]["B"]
     low, high = sorted(scores)
@@ -3659,7 +3675,14 @@ def check_doctor_strange(bar: Bar, address: str) -> None:
     three = bar.ev(boxes)
     assert [box[2:] for box in three] == [[30 + 34, True]] * 3, three
     assert all(abs(box[1] - wide / 3) <= 1 and abs(box[0] - at * wide / 3) <= 1 for at, box in enumerate(three)), three
-    assert bar.ev("[...document.querySelectorAll('#strange-hud [data-strange=\"numbers\"] .strange-letter')].map(cell => cell.textContent)") == ["A", "C", "B"]
+    # The band's columns stand in the order the worlds' lines do, and worlds
+    # that are the same world on the same turn share one, headed "A,C"
+    # (operator 2026-11-26: "cols should roughly align in order with the
+    # below lines. can merge equivalent states. mabye notation A,B"): C is A
+    # so far, and B is a world of its own.
+    letters = "[...document.querySelectorAll('#strange-hud [data-strange=\"numbers\"] .strange-letter')].map(cell => cell.textContent).join(' ')"
+    bar.until(f"{letters} === 'A,C B'", "C, the same world as A, shares A's column")
+    assert bar.ev("document.querySelector('#strange-hud [data-strange=\"numbers\"] .strange-letter').title") == "A and C are the same world on turn 2"
     # A turn back is every world, as they stood.
     bar.click('#strange-hud [data-strange="back1"]')
     bar.until(f"{turns('abc', 1)} && strangeIdle()", "the worlds go back a turn")
@@ -3667,7 +3690,7 @@ def check_doctor_strange(bar: Bar, address: str) -> None:
     # C, which the base timeline's picker says, in C's colour.
     bar.click('#strange-hud [data-strange="follow-c"]')
     assert bar.ev("[strange.follow, document.querySelector('#strange-hud [data-strange=\"branch\"]').textContent]") == \
-        ["c", "⑂ Branch: 1-(player strategy)1-Stock"]
+        ["c", "⑂ 1-(player strategy)1-Stock"]
     held = bar.ev(base)
     assert held[0] == "c" and held[1] == [f"{letter} · {name}" for letter, name in zip("ACB", bar.ev(names))] and held[2] == "#b79cff", held
     # Picking the base timeline there is the same: B is followed, and Branch
@@ -3676,9 +3699,9 @@ def check_doctor_strange(bar: Bar, address: str) -> None:
               " base.dispatchEvent(new Event('change', {bubbles: true})); return [strange.follow, base.value,"
               " document.querySelector(`#strange-hud [data-strange=\"follow-${letter}\"]`).textContent,"
               " document.querySelector('#strange-hud [data-strange=\"branch\"]').textContent]; })('%s')")
-    assert bar.ev(rebase % "b") == ["b", "b", "Following", "⑂ Branch: 1-(player strategy)1-Stock"], bar.ev(rebase % "b")
+    assert bar.ev(rebase % "b") == ["b", "b", "Following", "⑂ 1-(player strategy)1-Stock"], bar.ev(rebase % "b")
     assert bar.ev("debugSplit.panes.b.strategy") == "jack"
-    assert bar.ev(rebase % "c") == ["c", "c", "Following", "⑂ Branch: 1-(player strategy)1-Stock"]
+    assert bar.ev(rebase % "c") == ["c", "c", "Following", "⑂ 1-(player strategy)1-Stock"]
     # A press on the highway goes to the turn that height stands for: one
     # ahead of the last played is played to.
     bar.ev("(() => { const g = strangeGeometry(); strange.canvas.dispatchEvent(new MouseEvent('click',"
@@ -3707,17 +3730,14 @@ def check_doctor_strange(bar: Bar, address: str) -> None:
     bar.until("strange.run === null && strangeIdle()", "Pause stops the worlds")
     paused = bar.ev("[debugSplit.panes.a.turn, debugSplit.panes.b.turn, debugSplit.panes.c.turn, document.querySelector('#strange-hud [data-strange=\"say\"]').textContent]")
     assert paused[0] == paused[1] == paused[2] and paused[3] == f"Paused on turn {paused[0]}", paused
-    # Unlocked, each world goes by itself: a turn back is the followed one's
-    # (C's, here) alone, and each says its own turn.
-    bar.click('#strange-hud [data-strange="lock"]')
-    assert bar.ev("[strange.locked, document.querySelector('#strange-hud [data-strange=\"lock\"]').textContent]") == [False, "🔓 Unlocked"]
+    # The worlds are always locked (operator 2026-11-26: "drop locked. should
+    # always be locked."): there is no lock to press, and a turn back is every
+    # world's.
+    assert bar.ev("[strange.locked, document.querySelector('#strange-hud [data-strange=\"lock\"]'), typeof strangeLock]") == \
+        [True, None, "undefined"]
     turn = paused[0]
     bar.click('#strange-hud [data-strange="back1"]')
-    bar.until(f"debugSplit.panes.c.turn === {turn - 1} && {both(turn)} && strangeIdle()", "C alone goes back a turn")
-    assert bar.ev("document.querySelector('#strange-hud [data-strange-line=\"a\"]').textContent").startswith(f"Turn {turn}")
-    # Locking again brings the other worlds to the followed one's turn first.
-    bar.click('#strange-hud [data-strange="lock"]')
-    bar.until(f"strange.locked && {turns('abc', turn - 1)} && strangeIdle()", "locked again, on C's turn")
+    bar.until(f"{turns('abc', turn - 1)} && strangeIdle()", "every world goes back a turn")
     assert bar.ev("document.querySelector('#strange-hud [data-strange=\"play\"]').textContent") == "▶ Play Time"
     # Only what was played is a line: nothing on the tree is made up. (The
     # fan of ways a game might go was drawn from a dice the page no longer has.)
@@ -3758,11 +3778,10 @@ def check_doctor_strange(bar: Bar, address: str) -> None:
         hangs: Math.round(box.top) === strangeGeometry().cy + 34, notch: plate.classList.contains("strange-notch"), line: strangeGeometry().cy,
         gone: [document.querySelector('#strange-hud [data-strange-world="a"]'), getComputedStyle(debugSplit.panes.a.frame).visibility],
         exit: document.querySelector('#strange-hud [data-strange="close-b"]').disabled,
-        lock: document.querySelector('#strange-hud [data-strange="lock"]').disabled,
         say: document.querySelector('#strange-hud [data-strange="say"]').textContent};
     })()""")
     assert shut == {"follow": "b", "wide": [0, True, True], "hangs": True, "notch": True, "line": shut["line"],
-                    "gone": [None, "hidden"], "exit": True, "lock": True, "say": "Stock deleted"}, shut
+                    "gone": [None, "hidden"], "exit": True, "say": "Stock deleted"}, shut
     # One box takes the line up, as far as the cards at the top let it. In
     # this window (757 high) the floor under the title card holds two boxes'
     # line as well, since the base timeline's picker made the card a row
@@ -4036,23 +4055,6 @@ def check_doctor_strange(bar: Bar, address: str) -> None:
     bar.click('#strange-hud [data-strange="on1"]')
     bar.until(f"{both(now)} && strangeIdle() && {quiet} && {held}", "and forward onto its turn again")
     assert bar.ev(f"[{scores}, {steps('a')}, {steps('b')}]") == [after[1], stepped[0], stepped[1]]
-    # Unlocked, the one picked strikes the followed world alone, which parts
-    # from the other there.
-    bar.click('#strange-hud [data-strange="lock"]')
-    assert bar.ev("strange.locked") is False
-    bar.ev("(() => { const kinds = document.querySelector('#strange-hud [data-strange=\"swan-kind\"]'); kinds.value = 'nuclear_war'; return kinds.value; })()")
-    assert f"world {lead.upper()}" in bar.ev("document.querySelector('#strange-hud [data-strange=\"swan\"]').title")
-    bar.click('#strange-hud [data-strange="swan"]')
-    bar.until(f"strange.swan === null && strange.omen !== null && strangeSwans('{lead}').length === 2", "the picked swan strikes the followed world")
-    asked = bar.ev(f"[{struck(lead)}, {struck(rest)}]")
-    assert [len(asked[0]), len(asked[1]), asked[0][1].get("kind")] == [2, 1, "nuclear_war"], asked
-    alone = bar.ev(f"[{names}, strangeSwans('{rest}').length, [...document.querySelector('#strange-hud [data-strange=\"omen\"]').children].map(part => part.textContent).slice(1),"
-                   f" strangeTree().worlds.{rest}.parent || strangeTree().worlds.{lead}.parent, Math.max(strangeTree().worlds.a.fork, strangeTree().worlds.b.fork)]")
-    assert alone[:3] == [[f"{name}-🦢{now}" + (f"-🦢{now}" if letter == lead else "") for letter, name in zip(order, before[0])], 1,
-                         ["Instant nuclear war", f"The score is {score[lead] // 4} now", f"World {lead.upper()}"]], alone
-    bar.until(f"strangeIdle() && {quiet} && {held}", "its future is played again")
-    bar.click('#strange-hud [data-strange="lock"]')
-    bar.until("strange.locked && strangeIdle()", "the worlds are locked again")
     assert not bar.dev.console, f"the page complained: {bar.dev.console}"
 
     # With no room for two worlds the game is on its one timeline, which is
@@ -4104,14 +4106,14 @@ def check_doctor_strange_autosearch(bar: Bar, address: str) -> None:
     assert bar.ev("[strange.follow, debugSplit.panes.b.strategy]") == ["b", "jack"]
     start, base, other, b = 3, score("b"), score("a"), bar.ev("debugSplit.panes.b.id")
 
-    # The button is on the deck, under Branch, a size larger than the deck's
-    # other buttons but Play Time, and opens the AI Debugger's own panel,
-    # shown over the tree beside the card though the bar is unseen.
+    # The button is on the deck, under Create Branch, a size larger than the
+    # deck's other buttons but Play Time, and opens the AI Debugger's own
+    # panel, shown over the tree beside the card though the bar is unseen.
     button = '#strange-hud [data-strange="search"]'
     sizes = bar.ev(f"(() => {{ const mine = document.querySelector('{button}'), branch = document.querySelector('#strange-hud [data-strange=\"branch\"]');"
                    " const tall = held => held.getBoundingClientRect().height, type = held => parseFloat(getComputedStyle(held).fontSize);"
                    " const others = [...document.querySelectorAll('#strange-hud .strange-deck button')].filter(held => held !== mine && !held.classList.contains('strange-play'));"
-                   " return [tall(mine) > Math.max(...others.map(tall)), type(mine) > Math.max(...others.map(type)), mine.previousElementSibling === branch]; })()")
+                   " return [tall(mine) > Math.max(...others.map(tall)), type(mine) > Math.max(...others.map(type)), mine.previousElementSibling === branch.closest('label')]; })()")
     assert sizes == [True, True, True], sizes
     shown = "!document.getElementById('dbg-search').hidden"
     bar.click(button)
@@ -4126,10 +4128,10 @@ def check_doctor_strange_autosearch(bar: Bar, address: str) -> None:
                    " const hit = document.elementFromPoint(at.left + 20, at.top + 20);"
                    " return [Math.round(at.left - card.right), Math.round(at.top - card.top), !!hit && !!hit.closest('#dbg-search')]; })()")
     assert abs(place[0] - 10) <= 1 and place[1:] == [0, True], place
-    # It searches from the base timeline: the deck picks it, so the panel
+    # It searches from the timeline followed: the deck picks it, so the panel
     # has no picker of its own.
     about = bar.ev("document.getElementById('dbg-search-about').textContent")
-    assert about.startswith(f"From the base timeline, B, on turn {start}: which player strategies should hold the seat, and when, "
+    assert about.startswith(f"From the timeline followed, B, on turn {start}: which player strategies should hold the seat, and when, "
                             f"to meet these lists by turn {start + 30}."), about
     assert bar.ev("document.getElementById('dbg-search-half').hidden") is True
     pick = lambda field, value: bar.ev(
@@ -4747,10 +4749,12 @@ def main() -> int:
               "opens on the top rated player strategy on the right and its challenger on the left; the open turn is "
               "the line across the window, which is the divide between the tree and the boxes and has the turn "
               "written on it; a branch is named by the player strategies that played it, its box is in its colour, "
-              "and Branch is a picker that makes one in a step, a third world in a third box, from the base timeline picked over it; the pointer over a box "
+              "and Create Branch is a picker that makes one in a step, a third world in a third box, from the timeline Following picks over it; "
+              "Home, CIVVIS and a gold New game stand over the title; the numbers band is a column a world in the "
+              "order of the lines under it, the same worlds one column headed A,C; the pointer over a box "
               "picks out its line, the divide is dragged, and a box's exit deletes its branch, line and window; "
-              "locked, the worlds go through the turns together, never seen a turn apart, and Play Time and Pause "
-              "Time start and stop them, and unlocked they go by themselves until locked again; what the page costs "
+              "always locked, the worlds go through the turns together, never seen a turn apart, and Play Time and Pause "
+              "Time start and stop them; what the page costs "
               "is read and shown; each world's future is played ahead of the open turn and kept, every world asked "
               "at once, what was seen coming is kept with it; past those turns each world's future is played to the "
               "end of its game on a copy, every world at once, on the world itself or on an engine of its own, "
@@ -4760,8 +4764,8 @@ def main() -> int:
               "time running on is shown the turns held and plays "
               "none again, each world asked for one turn more for each turn it is shown and time never held for "
               "four, with nothing measured that is out of sight; "
-              "Generate Black Swan, at the top of the sky, strikes the same event nothing saw coming on every locked "
-              "world and on the followed one alone unlocked, any drawn by a seed or the one picked, says what struck, "
+              "Generate Black Swan, at the top of the sky, strikes the same event nothing saw coming on every "
+              "world, any drawn by a seed or the one picked, says what struck, "
               "marks it in the line's name and has each struck world's future played again; a narrow "
               "window has the one timeline and says why.")
         check_doctor_strange_autosearch(bar, f"http://127.0.0.1:{port}/")
