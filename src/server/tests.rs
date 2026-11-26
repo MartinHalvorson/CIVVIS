@@ -14987,9 +14987,11 @@ fn the_debugger_opens_on_the_debugger_view_and_single_player_is_a_switch() {
         "solo: SOLO_UI,",
         "soloUi.setAttribute(\"aria-pressed\", deck.solo ? \"true\" : \"false\");",
         // The seat's governors and policies stand on the map, without the
-        // two buttons that belong to a live Civilization VI game.
-        "const me = (livePause.available || debuggerView()) && state && state.me;",
-        "box.hidden = !(livePause.available || debuggerView());",
+        // two buttons that belong to a live Civilization VI game; Edge of
+        // Tomorrow asks for them too.
+        "function liveTrackerShown() { return livePause.available || debuggerView() || (!!window.civvisSeatTracker && playingSolo()); }",
+        "const me = liveTrackerShown() && state && state.me;",
+        "box.hidden = !liveTrackerShown();",
         "body.debugger-view .livepause-buttons, body.debugger-view #livepause-note { display: none; }",
         // The view is for reading: nothing is selected, a press on the map
         // reads as it does for a watcher, and the seat's rail and launch
