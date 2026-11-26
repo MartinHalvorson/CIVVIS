@@ -1226,15 +1226,18 @@ class Page(unittest.TestCase):
         # is gone, rule and all; nothing stands between the benchmark's head
         # and its two tables, and each table's title ends with the games it
         # counts. The par still shades every cell (the test after this one).
+        # Later that day the titles became only those games: "remove the
+        # diplo vicotry alloewd and diplo vicotry off parts of the title.
+        # leave diplo off at the end of the second".
         side = PAGE.index('<section class="res-block" id="res-side-tourney" aria-labelledby="res-title-tourney">')
         block = PAGE[side : PAGE.index("</section>", side)]
         between = block[block.index("</header>") + len("</header>") : block.index('<div class="res-bench-pair">')]
         self.assertEqual(re.sub(r"<!--.*?-->", "", between, flags=re.S).strip(), "")
-        for gone in ("res-bench-par", "Expected win rate", "beats the Firaxis AI"):
+        for gone in ("res-bench-par", "Expected win rate", "beats the Firaxis AI", "Diplomatic victory allowed ·", "Diplomatic victory off ·"):
             self.assertNotIn(gone, PAGE)
         for name, title in (
-            ("on", "Diplomatic victory allowed · 6P Continents Online"),
-            ("off", "Diplomatic victory off · 6P Continents Online, Diplo Off"),
+            ("on", "6P Continents Online"),
+            ("off", "6P Continents Online, Diplo Off"),
         ):
             self.assertIn(f'<h3 class="res-bench-title" id="res-title-rates-{name}">{title} <small id="res-rates-count-{name}"></small></h3>', block)
 
@@ -1328,8 +1331,8 @@ class Page(unittest.TestCase):
         self.assertIn(".res-bench-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; min-width: 0; }", PAGE)
         self.assertIn("@media (max-width: 859px) { .res-bench-pair { grid-template-columns: minmax(0, 1fr); } }", PAGE)
         for name, title in (
-            ("on", "Diplomatic victory allowed · 6P Continents Online"),
-            ("off", "Diplomatic victory off · 6P Continents Online, Diplo Off"),
+            ("on", "6P Continents Online"),
+            ("off", "6P Continents Online, Diplo Off"),
         ):
             self.assertIn(
                 f'<h3 class="res-bench-title" id="res-title-rates-{name}">{title} <small id="res-rates-count-{name}"></small></h3>', block
