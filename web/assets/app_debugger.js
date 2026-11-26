@@ -5436,6 +5436,18 @@ const STRANGE_STYLE = `
   #strange-hud .strange-versus b.strange-total { min-width: 3.6em; padding-left: 8px; color: #bccac4; }
   #strange-hud .strange-versus .strange-pair { padding-left: 20px; }
   #strange-hud .strange-versus b.lead { font-weight: 700; color: ${STRANGE_GOLD}; }
+  #strange-hud .strange-versus .strange-lit {
+    padding: 1px 5px; margin-right: -5px; border-radius: 5px;
+    background: color-mix(in srgb, ${STRANGE_GOLD} 22%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, ${STRANGE_GOLD} 45%, transparent);
+  }
+  #strange-hud .strange-versus .strange-row-exit {
+    width: 15px; height: 15px; margin-right: 3px; padding: 0; border-radius: 4px; vertical-align: 1px;
+    font-size: 9px; color: #9fb3ab; background: transparent; border-color: #35504a;
+  }
+  #strange-hud .strange-versus .strange-row-exit::before { content: "✕"; }
+  #strange-hud .strange-versus .strange-row-exit:hover:not(:disabled) { color: #10140f; background: ${STRANGE_GOLD}; }
+  #strange-hud .strange-versus .strange-row-exit:disabled { opacity: .35; cursor: default; }
   #strange-hud .strange-versus .strange-letter { font-weight: 700; text-align: center; padding: 0 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   #strange-hud .strange-versus .strange-letter.strange-pair { padding-left: 20px; }
   #strange-hud .strange-versus em {
@@ -6270,7 +6282,7 @@ function strangeBear(letter) {
 // split is made of them, and is the next branch's box.
 function strangeClose(letter) {
   const split = debugSplit;
-  if (!(strangeIdle() || strangeEndedHere(letter)) || !strange.order.includes(letter) || strange.order.length < 2) return;
+  if (!strangeCanClose(letter)) return;
   const name = strangeSeries(letter), at = strange.order.indexOf(letter);
   strange.order.splice(at, 1);
   if (strange.follow === letter) strange.follow = strange.order[Math.max(0, at - 1)];
@@ -6402,9 +6414,23 @@ function strangeOverNote() {
 // what is moving, and nothing else is being done to the worlds.
 function strangeEndedHere(letter) {
   const split = debugSplit, pane = split && split.panes[letter], run = strange.run;
-  if (!pane || !pane.over || pane.turn !== pane.over.turn) return false;
-  if (!split.shown || split.busy || split.running > 0 || strange.lockWanted || strange.swan || strange.planning) return false;
+  if (!pane || !pane.over || pane.turn !== pane.over.turn || !strangeQuiet()) return false;
   return !run || strangeEnded(letter, run.asked ?? run.at + 1);
+}
+// Nothing is being done to the worlds but time running on, if it is: no
+// branch being made, no world brought to another's turn, no black swan, no
+// path being played, no strategies being branched at once.
+function strangeQuiet() {
+  const split = debugSplit;
+  return !!split && split.shown && !split.busy && split.running === 0 && !strange.lockWanted && !strange.swan &&
+    !strange.planning && !strange.all;
+}
+// Whether a world may be deleted now: the last one open stays, and a world
+// goes while the worlds stand still, or while time runs on locked, the rest
+// going on without it (`strangeStep` waits on open worlds only).
+function strangeCanClose(letter) {
+  if (!strange.order.includes(letter) || strange.order.length < 2) return false;
+  return strangeIdle() || strangeEndedHere(letter) || (!!strange.run && strangeQuiet());
 }
 function strangeRunOver(run, note = "") {
   if (strange.run !== run) return;
@@ -6443,7 +6469,7 @@ function strangeStep() {
     const pane = split.panes[letter];
     return pane.ready === run.asked || (pane.turn === run.asked && !!pane.settled && pane.settled.wanted === run.asked);
   };
-  const letters = run.letters.filter(letter => split.panes[letter] && !strangeEnded(letter, run.asked));
+  const letters = run.letters.filter(letter => strange.order.includes(letter) && split.panes[letter] && !strangeEnded(letter, run.asked));
   if (letters.length === 0) { strangeRunOver(run, strangeOverNote()); return; }
   if (!run.shown && letters.every(ready)) { run.shown = true; strangeShow(); }
   const there = letter => split.panes[letter].turn === run.asked;
@@ -7637,8 +7663,8 @@ function strangeDraw() {
     picker.disabled = !idle;
     const series = strangeSeries(letter, tree), named = hud.querySelector(`[data-strange-name="${letter}"]`);
     if (named.textContent !== series) { named.textContent = series; named.title = `Branch ${series}: the player strategies that played it, and the turn each took the seat on. ${STRANGE_SWAN} is a black swan, on the turn it struck`; }
-    const exit = hud.querySelector(`[data-strange="close-${letter}"]`);
-    exit.disabled = !(idle || strangeEndedHere(letter)) || !many;
+    const exit = hud.querySelector(`[data-strange-world="${letter}"] [data-strange="close-${letter}"]`);
+    exit.disabled = !strangeCanClose(letter);
     exit.title = many ? `Delete ${name}: its line goes from the tree and its box from the window` : "The last world stays open";
     // A black swan that is still going on in this world is said first: the
     // latest by name, and how many more there are, because the plate is short.
@@ -7686,26 +7712,40 @@ function strangeDraw() {
   // makes a turn) and, beside a yield, what it has made so far, in whole
   // numbers, while there are three columns or fewer. Worlds that are the
   // same world, on the same turn (`strangeSame`), are one column headed
-  // "A,B". The most of a row, where one column has it alone, is in gold.
+  // "A,B". The most of a row is lit, in gold on a chip of gold (operator
+  // 2026-11-26: "in doctor strange hud, we should highlight the top value
+  // in each row. so the branch with the top score, most cities, etc."):
+  // every column that has it, unless every column has the same. Each world
+  // in a column's head has an ✕ that deletes it, as the ✕ on its box does
+  // ("we should also be able to exit branches. maybe from the top, have an
+  // option to close branches").
   const columns = strangeSame(open);
   const wide = columns.length <= 3;
   const numbers = group => group.map(letter => panes[letter].numbers).find(Boolean) || {};
   const lead = (key, group) => {
-    const value = numbers(group)[key];
-    const rest = columns.filter(other => other !== group).map(other => numbers(other)[key]);
-    return typeof value === "number" && rest.length > 0 && rest.every(other => typeof other === "number" && value > other);
+    const values = columns.map(other => numbers(other)[key]);
+    if (values.length < 2 || !values.every(other => typeof other === "number")) return false;
+    const top = Math.max(...values);
+    return numbers(group)[key] === top && values.some(other => other < top);
   };
+  const lit = (on, text) => on ? `<span class="strange-lit">${text}</span>` : text;
   const cell = (key, group) => {
-    const value = numbers(group)[key], made = numbers(group)[`${key}_total`];
+    const value = numbers(group)[key], made = numbers(group)[`${key}_total`], most = lead(`${key}_total`, group);
     const total = !wide || !STRANGE_TOTALS.includes(key) ? ""
-      : `<small${lead(`${key}_total`, group) ? ' class="lead"' : ""}>${typeof made === "number" && Number.isFinite(made) ? (Math.round(made) || 0).toLocaleString("en-US") : "–"}</small>`;
-    return `<b${lead(key, group) ? ' class="lead"' : ""}>${debugVersusNumber(value)}${total}</b>`;
+      : `<small${most ? ' class="lead"' : ""}>${lit(most, typeof made === "number" && Number.isFinite(made) ? (Math.round(made) || 0).toLocaleString("en-US") : "–")}</small>`;
+    return `<b${lead(key, group) ? ' class="lead"' : ""}>${lit(lead(key, group), debugVersusNumber(value))}${total}</b>`;
+  };
+  const exit = letter => {
+    const can = strangeCanClose(letter), name = strangeSeries(letter, tree);
+    return `<button class="strange-row-exit" data-strange="close-${letter}"${can ? "" : " disabled"} ` +
+      `title="${escapeAttr(many ? `Delete ${name}: its line goes from the tree and its box from the window` : "The last world stays open")}" ` +
+      `aria-label="Delete ${escapeAttr(name)}"></button>`;
   };
   const head = group => {
     const names = group.map(letter => letter.toUpperCase());
     const said = group.length > 1 ? ` title="${names.slice(0, -1).join(", ")} and ${names[names.length - 1]} are the same world on turn ${panes[group[0]].turn ?? turn}"` : "";
     return `<span class="strange-letter"${said}>` +
-      group.map(letter => `<span style="color:${strange.tint[letter]}">${letter.toUpperCase()}</span>`).join(",") + "</span>";
+      group.map(letter => `${exit(letter)}<span style="color:${strange.tint[letter]}">${letter.toUpperCase()}</span>`).join(",") + "</span>";
   };
   const table = `<i></i>` + columns.map(head).join("") + STRANGE_VERSUS_ROWS.map(([key, label, title]) => {
     const summed = STRANGE_TOTALS.includes(key);

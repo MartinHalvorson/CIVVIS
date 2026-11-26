@@ -3553,7 +3553,8 @@ def check_doctor_strange(bar: Bar, address: str) -> None:
                       " strangeSpread(g, 20) > strangeSpread(g, g.cy)]; })()")
     # Forward in time is up, a turn is the turn its height stands for, and the tree is wider ahead.
     assert geometry == [True, True, True, 37, 3, True], geometry
-    words = "[...document.querySelectorAll('#strange-hud [data-strange]')].map(held => [held.dataset.strange, held.textContent.trim(), !!held.disabled])"
+    words = ("[...document.querySelectorAll('#strange-hud [data-strange]')].filter(held => !held.parentElement.closest('[data-strange=\"numbers\"]'))"
+             ".map(held => [held.dataset.strange, held.textContent.trim(), !!held.disabled])")
     said = {name: [text, off] for name, text, off in bar.ev(words) if name != "numbers"}
     # Create Branch is a picker: the open turn and each player strategy the
     # followed world does not seat. Before it, Following: every open world,
@@ -4449,6 +4450,59 @@ def check_doctor_strange_world_ends(bar: Bar, address: str) -> None:
     assert not bar.dev.console, f"the page complained: {bar.dev.console}"
 
 
+def check_doctor_strange_leaders_and_closing(bar: Bar, address: str) -> None:
+    """Doctor Strange's CIVVIS lights the most of each of the worlds' numbers, and each row of them can delete its world.
+
+    Operator, 2026-11-26: "in doctor strange hud, we should highlight the top
+    value in each row. so the branch with the top score, most cities, etc. we
+    should also be able to exit branches. maybe from the top, have an option
+    to close branches".
+    """
+    ready = "typeof drawDebugBar === 'function' && typeof engineState === 'function'"
+    row = lambda letter: f"document.querySelector('#strange-hud [data-strange=\"numbers\"] [data-strange=\"close-{letter}\"]')"
+    bar.dev.call("Page.navigate", {"url": f"{address}?mode=strange"})
+    bar.until(f"{ready} && location.search === '?mode=strange' && state === null", "Doctor Strange's CIVVIS")
+    bar.ev("engine.scores = {1: 0}, strange.futures = false, render(engineState()), true")
+    bar.settled()
+    bar.until("debugSplit && debugSplit.shown && debugSplit.panes.a.turn === 1 && debugSplit.panes.b.turn === 1 && strangeIdle()",
+              "its two worlds are there")
+    # A seats Stock, which scores two a turn to Jack's one: a few turns on, A
+    # has the top score and its cell is lit, gold on a wash of gold. Both
+    # hold one city, so neither city count is.
+    bar.click('#strange-hud [data-strange="on10"]')
+    bar.until("strange.run === null && strangeIdle() && debugSplit.panes.a.turn === 11 && debugSplit.panes.a.numbers.score > debugSplit.panes.b.numbers.score",
+              "A leads on score", seconds=30)
+    band = bar.ev("""(() => { const card = document.querySelector('#strange-hud [data-strange="numbers"]');
+      const heads = [...card.querySelectorAll('.strange-letter')].map(held => held.textContent);
+      const rows = {}; let row = null;
+      for (const held of card.children) {
+        if (held.tagName === 'EM') { row = held.querySelector('.strange-long').textContent; rows[row] = []; continue; }
+        if (held.tagName === 'B' && row) rows[row].push([held.classList.contains('lead'),
+          getComputedStyle(held.querySelector('.strange-lit') || held).backgroundColor]);
+      }
+      return {heads, rows}; })()""")
+    # The band is a column a world: find A's and B's, then read a row a number.
+    a, b = band["heads"].index("A"), band["heads"].index("B")
+    score, cities = band["rows"]["Score"], band["rows"]["Cities"]
+    assert score[a][0] is True and score[b][0] is False, band
+    assert score[a][1] not in ("rgba(0, 0, 0, 0)", "transparent"), score[a]
+    assert cities[a][0] is False and cities[b][0] is False, band
+    # Each world in the band's heads has an ✕, and it deletes the world
+    # while time runs on for the rest.
+    assert bar.ev(f"[{row('a')}.disabled, {row('b')}.disabled, {row('b')}.getAttribute('aria-label')]")[:2] == [False, False]
+    bar.click('#strange-hud [data-strange="play"]')
+    bar.until("strange.run !== null && debugSplit.panes.a.turn >= 13", "time runs", seconds=30)
+    assert bar.ev(f"{row('b')}.disabled") is False, "a world can be deleted while time runs"
+    bar.click('#strange-hud [data-strange="numbers"] [data-strange="close-b"]')
+    bar.until("strange.order.join('') === 'a'", "B's row deletes B")
+    went = bar.ev("debugSplit.panes.a.turn")
+    bar.until(f"strange.run !== null && debugSplit.panes.a.turn >= {went + 2}", "and time runs on for A", seconds=30)
+    assert bar.ev(f"[{row('a')}.disabled, {row('a')}.title]") == [True, "The last world stays open"]
+    bar.click('#strange-hud [data-strange="play"]')
+    bar.until("strange.run === null && strangeIdle()", "Pause stops A", seconds=30)
+    assert not bar.dev.console, f"the page complained: {bar.dev.console}"
+
+
 def check_edge_of_tomorrow(bar: Bar, address: str) -> None:
     """Edge of Tomorrow: the played game with a jump back.
 
@@ -4997,6 +5051,10 @@ def main() -> int:
               "turn, and no world's future is begun while a search runs.")
         check_doctor_strange_all(bar, f"http://127.0.0.1:{port}/")
         check_doctor_strange_world_ends(bar, f"http://127.0.0.1:{port}/")
+        check_doctor_strange_leaders_and_closing(bar, f"http://127.0.0.1:{port}/")
+        print("Doctor Strange's CIVVIS lights the most of each of the worlds' numbers in gold on a wash of gold, "
+              "every world that has it unless they all do, and each row of the numbers begins with an ✕ that "
+              "deletes its world, while time runs as well; the last world stays.")
         print("Doctor Strange's CIVVIS goes on when one world's game is over: that world stays on the turn it "
               "ended on with a card in its box (who won, how, the turn, the score), View map puts the card away "
               "behind a chip that brings it back, Close deletes the world while time runs on for the rest, and "
