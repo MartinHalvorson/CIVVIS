@@ -2137,7 +2137,7 @@ const PLAYER_HUD_COLUMNS = [
   // other. Its heading doubles as the panel's drag handle.
   {key:"lock", label:"Row lock", block:"identity", min:"--hud-lock-column", width:0, fixed:true},
   {key:"rank", label:"Score rank", block:"identity", min:"--hud-rank-min", width:.7},
-  {key:"civ", label:"Civilization", block:"identity", min:"--hud-ident-min", width:2.035},
+  {key:"civ", label:"Civilization", block:"identity", min:"--hud-ident-min", width:.9},
   {key:"leader", label:"Leader", block:"identity", min:"--hud-ident-min", width:1.85},
   {key:"watch", label:"Watch as", block:"identity", min:"--hud-watch-column", width:0, fixed:true},
   {key:"player", label:"Player", block:"identity", min:"--hud-player-min", width:1.85},
@@ -2448,7 +2448,7 @@ function playerHudShedOrder() {
     ...PLAYER_HUD_RATED_TABLE_HOLDS];
 }
 const PLAYER_HUD_READABLE_WIDTH = {
-  lock:11, watch:70, rank:26, civ:70, leader:62, player:66, elo:30, elo_delta:40,
+  lock:11, watch:70, rank:26, civ:40, leader:62, player:66, elo:30, elo_delta:40,
   win_start:24, win_delta:16, win:26, plan:70, closest_victory:60, age:40,
   military:36, score:38,
 };
@@ -28031,7 +28031,7 @@ function playerHudOverview() {
           `<div class="victory-line"><span class="victory-civ-dot"></span>` +
           `<button type="button" class="victory-civ" data-hud-action="capital" data-hud-civ="${player.id}" ` +
           `title="${escapeAttr(empireTitle)}" aria-label="${escapeAttr(empireTitle)}"${capital ? "" : " disabled"}>` +
-          `${player.civ}</button><span class="victory-value${track.id === "score" ? " single" : ""}">${victoryTrackerStats(track.id, metric)}</span></div>` +
+          `${civShort(player.civ)}</button><span class="victory-value${track.id === "score" ? " single" : ""}">${victoryTrackerStats(track.id, metric)}</span></div>` +
           victoryMeter(track.id, metric, progress) + `</div>`;
       }).join("") + `</div></div></section>`;
   }).join("");
@@ -28619,7 +28619,7 @@ function drawPlayerHud() {
             return `<button class="diplomacy-identity diplomacy-civ-link" data-hud-col="civ" data-hud-action="capital" data-hud-civ="${p.id}" ` +
               `title="${escapeAttr(civTitle)}" aria-label="${escapeAttr(civTitle)}"${capital ? "" : " disabled"}>` +
               `<span class="diplomacy-identity-field">${agendaGlyph}` +
-              `<span class="diplomacy-civ">${p.id === acting && highlightActing ? "◉ " : ""}${p.civ}</span></span></button>`;
+              `<span class="diplomacy-civ">${p.id === acting && highlightActing ? "◉ " : ""}${civShort(p.civ)}</span></span></button>`;
           case "leader":
             return `<button class="diplomacy-identity diplomacy-leader-link" data-hud-col="leader" ${dossierAttrs}>` +
               `<span class="diplomacy-identity-field"><span class="diplomacy-leader-name">${leader}</span></span>` +
@@ -33234,7 +33234,7 @@ function warEntityLink(id, suffix = "") {
   const player = (state.players || [])[id];
   if (!player) return `${warPartyName(id)}${suffix}`;
   const minor = player.is_minor && !player.is_barbarian;
-  const label = `${player.civ}${suffix}`;
+  const label = `${minor ? player.civ : civShort(player.civ)}${suffix}`;
   return `<button type="button" class="war-entity-link${minor ? " city-state" : ""}" ` +
     `onclick="spectatePlayer(${id})" title="View ${player.civ}" aria-label="View ${player.civ}">${label}</button>`;
 }
