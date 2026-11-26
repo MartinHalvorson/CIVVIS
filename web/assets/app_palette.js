@@ -32,11 +32,15 @@
 // front page on it. A visitor would have seen "Boot failed · retry 1" and a
 // world two seconds late.
 //
-// The page's scripts are ordinary parser-run ones, so DOMContentLoaded
-// follows the last of them. A boot begun after that (a retry, a reconnect)
-// waits for nothing.
+// The page's scripts are ordinary parser-run ones, so the document leaves
+// "loading" right after the last of them has run. DOMContentLoaded is later:
+// it also waits for every deferred and module script, and civvis.ai's edge
+// injects one, Cloudflare's analytics beacon, from a second origin. Waiting
+// for it held the first world back behind a third party's handshake (2.9 s
+// once in 3 cold loads on 2026-11-26). A boot begun after that (a retry, a
+// reconnect) waits for nothing.
 const pageScriptsRan = document.readyState === "loading"
-  ? new Promise(resolve => document.addEventListener("DOMContentLoaded", resolve, {once: true}))
+  ? new Promise(resolve => document.addEventListener("readystatechange", resolve, {once: true}))
   : Promise.resolve();
 
 const S = 36, SQ3 = Math.sqrt(3);

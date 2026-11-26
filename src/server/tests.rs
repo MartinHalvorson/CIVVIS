@@ -377,15 +377,18 @@ fn boot_waits_for_every_script_of_the_page_before_it_calls_into_them() {
     assert!(wait < at("syncTeams();"));
     assert!(EMBEDDED_APP_SETUP_JS.contains("\nfunction syncTeams() {"));
     assert!(!EMBEDDED_APP_JS.contains("function syncTeams("));
-    // What is waited for: the page's scripts are parser-run, so
-    // DOMContentLoaded follows the last of them; a boot begun later (a
-    // retry, a reconnect) waits for nothing.
+    // What is waited for: the page's scripts are parser-run, so the document
+    // leaves "loading" right after the last of them. Not DOMContentLoaded,
+    // which also waits for deferred and module scripts, and civvis.ai's edge
+    // injects one (Cloudflare's analytics beacon) that held the first world
+    // back up to 2.9 s on 2026-11-26. A boot begun later (a retry, a
+    // reconnect) waits for nothing.
     // It is declared in the page's first script, ahead of app.js, where a
     // name can never be read before its declaration has run (and app.js is
     // three lines short of the size test_web_assets.py holds it under).
     assert!(include_str!("../../web/assets/app_palette.js").contains(concat!(
         "const pageScriptsRan = document.readyState === \"loading\"\n",
-        "  ? new Promise(resolve => document.addEventListener(\"DOMContentLoaded\", resolve, {once: true}))\n",
+        "  ? new Promise(resolve => document.addEventListener(\"readystatechange\", resolve, {once: true}))\n",
         "  : Promise.resolve();\n",
     )));
     assert!(!EMBEDDED_APP_JS.contains("const pageScriptsRan"));
@@ -394,6 +397,17 @@ fn boot_waits_for_every_script_of_the_page_before_it_calls_into_them() {
             .find(&format!("<script src=\"/assets/{name}\"></script>"))
             .unwrap_or_else(|| panic!("the page no longer loads {name}"))
     };
+    // Which holds only while every script of the page is a plain parser-run
+    // one: a deferred or module script runs after the document leaves
+    // "loading", and boot would call into it before it had run.
+    for tag in EMBEDDED_INDEX_HTML.match_indices("<script").map(|(at, _)| {
+        &EMBEDDED_INDEX_HTML[at..at + EMBEDDED_INDEX_HTML[at..].find('>').expect("script tag")]
+    }) {
+        assert!(
+            !tag.contains("defer") && !tag.contains("async") && !tag.contains("module"),
+            "{tag}"
+        );
+    }
     assert!(loads("app_palette.js") < loads("app.js"));
     assert!(loads("app.js") < loads("app_setup.js"));
     // And nothing of a later script is called before it.
