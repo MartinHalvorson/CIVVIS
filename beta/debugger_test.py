@@ -195,7 +195,7 @@ const SWANS = {pandemic: ["Pandemic", "Every city in the world loses half its pe
 // Another frame's engine as it stands, for a half that is copied or kept:
 // everything but the record of what this frame's own page sent.
 function engineOf(frames, pane) {
-  const frame = [...frames].find(held => held.src.includes(`pane=${pane}`));
+  const frame = [...frames].find(held => paneOf(held.src) === pane);
   const {sent, ...world} = JSON.parse(JSON.stringify(frame.contentWindow.eval("engine")));
   return world;
 }
@@ -217,7 +217,10 @@ function engineLine() {
 // The last turn ahead that playing on from the open turn would only play
 // again: the Civ AI seated played every turn from here to it, and the open
 // turn stands as it opened. A half of a split has none, as in the engine.
-const HALF = new URLSearchParams(location.search).has("pane") && window.parent !== window;
+// A half's address is `?pane#<name>` (`debugPaneAddress`), or `?pane=<name>`.
+const paneOf = address => { const url = new URL(address, location.href);
+  return url.searchParams.get("pane") || (url.searchParams.has("pane") ? decodeURIComponent(url.hash.slice(1)) : "") || null; };
+const HALF = !!paneOf(location.href) && window.parent !== window;
 function enginePlayedAhead() {
   if (HALF || engine.seat === null || engine.acted > 0 || engine.current !== 0) return null;
   let last = engine.turn;
@@ -371,7 +374,7 @@ function forkEngines(count) {
   forks.held = Array.from({length: count}, () => {
     const worlds = {"": worldOf(engine)};
     for (const frame of frames) {
-      const pane = new URL(frame.src, location.href).searchParams.get("pane");
+      const pane = paneOf(frame.src);
       // A page still loading (Doctor Strange's next branch, made ahead of
       // time) holds no world yet.
       let held = null;
@@ -418,7 +421,7 @@ async function scoutAnswer(pane, how, body) {
     return {error: null, scout: "done"};
   }
   if (how === "new" || !scouts.held[pane]) {
-    const frame = [...document.querySelectorAll("iframe")].find(held => held.src.includes(`pane=${pane}`));
+    const frame = [...document.querySelectorAll("iframe")].find(held => paneOf(held.src) === pane);
     if (!frame) return {error: "that world is not there"};
     scouts.held[pane] = worldOf(frame.contentWindow.eval("engine"));
     scouts.made += 1;
@@ -462,7 +465,7 @@ function engineDebug(body) {
   // from its own record whether the two are the same world; the toy reads
   // it off the two worlds as they stand before the request.
   const twin = body.twin ? [...window.parent.document.querySelectorAll("iframe")]
-    .find(held => held.src.includes(`pane=${body.twin}`)).contentWindow.eval("engine") : null;
+    .find(held => paneOf(held.src) === body.twin).contentWindow.eval("engine") : null;
   const alike = twin !== null && JSON.stringify(worldOf(engine)) === JSON.stringify(worldOf(twin));
   engine.stopped = null;
   engine.stepped = null;
@@ -691,7 +694,7 @@ function engineDebug(body) {
 // ---- the bar's script, and a half of a split
 // A half starts on its host's world. The real page fetches that through the
 // host's engine; here the half takes the toy engine as the host's stands.
-const pane = window.parent !== window && new URLSearchParams(location.search).get("pane");
+const pane = window.parent !== window && paneOf(location.href);
 const barScript = document.createElement("script");
 barScript.src = "app_debugger.js";
 if (!pane) document.body.appendChild(barScript);
