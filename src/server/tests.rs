@@ -2312,6 +2312,7 @@ fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
     // tomorrow"), and a link's own players, map or shape still wins.
     assert!(include_str!("../../beta/shim.js").contains(concat!(
         "    const MODE_WORLDS = {\n",
+        "      play: {map_topology: \"flat\"},\n",
         "      strange: {num_players: 4, map_script: \"pangaea\", map_topology: \"flat\"},\n",
         "      tomorrow: {num_players: 2, map_script: \"continents\", map_topology: \"flat\"},\n",
         "    };\n",
@@ -2320,8 +2321,15 @@ fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
         "    }\n",
     )));
     // The worlds those settings make: a Pangaea of four is a Tiny world, and
-    // two seats are a Duel's, both laid flat.
+    // two seats are a Duel's, both laid flat. The AI Debugger (operator,
+    // 2026-11-26: "lets use flat map on debugger") is the stock world laid
+    // flat: its four seats and its map, on a flat world's dimensions.
     let stock = stock_opening_params(11);
+    let debugged = new_game_params(&stock, &json!({"map_topology": "flat", "spectate": false}));
+    assert_eq!(debugged.num_players, stock.num_players);
+    assert_eq!(debugged.map_script, stock.map_script);
+    assert_eq!(debugged.map_topology, MapTopology::Flat);
+    assert_eq!(stock.map_topology, MapTopology::Planet);
     let strange = new_game_params(
         &stock,
         &json!({"num_players": 4, "map_script": "pangaea", "map_topology": "flat", "spectate": false}),

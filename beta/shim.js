@@ -241,8 +241,11 @@
     // to 1v1 beat an AI given a back button"): two seats are what make the
     // engine lay a Duel-sized world, on Continents, Civilization VI's own
     // first map type. Both are laid flat, as Civilization VI lays its maps,
-    // rather than on the stock world's globe.
+    // rather than on the stock world's globe. The AI Debugger keeps the stock
+    // world, laid flat as well (operator, 2026-11-26: "lets use flat map on
+    // debugger").
     const MODE_WORLDS = {
+      play: {map_topology: "flat"},
       strange: {num_players: 4, map_script: "pangaea", map_topology: "flat"},
       tomorrow: {num_players: 2, map_script: "continents", map_topology: "flat"},
     };

@@ -357,10 +357,15 @@ class Simulator(unittest.TestCase):
         # Operator 2026-11-26: "maybe add a green little bug to the end of ai
         # debugger if theres space". The link is a grid, so the bug is a
         # second column after the name, and the name is still its words.
-        self.assertIn("  #playlink { grid-auto-flow: column; justify-content: start; align-items: center; column-gap: .3em; }\n", VIEWER)
+        self.assertIn("  #playlink {\n"
+                      "    grid-auto-flow: column; justify-content: start; align-items: center; column-gap: .3em;\n", VIEWER)
+        # Operator 2026-11-26: "make the debugger button 30% taller. make the
+        # bug bigger too": 1.3 times a one-line link's border box, and the
+        # bug grown from 1.15em to fill it.
+        self.assertIn("    min-height: calc((1.3em + 7px) * 1.3);\n", VIEWER)
         bug = VIEWER[VIEWER.index("  #playlink::after {\n"):]
         bug = bug[:bug.index("  }\n")]
-        self.assertIn('content: "";', bug)
+        self.assertIn('content: ""; width: 1.6em; height: 1.6em;', bug)
         self.assertIn(BUG_GREEN, bug)
         self.assertRegex(VIEWER, r'<a class="home-link" id="playlink" [^>]*>AI Debugger</a>')
 
