@@ -28477,11 +28477,9 @@ function drawPlayerHud() {
       applyHudWidgetMetrics("players", metrics);
   }
   const capitals = capitalIndex();
-  const highestByStat = new Map();
-  statsByPlayer.forEach(stats => stats.forEach(([kind, , value]) => {
-    const numericValue = Number(value) || 0;
-    highestByStat.set(kind, Math.max(highestByStat.get(kind) ?? -Infinity, numericValue));
-  }));
+  // Each column's highest value, Elo rightward (`playerHudColumnHighs`).
+  const highestByStat = playerHudColumnHighs(scoreRankedMajors, p => [...statsByPlayer.get(p.id).map(([kind, , value]) => [kind, Number(value) || 0]),
+    ...PLAYER_HUD_LEADER_FACTS.map(key => [key, playerHudSortValue(p, key, statsByPlayer.get(p.id), rankById)])]);
   const relationById = new Map();
   // The one place the column model becomes markup: the heading and every row
   // emit one cell per column from this list, in this order, so the table and
@@ -28591,6 +28589,7 @@ function drawPlayerHud() {
           ` · ${strategy ? `${titleCase(strategy)} active strategy` : "no active strategy"}`;
       const stateClass = `${atWar ? "at-war" : ""} ${p.alive ? "" : "dead"}`;
       const stats = statsByPlayer.get(p.id);
+      const leads = key => playerHudSortValue(p, key, stats, rankById) === highestByStat.get(key) ? " category-leader" : "";
       const watchTitle = `Watch ${p.civ} through its fog of war · ${relationSummary}${agendaText}`;
       const expanded = hudOpenDossiers.includes(p.id);
       // Which rows actually hold at an edge, and how they stagger, depends on
@@ -28639,11 +28638,11 @@ function drawPlayerHud() {
             return `<button class="diplomacy-identity" data-hud-col="player" ${dossierAttrs}>` +
               `<span class="diplomacy-identity-field" title="${leagueTitle}"><span class="diplomacy-player">${playerName}</span></span></button>`;
           case "elo":
-            return `<button class="diplomacy-identity" data-hud-col="elo" ${dossierAttrs}>` +
+            return `<button class="diplomacy-identity${leads("elo")}" data-hud-col="elo" ${dossierAttrs}>` +
               `<span class="diplomacy-identity-field diplomacy-elo" title="${escapeAttr(playerEloTitle(p))}">` +
               `<span class="diplomacy-elo-value">${playerEloLabel(p)}</span></span></button>`;
           case "elo_delta":
-            return `<button class="diplomacy-identity" data-hud-col="elo_delta" ${dossierAttrs}>` +
+            return `<button class="diplomacy-identity${leads("elo_delta")}" data-hud-col="elo_delta" ${dossierAttrs}>` +
               `<span class="diplomacy-identity-field diplomacy-elo-delta" title="${escapeAttr(eloDeltaTitle(p))}">` +
               `<span class="diplomacy-elo-delta-value">${playerEloDelta}</span></span></button>`;
           // The per-cent sign lives in the START and NOW column heads, not in
@@ -28651,17 +28650,17 @@ function drawPlayerHud() {
           // three columns of their own; each cell still carries the full odds
           // story in its tooltip.
           case "win_start":
-            return `<button class="diplomacy-identity" data-hud-col="win_start" ${dossierAttrs}>` +
+            return `<button class="diplomacy-identity${leads("win_start")}" data-hud-col="win_start" ${dossierAttrs}>` +
               `<span class="diplomacy-identity-field diplomacy-expected" title="${escapeAttr(oddsTitle(p))}">` +
               `<span class="odds-start">${startPct ?? "—"}</span></span></button>`;
           case "win_delta": {
             const movement = oddsMovement(p);
-            return `<button class="diplomacy-identity" data-hud-col="win_delta" ${dossierAttrs}>` +
+            return `<button class="diplomacy-identity${leads("win_delta")}" data-hud-col="win_delta" ${dossierAttrs}>` +
               `<span class="diplomacy-identity-field diplomacy-expected diplomacy-odds-trend" title="${escapeAttr(oddsTitle(p))}">` +
               `<span class="odds-move ${movement.direction}" aria-label="Win chance trend ${movement.direction}">${movement.symbol}</span></span></button>`;
           }
           case "win":
-            return `<button class="diplomacy-identity" data-hud-col="win" ${dossierAttrs}>` +
+            return `<button class="diplomacy-identity${leads("win")}" data-hud-col="win" ${dossierAttrs}>` +
               `<span class="diplomacy-identity-field diplomacy-expected" title="${escapeAttr(oddsTitle(p))}">` +
               `<span class="odds-now">${nowPct ?? "—"}</span></span></button>`;
           case "age":
