@@ -3417,15 +3417,20 @@ function debugSplitOpen(dir, versus = null, seat = null, fresh = false) {
 // the folder this page is in, whichever of the simulator's pages holds the
 // split (`/test/doctor-strange` and `/test/debugger` are both the viewer at
 // `/test/`), so a half asks nothing of the page that holds it by its address.
-// Every half is at the one address `?pane`, its name after `#`, which a
-// browser neither sends nor files a cached page under: each half loads the
-// copy already held, revalidated with a 304, where `?pane=<name>` (a name
-// with the time in it) was a new address each visit, downloaded whole for
-// each half (operator 2026-11-26: "civivs seems slow switching between
-// civvis and dr strange"). The query stays so the address is never the
+// On the published site every half is at the one address `?pane`, its name
+// after `#`, which a browser neither sends nor files a cached page under:
+// each half loads the copy already held, revalidated with a 304, where
+// `?pane=<name>` (a name with the time in it) was a new address each visit,
+// downloaded whole for each half (operator 2026-11-26: "civivs seems slow
+// switching between civvis and dr strange"). The shim there puts the half's
+// name on each request itself. The query stays so the address is never the
 // holding page's own, which a browser will not load in a frame of itself.
+// A socket server serves the page from this machine and tells the halves
+// apart by the name in each request's `Referer` (`src/server/panes.rs`),
+// which never carries a fragment, so there the name stays `?pane=<name>`.
 function debugPaneAddress(id) {
-  return `${new URL("./", location.href).pathname}?pane#${id}`;
+  const root = new URL("./", location.href).pathname;
+  return window.CIVVIS_PUBLISHED_BUILD ? `${root}?pane#${id}` : `${root}?pane=${id}`;
 }
 // Which Civ AI plays a half's seat is the host's to say: it keeps the choice
 // and tells the half, from the strip or from the head of the half's lane.
