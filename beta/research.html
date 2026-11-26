@@ -415,7 +415,9 @@
      rare. white to red for 16.7 -> 0. bxakground of the cells please"):
      the script sets each tile's background and the text that reads on it.
      Tiles stand 3px apart so two white ones do not run together; a cell
-     with no game is an empty outline. */
+     with no game is an empty outline, and one of fewer than 5 games a
+     grey tile with no rate (operator 2026-11-26: "exclude cells with
+     sample size less than 5 from results"). */
   .res-rates { border-collapse: separate; border-spacing: 3px; }
   .res-rates th { padding-right: 8px; vertical-align: bottom; }
   .res-rates th.is-group { padding: 0 2px 3px 0; border-bottom: 1px solid var(--border); font-size: 12px; text-align: center; }
@@ -423,6 +425,7 @@
   .res-rates td:first-child { padding-left: 0; }
   .res-rates td.is-rate { color: #fff; font-weight: 700; }
   .res-rates td.is-zero { box-shadow: inset 0 0 0 1px var(--border); }
+  .res-rates td.is-few { background: rgba(147, 163, 181, 0.14); color: var(--muted); }
   .res-rates td small { color: var(--muted); font-size: 12.5px; font-weight: 400; }
   .res-rates td.is-rate small { color: inherit; opacity: 0.75; }
   /* On a phone a cell is two lines, the rate over its games, a heading
@@ -645,6 +648,7 @@
           The left table holds the games that allowed the Diplomatic victory, the right table the games set up with it switched off.
           A cell is CIVVIS&#8217;s win rate and, in brackets, the games it is a share of.
           Its shade is read against the 1/6 par: white at 16.7%, deepening to dark green at 100% and to red at 0%.
+          A cell of fewer than 5 games is left out: a grey tile with no rate, only its games in brackets.
           A win is a CIVVIS victory; a loss is a rival&#8217;s victory, our elimination, or a game conceded early.
           A day is 24 hours, counted back from the newest tournament game.
           The charts below count every verification game that ended in a victory, in a tournament or not, so their counts differ.
@@ -1027,8 +1031,8 @@
     // left of no diplo victory"). The record's two tables, `on` and `off`,
     // each a row per level, highest first, and in a row a cell per window
     // in the order of the page's columns: the wins as a share of the cell's
-    // games, then the games in brackets. A cell with no game in it has no
-    // rate.
+    // games, then the games in brackets. A cell with no game in it, or with
+    // fewer than 5, has no rate.
     //
     // A cell's background is its rate against the 1/6 par of a 6-player
     // game (operator 2026-11-24: "white for 16.7% - dark green for 100% win
@@ -1037,6 +1041,11 @@
     // toward dark green up to 100% and toward red down to 0%. Its text is
     // whichever of white and near-black stands out more on that shade.
     const PAR = 1 / 6, PAR_WHITE = [255, 255, 255], PAR_GREEN = [22, 101, 52], PAR_RED = [220, 38, 38];
+    // A cell of fewer than 5 games is left out of the results (operator
+    // 2026-11-26: "lets exclude cells with sample size less than 5 from
+    // results. can show the box grayed out"): a grey tile with no rate and
+    // no shade, only its games in brackets.
+    const MIN_GAMES = 5;
     const shade = (rate) => {
       const [to, t] = rate >= PAR ? [PAR_GREEN, (rate - PAR) / (1 - PAR)] : [PAR_RED, (PAR - rate) / PAR];
       const rgb = PAR_WHITE.map((c, i) => Math.round(c + (to[i] - c) * Math.min(1, Math.max(0, t))));
@@ -1064,12 +1073,11 @@
           if (RUNGS[row.level]) level.append(el("span", "res-wide", " " + RUNGS[row.level]));
           tr.append(level);
           for (const w of Array.isArray(row.windows) ? row.windows : []) {
-            const games = Number(w.games) || 0, wins = Number(w.wins) || 0;
-            const td = el("td", games ? "is-rate" : "is-zero", games ? pct(wins / games) : "—");
-            if (games) {
-              td.append(" ", el("small", "", "(" + fmt(games) + ")"));
-              Object.assign(td.style, shade(wins / games));
-            }
+            const games = Number(w.games) || 0, wins = Number(w.wins) || 0, rated = games >= MIN_GAMES;
+            const td = el("td", rated ? "is-rate" : games ? "is-few" : "is-zero", rated ? pct(wins / games) : "—");
+            if (games) td.append(" ", el("small", "", "(" + fmt(games) + ")"));
+            if (rated) Object.assign(td.style, shade(wins / games));
+            else if (games) td.title = "Fewer than " + MIN_GAMES + " games: left out, too few to rate";
             tr.append(td);
           }
           body.append(tr);
