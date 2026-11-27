@@ -122,7 +122,10 @@ ENGINE_TABLE
 to predict the live record, which is what the ELO Rankings page plots. Both
 simulator stand-ins miss in the same direction: they are far stronger than
 Civilization VI's own AI at every level. The Elo stand-in is 500–700 points
-too strong. The faithful field's rivals are our own deployment genome, so at
+too strong from King to Deity, and more at Prince. A table of one seat against
+five copies of a rival reads that rival 100 to 180 points low (`docs/ELO.md`,
+"Why a rung sits alone"), which still leaves 300 points or more at every
+level. The faithful field's rivals are our own deployment genome, so at
 Prince they are an equal field (1 in 6) where the live seat has won 39 of 39.
 
 The lanes do not transfer either. The Elo table rates `holy` (Religion) 353
