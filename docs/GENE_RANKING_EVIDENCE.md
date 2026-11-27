@@ -192,6 +192,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `science-seat-monuments` | off (unmeasured) | Opt-in gene `science-seat-monuments`: a Science seat's cities claim their Monument from the third city; see `advanced/culture_monuments.rs`. | 1 \| 1 |
 | `seen-pad-starts-the-denial` | off (unmeasured) | Opt-in gene `seen-pad-starts-the-denial`: a racer's seen Spaceport takes a Spy that disrupts it before the first launch; see `advanced/seen_pad_starts_the_denial.rs`. | 1 \| 1 |
 | `tagma-timing-needs-the-edge` | off (unmeasured) | Opt-in gene `tagma-timing-needs-the-edge`; see `advanced/tagma_timing_needs_the_edge.rs`. | 1 \| 1 |
+| `wounded-spreader-spends-far-from-home` | off (unmeasured) | Opt-in gene `wounded-spreader-spends-far-from-home`; see `advanced/apostle_army.rs`. | 1 \| 1 |
 
 ## Removed from the code
 

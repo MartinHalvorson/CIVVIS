@@ -757,6 +757,9 @@ impl AdvancedAi {
         /// Opt-in gene `tagma-timing-needs-the-edge`; see
         /// `advanced/tagma_timing_needs_the_edge.rs`.
         tagma_timing_needs_the_edge => enable_tagma_timing_needs_the_edge, disable_tagma_timing_needs_the_edge;
+        /// Opt-in gene `wounded-spreader-spends-far-from-home`; see
+        /// `advanced/apostle_army.rs`.
+        wounded_spreader_spends_far_from_home => enable_wounded_spreader_spends_far_from_home, disable_wounded_spreader_spends_far_from_home;
     }
 
     toggles! {

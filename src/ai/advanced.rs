@@ -11235,6 +11235,11 @@ pub struct AdvancedAi {
     /// weakest rival. See `advanced/tagma_timing_needs_the_edge.rs`. Off by
     /// default.
     tagma_timing_needs_the_edge: bool,
+    /// `wounded-spreader-spends-far-from-home`: a wounded Missionary or
+    /// Apostle more than a two-turn walk from any healing Holy Site spends its
+    /// charge at a target in this turn's reach instead of walking home. See
+    /// `advanced/apostle_army.rs`. Off by default.
+    wounded_spreader_spends_far_from_home: bool,
 }
 
 /// Science weight floor at the start of a game, and at its very end.
