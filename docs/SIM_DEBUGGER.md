@@ -175,8 +175,26 @@ between the ends are numbered along the top of the rail. On it:
   storage), so they are not said again, in that game or any later one. Going
   to a turn any other way (the turn box, the turn buttons, the Save points
   panel) leaves them;
-- save points as flags along the top edge and turn breakpoints as red marks
-  along the bottom, each to click;
+- save points as flags along the top edge, each to click;
+- breakpoints as red lines down through the rail, as a debugger draws them,
+  each named at its head and each to click (operator, 2026-11-27: "breakpoints
+  should add a vertical red line through the spot on the timeline. like a
+  debugger. for uncretain lines, like future eras, we can make the line
+  dashed. label lines with turn and/or era or whatever. a nuclear war
+  breakpoint could have a dashed line too. actually we can just compute these
+  out"). A turn breakpoint is a solid line named by its turn and the era it
+  falls in ("T75 · Medieval"). With "A new era begins" ticked, each era the
+  line has begun is a solid line, and each era the game's future begins is a
+  dashed one ("Industrial ~T142"); with "A nuclear weapon is used" ticked, the
+  turn the future first sees a device go off is a dashed line ("☢ ~T163").
+  The future is the engine's own `foresee`: a copy of the world at the end of
+  the line, played on by the same Civ AI to the end of the game, asked for a
+  stretch of about 250 ms at a time while nothing else is asked of the engine
+  and only while one of those two breakpoints is set. The engine is
+  deterministic, so those are the turns the line reaches them on while it is
+  played the same way; another turn or another Civ AI makes another future,
+  which is asked for anew. Names that would overlap take a second row. In a
+  split, each half's slim rail keeps its turn breakpoints as red dots;
 - under the pointer, the turn there and what letting go would do: "play to
   here", "play on from turn 7 to here" when the open turn is behind the last
   one played (the turns after it are played over), or the turn a thinned one
@@ -2459,7 +2477,7 @@ operation leaves the world as it was.
 | any, from a half of a split | optional `twin`, the other half's name: do it once for both if the two are the same world (see "Identical halves are played once") |
 | `adopt` | from the host of a split: `pane`, the half to keep |
 | `layers` | `layers`: the ids to switch on; all others are switched off |
-| `breakpoints` | `turns`, `categories`, `phrases`, `important`, `every_seat`, `conditions`; whatever is left out is cleared |
+| `breakpoints` | `turns`, `categories`, `phrases`, `important`, `every_seat`, `conditions`, `eras`, `nuclear` (stop on the turn a nuclear device goes off: `stopped` reads `{"kind": "nuclear", "turn": N}`); whatever is left out is cleared |
 | any | optional `lean`: true to be answered without the state document (see below) |
 
 Every state document of a played game carries `debug`: the open `turn`, the

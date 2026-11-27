@@ -272,6 +272,15 @@ impl Condition {
     }
 }
 
+/// The id of the last nuclear strike on a world's record, which changes on
+/// the turn a device goes off.
+fn last_strike(game: &Game) -> Option<u32> {
+    game.chronicle
+        .nuclear_strikes
+        .last()
+        .map(|strike| strike.id)
+}
+
 /// A reading as a number, when it is something that can be held to a line.
 pub(super) fn as_number(reading: &Value) -> Option<f64> {
     match reading {
@@ -352,6 +361,9 @@ pub struct Breakpoints {
     conditions: Vec<Condition>,
     /// Stop on the first turn of a new world era.
     eras: bool,
+    /// Stop on the turn a nuclear device goes off anywhere (operator
+    /// 2026-11-27: "a nuclear war breakpoint could have a dashed line too").
+    nuclear: bool,
 }
 
 impl Breakpoints {
@@ -443,7 +455,15 @@ impl Breakpoints {
             every_seat: request["every_seat"].as_bool().unwrap_or(false),
             conditions,
             eras: request["eras"].as_bool().unwrap_or(false),
+            nuclear: request["nuclear"].as_bool().unwrap_or(false),
         })
+    }
+
+    /// A nuclear device went off between two worlds of the line, when the
+    /// nuclear breakpoint is set.
+    fn detonated(&self, before: &Game, after: &Game) -> Option<Value> {
+        (self.nuclear && last_strike(after) != last_strike(before))
+            .then(|| json!({"kind": "nuclear", "turn": after.turn}))
     }
 
     /// The first condition a freshly played turn made true: one that holds
@@ -492,6 +512,7 @@ impl Breakpoints {
             "every_seat": self.every_seat,
             "conditions": self.conditions.iter().map(Condition::json).collect::<Vec<_>>(),
             "eras": self.eras,
+            "nuclear": self.nuclear,
             // The vocabulary a page offers, read from the engine's own lists.
             "known_categories": crate::game::EVENT_CATEGORIES,
             "known_tests": Test::ALL.map(Test::sign),
@@ -1852,6 +1873,7 @@ impl Session {
                             || json!({"kind": "era", "turn": game.turn, "era": game.world_era}),
                         )
                     })
+                    .or_else(|| breakpoints.detonated(before, game))
                     .or_else(|| {
                         let after = readings(game, &breakpoints.conditions);
                         let hit = breakpoints.crossed(game.turn, &read, &after);
@@ -1973,6 +1995,7 @@ impl Session {
             .unwrap_or_else(|| readings(&self.game, &self.debugger.breakpoints.conditions));
         let mut read_after = None;
         let era_before = self.game.world_era;
+        let struck_before = last_strike(&self.game);
         // In the middle of a round the next whole thing to play is the rest
         // of it: the rivals finish, and the turn that opens is the person's.
         let played = if self.debug_mid_round() {
@@ -1999,6 +2022,12 @@ impl Session {
                     (self.debugger.breakpoints.eras && self.game.world_era != era_before).then(
                         || json!({"kind": "era", "turn": self.game.turn, "era": self.game.world_era}),
                     )
+                })
+                .or_else(|| {
+                    // A nuclear device went off in the turn played.
+                    (self.debugger.breakpoints.nuclear
+                        && last_strike(&self.game) != struck_before)
+                        .then(|| json!({"kind": "nuclear", "turn": self.game.turn}))
                 })
                 .or_else(|| {
                     let after = readings(&self.game, &self.debugger.breakpoints.conditions);
