@@ -10771,6 +10771,10 @@ pub struct AdvancedAi {
     /// the pad city and disrupts there ahead of training and stealing. See
     /// `advanced/seen_pad_starts_the_denial.rs`. Off by default.
     seen_pad_starts_the_denial: bool,
+    /// `science-seat-monuments`: a Science seat's unthreatened cities claim
+    /// their Monument from the third city, through the Culture lane's claim.
+    /// See `advanced/culture_monuments.rs`. Off by default.
+    science_seat_monuments: bool,
     // ---- append: t-z ------------------------------------------------
     /// `world-religion-condemns-the-faith`: our soldiers condemn a faith
     /// World Religion's option B names, at peace, and the agent's ballot asks
