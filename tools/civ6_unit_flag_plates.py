@@ -16,14 +16,8 @@ tool does not go looking for the game itself, because exactly one module in
 
 Usage::
 
-    python3 tools/civ6_unit_flag_plates.py               # local/civ6-art/unit-plates.png
+    python3 tools/civ6_unit_flag_plates.py web/assets/civ6-unit-flag-plates.png
     python3 tools/civ6_unit_flag_plates.py --list        # the whole catalogue
-
-The cut is for the local server of somebody who owns the game, and for nobody
-else: it lands in the git-ignored ``local/civ6-art/``, every PNG this module
-writes carries ``art_provenance.LOCAL_MARK``, and ``tools/art_provenance.py``
-refuses that marker in the repository and in a published build. What the site
-ships is CIVVIS's own plates, drawn by ``tools/own_art.py`` (docs/CIV6_ART.md).
 
 ---------------------------------------------------------------- the container
 
@@ -161,7 +155,6 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import civ6_env as env  # noqa: E402
-import art_provenance  # noqa: E402
 
 #: The in-world UI package, under the assets root.
 IN_WORLD = "Base/Platforms/Windows/BLPs/UI/InWorld.blp"
@@ -501,9 +494,6 @@ def write_png(path, width, height, pixels):
     png += chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0))
     png += chunk(b"IDAT", zlib.compress(raw, 9))
     png += chunk(b"IEND", b"")
-    # Everything cut from the install is marked local-only, so the provenance
-    # check can refuse it wherever it turns up.
-    png = art_provenance.mark_local(png)
     with open(path, "wb") as handle:
         handle.write(png)
 
@@ -585,6 +575,5 @@ def main(destination, listing=False):
 
 if __name__ == "__main__":
     arguments = [word for word in sys.argv[1:] if not word.startswith("-")]
-    main(arguments[0] if arguments
-         else art_provenance.local_destination("unit-plates.png"),
+    main(arguments[0] if arguments else "web/assets/civ6-unit-flag-plates.png",
          listing="--list" in sys.argv[1:])

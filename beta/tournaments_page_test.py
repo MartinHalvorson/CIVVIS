@@ -452,16 +452,31 @@ class TournamentsPage(unittest.TestCase):
         self.assertIn('>ELO Rankings</a></h2>', record)
         # A column for each setup, in the operator's order, under its game;
         # Diplo off first and pressed, the order it opens in.
-        heads = re.findall(r'class="rank-sort" data-sort="(\w+)" aria-pressed="(\w+)"[^>]*>([^<]+)<', record)
+        # Two tables (operator, the same evening: "we should have two
+        # tables: one on the left for computer control firaxis civ 6 games
+        # and one on the right for CIVVIS self-play"): Civilization VI's
+        # Diplo off and on, then CIVVIS self-play's ten. Both Diplo off heads
+        # stand pressed: the page opens on the one-scale ranking by Diplo
+        # off, wherever a player's figure was measured.
+        heads = re.findall(r'class="rank-sort" data-sort="([\w:]+)" aria-pressed="(\w+)"[^>]*>([^<]+)<', record)
         self.assertEqual(heads, [
-            ("continents6_no_diplo", "true", "Diplo off"), ("continents6", "false", "Diplo on"),
-            ("continents6_science", "false", "Science"), ("continents6_culture", "false", "Culture"),
-            ("continents6_religion", "false", "Religion"), ("continents6_diplomacy", "false", "Diplomacy"),
-            ("continents6_domination", "false", "Domination"), ("continents6_score", "false", "Score"),
-            ("pangaea2_no_religion", "false", "Religion off"), ("pangaea2", "false", "Religion on")])
+            ("control:continents6_no_diplo", "true", "Diplo off"), ("control:continents6", "false", "Diplo on"),
+            ("self:continents6_no_diplo", "true", "Diplo off"), ("self:continents6", "false", "Diplo on"),
+            ("self:continents6_science", "false", "Science"), ("self:continents6_culture", "false", "Culture"),
+            ("self:continents6_religion", "false", "Religion"), ("self:continents6_diplomacy", "false", "Diplomacy"),
+            ("self:continents6_domination", "false", "Domination"), ("self:continents6_score", "false", "Score"),
+            ("self:pangaea2_no_religion", "false", "Religion off"), ("self:pangaea2", "false", "Religion on")])
+        pair = record[record.index('<div class="elo-pair">'):]
+        self.assertLess(pair.index('data-elo-side="control"'), pair.index('data-elo-side="self"'))
+        self.assertIn('>Civilization VI &#183; computer control</th>', pair)
+        self.assertIn('>CIVVIS self-play</th>', pair)
         self.assertIn('colspan="8" class="is-group is-split">6P Continents Online</th>', record)
         self.assertIn('colspan="2" class="is-group is-split">2P Pangaea</th>', record)
-        self.assertIn("show(COLUMNS[0][0]);", PAGE)
+        self.assertEqual(record.count('class="is-group is-split">6P Continents Online</th>'), 2)
+        self.assertIn("show(OPEN);", PAGE)
+        # A row is one fixed height in both tables, so the two line up.
+        self.assertIn("#tour-elo .elo-pair tbody tr { height: 28px; }", PAGE)
+        self.assertIn("#tour-elo .elo-pair thead tr { height: 24px; }", PAGE)
         # Each kind faintly its colour ("we can highlight dev blue, civvis
         # gold, and firaxis red in the elo table. faint"), with a key.
         for kind, ink in (("agent", "var(--gold) 8%"), ("level", "#e5534b 10%"), ("person", "var(--accent) 11%")):
@@ -1006,32 +1021,55 @@ class Drawn(unittest.TestCase):
         self.fail(f"the page never drew its rows ({self.dev.console[-5:]})")
 
     def test_elo_rankings_ranks_everyone_together_across_the_page_a_column_a_setup(self):
+        # Two tables, a row for each player across both (operator
+        # 2026-11-27: "two tables: one on the left for computer control
+        # firaxis civ 6 games and one on the right for CIVVIS self-play. 2
+        # separate tables but scrolling horizontally in one should move the
+        # other as well. rows should cross over all the way. any col in
+        # either table should sort all rows in both tables").
         self.rows(1500)
         read = """(() => { const card = document.getElementById('tour-elo');
-          const rows = [...card.querySelectorAll('tbody tr')].map(row => [...row.children].map(cell => cell.firstChild ? cell.firstChild.textContent : ''));
-          const kinds = [...card.querySelectorAll('tbody tr')].map(row => [row.className, getComputedStyle(row).backgroundColor]);
+          const side = name => card.querySelector('[data-elo-side="' + name + '"]');
+          const rows = name => [...side(name).querySelectorAll('tbody tr')].map(row => [...row.children].map(cell => cell.firstChild ? cell.firstChild.textContent : ''));
+          const tops = name => [...side(name).querySelectorAll('tbody tr')].map(row => { const r = row.getBoundingClientRect(); return [Math.round(r.top), Math.round(r.height)]; });
+          const kinds = [...card.querySelectorAll('tbody tr')].map(row => [row.className.replace(' is-hover', ''), getComputedStyle(row).backgroundColor]);
           const box = id => document.getElementById(id).getBoundingClientRect();
           const record = box('tour-record'), elo = box('tour-elo');
-          return {hidden: card.hidden, rows, kinds, pressed: [...card.querySelectorAll('.rank-sort')].filter(b => b.getAttribute('aria-pressed') === 'true').map(b => b.dataset.sort),
+          return {hidden: card.hidden, left: rows('control'), right: rows('self'), lefts: tops('control'), rights: tops('self'),
+            heads: ['control', 'self'].map(name => Math.round(side(name).querySelector('thead').getBoundingClientRect().height)),
+            kinds, pressed: [...card.querySelectorAll('.rank-sort')].filter(b => b.getAttribute('aria-pressed') === 'true').map(b => b.dataset.sort),
             top: [elo.bottom <= box('tour-running').top || box('tour-running').height === 0, elo.bottom <= box('tour-scheduled').top, Math.abs(elo.width - record.width) <= 2],
             note: card.querySelector('[data-rank-note]').textContent}; })()"""
+        names = lambda drawn: [row[1] for row in drawn["left"]]
         drawn = self.dev.evaluate(read)
         self.assertFalse(drawn["hidden"])
         self.assertEqual(drawn["top"], [True, True, True])
-        self.assertEqual(drawn["pressed"], ["continents6_no_diplo"])
-        # Every row numbered in one ranking, by Diplo off: the agents, the
-        # Firaxis levels and the person together. Diplo off and Diplo on read
-        # the four-player fits until the six-player ones are published; the
-        # Science and 2P Pangaea Religion on columns read their own fits; a
-        # column without one is a dash; a level with no figure is left out.
+        # It opens on the one-scale ranking by Diplo off, both Diplo off
+        # heads pressed: every row numbered, wherever its figure was measured.
+        self.assertEqual(drawn["pressed"], ["control:continents6_no_diplo", "self:continents6_no_diplo"])
+        # Left, Civilization VI: the Firaxis levels and the person; right,
+        # CIVVIS self-play: the agents, a column a setup. Diplo off and Diplo
+        # on read the four-player fits until the six-player ones are
+        # published; a column without a figure is a dash.
         dash = ["–"] * 5
-        self.assertEqual(drawn["rows"], [
-            ["1", "HolyRoller", "1543", "1547", "1300", *dash, "–", "1200"],
-            ["2", "Lv 8 Deity", "1452", "1042", "–", *dash, "–", "–"],
-            ["3", "JackOfAllTrades", "1191", "1155", "1400", *dash, "–", "–"],
-            ["4", "dev", "1100", "1210", "–", *dash, "–", "–"],
-            ["5", "Lv 5 King", "799", "595", "–", *dash, "–", "–"],
+        self.assertEqual(drawn["left"], [
+            ["1", "HolyRoller", "–", "–"],
+            ["2", "Lv 8 Deity", "1452", "1042"],
+            ["3", "JackOfAllTrades", "–", "–"],
+            ["4", "dev", "1100", "1210"],
+            ["5", "Lv 5 King", "799", "595"],
         ])
+        self.assertEqual(drawn["right"], [
+            ["1543", "1547", "1300", *dash, "–", "1200"],
+            ["–"] * 10,
+            ["1191", "1155", "1400", *dash, "–", "–"],
+            ["–"] * 10,
+            ["–"] * 10,
+        ])
+        # A row runs across: each row of the left stands level with its row
+        # on the right, and the two heads are one height.
+        self.assertEqual(drawn["lefts"], drawn["rights"])
+        self.assertEqual(drawn["heads"][0], drawn["heads"][1])
         # Each kind faintly its own colour, and the three apart.
         kinds = {cls: ink for cls, ink in drawn["kinds"]}
         self.assertEqual(sorted(kinds), ["is-agent", "is-level", "is-person"])
@@ -1039,15 +1077,47 @@ class Drawn(unittest.TestCase):
         self.assertTrue(all(ink not in ("rgba(0, 0, 0, 0)", "transparent") for ink in kinds.values()), kinds)
         self.assertIn("Diplo off and Diplo on read the four-player Pangaea tables until the six-player Continents fit is published.", drawn["note"])
         self.assertIn("Science 120", drawn["note"])
-        # Science sorts it by Science: those rated there first, the rest in
-        # Diplo off's order.
-        self.dev.evaluate("document.querySelector('#tour-elo [data-sort=\"continents6_science\"]').click(), true")
+        # Any head of either table sorts both: Science (right) puts those
+        # rated there first and the rest in the Diplo off ranking.
+        self.dev.evaluate("document.querySelector('#tour-elo [data-sort=\"self:continents6_science\"]').click(), true")
         drawn = self.dev.evaluate(read)
-        self.assertEqual(drawn["pressed"], ["continents6_science"])
-        self.assertEqual([row[1] for row in drawn["rows"]], ["JackOfAllTrades", "HolyRoller", "Lv 8 Deity", "dev", "Lv 5 King"])
-        # Diplo on sorts it the other way.
-        self.dev.evaluate("document.querySelector('#tour-elo [data-sort=\"continents6\"]').click(), true")
-        self.assertEqual([row[1] for row in self.dev.evaluate(read)["rows"]], ["HolyRoller", "dev", "JackOfAllTrades", "Lv 8 Deity", "Lv 5 King"])
+        self.assertEqual(drawn["pressed"], ["self:continents6_science"])
+        self.assertEqual(names(drawn), ["JackOfAllTrades", "HolyRoller", "Lv 8 Deity", "dev", "Lv 5 King"])
+        self.assertEqual(drawn["right"][0][2], "1400")
+        # Civilization VI's Diplo on (left) sorts both by it.
+        self.dev.evaluate("document.querySelector('#tour-elo [data-sort=\"control:continents6\"]').click(), true")
+        drawn = self.dev.evaluate(read)
+        self.assertEqual(names(drawn), ["dev", "Lv 8 Deity", "Lv 5 King", "HolyRoller", "JackOfAllTrades"])
+        self.assertEqual(drawn["right"][3][1], "1547")
+        self.assertEqual(drawn["lefts"], drawn["rights"])
+        # Pointing at a row in one table lights it in the other.
+        lit = self.dev.evaluate("""(() => { const card = document.getElementById('tour-elo');
+          card.querySelectorAll('[data-elo-side="control"] tbody tr')[1].children[1].dispatchEvent(new MouseEvent('mouseover', {bubbles: true}));
+          return [...card.querySelectorAll('[data-elo-side="self"] tbody tr')].map(row => row.classList.contains('is-hover')); })()""")
+        self.assertEqual(lit, [False, True, False, False, False])
+        self.assertEqual(self.dev.console, [])
+
+    def test_the_two_elo_tables_scroll_sideways_together(self):
+        # On a phone both tables are wider than their room: scrolling one
+        # sideways scrolls the other the same share of its width.
+        self.rows(390)
+        moved = self.dev.evaluate("""new Promise(done => {
+          const card = document.getElementById('tour-elo');
+          const [left, right] = ['control', 'self'].map(name => card.querySelector('[data-elo-side="' + name + '"]'));
+          const span = pane => pane.scrollWidth - pane.clientWidth;
+          right.scrollLeft = span(right);
+          setTimeout(() => {
+            const after = [span(left), span(right), left.scrollLeft, right.scrollLeft];
+            left.scrollLeft = 0;
+            setTimeout(() => done([...after, left.scrollLeft, right.scrollLeft]), 300);
+          }, 300);
+        })""")
+        span_left, span_right, left_at, right_at, left_back, right_back = moved
+        self.assertGreater(span_left, 0, moved)
+        self.assertGreater(span_right, 0, moved)
+        self.assertEqual(right_at, span_right, moved)
+        self.assertLessEqual(abs(left_at - span_left), 1, moved)
+        self.assertEqual((left_back, right_back), (0, 0), moved)
         self.assertEqual(self.dev.console, [])
 
     def test_a_row_of_games_is_labelled_first_and_last(self):

@@ -612,7 +612,7 @@ class ThePage(unittest.TestCase):
         places = [PAGE.index(mark) for mark in order]
         self.assertEqual(places, sorted(places))
         # The steps by kind, the games by how long they took and game time
-        # batch by batch are on Random AI Charts since 2026-11-26 (operator:
+        # batch by batch are on Unreviewed Gen AI Charts since 2026-11-26 (operator:
         # "please move all the ai generated charts that i havent approved of
         # or we have discussed to here").
         for gone in ('id="perf-path-steps"', 'id="perf-spans-plot"', 'id="perf-spans-table"', 'id="perf-batches"', "drawSpans", "drawBatches"):
@@ -646,7 +646,7 @@ class TheSiteList(unittest.TestCase):
                 ("site-link sub-link", "../win-analytics/", "Win Analytics"),
                 ("site-link sub-link", "../elo-rankings/", "ELO Rankings"),
                 ("site-link sub-link", "./", "CIVVIS Performance"),
-                ("site-link sub-link", "../random-ai-charts/", "Random AI Charts"),
+                ("site-link sub-link", "../unreviewed-gen-ai-charts/", "Unreviewed Gen AI Charts"),
                 ("site-link", "../../tournaments/", "Tournaments"),
                 ("site-link", "../../", "CIVVIS"),
                 ("site-link", "../../doctor-strange", "Doctor Strange's CIVVIS"),
@@ -685,7 +685,7 @@ class TheSiteList(unittest.TestCase):
                 re.findall(r'<a class="site-link sub-link" href="\.\./charts/([^"]+)/"[^>]*>([^<]+)</a>', menu),
                 [("ai-insights", "AI Insights"), ("civ-ai-interpretability", "Civ AI Interpretability"), ("civ-analytics", "Civ Analytics"),
                  ("win-analytics", "Win Analytics"), ("elo-rankings", "ELO Rankings"), ("civvis-performance", "CIVVIS Performance"),
-                 ("random-ai-charts", "Random AI Charts")],
+                 ("unreviewed-gen-ai-charts", "Unreviewed Gen AI Charts")],
             )
         self.assertNotIn("Performance</a>", VIEWER)
         for name in (">Win Analytics</a>", ">ELO Rankings</a>", ">Civ Analytics</a>", ">AI Insights</a>"):

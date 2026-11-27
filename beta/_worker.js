@@ -300,6 +300,10 @@ const PAGE_ADDRESS =
 // (/interpretability) is followed move by move to wherever the lane has the
 // page: /charts/ai-interpretability in a lane pinned to a revision from
 // before the new name, /charts/civ-ai-interpretability in one from after.
+//
+// Random AI Charts was named Unreviewed Gen AI Charts on 2026-11-27
+// (operator: "change random ai charts to unreviewed gen AI charts"), and its
+// address followed the name.
 const MOVED = {
   research: "charts/win-analytics",
   performance: "charts/civvis-performance",
@@ -307,6 +311,7 @@ const MOVED = {
   "charts/ai-interpretability": "charts/civ-ai-interpretability",
   experiments: "tournaments",
   "auto-tourneys": "tournaments",
+  "charts/random-ai-charts": "charts/unreviewed-gen-ai-charts",
 };
 
 // A page that went back to an address it had left, by that address, and the

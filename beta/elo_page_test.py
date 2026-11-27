@@ -471,7 +471,7 @@ class Page(unittest.TestCase):
         record = PAGE[PAGE.index('<div class="elo-record" id="elo-record" hidden>'):]
         sections = re.findall(r'<section [^>]*id="([a-z-]+)"', record)
         # The two readings of each Firaxis level stood beside the strategies
-        # until 2026-11-26, and are on Random AI Charts since (operator:
+        # until 2026-11-26, and are on Unreviewed Gen AI Charts since (operator:
         # "please move all the ai generated charts that i havent approved of
         # or we have discussed to here"); `random_page_test.py` holds them.
         self.assertEqual(sections, ["rank-strategies", "elo-over-time"])

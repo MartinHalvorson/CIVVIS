@@ -190,7 +190,7 @@ PAGES = {
     "charts/ai-insights": b'id="insights-data"',
     # Its figures arrive in the slots of the pages its charts came from, so it
     # is known by its own record of where each chart came from instead.
-    "charts/random-ai-charts": b'id="random-moved"',
+    "charts/unreviewed-gen-ai-charts": b'id="random-moved"',
     "download": b"releases/latest/download/",
 }
 
@@ -219,6 +219,9 @@ FORMER = {
     "performance": "charts/civvis-performance",
     "interpretability": "charts/ai-interpretability",
     "charts/ai-interpretability": "charts/civ-ai-interpretability",
+    # Random AI Charts, named Unreviewed Gen AI Charts on 2026-11-27 (operator:
+    # "change random ai charts to unreviewed gen AI charts").
+    "charts/random-ai-charts": "charts/unreviewed-gen-ai-charts",
 }
 
 # A page that went back to an address it had left, by that address, and the
@@ -347,11 +350,9 @@ def lane_page_problems(dist: pathlib.Path, mount: str, build: dict) -> list:
 
 
 # The atlases are republished as WebP when Pillow is available and stay PNG
-# when it is not, so the required-files list asks for the unit-glyph atlas the
+# when it is not, so the required-files list asks for the unit-flag atlas the
 # viewer draws in whichever form this build actually chose. (publish.sh leaves
 # out art the viewer no longer references, so a retired atlas is no witness.)
-# A stable lane built from a revision before #5940 still carries the sheet cut
-# from the game, under its old name, until the next promotion replaces it.
 def required(mount: str, pages=None) -> list:
     lane = "" if mount == "root" else "test/"
     pages = list(PAGES) if pages is None else pages
@@ -361,8 +362,7 @@ def required(mount: str, pages=None) -> list:
         f"{lane}shim.js",
         f"{lane}worker.js",
         f"{lane}build.json",
-        (f"{lane}assets/unit-glyphs.webp", f"{lane}assets/unit-glyphs.png",
-         f"{lane}assets/civ6-unit-flags.webp", f"{lane}assets/civ6-unit-flags.png"),
+        (f"{lane}assets/civ6-unit-flags.webp", f"{lane}assets/civ6-unit-flags.png"),
         # The landing photographs are deliberately not pinned by name here:
         # each lane ships its own revision's art, so the stable lane's set
         # legitimately differs from head's. The page's own references are
