@@ -11257,6 +11257,13 @@ pub struct AdvancedAi {
     /// weakest rival. See `advanced/tagma_timing_needs_the_edge.rs`. Off by
     /// default.
     tagma_timing_needs_the_edge: bool,
+    /// `walls-for-the-war-front`: while at war with a major, an unwalled city
+    /// that major's soldier was seen near starts its Walls. See
+    /// `advanced/walls_for_the_war_front.rs`. Off by default.
+    walls_for_the_war_front: bool,
+    /// `walls-for-the-war-front`: last turn an enemy soldier was seen near our
+    /// unwalled city, by (city tile, enemy).
+    war_front_sightings: BTreeMap<(Pos, usize), u32>,
 }
 
 /// Science weight floor at the start of a game, and at its very end.
@@ -11697,6 +11704,8 @@ mod tactics;
 /// The unit turn: the per-unit step, kill priorities, and the religious,
 /// Trader and explorer steps. See `advanced/units.rs`.
 mod units;
+/// `walls-for-the-war-front`: see `advanced/walls_for_the_war_front.rs`.
+mod walls_for_the_war_front;
 /// `war-defense-spends-the-runway`: see
 /// `advanced/war_defense_spends_the_runway.rs`.
 mod war_defense_spends_the_runway;
@@ -13569,6 +13578,9 @@ impl AdvancedAi {
         // door, from the same frame. No-op with the gene off.
         self.remember_threatened_capital(g, pid);
         self.remember_frontier_watch_sightings(g, pid);
+        // `walls-for-the-war-front`: the enemy's soldiers near our unwalled
+        // cities, from the same frame. No-op with the gene off.
+        self.remember_war_front_sightings(g, pid);
         // `surprise-watch-holds-its-ratio`: see `advanced/surprise_watch_latch.rs`.
         self.remember_surprise_watch_latches(g, pid);
         if !self.live_formationless_settler_shadow || self.turn_start_hostiles_turn == Some(g.turn)
@@ -28314,6 +28326,8 @@ impl AdvancedAi {
         // gene is off. See `advanced/score_sprints_to_the_tally.rs`.
         self.claim_score_sprint_queues(g, pid, &plan);
         self.claim_frontier_walls_before_the_surprise(g, pid);
+        // `walls-for-the-war-front`: see `advanced/walls_for_the_war_front.rs`.
+        self.claim_walls_for_the_war_front(g, pid);
         // Make the declaration response the final authority over queues this
         // turn. Earlier governors can continue to express their peaceful
         // plan; switching banks that progress and this bounded pass reclaims

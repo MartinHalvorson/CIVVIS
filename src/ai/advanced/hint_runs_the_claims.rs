@@ -392,6 +392,8 @@ impl AdvancedAi {
         // `capital-archers-before-the-surprise`: no-op with the gene off.
         self.claim_capital_archers_before_the_surprise(g, pid);
         self.claim_frontier_walls_before_the_surprise(g, pid);
+        // `walls-for-the-war-front`: no-op with the gene off.
+        self.claim_walls_for_the_war_front(g, pid);
         self.mobilize_surprise_defense_production(g, pid);
         self.redirect_unsafe_city_queue_for_defense(g, pid, plan.threatened_city);
         // `threatened-capital-trains-its-shooters`: no-op with the gene off.
