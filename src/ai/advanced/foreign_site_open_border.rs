@@ -47,7 +47,11 @@
 //! 5.3 times our military. When nobody sells, the journal names the filter
 //! that refused each seller; every six turns a held person with nothing to
 //! buy says why (no site known yet, a site open at a tile, or no major at
-//! peace holding one), so an idle person is never silent. A site is
+//! peace holding one), so an idle person is never silent. On a turn the
+//! purchase closes, every alliance desk waits a turn: the live bridge holds
+//! any purchase sent beside an alliance ask (`hold_deals_beside_an_alliance`
+//! in `civvis_orders`), and the same game asked Georgia for a Research
+//! Alliance every turn. A site is
 //! reachable when it is
 //! ours (Darwin only), explored, unowned and unsealed (Darwin only), or
 //! held by a seat at peace that lets us in (`Game::has_open_borders`; for
@@ -143,6 +147,18 @@ impl AdvancedAi {
             }
         }
         false
+    }
+
+    /// Whether this seat bought a stranded person's passage this turn: the
+    /// gene is on, such a person is held, and an Open Borders purchase of
+    /// ours started this turn. The alliance desks wait on such a turn, so the
+    /// live bridge does not hold the purchase behind an alliance ask.
+    pub(super) fn foreign_site_passage_bought(&self, g: &Game, pid: usize) -> bool {
+        self.foreign_site_buys_the_open_border
+            && !Self::held_foreign_site_people(g, pid).is_empty()
+            && g.active_trade_deals
+                .iter()
+                .any(|deal| deal.from == pid && deal.started == g.turn && deal.request.open_borders)
     }
 
     /// The sites the seat's held, unused persons need, each once. Empty in a

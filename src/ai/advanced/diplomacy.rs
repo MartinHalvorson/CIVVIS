@@ -1799,25 +1799,38 @@ impl AdvancedAi {
         // `coalition_before_war`: an alliance with a neighbour of the war
         // desk's target, ahead of the stock cadence. See
         // `advanced/coalition.rs`.
-        self.coalition_alliance_step(g, pid);
+        // `foreign-site-buys-the-open-border`: on a turn this seat bought
+        // passage for a stranded Great Person, every alliance desk below
+        // waits a turn. The live host opens one alliance session a batch and
+        // holds every purchase beside it (`hold_deals_beside_an_alliance`):
+        // a Research Alliance asked of Georgia every turn kept Mead's grant
+        // off the host for good (civvis-t7-20261127T075243Z t132-t150). See
+        // `advanced/foreign_site_open_border.rs`.
+        let site_passage_bought = self.foreign_site_passage_bought(g, pid);
+        if !site_passage_bought {
+            self.coalition_alliance_step(g, pid);
+        }
         // `military-alliance-shield`: a Military Alliance with the empire
         // fighting our enemy or the neighbour at our border. On a turn it
         // asks, the stock ask waits: the live host opens one alliance
         // session a batch (`hold_deals_beside_an_alliance`), and a held ask
         // would still be remembered as a refusal. See
         // `advanced/military_alliance_shield.rs`.
-        let shield_asked = self.military_alliance_shield_step(g, pid, plan, denied_partner);
+        let shield_asked = !site_passage_bought
+            && self.military_alliance_shield_step(g, pid, plan, denied_partner);
         // `research-alliance-first` runs inside `propose_strategic_alliance`:
         // the kind, the cadence, the ranking's science term and the partner
         // bar. See `advanced/research_alliance.rs`.
-        if !shield_asked {
+        if !shield_asked && !site_passage_bought {
             self.propose_strategic_alliance(g, pid, plan, denied_partner);
         }
         // `diplo-seat-allies-every-friend`: on a Diplomatic seat, one declared
         // friend we hold no alliance with is asked for a kind still free on
         // both sides; it stands down on a turn a desk above asked. See
         // `advanced/diplo_allies_every_friend.rs`.
-        self.diplo_allies_every_friend_step(g, pid, denied_partner);
+        if !site_passage_bought {
+            self.diplo_allies_every_friend_step(g, pid, denied_partner);
+        }
         // `embassy-finds-the-capital`: an Embassy to a rival whose original
         // capital we have never seen, the plan's target first; the stock
         // cadence below opens no second session on a turn it sends one. See
