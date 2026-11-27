@@ -361,7 +361,7 @@ function gameStatsMarkup(st) {
     </div>
     <div class="game-stats-grid" style="--gs-cols:${layout.cols};--gs-rows:${layout.rows}">${rows.map((row, i) =>
       `<figure class="game-stats-civ" style="--civ:${row.color}" data-player="${row.id}">
-        <figcaption><span class="gs-civ" title="${escapeAttr(row.civ)}">${escapeAttr(civShort(row.civ))}</span>${
+        <figcaption><span class="gs-civ">${escapeAttr(row.civ)}</span>${
           row.by ? `<span class="gs-by">${escapeAttr(row.by)}</span>` : ``}${
           row.won ? `<span class="gs-won">Winner</span>` : row.out !== null ? `<span class="gs-out">Out on turn ${row.out}</span>` : ``}
           <small><span>Score ${Math.round(row.score).toLocaleString()}</span><span>${count(row.held, "city", "cities")}</span><span>${

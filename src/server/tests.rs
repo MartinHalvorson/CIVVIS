@@ -8368,7 +8368,7 @@ fn browser_orders_controls_interface_setup_and_logs() {
     );
     assert!(
         EMBEDDED_INDEX
-            .contains("minmax(var(--hud-rank-min), .7fr) minmax(var(--hud-ident-min), .9fr)"),
+            .contains("minmax(var(--hud-rank-min), .7fr) minmax(var(--hud-ident-min), 2.035fr)"),
         "the rank heading should occupy its own first identity track"
     );
     assert!(
