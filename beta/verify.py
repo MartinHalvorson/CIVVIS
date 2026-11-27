@@ -347,11 +347,9 @@ def lane_page_problems(dist: pathlib.Path, mount: str, build: dict) -> list:
 
 
 # The atlases are republished as WebP when Pillow is available and stay PNG
-# when it is not, so the required-files list asks for the unit-glyph atlas the
+# when it is not, so the required-files list asks for the unit-flag atlas the
 # viewer draws in whichever form this build actually chose. (publish.sh leaves
 # out art the viewer no longer references, so a retired atlas is no witness.)
-# A stable lane built from a revision before #5940 still carries the sheet cut
-# from the game, under its old name, until the next promotion replaces it.
 def required(mount: str, pages=None) -> list:
     lane = "" if mount == "root" else "test/"
     pages = list(PAGES) if pages is None else pages
@@ -361,8 +359,7 @@ def required(mount: str, pages=None) -> list:
         f"{lane}shim.js",
         f"{lane}worker.js",
         f"{lane}build.json",
-        (f"{lane}assets/unit-glyphs.webp", f"{lane}assets/unit-glyphs.png",
-         f"{lane}assets/civ6-unit-flags.webp", f"{lane}assets/civ6-unit-flags.png"),
+        (f"{lane}assets/civ6-unit-flags.webp", f"{lane}assets/civ6-unit-flags.png"),
         # The landing photographs are deliberately not pinned by name here:
         # each lane ships its own revision's art, so the stable lane's set
         # legitimately differs from head's. The page's own references are

@@ -2502,7 +2502,7 @@
   .city-yields { display: grid; gap: 5px; grid-template-columns: repeat(6, minmax(0, 1fr)); margin-bottom: 9px; }
   .city-yield-icon {
     width: 26px; height: 26px; border-radius: 50%;
-    background: url("/assets/yield-icons.png") calc(var(--cell) * 20%) 0 / 600% 100% no-repeat,
+    background: url("/assets/civ6-yield-icons.png") calc(var(--cell) * 20%) 0 / 600% 100% no-repeat,
       var(--fill);
   }
   .city-meters { display: grid; gap: 4px 14px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -2658,9 +2658,6 @@
   }
   #buildmark-commit:hover { color: #eef8f4; text-decoration-color: currentColor; }
   #buildmark-commit:focus-visible { outline: 1px solid #b8d8cb; outline-offset: 2px; }
-  /* CC BY 3.0 asks for the icons' authors to be credited where they are used. */
-  #buildmark-credits { color: inherit; text-decoration-color: transparent; text-underline-offset: 2px; }
-  #buildmark-credits:hover { color: #eef8f4; text-decoration-color: currentColor; }
   .tip-primary, .tip-unit {
     display: inline-block; color: #fffaf0; font-size: var(--type-body); font-weight: 400; line-height: 1.45;
   }
@@ -2672,14 +2669,14 @@
   .tip-yield-marker {
     flex: 0 0 auto; width: 13px; height: 13px; display: inline-block; box-sizing: border-box;
     border: 1px solid #0c1012cc; border-radius: 50%;
-    /* The map's own sign, off the same sheet the map draws, dimmed
+    /* Civilization VI's own sign, off the same sheet the map draws, dimmed
        above the earned portion exactly as a fractional sign is on the map. The
        coloured disc stays underneath as the layer that survives a sheet the
        browser could not fetch. */
     background:
       linear-gradient(to top, #0000 0 var(--tip-yield-portion),
         #08110ec2 var(--tip-yield-portion) 100%),
-      url("/assets/yield-icons.png") calc(var(--tip-yield-cell) * 20%) 0 / 600% 100% no-repeat,
+      url("/assets/civ6-yield-icons.png") calc(var(--tip-yield-cell) * 20%) 0 / 600% 100% no-repeat,
       linear-gradient(to top, var(--tip-yield-fill) 0 var(--tip-yield-portion),
         color-mix(in srgb, var(--tip-yield-fill) 17%, #08110e) var(--tip-yield-portion) 100%);
     box-shadow: 0 1px 2px #0009;
@@ -7663,7 +7660,6 @@
 </div>
 <div id="buildmark" hidden>
   <a id="buildmark-commit" target="_blank" rel="noopener noreferrer"></a><span id="buildmark-details"></span>
-  · <a id="buildmark-credits" href="https://github.com/MartinHalvorson/CIVVIS/blob/main/web/assets/ART_CREDITS.md" target="_blank" rel="noopener noreferrer" title="Unit and yield icons from game-icons.net (CC BY 3.0), each author credited">Icons: game-icons.net</a>
 </div>
 <script src="/assets/app_palette.js"></script>
 <script src="/assets/app_arena.js"></script>
