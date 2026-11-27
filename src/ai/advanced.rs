@@ -7124,6 +7124,16 @@ pub struct AdvancedAi {
     /// holding or queueing a Spaceport or space project, nor a Builder. See
     /// `advanced/denial_spies_fill_every_slot.rs`. Opt-in.
     denial_spies_fill_every_slot_3: bool,
+    /// `city-campaign-3`: version two at peace, and the war in hand — a
+    /// major war already open (whoever opened it) draws a one-city plan
+    /// against that rival when the field army carries the city's bill, keeps
+    /// it for a twenty-turn clock, and holds the generic Siege row against a
+    /// rival with no such city. See `advanced/city_campaign.rs`. Opt-in.
+    city_campaign_3: bool,
+    /// `city-campaign-3`: rivals whose war reads no-go, each to the last turn
+    /// the verdict holds. Written by `maintain_city_campaign`, read by the
+    /// Objective Board's Siege rows. Empty while the gene is off.
+    campaign_war_no_go: BTreeMap<usize, u32>,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See

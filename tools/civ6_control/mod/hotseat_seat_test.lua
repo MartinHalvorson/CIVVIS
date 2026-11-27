@@ -186,9 +186,28 @@ localPlayer = 0
 assert(screen.humanTurn() == false, "the gate needs cfg.Hotseat")
 
 -- The generic closer and the behind-deal closer both stand down on the
--- operator's turn.
-assert(closer:find("if operatorHolds() or CivvisHotseatScreen.humanTurn() then", 1, true))
-assert(closer:find("or CivvisHotseatScreen.humanTurn() then return; end", 1, true))
+-- operator's turn: a real person's, not the `--auto-human gated` stub's.
+assert(closer:find("if operatorHolds() or CivvisHotseatScreen.personTurn() then", 1, true))
+assert(closer:find("or CivvisHotseatScreen.personTurn() then return; end", 1, true))
+assert(not closer:find("or CivvisHotseatScreen.humanTurn() then", 1, true),
+	"no closer stands down on humanTurn() alone")
+env.cfg = { Hotseat = true, HotseatHumanSeats = { 0 }, HotseatSeats = { 1 } }
+localPlayer = 0
+assert(screen.humanTurn() == true and screen.personTurn() == true,
+	"a person's turn: every closer stands down")
+-- The gated stub counts as the person for the cover and the hand-over, but
+-- its own announcements are closed: nobody is there to read them.
+env.cfg = { Hotseat = true, HotseatHumanSeats = { 0 }, HotseatStubSeats = { 0 }, HotseatSeats = { 1 } }
+assert(screen.humanTurn() == true and screen.personTurn() == false,
+	"the gated stub's turn: the closers act")
+localPlayer = 1
+assert(screen.personTurn() == false, "a CIVVIS seat's turn is never a person's")
+-- Single player and unattended tables: no person anywhere.
+env.cfg = { HotseatHumanSeats = { 0 }, HotseatStubSeats = {} }
+localPlayer = 0
+assert(screen.personTurn() == false)
+env.cfg = { Hotseat = true, HotseatHumanSeats = {}, HotseatStubSeats = {}, HotseatSeats = { 0, 1 } }
+assert(screen.personTurn() == false)
 -- And the camera never runs in a hotseat game.
 assert(read("CivvisControlMapView.lua"):find(
 	"return cfg.Play ~= false and cfg.CivvisDecides and cfg.Hotseat ~= true;", 1, true))

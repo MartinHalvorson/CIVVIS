@@ -144,6 +144,10 @@ class ManualConfigTest(unittest.TestCase):
         self.assertEqual(config["HotseatNames"],
                          {str(s): f"CIVVIS jack {s}" for s in hotseat.MANUAL_SEATS})
         self.assertEqual(config["OrdersDb"], "/r/o.sqlite")
+        # #5943: a person's game gets the cover and their hand-over pressed,
+        # both gated on this harness in the mod (harness_gate_test.lua part 6).
+        self.assertTrue(config["HotseatCover"] and config["HotseatAutoStart"])
+        self.assertTrue(install.hotseat_cover_wanted(config))
 
     def test_nothing_is_set_on_the_persons_game(self) -> None:
         config = hotseat.manual_lobby_config(manual_args(), Path("/r"), Path("/r/o.sqlite"))
@@ -163,6 +167,7 @@ class ManualConfigTest(unittest.TestCase):
         config = hotseat.manual_lobby_config(manual_args(auto_human="stub"), Path("/r"), Path("/r/o"))
         self.assertEqual(config["HotseatStubSeats"], [0])
         self.assertEqual(config["HotseatHumanSeats"], [])
+        self.assertFalse(install.hotseat_cover_wanted(config), "no person, no cover")
 
     def test_the_default_paths_carry_no_new_key(self) -> None:
         from test_civ6_hotseat import game_args
@@ -202,7 +207,12 @@ class PersonFacingInstallTest(unittest.TestCase):
             for child in action.findall("File"):
                 if action.tag != "Files":
                     self.assertIn(child.text, files, "every file an action names is listed")
-        for script in ["CivvisControlAutoClose.lua", "CivvisControlHeartbeat.lua"] + [
+        covers = [f.text for f in tree.findall(
+            "./InGameActions/AddUserInterfaces[@id='CivvisHotseatCoverUI']/File")]
+        self.assertEqual(covers, ["CivvisHotseatCover.xml"], "the person's cover is installed")
+        self.assertIn("CivvisHotseatCover.lua", files)
+        for script in ["CivvisControlAutoClose.lua", "CivvisControlHeartbeat.lua",
+                       "CivvisHotseatCover.lua"] + [
                 f"CivvisControlAgentSeat{s}.lua" for s in hotseat.MANUAL_SEATS]:
             head = (out / script).read_text().split("}\n", 1)[0]
             self.assertIn("RequireHarness = true,", head, script)

@@ -18,7 +18,12 @@
 --   5. the HUD in a single-player game is the shipped HUD; in a hotseat game
 --      with no harness it writes nothing and ends no turn, even with a stale
 --      controller stamp left from an earlier game; live, it reports the lobby
---      exactly once.
+--      exactly once;
+--   6. the person's cover (#5943) in a single-player game is hidden and adds
+--      nothing; in a hotseat game with no harness it never goes up, takes no
+--      key, moves no camera and writes nothing; live, it covers CIVVIS's seat
+--      and comes down within the freshness window of a stopped or dead harness,
+--      and never covers a seat that is not CIVVIS's.
 -- Run: lua5.1 tools/civ6_control/mod/harness_gate_test.lua
 local here = arg[0]:match("(.*)/[^/]*$") or "."
 local function read(name)
@@ -36,13 +41,13 @@ end
 -- 1. One block, three copies. ----------------------------------------------
 local blocks = {}
 for _, name in ipairs({ "CivvisControlAgent.lua", "CivvisControlAutoClose.lua",
-		"CivvisControlHeartbeat.lua" }) do
+		"CivvisControlHeartbeat.lua", "CivvisHotseatCover.lua" }) do
 	local block = read(name):match("(%-%- >>> CivvisHarness.-%-%- <<< CivvisHarness\n)")
 	assert(block, name .. " carries the CivvisHarness block")
 	blocks[#blocks + 1] = block
 end
-assert(blocks[1] == blocks[2] and blocks[2] == blocks[3],
-	"the agent, the closer and the HUD must judge the harness the same way")
+assert(blocks[1] == blocks[2] and blocks[2] == blocks[3] and blocks[3] == blocks[4],
+	"the agent, the closer, the HUD and the cover must judge the harness the same way")
 
 -- 2. The gate itself. ------------------------------------------------------
 local function gate(cfg, opts)
@@ -262,7 +267,21 @@ local function closer(name, cfg, opts)
 			env.OnClose = function() h.closes = h.closes + 1; h.hidden = true end
 		end
 	end
-	env.Controls = { PopupAlphaIn = { IsHidden = function() return false end } }
+	h.textHidden, h.dialogHidden = false, false
+	env.Controls = {
+		PopupAlphaIn = { IsHidden = function() return h.dialogHidden end,
+			SetHide = function(_, v) h.dialogHidden = v end },
+		PlayerChangingText = { IsHidden = function() return h.textHidden end,
+			SetHide = function(_, v) h.textHidden = v end },
+	}
+	env.UIManager = opts.uimanager
+	env.PlayerConfigurations = setmetatable({}, { __index = function()
+		return { GetHotseatPassword = function() return "" end,
+			GetWantsPause = function() return true end }
+	end })
+	env.Players = setmetatable({}, { __index = function()
+		return { IsTurnActive = function() return true end }
+	end })
 	env.ContextPtr = {
 		GetID = function() return name end, IsHidden = function() return h.hidden end,
 		SetUpdate = function(_, f) h.tick = f end, SetShowHandler = function(_, f) h.show = f end,
@@ -325,6 +344,57 @@ local operator = { Hotseat = true, HotseatSeats = { 1, 2, 3 }, HotseatHumanSeats
 local legacy = closer("PlayerChange", operator, { hotseat = true, localPlayer = 1 })
 play(legacy, 40)
 assert(legacy.presses > 0, "without the key a jack seat's Start Turn is still pressed")
+-- #5943's person's hand-over and cover, in the person-facing install: the
+-- person's own Start Turn is pressed only while the harness is live, and
+-- without it the hand-over is the shipped screen, text and all.
+local COVERED = {}
+for k, v in pairs(SCREENS) do COVERED[k] = v end
+COVERED.HotseatCover, COVERED.HotseatAutoStart = true, true
+for _, case in ipairs({ { beat = true, seat = 0, press = true }, { beat = false, seat = 0, press = false },
+		{ beat = false, seat = 1, press = false }, { beat = true, seat = 6, press = false } }) do
+	local handover = closer("PlayerChange", COVERED, { hotseat = true, beat = case.beat, localPlayer = case.seat })
+	play(handover, 40)
+	assert((handover.presses > 0) == case.press, string.format(
+		"seat %d, harness %s: Start Turn %s", case.seat, tostring(case.beat), case.press and "pressed" or "left"))
+	if not case.beat then
+		assert(not handover.textHidden and not handover.dialogHidden,
+			"no harness: the hand-over's own text and dialog stay as shipped")
+		assert(#handover.logs == 0)
+	end
+end
+-- The stub's seat (`--auto-human`) is a person's too while no harness is live.
+local STUBBED = {}
+for k, v in pairs(SCREENS) do STUBBED[k] = v end
+STUBBED.HotseatStubSeats, STUBBED.HotseatHumanSeats = { 0 }, {}
+local stubPopup = closer("TechCivicCompletedPopup", STUBBED, { hotseat = true, localPlayer = 0 })
+play(stubPopup, 400)
+assert(stubPopup.closes == 0, "no harness: the stub's announcement is left up")
+local stubLive = closer("TechCivicCompletedPopup", STUBBED, { hotseat = true, beat = true, localPlayer = 0 })
+play(stubLive, 40)
+assert(stubLive.closes > 0, "live: the stub's announcement closes")
+-- The cover queue: no wrapped UIManager in a single-player game, and the
+-- shipped queueing on every turn without a live harness on CIVVIS's seat.
+local function manager()
+	local m = { params = {} }
+	m.QueuePopup = function(self, ctx, priority, params) m.params[#m.params + 1] = params or {} end
+	m.IsInPopupQueue = function() return false end
+	m.DequeuePopup = function() end
+	return m
+end
+local spManager = manager()
+local spQueue = closer("TechCivicCompletedPopup", COVERED, { hotseat = false, localPlayer = 0, uimanager = spManager })
+assert(spQueue.env.UIManager == spManager, "a single-player game keeps the shipped UIManager")
+for _, case in ipairs({ { beat = false, seat = 1, visible = false }, { beat = true, seat = 1, visible = true },
+		{ beat = true, seat = 0, visible = false }, { beat = true, seat = 6, visible = false } }) do
+	local m = manager()
+	local queued = closer("TechCivicCompletedPopup", COVERED,
+		{ hotseat = true, beat = case.beat, localPlayer = case.seat, uimanager = m })
+	queued.now = queued.now + 5
+	queued.env.UIManager:QueuePopup(queued.env.ContextPtr, 1, {})
+	assert((m.params[1].AlwaysVisibleInQueue == true) == case.visible, string.format(
+		"seat %d, harness %s: queued %s", case.seat, tostring(case.beat),
+		case.visible and "visible under the cover" or "as shipped"))
+end
 print("ok   screen closer")
 
 -- 5. The HUD, whole. -------------------------------------------------------
@@ -445,4 +515,127 @@ local personHud = hud(HUD, { hotseat = true, beat = true, localPlayer = 0 })
 run(personHud, 120)
 assert(personHud.ends == 0, "live, the person's own turn is never ended")
 print("ok   HUD")
+-- 6. The person's cover (#5943), whole. -------------------------------------
+local function cover(cfg, opts)
+	local h = { handlers = {}, queued = 0, dequeued = 0, logs = {}, camera = 0, now = 100,
+		pid = opts.pid or 0, age = opts.age }
+	local function events(kind)
+		return setmetatable({}, { __index = function(_, name)
+			return setmetatable({ Add = function(f) h.handlers[kind .. "." .. name] = f end },
+				{ __call = function() end })
+		end })
+	end
+	local function changed() h.camera = h.camera + 1 end
+	local env = setmetatable({ CivvisControlConfig = cfg }, { __index = _G })
+	env.include = function() end
+	env.Events, env.LuaEvents = events("Events"), events("LuaEvents")
+	env.Automation = { Log = function(line) h.logs[#h.logs + 1] = line end, GetTime = function() return h.now end }
+	env.PopupPriority = { PausePanel = 102 }
+	env.UIManager = {
+		QueuePopup = function() h.queued = h.queued + 1 end,
+		DequeuePopup = function() h.dequeued = h.dequeued + 1 end,
+		IsInPopupQueue = function() return false end,
+	}
+	env.Controls = {
+		Detail = { SetText = function() end }, Lines = { CalculateSize = function() end },
+		Backdrop = { SetTexture = function(_, name) h.texture = name end },
+		MenuButton = { RegisterCallback = function() h.menuButton = true end },
+	}
+	env.Mouse, env.KeyEvents, env.Keys = { eLClick = 1 }, { KeyDown = 1, KeyUp = 2 }, { VK_ESCAPE = 27 }
+	env.InterfaceModeTypes = { SELECTION = 1 }
+	env.ExposedMembers = { CivvisSeatBeat = {} }
+	env.Game = { GetLocalPlayer = function() return h.pid end, GetCurrentGameTurn = function() return 3 end }
+	env.Players = setmetatable({}, { __index = function()
+		return { IsTurnActive = function() return true end,
+			GetCities = function() return { GetCapitalCity = function() return nil end } end }
+	end })
+	env.PlayerConfigurations = setmetatable({}, { __index = function()
+		return { GetWantsPause = function() return false end, GetHotseatPassword = function() return "" end,
+			GetPlayerName = function() return "x" end }
+	end })
+	env.UI = {
+		GetHeadSelectedUnit = function() return { GetOwner = function() return 9 end } end,
+		GetHeadSelectedCity = function() return nil end,
+		DeselectAllUnits = changed, DeselectAllCities = changed,
+		GetInterfaceMode = function() return 7 end, SetInterfaceMode = changed,
+		LookAtPlot = changed, SetMapZoom = changed,
+		GetMapLookAtWorldTarget = function() return 1, 2 end,
+		GetPlotCoordFromWorld = function() return 5, 6 end, GetMapZoom = function() return 0.5 end,
+	}
+	env.ContextPtr = {
+		SetUpdate = function(_, f) h.update = f end,
+		SetInputHandler = function(_, f) h.input = f end,
+		SetHide = function(_, v) h.hidden = v end,
+		LookUpControl = function() return nil end,
+	}
+	env.GameConfiguration = { IsHotseat = function() return opts.hotseat end }
+	env.DB = { Query = function(sql)
+		if sql:find("civvis.harness", 1, true) then return h.age and { { age = h.age } } or {} end
+		return {}
+	end }
+	local chunk = assert(loadfile(here .. "/CivvisHotseatCover.lua"))
+	setfenv(chunk, env)
+	chunk()
+	h.env = env
+	return h
+end
+local function fire(h, name, ...)
+	local f = h.handlers[name]
+	if f then f(...) end
+end
+local function tick(h, seconds)
+	h.now = h.now + seconds
+	if h.update then h.update(seconds) end
+end
+local COVER = { RequireHarness = true, Hotseat = true, HotseatCover = true, HotseatAutoStart = true,
+	HotseatHumanSeats = { 0 }, HotseatSeats = { 1, 2, 3, 4, 5 }, HotseatStubSeats = {},
+	HarnessRun = "hs-test", OrdersDb = "/runs/hs-test/orders.sqlite", RunTag = "hs-test" }
+
+-- A single-player game: no listener, no clock, no input handler, no line, and
+-- the opaque context kept hidden.
+local spCover = cover(COVER, { hotseat = false })
+assert(next(spCover.handlers) == nil and spCover.update == nil and spCover.input == nil,
+	"a single-player game gets nothing from the cover")
+assert(spCover.queued == 0 and #spCover.logs == 0 and spCover.texture == nil and not spCover.menuButton)
+assert(spCover.hidden == true, "the cover context is kept hidden")
+
+-- A hotseat game, no harness: never raised, no camera or selection change, no
+-- key taken, no line.
+local idleCover = cover(COVER, { hotseat = true })
+idleCover.pid = 0; fire(idleCover, "Events.LocalPlayerTurnEnd")
+idleCover.pid = 1; fire(idleCover, "Events.LocalPlayerTurnBegin")
+idleCover.pid = 0; fire(idleCover, "Events.LocalPlayerTurnBegin"); fire(idleCover, "Events.LoadScreenClose")
+fire(idleCover, "LuaEvents.PlayerChange_Close", 0)
+tick(idleCover, 1)
+assert(idleCover.queued == 0, "no harness: the cover never goes up")
+assert(idleCover.camera == 0, "no harness: the camera and the selection are the person's")
+assert(idleCover.input and idleCover.input(2, 27, 0) == false, "no harness: no key is taken")
+assert(#idleCover.logs == 0, "no harness: not one line")
+
+-- Live: up from the end of the person's turn over CIVVIS's seat, keys taken
+-- while up, the view restored for the person; down within the freshness
+-- window when the harness stops or dies.
+for _, ending in ipairs({ "stopped", "stale" }) do
+	local live = cover(COVER, { hotseat = true, age = 1 })
+	live.pid = 0; fire(live, "Events.LocalPlayerTurnEnd")
+	assert(live.queued == 1, "live: the cover goes up when the person ends the turn")
+	live.pid = 1; fire(live, "Events.LocalPlayerTurnBegin"); tick(live, 0.5)
+	assert(live.dequeued == 0, "live: it stays up over CIVVIS's seat")
+	assert(live.input(2, 13, 0) == true, "live and up: the cover takes the keys")
+	if ending == "stopped" then live.age = nil else live.age = 25 end
+	tick(live, 1)
+	assert(live.dequeued == 0, "inside 3 s the last reading stands")
+	tick(live, 2.5)
+	assert(live.dequeued == 1, "the harness " .. ending .. ": the cover comes down")
+	assert(live.input(2, 13, 0) == false, "and takes no key once down")
+end
+local viewed = cover(COVER, { hotseat = true, age = 1 })
+viewed.pid = 0; fire(viewed, "Events.LocalPlayerTurnEnd"); fire(viewed, "LuaEvents.PlayerChange_Close", 0)
+assert(viewed.camera > 0, "live: the person's view is restored")
+-- Nothing covers a seat that is not CIVVIS's.
+local other = cover(COVER, { hotseat = true, age = 1 })
+other.pid = 0; fire(other, "Events.LocalPlayerTurnEnd")
+other.pid = 6; fire(other, "Events.LocalPlayerTurnBegin"); tick(other, 0.5)
+assert(other.queued == 1 and other.dequeued == 1, "a seat that is not CIVVIS's is never covered")
+print("ok   cover")
 print("all harness-gate checks passed")
