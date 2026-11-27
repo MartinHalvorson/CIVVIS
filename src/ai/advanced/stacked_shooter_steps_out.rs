@@ -74,6 +74,7 @@
 //! runs. Grep the journal for `stacked-shooter-steps-out:`.
 
 use super::*;
+use crate::shared_sort::SharedSort;
 
 /// How near a centre an enemy soldier must stand for the stack to break: one
 /// turn's march of a two-move soldier from a shooter's two-tile reach of the
@@ -167,7 +168,7 @@ impl AdvancedAi {
                 )
             })
             .collect();
-        seen.sort_unstable_by_key(|(id, _)| *id);
+        seen.sort_unstable_by_key_shared(|(id, _)| *id);
         seen.into_iter().map(|(_, enemy)| enemy).collect()
     }
 
@@ -245,7 +246,7 @@ impl AdvancedAi {
                 (score, tile, shot)
             })
             .collect();
-        tiles.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
+        tiles.sort_by_shared(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
         tiles
     }
 
