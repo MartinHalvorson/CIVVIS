@@ -97,18 +97,6 @@ What a person's figure assumes is the twins' assumption turned round: an
 agent plays in Civilization VI as it does in the simulator, where it was
 rated at tables of four. A duel is a different table, and one game is one
 game: the margin says how little it pins down.
-
-**The scale of cheating** (operator 2026-11-27: "expand the format to:
-Player. Scale of Cheating. ELO (Diplo Off). ELO (Diplo On)", with Prince 0,
-King 1, Emperor 2, Immortal 3 and Deity 4 under it, and then "Mods"). The
-ELO Rankings table on the home page and on Tournaments says of every player
-how far the game helps it. Civilization VI hands its own AI its bonuses by
-level, in equal steps over Prince, where it hands it none
-(`data/difficulties.json`: the yields, the Combat Strength, the experience,
-the free units and boosts): the scale is the count of those steps, and the
-record carries it as `cheating`, a line for each level rated. An agent and a
-person are handed nothing, and stand at 0. No mod of the game's AI is rated
-yet; the table keeps their row.
 """
 
 from __future__ import annotations
@@ -144,10 +132,6 @@ TOP_AGENTS = 10
 
 #: The levels rated from the benchmark: the levels it deals.
 LEVELS = [4, 5, 6, 7, 8]
-
-#: The level at which Civilization VI hands its own AI nothing: the scale of
-#: cheating counts a level's steps over it.
-FAIR = "prince"
 
 #: Our seat's lane to the roster agent that plays it in the simulator.
 TWINS = {
@@ -465,15 +449,6 @@ def agents(source: pathlib.Path, points: list[dict]) -> list[dict]:
     return out
 
 
-def cheating() -> list[dict]:
-    """The scale of cheating at each level rated, the highest level first:
-    how many steps of its bonuses Civilization VI hands its own AI there,
-    none at Prince and four at Deity."""
-    fair = ranks.CIV6_RUNGS.index(FAIR) + 1
-    return [{"level": level, "name": ranks.CIV6_RUNGS[level - 1].title(), "scale": level - fair}
-            for level in LEVELS[::-1]]
-
-
 def simulator(points: list[dict]) -> list[dict]:
     """The simulator's Difficulty dial at the levels rated: the stand-in's
     ladder in the newest fit."""
@@ -528,8 +503,6 @@ def record(source: pathlib.Path) -> dict | None:
     # Benchmark games whose run does not say how the Diplomatic victory was
     # set: in neither reading.
     out["unswitched"] = sum(1 for g in games if g["diplo"] is None) if games is not None else 0
-    # The scale of cheating is the levels' own, whichever reading a game is in.
-    out["cheating"] = cheating()
     return out
 
 

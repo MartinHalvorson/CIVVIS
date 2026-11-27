@@ -29,7 +29,7 @@ ROOT = BETA.parent
 # add another page: Civ Analytics. First can be the civ records (pulled from
 # win analytics), then early build order"). The home page is its videos,
 # with the Firaxis Civ 6 AI benchmark copied over them from Win Analytics
-# and, over that since 2026-11-27, Tournaments' ELO Rankings table.
+# and, over that since 2026-11-27, ELO Rankings (`home_elo_test.py`).
 CHARTS = (BETA / "research.html").read_text(encoding="utf-8")
 ELO = (BETA / "elo.html").read_text(encoding="utf-8")
 CIVS = (BETA / "civs.html").read_text(encoding="utf-8")
@@ -438,10 +438,9 @@ class HomeRankings(unittest.TestCase):
             CIVS,
         )
         # And the home page has neither list left, nor their slot. Since
-        # 2026-11-27 it has ELO Rankings over its benchmark, the table
-        # Tournaments carries, from ELO Rankings' own record
-        # (`test_elo_rankings_is_the_home_page_s_first_part`): a table of
-        # its own, not the list that moved.
+        # 2026-11-27 it has ELO Rankings over its benchmark, drawn from ELO
+        # Rankings' own record (`home_elo_test.py`): a table of its own, not
+        # the list that moved.
         for gone in ("rankings-data", "rank-civs", "rank-strategies", 'id="rankings"'):
             self.assertNotIn(gone, LANDING)
 
@@ -745,46 +744,6 @@ class HomeRankings(unittest.TestCase):
         # Shown only when the page was given the record.
         self.assertIn("if (!section || !BENCH || !BENCH.tables) return;", LANDING)
         self.assertIn("section.hidden = false;", LANDING[LANDING.index('document.getElementById("home-benchmark")'):LANDING.index("// The video tiles.")])
-
-    def test_elo_rankings_is_the_home_page_s_first_part(self):
-        # Operator 2026-11-27: "put the elo chart at the top of home/ too,
-        # above the benchmarks. expand the format to: Player. Scale of
-        # Cheating. ELO (Diplo Off). ELO (Diplo On)", under it "Prince 0,
-        # King 1, Emperor 2, Immortal 3, Deity 4", then "Mods", "combining
-        # this with what you have there".
-        main = LANDING[LANDING.index('<main class="shell">'):LANDING.index("</main>")]
-        bare = re.sub(r"<!--.*?-->", "", main, flags=re.S)
-        self.assertRegex(bare, r'^<main class="shell">\s*<p class="intro">[^<]*(<cite>[^<]*</cite>[^<]*)*</p>\s*<section class="res-block home-elo" id="elo" ')
-        section = bare[bare.index('<section class="res-block home-elo"'):bare.index('<section class="res-block home-bench"')]
-        # Hidden until its script has the record to draw.
-        self.assertIn('<section class="res-block home-elo" id="elo" aria-labelledby="home-elo-title" hidden>', section)
-        # Its head is the benchmark's: the title, a line, and at the right
-        # the page that has the rest (how it is counted, the ratings over
-        # time).
-        self.assertIn('<h2 class="res-side-title" id="home-elo-title">ELO Rankings</h2>', section)
-        self.assertIn('<p class="home-bench-more"><a href="../charts/elo-rankings/">Elo over time</a></p>', section)
-        self.assertNotIn("<details", section)
-        self.assertEqual(section.count('<header class="res-side-head">'), 1)
-        self.assertEqual(section.count("</section>"), 1)
-        # The format's four columns, in its order, and its words.
-        heads = [re.sub(r"<[^>]+>", "", cell).strip()
-                 for cell in re.findall(r"<(?:span|button)\b[^>]*class=\"rank-(?:col|sort)[^>]*>(.*?)</(?:span|button)>\n", section)]
-        self.assertEqual(heads, ["Player", "Scale of Cheating", "ELO (Diplo Off)", "ELO (Diplo On)"])
-        # The line under the title says what the scale is, in the format's
-        # own numbers.
-        self.assertRegex(section, r'<p class="res-counted">[^<]*Scale of Cheating: [^<]*0 at Prince to 4 at Deity\.</p>')
-        # The table is Tournaments' own, rules, markup and script
-        # (`tournaments_page_test.py` holds the two pages to each other),
-        # drawn from ELO Rankings' record in a slot of this page.
-        self.assertEqual(section.count('<div class="elo-rank">'), 1)
-        self.assertEqual(section.count('<ol class="rank-list"></ol>'), 1)
-        self.assertEqual(LANDING.count('<script type="application/json" id="elo-data">null</script>'), 1)
-        publish = (BETA / "publish.sh").read_text(encoding="utf-8")
-        self.assertIn('fill elo_page.py "$out/$home_at/index.html"', publish)
-        # The benchmark's helpers are still that page's own first: this
-        # table's script stands after the benchmark's.
-        self.assertLess(LANDING.index('document.getElementById("home-benchmark")'), LANDING.index('document.getElementById("elo-data")'))
-        self.assertLess(LANDING.index('document.getElementById("elo-data")'), LANDING.index("// The video tiles."))
 
     def test_the_benchmark_s_record_is_the_one_win_analytics_is_given(self):
         self.assertEqual(LANDING.count('<script type="application/json" id="home-benchmark">null</script>'), 1)
