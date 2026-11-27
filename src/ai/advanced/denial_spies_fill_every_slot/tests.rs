@@ -534,12 +534,11 @@ fn the_live_list_fills_a_religion_seats_spy_slots() {
         let gene = crate::ai::gene(tag).expect("every listed tag is a registry row");
         (gene.enable)(&mut ai);
     }
-    let (g, _) = board(false);
+    let (mut g, _) = board(false);
     assert!(
         ai.denial_spies_fill_every_slot_on(&g),
         "a listed version reaches the Religion aim"
     );
-    let mut board = g.clone();
-    ai.claim_queues_for_denial_spies(&mut board, 0, &plan(GrandStrategy::Religion));
-    assert_eq!(training(&board).len(), 2, "both Spy slots train");
+    ai.claim_queues_for_denial_spies(&mut g, 0, &plan(GrandStrategy::Religion));
+    assert_eq!(training(&g).len(), 2, "both Spy slots train");
 }
