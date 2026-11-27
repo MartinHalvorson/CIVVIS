@@ -280,6 +280,32 @@ fn two_soldiers_without_a_shooter_are_not_this_genes() {
 }
 
 #[test]
+fn a_ship_in_port_puts_to_sea_and_the_archer_keeps_the_centre() {
+    let (mut g, home) = board();
+    war(&mut g, 0, 1);
+    // The tile west of the centre is sea: Cairo, `civvis-t8-20261126T090737Z`
+    // t93, held a Galley and an Archer on its centre.
+    let sea = west(&g, home, 1);
+    g.map.tiles.get_mut(&sea).unwrap().terrain = name!("coast");
+    let archer = spawn(&mut g, "archer", 0, home);
+    let galley = spawn(&mut g, "galley", 0, home);
+    let gun = east(&g, home, 2);
+    spawn(&mut g, "catapult", 1, gun);
+    assert!(
+        g.shooter_stacked_in_city(archer),
+        "the Galley mutes the Archer"
+    );
+    let mut ai = gene_on();
+    assert_eq!(ai.step_stacked_soldiers_out(&mut g, 0), 1);
+    assert_eq!(
+        g.units[&archer].pos, home,
+        "the land shooter keeps the centre"
+    );
+    assert_eq!(g.units[&galley].pos, sea, "the Galley puts to sea");
+    assert!(legal_shot(&g, archer, gun));
+}
+
+#[test]
 fn a_civilians_guard_keeps_the_centre_and_the_shooter_steps_out() {
     let (mut g, home) = board();
     war(&mut g, 0, 1);

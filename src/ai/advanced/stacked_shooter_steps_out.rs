@@ -38,21 +38,23 @@
 //! ## What the gene does
 //!
 //! At the start of our unit turn, before `shooters-man-the-capital` and the
-//! battle plan, for each City Center of ours that holds a land shooter and
-//! another of our land soldiers, while a land soldier (no recon) of a power
+//! battle plan, for each City Center of ours that holds a shooter and another
+//! of our combat units (a ship in port counts, as it does for the host),
+//! while a land soldier (no recon) of a power
 //! at war with us, barbarians included, stands in sight within
 //! [`STEP_OUT_THREAT_TILES`] tiles of it:
 //!
 //! 1. **Who keeps the centre.** A soldier there that guards a civilian (in a
 //!    formation, a Settler's bound escort, a Builder's reserved guard) keeps
-//!    its charge and the centre. With none, the best shooter keeps it: the
-//!    strongest ranged attack, then the most health, then the lowest id. A
+//!    its charge and the centre. With none, the best shooter keeps it: a
+//!    land one before a ship, the strongest ranged attack, then the most
+//!    health, then the lowest id. A
 //!    shooter behind the city's walls fires every turn and cannot be struck
 //!    while the city stands, the operator's "archer in city is solid".
 //! 2. **Who steps out.** Every other soldier on the centre that is no guard
-//!    and still has movement steps once onto a dry, passable tile beside the
-//!    centre that holds no City Center, no unit of another player and no
-//!    soldier of ours. The tile is the one with the best score:
+//!    and still has movement steps once onto a passable tile beside the
+//!    centre, dry land for a land unit and water for a ship, that holds no
+//!    City Center, no unit of another player and no soldier of ours. The tile is the one with the best score:
 //!    [`STEP_OUT_SHOT`] when a shooter keeps movement after the step and has a
 //!    visible enemy soldier within its range and line of sight from there,
 //!    minus [`STEP_OUT_BESIDE_ENEMY`] for each enemy melee soldier beside the
@@ -99,8 +101,9 @@ struct StepOutEnemy {
 }
 
 impl AdvancedAi {
-    /// A land combat unit of ours: what shares a centre under the host's rule
-    /// (`Game::shooter_stacked_in_city` counts any unit with strength).
+    /// A combat unit of ours, land or sea: what shares a centre under the
+    /// host's rule (`Game::shooter_stacked_in_city` counts any unit with
+    /// strength, so a Galley in port mutes the Archer beside it).
     fn step_out_soldier(g: &Game, pid: usize, uid: u32) -> bool {
         g.units.get(&uid).is_some_and(|unit| {
             let spec = &g.rules.units[unit.kind];
@@ -108,8 +111,15 @@ impl AdvancedAi {
                 && unit.hp > 0
                 && spec.class == "military"
                 && spec.strength > 0.0
-                && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+                && spec.domain.as_deref() != Some("air")
         })
+    }
+
+    /// A ship: it steps onto water, everything else onto land.
+    fn step_out_ship(g: &Game, uid: u32) -> bool {
+        g.units
+            .get(&uid)
+            .is_some_and(|unit| g.rules.units[unit.kind].domain.as_deref() == Some("sea"))
     }
 
     /// A unit with a ranged attack.
@@ -160,15 +170,15 @@ impl AdvancedAi {
         seen.into_iter().map(|(_, enemy)| enemy).collect()
     }
 
-    /// Whether `tile` beside a centre may take a stepped-out soldier: dry,
-    /// passable, no City Center, no unit of another player, no soldier of
-    /// ours.
-    fn step_out_tile_open(g: &Game, pid: usize, tile: Pos) -> bool {
+    /// Whether `tile` beside a centre may take a stepped-out soldier:
+    /// passable, dry for a land unit and water for a ship, no City Center, no
+    /// unit of another player, no soldier of ours.
+    fn step_out_tile_open(g: &Game, pid: usize, tile: Pos, ship: bool) -> bool {
         let Some(ground) = g.map.get(tile) else {
             return false;
         };
         g.rules.is_passable(ground)
-            && !g.rules.is_water(ground)
+            && g.rules.is_water(ground) == ship
             && g.city_at(tile).is_none()
             && g.unit_ids_at(tile).iter().all(|id| {
                 g.units.get(id).is_none_or(|other| {
@@ -190,6 +200,7 @@ impl AdvancedAi {
             return Vec::new();
         };
         let shooter = Self::step_out_shooter(g, uid);
+        let ship = Self::step_out_ship(g, uid);
         let reach = g.unit_attack_range(uid);
         let moves = unit.moves_left;
         // Leaving one enemy's zone of control for another's costs every point
@@ -200,7 +211,7 @@ impl AdvancedAi {
         let mut tiles: Vec<(i64, Pos, bool)> = g
             .nbrs(centre)
             .into_iter()
-            .filter(|tile| Self::step_out_tile_open(g, pid, *tile))
+            .filter(|tile| Self::step_out_tile_open(g, pid, *tile, ship))
             .map(|tile| {
                 let beside = enemies
                     .iter()
@@ -284,6 +295,7 @@ impl AdvancedAi {
                         let unit = &g.units[uid];
                         let strength = g.rules.units[unit.kind].ranged_attack_strength();
                         (
+                            !Self::step_out_ship(g, *uid),
                             (strength * 100.0).round() as i64,
                             unit.hp,
                             std::cmp::Reverse(*uid),
