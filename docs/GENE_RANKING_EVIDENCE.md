@@ -190,6 +190,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `science-core-ends-expansion` | off (unmeasured) | Opt-in gene `science-core-ends-expansion`: an assigned Science lane leaves the Expansion half at its core of cities; see `advanced/science_core_ends_expansion.rs`. | 1 \| 1 |
 | `seen-pad-starts-the-denial` | off (unmeasured) | Opt-in gene `seen-pad-starts-the-denial`: a racer's seen Spaceport takes a Spy that disrupts it before the first launch; see `advanced/seen_pad_starts_the_denial.rs`. | 1 \| 1 |
 | `spreaders-spread-before-they-chart` | off (unmeasured) | Opt-in gene `spreaders-spread-before-they-chart`; see `advanced/spreaders_spread_before_they_chart.rs`. | 1 \| 1 |
+| `tagma-timing-needs-the-edge` | off (unmeasured) | Opt-in gene `tagma-timing-needs-the-edge`; see `advanced/tagma_timing_needs_the_edge.rs`. | 1 \| 1 |
 | `trade-district-before-the-library` | off (unmeasured) | Opt-in gene `trade-district-before-the-library`; see `advanced/trade_district_follows_the_campus.rs`. | 1 \| 1 |
 | `watched-capital-keeps-its-defender-gold` | off (unmeasured) | Opt-in gene `watched-capital-keeps-its-defender-gold`; see `advanced/watched_capital_keeps_its_defender_gold.rs`. | 1 \| 1 |
 

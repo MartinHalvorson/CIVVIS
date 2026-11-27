@@ -738,6 +738,9 @@ impl AdvancedAi {
         /// Opt-in gene `tribute-and-friendship-land`; see
         /// `advanced/tribute_and_friendship_land.rs`.
         tribute_and_friendship_land => enable_tribute_and_friendship_land, disable_tribute_and_friendship_land;
+        /// Opt-in gene `tagma-timing-needs-the-edge`; see
+        /// `advanced/tagma_timing_needs_the_edge.rs`.
+        tagma_timing_needs_the_edge => enable_tagma_timing_needs_the_edge, disable_tagma_timing_needs_the_edge;
     }
 
     toggles! {
