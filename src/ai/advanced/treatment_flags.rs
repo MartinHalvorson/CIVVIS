@@ -730,6 +730,10 @@ impl AdvancedAi {
         /// claim their Monument from the third city; see
         /// `advanced/culture_monuments.rs`.
         science_seat_monuments => enable_science_seat_monuments, disable_science_seat_monuments;
+        /// Opt-in gene `settler-walk-clock-runs-all-game`: every stepped turn
+        /// out counts on the Settler walk clock, and the walk deadline holds
+        /// past the band turn; see `advanced/settler_walk_deadline.rs`.
+        settler_walk_clock_runs_all_game => enable_settler_walk_clock_runs_all_game, disable_settler_walk_clock_runs_all_game;
         // ---- append: t-z --------------------------------------------
         /// Opt-in gene `theology-fights-count-the-host-edge`; see
         /// `advanced/theology_fights.rs`.

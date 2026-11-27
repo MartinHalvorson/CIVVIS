@@ -10797,6 +10797,13 @@ pub struct AdvancedAi {
     /// shooters can fire. See `advanced/stacked_shooter_steps_out.rs`. Off by
     /// default.
     stacked_shooter_steps_out: bool,
+    /// `settler-walk-clock-runs-all-game`: the Settler walk clock that
+    /// `settler-walk-deadline` and `stalled-settler-takes-a-safe-site` read
+    /// ticks on every turn the Settler is stepped (retreats, flights and
+    /// walks to shelter included), and the walk deadline applies to walks
+    /// begun after the band turn. See `advanced/settler_walk_deadline.rs`.
+    /// Off by default.
+    settler_walk_clock_runs_all_game: bool,
     // ---- append: t-z ------------------------------------------------
     /// `world-religion-condemns-the-faith`: our soldiers condemn a faith
     /// World Religion's option B names, at peace, and the agent's ballot asks
