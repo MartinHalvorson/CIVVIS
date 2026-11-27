@@ -2145,8 +2145,14 @@
   #livepause[hidden] { display: none; }
   /* A full-screen dialog (a tree, the Civilopedia, an empire screen) covers
      the map, and the controls go under it with the map rather than float on
-     top of the dialog's columns. */
-  body:has(#empire.open, #diplomacy.open, #cityscreen.open, #pedia.open, #tree.open, #trade.open) #livepause {
+     top of the dialog's columns. Every one of those dialogs follows the box
+     in #maparea, so the box asks its own later siblings, not the body. A
+     `:has()` anchor is re-checked whenever text anywhere under it is
+     replaced, and the page's shared `:has()` invalidation reaches every
+     descendant, so on the body that was the whole page restyled at each
+     layout read after any HUD number changed: six 2-3 ms recalcs of ~900
+     elements per rendered turn, measured on /test. */
+  #livepause:has(~ #empire.open, ~ #diplomacy.open, ~ #cityscreen.open, ~ #pedia.open, ~ #tree.open, ~ #trade.open) {
     z-index: 14;
   }
   .livepause-buttons {
@@ -4775,8 +4781,11 @@
   }
   /* With no masthead across the top — hidden, or folded down to its turn
      box — the tracker climbs back to the corner. `:where` keeps this at the
-     rail's own weight, so the stacked compact bands below still place it. */
-  :where(body.overlay-players-hidden, #maparea:has(> #playerhud.standings-collapsed)) #victoryhud {
+     rail's own weight, so the stacked compact bands below still place it.
+     The masthead is the tracker's next sibling, so the fold is asked of the
+     tracker itself: anchored on #maparea it made the whole map area restyle
+     whenever any text inside it changed (see the live controls above). */
+  :where(body.overlay-players-hidden) #victoryhud, #victoryhud:where(:has(~ #playerhud.standings-collapsed)) {
     top: var(--panel-edge);
   }
   /* Two sections share the rail panel: the arena stats above, the victory
@@ -6787,7 +6796,7 @@
       </div>
       <div class="brand-copy">
         <h1>CIVVIS<span class="brand-suffix">.ai</span></h1>
-        <div class="tagline"><span>A <i>Civilization VI</i> Simulator</span><span>for AI reasoning insights</span></div>
+        <div class="tagline"><span>A <i>Civilization VI</i> Simulator</span><span>for fixing the Civ AI</span></div>
       </div>
       <!-- The site is five pages, Home, Charts, Tournaments, CIVVIS and AI
            Debugger, and every one of them lists all five in that order with

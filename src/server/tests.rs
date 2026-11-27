@@ -7769,7 +7769,7 @@ fn browser_orders_controls_interface_setup_and_logs() {
         "right: var(--panel-edge);\n    top: calc(var(--player-hud-top, var(--panel-edge)) + min(var(--player-hud-height, 106px), var(--player-hud-max-height)) + var(--panel-gap));"
     ));
     assert!(EMBEDDED_INDEX.contains(
-        ":where(body.overlay-players-hidden, #maparea:has(> #playerhud.standings-collapsed)) #victoryhud {\n    top: var(--panel-edge);"
+        ":where(body.overlay-players-hidden) #victoryhud, #victoryhud:where(:has(~ #playerhud.standings-collapsed)) {\n    top: var(--panel-edge);"
     ));
     // "Under the masthead" is its actual bottom in every layout. A masthead
     // the viewer moved publishes its top beside its height, and all four
@@ -13746,6 +13746,61 @@ fn the_civ6_endpoints_answer_on_any_host() {
             "the live pause is missing {piece}"
         );
     }
+}
+
+/// No `:has()` is anchored on the body or on the map area. Chrome cannot
+/// tell what a replaced run of children (`textContent`, `innerHTML`) might
+/// have matched, so it re-checks every `:has()` anchor above the change, and
+/// the page's shared `:has()` invalidation set reaches every descendant of
+/// an anchor. Anchored on the body, any HUD number changing restyled the
+/// whole page at the next layout read: on /test, six forced recalcs of ~900
+/// elements, 2-3 ms each, in every rendered turn, and 65% of the forced
+/// style and layout time while spectating. The two rules that did it ask the
+/// same question of the element itself through its later siblings, which
+/// only holds while those siblings follow it in `#maparea` — pinned here.
+#[test]
+fn no_has_selector_is_anchored_on_the_body_or_the_map_area() {
+    for anchor in ["body:has(", "html:has(", ":root:has(", "#maparea:has("] {
+        assert!(
+            !EMBEDDED_INDEX.contains(anchor),
+            "a `{anchor}` rule restyles the whole subtree at every text change inside it"
+        );
+    }
+    for piece in [
+        "#livepause:has(~ #empire.open, ~ #diplomacy.open, ~ #cityscreen.open, ~ #pedia.open, ~ #tree.open, ~ #trade.open) {\n    z-index: 14;",
+        ":where(body.overlay-players-hidden) #victoryhud, #victoryhud:where(:has(~ #playerhud.standings-collapsed)) {",
+    ] {
+        assert!(
+            EMBEDDED_INDEX.contains(piece),
+            "the sibling form of the rule is missing {piece}"
+        );
+    }
+    let area = EMBEDDED_INDEX
+        .split_once("<div id=\"maparea\">")
+        .expect("the map area")
+        .1;
+    let at = |tag: &str| {
+        area.find(tag)
+            .unwrap_or_else(|| panic!("{tag} is not in the map area"))
+    };
+    let livepause = at("<div id=\"livepause\"");
+    for dialog in [
+        "<div id=\"pedia\"",
+        "<div id=\"tree\"",
+        "<section id=\"empire\"",
+        "<section id=\"diplomacy\"",
+        "<section id=\"cityscreen\"",
+        "<section id=\"trade\"",
+    ] {
+        assert!(
+            livepause < at(dialog),
+            "{dialog} must follow the live controls for `#livepause:has(~ ...)` to see it"
+        );
+    }
+    assert!(
+        at("<aside id=\"victoryhud\"") < at("<aside id=\"playerhud\""),
+        "the masthead must follow the tracker for `#victoryhud:has(~ #playerhud...)` to see it"
+    );
 }
 
 /// The live mirror's research box and its Pause / New game buttons stand

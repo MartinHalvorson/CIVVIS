@@ -266,6 +266,22 @@ imports nothing, so it cannot vary on its own — the page rolls a seed per load
 and hands it over with the first request. `civvis.ai/test/?game=<n>` pins one,
 which is how a world worth showing gets shared.
 
+A first visit's world is drawn **before the engine has arrived**. The engine
+is ~3.2 MB of the ~4 MB a first visit fetches, and until 2026-11-27 nothing
+was drawn until it had downloaded, compiled and answered. The answers the
+first frame needs (the opening `/state`, `/rules`, `/gene-program`) are fixed
+by the build and the seed, so `publish.sh` has `bake_openings.mjs` ask the
+lane's own engine for them for a bank of 8 seeds drawn from the build's
+commit, each about 190 KB of gzip in `assets/openings/`, and writes the bank
+into `shim.js` (`OPENING_BANK`). A visit that opens on the stock world, at the
+pace and hold the bank was baked at, while this browser does not yet hold the
+build's engine (`civvis-engine-seen`), takes one of those seeds and draws its
+world from the baked answers. The engine is still asked every request in the
+same order, so the world it builds is the one on screen, and the next turn is
+its own. So a first visit after each publish shows one of that build's 8
+worlds; once the engine is in the browser's cache, which a returning visit
+loads in well under a second anyway, every world is new again.
+
 Settings travel the same way. A URL can make the lobby's choices before the
 page loads — `?players=12&map=pangaea&victories=domination` opens on that
 world instead of the stock exhibition, and every world after it stays on
