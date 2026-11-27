@@ -77,7 +77,7 @@ p99 times for games for self-play games."). It carries eight things:
   the middle game, the p99 the time one game in a hundred runs past.
 - **game time batch by batch**: the same five percentiles for every batch, so
   the chart shows the simulator getting faster build by build. It is drawn on
-  Random AI Charts since 2026-11-26, from this same record, as are the games
+  Unreviewed Gen AI Charts since 2026-11-26, from this same record, as are the games
   by how long they took and the path's steps by kind.
 
 The games are rows on the machine that plays them, not in the repository, so

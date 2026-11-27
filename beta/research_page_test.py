@@ -1083,7 +1083,7 @@ class Page(unittest.TestCase):
         self.assertNotIn("innerHTML", PAGE)
         self.assertNotIn("insertAdjacentHTML", PAGE)
         # The two kinds of game's charts. Each victory's timing and the
-        # figures moved to Random AI Charts on 2026-11-26
+        # figures moved to Unreviewed Gen AI Charts on 2026-11-26
         # (`test_each_victorys_timing_and_the_figures_moved_to_random_ai_charts`).
         for piece in ('id="res-kind-self_play"', 'id="res-kind-ai"'):
             self.assertIn(piece, PAGE)
@@ -1191,7 +1191,7 @@ class Page(unittest.TestCase):
         # Each victory's timing (a small chart per victory, the games against
         # the AI and self-play as two lines) and the figures (a table per
         # victory, every span of turns as a table, and how they are counted)
-        # stood under the graphs here; they are on Random AI Charts now, read
+        # stood under the graphs here; they are on Unreviewed Gen AI Charts now, read
         # off the same record (`research_page.py` still writes it whole).
         # Nothing of them is left on Win Analytics: not their markup, their
         # rules or their script.
@@ -1741,8 +1741,8 @@ class Page(unittest.TestCase):
             'title="The Civ AI Agents and Civilization VI&#8217;s own AI on one Elo scale, now and over time.">ELO Rankings</a>\n'
             '          <a class="site-link sub-link" href="../civvis-performance/" '
             'title="How fast the simulator plays: the fastest game on video and how long a self-play game takes.">CIVVIS Performance</a>\n'
-            '          <a class="site-link sub-link" href="../random-ai-charts/" '
-            'title="Charts the AI agents added on their own, kept here until they are asked for or talked over.">Random AI Charts</a>\n'
+            '          <a class="site-link sub-link" href="../unreviewed-gen-ai-charts/" '
+            'title="Charts the AI agents added on their own, kept here until they are asked for or talked over.">Unreviewed Gen AI Charts</a>\n'
             '        </div>\n'
             '      </div>\n'
             '      <a class="site-link" href="../../tournaments/" ',
@@ -1772,7 +1772,7 @@ class Page(unittest.TestCase):
                     ("ai-insights", "AI Insights"),
                     ("civ-ai-interpretability", "Civ AI Interpretability"), ("civ-analytics", "Civ Analytics"),
                     ("win-analytics", "Win Analytics"), ("elo-rankings", "ELO Rankings"),
-                    ("civvis-performance", "CIVVIS Performance"), ("random-ai-charts", "Random AI Charts"))],
+                    ("civvis-performance", "CIVVIS Performance"), ("unreviewed-gen-ai-charts", "Unreviewed Gen AI Charts"))],
             )
             self.assertEqual(nav.count('aria-current="page"'), 1)
             self.assertIn(f'<a class="site-link sub-link" href="./" aria-current="page">{name}</a>', nav)

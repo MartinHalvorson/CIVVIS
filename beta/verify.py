@@ -190,7 +190,7 @@ PAGES = {
     "charts/ai-insights": b'id="insights-data"',
     # Its figures arrive in the slots of the pages its charts came from, so it
     # is known by its own record of where each chart came from instead.
-    "charts/random-ai-charts": b'id="random-moved"',
+    "charts/unreviewed-gen-ai-charts": b'id="random-moved"',
     "download": b"releases/latest/download/",
 }
 
@@ -219,6 +219,9 @@ FORMER = {
     "performance": "charts/civvis-performance",
     "interpretability": "charts/ai-interpretability",
     "charts/ai-interpretability": "charts/civ-ai-interpretability",
+    # Random AI Charts, named Unreviewed Gen AI Charts on 2026-11-27 (operator:
+    # "change random ai charts to unreviewed gen AI charts").
+    "charts/random-ai-charts": "charts/unreviewed-gen-ai-charts",
 }
 
 # A page that went back to an address it had left, by that address, and the

@@ -239,8 +239,8 @@ interpretability_at="$(address "$interpretability_page" interpretability)"
 # AI Insights was written after pages stated their addresses, so it has no
 # former one: a revision without the page has no page to place.
 insights_at="$(address "$insights_page" charts/ai-insights)"
-# Random AI Charts likewise: written on 2026-11-26, with its address stated.
-random_at="$(address "$random_page" charts/random-ai-charts)"
+# Unreviewed Gen AI Charts likewise: written on 2026-11-26, with its address stated.
+random_at="$(address "$random_page" charts/unreviewed-gen-ai-charts)"
 download_at="$(address "$download_page" download)"
 
 # A lane built from some other revision than the invoking tree's is pinned:
@@ -410,7 +410,7 @@ if [ -f "$performance_page" ]; then
 else
   without+=(performance)
 fi
-# Random AI Charts, the last page under Charts/ (operator 2026-11-26:
+# Unreviewed Gen AI Charts, the last page under Charts/ (operator 2026-11-26:
 # "please add another chart to the end of charts/ called random ai charts.
 # please move all the ai generated charts that i havent approved of or we
 # have discussed to here"): the charts an agent added to the other pages on
@@ -427,7 +427,7 @@ if [ -f "$random_page" ]; then
   done
   pages+=("$random_at")
 else
-  without+=(random-ai-charts)
+  without+=(unreviewed-gen-ai-charts)
 fi
 # The home page carries no art of its own any more, so there is usually no
 # directory to ship; a pinned revision from when it had photographs still does.
