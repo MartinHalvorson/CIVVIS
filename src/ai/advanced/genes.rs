@@ -6075,6 +6075,12 @@ pub const GENES: &[Gene] = &[
     // 3,600 on 2026-11-22); new empty ground no longer buys a whole fresh
     // plan of the turn. Opt-in, unpriced; see `ai::player::take_turn`.
     Gene { tag: "exploration-replans-need-a-sighting", field: "exploration_replans_need_a_sighting", kind: Kind::OptIn, enable: AdvancedAi::enable_exploration_replans_need_a_sighting, disable: AdvancedAi::disable_exploration_replans_need_a_sighting },
+    // Live T7/T8 2026-11-26: Margaret Mead (only a foreign Campus) stood idle
+    // 35-46 turns beside our own Campuses with no Open Borders anywhere, and
+    // Charles Darwin 74 turns with every natural wonder in closed land. A
+    // held one with no reachable site buys one grant. Opt-in; see
+    // `advanced/foreign_site_open_border.rs`.
+    Gene { tag: "foreign-site-buys-the-open-border", field: "foreign_site_buys_the_open_border", kind: Kind::OptIn, enable: AdvancedAi::enable_foreign_site_buys_the_open_border, disable: AdvancedAi::disable_foreign_site_buys_the_open_border },
     // ---- append: g-k ------------------------------------------------
     // `gutted-rival-passes-the-edge`: a Domination lane's staged declaration
     // passes the peak edge against a target at 60% or less of its 30-turn

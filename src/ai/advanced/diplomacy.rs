@@ -255,6 +255,19 @@ impl AdvancedAi {
         {
             return;
         }
+        // `foreign-site-buys-the-open-border`: a held Margaret Mead or
+        // Charles Darwin whose every site lies behind a closed border buys
+        // one passage there, in any lane. Exact no-op while the gene is off.
+        // See `advanced/foreign_site_open_border.rs`.
+        if self.foreign_site_buys_the_open_border(
+            g,
+            pid,
+            excluded_partner,
+            &culture_threats,
+            &science_threats,
+        ) {
+            return;
+        }
         if objective == GrandStrategy::Culture && g.turn % 6 == pid as u32 % 6 {
             let best = g
                 .quick_deals(pid)

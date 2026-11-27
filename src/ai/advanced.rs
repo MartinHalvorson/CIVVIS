@@ -7989,6 +7989,11 @@ pub struct AdvancedAi {
     /// a new unit or city and a refusal still re-open it. See
     /// `ai::player::take_turn`. Off by default.
     exploration_replans_need_a_sighting: bool,
+    /// `foreign-site-buys-the-open-border`: a held Margaret Mead or Charles
+    /// Darwin with no reachable site buys one Open Borders grant from the
+    /// nearest major holding one. See `advanced/foreign_site_open_border.rs`.
+    /// Off by default.
+    foreign_site_buys_the_open_border: bool,
     // ---- append: g-k ------------------------------------------------
     /// `guru-walks-to-the-wounded`: a Guru with nothing to heal this turn
     /// walks to the wounded of its faith instead of at the nearest rival. See
@@ -11798,6 +11803,10 @@ mod strategic_deposit_prey;
 mod fog_yields_stranded;
 /// `food-focus-grows-the-small-city`: see `advanced/food_focus_grows_the_small_city.rs`.
 mod food_focus_grows_the_small_city;
+
+/// `foreign-site-buys-the-open-border`: see
+/// `advanced/foreign_site_open_border.rs`.
+mod foreign_site_open_border;
 
 /// `capital-monument-after-the-second-city`: see `advanced/capital_monument.rs`.
 mod capital_monument;
