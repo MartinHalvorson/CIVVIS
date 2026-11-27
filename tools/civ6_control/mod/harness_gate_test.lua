@@ -116,6 +116,16 @@ assert(cached.H.live() and #cached.queries == 1, "inside 3 s the last reading st
 cached.now = 103
 assert(cached.H.live() and #cached.queries == 2, "after 3 s it is read again")
 assert(#cached.attaches == 1, "ATTACH once per context")
+-- ...once a read has gone through it; until then each reading tries again.
+local flaky = gate(PERSON, { hotseat = true, query = function(_, h)
+	if not h.ready then error("no such table: civvis.harness") end
+	return { { age = 1 } }
+end })
+assert(flaky.H.live() == false and #flaky.attaches == 1)
+flaky.ready, flaky.now = true, 104
+assert(flaky.H.live() == true and #flaky.attaches == 2, "a failed first ATTACH is retried")
+flaky.now = 108
+assert(flaky.H.live() == true and #flaky.attaches == 2, "and a working one is not repeated")
 -- A harness stopping is seen on the next reading.
 local stopping = gate(PERSON, { hotseat = true, query = function(_, h)
 	return h.stopped and {} or { { age = 1 } }

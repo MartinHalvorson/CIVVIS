@@ -151,15 +151,17 @@ function CivvisHarness.read()
 	local run = string.gsub(tostring(cfg.HarnessRun or ""), "['\\]", "");
 	if path == "" or run == "" then return false; end
 	if not CivvisHarness.attached then
-		CivvisHarness.attached = true;
 		-- One connection serves every context: a second ATTACH of the alias
 		-- fails, and the read below goes through whichever context's took.
 		pcall(function() DB.Query("ATTACH DATABASE '" .. path .. "' AS civvis"); end);
 	end
 	local fresh = tonumber(cfg.HarnessFreshSeconds) or 20;
 	local live = false;
-	for _, row in ipairs(DB.Query("SELECT CAST(strftime('%s','now') AS INTEGER) - beat AS age"
-			.. " FROM civvis.harness WHERE run = '" .. run .. "'")) do
+	local rows = DB.Query("SELECT CAST(strftime('%s','now') AS INTEGER) - beat AS age"
+			.. " FROM civvis.harness WHERE run = '" .. run .. "'");
+	-- Attached once a read went through; until then each reading tries again.
+	CivvisHarness.attached = true;
+	for _, row in ipairs(rows) do
 		local age = tonumber(row.age);
 		if age ~= nil and age >= -5 and age <= fresh then live = true; end
 	end
