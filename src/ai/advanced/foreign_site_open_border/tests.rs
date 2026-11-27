@@ -186,6 +186,8 @@ fn a_campus_city_state_we_lead_buys_nothing() {
     hold(&mut g, "margaret_mead");
     let mut follower = g.clone();
 
+    // Meeting a city-state already files an entry for it; replace it.
+    g.players[0].envoys.retain(|(cs, _)| *cs != minor);
     g.players[0].envoys.push((minor, 3));
     assert_eq!(g.suzerain_of(minor), Some(0));
     assert!(!buy(&mut g, true));

@@ -46,6 +46,7 @@
 //! once, so only the live mirror can fire this; off, nothing changes.
 use super::AdvancedAi;
 use crate::game::Game;
+use crate::think;
 use crate::Pos;
 use std::collections::{BTreeMap, BTreeSet};
 
