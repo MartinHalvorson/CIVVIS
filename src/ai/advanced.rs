@@ -9770,6 +9770,11 @@ pub struct AdvancedAi {
     /// displaced by a Science counter to a rival's science race. See
     /// `advanced/religion_lane_outlasts_the_denial.rs`. Off by default.
     religion_lane_outlasts_the_denial: bool,
+    /// `religion-seat-third-city-first`: a two-city Religion seat's next
+    /// Settler takes the best city's queue before the band turn, ahead of the
+    /// first Shrine, Prayers and routine work. See
+    /// `advanced/religion_seat_third_city_first.rs`. Off by default.
+    religion_seat_third_city_first: bool,
     // ---- append: s-s ------------------------------------------------
     /// `score-seat-raises-wonders`: a Score seat keeps a wonder going in its
     /// capital from turn 40 (Online) and in a second city from turn 90, as a
@@ -28196,6 +28201,10 @@ impl AdvancedAi {
         // and the defence handoffs below. Exact no-op while the gene is off.
         // See `advanced/religion_seat_second_city_first.rs`.
         self.claim_religion_seat_second_city(g, pid, &plan);
+        // `religion-seat-third-city-first`: the same for a two-city seat's next
+        // Settler, before the band turn. Exact no-op while the gene is off.
+        // See `advanced/religion_seat_third_city_first.rs`.
+        self.claim_religion_seat_third_city(g, pid, &plan);
         // `capital-walls-before-the-surprise`: the original capital's Walls,
         // or its defender, after every ordinary writer (the opening book and
         // both governors), before the paused finishes and the defence
@@ -28584,6 +28593,9 @@ mod religion_seat_spends_the_bank;
 /// `advanced/religion_seat_spends_the_whole_bank.rs`.
 mod religion_seat_spends_the_whole_bank;
 mod religion_seat_takes_the_debater;
+/// `religion-seat-third-city-first`: see
+/// `advanced/religion_seat_third_city_first.rs`.
+mod religion_seat_third_city_first;
 mod religious_interception;
 
 /// `match-point-interception-ignores-power`: the faith's last holdout

@@ -593,6 +593,10 @@ impl AdvancedAi {
         /// Religion lane keeps its plan against a Science counter; see
         /// `advanced/religion_lane_outlasts_the_denial.rs`.
         religion_lane_outlasts_the_denial => enable_religion_lane_outlasts_the_denial, disable_religion_lane_outlasts_the_denial;
+        /// Opt-in gene `religion-seat-third-city-first`: a two-city Religion
+        /// seat's next Settler before the first Shrine and Prayers; see
+        /// `advanced/religion_seat_third_city_first.rs`.
+        religion_seat_third_city_first => enable_religion_seat_third_city_first, disable_religion_seat_third_city_first;
         // ---- append: s-s --------------------------------------------
         /// Opt-in gene `siege-goes-on-the-forecast`: the siege train goes,
         /// holds and stands down on the capture forecast, and Siege rows rank

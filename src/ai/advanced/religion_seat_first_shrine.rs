@@ -99,6 +99,7 @@ impl AdvancedAi {
         }) {
             return None;
         }
+        let third_city = self.third_city_settler_due(g, pid, plan);
         cities
             .into_iter()
             .filter_map(|cid| {
@@ -108,6 +109,11 @@ impl AdvancedAi {
                     || (city.last_attacked > 0
                         && g.turn.saturating_sub(city.last_attacked) <= FIRST_SHRINE_ATTACK_MEMORY)
                     || !self.first_shrine_may_displace(g, pid, cid)
+                    // `religion-seat-third-city-first`: the third city's
+                    // Settler goes first, and keeps the head once queued.
+                    // See `advanced/religion_seat_third_city_first.rs`.
+                    || third_city == Some(cid)
+                    || self.third_city_keeps_its_settler(g, pid, cid)
                 {
                     return None;
                 }
