@@ -676,6 +676,19 @@ class DuelUnderYourNameTest(unittest.TestCase):
         self.assertEqual(config["HotseatHumanSeats"], [0])
         self.assertEqual(config["HotseatNames"], {"1": "CIVVIS HolyRoller"})
         self.assertEqual(config["HotseatSeatAgents"], {"1": "holy"})
+        # The agent's lane reaches its seat's context in the mod, as it reaches
+        # its decision worker: the seat plays one lane, not two.
+        self.assertEqual(config["HotseatSeatLanes"], {"1": "religious"})
+        self.assertEqual(install.hotseat_seat_config(config, 1)["VictoryLane"], "religious")
+        self.assertNotIn("HotseatSeatLanes", install.hotseat_seat_config(config, 1))
+        self.assertEqual(hotseat.seat_lanes(game_args(players=2, agents=["holy"]), [1]), {1: "religious"})
+        mixed = hotseat.hotseat_config(game_args(agents=["tourist"]), Path("/tmp/r"), Path("/tmp/r/o.sqlite"))
+        self.assertEqual([install.hotseat_seat_config(mixed, seat)["VictoryLane"] for seat in (1, 2, 3)],
+                         ["culture", "civvis", "civvis"])
+        # No `--agents`: every seat keeps the table's lane.
+        plain = hotseat.hotseat_config(game_args(), Path("/tmp/r"), Path("/tmp/r/o.sqlite"))
+        self.assertEqual((plain["HotseatSeatLanes"], install.hotseat_seat_config(plain, 2)["VictoryLane"]),
+                         ({}, "civvis"))
         # A test stub's seat and an unattended table have no person to name.
         for nobody in (game_args(name="dev", auto_human="stub"),
                        game_args(name="dev", players=6, civvis_seats=1, leader=None)):

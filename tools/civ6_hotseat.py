@@ -306,6 +306,10 @@ def hotseat_config(args: argparse.Namespace, run_dir: Path, orders_db: Path) -> 
                          for i, (seat, agent) in enumerate(seat_agents(args, seats).items(), 1)},
         "HotseatSeatAgents": ({str(k): v for k, v in seat_agents(args, seats).items()}
                               if getattr(args, "agents", None) else {}),
+        # Each seat's own lane, for its context in the mod (`hotseat_seat_config`):
+        # the lane its decision worker is started with (`seat_lanes`).
+        "HotseatSeatLanes": ({str(k): v for k, v in seat_lanes(args, seats).items()}
+                             if getattr(args, "agents", None) else {}),
         # `--name`: the hand-over screen names the person's seat with it.
         "HotseatPersonName": person_name(args) or "",
         "HotseatSaveEvery": args.save_every,
