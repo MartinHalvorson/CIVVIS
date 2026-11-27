@@ -1387,6 +1387,8 @@ def manual_lobby_config(args: argparse.Namespace, run_dir: Path, orders_db: Path
     table.civvis_seats = None
     table.leader = None
     table.victories_off = []
+    # Only to satisfy the controller's parser; `MaxTurns` is dropped below.
+    table.max_turns = table.max_turns or default_max_turns(table.speed)
     config = hotseat_config(table, run_dir, orders_db)
     config.update({
         "RequireHarness": True,
@@ -1776,6 +1778,9 @@ def run_manual(args: argparse.Namespace) -> int:
                    "civvis_seats": civvis, "lobby": lobby}
         if monitor is not None:
             monitor.poll()
+            # The seats this game had, not every seat the install could play.
+            monitor.stats = {seat: stats for seat, stats in monitor.stats.items()
+                             if seat in civvis or (stub and seat == HUMAN_SEAT)}
             summary["report"] = smoke_report(monitor, log)
             monitor.close()
         if installed and env.game_pids():
