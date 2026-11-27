@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
 import json
 import os
 import re
@@ -630,6 +632,299 @@ class UnattendedTableTest(unittest.TestCase):
             self.seat_event(run_dir, 1, kind="defeat", ours=True, player=1, turn=90)
             monitor.poll()
             self.assertEqual(monitor.result, {"kind": "defeat", "turn": 90, "ours": False})
+
+class DuelUnderYourNameTest(unittest.TestCase):
+    """`--duel --name dev`: one against one with the strongest agent, the
+    person's seat under their name, and the ending kept for their Elo."""
+
+    def test_the_strongest_agent_is_the_roster_agent_the_published_fit_rates_highest(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            fit = Path(tmp) / "elo.json"
+            # The game's own AI and an agent no live seat plays are not candidates.
+            fit.write_text(json.dumps({"ratings": {
+                "civ6:deity": {"elo": 1900}, "forward": {"elo": 1500},
+                "holy": {"elo": 1400}, "tourist": {"elo": 1450}, "jack": {"elo": 1100}}}))
+            self.assertEqual(hotseat.strongest_agent(fit), "tourist")
+            self.assertEqual(hotseat.strongest_agent(Path(tmp) / "no-fit.json"), "jack")
+        # The repository's own published fit rates a roster agent.
+        self.assertIn(hotseat.strongest_agent(), hotseat.AGENT_LANES)
+
+    def started_with(self, *flags: str) -> argparse.Namespace:
+        with patch.object(hotseat, "run", return_value=0) as run, \
+                patch.object(hotseat, "read_current", return_value=None), \
+                patch.object(hotseat, "strongest_agent", return_value="holy"):
+            self.assertEqual(hotseat.main(list(flags)), 0)
+        return run.call_args.args[0]
+
+    def test_a_duel_is_two_players_on_a_duel_map_against_the_strongest(self) -> None:
+        args = self.started_with("--duel", "--name", "dev", "--leader", "LEADER_GILGAMESH")
+        self.assertEqual((args.players, args.map_size, args.map), (2, "MAPSIZE_DUEL", "Pangaea.lua"))
+        self.assertEqual((args.agents, args.name, args.leader), (["holy"], "dev", "LEADER_GILGAMESH"))
+        # Another agent can be named, and `strongest` is a name anywhere in the list.
+        self.assertEqual(self.started_with("--duel", "--agents", "tourist").agents, ["tourist"])
+        self.assertEqual(self.started_with("--agents", "jack,strongest").agents, ["jack", "holy"])
+
+    def test_a_name_the_game_and_the_record_cannot_carry_is_refused(self) -> None:
+        for bad in ("", " dev", "x" * 25, 'de"v', "dev\n", "<b>"):
+            with patch.object(hotseat, "run") as run, \
+                    patch.object(hotseat, "read_current", return_value=None):
+                self.assertEqual(hotseat.main(["--name", bad]), 2, repr(bad))
+                run.assert_not_called()
+
+    def test_the_hand_over_screen_is_told_the_persons_name(self) -> None:
+        config = hotseat.hotseat_config(game_args(players=2, name="dev", agents=["holy"]),
+                                        Path("/tmp/r"), Path("/tmp/r/o.sqlite"))
+        self.assertEqual(config["HotseatPersonName"], "dev")
+        self.assertEqual(config["HotseatHumanSeats"], [0])
+        self.assertEqual(config["HotseatNames"], {"1": "CIVVIS HolyRoller"})
+        self.assertEqual(config["HotseatSeatAgents"], {"1": "holy"})
+        # The agent's lane reaches its seat's context in the mod, as it reaches
+        # its decision worker: the seat plays one lane, not two.
+        self.assertEqual(config["HotseatSeatLanes"], {"1": "religious"})
+        self.assertEqual(install.hotseat_seat_config(config, 1)["VictoryLane"], "religious")
+        self.assertNotIn("HotseatSeatLanes", install.hotseat_seat_config(config, 1))
+        self.assertEqual(hotseat.seat_lanes(game_args(players=2, agents=["holy"]), [1]), {1: "religious"})
+        mixed = hotseat.hotseat_config(game_args(agents=["tourist"]), Path("/tmp/r"), Path("/tmp/r/o.sqlite"))
+        self.assertEqual([install.hotseat_seat_config(mixed, seat)["VictoryLane"] for seat in (1, 2, 3)],
+                         ["culture", "civvis", "civvis"])
+        # No `--agents`: every seat keeps the table's lane.
+        plain = hotseat.hotseat_config(game_args(), Path("/tmp/r"), Path("/tmp/r/o.sqlite"))
+        self.assertEqual((plain["HotseatSeatLanes"], install.hotseat_seat_config(plain, 2)["VictoryLane"]),
+                         ({}, "civvis"))
+        # A test stub's seat and an unattended table have no person to name.
+        for nobody in (game_args(name="dev", auto_human="stub"),
+                       game_args(name="dev", players=6, civvis_seats=1, leader=None)):
+            self.assertEqual(hotseat.hotseat_config(nobody, Path("/tmp/r"),
+                                                    Path("/tmp/r/o.sqlite"))["HotseatPersonName"], "")
+        # Asked for no name, the seat stays the game's own "Player 1".
+        self.assertEqual(hotseat.hotseat_config(game_args(), Path("/tmp/r"),
+                                                Path("/tmp/r/o.sqlite"))["HotseatPersonName"], "")
+
+    def duel(self, run_dir: Path, **more) -> tuple["hotseat.Monitor", argparse.Namespace, list]:
+        args = game_args(players=2, map_size="MAPSIZE_DUEL", name="dev", agents=["holy"],
+                         leader="LEADER_GILGAMESH", victories_off=[], **more)
+        lines: list[str] = []
+        monitor = hotseat.Monitor(run_dir, "hs", [1], args, lines.append)
+        self.addCleanup(monitor.close)
+        return monitor, args, lines
+
+    @staticmethod
+    def event(run_dir: Path, where: str, **event) -> None:
+        target = run_dir / where
+        target.parent.mkdir(exist_ok=True)
+        with target.open("a") as out:
+            out.write(json.dumps(event) + "\n")
+
+    def test_a_persons_table_keeps_its_ending_and_who_played(self) -> None:
+        import people_elo
+
+        began = {"started": "2026-11-27T06:30:00Z", "revision": "945f056d"}
+        for team, winner in ((1, "holy"), (0, "person")):
+            with tempfile.TemporaryDirectory() as tmp:
+                run_dir = Path(tmp)
+                monitor, args, lines = self.duel(run_dir)
+                self.event(run_dir, "events.jsonl", kind="hotseat_person", seat=0,
+                           applied=True, shown="dev")
+                self.event(run_dir, "hs-p1/events.jsonl", kind="seat",
+                           civ="CIVILIZATION_ARABIA", team=1)
+                self.event(run_dir, "hs-p1/events.jsonl", kind="victory", team=team, victory=4,
+                           victory_type="VICTORY_RELIGIOUS", turn=143)
+                monitor.poll()
+                self.assertIn("seat 0 is named 'dev' in the game", lines)
+                self.assertEqual(monitor.name(0), "dev (you, seat 0)")
+                record = hotseat.table_record(monitor, args, [1], began)
+                self.assertEqual(record["result"]["ours"], team == 1)
+                self.assertEqual(record["result"]["victory_type"], "VICTORY_RELIGIOUS")
+                self.assertEqual((record["person"], record["leader"], record["seat_agents"]),
+                                 ("dev", "LEADER_GILGAMESH", {1: "holy"}))
+                self.assertEqual((record["started"], record["revision"]),
+                                 ("2026-11-27T06:30:00Z", "945f056d"))
+                # ...and it is the line the people's record takes, through JSON
+                # as summary.json carries it.
+                summary = json.loads(json.dumps({"tag": "hs", "utc": "2026-11-27T09:00:00Z", **record}))
+                row = people_elo.game_row(summary)
+                self.assertEqual((row["person"], row["agents"], row["winner"], row["victory"],
+                                  row["turn"], row["at"], row["diplomatic"]),
+                                 ("dev", ["holy"], winner, "VICTORY_RELIGIOUS", 143,
+                                  "2026-11-27T06:30:00Z", True))
+
+    def test_a_test_stubs_game_keeps_no_ending_and_a_name_not_taken_is_said(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp)
+            monitor, args, lines = self.duel(run_dir)
+            self.event(run_dir, "events.jsonl", kind="hotseat_person", seat=0,
+                       applied=False, shown="Player 1")
+            monitor.poll()
+            self.assertIn("seat 0 is named 'Player 1' in the game (the name was NOT taken)", lines)
+        with tempfile.TemporaryDirectory() as tmp:
+            monitor, args, _ = self.duel(Path(tmp), auto_human="stub")
+            self.assertEqual(hotseat.table_record(monitor, args, [1], {}), {})
+
+    def test_a_finished_game_under_a_name_is_put_on_the_peoples_record(self) -> None:
+        source = (hotseat.HERE / "civ6_hotseat.py").read_text()
+        self.assertIn('if summary.get("person") and summary.get("result"):\n'
+                      "            record_person_game(run_dir, log)", source)
+        lines: list[str] = []
+        done = argparse.Namespace(returncode=2, stdout="", stderr="people_elo: not recorded: why\n")
+        with patch.object(hotseat.subprocess, "run", return_value=done) as ran:
+            hotseat.record_person_game(Path("/tmp/run"), lines.append)
+        self.assertEqual(ran.call_args.args[0][1:], [str(hotseat.HERE / "people_elo.py"), "record", "/tmp/run"])
+        self.assertEqual(lines[0], "[people] people_elo: not recorded: why")
+        self.assertIn("NOT put on the people's record (exit 2)", lines[1])
+
+
+def text(*labels: str) -> list[dict]:
+    """A read screen: one row per label."""
+    return [{"text": label, "x": 855, "y": 1040, "norm": hotseat._norm(label)} for label in labels]
+
+
+class StartGameTest(unittest.TestCase):
+    """Live 2026-11-27 (duel-dev-20261127T0643Z): the window query went
+    unanswered, the screen read came back empty, and the empty read was taken
+    for a staging room that had gone. START GAME was never pressed."""
+
+    BOUNDS = (0, 33, 1710, 1074)
+
+    def start(self, screens: list, **more) -> tuple[bool, list, list]:
+        """`start_game` over these screen reads in turn: its answer, its
+        clicks, and what it logged."""
+        reads = iter(screens)
+        clicks, lines, asked = [], [], []
+
+        def read(run_dir, name, fallback=None):
+            asked.append(fallback)
+            return self.BOUNDS, next(reads, [])
+
+        with patch.object(hotseat, "read_screen", side_effect=read), \
+                patch.object(hotseat, "click", side_effect=lambda log, point: clicks.append(point)), \
+                patch.object(hotseat, "wait_for_hands_off"), \
+                patch.object(hotseat.play, "ensure_game_frontmost") as front, \
+                patch.object(hotseat.time, "sleep"):
+            answer = hotseat.start_game(Path("/tmp/r"), self.BOUNDS, lines.append, **more)
+        self.assertTrue(front.called, "the game is brought forward before it is read")
+        self.assertEqual(set(asked), {self.BOUNDS}, "a read falls back on the window it was given")
+        return answer, clicks, lines
+
+    def test_a_screen_that_cannot_be_read_is_not_a_staging_room_that_has_gone(self) -> None:
+        answer, clicks, lines = self.start([[], [], []], attempts=3)
+        self.assertFalse(answer)
+        self.assertEqual(clicks, [])
+        self.assertEqual(len([line for line in lines if "could not be read" in line]), 3)
+
+    def test_it_presses_then_sees_the_room_go(self) -> None:
+        staging, loading = text("STAGING ROOM", "START GAME"), text("Loading, Please Wait...")
+        answer, clicks, _ = self.start([[], staging, loading])
+        self.assertTrue(answer)
+        # The orb above the label, once; the unreadable first frame pressed nothing.
+        self.assertEqual(clicks, [(855, 1040 - int(0.02 * 1074))])
+
+    def test_a_press_that_did_not_take_is_made_again_on_the_label_itself(self) -> None:
+        staging = text("STAGING ROOM", "START GAME")
+        answer, clicks, _ = self.start([staging, staging, [], text("Gilgamesh")])
+        self.assertTrue(answer)
+        self.assertEqual(clicks, [(855, 1019), (855, 1040)])
+
+    def test_another_page_is_not_a_started_game_until_start_game_was_pressed(self) -> None:
+        # A Terminal in front of the staging room reads as that Terminal.
+        answer, clicks, _ = self.start([text("martin@air ~ %")] * 4, attempts=3)
+        self.assertFalse(answer)
+        self.assertEqual(clicks, [])
+        # ...and a room still up after every press is not started either.
+        answer, clicks, _ = self.start([text("STAGING ROOM", "START GAME")] * 4, attempts=3)
+        self.assertFalse(answer)
+        self.assertEqual(len(clicks), 3)
+
+    def again(self, rows: list, *, active: bool = False, bounds=BOUNDS) -> tuple[bool, list, list]:
+        clicks, lines = [], []
+        with patch.object(hotseat, "read_screen", return_value=(bounds, rows)), \
+                patch.object(hotseat, "click", side_effect=lambda log, point: clicks.append(point)), \
+                patch.object(hotseat.play, "ensure_game_frontmost"), \
+                patch.object(hotseat.operator_presence, "operator_active", return_value=active):
+            pressed = hotseat.press_start_again(Path("/tmp/r"), lines.append, 61.0)
+        return pressed, clicks, lines
+
+    def test_a_staging_room_still_up_a_minute_on_is_pressed_again(self) -> None:
+        pressed, clicks, lines = self.again(text("STAGING ROOM", "START GAME"))
+        self.assertTrue(pressed)
+        self.assertEqual(clicks, [(855, 1019)])
+        self.assertIn("still up 61s after START GAME", lines[0])
+        # A game that is loading, an unreadable screen, and a person at the
+        # keyboard are all left alone.
+        for rows, more in ((text("Loading, Please Wait..."), {}), ([], {"bounds": None}),
+                           (text("START GAME"), {"active": True})):
+            pressed, clicks, _ = self.again(rows, **more)
+            self.assertEqual((pressed, clicks), (False, []))
+
+    def test_the_backstop_runs_until_the_game_reports_and_never_on_a_held_start(self) -> None:
+        source = (hotseat.HERE / "civ6_hotseat.py").read_text()
+        self.assertIn("if not monitor.started and ours_to_start \\\n"
+                      "                    and time.monotonic() - checked_start > START_CHECK_SECONDS:", source)
+        self.assertIn('ours_to_start = not args.attach and not getattr(args, "hold_start", False)', source)
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp)
+            monitor = hotseat.Monitor(run_dir, "hs", [1], game_args(players=2), lambda m: None)
+            self.addCleanup(monitor.close)
+            self.assertFalse(monitor.started)
+            with (run_dir / "events.jsonl").open("a") as out:
+                out.write(json.dumps({"kind": "hotseat_armed"}) + "\n")
+            monitor.poll()
+            self.assertTrue(monitor.started, "an armed hand-over screen is a game that is up")
+
+
+class SelfPlayTableTest(unittest.TestCase):
+    """Operator 2026-11-27: "practice self playing both side this time
+    (normally you will just play 1 side)"."""
+
+    def started_with(self, *flags: str) -> argparse.Namespace:
+        with patch.object(hotseat, "run", return_value=0) as run, \
+                patch.object(hotseat, "read_current", return_value=None), \
+                patch.object(hotseat, "strongest_agent", return_value="holy"):
+            self.assertEqual(hotseat.main(list(flags)), 0)
+        return run.call_args.args[0]
+
+    def test_self_play_seats_civvis_on_every_seat(self) -> None:
+        args = self.started_with("--duel", "--self-play", "--leader", "LEADER_GILGAMESH")
+        self.assertEqual((args.players, args.civvis_seats, args.map_size), (2, 2, "MAPSIZE_DUEL"))
+        # The strongest agent across the table, the flagship in the person's seat.
+        self.assertEqual(args.agents, ["jack", "holy"])
+        self.assertEqual(hotseat.jack_seats(args.players, args.civvis_seats), [0, 1])
+        config = hotseat.hotseat_config(game_args(players=2, civvis_seats=2, agents=["jack", "holy"],
+                                                  leader="LEADER_GILGAMESH"),
+                                        Path("/tmp/r"), Path("/tmp/r/o.sqlite"))
+        self.assertEqual((config["HotseatSeats"], config["HotseatHumanSeats"], config["HumanPlayers"]),
+                         ([0, 1], [], 2))
+        self.assertEqual(config["HotseatNames"], {"0": "CIVVIS JackOfAllTrades", "1": "CIVVIS HolyRoller"})
+        self.assertEqual([install.hotseat_seat_config(config, seat)["VictoryLane"] for seat in (0, 1)],
+                         ["civvis", "religious"])
+        # Every seat a hotseat human's row in the staging room, no Firaxis AI.
+        self.assertEqual(hotseat.wanted_slots(2, 2), ["host", "player"])
+        self.assertEqual(self.started_with("--players", "4", "--self-play").civvis_seats, 4)
+        self.assertEqual(self.started_with("--duel", "--self-play", "--agents", "holy,holy").agents,
+                         ["holy", "holy"])
+
+    def test_a_table_nobody_is_at_takes_no_persons_name(self) -> None:
+        for flags in (["--duel", "--self-play", "--name", "dev"],
+                      ["--players", "6", "--civvis-seats", "2", "--name", "dev"],
+                      ["--players", "4", "--self-play", "--civvis-seats", "2"],
+                      ["--players", "4", "--civvis-seats", "5"]):
+            with patch.object(hotseat, "run") as run, patch.object(hotseat, "read_current", return_value=None), \
+                    contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(hotseat.main(flags), 2, flags)
+                run.assert_not_called()
+
+    def test_attach_picks_a_table_back_up_as_the_table_it_is(self) -> None:
+        def installed(**flags) -> dict:
+            return hotseat.hotseat_config(game_args(**flags), Path("/tmp/r"), Path("/tmp/r/o.sqlite"))
+
+        self.assertEqual(hotseat.attached_table(installed(players=2, agents=["holy"])), (2, None))
+        self.assertEqual(hotseat.attached_table(installed(players=4, auto_human="stub")), (4, None))
+        self.assertEqual(hotseat.attached_table(installed(players=2, civvis_seats=2, leader=None)), (2, 2))
+        self.assertEqual(hotseat.attached_table(installed(players=6, civvis_seats=2, leader=None)), (6, 2))
+        # An install from before the table's size was written down.
+        old = installed(players=4)
+        del old["HotseatPlayers"]
+        self.assertEqual(hotseat.attached_table(old), (4, None))
+
 
 if __name__ == "__main__":
     unittest.main()

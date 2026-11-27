@@ -76,6 +76,27 @@ seat's twin; a benchmark game's switch is its own run summary's
 game whose summary does not say is in neither reading. The record is the
 stock reading at the top level and the diplo-off one under `off`, the same
 fields in both.
+
+**People** (operator 2026-11-27: "start posting elo on the website. use the
+name dev for me"). A person who plays the agents in Civilization VI itself,
+hot seat (`tools/civ6_hotseat.py --duel --name dev`), is rated on the same
+scale and stands in the Player strategies list among them. Their games are
+the people's record on the ledger branch (`people.jsonl`, written by
+`tools/people_elo.py record` when a game ends), read whenever the site is
+built. Each game is a table of the person and the agents they met, each agent
+at its rating in the fit in force when the game began, on the model above:
+the person wins with probability `s / (s + sum of the agents' strengths)`.
+Their rating is where their expected wins equal their wins, with the same
+imaginary pair (one game won and one lost against the average agent they
+met), so a person who has only won, or only lost, has a finite rating shown
+as a bound. Its margin is the fit's own and the agents' margins, in
+quadrature. A game stands in the reading its Diplomatic victory switch puts
+it in, against that reading's fit.
+
+What a person's figure assumes is the twins' assumption turned round: an
+agent plays in Civilization VI as it does in the simulator, where it was
+rated at tables of four. A duel is a different table, and one game is one
+game: the margin says how little it pins down.
 """
 
 from __future__ import annotations
@@ -86,6 +107,7 @@ import json
 import math
 import pathlib
 import re
+import subprocess
 import sys
 
 import home_rankings as ranks
@@ -99,6 +121,11 @@ HISTORY = pathlib.Path("data/strategy_elo_history.json")
 PUBLISHED = pathlib.Path("data/strategy_elo.json")
 NO_DIPLO_HISTORY = pathlib.Path("data/strategy_elo_no_diplo_history.json")
 NO_DIPLO_PUBLISHED = pathlib.Path("data/strategy_elo_no_diplo.json")
+
+#: The people's record on the ledger branch (`tools/people_elo.py`).
+PEOPLE_REF = "refs/remotes/origin/ledger:people.jsonl"
+#: `winner` on a line of the record the person won.
+PERSON = "person"
 
 #: How many agents the graph draws (operator: "the top 10 elo civvis ai agents").
 TOP_AGENTS = 10
@@ -243,6 +270,105 @@ def fit_level(games: list[tuple[float, float, bool]]) -> dict | None:
     }
 
 
+def people_games(source: pathlib.Path, text: str | None = None) -> list[dict] | None:
+    """The people's games, oldest first: when each began, who played, the
+    agents they met, whether the person won, and whether the Diplomatic
+    victory was on (`None` when the line does not say). `None` when this
+    clone's ledger holds no people's record. A line that names no person, no
+    agent or no winner is not a game."""
+    if text is None:
+        try:
+            shown = subprocess.run(["git", "-C", str(source), "show", PEOPLE_REF], capture_output=True, check=False)
+        except OSError:
+            return None
+        if shown.returncode != 0:
+            return None
+        text = shown.stdout.decode("utf-8", "replace")
+    games = []
+    for line in text.splitlines():
+        try:
+            row = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(row, dict):
+            continue
+        began = stamp(row.get("at")) or stamp(row.get("ended"))
+        met = [str(a) for a in row.get("agents") or [] if a]
+        name = str(row.get("person") or "").strip()
+        if not (began and met and name and row.get("winner")):
+            continue
+        on = row.get("diplomatic")
+        games.append({"at": began, "person": name, "agents": met, "won": row["winner"] == PERSON,
+                      "diplo": on if isinstance(on, bool) else None, "tag": row.get("tag")})
+    return sorted(games, key=lambda g: (g["at"], str(g["tag"])))
+
+
+def fit_person(tables: list[tuple[list[float], float, bool]]) -> dict | None:
+    """One person's rating from their games, each `(the agents' elos, the
+    agents' margin, won)`: the rating at which their expected wins equal
+    their wins, with the imaginary pair against the average agent met."""
+    if not tables:
+        return None
+    met = [a for rivals, _, _ in tables for a in rivals]
+    prior = sum(met) / len(met)
+    wins = sum(1 for _, _, won in tables if won)
+
+    def chance(r: float, rivals: list[float]) -> float:
+        return 1 / (1 + sum(strength(a - r) for a in rivals))
+
+    def slope(r: float) -> float:
+        # d(log likelihood)/dr, in units of ln(10)/400: wins less expected
+        # wins, and the imaginary pair against the average agent.
+        return wins - sum(chance(r, rivals) for rivals, _, _ in tables) + 1 - 2 * chance(r, [prior])
+
+    low, high = prior - 2000, prior + 2000
+    for _ in range(80):
+        mid = (low + high) / 2
+        if slope(mid) > 0:
+            low = mid
+        else:
+            high = mid
+    r = (low + high) / 2
+    info = sum(q * (1 - q) for q in (chance(r, rivals) for rivals, _, _ in tables))
+    pair = chance(r, [prior])
+    info += 2 * pair * (1 - pair)
+    own = MARGIN_Z / (LN * math.sqrt(info))
+    theirs = sum(m for _, m, _ in tables) / len(tables)
+    return {
+        "elo": round(r, 1),
+        "margin": round(math.hypot(own, theirs)),
+        # Never beaten: at least this. Never won: at most.
+        "bound": "lower" if wins == len(tables) else "upper" if wins == 0 else "",
+        "games": len(tables),
+        "wins": wins,
+    }
+
+
+def people(games: list[dict], points: list[dict]) -> list[dict]:
+    """Each person rated from their games, strongest first. A game against
+    an agent the fit in force does not rate is left out, and so is a person
+    with no game left."""
+    if not games or not points:
+        return []
+    tables: dict[str, list] = {}
+    seen: dict[str, dict] = {}
+    for game in games:
+        ratings = in_force(points, game["at"]).get("ratings") or {}
+        rivals = [ratings.get(agent) for agent in game["agents"]]
+        if not all(rivals):
+            continue
+        margin = math.sqrt(sum(float(r[1] or 0) ** 2 for r in rivals) / len(rivals))
+        tables.setdefault(game["person"], []).append(([float(r[0]) for r in rivals], margin, game["won"]))
+        kept = seen.setdefault(game["person"], {"met": set(), "last": game["at"]})
+        kept["met"].update(game["agents"])
+        kept["last"] = max(kept["last"], game["at"])
+    out = []
+    for name, mine in tables.items():
+        out.append({"name": name, **fit_person(mine), "met": sorted(seen[name]["met"]),
+                    "last": seen[name]["last"].strftime("%Y-%m-%dT%H:%M:%SZ")})
+    return sorted(out, key=lambda person: (-person["elo"], person["name"]))
+
+
 def rated(games: list[dict], points: list[dict]) -> dict[int, list[tuple[float, float, bool]]]:
     """Each game as its level's fit reads it, by level."""
     out: dict[int, list] = {}
@@ -339,12 +465,14 @@ def simulator(points: list[dict]) -> list[dict]:
     return out
 
 
-def reading(source: pathlib.Path, points: list[dict], published: pathlib.Path, games: list[dict] | None) -> dict:
+def reading(source: pathlib.Path, points: list[dict], published: pathlib.Path, games: list[dict] | None,
+            played: list[dict] | None = None) -> dict:
     """One reading of every figure: the agents of one fit's history, its
-    simulator ladder, and the Firaxis levels from the benchmark games played
+    simulator ladder, the Firaxis levels from the benchmark games played
     the same way (`games`, already split; `None` when the ledger could not be
-    read)."""
+    read), and the people from their games played that way (`played`)."""
     return {
+        "people": people(played or [], points),
         "strategies": ranks.strategies(source, published),
         "agents": agents(source, points),
         "simulator": simulator(points),
@@ -367,9 +495,11 @@ def record(source: pathlib.Path) -> dict | None:
         print(f"elo_page: no Firaxis levels from the benchmark ({error})", file=sys.stderr)
         games = None
     split = {on: [g for g in games if g["diplo"] is on] for on in (True, False)} if games is not None else {}
-    out: dict = reading(source, points, PUBLISHED, split.get(True))
+    met = people_games(source) or []
+    played = {on: [g for g in met if g["diplo"] is on] for on in (True, False)}
+    out: dict = reading(source, points, PUBLISHED, split.get(True), played[True])
     off = history(source, NO_DIPLO_PUBLISHED, NO_DIPLO_HISTORY)
-    out["off"] = reading(source, off, NO_DIPLO_PUBLISHED, split.get(False)) if off else None
+    out["off"] = reading(source, off, NO_DIPLO_PUBLISHED, split.get(False), played[False]) if off else None
     # Benchmark games whose run does not say how the Diplomatic victory was
     # set: in neither reading.
     out["unswitched"] = sum(1 for g in games if g["diplo"] is None) if games is not None else 0
@@ -403,7 +533,8 @@ def main(argv: list[str]) -> int:
     else:
         levels = (data.get("firaxis") or {}).get("levels") or []
         off = data.get("off") or {}
-        print(f"elo_page: wrote {len(data['agents'])} agents over {data['fits']} fits and "
+        print(f"elo_page: wrote {len(data['agents'])} agents over {data['fits']} fits, "
+              f"{len(data.get('people') or []) + len(off.get('people') or [])} people's ratings and "
               f"{len(levels)} Firaxis levels into {page}; diplo off: {len(off.get('agents') or [])} agents over "
               f"{off.get('fits', 0)} fits and {len((off.get('firaxis') or {}).get('levels') or [])} levels",
               file=sys.stderr)

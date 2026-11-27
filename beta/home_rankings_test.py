@@ -664,7 +664,10 @@ class HomeRankings(unittest.TestCase):
         # everything from the pair's opening to the end of the two tables:
         # the games that allowed the Diplomatic victory at the left, the
         # games with it off at the right, each titled with the games it
-        # counts, the four windows as columns.
+        # counts, the four windows as columns, and under the left one the
+        # Deity games with the Religious victory off as well (operator,
+        # 2026-11-27: "add a third category to the tournament for lv 8 deity
+        # no diplo no religion").
         for line in (
             '<h2 class="res-side-title" id="res-title-tourney">Firaxis Civ 6 AI benchmark: win rate by level</h2>',
             '<p class="res-counted" id="res-counted-tourney">Tournament games against Civilization VI&#8217;s own AI.</p>',
@@ -687,8 +690,10 @@ class HomeRankings(unittest.TestCase):
         self.assertNotIn("Diplomatic victory off ·", ours)
         self.assertIn(">6P Continents Online <small", ours)
         self.assertIn(">6P Continents Online, Diplo Off <small", ours)
-        self.assertEqual(ours.count("<table"), 2)
+        self.assertIn(">6P Continents Online, Diplo Off, Religion Off <small", ours)
+        self.assertEqual(ours.count("<table"), 3)
         self.assertLess(ours.index('id="res-rates-on"'), ours.index('id="res-rates-off"'))
+        self.assertLess(ours.index('id="res-rates-off"'), ours.index('id="res-rates-religion_off"'))
         # How the games are counted stays on Win Analytics, a link away.
         self.assertIn('<p class="home-bench-more"><a href="../charts/win-analytics/">Win Analytics</a></p>', section)
         self.assertNotIn("<details", section)
@@ -708,7 +713,7 @@ class HomeRankings(unittest.TestCase):
             if re.match(r"\s*(@media [^{]+\{ )?\.res-(rates|bench)", line):
                 self.assertIn("\n" + line + "\n", style, line.strip())
         # And the drawing: the shade of a cell against the 1/6 par, the
-        # words of a rate, and the loop that fills the two tables are that
+        # words of a rate, and the loop that fills the three tables are that
         # page's own lines.
         def cut(page: str, start: str, end: str) -> list[str]:
             at = page.index(start)
@@ -720,7 +725,7 @@ class HomeRankings(unittest.TestCase):
             ("const pct = (x) =>", '"%");'),
             ("const day = (iso) =>", "};"),
             ("const count = (n, one, many) =>", '.replace("Z", " UTC");'),
-            ('for (const name of ["on", "off"]) {', "body.append(tr);"),
+            ('for (const name of ["on", "off", "religion_off"]) {', "body.append(tr);"),
         ):
             self.assertEqual(cut(LANDING, start, end), cut(CHARTS, start, end), start)
         self.assertNotIn("innerHTML", LANDING)
@@ -738,12 +743,12 @@ class HomeRankings(unittest.TestCase):
             self.assertIsNone(shown)
         else:
             self.assertEqual({key: value for key, value in shown.items() if key != "rungs"}, rates)
-            self.assertEqual(sorted(shown["tables"]), ["off", "on"])
+            self.assertEqual(sorted(shown["tables"]), ["off", "on", "religion_off"])
         # Whatever the ledger holds: the record as it is, and with it the
         # levels' names, which Win Analytics has from its level picker.
-        record = {"to": "2026-11-24 20:18Z", "days": [1, 3, 7, 30], "games": 3, "tables": {
-            name: {"games": games, "levels": [{"level": level, "windows": [{"days": days, "games": games, "wins": 1} for days in (1, 3, 7, 30)]} for level in (8, 7, 6, 5, 4)]}
-            for name, games in (("on", 2), ("off", 1))
+        record = {"to": "2026-11-24 20:18Z", "days": [1, 3, 7, 30], "games": 4, "tables": {
+            name: {"games": games, "levels": [{"level": level, "windows": [{"days": days, "games": games, "wins": 1} for days in (1, 3, 7, 30)]} for level in levels]}
+            for name, games, levels in (("on", 2, (8, 7, 6, 5, 4)), ("off", 1, (8, 7, 6, 5, 4)), ("religion_off", 1, (8,)))
         }}
         with unittest.mock.patch.object(research_page, "tournament_rates", return_value=record):
             shown = home_rankings.benchmark(ROOT)

@@ -404,9 +404,74 @@ fitted level by level on every build of the site
 Deity far under the stand-in's rung. Moving `CIV6_REFERENCE` to the roster
 agent that agrees with them is still open.
 
+**A candidate that agrees (2026-11-27): `oldguard`.** By then our live seat
+won 19% of its Deity games, not "a handful". A calibration run seated
+`oldguard` (`AdvancedAi::legacy()`) as each rung's rival:
+`strategy_elo --reference oldguard --rungs king,emperor,immortal,deity
+--rung-games 40`, with its own `--log` (a copy of the published one) and
+`--out`. `tools/sim_live_calibration.py --elo <that file>` then priced the
+live benchmark against each stand-in on the fit's own model:
+
+| Level | Live record | `stock` stand-in predicts | `oldguard` stand-in predicts |
+|---|---|---:|---:|
+| Lv 4 Prince | 39/39 | 44.7% | 89.2% |
+| Lv 5 King | 30/40 (75%) | 17.1% | 44.9% |
+| Lv 6 Emperor | 32/56 (57%) | 4.0% | 38.7% |
+| Lv 7 Immortal | 16/53 (30%) | 2.2% | 19.9% |
+| Lv 8 Deity | 46/245 (19%) | 0.5% | 16.6% |
+
+The `stock` stand-in misses by 500 to 700 points at every level. Each
+`oldguard` rung sits 30 to 230 points above the level the live games imply.
+That is inside the two readings' margins combined (±140 to ±200 on 40 tables,
+±105 to ±152 live). It is also about the 100 to 180 points the
+one-against-five reading understates a rung by
+([Why a rung sits alone](#why-a-rung-sits-alone)). The move is still the
+operator's to make. It changes the Difficulty dial the game offers, every
+agent's `civ6_level` and the ELO page's ladder. It also needs every rung
+re-played under the new reference by the host's rating run. The 40-table run
+was not published.
+
 `src/odds.rs` carries hand-set handicap constants (`HANDICAP_YIELD_ELO` and its
 neighbours) for the win-odds annotation. The rung ratings here are the
 measurement those constants were waiting for; reconciling them is open.
+
+## People on the scale
+
+Operator 2026-11-27: "Set me up in a 1v1 duel with the strongest civvis AI ...
+also start posting elo on the website. use the name dev for me".
+
+A person who plays the agents in Civilization VI itself is rated on the
+agents' scale and listed among them on ELO Rankings, under their own name.
+
+- **The game.** `tools/civ6_hotseat.py --duel --name dev --leader
+  LEADER_GILGAMESH` starts a hot seat game on this Mac: the person in seat 0
+  under their name, one agent in the other seat, a Duel map. The agent is the
+  roster agent the published fit rates highest (`--agents strongest`, read
+  from `data/strategy_elo.json`), or the one `--agents` names; it plays the
+  live decider in that agent's victory lane, as the benchmark seat does.
+  `--players 4 --agents holy,tourist,jack` is a table of four the same way.
+- **The record.** When a game under a name ends with a victory or an
+  elimination, the harness puts one line on the ledger branch
+  (`people.jsonl`, `tools/people_elo.py record`): who played, which agents,
+  who won and how, when it began. A game that ended any other way is recorded
+  only when someone says who won (`people_elo.py record <run> --winner person`
+  or `--winner civvis`), as a concession.
+- **The rating.** `beta/elo_page.py` fits it whenever the site is built. Each
+  game is a table of the person and the agents they met, each agent at its
+  rating in the fit in force when the game began; the person wins with
+  probability `s / (s + the agents' strengths)`, the model every rating here
+  is fitted on, with the same imaginary pair of games (one won, one lost,
+  against the average agent they met). One game won against an agent rated
+  `r` is therefore `r + 400 log10(2)`, about 120 above it, shown as "at
+  least"; one lost is as far below, "at most". A game stands in the reading
+  (Diplomatic victory on or off) its own switch puts it in.
+  `tools/people_elo.py ratings` prints the same fit from a checkout.
+
+What it assumes: an agent plays in Civilization VI as it does in the
+simulator, where it was rated at tables of four over 250 turns. That is the
+assumption the Firaxis levels' figures rest on, turned round, and a duel is a
+further step from those tables. The margin beside a person's rating is the
+honest part: after one game it is wider than the gap between any two agents.
 
 ## The watched table
 
@@ -465,6 +530,8 @@ on our stand-in for Civilization VI's AI, not on that AI.
   Elo with the Firaxis levels the benchmark measures among them, each level's
   two readings side by side, and the Elo of the top ten agents and of Lv 4 to
   Lv 8 over time, every figure with the Diplomatic victory on and with it off.
+  A person who has played the agents in Civilization VI stands in the same
+  list under their name (`## People on the scale`).
 
 Difficulty and rival are separate dials. Difficulty is what the rules hand the
 rivals; the agent is how well they play. As measured on 2026-11-22 the

@@ -3229,7 +3229,8 @@ class TheProgressMarksGradeAGameWithoutAWin(unittest.TestCase):
             raise KeyError("surprise")
         with patch.object(civ6_ladder, "PROGRESS_MARKS", (
                 ("economy_marks", civ6_ladder.economy_marks),
-                ("religion_marks", broken))):
+                ("religion_marks", broken))), \
+                patch.object(civ6_ladder, "SUMMARY_MARKS", (("clock_margin", broken),)):
             marks = self._read(civ6_ladder.progress_marks, [self._board(50)])
         self.assertEqual(set(marks), {"economy_marks"})
 

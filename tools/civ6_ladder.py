@@ -1634,6 +1634,17 @@ def founding_marks(events_path: Path) -> dict | None:
     return founding_reading(events_of(events_path))
 
 
+def clock_margin_marks(events_path: Path) -> dict | None:
+    """How far each victory lane was from winning when the run ended, and the
+    rival's clock: `tools/clock_margin.py`, read over the shared parse."""
+    try:
+        import clock_margin
+    except ImportError:  # pragma: no cover - a caller that imported us by path
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import clock_margin
+    return clock_margin.clock_margin(events_of(events_path))
+
+
 #: The ledger fields `progress_marks` fills, each read by the function it names.
 PROGRESS_MARKS = (
     ("economy_marks", economy_marks),
@@ -1652,6 +1663,9 @@ SUMMARY_MARKS = (
     ("build_order", build_order),
     ("founding_marks", founding_marks),
     ("first_invasion", first_invasion),
+    # The graded live metric: lane shortfall, turns short and margin
+    # (`tools/clock_margin.py`; a reader calls `clock_margin.lane_margin`).
+    ("clock_margin", clock_margin_marks),
 )
 
 

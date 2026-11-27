@@ -92,6 +92,7 @@
   nav.back { margin-top: 52px; text-align: center; font-size: 12px; letter-spacing: 0.18em; text-transform: uppercase; }
   nav.back a { margin: 0 10px; color: #6f8279; text-decoration: none; }
   nav.back a:hover { color: #d7b66a; }
+  p.fine { margin: 18px 0 0; text-align: center; font-size: 12px; color: #8a9a90; }
 
   @media (prefers-reduced-motion: reduce) { a.get { transition: none; } }
 </style>
@@ -153,11 +154,9 @@ civvis play --spectate                        the same, all seats played by the 
     <li><b>One file.</b> The rules, the artwork and the interface are all compiled in. Nothing is fetched at runtime and nothing is installed.</li>
     <li><b>Offline, permanently.</b> It never contacts a server. A copy kept on a disk will still play in ten years.</li>
     <li><b>Deterministic.</b> The same seed replays the same game exactly, which is what makes the simulation useful rather than merely watchable.</li>
-    <!-- This deliberately does not name a licence. The repository states
-         none for now (operator, 2026-11-24: taken off until it has been
-         read closely). Say what is true, that the source is public, and
-         put the licence back here once the repository states one again. -->
-    <li><b>Open source.</b> <a href="https://github.com/MartinHalvorson/CIVVIS">The whole engine</a> is public — build your own, change the rules, keep the result.</li>
+    <!-- The repository's own licence, MIT since 2026-11-27 (README.md,
+         "Licence and trademarks"); what others wrote keeps its own. -->
+    <li><b>Free software, MIT licence.</b> <a href="https://github.com/MartinHalvorson/CIVVIS">The whole engine</a> is public — build your own, change the rules, keep the result. What others wrote keeps its own licence: <a href="https://github.com/MartinHalvorson/CIVVIS/blob/main/THIRD_PARTY_NOTICES.md">third-party notices</a>.</li>
   </ul>
 
   <h2>Or build it yourself</h2>
@@ -166,8 +165,8 @@ cd CIVVIS
 cargo build --release
 ./target/release/civvis benchmark</pre>
   <p>
-    Rust stable and nothing else; the engine has two dependencies, both of them
-    <code>serde</code>.
+    Rust stable and nothing else; the engine's few dependencies (<code>serde</code>,
+    <code>libm</code>, <code>memchr</code>, <code>mimalloc</code>) come from crates.io as it builds.
   </p>
 
   <!-- Lane-relative, like every link between the site's pages: the test
@@ -178,6 +177,7 @@ cargo build --release
     <a href="https://www.youtube.com/@civvis">Channel</a>
     <a href="https://github.com/MartinHalvorson/CIVVIS">Source</a>
   </nav>
+  <p class="fine">CIVVIS is a fan project, not affiliated with or endorsed by Firaxis Games, 2K or Take-Two Interactive. Sid Meier&#8217;s Civilization and Civilization VI are their trademarks.</p>
 
 </main>
 </body>

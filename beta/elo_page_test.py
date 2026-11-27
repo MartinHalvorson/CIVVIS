@@ -19,6 +19,7 @@ import tempfile
 import unittest
 
 import elo_page
+import home_rankings as ranks
 
 BETA = pathlib.Path(__file__).resolve().parent
 ROOT = BETA.parent
@@ -283,6 +284,129 @@ class Readings(unittest.TestCase):
         self.assertTrue(points)
         self.assertTrue(elo_page.agents(ROOT, points))
         self.assertEqual(elo_page.simulator(points)[0]["level"], 8)
+
+
+class People(unittest.TestCase):
+    """Operator 2026-11-27: "start posting elo on the website. use the name
+    dev for me". A person who plays the agents in Civilization VI is rated
+    on their scale, from the people's record on the ledger branch."""
+
+    @staticmethod
+    def line(tag: str, when: str, winner: str, agents=("holy",), person="dev", **more) -> str:
+        return json.dumps({"tag": tag, "at": when, "person": person, "agents": list(agents),
+                           "winner": winner, "diplomatic": True, **more})
+
+    def test_one_game_won_rates_a_person_a_little_above_the_agent_and_lost_a_little_below(self):
+        # The imaginary pair makes it two wins in three against the agent
+        # (or one): 400 log10(2) either side, a bound until they have both
+        # won and lost.
+        won = elo_page.fit_person([([1446.0], 21.0, True)])
+        lost = elo_page.fit_person([([1446.0], 21.0, False)])
+        self.assertAlmostEqual(won["elo"], 1446 + 400 * math.log10(2), delta=0.1)
+        self.assertAlmostEqual(lost["elo"], 1446 - 400 * math.log10(2), delta=0.1)
+        self.assertEqual((won["bound"], won["games"], won["wins"]), ("lower", 1, 1))
+        self.assertEqual((lost["bound"], lost["games"], lost["wins"]), ("upper", 1, 0))
+        # One game pins little down, and the agent's own margin is in it.
+        self.assertGreater(won["margin"], 400)
+        self.assertGreater(won["margin"], elo_page.fit_person([([1446.0], 0.0, True)])["margin"])
+        self.assertIsNone(elo_page.fit_person([]))
+
+    def test_the_rating_is_the_tables_reading_of_the_win_rate(self):
+        # Many duels: the pair no longer moves it, and the person sits
+        # 400 log10(p / (1 - p)) from the agent.
+        for p in (0.1, 0.5, 0.8):
+            n = 20000
+            fitted = elo_page.fit_person([([1200.0], 0.0, i < round(p * n)) for i in range(n)])
+            self.assertAlmostEqual(fitted["elo"], 1200 + 400 * math.log10(p / (1 - p)), delta=1.0, msg=p)
+            self.assertEqual(fitted["bound"], "")
+        # A table of four: winning one in four is level with three equal agents.
+        level = elo_page.fit_person([([1200.0] * 3, 0.0, i % 4 == 0) for i in range(4000)])
+        self.assertAlmostEqual(level["elo"], 1200.0, delta=1.0)
+        # More games narrow the margin.
+        few = elo_page.fit_person([([1200.0], 0.0, i % 2 == 0) for i in range(4)])
+        many = elo_page.fit_person([([1200.0], 0.0, i % 2 == 0) for i in range(40)])
+        self.assertLess(many["margin"], few["margin"])
+
+    def test_the_record_is_read_a_game_a_line_and_a_line_that_is_not_a_game_is_left_out(self):
+        text = "\n".join([
+            self.line("b", "2026-11-28T01:00:00Z", "holy"),
+            self.line("a", "2026-11-27T06:30:00Z", "person", diplomatic=False),
+            "not json",
+            json.dumps({"tag": "no-winner", "at": "2026-11-27T06:30:00Z", "person": "dev", "agents": ["holy"]}),
+            json.dumps({"tag": "nobody", "at": "2026-11-27T06:30:00Z", "agents": ["holy"], "winner": "holy"}),
+            self.line("no-agents", "2026-11-27T06:30:00Z", "person", agents=()),
+            self.line("unswitched", "2026-11-29T00:00:00Z", "person", diplomatic=None),
+        ])
+        games = elo_page.people_games(ROOT, text)
+        self.assertEqual([(g["tag"], g["person"], g["agents"], g["won"], g["diplo"]) for g in games], [
+            ("a", "dev", ["holy"], True, False),
+            ("b", "dev", ["holy"], False, True),
+            ("unswitched", "dev", ["holy"], True, None),
+        ])
+        self.assertEqual(games[0]["at"], at("2026-11-27T06:30:00Z"))
+        # A clone with no ledger has no record, which is not an empty one.
+        self.assertIsNone(elo_page.people_games(pathlib.Path(tempfile.mkdtemp())))
+
+    def test_each_game_is_rated_against_the_agents_fit_when_it_began(self):
+        points = [point("2026-11-20T00:00:00Z", holy=(1400.0, 20, ""), jack=(1100.0, 20, "")),
+                  point("2026-11-28T00:00:00Z", holy=(1500.0, 20, ""), jack=(1100.0, 20, ""))]
+        text = "\n".join([
+            self.line("a", "2026-11-27T06:30:00Z", "person"),
+            self.line("b", "2026-11-28T06:30:00Z", "holy"),
+            self.line("c", "2026-11-28T07:30:00Z", "person", agents=("nobody-rated",)),
+            self.line("d", "2026-11-28T08:30:00Z", "person", person="ada", agents=("jack",)),
+        ])
+        rated = elo_page.people(elo_page.people_games(ROOT, text), points)
+        self.assertEqual([p["name"] for p in rated], ["dev", "ada"], "strongest first")
+        dev = rated[0]
+        self.assertEqual(dev, {**elo_page.fit_person([([1400.0], 20.0, True), ([1500.0], 20.0, False)]),
+                               "name": "dev", "met": ["holy"], "last": "2026-11-28T06:30:00Z"})
+        self.assertEqual((dev["games"], dev["wins"], dev["bound"]), (2, 1, ""))
+        self.assertEqual((rated[1]["games"], rated[1]["met"]), (1, ["jack"]))
+        self.assertEqual(elo_page.people([], points), [])
+
+    def test_a_game_stands_in_the_reading_its_diplomatic_switch_puts_it_in(self):
+        text = "\n".join([
+            self.line("a", "2026-11-27T06:30:00Z", "person", agents=("jack",)),
+            self.line("b", "2026-11-27T07:30:00Z", "jack", agents=("jack",), diplomatic=False),
+            self.line("c", "2026-11-27T08:30:00Z", "person", agents=("jack",), diplomatic=None),
+        ])
+        root = Readings.tree(1000.0, 1300.0)
+        real = elo_page.people_games, elo_page.benchmark_games
+        elo_page.people_games = lambda source: real[0](source, text)
+        elo_page.benchmark_games = lambda source: []
+        try:
+            record = elo_page.record(root)
+        finally:
+            elo_page.people_games, elo_page.benchmark_games = real
+        on, off = record["people"], record["off"]["people"]
+        self.assertEqual([(p["name"], p["games"], p["wins"], p["bound"]) for p in on], [("dev", 1, 1, "lower")])
+        self.assertEqual([(p["name"], p["games"], p["wins"], p["bound"]) for p in off], [("dev", 1, 0, "upper")])
+        self.assertAlmostEqual(on[0]["elo"], 1000 + 400 * math.log10(2), delta=0.1)
+        self.assertAlmostEqual(off[0]["elo"], 1300 - 400 * math.log10(2), delta=0.1)
+
+    def test_a_person_stands_in_the_player_strategies_among_the_agents(self):
+        strategies = PAGE[PAGE.index("// ---- Player strategies"):PAGE.index("// ---- Elo over time")]
+        self.assertIn('entry("person:" + p.name, { kind: "person", name: p.name, tilt: "Person" })[side] = reading(p);',
+                      strategies)
+        # Numbered with the agents (a Firaxis level is a rung, not a place), in gold.
+        self.assertIn('item.append(el("span", "rank-n", r.kind === "level" ? "" : String(++place)));', strategies)
+        self.assertIn('r.kind === "person" ? " is-person"', strategies)
+        self.assertIn(".rank-row.is-person .rank-name { color: var(--gold); }", PAGE)
+        self.assertIn("--gold:", PAGE)
+        # What their figure counts is said on the row and under the list.
+        self.assertIn('" against the Civ AI Agents in Civilization VI"', strategies)
+        self.assertIn('" against the agents in Civilization VI itself, each agent at its Elo here when the game began."',
+                      strategies)
+
+    def test_the_record_is_the_one_the_recorder_writes(self):
+        sys.path.insert(0, str(ROOT / "tools"))
+        import people_elo
+
+        self.assertEqual(elo_page.PEOPLE_REF, f"refs/remotes/origin/{people_elo.LEDGER_BRANCH}:{people_elo.PEOPLE_PATH}")
+        self.assertEqual(elo_page.PERSON, people_elo.PERSON)
+        self.assertEqual(elo_page.PEOPLE_REF.split(":")[0], ranks.RESULTS_REF.split(":")[0],
+                         "read off the ledger the site build already fetches")
 
 
 class Page(unittest.TestCase):

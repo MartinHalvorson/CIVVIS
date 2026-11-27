@@ -517,3 +517,28 @@ fn version_three_keeps_a_religion_seats_missionary() {
         "Diplomacy: a Missionary is routine work"
     );
 }
+
+/// The versioned live list (`deploy/live-force-on.txt`) seated on a Religion
+/// seat, the lane the live Deity ladder plays (Tournament 8). Version two is
+/// forced on the live seat and inert on this aim; before version three was
+/// armed nothing in the list trained a denial Spy before a rival held Rocketry,
+/// and the live Religion seats held 1.05 Spies on the map against 1.85 slots
+/// at t150 (95 Deity games, 2026-11-22..27, `docs/CLOCK_MARGIN.md`).
+#[test]
+fn the_live_list_fills_a_religion_seats_spy_slots() {
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Religion);
+    for tag in include_str!("../../../../deploy/live-force-on.txt")
+        .split(|c: char| c == ',' || c.is_whitespace())
+        .filter(|tag| !tag.is_empty())
+    {
+        let gene = crate::ai::gene(tag).expect("every listed tag is a registry row");
+        (gene.enable)(&mut ai);
+    }
+    let (mut g, _) = board(false);
+    assert!(
+        ai.denial_spies_fill_every_slot_on(&g),
+        "a listed version reaches the Religion aim"
+    );
+    ai.claim_queues_for_denial_spies(&mut g, 0, &plan(GrandStrategy::Religion));
+    assert_eq!(training(&g).len(), 2, "both Spy slots train");
+}

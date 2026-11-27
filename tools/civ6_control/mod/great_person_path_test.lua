@@ -96,10 +96,10 @@ end })
 
 local host = { units = {}, ops = {}, paths = {}, cities = {}, commands = {} }
 local PID = 0
-local function greatPerson()
+local function greatPerson(individual)
 	return {
 		IsGreatPerson = function() return true end,
-		GetIndividual = function() return host.individual or GP_INDIVIDUAL end,
+		GetIndividual = function() return individual or host.individual or GP_INDIVIDUAL end,
 		GetClass = function() return GP_CLASS end,
 		GetActionCharges = function() return host.charges or 1 end,
 		GetActivationHighlightPlots = function()
@@ -263,43 +263,71 @@ check("missing path API keeps compatibility", host.ops[1] ~= nil and host.ops[1]
 UnitManager.GetMoveToPathEx = pathFinder
 
 -- Exercise the actual order driver, including activation before movement.
+-- Standard-speed costs from Projects.xml:29-33 and Expansion2_Projects.xml:32-35;
+-- the city queue below prices them at Online speed (half), as the host does.
 local projects = {}
-for index, name in ipairs({ "PROJECT_LAUNCH_EARTH_SATELLITE", "PROJECT_LAUNCH_MOON_LANDING",
-	"PROJECT_LAUNCH_MARS_BASE", "PROJECT_LAUNCH_EXOPLANET_EXPEDITION",
-	"PROJECT_ORBITAL_LASER", "PROJECT_TERRESTRIAL_LASER", "PROJECT_LAUNCH_MARS_REACTOR" }) do
-	projects[index] = { Index = index, Hash = index, ProjectType = name }
-	projects[name] = projects[index]
+for index, entry in ipairs({
+	{ "PROJECT_LAUNCH_EARTH_SATELLITE", 900 }, { "PROJECT_LAUNCH_MOON_LANDING", 1500 },
+	{ "PROJECT_LAUNCH_MARS_BASE", 1800 }, { "PROJECT_LAUNCH_EXOPLANET_EXPEDITION", 2100 },
+	{ "PROJECT_ORBITAL_LASER", 600 }, { "PROJECT_TERRESTRIAL_LASER", 600 },
+	{ "PROJECT_LAUNCH_MARS_REACTOR", 1800 } }) do
+	projects[index] = { Index = index, Hash = index, ProjectType = entry[1], Cost = entry[2] }
+	projects[entry[1]] = projects[index]
 end
 GameInfo.Projects = projects
+local SPACEPORT = { Index = 77, DistrictType = "DISTRICT_SPACEPORT" }
+GameInfo.Districts = setmetatable({ [77] = SPACEPORT, DISTRICT_SPACEPORT = SPACEPORT },
+	{ __call = function() return function() return nil end end })
 GameInfo.GreatPersonIndividuals[1002] = { GreatPersonIndividualType = "GREAT_PERSON_INDIVIDUAL_CARL_SAGAN" }
 GameInfo.GreatPersonIndividuals[1003] = { GreatPersonIndividualType = "GREAT_PERSON_INDIVIDUAL_SERGEI_KOROLEV" }
 GameInfo.GreatPersonIndividuals[1004] = { GreatPersonIndividualType = "GREAT_PERSON_INDIVIDUAL_STEPHANIE_KWOLEK" }
 Map.GetPlot = function(x, y) return { x = x, y = y } end
 Cities = { GetPlotPurchaseCity = function(p) return host.cityAt and host.cityAt[p.x] end }
-local function spaceCase(id, project, charges, turns)
-	reset(id)
-	host.individual, host.charges, host.canActivate = 1002, charges, true
-	local city = {
+local function pad(x, y)
+	return {
+		GetType = function() return SPACEPORT.Index end,
+		GetX = function() return x end, GetY = function() return y end,
+		IsComplete = function() return true end,
+		IsPillaged = function() return false end,
+	}
+end
+-- One of our cities. `opts.progress` is the host's progress on the current
+-- project; its cost is the Online price unless `opts.cost` names one.
+local function spaceCity(id, project, opts)
+	opts = opts or {}
+	return {
 		GetID = function() return id end, GetOwner = function() return PID end,
 		GetBuildQueue = function() return {
 			GetCurrentProductionTypeHash = function() return project end,
-			GetTurnsLeft = function() return turns or 10 end,
+			GetTurnsLeft = function() return opts.turns or 10 end,
+			GetProjectProgress = function() return opts.progress or 0 end,
+			GetProjectCost = function(_, index)
+				return opts.cost or (projects[index] and projects[index].Cost / 2) or -1
+			end,
 		} end,
+		GetYield = function() return opts.production or 20 end,
+		GetDistricts = function() return { Members = members(opts.pads or {}) } end,
 	}
+end
+local function spaceCase(id, project, charges, turns, progress)
+	reset(id)
+	host.individual, host.charges, host.canActivate = 1002, charges, true
+	local city = spaceCity(id, project, { turns = turns, progress = progress })
 	host.cities, host.cityAt = { city }, { [1] = city, [2] = city, [4] = city }
 end
+-- The launches are serial, so a fresh link of any stage takes the charge
+-- (old policy: reserved for Exoplanet, 6 of 12 live people never used).
 for _, project in ipairs({1, 2, 3}) do
 	spaceCase(20 + project, project, 1)
 	applyOrders(player, PID, 7, {})
-	check("last charge reserved at stage " .. project, #host.commands, 0)
-	check("no move to reserved stage " .. project, #host.ops, 0)
-	check("reservation is visible " .. project,
-		(lastEvent("gp") or ""):find('"action":"reserved_space_boost"', 1, true) ~= nil, true)
+	check("fresh launch link takes the charge at stage " .. project, #host.commands, 1)
+	check("activation reported at stage " .. project,
+		(lastEvent("gp") or ""):find('"action":"activated"', 1, true) ~= nil, true)
 end
 spaceCase(30, 3, 2)
 host.individual = 1003
 applyOrders(player, PID, 7, {})
-check("extra Korolev charge can accelerate Mars", #host.commands, 1)
+check("Korolev accelerates Mars", #host.commands, 1)
 spaceCase(31, 4, 1)
 applyOrders(player, PID, 7, {})
 check("last charge launches Exoplanet", #host.commands, 1)
@@ -309,9 +337,8 @@ spaceCase(32, 4, 1, 1)
 applyOrders(player, PID, 7, {})
 check("one-turn project does not consume boost", #host.commands, 0)
 spaceCase(33, 5, 1)
-host.launched = true
 applyOrders(player, PID, 7, {})
-check("leftover grant accelerates travel", #host.commands, 1)
+check("leftover grant accelerates a laser", #host.commands, 1)
 spaceCase(34, 1, 1)
 host.individual = 1004
 applyOrders(player, PID, 7, {})
@@ -319,35 +346,118 @@ check("permanent Kwolek bonus activates early", #host.commands, 1)
 spaceCase(35, 7, 1)
 projects.PROJECT_LAUNCH_EXOPLANET_EXPEDITION = nil
 applyOrders(player, PID, 7, {})
-check("vanilla last charge can finish Mars", #host.commands, 1)
+check("vanilla charge can finish Mars", #host.commands, 1)
 projects.PROJECT_LAUNCH_EXOPLANET_EXPEDITION = projects[4]
 spaceCase(36, 4, 1)
 host.canActivate = false
 host.cityAt[1], host.cityAt[2] = nil, nil
 host.paths["36:" .. reachable] = { plots = { origin, reachable }, turns = { 0, 1 } }
 applyOrders(player, PID, 7, {})
-check("walk to eligible late project instead of nearest highlight", host.ops[1] and host.ops[1].x, 4)
+check("walk to the spending city instead of nearest highlight", host.ops[1] and host.ops[1].x, 4)
 spaceCase(37, 4, 1)
 host.cityAt = {}
 applyOrders(player, PID, 7, {})
 check("unknown city cannot consume finite grant", #host.commands, 0)
 
+-- Hold only when the next link would take at least twice what this one still
+-- can. Live 204504Z: Sagan born beside a Mars Base 709/900 done (4 turns to
+-- save) spent on the Exoplanet four turns later (10 turns).
+spaceCase(50, 3, 1, 3, 709)
+applyOrders(player, PID, 7, {})
+check("nearly built Mars waits for the Exoplanet", #host.commands, 0)
+check("the wait is reported", (lastEvent("gp") or ""):find('"action":"reserved_space_boost"', 1, true) ~= nil, true)
+spaceCase(51, 3, 1, 3, 709)
+host.individual = 1003
+applyOrders(player, PID, 7, {})
+check("nearly built Mars waits for Korolev too", #host.commands, 0)
+-- Live 211309Z: Korolev passed a Moon 158/750 with 12 turns left at t178 and
+-- was spent on the t196 Exoplanet (about 4 turns).
+spaceCase(52, 2, 1, 12, 158)
+host.individual = 1003
+applyOrders(player, PID, 7, {})
+check("a part-built Moon with most of its build left takes Korolev", #host.commands, 1)
+spaceCase(53, 1, 1, 3, 300)
+host.individual = 1003
+applyOrders(player, PID, 7, {})
+check("a Satellite two-thirds built waits for the Moon", #host.commands, 0)
+
 spaceCase(38, 1, 1)
 applyOrders(player, PID, 7, { { kind = "unit", subject = 38, verb = "ACTIVATE_GREAT_PERSON" } })
-check("explicit early activation order also reserves charge", #host.commands, 0)
+check("explicit order spends on the first link", #host.commands, 1)
+local civvisActivation = nil
+for _, line in ipairs(LOG) do
+	if line:find('"action":"activated_by_civvis"', 1, true) and line:find('"unit":38', 1, true) then
+		civvisActivation = line
+	end
+end
+check("CIVVIS's activation is reported as a gp event", civvisActivation ~= nil, true)
+check("the report names the individual", civvisActivation ~= nil
+	and civvisActivation:find("GREAT_PERSON_INDIVIDUAL_CARL_SAGAN", 1, true) ~= nil, true)
+spaceCase(54, 3, 1, 3, 709)
+applyOrders(player, PID, 7, { { kind = "unit", subject = 54, verb = "ACTIVATE_GREAT_PERSON" } })
+check("explicit order still reserves a nearly built link", #host.commands, 0)
 spaceCase(39, 4, 1)
 applyOrders(player, PID, 7, { { kind = "unit", subject = 39, verb = "ACTIVATE_GREAT_PERSON" } })
-check("explicit late activation order consumes charge once", #host.commands, 1)
+check("explicit Exoplanet activation order consumes charge once", #host.commands, 1)
 spaceCase(40, 1, 1)
 local policy = CivvisSpaceBoost.forUnit(player, unitObject(host.units[40]), 7)
-check("bridge exports no early movement targets", #CivvisSpaceBoost.filterPlots(player, policy,
-	{ { x = 2, y = 1 }, { x = 4, y = 1 } }), 0)
+check("bridge exports first-link movement targets", #CivvisSpaceBoost.filterPlots(player, policy,
+	{ { x = 2, y = 1 }, { x = 4, y = 1 } }), 2)
 spaceCase(41, 4, 1)
 host.cityAt[2] = nil
 policy = CivvisSpaceBoost.forUnit(player, unitObject(host.units[41]), 7)
 local filtered = CivvisSpaceBoost.filterPlots(player, policy, { { x = 2, y = 1 }, { x = 4, y = 1 } })
 check("bridge exports eligible target only", #filtered, 1)
-check("bridge exports correct late city", filtered[1] and filtered[1].x, 4)
+check("bridge exports correct city", filtered[1] and filtered[1].x, 4)
+
+-- ★ Waiting happens on a Spaceport, not at the birthplace. No city is
+-- launching anything, so the person walks to the pad and holds there.
+local function stageCase(id, cities)
+	reset(id)
+	host.individual, host.charges, host.canActivate = 1002, 1, false
+	host.cities, host.cityAt = cities, {}
+end
+local padA, padB = plotIndex(6, 1), plotIndex(8, 1)
+stageCase(60, { spaceCity(60, nil, { pads = { pad(6, 1) } }) })
+host.paths["60:" .. padA] = { plots = { origin, plotIndex(5, 1), padA }, turns = { 0, 1, 1 } }
+applyOrders(player, PID, 7, {})
+check("held space person walks to the Spaceport", host.ops[1] and host.ops[1].x, 6)
+check("the walk is reported once", (lastEvent("gp") or ""):find('"action":"moving_to_spaceport"', 1, true) ~= nil, true)
+check("no charge spent while nothing launches", #host.commands, 0)
+local stagePlots = CivvisSpaceBoost.stagePlots(player, unitObject(host.units[60]))
+check("export names the pad for civvis_orders", stagePlots[1] and stagePlots[1].x, 6)
+check("export pad distance", stagePlots[1] and stagePlots[1].distance, 5)
+
+stageCase(61, { spaceCity(61, nil, { pads = { pad(6, 1) } }) })
+host.units[61].x = 6
+applyOrders(player, PID, 7, {})
+check("a person on the pad stays", #host.ops, 0)
+check("arrival is reported on the pad",
+	(lastEvent("gp") or ""):find('"on_spaceport":true', 1, true) ~= nil, true)
+check("stage plot at distance 0 is civvis_orders' hold",
+	CivvisSpaceBoost.stagePlots(player, unitObject(host.units[61]))[1].distance, 0)
+
+stageCase(62, { spaceCity(62, nil, { pads = { pad(6, 1) } }) })
+applyOrders(player, PID, 7, {})
+check("an unreachable pad is not walked to", #host.ops, 0)
+
+-- The city running a launch outranks a richer one; a pad a sibling holds is
+-- skipped (one civilian per plot).
+local launching = spaceCity(63, 1, { progress = 400, production = 10, pads = { pad(6, 1) } })
+local richer = spaceCity(64, nil, { production = 50, pads = { pad(8, 1) } })
+stageCase(63, { launching, richer })
+host.paths["63:" .. padA] = { plots = { origin, padA }, turns = { 0, 1 } }
+host.paths["63:" .. padB] = { plots = { origin, padB }, turns = { 0, 2 } }
+applyOrders(player, PID, 7, {})
+check("the launching city's pad outranks more production", host.ops[1] and host.ops[1].x, 6)
+stageCase(63, { launching, richer })
+host.paths["63:" .. padA] = { plots = { origin, padA }, turns = { 0, 1 } }
+host.paths["63:" .. padB] = { plots = { origin, padB }, turns = { 0, 2 } }
+host.units[65] = { id = 65, kind = "UNIT_GREAT_ENGINEER", x = 6, y = 1, gp = greatPerson(1003) }
+applyOrders(player, PID, 7, {})
+local sagan = nil
+for _, op in ipairs(host.ops) do if op.id == 63 then sagan = op end end
+check("a pad a sibling holds is skipped", sagan and sagan.x, 8)
 
 if failures > 0 then
 	print(string.format("%d failure(s)", failures))
