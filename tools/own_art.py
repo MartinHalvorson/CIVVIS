@@ -918,7 +918,8 @@ def credits(index_rows) -> str:
         f"[{ICONS_LICENCE}]({ICONS_LICENCE_URL}) for the pictographs |",
         "| `unit-glyphs.png` | game-icons.net silhouettes, below, rasterised by `tools/own_art.py` | "
         f"[{ICONS_LICENCE}]({ICONS_LICENCE_URL}) |",
-        "| `hidden-map-monsters.png` | made for CIVVIS (#391, #947) | the repository's own |",
+        "| `hidden-map-monsters.png` | added in #391, redrawn in #947, #953, #2222; how it was made is not "
+        "recorded (THIRD_PARTY_NOTICES.md, Unresolved); not Civilization VI's art | unresolved |",
         "",
         "## Icons from game-icons.net",
         "",
@@ -947,8 +948,8 @@ def manifest(files: dict[str, bytes]) -> str:
     monsters = ASSETS / "hidden-map-monsters.png"
     entries["hidden-map-monsters.png"] = {
         "sha256": hashlib.sha256(monsters.read_bytes()).hexdigest(),
-        "made_by": "made for CIVVIS in #391 and #947",
-        "source": "CIVVIS's own illustration; no game art",
+        "made_by": "added in #391, redrawn in #947, #953 and #2222",
+        "source": "origin not recorded (THIRD_PARTY_NOTICES.md, Unresolved); not Civilization VI's art",
     }
     body = {
         "_doc": ("Every image web/assets may ship, by sha256. tools/art_provenance.py refuses a tracked "

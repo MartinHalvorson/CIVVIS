@@ -10,7 +10,7 @@ Every sprite sheet the viewer draws is CIVVIS's own, drawn by
 | `unit-plates.png` | eight counter shapes of CIVVIS's own, 60 px cells in one row |
 | `yield-icons.png` | six lit discs drawn here, each carrying a game-icons.net pictograph, 80 px cells |
 | `city-wall-mark.png` | a battlement, 21 x 18 |
-| `hidden-map-monsters.png` | the unexplored-chart illustrations made for CIVVIS (#391, #947) |
+| `hidden-map-monsters.png` | the unexplored-chart vignettes added in #391; not the game's art, though how they were made is not recorded (`THIRD_PARTY_NOTICES.md`, Unresolved) |
 
 Until #5940 the first four were cut out of an installed game by the tools this
 document describes, and a fifth and sixth sheet (`feature-atlas.png`,

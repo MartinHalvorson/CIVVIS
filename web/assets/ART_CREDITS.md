@@ -12,7 +12,7 @@ does not list with its hash.
 | `city-wall-mark.png` | drawn by `tools/own_art.py` | the repository's own |
 | `yield-icons.png` | discs drawn by `tools/own_art.py`; pictographs from game-icons.net, below | [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/) for the pictographs |
 | `unit-glyphs.png` | game-icons.net silhouettes, below, rasterised by `tools/own_art.py` | [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/) |
-| `hidden-map-monsters.png` | made for CIVVIS (#391, #947) | the repository's own |
+| `hidden-map-monsters.png` | added in #391, redrawn in #947, #953, #2222; how it was made is not recorded (THIRD_PARTY_NOTICES.md, Unresolved); not Civilization VI's art | unresolved |
 
 ## Icons from game-icons.net
 
