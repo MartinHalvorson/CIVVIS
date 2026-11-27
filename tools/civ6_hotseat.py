@@ -54,6 +54,14 @@ from, among the agents. A game you concede has no ending of the game's own:
 who won. ``--hold-start`` sets the staging room up and leaves START GAME to you
 (to pick Teams, which have no text to read).
 
+Both sides, nobody at the Mac. ``--self-play`` seats a CIVVIS agent on every
+seat (``--civvis-seats`` = ``--players``): ``--duel --self-play`` is the same
+duel with the flagship in your seat and the strongest agent across the table
+(``--agents jack,holy``, seat 0 first), played to its ending, the result in
+``summary.json``, Civ VI closed after it. It is the rehearsal for the game you
+play: the same setup, staging room, hand-over screen and saves. It takes no
+``--name``: a game CIVVIS played is never put on the people's record.
+
 Known limits: you are always seat 0 (the host row). Diplomacy between you and a
 jack seat works the way hotseat diplomacy does (proposals wait for the other
 seat's turn). The setup is driven through Civ VI's menus by screen reading, so
@@ -312,6 +320,7 @@ def hotseat_config(args: argparse.Namespace, run_dir: Path, orders_db: Path) -> 
                              if getattr(args, "agents", None) else {}),
         # `--name`: the hand-over screen names the person's seat with it.
         "HotseatPersonName": person_name(args) or "",
+        "HotseatPlayers": args.players,
         "HotseatSaveEvery": args.save_every,
         "HotseatSaveName": args.tag,
         # The operator's seat's difficulty, and every jack seat's: hotseat
@@ -474,9 +483,13 @@ def _norm(text: str) -> str:
     return re.sub(r"[^a-z0-9 ]", "", str(text).lower()).strip()
 
 
-def read_screen(run_dir: Path, name: str) -> tuple[tuple | None, list[dict]]:
-    """The game window and every text line in it, in screen points."""
-    bounds = play.game_window()
+def read_screen(run_dir: Path, name: str,
+                fallback: tuple | None = None) -> tuple[tuple | None, list[dict]]:
+    """The game window and every text line in it, in screen points. `fallback`
+    is the window as last read, for a step that already knows it: on a loaded
+    host the geometry query (System Events) can go unanswered while the frame
+    itself can still be captured and read."""
+    bounds = play.game_window() or fallback
     if bounds is None:
         return None, []
     shot = run_dir / "setup" / f"{name}.png"
@@ -834,22 +847,64 @@ def set_difficulties(run_dir: Path, bounds: tuple, difficulty: str, log: Log) ->
     return False
 
 
-def start_game(run_dir: Path, bounds: tuple, log: Log) -> bool:
-    """Press START GAME (the orb above its label) and see the staging room go."""
+def start_game(run_dir: Path, bounds: tuple, log: Log, attempts: int = 10) -> bool:
+    """Press START GAME (the orb above its label) and see the staging room go.
+
+    Gone is something read, never something not read. Live 2026-11-27
+    (duel-dev-20261127T0643Z, load average 40): System Events did not answer
+    the window query, the read came back with no text at all, the empty read
+    was taken for a staging room that had gone, and the harness sat on "game
+    starting" with START GAME never pressed. So the room has gone only when a
+    screen that could be read shows neither label after a press; an unreadable
+    one is read again, and the game is brought to the front before each read
+    (a staging room behind a Terminal reads as that Terminal).
+    """
     _, _, _, h = bounds
-    for attempt in range(1, 5):
-        _, rows = read_screen(run_dir, f"start-{attempt}")
-        if not find(rows, "STAGING ROOM") and not find(rows, "START GAME"):
-            return True
+    pressed = 0
+    for attempt in range(1, attempts + 1):
+        wait_for_hands_off(log)
+        play.ensure_game_frontmost()
+        _, rows = read_screen(run_dir, f"start-{attempt}", bounds)
+        if not rows:
+            log(f"[setup] the screen could not be read (START GAME, attempt {attempt}); "
+                "reading it again")
+            time.sleep(3.0)
+            continue
         label = find(rows, "START GAME")
         if not label:
+            if pressed and not find(rows, "STAGING ROOM"):
+                return True
             time.sleep(2.0)
             continue
         x, y = label[0]["x"], label[0]["y"]
-        click(log, (x, y - int(0.02 * h)) if attempt % 2 else (x, y))
+        click(log, (x, y) if pressed % 2 else (x, y - int(0.02 * h)))
+        pressed += 1
         time.sleep(6.0)
-    _, rows = read_screen(run_dir, "start-final")
-    return not find(rows, "STAGING ROOM")
+    _, rows = read_screen(run_dir, "start-final", bounds)
+    return bool(rows and pressed) and not find(rows, "STAGING ROOM") \
+        and not find(rows, "START GAME")
+
+
+#: A started game's first event is due well inside this many seconds; with
+#: none, the staging room is looked at again (`press_start_again`).
+START_CHECK_SECONDS = 60.0
+
+
+def press_start_again(run_dir: Path, log: Log, waited_s: float) -> bool:
+    """The backstop behind `start_game`: no event from the game a minute after
+    START GAME, so look, and press it if the staging room is still up (a press
+    that only brought the window forward, a read that was wrong). Whether it
+    pressed."""
+    if operator_presence.operator_active(3.0):
+        return False
+    play.ensure_game_frontmost()
+    bounds, rows = read_screen(run_dir, "start-again")
+    label = find(rows, "START GAME")
+    if bounds is None or not label:
+        return False
+    log(f"[setup] the staging room is still up {waited_s:.0f}s after START GAME; pressing it again")
+    click(log, (label[0]["x"], label[0]["y"] - int(0.02 * bounds[3])))
+    return True
 
 
 #: Where Civ VI keeps hotseat saves (`auto/` holds its autosaves). A save to
@@ -1151,6 +1206,7 @@ class Monitor:
             self.on_ending(None, event)
             return
         if kind == "hotseat_armed":
+            self.started = True
             self.say("the hand-over screen is under CIVVIS control")
         elif kind == "hotseat_person":
             self.say(f"seat {event.get('seat')} is named {event.get('shown')!r} in the game"
@@ -1478,6 +1534,10 @@ def main(argv: list[str] | None = None) -> int:
                     help="unattended: CIVVIS plays seats 0..N-1 and the other seats up to "
                          "--players are Firaxis AI (no person at the Mac); the run stops at "
                          "the game's ending with the result in summary.json and closes Civ VI")
+    ap.add_argument("--self-play", action="store_true",
+                    help="unattended, CIVVIS on every seat (`--civvis-seats` = --players): "
+                         "`--duel --self-play --agents jack,holy` is the duel with nobody "
+                         "at the Mac, seat 0 first in --agents")
     ap.add_argument("--victories-off", default="", metavar="VICTORY_TYPE[,...]",
                     help="victory types switched off at setup, e.g. VICTORY_DIPLOMATIC "
                          "(the host policy's CIVVIS_VICTORIES_OFF is not read here); each "
@@ -1523,7 +1583,10 @@ def main(argv: list[str] | None = None) -> int:
     args.victories_off = [victory for victory in play.VICTORY_TYPES if victory in named]
     if args.duel:
         args.players, args.map_size = 2, "MAPSIZE_DUEL"
-        args.agents = args.agents or STRONGEST
+        # The strongest agent in the seat across the table: seat 1, with the
+        # flagship in the person's seat when nobody is at the Mac.
+        args.agents = args.agents or (f"{STRATEGY},{STRONGEST}" if args.self_play or args.civvis_seats
+                                      else STRONGEST)
     if args.name is not None and not PERSON_NAME.fullmatch(args.name):
         print("--name: 1 to 24 letters, digits, spaces, . _ or -, starting with a "
               "letter or digit", file=sys.stderr)
@@ -1536,9 +1599,20 @@ def main(argv: list[str] | None = None) -> int:
             print(f"--agents: {', '.join(bad)} not one of {', '.join(AGENT_LANES)}",
                   file=sys.stderr)
             return 2
-    if args.civvis_seats is not None and not 1 <= args.civvis_seats < args.players:
-        print(f"--civvis-seats must leave at least one Firaxis AI seat "
-              f"(1..{args.players - 1} of --players {args.players})", file=sys.stderr)
+    if args.self_play:
+        if args.civvis_seats not in (None, args.players):
+            print(f"--self-play seats CIVVIS on every one of the {args.players} seats; "
+                  f"--civvis-seats {args.civvis_seats} leaves some to Firaxis AI: ask for one",
+                  file=sys.stderr)
+            return 2
+        args.civvis_seats = args.players
+    if args.civvis_seats is not None and not 1 <= args.civvis_seats <= args.players:
+        print(f"--civvis-seats is 1..{args.players} of --players {args.players} "
+              f"(every seat: --self-play)", file=sys.stderr)
+        return 2
+    if args.civvis_seats and args.name:
+        print("--name is a person's, and an unattended table has nobody at it: a game "
+              "CIVVIS played must not stand on the people's record", file=sys.stderr)
         return 2
     args.resume_save = None
     if args.resume is not None:
@@ -1556,6 +1630,20 @@ def main(argv: list[str] | None = None) -> int:
     return run(args)
 
 
+def attached_table(config: dict) -> tuple[int, int | None]:
+    """The table an installed hotseat game is, for `--attach`: its seats in
+    all, and how many of them are CIVVIS's when nobody is at it (`None` for a
+    person's table or a test stub's, which are their CIVVIS seats and seat 0).
+    An unattended table has neither a person's seat nor a stub's, and its
+    CIVVIS seats start at seat 0; `HotseatPlayers` says how many seats there
+    are, Firaxis AI included (an install from before it was written is read
+    as its CIVVIS seats alone)."""
+    ours = len(config.get("HotseatSeats") or [])
+    unattended = not (config.get("HotseatHumanSeats") or config.get("HotseatStubSeats"))
+    players = int(config.get("HotseatPlayers") or (ours if unattended else ours + 1))
+    return players, (ours if unattended else None)
+
+
 def run(args: argparse.Namespace) -> int:
     attach_config = None
     if args.attach:
@@ -1569,7 +1657,7 @@ def run(args: argparse.Namespace) -> int:
                   "(Multiplayer -> Hot Seat -> Load Game) first", file=sys.stderr)
             return 2
         args.tag = attach_config["RunTag"]
-        args.players = len(attach_config.get("HotseatSeats") or []) + 1
+        args.players, args.civvis_seats = attached_table(attach_config)
         args.auto_human = (None if not attach_config.get("HotseatStubSeats")
                            else "gated" if attach_config.get("HotseatHumanSeats") else "stub")
         args.victory = attach_config.get("VictoryLane") or args.victory
@@ -1668,7 +1756,10 @@ def run(args: argparse.Namespace) -> int:
             bridges.append(watch.EventLogBridge(
                 run_dir / modinstall.hotseat_seat_tag(args.tag, seat),
                 tag=modinstall.hotseat_seat_tag(args.tag, seat)))
+        # Whether START GAME was this harness's to press (and so to press again).
+        ours_to_start = not args.attach and not getattr(args, "hold_start", False)
         if not args.attach and not set_up_game(run_dir, args, log):
+            ours_to_start = False
             if args.auto_human or getattr(args, "civvis_seats", None):
                 log("setup failed; the game window is left as it is for a look")
                 stop_reason = "setup failed"
@@ -1695,7 +1786,7 @@ def run(args: argparse.Namespace) -> int:
             monitor.catch_up()
         log("running. `tools/civ6_hotseat.py --stop` (or Ctrl-C) stops the automation; "
             "the game itself stays up.")
-        waited_for_game = time.monotonic()
+        waited_for_game = began_waiting = checked_start = time.monotonic()
         while True:
             for bridge in bridges:
                 bridge.pump()
@@ -1724,6 +1815,10 @@ def run(args: argparse.Namespace) -> int:
                     monitor.poll()
                     time.sleep(0.5)
                 break
+            if not monitor.started and ours_to_start \
+                    and time.monotonic() - checked_start > START_CHECK_SECONDS:
+                checked_start = time.monotonic()
+                press_start_again(run_dir, log, checked_start - began_waiting)
             if not monitor.started and time.monotonic() - waited_for_game > 300:
                 log("⚠ no hand-over event five minutes after START GAME; is the game up?")
                 waited_for_game = time.monotonic()

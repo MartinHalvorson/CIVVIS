@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
 import json
 import os
 import re
@@ -769,6 +771,159 @@ class DuelUnderYourNameTest(unittest.TestCase):
         self.assertEqual(ran.call_args.args[0][1:], [str(hotseat.HERE / "people_elo.py"), "record", "/tmp/run"])
         self.assertEqual(lines[0], "[people] people_elo: not recorded: why")
         self.assertIn("NOT put on the people's record (exit 2)", lines[1])
+
+
+def text(*labels: str) -> list[dict]:
+    """A read screen: one row per label."""
+    return [{"text": label, "x": 855, "y": 1040, "norm": hotseat._norm(label)} for label in labels]
+
+
+class StartGameTest(unittest.TestCase):
+    """Live 2026-11-27 (duel-dev-20261127T0643Z): the window query went
+    unanswered, the screen read came back empty, and the empty read was taken
+    for a staging room that had gone. START GAME was never pressed."""
+
+    BOUNDS = (0, 33, 1710, 1074)
+
+    def start(self, screens: list, **more) -> tuple[bool, list, list]:
+        """`start_game` over these screen reads in turn: its answer, its
+        clicks, and what it logged."""
+        reads = iter(screens)
+        clicks, lines, asked = [], [], []
+
+        def read(run_dir, name, fallback=None):
+            asked.append(fallback)
+            return self.BOUNDS, next(reads, [])
+
+        with patch.object(hotseat, "read_screen", side_effect=read), \
+                patch.object(hotseat, "click", side_effect=lambda log, point: clicks.append(point)), \
+                patch.object(hotseat, "wait_for_hands_off"), \
+                patch.object(hotseat.play, "ensure_game_frontmost") as front, \
+                patch.object(hotseat.time, "sleep"):
+            answer = hotseat.start_game(Path("/tmp/r"), self.BOUNDS, lines.append, **more)
+        self.assertTrue(front.called, "the game is brought forward before it is read")
+        self.assertEqual(set(asked), {self.BOUNDS}, "a read falls back on the window it was given")
+        return answer, clicks, lines
+
+    def test_a_screen_that_cannot_be_read_is_not_a_staging_room_that_has_gone(self) -> None:
+        answer, clicks, lines = self.start([[], [], []], attempts=3)
+        self.assertFalse(answer)
+        self.assertEqual(clicks, [])
+        self.assertEqual(len([line for line in lines if "could not be read" in line]), 3)
+
+    def test_it_presses_then_sees_the_room_go(self) -> None:
+        staging, loading = text("STAGING ROOM", "START GAME"), text("Loading, Please Wait...")
+        answer, clicks, _ = self.start([[], staging, loading])
+        self.assertTrue(answer)
+        # The orb above the label, once; the unreadable first frame pressed nothing.
+        self.assertEqual(clicks, [(855, 1040 - int(0.02 * 1074))])
+
+    def test_a_press_that_did_not_take_is_made_again_on_the_label_itself(self) -> None:
+        staging = text("STAGING ROOM", "START GAME")
+        answer, clicks, _ = self.start([staging, staging, [], text("Gilgamesh")])
+        self.assertTrue(answer)
+        self.assertEqual(clicks, [(855, 1019), (855, 1040)])
+
+    def test_another_page_is_not_a_started_game_until_start_game_was_pressed(self) -> None:
+        # A Terminal in front of the staging room reads as that Terminal.
+        answer, clicks, _ = self.start([text("martin@air ~ %")] * 4, attempts=3)
+        self.assertFalse(answer)
+        self.assertEqual(clicks, [])
+        # ...and a room still up after every press is not started either.
+        answer, clicks, _ = self.start([text("STAGING ROOM", "START GAME")] * 4, attempts=3)
+        self.assertFalse(answer)
+        self.assertEqual(len(clicks), 3)
+
+    def again(self, rows: list, *, active: bool = False, bounds=BOUNDS) -> tuple[bool, list, list]:
+        clicks, lines = [], []
+        with patch.object(hotseat, "read_screen", return_value=(bounds, rows)), \
+                patch.object(hotseat, "click", side_effect=lambda log, point: clicks.append(point)), \
+                patch.object(hotseat.play, "ensure_game_frontmost"), \
+                patch.object(hotseat.operator_presence, "operator_active", return_value=active):
+            pressed = hotseat.press_start_again(Path("/tmp/r"), lines.append, 61.0)
+        return pressed, clicks, lines
+
+    def test_a_staging_room_still_up_a_minute_on_is_pressed_again(self) -> None:
+        pressed, clicks, lines = self.again(text("STAGING ROOM", "START GAME"))
+        self.assertTrue(pressed)
+        self.assertEqual(clicks, [(855, 1019)])
+        self.assertIn("still up 61s after START GAME", lines[0])
+        # A game that is loading, an unreadable screen, and a person at the
+        # keyboard are all left alone.
+        for rows, more in ((text("Loading, Please Wait..."), {}), ([], {"bounds": None}),
+                           (text("START GAME"), {"active": True})):
+            pressed, clicks, _ = self.again(rows, **more)
+            self.assertEqual((pressed, clicks), (False, []))
+
+    def test_the_backstop_runs_until_the_game_reports_and_never_on_a_held_start(self) -> None:
+        source = (hotseat.HERE / "civ6_hotseat.py").read_text()
+        self.assertIn("if not monitor.started and ours_to_start \\\n"
+                      "                    and time.monotonic() - checked_start > START_CHECK_SECONDS:", source)
+        self.assertIn('ours_to_start = not args.attach and not getattr(args, "hold_start", False)', source)
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp)
+            monitor = hotseat.Monitor(run_dir, "hs", [1], game_args(players=2), lambda m: None)
+            self.addCleanup(monitor.close)
+            self.assertFalse(monitor.started)
+            with (run_dir / "events.jsonl").open("a") as out:
+                out.write(json.dumps({"kind": "hotseat_armed"}) + "\n")
+            monitor.poll()
+            self.assertTrue(monitor.started, "an armed hand-over screen is a game that is up")
+
+
+class SelfPlayTableTest(unittest.TestCase):
+    """Operator 2026-11-27: "practice self playing both side this time
+    (normally you will just play 1 side)"."""
+
+    def started_with(self, *flags: str) -> argparse.Namespace:
+        with patch.object(hotseat, "run", return_value=0) as run, \
+                patch.object(hotseat, "read_current", return_value=None), \
+                patch.object(hotseat, "strongest_agent", return_value="holy"):
+            self.assertEqual(hotseat.main(list(flags)), 0)
+        return run.call_args.args[0]
+
+    def test_self_play_seats_civvis_on_every_seat(self) -> None:
+        args = self.started_with("--duel", "--self-play", "--leader", "LEADER_GILGAMESH")
+        self.assertEqual((args.players, args.civvis_seats, args.map_size), (2, 2, "MAPSIZE_DUEL"))
+        # The strongest agent across the table, the flagship in the person's seat.
+        self.assertEqual(args.agents, ["jack", "holy"])
+        self.assertEqual(hotseat.jack_seats(args.players, args.civvis_seats), [0, 1])
+        config = hotseat.hotseat_config(game_args(players=2, civvis_seats=2, agents=["jack", "holy"],
+                                                  leader="LEADER_GILGAMESH"),
+                                        Path("/tmp/r"), Path("/tmp/r/o.sqlite"))
+        self.assertEqual((config["HotseatSeats"], config["HotseatHumanSeats"], config["HumanPlayers"]),
+                         ([0, 1], [], 2))
+        self.assertEqual(config["HotseatNames"], {"0": "CIVVIS JackOfAllTrades", "1": "CIVVIS HolyRoller"})
+        self.assertEqual([install.hotseat_seat_config(config, seat)["VictoryLane"] for seat in (0, 1)],
+                         ["civvis", "religious"])
+        # Every seat a hotseat human's row in the staging room, no Firaxis AI.
+        self.assertEqual(hotseat.wanted_slots(2, 2), ["host", "player"])
+        self.assertEqual(self.started_with("--players", "4", "--self-play").civvis_seats, 4)
+        self.assertEqual(self.started_with("--duel", "--self-play", "--agents", "holy,holy").agents,
+                         ["holy", "holy"])
+
+    def test_a_table_nobody_is_at_takes_no_persons_name(self) -> None:
+        for flags in (["--duel", "--self-play", "--name", "dev"],
+                      ["--players", "6", "--civvis-seats", "2", "--name", "dev"],
+                      ["--players", "4", "--self-play", "--civvis-seats", "2"],
+                      ["--players", "4", "--civvis-seats", "5"]):
+            with patch.object(hotseat, "run") as run, patch.object(hotseat, "read_current", return_value=None), \
+                    contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(hotseat.main(flags), 2, flags)
+                run.assert_not_called()
+
+    def test_attach_picks_a_table_back_up_as_the_table_it_is(self) -> None:
+        def installed(**flags) -> dict:
+            return hotseat.hotseat_config(game_args(**flags), Path("/tmp/r"), Path("/tmp/r/o.sqlite"))
+
+        self.assertEqual(hotseat.attached_table(installed(players=2, agents=["holy"])), (2, None))
+        self.assertEqual(hotseat.attached_table(installed(players=4, auto_human="stub")), (4, None))
+        self.assertEqual(hotseat.attached_table(installed(players=2, civvis_seats=2, leader=None)), (2, 2))
+        self.assertEqual(hotseat.attached_table(installed(players=6, civvis_seats=2, leader=None)), (6, 2))
+        # An install from before the table's size was written down.
+        old = installed(players=4)
+        del old["HotseatPlayers"]
+        self.assertEqual(hotseat.attached_table(old), (4, None))
 
 
 if __name__ == "__main__":
