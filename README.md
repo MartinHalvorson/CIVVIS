@@ -22,3 +22,9 @@ Highest Level Won by Victory Type (6p continents online unless otherwise noted):
 Quick real-time demos of CIVVIS.ai: a full match in 14 seconds from the single player POV, then a self-play game in 14 seconds that ends in a Phoenicia culture win (4K on YouTube: [single player POV](https://www.youtube.com/watch?v=9c8m87e3rCg&list=PLPI7k77hCAR4), [self-play](https://www.youtube.com/watch?v=2K2mHKYZ9Rg&list=PLPI7k77hCAR4), or click the clip):
 
 [![CIVVIS.ai — a full Civ 6 match from the single player point of view, from a lone settler to an England culture victory on turn 154, then a four-civilization self-play game on a planet world that ends in a Phoenicia culture victory on turn 143](https://github.com/MartinHalvorson/CIVVIS/releases/download/media-exhibition/singleplayer-selfplay.avif)](https://www.youtube.com/watch?v=9c8m87e3rCg&list=PLPI7k77hCAR4)
+
+## Licence and trademarks
+
+CIVVIS's own code and docs are under the [MIT License](LICENSE). Work by others that the repository carries or its programs compile in keeps its own licence, listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md): Stockfish in Wizard Chess is GPL-3.0, for one.
+
+CIVVIS is a fan project, not affiliated with or endorsed by Firaxis Games, 2K or Take-Two Interactive. Sid Meier's Civilization and Civilization VI are their trademarks. You need your own copy of the game to play against it.

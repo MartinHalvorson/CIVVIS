@@ -47,6 +47,10 @@
      longer fitted on the title's line. */
   .shell { width: min(1120px, 100%); margin: 0 auto; padding: 0 clamp(16px, 3vw, 32px); }
   main { padding-bottom: 48px; }
+  /* The non-affiliation notice, at footer weight under everything else
+     (README.md, "Licence and trademarks"). */
+  .site-foot { margin-top: 40px; }
+  .site-foot p { margin: 0; padding: 14px 0 32px; border-top: 1px solid var(--border); color: var(--muted); font-size: 12px; line-height: 1.5; }
 
   .site-header {
     display: flex;
@@ -690,6 +694,10 @@
       </div>
     </section>
   </main>
+
+  <footer class="shell site-foot">
+    <p>CIVVIS is a fan project, not affiliated with or endorsed by Firaxis Games, 2K or Take-Two Interactive. Sid Meier&#8217;s Civilization and Civilization VI are their trademarks.</p>
+  </footer>
 
   <script type="application/json" id="home-videos">null</script>
   <script type="application/json" id="home-benchmark">null</script>
