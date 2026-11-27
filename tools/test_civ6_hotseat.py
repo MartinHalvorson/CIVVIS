@@ -633,6 +633,150 @@ class UnattendedTableTest(unittest.TestCase):
             monitor.poll()
             self.assertEqual(monitor.result, {"kind": "defeat", "turn": 90, "ours": False})
 
+
+class CoverTest(unittest.TestCase):
+    """Operator 2026-11-26: a person's hotseat game plays like single player --
+    a cover over every turn that is not theirs, and no hand-over screen."""
+
+    def config(self, **overrides) -> dict:
+        return hotseat.hotseat_config(game_args(**overrides), Path("/tmp/r"),
+                                      Path("/tmp/r/o.sqlite"))
+
+    def install(self, config: dict) -> Path:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        with patch.object(install, "check_syntax", return_value=None):
+            install._write_mod(Path(tmp.name), config)
+        return Path(tmp.name)
+
+    def test_a_persons_game_is_covered_and_starts_itself_by_default(self) -> None:
+        cases = {
+            "person": ({}, (True, True)),
+            "no cover": ({"no_cover": True}, (False, True)),
+            "keep the hand-over": ({"keep_handover": True}, (True, False)),
+            "both old ways": ({"no_cover": True, "keep_handover": True}, (False, False)),
+            # `gated` stands in for the person: their game, testable unattended.
+            "gated stub": ({"auto_human": "gated"}, (True, True)),
+            # A stub that is nobody, and the unattended tables: no person, no cover.
+            "stub": ({"auto_human": "stub"}, (False, False)),
+            "unattended": ({"players": 6, "civvis_seats": 2, "leader": None}, (False, False)),
+        }
+        for name, (overrides, want) in cases.items():
+            with self.subTest(name):
+                config = self.config(**overrides)
+                self.assertEqual((config["HotseatCover"], config["HotseatAutoStart"]), want)
+        # The diagnostic: the screens under the cover keep their shipped queueing.
+        self.assertTrue(self.config()["HotseatCoverQueue"])
+        self.assertFalse(self.config(no_cover_queue=True)["HotseatCoverQueue"])
+        self.assertFalse(self.config(players=6, civvis_seats=2, leader=None)["HotseatCoverQueue"])
+
+    def test_the_flags_reach_the_config(self) -> None:
+        with patch.object(hotseat, "run", side_effect=lambda args: args) as ran, \
+                patch.object(hotseat, "read_current", return_value=None):
+            hotseat.main(["--no-cover", "--keep-handover", "--no-cover-queue"])
+            args = ran.call_args.args[0]
+        self.assertTrue(args.no_cover and args.keep_handover and args.no_cover_queue)
+        config = hotseat.hotseat_config(args, Path("/tmp/r"), Path("/tmp/r/o.sqlite"))
+        self.assertEqual((config["HotseatCover"], config["HotseatAutoStart"],
+                          config["HotseatCoverQueue"]), (False, False, False))
+
+    def test_the_cover_context_is_installed_for_a_persons_game(self) -> None:
+        out = self.install(self.config())
+        tree = ET.fromstring((out / "CivvisControl.modinfo").read_text())
+        contexts = [f.text for f in tree.findall(
+            "./InGameActions/AddUserInterfaces[@id='CivvisHotseatCoverUI']/File")]
+        self.assertEqual(contexts, ["CivvisHotseatCover.xml"])
+        files = {f.text for f in tree.findall("./Files/File")}
+        # Every file an action names is listed, or the game drops the action.
+        for action in tree.find("./InGameActions"):
+            for named in action.findall("File"):
+                self.assertIn(named.text, files)
+            replace = action.findtext("./Properties/LuaReplace")
+            if replace:
+                self.assertIn(replace, files)
+        self.assertIn("CivvisHotseatCover.lua", files)
+        script = (out / "CivvisHotseatCover.lua").read_text()
+        head = script.split("}\n", 1)[0]
+        self.assertIn("HotseatCover = true,", head)
+        self.assertIn("HotseatAutoStart = true,", head)
+        self.assertIn('RunTag = "hotseat-test",', head, "the cover reports under the run's own tag")
+        self.assertIn("CivvisHotseatCover.arm();", script)
+        self.assertTrue((out / "CivvisHotseatCover.xml").is_file())
+        # The screens it keeps drawn under it carry the same switch.
+        closer = (out / "CivvisControlAutoClose.lua").read_text().split("}\n", 1)[0]
+        self.assertIn("HotseatCover = true,", closer)
+
+    def test_no_other_install_carries_it(self) -> None:
+        for name, config in {
+            "single player": {"RunTag": "civvis-solo", "Play": True, "CivvisDecides": True},
+            "unattended": self.config(players=6, civvis_seats=2, leader=None),
+            "stub": self.config(auto_human="stub"),
+            "both old ways": self.config(no_cover=True, keep_handover=True),
+        }.items():
+            with self.subTest(name):
+                out = self.install(config)
+                self.assertNotIn("CivvisHotseatCover", (out / "CivvisControl.modinfo").read_text())
+                self.assertEqual(list(out.glob("CivvisHotseatCover*")), [])
+        # `--no-cover` alone still keeps the person's view: the context comes, the cover stays off.
+        out = self.install(self.config(no_cover=True))
+        head = (out / "CivvisHotseatCover.lua").read_text().split("}\n", 1)[0]
+        self.assertIn("HotseatCover = false,", head)
+
+    def monitor(self, run_dir: Path, **overrides) -> tuple[hotseat.Monitor, list[str]]:
+        lines: list[str] = []
+        monitor = hotseat.Monitor(run_dir, "hs", [1], game_args(players=2, **overrides),
+                                  lines.append)
+        self.addCleanup(monitor.close)
+        return monitor, lines
+
+    def write(self, run_dir: Path, *events: dict) -> None:
+        with (run_dir / "events.jsonl").open("a") as out:
+            for event in events:
+                out.write(json.dumps(dict(event, run="hs")) + "\n")
+
+    def test_the_cover_is_followed_and_a_stand_aside_is_told(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp)
+            monitor, lines = self.monitor(run_dir)
+            self.write(run_dir, {"kind": "hotseat_cover", "up": True, "reason": "turn_end",
+                                 "player": 0, "turn": 5})
+            monitor.poll()
+            self.assertTrue(monitor.covered())
+            self.assertEqual(lines, [], "the cover's ordinary comings and goings are quiet")
+            self.write(run_dir, {"kind": "hotseat_cover", "up": False, "reason": "yield_quiet",
+                                 "player": 1, "turn": 5, "quiet": 90, "between": 0})
+            monitor.poll()
+            self.assertFalse(monitor.covered())
+            self.assertEqual(monitor.cover_yields, 1)
+            self.assertIn("the cover stood aside for seat 1 (yield_quiet", "\n".join(lines))
+
+    def test_the_screen_rescue_does_not_read_the_cover(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp)
+            monitor, lines = self.monitor(run_dir)
+            self.write(run_dir,
+                       {"kind": "hotseat_turn", "phase": "begin", "player": 1, "turn": 5,
+                        "human": False},
+                       {"kind": "hotseat_cover", "up": True, "reason": "civvis_turn",
+                        "player": 1, "turn": 5})
+            with patch.object(hotseat, "read_screen", side_effect=AssertionError("read")), \
+                    patch.object(hotseat.popup_clear, "frontmost", return_value="Civ6"), \
+                    patch.object(hotseat.operator_presence, "operator_active", return_value=False):
+                hotseat.rescue_popup(monitor, lines.append)
+            self.assertIn("under the cover", lines[-1])
+            # A cover believed up for too long no longer stops the rescue.
+            monitor.cover_since -= hotseat.Monitor.COVER_TRUST_S + 1
+            self.assertFalse(monitor.covered())
+
+    def test_the_banner_says_where_the_person_is(self) -> None:
+        for overrides, want in (({}, "Your map is on the screen."),
+                                ({"keep_handover": True}, 'Press "Start Turn" in Civ VI.')):
+            with tempfile.TemporaryDirectory() as tmp, patch("builtins.print") as printed:
+                monitor, _ = self.monitor(Path(tmp), **overrides)
+                monitor.your_turn(7)
+                self.assertIn(want, printed.call_args.args[0])
+
+
 class DuelUnderYourNameTest(unittest.TestCase):
     """`--duel --name dev`: one against one with the strongest agent, the
     person's seat under their name, and the ending kept for their Elo."""
@@ -1101,6 +1245,45 @@ class ClosingCivTest(unittest.TestCase):
         self.assertTrue(closed)
         self.assertEqual(len(clicks), 2)
         self.assertEqual(stops, [])
+
+    @staticmethod
+    def question(*, yes: bool) -> list[dict]:
+        """The pause menu with its inline question, as read on 2026-11-27."""
+        rows = [("MENU", 855, 333), ("RETURN TO GAME", 855, 397), ("ARE YOU SURE?", 856, 502),
+                ("Are you sure you wish to quit your game?", 856, 536), ("No", 953, 588),
+                ("EXIT TO DESKTOP", 853, 641)]
+        if yes:
+            rows.append(("YES", 759, 588))
+        return [{"text": label, "x": x, "y": y, "norm": hotseat._norm(label)} for label, x, y in rows]
+
+    def test_a_yes_the_screen_reader_misses_is_pressed_where_it_stands(self) -> None:
+        # duel-dev-smoke-20261127T0845Z: nine looks, never the white-on-red YES.
+        unread = self.question(yes=False)
+        self.assertEqual([(row["x"], row["y"]) for row in
+                          hotseat.mirrored_yes(unread, hotseat.find(unread, "ARE YOU SURE", exact=False))],
+                         [(759, 588)], "NO mirrored about the heading")
+        closed, clicks, _, stops = self.quit([unread], pids_after=1)
+        self.assertTrue(closed)
+        self.assertEqual((clicks, stops), ([(759, 588)], []))
+        # A YES that is read is pressed where it was read.
+        closed, clicks, _, _ = self.quit([self.question(yes=True)], pids_after=1)
+        self.assertEqual(clicks, [(759, 588)])
+        # No question, or no NO under it: nothing is made up.
+        self.assertEqual(hotseat.mirrored_yes(unread, []), [])
+        above = [row for row in unread if row["text"] != "No"] + text("NO")[:0]
+        self.assertEqual(hotseat.mirrored_yes(above, hotseat.find(above, "ARE YOU SURE", exact=False)), [])
+
+    def test_the_quits_clock_has_an_end_whatever_is_read(self) -> None:
+        # A menu that never goes away renews the answer window every look; the
+        # clock still runs out, and the launcher's stop gets its turn.
+        menu = [row for row in self.question(yes=False) if row["text"] not in
+                ("ARE YOU SURE?", "Are you sure you wish to quit your game?", "No")]
+        closed, clicks, _, stops = self.quit([menu] * 500, pids_after=10 ** 6, stop_closes=False)
+        self.assertFalse(closed)
+        self.assertEqual(stops, [hotseat.QUIT_STOP_SECONDS])
+        looks = len(clicks)
+        self.assertLessEqual(looks * 12, hotseat.QUIT_SECONDS + hotseat.QUIT_OVERTIME_SECONDS + 12)
+        self.assertGreater(looks * 12, hotseat.QUIT_SECONDS, "past the clock, as far as it may go")
 
     def test_a_civ_that_shows_no_menu_gets_the_launchers_stop_and_a_longer_one(self) -> None:
         closed, clicks, asked_menu, stops = self.quit([], pids_after=1, stop_closes=True)

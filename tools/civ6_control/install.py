@@ -271,6 +271,28 @@ HOTSEAT_PLAYER_CHANGE = """		<!-- Hotseat only (install.py): the hand-over scree
 """
 
 
+#: Hotseat with a person at the Mac only: the cover over every turn that is not
+#: theirs, and the view kept across those turns (CivvisHotseatCover.lua). A
+#: context of its own, so the screen it draws sits in the popup queue rather
+#: than inside a shipped screen; its script is configured like the others.
+HOTSEAT_COVER = "CivvisHotseatCover"
+HOTSEAT_COVER_ACTION = """		<!-- Hotseat with a person only (install.py): the cover over CIVVIS's turns. -->
+		<AddUserInterfaces id="CivvisHotseatCoverUI">
+			<Properties>
+				<Context>InGame</Context>
+			</Properties>
+			<File>CivvisHotseatCover.xml</File>
+		</AddUserInterfaces>
+"""
+
+
+def hotseat_cover_wanted(config: dict) -> bool:
+    """Whether this install carries the cover context: a hotseat game a person
+    plays, with the cover or their hand-over pressed for them asked for."""
+    return bool(config.get("Hotseat") and config.get("HotseatHumanSeats")
+                and (config.get("HotseatCover") or config.get("HotseatAutoStart")))
+
+
 def hotseat_seat_tag(tag: str | None, seat: int) -> str:
     """The run tag one hotseat seat's agent writes and its brain reads."""
     return f"{tag or 'unset'}-p{int(seat)}"
@@ -312,8 +334,9 @@ def hotseat_seat_config(config: dict, seat: int) -> dict:
     return seat_config
 
 
-def hotseat_modinfo(text: str, seats: list[int]) -> str:
-    """The modinfo for a hotseat install: seat agents, and the hand-over screen."""
+def hotseat_modinfo(text: str, seats: list[int], cover: bool = False) -> str:
+    """The modinfo for a hotseat install: seat agents, the hand-over screen,
+    and with `cover` the person's cover context."""
     names = [HOTSEAT_AGENT.format(seat=seat) for seat in seats]
     action = re.search(r'(<AddUserInterfaces id="CivvisControlAgentUI">.*?)'
                        r'(\t*<File>CivvisControlAgent\.xml</File>\n)(.*?</AddUserInterfaces>)',
@@ -323,18 +346,51 @@ def hotseat_modinfo(text: str, seats: list[int]) -> str:
     indent = re.match(r"\t*", action.group(2)).group(0)
     files = "".join(f"{indent}<File>{name}.xml</File>\n" for name in names)
     text = text[:action.start(2)] + files + text[action.end(2):]
+    # Every file an action names must be listed under <Files>, or the game drops
+    # the action without a word (the note above <Files> in the modinfo).
     listed = "".join(f"\t\t<File>{name}.xml</File>\n\t\t<File>{name}.lua</File>\n"
-                     for name in names)
+                     for name in names + ([HOTSEAT_COVER] if cover else []))
     text = text.replace("\t</Files>", listed + "\t</Files>", 1)
-    return text.replace("\t</InGameActions>", HOTSEAT_PLAYER_CHANGE + "\t</InGameActions>", 1)
+    actions = HOTSEAT_PLAYER_CHANGE + (HOTSEAT_COVER_ACTION if cover else "")
+    return text.replace("\t</InGameActions>", actions + "\t</InGameActions>", 1)
+
+
+#: The FrontEnd block of the modinfo: the one `UpdateDatabase` that rewrites the
+#: Create Game defaults (CivvisControlConfig.xml).
+_FRONTEND_ACTIONS = re.compile(r"\t<FrontEndActions>.*?</FrontEndActions>\n", re.S)
+
+
+def person_facing_modinfo(text: str) -> str:
+    """The modinfo for `RequireHarness` (`civ6_hotseat.py --manual-lobby`).
+
+    That install is left in place by a person who plays other games with it,
+    so it must not re-default their Create Game screen: the FrontEnd block goes
+    and only InGameActions remain, the shape shipped DLC already has
+    (`DLC/ScoutCat/ScoutCat.modinfo`: InGameActions only). The settings file
+    stays listed under <Files>, unreferenced, like CivvisControlSetup.lua.
+    """
+    text, removed = _FRONTEND_ACTIONS.subn("", text, count=1)
+    if removed != 1 or "<FrontEndActions>" in text:
+        raise SystemExit("CivvisControl.modinfo has no single FrontEndActions block to drop")
+    return text
 
 
 def _write_mod(target: Path, config: dict) -> None:
     """Materialize a fully configured control mod into a writable directory."""
     target.mkdir(parents=True, exist_ok=True)
     text = prelude(config)
+    cover = hotseat_cover_wanted(config)
     for src in sorted(MOD_SOURCE.iterdir()):
-        if src.name in SCRIPTS:
+        if src.stem == HOTSEAT_COVER:
+            # Only a game a person plays carries it; every other install is
+            # exactly what it was before the cover existed.
+            if not cover:
+                continue
+            if src.suffix == ".lua":
+                _write_script(target / src.name, text + installed_lua(src.read_text()))
+            else:
+                shutil.copy2(src, target / src.name)
+        elif src.name in SCRIPTS:
             _write_script(target / src.name, text + installed_lua(src.read_text()))
         elif src.name == "CivvisControlConfig.xml":
             # The setup defaults are applied through the one FrontEnd hook shipped
@@ -355,6 +411,9 @@ def _write_mod(target: Path, config: dict) -> None:
         else:
             shutil.copy2(src, target / src.name)
     seats = hotseat_agent_seats(config)
+    if config.get("RequireHarness") and not (seats and config.get("HarnessRun")):
+        # Its gate (`CivvisHarness`) is a hotseat seat's, keyed on the run.
+        raise SystemExit("RequireHarness is a hotseat install: it needs HotseatSeats and HarnessRun")
     if seats:
         agent = installed_lua((MOD_SOURCE / "CivvisControlAgent.lua").read_text())
         context = (MOD_SOURCE / "CivvisControlAgent.xml").read_text()
@@ -364,8 +423,11 @@ def _write_mod(target: Path, config: dict) -> None:
                           prelude(hotseat_seat_config(config, seat)) + agent)
             (target / f"{name}.xml").write_text(context)
         modinfo = target / "CivvisControl.modinfo"
-        modinfo.write_text(hotseat_modinfo(
-            (MOD_SOURCE / "CivvisControl.modinfo").read_text(), seats))
+        text = hotseat_modinfo((MOD_SOURCE / "CivvisControl.modinfo").read_text(), seats,
+                               cover=cover)
+        if config.get("RequireHarness"):
+            text = person_facing_modinfo(text)
+        modinfo.write_text(text)
     # Kept beside the scripts so the active settings are readable in the
     # install without reading a whole script.
     # ⚠⚠ THE RUN TAG IN THIS FILE IS THE GAME LOCK'S IDENTITY. `gamelock.foreign_run`

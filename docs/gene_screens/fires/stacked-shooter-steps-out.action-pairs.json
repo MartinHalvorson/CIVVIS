@@ -1,0 +1,26 @@
+{
+ "kind": "captured_native_action_pairs_v1",
+ "tag": "stacked-shooter-steps-out",
+ "scope": "Recorded proposal activation on captured live input only, not host execution or strength. 15 boards from the T7/T8 Deity benchmark games of 2026-11-23..27 (6p Continents, Online) that ended with our civilization eliminated, from runs/<tag>/events.jsonl.gz on the ledger branch. Each board is the run's events.jsonl cut after turn N+1 and replayed at turn N. Both arms run one frozen ci-profile civvis_orders --resumed built from the branch, with the run's own requested genome (summary.json forced, each as --with) and its own victory target and civilization; the on arm adds --with stacked-shooter-steps-out. 15 of 15 complete. Stacked boards (the turn's first state frame showed a shooter of ours sharing a City Center with another of our soldiers, an enemy soldier within three tiles): 8 of 11 change. Seoul 025117Z t62 (four on the centre: three step out, two Archers fire where none did), Constantinople 042704Z t91 (one steps out, two shots where none), Niani 203957Z t92, Lisbon 161350Z t55, Cairo 090737Z t93 (a Galley in port puts to sea), Cairo 062335Z t110 and 122815Z t74 (one shot each where none), Lisbon 091247Z t58 (one Archer steps out, the third stays: no open tile). The off arms propose 0 shooter strikes on the 11 boards, the on arms 7. Unchanged: Lisbon 091247Z t56 (every tile beside the centre held or water; the gene journals that the stack stands), and 084019Z t77 and 172957Z t79, where the stack had cleared by the frame the decider reads. Control boards (turn 20 of four of the games, no stack under threat): 0 of 4 change and no gene line. Gene journal lines: 14 on, 0 off; orders differ on 8 of 15.",
+ "archive": {
+  "path": "docs/eval/2026-11-27-stacked-shooter-steps-out.native-queries.tar.xz",
+  "sha256": "1ec13b17c4fd4a1dc69e200b28c4b5d4995a102aad90810060fb8db899055991"
+ },
+ "members": [
+  "native-queries-01/0000/result.json",
+  "native-queries-01/0001/result.json",
+  "native-queries-01/0002/result.json",
+  "native-queries-01/0003/result.json",
+  "native-queries-01/0004/result.json",
+  "native-queries-01/0005/result.json",
+  "native-queries-01/0006/result.json",
+  "native-queries-01/0007/result.json",
+  "native-queries-01/0008/result.json",
+  "native-queries-01/0009/result.json",
+  "native-queries-01/0010/result.json",
+  "native-queries-01/0011/result.json",
+  "native-queries-01/0012/result.json",
+  "native-queries-01/0013/result.json",
+  "native-queries-01/0014/result.json"
+ ]
+}

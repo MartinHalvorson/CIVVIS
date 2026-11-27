@@ -1,0 +1,181 @@
+name: hotseat-bundle
+
+# The hotseat companion download (docs/CIV6_HOTSEAT_RELEASE.md): build it on
+# macOS (arm64) and Windows, unpack it outside the checkout the way a player
+# would, run what a player runs first, and keep each archive as a workflow
+# artifact. Nothing is published and nothing is signed: this repository holds no
+# Apple or Windows signing credentials.
+#
+# ⚠ THE WINDOWS JOB IS THE ONLY WINDOWS EVIDENCE THERE IS. No machine in the
+# fleet has a Windows Civilization VI. What this job proves: the bundle builds,
+# its program starts, it resolves a Steam layout (none here, so it says the game
+# is not found), its control mod installs into a scratch install tree, the log
+# relay works, and a real frozen decision worker answers a recorded board into
+# SQLite. What it cannot prove is anything the game does on Windows; the doc's
+# section 2 lists those measurements and the commands for them.
+#
+# Not a required check, and it runs only when the packaging changes.
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - tools/civvis_hotseat_app.py
+      - tools/package_hotseat.py
+      - tools/test_civvis_hotseat_app.py
+      - tools/fixtures/hotseat_selfcheck_events.jsonl
+      - tools/civ6_env.py
+      - tools/civ6_hotseat.py
+      - .github/workflows/hotseat-bundle.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  # One group per pull request, newest push wins; a dispatch is its own run.
+  group: hotseat-bundle-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  hotseat-bundle:
+    name: hotseat-bundle (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      # Each platform's verdict is its own finding; one failing must not hide
+      # the other's.
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            name: macos-arm64
+            program: civvis-hotseat
+          - os: windows-latest
+            name: windows-x86_64
+            program: civvis-hotseat.exe
+    env:
+      CARGO_INCREMENTAL: 0
+      # The decider for a bundle check, not for a public release: the release
+      # profile without its single-unit LTO pass, minutes instead of tens.
+      CARGO_PROFILE_RELEASE_LTO: "false"
+      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: hotseat-bundle-registry-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: hotseat-bundle-registry-${{ runner.os }}-
+
+      - name: Build civvis_orders and the bundle
+        run: python tools/package_hotseat.py --build-orders --archive
+
+      - name: Unpack the archive outside the checkout (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          PLAYER: ${{ runner.temp }}/player
+        run: |
+          set -euo pipefail
+          mkdir -p "$PLAYER"
+          ditto -x -k target/hotseat-bundle/civvis-hotseat-*.zip "$PLAYER"
+      - name: Unpack the archive outside the checkout (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          PLAYER: ${{ runner.temp }}/player
+        run: |
+          $zip = Get-Item target/hotseat-bundle/civvis-hotseat-*.zip
+          Expand-Archive -Path $zip.FullName -DestinationPath $env:PLAYER
+
+      - name: What a player downloads
+        shell: bash
+        working-directory: ${{ runner.temp }}/player
+        run: |
+          ls -la civvis-hotseat civvis-hotseat/_internal
+          du -sh civvis-hotseat
+          ls -l "$GITHUB_WORKSPACE"/target/hotseat-bundle/civvis-hotseat-*.zip
+      - name: civvis-hotseat --help
+        shell: bash
+        working-directory: ${{ runner.temp }}/player
+        run: ./civvis-hotseat/${{ matrix.program }} --help
+      - name: civvis-hotseat --status and --stop with nothing running
+        shell: bash
+        working-directory: ${{ runner.temp }}/player
+        run: |
+          ./civvis-hotseat/${{ matrix.program }} --status
+          ./civvis-hotseat/${{ matrix.program }} --stop
+      - name: civvis-hotseat doctor
+        shell: bash
+        working-directory: ${{ runner.temp }}/player
+        run: |
+          ./civvis-hotseat/${{ matrix.program }} doctor
+          ./civvis-hotseat/${{ matrix.program }} doctor --json
+      - name: civvis-hotseat selfcheck (the frozen worker, end to end)
+        shell: bash
+        working-directory: ${{ runner.temp }}/player
+        run: ./civvis-hotseat/${{ matrix.program }} selfcheck
+
+      # Findings, not gates: measurements of the Windows Python the bundle runs
+      # on, printed for docs/CIV6_HOTSEAT_RELEASE.md. Run whatever came before.
+      #  * why the bundle runs in UTF-8 mode: from a checkout under the Windows
+      #    code page the mod's agent does not decode, so install.py fails first;
+      #  * why civ6_decision_trace asks os.stat twice on Windows: a path stat and
+      #    a handle stat of one file disagree there, which killed every worker.
+      - name: "Findings: the code page, and stat against fstat"
+        if: always() && runner.os == 'Windows'
+        shell: bash
+        run: |
+          python -X utf8=0 - <<'PY'
+          import locale, os
+          from pathlib import Path
+          encoding = locale.getpreferredencoding(False)
+          agent = Path("tools/civ6_control/mod/CivvisControlAgent.lua")
+          try:
+              agent.read_text()
+              print(f"{encoding}: CivvisControlAgent.lua decodes")
+          except UnicodeDecodeError as error:
+              print(f"{encoding}: CivvisControlAgent.lua does not decode ({error})")
+
+          import shutil, subprocess, tempfile
+          def compare(label, path):
+              # As civ6_decision_trace does: the resolved path, then its handle.
+              path = str(Path(path).resolve(strict=True))
+              named = os.stat(path)
+              with open(path, "rb") as handle:
+                  opened = os.fstat(handle.fileno())
+              for field in ("st_dev", "st_ino", "st_size", "st_mtime_ns", "st_ctime_ns"):
+                  a, b = getattr(named, field), getattr(opened, field)
+                  print(f"{label:<26} {field:<12} stat {a}  fstat {b}  "
+                        f"{'same' if a == b else 'DIFFERENT'}")
+          compare("checkout file", agent)
+          # The case that failed: the decider copied into a temp run directory
+          # (`freeze_binary` uses copy2) and running there.
+          scratch = Path(tempfile.mkdtemp())
+          decider = scratch / "civvis_orders.exe"
+          shutil.copy2("target/hotseat-bundle/stage/civvis_orders.exe", decider)
+          compare("copied decider, idle", decider)
+          running = subprocess.Popen([str(decider), "--mirror", str(scratch), "--serve",
+                                      "--fresh-board"], stdin=subprocess.PIPE,
+                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+          try:
+              compare("copied decider, running", decider)
+              print("the decider was still running:", running.poll() is None)
+          finally:
+              running.stdin.close()
+              running.wait(timeout=60)
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: civvis-hotseat-${{ matrix.name }}
+          path: target/hotseat-bundle/civvis-hotseat-*.zip
+          if-no-files-found: error
+          retention-days: 14

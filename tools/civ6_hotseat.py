@@ -17,10 +17,16 @@ seats are named "CIVVIS jack 1..N" in the game.
     tools/civ6_hotseat.py --attach             # pick a running hotseat game back up
     tools/civ6_hotseat.py --status
 
-How a turn goes. Civ VI's hotseat plays the seats in order. On YOUR turn the
-terminal prints a banner (and macOS shows a notification): nothing of ours
-clicks, types, moves the camera or closes a screen until you end your turn --
-press "Start Turn" on Civ VI's hand-over screen yourself. On a jack seat's turn
+How a turn goes. Civ VI's hotseat plays the seats in order. It plays like
+single player: from the moment you end your turn a cover hides the screen
+("CIVVIS is taking its turn") until your next turn begins, and then your
+hand-over "Start Turn" is pressed for you, the cover lifts, and you are on your
+own map where you left it. Esc on the cover opens the game menu (save, load,
+quit). On YOUR turn the terminal prints a banner (and macOS shows a
+notification): nothing of ours clicks, types, moves the camera or closes a
+screen until you end your turn. `--no-cover` shows the jack seats' turns as
+they play; `--keep-handover` leaves Civ VI's hand-over screen for you to press.
+On a jack seat's turn
 the mod exports that seat's board, its worker (`tools/civ6_brain.py` ->
 `civvis_orders`, the same chain as the live verification seat) decides, the
 orders are issued in-game, and the turn ends. Every line of what happened is in
@@ -74,6 +80,26 @@ says which are on).
 
 Testing: ``--auto-human --turns N`` replaces you with a stub (the mod's own
 fallback ladder playing seat 0) and stops after turn N with a per-seat report.
+``--auto-human gated`` keeps seat 0 "the person" for the cover and the pressed
+hand-over, so a person's game runs with nobody at the Mac; only the stub's own
+announcements are closed for it, and its quiet turns ended, as nobody is there.
+
+You set up the game (``--manual-lobby``). Nothing touches the screen: no
+launch, click, keystroke, screenshot, OCR or window move, and none of the
+modules that could are even loaded, so it needs no Screen Recording or
+Accessibility permission, no Pillow, no Swift compiler and no ``cliclick``.
+
+    tools/civ6_hotseat.py --manual-lobby
+
+It installs the mod, prints what to do (start Civ VI -> Multiplayer -> Hot
+Seat -> make every player CIVVIS should play Human, the first row is you ->
+Start Game), and reads the game you made back from the game itself: every
+Human row after yours is a CIVVIS seat (up to five), AI rows are Civ VI's own.
+A stalled CIVVIS turn is reported here with what to do, never clicked.
+``--stop`` leaves the game alone, and the mod is removed only when Civ VI is
+not running. Installed and with no harness running, the mod does nothing: no
+screen closed, nothing answered, ordered, re-defaulted or logged (see "The
+person-facing install" in docs/CIV6_COMPUTER_CONTROL.md).
 """
 
 from __future__ import annotations
@@ -85,21 +111,32 @@ import re
 import shlex
 import shutil
 import signal
+import sqlite3
 import subprocess
 import sys
 import threading
 import time
+from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE / "civ6_control"))
+#: `--manual-lobby` is screen-free from the first import on: with this set
+#: before `civ6_control` loads, every module that clicks, types, captures,
+#: reads the screen or moves a window imports as a stand-in that refuses all
+#: use, Pillow is never loaded, and the decision workers inherit the same
+#: (`civ6_control/screen_free.py`).
+SCREEN_FREE_FLAG = "--manual-lobby"
+if SCREEN_FREE_FLAG in sys.argv[1:]:
+    os.environ["CIVVIS_SCREEN_FREE"] = "1"
 import civ6_env as env  # noqa: E402
 import civ6_setup  # noqa: E402
 import civ6_play as play  # noqa: E402
 from civ6_control import gamelock, launcher, operator_presence, popup_clear, watch  # noqa: E402
 from civ6_control import install as modinstall  # noqa: E402
+from civ6_control import screen_free  # noqa: E402
 from civ6_control.orders import reset_orders_db  # noqa: E402
 
 RUN_ROOT = Path(os.environ.get("CIVVIS_HOTSEAT_RUNS", "")
@@ -122,6 +159,17 @@ VERIFICATION_BIN = (Path.home() / "civvis-verification-clean-runtime" / "target"
                     / "release" / "civvis_orders")
 SNAPSHOTS = Path.home() / "civvis-civ6-runs" / "decider-snapshots"
 CHECKOUT_BIN = HERE.parent / "target" / "release" / "civvis_orders"
+#: Frozen by `tools/package_hotseat.py`, this file runs from a bundle that
+#: ships its own decider; it is tried before everything above. Windows needs
+#: the `.exe`: CreateProcess appends it to a name without one, so a frozen copy
+#: named `civvis_orders` would not start.
+FROZEN = bool(getattr(sys, "frozen", False))
+ORDERS_NAME = "civvis_orders.exe" if os.name == "nt" else "civvis_orders"
+BUNDLED_BIN = Path(getattr(sys, "_MEIPASS", HERE)) / ORDERS_NAME if FROZEN else None
+#: How the bundle's one program is asked to be a decision worker
+#: (`tools/civvis_hotseat_app.py`). The script's own name on purpose: the
+#: stale-worker check and `gamelock` recognise a worker by it.
+WORKER_COMMAND = "civ6_brain.py"
 
 
 def utc() -> str:
@@ -282,6 +330,19 @@ def default_max_turns(speed: str) -> int:
     return SPEED_TURNS.get(speed, 500)
 
 
+def mod_path(path: Path) -> str:
+    """A path as the mod will put it into SQL (`OrdersDb`, its ATTACH target).
+
+    ⚠ The mod's `sqlSafe` (CivvisControlAgent.lua) strips every apostrophe and
+    every backslash, so a Windows path would reach ATTACH as
+    `C:Usersnamecivvis-civ6-runs...` and the mod would open some other file.
+    Windows and SQLite both accept forward slashes, so on Windows it goes in
+    with those; elsewhere it is `str(path)`, as it always was. A path holding an
+    apostrophe cannot be attached on any system (`civvis_hotseat_app` doctor).
+    """
+    return path.as_posix() if os.name == "nt" else str(path)
+
+
 def hotseat_config(args: argparse.Namespace, run_dir: Path, orders_db: Path) -> dict:
     """The mod's settings: the live seat's own, re-pointed at a hotseat game.
 
@@ -292,7 +353,7 @@ def hotseat_config(args: argparse.Namespace, run_dir: Path, orders_db: Path) -> 
     flags = ["--tag", args.tag, "--difficulty", args.difficulty,
              "--map", args.map, "--map-size", args.map_size, "--speed", args.speed,
              "--max-turns", str(args.max_turns), "--civvis-decides",
-             "--civvis-victory", args.victory, "--orders-db", str(orders_db)]
+             "--civvis-victory", args.victory, "--orders-db", mod_path(orders_db)]
     if args.leader:
         flags += ["--leader", args.leader]
     # `--play-flags`: civ6_play switches every jack seat plays with (Tournament 6
@@ -308,6 +369,9 @@ def hotseat_config(args: argparse.Namespace, run_dir: Path, orders_db: Path) -> 
     config = play.build_config(settings)
     civvis_seats = getattr(args, "civvis_seats", None)
     seats = jack_seats(args.players, civvis_seats)
+    # A person plays seat 0 (or `--auto-human gated` stands in for them): their
+    # game plays like single player unless they ask otherwise.
+    person = not civvis_seats and args.auto_human != "stub"
     config.update({
         "Hotseat": True,
         "HotseatSeats": seats,
@@ -329,6 +393,14 @@ def hotseat_config(args: argparse.Namespace, run_dir: Path, orders_db: Path) -> 
         "HotseatPlayers": args.players,
         "HotseatSaveEvery": args.save_every,
         "HotseatSaveName": args.tag,
+        # The cover over every turn that is not the person's
+        # (CivvisHotseatCover.lua), and their hand-over pressed for them
+        # (CivvisControlAutoClose.lua, `CivvisHotseatScreen.autoStart`).
+        "HotseatCover": person and not getattr(args, "no_cover", False),
+        "HotseatAutoStart": person and not getattr(args, "keep_handover", False),
+        # Diagnostic: CIVVIS-turn screens keep their shipped queueing under the
+        # cover (CivvisControlAutoClose.lua, `CivvisCoverQueue`).
+        "HotseatCoverQueue": person and not getattr(args, "no_cover_queue", False),
         # The operator's seat's difficulty, and every jack seat's: hotseat
         # difficulty is per player (the staging room's Difficulty column).
         "PlayerDifficulty": args.difficulty,
@@ -351,7 +423,7 @@ def resolve_orders_bin(requested: str | None) -> Path | None:
     if requested:
         path = Path(requested).expanduser()
         return path if path.is_file() else None
-    candidates = [VERIFICATION_BIN]
+    candidates = ([BUNDLED_BIN] if BUNDLED_BIN else []) + [VERIFICATION_BIN]
     if SNAPSHOTS.is_dir():
         candidates += sorted(SNAPSHOTS.glob("*/civvis_orders"),
                              key=lambda p: p.stat().st_mtime, reverse=True)
@@ -363,7 +435,7 @@ def resolve_orders_bin(requested: str | None) -> Path | None:
 
 
 def freeze_binary(source: Path, run_dir: Path) -> Path:
-    target = run_dir / "civvis_orders"
+    target = run_dir / ORDERS_NAME
     if target.resolve() != source.resolve():
         shutil.copy2(source, target)
     provenance = {"source": str(source), "frozen": str(target), "utc": utc()}
@@ -373,13 +445,19 @@ def freeze_binary(source: Path, run_dir: Path) -> Path:
             provenance["snapshot"] = json.loads(snapshot.read_text())
         except ValueError:
             pass
-    (run_dir / "civvis_orders.provenance.json").write_text(json.dumps(provenance, indent=2))
+    # Beside the copy under the copy's name, where `civ6_brain.binary_provenance` looks.
+    (run_dir / f"{ORDERS_NAME}.provenance.json").write_text(json.dumps(provenance, indent=2))
     return target
 
 
 def brain_command(seat_dir: Path, orders_db: Path, binary: Path, victory: str) -> list[str]:
-    """One jack seat's decision worker: the live seat's brain, pinned binary."""
-    return [sys.executable, str(HERE / "civ6_brain.py"),
+    """One jack seat's decision worker: the live seat's brain, pinned binary.
+
+    Frozen, `sys.executable` is the bundle's program and there is no script to
+    hand it, so it is asked to be the worker by name (`WORKER_COMMAND`).
+    """
+    worker = WORKER_COMMAND if FROZEN else str(HERE / "civ6_brain.py")
+    return [sys.executable, worker,
             "--run-dir", str(seat_dir), "--orders-db", str(orders_db),
             "--mode", "civvis", "--bin", str(binary), "--victory", victory,
             # One program for the whole game, and its heartbeat kept out of the
@@ -404,13 +482,20 @@ def stop_stale_worker(seat_dir: Path, *, grace_s: float = 5.0) -> int | None:
         pid = int((seat_dir / "brain.pid").read_text().strip())
     except (OSError, ValueError):
         return None
-    try:
-        command = subprocess.run(["ps", "-o", "command=", "-p", str(pid)],
-                                 capture_output=True, text=True, timeout=5).stdout
-    except (OSError, subprocess.SubprocessError):
-        return None
+    command = env.process_command(pid)
     if "civ6_brain.py" not in command or str(seat_dir) not in command:
         return None
+    if os.name == "nt":
+        # No SIGTERM to wait out: `os.kill` here is TerminateProcess, and
+        # `os.kill(pid, 0)` would be a console Ctrl-C, not a probe.
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except OSError:
+            pass
+        deadline = time.monotonic() + grace_s
+        while time.monotonic() < deadline and env.pid_alive(pid):
+            time.sleep(0.2)
+        return pid
     try:
         os.kill(pid, signal.SIGTERM)
         deadline = time.monotonic() + grace_s
@@ -421,6 +506,14 @@ def stop_stale_worker(seat_dir: Path, *, grace_s: float = 5.0) -> int | None:
     except ProcessLookupError:
         pass
     return pid
+
+
+def worker_session() -> dict:
+    """A worker outside the terminal's Ctrl-C: its own session on POSIX, its
+    own process group on Windows (where `start_new_session` is ignored)."""
+    if os.name == "nt":
+        return {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
+    return {"start_new_session": True}
 
 
 class Brains:
@@ -448,7 +541,7 @@ class Brains:
             brain_command(seat_dir, self.orders_db, self.binary,
                           self.victory[seat] if isinstance(self.victory, dict) else self.victory),
             cwd=str(HERE.parent), stdout=out, stderr=subprocess.STDOUT, text=True,
-            start_new_session=True)
+            **worker_session())
         out.close()
         (seat_dir / "brain.pid").write_text(f"{self.procs[seat].pid}\n")
 
@@ -1061,8 +1154,24 @@ class Journal:
 #: quit is asked again, and the launcher's own stop behind it all.
 QUIT_SECONDS = 150.0
 QUIT_ANSWER_SECONDS = 30.0
+#: ...and the most that giving can add: the clock has an end whatever is read.
+QUIT_OVERTIME_SECONDS = 60.0
 QUIT_ASK_AGAIN = 3
 QUIT_STOP_SECONDS = 90.0
+
+
+def mirrored_yes(rows: list[dict], sure: list[dict]) -> list[dict]:
+    """Where the quit question's YES stands when the screen reader did not
+    return it: its NO, mirrored about the question's heading (the topmost
+    ARE YOU SURE row). Nothing without both a heading and a NO beneath it."""
+    if not sure:
+        return []
+    heading = min(sure, key=lambda row: row["y"])
+    below = [row for row in find(rows, "NO") if row["y"] > heading["y"]]
+    if not below:
+        return []
+    no = min(below, key=lambda row: row["y"])
+    return [{"text": "YES", "x": 2 * heading["x"] - no["x"], "y": no["y"], "norm": _norm("YES")}]
 
 
 def quit_civ(run_dir: Path, log: Log, timeout_s: float = QUIT_SECONDS) -> bool:
@@ -1082,11 +1191,28 @@ def quit_civ(run_dir: Path, log: Log, timeout_s: float = QUIT_SECONDS) -> bool:
     game. So the quit is asked again every few unanswered looks, a question
     that is up is always given the time to be answered, and the stop behind it
     waits longer.
+
+    The YES is pressed where it stands when it cannot be read. Live the same
+    night (duel-dev-smoke-20261127T0845Z, the person's turn, a full-screen
+    window): the screen reader returned ARE YOU SURE?, the sentence under it
+    and "No", and never the white-on-red YES, in nine looks out of nine. With
+    no YES to press the pause menu's EXIT TO DESKTOP behind the question was
+    pressed again each look, each press renewing the clock, and the harness
+    never came back. YES and NO stand either side of the heading
+    (InGameTopOptionsMenu's inline question), so an unread YES is NO mirrored
+    about it (pressed by hand there: Civ VI closed at once). And the time a
+    question is given is bounded: the clock runs out `QUIT_OVERTIME_SECONDS`
+    past its length at the latest.
     """
     if not env.game_pids():
         return True
     env.request_macos_quit()
     deadline = time.monotonic() + timeout_s
+    limit = deadline + QUIT_OVERTIME_SECONDS
+
+    def given_time() -> float:
+        return min(limit, max(deadline, time.monotonic() + QUIT_ANSWER_SECONDS))
+
     step = unanswered = 0
     while time.monotonic() < deadline:
         time.sleep(2.0)
@@ -1095,10 +1221,11 @@ def quit_civ(run_dir: Path, log: Log, timeout_s: float = QUIT_SECONDS) -> bool:
         step += 1
         _, rows = read_screen(run_dir, f"quit-{step}")
         # In a game: the pause menu's inline ARE YOU SURE? / YES.
-        yes = find(rows, "YES")
-        if yes and find(rows, "ARE YOU SURE", exact=False):
+        sure = find(rows, "ARE YOU SURE", exact=False)
+        yes = find(rows, "YES") or mirrored_yes(rows, sure)
+        if yes and sure:
             play.click_at(yes[0]["x"], yes[0]["y"])
-            deadline = max(deadline, time.monotonic() + QUIT_ANSWER_SECONDS)
+            deadline = given_time()
             continue
         # On a setup screen: the EXIT TO DESKTOP / OK / Cancel modal, whose OK
         # the live lane finds as Cancel mirrored about the heading.
@@ -1108,13 +1235,13 @@ def quit_civ(run_dir: Path, log: Log, timeout_s: float = QUIT_SECONDS) -> bool:
                 play.click_at(ok[0]["x"], ok[0]["y"])
             else:
                 play.confirm_exit_dialog(run_dir / "setup")
-            deadline = max(deadline, time.monotonic() + QUIT_ANSWER_SECONDS)
+            deadline = given_time()
             continue
         # The pause menu without its question yet.
         exit_row = find(rows, "EXIT TO DESKTOP")
         if exit_row and find(rows, "RETURN TO GAME"):
             play.click_at(exit_row[0]["x"], exit_row[0]["y"])
-            deadline = max(deadline, time.monotonic() + QUIT_ANSWER_SECONDS)
+            deadline = given_time()
             continue
         unanswered += 1
         if unanswered % QUIT_ASK_AGAIN == 0:
@@ -1186,6 +1313,16 @@ class Monitor:
         self.rescued_at = 0.0
         self.quiet = False
         self.seat_stalls = 0
+        # `--manual-lobby`: the game the person set up, as the HUD read it
+        # back (`hotseat_lobby`, CivvisControlHeartbeat.lua), oldest first.
+        self.lobbies: list[dict] = []
+        # `--manual-lobby`: when the last stall note was said (None: never).
+        self.stall_noted_at: float | None = None
+        # The cover over the jack seats' turns (CivvisHotseatCover.lua), as its
+        # own `hotseat_cover` events last said, and since when.
+        self.cover_up = False
+        self.cover_since = time.monotonic()
+        self.cover_yields = 0
 
     def catch_up(self) -> None:
         """Read the record so far without replaying it (`--attach`): learn whose
@@ -1260,7 +1397,9 @@ class Monitor:
         if kind in ("victory", "defeat"):
             self.on_ending(None, event)
             return
-        if kind == "hotseat_armed":
+        if kind == "hotseat_lobby":
+            self.lobbies.append(event)
+        elif kind == "hotseat_armed":
             self.started = True
             self.say("the hand-over screen is under CIVVIS control")
         elif kind == "hotseat_person":
@@ -1312,13 +1451,27 @@ class Monitor:
             self.say(f"⚠ turn {event.get('turn')}: seat {event.get('player')}'s hand-over pause stood "
                      f"{event.get('waited')} s with no Start Turn on screen; released "
                      f"(still paused {event.get('still_paused')})")
+        elif kind == "hotseat_cover":
+            up = bool(event.get("up"))
+            if up != self.cover_up:
+                self.cover_up, self.cover_since = up, time.monotonic()
+            if str(event.get("reason", "")).startswith("yield"):
+                self.cover_yields += 1
+                self.say(f"⚠ turn {event.get('turn')}: the cover stood aside for seat "
+                         f"{event.get('player')} ({event.get('reason')}: quiet "
+                         f"{event.get('quiet')} s, between turns {event.get('between')} s); "
+                         "the game is on screen until that turn ends")
 
     def your_turn(self, turn: int) -> None:
         if turn == self.notified_turn:
             return
         self.notified_turn = turn
         bar = "=" * 64
-        print(f"\a\n{bar}\n  YOUR TURN — turn {turn}.  Press \"Start Turn\" in Civ VI.\n"
+        if getattr(self.args, "keep_handover", False):
+            line = "Press \"Start Turn\" in Civ VI."
+        else:
+            line = "Your map is on the screen."
+        print(f"\a\n{bar}\n  YOUR TURN — turn {turn}.  {line}\n"
               f"  Nothing of CIVVIS's touches the screen until you end it.\n{bar}\n",
               flush=True)
         self.log(f"turn {turn}: your turn")
@@ -1385,6 +1538,15 @@ class Monitor:
         return (self.active is not None and not self.active_human
                 and time.monotonic() - self.last_event > seconds)
 
+    #: The longest a cover is believed up with a seat stalled under it. The
+    #: mod's cover stands aside after 90 s of a quiet seat (and says so, flush
+    #: line and all); past this the screen rescue looks anyway.
+    COVER_TRUST_S = 600.0
+
+    def covered(self) -> bool:
+        """The cover is up: a screenshot shows it, not the game."""
+        return self.cover_up and time.monotonic() - self.cover_since < self.COVER_TRUST_S
+
     def close(self) -> None:
         self.timings.close()
 
@@ -1397,6 +1559,13 @@ def rescue_popup(monitor: Monitor, log: Log) -> None:
     monitor.rescued_at = time.monotonic()
     monitor.poll()
     if monitor.active is None or monitor.active_human:
+        return
+    if monitor.covered():
+        # Under the cover the screen shows the cover. The HUD's seat watch ends
+        # a quiet turn by itself, and the cover stands aside for a seat that
+        # stays quiet; the rescue reads the screen once it does.
+        log(f"{monitor.name(monitor.active)} has been quiet for a while under the cover; "
+            "the mod's seat watch has it, and the cover stands aside if it stays quiet")
         return
     try:
         front = popup_clear.frontmost()
@@ -1582,13 +1751,23 @@ def read_current() -> dict | None:
         return None
 
 
-def harness_alive(pid: int) -> bool:
-    try:
-        out = subprocess.run(["ps", "-o", "command=", "-p", str(int(pid))],
-                             capture_output=True, text=True, timeout=5).stdout
-    except (OSError, subprocess.SubprocessError, ValueError):
+#: The bundle's program as a harness: its own name, not one of its workers.
+_APP_HARNESS = re.compile(r'(?:^|[\\/"\s])civvis-hotseat(?:\.exe)?(?:"|\s|$)')
+
+
+def is_harness_command(command: str) -> bool:
+    """Whether a command line is this harness: the script, or the bundle's
+    program (`tools/package_hotseat.py`, or `tools/civvis_hotseat_app.py` run
+    from a checkout) when it is not a decision worker."""
+    if "civ6_hotseat.py" in command:
+        return True
+    if WORKER_COMMAND in command:
         return False
-    return "civ6_hotseat.py" in out
+    return bool(_APP_HARNESS.search(command)) or "civvis_hotseat_app.py" in command
+
+
+def harness_alive(pid: int) -> bool:
+    return is_harness_command(env.process_command(pid))
 
 
 def stop_command(args: argparse.Namespace) -> int:
@@ -1600,10 +1779,16 @@ def stop_command(args: argparse.Namespace) -> int:
                   "left alone (quit it from its menu)")
         return 0
     run_dir = Path(current["run_dir"])
+    if args.quit_game and current.get("manual_lobby"):
+        print(f"{SCREEN_FREE_FLAG}: Civ VI and the game are yours, so they stay up "
+              "(quit Civ VI from its own menu)")
     (run_dir / "stop.json").write_text(json.dumps({"quit_game": bool(args.quit_game),
                                                    "resign": bool(args.resign),
                                                    "utc": utc()}))
-    os.kill(int(current["pid"]), signal.SIGTERM)
+    # Windows has no SIGTERM to send (`os.kill` is TerminateProcess, which
+    # skips the teardown below); the harness polls for stop.json instead.
+    if os.name != "nt":
+        os.kill(int(current["pid"]), signal.SIGTERM)
     deadline = time.monotonic() + 120
     while time.monotonic() < deadline and harness_alive(current["pid"]):
         time.sleep(1.0)
@@ -1638,6 +1823,489 @@ class Stop(Exception):
 SETUP_FAULT_REASON = "setup fault"
 
 
+# ------------------------------------------------------------ the manual lobby
+#
+# `--manual-lobby`: the person sets the Hot Seat game up and starts it; this
+# installs the mod, reads the log and writes orders, and nothing else. It runs
+# screen-free (`civ6_control/screen_free.py`), and every message is written for
+# somebody who has never seen this project.
+
+#: The seats a person-facing install can play: every Human row after the
+#: first, up to five. All five get an agent context whatever the lobby holds
+#: (a copy of the ~1 MB agent each), so the person never declares a player
+#: count up front. A count would have to match the lobby, and a different count
+#: means a different file list, which Civ VI notices only on its next launch
+#: (`Mods.sqlite` is an mtime index). A context whose seat is not a Human row
+#: never acts: the hotseat local player is always a Human row, and each context
+#: acts only on its own seat (`CivvisSeat.gate`).
+MANUAL_SEATS = [1, 2, 3, 4, 5]
+#: The harness rewrites its beat this often; the mod treats it as live while it
+#: is at most HARNESS_FRESH_S old (`CivvisHarness.live`, SQLite's clock).
+HARNESS_BEAT_S = 2.0
+HARNESS_FRESH_S = 20
+#: The mod's freshness read, as its three scripts send it (`CivvisHarness.read`;
+#: `tools/test_civ6_hotseat_manual_lobby.py` holds the Lua to this text).
+HARNESS_AGE_SQL = ("SELECT CAST(strftime('%s','now') AS INTEGER) - beat AS age"
+                   " FROM civvis.harness WHERE run = '{run}'")
+#: A CIVVIS turn this quiet gets a note in the terminal, at most this often.
+MANUAL_STALL_NOTE_S = 300.0
+#: The game loaded CIVVIS but no lobby record came this long after.
+LOBBY_LATE_S = 90.0
+
+START_CIV = "Start Civilization VI."
+RESTART_CIV = ("Civ VI is already running, and it looks for mods only when it starts: "
+               "quit it completely (Civ VI menu -> Quit) and start it again.")
+MANUAL_STEPS = """\
+CIVVIS is installed. Now set up the game in Civilization VI yourself:
+  1. {start}
+  2. Main menu -> Multiplayer -> Hot Seat.
+  3. Choose the map, speed and anything else you like, then Confirm Settings.
+  4. In the staging room the first row is you. Add a player for each seat
+     CIVVIS should play and set it to Human (up to {most}); AI rows are
+     Civ VI's own AI.
+  5. Start Game.
+CIVVIS plays its seats from the first turn. Keep this window open while you
+play: Ctrl-C here (or `tools/civ6_hotseat.py --stop`) stops CIVVIS and leaves
+Civ VI and your game alone.
+"""
+
+
+def manual_lobby_config(args: argparse.Namespace, run_dir: Path, orders_db: Path) -> dict:
+    """The person-facing install: every seat in MANUAL_SEATS, gated on this
+    harness (`RequireHarness`), and nothing that sets anything on their game.
+
+    The controller settings are the hotseat table's own (`hotseat_config`);
+    only what the lobby decides is taken out: no turn limit imposed in game,
+    no Create Game defaults (the installer drops the FrontEnd block), no
+    leader, no difficulty, no victories switched off.
+    """
+    table = argparse.Namespace(**vars(args))
+    table.players = len(MANUAL_SEATS) + 1
+    table.civvis_seats = None
+    table.leader = None
+    table.victories_off = []
+    # Only to satisfy the controller's parser; `MaxTurns` is dropped below.
+    table.max_turns = table.max_turns or default_max_turns(table.speed)
+    config = hotseat_config(table, run_dir, orders_db)
+    config.update({
+        "RequireHarness": True,
+        "HarnessRun": args.tag,
+        "HarnessFreshSeconds": HARNESS_FRESH_S,
+        "MaxTurns": None, "Difficulty": None, "PlayerDifficulty": None, "GameSpeed": None,
+        "MapScript": None, "MapSize": None, "Leader": None, "HumanPlayers": None,
+        "VictoriesOff": [],
+    })
+    return config
+
+
+class HarnessBeat:
+    """This harness's pulse in the orders database.
+
+    The person-facing mod plays and writes only while this row is fresh
+    (`CivvisHarness`). Stopping deletes it and a crash lets it go stale, so
+    either way the game is the person's again within seconds.
+    """
+
+    SCHEMA = ("CREATE TABLE IF NOT EXISTS harness "
+              "(run TEXT PRIMARY KEY, beat INTEGER NOT NULL, pid INTEGER)")
+
+    def __init__(self, path: Path, run: str, every_s: float = HARNESS_BEAT_S,
+                 clock=time.monotonic):
+        self.path, self.run, self.every_s, self.clock = Path(path), run, every_s, clock
+        self.last: float | None = None
+
+    def beat(self) -> bool:
+        now = self.clock()
+        if self.last is not None and now - self.last < self.every_s:
+            return True
+        self.last = now
+        try:
+            with closing(sqlite3.connect(str(self.path), timeout=2.0)) as db, db:
+                db.execute(self.SCHEMA)
+                db.execute("INSERT OR REPLACE INTO harness (run, beat, pid) VALUES (?, ?, ?)",
+                           (self.run, int(time.time()), os.getpid()))
+            return True
+        except sqlite3.Error:
+            return False
+
+    def age(self) -> int | None:
+        """The beat's age in seconds, read exactly as the mod reads it."""
+        try:
+            with closing(sqlite3.connect(":memory:")) as db:
+                db.execute("ATTACH DATABASE ? AS civvis", (str(self.path),))
+                rows = db.execute(HARNESS_AGE_SQL.format(
+                    run=self.run.replace("'", "").replace("\\", ""))).fetchall()
+        except sqlite3.Error:
+            return None
+        return int(rows[0][0]) if rows and rows[0][0] is not None else None
+
+    def clear(self) -> None:
+        try:
+            with closing(sqlite3.connect(str(self.path), timeout=2.0)) as db, db:
+                db.execute(self.SCHEMA)
+                db.execute("DELETE FROM harness WHERE run = ?", (self.run,))
+        except sqlite3.Error:
+            pass
+
+
+class ModdingLog:
+    """What Civ VI itself says about each game it sets up (`Logs/Modding.log`).
+
+    Independent of the mod, so it can say what the mod cannot: that a game
+    started without CIVVIS in it, or as something other than Hot Seat. A game
+    is a block opened by `Stage: Configure Content`, carrying `Game Mode:`
+    (`HOTSEAT`, `Single-Player`), `Map Script:`, `Human Players:` and `AI
+    Players:`, then one `Applying Component - <id> (<action>)` line per mod
+    action applied (`CivvisControlAgentUI` is ours), and closed by the next
+    `Stage:` line (`Initializing a new game`).
+    """
+
+    LINE = re.compile(r"^\[[\d.]+\]\s?(.*)$")
+    FIELDS = (("Game Mode:", "mode", str), ("Map Script:", "map", str),
+              ("Human Players:", "humans", int), ("AI Players:", "ais", int))
+    OURS = "Applying Component - CivvisControlAgentUI"
+
+    def __init__(self, path: Path | None = None, clock=time.monotonic, settle_s: float = 30.0):
+        self.path = Path(path) if path else env.logs_dir() / "Modding.log"
+        self.clock, self.settle_s = clock, settle_s
+        self.offset, self.inode = self._stat()
+        self.partial = ""
+        self.block: dict | None = None
+
+    def _stat(self) -> tuple[int, int | None]:
+        try:
+            stat = self.path.stat()
+        except OSError:
+            return 0, None
+        return stat.st_size, stat.st_ino
+
+    def poll(self) -> list[dict]:
+        """The games set up since the last poll, each once."""
+        size, inode = self._stat()
+        if inode != self.inode or size < self.offset:
+            # Civ VI starts a fresh log each launch.
+            self.offset, self.inode, self.partial = 0, inode, ""
+        chunk = ""
+        if size > self.offset:
+            try:
+                with self.path.open("r", errors="replace") as handle:
+                    handle.seek(self.offset)
+                    chunk = handle.read()
+                    self.offset = handle.tell()
+            except OSError:
+                chunk = ""
+        lines = (self.partial + chunk).split("\n")
+        self.partial = lines.pop()
+        done = []
+        for raw in lines:
+            match = self.LINE.match(raw.strip())
+            text = (match.group(1) if match else raw).strip()
+            if text == "Stage: Configure Content":
+                if self.block is not None:
+                    done.append(self.block)
+                self.block = {"mode": None, "map": None, "humans": None, "ais": None,
+                              "civvis": False, "stage": None, "at": self.clock()}
+            elif self.block is None:
+                continue
+            elif text.startswith("Stage:"):
+                self.block["stage"] = text[len("Stage:"):].strip()
+                done.append(self.block)
+                self.block = None
+            elif text.startswith(self.OURS):
+                self.block["civvis"] = True
+            else:
+                for prefix, key, cast in self.FIELDS:
+                    if text.startswith(prefix) and self.block[key] is None:
+                        try:
+                            self.block[key] = cast(text[len(prefix):].strip())
+                        except ValueError:
+                            pass
+        if self.block is not None and self.clock() - self.block["at"] > self.settle_s:
+            done.append(self.block)
+            self.block = None
+        return done
+
+
+def modding_verdict(block: dict) -> str | None:
+    """What a person needs to hear about a game Civ VI set up, if anything."""
+    mode = str(block.get("mode") or "")
+    if mode and mode.upper() != "HOTSEAT":
+        return (f"Civ VI started a {mode} game; CIVVIS plays only Hot Seat games "
+                "(main menu -> Multiplayer -> Hot Seat). This window keeps waiting.")
+    if mode and not block.get("civvis"):
+        return ("⚠ Civ VI started this Hot Seat game without the CIVVIS mod, because it was "
+                "already running when the mod was installed: quit Civ VI completely, start it "
+                "again, and set the game up again. This window keeps waiting.")
+    return None
+
+
+def _rows(seats: list[int]) -> str:
+    """Seats as the staging room numbers them: row N is seat N-1."""
+    named = [f"row {seat + 1}" for seat in seats]
+    return named[0] if len(named) == 1 else ", ".join(named[:-1]) + " and " + named[-1]
+
+
+def lobby_seats(lobby: dict, installed: list[int] = MANUAL_SEATS) -> tuple[list[int], list[str]]:
+    """The CIVVIS seats in the game the person set up, and what is wrong with it.
+
+    Every Human row after the first is a CIVVIS seat; AI rows are Civ VI's own.
+    Each problem is one sentence saying what to do about it.
+    """
+    players = [p for p in lobby.get("players") or [] if isinstance(p, dict)]
+    humans = sorted(int(p["id"]) for p in players
+                    if p.get("slot") == "human" and isinstance(p.get("id"), (int, float)))
+    problems = []
+    if HUMAN_SEAT not in humans:
+        problems.append("The first row is not Human, but it is yours: quit to the main menu, "
+                        "set it to Human, and start the game again.")
+    civvis = [seat for seat in humans if seat in installed]
+    beyond = [seat for seat in humans if seat != HUMAN_SEAT and seat not in installed]
+    if beyond:
+        one = len(beyond) == 1
+        problems.append(
+            f"{_rows(beyond)} {'is' if one else 'are'} Human, but CIVVIS plays at most "
+            f"{len(installed)} seats (rows 2-{max(installed) + 1}), so {'its' if one else 'their'} "
+            f"turns will wait for a person: set {'it' if one else 'them'} to AI and start "
+            "the game again.")
+    if not civvis:
+        problems.append("Only your row is Human, so CIVVIS has no seat to play: quit to the "
+                        "main menu, set the Hot Seat game up again with at least one more "
+                        "player set to Human, and start it. This window keeps waiting.")
+    return civvis, problems
+
+
+def describe_lobby(lobby: dict, civvis: list[int], stub: bool = False) -> str:
+    """The game as Civ VI reports it, in one line."""
+    players = sorted((p for p in lobby.get("players") or [] if isinstance(p, dict)),
+                     key=lambda p: p.get("id", 99))
+    seats = []
+    for player in players:
+        seat = int(player.get("id", -1))
+        if seat == HUMAN_SEAT:
+            who = "test stub" if stub else "you"
+        elif seat in civvis:
+            who = seat_name(seat)
+        elif player.get("slot") == "human":
+            who = "a person"
+        else:
+            who = "Civ VI AI"
+        detail = ", ".join(str(v) for v in (player.get("slot"), player.get("difficulty"),
+                                             player.get("leader")) if v)
+        seats.append(f"row {seat + 1} {who} ({detail})")
+    limit = lobby.get("max_turns")
+    return (f"the game: {'Hot Seat' if lobby.get('hotseat') else 'NOT Hot Seat'}, "
+            f"{len(players)} players on {lobby.get('map')} {lobby.get('size')} at "
+            f"{lobby.get('speed')}, turn limit {limit if limit not in (None, -1) else '?'}; "
+            + "; ".join(seats))
+
+
+def manual_stall_note(monitor: Monitor, log: Log, now: float) -> bool:
+    """A CIVVIS turn gone quiet, said in the terminal; nothing is clicked."""
+    # Never noted is not "noted at 0": `time.monotonic()` counts from boot, so
+    # a machine up less than MANUAL_STALL_NOTE_S would never say anything.
+    if monitor.stall_noted_at is not None and now - monitor.stall_noted_at < MANUAL_STALL_NOTE_S:
+        return False
+    monitor.stall_noted_at = now
+    log(f"⚠ {monitor.name(monitor.active)} has made no move for "
+        f"{int(now - monitor.last_event)} s on its turn. Nothing here clicks in --manual-lobby "
+        "mode: if Civ VI shows a screen waiting for a click, close it (its own button, or Esc); "
+        "if the map shows NEXT TURN, press it. CIVVIS carries on once the turn moves.")
+    return True
+
+
+def run_manual(args: argparse.Namespace) -> int:
+    """`--manual-lobby`: install, say what to do, read the person's game back,
+    and play its CIVVIS seats until Civ VI closes or the harness is stopped."""
+    if not screen_free.engaged() or screen_free.loaded_for_real():
+        print(f"{SCREEN_FREE_FLAG} runs screen-free from its first import: spell the flag out "
+              f"in full ({SCREEN_FREE_FLAG})", file=sys.stderr)
+        return 2
+    args.tag = args.tag or "hotseat-" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    run_dir = RUN_ROOT / args.tag
+    orders_db = run_dir / "orders.sqlite"
+    # The path as the mod is handed it (`mod_path`): forward slashes on Windows.
+    if "'" in str(orders_db) or "\\" in mod_path(orders_db):
+        print(f"{run_dir} has a quote or a backslash in it, which the game cannot open its "
+              "orders database through: set CIVVIS_HOTSEAT_RUNS to a plain path", file=sys.stderr)
+        return 2
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "stop.json").unlink(missing_ok=True)
+    log = Log(run_dir / "hotseat.log")
+    if not gamelock.acquire(args.tag, require_verification_intent=False,
+                            honour_operator_halt=False):
+        log(f"another run holds Civ VI: {gamelock.foreign_run(args.tag) or gamelock.describe()}")
+        return 6
+    stub = bool(args.auto_human)
+    agents = MANUAL_SEATS + ([HUMAN_SEAT] if stub else [])
+    beat = HarnessBeat(orders_db, args.tag)
+    brains: Brains | None = None
+    monitor: Monitor | None = None
+    bridges: list[watch.EventLogBridge] = []
+    stop_reason = "finished"
+    civvis: list[int] = []
+    lobby: dict | None = None
+    installed = False
+
+    def on_term(signum, _frame):  # noqa: ANN001
+        raise Stop(f"signal {signum}")
+
+    signal.signal(signal.SIGTERM, on_term)
+    signal.signal(signal.SIGINT, on_term)
+    write_current({"pid": os.getpid(), "tag": args.tag, "run_dir": str(run_dir),
+                   "started": utc(), "manual_lobby": True})
+    try:
+        binary = resolve_orders_bin(args.orders_bin)
+        if binary is None:
+            log("no civvis_orders binary found; pass --orders-bin or build one "
+                "(cargo build --release --locked --bin civvis_orders)")
+            return 4
+        binary = freeze_binary(binary, run_dir)
+        civ_at_install = set(env.game_pids())
+        config = manual_lobby_config(args, run_dir, orders_db)
+        reset_orders_db(orders_db)
+        import civ6_brain  # noqa: PLC0415 - screen-free here: the guard is engaged
+        civ6_brain.connect(orders_db).close()
+        beat.beat()
+        age = beat.age()
+        if age is None or not -5 <= age <= HARNESS_FRESH_S:
+            log(f"the orders database at {orders_db} does not read back this harness's beat "
+                f"(age {age}); the game could not tell that CIVVIS is running")
+            stop_reason = "beat unreadable"
+            return 4
+        target = modinstall.install(config)
+        installed = True
+        (run_dir / "config.json").write_text(json.dumps(config, indent=2, sort_keys=True))
+        log(f"installed the CIVVIS mod for a Hot Seat game you set up, at {target}; "
+            f"CIVVIS seats play with {binary}")
+        log(f"screen-free: {len(screen_free.SCREEN_MODULES)} screen modules are refusing "
+            f"stand-ins, {len(screen_free.loaded_for_real())} loaded for real, Pillow absent")
+        restart_wanted = bool(civ_at_install)
+        print("\n" + MANUAL_STEPS.format(start=RESTART_CIV if restart_wanted else START_CIV,
+                                         most=len(MANUAL_SEATS)), flush=True)
+        bridges = [watch.EventLogBridge(run_dir, tag=args.tag)]
+        for seat in agents:
+            bridges.append(watch.EventLogBridge(
+                run_dir / modinstall.hotseat_seat_tag(args.tag, seat),
+                tag=modinstall.hotseat_seat_tag(args.tag, seat)))
+        monitor = Monitor(run_dir, args.tag, MANUAL_SEATS, args, log)
+        modding = ModdingLog()
+        civ_up = bool(civ_at_install)
+        loaded_at: float | None = None
+        late_said = False
+        while True:
+            beat.beat()
+            if os.name == "nt" and (run_dir / "stop.json").is_file():
+                raise Stop("stop requested")  # `--stop` sends no SIGTERM on Windows
+            for bridge in bridges:
+                bridge.pump()
+            monitor.poll()
+            now = time.monotonic()
+            for block in modding.poll():
+                log(f"Civ VI set up a game: {block.get('mode')}, {block.get('humans')} human and "
+                    f"{block.get('ais')} AI players on {block.get('map')}, CIVVIS mod "
+                    f"{'loaded' if block.get('civvis') else 'NOT loaded'}")
+                verdict = modding_verdict(block)
+                if verdict:
+                    log(verdict)
+                elif block.get("civvis") and lobby is None:
+                    loaded_at, late_said = now, False
+            while monitor.lobbies:
+                event = monitor.lobbies.pop(0)
+                if brains is not None:
+                    stop_reason = "another game"
+                    log("Civ VI started another game while CIVVIS was playing this one, so CIVVIS "
+                        "stops here (its orders belong to the first game). To play the new one "
+                        f"with CIVVIS, run `tools/civ6_hotseat.py {SCREEN_FREE_FLAG}` again.")
+                    raise Stop("another game")
+                lobby, loaded_at = event, None
+                civvis, problems = lobby_seats(event)
+                log(describe_lobby(event, civvis, stub))
+                for problem in problems:
+                    log(("⚠ " if civvis else "") + problem)
+                if civvis:
+                    monitor.seats = civvis
+                    brains = Brains(run_dir, args.tag, civvis, orders_db, binary, args.victory, log)
+                    brains.start_all()
+                    log(f"CIVVIS plays {_rows(civvis)}"
+                        + (" and the test stub row 1" if stub else "")
+                        + ". Ctrl-C here, or `tools/civ6_hotseat.py --stop`, stops CIVVIS and "
+                          "leaves the game as it is.")
+            if (loaded_at is not None and not late_said and lobby is None
+                    and now - loaded_at > LOBBY_LATE_S):
+                late_said = True
+                log(f"⚠ Civ VI loaded the CIVVIS mod {int(now - loaded_at)} s ago and it has not "
+                    f"answered. It reads this harness through {orders_db}; if that file is gone "
+                    "or unreadable, CIVVIS cannot see that it should play. Quit to the main menu, "
+                    f"restart `tools/civ6_hotseat.py {SCREEN_FREE_FLAG}`, and start the game again.")
+            if brains is not None:
+                brains.keep_alive()
+            pids = set(env.game_pids())
+            if pids and not civ_up:
+                civ_up = True
+                if restart_wanted and pids.isdisjoint(civ_at_install):
+                    restart_wanted = False
+                    log("Civ VI started again with the CIVVIS mod: set up the Hot Seat game now.")
+            elif not pids and civ_up:
+                civ_up = False
+                if brains is not None:
+                    stop_reason = "Civ VI closed"
+                    log("Civ VI has closed")
+                    break
+                log("Civ VI has closed; start it again when you are ready. This window keeps "
+                    "waiting.")
+            if (args.turns is not None and monitor.turn > args.turns
+                    and monitor.active is not None):
+                stop_reason = f"reached turn {args.turns}"
+                log(f"turn {args.turns} is complete")
+                break
+            if brains is not None and monitor.stalled(args.stall_seconds):
+                manual_stall_note(monitor, log, now)
+            time.sleep(0.5)
+    except Stop as stop:
+        if stop_reason == "finished":
+            stop_reason = f"stopped ({stop})"
+        log(f"stopping: {stop}")
+    finally:
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        if brains is not None:
+            brains.stop()
+        # The game is the person's again from here: the mod stands down within
+        # seconds (`CivvisHarness.live`).
+        beat.clear()
+        for bridge in bridges:
+            try:
+                bridge.pump()
+            except OSError:
+                pass
+        summary = {"tag": args.tag, "utc": utc(), "reason": stop_reason, "manual_lobby": True,
+                   "civvis_seats": civvis, "lobby": lobby}
+        if monitor is not None:
+            monitor.poll()
+            # The seats this game had, not every seat the install could play.
+            monitor.stats = {seat: stats for seat, stats in monitor.stats.items()
+                             if seat in civvis or (stub and seat == HUMAN_SEAT)}
+            summary["report"] = smoke_report(monitor, log)
+            monitor.close()
+        if installed and env.game_pids():
+            log("Civ VI is still running, so the CIVVIS mod stays installed; it does nothing "
+                "without this harness. To remove it after you quit Civ VI: "
+                "python3 tools/civ6_control/install.py --uninstall")
+        elif installed:
+            try:
+                if modinstall.uninstall():
+                    log("removed the CIVVIS mod")
+            except Exception as error:  # noqa: BLE001 - cleanup must finish
+                log(f"could not remove the CIVVIS mod: {error}")
+        (run_dir / "summary.json").write_text(json.dumps(summary, indent=2))
+        gamelock.release()
+        current = read_current()
+        if current and current.get("pid") == os.getpid():
+            CURRENT.unlink(missing_ok=True)
+        log(f"done ({stop_reason}); record in {run_dir}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0],
                                  formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -1669,6 +2337,15 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--stall-seconds", type=float, default=180.0,
                     help="a jack seat silent this long gets the popup rescue")
     ap.add_argument("--no-notify", action="store_true", help="no macOS notifications")
+    ap.add_argument("--no-cover", action="store_true",
+                    help="show the jack seats' turns as they play (default: a cover hides "
+                         "the screen from the end of your turn to the start of your next)")
+    ap.add_argument("--keep-handover", action="store_true",
+                    help="leave Civ VI's hand-over screen for you to press Start Turn on "
+                         "(default: it is pressed for you and your turn simply begins)")
+    ap.add_argument("--no-cover-queue", action="store_true",
+                    help="DIAGNOSTIC: under the cover, the jack seats' announcements keep "
+                         "their shipped queueing (they wait until the cover stands aside)")
     ap.add_argument("--resume", nargs="?", const="latest", default=None, metavar="SAVE",
                     help="start Civ VI and load a hotseat save instead of a new game: "
                          "a .Civ6Save path, or the newest hotseat save/autosave")
@@ -1714,14 +2391,53 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--auto-human", nargs="?", const="stub", choices=["stub", "gated"],
                     default=None,
                     help="TEST: a stub plays seat 0 instead of you; `gated` keeps seat 0 "
-                         "the operator's in every gate (its Start Turn is not pressed)")
+                         "the operator's for the cover and the hand-over (covered on the jack "
+                         "seats' turns, its Start Turn pressed only as yours would be), while "
+                         "the stub's own announcements are closed and its quiet turns ended")
     ap.add_argument("--turns", type=int, default=None,
                     help="stop after this game turn (with --auto-human: then report)")
+    ap.add_argument(SCREEN_FREE_FLAG, dest="manual_lobby", action="store_true",
+                    help="you set up and start the Hot Seat game in Civ VI; this only installs "
+                         "the mod, reads the log and writes orders: nothing is launched, "
+                         "clicked, typed, captured or moved (no Screen Recording or "
+                         "Accessibility permission, Pillow, swiftc or cliclick needed). The "
+                         "game's settings are yours: --players/--map/--speed/--difficulty/"
+                         "--leader are not used")
     args = ap.parse_args(argv)
     if args.stop:
         return stop_command(args)
     if args.status:
         return status_command()
+    if args.manual_lobby:
+        clash = [flag for flag, given in (("--attach", args.attach),
+                                          ("--resume", args.resume is not None),
+                                          ("--civvis-seats", args.civvis_seats is not None),
+                                          ("--victories-off", bool(args.victories_off)))
+                 if given]
+        if clash:
+            print(f"{SCREEN_FREE_FLAG} leaves the game to you, so {', '.join(clash)} has "
+                  "nothing to do: load a save or switch victories off in Civ VI's own setup",
+                  file=sys.stderr)
+            return 2
+        if argv is not None and not screen_free.engaged():
+            print(f"{SCREEN_FREE_FLAG} must run screen-free from its first import "
+                  "(CIVVIS_SCREEN_FREE=1 before civ6_control loads)", file=sys.stderr)
+            return 2
+        if not screen_free.engaged():
+            # Abbreviated on the command line (`--manual`), so the module-level
+            # switch missed it: start again screen-free rather than run with
+            # the screen modules loaded (nothing of theirs has been called).
+            # Frozen (`tools/package_hotseat.py`) the program is the harness:
+            # it takes no script path.
+            script = [] if FROZEN else [str(Path(__file__).resolve())]
+            os.execve(sys.executable, [sys.executable, *script, *sys.argv[1:]],
+                      dict(os.environ, CIVVIS_SCREEN_FREE="1"))
+        current = read_current()
+        if current and harness_alive(current.get("pid", -1)):
+            print(f"a hotseat harness is already running (pid {current['pid']}, "
+                  f"{current.get('tag')}); `--stop` it first", file=sys.stderr)
+            return 6
+        return run_manual(args)
     if args.leader and args.leader.lower() == play.RANDOM_LEADER:
         args.leader = None
     if args.max_turns is None:
@@ -1818,6 +2534,9 @@ def run(args: argparse.Namespace) -> int:
         seat_agent_map = attach_config.get("HotseatSeatAgents") or {}
         args.agents = [seat_agent_map[k] for k in sorted(seat_agent_map, key=int)] or None
         args.victories_off = list(attach_config.get("VictoriesOff") or [])
+        # The installed game's own: an install from before these keys had neither.
+        args.no_cover = not attach_config.get("HotseatCover")
+        args.keep_handover = not attach_config.get("HotseatAutoStart")
     elif env.game_pids():
         print("Civ VI is already running. Quit it first (this starts a fresh game), "
               "or pass --attach to drive a hotseat game you loaded.", file=sys.stderr)
@@ -1864,8 +2583,8 @@ def run(args: argparse.Namespace) -> int:
             return 4
         if not args.attach:
             binary = freeze_binary(binary, run_dir)
-        elif (run_dir / "civvis_orders").is_file():
-            binary = run_dir / "civvis_orders"
+        elif (run_dir / ORDERS_NAME).is_file():
+            binary = run_dir / ORDERS_NAME
         log(f"jack seats {seats} play with {binary}")
         if not args.attach:
             if args.resume_save is not None:
@@ -1951,6 +2670,8 @@ def run(args: argparse.Namespace) -> int:
                 bridge.pump()
             monitor.poll()
             brains.keep_alive()
+            if os.name == "nt" and (run_dir / "stop.json").is_file():
+                raise Stop("stop requested")
             if not env.game_pids():
                 stop_reason = "Civ VI closed"
                 log("Civ VI has closed")

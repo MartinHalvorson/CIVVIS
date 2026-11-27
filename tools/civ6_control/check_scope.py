@@ -69,7 +69,7 @@ KNOWN_GLOBALS = {
     "DealAgreementTypes", "DealDirection", "DealItemTypes", "DealManager",
     "DealProposalAction", "DefenseTypes", "DiplomacyResponseTypes", "DirectionTypes",
     "GameClimate", "GlobalParameters", "MilitaryFormationTypes", "Options",
-    "OperationResultsTypes", "PromiseTypes", "TerrainManager", "UIManager",
+    "OperationResultsTypes", "PopupPriority", "PromiseTypes", "TerrainManager", "UIManager",
     "UnitCommandResults", "UnitOperationMoveModifiers", "UnitOperationResults",
     "UserConfiguration",
 }

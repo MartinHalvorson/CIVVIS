@@ -6666,6 +6666,13 @@ pub const GENES: &[Gene] = &[
     // rivals. The held spreader waits; the scouts leave those rivals to the
     // seekers. Opt-in; see `advanced/spreaders_spread_before_they_chart.rs`.
     Gene { tag: "spreaders-spread-before-they-chart", field: "spreaders_spread_before_they_chart", kind: Kind::OptIn, enable: AdvancedAi::enable_spreaders_spread_before_they_chart, disable: AdvancedAi::disable_spreaders_spread_before_they_chart },
+    // In the 28 live Deity eliminations of 2026-11-22..27 a shooter stacked
+    // on one of our City Centers with another soldier of ours, an enemy in
+    // its range, fired on 17% of turns (68 of 408) against 84% alone on a
+    // centre; the host offers a stacked shooter no target and nothing moved
+    // the second soldier out. One shooter keeps the centre and the rest step
+    // beside it. Opt-in; see `advanced/stacked_shooter_steps_out.rs`.
+    Gene { tag: "stacked-shooter-steps-out", field: "stacked_shooter_steps_out", kind: Kind::OptIn, enable: AdvancedAi::enable_stacked_shooter_steps_out, disable: AdvancedAi::disable_stacked_shooter_steps_out },
     // Live Tournament 7 Science seats (36 seats, 2026-11-27): 39% of their
     // cities held a Monument at t100 and their Culture ran a median 35 a
     // turn against the best rival's 168, so 30 of 32 still sat in Monarchy
