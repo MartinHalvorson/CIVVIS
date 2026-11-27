@@ -1,0 +1,27 @@
+{
+ "kind": "captured_native_action_pairs_v1",
+ "tag": "foreign-site-buys-the-open-border",
+ "scope": "Recorded proposal activation on captured live input only, not host execution or strength. 16 boards from eight live T7/T8 benchmark games of 2026-11-26 (6p Continents, Online) holding Margaret Mead or Charles Darwin with an empty activation-plot list. Each board is the run's events.jsonl cut after turn N+1 and replayed at turn N. Both arms run one frozen ci-profile civvis_orders --resumed built from the branch, with the run's own requested genome (why.log line 1 forced, each as --with) and its own victory target and civilization; the on arm adds --with foreign-site-buys-the-open-border. 16 of 16 complete. Stranded boards (every known site in a major's land with no Open Borders): Mead, Ethiopia 180657Z t143 t156 t170 and Russia 094623Z t147 t160 t175: 6 of 6 on arms close a grant and add one 'buy OPEN_BORDERS' order at the bridge's 28 ceiling (Canada, Mongolia, Zulu, Khmer, Khmer, Norway; quoted 22-25 Gold); off arms none. Darwin, Hungary 230955Z-cont1 t133 t150 t180 (natural wonders only in Brazil/Sweden/Persia): the grant from Brazil closes on all 3, and the order crosses at t150; at t133 and t180 the bridge's hold_deals_beside_an_alliance holds it behind a Research Alliance ask to Germany in the same batch. Darwin, Greece 212621Z t102 t115 t128 (Devils Tower only, in Rome): the order crosses at t115; at t102 and t128 the armed passage-waits-past-the-opening holds Rome at 1.77x and 2.06x our military. Open boards (a site reachable, the person walked there live): Mead Egypt 165626Z t151 (Palenque ours), Khmer 211309Z t148 (Inca grant, Nalanda ours); Darwin Korea 221429Z t118 (unowned Galapagos ground), Khmer 211309Z t108 (unowned ground by Pamukkale): 0 of 4 change and no gene line. Gene journal lines: 11 on, 0 off; orders differ on 8 of 16.",
+ "archive": {
+  "path": "docs/eval/2026-11-27-foreign-site-buys-the-open-border.native-queries.tar.xz",
+  "sha256": "259bdcd9304152cc402a3dc063e869508ad66d06539d6f8b6925bae5586bb45c"
+ },
+ "members": [
+  "native-queries-01/0000/result.json",
+  "native-queries-01/0001/result.json",
+  "native-queries-01/0002/result.json",
+  "native-queries-01/0003/result.json",
+  "native-queries-01/0004/result.json",
+  "native-queries-01/0005/result.json",
+  "native-queries-01/0006/result.json",
+  "native-queries-01/0007/result.json",
+  "native-queries-01/0008/result.json",
+  "native-queries-01/0009/result.json",
+  "native-queries-01/0010/result.json",
+  "native-queries-01/0011/result.json",
+  "native-queries-01/0012/result.json",
+  "native-queries-01/0013/result.json",
+  "native-queries-01/0014/result.json",
+  "native-queries-01/0015/result.json"
+ ]
+}

@@ -90,7 +90,7 @@ impl AdvancedAi {
         Some(*capital)
     }
 
-    fn second_city_settler() -> Item {
+    pub(super) fn second_city_settler() -> Item {
         Item::Unit {
             unit: crate::name!("settler"),
         }
@@ -130,7 +130,12 @@ impl AdvancedAi {
 
     /// Why the capital's current head keeps its place, or `None` when the
     /// Settler takes it.
-    fn second_city_head_keeps(&self, g: &Game, pid: usize, cid: u32) -> Option<&'static str> {
+    pub(super) fn second_city_head_keeps(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+    ) -> Option<&'static str> {
         let head = g.cities[&cid].queue.first()?;
         let holy_site = matches!(head, Item::District { district, .. }
             if g.district_family(*district) == "holy_site");

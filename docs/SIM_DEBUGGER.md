@@ -1532,8 +1532,9 @@ path). these should alert on the top section out in the distance."
   request, so nothing else finds it away. The turns are kept ahead of the
   open turn like any turn played and walked back from, so they are the line
   the tree draws, with the world's name and score where it ends, and time
-  running on is shown them instead of playing them again: while Futures is
-  on, no world is asked for a turn of its own. Ahead of the last turn played
+  running on is shown them instead of playing them again: while the futures
+  are on (always, since the Futures button went on 2026-11-26), no world is
+  asked for a turn of its own. Ahead of the last turn played
   there is a dashed way straight on and nothing else.
 - **Time runs on without stopping.** Operator, 2026-11-24: "Right now Doctor
   Strange's Civ 6 goes 4 turns and pauses. This should not happen. It should
@@ -1740,9 +1741,14 @@ path). these should alert on the top section out in the distance."
   on the left. move futures up to be right of this. then the -10, -1, 1, 10
   line. then play time.then "B stopped on turn 185..." drop locked. should
   always be locked. drop the civvis and civvis ai debugger things"): Home,
-  CIVVIS and New game (gold); the title; To the fork with Futures beside
-  it; −10, −1, +1, +10; Play Time; what the page says; then Following,
-  Create Branch and Autosearch. Home and CIVVIS are relative links (`home`,
+  CIVVIS and New game (gold); the title; −10, −1, +1, +10; Play Time; what
+  the page says; then Following, Create Branch and Autosearch. To the fork
+  and Futures were dropped later that day ("the turn box doesnt appear right
+  initially odten. please drop to the fork and future to the end": their
+  words were cut short on the card, and To the fork filled in only once the
+  worlds parted), and the title went from 19 px to 22 px ("title can be a
+  bit bigger"; `clamp(16px, 2.2vw, 22px)`, one line in the 330 px card).
+  The futures are always played out. Home and CIVVIS are relative links (`home`,
   `./`), so the `/test` lane keeps its own. New game loads the page again
   at its own address without `?game=` (`strangeNewGame`): the published
   page opens each visit on a seed of its own (`OPENING_SEED`,
@@ -1764,8 +1770,19 @@ path). these should alert on the top section out in the distance."
   open turn and `(player strategy)` alone (`⑂ 60-(player strategy)`); the
   page's words say "the timeline followed" for the base timeline.
 - **Play Time and Pause Time.** The play button runs time on from the open
-  turn and reads Pause Time while it runs.
-- **Going back** (the step buttons, To the fork, or a press on the highway at
+  turn and reads Pause Time while it runs. It runs to the end of the game or
+  until it is paused (operator 2026-11-26: "play time should not stop. when
+  clicked, it should compute all the way out to the end or until stopped").
+  A world that cannot play the next turn used to stop time for every world
+  ("B stopped on turn 185, short of turn 186"): its engine failed the turn,
+  or its game ended on it and the world said so (`pane-over`) only after.
+  Now that world stands where it stopped (`stood`, counted as ended by
+  `strangeEnded`), the card says so ("… Time runs on for the rest"), and the
+  others play on. The next press of Play or a step asks it for its turns
+  again (`strangeTravel`). Time stops by itself only when no world can play
+  on: "Every world's game is over", or "B stopped on turn 187: no world
+  could play on", which becomes the first if B's word comes after.
+- **Going back** (the step buttons, or a press on the highway at
   a turn's height) puts the worlds back as they stood. The turns they hold
   ahead of the open one stay on the tree, above the line.
 - **Locked, the worlds go through the turns together** (operator

@@ -6075,6 +6075,12 @@ pub const GENES: &[Gene] = &[
     // 3,600 on 2026-11-22); new empty ground no longer buys a whole fresh
     // plan of the turn. Opt-in, unpriced; see `ai::player::take_turn`.
     Gene { tag: "exploration-replans-need-a-sighting", field: "exploration_replans_need_a_sighting", kind: Kind::OptIn, enable: AdvancedAi::enable_exploration_replans_need_a_sighting, disable: AdvancedAi::disable_exploration_replans_need_a_sighting },
+    // Live T7/T8 2026-11-26: Margaret Mead (only a foreign Campus) stood idle
+    // 35-46 turns beside our own Campuses with no Open Borders anywhere, and
+    // Charles Darwin 74 turns with every natural wonder in closed land. A
+    // held one with no reachable site buys one grant. Opt-in; see
+    // `advanced/foreign_site_open_border.rs`.
+    Gene { tag: "foreign-site-buys-the-open-border", field: "foreign_site_buys_the_open_border", kind: Kind::OptIn, enable: AdvancedAi::enable_foreign_site_buys_the_open_border, disable: AdvancedAi::disable_foreign_site_buys_the_open_border },
     // ---- append: g-k ------------------------------------------------
     // `gutted-rival-passes-the-edge`: a Domination lane's staged declaration
     // passes the peak edge against a target at 60% or less of its 30-turn
@@ -6401,6 +6407,15 @@ pub const GENES: &[Gene] = &[
     // Religion lane. Opt-in; see
     // `advanced/religion_lane_outlasts_the_denial.rs`.
     Gene { tag: "religion-lane-outlasts-the-denial", field: "religion_lane_outlasts_the_denial", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_lane_outlasts_the_denial, disable: AdvancedAi::disable_religion_lane_outlasts_the_denial },
+    // Tournament 8 2026-11-26, four Lv 8 Religion seats: the third city came
+    // 25-51 turns after the second (t24-49, t14-54, t15-66, t22-53). After
+    // the founding, `religion-seat-first-shrine` went ahead of the capital's
+    // Settler in three of them and no Settler was asked again until the
+    // early floor at t31-37. A two-city Religion seat's next Settler takes
+    // the best city's queue before the band turn, with the second-city
+    // gene's exceptions. Opt-in; see
+    // `advanced/religion_seat_third_city_first.rs`.
+    Gene { tag: "religion-seat-third-city-first", field: "religion_seat_third_city_first", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_third_city_first, disable: AdvancedAi::disable_religion_seat_third_city_first },
     // ---- append: s-s ------------------------------------------------
     // Kristina Deity 11-10 reached Nationalism at t122 with 8 cities on three
     // terrain classes and built no Open-Air Museum by t150 (+48 Culture and

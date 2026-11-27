@@ -521,6 +521,10 @@ function engineDebug(body) {
   } else if (["step", "play", "ahead"].includes(body.op) && engine.over && engine.turn >= engine.over.turn) {
     // Nor is a turn played past the end of a game that is over.
     error = "the game is over";
+  } else if (["step", "play"].includes(body.op) && typeof engine.jam === "number" && engine.turn + 1 >= engine.jam) {
+    // A turn the test says this world's engine cannot play (`engine.jam`),
+    // though its game is not over.
+    error = "this turn could not be played";
   } else if (body.op === "step") {
     step();
   } else if (body.op === "play") {
@@ -3559,6 +3563,8 @@ def check_doctor_strange(bar: Bar, address: str) -> None:
     words = ("[...document.querySelectorAll('#strange-hud [data-strange]')].filter(held => !held.parentElement.closest('[data-strange=\"numbers\"]'))"
              ".map(held => [held.dataset.strange, held.textContent.trim(), !!held.disabled])")
     said = {name: [text, off] for name, text, off in bar.ev(words) if name != "numbers"}
+    # To the fork and Futures are gone (operator 2026-11-26: "please drop to
+    # the fork and future to the end"): the steps come first under the title.
     # Create Branch is a picker: the open turn and each player strategy the
     # followed world does not seat. Before it, Following: every open world,
     # by its letter and its name, and between the two Branch Next Best and
@@ -3569,7 +3575,6 @@ def check_doctor_strange(bar: Bar, address: str) -> None:
                     "on10": ["+10", False], "base": ["A · StockB · Jack", False],
                     "next1": ["Branch Next Best", True], "next5": ["Branch 5 Next Best", True],
                     "branch": ["⑂ 1-(player strategy)1-Jack", False], "search": ["Autosearch", False],
-                    "fork": ["⏮ To the fork", True], "futures": ["🔮 Futures: off", False],
                     "swan": ["🦢 Generate Black Swan", False], "swan-kind": ["AnyPandemicInstant nuclear war", False],
                     "omen": ["", False], "all": ["All 14,000,605", True],
                     "say": ["One world so far. Play, and each player strategy takes it its own way", False],
@@ -3609,6 +3614,15 @@ def check_doctor_strange(bar: Bar, address: str) -> None:
                  " row.getBoundingClientRect().bottom <= title.getBoundingClientRect().top,"
                  " getComputedStyle(row.querySelector('.strange-new')).backgroundColor === getComputedStyle(play).backgroundColor]; })()")
     assert top == [[["A", "Home", "home", "_top"], ["A", "CIVVIS", "./", "_top"], ["BUTTON", "New game", None, None]], True, True], top
+    # The title a size up (operator 2026-11-26: "title can be a bit bigger"),
+    # on one line, and under it the steps first: To the fork and Futures are
+    # gone.
+    head = bar.ev("(() => { const card = document.querySelector('#strange-hud .strange-title'), title = card.querySelector(':scope > b'),"
+                  " deck = card.querySelector('.strange-time'), size = parseFloat(getComputedStyle(title).fontSize);"
+                  " return [Math.abs(size - Math.min(22, Math.max(16, innerWidth * .022))) < .5,"
+                  " title.getBoundingClientRect().height < size * 1.6, deck.firstElementChild.className,"
+                  " !!card.querySelector('[data-strange=\"fork\"], [data-strange=\"futures\"]')]; })()")
+    assert head == [True, True, "strange-steps", False], head
     inks = ("strange.order.map(letter => [strange.tint[letter], getComputedStyle(debugSplit.panes[letter].frame).borderLeftColor,"
             " getComputedStyle(document.querySelector(`#strange-hud [data-strange-world=\"${letter}\"]`)).borderTopColor])")
     assert bar.ev(inks) == [["#ff8f6b", "rgb(255, 143, 107)", "rgb(255, 143, 107)"], ["#6fd3e0", "rgb(111, 211, 224)", "rgb(111, 211, 224)"]]
@@ -3619,9 +3633,8 @@ def check_doctor_strange(bar: Bar, address: str) -> None:
     assert bar.ev("[strangeTree().splits === Infinity, strange.order.join(''), strange.follow]") == [True, "ab", "a"]
     bar.click('#strange-hud [data-strange="on1"]')
     bar.until(f"{both(2)} && strangeIdle() && strangeTree().splits === 1", "the two worlds part")
-    assert bar.ev("[document.querySelector('#strange-hud [data-strange=\"say\"]').textContent,"
-                  " document.querySelector('#strange-hud [data-strange=\"fork\"]').textContent, strangeTree().worlds.b.parent]") == \
-        ["A and B parted on turn 1", "⏮ To the fork · 1", "a"]
+    assert bar.ev("[document.querySelector('#strange-hud [data-strange=\"say\"]').textContent, strangeTree().worlds.b.parent]") == \
+        ["A and B parted on turn 1", "a"]
     # The band sets each yield a turn over what the world has made so far
     # (operator 2026-11-23: "lets track cumulative prod, science, culture,
     # gold, faith next to the current turn yields"), a column a world and a
@@ -3840,18 +3853,16 @@ def check_doctor_strange(bar: Bar, address: str) -> None:
     bar.ev(f"debugSplit.panes.b.frame.contentWindow.eval('engine.nukes = [{here + 5}]'), true")
     # Every world is asked at once, each for its own: none waits for another
     # to answer first.
-    asked = bar.ev("(() => { document.querySelector('#strange-hud [data-strange=\"futures\"]').click();"
+    asked = bar.ev("(() => { strange.futures = true; strangeAheadNext(); strangeForesee(); strangeDraw();"
                    " return [strange.futures, Object.keys(strange.peeks).sort().join(''), Object.values(strange.peeks).map(peek => peek.turns)]; })()")
     assert asked == [True, "ab", [4, 4]], asked
     held = "['a', 'b'].every(letter => strangeKept(letter) - debugSplit.panes[letter].turn >= STRANGE_AHEAD)"
     quiet = "Object.keys(strange.peeks).length === 0"
     bar.until(f"strange.futures && {quiet} && {held}", "each world's future is played ahead of the open turn")
     future = bar.ev(f"[debugSplit.panes.a.turn, debugSplit.panes.b.turn, {aheads('a')}, {aheads('b')}, strangeTree().worlds.a.last, strangeTree().worlds.b.last,"
-                    " debugSplit.panes.a.alerts, debugSplit.panes.b.alerts, debugSplit.panes.b.ahead.size,"
-                    " document.querySelector('#strange-hud [data-strange=\"futures\"]').textContent]")
+                    " debugSplit.panes.a.alerts, debugSplit.panes.b.alerts, debugSplit.panes.b.ahead.size]")
     assert future == [here, here, [4, 4, 4], [4, 4, 4], here + 12, here + 12, [],
-                      [{"turn": here + 5, "kind": "nuclear", "text": "Greece detonates a nuclear device"}], 12,
-                      "🔮 Futures: to the end of the game"], future
+                      [{"turn": here + 5, "kind": "nuclear", "text": "Greece detonates a nuclear device"}], 12], future
 
     # The whole of each world's future (operator 2026-11-24: "each branch in
     # doctor strange's civ 6 should simulate out to the end of the branch",
@@ -4450,6 +4461,61 @@ def check_doctor_strange_world_ends(bar: Bar, address: str) -> None:
     lost = card("a")
     assert [lost["shown"], lost["kicker"], lost["title"], lost["buttons"]] == \
         [True, "Defeat", "greece won", [["View map", False], ["Close", True]]], lost
+    assert not bar.dev.console, f"the page complained: {bar.dev.console}"
+
+
+def check_doctor_strange_time_runs_on(bar: Bar, address: str) -> None:
+    """Doctor Strange's CIVVIS: Play Time runs on past a world that cannot play a turn, until every world is done or it is stopped.
+
+    Operator, 2026-11-26: "play time should not stop. when clicked, it
+    should compute all the way out to the end or until stopped". A world
+    whose engine fails a turn (or that ends its game on a turn and says so
+    only after) used to stop time for every world, saying "B stopped on
+    turn N, short of turn N+1".
+    """
+    ready = "typeof drawDebugBar === 'function' && typeof engineState === 'function'"
+    said = "document.querySelector('#strange-hud [data-strange=\"say\"]').textContent"
+    pane = lambda letter, code: f"debugSplit.panes.{letter}.frame.contentWindow.eval({json.dumps(code)})"
+    bar.dev.call("Page.navigate", {"url": f"{address}?mode=strange"})
+    bar.until(f"{ready} && location.search === '?mode=strange' && state === null", "Doctor Strange's CIVVIS")
+    bar.ev("engine.scores = {1: 0}, strange.futures = false, render(engineState()), true")
+    bar.settled()
+    bar.until("debugSplit && debugSplit.shown && debugSplit.panes.a.turn === 1 && debugSplit.panes.b.turn === 1 && strangeIdle()",
+              "its two worlds are there")
+    # B's engine cannot play turn 4. Time runs on for A; B stands on turn 3
+    # and the deck says so. B is the world followed, and the turn on the line
+    # is time's, not the turn B stands on.
+    bar.ev(pane("b", "engine.jam = 4, true"))
+    bar.ev("strange.follow = 'b', strangeDraw(), true")
+    bar.click('#strange-hud [data-strange="play"]')
+    bar.until("debugSplit.panes.a.turn >= 8 && strange.run !== null", "time runs on for A while B cannot play turn 4", seconds=30)
+    assert bar.ev("[debugSplit.panes.b.turn, debugSplit.panes.b.stood]") == [3, 3]
+    assert bar.ev(said) == "B stopped on turn 3, short of turn 4. Time runs on for the rest", bar.ev(said)
+    bar.until("+document.querySelector('#strange-hud [data-strange=\"turn\"]').textContent >= 8", "the line says time's turn")
+    # Paused, and pressed again once B's engine can play the turn: B is asked
+    # for its turns again and comes back to the turn the others stand on.
+    bar.click('#strange-hud [data-strange="play"]')
+    bar.until("strange.run === null && strangeIdle()", "Pause stops time", seconds=30)
+    bar.ev(pane("b", "engine.jam = null, true"))
+    went = bar.ev("debugSplit.panes.a.turn")
+    bar.click('#strange-hud [data-strange="play"]')
+    bar.until(f"debugSplit.panes.a.turn >= {went + 2} && debugSplit.panes.b.turn === debugSplit.panes.a.turn && strange.run !== null",
+              "B plays again and keeps pace with A", seconds=30)
+    assert bar.ev("debugSplit.panes.b.stood") is None
+    bar.click('#strange-hud [data-strange="play"]')
+    bar.until("strange.run === null && strangeIdle()", "Pause stops time again", seconds=30)
+    # Only when no world is left that can play does time stop by itself.
+    turn = bar.ev("debugSplit.panes.a.turn")
+    bar.ev(pane("a", f"engine.jam = {turn + 3}, true"))
+    bar.ev(pane("b", f"engine.jam = {turn + 3}, true"))
+    bar.click('#strange-hud [data-strange="play"]')
+    bar.until("strange.run === null", "time stops when no world can play on", seconds=30)
+    assert bar.ev("[debugSplit.panes.a.turn, debugSplit.panes.b.turn]") == [turn + 2, turn + 2]
+    assert bar.ev(said) == f"A stopped on turn {turn + 2}, B stopped on turn {turn + 2}: no world could play on", bar.ev(said)
+    # A world that stood because its game was over, and says so only after,
+    # is over: once every world is, that is what is said.
+    bar.ev(f"strangeOver('a', {{turn: {turn + 2}, how: 'won'}}), strangeOver('b', {{turn: {turn + 2}, how: 'lost'}}), true")
+    assert bar.ev(f"[{said}, debugSplit.panes.a.stood, debugSplit.panes.b.stood]") == ["Every world's game is over", None, None]
     assert not bar.dev.console, f"the page complained: {bar.dev.console}"
 
 
@@ -5078,6 +5144,10 @@ def main() -> int:
               "turn, and no world's future is begun while a search runs.")
         check_doctor_strange_all(bar, f"http://127.0.0.1:{port}/")
         check_doctor_strange_world_ends(bar, f"http://127.0.0.1:{port}/")
+        check_doctor_strange_time_runs_on(bar, f"http://127.0.0.1:{port}/")
+        print("Doctor Strange's CIVVIS runs time on past a world that cannot play a turn: that world stands where "
+              "it stopped, the deck says so, the rest play on, Play asks it again, and time stops by itself only "
+              "when no world can play on.")
         check_doctor_strange_leaders_and_closing(bar, f"http://127.0.0.1:{port}/")
         print("Doctor Strange's CIVVIS lights the most of each of the worlds' numbers in gold on a wash of gold, "
               "every world that has it unless they all do, and each row of the numbers begins with an ✕ that "

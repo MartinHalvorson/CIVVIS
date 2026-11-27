@@ -414,6 +414,10 @@ impl AdvancedAi {
         /// re-opens the turn only when it shows a foreign unit or city; see
         /// `ai::player::take_turn`.
         exploration_replans_need_a_sighting => enable_exploration_replans_need_a_sighting, disable_exploration_replans_need_a_sighting;
+        /// Opt-in gene `foreign-site-buys-the-open-border`: a held Mead or
+        /// Darwin with no reachable site buys one Open Borders grant; see
+        /// `advanced/foreign_site_open_border.rs`.
+        foreign_site_buys_the_open_border => enable_foreign_site_buys_the_open_border, disable_foreign_site_buys_the_open_border;
         // ---- append: g-k --------------------------------------------
         /// `gutted-rival-passes-the-edge`: a staged declaration by a Domination
         /// lane passes the peak edge against a target at 60% or less of its
@@ -593,6 +597,10 @@ impl AdvancedAi {
         /// Religion lane keeps its plan against a Science counter; see
         /// `advanced/religion_lane_outlasts_the_denial.rs`.
         religion_lane_outlasts_the_denial => enable_religion_lane_outlasts_the_denial, disable_religion_lane_outlasts_the_denial;
+        /// Opt-in gene `religion-seat-third-city-first`: a two-city Religion
+        /// seat's next Settler before the first Shrine and Prayers; see
+        /// `advanced/religion_seat_third_city_first.rs`.
+        religion_seat_third_city_first => enable_religion_seat_third_city_first, disable_religion_seat_third_city_first;
         // ---- append: s-s --------------------------------------------
         /// Opt-in gene `siege-goes-on-the-forecast`: the siege train goes,
         /// holds and stands down on the capture forecast, and Siege rows rank
