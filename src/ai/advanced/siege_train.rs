@@ -2379,6 +2379,8 @@ impl AdvancedAi {
                 .filter(|city| !self.siege_stood_down_at(g, city.pos))
                 // `siege-goes-on-the-forecast`: nor does a hopeless one.
                 .filter(|city| !self.forecast_stood_down_at(g, city.pos))
+                // `recovery-holds-the-muster`: nor does one held at home.
+                .filter(|_| !self.recovery_holds_the_siege(g, cid))
                 .map(|_| cid)
         };
         g.city_at(group.objective).and_then(enemy_city).or_else(|| {

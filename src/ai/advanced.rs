@@ -9758,6 +9758,14 @@ pub struct AdvancedAi {
     /// religion leaves the Expansion half once it holds its core of cities.
     /// See `advanced/religion_core_ends_expansion.rs`. Off by default.
     religion_core_ends_expansion: bool,
+    /// `recovery-holds-the-muster`: while the plan reads Recovery (at war and
+    /// losing ground at home), a Siege row whose train has not invested the
+    /// city leaves the board and the train musters for no city. See
+    /// `advanced/recovery_holds_the_muster.rs`. Off by default.
+    recovery_holds_the_muster: bool,
+    /// `recovery-holds-the-muster`: the last turn the board was assessed
+    /// under Recovery. `None` with the gene off.
+    recovery_muster_held_turn: Option<u32>,
     // ---- append: s-s ------------------------------------------------
     /// `score-seat-raises-wonders`: a Score seat keeps a wonder going in its
     /// capital from turn 40 (Online) and in a second city from turn 90, as a
@@ -12020,6 +12028,9 @@ mod ranged_finish;
 /// Recon disruption: the pass picket. One opt-in gene; see
 /// `advanced/recon_disruption.rs`.
 mod recon_disruption;
+/// `recovery-holds-the-muster`: no siege muster while losing ground at
+/// home. Opt-in; see `advanced/recovery_holds_the_muster.rs`.
+mod recovery_holds_the_muster;
 /// The religious corps: the four opt-in genes for what a founder buys with
 /// Faith once its cities start slipping, and what it does with the units
 /// afterwards. See `advanced/religion.rs`.

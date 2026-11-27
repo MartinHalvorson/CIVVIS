@@ -585,6 +585,10 @@ impl AdvancedAi {
         /// lane follows its lane at its core of cities; see
         /// `advanced/religion_core_ends_expansion.rs`.
         religion_core_ends_expansion => enable_religion_core_ends_expansion, disable_religion_core_ends_expansion;
+        /// Opt-in gene `recovery-holds-the-muster`: no Siege row is mustered
+        /// while the plan reads Recovery; see
+        /// `advanced/recovery_holds_the_muster.rs`.
+        recovery_holds_the_muster => enable_recovery_holds_the_muster, disable_recovery_holds_the_muster;
         // ---- append: s-s --------------------------------------------
         /// Opt-in gene `siege-goes-on-the-forecast`: the siege train goes,
         /// holds and stands down on the capture forecast, and Siege rows rank
