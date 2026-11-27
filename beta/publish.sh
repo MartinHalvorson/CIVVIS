@@ -300,6 +300,11 @@ if [ -f "$tournaments_page" ]; then
   mkdir -p "$out/$tournaments_at"
   cp "$tournaments_page" "$out/$tournaments_at/index.html"
   fill tournaments_page.py "$out/$tournaments_at/index.html"
+  # Its ELO Rankings table over the benchmark is ELO Rankings' own record
+  # (operator 2026-11-27: "lets copy the player straegies table over to
+  # tournaments"), written by the same script into a slot of the same name;
+  # a revision whose page has no such slot is left as it is.
+  fill elo_page.py "$out/$tournaments_at/index.html"
   pages+=("$tournaments_at")
 else
   without+=(tournaments)

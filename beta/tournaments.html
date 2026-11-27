@@ -350,6 +350,41 @@
   .fine > summary:hover, .fine[open] > summary { color: var(--accent); }
   details.fine > .tour-legend { max-width: 860px; margin-top: 6px; }
 
+  /* ELO Rankings, over the benchmark on the right (operator 2026-11-27:
+     "lets copy the player straegies table over to tournaments. place on the
+     right side, above the official benchmark. Call this ELO Rankings. List
+     CIVVIS AI strategies, classic Firaxis AI, and dev all together in the
+     ranking. list Diplo off first (and default for sorting), and Diplo on col
+     to the right"): ELO Rankings' Player strategies table (`beta/elo.html`),
+     its Elo columns the other way round, every row numbered in one ranking.
+     Its rules are held to its card, the page's own `.rank-*` being others. */
+  #tour-elo .rank-list { margin: 0; padding: 0; list-style: none; }
+  #tour-elo .rank-row {
+    display: grid; grid-template-columns: 18px minmax(0, 1fr) 6.6em 6.6em; gap: 8px; align-items: baseline;
+    padding: 4px 0; border-top: 1px solid var(--border); font-size: 13px; line-height: 1.4;
+  }
+  #tour-elo .rank-n { color: var(--faint); font-size: 11.5px; font-variant-numeric: tabular-nums; text-align: right; }
+  #tour-elo .rank-name { min-width: 0; overflow: hidden; color: var(--text); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+  #tour-elo .rank-name small { margin-left: 6px; color: var(--muted); font-size: 11.5px; font-weight: 400; }
+  #tour-elo .rank-value { color: #fff; font-variant-numeric: tabular-nums; font-weight: 700; text-align: right; white-space: nowrap; }
+  #tour-elo .rank-value small { margin-left: 4px; color: var(--faint); font-size: 11px; font-weight: 400; }
+  #tour-elo .rank-value.is-none { color: var(--faint); font-weight: 400; }
+  #tour-elo .rank-head { padding: 0 0 3px; border-top: 0; }
+  #tour-elo .rank-sort {
+    padding: 2px 0; border: 0; background: none; color: var(--faint); cursor: pointer;
+    font: 500 11.5px/1.3 var(--sans); text-align: right; white-space: nowrap;
+  }
+  #tour-elo .rank-sort:hover { color: var(--text); }
+  #tour-elo .rank-sort[aria-pressed="true"] { color: #fff; font-weight: 700; }
+  #tour-elo .rank-sort[aria-pressed="true"]::after { content: " \25BE"; }
+  #tour-elo .rank-sort:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  @media (max-width: 479px) { #tour-elo .rank-row { grid-template-columns: 14px minmax(0, 1fr) 5.4em 5.4em; gap: 6px; } #tour-elo .rank-value small { display: block; margin-left: 0; } }
+  /* Civilization VI's own AI at a level, and a person among the agents. */
+  #tour-elo .rank-row.is-level .rank-name { color: var(--muted); }
+  #tour-elo .rank-row.is-person .rank-name { color: var(--gold); }
+  #tour-elo .rank-title a { color: inherit; text-decoration: none; }
+  #tour-elo .rank-title a:hover, #tour-elo .rank-title a:focus-visible { color: var(--accent); }
+
   /* The counts under the squares, a line each: wins by victory, losses by
      how they were lost, the record per level when the levels differ, and
      for a finished tournament its notes. */
@@ -574,6 +609,23 @@
         <p class="rank-note">
           Scheduled in <a href="https://github.com/MartinHalvorson/CIVVIS/blob/main/data/tournaments.json" target="_blank" rel="noreferrer">data/tournaments.json</a>.
         </p>
+      </section>
+      <section class="tour-section" id="tour-elo" hidden aria-labelledby="tour-elo-title">
+        <h2 class="rank-title" id="tour-elo-title"><a href="../charts/elo-rankings/" title="ELO Rankings: the ratings now and over time">ELO Rankings</a></h2>
+        <p class="rank-sub">CIVVIS AI strategies, the classic Firaxis AI and the people who play them, on one Elo scale. Our stand-in for Prince is 1000.</p>
+        <div class="rank-row rank-head">
+          <span></span><span></span>
+          <button type="button" class="rank-sort" data-sort="off" aria-pressed="true" title="The Diplomatic victory switched off. Sort by this column">Diplo off</button>
+          <button type="button" class="rank-sort" data-sort="on" aria-pressed="false" title="Every victory on. Sort by this column">Diplo on</button>
+        </div>
+        <ol class="rank-list"></ol>
+        <details class="fine">
+          <summary>How it is counted</summary>
+          <p class="rank-note">
+            <span data-rank-note></span>
+            <a href="https://github.com/MartinHalvorson/CIVVIS/blob/main/docs/ELO.md" target="_blank" rel="noreferrer">How the Elo works</a>
+          </p>
+        </details>
       </section>
       <section class="tour-section" id="tour-benchmark" hidden aria-labelledby="tour-benchmark-title">
         <h2 class="rank-title" id="tour-benchmark-title">Benchmark</h2>
@@ -918,6 +970,124 @@
       label.parentNode.style.setProperty(first ? "--lead" : "--trail",
         (first ? Math.ceil((wide + 4) / 14) * 14 : Math.ceil(wide + 5)) + "px");
     });
+  })();
+  </script>
+  <!-- ELO Rankings' figures: `beta/publish.sh` fills this slot with the
+       ELO Rankings page's own record (`beta/elo_page.py`), the same fits. -->
+  <script type="application/json" id="elo-data">null</script>
+  <script>
+  // ELO Rankings (`#tour-elo`): the CIVVIS AI strategies, Civilization VI's
+  // own AI at Lv 4 to Lv 8 and the people who play the agents in
+  // Civilization VI itself, in one ranking, a column for each reading of the
+  // games: with the Diplomatic victory switched off, then with every victory
+  // on. A column head sorts the list by it; it opens on Diplo off. Every
+  // figure arrives through textContent.
+  (() => {
+    let data = null;
+    try { data = JSON.parse(document.getElementById("elo-data").textContent); } catch (_) { return; }
+    if (!data || typeof data !== "object") return;
+    const el = (tag, cls, text) => {
+      const node = document.createElement(tag);
+      if (cls) node.className = cls;
+      if (text != null) node.textContent = text;
+      return node;
+    };
+    const count = (n) => Number(n).toLocaleString("en-US");
+    const day = (iso) => new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+    // An entrant that never lost is rated "at least", one that never won "at most".
+    const elo = (r) => (r.bound === "upper" ? "≤" : "") + Math.round(r.elo) + (r.bound === "lower" ? "+" : "");
+    const pm = (m) => (m ? "±" + Math.round(m) : "");
+    const VIEWS = { off: data.off || null, on: data };
+    const SIDES = ["off", "on"];
+    const SIDE_NAME = { on: "Diplo on", off: "Diplo off" };
+    const reading = (r) => ({ elo: r.elo, margin: r.margin, bound: r.bound, games: r.games, wins: r.wins });
+    const entries = new Map();
+    const entry = (key, base) => {
+      if (!entries.has(key)) entries.set(key, { ...base, on: null, off: null });
+      return entries.get(key);
+    };
+    for (const side of SIDES) {
+      const view = VIEWS[side];
+      if (!view) continue;
+      const rows = view.strategies && Array.isArray(view.strategies.rows) ? view.strategies.rows : [];
+      for (const r of rows) {
+        if (r.kind === "agent") entry("agent:" + r.id, { kind: "agent", name: r.name, tilt: r.tilt })[side] = reading(r);
+      }
+      const levels = view.firaxis && Array.isArray(view.firaxis.levels) ? view.firaxis.levels : [];
+      for (const l of levels) {
+        if (l.now) entry("level:" + l.level, { kind: "level", name: "Lv " + l.level + " " + l.name, tilt: "Classic Firaxis AI" })[side] = reading(l.now);
+      }
+      for (const p of Array.isArray(view.people) ? view.people : []) {
+        entry("person:" + p.name, { kind: "person", name: p.name, tilt: "Person" })[side] = reading(p);
+      }
+    }
+    const card = document.getElementById("tour-elo");
+    if (!card || !entries.size) return;
+    const ol = card.querySelector(".rank-list");
+    const value = (r, side) => {
+      const x = r[side];
+      if (!x) return el("span", "rank-value is-none", "–");
+      const figure = el("span", "rank-value", elo(x));
+      if (x.margin) figure.append(el("small", "", pm(x.margin)));
+      return figure;
+    };
+    const said = (r, side) => {
+      const x = r[side];
+      if (!x) return "";
+      const interval = x.margin ? "; 95% interval " + Math.round(x.elo - x.margin) + "–" + Math.round(x.elo + x.margin) : "";
+      return SIDE_NAME[side] + ": " + (r.kind === "level"
+        ? "our seat won " + x.wins + " of " + x.games + " benchmark games against five of it"
+        : r.kind === "person"
+        ? "won " + x.wins + " of " + x.games + (x.games === 1 ? " game" : " games") + " against the Civ AI Agents in Civilization VI"
+        : "won " + x.wins + " of " + x.games + " rated tables") + interval;
+    };
+    // Strongest first in the column sorted by; a row with no figure there
+    // follows every row that has one, in the other column's order. At a tie
+    // an agent stands above a level, and a level above a person.
+    const rank = { agent: 0, level: 1, person: 2 };
+    const order = (side) => {
+      const other = side === "on" ? "off" : "on";
+      return [...entries.values()].sort((a, b) =>
+        (!a[side] - !b[side])
+        || ((b[side] || b[other]).elo - (a[side] || a[other]).elo)
+        || (rank[a.kind] - rank[b.kind]) || a.name.localeCompare(b.name));
+    };
+    const show = (side) => {
+      let place = 0;
+      ol.textContent = "";
+      for (const r of order(side)) {
+        const item = el("li", "rank-row" + (r.kind === "level" ? " is-level" : r.kind === "person" ? " is-person" : ""));
+        item.title = [r.name, said(r, "off"), said(r, "on")].filter(Boolean).join("\n");
+        item.append(el("span", "rank-n", String(++place)));
+        const label = el("span", "rank-name", r.name);
+        if (r.tilt) label.append(el("small", "", r.tilt));
+        item.append(label, value(r, "off"), value(r, "on"));
+        ol.append(item);
+      }
+      for (const button of card.querySelectorAll(".rank-sort")) button.setAttribute("aria-pressed", String(button.dataset.sort === side));
+    };
+    for (const button of card.querySelectorAll(".rank-sort")) button.addEventListener("click", () => show(button.dataset.sort));
+    show(VIEWS.off ? "off" : "on");
+    const fitted = (side) => {
+      const s = VIEWS[side] && VIEWS[side].strategies;
+      if (!s) return "";
+      return SIDE_NAME[side] + ": " + (s.tables ? count(s.tables) + " " : "") + (s.players === 4 ? "four-player " : "")
+        + "simulator tables" + (s.turns ? " of " + s.turns + " turns" : "")
+        + (s.runs > 1 ? " over the last " + s.runs + " rating runs" : s.runs === 1 ? " from one rating run" : "")
+        + (s.latest_run ? ", newest " + s.latest_run : "") + ".";
+    };
+    const benchmark = SIDES.map((side) => VIEWS[side] && VIEWS[side].firaxis).filter(Boolean);
+    const newest = benchmark.map((f) => f.to).sort().pop();
+    const played = SIDES.flatMap((side) => (VIEWS[side] && Array.isArray(VIEWS[side].people) ? VIEWS[side].people : []));
+    const met = played.reduce((n, p) => n + p.games, 0);
+    card.querySelector("[data-rank-note]").textContent =
+      [fitted("off"), fitted("on")].filter(Boolean).join(" ")
+      + (met ? " People: " + count(met) + (met === 1 ? " hot seat game" : " hot seat games") + " against the agents in Civilization VI itself, each agent at its Elo when the game began." : "")
+      + (benchmark.length ? " The classic Firaxis AI: benchmark games of the last " + benchmark[0].days + " days through " + day(newest) + ", "
+        + SIDES.filter((side) => VIEWS[side] && VIEWS[side].firaxis)
+          .map((side) => count(VIEWS[side].firaxis.games) + " with the Diplomatic victory " + side).join(" and ") + "." : "")
+      + " ± is the 95% margin of error.";
+    card.hidden = false;
   })();
   </script>
 </body>

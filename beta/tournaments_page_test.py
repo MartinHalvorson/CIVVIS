@@ -23,6 +23,7 @@ import time
 import unittest
 import urllib.request
 
+import elo_page
 import home_rankings
 import tournaments_page
 from verify import Devtools, find_chrome, free_port, fresh_profile, tether
@@ -36,6 +37,33 @@ PUBLISH = (BETA / "publish.sh").read_text(encoding="utf-8")
 
 ON = {"players": 6, "map": "Continents.lua"}
 MATCH = {"players": 6, "map": "Continents.lua"}
+
+
+def rated(elo: float, margin: float, games: int, wins: int, **more) -> dict:
+    return {"elo": elo, "margin": margin, "games": games, "wins": wins, **more}
+
+
+def elo_record() -> dict:
+    """ELO Rankings' record (`beta/elo_page.py`) as the ELO Rankings table on
+    this page reads it: two agents, two Firaxis levels and one person, in
+    each reading. Diplo off and Diplo on order them differently."""
+    def reading(holy, jack, deity, king, dev):
+        return {
+            "strategies": {"rows": [
+                {"kind": "agent", "id": "holy", "name": "HolyRoller", "tilt": "Religion", **rated(holy, 30, 400, 250)},
+                {"kind": "agent", "id": "jack", "name": "JackOfAllTrades", "tilt": "Balanced", **rated(jack, 29, 400, 200)},
+                {"kind": "rung", "name": "Deity", "elo": 1955},
+            ], "tables": 900, "players": 4, "turns": 250, "runs": 3, "latest_run": "2026-11-27"},
+            "firaxis": {"days": 7, "games": 40, "to": "2026-11-27T10:00:00Z", "levels": [
+                {"level": 8, "name": "Deity", "now": rated(deity, 90, 30, 9)},
+                {"level": 5, "name": "King", "now": rated(king, 150, 10, 7)},
+                {"level": 4, "name": "Prince", "now": None},
+            ]},
+            "people": [{"name": "dev", **rated(dev, 180, 3, 2)}],
+        }
+    on = reading(holy=1547, jack=1155, deity=1042, king=595, dev=1210)
+    on["off"] = reading(holy=1543, jack=1191, deity=1452, king=799, dev=1100)
+    return on
 
 
 def run(tag: str, outcome: str, civ: str | None, minute: int, **more) -> dict:
@@ -399,6 +427,37 @@ class TournamentsPage(unittest.TestCase):
         self.assertNotIn("civvis.ai/experiments/", PAGE)
         # The page is authored lane-relative: nothing in it links the site root.
         self.assertEqual(re.findall(r'(?:href|src)="(/[^"]*)"', PAGE), [])
+
+    def test_elo_rankings_stands_over_the_benchmark_and_publishing_fills_it(self):
+        # Operator 2026-11-27: "lets copy the player straegies table over to
+        # tournaments. place on the right side, above the official benchmark.
+        # Call this ELO Rankings. List CIVVIS AI strategies, classic Firaxis
+        # AI, and dev all together in the ranking. list Diplo off first (and
+        # default for sorting), and Diplo on col to the right".
+        side = PAGE[PAGE.index('<div class="tour-side">'):PAGE.index('<p class="tour-legend">')]
+        self.assertLess(side.index('id="tour-scheduled"'), side.index('id="tour-elo"'))
+        self.assertLess(side.index('id="tour-elo"'), side.index('id="tour-benchmark"'))
+        self.assertIn('>ELO Rankings</a></h2>', side)
+        # Diplo off first, and pressed: the order it opens in.
+        heads = re.findall(r'class="rank-sort" data-sort="(\w+)" aria-pressed="(\w+)"[^>]*>([^<]+)<', side)
+        self.assertEqual(heads, [("off", "true", "Diplo off"), ("on", "false", "Diplo on")])
+        self.assertIn('show(VIEWS.off ? "off" : "on")', PAGE)
+        # Its figures are ELO Rankings' own record, written by the same
+        # script into a slot of the same name, once.
+        self.assertEqual(PAGE.count('<script type="application/json" id="elo-data">null</script>'), 1)
+        self.assertLess(PUBLISH.index('fill tournaments_page.py "$out/$tournaments_at/index.html"'),
+                        PUBLISH.index('fill elo_page.py "$out/$tournaments_at/index.html"'))
+        filled = elo_page.fill(tournaments_page.fill(PAGE, self.record()), elo_record())
+        self.assertEqual(json.loads(elo_page.SLOT.search(filled)[2]), elo_record())
+        self.assertEqual(json.loads(tournaments_page.SLOT.search(filled)[2]), self.record())
+        self.assertEqual(filled.count("</script>"), PAGE.count("</script>"))
+        # Its rules are its own card's: the page's own `.rank-row` and such
+        # are not touched.
+        style = re.sub(r"/\*.*?\*/", "", PAGE[:PAGE.index("</style>")], flags=re.S)
+        rules = [part.rsplit("{", 1)[0].split("{")[-1].strip() for part in style.split("}") if "{" in part]
+        for rule in rules:
+            if any(name in rule for name in (".rank-row", ".rank-list", ".rank-sort", ".rank-name", ".rank-value", ".rank-n ")):
+                self.assertTrue(all(part.strip().startswith("#tour-elo") for part in rule.split(",")), rule)
 
     def test_without_a_ledger_the_page_says_it_has_no_record(self):
         with tempfile.TemporaryDirectory() as empty:
@@ -862,7 +921,7 @@ class Drawn(unittest.TestCase):
         record["finished"] = record["finished"] + [single]
         cls.record = record
         page = cls.stage / "index.html"
-        page.write_text(tournaments_page.fill(PAGE, record), encoding="utf-8")
+        page.write_text(elo_page.fill(tournaments_page.fill(PAGE, record), elo_record()), encoding="utf-8")
         cls.address = page.as_uri()
         chrome = os.environ.get("CIVVIS_TEST_CHROME") or find_chrome()
         if not pathlib.Path(chrome).exists() and not shutil.which(chrome):
@@ -920,6 +979,36 @@ class Drawn(unittest.TestCase):
                 time.sleep(0.1)
             print(f"attempt {attempt}: the page had not drawn its rows after 15s; opening it again.")
         self.fail(f"the page never drew its rows ({self.dev.console[-5:]})")
+
+    def test_elo_rankings_ranks_everyone_together_diplo_off_first(self):
+        self.rows(1500)
+        read = """(() => { const card = document.getElementById('tour-elo');
+          const rows = [...card.querySelectorAll('.rank-list .rank-row')].map(row => [...row.children].map(cell => cell.firstChild ? cell.firstChild.textContent : ''));
+          const box = id => document.getElementById(id).getBoundingClientRect();
+          return {hidden: card.hidden, rows, pressed: [...card.querySelectorAll('.rank-sort')].map(b => [b.dataset.sort, b.getAttribute('aria-pressed')]),
+            right: [box('tour-scheduled').bottom <= box('tour-elo').top, box('tour-elo').bottom <= box('tour-benchmark').top,
+              box('tour-elo').left > innerWidth / 2], note: card.querySelector('[data-rank-note]').textContent}; })()"""
+        drawn = self.dev.evaluate(read)
+        self.assertFalse(drawn["hidden"])
+        self.assertEqual(drawn["right"], [True, True, True])
+        self.assertEqual(drawn["pressed"], [["off", "true"], ["on", "false"]])
+        # Every row numbered in one ranking, by Diplo off: the agents, the
+        # Firaxis levels and the person together; the Diplo off figure
+        # first, Diplo on to its right; a level with no figure is left out.
+        self.assertEqual(drawn["rows"], [
+            ["1", "HolyRoller", "1543", "1547"],
+            ["2", "Lv 8 Deity", "1452", "1042"],
+            ["3", "JackOfAllTrades", "1191", "1155"],
+            ["4", "dev", "1100", "1210"],
+            ["5", "Lv 5 King", "799", "595"],
+        ])
+        self.assertIn("Diplo off: 900 four-player simulator tables of 250 turns over the last 3 rating runs", drawn["note"])
+        # Diplo on sorts it the other way.
+        self.dev.evaluate("document.querySelector('#tour-elo [data-sort=\"on\"]').click(), true")
+        drawn = self.dev.evaluate(read)
+        self.assertEqual(drawn["pressed"], [["off", "false"], ["on", "true"]])
+        self.assertEqual([row[1] for row in drawn["rows"]], ["HolyRoller", "dev", "JackOfAllTrades", "Lv 8 Deity", "Lv 5 King"])
+        self.assertEqual(self.dev.console, [])
 
     def test_a_row_of_games_is_labelled_first_and_last(self):
         # Operator 2026-11-24: "in tourneys we should label the first game
