@@ -382,6 +382,8 @@ def join_game(segments: list[dict]) -> dict:
                                      "victory_target": last.get("victory_target")})
     for key in ("progress", "turns_short", "margin"):
         game[f"clock_{key}"] = lane.get(key) if lane else None
+    game["clock_rival_finish"] = ((lane.get("rival_clock") or {}).get("finish_turn")
+                                  if lane else None)
     turns_played = game["last_turn"] or 0
     game["kills_per_loss"] = (game["kills"] / max(game["losses"], 1)
                               if game["combat_seen"] else None)
@@ -582,6 +584,7 @@ SCREEN_KPIS = (
     ("launch_mars", "mars launch turn", "mean"),
     ("clock_progress", "lane progress at the end", "mean"),
     ("clock_margin", "clock margin, turns", "mean"),
+    ("clock_rival_finish", "rival finish turn", "mean"),
     ("abandoned_at_150", "abandoned at t150", "rate"),
     ("reached_t200", "reached t200", "rate"),
     ("won", "won", "rate"),

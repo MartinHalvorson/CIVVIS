@@ -11,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import civ6_ladder  # noqa: E402
 import clock_margin  # noqa: E402
+import live_ledger  # noqa: E402
 
 FAITH = "RELIGION_BUDDHISM"
 OTHER = "RELIGION_JUDAISM"
@@ -68,6 +69,7 @@ class ReligiousLane(unittest.TestCase):
         self.assertEqual(reading["rival_clock"]["turns"], 0.0)
         self.assertEqual(reading["rival_clock"]["player"], 2)
         self.assertEqual(lane["margin"], -20.0)
+        self.assertEqual((lane["finish_turn"], reading["rival_clock"]["finish_turn"]), (190.0, 170.0))
         # Ourselves and rival 1 whole, rival 2 two of the four it needs: 2.5 of 3.
         self.assertAlmostEqual(lane["progress"], round((1 + 1 + 2 / 4) / 3, 3))
 
@@ -106,6 +108,14 @@ class ReligiousLane(unittest.TestCase):
 
 
 class OtherLanes(unittest.TestCase):
+    def test_a_win_by_another_victory_tops_the_scale(self):
+        events = [SEAT, board(170, [], stages=2),
+                  {"kind": "victory", "turn": 170, "won": True, "team": 0,
+                   "victory_type": "VICTORY_DIPLOMATIC"}]
+        lane = clock_margin.clock_margin(events, "science")["lanes"]["science"]
+        self.assertEqual((lane["progress"], lane["turns_short"]), (1.0, 0.0))
+        self.assertEqual(lane["launches_short"], 2)
+
     def test_science_in_flight(self):
         events = [SEAT, board(170, [], stages=4, svp=10, rate=3), lost_to(2, 170)]
         lane = clock_margin.clock_margin(events, "science")["lanes"]["science"]
@@ -162,6 +172,20 @@ class LedgerWiring(unittest.TestCase):
         margin = clock_margin.run_margin(path.parent)
         self.assertEqual((margin["lane"], margin["turns_short"]), ("religious", 20.0))
         self.assertEqual(clock_margin.batch_summary([margin])["losses_within_20"], 1)
+
+    def test_the_live_ledger_grades_every_game_on_it(self):
+        path = self.write(ReligiousLane().game())
+        body = {"tag": "civvis-x", "_dir": path.parent, "victory_target": "religious",
+                "last_turn": 170}
+        game = live_ledger.join_game([body])
+        self.assertEqual((game["clock_turns_short"], game["clock_margin"]), (20.0, -20.0))
+        self.assertEqual(game["clock_rival_finish"], 170.0)
+        keys = [key for key, _, _ in live_ledger.SCREEN_KPIS]
+        for key in ("clock_progress", "clock_margin", "clock_rival_finish"):
+            self.assertIn(key, keys)
+        # A summary that carries the reading is read, not the log.
+        body["clock_margin"] = {"lanes": {"religious": {"progress": 0.5, "margin": 3.0}}}
+        self.assertEqual(live_ledger.join_game([body])["clock_margin"], 3.0)
 
     def test_no_lane_no_reading(self):
         self.assertIsNone(clock_margin.lane_margin({"clock_margin": {"lanes": {}}}))

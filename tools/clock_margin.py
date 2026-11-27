@@ -21,7 +21,10 @@ One reading per run, from the `state` frames the control mod already exports
 * **the rival's clock**: the fewest turns any rival still needed by the lanes
   the boards can time (its expedition, its culture count), 0 when one won;
 * **margin** = rival clock - our turns short: positive, we were ahead; at a
-  rival's win it is minus our turns short.
+  rival's win it is minus our turns short. Both clocks are also given as the
+  turn they run out (`finish_turn`, `rival_clock.finish_turn`): the rival's
+  is the instrument for a denial change, since it is defined in a loss (the
+  turn it won) and in a win (when it would have) alike.
 
 `progress` is the lane's completed share (0..1) and is always defined, so a
 batch where nobody gets near a turn estimate still grades.
@@ -304,7 +307,10 @@ def clock_margin(events: Iterable, lane: str | None = None) -> dict | None:
             continue
         reading, units = _lane_units(last, name)
         turns = None
-        if won and outcome.get("victory_type") == LANE_VICTORY[name]:
+        if won:
+            # A win by any victory is the top of the scale: a Science seat that
+            # wins the Diplomatic Victory is not "two launches short". The
+            # shortfall units stay as the boards read them.
             turns = 0.0
             reading["progress"] = 1.0
         elif name == "science":
@@ -319,8 +325,11 @@ def clock_margin(events: Iterable, lane: str | None = None) -> dict | None:
         reading["turns_short"] = turns
         lanes[name] = reading
     rival = _rival_clock(boards, outcome, us)
+    rival["finish_turn"] = (round(last["turn"] + rival["turns"], 1)
+                            if rival["turns"] is not None else None)
     for reading in lanes.values():
         short, clock = reading["turns_short"], rival["turns"]
+        reading["finish_turn"] = round(last["turn"] + short, 1) if short is not None else None
         reading["margin"] = round(clock - short, 1) if short is not None and clock is not None else None
     return {
         "turn": last["turn"],
