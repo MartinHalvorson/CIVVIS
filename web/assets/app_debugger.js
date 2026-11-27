@@ -5474,7 +5474,7 @@ const STRANGE_STYLE = `
     --strange-head: ${STRANGE_HEAD}px;
     /* Where the line of the open turn is and how wide the board is at it:
        the page's to say (\`strangeLayout\`). */
-    --strange-line: 50%; --strange-board: 160px;
+    --strange-line: 50%; --strange-board: 160px; --strange-turn-left: calc(50% + 110px);
   }
   html.strange #debugsplit .dbg-divider { display: none !important; }
   /* The worlds: a box each under the line of the open turn, in the colour of
@@ -5897,14 +5897,22 @@ const STRANGE_STYLE = `
      highway, or the steps, go back. */
   #strange-hud .strange-title .strange-say + .strange-deck { margin-top: 4px; }
   /* The open turn is the line across the window, and is written on it, with
-     its era: to one side of the board, so that the tree where it meets the
-     line is left in sight, and the worlds' card has the other side. */
+     its era, on the right of the tree, its left edge on the edge of the
+     green path the worlds' lines run down between the boxes, or past the
+     lanes on that side when they reach further (operator 2026-11-27: "please
+     move turn count to the right side of the box. and move in a bit (if
+     there aren't too many lines) to line up with the edge of the center
+     green path with all the historical lines"; it stood left of the board
+     before, off the window once a dozen worlds widened it). With so many
+     lanes right of the followed world that it would stand over them, it is
+     written left of the tree instead, the same way, where that is clear.
+     Where is the page's to say (\`--strange-turn-left\`, \`strangeTurnLeft\`). */
   #strange-hud .strange-now {
     position: absolute; bottom: calc(100% - var(--strange-line)); box-sizing: border-box; height: 38px; padding: 0 11px;
     display: flex; align-items: center; gap: 6px; white-space: nowrap; pointer-events: none;
     border: 1px solid ${STRANGE_GOLD}88; border-bottom: 0; border-radius: 11px 11px 0 0; background: #07110fe6;
   }
-  #strange-hud .strange-turn { right: calc(50% + var(--strange-board)); align-items: baseline; padding-top: 5px; color: #9fb3ab; font-weight: 700; letter-spacing: .12em; }
+  #strange-hud .strange-turn { left: var(--strange-turn-left); align-items: baseline; padding-top: 5px; color: #9fb3ab; font-weight: 700; letter-spacing: .12em; }
   #strange-hud .strange-turn b { color: ${STRANGE_GOLD}; font: 700 28px/1 Georgia, serif; letter-spacing: 0; font-variant-numeric: tabular-nums; }
   #strange-hud .strange-era { margin-left: 4px; color: #bccac4; letter-spacing: .08em; text-transform: uppercase; }
   #strange-hud .strange-era::before { content: "· "; }
@@ -6130,6 +6138,25 @@ function strangeGeometry() {
 }
 // How wide the board is on the line of the open turn, to either side.
 function strangeBoard(g) { return g.near * Math.max(2.7, g.reach * 2 + .7) + 40; }
+// Where the turn on the line stands, by its left edge: right of the middle,
+// on the edge of the green path the worlds' lines run down between the
+// boxes, half a lane out, unless the lanes on that side reach further, then
+// just past the outermost of them; never so far that it runs under the
+// column on the right, which comes down near the line, or off the window.
+// Where the lanes on the right leave it no room, it stands left of the tree
+// the same way, if the lanes on that side do; with neither side clear, on
+// the right as far out as there is room. `wide` is how wide the turn's chip
+// is, and `column` where that column stands, as last measured
+// (`strangeCards`).
+function strangeTurnLeft(g, wide = strange.turnWide || 0, column = strange.turnColumn || null) {
+  const open = strangeOpen(), mine = Math.max(0, open.indexOf(strange.follow));
+  const clear = lanes => Math.max(g.lane / 2, g.near * lanes + 16);
+  const right = g.cx + clear(open.length - 1 - mine), left = g.cx - clear(mine) - wide;
+  const most = (column && column.bottom > g.cy - 50 ? column.left - 10 : g.W - 12) - wide;
+  if (right <= most) return Math.round(right);
+  if (left >= 12) return Math.round(left);
+  return Math.round(Math.max(12, most));
+}
 function strangeY(g, turn, cam) {
   const ahead = turn - cam;
   return ahead >= 0 ? g.cy - g.up * (1 - Math.exp(-ahead / g.tauUp)) : g.cy + g.down * (1 - Math.exp(ahead / g.tauDown));
@@ -8076,6 +8103,9 @@ function strangeCards() {
   // as the worlds' numbers do on the right, unless the turn written on the
   // line would be under it there: then it stands over the turn.
   const turn = box(".strange-turn"), foot = box(".strange-send");
+  // What the turn on the line needs to stand clear of the column on the right.
+  strange.turnWide = Math.ceil(turn.width);
+  strange.turnColumn = {left: column.left, bottom: column.bottom};
   const lift = turn.right > foot.left - 10 && turn.left < foot.right + 10 ? Math.ceil(turn.height) + 8 : 0;
   if (hud.style.getPropertyValue("--strange-send-lift") !== `${lift}px`) hud.style.setProperty("--strange-send-lift", `${lift}px`);
   strange.floor = Math.ceil(Math.max(title.bottom + 46, title.bottom + 10 + foot.height + 12 + lift, versus.bottom + 170));
@@ -8108,8 +8138,10 @@ function strangeLayout() {
   };
   // The worlds' card stands on the line, and has moved if the line has.
   if (put(host, "--strange-line", `${g.cy}px`)) strangeCards();
-  // The turn on the line moves with the board, and All 14,000,605 with it.
+  // The turn on the line moves with the board and the lanes, and Send it
+  // with it (`strangeCards`).
   if (put(host, "--strange-board", `${Math.round(strangeBoard(g) + 6)}px`)) strangeCards();
+  if (put(host, "--strange-turn-left", `${strangeTurnLeft(g)}px`)) strangeCards();
   for (const letter of open) {
     const at = g.boxes[letter], pane = split.panes[letter], plate = hud.querySelector(`[data-strange-world="${letter}"]`);
     if (!at || !plate) continue;
