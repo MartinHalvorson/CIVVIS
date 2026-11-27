@@ -100,7 +100,13 @@
     "draws the civ among the civs suited to that lane. The newest build plays each game; Claude Opus 5.5 reviews every one, as it",
     "does the benchmark's, and a mistake that recurs is fixed in code as a gene and armed, so the agent improves during the tournament.",
     "Operator 2026-11-26: \"change experiments back to tournaments\": the page is Tournaments again, at /tournaments/, and each",
-    "series on it \"Tournament N\", numbered as before without the benchmark; the benchmark stays apart on the right."
+    "series on it \"Tournament N\", numbered as before without the benchmark; the benchmark stays apart on the right.",
+    "Operator 2026-11-27 ~06:30Z: \"add a third category to the tournament for lv 8 deity no diplo no religion. lets grind this hard.",
+    "self improve from our mistakes.\": from tag `civvis-t7-20261127T063345Z` the host's bench conductor plays one launch in two",
+    "(alternating with a tournament's games while one is played) as the benchmark's third category, Lv 8 Deity with the Diplomatic",
+    "and the Religious victories both off. They are benchmark games, tagged `civvis-t7-`, told apart only by their run summary",
+    "(`seat.victories.religious` false), and Win Analytics lists them in a third table, \"6P Continents Online, Diplo Off, Religion",
+    "Off\", none of them in the Diplo Off table (beta/research_page.py `rate_table`)."
   ],
   "descriptions": {
     "1": "Proof of concept, 10 game series",
@@ -275,8 +281,8 @@
       "name": "Lv 4 to Lv 8 against the Firaxis AI, 1 CIVVIS agent + 5 AI",
       "benchmark": true,
       "description": "Official Benchmark",
-      "idea": "Benchmark games, played whenever no tournament is: one CIVVIS agent against five Firaxis AI, half the games at Lv 8 and an eighth at each of Lv 4, 5, 6 and 7, half of each level's games with the Diplomatic victory allowed. A scheduled tournament pauses it, and it resumes when that tournament is done. Its win rate at each level is our primary benchmark against the Firaxis AI, tracked over time here and on Win Analytics. Claude Opus 5.5 reviews every game for our mistakes, and a mistake that recurs is fixed in code, so the agent improves as the benchmark runs.",
-      "conditions": "Lv 8 one game in two, Lv 4-7 one in eight each, 6P Continents Online, 1 CIVVIS + 5 AI, Diplomatic victory on in half the games",
+      "idea": "Benchmark games, played whenever no tournament is: one CIVVIS agent against five Firaxis AI, half the games at Lv 8 and an eighth at each of Lv 4, 5, 6 and 7, half of each level's games with the Diplomatic victory allowed. Since 2026-11-27 one launch in two is its third category instead: Lv 8 Deity with both the Diplomatic and the Religious victory off, a table of its own on Win Analytics. A scheduled tournament pauses it, and it resumes when that tournament is done. Its win rate at each level is our primary benchmark against the Firaxis AI, tracked over time here and on Win Analytics. Claude Opus 5.5 reviews every game for our mistakes, and a mistake that recurs is fixed in code, so the agent improves as the benchmark runs.",
+      "conditions": "Since 2026-11-27 one game in two Lv 8 with the Diplomatic and Religious victories off; the rest Lv 8 one in two, Lv 4-7 one in eight each, Diplomatic victory on in half; 6P Continents Online, 1 CIVVIS + 5 AI",
       "note": "Until 2026-11-23 its games were Lv 6, Lv 7, Lv 8 and Lv 8 in turn, all with the Diplomatic victory off.",
       "start": "civvis-t7-",
       "end": "civvis-t8-",
@@ -284,9 +290,9 @@
       "match": {"players": 6, "map": "Continents.lua"},
       "hyperparameters": {
         "Games": "Indefinite: played whenever no tournament runs; a scheduled tournament pauses it and it resumes after",
-        "AI level": "Since 2026-11-23 04:43: Lv 8 Deity 1 game in 2; Lv 4 Prince, Lv 5 King, Lv 6 Emperor and Lv 7 Immortal 1 in 8 each, dealt in shuffled blocks of 16. Before: Lv 6, Lv 7, Lv 8, Lv 8 in turn",
+        "AI level": "Since 2026-11-27 06:33: 1 launch in 2 is the third category, Lv 8 Deity, and the others are dealt as before. Since 2026-11-23 04:43: Lv 8 Deity 1 game in 2; Lv 4 Prince, Lv 5 King, Lv 6 Emperor and Lv 7 Immortal 1 in 8 each, dealt in shuffled blocks of 16. Before: Lv 6, Lv 7, Lv 8, Lv 8 in turn",
         "Players": "6: 1 CIVVIS agent + 5 Firaxis AI",
-        "Victory types": "Since 2026-11-23 04:43: Diplomatic allowed in half of each level's games and off in the other half; Science, Culture, Domination, Religious and Score always on. Before: all but Diplomatic",
+        "Victory types": "Since 2026-11-27 06:33, the third category (1 launch in 2): Diplomatic and Religious off; Science, Culture, Domination and Score on. The others, since 2026-11-23 04:43: Diplomatic allowed in half of each level's games and off in the other half; Science, Culture, Domination, Religious and Score always on. Before: all but Diplomatic",
         "Civ": "Random each game",
         "Strategy": "Our best strategy for the civ drawn",
         "Map": "Continents, Small, 9 city-states, a new map each game",

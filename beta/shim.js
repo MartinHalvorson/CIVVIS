@@ -505,7 +505,8 @@
       const answer = askHome(homeOf(pane), method, path, body);
       // The first thing a world asks seats it on the page's engine; the
       // engine is forked behind that request and the fork is the world's.
-      if (!home) changing(pane, forkOf(worker).then((made) => { homes.set(pane, made); counted(); }));
+      // A page out of sight is no world yet, and is given none (`unseen`).
+      if (!home && !unseen(pane)) changing(pane, forkOf(worker).then((made) => { homes.set(pane, made); counted(); }));
       return answer;
     };
     const waiting = moving.get(pane);
@@ -621,10 +622,23 @@
     }, [], target, false);
   }
 
-  // A world whose page has gone is not asked anything again.
+  // A world's page out of sight (`strange-shut`, `assets/app_debugger.js`)
+  // holds no world: a box that was closed, kept to be the next branch's, or
+  // a page made ahead for the next branch. Its engine is let go of, so the
+  // memory it held is given back (an engine's memory never shrinks while it
+  // lives), and it is given none until it is a world again: a branch made
+  // in it copies the world it branches, on a fork of that world's engine.
+  function unseen(pane) {
+    return [...document.querySelectorAll("iframe.strange-shut")].some((frame) => {
+      try { return paneNamed(frame.src) === pane; } catch (_) { return false; }
+    });
+  }
+
+  // A world whose page has gone, or is out of sight, is not asked anything
+  // again.
   if (HOMES) {
     setInterval(() => {
-      const shown = new Set([...document.querySelectorAll("iframe")].map((frame) => {
+      const shown = new Set([...document.querySelectorAll("iframe:not(.strange-shut)")].map((frame) => {
         try { return paneNamed(frame.src); } catch (_) { return null; }
       }));
       for (const [pane, home] of [...homes]) {
@@ -728,6 +742,12 @@
     // is its memory between two requests and never part-way through one.
     const { module, memory } = await tell(source, { fork: "leave", wasmUrl: WASM_URL }, [], "/forks", true);
     const bytes = memory.byteLength;
+    // Each fork is the engine's memory again, and a worker's memory never
+    // shrinks while it lives: no more are made than fit beside the engines
+    // the tab holds, under its ceiling (`tabEnginesMB`,
+    // `assets/app_debugger.js`), and always one. The answer says how many.
+    count = forksThatFit(bytes, count);
+    while (forks.length > count) release(forks.pop(), "that fork was let go");
     while (forks.length < count) {
       const fork = new Worker(WORKER_URL);
       fork.onmessage = answered;
@@ -738,6 +758,20 @@
     await Promise.all(forks.map((fork, at) => tell(
       fork, { fork: "adopt", module, memory }, at === forks.length - 1 ? [memory] : [], "/forks", true)));
     return { forks: forks.length, memory_bytes: bytes, ms: Math.round(performance.now() - started) };
+  }
+
+  // How many forks of an engine of `bytes` fit beside the engines this page
+  // holds (its own, each world's and each world's scout, as each last said),
+  // in the room the page gives every engine together; `count` where the page
+  // gives none.
+  function forksThatFit(bytes, count) {
+    const room = typeof window.tabEnginesMB === "function" ? Number(window.tabEnginesMB()) : Infinity;
+    if (!Number.isFinite(room)) return count;
+    const alive = new Set([worker, ...homes.values()]);
+    for (const held of scouts.values()) if (held.engine) alive.add(held.engine);
+    let held = 0;
+    for (const engine of alive) held += (meters.get(engine) || { bytes: 0 }).bytes;
+    return Math.max(1, Math.min(count, Math.floor((room * 1048576 - held) / Math.max(1, bytes))));
   }
 
   // Which fork a request names, if it names one, and the request without the name.

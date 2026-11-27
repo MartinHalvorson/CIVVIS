@@ -40,6 +40,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import civ6_ladder  # noqa: E402
 import civ6_run_report  # noqa: E402
+import clock_margin  # noqa: E402
 import genes  # noqa: E402
 
 CACHE_DEFAULT = Path.home() / ".cache" / "civvis" / "ledger"
@@ -369,6 +370,20 @@ def join_game(segments: list[dict]) -> dict:
     for project, label in civ6_run_report.SPACE_CHAIN:
         key = label.split()[0]  # earth, moon, mars, exoplanet
         game[f"launch_{key}"] = launch.get(project, ordered.get(project))
+    # The graded race (`tools/clock_margin.py`): the last segment's summary
+    # carries it since the harness wrote it; an older one is read from its log.
+    reading = last.get("clock_margin")
+    if reading is None and last.get("_dir") and events_path(last["_dir"]):
+        try:
+            reading = clock_margin.clock_margin(clock_margin.open_events(events_path(last["_dir"])))
+        except (OSError, EOFError, ValueError):
+            reading = None
+    lane = clock_margin.lane_margin({"clock_margin": reading,
+                                     "victory_target": last.get("victory_target")})
+    for key in ("progress", "turns_short", "margin"):
+        game[f"clock_{key}"] = lane.get(key) if lane else None
+    game["clock_rival_finish"] = ((lane.get("rival_clock") or {}).get("finish_turn")
+                                  if lane else None)
     turns_played = game["last_turn"] or 0
     game["kills_per_loss"] = (game["kills"] / max(game["losses"], 1)
                               if game["combat_seen"] else None)
@@ -567,6 +582,9 @@ SCREEN_KPIS = (
     ("launch_earth", "satellite launch turn", "mean"),
     ("launch_moon", "moon launch turn", "mean"),
     ("launch_mars", "mars launch turn", "mean"),
+    ("clock_progress", "lane progress at the end", "mean"),
+    ("clock_margin", "clock margin, turns", "mean"),
+    ("clock_rival_finish", "rival finish turn", "mean"),
     ("abandoned_at_150", "abandoned at t150", "rate"),
     ("reached_t200", "reached t200", "rate"),
     ("won", "won", "rate"),
@@ -643,7 +661,8 @@ def render_screen(report: dict) -> str:
 
 
 KPI_HEADER = ["game", "dif", "lane", "arm", "t", "end", "k/l", "loss/100t", "c@60",
-              "sci100", "sci150", "tech150", "boost", "insp", "sat", "moon", "mars"]
+              "sci100", "sci150", "tech150", "boost", "insp", "sat", "moon", "mars",
+              "lane%", "short", "margin"]
 
 
 def kpi_row(game: dict, gene: str | None = None) -> list[str]:
@@ -667,6 +686,9 @@ def kpi_row(game: dict, gene: str | None = None) -> list[str]:
         _fmt(game["launch_earth"]),
         _fmt(game["launch_moon"]),
         _fmt(game["launch_mars"]),
+        _fmt(game.get("clock_progress")),
+        _fmt(game.get("clock_turns_short"), 0),
+        _fmt(game.get("clock_margin"), 0),
     ]
 
 

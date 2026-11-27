@@ -41,10 +41,11 @@ shows. The page carries a second slot for it,
 filled here too (`videos`), so a new record reaches both pages from its one
 line in that file.
 
-Over the videos the home page shows the Firaxis Civ 6 AI benchmark, the two
+Over the videos the home page shows the Firaxis Civ 6 AI benchmark, the
 tables of win rates Win Analytics opens on (operator 2026-11-24: "above the
 videos, lets copy the Firaxis Civ 6 Benchmarks showing our win rate (both
-diplo on and off), same as the chart is now"). Its record is a slot of its
+diplo on and off), same as the chart is now"; since 2026-11-27 a third, the
+Deity games with the Religious victory off too). Its record is a slot of its
 own, `home-benchmark`, filled here (`benchmark`) with what
 `research_page.tournament_rates` works out for Win Analytics, so the two
 pages show one count.
@@ -529,10 +530,11 @@ BENCHMARK_SLOT = re.compile(
 def benchmark(source: pathlib.Path) -> dict | None:
     """The Firaxis Civ 6 AI benchmark as the home page shows it: the record
     Win Analytics is given as `tournament_rates` (CIVVIS's win rate at each
-    level over the tournaments' games, with the Diplomatic victory allowed
-    and with it off), and with it the levels' names (`rungs`: `8` is Deity),
-    which that page has from its level picker and this one has nowhere
-    else. `None` when the run ledger or the tournaments cannot be read."""
+    level over the tournaments' games, with the Diplomatic victory allowed,
+    with it off, and at Deity with the Religious victory off as well), and
+    with it the levels' names (`rungs`: `8` is Deity), which that page has
+    from its level picker and this one has nowhere else. `None` when the
+    run ledger or the tournaments cannot be read."""
     # Read here and not at the top of the file: that module reads this one.
     import research_page
 
