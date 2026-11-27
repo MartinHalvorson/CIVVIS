@@ -35,8 +35,10 @@ for a person's table as it does for an unattended one). The harness calls it
 when a named person's game ends with a victory or an elimination on record;
 a game that ended any other way (the person conceded, or closed the game) has
 no ending the game itself declared, and is recorded only when someone says who
-won: `--winner person` or `--winner civvis`. Recording the same game twice
-changes nothing; recording it again with a different answer corrects the line.
+won: `--winner person` or `--winner civvis` (`civ6_hotseat.py --stop --resign`
+does the second for the person who is giving the game up). Recording the same
+game twice changes nothing; recording it again with a different answer
+corrects the line.
 
 **The rating** is fitted where the page is built (`beta/elo_page.py`,
 `people`): each game is a table of the person and the agents they met, each
@@ -44,7 +46,8 @@ agent at its published Elo when the game began, on the model the agents
 themselves are fitted on. `ratings` prints that fit from this checkout.
 
 What is not recorded: a `--auto-human` test stub's game, an unattended table
-(no person at it), and a game whose person was not named (`--name`).
+(no person at it: refused here even under a `--name`), and a game whose person
+was not named (`--name`).
 """
 
 from __future__ import annotations
@@ -62,8 +65,10 @@ REPO = HERE.parent
 LEDGER_BRANCH = "ledger"
 #: The people's record on the ledger branch.
 PEOPLE_PATH = "people.jsonl"
-#: `winner` when the person won; any other value is the agent that did.
+#: `winner` when the person won; any other value is the agent that did, or
+#: `civvis` for a game given up at a table of several agents.
 PERSON = "person"
+CIVVIS = "civvis"
 #: The flagship plays a CIVVIS seat no `--agents` names (`civ6_hotseat.STRATEGY`).
 FLAGSHIP = "jack"
 #: `victory` for a game nobody won by the game's own rules.
@@ -87,6 +92,10 @@ def game_row(summary: dict, *, winner: str | None = None, victory: str | None = 
     """One game's line from its run summary. `winner` (`person`, `civvis`, or
     an agent at the table) overrides the ending on record, for a game that
     ended by concession."""
+    if summary.get("civvis_seats") and summary.get("person_seat") is None:
+        # `--name` here names the person at a table; it does not put one there.
+        raise NotRecorded("an unattended table: CIVVIS played every seat it lists and nobody "
+                          "was at it (civ6_hotseat.py --self-play / --civvis-seats)")
     person = name or summary.get("person")
     if not person:
         raise NotRecorded("no person is named for this game (civ6_hotseat.py --name, or --name here)")
@@ -96,13 +105,13 @@ def game_row(summary: dict, *, winner: str | None = None, victory: str | None = 
     seats = [int(seat) for seat in summary.get("civvis_seats") or []]
     result = summary.get("result") if isinstance(summary.get("result"), dict) else None
     if winner is not None:
-        if winner == "civvis":
-            if len(set(agents)) != 1:
-                raise NotRecorded(f"--winner civvis is ambiguous at a table of {', '.join(agents)}: "
-                                  "name the agent that won")
+        if winner == CIVVIS and len(set(agents)) == 1:
             winner = agents[0]
-        if winner != PERSON and winner not in agents:
-            raise NotRecorded(f"--winner {winner}: not `person` and not at the table ({', '.join(agents)})")
+        # At a table of several agents `civvis` stays as it is: the person
+        # lost, to no one agent in particular (a resignation).
+        if winner not in (PERSON, CIVVIS) and winner not in agents:
+            raise NotRecorded(f"--winner {winner}: not `person`, not `civvis` and not at the "
+                              f"table ({', '.join(agents)})")
         victory = victory or CONCESSION
         turn = (result or {}).get("turn") or summary.get("turn")
     elif result is None:
@@ -129,7 +138,9 @@ def game_row(summary: dict, *, winner: str | None = None, victory: str | None = 
     return {
         "tag": summary.get("tag"),
         "at": summary.get("started") or summary.get("utc"),
-        "ended": summary.get("utc"),
+        # The game's own word for when, where it gave one: the same line
+        # however often, and whenever, the summary is written.
+        "ended": (result or {}).get("at") or summary.get("utc"),
         "person": person,
         "leader": summary.get("leader"),
         "agents": agents,
@@ -228,6 +239,8 @@ def said(row: dict) -> str:
     """One game as a sentence."""
     against = ", ".join(row.get("agents") or [])
     won = row.get("winner") == PERSON
+    if row.get("winner") == CIVVIS:
+        row = {**row, "winner": against}
     how = str(row.get("victory") or "").removeprefix("VICTORY_").lower() or "?"
     return (f"{row.get('at') or '?'}  {row.get('person')} {'beat' if won else 'lost to'} "
             f"{against if won or len(row.get('agents') or []) == 1 else row.get('winner')}"
