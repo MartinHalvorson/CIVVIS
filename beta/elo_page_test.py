@@ -265,8 +265,10 @@ class Readings(unittest.TestCase):
         self.assertEqual([r["elo"] for r in record["strategies"]["rows"]], [1000.0])
         self.assertEqual([r["elo"] for r in record["off"]["strategies"]["rows"]], [1300.0])
         self.assertEqual(record["off"]["agents"][0]["series"], [["2026-11-20T00:00:00Z", 1300.0, 20, ""]])
-        # The diplo-off reading carries every field the stock one does.
-        self.assertEqual(set(record["off"]), set(record) - {"off", "unswitched"})
+        # The diplo-off reading carries every field the stock one does. The
+        # scale of cheating is the levels' own, in whichever reading.
+        self.assertEqual(set(record["off"]), set(record) - {"off", "unswitched", "cheating"})
+        self.assertEqual(record["cheating"], elo_page.cheating())
 
     def test_a_revision_from_before_the_diplo_off_fit_has_no_second_reading(self):
         record = self.record(self.tree(1000.0, None), self.games(False))
@@ -284,6 +286,48 @@ class Readings(unittest.TestCase):
         self.assertTrue(points)
         self.assertTrue(elo_page.agents(ROOT, points))
         self.assertEqual(elo_page.simulator(points)[0]["level"], 8)
+
+
+class Cheating(unittest.TestCase):
+    """Operator 2026-11-27: "expand the format to: Player. Scale of Cheating.
+    ELO (Diplo Off). ELO (Diplo On)", and under it "Prince 0, King 1,
+    Emperor 2, Immortal 3, Deity 4"."""
+
+    def test_the_scale_is_prince_0_to_deity_4(self):
+        self.assertEqual(elo_page.cheating(), [
+            {"level": 8, "name": "Deity", "scale": 4},
+            {"level": 7, "name": "Immortal", "scale": 3},
+            {"level": 6, "name": "Emperor", "scale": 2},
+            {"level": 5, "name": "King", "scale": 1},
+            {"level": 4, "name": "Prince", "scale": 0},
+        ])
+        # A line for each level rated, and no other.
+        self.assertEqual(sorted(line["level"] for line in elo_page.cheating()), elo_page.LEVELS)
+
+    def test_the_scale_counts_the_steps_of_bonus_the_game_hands_its_own_ai(self):
+        # The engine's ladder is the game's own (`data/difficulties.json`,
+        # `rules::DifficultySpec`): Prince hands the AI nothing, and each
+        # level over it one more step of every bonus. The scale is that
+        # count, so it cannot drift from what a level is.
+        ladder = json.loads((ROOT / "data" / "difficulties.json").read_text(encoding="utf-8"))
+        fair = ladder[elo_page.FAIR]
+        self.assertEqual([key for key in fair if key.startswith("ai_")], [])
+        step = ladder[ranks.CIV6_RUNGS[ranks.CIV6_RUNGS.index(elo_page.FAIR) + 1]]
+        self.assertGreater(step["ai_xp_pct"], 0)
+        for line in elo_page.cheating():
+            rung = ladder[line["name"].lower()]
+            self.assertEqual(rung["order"] - fair["order"], line["scale"], line["name"])
+            self.assertEqual(rung.get("ai_era_boosts", 0), line["scale"], line["name"])
+            self.assertEqual(rung.get("ai_xp_pct", 0), line["scale"] * step["ai_xp_pct"], line["name"])
+            self.assertEqual(rung.get("ai_yield_pct", {}).get("production", 0),
+                             line["scale"] * step["ai_yield_pct"]["production"], line["name"])
+
+    def test_the_record_carries_the_scale_whatever_the_ledger_holds(self):
+        # With no benchmark game read at all, every level still has its
+        # place on the scale: the table lists it without a figure.
+        record = Readings().record(Readings.tree(1000.0, 1300.0), [])
+        self.assertIsNone(record["firaxis"])
+        self.assertEqual(record["cheating"], elo_page.cheating())
 
 
 class People(unittest.TestCase):

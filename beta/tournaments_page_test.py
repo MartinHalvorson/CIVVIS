@@ -3,8 +3,9 @@
 
 The last class here opens the page in a browser, filled with a record, and
 reads the row of game squares as it is drawn: the labels at its two ends and
-where they stand. Set `CIVVIS_TEST_CHROME` to run it with a particular
-browser binary.
+where they stand. It reads the ELO Rankings table the same way, here and on
+the home page, which carries the same one. Set `CIVVIS_TEST_CHROME` to run it
+with a particular browser binary.
 """
 
 from __future__ import annotations
@@ -63,7 +64,23 @@ def elo_record() -> dict:
         }
     on = reading(holy=1547, jack=1155, deity=1042, king=595, dev=1210)
     on["off"] = reading(holy=1543, jack=1191, deity=1452, king=799, dev=1100)
+    # Every level rated has its place on the scale of cheating, the three
+    # with no figure here among them.
+    on["cheating"] = elo_page.cheating()
     return on
+
+
+def cut(page: str, start: str, end: str) -> str:
+    """The page from `start` through the first `end` after it."""
+    at = page.index(start)
+    return page[at:page.index(end, at) + len(end)]
+
+
+#: The ELO Rankings table, which this page and the home page both carry:
+#: where its rules, its markup and its script start and end in either.
+ELO_RULES = ("  .elo-rank { container: elo-rank / inline-size;", "  .elo-rank .rank-row.is-mods .rank-name { color: var(--faint); }\n")
+ELO_TABLE = ('        <div class="elo-rank">\n', '          <ol class="rank-list"></ol>\n        </div>\n')
+ELO_SCRIPT = ("  // ELO Rankings (`.elo-rank`)", "    card.hidden = false;\n  })();\n  </script>\n")
 
 
 def run(tag: str, outcome: str, civ: str | None, minute: int, **more) -> dict:
@@ -438,10 +455,29 @@ class TournamentsPage(unittest.TestCase):
         self.assertLess(side.index('id="tour-scheduled"'), side.index('id="tour-elo"'))
         self.assertLess(side.index('id="tour-elo"'), side.index('id="tour-benchmark"'))
         self.assertIn('>ELO Rankings</a></h2>', side)
+        # Later that day: "expand the format to: Player. Scale of Cheating.
+        # ELO (Diplo Off). ELO (Diplo On)". Four columns under those names,
+        # after the place in the ranking; in a narrow table a head keeps its
+        # last word or two.
+        head = cut(side, '<div class="rank-row rank-head">', "</div>")
+        columns = [re.sub(r"<[^>]+>", "", cell).strip() for cell in re.findall(r"<(?:span|button)\b[^>]*class=\"rank-(?:col|sort)[^>]*>(.*?)</(?:span|button)>\n", head)]
+        self.assertEqual(columns, ["Player", "Scale of Cheating", "ELO (Diplo Off)", "ELO (Diplo On)"])
+        self.assertIn('<span class="rank-wide">Scale of </span>Cheating</span>', head)
+        self.assertIn('<span class="rank-wide">ELO (</span>Diplo Off<span class="rank-wide">)</span></button>', head)
+        self.assertIn(".elo-rank .rank-wide { display: none; }", PAGE)
         # Diplo off first, and pressed: the order it opens in.
-        heads = re.findall(r'class="rank-sort" data-sort="(\w+)" aria-pressed="(\w+)"[^>]*>([^<]+)<', side)
-        self.assertEqual(heads, [("off", "true", "Diplo off"), ("on", "false", "Diplo on")])
+        heads = re.findall(r'class="rank-sort" data-sort="(\w+)" aria-pressed="(\w+)"', head)
+        self.assertEqual(heads, [("off", "true"), ("on", "false")])
         self.assertIn('show(VIEWS.off ? "off" : "on")', PAGE)
+        # A row's cells are in the heads' order, and under the players a row
+        # is kept for the mods ("Mods", the last line of the format).
+        self.assertIn('item.append(label, cheat(r), value(r, "off"), value(r, "on"));', PAGE)
+        self.assertIn('const MODS = { kind: "mods", name: "Mods", tilt: "None rated yet", cheating: null, on: null, off: null };', PAGE)
+        self.assertIn("for (const r of [...order(side), MODS]) {", PAGE)
+        # The scale of a level is the record's; an agent and a person are
+        # handed nothing.
+        self.assertIn('for (const c of Array.isArray(data.cheating) ? data.cheating : []) {', PAGE)
+        self.assertEqual(PAGE.count("cheating: 0 })[side] = reading("), 2)
         # Its figures are ELO Rankings' own record, written by the same
         # script into a slot of the same name, once.
         self.assertEqual(PAGE.count('<script type="application/json" id="elo-data">null</script>'), 1)
@@ -451,13 +487,45 @@ class TournamentsPage(unittest.TestCase):
         self.assertEqual(json.loads(elo_page.SLOT.search(filled)[2]), elo_record())
         self.assertEqual(json.loads(tournaments_page.SLOT.search(filled)[2]), self.record())
         self.assertEqual(filled.count("</script>"), PAGE.count("</script>"))
-        # Its rules are its own card's: the page's own `.rank-row` and such
+        # Its rules are its own table's: the page's own `.rank-row` and such
         # are not touched.
         style = re.sub(r"/\*.*?\*/", "", PAGE[:PAGE.index("</style>")], flags=re.S)
         rules = [part.rsplit("{", 1)[0].split("{")[-1].strip() for part in style.split("}") if "{" in part]
-        for rule in rules:
-            if any(name in rule for name in (".rank-row", ".rank-list", ".rank-sort", ".rank-name", ".rank-value", ".rank-n ")):
-                self.assertTrue(all(part.strip().startswith("#tour-elo") for part in rule.split(",")), rule)
+        held = [rule for rule in rules
+                if any(name in rule for name in (".rank-row", ".rank-list", ".rank-sort", ".rank-name", ".rank-value", ".rank-n ", ".rank-cheat", ".rank-col", ".rank-wide"))]
+        self.assertGreater(len(held), 15)
+        for rule in held:
+            self.assertTrue(all(part.strip().startswith(".elo-rank") for part in rule.split(",")), rule)
+
+    def test_the_home_page_carries_the_same_elo_rankings_table(self):
+        # Operator 2026-11-27: "put the elo chart at the top of home/ too,
+        # above the benchmarks." One table on two pages: its rules, its
+        # markup and the script that fills it are the same lines in both, so
+        # it cannot change on one and stay as it was on the other.
+        for start, end in (ELO_RULES, ELO_TABLE, ELO_SCRIPT):
+            self.assertEqual(PAGE.count(start), 1, start)
+            self.assertEqual(LANDING.count(start), 1, start)
+            self.assertEqual(cut(LANDING, start, end), cut(PAGE, start, end), start)
+        self.assertGreater(len(cut(PAGE, *ELO_RULES).split("\n")), 25)
+        self.assertGreater(len(cut(PAGE, *ELO_SCRIPT).split("\n")), 120)
+        # The script finds its table by what it is, not by the page's card.
+        script = cut(PAGE, *ELO_SCRIPT)
+        self.assertIn('const list = document.querySelector(".elo-rank");', script)
+        self.assertIn('const card = list && list.closest("section");', script)
+        self.assertNotIn("tour-elo", script)
+        self.assertNotIn("innerHTML", script)
+        # The home page's is filled as this page's is, from the same record,
+        # after its own.
+        self.assertEqual(LANDING.count('<script type="application/json" id="elo-data">null</script>'), 1)
+        self.assertLess(PUBLISH.index('fill home_rankings.py "$out/$home_at/index.html"'),
+                        PUBLISH.index('fill elo_page.py "$out/$home_at/index.html"'))
+        self.assertEqual(json.loads(elo_page.SLOT.search(elo_page.fill(LANDING, elo_record()))[2]), elo_record())
+        # How it is counted folds here, and says what the scale is. The home
+        # page has no room for it: the script writes it where there is one.
+        self.assertIn('const note = card.querySelector("[data-rank-note]");\n    if (note) {', script)
+        self.assertIn("Scale of cheating: the steps of its bonuses Civilization VI hands its own AI at a level, none at Prince and four at Deity", script)
+        self.assertIn("<span data-rank-note></span>", PAGE)
+        self.assertNotIn("data-rank-note", cut(LANDING, '<section class="res-block home-elo" id="elo"', "</section>"))
 
     def test_without_a_ledger_the_page_says_it_has_no_record(self):
         with tempfile.TemporaryDirectory() as empty:
@@ -923,6 +991,14 @@ class Drawn(unittest.TestCase):
         page = cls.stage / "index.html"
         page.write_text(elo_page.fill(tournaments_page.fill(PAGE, record), elo_record()), encoding="utf-8")
         cls.address = page.as_uri()
+        # The home page, which carries the same ELO Rankings table over its
+        # benchmark: filled with the same record, and a benchmark's.
+        bench = {"to": "2026-11-27 10:00Z", "days": [1, 3, 7, 30], "games": 12, "rungs": {"8": "Deity"}, "tables": {
+            name: {"games": 6, "levels": [{"level": 8, "windows": [{"days": days, "games": 6, "wins": 2} for days in (1, 3, 7, 30)]}]}
+            for name in ("on", "off", "religion_off")}}
+        home = cls.stage / "home.html"
+        home.write_text(elo_page.fill(home_rankings.fill(LANDING, bench, home_rankings.BENCHMARK_SLOT), elo_record()), encoding="utf-8")
+        cls.home = home.as_uri()
         chrome = os.environ.get("CIVVIS_TEST_CHROME") or find_chrome()
         if not pathlib.Path(chrome).exists() and not shutil.which(chrome):
             return
@@ -980,34 +1056,138 @@ class Drawn(unittest.TestCase):
             print(f"attempt {attempt}: the page had not drawn its rows after 15s; opening it again.")
         self.fail(f"the page never drew its rows ({self.dev.console[-5:]})")
 
+    #: The ELO Rankings table as it is drawn, on either page: each row's
+    #: cells, which head is pressed, and what "How it is counted" says.
+    ELO = """(() => { const list = document.querySelector('.elo-rank'), card = list.closest('section');
+      const cells = row => [...row.children].map(cell => cell.firstChild ? cell.firstChild.textContent : '');
+      const note = card.querySelector('[data-rank-note]');
+      return {hidden: card.hidden, id: card.id, rows: [...list.querySelectorAll('.rank-list .rank-row')].map(cells),
+        kinds: [...list.querySelectorAll('.rank-list .rank-row')].map(row => row.className.replace('rank-row', '').trim()),
+        heads: [...list.querySelectorAll('.rank-head > *')].map(head => head.innerText.trim()),
+        pressed: [...list.querySelectorAll('.rank-sort')].map(b => [b.dataset.sort, b.getAttribute('aria-pressed')]),
+        columns: [...list.querySelectorAll('.rank-list .rank-row')].every(row => getComputedStyle(row).gridTemplateColumns.split(' ').length === 5),
+        wide: document.documentElement.scrollWidth > innerWidth, note: note ? note.textContent : null}; })()"""
+
+    #: The fixture's players as the table lists them, by Diplo off: every
+    #: rated player numbered in one ranking, then the levels with no figure,
+    #: the highest first, then the row kept for the mods. A row is its place,
+    #: the player, its place on the scale of cheating, and its Elo with the
+    #: Diplomatic victory off and on.
+    BY_OFF = [
+        ["1", "HolyRoller", "0", "1543", "1547"],
+        ["2", "Lv 8 Deity", "4", "1452", "1042"],
+        ["3", "JackOfAllTrades", "0", "1191", "1155"],
+        ["4", "dev", "0", "1100", "1210"],
+        ["5", "Lv 5 King", "1", "799", "595"],
+        ["", "Lv 7 Immortal", "3", "–", "–"],
+        ["", "Lv 6 Emperor", "2", "–", "–"],
+        ["", "Lv 4 Prince", "0", "–", "–"],
+        ["", "Mods", "–", "–", "–"],
+    ]
+
+    def opened(self, address: str, width: int) -> None:
+        """A page of the stage opened in a window `width` wide, its ELO
+        Rankings table drawn."""
+        if not self.chrome:
+            self.skipTest("no Chrome on this machine to open the page in")
+        self.dev.call("Emulation.setDeviceMetricsOverride",
+                      {"width": width, "height": 1200, "deviceScaleFactor": 1, "mobile": False})
+        drawn = "document.readyState === 'complete' && location.href === %s && !!document.querySelector('.elo-rank .rank-list .rank-row')" % json.dumps(address)
+        for attempt in range(1, 5):
+            self.dev.call("Page.navigate", {"url": address})
+            deadline = time.time() + 15
+            while time.time() < deadline:
+                try:
+                    if self.dev.evaluate(drawn):
+                        return
+                except Exception:  # noqa: BLE001 - the page may be between two documents
+                    pass
+                time.sleep(0.1)
+            print(f"attempt {attempt}: the page had not drawn its ELO Rankings after 15s; opening it again.")
+        self.fail(f"the page never drew its ELO Rankings ({self.dev.console[-5:]})")
+
     def test_elo_rankings_ranks_everyone_together_diplo_off_first(self):
         self.rows(1500)
-        read = """(() => { const card = document.getElementById('tour-elo');
-          const rows = [...card.querySelectorAll('.rank-list .rank-row')].map(row => [...row.children].map(cell => cell.firstChild ? cell.firstChild.textContent : ''));
-          const box = id => document.getElementById(id).getBoundingClientRect();
-          return {hidden: card.hidden, rows, pressed: [...card.querySelectorAll('.rank-sort')].map(b => [b.dataset.sort, b.getAttribute('aria-pressed')]),
-            right: [box('tour-scheduled').bottom <= box('tour-elo').top, box('tour-elo').bottom <= box('tour-benchmark').top,
-              box('tour-elo').left > innerWidth / 2], note: card.querySelector('[data-rank-note]').textContent}; })()"""
-        drawn = self.dev.evaluate(read)
+        where = """(() => { const box = id => document.getElementById(id).getBoundingClientRect();
+          return [box('tour-scheduled').bottom <= box('tour-elo').top, box('tour-elo').bottom <= box('tour-benchmark').top,
+            box('tour-elo').left > innerWidth / 2]; })()"""
+        drawn = self.dev.evaluate(self.ELO)
         self.assertFalse(drawn["hidden"])
-        self.assertEqual(drawn["right"], [True, True, True])
+        self.assertEqual(drawn["id"], "tour-elo")
+        self.assertEqual(self.dev.evaluate(where), [True, True, True])
+        # Operator, later on 2026-11-27: "expand the format to: Player.
+        # Scale of Cheating. ELO (Diplo Off). ELO (Diplo On)".
+        self.assertEqual(drawn["heads"], ["", "Player", "Scale of Cheating", "ELO (Diplo Off)", "ELO (Diplo On)"])
+        self.assertTrue(drawn["columns"])
         self.assertEqual(drawn["pressed"], [["off", "true"], ["on", "false"]])
-        # Every row numbered in one ranking, by Diplo off: the agents, the
-        # Firaxis levels and the person together; the Diplo off figure
-        # first, Diplo on to its right; a level with no figure is left out.
-        self.assertEqual(drawn["rows"], [
-            ["1", "HolyRoller", "1543", "1547"],
-            ["2", "Lv 8 Deity", "1452", "1042"],
-            ["3", "JackOfAllTrades", "1191", "1155"],
-            ["4", "dev", "1100", "1210"],
-            ["5", "Lv 5 King", "799", "595"],
-        ])
+        # Every rated row numbered in one ranking, by Diplo off: the agents,
+        # the Firaxis levels and the person together, each with its place on
+        # the scale of cheating (an agent and a person 0, a level its steps
+        # over Prince); the Diplo off figure, then Diplo on to its right.
+        # A level with no figure keeps its row, unnumbered, under them, and
+        # under those the mods' row.
+        self.assertEqual(drawn["rows"], self.BY_OFF)
+        self.assertEqual(drawn["kinds"], ["", "is-level", "", "is-person", "is-level", "is-level", "is-level", "is-level", "is-mods"])
         self.assertIn("Diplo off: 900 four-player simulator tables of 250 turns over the last 3 rating runs", drawn["note"])
-        # Diplo on sorts it the other way.
+        self.assertIn("Scale of cheating: the steps of its bonuses Civilization VI hands its own AI at a level", drawn["note"])
+        # Diplo on sorts it the other way; the rows with no figure stay last.
         self.dev.evaluate("document.querySelector('#tour-elo [data-sort=\"on\"]').click(), true")
-        drawn = self.dev.evaluate(read)
+        drawn = self.dev.evaluate(self.ELO)
         self.assertEqual(drawn["pressed"], [["off", "false"], ["on", "true"]])
-        self.assertEqual([row[1] for row in drawn["rows"]], ["HolyRoller", "dev", "JackOfAllTrades", "Lv 8 Deity", "Lv 5 King"])
+        self.assertEqual([row[1] for row in drawn["rows"]],
+                         ["HolyRoller", "dev", "JackOfAllTrades", "Lv 8 Deity", "Lv 5 King", "Lv 7 Immortal", "Lv 6 Emperor", "Lv 4 Prince", "Mods"])
+        self.assertEqual([row[0] for row in drawn["rows"]], ["1", "2", "3", "4", "5", "", "", "", ""])
+        # A row says what its figures are when it is pointed at.
+        said = self.dev.evaluate("[...document.querySelectorAll('#tour-elo .rank-list .rank-row')].map(row => row.title)")
+        self.assertIn("Scale of cheating 4: 4 steps of the bonuses Civilization VI hands its own AI", said[3])
+        self.assertIn("Scale of cheating 0: plays with no bonus", said[0])
+        self.assertIn("Scale of cheating 0: Civilization VI hands its own AI no bonus at this level", said[7])
+        self.assertEqual(said[8], "Mods of Civilization VI’s AI: none is rated yet")
+        self.assertEqual(self.dev.console, [])
+
+    def test_the_table_keeps_its_columns_in_a_narrow_column_and_on_a_phone(self):
+        # The table is drawn by the room it is given: the right-hand column
+        # of a window just wide enough for two, and a phone's one column.
+        # The heads keep their last word or two, no name is cut short, and
+        # the page is no wider than the window.
+        for width in (1150, 390):
+            self.opened(self.address, width)
+            drawn = self.dev.evaluate(self.ELO)
+            self.assertEqual(drawn["heads"], ["", "Player", "Cheating", "Diplo Off", "Diplo On"], width)
+            self.assertTrue(drawn["columns"], width)
+            self.assertFalse(drawn["wide"], width)
+            self.assertEqual(drawn["rows"], self.BY_OFF, width)
+            cut_short = self.dev.evaluate("[...document.querySelectorAll('.elo-rank .rank-name')].filter(n => n.scrollWidth > n.clientWidth).map(n => n.firstChild.textContent)")
+            self.assertEqual(cut_short, [], width)
+        self.assertEqual(self.dev.console, [])
+
+    def test_the_home_page_draws_the_same_table_over_its_benchmark(self):
+        # Operator 2026-11-27: "put the elo chart at the top of home/ too,
+        # above the benchmarks."
+        self.opened(self.home, 1280)
+        drawn = self.dev.evaluate(self.ELO)
+        self.assertFalse(drawn["hidden"])
+        self.assertEqual(drawn["id"], "elo")
+        self.assertEqual(drawn["heads"], ["", "Player", "Scale of Cheating", "ELO (Diplo Off)", "ELO (Diplo On)"])
+        self.assertEqual(drawn["pressed"], [["off", "true"], ["on", "false"]])
+        self.assertEqual(drawn["rows"], self.BY_OFF)
+        self.assertTrue(drawn["columns"])
+        self.assertFalse(drawn["wide"])
+        # It is the page's first part: under the line the page opens on,
+        # over the benchmark, which is over the videos.
+        places = self.dev.evaluate("""(() => { const box = q => document.querySelector(q).getBoundingClientRect();
+          return [box('.intro').bottom <= box('#elo').top, box('#elo').bottom <= box('#bench').top, box('#bench').bottom <= box('#watch').top,
+            document.getElementById('bench').hidden, document.querySelector('main').firstElementChild.nextElementSibling.id]; })()""")
+        self.assertEqual(places, [True, True, True, False, "elo"])
+        # How it is counted is a link away, on ELO Rankings.
+        self.assertIsNone(drawn["note"])
+        self.assertEqual(self.dev.evaluate("document.querySelector('#elo .home-bench-more a').getAttribute('href')"), "../charts/elo-rankings/")
+        # On a phone it keeps its columns, and the page its width.
+        self.opened(self.home, 390)
+        drawn = self.dev.evaluate(self.ELO)
+        self.assertEqual(drawn["heads"], ["", "Player", "Cheating", "Diplo Off", "Diplo On"])
+        self.assertEqual(drawn["rows"], self.BY_OFF)
+        self.assertFalse(drawn["wide"])
         self.assertEqual(self.dev.console, [])
 
     def test_a_row_of_games_is_labelled_first_and_last(self):

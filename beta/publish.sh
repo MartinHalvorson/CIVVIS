@@ -297,6 +297,12 @@ if [ -f "$landing_page" ]; then
   # (2026-11-24) still carries it, and its own revision's copy of the script
   # fills it; since then it is written with that page's record, below.
   fill home_rankings.py "$out/$home_at/index.html"
+  # Over the benchmark stands ELO Rankings, the table Tournaments carries
+  # (operator 2026-11-27: "put the elo chart at the top of home/ too, above
+  # the benchmarks"): ELO Rankings' own record, written by the same script
+  # into a slot of the same name; a revision whose home page has no such
+  # slot is left as it is.
+  fill elo_page.py "$out/$home_at/index.html"
   pages+=("$home_at")
 else
   without+=(home)
