@@ -2626,11 +2626,14 @@ def record_summary(summary_path: Path, ledger: Path | None = None) -> bool:
 # or working tree of the management worktree it plays from, and never
 # force-pushes anything.
 LEDGER_BRANCH = "ledger"
+# martbot-1's noreply address, never a made-up one: GitHub credits a commit to
+# whoever owns its address (#5753 credited a stranger through `d@d`). Kept equal
+# to commit_identity.FLEET_IDENTITY by tools/test_commit_identity.py.
 LEDGER_IDENTITY = {
-    "GIT_AUTHOR_NAME": "civvis ladder",
-    "GIT_AUTHOR_EMAIL": "ladder@civvis.invalid",
-    "GIT_COMMITTER_NAME": "civvis ladder",
-    "GIT_COMMITTER_EMAIL": "ladder@civvis.invalid",
+    "GIT_AUTHOR_NAME": "martbot-1",
+    "GIT_AUTHOR_EMAIL": "285244636+martbot-1@users.noreply.github.com",
+    "GIT_COMMITTER_NAME": "martbot-1",
+    "GIT_COMMITTER_EMAIL": "285244636+martbot-1@users.noreply.github.com",
 }
 
 
