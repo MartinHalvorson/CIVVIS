@@ -395,7 +395,22 @@ impl AdvancedAi {
             .min(corps.len() / SCOUT_SHARE)
             .saturating_sub(seeking)
             .max(surplus);
-        if !corps.iter().take(scouts).any(|(_, id)| *id == uid) {
+        // `spreaders-spread-before-they-chart-2`: the quota after every
+        // searcher already out, from the spreaders that are not searching.
+        // `None` off.
+        let picked = match self.scouts_after_the_searchers(
+            g,
+            pid,
+            religion,
+            offensive,
+            &corps,
+            under_charted,
+            surplus,
+        ) {
+            Some(picked) => picked.contains(&uid),
+            None => corps.iter().take(scouts).any(|(_, id)| *id == uid),
+        };
+        if !picked {
             return false;
         }
         self.religion_seat_spreader_charts(g, pid, uid, religion, offensive)

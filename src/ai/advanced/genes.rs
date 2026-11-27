@@ -6686,6 +6686,15 @@ pub const GENES: &[Gene] = &[
     // seat from its third city; science heads keep their queue. Opt-in; see
     // `advanced/culture_monuments.rs`.
     Gene { tag: "science-seat-monuments", field: "science_seat_monuments", kind: Kind::OptIn, enable: AdvancedAi::enable_science_seat_monuments, disable: AdvancedAi::disable_science_seat_monuments },
+    // Version one armed, the reviewer still named "spreaders scout instead of
+    // spreading" in 35 of 40 Lv 8 tourney games (2026-11-27). Three searches
+    // each took their own share of the corps: in t8-20261127T064630Z at t90
+    // three last-charge Missionaries scouted, the two seekers were the
+    // corps' full spreaders (farthest from home) and none of seven spread
+    // with five known rival cities owed. The searchers share one budget and
+    // the seekers are the most spent spreaders. Opt-in; see
+    // `advanced/spreaders_spread_before_they_chart.rs`.
+    Gene { tag: "spreaders-spread-before-they-chart-2", field: "spreaders_spread_before_they_chart_2", kind: Kind::OptIn, enable: AdvancedAi::enable_spreaders_spread_before_they_chart_2, disable: AdvancedAi::disable_spreaders_spread_before_they_chart_2 },
     // ---- append: t-z ------------------------------------------------
     // Host previews of our religious strikes, 11-09: rival defenders carry +4
     // for difficulty (68 of 75) and +3/+6 Intel (55 of 75), which the fight

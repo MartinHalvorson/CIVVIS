@@ -10797,6 +10797,13 @@ pub struct AdvancedAi {
     /// shooters can fire. See `advanced/stacked_shooter_steps_out.rs`. Off by
     /// default.
     stacked_shooter_steps_out: bool,
+    /// `spreaders-spread-before-they-chart-2`: version one, and the corps'
+    /// searchers share one budget: the last-charge scouts already walking
+    /// the fog count against the seekers' and the scouts' quotas, the surplus
+    /// clause counts every searcher already out, and the seekers are the
+    /// spreaders with the fewest charges. See
+    /// `advanced/spreaders_spread_before_they_chart.rs`. Off by default.
+    spreaders_spread_before_they_chart_2: bool,
     // ---- append: t-z ------------------------------------------------
     /// `world-religion-condemns-the-faith`: our soldiers condemn a faith
     /// World Religion's option B names, at peace, and the agent's ballot asks
