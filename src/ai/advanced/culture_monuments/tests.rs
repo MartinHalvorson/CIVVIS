@@ -595,8 +595,10 @@ fn a_culture_seat_plays_as_before_with_the_science_gene_on() {
     assert_eq!(heads(&kept, &cities), heads(&busy, &cities));
 }
 
-/// At war with a major, a Science seat claims in its cities out of the
-/// rival's reach and holds the one with the rival's soldier beside it.
+/// At war with a major, a Science seat claims the idle queues of its cities
+/// out of the rival's reach and holds the one with the rival's soldier
+/// beside it; a soldier at the head (a Scout) and the plan's threatened city
+/// keep their queue.
 #[test]
 fn a_science_seat_claims_through_the_war_outside_the_soldiers_reach() {
     let (mut game, mut cities, monument) = at_war_with_a_soldier_beside_one_city();
@@ -608,6 +610,9 @@ fn a_science_seat_claims_through_the_war_outside_the_soldiers_reach() {
         .expect("fixture: the rival's soldier");
     let third = add_city(&mut game, &cities, Some(post), unit("scout"));
     cities.push(third);
+    for cid in &cities {
+        game.cities.get_mut(cid).unwrap().queue.clear();
+    }
     let plan = StrategicPlan {
         strategy: GrandStrategy::Science,
         target_player: None,
@@ -620,22 +625,27 @@ fn a_science_seat_claims_through_the_war_outside_the_soldiers_reach() {
 
     let mut off = game.clone();
     science_seat(false).claim_culture_monuments(&mut off, 0, &plan);
-    assert_eq!(heads(&off, &cities), vec![Some(unit("scout")); 3]);
+    assert_eq!(heads(&off, &cities), vec![None; 3]);
 
     let ai = science_seat(true);
     let mut on = game.clone();
     ai.claim_culture_monuments(&mut on, 0, &plan);
     assert_eq!(
         heads(&on, &cities),
-        vec![
-            Some(monument.clone()),
-            Some(unit("scout")),
-            Some(monument.clone())
-        ],
+        vec![Some(monument.clone()), None, Some(monument.clone())],
         "the cities out of reach claim; the one beside the soldier holds"
     );
     assert!(ai.culture_monument_holds(&on, 0, cities[0], &plan, &monument));
     assert!(ai.culture_monument_item(&on, 0, cities[1], &plan).is_none());
+
+    let mut soldier = game.clone();
+    soldier.cities.get_mut(&cities[2]).unwrap().queue = vec![unit("scout")];
+    ai.claim_culture_monuments(&mut soldier, 0, &plan);
+    assert_eq!(
+        soldier.cities[&cities[2]].queue.first(),
+        Some(&unit("scout")),
+        "a soldier keeps its queue at war"
+    );
 
     let mut threatened = game.clone();
     let plan = StrategicPlan {
@@ -645,7 +655,7 @@ fn a_science_seat_claims_through_the_war_outside_the_soldiers_reach() {
     ai.claim_culture_monuments(&mut threatened, 0, &plan);
     assert_eq!(
         threatened.cities[&cities[2]].queue.first(),
-        Some(&unit("scout")),
+        None,
         "the plan's threatened city keeps its queue"
     );
 }
