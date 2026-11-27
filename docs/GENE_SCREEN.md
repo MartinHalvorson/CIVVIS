@@ -76,17 +76,19 @@ gives the rung to every major alike. A rung reaches a major only through
 bonus start units and era boosts of `data/difficulties.json`. Prince's row
 carries none of them. In the ledger's games the difficulty therefore changes
 nothing for any major. What is left is the city-states' two starting
-Warriors (one more per rung from Emperor up) and genes that read the rung itself,
-which never fire at Prince (`capital-walls-at-any-ratio` and
-`immortal-skips-the-prophet-race` act at Immortal and Deity only). The
+Warriors (one more per rung from Emperor up), and the genes that read the
+rung: two act at Immortal and Deity only and so never fire in a ledger game
+(`capital-walls-at-any-ratio`, `immortal-skips-the-prophet-race`). The
 barbarians are the exception: they play Deity in every screen game
 (`SCREEN_BARBARIAN_DIFFICULTY`). At any rung under `--handicap all` the six
 seats are boosted alike, so a seat wins 1 in 6 by symmetry and a gene's
-on-off difference is measured against our own random genomes. `player_contract:
-observed-player-v1` is the information each seat may use (its own fog-honest
-view), `target_mix` the lanes a measured seat draws, and `native_competitions`
-whether the World Congress competitions play natively. None of them puts a
-Firaxis-level rival at the table.
+on-off difference is measured against our own random genomes. The header's
+other legs do not change that. `player_contract: observed-player-v1` is the
+information contract: each seat plans on its own observed view
+(`Game::player_decision_view`). `target_mix` is the lanes a measured seat
+draws from, and `native_competitions` whether the World Congress
+competitions play natively. None of them puts a Firaxis-level rival at the
+table.
 
 **What the Elo table's `civ6:<level>` rows are.** `strategy_elo` seats the
 `stock` agent (`CIV6_REFERENCE`, `AdvancedAi::new()`: the production genes,
@@ -99,8 +101,8 @@ Nothing of Firaxis's plays.
 **The live arrangement exists in the screen.** `--rivals firaxis-faithful
 --handicap rivals --rival-chairs 5` seats one measured seat against five
 chairs of the deployment genome that carry the rung's handicap (*The
-faithful field*, below), and the rival-only knobs under it calibrate those chairs' economy and space
-race. On this M4 Air a game cost 25–37 s of CPU. That is about the standard
+faithful field*, below), and the rival-only knobs under it calibrate those
+chairs' economy and space race. On this M4 Air a game cost 25–37 s of CPU. That is about the standard
 game's cost, but it measures one seat where the standard game measures six,
 so a gene's error over the same games is √6 ≈ 2.4 times wider.
 
@@ -122,6 +124,14 @@ simulator stand-ins miss in the same direction: they are far stronger than
 Civilization VI's own AI at every level. The Elo stand-in is 500–700 points
 too strong. The faithful field's rivals are our own deployment genome, so at
 Prince they are an equal field (1 in 6) where the live seat has won 39 of 39.
+
+The lanes do not transfer either. The Elo table rates `holy` (Religion) 353
+points above `moonshot` (Science), seven times the strength. Live, the two
+lanes win alike: 22 of 118 and 24 of 127 at Deity, 8 of 14 and 24 of 42 at
+Emperor. Fitted one lane at a time, the same Firaxis Deity AI reads 1423 ±82
+against our Religion seats and 1067 ±80 against our Science seats, the sim's
+own gap reflected back. A lane verdict from self-play is a statement about
+our agents against each other.
 
 **Why the continuous batch does not switch to the live arrangement.** Each
 reason is in the code:
