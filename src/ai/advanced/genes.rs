@@ -5889,6 +5889,13 @@ pub const GENES: &[Gene] = &[
     // never taking the seat's own Spaceport city or a Builder. See
     // `advanced/denial_spies_fill_every_slot.rs`.
     Gene { tag: "denial-spies-fill-every-slot-3", field: "denial_spies_fill_every_slot_3", kind: Kind::OptIn, enable: AdvancedAi::enable_denial_spies_fill_every_slot_3, disable: AdvancedAi::disable_denial_spies_fill_every_slot_3 },
+    // `city-campaign-3`: the war in hand. Live Deity 2026-11-18..27 (611
+    // games): 38 declarations on majors, every one a heretic strike or a
+    // launcher war; 6 ever struck a city, 2 took any (11 cities, one game),
+    // 25 ended in peace with nothing, 182 kills for 299 units lost; `city-
+    // campaign-2` (armed) never plans while any major war is open. See
+    // `advanced/city_campaign.rs` and `docs/OFFENSIVE_CAMPAIGN.md`.
+    Gene { tag: "city-campaign-3", field: "city_campaign_3", kind: Kind::OptIn, enable: AdvancedAi::enable_city_campaign_3, disable: AdvancedAi::disable_city_campaign_3 },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the

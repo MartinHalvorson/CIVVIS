@@ -3883,6 +3883,7 @@ impl AdvancedAi {
     pub fn enable_city_campaign(&mut self) {
         self.city_campaign = true;
         self.city_campaign_2 = false;
+        self.city_campaign_3 = false;
     }
 
     /// The twin of `enable_city_campaign`.
@@ -4852,11 +4853,31 @@ impl AdvancedAi {
     pub fn enable_city_campaign_2(&mut self) {
         self.city_campaign = false;
         self.city_campaign_2 = true;
+        self.city_campaign_3 = false;
     }
 
     /// The twin of `enable_city_campaign_2`.
     pub fn disable_city_campaign_2(&mut self) {
         self.city_campaign_2 = false;
+    }
+
+    /// Version two's staged opportunity at peace, and the war in hand: a
+    /// major war already open draws a one-city plan against that rival when
+    /// the field army carries the city's bill, keeps it for a twenty-turn
+    /// clock, offers peace once the city is ours, and holds the generic Siege
+    /// row against a rival none of whose cities the army can take. Opt-in
+    /// gene `city-campaign-3`; see `advanced/city_campaign.rs` and
+    /// `docs/OFFENSIVE_CAMPAIGN.md`.
+    pub fn enable_city_campaign_3(&mut self) {
+        self.city_campaign = false;
+        self.city_campaign_2 = false;
+        self.city_campaign_3 = true;
+    }
+
+    /// The twin of `enable_city_campaign_3`.
+    pub fn disable_city_campaign_3(&mut self) {
+        self.city_campaign_3 = false;
+        self.campaign_war_no_go.clear();
     }
 
     /// `doomed-blow-veto`: a unit whose every blow this turn would leave it

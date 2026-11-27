@@ -12,6 +12,7 @@ seats are named "CIVVIS jack 1..N" in the game.
     tools/civ6_hotseat.py --duel --name dev --leader LEADER_GILGAMESH   # 1v1, see below
     tools/civ6_hotseat.py --stop               # stop the automation, leave the game up
     tools/civ6_hotseat.py --stop --quit-game   # ...and close Civ VI (it saves every 10 turns)
+    tools/civ6_hotseat.py --stop --quit-game --resign   # ...and give the game up (--name: recorded)
     tools/civ6_hotseat.py --resume             # load the newest hotseat save and play on
     tools/civ6_hotseat.py --attach             # pick a running hotseat game back up
     tools/civ6_hotseat.py --status
@@ -49,9 +50,11 @@ table. ``--name dev`` puts your name on seat 0 (the hand-over screen and the
 score board say it), and when the game ends with a victory or an elimination
 it is put on the people's record on the ledger branch
 (``tools/people_elo.py record``), which the site's ELO Rankings page rates you
-from, among the agents. A game you concede has no ending of the game's own:
+from, among the agents: the moment the game is decided, not when Civ VI is
+closed. A game you give up has no ending of the game's own: ``--stop --resign``
+(with ``--quit-game`` to close Civ VI too) records it as CIVVIS's, and
 ``tools/people_elo.py record <run_dir> --winner civvis`` (or ``person``) says
-who won. ``--hold-start`` sets the staging room up and leaves START GAME to you
+who won one that was simply left. ``--hold-start`` sets the staging room up and leaves START GAME to you
 (to pick Teams, which have no text to read).
 
 Both sides, nobody at the Mac. ``--self-play`` seats a CIVVIS agent on every
@@ -221,14 +224,17 @@ def checkout_revision(checkout: Path = HERE.parent) -> str | None:
     return shown.stdout.strip() or None if shown.returncode == 0 else None
 
 
-def record_person_game(run_dir: Path, log) -> None:
+def record_person_game(run_dir: Path, log, resigned: bool = False) -> None:
     """A named person's finished game goes on the people's record
     (`tools/people_elo.py record`), which the ELO Rankings page rates them
     from. In its own process: a push that fails must not take the harness's
-    cleanup with it, and what it printed is in the log either way."""
+    cleanup with it, and what it printed is in the log either way. `resigned`:
+    the person gave the game up (`--stop --resign`), so it is CIVVIS's."""
+    command = [sys.executable, str(HERE / "people_elo.py"), "record", str(run_dir)]
+    if resigned:
+        command += ["--winner", "civvis", "--victory", "resignation"]
     try:
-        done = subprocess.run([sys.executable, str(HERE / "people_elo.py"), "record", str(run_dir)],
-                              capture_output=True, text=True, check=False, timeout=300)
+        done = subprocess.run(command, capture_output=True, text=True, check=False, timeout=300)
     except (OSError, subprocess.SubprocessError) as error:
         log(f"the game was NOT put on the people's record: {error}")
         return
@@ -236,7 +242,7 @@ def record_person_game(run_dir: Path, log) -> None:
         log(f"[people] {line}")
     if done.returncode != 0:
         log(f"the game was NOT put on the people's record (exit {done.returncode}); "
-            f"`tools/people_elo.py record {run_dir}` tries again")
+            f"`{' '.join(['tools/people_elo.py', *command[2:]])}` tries again")
 
 
 def person_name(args: argparse.Namespace) -> str | None:
@@ -483,13 +489,25 @@ def _norm(text: str) -> str:
     return re.sub(r"[^a-z0-9 ]", "", str(text).lower()).strip()
 
 
+#: The game window as `read_screen` last got it from the host, for a read the
+#: host does not answer.
+LAST_WINDOW: dict = {"bounds": None}
+
+
 def read_screen(run_dir: Path, name: str,
                 fallback: tuple | None = None) -> tuple[tuple | None, list[dict]]:
     """The game window and every text line in it, in screen points. `fallback`
     is the window as last read, for a step that already knows it: on a loaded
     host the geometry query (System Events) can go unanswered while the frame
-    itself can still be captured and read."""
-    bounds = play.game_window() or fallback
+    itself can still be captured and read. With neither, the window this
+    process last read stands in (`LAST_WINDOW`)."""
+    bounds = play.game_window()
+    if bounds is not None:
+        LAST_WINDOW["bounds"] = bounds
+    # Live 2026-11-27, twice in one evening on a loaded Mac: System Events
+    # "did not answer in 10s", then "Can't get process Civ6_Exe_Child". The
+    # window had not moved; the frame could be captured and read all along.
+    bounds = bounds or fallback or LAST_WINDOW["bounds"]
     if bounds is None:
         return None, []
     shot = run_dir / "setup" / f"{name}.png"
@@ -1038,7 +1056,16 @@ class Journal:
         return out
 
 
-def quit_civ(run_dir: Path, log: Log, timeout_s: float = 60.0) -> bool:
+#: `quit_civ`'s clock: the whole attempt, the seconds a question that is up
+#: is always given to be answered, how many unanswered looks before the menu
+#: quit is asked again, and the launcher's own stop behind it all.
+QUIT_SECONDS = 150.0
+QUIT_ANSWER_SECONDS = 30.0
+QUIT_ASK_AGAIN = 3
+QUIT_STOP_SECONDS = 90.0
+
+
+def quit_civ(run_dir: Path, log: Log, timeout_s: float = QUIT_SECONDS) -> bool:
     """Close Civ VI from its own menu and answer its question.
 
     In a hotseat game the menu quit opens the in-game pause menu with an inline
@@ -1046,12 +1073,21 @@ def quit_civ(run_dir: Path, log: Log, timeout_s: float = 60.0) -> bool:
     operator's turn, because every CIVVIS context stands down then. This is the
     operator's own request, so the harness answers it, then falls back to the
     launcher's ordinary stop.
+
+    The clock is a loaded host's. Live 2026-11-27 (selfplay-duel-20261127T0654Z,
+    load average 40, the Victory screen up): a look took ten seconds, not two,
+    the menu came up only on the second asking, and ARE YOU SURE? appeared on
+    the sixth look as the sixty seconds ran out; the launcher's stop then sent
+    a TERM that cannot cross that question, and Civ VI stayed up on a finished
+    game. So the quit is asked again every few unanswered looks, a question
+    that is up is always given the time to be answered, and the stop behind it
+    waits longer.
     """
     if not env.game_pids():
         return True
     env.request_macos_quit()
     deadline = time.monotonic() + timeout_s
-    step = 0
+    step = unanswered = 0
     while time.monotonic() < deadline:
         time.sleep(2.0)
         if not env.game_pids():
@@ -1062,6 +1098,7 @@ def quit_civ(run_dir: Path, log: Log, timeout_s: float = 60.0) -> bool:
         yes = find(rows, "YES")
         if yes and find(rows, "ARE YOU SURE", exact=False):
             play.click_at(yes[0]["x"], yes[0]["y"])
+            deadline = max(deadline, time.monotonic() + QUIT_ANSWER_SECONDS)
             continue
         # On a setup screen: the EXIT TO DESKTOP / OK / Cancel modal, whose OK
         # the live lane finds as Cancel mirrored about the heading.
@@ -1071,16 +1108,20 @@ def quit_civ(run_dir: Path, log: Log, timeout_s: float = 60.0) -> bool:
                 play.click_at(ok[0]["x"], ok[0]["y"])
             else:
                 play.confirm_exit_dialog(run_dir / "setup")
+            deadline = max(deadline, time.monotonic() + QUIT_ANSWER_SECONDS)
             continue
         # The pause menu without its question yet.
         exit_row = find(rows, "EXIT TO DESKTOP")
         if exit_row and find(rows, "RETURN TO GAME"):
             play.click_at(exit_row[0]["x"], exit_row[0]["y"])
+            deadline = max(deadline, time.monotonic() + QUIT_ANSWER_SECONDS)
             continue
-        if step % 5 == 0:
+        unanswered += 1
+        if unanswered % QUIT_ASK_AGAIN == 0:
+            log(f"[quit] Civ VI has shown no quit menu in {unanswered} looks; asking again")
             env.request_macos_quit()
     if env.game_pids():
-        launcher.stop(timeout_s=30)
+        launcher.stop(timeout_s=QUIT_STOP_SECONDS)
     return not env.game_pids()
 
 
@@ -1092,6 +1133,18 @@ def notify(title: str, message: str) -> None:
         subprocess.run(["osascript", "-e", script], capture_output=True, timeout=10)
     except (OSError, subprocess.SubprocessError):
         pass
+
+
+def ended_at(event: dict) -> dict:
+    """When the game said it ended, from the event's own clock (`t`, the
+    mod's seconds): the same answer however often the record is read back, so
+    a game's line on the people's record is written once. Nothing for an event
+    with no clock."""
+    try:
+        at = datetime.fromtimestamp(int(event["t"]), timezone.utc)
+    except (KeyError, TypeError, ValueError, OverflowError, OSError):
+        return {}
+    return {"at": at.strftime("%Y-%m-%dT%H:%M:%SZ")}
 
 
 class Monitor:
@@ -1191,13 +1244,15 @@ class Monitor:
             if event.get("victory_type"):
                 # The victory by name (`victory` is the host's own index).
                 self.result["victory_type"] = event["victory_type"]
+            self.result.update(ended_at(event))
             self.log(f"game over at turn {event.get('turn')}: team {team} won "
                      f"({'ours' if ours else 'a rival'}), victory {event.get('victory')}")
         elif kind == "defeat" and event.get("ours") and seat is not None:
             self.defeated.add(seat)
             self.log(f"{self.name(seat)} was eliminated at turn {event.get('turn')}")
             if self.result is None and self.defeated >= set(self.seats):
-                self.result = {"kind": "defeat", "turn": event.get("turn"), "ours": False}
+                self.result = {"kind": "defeat", "turn": event.get("turn"), "ours": False,
+                               **ended_at(event)}
                 self.log("every CIVVIS seat is eliminated")
 
     def on_base(self, event: dict) -> None:
@@ -1416,10 +1471,103 @@ def table_record(monitor: Monitor, args: argparse.Namespace, seats: list[int],
         "victories_off": monitor.victories_off, "victories": monitor.victories,
         "setup_fault": monitor.setup_fault,
         "seat_stalls": monitor.seat_stalls}
+    record.update(began)
     if not monitor.unattended:
         record.update({"person": person_name(args), "person_seat": HUMAN_SEAT,
-                       "leader": args.leader, **began})
+                       "leader": args.leader})
     return record
+
+
+#: What Civ VI was seen to hold with a late duel loaded (6.87 GB, 2026-11-27)
+#: and a little to breathe: with less memory than this to spare, macOS closes
+#: it. And the load average, per core, past which a look at the screen takes
+#: ten seconds and System Events stops answering (measured the same night).
+CIV_MEMORY_GB = 8.0
+LOAD_PER_CORE = 2.0
+
+
+def host_strain(run=subprocess.run) -> dict:
+    """What this Mac has to spare as a game starts: memory free (macOS's own
+    `memory_pressure` figure, as a share and in GB), swap in use, the load
+    averages and the cores. A reading the host does not give is `None`."""
+    strain: dict = {"memory_free": None, "memory_free_gb": None, "swap_used_mb": None,
+                    "swap_total_mb": None, "load": play.host_load(), "cores": os.cpu_count()}
+
+    def said(*command: str) -> str:
+        try:
+            return run(list(command), capture_output=True, text=True, check=False, timeout=20).stdout
+        except (OSError, subprocess.SubprocessError):
+            return ""
+
+    free = re.search(r"free percentage:\s*(\d+)%", said("memory_pressure"))
+    total = re.search(r"\d+", said("sysctl", "-n", "hw.memsize"))
+    if free:
+        strain["memory_free"] = int(free[1]) / 100
+        if total:
+            strain["memory_free_gb"] = round(strain["memory_free"] * int(total[0]) / 2 ** 30, 1)
+    swap = said("sysctl", "-n", "vm.swapusage")
+    for key, label in (("swap_total_mb", "total"), ("swap_used_mb", "used")):
+        found = re.search(rf"{label} = ([\d.]+)M", swap)
+        if found:
+            strain[key] = round(float(found[1]))
+    return strain
+
+
+def strain_warnings(strain: dict) -> list[str]:
+    """What to say before a game starts on a Mac with too little to spare.
+
+    Live 2026-11-27, one evening, a dozen sessions compiling beside the game:
+    macOS ran out of application memory with Civ VI at 6.87 GB and offered to
+    force-quit it (the game fell back to its main menu from the staging
+    room), and at a load average of 40 the window query went unanswered and
+    START GAME was taken as pressed. Neither looked like what it was."""
+    warnings = []
+    free = strain.get("memory_free_gb")
+    if free is not None and free < CIV_MEMORY_GB:
+        warnings.append(f"only {free:.1f} GB of memory is free ({strain['memory_free']:.0%}); Civ VI "
+                        f"takes about {CIV_MEMORY_GB - 1:.0f} GB and macOS closes it when there "
+                        "is none: quit other apps, or stop the builds, first")
+    load, cores = strain.get("load"), strain.get("cores")
+    if load and cores and load[0] > LOAD_PER_CORE * cores:
+        warnings.append(f"the load average is {load[0]:.0f} on {cores} cores; the setup's "
+                        "screen reads and clicks will be slow and may need a second try")
+    return warnings
+
+
+def strain_line(strain: dict) -> str:
+    free, load = strain.get("memory_free_gb"), strain.get("load")
+    return ("host: "
+            + (f"{free:.1f} GB memory free ({strain['memory_free']:.0%})" if free is not None
+               else "memory unread")
+            + (f", swap {strain['swap_used_mb']} of {strain['swap_total_mb']} MB"
+               if strain.get("swap_used_mb") is not None and strain.get("swap_total_mb") else "")
+            + (f", load {load[0]:.0f} on {strain.get('cores')} cores" if load else ""))
+
+
+#: In the run directory: the Civ VI process this run launched.
+LAUNCHED = "launched.json"
+
+
+def note_launched(run_dir: Path, pid: int) -> None:
+    (run_dir / LAUNCHED).write_text(json.dumps({"pid": int(pid), "utc": utc()}))
+
+
+def launched_here(run_dir: Path, running: list[int] | None = None) -> bool:
+    """Whether the Civ VI now running is the one this run launched: a harness
+    that comes up by `--attach` (the supervisor's, after the first one died)
+    closes it at the game's ending or on `--stop --quit-game` as the first
+    would have. A Civ VI the person opened and loaded a save into is not ours
+    to close, and a run with no record of a launch never closes one.
+
+    Live 2026-11-27 (selfplay-duel-20261127T0654Z): the harness was killed at
+    turn 31 and re-attached in four seconds, the game ended at turn 111, and
+    the re-attached harness, which had launched nothing itself, left Civ VI on
+    the Victory screen for the supervisor to re-attach to every 25 seconds."""
+    try:
+        pid = int(json.loads((run_dir / LAUNCHED).read_text())["pid"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return False
+    return pid in (env.game_pids() if running is None else running)
 
 
 def write_current(payload: dict) -> None:
@@ -1453,6 +1601,7 @@ def stop_command(args: argparse.Namespace) -> int:
         return 0
     run_dir = Path(current["run_dir"])
     (run_dir / "stop.json").write_text(json.dumps({"quit_game": bool(args.quit_game),
+                                                   "resign": bool(args.resign),
                                                    "utc": utc()}))
     os.kill(int(current["pid"]), signal.SIGTERM)
     deadline = time.monotonic() + 120
@@ -1529,6 +1678,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--stop", action="store_true", help="stop the running harness")
     ap.add_argument("--quit-game", action="store_true",
                     help="with --stop: also close Civ VI if the harness started it")
+    ap.add_argument("--resign", action="store_true",
+                    help="with --stop: you give the game up. A game under a --name that the "
+                         "game itself has not ended goes on the people's record as CIVVIS's")
     ap.add_argument("--status", action="store_true")
     ap.add_argument("--civvis-seats", type=int, default=None, metavar="N",
                     help="unattended: CIVVIS plays seats 0..N-1 and the other seats up to "
@@ -1685,7 +1837,7 @@ def run(args: argparse.Namespace) -> int:
     halt = gamelock.operator_halt_description()
     if halt:
         log(f"note: the unattended lanes stay halted ({halt}); this game is yours")
-    launched = False
+    launched = bool(args.attach) and launched_here(run_dir)
     # When the game began and at which revision: a re-attached harness keeps
     # the first one's answer (the installed config carries both).
     began = {"started": (attach_config or {}).get("HotseatStarted") or utc(),
@@ -1733,10 +1885,16 @@ def run(args: argparse.Namespace) -> int:
             log(f"game: {args.players} players on {args.map} {args.map_size}, "
                 f"{args.speed}, {args.difficulty}, turn limit {args.max_turns}; "
                 f"you: {args.leader or 'random leader'}; save every {args.save_every} turns")
+            # What the Mac has to spare, said before the game is started on it.
+            began["host"] = host_strain()
+            log(strain_line(began["host"]))
+            for warning in strain_warnings(began["host"]):
+                log(f"⚠ {warning}")
             apply_person_options(log)
             launcher.clear_run_logs()
             process = launcher.launch(stdout=run_dir / "stdout.log")
             launched = True
+            note_launched(run_dir, process.pid)
             log(f"Civ VI starting (pid {process.pid})")
             write_current({"pid": os.getpid(), "tag": args.tag, "run_dir": str(run_dir),
                            "started": utc(), "players": args.players, "launched_civ": True})
@@ -1787,6 +1945,7 @@ def run(args: argparse.Namespace) -> int:
         log("running. `tools/civ6_hotseat.py --stop` (or Ctrl-C) stops the automation; "
             "the game itself stays up.")
         waited_for_game = began_waiting = checked_start = time.monotonic()
+        posted = False
         while True:
             for bridge in bridges:
                 bridge.pump()
@@ -1815,6 +1974,16 @@ def run(args: argparse.Namespace) -> int:
                     monitor.poll()
                     time.sleep(0.5)
                 break
+            if monitor.result is not None and not posted and not monitor.unattended \
+                    and person_name(args):
+                # The person's game is decided: on the record now, not when
+                # they get round to closing Civ VI (the Victory screen offers
+                # "one more turn").
+                posted = True
+                (run_dir / "summary.json").write_text(json.dumps(
+                    {"tag": args.tag, "utc": utc(), "reason": "game over",
+                     **table_record(monitor, args, seats, began)}, indent=2))
+                record_person_game(run_dir, log)
             if not monitor.started and ours_to_start \
                     and time.monotonic() - checked_start > START_CHECK_SECONDS:
                 checked_start = time.monotonic()
@@ -1849,6 +2018,11 @@ def run(args: argparse.Namespace) -> int:
             request = json.loads((run_dir / "stop.json").read_text())
         except (OSError, ValueError):
             pass
+        # The record first: closing Civ VI can take minutes on a loaded host,
+        # and the supervisor reads the summary to know a game is over.
+        (run_dir / "summary.json").write_text(json.dumps(summary, indent=2))
+        if summary.get("person") and (summary.get("result") or request.get("resign")):
+            record_person_game(run_dir, log, resigned=not summary.get("result"))
         # An unattended table always closes Civ VI: the next table starts clean.
         quit_game = launched and (bool(request.get("quit_game"))
                                   or (args.auto_human and args.turns is not None)
@@ -1862,9 +2036,6 @@ def run(args: argparse.Namespace) -> int:
                 modinstall.uninstall()
             except Exception as error:  # noqa: BLE001 - cleanup must finish
                 log(f"could not remove the control mod: {error}")
-        (run_dir / "summary.json").write_text(json.dumps(summary, indent=2))
-        if summary.get("person") and summary.get("result"):
-            record_person_game(run_dir, log)
         gamelock.release()
         current = read_current()
         if current and current.get("pid") == os.getpid():
