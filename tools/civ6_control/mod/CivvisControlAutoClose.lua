@@ -266,17 +266,22 @@ end
 -- higher one is held hidden unless it asks to stay drawn
 -- (`AlwaysVisibleInQueue`: HotSeatBackground.lua:27 asks, to stay under the
 -- hand-over; FullscreenMapPopup.lua:167 asks, to stay under the MP pause),
--- and a hidden context does not tick. Under the cover that would leave the
--- hand-over unpressed and an announcement holding the game's event lock
--- (`ExclusivePopupManager:Lock`, PopupManager.lua:52-61) never closed, so the
--- CIVVIS seat's turn would stop. So in a cover game this context's global
--- `UIManager` is a proxy whose `QueuePopup` adds `AlwaysVisibleInQueue` when
--- this context queues itself: always for PlayerChange, and for every other
--- screen here only on a CIVVIS seat's turn. Drawn under the cover, it shows,
--- ticks and is closed exactly as before; the person sees none of it. Every
--- other call reaches the real object with the real `self`, and the proxy is
--- used only if it answers `IsInPopupQueue` the way the real one does.
--- The end screens are left as they ship.
+-- and a hidden context does not tick. Under the cover that would leave an
+-- announcement holding the game's event lock (`ExclusivePopupManager:Lock`,
+-- PopupManager.lua:52-61) never closed, so the CIVVIS seat's turn would stop.
+-- So in a cover game this context's global `UIManager` is a proxy whose
+-- `QueuePopup` adds `AlwaysVisibleInQueue` when this context queues itself on
+-- a CIVVIS seat's turn. Drawn under the cover, it shows, ticks and is closed
+-- exactly as before; the person sees none of it. Every other call reaches the
+-- real object with the real `self`, and the proxy is used only if it answers
+-- `IsInPopupQueue` the way the real one does.
+-- The hand-over (it sits above the cover and is pressed as it ships) and the
+-- end screens get no proxy at all. ⚠ The first cut also kept the hand-over
+-- drawn under a cover above it this way, and Civ VI exited within a second of
+-- a Start Turn press twice in two live games (CivvisHotseatCover.lua, WHERE IT
+-- SITS). `HotseatCoverQueue = false` (`civ6_hotseat.py --no-cover-queue`)
+-- turns the proxy off to tell its part apart: the screens then wait under the
+-- cover until it stands aside.
 CivvisCoverQueue = { installed = false, visible = 0 };
 function CivvisCoverQueue.listed(list, pid)
 	if type(list) ~= "table" or pid == nil then return false; end
@@ -286,11 +291,13 @@ function CivvisCoverQueue.listed(list, pid)
 	return false;
 end
 function CivvisCoverQueue.on()
-	return cfg.Hotseat == true and cfg.HotseatCover == true;
+	return cfg.Hotseat == true and cfg.HotseatCover == true and cfg.HotseatCoverQueue ~= false
+		and NAME ~= "PlayerChange" and not END_SCREENS[NAME];
 end
 function CivvisCoverQueue.wanted(name, pid)
-	if not CivvisCoverQueue.on() or END_SCREENS[name] then return false; end
-	if name == "PlayerChange" then return true; end
+	if not CivvisCoverQueue.on() or name == "PlayerChange" or END_SCREENS[name] then
+		return false;
+	end
 	return CivvisCoverQueue.listed(cfg.HotseatSeats, pid)
 		and not CivvisCoverQueue.listed(cfg.HotseatHumanSeats, pid);
 end
@@ -320,9 +327,7 @@ function CivvisCoverQueue.install()
 		if ok and want then
 			pass = CivvisCoverQueue.params(params);
 			CivvisCoverQueue.visible = CivvisCoverQueue.visible + 1;
-			if NAME ~= "PlayerChange" then
-				report("cover_queue_visible", string.format(',"count":%d', CivvisCoverQueue.visible));
-			end
+			report("cover_queue_visible", string.format(',"count":%d', CivvisCoverQueue.visible));
 		end
 		if self == proxy then self = real; end
 		return queue(self, context, priority, pass, ...);
@@ -1190,7 +1195,7 @@ end
 --    their own turns, and so is the operator.
 -- Every save the harness asks for is made here, at the start of the first
 -- CIVVIS seat's turn, through InGameTopOptionsMenu.lua:183's own call.
-CivvisHotseatScreen = { waited = 0, pressedFor = nil, savedTurn = -1 };
+CivvisHotseatScreen = { waited = 0, pressedFor = nil, savedTurn = -1, hiddenFor = nil };
 function CivvisHotseatScreen.listed(list, pid)
 	if type(list) ~= "table" or pid == nil then return false; end
 	for _, seat in ipairs(list) do
@@ -1278,19 +1283,50 @@ function CivvisHotseatScreen.press(pid, turn, via)
 	CivvisHotseatScreen.pressedFor = key;
 	return pressed;
 end
+-- A game with the cover (CivvisHotseatCover.lua). The hand-over sits above it
+-- and is pressed as it ships; all it may show over the cover is its menu
+-- button.
+function CivvisHotseatScreen.covered()
+	return cfg.Hotseat == true and cfg.HotseatCover == true;
+end
+function CivvisHotseatScreen.paused(pid)
+	local paused = false;
+	pcall(function() paused = PlayerConfigurations[pid]:GetWantsPause() == true; end);
+	return paused;
+end
 -- One press per seat and turn, after the screen has been up a moment (its
--- own slide-in) and retried every two seconds while it stays up.
+-- own slide-in) and retried every two seconds while it stays up. Over the
+-- cover, a hand-over this presses is hidden on its first frame, the way
+-- PlayerChange.lua hides it itself (:61 after Start Turn, :194 for "please
+-- wait"), and pressed on the same clock while its pause stands; its "please
+-- wait" line (:191) is hidden too (:172). Nothing else of it is touched.
 function CivvisHotseatScreen.frame(fDTime)
 	local dialog = false;
 	pcall(function() dialog = not Controls.PopupAlphaIn:IsHidden(); end);
 	local pid = CivvisHotseatScreen.localPlayer();
-	if not dialog or not CivvisHotseatScreen.mayPress(pid) then
+	local covered = CivvisHotseatScreen.covered();
+	if covered then
+		pcall(function()
+			if not Controls.PlayerChangingText:IsHidden() then
+				Controls.PlayerChangingText:SetHide(true);
+			end
+		end);
+	end
+	if not CivvisHotseatScreen.mayPress(pid) then
+		CivvisHotseatScreen.waited = 0;
+		return;
+	end
+	local turn = CivvisHotseatScreen.turn();
+	local key = pid .. ":" .. turn;
+	if dialog and covered then
+		pcall(function() Controls.PopupAlphaIn:SetHide(true); end);
+		CivvisHotseatScreen.hiddenFor = key;
+	elseif not dialog and not (covered and CivvisHotseatScreen.hiddenFor == key
+			and CivvisHotseatScreen.paused(pid)) then
 		CivvisHotseatScreen.waited = 0;
 		return;
 	end
 	CivvisHotseatScreen.waited = CivvisHotseatScreen.waited + (tonumber(fDTime) or 0);
-	local turn = CivvisHotseatScreen.turn();
-	local key = pid .. ":" .. turn;
 	local pause = CivvisHotseatScreen.pressedFor == key and 2.0
 		or (tonumber(cfg.HotseatPressSeconds) or 0.3);
 	if CivvisHotseatScreen.waited < pause then return; end
@@ -1298,11 +1334,11 @@ function CivvisHotseatScreen.frame(fDTime)
 	CivvisHotseatScreen.press(pid, turn, "dialog");
 end
 -- The cover's backstop (CivvisHotseatCover.lua, `nudge`): the seat now
--- playing still holds its hand-over pause 1.5 s in. Under the cover this
--- context is kept drawn (`CivvisCoverQueue`) and its own frame presses first;
--- were it ever held hidden its frame would stop, and an event still reaches
--- it. The same press, for the same seats, and only on a standing hand-over
--- pause the operator did not ask for.
+-- playing still holds its hand-over pause 1.5 s in. The hand-over sits above
+-- the cover and its own frame presses first; were it ever held hidden its
+-- frame would stop, and an event still reaches it. The same press, for the
+-- same seats, and only on a standing hand-over pause the operator did not
+-- ask for.
 function CivvisHotseatScreen.fromCover(pid, turn)
 	pid = tonumber(pid);
 	if pid == nil or pid ~= CivvisHotseatScreen.localPlayer()

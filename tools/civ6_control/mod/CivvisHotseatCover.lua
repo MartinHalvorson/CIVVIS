@@ -24,28 +24,34 @@
 --    ended their last turn, no unit or city of another seat left selected,
 --    the plain selection mode.
 --
--- WHERE IT SITS. A popup's place in the queue is its priority: the hand-over
--- (`PopupPriority.PlayerChange`) is drawn over its own background
--- (`HotSeatBackground`, queued after it, HotSeatBackground.lua:27) because
--- its priority is higher, and a lower popup stays drawn only with
--- `AlwaysVisibleInQueue`. Every screen a CIVVIS seat can raise is queued at
--- High or lower, or is not a popup at all (the leader screens), and the
--- hand-over is Utmost+3 (Loaders/PopupPriorityLoader_Base.lua:11-15). The
--- cover takes `PopupPriority.EndGameMenu` (Utmost+4): over the hand-over and
--- every CIVVIS screen, under the game menu (Utmost+5). It is itself queued
--- `AlwaysVisibleInQueue`, so it stays drawn under the open game menu.
--- The end of the game shares its priority and is never covered: the cover
--- lifts when EndGameMenu is queued (HotSeatBackground.lua:10-17 asks the same
--- question) or a team wins.
+-- WHERE IT SITS: exactly where the shipped hotseat backdrop does. A popup's
+-- place in the queue is its priority (Loaders/PopupPriorityLoader_Base.lua:11-15:
+-- HotSeatBackground Utmost+1, PausePanel +2, PlayerChange +3, EndGameMenu +4,
+-- the game menu +5), and a lower popup stays drawn only with
+-- `AlwaysVisibleInQueue`. The backdrop asks for that to stay under the
+-- hand-over (HotSeatBackground.lua:27); the cover asks for it too and takes
+-- the PausePanel slot, which a hotseat game never fills (Panels/PausePanel.lua:77,
+-- :86). So it is over the backdrop and over every screen a CIVVIS seat can
+-- raise (High or lower, or no popup at all, like the leader screens), and
+-- under the hand-over, the end of the game and the game menu. The hand-over
+-- is therefore queued, shown, pressed and dequeued exactly as it ships, never
+-- under another popup: over the cover CivvisControlAutoClose.lua hides only
+-- its dialog and its "please wait" line (what PlayerChange.lua:61/:194 and
+-- :172 hide themselves), so what shows over the cover is its menu button.
+-- ⚠ The first cut sat ABOVE the hand-over (the EndGameMenu slot) and kept the
+-- hand-over drawn under it with an injected `AlwaysVisibleInQueue`; Civ VI
+-- exited silently within a second of a Start Turn press in both live games
+-- tried that way (cover-live-1/-2, 2026-11-27), and not in a control without
+-- either. Neither is done any more.
 --
 -- WHAT KEEPS PLAYING UNDER IT. A screen queued under a higher popup is held
--- hidden, and a hidden context does not tick: the hand-over would never be
--- pressed and an announcement holding the game's event lock would never be
--- closed. So in a cover game every screen CivvisControlAutoClose.lua serves
--- queues itself `AlwaysVisibleInQueue` on a CIVVIS seat's turn, and the
--- hand-over always does (`CivvisCoverQueue` there): drawn, ticking and closed
--- exactly as before, under the cover. As a backstop this context's own clock
--- asks the hand-over to press (`LuaEvents.CivvisHotseatStartTurn`, which
+-- hidden, and a hidden context does not tick: an announcement holding the
+-- game's event lock would never be closed and the CIVVIS seat's turn would
+-- stop. So in a cover game every screen CivvisControlAutoClose.lua serves
+-- (but the hand-over and the end screens) queues itself `AlwaysVisibleInQueue`
+-- on a CIVVIS seat's turn (`CivvisCoverQueue` there): drawn, ticking and
+-- closed exactly as before, under the cover. As a backstop this context's own
+-- clock asks the hand-over to press (`LuaEvents.CivvisHotseatStartTurn`, which
 -- reaches a hidden context) when a seat's pause still stands 1.5 s in.
 --
 -- A STALL IS NEVER HIDDEN FOR GOOD. The HUD's seat watch
@@ -162,13 +168,19 @@ function CivvisHotseatCover.report(kind, fields)
 	end);
 end
 
--- Just under the game menu (see WHERE IT SITS above).
+-- Over the hotseat backdrop, under the hand-over (see WHERE IT SITS above).
 function CivvisHotseatCover.priority()
 	local priority = nil;
-	pcall(function() priority = PopupPriority.EndGameMenu or PopupPriority.Utmost; end);
+	pcall(function()
+		priority = PopupPriority.PausePanel
+			or (PopupPriority.HotSeatBackground and PopupPriority.HotSeatBackground + 1)
+			or PopupPriority.Utmost;
+	end);
 	return priority;
 end
--- HotSeatBackground.lua:10-17's own test for the end of the game.
+-- HotSeatBackground.lua:10-17's own test for the end of the game. The end
+-- screen is above the cover anyway; the cover still goes, so the map is there
+-- behind it for "one more turn".
 function CivvisHotseatCover.endGameUp()
 	local up = false;
 	pcall(function()

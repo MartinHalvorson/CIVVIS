@@ -227,6 +227,9 @@ def hotseat_config(args: argparse.Namespace, run_dir: Path, orders_db: Path) -> 
         # (CivvisControlAutoClose.lua, `CivvisHotseatScreen.autoStart`).
         "HotseatCover": person and not getattr(args, "no_cover", False),
         "HotseatAutoStart": person and not getattr(args, "keep_handover", False),
+        # Diagnostic: CIVVIS-turn screens keep their shipped queueing under the
+        # cover (CivvisControlAutoClose.lua, `CivvisCoverQueue`).
+        "HotseatCoverQueue": person and not getattr(args, "no_cover_queue", False),
         # The operator's seat's difficulty, and every jack seat's: hotseat
         # difficulty is per player (the staging room's Difficulty column).
         "PlayerDifficulty": args.difficulty,
@@ -1378,6 +1381,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--keep-handover", action="store_true",
                     help="leave Civ VI's hand-over screen for you to press Start Turn on "
                          "(default: it is pressed for you and your turn simply begins)")
+    ap.add_argument("--no-cover-queue", action="store_true",
+                    help="DIAGNOSTIC: under the cover, the jack seats' announcements keep "
+                         "their shipped queueing (they wait until the cover stands aside)")
     ap.add_argument("--resume", nargs="?", const="latest", default=None, metavar="SAVE",
                     help="start Civ VI and load a hotseat save instead of a new game: "
                          "a .Civ6Save path, or the newest hotseat save/autosave")

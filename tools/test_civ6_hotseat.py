@@ -663,15 +663,20 @@ class CoverTest(unittest.TestCase):
             with self.subTest(name):
                 config = self.config(**overrides)
                 self.assertEqual((config["HotseatCover"], config["HotseatAutoStart"]), want)
+        # The diagnostic: the screens under the cover keep their shipped queueing.
+        self.assertTrue(self.config()["HotseatCoverQueue"])
+        self.assertFalse(self.config(no_cover_queue=True)["HotseatCoverQueue"])
+        self.assertFalse(self.config(players=6, civvis_seats=2, leader=None)["HotseatCoverQueue"])
 
     def test_the_flags_reach_the_config(self) -> None:
         with patch.object(hotseat, "run", side_effect=lambda args: args) as ran, \
                 patch.object(hotseat, "read_current", return_value=None):
-            hotseat.main(["--no-cover", "--keep-handover"])
+            hotseat.main(["--no-cover", "--keep-handover", "--no-cover-queue"])
             args = ran.call_args.args[0]
-        self.assertTrue(args.no_cover and args.keep_handover)
+        self.assertTrue(args.no_cover and args.keep_handover and args.no_cover_queue)
         config = hotseat.hotseat_config(args, Path("/tmp/r"), Path("/tmp/r/o.sqlite"))
-        self.assertEqual((config["HotseatCover"], config["HotseatAutoStart"]), (False, False))
+        self.assertEqual((config["HotseatCover"], config["HotseatAutoStart"],
+                          config["HotseatCoverQueue"]), (False, False, False))
 
     def test_the_cover_context_is_installed_for_a_persons_game(self) -> None:
         out = self.install(self.config())

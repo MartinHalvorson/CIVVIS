@@ -15,7 +15,7 @@ local closer = read("CivvisControlAutoClose.lua")
 -- 1. The person's hand-over. ------------------------------------------------
 local screenBlock = assert(closer:match("(CivvisHotseatScreen = { .-\n)if NAME == \"PlayerChange\" then"),
 	"AutoClose defines CivvisHotseatScreen before the PlayerChange arm")
-local localPlayer, turn, dialogHidden = 0, 4, false
+local localPlayer, turn, dialogHidden, waitLineHidden = 0, 4, false, false
 local paused, active, password, held = {}, {}, {}, false
 local reports, presses, listeners = {}, 0, {}
 local function screenEnv(config)
@@ -26,7 +26,12 @@ local function screenEnv(config)
 		report = function(kind, fields) reports[#reports + 1] = { kind = kind, fields = fields or "" } end,
 		Game = { GetLocalPlayer = function() return localPlayer end,
 		         GetCurrentGameTurn = function() return turn end },
-		Controls = { PopupAlphaIn = { IsHidden = function() return dialogHidden end } },
+		Controls = {
+			PopupAlphaIn = { IsHidden = function() return dialogHidden end,
+			                 SetHide = function(self, hide) dialogHidden = hide end },
+			PlayerChangingText = { IsHidden = function() return waitLineHidden end,
+			                       SetHide = function(self, hide) waitLineHidden = hide end },
+		},
 		OnOk = function() presses = presses + 1 end,
 		PlayerConfigurations = setmetatable({}, { __index = function(_, pid)
 			return { GetWantsPause = function() return paused[pid] == true end,
@@ -112,6 +117,52 @@ listeners.startTurn = nil
 screenEnv(with({ HotseatAutoStart = true })).arm()
 assert(listeners.startTurn == nil, "no cover, no listener")
 
+-- Over the cover the hand-over is pressed as it ships, but never drawn: its
+-- dialog is hidden on its first frame and its "please wait" line with it.
+do
+	local covered = screenEnv(with({ HotseatAutoStart = true, HotseatCover = true }))
+	presses, reports = 0, {}
+	localPlayer, turn, active[1], paused[1] = 1, 9, true, true
+	dialogHidden, waitLineHidden = false, false
+	covered.frame(0.05)
+	assert(dialogHidden == true and waitLineHidden == true, "hidden on the first frame")
+	assert(presses == 0, "not pressed on the first frame")
+	covered.frame(0.1)
+	covered.frame(0.2)
+	assert(presses == 1, "pressed on the same clock as a shown dialog")
+	assert(reports[#reports].fields:find('"via":"dialog"', 1, true))
+	-- The pause stands (the press did not take): pressed again 2 s on.
+	covered.frame(1.0)
+	assert(presses == 1)
+	covered.frame(1.1)
+	assert(presses == 2 and reports[#reports].fields:find('"again":true', 1, true))
+	-- It took: nothing more is pressed however long the hand-over stays up.
+	paused[1] = false
+	for _ = 1, 20 do covered.frame(0.5) end
+	assert(presses == 2, "never pressed once unpaused")
+	-- "Please wait" between turns, whoever's turn ended: the line stays hidden.
+	waitLineHidden = false
+	localPlayer = 0
+	covered.frame(0.1)
+	assert(waitLineHidden == true)
+	-- With --keep-handover the person's own dialog is theirs, over no cover.
+	local keepOwn = screenEnv(with({ HotseatAutoStart = false, HotseatCover = true }))
+	dialogHidden, presses = false, 0
+	localPlayer, turn, paused[0] = 0, 10, true
+	for _ = 1, 10 do keepOwn.frame(0.2) end
+	assert(dialogHidden == false and presses == 0, "their dialog, their press")
+	-- Without the cover, the dialog is never touched.
+	local plain = screenEnv(with({ HotseatAutoStart = true }))
+	dialogHidden, waitLineHidden, presses = false, false, 0
+	localPlayer, turn, paused[1] = 1, 11, true
+	for _ = 1, 3 do plain.frame(0.2) end
+	assert(dialogHidden == false and waitLineHidden == false and presses == 1)
+	dialogHidden = true
+	for _ = 1, 20 do plain.frame(0.5) end
+	assert(presses == 1, "no dialog, no press: exactly as before")
+	paused[1], paused[0], dialogHidden = nil, nil, false
+end
+
 -- 2. Screens under the cover stay drawn on a CIVVIS seat's turn. ------------
 local queueBlock = assert(closer:match("(CivvisCoverQueue = { .-\n)if CivvisCoverQueue%.on%(%) then"),
 	"AutoClose defines CivvisCoverQueue")
@@ -154,8 +205,10 @@ local function queueEnv(config, name, manager)
 end
 local coverGame = with({ HotseatCover = true, HotseatSeats = { 1, 2 } })
 
--- Off in every game without the cover: the global is never touched.
-for _, config in ipairs({ {}, with({ HotseatCover = false }), { HotseatCover = true } }) do
+-- Off in every game without the cover, and with `--no-cover-queue`: the
+-- global is never touched.
+for _, config in ipairs({ {}, with({ HotseatCover = false }), { HotseatCover = true },
+		with({ HotseatCover = true, HotseatCoverQueue = false }) }) do
 	local manager = fakeManager()
 	local env = queueEnv(config, "TechCivicCompletedPopup", manager)
 	local ok, why = env.CivvisCoverQueue.install()
@@ -200,20 +253,14 @@ do
 	assert(manager.calls[#manager.calls].priority == 41)
 end
 
--- The hand-over is always drawn under the cover, the end screen never touched.
-do
+-- The hand-over and the end screen get no proxy at all: they sit above the
+-- cover and are queued as they ship.
+for _, name in ipairs({ "PlayerChange", "EndGameMenu" }) do
 	local manager = fakeManager()
-	local env, me = queueEnv(coverGame, "PlayerChange", manager)
-	assert(env.CivvisCoverQueue.install())
-	localPlayer = 0
-	env.UIManager:QueuePopup(me, 103)
-	assert(manager.calls[1].params.AlwaysVisibleInQueue == true, "the person's own hand-over too")
-	local endManager = fakeManager()
-	local endEnv, endMe = queueEnv(coverGame, "EndGameMenu", endManager)
-	assert(endEnv.CivvisCoverQueue.install())
-	localPlayer = 1
-	endEnv.UIManager:QueuePopup(endMe, 104)
-	assert(endManager.calls[1].params == nil, "the end screen is queued as it ships")
+	local env = queueEnv(coverGame, name, manager)
+	local ok, why = env.CivvisCoverQueue.install()
+	assert(ok == false and why == "off" and env.UIManager == manager, name)
+	assert(env.CivvisCoverQueue.wanted(name, 1) == false, name)
 end
 
 -- Fail open: a proxy that does not answer like the real object is not used.

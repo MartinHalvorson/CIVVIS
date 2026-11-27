@@ -185,9 +185,13 @@ do
 	handlers.LoadScreenClose()
 	assert(#did.queued == 1 and cover.up, "covered over their own hand-over")
 	local q = did.queued[1]
-	assert(q.priority > PRIORITY.PlayerChange and q.priority < PRIORITY.InGameTopOptionsMenu,
-		"over the hand-over, under the game menu")
-	assert(q.params.AlwaysVisibleInQueue == true, "stays drawn under the open game menu")
+	-- Over the shipped hotseat backdrop and every CIVVIS screen (High and
+	-- below), UNDER the hand-over: it is pressed exactly as it ships.
+	assert(q.priority > PRIORITY.HotSeatBackground and q.priority < PRIORITY.PlayerChange,
+		"between the backdrop and the hand-over: " .. tostring(q.priority))
+	assert(q.priority == PRIORITY.PausePanel, "the slot a hotseat game never fills")
+	assert(q.params.AlwaysVisibleInQueue == true,
+		"stays drawn under the hand-over and the open game menu")
 	-- Their hand-over is pressed (CivvisControlAutoClose.lua): it closes, and the
 	-- cover lifts. Turn 1: no view saved and no capital yet, so the camera stays.
 	world.paused[0] = false
@@ -371,6 +375,15 @@ do
 	handlers.UserRequestClose()
 	assert(not cover.up and last(did, "hotseat_cover"):find('"reason":"quit_request"', 1, true),
 		"a quit's confirmation is on screen")
+end
+
+-- A loader without the PausePanel slot still lands over the backdrop.
+do
+	PRIORITY.PausePanel = nil
+	local cover, world, did, handlers = load(HOTSEAT())
+	handlers.LocalPlayerTurnEnd()
+	assert(did.queued[1].priority == PRIORITY.HotSeatBackground + 1)
+	PRIORITY.PausePanel = 102
 end
 
 -- 7. The old ways, kept: --keep-handover, --no-cover, a hotseat password. ----
