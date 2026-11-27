@@ -245,15 +245,57 @@ With the gene off, nothing reads the new code: every new branch checks
 
 Those are the next links, in that order.
 
+## What the simulator probe says
+
+`docs/gene_screens/fires/city-campaign-3.json` comes from 24 games of the
+standard screen (Prince, six of our seats, 74x46 Continents, Online, 250
+turns, seeds 966270000–966270023), with the family drawn together:
+
+```bash
+target/ci/gene_screen --games 24 --jobs 4 --genes city-campaign,city-campaign-2,city-campaign-3 --start-seed 966270000 --out target/city-campaign-3.jsonl
+```
+
+Version 3 was on in 17 of the 144 seats. Every reading is seats on minus
+seats off ± one clustered standard error.
+
+| reading | Δ | z |
+|---|---:|---:|
+| win | +14.5 pp (29.4% against 15.0%) | +1.27 |
+| score share | +0.98 pp | +0.93 |
+| cities taken | −0.15 ± 0.09 | −1.73 |
+| cities lost | +0.11 ± 0.21 | +0.53 |
+| units lost to majors | −1.97 ± 0.68 | −2.91 |
+| blows struck at −10 odds or worse | −9.2 ± 2.2 | −4.15 |
+| techs at the turn-150 mark | +1.84 ± 0.78 | +2.37 |
+
+**Reading.**
+- It fires.
+- At Prince, the no-go half dominates. The army stops throwing blows at bad
+  odds and loses about two fewer units to majors. It also takes about 0.15
+  fewer cities a seat.
+- The win and share readings point up, but a 17-seat arm resolves only
+  ±24 pp, so they are noise.
+
+So the simulator does not show the in-war plan adding captures at Prince. It
+shows the attrition half working. Live at Deity, our own wars already take
+almost nothing (2 of 38), which leaves the no-go little to cost there. That
+is the hypothesis the live arm tests. It is not a result.
+
 ## What it should move, and how it is read
 
-**The ledger numbers it should move:**
-- **Foreign cities held at turn 150 (primary): up.** Today 0.19 a game
-  (sd 0.43, 486 games), from `conquest_marks.at.150.cities` in each run's
-  summary.
-- At turn 100: today 0.06.
-- Our score over the best rival's: today a median of 0.37 (sd 0.135).
-- **Units lost in the wars we are in: down,** through the no-go.
+**The ledger numbers it should move, preregistered:**
+- **Our score over the best rival's (primary): up.** Today a median of 0.37
+  (sd 0.135), from `last_score / rival_best`.
+- **Units lost: down,** through the no-go. Today 8,919 across all wars in
+  the 611 games, and 299 in our own 38.
+- **Foreign cities held at turn 150: up** if the in-war plan works. Today
+  0.19 a game (sd 0.43, 486 games), from `conquest_marks.at.150.cities`. The
+  simulator says this could fall instead (−0.15 a seat at Prince), so it is
+  also the harm check.
+
+**Stop rule.** After about 180 games per arm, take the line out of
+the force list if foreign cities held at turn 150 is lower than control and
+the score ratio is not higher.
 
 **Mechanism checks, from the event logs with the reading rules above.** Take
 every war of 10 turns or more, ours or theirs. Two shares should rise: wars
@@ -261,11 +303,11 @@ in which a target city is struck, and wars that end with a capture. Today
 those are 6 of 38 and 2 of 38 for our own declarations. Kills over losses in
 those wars should rise from 0.61 towards the overall 1.73.
 
-**Games needed.**
-- To detect +0.15 foreign cities held at turn 150 at 80% power, two-sided
-  5%: about 130 games per arm, roughly three days of the live host at 90
-  games a day with the arms alternating.
-- The score ratio needs about 180 per arm to detect +0.04.
+**Games needed** (80% power, two-sided 5%).
+- The score ratio, the primary: about 180 games per arm to detect +0.04.
+  That is roughly four days of the live host at 90 games a day with the arms
+  alternating.
+- Foreign cities held at turn 150: about 130 per arm to detect ±0.15.
 - A Deity win rate moved by 5 points needs more than 1,000 per arm. That is
   not a verdict this gene can get on its own.
 
