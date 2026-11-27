@@ -1748,8 +1748,48 @@ path). these should alert on the top section out in the distance."
     through, and the pointer on it lists every detonation and war ahead and
     how fast it is being played. With many worlds open the signs say less
     and stand in two rows (`strangeFates`).
-  - *Predicted Paths* (`strangePathsDraw`, `strangeOutcome`,
-    `[data-strange-paths]`). Operator, 2026-11-26: "for doctor strange's
+  - *End outcome* (`strangeEndOutcome`, `strangeOutcome`, `.strange-end`),
+    the last row of the worlds' numbers. Operator, 2026-11-27: "lets merge
+    the predicted paths into the path hud. make another row that is end
+    outcome: and list the XXX wins, turnXXX, no wars, no nuclear wars". A
+    world's line is who wins and on what turn (or `No winner`, or the seat
+    `is out`), then the wars still to be declared on the way (`no wars`,
+    `1 war`, `N wars`) and the nuclear war (`no nuclear wars`, `nuclear war
+    turn N`, or `since turn N`): `Mali wins, turn 185, no wars, no nuclear
+    wars`. A future still being played says `Not decided by turn N` and what
+    it has seen `so far`. The best is lit as the most of a row is, in the
+    order the predicted paths had (below), unless every world comes to the
+    same. The row is two lines high whatever it says (a world alone in its
+    column may take both, two worlds sharing a column have a line each led
+    by the letter, and past two the first world's line is followed by
+    `+N more`), so the band and the line under it do not move while the
+    words change or worlds part; the pointer says each line whole and all
+    that comes on the way. Under each column's letters is the player
+    strategy holding each seat there now (`.strange-who`; operator: "add the
+    names of the active strategy to the header of the paths hud").
+  - *The world followed* (`strangeStandingsMount`, `strangeStandingsDraw`,
+    `strangeWorldNow`). Operator, 2026-11-27: "in doc stranges civvis, i
+    can't actually tell what civ we are. please add the player hud in for
+    the "Following" game. we can have this player hud above the path hud
+    that has all the paths listed. lets add the victory track to the right
+    as well". The simulator's own standings (`#playerhud`) and victory
+    tracker (`#victoryhud`), which the highway covered where they stood,
+    are moved onto it: the standings across the top over the worlds'
+    numbers (which stand under them, `--strange-versus-top`), the tracker
+    in the right-hand column in the predicted paths' place. The simulator
+    draws them as it always does (`drawPlayerHud`, wrapped in this page to
+    read the followed world's state for as long as it draws, which each
+    world's page hands over), again whenever that world has another turn
+    to show or another world is followed. So the seat the worlds play is
+    the standings' gold row, only the civilizations that world has met are
+    listed, and the tracker's gold bar is that world's game. Left out here:
+    the standings' turn box (the turn is the line's), Watch as (it turns
+    the simulator's own map, which is not shown), the tracker's record of
+    games, and what moves, sizes or hides a panel. The highway's own button
+    style stops at these two (`:where(:not(...))`), so they look as they do
+    in the simulator. The worlds still draw no standings of their own.
+  - *Predicted Paths*, 2026-11-26 to 2026-11-27, now End outcome above
+    (`strangeOutcome` still ranks). Operator, 2026-11-26: "for doctor strange's
     civvis, lets list the computed outcomes on the right side of the top
     scetion of the screen, ranked from best to worst. cpu and memory can go
     at the top. then: "Predicted Paths". The numbers table can go across
@@ -1757,10 +1797,11 @@ path). these should alert on the top section out in the distance."
     the resources/predicted paths box i described. lets truncate the
     timelines map below this. lets also make sure the dividing line beteen
     the bottom worlds and the top sectoin is moveable". The signs over the
-    branches are no longer shown; what they said is listed in a column down
+    branches are no longer shown; what they said was listed in a column down
     the right of the upper half (`.strange-right`): what the page costs,
     the black swan, then **Predicted Paths**, a row a world, best first,
-    then the defeat tracker. A row is the world's letter and player
+    then the defeat tracker (the victory tracker of the world followed has
+    that place now). A row was the world's letter and player
     strategy, what its future comes to (★ the seat wins, ✗ it loses, 🏁 the
     game ends, or how far it has been played undecided), and under it the
     sign's nuclear war and next war. Best first: the seat wins (sooner
@@ -1900,8 +1941,8 @@ against the toy engine: the opening seats, the layout, the names and colours,
 the one-step Branch into a third world, the pointer over a box, going back,
 following, the locked run, the divide, deleting a world of each kind and
 opening one again, the meter, the futures and their alerts, each world's
-future played to the end of its game with the predicted paths saying
-what is coming, best first (every world at once, on the world itself and where each
+future played to the end of its game with End outcome saying what each
+comes to, the best lit (every world at once, on the world itself and where each
 has a scout), time running
 through turns played ahead, a black swan on every locked world and on the
 followed one alone, and the narrow window, which has the one timeline

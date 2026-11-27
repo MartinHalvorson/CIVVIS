@@ -3529,9 +3529,11 @@ def check_doctor_strange(bar: Bar, address: str) -> None:
     # 2026-11-26: "lets drop the minimap and controls thing from the maps
     # doctor stranges civ 6"). What
     # the page costs is in the top right corner, at the head of a column that
-    # runs down the right of the upper half: the black swan, the predicted
-    # paths and the defeat tracker under it (operator 2026-11-26: "cpu and
-    # memory can go at the top. then: "Predicted Paths""). The worlds'
+    # runs down the right of the upper half: the black swan, the victory
+    # tracker of the world followed and the defeat tracker under it (operator
+    # 2026-11-26: "cpu and memory can go at the top. then: "Predicted
+    # Paths""; 2026-11-27: "lets add the victory track to the right as well",
+    # and the predicted paths went into the worlds' numbers). The worlds'
     # numbers go across the top between the title and that column ("from
     # the right side of the upper left box to the left side of the
     # resources/predicted paths box"), and the tree is drawn under them
@@ -3553,7 +3555,7 @@ def check_doctor_strange(bar: Bar, address: str) -> None:
         meter: [meter.top < 40, meter.right > innerWidth - 40],
         versus: [versus.top < 40, versus.left > title.right, versus.right < column.left, strange.treeTop >= versus.bottom],
         column: [column.top < 40, column.right > innerWidth - 40, column.bottom <= line, meter.top === column.top,
-          order.join(" ") === "strange-meter strange-swans strange-paths strange-defeat"],
+          order.join(" ") === "strange-meter strange-swans strange-victory strange-defeat"],
         halves: ["a", "b"].map(letter => debugSplit.panes[letter].frame.contentWindow.eval(
           "[STRANGE, STRANGE_PANE, document.documentElement.classList.contains('strange-pane'), getComputedStyle(debugBar).display," +
           " ...['.minimap-frame', '#map-controls-dock'].map(s => getComputedStyle(document.querySelector(s)).display)," +
@@ -3668,10 +3670,16 @@ def check_doctor_strange(bar: Bar, address: str) -> None:
       const rows = Object.fromEntries(letters.map((world, at) => [world, heads.map((_, row) => cells[row * letters.length + at])]));
       return {heads, rows, shape: [...card.children].map(held => held.tagName).join(' ')}; })()""")
     assert band["heads"] == ["Score", "Cities", "Population", "Production", "Science", "Culture", "Gold", "Faith",
-                             "Military"], band
+                             "Military", "End outcome"], band
     assert list(band["rows"]) == ["A", "B"], band
-    # The letters across the top, then a row a number: its name, a cell a world.
-    assert band["shape"] == " ".join(["I", "SPAN", "SPAN"] + ["EM", "B", "B"] * len(band["heads"])), band
+    # The letters across the top, the player strategy holding each seat under
+    # them (operator 2026-11-27: "add the names of the active strategy to the
+    # header of the paths hud"), then a row a number: its name, a cell a
+    # world. End outcome is the last row (its words are checked further on).
+    assert band["shape"] == " ".join(["I", "SPAN", "SPAN", "I", "SPAN", "SPAN"] + ["EM", "B", "B"] * (len(band["heads"]) - 1) +
+                                     ["EM", "SPAN", "SPAN"]), band
+    who = bar.ev("[...document.querySelectorAll('#strange-hud [data-strange=\"numbers\"] .strange-who')].map(held => held.textContent)")
+    assert who == [bar.ev(f"strangeHandle(debugSplit.panes.{letter}.strategy)") for letter in "ab"] and who[0] != who[1], who
     col = band["heads"].index
     row_a, row_b = band["rows"]["A"], band["rows"]["B"]
     low, high = sorted(scores)
@@ -3902,29 +3910,46 @@ def check_doctor_strange(bar: Bar, address: str) -> None:
                   " ['a', 'b'].map(letter => [debugSplit.panes[letter].sight.from, debugSplit.panes[letter].sight.turn, debugSplit.panes[letter].sight.asked]),"
                   " ['a', 'b'].map(letter => strangeSightStale(letter))]")
     assert told == [2, 2, True, [0, 0], [[here + 12, 400, "stock"], [here + 12, 400, "jack"]], [False, False]], told
-    # What each world's future comes to is listed on the right, under what
-    # the page costs, as "Predicted Paths", best first (operator 2026-11-26:
-    # "lets list the computed outcomes on the right side of the top scetion
-    # of the screen, ranked from best to worst"), and no longer signed over
-    # each branch. A's world has no nuclear war to the end of its game and a
-    # war in thirty turns; B's has a nuclear war five turns on, so A is first.
-    # Each line says it whole: the outcome on one line, what comes on the way
-    # under it ("On current path," and the nuclear war, then the next war).
+    # What each world's future comes to is the last row of the worlds'
+    # numbers, End outcome (operator 2026-11-27: "lets merge the predicted
+    # paths into the path hud. make another row that is end outcome: and list
+    # the XXX wins, turnXXX, no wars, no nuclear wars"), where the predicted
+    # paths were listed on the right, and it is not signed over each branch.
+    # A's world has no nuclear war to the end of its game and a war in thirty
+    # turns; B's has a nuclear war five turns on and no war, so A's is the
+    # best and is lit. Each world's line says it whole, in the column under
+    # its letter.
     assert bar.ev("[...document.querySelectorAll('#strange-hud .strange-fate')].every(sign => getComputedStyle(sign).display === 'none')")
-    paths = ("[...document.querySelectorAll('#strange-hud [data-strange-paths] li')].map(row => [row.dataset.pathWorld, row.dataset.outcome,"
-             " row.querySelector('b').textContent, row.querySelector('strong').textContent, row.querySelector('small').textContent])")
-    assert bar.ev("document.querySelector('#strange-hud [data-strange-paths] h3').textContent") == "Predicted Paths"
-    PATHS_WANT = [
-        ["a", "clear", "1", "🏁 The game ends, turn 400", "☮ No nuclear war · ⚔ War in 30 turns: Rome on Greece"],
-        ["b", "nuclear", "2", "🏁 The game ends, turn 400", "☢ Nuclear war in 5 turns (Atomic Era) · No wars ahead"]]
-    assert bar.ev(paths) == PATHS_WANT, bar.ev(paths)
-    whole = bar.ev("[...document.querySelectorAll('#strange-hud [data-strange-paths] li')].map(row => { const box = row.getBoundingClientRect();"
-                   " return [...row.querySelectorAll('span, strong, small')].map(line => { const at = line.getBoundingClientRect();"
-                   "  return at.height > 0 && at.top >= box.top && at.bottom <= box.bottom && line.scrollWidth <= line.clientWidth; }); })")
-    assert whole == [[True, True, True], [True, True, True]], whole
-    told = bar.ev("document.querySelector('#strange-hud [data-path-world=\"b\"]').title")
-    assert told.startswith("World B: on current path, nuclear war in 5 turns (Atomic Era)\n"), told
+    assert bar.ev("document.querySelector('#strange-hud [data-strange-paths]')") is None
+    ends = ("[...document.querySelectorAll('#strange-hud .strange-end [data-end-world]')].map(line => [line.dataset.endWorld, line.dataset.outcome,"
+            " line.textContent.replace(/^[A-Z]: /, ''), !!line.querySelector('.strange-lit')])")
+    assert bar.ev("[...document.querySelectorAll('#strange-hud [data-strange=\"numbers\"] em')].pop().querySelector('.strange-long').textContent") == "End outcome"
+    ENDS_WANT = [
+        ["a", "clear", "No winner, turn 400, 1 war, no nuclear wars", True],
+        ["b", "nuclear", "No winner, turn 400, no wars, nuclear war turn %d" % (here + 5), False]]
+    # A line a world, in its column, whichever order the columns stand in.
+    assert sorted(bar.ev(ends)) == ENDS_WANT, bar.ev(ends)
+    whole = bar.ev("(() => { const band = document.querySelector('#strange-hud .strange-versus'), box = band.getBoundingClientRect();"
+                   " return [band.scrollHeight <= band.clientHeight + 1, ...[...band.querySelectorAll('.strange-end [data-end-world]')].map(line => {"
+                   "  const at = line.getBoundingClientRect(); return at.height > 0 && at.top >= box.top && at.bottom <= box.bottom"
+                   "  && line.scrollWidth <= line.clientWidth + 1; })]; })()")
+    assert whole == [True, True, True], whole
+    # The pointer says the line whole, then all that is coming on the way.
+    told = bar.ev("document.querySelector('#strange-hud [data-end-world=\"b\"]').title")
+    assert told.startswith("No winner, turn 400, no wars, nuclear war turn %d\nWorld B: on current path, nuclear war in 5 turns (Atomic Era)\n" % (here + 5)), told
     assert "Turn %d: Greece detonates a nuclear device" % (here + 5) in told, told
+    # The words for the other ends: a win, the seat out of the game, and a
+    # future still being played, which says how far it has got.
+    said = bar.ev("(() => { const pane = debugSplit.panes.a, kept = pane.sight, turn = pane.turn;"
+                  " const text = sight => { pane.sight = {...kept, ...sight}; return strangeEndOutcome('a').text; };"
+                  " const out = [text({done: true, turn: turn + 90, seen: [{turn: turn + 90, kind: 'won', text: 'Rome wins the game', era: 7}]}),"
+                  "  text({done: true, turn: turn + 60, seen: [{turn: turn + 20, kind: 'war', text: 'x'}, {turn: turn + 30, kind: 'war', text: 'y'},"
+                  "   {turn: turn + 40, kind: 'nuclear', text: 'z', era: 6}, {turn: turn + 60, kind: 'over', text: 'Rome is out of the game', era: 7}]}),"
+                  "  text({done: false, turn: turn + 46, seen: []})];"
+                  " pane.sight = kept; return out; })()")
+    assert said == ["Rome wins, turn %d, no wars, no nuclear wars" % (here + 90),
+                    "Rome is out, turn %d, 2 wars, nuclear war turn %d" % (here + 60, here + 40),
+                    "Not decided by turn %d, no wars so far, no nuclear wars so far" % (here + 46)], said
     # Until a future has been played to the end, its path says how far it
     # has been played with no nuclear war in it: the three things it says.
     said = bar.ev("(() => { const pane = debugSplit.panes.a, kept = pane.sight, turn = pane.turn;"
@@ -3959,7 +3984,7 @@ def check_doctor_strange(bar: Bar, address: str) -> None:
                   " return {title: held.querySelector('.hud-section-heading').textContent,"
                   "  paths: [...held.querySelectorAll('.victory-track')].map(path => [path.dataset.defeat, path.querySelector('.victory-heading b').textContent,"
                   "   path.querySelector('.victory-subheading').textContent, [...path.querySelectorAll('[data-defeat-world]')].map(row => row.dataset.defeatWorld)]),"
-                  "  beside: held.parentElement.classList.contains('strange-right') && box.top >= document.querySelector('#strange-hud [data-strange-paths]').getBoundingClientRect().bottom && box.left > versus.right,"
+                  "  beside: held.parentElement.classList.contains('strange-right') && box.top >= document.querySelector('#strange-hud .strange-swans').getBoundingClientRect().bottom && box.left > versus.right,"
                   "  kept: strange.cards.some(card => card.left <= box.left && card.right >= box.right && card.top <= box.top), open: strangeOpen()}; })()")
     # A row a world, in the order the worlds stand.
     assert card == {"title": "Defeat tracker", "paths": [["nuclear", "Nuclear war", "Turns away", card["open"]],
@@ -3990,8 +4015,8 @@ def check_doctor_strange(bar: Bar, address: str) -> None:
     bar.until(seen, "both futures are played out at once")
     bar.until("scouts.done >= 4 && Object.keys(scouts.held).length === 0", "and their engines let go of")
     bar.ev("delete window.__civvisBeta, delete navigator.hardwareConcurrency, scouts.wait = 0, true")
-    bar.until(f"JSON.stringify({paths}) === {json.dumps(json.dumps(PATHS_WANT, ensure_ascii=False, separators=(',', ':')), ensure_ascii=False)}",
-              "the predicted paths read as before")
+    bar.until(f"JSON.stringify({ends}.sort()) === {json.dumps(json.dumps(ENDS_WANT, ensure_ascii=False, separators=(',', ':')), ensure_ascii=False)}",
+              "the end outcomes read as before")
     assert not bar.dev.console, f"the page complained: {bar.dev.console}"
     # Time running on is shown the turns that were played ahead, and none is
     # played again: the worlds are asked for more of their futures as they
@@ -4055,8 +4080,8 @@ def check_doctor_strange(bar: Bar, address: str) -> None:
         ["pandemic", "Pandemic", "Every city in the world loses half its people"],
         ["nuclear_war", "Instant nuclear war", "Every civilization is at war with every other"]]
     placed = bar.ev("(() => { const box = name => document.querySelector(`#strange-hud .${name}`).getBoundingClientRect();"
-                    " const swans = box('strange-swans'), meter = box('strange-meter'), paths = box('strange-paths'), versus = box('strange-versus');"
-                    " return [swans.top >= meter.bottom, swans.bottom <= paths.top, Math.abs(swans.right - meter.right) < 1, swans.left > versus.right,"
+                    " const swans = box('strange-swans'), meter = box('strange-meter'), defeat = box('strange-defeat'), versus = box('strange-versus');"
+                    " return [swans.top >= meter.bottom, swans.bottom <= defeat.top, Math.abs(swans.right - meter.right) < 1, swans.left > versus.right,"
                     " strange.cards.some(card => card.left <= swans.left && card.right >= swans.right && card.top <= swans.top && card.bottom >= swans.bottom)]; })()")
     assert placed == [True] * 5, placed
     bar.ev("strangeSwan('', 8), true")

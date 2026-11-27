@@ -5292,8 +5292,8 @@ const STRANGE_SEE_WAIT_MS = 120000, STRANGE_SEE_AGAIN_MS = 3000, STRANGE_SEE_ANE
 // of it; the room left between two, and where the first row stands.
 const STRANGE_FATES = {full: [292, 56], line: [178, 24], word: [88, 24]};
 const STRANGE_FATE_GAP = 6, STRANGE_FATE_TOP = 50;
-// The right-hand column at the top: what the page costs, the predicted paths
-// and the defeat tracker.
+// The right-hand column at the top: what the page costs, the black swan, the
+// victory tracker of the world followed and the defeat tracker.
 const STRANGE_RIGHT_WIDE = 300;
 // How often what the page costs is read, and how many readings are drawn.
 const STRANGE_METER_MS = 2000, STRANGE_METER_KEPT = 60;
@@ -5344,13 +5344,19 @@ const STRANGE_STYLE = `
     color: #e8e3d2; font: 12px/1.25 system-ui, sans-serif;
   }
   #strange-hud > * { pointer-events: auto; }
-  #strange-hud button, #strange-hud select {
+  /* The highway's own controls. The simulator's standings and victory
+     tracker, which stand on it (\`strangeStandingsMount\`), keep theirs as
+     the simulator draws them, and the simulator's type. */
+  #strange-hud button:where(:not(:is(.strange-standings, .strange-victory) *)), #strange-hud select:where(:not(:is(.strange-standings, .strange-victory) *)) {
     height: 26px; padding: 0 8px; border-radius: 8px; font: inherit; line-height: 1; cursor: pointer;
     color: inherit; background: #14231f; border: 1px solid #35504a;
   }
-  #strange-hud select { min-width: 0; max-width: 100%; background: #060d0b; }
-  #strange-hud button:hover:not(:disabled) { border-color: ${STRANGE_GOLD}; }
-  #strange-hud button:disabled { opacity: .38; cursor: default; }
+  #strange-hud select:where(:not(:is(.strange-standings, .strange-victory) *)) { min-width: 0; max-width: 100%; background: #060d0b; }
+  #strange-hud button:where(:not(:is(.strange-standings, .strange-victory) *)):hover:not(:disabled) { border-color: ${STRANGE_GOLD}; }
+  #strange-hud button:where(:not(:is(.strange-standings, .strange-victory) *)):disabled { opacity: .38; cursor: default; }
+  #strange-hud :is(.strange-standings, .strange-victory) {
+    font: var(--type-body)/1.5 var(--font-ui); color: var(--text); letter-spacing: .005em; user-select: text;
+  }
   #strange-hud .strange-card { border: 1px solid #35504a; border-radius: 12px; background: #07110fd9; }
   #strange-hud .strange-title {
     position: absolute; left: 14px; top: 12px; box-sizing: border-box; width: min(330px, 34vw); padding: 10px 12px 10px;
@@ -5403,7 +5409,7 @@ const STRANGE_STYLE = `
     overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin;
   }
   #strange-hud .strange-versus {
-    position: absolute; top: 12px; left: calc(14px + min(330px, 34vw) + 12px);
+    position: absolute; top: var(--strange-versus-top, 12px); left: calc(14px + min(330px, 34vw) + 12px);
     right: calc(14px + ${STRANGE_RIGHT_WIDE}px + 12px); box-sizing: border-box; max-height: 34vh; overflow: auto;
     padding: 8px 12px 9px; display: grid; gap: 3px 0; align-items: baseline; font-variant-numeric: tabular-nums;
   }
@@ -5418,27 +5424,69 @@ const STRANGE_STYLE = `
      number is one line high, and the band leaves the tree its room. */
   #strange-hud .strange-versus b small { display: inline; margin-left: .7em; font-size: 10.5px; font-weight: 400; color: #8fa39b; }
   #strange-hud .strange-versus b small.lead { color: ${STRANGE_GOLD}; font-weight: 700; }
-  /* The predicted paths: each world's future as it has been played out
-     to the end of its game, one to a row, the best first. */
-  #strange-hud .strange-paths { flex: none; padding: 7px 10px 8px; }
-  #strange-hud .strange-paths:empty { display: none; }
-  #strange-hud .strange-paths h3 {
-    margin: 0 0 6px; font: 800 11px/1.2 system-ui, sans-serif; letter-spacing: .12em; text-transform: uppercase; color: #e8e3d2;
+  /* The world followed, as the simulator shows a world (operator 2026-11-27:
+     "in doc stranges civvis, i can't actually tell what civ we are. please
+     add the player hud in for the "Following" game. we can have this player
+     hud above the path hud that has all the paths listed. lets add the
+     victory track to the right as well"): the page's own standings over the
+     worlds' numbers, and its own victory tracker in the column on the right,
+     both drawn from the world followed (\`strangeStandingsDraw\`). The seat
+     the worlds play is the standings' gold row. The turn is the line's, so
+     the standings leave out their turn box; the tracker leaves out the
+     record of games; and neither keeps what moves, sizes or hides a panel,
+     because the highway says where these two stand. */
+  #strange-hud .strange-standings {
+    position: absolute; top: 12px; left: calc(14px + min(330px, 34vw) + 12px);
+    right: calc(14px + ${STRANGE_RIGHT_WIDE}px + 12px);
   }
-  #strange-hud .strange-paths ol { margin: 0; padding: 0; list-style: none; display: grid; gap: 5px; }
-  #strange-hud .strange-paths li {
-    display: grid; grid-template-columns: 16px minmax(0, 1fr); column-gap: 7px; padding: 4px 7px 5px;
-    border-left: 3px solid var(--strange-tint); border-radius: 6px; background: #ffffff07;
+  #strange-hud .strange-standings:empty, #strange-hud .strange-victory:empty { display: none; }
+  html.strange #strange-hud #playerhud {
+    position: relative !important; inset: auto !important; width: auto !important; height: auto !important;
+    max-height: 30vh; display: grid !important; grid-template-columns: minmax(0, 1fr) !important;
   }
-  #strange-hud .strange-paths li > b { grid-row: span 3; font: 700 14px/18px Georgia, serif; color: #9fb3ab; }
-  #strange-hud .strange-paths li > span, #strange-hud .strange-paths li > strong {
-    min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  html.strange #strange-hud #playerhud > :is(.victory-turn, .turn-plate-seam, .turn-plate-restore, .standings-restore, .overlay-close, .widget-resize-handle) { display: none !important; }
+  html.strange #strange-hud #playerhud > .player-standings { grid-column: 1 !important; display: flex !important; }
+  #strange-hud .strange-victory { flex: 1 1 auto; min-height: 250px; display: flex; }
+  html.strange #strange-hud #victoryhud {
+    position: relative !important; inset: auto !important; width: auto !important; height: auto !important;
+    flex: 1 1 auto; min-height: 0; display: grid !important; grid-template-rows: minmax(0, 1fr) !important;
   }
-  #strange-hud .strange-paths li > span { font-size: 11.5px; font-weight: 700; color: var(--strange-tint); }
-  #strange-hud .strange-paths li > strong { font-size: 12px; line-height: 16px; }
-  #strange-hud .strange-paths li > small { min-width: 0; font-size: 11px; line-height: 14px; color: #9fb3ab; }
-  #strange-hud .strange-paths li[data-outcome="won"] > strong { color: ${STRANGE_GOLD}; }
-  #strange-hud .strange-paths li[data-outcome="lost"] > strong { color: #ff8a80; }
+  html.strange #strange-hud #victoryhud > :is(.sim-stats-region, .sim-stats-seam, .overlay-close, .widget-resize-handle) { display: none !important; }
+  html.strange #strange-hud #victoryhud > .victory-region { grid-row: 1 !important; }
+  /* A civilization's name flies the simulator's own map to it, and that map
+     is not shown here; a panel's heading drags the panel. */
+  html.strange #strange-hud :is(#playerhud, #victoryhud) :is([data-hud-action="capital"], [data-widget-drag]) { pointer-events: none; cursor: default; }
+  /* Under each column's letters, the player strategy that holds the seat
+     there now (operator 2026-11-27: "add the names of the active strategy to
+     the header of the paths hud"). */
+  #strange-hud .strange-versus .strange-who {
+    padding: 0 6px 3px; text-align: center; font-size: 11px; font-weight: 700;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  /* End outcome, the last row (operator 2026-11-27: "lets merge the
+     predicted paths into the path hud. make another row that is end outcome:
+     and list the XXX wins, turnXXX, no wars, no nuclear wars"): how each
+     world's future ends, as it has been played out to the end of its game
+     (\`strangeEndOutcome\`). Worlds that share a column each have a line,
+     led by the letter. The best is lit as the most of a row is. */
+  /* The row is two lines high whatever it says, so the band, and the line
+     of the open turn under it, stay where they are while the words change
+     and while worlds share a column and part: a world alone in its column
+     has both lines, two worlds sharing one have a line each, and past two
+     the first world's line is followed by how many more there are. What is
+     cut short is said whole on the pointer. */
+  #strange-hud .strange-versus .strange-end {
+    align-self: start; box-sizing: border-box; min-width: 0; height: 30px; padding: 2px 6px 0; overflow: hidden;
+    text-align: center; font-size: 11px; line-height: 14px; color: #dfe8e3;
+  }
+  #strange-hud .strange-versus .strange-end > span { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #strange-hud .strange-versus .strange-end > span:only-child {
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal;
+  }
+  #strange-hud .strange-versus .strange-end [data-outcome="won"] { color: ${STRANGE_GOLD}; }
+  #strange-hud .strange-versus .strange-end [data-outcome="lost"] { color: #ff8a80; }
+  #strange-hud .strange-versus .strange-end b { font-weight: 700; }
+  #strange-hud .strange-versus em.strange-end-head { align-self: start; padding-top: 3px; }
   /* The outcomes are listed there now, not signed over each branch. */
   #strange-hud .strange-fate { display: none !important; }
   /* The defeat tracker (operator 2026-11-26: "add an inverse victory tracker
@@ -7162,24 +7210,70 @@ function strangeOutcome(letter) {
     : sight.done ? "No wars ahead" : `No war in the next ${turns(reach)}`;
   return {rank, outcome: won ? "won" : lost ? "lost" : first ? "nuclear" : "clear", head, nuclear: fate.head, wars, title: fate.title};
 }
-function strangePathsDraw(hud, open, tree) {
-  const card = hud.querySelector("[data-strange-paths]");
-  if (!card) return;
-  const read = open.map(letter => ({letter, ...strangeOutcome(letter)}))
-    .sort((one, other) => one.rank[0] - other.rank[0] || one.rank[1] - other.rank[1] || open.indexOf(one.letter) - open.indexOf(other.letter));
-  const html = `<h3>Predicted Paths</h3><ol>` + read.map((path, at) => {
-    const name = `${path.letter.toUpperCase()} · ${strangeSeries(path.letter, tree)}`;
-    return `<li data-path-world="${path.letter}" data-outcome="${path.outcome}" style="--strange-tint:${strange.tint[path.letter]}" title="${escapeAttr(path.title)}">` +
-      `<b>${at + 1}</b><span>${escapeAttr(name)}</span><strong>${escapeAttr(path.head)}</strong>` +
-      `<small>${escapeAttr([path.nuclear, path.wars].filter(Boolean).join(" · "))}</small></li>`;
-  }).join("") + `</ol>`;
-  if (card.dataset.drawn !== html) {
-    const grew = card.dataset.rows !== String(open.length);
-    card.dataset.drawn = html;
-    card.dataset.rows = String(open.length);
-    card.innerHTML = html;
-    if (grew) strange.stale = true;
-  }
+// A world's end outcome, as the paths table's last row says it (operator
+// 2026-11-27: "make another row that is end outcome: and list the XXX wins,
+// turnXXX, no wars, no nuclear wars"): who wins and on what turn, then the
+// wars and the nuclear wars still to come on the way there, from the future
+// played out to the end of its game. A future still being played says how
+// far it has got, and what it has seen so far. It ranks as `strangeOutcome`
+// does, which was the order of the predicted paths it replaces.
+function strangeEndOutcome(letter) {
+  const pane = debugSplit.panes[letter], sight = pane.sight, turn = pane.turn;
+  const told = strangeOutcome(letter);
+  if (!sight || typeof turn !== "number" || typeof sight.turn !== "number") return {...told, text: "Looking ahead…"};
+  const end = sight.done ? [...sight.seen].reverse().find(seen => seen.kind === "won" || seen.kind === "over") || null : null;
+  const first = sight.seen.find(seen => seen.kind === "nuclear") || null;
+  const wars = sight.seen.filter(seen => seen.kind === "war" && seen.turn >= turn).length;
+  const yet = sight.done ? "" : " so far";
+  const who = !end ? `Not decided by turn ${sight.turn}`
+    : end.text === "The game ends" ? "No winner"
+    : String(end.text).replace(" wins the game", " wins").replace(" is out of the game", " is out");
+  const text = [who, ...(end ? [`turn ${end.turn}`] : []),
+    wars ? `${wars} war${wars === 1 ? "" : "s"}${yet}` : `no wars${yet}`,
+    !first ? `no nuclear wars${yet}` : first.turn < turn ? `nuclear war since turn ${first.turn}` : `nuclear war turn ${first.turn}`].join(", ");
+  return {...told, text};
+}
+// The standings and the victory tracker of the world followed (operator
+// 2026-11-27: "i can't actually tell what civ we are. please add the player
+// hud in for the "Following" game"). They are the simulator's own two
+// panels, which the highway covers where they stand: they are moved onto it
+// (`strangeStandingsMount`), and the simulator draws them as it always
+// does, reading the world followed in place of its own (`drawPlayerHud`,
+// wrapped where this page is made). Each world hands over the world it holds
+// (`strangeWorldNow`, said in each world's page), and they are drawn again
+// when that world has another turn to show or another world is followed.
+// The panels are kept here, so that a highway made again takes them up, and
+// a highway gone hands them back to the map they came from.
+let strangePanels = null;
+function strangeStandingsMount(hud) {
+  const players = strangePanels ? strangePanels.players : document.getElementById("playerhud");
+  const victory = strangePanels ? strangePanels.victory : document.getElementById("victoryhud");
+  strange.standings = typeof drawPlayerHud === "function" && !!players && !!victory;
+  strange.standingsWorld = null;
+  if (!strange.standings) return;
+  strangePanels = {players, victory};
+  hud.querySelector(".strange-standings").append(players);
+  hud.querySelector(".strange-victory").append(victory);
+}
+function strangeStandingsHome() {
+  const area = document.getElementById("maparea");
+  if (!strangePanels || !area) return;
+  for (const panel of [strangePanels.players, strangePanels.victory]) if (!panel.isConnected) area.prepend(panel);
+}
+function strangeFollowedWorld() {
+  try {
+    const pane = debugSplit && debugSplit.panes[strange.follow], frame = pane && pane.frame;
+    const world = frame && frame.contentWindow && typeof frame.contentWindow.strangeWorldNow === "function"
+      ? frame.contentWindow.strangeWorldNow() : null;
+    return world && Array.isArray(world.players) ? world : null;
+  } catch (_) { return null; }
+}
+function strangeStandingsDraw() {
+  if (!strange.standings) return;
+  const world = strangeFollowedWorld();
+  if (!world || world === strange.standingsWorld) return;
+  strange.standingsWorld = world;
+  try { drawPlayerHud(); } catch (error) { console.error("doctor strange standings", error); }
 }
 // The defeat tracker: the victory tracker's format, with a path for a
 // nuclear war and one for losing, each counting the turns away.
@@ -7664,9 +7758,10 @@ function strangeMount() {
         <button class="strange-swan" data-strange="swan"></button>
         <select data-strange="swan-kind" aria-label="Which black swan"></select>
       </div>
-      <section class="strange-paths strange-card" data-strange-paths aria-label="Predicted paths: each world's computed outcome, best first"></section>
+      <div class="strange-victory" data-strange-victory></div>
       <section class="strange-defeat strange-card" data-strange-defeat aria-label="Defeat tracker: how near each world is to a nuclear war and to losing the game"></section>
     </div>
+    <div class="strange-standings" data-strange-standings></div>
     <div class="strange-versus strange-card" data-strange="numbers"></div>
     <button class="strange-send" data-strange="send">Send it</button>
     <div class="strange-omen" data-strange="omen" role="alert" title="Click to put away" hidden></div>
@@ -7741,6 +7836,7 @@ function strangeMount() {
   split.host.appendChild(hud);
   strange.canvas = canvas; strange.hud = hud;
   strange.then = 0;
+  strangeStandingsMount(hud);
   for (const letter of strange.order) strangeWorldOpen(letter);
   // A card that has changed its size is measured once the browser has laid
   // the page out, which is when it says so.
@@ -7772,10 +7868,15 @@ function strangeMount() {
 // `strange.shape`), the line moving moves the worlds' card with it, and a
 // card that has grown by itself, a number gaining a figure, is seen by the
 // browser once it has laid the page out anyway (`strangeMount`).
-const STRANGE_CARDS = [".strange-title", ".strange-right", ".strange-versus", ".strange-omen", ".strange-send"];
+const STRANGE_CARDS = [".strange-title", ".strange-right", ".strange-standings", ".strange-versus", ".strange-omen", ".strange-send"];
 function strangeCards() {
   const hud = strange.hud;
   const box = name => hud.querySelector(name).getBoundingClientRect();
+  // The worlds' numbers stand under the standings of the world followed,
+  // where those are shown.
+  const standings = hud.querySelector(".strange-standings"), shown = standings.childElementCount > 0;
+  const under = shown ? Math.ceil(standings.getBoundingClientRect().bottom + 8) : 12;
+  if (hud.style.getPropertyValue("--strange-versus-top") !== `${under}px`) hud.style.setProperty("--strange-versus-top", `${under}px`);
   const title = box(".strange-title"), versus = box(".strange-versus"), column = box(".strange-right");
   // The tree is drawn under the worlds' numbers, and the line stands low
   // enough to leave it room.
@@ -7792,6 +7893,10 @@ function strangeCards() {
   strange.cards = [{left: title.left, right: title.right, top: title.top, bottom: title.bottom, side: -1},
     {left: column.left, right: column.right, top: column.top, bottom: column.bottom, side: 1},
     {left: versus.left, right: versus.right, top: versus.top, bottom: versus.bottom, side: 1}];
+  if (shown) {
+    const held = standings.getBoundingClientRect();
+    strange.cards.push({left: held.left, right: held.right, top: held.top, bottom: held.bottom, side: 1});
+  }
   // And off what the black swan says while it says it.
   for (const held of [hud.querySelector(".strange-omen")]) {
     if (held.hidden) continue;
@@ -8077,21 +8182,43 @@ function strangeDraw() {
     return `<span class="strange-letter"${said}>` +
       group.map(letter => `${exit(letter)}<span style="color:${strange.tint[letter]}">${letter.toUpperCase()}</span>`).join(",") + "</span>";
   };
-  const table = `<i></i>` + columns.map(head).join("") + STRANGE_VERSUS_ROWS.map(([key, label, title]) => {
+  const who = group => `<span class="strange-who">` + group.map(letter => {
+    const held = strangeHandle(panes[letter].strategy);
+    return `<span style="color:${strange.tint[letter]}" title="${escapeAttr(`${letter.toUpperCase()} · ${strangeSeries(letter, tree)}: ${held} holds the seat now`)}">${escapeAttr(held)}</span>`;
+  }).join(", ") + `</span>`;
+  // End outcome, each world's own (`strangeEndOutcome`): the best is lit,
+  // unless every world comes to the same.
+  const ends = Object.fromEntries(open.map(letter => [letter, strangeEndOutcome(letter)]));
+  const before = (one, other) => one.rank[0] - other.rank[0] || one.rank[1] - other.rank[1];
+  const best = open.map(letter => ends[letter]).reduce((one, other) => before(other, one) < 0 ? other : one, ends[open[0]]);
+  const even = open.every(letter => before(ends[letter], best) === 0);
+  const end = group => {
+    const shown = group.length > 2 ? group.slice(0, 1) : group, more = group.slice(shown.length);
+    return `<span class="strange-end">` + shown.map(letter => {
+      const at = ends[letter], line = escapeAttr(at.text);
+      const lead = group.length > 1 ? `<b style="color:${strange.tint[letter]}">${letter.toUpperCase()}:</b> ` : "";
+      return `<span data-end-world="${letter}" data-outcome="${at.outcome}" title="${escapeAttr(`${at.text}\n${at.title}`)}">${lead}` +
+        `${lit(!even && before(at, best) === 0, line)}</span>`;
+    }).join("") + (more.length === 0 ? "" : `<span class="strange-end-more" title="${escapeAttr(more.map(letter =>
+      `${letter.toUpperCase()}: ${ends[letter].text}`).join("\n"))}">+${more.length} more: ${more.map(letter => letter.toUpperCase()).join(", ")}</span>`) +
+      `</span>`;
+  };
+  const table = `<i></i>` + columns.map(head).join("") + `<i></i>` + columns.map(who).join("") + STRANGE_VERSUS_ROWS.map(([key, label, title]) => {
     const summed = STRANGE_TOTALS.includes(key);
     const short = STRANGE_VERSUS_SHORT[key] || label;
     return `<em title="${summed && wide ? `${title}: a turn, and beside it made over the game so far${key === "gold" ? " (net of upkeep)" : ""}` : title}">` +
       `<span class="strange-long">${label}</span><span class="strange-short">${short}</span></em>` +
       columns.map(group => cell(key, group)).join("");
-  }).join("");
+  }).join("") + `<em class="strange-end-head" title="How each world's game ends, as its future has been played out to the end: who wins and on what turn, then the wars and nuclear wars still to come"><span class="strange-long">End outcome</span><span class="strange-short">Outcome</span></em>` +
+    columns.map(end).join("");
   if (strange.drawn !== table) {
     strange.drawn = table;
     const card = hud.querySelector('[data-strange="numbers"]');
     card.style.gridTemplateColumns = `auto repeat(${columns.length}, minmax(0, 1fr))`;
     card.innerHTML = table;
   }
-  strangePathsDraw(hud, open, tree);
   strangeDefeatDraw(hud, open, tree);
+  strangeStandingsDraw();
   const count = `${open.length} world${open.length === 1 ? "" : "s"} open`;
   const said = hud.querySelector("[data-strange-worlds]");
   if (said.textContent !== count) said.textContent = count;
@@ -8511,6 +8638,10 @@ if (STRANGE_PANE) {
   // (The viewer's own, where the page has them.)
   debugDock = () => {};
   if (typeof drawPlayerHud === "function") drawPlayerHud = () => {};
+  // The page that holds the worlds draws the standings and the victory
+  // tracker of the one it follows, from the world as this page holds it
+  // (`strangeStandingsDraw`).
+  window.strangeWorldNow = () => state;
   // A world whose game is over is not started again on a countdown: that
   // would end the world (`strangeWorldFate`).
   if (typeof finaleHoldsForTheReader === "function") finaleHoldsForTheReader = () => true;
@@ -8577,6 +8708,27 @@ if (STRANGE) {
     return opened;
   };
   setInterval(() => { try { strangeSpare(); } catch (error) { console.error("doctor strange", error); } }, STRANGE_SPARE_EVERY_MS);
+  // The standings and the victory tracker are the world followed
+  // (`strangeStandingsDraw`): the simulator's own drawing, given that world
+  // to read for as long as it draws. Until a world can be read it draws the
+  // page's own, which is the same game.
+  // Watch as is not a column of them here: it turns the simulator's own map
+  // to a civilization's eyes, and that map is not shown.
+  if (typeof playerHudColumnExists === "function") {
+    const exists = playerHudColumnExists;
+    playerHudColumnExists = column => column.key !== "watch" && exists(column);
+  }
+  if (typeof drawPlayerHud === "function") {
+    const drawStandings = drawPlayerHud;
+    drawPlayerHud = function () {
+      if (strangePanels && !strangePanels.players.isConnected) strangeStandingsHome();
+      const world = strange.standings && strangePanels && strangePanels.players.isConnected ? strangeFollowedWorld() : null;
+      if (!world) return drawStandings();
+      const own = state;
+      state = world;
+      try { return drawStandings(); } finally { state = own; }
+    };
+  }
   // What the worlds do next is worked out at once, every time; the split
   // and the highway are drawn once a frame. Each world says several things
   // a turn (its turn, its marks, its numbers, that it followed, that it is
