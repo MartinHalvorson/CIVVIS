@@ -5,6 +5,8 @@ local completed, started, stockFinished, stockPlayed = 0, 0, 0, 0;
 local callback, replayButton;
 local env = setmetatable({
     NAME = "EndGameMenu", END_SCREENS = {EndGameMenu = true}, Styles = {},
+    -- Not the person-facing install outside hotseat (harness_gate_test.lua).
+    CivvisHarness = {dormant = function() return false; end},
     Mouse = {eLClick = 1},
     Controls = {
         Movie = {SetMovieFinishedCallback = function(_, fn) callback = fn; end},

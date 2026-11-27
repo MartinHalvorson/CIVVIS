@@ -50,6 +50,8 @@ function CivvisSeat.mine()
 	if CivvisSeat.seat == nil then return true; end
 	local ok, pid = pcall(function() return Game.GetLocalPlayer(); end);
 	if not ok or pid ~= CivvisSeat.seat then return false; end
+	-- The person-facing install: only while its harness is live (`CivvisHarness`).
+	if cfg.RequireHarness == true and not CivvisHarness.live() then return false; end
 	local held = false;
 	pcall(function() held = PlayerConfigurations[pid]:GetWantsPause() == true; end);
 	return not held;
@@ -73,6 +75,80 @@ function CivvisSeat.beat()
 	end
 	beats[CivvisSeat.seat] = Automation.GetTime();
 end
+-- >>> CivvisHarness: the same block in CivvisControlAgent.lua,
+-- CivvisControlAutoClose.lua and CivvisControlHeartbeat.lua (harness_gate_test.lua).
+-- ★★ THE PERSON-FACING INSTALL DOES NOTHING WITHOUT A LIVE HARNESS.
+-- `RequireHarness` is set only by `tools/civ6_hotseat.py --manual-lobby`, the
+-- install a person who is not this project's operator may leave in place and
+-- play every other game with. Two rules keep it stock for them:
+--   * outside a hotseat game it is dormant (`dormant`): the shipped screen or
+--     HUD and nothing of ours, and no agent context registers anything;
+--   * in a hotseat game it acts and writes only while the harness that
+--     installed it is live (`live`): a `harness` row under `HarnessRun` in the
+--     orders database whose `beat` (Unix seconds, rewritten every 2 s) is at
+--     most `HarnessFreshSeconds` old by SQLite's own clock. A stopped harness
+--     deletes the row and a killed one goes stale; either way every seat is a
+--     person's again, as Civ VI ships it.
+-- Read at most every 3 s of `Automation.GetTime()`, never per tick: a
+-- `DB.Query` per game-core tick starves the log flush. Unset, `live` is true,
+-- `dormant` false, and nothing here runs.
+CivvisHarness = { ok = false, calls = 0 };
+function CivvisHarness.hotseat()
+	local on = false;
+	pcall(function() on = GameConfiguration.IsHotseat() == true; end);
+	return on;
+end
+function CivvisHarness.dormant()
+	return cfg.RequireHarness == true and not CivvisHarness.hotseat();
+end
+function CivvisHarness.read()
+	if not CivvisHarness.hotseat() then return false; end
+	local path = string.gsub(tostring(cfg.OrdersDb or ""), "['\\]", "");
+	local run = string.gsub(tostring(cfg.HarnessRun or ""), "['\\]", "");
+	if path == "" or run == "" then return false; end
+	if not CivvisHarness.attached then
+		CivvisHarness.attached = true;
+		-- One connection serves every context: a second ATTACH of the alias
+		-- fails, and the read below goes through whichever context's took.
+		pcall(function() DB.Query("ATTACH DATABASE '" .. path .. "' AS civvis"); end);
+	end
+	local fresh = tonumber(cfg.HarnessFreshSeconds) or 20;
+	local live = false;
+	for _, row in ipairs(DB.Query("SELECT CAST(strftime('%s','now') AS INTEGER) - beat AS age"
+			.. " FROM civvis.harness WHERE run = '" .. run .. "'")) do
+		local age = tonumber(row.age);
+		if age ~= nil and age >= -5 and age <= fresh then live = true; end
+	end
+	return live;
+end
+function CivvisHarness.live()
+	if cfg.RequireHarness ~= true then return true; end
+	local h = CivvisHarness;
+	if h.checking then return h.ok; end
+	local now = nil;
+	pcall(function() now = Automation.GetTime(); end);
+	h.calls = h.calls + 1;
+	if h.at ~= nil then
+		if type(now) == "number" and now >= h.at and now - h.at < 3 then return h.ok; end
+		if type(now) ~= "number" and h.calls % 200 ~= 0 then return h.ok; end
+	end
+	h.checking, h.at = true, type(now) == "number" and now or -1;
+	local ok, live = pcall(h.read);
+	h.ok, h.checking = ok and live == true, false;
+	return h.ok;
+end
+-- Whether the local player's turn is CIVVIS's: one of the installed seats (or
+-- the test stub) while the harness is live. Every other turn is a person's.
+function CivvisHarness.mine(pid)
+	if not CivvisHarness.live() then return false; end
+	for _, list in ipairs({ cfg.HotseatSeats or {}, cfg.HotseatStubSeats or {} }) do
+		for _, seat in ipairs(list) do
+			if tonumber(seat) == pid then return true; end
+		end
+	end
+	return false;
+end
+-- <<< CivvisHarness
 -- Whether `name` is a civilization's own Holy Site. Russia's Lavra is ordered
 -- under its own type (`DistrictReplaces`, Districts.xml:34), so a test for
 -- DISTRICT_HOLY_SITE alone never sees it.
@@ -480,6 +556,8 @@ encode = function(v)
 end
 
 local function emit(kind, payload)
+	-- The person-facing install writes nothing without a live harness.
+	if cfg.RequireHarness == true and not CivvisHarness.live() then return; end
 	payload = payload or {};
 	payload.kind = kind;
 	payload.ctx = "agent";
@@ -30013,7 +30091,10 @@ function Initialize()
 		-- window ran out, and SIGTERM closed the game 28 s after the hold. This mod
 		-- is installed only for an automated game, and the modal's Yes
 		-- (`OnExitGame`) is exactly this call.
+		-- Not in the person-facing install (`RequireHarness`): its harness never
+		-- quits the game, and a person's Exit keeps the game's own question.
 		UserRequestClose = function()
+			if cfg.RequireHarness == true then return; end
 			if cfg.Play ~= false then pcall(function() Events.UserConfirmedClose(); end); end
 		end,
 		-- The tactical ledger: see CivvisLedger.
@@ -30038,4 +30119,6 @@ function Initialize()
 	if cfg.FiraxisSelfPlay == true then CivvisSelfPlay.wire(); end
 end
 
-Initialize();
+-- The person-facing install in a game that is not hotseat (their own single
+-- player game): no listener at all, so no handler of ours ever runs.
+if not CivvisHarness.dormant() then Initialize(); end
