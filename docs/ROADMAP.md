@@ -1,8 +1,9 @@
 # Roadmap
 
 Where the project actually is, and what it is doing next. History below is
-kept for orientation; the current-state section is the part to trust, and
-`docs/AI_GAPS.md` is the always-current assessment of the AI specifically.
+kept for orientation; the current-state section and the ranked objectives are
+the part to trust, and `python3 tools/live_status.py` prints the numbers they
+rest on. `docs/AI_GAPS.md` is the assessment of the AI specifically.
 
 For the standing question this roadmap exists to close — how far CIVVIS is from
 Civilization VI, and why measured strength here has not transferred there —
@@ -14,7 +15,135 @@ The current evaluation inventory and live-bridge counts are generated in
 [`docs/EVAL_STATUS.md`](EVAL_STATUS.md); do not duplicate those numbers in
 prose. Refresh it with `python3 tools/eval_manifest.py --write`.
 
-## Where the project is (2026-08-17)
+## Where the project is (2026-11-27)
+
+**Run `python3 tools/live_status.py` first.** It reads the live ledger (the
+`ledger` branch's `results.jsonl`, one line per game the live seat played) and
+prints the win rate at each level against equal odds, the Lv 8 Deity record by
+day, how Deity games are lost, the turns games end on, our score against the
+best rival's, the live host's throughput and idle time, and the gene backlog
+with the armed set the newest game actually played. It counts a game exactly
+as the site's Tournaments page does. This section states the shape of things
+and no number a tool can print; the one table below is a dated snapshot.
+
+- **The engine and the site are built.** A pure-Rust engine at full rules
+  depth, played on civvis.ai in the browser: CIVVIS (a game watched as an AI
+  simulation), the AI Debugger family (AI Debugger, Doctor Strange and Edge of
+  Tomorrow, one engine), Tournaments, and the Charts pages, each lane
+  published from one revision (`docs/SPECTATOR_DEPLOY.md`). Remaining engine
+  work is fidelity against real Civilization VI (`docs/FIDELITY.md`).
+- **The live seat plays real Civilization VI, and Deity is the front line.**
+  One CIVVIS agent against five Firaxis AI on 6P Continents at Online speed,
+  played one game at a time by one live host. It has won at every level, wins
+  most games up to Emperor, and at Lv 8 Deity wins about one game in five,
+  barely above the one in six an even seat would. The Settler-to-Deity ladder
+  the 2026-08-17 roadmap below was climbing is done; making Deity a winning
+  level is the work.
+- **How Deity is lost.** Most losses are a rival's Science victory late in
+  the game; a rival's Culture victory and our own elimination in the middle
+  game make up most of the rest. Our wins are Religious and Diplomatic, and
+  they land before the rival Science clock does. Our score is about half the
+  best rival's even in the games we win: we win with a smaller empire.
+- **What the measurements say about themselves.** The gene screen prices
+  genes at Prince with all six seats ours (`docs/GENE_SCREEN.md`), and
+  `data/strategy_elo.json`'s 4-player simulation rates our best agent below
+  its own sim Emperor and far below its sim Deity. The live seat beats the
+  Firaxis Emperor most games, so the simulator's difficulty scale does not
+  describe live play, and a gene priced there has not been priced for Deity.
+- **The live seat's armed genome is not the repository's.** `deploy/live-force-on.txt`
+  (read by `tools/ops/civvis-game-supervisor.sh` at every batch, and what
+  `codemap.py --gene` reports as "armed live") has not changed since
+  2026-11-06. Every finished run's `summary.json` on the ledger branch
+  records the `forced` list it was launched with, and that list has grown
+  almost daily since: the live host plays a larger list the repository does
+  not hold. The verified-head launcher clears `CIVVIS_WITH` and
+  `CIVVIS_WITH_FILE`, which leaves the supervisor's local override,
+  `~/.civvis-live-force-on` on the live host, as the place genes are really
+  armed. `tools/live_status.py` prints the played list against the file.
+- **The opt-in pile.** Most registry rows are opt-in genes that no live game
+  has played and no screen at Deity has priced; `live_status.py` counts them.
+
+Snapshot, 2026-11-27 05:17 UTC (`python3 tools/live_status.py --since all
+--tag civvis-t7- --tag civvis-t8-`: the Official Benchmark and Tournament 7, tagged `civvis-t8-`).
+**A snapshot, not a status; do not update it by hand.**
+
+| reading | value |
+|---|---|
+| Lv 8 Deity | 46 / 245 won (19%; 95% 14–24%; equal odds 17%) |
+| Tournament 7 (`civvis-t8-`), Deity, Diplomatic victory off | 10 / 58, every win Religious |
+| Deity losses | 199: rival Science 146, eliminated 28, rival Culture 24, rival Religious 1 |
+| Rival Science victory, turn | p10 173, median 186, p90 199 |
+| Our Deity wins, median turn | Religious 167, Diplomatic 173 (one Science win) |
+| Our eliminations, turn | p25 78, median 100 |
+| Our score / best rival's, median | 0.52 in wins, 0.35 in losses |
+| Live host | about 90 finished games a day; idle 29% of wall time (2026-11-24 to 11-27) |
+
+The conflict-hotspot objective of the 2026-08-17 ranking, under History, is
+still the table `tools/conflict_hotspots.py --check` holds against the
+measured ranking in CI; it moved with the rest of that section unchanged.
+
+## Objectives (ranked 2026-11-27)
+
+1. **The Lv 8 Deity win rate is the project's first number.** Target: 40%
+   over 100 games with the Diplomatic victory off (Tournament 7's shape,
+   `civvis-t8-`; `python3 tools/live_status.py --since all --tag civvis-t8-
+   --victory-settings`). Every other objective below, and every piece of work
+   anyone proposes, is ranked by its expected effect on this number. A change
+   that cannot say how it moves it waits.
+2. **Beat or break the rival Science clock.** A rival's Science victory is
+   most Deity losses. Two ways out, both measured on the ledger: win before
+   it lands (our Religious and Diplomatic wins already come earlier than the
+   rival Science median), or deny it — find the Science leader early, and
+   strike its spaceport, campuses and capital. The number to move is the
+   rival Science share of Deity losses in `live_status.py`; a graded per-game
+   reading of the race (objective 5) shows progress long before the win rate
+   can.
+3. **Close the economy gap by taking cities.** We win with about half the
+   best rival's score, so the seat has to grow by conquest, not only by
+   settling. Planned conquest of a chosen neighbour, timed and staged, with
+   the operator's campaign tactics in `docs/OFFENSIVE_CAMPAIGN.md`. The
+   numbers to move: our score against the best rival's, and cities taken per
+   game (the run summaries' `conquest_marks`).
+4. **Stop being eliminated.** Elimination in the middle game is a loss no
+   late-game plan can recover. Early defence, garrisons and the answer to a
+   declared war, in `docs/DEFENSE_TACTICS.md`. The number to move: the
+   eliminated share of Deity losses and its turn percentiles.
+5. **Measure at Deity, not Prince.** Price genes on a screen whose opponents
+   play like the live Deity AI, calibrate the simulator against the live
+   ledger (the sim's Emperor and Deity must rank where the Firaxis levels
+   rank live), and adopt a graded live metric — the turn margin to the rival
+   Science victory, or the score ratio — so a change shows its sign in tens of
+   games rather than the hundreds a win rate needs.
+6. **Raise live game throughput.** Every live verdict waits on games, and one
+   host plays one game at a time. Cut the idle share of wall time that
+   `live_status.py` prints and the setup time of each game; add a second
+   live seat when one is possible.
+7. **Arm or delete the opt-in pile.** No new opt-in gene while your previous
+   one has no live verdict. Every behaviour PR names the ledger number it
+   should move (a line `live_status.py` prints), in which direction, how many
+   live games would show it, and exactly how it is armed for the live seat.
+   An opt-in that cannot be armed live or has no measured effect is deleted.
+   The live seat's armed list moves into the repository
+   (`deploy/live-force-on.txt`) so arming is reviewed, versioned and the same
+   on every host.
+8. **Direction docs carry no numbers a tool can print.** This file,
+   `docs/AI_GAPS.md`, `README.md` and `AGENTS.md` say what to run, not what it
+   printed. A dated snapshot, labelled as one, is the only exception.
+9. **Own art and a licence.** Nothing cut from the game, in the repository or
+   on the site: the art the site draws is CIVVIS's own, and the repository
+   carries a licence.
+10. **One flagship.** The AI Debugger family — AI Debugger, Doctor Strange and
+    Edge of Tomorrow share one engine (`docs/SIM_DEBUGGER.md`) — is finished
+    and held to the memory budget (a civvis.ai tab under about 1–1.5 GB, sized
+    for an 8 GB laptop, every cache capped or evicted) before new pages are
+    added. Wizard Chess and new chart pages wait.
+
+## History
+
+The two sections this roadmap opened with from 2026-08-17 to 2026-11-27,
+unchanged. They are the record of what was believed then, not direction.
+
+### Where the project is (2026-08-17)
 
 Everything the old roadmap called planned has shipped and then some:
 
@@ -54,7 +183,7 @@ Everything the old roadmap called planned has shipped and then some:
   attempt, terminal, and win counts are generated in `docs/EVAL_STATUS.md`,
   rather than repeated here. This is the project's front line.
 
-## Active objectives (ranked 2026-08-17)
+### Active objectives (ranked 2026-08-17)
 
 1. **Make Settler repeatable, then take Chieftain.** The rung is claimed; two
    wins in 119 attempts is a result, not a capability. The installed supervisor
