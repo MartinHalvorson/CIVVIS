@@ -767,6 +767,9 @@ impl AdvancedAi {
         /// Opt-in gene `watched-capital-trains-its-defender`; see
         /// `advanced/watched_capital_trains_its_defender.rs`.
         watched_capital_trains_its_defender => enable_watched_capital_trains_its_defender, disable_watched_capital_trains_its_defender;
+        /// Opt-in gene `walls-for-the-war-front`; see
+        /// `advanced/walls_for_the_war_front.rs`.
+        walls_for_the_war_front => enable_walls_for_the_war_front, disable_walls_for_the_war_front;
     }
 
     toggles! {

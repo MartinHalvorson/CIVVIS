@@ -1,0 +1,27 @@
+{
+ "kind": "captured_native_action_pairs_v1",
+ "tag": "walls-for-the-war-front",
+ "scope": "Recorded proposal activation on captured live input only, not host execution or strength. 16 boards from three live T8 benchmark games of 2026-11-27 (Lv 8 Deity 6p, Online) whose cities fell unwalled during a war (city_lost wall_damage_when_held 0): civvis-t8-20261127T082413Z Arabia t50 t62 t68 t72 t76 t80 t84 (Mecca t87, Hattin t90), -T111442Z Ethiopia t62 t63 t85 t86 t88 (Dire Dawa t64, Sodo t87, Mekele t89), -T102751Z Mali t94 t114 t140 t143 (Niani t96 onward). Each board is the run's events.jsonl cut after turn N+1 and replayed at turn N. Both arms run one frozen ci-profile civvis_orders --resumed built from the branch with the run's own requested genome (why.log line 1 forced); the on arm adds --with walls-for-the-war-front. 16 of 16 boards completed in both arms; orders differ on 7: Arabia t62 (at war with Germany at 2.0x: Walls in Mecca 3 turns, Hattin 5, Halab 8), Ethiopia t62/t63 (China 1.2-1.3x: Addis Ababa, Sodo, Dessie), t85/t86/t88 (Maya 0.8-0.9x: Lalibela, Mekele over its Entertainment Complex, Adwa), Mali t94 (Ottomans 1.3x: Niani, Jenne, Gao). The on arms journal 18 'walls-for-the-war-front:' lines, the off arms 0. Unchanged boards: t50 at peace, Arabia t72-t84 after the t72 peace, and frames with no enemy soldier visible near an unwalled city (the replay carries no sighting memory from earlier turns).",
+ "archive": {
+  "path": "docs/eval/2026-11-27-walls-for-the-war-front.native-queries.tar.xz",
+  "sha256": "a65461cd515052d6f4b83b70efc4bf1e7540efd46a5b12a6e2033cc5013e207a"
+ },
+ "members": [
+  "native-queries-01/0000/result.json",
+  "native-queries-01/0001/result.json",
+  "native-queries-01/0002/result.json",
+  "native-queries-01/0003/result.json",
+  "native-queries-01/0004/result.json",
+  "native-queries-01/0005/result.json",
+  "native-queries-01/0006/result.json",
+  "native-queries-01/0007/result.json",
+  "native-queries-01/0008/result.json",
+  "native-queries-01/0009/result.json",
+  "native-queries-01/0010/result.json",
+  "native-queries-01/0011/result.json",
+  "native-queries-01/0012/result.json",
+  "native-queries-01/0013/result.json",
+  "native-queries-01/0014/result.json",
+  "native-queries-01/0015/result.json"
+ ]
+}
