@@ -2144,6 +2144,16 @@ on. The viewer's own result card is put away in a world's box, and so is the
 countdown to a new game it would start on a native server
 (`finaleHoldsForTheReader`), which would end the world.
 
+### The turn on the screen
+
+While time runs, the turn written on the line is the one the worlds were last
+told to show (`strangeShowing`), and it is written in the same breath as they
+are told (`strangeTurnSay`), so it changes with the maps. Read off the
+followed world instead, it changed only once that world had said it was there
+and the page was next drawn (once a frame at most): measured on /test with
+two worlds, a world's map was a turn ahead of the count in one look in seven,
+and a turn the page was not drawn on was never written at all.
+
 ### Send it
 
 Operator 2026-11-26: "add a button to the left side top half but the bottom
@@ -2179,11 +2189,17 @@ them: ten worlds. Its hover says what a press does: on the site today, "Spawn
 has a world then".
 
 Once every new world stands on the base's turn, time runs on for all the open
-worlds to the end of the game, and faster than Play Time (`fast`,
-`strangeFarthest`): the turn shown is the furthest every world holds, less
-`STRANGE_SEND_KEEP` (4), rather than each turn on the way, and a world that
-answers for its future is asked for the next turns at once, so each world's
-engine plays the whole time, on a core of its own. A world whose game ends is
+worlds to the end of the game (`fast`): a world that answers for its future
+is asked for the next turns at once, so each world's engine plays the whole
+time, on a core of its own, and every turn on the way is shown, one after
+another. From 2026-11-27 to the same day it showed the furthest turn every
+world held less four instead (`strangeFarthest`, `STRANGE_SEND_KEEP`); with
+the futures played two turns at a time that meant every other turn, so the
+turn count went 5, 7, 9, ... and skipped (operator 2026-11-27: "turn count
+appears to be skipping turns ... please fix such that the turn counts
+iterates more smoothly and the mapstate match the turn count"). Showing every
+turn costs the time to the end the table below measures (67 s against 52 s
+for ten worlds), which is the page drawing every box on every turn. A world whose game ends is
 taken to its last turn, so it says how it ended. No future is begun on a scout
 while it runs (`strangeForesee`): the worlds play their own futures, and are as
 fast as the slowest of them, which a scout beside it slows. Pressed while time
@@ -2206,8 +2222,8 @@ the worlds that were already ahead only took cores from the slowest one.
 Showing each turn, two fifths of the page's thread went to the browser laying
 out and painting the ten boxes, and a third to the boxes drawing their turns.
 Here each world's engine had a third of a core; on a computer with its cores
-free the engines play several times faster and the page's drawing, which Send
-it no longer waits on, was the whole of the limit. A world's turn is played
+free the engines play several times faster and the page's drawing is the
+whole of the limit. A world's turn is played
 one after the other on its own engine, so a core one world leaves free cannot
 play another world's turn for it: what it can do is keep every world's engine
 playing, which Send it now does.

@@ -4520,22 +4520,28 @@ def check_doctor_strange_send_it(bar: Bar, address: str) -> None:
         bar.until("strange.run === null && strangeIdle()", "Pause stops the worlds", seconds=30)
         assert len(set(bar.ev(turns))) == 1
         # With nothing left to branch, Send it runs the worlds on, as fast as
-        # they are played: each world's future is played ahead of the turn
-        # shown, and the turn shown is the furthest every world holds, less
-        # STRANGE_SEND_KEEP, not each turn on the way.
+        # they are played and drawn: each world's future is played ahead of
+        # the turn shown, and every turn on the way is shown, one after
+        # another, with the label saying each (operator 2026-11-27: "turn count
+        # appears to be skipping turns ... please fix such that the turn counts
+        # iterates more smoothly and the mapstate match the turn count").
         assert bar.ev(f"document.querySelector('{button}').title") == "12 worlds are open, which is the most: run all 12 worlds out to the end"
         bar.ev("strange.futures = true, strangeAheadNext(), true")
         bar.until("Object.keys(strange.peeks).length === 0 && strangeOpen().every(letter => strangeKept(letter) - debugSplit.panes[letter].turn >= STRANGE_AHEAD)",
                   "each world holds its future ahead", seconds=60)
         stood = bar.ev(f"{turns}[0]")
-        bar.ev("window.strangeShown = []; window.strangeWatch = setInterval(() => { const run = strange.run;"
-               " if (run && strangeShown[strangeShown.length - 1] !== run.at) strangeShown.push(run.at); }, 2), true")
+        bar.ev("window.strangeShown = []; window.strangeSaid = []; window.strangeWatch = setInterval(() => { const run = strange.run;"
+               " if (run && strangeShown[strangeShown.length - 1] !== run.at) strangeShown.push(run.at);"
+               " const said = +document.querySelector('#strange-hud [data-strange=\"turn\"]').textContent;"
+               " if (run && strangeSaid[strangeSaid.length - 1] !== said) strangeSaid.push(said); }, 2), true")
         bar.click(button)
         bar.until(f"strange.run !== null && strange.run.fast && {together(stood + 20)}", "Send it runs time on", seconds=60)
         assert bar.ev(said) == "Send it: time runs on for all 12 worlds, to the end.", bar.ev(said)
-        shown = bar.ev("clearInterval(strangeWatch), strangeShown")
+        shown, said_turns = bar.ev("clearInterval(strangeWatch), [strangeShown, strangeSaid]")
         steps = [later - earlier for earlier, later in zip(shown, shown[1:])]
-        assert shown[0] == stood and steps and steps[0] == bar.ev("STRANGE_AHEAD - STRANGE_SEND_KEEP") and max(steps) > 1, shown
+        assert shown[0] == stood and steps and set(steps) == {1}, shown
+        said_steps = [later - earlier for earlier, later in zip(said_turns, said_turns[1:])]
+        assert said_steps and set(said_steps) == {1}, said_turns
         bar.click('#strange-hud [data-strange="play"]')
         bar.until("strange.run === null && strangeIdle()", "Pause stops the worlds", seconds=30)
         assert len(set(bar.ev(turns))) == 1
