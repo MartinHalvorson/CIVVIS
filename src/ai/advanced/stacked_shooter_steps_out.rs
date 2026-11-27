@@ -39,7 +39,8 @@
 //!
 //! At the start of our unit turn, before `shooters-man-the-capital` and the
 //! battle plan, for each City Center of ours that holds a shooter and another
-//! of our combat units (a ship in port counts, as it does for the host),
+//! of our combat units (a ship in port counts: the engine's reading of the
+//! host rule counts any unit with strength),
 //! while a land soldier (no recon) of a power
 //! at war with us, barbarians included, stands in sight within
 //! [`STEP_OUT_THREAT_TILES`] tiles of it:
@@ -102,8 +103,8 @@ struct StepOutEnemy {
 
 impl AdvancedAi {
     /// A combat unit of ours, land or sea: what shares a centre under the
-    /// host's rule (`Game::shooter_stacked_in_city` counts any unit with
-    /// strength, so a Galley in port mutes the Archer beside it).
+    /// engine's reading of the host rule (`Game::shooter_stacked_in_city`
+    /// counts any unit with strength, a Galley in port included).
     fn step_out_soldier(g: &Game, pid: usize, uid: u32) -> bool {
         g.units.get(&uid).is_some_and(|unit| {
             let spec = &g.rules.units[unit.kind];

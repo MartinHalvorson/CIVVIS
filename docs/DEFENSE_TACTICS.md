@@ -148,19 +148,22 @@ the summary of `civvis-t8-20261127T042704Z` (decider 760a9ab1), not from
 
 `src/ai/advanced/stacked_shooter_steps_out.rs`, opt-in. At the start of our
 unit turn, before `shooters-man-the-capital` and the battle plan, each City
-Center of ours where a shooter shares the tile with another of our soldiers,
-while an enemy land soldier (barbarians included, recon not) stands in sight
+Center of ours where a shooter shares the tile with another of our combat
+units (a ship in port counts: the engine's reading of the host rule, `Game::shooter_stacked_in_city`, counts any unit with strength), while an enemy land soldier (barbarians included, recon not) stands in sight
 within four tiles, keeps one soldier on the centre (a civilian's guard if one
 is there, else the best shooter) and steps every other one onto the best
-free tile beside it: a tile with a shot this turn first, then the fewest
-enemy melee beside it, then cover, then our own ground. The battle plan and
+free tile beside it (water for a ship): a tile with a shot this turn first,
+then the fewest enemy melee beside it, then cover, then our own ground. A
+stack with no open tile beside it stands, and the journal says so. The battle plan and
 `shooters-man-the-capital` then see shooters that can fire. Off, nothing
 runs.
 
 **What it moves on the ledger.** The direct reading is the share of
-shooter-turns with a target that fire (`events.jsonl`: 49% in the eliminated
-games; a stacked shooter is 17% of the time a shooter at all): it should
-rise toward the 84% a lone garrison reads, within ten games. Then
+shooter-turns with a target that fire (`events.jsonl`, `census/idle.py` in the archive: 49% in the eliminated
+games, 17% for a stacked shooter on a centre): the stacked share of those
+shooter-turns (25% in the eliminated games) should fall toward zero and the
+centre's fire rate rise toward the 84% a lone garrison reads, within ten
+games. Then
 `summary.combat` kills per loss (1.25 in the eliminated) and damage
 dealt/taken (0.80), which converge in tens of games. The outcome is the Deity
 elimination rate, 11.4% (28 of 245) since 11-22, median elimination turn
@@ -179,13 +182,24 @@ override match the repository list. A live screen
 (`~/.civvis-live-screen-gene`, `docs/LIVE_SCREEN.md`) is the clean A/B; the
 slot was held by `religion-seat-takes-the-faith-beliefs` on 11-27.
 
-**What was verified.** Unit tests (`stacked_shooter_steps_out/tests.rs`)
-including a whole turn of the live-like seat (battle planner and
+**What was verified.** Eleven unit tests (`stacked_shooter_steps_out/tests.rs`),
+among them a whole turn of the live-like seat (battle planner and
 `shooters-man-the-capital` on) in which two stacked Archers fire none of
-their shots off and both on; and paired replays of captured live boards
-from the eliminated games through `civvis_orders --resumed`
-(`docs/gene_screens/fires/stacked-shooter-steps-out.action-pairs.json`).
-Not verified: host execution, and any outcome.
+their shots with the gene off and both with it on, a Galley in port that
+puts to sea, a guard that keeps its charge, cover over exposure, and a river
+crossing that is no firing stand. And paired replays of 15 captured live
+boards from the eliminated games through one frozen `civvis_orders
+--resumed`, each with the run's own requested genome, the on arm adding
+only this gene (`docs/gene_screens/fires/stacked-shooter-steps-out.action-pairs.json`,
+archive `docs/eval/2026-11-27-stacked-shooter-steps-out.native-queries.tar.xz`):
+on 11 boards with a stacked shooter under threat the off arms propose no
+shooter strike at all and the on arms propose 7; 8 of the 11 change (Seoul
+t62: three step out and two Archers fire; Constantinople t91: one steps out,
+two fire; a Galley puts to sea in Cairo t93). The three that do not: Lisbon
+t56, where every tile beside the centre was held or water, and two boards
+whose stack had cleared by the frame the decider reads. The four control
+boards change nothing. Not verified: host execution (no live game was run:
+the operator is playing on this Mac), and any outcome.
 
 ## 4. Where live arming happens
 
