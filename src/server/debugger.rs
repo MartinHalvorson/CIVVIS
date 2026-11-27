@@ -1216,6 +1216,14 @@ impl Timeline {
     /// oldest turns go first and the odd ones before the even, so a long
     /// game's early turns are kept one in two, then one in four, and so on to
     /// one in `COARSEST_STRIDE`. If that is still too many, the oldest go.
+    ///
+    /// The first turn of each world era stays too, as the first turn does,
+    /// for as long as the room holds them: Era Back and Era Next, and Doctor
+    /// Strange's Turn 1, Era back and Era forward, go there, and a turn kept
+    /// is a jump where one let go is turns played again (operator
+    /// 2026-11-27: "we should make sure to save these turns for fast
+    /// jumping"). They go only in a last pass, oldest first, when the room
+    /// is smaller than they are.
     fn thin(&mut self) {
         if let Some(in_use) = memory_in_use() {
             self.squeeze(in_use);
@@ -1227,21 +1235,38 @@ impl Timeline {
         while over > 0 {
             let old = self.marks.len().saturating_sub(dense);
             let last_pass = stride > COARSEST_STRIDE;
+            let eras_go = stride > 2 * COARSEST_STRIDE;
+            let dawns = Self::dawns(&self.marks);
             let mut index = 0;
             self.marks.retain(|mark| {
                 let kept_by_stride = !last_pass && mark.turn % stride == 0;
-                let goes = over > 0 && index > 0 && index < old && !kept_by_stride;
+                let kept_by_era = !eras_go && dawns[index];
+                let goes = over > 0 && index > 0 && index < old && !kept_by_stride && !kept_by_era;
                 index += 1;
                 if goes {
                     over -= 1;
                 }
                 !goes
             });
-            if last_pass {
+            if eras_go {
                 break;
             }
             stride *= 2;
         }
+    }
+
+    /// Which marks are the first kept turn of their world era: the first
+    /// mark, and each whose era is not the one before it's.
+    fn dawns(marks: &[Mark]) -> Vec<bool> {
+        let mut era = None;
+        marks
+            .iter()
+            .map(|mark| {
+                let dawn = era != Some(mark.game.world_era);
+                era = Some(mark.game.world_era);
+                dawn
+            })
+            .collect()
     }
 
     /// Keep a world under a name. A name already taken is given to this

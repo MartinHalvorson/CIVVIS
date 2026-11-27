@@ -207,6 +207,25 @@ dossiers) are the viewer's own and were already moved by their title bars
 (`[data-widget-drag]` in `web/assets/app.js`), on one screen and in each
 half.
 
+## New games on a set world
+
+Operator, 2026-11-27: "in civvis debugger, above start new game with
+seclected settings, add a 2P pangaea New Game, 6P Continents New Game on teh
+right. theses function the same as the new game except set the player count
+and map as well to the claimed settings. same for civvis: edge of tomorrow".
+
+In a played game (the AI Debugger, Edge of Tomorrow, and a sim debugger game
+picked in Game Setup) the left panel has two buttons over Start new game:
+**2P Pangaea New Game** on the left and **6P Continents New Game** on the
+right (`#preset-games`, shown with `body.debugger-view`, and on Edge of Tomorrow, which wears the Civilization VI screen, with `html.tomorrow`). Each sets World size
+(2, a Duel world, or 6, a Small one) and Map (Pangaea or Continents) on Game
+Setup, as a person picking them would, so each select's own listener re-fits
+what follows from it and the panel stages the settings, then starts the game
+as Start new game starts it (`startPresetGame`, `startNewSimulation`), with
+every other setting as it stands. Game Setup then shows what the game was
+started with. They are off while a game is being started and in the Civilization VI
+mode, whose maps are that game's.
+
 ## Two views
 
 A game under the debugger is shown one of two ways, and the bar's **Single
@@ -253,7 +272,12 @@ and 2.8 MB by turn 130. When room runs out the first mark and the newest 60
 stay whole (the newest half of the room when that is fewer), and between them
 the oldest turns go first, the odd ones before the even: a very long game
 keeps its early turns one in two, then one in four, and so on to one in 64. If
-that is still too many the oldest go, so the room is never exceeded.
+that is still too many the oldest go, so the room is never exceeded. The first
+turn of each world era stays as the first turn does (`Timeline::thin`), so Era
+Back, Era Next and Doctor Strange's Turn 1, Era back and Era forward land on a
+turn held, a jump, and not on turns played again (operator 2026-11-27: "we
+should make sure to save these turns for fast jumping"). Era starts go only
+when the room is smaller than they are, oldest first.
 
 Past the memory line, each time the memory has grown by another 1/32 of the
 line (32 MB at 1 GB), a fifth of the room is taken away, down to 12 marks.
@@ -1144,7 +1168,7 @@ with a copy of it, its scout, for each future played at once. From those,
   opens on. On the 8 GB budget one fits and two may be open; on 16 GB six;
   on 24 GB ten; the dozen there are letters for from 32 GB. Past that,
   Branch, Branch Next Best, Branch 5 Next Best, Autosearch's Branch it and
-  All 14,000,605 make no world, or as many as fit, and say why;
+  Send it make no world, or as many as fit, and say why;
 - what the boxes leave is the worlds' kept turns, the same line for each
   world (`room`), and as many futures are begun at once as fit beside them
   (one at a time on the 8 GB budget, `strangeForesee`);
@@ -1162,7 +1186,7 @@ with a copy of it, its scout, for each future played at once. From those,
 `beta/strange_memory_test.py` runs that arithmetic as it ships, in node;
 `check_doctor_strange_memory` in `beta/debugger_test.py` holds the cap
 against every way of making a world, and `beta/homes_test.py` the shim's
-side. Measured before and after (PR #5939 has the table): All 14,000,605
+side. Measured before and after (PR #5939 has the table): All 14,000,605 (now Send it)
 from turn 60 made eleven worlds and passed 5 GB by turn 132; on the 16 GB
 budget it makes four (six worlds) and the tab peaked at 3.15 GB, its
 engines 1.1 GB; on the 8 GB budget it makes none. What none of this reaches
@@ -1743,8 +1767,48 @@ path). these should alert on the top section out in the distance."
     through, and the pointer on it lists every detonation and war ahead and
     how fast it is being played. With many worlds open the signs say less
     and stand in two rows (`strangeFates`).
-  - *Predicted Paths* (`strangePathsDraw`, `strangeOutcome`,
-    `[data-strange-paths]`). Operator, 2026-11-26: "for doctor strange's
+  - *End outcome* (`strangeEndOutcome`, `strangeOutcome`, `.strange-end`),
+    the last row of the worlds' numbers. Operator, 2026-11-27: "lets merge
+    the predicted paths into the path hud. make another row that is end
+    outcome: and list the XXX wins, turnXXX, no wars, no nuclear wars". A
+    world's line is who wins and on what turn (or `No winner`, or the seat
+    `is out`), then the wars still to be declared on the way (`no wars`,
+    `1 war`, `N wars`) and the nuclear war (`no nuclear wars`, `nuclear war
+    turn N`, or `since turn N`): `Mali wins, turn 185, no wars, no nuclear
+    wars`. A future still being played says `Not decided by turn N` and what
+    it has seen `so far`. The best is lit as the most of a row is, in the
+    order the predicted paths had (below), unless every world comes to the
+    same. The row is two lines high whatever it says (a world alone in its
+    column may take both, two worlds sharing a column have a line each led
+    by the letter, and past two the first world's line is followed by
+    `+N more`), so the band and the line under it do not move while the
+    words change or worlds part; the pointer says each line whole and all
+    that comes on the way. Under each column's letters is the player
+    strategy holding each seat there now (`.strange-who`; operator: "add the
+    names of the active strategy to the header of the paths hud").
+  - *The world followed* (`strangeStandingsMount`, `strangeStandingsDraw`,
+    `strangeWorldNow`). Operator, 2026-11-27: "in doc stranges civvis, i
+    can't actually tell what civ we are. please add the player hud in for
+    the "Following" game. we can have this player hud above the path hud
+    that has all the paths listed. lets add the victory track to the right
+    as well". The simulator's own standings (`#playerhud`) and victory
+    tracker (`#victoryhud`), which the highway covered where they stood,
+    are moved onto it: the standings across the top over the worlds'
+    numbers (which stand under them, `--strange-versus-top`), the tracker
+    in the right-hand column in the predicted paths' place. The simulator
+    draws them as it always does (`drawPlayerHud`, wrapped in this page to
+    read the followed world's state for as long as it draws, which each
+    world's page hands over), again whenever that world has another turn
+    to show or another world is followed. So the seat the worlds play is
+    the standings' gold row, only the civilizations that world has met are
+    listed, and the tracker's gold bar is that world's game. Left out here:
+    the standings' turn box (the turn is the line's), Watch as (it turns
+    the simulator's own map, which is not shown), the tracker's record of
+    games, and what moves, sizes or hides a panel. The highway's own button
+    style stops at these two (`:where(:not(...))`), so they look as they do
+    in the simulator. The worlds still draw no standings of their own.
+  - *Predicted Paths*, 2026-11-26 to 2026-11-27, now End outcome above
+    (`strangeOutcome` still ranks). Operator, 2026-11-26: "for doctor strange's
     civvis, lets list the computed outcomes on the right side of the top
     scetion of the screen, ranked from best to worst. cpu and memory can go
     at the top. then: "Predicted Paths". The numbers table can go across
@@ -1752,10 +1816,11 @@ path). these should alert on the top section out in the distance."
     the resources/predicted paths box i described. lets truncate the
     timelines map below this. lets also make sure the dividing line beteen
     the bottom worlds and the top sectoin is moveable". The signs over the
-    branches are no longer shown; what they said is listed in a column down
+    branches are no longer shown; what they said was listed in a column down
     the right of the upper half (`.strange-right`): what the page costs,
     the black swan, then **Predicted Paths**, a row a world, best first,
-    then the defeat tracker. A row is the world's letter and player
+    then the defeat tracker (the victory tracker of the world followed has
+    that place now). A row was the world's letter and player
     strategy, what its future comes to (★ the seat wins, ✗ it loses, 🏁 the
     game ends, or how far it has been played undecided), and under it the
     sign's nuclear war and next war. Best first: the seat wins (sooner
@@ -1801,18 +1866,33 @@ path). these should alert on the top section out in the distance."
   on the left. move futures up to be right of this. then the -10, -1, 1, 10
   line. then play time.then "B stopped on turn 185..." drop locked. should
   always be locked. drop the civvis and civvis ai debugger things"): Home,
-  CIVVIS and New game (gold); the title; −10, −1, +1, +10; Play Time; what
+  Charts/ and CIVVIS (2026-11-27, below); the title; 2P Pangaea New Game and
+  6P Continents New Game; Turn 1, Era back, −10, −1, +1, +10, Era forward
+  (2026-11-27, below); Play Time; what
   the page says; then Following, Create Branch and Autosearch. To the fork
   and Futures were dropped later that day ("the turn box doesnt appear right
   initially odten. please drop to the fork and future to the end": their
   words were cut short on the card, and To the fork filled in only once the
   worlds parted), and the title went from 19 px to 22 px ("title can be a
   bit bigger"; `clamp(16px, 2.2vw, 22px)`, one line in the 330 px card).
-  The futures are always played out. Home and CIVVIS are relative links (`home`,
-  `./`), so the `/test` lane keeps its own. New game loads the page again
-  at its own address without `?game=` (`strangeNewGame`): the published
-  page opens each visit on a seed of its own (`OPENING_SEED`,
-  `beta/shim.js`), so that is a new world, one timeline again.
+  The futures are always played out. On 2026-11-27 ("for doctor strange's
+  civvis, make the top buttons Home, Charts/, and CIVVIS and color code
+  them appropriately. Make the title line a bit bigger. and more readable.
+  (maybe make the buttons above it a bit different section. under the
+  title, lets have a 2P Pangaea New Game option and 6P Continents New Game
+  option") the row over the title became Home, Charts/ and CIVVIS in the
+  site list's colours (Home and Charts/ blue, CIVVIS gold), in a strip of
+  its own over a rule; the title went to 25 px in a lighter gold with a
+  shadow (`clamp(17px, 2.5vw, 25px)`), the card to 360 px (`--strange-card`,
+  which the cards beside it stand clear of) so it stays one line; and New
+  game became two buttons under the title. Home, Charts/ and CIVVIS are
+  relative links (`home`, `charts/ai-insights/`, `./`), so the `/test` lane
+  keeps its own. 2P Pangaea New Game and 6P Continents New Game load the
+  page again at its own address without `?game=` and with `players` and
+  `map` set (`strangeNewGame`, `strangeNewGameAddress`), which the page
+  reads as any link's (`beta/shim.js`); the published page opens each visit
+  on a seed of its own (`OPENING_SEED`), so that is a new world of that
+  many civilizations on that map, one timeline again.
 - **The base timeline is picked before Branch.** Operator, 2026-11-25: "the
   option to branch in the simulator should be preceded by a selection of the
   base timeline". Over the Branch picker, a Base timeline picker lists every
@@ -1894,8 +1974,8 @@ against the toy engine: the opening seats, the layout, the names and colours,
 the one-step Branch into a third world, the pointer over a box, going back,
 following, the locked run, the divide, deleting a world of each kind and
 opening one again, the meter, the futures and their alerts, each world's
-future played to the end of its game with the predicted paths saying
-what is coming, best first (every world at once, on the world itself and where each
+future played to the end of its game with End outcome saying what each
+comes to, the best lit (every world at once, on the world itself and where each
 has a scout), time running
 through turns played ahead, a black swan on every locked world and on the
 followed one alone, and the narrow window, which has the one timeline
@@ -2046,42 +2126,105 @@ on. The viewer's own result card is put away in a world's box, and so is the
 countdown to a new game it would start on a native server
 (`finaleHoldsForTheReader`), which would end the world.
 
-### All 14,000,605
+### Send it
 
 Operator 2026-11-26: "add a button to the left side top half but the bottom
 of it in doctor strange that says "All 14,000,605" and when clicked every
 ai-strategy we have (we can say top 10 for now) spawns from the current point
 and all start simulating towards the end. time carries forward for all. spawn
-a window for each".
+a window for each". Then 2026-11-27: "change the all 14,000,000... button to
+"Send it". hover text can say spwan 10 branches and run all out to the end.
+also, work to optimize this process so we are runing branches as fast as
+possible. we should be utilizing free cores to speed up other world. actually
+lets have the button spawn up to a total of 12 worlds. so we can have a nice
+grid down below."
 
 The button stands at the foot of the tree on the left, 12 px over the line of
 the open turn as the worlds' numbers stand on the right, in Doctor Strange's
 colours (his button's in the site list). Where the turn written on the line
-would be under it, it stands over the turn instead (`--strange-all-lift`), and
-the line is kept under it (`strange.floor`).
+would be under it, it stands over the turn instead (`--strange-send-lift`),
+and the line is kept under it (`strange.floor`).
 
-Pressed, the base timeline is branched on its open turn once for each of the
-best `STRANGE_ALL_TOP` (10) player strategies, best first by the picker's
-rating, each a world in a box of its own beside the base (`strangeAll`,
-`strangeMake`). A strategy that already has its world there is left out: the
-one the base seats, and one seated in a world that is still the same world as
-the base on that turn (the engine's print of the turn is the same). Once every
-new world stands on the base's turn (its copy is done), time runs on for all
-the open worlds to the end of the game, as Play Time does. Pressed while time
-runs, time stops first and the worlds branch from the turn it stops on. At 12
-worlds open there is no more room: the best that fit are branched and the page
-says how many were left out, and the button waits for a world to be deleted.
+Pressed, the base timeline is branched on its open turn for the best player
+strategies that have no world of their own there, best first by the picker's
+rating, each a world in a box of its own beside the base (`strangeSendIt`,
+`strangeMake`), until `STRANGE_SEND_WORLDS` (12) worlds are open: three rows of
+four boxes. Fewer are made where the memory ceiling holds fewer (`What a tab
+may hold`; the page says how many did not fit), or where every player strategy
+already has its world. A strategy that already has its world there is left
+out, by the rule Branch Next Best uses (`strangeSeated`): the one the base
+seats, and one seated in a world that is still the same world as the base on
+that turn, which would only play the same game again. With the site's ten
+rated strategies, the page's two worlds and eight branches are every one of
+them: ten worlds. Its hover says what a press does: on the site today, "Spawn
+8 branches of A and run all 10 worlds out to the end: every player strategy
+has a world then".
 
-On the real engine (civvis.ai/test, 1600x1000, 10 strategies rated, 11-26):
-from turn 11, nine worlds opened and time ran 1.8 s after the press; the 11
-worlds then went from turn 13 to turn 142 in 45 s, never more than a turn
-apart, each named `TouristTrap-11-<Strategy>`.
+Once every new world stands on the base's turn, time runs on for all the open
+worlds to the end of the game, and faster than Play Time (`fast`,
+`strangeFarthest`): the turn shown is the furthest every world holds, less
+`STRANGE_SEND_KEEP` (4), rather than each turn on the way, and a world that
+answers for its future is asked for the next turns at once, so each world's
+engine plays the whole time, on a core of its own. A world whose game ends is
+taken to its last turn, so it says how it ended. No future is begun on a scout
+while it runs (`strangeForesee`): the worlds play their own futures, and are as
+fast as the slowest of them, which a scout beside it slows. Pressed while time
+runs, time stops first and the worlds branch from the turn it stops on; with no
+room for another world it makes the running worlds' run its own.
+
+Measured on the published engine (civvis.ai/test, 2026-11-27, headless Chrome,
+1600x1000, ten worlds from turn 1 to the end of every game at turn 201, on this
+18-core computer while other work held about 13 of its cores):
+
+| Run | Time | Page thread busy | What time waited on |
+|---|---|---|---|
+| Before: every turn shown | 67-77 s (four runs) | 82-86% | the page drawing ten boxes a turn (605 of 609 samples), every world 11 or 12 turns ahead the whole way |
+| Before, scouts stopped | 67 s | 82% | the same |
+| Send it, run back to back with the 77 s one | 52 s | 68% | the slowest world's engine |
+
+Letting each world play 24 turns ahead instead of 12 made it slower (72 s):
+the worlds that were already ahead only took cores from the slowest one.
+
+Showing each turn, two fifths of the page's thread went to the browser laying
+out and painting the ten boxes, and a third to the boxes drawing their turns.
+Here each world's engine had a third of a core; on a computer with its cores
+free the engines play several times faster and the page's drawing, which Send
+it no longer waits on, was the whole of the limit. A world's turn is played
+one after the other on its own engine, so a core one world leaves free cannot
+play another world's turn for it: what it can do is keep every world's engine
+playing, which Send it now does.
+
+A world's box no longer places the build's label beside its minimap, both of
+which a box hides, and does not fit the hidden minimap's frame while the worlds
+move: each measured the page at every turn (3% and 4% of the page's thread with
+ten worlds).
 
 A world tells its engine its share of the room (`strangePaneRoom`, `room`)
 in turn with what the page tells it (`debugInTurn`). Sent on its own, the op
 could be in flight when a follow asked for its next step, the step was
 dropped, and the world stopped short the moment time ran on after worlds
 were opened.
+
+### Turn 1, Era back and Era forward
+
+Operator 2026-11-27: "lets add era back and era forward to the controls. lets
+add a turn 1 option too. this should be a clean set of controls. lets try to
+put in order: turn 1, era back (which goes to the start of the era, then the
+last era start). we should make sure to save these turns for fast jumping. we
+have another thread working to cut out half the turns".
+
+The steps under the title are one row: Turn 1, ◀◀ Era, −10, −1, +1, +10,
+Era ▶▶. Each takes every world, together, as the steps do. An era is the
+followed world's: its engine says the first turn of each world era it has
+been through (`marks.eras`, its turns played ahead included). Era back goes to
+the first turn of the era the followed world stands in, and from there to the
+first turn of the era before (`strangeEraBack`). Era forward goes to the first
+turn of the next era when the followed world has played it, and otherwise
+time runs on, every world with its own player strategy, until the followed
+world comes into a new era, and stops on its first turn (`strangeEraOn`, the
+`era` of a run in `strangeAsk`). The engine keeps the first turn and the first
+turn of each era whatever else it thins (see the timeline's room above), so
+these are jumps to turns held.
 
 ### Branch Next Best
 
@@ -2092,7 +2235,7 @@ A row of two buttons stands across the branching deck between Following and
 Create Branch, in Create Branch's gold: Branch Next Best on the left, Branch 5
 Next Best on the right (`strangeNext`). Each branches the base timeline on its open turn for
 the best-rated player strategies that have no world of their own there yet,
-by All 14,000,605's rule (`strangeSeated`): one, or `STRANGE_NEXT_MANY` (5),
+by Send it's rule (`strangeSeated`): one, or `STRANGE_NEXT_MANY` (5),
 best first, each a world in a box of its own beside the base. A branch whose
 copy has not landed yet counts as the base's world too (`strange.made`), so a
 quick second press takes the next ones down the ranking rather than the same
@@ -2187,7 +2330,9 @@ Duel.
   on the right the left panel's Auto-play, moved in whole (`#autoplaybar`,
   so the page's own `autoplay` drives it where it stands): Turns and Civ AI
   over Jump back, Auto-play and Wake here. What Auto-play's note says is
-  said on the bar. Start new game stays in the left panel. With little room
+  said on the bar. Start new game stays in the left panel, with 2P Pangaea
+  New Game and 6P Continents New Game over it (see New games on a set
+  world). With little room
   the line goes under the other two.
 - **The screen** has no minimap and no map controls (operator, 2026-11-26:
   "should not have the world minimap or <...(spin)x thing showing"); the map

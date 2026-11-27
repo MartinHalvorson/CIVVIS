@@ -338,7 +338,11 @@ ELO Rankings shows both side by side: Player strategies has a column for
 each (its head sorts the list; it opens sorted by Diplo off, operator
 2026-11-26: "player strategies should default diplo off"), the levels table
 each reading's benchmark and simulator figures, and the graph a switch between
-the two.
+the two. Tournaments carries the same table as ELO Rankings, over the Official
+Benchmark (operator 2026-11-27: "list Diplo off first (and default for
+sorting), and Diplo on col to the right"): Diplo off is its first column and
+opens sorted, and the agents, the Firaxis levels and the people are numbered
+in one ranking.
 
 **The first reading** (2026-11-24; the agents from one run of 1,800 diplo-off
 tables, `2026-11-24-d27f49f`, so their margins are about ±60 against the

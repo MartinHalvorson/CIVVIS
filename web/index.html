@@ -346,8 +346,11 @@
     margin-top: 9px; color: #f0f2ee; font-size: var(--type-body);
     font-weight: 600; letter-spacing: 0; line-height: 1.36;
   }
-  /* The lockup is always the same two lines: the simulator's name, then its
-     purpose. Each phrase owns exactly one line at every band — never joined
+  /* The lockup is always the same three lines: the simulator's name, its
+     purpose, then "(fan project, free)" (operator, 2026-11-27: "change to ...
+     fixing the Civ AI (fan project, free)"; on the purpose's line it would
+     not fit the lane even at the fitter's floor). Each phrase owns exactly
+     one line at every band — never joined
      into a sentence, never folded mid-phrase — so the spans are unbreakable
      and the text fitter shrinks the type into the lane instead of wrapping. */
   .tagline span { display: block; white-space: nowrap; }
@@ -2145,8 +2148,14 @@
   #livepause[hidden] { display: none; }
   /* A full-screen dialog (a tree, the Civilopedia, an empire screen) covers
      the map, and the controls go under it with the map rather than float on
-     top of the dialog's columns. */
-  body:has(#empire.open, #diplomacy.open, #cityscreen.open, #pedia.open, #tree.open, #trade.open) #livepause {
+     top of the dialog's columns. Every one of those dialogs follows the box
+     in #maparea, so the box asks its own later siblings, not the body. A
+     `:has()` anchor is re-checked whenever text anywhere under it is
+     replaced, and the page's shared `:has()` invalidation reaches every
+     descendant, so on the body that was the whole page restyled at each
+     layout read after any HUD number changed: six 2-3 ms recalcs of ~900
+     elements per rendered turn, measured on /test. */
+  #livepause:has(~ #empire.open, ~ #diplomacy.open, ~ #cityscreen.open, ~ #pedia.open, ~ #tree.open, ~ #trade.open) {
     z-index: 14;
   }
   .livepause-buttons {
@@ -2387,6 +2396,23 @@
     grid-template-columns: minmax(0, 1fr); margin: 0 0 7px;
   }
   body:not(.watching-sim) .spec-controls #specpause { display: none; }
+  /* 2P Pangaea New Game and 6P Continents New Game, side by side over Start
+     new game in a played game (the AI Debugger, Edge of Tomorrow): each sets
+     World size and Map on Game Setup and starts the game as Start new game
+     does (`startPresetGame`). Edge of Tomorrow wears the Civilization VI
+     screen, so it is not the debugger view, and is named for itself.
+     Watching, there is no Start new game to stand over. */
+  .preset-games { display: none; }
+  body.debugger-view .preset-games, html.tomorrow .preset-games { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; margin: 0 0 7px; }
+  .preset-games button {
+    width: 100%; min-width: 0; min-height: 40px; margin: 0; padding: 6px 6px; line-height: 1.15;
+    font-size: var(--type-control); font-weight: 800; letter-spacing: .02em;
+  }
+  .preset-games button .lbl { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .preset-games button .sub {
+    display: block; margin-top: 2px; color: var(--muted); font-size: var(--type-label); font-weight: 700;
+    letter-spacing: .07em; text-transform: uppercase; white-space: nowrap;
+  }
   /* Civ 6 conducts diplomacy leader by leader: who they are, what they want,
      how they feel about you, and what you can do about it. Quick Deals
      already compares every acceptable trade at once; this is the other half —
@@ -4772,8 +4798,11 @@
   }
   /* With no masthead across the top — hidden, or folded down to its turn
      box — the tracker climbs back to the corner. `:where` keeps this at the
-     rail's own weight, so the stacked compact bands below still place it. */
-  :where(body.overlay-players-hidden, #maparea:has(> #playerhud.standings-collapsed)) #victoryhud {
+     rail's own weight, so the stacked compact bands below still place it.
+     The masthead is the tracker's next sibling, so the fold is asked of the
+     tracker itself: anchored on #maparea it made the whole map area restyle
+     whenever any text inside it changed (see the live controls above). */
+  :where(body.overlay-players-hidden) #victoryhud, #victoryhud:where(:has(~ #playerhud.standings-collapsed)) {
     top: var(--panel-edge);
   }
   /* Two sections share the rail panel: the arena stats above, the victory
@@ -4897,11 +4926,20 @@
   #victoryhud > .victory-region > .hud-region-bar { grid-area: 1 / 1 / 2 / -1; }
   #victoryhud > .victory-region > .victory-off-note { grid-area: 2 / 1 / 3 / -1; }
   #victoryhud > .victory-region > .hud-rail { grid-area: 3 / 2; }
+  /* The bar's height is one value that glides, and everything drawn at the
+     turn reads it: the gold's cut, its head, and both copies of the scale.
+     Each of them used to glide on its own transition, and the head's fell
+     behind the gold on every climb and caught up when it stopped (operator,
+     2026-11-27: "theres a white line that lags behind and catches up to the
+     rising gold bar. please fix so it stays aligned"). With one height there
+     is nothing for the head to lag. */
+  @property --rise { syntax: "<percentage>"; inherits: true; initial-value: 0%; }
   .turn-gauge {
     grid-area: 3 / 1; position: relative; width: 30px; margin: 2px 5px 2px 0;
     overflow: hidden; border-radius: 5px; container: turn-gauge / size;
     background: color-mix(in srgb, var(--gold) 8%, transparent);
     box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--gold) 24%, transparent);
+    transition: --rise .45s ease-out;
   }
   /* The gold stands the whole height and is cut off at the turn, so its
      colour belongs to the height and not to the bar: deep at the foot,
@@ -4910,7 +4948,6 @@
     position: absolute; inset: 0;
     background: linear-gradient(to top, color-mix(in srgb, var(--gold) 78%, #2a2008), var(--gold) 50%, var(--gold-bright));
     clip-path: inset(calc(100% - var(--rise, 0%)) 0 0 0);
-    transition: clip-path .45s ease-out;
   }
   /* The bar's head: a bright line that is all there is of it on turn 1. */
   .turn-gauge > i {
@@ -4918,7 +4955,6 @@
     bottom: clamp(0px, calc(var(--rise, 0%) - 2px), calc(100% - 2px));
     background: color-mix(in srgb, var(--gold-bright) 70%, #fff);
     box-shadow: 0 0 7px color-mix(in srgb, var(--gold-bright) 70%, transparent);
-    transition: bottom .45s ease-out;
   }
   /* The scale: a hairline across the bar at the height it stands at on a
      round turn, and the turn's figure hung just under it, so the bar's head
@@ -4928,7 +4964,7 @@
      cap's line is the top of the bar itself. */
   .turn-gauge-scale {
     position: absolute; inset: 0; color: color-mix(in srgb, var(--gold) 72%, transparent);
-    clip-path: inset(0 0 var(--rise, 0%) 0); transition: clip-path .45s ease-out;
+    clip-path: inset(0 0 var(--rise, 0%) 0);
   }
   .turn-gauge-scale.lit { color: #2a2008d9; clip-path: inset(calc(100% - var(--rise, 0%)) 0 0 0); }
   .turn-gauge-scale > b {
@@ -4952,16 +4988,14 @@
   }
   #victoryhud.victory-collapsed .turn-gauge { display: none; }
   @media (prefers-reduced-motion: reduce) {
-    .turn-gauge-fill, .turn-gauge > i, .turn-gauge-scale { transition: none; }
+    .turn-gauge { transition: none; }
   }
   /* A new game's bar starts where that game is, with no glide down from
      where the last game ended (operator, 2026-11-24: "have gold bar
      immediately start at 1/250 rather than a motion down", "between games
      that is"). `settleTurnGauge` in app_clock.js puts the bar at the new
      game's turn while this holds its motion off, and takes it away again. */
-  .turn-gauge.turn-gauge-settling > .turn-gauge-fill,
-  .turn-gauge.turn-gauge-settling > i,
-  .turn-gauge.turn-gauge-settling > .turn-gauge-scale { transition: none; }
+  .turn-gauge.turn-gauge-settling { transition: none; }
 
 
   .overlay-options { margin-top: 11px; padding-top: 10px; border-top: 1px solid var(--line-soft); }
@@ -6779,7 +6813,7 @@
       </div>
       <div class="brand-copy">
         <h1>CIVVIS<span class="brand-suffix">.ai</span></h1>
-        <div class="tagline"><span>A <i>Civilization VI</i> Simulator</span><span>for AI reasoning insights</span></div>
+        <div class="tagline"><span>A <i>Civilization VI</i> Simulator</span><span>for fixing the Civ AI</span><span>(fan project, free)</span></div>
       </div>
       <!-- The site is five pages, Home, Charts, Tournaments, CIVVIS and AI
            Debugger, and every one of them lists all five in that order with
@@ -6825,6 +6859,16 @@
   <div class="side-scroll">
     <div class="side-actions" aria-label="Simulation controls">
       <div id="specbar" style="display:none">
+        <!-- Two new games the settings are often asked for, over Start new
+             game in a played game (operator 2026-11-27: "in civvis debugger,
+             above start new game with seclected settings, add a 2P pangaea
+             New Game, 6P Continents New Game on teh right. theses function the
+             same as the new game except set the player count and map as well
+             to the claimed settings. same for civvis: edge of tomorrow"). -->
+        <div class="preset-games" id="preset-games" role="group" aria-label="New game on a set world">
+          <button type="button" data-preset-players="2" data-preset-map="pangaea" title="Start a new game on a Pangaea for 2 civilizations (a Duel world), with the other selected settings"><span class="lbl">2P Pangaea</span> <span class="sub">New Game</span></button>
+          <button type="button" data-preset-players="6" data-preset-map="continents" title="Start a new game on Continents for 6 civilizations (a Small world), with the other selected settings"><span class="lbl">6P Continents</span> <span class="sub">New Game</span></button>
+        </div>
         <div class="spec-controls">
           <button class="primary" id="specpause">⏸ Pause</button>
           <button id="restart-sim" title="Start a new game with the same settings, on a fresh map"><span class="lbl">Restart sim</span><span class="sub">same settings</span></button>
