@@ -404,6 +404,33 @@ fitted level by level on every build of the site
 Deity far under the stand-in's rung. Moving `CIV6_REFERENCE` to the roster
 agent that agrees with them is still open.
 
+**A candidate that agrees (2026-11-27): `oldguard`.** By then our live seat
+won 19% of its Deity games, not "a handful". A calibration run seated
+`oldguard` (`AdvancedAi::legacy()`) as each rung's rival:
+`strategy_elo --reference oldguard --rungs king,emperor,immortal,deity
+--rung-games 40`, with its own `--log` (a copy of the published one) and
+`--out`. `tools/sim_live_calibration.py --elo <that file>` then priced the
+live benchmark against each stand-in on the fit's own model:
+
+| Level | Live record | `stock` stand-in predicts | `oldguard` stand-in predicts |
+|---|---|---:|---:|
+| Lv 4 Prince | 39/39 | 44.7% | 89.2% |
+| Lv 5 King | 30/40 (75%) | 17.1% | 44.9% |
+| Lv 6 Emperor | 32/56 (57%) | 4.0% | 38.7% |
+| Lv 7 Immortal | 16/53 (30%) | 2.2% | 19.9% |
+| Lv 8 Deity | 46/245 (19%) | 0.5% | 16.6% |
+
+The `stock` stand-in misses by 500 to 700 points at every level. Each
+`oldguard` rung sits 30 to 230 points above the level the live games imply.
+That is inside the two readings' margins combined (±140 to ±200 on 40 tables,
+±105 to ±152 live). It is also about the 100 to 180 points the
+one-against-five reading understates a rung by
+([Why a rung sits alone](#why-a-rung-sits-alone)). The move is still the
+operator's to make. It changes the Difficulty dial the game offers, every
+agent's `civ6_level` and the ELO page's ladder. It also needs every rung
+re-played under the new reference by the host's rating run. The 40-table run
+was not published.
+
 `src/odds.rs` carries hand-set handicap constants (`HANDICAP_YIELD_ELO` and its
 neighbours) for the win-odds annotation. The rung ratings here are the
 measurement those constants were waiting for; reconciling them is open.

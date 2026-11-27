@@ -2704,7 +2704,7 @@ class TheTableIsDerived(unittest.TestCase):
         self.assertEqual(lines[: len(heading)], heading)
         self.assertEqual(
             lines[0],
-            "## A Ranking of all Gene Heuristics by On/Off Win Rate Difference in Tournaments",
+            "## A Ranking of all Gene Heuristics by On/Off Win Rate Difference in Prince Self-Play Tournaments",
         )
         self.assertNotIn("Deployment default", "\n".join(lines[: len(heading)]))
         table = len(heading)

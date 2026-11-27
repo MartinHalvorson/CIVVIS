@@ -32604,7 +32604,7 @@ function geneChipHtml(gene) {
   if (blurb) facts.push(blurb);
   facts.push(GENE_KIND_STORY[gene.kind] || gene.kind);
   if (effect !== null) {
-    facts.push(`seats with it on won ${signed(effect)} points more often` +
+    facts.push(`in Prince self-play, seats with it on won ${signed(effect)} points more often` +
       (typeof gene.p_helps === "number" ? ` · ${gene.p_helps}% likely to help` : "") +
       (typeof gene.rank === "number" ? ` · ranked #${gene.rank}` : ""));
   }
@@ -32670,15 +32670,15 @@ function drawGeneProgram() {
     (program.policy ? ` under the ${program.policy} deployment policy` : "") + ".";
   const story = live && armed.length
     ? `Each gene is one named rule. ${base.length} are the default set, most chosen by ` +
-      `tournament results. The operator armed ${armed.length} more for live play.`
-    : `Each gene is one named rule. ${base.length} are playing here, most chosen by tournament results.`;
+      `Prince self-play results. The operator armed ${armed.length} more for live play.`
+    : `Each gene is one named rule. ${base.length} are playing here, most chosen by Prince self-play results.`;
   const unit = `Win-rate points: how much more often seats with the gene on won` +
-    (seats ? `, over ${seats.toLocaleString("en-US")} tournament seats` : "") +
+    (seats ? `, over ${seats.toLocaleString("en-US")} Prince self-play seats (six CIVVIS seats a game, no Firaxis AI)` : "") +
     (through ? ` through ${through}` : "") + ".";
   holder.innerHTML =
     `<div class="gene-story">${story}</div>` +
     (lead.length
-      ? `<div class="gene-caption" title="${reasonEscape(unit)}"><span>${strategyMetaHtml("Biggest measured gains", "Biggest gains")}</span>` +
+      ? `<div class="gene-caption" title="${reasonEscape(unit)}"><span>${strategyMetaHtml("Biggest self-play gains", "Self-play gains")}</span>` +
         `<span>${strategyMetaHtml("win-rate pts", "pts")}</span></div>` +
         `<div class="gene-chips">${lead.map(geneChipHtml).join("")}</div>`
       : "") +
