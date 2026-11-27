@@ -270,6 +270,7 @@ class Lanes(unittest.TestCase):
         # lanes: the script itself and the pass that versions a lane's files.
         shutil.copy(BETA / "publish.sh", beta / "publish.sh")
         shutil.copy(BETA / "cache_bust.py", beta / "cache_bust.py")
+        shutil.copy(BETA / "bake_openings.mjs", beta / "bake_openings.mjs")
         # The serving shell, one per deployment.
         (beta / "_worker.js").write_text(f"// shell of {revision}\n", encoding="utf-8")
         (beta / "404.html").write_text(f"<!-- shell of {revision} -->\n", encoding="utf-8")
@@ -550,6 +551,7 @@ class Script(unittest.TestCase):
             [
                 "beta/404.html",
                 "beta/_worker.js",
+                "beta/bake_openings.mjs",
                 "beta/cache_bust.py",
                 "beta/dist",
                 "tools/site_wasm_symbols.py",
