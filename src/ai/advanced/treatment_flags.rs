@@ -719,6 +719,10 @@ impl AdvancedAi {
         /// Opt-in gene `spreaders-spread-before-they-chart`; see
         /// `advanced/spreaders_spread_before_they_chart.rs`.
         spreaders_spread_before_they_chart => enable_spreaders_spread_before_they_chart, disable_spreaders_spread_before_they_chart;
+        /// Opt-in gene `science-seat-monuments`: a Science seat's cities
+        /// claim their Monument from the third city; see
+        /// `advanced/culture_monuments.rs`.
+        science_seat_monuments => enable_science_seat_monuments, disable_science_seat_monuments;
         // ---- append: t-z --------------------------------------------
         /// Opt-in gene `theology-fights-count-the-host-edge`; see
         /// `advanced/theology_fights.rs`.
