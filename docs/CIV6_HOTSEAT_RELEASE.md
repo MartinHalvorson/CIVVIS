@@ -212,8 +212,11 @@ Windows; each is fixed behind a platform check, so macOS runs exactly as before.
   disagreed for the decider copied into the run directory, so it raised
   "decision binary changed while recording provenance" on the first decision
   and the worker died. Windows now asks `os.stat` both times. The job's
-  findings step compares the two on a checkout file and on that copied
-  decider, idle and running: STAT_FINDING
+  findings step compares the two: on a checkout file every field agrees, and
+  on the decider copied with `shutil.copy2` (as `freeze_binary` copies it),
+  idle or running, only `st_ctime_ns` differs, by 24 s (`os.stat`
+  1795762985606911500 against `os.fstat` 1795762961649839800, run
+  45954989582).
 - **A frozen copy of the decider named `civvis_orders` would not start**:
   CreateProcess appends `.exe` to a name without one. The pinned copy keeps
   `civvis_orders.exe`.
