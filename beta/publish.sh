@@ -645,6 +645,22 @@ page = page.replace(
     1,
 )
 
+# The viewer's own scripts are at the end of the page, after ~380 KB of style,
+# so a browser learned of them only once the whole page had arrived (measured
+# 2026-11-26: the page's first byte at 0.32 s, the scripts asked for at 0.50 s).
+# A first visit's world is drawn from a baked opening before the engine
+# arrives, so these scripts are what that first frame waits on; named in the
+# head, they are asked for with the page's first bytes. cache_bust.py versions
+# these links with the tags they stand for, so each is one request.
+named = re.findall(r'<script src="(assets/[^"?#]+\.js)"></script>', page)
+if named:
+    page = page.replace(
+        '\n<script src="shim.js"></script>',
+        '\n<script src="shim.js"></script>'
+        + "".join(f'\n<link rel="preload" href="{src}" as="script">' for src in named),
+        1,
+    )
+
 target.write_text(page, encoding="utf-8")
 print(f"   viewer written to {target} ({len(page):,} bytes)")
 PY
