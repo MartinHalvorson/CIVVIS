@@ -186,6 +186,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 |---|---|---|---:|
 | `recovery-holds-the-muster` | off (unmeasured) | Opt-in gene `recovery-holds-the-muster`: no Siege row is mustered while the plan reads Recovery; see `advanced/recovery_holds_the_muster.rs`. | 1 \| 1 |
 | `religion-core-ends-expansion` | off (unmeasured) | Opt-in gene `religion-core-ends-expansion`: a founded Religion lane follows its lane at its core of cities; see `advanced/religion_core_ends_expansion.rs`. | 1 \| 1 |
+| `religion-lane-outlasts-the-denial` | off (unmeasured) | Opt-in gene `religion-lane-outlasts-the-denial`: a founded Religion lane keeps its plan against a Science counter; see `advanced/religion_lane_outlasts_the_denial.rs`. | 1 \| 1 |
 | `science-core-ends-expansion` | off (unmeasured) | Opt-in gene `science-core-ends-expansion`: an assigned Science lane leaves the Expansion half at its core of cities; see `advanced/science_core_ends_expansion.rs`. | 1 \| 1 |
 | `seen-pad-starts-the-denial` | off (unmeasured) | Opt-in gene `seen-pad-starts-the-denial`: a racer's seen Spaceport takes a Spy that disrupts it before the first launch; see `advanced/seen_pad_starts_the_denial.rs`. | 1 \| 1 |
 | `spreaders-spread-before-they-chart` | off (unmeasured) | Opt-in gene `spreaders-spread-before-they-chart`; see `advanced/spreaders_spread_before_they_chart.rs`. | 1 \| 1 |

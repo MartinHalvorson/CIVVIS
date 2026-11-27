@@ -6392,6 +6392,15 @@ pub const GENES: &[Gene] = &[
     // the train has not invested stands down. Opt-in; see
     // `advanced/recovery_holds_the_muster.rs`.
     Gene { tag: "recovery-holds-the-muster", field: "recovery_holds_the_muster", kind: Kind::OptIn, enable: AdvancedAi::enable_recovery_holds_the_muster, disable: AdvancedAi::disable_recovery_holds_the_muster },
+    // 4 of 40 reviewed Lv 8 tourney games (2026-11-26) left a founded
+    // Religion lane one majority short of winning for "Grand strategy:
+    // science | countering a rival close to winning, ahead of the lane"
+    // ("its science race reads 84%") with 41-60 techs against 76-77; a
+    // spaceport ordered t171 never completed and the religious wins came at
+    // t167-t184 anyway. A Science counter no longer displaces a founded
+    // Religion lane. Opt-in; see
+    // `advanced/religion_lane_outlasts_the_denial.rs`.
+    Gene { tag: "religion-lane-outlasts-the-denial", field: "religion_lane_outlasts_the_denial", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_lane_outlasts_the_denial, disable: AdvancedAi::disable_religion_lane_outlasts_the_denial },
     // ---- append: s-s ------------------------------------------------
     // Kristina Deity 11-10 reached Nationalism at t122 with 8 cities on three
     // terrain classes and built no Open-Air Museum by t150 (+48 Culture and

@@ -506,6 +506,34 @@ fn a_science_race_counter_does_not_replace_an_assigned_culture_goal() {
     assert_eq!(ai.assess(&game, 0).strategy, GrandStrategy::Culture);
 }
 
+/// `religion-lane-outlasts-the-denial`: the same launched Science threat
+/// against a founded Religion lane. Off, the plan turns to a space race of
+/// its own (the reviewed "science | countering a rival close to winning,
+/// ahead of the lane"); on, it keeps its Religion lane while the denial
+/// stays visible to the machinery that can actually stop a launch.
+#[test]
+fn a_science_race_counter_does_not_replace_a_founded_religion_lane_with_the_gene() {
+    let mut game = only_launched_science_threat_board();
+    game.players[0].religion = Some("Home Faith".to_string());
+    let mut ai = targeted_science_counter(VictoryTarget::Religion);
+    assert_eq!(
+        ai.actionable_victory_denial(&game, 0),
+        Some((3, GrandStrategy::Science)),
+        "the launch threat remains visible to the denial machinery"
+    );
+    assert_eq!(
+        ai.assess(&game, 0).strategy,
+        GrandStrategy::Science,
+        "the fixture is the reviewed case: the counter displaces the lane"
+    );
+    ai.enable_religion_lane_outlasts_the_denial();
+    assert_eq!(
+        ai.actionable_victory_denial(&game, 0),
+        Some((3, GrandStrategy::Science))
+    );
+    assert_ne!(ai.assess(&game, 0).strategy, GrandStrategy::Science);
+}
+
 #[test]
 fn a_direct_army_counter_still_interrupts_an_assigned_culture_goal() {
     let game = only_launched_science_threat_board();
