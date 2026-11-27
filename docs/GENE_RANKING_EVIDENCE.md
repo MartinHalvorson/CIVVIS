@@ -195,6 +195,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `seen-pad-starts-the-denial` | off (unmeasured) | Opt-in gene `seen-pad-starts-the-denial`: a racer's seen Spaceport takes a Spy that disrupts it before the first launch; see `advanced/seen_pad_starts_the_denial.rs`. | 1 \| 1 |
 | `stacked-shooter-steps-out` | off (unmeasured) | Opt-in gene `stacked-shooter-steps-out`: a crowded City Center keeps one shooter and steps our other soldiers beside it, so the shooters can fire; see `advanced/stacked_shooter_steps_out.rs`. | 1 \| 1 |
 | `tagma-timing-needs-the-edge` | off (unmeasured) | Opt-in gene `tagma-timing-needs-the-edge`; see `advanced/tagma_timing_needs_the_edge.rs`. | 1 \| 1 |
+| `watched-capital-trains-its-defender` | off (unmeasured) | Opt-in gene `watched-capital-trains-its-defender`; see `advanced/watched_capital_trains_its_defender.rs`. | 1 \| 1 |
 
 ## Removed from the code
 
