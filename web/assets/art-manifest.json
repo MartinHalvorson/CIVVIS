@@ -1,0 +1,30 @@
+{
+  "_doc": "Every image web/assets may ship, by sha256. tools/art_provenance.py refuses a tracked image or a published one that is not listed here with these bytes, and any image carrying the cutters' local-only marker. Written by tools/own_art.py.",
+  "files": {
+    "city-wall-mark.png": {
+      "sha256": "8ffd96d7145f9c0d3dd6c0cd03bed7c6cf56832c4b86b220bb36c845fe9d8cfb",
+      "made_by": "tools/own_art.py",
+      "source": "drawn by tools/own_art.py"
+    },
+    "hidden-map-monsters.png": {
+      "sha256": "1fd7e484379ebe8b2f89b7cda73c67f6ca37542df86cb3c3e9264e45592a863d",
+      "made_by": "made for CIVVIS in #391 and #947",
+      "source": "CIVVIS's own illustration; no game art"
+    },
+    "unit-glyphs.png": {
+      "sha256": "7de98e13f8cc7dbf98d0831fb38f877f2781643df542e98d098aaf1660823ffa",
+      "made_by": "tools/own_art.py",
+      "source": "game-icons.net, CC BY 3.0 (ART_CREDITS.md)"
+    },
+    "unit-plates.png": {
+      "sha256": "65fc6972e39f9e586679b008616f9b5c601115bc0aae01033c50095c2b6b92f1",
+      "made_by": "tools/own_art.py",
+      "source": "drawn by tools/own_art.py"
+    },
+    "yield-icons.png": {
+      "sha256": "903c5b5db0c3771dc31afec2f11eb20d09996fdcf400fd8ddaee23a60ebf7e7a",
+      "made_by": "tools/own_art.py",
+      "source": "game-icons.net, CC BY 3.0 (ART_CREDITS.md)"
+    }
+  }
+}

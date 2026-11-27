@@ -345,18 +345,18 @@ const CAPTURE_ONLY_CIVILIAN_UNITS = new Set(["settler", "builder"]);
 function unitHasHealth(unit) {
   return !!unit && !CAPTURE_ONLY_CIVILIAN_UNITS.has(unit.type) && Number.isFinite(unit.hp);
 }
-// The command map uses Civilization VI's own unit glyphs, cut off the install
-// by tools/civ6_unit_glyphs.py. A cell is a unit's place in the **sorted**
-// ruleset roster, so the sheet's order is derived rather than chosen and this
-// list is that roster spelled out.
+// The command map's unit glyphs are game-icons.net silhouettes (CC BY 3.0),
+// drawn into /assets/unit-glyphs.png by tools/own_art.py. A cell is a unit's
+// place in the **sorted** ruleset roster, so the sheet's order is derived
+// rather than chosen and this list is that roster spelled out.
 //
 // ⚠ It is sorted for a reason. This used to be a list somebody appended to,
-// and the cutter's roster was a second list somebody else appended to. They
-// drifted by one: `nihang` was added here, never added there, and took the
-// cell after the last one the cutter wrote -- which held a duplicate of
+// and the drawing tool's roster was a second list somebody else appended to.
+// They drifted by one: `nihang` was added here, never added there, and took
+// the cell after the last one the tool wrote -- which held a duplicate of
 // `warrior_monk`'s picture. Every Nihang on the map wore a Warrior Monk's
 // glyph, and nothing failed. Sorted order plus the contract test in
-// `src/server.rs` makes an append that skips the cutter impossible to miss.
+// `src/server.rs` makes an append that skips the tool impossible to miss.
 const CIV6_UNIT_ICON_TYPES = [
   "aircraft_carrier", "anti_air_gun", "apostle", "archaeologist", "archer",
   "artillery", "at_crew", "barbarian_horse_archer", "barbarian_horseman",
@@ -389,16 +389,16 @@ const CIV6_UNIT_ICON_INDEX = new Map(
 const CIV6_UNIT_ICON_CELL = 64, CIV6_UNIT_ICON_COLUMNS = 12;
 const CIV6_UNIT_ICON_ATLAS = new Image();
 const CIV6_UNIT_ICON_CACHE = new Map();
-// Where each silhouette actually sits inside its cell. Civilization VI authors
-// its icons with a per-icon margin, so the ink runs from 38 of a cell's 64 px
-// to 57 and averages 49. Drawing whole cells at one box size therefore drew the
+// Where each silhouette actually sits inside its cell. Icon sets author each
+// icon with its own margin, so the ink of one cell runs well short of its 64
+// px and another's does not. Drawing whole cells at one box size therefore drew the
 // same command counter at sizes 1.5x apart, which reads as the map keeping two
 // or three classes of unit marker. Measuring the alpha once turns every cell
 // into a silhouette rectangle, and one requested size then means one size.
 const CIV6_UNIT_ICON_BOXES = new Map();
-// Ignore the near-transparent fringe of the 4:1 downsample, so a stray pixel
-// cannot inflate an icon's measured extent. The cutter measures on this same
-// floor, and civ6-unit-flags.json records what it found.
+// Ignore the near-transparent antialiased fringe, so a stray pixel cannot
+// inflate an icon's measured extent. tools/own_art.py measures on this same
+// floor, and unit-glyphs.json records what it found.
 const CIV6_UNIT_ICON_ALPHA_FLOOR = 12;
 const CIV6_UNIT_ICON_FULL_CELL = Object.freeze(
   {x:0, y:0, w:CIV6_UNIT_ICON_CELL, h:CIV6_UNIT_ICON_CELL});
@@ -409,10 +409,10 @@ CIV6_UNIT_ICON_ATLAS.onload = () => {
   measureCiv6UnitIconBoxes();
   if (state) { draw(); drawMini(); }
 };
-CIV6_UNIT_ICON_ATLAS.src = "/assets/civ6-unit-flags.png";
+CIV6_UNIT_ICON_ATLAS.src = "/assets/unit-glyphs.png";
 
 // One pass over the loaded atlas rather than a hand-kept table of rectangles:
-// tools/civ6_unit_glyphs.py can add or re-cut a cell without a second list
+// tools/own_art.py can add or redraw a cell without a second list
 // going quietly stale beside it. A canvas the browser refuses to read leaves
 // every icon on its full cell, which is exactly the old behaviour.
 function measureCiv6UnitIconBoxes() {
@@ -469,7 +469,7 @@ function civ6UnitIconSprite(type, color) {
               CIV6_UNIT_ICON_CELL, CIV6_UNIT_ICON_CELL,
               0, 0, CIV6_UNIT_ICON_CELL, CIV6_UNIT_ICON_CELL);
   // The atlas is a white alpha mask. Tinting once per jersey colour keeps the
-  // official shape while making a busy map cost only one drawImage per unit.
+  // drawn shape while making a busy map cost only one drawImage per unit.
   g.globalCompositeOperation = "source-in";
   g.fillStyle = color;
   g.fillRect(0, 0, CIV6_UNIT_ICON_CELL, CIV6_UNIT_ICON_CELL);
@@ -10654,12 +10654,12 @@ function drawNaturalWonderPerimeters(tiles) {
 // then a square — so the count reads from silhouette before a player has to
 // inspect it. Five signs would obscure the tile, so five-or-more becomes one
 // deliberately larger, numbered sign instead.
-// The signs themselves are the base game's own. tools/civ6_yield_icons.py cuts
-// them from the very texture the plate geometry was measured against, so a
-// spectator's Food is the Civilization VI corn rather than a wheat ellipse
-// somebody drew to stand in for it. Each cell is one finished circular icon --
-// the colour and the object are a single piece of art -- which is why nothing
-// below paints a disc underneath one.
+// The signs are CIVVIS's own: tools/own_art.py draws each as a lit disc in
+// the yield's colour carrying a game-icons.net pictograph (wheat, gear and
+// hammer, coins, flask, masks, dove) into /assets/yield-icons.png. Each cell
+// is one finished circular icon -- the colour and the object are a single
+// piece of art -- which is why nothing below paints a disc underneath one.
+// Somebody who owns the game can see its own signs locally (CIV6_ART.md).
 const CIV6_YIELD_ICON_KINDS = ["food", "production", "gold",
                                "science", "culture", "faith"];
 const CIV6_YIELD_ICON_INDEX = new Map(
@@ -10671,12 +10671,12 @@ CIV6_YIELD_ICON_ATLAS.onload = () => {
   CIV6_YIELD_ICON_ATLAS_READY = true;
   if (state) { draw(); drawMini(); }
 };
-CIV6_YIELD_ICON_ATLAS.src = "/assets/civ6-yield-icons.png";
+CIV6_YIELD_ICON_ATLAS.src = "/assets/yield-icons.png";
 function civ6YieldIconReady(kind) {
   return CIV6_YIELD_ICON_ATLAS_READY && CIV6_YIELD_ICON_INDEX.has(kind);
 }
-// Firaxis authors every sign at one size, so one radius covers the sheet: the
-// generator cuts each disc at the widest of the six and centres it in the cell.
+// Every sign is drawn at one size, so one radius covers the sheet: each disc
+// fills its cell, centred, and the cell is drawn at the sign's radius.
 function drawCiv6YieldIcon(kind, x, y, r) {
   cx.drawImage(CIV6_YIELD_ICON_ATLAS,
                CIV6_YIELD_ICON_INDEX.get(kind) * CIV6_YIELD_ICON_CELL, 0,
@@ -10685,8 +10685,8 @@ function drawCiv6YieldIcon(kind, x, y, r) {
 }
 // The drawn signs below stand in for the first frame, and for an atlas the
 // browser could not fetch: a coloured disc under a white pictograph, which is
-// what the strategic layer looked like before the base game's own icons could
-// be cut. Keep Civ's familiar yield colour families, with the chroma turned up
+// what the strategic layer looked like before the drawn sheet existed. Keep
+// the familiar yield colour families, with the chroma turned up
 // so they read against terrain, fog, and ownership paint.
 const YPIP = { food:"#69e64f", production:"#ff8b3d", gold:"#ffda3b",
                science:"#36cfff", culture:"#ca74ff", faith:"#f6e5a8" };
@@ -13696,11 +13696,11 @@ function cityIconInk(fill, cityState) {
   if (cityState) return "#e7e9e3";
   return lightness(fill) < .55 ? "#fff4d4" : "#11161b";
 }
-// Civilization VI changes a city's ordinary fortification mark to this pair
-// of shields once it has outer defenses. The source is the exact
-// `Banner_StrengthIcon_Shields` sprite its CityBannerManager selects from
-// `Base/Platforms/Windows/BLPs/UI/InWorld.blp`, cut by
-// tools/civ6_city_banner_art.py rather than redrawn here.
+// A city with outer defenses wears this mark beside its wall meter, as
+// Civilization VI's banner does. The mark is CIVVIS's own battlement, drawn
+// into /assets/city-wall-mark.png by tools/own_art.py; the game's own shields
+// are only ever cut into local/civ6-art/ for a local server, by
+// tools/civ6_city_banner_art.py (docs/CIV6_ART.md).
 const CIV6_CITY_BANNER_WALL_SHIELDS_WIDTH = 21;
 const CIV6_CITY_BANNER_WALL_SHIELDS_HEIGHT = 18;
 const CIV6_CITY_BANNER_WALL_SHIELDS = new Image();
@@ -13709,7 +13709,7 @@ CIV6_CITY_BANNER_WALL_SHIELDS.onload = () => {
   CIV6_CITY_BANNER_WALL_SHIELDS_READY = true;
   if (state) draw();
 };
-CIV6_CITY_BANNER_WALL_SHIELDS.src = "/assets/civ6-city-banner-shields.png";
+CIV6_CITY_BANNER_WALL_SHIELDS.src = "/assets/city-wall-mark.png";
 function drawCiv6CityBannerWallShields(context, x, y, width) {
   if (!CIV6_CITY_BANNER_WALL_SHIELDS_READY) return;
   const height = width * CIV6_CITY_BANNER_WALL_SHIELDS_HEIGHT /
@@ -14215,22 +14215,20 @@ function strategicResourceUnitPlacement(tile, placement, hexInradius) {
     r: placement.r * RESOURCE_UNIT_CLEARANCE_SCALE,
   };
 }
-// The command counter is Civilization VI's own unit flag, cut from the game.
-//
-// Two shapes used to be painted here and both were the viewer's invention: a
-// circle for anything that could fight and a rounded triangle, point *down*,
-// for everything that could not. The base game authors eight silhouettes, its
-// civilian triangle points *up*, a fortified soldier stands on a shield and an
-// embarked one on a boat cut. `tools/civ6_unit_flag_plates.py` takes all eight
-// out of the game's own `BLPs/UI/InWorld.blp` into
-// `/assets/civ6-unit-flag-plates.png`, one row of equal square cells measured
-// across the whole set -- so the flags keep the relative sizes and the
-// deliberately different seats the base game authored, which cropping each
-// shape to its own box would have thrown away.
+// The command counter stands on one of eight plates, one per kind of unit as
+// Civilization VI distinguishes them, in shapes of CIVVIS's own: a roundel for
+// anything that fights, the viewer's long-standing rounded triangle (point
+// down) for civilians, a hull for ships, a rounded square for support, a
+// hexagon for trade, a quatrefoil for religion, a heater shield for a
+// fortified unit and a boat for an embarked one. `tools/own_art.py` draws all
+// eight into `/assets/unit-plates.png`, one row of equal square cells on one
+// shared scale -- so the plates keep the relative sizes and seats they were
+// drawn with, which cropping each shape to its own box would throw away. (The
+// game's own flags are cut into local/civ6-art/ only, for a local server.)
 //
 // Everything a counter must answer -- where its outline runs, how wide a
 // health bar may be, where the glyph sits -- is measured off that sheet in one
-// pass when it loads, so re-cutting the art can never leave a hand-kept table
+// pass when it loads, so redrawing the art can never leave a hand-kept table
 // of shapes stale beside it. Until it loads, and for the production
 // medallion's plain ring, the retired circle and triangle remain as the
 // fallback so a counter is never missing.
@@ -14258,7 +14256,7 @@ CIV6_FLAG_PLATE_ATLAS.onload = () => {
   measureCiv6FlagPlates();
   if (state) { draw(); drawMini(); }
 };
-CIV6_FLAG_PLATE_ATLAS.src = "/assets/civ6-unit-flag-plates.png";
+CIV6_FLAG_PLATE_ATLAS.src = "/assets/unit-plates.png";
 
 // Which flag a unit stands on. Fortified and embarked are states the base game
 // answers before it looks at the unit at all; below that the ruleset's own
@@ -31615,8 +31613,8 @@ function drawCityScreen() {
     (governor ? ` · ⚑ ${governor.name}` : "") +
     (city.religion ? ` · ${titleCase(city.religion)}` : "");
 
-  // The six yields wear Civilization VI's own signs, off the sheet the map
-  // draws, over the coloured disc that survives a sheet that did not load.
+  // The six yields wear the map's own signs, off the sheet the map draws,
+  // over the coloured disc that survives a sheet that did not load.
   // Each yield is also its focus, as on Civilization VI's city panel: press
   // to favour it, again to disfavour it, again to leave it to the governor.
   // A server that does not say what the focus is has none to set, and the

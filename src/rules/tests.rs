@@ -350,9 +350,13 @@ fn shipped_ruleset_fingerprint_tracks_the_audited_firaxis_rows() {
     // Moved again by the forest and jungle fires: `forest_fire` and
     // `jungle_fire` in `data/disasters.json`, with their shipped
     // `RandomEvent_Frequencies` rows as `per_intensity`.
+    // Moved again by #5940, which rewords the descriptive text that had been
+    // copied from the game's own strings (agenda descriptions, city-state
+    // effects, a few belief, dedication, policy and promotion notes). No
+    // number, name or rule changed.
     assert_eq!(
         Rules::shipped().source_fingerprint(),
-        "fnv1a64:f68a1c804ce764ac"
+        "fnv1a64:d7367d7c8c2d804e"
     );
 }
 

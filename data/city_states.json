@@ -10,7 +10,7 @@
    "bonus": "kabul",
    "implemented": true,
    "shipped": true,
-   "effect": "Your units receive double experience from battles they initiate."
+   "effect": "Units earn double experience in battles they start."
   },
   {
    "name": "Geneva",
@@ -20,7 +20,7 @@
    "bonus": "geneva",
    "implemented": true,
    "shipped": true,
-   "effect": "Your cities earn +15% Science whenever you are not at war with any civilization."
+   "effect": "+15% Science in every city while you are at war with no civilization."
   },
   {
    "name": "Hattusa",
@@ -30,7 +30,7 @@
    "bonus": "hattusa",
    "implemented": true,
    "shipped": true,
-   "effect": "Provides you with 2 of each Strategic resource per turn that you have revealed but have not improved."
+   "effect": "Each turn, 2 of every Strategic resource you have revealed but not yet improved."
   },
   {
    "name": "Mohenjo-Daro",
@@ -40,7 +40,7 @@
    "bonus": "mohenjo_daro",
    "implemented": true,
    "shipped": true,
-   "effect": "Your cities have full Housing from water, as if they were all next to a River."
+   "effect": "Every city gets full water Housing, as though it stood on a River."
   },
   {
    "name": "Yerevan",
@@ -50,7 +50,7 @@
    "bonus": "yerevan",
    "implemented": true,
    "shipped": true,
-   "effect": "Your Apostle units can choose from any possible promotion instead of receiving a random promotion."
+   "effect": "Apostles pick any promotion instead of a random one."
   },
   {
    "name": "Zanzibar",
@@ -60,7 +60,7 @@
    "bonus": "zanzibar",
    "implemented": true,
    "shipped": true,
-   "effect": "Receive the Cinnamon and Cloves Luxury resources. These cannot be earned any other way in the game, and provide 6 Amenities each."
+   "effect": "Grants the Cinnamon and Cloves Luxuries, which exist nowhere else; each gives 6 Amenities."
   },
   {
    "name": "Auckland",
@@ -70,7 +70,7 @@
    "bonus": "auckland",
    "implemented": true,
    "shipped": true,
-   "effect": "Shallow water tiles you own provide +1 Production. Additional +1 when you reach the Industrial era."
+   "effect": "Owned shallow-water tiles yield +1 Production, and +1 more from the Industrial era."
   },
   {
    "name": "Valletta",
@@ -80,7 +80,7 @@
    "bonus": "valletta",
    "implemented": true,
    "shipped": true,
-   "effect": "City Center buildings and Encampment district buildings can be bought with Faith. Cost of purchasing Ancient, Medieval, and Renaissance Walls is reduced, but they can only be bought with Faith."
+   "effect": "City Center and Encampment buildings can be bought with Faith; Ancient, Medieval and Renaissance Walls cost less but can only be bought with Faith."
   },
   {
    "name": "Vilnius",
@@ -90,7 +90,7 @@
    "bonus": "vilnius",
    "implemented": true,
    "shipped": true,
-   "effect": "When you enter a new era, earn 1 random Inspiration from that era."
+   "effect": "Each new era you enter grants one random Inspiration from that era."
   },
   {
    "name": "Kandy",
@@ -100,7 +100,7 @@
    "bonus": "kandy",
    "implemented": true,
    "shipped": true,
-   "effect": "Receive a Relic every time you discover a new natural wonder, and earn +50% Faith from all Relics."
+   "effect": "Each natural wonder you discover grants a Relic, and Relics yield +50% Faith."
   },
   {
    "name": "Jerusalem",
@@ -110,7 +110,7 @@
    "bonus": "jerusalem",
    "implemented": true,
    "shipped": true,
-   "effect": "Your cities with Holy Sites exert pressure as if they were Holy Cities (4x Religion pressure on all cities within 10 tiles)."
+   "effect": "Cities with a Holy Site push religion like a Holy City: 4x pressure on every city within 10 tiles."
   },
   {
    "name": "Brussels",
@@ -130,7 +130,7 @@
    "bonus": "preslav",
    "implemented": true,
    "shipped": true,
-   "effect": "You receive +2 Loyalty per turn in cities for each Encampment district building."
+   "effect": "+2 Loyalty per turn in a city for each Encampment building it has."
   },
   {
    "name": "Antananarivo",
@@ -140,7 +140,7 @@
    "bonus": "antananarivo",
    "implemented": true,
    "shipped": true,
-   "effect": "Your Civilization gains +2% Culture for each Great Person it has ever earned, up to a total of +30%."
+   "effect": "+2% Culture empire-wide for each Great Person ever earned, capped at +30%."
   },
   {
    "name": "Mogadishu",
@@ -150,7 +150,7 @@
    "bonus": "mogadishu",
    "implemented": true,
    "shipped": true,
-   "effect": "Your Trader units are immune to being plundered on water tiles."
+   "effect": "Traders cannot be plundered on water."
   },
   {
    "name": "Cahokia",
@@ -160,7 +160,7 @@
    "bonus": "cahokia",
    "implemented": true,
    "shipped": true,
-   "effect": "Your Builders can now make Cahokia Mounds improvements. Cahokia Mounds provide +3 Gold. Cities receive +1 Amenity from their first Cahokia Mound improvement. Upon discovering Natural History, cities receive +1 Amenity from their second Cahokia Mound improvement. +1 Food for every 2 adjacent Districts once Feudalism is discovered or for every adjacent District once Replaceable Parts is researched. Provides +1 Housing. Receive an additional Housing once Cultural Heritage is discovered. Cannot be built adjacent to other Cahokia Mounds."
+   "effect": "Builders can build the Cahokia Mounds improvement: +3 Gold and +1 Housing (+1 more Housing with Cultural Heritage); the first in a city gives +1 Amenity, and the second does too after Natural History; +1 Food per 2 adjacent Districts after Feudalism, per adjacent District after Replaceable Parts. Never adjacent to another Cahokia Mounds."
   },
   {
    "name": "Akkad",
@@ -170,7 +170,7 @@
    "bonus": "akkad",
    "implemented": true,
    "shipped": true,
-   "effect": "Melee and anti-cavalry unit's attacks do full damage to the city's Walls."
+   "effect": "Melee and anti-cavalry attacks deal full damage to city Walls."
   },
   {
    "name": "Anshan",
@@ -190,7 +190,7 @@
    "bonus": "armagh",
    "implemented": true,
    "shipped": true,
-   "effect": "Your Builders can now make Monastery improvements. Monasteries provide +2 Faith. +15 HP healing for friendly religious unit on this tile that has not attacked this turn. +1 Faith for every 2 adjacent Districts. Provides +1 Housing. Receive an additional Housing once Colonialism is discovered. Cannot be built next to another Monastery."
+   "effect": "Builders can build the Monastery improvement: +2 Faith, +1 Faith per 2 adjacent Districts, +1 Housing (+1 more with Colonialism), and +15 HP healing for a friendly religious unit on it that did not attack this turn. Never next to another Monastery."
   },
   {
    "name": "Ayutthaya",
@@ -200,7 +200,7 @@
    "bonus": "ayutthaya",
    "implemented": true,
    "shipped": true,
-   "effect": "Gain Culture equal to 10% of the construction cost when finishing buildings."
+   "effect": "Completing a building gives Culture worth 10% of its construction cost."
   },
   {
    "name": "Bandar Brunei",
@@ -230,7 +230,7 @@
    "bonus": "buenos_aires",
    "implemented": true,
    "shipped": true,
-   "effect": "Your Bonus resources behave like Luxury resources, providing 1 Amenity per type."
+   "effect": "Bonus resources count as Luxuries: 1 Amenity per type."
   },
   {
    "name": "Caguana",
@@ -240,7 +240,7 @@
    "bonus": "caguana",
    "implemented": true,
    "shipped": true,
-   "effect": "Your Builders can now make Batey improvements. +1 Culture. +1 Culture for every adjacent Bonus resource and Entertainment Complex (increased to +2 Culture when Exploration is discovered). Provides Tourism after researching Flight. Cannot be built adjacent to another Batey."
+   "effect": "Builders can build the Batey improvement: +1 Culture, plus +1 per adjacent Bonus resource and Entertainment Complex (+2 each after Exploration); yields Tourism after Flight. Never adjacent to another Batey."
   },
   {
    "name": "Cardiff",
@@ -260,7 +260,7 @@
    "bonus": "chinguetti",
    "implemented": true,
    "shipped": true,
-   "effect": "International and domestic Trade Routes receive +1 Faith for every follower in this city, of your founded or majority religion."
+   "effect": "Domestic and international Trade Routes gain +1 Faith per follower of your founded or majority religion in this city."
   },
   {
    "name": "Fez",
@@ -270,7 +270,7 @@
    "bonus": "fez",
    "implemented": true,
    "shipped": true,
-   "effect": "When you use a religious unit to convert a city for the first time earn 20 Science per Population of that city (on Standard Speed)."
+   "effect": "The first time a religious unit converts a city, earn 20 Science per citizen of that city (Standard speed)."
   },
   {
    "name": "Granada",
@@ -280,7 +280,7 @@
    "bonus": "granada",
    "implemented": true,
    "shipped": true,
-   "effect": "Your Builders can now make Alc\u00e1zar improvements. Alc\u00e1zars provide +2 Culture. Provides Science equal to 50% of the tile's Appeal. Occupying unit receives +4 Defense Strength, and automatically gains 2 turns of fortification. Provides Tourism after researching Flight. Cannot be built next to another Alc\u00e1zar."
+   "effect": "Builders can build the Alc\u00e1zar improvement: +2 Culture and Science equal to half the tile's Appeal; a unit on it gets +4 Defense Strength and 2 turns of fortification at once; yields Tourism after Flight. Never next to another Alc\u00e1zar."
   },
   {
    "name": "Hong Kong",
@@ -310,7 +310,7 @@
    "bonus": "johannesburg",
    "implemented": true,
    "shipped": true,
-   "effect": "Cities receive +1 Production for every improved resource type. After researching Industrialization it becomes +2 Production."
+   "effect": "Cities gain +1 Production per improved resource type, +2 after Industrialization."
   },
   {
    "name": "Kumasi",
@@ -330,7 +330,7 @@
    "bonus": "la_venta",
    "implemented": true,
    "shipped": true,
-   "effect": "Your Builders can now make Colossal Head improvements. Colossal Heads provide +2 Faith. +1 Faith for every 2 adjacent Rainforest or for every adjacent Rainforest once Humanism is discovered. +1 Faith for every 2 adjacent Woods or for every adjacent Woods once Humanism is discovered. Tourism from Faith once Flight is discovered. Cannot be built on Snow or Snow Hills."
+   "effect": "Builders can build the Colossal Head improvement: +2 Faith, +1 Faith per 2 adjacent Rainforest and per 2 adjacent Woods (per each after Humanism); Tourism from its Faith after Flight. Not on Snow or Snow Hills."
   },
   {
    "name": "Lahore",
@@ -340,7 +340,7 @@
    "bonus": "lahore",
    "implemented": true,
    "shipped": true,
-   "effect": "Your cities can now train Nihang units. A unit with a unique Promotion tree that can be purchased with Faith. Combat Strength is increased when Barracks, Armory, and Military Academy buildings are first constructed."
+   "effect": "Cities can train the Nihang: bought with Faith, with a promotion tree of its own, and stronger once Barracks, Armory and Military Academy first stand in its city."
   },
   {
    "name": "Mexico City",
@@ -350,7 +350,7 @@
    "bonus": "mexico_city",
    "implemented": true,
    "shipped": true,
-   "effect": "Regional effects from your Industrial Zone, Water Park, and Entertainment Complex districts reach 3 tiles farther."
+   "effect": "Industrial Zone, Water Park and Entertainment Complex effects reach 3 tiles further."
   },
   {
    "name": "Mitla",
@@ -360,7 +360,7 @@
    "bonus": "mitla",
    "implemented": true,
    "shipped": true,
-   "effect": "City growth rate is 15% higher in cities with a Campus district."
+   "effect": "Cities with a Campus grow 15% faster."
   },
   {
    "name": "Muscat",
@@ -370,7 +370,7 @@
    "bonus": "muscat",
    "implemented": true,
    "shipped": true,
-   "effect": "+1 Amenity in cities with a Commercial Hub district."
+   "effect": "Cities with a Commercial Hub get +1 Amenity."
   },
   {
    "name": "Nalanda",
@@ -380,7 +380,7 @@
    "bonus": "nalanda",
    "implemented": true,
    "shipped": true,
-   "effect": "Your Builders can now make Mahavihara improvements. +2 Science and +1 Housing. +1 Faith for every adjacent Holy Site district and +1 Science for every adjacent Campus district. After researching Scientific Theory receive an additional +1 Science for every adjacent Campus. When a player constructs their first Mahavihara receive a random technology. Must be built on flat terrain not adjacent to another Mahavihara."
+   "effect": "Builders can build the Mahavihara improvement: +2 Science, +1 Housing, +1 Faith per adjacent Holy Site and +1 Science per adjacent Campus (+2 after Scientific Theory); your first one grants a random technology. Flat land only, never next to another Mahavihara."
   },
   {
    "name": "Nan Madol",
@@ -390,7 +390,7 @@
    "bonus": "nan_madol",
    "implemented": true,
    "shipped": true,
-   "effect": "Your districts on or next to Coast or Lake tiles provide +2 Culture."
+   "effect": "Districts on or beside Coast or Lake give +2 Culture."
   },
   {
    "name": "Nazca",
@@ -400,7 +400,7 @@
    "bonus": "nazca",
    "implemented": true,
    "shipped": true,
-   "effect": "Your Builders can now make Nazca Line improvements. Nazca Lines provide +1 Faith to adjacent tiles. +1 Faith to adjacent tiles with a resource. +1 Food to adjacent Desert and Desert Hill tiles after discovering Civil Service. +1 Production to adjacent flat tiles after researching Mass Production. +1 Appeal. Can only be built on flat Desert. This tile cannot be worked."
+   "effect": "Builders can build Nazca Lines, on flat Desert only and never worked: +1 Faith to adjacent tiles, +1 more to those with a resource, +1 Food to adjacent Desert and Desert Hills after Civil Service, +1 Production to adjacent flat tiles after Mass Production, and +1 Appeal."
   },
   {
    "name": "Ngazargamu",
@@ -410,7 +410,7 @@
    "bonus": "ngazargamu",
    "implemented": true,
    "shipped": true,
-   "effect": "Land combat or Support units are 20% cheaper to purchase with Gold for each Encampment district building in that city."
+   "effect": "Each Encampment building in a city makes its land combat and support units 20% cheaper to buy with Gold."
   },
   {
    "name": "Rapa Nui",
@@ -420,7 +420,7 @@
    "bonus": "rapa_nui",
    "implemented": true,
    "shipped": true,
-   "effect": "Your Builders can now make Moai improvements. Moai provide +1 Culture. +1 Culture for every 2 adjacent Moai. +2 Culture if on or adjacent to a Volcanic Soil tile. +1 Culture if adjacent to a Coast or Lake tile . Additional Culture and Tourism as you advance through the Civics and Technology Tree. Can be built on Plains, Plains Hills, Grassland, Grassland Hills, or Volcanic Soil. Cannot be placed adjacent to a Woods or Rainforest tile."
+   "effect": "Builders can build the Moai improvement on Plains, Grassland (and their Hills) or Volcanic Soil, never beside Woods or Rainforest: +1 Culture, +1 per 2 adjacent Moai, +2 on or beside Volcanic Soil, +1 beside Coast or Lake, and more Culture and Tourism later in the tech and civic trees."
   },
   {
    "name": "Samarkand",
@@ -430,7 +430,7 @@
    "bonus": "samarkand",
    "implemented": true,
    "shipped": true,
-   "effect": "Your Builders can now make Trading Dome improvements. +2 Gold. +1 Gold for every adjacent Luxury resource. Your outgoing international Trade Routes grant +1 Gold per Trading Dome at the origin. Cannot be built next to another Trading Dome."
+   "effect": "Builders can build the Trading Dome improvement: +2 Gold, +1 per adjacent Luxury; each one adds +1 Gold to your outgoing international Trade Routes from its city. Never next to another Trading Dome."
   },
   {
    "name": "Singapore",
@@ -450,7 +450,7 @@
    "bonus": "taruga",
    "implemented": true,
    "shipped": true,
-   "effect": "+5% Science in all cities for each different improved Strategic resource they have."
+   "effect": "+5% Science in a city for each kind of improved Strategic resource it has."
   },
   {
    "name": "Vatican City",
@@ -460,7 +460,7 @@
    "bonus": "vatican_city",
    "implemented": true,
    "shipped": true,
-   "effect": "When you activate a Great Person they spread 400 Religious pressure of your founded (or majority) religion to cities within 10 tiles."
+   "effect": "Activating a Great Person pushes 400 pressure of your founded (or majority) religion into every city within 10 tiles."
   },
   {
    "name": "Venice",
@@ -480,7 +480,7 @@
    "bonus": "wolin",
    "implemented": true,
    "shipped": true,
-   "effect": "Receive Great General points when a land unit defeats a major or minor civilization's unit and receive Great Admiral points when a naval unit defeats a major or minor civilization's unit equal to 25% of the opposing unit's strength (Standard Speed)."
+   "effect": "A land unit's kill earns Great General points, and a naval unit's kill Great Admiral points, worth 25% of the defeated unit's strength (Standard speed); major and minor civilizations' units alike."
   },
   {
    "name": "Carthage",
