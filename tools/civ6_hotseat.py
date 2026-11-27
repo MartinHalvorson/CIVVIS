@@ -160,7 +160,86 @@ def agent_seats(players: int, auto_human: bool, civvis_seats: int | None = None)
     return jack_seats(players) + ([HUMAN_SEAT] if auto_human else [])
 
 
-def seat_name(index: int) -> str:
+#: Roster agents a live seat can play: each is the deployment chassis with no
+#: genes, so the live decider IS that agent when given the agent's victory lane
+#: (`src/strategies.rs` ROSTER: jack = no target, holy = Religion, ...).
+AGENT_LANES = {"jack": "civvis", "holy": "religious", "tourist": "culture",
+               "moonshot": "science", "siege": "domination", "swing": "diplomatic"}
+AGENT_HANDLES = {"jack": "JackOfAllTrades", "holy": "HolyRoller", "tourist": "TouristTrap",
+                 "moonshot": "MoonshotMaven", "siege": "SiegeTheDay", "swing": "SwingVote"}
+
+
+#: `--agents strongest`: the roster agent the ELO Rankings page rates highest.
+STRONGEST = "strongest"
+PUBLISHED_ELO = HERE.parent / "data" / "strategy_elo.json"
+#: A person's name as the game and the people's record take it (`--name`).
+PERSON_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9 _.-]{0,23}")
+
+
+def strongest_agent(published: Path = PUBLISHED_ELO) -> str:
+    """The roster agent with the highest published Elo (`data/strategy_elo.json`,
+    the fit the ELO Rankings page shows); jack when there is no fit to read."""
+    try:
+        ratings = json.loads(published.read_text(encoding="utf-8"))["ratings"]
+        rated = {agent: float(ratings[agent]["elo"]) for agent in AGENT_LANES if agent in ratings}
+    except (OSError, ValueError, KeyError, TypeError):
+        rated = {}
+    return max(rated, key=rated.get) if rated else STRATEGY
+
+
+def checkout_revision(checkout: Path = HERE.parent) -> str | None:
+    """The revision this checkout is at: the harness's, and the decider's when
+    it is this checkout's own build."""
+    try:
+        shown = subprocess.run(["git", "-C", str(checkout), "rev-parse", "--short=8", "HEAD"],
+                               capture_output=True, text=True, check=False, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return shown.stdout.strip() or None if shown.returncode == 0 else None
+
+
+def record_person_game(run_dir: Path, log) -> None:
+    """A named person's finished game goes on the people's record
+    (`tools/people_elo.py record`), which the ELO Rankings page rates them
+    from. In its own process: a push that fails must not take the harness's
+    cleanup with it, and what it printed is in the log either way."""
+    try:
+        done = subprocess.run([sys.executable, str(HERE / "people_elo.py"), "record", str(run_dir)],
+                              capture_output=True, text=True, check=False, timeout=300)
+    except (OSError, subprocess.SubprocessError) as error:
+        log(f"the game was NOT put on the people's record: {error}")
+        return
+    for line in (done.stdout + done.stderr).strip().splitlines():
+        log(f"[people] {line}")
+    if done.returncode != 0:
+        log(f"the game was NOT put on the people's record (exit {done.returncode}); "
+            f"`tools/people_elo.py record {run_dir}` tries again")
+
+
+def person_name(args: argparse.Namespace) -> str | None:
+    """The person at seat 0, when the table has one and `--name` named them."""
+    if getattr(args, "civvis_seats", None) or getattr(args, "auto_human", None):
+        return None
+    return getattr(args, "name", None) or None
+
+
+def seat_agents(args: argparse.Namespace, seats: list[int]) -> dict[int, str]:
+    """Seat -> roster agent: `--agents` in seat order, else jack everywhere."""
+    agents = list(getattr(args, "agents", None) or [])
+    return {seat: (agents[i] if i < len(agents) else "jack") for i, seat in enumerate(seats)}
+
+
+def seat_lanes(args: argparse.Namespace, seats: list[int]) -> dict[int, str]:
+    """Seat -> victory lane its decider plays: the agent's own when `--agents`
+    names one, else `--victory`."""
+    if not getattr(args, "agents", None):
+        return {seat: args.victory for seat in seats}
+    return {seat: AGENT_LANES[agent] for seat, agent in seat_agents(args, seats).items()}
+
+
+def seat_name(index: int, agent: str | None = None) -> str:
+    if agent:
+        return f"CIVVIS {AGENT_HANDLES.get(agent, agent)}"
     return f"CIVVIS jack {index}"
 
 
@@ -208,7 +287,12 @@ def hotseat_config(args: argparse.Namespace, run_dir: Path, orders_db: Path) -> 
         # testable without a person. Unattended, no seat is a person's.
         "HotseatHumanSeats": ([] if civvis_seats or args.auto_human == "stub" else [HUMAN_SEAT]),
         "HotseatStubSeats": [HUMAN_SEAT] if args.auto_human and not civvis_seats else [],
-        "HotseatNames": {str(seat): seat_name(i) for i, seat in enumerate(seats, 1)},
+        "HotseatNames": {str(seat): seat_name(i, getattr(args, "agents", None) and agent)
+                         for i, (seat, agent) in enumerate(seat_agents(args, seats).items(), 1)},
+        "HotseatSeatAgents": ({str(k): v for k, v in seat_agents(args, seats).items()}
+                              if getattr(args, "agents", None) else {}),
+        # `--name`: the hand-over screen names the person's seat with it.
+        "HotseatPersonName": person_name(args) or "",
         "HotseatSaveEvery": args.save_every,
         "HotseatSaveName": args.tag,
         # The operator's seat's difficulty, and every jack seat's: hotseat
@@ -327,7 +411,8 @@ class Brains:
             self.log(f"seat {seat}: stopped a decision worker left running (pid {stopped})")
         out = (seat_dir / "brain.log").open("a", buffering=1)
         self.procs[seat] = subprocess.Popen(
-            brain_command(seat_dir, self.orders_db, self.binary, self.victory),
+            brain_command(seat_dir, self.orders_db, self.binary,
+                          self.victory[seat] if isinstance(self.victory, dict) else self.victory),
             cwd=str(HERE.parent), stdout=out, stderr=subprocess.STDOUT, text=True,
             start_new_session=True)
         out.close()
@@ -838,6 +923,11 @@ def set_up_game(run_dir: Path, args: argparse.Namespace, log: Log) -> bool:
         return False
     if not set_difficulties(run_dir, bounds, args.difficulty, log):
         return False
+    if getattr(args, "hold_start", False):
+        log("[setup] staging room ready; HOLDING for the person: set Teams, then START GAME")
+        print("\a\nStaging room is set. Set the Team column, then press START GAME.\n",
+              flush=True)
+        return True
     if not start_game(run_dir, bounds, log):
         log("[setup] START GAME did not start the game")
         return False
@@ -936,7 +1026,8 @@ class Monitor:
     def __init__(self, run_dir: Path, tag: str, seats: list[int], args: argparse.Namespace,
                  log: Log):
         self.run_dir, self.tag, self.seats, self.args, self.log = run_dir, tag, seats, args, log
-        self.names = {seat: seat_name(i) for i, seat in enumerate(seats, 1)}
+        self.names = {seat: seat_name(i, getattr(args, "agents", None) and agent)
+                      for i, (seat, agent) in enumerate(seat_agents(args, seats).items(), 1)}
         self.unattended = bool(getattr(args, "civvis_seats", None))
         watched = list(seats) if self.unattended else agent_seats(len(seats) + 1, args.auto_human)
         # The game's ending, for an unattended table: each CIVVIS seat's own
@@ -987,7 +1078,10 @@ class Monitor:
 
     def name(self, player: int) -> str:
         if player == HUMAN_SEAT and not self.unattended:
-            return "test stub (seat 0)" if self.args.auto_human else "you (Player 1)"
+            if self.args.auto_human:
+                return "test stub (seat 0)"
+            person = person_name(self.args)
+            return f"{person} (you, seat 0)" if person else "you (Player 1)"
         return f"{self.names.get(player, f'seat {player}')} (seat {player})"
 
     def poll(self) -> None:
@@ -1020,6 +1114,9 @@ class Monitor:
             self.result = {"kind": "victory", "team": team, "victory": event.get("victory"),
                            "turn": event.get("turn"), "ours": ours,
                            "winner_seat": teams.get(int(team)) if ours else None}
+            if event.get("victory_type"):
+                # The victory by name (`victory` is the host's own index).
+                self.result["victory_type"] = event["victory_type"]
             self.log(f"game over at turn {event.get('turn')}: team {team} won "
                      f"({'ours' if ours else 'a rival'}), victory {event.get('victory')}")
         elif kind == "defeat" and event.get("ours") and seat is not None:
@@ -1036,6 +1133,9 @@ class Monitor:
             return
         if kind == "hotseat_armed":
             self.say("the hand-over screen is under CIVVIS control")
+        elif kind == "hotseat_person":
+            self.say(f"seat {event.get('seat')} is named {event.get('shown')!r} in the game"
+                     + ("" if event.get("applied") else " (the name was NOT taken)"))
         elif kind == "hotseat_turn":
             self.started = True
             player, turn = int(event.get("player", -1)), int(event.get("turn", -1))
@@ -1223,6 +1323,30 @@ def smoke_report(monitor: Monitor, log: Log) -> dict:
 
 # ------------------------------------------------------------ the lifecycle
 
+def table_record(monitor: Monitor, args: argparse.Namespace, seats: list[int],
+                 began: dict) -> dict:
+    """What a table's summary says of its game: the ending and the setup, for
+    an unattended table and for a person's (theirs is what rates them,
+    `tools/people_elo.py record`), with the person, their leader and when the
+    game began on theirs. A test stub's game has no ending to keep."""
+    if args.auto_human and not monitor.unattended:
+        return {}
+    record = {
+        "result": monitor.result, "seats": {str(k): v for k, v in monitor.seat_info.items()},
+        "eliminated": sorted(monitor.defeated), "turn": monitor.turn,
+        "difficulty": args.difficulty, "players": args.players, "map": args.map,
+        "map_size": args.map_size, "speed": args.speed, "max_turns": args.max_turns,
+        "civvis_seats": seats, "victory_target": args.victory,
+        "seat_agents": seat_agents(args, seats) if getattr(args, "agents", None) else None,
+        "victories_off": monitor.victories_off, "victories": monitor.victories,
+        "setup_fault": monitor.setup_fault,
+        "seat_stalls": monitor.seat_stalls}
+    if not monitor.unattended:
+        record.update({"person": person_name(args), "person_seat": HUMAN_SEAT,
+                       "leader": args.leader, **began})
+    return record
+
+
 def write_current(payload: dict) -> None:
     RUN_ROOT.mkdir(parents=True, exist_ok=True)
     CURRENT.write_text(json.dumps(payload, indent=2))
@@ -1343,6 +1467,19 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--play-flags", default="", metavar="FLAGS",
                     help="civ6_play switches every jack seat plays with, as one string "
                          "(--play-flags='--dv-join-winner --luxury-quote-proposals')")
+    ap.add_argument("--agents", default=None, metavar="AGENT[,...]",
+                    help="roster agents for the CIVVIS seats in seat order (seat 1 first), "
+                         f"from {', '.join(AGENT_LANES)}, or `{STRONGEST}` for the one the "
+                         "ELO Rankings rate highest; default jack on every seat")
+    ap.add_argument("--name", default=None, metavar="NAME",
+                    help="YOUR name: seat 0 carries it in the game, and a finished game "
+                         "is recorded under it for the people's Elo (tools/people_elo.py)")
+    ap.add_argument("--duel", action="store_true",
+                    help="one against one: 2 players on a Duel map against the strongest "
+                         "agent (`--agents` names another)")
+    ap.add_argument("--hold-start", action="store_true",
+                    help="set up the staging room but leave START GAME to the person "
+                         "(e.g. to pick Teams, which have no text to read)")
     ap.add_argument("--auto-human", nargs="?", const="stub", choices=["stub", "gated"],
                     default=None,
                     help="TEST: a stub plays seat 0 instead of you; `gated` keeps seat 0 "
@@ -1365,6 +1502,21 @@ def main(argv: list[str] | None = None) -> int:
               f"{', '.join(play.VICTORY_TYPES)}", file=sys.stderr)
         return 2
     args.victories_off = [victory for victory in play.VICTORY_TYPES if victory in named]
+    if args.duel:
+        args.players, args.map_size = 2, "MAPSIZE_DUEL"
+        args.agents = args.agents or STRONGEST
+    if args.name is not None and not PERSON_NAME.fullmatch(args.name):
+        print("--name: 1 to 24 letters, digits, spaces, . _ or -, starting with a "
+              "letter or digit", file=sys.stderr)
+        return 2
+    if args.agents:
+        args.agents = [a.strip().lower() for a in args.agents.split(",") if a.strip()]
+        args.agents = [strongest_agent() if a == STRONGEST else a for a in args.agents]
+        bad = [a for a in args.agents if a not in AGENT_LANES]
+        if bad:
+            print(f"--agents: {', '.join(bad)} not one of {', '.join(AGENT_LANES)}",
+                  file=sys.stderr)
+            return 2
     if args.civvis_seats is not None and not 1 <= args.civvis_seats < args.players:
         print(f"--civvis-seats must leave at least one Firaxis AI seat "
               f"(1..{args.players - 1} of --players {args.players})", file=sys.stderr)
@@ -1402,6 +1554,10 @@ def run(args: argparse.Namespace) -> int:
         args.auto_human = (None if not attach_config.get("HotseatStubSeats")
                            else "gated" if attach_config.get("HotseatHumanSeats") else "stub")
         args.victory = attach_config.get("VictoryLane") or args.victory
+        args.name = attach_config.get("HotseatPersonName") or args.name
+        args.leader = attach_config.get("Leader") or None
+        seat_agent_map = attach_config.get("HotseatSeatAgents") or {}
+        args.agents = [seat_agent_map[k] for k in sorted(seat_agent_map, key=int)] or None
         args.victories_off = list(attach_config.get("VictoriesOff") or [])
     elif env.game_pids():
         print("Civ VI is already running. Quit it first (this starts a fresh game), "
@@ -1423,6 +1579,11 @@ def run(args: argparse.Namespace) -> int:
     if halt:
         log(f"note: the unattended lanes stay halted ({halt}); this game is yours")
     launched = False
+    # When the game began and at which revision: a re-attached harness keeps
+    # the first one's answer (the installed config carries both).
+    began = {"started": (attach_config or {}).get("HotseatStarted") or utc(),
+             "revision": ((attach_config or {}).get("HotseatRevision") if args.attach
+                          else checkout_revision())}
     seats = jack_seats(args.players, getattr(args, "civvis_seats", None))
     brains = None
     monitor = None
@@ -1451,6 +1612,8 @@ def run(args: argparse.Namespace) -> int:
             if args.resume_save is not None:
                 args.leader = None
             config = hotseat_config(args, run_dir, orders_db)
+            config.update({"HotseatStarted": began["started"],
+                           "HotseatRevision": began["revision"] or ""})
             reset_orders_db(orders_db)
             target = modinstall.install(config)
             (run_dir / "config.json").write_text(json.dumps(config, indent=2, sort_keys=True))
@@ -1503,7 +1666,8 @@ def run(args: argparse.Namespace) -> int:
             # In the background: the brains start while the map loads.
             threading.Thread(target=park_upper_left, args=(log,), name="upper-left",
                              daemon=True).start()
-        brains = Brains(run_dir, args.tag, seats, orders_db, binary, args.victory, log)
+        brains = Brains(run_dir, args.tag, seats, orders_db, binary,
+                        seat_lanes(args, seats), log)
         brains.start_all()
         monitor = Monitor(run_dir, args.tag, seats, args, log)
         if args.attach:
@@ -1564,16 +1728,7 @@ def run(args: argparse.Namespace) -> int:
         if monitor is not None:
             monitor.poll()
             summary["report"] = smoke_report(monitor, log)
-            if monitor.unattended:
-                summary.update({
-                    "result": monitor.result, "seats": {str(k): v for k, v in monitor.seat_info.items()},
-                    "eliminated": sorted(monitor.defeated), "turn": monitor.turn,
-                    "difficulty": args.difficulty, "players": args.players, "map": args.map,
-                    "map_size": args.map_size, "speed": args.speed, "max_turns": args.max_turns,
-                    "civvis_seats": seats, "victory_target": args.victory,
-                    "victories_off": monitor.victories_off, "victories": monitor.victories,
-                    "setup_fault": monitor.setup_fault,
-                    "seat_stalls": monitor.seat_stalls})
+            summary.update(table_record(monitor, args, seats, began))
             monitor.close()
         request = {}
         try:
@@ -1594,6 +1749,8 @@ def run(args: argparse.Namespace) -> int:
             except Exception as error:  # noqa: BLE001 - cleanup must finish
                 log(f"could not remove the control mod: {error}")
         (run_dir / "summary.json").write_text(json.dumps(summary, indent=2))
+        if summary.get("person") and summary.get("result"):
+            record_person_game(run_dir, log)
         gamelock.release()
         current = read_current()
         if current and current.get("pid") == os.getpid():

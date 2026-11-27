@@ -631,5 +631,132 @@ class UnattendedTableTest(unittest.TestCase):
             monitor.poll()
             self.assertEqual(monitor.result, {"kind": "defeat", "turn": 90, "ours": False})
 
+class DuelUnderYourNameTest(unittest.TestCase):
+    """`--duel --name dev`: one against one with the strongest agent, the
+    person's seat under their name, and the ending kept for their Elo."""
+
+    def test_the_strongest_agent_is_the_roster_agent_the_published_fit_rates_highest(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            fit = Path(tmp) / "elo.json"
+            # The game's own AI and an agent no live seat plays are not candidates.
+            fit.write_text(json.dumps({"ratings": {
+                "civ6:deity": {"elo": 1900}, "forward": {"elo": 1500},
+                "holy": {"elo": 1400}, "tourist": {"elo": 1450}, "jack": {"elo": 1100}}}))
+            self.assertEqual(hotseat.strongest_agent(fit), "tourist")
+            self.assertEqual(hotseat.strongest_agent(Path(tmp) / "no-fit.json"), "jack")
+        # The repository's own published fit rates a roster agent.
+        self.assertIn(hotseat.strongest_agent(), hotseat.AGENT_LANES)
+
+    def started_with(self, *flags: str) -> argparse.Namespace:
+        with patch.object(hotseat, "run", return_value=0) as run, \
+                patch.object(hotseat, "read_current", return_value=None), \
+                patch.object(hotseat, "strongest_agent", return_value="holy"):
+            self.assertEqual(hotseat.main(list(flags)), 0)
+        return run.call_args.args[0]
+
+    def test_a_duel_is_two_players_on_a_duel_map_against_the_strongest(self) -> None:
+        args = self.started_with("--duel", "--name", "dev", "--leader", "LEADER_GILGAMESH")
+        self.assertEqual((args.players, args.map_size, args.map), (2, "MAPSIZE_DUEL", "Pangaea.lua"))
+        self.assertEqual((args.agents, args.name, args.leader), (["holy"], "dev", "LEADER_GILGAMESH"))
+        # Another agent can be named, and `strongest` is a name anywhere in the list.
+        self.assertEqual(self.started_with("--duel", "--agents", "tourist").agents, ["tourist"])
+        self.assertEqual(self.started_with("--agents", "jack,strongest").agents, ["jack", "holy"])
+
+    def test_a_name_the_game_and_the_record_cannot_carry_is_refused(self) -> None:
+        for bad in ("", " dev", "x" * 25, 'de"v', "dev\n", "<b>"):
+            with patch.object(hotseat, "run") as run, \
+                    patch.object(hotseat, "read_current", return_value=None):
+                self.assertEqual(hotseat.main(["--name", bad]), 2, repr(bad))
+                run.assert_not_called()
+
+    def test_the_hand_over_screen_is_told_the_persons_name(self) -> None:
+        config = hotseat.hotseat_config(game_args(players=2, name="dev", agents=["holy"]),
+                                        Path("/tmp/r"), Path("/tmp/r/o.sqlite"))
+        self.assertEqual(config["HotseatPersonName"], "dev")
+        self.assertEqual(config["HotseatHumanSeats"], [0])
+        self.assertEqual(config["HotseatNames"], {"1": "CIVVIS HolyRoller"})
+        self.assertEqual(config["HotseatSeatAgents"], {"1": "holy"})
+        # A test stub's seat and an unattended table have no person to name.
+        for nobody in (game_args(name="dev", auto_human="stub"),
+                       game_args(name="dev", players=6, civvis_seats=1, leader=None)):
+            self.assertEqual(hotseat.hotseat_config(nobody, Path("/tmp/r"),
+                                                    Path("/tmp/r/o.sqlite"))["HotseatPersonName"], "")
+        # Asked for no name, the seat stays the game's own "Player 1".
+        self.assertEqual(hotseat.hotseat_config(game_args(), Path("/tmp/r"),
+                                                Path("/tmp/r/o.sqlite"))["HotseatPersonName"], "")
+
+    def duel(self, run_dir: Path, **more) -> tuple["hotseat.Monitor", argparse.Namespace, list]:
+        args = game_args(players=2, map_size="MAPSIZE_DUEL", name="dev", agents=["holy"],
+                         leader="LEADER_GILGAMESH", victories_off=[], **more)
+        lines: list[str] = []
+        monitor = hotseat.Monitor(run_dir, "hs", [1], args, lines.append)
+        self.addCleanup(monitor.close)
+        return monitor, args, lines
+
+    @staticmethod
+    def event(run_dir: Path, where: str, **event) -> None:
+        target = run_dir / where
+        target.parent.mkdir(exist_ok=True)
+        with target.open("a") as out:
+            out.write(json.dumps(event) + "\n")
+
+    def test_a_persons_table_keeps_its_ending_and_who_played(self) -> None:
+        import people_elo
+
+        began = {"started": "2026-11-27T06:30:00Z", "revision": "945f056d"}
+        for team, winner in ((1, "holy"), (0, "person")):
+            with tempfile.TemporaryDirectory() as tmp:
+                run_dir = Path(tmp)
+                monitor, args, lines = self.duel(run_dir)
+                self.event(run_dir, "events.jsonl", kind="hotseat_person", seat=0,
+                           applied=True, shown="dev")
+                self.event(run_dir, "hs-p1/events.jsonl", kind="seat",
+                           civ="CIVILIZATION_ARABIA", team=1)
+                self.event(run_dir, "hs-p1/events.jsonl", kind="victory", team=team, victory=4,
+                           victory_type="VICTORY_RELIGIOUS", turn=143)
+                monitor.poll()
+                self.assertIn("seat 0 is named 'dev' in the game", lines)
+                self.assertEqual(monitor.name(0), "dev (you, seat 0)")
+                record = hotseat.table_record(monitor, args, [1], began)
+                self.assertEqual(record["result"]["ours"], team == 1)
+                self.assertEqual(record["result"]["victory_type"], "VICTORY_RELIGIOUS")
+                self.assertEqual((record["person"], record["leader"], record["seat_agents"]),
+                                 ("dev", "LEADER_GILGAMESH", {1: "holy"}))
+                self.assertEqual((record["started"], record["revision"]),
+                                 ("2026-11-27T06:30:00Z", "945f056d"))
+                # ...and it is the line the people's record takes, through JSON
+                # as summary.json carries it.
+                summary = json.loads(json.dumps({"tag": "hs", "utc": "2026-11-27T09:00:00Z", **record}))
+                row = people_elo.game_row(summary)
+                self.assertEqual((row["person"], row["agents"], row["winner"], row["victory"],
+                                  row["turn"], row["at"], row["diplomatic"]),
+                                 ("dev", ["holy"], winner, "VICTORY_RELIGIOUS", 143,
+                                  "2026-11-27T06:30:00Z", True))
+
+    def test_a_test_stubs_game_keeps_no_ending_and_a_name_not_taken_is_said(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp)
+            monitor, args, lines = self.duel(run_dir)
+            self.event(run_dir, "events.jsonl", kind="hotseat_person", seat=0,
+                       applied=False, shown="Player 1")
+            monitor.poll()
+            self.assertIn("seat 0 is named 'Player 1' in the game (the name was NOT taken)", lines)
+        with tempfile.TemporaryDirectory() as tmp:
+            monitor, args, _ = self.duel(Path(tmp), auto_human="stub")
+            self.assertEqual(hotseat.table_record(monitor, args, [1], {}), {})
+
+    def test_a_finished_game_under_a_name_is_put_on_the_peoples_record(self) -> None:
+        source = (hotseat.HERE / "civ6_hotseat.py").read_text()
+        self.assertIn('if summary.get("person") and summary.get("result"):\n'
+                      "            record_person_game(run_dir, log)", source)
+        lines: list[str] = []
+        done = argparse.Namespace(returncode=2, stdout="", stderr="people_elo: not recorded: why\n")
+        with patch.object(hotseat.subprocess, "run", return_value=done) as ran:
+            hotseat.record_person_game(Path("/tmp/run"), lines.append)
+        self.assertEqual(ran.call_args.args[0][1:], [str(hotseat.HERE / "people_elo.py"), "record", "/tmp/run"])
+        self.assertEqual(lines[0], "[people] people_elo: not recorded: why")
+        self.assertIn("NOT put on the people's record (exit 2)", lines[1])
+
+
 if __name__ == "__main__":
     unittest.main()
