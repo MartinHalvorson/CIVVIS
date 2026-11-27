@@ -218,8 +218,9 @@ keeps version two's staged plan at peace unchanged, and adds:
   cooldown (`CAMPAIGN_REPEAT_COOLDOWN`, 15 turns), and no new plan is drawn
   in that time. Counter: `campaign:clock_expired`.
 - **Peace.** Once the plan's city is ours, `city_campaign_diplomacy`
-  (unchanged) offers peace. A plan's war ending in peace starts the
-  cooldown, as before.
+  (unchanged) offers peace that turn. If the rival refuses and the war goes
+  on, the next turn plans the war's next city. A plan's war ending in peace
+  starts the cooldown, as before.
 
 With the gene off, nothing reads the new code: every new branch checks
 `city_campaign_3`, and the no-go map stays empty.
