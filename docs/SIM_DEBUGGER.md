@@ -253,7 +253,12 @@ and 2.8 MB by turn 130. When room runs out the first mark and the newest 60
 stay whole (the newest half of the room when that is fewer), and between them
 the oldest turns go first, the odd ones before the even: a very long game
 keeps its early turns one in two, then one in four, and so on to one in 64. If
-that is still too many the oldest go, so the room is never exceeded.
+that is still too many the oldest go, so the room is never exceeded. The first
+turn of each world era stays as the first turn does (`Timeline::thin`), so Era
+Back, Era Next and Doctor Strange's Turn 1, Era back and Era forward land on a
+turn held, a jump, and not on turns played again (operator 2026-11-27: "we
+should make sure to save these turns for fast jumping"). Era starts go only
+when the room is smaller than they are, oldest first.
 
 Past the memory line, each time the memory has grown by another 1/32 of the
 line (32 MB at 1 GB), a fifth of the room is taken away, down to 12 marks.
@@ -1144,7 +1149,7 @@ with a copy of it, its scout, for each future played at once. From those,
   opens on. On the 8 GB budget one fits and two may be open; on 16 GB six;
   on 24 GB ten; the dozen there are letters for from 32 GB. Past that,
   Branch, Branch Next Best, Branch 5 Next Best, Autosearch's Branch it and
-  All 14,000,605 make no world, or as many as fit, and say why;
+  Send it make no world, or as many as fit, and say why;
 - what the boxes leave is the worlds' kept turns, the same line for each
   world (`room`), and as many futures are begun at once as fit beside them
   (one at a time on the 8 GB budget, `strangeForesee`);
@@ -1162,7 +1167,7 @@ with a copy of it, its scout, for each future played at once. From those,
 `beta/strange_memory_test.py` runs that arithmetic as it ships, in node;
 `check_doctor_strange_memory` in `beta/debugger_test.py` holds the cap
 against every way of making a world, and `beta/homes_test.py` the shim's
-side. Measured before and after (PR #5939 has the table): All 14,000,605
+side. Measured before and after (PR #5939 has the table): All 14,000,605 (now Send it)
 from turn 60 made eleven worlds and passed 5 GB by turn 132; on the 16 GB
 budget it makes four (six worlds) and the tab peaked at 3.15 GB, its
 engines 1.1 GB; on the 8 GB budget it makes none. What none of this reaches
@@ -1842,7 +1847,8 @@ path). these should alert on the top section out in the distance."
   on the left. move futures up to be right of this. then the -10, -1, 1, 10
   line. then play time.then "B stopped on turn 185..." drop locked. should
   always be locked. drop the civvis and civvis ai debugger things"): Home,
-  CIVVIS and New game (gold); the title; −10, −1, +1, +10; Play Time; what
+  CIVVIS and New game (gold); the title; Turn 1, Era back, −10, −1, +1, +10,
+  Era forward (2026-11-27, below); Play Time; what
   the page says; then Following, Create Branch and Autosearch. To the fork
   and Futures were dropped later that day ("the turn box doesnt appear right
   initially odten. please drop to the fork and future to the end": their
@@ -2087,42 +2093,105 @@ on. The viewer's own result card is put away in a world's box, and so is the
 countdown to a new game it would start on a native server
 (`finaleHoldsForTheReader`), which would end the world.
 
-### All 14,000,605
+### Send it
 
 Operator 2026-11-26: "add a button to the left side top half but the bottom
 of it in doctor strange that says "All 14,000,605" and when clicked every
 ai-strategy we have (we can say top 10 for now) spawns from the current point
 and all start simulating towards the end. time carries forward for all. spawn
-a window for each".
+a window for each". Then 2026-11-27: "change the all 14,000,000... button to
+"Send it". hover text can say spwan 10 branches and run all out to the end.
+also, work to optimize this process so we are runing branches as fast as
+possible. we should be utilizing free cores to speed up other world. actually
+lets have the button spawn up to a total of 12 worlds. so we can have a nice
+grid down below."
 
 The button stands at the foot of the tree on the left, 12 px over the line of
 the open turn as the worlds' numbers stand on the right, in Doctor Strange's
 colours (his button's in the site list). Where the turn written on the line
-would be under it, it stands over the turn instead (`--strange-all-lift`), and
-the line is kept under it (`strange.floor`).
+would be under it, it stands over the turn instead (`--strange-send-lift`),
+and the line is kept under it (`strange.floor`).
 
-Pressed, the base timeline is branched on its open turn once for each of the
-best `STRANGE_ALL_TOP` (10) player strategies, best first by the picker's
-rating, each a world in a box of its own beside the base (`strangeAll`,
-`strangeMake`). A strategy that already has its world there is left out: the
-one the base seats, and one seated in a world that is still the same world as
-the base on that turn (the engine's print of the turn is the same). Once every
-new world stands on the base's turn (its copy is done), time runs on for all
-the open worlds to the end of the game, as Play Time does. Pressed while time
-runs, time stops first and the worlds branch from the turn it stops on. At 12
-worlds open there is no more room: the best that fit are branched and the page
-says how many were left out, and the button waits for a world to be deleted.
+Pressed, the base timeline is branched on its open turn for the best player
+strategies that have no world of their own there, best first by the picker's
+rating, each a world in a box of its own beside the base (`strangeSendIt`,
+`strangeMake`), until `STRANGE_SEND_WORLDS` (12) worlds are open: three rows of
+four boxes. Fewer are made where the memory ceiling holds fewer (`What a tab
+may hold`; the page says how many did not fit), or where every player strategy
+already has its world. A strategy that already has its world there is left
+out, by the rule Branch Next Best uses (`strangeSeated`): the one the base
+seats, and one seated in a world that is still the same world as the base on
+that turn, which would only play the same game again. With the site's ten
+rated strategies, the page's two worlds and eight branches are every one of
+them: ten worlds. Its hover says what a press does: on the site today, "Spawn
+8 branches of A and run all 10 worlds out to the end: every player strategy
+has a world then".
 
-On the real engine (civvis.ai/test, 1600x1000, 10 strategies rated, 11-26):
-from turn 11, nine worlds opened and time ran 1.8 s after the press; the 11
-worlds then went from turn 13 to turn 142 in 45 s, never more than a turn
-apart, each named `TouristTrap-11-<Strategy>`.
+Once every new world stands on the base's turn, time runs on for all the open
+worlds to the end of the game, and faster than Play Time (`fast`,
+`strangeFarthest`): the turn shown is the furthest every world holds, less
+`STRANGE_SEND_KEEP` (4), rather than each turn on the way, and a world that
+answers for its future is asked for the next turns at once, so each world's
+engine plays the whole time, on a core of its own. A world whose game ends is
+taken to its last turn, so it says how it ended. No future is begun on a scout
+while it runs (`strangeForesee`): the worlds play their own futures, and are as
+fast as the slowest of them, which a scout beside it slows. Pressed while time
+runs, time stops first and the worlds branch from the turn it stops on; with no
+room for another world it makes the running worlds' run its own.
+
+Measured on the published engine (civvis.ai/test, 2026-11-27, headless Chrome,
+1600x1000, ten worlds from turn 1 to the end of every game at turn 201, on this
+18-core computer while other work held about 13 of its cores):
+
+| Run | Time | Page thread busy | What time waited on |
+|---|---|---|---|
+| Before: every turn shown | 67-77 s (four runs) | 82-86% | the page drawing ten boxes a turn (605 of 609 samples), every world 11 or 12 turns ahead the whole way |
+| Before, scouts stopped | 67 s | 82% | the same |
+| Send it, run back to back with the 77 s one | 52 s | 68% | the slowest world's engine |
+
+Letting each world play 24 turns ahead instead of 12 made it slower (72 s):
+the worlds that were already ahead only took cores from the slowest one.
+
+Showing each turn, two fifths of the page's thread went to the browser laying
+out and painting the ten boxes, and a third to the boxes drawing their turns.
+Here each world's engine had a third of a core; on a computer with its cores
+free the engines play several times faster and the page's drawing, which Send
+it no longer waits on, was the whole of the limit. A world's turn is played
+one after the other on its own engine, so a core one world leaves free cannot
+play another world's turn for it: what it can do is keep every world's engine
+playing, which Send it now does.
+
+A world's box no longer places the build's label beside its minimap, both of
+which a box hides, and does not fit the hidden minimap's frame while the worlds
+move: each measured the page at every turn (3% and 4% of the page's thread with
+ten worlds).
 
 A world tells its engine its share of the room (`strangePaneRoom`, `room`)
 in turn with what the page tells it (`debugInTurn`). Sent on its own, the op
 could be in flight when a follow asked for its next step, the step was
 dropped, and the world stopped short the moment time ran on after worlds
 were opened.
+
+### Turn 1, Era back and Era forward
+
+Operator 2026-11-27: "lets add era back and era forward to the controls. lets
+add a turn 1 option too. this should be a clean set of controls. lets try to
+put in order: turn 1, era back (which goes to the start of the era, then the
+last era start). we should make sure to save these turns for fast jumping. we
+have another thread working to cut out half the turns".
+
+The steps under the title are one row: Turn 1, ◀◀ Era, −10, −1, +1, +10,
+Era ▶▶. Each takes every world, together, as the steps do. An era is the
+followed world's: its engine says the first turn of each world era it has
+been through (`marks.eras`, its turns played ahead included). Era back goes to
+the first turn of the era the followed world stands in, and from there to the
+first turn of the era before (`strangeEraBack`). Era forward goes to the first
+turn of the next era when the followed world has played it, and otherwise
+time runs on, every world with its own player strategy, until the followed
+world comes into a new era, and stops on its first turn (`strangeEraOn`, the
+`era` of a run in `strangeAsk`). The engine keeps the first turn and the first
+turn of each era whatever else it thins (see the timeline's room above), so
+these are jumps to turns held.
 
 ### Branch Next Best
 
@@ -2133,7 +2202,7 @@ A row of two buttons stands across the branching deck between Following and
 Create Branch, in Create Branch's gold: Branch Next Best on the left, Branch 5
 Next Best on the right (`strangeNext`). Each branches the base timeline on its open turn for
 the best-rated player strategies that have no world of their own there yet,
-by All 14,000,605's rule (`strangeSeated`): one, or `STRANGE_NEXT_MANY` (5),
+by Send it's rule (`strangeSeated`): one, or `STRANGE_NEXT_MANY` (5),
 best first, each a world in a box of its own beside the base. A branch whose
 copy has not landed yet counts as the base's world too (`strange.made`), so a
 quick second press takes the next ones down the ranking rather than the same

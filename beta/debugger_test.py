@@ -3586,12 +3586,13 @@ def check_doctor_strange(bar: Bar, address: str) -> None:
     # Branch 5 Next Best, which wait here: both of the toy's two strategies
     # have a world on turn 1 already. Each box has its exit. Over the title,
     # Home, CIVVIS and New game.
-    assert said == {"new": ["New game", False], "play": ["▶ Play Time", False], "back10": ["−10", True], "back1": ["−1", True], "on1": ["+1", False],
-                    "on10": ["+10", False], "base": ["A · StockB · Jack", False],
+    assert said == {"new": ["New game", False], "play": ["▶ Play Time", False], "first": ["Turn 1", True], "era-back": ["◀◀Era", True],
+                    "back10": ["−10", True], "back1": ["−1", True], "on1": ["+1", False],
+                    "on10": ["+10", False], "era-on": ["Era▶▶", False], "base": ["A · StockB · Jack", False],
                     "next1": ["Branch Next Best", True], "next5": ["Branch 5 Next Best", True],
                     "branch": ["⑂ 1-(player strategy)1-Jack", False], "search": ["Autosearch", False],
                     "swan": ["🦢 Generate Black Swan", False], "swan-kind": ["AnyPandemicInstant nuclear war", False],
-                    "omen": ["", False], "all": ["All 14,000,605", True],
+                    "omen": ["", False], "send": ["Send it", False],
                     "say": ["One world so far. Play, and each player strategy takes it its own way", False],
                     "follow-a": ["Following", True], "follow-b": ["Follow", False],
                     "close-a": ["✕", False], "close-b": ["✕", False],
@@ -4149,7 +4150,8 @@ def check_doctor_strange_memory(bar: Bar, address: str) -> None:
     the least it is told and one future played beside it (`strangeBudgetOf`;
     measured in PR #5939), and the page's own two may still be open, each
     world's engine told the least. A third is refused with words that say
-    why, Branch Next Best, Branch 5 Next Best and All 14,000,605 make none,
+    why, Branch Next Best and Branch 5 Next Best make none, Send it only runs
+    the two on,
     no page is made ahead for one, and deleting a world makes room for one
     again. A link that says the computer has more (`?memory=16`) has room for
     more.
@@ -4160,7 +4162,7 @@ def check_doctor_strange_memory(bar: Bar, address: str) -> None:
     lines = "strange.order.map(letter => debugSplit.panes[letter].frame.contentWindow.eval('engine.line'))"
     frames = "document.querySelectorAll('#debugsplit iframe').length"
     two = "debugSplit && debugSplit.shown && strange.order.length === 2 && strange.order.every(letter => debugSplit.panes[letter].turn === 1) && strangeIdle()"
-    buttons = ("['branch', 'next1', 'next5', 'all'].map(action => document.querySelector(`#strange-hud [data-strange=\"${action}\"]`))"
+    buttons = ("['branch', 'next1', 'next5', 'send'].map(action => document.querySelector(`#strange-hud [data-strange=\"${action}\"]`))"
                ".map(held => [held.disabled, held.title])")
     # Two strategies more than the two worlds seat, so there is always one to branch.
     more = json.dumps(json.dumps([["s3", 990], ["s4", 980]]))
@@ -4177,16 +4179,14 @@ def check_doctor_strange_memory(bar: Bar, address: str) -> None:
         bar.until(f"{lines}.every(line => line === 128)", "each world's engine is told its share", seconds=30)
         # Full: each way of making a world is off, and says why.
         state = bar.ev(buttons)
-        assert [disabled for disabled, _ in state] == [True] * 4, state
+        assert [disabled for disabled, _ in state] == [True, True, True, False], state
         assert state[0][1] == state[1][1] == state[2][1] == f"{full}. Delete one to branch again", state
-        assert state[3][1] == f"{full}. Delete some to branch every player strategy", state
+        assert state[3][1] == f"{full}: run all 2 worlds out to the end", state
         # Asked anyway, none is made, and the page says why.
         assert bar.ev("strangeBranch('jack')") is None
         assert bar.ev(said) == f"{full}. Delete one to branch again", bar.ev(said)
         assert bar.ev("strangeNext(5)") == []
         assert bar.ev(said) == f"{full}. Delete one to branch again", bar.ev(said)
-        bar.ev("strangeAll(), true")
-        assert bar.ev(f"[strange.all, {said}, strange.order.length]") == [None, f"{full}. Delete some to branch them all", 2]
         # And no page is made ahead for a world that would not fit
         # (`strangeSpare`: after STRANGE_SPARE_STILL_MS standing still).
         bar.ev("new Promise(done => setTimeout(() => done(true), 3500))")
@@ -4200,7 +4200,7 @@ def check_doctor_strange_memory(bar: Bar, address: str) -> None:
         assert bar.ev("strangeBranch('jack')") == "b"
         bar.until(two, "the branch is a world in B's box", seconds=30)
         bar.until(f"{lines}.every(line => line === 128)", "the branch's engine is told its share", seconds=30)
-        assert bar.ev(f"[{frames}, {buttons}.map(([disabled]) => disabled)]") == [2, [True] * 4]
+        assert bar.ev(f"[{frames}, {buttons}.map(([disabled]) => disabled)]") == [2, [True, True, True, False]]
         assert not bar.dev.console, f"the page complained: {bar.dev.console}"
     finally:
         bar.ev("localStorage.removeItem('civvis-toy-memory'), true")
@@ -4351,28 +4351,35 @@ def check_doctor_strange_autosearch(bar: Bar, address: str) -> None:
     assert not bar.dev.console, f"the page complained: {bar.dev.console}"
 
 
-def check_doctor_strange_all(bar: Bar, address: str) -> None:
-    """Doctor Strange's CIVVIS has All 14,000,605: the best player strategies branched from the base timeline at once, and time run on for all.
+def check_doctor_strange_send_it(bar: Bar, address: str) -> None:
+    """Doctor Strange's CIVVIS has Send it: the best player strategies branched from the base timeline up to twelve worlds, and time run on for all of them to the end, as fast as they are played.
 
     Operator, 2026-11-26: "add a button to the left side top half but the
     bottom of it in doctor strange that says "All 14,000,605" and when
     clicked every ai-strategy we have (we can say top 10 for now) spawns from
     the current point and all start simulating towards the end. time carries
-    forward for all. spawn a window for each".
+    forward for all. spawn a window for each". Then 2026-11-27: "change the
+    all 14,000,000... button to "Send it". hover text can say spwan 10
+    branches and run all out to the end. also, work to optimize this process
+    so we are runing branches as fast as possible ... actually lets have the
+    button spawn up to a total of 12 worlds. so we can have a nice grid down
+    below."
 
-    The toy's roster is made eleven long here, rated below Jack and Stock,
-    so the top ten leave one out.
+    The toy's roster is made thirteen long here, rated below Jack and Stock:
+    the page's two worlds seat two, Send it branches ten, which makes twelve
+    worlds, and one strategy is left without.
     """
-    more = [[f"s{rank}", 1000 - 10 * (rank - 2)] for rank in range(3, 12)]
+    more = [[f"s{rank}", 1000 - 10 * (rank - 2)] for rank in range(3, 14)]
     ready = "typeof drawDebugBar === 'function' && typeof engineState === 'function'"
-    button = '#strange-hud [data-strange="all"]'
+    button = '#strange-hud [data-strange="send"]'
     said = "document.querySelector('#strange-hud [data-strange=\"say\"]').textContent"
     seats = "strange.order.map(letter => debugSplit.panes[letter].strategy)"
+    turns = "strange.order.map(letter => debugSplit.panes[letter].turn)"
     together = lambda turn: f"strange.order.every(letter => debugSplit.panes[letter].turn >= {turn})"
     bar.ev(f"localStorage.setItem('civvis-toy-strategies', {json.dumps(json.dumps(more))}), true")
     try:
         bar.dev.call("Page.navigate", {"url": f"{address}?mode=strange"})
-        bar.until(f"{ready} && location.search === '?mode=strange' && state === null", "Doctor Strange's CIVVIS, with eleven strategies")
+        bar.until(f"{ready} && location.search === '?mode=strange' && state === null", "Doctor Strange's CIVVIS, with thirteen strategies")
         bar.ev("engine.scores = {1: 0}, strange.futures = false, render(engineState()), true")
         bar.settled()
         bar.until("debugSplit && debugSplit.shown && debugSplit.panes.a.turn === 1 && debugSplit.panes.b.turn === 1 && strangeIdle()",
@@ -4384,61 +4391,129 @@ def check_doctor_strange_all(bar: Bar, address: str) -> None:
         # line under all of it, the column on the right included.
         place = bar.ev(f"""(() => {{
           const box = name => document.querySelector(`#strange-hud ${{name}}`).getBoundingClientRect();
-          const all = box('[data-strange="all"]'), title = box('.strange-title'), turn = box('.strange-turn'), column = box('.strange-right');
+          const send = box('[data-strange="send"]'), title = box('.strange-title'), turn = box('.strange-turn'), column = box('.strange-right');
           const line = strangeGeometry().cy;
-          return [Math.round(all.left) === 14, Math.round(all.bottom) === line - 12, Math.round(column.bottom) <= line - 12,
-            all.top > title.bottom, all.right < turn.left, all.right < innerWidth / 2, line >= strange.floor,
-            strange.cards.some(card => card.side < 0 && Math.round(card.top) === Math.round(all.top))];
+          return [Math.round(send.left) === 14, Math.round(send.bottom) === line - 12, Math.round(column.bottom) <= line - 12,
+            send.top > title.bottom, send.right < turn.left, send.right < innerWidth / 2, line >= strange.floor,
+            strange.cards.some(card => card.side < 0 && Math.round(card.top) === Math.round(send.top))];
         }})()""")
         assert place == [True] * 8, place
         # Its words are the operator's, in Doctor Strange's colours. The base,
         # A, seats Stock, and B seats Jack and is still the same world on
-        # turn 1: of the top ten that leaves eight to branch.
+        # turn 1: ten of the eleven others fit in the twelve.
         look = bar.ev(f"(() => {{ const held = document.querySelector('{button}'), seen = getComputedStyle(held);"
                       " return [held.textContent, held.disabled, seen.color, seen.borderTopColor, seen.backgroundImage.startsWith('linear-gradient'), held.title]; })()")
-        assert look[:5] == ["All 14,000,605", False, "rgb(255, 227, 163)", "rgb(255, 154, 46)", True], look
-        assert look[5].endswith("each in a window of its own, and time runs on for all the worlds to the end of the game: 8 new worlds"), look[5]
-        assert bar.ev("strangeAllNames()") == [name for name, _ in more[:8]]
+        assert look == ["Send it", False, "rgb(255, 227, 163)", "rgb(255, 154, 46)", True,
+                        "Spawn 10 branches of A and run all 12 worlds out to the end"], look
+        assert bar.ev("strangeSendNames()") == [name for name, _ in more[:10]]
         # Pressed: a world for each, in a box of its own beside the base, best
         # first, each a copy of A on turn 1 with its own strategy in the seat;
-        # then time runs on for all ten, together.
+        # then time runs on for all twelve, together, as fast as they go.
         bar.click(button)
-        bar.until(f"strange.order.length === 10 && strange.all === null && strange.run !== null", "every strategy is a world, and time runs",
+        bar.until("strange.order.length === 12 && strange.send === null && strange.run !== null", "twelve worlds, and time runs",
                   seconds=60)
-        assert bar.ev("strange.order.join('')") == "acdefghijb"
-        assert bar.ev(seats) == ["stock"] + [name for name, _ in more[:8]] + ["jack"]
-        assert bar.ev(said) == "All 14,000,605: 8 branches of A from turn 1, and time runs on for all 10 worlds, to the end.", bar.ev(said)
-        assert bar.ev("document.querySelectorAll('#debugsplit iframe:not(.strange-shut)').length") == 10
-        bar.until("strange.order.slice(1, 9).every(letter => debugSplit.panes[letter].frame.contentWindow.eval('engine.seat') === debugSplit.panes[letter].strategy)",
+        assert bar.ev("[strange.order.join(''), strange.run.fast, strange.run.play]") == ["acdefghijklb", True, True]
+        assert bar.ev(seats) == ["stock"] + [name for name, _ in more[:10]] + ["jack"]
+        assert bar.ev(said) == "Send it: 10 branches of A from turn 1, and time runs on for all 12 worlds, to the end.", bar.ev(said)
+        assert bar.ev("document.querySelectorAll('#debugsplit iframe:not(.strange-shut)').length") == 12
+        # Three rows of four boxes.
+        rows = bar.ev("(() => { const g = strangeGeometry(), tops = new Map(); for (const letter of strange.order) {"
+                      " const box = g.boxes[letter]; tops.set(Math.round(box.y), (tops.get(Math.round(box.y)) || 0) + 1); } return [...tops.values()]; })()")
+        assert rows == [4, 4, 4], rows
+        bar.until("strange.order.slice(1, 11).every(letter => debugSplit.panes[letter].frame.contentWindow.eval('engine.seat') === debugSplit.panes[letter].strategy)",
                   "each new world is seated with its own strategy")
-        copies = bar.ev("strange.order.slice(1, 9).map(letter => debugSplit.panes[letter].frame.contentWindow.eval("
+        copies = bar.ev("strange.order.slice(1, 11).map(letter => debugSplit.panes[letter].frame.contentWindow.eval("
                         "'engine.sent.filter(call => call.path === \"/debug\" && call.body.op === \"copy\").length'))")
-        assert copies == [1] * 8, copies
-        bar.ev("window.strangeGaps = []; window.strangeWatch = setInterval(() => { const turns = strange.order.map(letter => debugSplit.panes[letter].turn);"
-               " strangeGaps.push(Math.max(...turns) - Math.min(...turns)); }, 4); true")
-        bar.until(together(bar.ev("Math.max(...strange.order.map(letter => debugSplit.panes[letter].turn))") + 3),
-                  "time carries forward for all ten", seconds=60)
-        gaps = bar.ev("clearInterval(strangeWatch), strangeGaps")
-        assert gaps and max(gaps) <= 1, gaps
-        # Pressed while time runs: time stops, the best of those without a
-        # world of their own on that turn branch A there, as many as fit in
-        # the twelve, and time runs on again for all.
-        bar.click(button)
-        bar.until("strange.order.length === 12 && strange.all === null && strange.run !== null", "pressed again while time runs", seconds=60)
-        assert bar.ev("strange.order.join('')") == "aklcdefghijb"
-        assert bar.ev(seats)[:3] == ["stock", "jack", "s3"]
-        turn = bar.ev("strangeTree().worlds.k.fork")
-        assert bar.ev(said) == (f"All 14,000,605: 2 branches of A from turn {turn}, and time runs on for all 12 worlds, to the end. "
-                                "7 more did not fit: 12 worlds is the most."), (bar.ev(said), turn)
+        assert copies == [1] * 10, copies
+        bar.until(together(bar.ev(f"Math.max(...{turns})") + 3), "time carries forward for all twelve", seconds=60)
+        # Twelve is the most it makes: pressed again it has nothing more to do.
         assert bar.ev(f"[document.querySelector('{button}').disabled, document.querySelector('{button}').title]") == \
-            [True, "12 worlds are open, which is the most. Delete some to branch every player strategy"]
-        bar.until(together(turn + 2), "time carries forward for all twelve", seconds=60)
+            [True, "Running all 12 worlds out to the end"]
         bar.click('#strange-hud [data-strange="play"]')
         bar.until("strange.run === null && strangeIdle()", "Pause stops the worlds", seconds=30)
-        assert len(set(bar.ev("strange.order.map(letter => debugSplit.panes[letter].turn)"))) == 1
+        assert len(set(bar.ev(turns))) == 1
+        # With nothing left to branch, Send it runs the worlds on, as fast as
+        # they are played: each world's future is played ahead of the turn
+        # shown, and the turn shown is the furthest every world holds, less
+        # STRANGE_SEND_KEEP, not each turn on the way.
+        assert bar.ev(f"document.querySelector('{button}').title") == "12 worlds are open, which is the most: run all 12 worlds out to the end"
+        bar.ev("strange.futures = true, strangeAheadNext(), true")
+        bar.until("Object.keys(strange.peeks).length === 0 && strangeOpen().every(letter => strangeKept(letter) - debugSplit.panes[letter].turn >= STRANGE_AHEAD)",
+                  "each world holds its future ahead", seconds=60)
+        stood = bar.ev(f"{turns}[0]")
+        bar.ev("window.strangeShown = []; window.strangeWatch = setInterval(() => { const run = strange.run;"
+               " if (run && strangeShown[strangeShown.length - 1] !== run.at) strangeShown.push(run.at); }, 2), true")
+        bar.click(button)
+        bar.until(f"strange.run !== null && strange.run.fast && {together(stood + 20)}", "Send it runs time on", seconds=60)
+        assert bar.ev(said) == "Send it: time runs on for all 12 worlds, to the end.", bar.ev(said)
+        shown = bar.ev("clearInterval(strangeWatch), strangeShown")
+        steps = [later - earlier for earlier, later in zip(shown, shown[1:])]
+        assert shown[0] == stood and steps and steps[0] == bar.ev("STRANGE_AHEAD - STRANGE_SEND_KEEP") and max(steps) > 1, shown
+        bar.click('#strange-hud [data-strange="play"]')
+        bar.until("strange.run === null && strangeIdle()", "Pause stops the worlds", seconds=30)
+        assert len(set(bar.ev(turns))) == 1
         assert not bar.dev.console, f"the page complained: {bar.dev.console}"
     finally:
         bar.ev("localStorage.removeItem('civvis-toy-strategies'), true")
+
+
+def check_doctor_strange_eras(bar: Bar, address: str) -> None:
+    """Doctor Strange's CIVVIS steps read Turn 1, Era back, −10, −1, +1, +10, Era forward.
+
+    Operator, 2026-11-27: "lets add era back and era forward to the controls.
+    lets add a turn 1 option too. this should be a clean set of controls.
+    lets try to put in order: turn 1, era back (which goes to the start of
+    the era, then the last era start). we should make sure to save these
+    turns for fast jumping". An era is the followed world's (A's here, whose
+    next era begins on turn 6), and every world goes, together.
+    """
+    ready = "typeof drawDebugBar === 'function' && typeof engineState === 'function'"
+    said = "document.querySelector('#strange-hud [data-strange=\"say\"]').textContent"
+    turns = "strange.order.map(letter => debugSplit.panes[letter].turn)"
+    off = lambda name: f"document.querySelector('#strange-hud [data-strange=\"{name}\"]').disabled"
+    title = lambda name: f"document.querySelector('#strange-hud [data-strange=\"{name}\"]').title"
+    stand = lambda turn, why: bar.until(f"strangeIdle() && strange.run === null && {turns}.every(turn => turn === {turn})", why, seconds=60)
+    bar.dev.call("Page.navigate", {"url": f"{address}?mode=strange"})
+    bar.until(f"{ready} && location.search === '?mode=strange' && state === null", "Doctor Strange's CIVVIS")
+    bar.ev("engine.scores = {1: 0}, strange.futures = false, render(engineState()), true")
+    bar.settled()
+    stand(1, "its two worlds are there")
+    # One clean row, in the operator's order, inside the card.
+    row = bar.ev("""(() => { const row = document.querySelector('#strange-hud .strange-steps'), card = row.closest('.strange-title').getBoundingClientRect();
+      const held = [...row.children], boxes = held.map(button => button.getBoundingClientRect());
+      return [held.map(button => button.dataset.strange), new Set(boxes.map(box => Math.round(box.top))).size,
+        boxes.every((box, at) => at === 0 || box.left >= boxes[at - 1].right), boxes[0].left >= card.left, boxes[boxes.length - 1].right <= card.right,
+        held.every(button => button.scrollWidth <= button.clientWidth)]; })()""")
+    assert row == [["first", "era-back", "back10", "back1", "on1", "on10", "era-on"], 1, True, True, True, True], row
+    assert bar.ev(f"[{off('first')}, {off('era-back')}, {off('era-on')}]") == [True, True, False]
+    assert bar.ev(title("era-on")) == "Era forward: the worlds play on, each with its own player strategy, until A comes into a new era"
+    for letter in "ab":
+        bar.ev(f"debugSplit.panes.{letter}.frame.contentWindow.eval('engine.eraAt = 6'), true")
+    # Era forward, with no next era played yet: time runs on until A comes
+    # into one, and stops on its first turn.
+    bar.click('#strange-hud [data-strange="era-on"]')
+    stand(6, "Era forward plays on to the first turn of the next era")
+    assert bar.ev(said) == "The Classical era began on turn 6", bar.ev(said)
+    bar.click('#strange-hud [data-strange="on10"]')
+    stand(16, "ten turns on")
+    # Era back: the first turn of this era, then the first of the era before.
+    assert bar.ev(title("era-back")).startswith("Era back: the worlds go back to turn 6, where the Classical era began for A")
+    bar.click('#strange-hud [data-strange="era-back"]')
+    stand(6, "Era back goes to the start of the era")
+    bar.click('#strange-hud [data-strange="era-back"]')
+    stand(1, "and from there to the start of the era before")
+    assert bar.ev(f"[{off('first')}, {off('era-back')}]") == [True, True]
+    # Era forward to an era already played goes there, along the turns held.
+    assert bar.ev(title("era-on")) == "Era forward: the worlds go on to turn 6, where the Classical era begins for A"
+    bar.click('#strange-hud [data-strange="era-on"]')
+    stand(6, "Era forward goes to an era already played")
+    # Turn 1.
+    bar.click('#strange-hud [data-strange="first"]')
+    stand(1, "Turn 1 goes back to the first turn")
+    jumps = bar.ev("['a', 'b'].map(letter => debugSplit.panes[letter].frame.contentWindow.eval("
+                   "'engine.sent.filter(call => call.path === \"/debug\" && call.body.op === \"jump\").map(call => call.body.turn)'))")
+    assert all(jump[-3:] == [1, 6, 1] for jump in jumps), jumps
+    assert not bar.dev.console, f"the page complained: {bar.dev.console}"
 
 
 def check_doctor_strange_next_best(bar: Bar, address: str) -> None:
@@ -5239,7 +5314,7 @@ def main() -> int:
         check_doctor_strange_memory(bar, f"http://127.0.0.1:{port}/")
         print("Doctor Strange's CIVVIS holds its worlds under the tab's memory ceiling: on an 8 GB laptop a tab is "
               "kept under 1.5 GB, where the page's two worlds may be open; a third is refused by Branch, Branch Next Best, Branch 5 Next "
-              "Best and All 14,000,605 with words that say why, no page is made ahead for one, each world's engine is "
+              "Best with words that say why (Send it runs the two on), no page is made ahead for one, each world's engine is "
               "told its share of the ceiling, deleting a world makes room for one again, and a link that says the "
               "computer has 16 GB holds six.")
         print("Doctor Strange's CIVVIS is the split shown as worlds in boxes under the tree of their timelines: it "
@@ -5271,7 +5346,8 @@ def main() -> int:
               "of that world's own engine, asking no world anything; the path found is made a branch, a copy of "
               "the base that plays it to what the search read, the other worlds locked to it play on to the same "
               "turn, and no world's future is begun while a search runs.")
-        check_doctor_strange_all(bar, f"http://127.0.0.1:{port}/")
+        check_doctor_strange_send_it(bar, f"http://127.0.0.1:{port}/")
+        check_doctor_strange_eras(bar, f"http://127.0.0.1:{port}/")
         check_doctor_strange_world_ends(bar, f"http://127.0.0.1:{port}/")
         check_doctor_strange_time_runs_on(bar, f"http://127.0.0.1:{port}/")
         print("Doctor Strange's CIVVIS runs time on past a world that cannot play a turn: that world stands where "
@@ -5285,11 +5361,13 @@ def main() -> int:
               "ended on with a card in its box (who won, how, the turn, the score), View map puts the card away "
               "behind a chip that brings it back, Close deletes the world while time runs on for the rest, and "
               "time stops only when the last world's game is over.")
-        print("Doctor Strange's CIVVIS has All 14,000,605 at the foot of the tree on the left: it branches the base "
-              "timeline once for each of the top ten player strategies that has no world of its own there, each a "
-              "world in a window of its own beside the base, best first, and time runs on for every world together; "
-              "pressed while time runs it stops time, branches from that turn as many as there is room for, says "
-              "how many did not fit, and runs time on again.")
+        print("Doctor Strange's CIVVIS has Send it at the foot of the tree on the left: it branches the base "
+              "timeline for the best player strategies without a world of their own there, up to twelve worlds in "
+              "three rows of four, best first, and runs time on for every world together to the end, showing the "
+              "furthest turn every world holds while each world's future is played ahead; with nothing left to "
+              "branch it runs the worlds on. Its steps read Turn 1, Era back, -10, -1, +1, +10, Era forward: Era "
+              "back goes to the start of the followed world's era, then of the era before, and Era forward to the "
+              "next era's first turn, playing on to it when it has not been played.")
         check_doctor_strange_next_best(bar, f"http://127.0.0.1:{port}/")
         print("Doctor Strange's CIVVIS has Branch Next Best and Branch 5 Next Best side by side over Branch: each "
               "branches the base timeline on its open turn for the best player strategies without a world of their "
