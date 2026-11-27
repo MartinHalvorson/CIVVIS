@@ -22,7 +22,13 @@ def _binary_digest(filename: str, identity: tuple) -> str:
     with open(filename, "rb") as stream:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(chunk)
-        status = os.fstat(stream.fileno())
+        # ⚠ Windows: `identity` comes from `os.stat` on the path, and there
+        # `os.fstat` on a handle can report another `st_ctime` for the same
+        # file: 24 s apart for a decider copied with `shutil.copy2`, as
+        # `civ6_hotseat.freeze_binary` copies it (windows-latest runner,
+        # 2026-11-27). Every decision raised below and the worker died on its
+        # first board, so the file is asked the same way both times.
+        status = os.stat(filename) if os.name == "nt" else os.fstat(stream.fileno())
     if identity != (status.st_dev, status.st_ino, status.st_size, status.st_mtime_ns, status.st_ctime_ns):
         raise ValueError("decision binary changed while recording provenance")
     return digest.hexdigest()

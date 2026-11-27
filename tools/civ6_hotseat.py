@@ -159,6 +159,17 @@ VERIFICATION_BIN = (Path.home() / "civvis-verification-clean-runtime" / "target"
                     / "release" / "civvis_orders")
 SNAPSHOTS = Path.home() / "civvis-civ6-runs" / "decider-snapshots"
 CHECKOUT_BIN = HERE.parent / "target" / "release" / "civvis_orders"
+#: Frozen by `tools/package_hotseat.py`, this file runs from a bundle that
+#: ships its own decider; it is tried before everything above. Windows needs
+#: the `.exe`: CreateProcess appends it to a name without one, so a frozen copy
+#: named `civvis_orders` would not start.
+FROZEN = bool(getattr(sys, "frozen", False))
+ORDERS_NAME = "civvis_orders.exe" if os.name == "nt" else "civvis_orders"
+BUNDLED_BIN = Path(getattr(sys, "_MEIPASS", HERE)) / ORDERS_NAME if FROZEN else None
+#: How the bundle's one program is asked to be a decision worker
+#: (`tools/civvis_hotseat_app.py`). The script's own name on purpose: the
+#: stale-worker check and `gamelock` recognise a worker by it.
+WORKER_COMMAND = "civ6_brain.py"
 
 
 def utc() -> str:
@@ -319,6 +330,19 @@ def default_max_turns(speed: str) -> int:
     return SPEED_TURNS.get(speed, 500)
 
 
+def mod_path(path: Path) -> str:
+    """A path as the mod will put it into SQL (`OrdersDb`, its ATTACH target).
+
+    ⚠ The mod's `sqlSafe` (CivvisControlAgent.lua) strips every apostrophe and
+    every backslash, so a Windows path would reach ATTACH as
+    `C:Usersnamecivvis-civ6-runs...` and the mod would open some other file.
+    Windows and SQLite both accept forward slashes, so on Windows it goes in
+    with those; elsewhere it is `str(path)`, as it always was. A path holding an
+    apostrophe cannot be attached on any system (`civvis_hotseat_app` doctor).
+    """
+    return path.as_posix() if os.name == "nt" else str(path)
+
+
 def hotseat_config(args: argparse.Namespace, run_dir: Path, orders_db: Path) -> dict:
     """The mod's settings: the live seat's own, re-pointed at a hotseat game.
 
@@ -329,7 +353,7 @@ def hotseat_config(args: argparse.Namespace, run_dir: Path, orders_db: Path) -> 
     flags = ["--tag", args.tag, "--difficulty", args.difficulty,
              "--map", args.map, "--map-size", args.map_size, "--speed", args.speed,
              "--max-turns", str(args.max_turns), "--civvis-decides",
-             "--civvis-victory", args.victory, "--orders-db", str(orders_db)]
+             "--civvis-victory", args.victory, "--orders-db", mod_path(orders_db)]
     if args.leader:
         flags += ["--leader", args.leader]
     # `--play-flags`: civ6_play switches every jack seat plays with (Tournament 6
@@ -399,7 +423,7 @@ def resolve_orders_bin(requested: str | None) -> Path | None:
     if requested:
         path = Path(requested).expanduser()
         return path if path.is_file() else None
-    candidates = [VERIFICATION_BIN]
+    candidates = ([BUNDLED_BIN] if BUNDLED_BIN else []) + [VERIFICATION_BIN]
     if SNAPSHOTS.is_dir():
         candidates += sorted(SNAPSHOTS.glob("*/civvis_orders"),
                              key=lambda p: p.stat().st_mtime, reverse=True)
@@ -411,7 +435,7 @@ def resolve_orders_bin(requested: str | None) -> Path | None:
 
 
 def freeze_binary(source: Path, run_dir: Path) -> Path:
-    target = run_dir / "civvis_orders"
+    target = run_dir / ORDERS_NAME
     if target.resolve() != source.resolve():
         shutil.copy2(source, target)
     provenance = {"source": str(source), "frozen": str(target), "utc": utc()}
@@ -421,13 +445,19 @@ def freeze_binary(source: Path, run_dir: Path) -> Path:
             provenance["snapshot"] = json.loads(snapshot.read_text())
         except ValueError:
             pass
-    (run_dir / "civvis_orders.provenance.json").write_text(json.dumps(provenance, indent=2))
+    # Beside the copy under the copy's name, where `civ6_brain.binary_provenance` looks.
+    (run_dir / f"{ORDERS_NAME}.provenance.json").write_text(json.dumps(provenance, indent=2))
     return target
 
 
 def brain_command(seat_dir: Path, orders_db: Path, binary: Path, victory: str) -> list[str]:
-    """One jack seat's decision worker: the live seat's brain, pinned binary."""
-    return [sys.executable, str(HERE / "civ6_brain.py"),
+    """One jack seat's decision worker: the live seat's brain, pinned binary.
+
+    Frozen, `sys.executable` is the bundle's program and there is no script to
+    hand it, so it is asked to be the worker by name (`WORKER_COMMAND`).
+    """
+    worker = WORKER_COMMAND if FROZEN else str(HERE / "civ6_brain.py")
+    return [sys.executable, worker,
             "--run-dir", str(seat_dir), "--orders-db", str(orders_db),
             "--mode", "civvis", "--bin", str(binary), "--victory", victory,
             # One program for the whole game, and its heartbeat kept out of the
@@ -452,13 +482,20 @@ def stop_stale_worker(seat_dir: Path, *, grace_s: float = 5.0) -> int | None:
         pid = int((seat_dir / "brain.pid").read_text().strip())
     except (OSError, ValueError):
         return None
-    try:
-        command = subprocess.run(["ps", "-o", "command=", "-p", str(pid)],
-                                 capture_output=True, text=True, timeout=5).stdout
-    except (OSError, subprocess.SubprocessError):
-        return None
+    command = env.process_command(pid)
     if "civ6_brain.py" not in command or str(seat_dir) not in command:
         return None
+    if os.name == "nt":
+        # No SIGTERM to wait out: `os.kill` here is TerminateProcess, and
+        # `os.kill(pid, 0)` would be a console Ctrl-C, not a probe.
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except OSError:
+            pass
+        deadline = time.monotonic() + grace_s
+        while time.monotonic() < deadline and env.pid_alive(pid):
+            time.sleep(0.2)
+        return pid
     try:
         os.kill(pid, signal.SIGTERM)
         deadline = time.monotonic() + grace_s
@@ -469,6 +506,14 @@ def stop_stale_worker(seat_dir: Path, *, grace_s: float = 5.0) -> int | None:
     except ProcessLookupError:
         pass
     return pid
+
+
+def worker_session() -> dict:
+    """A worker outside the terminal's Ctrl-C: its own session on POSIX, its
+    own process group on Windows (where `start_new_session` is ignored)."""
+    if os.name == "nt":
+        return {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
+    return {"start_new_session": True}
 
 
 class Brains:
@@ -496,7 +541,7 @@ class Brains:
             brain_command(seat_dir, self.orders_db, self.binary,
                           self.victory[seat] if isinstance(self.victory, dict) else self.victory),
             cwd=str(HERE.parent), stdout=out, stderr=subprocess.STDOUT, text=True,
-            start_new_session=True)
+            **worker_session())
         out.close()
         (seat_dir / "brain.pid").write_text(f"{self.procs[seat].pid}\n")
 
@@ -1706,13 +1751,23 @@ def read_current() -> dict | None:
         return None
 
 
-def harness_alive(pid: int) -> bool:
-    try:
-        out = subprocess.run(["ps", "-o", "command=", "-p", str(int(pid))],
-                             capture_output=True, text=True, timeout=5).stdout
-    except (OSError, subprocess.SubprocessError, ValueError):
+#: The bundle's program as a harness: its own name, not one of its workers.
+_APP_HARNESS = re.compile(r'(?:^|[\\/"\s])civvis-hotseat(?:\.exe)?(?:"|\s|$)')
+
+
+def is_harness_command(command: str) -> bool:
+    """Whether a command line is this harness: the script, or the bundle's
+    program (`tools/package_hotseat.py`, or `tools/civvis_hotseat_app.py` run
+    from a checkout) when it is not a decision worker."""
+    if "civ6_hotseat.py" in command:
+        return True
+    if WORKER_COMMAND in command:
         return False
-    return "civ6_hotseat.py" in out
+    return bool(_APP_HARNESS.search(command)) or "civvis_hotseat_app.py" in command
+
+
+def harness_alive(pid: int) -> bool:
+    return is_harness_command(env.process_command(pid))
 
 
 def stop_command(args: argparse.Namespace) -> int:
@@ -1730,7 +1785,10 @@ def stop_command(args: argparse.Namespace) -> int:
     (run_dir / "stop.json").write_text(json.dumps({"quit_game": bool(args.quit_game),
                                                    "resign": bool(args.resign),
                                                    "utc": utc()}))
-    os.kill(int(current["pid"]), signal.SIGTERM)
+    # Windows has no SIGTERM to send (`os.kill` is TerminateProcess, which
+    # skips the teardown below); the harness polls for stop.json instead.
+    if os.name != "nt":
+        os.kill(int(current["pid"]), signal.SIGTERM)
     deadline = time.monotonic() + 120
     while time.monotonic() < deadline and harness_alive(current["pid"]):
         time.sleep(1.0)
@@ -2065,7 +2123,8 @@ def run_manual(args: argparse.Namespace) -> int:
     args.tag = args.tag or "hotseat-" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     run_dir = RUN_ROOT / args.tag
     orders_db = run_dir / "orders.sqlite"
-    if "'" in str(orders_db) or "\\" in str(orders_db):
+    # The path as the mod is handed it (`mod_path`): forward slashes on Windows.
+    if "'" in str(orders_db) or "\\" in mod_path(orders_db):
         print(f"{run_dir} has a quote or a backslash in it, which the game cannot open its "
               "orders database through: set CIVVIS_HOTSEAT_RUNS to a plain path", file=sys.stderr)
         return 2
@@ -2135,6 +2194,8 @@ def run_manual(args: argparse.Namespace) -> int:
         late_said = False
         while True:
             beat.beat()
+            if os.name == "nt" and (run_dir / "stop.json").is_file():
+                raise Stop("stop requested")  # `--stop` sends no SIGTERM on Windows
             for bridge in bridges:
                 bridge.pump()
             monitor.poll()
@@ -2366,8 +2427,10 @@ def main(argv: list[str] | None = None) -> int:
             # Abbreviated on the command line (`--manual`), so the module-level
             # switch missed it: start again screen-free rather than run with
             # the screen modules loaded (nothing of theirs has been called).
-            os.execve(sys.executable, [sys.executable, str(Path(__file__).resolve()),
-                                       *sys.argv[1:]],
+            # Frozen (`tools/package_hotseat.py`) the program is the harness:
+            # it takes no script path.
+            script = [] if FROZEN else [str(Path(__file__).resolve())]
+            os.execve(sys.executable, [sys.executable, *script, *sys.argv[1:]],
                       dict(os.environ, CIVVIS_SCREEN_FREE="1"))
         current = read_current()
         if current and harness_alive(current.get("pid", -1)):
@@ -2520,8 +2583,8 @@ def run(args: argparse.Namespace) -> int:
             return 4
         if not args.attach:
             binary = freeze_binary(binary, run_dir)
-        elif (run_dir / "civvis_orders").is_file():
-            binary = run_dir / "civvis_orders"
+        elif (run_dir / ORDERS_NAME).is_file():
+            binary = run_dir / ORDERS_NAME
         log(f"jack seats {seats} play with {binary}")
         if not args.attach:
             if args.resume_save is not None:
@@ -2607,6 +2670,8 @@ def run(args: argparse.Namespace) -> int:
                 bridge.pump()
             monitor.poll()
             brains.keep_alive()
+            if os.name == "nt" and (run_dir / "stop.json").is_file():
+                raise Stop("stop requested")
             if not env.game_pids():
                 stop_reason = "Civ VI closed"
                 log("Civ VI has closed")

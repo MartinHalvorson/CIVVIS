@@ -127,6 +127,12 @@ ADVISORY_CHECKS = {
         "self-test runs only when its workflow file changes, so it cannot be "
         "required on every PR. Source CI remains required; workflow edits "
         "must record a successful qualification self-test before shipping.",
+    "hotseat-bundle":
+        "Builds and runs the hotseat companion download on macOS and Windows "
+        "runners (docs/CIV6_HOTSEAT_RELEASE.md). It runs only when the "
+        "packaging files change, so it cannot be required on every PR; a PR "
+        "that changes them records its passing run before shipping. Its "
+        "Windows job is evidence about the bundle, never about the game.",
     "wasm-paired-cost":
         "A manual full-game comparison of pinned qualified engine artifacts, "
         "which can intentionally include an unsuccessful experiment. Its PR "
