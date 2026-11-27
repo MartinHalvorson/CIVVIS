@@ -13,11 +13,49 @@ up to the top of civvis.ai performance"). Among and past them stand four stops n
 played yet:
 [The stops past what was measured](#the-stops-past-what-was-measured).
 Left of CIVVIS self-play the games play many at once, and a time there is
-amortized: [Amortized games](#amortized-games).
+amortized: [Amortized games](#amortized-games). Over the line and under it
+are its two other scales, and each measured stop says what it is played on:
+[Two scales, native and browser](#two-scales-native-and-browser).
 
 The readings are `data/performance/speedup_timeline.json`. The page's figures
 are worked out from them by `beta/speedup_timeline.py` when the site is
 published. Nothing derived is committed.
+
+## Two scales, native and browser
+
+The project owner, 2026-11-27: "we can also have a time / game measure along
+the top and a games / time measure along the bottom". The line's tenfolds
+(1x, 10x, ... 10 million x, under the line) are drawn again over the track as
+the time one game takes at that pace, and under it as the games that is in an
+hour, a minute or a second: 1x is a game by hand, `5 h/game` and `0.2
+games/h`; 1,000x is `18 s/game` and `3.3 games/min`; 10 million x is `1.8
+ms/game` and `556 games/s` (`ticks`, `per_game` and `per_time`, from the hand
+stop's time). The narrow layout is a list and has no scale.
+
+The same day: "note that firaxis (native app) and civvis (browser)", "if
+thats true", "if we have different speeds for browser and native speeds too we
+should note that". A measured stop says under its figures what it is played
+on, from the ledger's `runs`: `native app` for the two Civilization VI stops
+(computer control and Firaxis self-play), `native` for CIVVIS self-play and
+the parallel games, whose games are timed on the native `civvis` program, not
+in a browser. The site's games run in the browser, on its WebAssembly build of
+the same engine, and take longer there: the ledger's `browser` on CIVVIS
+self-play is the measured ratio, and the line says `native · 59 s in the
+browser`, the stop's reading times it.
+
+The ratio was measured on 2026-11-27 with one game played both ways, through
+the routes the site uses (`/new`, then `/step` ten turns at a time until it is
+finished), six seats on 74x46 Continents at Online speed: a release build of
+main (`civvis play --no-open --port N`) and the site's `civvis.wasm` from /test
+in Node's V8, the engine Chrome runs it on, with nothing changed in the engine
+between them. Seed 20261127 played the same game both ways (130 turns, a
+culture win): 17.0 s native and 29.5 s in the browser's engine, 1.74 times as
+long. Seed 31415 played 195 turns native in 43.6 s and 201 in the browser's
+engine in 71.7 s (the two builds part ways in that game), 1.59 times as long a
+turn. The ledger keeps 1.7. To measure it again, play the same seeds both ways
+with a script that times `/new` and `/step` against the native server and
+against `civvis.wasm` called through its `civvis_request` export, and put the
+new ratio and how it was measured in `browser`.
 
 The CIVVIS Performance page opens on the same readings as two tables, each
 figure beside the sum that gives it. They are described under

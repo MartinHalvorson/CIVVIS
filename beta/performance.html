@@ -514,11 +514,12 @@
   .speed-aim { margin: 0 0 0 auto; font-size: 13px; }
   .speed-aim a { color: var(--accent); text-decoration: none; white-space: nowrap; }
   .speed-aim a:hover { text-decoration: underline; }
-  .speed-axis { display: none; }
+  .speed-axis, .speed-scale { display: none; }
   .speed-line { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--border); }
   .speed-stop { padding: 7px 0; border-bottom: 1px solid var(--border); }
   .speed-dot { display: none; }
   .speed-label { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 0 14px; }
+  .speed-where { color: var(--muted); font-size: 11.5px; }
   .speed-name { grid-row: 1 / span 3; color: var(--text); font-size: 14px; font-weight: 600; }
   .speed-what { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .speed-read { grid-column: 2; grid-row: 1; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
@@ -616,6 +617,18 @@
     .speed-tick.is-end::before { left: auto; right: 0; }
     .speed-tick.is-start { transform: translateX(100%); }
     .speed-tick.is-start::before { left: 0; }
+    /* Over the track and under it, the same tenfolds as a time a game and
+       as games in a time (operator 2026-11-27: "we can also have a time /
+       game measure along the top and a games / time measure along the
+       bottom"): 1x is a game by hand, five hours, which is 0.2 games an
+       hour, and each tenfold a tenth of the time and ten times the games. */
+    .speed-scale { display: block; position: relative; height: 22px; }
+    .speed-scale.is-top { margin-bottom: 4px; border-bottom: 1px dashed var(--border); }
+    .speed-scale.is-bottom { margin-top: 4px; border-top: 1px dashed var(--border); }
+    .speed-scale .speed-tick { top: auto; bottom: 0; padding: 0 0 5px; color: var(--muted); }
+    .speed-scale .speed-tick::before { top: auto; bottom: -1px; height: 5px; }
+    .speed-scale.is-bottom .speed-tick { top: 0; bottom: auto; padding: 6px 0 0; }
+    .speed-scale.is-bottom .speed-tick::before { top: -1px; bottom: auto; }
     .speed-line { position: absolute; left: 0; right: 0; top: var(--over); height: 0; border: 0; }
     .speed-stop { position: absolute; right: calc(var(--at) * 100%); top: 0; width: 0; height: 0; padding: 0; border: 0; }
     .speed-dot {
@@ -889,6 +902,7 @@
             <p class="speed-claim">faster than a game played by hand <span data-speed="was" hidden></span></p>
             <p class="speed-aim"><a href="https://github.com/MartinHalvorson/CIVVIS/blob/main/docs/SPEEDUP_TIMELINE.md" target="_blank" rel="noreferrer">How it is measured</a></p>
           </div>
+          <div class="speed-scale is-top" data-scale="game" aria-label="Time a game at each tenfold"></div>
           <div class="speed-track">
             <div class="speed-axis" aria-hidden="true"></div>
             <a class="speed-between" id="speed-between" href="#speed-gap" hidden></a>
@@ -909,6 +923,7 @@
                   <b class="speed-name">CIVVIS &#8594; Firaxis <span>computer control</span></b>
                   <small class="speed-what">Civilization VI itself, Firaxis&#8217;s game, with CIVVIS at the controls of one seat.</small>
                   <span class="speed-read"><b data-speed="time"></b> <i data-speed="times"></i></span>
+                  <small class="speed-where" data-speed="where" hidden></small>
                   <small class="speed-goal" data-speed="goal" hidden></small>
                 </span>
               </li>
@@ -918,6 +933,7 @@
                   <b class="speed-name">Firaxis self-play</b>
                   <small class="speed-what">Civilization VI itself with Firaxis&#8217;s own AI in every seat.</small>
                   <span class="speed-read"><b data-speed="time"></b> <i data-speed="times"></i></span>
+                  <small class="speed-where" data-speed="where" hidden></small>
                   <small class="speed-goal" data-speed="goal" hidden></small>
                   <small class="speed-goal" data-speed="worked" hidden></small>
                 </span>
@@ -928,6 +944,7 @@
                   <b class="speed-name">CIVVIS self-play</b>
                   <small class="speed-what">One simulator game on one core, every seat a CIVVIS AI agent.</small>
                   <span class="speed-read"><b data-speed="time"></b> <i data-speed="times"></i></span>
+                  <small class="speed-where" data-speed="where" hidden></small>
                   <small class="speed-goal" data-speed="goal" hidden></small>
                 </span>
               </li>
@@ -938,6 +955,7 @@
                   <small class="speed-what">CIVVIS self-play on every core of one M5 Max at once: the time from one finished game to the next.</small>
                   <span class="speed-read"><b data-speed="time"></b> <i data-speed="times"></i></span>
                   <small class="speed-second" data-speed="second" hidden></small>
+                  <small class="speed-where" data-speed="where" hidden></small>
                   <small class="speed-goal" data-speed="goal" hidden></small>
                 </span>
               </li>
@@ -992,6 +1010,7 @@
               </li>
             </ol>
           </div>
+          <div class="speed-scale is-bottom" data-scale="rate" aria-label="Games in a time at each tenfold"></div>
           <p class="speed-note" id="speed-amortized" hidden>Amortized: many games play at once, and the time is from one finished game to the next.</p>
           <p class="speed-note" id="speed-note" hidden>
             Cloud cost: a best estimate by <span data-speed="cloud-by"></span>, not a quote.
@@ -1718,6 +1737,10 @@
         shown += 1;
         const shared = read(entry, stop);
         put(entry, "goal", stop.goal);
+        // What it is played on: Civilization VI is a native app, and CIVVIS
+        // is timed on its native program, with the browser's time beside it
+        // where it has been measured.
+        put(entry, "where", stop.where);
         // A reading worked out from other measurements says so.
         put(entry, "worked", stop.worked ? "worked out, not yet timed" : "");
         entry.classList.toggle("is-worked", !!stop.worked);
@@ -1731,7 +1754,7 @@
         entry.classList.toggle("is-fastest", stop.key === line.fastest);
         // Held over a stop: what it is, how its time was measured, and
         // where its multiplier stood at its first reading.
-        entry.title = [entry.querySelector(".speed-what").textContent, shared, stop.from, stop.was && "It was " + stop.was + "."]
+        entry.title = [entry.querySelector(".speed-what").textContent, shared, stop.from, stop.where_from, stop.was && "It was " + stop.was + "."]
           .filter(Boolean).join(" ");
       }
       if (!shown) return null;
@@ -1906,6 +1929,14 @@
         mark.style.setProperty("--at", tick.at);
         mark.textContent = tick.times;
         axis.append(mark);
+        // The same tenfold over the track as a time a game, and under it as
+        // games in a time.
+        for (const [name, words] of [["game", tick.per_game], ["rate", tick.per_time]]) {
+          if (!words) continue;
+          const again = mark.cloneNode(false);
+          again.textContent = words;
+          section.querySelector(`.speed-scale[data-scale="${name}"]`).append(again);
+        }
       }
       section.hidden = false;
       // The room the words take on the line. A stop's words are as tall as
