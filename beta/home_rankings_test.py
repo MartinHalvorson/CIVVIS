@@ -477,8 +477,12 @@ class HomeRankings(unittest.TestCase):
         # row: his spaces 1 to 8. A tile's title is the first thing in it,
         # over its video, which the pattern above reads in that order. A
         # title that says everything has no second line: the two victories
-        # are titled as he wrote them, and so are CIVVIS.ai, Edge of
-        # Tomorrow and Doctor Strange's CIVVIS. The
+        # are titled as he wrote them, and so are CIVVIS.ai and Doctor
+        # Strange's CIVVIS. Edge of Tomorrow's second line says what it is
+        # for (operator 2026-11-27: "to home/ edge of tomorrow - add
+        # desecription: play and replay sequences throughout a Civ game with
+        # top CIVVIS AI strategies to discover and experiment with optimal
+        # play"). The
         # culture win is still at the right (2026-11-22), of the second row.
         # Since 2026-11-25 the fastest game's title ends with its time
         # ("throw a time on fastest recorded civvis game home/.:: <6s") and
@@ -493,7 +497,8 @@ class HomeRankings(unittest.TestCase):
                 ("watch-culture", "6PCd4R08UPM", "Lv 8 Deity Win - Maya, Culture", ""),
                 ("watch-civvis", "U0iwoVTK5q8", "CIVVIS.ai", ""),
                 ("watch-debugger", "6W5t0hcR_N4", "CIVVIS AI Debugger", "Multiverse, Time Travel"),
-                ("watch-tomorrow", "kcDyO_tOpmQ", "CIVVIS: Edge of Tomorrow", ""),
+                ("watch-tomorrow", "kcDyO_tOpmQ", "CIVVIS: Edge of Tomorrow",
+                 "Play and replay sequences throughout a Civ game with top CIVVIS AI strategies to discover and experiment with optimal play"),
                 ("watch-strange", "11wYuujdddk", "Doctor Strange's CIVVIS", ""),
             ],
         )
