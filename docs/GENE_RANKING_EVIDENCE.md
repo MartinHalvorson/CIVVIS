@@ -184,6 +184,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 
 | Gene | Default | Description | Best version \| Total versions |
 |---|---|---|---:|
+| `city-campaign-3` | off (unmeasured) | Version two's staged opportunity at peace, and the war in hand: a major war already open draws a one-city plan against that rival when the field army carries the city's bill, keeps it for a twenty-turn clock, offers peace once the city is ours, and holds the generic Siege row against a rival none of whose cities the army can take. | 1 \| 3 |
 | `foreign-site-buys-the-open-border` | off (unmeasured) | Opt-in gene `foreign-site-buys-the-open-border`: a held Mead or Darwin with no reachable site buys one Open Borders grant; see `advanced/foreign_site_open_border.rs`. | 1 \| 1 |
 | `recovery-holds-the-muster` | off (unmeasured) | Opt-in gene `recovery-holds-the-muster`: no Siege row is mustered while the plan reads Recovery; see `advanced/recovery_holds_the_muster.rs`. | 1 \| 1 |
 | `religion-lane-outlasts-the-denial` | off (unmeasured) | Opt-in gene `religion-lane-outlasts-the-denial`: a founded Religion lane keeps its plan against a Science counter; see `advanced/religion_lane_outlasts_the_denial.rs`. | 1 \| 1 |
