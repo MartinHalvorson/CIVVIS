@@ -44,7 +44,7 @@ CHARTS = [
     ("win-analytics", "Win Analytics"),
     ("elo-rankings", "ELO Rankings"),
     ("civvis-performance", "CIVVIS Performance"),
-    ("random-ai-charts", "Random AI Charts"),
+    ("unreviewed-gen-ai-charts", "Unreviewed Gen AI Charts"),
 ]
 LINK = re.compile(r'<a class="(site-link(?: sub-link)?)" href="([^"]*)"([^>]*)>([^<]+)</a>')
 
