@@ -2393,6 +2393,23 @@
     grid-template-columns: minmax(0, 1fr); margin: 0 0 7px;
   }
   body:not(.watching-sim) .spec-controls #specpause { display: none; }
+  /* 2P Pangaea New Game and 6P Continents New Game, side by side over Start
+     new game in a played game (the AI Debugger, Edge of Tomorrow): each sets
+     World size and Map on Game Setup and starts the game as Start new game
+     does (`startPresetGame`). Edge of Tomorrow wears the Civilization VI
+     screen, so it is not the debugger view, and is named for itself.
+     Watching, there is no Start new game to stand over. */
+  .preset-games { display: none; }
+  body.debugger-view .preset-games, html.tomorrow .preset-games { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; margin: 0 0 7px; }
+  .preset-games button {
+    width: 100%; min-width: 0; min-height: 40px; margin: 0; padding: 6px 6px; line-height: 1.15;
+    font-size: var(--type-control); font-weight: 800; letter-spacing: .02em;
+  }
+  .preset-games button .lbl { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .preset-games button .sub {
+    display: block; margin-top: 2px; color: var(--muted); font-size: var(--type-label); font-weight: 700;
+    letter-spacing: .07em; text-transform: uppercase; white-space: nowrap;
+  }
   /* Civ 6 conducts diplomacy leader by leader: who they are, what they want,
      how they feel about you, and what you can do about it. Quick Deals
      already compares every acceptable trade at once; this is the other half —
@@ -6842,6 +6859,16 @@
   <div class="side-scroll">
     <div class="side-actions" aria-label="Simulation controls">
       <div id="specbar" style="display:none">
+        <!-- Two new games the settings are often asked for, over Start new
+             game in a played game (operator 2026-11-27: "in civvis debugger,
+             above start new game with seclected settings, add a 2P pangaea
+             New Game, 6P Continents New Game on teh right. theses function the
+             same as the new game except set the player count and map as well
+             to the claimed settings. same for civvis: edge of tomorrow"). -->
+        <div class="preset-games" id="preset-games" role="group" aria-label="New game on a set world">
+          <button type="button" data-preset-players="2" data-preset-map="pangaea" title="Start a new game on a Pangaea for 2 civilizations (a Duel world), with the other selected settings"><span class="lbl">2P Pangaea</span> <span class="sub">New Game</span></button>
+          <button type="button" data-preset-players="6" data-preset-map="continents" title="Start a new game on Continents for 6 civilizations (a Small world), with the other selected settings"><span class="lbl">6P Continents</span> <span class="sub">New Game</span></button>
+        </div>
         <div class="spec-controls">
           <button class="primary" id="specpause">⏸ Pause</button>
           <button id="restart-sim" title="Start a new game with the same settings, on a fresh map"><span class="lbl">Restart sim</span><span class="sub">same settings</span></button>

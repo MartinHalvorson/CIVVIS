@@ -5342,6 +5342,8 @@ const STRANGE_STYLE = `
   #strange-hud {
     position: absolute; inset: 0; z-index: 2; pointer-events: none; user-select: none;
     color: #e8e3d2; font: 12px/1.25 system-ui, sans-serif;
+    /* The title's card, which the cards beside it stand clear of. */
+    --strange-card: min(360px, 36vw);
   }
   #strange-hud > * { pointer-events: auto; }
   /* The highway's own controls. The simulator's standings and victory
@@ -5359,27 +5361,45 @@ const STRANGE_STYLE = `
   }
   #strange-hud .strange-card { border: 1px solid #35504a; border-radius: 12px; background: #07110fd9; }
   #strange-hud .strange-title {
-    position: absolute; left: 14px; top: 12px; box-sizing: border-box; width: min(330px, 34vw); padding: 10px 12px 10px;
+    position: absolute; left: 14px; top: 12px; box-sizing: border-box; width: var(--strange-card); padding: 10px 12px 10px;
   }
-  /* The title a size up (operator 2026-11-26: "title can be a bit bigger"):
-     22px fills the 330px card to its edges less 16px; a narrower window
-     narrows the card (34vw) and the title with it, to stay one line. */
+  /* The title a size up again and plainer to read (operator 2026-11-27:
+     "Make the title line a bit bigger. and more readable"; 2026-11-26: "title
+     can be a bit bigger"): 25px, a lighter gold with a shadow under it, in a
+     card 30px wider than it was so it stays one line; a narrower window
+     narrows the card (36vw) and the title with it. */
   #strange-hud .strange-title b {
-    display: block; color: ${STRANGE_GOLD}; font: 700 clamp(16px, 2.2vw, 22px)/1.15 Georgia, serif; letter-spacing: .02em;
+    display: block; color: #ffe2a0; font: 700 clamp(17px, 2.5vw, 25px)/1.2 Georgia, serif; letter-spacing: .01em;
+    text-shadow: 0 1px 2px #000c; white-space: nowrap;
   }
-  /* Home, CIVVIS and New game over the title (operator 2026-11-26: "to the
-     top of dr strange game, above the title, lets add home, civvis, new game
-     buttons. new game can be gold"): three buttons of a size, New game in
-     the gold of Play. */
-  #strange-hud .strange-title .strange-top { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; margin-bottom: 9px; }
-  #strange-hud .strange-title .strange-top > * {
+  /* Home, Charts/ and CIVVIS over the title (operator 2026-11-27: "make the
+     top buttons Home, Charts/, and CIVVIS and color code them appropriately
+     ... maybe make the buttons above it a bit different section"): the
+     site's own colours for them, as every page's list has them (Home and
+     Charts/ blue, CIVVIS gold), in a strip of their own over a rule. They
+     were Home, CIVVIS and a gold New game (2026-11-26); the new games are
+     under the title now. */
+  #strange-hud .strange-title .strange-top {
+    display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px;
+    margin: -2px -4px 10px; padding: 0 4px 9px; border-bottom: 1px solid #35504a;
+  }
+  #strange-hud .strange-title .strange-top > a {
     box-sizing: border-box; height: 26px; padding: 0 8px; display: flex; align-items: center; justify-content: center;
-    border: 1px solid #35504a; border-radius: 6px; background: #14231f; color: #dfe8e3;
+    border: 1px solid #3b6788; border-radius: 6px; background: #274b66; color: #a8d8f5;
     font-size: 12px; font-weight: 700; letter-spacing: normal; text-transform: none; text-decoration: none; white-space: nowrap;
   }
-  #strange-hud .strange-title .strange-top > a:hover { color: ${STRANGE_GOLD}; border-color: ${STRANGE_GOLD}; }
-  #strange-hud .strange-title .strange-top > .strange-new { color: #10140f; background: ${STRANGE_GOLD}; border-color: transparent; }
-  #strange-hud .strange-title .strange-top > .strange-new:hover { filter: brightness(1.08); }
+  #strange-hud .strange-title .strange-top > a:hover { color: #fff; border-color: #66c0f4; background: #315d7e; }
+  #strange-hud .strange-title .strange-top > a.strange-civvis { color: #17130c; border-color: #efd184; background: linear-gradient(145deg, #dec176, #aa7d30); }
+  #strange-hud .strange-title .strange-top > a.strange-civvis:hover { color: #000; border-color: #fff3c9; background: linear-gradient(145deg, #f0d68e, #c0913c); }
+  /* 2P Pangaea New Game and 6P Continents New Game under the title
+     (operator 2026-11-27: "under the title, lets have a 2P Pangaea New Game
+     option and 6P Continents New Game option"), in the gold New game had. */
+  #strange-hud .strange-title .strange-news { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; margin-top: 8px; }
+  #strange-hud .strange-title .strange-news button {
+    width: 100%; padding: 0 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    color: ${STRANGE_GOLD}; border-color: #8a7440; font-size: 11.5px; font-weight: 700; letter-spacing: 0;
+  }
+  #strange-hud .strange-title .strange-news button:hover:not(:disabled) { color: #10140f; background: ${STRANGE_GOLD}; border-color: transparent; }
   #strange-hud .strange-title span { display: block; margin-top: 4px; color: #bccac4; }
   /* What the page costs, in the top right corner (operator 2026-11-24: "we
      should also monitor resource usage - maybe track memory used and cpu %
@@ -5409,7 +5429,7 @@ const STRANGE_STYLE = `
     overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin;
   }
   #strange-hud .strange-versus {
-    position: absolute; top: var(--strange-versus-top, 12px); left: calc(14px + min(330px, 34vw) + 12px);
+    position: absolute; top: var(--strange-versus-top, 12px); left: calc(14px + var(--strange-card) + 12px);
     right: calc(14px + ${STRANGE_RIGHT_WIDE}px + 12px); box-sizing: border-box; max-height: 34vh; overflow: auto;
     padding: 8px 12px 9px; display: grid; gap: 3px 0; align-items: baseline; font-variant-numeric: tabular-nums;
   }
@@ -5436,7 +5456,7 @@ const STRANGE_STYLE = `
      record of games; and neither keeps what moves, sizes or hides a panel,
      because the highway says where these two stand. */
   #strange-hud .strange-standings {
-    position: absolute; top: 12px; left: calc(14px + min(330px, 34vw) + 12px);
+    position: absolute; top: 12px; left: calc(14px + var(--strange-card) + 12px);
     right: calc(14px + ${STRANGE_RIGHT_WIDE}px + 12px);
   }
   #strange-hud .strange-standings:empty, #strange-hud .strange-victory:empty { display: none; }
@@ -5659,7 +5679,7 @@ const STRANGE_STYLE = `
   /* What struck, under the button for as long as it is news. */
   #strange-hud .strange-omen {
     position: absolute; left: 50%; top: calc(var(--strange-band, 40px) + 10px); transform: translateX(-50%); box-sizing: border-box;
-    width: max-content; max-width: min(470px, calc(100% - 2 * min(330px, 34vw) - 64px)); padding: 9px 14px 10px;
+    width: max-content; max-width: min(470px, calc(100% - 2 * var(--strange-card) - 64px)); padding: 9px 14px 10px;
     text-align: center; cursor: pointer; color: ${STRANGE_SWAN_INK}; background: #000000eb;
     border: 1px solid ${STRANGE_SWAN_INK}; border-radius: 12px; box-shadow: 0 0 34px -4px ${STRANGE_SWAN_INK}99;
   }
@@ -6051,10 +6071,19 @@ function strangeSame(open = strangeOpen()) {
 // the page again, at its own address, which opens on a world of its own
 // with a seed of its own (`OPENING_SEED` in beta/shim.js). An address that
 // pins a world with `?game=` is let go of.
-function strangeNewGame() {
-  const next = new URL(window.location.href);
+// A new game is the page again on a new world (the published page draws a
+// new opening seed each visit): one of `players` civilizations on `map` when
+// they are named (2P Pangaea New Game, 6P Continents New Game), which the
+// page reads from its address as any link's (`beta/shim.js`).
+function strangeNewGameAddress(players = null, map = null, from = window.location.href) {
+  const next = new URL(from);
   next.searchParams.delete("game");
-  window.location.assign(next.href);
+  if (players) next.searchParams.set("players", String(players));
+  if (map) next.searchParams.set("map", map);
+  return next.href;
+}
+function strangeNewGame(players = null, map = null) {
+  window.location.assign(strangeNewGameAddress(players, map));
 }
 
 // A world's box is made: its name plate, and for a world past the split's
@@ -7720,11 +7749,14 @@ function strangeMount() {
   hud.id = "strange-hud";
   hud.innerHTML = `
     <div class="strange-title strange-card">
-      <div class="strange-top" role="group" aria-label="Pages and a new game">
-        <a href="home" target="_top">Home</a><a href="./" target="_top">CIVVIS</a>
-        <button class="strange-new" data-strange="new" title="A new game: a new world of four civilizations on a Pangaea, one timeline again. The worlds open now are let go of">New game</button>
-      </div>
+      <nav class="strange-top" aria-label="Pages">
+        <a href="home" target="_top">Home</a><a href="charts/ai-insights/" target="_top">Charts/</a><a class="strange-civvis" href="./" target="_top">CIVVIS</a>
+      </nav>
       <b title="One world, many timelines. Forward in time is up: the line across the window is the open turn, what was played runs down from it and each world's future is played out ahead">Doctor Strange's CIVVIS</b>
+      <div class="strange-news" role="group" aria-label="New game">
+        <button data-strange="new2" data-players="2" data-map="pangaea" title="A new game: a new world of 2 civilizations on a Pangaea, one timeline again. The worlds open now are let go of">2P Pangaea New Game</button>
+        <button data-strange="new6" data-players="6" data-map="continents" title="A new game: a new world of 6 civilizations on Continents, one timeline again. The worlds open now are let go of">6P Continents New Game</button>
+      </div>
       <div class="strange-deck strange-time" role="toolbar" aria-label="Timeline">
         <div class="strange-steps">
           <button data-strange="first" aria-label="Turn 1">Turn 1</button>
@@ -7769,7 +7801,7 @@ function strangeMount() {
     <div class="strange-now strange-turn"><span>TURN</span><b data-strange="turn"></b><span data-strange="limit"></span><span class="strange-era" data-strange="era"></span></div>`;
   hud.addEventListener("click", event => {
     const button = event.target.closest("[data-strange]");
-    if (button && button.dataset.strange === "new") { strangeNewGame(); return; }
+    if (button && button.dataset.players) { strangeNewGame(Number(button.dataset.players), button.dataset.map); return; }
     if (!button || button.disabled || !debugSplit) return;
     const action = button.dataset.strange, now = strangeNow() ?? 1;
     if (action === "play") strangePlay();

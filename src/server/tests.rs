@@ -330,6 +330,64 @@ fn a_unit_is_offered_only_the_orders_it_can_carry_out() {
     assert!(!EMBEDDED_APP_JS.contains("`Travelling to ${travel.to.join(\",\")}`"));
 }
 
+/// 2P Pangaea New Game and 6P Continents New Game stand side by side over
+/// Start new game in a played game, the AI Debugger and Edge of Tomorrow
+/// (operator 2026-11-27: "in civvis debugger, above start new game with
+/// seclected settings, add a 2P pangaea New Game, 6P Continents New Game on
+/// teh right. theses function the same as the new game except set the player
+/// count and map as well to the claimed settings. same for civvis: edge of
+/// tomorrow"). Each sets World size and Map on Game Setup and starts the game
+/// as Start new game does.
+#[test]
+fn a_played_game_offers_two_set_worlds_over_start_new_game() {
+    let row = EMBEDDED_INDEX
+        .find("<div class=\"preset-games\" id=\"preset-games\"")
+        .expect("the row of set worlds");
+    let start = EMBEDDED_INDEX
+        .find("<button id=\"restart-sim\"")
+        .expect("Start new game");
+    assert!(row < start, "the set worlds stand over Start new game");
+    let markup = &EMBEDDED_INDEX[row..start];
+    let two = markup
+        .find("data-preset-players=\"2\" data-preset-map=\"pangaea\"")
+        .expect("2P Pangaea");
+    let six = markup
+        .find("data-preset-players=\"6\" data-preset-map=\"continents\"")
+        .expect("6P Continents");
+    assert!(
+        two < six,
+        "2P Pangaea on the left, 6P Continents on the right"
+    );
+    assert!(markup.contains(
+        "><span class=\"lbl\">2P Pangaea</span> <span class=\"sub\">New Game</span></button>"
+    ));
+    assert!(markup.contains(
+        "><span class=\"lbl\">6P Continents</span> <span class=\"sub\">New Game</span></button>"
+    ));
+    // Only a played game has a Start new game to stand over.
+    assert!(EMBEDDED_INDEX.contains(".preset-games { display: none; }"));
+    assert!(EMBEDDED_INDEX.contains(
+        "body.debugger-view .preset-games, html.tomorrow .preset-games { display: grid;"
+    ));
+    for piece in [
+        "function startPresetGame(players, map) {",
+        "for (const [id, value] of [[\"np\", String(players)], [\"maptype\", map]]) {",
+        "select.dispatchEvent(new Event(\"change\", {bubbles: true}));",
+        "button.onclick = () => startPresetGame(Number(button.dataset.presetPlayers), button.dataset.presetMap);",
+        "...document.querySelectorAll(\"#preset-games button\"),",
+    ] {
+        assert!(
+            EMBEDDED_APP_SETUP_JS.contains(piece),
+            "missing set-world piece: {piece}"
+        );
+    }
+    let body = &EMBEDDED_APP_SETUP_JS[EMBEDDED_APP_SETUP_JS
+        .find("function startPresetGame(players, map) {")
+        .unwrap()..];
+    let body = &body[..body.find("\n}\n").unwrap()];
+    assert!(body.trim_end().ends_with("startNewSimulation();"));
+}
+
 #[test]
 fn setup_asset_is_embedded_and_keeps_the_global_script_contract() {
     assert!(EMBEDDED_APP_SETUP_JS.starts_with("\"use strict\";"));
