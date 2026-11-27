@@ -50,6 +50,11 @@ own, `home-benchmark`, filled here (`benchmark`) with what
 `research_page.tournament_rates` works out for Win Analytics, so the two
 pages show one count.
 
+Over the benchmark, since 2026-11-27, stands ELO Rankings (operator: "put the
+elo chart at the top of home/ too, above the benchmarks"). Its record is not
+this script's: `beta/elo_page.py` writes ELO Rankings' own into the page's
+`elo-data` slot, after this has filled the other two.
+
 The speed timeline that stood over them until 2026-11-24 is CIVVIS
 Performance's now (operator: "move the civvis performance timeline thing
 from home/ to the civvis performance section"), and `beta/performance_page.py`

@@ -27,8 +27,9 @@ ROOT = BETA.parent
 # Analytics (operator: "add that to a new page: Charts/ELO Rankings ... at
 # the top of this page is the player straetgies, pulled from win analytics,
 # add another page: Civ Analytics. First can be the civ records (pulled from
-# win analytics), then early build order"). The home page is six videos,
-# with the Firaxis Civ 6 AI benchmark copied over them from Win Analytics.
+# win analytics), then early build order"). The home page is its videos,
+# with the Firaxis Civ 6 AI benchmark copied over them from Win Analytics
+# and, over that since 2026-11-27, ELO Rankings (`home_elo_test.py`).
 CHARTS = (BETA / "research.html").read_text(encoding="utf-8")
 ELO = (BETA / "elo.html").read_text(encoding="utf-8")
 CIVS = (BETA / "civs.html").read_text(encoding="utf-8")
@@ -436,8 +437,11 @@ class HomeRankings(unittest.TestCase):
             f'href="https://github.com/MartinHalvorson/CIVVIS/blob/{civ6_ladder.LEDGER_BRANCH}/{civ6_ladder.RESULTS_PATH}"',
             CIVS,
         )
-        # And the home page has neither list left, nor their slot.
-        for gone in ("rankings-data", "rank-civs", "rank-strategies", "rank-list", 'id="rankings"'):
+        # And the home page has neither list left, nor their slot. Since
+        # 2026-11-27 it has ELO Rankings over its benchmark, drawn from ELO
+        # Rankings' own record (`home_elo_test.py`): a table of its own, not
+        # the list that moved.
+        for gone in ("rankings-data", "rank-civs", "rank-strategies", 'id="rankings"'):
             self.assertNotIn(gone, LANDING)
 
     def test_the_home_page_is_eight_videos_two_to_a_row(self):
@@ -680,19 +684,22 @@ class HomeRankings(unittest.TestCase):
         # Operator 2026-11-24: "above the videos, lets copy the Firaxis Civ 6
         # Benchmarks showing our win rate (both diplo on and off), same as
         # the chart is now. then the videos below".
-        # It is the page's first part since the speed timeline that stood
-        # over it went to CIVVIS Performance, later that day ("move the
-        # civvis performance timeline thing from home/ to the civvis
-        # performance section"; `beta/speedup_timeline_test.py`).
+        # It was the page's first part from the day the speed timeline
+        # that stood over it went to CIVVIS Performance, later that day
+        # ("move the civvis performance timeline thing from home/ to the
+        # civvis performance section"; `beta/speedup_timeline_test.py`),
+        # until 2026-11-27, when ELO Rankings went over it ("put the elo
+        # chart at the top of home/ too, above the benchmarks").
         places = [LANDING.index(mark) for mark in (
             '<p class="intro">',
+            '<section class="res-block home-elo" id="elo" aria-labelledby="home-elo-title" hidden>',
             '<section class="res-block home-bench" id="bench" aria-labelledby="res-title-tourney" hidden>',
             '<section class="watch"',
         )]
         self.assertEqual(places, sorted(places))
         main = LANDING[LANDING.index('<main class="shell">'):LANDING.index("</main>")]
-        self.assertEqual(re.findall(r"<section [^>]*\bid=\"([\w-]+)\"", main), ["bench", "watch"])
-        section = LANDING[places[1]:places[2]]
+        self.assertEqual(re.findall(r"<section [^>]*\bid=\"([\w-]+)\"", main), ["elo", "bench", "watch"])
+        section = LANDING[places[2]:places[3]]
         bare = lambda text: [line.strip() for line in text.strip().split("\n")]  # noqa: E731
         # Its title and the line under it are Win Analytics' own, and so is
         # everything from the pair's opening to the end of the two tables:

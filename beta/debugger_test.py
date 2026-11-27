@@ -190,7 +190,7 @@ const engine = {turn: 1, marks: [1], worlds: {1: 1}, saves: [], ids: 0, breaks: 
   seat: null, by: {}, seed: 7,
   current: 0, stepped: null, acted: 0, reveal: false, layers: [], wait: 0,
   eras: [{era: 0, name: "ancient", turn: 1}], eraAt: null,
-  watch: {categories: [], phrases: [], important: false, every_seat: false, conditions: [], eras: false}, sent: []};
+  watch: {categories: [], phrases: [], important: false, every_seat: false, conditions: [], eras: false, nuclear: false}, sent: []};
 const ERAS = ["ancient", "classical", "medieval"];
 // The page's own list of the world eras (`app.js`), which the bar names an
 // era it has not seen yet from.
@@ -517,6 +517,8 @@ function engineDebug(body) {
     if (dawn) engine.eras.push({era: engine.eras.length, name: ERAS[engine.eras.length], turn: engine.turn});
     if (engine.breaks.includes(engine.turn)) engine.stopped = {kind: "turn", turn: engine.turn};
     else if (dawn && engine.watch.eras) engine.stopped = {kind: "era", turn: engine.turn, era: engine.eras.length - 1};
+    // A device goes off on each of the turns `engine.nukes` names.
+    else if (engine.watch.nuclear && (engine.nukes || []).includes(engine.turn)) engine.stopped = {kind: "nuclear", turn: engine.turn};
     // The game is over at its last turn.
     else if (engine.limit && engine.turn >= engine.limit) engine.stopped = {kind: "end", turn: engine.turn};
     if (engine.scores) engine.scores[engine.turn] = engine.score;
@@ -600,7 +602,8 @@ function engineDebug(body) {
     const known = !made && typeof body.known === "number" ? body.known : null;
     foresight = {from: seer.from, base: seer.base, seat: seer.seat, turn: seer.turn, done, limit: engine.limit || null, played,
       since: known, anew: made, worlds: seer.prints.filter(([turn]) => known === null || turn > known),
-      eras: [{turn: seer.from, era: 0, name: "ancient"}], seen: seer.seen.filter(seen => known === null || seen.turn >= known),
+      eras: [{turn: seer.from, era: 0, name: "ancient"}, ...(engine.futureEras || []).filter(era => era.turn > seer.from && era.turn <= seer.turn)],
+      seen: seer.seen.filter(seen => known === null || seen.turn >= known),
       detonations: seer.seen.filter(seen => seen.kind === "nuclear").length, victory: null};
   } else if (body.op === "black_swan") {
     // A black swan strikes the open turn's world (`debug_black_swan`): the
@@ -666,7 +669,7 @@ function engineDebug(body) {
     // Whatever a request leaves out is cleared, as the engine does it.
     engine.breaks = body.turns || [];
     engine.watch = {categories: body.categories || [], phrases: body.phrases || [], important: !!body.important,
-      every_seat: !!body.every_seat, conditions: body.conditions || [], eras: !!body.eras};
+      every_seat: !!body.every_seat, conditions: body.conditions || [], eras: !!body.eras, nuclear: !!body.nuclear};
   } else if (body.op === "layers") {
     engine.layers = body.layers || [];
   } else if (body.op === "reveal") {
@@ -766,7 +769,9 @@ class Bar:
         # Not the line the page tells its engine to keep its turns under
         # (`debugRoomAsk`): that is told whenever the deck is drawn idle and
         # the engine does not hold it yet, between whatever a check presses.
-        return self.ev("engine.sent.filter(call => call.path === '/debug' && call.body.op !== 'room').map(call => call.body)")
+        # Nor the game's future the one timeline reads in the background
+        # while the era or nuclear breakpoint is set (`debugForesee`).
+        return self.ev("engine.sent.filter(call => call.path === '/debug' && call.body.op !== 'room' && call.body.op !== 'foresee').map(call => call.body)")
 
     def forget(self) -> None:
         self.ev("engine.sent.length = 0, true")
@@ -1348,7 +1353,7 @@ def check_breakpoints_and_a_run(bar: Bar) -> None:
     # Turns are whole numbers, each once; anything else in the field is dropped.
     request = typed("turns", "12, 15, twelve, 12")
     assert request == {"op": "breakpoints", "turns": [12, 15], "categories": [], "phrases": [],
-                       "important": False, "every_seat": False, "eras": False, "conditions": []}, request
+                       "important": False, "every_seat": False, "eras": False, "nuclear": False, "conditions": []}, request
     assert count() == "2", count()
     request = typed("phrases", "declared war, captured")
     assert request["phrases"] == ["declared war", "captured"] and request["turns"] == [12, 15], request
@@ -1449,6 +1454,74 @@ def check_breakpoints_and_a_run(bar: Bar) -> None:
     assert bar.note().startswith("Stopped by hand after "), bar.note()
     assert bar.ev("state.turn") < 400, "auto-play was stopped, not exhausted"
     bar.ev(f"{turns}.value = '1', true")
+
+
+def check_breakpoint_lines(bar: Bar) -> None:
+    """Breakpoints stand on the one timeline as red lines through it, named.
+
+    Operator 2026-11-27: "breakpoints should add a vertical red line through
+    the spot on the timeline. like a debugger. for uncretain lines, like
+    future eras, we can make the line dashed. label lines with turn and/or
+    era or whatever. a nuclear war breakpoint could have a dashed line too.
+    actually we can just compute these out". A set turn is a solid line; the
+    era and nuclear breakpoints are dashed lines at the turns the game's
+    future (the engine's `foresee`) reaches them on.
+    """
+    lines = (f"[...document.querySelectorAll('{LANE} .dbg-marks i.stop')].map(line => "
+             "[+line.dataset.dbgTurn, line.classList.contains('dbg-ahead'), line.textContent, getComputedStyle(line).borderLeftStyle])")
+    field = "#dbg-pop-breaks [data-dbg-field={}]".format
+    turns = "document.getElementById('dbg-turns')"
+    last = int(bar.ev("state.debug.last"))
+    first = int(bar.ev("state.debug.first"))
+    era_now = bar.ev("debugEraName(state.debug.eras[state.debug.eras.length - 1])")
+    begun = bar.ev(f"state.debug.eras.filter(era => era.turn > {first}).map(era => era.turn)")
+    bar.click('[data-dbg-pop="breaks"]')
+
+    # A turn set is a solid red line at that turn, named by it and its era.
+    bar.ev(f"(() => {{ const box = document.querySelector({json.dumps(field('turns'))}); box.value = '{last + 10}';"
+           " box.dispatchEvent(new Event('change', {bubbles: true})); return true; })()")
+    bar.idle(f"state.debug.breakpoints.turns.includes({last + 10})", "the turn breakpoint is set")
+    assert bar.ev(lines) == [[last + 10, False, f"T{last + 10} · {era_now}", "solid"]], bar.ev(lines)
+
+    # The era and nuclear breakpoints: the game's future is asked for, and
+    # the era it begins and the device it sees go off are dashed lines at
+    # their turns, beside the solid ones at the eras the line has begun.
+    bar.ev(f"engine.futureEras = [{{turn: {last + 20}, era: 9, name: 'industrial'}}], engine.nukes = [{last + 30}], engine.seer = null, true")
+    bar.forget()
+    bar.click(field("eras"))
+    bar.idle("state.debug.breakpoints.eras === true", "the era breakpoint is ticked")
+    bar.click(field("nuclear"))
+    bar.idle("state.debug.breakpoints.nuclear === true", "the nuclear breakpoint is ticked")
+    assert bar.sent()[-1]["nuclear"] is True and bar.sent()[-1]["eras"] is True, bar.sent()
+    assert bar.ev("document.getElementById('dbg-break-count').textContent") == "3"
+    bar.until(f"!!document.querySelector('{LANE} .dbg-marks i.stop.dbg-ahead[data-dbg-turn=\"{last + 30}\"]')",
+              "the nuclear war the future sees is drawn", seconds=20)
+    drawn = bar.ev(lines)
+    assert drawn == sorted([[turn, False, f"T{turn}", "solid"] for turn in begun] +
+                           [[last + 10, False, f"T{last + 10} · {era_now}", "solid"],
+                            [last + 20, True, f"Industrial ~T{last + 20}", "dashed"],
+                            [last + 30, True, f"☢ ~T{last + 30}", "dashed"]]), drawn
+    asked = bar.ev("engine.sent.filter(call => call.path === '/debug' && call.body.op === 'foresee').map(call => call.body)")
+    assert asked and asked[0].get("anew") is True and all(call["lean"] is True and call["turns"] >= 1 for call in asked), asked
+    assert all("known" in call for call in asked[1:]), asked
+
+    # The nuclear breakpoint stops a run on the turn the device goes off.
+    bar.click(field("eras"))
+    bar.idle("state.debug.breakpoints.eras === false", "the era breakpoint is unticked")
+    bar.ev(f"(() => {{ const box = document.querySelector({json.dumps(field('turns'))}); box.value = '';"
+           " box.dispatchEvent(new Event('change', {bubbles: true})); return true; })()")
+    bar.idle("state.debug.breakpoints.turns.length === 0", "the turn breakpoint is cleared")
+    bar.ev(f"{turns}.value = 'indefinite', true")
+    bar.click('[data-dbg="autoplay"]')
+    bar.idle(f"state.turn === {last + 30}", "auto-play stops where the device goes off")
+    assert bar.note() == f"Stopped on turn {last + 30}: a nuclear device went off", bar.note()
+
+    # Cleared, nothing is drawn and nothing more is asked of the future.
+    bar.click('[data-dbg="break-clear"]')
+    bar.idle("!state.debug.breakpoints.nuclear && !state.debug.breakpoints.eras", "the breakpoints are cleared")
+    assert bar.ev(lines) == [], bar.ev(lines)
+    bar.ev(f"engine.futureEras = [], engine.nukes = [], {turns}.value = '1', true")
+    bar.click('[data-dbg-pop="breaks"]')
 
 
 def check_layers_reveal_and_undo(bar: Bar) -> None:
@@ -5265,6 +5338,7 @@ def main() -> int:
               "timeline, and "
               "Auto-play with its count.")
         check_breakpoints_and_a_run(bar)
+        check_breakpoint_lines(bar)
         check_layers_reveal_and_undo(bar)
         print("breakpoints are set from the form, auto-play stops on a turn, on a new era or by "
               "hand, layers, reveal and undo send what they are for, and the Single player switch "
