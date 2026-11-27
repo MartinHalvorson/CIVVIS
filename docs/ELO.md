@@ -367,6 +367,44 @@ stand-in ladder reads Deity 1915, Immortal 1737 and Emperor 1574 against 1971,
 (270 of the stock fit's 10,920, 2.5%) for the switch to move them much; the
 benchmark's do not.
 
+## One rating for each setup
+
+Operator 2026-11-27: "lets add victory type cols to elo rankings and move elo
+rankings to the top full wdith of tournaments. 6p Continents Online (Diplo
+off, Diplo on, science, culture, religion, diplomacy, domination, score) , 2P
+Pangaea (religion off, religion on). we can elo for each, sortable by score".
+
+`strategy_elo --setup <name>` plays every table at one named setup (`SETUPS`
+in `src/bin/strategy_elo.rs`): its seats, its map and the victories that can
+end it. Each keeps its own log, fit and history, `data/strategy_elo_<name>_games.jsonl`,
+`data/strategy_elo_<name>.json` and `data/strategy_elo_<name>_history.json`
+(the name with `_` for `-`), and every logged table carries `"setup"`, so a
+fit reads only its own tables and the stock and diplo-off fits, which carry
+none, read none of these.
+
+| Setup | Seats, map | Victories that can end a table |
+|---|---|---|
+| `continents6` | 6, Continents | all six |
+| `continents6-no-diplo` | 6, Continents | all but Diplomatic |
+| `continents6-science` | 6, Continents | Science alone |
+| `continents6-culture` | 6, Continents | Culture alone |
+| `continents6-religion` | 6, Continents | Religious alone |
+| `continents6-diplomacy` | 6, Continents | Diplomatic alone |
+| `continents6-domination` | 6, Continents | Domination alone |
+| `continents6-score` | 6, Continents | Score alone |
+| `pangaea2` | 2, Pangaea | all six |
+| `pangaea2-no-religion` | 2, Pangaea | all but Religious |
+
+All are Online speed, 250 turns, at Prince. A table nobody wins by its one
+victory before the turn limit is settled on score, as every table the engine
+leaves undecided is (`"score-at-cap"`), and the published `victories` count
+how many were: a victory the simulator seldom reaches (Diplomatic, 2.5% of
+stock tables) is mostly a reading of score.
+
+The stock and diplo-off fits are four-player tables on the default map
+(Pangaea); `continents6` and `continents6-no-diplo` are the same two games at
+the benchmark's own size and map.
+
 ## What the Civilization VI mapping does and does not prove
 
 It measures, in our engine, what each rung's *handicap* is worth: the yield

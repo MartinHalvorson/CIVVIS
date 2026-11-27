@@ -79,6 +79,34 @@ class HistoryTest(unittest.TestCase):
         self.assertEqual(sum(line.lstrip().startswith('{"at"') for line in text.splitlines()), 1)
         json.loads(text)
 
+    def test_each_named_setup_has_a_fit_and_the_tool_names_the_same_setups(self):
+        # Operator 2026-11-27: "6p Continents Online (Diplo off, Diplo on,
+        # science, culture, religion, diplomacy, domination, score) , 2P
+        # Pangaea (religion off, religion on). we can elo for each". Each of
+        # strategy_elo's setups publishes a fit this keeps a history of.
+        files = {published.name for published, _ in history.FITS}
+        for name in history.SETUPS:
+            self.assertIn(f"strategy_elo_{name}.json", files)
+        tool = (history.ROOT / "src" / "bin" / "strategy_elo.rs").read_text(encoding="utf-8")
+        named = {name.replace("-", "_") for name in __import__("re").findall(r'Setup\s*\{\s*name:\s*"([a-z0-9-]+)"', tool)}
+        self.assertEqual(named, set(history.SETUPS))
+        self.assertEqual(len(history.SETUPS), 10)
+
+    def test_a_named_setup_fit_once_published_must_have_its_history(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            (root / "data").mkdir()
+            published = {"tables": 12, "runs": [{"run": "r1", "tables": 12}], "ratings": {"stock": {"elo": 1000.0, "sd": 0.0}}, "ladder": {}}
+            for path in (history.PUBLISHED, pathlib.Path("data/strategy_elo_continents6_science.json")):
+                (root / path).write_text(json.dumps(published), encoding="utf-8")
+            history.append(root, "2026-11-27T05:00:00Z")
+            # `append` (main's loop) adds a point for every published fit; this
+            # one only did the stock fit, so the science fit has none yet.
+            self.assertIn("strategy_elo_continents6_science_history.json", history.check_all(root) or "")
+            history.append(root, "2026-11-27T05:00:00Z", pathlib.Path("data/strategy_elo_continents6_science.json"),
+                           pathlib.Path("data/strategy_elo_continents6_science_history.json"))
+            self.assertIsNone(history.check_all(root))
+
 
 if __name__ == "__main__":
     unittest.main()
