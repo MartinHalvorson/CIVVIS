@@ -6,10 +6,14 @@ This is the current assessment of the game-playing AI. `docs/EVAL.md` is the
 chronological experiment log; older entries there preserve what was believed at
 the time and are not automatically the current conclusion.
 
-The same rule now applies inside this file. **The list immediately below is the
-only live ranking here.** Three sections used to compete for that role; all
-three are still present, under `Superseded ranking` headings, because what was
-believed and why is evidence — but none of them is an instruction any more.
+The same rule now applies inside this file. **No ranking in this file is live
+any more.** The project's ranked objectives are
+[`docs/ROADMAP.md`'s](ROADMAP.md#objectives-ranked-2026-11-27) (2026-11-27),
+ordered by their expected effect on the live Lv 8 Deity win rate, and the
+numbers behind them are printed on demand by `python3 tools/live_status.py`.
+Four sections here used to compete for the role; all four are still present,
+under `Superseded ranking` headings, because what was believed and why is
+evidence — but none of them is an instruction any more.
 
 
 > **2026-08-27 — decisions tracked to completion.** `docs/COMMITMENTS.md`:
@@ -21,7 +25,13 @@ believed and why is evidence — but none of them is an instruction any more.
 > at half its priced pace. No existing gene closes a class; the first
 > ledger-acting gene is `capture-go-or-stand-down`.
 
-## Current ranked next work (2026-08-17)
+## Superseded ranking (2026-08-17): current ranked next work
+
+*Superseded on 2026-11-27 by [`docs/ROADMAP.md`'s ranked
+objectives](ROADMAP.md#objectives-ranked-2026-11-27) — kept as the record of
+what was believed and why. It was written while the live seat was climbing
+Settler; the live seat now plays Lv 8 Deity, and `python3
+tools/live_status.py` prints where it stands.*
 
 Ordered by the largest remaining decision risk rather than by how local the next
 code edit is. This is the 2026-07-31 turn-frame ordering further down, minus the
@@ -510,8 +520,7 @@ no tested replacement cleared the deployment gate.
 ## Superseded ranking (2026-07-30): next priorities
 
 *Superseded — kept as the record of what was believed and why. The live
-ranking is [Current ranked next work](#current-ranked-next-work-2026-08-17)
-at the top of this file.*
+ranking is [`docs/ROADMAP.md`'s ranked objectives](ROADMAP.md#objectives-ranked-2026-11-27).*
 
 The first of the three rankings this file accumulated. Items 1–4 were
 re-expressed by the two rankings after it; item 5, external calibration, was
@@ -566,8 +575,7 @@ also fails closed in promotion mode.
 ## Superseded ranking (2026-07-31): next ranked work after the identity implementation
 
 *Superseded — kept as the record of what was believed and why. The live
-ranking is [Current ranked next work](#current-ranked-next-work-2026-08-17)
-at the top of this file.*
+ranking is [`docs/ROADMAP.md`'s ranked objectives](ROADMAP.md#objectives-ranked-2026-11-27).*
 
 Superseded by the turn-frame ranking immediately below, which says so in its
 own closing line.
@@ -610,8 +618,7 @@ that boundary rather than re-running the old stringly comparisons.
 ## Superseded ranking (2026-07-31): ranked next work after the turn-frame repair
 
 *Superseded — kept as the record of what was believed and why. The live
-ranking is [Current ranked next work](#current-ranked-next-work-2026-08-17)
-at the top of this file.*
+ranking is [`docs/ROADMAP.md`'s ranked objectives](ROADMAP.md#objectives-ranked-2026-11-27).*
 
 The direct ancestor of the current list: items 2, 4 and 5 survive there, items
 1 and 3 have since been answered, and the resolution of each is recorded at the

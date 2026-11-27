@@ -817,6 +817,21 @@ while read -r file; do
   download_bytes=$(( download_bytes + $(echo "$bytes" | tr -d ' ') ))
 done < <(viewer_files)
 
+# `status.json`: the live ledger's state, exactly as `tools/live_status.py
+# --json` prints it, for anything that reads the site rather than the
+# repository. The lane's own revision's tool reads the ledger as this clone
+# fetched it, so it never fetches here. A revision without the tool has no
+# file, and a failure costs the lane this file, never its publish.
+if [ -f "$source_tree/tools/live_status.py" ]; then
+  if python3 "$source_tree/tools/live_status.py" --repo "$source_tree" \
+      --ref refs/remotes/origin/ledger --json > "$out/status.json.tmp"; then
+    mv "$out/status.json.tmp" "$out/status.json"
+  else
+    rm -f "$out/status.json.tmp"
+    echo "::warning::$short: tools/live_status.py could not read the ledger; the lane is published without status.json"
+  fi
+fi
+
 wasm_bytes=$(wc -c < "$out/civvis.wasm" | tr -d ' ')
 bundle_bytes=$(find "$out" -type f ! -name '*.br' -exec wc -c {} + | tail -1 | awk '{print $1}')
 # `pages` is the lane's own list of what it carries beside the viewer: the

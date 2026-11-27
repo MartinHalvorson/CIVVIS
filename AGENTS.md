@@ -3,6 +3,19 @@
 These rules apply to every human and automated coding agent in this repository.
 Read [docs/VERSION_CONTROL.md](docs/VERSION_CONTROL.md) before changing files.
 
+## Current objective
+
+- Run `python3 tools/live_status.py` first. It prints where the live seat
+  stands against Civilization VI from the live ledger; no document here
+  carries those numbers, so read them there and nowhere else.
+- The Lv 8 Deity win rate is the project's first number. Every task is ranked
+  by its expected effect on it ([docs/ROADMAP.md](docs/ROADMAP.md),
+  "Objectives (ranked 2026-11-27)").
+- No new opt-in gene while your previous one has no live verdict. Every
+  behaviour PR names the ledger number it should move (a line `live_status.py`
+  prints), in which direction, how many live games would show it, and exactly
+  how it is armed for the live seat.
+
 ## Operating mandate
 
 - Operate using your best judgment. Once a user authorizes a task, standing
