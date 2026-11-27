@@ -2,9 +2,11 @@
 """The site's tagline says what the project is for.
 
 Operator, 2026-11-27: change "A civ VI simulator for ai reasoning insights"
-to "A Civilization VI Simulator for fixing the Civ AI". The simulator's
-lockup reads exactly that, two lines: "A Civilization VI Simulator" and "for
-fixing the Civ AI". Every page with a header carries the same second line
+to "A Civilization VI Simulator for fixing the Civ AI", then the same day
+"change to ... fixing the Civ AI (fan project, free)". The simulator's
+lockup reads exactly that in three lines, each phrase whole, because the
+second phrase does not fit its lane on one line: "A Civilization VI
+Simulator", "for fixing the Civ AI", "(fan project, free)". Every page with a header carries the same second line
 under its own first line ("An open source Civilization VI Simulator"), and
 the home page's description for search engines says the same.
 
@@ -26,7 +28,7 @@ BETA = pathlib.Path(__file__).resolve().parent
 ROOT = BETA.parent
 SIMULATOR = ROOT / "web" / "index.html"
 
-PURPOSE = "for fixing the Civ AI"
+PURPOSE = "for fixing the Civ AI (fan project, free)"
 # Each wording the tagline has had, newest last: "for AI strategy
 # development" until #5741 (2026-11-23), "for AI reasoning insights" until
 # 2026-11-27, and "for interpretability & forecasting insights", asked for on
@@ -48,7 +50,7 @@ class TheTaglineIsForFixingTheCivAI(unittest.TestCase):
         page = SIMULATOR.read_text(encoding="utf-8")
         self.assertIn(
             '<div class="tagline"><span>A <i>Civilization VI</i> Simulator</span>'
-            f"<span>{PURPOSE}</span></div>",
+            "<span>for fixing the Civ AI</span><span>(fan project, free)</span></div>",
             page,
         )
 
