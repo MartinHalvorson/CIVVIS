@@ -39,14 +39,16 @@ simulator speaks.
 Live games are counted the way the Tournaments page counts them
 (`beta/home_rankings.tournament_series`): a `<tag>-contN` resume is the same
 game as `<tag>`, a game counts once by its best run, a game whose every run is
-`unfinished` is not a game, and only six-player Continents tables are read.
+`unfinished` is not a game, only six-player Continents tables are read, and a
+table two of our agents sat at (`civ` reads `A+B`) is left out, as the ELO
+Rankings page leaves it out.
 `--since-tag` (default `civvis-t7-`, the Official Benchmark's first game)
 bounds the tags counted, so the default reads the benchmark and every
 tournament after it.
 
 `--max-miss PP` exits 1 when any level with games on both sides misses by
 more than PP points (a calibration check for a field meant to match live).
-Reads files only; writes nothing.
+Reads the files and the fetched ledger branch; writes nothing.
 """
 
 from __future__ import annotations
@@ -54,7 +56,6 @@ from __future__ import annotations
 import argparse
 import json
 import math
-import re
 import subprocess
 import sys
 from pathlib import Path
@@ -189,7 +190,8 @@ def engine_levels(paths: list[str]) -> tuple[dict[str, dict], list[str]]:
     Only a source that seats one measured seat against handicapped rival
     chairs is the live arrangement; any other is refused with its reason, so
     a self-play batch (every seat ours, a win rate of 1/players by symmetry)
-    cannot pass for a prediction of the live seat."""
+    cannot pass for a prediction of the live seat. Every file given is pooled
+    per level, so give one field's files per run (`fields` names each)."""
     levels: dict[str, dict] = {}
     fields: list[str] = []
     for path in paths:
@@ -354,7 +356,8 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps({"since_tag": args.since_tag, "elo": args.elo, "engine_fields": fields,
                           "levels": rows}, indent=1))
     else:
-        print(render(rows, fields, args.elo))
+        shown = Path(args.elo).resolve()
+        print(render(rows, fields, str(shown.relative_to(ROOT)) if shown.is_relative_to(ROOT) else args.elo))
     if args.max_miss is not None and worst_miss(rows) > args.max_miss:
         print(f"calibration: a level misses live by {worst_miss(rows):.1f} points, over {args.max_miss}",
               file=sys.stderr)
