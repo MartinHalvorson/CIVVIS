@@ -10007,7 +10007,9 @@ fn the_unit_glyphs_are_drawn_from_credited_open_icons() {
         let icon = row["icon"].as_str().expect("an icon name");
         assert_eq!(row["licence"].as_str(), Some("CC BY 3.0"), "{unit}");
         assert!(
-            icons["icons"][icon]["paths"].as_array().is_some_and(|paths| !paths.is_empty()),
+            icons["icons"][icon]["paths"]
+                .as_array()
+                .is_some_and(|paths| !paths.is_empty()),
             "{unit} is drawn from {icon}, whose paths are not kept"
         );
         assert_eq!(icons["icons"][icon]["author"], row["author"], "{unit}");
@@ -10046,11 +10048,9 @@ fn a_unit_counter_stands_on_one_of_eight_drawn_plates() {
 
     // The sheet really carries those eight styles, in that order, as
     // square cells -- the one fact a re-cut could break silently.
-    let cell = usize::from(u32::from_be_bytes(
-        EMBEDDED_UNIT_PLATES[20..24].try_into().unwrap(),
-    ) as u16);
-    let width =
-        u32::from_be_bytes(EMBEDDED_UNIT_PLATES[16..20].try_into().unwrap()) as usize;
+    let cell =
+        usize::from(u32::from_be_bytes(EMBEDDED_UNIT_PLATES[20..24].try_into().unwrap()) as u16);
+    let width = u32::from_be_bytes(EMBEDDED_UNIT_PLATES[16..20].try_into().unwrap()) as usize;
     assert!(cell > 0, "the plate sheet has a height");
     assert_eq!(
         width,
