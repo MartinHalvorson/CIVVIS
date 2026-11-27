@@ -63,6 +63,14 @@ def elo_record() -> dict:
         }
     on = reading(holy=1547, jack=1155, deity=1042, king=595, dev=1210)
     on["off"] = reading(holy=1543, jack=1191, deity=1452, king=799, dev=1100)
+    # Two of the named setups' fits (`strategy_elo --setup`): the agents
+    # alone, no Firaxis level or person read beside them.
+    def agents_only(holy, jack):
+        rows = [{"kind": "agent", "id": "holy", "name": "HolyRoller", "tilt": "Religion", **rated(holy, 40, 100, 40)}]
+        if jack is not None:
+            rows.append({"kind": "agent", "id": "jack", "name": "JackOfAllTrades", "tilt": "Balanced", **rated(jack, 40, 100, 50)})
+        return {"strategies": {"rows": rows, "tables": 120, "players": 6, "turns": 250, "runs": 1}, "firaxis": None, "people": []}
+    on["setups"] = {"continents6_science": agents_only(1300, 1400), "pangaea2": agents_only(1200, None)}
     return on
 
 
@@ -428,20 +436,37 @@ class TournamentsPage(unittest.TestCase):
         # The page is authored lane-relative: nothing in it links the site root.
         self.assertEqual(re.findall(r'(?:href|src)="(/[^"]*)"', PAGE), [])
 
-    def test_elo_rankings_stands_over_the_benchmark_and_publishing_fills_it(self):
-        # Operator 2026-11-27: "lets copy the player straegies table over to
-        # tournaments. place on the right side, above the official benchmark.
-        # Call this ELO Rankings. List CIVVIS AI strategies, classic Firaxis
-        # AI, and dev all together in the ranking. list Diplo off first (and
-        # default for sorting), and Diplo on col to the right".
-        side = PAGE[PAGE.index('<div class="tour-side">'):PAGE.index('<p class="tour-legend">')]
-        self.assertLess(side.index('id="tour-scheduled"'), side.index('id="tour-elo"'))
-        self.assertLess(side.index('id="tour-elo"'), side.index('id="tour-benchmark"'))
-        self.assertIn('>ELO Rankings</a></h2>', side)
-        # Diplo off first, and pressed: the order it opens in.
-        heads = re.findall(r'class="rank-sort" data-sort="(\w+)" aria-pressed="(\w+)"[^>]*>([^<]+)<', side)
-        self.assertEqual(heads, [("off", "true", "Diplo off"), ("on", "false", "Diplo on")])
-        self.assertIn('show(VIEWS.off ? "off" : "on")', PAGE)
+    def test_elo_rankings_stands_across_the_top_with_a_column_a_setup_and_publishing_fills_it(self):
+        # Operator 2026-11-27: "lets add victory type cols to elo rankings
+        # and move elo rankings to the top full wdith of tournaments. 6p
+        # Continents Online (Diplo off, Diplo on, science, culture, religion,
+        # diplomacy, domination, score) , 2P Pangaea (religion off, religion
+        # on). we can elo for each, sortable by score". It stood on the right
+        # over the benchmark from earlier that day ("list Diplo off first (and
+        # default for sorting)"): now it is the record's first child, before
+        # both columns, so it spans the page.
+        record = PAGE[PAGE.index('<div class="tour-record" id="tour-record" hidden>'):PAGE.index('<p class="tour-legend">')]
+        self.assertLess(record.index('id="tour-elo"'), record.index('<div class="tour-main">'))
+        self.assertNotIn('id="tour-elo"', record[record.index('<div class="tour-side">'):])
+        self.assertIn(".tour-record > :not(.tour-main):not(.tour-side) { grid-column: 1 / -1; }", PAGE)
+        self.assertIn('>ELO Rankings</a></h2>', record)
+        # A column for each setup, in the operator's order, under its game;
+        # Diplo off first and pressed, the order it opens in.
+        heads = re.findall(r'class="rank-sort" data-sort="(\w+)" aria-pressed="(\w+)"[^>]*>([^<]+)<', record)
+        self.assertEqual(heads, [
+            ("continents6_no_diplo", "true", "Diplo off"), ("continents6", "false", "Diplo on"),
+            ("continents6_science", "false", "Science"), ("continents6_culture", "false", "Culture"),
+            ("continents6_religion", "false", "Religion"), ("continents6_diplomacy", "false", "Diplomacy"),
+            ("continents6_domination", "false", "Domination"), ("continents6_score", "false", "Score"),
+            ("pangaea2_no_religion", "false", "Religion off"), ("pangaea2", "false", "Religion on")])
+        self.assertIn('colspan="8" class="is-group is-split">6P Continents Online</th>', record)
+        self.assertIn('colspan="2" class="is-group is-split">2P Pangaea</th>', record)
+        self.assertIn("show(COLUMNS[0][0]);", PAGE)
+        # Each kind faintly its colour ("we can highlight dev blue, civvis
+        # gold, and firaxis red in the elo table. faint"), with a key.
+        for kind, ink in (("agent", "var(--gold) 8%"), ("level", "#e5534b 10%"), ("person", "var(--accent) 11%")):
+            self.assertIn(f"#tour-elo tbody tr.is-{kind} {{ background: color-mix(in srgb, {ink}, transparent); }}", PAGE)
+            self.assertIn(f'<span class="elo-kind is-{kind}">', record)
         # Its figures are ELO Rankings' own record, written by the same
         # script into a slot of the same name, once.
         self.assertEqual(PAGE.count('<script type="application/json" id="elo-data">null</script>'), 1)
@@ -451,12 +476,12 @@ class TournamentsPage(unittest.TestCase):
         self.assertEqual(json.loads(elo_page.SLOT.search(filled)[2]), elo_record())
         self.assertEqual(json.loads(tournaments_page.SLOT.search(filled)[2]), self.record())
         self.assertEqual(filled.count("</script>"), PAGE.count("</script>"))
-        # Its rules are its own card's: the page's own `.rank-row` and such
-        # are not touched.
+        # Its rules are its own card's: the page's own `.rank-*` are not touched.
         style = re.sub(r"/\*.*?\*/", "", PAGE[:PAGE.index("</style>")], flags=re.S)
         rules = [part.rsplit("{", 1)[0].split("{")[-1].strip() for part in style.split("}") if "{" in part]
         for rule in rules:
-            if any(name in rule for name in (".rank-row", ".rank-list", ".rank-sort", ".rank-name", ".rank-value", ".rank-n ")):
+            if any(name in rule for name in (".rank-sort", ".elo-kind", "tr.is-agent", "tr.is-level", "tr.is-person",
+                                             "td.is-value", "td.is-sorted", "td.is-split")):
                 self.assertTrue(all(part.strip().startswith("#tour-elo") for part in rule.split(",")), rule)
 
     def test_without_a_ledger_the_page_says_it_has_no_record(self):
@@ -980,34 +1005,49 @@ class Drawn(unittest.TestCase):
             print(f"attempt {attempt}: the page had not drawn its rows after 15s; opening it again.")
         self.fail(f"the page never drew its rows ({self.dev.console[-5:]})")
 
-    def test_elo_rankings_ranks_everyone_together_diplo_off_first(self):
+    def test_elo_rankings_ranks_everyone_together_across_the_page_a_column_a_setup(self):
         self.rows(1500)
         read = """(() => { const card = document.getElementById('tour-elo');
-          const rows = [...card.querySelectorAll('.rank-list .rank-row')].map(row => [...row.children].map(cell => cell.firstChild ? cell.firstChild.textContent : ''));
+          const rows = [...card.querySelectorAll('tbody tr')].map(row => [...row.children].map(cell => cell.firstChild ? cell.firstChild.textContent : ''));
+          const kinds = [...card.querySelectorAll('tbody tr')].map(row => [row.className, getComputedStyle(row).backgroundColor]);
           const box = id => document.getElementById(id).getBoundingClientRect();
-          return {hidden: card.hidden, rows, pressed: [...card.querySelectorAll('.rank-sort')].map(b => [b.dataset.sort, b.getAttribute('aria-pressed')]),
-            right: [box('tour-scheduled').bottom <= box('tour-elo').top, box('tour-elo').bottom <= box('tour-benchmark').top,
-              box('tour-elo').left > innerWidth / 2], note: card.querySelector('[data-rank-note]').textContent}; })()"""
+          const record = box('tour-record'), elo = box('tour-elo');
+          return {hidden: card.hidden, rows, kinds, pressed: [...card.querySelectorAll('.rank-sort')].filter(b => b.getAttribute('aria-pressed') === 'true').map(b => b.dataset.sort),
+            top: [elo.bottom <= box('tour-running').top || box('tour-running').height === 0, elo.bottom <= box('tour-scheduled').top, Math.abs(elo.width - record.width) <= 2],
+            note: card.querySelector('[data-rank-note]').textContent}; })()"""
         drawn = self.dev.evaluate(read)
         self.assertFalse(drawn["hidden"])
-        self.assertEqual(drawn["right"], [True, True, True])
-        self.assertEqual(drawn["pressed"], [["off", "true"], ["on", "false"]])
+        self.assertEqual(drawn["top"], [True, True, True])
+        self.assertEqual(drawn["pressed"], ["continents6_no_diplo"])
         # Every row numbered in one ranking, by Diplo off: the agents, the
-        # Firaxis levels and the person together; the Diplo off figure
-        # first, Diplo on to its right; a level with no figure is left out.
+        # Firaxis levels and the person together. Diplo off and Diplo on read
+        # the four-player fits until the six-player ones are published; the
+        # Science and 2P Pangaea Religion on columns read their own fits; a
+        # column without one is a dash; a level with no figure is left out.
+        dash = ["–"] * 5
         self.assertEqual(drawn["rows"], [
-            ["1", "HolyRoller", "1543", "1547"],
-            ["2", "Lv 8 Deity", "1452", "1042"],
-            ["3", "JackOfAllTrades", "1191", "1155"],
-            ["4", "dev", "1100", "1210"],
-            ["5", "Lv 5 King", "799", "595"],
+            ["1", "HolyRoller", "1543", "1547", "1300", *dash, "–", "1200"],
+            ["2", "Lv 8 Deity", "1452", "1042", "–", *dash, "–", "–"],
+            ["3", "JackOfAllTrades", "1191", "1155", "1400", *dash, "–", "–"],
+            ["4", "dev", "1100", "1210", "–", *dash, "–", "–"],
+            ["5", "Lv 5 King", "799", "595", "–", *dash, "–", "–"],
         ])
-        self.assertIn("Diplo off: 900 four-player simulator tables of 250 turns over the last 3 rating runs", drawn["note"])
-        # Diplo on sorts it the other way.
-        self.dev.evaluate("document.querySelector('#tour-elo [data-sort=\"on\"]').click(), true")
+        # Each kind faintly its own colour, and the three apart.
+        kinds = {cls: ink for cls, ink in drawn["kinds"]}
+        self.assertEqual(sorted(kinds), ["is-agent", "is-level", "is-person"])
+        self.assertEqual(len(set(kinds.values())), 3, kinds)
+        self.assertTrue(all(ink not in ("rgba(0, 0, 0, 0)", "transparent") for ink in kinds.values()), kinds)
+        self.assertIn("Diplo off and Diplo on read the four-player Pangaea tables until the six-player Continents fit is published.", drawn["note"])
+        self.assertIn("Science 120", drawn["note"])
+        # Science sorts it by Science: those rated there first, the rest in
+        # Diplo off's order.
+        self.dev.evaluate("document.querySelector('#tour-elo [data-sort=\"continents6_science\"]').click(), true")
         drawn = self.dev.evaluate(read)
-        self.assertEqual(drawn["pressed"], [["off", "false"], ["on", "true"]])
-        self.assertEqual([row[1] for row in drawn["rows"]], ["HolyRoller", "dev", "JackOfAllTrades", "Lv 8 Deity", "Lv 5 King"])
+        self.assertEqual(drawn["pressed"], ["continents6_science"])
+        self.assertEqual([row[1] for row in drawn["rows"]], ["JackOfAllTrades", "HolyRoller", "Lv 8 Deity", "dev", "Lv 5 King"])
+        # Diplo on sorts it the other way.
+        self.dev.evaluate("document.querySelector('#tour-elo [data-sort=\"continents6\"]').click(), true")
+        self.assertEqual([row[1] for row in self.dev.evaluate(read)["rows"]], ["HolyRoller", "dev", "JackOfAllTrades", "Lv 8 Deity", "Lv 5 King"])
         self.assertEqual(self.dev.console, [])
 
     def test_a_row_of_games_is_labelled_first_and_last(self):

@@ -64,10 +64,28 @@
 //! strategy_elo --no-diplo --run 2026-11-24-d27f49f --add-games 480 \
 //!   --add-rung-games 120 --keep-runs 5 --jobs 6
 //! ```
+//!
+//! `--setup <name>` plays every table at one of the named setups (`SETUPS`):
+//! its seats, its map and the victories that can end it, each kept apart
+//! from the others in its own log (`data/strategy_elo_<name>_games.jsonl`)
+//! and published file (`data/strategy_elo_<name>.json`). Operator
+//! 2026-11-27: "lets add victory type cols to elo rankings ... 6p Continents
+//! Online (Diplo off, Diplo on, science, culture, religion, diplomacy,
+//! domination, score) , 2P Pangaea (religion off, religion on). we can elo for
+//! each". A victory's own setup has that victory alone on: a table nobody
+//! wins that way by the turn limit is settled on score, as every table the
+//! engine leaves undecided is (`"score-at-cap"`), and the published
+//! `victories` say how many were.
+//!
+//! ```text
+//! strategy_elo --setup continents6-science --run 2026-11-27-abc1234 \
+//!   --add-games 240 --jobs 6
+//! ```
 use civvis::ai::{Ai, BasicAi};
+use civvis::game::VictoryConditions;
 use civvis::game::{Action, Game, GameOptions};
 use civvis::parallel;
-use civvis::setup::MapSize;
+use civvis::setup::{MapScript, MapSize};
 use civvis::strategies::{
     self, Table, CIV6_REFERENCE, CIV6_RUNGS, MARGIN_Z, PRINCE, PRINCE_ELO, ROSTER,
 };
@@ -85,6 +103,105 @@ const NO_DIPLO_OUT: &str = "data/strategy_elo_no_diplo.json";
 const SPEED: &str = "online";
 const DEFAULT_TURNS: u32 = 250;
 const BOOTSTRAP_ROUNDS: usize = 200;
+
+/// A setup the ratings are measured at (`--setup`): how many seat a table,
+/// on which map, and which victories can end it, in `VictoryConditions`'
+/// order (Science, Culture, Religious, Diplomatic, Domination, Score).
+struct Setup {
+    name: &'static str,
+    players: usize,
+    map: MapScript,
+    victories: [bool; 6],
+}
+
+const EVERY: [bool; 6] = [true; 6];
+const fn only(at: usize) -> [bool; 6] {
+    let mut on = [false; 6];
+    on[at] = true;
+    on
+}
+const fn but(at: usize) -> [bool; 6] {
+    let mut on = [true; 6];
+    on[at] = false;
+    on
+}
+
+/// The ratings Tournaments shows, a column each: 6P Continents Online with
+/// every victory on and with the Diplomatic victory off, and with each
+/// victory alone; 2P Pangaea with the Religious victory on and off.
+const SETUPS: [Setup; 10] = [
+    Setup {
+        name: "continents6",
+        players: 6,
+        map: MapScript::Continents,
+        victories: EVERY,
+    },
+    Setup {
+        name: "continents6-no-diplo",
+        players: 6,
+        map: MapScript::Continents,
+        victories: but(3),
+    },
+    Setup {
+        name: "continents6-science",
+        players: 6,
+        map: MapScript::Continents,
+        victories: only(0),
+    },
+    Setup {
+        name: "continents6-culture",
+        players: 6,
+        map: MapScript::Continents,
+        victories: only(1),
+    },
+    Setup {
+        name: "continents6-religion",
+        players: 6,
+        map: MapScript::Continents,
+        victories: only(2),
+    },
+    Setup {
+        name: "continents6-diplomacy",
+        players: 6,
+        map: MapScript::Continents,
+        victories: only(3),
+    },
+    Setup {
+        name: "continents6-domination",
+        players: 6,
+        map: MapScript::Continents,
+        victories: only(4),
+    },
+    Setup {
+        name: "continents6-score",
+        players: 6,
+        map: MapScript::Continents,
+        victories: only(5),
+    },
+    Setup {
+        name: "pangaea2",
+        players: 2,
+        map: MapScript::Pangaea,
+        victories: EVERY,
+    },
+    Setup {
+        name: "pangaea2-no-religion",
+        players: 2,
+        map: MapScript::Pangaea,
+        victories: but(2),
+    },
+];
+
+fn victory_conditions(on: [bool; 6]) -> VictoryConditions {
+    VictoryConditions {
+        science: on[0],
+        culture: on[1],
+        religious: on[2],
+        diplomatic: on[3],
+        domination: on[4],
+        score: on[5],
+    }
+}
 
 struct Options {
     players: usize,
@@ -111,6 +228,9 @@ struct Options {
     /// Whether the Diplomatic victory can end a table (`--no-diplo` switches
     /// it off). The other five victories are always on.
     diplomatic: bool,
+    /// The named setup this run plays (`--setup`), or none: the stock tables,
+    /// on the default map, with `diplomatic` the one switch.
+    setup: Option<&'static Setup>,
 }
 
 fn text(args: &[String], key: &str) -> Option<String> {
@@ -234,6 +354,10 @@ fn play(options: &Options, plan: &Plan) -> Value {
     setup.speed = SPEED.to_string();
     setup.difficulty = plan.rung.clone();
     setup.victory_conditions.diplomatic = options.diplomatic;
+    if let Some(named) = options.setup {
+        setup.map_script = named.map;
+        setup.victory_conditions = victory_conditions(named.victories);
+    }
     setup.human_seats.extend(plan.challengers.iter().copied());
     let mut game = Game::new_with(setup);
     let majors: Vec<usize> = game
@@ -301,6 +425,7 @@ fn play(options: &Options, plan: &Plan) -> Value {
         "turns": options.turns,
         "reference": options.reference,
         "diplomatic": options.diplomatic,
+        "setup": options.setup.map(|named| named.name),
         "seats": plan.seats,
         "challengers": plan.challengers,
         "winner": winner,
@@ -326,6 +451,7 @@ fn read_log(options: &Options) -> Vec<Value> {
             line["players"].as_u64() == Some(options.players as u64)
                 && line["turns"].as_u64() == Some(options.turns as u64)
                 && line["diplomatic"].as_bool().unwrap_or(true) == options.diplomatic
+                && line["setup"].as_str() == options.setup.map(|named| named.name)
                 && line["kind"] != RETIRED_RUNG_KIND
                 && (line["kind"] == "pool"
                     || line["reference"].as_str() == Some(options.reference.as_str()))
@@ -463,6 +589,17 @@ fn publish(options: &Options) {
         "speed": SPEED,
         // Whether the Diplomatic victory could end these tables.
         "diplomatic": options.diplomatic,
+        // The named setup, its map and the victories that could end a table.
+        "setup": options.setup.map(|named| named.name),
+        "map": options.setup.map(|named| named.map.id()),
+        "victory_conditions": options.setup.map(|named| {
+            VictoryConditions::NAMES
+                .iter()
+                .zip(named.victories)
+                .filter(|(_, on)| *on)
+                .map(|(name, _)| *name)
+                .collect::<Vec<_>>()
+        }),
         "tables": tables.len(),
         "runs": runs
             .iter()
@@ -513,14 +650,44 @@ fn publish(options: &Options) {
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let diplomatic = !args.iter().any(|arg| arg == "--no-diplo");
-    let (log, out) = if diplomatic {
-        (DEFAULT_LOG, DEFAULT_OUT)
-    } else {
-        (NO_DIPLO_LOG, NO_DIPLO_OUT)
+    let setup = text(&args, "--setup").map(|name| {
+        SETUPS
+            .iter()
+            .find(|named| named.name == name)
+            .unwrap_or_else(|| {
+                let names: Vec<&str> = SETUPS.iter().map(|named| named.name).collect();
+                eprintln!("--setup wants one of {}, not {name:?}", names.join(", "));
+                std::process::exit(2);
+            })
+    });
+    if setup.is_some()
+        && (args.iter().any(|arg| arg == "--no-diplo") || text(&args, "--players").is_some())
+    {
+        eprintln!("--setup names its own seats and victories: leave out --players and --no-diplo");
+        std::process::exit(2);
+    }
+    let diplomatic = match setup {
+        Some(named) => named.victories[3],
+        None => !args.iter().any(|arg| arg == "--no-diplo"),
+    };
+    let named_log = setup.map(|named| {
+        format!(
+            "data/strategy_elo_{}_games.jsonl",
+            named.name.replace('-', "_")
+        )
+    });
+    let named_out =
+        setup.map(|named| format!("data/strategy_elo_{}.json", named.name.replace('-', "_")));
+    let (log, out) = match (&named_log, &named_out) {
+        (Some(log), Some(out)) => (log.as_str(), out.as_str()),
+        _ if diplomatic => (DEFAULT_LOG, DEFAULT_OUT),
+        _ => (NO_DIPLO_LOG, NO_DIPLO_OUT),
     };
     let options = Options {
-        players: number(&args, "--players", 4).clamp(2, ROSTER.len() as u64) as usize,
+        players: match setup {
+            Some(named) => named.players,
+            None => number(&args, "--players", 4).clamp(2, ROSTER.len() as u64) as usize,
+        },
         turns: number(&args, "--turns", DEFAULT_TURNS as u64).max(1) as u32,
         seed: number(&args, "--seed", 20_261_111),
         jobs: number(&args, "--jobs", parallel::default_jobs() as u64).max(1) as usize,
@@ -540,6 +707,7 @@ fn main() {
         fit_only: args.iter().any(|arg| arg == "--fit-only"),
         reference: text(&args, "--reference").unwrap_or_else(|| CIV6_REFERENCE.to_string()),
         diplomatic,
+        setup,
     };
     if strategies::find(&options.reference).map(|row| row.id) != Some(options.reference.as_str()) {
         eprintln!("--reference wants a roster id, not {:?}", options.reference);

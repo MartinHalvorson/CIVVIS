@@ -441,9 +441,9 @@ def main(argv: list[str] | None = None) -> int:
                   f"got {page['body']!r} {page['contentEncoding']!r}")
             check(problems, f"{door} is still revalidated on every visit",
                   "must-revalidate" in (page["cacheControl"] or ""), f"got {page['cacheControl']!r}")
-        art = hit(path="/test/assets/unit-glyphs.webp?v=abc", accepts="br", compressed=True)
+        art = hit(path="/test/assets/civ6-unit-flags.webp?v=abc", accepts="br", compressed=True)
         check(problems, "images, already compressed, look for no copy",
-              art["body"] == "asset:/test/assets/unit-glyphs.webp", f"got {art['body']!r}")
+              art["body"] == "asset:/test/assets/civ6-unit-flags.webp", f"got {art['body']!r}")
         landing = hit(path="/home/", accepts="br", compressed=True)
         check(problems, "nor does a page outside the game",
               landing["body"] == "asset:/home/", f"got {landing['body']!r}")
@@ -897,11 +897,11 @@ def main(argv: list[str] | None = None) -> int:
                   module["contentType"] == "application/wasm", f"got {module['contentType']!r}")
             check(problems, f"{which} module is revalidated rather than trusted",
                   "must-revalidate" in (module["cacheControl"] or ""), f"got {module['cacheControl']!r}")
-            atlas = hit(path=f"{prefix}/assets/unit-plates.webp")
+            atlas = hit(path=f"{prefix}/assets/feature-atlas.webp")
             check(problems, f"{which} old atlas URLs are revalidated",
                   "must-revalidate" in (atlas["cacheControl"] or ""),
                   f"got {atlas['cacheControl']!r}")
-            for filename in ("shim.js", "worker.js", "civvis.wasm", "assets/unit-plates.webp"):
+            for filename in ("shim.js", "worker.js", "civvis.wasm", "assets/feature-atlas.webp"):
                 versioned = hit(path=f"{prefix}/{filename}?v=content-hash")
                 check(problems, f"{which} versioned {filename} is immutable",
                       "max-age=31536000" in (versioned["cacheControl"] or "")

@@ -146,19 +146,6 @@ own data.
 | SRTM15+ V2.7 (Tozer et al. 2019, https://doi.org/10.1029/2019EA000658), resampled to 10 arc-minutes by the GMT data server (`earth_relief_10m_p`) | Public domain: the series' README says "All data are derived from public domain sources and these data are also in the public domain." | https://topex.ucsd.edu/pub/srtm15_plus/README_V2.7.txt, https://www.generic-mapping-tools.org/remote-datasets/earth-relief.html |
 | Köppen-Geiger climate classification at half a degree (Kottek et al. 2006, Meteorologische Zeitschrift 15, 259-263) | None stated: see Unresolved | http://koeppen-geiger.vu-wien.ac.at/ |
 
-## Icons from game-icons.net
-
-| | |
-|---|---|
-| Files | `web/assets/unit-glyphs.png` (one silhouette per unit) and the pictographs on `web/assets/yield-icons.png`, rasterised by `tools/own_art.py` from the path data in `tools/own_art_icons.json` |
-| Version | https://github.com/game-icons/icons at `82d948812bfe` (2026-04-23), 120 icons, shapes unmodified |
-| Licence | CC BY 3.0, https://creativecommons.org/licenses/by/3.0/ |
-| Authors | Lorc, Delapouite, Skoll, Sbed, Cathelineau and Caro Asercion; the author of every icon, and what it draws, in [`web/assets/ART_CREDITS.md`](web/assets/ART_CREDITS.md). The viewer links that page from its build marker. |
-
-The plates, yield discs and city-wall mark are CIVVIS's own, drawn by the same
-tool; `web/assets/art-manifest.json` lists every image the site may ship, by
-hash.
-
 ## Sid Meier's Civilization VI
 
 CIVVIS is a fan project, not affiliated with or endorsed by Firaxis Games,
@@ -172,20 +159,19 @@ repository touches:
   leaders, units and abilities, read from the game's database and
   Civilopedia so the engine plays by the same rules, with short descriptions
   in CIVVIS's own words. No file of the game is copied into the repository;
-  the screenshots of it, below, are the exception.
+  the art cut from it and the screenshots of it, below, are the exceptions.
 - **The mod that plays the real game** (`tools/civ6_control/mod/`,
   `tools/civ6_mod/`): CIVVIS's own Lua and XML, MIT like the rest. It calls
   the game's scripting interface; where it follows the game's own UI scripts,
   a comment names the script, and no Firaxis file is included.
 - **Colours** (`data/civ6_player_colors.json`, the district colours in
   `web/assets/app.js`): colour values read from the game's colour atlas.
-- **Art**: none of the game's ships. Until #5940 four sprite sheets cut from
-  the installed game were compiled in and served by the site; the map now
-  draws CIVVIS's own (`tools/own_art.py`, below). The cutters listed in
-  `docs/CIV6_ART.md` still exist for somebody who owns the game and write only
-  into the git-ignored `local/civ6-art/`, which only a local server reads;
-  `tools/art_provenance.py` refuses such art in the repository and in every
-  published build.
+- **Art cut from the installed game** (`web/assets/civ6-unit-flags.png` with
+  its `.json`, `web/assets/civ6-unit-flag-plates.png`,
+  `web/assets/civ6-yield-icons.png`, `web/assets/civ6-city-banner-shields.png`;
+  the tools that cut them are listed in `docs/CIV6_ART.md`): Firaxis's and
+  2K's artwork, compiled into the shipped programs and served by the site.
+  See Unresolved.
 - **Screenshots used as test fixtures** (`tools/fixtures/deal_refuse_live.jpg`,
   `tools/fixtures/ordinary_map_live.jpg`, `tools/fixtures/game_modes_scaled.png`):
   screens of the running game, read by the tools' tests and never published.
@@ -198,6 +184,7 @@ claimed under MIT.
 
 | What | Where | Why |
 |---|---|---|
+| Civilization VI artwork | `web/assets/civ6-unit-flags.png`, `web/assets/civ6-unit-flag-plates.png`, `web/assets/civ6-yield-icons.png`, `web/assets/civ6-city-banner-shields.png` | Firaxis's and 2K's work, taken from the installed game; no licence is granted for it. It ships inside the programs and on the site. Only replacing it with CIVVIS's own art resolves it. |
 | Civilization VI screenshots | `tools/fixtures/deal_refuse_live.jpg`, `tools/fixtures/ordinary_map_live.jpg`, `tools/fixtures/game_modes_scaled.png` | Pictures of Firaxis's and 2K's game; no licence. Test inputs only, not shipped or served. |
-| The hidden-map vignettes | `web/assets/hidden-map-monsters.png` | Where they came from is not recorded. They arrived in #391 (2026-07-26), redrawn in #947, #953 and #2222; none says whether they were drawn, generated or taken from elsewhere. They do not look like Civilization VI's art. They ship inside the programs and on the site. (The two terrain feature atlases of the same kind, unused since #4865, were deleted in #5940.) |
+| Terrain feature atlases and the hidden-map vignettes | `web/assets/feature-atlas.png`, `web/assets/environment-feature-atlas.png`, `web/assets/hidden-map-monsters.png` | Where they came from is not recorded. The two atlases arrived 2026-07-22 in commits with no description; the vignettes in #391 (2026-07-26), redrawn in #947, #953 and #2222. None says whether they were drawn, generated or taken from elsewhere. They do not look like Civilization VI's art. They ship inside the programs and on the site. |
 | Köppen-Geiger climate data | input to `data/earth_surface.txt` | The source site states no licence or terms for the download. The repository keeps only a coarse terrain class derived from it, and cites it. |

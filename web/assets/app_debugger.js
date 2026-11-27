@@ -539,9 +539,29 @@ const DEBUG_BAR_STYLE = `
   }
   #debugbar .dbg-marks i.auto { background: #8fb4a8; }
   #debugbar .dbg-marks i.stop { top: auto; bottom: -5px; border-radius: 50%; background: #e2574c; }
+  /* On the one timeline a breakpoint is a red line down through the rail,
+     as a debugger draws one, named at its head (operator, 2026-11-27:
+     "breakpoints should add a vertical red line through the spot on the
+     timeline. like a debugger"). A line whose turn is worked out of the
+     game's future, not set (the next era, a nuclear war), is dashed. */
+  #debugbar:not(.dbg-split-on) .dbg-marks i.stop {
+    top: 0; bottom: 0; width: 0; height: auto; margin-left: -1px; border: 0; border-radius: 0;
+    border-left: 2px solid #e2574c; background: none; box-shadow: 0 0 0 1px #10140f40;
+  }
+  #debugbar:not(.dbg-split-on) .dbg-marks i.stop.dbg-ahead { border-left-style: dashed; box-shadow: none; }
+  #debugbar .dbg-marks i.stop b {
+    position: absolute; top: 2px; left: 3px; padding: 0 5px; border-radius: 3px; white-space: nowrap;
+    font: 700 10px/15px system-ui, sans-serif; color: #fff; background: #b8322a; cursor: pointer;
+  }
+  #debugbar .dbg-marks i.stop.dbg-ahead b { background: #10140fcc; color: #ff8a80; border: 1px dashed #e2574c; line-height: 13px; }
+  #debugbar .dbg-marks i.stop.dbg-row2 b { top: 20px; }
+  /* A name stands over every line, not under the next line along. */
+  #debugbar .dbg-marks i.stop b { z-index: 3; }
+  #debugbar.dbg-split-on .dbg-marks i.stop b { display: none; }
   /* On a tree's slim rails a mark keeps closer to its own rail. */
   #debugbar.dbg-split-on .dbg-marks i { top: -2px; }
   #debugbar.dbg-split-on .dbg-marks i.stop { top: auto; bottom: -2px; }
+  #debugbar.dbg-split-on .dbg-marks i.stop.dbg-ahead { display: none; }
   /* The first turn of each era the game has been through: a line down the
      rail with the era's name at its foot. The name is the thing to click. */
   #debugbar .dbg-marks u {
@@ -985,6 +1005,125 @@ function debugSeat() {
   const name = debugStrategy();
   return name && debugTimeline() ? debugOp({op: "status", strategy: name}) : null;
 }
+// ---- Breakpoints as lines on the timeline
+//
+// Operator, 2026-11-27: "breakpoints should add a vertical red line through
+// the spot on the timeline. like a debugger. for uncretain lines, like future
+// eras, we can make the line dashed. label lines with turn and/or era or
+// whatever. a nuclear war breakpoint could have a dashed line too. actually
+// we can just compute these out so you should be able to figure out the turn
+// from it".
+//
+// A turn breakpoint is a solid line at its turn, named by the turn and the
+// era that turn falls in. The era breakpoint is a solid line at each era the
+// line has begun, and a dashed one at each era the game's future begins; the
+// nuclear breakpoint a dashed one at the turn the future first sees a device
+// go off. The future is the engine's own (`foresee`, `debug_foresee` in
+// `src/server/debugger.rs`): a copy of the world at the end of the line,
+// played on by the same Civ AI to the end of the game with nothing kept but
+// what it saw. The engine is deterministic, so that is the turn the line
+// itself reaches it on for as long as it is played the same way; it is
+// dashed because a turn played another way, or another Civ AI, makes it
+// another future, which is then asked for anew.
+//
+// The future is asked for only on the one timeline, while the era or the
+// nuclear breakpoint is set, and only while nothing else is asked of the
+// engine: a stretch of turns at a time, about `DEBUG_SIGHT_MS` of the
+// engine's time each, so a click is never kept waiting long behind it.
+const DEBUG_SIGHT_MS = 250;
+let debugSight = null, debugSightOut = false, debugSightAfter = 0;
+function debugSightWanted(timeline) {
+  const breaks = (timeline || {}).breakpoints || {};
+  return !!timeline && DEBUG_PANE === null && !debugSplit && (breaks.eras === true || breaks.nuclear === true);
+}
+// Which future a line has: the end of the line, the print of its world there
+// and the Civ AI that plays on from it. Another of any is another future.
+function debugSightKey(timeline) {
+  const worlds = timeline.worlds || [];
+  return JSON.stringify([timeline.last ?? null, worlds.length ? worlds[worlds.length - 1] : null,
+    timeline.seat ?? null, debugStrategy() || null]);
+}
+async function debugForesee() {
+  const timeline = debugTimeline();
+  if (!debugSightWanted(timeline) || debugSightOut || debugBusy || debugRunning || turnAdvancePending) return;
+  if (performance.now() < debugSightAfter) return;
+  const key = debugSightKey(timeline);
+  if (debugSight && debugSight.key !== key) debugSight = null;
+  if (debugSight && debugSight.done) return;
+  const sight = debugSight, strategy = debugStrategy();
+  const turns = !sight ? 4 : Math.max(1, Math.min(40, Math.round(DEBUG_SIGHT_MS / Math.max(1, sight.pace))));
+  debugSightOut = true;
+  const since = performance.now();
+  let told = null;
+  try {
+    told = await fetchJSON("/debug", {method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({op: "foresee", turns, lean: true, ...(strategy ? {strategy} : {}),
+        ...(sight ? {known: sight.turn} : {anew: true})})}, 20000);
+  } catch (_) { told = null; }
+  debugSightOut = false;
+  const seen = told && !told.error ? told.foresight : null;
+  // An engine that cannot say is asked again in a while; nothing is said.
+  if (!seen || typeof seen.turn !== "number") { debugSightAfter = performance.now() + 15000; return; }
+  const now = debugTimeline();
+  if (!now || debugSightKey(now) !== key) { drawDebugBar(false); return; }
+  let next = debugSight;
+  if (!next || seen.anew === true || typeof seen.since !== "number") next = {key, seen: [], eras: [], pace: 50};
+  else next.seen = next.seen.filter(event => event.turn < seen.since);
+  next.seen.push(...(Array.isArray(seen.seen) ? seen.seen : []).filter(event => event && typeof event.turn === "number"));
+  Object.assign(next, {turn: seen.turn, from: seen.from, done: seen.done === true,
+    eras: Array.isArray(seen.eras) ? seen.eras : next.eras});
+  if (seen.played > 0) next.pace = (performance.now() - since) / seen.played;
+  debugSight = next;
+  drawDebugBar(false);
+}
+// Two names that would overlap are set one under the other: a line's name
+// takes the second row when it would run into the name before it on the
+// first. `along` is how far along the lane a turn stands, in pixels; a lane
+// not yet measured keeps them all on the first.
+function debugLineRows(lines, along) {
+  const ends = [-Infinity, -Infinity];
+  return lines.map(line => {
+    const from = along(line.turn) + 3, wide = 12 + 6.2 * [...line.label].length;
+    const row = from >= ends[0] ? 0 : from >= ends[1] ? 1 : 0;
+    ends[row] = Math.max(ends[row], from + wide + 4);
+    return [line, row];
+  });
+}
+// The lines on the one timeline: {turn, ahead, label, title}, one a turn.
+function debugBreakLines(timeline, first, last) {
+  const breaks = timeline.breakpoints || {};
+  const sight = debugSight && debugSight.key === debugSightKey(timeline) ? debugSight : null;
+  const begun = timeline.eras || [];
+  const coming = sight ? sight.eras.filter(era => era.turn > last) : [];
+  const eraOn = turn => [...begun, ...coming].filter(era => era.turn <= turn).sort((one, other) => one.turn - other.turn).pop() || null;
+  const lines = new Map();
+  const put = (turn, ahead, label, title) => {
+    const had = lines.get(turn);
+    if (!had) { lines.set(turn, {turn, ahead, label, title}); return; }
+    // A set turn is certain whatever else falls on it.
+    had.ahead = had.ahead && ahead;
+    if (!had.label.includes(label)) had.label += ` · ${label}`;
+    had.title += `; ${title}`;
+  };
+  for (const turn of breaks.turns || []) {
+    const era = eraOn(turn);
+    put(turn, false, `T${turn}${era ? ` · ${debugEraName(era)}` : ""}`, `Breakpoint on turn ${turn}`);
+  }
+  if (breaks.eras === true) {
+    for (const era of begun.filter(era => era.turn > first))
+      put(era.turn, false, `T${era.turn}`, `The ${debugEraName(era)} era began on turn ${era.turn}`);
+    for (const era of coming)
+      put(era.turn, true, `${debugEraName(era)} ~T${era.turn}`,
+        `The ${debugEraName(era)} era begins on turn ${era.turn} if this line is played on as it is (the game's future, worked out)`);
+  }
+  if (breaks.nuclear === true && sight) {
+    const blast = sight.seen.find(event => event.kind === "nuclear" && event.turn > last);
+    if (blast)
+      put(blast.turn, true, `☢ ~T${blast.turn}`,
+        `${blast.text || "A nuclear device goes off"} on turn ${blast.turn}${blast.era_name ? `, in the ${titleCase(blast.era_name)} era` : ""}, if this line is played on as it is`);
+  }
+  return [...lines.values()].sort((one, other) => one.turn - other.turn);
+}
 // Why the engine stopped a run, in a line, with somewhere to look if it has one.
 function debugSayStop(stopped) {
   if (!stopped) return;
@@ -993,6 +1132,7 @@ function debugSayStop(stopped) {
     const era = ((debugTimeline() || {}).eras || []).find(began => began.era === stopped.era) || {era: stopped.era};
     debugSay(`Stopped on turn ${stopped.turn}: the ${debugEraName(era)} era began`);
   }
+  else if (stopped.kind === "nuclear") debugSay(`Stopped on turn ${stopped.turn}: a nuclear device went off`);
   else if (stopped.kind === "event")
     debugSay(`Stopped on ${stopped.category}: ${stopped.text}`, stopped.pos || null);
   else if (stopped.kind === "condition") {
@@ -1316,6 +1456,7 @@ function debugBreakpointsFromForm() {
     important: pop.querySelector("[data-dbg-field=important]").checked,
     every_seat: pop.querySelector("[data-dbg-field=every_seat]").checked,
     eras: pop.querySelector("[data-dbg-field=eras]").checked,
+    nuclear: pop.querySelector("[data-dbg-field=nuclear]").checked,
     // Conditions are added and removed one at a time; the engine holds the set.
     conditions: [...(debugTimeline().breakpoints.conditions || [])],
   };
@@ -1503,6 +1644,7 @@ function debugBuildBar() {
       <h4>Breakpoints</h4>
       <p>Auto-play, and a turn played to on the timeline, stop when one of these happens.</p>
       <label title="Stop on the first turn of each new era. The eras already played are named on the timeline at the turn they began"><input type="checkbox" data-dbg-field="eras"> A new era begins</label>
+      <label title="Stop on the turn a nuclear device goes off, anyone's. The turn the game's future says it comes is drawn on the timeline as a dashed line"><input type="checkbox" data-dbg-field="nuclear"> A nuclear weapon is used</label>
       <div class="dbg-line"><span>Turns</span>
         <input type="text" data-dbg-field="turns" inputmode="numeric" placeholder="50, 75" aria-label="Stop when these turns open">
         <button data-dbg="break-plus" title="Add the turn ten from now">+10</button></div>
@@ -2117,9 +2259,13 @@ function debugDrawLane(key, model) {
     (model.eras || []).filter(era => era.turn >= lo && era.turn <= hi).map(era =>
       `<u${era.both ? ` class="dbg-both${era.still ? " dbg-still" : ""}"` : ""} style="left:${at(era.turn)}%${moved(era.turn)}"><b data-dbg-turn="${era.turn}" title="The ${escapeAttr(titleCase(String(era.name || `era ${era.era}`)))} era began on turn ${era.turn}. Click to go there">${
         escapeAttr(titleCase(String(era.name || `era ${era.era}`)))}</b></u>`).join("") +
-    (model.stops || []).filter(turn => turn >= lo && turn <= hi).map(turn =>
-      `<i class="stop" data-dbg-turn="${turn}" style="left:${at(turn)}%${moved(turn, tree ? tree.lean : 0)}" title="Breakpoint on turn ${turn}. Click to ${
-        turn > last ? "play to it" : "go there"}"></i>`).join("") +
+    (model.lines
+      ? debugLineRows(model.lines.filter(line => line.turn >= lo && line.turn <= hi), along).map(([line, row]) =>
+        `<i class="stop${line.ahead ? " dbg-ahead" : ""}${row ? " dbg-row2" : ""}" data-dbg-turn="${line.turn}" style="left:${at(line.turn)}%" title="${escapeAttr(line.title)}. Click to ${
+          line.turn > last ? "play to it" : "go there"}"><b>${escapeAttr(line.label)}</b></i>`).join("")
+      : (model.stops || []).filter(turn => turn >= lo && turn <= hi).map(turn =>
+        `<i class="stop" data-dbg-turn="${turn}" style="left:${at(turn)}%${moved(turn, tree ? tree.lean : 0)}" title="Breakpoint on turn ${turn}. Click to ${
+          turn > last ? "play to it" : "go there"}"></i>`).join("")) +
     (model.flags || []).filter(point => point.turn >= lo && point.turn <= hi).map(point =>
       `<i${point.auto ? ' class="auto"' : ""} data-dbg-goto="${point.id}" style="left:${at(point.turn)}%${moved(point.turn, tree ? tree.lean : 0)}"` +
       ` title="${escapeAttr(point.name)}: turn ${point.turn}. Click to go there"></i>`).join(""));
@@ -2404,6 +2550,7 @@ function drawDebugBar(measure = true) {
     debugDrawLane("", {name: "", ...debugAxis(first, Math.max(last, beyond ? beyond.to : 0)), first, last, turn: state.turn,
       fork: null, beyond, kept: thinned ? new Set(kept) : null, turns: thinned ? kept : null,
       flags: [...(timeline.saves || [])].sort((a, b) => a.turn - b.turn || a.id - b.id), stops: timeline.breakpoints.turns,
+      lines: debugBreakLines(timeline, first, last),
       by: timeline.played_by || [], played: timeline.played_by || [],
       travel: deck.idle && !debugRunning,
       eras: timeline.eras || [], goal: debugRunning ? debugGoal : null, idle: deck.idle});
@@ -2413,6 +2560,7 @@ function drawDebugBar(measure = true) {
   debugDrawSearch(bar);
   if (DEBUG_PANE !== null) { debugPaneDeck(deck); debugPaneMarks(timeline); }
   if (measure) debugDock(bar);
+  if (debugSightWanted(timeline)) setTimeout(debugForesee, 0);
 }
 // What the box asks, or null. Both are asked on the one timeline, and
 // nothing is done until one is answered. `branch`: Branch was pressed, and
@@ -2642,7 +2790,7 @@ function debugDrawDeck(bar, deck) {
   document.getElementById("dbg-layer-count").textContent = layersOn ? `${layersOn}` : "";
   const conditions = breaks.conditions || [];
   const breakCount = breaks.turns.length + breaks.categories.length + breaks.phrases.length +
-    conditions.length + (breaks.important ? 1 : 0) + (breaks.eras ? 1 : 0);
+    conditions.length + (breaks.important ? 1 : 0) + (breaks.eras ? 1 : 0) + (breaks.nuclear ? 1 : 0);
   document.getElementById("dbg-break-count").textContent = breakCount ? `${breakCount}` : "";
   // A pane is already one half of a split, and a split does not split again.
   const split = bar.querySelector('[data-dbg="split"]');
@@ -2705,6 +2853,7 @@ function debugDrawDeck(bar, deck) {
   field("important").checked = breaks.important;
   field("every_seat").checked = breaks.every_seat;
   field("eras").checked = breaks.eras === true;
+  field("nuclear").checked = breaks.nuclear === true;
 
   const note = document.getElementById("dbg-note");
   const html = escapeAttr(deck.note) +
@@ -3131,8 +3280,8 @@ function debugSplitSettle() {
     ask({op: "layers", layers: mine.layers.filter(layer => layer.on).map(layer => layer.id)});
   if (mine.reveal !== theirs.reveal) ask({op: "reveal", on: mine.reveal === true});
   if (differ(mine.breakpoints, theirs.breakpoints)) {
-    const {turns, categories, phrases, important, every_seat, eras, conditions} = mine.breakpoints;
-    ask({op: "breakpoints", turns, categories, phrases, important, every_seat, eras, conditions});
+    const {turns, categories, phrases, important, every_seat, eras, nuclear, conditions} = mine.breakpoints;
+    ask({op: "breakpoints", turns, categories, phrases, important, every_seat, eras, nuclear: nuclear === true, conditions});
   }
 }
 // A control on the deck, named so that the same control can be found on
@@ -5325,7 +5474,7 @@ const STRANGE_STYLE = `
     --strange-head: ${STRANGE_HEAD}px;
     /* Where the line of the open turn is and how wide the board is at it:
        the page's to say (\`strangeLayout\`). */
-    --strange-line: 50%; --strange-board: 160px;
+    --strange-line: 50%; --strange-board: 160px; --strange-turn-left: calc(50% + 110px);
   }
   html.strange #debugsplit .dbg-divider { display: none !important; }
   /* The worlds: a box each under the line of the open turn, in the colour of
@@ -5395,10 +5544,18 @@ const STRANGE_STYLE = `
      (operator 2026-11-27: "under the title, lets have a 2P Pangaea New Game
      option and 6P Continents New Game option"), in the gold New game had. */
   #strange-hud .strange-title .strange-news { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; margin-top: 8px; }
+  /* Each on two lines, the world over "New Game", as the AI Debugger's
+     pair are: on one line "6P Continents New Game" was cut short where the
+     fonts run wider (Linux's), in half of a 360px card. */
   #strange-hud .strange-title .strange-news button {
-    width: 100%; padding: 0 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    color: ${STRANGE_GOLD}; border-color: #8a7440; font-size: 11.5px; font-weight: 700; letter-spacing: 0;
+    width: 100%; height: auto; min-height: 36px; padding: 3px 4px; overflow: hidden;
+    color: ${STRANGE_GOLD}; border-color: #8a7440; line-height: 1.15; letter-spacing: 0;
   }
+  #strange-hud .strange-title .strange-news button > span {
+    display: block; margin: 0; color: inherit; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  #strange-hud .strange-title .strange-news .strange-news-map { font-size: 12.5px; font-weight: 700; }
+  #strange-hud .strange-title .strange-news .strange-news-new { margin-top: 1px; font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; opacity: .78; }
   #strange-hud .strange-title .strange-news button:hover:not(:disabled) { color: #10140f; background: ${STRANGE_GOLD}; border-color: transparent; }
   #strange-hud .strange-title span { display: block; margin-top: 4px; color: #bccac4; }
   /* What the page costs, in the top right corner (operator 2026-11-24: "we
@@ -5740,14 +5897,22 @@ const STRANGE_STYLE = `
      highway, or the steps, go back. */
   #strange-hud .strange-title .strange-say + .strange-deck { margin-top: 4px; }
   /* The open turn is the line across the window, and is written on it, with
-     its era: to one side of the board, so that the tree where it meets the
-     line is left in sight, and the worlds' card has the other side. */
+     its era, on the right of the tree, its left edge on the edge of the
+     green path the worlds' lines run down between the boxes, or past the
+     lanes on that side when they reach further (operator 2026-11-27: "please
+     move turn count to the right side of the box. and move in a bit (if
+     there aren't too many lines) to line up with the edge of the center
+     green path with all the historical lines"; it stood left of the board
+     before, off the window once a dozen worlds widened it). With so many
+     lanes right of the followed world that it would stand over them, it is
+     written left of the tree instead, the same way, where that is clear.
+     Where is the page's to say (\`--strange-turn-left\`, \`strangeTurnLeft\`). */
   #strange-hud .strange-now {
     position: absolute; bottom: calc(100% - var(--strange-line)); box-sizing: border-box; height: 38px; padding: 0 11px;
     display: flex; align-items: center; gap: 6px; white-space: nowrap; pointer-events: none;
     border: 1px solid ${STRANGE_GOLD}88; border-bottom: 0; border-radius: 11px 11px 0 0; background: #07110fe6;
   }
-  #strange-hud .strange-turn { right: calc(50% + var(--strange-board)); align-items: baseline; padding-top: 5px; color: #9fb3ab; font-weight: 700; letter-spacing: .12em; }
+  #strange-hud .strange-turn { left: var(--strange-turn-left); align-items: baseline; padding-top: 5px; color: #9fb3ab; font-weight: 700; letter-spacing: .12em; }
   #strange-hud .strange-turn b { color: ${STRANGE_GOLD}; font: 700 28px/1 Georgia, serif; letter-spacing: 0; font-variant-numeric: tabular-nums; }
   #strange-hud .strange-era { margin-left: 4px; color: #bccac4; letter-spacing: .08em; text-transform: uppercase; }
   #strange-hud .strange-era::before { content: "· "; }
@@ -5973,6 +6138,25 @@ function strangeGeometry() {
 }
 // How wide the board is on the line of the open turn, to either side.
 function strangeBoard(g) { return g.near * Math.max(2.7, g.reach * 2 + .7) + 40; }
+// Where the turn on the line stands, by its left edge: right of the middle,
+// on the edge of the green path the worlds' lines run down between the
+// boxes, half a lane out, unless the lanes on that side reach further, then
+// just past the outermost of them; never so far that it runs under the
+// column on the right, which comes down near the line, or off the window.
+// Where the lanes on the right leave it no room, it stands left of the tree
+// the same way, if the lanes on that side do; with neither side clear, on
+// the right as far out as there is room. `wide` is how wide the turn's chip
+// is, and `column` where that column stands, as last measured
+// (`strangeCards`).
+function strangeTurnLeft(g, wide = strange.turnWide || 0, column = strange.turnColumn || null) {
+  const open = strangeOpen(), mine = Math.max(0, open.indexOf(strange.follow));
+  const clear = lanes => Math.max(g.lane / 2, g.near * lanes + 16);
+  const right = g.cx + clear(open.length - 1 - mine), left = g.cx - clear(mine) - wide;
+  const most = (column && column.bottom > g.cy - 50 ? column.left - 10 : g.W - 12) - wide;
+  if (right <= most) return Math.round(right);
+  if (left >= 12) return Math.round(left);
+  return Math.round(Math.max(12, most));
+}
 function strangeY(g, turn, cam) {
   const ahead = turn - cam;
   return ahead >= 0 ? g.cy - g.up * (1 - Math.exp(-ahead / g.tauUp)) : g.cy + g.down * (1 - Math.exp(ahead / g.tauDown));
@@ -7754,8 +7938,8 @@ function strangeMount() {
       </nav>
       <b title="One world, many timelines. Forward in time is up: the line across the window is the open turn, what was played runs down from it and each world's future is played out ahead">Doctor Strange's CIVVIS</b>
       <div class="strange-news" role="group" aria-label="New game">
-        <button data-strange="new2" data-players="2" data-map="pangaea" title="A new game: a new world of 2 civilizations on a Pangaea, one timeline again. The worlds open now are let go of">2P Pangaea New Game</button>
-        <button data-strange="new6" data-players="6" data-map="continents" title="A new game: a new world of 6 civilizations on Continents, one timeline again. The worlds open now are let go of">6P Continents New Game</button>
+        <button data-strange="new2" data-players="2" data-map="pangaea" title="A new game: a new world of 2 civilizations on a Pangaea, one timeline again. The worlds open now are let go of"><span class="strange-news-map">2P Pangaea</span> <span class="strange-news-new">New Game</span></button>
+        <button data-strange="new6" data-players="6" data-map="continents" title="A new game: a new world of 6 civilizations on Continents, one timeline again. The worlds open now are let go of"><span class="strange-news-map">6P Continents</span> <span class="strange-news-new">New Game</span></button>
       </div>
       <div class="strange-deck strange-time" role="toolbar" aria-label="Timeline">
         <div class="strange-steps">
@@ -7919,6 +8103,9 @@ function strangeCards() {
   // as the worlds' numbers do on the right, unless the turn written on the
   // line would be under it there: then it stands over the turn.
   const turn = box(".strange-turn"), foot = box(".strange-send");
+  // What the turn on the line needs to stand clear of the column on the right.
+  strange.turnWide = Math.ceil(turn.width);
+  strange.turnColumn = {left: column.left, bottom: column.bottom};
   const lift = turn.right > foot.left - 10 && turn.left < foot.right + 10 ? Math.ceil(turn.height) + 8 : 0;
   if (hud.style.getPropertyValue("--strange-send-lift") !== `${lift}px`) hud.style.setProperty("--strange-send-lift", `${lift}px`);
   strange.floor = Math.ceil(Math.max(title.bottom + 46, title.bottom + 10 + foot.height + 12 + lift, versus.bottom + 170));
@@ -7951,8 +8138,10 @@ function strangeLayout() {
   };
   // The worlds' card stands on the line, and has moved if the line has.
   if (put(host, "--strange-line", `${g.cy}px`)) strangeCards();
-  // The turn on the line moves with the board, and All 14,000,605 with it.
+  // The turn on the line moves with the board and the lanes, and Send it
+  // with it (`strangeCards`).
   if (put(host, "--strange-board", `${Math.round(strangeBoard(g) + 6)}px`)) strangeCards();
+  if (put(host, "--strange-turn-left", `${strangeTurnLeft(g)}px`)) strangeCards();
   for (const letter of open) {
     const at = g.boxes[letter], pane = split.panes[letter], plate = hud.querySelector(`[data-strange-world="${letter}"]`);
     if (!at || !plate) continue;

@@ -297,6 +297,12 @@ if [ -f "$landing_page" ]; then
   # (2026-11-24) still carries it, and its own revision's copy of the script
   # fills it; since then it is written with that page's record, below.
   fill home_rankings.py "$out/$home_at/index.html"
+  # Over the benchmark stands ELO Rankings, the table Tournaments carries
+  # (operator 2026-11-27: "put the elo chart at the top of home/ too, above
+  # the benchmarks"): ELO Rankings' own record, written by the same script
+  # into a slot of the same name; a revision whose home page has no such
+  # slot is left as it is.
+  fill elo_page.py "$out/$home_at/index.html"
   pages+=("$home_at")
 else
   without+=(home)
@@ -462,18 +468,6 @@ cp "$repo_root/beta/_worker.js" "$out/_worker.js"
 # Its very existence switches Pages from single-page-app fallback (unknown
 # path -> the front page, 200) to honest 404s. See the comment inside it.
 cp "$repo_root/beta/404.html" "$out/404.html"
-
-# Only CIVVIS's own art is published. The lane's own revision says what that
-# is (`web/assets/art-manifest.json`, by sha256), and its
-# `tools/art_provenance.py` fails the build on any image here it does not list,
-# and on anything the `tools/civ6_*` cutters marked as cut from an installed
-# Civilization VI -- their output belongs in the git-ignored local/civ6-art/
-# for a local server, never on civvis.ai (docs/CIV6_ART.md). It runs before
-# the WebP pass, which would drop the marker. A revision from before the check
-# (a stable lane awaiting promotion) has neither file and builds as it did.
-if [ -f "$source_tree/tools/art_provenance.py" ]; then
-  python3 "$source_tree/tools/art_provenance.py" --bundle "$out"
-fi
 
 # The viewer, copied and then made lane-relative. Each substitution is
 # checked, because a silently unmatched one publishes a page whose strategic

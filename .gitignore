@@ -40,7 +40,7 @@ beta/__pycache__/
 # dirty main management worktree — so the mirror running blocked new work.
 /status.json
 
-# Civilization VI's own art, cut off an installed game by tools/civ6_* for the
-# local server of somebody who owns it (docs/CIV6_ART.md). It is never
-# committed or published; tools/art_provenance.py refuses it in either place.
+# Where the tools/civ6_* cutters wrote Civilization VI's art for a local
+# server while the site drew art of its own (#5940, switched back since:
+# they write into web/assets again). A machine may still hold such a folder.
 /local/
