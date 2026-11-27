@@ -148,6 +148,41 @@ mandatory. `tools/fixtures/game_modes_scaled.png` preserves the checkbox-only
 crop from the 2026-10-24 recovery: all eight boxes are empty, while the old fixed
 coordinates read all eight as selected.
 
+## A seat that sleeps plays nothing
+
+The chain runs under `caffeinate -dims` (`civvis-interactive-host.sh`) and every
+harness holds its own `caffeinate -dims -w`. Those assertions stop idle sleep;
+they do not stop a laptop sleeping when its lid closes without an external
+display, nor hibernating on a flat battery, and `-s` holds only on mains power.
+Outages, not the lane's own boundaries, are the largest cost in the record:
+from 2026-11-24 to 11-27 a harness was running for 23.0 of the 24 hours of the
+one undisturbed day, and three outages of 2.1, 10.8 and 2.7 hours took 15.6
+hours on the others. The first was a Mac asleep; in the other two no chain ran
+at all (each stopped game's record reached the ledger only when the next chain
+started).
+
+A run the Mac slept through says so in its own summary: `timing.seconds` is a
+monotonic clock, which macOS stops during sleep, while `started_utc` and
+`finished_utc` are wall time. `civvis-t7-20261125T154517Z` reads 251.7 s
+between 15:45:18Z and 17:53:34Z, and its events arrive in bursts about sixteen
+minutes apart, the maintenance wakes of a sleeping Mac. To see it on the seat
+and to keep it awake:
+
+```bash
+pmset -g log | grep -E ' (Sleep|Wake|DarkWake) ' | tail -40   # local time
+pmset -g assertions | grep -E 'PreventSystemSleep|PreventUserIdleSystemSleep'
+sudo pmset -c sleep 0 standby 0 powernap 0    # never sleep on mains power
+sudo pmset -a disablesleep 1                  # nor with the lid closed (0 undoes it)
+```
+
+A game the lane was told to stop is the other kind of outage: its row ends
+`killed` with the game still talking seconds before, and nothing starts until
+`civvis-games on` (or, on a `CIVVIS_CONTROL=terminal` seat, until the operator
+reopens the loop). A tournament switch does not need it: the supervisor reads
+`CIVVIS_DIFFICULTY` and the climb `CIVVIS_TAG_PREFIX` from the policy file at
+every boundary, so edit the file and, to end the game in progress early,
+`civvis-games retire`.
+
 ## Using the Mac while a game plays
 
 The harness drives Civilization VI through the GUI, so left to itself it raises
