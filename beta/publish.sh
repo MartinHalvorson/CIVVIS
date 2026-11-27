@@ -448,6 +448,18 @@ cp "$repo_root/beta/_worker.js" "$out/_worker.js"
 # path -> the front page, 200) to honest 404s. See the comment inside it.
 cp "$repo_root/beta/404.html" "$out/404.html"
 
+# Only CIVVIS's own art is published. The lane's own revision says what that
+# is (`web/assets/art-manifest.json`, by sha256), and its
+# `tools/art_provenance.py` fails the build on any image here it does not list,
+# and on anything the `tools/civ6_*` cutters marked as cut from an installed
+# Civilization VI -- their output belongs in the git-ignored local/civ6-art/
+# for a local server, never on civvis.ai (docs/CIV6_ART.md). It runs before
+# the WebP pass, which would drop the marker. A revision from before the check
+# (a stable lane awaiting promotion) has neither file and builds as it did.
+if [ -f "$source_tree/tools/art_provenance.py" ]; then
+  python3 "$source_tree/tools/art_provenance.py" --bundle "$out"
+fi
+
 # The viewer, copied and then made lane-relative. Each substitution is
 # checked, because a silently unmatched one publishes a page whose strategic
 # map sprites are simply missing.
