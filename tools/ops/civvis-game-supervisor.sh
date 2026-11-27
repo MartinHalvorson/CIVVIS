@@ -37,6 +37,9 @@ INTENTFILE=${CIVVIS_OPERATOR_INTENT_FILE:-${CIVVIS_INTENTFILE:-$HOME/.civvis-ope
 # letting it report a night of results for a program main has moved past; `0`
 # restores the old behaviour of refusing on any fetch failure.
 HEAD_FETCH_GRACE_S=${CIVVIS_HEAD_FETCH_GRACE_S:-21600}
+# How long the boundary may have spent since its own fetch of `origin/main`
+# before the launch fetches again. See "head recheck" below.
+HEAD_RECHECK_AFTER_S=${CIVVIS_HEAD_RECHECK_AFTER_S:-15}
 # ⚠⚠ THE TREE THIS SUPERVISOR PLAYS FROM IS DERIVED, NOT TYPED. It used to read
 # `REPO=/Users/martin/CIVVIS`, which is a path that exists on exactly one
 # machine in the fleet. Everywhere else the supervisor reached `cd "$REPO"`,
@@ -1026,6 +1029,8 @@ while true; do
         continue
       fi
     fi
+    # The moment this cycle's `origin/main` was read; see "head recheck".
+    HEAD_FETCHED_AT=$SECONDS
     if ! git checkout --quiet --detach origin/main >>"$SUP" 2>&1; then
       # ⚠⚠ NAME THE CAUSE. A dirty head tree is the ordinary way this fails and
       # the generic message hid it completely: on 2026-08-28 another agent was
@@ -1101,11 +1106,25 @@ while true; do
     fi
   fi
   # <<< head build
+  # >>> head recheck
   # A clean release build can take minutes.  Main may advance while it runs,
   # so the checkout that was fresh before the build is not necessarily fresh
   # when the UI begins a new game.  Re-fetch at this boundary: when it moved,
   # leave this built-but-stale binary unused and rebuild the new exact head.
-  if [[ "$PIN" == "head" ]]; then
+  #
+  # ★ ONLY WHEN TIME HAS PASSED SINCE THE FETCH ABOVE. Since the next-head
+  # prebuild, most boundaries build nothing: the stamp already vouches for the
+  # binaries, or the prebuild is adopted, and the fetch above was a second
+  # ago. The recheck then asked GitHub the same question twice per game -- a
+  # round trip of 3.9-6.0 s on a slow night (`git fetch origin main` timed from
+  # a fleet Mac, 2026-11-27), and up to 75 s each while github.com:443 times
+  # out (2026-08-28), when the first fetch has already failed into its grace
+  # window and the second can only fail the same way. A cargo build (46-87 s),
+  # or a wait on a prebuild still compiling that runs past
+  # HEAD_RECHECK_AFTER_S, is rechecked exactly as before, and so is a cycle
+  # that somehow holds no fetch moment.
+  if [[ "$PIN" == "head" ]] && { [[ -z "${HEAD_FETCHED_AT:-}" ]] \
+      || (( SECONDS - HEAD_FETCHED_AT >= HEAD_RECHECK_AFTER_S )); }; then
     if ! git -c gc.auto=0 fetch --quiet origin main >>"$SUP" 2>&1; then
       # The build we are about to launch was cut from a checkout this cycle
       # already accepted above, so a network that dropped DURING the build is
@@ -1126,6 +1145,7 @@ while true; do
       continue
     fi
   fi
+  # <<< head recheck
 
   DIFFICULTY=$EXPLICIT_DIFFICULTY
   if ! DIFFICULTY=$(read_difficulty_policy "$DIFFICULTY"); then
@@ -1177,6 +1197,16 @@ while true; do
   # FROM $REPO so binary and assets are the same revision by construction.  A
   # cwd check alone is insufficient: `git pull` changes the same checkout path
   # in place, while a long-lived mirror server still has the previous binary.
+  #
+  # ★ ONLY THE CAPTURE-FREE LANE NEEDS THIS REFRESH FROM HERE. The visual climb
+  # retires the follower AND its server before its first attempt and starts its
+  # own follower from this same tree, stamped with this same revision
+  # (`civ6_civvis_climb.ensure_mirror`, `mirror_follower_environment`), so a
+  # refresh here was paid twice wherever the built revision had changed -- on
+  # a busy merge day, most boundaries. Traced 2026-11-04 06:47Z: refresh
+  # 06:47:44, replacement listening 06:47:48, and the climb then retired that
+  # replacement. `civ6_capture_free_loop.py` starts no follower, so that lane
+  # keeps the refresh.
   FOLLOW_PID=$(display_follower_pid || true)
   FOLLOW_CWD=""
   if [[ -n "$FOLLOW_PID" ]]; then
@@ -1185,7 +1215,8 @@ while true; do
   fi
   FOLLOW_REVISION=""
   [[ -f "$FOLLOW_REVISION_FILE" ]] && FOLLOW_REVISION=$(<"$FOLLOW_REVISION_FILE")
-  if [[ "$FOLLOW_CWD" != "$REPO" || "$FOLLOW_REVISION" != "$HEAD_SHA" ]]; then
+  if (( CAPTURE_FREE )) \
+      && [[ "$FOLLOW_CWD" != "$REPO" || "$FOLLOW_REVISION" != "$HEAD_SHA" ]]; then
     say "display mirror is cwd='${FOLLOW_CWD:-absent}' revision='${FOLLOW_REVISION:-unknown}', want cwd='$REPO' revision='$HEAD_SHA'; refreshing exact mirror owners"
     if [[ -n "$FOLLOW_PID" ]] && kill -0 "$FOLLOW_PID" 2>/dev/null; then
       kill -TERM "$FOLLOW_PID" 2>/dev/null || true
