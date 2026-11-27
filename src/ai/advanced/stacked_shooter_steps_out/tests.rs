@@ -134,8 +134,14 @@ fn off_a_stacked_centre_stays_stacked_and_its_shooter_cannot_fire() {
     spawn(&mut g, "warrior", 0, home);
     let gun = east(&g, home, 2);
     spawn(&mut g, "catapult", 1, gun);
-    assert!(g.shooter_stacked_in_city(archer), "the host rule reads the stack");
-    assert!(!legal_shot(&g, archer, gun), "stacked, the Archer has no shot");
+    assert!(
+        g.shooter_stacked_in_city(archer),
+        "the host rule reads the stack"
+    );
+    assert!(
+        !legal_shot(&g, archer, gun),
+        "stacked, the Archer has no shot"
+    );
     let mut ai = AdvancedAi::new();
     let before = board_print(&g);
     assert_eq!(ai.step_stacked_soldiers_out(&mut g, 0), 0);
@@ -217,7 +223,11 @@ fn no_enemy_soldier_near_leaves_the_stack() {
     let four = east(&dark, home, 4);
     spawn(&mut dark, "swordsman", 1, four);
     dark.host_observed = Arc::new(dark.wdisk(home, 2).into_iter().collect());
-    assert_eq!(ai.step_stacked_soldiers_out(&mut dark, 0), 0, "out of sight");
+    assert_eq!(
+        ai.step_stacked_soldiers_out(&mut dark, 0),
+        0,
+        "out of sight"
+    );
 }
 
 #[test]

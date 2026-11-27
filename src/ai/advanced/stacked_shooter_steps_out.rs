@@ -222,11 +222,12 @@ impl AdvancedAi {
                     .and_then(|ground| ground.owner_city)
                     .and_then(|city| g.cities.get(&city))
                     .is_some_and(|city| city.owner == pid);
-                let score = if shot { STEP_OUT_SHOT } else { 0 }
-                    - STEP_OUT_BESIDE_ENEMY * beside
-                    - STEP_OUT_NEAR_ENEMY * near
-                    + g.tile_defense_bonus(tile).round() as i64
-                    + if own { STEP_OUT_OWN_GROUND } else { 0 };
+                let shot_score = if shot { STEP_OUT_SHOT } else { 0 };
+                let ground_score = if own { STEP_OUT_OWN_GROUND } else { 0 };
+                let score =
+                    shot_score - STEP_OUT_BESIDE_ENEMY * beside - STEP_OUT_NEAR_ENEMY * near
+                        + g.tile_defense_bonus(tile).round() as i64
+                        + ground_score;
                 (score, tile, shot)
             })
             .collect();
@@ -255,8 +256,7 @@ impl AdvancedAi {
                 .filter(|uid| Self::step_out_soldier(g, pid, *uid))
                 .collect();
             soldiers.sort_unstable();
-            if soldiers.len() < 2 || !soldiers.iter().any(|uid| Self::step_out_shooter(g, *uid))
-            {
+            if soldiers.len() < 2 || !soldiers.iter().any(|uid| Self::step_out_shooter(g, *uid)) {
                 continue;
             }
             // Read two tiles past the threat radius: a tile beside the centre
@@ -301,13 +301,22 @@ impl AdvancedAi {
                 })
                 .collect();
             let city = g.cities[&cid].name.clone();
-            let held_by = keeper
-                .or_else(|| guards.first().copied())
-                .map_or_else(|| "nobody".to_string(), |uid| plain(g.units[&uid].kind.as_str()));
+            let held_by = keeper.or_else(|| guards.first().copied()).map_or_else(
+                || "nobody".to_string(),
+                |uid| plain(g.units[&uid].kind.as_str()),
+            );
             for uid in movers {
                 let kind = g.units[&uid].kind;
                 for (score, tile, shot) in Self::step_out_tiles(g, pid, uid, centre, &enemies) {
-                    if g.apply(pid, &Action::Move { unit: uid, to: tile }).is_err() {
+                    if g.apply(
+                        pid,
+                        &Action::Move {
+                            unit: uid,
+                            to: tile,
+                        },
+                    )
+                    .is_err()
+                    {
                         continue;
                     }
                     stepped += 1;
