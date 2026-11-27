@@ -134,8 +134,8 @@ happening: a capture most of all, and any piece that moves. A drag, two
 fingers or an arrow key turn the head instead (take hold of the world and
 pull it), and the head stays where it was put for two seconds. The
 knight's head is on the rider's left: turned toward it they rise in the
-saddle and lean in to see over it (`Seat.rise`), the more the further round
-they look, and sit down again when they look ahead. From one seat
+saddle and lean in to see over it (`Seat.rise`), fully by half a right angle
+round, and sit down again when they look ahead. From one seat
 to another the view travels; it does not cut. A rider does not see their own
 cloak.
 
@@ -150,6 +150,15 @@ rider who has just moved stays on their piece, seen from the other side, a
 cloaked figure with their reins. A take back is the last move, whoever made
 it, and the board goes back to them. There is no Elo to set, so it is not
 shown.
+
+**A knight gathers and lands** (`World.gather`, `World.land`). Before it
+leaps, a knight sinks a tenth of a square and tips back onto its haunches,
+and the leap springs out of that, rearing as before; as it lands it gives,
+nose down to level with a nod in it, and comes back up. A rider feels the
+whole of it: measured at their eye over a leap from g1 to f3, at rest 1.24,
+the knight down 0.10 as it gathers, the eye up to 2.44 at the top, the knight
+down 0.09 as it lands, and the view surges wider for an instant as it
+springs (`hooks.surge`).
 
 **The fallen stay fallen** (`World.heaps`). A piece taken does not only
 break: what it was lies as a heap of its broken stone on the board's rim for
@@ -185,7 +194,7 @@ up onto what it becomes.
 **The knight ridden** (`World.ride`) wears a cloth over its neck in its
 side's colour, with its rider sitting behind its ears, so that from the
 board it is plain which knight is ridden. It is alive to the one on its
-back (`World.attend`): a mane of stone, an eye lit from inside with its
+back (`World.attend`): a carved crest of mane along its neck, an eye lit from inside with its
 side's light that closes now and then, a bit and reins that run back to the
 rider's hands, and ears that turn toward the piece that is moving and prick
 up while it moves. It breathes out as it lands, and the stone groans under
@@ -330,6 +339,10 @@ loop). The structure that makes that converge rather than wander:
 4. **Measured, not guessed.** Frame time on this Mac's own GPU, the
    engine's Elo from its own scale, and what a test can see (where the
    camera is, which pieces glow) rather than "looks right".
+5. **Played, every few slices.** A tick that builds nothing new: a game
+   ridden against the engine, a picture after every exchange, and what
+   breaks the feeling fixed. Slices are each looked at alone; a game puts
+   them together, and finds what none of them showed (#5788).
 
 Done: the rider's seat (#5747); the rider low and beside the head, and
 sound where it happens (#5755); the knight ridden alive (#5757); peril felt
@@ -339,7 +352,8 @@ given (#5771); the opponent deliberating (#5772); riding into the blow
 (#5774); each piece its own stone (#5775); the hall's own sound (#5776); the
 hall's light following the game (#5777); riding any piece (#5778); the
 rider's own hands (#5781); two players at one laptop (#5782); the headset
-seat (#5784); the fallen and the commanding hand (#5785).
+seat (#5784); the fallen and the commanding hand (#5785); a knight that
+gathers and lands (#5786); a played game, and what it found (#5788).
 
 What is next, most felt first:
 
@@ -370,8 +384,8 @@ What is next, most felt first:
   glance up, or a look back at it from beside the board while riding.
 - **The knights as horses.** The pieces of the film-free set are busts; a
   rider's knight wants a body under them: a stone horse's neck and shoulders
-  before the saddle, legs that gather and land, kept a chess knight from the
-  board.
+  before the saddle, kept a chess knight from the board. (Its gathering and
+  landing are done, #5786: the felt half first.)
 - **The board between moves.** What a rider hears and sees while nobody
   moves: the pieces' small shifts, the fires, a far piece turning its head,
   so that the wait for the opponent is a wait among the living.

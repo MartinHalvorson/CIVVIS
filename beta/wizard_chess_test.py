@@ -460,6 +460,9 @@ class Played(unittest.TestCase):
                    "Math.abs(wizardChess.seat.camera.position.x - 2.0) < 0.1 && wizardChess.seat.camera.position.z < 2.2",
                    "the rider is carried to f3", seconds=120)
         self.assertEqual(ev("wizardChess.game.played[0].san"), "Nf3")
+        # The knight gathered itself before it leapt and gave as it landed.
+        self.assertEqual(ev("[wizardChess.world.ridden.userData.gathers, wizardChess.world.ridden.userData.landings]"), [1, 1])
+        self.assertAlmostEqual(ev("wizardChess.world.ridden.position.y"), 0, delta=1e-6)
         # The knight ridden came down on its hooves, and breathed out.
         heard = ev("wizardChess.sound.heard")
         self.assertIn(["set", "n"], heard)

@@ -425,7 +425,7 @@ class World {
       cloak: new THREE.ConeGeometry(0.13, 0.5, 14), hood: new THREE.SphereGeometry(0.075, 14, 10),
       // And what makes it a living thing to the one on its back: a mane, two
       // ears that turn, an eye, a bit and the reins to the rider's hands.
-      tuft: new THREE.ConeGeometry(0.03, 0.075, 5), ear: new THREE.ConeGeometry(0.04, 0.16, 4),
+      ear: new THREE.ConeGeometry(0.04, 0.16, 4),
       eye: new THREE.SphereGeometry(0.032, 12, 8), bit: new THREE.TorusGeometry(0.035, 0.009, 6, 16),
       // The rider's own hands, gauntleted, and their forearms: what a rider
       // sees of themself.
@@ -573,10 +573,14 @@ class World {
       // Over the back of the neck, along the line of the mane.
       part(made.cloth, this.cloth[colour], -0.25, 0.86, 0, -0.38);
       part(made.trim, this.cloth.gold, -0.18, 0.69, 0, -0.38);
-      // The mane, from the cloth up to between the ears, pointing back.
-      [[-0.235, 0.98], [-0.2, 1.07], [-0.165, 1.15], [-0.135, 1.23], [-0.115, 1.3]].forEach(([x, y], at) => {
-        part(made.tuft, this.material[colour], x + 0.005, y, at % 2 ? 0.015 : -0.015, 1.35).scale.set(1, 1, 0.35);
-      });
+      // The mane: one carved crest of stone along the back of the neck, from
+      // the cloth up to between the ears (tufts of it read as spikes).
+      const crest = new THREE.CatmullRomCurve3([[-0.245, 0.95], [-0.215, 1.05], [-0.175, 1.14], [-0.14, 1.23], [-0.11, 1.31]]
+        .map(([x, y]) => new THREE.Vector3(x - 0.012, y, 0)));
+      const mane = new THREE.Mesh(new THREE.TubeGeometry(crest, 24, 0.03, 6), this.material[colour]);
+      mane.scale.z = 0.55;
+      mane.castShadow = true;
+      saddle.add(mane);
       // Ears, each on a pivot so that it can turn toward what it hears.
       const ears = [-1, 1].map(side => {
         const pivot = new THREE.Group();
@@ -864,12 +868,34 @@ class World {
     this.dust(to, 0.5);
   }
 
+  // A knight gathers itself before it leaps: it sinks, tipping back onto its
+  // haunches, and the leap springs out of that.
+  async gather(piece, heading) {
+    if (piece.userData.kind !== "n") return 0;
+    piece.userData.gathers = (piece.userData.gathers || 0) + 1;
+    // Tipped back as far as the leap's own rearing begins (`rear`), so the
+    // one runs into the other.
+    await tween(0.17, t => { piece.position.y = -GATHER * Math.sin(t * Math.PI / 2); this.lean(piece, heading, -0.24 * t); }, ease.out);
+    return GATHER;
+  }
+  // And it gives as it lands, and comes back up.
+  async land(piece, heading) {
+    if (piece.userData.kind !== "n") return;
+    piece.userData.landings = (piece.userData.landings || 0) + 1;
+    const at = piece.position.y;
+    // From nose down, as the leap ends (`rear`), to level, with a nod in it.
+    await tween(0.24, t => { piece.position.y = at - GATHER * 0.9 * Math.sin(t * Math.PI); this.lean(piece, heading, 0.24 * (1 - t) + 0.06 * Math.sin(t * Math.PI)); }, ease.line);
+    piece.position.y = at;
+  }
+
   async leap(piece, to, high, hooks) {
     const from = piece.position.clone(), far = from.distanceTo(to), heading = to.clone().sub(from).normalize();
+    const low = await this.gather(piece, heading);
     hooks.sound("lift", 0.6, from, piece.userData.kind);
+    if (low) hooks.surge(piece);
     await tween(0.42 + far * 0.07, t => {
       piece.position.lerpVectors(from, to, t);
-      piece.position.y = Math.sin(t * Math.PI) * high;
+      piece.position.y = -low * (1 - t) + Math.sin(t * Math.PI) * high;
       this.rear(piece, heading, t);
     });
     piece.position.copy(to);
@@ -884,6 +910,7 @@ class World {
       this.dust(nose, 0.3, true);
       hooks.sound("snort", 1, nose, "n");
     }
+    await this.land(piece, heading);
     await this.settle(piece);
   }
 
@@ -895,10 +922,12 @@ class World {
     const way = prey.clone().sub(from), far = way.length(), heading = way.clone().normalize();
     const near = prey.clone().addScaledVector(heading, -0.82);
     if (kind === "n") {
+      const low = await this.gather(mover, heading);
       hooks.sound("lift", 0.7, from, kind);
+      hooks.surge(mover);
       await tween(0.5 + far * 0.06, t => {
         mover.position.lerpVectors(from, prey, t);
-        mover.position.y = Math.sin(t * Math.PI) * 2.1;
+        mover.position.y = -low * (1 - t) + Math.sin(t * Math.PI) * 2.1;
         this.rear(mover, heading, t);
       }, ease.in);
       this.shatter(victim, heading, hooks, 1.1);
@@ -1559,6 +1588,8 @@ const AHEAD = new THREE.Vector3(1.6, 1.02, 0.5);
 // Where a rider stands on any other piece (`World.ride`), in its own frame;
 // their eye is a little above it.
 const RIDER_TOPS = {p: 0.91, r: 0.92, b: 1.34, q: 1.47, k: 1.72};
+// How far a knight sinks to gather itself before a leap, and gives as it lands.
+const GATHER = 0.1;
 const FLOOR = -0.62, STANDING = FLOOR + 0.8;
 const FIELD = {table: 36, ride: 64, thrown: 70, aside: 58};
 class Seat {
@@ -1867,7 +1898,9 @@ class Seat {
     // in the saddle and lean in, so as to see over it, the more the further
     // round they look.
     const across = this.head ? turnBy(forward, this.head.yaw) : 0;
-    this.rise += (Math.max(0, Math.min(1, (across - 0.3) / 0.8)) - this.rise) * Math.min(1, dt * 5);
+    // Fully risen by half a right angle round: the head is in the way of
+    // anything ahead and to the left.
+    this.rise += (Math.max(0, Math.min(1, (across - 0.15) / 0.55)) - this.rise) * Math.min(1, dt * 5);
     const seat = EYE.clone();
     seat.y += 0.42 * this.rise;
     seat.z -= 0.2 * this.rise;
@@ -1993,6 +2026,8 @@ const opponent = new Opponent(new URL("./vendor/stockfish-18-lite-single.js", im
 const voice = new Voice(heard, listening);
 const hooks = {sound: (name, strength, at, kind) => sound.play(name, strength, at, kind), look: point => seat.look(point), shake: much => seat.shake(much),
   moving: piece => { seat.watching = piece; },
+  // The piece a rider is on springs: the view surges wider for a moment.
+  surge: piece => { if (piece === world.ridden && seat.mode === "ride") seat.kick(0.06); },
   // A blow landing at the rider's side: the view jars and shakes, and the
   // world's time slows for a moment (`pace`), so that it is seen.
   impact: (at, force) => {
