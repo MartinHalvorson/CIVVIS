@@ -719,6 +719,10 @@ impl AdvancedAi {
         /// Opt-in gene `spreaders-spread-before-they-chart`; see
         /// `advanced/spreaders_spread_before_they_chart.rs`.
         spreaders_spread_before_they_chart => enable_spreaders_spread_before_they_chart, disable_spreaders_spread_before_they_chart;
+        /// Opt-in gene `stacked-shooter-steps-out`: a crowded City Center keeps
+        /// one shooter and steps our other soldiers beside it, so the shooters
+        /// can fire; see `advanced/stacked_shooter_steps_out.rs`.
+        stacked_shooter_steps_out => enable_stacked_shooter_steps_out, disable_stacked_shooter_steps_out;
         /// Opt-in gene `science-seat-monuments`: a Science seat's cities
         /// claim their Monument from the third city; see
         /// `advanced/culture_monuments.rs`.
