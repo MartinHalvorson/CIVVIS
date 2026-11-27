@@ -555,6 +555,69 @@ frame rate a loaded machine was managing, not drift.
   `GameInfo.UnitOperations` / `GameInfo.UnitCommands` and their resolution is
   reported at startup.
 
+### A person's hotseat game plays like single player
+
+`tools/civ6_hotseat.py` seats a person at seat 0 and CIVVIS everywhere else.
+Two things, both only in an install for a game a person plays
+(`HotseatCover`, `HotseatAutoStart`; `--no-cover` and `--keep-handover` turn
+them off, and no other install carries them):
+
+- **A cover over every turn that is not theirs** (`CivvisHotseatCover.lua`, an
+  `AddUserInterfaces` context of its own). It is a popup, and popups are drawn
+  in priority order (Loaders/PopupPriorityLoader_Base.lua:11-15). It takes the
+  `PausePanel` slot, Utmost+2, which a hotseat game never fills
+  (Panels/PausePanel.lua:77/:86): over the shipped hotseat backdrop (+1) and
+  every screen a CIVVIS seat raises (High or lower, or not a popup at all,
+  like the leader screens), under the hand-over (+3), the end screen (+4) and
+  the game menu (+5), which Esc on the cover opens through the hand-over's own
+  route (`LuaEvents.PlayerChange_OpenInGameOptionsMenu`). It goes up on the
+  person's `LocalPlayerTurnEnd`, so it is up long before a CIVVIS seat's
+  hand-over is pressed. Over it the hand-over shows only its menu button: the
+  closer hides its dialog on the first frame and its "please wait" line, as
+  PlayerChange.lua hides them itself (:61/:194, :172), and presses it on the
+  shipped path.
+- **The person's hand-over pressed for them** (`CivvisHotseatScreen.autoStart`
+  in `CivvisControlAutoClose.lua`). The cover lifts on that press, which the
+  shipped screen announces (`LuaEvents.PlayerChange_Close`, PlayerChange.lua:59),
+  after the camera and zoom go back where the person ended their last turn
+  and another seat's selection is dropped.
+
+⚠ **A popup queued under a higher one is held hidden, and a hidden context
+does not tick.** That is why the shipped hotseat background asks for
+`AlwaysVisibleInQueue` (HotSeatBackground.lua:27), and it is why a cover
+alone would stop the game: an announcement holding the engine's event lock
+(`ExclusivePopupManager:Lock`, PopupManager.lua:52-61) under it would never be
+closed. So in a cover game every screen the closer serves (but the hand-over
+and the end screens) queues itself `AlwaysVisibleInQueue` on a CIVVIS seat's
+turn (`CivvisCoverQueue`, a `UIManager` proxy in that shim; `--no-cover-queue`
+turns it off for diagnosis). The cover's own clock is the backstop: a seat's
+hand-over pause still standing 1.5 s in is pressed by event
+(`LuaEvents.CivvisHotseatStartTurn`), which reaches a hidden context. A seat
+quiet for 90 s, 180 s with no seat active, or the person's own turn waiting
+10 s makes the cover stand aside for that turn (`hotseat_cover`, reason
+`yield_*`), and the harness's screen rescue, which does not read the screen
+while the cover is up, sees the game again.
+
+The test arrangement `--auto-human gated` puts a stub in the person's seat
+(`HotseatHumanSeats` and `HotseatStubSeats` both list seat 0): the cover and
+the pressed hand-over treat it as the person, but the closers act on its turn
+(`CivvisHotseatScreen.personTurn`) and the HUD's seat watch ends its quiet
+turns (`CivvisSeatWatch.watched`), because nobody is there. Run `cover-live-6`
+parked on turn 1 behind the stub's own "Roman Empire Makes History" card: the
+stub ignores UI pulses (`controller_clock` `standalone`) and hears only game-core
+events, which stopped. A real person's seat is never closed for or ended.
+
+⚠⚠ **Measured 2026-11-27: the first cut killed the game.** It put the cover
+ABOVE the hand-over (the EndGameMenu slot) and kept the hand-over drawn under
+it with an injected `AlwaysVisibleInQueue`. In both live duels tried that way
+(`cover-live-1`, `cover-live-2`) Civ VI exited within a second of a Start Turn
+press, once on the CIVVIS seat's and once on the person's, with no crash
+report, no minidump and the net log ending on `GamePaused: gamePaused=1`. A
+control on the same Mac minutes later (`cover-control-3`, the old stub path,
+no cover) played three full turns. The placement above is the change that
+followed: the hand-over is never under another popup and never proxied. It
+still needs its own live run (see the PR).
+
 ## The lobby a run sets up
 
 **The map size IS the player count.** There is no separate player-count control on

@@ -17,10 +17,16 @@ seats are named "CIVVIS jack 1..N" in the game.
     tools/civ6_hotseat.py --attach             # pick a running hotseat game back up
     tools/civ6_hotseat.py --status
 
-How a turn goes. Civ VI's hotseat plays the seats in order. On YOUR turn the
-terminal prints a banner (and macOS shows a notification): nothing of ours
-clicks, types, moves the camera or closes a screen until you end your turn --
-press "Start Turn" on Civ VI's hand-over screen yourself. On a jack seat's turn
+How a turn goes. Civ VI's hotseat plays the seats in order. It plays like
+single player: from the moment you end your turn a cover hides the screen
+("CIVVIS is taking its turn") until your next turn begins, and then your
+hand-over "Start Turn" is pressed for you, the cover lifts, and you are on your
+own map where you left it. Esc on the cover opens the game menu (save, load,
+quit). On YOUR turn the terminal prints a banner (and macOS shows a
+notification): nothing of ours clicks, types, moves the camera or closes a
+screen until you end your turn. `--no-cover` shows the jack seats' turns as
+they play; `--keep-handover` leaves Civ VI's hand-over screen for you to press.
+On a jack seat's turn
 the mod exports that seat's board, its worker (`tools/civ6_brain.py` ->
 `civvis_orders`, the same chain as the live verification seat) decides, the
 orders are issued in-game, and the turn ends. Every line of what happened is in
@@ -74,6 +80,9 @@ says which are on).
 
 Testing: ``--auto-human --turns N`` replaces you with a stub (the mod's own
 fallback ladder playing seat 0) and stops after turn N with a per-seat report.
+``--auto-human gated`` keeps seat 0 "the person" for the cover and the pressed
+hand-over, so a person's game runs with nobody at the Mac; only the stub's own
+announcements are closed for it, and its quiet turns ended, as nobody is there.
 """
 
 from __future__ import annotations
@@ -308,6 +317,9 @@ def hotseat_config(args: argparse.Namespace, run_dir: Path, orders_db: Path) -> 
     config = play.build_config(settings)
     civvis_seats = getattr(args, "civvis_seats", None)
     seats = jack_seats(args.players, civvis_seats)
+    # A person plays seat 0 (or `--auto-human gated` stands in for them): their
+    # game plays like single player unless they ask otherwise.
+    person = not civvis_seats and args.auto_human != "stub"
     config.update({
         "Hotseat": True,
         "HotseatSeats": seats,
@@ -329,6 +341,14 @@ def hotseat_config(args: argparse.Namespace, run_dir: Path, orders_db: Path) -> 
         "HotseatPlayers": args.players,
         "HotseatSaveEvery": args.save_every,
         "HotseatSaveName": args.tag,
+        # The cover over every turn that is not the person's
+        # (CivvisHotseatCover.lua), and their hand-over pressed for them
+        # (CivvisControlAutoClose.lua, `CivvisHotseatScreen.autoStart`).
+        "HotseatCover": person and not getattr(args, "no_cover", False),
+        "HotseatAutoStart": person and not getattr(args, "keep_handover", False),
+        # Diagnostic: CIVVIS-turn screens keep their shipped queueing under the
+        # cover (CivvisControlAutoClose.lua, `CivvisCoverQueue`).
+        "HotseatCoverQueue": person and not getattr(args, "no_cover_queue", False),
         # The operator's seat's difficulty, and every jack seat's: hotseat
         # difficulty is per player (the staging room's Difficulty column).
         "PlayerDifficulty": args.difficulty,
@@ -1186,6 +1206,11 @@ class Monitor:
         self.rescued_at = 0.0
         self.quiet = False
         self.seat_stalls = 0
+        # The cover over the jack seats' turns (CivvisHotseatCover.lua), as its
+        # own `hotseat_cover` events last said, and since when.
+        self.cover_up = False
+        self.cover_since = time.monotonic()
+        self.cover_yields = 0
 
     def catch_up(self) -> None:
         """Read the record so far without replaying it (`--attach`): learn whose
@@ -1312,13 +1337,27 @@ class Monitor:
             self.say(f"⚠ turn {event.get('turn')}: seat {event.get('player')}'s hand-over pause stood "
                      f"{event.get('waited')} s with no Start Turn on screen; released "
                      f"(still paused {event.get('still_paused')})")
+        elif kind == "hotseat_cover":
+            up = bool(event.get("up"))
+            if up != self.cover_up:
+                self.cover_up, self.cover_since = up, time.monotonic()
+            if str(event.get("reason", "")).startswith("yield"):
+                self.cover_yields += 1
+                self.say(f"⚠ turn {event.get('turn')}: the cover stood aside for seat "
+                         f"{event.get('player')} ({event.get('reason')}: quiet "
+                         f"{event.get('quiet')} s, between turns {event.get('between')} s); "
+                         "the game is on screen until that turn ends")
 
     def your_turn(self, turn: int) -> None:
         if turn == self.notified_turn:
             return
         self.notified_turn = turn
         bar = "=" * 64
-        print(f"\a\n{bar}\n  YOUR TURN — turn {turn}.  Press \"Start Turn\" in Civ VI.\n"
+        if getattr(self.args, "keep_handover", False):
+            line = "Press \"Start Turn\" in Civ VI."
+        else:
+            line = "Your map is on the screen."
+        print(f"\a\n{bar}\n  YOUR TURN — turn {turn}.  {line}\n"
               f"  Nothing of CIVVIS's touches the screen until you end it.\n{bar}\n",
               flush=True)
         self.log(f"turn {turn}: your turn")
@@ -1385,6 +1424,15 @@ class Monitor:
         return (self.active is not None and not self.active_human
                 and time.monotonic() - self.last_event > seconds)
 
+    #: The longest a cover is believed up with a seat stalled under it. The
+    #: mod's cover stands aside after 90 s of a quiet seat (and says so, flush
+    #: line and all); past this the screen rescue looks anyway.
+    COVER_TRUST_S = 600.0
+
+    def covered(self) -> bool:
+        """The cover is up: a screenshot shows it, not the game."""
+        return self.cover_up and time.monotonic() - self.cover_since < self.COVER_TRUST_S
+
     def close(self) -> None:
         self.timings.close()
 
@@ -1397,6 +1445,13 @@ def rescue_popup(monitor: Monitor, log: Log) -> None:
     monitor.rescued_at = time.monotonic()
     monitor.poll()
     if monitor.active is None or monitor.active_human:
+        return
+    if monitor.covered():
+        # Under the cover the screen shows the cover. The HUD's seat watch ends
+        # a quiet turn by itself, and the cover stands aside for a seat that
+        # stays quiet; the rescue reads the screen once it does.
+        log(f"{monitor.name(monitor.active)} has been quiet for a while under the cover; "
+            "the mod's seat watch has it, and the cover stands aside if it stays quiet")
         return
     try:
         front = popup_clear.frontmost()
@@ -1669,6 +1724,15 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--stall-seconds", type=float, default=180.0,
                     help="a jack seat silent this long gets the popup rescue")
     ap.add_argument("--no-notify", action="store_true", help="no macOS notifications")
+    ap.add_argument("--no-cover", action="store_true",
+                    help="show the jack seats' turns as they play (default: a cover hides "
+                         "the screen from the end of your turn to the start of your next)")
+    ap.add_argument("--keep-handover", action="store_true",
+                    help="leave Civ VI's hand-over screen for you to press Start Turn on "
+                         "(default: it is pressed for you and your turn simply begins)")
+    ap.add_argument("--no-cover-queue", action="store_true",
+                    help="DIAGNOSTIC: under the cover, the jack seats' announcements keep "
+                         "their shipped queueing (they wait until the cover stands aside)")
     ap.add_argument("--resume", nargs="?", const="latest", default=None, metavar="SAVE",
                     help="start Civ VI and load a hotseat save instead of a new game: "
                          "a .Civ6Save path, or the newest hotseat save/autosave")
@@ -1714,7 +1778,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--auto-human", nargs="?", const="stub", choices=["stub", "gated"],
                     default=None,
                     help="TEST: a stub plays seat 0 instead of you; `gated` keeps seat 0 "
-                         "the operator's in every gate (its Start Turn is not pressed)")
+                         "the operator's for the cover and the hand-over (covered on the jack "
+                         "seats' turns, its Start Turn pressed only as yours would be), while "
+                         "the stub's own announcements are closed and its quiet turns ended")
     ap.add_argument("--turns", type=int, default=None,
                     help="stop after this game turn (with --auto-human: then report)")
     args = ap.parse_args(argv)
@@ -1818,6 +1884,9 @@ def run(args: argparse.Namespace) -> int:
         seat_agent_map = attach_config.get("HotseatSeatAgents") or {}
         args.agents = [seat_agent_map[k] for k in sorted(seat_agent_map, key=int)] or None
         args.victories_off = list(attach_config.get("VictoriesOff") or [])
+        # The installed game's own: an install from before these keys had neither.
+        args.no_cover = not attach_config.get("HotseatCover")
+        args.keep_handover = not attach_config.get("HotseatAutoStart")
     elif env.game_pids():
         print("Civ VI is already running. Quit it first (this starts a fresh game), "
               "or pass --attach to drive a hotseat game you loaded.", file=sys.stderr)

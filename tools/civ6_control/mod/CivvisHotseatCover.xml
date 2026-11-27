@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The person's screen while CIVVIS plays a hotseat seat (CivvisHotseatCover.lua).
+     Installed only for a game a person plays (install.py, `HotseatCover`).
+
+     Opaque by construction: the Box is a solid colour and comes first, so a
+     backdrop texture that fails to load leaves a dark screen, never the map.
+     The Box consumes the mouse (the shipped DeclareWarPopup.xml:4 / HotSeatBackground.xml:5
+     pattern) and the script consumes every key, so nothing reaches the map, the
+     HUD or a screen under it. The menu button is PlayerChange.xml:3's own. -->
+<Context ColorSet="BodyTextCool" Style="FontNormal16" FontStyle="Shadow">
+	<Box ID="Shade" Size="parent,parent" Color="10,14,22,255" ConsumeMouse="1"/>
+	<Image ID="Backdrop" Size="parent,parent" StretchMode="UniformToFill" Color="255,255,255,60"/>
+	<Stack ID="Lines" Anchor="C,C" StackGrowth="Bottom" StackPadding="14">
+		<Label ID="Headline" Anchor="C,T" Style="FontFlair26" FontStyle="Shadow" String="CIVVIS is taking its turn"/>
+		<Label ID="Detail" Anchor="C,T" Style="FontNormal18" FontStyle="Shadow" String=""/>
+	</Stack>
+	<Label ID="Hint" Anchor="C,B" Offset="0,48" Style="FontNormal14" FontStyle="Shadow" String="Esc opens the game menu"/>
+	<Button ID="MenuButton" Size="29,29" Texture="TopBar_MenuButton" ToolTip="LOC_TOP_PANEL_MENU_TOOLTIP" Anchor="R,T"/>
+</Context>

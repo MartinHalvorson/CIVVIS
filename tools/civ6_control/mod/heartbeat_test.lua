@@ -545,6 +545,29 @@ do
     h.paused = true
     for _ = 1, 600 do h.second(false) end
     assert(#h.requests == 0 and h.pause_set == nil, "the operator's seat is never ended or unpaused")
+    -- ...and a stub elsewhere at the table changes nothing about theirs.
+    h = seatHost({ CivvisDecides = true, Hotseat = true, HotseatSeats = { 1, 2 },
+                   HotseatHumanSeats = { 0 }, HotseatStubSeats = { 3 }, RunTag = "table" })
+    h.second(true)
+    for _ = 1, 600 do h.second(false) end
+    assert(#h.requests == 0, "a person's seat with no stub in it is never ended")
+    -- The `--auto-human` test stubs are watched like a CIVVIS seat: `gated`
+    -- lists seat 0 as the person's AND the stub's (run cover-live-6 went quiet
+    -- on the stub's turn 1 and nothing ended it), `stub` lists it as a stub only.
+    for _, stub in ipairs({
+        { CivvisDecides = true, Hotseat = true, HotseatSeats = { 1 }, HotseatHumanSeats = { 0 },
+          HotseatStubSeats = { 0 }, RunTag = "table" },
+        { CivvisDecides = true, Hotseat = true, HotseatSeats = { 1 }, HotseatHumanSeats = {},
+          HotseatStubSeats = { 0 }, RunTag = "table" },
+    }) do
+        h = seatHost(stub)
+        h.second(true)
+        for _ = 1, 44 do h.second(false) end
+        assert(#h.requests == 0, "44 quiet seconds of a stub are nothing")
+        h.second(false)
+        assert(#h.requests == 1 and h.kinds("seat_quiet")[1]:find('"player":0', 1, true),
+            "a stub's quiet turn is ended like a CIVVIS seat's")
+    end
     -- A HUD hidden for a minute (a leader screen stops both clocks) is not a quiet minute.
     h = seatHost(HOTSEAT)
     h.second(true)
