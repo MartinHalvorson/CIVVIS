@@ -1,4 +1,5 @@
-## A Ranking of all Gene Heuristics by On/Off Win Rate Difference in Tournaments
+## A Ranking of all Gene Heuristics by On/Off Win Rate Difference in Prince Self-Play Tournaments
+- ⚠ **Prince self-play, not Deity evidence.** Every batch below is six CIVVIS seats playing each other at Prince, where `data/difficulties.json` hands no seat anything and no Firaxis AI sits at the table. The live seat is one CIVVIS agent against five Firaxis AIs at Deity. A gene's figures here say how it does against our own agents, not against the Firaxis AI (`docs/GENE_SCREEN.md`, "What the screen measures").
 - Ranking
 - Gene Name
 - A short Gene Description

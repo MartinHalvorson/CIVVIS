@@ -55,6 +55,117 @@ The standing cadence this implies:
    (`--genes tag`) on disjoint seeds before it moves a default — see *Two
    stages* below.
 
+## ⚠⚠ What the screen measures: Prince self-play, not the live seat (2026-11-27)
+
+Every reporting batch in `docs/gene_ledger.json` is **six CIVVIS seats
+playing each other at Prince**. The live seat is one CIVVIS agent against
+five Firaxis AIs, mostly at Deity. A ledger verdict says how a gene does
+against our own agents. It is not evidence against the Firaxis Deity AI,
+and the ranking, the strategy panel and the Interpretability page now say
+"Prince self-play" wherever they show one. `tools/test_sim_live_calibration.py`
+holds each fact below to the file that makes it true, and fails when a
+reporting batch plays another field, so the label cannot go stale.
+
+**What `difficulty` does in a screen game.** The continuous batch passes
+`gene_screen` only `--games --target-games --start-seed --jobs --out
+--append` (`run_segment` in `tools/continuous_batch_scheduler.py`). So it
+plays the binary's defaults: `--difficulty` falls back to
+`civvis::game::default_difficulty()`, which is `prince`, and `--handicap all`
+gives the rung to every major alike. A rung reaches a major only through
+`Game::takes_handicap`: the yield percentages, Combat Strength, experience,
+bonus start units and era boosts of `data/difficulties.json`. Prince's row
+carries none of them. In the ledger's games the difficulty therefore changes
+nothing for any major. What is left is the city-states' two starting
+Warriors (one more per rung from Emperor up) and genes that read the rung itself,
+which never fire at Prince (`capital-walls-at-any-ratio` and
+`immortal-skips-the-prophet-race` act at Immortal and Deity only). The
+barbarians are the exception: they play Deity in every screen game
+(`SCREEN_BARBARIAN_DIFFICULTY`). At any rung under `--handicap all` the six
+seats are boosted alike, so a seat wins 1 in 6 by symmetry and a gene's
+on-off difference is measured against our own random genomes. `player_contract:
+observed-player-v1` is the information each seat may use (its own fog-honest
+view), `target_mix` the lanes a measured seat draws, and `native_competitions`
+whether the World Congress competitions play natively. None of them puts a
+Firaxis-level rival at the table.
+
+**What the Elo table's `civ6:<level>` rows are.** `strategy_elo` seats the
+`stock` agent (`CIV6_REFERENCE`, `AdvancedAi::new()`: the production genes,
+every opt-in off) with the level's AI handicap at a four-seat table. The
+other three seats are roster agents on the human's terms (`human_seats`).
+The fit (`strategies::fit`) has a seat win with probability proportional to
+`10^(elo/400)`, pinned so that Prince (`stock`, unhandicapped) is 1000.
+Nothing of Firaxis's plays.
+
+**The live arrangement exists in the screen.** `--rivals firaxis-faithful
+--handicap rivals --rival-chairs 5` seats one measured seat against five
+chairs of the deployment genome that carry the rung's handicap (*The
+faithful field*, below), and the rival-only knobs under it calibrate those chairs' economy and space
+race. On this M4 Air a game cost 25–37 s of CPU. That is about the standard
+game's cost, but it measures one seat where the standard game measures six,
+so a gene's error over the same games is √6 ≈ 2.4 times wider.
+
+**Calibration.** `tools/sim_live_calibration.py` compares the ledger's
+`results.jsonl` (the Official Benchmark and everything after it, 6p
+Continents, a game counted once by its best run) with what the simulator
+predicts for the same table. The Elo prediction is our lane's twin against
+five copies of `civ6:<level>`, on the fit's own model, using `beta/elo_page`'s
+twins and fit. The engine prediction is a 30-game native batch of the
+recommended faithful field per level (seeds 59200000+, `--deployment-genome
+--target-mix science,religion`, the live lanes; rung −2, pace, late science
+75, space floor 62, victory pace 175). Read 2026-11-27, main d07b91fb:
+
+ENGINE_TABLE
+
+"Live-implied" is the rating the level's rivals would need for the Elo model
+to predict the live record, which is what the ELO Rankings page plots. Both
+simulator stand-ins miss in the same direction: they are far stronger than
+Civilization VI's own AI at every level. The Elo stand-in is 500–700 points
+too strong. The faithful field's rivals are our own deployment genome, so at
+Prince they are an equal field (1 in 6) where the live seat has won 39 of 39.
+
+**Why the continuous batch does not switch to the live arrangement.** Each
+reason is in the code:
+
+1. **The batch rule would flip the whole genome.** A batch's column for a
+   gene is `(win_on − 1/players) × n_on × 10,000 / seats`
+   (`total_seat_batch_wins_value`). The rule turns a gene on above +3 and off
+   below −3. That arithmetic is a difference only while both arms sit
+   symmetric about 1 in 6, which a self-play batch guarantees. With one
+   measured seat against five rivals, both arms sit wherever the field puts
+   the seat. At the live Deity rate (19%) every default-on gene would read
+   about +175 and every opt-in about +58, so every gene turns on. At the
+   calibrated field's Deity rate every gene turns off. Re-basing the rule on
+   the on-off difference comes first, and that changes which genes are
+   default-on.
+2. **The publication would refuse it.** `genes.reporting_batch_records`
+   refuses three columns that played different fields (`field_drift`). The
+   epoch that lets a new contract start fresh columns
+   (`reporting_contract`) keys on the player contract, the target mix and
+   native competitions, not on the field. So the first faithful batch would
+   stop at publication, and the scheduler does not start the next batch
+   until a publication merges.
+3. **The stand-in does not match live yet.** No setting of the existing
+   rival knobs is fitted to win rates. They were fitted to the rivals'
+   economy and finish turn at Immortal, Emperor and King when our seat won
+   almost nothing. The table above shows the result at today's genome.
+
+**What to run instead.** Price a gene at Deity in the live arrangement as a
+probe, beside the ledger rather than in it, read on its on-off difference,
+end turn and score share (the faithful-field sections below say how), and
+check the field against live in the same breath:
+
+```
+gene_screen --rivals firaxis-faithful --handicap rivals --rival-chairs 5 \
+  --rival-rung -2 --rival-pace --rival-late-science 75 --rival-space-floor 62 \
+  --rival-victory-pace 175 --difficulty deity --target-mix science,religion \
+  --genes <tag> --games 600 --out rows.jsonl
+python3 tools/sim_live_calibration.py --engine rows.jsonl
+```
+
+`--max-miss PP` makes the second command exit 1 when any level misses live
+by more than PP points. That is the gate a field must pass before its
+verdicts may be read as Deity evidence.
+
 ## ⭐ ONE SCREEN (operator, 2026-08-22)
 
 *"lets drop all the native screen / war screen stuff. we should just have 1
