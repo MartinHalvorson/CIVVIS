@@ -26,11 +26,11 @@ Steam installs only. Epic Games installs and Linux (native or Proton) are out
 of scope: nothing resolves them and nothing has been tried on them. The macOS
 bundle is arm64 only.
 
-This document describes the bundle with the person-facing lobby
-(`--manual-lobby`, #5944) and the cover screen (#5943) merged. A bundle built
-before those land has neither flag and drives the setup itself by reading the
-screen, which needs a Swift compiler and screen permissions a downloaded copy
-does not have.
+The bundle is for `--manual-lobby`: you set the Hot Seat game up in Civ VI by
+hand and nothing of CIVVIS's touches the screen. The harness's other mode, the
+one that sets the game up itself by reading the screen, needs a Swift compiler
+and Screen Recording and Accessibility permissions that a downloaded copy does
+not have.
 
 ## 1. Installing and playing
 
@@ -73,63 +73,89 @@ does not have.
    decision worker answer it, and stops it again (about ten seconds).
 
 5. **macOS only:** the control mod is installed inside the game's application
-   bundle (`Civ6.app/Contents/Assets/DLC/CivvisControl`, the only folder this
-   build of the game scans; section 2). The first time, macOS may answer
+   bundle, so the first install shows an App Management prompt, or answers
    "Operation not permitted": allow your terminal under System Settings ->
-   Privacy & Security -> App Management, then run it again. Installing breaks
-   the game bundle's code signature and removing the mod restores it
-   (`tools/civ6_control/install.py`, measured, issue #1342).
+   Privacy & Security -> App Management, then run it again.
 
 ### Playing a game
 
-1. With Civilization VI **closed**, start the harness and leave its window open:
+1. Start the harness and leave its window open:
 
    ```
    ./civvis-hotseat/civvis-hotseat --manual-lobby
    ```
 
-   It installs the control mod and prints what to do next.
-2. Start Civilization VI from Steam. Choose **Multiplayer -> Hot Seat**, set the
-   game up as you like, then in the staging room:
-   - the **first row is you**: pick your leader;
-   - every row CIVVIS should play: set it to **Human** (up to five);
-   - any row set to AI is Civilization VI's own AI.
-3. Press **Start Game**. The harness reads the game you made back from the game
-   itself and starts one CIVVIS worker per Human row after yours, named
-   "CIVVIS jack 1", "CIVVIS jack 2", ...
+   It installs the control mod and prints the steps below. If Civ VI is already
+   running it says so: the game looks for mods only when it starts, so quit it
+   completely (Civ VI menu -> Quit) and start it again.
+2. Start Civilization VI.
+3. Main menu -> **Multiplayer -> Hot Seat**. Choose the map, speed and anything
+   else you like, then **Confirm Settings**.
+4. In the staging room the **first row is you**. Add a player for each seat
+   CIVVIS should play and set it to **Human** (up to five). AI rows are Civ VI's
+   own AI.
+5. **Start Game.** The harness reads the game you made back from the game
+   itself (one line in its window) and starts one CIVVIS worker per Human row
+   after yours, named "CIVVIS jack 1", "CIVVIS jack 2", ...
 
 What to expect:
 
-- **Your turn** plays like single player. When you end it, a cover ("CIVVIS is
-  taking its turn") hides the screen until your next turn begins; then your
-  hand-over "Start Turn" is pressed for you, the cover lifts, and you are back
-  on your map where you left it. Esc on the cover opens the game menu (save,
-  load, quit). `--no-cover` shows CIVVIS's turns as they play;
-  `--keep-handover` leaves the hand-over screen for you to press.
-- The terminal prints a banner when it is your turn and one line per CIVVIS
-  turn. Nothing of CIVVIS's clicks, types or moves anything on your turn, and in
-  `--manual-lobby` nothing of it touches the screen at all.
-- **Hot Seat only.** CIVVIS plays Hot Seat games and nothing else. With no
-  harness running the installed mod does nothing at all (#5944); take it out
-  when you are done (below).
+- **Your turn plays like single player.** When you end it, a cover ("CIVVIS is
+  taking its turn", with the seat and turn and nothing about that empire) hides
+  the screen until your next turn begins. Then your hand-over "Start Turn" is
+  pressed for you, the cover lifts, and you are back on your own map where you
+  left it, with no hand-over dialog. `--no-cover` shows CIVVIS's turns as they
+  play; `--keep-handover` leaves the hand-over screen for you to press.
+- **Esc on the cover** opens the game menu (save, load, quit).
+- **Sound plays through the cover.** It hides pixels only: CIVVIS's leader
+  voice lines, diplomacy music, combat and unit sounds, fanfares and
+  notification chimes are all audible.
+- **A CIVVIS turn that stalls is not hidden for good.** The cover stands aside
+  for the rest of that turn after 90 s of a quiet CIVVIS seat (180 s with no
+  seat active), and the harness window says what you can do: close a screen
+  that is waiting for a click, or press NEXT TURN. Nothing of CIVVIS's clicks
+  for you in this mode.
+- The terminal prints a line when it is your turn and one per CIVVIS turn.
+- **Hot Seat only.** With no harness running, the installed mod does nothing
+  at all, in a Hot Seat game or any other.
 - Diplomacy with a CIVVIS seat works the way Hot Seat diplomacy does: a proposal
   waits for the other seat's turn.
-- The mod saves the game every ten turns (`--save-every`) under
-  Saves/Hotseat, besides Civilization VI's own autosaves.
 
 Stopping: Ctrl-C in the harness window, or `civvis-hotseat --stop` from another
-one. The game stays up; until a worker is back, a CIVVIS turn waits out the
-mod's order poll and then plays on the mod's own fallback rules.
-`civvis-hotseat --status` says what is running. Every line of a game is kept
-in `~/civvis-civ6-runs/hotseat/<tag>/` (`hotseat.log`, `turns.jsonl`, and one
+one. Civ VI and your game stay up, and within seconds every seat is a person's
+again (the mod acts only while it hears the harness). `civvis-hotseat --status`
+says what is running. Every line of a game is kept in
+`~/civvis-civ6-runs/hotseat/<tag>/` (`hotseat.log`, `turns.jsonl`, and one
 folder per CIVVIS seat).
+
+### What the mod changes while it is installed
+
+Tell anyone who plays with it:
+
+- **Your own mod setup is rebuilt from defaults.** Installing and uninstalling
+  both delete `Mods.sqlite`, or the game would not notice the mod (it indexes
+  mod folders by time). Civ VI rebuilds it at its next start, and it holds your
+  mod groups (`ModGroups`, `ModGroupItems`): those come back as the defaults.
+- **Your own interface mods may be pushed aside.** The mod replaces about 30 of
+  the game's screens (popups, the hand-over, the top panel) with the shipped
+  script plus its own hooks. Civ VI loads one replacement per screen, so a UI
+  mod of yours for one of those screens does not load while this one is
+  installed.
+- **macOS asks for App Management**, because the mod goes inside the game's
+  application bundle (`Civ6.app/Contents/Assets/DLC/CivvisControl`, the only
+  folder this build of the game scans). Installing also breaks the bundle's
+  code signature, and removing the mod restores it.
+- Five CIVVIS seat contexts load in every game, single player included. They
+  stay dormant outside Hot Seat, but they are parsed.
 
 ### Uninstalling
 
-1. Quit Civilization VI.
-2. `civvis-hotseat uninstall` removes the control mod from the game (the harness
-   also removes it whenever it ends with the game closed). On macOS that
-   restores the game bundle's code signature.
+1. Quit Civilization VI. (The harness removes the mod by itself when it ends
+   with Civ VI closed; with Civ VI running it leaves the mod installed and says
+   so.)
+2. `civvis-hotseat uninstall` removes the control mod from the game. On macOS
+   that restores the game bundle's code signature. Like installing, it deletes
+   `Mods.sqlite`.
 3. Delete the `civvis-hotseat` folder, and if you like the game records in
    `~/civvis-civ6-runs/hotseat`.
 
@@ -150,8 +176,15 @@ ships an existing `civvis_orders` instead of building one.
 ## 2. What is verified where
 
 Everything the project knows about how Civilization VI treats the control mod
-was measured on macOS (`docs/CIV6_COMPUTER_CONTROL.md`). On Windows the only
-evidence is the `windows-x86_64` job of
+was measured on macOS (`docs/CIV6_COMPUTER_CONTROL.md`). The live rows below
+are the runs of 2026-11-27 on a MacBook Air (M4), Prince, Online speed,
+Pangaea, from a checkout: the person at seat 0 was a test stand-in
+(`--auto-human`) and a script set the lobby up by hand. Evidence (screenshots,
+logs, verdicts) is in `~/civvis-civ6-runs/hotseat/<run>/evidence/` on that
+Mac, and the runs are written up in #5943 and #5944. Both manual runs stopped
+at turn 5 when the stand-in's own Scout (seat 0's unit, not CIVVIS's) could
+not be given a move the game accepted. On Windows the only evidence is the
+`windows-x86_64` job of
 [`.github/workflows/hotseat-bundle.yml`](../.github/workflows/hotseat-bundle.yml),
 on a runner with no game.
 
@@ -166,7 +199,12 @@ on a runner with no game.
 | `Automation.Log` writes, and where | measured: `<user dir>/Logs/Automation.log`, newline-terminated | **unmeasured** |
 | `DB.Query("ATTACH DATABASE ...")` reaches our SQLite file | measured | **unmeasured** |
 | paths in the mod's SQL | measured for macOS paths | **unmeasured** (see below) |
-| Hot Seat menus, hand-over screen, cover | measured | **unmeasured** |
+| Hot Seat menus, hand-over screen | measured | **unmeasured** |
+| the cover over CIVVIS's turns, the person's own map uncovered with no hand-over dialog | **seen live** (`cover-live-7`: six game turns, 12 Start Turn presses with no crash, 0 of 16 screenshots wrong) | **unmeasured** |
+| a hand-set lobby with a screen-free harness | **seen live** (`manual-live-1`: CIVVIS played turns 1-4 on its worker's orders; the harness logged 0 screen modules loaded for real, and neither it nor its worker had Pillow loaded) | **unmeasured** |
+| the two together | **seen live** for 4 turns (`manual-cover-1`) | **unmeasured** |
+| the mod silent once the harness stops | **seen live** (both manual runs: the game's CIVVIS lines did not grow in the 60 s after the stop) | **unmeasured** |
+| Esc on the cover; the cover lifting from up when the harness stops or dies; the stall stand-aside timers | tests only (`hotseat_cover_test.lua`, `harness_gate_test.lua`) | tests only |
 | the game's process names | measured (`Civ6_Exe_Child`) | **unmeasured** (`CivilizationVI.exe`, `CivilizationVI_DX12.exe` from the Steam depot) |
 | a whole game played by the **frozen bundle** (not a checkout) | **unmeasured**: no game was launched while it was built | **unmeasured** |
 | a browser-downloaded copy past Gatekeeper / SmartScreen | **unmeasured** | **unmeasured** |
