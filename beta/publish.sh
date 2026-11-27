@@ -134,15 +134,25 @@ if command -v wasm-opt >/dev/null; then
   # identical trace and save hashes: rustc `opt-level = "s"` shrank the module
   # 18.37 -> 12.50 MB (3.97 -> 3.05 MB brotli) and cost about 23% engine time
   # (median 94.7 s against 76.9 s a game). wasm-opt alone barely matters:
-  # -O3, -Os and -Oz on the same input land within 0.5% of each other.
+  # -O3, -Os and -Oz on the same input land within 0.5% of each other in
+  # raw bytes, but raw bytes are not what a visitor downloads.
+  #
+  # `-ocimfs=0` keeps Binaryen from inlining functions that have one caller.
+  # Measured 2026-11-27 (origin/main 4ebd4ad, rustc 1.99.1 + Binaryen 120 as
+  # in CI): that inlining takes 1.2 MB off the raw module but adds ~3% to its
+  # brotli, the copy every browser fetches; without it the engine is
+  # 3,299,528 -> 3,223,763 bytes brotli (-2.3%), engine instructions
+  # unchanged (-0.00/-0.06/+0.03% on seeds 7/11/23), CPU fully compiled
+  # -3.4% and compile time -13%, every game identical (watched, played and
+  # save/load answer hashes).
   if [ -n "$symbols_out" ]; then
     # The printing pass leaves the optimized module byte-for-byte unchanged.
     # Its indexes name the final functions, after inlining and reordering.
-    wasm-opt -O3 "$raw_wasm" --symbolmap -o "$out/civvis.wasm" > "$symbols_out/functions.map"
+    wasm-opt -O3 -ocimfs=0 "$raw_wasm" --symbolmap -o "$out/civvis.wasm" > "$symbols_out/functions.map"
     python3 "$repo_root/tools/site_wasm_symbols.py" \
       "$out/civvis.wasm" "$symbols_out/functions.map" "$commit"
   else
-    wasm-opt -O3 "$raw_wasm" -o "$out/civvis.wasm"
+    wasm-opt -O3 -ocimfs=0 "$raw_wasm" -o "$out/civvis.wasm"
   fi
 else
   echo "==> wasm-opt is not installed; publishing the unshrunk module" >&2
