@@ -21,7 +21,10 @@ Where the numbers come from. The live seat appends every run it plays to the
 ledger`, read from `FETCH_HEAD`); when the fetch fails it reads the file from
 GitHub's raw address, and when that fails too, the clone's
 `refs/remotes/origin/ledger` as it is. `--ref` reads a ref without fetching,
-`--ledger` reads a file.
+`--ledger` reads a file. ⚠ The FIRST fetch of the ledger branch into a clone
+is large (every run's gzipped events log is on it) and can take many minutes
+on a slow line; later fetches are small. `--ref refs/remotes/origin/ledger`
+reads what the clone already has, and the raw file alone is about 2 MB.
 
 How a game is counted, exactly as the site's Tournaments page counts it
 (`beta/home_rankings.tournament_series`, which `beta/tournaments_page.py`
