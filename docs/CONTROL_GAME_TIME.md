@@ -8,9 +8,10 @@ civvis computer control games time end to end and that number show flow
 through to a performance chart (civvis comptuer control games speed over
 time) and be a top chart for civvis performance".
 
-It is the first part of the
-[CIVVIS Performance page](https://civvis.ai/charts/civvis-performance/): four
-tiles and a chart of every day's games.
+It is the second part of the
+[CIVVIS Performance page](https://civvis.ai/charts/civvis-performance/), under
+the speed timeline (first since 2026-11-27): four tiles and a chart of every
+day's games.
 
 ## What is timed
 

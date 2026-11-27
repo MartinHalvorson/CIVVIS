@@ -189,7 +189,7 @@ class TheSpeedup(unittest.TestCase):
     deity self-play, civvis self-play. how much has civvis self-play speed up
     over my manual 5 hr games? add this info, maybe in tables to the top")."""
 
-    SECTION = PAGE[PAGE.index('<section class="res-section" id="perf-speedup"'):PAGE.index('<section class="res-section" id="perf-line"')]
+    SECTION = PAGE[PAGE.index('<section class="res-section" id="perf-speedup"'):PAGE.index('<section class="res-section" id="perf-history"')]
 
     def test_the_record_carries_the_worked_tables_and_the_line_of_one_ledger(self):
         # The computer control stop reads its benchmark's record from the
@@ -237,14 +237,13 @@ class TheSpeedup(unittest.TestCase):
 
     def test_it_is_the_first_part_of_the_page_and_shows_only_when_filled(self):
         record = PAGE[PAGE.index('<div class="res-record" id="perf-record" hidden>'):]
-        # Under the computer control chart, the page's top chart since
-        # 2026-11-24 (`control_times_test.py`). After the tables come the
-        # same figures as a line, which was Home's until that day (operator:
-        # "move the civvis performance timeline thing from home/ to the
-        # civvis performance section. middle of the page or so"), each way
-        # of playing over time and the path through one game.
+        # Under the speed timeline, the page's first part since 2026-11-27
+        # (operator: "move civ game speedup - synthetic data pipeline up to
+        # the top of civvis.ai performance"), and the computer control chart
+        # (`control_times_test.py`). After the tables come each way of
+        # playing over time and the path through one game.
         self.assertEqual(re.findall(r'<section class="res-section" id="([\w-]+)"', record),
-                         ["perf-control", "perf-speedup", "perf-line", "perf-history", "perf-path", "perf-video", "perf-times"])
+                         ["perf-line", "perf-control", "perf-speedup", "perf-history", "perf-path", "perf-video", "perf-times"])
         self.assertIn('<section class="res-section" id="perf-speedup" aria-labelledby="perf-speedup-title" hidden>', PAGE)
         self.assertIn('document.getElementById("perf-speedup").hidden = false;', PAGE)
         # The sentence, the tiles, one game at a time, the machine, the

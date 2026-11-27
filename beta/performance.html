@@ -801,192 +801,7 @@
          with neither) shows the one sentence. -->
     <p class="res-empty" id="perf-empty">This copy of the page has no figures. They are written in when the site is published.</p>
     <div class="res-record" id="perf-record" hidden>
-      <!-- CIVVIS computer control, the page's first part and its top chart
-           (operator 2026-11-24: "we should be benchmarking our civvis
-           computer control games time end to end and that number show flow
-           through to a performance chart (civvis comptuer control games
-           speed over time) and be a top chart for civvis performance"). A
-           game's time is everything the machine spends on it, from the
-           launch of Civilization VI to the result written, and the chart is
-           each day's games. `beta/control_times.py` works the record out of
-           the run ledger when the site is published, so a finished game is
-           on it with the next publish (`docs/CONTROL_GAME_TIME.md`). -->
-      <section class="res-section" id="perf-control" aria-labelledby="perf-control-title" hidden>
-        <h2 class="rank-title" id="perf-control-title">CIVVIS computer control: game speed over time</h2>
-        <p class="rank-sub">One game with CIVVIS at the controls of Civilization VI itself, timed end to end: launch, setup, play to a victory, result. Lower is faster.</p>
-        <div class="res-controls">
-          <!-- What the chart times: a whole game, or one turn of it, which
-               does not move with how long the games happened to run. -->
-          <div class="res-control" role="group" aria-label="What the chart times">
-            <span>Time of</span>
-            <div class="res-seg" id="perf-control-measure">
-              <button type="button" data-measure="game" aria-pressed="true">A game</button>
-              <button type="button" data-measure="turn" aria-pressed="false">A turn</button>
-            </div>
-          </div>
-        </div>
-        <div class="perf-tiles perf-control-tiles" id="perf-control-tiles"></div>
-        <p class="perf-facts" id="perf-control-split" hidden></p>
-        <ul class="res-legend" aria-label="What is drawn">
-          <li><span class="res-linekey"></span>The day&#8217;s middle game</li>
-          <li><span class="res-swatch" style="opacity: 0.42"></span>Eight games in ten</li>
-        </ul>
-        <div class="res-plot" id="perf-control-plot"></div>
-        <details class="res-details">
-          <summary>Every day as a table</summary>
-          <div class="res-scroll">
-            <table class="rank-table" id="perf-control-table">
-              <thead>
-                <tr>
-                  <th scope="col">Day</th><th scope="col">Games</th><th scope="col">One in ten faster than</th><th scope="col">Middle game</th>
-                  <th scope="col">One in ten slower than</th><th scope="col">Turns</th><th scope="col">A turn</th><th scope="col">Level</th>
-                </tr>
-              </thead>
-              <tbody></tbody>
-            </table>
-          </div>
-        </details>
-        <!-- What the chart counts, closed until it is pressed, as on every
-             part of the page (operator 2026-11-24: "there is too much text
-             on pages ... should be a more visual experience"). -->
-        <details class="fine">
-          <summary>How it is counted</summary>
-          <div class="rank-note">
-            <p id="perf-control-note"></p>
-          </div>
-        </details>
-        <div class="rank-note">
-          <p>
-            <a href="https://github.com/MartinHalvorson/CIVVIS/blob/main/docs/CONTROL_GAME_TIME.md" target="_blank" rel="noreferrer">How a game is timed</a> ·
-            <a href="https://github.com/MartinHalvorson/CIVVIS/blob/ledger/results.jsonl" target="_blank" rel="noreferrer">Every game&#8217;s result</a>
-          </p>
-        </div>
-      </section>
-
-      <!-- How many times faster than a game played by hand, the page's
-           second part (operator 2026-11-22: "at the top of civvis performance
-           we want to calculate a multiplier on the theoretical and
-           experimetnal throughput of the simualtor. and the calculations.
-           baeline is 5 hrs for manually played game. please add the deity
-           computer control, deity self-play, civvis self-play. how much has
-           civvis self-play speed up over my manual 5 hr games? add this
-           info, maybe in tables to the top"). No figure is written here:
-           the readings are `data/performance/speedup_timeline.json`, the
-           ledger the speed timeline under the tables is drawn from, and
-           `beta/speedup_timeline.py` works out every multiplier and the sum
-           shown beside it, so the tables and the line cannot disagree. -->
-      <section class="res-section" id="perf-speedup" aria-labelledby="perf-speedup-title" hidden>
-        <h2 class="rank-title" id="perf-speedup-title">Speedup over a game played by hand</h2>
-        <p class="perf-speed-lede" id="perf-speed-lede"></p>
-        <div class="perf-tiles perf-speed-tiles" id="perf-speed-tiles"></div>
-        <div class="res-kind">
-          <h3 class="res-kind-title">One game at a time</h3>
-          <div class="res-scroll perf-sum-scroll">
-            <table class="rank-table perf-sum-table" id="perf-games-table">
-              <thead>
-                <tr>
-                  <th scope="col">Way of playing</th><th scope="col">Faster than by hand</th>
-                  <th scope="col">One game takes</th><th scope="col">Games an hour</th>
-                  <th scope="col" class="perf-sum">The calculation</th><th scope="col">Goal</th><th scope="col">Measured</th>
-                </tr>
-              </thead>
-              <tbody></tbody>
-            </table>
-          </div>
-        </div>
-        <div class="res-kind" id="perf-throughput" hidden>
-          <h3 class="res-kind-title">One machine, every core: experimental and theoretical throughput</h3>
-          <p class="rank-sub">Experimental is a run on every core. Theoretical is a calculation, not a run.</p>
-          <div class="res-scroll perf-sum-scroll">
-            <table class="rank-table perf-sum-table" id="perf-throughput-table">
-              <thead>
-                <tr>
-                  <th scope="col">Simulator and throughput</th>
-                  <th scope="col">Faster than by hand</th><th scope="col">Games a minute</th><th scope="col">Games an hour</th>
-                  <th scope="col" class="perf-sum">The calculation</th><th scope="col">The run reaches</th>
-                </tr>
-              </thead>
-              <tbody></tbody>
-            </table>
-          </div>
-        </div>
-        <!-- The same benchmarks, processor by processor (operator
-             2026-11-22: "Add in a theoretical 9980, performance and m5
-             ultra, m6. we should have a table in civvis performance that
-             has our benchmarks (and age) across each processor. we should
-             also list the single thread score and multithread score from
-             the website"). The processors and the website's scores for
-             them are `data/performance/processors.json`, and
-             `speedup_timeline.processors` works out the rows. The head of
-             the table is written with them, a column for each one-core way
-             of playing, and the age is counted on the day the page is
-             read. -->
-        <div class="res-kind" id="perf-processors" hidden>
-          <h3 class="res-kind-title">Processor by processor: the benchmarks, measured and worked out</h3>
-          <p class="rank-sub" id="perf-processors-sub">
-            Experimental is the processor the benchmarks were run on.
-            Theoretical is a calculation from two scores, not a run.
-          </p>
-          <div class="res-scroll perf-sum-scroll">
-            <table class="rank-table perf-sum-table perf-proc-table" id="perf-processors-table">
-              <thead></thead>
-              <tbody></tbody>
-            </table>
-          </div>
-          <details class="fine">
-            <summary>How it is worked out</summary>
-            <p class="rank-note">
-              One game on one core is the measured time, times the measured processor&#8217;s single thread score, over the row&#8217;s own.
-              Games a minute on every core are the measured run&#8217;s, times the row&#8217;s multithread score, over the measured processor&#8217;s.
-              A score is not this simulator, so a theoretical row is what the scores predict until the benchmark is run on that processor.
-              The age is how old the readings are that a row&#8217;s figures rest on.
-            </p>
-          </details>
-        </div>
-        <!-- What renting the rest of the way to each goal is estimated to
-             cost (operator 2026-11-22: "Addd 1 billion x to the scaling
-             scale as well. we should also estimate the cloud cost in $ to
-             fill i nthe remaining amount (note that this is a Fable 5.2
-             best estimate of the numbers)"). The machine rented, its price
-             and who made the estimate are the `cloud` entry of the
-             readings, and `speedup_timeline.rented` works out the rows.
-             The words over the table are written with them, so that they
-             name whose estimate it is. -->
-        <div class="res-kind" id="perf-cloud" hidden>
-          <h3 class="res-kind-title">The rest of the way, rented: an estimate of the cloud cost</h3>
-          <p class="rank-sub perf-cloud-sub" id="perf-cloud-sub"></p>
-          <div class="res-scroll perf-sum-scroll">
-            <table class="rank-table perf-sum-table" id="perf-cloud-table">
-              <thead>
-                <tr>
-                  <th scope="col">Rented</th><th scope="col">Speedup it adds</th><th scope="col">Machines</th>
-                  <th scope="col" class="perf-sum">The calculation</th>
-                  <th scope="col">An hour, list price</th><th scope="col">An hour, spot price</th><th scope="col">A year, list price</th>
-                </tr>
-              </thead>
-              <tbody></tbody>
-            </table>
-          </div>
-          <details class="fine">
-            <summary>How it is worked out</summary>
-            <p class="rank-note" id="perf-cloud-how"></p>
-          </details>
-        </div>
-        <details class="res-details">
-          <summary>How each figure was measured</summary>
-          <dl class="perf-from" id="perf-from"></dl>
-        </details>
-        <div class="rank-note">
-          <p>
-            <a href="https://github.com/MartinHalvorson/CIVVIS/blob/main/data/performance/speedup_timeline.json" target="_blank" rel="noreferrer">The readings</a> ·
-            <a href="https://github.com/MartinHalvorson/CIVVIS/blob/main/docs/SPEEDUP_TIMELINE.md" target="_blank" rel="noreferrer">How each way of playing is measured</a> ·
-            <a href="https://github.com/MartinHalvorson/CIVVIS/blob/main/docs/GAMES_PER_MINUTE.md" target="_blank" rel="noreferrer">The every-core test</a> ·
-            <a href="#perf-line">The same figures as a line</a>
-          </p>
-        </div>
-      </section>
-
-      <!-- The same figures as a line: the speed timeline (operator,
+      <!-- The speed timeline, the page's first part (operator,
            2026-11-22: "Above the 6 seconds video, lets have a timeline:
            right to left: 5 hrs for me to play a Civ 6 game, 10-15 minutes
            with CIVVIS computer control, how long with Firaxis Civ 6 Deity
@@ -999,7 +814,10 @@
            2026-11-24, when it came here, between the tables of sums and
            the charts of each stop over time (operator: "move the civvis
            performance timeline thing from home/ to the civvis performance
-           section. middle of the page or so"). The stops are written here
+           section. middle of the page or so"), and since 2026-11-27 it is
+           the page's first part, over the computer control chart
+           (operator: "move civ game speedup - synthetic data pipeline up to
+           the top of civvis.ai performance"). The stops are written here
            slowest first, with their names; their times, multipliers and
            places on the line are `data/performance/speedup_timeline.json`,
            worked out by `speedup_timeline.timeline` and written into the
@@ -1204,6 +1022,192 @@
               <p class="rank-note" id="speed-gap-counted"></p>
             </details>
           </div>
+        </div>
+      </section>
+
+      <!-- CIVVIS computer control, the page's top chart under the speed
+           timeline (the first part until 2026-11-27)
+           (operator 2026-11-24: "we should be benchmarking our civvis
+           computer control games time end to end and that number show flow
+           through to a performance chart (civvis comptuer control games
+           speed over time) and be a top chart for civvis performance"). A
+           game's time is everything the machine spends on it, from the
+           launch of Civilization VI to the result written, and the chart is
+           each day's games. `beta/control_times.py` works the record out of
+           the run ledger when the site is published, so a finished game is
+           on it with the next publish (`docs/CONTROL_GAME_TIME.md`). -->
+      <section class="res-section" id="perf-control" aria-labelledby="perf-control-title" hidden>
+        <h2 class="rank-title" id="perf-control-title">CIVVIS computer control: game speed over time</h2>
+        <p class="rank-sub">One game with CIVVIS at the controls of Civilization VI itself, timed end to end: launch, setup, play to a victory, result. Lower is faster.</p>
+        <div class="res-controls">
+          <!-- What the chart times: a whole game, or one turn of it, which
+               does not move with how long the games happened to run. -->
+          <div class="res-control" role="group" aria-label="What the chart times">
+            <span>Time of</span>
+            <div class="res-seg" id="perf-control-measure">
+              <button type="button" data-measure="game" aria-pressed="true">A game</button>
+              <button type="button" data-measure="turn" aria-pressed="false">A turn</button>
+            </div>
+          </div>
+        </div>
+        <div class="perf-tiles perf-control-tiles" id="perf-control-tiles"></div>
+        <p class="perf-facts" id="perf-control-split" hidden></p>
+        <ul class="res-legend" aria-label="What is drawn">
+          <li><span class="res-linekey"></span>The day&#8217;s middle game</li>
+          <li><span class="res-swatch" style="opacity: 0.42"></span>Eight games in ten</li>
+        </ul>
+        <div class="res-plot" id="perf-control-plot"></div>
+        <details class="res-details">
+          <summary>Every day as a table</summary>
+          <div class="res-scroll">
+            <table class="rank-table" id="perf-control-table">
+              <thead>
+                <tr>
+                  <th scope="col">Day</th><th scope="col">Games</th><th scope="col">One in ten faster than</th><th scope="col">Middle game</th>
+                  <th scope="col">One in ten slower than</th><th scope="col">Turns</th><th scope="col">A turn</th><th scope="col">Level</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </details>
+        <!-- What the chart counts, closed until it is pressed, as on every
+             part of the page (operator 2026-11-24: "there is too much text
+             on pages ... should be a more visual experience"). -->
+        <details class="fine">
+          <summary>How it is counted</summary>
+          <div class="rank-note">
+            <p id="perf-control-note"></p>
+          </div>
+        </details>
+        <div class="rank-note">
+          <p>
+            <a href="https://github.com/MartinHalvorson/CIVVIS/blob/main/docs/CONTROL_GAME_TIME.md" target="_blank" rel="noreferrer">How a game is timed</a> ·
+            <a href="https://github.com/MartinHalvorson/CIVVIS/blob/ledger/results.jsonl" target="_blank" rel="noreferrer">Every game&#8217;s result</a>
+          </p>
+        </div>
+      </section>
+
+      <!-- How many times faster than a game played by hand, the page's
+           second part (operator 2026-11-22: "at the top of civvis performance
+           we want to calculate a multiplier on the theoretical and
+           experimetnal throughput of the simualtor. and the calculations.
+           baeline is 5 hrs for manually played game. please add the deity
+           computer control, deity self-play, civvis self-play. how much has
+           civvis self-play speed up over my manual 5 hr games? add this
+           info, maybe in tables to the top"). No figure is written here:
+           the readings are `data/performance/speedup_timeline.json`, the
+           ledger the speed timeline under the tables is drawn from, and
+           `beta/speedup_timeline.py` works out every multiplier and the sum
+           shown beside it, so the tables and the line cannot disagree. -->
+      <section class="res-section" id="perf-speedup" aria-labelledby="perf-speedup-title" hidden>
+        <h2 class="rank-title" id="perf-speedup-title">Speedup over a game played by hand</h2>
+        <p class="perf-speed-lede" id="perf-speed-lede"></p>
+        <div class="perf-tiles perf-speed-tiles" id="perf-speed-tiles"></div>
+        <div class="res-kind">
+          <h3 class="res-kind-title">One game at a time</h3>
+          <div class="res-scroll perf-sum-scroll">
+            <table class="rank-table perf-sum-table" id="perf-games-table">
+              <thead>
+                <tr>
+                  <th scope="col">Way of playing</th><th scope="col">Faster than by hand</th>
+                  <th scope="col">One game takes</th><th scope="col">Games an hour</th>
+                  <th scope="col" class="perf-sum">The calculation</th><th scope="col">Goal</th><th scope="col">Measured</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="res-kind" id="perf-throughput" hidden>
+          <h3 class="res-kind-title">One machine, every core: experimental and theoretical throughput</h3>
+          <p class="rank-sub">Experimental is a run on every core. Theoretical is a calculation, not a run.</p>
+          <div class="res-scroll perf-sum-scroll">
+            <table class="rank-table perf-sum-table" id="perf-throughput-table">
+              <thead>
+                <tr>
+                  <th scope="col">Simulator and throughput</th>
+                  <th scope="col">Faster than by hand</th><th scope="col">Games a minute</th><th scope="col">Games an hour</th>
+                  <th scope="col" class="perf-sum">The calculation</th><th scope="col">The run reaches</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+        <!-- The same benchmarks, processor by processor (operator
+             2026-11-22: "Add in a theoretical 9980, performance and m5
+             ultra, m6. we should have a table in civvis performance that
+             has our benchmarks (and age) across each processor. we should
+             also list the single thread score and multithread score from
+             the website"). The processors and the website's scores for
+             them are `data/performance/processors.json`, and
+             `speedup_timeline.processors` works out the rows. The head of
+             the table is written with them, a column for each one-core way
+             of playing, and the age is counted on the day the page is
+             read. -->
+        <div class="res-kind" id="perf-processors" hidden>
+          <h3 class="res-kind-title">Processor by processor: the benchmarks, measured and worked out</h3>
+          <p class="rank-sub" id="perf-processors-sub">
+            Experimental is the processor the benchmarks were run on.
+            Theoretical is a calculation from two scores, not a run.
+          </p>
+          <div class="res-scroll perf-sum-scroll">
+            <table class="rank-table perf-sum-table perf-proc-table" id="perf-processors-table">
+              <thead></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <details class="fine">
+            <summary>How it is worked out</summary>
+            <p class="rank-note">
+              One game on one core is the measured time, times the measured processor&#8217;s single thread score, over the row&#8217;s own.
+              Games a minute on every core are the measured run&#8217;s, times the row&#8217;s multithread score, over the measured processor&#8217;s.
+              A score is not this simulator, so a theoretical row is what the scores predict until the benchmark is run on that processor.
+              The age is how old the readings are that a row&#8217;s figures rest on.
+            </p>
+          </details>
+        </div>
+        <!-- What renting the rest of the way to each goal is estimated to
+             cost (operator 2026-11-22: "Addd 1 billion x to the scaling
+             scale as well. we should also estimate the cloud cost in $ to
+             fill i nthe remaining amount (note that this is a Fable 5.2
+             best estimate of the numbers)"). The machine rented, its price
+             and who made the estimate are the `cloud` entry of the
+             readings, and `speedup_timeline.rented` works out the rows.
+             The words over the table are written with them, so that they
+             name whose estimate it is. -->
+        <div class="res-kind" id="perf-cloud" hidden>
+          <h3 class="res-kind-title">The rest of the way, rented: an estimate of the cloud cost</h3>
+          <p class="rank-sub perf-cloud-sub" id="perf-cloud-sub"></p>
+          <div class="res-scroll perf-sum-scroll">
+            <table class="rank-table perf-sum-table" id="perf-cloud-table">
+              <thead>
+                <tr>
+                  <th scope="col">Rented</th><th scope="col">Speedup it adds</th><th scope="col">Machines</th>
+                  <th scope="col" class="perf-sum">The calculation</th>
+                  <th scope="col">An hour, list price</th><th scope="col">An hour, spot price</th><th scope="col">A year, list price</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <details class="fine">
+            <summary>How it is worked out</summary>
+            <p class="rank-note" id="perf-cloud-how"></p>
+          </details>
+        </div>
+        <details class="res-details">
+          <summary>How each figure was measured</summary>
+          <dl class="perf-from" id="perf-from"></dl>
+        </details>
+        <div class="rank-note">
+          <p>
+            <a href="https://github.com/MartinHalvorson/CIVVIS/blob/main/data/performance/speedup_timeline.json" target="_blank" rel="noreferrer">The readings</a> ·
+            <a href="https://github.com/MartinHalvorson/CIVVIS/blob/main/docs/SPEEDUP_TIMELINE.md" target="_blank" rel="noreferrer">How each way of playing is measured</a> ·
+            <a href="https://github.com/MartinHalvorson/CIVVIS/blob/main/docs/GAMES_PER_MINUTE.md" target="_blank" rel="noreferrer">The every-core test</a> ·
+            <a href="#perf-line">The same figures as a line, at the top</a>
+          </p>
         </div>
       </section>
 
