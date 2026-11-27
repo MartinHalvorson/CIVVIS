@@ -25156,6 +25156,127 @@ fn the_walk_clock_counts_turns_out_of_a_city_and_follows_the_unit() {
     assert!(ai.settler_walk_clock.is_empty());
 }
 
+// ── settler-walk-clock-runs-all-game ─────────────────────────────────────
+//
+// See `advanced/settler_walk_deadline.rs`: every stepped turn out of a city
+// counts on the walk clock, and the deadline holds walks begun after the
+// band turn.
+
+/// Reset a test Settler's movement so the next step can act.
+fn rested(game: &mut Game, settler: u32) {
+    if let Some(unit) = game.units.get_mut(&settler) {
+        unit.moves_left = 2.0;
+        unit.acted = false;
+    }
+}
+
+#[test]
+fn the_walk_deadline_holds_a_late_walk_only_with_the_clock_gene() {
+    let (mut game, settler) = walk_deadline_board(93_207);
+    let band = AdvancedAi::expansion_band_turn(&game);
+    let deadline = AdvancedAi::settler_walk_deadline_turns(&game);
+    game.turn = band + deadline + 2;
+    let mut ai = AdvancedAi::new();
+    ai.enable_settler_walk_deadline();
+    // A walk that began one turn after the band turn, out past its deadline.
+    ai.settler_walk_clock
+        .insert(settler, (band + 1, game.turn, deadline + 1));
+    assert!(
+        ai.settler_walk_deadline_site(&game, 0, settler).is_some(),
+        "a legal site lies within the deadline's reach"
+    );
+    rested(&mut game, settler);
+    assert_eq!(
+        ai.settler_walk_deadline_step(&mut game, 0, settler),
+        None,
+        "the shipped deadline leaves a walk begun after the band turn alone"
+    );
+    ai.enable_settler_walk_clock_runs_all_game();
+    let cities = game.cities.len();
+    rested(&mut game, settler);
+    assert_eq!(
+        ai.settler_walk_deadline_step(&mut game, 0, settler),
+        Some(true),
+        "with the gene the late walk founds or steps toward the deadline's site"
+    );
+    assert!(
+        game.cities.len() > cities || game.units.contains_key(&settler),
+        "the Settler founded or is still walking to the site"
+    );
+}
+
+/// The Settler is out on open ground and an enemy major's soldier stands
+/// beside it, so `settler-shelters-from-the-war` takes the turn (it heads
+/// for the capital) before the walk-deadline check runs.
+fn shelter_walk_turns(seed: u64, clock_gene: bool) -> (u32, Vec<String>) {
+    let (mut game, settler) = walk_deadline_board(seed);
+    game.at_war.insert((0, 1));
+    let mut ai = AdvancedAi::new();
+    ai.enable_settler_walk_deadline();
+    ai.enable_settler_shelters_from_the_war();
+    if clock_gene {
+        ai.enable_settler_walk_clock_runs_all_game();
+    }
+    let journal = crate::reasoning::Journal::recording();
+    ai.attach_journal(journal.handle());
+    let soldier = game.spawn_test_unit("warrior", 1, game.units[&settler].pos);
+    for _ in 0..3 {
+        let here = game.units[&settler].pos;
+        assert!(game.city_at(here).is_none(), "the Settler is out of a city");
+        // Keep the soldier beside the Settler, where it is always seen.
+        let beside = game
+            .wdisk(here, 1)
+            .into_iter()
+            .find(|p| {
+                *p != here
+                    && game
+                        .map
+                        .get(*p)
+                        .is_some_and(|t| !game.rules.is_water(t) && game.rules.is_passable(t))
+                    && game.unit_ids_at(*p).is_empty()
+            })
+            .expect("open ground beside the Settler");
+        game.units.get_mut(&soldier).unwrap().pos = beside;
+        rested(&mut game, settler);
+        ai.advanced_settler_step(&mut game, 0, settler);
+        game.turn += 1;
+    }
+    let lines = journal
+        .since(0)
+        .thoughts
+        .iter()
+        .map(|thought| thought.headline.clone())
+        .collect();
+    (ai.settler_turns_out(settler), lines)
+}
+
+#[test]
+fn turns_spent_walking_to_shelter_count_on_the_walk_clock_only_with_the_gene() {
+    let (off, off_lines) = shelter_walk_turns(93_208, false);
+    assert!(
+        off_lines
+            .iter()
+            .any(|line| line.contains("heads for shelter")),
+        "the shelter branch took the turns; journal:\n{}",
+        off_lines.join("\n")
+    );
+    assert_eq!(
+        off, 0,
+        "off, the branch returns before the clock and no turn out is counted"
+    );
+    let (on, on_lines) = shelter_walk_turns(93_208, true);
+    assert!(
+        on_lines
+            .iter()
+            .any(|line| line.contains("heads for shelter")),
+        "the same branch took the turns with the gene"
+    );
+    assert_eq!(
+        on, 2,
+        "on, every stepped turn after the first counts as a turn out"
+    );
+}
+
 #[test]
 fn science_production_recovers_in_peace_without_war_economy() {
     let (mut game, city, home) = empire_with_a_capital(79_101);

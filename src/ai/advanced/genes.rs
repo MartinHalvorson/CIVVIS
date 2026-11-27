@@ -6686,6 +6686,14 @@ pub const GENES: &[Gene] = &[
     // seat from its third city; science heads keep their queue. Opt-in; see
     // `advanced/culture_monuments.rs`.
     Gene { tag: "science-seat-monuments", field: "science_seat_monuments", kind: Kind::OptIn, enable: AdvancedAi::enable_science_seat_monuments, disable: AdvancedAi::disable_science_seat_monuments },
+    // Live Tournament 7 (4 of 40 reviewed games, 2026-11-27): Settlers
+    // walked 20 to 112 turns without founding while the two armed walk
+    // limits never fired. The walk clock ticked only on turns that reached
+    // the deadline check, so retreats and walks to shelter (up to 39 turns
+    // a game) were not counted, and the deadline ignored every walk begun
+    // after the band turn (t60 on Online), where most long walks began.
+    // Opt-in; see `advanced/settler_walk_deadline.rs`.
+    Gene { tag: "settler-walk-clock-runs-all-game", field: "settler_walk_clock_runs_all_game", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_walk_clock_runs_all_game, disable: AdvancedAi::disable_settler_walk_clock_runs_all_game },
     // ---- append: t-z ------------------------------------------------
     // Host previews of our religious strikes, 11-09: rival defenders carry +4
     // for difficulty (68 of 75) and +3/+6 Intel (55 of 75), which the fight
