@@ -986,7 +986,11 @@ impl AdvancedAi {
         if owner == pid || !g.is_at_war(pid, owner) {
             return false;
         }
-        if let Some(plan) = self.campaign.as_ref().filter(|plan| plan.target == owner) {
+        if let Some(plan) = self
+            .campaign
+            .as_ref()
+            .filter(|plan| plan.target == owner && !plan.cities.is_empty())
+        {
             return !plan.cities.contains(&city);
         }
         self.campaign_war_no_go
@@ -1017,12 +1021,14 @@ impl AdvancedAi {
         let turn = g.turn;
         self.campaign_war_no_go.retain(|_, until| *until >= turn);
         let mut previous = self.campaign.take();
+        let mut taken_this_turn = 0;
         if let Some(plan) = previous.as_mut() {
             let taken_now = plan
                 .cities
                 .iter()
                 .filter(|cid| g.cities.get(cid).is_some_and(|city| city.owner == pid))
                 .count();
+            taken_this_turn = taken_now;
             if taken_now > 0 {
                 plan.taken += taken_now;
                 Self::campaign_count(g, pid, "campaign:taken", taken_now as i64);
@@ -1046,6 +1052,18 @@ impl AdvancedAi {
         let cooldown = g
             .turn
             .saturating_add(g.standard_duration(CAMPAIGN_REPEAT_COOLDOWN));
+        // `city-campaign-3`: a plan whose city fell on an earlier turn has
+        // had its peace offer (`city_campaign_diplomacy` runs the turn the
+        // capture is counted). A war that goes on after it is a war in hand
+        // again, and the next city is planned below.
+        if self.city_campaign_3
+            && taken_this_turn == 0
+            && previous
+                .as_ref()
+                .is_some_and(|plan| at_war_with(plan) && plan.taken > 0 && plan.cities.is_empty())
+        {
+            previous = None;
+        }
         if let Some(plan) = previous.as_ref().filter(|plan| at_war_with(plan)) {
             // `city-campaign-3`: the war's clock. A plan that has taken
             // nothing twenty turns into its war is a no-go: the army stops
@@ -2314,6 +2332,15 @@ mod tests {
         assert_eq!(plan.taken, 1);
         ai.city_campaign_diplomacy(&mut game, 0);
         assert!(ai.peace_offers.contains(&1), "the capture asks for peace");
+        // Peace refused, the war goes on: the next turn plans the next city
+        // rather than holding the whole front on a spent plan.
+        let next = game.found_city_for(1, (16, 4), None);
+        game.turn = 66;
+        ai.maintain_city_campaign(&mut game, 0);
+        let fresh = ai.campaign.clone().expect("the war in hand moves on");
+        assert_eq!(fresh.taken, 0);
+        assert_eq!(fresh.cities, vec![next]);
+        assert!(!ai.campaign_withholds_the_siege(&game, 0, next));
     }
 }
 
