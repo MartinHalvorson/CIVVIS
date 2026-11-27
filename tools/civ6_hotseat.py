@@ -1677,6 +1677,8 @@ def run_manual(args: argparse.Namespace) -> int:
         (run_dir / "config.json").write_text(json.dumps(config, indent=2, sort_keys=True))
         log(f"installed the CIVVIS mod for a Hot Seat game you set up, at {target}; "
             f"CIVVIS seats play with {binary}")
+        log(f"screen-free: {len(screen_free.SCREEN_MODULES)} screen modules are refusing "
+            f"stand-ins, {len(screen_free.loaded_for_real())} loaded for real, Pillow absent")
         restart_wanted = bool(civ_at_install)
         print("\n" + MANUAL_STEPS.format(start=RESTART_CIV if restart_wanted else START_CIV,
                                          most=len(MANUAL_SEATS)), flush=True)
