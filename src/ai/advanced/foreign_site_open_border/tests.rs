@@ -290,3 +290,101 @@ fn darwin_beside_open_or_own_ground_buys_nothing() {
     assert!(buy(&mut sealed, true));
     assert_eq!(grants(&sealed), [2]);
 }
+
+/// `passage-waits-past-the-opening` withholds passage from a rival over 1.5
+/// times our military: the nine live declarations it answers came from
+/// Unfriendly rivals that had just granted it. A declared friend cannot
+/// declare war while the friendship stands, so live Deity t132-t150
+/// (civvis-t7-20261127T075243Z) left Mead idle beside two friends at 1.9-5.3
+/// times our military. The gate still holds a stronger rival that is not one.
+#[test]
+fn a_stronger_friend_sells_past_the_passage_gate() {
+    let mut g = board();
+    // Past the gate's opening, which a Standard-speed board holds to t160.
+    g.turn = 200;
+    campus(&mut g, 1);
+    hold(&mut g, "margaret_mead");
+    let ours = g.military_power(0).max(1.0);
+    std::sync::Arc::make_mut(&mut g.observed_military_power).insert(1, ours * 3.0);
+    let mut ai = seat(true);
+    ai.enable_passage_waits_past_the_opening();
+    assert!(
+        matches!(
+            ai.passage_hold(&g, 0, 1),
+            Some(PassageHold::Stronger { .. })
+        ),
+        "the gate holds rival 1 for its military"
+    );
+
+    let mut stranger = g.clone();
+    assert!(!ai.foreign_site_buys_the_open_border(
+        &mut stranger,
+        0,
+        None,
+        &BTreeSet::new(),
+        &BTreeSet::new()
+    ));
+    assert!(grants(&stranger).is_empty());
+
+    let until = g.turn + 20;
+    g.players[0].friends_until.insert(1, until);
+    g.players[1].friends_until.insert(0, until);
+    assert!(ai.foreign_site_buys_the_open_border(
+        &mut g,
+        0,
+        None,
+        &BTreeSet::new(),
+        &BTreeSet::new()
+    ));
+    assert_eq!(grants(&g), [1]);
+}
+
+/// Live 081553Z: Darwin stood idle t102-t151 with no natural wonder on the
+/// exported map at all, and the gene had nothing to buy. It still has
+/// nothing to buy; it now says so.
+#[test]
+fn darwin_with_no_known_wonder_buys_nothing() {
+    let mut g = board();
+    hold(&mut g, "charles_darwin");
+    assert!(!buy(&mut g, true));
+    assert!(grants(&g).is_empty());
+}
+
+/// The alliance desks wait on the trade slot of a turn a stranded person's
+/// passage closes: the live bridge holds any purchase sent beside an
+/// alliance ask. Off the slot they ask as before.
+#[test]
+fn the_purchase_turn_is_known_to_the_alliance_desks() {
+    let mut g = board();
+    let mut off_slot = g.clone();
+    g.turn = 150;
+    campus(&mut g, 1);
+    hold(&mut g, "margaret_mead");
+    let ai = seat(true);
+    let start = g.log.len();
+    assert!(
+        !ai.foreign_site_passage_bought(&g, 0, start),
+        "nothing bought yet"
+    );
+
+    assert!(buy(&mut g, true));
+    assert!(ai.foreign_site_passage_bought(&g, 0, start));
+    assert!(
+        !seat(false).foreign_site_passage_bought(&g, 0, start),
+        "off"
+    );
+    let later = g.log.len();
+    assert!(
+        !ai.foreign_site_passage_bought(&g, 0, later),
+        "only what the trade slot applied counts"
+    );
+
+    campus(&mut off_slot, 1);
+    hold(&mut off_slot, "margaret_mead");
+    let start = off_slot.log.len();
+    assert!(
+        buy(&mut off_slot, true),
+        "the purchase is made off the slot too"
+    );
+    assert!(!ai.foreign_site_passage_bought(&off_slot, 0, start));
+}
