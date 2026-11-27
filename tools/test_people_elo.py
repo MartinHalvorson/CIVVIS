@@ -100,8 +100,10 @@ class Row(unittest.TestCase):
         # with no name for the victory keeps the host's index.
         self.assertEqual((row["agents"], row["winner"], row["victory"]),
                          (["holy", "jack", "tourist"], "tourist", 2))
-        with self.assertRaisesRegex(people_elo.NotRecorded, "ambiguous"):
-            people_elo.game_row(table, winner="civvis")
+        # Given up at a table of several: the person lost, to no one agent.
+        resigned = people_elo.game_row({**table, "result": None}, winner="civvis", victory="resignation")
+        self.assertEqual((resigned["winner"], resigned["victory"]), ("civvis", "resignation"))
+        self.assertIn("dev lost to holy, jack, tourist  (resignation", people_elo.said(resigned))
 
     def test_a_game_the_game_did_not_end_needs_someone_to_say_who_won(self):
         open_game = summary(result=None)
@@ -120,6 +122,25 @@ class Row(unittest.TestCase):
         self.assertEqual(people_elo.game_row(summary(person=None), name="dev")["person"], "dev")
         with self.assertRaisesRegex(people_elo.NotRecorded, "no CIVVIS seat"):
             people_elo.game_row(summary(civvis_seats=[]))
+
+    def test_a_table_nobody_was_at_is_refused_even_under_a_name(self):
+        # `selfplay-duel-20261127T0654Z`'s summary: CIVVIS on both seats.
+        unattended = summary(person=None, civvis_seats=[0, 1], seat_agents={"0": "jack", "1": "holy"})
+        del unattended["person_seat"]
+        for name in (None, "dev"):
+            with self.assertRaisesRegex(people_elo.NotRecorded, "unattended table"):
+                people_elo.game_row(unattended, name=name)
+
+    def test_a_game_ended_when_the_game_said_so(self):
+        # The same line whenever the summary was written: at the ending, and
+        # again when the person closed Civ VI an hour later.
+        at = {"kind": "victory", "team": 1, "victory": 4, "victory_type": "VICTORY_RELIGIOUS",
+              "turn": 143, "ours": True, "winner_seat": 1, "at": "2026-11-27T08:55:00Z"}
+        first = people_elo.game_row(summary(result=at, utc="2026-11-27T08:55:03Z"))
+        later = people_elo.game_row(summary(result=at, utc="2026-11-27T10:00:00Z"))
+        self.assertEqual(first, later)
+        self.assertEqual(first["ended"], "2026-11-27T08:55:00Z")
+        self.assertEqual(people_elo.game_row(summary())["ended"], "2026-11-27T09:00:00Z")
 
     def test_the_diplomatic_switch_is_the_tables_own(self):
         self.assertIs(people_elo.game_row(summary(victories_off=["VICTORY_DIPLOMATIC"]))["diplomatic"], False)

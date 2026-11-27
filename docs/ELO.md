@@ -453,9 +453,12 @@ agents' scale and listed among them on ELO Rankings, under their own name.
 - **The record.** When a game under a name ends with a victory or an
   elimination, the harness puts one line on the ledger branch
   (`people.jsonl`, `tools/people_elo.py record`): who played, which agents,
-  who won and how, when it began. A game that ended any other way is recorded
-  only when someone says who won (`people_elo.py record <run> --winner person`
-  or `--winner civvis`), as a concession.
+  who won and how, when it began. It does so the moment the game is decided,
+  not when Civ VI is closed. A game the person gives up is CIVVIS's:
+  `civ6_hotseat.py --stop --resign` records it as a resignation. A game that
+  was simply left is recorded only when someone says who won
+  (`people_elo.py record <run> --winner person` or `--winner civvis`), as a
+  concession. A table nobody was at (`--self-play`) is never recorded.
 - **The rating.** `beta/elo_page.py` fits it whenever the site is built. Each
   game is a table of the person and the agents they met, each agent at its
   rating in the fit in force when the game began; the person wins with

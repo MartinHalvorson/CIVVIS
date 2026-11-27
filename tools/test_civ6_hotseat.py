@@ -762,8 +762,16 @@ class DuelUnderYourNameTest(unittest.TestCase):
 
     def test_a_finished_game_under_a_name_is_put_on_the_peoples_record(self) -> None:
         source = (hotseat.HERE / "civ6_hotseat.py").read_text()
-        self.assertIn('if summary.get("person") and summary.get("result"):\n'
-                      "            record_person_game(run_dir, log)", source)
+        # At the harness's end, before the wait for Civ VI to close...
+        self.assertIn('if summary.get("person") and (summary.get("result") or request.get("resign")):\n'
+                      '            record_person_game(run_dir, log, resigned=not summary.get("result"))',
+                      source)
+        end = source.index('record_person_game(run_dir, log, resigned=not summary.get("result"))')
+        self.assertLess(end, source.index('log("closing Civ VI")'),
+                        "the record does not wait on a quit that can take minutes")
+        # ...and in the loop the moment the game is decided, for a person's table only.
+        self.assertIn("if monitor.result is not None and not posted and not monitor.unattended \\\n"
+                      "                    and person_name(args):", source)
         lines: list[str] = []
         done = argparse.Namespace(returncode=2, stdout="", stderr="people_elo: not recorded: why\n")
         with patch.object(hotseat.subprocess, "run", return_value=done) as ran:
@@ -771,6 +779,54 @@ class DuelUnderYourNameTest(unittest.TestCase):
         self.assertEqual(ran.call_args.args[0][1:], [str(hotseat.HERE / "people_elo.py"), "record", "/tmp/run"])
         self.assertEqual(lines[0], "[people] people_elo: not recorded: why")
         self.assertIn("NOT put on the people's record (exit 2)", lines[1])
+        # A game given up is CIVVIS's, and says so.
+        with patch.object(hotseat.subprocess, "run", return_value=done) as ran:
+            hotseat.record_person_game(Path("/tmp/run"), lines.append, resigned=True)
+        self.assertEqual(ran.call_args.args[0][2:],
+                         ["record", "/tmp/run", "--winner", "civvis", "--victory", "resignation"])
+        self.assertIn("`tools/people_elo.py record /tmp/run --winner civvis --victory resignation` "
+                      "tries again", lines[-1])
+
+    def test_resigning_is_a_stop_that_says_so(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp)
+            current = {"pid": 4242, "tag": "duel-dev", "run_dir": str(run_dir)}
+            alive = iter([True, True, False, False])
+            with patch.object(hotseat, "read_current", return_value=current), \
+                    patch.object(hotseat, "harness_alive", side_effect=lambda pid: next(alive, False)), \
+                    patch.object(hotseat.os, "kill") as kill, patch.object(hotseat.time, "sleep"), \
+                    contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(hotseat.main(["--stop", "--quit-game", "--resign"]), 0)
+            kill.assert_called_once()
+            request = json.loads((run_dir / "stop.json").read_text())
+            self.assertEqual((request["quit_game"], request["resign"]), (True, True))
+            with patch.object(hotseat, "read_current", return_value=current), \
+                    patch.object(hotseat, "harness_alive", side_effect=[True, False, False]), \
+                    patch.object(hotseat.os, "kill"), patch.object(hotseat.time, "sleep"), \
+                    contextlib.redirect_stdout(io.StringIO()):
+                hotseat.main(["--stop"])
+            self.assertIs(json.loads((run_dir / "stop.json").read_text())["resign"], False)
+
+    def test_the_ending_carries_the_games_own_time_for_it(self) -> None:
+        self.assertEqual(hotseat.ended_at({"t": 1795762751}), {"at": "2026-11-27T06:59:11Z"})
+        self.assertEqual(hotseat.ended_at({"turn": 3}), {})
+        self.assertEqual(hotseat.ended_at({"t": "soon"}), {})
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp)
+            monitor, args, _ = self.duel(run_dir)
+            self.event(run_dir, "hs-p1/events.jsonl", kind="victory", team=0, victory=1,
+                       victory_type="VICTORY_CULTURE", turn=150, t=1795762751)
+            monitor.poll()
+            self.assertEqual(monitor.result["at"], "2026-11-27T06:59:11Z")
+        # Every table's record says when it began and at which revision.
+        with tempfile.TemporaryDirectory() as tmp:
+            args = game_args(players=2, civvis_seats=2, agents=["jack", "holy"], victories_off=[])
+            monitor = hotseat.Monitor(Path(tmp), "hs", [0, 1], args, lambda m: None)
+            self.addCleanup(monitor.close)
+            record = hotseat.table_record(monitor, args, [0, 1],
+                                          {"started": "2026-11-27T06:54:17Z", "revision": "945f056d"})
+            self.assertEqual((record["started"], record["revision"]), ("2026-11-27T06:54:17Z", "945f056d"))
+            self.assertNotIn("person", record)
 
 
 def text(*labels: str) -> list[dict]:
@@ -924,6 +980,165 @@ class SelfPlayTableTest(unittest.TestCase):
         old = installed(players=4)
         del old["HotseatPlayers"]
         self.assertEqual(hotseat.attached_table(old), (4, None))
+
+
+class HostStrainTest(unittest.TestCase):
+    """Live 2026-11-27: macOS ran out of application memory with Civ VI at
+    6.87 GB, and at a load average of 40 System Events stopped answering.
+    Neither failure looked like what it was, so the harness says what the Mac
+    has to spare before it starts a game on it."""
+
+    @staticmethod
+    def host(free: str, swap: str = "total = 4096.00M  used = 3178.94M  free = 917.06M  (encrypted)"):
+        answers = {"memory_pressure": f"...\nSystem-wide memory free percentage: {free}\n",
+                   "hw.memsize": "17179869184\n", "vm.swapusage": swap}
+
+        def run(command, **_):
+            return argparse.Namespace(stdout=answers[command[-1]])
+        return run
+
+    def test_the_reading_is_macos_own(self) -> None:
+        with patch.object(hotseat.play, "host_load", return_value=[8.2, 18.9, 23.7]), \
+                patch.object(hotseat.os, "cpu_count", return_value=10):
+            strain = hotseat.host_strain(self.host("62%"))
+        self.assertEqual(strain, {"memory_free": 0.62, "memory_free_gb": 9.9, "swap_used_mb": 3179,
+                                  "swap_total_mb": 4096, "load": [8.2, 18.9, 23.7], "cores": 10})
+        self.assertEqual(hotseat.strain_warnings(strain), [])
+        self.assertEqual(hotseat.strain_line(strain),
+                         "host: 9.9 GB memory free (62%), swap 3179 of 4096 MB, load 8 on 10 cores")
+
+    def test_too_little_memory_or_too_much_load_is_said_before_the_game_starts(self) -> None:
+        with patch.object(hotseat.play, "host_load", return_value=[41.0, 60.0, 66.0]), \
+                patch.object(hotseat.os, "cpu_count", return_value=10):
+            strain = hotseat.host_strain(self.host("30%"))
+        memory, load = hotseat.strain_warnings(strain)
+        self.assertIn("only 4.8 GB of memory is free (30%)", memory)
+        self.assertIn("load average is 41 on 10 cores", load)
+        source = (hotseat.HERE / "civ6_hotseat.py").read_text()
+        self.assertLess(source.index('began["host"] = host_strain()'),
+                        source.index("process = launcher.launch("), "said before Civ VI is started")
+
+    def test_a_host_that_does_not_say_is_not_a_host_under_strain(self) -> None:
+        def nothing(command, **_):
+            raise OSError("no such tool")
+        with patch.object(hotseat.play, "host_load", return_value=None):
+            strain = hotseat.host_strain(nothing)
+        self.assertIsNone(strain["memory_free"])
+        self.assertEqual(hotseat.strain_warnings(strain), [])
+        self.assertEqual(hotseat.strain_line(strain), "host: memory unread")
+
+
+class ClosingCivTest(unittest.TestCase):
+    """Live 2026-11-27 (selfplay-duel-20261127T0654Z): a re-attached harness
+    left Civ VI on the Victory screen, the supervisor re-attached to the
+    finished game every 25 s, and the quit's sixty seconds ran out on a
+    loaded host as ARE YOU SURE? came up."""
+
+    def test_a_reattached_harness_owns_the_civ_its_run_launched(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp)
+            self.assertFalse(hotseat.launched_here(run_dir, [27184]), "no launch on record")
+            hotseat.note_launched(run_dir, 27184)
+            self.assertTrue(hotseat.launched_here(run_dir, [27184]))
+            # A Civ VI the person opened since is not this run's to close.
+            self.assertFalse(hotseat.launched_here(run_dir, [31337]))
+            self.assertFalse(hotseat.launched_here(run_dir, []))
+            (run_dir / hotseat.LAUNCHED).write_text("not json")
+            self.assertFalse(hotseat.launched_here(run_dir, [27184]))
+        source = (hotseat.HERE / "civ6_hotseat.py").read_text()
+        self.assertIn("launched = bool(args.attach) and launched_here(run_dir)", source)
+        self.assertIn("launched = True\n            note_launched(run_dir, process.pid)", source)
+
+    def quit(self, screens: list, *, pids_after: int, seconds_a_look: float = 10.0,
+             stop_closes: bool = False) -> tuple[bool, list, int, list]:
+        """`quit_civ` against these screens in turn, a look taking
+        `seconds_a_look`; Civ VI exits once `pids_after` clicks have landed."""
+        clock = [0.0]
+        clicks, lines = [], []
+        reads = iter(screens)
+        asked = []
+
+        def read(run_dir, name, fallback=None):
+            clock[0] += seconds_a_look
+            return (0, 0, 1710, 1107), next(reads, [])
+
+        def running():
+            return [] if len(clicks) >= pids_after else [27184]
+
+        def stop(timeout_s):
+            asked.append(timeout_s)
+            if stop_closes:
+                clicks.extend([None] * pids_after)
+
+        with patch.object(hotseat, "read_screen", side_effect=read), \
+                patch.object(hotseat.play, "click_at", side_effect=lambda x, y: clicks.append((x, y))), \
+                patch.object(hotseat.env, "game_pids", side_effect=running), \
+                patch.object(hotseat.env, "request_macos_quit") as menu_quit, \
+                patch.object(hotseat.launcher, "stop", side_effect=stop), \
+                patch.object(hotseat.time, "monotonic", side_effect=lambda: clock[0]), \
+                patch.object(hotseat.time, "sleep", side_effect=lambda s: clock.__setitem__(0, clock[0] + s)):
+            closed = hotseat.quit_civ(Path("/tmp/r"), lines.append)
+        return closed, [c for c in clicks if c], menu_quit.call_count, asked
+
+    def test_the_question_that_comes_up_late_is_still_answered(self) -> None:
+        victory = text("VICTORY", "Just One More Turn...")
+        question = text("ARE YOU SURE?", "YES", "NO")
+        # As measured: five looks at the Victory screen, then the question.
+        closed, clicks, asked_menu, stops = self.quit([victory] * 5 + [question], pids_after=1)
+        self.assertTrue(closed)
+        self.assertEqual(clicks, [(855, 1040)])
+        self.assertEqual(asked_menu, 2, "asked again after three looks with no menu")
+        self.assertEqual(stops, [], "the launcher's stop is not needed")
+
+    def test_a_question_up_at_the_deadline_is_given_its_time(self) -> None:
+        victory, question = text("VICTORY"), text("ARE YOU SURE?", "YES", "NO")
+        looks = int(hotseat.QUIT_SECONDS // 12)
+        # The question is read as the clock runs out (a look is twelve seconds
+        # here), and its first press does not take: the clock gives a question
+        # that is up its time, so it is pressed again rather than given up on.
+        closed, clicks, _, stops = self.quit([victory] * looks + [question, question],
+                                             pids_after=2)
+        self.assertTrue(closed)
+        self.assertEqual(len(clicks), 2)
+        self.assertEqual(stops, [])
+
+    def test_a_civ_that_shows_no_menu_gets_the_launchers_stop_and_a_longer_one(self) -> None:
+        closed, clicks, asked_menu, stops = self.quit([], pids_after=1, stop_closes=True)
+        self.assertTrue(closed)
+        self.assertEqual((clicks, stops), ([], [hotseat.QUIT_STOP_SECONDS]))
+        self.assertGreaterEqual(asked_menu, 3)
+        self.assertGreaterEqual(hotseat.QUIT_SECONDS, 120)
+        closed, _, _, _ = self.quit([], pids_after=1, stop_closes=False)
+        self.assertFalse(closed, "a Civ VI that will not go is reported, not assumed gone")
+
+    def test_a_read_the_host_does_not_answer_uses_the_window_last_read(self) -> None:
+        window = (0, 0, 1710, 1107)
+        observation = {"text": "START GAME"}
+        asked = []
+
+        def recognize(shot, bounds):
+            asked.append(bounds)
+            return [observation]
+
+        answers = iter([window, None, None])
+        with tempfile.TemporaryDirectory() as tmp, \
+                patch.dict(hotseat.LAST_WINDOW, {"bounds": None}), \
+                patch.object(hotseat.play, "game_window", side_effect=lambda: next(answers)), \
+                patch.object(hotseat.play, "screenshot", return_value=True), \
+                patch.object(hotseat.play, "desktop_size", return_value=(1710, 1107)), \
+                patch.object(hotseat.play, "recognize_once", side_effect=recognize), \
+                patch.object(hotseat.play, "_observation_point", return_value=(0.5, 0.94)):
+            run_dir = Path(tmp)
+            first = hotseat.read_screen(run_dir, "a")
+            again = hotseat.read_screen(run_dir, "b")
+            given = hotseat.read_screen(run_dir, "c", (10, 10, 800, 600))
+        self.assertEqual(first[0], window)
+        self.assertEqual(again[0], window, "System Events did not answer: the window as last read")
+        self.assertEqual([row["text"] for row in again[1]], ["START GAME"])
+        self.assertEqual(given[0], (10, 10, 800, 600), "a step's own window comes first")
+        with patch.dict(hotseat.LAST_WINDOW, {"bounds": None}), \
+                patch.object(hotseat.play, "game_window", return_value=None):
+            self.assertEqual(hotseat.read_screen(Path("/tmp/r"), "never"), (None, []))
 
 
 if __name__ == "__main__":
