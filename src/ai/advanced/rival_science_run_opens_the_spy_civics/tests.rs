@@ -90,7 +90,7 @@ fn a_religion_seat_watching_a_science_run_adopts_diplomatic_service() {
     let off_pick = off_board.players[0].civic.clone();
     assert!(off_pick.is_some(), "the stock seat picks a civic");
     assert_ne!(
-        off_pick.as_ref().map(|civic| civic.as_str()),
+        off_pick.as_deref(),
         Some("diplomatic_service"),
         "the stock seat takes its government ladder first (the live loss)"
     );
@@ -98,10 +98,7 @@ fn a_religion_seat_watching_a_science_run_adopts_diplomatic_service() {
     let mut on_board = running_board();
     religion_seat(true).advanced_research(&mut on_board, 0, &religion);
     assert_eq!(
-        on_board.players[0]
-            .civic
-            .as_ref()
-            .map(|civic| civic.as_str()),
+        on_board.players[0].civic.as_deref(),
         Some("diplomatic_service")
     );
 }
