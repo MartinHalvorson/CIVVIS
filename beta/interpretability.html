@@ -607,6 +607,12 @@
             <p class="int-bars-none" id="int-bottleneck-none" hidden>These seats named nothing.</p>
           </div>
         </div>
+        <div class="res-kind" id="int-through" hidden>
+          <h3 class="res-kind-title">What the turn is for, by how far through the game</h3>
+          <p class="int-kind-sub">Every game stretched to one length, 0% its first turn and 100% its last. Most seats open on Expansion and turn to the victory a little past halfway.</p>
+          <ul class="res-legend" id="int-through-key" aria-label="Postures"></ul>
+          <div class="res-plot" id="int-through-plot"></div>
+        </div>
         <div class="res-kind">
           <h3 class="res-kind-title">What it aims for, and what it wins by</h3>
           <p class="int-kind-sub">The share of those seats that won, cut by the victory they won with. Press a row to count only its seats.</p>
@@ -878,11 +884,13 @@
         button.dataset.target = a;
         seg.append(button);
       }
-      for (const p of POSTURES) {
-        const item = el("li");
-        item.title = POSTURE[p][0] + ": " + POSTURE[p][1];
-        item.append(key("swatch", pcol(p)), POSTURE[p][0]);
-        $("int-posture-key").append(item);
+      for (const list of ["int-posture-key", "int-through-key"]) {
+        for (const p of POSTURES) {
+          const item = el("li");
+          item.title = POSTURE[p][0] + ": " + POSTURE[p][1];
+          item.append(key("swatch", pcol(p)), POSTURE[p][0]);
+          $(list).append(item);
+        }
       }
       for (const v of VICTORIES) {
         const item = el("li");
@@ -908,11 +916,37 @@
       };
 
       // What the turn is for: a column per span of turns, stacked to the
-      // whole of the seats still playing.
-      const drawPosture = () => {
-        const plot = $("int-posture-plot"), t = target();
+      // whole of the seats still playing. And the same by how far through
+      // its game each turn is (operator 2026-11-27: "produce another the plan
+      // through a game chart where the x axis is % through the game"): a
+      // column per part of the game, every game stretched to one length, and
+      // every seat one in each part it played through, so a long game weighs
+      // no more than a short one.
+      const THROUGH = Number(plans.through) || 0, STEP = THROUGH ? 100 / THROUGH : 0;
+      const AXES = {
+        turn: {
+          plot: "int-posture-plot", counts: (t) => t,
+          from: (i) => i * SPAN + 1, to: (i, spans) => Math.min(spans, i) * SPAN,
+          name: (c) => "Turns " + c.from + " to " + c.to, seats: (c) => c.playing / (c.to - c.from + 1),
+          last: (spans) => spans * SPAN, ticks: (inner) => (inner >= 420 ? 25 : 50), tick: (at) => (at === 0 ? "1" : String(at)),
+          title: (group) => "Turn · a column is " + SPAN * group + " turns", by: "by turn",
+          mid: (drawn, group) => drawn[Math.min(drawn.length - 1, Math.floor(150 / (SPAN * group)))],
+        },
+        through: {
+          plot: "int-through-plot", counts: (t) => t.through,
+          from: (i) => +(i * STEP).toFixed(1), to: (i, spans) => +(Math.min(spans, i) * STEP).toFixed(1),
+          name: (c) => c.from + "% to " + c.to + "% through the game", seats: (c, group) => c.playing / group,
+          last: () => 100, ticks: () => 25, tick: (at) => at + "%",
+          title: (group) => "How far through its game · a column is " + +(STEP * group).toFixed(1) + "%", by: "by how far through its game",
+          mid: (drawn) => drawn[Math.floor(drawn.length / 2)],
+        },
+      };
+      const drawPosture = (kind = "turn") => {
+        const axis = AXES[kind], plot = $(axis.plot), counted = axis.counts(target());
+        if (!plot) return;
         plot.replaceChildren();
-        const spans = t.playing.length;
+        if (!counted || !Array.isArray(counted.playing)) return;
+        const spans = counted.playing.length;
         const width = Math.max(260, plot.clientWidth), height = 252, m = { l: 38, r: 6, t: 8, b: 36 };
         const inner = width - m.l - m.r;
         // A span is a column; where a column would be a hairline (a phone),
@@ -920,11 +954,11 @@
         const group = inner / spans >= 8 ? 1 : 2;
         const cols = [];
         for (let i = 0; i < spans; i += group) {
-          const col = { from: i * SPAN + 1, to: Math.min(spans, i + group) * SPAN, playing: 0, by: {} };
+          const col = { from: axis.from(i), to: axis.to(i + group, spans), playing: 0, by: {} };
           for (const p of POSTURES) col.by[p] = 0;
           for (let k = i; k < Math.min(spans, i + group); k++) {
-            col.playing += Number(t.playing[k]) || 0;
-            for (const p of POSTURES) col.by[p] += Number((t.posture[p] || [])[k]) || 0;
+            col.playing += Number(counted.playing[k]) || 0;
+            for (const p of POSTURES) col.by[p] += Number((counted.posture[p] || [])[k]) || 0;
           }
           cols.push(col);
         }
@@ -932,13 +966,14 @@
         // handful of seats: it is drawn while 3 seats in 100 still play.
         const floor = 0.03 * Math.max(...cols.map((c) => c.playing));
         const drawn = cols.filter((c) => c.playing >= floor && c.playing > 0);
+        if (!drawn.length) return;
         const slot = inner / cols.length, gap = slot >= 7 ? 2 : 1, barW = Math.max(1, slot - gap);
         const y = (share) => m.t + (1 - share) * (height - m.t - m.b);
         const root = svg("svg", { width, height, viewBox: "0 0 " + width + " " + height, role: "img" });
         const said = (c) => POSTURES.filter((p) => c.by[p] / c.playing >= 0.1).map((p) => POSTURE[p][0] + " " + pct(c.by[p] / c.playing, 0)).join(", ");
-        const mid = drawn[Math.min(drawn.length - 1, Math.floor(150 / (SPAN * group)))];
-        root.setAttribute("aria-label", "The share of " + AIM[state.target].toLowerCase() + " seats in each posture, by turn. Turns "
-          + drawn[0].from + " to " + drawn[0].to + ": " + said(drawn[0]) + ". Turns " + mid.from + " to " + mid.to + ": " + said(mid) + ".");
+        const mid = axis.mid(drawn, group);
+        root.setAttribute("aria-label", "The share of " + AIM[state.target].toLowerCase() + " seats in each posture, " + axis.by + ". "
+          + axis.name(drawn[0]) + ": " + said(drawn[0]) + ". " + axis.name(mid) + ": " + said(mid) + ".");
         const grid = svg("g", { class: "res-grid" });
         for (const share of [0, 0.25, 0.5, 0.75, 1]) {
           if (share > 0) grid.append(svg("line", { x1: m.l, x2: width - m.r, y1: Math.round(y(share)) + 0.5, y2: Math.round(y(share)) + 0.5 }));
@@ -969,27 +1004,33 @@
             hover.setAttribute("visibility", "visible");
             const rows = POSTURES.slice().reverse().filter((p) => c.by[p] > 0)
               .map((p) => ({ colour: pcol(p), value: pct(c.by[p] / c.playing), name: POSTURE[p][0] + ": " + POSTURE[p][1] }));
-            showTip(event, "Turns " + c.from + " to " + c.to + " · " + fmt(Math.round(c.playing / (c.to - c.from + 1))) + " seats playing", rows);
+            showTip(event, axis.name(c) + " · " + fmt(Math.round(axis.seats(c, group))) + " seats playing", rows);
           });
           hit.addEventListener("pointerleave", () => { hover.setAttribute("visibility", "hidden"); hideTip(); });
           root.append(hit);
         });
         root.append(svg("line", { class: "res-base", x1: m.l, x2: width - m.r, y1: Math.round(y(0)) + 0.5, y2: Math.round(y(0)) + 0.5 }));
-        const last = spans * SPAN;
-        for (let at = 0; at <= last; at += inner >= 420 ? 25 : 50) {
+        const last = axis.last(spans);
+        for (let at = 0; at <= last; at += axis.ticks(inner)) {
           const x = m.l + (at / last) * inner;
           const label = svg("text", { class: "res-tick", x, y: height - m.b + 15, "text-anchor": at === last ? "end" : at === 0 ? "start" : "middle" });
-          label.textContent = at === 0 ? "1" : String(at);
+          label.textContent = axis.tick(at);
           root.append(label);
         }
         const title = svg("text", { class: "res-axis-title", x: m.l + inner / 2, y: height - 4, "text-anchor": "middle" });
-        title.textContent = "Turn · a column is " + SPAN * group + " turns";
+        title.textContent = axis.title(group);
         root.append(title);
         plot.append(root);
+        if (kind !== "turn") return;
         const thin = $("int-posture-thin"), cut = cols.find((c) => !drawn.includes(c));
         thin.hidden = !cut;
         if (cut) thin.textContent = "From turn " + cut.from + " fewer than 3 seats in 100 are still playing: their games have ended. The columns stop there.";
       };
+      // The chart by how far through the game is there when the snapshot
+      // counted it.
+      const throughShown = THROUGH > 0 && !!(T.all.through && Array.isArray(T.all.through.playing));
+      $("int-through").hidden = !throughShown;
+      const drawPostures = () => { drawPosture("turn"); if (throughShown) drawPosture("through"); };
 
       // What it says is in its way: the bottlenecks the seats name, by the
       // share of the turns on which one was named.
@@ -1140,7 +1181,7 @@
         for (const b of buttons) b.setAttribute("aria-pressed", String(b.dataset.target === state.target));
         for (const [name, row] of Object.entries(aimRows)) row.setAttribute("aria-pressed", String(name === state.target));
         hideTip();
-        drawCounted(); drawPosture(); drawBottleneck(); drawSmalls();
+        drawCounted(); drawPostures(); drawBottleneck(); drawSmalls();
       };
       seg.addEventListener("click", (event) => {
         const button = event.target.closest("button");
@@ -1157,9 +1198,10 @@
         note.append(" of build ", link);
       }
       note.append(". A seat holds a posture from the turn it writes it down until it writes the next, and is counted until its game ends or it is out of it."
+        + " By how far through the game, a game that ended on turn 110 and one that ended on turn 250 are both cut into 50 parts, and a seat counts once in each part it played through."
         + " In a tournament each seat also plays its own draw of genes, so these are the plans of many slightly different agents, not of one.");
       $("int-plans").hidden = false;
-      drawPlans = () => { drawPosture(); drawSmalls(); };
+      drawPlans = () => { drawPostures(); drawSmalls(); };
       pick("all");
     }
 
