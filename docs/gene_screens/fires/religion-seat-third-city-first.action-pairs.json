@@ -1,0 +1,24 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "religion-seat-third-city-first",
+  "scope": "Recorded proposal activation on captured live input only, not host execution or strength. 13 boards from three live T8 benchmark games of 2026-11-26 (Lv 8 Deity 6p, Online, Religion seats) whose third city came 25-40 turns after the second (civvis-t8-20261126T093036Z t25 t26 t28 t30, -T104734Z t24 t26 t28 t30 t32, -T151149Z t23 t24 t25 t26): the founding turn's first Shrine and the turns after it with two cities and no Settler out or queued. Each board is the run's events.jsonl cut after turn N+1 and replayed at turn N. Both arms run one frozen ci-profile civvis_orders --resumed built from the branch with the run's own requested genome (why.log line 1 forced); the on arm adds --with religion-seat-third-city-first. 13 of 13 complete; 7 boards change the produce order: the off arm orders BUILDING_SHRINE on 5 of them (093036Z t25, 104734Z t24, 151149Z t23-25), as the live seat did, and a Monument or nothing on 2, while the on arm orders UNIT_SETTLER on all 7. The off arms carry 7 religion-seat-first-shrine lines, the on arms 0; the on arms carry 5 gene journal lines. Script: native-queries-01/run-third-city-queries.py.",
+  "archive": {
+    "path": "docs/eval/2026-11-26-religion-seat-third-city-first.native-queries.tar.xz",
+    "sha256": "34bccf05dbed3972a881a9d22dafc03bc69b38f45faa2823f244da10d8a98109"
+  },
+  "members": [
+    "native-queries-01/0000/result.json",
+    "native-queries-01/0001/result.json",
+    "native-queries-01/0002/result.json",
+    "native-queries-01/0003/result.json",
+    "native-queries-01/0004/result.json",
+    "native-queries-01/0005/result.json",
+    "native-queries-01/0006/result.json",
+    "native-queries-01/0007/result.json",
+    "native-queries-01/0008/result.json",
+    "native-queries-01/0009/result.json",
+    "native-queries-01/0010/result.json",
+    "native-queries-01/0011/result.json",
+    "native-queries-01/0012/result.json"
+  ]
+}

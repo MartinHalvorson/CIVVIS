@@ -6401,6 +6401,15 @@ pub const GENES: &[Gene] = &[
     // Religion lane. Opt-in; see
     // `advanced/religion_lane_outlasts_the_denial.rs`.
     Gene { tag: "religion-lane-outlasts-the-denial", field: "religion_lane_outlasts_the_denial", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_lane_outlasts_the_denial, disable: AdvancedAi::disable_religion_lane_outlasts_the_denial },
+    // Tournament 8 2026-11-26, four Lv 8 Religion seats: the third city came
+    // 25-51 turns after the second (t24-49, t14-54, t15-66, t22-53). After
+    // the founding, `religion-seat-first-shrine` went ahead of the capital's
+    // Settler in three of them and no Settler was asked again until the
+    // early floor at t31-37. A two-city Religion seat's next Settler takes
+    // the best city's queue before the band turn, with the second-city
+    // gene's exceptions. Opt-in; see
+    // `advanced/religion_seat_third_city_first.rs`.
+    Gene { tag: "religion-seat-third-city-first", field: "religion_seat_third_city_first", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_third_city_first, disable: AdvancedAi::disable_religion_seat_third_city_first },
     // ---- append: s-s ------------------------------------------------
     // Kristina Deity 11-10 reached Nationalism at t122 with 8 cities on three
     // terrain classes and built no Open-Air Museum by t150 (+48 Culture and
