@@ -601,6 +601,27 @@ class EachColumnFromEloRightMarksItsLeader(unittest.TestCase):
         self.assertLess(self.page.index("  #playerhud .ribbon-stat:hover,"), self.page.index(rule))
 
 
+class CivsAreNamedInFull(unittest.TestCase):
+    """The standings, the victory tracker, the war log and the result graphs
+    name each civilization in full again.
+
+    Operator 2026-11-26: "lets change the civ names back to the full names fo
+    the civs, not the 3 letter abbreviations" (the codes came in with #5910).
+    """
+
+    def test_no_script_shortens_a_civ(self):
+        app = (ASSETS / "app.js").read_text(encoding="utf-8")
+        for name in ("app.js", "app_standings.js", "app_moments.js"):
+            self.assertNotIn("civShort", (ASSETS / name).read_text(encoding="utf-8"), name)
+        self.assertIn('${p.id === acting && highlightActing ? "◉ " : ""}${p.civ}</span>', app)
+        self.assertIn("`${player.civ}</button><span class=\"victory-value", app)
+        self.assertIn("const label = `${player.civ}${suffix}`;", app)
+        # The CIV column gets its full-name share and floor back.
+        self.assertIn('{key:"civ", label:"Civilization", block:"identity", min:"--hud-ident-min", width:2.035}', app)
+        self.assertIn("minmax(var(--hud-rank-min), .7fr) minmax(var(--hud-ident-min), 2.035fr)",
+                      INDEX.read_text(encoding="utf-8"))
+
+
 class QuickDealsEndsTheLaunchBar(unittest.TestCase):
     """Quick Deals is the last button of the launch bar, not one of the hooks.
 
@@ -2822,13 +2843,8 @@ class TheResultScreenIsAScreenOfCharts(unittest.TestCase):
         block = moments[moments.index("const GAME_STATS_SERIES = ["):moments.index("// Hover: one turn cursor")]
         start = app.index("function compactStat(")
         compact = app[start:app.index("\n}\n", start)] + "\n}\n"
-        # A chart's caption names its civilization by three letters
-        # (`civShort`, in the script that loads before app.js).
-        standings = (ASSETS / "app_standings.js").read_text(encoding="utf-8")
-        short = standings[standings.index("const CIV_SHORT = {"):
-                          standings.index("\n}\n", standings.index("function civShort(")) + 3]
         done = subprocess.run(
-            [NODE, "-e", GAME_STATS_SCENARIOS.replace("__COMPACT__", short + compact).replace("__BLOCK__", block)],
+            [NODE, "-e", GAME_STATS_SCENARIOS.replace("__COMPACT__", compact).replace("__BLOCK__", block)],
             capture_output=True, text=True, timeout=120)
         self.assertEqual(done.returncode, 0, done.stderr.strip()[-3000:])
         self.assertIn("game stats checks passed", done.stdout)
