@@ -1796,17 +1796,18 @@ impl AdvancedAi {
                    "Denouncing {}", g.players[rival].civ;
                    "their space race is a science threat");
         }
+        // `foreign-site-buys-the-open-border`: on the six-turn trade slot of
+        // a turn this seat bought passage for a stranded Great Person, every
+        // alliance desk below waits. The live host opens one alliance
+        // session a batch and holds every purchase beside it
+        // (`hold_deals_beside_an_alliance`): a Research Alliance asked of
+        // Georgia every turn kept Mead's grant off the host for good
+        // (civvis-t7-20261127T075243Z t132-t150). See
+        // `advanced/foreign_site_open_border.rs`.
+        let site_passage_bought = self.foreign_site_passage_bought(g, pid);
         // `coalition_before_war`: an alliance with a neighbour of the war
         // desk's target, ahead of the stock cadence. See
         // `advanced/coalition.rs`.
-        // `foreign-site-buys-the-open-border`: on a turn this seat bought
-        // passage for a stranded Great Person, every alliance desk below
-        // waits a turn. The live host opens one alliance session a batch and
-        // holds every purchase beside it (`hold_deals_beside_an_alliance`):
-        // a Research Alliance asked of Georgia every turn kept Mead's grant
-        // off the host for good (civvis-t7-20261127T075243Z t132-t150). See
-        // `advanced/foreign_site_open_border.rs`.
-        let site_passage_bought = self.foreign_site_passage_bought(g, pid);
         if !site_passage_bought {
             self.coalition_alliance_step(g, pid);
         }

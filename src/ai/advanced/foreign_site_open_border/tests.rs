@@ -350,11 +350,14 @@ fn darwin_with_no_known_wonder_buys_nothing() {
     assert!(grants(&g).is_empty());
 }
 
-/// The alliance desks wait on the turn a stranded person's passage closes:
-/// the live bridge holds any purchase sent beside an alliance ask.
+/// The alliance desks wait on the trade slot of a turn a stranded person's
+/// passage closes: the live bridge holds any purchase sent beside an
+/// alliance ask. Off the slot they ask as before.
 #[test]
 fn the_purchase_turn_is_known_to_the_alliance_desks() {
     let mut g = board();
+    let mut off_slot = g.clone();
+    g.turn = 150;
     campus(&mut g, 1);
     hold(&mut g, "margaret_mead");
     let ai = seat(true);
@@ -370,4 +373,12 @@ fn the_purchase_turn_is_known_to_the_alliance_desks() {
         !ai.foreign_site_passage_bought(&g, 0),
         "the next turn asks again"
     );
+
+    campus(&mut off_slot, 1);
+    hold(&mut off_slot, "margaret_mead");
+    assert!(
+        buy(&mut off_slot, true),
+        "the purchase is made off the slot too"
+    );
+    assert!(!ai.foreign_site_passage_bought(&off_slot, 0));
 }
