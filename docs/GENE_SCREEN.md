@@ -63,8 +63,10 @@ five Firaxis AIs, mostly at Deity. A ledger verdict says how a gene does
 against our own agents. It is not evidence against the Firaxis Deity AI,
 and the ranking, the strategy panel and the Interpretability page now say
 "Prince self-play" wherever they show one. `tools/test_sim_live_calibration.py`
-holds each fact below to the file that makes it true, and fails when a
-reporting batch plays another field, so the label cannot go stale.
+holds the field facts below to the files that make them true: Prince's empty
+handicap row, the screen's defaults, the batch's flags and every source's
+rung. It fails when a reporting batch plays another field, so the label
+cannot go stale.
 
 **What `difficulty` does in a screen game.** The continuous batch passes
 `gene_screen` only `--games --target-games --start-seed --jobs --out
@@ -111,24 +113,52 @@ over the same games is √6 ≈ 2.4 times wider.
 **Calibration.** `tools/sim_live_calibration.py` compares the ledger's
 `results.jsonl` (the Official Benchmark and everything after it, 6p
 Continents, a game counted once by its best run) with what the simulator
-predicts for the same table. The Elo prediction is our lane's twin against
-five copies of `civ6:<level>`, on the fit's own model, using `beta/elo_page`'s
-twins and fit. The engine prediction is a 30-game native batch of the
-recommended faithful field per level (seeds 59200000+, `--deployment-genome
---target-mix science,religion`, the live lanes; rung −2, pace, late science
-75, space floor 62, victory pace 175). Read 2026-11-27, main d07b91fb:
+predicts for the same table. Read 2026-11-27 at 05:20Z, main d07b91fb:
 
-ENGINE_TABLE
+- **Elo**: our lane's twin against five copies of `civ6:<level>`, on the
+  fit's own model, with `beta/elo_page`'s twins and fit. Two stand-ins are
+  priced: the published `stock` one, and `oldguard` from a 40-table-a-rung
+  calibration run (`docs/ELO.md`, "A candidate that agrees").
+- **Native**: one measured seat (`--deployment-genome --target-mix
+  science,religion`, the live lanes) against five handicapped chairs. The
+  faithful field is the recommended calibration below (rung −2, pace, late
+  science 75, space floor 62, victory pace 175; seeds 59200000+). The other
+  three columns are the three kinds `--rivals firaxis-mix --rival-chairs 5`
+  deals one game in three each (`rival_kind`, seed mod 3; seeds 59600001+
+  and 59610000+, no calibration knobs): `legacy` is the `oldguard` agent,
+  `firaxis-mix` is `stock` on a lane, and `random` is the deployment genome.
+  `--rival-kind` reads one of them.
+
+Each cell is the predicted win rate, or the native wins over games, with the
+miss against live in points:
+
+| Level | Live | Live-implied rival Elo | Sim `civ6:` Elo | Elo: `stock` stand-in | Elo: `oldguard` stand-in | Native: faithful field | Native: `oldguard` chairs | Native: `stock` chairs | Native: deployment chairs |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Lv 4 Prince | 39/39 (100%) | ≤ 258 | 1000 | 44.7% (−55) | 89.2% (−11) | 5/30 (−83) | — | — | — |
+| Lv 5 King | 30/40 (75%) | 686 ±126 | 1197 | 17.1% (−58) | 44.9% (−30) | 5/30 (−58) | — | — | — |
+| Lv 6 Emperor | 32/56 (57%) | 844 ±100 | 1526 | 4.0% (−53) | 38.7% (−18) | 0/9 (−57) | 3/6 (−7) | 6/6 (+43) | 0/6 (−57) |
+| Lv 7 Immortal | 16/53 (30%) | 1120 ±113 | 1683 | 2.2% (−28) | 19.9% (−10) | — | — | — | — |
+| Lv 8 Deity | 46/245 (19%) | 1292 ±63 | 1972 | 0.5% (−18) | 16.6% (−2) | 0/24 (−19) | 1/12 (−10) | 2/12 (−2) | 0/12 (−19) |
 
 "Live-implied" is the rating the level's rivals would need for the Elo model
-to predict the live record, which is what the ELO Rankings page plots. Both
-simulator stand-ins miss in the same direction: they are far stronger than
-Civilization VI's own AI at every level. The Elo stand-in is 500–700 points
-too strong from King to Deity, and more at Prince. A table of one seat against
-five copies of a rival reads that rival 100 to 180 points low (`docs/ELO.md`,
-"Why a rung sits alone"), which still leaves 300 points or more at every
-level. The faithful field's rivals are our own deployment genome, so at
-Prince they are an equal field (1 in 6) where the live seat has won 39 of 39.
+to predict the live record, which is what the ELO Rankings page plots. The
+published stand-in is far stronger than Civilization VI's own AI at every
+level: 500–700 points from King to Deity, and more at Prince. A table of one
+seat against five copies of a rival reads that rival 100 to 180 points low
+(`docs/ELO.md`, "Why a rung sits alone"), which still leaves 300 points or
+more at every level. The faithful field is further off still. Its chairs are
+our own deployment genome, so at Prince and King it is an even table (5 of
+30), where the live seat won 39 of 39 and 30 of 40. At Emperor and Deity it
+won nothing in 33 games, and its rivals won by Culture as early as turn 101,
+where live losses are 74% rival Science at a median turn 186. The
+uncalibrated deployment chairs read the same. `stock` chairs on a lane swing
+from 6 of 6 at Emperor to 2 of 12 at Deity.
+
+The one stand-in both instruments agree on is `oldguard` with the level's
+handicap. The Elo model puts it 2 to 30 percentage points under live from
+Prince to Deity. Its 3 of 6 Emperor and 1 of 12 Deity native games are
+consistent with live's 57% and 19%. That makes it a candidate, not a fit: 18
+native games cannot separate it from its neighbours.
 
 The lanes do not transfer either. The Elo table rates `holy` (Religion) 353
 points above `moonshot` (Science), seven times the strength. Live, the two
@@ -159,27 +189,33 @@ reason is in the code:
    native competitions, not on the field. So the first faithful batch would
    stop at publication, and the scheduler does not start the next batch
    until a publication merges.
-3. **The stand-in does not match live yet.** No setting of the existing
-   rival knobs is fitted to win rates. They were fitted to the rivals'
-   economy and finish turn at Immortal, Emperor and King when our seat won
-   almost nothing. The table above shows the result at today's genome.
+3. **No stand-in the screen can seat is fitted to live win rates.** The
+   faithful field's knobs were fitted to the rivals' economy and finish
+   turn when our seat won almost nothing, and at today's genome it misses
+   by 19 to 83 points. The `oldguard` candidate plays only as one game in
+   three of `--rivals firaxis-mix`, which spends the other two on fields
+   that miss; it needs a rival kind of its own and a few hundred games a
+   level before it is a profile.
 
 **What to run instead.** Price a gene at Deity in the live arrangement as a
 probe, beside the ledger rather than in it, read on its on-off difference,
 end turn and score share (the faithful-field sections below say how), and
-check the field against live in the same breath:
+check the field against live from the same rows:
 
 ```
-gene_screen --rivals firaxis-faithful --handicap rivals --rival-chairs 5 \
-  --rival-rung -2 --rival-pace --rival-late-science 75 --rival-space-floor 62 \
-  --rival-victory-pace 175 --difficulty deity --target-mix science,religion \
-  --genes <tag> --games 600 --out rows.jsonl
-python3 tools/sim_live_calibration.py --engine rows.jsonl
+gene_screen --rivals firaxis-mix --handicap rivals --rival-chairs 5 \
+  --difficulty deity --target-mix science,religion \
+  --genes <tag> --games 900 --out rows.jsonl
+python3 tools/sim_live_calibration.py --engine rows.jsonl --rival-kind legacy --max-miss 10
 ```
 
-`--max-miss PP` makes the second command exit 1 when any level misses live
-by more than PP points. That is the gate a field must pass before its
-verdicts may be read as Deity evidence.
+Read the gene on the `legacy` games only (the third of the batch whose rival
+rows say `rival_mix: "legacy"`). `--max-miss PP` makes the second command
+exit 1 when any level's engine games miss live by more than PP points. That
+is the gate a field must pass before its verdicts may be read as Deity
+evidence, and no field has passed it yet. The faithful field's command
+(below) still prices the same gene against stronger rivals, but nothing in
+it is calibrated to the live seat's win rate.
 
 ## ⭐ ONE SCREEN (operator, 2026-08-22)
 
