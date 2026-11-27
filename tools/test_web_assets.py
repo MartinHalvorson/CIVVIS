@@ -1279,7 +1279,7 @@ class AGoldBarRisesUpTheVictoryTrackerWithTheTurn(unittest.TestCase):
         self.assertLess(gauge, rail)
         page = INDEX.read_text(encoding="utf-8")
         style = page[page.index("  #victoryhud > .victory-region {\n    display: grid;"):]
-        style = style[:style.index("  @media (prefers-reduced-motion: reduce) {\n    .turn-gauge-fill")]
+        style = style[:style.index("  @media (prefers-reduced-motion: reduce) {\n    .turn-gauge {")]
         # The bar's column is as wide as the bar and no wider without one; the
         # heading and the "Off" line span both columns, the bar and the rail
         # share the row under them.
@@ -1333,6 +1333,18 @@ class AGoldBarRisesUpTheVictoryTrackerWithTheTurn(unittest.TestCase):
         # dark copy where it ends, so no figure is drawn twice in one place.
         self.assertIn("clip-path: inset(0 0 var(--rise, 0%) 0);", rule(".turn-gauge-scale"))
         self.assertIn("clip-path: inset(calc(100% - var(--rise, 0%)) 0 0 0);", rule(".turn-gauge-scale.lit"))
+        # Operator, 2026-11-27: "theres a white line that lags behind and
+        # catches up to the rising gold bar. please fix so it stays aligned".
+        # The gold, its head and the scale each glided on a transition of
+        # their own, and the head's fell behind on a climb. Now the height is
+        # the one thing that glides: it is a registered value, so it can, and
+        # every part drawn at the turn reads it from the bar and has no
+        # motion of its own to fall behind with.
+        self.assertIn('\n  @property --rise { syntax: "<percentage>"; inherits: true; initial-value: 0%; }\n', page)
+        self.assertIn("transition: --rise .45s ease-out;", rule(".turn-gauge"))
+        for part in (".turn-gauge-fill", ".turn-gauge > i", ".turn-gauge-scale", ".turn-gauge-scale.lit"):
+            self.assertNotIn("transition", rule(part), part)
+        self.assertIn("  @media (prefers-reduced-motion: reduce) {\n    .turn-gauge { transition: none; }\n  }", page)
         # Both copies come after the head in the markup, so they paint over it.
         source = (ASSETS / "app.js").read_text(encoding="utf-8")
         gauge = source[source.index("function turnGauge() {"):]
@@ -1447,22 +1459,16 @@ class ANewGamesGoldBarStartsAtItsFirstTurn(unittest.TestCase):
 
     def test_the_hold_stops_every_part_of_the_bar_that_glides(self):
         page = self.page
-        gauge = page[page.index("  .turn-gauge {"):page.index("  .overlay-options {")]
-        # Every part of the bar that glides to a new turn...
+        gauge = page[page.index("\n  .turn-gauge {"):page.index("  .overlay-options {")]
+        # The one part of the bar that glides to a new turn is its height,
+        # which the gold, its head and the scale all read...
         gliding = sorted(selector.strip() for selector, body in re.findall(r"\n  ([^{}\n]+) \{([^}]*)\}", gauge)
                          if "transition:" in body and "none" not in body)
-        self.assertEqual(gliding, [".turn-gauge > i", ".turn-gauge-fill", ".turn-gauge-scale"])
-        # ...is held by the one rule, which stands after them all.
-        hold = ("  .turn-gauge.turn-gauge-settling > .turn-gauge-fill,\n"
-                "  .turn-gauge.turn-gauge-settling > i,\n"
-                "  .turn-gauge.turn-gauge-settling > .turn-gauge-scale { transition: none; }\n")
+        self.assertEqual(gliding, [".turn-gauge"])
+        # ...and the hold is on the bar itself, after the rule it holds.
+        hold = "  .turn-gauge.turn-gauge-settling { transition: none; }\n"
         self.assertIn(hold, gauge)
-        for selector in gliding:
-            self.assertLess(gauge.index(f"  {selector} {{"), gauge.index(hold))
-        # The parts are the bar's own children, as the hold's selectors say.
-        drawn = self.source[self.source.index("function turnGauge() {"):]
-        drawn = drawn[:drawn.index("\n}\n")]
-        self.assertIn('<span class="turn-gauge-fill"></span><i></i>', drawn)
+        self.assertLess(gauge.index("  .turn-gauge {"), gauge.index(hold))
         self.assertIn("turn-gauge-settling", self.settle)
         # The markup never names the hold, so a redraw cannot leave it on.
         self.assertNotIn("turn-gauge-settling", self.source)
