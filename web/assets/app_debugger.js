@@ -6575,7 +6575,9 @@ function strangeAsk(run) {
 // laying out and painting them), never on a world. Drawn only as often as
 // the page can, a turn shown is as far on as the worlds have played, and
 // each world's engine plays on ahead the whole time (`strangeAheadDone`), so
-// the worlds go as fast as their engines play them, each on a core.
+// the worlds go as fast as their engines play them, each on a core: 52 s
+// against 77 s for the same ten worlds run back to back (with no scouts
+// beside them, `strangeForesee`, and less measuring in the boxes).
 //
 // A world with no turns left to play ahead (its game ends there,
 // `strangeSpent`) is taken all the way to the last it holds, so its last
@@ -6928,9 +6930,7 @@ function strangeForesee() {
   // While Send it runs time on, no future is begun either: the worlds are
   // playing their futures themselves, each on its engine, and are only as
   // fast as the slowest of them, which a scout on a core beside it slows.
-  // Measured (2026-11-27, ten worlds from turn 1 to the end on a busy 18-core
-  // computer): 63 s with scouts, 58 s without. The futures carry on once time
-  // stops, from wherever the worlds are.
+  // The futures carry on once time stops, from wherever the worlds are.
   if (strange.run && strange.run.fast) return;
   const open = strangeOpen(), own = strangeScouts(), now = performance.now();
   if (!own && (!strangeIdle() || Object.keys(strange.peeks).length > 0)) return;

@@ -2104,9 +2104,12 @@ Measured on the published engine (civvis.ai/test, 2026-11-27, headless Chrome,
 
 | Run | Time | Page thread busy | What time waited on |
 |---|---|---|---|
-| Before: every turn shown | 67 s | 83% | the page drawing ten boxes a turn (605 of 609 samples), every world 11 or 12 turns ahead the whole way |
+| Before: every turn shown | 67-77 s (four runs) | 82-86% | the page drawing ten boxes a turn (605 of 609 samples), every world 11 or 12 turns ahead the whole way |
 | Before, scouts stopped | 67 s | 82% | the same |
-| Send it: furthest turn shown, futures played without a pause, no scouts | 58 s | 67% | the slowest world's engine |
+| Send it, run back to back with the 77 s one | 52 s | 68% | the slowest world's engine |
+
+Letting each world play 24 turns ahead instead of 12 made it slower (72 s):
+the worlds that were already ahead only took cores from the slowest one.
 
 Showing each turn, two fifths of the page's thread went to the browser laying
 out and painting the ten boxes, and a third to the boxes drawing their turns.
