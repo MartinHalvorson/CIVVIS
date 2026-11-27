@@ -624,6 +624,92 @@ whole `BOOTSTRAP_ATTEMPTS` budget. The climb files the launch as it files any
 launch that reached no board, so a seat that draws its leader per game moves on
 within about a minute.
 
+## The person-facing install (`civ6_hotseat.py --manual-lobby`)
+
+`tools/civ6_hotseat.py --manual-lobby` is the hotseat game for somebody who is
+not this project's operator. The person starts Civ VI and sets the Hot Seat
+game up by hand (main menu -> Multiplayer -> Hot Seat -> make every player
+CIVVIS should play Human, the first row is theirs -> Start Game); the harness
+only installs the mod, reads `Automation.log` and writes orders.
+
+**Screen-free by construction.** The flag sets `CIVVIS_SCREEN_FREE=1` before
+`civ6_control` loads, and `civ6_control/__init__.py` then engages
+`civ6_control/screen_free.py`: every module that clicks, types, captures,
+reads the screen or moves a window (`macos_capture`, `macos_input`,
+`macos_ocr`, `macos_window`, `popup_clear`, `vision`) imports as a stand-in
+that refuses every use, and Pillow reads as absent. The decision workers
+inherit the variable. Nothing needs Screen Recording or Accessibility
+permission, Pillow, `swiftc` or `cliclick`, and nothing compiles a helper.
+`tools/test_civ6_hotseat_manual_lobby.py` imports the harness and a worker that
+way and runs a whole session against a scripted game, failing if a screen module
+loads for real, Pillow loads, or a screen tool is started.
+
+**Seats are discovered, not declared.** The install writes an agent context for
+each of seats 1-5 whatever the lobby will hold (a copy of the ~750 KB installed
+agent each; about 2.4 MB of Lua heap and 0.08 s apiece under stock Lua 5.1).
+A declared count would have to match the lobby the person builds, and a
+different count means a different file list, which Civ VI notices only at its
+next launch (`Mods.sqlite` is an mtime index) -- a failure that reads as CIVVIS
+not playing. A context whose seat is not a Human row never acts, because the
+hotseat local player is always a Human row and each context acts on its own
+seat only. The HUD then reads the lobby back once per game (`hotseat_lobby`:
+every participating full civ, its slot, difficulty, leader, and the map, size,
+speed and turn limit), and the harness starts one worker per Human row after
+the first. What it says when the lobby does not fit: only the person is Human
+(no CIVVIS seat), a Human row past row 6 (its turns wait for a person), or a
+first row that is not Human. Civ VI's own `Modding.log` is read beside it, so a
+Hot Seat game started without the mod (Civ VI was running when it was
+installed) or a single-player game is named in one sentence with the fix.
+
+**Inert without its harness.** The install sets `RequireHarness`, and three
+copies of one `CivvisHarness` block (agent, screen closer, HUD;
+`mod/harness_gate_test.lua` holds them identical) apply two rules:
+
+- *Outside a hotseat game* (`GameConfiguration.IsHotseat()`, the shipped test,
+  `ActionPanel.lua:1213`) the install is **dormant**: no agent context
+  registers a listener; each replaced screen and the HUD load their shipped
+  script and stop there -- no clock, no wrapped `UI`, no listener, no line.
+- *In a hotseat game* it acts and writes only while the harness is **live**: a
+  `harness` row under `HarnessRun` in the orders database whose `beat` (Unix
+  seconds, rewritten every 2 s) is at most `HarnessFreshSeconds` (20) old by
+  SQLite's own clock (`SELECT CAST(strftime('%s','now') AS INTEGER) - beat`).
+  It is read at most every 3 s of `Automation.GetTime()`. `--stop` and Ctrl-C
+  delete the row and a killed harness lets it go stale; either way every seat is
+  a person's again within seconds, with its hand-over screen waiting for them.
+  While live, a turn is CIVVIS's only on its installed seats.
+
+The person-facing install also sets no Create Game default: `install.py` drops
+the modinfo's `FrontEndActions` (the `UpdateDatabase` of
+`CivvisControlConfig.xml`), leaving the InGameActions-only shape shipped DLC
+already have (`DLC/ScoutCat/ScoutCat.modinfo`). The agent imposes no turn
+limit (`MaxTurns` nil) and does not confirm a person's Exit
+(`UserRequestClose`). The mod is removed only when Civ VI is not running; under
+a running game it stays, inert, and the harness says how to remove it later.
+
+| A hotseat install left in place, then | Before (`civ6_hotseat.py` install) | `--manual-lobby` install |
+|---|---|---|
+| (a) a single-player game | popup closers armed, standing down only because seat 0 is in `HotseatHumanSeats`, each writing `autoclose_armed` and a heartbeat a minute; `UI` wrapped; each seat context writing `loaded`; the HUD's seat watch armed | the shipped screens and HUD: no listener, no wrapper, no line |
+| (b) a hotseat game, no harness | each installed CIVVIS seat's turn played (the fallback ladder after the order wait), its Start Turn pressed, its popups closed and its diplomacy answered; lines written | every seat is a person's: nothing closed, pressed, answered, ordered or written |
+| (c) the front end | Create Game defaults rewritten: difficulty, speed, map, size, a custom turn limit | untouched |
+
+What could not be made stock, and why:
+
+- **One replacement per context.** The ~30 `ReplaceUIScript` actions (the
+  popups, `PlayerChange`, and `TopPanel` at `LoadOrder` 100000) each load the
+  shipped script, so the screens behave as shipped, but the engine loads one
+  replacement per context: a person's own UI mod that replaces the same
+  context is displaced while this is installed. A modinfo is static; no
+  setting can withdraw an action per game.
+- **The mod index is rebuilt.** Install and uninstall drop `Mods.sqlite`, or the
+  new folder is never discovered. Civ VI rebuilds it at its next launch; any
+  state Additional Content kept there is rebuilt from each mod's defaults.
+- **The bundle's seal** is broken while installed and restored on uninstall
+  (issue #1342, above).
+- **Load cost.** Five agent contexts load in every game, single player included
+  (dormant, but parsed); in a hotseat game the gated listeners and pass-through
+  wrappers stay registered, and the HUD and hand-over screen read the beat
+  every 3 s.
+
 ## The ladder
 
 `tools/civ6_ladder.py` holds the record. A rung is claimed only by a victory
