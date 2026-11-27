@@ -32,6 +32,7 @@ is where every other file of a lane comes from.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import pathlib
@@ -521,6 +522,27 @@ class Lanes(unittest.TestCase):
             self.assertIn(f'href="{charts}/"', viewer)
             self.assertNotIn('href="/', viewer)
             self.assertNotIn('src="/', viewer)
+
+    # ------------------------------------------------- what is asked for early
+
+    def test_every_page_but_the_viewer_fetches_the_engine_ahead(self):
+        # Discovered, as cache_bust.py discovers them: every page below the
+        # lane root, from as many directories up as it is deep, by the
+        # engine's own content version.
+        for lane in (self.stable, self.test):
+            version = hashlib.sha256((lane / "civvis.wasm").read_bytes()).hexdigest()
+            self.assertNotIn("data-engine-prefetch", self.read(lane, "index.html"))
+            pages = sorted(lane.glob("*/**/index.html"))
+            self.assertTrue(pages, f"{lane.name} has no pages to check")
+            for found in pages:
+                up = "../" * (len(found.relative_to(lane).parts) - 1)
+                self.assertEqual(found.read_text(encoding="utf-8").count("data-engine-prefetch"), 1, found)
+                self.assertIn(f'new URL("{up}civvis.wasm?v={version}", location.href)',
+                              found.read_text(encoding="utf-8"), found)
+
+    def test_the_viewer_names_its_scripts_in_its_head(self):
+        head = self.read(self.test, "index.html").split("</head>", 1)[0]
+        self.assertRegex(head, r'<link rel="preload" href="assets/app\.js\?v=[0-9a-f]{64}" as="script">')
 
     # ------------------------------------------------------------- the shell
 

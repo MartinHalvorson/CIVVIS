@@ -137,6 +137,63 @@ def version_lane(lane: pathlib.Path) -> None:
         if lane_page.is_file():
             version_references(lane_page, lane / page_dir)
 
+    prefetch_engine(lane, wasm_version)
+
+
+#: What every page of a lane but the simulator carries, so that a visitor who
+#: goes on to the simulator finds its engine already in the browser: fetched
+#: once the page has loaded and gone idle, at the browser's lowest priority,
+#: and not at all on a connection that asks to save data or reports itself as
+#: 2G/3G. On a first visit the engine is ~3.2 MB of the ~4 MB the simulator
+#: fetches; once it is in the cache the simulator is drawn in well under a
+#: second. Its arrival is noted where the simulator's shim reads it
+#: (`civvis-engine-seen`), so the simulator then opens on a world of its own
+#: rather than a baked one.
+ENGINE_PREFETCH = """<script data-engine-prefetch>
+(() => {
+  const line = navigator.connection;
+  if (line && (line.saveData || /2g|3g/.test(line.effectiveType || ""))) return;
+  const url = new URL("%(up)scivvis.wasm?v=%(version)s", location.href).href;
+  const fetchAhead = () => {
+    const hint = document.createElement("link");
+    hint.rel = "prefetch";
+    hint.as = "fetch";
+    hint.crossOrigin = "anonymous";
+    hint.href = url;
+    hint.onload = () => { try { localStorage.setItem("civvis-engine-seen", url); } catch (_) {} };
+    document.head.appendChild(hint);
+  };
+  const idle = () => window.requestIdleCallback
+    ? requestIdleCallback(fetchAhead, { timeout: 4000 }) : setTimeout(fetchAhead, 1500);
+  if (document.readyState === "complete") idle();
+  else addEventListener("load", idle, { once: true });
+})();
+</script>
+"""
+
+
+def prefetch_engine(lane: pathlib.Path, wasm_version: str) -> int:
+    """Give every page of the lane but the simulator the engine prefetch.
+
+    Discovered, not listed: any `index.html` below the lane root is a page.
+    The engine's address is the lane root's, as many directories up as the
+    page is deep. Returns how many pages carry it."""
+    carried = 0
+    for page_path in sorted(lane.glob("*/**/index.html")):
+        relative = page_path.relative_to(lane)
+        if relative.parts[0] == "assets":
+            continue
+        text = page_path.read_text(encoding="utf-8")
+        if "data-engine-prefetch" in text:
+            continue
+        up = "../" * (len(relative.parts) - 1)
+        snippet = ENGINE_PREFETCH % {"up": up, "version": wasm_version}
+        end = text.rfind("</body>")
+        text = text[:end] + snippet + text[end:] if end != -1 else text + snippet
+        page_path.write_text(text, encoding="utf-8")
+        carried += 1
+    return carried
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
