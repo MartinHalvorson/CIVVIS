@@ -184,6 +184,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 
 | Gene | Default | Description | Best version \| Total versions |
 |---|---|---|---:|
+| `foreign-site-buys-the-open-border` | off (unmeasured) | Opt-in gene `foreign-site-buys-the-open-border`: a held Mead or Darwin with no reachable site buys one Open Borders grant; see `advanced/foreign_site_open_border.rs`. | 1 \| 1 |
 | `recovery-holds-the-muster` | off (unmeasured) | Opt-in gene `recovery-holds-the-muster`: no Siege row is mustered while the plan reads Recovery; see `advanced/recovery_holds_the_muster.rs`. | 1 \| 1 |
 | `religion-lane-outlasts-the-denial` | off (unmeasured) | Opt-in gene `religion-lane-outlasts-the-denial`: a founded Religion lane keeps its plan against a Science counter; see `advanced/religion_lane_outlasts_the_denial.rs`. | 1 \| 1 |
 | `religion-seat-third-city-first` | off (unmeasured) | Opt-in gene `religion-seat-third-city-first`: a two-city Religion seat's next Settler before the first Shrine and Prayers; see `advanced/religion_seat_third_city_first.rs`. | 1 \| 1 |
