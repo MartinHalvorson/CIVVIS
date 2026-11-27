@@ -346,8 +346,11 @@
     margin-top: 9px; color: #f0f2ee; font-size: var(--type-body);
     font-weight: 600; letter-spacing: 0; line-height: 1.36;
   }
-  /* The lockup is always the same two lines: the simulator's name, then its
-     purpose. Each phrase owns exactly one line at every band — never joined
+  /* The lockup is always the same three lines: the simulator's name, its
+     purpose, then "(fan project, free)" (operator, 2026-11-27: "change to ...
+     fixing the Civ AI (fan project, free)"; on the purpose's line it would
+     not fit the lane even at the fitter's floor). Each phrase owns exactly
+     one line at every band — never joined
      into a sentence, never folded mid-phrase — so the spans are unbreakable
      and the text fitter shrinks the type into the lane instead of wrapping. */
   .tagline span { display: block; white-space: nowrap; }
@@ -6813,7 +6816,7 @@
       </div>
       <div class="brand-copy">
         <h1>CIVVIS<span class="brand-suffix">.ai</span></h1>
-        <div class="tagline"><span>A <i>Civilization VI</i> Simulator</span><span>for fixing the Civ AI</span></div>
+        <div class="tagline"><span>A <i>Civilization VI</i> Simulator</span><span>for fixing the Civ AI</span><span>(fan project, free)</span></div>
       </div>
       <!-- The site is five pages, Home, Charts, Tournaments, CIVVIS and AI
            Debugger, and every one of them lists all five in that order with

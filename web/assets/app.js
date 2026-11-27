@@ -3462,10 +3462,10 @@ if (playerHudPanel) {
 // that keeps both dimensions inside it. Wrapped prose is deliberately absent:
 // it keeps the shared body scale and lets its panel scroll naturally.
 const RESPONSIVE_TEXT_RULES = [
-  // The tagline's two phrases are unbreakable on every band — the simulator's
-  // name on the first line, its purpose on the second — so both entries
+  // The tagline's three phrases are unbreakable on every band — the name,
+  // the purpose, "(fan project, free)" — so all of them
   // measure for real and shrink the run instead of letting it fold, `together`
-  // so the two lines stay one size. The split keeps the compact band's smaller
+  // so the lines stay one size. The split keeps the compact band's smaller
   // ceiling and retires a stale fitted size left when the deck changes band.
   {selector:"#side:not([data-type-size=compact]) .tagline span", min:12, max:16, together:true},
   {selector:"#side[data-type-size=compact] .tagline span", min:10, max:12, together:true},
