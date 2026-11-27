@@ -371,6 +371,62 @@ fn a_step_plays_one_turn_and_stops_on_the_turn_it_was_told_to() {
     assert_eq!(marked(&session), [1, 2, 3]);
 }
 
+/// A nuclear breakpoint (operator 2026-11-27: "a nuclear war breakpoint could
+/// have a dashed line too") is set and read back like the others, and stops
+/// on the turn a device goes off: the strike record grows.
+#[test]
+fn a_nuclear_breakpoint_stops_on_the_turn_a_device_goes_off() {
+    let mut session = played();
+    let set = session.debug(&json!({"op": "breakpoints", "nuclear": true}));
+    assert_eq!(set["error"], Value::Null);
+    assert_eq!(set["debug"]["breakpoints"]["nuclear"], json!(true));
+    assert_eq!(set["debug"]["breakpoints"]["eras"], json!(false));
+    let before = session.game.clone();
+    let turn = session.game.turn;
+    std::sync::Arc::make_mut(&mut session.game.chronicle.nuclear_strikes).push(
+        crate::game::NuclearStrike {
+            id: 1,
+            turn,
+            attacker: 1,
+            target: (3, 3),
+            thermonuclear: false,
+            platform: "city".to_string(),
+            launched_from: (2, 2),
+            blast_radius: 1,
+            fallout_until: turn + 10,
+            victims: BTreeSet::from([0]),
+            cities: Vec::new(),
+            units_destroyed: 0,
+        },
+    );
+    assert_eq!(
+        session
+            .debugger
+            .breakpoints
+            .detonated(&before, &session.game),
+        Some(json!({"kind": "nuclear", "turn": turn}))
+    );
+    // Nothing went off between two worlds with the same record.
+    assert_eq!(
+        session
+            .debugger
+            .breakpoints
+            .detonated(&session.game, &session.game),
+        None
+    );
+    // Off, the same strike stops nothing; a request that leaves it out
+    // clears it, as every breakpoint is cleared.
+    let cleared = session.debug(&json!({"op": "breakpoints"}));
+    assert_eq!(cleared["debug"]["breakpoints"]["nuclear"], json!(false));
+    assert_eq!(
+        session
+            .debugger
+            .breakpoints
+            .detonated(&before, &session.game),
+        None
+    );
+}
+
 /// An era breakpoint stops a run on the first turn of a new world era, and
 /// the timeline says which turn each era it has been through began on.
 #[test]

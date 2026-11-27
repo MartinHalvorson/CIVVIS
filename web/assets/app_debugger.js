@@ -539,9 +539,29 @@ const DEBUG_BAR_STYLE = `
   }
   #debugbar .dbg-marks i.auto { background: #8fb4a8; }
   #debugbar .dbg-marks i.stop { top: auto; bottom: -5px; border-radius: 50%; background: #e2574c; }
+  /* On the one timeline a breakpoint is a red line down through the rail,
+     as a debugger draws one, named at its head (operator, 2026-11-27:
+     "breakpoints should add a vertical red line through the spot on the
+     timeline. like a debugger"). A line whose turn is worked out of the
+     game's future, not set (the next era, a nuclear war), is dashed. */
+  #debugbar:not(.dbg-split-on) .dbg-marks i.stop {
+    top: 0; bottom: 0; width: 0; height: auto; margin-left: -1px; border: 0; border-radius: 0;
+    border-left: 2px solid #e2574c; background: none; box-shadow: 0 0 0 1px #10140f40;
+  }
+  #debugbar:not(.dbg-split-on) .dbg-marks i.stop.dbg-ahead { border-left-style: dashed; box-shadow: none; }
+  #debugbar .dbg-marks i.stop b {
+    position: absolute; top: 2px; left: 3px; padding: 0 5px; border-radius: 3px; white-space: nowrap;
+    font: 700 10px/15px system-ui, sans-serif; color: #fff; background: #b8322a; cursor: pointer;
+  }
+  #debugbar .dbg-marks i.stop.dbg-ahead b { background: #10140fcc; color: #ff8a80; border: 1px dashed #e2574c; line-height: 13px; }
+  #debugbar .dbg-marks i.stop.dbg-row2 b { top: 20px; }
+  /* A name stands over every line, not under the next line along. */
+  #debugbar .dbg-marks i.stop b { z-index: 3; }
+  #debugbar.dbg-split-on .dbg-marks i.stop b { display: none; }
   /* On a tree's slim rails a mark keeps closer to its own rail. */
   #debugbar.dbg-split-on .dbg-marks i { top: -2px; }
   #debugbar.dbg-split-on .dbg-marks i.stop { top: auto; bottom: -2px; }
+  #debugbar.dbg-split-on .dbg-marks i.stop.dbg-ahead { display: none; }
   /* The first turn of each era the game has been through: a line down the
      rail with the era's name at its foot. The name is the thing to click. */
   #debugbar .dbg-marks u {
@@ -985,6 +1005,125 @@ function debugSeat() {
   const name = debugStrategy();
   return name && debugTimeline() ? debugOp({op: "status", strategy: name}) : null;
 }
+// ---- Breakpoints as lines on the timeline
+//
+// Operator, 2026-11-27: "breakpoints should add a vertical red line through
+// the spot on the timeline. like a debugger. for uncretain lines, like future
+// eras, we can make the line dashed. label lines with turn and/or era or
+// whatever. a nuclear war breakpoint could have a dashed line too. actually
+// we can just compute these out so you should be able to figure out the turn
+// from it".
+//
+// A turn breakpoint is a solid line at its turn, named by the turn and the
+// era that turn falls in. The era breakpoint is a solid line at each era the
+// line has begun, and a dashed one at each era the game's future begins; the
+// nuclear breakpoint a dashed one at the turn the future first sees a device
+// go off. The future is the engine's own (`foresee`, `debug_foresee` in
+// `src/server/debugger.rs`): a copy of the world at the end of the line,
+// played on by the same Civ AI to the end of the game with nothing kept but
+// what it saw. The engine is deterministic, so that is the turn the line
+// itself reaches it on for as long as it is played the same way; it is
+// dashed because a turn played another way, or another Civ AI, makes it
+// another future, which is then asked for anew.
+//
+// The future is asked for only on the one timeline, while the era or the
+// nuclear breakpoint is set, and only while nothing else is asked of the
+// engine: a stretch of turns at a time, about `DEBUG_SIGHT_MS` of the
+// engine's time each, so a click is never kept waiting long behind it.
+const DEBUG_SIGHT_MS = 250;
+let debugSight = null, debugSightOut = false, debugSightAfter = 0;
+function debugSightWanted(timeline) {
+  const breaks = (timeline || {}).breakpoints || {};
+  return !!timeline && DEBUG_PANE === null && !debugSplit && (breaks.eras === true || breaks.nuclear === true);
+}
+// Which future a line has: the end of the line, the print of its world there
+// and the Civ AI that plays on from it. Another of any is another future.
+function debugSightKey(timeline) {
+  const worlds = timeline.worlds || [];
+  return JSON.stringify([timeline.last ?? null, worlds.length ? worlds[worlds.length - 1] : null,
+    timeline.seat ?? null, debugStrategy() || null]);
+}
+async function debugForesee() {
+  const timeline = debugTimeline();
+  if (!debugSightWanted(timeline) || debugSightOut || debugBusy || debugRunning || turnAdvancePending) return;
+  if (performance.now() < debugSightAfter) return;
+  const key = debugSightKey(timeline);
+  if (debugSight && debugSight.key !== key) debugSight = null;
+  if (debugSight && debugSight.done) return;
+  const sight = debugSight, strategy = debugStrategy();
+  const turns = !sight ? 4 : Math.max(1, Math.min(40, Math.round(DEBUG_SIGHT_MS / Math.max(1, sight.pace))));
+  debugSightOut = true;
+  const since = performance.now();
+  let told = null;
+  try {
+    told = await fetchJSON("/debug", {method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({op: "foresee", turns, lean: true, ...(strategy ? {strategy} : {}),
+        ...(sight ? {known: sight.turn} : {anew: true})})}, 20000);
+  } catch (_) { told = null; }
+  debugSightOut = false;
+  const seen = told && !told.error ? told.foresight : null;
+  // An engine that cannot say is asked again in a while; nothing is said.
+  if (!seen || typeof seen.turn !== "number") { debugSightAfter = performance.now() + 15000; return; }
+  const now = debugTimeline();
+  if (!now || debugSightKey(now) !== key) { drawDebugBar(false); return; }
+  let next = debugSight;
+  if (!next || seen.anew === true || typeof seen.since !== "number") next = {key, seen: [], eras: [], pace: 50};
+  else next.seen = next.seen.filter(event => event.turn < seen.since);
+  next.seen.push(...(Array.isArray(seen.seen) ? seen.seen : []).filter(event => event && typeof event.turn === "number"));
+  Object.assign(next, {turn: seen.turn, from: seen.from, done: seen.done === true,
+    eras: Array.isArray(seen.eras) ? seen.eras : next.eras});
+  if (seen.played > 0) next.pace = (performance.now() - since) / seen.played;
+  debugSight = next;
+  drawDebugBar(false);
+}
+// Two names that would overlap are set one under the other: a line's name
+// takes the second row when it would run into the name before it on the
+// first. `along` is how far along the lane a turn stands, in pixels; a lane
+// not yet measured keeps them all on the first.
+function debugLineRows(lines, along) {
+  const ends = [-Infinity, -Infinity];
+  return lines.map(line => {
+    const from = along(line.turn) + 3, wide = 12 + 6.2 * [...line.label].length;
+    const row = from >= ends[0] ? 0 : from >= ends[1] ? 1 : 0;
+    ends[row] = Math.max(ends[row], from + wide + 4);
+    return [line, row];
+  });
+}
+// The lines on the one timeline: {turn, ahead, label, title}, one a turn.
+function debugBreakLines(timeline, first, last) {
+  const breaks = timeline.breakpoints || {};
+  const sight = debugSight && debugSight.key === debugSightKey(timeline) ? debugSight : null;
+  const begun = timeline.eras || [];
+  const coming = sight ? sight.eras.filter(era => era.turn > last) : [];
+  const eraOn = turn => [...begun, ...coming].filter(era => era.turn <= turn).sort((one, other) => one.turn - other.turn).pop() || null;
+  const lines = new Map();
+  const put = (turn, ahead, label, title) => {
+    const had = lines.get(turn);
+    if (!had) { lines.set(turn, {turn, ahead, label, title}); return; }
+    // A set turn is certain whatever else falls on it.
+    had.ahead = had.ahead && ahead;
+    if (!had.label.includes(label)) had.label += ` · ${label}`;
+    had.title += `; ${title}`;
+  };
+  for (const turn of breaks.turns || []) {
+    const era = eraOn(turn);
+    put(turn, false, `T${turn}${era ? ` · ${debugEraName(era)}` : ""}`, `Breakpoint on turn ${turn}`);
+  }
+  if (breaks.eras === true) {
+    for (const era of begun.filter(era => era.turn > first))
+      put(era.turn, false, `T${era.turn}`, `The ${debugEraName(era)} era began on turn ${era.turn}`);
+    for (const era of coming)
+      put(era.turn, true, `${debugEraName(era)} ~T${era.turn}`,
+        `The ${debugEraName(era)} era begins on turn ${era.turn} if this line is played on as it is (the game's future, worked out)`);
+  }
+  if (breaks.nuclear === true && sight) {
+    const blast = sight.seen.find(event => event.kind === "nuclear" && event.turn > last);
+    if (blast)
+      put(blast.turn, true, `☢ ~T${blast.turn}`,
+        `${blast.text || "A nuclear device goes off"} on turn ${blast.turn}${blast.era_name ? `, in the ${titleCase(blast.era_name)} era` : ""}, if this line is played on as it is`);
+  }
+  return [...lines.values()].sort((one, other) => one.turn - other.turn);
+}
 // Why the engine stopped a run, in a line, with somewhere to look if it has one.
 function debugSayStop(stopped) {
   if (!stopped) return;
@@ -993,6 +1132,7 @@ function debugSayStop(stopped) {
     const era = ((debugTimeline() || {}).eras || []).find(began => began.era === stopped.era) || {era: stopped.era};
     debugSay(`Stopped on turn ${stopped.turn}: the ${debugEraName(era)} era began`);
   }
+  else if (stopped.kind === "nuclear") debugSay(`Stopped on turn ${stopped.turn}: a nuclear device went off`);
   else if (stopped.kind === "event")
     debugSay(`Stopped on ${stopped.category}: ${stopped.text}`, stopped.pos || null);
   else if (stopped.kind === "condition") {
@@ -1316,6 +1456,7 @@ function debugBreakpointsFromForm() {
     important: pop.querySelector("[data-dbg-field=important]").checked,
     every_seat: pop.querySelector("[data-dbg-field=every_seat]").checked,
     eras: pop.querySelector("[data-dbg-field=eras]").checked,
+    nuclear: pop.querySelector("[data-dbg-field=nuclear]").checked,
     // Conditions are added and removed one at a time; the engine holds the set.
     conditions: [...(debugTimeline().breakpoints.conditions || [])],
   };
@@ -1503,6 +1644,7 @@ function debugBuildBar() {
       <h4>Breakpoints</h4>
       <p>Auto-play, and a turn played to on the timeline, stop when one of these happens.</p>
       <label title="Stop on the first turn of each new era. The eras already played are named on the timeline at the turn they began"><input type="checkbox" data-dbg-field="eras"> A new era begins</label>
+      <label title="Stop on the turn a nuclear device goes off, anyone's. The turn the game's future says it comes is drawn on the timeline as a dashed line"><input type="checkbox" data-dbg-field="nuclear"> A nuclear weapon is used</label>
       <div class="dbg-line"><span>Turns</span>
         <input type="text" data-dbg-field="turns" inputmode="numeric" placeholder="50, 75" aria-label="Stop when these turns open">
         <button data-dbg="break-plus" title="Add the turn ten from now">+10</button></div>
@@ -2117,9 +2259,13 @@ function debugDrawLane(key, model) {
     (model.eras || []).filter(era => era.turn >= lo && era.turn <= hi).map(era =>
       `<u${era.both ? ` class="dbg-both${era.still ? " dbg-still" : ""}"` : ""} style="left:${at(era.turn)}%${moved(era.turn)}"><b data-dbg-turn="${era.turn}" title="The ${escapeAttr(titleCase(String(era.name || `era ${era.era}`)))} era began on turn ${era.turn}. Click to go there">${
         escapeAttr(titleCase(String(era.name || `era ${era.era}`)))}</b></u>`).join("") +
-    (model.stops || []).filter(turn => turn >= lo && turn <= hi).map(turn =>
-      `<i class="stop" data-dbg-turn="${turn}" style="left:${at(turn)}%${moved(turn, tree ? tree.lean : 0)}" title="Breakpoint on turn ${turn}. Click to ${
-        turn > last ? "play to it" : "go there"}"></i>`).join("") +
+    (model.lines
+      ? debugLineRows(model.lines.filter(line => line.turn >= lo && line.turn <= hi), along).map(([line, row]) =>
+        `<i class="stop${line.ahead ? " dbg-ahead" : ""}${row ? " dbg-row2" : ""}" data-dbg-turn="${line.turn}" style="left:${at(line.turn)}%" title="${escapeAttr(line.title)}. Click to ${
+          line.turn > last ? "play to it" : "go there"}"><b>${escapeAttr(line.label)}</b></i>`).join("")
+      : (model.stops || []).filter(turn => turn >= lo && turn <= hi).map(turn =>
+        `<i class="stop" data-dbg-turn="${turn}" style="left:${at(turn)}%${moved(turn, tree ? tree.lean : 0)}" title="Breakpoint on turn ${turn}. Click to ${
+          turn > last ? "play to it" : "go there"}"></i>`).join("")) +
     (model.flags || []).filter(point => point.turn >= lo && point.turn <= hi).map(point =>
       `<i${point.auto ? ' class="auto"' : ""} data-dbg-goto="${point.id}" style="left:${at(point.turn)}%${moved(point.turn, tree ? tree.lean : 0)}"` +
       ` title="${escapeAttr(point.name)}: turn ${point.turn}. Click to go there"></i>`).join(""));
@@ -2404,6 +2550,7 @@ function drawDebugBar(measure = true) {
     debugDrawLane("", {name: "", ...debugAxis(first, Math.max(last, beyond ? beyond.to : 0)), first, last, turn: state.turn,
       fork: null, beyond, kept: thinned ? new Set(kept) : null, turns: thinned ? kept : null,
       flags: [...(timeline.saves || [])].sort((a, b) => a.turn - b.turn || a.id - b.id), stops: timeline.breakpoints.turns,
+      lines: debugBreakLines(timeline, first, last),
       by: timeline.played_by || [], played: timeline.played_by || [],
       travel: deck.idle && !debugRunning,
       eras: timeline.eras || [], goal: debugRunning ? debugGoal : null, idle: deck.idle});
@@ -2413,6 +2560,7 @@ function drawDebugBar(measure = true) {
   debugDrawSearch(bar);
   if (DEBUG_PANE !== null) { debugPaneDeck(deck); debugPaneMarks(timeline); }
   if (measure) debugDock(bar);
+  if (debugSightWanted(timeline)) setTimeout(debugForesee, 0);
 }
 // What the box asks, or null. Both are asked on the one timeline, and
 // nothing is done until one is answered. `branch`: Branch was pressed, and
@@ -2642,7 +2790,7 @@ function debugDrawDeck(bar, deck) {
   document.getElementById("dbg-layer-count").textContent = layersOn ? `${layersOn}` : "";
   const conditions = breaks.conditions || [];
   const breakCount = breaks.turns.length + breaks.categories.length + breaks.phrases.length +
-    conditions.length + (breaks.important ? 1 : 0) + (breaks.eras ? 1 : 0);
+    conditions.length + (breaks.important ? 1 : 0) + (breaks.eras ? 1 : 0) + (breaks.nuclear ? 1 : 0);
   document.getElementById("dbg-break-count").textContent = breakCount ? `${breakCount}` : "";
   // A pane is already one half of a split, and a split does not split again.
   const split = bar.querySelector('[data-dbg="split"]');
@@ -2705,6 +2853,7 @@ function debugDrawDeck(bar, deck) {
   field("important").checked = breaks.important;
   field("every_seat").checked = breaks.every_seat;
   field("eras").checked = breaks.eras === true;
+  field("nuclear").checked = breaks.nuclear === true;
 
   const note = document.getElementById("dbg-note");
   const html = escapeAttr(deck.note) +
@@ -3131,8 +3280,8 @@ function debugSplitSettle() {
     ask({op: "layers", layers: mine.layers.filter(layer => layer.on).map(layer => layer.id)});
   if (mine.reveal !== theirs.reveal) ask({op: "reveal", on: mine.reveal === true});
   if (differ(mine.breakpoints, theirs.breakpoints)) {
-    const {turns, categories, phrases, important, every_seat, eras, conditions} = mine.breakpoints;
-    ask({op: "breakpoints", turns, categories, phrases, important, every_seat, eras, conditions});
+    const {turns, categories, phrases, important, every_seat, eras, nuclear, conditions} = mine.breakpoints;
+    ask({op: "breakpoints", turns, categories, phrases, important, every_seat, eras, nuclear: nuclear === true, conditions});
   }
 }
 // A control on the deck, named so that the same control can be found on
