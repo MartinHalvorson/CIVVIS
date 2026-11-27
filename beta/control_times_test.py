@@ -284,10 +284,13 @@ class ThePage(unittest.TestCase):
         self.assertEqual(record["control"]["all"]["games"], 7)
         self.assertEqual((record["windows"], record["videos"], record["speedup"]), ({}, [], None))
 
-    def test_it_is_the_first_part_of_the_page_and_shows_only_when_filled(self):
-        # Operator 2026-11-24: "be a top chart for civvis performance".
+    def test_it_is_a_top_part_of_the_page_and_shows_only_when_filled(self):
+        # Operator 2026-11-24: "be a top chart for civvis performance". It
+        # was the first part until 2026-11-27, when the speed timeline went
+        # over it ("move civ game speedup - synthetic data pipeline up to
+        # the top of civvis.ai performance"); it is the second.
         record = PAGE[PAGE.index('<div class="res-record" id="perf-record" hidden>'):]
-        self.assertEqual(re.findall(r'<section class="res-section" id="([\w-]+)"', record)[0], "perf-control")
+        self.assertEqual(re.findall(r'<section class="res-section" id="([\w-]+)"', record)[:2], ["perf-line", "perf-control"])
         self.assertIn('<section class="res-section" id="perf-control" aria-labelledby="perf-control-title" hidden>', PAGE)
         self.assertIn('<h2 class="rank-title" id="perf-control-title">CIVVIS computer control: game speed over time</h2>', SECTION)
         self.assertIn('document.getElementById("perf-control").hidden = false;', SCRIPT)

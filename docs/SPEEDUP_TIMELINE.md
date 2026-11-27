@@ -1,13 +1,15 @@
 # The speed timeline
 
 How many times faster than a person a game of Civilization VI gets played.
-CIVVIS Performance shows it in the middle of the page, under its tables of
-sums and over its charts of each stop over time, under the title the project
-owner gave it on 2026-11-24, "Civ Game Speedup - Synthetic Data Pipeline":
+CIVVIS Performance shows it at the top of the page, over the computer control
+chart and its tables of sums, under the title the project owner gave it on
+2026-11-24, "Civ Game Speedup - Synthetic Data Pipeline":
 one number, and under it a line with five ways of playing one game, each
 standing at its multiplier. It stood on the home page, over the videos, until
 later that day ("move the civvis performance timeline thing from home/ to the
-civvis performance section. middle of the page or so"). Among and past them stand four stops nothing has
+civvis performance section. middle of the page or so"), and went to the top
+of that page on 2026-11-27 ("move civ game speedup - synthetic data pipeline
+up to the top of civvis.ai performance"). Among and past them stand four stops nothing has
 played yet:
 [The stops past what was measured](#the-stops-past-what-was-measured).
 Left of CIVVIS self-play the games play many at once, and a time there is

@@ -1571,7 +1571,7 @@ class Gap(unittest.TestCase):
 
 
 class Page(unittest.TestCase):
-    SECTION = PAGE[PAGE.index('<section class="res-section" id="perf-line"') : PAGE.index('<section class="res-section" id="perf-history"')]
+    SECTION = PAGE[PAGE.index('<section class="res-section" id="perf-line"') : PAGE.index('<section class="res-section" id="perf-control"')]
     SCRIPT = PAGE[PAGE.index("// ---- The same figures as a line"):PAGE.index("// ---- Each way of playing over time")]
 
     def test_the_page_has_an_entry_for_every_stop_and_no_figure_of_its_own(self):
@@ -1780,20 +1780,19 @@ class Page(unittest.TestCase):
         self.assertLessEqual(len(re.sub(r"&#?\w+;", "x", why).split()), 35)
         self.assertIsNone(re.search(r"\d", re.sub(r"&#\d+;", "", why)))
 
-    def test_it_stands_in_the_middle_of_civvis_performance_and_home_has_none_of_it(self):
+    def test_it_tops_civvis_performance_and_home_has_none_of_it(self):
         # Operator 2026-11-24: "move the civvis performance timeline thing
         # from home/ to the civvis performance section. middle of the page
-        # or so". It is the page's third part of eight, under the tables
-        # that work its figures out and over the charts of each of its stops
-        # over time: with the page's figures in it, about two fifths of the
-        # way down.
+        # or so"; then 2026-11-27: "move civ game speedup - synthetic data
+        # pipeline up to the top of civvis.ai performance". It is the
+        # page's first part, over the computer control chart and the tables
+        # that work its figures out.
         parts = re.findall(r'<section class="res-section" id="([\w-]+)"', PAGE)
-        at = parts.index("perf-line")
-        self.assertEqual(parts[at - 1 : at + 2], ["perf-speedup", "perf-line", "perf-history"])
-        self.assertGreaterEqual(at, 2)
-        self.assertGreaterEqual(len(parts) - 1 - at, 2)
+        self.assertEqual(parts[:3], ["perf-line", "perf-control", "perf-speedup"])
+        record = PAGE.index('<div class="res-record" id="perf-record" hidden>')
+        self.assertLess(record, PAGE.index('<section class="res-section" id="perf-line"'))
         # The tables' link to the line is to this page's own part.
-        self.assertIn('<a href="#perf-line">The same figures as a line</a>', PAGE)
+        self.assertIn('<a href="#perf-line">The same figures as a line, at the top</a>', PAGE)
         self.assertNotIn("home/#speed", PAGE)
         # Home has none of it left: no entry, no rule, no script, no slot.
         for gone in ('class="speed', "speed-stop", "speed-track", "data-speed=", "home-speedup", "Civ Game Speedup"):
