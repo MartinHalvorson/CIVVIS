@@ -6416,6 +6416,15 @@ pub const GENES: &[Gene] = &[
     // gene's exceptions. Opt-in; see
     // `advanced/religion_seat_third_city_first.rs`.
     Gene { tag: "religion-seat-third-city-first", field: "religion_seat_third_city_first", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_third_city_first, disable: AdvancedAi::disable_religion_seat_third_city_first },
+    // Tournament 8 2026-11-26/27, five Lv 8 Religion seats lost to a rival's
+    // Science Victory (launches 0/4 against 4/4): Diplomatic Service came at
+    // t115-151 as a government-ladder step and the first denial Spy 3-7
+    // turns after it, when the rival had already landed 1-2 space projects.
+    // Off a Science aim, while a met rival makes 1.5 times our Science (and
+    // at least 60), the civic slot takes Diplomatic Service then Nationalism
+    // ahead of the government ladder. Opt-in; see
+    // `advanced/rival_science_run_opens_the_spy_civics.rs`.
+    Gene { tag: "rival-science-run-opens-the-spy-civics", field: "rival_science_run_opens_the_spy_civics", kind: Kind::OptIn, enable: AdvancedAi::enable_rival_science_run_opens_the_spy_civics, disable: AdvancedAi::disable_rival_science_run_opens_the_spy_civics },
     // ---- append: s-s ------------------------------------------------
     // Kristina Deity 11-10 reached Nationalism at t122 with 8 cities on three
     // terrain classes and built no Open-Air Museum by t150 (+48 Culture and

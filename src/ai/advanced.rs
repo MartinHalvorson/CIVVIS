@@ -9780,6 +9780,12 @@ pub struct AdvancedAi {
     /// first Shrine, Prayers and routine work. See
     /// `advanced/religion_seat_third_city_first.rs`. Off by default.
     religion_seat_third_city_first: bool,
+    /// `rival-science-run-opens-the-spy-civics`: off a Science aim, while a
+    /// met rival makes 1.5 times our Science a turn, the civic slot takes
+    /// Diplomatic Service and then Nationalism (a Spy slot each) ahead of the
+    /// government ladder. See
+    /// `advanced/rival_science_run_opens_the_spy_civics.rs`. Off by default.
+    rival_science_run_opens_the_spy_civics: bool,
     // ---- append: s-s ------------------------------------------------
     /// `score-seat-raises-wonders`: a Score seat keeps a wonder going in its
     /// capital from turn 40 (Online) and in a second city from turn 90, as a
@@ -28610,6 +28616,9 @@ mod religion_seat_takes_the_debater;
 /// `advanced/religion_seat_third_city_first.rs`.
 mod religion_seat_third_city_first;
 mod religious_interception;
+/// `rival-science-run-opens-the-spy-civics`: see
+/// `advanced/rival_science_run_opens_the_spy_civics.rs`.
+mod rival_science_run_opens_the_spy_civics;
 
 /// `match-point-interception-ignores-power`: the faith's last holdout
 /// intercepts its spreader at a lower power floor. See

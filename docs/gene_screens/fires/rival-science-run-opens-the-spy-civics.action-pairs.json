@@ -1,0 +1,24 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "rival-science-run-opens-the-spy-civics",
+  "scope": "Recorded proposal activation on captured live input only, not host execution or strength. 13 boards from four live T8 benchmark games of 2026-11-26/27 (Lv 8 Deity 6p, Online, Diplo off, Religion seats) lost to a rival's Science Victory with launches 0/4 against 4/4 (civvis-t8-20261126T123528Z t99, -T162529Z t92 t99, -20261127T034217Z t91 t92 t93 t95 t97, -T041052Z t91 t92 t93 t94 t96): each a turn on which the seat held Guilds but adopted a civic other than Diplomatic Service. Each board is the run's events.jsonl cut at turn N's first state row (the civic slot empty) and replayed at turn N. Both arms run one frozen ci-profile civvis_orders --resumed built from the branch with the run's own requested genome (why.log line 1 forced); the on arm adds --with rival-science-run-opens-the-spy-civics. 13 of 13 complete; all 13 change the civic order: the on arm orders CIVIC_DIPLOMATIC_SERVICE on 13, the off arm on 0. The off arm repeats the live pick on the 10 boards of 034217Z and 041052Z (Military Tradition, Military Training, Naval Tradition, Mercenaries, Medieval Faires) and orders Military Tradition on the other 3 (live: Medieval Faires, Medieval Faires, Humanism). Script: native-queries-01/run-spy-civic-queries.py.",
+  "archive": {
+    "path": "docs/eval/2026-11-27-rival-science-run-opens-the-spy-civics.native-queries.tar.xz",
+    "sha256": "35127f30f5c561cd14621dd5120b1b4cb30041e5fba094a08d0316419d0aba22"
+  },
+  "members": [
+    "native-queries-01/0000/result.json",
+    "native-queries-01/0001/result.json",
+    "native-queries-01/0002/result.json",
+    "native-queries-01/0003/result.json",
+    "native-queries-01/0004/result.json",
+    "native-queries-01/0005/result.json",
+    "native-queries-01/0006/result.json",
+    "native-queries-01/0007/result.json",
+    "native-queries-01/0008/result.json",
+    "native-queries-01/0009/result.json",
+    "native-queries-01/0010/result.json",
+    "native-queries-01/0011/result.json",
+    "native-queries-01/0012/result.json"
+  ]
+}
