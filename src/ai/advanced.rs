@@ -9766,6 +9766,10 @@ pub struct AdvancedAi {
     /// `recovery-holds-the-muster`: the last turn the board was assessed
     /// under Recovery. `None` with the gene off.
     recovery_muster_held_turn: Option<u32>,
+    /// `religion-lane-outlasts-the-denial`: a founded Religion lane is not
+    /// displaced by a Science counter to a rival's science race. See
+    /// `advanced/religion_lane_outlasts_the_denial.rs`. Off by default.
+    religion_lane_outlasts_the_denial: bool,
     // ---- append: s-s ------------------------------------------------
     /// `score-seat-raises-wonders`: a Score seat keeps a wonder going in its
     /// capital from turn 40 (Online) and in a second city from turn 90, as a
@@ -11601,6 +11605,9 @@ mod religion_core_ends_expansion;
 mod religion_lane;
 /// `religion-lane-hands-over`: see `advanced/religion_lane_hands_over.rs`.
 mod religion_lane_hands_over;
+/// `religion-lane-outlasts-the-denial`: see
+/// `advanced/religion_lane_outlasts_the_denial.rs`.
+mod religion_lane_outlasts_the_denial;
 /// `religion-lane-spreads-from-founding`: see `advanced/religion_lane_spreads.rs`.
 mod religion_lane_spreads;
 mod religion_majorities;

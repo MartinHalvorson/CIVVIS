@@ -650,6 +650,15 @@ impl AdvancedAi {
                 // empire-wide change to a competing victory yields the lane.
                 && !(active_victory_target == Some(VictoryTarget::Culture)
                     && *counter == GrandStrategy::Science)
+                // `religion-lane-outlasts-the-denial`: the same for a founded
+                // Religion lane. False with the gene off. See
+                // `advanced/religion_lane_outlasts_the_denial.rs`.
+                && !self.religion_lane_outlasts_the_denial_for(
+                    g,
+                    pid,
+                    active_victory_target,
+                    *counter,
+                )
         }) {
             // `denial-outranks-expansion`: the same answer the branch below
             // gives, reached before the lane can say "keep expanding". A

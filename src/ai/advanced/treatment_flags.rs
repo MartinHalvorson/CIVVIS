@@ -589,6 +589,10 @@ impl AdvancedAi {
         /// while the plan reads Recovery; see
         /// `advanced/recovery_holds_the_muster.rs`.
         recovery_holds_the_muster => enable_recovery_holds_the_muster, disable_recovery_holds_the_muster;
+        /// Opt-in gene `religion-lane-outlasts-the-denial`: a founded
+        /// Religion lane keeps its plan against a Science counter; see
+        /// `advanced/religion_lane_outlasts_the_denial.rs`.
+        religion_lane_outlasts_the_denial => enable_religion_lane_outlasts_the_denial, disable_religion_lane_outlasts_the_denial;
         // ---- append: s-s --------------------------------------------
         /// Opt-in gene `siege-goes-on-the-forecast`: the siege train goes,
         /// holds and stands down on the capture forecast, and Siege rows rank
