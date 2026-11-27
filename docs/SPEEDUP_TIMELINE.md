@@ -3,9 +3,11 @@
 How many times faster than a person a game of Civilization VI gets played.
 CIVVIS Performance shows it at the top of the page, over the computer control
 chart and its tables of sums, under the title the project owner gave it on
-2026-11-24, "Civ Game Speedup - Synthetic Data Pipeline":
-one number, and under it a line with five ways of playing one game, each
-standing at its multiplier. It stood on the home page, over the videos, until
+2026-11-27, "Synthetic Data Speed and Scale Up" (from 2026-11-24 until then
+"Civ Game Speedup - Synthetic Data Pipeline"): three figures, and under them
+a line with five ways of playing one game, each standing at its multiplier,
+drawn in four rows: [The rows](#the-rows) and [The three
+figures](#the-three-figures). It stood on the home page, over the videos, until
 later that day ("move the civvis performance timeline thing from home/ to the
 civvis performance section. middle of the page or so"), and went to the top
 of that page on 2026-11-27 ("move civ game speedup - synthetic data pipeline
@@ -27,6 +29,80 @@ third table there puts the same benchmarks on other processors:
 renting the rest of the way to the goal would cost:
 [The goals and the cloud's cost](#the-goals-and-the-clouds-cost). Under the
 tables each stop is charted over time: [Each stop over time](#each-stop-over-time).
+
+## The rows
+
+The project owner, 2026-11-27: "we should split the synthetic data pipeline
+up into a few rows. first row is today's software scale-up, second row is
+hardware scale up, third row is additional optimizations (hyperscale can
+start where hardwaer scale up ends and point left (Many OOMs). third row
+should also have start from civvis self-play (which can be a range (6s-34s)
+and point left to "Civ 6 computational irreducability). can have a range
+here, with maybe 1-10x???? being the width. maybe actually add a top row for
+firaxis (human player, CIVVIS->Firaxis..., Firaxis self play. the old first
+row is now second row and can be CIVVIS. change name to synthetic data speed
+and scale up".
+
+The line is four rows, top to bottom, all on the one scale of multipliers,
+right to left. The ledger's `lanes` say which entries stand in which row:
+
+| Row | What stands in it |
+| --- | --- |
+| Firaxis | Human Player (me), CIVVIS → Firaxis computer control and Firaxis self-play: the real game. |
+| CIVVIS | CIVVIS self-play and Parallel games, M5 Max, all 18 cores: the simulator as it plays today. It starts at Firaxis self-play's place, and the stretch from there to CIVVIS self-play is the gold gap with its figure (see [Why CIVVIS self-play is faster than Firaxis self-play](#why-civvis-self-play-is-faster-than-firaxis-self-play)). |
+| Hardware scale-up | From the M5 Max as it plays today to the M5 Max's theoretical most, then Reasonable Local Hardware Scale-up Theoretical. The 1,000,000x goal's words stand in this row; its place is a broken gold rule down every row. |
+| Additional optimizations | Three spans: CIVVIS self-play as a range, the irreducible game as a guess past it, and hyperscale. |
+
+A row has its `key`, its `name`, the stops, projected stops and goals it holds
+(`entries`), and, where it carries on from a stop of another row, that stop
+(`after`). On the page its name stands at the left, its stretch of the line is
+solid where it holds a stop that was played and broken where it holds only
+guesses, and a faint broken hand-off joins it to the stop it carries on from.
+The tenfolds are faint rules down every row, and the scale's marks stand once,
+under the last. In the narrow layout each row is its name over its list.
+
+A span has no single figure (`spans` of a row):
+
+- **A range** (`range`, the self-play span): from the stop's own reading (the
+  standard game, six players on Continents on one core, 34.5 s) to the fastest
+  game on record, the fewest seconds of the record videos
+  (`data/performance/fastest_game_videos.json`, the "<6s" game, 4P Tennis Ball,
+  Online). Drawn as a pale solid bar.
+- **A guess past a span** (`after` and `times`, the irreducible game): from
+  that span's fast end so many times faster to so many more, here 1x to 10x
+  past the fastest game on record. The project owner asked for a range "1-10x"
+  wide; this page reads it from the fastest game, so the guess starts where
+  the range ends: 600 ms to 6 s. Drawn hatched, with an arrow at its far end.
+- **An open arrow** (`open`, hyperscale): from an entry of the line, the
+  scale-up, to the line's end, worded "Many OOMs" and with no figure.
+
+The irreducible game is still a projected stop (`irreducible`, ten times
+CIVVIS self-play), because the M5 Max's theoretical most stands on it. No row
+holds it as a point, so the line does not draw it; its span stands for it.
+Each row's words take their sides in turn along that row
+(`speedup_timeline.sides`), and stand a row further out where they would meet
+(`speedup_timeline.rows`): words are given 170px (`ROOM`) of the 880px line,
+which is the panel less the rows' names (`GUTTER`, 120px).
+
+`speedup_timeline.lanes` works the rows out and `speedup_timeline.spans` the
+spans; `speedup_timeline.timeline` returns them as `lanes` and `spans`, and
+every entry with the `lane` it stands in. A ledger with no `lanes` keeps the
+one line.
+
+## The three figures
+
+The project owner, 2026-11-27: "below the title and above the chart, lets
+track: self-play speed: Nx (range ok), self-play games throughput: answer,
+person-played games throughput scaleup: answer".
+
+| Figure | What it is | From |
+| --- | --- | --- |
+| Self-play speed | How many times faster one game on one core is than a game by hand, as the range the bottom row draws: `522x – 3,000x`. | The self-play stop, and its range where there is one. |
+| Self-play games throughput | The games a second one machine plays on every core, with a day of games at that rate: `0.41 games/s`, `35,000 games a day`. | The every-core stop. |
+| Person-played games throughput scale-up | How many times as many games one machine plays as a person by hand: the page's one number until then, `7,299x`. | The every-core stop's multiplier. |
+
+The ledger's `head` names the two stops (`speed`, `throughput`), and
+`speedup_timeline.headline` works the figures out as the record's `head`.
 
 ## The five stops
 
@@ -298,17 +374,19 @@ multiplies (`over`) is a measured one, or a projected one listed before it.
 | Civ 6 Computational Irreducibility (`irreducible`) | One game on one core with nothing left in it that the game does not need. A guess: nobody knows where it is. | `10 × CIVVIS self-play's multiplier` |
 | M5 Max, Theoretical Max Civ 6 Throughput (`m5_max`) | The most games one M5 Max could finish: the irreducible game on every core at once. A guess on a guess, and amortized. | `10 × the irreducible game's multiplier` |
 | Reasonable Local Hardware Scale-up Theoretical (`scale_up`) | Hardware of our own, scaled up within reason past the one M5 Max. Theoretical. | `10 × the M5 Max theoretical's multiplier` |
-| Distributed RL fleet (`fleet`) | Many machines playing self-play at once for reinforcement learning. A potential, and open at its top. | `1,000 × the M5 Max's multiplier`, and more |
 
 Every figure is the project owner's. The first two are his guesses and stand
 on CIVVIS self-play, so the M5 Max's theoretical most is a hundred times one
 self-play game, whatever the M5 Max measures today. The scale-up is ten times
 that theoretical most (until 2026-11-26 it was ten times the M5 Max as
-measured, which left it close over the theoretical stop). The fleet is over
-the M5 Max's every-core stop as it was measured. No machine was sized or
-priced for either. Whether his 1,000 is over the one M5 Max or over the
-scaled-up hardware is this page's reading of his sentence, and it reads the
-first.
+measured, which left it close over the theoretical stop). No machine was
+sized or priced for it.
+
+A fourth, the distributed RL fleet (`fleet`, "potential distributed RL fleet:
+up to 1000+x", a thousand times the M5 Max's every-core stop and more), stood
+on the line from 2026-11-22 until 2026-11-27, when hyperscale took its place
+as an arrow with no figure on the bottom row ("hyperscale can start where
+hardwaer scale up ends and point left (Many OOMs)").
 What a game takes now, in steps and instructions, and the plan for taking
 steps out of it, is [`docs/PATH_STEPS.md`](PATH_STEPS.md).
 
@@ -317,11 +395,8 @@ line, a stop, a projected stop or a goal, takes its side of the line in turn
 (`speedup_timeline.sides`), so two that stand close together go one over the
 line and one under it. The page's number is never a projected stop: it is the
 fastest stop that was measured, and the line is drawn solid only as far as
-that stop. A thousand M5 Maxes are past the 1,000,000x goal and short of the
-10,000,000x the line runs out to, so the fleet stands on the line at its own
-place, left of the goal. Until the line was extended it stood at the line's
-end as an arrow that pointed on from it, and a stop past the end of the line
-still does (`past` in the record), with its own figure beside it.
+that stop. A stop past the end of the line stands at its end as an arrow that
+points on from it (`past` in the record), with its own figure beside it.
 
 A projected stop is an entry of `projected`:
 
@@ -329,7 +404,7 @@ A projected stop is an entry of `projected`:
 - `over` is the key of the measured stop it multiplies.
 - `estimates` are dated, oldest first, and the newest is shown. Each has the
   day it was `taken`, the figure (`times`), `or_more` when the figure is open
-  at its top (his "1000+", shown as `1,000x+`), and `from`, which says whose
+  at its top (the fleet's "1000+" was shown as `1,000x+`), and `from`, which says whose
   figure it is and what it stands for.
 
 A changed figure is a new estimate after the ones there, as a new reading

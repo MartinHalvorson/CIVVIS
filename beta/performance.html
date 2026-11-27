@@ -507,14 +507,26 @@
      or more, the list becomes the line. */
   .speed { margin: 8px 0 0; }
   .speed [hidden] { display: none; }
-  .speed-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 14px; margin: 0 0 8px; }
-  .speed-number { margin: 0; color: var(--gold); font-size: 34px; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
-  .speed-claim { margin: 0; color: var(--text); font-size: 15px; }
-  .speed-claim span { color: var(--muted); font-size: 13px; }
+  /* Under the title, three figures (operator 2026-11-27: "self-play
+     speed: Nx (range ok), self-play games throughput: answer, person-played
+     games throughput scaleup: answer"), each its name, its figure and a
+     small line of what it is. */
+  .speed-head { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px 14px; margin: 0 0 10px; }
+  .speed-figures { display: flex; flex-wrap: wrap; gap: 8px 40px; }
+  .speed-figure { display: flex; flex-direction: column; min-width: 0; margin: 0; }
+  .speed-figure-name { color: var(--muted); font-size: 12px; font-weight: 600; }
+  .speed-number { margin: 0; color: var(--gold); font-size: 28px; font-weight: 700; line-height: 1.2; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .speed-figure small { color: var(--muted); font-size: 12px; }
+  .speed-claim span { color: var(--faint); }
   .speed-aim { margin: 0 0 0 auto; font-size: 13px; }
   .speed-aim a { color: var(--accent); text-decoration: none; white-space: nowrap; }
   .speed-aim a:hover { text-decoration: underline; }
   .speed-axis { display: none; }
+  /* The rows (2026-11-27): in the narrow layout each is its name over its
+     list; the lines, bars and rules are drawn only where the line is. */
+  .speed-lane { margin: 12px 0 0; }
+  .speed-lane-name { margin: 0 0 4px; color: var(--muted); font: 600 11px/1.3 var(--sans); letter-spacing: 0.08em; text-transform: uppercase; }
+  .speed-grid, .speed-rail, .speed-handoff, .speed-span-bar { display: none; }
   .speed-line { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--border); }
   .speed-stop { padding: 7px 0; border-bottom: 1px solid var(--border); }
   .speed-dot { display: none; }
@@ -678,6 +690,47 @@
       background: var(--panel); color: var(--gold); font-size: 11px; font-weight: 700; line-height: 14px; white-space: nowrap; font-variant-numeric: tabular-nums;
     }
     .speed-between:hover b, .speed-between:focus-visible b { background: var(--gold); color: #10161d; }
+    /* The line in rows (operator 2026-11-27: "we should split the synthetic
+       data pipeline up into a few rows"), top to bottom on the one scale:
+       each row its name in the room at the left (`--gutter`, the slot's
+       `GUTTER`) and its own room over and under its line, measured from its
+       words as the one line's was. Its stretch of the line is solid where
+       it was measured and broken where it is a guess, with a faint broken
+       hand-off from the stop of the row above that it carries on from. The
+       tenfolds are faint rules down every row and the goal a broken gold
+       one, and the scale's marks stand once, under the last row. */
+    .speed-track.is-laned { --gutter: 120px; height: auto; }
+    .speed-lane { --over: 40px; --under: 40px; display: grid; grid-template-columns: var(--gutter) minmax(0, 1fr); margin: 0; border-top: 1px solid var(--border); }
+    .speed-grid + .speed-lane { border-top: 0; }
+    .speed-lane-name { margin: 0; padding: calc(var(--over) - 7px) 12px 0 0; line-height: 1.2; }
+    .speed-run { position: relative; height: calc(var(--over) + var(--under)); }
+    .speed-rail, .speed-handoff, .speed-span-bar {
+      display: block; position: absolute; right: calc(var(--from) * 100%); width: calc((var(--to) - var(--from)) * 100%); top: var(--over); height: 2px;
+    }
+    .speed-rail { background: var(--accent); }
+    .speed-rail.is-guess { background: repeating-linear-gradient(to left, var(--accent) 0 6px, transparent 6px 10px); }
+    .speed-handoff { background: repeating-linear-gradient(to left, var(--border-strong) 0 4px, transparent 4px 8px); }
+    /* A span is a bar: a range solid and pale, a guess hatched and broken
+       with an arrow at its far end, and an open one a broken line with an
+       arrow at the line's end. Its words stand at its middle. */
+    .speed-span-bar.is-range, .speed-span-bar.is-guess { top: calc(var(--over) - 4px); height: 10px; box-sizing: border-box; border-radius: 5px; }
+    .speed-span-bar.is-range { border: 1px solid var(--accent); background: color-mix(in srgb, var(--accent) 45%, transparent); }
+    .speed-span-bar.is-guess { border: 1px dashed var(--accent); background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--accent) 30%, transparent) 0 4px, transparent 4px 8px); }
+    .speed-span-bar.is-open { width: calc((var(--to) - var(--from)) * 100% - 9px); background: repeating-linear-gradient(to left, var(--accent) 0 6px, transparent 6px 10px); }
+    .speed-span-bar.is-guess::before, .speed-span-bar.is-open::before {
+      content: ""; position: absolute; left: -9px; top: 50%; transform: translateY(-50%);
+      border-top: 6px solid transparent; border-bottom: 6px solid transparent; border-right: 9px solid var(--accent);
+    }
+    .speed-span .speed-dot { display: none; }
+    .speed-span .speed-read i { display: block; margin-left: 0; }
+    .speed-grid { display: block; position: absolute; left: var(--gutter); right: 0; top: 0; bottom: 24px; pointer-events: none; }
+    .speed-tenfold, .speed-goal-rule { position: absolute; top: 0; bottom: 0; right: calc(var(--at) * 100%); border-left: 1px solid color-mix(in srgb, var(--border) 70%, transparent); }
+    .speed-goal-rule { border-left: 1px dashed color-mix(in srgb, var(--gold) 55%, transparent); }
+    .speed-track.is-laned .speed-axis { position: relative; top: auto; left: auto; right: auto; height: 24px; margin-left: var(--gutter); background: none; }
+    .speed-track.is-laned .speed-axis::after { display: none; }
+    .speed-track.is-laned .speed-stop.is-below .speed-label { top: 13px; }
+    .speed-track.is-laned .speed-stop.is-far.is-below .speed-label { top: var(--out, 71px); }
+    .speed-track.is-laned .speed-stop.is-far.is-below::before { top: 9px; height: calc(var(--out, 71px) - 11px); }
   }
 
   /* One tooltip for both charts: the value first, then what it is. */
@@ -865,7 +918,11 @@
            computer control"), the arrow drawn as one.
 
            The title is his too, that day: "lets title "Civ Game Speedup -
-           Synthetic Data Pipeline"". And a stop whose games play many at
+           Synthetic Data Pipeline"", and from 2026-11-27 "Synthetic Data
+           Speed and Scale Up", when he had the line drawn in four rows
+           (Firaxis, CIVVIS, hardware scale-up, additional optimizations)
+           with three figures over it (docs/SPEEDUP_TIMELINE.md, "The
+           rows"). And a stop whose games play many at
            once has a second measure in brackets under its figures, which
            says its time is amortized: the record's `amortized`, with its
            games per second (`rate`), which it leads with (`lead`): past
@@ -882,11 +939,33 @@
            note under its figures (`speed-aside`), the one small line on
            the chart that is written here and not by the record. -->
       <section class="res-section" id="perf-line" aria-labelledby="perf-line-title" hidden>
-        <h2 class="rank-title" id="perf-line-title">Civ Game Speedup - Synthetic Data Pipeline</h2>
+        <h2 class="rank-title" id="perf-line-title">Synthetic Data Speed and Scale Up</h2>
         <div class="speed">
+          <!-- Three figures under the title, over the chart (operator
+               2026-11-27: "below the title and above the chart, lets track:
+               self-play speed: Nx (range ok), self-play games throughput:
+               answer, person-played games throughput scaleup: answer"): the
+               record's `timeline.head`. The third is the page's number it
+               had alone until then, how many times as many games one machine
+               plays as a person playing by hand. -->
           <div class="speed-head">
-            <p class="speed-number" data-speed="speedup"></p>
-            <p class="speed-claim">faster than a game played by hand <span data-speed="was" hidden></span></p>
+            <div class="speed-figures">
+              <p class="speed-figure" data-head="speed" hidden>
+                <span class="speed-figure-name">Self-play speed</span>
+                <b class="speed-number" data-speed="head-speed"></b>
+                <small data-speed="head-speed-time"></small>
+              </p>
+              <p class="speed-figure" data-head="throughput" hidden>
+                <span class="speed-figure-name">Self-play games throughput</span>
+                <b class="speed-number" data-speed="head-throughput"></b>
+                <small data-speed="head-throughput-day"></small>
+              </p>
+              <p class="speed-figure" data-head="scaleup">
+                <span class="speed-figure-name">Person-played games throughput scale-up</span>
+                <b class="speed-number" data-speed="speedup"></b>
+                <small class="speed-claim">as many games as a person playing by hand <span data-speed="was" hidden></span></small>
+              </p>
+            </div>
             <p class="speed-aim"><a href="https://github.com/MartinHalvorson/CIVVIS/blob/main/docs/SPEEDUP_TIMELINE.md" target="_blank" rel="noreferrer">How it is measured</a></p>
           </div>
           <div class="speed-track">
@@ -970,14 +1049,36 @@
                   <small class="speed-goal"><span data-speed="by"></span> M5 Max theoretical</small>
                 </span>
               </li>
-              <li class="speed-stop speed-ahead" data-ahead="fleet">
+              <!-- The bottom row's stretches with no single figure (the
+                   record's `timeline.spans`): CIVVIS self-play as a range,
+                   the irreducible game as a guess past it, and hyperscale,
+                   an arrow from where the hardware row ends (operator
+                   2026-11-27). Each is drawn as a bar along its row, its
+                   words at the bar's middle. -->
+              <li class="speed-stop speed-span" data-span="self_play">
                 <span class="speed-dot" aria-hidden="true"></span>
                 <span class="speed-label">
-                  <b class="speed-name">Distributed RL fleet</b>
-                  <small class="speed-what">Many machines playing self-play at once for reinforcement learning. A potential: no such fleet exists.</small>
+                  <b class="speed-name">CIVVIS self-play</b>
+                  <small class="speed-what">One simulator game on one core, from the standard game, six players on Continents, to the fastest game on record.</small>
                   <span class="speed-read"><b data-speed="time"></b> <i data-speed="times"></i></span>
-                  <small class="speed-second" data-speed="second" hidden></small>
-                  <small class="speed-goal">potential, up to <span data-speed="by"></span></small>
+                  <small class="speed-goal">the standard game to the fastest on record</small>
+                </span>
+              </li>
+              <li class="speed-stop speed-span" data-span="irreducible">
+                <span class="speed-dot" aria-hidden="true"></span>
+                <span class="speed-label">
+                  <b class="speed-name">Civ 6 Computational <span>Irreducibility</span></b>
+                  <small class="speed-what">One game with nothing left in it that the game does not need. A guess: nobody knows where this is.</small>
+                  <span class="speed-read"><b data-speed="time"></b> <i data-speed="times"></i></span>
+                  <small class="speed-goal">a guess, <span data-speed="by"></span> past the fastest game</small>
+                </span>
+              </li>
+              <li class="speed-stop speed-span" data-span="hyperscale">
+                <span class="speed-dot" aria-hidden="true"></span>
+                <span class="speed-label">
+                  <b class="speed-name">Hyperscale</b>
+                  <small class="speed-what">Many machines past our own, playing at once, from where the hardware scale-up ends.</small>
+                  <span class="speed-read"><b>Many OOMs</b></span>
                 </span>
               </li>
               <li class="speed-stop speed-finish" data-goal="million">
@@ -1770,6 +1871,80 @@
         entry.classList.toggle("is-past", !!stop.past);
         entry.title = [entry.querySelector(".speed-what").textContent, shared, stop.past && "It is past the end of this line.", stop.from].filter(Boolean).join(" ");
       }
+      // The stretches with no single figure (the record's `spans`): a range,
+      // a guess past it and an open arrow, each with its words at its middle.
+      const spanned = new Map((Array.isArray(line.spans) ? line.spans : []).filter((span) => span && span.key).map((span) => [span.key, span]));
+      for (const entry of section.querySelectorAll("[data-span]")) {
+        const span = spanned.get(entry.dataset.span);
+        entry.hidden = !span;
+        if (!span) continue;
+        put(entry, "time", span.time);
+        put(entry, "times", span.times);
+        put(entry, "by", span.by);
+        entry.style.setProperty("--at", span.at);
+        entry.classList.add(span.side === "above" ? "is-above" : "is-below");
+        entry.classList.toggle("is-far", !!span.far);
+        entry.classList.toggle("is-start", span.at > 0.92);
+        entry.title = [entry.querySelector(".speed-what").textContent, span.from].filter(Boolean).join(" ");
+      }
+      // The line in rows, top to bottom, all on the one scale (operator
+      // 2026-11-27: "we should split the synthetic data pipeline up into a
+      // few rows"): the record's `lanes`, each with its name at the left, its
+      // stretch of the line (measured, or a guess), the hand-off from the
+      // stop of another row it carries on from, and its spans' bars. Every
+      // entry goes to the row the record puts it in; one no row holds is not
+      // drawn. A record with no rows keeps the one line.
+      const list = section.querySelector(".speed-line");
+      const track = section.querySelector(".speed-track");
+      const axis = section.querySelector(".speed-axis");
+      const rowOf = (entry) => named.get(entry.dataset.stop) || ahead.get(entry.dataset.ahead) || aimed.get(entry.dataset.goal) || spanned.get(entry.dataset.span);
+      const lanes = (Array.isArray(line.lanes) ? line.lanes : []).filter((lane) => lane && lane.key);
+      const runs = new Map();
+      const placed = (node, from, to) => {
+        node.style.setProperty("--from", from);
+        node.style.setProperty("--to", to);
+        return node;
+      };
+      if (lanes.length) {
+        track.classList.add("is-laned");
+        const grid = el("div", "speed-grid");
+        grid.setAttribute("aria-hidden", "true");
+        for (const tick of line.ticks || []) {
+          if (tick.at <= 0 || tick.at >= 1) continue;
+          const rule = el("span", "speed-tenfold");
+          rule.style.setProperty("--at", tick.at);
+          grid.append(rule);
+        }
+        for (const goal of aimed.values()) {
+          const rule = el("span", "speed-goal-rule");
+          rule.style.setProperty("--at", goal.at);
+          grid.append(rule);
+        }
+        track.append(grid);
+        for (const lane of lanes) {
+          const box = el("div", "speed-lane");
+          box.dataset.lane = lane.key;
+          const run = el("div", "speed-run");
+          if (Number.isFinite(lane.start) && Number.isFinite(lane.from) && lane.start < lane.from) run.append(placed(el("span", "speed-handoff"), lane.start, lane.from));
+          if (Number.isFinite(lane.from) && Number.isFinite(lane.to)) run.append(placed(el("span", "speed-rail" + (lane.measured ? "" : " is-guess")), lane.from, lane.to));
+          for (const span of spanned.values()) {
+            if (span.lane === lane.key) run.append(placed(el("span", "speed-span-bar is-" + (span.open ? "open" : span.by ? "guess" : "range")), span.start, span.end));
+          }
+          const own = el("ol", "speed-line");
+          run.append(own);
+          box.append(el("p", "speed-lane-name", text(lane.name)), run);
+          track.append(box);
+          runs.set(lane.key, { box, run, list: own });
+        }
+        for (const entry of [...list.children]) {
+          const row = rowOf(entry);
+          const lane = row && runs.get(row.lane);
+          if (lane) lane.list.append(entry);
+          else entry.hidden = true;
+        }
+        list.hidden = true;
+        track.append(axis);
+      }
       // Why one stop is so many times faster than another (operator,
       // 2026-11-24: "what is the main reason civvis is so much faster than
       // firaxis civ 6? please try to explain that gap in the chart/timeline"):
@@ -1863,6 +2038,10 @@
         counted.textContent = text(between.counted);
         counted.parentElement.hidden = !between.counted;
         document.getElementById("speed-gap").hidden = false;
+        // In rows, the stretch is drawn on the row of the faster stop, which
+        // carries on from the slower one's.
+        const lane = runs.get((named.get(between.fast) || {}).lane);
+        if (lane) lane.run.insertBefore(mark, lane.list);
       }
       // A part's time is written on it where the part is wide enough to
       // hold it, at whatever width the page is; a narrower part has it in
@@ -1881,12 +2060,15 @@
       // played yet can be slower than one that was measured: the entries are
       // put in the order of their multipliers, whatever kind each is. On the
       // line an entry stands where its `--at` puts it, in any order.
-      const list = section.querySelector(".speed-line");
+      // In rows, each row's list is in that order.
       const pace = (entry) => {
-        const row = named.get(entry.dataset.stop) || ahead.get(entry.dataset.ahead) || aimed.get(entry.dataset.goal);
-        return row && Number.isFinite(row.multiplier) ? row.multiplier : Infinity;
+        const row = rowOf(entry);
+        const multiplier = row && (Array.isArray(row.multiplier) ? row.multiplier[0] : row.multiplier);
+        return Number.isFinite(multiplier) ? multiplier : Infinity;
       };
-      for (const entry of [...list.children].sort((one, other) => pace(one) - pace(other))) list.append(entry);
+      for (const own of [list, ...[...runs.values()].map((lane) => lane.list)]) {
+        for (const entry of [...own.children].sort((one, other) => pace(one) - pace(other))) own.append(entry);
+      }
       // Under the line, once: what amortized means.
       document.getElementById("speed-amortized").hidden = !amortized;
       // Whose estimate the cloud cost is. The machine and its price are two
@@ -1898,7 +2080,18 @@
       }
       put(section, "speedup", line.speedup);
       put(section, "was", line.was && "(was " + line.was + ")");
-      const axis = section.querySelector(".speed-axis");
+      // The three figures over the line: self-play's speed, its games a
+      // second, and how many times as many games as a person by hand.
+      const head = line.head && typeof line.head === "object" ? line.head : {};
+      const hand = line.stops[0] || {};
+      const speed = head.speed && head.speed.times ? head.speed : null;
+      put(section, "head-speed", speed && speed.times);
+      put(section, "head-speed-time", speed && "a game on one core in " + speed.time + ", " + text(hand.time) + " by hand");
+      section.querySelector('[data-head="speed"]').hidden = !speed;
+      const many = head.throughput && head.throughput.rate ? head.throughput : null;
+      put(section, "head-throughput", many && many.rate);
+      put(section, "head-throughput-day", many && many.day + ", one machine");
+      section.querySelector('[data-head="throughput"]').hidden = !many;
       axis.style.setProperty("--reach", line.reach);
       for (const tick of line.ticks || []) {
         const mark = document.createElement("span");
@@ -1915,18 +2108,23 @@
       // the line that they would run into. It is measured from the page as it
       // stands, whatever figures the slot brought, and again when the window
       // changes; the narrow layout is a list and needs none of it.
-      const track = section.querySelector(".speed-track");
       const wide = window.matchMedia("(min-width: 1120px)");
+      // In rows each row has its own room over and under its line, and no
+      // scale's marks under it: those are under the last row.
+      const laned = runs.size > 0;
       const fit = () => {
         fitGap();
         if (!wide.matches) return;
-        for (const [side, near, least, floor] of [["above", 11, 69, 16], ["below", 29, 87, 30]]) {
+        for (const box of laned ? [...runs.values()].map((lane) => lane.box) : [track]) fitIn(box);
+      };
+      const fitIn = (track) => {
+        for (const [side, near, least, floor] of [["above", 11, 69, 16], laned ? ["below", 13, 71, 14] : ["below", 29, 87, 30]]) {
           const span = (entry) => {
             const label = entry.querySelector(".speed-label");
             const lines = [...label.children].filter((line) => !line.hidden && !line.classList.contains("speed-what")).map((line) => line.getBoundingClientRect());
             return { entry, left: Math.min(...lines.map((line) => line.left)), right: Math.max(...lines.map((line) => line.right)), tall: label.getBoundingClientRect().height };
           };
-          const words = [...section.querySelectorAll(".speed-stop.is-" + side)].filter((entry) => !entry.hidden).map(span);
+          const words = [...track.querySelectorAll(".speed-stop.is-" + side)].filter((entry) => !entry.hidden).map(span);
           const next = words.filter((own) => !own.entry.classList.contains("is-far"));
           let reach = Math.max(floor, ...next.map((own) => near + own.tall));
           for (const own of words.filter((own) => own.entry.classList.contains("is-far"))) {
