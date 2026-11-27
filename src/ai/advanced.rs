@@ -10771,6 +10771,12 @@ pub struct AdvancedAi {
     /// the pad city and disrupts there ahead of training and stealing. See
     /// `advanced/seen_pad_starts_the_denial.rs`. Off by default.
     seen_pad_starts_the_denial: bool,
+    /// `stacked-shooter-steps-out`: a City Center of ours where a shooter
+    /// shares the tile with another of our soldiers, with an enemy soldier in
+    /// sight nearby, keeps one shooter and steps the rest beside it, so the
+    /// shooters can fire. See `advanced/stacked_shooter_steps_out.rs`. Off by
+    /// default.
+    stacked_shooter_steps_out: bool,
     // ---- append: t-z ------------------------------------------------
     /// `world-religion-condemns-the-faith`: our soldiers condemn a faith
     /// World Religion's option B names, at peace, and the agent's ballot asks
@@ -12561,6 +12567,8 @@ mod spy_patience_reads_the_host;
 /// One spy per target city: the reading the spy-posting genes share. See
 /// `advanced/spy_targets.rs`.
 mod spy_targets;
+/// `stacked-shooter-steps-out`: see `advanced/stacked_shooter_steps_out.rs`.
+mod stacked_shooter_steps_out;
 /// `sweden-builds-open-air-museums`: see
 /// `advanced/sweden_builds_open_air_museums.rs`.
 mod sweden_builds_open_air_museums;

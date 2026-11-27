@@ -715,6 +715,10 @@ impl AdvancedAi {
         /// Opt-in gene `spreaders-spread-before-they-chart`; see
         /// `advanced/spreaders_spread_before_they_chart.rs`.
         spreaders_spread_before_they_chart => enable_spreaders_spread_before_they_chart, disable_spreaders_spread_before_they_chart;
+        /// Opt-in gene `stacked-shooter-steps-out`: a crowded City Center keeps
+        /// one shooter and steps our other soldiers beside it, so the shooters
+        /// can fire; see `advanced/stacked_shooter_steps_out.rs`.
+        stacked_shooter_steps_out => enable_stacked_shooter_steps_out, disable_stacked_shooter_steps_out;
         // ---- append: t-z --------------------------------------------
         /// Opt-in gene `theology-fights-count-the-host-edge`; see
         /// `advanced/theology_fights.rs`.
