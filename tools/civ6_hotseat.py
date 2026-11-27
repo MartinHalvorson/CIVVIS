@@ -9,6 +9,7 @@ seats are named "CIVVIS jack 1..N" in the game.
 
     tools/civ6_hotseat.py                      # 4 players, Tiny Pangaea, Online, Prince
     tools/civ6_hotseat.py --leader LEADER_SALADIN --difficulty DIFFICULTY_KING
+    tools/civ6_hotseat.py --duel --name dev --leader LEADER_GILGAMESH   # 1v1, see below
     tools/civ6_hotseat.py --stop               # stop the automation, leave the game up
     tools/civ6_hotseat.py --stop --quit-game   # ...and close Civ VI (it saves every 10 turns)
     tools/civ6_hotseat.py --resume             # load the newest hotseat save and play on
@@ -38,6 +39,20 @@ loads the newest hotseat save or autosave (``--resume PATH`` for a particular
 one) through the Hot Seat page's Load Game, then plays on exactly like a new
 game. ``--attach`` picks up a hotseat game that is still running with the mod
 (after ``--stop`` or a closed terminal).
+
+A duel, under your name, for your Elo. ``--duel`` is one against one: two
+players on a Duel map, the other seat played by the strongest roster agent
+(``--agents strongest``: the highest Elo in ``data/strategy_elo.json``; a seat's
+agent is the live decider in that agent's victory lane, named "CIVVIS
+<Handle>"). ``--agents holy,tourist`` names the agents seat by seat at any
+table. ``--name dev`` puts your name on seat 0 (the hand-over screen and the
+score board say it), and when the game ends with a victory or an elimination
+it is put on the people's record on the ledger branch
+(``tools/people_elo.py record``), which the site's ELO Rankings page rates you
+from, among the agents. A game you concede has no ending of the game's own:
+``tools/people_elo.py record <run_dir> --winner civvis`` (or ``person``) says
+who won. ``--hold-start`` sets the staging room up and leaves START GAME to you
+(to pick Teams, which have no text to read).
 
 Known limits: you are always seat 0 (the host row). Diplomacy between you and a
 jack seat works the way hotseat diplomacy does (proposals wait for the other
