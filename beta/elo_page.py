@@ -121,6 +121,18 @@ HISTORY = pathlib.Path("data/strategy_elo_history.json")
 PUBLISHED = pathlib.Path("data/strategy_elo.json")
 NO_DIPLO_HISTORY = pathlib.Path("data/strategy_elo_no_diplo_history.json")
 NO_DIPLO_PUBLISHED = pathlib.Path("data/strategy_elo_no_diplo.json")
+#: The named setups (`strategy_elo --setup`), a column each on Tournaments
+#: (operator 2026-11-27: "6p Continents Online (Diplo off, Diplo on, science,
+#: culture, religion, diplomacy, domination, score) , 2P Pangaea (religion
+#: off, religion on). we can elo for each"), each with its published fit and
+#: history. The benchmark games are 6P Continents Online, so the Firaxis levels
+#: and the people's hot seat games are read beside the two of those whose
+#: Diplomatic victory matches theirs (`True`: on, `False`: off).
+SETUPS = {
+    "continents6_no_diplo": False, "continents6": True, "continents6_science": None, "continents6_culture": None,
+    "continents6_religion": None, "continents6_diplomacy": None, "continents6_domination": None,
+    "continents6_score": None, "pangaea2_no_religion": None, "pangaea2": None,
+}
 
 #: The people's record on the ledger branch (`tools/people_elo.py`).
 PEOPLE_REF = "refs/remotes/origin/ledger:people.jsonl"
@@ -500,6 +512,14 @@ def record(source: pathlib.Path) -> dict | None:
     out: dict = reading(source, points, PUBLISHED, split.get(True), played[True])
     off = history(source, NO_DIPLO_PUBLISHED, NO_DIPLO_HISTORY)
     out["off"] = reading(source, off, NO_DIPLO_PUBLISHED, split.get(False), played[False]) if off else None
+    # Each named setup whose fit is published, read the same way.
+    out["setups"] = {}
+    for name, diplo in SETUPS.items():
+        published = pathlib.Path(f"data/strategy_elo_{name}.json")
+        fits = history(source, published, pathlib.Path(f"data/strategy_elo_{name}_history.json"))
+        if fits:
+            out["setups"][name] = reading(source, fits, published, split.get(diplo) if diplo is not None else None,
+                                          played[diplo] if diplo is not None else None)
     # Benchmark games whose run does not say how the Diplomatic victory was
     # set: in neither reading.
     out["unswitched"] = sum(1 for g in games if g["diplo"] is None) if games is not None else 0
