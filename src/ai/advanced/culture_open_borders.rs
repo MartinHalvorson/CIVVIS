@@ -133,7 +133,7 @@ impl AdvancedAi {
     /// it hides gains Early Empire in the view. Returns the rivals changed, so
     /// the caller can take it back. On an authoritative board the civic is
     /// already there and nothing changes.
-    fn reveal_enforcing_civics(g: &mut Game, pid: usize) -> Vec<usize> {
+    pub(super) fn reveal_enforcing_civics(g: &mut Game, pid: usize) -> Vec<usize> {
         let early_empire = crate::name!("early_empire");
         let revealed: Vec<usize> = (0..g.players.len())
             .filter(|&rival| {
@@ -166,7 +166,11 @@ impl AdvancedAi {
     /// drives to zero while its real income is 100+ a turn. Every renewal
     /// after the first grant expired was refused that way in a traced game,
     /// although the same grant for a 25 Gold lump validated every turn.
-    fn lump_open_borders_quote(g: &Game, pid: usize, partner: usize) -> Option<QuickDeal> {
+    pub(super) fn lump_open_borders_quote(
+        g: &Game,
+        pid: usize,
+        partner: usize,
+    ) -> Option<QuickDeal> {
         let other = &g.players[partner];
         if partner == pid
             || !other.alive
@@ -205,7 +209,7 @@ impl AdvancedAi {
     }
 
     /// The lump never spends into the reserve a falling treasury keeps.
-    fn open_borders_affordable(g: &Game, pid: usize, deal: &QuickDeal) -> bool {
+    pub(super) fn open_borders_affordable(g: &Game, pid: usize, deal: &QuickDeal) -> bool {
         let player = &g.players[pid];
         let reserve = if player.gold_per_turn < 0.0 {
             DEFICIT_RESERVE
