@@ -1161,12 +1161,16 @@ with a copy of it, its scout, for each future played at once. From those,
 
 `beta/strange_memory_test.py` runs that arithmetic as it ships, in node;
 `check_doctor_strange_memory` in `beta/debugger_test.py` holds the cap
-against every way of making a world. The measurements, before and after, are
-in PR #5939. What none of this reaches is the page's own growth: by the end
-of a game the two worlds the page opens on are about 1.65 GB on the 8 GB
-budget (2.2 GB before), the engines a third of it; the rest is the host page
-and the two boxes' viewer pages (renderer and GPU), which grow with their
-games whatever their engines keep.
+against every way of making a world, and `beta/homes_test.py` the shim's
+side. Measured before and after (PR #5939 has the table): All 14,000,605
+from turn 60 made eleven worlds and passed 5 GB by turn 132; on the 16 GB
+budget it makes four (six worlds) and the tab peaked at 3.15 GB, its
+engines 1.1 GB; on the 8 GB budget it makes none. What none of this reaches
+is the pages' own growth: by the end of a game the two worlds the page opens
+on are about 1.65-1.7 GB on the 8 GB budget (2.2 GB before), their engines a
+fifth of it; the rest is the host page and the two boxes' viewer pages
+(renderer and GPU), which grow with their games whatever their engines
+keep.
 
 ## What a search costs
 
