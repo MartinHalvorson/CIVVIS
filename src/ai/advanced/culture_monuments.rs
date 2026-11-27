@@ -61,6 +61,35 @@
 //!
 //! Version one's holds are otherwise unchanged. With version two off the
 //! board plays exactly as version one.
+//!
+//! **`science-seat-monuments`: the same claim for a Science seat (live
+//! Tournament 7, 36 Science seats on Lv 8 Deity, read 2026-11-27).** At t100
+//! only 39% of the seats' 258 cities held a Monument and 2% a Theater Square;
+//! the seat's Culture ran a median 35 a turn against the best rival's 168.
+//! Civics lagged (about 18 at t100; 27 against the rivals' 37 at t150), so 30
+//! of 32 seats still governed from Monarchy at t150, Exploration (Merchant
+//! Republic) was unlocked in none and Suffrage (Democracy) in one: fewer and
+//! later policy slots for the science cards. `monument-first` sits in the
+//! basic ladder that the advanced claims (the Settler floor, the Campus
+//! claims, the Builders, Traders and Granaries) usually reach first.
+//! - For a seat whose active victory target is Science, this module's claim
+//!   runs on version one's holds from [`SCIENCE_MONUMENT_MIN_CITIES`] cities.
+//!   On top of them, science keeps its queue (a Campus-family district or
+//!   one of its buildings: [`AdvancedAi::science_head`], the rule
+//!   `science-heads-keep-their-queue` set for the backlog Builder), as does
+//!   `trade-district-follows-the-campus`' claimed district or building.
+//! - War holds the claim only in a threatened city, by version two's gate:
+//!   the plan's threatened city, a city attacked within four turns, or one
+//!   with an at-war major's soldier within [`MONUMENT_THREAT_RADIUS`] tiles.
+//!   A soldier at the head keeps its queue while any major is at war with us.
+//!   On those boards 12% of the seats' turns from t30 to t150 were at war
+//!   with a major (14% of their Monument-less city-turns); version one's
+//!   empire-wide hold would leave the rear cities unclaimed all that time.
+//! - Version two's near-done pass is the Culture seat's alone: on a Science
+//!   seat a Monument never goes ahead of science, a wonder or a project.
+//!
+//! Off, or for any other victory target, nothing changes; a Culture seat
+//! plays as before with the gene on.
 
 use super::capital_monument::{CAPITAL_MONUMENT_MAX_STANDARD, CAPITAL_MONUMENT_MIN_CITIES};
 use super::*;
@@ -74,10 +103,46 @@ pub(crate) const MONUMENT_THREAT_RADIUS: i32 = 6;
 /// before the city's other heads.
 pub(crate) const MONUMENT_FINISH_STANDARD: u32 = 4;
 
+/// `science-seat-monuments`: the city count from which a Science seat claims.
+/// The early Settler floor and the first Campus come first in the opening,
+/// and `capital-monument-after-the-second-city` already covers the capital at
+/// two.
+pub(crate) const SCIENCE_MONUMENT_MIN_CITIES: usize = 3;
+
 impl AdvancedAi {
+    /// The victory target whose Monument claim this seat plays: Culture with
+    /// `culture-seat-monuments` (or `-2`), Science with
+    /// `science-seat-monuments`. `None` otherwise.
+    fn culture_monument_lane(&self, g: &Game) -> Option<VictoryTarget> {
+        if !(self.culture_seat_monuments
+            || self.culture_seat_monuments_2
+            || self.science_seat_monuments)
+        {
+            return None;
+        }
+        match self.active_victory_target(g)? {
+            VictoryTarget::Culture
+                if self.culture_seat_monuments || self.culture_seat_monuments_2 =>
+            {
+                Some(VictoryTarget::Culture)
+            }
+            VictoryTarget::Science if self.science_seat_monuments => Some(VictoryTarget::Science),
+            _ => None,
+        }
+    }
+
+    /// Whether the claim holds at war only in a threatened city (version
+    /// two's gate): version two, or a Science seat's claim. Under it the claim
+    /// also runs through `threatened-war-holds-the-claims`.
+    pub(super) fn culture_monuments_hold_locally(&self, g: &Game) -> bool {
+        self.culture_seat_monuments_2
+            || self.culture_monument_lane(g) == Some(VictoryTarget::Science)
+    }
+
     /// The Monument `cid` would claim and its build turns: a Culture seat's
     /// unthreatened city of ours with none built, once the second city
-    /// stands. `None` with the gene off or for another victory target.
+    /// stands, or a Science seat's from its third. `None` with the genes off
+    /// or for another victory target.
     pub(super) fn culture_monument_item(
         &self,
         g: &Game,
@@ -85,17 +150,19 @@ impl AdvancedAi {
         cid: u32,
         plan: &StrategicPlan,
     ) -> Option<(Item, f64)> {
-        if !(self.culture_seat_monuments || self.culture_seat_monuments_2)
-            || self.active_victory_target(g) != Some(VictoryTarget::Culture)
-        {
-            return None;
-        }
+        let science = self.culture_monument_lane(g)? == VictoryTarget::Science;
+        let min_cities = if science {
+            SCIENCE_MONUMENT_MIN_CITIES
+        } else {
+            CAPITAL_MONUMENT_MIN_CITIES
+        };
         let city = g.cities.get(&cid)?;
         if city.owner != pid
-            || g.player_city_ids(pid).len() < CAPITAL_MONUMENT_MIN_CITIES
+            || g.player_city_ids(pid).len() < min_cities
             || plan.threatened_city == Some(cid)
             || (city.last_attacked > 0 && g.turn.saturating_sub(city.last_attacked) <= 4)
-            || (self.culture_seat_monuments_2 && Self::monument_city_under_arms(g, pid, city.pos))
+            || ((science || self.culture_seat_monuments_2)
+                && Self::monument_city_under_arms(g, pid, city.pos))
         {
             return None;
         }
@@ -157,7 +224,7 @@ impl AdvancedAi {
 
     /// Version two: whether `item` at the head of `cid` is a near-done
     /// Monument this gene claims, so a claim that runs before this one leaves
-    /// it there. Always false with version two off.
+    /// it there. Always false with version two off, and on a Science seat.
     pub(super) fn culture_monument_finishes_first(
         &self,
         g: &Game,
@@ -167,6 +234,7 @@ impl AdvancedAi {
         item: &Item,
     ) -> bool {
         self.culture_seat_monuments_2
+            && self.culture_monument_lane(g) == Some(VictoryTarget::Culture)
             && self
                 .culture_monument_item(g, pid, cid, plan)
                 .is_some_and(|(monument, turns)| {
@@ -203,14 +271,16 @@ impl AdvancedAi {
             || turns <= monument_turns
     }
 
-    /// See the module: every eligible city of a Culture seat claims its
-    /// Monument. Exact no-op with the gene off or for another target.
+    /// See the module: every eligible city of a Culture seat (or, with
+    /// `science-seat-monuments`, a Science seat) claims its Monument. Exact
+    /// no-op with the genes off or for another target.
     pub(super) fn claim_culture_monuments(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
-        if !(self.culture_seat_monuments || self.culture_seat_monuments_2)
-            || self.active_victory_target(g) != Some(VictoryTarget::Culture)
-        {
+        let Some(lane) = self.culture_monument_lane(g) else {
             return;
-        }
+        };
+        let science = lane == VictoryTarget::Science;
+        // Version two's near-done pass is the Culture seat's alone.
+        let version_two = self.culture_seat_monuments_2 && !science;
         let at_major_war = g.players.iter().any(|other| {
             other.id != pid
                 && other.alive
@@ -218,7 +288,7 @@ impl AdvancedAi {
                 && !other.is_minor
                 && g.is_at_war(pid, other.id)
         });
-        if at_major_war && !self.culture_seat_monuments_2 {
+        if at_major_war && !(self.culture_seat_monuments_2 || science) {
             return;
         }
         for cid in g.player_city_ids(pid) {
@@ -229,8 +299,8 @@ impl AdvancedAi {
             if head.as_ref() == Some(&monument) {
                 continue;
             }
-            let near_done = self.culture_seat_monuments_2
-                && Self::culture_monument_near_done(g, pid, cid, &monument, turns);
+            let near_done =
+                version_two && Self::culture_monument_near_done(g, pid, cid, &monument, turns);
             if let Some(item) = &head {
                 if near_done {
                     if self.culture_monument_near_done_yields_to(g, pid, cid, plan, item, turns) {
@@ -244,6 +314,11 @@ impl AdvancedAi {
                     || self.idle_route_trader_holds(g, pid, cid, plan, item)
                     || self.backlog_builder_holds(g, pid, cid, plan, item)
                     || self.capped_aqueduct_holds(g, pid, cid, plan, item)
+                    // `science-seat-monuments`: science and the Science
+                    // lane's trade district keep their queue.
+                    || (science
+                        && (Self::science_head(g, item)
+                            || self.trade_district_claim_holds(g, pid, cid, plan, item)))
                     || !Self::culture_theater_may_defer(g, pid, cid, item, at_major_war)
                 {
                     continue;
@@ -267,6 +342,10 @@ impl AdvancedAi {
                     think!(self.journal(), Cities, Decision,
                            "{name} finishes its Monument first";
                            "culture-seat-monuments-2: {turns:.1} turns left, ahead of {ahead}");
+                } else if science {
+                    think!(self.journal(), Cities, Decision,
+                           "{name} claims its Monument for the civics";
+                           "science-seat-monuments: {turns:.1} turns, ahead of {ahead}");
                 } else {
                     think!(self.journal(), Cities, Decision,
                            "{name} claims its Monument for the Culture victory";
