@@ -5349,8 +5349,11 @@ const STRANGE_STYLE = `
   #strange-hud .strange-title {
     position: absolute; left: 14px; top: 12px; box-sizing: border-box; width: min(330px, 34vw); padding: 10px 12px 10px;
   }
+  /* The title a size up (operator 2026-11-26: "title can be a bit bigger"):
+     22px fills the 330px card to its edges less 16px; a narrower window
+     narrows the card (34vw) and the title with it, to stay one line. */
   #strange-hud .strange-title b {
-    display: block; color: ${STRANGE_GOLD}; font: 700 19px/1.15 Georgia, serif; letter-spacing: .02em;
+    display: block; color: ${STRANGE_GOLD}; font: 700 clamp(16px, 2.2vw, 22px)/1.15 Georgia, serif; letter-spacing: .02em;
   }
   /* Home, CIVVIS and New game over the title (operator 2026-11-26: "to the
      top of dr strange game, above the title, lets add home, civvis, new game
@@ -5410,7 +5413,7 @@ const STRANGE_STYLE = `
   #strange-hud .strange-versus b small { display: inline; margin-left: .7em; font-size: 10.5px; font-weight: 400; color: #8fa39b; }
   #strange-hud .strange-versus b small.lead { color: ${STRANGE_GOLD}; font-weight: 700; }
   /* The predicted paths: each world's future as it has been played out
-     ("Futures: to the end of the game"), one to a row, the best first. */
+     to the end of its game, one to a row, the best first. */
   #strange-hud .strange-paths { flex: none; padding: 7px 10px 8px; }
   #strange-hud .strange-paths:empty { display: none; }
   #strange-hud .strange-paths h3 {
@@ -5583,7 +5586,6 @@ const STRANGE_STYLE = `
   /* Its panel is the AI Debugger's, which is the bar's own, and the bar is
      unseen here: the panel alone is shown, a window over the tree. */
   html.strange.dbg-split-open #debugbar #dbg-search { visibility: visible !important; pointer-events: auto !important; }
-  #strange-hud .strange-deck .strange-futures.on { color: #10140f; background: #9ad0ff; border-color: transparent; font-weight: 700; }
   /* A black swan is not one of the hand's moves on the highway: it comes
      out of the blue. So it is struck from over the far end of the tree, at
      the top of the sky, between the cards: the button, and beside it which.
@@ -5650,10 +5652,12 @@ const STRANGE_STYLE = `
      then play time.then "B stopped on turn 185..." drop locked. should always
      be locked. drop the civvis and civvis ai debugger things". What makes a
      branch comes after what is said: the timeline followed, Create Branch
-     and Autosearch. */
+     and Autosearch. Later the same day: "the turn box doesnt appear right
+     initially odten. please drop to the fork and future to the end": To the
+     fork and Futures are gone, so the steps come first under the title. The
+     futures are always played out (strange.futures), and a press on the
+     highway, or the steps, go back. */
   #strange-hud .strange-title .strange-say + .strange-deck { margin-top: 4px; }
-  /* To the fork as wide as its words, and Futures the rest of the row. */
-  #strange-hud .strange-deck.strange-time { grid-template-columns: auto minmax(0, 1fr); }
   /* The open turn is the line across the window, and is written on it, with
      its era: to one side of the board, so that the tree where it meets the
      line is left in sight, and the worlds' card has the other side. */
@@ -6334,15 +6338,19 @@ function strangeTravel(end, play = false) {
     else debugSplitGoTo(strange.follow, String(end));
     return;
   }
+  // A world left standing short of a turn (`strangeStep`) is asked again.
+  for (const letter of strangeOpen()) delete split.panes[letter].stood;
   strange.run = {end, at, asked: null, stop: false, play, letters: strangeOpen()};
   strangeAsk(strange.run);
 }
 // The turn the worlds stand on: the followed world's, unless the worlds are
-// locked and its game ended before the others' did, and time went on for
-// them (`strangeEnded`): then theirs, the furthest any world stands on.
+// locked and its game ended before the others' did, or it was left standing
+// short of a turn, and time went on for them (`strangeEnded`): then theirs,
+// the furthest any world stands on.
 function strangeNow() {
   const split = debugSplit, follow = split.panes[strange.follow];
-  if (!strange.locked || !follow.over || follow.turn !== follow.over.turn) return follow.turn;
+  const end = follow.over ? follow.over.turn : follow.stood;
+  if (!strange.locked || typeof end !== "number" || follow.turn !== end) return follow.turn;
   return Math.max(follow.turn ?? 0, ...strangeOpen().map(letter => split.panes[letter].turn ?? 0));
 }
 // The last turn a world holds on its own line.
@@ -6401,10 +6409,13 @@ function strangeShow() {
   }
 }
 // Whether a world's game is over before `turn`: it ended on an earlier one
-// (`pane-over`). Its world cannot be taken to `turn`, and is not waited on.
+// (`pane-over`), or the world stands short of a turn it could not play while
+// time ran on (`stood`, `strangeStep`). Its world is not taken to `turn`,
+// and is not waited on.
 function strangeEnded(letter, turn) {
-  const over = debugSplit && debugSplit.panes[letter] ? debugSplit.panes[letter].over : null;
-  return !!over && typeof turn === "number" && turn > over.turn;
+  const pane = debugSplit && debugSplit.panes[letter];
+  if (!pane || typeof turn !== "number") return false;
+  return (!!pane.over && turn > pane.over.turn) || (typeof pane.stood === "number" && turn > pane.stood);
 }
 // A world has said its game is over, or is again not. Time that was waiting
 // on its turn goes on without it (`strangeStep`, from the split's drawing).
@@ -6412,6 +6423,13 @@ function strangeOver(letter, over) {
   const pane = debugSplit && debugSplit.panes[letter];
   if (!pane) return;
   pane.over = over && typeof over.turn === "number" ? {turn: over.turn, how: over.how} : null;
+  // A world left standing short of a turn because its game was over, which
+  // it says only now (`strangeStep`): it is over, and if time stopped on it,
+  // what is said is that.
+  if (pane.over && typeof pane.stood === "number") {
+    delete pane.stood;
+    if (!strange.run && strangeOpen().every(open => debugSplit.panes[open].over)) strangeSay(strangeOverNote());
+  }
   drawDebugSplit();
 }
 // What is said when time stops because no world has a game left to play.
@@ -6496,10 +6514,32 @@ function strangeStep() {
     return;
   }
   // A world that is done following and stands short of the turn could not
-  // play it: its game is over, or the turn is not kept to be gone back to.
-  const short = letters.find(letter => !there(letter) && split.panes[letter].settled &&
+  // play it: its game is over (a world that ends its game on a turn it is
+  // asked for may say so only later, `pane-over`), or its engine failed the
+  // turn. It does not stop time for the rest (operator 2026-11-26: "play time
+  // should not stop. when clicked, it should compute all the way out to the
+  // end or until stopped"): it is shown the turn it stands on and stays
+  // there, as a world whose game is over does (`strangeEnded`), and time runs
+  // on for the others. The next move asks it for its turns again
+  // (`strangeTravel`). Time stops only when no world is left to play.
+  const shorts = letters.filter(letter => !there(letter) && split.panes[letter].settled &&
     split.panes[letter].settled.wanted === run.asked);
-  if (short) strangeRunOver(run, `${short.toUpperCase()} stopped on turn ${split.panes[short].turn}, short of turn ${run.asked}`);
+  if (shorts.length === 0) return;
+  for (const letter of shorts) {
+    const pane = split.panes[letter];
+    pane.stood = pane.turn;
+    pane.ready = null;
+    debugSplitTell(letter, {civvis: "pane-show"});
+  }
+  const stopped = letters => letters.map(letter => `${letter.toUpperCase()} stopped on turn ${split.panes[letter].stood}`).join(", ");
+  if (shorts.length === letters.length) {
+    // Every world left in the run stands short: they are named, with any
+    // that stood earlier in it, as their answers came one at a time.
+    strangeRunOver(run, `${stopped(strangeOpen().filter(letter => typeof split.panes[letter].stood === "number"))}: no world could play on`);
+    return;
+  }
+  strangeSay(`${stopped(shorts)}, short of turn ${run.asked}. Time runs on for the rest`);
+  strangeStep();
 }
 
 // ---- the futures
@@ -7326,8 +7366,6 @@ function strangeMount() {
       </div>
       <b title="One world, many timelines. Forward in time is up: the line across the window is the open turn, what was played runs down from it and each world's future is played out ahead">Doctor Strange's CIVVIS</b>
       <div class="strange-deck strange-time" role="toolbar" aria-label="Timeline">
-        <button data-strange="fork"></button>
-        <button class="strange-futures" data-strange="futures" aria-pressed="true"></button>
         <div class="strange-steps">
           <button data-strange="back10" title="The worlds go back ten turns, as they stood">−10</button>
           <button data-strange="back1" title="The worlds go back a turn, as they stood">−1</button>
@@ -7375,8 +7413,6 @@ function strangeMount() {
     else if (action === "back1") strangeGoTo(now - 1);
     else if (action === "on1") strangeGoTo(now + 1);
     else if (action === "on10") strangeGoTo(now + 10);
-    else if (action === "futures") { strange.futures = !strange.futures; strangeAheadNext(); strangeForesee(); strangeDraw(); }
-    else if (action === "fork") strangeGoTo((strange.tree || strangeTree()).splits);
     else if (action === "search") debugSearchShow(!debugSearchShown);
     else if (action === "all") strangeAll();
     else if (action === "next1") strangeNext(1);
@@ -7563,12 +7599,6 @@ function strangeDraw() {
     : !many ? "Time runs on from here: the world plays on, a turn at a time"
     : strange.locked ? "Time runs on from here: the worlds play on, a turn at a time and always on the same turn, each with its own player strategy"
     : "Time runs on from here: the worlds play on, each by itself with its own player strategy";
-  const futures = set("futures", strange.futures ? "🔮 Futures: to the end of the game" : "🔮 Futures: off");
-  futures.classList.toggle("on", strange.futures);
-  futures.setAttribute("aria-pressed", strange.futures ? "true" : "false");
-  futures.title = strange.futures
-    ? `Each world's future is played out to the end of its game along its own player strategy. What is coming (a nuclear war, a war, how the game ends) is put up on its line and summed up over the far end of its branch, and its next ${STRANGE_AHEAD} turns are kept to be shown the moment time comes to them. Click to play only what is shown`
-    : "Each world plays a turn when it is shown it. Click to play each world's future out to the end of its game";
   // Generate Black Swan, and which: any, drawn at random, or one by name.
   // The engine says which there are (`debug.swan_kinds`).
   const struck = strange.locked && many ? open : [follow];
@@ -7660,9 +7690,6 @@ function strangeDraw() {
         ` in a box of its own: ${take.map(name => `${turn}-${strangeHandle(name)}`).join(", ")}` +
         (take.length < Math.min(count, nextBest.length) ? ` (room for ${take.length})` : "");
   }
-  const back = set("fork", one ? "⏮ To the fork" : `⏮ To the fork · ${tree.splits}`);
-  back.disabled = !idle || one || turn === tree.splits;
-  back.title = !many ? "One world is open" : one ? "The worlds are one world so far" : `The worlds go back to turn ${tree.splits}, the last they all share`;
   const seats = new Set(open.map(letter => panes[letter].strategy));
   set("say", strange.said || (!many ? `World ${open[0].toUpperCase()} is the one open. Branch opens another beside it`
     : one ? (seats.size === 1 ? "The worlds seat the same player strategy: they are one world until one is given another"
