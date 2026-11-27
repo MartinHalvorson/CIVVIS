@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-r"""Cut Civilization VI's own unit glyphs out of its icon atlases, for a local server.
+r"""Cut the spectator's unit glyphs out of Civilization VI's own icon atlases.
 
 The command map draws a white symbol inside every unit counter.  Until now that
 symbol came off the **Civilization Wiki**: `tools/civ6_unit_flags.swift`
@@ -10,17 +10,9 @@ a third-party archive standing in for a file on this disk.
 
 This reads the file on this disk instead::
 
-    python3 tools/civ6_unit_glyphs.py            # local/civ6-art/unit-glyphs.{png,json}
+    python3 tools/civ6_unit_glyphs.py            # web/assets/civ6-unit-flags.{png,json}
     python3 tools/civ6_unit_glyphs.py --list     # the resolved icon table
-    python3 tools/civ6_unit_glyphs.py --verify   # re-check the local cut, no install
-
-The cut is for the local server of somebody who owns the game, and for nobody
-else. It lands in the git-ignored ``local/civ6-art/`` (``art_provenance.LOCAL_ART``),
-on the very cell layout of the sheet the site ships, so the local server can
-serve it in that sheet's place. The PNG carries
-``art_provenance.LOCAL_MARK``, which ``tools/art_provenance.py`` refuses in the
-repository and in any published build. The site's own glyphs are game-icons.net
-silhouettes drawn by ``tools/own_art.py`` (docs/CIV6_ART.md).
+    python3 tools/civ6_unit_glyphs.py --verify   # re-check the committed art, no install
 
 `civ6_unit_flag_plates` already parses the `CIVBLP` package format and its
 docstring is the long version of the container; this tool imports that parser
@@ -109,15 +101,14 @@ import zlib
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import art_provenance  # noqa: E402
 import civ6_env as env  # noqa: E402
 import civ6_unit_flag_plates as blp  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 
-#: The local cut and its manifest: never committed, never published.
-ATLAS = art_provenance.LOCAL_ART / "unit-glyphs.png"
-MANIFEST = art_provenance.LOCAL_ART / "unit-glyphs.json"
+#: The committed atlas and its manifest.
+ATLAS = ROOT / "web/assets/civ6-unit-flags.png"
+MANIFEST = ROOT / "web/assets/civ6-unit-flags.json"
 
 #: The ruleset roster, and the one CIVVIS-to-Civilization VI unit translation.
 UNITS = ROOT / "data/units.json"
@@ -456,7 +447,6 @@ def cut():
     if blank:
         raise SystemExit(f"cut a blank cell for {blank}")
 
-    ATLAS.parent.mkdir(parents=True, exist_ok=True)
     blp.write_png(ATLAS, width, sheet_rows * CELL, sheet)
     art = ATLAS.read_bytes()
     for row in rows:
@@ -489,13 +479,13 @@ def cut():
 
 
 def verify():
-    """Re-check the local atlas against its manifest. No install needed."""
+    """Re-check the committed atlas against its manifest. No install needed."""
     manifest = json.loads(MANIFEST.read_text())
     art = ATLAS.read_bytes()
     if len(art) != manifest["png_bytes"] or \
             f"{fnv1a64(art):#018x}" != manifest["png_fnv1a64"]:
         raise SystemExit("the manifest describes a different atlas than the "
-                         "one beside it")
+                         "one committed beside it")
     width, height, pixels = read_png(art)
     cell, columns = manifest["cell_size"], manifest["columns"]
     if width != columns * cell or height != manifest["rows"] * cell:
