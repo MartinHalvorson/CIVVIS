@@ -211,4 +211,41 @@ assert(screen.personTurn() == false)
 assert(read("CivvisControlMapView.lua"):find(
 	"return cfg.Play ~= false and cfg.CivvisDecides and cfg.Hotseat ~= true;", 1, true))
 
+-- `--name dev`: the hand-over screen names the person's seat when it loads
+-- (EditHotseatPlayer.lua:120, `pPlayerConfig:SetHotseatName(playerName)`),
+-- reads the name back, and tries again at a turn's start until the game says it.
+assert(closer:find('pcall(CivvisHotseatScreen.namePerson);\n\treport("hotseat_armed"', 1, true),
+	"the screen names the person before it reports itself armed")
+local seatNames, refuse = { [0] = "Player 1" }, true
+env.PlayerConfigurations = setmetatable({}, { __index = function(_, pid)
+	return { SetHotseatName = function(_, name) if not refuse then seatNames[pid] = name end end,
+	         GetPlayerName = function() return seatNames[pid] end }
+end })
+env.cfg = { Hotseat = true, HotseatHumanSeats = { 0 }, HotseatSeats = { 1 }, HotseatPersonName = "dev" }
+reports = {}
+screen.namePerson()
+assert(#reports == 1 and reports[1].kind == "hotseat_person"
+	and reports[1].fields == ',"seat":0,"applied":false,"shown":"Player 1"', reports[1].fields)
+refuse = false
+localPlayer = 0
+screen.announce("begin")
+assert(seatNames[0] == "dev" and seatNames[1] == nil, "only the person's seat is named")
+assert(reports[2].fields == ',"seat":0,"applied":true,"shown":"dev"', reports[2].fields)
+assert(reports[3].kind == "hotseat_turn")
+-- Read back once, it is left alone.
+screen.announce("end")
+assert(#reports == 4 and reports[4].kind == "hotseat_turn", kinds())
+-- A name the game shows with a quote in it cannot break the event's JSON.
+seatNames[0] = 'Pl"ayer\\1'
+screen.personNamed = nil
+refuse = true
+reports = {}
+screen.namePerson()
+assert(reports[1].fields == ',"seat":0,"applied":false,"shown":"Player1"', reports[1].fields)
+-- No name asked: nothing is named, nothing is said.
+env.cfg.HotseatPersonName = ""
+reports = {}
+screen.namePerson()
+assert(#reports == 0)
+
 print("hotseat_seat_test: ok")

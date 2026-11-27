@@ -1232,7 +1232,28 @@ function CivvisHotseatScreen.personTurn()
 	return not CivvisHotseatScreen.listed(cfg.HotseatStubSeats,
 		CivvisHotseatScreen.localPlayer());
 end
+-- `--name dev` (HotseatPersonName): the person's seat has no agent context to
+-- name it as a CIVVIS seat names itself (CivvisSeat.claim), so this screen
+-- does, when it loads: before the first hand-over is shown, so it already says
+-- "dev" and not "Player 1". EditHotseatPlayer.lua:120 names a seat this way.
+-- Read back, never assumed, and tried again at a turn's start until it reads so.
+function CivvisHotseatScreen.namePerson()
+	local name = cfg.HotseatPersonName;
+	if type(name) ~= "string" or name == "" or CivvisHotseatScreen.personNamed then return; end
+	local all = true;
+	for _, seat in ipairs(cfg.HotseatHumanSeats or {}) do
+		seat = tonumber(seat);
+		local applied = pcall(function() PlayerConfigurations[seat]:SetHotseatName(name); end);
+		local shown = "?";
+		pcall(function() shown = tostring(PlayerConfigurations[seat]:GetPlayerName()); end);
+		if shown ~= name then all = false; end
+		report("hotseat_person", string.format(',"seat":%d,"applied":%s,"shown":"%s"',
+			seat, tostring(applied and shown == name), (shown:gsub('[\\"%c]', ""))));
+	end
+	CivvisHotseatScreen.personNamed = all;
+end
 function CivvisHotseatScreen.announce(phase)
+	pcall(CivvisHotseatScreen.namePerson);
 	local pid = CivvisHotseatScreen.localPlayer();
 	report("hotseat_turn", string.format(
 		',"phase":"%s","player":%d,"turn":%d,"human":%s,"civvis":%s',
@@ -1381,6 +1402,7 @@ function CivvisHotseatScreen.arm()
 		end);
 	end
 	ContextPtr:SetUpdate(function(fDTime) pcall(CivvisHotseatScreen.frame, fDTime); end);
+	pcall(CivvisHotseatScreen.namePerson);
 	report("hotseat_armed", string.format(',"start_turn":%s', tostring(type(OnOk) == "function")));
 end
 

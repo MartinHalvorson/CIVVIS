@@ -210,6 +210,10 @@ pub(crate) const CAMPAIGN_PATIENCE: u32 = 20;
 /// already on the ring. Ten gives that clock room while bounding a failed
 /// opportunity before it freezes ordinary development.
 pub(crate) const CAMPAIGN_V2_PATIENCE: u32 = 10;
+/// `city-campaign-3`: a plan drawn in a war already open takes its city
+/// within this many standard turns of the war, or the war reads no-go. The
+/// operator's own horizon: "are we pushing in the next 20 turns?"
+pub(crate) const CAMPAIGN_V3_CLOCK: u32 = 20;
 /// After a campaign closes in peace — or a plan expires unlaunched — no plan
 /// for this many standard turns (`campaign_retry_after`).
 pub(crate) const CAMPAIGN_REPEAT_COOLDOWN: u32 = 15;
@@ -338,7 +342,16 @@ impl AdvancedAi {
         // `plan_city_campaign`, and the gene would ship city-campaign v1's
         // planner with it. Exactly the shipped predicate with the gene off.
         // See `advanced/early_conquest.rs`.
-        self.city_campaign || self.city_campaign_2 || self.conquest_owns_the_campaign()
+        self.city_campaign
+            || self.city_campaign_2
+            || self.city_campaign_3
+            || self.conquest_owns_the_campaign()
+    }
+
+    /// Version two's staged-only plan at peace. Version three keeps it and
+    /// adds the war in hand, so both read this.
+    fn campaign_staged_only(&self) -> bool {
+        self.city_campaign_2 || self.city_campaign_3
     }
 
     /// Whether a plan stands to read: the gene is on, the rival is alive and
@@ -840,6 +853,151 @@ impl AdvancedAi {
         true
     }
 
+    /// `city-campaign-3`: whether the war with `rival` is one the war in
+    /// hand plans for — an open war with a living major we may target, not
+    /// the launcher war (`advanced/launcher_war.rs` raids its pads and owns
+    /// that front), and not on the Domination lane, whose war desk chooses
+    /// capitals on its own.
+    fn war_in_hand_rival(&self, g: &Game, pid: usize, rival: usize) -> bool {
+        rival != pid
+            && g.players
+                .get(rival)
+                .is_some_and(|player| player.alive && !player.is_minor && !player.is_barbarian)
+            && g.is_at_war(pid, rival)
+            && self.active_victory_target(g) != Some(VictoryTarget::Domination)
+            && !self.launcher_keeps_the_war(g, pid, rival)
+            && !self.launcher_war_opens(g, pid, rival)
+    }
+
+    /// `city-campaign-3`: the go/no-go on one war in hand. The cheapest city
+    /// of `rival` within [`CAMPAIGN_V2_REACH`] of ours that holds after the
+    /// capture and whose whole spare-included bill — strength, bodies and a
+    /// capturer — the field army carries today: our rough total against
+    /// their rough total at that city. `None` is a no-go.
+    pub(crate) fn war_in_hand_pick(
+        &self,
+        g: &Game,
+        pid: usize,
+        rival: usize,
+    ) -> Option<(u32, CityRequirement)> {
+        if !self.war_in_hand_rival(g, pid, rival) {
+            return None;
+        }
+        let appraisal = self.appraise_neighbour(g, pid, rival)?;
+        let army = self.campaign_field_army(g, pid);
+        if !army
+            .iter()
+            .any(|uid| g.rules.units[g.units[uid].kind].is_melee_capable())
+        {
+            return None;
+        }
+        let army_strength = Self::campaign_strength_of(g, &army);
+        let average_body = if army.is_empty() {
+            DEFAULT_BODY_STRENGTH
+        } else {
+            army_strength / army.len() as f64
+        };
+        let mut best: Option<((f64, i32, u32), CityRequirement)> = None;
+        for city in g.cities.values().filter(|city| city.owner == rival) {
+            let core_distance = Self::campaign_core_distance(g, pid, city.pos);
+            if core_distance > CAMPAIGN_V2_REACH {
+                continue;
+            }
+            let bill = self.campaign_city_requirement(g, pid, city.id, &appraisal, average_body);
+            if !bill.holdable || army_strength + 1e-9 < bill.strength || army.len() < bill.bodies {
+                continue;
+            }
+            let key = (
+                bill.strength / army_strength.max(1.0),
+                core_distance,
+                city.id,
+            );
+            if best.as_ref().is_none_or(|(held, _)| key < *held) {
+                best = Some((key, bill));
+            }
+        }
+        best.map(|((_, _, city), bill)| (city, bill))
+    }
+
+    /// `city-campaign-3`: the war in hand. Version one and two refuse to plan
+    /// while any major war is open, so a war that is already paid for — the
+    /// faith strike's, the launcher's, the one a rival opened on us — never
+    /// gets a city to take. This draws the one city the field army can take
+    /// and hold against the best of those wars, already declared.
+    pub(crate) fn plan_city_campaign_3(&self, g: &Game, pid: usize) -> Option<CampaignPlan> {
+        if g.turn < g.standard_duration(CAMPAIGN_MIN_TURN) || g.player_city_ids(pid).len() < 2 {
+            return None;
+        }
+        let army_strength = Self::campaign_strength_of(g, &self.campaign_field_army(g, pid));
+        let mut best: Option<((f64, usize), usize, u32, CityRequirement)> = None;
+        for rival in 0..g.players.len() {
+            if let Some((city, bill)) = self.war_in_hand_pick(g, pid, rival) {
+                let key = (bill.strength / army_strength.max(1.0), rival);
+                if best.as_ref().is_none_or(|(held, ..)| key < *held) {
+                    best = Some((key, rival, city, bill));
+                }
+            }
+        }
+        let (_, target, city, bill) = best?;
+        Some(CampaignPlan {
+            target,
+            cities: vec![city],
+            requirement: bill.strength,
+            bodies: bill.bodies,
+            planned: g.turn,
+            declared: Some(g.turn),
+            taken: 0,
+        })
+    }
+
+    /// `city-campaign-3`: record this turn's no-go verdicts — every war in
+    /// hand whose rival has no city the army can take, other than the plan's
+    /// own target. A verdict from an expired clock keeps its longer date.
+    fn record_war_no_go(&mut self, g: &Game, pid: usize) {
+        let planned = self.campaign.as_ref().map(|plan| plan.target);
+        let no_go: Vec<usize> = (0..g.players.len())
+            .filter(|rival| Some(*rival) != planned)
+            .filter(|rival| self.war_in_hand_rival(g, pid, *rival))
+            .filter(|rival| self.war_in_hand_pick(g, pid, *rival).is_none())
+            .collect();
+        for rival in no_go {
+            let until = self.campaign_war_no_go.entry(rival).or_insert(g.turn);
+            *until = (*until).max(g.turn);
+        }
+    }
+
+    /// `city-campaign-3`: whether the Objective Board leaves out the Siege
+    /// row on `city`. At war with its owner, a plan that names another city
+    /// of that owner keeps the army on its one objective, so everything
+    /// strikes one city at once; and a war that reads no-go raises no Siege
+    /// row at all, so the army holds where the enemy has to come to it
+    /// instead of walking into the walls a unit at a time. `false` with the
+    /// gene off, in an arena, and on the Domination lane.
+    pub(crate) fn campaign_withholds_the_siege(&self, g: &Game, pid: usize, city: u32) -> bool {
+        if !self.city_campaign_3
+            || g.is_arena()
+            || self.active_victory_target(g) == Some(VictoryTarget::Domination)
+        {
+            return false;
+        }
+        let Some(owner) = g.cities.get(&city).map(|city| city.owner) else {
+            return false;
+        };
+        if owner == pid || !g.is_at_war(pid, owner) {
+            return false;
+        }
+        if let Some(plan) = self
+            .campaign
+            .as_ref()
+            .filter(|plan| plan.target == owner && !plan.cities.is_empty())
+        {
+            return !plan.cities.contains(&city);
+        }
+        self.campaign_war_no_go
+            .get(&owner)
+            .is_some_and(|until| *until >= g.turn)
+    }
+
     /// One of the `campaign:*` counters the probe rows read.
     fn campaign_count(g: &mut Game, pid: usize, key: &str, by: i64) {
         *g.players[pid].counters.entry(key.to_string()).or_insert(0) += by;
@@ -860,13 +1018,17 @@ impl AdvancedAi {
             self.campaign = None;
             return;
         }
+        let turn = g.turn;
+        self.campaign_war_no_go.retain(|_, until| *until >= turn);
         let mut previous = self.campaign.take();
+        let mut taken_this_turn = 0;
         if let Some(plan) = previous.as_mut() {
             let taken_now = plan
                 .cities
                 .iter()
                 .filter(|cid| g.cities.get(cid).is_some_and(|city| city.owner == pid))
                 .count();
+            taken_this_turn = taken_now;
             if taken_now > 0 {
                 plan.taken += taken_now;
                 Self::campaign_count(g, pid, "campaign:taken", taken_now as i64);
@@ -887,15 +1049,53 @@ impl AdvancedAi {
                 .is_some_and(|player| player.alive)
                 && g.is_at_war(pid, plan.target)
         };
-        if let Some(plan) = previous.as_ref().filter(|plan| at_war_with(plan)) {
-            // A war under way is a commitment: the plan holds until every
-            // city is taken and the peace desk has closed it.
-            self.campaign = Some(plan.clone());
-            return;
-        }
         let cooldown = g
             .turn
             .saturating_add(g.standard_duration(CAMPAIGN_REPEAT_COOLDOWN));
+        // `city-campaign-3`: a plan whose city fell on an earlier turn has
+        // had its peace offer (`city_campaign_diplomacy` runs the turn the
+        // capture is counted). A war that goes on after it is a war in hand
+        // again, and the next city is planned below.
+        if self.city_campaign_3
+            && taken_this_turn == 0
+            && previous
+                .as_ref()
+                .is_some_and(|plan| at_war_with(plan) && plan.taken > 0 && plan.cities.is_empty())
+        {
+            previous = None;
+        }
+        if let Some(plan) = previous.as_ref().filter(|plan| at_war_with(plan)) {
+            // `city-campaign-3`: the war's clock. A plan that has taken
+            // nothing twenty turns into its war is a no-go: the army stops
+            // feeding that siege, and the rival is not planned again for the
+            // cooldown.
+            let clock_out = self.city_campaign_3
+                && plan.taken == 0
+                && plan.declared.is_some_and(|declared| {
+                    g.turn.saturating_sub(declared) >= g.standard_duration(CAMPAIGN_V3_CLOCK)
+                });
+            if clock_out {
+                let target = plan.target;
+                let until = self.campaign_war_no_go.entry(target).or_insert(cooldown);
+                *until = (*until).max(cooldown);
+                self.campaign_retry_after = self.campaign_retry_after.max(cooldown);
+                Self::campaign_count(g, pid, "campaign:clock_expired", 1);
+                think!(self.journal(), Military, Strategy,
+                       "The campaign against {} is a no-go", g.players[target].civ;
+                       "city-campaign-3: {} turns into the war and no planned city taken; the army stops feeding the siege until turn {}",
+                       g.turn.saturating_sub(plan.declared.unwrap_or(g.turn)), cooldown);
+                self.campaign = None;
+                self.record_war_no_go(g, pid);
+                return;
+            }
+            // A war under way is a commitment: the plan holds until every
+            // city is taken and the peace desk has closed it.
+            self.campaign = Some(plan.clone());
+            if self.city_campaign_3 {
+                self.record_war_no_go(g, pid);
+            }
+            return;
+        }
         if previous
             .as_ref()
             .is_some_and(|plan| plan.declared.is_some())
@@ -913,11 +1113,37 @@ impl AdvancedAi {
                 && !player.is_barbarian
                 && g.is_at_war(pid, player.id)
         });
+        if self.city_campaign_3 && major_war {
+            // `city-campaign-3`: the war in hand. Versions one and two stop
+            // here; this one plans inside the war it is already paying for.
+            self.campaign = if g.turn >= self.campaign_retry_after {
+                self.plan_city_campaign_3(g, pid)
+            } else {
+                None
+            };
+            if let Some(plan) = self.campaign.clone() {
+                Self::campaign_count(g, pid, "campaign:planned", 1);
+                Self::campaign_count(g, pid, "campaign:war_planned", 1);
+                if self.journal().wants(crate::reasoning::Level::Strategy) {
+                    let name = plan
+                        .cities
+                        .first()
+                        .and_then(|cid| g.cities.get(cid))
+                        .map_or_else(String::new, |city| city.name.clone());
+                    think!(self.journal(), Military, Strategy,
+                           "Planning the war in hand against {}", g.players[plan.target].civ;
+                           "city-campaign-3: {name} asks {:.0} strength in {} bodies with the spare, and the field army carries it; taken within {} turns or the war is a no-go, then peace",
+                           plan.requirement, plan.bodies, g.standard_duration(CAMPAIGN_V3_CLOCK));
+                }
+            }
+            self.record_war_no_go(g, pid);
+            return;
+        }
         if major_war || g.turn < self.peace_until || g.turn < self.campaign_retry_after {
             self.campaign = None;
             return;
         }
-        if self.city_campaign_2 {
+        if self.campaign_staged_only() {
             if let Some(mut plan) = previous.take() {
                 if self.refresh_city_campaign_2(g, pid, &mut plan) {
                     if g.turn.saturating_sub(plan.planned)
@@ -932,7 +1158,7 @@ impl AdvancedAi {
                 }
             }
         }
-        let Some(mut fresh) = (if self.city_campaign_2 {
+        let Some(mut fresh) = (if self.campaign_staged_only() {
             self.plan_city_campaign_2(g, pid)
         } else {
             self.plan_city_campaign(g, pid)
@@ -940,12 +1166,12 @@ impl AdvancedAi {
             self.campaign = None;
             return;
         };
-        if !self.city_campaign_2 {
+        if !self.campaign_staged_only() {
             if let Some(plan) = previous.filter(|plan| plan.target == fresh.target) {
                 fresh.planned = plan.planned;
             }
         }
-        let patience = if self.city_campaign_2 {
+        let patience = if self.campaign_staged_only() {
             CAMPAIGN_V2_PATIENCE
         } else {
             CAMPAIGN_PATIENCE
@@ -1923,6 +2149,198 @@ mod tests {
             Some(true)
         );
         assert!(game.map.tiles[&farms[2]].pillaged);
+    }
+
+    // ------------------------------------------------------------------
+    // city-campaign-3: the war in hand
+    // ------------------------------------------------------------------
+
+    /// Ours at (6, 10) with a second city and six Warriors; a neighbour ten
+    /// tiles east with one Warrior; a strong empire out of reach. At war with
+    /// the neighbour, as a faith strike or a rival's declaration leaves us.
+    fn war_in_hand_board(seed: u64) -> Game {
+        let mut game = flat_board(seed, &[(6, 10), (16, 10), (28, 10)]);
+        let home = game.cities[&game.player_city_ids(0)[0]].pos;
+        game.found_city_for(0, (6, 5), None);
+        warriors(&mut game, 0, home, 6);
+        let weak = game.cities[&game.player_city_ids(1)[0]].pos;
+        warriors(&mut game, 1, weak, 1);
+        let strong = game.cities[&game.player_city_ids(2)[0]].pos;
+        warriors(&mut game, 2, strong, 6);
+        give_techs(&mut game, 2, 8);
+        game.at_war.insert((0, 1));
+        game
+    }
+
+    #[test]
+    fn city_campaign_3_is_a_native_opt_in_and_one_version_plays() {
+        opt_in_off_in_both_controllers("city-campaign-3", |ai| ai.city_campaign_3);
+        let mut ai = AdvancedAi::new();
+        ai.enable_city_campaign_2();
+        ai.enable_city_campaign_3();
+        assert!(ai.city_campaign_3 && !ai.city_campaign_2 && !ai.city_campaign);
+        ai.enable_city_campaign_2();
+        assert!(ai.city_campaign_2 && !ai.city_campaign_3);
+        ai.enable_city_campaign_3();
+        ai.enable_city_campaign();
+        assert!(ai.city_campaign && !ai.city_campaign_3);
+    }
+
+    /// The defect: version two — the one the live seat plays — returns at the
+    /// first open major war, so a war already paid for never names a city.
+    /// Version three names the neighbour's city the army can carry, already
+    /// declared, and the Board keeps its Siege row.
+    #[test]
+    fn the_war_in_hand_gets_a_plan_that_version_two_never_draws() {
+        let mut game = war_in_hand_board(80_331);
+        let theirs = game.player_city_ids(1)[0];
+
+        let mut v2 = AdvancedAi::new();
+        v2.enable_city_campaign_2();
+        v2.maintain_city_campaign(&mut game, 0);
+        assert_eq!(v2.campaign, None, "version two never plans inside a war");
+        assert!(!v2.campaign_withholds_the_siege(&game, 0, theirs));
+
+        let mut ai = AdvancedAi::new();
+        ai.enable_city_campaign_3();
+        ai.maintain_city_campaign(&mut game, 0);
+        let plan = ai.campaign.clone().expect("the war in hand is planned");
+        assert_eq!(plan.target, 1);
+        assert_eq!(plan.cities, vec![theirs]);
+        assert_eq!(plan.planned, 60);
+        assert_eq!(plan.declared, Some(60), "the war is already open");
+        assert_eq!(
+            game.players[0].counters.get("campaign:war_planned"),
+            Some(&1)
+        );
+        assert!(ai.city_campaign_stands(&game, 0));
+        assert_eq!(ai.campaign_target(&game, 0), Some(1));
+        assert!(!ai.campaign_withholds_the_siege(&game, 0, theirs));
+        assert!(ai.campaign_war_no_go.is_empty());
+
+        // At peace with nobody planned against, version three is version two.
+        let mut calm = war_in_hand_board(80_331);
+        calm.at_war.clear();
+        let mut v3 = AdvancedAi::new();
+        v3.enable_city_campaign_3();
+        let mut v2 = AdvancedAi::new();
+        v2.enable_city_campaign_2();
+        v3.maintain_city_campaign(&mut calm, 0);
+        v2.maintain_city_campaign(&mut calm, 0);
+        assert_eq!(v3.campaign, v2.campaign);
+    }
+
+    /// A war against an empire whose cities the field army cannot carry is a
+    /// no-go: no plan, and no Siege row walks our units into its walls.
+    #[test]
+    fn a_war_none_of_whose_cities_the_army_can_take_is_a_no_go() {
+        let mut game = flat_board(80_332, &[(6, 10), (16, 10)]);
+        let home = game.cities[&game.player_city_ids(0)[0]].pos;
+        game.found_city_for(0, (6, 5), None);
+        warriors(&mut game, 0, home, 4);
+        let theirs = game.player_city_ids(1)[0];
+        let their_pos = game.cities[&theirs].pos;
+        warriors(&mut game, 1, their_pos, 8);
+        give_techs(&mut game, 1, 8);
+        game.at_war.insert((0, 1));
+
+        let mut v2 = AdvancedAi::new();
+        v2.enable_city_campaign_2();
+        v2.maintain_city_campaign(&mut game, 0);
+        assert!(
+            !v2.campaign_withholds_the_siege(&game, 0, theirs),
+            "off, nothing held"
+        );
+
+        let mut ai = AdvancedAi::new();
+        ai.enable_city_campaign_3();
+        assert_eq!(ai.war_in_hand_pick(&game, 0, 1), None);
+        ai.maintain_city_campaign(&mut game, 0);
+        assert_eq!(ai.campaign, None);
+        assert_eq!(ai.campaign_war_no_go.get(&1), Some(&60));
+        assert!(ai.campaign_withholds_the_siege(&game, 0, theirs));
+        // The verdict is read again every turn: peace clears it.
+        game.at_war.clear();
+        game.turn = 61;
+        ai.maintain_city_campaign(&mut game, 0);
+        assert!(!ai.campaign_withholds_the_siege(&game, 0, theirs));
+        assert!(ai.campaign_war_no_go.is_empty());
+    }
+
+    /// Everything strikes one city: a plan against a rival with two cities
+    /// leaves the Siege row off the one it does not name.
+    #[test]
+    fn the_plan_holds_the_army_on_one_city_of_theirs() {
+        let mut game = war_in_hand_board(80_333);
+        game.found_city_for(1, (16, 16), None);
+        let mut ai = AdvancedAi::new();
+        ai.enable_city_campaign_3();
+        ai.maintain_city_campaign(&mut game, 0);
+        let plan = ai.campaign.clone().expect("a plan");
+        assert_eq!(plan.cities.len(), 1);
+        let other = game
+            .player_city_ids(1)
+            .into_iter()
+            .find(|cid| !plan.cities.contains(cid))
+            .expect("a second city of theirs");
+        assert!(!ai.campaign_withholds_the_siege(&game, 0, plan.cities[0]));
+        assert!(ai.campaign_withholds_the_siege(&game, 0, other));
+        // A city of another empire at peace with us is no business of this.
+        let neutral = game.player_city_ids(2)[0];
+        assert!(!ai.campaign_withholds_the_siege(&game, 0, neutral));
+    }
+
+    /// Twenty turns into the war with nothing taken the plan is a no-go and
+    /// the rival is not planned again for the cooldown; a capture inside the
+    /// clock ends in the peace offer instead.
+    #[test]
+    fn the_clock_turns_an_untaken_war_into_a_no_go_and_a_capture_into_peace() {
+        let mut game = war_in_hand_board(80_334);
+        let theirs = game.player_city_ids(1)[0];
+        let mut ai = AdvancedAi::new();
+        ai.enable_city_campaign_3();
+        ai.maintain_city_campaign(&mut game, 0);
+        assert!(ai.campaign.is_some());
+
+        game.turn = 60 + game.standard_duration(CAMPAIGN_V3_CLOCK) - 1;
+        ai.maintain_city_campaign(&mut game, 0);
+        assert!(ai.campaign.is_some(), "inside the clock the plan holds");
+        game.turn += 1;
+        ai.maintain_city_campaign(&mut game, 0);
+        assert_eq!(ai.campaign, None, "the clock has run out");
+        assert_eq!(
+            game.players[0].counters.get("campaign:clock_expired"),
+            Some(&1)
+        );
+        assert!(ai.campaign_retry_after > game.turn);
+        assert!(ai.campaign_withholds_the_siege(&game, 0, theirs));
+        game.turn += 1;
+        ai.maintain_city_campaign(&mut game, 0);
+        assert_eq!(ai.campaign, None, "no fresh plan inside the cooldown");
+        assert!(ai.campaign_withholds_the_siege(&game, 0, theirs));
+
+        // The same war, the city taken inside the clock: peace is offered.
+        let mut game = war_in_hand_board(80_334);
+        let theirs = game.player_city_ids(1)[0];
+        let mut ai = AdvancedAi::new();
+        ai.enable_city_campaign_3();
+        ai.maintain_city_campaign(&mut game, 0);
+        game.turn = 65;
+        game.cities.get_mut(&theirs).unwrap().owner = 0;
+        ai.maintain_city_campaign(&mut game, 0);
+        let plan = ai.campaign.clone().expect("the plan holds until peace");
+        assert_eq!(plan.taken, 1);
+        ai.city_campaign_diplomacy(&mut game, 0);
+        assert!(ai.peace_offers.contains(&1), "the capture asks for peace");
+        // Peace refused, the war goes on: the next turn plans the next city
+        // rather than holding the whole front on a spent plan.
+        let next = game.found_city_for(1, (16, 4), None);
+        game.turn = 66;
+        ai.maintain_city_campaign(&mut game, 0);
+        let fresh = ai.campaign.clone().expect("the war in hand moves on");
+        assert_eq!(fresh.taken, 0);
+        assert_eq!(fresh.cities, vec![next]);
+        assert!(!ai.campaign_withholds_the_siege(&game, 0, next));
     }
 }
 

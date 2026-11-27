@@ -25,7 +25,9 @@ What is checked:
     let go when the page says it is done or the world's page has gone;
   * Autosearch's copies of a world it names are forks of that world's
     engine, and with none named of the page's;
-  * a world whose page has gone has its engine let go;
+  * a world whose page has gone has its engine let go, and so has one whose
+    page is out of sight, which is given none until it is seen again;
+  * no more copies are made for Autosearch than the page has room for;
   * the split closed onto a world makes that world's engine the page's.
 
 Nothing here plays a game. That a world played on its own engine plays
@@ -188,6 +190,42 @@ def check_homes(dev: Devtools, origin: str) -> None:
     assert said('(await said("/debug?fork=1", {op: "status"})).n') == on(page_now, 1)
     assert said('(await said("/forks", {count: 0})).forks') == 0
     print("Autosearch's copies are of the world it names, and of the page's engine when it names none.")
+    # No more copies are made than fit in the room the page gives all its
+    # engines together (`tabEnginesMB`, assets/app_debugger.js), and never
+    # none; the answer says how many there are.
+    said('(window.tabEnginesMB = () => 0, true)')
+    assert said('(await said("/forks", {count: 3})).forks') == 1
+    said('(window.tabEnginesMB = () => 1e6, true)')
+    assert said('(await said("/forks", {count: 3})).forks') == 3
+    said('(delete window.tabEnginesMB, true)')
+    assert said('(await said("/forks", {count: 0})).forks') == 0
+    print("no more copies are made than the page has room for, and always one.")
+
+    # A world's page out of sight (`strange-shut`: a box closed and kept for
+    # the next branch, or a page made ahead for one) holds no world: its
+    # engine and its scout are let go, and it is given none while it stays
+    # out of sight. Seen again, its next request seats it once more.
+    shut = 'document.querySelector(\'iframe[data-world="b-t1"]\').classList'
+    engines = '[window.__civvisBeta.homes, window.__civvisBeta.scouts]'
+    said('(await said("/debug?pane=b-t1&scout=1", {op: "foresee", turns: 1}), true)')
+    assert said(engines) == [2, 1], said(engines)
+    said(f'({shut}.add("strange-shut"), true)')
+    deadline = time.time() + 15
+    while said(engines) != [1, 0]:
+        if time.time() > deadline:
+            raise AssertionError(f"B's engines were kept out of sight: {said(engines)}")
+        time.sleep(0.25)
+    assert isinstance(said('(await ask(world("b-t1"), "/status")).n'), int)
+    said('new Promise((done) => setTimeout(() => done(true), 300))')
+    assert said(engines) == [1, 0], said(engines)
+    said(f'({shut}.remove("strange-shut"), true)')
+    said('(await ask(world("b-t1"), "/status")).n')
+    deadline = time.time() + 15
+    while said('window.__civvisBeta.homes') != 2:
+        if time.time() > deadline:
+            raise AssertionError(f"B, seen again, was given no engine: {said(engines)}")
+        time.sleep(0.1)
+    print("a world's page out of sight has its engine and its scout let go, and is given none until it is seen again.")
 
     # A world whose page has gone has its engine let go, and its scout.
     said('(document.querySelector(\'iframe[data-world="b-t1"]\').remove(), true)')

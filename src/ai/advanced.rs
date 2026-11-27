@@ -7124,6 +7124,16 @@ pub struct AdvancedAi {
     /// holding or queueing a Spaceport or space project, nor a Builder. See
     /// `advanced/denial_spies_fill_every_slot.rs`. Opt-in.
     denial_spies_fill_every_slot_3: bool,
+    /// `city-campaign-3`: version two at peace, and the war in hand — a
+    /// major war already open (whoever opened it) draws a one-city plan
+    /// against that rival when the field army carries the city's bill, keeps
+    /// it for a twenty-turn clock, and holds the generic Siege row against a
+    /// rival with no such city. See `advanced/city_campaign.rs`. Opt-in.
+    city_campaign_3: bool,
+    /// `city-campaign-3`: rivals whose war reads no-go, each to the last turn
+    /// the verdict holds. Written by `maintain_city_campaign`, read by the
+    /// Objective Board's Siege rows. Empty while the gene is off.
+    campaign_war_no_go: BTreeMap<usize, u32>,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -9780,6 +9790,12 @@ pub struct AdvancedAi {
     /// first Shrine, Prayers and routine work. See
     /// `advanced/religion_seat_third_city_first.rs`. Off by default.
     religion_seat_third_city_first: bool,
+    /// `rival-science-run-opens-the-spy-civics`: off a Science aim, while a
+    /// met rival makes 1.5 times our Science a turn, the civic slot takes
+    /// Diplomatic Service and then Nationalism (a Spy slot each) ahead of the
+    /// government ladder. See
+    /// `advanced/rival_science_run_opens_the_spy_civics.rs`. Off by default.
+    rival_science_run_opens_the_spy_civics: bool,
     // ---- append: s-s ------------------------------------------------
     /// `score-seat-raises-wonders`: a Score seat keeps a wonder going in its
     /// capital from turn 40 (Online) and in a second city from turn 90, as a
@@ -10771,6 +10787,10 @@ pub struct AdvancedAi {
     /// the pad city and disrupts there ahead of training and stealing. See
     /// `advanced/seen_pad_starts_the_denial.rs`. Off by default.
     seen_pad_starts_the_denial: bool,
+    /// `science-seat-monuments`: a Science seat's unthreatened cities claim
+    /// their Monument from the third city, through the Culture lane's claim.
+    /// See `advanced/culture_monuments.rs`. Off by default.
+    science_seat_monuments: bool,
     // ---- append: t-z ------------------------------------------------
     /// `world-religion-condemns-the-faith`: our soldiers condemn a faith
     /// World Religion's option B names, at peace, and the agent's ballot asks
@@ -28606,6 +28626,9 @@ mod religion_seat_takes_the_debater;
 /// `advanced/religion_seat_third_city_first.rs`.
 mod religion_seat_third_city_first;
 mod religious_interception;
+/// `rival-science-run-opens-the-spy-civics`: see
+/// `advanced/rival_science_run_opens_the_spy_civics.rs`.
+mod rival_science_run_opens_the_spy_civics;
 
 /// `match-point-interception-ignores-power`: the faith's last holdout
 /// intercepts its spreader at a lower power floor. See

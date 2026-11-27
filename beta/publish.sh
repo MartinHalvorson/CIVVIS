@@ -448,6 +448,18 @@ cp "$repo_root/beta/_worker.js" "$out/_worker.js"
 # path -> the front page, 200) to honest 404s. See the comment inside it.
 cp "$repo_root/beta/404.html" "$out/404.html"
 
+# Only CIVVIS's own art is published. The lane's own revision says what that
+# is (`web/assets/art-manifest.json`, by sha256), and its
+# `tools/art_provenance.py` fails the build on any image here it does not list,
+# and on anything the `tools/civ6_*` cutters marked as cut from an installed
+# Civilization VI -- their output belongs in the git-ignored local/civ6-art/
+# for a local server, never on civvis.ai (docs/CIV6_ART.md). It runs before
+# the WebP pass, which would drop the marker. A revision from before the check
+# (a stable lane awaiting promotion) has neither file and builds as it did.
+if [ -f "$source_tree/tools/art_provenance.py" ]; then
+  python3 "$source_tree/tools/art_provenance.py" --bundle "$out"
+fi
+
 # The viewer, copied and then made lane-relative. Each substitution is
 # checked, because a silently unmatched one publishes a page whose strategic
 # map sprites are simply missing.
@@ -804,6 +816,21 @@ while read -r file; do
   fi
   download_bytes=$(( download_bytes + $(echo "$bytes" | tr -d ' ') ))
 done < <(viewer_files)
+
+# `status.json`: the live ledger's state, exactly as `tools/live_status.py
+# --json` prints it, for anything that reads the site rather than the
+# repository. The lane's own revision's tool reads the ledger as this clone
+# fetched it, so it never fetches here. A revision without the tool has no
+# file, and a failure costs the lane this file, never its publish.
+if [ -f "$source_tree/tools/live_status.py" ]; then
+  if python3 "$source_tree/tools/live_status.py" --repo "$source_tree" \
+      --ref refs/remotes/origin/ledger --json > "$out/status.json.tmp"; then
+    mv "$out/status.json.tmp" "$out/status.json"
+  else
+    rm -f "$out/status.json.tmp"
+    echo "::warning::$short: tools/live_status.py could not read the ledger; the lane is published without status.json"
+  fi
+fi
 
 wasm_bytes=$(wc -c < "$out/civvis.wasm" | tr -d ' ')
 bundle_bytes=$(find "$out" -type f ! -name '*.br' -exec wc -c {} + | tail -1 | awk '{print $1}')

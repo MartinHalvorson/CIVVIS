@@ -215,7 +215,9 @@ class TournamentWinRates(unittest.TestCase):
     drop the wins, losses. games (n) should be listed after each value. so
     like 100% (5) or 14% (181). at the top, we should have win rate (total
     games)". Later that day he reversed the sides: "put diplo victory allowed
-    to the left of no diplo victory"."""
+    to the left of no diplo victory". And 2026-11-27: "add a third category
+    to the tournament for lv 8 deity no diplo no religion. lets grind this
+    hard. self improve from our mistakes."."""
 
     SPECS = [
         {"name": "Deity series", "start": "civvis-20261001T000000Z", "end": "civvis-t", "series_size": 2,
@@ -251,6 +253,12 @@ class TournamentWinRates(unittest.TestCase):
         run("civvis-t6-20261122T020000Z", "win", 210, "VICTORY_TECHNOLOGY", difficulty="DIFFICULTY_WARLORD"),
         # The indefinite benchmark.
         run("civvis-t7-20261122T030000Z", "rival_victory", 233, "VICTORY_TECHNOLOGY", difficulty="DIFFICULTY_IMMORTAL"),
+        # Its third category, the Religious victory off as well: a Deity win
+        # and a Deity loss, and an Immortal game, a level that table does
+        # not list.
+        run("civvis-t7-20261122T033000Z", "win", 214, "VICTORY_TECHNOLOGY"),
+        run("civvis-t7-20261122T034000Z", "rival_victory", 228, "VICTORY_TECHNOLOGY", difficulty="DIFFICULTY_IMMORTAL"),
+        run("civvis-t7-20261122T035000Z", "rival_victory", 231, "VICTORY_CULTURE"),
         run("civvis-t7-20261122T040000Z", "rival_victory", 236, "VICTORY_CULTURE"),
     ]
     #: Each run's Diplomatic victory, as its summary says it. The game of
@@ -268,29 +276,42 @@ class TournamentWinRates(unittest.TestCase):
         "civvis-t6-20261122T010000Z": False,
         "civvis-t6-20261122T020000Z": False,
         "civvis-t7-20261122T030000Z": False,
+        "civvis-t7-20261122T033000Z": False,
+        "civvis-t7-20261122T034000Z": False,
+        "civvis-t7-20261122T035000Z": False,
         "civvis-t7-20261122T040000Z": True,
     }
+    #: The runs played with the Religious victory off as well.
+    RELIGION_OFF = {"civvis-t7-20261122T033000Z", "civvis-t7-20261122T034000Z", "civvis-t7-20261122T035000Z"}
+    #: So each run's table: its Diplomatic switch's, or the third.
+    TABLES = {
+        **{tag: "on" if on else "off" for tag, on in SWITCH.items()},
+        **dict.fromkeys(RELIGION_OFF, "religion_off"),
+    }
 
-    def switch(self, tags: list[str]) -> dict[str, bool]:
-        return {tag: self.SWITCH[tag] for tag in tags if tag in self.SWITCH}
+    def switch(self, tags: list[str]) -> dict[str, str]:
+        return {tag: self.TABLES[tag] for tag in tags if tag in self.TABLES}
 
     def games(self) -> list[tuple]:
         return research_page.tournament_games(self.ROWS, self.SPECS, self.switch)
 
     def test_the_games_are_the_tournaments_finished_games_by_level_and_switch(self):
-        at = lambda day, hour: datetime.datetime(2026, int(day[:2]), int(day[3:]), hour)
+        at = lambda day, hour, minute=0: datetime.datetime(2026, int(day[:2]), int(day[3:]), hour, minute)
         self.assertEqual(
             sorted(self.games()),
             [
-                (at("10-20", 10), 8, False, True),
-                (at("11-17", 10), 8, True, True),
-                (at("11-18", 10), 8, False, False),
-                (at("11-19", 10), 8, False, True),
-                (at("11-21", 21), 4, True, False),
-                (at("11-21", 22), 4, True, False),
-                (at("11-21", 23), 5, False, False),
-                (at("11-22", 3), 7, False, False),
-                (at("11-22", 4), 8, False, True),
+                (at("10-20", 10), 8, False, "on"),
+                (at("11-17", 10), 8, True, "on"),
+                (at("11-18", 10), 8, False, "off"),
+                (at("11-19", 10), 8, False, "on"),
+                (at("11-21", 21), 4, True, "off"),
+                (at("11-21", 22), 4, True, "off"),
+                (at("11-21", 23), 5, False, "off"),
+                (at("11-22", 3), 7, False, "off"),
+                (at("11-22", 3, 30), 8, True, "religion_off"),
+                (at("11-22", 3, 40), 7, False, "religion_off"),
+                (at("11-22", 3, 50), 8, False, "religion_off"),
+                (at("11-22", 4), 8, False, "on"),
             ],
         )
         # They are the games the Tournaments page counts, level by level,
@@ -336,25 +357,53 @@ class TournamentWinRates(unittest.TestCase):
         for summary in ({}, {"seat": None}, {"seat": {}}, {"seat": {"victories": {}}}, {"seat": {"victories": {"diplomatic": "no"}}}):
             self.assertIsNone(said(summary), summary)
 
-    def test_the_two_tables_list_every_level_in_every_window(self):
+    def test_a_summary_says_which_table_its_game_stands_in(self):
+        # The Religious switch is read as the Diplomatic one is: the game's
+        # own report, or what a hotseat table was asked to switch off.
+        self.assertIs(research_page.religious({"seat": {"victories": {"diplomatic": False, "religious": False}}}), False)
+        self.assertIs(research_page.religious({"seat": {"victories": {"religious": True}}}), True)
+        self.assertIs(research_page.religious({"victories_off": ["VICTORY_DIPLOMATIC", "VICTORY_RELIGIOUS"]}), False)
+        self.assertIs(research_page.religious({"victories_off": ["VICTORY_DIPLOMATIC"]}), True)
+        self.assertIsNone(research_page.religious({"seat": {"victories": {"diplomatic": False}}}))
+        table = research_page.rate_table
+        seat = lambda **on: {"seat": {"victories": on}}  # noqa: E731
+        self.assertEqual(table(seat(diplomatic=True, religious=True)), "on")
+        self.assertEqual(table(seat(diplomatic=False, religious=True)), "off")
+        # Both off: the third table, and never the Diplo Off one.
+        self.assertEqual(table(seat(diplomatic=False, religious=False)), "religion_off")
+        self.assertEqual(table({"victories_off": ["VICTORY_DIPLOMATIC", "VICTORY_RELIGIOUS"]}), "religion_off")
+        self.assertEqual(table({"victories_off": ["VICTORY_DIPLOMATIC"]}), "off")
+        # A summary silent on the Religious victory: a game with it on, as
+        # every game was before the third table.
+        self.assertEqual(table(seat(diplomatic=False)), "off")
+        self.assertEqual(table(seat(diplomatic=True)), "on")
+        # Only the Religious victory off: no table lists such a game; and
+        # nothing said of the Diplomatic victory, no table either.
+        self.assertIsNone(table(seat(diplomatic=True, religious=False)))
+        self.assertIsNone(table(seat(religious=False)))
+        self.assertIsNone(table({}))
+
+    def test_the_tables_list_their_levels_in_every_window(self):
         self.assertEqual(research_page.RATE_LEVELS, [8, 7, 6, 5, 4])
         self.assertEqual(research_page.RATE_DAYS, [1, 3, 7, 30])
-        self.assertEqual(research_page.RATE_TABLES, [("on", True), ("off", False)])
+        self.assertEqual(research_page.RATE_TABLES, [("on", [8, 7, 6, 5, 4]), ("off", [8, 7, 6, 5, 4]), ("religion_off", [8])])
         rates = research_page.win_rates(self.games())
         self.assertEqual(list(rates), ["to", "days", "games", "tables"])
         # Every window counts back from the newest tournament game in either
         # table, the Deity loss begun 11-22 04:00.
         self.assertEqual((rates["to"], rates["days"]), ("2026-11-22 04:00Z", [1, 3, 7, 30]))
-        self.assertEqual(list(rates["tables"]), ["on", "off"])
+        self.assertEqual(list(rates["tables"]), ["on", "off", "religion_off"])
         cells = lambda table, level: [
             (w["days"], w["games"], w["wins"])
             for row in rates["tables"][table]["levels"] if row["level"] == level
             for w in row["windows"]
         ]
-        for table in rates["tables"].values():
-            self.assertEqual([row["level"] for row in table["levels"]], [8, 7, 6, 5, 4])
+        for name in ("on", "off"):
+            self.assertEqual([row["level"] for row in rates["tables"][name]["levels"]], [8, 7, 6, 5, 4])
+        self.assertEqual([row["level"] for row in rates["tables"]["religion_off"]["levels"]], [8])
         # Diplomatic off: the ladder's and the benchmark's games are in the
         # last day, the Deity elimination of 11-18 only in the last week.
+        # None of the games with the Religious victory off is among them.
         self.assertEqual(cells("off", 8), [(1, 0, 0), (3, 0, 0), (7, 1, 0), (30, 1, 0)])
         self.assertEqual(cells("off", 7), [(1, 1, 0), (3, 1, 0), (7, 1, 0), (30, 1, 0)])
         # A level nobody has played is still a row.
@@ -366,22 +415,33 @@ class TournamentWinRates(unittest.TestCase):
         self.assertEqual(cells("on", 8), [(1, 1, 0), (3, 2, 0), (7, 3, 1), (30, 3, 1)])
         for level in (7, 6, 5, 4):
             self.assertEqual(cells("on", level), [(1, 0, 0), (3, 0, 0), (7, 0, 0), (30, 0, 0)])
+        # The Religious victory off as well: the Deity win and loss, in the
+        # last day. The Immortal game is in no table.
+        self.assertEqual(cells("religion_off", 8), [(1, 2, 1), (3, 2, 1), (7, 2, 1), (30, 2, 1)])
         # A table's games, and the record's, are what the widest window holds.
-        self.assertEqual((rates["tables"]["off"]["games"], rates["tables"]["on"]["games"], rates["games"]), (5, 3, 8))
+        self.assertEqual(
+            (rates["tables"]["off"]["games"], rates["tables"]["on"]["games"], rates["tables"]["religion_off"]["games"], rates["games"]),
+            (5, 3, 2, 10),
+        )
         self.assertIsNone(research_page.win_rates([]))
+        # A game at a level its table does not list counts for nothing, not
+        # even the newest moment every window is measured back from.
+        self.assertIsNone(research_page.win_rates([(datetime.datetime(2026, 11, 27, 7), 7, True, "religion_off")]))
+        later = research_page.win_rates(self.games() + [(datetime.datetime(2026, 11, 27, 7), 7, True, "religion_off")])
+        self.assertEqual(later, rates)
 
     def test_a_day_is_24_hours_back_from_the_newest_game(self):
         newest = datetime.datetime(2026, 11, 23, 4, 21, 12)
         ago = lambda **back: newest - datetime.timedelta(**back)
         games = [
-            (newest, 8, True, False),
-            (ago(hours=23, minutes=59), 8, False, False),
+            (newest, 8, True, "off"),
+            (ago(hours=23, minutes=59), 8, False, "off"),
             # A day to the second is outside the last day and inside the last 3.
-            (ago(days=1), 8, False, False),
-            (ago(days=2, hours=23), 8, True, False),
-            (ago(days=3), 8, False, False),
-            (ago(days=29, hours=23), 8, False, False),
-            (ago(days=30), 8, True, False),
+            (ago(days=1), 8, False, "off"),
+            (ago(days=2, hours=23), 8, True, "off"),
+            (ago(days=3), 8, False, "off"),
+            (ago(days=29, hours=23), 8, False, "off"),
+            (ago(days=30), 8, True, "off"),
         ]
         deity = research_page.win_rates(games)["tables"]["off"]["levels"][0]
         self.assertEqual(deity["level"], 8)
@@ -390,11 +450,17 @@ class TournamentWinRates(unittest.TestCase):
     def test_the_record_holds_them_off_the_ledger_and_the_definitions(self):
         said = lambda on: {"seat": {"victories": {"diplomatic": on}}}
         more = {tag: said(on) for tag, on in self.SWITCH.items()}
-        # One of the ladder's games was a hotseat table.
+        for tag in self.RELIGION_OFF:
+            more[tag]["seat"]["victories"]["religious"] = False
+        # One of the ladder's games was a hotseat table, and so was one of
+        # the third category's.
         more["civvis-t6-20261121T230000Z"] = {"victories_off": ["VICTORY_DIPLOMATIC"]}
+        more["civvis-t7-20261122T035000Z"] = {"victories_off": ["VICTORY_DIPLOMATIC", "VICTORY_RELIGIOUS"]}
         with tempfile.TemporaryDirectory() as scratch, contextlib.redirect_stderr(io.StringIO()):
             source = GamesAgainstTheAI().ledger(scratch, self.ROWS, more)
-            self.assertEqual(research_page.switches(source, [row["tag"] for row in self.ROWS] + ["civvis-missing"]), self.SWITCH)
+            tags = [row["tag"] for row in self.ROWS] + ["civvis-missing"]
+            self.assertEqual(research_page.switches(source, tags), self.SWITCH)
+            self.assertEqual(research_page.tables_of(source, tags), self.TABLES)
             # No definitions in the clone: no table, and the charts' games
             # are counted as before.
             bare = research_page.research(source)
@@ -411,7 +477,7 @@ class TournamentWinRates(unittest.TestCase):
             written = json.loads(research_page.SLOT.search(page.read_text(encoding="utf-8"))[2])
         self.assertEqual(record["tournament_rates"], research_page.win_rates(self.games()))
         self.assertEqual(written["tournament_rates"], record["tournament_rates"])
-        self.assertIn("8 tournament games into", said.getvalue())
+        self.assertIn("10 tournament games into", said.getvalue())
         self.assertEqual(bare["levels"], record["levels"])
 
     def test_the_committed_definitions_are_where_the_record_reads_them(self):
@@ -1089,15 +1155,16 @@ class Page(unittest.TestCase):
         # a last 1 day win rate col, last 3 days, last 7 days, last 30 days
         # ... a table on the left the is with diplo excluded and a table on
         # the right that allows diplo wins";
-        # `test_the_benchmark_stands_over_the_graphs_as_two_tables`): one
-        # block across the page, its two tables side by side. The tree of
+        # `test_the_benchmark_stands_over_the_graphs_as_three_tables`): one
+        # block across the page, its two tables side by side and the third
+        # (2026-11-27) under the left one. The tree of
         # build orders stood over it on 2026-11-23 and is on Civ Analytics
         # since (`test_the_build_orders_stand_as_a_tree_a_reader_opens_on_civ_analytics`).
         # Nothing else is over the graphs' column, whose first block is
         # self-play's. The key to the colours and the span of a column are
         # over the first chart, in its panel.
         over = PAGE[PAGE.index('<div class="res-record" id="res-record" hidden>') : graphs]
-        self.assertEqual((over.count('class="res-section"'), over.count("<h2"), over.count("<section")), (2, 1, 1))
+        self.assertEqual((over.count('class="res-section"'), over.count("<h2"), over.count("<section")), (3, 1, 1))
         self.assertNotIn("res-side-builds", PAGE)
         self.assertNotIn("res-kind", over)
         self.assertEqual(PAGE[graphs:own].strip(), '<div class="res-graphs">')
@@ -1241,7 +1308,9 @@ class Page(unittest.TestCase):
         # counts. The par still shades every cell (the test after this one).
         # Later that day the titles became only those games: "remove the
         # diplo vicotry alloewd and diplo vicotry off parts of the title.
-        # leave diplo off at the end of the second".
+        # leave diplo off at the end of the second". The third table, from
+        # 2026-11-27 ("add a third category to the tournament for lv 8 deity
+        # no diplo no religion"), is named the same way.
         side = PAGE.index('<section class="res-block" id="res-side-tourney" aria-labelledby="res-title-tourney">')
         block = PAGE[side : PAGE.index("</section>", side)]
         between = block[block.index("</header>") + len("</header>") : block.index('<div class="res-bench-pair">')]
@@ -1251,6 +1320,7 @@ class Page(unittest.TestCase):
         for name, title in (
             ("on", "6P Continents Online"),
             ("off", "6P Continents Online, Diplo Off"),
+            ("religion_off", "6P Continents Online, Diplo Off, Religion Off"),
         ):
             self.assertIn(f'<h3 class="res-bench-title" id="res-title-rates-{name}">{title} <small id="res-rates-count-{name}"></small></h3>', block)
 
@@ -1344,7 +1414,7 @@ class Page(unittest.TestCase):
         self.assertIn(".res-kind-title .res-big-count { display: inline-block;", PAGE)
         self.assertRegex(PAGE, r"\.res-kind-title \.res-big-count \{[^}]*color: #fff; font-size: 20px; font-weight: 800;")
 
-    def test_the_benchmark_stands_over_the_graphs_as_two_tables(self):
+    def test_the_benchmark_stands_over_the_graphs_as_three_tables(self):
         # Operator 2026-11-23: "at the top of win analytics, we should have a
         # last 1 day win rate col, last 3 days, last 7 days, last 30 days.
         # this will help us track win rates. order the cols lv 8 down to
@@ -1373,17 +1443,25 @@ class Page(unittest.TestCase):
         # (operator, later on 2026-11-23, reversing the sides he first asked
         # for: "put diplo victory allowed to the left of no diplo victory"),
         # and nothing stands between the pair's opening and the left table.
-        self.assertEqual(block.count("<table"), 2)
+        # The third, the Deity games with the Religious victory off as well
+        # (operator 2026-11-27: "add a third category to the tournament for
+        # lv 8 deity no diplo no religion"), comes after them in the same
+        # grid of two, so it stands under the left one.
+        self.assertEqual(block.count("<table"), 3)
         pair = block.index('<div class="res-bench-pair">')
         off, on = block.index('<div class="res-section" id="res-bench-off">'), block.index('<div class="res-section" id="res-bench-on">')
+        third = block.index('<div class="res-section" id="res-bench-religion_off">')
         self.assertLess(pair, on)
         self.assertLess(on, off)
+        self.assertLess(off, third)
+        self.assertLess(third, block.index('<details class="fine">'))
         self.assertEqual(block[pair + len('<div class="res-bench-pair">') : on].strip(), "")
         self.assertIn(".res-bench-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; min-width: 0; }", PAGE)
         self.assertIn("@media (max-width: 859px) { .res-bench-pair { grid-template-columns: minmax(0, 1fr); } }", PAGE)
         for name, title in (
             ("on", "6P Continents Online"),
             ("off", "6P Continents Online, Diplo Off"),
+            ("religion_off", "6P Continents Online, Diplo Off, Religion Off"),
         ):
             self.assertIn(
                 f'<h3 class="res-bench-title" id="res-title-rates-{name}">{title} <small id="res-rates-count-{name}"></small></h3>', block
@@ -1406,12 +1484,12 @@ class Page(unittest.TestCase):
         # The windows stand side by side, so there is none to choose.
         self.assertNotIn("res-window-tourney", PAGE)
         self.assertIn('const state = { windows: { self_play: "7", ai: "30" }, span: 5,', PAGE)
-        # The script draws both tables off the record's `tournament_rates`,
+        # The script draws every table off the record's `tournament_rates`,
         # in the record's order of rows, Lv 8 Deity first: a cell is the wins
         # as a share of its games and then the games in brackets, "14% (181)".
         self.assertIn("const BENCH = data.tournament_rates && data.tournament_rates.tables ? data.tournament_rates : null;", PAGE)
-        self.assertIn('for (const name of ["on", "off"]) {', PAGE)
-        self.assertEqual([name for name, _ in research_page.RATE_TABLES], ["on", "off"])
+        self.assertIn('for (const name of ["on", "off", "religion_off"]) {', PAGE)
+        self.assertEqual([name for name, _ in research_page.RATE_TABLES], ["on", "off", "religion_off"])
         self.assertIn('const body = document.querySelector("#res-rates-" + name + " tbody");', PAGE)
         self.assertIn('const td = el("td", rated ? "is-rate" : games ? "is-few" : "is-zero", rated ? pct(wins / games) : "—");', PAGE)
         self.assertIn('td.append(" ", el("small", "", "(" + fmt(games) + ")"));', PAGE)
@@ -1431,6 +1509,11 @@ class Page(unittest.TestCase):
         # not win.
         self.assertIn('Every finished game of the tournaments on the <a href="../../tournaments/">Tournaments</a> page', block)
         self.assertIn("The left table holds the games that allowed the Diplomatic victory, the right table the games set up with it switched off.", block)
+        self.assertIn(
+            "The table under the left one holds the Lv 8 Deity games set up with the Religious victory switched off as well; "
+            "they are not in the right table.",
+            block,
+        )
         self.assertIn("A win is a CIVVIS victory; a loss is a rival&#8217;s victory, our elimination, or a game conceded early.", block)
         self.assertIn("A day is 24 hours, counted back from the newest tournament game.", block)
         self.assertEqual(home_rankings.OUTCOMES, ["win", "defeat", "rival_victory", "abandoned", "unfinished"])

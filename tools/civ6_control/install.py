@@ -314,13 +314,21 @@ def hotseat_seat_config(config: dict, seat: int) -> dict:
     operator) plays the mod's own fallback ladder with no decision worker.
     """
     names = config.get("HotseatNames") or {}
+    lanes = config.get("HotseatSeatLanes") or {}
     seat_config = dict(config)
     seat_config.pop("HotseatNames", None)
+    seat_config.pop("HotseatSeatLanes", None)
     seat_config.update({
         "RunTag": hotseat_seat_tag(config.get("RunTag"), seat),
         "HotseatSeat": int(seat),
         "HotseatName": names.get(str(seat)) or names.get(seat),
     })
+    # `--agents`: a seat's agent plays its own victory lane, and the mod's
+    # lane-read rules (the congress votes, the alliances) follow the lane its
+    # decision worker was given, as they do on the single seat.
+    lane = lanes.get(str(seat)) or lanes.get(seat)
+    if lane:
+        seat_config["VictoryLane"] = lane
     if int(seat) in {int(s) for s in config.get("HotseatStubSeats") or []}:
         seat_config["CivvisDecides"] = False
     return seat_config

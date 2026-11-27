@@ -9,8 +9,10 @@ seats are named "CIVVIS jack 1..N" in the game.
 
     tools/civ6_hotseat.py                      # 4 players, Tiny Pangaea, Online, Prince
     tools/civ6_hotseat.py --leader LEADER_SALADIN --difficulty DIFFICULTY_KING
+    tools/civ6_hotseat.py --duel --name dev --leader LEADER_GILGAMESH   # 1v1, see below
     tools/civ6_hotseat.py --stop               # stop the automation, leave the game up
     tools/civ6_hotseat.py --stop --quit-game   # ...and close Civ VI (it saves every 10 turns)
+    tools/civ6_hotseat.py --stop --quit-game --resign   # ...and give the game up (--name: recorded)
     tools/civ6_hotseat.py --resume             # load the newest hotseat save and play on
     tools/civ6_hotseat.py --attach             # pick a running hotseat game back up
     tools/civ6_hotseat.py --status
@@ -44,6 +46,30 @@ loads the newest hotseat save or autosave (``--resume PATH`` for a particular
 one) through the Hot Seat page's Load Game, then plays on exactly like a new
 game. ``--attach`` picks up a hotseat game that is still running with the mod
 (after ``--stop`` or a closed terminal).
+
+A duel, under your name, for your Elo. ``--duel`` is one against one: two
+players on a Duel map, the other seat played by the strongest roster agent
+(``--agents strongest``: the highest Elo in ``data/strategy_elo.json``; a seat's
+agent is the live decider in that agent's victory lane, named "CIVVIS
+<Handle>"). ``--agents holy,tourist`` names the agents seat by seat at any
+table. ``--name dev`` puts your name on seat 0 (the hand-over screen and the
+score board say it), and when the game ends with a victory or an elimination
+it is put on the people's record on the ledger branch
+(``tools/people_elo.py record``), which the site's ELO Rankings page rates you
+from, among the agents: the moment the game is decided, not when Civ VI is
+closed. A game you give up has no ending of the game's own: ``--stop --resign``
+(with ``--quit-game`` to close Civ VI too) records it as CIVVIS's, and
+``tools/people_elo.py record <run_dir> --winner civvis`` (or ``person``) says
+who won one that was simply left. ``--hold-start`` sets the staging room up and leaves START GAME to you
+(to pick Teams, which have no text to read).
+
+Both sides, nobody at the Mac. ``--self-play`` seats a CIVVIS agent on every
+seat (``--civvis-seats`` = ``--players``): ``--duel --self-play`` is the same
+duel with the flagship in your seat and the strongest agent across the table
+(``--agents jack,holy``, seat 0 first), played to its ending, the result in
+``summary.json``, Civ VI closed after it. It is the rehearsal for the game you
+play: the same setup, staging room, hand-over screen and saves. It takes no
+``--name``: a game CIVVIS played is never put on the people's record.
 
 Known limits: you are always seat 0 (the host row). Diplomacy between you and a
 jack seat works the way hotseat diplomacy does (proposals wait for the other
@@ -169,7 +195,89 @@ def agent_seats(players: int, auto_human: bool, civvis_seats: int | None = None)
     return jack_seats(players) + ([HUMAN_SEAT] if auto_human else [])
 
 
-def seat_name(index: int) -> str:
+#: Roster agents a live seat can play: each is the deployment chassis with no
+#: genes, so the live decider IS that agent when given the agent's victory lane
+#: (`src/strategies.rs` ROSTER: jack = no target, holy = Religion, ...).
+AGENT_LANES = {"jack": "civvis", "holy": "religious", "tourist": "culture",
+               "moonshot": "science", "siege": "domination", "swing": "diplomatic"}
+AGENT_HANDLES = {"jack": "JackOfAllTrades", "holy": "HolyRoller", "tourist": "TouristTrap",
+                 "moonshot": "MoonshotMaven", "siege": "SiegeTheDay", "swing": "SwingVote"}
+
+
+#: `--agents strongest`: the roster agent the ELO Rankings page rates highest.
+STRONGEST = "strongest"
+PUBLISHED_ELO = HERE.parent / "data" / "strategy_elo.json"
+#: A person's name as the game and the people's record take it (`--name`).
+PERSON_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9 _.-]{0,23}")
+
+
+def strongest_agent(published: Path = PUBLISHED_ELO) -> str:
+    """The roster agent with the highest published Elo (`data/strategy_elo.json`,
+    the fit the ELO Rankings page shows); jack when there is no fit to read."""
+    try:
+        ratings = json.loads(published.read_text(encoding="utf-8"))["ratings"]
+        rated = {agent: float(ratings[agent]["elo"]) for agent in AGENT_LANES if agent in ratings}
+    except (OSError, ValueError, KeyError, TypeError):
+        rated = {}
+    return max(rated, key=rated.get) if rated else STRATEGY
+
+
+def checkout_revision(checkout: Path = HERE.parent) -> str | None:
+    """The revision this checkout is at: the harness's, and the decider's when
+    it is this checkout's own build."""
+    try:
+        shown = subprocess.run(["git", "-C", str(checkout), "rev-parse", "--short=8", "HEAD"],
+                               capture_output=True, text=True, check=False, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return shown.stdout.strip() or None if shown.returncode == 0 else None
+
+
+def record_person_game(run_dir: Path, log, resigned: bool = False) -> None:
+    """A named person's finished game goes on the people's record
+    (`tools/people_elo.py record`), which the ELO Rankings page rates them
+    from. In its own process: a push that fails must not take the harness's
+    cleanup with it, and what it printed is in the log either way. `resigned`:
+    the person gave the game up (`--stop --resign`), so it is CIVVIS's."""
+    command = [sys.executable, str(HERE / "people_elo.py"), "record", str(run_dir)]
+    if resigned:
+        command += ["--winner", "civvis", "--victory", "resignation"]
+    try:
+        done = subprocess.run(command, capture_output=True, text=True, check=False, timeout=300)
+    except (OSError, subprocess.SubprocessError) as error:
+        log(f"the game was NOT put on the people's record: {error}")
+        return
+    for line in (done.stdout + done.stderr).strip().splitlines():
+        log(f"[people] {line}")
+    if done.returncode != 0:
+        log(f"the game was NOT put on the people's record (exit {done.returncode}); "
+            f"`{' '.join(['tools/people_elo.py', *command[2:]])}` tries again")
+
+
+def person_name(args: argparse.Namespace) -> str | None:
+    """The person at seat 0, when the table has one and `--name` named them."""
+    if getattr(args, "civvis_seats", None) or getattr(args, "auto_human", None):
+        return None
+    return getattr(args, "name", None) or None
+
+
+def seat_agents(args: argparse.Namespace, seats: list[int]) -> dict[int, str]:
+    """Seat -> roster agent: `--agents` in seat order, else jack everywhere."""
+    agents = list(getattr(args, "agents", None) or [])
+    return {seat: (agents[i] if i < len(agents) else "jack") for i, seat in enumerate(seats)}
+
+
+def seat_lanes(args: argparse.Namespace, seats: list[int]) -> dict[int, str]:
+    """Seat -> victory lane its decider plays: the agent's own when `--agents`
+    names one, else `--victory`."""
+    if not getattr(args, "agents", None):
+        return {seat: args.victory for seat in seats}
+    return {seat: AGENT_LANES[agent] for seat, agent in seat_agents(args, seats).items()}
+
+
+def seat_name(index: int, agent: str | None = None) -> str:
+    if agent:
+        return f"CIVVIS {AGENT_HANDLES.get(agent, agent)}"
     return f"CIVVIS jack {index}"
 
 
@@ -220,7 +328,17 @@ def hotseat_config(args: argparse.Namespace, run_dir: Path, orders_db: Path) -> 
         # testable without a person. Unattended, no seat is a person's.
         "HotseatHumanSeats": ([] if civvis_seats or args.auto_human == "stub" else [HUMAN_SEAT]),
         "HotseatStubSeats": [HUMAN_SEAT] if args.auto_human and not civvis_seats else [],
-        "HotseatNames": {str(seat): seat_name(i) for i, seat in enumerate(seats, 1)},
+        "HotseatNames": {str(seat): seat_name(i, getattr(args, "agents", None) and agent)
+                         for i, (seat, agent) in enumerate(seat_agents(args, seats).items(), 1)},
+        "HotseatSeatAgents": ({str(k): v for k, v in seat_agents(args, seats).items()}
+                              if getattr(args, "agents", None) else {}),
+        # Each seat's own lane, for its context in the mod (`hotseat_seat_config`):
+        # the lane its decision worker is started with (`seat_lanes`).
+        "HotseatSeatLanes": ({str(k): v for k, v in seat_lanes(args, seats).items()}
+                             if getattr(args, "agents", None) else {}),
+        # `--name`: the hand-over screen names the person's seat with it.
+        "HotseatPersonName": person_name(args) or "",
+        "HotseatPlayers": args.players,
         "HotseatSaveEvery": args.save_every,
         "HotseatSaveName": args.tag,
         # The cover over every turn that is not the person's
@@ -347,7 +465,8 @@ class Brains:
             self.log(f"seat {seat}: stopped a decision worker left running (pid {stopped})")
         out = (seat_dir / "brain.log").open("a", buffering=1)
         self.procs[seat] = subprocess.Popen(
-            brain_command(seat_dir, self.orders_db, self.binary, self.victory),
+            brain_command(seat_dir, self.orders_db, self.binary,
+                          self.victory[seat] if isinstance(self.victory, dict) else self.victory),
             cwd=str(HERE.parent), stdout=out, stderr=subprocess.STDOUT, text=True,
             start_new_session=True)
         out.close()
@@ -390,9 +509,25 @@ def _norm(text: str) -> str:
     return re.sub(r"[^a-z0-9 ]", "", str(text).lower()).strip()
 
 
-def read_screen(run_dir: Path, name: str) -> tuple[tuple | None, list[dict]]:
-    """The game window and every text line in it, in screen points."""
+#: The game window as `read_screen` last got it from the host, for a read the
+#: host does not answer.
+LAST_WINDOW: dict = {"bounds": None}
+
+
+def read_screen(run_dir: Path, name: str,
+                fallback: tuple | None = None) -> tuple[tuple | None, list[dict]]:
+    """The game window and every text line in it, in screen points. `fallback`
+    is the window as last read, for a step that already knows it: on a loaded
+    host the geometry query (System Events) can go unanswered while the frame
+    itself can still be captured and read. With neither, the window this
+    process last read stands in (`LAST_WINDOW`)."""
     bounds = play.game_window()
+    if bounds is not None:
+        LAST_WINDOW["bounds"] = bounds
+    # Live 2026-11-27, twice in one evening on a loaded Mac: System Events
+    # "did not answer in 10s", then "Can't get process Civ6_Exe_Child". The
+    # window had not moved; the frame could be captured and read all along.
+    bounds = bounds or fallback or LAST_WINDOW["bounds"]
     if bounds is None:
         return None, []
     shot = run_dir / "setup" / f"{name}.png"
@@ -750,22 +885,64 @@ def set_difficulties(run_dir: Path, bounds: tuple, difficulty: str, log: Log) ->
     return False
 
 
-def start_game(run_dir: Path, bounds: tuple, log: Log) -> bool:
-    """Press START GAME (the orb above its label) and see the staging room go."""
+def start_game(run_dir: Path, bounds: tuple, log: Log, attempts: int = 10) -> bool:
+    """Press START GAME (the orb above its label) and see the staging room go.
+
+    Gone is something read, never something not read. Live 2026-11-27
+    (duel-dev-20261127T0643Z, load average 40): System Events did not answer
+    the window query, the read came back with no text at all, the empty read
+    was taken for a staging room that had gone, and the harness sat on "game
+    starting" with START GAME never pressed. So the room has gone only when a
+    screen that could be read shows neither label after a press; an unreadable
+    one is read again, and the game is brought to the front before each read
+    (a staging room behind a Terminal reads as that Terminal).
+    """
     _, _, _, h = bounds
-    for attempt in range(1, 5):
-        _, rows = read_screen(run_dir, f"start-{attempt}")
-        if not find(rows, "STAGING ROOM") and not find(rows, "START GAME"):
-            return True
+    pressed = 0
+    for attempt in range(1, attempts + 1):
+        wait_for_hands_off(log)
+        play.ensure_game_frontmost()
+        _, rows = read_screen(run_dir, f"start-{attempt}", bounds)
+        if not rows:
+            log(f"[setup] the screen could not be read (START GAME, attempt {attempt}); "
+                "reading it again")
+            time.sleep(3.0)
+            continue
         label = find(rows, "START GAME")
         if not label:
+            if pressed and not find(rows, "STAGING ROOM"):
+                return True
             time.sleep(2.0)
             continue
         x, y = label[0]["x"], label[0]["y"]
-        click(log, (x, y - int(0.02 * h)) if attempt % 2 else (x, y))
+        click(log, (x, y) if pressed % 2 else (x, y - int(0.02 * h)))
+        pressed += 1
         time.sleep(6.0)
-    _, rows = read_screen(run_dir, "start-final")
-    return not find(rows, "STAGING ROOM")
+    _, rows = read_screen(run_dir, "start-final", bounds)
+    return bool(rows and pressed) and not find(rows, "STAGING ROOM") \
+        and not find(rows, "START GAME")
+
+
+#: A started game's first event is due well inside this many seconds; with
+#: none, the staging room is looked at again (`press_start_again`).
+START_CHECK_SECONDS = 60.0
+
+
+def press_start_again(run_dir: Path, log: Log, waited_s: float) -> bool:
+    """The backstop behind `start_game`: no event from the game a minute after
+    START GAME, so look, and press it if the staging room is still up (a press
+    that only brought the window forward, a read that was wrong). Whether it
+    pressed."""
+    if operator_presence.operator_active(3.0):
+        return False
+    play.ensure_game_frontmost()
+    bounds, rows = read_screen(run_dir, "start-again")
+    label = find(rows, "START GAME")
+    if bounds is None or not label:
+        return False
+    log(f"[setup] the staging room is still up {waited_s:.0f}s after START GAME; pressing it again")
+    click(log, (label[0]["x"], label[0]["y"] - int(0.02 * bounds[3])))
+    return True
 
 
 #: Where Civ VI keeps hotseat saves (`auto/` holds its autosaves). A save to
@@ -858,6 +1035,11 @@ def set_up_game(run_dir: Path, args: argparse.Namespace, log: Log) -> bool:
         return False
     if not set_difficulties(run_dir, bounds, args.difficulty, log):
         return False
+    if getattr(args, "hold_start", False):
+        log("[setup] staging room ready; HOLDING for the person: set Teams, then START GAME")
+        print("\a\nStaging room is set. Set the Team column, then press START GAME.\n",
+              flush=True)
+        return True
     if not start_game(run_dir, bounds, log):
         log("[setup] START GAME did not start the game")
         return False
@@ -894,7 +1076,16 @@ class Journal:
         return out
 
 
-def quit_civ(run_dir: Path, log: Log, timeout_s: float = 60.0) -> bool:
+#: `quit_civ`'s clock: the whole attempt, the seconds a question that is up
+#: is always given to be answered, how many unanswered looks before the menu
+#: quit is asked again, and the launcher's own stop behind it all.
+QUIT_SECONDS = 150.0
+QUIT_ANSWER_SECONDS = 30.0
+QUIT_ASK_AGAIN = 3
+QUIT_STOP_SECONDS = 90.0
+
+
+def quit_civ(run_dir: Path, log: Log, timeout_s: float = QUIT_SECONDS) -> bool:
     """Close Civ VI from its own menu and answer its question.
 
     In a hotseat game the menu quit opens the in-game pause menu with an inline
@@ -902,12 +1093,21 @@ def quit_civ(run_dir: Path, log: Log, timeout_s: float = 60.0) -> bool:
     operator's turn, because every CIVVIS context stands down then. This is the
     operator's own request, so the harness answers it, then falls back to the
     launcher's ordinary stop.
+
+    The clock is a loaded host's. Live 2026-11-27 (selfplay-duel-20261127T0654Z,
+    load average 40, the Victory screen up): a look took ten seconds, not two,
+    the menu came up only on the second asking, and ARE YOU SURE? appeared on
+    the sixth look as the sixty seconds ran out; the launcher's stop then sent
+    a TERM that cannot cross that question, and Civ VI stayed up on a finished
+    game. So the quit is asked again every few unanswered looks, a question
+    that is up is always given the time to be answered, and the stop behind it
+    waits longer.
     """
     if not env.game_pids():
         return True
     env.request_macos_quit()
     deadline = time.monotonic() + timeout_s
-    step = 0
+    step = unanswered = 0
     while time.monotonic() < deadline:
         time.sleep(2.0)
         if not env.game_pids():
@@ -918,6 +1118,7 @@ def quit_civ(run_dir: Path, log: Log, timeout_s: float = 60.0) -> bool:
         yes = find(rows, "YES")
         if yes and find(rows, "ARE YOU SURE", exact=False):
             play.click_at(yes[0]["x"], yes[0]["y"])
+            deadline = max(deadline, time.monotonic() + QUIT_ANSWER_SECONDS)
             continue
         # On a setup screen: the EXIT TO DESKTOP / OK / Cancel modal, whose OK
         # the live lane finds as Cancel mirrored about the heading.
@@ -927,16 +1128,20 @@ def quit_civ(run_dir: Path, log: Log, timeout_s: float = 60.0) -> bool:
                 play.click_at(ok[0]["x"], ok[0]["y"])
             else:
                 play.confirm_exit_dialog(run_dir / "setup")
+            deadline = max(deadline, time.monotonic() + QUIT_ANSWER_SECONDS)
             continue
         # The pause menu without its question yet.
         exit_row = find(rows, "EXIT TO DESKTOP")
         if exit_row and find(rows, "RETURN TO GAME"):
             play.click_at(exit_row[0]["x"], exit_row[0]["y"])
+            deadline = max(deadline, time.monotonic() + QUIT_ANSWER_SECONDS)
             continue
-        if step % 5 == 0:
+        unanswered += 1
+        if unanswered % QUIT_ASK_AGAIN == 0:
+            log(f"[quit] Civ VI has shown no quit menu in {unanswered} looks; asking again")
             env.request_macos_quit()
     if env.game_pids():
-        launcher.stop(timeout_s=30)
+        launcher.stop(timeout_s=QUIT_STOP_SECONDS)
     return not env.game_pids()
 
 
@@ -950,13 +1155,26 @@ def notify(title: str, message: str) -> None:
         pass
 
 
+def ended_at(event: dict) -> dict:
+    """When the game said it ended, from the event's own clock (`t`, the
+    mod's seconds): the same answer however often the record is read back, so
+    a game's line on the people's record is written once. Nothing for an event
+    with no clock."""
+    try:
+        at = datetime.fromtimestamp(int(event["t"]), timezone.utc)
+    except (KeyError, TypeError, ValueError, OverflowError, OSError):
+        return {}
+    return {"at": at.strftime("%Y-%m-%dT%H:%M:%SZ")}
+
+
 class Monitor:
     """Who is playing, from the mod's own events, and how long each seat took."""
 
     def __init__(self, run_dir: Path, tag: str, seats: list[int], args: argparse.Namespace,
                  log: Log):
         self.run_dir, self.tag, self.seats, self.args, self.log = run_dir, tag, seats, args, log
-        self.names = {seat: seat_name(i) for i, seat in enumerate(seats, 1)}
+        self.names = {seat: seat_name(i, getattr(args, "agents", None) and agent)
+                      for i, (seat, agent) in enumerate(seat_agents(args, seats).items(), 1)}
         self.unattended = bool(getattr(args, "civvis_seats", None))
         watched = list(seats) if self.unattended else agent_seats(len(seats) + 1, args.auto_human)
         # The game's ending, for an unattended table: each CIVVIS seat's own
@@ -1012,7 +1230,10 @@ class Monitor:
 
     def name(self, player: int) -> str:
         if player == HUMAN_SEAT and not self.unattended:
-            return "test stub (seat 0)" if self.args.auto_human else "you (Player 1)"
+            if self.args.auto_human:
+                return "test stub (seat 0)"
+            person = person_name(self.args)
+            return f"{person} (you, seat 0)" if person else "you (Player 1)"
         return f"{self.names.get(player, f'seat {player}')} (seat {player})"
 
     def poll(self) -> None:
@@ -1045,13 +1266,18 @@ class Monitor:
             self.result = {"kind": "victory", "team": team, "victory": event.get("victory"),
                            "turn": event.get("turn"), "ours": ours,
                            "winner_seat": teams.get(int(team)) if ours else None}
+            if event.get("victory_type"):
+                # The victory by name (`victory` is the host's own index).
+                self.result["victory_type"] = event["victory_type"]
+            self.result.update(ended_at(event))
             self.log(f"game over at turn {event.get('turn')}: team {team} won "
                      f"({'ours' if ours else 'a rival'}), victory {event.get('victory')}")
         elif kind == "defeat" and event.get("ours") and seat is not None:
             self.defeated.add(seat)
             self.log(f"{self.name(seat)} was eliminated at turn {event.get('turn')}")
             if self.result is None and self.defeated >= set(self.seats):
-                self.result = {"kind": "defeat", "turn": event.get("turn"), "ours": False}
+                self.result = {"kind": "defeat", "turn": event.get("turn"), "ours": False,
+                               **ended_at(event)}
                 self.log("every CIVVIS seat is eliminated")
 
     def on_base(self, event: dict) -> None:
@@ -1060,7 +1286,11 @@ class Monitor:
             self.on_ending(None, event)
             return
         if kind == "hotseat_armed":
+            self.started = True
             self.say("the hand-over screen is under CIVVIS control")
+        elif kind == "hotseat_person":
+            self.say(f"seat {event.get('seat')} is named {event.get('shown')!r} in the game"
+                     + ("" if event.get("applied") else " (the name was NOT taken)"))
         elif kind == "hotseat_turn":
             self.started = True
             player, turn = int(event.get("player", -1)), int(event.get("turn", -1))
@@ -1278,6 +1508,123 @@ def smoke_report(monitor: Monitor, log: Log) -> dict:
 
 # ------------------------------------------------------------ the lifecycle
 
+def table_record(monitor: Monitor, args: argparse.Namespace, seats: list[int],
+                 began: dict) -> dict:
+    """What a table's summary says of its game: the ending and the setup, for
+    an unattended table and for a person's (theirs is what rates them,
+    `tools/people_elo.py record`), with the person, their leader and when the
+    game began on theirs. A test stub's game has no ending to keep."""
+    if args.auto_human and not monitor.unattended:
+        return {}
+    record = {
+        "result": monitor.result, "seats": {str(k): v for k, v in monitor.seat_info.items()},
+        "eliminated": sorted(monitor.defeated), "turn": monitor.turn,
+        "difficulty": args.difficulty, "players": args.players, "map": args.map,
+        "map_size": args.map_size, "speed": args.speed, "max_turns": args.max_turns,
+        "civvis_seats": seats, "victory_target": args.victory,
+        "seat_agents": seat_agents(args, seats) if getattr(args, "agents", None) else None,
+        "victories_off": monitor.victories_off, "victories": monitor.victories,
+        "setup_fault": monitor.setup_fault,
+        "seat_stalls": monitor.seat_stalls}
+    record.update(began)
+    if not monitor.unattended:
+        record.update({"person": person_name(args), "person_seat": HUMAN_SEAT,
+                       "leader": args.leader})
+    return record
+
+
+#: What Civ VI was seen to hold with a late duel loaded (6.87 GB, 2026-11-27)
+#: and a little to breathe: with less memory than this to spare, macOS closes
+#: it. And the load average, per core, past which a look at the screen takes
+#: ten seconds and System Events stops answering (measured the same night).
+CIV_MEMORY_GB = 8.0
+LOAD_PER_CORE = 2.0
+
+
+def host_strain(run=subprocess.run) -> dict:
+    """What this Mac has to spare as a game starts: memory free (macOS's own
+    `memory_pressure` figure, as a share and in GB), swap in use, the load
+    averages and the cores. A reading the host does not give is `None`."""
+    strain: dict = {"memory_free": None, "memory_free_gb": None, "swap_used_mb": None,
+                    "swap_total_mb": None, "load": play.host_load(), "cores": os.cpu_count()}
+
+    def said(*command: str) -> str:
+        try:
+            return run(list(command), capture_output=True, text=True, check=False, timeout=20).stdout
+        except (OSError, subprocess.SubprocessError):
+            return ""
+
+    free = re.search(r"free percentage:\s*(\d+)%", said("memory_pressure"))
+    total = re.search(r"\d+", said("sysctl", "-n", "hw.memsize"))
+    if free:
+        strain["memory_free"] = int(free[1]) / 100
+        if total:
+            strain["memory_free_gb"] = round(strain["memory_free"] * int(total[0]) / 2 ** 30, 1)
+    swap = said("sysctl", "-n", "vm.swapusage")
+    for key, label in (("swap_total_mb", "total"), ("swap_used_mb", "used")):
+        found = re.search(rf"{label} = ([\d.]+)M", swap)
+        if found:
+            strain[key] = round(float(found[1]))
+    return strain
+
+
+def strain_warnings(strain: dict) -> list[str]:
+    """What to say before a game starts on a Mac with too little to spare.
+
+    Live 2026-11-27, one evening, a dozen sessions compiling beside the game:
+    macOS ran out of application memory with Civ VI at 6.87 GB and offered to
+    force-quit it (the game fell back to its main menu from the staging
+    room), and at a load average of 40 the window query went unanswered and
+    START GAME was taken as pressed. Neither looked like what it was."""
+    warnings = []
+    free = strain.get("memory_free_gb")
+    if free is not None and free < CIV_MEMORY_GB:
+        warnings.append(f"only {free:.1f} GB of memory is free ({strain['memory_free']:.0%}); Civ VI "
+                        f"takes about {CIV_MEMORY_GB - 1:.0f} GB and macOS closes it when there "
+                        "is none: quit other apps, or stop the builds, first")
+    load, cores = strain.get("load"), strain.get("cores")
+    if load and cores and load[0] > LOAD_PER_CORE * cores:
+        warnings.append(f"the load average is {load[0]:.0f} on {cores} cores; the setup's "
+                        "screen reads and clicks will be slow and may need a second try")
+    return warnings
+
+
+def strain_line(strain: dict) -> str:
+    free, load = strain.get("memory_free_gb"), strain.get("load")
+    return ("host: "
+            + (f"{free:.1f} GB memory free ({strain['memory_free']:.0%})" if free is not None
+               else "memory unread")
+            + (f", swap {strain['swap_used_mb']} of {strain['swap_total_mb']} MB"
+               if strain.get("swap_used_mb") is not None and strain.get("swap_total_mb") else "")
+            + (f", load {load[0]:.0f} on {strain.get('cores')} cores" if load else ""))
+
+
+#: In the run directory: the Civ VI process this run launched.
+LAUNCHED = "launched.json"
+
+
+def note_launched(run_dir: Path, pid: int) -> None:
+    (run_dir / LAUNCHED).write_text(json.dumps({"pid": int(pid), "utc": utc()}))
+
+
+def launched_here(run_dir: Path, running: list[int] | None = None) -> bool:
+    """Whether the Civ VI now running is the one this run launched: a harness
+    that comes up by `--attach` (the supervisor's, after the first one died)
+    closes it at the game's ending or on `--stop --quit-game` as the first
+    would have. A Civ VI the person opened and loaded a save into is not ours
+    to close, and a run with no record of a launch never closes one.
+
+    Live 2026-11-27 (selfplay-duel-20261127T0654Z): the harness was killed at
+    turn 31 and re-attached in four seconds, the game ended at turn 111, and
+    the re-attached harness, which had launched nothing itself, left Civ VI on
+    the Victory screen for the supervisor to re-attach to every 25 seconds."""
+    try:
+        pid = int(json.loads((run_dir / LAUNCHED).read_text())["pid"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return False
+    return pid in (env.game_pids() if running is None else running)
+
+
 def write_current(payload: dict) -> None:
     RUN_ROOT.mkdir(parents=True, exist_ok=True)
     CURRENT.write_text(json.dumps(payload, indent=2))
@@ -1309,6 +1656,7 @@ def stop_command(args: argparse.Namespace) -> int:
         return 0
     run_dir = Path(current["run_dir"])
     (run_dir / "stop.json").write_text(json.dumps({"quit_game": bool(args.quit_game),
+                                                   "resign": bool(args.resign),
                                                    "utc": utc()}))
     os.kill(int(current["pid"]), signal.SIGTERM)
     deadline = time.monotonic() + 120
@@ -1394,11 +1742,18 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--stop", action="store_true", help="stop the running harness")
     ap.add_argument("--quit-game", action="store_true",
                     help="with --stop: also close Civ VI if the harness started it")
+    ap.add_argument("--resign", action="store_true",
+                    help="with --stop: you give the game up. A game under a --name that the "
+                         "game itself has not ended goes on the people's record as CIVVIS's")
     ap.add_argument("--status", action="store_true")
     ap.add_argument("--civvis-seats", type=int, default=None, metavar="N",
                     help="unattended: CIVVIS plays seats 0..N-1 and the other seats up to "
                          "--players are Firaxis AI (no person at the Mac); the run stops at "
                          "the game's ending with the result in summary.json and closes Civ VI")
+    ap.add_argument("--self-play", action="store_true",
+                    help="unattended, CIVVIS on every seat (`--civvis-seats` = --players): "
+                         "`--duel --self-play --agents jack,holy` is the duel with nobody "
+                         "at the Mac, seat 0 first in --agents")
     ap.add_argument("--victories-off", default="", metavar="VICTORY_TYPE[,...]",
                     help="victory types switched off at setup, e.g. VICTORY_DIPLOMATIC "
                          "(the host policy's CIVVIS_VICTORIES_OFF is not read here); each "
@@ -1407,6 +1762,19 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--play-flags", default="", metavar="FLAGS",
                     help="civ6_play switches every jack seat plays with, as one string "
                          "(--play-flags='--dv-join-winner --luxury-quote-proposals')")
+    ap.add_argument("--agents", default=None, metavar="AGENT[,...]",
+                    help="roster agents for the CIVVIS seats in seat order (seat 1 first), "
+                         f"from {', '.join(AGENT_LANES)}, or `{STRONGEST}` for the one the "
+                         "ELO Rankings rate highest; default jack on every seat")
+    ap.add_argument("--name", default=None, metavar="NAME",
+                    help="YOUR name: seat 0 carries it in the game, and a finished game "
+                         "is recorded under it for the people's Elo (tools/people_elo.py)")
+    ap.add_argument("--duel", action="store_true",
+                    help="one against one: 2 players on a Duel map against the strongest "
+                         "agent (`--agents` names another)")
+    ap.add_argument("--hold-start", action="store_true",
+                    help="set up the staging room but leave START GAME to the person "
+                         "(e.g. to pick Teams, which have no text to read)")
     ap.add_argument("--auto-human", nargs="?", const="stub", choices=["stub", "gated"],
                     default=None,
                     help="TEST: a stub plays seat 0 instead of you; `gated` keeps seat 0 "
@@ -1431,9 +1799,38 @@ def main(argv: list[str] | None = None) -> int:
               f"{', '.join(play.VICTORY_TYPES)}", file=sys.stderr)
         return 2
     args.victories_off = [victory for victory in play.VICTORY_TYPES if victory in named]
-    if args.civvis_seats is not None and not 1 <= args.civvis_seats < args.players:
-        print(f"--civvis-seats must leave at least one Firaxis AI seat "
-              f"(1..{args.players - 1} of --players {args.players})", file=sys.stderr)
+    if args.duel:
+        args.players, args.map_size = 2, "MAPSIZE_DUEL"
+        # The strongest agent in the seat across the table: seat 1, with the
+        # flagship in the person's seat when nobody is at the Mac.
+        args.agents = args.agents or (f"{STRATEGY},{STRONGEST}" if args.self_play or args.civvis_seats
+                                      else STRONGEST)
+    if args.name is not None and not PERSON_NAME.fullmatch(args.name):
+        print("--name: 1 to 24 letters, digits, spaces, . _ or -, starting with a "
+              "letter or digit", file=sys.stderr)
+        return 2
+    if args.agents:
+        args.agents = [a.strip().lower() for a in args.agents.split(",") if a.strip()]
+        args.agents = [strongest_agent() if a == STRONGEST else a for a in args.agents]
+        bad = [a for a in args.agents if a not in AGENT_LANES]
+        if bad:
+            print(f"--agents: {', '.join(bad)} not one of {', '.join(AGENT_LANES)}",
+                  file=sys.stderr)
+            return 2
+    if args.self_play:
+        if args.civvis_seats not in (None, args.players):
+            print(f"--self-play seats CIVVIS on every one of the {args.players} seats; "
+                  f"--civvis-seats {args.civvis_seats} leaves some to Firaxis AI: ask for one",
+                  file=sys.stderr)
+            return 2
+        args.civvis_seats = args.players
+    if args.civvis_seats is not None and not 1 <= args.civvis_seats <= args.players:
+        print(f"--civvis-seats is 1..{args.players} of --players {args.players} "
+              f"(every seat: --self-play)", file=sys.stderr)
+        return 2
+    if args.civvis_seats and args.name:
+        print("--name is a person's, and an unattended table has nobody at it: a game "
+              "CIVVIS played must not stand on the people's record", file=sys.stderr)
         return 2
     args.resume_save = None
     if args.resume is not None:
@@ -1451,6 +1848,20 @@ def main(argv: list[str] | None = None) -> int:
     return run(args)
 
 
+def attached_table(config: dict) -> tuple[int, int | None]:
+    """The table an installed hotseat game is, for `--attach`: its seats in
+    all, and how many of them are CIVVIS's when nobody is at it (`None` for a
+    person's table or a test stub's, which are their CIVVIS seats and seat 0).
+    An unattended table has neither a person's seat nor a stub's, and its
+    CIVVIS seats start at seat 0; `HotseatPlayers` says how many seats there
+    are, Firaxis AI included (an install from before it was written is read
+    as its CIVVIS seats alone)."""
+    ours = len(config.get("HotseatSeats") or [])
+    unattended = not (config.get("HotseatHumanSeats") or config.get("HotseatStubSeats"))
+    players = int(config.get("HotseatPlayers") or (ours if unattended else ours + 1))
+    return players, (ours if unattended else None)
+
+
 def run(args: argparse.Namespace) -> int:
     attach_config = None
     if args.attach:
@@ -1464,10 +1875,14 @@ def run(args: argparse.Namespace) -> int:
                   "(Multiplayer -> Hot Seat -> Load Game) first", file=sys.stderr)
             return 2
         args.tag = attach_config["RunTag"]
-        args.players = len(attach_config.get("HotseatSeats") or []) + 1
+        args.players, args.civvis_seats = attached_table(attach_config)
         args.auto_human = (None if not attach_config.get("HotseatStubSeats")
                            else "gated" if attach_config.get("HotseatHumanSeats") else "stub")
         args.victory = attach_config.get("VictoryLane") or args.victory
+        args.name = attach_config.get("HotseatPersonName") or args.name
+        args.leader = attach_config.get("Leader") or None
+        seat_agent_map = attach_config.get("HotseatSeatAgents") or {}
+        args.agents = [seat_agent_map[k] for k in sorted(seat_agent_map, key=int)] or None
         args.victories_off = list(attach_config.get("VictoriesOff") or [])
         # The installed game's own: an install from before these keys had neither.
         args.no_cover = not attach_config.get("HotseatCover")
@@ -1491,7 +1906,12 @@ def run(args: argparse.Namespace) -> int:
     halt = gamelock.operator_halt_description()
     if halt:
         log(f"note: the unattended lanes stay halted ({halt}); this game is yours")
-    launched = False
+    launched = bool(args.attach) and launched_here(run_dir)
+    # When the game began and at which revision: a re-attached harness keeps
+    # the first one's answer (the installed config carries both).
+    began = {"started": (attach_config or {}).get("HotseatStarted") or utc(),
+             "revision": ((attach_config or {}).get("HotseatRevision") if args.attach
+                          else checkout_revision())}
     seats = jack_seats(args.players, getattr(args, "civvis_seats", None))
     brains = None
     monitor = None
@@ -1520,6 +1940,8 @@ def run(args: argparse.Namespace) -> int:
             if args.resume_save is not None:
                 args.leader = None
             config = hotseat_config(args, run_dir, orders_db)
+            config.update({"HotseatStarted": began["started"],
+                           "HotseatRevision": began["revision"] or ""})
             reset_orders_db(orders_db)
             target = modinstall.install(config)
             (run_dir / "config.json").write_text(json.dumps(config, indent=2, sort_keys=True))
@@ -1532,10 +1954,16 @@ def run(args: argparse.Namespace) -> int:
             log(f"game: {args.players} players on {args.map} {args.map_size}, "
                 f"{args.speed}, {args.difficulty}, turn limit {args.max_turns}; "
                 f"you: {args.leader or 'random leader'}; save every {args.save_every} turns")
+            # What the Mac has to spare, said before the game is started on it.
+            began["host"] = host_strain()
+            log(strain_line(began["host"]))
+            for warning in strain_warnings(began["host"]):
+                log(f"⚠ {warning}")
             apply_person_options(log)
             launcher.clear_run_logs()
             process = launcher.launch(stdout=run_dir / "stdout.log")
             launched = True
+            note_launched(run_dir, process.pid)
             log(f"Civ VI starting (pid {process.pid})")
             write_current({"pid": os.getpid(), "tag": args.tag, "run_dir": str(run_dir),
                            "started": utc(), "players": args.players, "launched_civ": True})
@@ -1555,7 +1983,10 @@ def run(args: argparse.Namespace) -> int:
             bridges.append(watch.EventLogBridge(
                 run_dir / modinstall.hotseat_seat_tag(args.tag, seat),
                 tag=modinstall.hotseat_seat_tag(args.tag, seat)))
+        # Whether START GAME was this harness's to press (and so to press again).
+        ours_to_start = not args.attach and not getattr(args, "hold_start", False)
         if not args.attach and not set_up_game(run_dir, args, log):
+            ours_to_start = False
             if args.auto_human or getattr(args, "civvis_seats", None):
                 log("setup failed; the game window is left as it is for a look")
                 stop_reason = "setup failed"
@@ -1572,7 +2003,8 @@ def run(args: argparse.Namespace) -> int:
             # In the background: the brains start while the map loads.
             threading.Thread(target=park_upper_left, args=(log,), name="upper-left",
                              daemon=True).start()
-        brains = Brains(run_dir, args.tag, seats, orders_db, binary, args.victory, log)
+        brains = Brains(run_dir, args.tag, seats, orders_db, binary,
+                        seat_lanes(args, seats), log)
         brains.start_all()
         monitor = Monitor(run_dir, args.tag, seats, args, log)
         if args.attach:
@@ -1581,7 +2013,8 @@ def run(args: argparse.Namespace) -> int:
             monitor.catch_up()
         log("running. `tools/civ6_hotseat.py --stop` (or Ctrl-C) stops the automation; "
             "the game itself stays up.")
-        waited_for_game = time.monotonic()
+        waited_for_game = began_waiting = checked_start = time.monotonic()
+        posted = False
         while True:
             for bridge in bridges:
                 bridge.pump()
@@ -1610,6 +2043,20 @@ def run(args: argparse.Namespace) -> int:
                     monitor.poll()
                     time.sleep(0.5)
                 break
+            if monitor.result is not None and not posted and not monitor.unattended \
+                    and person_name(args):
+                # The person's game is decided: on the record now, not when
+                # they get round to closing Civ VI (the Victory screen offers
+                # "one more turn").
+                posted = True
+                (run_dir / "summary.json").write_text(json.dumps(
+                    {"tag": args.tag, "utc": utc(), "reason": "game over",
+                     **table_record(monitor, args, seats, began)}, indent=2))
+                record_person_game(run_dir, log)
+            if not monitor.started and ours_to_start \
+                    and time.monotonic() - checked_start > START_CHECK_SECONDS:
+                checked_start = time.monotonic()
+                press_start_again(run_dir, log, checked_start - began_waiting)
             if not monitor.started and time.monotonic() - waited_for_game > 300:
                 log("⚠ no hand-over event five minutes after START GAME; is the game up?")
                 waited_for_game = time.monotonic()
@@ -1633,22 +2080,18 @@ def run(args: argparse.Namespace) -> int:
         if monitor is not None:
             monitor.poll()
             summary["report"] = smoke_report(monitor, log)
-            if monitor.unattended:
-                summary.update({
-                    "result": monitor.result, "seats": {str(k): v for k, v in monitor.seat_info.items()},
-                    "eliminated": sorted(monitor.defeated), "turn": monitor.turn,
-                    "difficulty": args.difficulty, "players": args.players, "map": args.map,
-                    "map_size": args.map_size, "speed": args.speed, "max_turns": args.max_turns,
-                    "civvis_seats": seats, "victory_target": args.victory,
-                    "victories_off": monitor.victories_off, "victories": monitor.victories,
-                    "setup_fault": monitor.setup_fault,
-                    "seat_stalls": monitor.seat_stalls})
+            summary.update(table_record(monitor, args, seats, began))
             monitor.close()
         request = {}
         try:
             request = json.loads((run_dir / "stop.json").read_text())
         except (OSError, ValueError):
             pass
+        # The record first: closing Civ VI can take minutes on a loaded host,
+        # and the supervisor reads the summary to know a game is over.
+        (run_dir / "summary.json").write_text(json.dumps(summary, indent=2))
+        if summary.get("person") and (summary.get("result") or request.get("resign")):
+            record_person_game(run_dir, log, resigned=not summary.get("result"))
         # An unattended table always closes Civ VI: the next table starts clean.
         quit_game = launched and (bool(request.get("quit_game"))
                                   or (args.auto_human and args.turns is not None)
@@ -1662,7 +2105,6 @@ def run(args: argparse.Namespace) -> int:
                 modinstall.uninstall()
             except Exception as error:  # noqa: BLE001 - cleanup must finish
                 log(f"could not remove the control mod: {error}")
-        (run_dir / "summary.json").write_text(json.dumps(summary, indent=2))
         gamelock.release()
         current = read_current()
         if current and current.get("pid") == os.getpid():

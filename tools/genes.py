@@ -1271,8 +1271,17 @@ def arm_information_value(effect: float, se: float, arm_se: float,
 #: to `GENE_HEURISTIC_RANKING.md` in the same stroke. The generator reproduces
 #: it verbatim so that `write` never overwrites the operator's text and
 #: `check` is comparing like with like. Edit here, not in the rendered file.
+#: The title's "Prince Self-Play" and the warning under it (2026-11-27) say
+#: which field every column played, so nobody reads a column as evidence
+#: against the Firaxis Deity AI; `tools/test_sim_live_calibration.py` fails
+#: when a reporting batch plays another field and the words go stale.
 RANKING_HEADING = [
-    "## A Ranking of all Gene Heuristics by On/Off Win Rate Difference in Tournaments",
+    "## A Ranking of all Gene Heuristics by On/Off Win Rate Difference in Prince Self-Play Tournaments",
+    "- ⚠ **Prince self-play, not Deity evidence.** Every batch below is six CIVVIS seats "
+    "playing each other at Prince, where `data/difficulties.json` hands no seat anything "
+    "and no Firaxis AI sits at the table. The live seat is one CIVVIS agent against five "
+    "Firaxis AIs at Deity. A gene's figures here say how it does against our own agents, "
+    "not against the Firaxis AI (`docs/GENE_SCREEN.md`, \"What the screen measures\").",
     "- Ranking",
     "- Gene Name",
     "- A short Gene Description",
