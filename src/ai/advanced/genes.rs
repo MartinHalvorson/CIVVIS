@@ -6238,6 +6238,12 @@ pub const GENES: &[Gene] = &[
     // rarer one and about a tenth of a turn's compute. Opt-in, unpriced; see
     // `ai::player::take_turn`.
     Gene { tag: "one-replan-per-turn", field: "one_replan_per_turn", kind: Kind::OptIn, enable: AdvancedAi::enable_one_replan_per_turn, disable: AdvancedAi::disable_one_replan_per_turn },
+    // Lv 8 Deity Religion seats civvis-t8-20261126T132453Z, 160109Z and
+    // 20261127T025659Z: the opening's barbarian defense took the capital's
+    // founding Holy Site (a 28/29 repair in one) for an Archer, Slinger or
+    // Warrior with a defender already home; all four Prophets went and no
+    // religion was founded. Opt-in; see `ai/barbarians.rs`.
+    Gene { tag: "opening-defense-spares-the-holy-site", field: "opening_defense_spares_the_holy_site", kind: Kind::OptIn, enable: AdvancedAi::enable_opening_defense_spares_the_holy_site, disable: AdvancedAi::disable_opening_defense_spares_the_holy_site },
     // ---- append: p-r ------------------------------------------------
     // `racer-seat-statue-civic-first`: Civil Engineering first for a Science,
     // Culture or Religious seat that reaches for the Statue of Liberty, as

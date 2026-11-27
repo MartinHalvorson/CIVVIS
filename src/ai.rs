@@ -2731,6 +2731,13 @@ pub struct BasicAi {
     /// `OPENING_DEFENSE_SETTLER_PREEMPTS` times. See
     /// `opening_defense_settler_preempts`. Opt-in gene, off by default.
     pub(crate) opening_defense_preempts_once: bool,
+    /// `opening-defense-spares-the-holy-site`: the opening's barbarian
+    /// defense does not displace a Holy Site (new or a repair) at the head of
+    /// the capital's queue while our religion is unfounded and a Prophet is
+    /// still open, once a land defender already stands at home and the city
+    /// has not been hit. See `holy_site_holds_the_opening_defense` in
+    /// `ai/barbarians.rs`. Opt-in gene, off by default.
+    pub(crate) opening_defense_spares_the_holy_site: bool,
     /// Version two preserves every wonder pocket V1 would scout, but among
     /// goals no more than one tile beyond V1's nearest it picks the tile that
     /// reveals the most of the pocket. It therefore buys information without
@@ -4439,6 +4446,7 @@ impl BasicAi {
             wonder_ring_recon: false,
             opening_defense_preempts: 0,
             opening_defense_preempts_once: false,
+            opening_defense_spares_the_holy_site: false,
             wonder_ring_recon_2: false,
             hut_collection: false,
             village_seeking: false,
@@ -5908,7 +5916,16 @@ impl BasicAi {
                 let displaces_settler =
                     matches!(&displaced, Some(Item::Unit { unit }) if unit == "settler");
                 let live = pid == crate::game::MIRRORED_SEAT && !g.host_observed.is_empty();
-                if live
+                // `opening-defense-spares-the-holy-site`: see
+                // `holy_site_holds_the_opening_defense` in `ai/barbarians.rs`.
+                if self.holy_site_holds_the_opening_defense(g, pid, *cid) {
+                    think!(self.journal, Military, Decision,
+                           "{} keeps its Holy Site despite nearby barbarians", g.cities[cid].name;
+                           "opening-defense-spares-the-holy-site: {} waits for the Holy Site; \
+                            {} defender(s) home, our religion unfounded and a Prophet still open",
+                           Self::item_label(&item),
+                           self.barbarian_local_defenders_for_controller(g, pid, *cid));
+                } else if live
                     && displaces_settler
                     && self.opening_defense_preempts >= self.opening_defense_settler_preempts()
                 {
