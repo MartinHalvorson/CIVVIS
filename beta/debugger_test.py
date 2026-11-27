@@ -5457,8 +5457,8 @@ def main() -> int:
               "time stops only when the last world's game is over.")
         print("Doctor Strange's CIVVIS has Send it at the foot of the tree on the left: it branches the base "
               "timeline for the best player strategies without a world of their own there, up to twelve worlds in "
-              "three rows of four, best first, and runs time on for every world together to the end, showing the "
-              "furthest turn every world holds while each world's future is played ahead; with nothing left to "
+              "three rows of four, best first, and runs time on for every world together to the end, showing "
+              "every turn on the way, the count with it, while each world's future is played ahead; with nothing left to "
               "branch it runs the worlds on. Its steps read Turn 1, Era back, -10, -1, +1, +10, Era forward: Era "
               "back goes to the start of the followed world's era, then of the era before, and Era forward to the "
               "next era's first turn, playing on to it when it has not been played.")
