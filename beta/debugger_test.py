@@ -4118,15 +4118,16 @@ def check_doctor_strange_memory(bar: Bar, address: str) -> None:
 
     Operator, a standing rule since 2026-11-23: "please be careful about a
     memory blowup on civvis. considering the typical amount of memory people
-    computres have". On the 8 GB budget (`navigator.deviceMemory` 8, which
-    is the most Chrome says, or not said) a tab is kept under 1.5 GB, which
-    holds two worlds: each one's box, its engine at the least it is told and
-    one future played beside them (`strangeBudgetOf`; measured in PR #5939).
-    A third is refused with words that say why, Branch Next Best, Branch 5
-    Next Best and All 14,000,605 make none, no page is made ahead for one,
-    each world's engine is told its share of the ceiling, and deleting a
-    world makes room for one again. A link that says the computer has more
-    (`?memory=16`) has room for more.
+    computres have". On the 8 GB budget (`navigator.deviceMemory` 8, as
+    Chrome says on an 8 GB laptop, or not said) a tab is kept under 1.5 GB,
+    in which by the end of a game one world fits with its box, its engine at
+    the least it is told and one future played beside it (`strangeBudgetOf`;
+    measured in PR #5939), and the page's own two may still be open, each
+    world's engine told the least. A third is refused with words that say
+    why, Branch Next Best, Branch 5 Next Best and All 14,000,605 make none,
+    no page is made ahead for one, and deleting a world makes room for one
+    again. A link that says the computer has more (`?memory=16`) has room for
+    more.
     """
     ready = "typeof drawDebugBar === 'function' && typeof engineState === 'function'"
     said = "document.querySelector('#strange-hud [data-strange=\"say\"]').textContent"
@@ -4146,9 +4147,9 @@ def check_doctor_strange_memory(bar: Bar, address: str) -> None:
         bar.settled()
         bar.until(two, "its two worlds are there")
         assert bar.ev("[navigator.deviceMemory, tabMemoryGB(), tabCeilingMB(), DEBUG_SMALL_DEVICE]") == [8, 8, 1536, False]
-        assert bar.ev("strangeBudget()") == {"ceilingMB": 1536, "most": 2, "futures": 1, "roomMB": 135}, bar.ev("strangeBudget()")
+        assert bar.ev("strangeBudget()") == {"ceilingMB": 1536, "fits": 1, "most": 2, "futures": 1, "roomMB": 128}, bar.ev("strangeBudget()")
         # Each world's engine is told the line its share of the ceiling allows.
-        bar.until(f"{lines}.every(line => line === 135)", "each world's engine is told its share", seconds=30)
+        bar.until(f"{lines}.every(line => line === 128)", "each world's engine is told its share", seconds=30)
         # Full: each way of making a world is off, and says why.
         state = bar.ev(buttons)
         assert [disabled for disabled, _ in state] == [True] * 4, state
@@ -4165,20 +4166,20 @@ def check_doctor_strange_memory(bar: Bar, address: str) -> None:
         # (`strangeSpare`: after STRANGE_SPARE_STILL_MS standing still).
         bar.ev("new Promise(done => setTimeout(() => done(true), 3500))")
         assert bar.ev(frames) == 2, bar.ev(frames)
-        # B deleted: one world, and room for one more, made in B's box. The
-        # world left is told a larger line, B's box still being a page.
+        # B deleted: one world, and room for one more, made in B's box, which
+        # is a page still: the world left is told the same line.
         bar.click('#strange-hud [data-strange="close-b"]')
         bar.until("strange.order.join('') === 'a' && strangeIdle()", "B is deleted")
-        assert bar.ev("strangeBudget()") == {"ceilingMB": 1536, "most": 2, "futures": 1, "roomMB": 203}, bar.ev("strangeBudget()")
-        bar.until(f"{lines}.every(line => line === 203)", "the world left is told its larger share", seconds=30)
+        assert bar.ev("strangeBudget()") == {"ceilingMB": 1536, "fits": 1, "most": 2, "futures": 1, "roomMB": 128}, bar.ev("strangeBudget()")
         assert bar.ev(buttons)[0][0] is False
         assert bar.ev("strangeBranch('jack')") == "b"
         bar.until(two, "the branch is a world in B's box", seconds=30)
-        assert bar.ev(f"[{frames}, strangeBudget().roomMB, {buttons}.map(([disabled]) => disabled)]") == [2, 135, [True] * 4]
+        bar.until(f"{lines}.every(line => line === 128)", "the branch's engine is told its share", seconds=30)
+        assert bar.ev(f"[{frames}, {buttons}.map(([disabled]) => disabled)]") == [2, [True] * 4]
         assert not bar.dev.console, f"the page complained: {bar.dev.console}"
     finally:
         bar.ev("localStorage.removeItem('civvis-toy-memory'), true")
-    # A link that says the computer has 16 GB: a 3 GB tab holds nine worlds,
+    # A link that says the computer has 16 GB: a 3 GB tab holds six worlds,
     # and two futures are played at once.
     bar.ev("localStorage.setItem('civvis-toy-memory', '8'), true")
     try:
@@ -4188,7 +4189,7 @@ def check_doctor_strange_memory(bar: Bar, address: str) -> None:
         bar.settled()
         bar.until(two, "its two worlds are there")
         budget = "(({ceilingMB, most, futures}) => [tabMemoryGB(), ceilingMB, most, futures])(strangeBudget())"
-        assert bar.ev(budget) == [16, 3072, 9, 2], bar.ev(budget)
+        assert bar.ev(budget) == [16, 3072, 6, 2], bar.ev(budget)
         assert bar.ev(buttons)[0][0] is False
         assert bar.ev("strangeBranch('jack')") == "c"
         bar.until("strange.order.length === 3 && strangeIdle()", "a third world", seconds=30)
@@ -5212,10 +5213,10 @@ def main() -> int:
         check_doctor_strange(bar, f"http://127.0.0.1:{port}/")
         check_doctor_strange_memory(bar, f"http://127.0.0.1:{port}/")
         print("Doctor Strange's CIVVIS holds its worlds under the tab's memory ceiling: on an 8 GB laptop a tab is "
-              "kept under 1.5 GB, which holds two worlds; a third is refused by Branch, Branch Next Best, Branch 5 Next "
+              "kept under 1.5 GB, where the page's two worlds may be open; a third is refused by Branch, Branch Next Best, Branch 5 Next "
               "Best and All 14,000,605 with words that say why, no page is made ahead for one, each world's engine is "
               "told its share of the ceiling, deleting a world makes room for one again, and a link that says the "
-              "computer has 16 GB holds nine.")
+              "computer has 16 GB holds six.")
         print("Doctor Strange's CIVVIS is the split shown as worlds in boxes under the tree of their timelines: it "
               "opens on the top rated player strategy on the right and its challenger on the left; the open turn is "
               "the line across the window, which is the divide between the tree and the boxes and has the turn "

@@ -6057,29 +6057,34 @@ function strangeFrame(letter, born = null) {
 //
 // Doctor Strange's worlds are each a page and an engine of their own
 // (`strangeFrame`, `beta/shim.js`), and nothing held them under a ceiling.
-// Measured on the published engine (PR #5939: headless Chrome, its
+// Measured on the published engine (PR #5939: headless Chrome, the page's
 // four-seat Pangaea, the page's process and the GPU process added up), two
-// worlds were 1.2 GB on turn 1 and 1.7-2.0 GB by turn 120, four were 2.3-2.4
-// GB by turn 120, and All 14,000,605 went on past that. What a tab is made
-// of, there: the page itself, with its own engine and its part of the GPU
-// process, about 950 MB by the late game (`pageMB`); each world's box, the
-// viewer again in a frame, about 90 MB more (`boxMB`); and each world's
-// engine, which keeps every turn played until it passes the line it is told
-// (`room`, 1 GB unless told; the engine's least is 128 MB), with a copy of
-// it for each future played ahead at once (`strangeForesee`). A world's
-// engine was about 55 MB on turn 60 and 200 MB on turn 120.
+// worlds were 1.1 GB on turn 1, 1.8 GB by turn 120 and 2.2 GB when their
+// games ended (turn 190), four were 2.3-2.7 GB by turn 120, and All
+// 14,000,605's ten went past 5 GB by turn 150 and were stopped there. What a
+// tab is made of by the end of a game, the most it holds: the page itself,
+// with its own engine and its part of the GPU process, about 920 MB
+// (`pageMB`); each world's box, the viewer again in a frame, about 200 MB
+// more (`boxMB`, 70 MB on turn 1: a box's page grows as its game does); and
+// each world's engine, which keeps every turn played until it passes the
+// line it is told (`room`, 1 GB unless told; the engine's least is 128 MB),
+// with a copy of it for each future played ahead (`strangeForesee`). A
+// world's engine was about 55 MB on turn 60, 200 MB on 120 and 330 MB at the
+// end.
 //
 // So a tab is given a ceiling, 3/16 of the memory the browser says the
-// computer has (`navigator.deviceMemory`): 1.5 GB on the 8 GB budget, where
-// a browser that does not say is put too, and Chrome never says more than
-// 8. A link may say how much the computer has instead (`?memory=32`, in GB),
-// for one that has more. A phone or a small device opens on the one
+// computer has (`navigator.deviceMemory`, which Chrome rounds down to a
+// power of two: 8 on an 8 GB laptop, 16 on a 16 GB one): 1.5 GB on the 8 GB
+// budget, where a browser that does not say (Safari, Firefox) or says less
+// is put too, and 3 GB on 16 GB. A link may say how much the computer has
+// instead (`?memory=32`, in GB). A phone or a small device opens on the one
 // timeline, as before, with its 384 MB line. The worlds live inside the
 // ceiling (`strangeBudgetOf`):
 //   - as many worlds may be open as fit with each box and each world's
-//     engine at its least, and one future played beside them; past that a
-//     branch is refused and the page says why (`strangeFullWords`), and All
-//     14,000,605 and Branch 5 Next Best make as many as fit;
+//     engine at its least, and one future played beside them, and never
+//     fewer than the two the page opens on; past that a branch is refused
+//     and the page says why (`strangeFullWords`), and All 14,000,605 and
+//     Branch 5 Next Best make as many as fit;
 //   - what is left is the worlds' kept turns, the same line for each world,
 //     and as many futures are played at once as fit beside them;
 //   - a world deleted, or a page waiting to be one, holds no engine (`shim.js`
@@ -6088,7 +6093,7 @@ function strangeFrame(letter, born = null) {
 //     ahead for a branch that would not fit (`strangeSpare`).
 // The AI Debugger and Edge of Tomorrow keep their turns under the same
 // ceiling (`debugRoomMB`).
-const TAB_MEMORY = {share: 3 / 16, budgetGB: 8, mostGB: 64, pageMB: 950, boxMB: 90, engineLeastMB: 128, engineMostMB: 3072, smallMB: 384};
+const TAB_MEMORY = {share: 3 / 16, budgetGB: 8, mostGB: 64, pageMB: 920, boxMB: 200, opens: 2, engineLeastMB: 128, engineMostMB: 3072, smallMB: 384};
 // The memory this computer is taken to have, in GB: what a link says, or
 // else what the browser says, but never less than the 8 GB budget, which is
 // what a browser that says nothing is given.
@@ -6108,20 +6113,22 @@ function tabEngineMB(megabytes) {
 }
 // Doctor Strange under a ceiling, with `worlds` open in `boxes` boxes (a
 // box out of sight is a page still: one closed, or one made ahead):
-//   most     the most worlds that may be open: each box, each world's
-//            engine at its least and one future beside them fit;
+//   fits     the worlds that fit: each box, each world's engine at its least
+//            and one future beside them, by the end of a game;
+//   most     the most that may be open: as many as fit, but the two the
+//            page opens on however few do (on the 8 GB budget one does);
 //   roomMB   the line each open world's engine is told: what the boxes
 //            leave, shared by the worlds and the futures played at once;
 //   futures  how many futures are played at once: every world's where each
 //            world and its copy fit at the least, else one at a time.
 function strangeBudgetOf(ceilingMB, worlds, boxes = worlds) {
-  const {pageMB, boxMB, engineLeastMB: least} = TAB_MEMORY;
+  const {pageMB, boxMB, engineLeastMB: least, opens} = TAB_MEMORY;
   const engines = count => ceilingMB - pageMB - count * boxMB;
-  let most = 1;
-  while (most < STRANGE_LETTERS.length && engines(most + 1) >= (most + 2) * least) most++;
+  let fits = 1;
+  while (fits < STRANGE_LETTERS.length && engines(fits + 1) >= (fits + 2) * least) fits++;
   const open = Math.max(1, worlds), held = Math.max(0, engines(Math.max(open, boxes)));
   const futures = Math.max(1, Math.min(open, Math.floor(held / least) - open));
-  return {ceilingMB, most, futures, roomMB: tabEngineMB(held / (open + futures))};
+  return {ceilingMB, fits, most: Math.max(opens, fits), futures, roomMB: tabEngineMB(held / (open + futures))};
 }
 // This page's: the ceiling of this computer, the worlds open and the boxes there are.
 function strangeBudget() {

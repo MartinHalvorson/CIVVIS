@@ -11,11 +11,13 @@ ships and run in node on stand-ins for the browser, so what is checked here
 is the page's own arithmetic, not a copy of it:
 
   * the computer is taken as the 8 GB budget unless the browser says more
-    (Chrome never does) or a link does (`?memory=`), and the ceiling is 3/16
-    of it: 1.5 GB on 8 GB;
-  * the most worlds are as many as fit with each box, each world's engine at
-    its least and one future beside them, never past the dozen there are
-    letters for; two on the 8 GB budget;
+    (Chrome says 16 on a 16 GB computer) or a link does (`?memory=`), and the
+    ceiling is 3/16 of it: 1.5 GB on 8 GB, 3 GB on 16;
+  * the worlds that fit are as many as fit with each box, each world's
+    engine at its least and one future beside them, by the end of a game,
+    never past the dozen there are letters for; the most that may be open
+    is that, but never fewer than the two the page opens on: one fits on
+    the 8 GB budget, and two may be open;
   * the line each world's engine is told shares what the boxes leave between
     the worlds and the futures played at once, never under the engine's
     least nor over its most, and every world open under the most fits;
@@ -65,7 +67,7 @@ def run(expression: str, memory=None, search: str = "", small: bool = False, box
 @unittest.skipUnless(shutil.which("node"), "needs node to run the page's arithmetic")
 class TabMemory(unittest.TestCase):
     def test_the_computer_is_the_8_gb_budget_unless_told_more(self):
-        # Chrome says at most 8; other browsers say nothing; a small device
+        # Chrome says 8 on an 8 GB laptop; Safari and Firefox say nothing; a small device
         # says less, and is put on the budget too (it opens on one timeline).
         self.assertEqual(run("[tabMemoryGB(), tabCeilingMB()]", memory=8), [8, 1536])
         self.assertEqual(run("[tabMemoryGB(), tabCeilingMB()]", memory=None), [8, 1536])
@@ -80,32 +82,33 @@ class TabMemory(unittest.TestCase):
         self.assertEqual(run("tabMemoryGB()", memory=8, search="?memory="), 8)
         self.assertEqual(run("tabMemoryGB()", memory=8, search="?memory=9999"), 64)
 
-    def test_two_worlds_fit_on_the_8_gb_budget(self):
-        # 1536 - 950 for the page leaves 586: two boxes (180) and two
-        # engines at their least with one future beside them (384) fit in
-        # it, three boxes and three such (270 + 512) do not.
-        self.assertEqual(run("strangeBudgetOf(1536, 2)"), {"ceilingMB": 1536, "most": 2, "futures": 1, "roomMB": 135})
-        self.assertEqual(run("strangeBudgetOf(1536, 1)"), {"ceilingMB": 1536, "most": 2, "futures": 1, "roomMB": 248})
+    def test_two_worlds_may_be_open_on_the_8_gb_budget(self):
+        # 1536 - 920 for the page leaves 616: one box (200) and one engine at
+        # its least with one future beside it (256) fit in it, two boxes and
+        # two such (400 + 384) do not. The page's own two may still be open,
+        # each world's engine at its least, and futures played one at a time.
+        self.assertEqual(run("strangeBudgetOf(1536, 2)"), {"ceilingMB": 1536, "fits": 1, "most": 2, "futures": 1, "roomMB": 128})
+        self.assertEqual(run("strangeBudgetOf(1536, 1)"), {"ceilingMB": 1536, "fits": 1, "most": 2, "futures": 1, "roomMB": 208})
         # A box out of sight is a page still: one world in two boxes.
-        self.assertEqual(run("strangeBudgetOf(1536, 1, 2)"), {"ceilingMB": 1536, "most": 2, "futures": 1, "roomMB": 203})
+        self.assertEqual(run("strangeBudgetOf(1536, 1, 2)"), {"ceilingMB": 1536, "fits": 1, "most": 2, "futures": 1, "roomMB": 128})
 
     def test_more_memory_holds_more_worlds_up_to_the_letters(self):
-        self.assertEqual(run("[8, 16, 24, 32, 64].map(gb => strangeBudgetOf(tabCeilingMB(gb), 1).most)"), [2, 9, 12, 12, 12])
+        self.assertEqual(run("[8, 16, 24, 32, 64].map(gb => strangeBudgetOf(tabCeilingMB(gb), 1).most)"), [2, 6, 10, 12, 12])
         # And plays every world's future at once when each world and its
         # copy fit at the least.
-        self.assertEqual(run("strangeBudgetOf(3072, 9)"), {"ceilingMB": 3072, "most": 9, "futures": 1, "roomMB": 131})
-        self.assertEqual(run("strangeBudgetOf(3072, 4)"), {"ceilingMB": 3072, "most": 9, "futures": 4, "roomMB": 220})
-        self.assertEqual(run("strangeBudgetOf(12288, 12)"), {"ceilingMB": 12288, "most": 12, "futures": 12, "roomMB": 427})
+        self.assertEqual(run("strangeBudgetOf(3072, 6)"), {"ceilingMB": 3072, "fits": 6, "most": 6, "futures": 1, "roomMB": 136})
+        self.assertEqual(run("strangeBudgetOf(3072, 4)"), {"ceilingMB": 3072, "fits": 6, "most": 6, "futures": 4, "roomMB": 169})
+        self.assertEqual(run("strangeBudgetOf(12288, 12)"), {"ceilingMB": 12288, "fits": 12, "most": 12, "futures": 12, "roomMB": 373})
 
-    def test_every_world_open_under_the_most_fits_under_the_ceiling(self):
+    def test_every_world_that_fits_fits_under_the_ceiling(self):
         # The page, every box, every world's engine at the line it is told
         # and as many copies as futures are played at once: never over the
-        # ceiling, for every computer and every count of worlds up to the most.
+        # ceiling, for every computer and every count of worlds that fit.
         over = run("""(() => {
           const over = [];
           for (const gb of [8, 12, 16, 20, 24, 32, 48, 64]) {
-            const ceiling = tabCeilingMB(gb), most = strangeBudgetOf(ceiling, 1).most;
-            for (let worlds = 1; worlds <= most; worlds++) for (let boxes = worlds; boxes <= Math.min(most, worlds + 1); boxes++) {
+            const ceiling = tabCeilingMB(gb), fits = strangeBudgetOf(ceiling, 1).fits;
+            for (let worlds = 1; worlds <= fits; worlds++) for (let boxes = worlds; boxes <= Math.min(fits, worlds + 1); boxes++) {
               const {roomMB, futures} = strangeBudgetOf(ceiling, worlds, boxes);
               const total = TAB_MEMORY.pageMB + boxes * TAB_MEMORY.boxMB + (worlds + futures) * roomMB;
               if (total > ceiling && roomMB < TAB_MEMORY.engineMostMB) over.push([gb, worlds, boxes, total, ceiling]);
@@ -123,11 +126,11 @@ class TabMemory(unittest.TestCase):
         self.assertEqual(run("strangeBudgetOf(1536, 12, 12).roomMB"), 128)
 
     def test_the_ai_debugger_and_edge_of_tomorrow_keep_their_turns_under_the_ceiling(self):
-        # The page alone leaves 586 MB; a split's two boxes leave 406, the
+        # The page alone leaves 616 MB; a split's two boxes leave 216, the
         # one line of the engine both halves are worlds on.
-        self.assertEqual(run("debugRoomMB()", memory=8), 586)
-        self.assertEqual(run("debugRoomMB()", memory=8, boxes=2), 406)
-        self.assertEqual(run("debugRoomMB()", memory=16), 2122)
+        self.assertEqual(run("debugRoomMB()", memory=8), 616)
+        self.assertEqual(run("debugRoomMB()", memory=8, boxes=2), 216)
+        self.assertEqual(run("debugRoomMB()", memory=16), 2152)
         # A small device keeps the line it always had.
         self.assertEqual(run("debugRoomMB()", memory=2, small=True), 384)
 
@@ -136,8 +139,8 @@ class TabMemory(unittest.TestCase):
                          "2 worlds are open, which is the most this computer's memory holds (a tab is kept under 1.5 GB)")
         self.assertEqual(run("strangeFullWords(strangeBudgetOf(1536, 2), false)"),
                          "2 worlds is the most this computer's memory holds (a tab is kept under 1.5 GB)")
-        self.assertEqual(run("strangeFullWords(strangeBudgetOf(3072, 9))"),
-                         "9 worlds are open, which is the most this computer's memory holds (a tab is kept under 3.0 GB)")
+        self.assertEqual(run("strangeFullWords(strangeBudgetOf(3072, 6))"),
+                         "6 worlds are open, which is the most this computer's memory holds (a tab is kept under 3.0 GB)")
         # Where the letters run out first, the words are what they were.
         self.assertEqual(run("strangeFullWords(strangeBudgetOf(12288, 12))"), "12 worlds are open, which is the most")
         self.assertEqual(run("strangeFullWords(strangeBudgetOf(12288, 12), false)"), "12 worlds is the most")
