@@ -772,7 +772,7 @@
           <a class="site-link sub-link" href="../win-analytics/" title="Who wins, how and when: the games against Civilization VI&#8217;s own AI beside the CIVVIS self-play games.">Win Analytics</a>
           <a class="site-link sub-link" href="../elo-rankings/" title="The Civ AI Agents and Civilization VI&#8217;s own AI on one Elo scale, now and over time.">ELO Rankings</a>
           <a class="site-link sub-link" href="./" aria-current="page">CIVVIS Performance</a>
-          <a class="site-link sub-link" href="../random-ai-charts/" title="Charts the AI agents added on their own, kept here until they are asked for or talked over.">Random AI Charts</a>
+          <a class="site-link sub-link" href="../unreviewed-gen-ai-charts/" title="Charts the AI agents added on their own, kept here until they are asked for or talked over.">Unreviewed Gen AI Charts</a>
         </div>
       </div>
       <a class="site-link" href="../../tournaments/" title="Series of verification games against Civilization VI&#8217;s own AI: running, scheduled and finished.">Tournaments</a>
@@ -2311,8 +2311,8 @@
     // irreducability and should have a chart tracking the size/num of
     // steps"): the tiles and a column for every reading. Blue is the steps
     // that stay and orange the steps that a unit's walk taken as one step
-    // would save. The newest reading's steps by kind are on Random AI
-    // Charts since 2026-11-25.
+    // would save. The newest reading's steps by kind are on Unreviewed Gen
+    // AI Charts since 2026-11-25.
     const trail = data.path && typeof data.path === "object" ? data.path : null;
     const walked = (trail && Array.isArray(trail.readings) ? trail.readings : []).filter((r) => r && r.taken && Number(r.steps) > 0);
     if (walked.length) {

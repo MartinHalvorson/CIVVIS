@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Random AI Charts: the charts an agent added to the other pages of Charts/
+"""Unreviewed Gen AI Charts: the charts an agent added to the other pages of Charts/
 on its own, moved to one page at the end of Charts/ (operator, 2026-11-26:
 "please add another chart to the end of charts/ called random ai charts.
 please move all the ai generated charts that i havent approved of or we have
@@ -54,18 +54,18 @@ def style() -> str:
 
 class ThePage(unittest.TestCase):
     def test_it_is_the_last_page_under_charts_and_ringed(self):
-        self.assertIn("<title>Random AI Charts · CIVVIS.ai</title>", PAGE)
-        self.assertIn('<link rel="canonical" href="https://civvis.ai/charts/random-ai-charts/">', PAGE)
+        self.assertIn("<title>Unreviewed Gen AI Charts · CIVVIS.ai</title>", PAGE)
+        self.assertIn('<link rel="canonical" href="https://civvis.ai/charts/unreviewed-gen-ai-charts/">', PAGE)
         nav = PAGE[PAGE.index('<nav class="site-nav"'):PAGE.index("</nav>")]
         menu = nav[nav.index('<div class="site-menu">'):nav.index("</div>", nav.index('<div class="site-menu">'))]
         names = re.findall(r'<a class="site-link sub-link" href="([^"]+)"[^>]*>([^<]+)</a>', menu)
-        self.assertEqual(names[-1], ("./", "Random AI Charts"))
+        self.assertEqual(names[-1], ("./", "Unreviewed Gen AI Charts"))
         self.assertEqual(
             [name for _, name in names],
             ["AI Insights", "Civ AI Interpretability", "Civ Analytics", "Win Analytics", "ELO Rankings",
-             "CIVVIS Performance", "Random AI Charts"],
+             "CIVVIS Performance", "Unreviewed Gen AI Charts"],
         )
-        self.assertIn('<a class="site-link sub-link" href="./" aria-current="page">Random AI Charts</a>', nav)
+        self.assertIn('<a class="site-link sub-link" href="./" aria-current="page">Unreviewed Gen AI Charts</a>', nav)
         # Charts/ itself opens the folder's first page, as on every page.
         self.assertIn('<a class="site-link" href="../ai-insights/" ', nav)
 
@@ -75,7 +75,7 @@ class ThePage(unittest.TestCase):
 
     def test_the_publish_places_it_last_under_charts_and_fills_its_slots(self):
         self.assertIn('random_page="$source_tree/beta/random.html"', PUBLISH)
-        self.assertIn('random_at="$(address "$random_page" charts/random-ai-charts)"', PUBLISH)
+        self.assertIn('random_at="$(address "$random_page" charts/unreviewed-gen-ai-charts)"', PUBLISH)
         # Its block follows CIVVIS Performance's, so the lane lists it last
         # under Charts/ and `/charts` still opens AI Insights.
         self.assertLess(PUBLISH.index('pages+=("$performance_at")'), PUBLISH.index('pages+=("$random_at")'))

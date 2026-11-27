@@ -364,6 +364,25 @@
      civvis gold, and firaxis red in the elo table. faint"). Its rules are
      held to its card. */
   #tour-elo .tour-scroll { overflow-x: auto; }
+  /* The two tables side by side, Civilization VI's on the left and CIVVIS
+     self-play's on the right. A row is the same player in both, so every
+     row and every head row is one fixed height and the two line up. */
+  #tour-elo .elo-pair { display: grid; grid-template-columns: minmax(0, auto) minmax(0, 1fr); gap: 0 14px; align-items: start; }
+  #tour-elo .elo-pair .elo-scroll { min-width: 0; }
+  #tour-elo .elo-pair thead tr { height: 24px; }
+  #tour-elo .elo-pair tbody tr { height: 28px; }
+  /* Separate borders and cells of a set height, so a row is exactly as tall
+     in both tables whatever its cells hold. */
+  #tour-elo .elo-pair table { border-collapse: separate; border-spacing: 0; }
+  #tour-elo .elo-pair th, #tour-elo .elo-pair td { box-sizing: border-box; padding-top: 0; padding-bottom: 0; overflow: hidden; }
+  #tour-elo .elo-pair thead th { height: 24px; line-height: 23px; }
+  #tour-elo .elo-pair tbody tr { border-top: 0; }
+  #tour-elo .elo-pair tbody td { height: 28px; line-height: 27px; border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent); }
+  /* Smaller words beside a figure or a name sit in its line, not a taller one. */
+  #tour-elo .elo-pair td small { line-height: 1; }
+  #tour-elo th.elo-side-head { color: var(--text); font-size: 11.5px; letter-spacing: .06em; text-align: left; border-bottom: 1px solid var(--border); }
+  #tour-elo tbody tr.is-hover td { box-shadow: inset 0 0 0 999px color-mix(in srgb, #fff 7%, transparent); }
+  @media (max-width: 719px) { #tour-elo .elo-pair { gap: 0 8px; } }
   #tour-elo table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
   #tour-elo th, #tour-elo td { padding: 4px 6px; text-align: right; white-space: nowrap; }
   #tour-elo thead th { color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
@@ -505,7 +524,7 @@
           <a class="site-link sub-link" href="../charts/win-analytics/" title="Who wins, how and when: the games against Civilization VI&#8217;s own AI beside the CIVVIS self-play games.">Win Analytics</a>
           <a class="site-link sub-link" href="../charts/elo-rankings/" title="The Civ AI Agents and Civilization VI&#8217;s own AI on one Elo scale, now and over time.">ELO Rankings</a>
           <a class="site-link sub-link" href="../charts/civvis-performance/" title="How fast the simulator plays: the fastest game on video and how long a self-play game takes.">CIVVIS Performance</a>
-          <a class="site-link sub-link" href="../charts/random-ai-charts/" title="Charts the AI agents added on their own, kept here until they are asked for or talked over.">Random AI Charts</a>
+          <a class="site-link sub-link" href="../charts/unreviewed-gen-ai-charts/" title="Charts the AI agents added on their own, kept here until they are asked for or talked over.">Unreviewed Gen AI Charts</a>
         </div>
       </div>
       <a class="site-link" href="./" aria-current="page">Tournaments</a>
@@ -594,16 +613,39 @@
     <div class="tour-record" id="tour-record" hidden>
       <section class="tour-section" id="tour-elo" hidden aria-labelledby="tour-elo-title">
         <h2 class="rank-title" id="tour-elo-title"><a href="../charts/elo-rankings/" title="ELO Rankings: the ratings now and over time">ELO Rankings</a></h2>
-        <p class="rank-sub">CIVVIS AI strategies, the classic Firaxis AI and the people who play them, on one Elo scale, a column for each game. Our stand-in for Prince is 1000.</p>
+        <p class="rank-sub">CIVVIS AI strategies, the classic Firaxis AI and people, on one Elo scale. Left: measured in Civilization VI under computer control. Right: CIVVIS self-play. Any column sorts both. Our stand-in for Prince is 1000.</p>
         <p class="elo-kinds"><span class="elo-kind is-agent">CIVVIS AI</span><span class="elo-kind is-level">Classic Firaxis AI</span><span class="elo-kind is-person">Dev</span></p>
-        <div class="tour-scroll">
-          <table aria-labelledby="tour-elo-title">
-            <thead>
-              <tr><th scope="col" rowspan="2"></th><th scope="col" rowspan="2" class="is-ident">Player</th><th scope="colgroup" colspan="8" class="is-group is-split">6P Continents Online</th><th scope="colgroup" colspan="2" class="is-group is-split">2P Pangaea</th></tr>
-              <tr><th scope="col" class="is-split"><button type="button" class="rank-sort" data-sort="continents6_no_diplo" aria-pressed="true" title="6P Continents Online: Every victory but the Diplomatic. Sort by this column">Diplo off</button></th><th scope="col"><button type="button" class="rank-sort" data-sort="continents6" aria-pressed="false" title="6P Continents Online: Every victory on. Sort by this column">Diplo on</button></th><th scope="col"><button type="button" class="rank-sort" data-sort="continents6_science" aria-pressed="false" title="6P Continents Online: The Science victory alone. Sort by this column">Science</button></th><th scope="col"><button type="button" class="rank-sort" data-sort="continents6_culture" aria-pressed="false" title="6P Continents Online: The Culture victory alone. Sort by this column">Culture</button></th><th scope="col"><button type="button" class="rank-sort" data-sort="continents6_religion" aria-pressed="false" title="6P Continents Online: The Religious victory alone. Sort by this column">Religion</button></th><th scope="col"><button type="button" class="rank-sort" data-sort="continents6_diplomacy" aria-pressed="false" title="6P Continents Online: The Diplomatic victory alone. Sort by this column">Diplomacy</button></th><th scope="col"><button type="button" class="rank-sort" data-sort="continents6_domination" aria-pressed="false" title="6P Continents Online: The Domination victory alone. Sort by this column">Domination</button></th><th scope="col"><button type="button" class="rank-sort" data-sort="continents6_score" aria-pressed="false" title="6P Continents Online: The Score victory alone. Sort by this column">Score</button></th><th scope="col" class="is-split"><button type="button" class="rank-sort" data-sort="pangaea2_no_religion" aria-pressed="false" title="2P Pangaea: Every victory but the Religious. Sort by this column">Religion off</button></th><th scope="col"><button type="button" class="rank-sort" data-sort="pangaea2" aria-pressed="false" title="2P Pangaea: Every victory on. Sort by this column">Religion on</button></th></tr>
-            </thead>
-            <tbody></tbody>
-          </table>
+        <!-- Two tables, a row for each player running across both (operator
+             2026-11-27: "we should have two tables: one on the left for
+             computer control firaxis civ 6 games and one on the right for
+             CIVVIS self-play. 2 separate tables but scrolling horizontally in
+             one should move the other as well. rows should cross over all the
+             way. any col in either table should sort all rows in both
+             tables"). The left is what Civilization VI itself measured: the
+             classic Firaxis AI from the benchmark and people from their
+             hot-seat games. The right is CIVVIS self-play, the simulator's
+             fits a setup each. -->
+        <div class="elo-pair">
+          <div class="tour-scroll elo-scroll" data-elo-side="control">
+            <table aria-label="ELO measured in Civilization VI under computer control">
+              <thead>
+                <tr><th scope="colgroup" colspan="4" class="elo-side-head">Civilization VI &#183; computer control</th></tr>
+                <tr><th scope="col" rowspan="2"></th><th scope="col" rowspan="2" class="is-ident">Player</th><th scope="colgroup" colspan="2" class="is-group is-split">6P Continents Online</th></tr>
+                <tr><th scope="col" class="is-split"><button type="button" class="rank-sort" data-sort="control:continents6_no_diplo" aria-pressed="true" title="6P Continents Online: Every victory but the Diplomatic, measured in Civilization VI under computer control (the benchmark) and in hot-seat games. Sort both tables by this column">Diplo off</button></th><th scope="col"><button type="button" class="rank-sort" data-sort="control:continents6" aria-pressed="false" title="6P Continents Online: Every victory on, measured in Civilization VI under computer control (the benchmark) and in hot-seat games. Sort both tables by this column">Diplo on</button></th></tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <div class="tour-scroll elo-scroll" data-elo-side="self">
+            <table aria-label="ELO measured in CIVVIS self-play">
+              <thead>
+                <tr><th scope="colgroup" colspan="10" class="elo-side-head">CIVVIS self-play</th></tr>
+                <tr><th scope="colgroup" colspan="8" class="is-group is-split">6P Continents Online</th><th scope="colgroup" colspan="2" class="is-group is-split">2P Pangaea</th></tr>
+                <tr><th scope="col" class="is-split"><button type="button" class="rank-sort" data-sort="self:continents6_no_diplo" aria-pressed="true" title="6P Continents Online: Every victory but the Diplomatic. Sort both tables by this column">Diplo off</button></th><th scope="col"><button type="button" class="rank-sort" data-sort="self:continents6" aria-pressed="false" title="6P Continents Online: Every victory on. Sort both tables by this column">Diplo on</button></th><th scope="col"><button type="button" class="rank-sort" data-sort="self:continents6_science" aria-pressed="false" title="6P Continents Online: The Science victory alone. Sort both tables by this column">Science</button></th><th scope="col"><button type="button" class="rank-sort" data-sort="self:continents6_culture" aria-pressed="false" title="6P Continents Online: The Culture victory alone. Sort both tables by this column">Culture</button></th><th scope="col"><button type="button" class="rank-sort" data-sort="self:continents6_religion" aria-pressed="false" title="6P Continents Online: The Religious victory alone. Sort both tables by this column">Religion</button></th><th scope="col"><button type="button" class="rank-sort" data-sort="self:continents6_diplomacy" aria-pressed="false" title="6P Continents Online: The Diplomatic victory alone. Sort both tables by this column">Diplomacy</button></th><th scope="col"><button type="button" class="rank-sort" data-sort="self:continents6_domination" aria-pressed="false" title="6P Continents Online: The Domination victory alone. Sort both tables by this column">Domination</button></th><th scope="col"><button type="button" class="rank-sort" data-sort="self:continents6_score" aria-pressed="false" title="6P Continents Online: The Score victory alone. Sort both tables by this column">Score</button></th><th scope="col" class="is-split"><button type="button" class="rank-sort" data-sort="self:pangaea2_no_religion" aria-pressed="false" title="2P Pangaea: Every victory but the Religious. Sort both tables by this column">Religion off</button></th><th scope="col"><button type="button" class="rank-sort" data-sort="self:pangaea2" aria-pressed="false" title="2P Pangaea: Every victory on. Sort both tables by this column">Religion on</button></th></tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
         </div>
         <details class="fine">
           <summary>How it is counted</summary>
@@ -1030,9 +1072,14 @@
     const viewOf = ([key, , stands]) => setups[key] || (stands ? fourPlayer[stands] : null);
     const standsIn = ([key, , stands]) => !setups[key] && !!stands && !!fourPlayer[stands];
     const reading = (r) => ({ elo: r.elo, margin: r.margin, bound: r.bound, games: r.games, wins: r.wins });
+    // The left table's columns: the setups Civilization VI itself was
+    // measured at, under computer control (the benchmark's levels) and in
+    // people's hot-seat games. The right table's are COLUMNS, CIVVIS
+    // self-play's fits.
+    const CONTROL = COLUMNS.filter((column) => column[2]);
     const entries = new Map();
     const entry = (key, base) => {
-      if (!entries.has(key)) entries.set(key, { ...base, at: {} });
+      if (!entries.has(key)) entries.set(key, { ...base, at: { control: {}, self: {} } });
       return entries.get(key);
     };
     for (const column of COLUMNS) {
@@ -1040,61 +1087,106 @@
       if (!view) continue;
       const rows = view.strategies && Array.isArray(view.strategies.rows) ? view.strategies.rows : [];
       for (const r of rows) {
-        if (r.kind === "agent") entry("agent:" + r.id, { kind: "agent", name: r.name, tilt: r.tilt }).at[key] = reading(r);
+        if (r.kind === "agent") entry("agent:" + r.id, { kind: "agent", name: r.name, tilt: r.tilt }).at.self[key] = reading(r);
       }
+    }
+    for (const column of CONTROL) {
+      const view = viewOf(column), key = column[0];
+      if (!view) continue;
       const levels = view.firaxis && Array.isArray(view.firaxis.levels) ? view.firaxis.levels : [];
       for (const l of levels) {
-        if (l.now) entry("level:" + l.level, { kind: "level", name: "Lv " + l.level + " " + l.name, tilt: "Classic Firaxis AI" }).at[key] = reading(l.now);
+        if (l.now) entry("level:" + l.level, { kind: "level", name: "Lv " + l.level + " " + l.name, tilt: "Classic Firaxis AI" }).at.control[key] = reading(l.now);
       }
       for (const pl of Array.isArray(view.people) ? view.people : []) {
-        entry("person:" + pl.name, { kind: "person", name: pl.name, tilt: "Person" }).at[key] = reading(pl);
+        entry("person:" + pl.name, { kind: "person", name: pl.name, tilt: "Person" }).at.control[key] = reading(pl);
       }
     }
     const card = document.getElementById("tour-elo");
     if (!card || !entries.size) return;
-    const body = card.querySelector("tbody");
-    const said = (r, column) => {
-      const x = r.at[column[0]];
+    const bodies = { control: card.querySelector('[data-elo-side="control"] tbody'), self: card.querySelector('[data-elo-side="self"] tbody') };
+    const said = (r, side, column) => {
+      const x = r.at[side][column[0]];
       if (!x) return "";
       const interval = x.margin ? "; 95% interval " + Math.round(x.elo - x.margin) + "–" + Math.round(x.elo + x.margin) : "";
-      return GROUP(column[0]) + ", " + column[1] + ": " + (r.kind === "level"
+      return (side === "control" ? "Civilization VI, " : "CIVVIS self-play, ") + GROUP(column[0]) + ", " + column[1] + ": " + (r.kind === "level"
         ? "our seat won " + x.wins + " of " + x.games + " benchmark games against five of it"
         : r.kind === "person"
         ? "won " + x.wins + " of " + x.games + (x.games === 1 ? " game" : " games") + " against the Civ AI Agents in Civilization VI"
         : "won " + x.wins + " of " + x.games + " rated tables" + (standsIn(column) ? " (four-player tables)" : "")) + interval;
     };
-    // Strongest first in the column sorted by; a row with no figure there
-    // follows every row that has one, in Diplo off's order, then by name. At
-    // a tie an agent stands above a level, and a level above a person.
+    // A sort is a side and a setup ("self:continents6_science"), or both
+    // sides' Diplo off together ("both:"), the ranking the page opens on:
+    // every player on the one scale by its Diplo off figure, wherever it was
+    // measured. Strongest first; a row with no figure in the column sorted
+    // by follows every row that has one, in that Diplo off ranking, then by
+    // name. At a tie an agent stands above a level, and a level above a
+    // person.
     const rank = { agent: 0, level: 1, person: 2 };
-    const figure = (r, key) => (r.at[key] ? r.at[key].elo : null);
-    const order = (key) => [...entries.values()].sort((a, b) =>
-      ((figure(a, key) === null) - (figure(b, key) === null))
-      || ((figure(b, key) ?? figure(b, COLUMNS[0][0]) ?? -Infinity) - (figure(a, key) ?? figure(a, COLUMNS[0][0]) ?? -Infinity))
+    const OPEN = "both:" + COLUMNS[0][0];
+    const figure = (r, sort) => {
+      const [side, key] = sort.split(":");
+      const of = (where) => (r.at[where][key] ? r.at[where][key].elo : null);
+      return side === "both" ? of("self") ?? of("control") : of(side);
+    };
+    const order = (sort) => [...entries.values()].sort((a, b) =>
+      ((figure(a, sort) === null) - (figure(b, sort) === null))
+      || ((figure(b, sort) ?? figure(b, OPEN) ?? -Infinity) - (figure(a, sort) ?? figure(a, OPEN) ?? -Infinity))
       || (rank[a.kind] - rank[b.kind]) || a.name.localeCompare(b.name));
-    const show = (key) => {
+    const cells = (row, r, side, columns, sort, splits) => {
+      columns.forEach((column, at) => {
+        const x = r.at[side][column[0]];
+        const sorted = sort === side + ":" + column[0] || (sort === OPEN && column[0] === COLUMNS[0][0]);
+        const cell = el("td", (x ? "is-value" : "is-none") + (splits.includes(at) ? " is-split" : "") + (sorted ? " is-sorted" : ""), x ? elo(x) : "–");
+        if (x && x.margin) cell.append(el("small", "", pm(x.margin)));
+        if (x) cell.title = said(r, side, column);
+        row.append(cell);
+      });
+    };
+    const show = (sort) => {
       let place = 0;
-      body.textContent = "";
-      for (const r of order(key)) {
-        const row = el("tr", "is-" + r.kind);
-        row.title = [r.name, ...COLUMNS.map((column) => said(r, column))].filter(Boolean).join("\n");
-        row.append(el("td", "is-n", String(++place)));
+      bodies.control.textContent = "";
+      bodies.self.textContent = "";
+      for (const r of order(sort)) {
+        const title = [r.name, ...CONTROL.map((column) => said(r, "control", column)), ...COLUMNS.map((column) => said(r, "self", column))].filter(Boolean).join("\n");
+        const left = el("tr", "is-" + r.kind), right = el("tr", "is-" + r.kind);
+        left.title = right.title = title;
+        left.dataset.eloRow = right.dataset.eloRow = String(place);
+        left.append(el("td", "is-n", String(++place)));
         const name = el("td", "is-ident", r.name);
         if (r.tilt) name.append(el("small", "", r.tilt));
-        row.append(name);
-        COLUMNS.forEach((column, at) => {
-          const x = r.at[column[0]];
-          const cell = el("td", (x ? "is-value" : "is-none") + (at === 0 || at === 8 ? " is-split" : "") + (column[0] === key ? " is-sorted" : ""), x ? elo(x) : "–");
-          if (x && x.margin) cell.append(el("small", "", pm(x.margin)));
-          if (x) cell.title = said(r, column);
-          row.append(cell);
-        });
-        body.append(row);
+        left.append(name);
+        cells(left, r, "control", CONTROL, sort, [0]);
+        cells(right, r, "self", COLUMNS, sort, [0, 8]);
+        bodies.control.append(left);
+        bodies.self.append(right);
       }
-      for (const button of card.querySelectorAll(".rank-sort")) button.setAttribute("aria-pressed", String(button.dataset.sort === key));
+      for (const button of card.querySelectorAll(".rank-sort"))
+        button.setAttribute("aria-pressed", String(button.dataset.sort === sort || (sort === OPEN && button.dataset.sort.endsWith(":" + COLUMNS[0][0]))));
     };
     for (const button of card.querySelectorAll(".rank-sort")) button.addEventListener("click", () => show(button.dataset.sort));
-    show(COLUMNS[0][0]);
+    show(OPEN);
+    // A row is one player across both tables: pointing at it in either
+    // lights it in both.
+    const light = (index) => {
+      for (const row of card.querySelectorAll("tbody tr")) row.classList.toggle("is-hover", row.dataset.eloRow === index);
+    };
+    for (const body of Object.values(bodies)) {
+      body.addEventListener("mouseover", (event) => { const row = event.target.closest("tr"); if (row) light(row.dataset.eloRow); });
+      body.addEventListener("mouseleave", () => light(null));
+    }
+    // Scrolling either table sideways scrolls the other the same share of
+    // its own width.
+    const panes = [...card.querySelectorAll(".elo-scroll")];
+    let leading = null;
+    for (const pane of panes) {
+      pane.addEventListener("scroll", () => {
+        if (leading && leading !== pane) return;
+        leading = pane;
+        const span = pane.scrollWidth - pane.clientWidth, share = span > 0 ? pane.scrollLeft / span : 0;
+        for (const other of panes) if (other !== pane) other.scrollLeft = Math.round(share * (other.scrollWidth - other.clientWidth));
+        requestAnimationFrame(() => requestAnimationFrame(() => { if (leading === pane) leading = null; }));
+      });
+    }
     // How each column was measured, and where the four-player fits stand in.
     const fitted = COLUMNS.map((column) => {
       const s = viewOf(column) && viewOf(column).strategies;

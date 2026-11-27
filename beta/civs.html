@@ -526,7 +526,7 @@
           <a class="site-link sub-link" href="../win-analytics/" title="Who wins, how and when: the games against Civilization VI&#8217;s own AI beside the CIVVIS self-play games.">Win Analytics</a>
           <a class="site-link sub-link" href="../elo-rankings/" title="The Civ AI Agents and Civilization VI&#8217;s own AI on one Elo scale, now and over time.">ELO Rankings</a>
           <a class="site-link sub-link" href="../civvis-performance/" title="How fast the simulator plays: the fastest game on video and how long a self-play game takes.">CIVVIS Performance</a>
-          <a class="site-link sub-link" href="../random-ai-charts/" title="Charts the AI agents added on their own, kept here until they are asked for or talked over.">Random AI Charts</a>
+          <a class="site-link sub-link" href="../unreviewed-gen-ai-charts/" title="Charts the AI agents added on their own, kept here until they are asked for or talked over.">Unreviewed Gen AI Charts</a>
         </div>
       </div>
       <a class="site-link" href="../../tournaments/" title="Series of verification games against Civilization VI&#8217;s own AI: running, scheduled and finished.">Tournaments</a>
@@ -792,12 +792,12 @@
           <h3 class="civ-step-title"><span class="civ-step-n">6</span><span>Which victory to race for <span class="civ-step-turns">turns 100&#8211;250</span></span></h3>
           <p class="civ-step-why">By turn 100 the map shows which victory is in reach.</p>
         </header>
-        <!-- Its chart, the win rate by the victory aimed for, is on Random AI
-             Charts (operator, 2026-11-25: "please move all the ai generated
+        <!-- Its chart, the win rate by the victory aimed for, is on Unreviewed Gen
+             AI Charts (operator, 2026-11-25: "please move all the ai generated
              charts that i havent approved of or we have discussed to here"):
              an agent added it beyond the "chart or two" asked for. The
              decision stays in the timeline. -->
-        <p class="rank-sub"><a href="../random-ai-charts/#civ-victories">Its chart is on Random AI Charts.</a></p>
+        <p class="rank-sub"><a href="../unreviewed-gen-ai-charts/#civ-victories">Its chart is on Unreviewed Gen AI Charts.</a></p>
         <details class="fine">
         <summary>How it is counted</summary>
         <p class="rank-note" id="civ-filtered-note">
@@ -1015,7 +1015,7 @@
         ["level", "diplo", "won", "day", "city2", "city3", "pantheon", "founder", "follower", "invaded"].map(F);
       // Where the game stood at turns 50 and 100: -1 is a mark no summary
       // holds. (The victory it aimed for, the row's last field, is counted
-      // on Random AI Charts.)
+      // on Unreviewed Gen AI Charts.)
       const [CITIES50, RIVAL50, SCIENCE100] = ["cities50", "rival_cities50", "science100"].map(F);
       const levels = GAMES ? [...new Set(GAMES.rows.map((r) => r[LEVEL]))].sort((a, b) => b - a) : [];
       const pick = {
