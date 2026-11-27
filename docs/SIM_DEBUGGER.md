@@ -207,6 +207,25 @@ dossiers) are the viewer's own and were already moved by their title bars
 (`[data-widget-drag]` in `web/assets/app.js`), on one screen and in each
 half.
 
+## New games on a set world
+
+Operator, 2026-11-27: "in civvis debugger, above start new game with
+seclected settings, add a 2P pangaea New Game, 6P Continents New Game on teh
+right. theses function the same as the new game except set the player count
+and map as well to the claimed settings. same for civvis: edge of tomorrow".
+
+In a played game (the AI Debugger, Edge of Tomorrow, and a sim debugger game
+picked in Game Setup) the left panel has two buttons over Start new game:
+**2P Pangaea New Game** on the left and **6P Continents New Game** on the
+right (`#preset-games`, shown with `body.debugger-view`, and on Edge of Tomorrow, which wears the Civilization VI screen, with `html.tomorrow`). Each sets World size
+(2, a Duel world, or 6, a Small one) and Map (Pangaea or Continents) on Game
+Setup, as a person picking them would, so each select's own listener re-fits
+what follows from it and the panel stages the settings, then starts the game
+as Start new game starts it (`startPresetGame`, `startNewSimulation`), with
+every other setting as it stands. Game Setup then shows what the game was
+started with. They are off while a game is being started and in the Civilization VI
+mode, whose maps are that game's.
+
 ## Two views
 
 A game under the debugger is shown one of two ways, and the bar's **Single
@@ -1847,19 +1866,33 @@ path). these should alert on the top section out in the distance."
   on the left. move futures up to be right of this. then the -10, -1, 1, 10
   line. then play time.then "B stopped on turn 185..." drop locked. should
   always be locked. drop the civvis and civvis ai debugger things"): Home,
-  CIVVIS and New game (gold); the title; Turn 1, Era back, −10, −1, +1, +10,
-  Era forward (2026-11-27, below); Play Time; what
+  Charts/ and CIVVIS (2026-11-27, below); the title; 2P Pangaea New Game and
+  6P Continents New Game; Turn 1, Era back, −10, −1, +1, +10, Era forward
+  (2026-11-27, below); Play Time; what
   the page says; then Following, Create Branch and Autosearch. To the fork
   and Futures were dropped later that day ("the turn box doesnt appear right
   initially odten. please drop to the fork and future to the end": their
   words were cut short on the card, and To the fork filled in only once the
   worlds parted), and the title went from 19 px to 22 px ("title can be a
   bit bigger"; `clamp(16px, 2.2vw, 22px)`, one line in the 330 px card).
-  The futures are always played out. Home and CIVVIS are relative links (`home`,
-  `./`), so the `/test` lane keeps its own. New game loads the page again
-  at its own address without `?game=` (`strangeNewGame`): the published
-  page opens each visit on a seed of its own (`OPENING_SEED`,
-  `beta/shim.js`), so that is a new world, one timeline again.
+  The futures are always played out. On 2026-11-27 ("for doctor strange's
+  civvis, make the top buttons Home, Charts/, and CIVVIS and color code
+  them appropriately. Make the title line a bit bigger. and more readable.
+  (maybe make the buttons above it a bit different section. under the
+  title, lets have a 2P Pangaea New Game option and 6P Continents New Game
+  option") the row over the title became Home, Charts/ and CIVVIS in the
+  site list's colours (Home and Charts/ blue, CIVVIS gold), in a strip of
+  its own over a rule; the title went to 25 px in a lighter gold with a
+  shadow (`clamp(17px, 2.5vw, 25px)`), the card to 360 px (`--strange-card`,
+  which the cards beside it stand clear of) so it stays one line; and New
+  game became two buttons under the title. Home, Charts/ and CIVVIS are
+  relative links (`home`, `charts/ai-insights/`, `./`), so the `/test` lane
+  keeps its own. 2P Pangaea New Game and 6P Continents New Game load the
+  page again at its own address without `?game=` and with `players` and
+  `map` set (`strangeNewGame`, `strangeNewGameAddress`), which the page
+  reads as any link's (`beta/shim.js`); the published page opens each visit
+  on a seed of its own (`OPENING_SEED`), so that is a new world of that
+  many civilizations on that map, one timeline again.
 - **The base timeline is picked before Branch.** Operator, 2026-11-25: "the
   option to branch in the simulator should be preceded by a selection of the
   base timeline". Over the Branch picker, a Base timeline picker lists every
@@ -2297,7 +2330,9 @@ Duel.
   on the right the left panel's Auto-play, moved in whole (`#autoplaybar`,
   so the page's own `autoplay` drives it where it stands): Turns and Civ AI
   over Jump back, Auto-play and Wake here. What Auto-play's note says is
-  said on the bar. Start new game stays in the left panel. With little room
+  said on the bar. Start new game stays in the left panel, with 2P Pangaea
+  New Game and 6P Continents New Game over it (see New games on a set
+  world). With little room
   the line goes under the other two.
 - **The screen** has no minimap and no map controls (operator, 2026-11-26:
   "should not have the world minimap or <...(spin)x thing showing"); the map

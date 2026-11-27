@@ -3584,9 +3584,9 @@ def check_doctor_strange(bar: Bar, address: str) -> None:
     # followed world does not seat. Before it, Following: every open world,
     # by its letter and its name, and between the two Branch Next Best and
     # Branch 5 Next Best, which wait here: both of the toy's two strategies
-    # have a world on turn 1 already. Each box has its exit. Over the title,
-    # Home, CIVVIS and New game.
-    assert said == {"new": ["New game", False], "play": ["▶ Play Time", False], "first": ["Turn 1", True], "era-back": ["◀◀Era", True],
+    # have a world on turn 1 already. Each box has its exit. Under the title,
+    # 2P Pangaea New Game and 6P Continents New Game.
+    assert said == {"new2": ["2P Pangaea New Game", False], "new6": ["6P Continents New Game", False], "play": ["▶ Play Time", False], "first": ["Turn 1", True], "era-back": ["◀◀Era", True],
                     "back10": ["−10", True], "back1": ["−1", True], "on1": ["+1", False],
                     "on10": ["+10", False], "era-on": ["Era▶▶", False], "base": ["A · StockB · Jack", False],
                     "next1": ["Branch Next Best", True], "next5": ["Branch 5 Next Best", True],
@@ -3621,24 +3621,38 @@ def check_doctor_strange(bar: Bar, address: str) -> None:
     # turn is written on the line of the open turn, not at the foot of the window.
     names = "strange.order.map(letter => document.querySelector(`#strange-hud [data-strange-name=\"${letter}\"]`).textContent)"
     assert bar.ev(names) == ["Stock", "Jack"]
-    # Home, CIVVIS and New game stand over the title (operator 2026-11-26:
-    # "to the top of dr strange game, above the title, lets add home, civvis,
-    # new game buttons. new game can be gold"), New game in the gold of Play.
+    # Home, Charts/ and CIVVIS stand over the title in a strip of their own
+    # (operator 2026-11-27: "make the top buttons Home, Charts/, and CIVVIS
+    # and color code them appropriately ... maybe make the buttons above it a
+    # bit different section"), in the site list's colours: Home and Charts/
+    # blue, CIVVIS gold.
     top = bar.ev("(() => { const card = document.querySelector('#strange-hud .strange-title'), row = card.querySelector('.strange-top'),"
-                 " title = card.querySelector(':scope > b'), play = card.querySelector('[data-strange=\"play\"]');"
+                 " title = card.querySelector(':scope > b'), seen = held => getComputedStyle(held);"
                  " return [[...row.children].map(held => [held.tagName, held.textContent, held.getAttribute('href'), held.target || null]),"
-                 " row.getBoundingClientRect().bottom <= title.getBoundingClientRect().top,"
-                 " getComputedStyle(row.querySelector('.strange-new')).backgroundColor === getComputedStyle(play).backgroundColor]; })()")
-    assert top == [[["A", "Home", "home", "_top"], ["A", "CIVVIS", "./", "_top"], ["BUTTON", "New game", None, None]], True, True], top
-    # The title a size up (operator 2026-11-26: "title can be a bit bigger"),
-    # on one line, and under it the steps first: To the fork and Futures are
-    # gone.
+                 " row.getBoundingClientRect().bottom <= title.getBoundingClientRect().top, seen(row).borderBottomStyle,"
+                 " [...row.children].map(held => seen(held).color),"
+                 " seen(row.children[2]).backgroundImage.startsWith('linear-gradient')]; })()")
+    assert top == [[["A", "Home", "home", "_top"], ["A", "Charts/", "charts/ai-insights/", "_top"], ["A", "CIVVIS", "./", "_top"]], True, "solid",
+                   ["rgb(168, 216, 245)", "rgb(168, 216, 245)", "rgb(23, 19, 12)"], True], top
+    # The title a size up again (operator 2026-11-26: "title can be a bit
+    # bigger"; 2026-11-27: "Make the title line a bit bigger. and more
+    # readable"), on one line inside its card; under it the two new games,
+    # side by side, and then the steps: To the fork and Futures are gone.
     head = bar.ev("(() => { const card = document.querySelector('#strange-hud .strange-title'), title = card.querySelector(':scope > b'),"
-                  " deck = card.querySelector('.strange-time'), size = parseFloat(getComputedStyle(title).fontSize);"
-                  " return [Math.abs(size - Math.min(22, Math.max(16, innerWidth * .022))) < .5,"
-                  " title.getBoundingClientRect().height < size * 1.6, deck.firstElementChild.className,"
+                  " deck = card.querySelector('.strange-time'), size = parseFloat(getComputedStyle(title).fontSize), news = card.querySelector('.strange-news');"
+                  " const box = held => held.getBoundingClientRect(), [two, six] = [...news.children].map(box);"
+                  " return [Math.abs(size - Math.min(25, Math.max(17, innerWidth * .025))) < .5,"
+                  " box(title).height < size * 1.6, title.scrollWidth <= title.clientWidth, deck.firstElementChild.className,"
+                  " box(title).bottom <= box(news).top, box(news).bottom <= box(deck).top, Math.round(two.top) === Math.round(six.top) && two.right <= six.left,"
+                  " [...news.children].every(held => held.scrollWidth <= held.clientWidth),"
                   " !!card.querySelector('[data-strange=\"fork\"], [data-strange=\"futures\"]')]; })()")
-    assert head == [True, True, "strange-steps", False], head
+    assert head == [True, True, True, "strange-steps", True, True, True, True, False], head
+    # Each is a new game on its world: the page again, with no game named,
+    # and the players and map its address names (`beta/shim.js`).
+    assert bar.ev("['new2', 'new6'].map(name => { const held = document.querySelector(`#strange-hud [data-strange=\"${name}\"]`);"
+                  " return strangeNewGameAddress(+held.dataset.players, held.dataset.map, 'https://civvis.ai/test/doctor-strange?game=7&shape=flat'); })") == [
+        "https://civvis.ai/test/doctor-strange?shape=flat&players=2&map=pangaea",
+        "https://civvis.ai/test/doctor-strange?shape=flat&players=6&map=continents"]
     inks = ("strange.order.map(letter => [strange.tint[letter], getComputedStyle(debugSplit.panes[letter].frame).borderLeftColor,"
             " getComputedStyle(document.querySelector(`#strange-hud [data-strange-world=\"${letter}\"]`)).borderTopColor])")
     assert bar.ev(inks) == [["#ff8f6b", "rgb(255, 143, 107)", "rgb(255, 143, 107)"], ["#6fd3e0", "rgb(111, 211, 224)", "rgb(111, 211, 224)"]]
@@ -5322,7 +5336,7 @@ def main() -> int:
               "the line across the window, which is the divide between the tree and the boxes and has the turn "
               "written on it; a branch is named by the player strategies that played it, its box is in its colour, "
               "and Create Branch is a picker that makes one in a step, a third world in a third box, from the timeline Following picks over it; "
-              "Home, CIVVIS and a gold New game stand over the title; the numbers band is a column a world in the "
+              "Home and Charts/ in blue and CIVVIS in gold stand over the title in a strip of their own, 2P Pangaea New Game and 6P Continents New Game under it; the numbers band is a column a world in the "
               "order of the lines under it, the same worlds one column headed A,C; the pointer over a box "
               "picks out its line, the divide is dragged, and a box's exit deletes its branch, line and window; "
               "always locked, the worlds go through the turns together, never seen a turn apart, and Play Time and Pause "
