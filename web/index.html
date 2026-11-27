@@ -4900,11 +4900,20 @@
   #victoryhud > .victory-region > .hud-region-bar { grid-area: 1 / 1 / 2 / -1; }
   #victoryhud > .victory-region > .victory-off-note { grid-area: 2 / 1 / 3 / -1; }
   #victoryhud > .victory-region > .hud-rail { grid-area: 3 / 2; }
+  /* The bar's height is one value that glides, and everything drawn at the
+     turn reads it: the gold's cut, its head, and both copies of the scale.
+     Each of them used to glide on its own transition, and the head's fell
+     behind the gold on every climb and caught up when it stopped (operator,
+     2026-11-27: "theres a white line that lags behind and catches up to the
+     rising gold bar. please fix so it stays aligned"). With one height there
+     is nothing for the head to lag. */
+  @property --rise { syntax: "<percentage>"; inherits: true; initial-value: 0%; }
   .turn-gauge {
     grid-area: 3 / 1; position: relative; width: 30px; margin: 2px 5px 2px 0;
     overflow: hidden; border-radius: 5px; container: turn-gauge / size;
     background: color-mix(in srgb, var(--gold) 8%, transparent);
     box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--gold) 24%, transparent);
+    transition: --rise .45s ease-out;
   }
   /* The gold stands the whole height and is cut off at the turn, so its
      colour belongs to the height and not to the bar: deep at the foot,
@@ -4913,7 +4922,6 @@
     position: absolute; inset: 0;
     background: linear-gradient(to top, color-mix(in srgb, var(--gold) 78%, #2a2008), var(--gold) 50%, var(--gold-bright));
     clip-path: inset(calc(100% - var(--rise, 0%)) 0 0 0);
-    transition: clip-path .45s ease-out;
   }
   /* The bar's head: a bright line that is all there is of it on turn 1. */
   .turn-gauge > i {
@@ -4921,7 +4929,6 @@
     bottom: clamp(0px, calc(var(--rise, 0%) - 2px), calc(100% - 2px));
     background: color-mix(in srgb, var(--gold-bright) 70%, #fff);
     box-shadow: 0 0 7px color-mix(in srgb, var(--gold-bright) 70%, transparent);
-    transition: bottom .45s ease-out;
   }
   /* The scale: a hairline across the bar at the height it stands at on a
      round turn, and the turn's figure hung just under it, so the bar's head
@@ -4931,7 +4938,7 @@
      cap's line is the top of the bar itself. */
   .turn-gauge-scale {
     position: absolute; inset: 0; color: color-mix(in srgb, var(--gold) 72%, transparent);
-    clip-path: inset(0 0 var(--rise, 0%) 0); transition: clip-path .45s ease-out;
+    clip-path: inset(0 0 var(--rise, 0%) 0);
   }
   .turn-gauge-scale.lit { color: #2a2008d9; clip-path: inset(calc(100% - var(--rise, 0%)) 0 0 0); }
   .turn-gauge-scale > b {
@@ -4955,16 +4962,14 @@
   }
   #victoryhud.victory-collapsed .turn-gauge { display: none; }
   @media (prefers-reduced-motion: reduce) {
-    .turn-gauge-fill, .turn-gauge > i, .turn-gauge-scale { transition: none; }
+    .turn-gauge { transition: none; }
   }
   /* A new game's bar starts where that game is, with no glide down from
      where the last game ended (operator, 2026-11-24: "have gold bar
      immediately start at 1/250 rather than a motion down", "between games
      that is"). `settleTurnGauge` in app_clock.js puts the bar at the new
      game's turn while this holds its motion off, and takes it away again. */
-  .turn-gauge.turn-gauge-settling > .turn-gauge-fill,
-  .turn-gauge.turn-gauge-settling > i,
-  .turn-gauge.turn-gauge-settling > .turn-gauge-scale { transition: none; }
+  .turn-gauge.turn-gauge-settling { transition: none; }
 
 
   .overlay-options { margin-top: 11px; padding-top: 10px; border-top: 1px solid var(--line-soft); }
