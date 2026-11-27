@@ -50,8 +50,7 @@ reads `~/civvis-civ6-runs/control`, which only the live host has.
 (seven end first), a neighbouring major took it every time. Of the 65 cities
 we lost in all 28, majors took 55, city-states and the Free Cities 9
 (loyalty flips after the capital went), barbarians 1 (Tawdenni, t105, to
-Line Infantry and Field Cannons). The eliminations come from one lane:
-religious-target games lost 21 of 119 Deity games to elimination (17.6%),
+Line Infantry and Field Cannons). Three quarters of the eliminations come from one lane: religious-target games lost 21 of 119 Deity games to elimination (17.6%),
 science-target games 7 of 131 (5.3%). Mali alone lost 11 of 30.
 
 **The war that takes the capital.** Declared on us at a median turn 68, by a
@@ -73,7 +72,7 @@ Temple) 21%, Walls 9%. Once at war it was a military unit 58% of the time.
 and at the fall in 18 of 21. A shooter stood in or beside it at the
 declaration in 14 of 21; at the fall one stood on the centre in 18. None of
 the 65 lost cities had an Encampment. Our military power was 0.19-0.34 of
-the strongest rival's at every mark from t20 to t80. Gold on turns at war with a major at 2x or worse: a median 60 banked; an
+the strongest rival's at every mark from t20 to t80. Gold, on turns at war with a major at 2x or worse: a median 60 banked; an
 Archer was not for sale at that price (Mali 050225Z t58: 68 Gold, the menu
 sold a Scout), so Gold bought 28 soldiers on those turns across the 28 games,
 while Faith bought 65 Missionaries or Apostles and 2 soldiers. Rival unique units were in sight before 24 of the 59
@@ -114,8 +113,7 @@ default hold, and the host refused every Fortify, Alert and Skip it sent
 them. `shooters-man-the-capital` (armed) calls a shooter on the capital's
 centre, finds no legal shot for it, and holds it there for the turn.
 
-**Attrition (summary.combat).** Kills per loss: eliminated 1.25, invaded
-survivors that lost a city 1.62, games that lost no city 2.9. Damage dealt
+**Attrition (summary.combat).** Kills per loss, over the 244 Deity summaries: eliminated 1.25, games that lost a city and survived 1.62, games that lost no city 2.9. Damage dealt
 per damage taken: 0.80, 0.93, 1.15.
 
 **Economy (summary marks).** At t60 the eliminated held a median 2 cities;
@@ -131,7 +129,7 @@ the summary of `civvis-t8-20261127T042704Z` (decider 760a9ab1), not from
 | heuristic | what the AI does today | live | gap | evidence |
 |---|---|---|---|---|
 | Scout heals in place, tanks a barb warrior | Recon follows the explore and contact sweeps (`ai/unit_turn.rs`, `advanced/scout_distance.rs`); healing is the generic wounded rotation (`advanced/battle_planner.rs`, `docs/LIVE_WOUNDED_MOVEMENT.md`); `opening-scout-comes-back` brings the opening Scout home | `opening-scout-comes-back`, `scout-first-opening` live; `barbarian-scouts-are-scouts` (Repair) withheld by the ledger | No rule says a wounded Scout fortifies to heal beside a barbarian rather than walking on | Not measured here: barbarians took 1 of 65 cities; Scouts are not in the death path at Deity |
-| Hide behind river, hills, woods/jungle | `safest-stand` (stand on the tile the danger field prices lowest), `strike-reach`, `risk-is-priced` (`advanced/priced_risk.rs`), `defend-where-you-stand`; the engine prices `tile_defense_bonus` (hills, features, forts) | all live | Terrain enters only through the danger field; a river between a defender and its attacker is not scored anywhere I found. **This change**: the stepped-out soldier takes the tile with the best cover (+3 hills, +3 woods/rainforest) and the fewest enemy melee beside it | Lisbon's Archers never left the centre to use any tile |
+| Hide behind river, hills, woods/jungle | `safest-stand` (stand on the tile the danger field prices lowest), `strike-reach`, `risk-is-priced` (`advanced/priced_risk.rs`), `defend-where-you-stand`; the engine prices `tile_defense_bonus` (hills, features, forts) | all live | Terrain and river crossings enter through the engine's combat pricing (`battle_solver/model.rs`, `engine_pricing.rs`), so they shape the danger a stand reads; nothing else picks a tile for its cover. **This change**: the stepped-out soldier takes the tile with the best cover (+3 hills, +3 woods/rainforest) and the fewest enemy melee beside it | Lisbon's Archers never left the centre to use any tile |
 | Warrior grinds a Spearman, +5 vs barbarians | Camp clearing: `camp-party` (Repair), `emptied-camp-is-taken`, `camp-tile-buyout`, `war-kills-the-bands-2` | live | ClearCamp forces hover beside fortified camps (memory: 2026-09-26 proxy census) | Barbarians are not the Deity killer in these 28 |
 | Units spawning and trapped | `builder-barbarian-safety`, `builders-work-through-raiders`, `civilian-out-of-reach` (`docs/CIVILIAN_SAFETY.md`) cover civilians | the first two live; `civilian-out-of-reach` off | Military units are not checked against camp spawn rings | Not seen in the 28 |
 | Keep units alive with barbs | `ranged-hp-reserve`, `doomed-blow-veto`, `falling-city-outranks-the-heal`; `wounded-out-of-reach` and `swap-rotation` off | partly | No barbarian-phase preservation rule of its own | — |
