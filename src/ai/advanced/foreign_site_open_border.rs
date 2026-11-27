@@ -38,12 +38,23 @@
 //! science denial filters, `passage-waits-past-the-opening`'s hold,
 //! [`AdvancedAi::open_borders_affordable`]'s reserve), with the view's hidden
 //! civics revealed for the purchase and restored after it
-//! ([`AdvancedAi::reveal_enforcing_civics`]). A site is reachable when it is
+//! ([`AdvancedAi::reveal_enforcing_civics`]), save one exception: the
+//! passage gate's military hold is waived for a declared friend or an ally.
+//! The gate answers rivals that declared war right after granting passage,
+//! all nine Unfriendly; a friend or ally cannot declare while that bond
+//! stands. The first armed live game (civvis-t7-20261127T075243Z, Deity) left
+//! Mead idle from t132 beside England and Ethiopia, both friends, at 1.9 to
+//! 5.3 times our military. When nobody sells, the journal names the filter
+//! that refused each seller; every six turns a held person with nothing to
+//! buy says why (no site known yet, a site open at a tile, or no major at
+//! peace holding one), so an idle person is never silent. A site is
+//! reachable when it is
 //! ours (Darwin only), explored, unowned and unsealed (Darwin only), or
 //! held by a seat at peace that lets us in (`Game::has_open_borders`; for
 //! Mead a city-state only as its Suzerain). Once the person is used the need is
 //! gone and nothing more happens. Headless games retire Great People at
 //! once, so only the live mirror can fire this; off, nothing changes.
+use super::passage_waits_past_the_opening::PassageHold;
 use super::AdvancedAi;
 use crate::game::Game;
 use crate::think;
@@ -57,6 +68,19 @@ pub(super) enum ForeignSite {
     ForeignCampus,
     /// Charles Darwin: a natural wonder tile or one beside it.
     NaturalWonder,
+}
+
+/// What a held person's known sites leave the seat to do.
+enum SiteSurvey {
+    /// No site is known yet: the map has not shown one.
+    Unknown,
+    /// This tile serves the person today, so it can walk there itself.
+    Reachable(Pos),
+    /// Known site tiles, none held by a met major at peace.
+    NoSeller(usize),
+    /// The majors holding a site, each with its distance from our nearest
+    /// city.
+    Sellers(BTreeMap<usize, i32>),
 }
 
 impl ForeignSite {
@@ -100,8 +124,12 @@ impl AdvancedAi {
             return false;
         }
         for site in Self::held_foreign_site_people(g, pid) {
-            let Some(sellers) = Self::foreign_site_sellers(g, pid, site, excluded_partner) else {
-                continue;
+            let sellers = match Self::survey_foreign_sites(g, pid, site, excluded_partner) {
+                SiteSurvey::Sellers(sellers) => sellers,
+                survey => {
+                    self.journal_nothing_to_buy(g, pid, site, &survey);
+                    continue;
+                }
             };
             if self.buy_foreign_site_passage(
                 g,
@@ -202,24 +230,29 @@ impl AdvancedAi {
         }
     }
 
-    /// `None` when a site is already reachable (or none is known); else every
-    /// met, living, not-at-war major holding a site, with its site's distance
-    /// from our nearest city.
-    fn foreign_site_sellers(
+    /// Whether a site is known and open, and else every met, living,
+    /// not-at-war major holding one, with its site's distance from our
+    /// nearest city.
+    fn survey_foreign_sites(
         g: &Game,
         pid: usize,
         site: ForeignSite,
         excluded_partner: Option<usize>,
-    ) -> Option<BTreeMap<usize, i32>> {
+    ) -> SiteSurvey {
         let anchors: Vec<Pos> = g
             .player_city_ids(pid)
             .into_iter()
             .map(|cid| g.cities[&cid].pos)
             .collect();
         let mut sellers: BTreeMap<usize, i32> = BTreeMap::new();
+        let mut known = 0;
         for (pos, owner) in Self::foreign_site_tiles(g, site) {
             if Self::foreign_site_reachable(g, pid, site, pos, owner) {
-                return None;
+                return SiteSurvey::Reachable(pos);
+            }
+            // Our own Campus is never one of Mead's.
+            if owner != Some(pid) {
+                known += 1;
             }
             let Some(owner) = owner else {
                 continue;
@@ -246,7 +279,43 @@ impl AdvancedAi {
                 .and_modify(|nearest| *nearest = (*nearest).min(distance))
                 .or_insert(distance);
         }
-        (!sellers.is_empty()).then_some(sellers)
+        match (known, sellers.is_empty()) {
+            (0, _) => SiteSurvey::Unknown,
+            (_, true) => SiteSurvey::NoSeller(known),
+            _ => SiteSurvey::Sellers(sellers),
+        }
+    }
+
+    /// Every six turns, why a held person's sites leave nothing to buy, so a
+    /// person standing idle is never silent in the journal.
+    fn journal_nothing_to_buy(&self, g: &Game, pid: usize, site: ForeignSite, survey: &SiteSurvey) {
+        if g.turn % 6 != pid as u32 % 6 {
+            return;
+        }
+        let person = site.person();
+        let place = site.place();
+        match survey {
+            SiteSurvey::Unknown => {
+                think!(self.journal(), Diplomacy, Decision,
+                       "No {place} known for {person}";
+                       "foreign-site-buys-the-open-border: the map shows no {place} yet, \
+                        so there is no passage to buy");
+            }
+            SiteSurvey::Reachable(pos) => {
+                let (x, y) = crate::hex::axial_to_offset(pos.0, pos.1);
+                think!(self.journal(), Diplomacy, Decision,
+                       "A site is open to {person}";
+                       "foreign-site-buys-the-open-border: the {place} tile at civ6 ({x},{y}) \
+                        is open to us, so no passage is bought");
+            }
+            SiteSurvey::NoSeller(known) => {
+                think!(self.journal(), Diplomacy, Decision,
+                       "No seller for {person}";
+                       "foreign-site-buys-the-open-border: {known} known {place} tiles, none \
+                        held by a met major at peace");
+            }
+            SiteSurvey::Sellers(_) => {}
+        }
     }
 
     /// One grant from the nearest seller that will sell. Returns whether one
@@ -267,23 +336,43 @@ impl AdvancedAi {
         ranked.sort_unstable();
         let revealed = Self::reveal_enforcing_civics(g, pid);
         let mut bought = None;
+        let mut refusals: Vec<String> = Vec::new();
         for &(distance, partner) in &ranked {
-            let Some(deal) = Self::lump_open_borders_quote(g, pid, partner)
-                .filter(|deal| {
-                    self.culture_deal_allowed(deal, culture_threats)
-                        && self.science_denial_deal_allowed(deal, science_threats)
-                })
-                .filter(|deal| Self::open_borders_affordable(g, pid, deal))
-                // `passage-waits-past-the-opening`; `None` with it off.
-                .filter(|deal| self.passage_hold(g, pid, deal.partner).is_none())
-            else {
+            let civ = g.players[partner].civ.to_string();
+            let Some(deal) = Self::lump_open_borders_quote(g, pid, partner) else {
+                refusals.push(format!("{civ}: no price both sides gain from"));
                 continue;
+            };
+            if !(self.culture_deal_allowed(&deal, culture_threats)
+                && self.science_denial_deal_allowed(&deal, science_threats))
+            {
+                refusals.push(format!("{civ}: a culture or science threat"));
+                continue;
+            }
+            if !Self::open_borders_affordable(g, pid, &deal) {
+                refusals.push(format!(
+                    "{civ}: {:.0} Gold would spend into the reserve",
+                    deal.offer.gold
+                ));
+                continue;
+            }
+            // `passage-waits-past-the-opening`; `None` with it off. A friend
+            // or ally cannot declare war on us while that bond stands, so
+            // its military is no reason to withhold this one grant.
+            let waived = match self.passage_hold(g, pid, partner) {
+                Some(PassageHold::Stronger { .. }) if Self::passage_bond(g, pid, partner) => true,
+                Some(hold) => {
+                    refusals.push(format!("{civ}: {}", hold.reason(g.turn)));
+                    continue;
+                }
+                None => false,
             };
             let price = deal.offer.gold;
             if self.base.close_quick_deal(g, pid, deal) {
-                bought = Some((partner, distance, price));
+                bought = Some((partner, distance, price, waived));
                 break;
             }
+            refusals.push(format!("{civ}: the trade did not validate"));
         }
         for rival in revealed {
             g.players[rival]
@@ -293,12 +382,17 @@ impl AdvancedAi {
         let person = site.person();
         let place = site.place();
         match bought {
-            Some((partner, distance, price)) => {
+            Some((partner, distance, price, waived)) => {
+                let bond = if waived {
+                    "; their military is over the passage gate, but they are our friend"
+                } else {
+                    ""
+                };
                 think!(self.journal(), Diplomacy, Decision,
                        "Buying passage from {} for {person}", g.players[partner].civ;
                        "foreign-site-buys-the-open-border: {person} has no reachable {place}; \
                         theirs is {distance} tiles from our nearest city, the grant costs \
-                        {price:.0} Gold");
+                        {price:.0} Gold{bond}");
                 true
             }
             None => {
@@ -306,12 +400,18 @@ impl AdvancedAi {
                     think!(self.journal(), Diplomacy, Decision,
                            "No passage on sale for {person}";
                            "foreign-site-buys-the-open-border: {person} has no reachable {place} \
-                            and none of the {} seats holding one sells passage",
-                           ranked.len());
+                            and none of the {} seats holding one sells passage: {}",
+                           ranked.len(), refusals.join("; "));
                 }
                 false
             }
         }
+    }
+
+    /// A declared friendship or an alliance: either forbids a declaration of
+    /// war while it stands (`legal_actions` withholds it, as the host does).
+    fn passage_bond(g: &Game, pid: usize, partner: usize) -> bool {
+        g.are_friends(pid, partner) || g.are_allied(pid, partner)
     }
 }
 
