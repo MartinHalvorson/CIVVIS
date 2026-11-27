@@ -751,7 +751,8 @@ def windows_command_lines(pid: int | None = None, timeout_s: float = 30.0) -> li
     query = "Get-CimInstance Win32_Process"
     if pid is not None:
         query += f" -Filter 'ProcessId={int(pid)}'"
-    script = ("[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; "
+    # UTF-8 without a byte-order mark: a BOM would glue itself to the first pid.
+    script = ("[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false; "
               f"{query} | ForEach-Object {{ [Console]::Out.WriteLine("
               "([string]$_.ProcessId) + ' ' + [string]$_.CommandLine) }")
     try:
@@ -762,7 +763,7 @@ def windows_command_lines(pid: int | None = None, timeout_s: float = 30.0) -> li
         return []
     rows = []
     for line in out.splitlines():
-        head, _, command = line.strip().partition(" ")
+        head, _, command = line.strip().lstrip("\ufeff").partition(" ")
         if head.isdigit():
             rows.append((int(head), command))
     return rows

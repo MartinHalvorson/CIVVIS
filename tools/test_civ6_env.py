@@ -497,7 +497,8 @@ class WindowsProcesses(unittest.TestCase):
             self.assertEqual(civ6_env.game_pids(), [])
 
     def test_command_lines_are_parsed_from_powershell(self):
-        out = "12 \"C:\\b\\civvis-hotseat.exe\" civ6_brain.py --run-dir C:\\r\n13 \n\nnoise\n"
+        # A byte-order mark, should PowerShell write one, must not hide the first row.
+        out = "\ufeff12 \"C:\\b\\civvis-hotseat.exe\" civ6_brain.py --run-dir C:\\r\n13 \n\nnoise\n"
         with mock.patch.object(civ6_env.subprocess, "run",
                                return_value=mock.Mock(stdout=out)) as ran:
             rows = civ6_env.windows_command_lines(12)

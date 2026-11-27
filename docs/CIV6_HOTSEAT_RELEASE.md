@@ -18,9 +18,9 @@ by `tools/package_hotseat.py` with PyInstaller. Nothing was rewritten for it.
 
 | | macOS (Apple silicon) | Windows (x86-64) |
 |---|---|---|
-| The game with CIVVIS | **measured**: the project plays on it | **unmeasured**: nobody has run it with the game |
-| The bundle | built, run and self-checked on a Mac and in CI | built and self-checked in CI only |
-| Supported | yes | not yet: see section 2 |
+| The harness with the game | **measured** from a checkout: the project plays on it | **unmeasured**: nobody has run it with the game |
+| The bundle | built, run and self-checked on a Mac and in CI; **has not yet played a real game** | built and self-checked in CI only |
+| Supported | once the bundle has played one game (section 2) | not yet: see section 2 |
 
 Steam installs only. Epic Games installs and Linux (native or Proton) are out
 of scope: nothing resolves them and nothing has been tried on them. The macOS
@@ -167,6 +167,8 @@ on a runner with no game.
 | paths in the mod's SQL | measured for macOS paths | **unmeasured** (see below) |
 | Hot Seat menus, hand-over screen, cover | measured | **unmeasured** |
 | the game's process names | measured (`Civ6_Exe_Child`) | **unmeasured** (`CivilizationVI.exe`, `CivilizationVI_DX12.exe` from the Steam depot) |
+| a whole game played by the **frozen bundle** (not a checkout) | **unmeasured**: no game was launched while it was built | **unmeasured** |
+| a browser-downloaded copy past Gatekeeper / SmartScreen | **unmeasured** | **unmeasured** |
 
 ### Found on the way, fixed for Windows in this bundle
 
@@ -210,6 +212,15 @@ Windows; each is fixed behind a platform check, so macOS runs exactly as before.
 Off the bundle's path and not changed: `watch.GameLiveness` (used by
 `civ6_play.py`'s relay) still probes with `os.kill(pid, 0)`, and `--resume`
 looks for saves in the macOS folder only.
+
+### What must be measured on a Mac before the bundle is called supported there
+
+One whole short game played by the unpacked bundle, not a checkout, from a
+browser download: clear the quarantine as in section 1, `doctor`, `selfcheck`,
+then `civvis-hotseat --manual-lobby` with one Human row after yours for ten
+turns. The seat's `turn` events must read `"orders_source": "civvis"`, and
+`civvis-hotseat --stop` then `uninstall` must leave `codesign -v` on `Civ6.app`
+reporting the bundle valid again.
 
 ### What must be measured on a Windows machine with Civilization VI
 

@@ -37,8 +37,8 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  bundle:
-    name: ${{ matrix.name }}
+  hotseat-bundle:
+    name: hotseat-bundle (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     strategy:
@@ -123,22 +123,32 @@ jobs:
         working-directory: ${{ runner.temp }}/player
         run: ./civvis-hotseat/${{ matrix.program }} selfcheck
 
-      # A finding, not a gate: why the bundle runs in Python's UTF-8 mode. From a
-      # checkout under the Windows code page the mod's agent does not decode, so
-      # install.py would fail on its first read.
-      - name: "Finding: a source run outside UTF-8 mode reads the mod as"
-        if: runner.os == 'Windows'
+      # Findings, not gates: measurements of the Windows Python the bundle runs
+      # on, printed for docs/CIV6_HOTSEAT_RELEASE.md. Run whatever came before.
+      #  * why the bundle runs in UTF-8 mode: from a checkout under the Windows
+      #    code page the mod's agent does not decode, so install.py fails first;
+      #  * why civ6_decision_trace asks os.stat twice on Windows: a path stat and
+      #    a handle stat of one file disagree there, which killed every worker.
+      - name: "Findings: the code page, and stat against fstat"
+        if: always() && runner.os == 'Windows'
         shell: bash
         run: |
           python -X utf8=0 - <<'PY'
-          import locale
+          import locale, os
           from pathlib import Path
           encoding = locale.getpreferredencoding(False)
+          agent = Path("tools/civ6_control/mod/CivvisControlAgent.lua")
           try:
-              Path("tools/civ6_control/mod/CivvisControlAgent.lua").read_text()
+              agent.read_text()
               print(f"{encoding}: CivvisControlAgent.lua decodes")
           except UnicodeDecodeError as error:
               print(f"{encoding}: CivvisControlAgent.lua does not decode ({error})")
+          path = os.stat(agent)
+          with agent.open("rb") as handle:
+              opened = os.fstat(handle.fileno())
+          for field in ("st_dev", "st_ino", "st_size", "st_mtime_ns", "st_ctime_ns"):
+              a, b = getattr(path, field), getattr(opened, field)
+              print(f"{field:<12} stat {a}  fstat {b}  {'same' if a == b else 'DIFFERENT'}")
           PY
 
       - uses: actions/upload-artifact@v4
