@@ -6384,6 +6384,14 @@ pub const GENES: &[Gene] = &[
     // Religion lane follows its lane; settling is unchanged. Opt-in; see
     // `advanced/religion_core_ends_expansion.rs`.
     Gene { tag: "religion-core-ends-expansion", field: "religion_core_ends_expansion", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_core_ends_expansion, disable: AdvancedAi::disable_religion_core_ends_expansion },
+    // 8 of 40 reviewed Lv 8 tourney games (2026-11-26) kept a land force
+    // mustering for a siege ("will muster for Siege Brisbane", 87 lines
+    // t41-t81) while the plan read "recovery | at war and losing ground at
+    // home" and Cairo and Baghdad were under attack; the siege read "nothing
+    // to open the walls" and Cairo fell at t81. Under Recovery a Siege row
+    // the train has not invested stands down. Opt-in; see
+    // `advanced/recovery_holds_the_muster.rs`.
+    Gene { tag: "recovery-holds-the-muster", field: "recovery_holds_the_muster", kind: Kind::OptIn, enable: AdvancedAi::enable_recovery_holds_the_muster, disable: AdvancedAi::disable_recovery_holds_the_muster },
     // ---- append: s-s ------------------------------------------------
     // Kristina Deity 11-10 reached Nationalism at t122 with 8 cities on three
     // terrain classes and built no Open-Air Museum by t150 (+48 Culture and

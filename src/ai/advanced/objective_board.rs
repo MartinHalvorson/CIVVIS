@@ -1355,6 +1355,25 @@ impl AdvancedAi {
                 "siege-at-the-walls-dies-first: {} Siege row(s) held while it lives; the army stays home",
                 siege_cities.len());
         }
+        // `recovery-holds-the-muster`: under Recovery (or within a few turns
+        // of it) a siege the train has not invested raises no row. False
+        // with the gene off. See `advanced/recovery_holds_the_muster.rs`.
+        let recovery_hold = self.recovery_muster_held(g, plan);
+        if recovery_hold && !walls_hold {
+            let held: Vec<String> = siege_cities
+                .iter()
+                .filter(|cid| self.recovery_holds_the_siege(g, **cid))
+                .filter_map(|cid| g.cities.get(cid))
+                .filter(|city| city.owner != pid && g.is_at_war(pid, city.owner))
+                .map(|city| city.name.clone())
+                .collect();
+            if !held.is_empty() {
+                think!(self.journal(), Military, Decision,
+                    "Siege rows stand down: losing ground at home";
+                    "recovery-holds-the-muster: no muster for {} while the plan reads Recovery; the army stays home",
+                    held.join(", "));
+            }
+        }
         // `outclassed-siege-stands-down`: cities whose Siege row is left out
         // this assessment. They still cover their neighbourhood against
         // Destroy rows below. Empty with the gene off.
@@ -1368,6 +1387,10 @@ impl AdvancedAi {
             }
             let city_pos = city.pos;
             if walls_hold {
+                stood_down.push(city_pos);
+                continue;
+            }
+            if recovery_hold && self.recovery_holds_the_siege(g, cid) {
                 stood_down.push(city_pos);
                 continue;
             }
