@@ -555,6 +555,44 @@ frame rate a loaded machine was managing, not drift.
   `GameInfo.UnitOperations` / `GameInfo.UnitCommands` and their resolution is
   reported at startup.
 
+### A person's hotseat game plays like single player
+
+`tools/civ6_hotseat.py` seats a person at seat 0 and CIVVIS everywhere else.
+Two things, both only in an install for a game a person plays
+(`HotseatCover`, `HotseatAutoStart`; `--no-cover` and `--keep-handover` turn
+them off, and no other install carries them):
+
+- **A cover over every turn that is not theirs** (`CivvisHotseatCover.lua`, an
+  `AddUserInterfaces` context of its own). It is a popup, queued at
+  `PopupPriority.EndGameMenu`: popups are drawn in priority order, so it sits
+  over the hand-over (`PlayerChange`, Utmost+3) and every screen a CIVVIS seat
+  raises (High or lower, or not a popup at all, like the leader screens), and
+  under the game menu (Utmost+5), which Esc on the cover opens through the
+  hand-over's own route (`LuaEvents.PlayerChange_OpenInGameOptionsMenu`).
+  It goes up on the person's `LocalPlayerTurnEnd`, so it is up long before a
+  CIVVIS seat's hand-over is pressed.
+- **The person's hand-over pressed for them** (`CivvisHotseatScreen.autoStart`
+  in `CivvisControlAutoClose.lua`). The cover lifts on that press, which the
+  shipped screen announces (`LuaEvents.PlayerChange_Close`, PlayerChange.lua:59),
+  after the camera and zoom go back where the person ended their last turn
+  and another seat's selection is dropped.
+
+⚠ **A popup queued under a higher one is held hidden, and a hidden context
+does not tick.** That is why the shipped hotseat background asks for
+`AlwaysVisibleInQueue` (HotSeatBackground.lua:27), and it is why a cover
+alone would stop the game: the hand-over under it would never be pressed, and
+an announcement holding the engine's event lock (`ExclusivePopupManager:Lock`,
+PopupManager.lua:52-61) would never be closed. So in a cover game every screen
+the closer serves queues itself `AlwaysVisibleInQueue` on a CIVVIS seat's turn,
+and the hand-over always does (`CivvisCoverQueue`, a `UIManager` proxy in that
+shim): drawn, ticking and closed as before, under the cover. The cover's own
+clock is the backstop: a seat's hand-over pause still standing 1.5 s in is
+pressed by event (`LuaEvents.CivvisHotseatStartTurn`), which reaches a hidden
+context. A seat quiet for 90 s, 180 s with no seat active, or the person's own
+turn waiting 10 s makes the cover stand aside for that turn (`hotseat_cover`,
+reason `yield_*`), and the harness's screen rescue, which does not read the
+screen while the cover is up, sees the game again.
+
 ## The lobby a run sets up
 
 **The map size IS the player count.** There is no separate player-count control on
