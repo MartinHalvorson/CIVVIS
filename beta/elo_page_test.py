@@ -332,9 +332,14 @@ class Page(unittest.TestCase):
 
     def test_every_figure_is_shown_with_the_diplomatic_victory_on_and_off(self):
         # Player strategies: a column for each, its head sorting the list.
+        # It opens sorted by Diplo off (operator 2026-11-26: "player
+        # strategies should default diplo off"), by Diplo on only while the
+        # record has no diplo-off fit.
         strategies = PAGE[PAGE.index('id="rank-strategies"'):PAGE.index('id="elo-over-time"')]
         self.assertEqual(re.findall(r'data-sort="(\w+)" aria-pressed="(\w+)"[^>]*>([^<]+)<', strategies),
-                         [("on", "true", "Diplo on"), ("off", "false", "Diplo off")])
+                         [("on", "false", "Diplo on"), ("off", "true", "Diplo off")])
+        self.assertIn('show(VIEWS.off ? "off" : "on");', PAGE)
+        self.assertNotIn('show("on");', PAGE)
         self.assertIn("item.append(label, value(r, \"on\"), value(r, \"off\"));", PAGE)
         # The graph: one reading at a time, switched over the key.
         graph = PAGE[PAGE.index('id="elo-over-time"'):PAGE.index('id="elo-legend"')]

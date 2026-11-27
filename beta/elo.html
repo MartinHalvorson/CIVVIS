@@ -481,8 +481,8 @@
         <p class="rank-sub">Our stand-in for Prince is 1000.</p>
         <div class="rank-row rank-head">
           <span></span><span></span>
-          <button type="button" class="rank-sort" data-sort="on" aria-pressed="true" title="Every victory on. Sort by this column">Diplo on</button>
-          <button type="button" class="rank-sort" data-sort="off" aria-pressed="false" title="The Diplomatic victory switched off. Sort by this column">Diplo off</button>
+          <button type="button" class="rank-sort" data-sort="on" aria-pressed="false" title="Every victory on. Sort by this column">Diplo on</button>
+          <button type="button" class="rank-sort" data-sort="off" aria-pressed="true" title="The Diplomatic victory switched off. Sort by this column">Diplo off</button>
         </div>
         <ol class="rank-list"></ol>
         <details class="fine">
@@ -653,7 +653,10 @@
         for (const button of list.querySelectorAll(".rank-sort")) button.setAttribute("aria-pressed", String(button.dataset.sort === side));
       };
       for (const button of list.querySelectorAll(".rank-sort")) button.addEventListener("click", () => show(button.dataset.sort));
-      show("on");
+      // The list opens sorted by Diplo off (operator 2026-11-26: "player
+      // strategies should default diplo off"), or by Diplo on while the
+      // record has no diplo-off fit.
+      show(VIEWS.off ? "off" : "on");
       const fitted = (side) => {
         const s = VIEWS[side] && VIEWS[side].strategies;
         if (!s) return "";
