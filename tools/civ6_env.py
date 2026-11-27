@@ -20,6 +20,13 @@ indistinguishable from a tuner the platform does not support.
 This module resolves the live directory by asking which one the game most
 recently wrote, and falls back to the nested layout when neither has been
 touched.
+
+Windows (Steam only) is resolved by its own functions further down, behind
+``on_windows()``, so nothing a macOS host resolves changes. That half is
+written from the Steam depot layout and the ``Documents\\My Games`` tree and is
+UNMEASURED against a Windows Civilization VI: docs/CIV6_HOTSEAT_RELEASE.md
+lists what has to be measured before it is called supported. Epic Games and
+Linux/Proton installs are out of scope.
 """
 
 from __future__ import annotations
@@ -71,6 +78,11 @@ def install_dir(explicit: str | os.PathLike | None = None) -> Path:
         path = Path(candidate)
         if path.is_dir():
             return path
+    if on_windows():
+        # Every Steam library the client knows, before the fixed guesses below.
+        for path in windows_install_candidates():
+            if path.is_dir():
+                return path
     for path in INSTALL_CANDIDATES:
         if path.is_dir():
             return path
@@ -105,6 +117,8 @@ def user_dir() -> Path:
     """
     if override := os.environ.get("CIV6_USER_DIR"):
         return Path(override)
+    if on_windows():
+        return windows_user_dir()
     stamps = []
     for candidate in (NESTED_USER_DIR, LEGACY_USER_DIR):
         options = candidate / "AppOptions.txt"
@@ -234,8 +248,18 @@ def game_pids(timeout_s: float = GAME_PIDS_TIMEOUT_S) -> list[int]:
 
     `OSError` keeps returning ``[]``: no `ps` on this host is a real answer,
     not an unanswered question.
+
+    On Windows there is no `ps`; the process table is read in-process
+    (`windows_processes`) and matched on the executable names in
+    `WINDOWS_GAME_EXES`, which are the Steam depot's and unmeasured.
     """
     global _LAST_GAME_PIDS
+    if on_windows():
+        try:
+            return [pid for pid, name in windows_processes()
+                    if name.lower() in {exe.lower() for exe in WINDOWS_GAME_EXES}]
+        except OSError:
+            return []
     try:
         out = subprocess.run(
             ["ps", "-axo", "pid=,command="], capture_output=True, text=True,
@@ -348,6 +372,14 @@ def quit_game(timeout_s: float = 20.0) -> bool:
 
     if not game_pids():
         return True
+    if on_windows():
+        # ⚠ `os.kill(pid, SIGTERM)` on Windows is TerminateProcess: no quit
+        # request, no chance to flush a save, exactly the hard kill the end of
+        # this function refuses to escalate to. There is no menu quit here
+        # either, so the honest answer is to leave the game to the person.
+        print("[env] not stopping Civilization VI on Windows (it would be a hard "
+              "kill); quit it from its own menu", file=sys.stderr, flush=True)
+        return False
     # Prefer the application's own Quit menu where macOS exposes it.  It gives
     # the game a chance to flush options/save state before the longstanding
     # TERM fallback.  Leave most of the caller's bounded stop window for that
@@ -400,6 +432,359 @@ def quit_game(timeout_s: float = 20.0) -> bool:
 def launch_game() -> None:
     """Ask Steam to start the game."""
     subprocess.run(["open", f"steam://rungameid/{STEAM_APP_ID}"], check=False)
+
+
+# ------------------------------------------------------------------ Windows
+#
+# ⚠ UNMEASURED. Nothing in this section has been run against a Windows
+# Civilization VI. The paths are the Steam depot's and the documented
+# `Documents\My Games` tree; the process names are the depot's executables.
+# `tools/civvis_hotseat_app.py doctor` prints what each resolves to on a real
+# machine, and docs/CIV6_HOTSEAT_RELEASE.md lists the measurements still owed.
+# Steam only: an Epic Games install and Linux/Proton are out of scope.
+
+
+def on_windows() -> bool:
+    """The switch for this section. A function so the tests can drive the
+    Windows resolution over fake trees on any host."""
+    return sys.platform == "win32"
+
+
+#: The user directory below Documents: AppOptions.txt, Logs, Mods, Saves.
+WINDOWS_USER_SUBPATH = Path("My Games") / "Sid Meier's Civilization VI"
+#: Steam's `installdir` for app 289070, used when no app manifest names one.
+STEAM_INSTALL_NAME = "Sid Meier's Civilization VI"
+#: `Base\Binaries\Win64Steam\` in the depot: the DirectX 11 and 12 builds.
+WINDOWS_GAME_EXES = ("CivilizationVI.exe", "CivilizationVI_DX12.exe")
+
+
+def windows_documents_dir() -> Path:
+    """The user's Documents folder, asked of the shell (CSIDL_PERSONAL).
+
+    Documents is commonly redirected (OneDrive, a second drive), and a fixed
+    `%USERPROFILE%\\Documents` would then name a folder the game never writes.
+    """
+    try:
+        import ctypes  # noqa: PLC0415 - Windows only
+        buffer = ctypes.create_unicode_buffer(260)
+        # SHGetFolderPathW(hwnd, CSIDL_PERSONAL, token, SHGFP_TYPE_CURRENT, out)
+        if ctypes.windll.shell32.SHGetFolderPathW(None, 5, None, 0, buffer) == 0 and buffer.value:
+            return Path(buffer.value)
+    except (AttributeError, OSError, ValueError):
+        pass
+    return Path(os.environ.get("USERPROFILE") or Path.home()) / "Documents"
+
+
+def windows_user_dir_candidates(documents: Path | None = None,
+                                environ: dict | None = None) -> list[Path]:
+    """Every `My Games\\Sid Meier's Civilization VI` the game could be using:
+    under the shell's Documents first, then the profile's and OneDrive's."""
+    environ = os.environ if environ is None else environ
+    roots = [documents if documents is not None else windows_documents_dir()]
+    if environ.get("USERPROFILE"):
+        roots.append(Path(environ["USERPROFILE"]) / "Documents")
+    if environ.get("OneDrive"):
+        roots.append(Path(environ["OneDrive"]) / "Documents")
+    candidates: list[Path] = []
+    for root in roots:
+        candidate = root / WINDOWS_USER_SUBPATH
+        if str(candidate).lower() not in {str(c).lower() for c in candidates}:
+            candidates.append(candidate)
+    return candidates
+
+
+def windows_user_dir(candidates: list[Path] | None = None) -> Path:
+    """The Windows user directory: the same rule as macOS, the candidate whose
+    AppOptions.txt the game stamped last, else the shell's Documents one."""
+    candidates = windows_user_dir_candidates() if candidates is None else candidates
+    stamps = []
+    for index, candidate in enumerate(candidates):
+        options = candidate / "AppOptions.txt"
+        if options.is_file():
+            stamps.append((options.stat().st_mtime, -index, candidate))
+    if stamps:
+        return max(stamps)[2]
+    return candidates[0]
+
+
+def app_options_path() -> Path:
+    """The AppOptions.txt the game reads (both platforms)."""
+    return user_dir() / "AppOptions.txt"
+
+
+_VDF_TOKEN = re.compile(r'"((?:[^"\\]|\\.)*)"|([{}])|//[^\n]*')
+
+
+def parse_vdf(text: str) -> dict:
+    """Valve's KeyValues text, the format of `libraryfolders.vdf` and
+    `appmanifest_*.acf`: quoted keys, quoted values or `{ }` blocks, `\\`
+    escapes, `//` comments. Platform conditionals (`[$WIN32]`) are ignored."""
+    stack: list[dict] = [{}]
+    key: str | None = None
+    for match in _VDF_TOKEN.finditer(text):
+        quoted, brace = match.group(1), match.group(2)
+        if brace == "{":
+            child: dict = {}
+            if key is not None:
+                stack[-1][key] = child
+            stack.append(child)
+            key = None
+        elif brace == "}":
+            if len(stack) > 1:
+                stack.pop()
+            key = None
+        elif quoted is not None:
+            value = re.sub(r"\\(.)", lambda m: {"n": "\n", "t": "\t"}.get(m.group(1), m.group(1)),
+                           quoted)
+            if key is None:
+                key = value
+            else:
+                stack[-1][key] = value
+                key = None
+    return stack[0]
+
+
+def _vdf_get(table: object, name: str):
+    """A KeyValues lookup; Valve's keys are case-insensitive."""
+    if not isinstance(table, dict):
+        return None
+    return next((value for key, value in table.items() if key.lower() == name.lower()), None)
+
+
+def _read_vdf(path: Path) -> dict:
+    try:
+        return parse_vdf(path.read_text(encoding="utf-8", errors="replace"))
+    except OSError:
+        return {}
+
+
+def windows_steam_roots(environ: dict | None = None, read_registry: bool = True) -> list[Path]:
+    """Steam installations: what the registry says (per user, then machine),
+    then the two Program Files defaults."""
+    environ = os.environ if environ is None else environ
+    roots: list[Path] = []
+    if read_registry:
+        roots += _registry_steam_paths()
+    for variable in ("ProgramFiles(x86)", "ProgramFiles"):
+        if environ.get(variable):
+            roots.append(Path(environ[variable]) / "Steam")
+    unique: list[Path] = []
+    for root in roots:
+        if str(root).lower() not in {str(r).lower() for r in unique}:
+            unique.append(root)
+    return unique
+
+
+def _registry_steam_paths() -> list[Path]:
+    try:
+        import winreg  # noqa: PLC0415 - Windows only
+    except ImportError:
+        return []
+    found = []
+    for hive, key, value in (
+            (winreg.HKEY_CURRENT_USER, r"Software\Valve\Steam", "SteamPath"),
+            (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\Valve\Steam", "InstallPath"),
+            (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Valve\Steam", "InstallPath")):
+        try:
+            with winreg.OpenKey(hive, key) as handle:
+                path, _ = winreg.QueryValueEx(handle, value)
+        except OSError:
+            continue
+        if isinstance(path, str) and path:
+            found.append(Path(path))
+    return found
+
+
+def steam_libraries(steam_root: Path) -> list[Path]:
+    """Every Steam library one installation knows: itself, then each library
+    in `steamapps/libraryfolders.vdf`, in the current nested layout
+    (`"1" { "path" "D:\\SteamLibrary" ... }`) or the older flat one
+    (`"1" "D:\\SteamLibrary"`)."""
+    libraries = [Path(steam_root)]
+    folders = _vdf_get(_read_vdf(Path(steam_root) / "steamapps" / "libraryfolders.vdf"),
+                       "libraryfolders")
+    for key, value in (folders or {}).items():
+        if not key.isdigit():
+            continue
+        path = _vdf_get(value, "path") if isinstance(value, dict) else value
+        if isinstance(path, str) and path:
+            library = Path(path)
+            if str(library).lower() not in {str(known).lower() for known in libraries}:
+                libraries.append(library)
+    return libraries
+
+
+def steam_app_dir(library: Path, app_id: str = STEAM_APP_ID) -> Path:
+    """Where one library keeps the game: the `installdir` its app manifest
+    names, or the depot's default folder name."""
+    manifest = Path(library) / "steamapps" / f"appmanifest_{app_id}.acf"
+    name = _vdf_get(_vdf_get(_read_vdf(manifest), "AppState"), "installdir")
+    return Path(library) / "steamapps" / "common" / (name or STEAM_INSTALL_NAME)
+
+
+def windows_install_candidates(steam_roots: list[Path] | None = None) -> list[Path]:
+    """The game's folder in every Steam library, libraries holding its app
+    manifest first."""
+    roots = windows_steam_roots() if steam_roots is None else steam_roots
+    manifested, others = [], []
+    for root in roots:
+        for library in steam_libraries(root):
+            candidate = steam_app_dir(library)
+            seen = {str(c).lower() for c in manifested + others}
+            if str(candidate).lower() in seen:
+                continue
+            has_manifest = (library / "steamapps" / f"appmanifest_{STEAM_APP_ID}.acf").is_file()
+            (manifested if has_manifest else others).append(candidate)
+    return manifested + others
+
+
+def mod_install_candidates() -> list[tuple[str, Path | None, str]]:
+    """(name, folder, evidence) for each place a mod could be installed.
+
+    `tools/civ6_control/install.py` writes the first, on both platforms.
+    """
+    try:
+        dlc: Path | None = assets_dir() / "DLC"
+    except SystemExit:
+        dlc = None
+    if on_windows():
+        return [("install DLC", dlc, "UNMEASURED on Windows; this is where install.py writes"),
+                ("user Mods", mods_dir(), "UNMEASURED on Windows; the folder hand-installed "
+                 "Windows mods conventionally use; install.py does not write here")]
+    return [("install DLC", dlc, "measured on macOS: the only folder this build scans"),
+            ("user Mods", mods_dir(), "measured on macOS: never scanned (install.py)")]
+
+
+# ------------------------------------------------- processes, on both systems
+#
+# ⚠ `os.kill(pid, 0)` IS NOT A LIVENESS PROBE ON WINDOWS. Signal 0 is
+# `CTRL_C_EVENT` there, so Python sends a console control event instead of
+# asking whether the process exists, and every other signal number is
+# TerminateProcess. `pid_alive` asks the system properly on Windows; callers
+# keep their own POSIX `os.kill(pid, 0)` and route only Windows here.
+
+
+def pid_alive(pid: int) -> bool:
+    """Whether `pid` names a running process (False for pids <= 0)."""
+    try:
+        pid = int(pid)
+    except (TypeError, ValueError):
+        return False
+    if pid <= 0:
+        return False
+    if on_windows():
+        return _windows_pid_alive(pid)
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    return True
+
+
+def _windows_pid_alive(pid: int) -> bool:
+    import ctypes  # noqa: PLC0415 - Windows only
+    from ctypes import wintypes  # noqa: PLC0415
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel32.GetExitCodeProcess.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    handle = kernel32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+    if not handle:
+        return ctypes.get_last_error() == 5  # ERROR_ACCESS_DENIED: it exists
+    try:
+        code = wintypes.DWORD()
+        if not kernel32.GetExitCodeProcess(handle, ctypes.byref(code)):
+            return True  # unreadable: a lock must not be handed out on a guess
+        return code.value == 259  # STILL_ACTIVE
+    finally:
+        kernel32.CloseHandle(handle)
+
+
+def windows_processes() -> list[tuple[int, str]]:
+    """(pid, executable name) for every process, from a Toolhelp snapshot:
+    in-process, so `game_pids` can be polled without spawning anything."""
+    import ctypes  # noqa: PLC0415 - Windows only
+    from ctypes import wintypes  # noqa: PLC0415
+
+    class Entry(ctypes.Structure):  # PROCESSENTRY32W
+        _fields_ = [("dwSize", wintypes.DWORD), ("cntUsage", wintypes.DWORD),
+                    ("th32ProcessID", wintypes.DWORD), ("th32DefaultHeapID", ctypes.c_size_t),
+                    ("th32ModuleID", wintypes.DWORD), ("cntThreads", wintypes.DWORD),
+                    ("th32ParentProcessID", wintypes.DWORD), ("pcPriClassBase", ctypes.c_long),
+                    ("dwFlags", wintypes.DWORD), ("szExeFile", ctypes.c_wchar * 260)]
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
+    kernel32.CreateToolhelp32Snapshot.argtypes = [wintypes.DWORD, wintypes.DWORD]
+    kernel32.Process32FirstW.argtypes = [wintypes.HANDLE, ctypes.POINTER(Entry)]
+    kernel32.Process32NextW.argtypes = [wintypes.HANDLE, ctypes.POINTER(Entry)]
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    snapshot = kernel32.CreateToolhelp32Snapshot(0x2, 0)  # TH32CS_SNAPPROCESS
+    if not snapshot or snapshot == ctypes.c_void_p(-1).value:
+        raise OSError(ctypes.get_last_error(), "CreateToolhelp32Snapshot failed")
+    rows = []
+    try:
+        entry = Entry()
+        entry.dwSize = ctypes.sizeof(Entry)
+        more = kernel32.Process32FirstW(snapshot, ctypes.byref(entry))
+        while more:
+            rows.append((int(entry.th32ProcessID), entry.szExeFile))
+            more = kernel32.Process32NextW(snapshot, ctypes.byref(entry))
+    finally:
+        kernel32.CloseHandle(snapshot)
+    return rows
+
+
+def windows_command_lines(pid: int | None = None, timeout_s: float = 30.0) -> list[tuple[int, str]]:
+    """(pid, command line) from WMI through PowerShell: one process, or all.
+
+    Slow (a PowerShell start, about a second), so only for the rare checks
+    that must tell one of our workers from a reused pid: never in a poll loop.
+    Empty when PowerShell cannot be run or does not answer in `timeout_s`.
+    """
+    query = "Get-CimInstance Win32_Process"
+    if pid is not None:
+        query += f" -Filter 'ProcessId={int(pid)}'"
+    script = ("[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; "
+              f"{query} | ForEach-Object {{ [Console]::Out.WriteLine("
+              "([string]$_.ProcessId) + ' ' + [string]$_.CommandLine) }")
+    try:
+        out = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+                             capture_output=True, text=True, encoding="utf-8", errors="replace",
+                             timeout=timeout_s).stdout
+    except (OSError, subprocess.SubprocessError):
+        return []
+    rows = []
+    for line in out.splitlines():
+        head, _, command = line.strip().partition(" ")
+        if head.isdigit():
+            rows.append((int(head), command))
+    return rows
+
+
+def process_command(pid: int) -> str:
+    """The command line of `pid`, or "" when it cannot be read.
+
+    POSIX asks `ps -o command= -p PID` exactly as the harness always has.
+    """
+    try:
+        pid = int(pid)
+    except (TypeError, ValueError):
+        return ""
+    if on_windows():
+        return next((command for found, command in windows_command_lines(pid)
+                     if found == pid), "")
+    try:
+        return subprocess.run(["ps", "-o", "command=", "-p", str(pid)],
+                              capture_output=True, text=True, timeout=5).stdout
+    except (OSError, subprocess.SubprocessError):
+        return ""
 
 
 if __name__ == "__main__":
