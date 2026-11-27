@@ -119,10 +119,89 @@ if SECONDS < 0 then SECONDS = 0; end
 
 local RUN = tostring(cfg.RunTag or "unset");
 
+-- >>> CivvisHarness: the same block in CivvisControlAgent.lua,
+-- CivvisControlAutoClose.lua and CivvisControlHeartbeat.lua (harness_gate_test.lua).
+-- ★★ THE PERSON-FACING INSTALL DOES NOTHING WITHOUT A LIVE HARNESS.
+-- `RequireHarness` is set only by `tools/civ6_hotseat.py --manual-lobby`, the
+-- install a person who is not this project's operator may leave in place and
+-- play every other game with. Two rules keep it stock for them:
+--   * outside a hotseat game it is dormant (`dormant`): the shipped screen or
+--     HUD and nothing of ours, and no agent context registers anything;
+--   * in a hotseat game it acts and writes only while the harness that
+--     installed it is live (`live`): a `harness` row under `HarnessRun` in the
+--     orders database whose `beat` (Unix seconds, rewritten every 2 s) is at
+--     most `HarnessFreshSeconds` old by SQLite's own clock. A stopped harness
+--     deletes the row and a killed one goes stale; either way every seat is a
+--     person's again, as Civ VI ships it.
+-- Read at most every 3 s of `Automation.GetTime()`, never per tick: a
+-- `DB.Query` per game-core tick starves the log flush. Unset, `live` is true,
+-- `dormant` false, and nothing here runs.
+CivvisHarness = { ok = false, calls = 0 };
+function CivvisHarness.hotseat()
+	local on = false;
+	pcall(function() on = GameConfiguration.IsHotseat() == true; end);
+	return on;
+end
+function CivvisHarness.dormant()
+	return cfg.RequireHarness == true and not CivvisHarness.hotseat();
+end
+function CivvisHarness.read()
+	if not CivvisHarness.hotseat() then return false; end
+	local path = string.gsub(tostring(cfg.OrdersDb or ""), "['\\]", "");
+	local run = string.gsub(tostring(cfg.HarnessRun or ""), "['\\]", "");
+	if path == "" or run == "" then return false; end
+	if not CivvisHarness.attached then
+		-- One connection serves every context: a second ATTACH of the alias
+		-- fails, and the read below goes through whichever context's took.
+		pcall(function() DB.Query("ATTACH DATABASE '" .. path .. "' AS civvis"); end);
+	end
+	local fresh = tonumber(cfg.HarnessFreshSeconds) or 20;
+	local live = false;
+	local rows = DB.Query("SELECT CAST(strftime('%s','now') AS INTEGER) - beat AS age"
+			.. " FROM civvis.harness WHERE run = '" .. run .. "'");
+	-- Attached once a read went through; until then each reading tries again.
+	CivvisHarness.attached = true;
+	for _, row in ipairs(rows) do
+		local age = tonumber(row.age);
+		if age ~= nil and age >= -5 and age <= fresh then live = true; end
+	end
+	return live;
+end
+function CivvisHarness.live()
+	if cfg.RequireHarness ~= true then return true; end
+	local h = CivvisHarness;
+	if h.checking then return h.ok; end
+	local now = nil;
+	pcall(function() now = Automation.GetTime(); end);
+	h.calls = h.calls + 1;
+	if h.at ~= nil then
+		if type(now) == "number" and now >= h.at and now - h.at < 3 then return h.ok; end
+		if type(now) ~= "number" and h.calls % 200 ~= 0 then return h.ok; end
+	end
+	h.checking, h.at = true, type(now) == "number" and now or -1;
+	local ok, live = pcall(h.read);
+	h.ok, h.checking = ok and live == true, false;
+	return h.ok;
+end
+-- Whether the local player's turn is CIVVIS's: one of the installed seats (or
+-- the test stub) while the harness is live. Every other turn is a person's.
+function CivvisHarness.mine(pid)
+	if not CivvisHarness.live() then return false; end
+	for _, list in ipairs({ cfg.HotseatSeats or {}, cfg.HotseatStubSeats or {} }) do
+		for _, seat in ipairs(list) do
+			if tonumber(seat) == pid then return true; end
+		end
+	end
+	return false;
+end
+-- <<< CivvisHarness
+
 -- The agent's channel, and for the same reason: this build writes no Lua.log,
 -- so Automation.Log is the only output that survives. Every field written here
 -- is a name or a number, so the encoder the agent needs is not needed here.
 local function report(kind, fields)
+	-- The person-facing install writes nothing without a live harness.
+	if not CivvisHarness.live() then return; end
 	local line = string.format('{"kind":"%s","ctx":"autoclose","screen":"%s","run":"%s"%s}',
 	                           kind, NAME, RUN, fields or "");
 	pcall(function() Automation.Log(PREFIX .. line); end);
@@ -248,7 +327,8 @@ local function installEventLedger()
 	pcall(function() UI = ui; end);
 	return false, "none", kind, "global_not_replaced";
 end
-do
+-- Not in a dormant person-facing context: there `UI` stays the shipped object.
+if not CivvisHarness.dormant() then
 	local ran, installed, how, uiType, why = pcall(installEventLedger);
 	if not ran then
 		-- `installed` holds the error message when the install raised.
@@ -292,12 +372,15 @@ function CivvisCoverQueue.listed(list, pid)
 end
 function CivvisCoverQueue.on()
 	return cfg.Hotseat == true and cfg.HotseatCover == true and cfg.HotseatCoverQueue ~= false
-		and NAME ~= "PlayerChange" and not END_SCREENS[NAME];
+		and NAME ~= "PlayerChange" and not END_SCREENS[NAME]
+		and (cfg.RequireHarness ~= true or not CivvisHarness.dormant());
 end
 function CivvisCoverQueue.wanted(name, pid)
 	if not CivvisCoverQueue.on() or name == "PlayerChange" or END_SCREENS[name] then
 		return false;
 	end
+	-- `RequireHarness`: the shipped queueing unless CIVVIS's seat, harness live.
+	if cfg.RequireHarness == true and not CivvisHarness.mine(pid) then return false; end
 	return CivvisCoverQueue.listed(cfg.HotseatSeats, pid)
 		and not CivvisCoverQueue.listed(cfg.HotseatHumanSeats, pid);
 end
@@ -447,6 +530,10 @@ if END_SCREENS[NAME] then
         pcall(function() include("EndGameMenu_Expansion2"); end);
     end
 end
+
+-- The person-facing install outside a hotseat game: the shipped screen, as
+-- loaded above, and nothing of ours after it -- no wrapper, no clock, no line.
+if CivvisHarness.dormant() then return; end
 
 -- EndGameMenu.lua:1328 owns the natural movie-finished callback. Keep its
 -- handler and report the boundary so the harness can wait for the full movie.
@@ -1217,6 +1304,9 @@ function CivvisHotseatScreen.turn()
 end
 function CivvisHotseatScreen.humanTurn()
 	if cfg.Hotseat ~= true then return false; end
+	-- `RequireHarness`: CIVVIS's turn only on its own seats, harness live.
+	if cfg.RequireHarness == true
+			and not CivvisHarness.mine(CivvisHotseatScreen.localPlayer()) then return true; end
 	return CivvisHotseatScreen.listed(cfg.HotseatHumanSeats,
 		CivvisHotseatScreen.localPlayer());
 end
@@ -1229,6 +1319,9 @@ end
 -- it. A stub seat is only ever listed by the `--auto-human` test arrangements.
 function CivvisHotseatScreen.personTurn()
 	if not CivvisHotseatScreen.humanTurn() then return false; end
+	-- `RequireHarness`: with no live harness the stub's seat is a person's too.
+	if cfg.RequireHarness == true
+			and not CivvisHarness.mine(CivvisHotseatScreen.localPlayer()) then return true; end
 	return not CivvisHotseatScreen.listed(cfg.HotseatStubSeats,
 		CivvisHotseatScreen.localPlayer());
 end
@@ -1301,6 +1394,8 @@ end
 -- operator's only with `HotseatAutoStart`.
 function CivvisHotseatScreen.mayPress(pid)
 	if pid == nil or pid < 0 then return false; end
+	-- `RequireHarness`: no Start Turn is pressed for anyone without a live harness.
+	if cfg.RequireHarness == true and not CivvisHarness.live() then return false; end
 	if cfg.Hotseat == true and CivvisHotseatScreen.listed(cfg.HotseatHumanSeats, pid) then
 		return CivvisHotseatScreen.autoStart(pid);
 	end
@@ -1322,7 +1417,8 @@ end
 -- and is pressed as it ships; all it may show over the cover is its menu
 -- button.
 function CivvisHotseatScreen.covered()
-	return cfg.Hotseat == true and cfg.HotseatCover == true;
+	return cfg.Hotseat == true and cfg.HotseatCover == true
+		and (cfg.RequireHarness ~= true or CivvisHarness.live());
 end
 function CivvisHotseatScreen.paused(pid)
 	local paused = false;
