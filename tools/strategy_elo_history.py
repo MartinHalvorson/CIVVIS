@@ -20,6 +20,13 @@ elo for games with diplo off. we should maintain this because diplo on or off
 makes a big difference"). A revision from before the second fit has neither of
 its files, and that is no fault.
 
+Then one fit for each named setup Tournaments shows a column for
+(`strategy_elo --setup <name>`: `data/strategy_elo_<name>.json` and
+`data/strategy_elo_<name>_history.json`; operator 2026-11-27: "6p Continents
+Online (Diplo off, Diplo on, science, culture, religion, diplomacy,
+domination, score) , 2P Pangaea (religion off, religion on). we can elo for
+each"). Each is checked once it is published, like the diplo-off fit.
+
 `data/strategy_elo.json` holds one fit, the newest; each rating run rewrites
 it (`docs/ELO.md`). The operator wanted the ratings over time (2026-11-23:
 "we should have a running graph over time of the top 10 elo civvis ai agents,
@@ -52,9 +59,20 @@ HISTORY = pathlib.Path("data/strategy_elo_history.json")
 NO_DIPLO_PUBLISHED = pathlib.Path("data/strategy_elo_no_diplo.json")
 NO_DIPLO_HISTORY = pathlib.Path("data/strategy_elo_no_diplo_history.json")
 
+#: The named setups (`strategy_elo --setup`, its `SETUPS`), in the order
+#: Tournaments lists their columns.
+SETUPS = [
+    "continents6_no_diplo", "continents6", "continents6_science", "continents6_culture",
+    "continents6_religion", "continents6_diplomacy", "continents6_domination", "continents6_score",
+    "pangaea2_no_religion", "pangaea2",
+]
+
 #: Each fit's published file and its history: the stock game's first, then the
-#: one played with the Diplomatic victory off.
-FITS = [(PUBLISHED, HISTORY), (NO_DIPLO_PUBLISHED, NO_DIPLO_HISTORY)]
+#: one played with the Diplomatic victory off, then each named setup's.
+FITS = [(PUBLISHED, HISTORY), (NO_DIPLO_PUBLISHED, NO_DIPLO_HISTORY)] + [
+    (pathlib.Path(f"data/strategy_elo_{name}.json"), pathlib.Path(f"data/strategy_elo_{name}_history.json"))
+    for name in SETUPS
+]
 
 DOC = (
     "Every published strategy Elo fit, oldest first (tools/strategy_elo_history.py). A point: `at`, when it "
@@ -169,8 +187,8 @@ def check(root: pathlib.Path, published: pathlib.Path = PUBLISHED, history: path
 
 
 def check_all(root: pathlib.Path) -> str | None:
-    """What is wrong with either history, or `None`: the stock fit must be
-    there, the diplo-off fit only once it is published."""
+    """What is wrong with any history, or `None`: the stock fit must be
+    there, every other fit only once it is published."""
     for at, (published, history) in enumerate(FITS):
         problem = check(root, published, history, required=at == 0)
         if problem:
