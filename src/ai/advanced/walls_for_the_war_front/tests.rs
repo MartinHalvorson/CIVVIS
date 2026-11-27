@@ -159,3 +159,51 @@ fn a_walled_city_is_left_alone() {
     ai.claim_walls_for_the_war_front(&mut game, 0);
     assert_eq!(game.cities[&front].queue.first(), Some(&builder()));
 }
+
+#[test]
+fn a_soldier_nearly_trained_keeps_the_queue_and_a_slow_one_yields() {
+    let warrior = Item::Unit {
+        unit: crate::name!("warrior"),
+    };
+    let (game, front, _) = war_front();
+    let production = game.city_yields(front).production.max(0.1);
+
+    let mut slow = game.clone();
+    slow.apply(
+        0,
+        &Action::Produce {
+            city: front,
+            item: warrior.clone(),
+        },
+    )
+    .unwrap();
+    let mut ai = armed();
+    ai.remember_war_front_sightings(&slow, 0);
+    let left = slow.item_remaining_cost_for_city(0, front, &warrior);
+    let turns = slow
+        .host_production_turns(front, &warrior)
+        .filter(|turns| turns.is_finite() && *turns > 0.0)
+        .unwrap_or(left / production);
+    assert!(turns > WAR_FRONT_DEFENDER_TURNS, "{turns} turns");
+    ai.claim_walls_for_the_war_front(&mut slow, 0);
+    assert_eq!(slow.cities[&front].queue.first(), Some(&walls()));
+
+    let mut near = game.clone();
+    near.apply(
+        0,
+        &Action::Produce {
+            city: front,
+            item: warrior.clone(),
+        },
+    )
+    .unwrap();
+    let cost = near.item_remaining_cost_for_city(0, front, &warrior);
+    // Invest all but a turn and a half of the soldier.
+    near.cities.get_mut(&front).unwrap().production = (cost - 1.5 * production).max(0.0);
+    let left = near.item_remaining_cost_for_city(0, front, &warrior);
+    assert!(left > production && left <= WAR_FRONT_DEFENDER_TURNS * production);
+    let mut ai = armed();
+    ai.remember_war_front_sightings(&near, 0);
+    ai.claim_walls_for_the_war_front(&mut near, 0);
+    assert_eq!(near.cities[&front].queue.first(), Some(&warrior));
+}

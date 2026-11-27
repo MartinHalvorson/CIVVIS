@@ -16,7 +16,8 @@
 //! [`WAR_FRONT_RATIO`] of our military power, starts the city's first Walls. A
 //! sighting lasts [`WAR_FRONT_STANDARD`] Standard turns. Once invested, the
 //! wall finishes while any war with a major lasts. A head that finishes this
-//! turn keeps the queue; the head displaced keeps its progress. Sightings are
+//! turn, or a land soldier within [`WAR_FRONT_DEFENDER_TURNS`] of done, keeps
+//! the queue; the head displaced keeps its progress. Sightings are
 //! keyed by the city's tile, because live city ids change between frames.
 //! The defence handoffs that run after this claim still have the last word.
 
@@ -25,6 +26,7 @@ use super::*;
 const WAR_FRONT_TILES: i32 = 8;
 const WAR_FRONT_STANDARD: u32 = 10;
 const WAR_FRONT_RATIO: f64 = 0.5;
+const WAR_FRONT_DEFENDER_TURNS: f64 = 2.0;
 
 impl AdvancedAi {
     fn war_front_city(g: &Game, pid: usize, cid: u32) -> bool {
@@ -50,6 +52,15 @@ impl AdvancedAi {
             && spec.domain.as_deref().is_none_or(|domain| domain == "land")
             && spec.promotion_class != "recon"
             && (spec.is_melee_capable() || spec.has_ranged_attack())
+    }
+
+    /// A land soldier in training: one nearly done keeps the queue.
+    fn war_front_defender(g: &Game, item: &Item) -> bool {
+        matches!(item, Item::Unit { unit } if g.rules.units.get(unit).is_some_and(|spec| {
+            spec.class == "military"
+                && spec.domain.as_deref().is_none_or(|domain| domain == "land")
+                && (spec.is_melee_capable() || spec.has_ranged_attack())
+        }))
     }
 
     fn at_war_with_a_major(g: &Game, pid: usize) -> bool {
@@ -136,7 +147,14 @@ impl AdvancedAi {
             }
             let production = g.city_yields(cid).production.max(0.1);
             if let Some(item) = &head {
-                if g.item_remaining_cost_for_city(pid, cid, item) <= production + f64::EPSILON {
+                let remaining = g.item_remaining_cost_for_city(pid, cid, item);
+                let turns = g
+                    .host_production_turns(cid, item)
+                    .filter(|turns| turns.is_finite() && *turns > 0.0)
+                    .unwrap_or(remaining / production);
+                if remaining <= production + f64::EPSILON
+                    || (Self::war_front_defender(g, item) && turns <= WAR_FRONT_DEFENDER_TURNS)
+                {
                     continue;
                 }
             }
