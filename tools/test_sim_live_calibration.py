@@ -184,6 +184,8 @@ class TheScreensField(unittest.TestCase):
             self.assertTrue(profile["all_seats"], batch["path"])
             self.assertEqual(profile.get("difficulty", "prince"), "prince", batch["path"])
             self.assertFalse(profile.get("rivals"), batch["path"])
+        for source in ledger["sources"]:
+            self.assertIn(source["profile"].get("difficulty", "prince"), ("prince", None), source["path"])
         ranking = (ROOT / "GENE_HEURISTIC_RANKING.md").read_text().splitlines()
         self.assertIn("Prince Self-Play", ranking[0])
         self.assertIn("not Deity evidence", ranking[1])

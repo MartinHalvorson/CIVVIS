@@ -102,9 +102,11 @@ Nothing of Firaxis's plays.
 --handicap rivals --rival-chairs 5` seats one measured seat against five
 chairs of the deployment genome that carry the rung's handicap (*The
 faithful field*, below), and the rival-only knobs under it calibrate those
-chairs' economy and space race. On this M4 Air a game cost 25–37 s of CPU. That is about the standard
-game's cost, but it measures one seat where the standard game measures six,
-so a gene's error over the same games is √6 ≈ 2.4 times wider.
+chairs' economy and space race. On this M4 Air, loaded by other work, such a
+game cost 37–66 s of CPU (200–360 ms a turn) against 49 s (240 ms a turn) for
+a standard self-play game the same night. So a game costs about the same, but
+it measures one seat where the standard game measures six, and a gene's error
+over the same games is √6 ≈ 2.4 times wider.
 
 **Calibration.** `tools/sim_live_calibration.py` compares the ledger's
 `results.jsonl` (the Official Benchmark and everything after it, 6p
@@ -193,11 +195,12 @@ gene is on and when gene is off."*
 | speed | **Online**, its own **250-turn** clock; a game that reaches it is a score victory, not a truncation |
 | lanes | **all six**; no restricted-lane regime |
 | civs | shuffled per map |
-| majors' rung | **Emperor** — `--difficulty emperor`, the documented invocation since 2026-08-25: the live Civilization VI verification ladder plays Emperor and above, and a screen at the engine's Prince default prices genes against a slower economy than the one they are verified in. ⚠ Provenance, not an enforced leg: the code's default stays Prince (nothing was changed silently), the header records the rung, and the ledger pools both — read `difficulty` on a source before comparing two |
+| majors' rung | **Prince** in every published batch. This row named `--difficulty emperor` as the documented invocation from 2026-08-25, but the continuous batch passes no `--difficulty`, so it plays the code's Prince default, and every source in `docs/gene_ledger.json` records `prince` or nothing (*What the screen measures*, above). ⚠ Provenance, not an enforced leg: the header records the rung and the ledger would pool another one, so read `difficulty` on a source before comparing two |
 | barbarians | Deity, their own tournament rung whatever the majors play |
 
-`gene_screen --games N --difficulty emperor --out rows.jsonl` *is* the
-screen. Every **map** flag still exists, and every one of them turns a batch
+`gene_screen --games N --out rows.jsonl` *is* the screen, at Prince, as the
+continuous batch runs it (`--difficulty emperor` was the documented form from
+2026-08-25, and no reporting batch played it). Every **map** flag still exists, and every one of them turns a batch
 into a **probe**: `tools/genes.py` refuses a source whose header does not
 match the map legs of this table, so the ledger cannot quietly hold two
 worlds in one column. The shape lives in `SCREEN_PLAYERS`/`SCREEN_MAP`/… in
