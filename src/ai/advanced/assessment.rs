@@ -507,6 +507,11 @@ impl AdvancedAi {
                 || g.players[pid]
                     .civics
                     .contains(&crate::name!("divine_right")));
+        // `tagma-timing-needs-the-edge`: the timing also asks for the
+        // elective war's power bar against the weakest rival. Unchanged with
+        // the gene off. See `advanced/tagma_timing_needs_the_edge.rs`.
+        let basil_tagma_timing =
+            self.tagma_timing_with_the_edge(basil_tagma_timing, my_power, weakest_rival);
         // The ancient rush is a *window*, not a preference, so it is decided
         // beside the other timing arm rather than among the victory lanes.
         let rush_victim = self.early_rush_victim(g, pid);

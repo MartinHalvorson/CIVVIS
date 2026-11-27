@@ -11210,6 +11210,11 @@ pub struct AdvancedAi {
     /// that rival, and never withheld by the refused-order rule. See
     /// `advanced/tribute_and_friendship_land.rs`. Off by default.
     tribute_and_friendship_land: bool,
+    /// `tagma-timing-needs-the-edge`: Basil's Tagma timing takes the plan to
+    /// Conquest only with the army the elective war asks for against the
+    /// weakest rival. See `advanced/tagma_timing_needs_the_edge.rs`. Off by
+    /// default.
+    tagma_timing_needs_the_edge: bool,
 }
 
 /// Science weight floor at the start of a game, and at its very end.
@@ -12715,6 +12720,9 @@ mod stalled_settler_site;
 /// `strategic-unit-closes-the-dark-age`: see
 /// `advanced/strategic_unit_closes_the_age.rs`.
 mod strategic_unit_closes_the_age;
+/// `tagma-timing-needs-the-edge`: see
+/// `advanced/tagma_timing_needs_the_edge.rs`.
+mod tagma_timing_needs_the_edge;
 /// `the-worked-backlog-gets-its-builder-first`: a worked backlog two or more
 /// tiles ahead of the Builder charges calls a Builder ahead of the other
 /// idle-queue claims. See

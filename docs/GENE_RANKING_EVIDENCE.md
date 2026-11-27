@@ -187,6 +187,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `recovery-holds-the-muster` | off (unmeasured) | Opt-in gene `recovery-holds-the-muster`: no Siege row is mustered while the plan reads Recovery; see `advanced/recovery_holds_the_muster.rs`. | 1 \| 1 |
 | `religion-lane-outlasts-the-denial` | off (unmeasured) | Opt-in gene `religion-lane-outlasts-the-denial`: a founded Religion lane keeps its plan against a Science counter; see `advanced/religion_lane_outlasts_the_denial.rs`. | 1 \| 1 |
 | `seen-pad-starts-the-denial` | off (unmeasured) | Opt-in gene `seen-pad-starts-the-denial`: a racer's seen Spaceport takes a Spy that disrupts it before the first launch; see `advanced/seen_pad_starts_the_denial.rs`. | 1 \| 1 |
+| `tagma-timing-needs-the-edge` | off (unmeasured) | Opt-in gene `tagma-timing-needs-the-edge`; see `advanced/tagma_timing_needs_the_edge.rs`. | 1 \| 1 |
 
 ## Removed from the code
 

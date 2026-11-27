@@ -1,0 +1,24 @@
+{
+ "kind": "captured_native_action_pairs_v1",
+ "tag": "tagma-timing-needs-the-edge",
+ "scope": "Recorded proposal activation on captured live input only, not host execution or strength. 13 boards from four live T8 benchmark games of 2026-11-26 (Lv 8 Deity 6p, Online, Byzantium Religion seats) that logged 'Grand strategy: conquest | Tagma timing is live' after founding and took 0 cities by t150 (civvis-t8-20261126T101919Z t31 t56 t99 t141, -T120405Z t43 t74 t100, -T140214Z t26 t50 t80, -T144622Z t33 t63 t112). Each board is the run's events.jsonl cut after turn N+1 and replayed at turn N. Both arms run one frozen ci-profile civvis_orders --resumed built from the branch with the run's own requested genome (why.log line 1 forced); the on arm adds --with tagma-timing-needs-the-edge. 13 of 13 complete; the off arms carry 12 'Tagma timing is live' lines, the on arms 2 (101919Z t141 at power 1572 and 140214Z t80 at 511, which clear the bar); the other 11 on arms read expansion/religion/recovery with one 'tagma-timing-needs-the-edge:' journal line each (11 on, 0 off); orders differ on 3.",
+ "archive": {
+  "path": "docs/eval/2026-11-26-tagma-timing-needs-the-edge.native-queries.tar.xz",
+  "sha256": "df96e0d501c3d93b5df2419174e38c2a25dac00899ee0e00de79acdba66dc7f0"
+ },
+ "members": [
+  "native-queries-01/0000/result.json",
+  "native-queries-01/0001/result.json",
+  "native-queries-01/0002/result.json",
+  "native-queries-01/0003/result.json",
+  "native-queries-01/0004/result.json",
+  "native-queries-01/0005/result.json",
+  "native-queries-01/0006/result.json",
+  "native-queries-01/0007/result.json",
+  "native-queries-01/0008/result.json",
+  "native-queries-01/0009/result.json",
+  "native-queries-01/0010/result.json",
+  "native-queries-01/0011/result.json",
+  "native-queries-01/0012/result.json"
+ ]
+}
