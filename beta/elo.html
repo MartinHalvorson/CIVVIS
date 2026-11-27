@@ -311,6 +311,8 @@
   /* Civilization VI's own AI at a level: a landmark on the scale, not an entrant. */
   .rank-row.is-rung .rank-name,
   .rank-row.is-rung .rank-value { color: var(--faint); font-size: 12px; font-weight: 500; }
+  /* A person among the agents: their own name, in the page's gold. */
+  .rank-row.is-person .rank-name { color: var(--gold); }
   .rank-swatch { display: inline-block; width: 12px; height: 0; margin-right: 6px; border-top: 2px solid; vertical-align: 3px; }
   .rank-swatch.is-dotted { border-top-style: dotted; }
   .rank-swatch.is-dashed { border-top-style: dashed; }
@@ -597,6 +599,13 @@
       for (const l of view.levels) {
         if (l.now) entry("level:" + l.level, { kind: "level", name: levelName(l) })[side] = reading(l.now);
       }
+      // People who play the agents in Civilization VI itself, hot seat
+      // (operator 2026-11-27: "start posting elo on the website. use the
+      // name dev for me"): rated on the agents' scale from their games
+      // against them, and listed among them under their own names.
+      for (const p of Array.isArray(view.people) ? view.people : []) {
+        entry("person:" + p.name, { kind: "person", name: p.name, tilt: "Person" })[side] = reading(p);
+      }
     }
     const list = document.getElementById("rank-strategies");
     if (entries.size) {
@@ -615,6 +624,8 @@
         const interval = x.margin ? "; 95% interval " + Math.round(x.elo - x.margin) + "\u2013" + Math.round(x.elo + x.margin) : "";
         return SIDE_NAME[side] + ": " + (r.kind === "level"
           ? "our seat won " + x.wins + " of " + x.games + " benchmark games against five of it"
+          : r.kind === "person"
+          ? "won " + x.wins + " of " + x.games + (x.games === 1 ? " game" : " games") + " against the Civ AI Agents in Civilization VI"
           : "won " + x.wins + " of " + x.games + " rated tables") + interval;
       };
       // Strongest first in the column sorted by; a row with no figure there
@@ -631,7 +642,7 @@
         let place = 0;
         ol.textContent = "";
         for (const r of order(side)) {
-          const item = el("li", "rank-row" + (r.kind === "level" ? " is-rung" : ""));
+          const item = el("li", "rank-row" + (r.kind === "level" ? " is-rung" : r.kind === "person" ? " is-person" : ""));
           item.title = [r.name, said(r, "on"), said(r, "off")].filter(Boolean).join("\n");
           item.append(el("span", "rank-n", r.kind === "level" ? "" : String(++place)));
           const label = el("span", "rank-name");
@@ -667,8 +678,11 @@
       };
       const benchmark = SIDES.map((side) => VIEWS[side] && VIEWS[side].firaxis).filter(Boolean);
       const newest = benchmark.map((f) => f.to).sort().pop();
+      const played = SIDES.flatMap((side) => (VIEWS[side] && Array.isArray(VIEWS[side].people) ? VIEWS[side].people : []));
+      const met = played.reduce((n, p) => n + p.games, 0);
       list.querySelector("[data-rank-note]").textContent =
         [fitted("on"), fitted("off")].filter(Boolean).join(" ")
+        + (met ? " People: " + count(met) + (met === 1 ? " hot seat game" : " hot seat games") + " against the agents in Civilization VI itself, each agent at its Elo here when the game began." : "")
         + (benchmark.length ? " The Firaxis levels: benchmark games of the last " + benchmark[0].days + " days through " + day(newest) + ", "
           + SIDES.filter((side) => VIEWS[side] && VIEWS[side].firaxis)
             .map((side) => count(VIEWS[side].firaxis.games) + " with the Diplomatic victory " + side).join(" and ") + "." : "")

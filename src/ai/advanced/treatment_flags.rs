@@ -601,6 +601,10 @@ impl AdvancedAi {
         /// seat's next Settler before the first Shrine and Prayers; see
         /// `advanced/religion_seat_third_city_first.rs`.
         religion_seat_third_city_first => enable_religion_seat_third_city_first, disable_religion_seat_third_city_first;
+        /// Opt-in gene `rival-science-run-opens-the-spy-civics`: a rival's
+        /// science run brings the Spy-slot civics forward off a Science aim;
+        /// see `advanced/rival_science_run_opens_the_spy_civics.rs`.
+        rival_science_run_opens_the_spy_civics => enable_rival_science_run_opens_the_spy_civics, disable_rival_science_run_opens_the_spy_civics;
         // ---- append: s-s --------------------------------------------
         /// Opt-in gene `siege-goes-on-the-forecast`: the siege train goes,
         /// holds and stands down on the capture forecast, and Siege rows rank
@@ -715,6 +719,10 @@ impl AdvancedAi {
         /// Opt-in gene `spreaders-spread-before-they-chart`; see
         /// `advanced/spreaders_spread_before_they_chart.rs`.
         spreaders_spread_before_they_chart => enable_spreaders_spread_before_they_chart, disable_spreaders_spread_before_they_chart;
+        /// Opt-in gene `science-seat-monuments`: a Science seat's cities
+        /// claim their Monument from the third city; see
+        /// `advanced/culture_monuments.rs`.
+        science_seat_monuments => enable_science_seat_monuments, disable_science_seat_monuments;
         // ---- append: t-z --------------------------------------------
         /// Opt-in gene `theology-fights-count-the-host-edge`; see
         /// `advanced/theology_fights.rs`.

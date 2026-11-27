@@ -1222,6 +1222,9 @@ impl AdvancedAi {
             // Feudalism, the Tagma's Divine Right, the Winged Hussar's
             // Mercantilism). See `advanced/decisive_window.rs`.
             let decisive_civic_goal = self.decisive_window_civic_goal(g, pid, plan);
+            // `rival-science-run-opens-the-spy-civics`: read once; see the
+            // arm below. `None` with the gene off.
+            let spy_civic_goal = self.rival_science_run_spy_civic_goal(g, pid, plan);
             let forced_goal = match objective {
                 _ if g.has_ability(pid, "taxis")
                     && !g.players[pid]
@@ -1326,6 +1329,12 @@ impl AdvancedAi {
                 _ if self.diplo_statue_civic_goal(g, pid).is_some() => {
                     self.diplo_statue_civic_goal(g, pid)
                 }
+                // `rival-science-run-opens-the-spy-civics`: off a Science aim,
+                // a rival's science run takes the Spy-slot civics ahead of the
+                // government ladder, so the denial has Spies to train. See
+                // `advanced/rival_science_run_opens_the_spy_civics.rs`. No-op
+                // with the gene off.
+                _ if spy_civic_goal.is_some() => spy_civic_goal,
                 _ if self.government_ladder_goal(g, pid, objective).is_some() => {
                     self.government_ladder_goal(g, pid, objective)
                 }

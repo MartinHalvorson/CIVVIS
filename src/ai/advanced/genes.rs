@@ -6416,6 +6416,15 @@ pub const GENES: &[Gene] = &[
     // gene's exceptions. Opt-in; see
     // `advanced/religion_seat_third_city_first.rs`.
     Gene { tag: "religion-seat-third-city-first", field: "religion_seat_third_city_first", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_third_city_first, disable: AdvancedAi::disable_religion_seat_third_city_first },
+    // Tournament 8 2026-11-26/27, five Lv 8 Religion seats lost to a rival's
+    // Science Victory (launches 0/4 against 4/4): Diplomatic Service came at
+    // t115-151 as a government-ladder step and the first denial Spy 3-7
+    // turns after it, when the rival had already landed 1-2 space projects.
+    // Off a Science aim, while a met rival makes 1.5 times our Science (and
+    // at least 60), the civic slot takes Diplomatic Service then Nationalism
+    // ahead of the government ladder. Opt-in; see
+    // `advanced/rival_science_run_opens_the_spy_civics.rs`.
+    Gene { tag: "rival-science-run-opens-the-spy-civics", field: "rival_science_run_opens_the_spy_civics", kind: Kind::OptIn, enable: AdvancedAi::enable_rival_science_run_opens_the_spy_civics, disable: AdvancedAi::disable_rival_science_run_opens_the_spy_civics },
     // ---- append: s-s ------------------------------------------------
     // Kristina Deity 11-10 reached Nationalism at t122 with 8 cities on three
     // terrain classes and built no Open-Air Museum by t150 (+48 Culture and
@@ -6650,6 +6659,13 @@ pub const GENES: &[Gene] = &[
     // rivals. The held spreader waits; the scouts leave those rivals to the
     // seekers. Opt-in; see `advanced/spreaders_spread_before_they_chart.rs`.
     Gene { tag: "spreaders-spread-before-they-chart", field: "spreaders_spread_before_they_chart", kind: Kind::OptIn, enable: AdvancedAi::enable_spreaders_spread_before_they_chart, disable: AdvancedAi::disable_spreaders_spread_before_they_chart },
+    // Live Tournament 7 Science seats (36 seats, 2026-11-27): 39% of their
+    // cities held a Monument at t100 and their Culture ran a median 35 a
+    // turn against the best rival's 168, so 30 of 32 still sat in Monarchy
+    // at t150. The Culture lane's Monument claim, widened to the Science
+    // seat from its third city; science heads keep their queue. Opt-in; see
+    // `advanced/culture_monuments.rs`.
+    Gene { tag: "science-seat-monuments", field: "science_seat_monuments", kind: Kind::OptIn, enable: AdvancedAi::enable_science_seat_monuments, disable: AdvancedAi::disable_science_seat_monuments },
     // ---- append: t-z ------------------------------------------------
     // Host previews of our religious strikes, 11-09: rival defenders carry +4
     // for difficulty (68 of 75) and +3/+6 Intel (55 of 75), which the fight

@@ -95,13 +95,20 @@ the two pages agree: a win is CIVVIS's victory and anything else a finished
 game ended in is a loss, a rival's victory, our elimination or a game
 conceded early. That is a wider count than the charts', which have no place
 for a game without a victory. Which table a game stands in is the game's own
-setup, read off its run summary on the ledger (`switches`): what the game
+setup, read off its run summary on the ledger (`tables_of`): what the game
 itself reported of its Diplomatic victory, or what a hotseat table was asked
-to switch off. A game whose summary does not say is in neither table. The
-record holds it under `tournament_rates`: `tables.on` and `tables.off`, each
-with every level and every window, and `to`, the newest tournament game's
-start, which every window is measured back from in whole days of 24 hours,
-so every cell of both tables is the same days' games.
+to switch off. A game whose summary does not say is in neither table.
+A third table holds the Lv 8 Deity games played with the Religious victory
+off as well (operator 2026-11-27: "add a third category to the tournament
+for lv 8 deity no diplo no religion. lets grind this hard. self improve from
+our mistakes."), a row of its own and no game of the Diplo Off table's: the
+host's bench conductor plays them as benchmark games, tagged as the others
+are, so the game's own Religious switch is all that tells them apart. The
+record holds it under `tournament_rates`: `tables.on`, `tables.off` and
+`tables.religion_off`, each with its levels and every window, and `to`, the
+newest tournament game's start, which every window is measured back from in
+whole days of 24 hours, so every cell of every table is the same days'
+games.
 
 The record also holds the tree of build orders
 (operator 2026-11-23: "add a tree for the early build order win rates for
@@ -205,7 +212,7 @@ WINDOWS = [("7", 7), ("30", 30), ("all", None)]
 #: snapshot is taken, from each game's own finish.
 RECENT = [("1", 1), ("3", 3)]
 
-#: The tournaments' definitions, in the source tree, and what the two tables
+#: The tournaments' definitions, in the source tree, and what the tables
 #: of win rates list (operator 2026-11-23): their rows, the levels from Deity
 #: down to Prince ("order the cols lv 8 down to level 4"), their columns, the
 #: days back from the newest tournament game ("a last 1 day win rate col,
@@ -213,11 +220,15 @@ RECENT = [("1", 1), ("3", 3)]
 #: games with the Diplomatic victory on before the games with it off (he
 #: first asked for "a table on the left the is with diplo excluded and a
 #: table on the right that allows diplo wins", and later that day reversed
-#: it: "put diplo victory allowed to the left of no diplo victory").
+#: it: "put diplo victory allowed to the left of no diplo victory"), each
+#: with the levels it lists. The third, the games with the Religious victory
+#: off as well (operator 2026-11-27: "add a third category to the tournament
+#: for lv 8 deity no diplo no religion"), lists Deity alone, the one level
+#: they are played at.
 TOURNAMENTS = pathlib.Path("data/tournaments.json")
 RATE_LEVELS = LEVELS[::-1]
 RATE_DAYS = [1, 3, 7, 30]
-RATE_TABLES = [("on", True), ("off", False)]
+RATE_TABLES = [("on", RATE_LEVELS), ("off", RATE_LEVELS), ("religion_off", [8])]
 
 #: The snapshot of the openings, in the source tree, and what the tree of
 #: build orders lists (operator 2026-11-23: "early build order win rates for
@@ -382,26 +393,59 @@ def limits(source: pathlib.Path, tags: list[str]) -> dict[str, tuple]:
     return summaries(source, tags, lambda summary: (summary.get("speed"), summary.get("max_turns")))
 
 
-def diplomatic(summary: dict) -> bool | None:
-    """Whether a run was played with the Diplomatic victory on, as its
-    summary says. A hotseat table's names what the table was asked to switch
-    off (`victories_off`); a single-player game's carries what the game
-    itself reported once the board was up (`seat.victories`, a switch per
-    victory type). `None` when it says neither: a launch that never reached a
-    board, or a run from before the game reported its switches."""
+def victory_on(summary: dict, victory: str) -> bool | None:
+    """Whether a run was played with a victory (`diplomatic`, `religious`)
+    on, as its summary says. A hotseat table's names what the table was
+    asked to switch off (`victories_off`); a single-player game's carries
+    what the game itself reported once the board was up (`seat.victories`, a
+    switch per victory type). `None` when it says neither: a launch that
+    never reached a board, or a run from before the game reported its
+    switches."""
     off = summary.get("victories_off")
     if isinstance(off, list):
-        return "VICTORY_DIPLOMATIC" not in off
+        return f"VICTORY_{victory.upper()}" not in off
     seat = summary.get("seat")
     reported = seat.get("victories") if isinstance(seat, dict) else None
-    on = reported.get("diplomatic") if isinstance(reported, dict) else None
+    on = reported.get(victory) if isinstance(reported, dict) else None
     return on if isinstance(on, bool) else None
+
+
+def diplomatic(summary: dict) -> bool | None:
+    """Whether a run was played with the Diplomatic victory on (`victory_on`)."""
+    return victory_on(summary, "diplomatic")
+
+
+def religious(summary: dict) -> bool | None:
+    """Whether a run was played with the Religious victory on (`victory_on`)."""
+    return victory_on(summary, "religious")
 
 
 def switches(source: pathlib.Path, tags: list[str]) -> dict[str, bool]:
     """Each run's Diplomatic victory, on or off, from its summary on the
     ledger branch. A run whose summary does not say is not in the answer."""
     return {tag: on for tag, on in summaries(source, tags, diplomatic).items() if on is not None}
+
+
+def rate_table(summary: dict) -> str | None:
+    """The table of win rates a run's game stands in (`RATE_TABLES`), as its
+    summary says: `on` with the Diplomatic victory on, `off` with it off,
+    and `religion_off` with the Religious victory off as well, which is
+    never also `off`. A summary silent on the Religious victory is a game
+    with it on, as every game was before the third table. `None` when it
+    says nothing of the Diplomatic victory, and for a game with only the
+    Religious victory off, which no table lists."""
+    on = diplomatic(summary)
+    if on is None:
+        return None
+    if religious(summary) is False:
+        return None if on else "religion_off"
+    return "on" if on else "off"
+
+
+def tables_of(source: pathlib.Path, tags: list[str]) -> dict[str, str]:
+    """Each run's table of win rates (`rate_table`), from its summary on the
+    ledger branch. A run whose summary names none is not in the answer."""
+    return {tag: name for tag, name in summaries(source, tags, rate_table).items() if name}
 
 
 def full_length(limit: tuple | None) -> bool:
@@ -493,13 +537,12 @@ def started(key: str, ending: dict) -> datetime.datetime | None:
 def tournament_games(rows: list[dict], specs: list[dict], switch=lambda tags: {}) -> list[tuple]:
     """Every finished game of every tournament, at a level the tables list:
     when it began, the level the game's AI played at, whether CIVVIS won it,
-    and whether it was played with the Diplomatic victory on. The games and
+    and the table it stands in (`on`, `off` or `religion_off`). The games and
     their endings are `home_rankings.tournament_series`'s own, the count the
     Tournaments page shows; a game counts once, whatever series it stands
-    in. `switch` answers each run's Diplomatic victory (`switches`), asked of
-    the run a game ended in and, where that run does not say, of the game's
-    first; a game neither says it for stands in neither table and is left
-    out."""
+    in. `switch` answers each run's table (`tables_of`), asked of the run a
+    game ended in and, where that run does not say, of the game's first; a
+    game neither says it for stands in no table and is left out."""
     games: dict[str, tuple] = {}
     for series in ranks.tournament_series(rows, specs, detail=True) or []:
         for key, ending in series["played"]:
@@ -509,31 +552,35 @@ def tournament_games(rows: list[dict], specs: list[dict], switch=lambda tags: {}
     known = switch(sorted({tag for key, (_, ending) in games.items() for tag in (ending.get("tag") or key, key)}))
     out = []
     for key, (at, ending) in games.items():
-        on = known.get(ending.get("tag") or key, known.get(key))
-        if on is not None:
-            out.append((at, ranks.level(ending.get("difficulty")), ending["outcome"] == "win", bool(on)))
+        table = known.get(ending.get("tag") or key, known.get(key))
+        if table is not None:
+            out.append((at, ranks.level(ending.get("difficulty")), ending["outcome"] == "win", table))
     return out
 
 
 def win_rates(games: list[tuple]) -> dict | None:
-    """The two tables of win rates, the games with the Diplomatic victory on
-    and the games with it off: in each, every level of `RATE_LEVELS` with its
-    games and wins in each window of `RATE_DAYS`. A window is that many days
-    of 24 hours back from the newest game of them all, in either table, so
-    every cell is the same days' games, and a level with no game in a window
-    is listed with none. `games` is what the widest window holds, in a table
-    and in both. `None` without a game."""
+    """The tables of win rates (`RATE_TABLES`), the games with the Diplomatic
+    victory on, the games with it off, and the Deity games with the Religious
+    victory off as well: in each, every level it lists with its games and
+    wins in each window of `RATE_DAYS`. A game at a level its table does not
+    list is in none. A window is that many days of 24 hours back from the
+    newest game of them all, in any table, so every cell is the same days'
+    games, and a level with no game in a window is listed with none. `games`
+    is what the widest window holds, in a table and in all. `None` without a
+    game."""
+    listed = dict(RATE_TABLES)
+    games = [game for game in games if game[1] in listed.get(game[3], ())]
     if not games:
         return None
     newest = max(at for at, _, _, _ in games)
     tables = {}
-    for name, switched in RATE_TABLES:
+    for name, rows in RATE_TABLES:
         levels = []
-        for level in RATE_LEVELS:
+        for level in rows:
             windows = []
             for days in RATE_DAYS:
                 since = newest - datetime.timedelta(days=days)
-                won = [won for at, played, won, on in games if played == level and on is switched and at > since]
+                won = [won for at, played, won, table in games if played == level and table == name and at > since]
                 windows.append({"days": days, "games": len(won), "wins": sum(won)})
             levels.append({"level": level, "windows": windows})
         tables[name] = {"games": sum(row["windows"][-1]["games"] for row in levels), "levels": levels}
@@ -757,7 +804,7 @@ def tournament_rates(source: pathlib.Path, rows: list[dict] | None) -> dict | No
         if not rows:
             return None
         specs = json.loads((source / TOURNAMENTS).read_text(encoding="utf-8")).get("tournaments") or []
-        return win_rates(tournament_games(rows, specs, lambda tags: switches(source, tags)))
+        return win_rates(tournament_games(rows, specs, lambda tags: tables_of(source, tags)))
     except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:
         print(f"research_page: no win rates over the tournaments' games ({error})", file=sys.stderr)
         return None
@@ -789,7 +836,7 @@ def research(source: pathlib.Path) -> dict | None:
         out["levels"] = {}
     # The win rate at each level over the tournaments' games, off the same
     # result lines and the definitions the Tournaments page reads, each
-    # game in the table of its own Diplomatic switch.
+    # game in the table of its own Diplomatic and Religious switches.
     out["tournament_rates"] = tournament_rates(source, rows)
     # The tree of build orders over the games against Deity: each game's
     # opening from the snapshot, from its run's summary for a game the

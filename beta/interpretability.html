@@ -649,7 +649,7 @@
       <!-- Bottom up: the gene pool, every rule with what it is worth. -->
       <section class="res-section" id="int-genes" aria-labelledby="int-genes-title" hidden>
         <h2 class="rank-title" id="int-genes-title">Bottom up: one rule at a time</h2>
-        <p class="rank-sub">A gene is a switch on one rule, such as <q>a Settler always has somewhere to go</q>. Its price: the win rate of the seats with it on, less those with it off.</p>
+        <p class="rank-sub">A gene switches one rule, such as <q>a Settler always has somewhere to go</q>. Its price, in Prince self-play with no Firaxis AI: the win rate with it on, less with it off.</p>
         <div class="res-kind">
           <h3 class="res-kind-title">Every rule, by what it is worth</h3>
           <p class="int-kind-sub">A dot is a gene. Right: seats win more with the rule on. Higher: surer that it helps.</p>
@@ -683,7 +683,9 @@
             turned off by its last three batches, with a margin so that one batch cannot flip it, so a rule in the best
             genome can stand left of zero here and one outside it to the right. A rule that costs wins stays in the pool,
             switched off, as the record of what was tried. In a tournament every seat draws its own genes: one of the best
-            genome is on for about three seats in four, any other for about one in four.
+            genome is on for about three seats in four, any other for about one in four. Every batch is six CIVVIS seats
+            against each other at Prince, where the level hands no seat anything; the live seat plays one CIVVIS agent
+            against five Firaxis AIs at Deity, so these prices are not evidence against the Firaxis AI.
           </p>
         </details>
         <div class="rank-note">

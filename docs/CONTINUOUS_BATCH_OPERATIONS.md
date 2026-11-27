@@ -14,6 +14,12 @@ The tool is `tools/continuous_batch_scheduler.py`; every command below takes
   source under `<root>/sources/<commit>/`, builds one release binary, reserves a
   seed window, and appends six `kind: game` rows per finished game to
   `<root>/batches/<id>/rows-continuous.jsonl`.
+- The games are `gene_screen`'s default field, because `run_segment` passes it
+  no field flag: six CIVVIS seats against each other at Prince, with no
+  Firaxis-level rival at the table. That is what every published column
+  measures, and it is not the live seat's Deity table. `docs/GENE_SCREEN.md`,
+  "What the screen measures", says why the batch does not play the live
+  arrangement yet.
 - `<root>/scheduler-state.json` is the only truth about phase, reservations,
   deadline and publication. `<root>/logs/scheduler.log` gets one line per
   lifecycle event (`segment_started`, `cut_request_adopted`, `frozen_deadline`,

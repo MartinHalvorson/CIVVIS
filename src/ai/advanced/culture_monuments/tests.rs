@@ -330,3 +330,332 @@ fn a_young_monument_keeps_version_ones_holds() {
     claim(&ai, &mut game);
     assert_eq!(game.cities[&cities[0]].queue.first(), Some(&shrine));
 }
+
+// ---- `science-seat-monuments` ----------------------------------------------
+
+fn science_seat(gene: bool) -> AdvancedAi {
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
+    if gene {
+        ai.enable_science_seat_monuments();
+    }
+    ai
+}
+
+fn building(name: &str) -> Item {
+    Item::Building {
+        building: crate::name::Name::new(name),
+    }
+}
+
+/// The claim's first item in every city of ours, in city order.
+fn heads(game: &Game, cities: &[u32]) -> Vec<Option<Item>> {
+    cities
+        .iter()
+        .map(|cid| game.cities[cid].queue.first().cloned())
+        .collect()
+}
+
+/// A third land site of ours, at least five tiles from each city in
+/// `cities`, within ten of the first and, given `clear_of`, more than
+/// [`MONUMENT_THREAT_RADIUS`] tiles from it. The new city's Monument has 50
+/// Production banked and the queue is `head`.
+fn add_city(game: &mut Game, cities: &[u32], clear_of: Option<Pos>, head: Item) -> u32 {
+    let taken: Vec<Pos> = cities.iter().map(|cid| game.cities[cid].pos).collect();
+    let site = game
+        .map
+        .tiles
+        .iter()
+        .filter(|(pos, tile)| {
+            !game.rules.is_water(tile)
+                && game.wdist(**pos, taken[0]) <= 10
+                && taken.iter().all(|t| game.wdist(**pos, *t) >= 5)
+                && clear_of.is_none_or(|post| game.wdist(**pos, post) > MONUMENT_THREAT_RADIUS)
+        })
+        .map(|(pos, _)| *pos)
+        .min()
+        .expect("fixture: a third site");
+    game.place_city(0, site, None);
+    let cid = *game
+        .player_city_ids(0)
+        .iter()
+        .find(|cid| !cities.contains(cid))
+        .expect("fixture: the third city");
+    let monument = building("monument");
+    let city = game.cities.get_mut(&cid).unwrap();
+    city.queue = vec![head];
+    city.production_progress
+        .insert(Game::item_progress_key(&monument), 50.0);
+    cid
+}
+
+/// [`two_cities`] and a third city, every queue idle.
+fn three_cities() -> (Game, Vec<u32>, Item) {
+    let (mut game, mut cities, monument) = two_cities();
+    let third = add_city(&mut game, &cities, None, unit("scout"));
+    game.cities.get_mut(&third).unwrap().queue.clear();
+    cities.push(third);
+    for cid in &cities {
+        assert!(
+            game.can_produce(0, *cid, &monument),
+            "fixture: every city can build its Monument"
+        );
+    }
+    (game, cities, monument)
+}
+
+#[test]
+fn science_seat_monuments_is_opt_in() {
+    super::super::test_support::opt_in_off_in_both_controllers("science-seat-monuments", |ai| {
+        ai.science_seat_monuments
+    });
+}
+
+/// From the third city on, every city of a Science seat training a Scout
+/// puts its Monument first and the claim holds. Two cities claim nothing;
+/// off, with only the Culture gene, or for a Domination seat nothing moves.
+#[test]
+fn a_science_seat_claims_every_citys_monument_from_its_third_city() {
+    let (game, cities, monument) = three_cities();
+    let mut busy = game.clone();
+    for cid in &cities {
+        busy.cities.get_mut(cid).unwrap().queue = vec![unit("scout")];
+    }
+    let mut domination = AdvancedAi::targeting(VictoryTarget::Domination);
+    domination.enable_science_seat_monuments();
+    for (ai, why) in [
+        (science_seat(false), "off"),
+        (seat(VictoryTarget::Science, true), "the Culture gene alone"),
+        (domination, "a Domination seat"),
+    ] {
+        let mut kept = busy.clone();
+        claim(&ai, &mut kept);
+        assert_eq!(
+            heads(&kept, &cities),
+            vec![Some(unit("scout")); 3],
+            "{why}: no claim"
+        );
+        assert!(!ai.culture_monuments_hold_locally(&kept), "{why}");
+    }
+
+    let ai = science_seat(true);
+    let mut on = busy.clone();
+    claim(&ai, &mut on);
+    let plan = ai.assess(&on, 0);
+    for cid in &cities {
+        assert_eq!(
+            on.cities[cid].queue.first(),
+            Some(&monument),
+            "the Monument goes first"
+        );
+        assert!(ai.culture_monument_holds(&on, 0, *cid, &plan, &monument));
+    }
+    assert!(ai.culture_monuments_hold_locally(&on));
+
+    let (mut two, pair, _) = two_cities();
+    for cid in &pair {
+        two.cities.get_mut(cid).unwrap().queue = vec![unit("scout")];
+    }
+    let plan = ai.assess(&two, 0);
+    assert!(ai.culture_monument_item(&two, 0, pair[1], &plan).is_none());
+    claim(&ai, &mut two);
+    assert_eq!(
+        heads(&two, &pair),
+        vec![Some(unit("scout")); 2],
+        "two cities wait for the third"
+    );
+}
+
+/// Science (a Library, a Campus), a Settler and Walls keep their queue on a
+/// Science seat; a Culture seat's claim passes the Library and the Campus.
+#[test]
+fn science_settlers_and_walls_keep_a_science_seats_queue() {
+    let (game, cities, monument) = three_cities();
+    let campus = Item::District {
+        district: crate::name!("campus"),
+        pos: game.cities[&cities[2]].pos,
+    };
+    let mut busy = game.clone();
+    for (cid, head) in cities
+        .iter()
+        .zip([building("library"), unit("settler"), campus.clone()])
+    {
+        busy.cities.get_mut(cid).unwrap().queue = vec![head];
+    }
+
+    let mut science = busy.clone();
+    claim(&science_seat(true), &mut science);
+    assert_eq!(
+        heads(&science, &cities),
+        vec![
+            Some(building("library")),
+            Some(unit("settler")),
+            Some(campus.clone())
+        ],
+        "science and the Settler keep their queue"
+    );
+
+    let mut culture = busy.clone();
+    claim(&seat(VictoryTarget::Culture, true), &mut culture);
+    assert_eq!(
+        heads(&culture, &cities),
+        vec![
+            Some(monument.clone()),
+            Some(unit("settler")),
+            Some(monument.clone())
+        ],
+        "the Culture seat passes science"
+    );
+
+    let mut walls = game.clone();
+    walls.cities.get_mut(&cities[0]).unwrap().queue = vec![building("walls")];
+    claim(&science_seat(true), &mut walls);
+    assert_eq!(
+        walls.cities[&cities[0]].queue.first(),
+        Some(&building("walls"))
+    );
+}
+
+/// Version two's near-done pass stays the Culture seat's: a Science seat
+/// with both genes keeps its Library ahead of a near-done Monument.
+#[test]
+fn the_near_done_pass_stays_on_the_culture_seat() {
+    let (mut game, cities, monument) = three_cities();
+    game.cities.get_mut(&cities[0]).unwrap().queue = vec![building("library")];
+    let mut ai = science_seat(true);
+    ai.enable_culture_seat_monuments_2();
+    let plan = ai.assess(&game, 0);
+    assert!(ai
+        .culture_monument_item(&game, 0, cities[0], &plan)
+        .is_some());
+    assert!(!ai.culture_monument_finishes_first(&game, 0, cities[0], &plan, &monument));
+    claim(&ai, &mut game);
+    assert_eq!(
+        game.cities[&cities[0]].queue.first(),
+        Some(&building("library"))
+    );
+}
+
+/// A Culture seat plays as before with the Science gene on: the same heads
+/// after the claim on an open board and at war, and no claim through the war
+/// for version one.
+#[test]
+fn a_culture_seat_plays_as_before_with_the_science_gene_on() {
+    let (game, cities, _) = three_cities();
+    let mut busy = game.clone();
+    for (cid, head) in cities
+        .iter()
+        .zip([unit("scout"), building("library"), unit("settler")])
+    {
+        busy.cities.get_mut(cid).unwrap().queue = vec![head];
+    }
+    let (war, war_cities, _) = at_war_with_a_soldier_beside_one_city();
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Culture,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 6,
+        assessed_turn: 0,
+        rush: false,
+    };
+    for v2 in [false, true] {
+        let mut culture = seat(VictoryTarget::Culture, true);
+        if v2 {
+            culture.enable_culture_seat_monuments_2();
+        }
+        let mut both = culture.clone();
+        both.enable_science_seat_monuments();
+        assert_eq!(
+            culture.culture_monuments_hold_locally(&busy),
+            both.culture_monuments_hold_locally(&busy)
+        );
+
+        let (mut before, mut after) = (busy.clone(), busy.clone());
+        claim(&culture, &mut before);
+        claim(&both, &mut after);
+        assert_eq!(heads(&before, &cities), heads(&after, &cities), "v2 {v2}");
+
+        let (mut before, mut after) = (war.clone(), war.clone());
+        culture.claim_culture_monuments(&mut before, 0, &plan);
+        both.claim_culture_monuments(&mut after, 0, &plan);
+        assert_eq!(
+            heads(&before, &war_cities),
+            heads(&after, &war_cities),
+            "v2 {v2} at war"
+        );
+        if !v2 {
+            assert_eq!(heads(&after, &war_cities), vec![Some(unit("scout")); 2]);
+        }
+    }
+
+    let mut idle = seat(VictoryTarget::Culture, false);
+    idle.enable_science_seat_monuments();
+    let mut kept = busy.clone();
+    claim(&idle, &mut kept);
+    assert_eq!(heads(&kept, &cities), heads(&busy, &cities));
+}
+
+/// At war with a major, a Science seat claims the idle queues of its cities
+/// out of the rival's reach and holds the one with the rival's soldier
+/// beside it; a soldier at the head (a Scout) and the plan's threatened city
+/// keep their queue.
+#[test]
+fn a_science_seat_claims_through_the_war_outside_the_soldiers_reach() {
+    let (mut game, mut cities, monument) = at_war_with_a_soldier_beside_one_city();
+    let post = game
+        .player_unit_ids(1)
+        .into_iter()
+        .map(|uid| game.units[&uid].pos)
+        .next()
+        .expect("fixture: the rival's soldier");
+    let third = add_city(&mut game, &cities, Some(post), unit("scout"));
+    cities.push(third);
+    for cid in &cities {
+        game.cities.get_mut(cid).unwrap().queue.clear();
+    }
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Science,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 6,
+        assessed_turn: 0,
+        rush: false,
+    };
+
+    let mut off = game.clone();
+    science_seat(false).claim_culture_monuments(&mut off, 0, &plan);
+    assert_eq!(heads(&off, &cities), vec![None; 3]);
+
+    let ai = science_seat(true);
+    let mut on = game.clone();
+    ai.claim_culture_monuments(&mut on, 0, &plan);
+    assert_eq!(
+        heads(&on, &cities),
+        vec![Some(monument.clone()), None, Some(monument.clone())],
+        "the cities out of reach claim; the one beside the soldier holds"
+    );
+    assert!(ai.culture_monument_holds(&on, 0, cities[0], &plan, &monument));
+    assert!(ai.culture_monument_item(&on, 0, cities[1], &plan).is_none());
+
+    let mut soldier = game.clone();
+    soldier.cities.get_mut(&cities[2]).unwrap().queue = vec![unit("scout")];
+    ai.claim_culture_monuments(&mut soldier, 0, &plan);
+    assert_eq!(
+        soldier.cities[&cities[2]].queue.first(),
+        Some(&unit("scout")),
+        "a soldier keeps its queue at war"
+    );
+
+    let mut threatened = game.clone();
+    let plan = StrategicPlan {
+        threatened_city: Some(cities[2]),
+        ..plan
+    };
+    ai.claim_culture_monuments(&mut threatened, 0, &plan);
+    assert_eq!(
+        threatened.cities[&cities[2]].queue.first(),
+        None,
+        "the plan's threatened city keeps its queue"
+    );
+}

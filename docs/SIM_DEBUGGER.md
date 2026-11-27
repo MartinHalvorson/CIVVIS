@@ -1086,9 +1086,10 @@ late in a six-seat game (55 MB at turn 30, 199 MB at 100, 623 MB at 195 with
 every turn kept), and an engine keeps turns up to its memory line (`room`,
 1 GB unless told). One engine held every world under one line; an engine a
 world would hold a line each. So each world tells its engine its share of
-2 GB (384 MB on a small device), never under 128 MB, again whenever a world
-is opened or deleted (`strangePaneRoom`): two worlds 1024 MB each, three 682.
-Past its line a world gives back its oldest turns first: told 256 MB, one
+the tab's ceiling (384 MB on a small device), never under 128 MB, again
+whenever a world is opened or deleted (`strangePaneRoom`; "What a tab may
+hold", below; it was a share of a flat 2 GB until PR #5939: two worlds 1024
+MB each, three 682). Past its line a world gives back its oldest turns first: told 256 MB, one
 world's engine stood at 274 MB by turn 150 and 283 MB at the end (turn 195),
 keeping 49 of its turns, in the same time as keeping all of them.
 
@@ -1111,6 +1112,65 @@ them all go, and `/machine-metrics` counts a scout with the engines
 A scout is the world's engine's memory over again for as long as its game
 takes to play out. Off the published build `scout` means nothing: the same
 request is answered by the world itself.
+
+### What a tab may hold
+
+Operator, a standing rule since 2026-11-23: "please be careful about a
+memory blowup on civvis. considering the typical amount of memory people
+computres have". A visitor is an 8 GB laptop with other things open, and a
+tab is what it costs that computer: the page's process, its part of the GPU
+process, and every engine's memory, which never shrinks while its worker
+lives. So a tab is given a ceiling of 3/16 of the memory the browser says
+the computer has (`navigator.deviceMemory`, which Chrome rounds down to a
+power of two): 1.5 GB on the 8 GB budget, where a browser that says nothing
+(Safari, Firefox) or says less is put too, and 3 GB on 16 GB. A link may say
+what the computer has instead (`?memory=32`, in GB). A phone or a small
+device opens on the one timeline with its 384 MB line, as before.
+
+What a Doctor Strange tab is made of was measured on the published engine
+(PR #5939: headless Chrome with its GPU, the page's four-seat Pangaea, the
+page's process and the GPU process added up, the no-build local lane): by
+the end of a game the page itself, its own engine and its part of the GPU
+process are about 920 MB; each world's box, the viewer again in a frame,
+about 200 MB more (70 MB on turn 1: a box's page grows with its game); and
+each world's engine keeps every turn until it passes the line it is told
+(about 55 MB on turn 60, 200 MB on 120, 330 MB at the end of the game),
+with a copy of it, its scout, for each future played at once. From those,
+`strangeBudgetOf` (in `app_debugger.js`, "What a tab may hold"):
+
+- the worlds that fit are as many as fit under the ceiling with each box,
+  each world's engine at the engine's least (128 MB) and one future played
+  beside them; as many may be open, but never fewer than the two the page
+  opens on. On the 8 GB budget one fits and two may be open; on 16 GB six;
+  on 24 GB ten; the dozen there are letters for from 32 GB. Past that,
+  Branch, Branch Next Best, Branch 5 Next Best, Autosearch's Branch it and
+  All 14,000,605 make no world, or as many as fit, and say why;
+- what the boxes leave is the worlds' kept turns, the same line for each
+  world (`room`), and as many futures are begun at once as fit beside them
+  (one at a time on the 8 GB budget, `strangeForesee`);
+- a world deleted, and a page made ahead for the next branch, hold no
+  engine: the shim lets go of the engine of a world's page out of sight
+  (`strange-shut`) and gives it none until it is a world again; a future
+  played to its end lets go of its scout; and no page is made ahead for a
+  branch that would not fit (`strangeSpare`);
+- the AI Debugger's page and Edge of Tomorrow tell their engine what the
+  page and a split's two boxes leave (`debugRoomMB`: 616 MB alone and 216 MB
+  for a split on the 8 GB budget, where it was 1 GB), without making the bar
+  busy; and a fork for Autosearch is made only where it fits beside the
+  engines the tab holds (`forksThatFit` in `beta/shim.js`).
+
+`beta/strange_memory_test.py` runs that arithmetic as it ships, in node;
+`check_doctor_strange_memory` in `beta/debugger_test.py` holds the cap
+against every way of making a world, and `beta/homes_test.py` the shim's
+side. Measured before and after (PR #5939 has the table): All 14,000,605
+from turn 60 made eleven worlds and passed 5 GB by turn 132; on the 16 GB
+budget it makes four (six worlds) and the tab peaked at 3.15 GB, its
+engines 1.1 GB; on the 8 GB budget it makes none. What none of this reaches
+is the pages' own growth: by the end of a game the two worlds the page opens
+on are about 1.65-1.7 GB on the 8 GB budget (2.2 GB before), their engines a
+fifth of it; the rest is the host page and the two boxes' viewer pages
+(renderer and GPU), which grow with their games whatever their engines
+keep.
 
 ## What a search costs
 

@@ -400,7 +400,7 @@ class LobbyTest(unittest.TestCase):
                     patch.object(hotseat, "harness_alive", side_effect=lambda _p: next(alive, False)), \
                     patch.object(hotseat.os, "kill") as kill, \
                     patch("builtins.print", side_effect=lambda *a, **k: out.append(" ".join(map(str, a)))):
-                self.assertEqual(hotseat.stop_command(argparse.Namespace(quit_game=True)), 0)
+                self.assertEqual(hotseat.stop_command(argparse.Namespace(quit_game=True, resign=False)), 0)
             kill.assert_called_once()
             self.assertTrue(any("they stay up" in line for line in out))
 
