@@ -69,6 +69,7 @@ WINDOWS_WARNING = (
 
 
 def main(argv: list[str] | None = None) -> int:
+    from_command_line = argv is None
     argv = list(sys.argv[1:] if argv is None else argv)
     command = argv[0] if argv else ""
     if command == WORKER_COMMAND:
@@ -82,7 +83,10 @@ def main(argv: list[str] | None = None) -> int:
     if command in ("-h", "--help"):
         print(__doc__.split("\n\n")[1] + "\n")
     import civ6_hotseat  # noqa: PLC0415 - only the harness pays for its imports
-    return civ6_hotseat.main(argv)
+    # From the command line the harness reads `sys.argv` itself, as it does run
+    # as a script: `--manual-lobby` is seen there before `civ6_control` loads
+    # (screen-free from the first import), and an abbreviated flag re-executes.
+    return civ6_hotseat.main(None if from_command_line else argv)
 
 
 def run_worker(argv: list[str]) -> int:
@@ -189,6 +193,10 @@ def doctor_report() -> dict:
     report["game_running"] = bool(pids)
     report["game_pids"] = pids
     current = civ6_hotseat.read_current()
+    from civ6_control import screen_free  # noqa: PLC0415
+    report["screen_free"] = {"engaged": screen_free.engaged(),
+                             "loaded_for_real": screen_free.loaded_for_real(),
+                             "environment": os.environ.get(screen_free.ENV)}
     report["harness"] = {"runs": str(civ6_hotseat.RUN_ROOT), "current": current,
                          "running": bool(current and civ6_hotseat.harness_alive(
                              current.get("pid", -1)))}
@@ -317,6 +325,9 @@ def selfcheck(argv: list[str]) -> int:
         "CIVVIS_GAME_LOCK_DIR": str(root / "game.lock"),
         "CIVVIS_OPERATOR_HALT_FILE": str(root / "operator-halt.json"),
         "CIVVIS_HOTSEAT_RUNS": str(root / "runs"),
+        # As `--manual-lobby` runs, the mode this bundle is for: screen-free
+        # from the first import, here and in every worker started from here.
+        "CIVVIS_SCREEN_FREE": "1",
     })
     os.environ.pop("CIV6_DIR", None)
     results: list[tuple[bool, str, str]] = []
@@ -344,6 +355,8 @@ def selfcheck(argv: list[str]) -> int:
     step("worker stop", lambda: _check_worker_stop(state))
     step("game lock", lambda: _check_lock(state, root))
     step("processes", lambda: _check_processes(state))
+    step("screen-free child", lambda: _check_screen_free_child(state))
+    step("manual lobby", lambda: _check_manual_lobby(state, root, args.orders_bin))
     if "brains" in state:
         state["brains"].stop()
     passed = sum(ok for ok, _, _ in results)
@@ -368,27 +381,36 @@ def _check_imports(state: dict, root: Path) -> str:
     from civ6_control import gamelock, watch  # noqa: F401, PLC0415
     from civ6_control import install as modinstall  # noqa: PLC0415
 
+    from civ6_control import screen_free  # noqa: PLC0415
+
     state.update(env=env, hotseat=civ6_hotseat, modinstall=modinstall)
+    _need(screen_free.engaged() and not screen_free.loaded_for_real(),
+          f"not screen-free: engaged {screen_free.engaged()}, loaded for real "
+          f"{screen_free.loaded_for_real()}")
     _need(env.install_dir() == root / "install", f"install resolved to {env.install_dir()}")
     _need(env.user_dir() == root / "user", f"user dir resolved to {env.user_dir()}")
     _need(gamelock.LOCK == root / "game.lock", f"game lock is {gamelock.LOCK}")
     shipped = sorted(p.name for p in modinstall.MOD_SOURCE.glob("*"))
     missing = [name for name in modinstall.SCRIPTS if name not in shipped]
     _need(not missing, f"mod source {modinstall.MOD_SOURCE} lacks {missing}")
-    return f"mod source {modinstall.MOD_SOURCE} ({len(shipped)} files)"
+    return (f"mod source {modinstall.MOD_SOURCE} ({len(shipped)} files); screen-free, "
+            f"{len(screen_free.SCREEN_MODULES)} screen modules stood in, 0 loaded for real")
 
 
 def _check_mod_install(state: dict, root: Path) -> str:
+    """The person-facing install `--manual-lobby` writes, into the scratch tree:
+    every seat's agent, the cover context, all gated on a live harness."""
     hotseat, modinstall = state["hotseat"], state["modinstall"]
     tag = "selfcheck"
     run_dir = root / "runs" / tag
     run_dir.mkdir(parents=True, exist_ok=True)
     settings = _Settings(tag=tag, difficulty="DIFFICULTY_PRINCE", map="Pangaea.lua",
-                         map_size="MAPSIZE_DUEL", speed="GAMESPEED_ONLINE", max_turns=250,
+                         map_size="MAPSIZE_DUEL", speed="GAMESPEED_ONLINE", max_turns=None,
                          victory="civvis", leader=None, players=2, auto_human=None,
-                         save_every=10)
+                         save_every=10, play_flags="", victories_off=[], civvis_seats=None,
+                         no_cover=False, keep_handover=False, no_cover_queue=False)
     orders_db = run_dir / "orders.sqlite"
-    config = hotseat.hotseat_config(settings, run_dir, orders_db)
+    config = hotseat.manual_lobby_config(settings, run_dir, orders_db)
     state.update(tag=tag, run_dir=run_dir, orders_db=orders_db)
     # What the mod's `sqlSafe` makes of the path before it ATTACHes it: every
     # apostrophe and backslash stripped (CivvisControlAgent.lua).
@@ -397,18 +419,28 @@ def _check_mod_install(state: dict, root: Path) -> str:
           f"the mod would attach {attached!r}, not the worker's {str(orders_db)!r}")
     target = modinstall.install(config)
     _need(target.is_relative_to(root), f"installed outside the scratch tree: {target}")
-    agent = target / f"{modinstall.HOTSEAT_AGENT.format(seat=SEAT)}.lua"
-    _need(agent.is_file(), f"no seat agent {agent.name}")
-    _need(f"HotseatSeat = {SEAT}," in agent.read_text(encoding="utf-8"),
-          "the seat agent's settings prelude does not name its seat")
+    for seat in hotseat.MANUAL_SEATS:
+        agent = target / f"{modinstall.HOTSEAT_AGENT.format(seat=seat)}.lua"
+        _need(agent.is_file(), f"no seat agent {agent.name}")
+        _need(f"HotseatSeat = {seat}," in agent.read_text(encoding="utf-8"),
+              f"{agent.name}'s settings prelude does not name its seat")
+    cover = target / f"{modinstall.HOTSEAT_COVER}.lua"
+    _need(cover.is_file() and cover.with_suffix(".xml").is_file(), "no cover context")
+    for script in (cover, target / f"{modinstall.HOTSEAT_AGENT.format(seat=SEAT)}.lua"):
+        prelude = script.read_text(encoding="utf-8")
+        _need("RequireHarness = true," in prelude and f'HarnessRun = "{tag}",' in prelude,
+              f"{script.name} is not gated on this harness")
     modinfo = (target / "CivvisControl.modinfo").read_text(encoding="utf-8")
-    _need(agent.with_suffix(".xml").name in modinfo, "modinfo does not list the seat context")
+    _need(f"{modinstall.HOTSEAT_COVER}.xml" in modinfo, "modinfo does not list the cover")
+    _need("<FrontEndActions>" not in modinfo, "modinfo still re-defaults Create Game")
     installed = modinstall.installed_config() or {}
-    _need(installed.get("RunTag") == tag, f"installed run tag {installed.get('RunTag')!r}")
+    _need(installed.get("RunTag") == tag and installed.get("RequireHarness") is True,
+          f"installed config: run {installed.get('RunTag')!r}, "
+          f"RequireHarness {installed.get('RequireHarness')!r}")
     files = len(list(target.iterdir()))
-    size = agent.stat().st_size
     _need(modinstall.uninstall() and not target.exists(), "uninstall left the mod behind")
-    return f"{files} files at {target}, seat agent {size} bytes; removed again"
+    return (f"{files} files at {target}: seats {hotseat.MANUAL_SEATS}, the cover, "
+            "RequireHarness in every prelude, no FrontEndActions; removed again")
 
 
 def _check_log_relay(state: dict, root: Path, events_path: Path) -> str:
@@ -537,6 +569,90 @@ def _check_processes(state: dict) -> str:
     pids = env.game_pids()
     details.append(f"Civilization VI {'running, pid ' + str(pids) if pids else 'not running'}")
     return "; ".join(details)
+
+
+def _check_screen_free_child(state: dict) -> str:
+    """A child of this program inherits screen-free mode, as every decision
+    worker does: it engages from the environment, before anything loads."""
+    import subprocess  # noqa: PLC0415
+
+    command = _program()
+    done = subprocess.run([*command, "doctor", "--json"], capture_output=True, text=True,
+                          encoding="utf-8", errors="replace", timeout=120)
+    _need(done.returncode == 0, f"doctor exited {done.returncode}: {done.stderr[-300:]}")
+    seen = json.loads(done.stdout).get("screen_free") or {}
+    _need(seen.get("engaged") is True and seen.get("loaded_for_real") == [],
+          f"the child reads {seen}")
+    return f"`{' '.join(Path(part).name for part in command)} doctor` engaged it, 0 loaded for real"
+
+
+def _program() -> list[str]:
+    """This program, as a child process is started: frozen it is the program."""
+    return [sys.executable] if FROZEN else [sys.executable, str(Path(__file__).resolve())]
+
+
+def _check_manual_lobby(state: dict, root: Path, orders_bin: str | None) -> str:
+    """`civvis-hotseat --manual-lobby` itself, with no game: it installs into
+    the scratch tree, `--status` sees it running, and `--stop` ends it.
+
+    The child is started WITHOUT `CIVVIS_SCREEN_FREE`, so the flag alone has
+    to make it screen-free, as it does for a player.
+    """
+    import sqlite3 as sql  # noqa: PLC0415
+    import subprocess  # noqa: PLC0415
+
+    env, modinstall = state["env"], state["modinstall"]
+    tag = "selfcheck-lobby"
+    run_dir = root / "runs" / tag
+    clean = {key: value for key, value in os.environ.items() if key != "CIVVIS_SCREEN_FREE"}
+    extra = ["--orders-bin", orders_bin] if orders_bin else []
+    output = root / "manual-lobby.out"
+    with output.open("w", encoding="utf-8") as stream:
+        harness = subprocess.Popen([*_program(), "--manual-lobby", "--tag", tag, *extra],
+                                   stdout=stream, stderr=subprocess.STDOUT, env=clean)
+    started = time.monotonic()
+    try:
+        log = run_dir / "hotseat.log"
+        while True:
+            text = log.read_text(encoding="utf-8", errors="replace") if log.is_file() else ""
+            if "screen-free:" in text:
+                break
+            if harness.poll() is not None or time.monotonic() - started > 120:
+                raise Failed(f"no install from --manual-lobby (exit {harness.poll()}): "
+                             + " | ".join(output.read_text(encoding="utf-8", errors="replace")
+                                          .splitlines()[-8:]))
+            time.sleep(0.5)
+        _need("0 loaded for real" in text, f"not screen-free: {text.splitlines()[-1]}")
+        target = modinstall.install_dir()
+        cover = target / f"{modinstall.HOTSEAT_COVER}.lua"
+        _need(target.is_relative_to(root) and cover.is_file()
+              and "RequireHarness = true," in cover.read_text(encoding="utf-8"),
+              f"the harness's install at {target} has no gated cover")
+        status = subprocess.run([*_program(), "--status"], capture_output=True, text=True,
+                                encoding="utf-8", errors="replace", env=clean, timeout=120)
+        _need('"harness_running": true' in status.stdout,
+              f"--status does not see the harness: {status.stdout[-300:]}")
+        asked = time.monotonic()
+        stop = subprocess.run([*_program(), "--stop"], capture_output=True, text=True,
+                              encoding="utf-8", errors="replace", env=clean, timeout=180)
+        harness.wait(timeout=60)
+        took = time.monotonic() - asked
+        _need(stop.returncode == 0, f"--stop exited {stop.returncode}: {stop.stdout[-300:]}")
+        with sql.connect(str(run_dir / "orders.sqlite"), timeout=10) as db:
+            beats = db.execute("SELECT count(*) FROM harness WHERE run = ?", (tag,)).fetchone()[0]
+        _need(beats == 0, "the harness's beat is still in the orders database")
+        if env.game_pids():
+            # A game is up (not ours): the harness rightly leaves its mod in place.
+            removed = "left in place with a game running, removed here"
+            modinstall.uninstall()
+        else:
+            _need(not target.exists(), "the harness ended with Civ VI closed and left its mod")
+            removed = "removed by the harness"
+        return (f"installed screen-free from the flag alone, with the gated cover; --status saw "
+                f"it running; --stop ended it in {took:.1f}s, beat gone, mod {removed}")
+    finally:
+        if harness.poll() is None:
+            harness.kill()
 
 
 if __name__ == "__main__":

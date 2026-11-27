@@ -1723,10 +1723,13 @@ _APP_HARNESS = re.compile(r'(?:^|[\\/"\s])civvis-hotseat(?:\.exe)?(?:"|\s|$)')
 
 def is_harness_command(command: str) -> bool:
     """Whether a command line is this harness: the script, or the bundle's
-    program (`tools/package_hotseat.py`) when it is not a decision worker."""
+    program (`tools/package_hotseat.py`, or `tools/civvis_hotseat_app.py` run
+    from a checkout) when it is not a decision worker."""
     if "civ6_hotseat.py" in command:
         return True
-    return bool(_APP_HARNESS.search(command)) and WORKER_COMMAND not in command
+    if WORKER_COMMAND in command:
+        return False
+    return bool(_APP_HARNESS.search(command)) or "civvis_hotseat_app.py" in command
 
 
 def harness_alive(pid: int) -> bool:
@@ -2086,7 +2089,8 @@ def run_manual(args: argparse.Namespace) -> int:
     args.tag = args.tag or "hotseat-" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     run_dir = RUN_ROOT / args.tag
     orders_db = run_dir / "orders.sqlite"
-    if "'" in str(orders_db) or "\\" in str(orders_db):
+    # The path as the mod is handed it (`mod_path`): forward slashes on Windows.
+    if "'" in str(orders_db) or "\\" in mod_path(orders_db):
         print(f"{run_dir} has a quote or a backslash in it, which the game cannot open its "
               "orders database through: set CIVVIS_HOTSEAT_RUNS to a plain path", file=sys.stderr)
         return 2
@@ -2156,6 +2160,8 @@ def run_manual(args: argparse.Namespace) -> int:
         late_said = False
         while True:
             beat.beat()
+            if os.name == "nt" and (run_dir / "stop.json").is_file():
+                raise Stop("stop requested")  # `--stop` sends no SIGTERM on Windows
             for bridge in bridges:
                 bridge.pump()
             monitor.poll()
@@ -2387,8 +2393,10 @@ def main(argv: list[str] | None = None) -> int:
             # Abbreviated on the command line (`--manual`), so the module-level
             # switch missed it: start again screen-free rather than run with
             # the screen modules loaded (nothing of theirs has been called).
-            os.execve(sys.executable, [sys.executable, str(Path(__file__).resolve()),
-                                       *sys.argv[1:]],
+            # Frozen (`tools/package_hotseat.py`) the program is the harness:
+            # it takes no script path.
+            script = [] if FROZEN else [str(Path(__file__).resolve())]
+            os.execve(sys.executable, [sys.executable, *script, *sys.argv[1:]],
                       dict(os.environ, CIVVIS_SCREEN_FREE="1"))
         current = read_current()
         if current and harness_alive(current.get("pid", -1)):

@@ -68,9 +68,11 @@ not have.
    that game behaviour there is unverified.
 
    `civvis-hotseat selfcheck` then proves the bundle works on this computer
-   without touching the game: it installs the mod into a scratch folder, feeds
-   a recorded opening board through a scratch `Automation.log`, has a real
-   decision worker answer it, and stops it again (about ten seconds).
+   without touching the game, all in a scratch folder: it installs the mod the
+   way `--manual-lobby` does, feeds a recorded opening board through a scratch
+   `Automation.log`, has a real decision worker answer it and stops it, then
+   starts `--manual-lobby` itself and stops it with `--stop` (about twenty
+   seconds).
 
 5. **macOS only:** the control mod is installed inside the game's application
    bundle, so the first install shows an App Management prompt, or answers
@@ -192,7 +194,7 @@ on a runner with no game.
 |---|---|---|
 | bundle builds (PyInstaller 6.22.3, Python 3.12) | measured, locally and in CI | measured, in CI |
 | `--help`, `--status`, `--stop`, `doctor` from the unpacked archive | measured | measured, in CI |
-| `selfcheck`: mod installs from the bundle into a scratch install tree, the `Automation.log` relay, a frozen worker answers a recorded board into SQLite with a `ready` row, the worker is recognised and stopped, a stale game lock is taken over | measured | measured, in CI |
+| `selfcheck`: screen-free from the first import; the `--manual-lobby` install (five seat agents, the cover, `RequireHarness` in every prelude, no `FrontEndActions`) from the bundle into a scratch install tree; the `Automation.log` relay; a frozen worker answers a recorded board into SQLite with a `ready` row; the worker is recognised and stopped; a stale game lock is taken over; a child of the program inherits screen-free mode; the frozen `--manual-lobby` harness installs, `--status` sees it, `--stop` ends it and its beat and mod go | measured | measured, in CI |
 | Steam install and user folder resolution | measured | unit-tested over fake trees (`tools/test_civ6_env.py`); on the runner, with no game, `doctor` reports the install not found and the user folder as `C:\Users\runneradmin\Documents\My Games\Sid Meier's Civilization VI` |
 | reading the process table and a process's command line | measured (`ps`) | measured, in CI: the Toolhelp table names the program, and PowerShell's command line lets `--status` recognise it |
 | the game discovers the mod | measured: install `DLC` only, never the user `Mods` | **unmeasured** |
@@ -255,6 +257,11 @@ Windows; each is fixed behind a platform check, so macOS runs exactly as before.
   idle or running, only `st_ctime_ns` differs, by 24 s (`os.stat`
   1795762985606911500 against `os.fstat` 1795762961649839800, run
   45954989582).
+- **`--manual-lobby` refused every Windows path.** It stops when the orders
+  path holds a quote or a backslash, which every Windows path does; it now
+  checks the path as the mod is handed it (forward slashes). Its loop polls the
+  Windows stop request too, and an abbreviated `--manual` re-executes the
+  frozen program rather than handing it a script path it cannot run.
 - **A frozen copy of the decider named `civvis_orders` would not start**:
   CreateProcess appends `.exe` to a name without one. The pinned copy keeps
   `civvis_orders.exe`.

@@ -94,6 +94,41 @@ class RoutingTest(unittest.TestCase):
                 self.assertEqual(hotseat.resolve_orders_bin(None), bundled)
 
 
+class ManualLobbyFrozenTest(unittest.TestCase):
+    """`civvis-hotseat --manual-lobby`, the mode the bundle is for."""
+
+    def test_from_the_command_line_the_harness_reads_argv_itself(self):
+        """So its module-level switch sees `--manual-lobby` before anything of
+        `civ6_control` loads, and an abbreviated flag can re-execute."""
+        with mock.patch.object(hotseat, "main", return_value=0) as harness, \
+                mock.patch.object(sys, "argv", ["civvis-hotseat", "--status"]):
+            app.main()
+            app.main(["--status"])
+        self.assertEqual([call.args for call in harness.call_args_list],
+                         [(None,), (["--status"],)])
+
+    def _reexec(self, frozen: bool) -> list[str]:
+        with mock.patch.object(hotseat, "FROZEN", frozen), \
+                mock.patch.object(hotseat.screen_free, "engaged", return_value=False), \
+                mock.patch.object(hotseat, "read_current", return_value=None), \
+                mock.patch.object(sys, "argv", ["civvis-hotseat", "--manual"]), \
+                mock.patch.object(hotseat.os, "execve",
+                                  side_effect=SystemExit("re-executed")) as execve:
+            with self.assertRaises(SystemExit):
+                hotseat.main()
+        program, argv, environ = execve.call_args.args
+        self.assertEqual(program, sys.executable)
+        self.assertEqual(environ["CIVVIS_SCREEN_FREE"], "1")
+        return argv
+
+    def test_an_abbreviated_flag_restarts_the_frozen_program_screen_free(self):
+        self.assertEqual(self._reexec(frozen=True), [sys.executable, "--manual"])
+
+    def test_from_a_checkout_it_restarts_the_script_as_before(self):
+        self.assertEqual(self._reexec(frozen=False),
+                         [sys.executable, str(HERE / "civ6_hotseat.py"), "--manual"])
+
+
 class HarnessRecognitionTest(unittest.TestCase):
     """`--status` and `--stop` recognise a harness pid by its command line."""
 
@@ -101,12 +136,14 @@ class HarnessRecognitionTest(unittest.TestCase):
         for command in ("/usr/bin/python3 tools/civ6_hotseat.py --tag t",
                         "/Users/p/Downloads/civvis-hotseat/civvis-hotseat --manual-lobby",
                         "./civvis-hotseat",
+                        "/usr/bin/python3 /r/tools/civvis_hotseat_app.py --manual-lobby",
                         '"C:\\Users\\p\\civvis-hotseat\\civvis-hotseat.exe" --tag t'):
             with self.subTest(command=command):
                 self.assertTrue(hotseat.is_harness_command(command))
 
     def test_a_worker_or_a_folder_of_the_same_name_is_not(self):
         for command in ("/b/civvis-hotseat/civvis-hotseat civ6_brain.py --run-dir /r/t-p1",
+                        "python3 /r/tools/civvis_hotseat_app.py civ6_brain.py --run-dir /r/t-p1",
                         "/bin/bash /Users/p/civvis-hotseat/civ6-hotseat.sh supervise",
                         "/Users/p/civvis-hotseat-main/target/release/civvis_orders --serve",
                         ""):
@@ -198,7 +235,10 @@ class SelfcheckTest(unittest.TestCase):
                            "--timeout", "60")
             output = done.stdout + done.stderr
             self.assertEqual(done.returncode, 0, output)
-            self.assertIn("7 of 7 checks passed", output)
+            self.assertIn("9 of 9 checks passed", output)
+            self.assertIn("--status saw it running; --stop ended it", output)
+            self.assertIn("RequireHarness in every prelude", output)
+            self.assertIn("screen-free, 6 screen modules stood in, 0 loaded for real", output)
             self.assertIn("turn 1: 2 orders", output)
             self.assertFalse((scratch / "install" / "DLC" / modinstall.MOD_NAME).exists(),
                              "the mod is uninstalled again")
