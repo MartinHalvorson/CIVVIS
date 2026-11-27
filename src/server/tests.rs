@@ -7,8 +7,8 @@ use super::{
     viewer_path, ChronicleSnapshot, ChronicleState, FrameDelivery, Params, RequestSender, Session,
     Shared, SpectatorFrame, BETWEEN_GAME_COUNTDOWN_OPTIONS_MS, DEFAULT_BETWEEN_GAME_COUNTDOWN_MS,
     EMBEDDED_APP_FRONTDOOR_JS, EMBEDDED_APP_JS, EMBEDDED_APP_MOMENTS_JS, EMBEDDED_APP_SETUP_JS,
-    EMBEDDED_CIV6_UNIT_FLAGS, EMBEDDED_CIV6_UNIT_FLAG_PLATES, EMBEDDED_CIV6_YIELD_ICONS,
-    EMBEDDED_HIDDEN_MAP_MONSTERS, EMBEDDED_INDEX, EMBEDDED_INDEX_HTML,
+    EMBEDDED_CITY_WALL_MARK, EMBEDDED_HIDDEN_MAP_MONSTERS, EMBEDDED_INDEX, EMBEDDED_INDEX_HTML,
+    EMBEDDED_UNIT_GLYPHS, EMBEDDED_UNIT_PLATES, EMBEDDED_YIELD_ICONS, LOCAL_CIV6_ART,
     MAX_EXACT_JAVASCRIPT_INTEGER, SAVE_DIR, STATE_LONG_POLL, VIEWER_ACTIVE,
 };
 use crate::game::{Action, Game, LeaderPool, PlayOnMode, VictoryConditions, CIV6_LEADER_POOL};
@@ -9801,31 +9801,31 @@ fn browser_key_bindings_match_the_requested_set() {
 }
 
 #[test]
-fn strategic_units_use_a_complete_civ6_icon_atlas() {
-    assert!(EMBEDDED_CIV6_UNIT_FLAGS.starts_with(b"\x89PNG\r\n\x1a\n"));
-    assert!(EMBEDDED_CIV6_UNIT_FLAGS.len() > 50_000);
-    assert!(EMBEDDED_INDEX.contains("CIV6_UNIT_ICON_ATLAS.src = \"/assets/civ6-unit-flags.png\""));
+fn strategic_units_use_a_complete_unit_glyph_atlas() {
+    assert!(EMBEDDED_UNIT_GLYPHS.starts_with(b"\x89PNG\r\n\x1a\n"));
+    assert!(EMBEDDED_UNIT_GLYPHS.len() > 50_000);
+    assert!(EMBEDDED_INDEX.contains("CIV6_UNIT_ICON_ATLAS.src = \"/assets/unit-glyphs.png\""));
 
     let ids = EMBEDDED_INDEX
         .split("const CIV6_UNIT_ICON_TYPES = [")
         .nth(1)
         .and_then(|tail| tail.split("];\nconst CIV6_UNIT_ICON_INDEX").next())
-        .expect("ordered Civilization VI unit icon IDs");
+        .expect("ordered unit icon IDs");
     let rules = crate::rules::Rules::embedded();
     assert_eq!(ids.matches('"').count() / 2, rules.units.len());
     for unit in rules.units.keys() {
         assert!(
             ids.contains(&format!("\"{unit}\"")),
-            "unit {unit} has no Civilization VI icon cell"
+            "unit {unit} has no glyph cell"
         );
     }
     // Naming every unit is not enough: `nihang` was named here, and its
-    // cell held a duplicate of `warrior_monk`'s picture because the cutter
-    // never learned about it. What follows is the rest of that contract --
+    // cell held a duplicate of `warrior_monk`'s picture because the tool
+    // drawing the sheet never learned about it. What follows is the rest of that contract --
     // the sheet is the ruleset's roster, in the ruleset's order, and every
     // cell of it has ink.
     let manifest = civ6_unit_glyph_manifest();
-    let cut: Vec<&str> = manifest["units"]
+    let drawn: Vec<&str> = manifest["units"]
         .as_array()
         .expect("the glyph manifest's unit rows")
         .iter()
@@ -9833,8 +9833,8 @@ fn strategic_units_use_a_complete_civ6_icon_atlas() {
         .collect();
     let roster: Vec<&str> = rules.units.keys().map(|name| name.as_str()).collect();
     assert_eq!(
-        cut, roster,
-        "the cut sheet is the ruleset's units in the ruleset's order"
+        drawn, roster,
+        "the drawn sheet is the ruleset's units in the ruleset's order"
     );
     let named: Vec<&str> = ids.split('"').skip(1).step_by(2).collect();
     assert_eq!(
@@ -9851,7 +9851,7 @@ fn strategic_units_use_a_complete_civ6_icon_atlas() {
         );
         assert!(
             row["ink"].as_u64().unwrap_or(0) > 0,
-            "{unit} was cut from a blank cell"
+            "{unit} was drawn into a blank cell"
         );
         let cell = manifest["cell_size"].as_u64().unwrap();
         let box_ = row["box"].as_array().expect("a measured silhouette");
@@ -9915,7 +9915,7 @@ fn strategic_units_use_a_complete_civ6_icon_atlas() {
         .contains("drawUnitPictogram(it.unit, seat.x, seat.y, seat.size, \"#f0ead8\")"));
 
     // Religious units are ordinary units of the map: each has its own
-    // Civilization VI cell and rides the same token as everything else.
+    // cell and rides the same token as everything else.
     for religious in [
         "missionary",
         "apostle",
@@ -9929,7 +9929,7 @@ fn strategic_units_use_a_complete_civ6_icon_atlas() {
         );
         assert!(
             ids.contains(&format!("\"{religious}\"")),
-            "{religious} has no Civilization VI icon cell"
+            "{religious} has no glyph cell"
         );
     }
 }
@@ -9940,9 +9940,9 @@ fn repository_file(path: &str) -> String {
         .unwrap_or_else(|error| panic!("{path}: {error}"))
 }
 
-/// What `tools/civ6_unit_glyphs.py` recorded about the sheet it cut.
+/// What `tools/own_art.py` recorded about the sheet it drew.
 fn civ6_unit_glyph_manifest() -> serde_json::Value {
-    serde_json::from_str(&repository_file("web/assets/civ6-unit-flags.json"))
+    serde_json::from_str(&repository_file("web/assets/unit-glyphs.json"))
         .expect("the unit glyph manifest is JSON")
 }
 
@@ -9953,34 +9953,18 @@ fn fnv1a64(bytes: &[u8]) -> u64 {
     })
 }
 
-/// The unit glyphs are cut off the installed game, not scraped from an
-/// archive of it.
+/// The unit glyphs are openly licensed silhouettes, credited one by one, and
+/// nothing the site ships is cut from Civilization VI.
 ///
-/// They were the last CIVVIS art that was not. `tools/civ6_unit_flags.swift`
-/// downloaded 89 Civilopedia cards from the Civilization Wiki and recovered
-/// the white symbols by subtracting a per-pixel percentile of the set --
-/// which worked, and which meant the spectator's unit markers depended on a
-/// third party's copy of a file sitting on the same disk. The cards are
-/// gone; `tools/civ6_unit_glyphs.py` reads
-/// `Base/Platforms/Windows/BLPs/UI/Icons.blp` and its DLC siblings.
-///
-/// The point of this test is the *chain*: which Civilization VI unit a
-/// CIVVIS unit is, which icon that unit's flag asks for, and which cell of
-/// which atlas that icon is. A roster written down beside the renderer
-/// instead is what put a Warrior Monk's picture on every Nihang.
+/// They used to be cut off the installed game (`tools/civ6_unit_glyphs.py`),
+/// and before that scraped from Civilopedia cards on the Civilization Wiki
+/// (`tools/civ6_unit_flags.swift`). Both put somebody else's art on a public
+/// site. `tools/own_art.py` now draws a game-icons.net silhouette (CC BY 3.0)
+/// into every cell from path data kept in `tools/own_art_icons.json`; the
+/// cutter still exists, for an owner of the game, and writes only into the
+/// git-ignored `local/civ6-art/` that this local server prefers when present.
 #[test]
-fn the_unit_glyphs_are_cut_from_the_installed_game() {
-    let cutter = repository_file("tools/civ6_unit_glyphs.py");
-    assert!(
-        cutter.contains("import civ6_env as env"),
-        "the install is resolved by the one module allowed to look for it"
-    );
-    assert!(
-        cutter.contains("import civ6_unit_flag_plates as blp"),
-        "one parser reads the package format, not two"
-    );
-    assert!(cutter.contains("assets.rglob(\"Icons.blp\")"));
-    assert!(cutter.contains("ICON_ATLAS_UNITS"));
+fn the_unit_glyphs_are_drawn_from_credited_open_icons() {
     // The scrape is retired, not merely unused: a fallback nothing runs is
     // a fallback nobody notices has rotted.
     assert!(
@@ -9995,95 +9979,78 @@ fn the_unit_glyphs_are_cut_from_the_installed_game() {
     let manifest = civ6_unit_glyph_manifest();
     assert_eq!(
         manifest["png_bytes"].as_u64(),
-        Some(EMBEDDED_CIV6_UNIT_FLAGS.len() as u64)
+        Some(EMBEDDED_UNIT_GLYPHS.len() as u64)
     );
     assert_eq!(
         manifest["png_fnv1a64"].as_str(),
-        Some(format!("{:#018x}", fnv1a64(EMBEDDED_CIV6_UNIT_FLAGS)).as_str()),
+        Some(format!("{:#018x}", fnv1a64(EMBEDDED_UNIT_GLYPHS)).as_str()),
         "the manifest was written for a different atlas than the one here"
     );
     let cell = manifest["cell_size"].as_u64().unwrap();
     let columns = manifest["columns"].as_u64().unwrap();
-    let width = u32::from_be_bytes(EMBEDDED_CIV6_UNIT_FLAGS[16..20].try_into().unwrap());
-    let height = u32::from_be_bytes(EMBEDDED_CIV6_UNIT_FLAGS[20..24].try_into().unwrap());
+    let width = u32::from_be_bytes(EMBEDDED_UNIT_GLYPHS[16..20].try_into().unwrap());
+    let height = u32::from_be_bytes(EMBEDDED_UNIT_GLYPHS[20..24].try_into().unwrap());
     assert_eq!(u64::from(width), columns * cell);
     assert_eq!(u64::from(height), manifest["rows"].as_u64().unwrap() * cell);
     assert!(EMBEDDED_INDEX.contains(&format!(
         "const CIV6_UNIT_ICON_CELL = {cell}, CIV6_UNIT_ICON_COLUMNS = {columns};"
     )));
 
-    // Every Civilization VI name the cut resolved is a name Civilization VI
-    // actually ships. `tools/civ6_type_names.py` harvests that list off the
-    // install for the live order channel, which learned the hard way that a
-    // name the game does not have is discarded in silence.
-    let shipped: std::collections::BTreeSet<String> =
-        serde_json::from_str(&repository_file("data/civ6_type_names.json"))
-            .expect("the harvested Civilization VI type names");
-    let rules = crate::rules::Rules::embedded();
-    let mut borrowed = 0;
+    // Every cell names the icon it was drawn from, its author and its
+    // licence, and that icon is both kept in the repository and credited.
+    let icons: serde_json::Value =
+        serde_json::from_str(&repository_file("tools/own_art_icons.json"))
+            .expect("the icon path data");
+    let credits = repository_file("web/assets/ART_CREDITS.md");
     for row in manifest["units"].as_array().unwrap() {
         let unit = row["type"].as_str().unwrap();
-        let kind = row["civ6_type"].as_str().expect("a Civilization VI type");
+        let icon = row["icon"].as_str().expect("an icon name");
+        assert_eq!(row["licence"].as_str(), Some("CC BY 3.0"), "{unit}");
         assert!(
-            shipped.contains(kind),
-            "{unit} is cut as {kind}, which Civilization VI does not ship"
+            icons["icons"][icon]["paths"]
+                .as_array()
+                .is_some_and(|paths| !paths.is_empty()),
+            "{unit} is drawn from {icon}, whose paths are not kept"
         );
-        assert!(row["icon"].as_str().unwrap().starts_with("ICON_UNIT_"));
-        assert!(row["package"].as_str().unwrap().ends_with("Icons.blp"));
-        // A unit with no symbol icon of its own borrows one, and only from
-        // the unit the ruleset says it replaces -- never from a default.
-        if let Some(stand_in) = row["via"].as_str() {
-            borrowed += 1;
-            assert_eq!(
-                rules.units[unit].replaces.as_deref(),
-                Some(stand_in),
-                "{unit} borrows {stand_in}'s glyph without replacing it"
-            );
-        }
+        assert_eq!(icons["icons"][icon]["author"], row["author"], "{unit}");
+        assert!(
+            credits.contains(&format!("https://game-icons.net/1x1/{icon}.html")),
+            "{icon} is drawn but not credited"
+        );
     }
-    assert_eq!(
-        borrowed, 2,
-        "Civilization VI defines a symbol icon for every unit of this \
-             ruleset but the Oromo Cavalry, which stands on the Courser's, \
-             and the Hul'che, which stands on the Archer's"
-    );
+
+    // The cutter is still there for an owner of the game, and it writes
+    // nowhere the site is built from.
+    let cutter = repository_file("tools/civ6_unit_glyphs.py");
+    assert!(cutter.contains("import civ6_env as env"));
+    assert!(cutter.contains("art_provenance.LOCAL_ART"));
+    assert!(!cutter.contains("ROOT / \"web/assets"));
+    assert_eq!(LOCAL_CIV6_ART, "local/civ6-art");
 }
 
-/// The command counter is Civilization VI's own unit flag, not a shape of
-/// this viewer's. Both retired shapes -- the circle and the rounded
-/// triangle, point *down* -- were invented here; the base game authors
-/// eight silhouettes, points its civilian triangle *up*, stands a
-/// fortified soldier on a shield and an embarked one on a boat cut. This
-/// is the same contract the yield signs already keep: the sheet is cut off
-/// the installed game, and every question the counter answers is measured
-/// from that one sheet rather than restated beside it.
+/// The command counter stands on one of eight plates, one per kind of unit
+/// as Civilization VI tells them apart, in shapes of CIVVIS's own drawn by
+/// `tools/own_art.py`. This is the same contract the yield signs keep: every
+/// question the counter answers is measured from that one sheet rather than
+/// restated beside it, so the game's own flags, cut into `local/civ6-art/`
+/// for a local server, are measured by the same code.
 #[test]
-fn a_unit_counter_is_the_base_games_own_flag() {
-    assert!(EMBEDDED_CIV6_UNIT_FLAG_PLATES.starts_with(b"\x89PNG\r\n\x1a\n"));
-    assert!(EMBEDDED_CIV6_UNIT_FLAG_PLATES.len() > 5_000);
-    // Cut, not imitated, and the cutter says where from.
-    let cutter = std::fs::read_to_string(
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tools/civ6_unit_flag_plates.py"),
-    )
-    .expect("the flag-plate cutter");
-    assert!(cutter.contains("Base/Platforms/Windows/BLPs/UI/InWorld.blp"));
-    assert!(
-        cutter.contains("import civ6_env as env"),
-        "the install is resolved by the one module allowed to look for it"
-    );
-    assert!(EMBEDDED_INDEX
-        .contains("CIV6_FLAG_PLATE_ATLAS.src = \"/assets/civ6-unit-flag-plates.png\""));
+fn a_unit_counter_stands_on_one_of_eight_drawn_plates() {
+    assert!(EMBEDDED_UNIT_PLATES.starts_with(b"\x89PNG\r\n\x1a\n"));
+    assert!(EMBEDDED_UNIT_PLATES.len() > 5_000);
+    // Drawn here, and the tool says how.
+    let tool = repository_file("tools/own_art.py");
+    assert!(tool.contains("def draw_unit_plates():"));
+    assert!(EMBEDDED_INDEX.contains("CIV6_FLAG_PLATE_ATLAS.src = \"/assets/unit-plates.png\""));
     assert!(EMBEDDED_INDEX.contains(
         "const CIV6_FLAG_PLATE_STYLES = [\"base\", \"civilian\", \"naval\", \"support\",\n                                \"trade\", \"religion\", \"fortify\", \"embark\"];"
     ));
 
     // The sheet really carries those eight styles, in that order, as
     // square cells -- the one fact a re-cut could break silently.
-    let cell = usize::from(u32::from_be_bytes(
-        EMBEDDED_CIV6_UNIT_FLAG_PLATES[20..24].try_into().unwrap(),
-    ) as u16);
-    let width =
-        u32::from_be_bytes(EMBEDDED_CIV6_UNIT_FLAG_PLATES[16..20].try_into().unwrap()) as usize;
+    let cell =
+        usize::from(u32::from_be_bytes(EMBEDDED_UNIT_PLATES[20..24].try_into().unwrap()) as u16);
+    let width = u32::from_be_bytes(EMBEDDED_UNIT_PLATES[16..20].try_into().unwrap()) as usize;
     assert!(cell > 0, "the plate sheet has a height");
     assert_eq!(
         width,
@@ -10191,6 +10158,49 @@ fn a_unit_counter_is_the_base_games_own_flag() {
     assert!(
         EMBEDDED_INDEX.contains("const bw = Math.min(r * 1.28, Math.max(0, room - frame) * 2);")
     );
+}
+
+/// Every sprite sheet the map draws is CIVVIS's own, and the only way the
+/// game's own art reaches a screen is a cut the owner made into the
+/// git-ignored `local/civ6-art/`, served by this native server alone.
+#[test]
+fn the_map_sheets_are_our_own_and_a_local_cut_only_ever_reaches_the_local_server() {
+    // The wall mark keeps the cut sprite's size, so a local cut drops in.
+    assert!(EMBEDDED_CITY_WALL_MARK.starts_with(b"\x89PNG\r\n\x1a\n"));
+    let width = u32::from_be_bytes(EMBEDDED_CITY_WALL_MARK[16..20].try_into().unwrap());
+    let height = u32::from_be_bytes(EMBEDDED_CITY_WALL_MARK[20..24].try_into().unwrap());
+    assert_eq!((width, height), (21, 18));
+    // Nothing compiled in is marked as a cut, and each sheet is listed art.
+    let marker = b"civvis-provenance\0cut from an installed Civilization VI";
+    let manifest: serde_json::Value =
+        serde_json::from_str(&repository_file("web/assets/art-manifest.json"))
+            .expect("the art manifest");
+    for (name, sheet) in [
+        ("unit-glyphs.png", EMBEDDED_UNIT_GLYPHS),
+        ("unit-plates.png", EMBEDDED_UNIT_PLATES),
+        ("yield-icons.png", EMBEDDED_YIELD_ICONS),
+        ("city-wall-mark.png", EMBEDDED_CITY_WALL_MARK),
+        ("hidden-map-monsters.png", EMBEDDED_HIDDEN_MAP_MONSTERS),
+    ] {
+        assert!(
+            !sheet.windows(marker.len()).any(|window| window == marker),
+            "{name} is art cut from the game"
+        );
+        assert!(
+            manifest["files"][name]["sha256"].is_string(),
+            "{name} is not listed in art-manifest.json"
+        );
+    }
+    // The native server prefers a local cut; the published build has no
+    // such path at all, because its router never reads the disk.
+    let server = repository_file("src/server.rs");
+    assert!(server.contains(
+        "std::fs::read(format!(\"{LOCAL_CIV6_ART}/{name}\"))\n        .or_else(|_| std::fs::read(format!(\"web/assets/{name}\")))"
+    ));
+    assert!(!repository_file("src/wasm.rs").contains("LOCAL_CIV6_ART"));
+    assert!(!repository_file("src/wasm.rs").contains("local/civ6-art"));
+    // The retired terrain atlases are gone with their routes: nothing drew them.
+    assert!(!server.contains("feature-atlas.png"));
 }
 
 #[test]
@@ -11893,15 +11903,19 @@ fn browser_tile_yields_are_compact_electric_and_centered_at_sixty_three_percent(
     assert!(EMBEDDED_INDEX.contains("--tip-yield-portion:${Math.round(portion * 100)}%"));
 }
 
-/// The signs on the plate are Civilization VI's own, cut from the very
-/// texture the plate geometry was measured against. Each is one finished
-/// circular icon, so nothing paints a disc under one -- the disc and the
-/// pictograph are what the viewer drew while it had no sheet to draw.
+/// The signs on the plate are drawn by `tools/own_art.py`: a lit disc in the
+/// yield's colour carrying a credited game-icons.net pictograph. Each is one
+/// finished circular icon, so nothing paints a disc under one -- the disc and
+/// the pictograph are what the viewer drew while it had no sheet to draw.
 #[test]
-fn browser_tile_yield_signs_are_the_base_games_own_icons() {
-    assert!(EMBEDDED_CIV6_YIELD_ICONS.starts_with(b"\x89PNG\r\n\x1a\n"));
-    assert!(EMBEDDED_CIV6_YIELD_ICONS.len() > 8_000);
-    assert!(EMBEDDED_INDEX.contains("CIV6_YIELD_ICON_ATLAS.src = \"/assets/civ6-yield-icons.png\""));
+fn browser_tile_yield_signs_are_drawn_icons_off_one_sheet() {
+    assert!(EMBEDDED_YIELD_ICONS.starts_with(b"\x89PNG\r\n\x1a\n"));
+    assert!(EMBEDDED_YIELD_ICONS.len() > 8_000);
+    assert!(EMBEDDED_INDEX.contains("CIV6_YIELD_ICON_ATLAS.src = \"/assets/yield-icons.png\""));
+    // Six square cells in one row, as the viewer slices them.
+    let width = u32::from_be_bytes(EMBEDDED_YIELD_ICONS[16..20].try_into().unwrap());
+    let height = u32::from_be_bytes(EMBEDDED_YIELD_ICONS[20..24].try_into().unwrap());
+    assert_eq!((width, height), (6 * 80, 80));
     assert!(EMBEDDED_INDEX.contains(
         "const CIV6_YIELD_ICON_KINDS = [\"food\", \"production\", \"gold\",\n                               \"science\", \"culture\", \"faith\"];"
     ));
@@ -11929,7 +11943,7 @@ fn browser_tile_yield_signs_are_the_base_games_own_icons() {
     // hover is never a second, private vocabulary for the same yield.
     assert!(EMBEDDED_INDEX.contains("--tip-yield-cell:${cell};"));
     assert!(EMBEDDED_INDEX.contains(
-        "url(\"/assets/civ6-yield-icons.png\") calc(var(--tip-yield-cell) * 20%) 0 / 600% 100% no-repeat,"
+        "url(\"/assets/yield-icons.png\") calc(var(--tip-yield-cell) * 20%) 0 / 600% 100% no-repeat,"
     ));
 }
 

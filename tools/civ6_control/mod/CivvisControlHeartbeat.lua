@@ -10,6 +10,87 @@ if type(LateInitialize) ~= "function" then include("TopPanel"); end
 
 local cfg = CivvisControlConfig or {};
 
+-- >>> CivvisHarness: the same block in CivvisControlAgent.lua,
+-- CivvisControlAutoClose.lua and CivvisControlHeartbeat.lua (harness_gate_test.lua).
+-- ★★ THE PERSON-FACING INSTALL DOES NOTHING WITHOUT A LIVE HARNESS.
+-- `RequireHarness` is set only by `tools/civ6_hotseat.py --manual-lobby`, the
+-- install a person who is not this project's operator may leave in place and
+-- play every other game with. Two rules keep it stock for them:
+--   * outside a hotseat game it is dormant (`dormant`): the shipped screen or
+--     HUD and nothing of ours, and no agent context registers anything;
+--   * in a hotseat game it acts and writes only while the harness that
+--     installed it is live (`live`): a `harness` row under `HarnessRun` in the
+--     orders database whose `beat` (Unix seconds, rewritten every 2 s) is at
+--     most `HarnessFreshSeconds` old by SQLite's own clock. A stopped harness
+--     deletes the row and a killed one goes stale; either way every seat is a
+--     person's again, as Civ VI ships it.
+-- Read at most every 3 s of `Automation.GetTime()`, never per tick: a
+-- `DB.Query` per game-core tick starves the log flush. Unset, `live` is true,
+-- `dormant` false, and nothing here runs.
+CivvisHarness = { ok = false, calls = 0 };
+function CivvisHarness.hotseat()
+	local on = false;
+	pcall(function() on = GameConfiguration.IsHotseat() == true; end);
+	return on;
+end
+function CivvisHarness.dormant()
+	return cfg.RequireHarness == true and not CivvisHarness.hotseat();
+end
+function CivvisHarness.read()
+	if not CivvisHarness.hotseat() then return false; end
+	local path = string.gsub(tostring(cfg.OrdersDb or ""), "['\\]", "");
+	local run = string.gsub(tostring(cfg.HarnessRun or ""), "['\\]", "");
+	if path == "" or run == "" then return false; end
+	if not CivvisHarness.attached then
+		-- One connection serves every context: a second ATTACH of the alias
+		-- fails, and the read below goes through whichever context's took.
+		pcall(function() DB.Query("ATTACH DATABASE '" .. path .. "' AS civvis"); end);
+	end
+	local fresh = tonumber(cfg.HarnessFreshSeconds) or 20;
+	local live = false;
+	local rows = DB.Query("SELECT CAST(strftime('%s','now') AS INTEGER) - beat AS age"
+			.. " FROM civvis.harness WHERE run = '" .. run .. "'");
+	-- Attached once a read went through; until then each reading tries again.
+	CivvisHarness.attached = true;
+	for _, row in ipairs(rows) do
+		local age = tonumber(row.age);
+		if age ~= nil and age >= -5 and age <= fresh then live = true; end
+	end
+	return live;
+end
+function CivvisHarness.live()
+	if cfg.RequireHarness ~= true then return true; end
+	local h = CivvisHarness;
+	if h.checking then return h.ok; end
+	local now = nil;
+	pcall(function() now = Automation.GetTime(); end);
+	h.calls = h.calls + 1;
+	if h.at ~= nil then
+		if type(now) == "number" and now >= h.at and now - h.at < 3 then return h.ok; end
+		if type(now) ~= "number" and h.calls % 200 ~= 0 then return h.ok; end
+	end
+	h.checking, h.at = true, type(now) == "number" and now or -1;
+	local ok, live = pcall(h.read);
+	h.ok, h.checking = ok and live == true, false;
+	return h.ok;
+end
+-- Whether the local player's turn is CIVVIS's: one of the installed seats (or
+-- the test stub) while the harness is live. Every other turn is a person's.
+function CivvisHarness.mine(pid)
+	if not CivvisHarness.live() then return false; end
+	for _, list in ipairs({ cfg.HotseatSeats or {}, cfg.HotseatStubSeats or {} }) do
+		for _, seat in ipairs(list) do
+			if tonumber(seat) == pid then return true; end
+		end
+	end
+	return false;
+end
+-- <<< CivvisHarness
+
+-- The person-facing install outside a hotseat game: the shipped HUD, as
+-- included above, and nothing of ours after it.
+if CivvisHarness.dormant() then return; end
+
 -- ★ AN IN-GAME VSYNC A/B, OFF UNLESS `VSyncABTurns` IS SET. The rival-AI
 -- phase is ~3 s of a 7-9 s turn, and during it the Game Core thread sits in
 -- its message wait 82-91% of the time while this app's frame loop runs at the
@@ -24,6 +105,8 @@ local cfg = CivvisControlConfig or {};
 -- a block's setting written back on exit cannot leak into the next game.
 CivvisVSyncAB = { frames = 0, seconds = 0 };
 function CivvisVSyncAB.log(kind, fields)
+	-- The person-facing install writes nothing without a live harness.
+	if not CivvisHarness.live() then return; end
 	pcall(function()
 		Automation.Log("CIVVISJSON " .. string.format(
 			'{"ctx":"heartbeat","kind":"%s","run":"%s",%s}\n',
@@ -186,7 +269,7 @@ end
 --
 -- Only seconds this watch itself saw pass are counted (at most 3 a reading),
 -- so a leader screen that hides the HUD for a minute is not a quiet minute.
--- A person's seat (`HotseatHumanSeats`), a game held by the operator
+-- A person's seat (`HotseatHumanSeats`, unless a test stub plays it), a game held by the operator
 -- (`CivvisOperatorHold`), a finished game and every single-player run are
 -- left alone: the watch arms only when `cfg.Hotseat` is set.
 CivvisSeatWatch = { quiet = 0, forces = 0, over = false };
@@ -203,6 +286,17 @@ function CivvisSeatWatch.listed(list, pid)
 		if tonumber(seat) == pid then return true; end
 	end
 	return false;
+end
+-- The seats this watches: every CIVVIS seat, and a test stub's
+-- (`HotseatStubSeats`, only ever listed by `civ6_hotseat.py --auto-human`)
+-- even where `--auto-human gated` also lists it as the person's, because no
+-- person is there to end its turn (run cover-live-6, 2026-11-27: the stub
+-- went quiet on turn 1 and nothing ended it). A real person's seat, listed
+-- human and played by no stub, is never watched.
+function CivvisSeatWatch.watched(pid)
+	local w = CivvisSeatWatch;
+	if w.listed(cfg.HotseatStubSeats, pid) then return true; end
+	return w.listed(cfg.HotseatSeats, pid) and not w.listed(cfg.HotseatHumanSeats, pid);
 end
 function CivvisSeatWatch.reset()
 	local w = CivvisSeatWatch;
@@ -272,8 +366,8 @@ function CivvisSeatWatch.beat(source)
 	w.checked = now;
 	local pid = -1;
 	pcall(function() pid = Game.GetLocalPlayer(); end);
-	if type(pid) ~= "number" or pid < 0 or not w.listed(cfg.HotseatSeats, pid)
-			or w.listed(cfg.HotseatHumanSeats, pid) then
+	if type(pid) ~= "number" or pid < 0 or not w.watched(pid)
+			or (cfg.RequireHarness == true and not CivvisHarness.mine(pid)) then
 		w.reset();
 		return;
 	end
@@ -361,6 +455,94 @@ function CivvisSeatWatch.arm()
 		tostring(type(stockTick) == "function"),
 		CivvisSeatWatch.field(tonumber(cfg.SeatQuietSeconds) or 45)));
 end
+-- ★ THE LOBBY THE PERSON MADE, READ BACK ONCE A GAME (`RequireHarness` only).
+-- `tools/civ6_hotseat.py --manual-lobby` leaves the Hot Seat setup to the
+-- person and learns what the game is from this record: each participating
+-- full civ (StagingRoom.lua:1122, `GetCivilizationLevelTypeID() ==
+-- CivilizationLevelTypes.CIVILIZATION_LEVEL_FULL_CIV`), whether its slot is a
+-- person's (`SlotStatus.SS_TAKEN`, :1397) or Civ VI's AI (`SS_COMPUTER`,
+-- :880), its own difficulty (hotseat difficulty is per player:
+-- InGameTopOptionsMenu.lua:437-438, `GetHandicapTypeID()` into
+-- `GameInfo.Difficulties`), and the map, size and speed (:442). Written on the
+-- first HUD pulse of a started game while the harness is live, then a second
+-- line so the game writes the first one out at once.
+CivvisLobby = { sent = false };
+function CivvisLobby.typeOf(rows, hash, column)
+	local name = nil;
+	pcall(function()
+		local row = rows[hash];
+		if row ~= nil then name = row[column]; end
+	end);
+	return name;
+end
+function CivvisLobby.player(id)
+	local f = CivvisSeatWatch.field;
+	local pc = PlayerConfigurations[id];
+	if pc == nil then return nil; end
+	local full = false;
+	pcall(function()
+		full = pc:GetCivilizationLevelTypeID() == CivilizationLevelTypes.CIVILIZATION_LEVEL_FULL_CIV;
+	end);
+	if not full then return nil; end
+	local slot = "other";
+	pcall(function()
+		local status = pc:GetSlotStatus();
+		if status == SlotStatus.SS_TAKEN then slot = "human";
+		elseif status == SlotStatus.SS_COMPUTER then slot = "computer"; end
+	end);
+	if slot == "other" then return nil; end
+	local human, alive, name, civ, leader, handicap = nil, nil, nil, nil, nil, nil;
+	pcall(function() human = pc:IsHuman() == true; end);
+	pcall(function() alive = Players[id]:IsAlive() == true; end);
+	pcall(function() name = pc:GetPlayerName(); end);
+	pcall(function() civ = pc:GetCivilizationTypeName(); end);
+	pcall(function() leader = pc:GetLeaderTypeName(); end);
+	pcall(function() handicap = pc:GetHandicapTypeID(); end);
+	return string.format(
+		'{"id":%s,"slot":%s,"human":%s,"alive":%s,"name":%s,"civ":%s,"leader":%s,"difficulty":%s}',
+		f(id), f(slot), f(human), f(alive), f(name), f(civ), f(leader),
+		f(CivvisLobby.typeOf(GameInfo.Difficulties, handicap, "DifficultyType")));
+end
+function CivvisLobby.players()
+	local ids = nil;
+	pcall(function() ids = GameConfiguration.GetParticipatingPlayerIDs(); end);
+	if type(ids) ~= "table" or #ids == 0 then
+		ids = {};
+		for id = 0, 63 do ids[#ids + 1] = id; end
+	end
+	local out = {};
+	for _, id in ipairs(ids) do
+		local row = nil;
+		pcall(function() row = CivvisLobby.player(id); end);
+		if row ~= nil then out[#out + 1] = row; end
+	end
+	return out;
+end
+function CivvisLobby.pulse()
+	if CivvisLobby.sent or cfg.RequireHarness ~= true or not CivvisHarness.live() then return; end
+	local turn = nil;
+	pcall(function() turn = tonumber(Game.GetCurrentGameTurn()); end);
+	if turn == nil or turn < 1 then return; end
+	CivvisLobby.sent = true;
+	local f = CivvisSeatWatch.field;
+	local pid, script, size, speed, ruleset, maxTurns = nil, nil, nil, nil, nil, nil;
+	pcall(function() pid = Game.GetLocalPlayer(); end);
+	pcall(function() script = MapConfiguration.GetScript(); end);
+	pcall(function() size = MapConfiguration.GetMapSize(); end);
+	pcall(function() speed = GameConfiguration.GetGameSpeedType(); end);
+	pcall(function() ruleset = GameConfiguration.GetRuleSet(); end);
+	pcall(function() maxTurns = Game.GetMaxGameTurns(); end);
+	CivvisVSyncAB.log("hotseat_lobby", string.format(
+		'"t":%s,"turn":%d,"local_player":%s,"hotseat":%s,"map":%s,"size":%s,"speed":%s,'
+		.. '"ruleset":%s,"max_turns":%s,"players":[%s]',
+		f(CivvisSeatWatch.now()), turn, f(pid), f(CivvisHarness.hotseat()), f(script),
+		f(CivvisLobby.typeOf(GameInfo.Maps, size, "MapSizeType")),
+		f(CivvisLobby.typeOf(GameInfo.GameSpeeds, speed, "GameSpeedType")),
+		f(type(ruleset) == "string" and ruleset or nil), f(maxTurns),
+		table.concat(CivvisLobby.players(), ",")));
+	CivvisVSyncAB.log("hotseat_lobby_flush", string.format('"turn":%d', turn));
+end
+
 local seatWatch = cfg.Play ~= false and cfg.CivvisDecides and cfg.Hotseat == true;
 if seatWatch then CivvisSeatWatch.arm(); end
 
@@ -389,6 +571,7 @@ if cfg.Play ~= false and cfg.CivvisDecides then
 		pcall(function() CivvisMapView.Pulse(); end);
 		pcall(function() LuaEvents.CivvisControlPulse("TopPanel"); end);
 		if seatWatch then pcall(CivvisSeatWatch.beat, "frame"); end
+		if cfg.RequireHarness == true then pcall(CivvisLobby.pulse); end
 		if abTurns > 0 then pcall(CivvisVSyncAB.pulse, abTurns); end
 	end);
 end

@@ -119,10 +119,89 @@ if SECONDS < 0 then SECONDS = 0; end
 
 local RUN = tostring(cfg.RunTag or "unset");
 
+-- >>> CivvisHarness: the same block in CivvisControlAgent.lua,
+-- CivvisControlAutoClose.lua and CivvisControlHeartbeat.lua (harness_gate_test.lua).
+-- ★★ THE PERSON-FACING INSTALL DOES NOTHING WITHOUT A LIVE HARNESS.
+-- `RequireHarness` is set only by `tools/civ6_hotseat.py --manual-lobby`, the
+-- install a person who is not this project's operator may leave in place and
+-- play every other game with. Two rules keep it stock for them:
+--   * outside a hotseat game it is dormant (`dormant`): the shipped screen or
+--     HUD and nothing of ours, and no agent context registers anything;
+--   * in a hotseat game it acts and writes only while the harness that
+--     installed it is live (`live`): a `harness` row under `HarnessRun` in the
+--     orders database whose `beat` (Unix seconds, rewritten every 2 s) is at
+--     most `HarnessFreshSeconds` old by SQLite's own clock. A stopped harness
+--     deletes the row and a killed one goes stale; either way every seat is a
+--     person's again, as Civ VI ships it.
+-- Read at most every 3 s of `Automation.GetTime()`, never per tick: a
+-- `DB.Query` per game-core tick starves the log flush. Unset, `live` is true,
+-- `dormant` false, and nothing here runs.
+CivvisHarness = { ok = false, calls = 0 };
+function CivvisHarness.hotseat()
+	local on = false;
+	pcall(function() on = GameConfiguration.IsHotseat() == true; end);
+	return on;
+end
+function CivvisHarness.dormant()
+	return cfg.RequireHarness == true and not CivvisHarness.hotseat();
+end
+function CivvisHarness.read()
+	if not CivvisHarness.hotseat() then return false; end
+	local path = string.gsub(tostring(cfg.OrdersDb or ""), "['\\]", "");
+	local run = string.gsub(tostring(cfg.HarnessRun or ""), "['\\]", "");
+	if path == "" or run == "" then return false; end
+	if not CivvisHarness.attached then
+		-- One connection serves every context: a second ATTACH of the alias
+		-- fails, and the read below goes through whichever context's took.
+		pcall(function() DB.Query("ATTACH DATABASE '" .. path .. "' AS civvis"); end);
+	end
+	local fresh = tonumber(cfg.HarnessFreshSeconds) or 20;
+	local live = false;
+	local rows = DB.Query("SELECT CAST(strftime('%s','now') AS INTEGER) - beat AS age"
+			.. " FROM civvis.harness WHERE run = '" .. run .. "'");
+	-- Attached once a read went through; until then each reading tries again.
+	CivvisHarness.attached = true;
+	for _, row in ipairs(rows) do
+		local age = tonumber(row.age);
+		if age ~= nil and age >= -5 and age <= fresh then live = true; end
+	end
+	return live;
+end
+function CivvisHarness.live()
+	if cfg.RequireHarness ~= true then return true; end
+	local h = CivvisHarness;
+	if h.checking then return h.ok; end
+	local now = nil;
+	pcall(function() now = Automation.GetTime(); end);
+	h.calls = h.calls + 1;
+	if h.at ~= nil then
+		if type(now) == "number" and now >= h.at and now - h.at < 3 then return h.ok; end
+		if type(now) ~= "number" and h.calls % 200 ~= 0 then return h.ok; end
+	end
+	h.checking, h.at = true, type(now) == "number" and now or -1;
+	local ok, live = pcall(h.read);
+	h.ok, h.checking = ok and live == true, false;
+	return h.ok;
+end
+-- Whether the local player's turn is CIVVIS's: one of the installed seats (or
+-- the test stub) while the harness is live. Every other turn is a person's.
+function CivvisHarness.mine(pid)
+	if not CivvisHarness.live() then return false; end
+	for _, list in ipairs({ cfg.HotseatSeats or {}, cfg.HotseatStubSeats or {} }) do
+		for _, seat in ipairs(list) do
+			if tonumber(seat) == pid then return true; end
+		end
+	end
+	return false;
+end
+-- <<< CivvisHarness
+
 -- The agent's channel, and for the same reason: this build writes no Lua.log,
 -- so Automation.Log is the only output that survives. Every field written here
 -- is a name or a number, so the encoder the agent needs is not needed here.
 local function report(kind, fields)
+	-- The person-facing install writes nothing without a live harness.
+	if not CivvisHarness.live() then return; end
 	local line = string.format('{"kind":"%s","ctx":"autoclose","screen":"%s","run":"%s"%s}',
 	                           kind, NAME, RUN, fields or "");
 	pcall(function() Automation.Log(PREFIX .. line); end);
@@ -248,7 +327,8 @@ local function installEventLedger()
 	pcall(function() UI = ui; end);
 	return false, "none", kind, "global_not_replaced";
 end
-do
+-- Not in a dormant person-facing context: there `UI` stays the shipped object.
+if not CivvisHarness.dormant() then
 	local ran, installed, how, uiType, why = pcall(installEventLedger);
 	if not ran then
 		-- `installed` holds the error message when the install raised.
@@ -258,6 +338,115 @@ do
 	report("event_ledger", string.format(',"installed":%s,"how":"%s","ui_type":"%s","exposed":"%s"%s',
 		tostring(installed == true), tostring(how), tostring(uiType), type(ExposedMembers),
 		why and string.format(',"why":"%s"', tostring(why)) or ""));
+end
+
+-- ★★ HOTSEAT COVER: A SCREEN UNDER THE COVER STILL COMES UP, AND STILL CLOSES.
+-- In a game a person plays, CivvisHotseatCover.lua lays one popup over
+-- everything while CIVVIS plays (`HotseatCover`). A popup queued under a
+-- higher one is held hidden unless it asks to stay drawn
+-- (`AlwaysVisibleInQueue`: HotSeatBackground.lua:27 asks, to stay under the
+-- hand-over; FullscreenMapPopup.lua:167 asks, to stay under the MP pause),
+-- and a hidden context does not tick. Under the cover that would leave an
+-- announcement holding the game's event lock (`ExclusivePopupManager:Lock`,
+-- PopupManager.lua:52-61) never closed, so the CIVVIS seat's turn would stop.
+-- So in a cover game this context's global `UIManager` is a proxy whose
+-- `QueuePopup` adds `AlwaysVisibleInQueue` when this context queues itself on
+-- a CIVVIS seat's turn. Drawn under the cover, it shows, ticks and is closed
+-- exactly as before; the person sees none of it. Every other call reaches the
+-- real object with the real `self`, and the proxy is used only if it answers
+-- `IsInPopupQueue` the way the real one does.
+-- The hand-over (it sits above the cover and is pressed as it ships) and the
+-- end screens get no proxy at all. ⚠ The first cut also kept the hand-over
+-- drawn under a cover above it this way, and Civ VI exited within a second of
+-- a Start Turn press twice in two live games (CivvisHotseatCover.lua, WHERE IT
+-- SITS). `HotseatCoverQueue = false` (`civ6_hotseat.py --no-cover-queue`)
+-- turns the proxy off to tell its part apart: the screens then wait under the
+-- cover until it stands aside.
+CivvisCoverQueue = { installed = false, visible = 0 };
+function CivvisCoverQueue.listed(list, pid)
+	if type(list) ~= "table" or pid == nil then return false; end
+	for _, seat in ipairs(list) do
+		if tonumber(seat) == pid then return true; end
+	end
+	return false;
+end
+function CivvisCoverQueue.on()
+	return cfg.Hotseat == true and cfg.HotseatCover == true and cfg.HotseatCoverQueue ~= false
+		and NAME ~= "PlayerChange" and not END_SCREENS[NAME]
+		and (cfg.RequireHarness ~= true or not CivvisHarness.dormant());
+end
+function CivvisCoverQueue.wanted(name, pid)
+	if not CivvisCoverQueue.on() or name == "PlayerChange" or END_SCREENS[name] then
+		return false;
+	end
+	-- `RequireHarness`: the shipped queueing unless CIVVIS's seat, harness live.
+	if cfg.RequireHarness == true and not CivvisHarness.mine(pid) then return false; end
+	return CivvisCoverQueue.listed(cfg.HotseatSeats, pid)
+		and not CivvisCoverQueue.listed(cfg.HotseatHumanSeats, pid);
+end
+function CivvisCoverQueue.params(params)
+	local out = {};
+	if type(params) == "table" then
+		for key, value in pairs(params) do out[key] = value; end
+	end
+	out.AlwaysVisibleInQueue = true;
+	return out;
+end
+function CivvisCoverQueue.install()
+	if not CivvisCoverQueue.on() then return false, "off"; end
+	local real = UIManager;
+	local kind = type(real);
+	if kind ~= "table" and kind ~= "userdata" then return false, "no_uimanager"; end
+	local queue = nil;
+	pcall(function() queue = real.QueuePopup; end);
+	if type(queue) ~= "function" then return false, "no_queue"; end
+	local proxy = nil;
+	local bound = {};
+	local function queuePopup(self, context, priority, params, ...)
+		local pass = params;
+		local ok, want = pcall(function()
+			return context == ContextPtr and CivvisCoverQueue.wanted(NAME, Game.GetLocalPlayer());
+		end);
+		if ok and want then
+			pass = CivvisCoverQueue.params(params);
+			CivvisCoverQueue.visible = CivvisCoverQueue.visible + 1;
+			report("cover_queue_visible", string.format(',"count":%d', CivvisCoverQueue.visible));
+		end
+		if self == proxy then self = real; end
+		return queue(self, context, priority, pass, ...);
+	end
+	proxy = setmetatable({ QueuePopup = queuePopup }, {
+		__index = function(_, key)
+			local value = real[key];
+			if type(value) ~= "function" then return value; end
+			if bound[key] == nil then
+				bound[key] = function(self, ...)
+					if self == proxy then return value(real, ...); end
+					return value(self, ...);
+				end;
+			end
+			return bound[key];
+		end,
+		__newindex = function(_, key, value) real[key] = value; end,
+	});
+	local direct, through = nil, nil;
+	local readDirect = pcall(function() direct = real:IsInPopupQueue(ContextPtr); end);
+	local readThrough = pcall(function() through = proxy:IsInPopupQueue(ContextPtr); end);
+	if not readThrough or (readDirect and direct ~= through) then return false, "proxy_refused"; end
+	local swapped = pcall(function() UIManager = proxy; end);
+	local current = nil;
+	pcall(function() current = UIManager; end);
+	if not swapped or current ~= proxy then
+		pcall(function() UIManager = real; end);
+		return false, "global_not_replaced";
+	end
+	CivvisCoverQueue.installed = true;
+	return true, kind;
+end
+if CivvisCoverQueue.on() then
+	local ran, installed, how = pcall(CivvisCoverQueue.install);
+	report("cover_queue", string.format(',"installed":%s,"how":"%s"',
+		tostring(ran and installed == true), (tostring(ran and how or installed):gsub('["\\]', "'"))));
 end
 
 -- One screen is already replaced by a DLC, on a criterion true of every run
@@ -341,6 +530,10 @@ if END_SCREENS[NAME] then
         pcall(function() include("EndGameMenu_Expansion2"); end);
     end
 end
+
+-- The person-facing install outside a hotseat game: the shipped screen, as
+-- loaded above, and nothing of ours after it -- no wrapper, no clock, no line.
+if CivvisHarness.dormant() then return; end
 
 -- EndGameMenu.lua:1328 owns the natural movie-finished callback. Keep its
 -- handler and report the boundary so the harness can wait for the full movie.
@@ -1077,16 +1270,21 @@ end
 --
 -- 1. The operator's turn is theirs. While the local player is one of
 --    `HotseatHumanSeats`, no screen here is closed, answered or escaped: the
---    announcement, the leader and the deal are the person's to read.
+--    announcement, the leader and the deal are the person's to read. The one
+--    exception is a seat the `--auto-human gated` test stub plays
+--    (`personTurn` below): nobody is there to read them.
 -- 2. PlayerChange is the hand-over screen. PlayerChange.lua shows it on every
 --    human seat's turn (BuildTurnControls :121, which also pauses the game)
 --    and only its Start Turn button (`OnOk` :54) unpauses and dequeues it. On
---    a CIVVIS seat this presses it; on the operator's seat it waits for them.
---    It also says, for the harness, whose turn begins and ends: the seat
---    agents are silent outside their own turns, and so is the operator.
+--    a CIVVIS seat this presses it; on the operator's seat it waits for them,
+--    unless the game asks for their hand-over to be pressed too
+--    (`HotseatAutoStart`, the default for a game a person plays; the cover in
+--    CivvisHotseatCover.lua lifts on that press). It also says, for the
+--    harness, whose turn begins and ends: the seat agents are silent outside
+--    their own turns, and so is the operator.
 -- Every save the harness asks for is made here, at the start of the first
 -- CIVVIS seat's turn, through InGameTopOptionsMenu.lua:183's own call.
-CivvisHotseatScreen = { waited = 0, pressedFor = nil, savedTurn = -1 };
+CivvisHotseatScreen = { waited = 0, pressedFor = nil, savedTurn = -1, hiddenFor = nil };
 function CivvisHotseatScreen.listed(list, pid)
 	if type(list) ~= "table" or pid == nil then return false; end
 	for _, seat in ipairs(list) do
@@ -1106,10 +1304,49 @@ function CivvisHotseatScreen.turn()
 end
 function CivvisHotseatScreen.humanTurn()
 	if cfg.Hotseat ~= true then return false; end
+	-- `RequireHarness`: CIVVIS's turn only on its own seats, harness live.
+	if cfg.RequireHarness == true
+			and not CivvisHarness.mine(CivvisHotseatScreen.localPlayer()) then return true; end
 	return CivvisHotseatScreen.listed(cfg.HotseatHumanSeats,
 		CivvisHotseatScreen.localPlayer());
 end
+-- Whose screens no closer touches: a real person's. The `--auto-human gated`
+-- test stub sits in a person's seat (`HotseatHumanSeats` AND
+-- `HotseatStubSeats`) so the cover and the pressed hand-over treat it as the
+-- person, but nobody is there to dismiss its announcements: run cover-live-6
+-- (2026-11-27) parked on turn 1 behind its own "Roman Empire Makes History"
+-- card. So the closers stand down for a person's seat only when no stub plays
+-- it. A stub seat is only ever listed by the `--auto-human` test arrangements.
+function CivvisHotseatScreen.personTurn()
+	if not CivvisHotseatScreen.humanTurn() then return false; end
+	-- `RequireHarness`: with no live harness the stub's seat is a person's too.
+	if cfg.RequireHarness == true
+			and not CivvisHarness.mine(CivvisHotseatScreen.localPlayer()) then return true; end
+	return not CivvisHotseatScreen.listed(cfg.HotseatStubSeats,
+		CivvisHotseatScreen.localPlayer());
+end
+-- `--name dev` (HotseatPersonName): the person's seat has no agent context to
+-- name it as a CIVVIS seat names itself (CivvisSeat.claim), so this screen
+-- does, when it loads: before the first hand-over is shown, so it already says
+-- "dev" and not "Player 1". EditHotseatPlayer.lua:120 names a seat this way.
+-- Read back, never assumed, and tried again at a turn's start until it reads so.
+function CivvisHotseatScreen.namePerson()
+	local name = cfg.HotseatPersonName;
+	if type(name) ~= "string" or name == "" or CivvisHotseatScreen.personNamed then return; end
+	local all = true;
+	for _, seat in ipairs(cfg.HotseatHumanSeats or {}) do
+		seat = tonumber(seat);
+		local applied = pcall(function() PlayerConfigurations[seat]:SetHotseatName(name); end);
+		local shown = "?";
+		pcall(function() shown = tostring(PlayerConfigurations[seat]:GetPlayerName()); end);
+		if shown ~= name then all = false; end
+		report("hotseat_person", string.format(',"seat":%d,"applied":%s,"shown":"%s"',
+			seat, tostring(applied and shown == name), (shown:gsub('[\\"%c]', ""))));
+	end
+	CivvisHotseatScreen.personNamed = all;
+end
 function CivvisHotseatScreen.announce(phase)
+	pcall(CivvisHotseatScreen.namePerson);
 	local pid = CivvisHotseatScreen.localPlayer();
 	report("hotseat_turn", string.format(
 		',"phase":"%s","player":%d,"turn":%d,"human":%s,"civvis":%s',
@@ -1142,30 +1379,109 @@ function CivvisHotseatScreen.save(pid, turn)
 	report("hotseat_saved", string.format(',"name":"%s","turn":%d,"requested":%s',
 		name, turn, tostring(saved)));
 end
+-- The person's hand-over, pressed for them. A seat with a hotseat password
+-- keeps its screen, as the shipped Enter key does (PlayerChange.lua:42-43).
+function CivvisHotseatScreen.autoStart(pid)
+	if cfg.Hotseat ~= true or cfg.HotseatAutoStart ~= true
+			or not CivvisHotseatScreen.listed(cfg.HotseatHumanSeats, pid) then
+		return false;
+	end
+	local password = "";
+	pcall(function() password = PlayerConfigurations[pid]:GetHotseatPassword() or ""; end);
+	return password == "";
+end
+-- Whose hand-over this presses: every CIVVIS seat and test stub, and the
+-- operator's only with `HotseatAutoStart`.
+function CivvisHotseatScreen.mayPress(pid)
+	if pid == nil or pid < 0 then return false; end
+	-- `RequireHarness`: no Start Turn is pressed for anyone without a live harness.
+	if cfg.RequireHarness == true and not CivvisHarness.live() then return false; end
+	if cfg.Hotseat == true and CivvisHotseatScreen.listed(cfg.HotseatHumanSeats, pid) then
+		return CivvisHotseatScreen.autoStart(pid);
+	end
+	return CivvisHotseatScreen.listed(cfg.HotseatSeats, pid)
+		or CivvisHotseatScreen.listed(cfg.HotseatStubSeats, pid);
+end
+function CivvisHotseatScreen.press(pid, turn, via)
+	local key = pid .. ":" .. turn;
+	pcall(CivvisHotseatScreen.save, pid, turn);
+	local pressed = type(OnOk) == "function" and pcall(OnOk);
+	report("hotseat_start_turn", string.format(
+		',"player":%d,"turn":%d,"pressed":%s,"again":%s,"person":%s,"via":"%s"',
+		pid, turn, tostring(pressed), tostring(CivvisHotseatScreen.pressedFor == key),
+		tostring(CivvisHotseatScreen.listed(cfg.HotseatHumanSeats, pid)), tostring(via)));
+	CivvisHotseatScreen.pressedFor = key;
+	return pressed;
+end
+-- A game with the cover (CivvisHotseatCover.lua). The hand-over sits above it
+-- and is pressed as it ships; all it may show over the cover is its menu
+-- button.
+function CivvisHotseatScreen.covered()
+	return cfg.Hotseat == true and cfg.HotseatCover == true
+		and (cfg.RequireHarness ~= true or CivvisHarness.live());
+end
+function CivvisHotseatScreen.paused(pid)
+	local paused = false;
+	pcall(function() paused = PlayerConfigurations[pid]:GetWantsPause() == true; end);
+	return paused;
+end
 -- One press per seat and turn, after the screen has been up a moment (its
--- own slide-in) and retried every two seconds while it stays up.
+-- own slide-in) and retried every two seconds while it stays up. Over the
+-- cover, a hand-over this presses is hidden on its first frame, the way
+-- PlayerChange.lua hides it itself (:61 after Start Turn, :194 for "please
+-- wait"), and pressed on the same clock while its pause stands; its "please
+-- wait" line (:191) is hidden too (:172). Nothing else of it is touched.
 function CivvisHotseatScreen.frame(fDTime)
 	local dialog = false;
 	pcall(function() dialog = not Controls.PopupAlphaIn:IsHidden(); end);
 	local pid = CivvisHotseatScreen.localPlayer();
-	if not dialog or pid < 0 or CivvisHotseatScreen.humanTurn()
-			or not (CivvisHotseatScreen.listed(cfg.HotseatSeats, pid)
-				or CivvisHotseatScreen.listed(cfg.HotseatStubSeats, pid)) then
+	local covered = CivvisHotseatScreen.covered();
+	if covered then
+		pcall(function()
+			if not Controls.PlayerChangingText:IsHidden() then
+				Controls.PlayerChangingText:SetHide(true);
+			end
+		end);
+	end
+	if not CivvisHotseatScreen.mayPress(pid) then
+		CivvisHotseatScreen.waited = 0;
+		return;
+	end
+	local turn = CivvisHotseatScreen.turn();
+	local key = pid .. ":" .. turn;
+	if dialog and covered then
+		pcall(function() Controls.PopupAlphaIn:SetHide(true); end);
+		CivvisHotseatScreen.hiddenFor = key;
+	elseif not dialog and not (covered and CivvisHotseatScreen.hiddenFor == key
+			and CivvisHotseatScreen.paused(pid)) then
 		CivvisHotseatScreen.waited = 0;
 		return;
 	end
 	CivvisHotseatScreen.waited = CivvisHotseatScreen.waited + (tonumber(fDTime) or 0);
-	local turn = CivvisHotseatScreen.turn();
-	local key = pid .. ":" .. turn;
 	local pause = CivvisHotseatScreen.pressedFor == key and 2.0
 		or (tonumber(cfg.HotseatPressSeconds) or 0.3);
 	if CivvisHotseatScreen.waited < pause then return; end
 	CivvisHotseatScreen.waited = 0;
-	pcall(CivvisHotseatScreen.save, pid, turn);
-	local pressed = type(OnOk) == "function" and pcall(OnOk);
-	report("hotseat_start_turn", string.format(',"player":%d,"turn":%d,"pressed":%s,"again":%s',
-		pid, turn, tostring(pressed), tostring(CivvisHotseatScreen.pressedFor == key)));
-	CivvisHotseatScreen.pressedFor = key;
+	CivvisHotseatScreen.press(pid, turn, "dialog");
+end
+-- The cover's backstop (CivvisHotseatCover.lua, `nudge`): the seat now
+-- playing still holds its hand-over pause 1.5 s in. The hand-over sits above
+-- the cover and its own frame presses first; were it ever held hidden its
+-- frame would stop, and an event still reaches it. The same press, for the
+-- same seats, and only on a standing hand-over pause the operator did not
+-- ask for.
+function CivvisHotseatScreen.fromCover(pid, turn)
+	pid = tonumber(pid);
+	if pid == nil or pid ~= CivvisHotseatScreen.localPlayer()
+			or not CivvisHotseatScreen.mayPress(pid) then
+		return false;
+	end
+	local paused, active, held = false, false, false;
+	pcall(function() paused = PlayerConfigurations[pid]:GetWantsPause() == true; end);
+	pcall(function() active = Players[pid]:IsTurnActive() == true; end);
+	pcall(function() held = ExposedMembers.CivvisOperatorHold == true; end);
+	if not paused or not active or held then return false; end
+	return CivvisHotseatScreen.press(pid, CivvisHotseatScreen.turn(), "cover");
 end
 function CivvisHotseatScreen.arm()
 	pcall(function()
@@ -1174,7 +1490,15 @@ function CivvisHotseatScreen.arm()
 	pcall(function()
 		Events.LocalPlayerTurnEnd.Add(function() CivvisHotseatScreen.announce("end"); end);
 	end);
+	if cfg.HotseatCover == true then
+		pcall(function()
+			LuaEvents.CivvisHotseatStartTurn.Add(function(pid, turn)
+				pcall(CivvisHotseatScreen.fromCover, pid, turn);
+			end);
+		end);
+	end
 	ContextPtr:SetUpdate(function(fDTime) pcall(CivvisHotseatScreen.frame, fDTime); end);
+	pcall(CivvisHotseatScreen.namePerson);
 	report("hotseat_armed", string.format(',"start_turn":%s', tostring(type(OnOk) == "function")));
 end
 
@@ -1511,7 +1835,7 @@ else
 	pcall(function()
 		LuaEvents.CivvisCloseBehindDeal.Add(function(holder, id)
 			if holder ~= NAME or END_SCREENS[NAME] or operatorHolds()
-					or CivvisHotseatScreen.humanTurn() then return; end
+					or CivvisHotseatScreen.personTurn() then return; end
 			if NAME == "DiplomacyActionView" or NAME == "DiplomacyDealView"
 					or NAME == "WonderBuiltPopup" then return; end
 			-- Only while this context still holds that lock: a popup that
@@ -1591,7 +1915,7 @@ else
 		end
 		-- After the pulse above, which is how a held agent hears the resume
 		-- while a leader screen hides TopPanel. The clock restarts on resume.
-		if operatorHolds() or CivvisHotseatScreen.humanTurn() then
+		if operatorHolds() or CivvisHotseatScreen.personTurn() then
 			showing = false;
 			return;
 		end

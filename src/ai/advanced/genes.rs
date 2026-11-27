@@ -5889,6 +5889,13 @@ pub const GENES: &[Gene] = &[
     // never taking the seat's own Spaceport city or a Builder. See
     // `advanced/denial_spies_fill_every_slot.rs`.
     Gene { tag: "denial-spies-fill-every-slot-3", field: "denial_spies_fill_every_slot_3", kind: Kind::OptIn, enable: AdvancedAi::enable_denial_spies_fill_every_slot_3, disable: AdvancedAi::disable_denial_spies_fill_every_slot_3 },
+    // `city-campaign-3`: the war in hand. Live Deity 2026-11-18..27 (611
+    // games): 38 declarations on majors, every one a heretic strike or a
+    // launcher war; 6 ever struck a city, 2 took any (11 cities, one game),
+    // 25 ended in peace with nothing, 182 kills for 299 units lost; `city-
+    // campaign-2` (armed) never plans while any major war is open. See
+    // `advanced/city_campaign.rs` and `docs/OFFENSIVE_CAMPAIGN.md`.
+    Gene { tag: "city-campaign-3", field: "city_campaign_3", kind: Kind::OptIn, enable: AdvancedAi::enable_city_campaign_3, disable: AdvancedAi::disable_city_campaign_3 },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the
@@ -6416,6 +6423,15 @@ pub const GENES: &[Gene] = &[
     // gene's exceptions. Opt-in; see
     // `advanced/religion_seat_third_city_first.rs`.
     Gene { tag: "religion-seat-third-city-first", field: "religion_seat_third_city_first", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_third_city_first, disable: AdvancedAi::disable_religion_seat_third_city_first },
+    // Tournament 8 2026-11-26/27, five Lv 8 Religion seats lost to a rival's
+    // Science Victory (launches 0/4 against 4/4): Diplomatic Service came at
+    // t115-151 as a government-ladder step and the first denial Spy 3-7
+    // turns after it, when the rival had already landed 1-2 space projects.
+    // Off a Science aim, while a met rival makes 1.5 times our Science (and
+    // at least 60), the civic slot takes Diplomatic Service then Nationalism
+    // ahead of the government ladder. Opt-in; see
+    // `advanced/rival_science_run_opens_the_spy_civics.rs`.
+    Gene { tag: "rival-science-run-opens-the-spy-civics", field: "rival_science_run_opens_the_spy_civics", kind: Kind::OptIn, enable: AdvancedAi::enable_rival_science_run_opens_the_spy_civics, disable: AdvancedAi::disable_rival_science_run_opens_the_spy_civics },
     // ---- append: s-s ------------------------------------------------
     // Kristina Deity 11-10 reached Nationalism at t122 with 8 cities on three
     // terrain classes and built no Open-Air Museum by t150 (+48 Culture and
@@ -6650,6 +6666,13 @@ pub const GENES: &[Gene] = &[
     // rivals. The held spreader waits; the scouts leave those rivals to the
     // seekers. Opt-in; see `advanced/spreaders_spread_before_they_chart.rs`.
     Gene { tag: "spreaders-spread-before-they-chart", field: "spreaders_spread_before_they_chart", kind: Kind::OptIn, enable: AdvancedAi::enable_spreaders_spread_before_they_chart, disable: AdvancedAi::disable_spreaders_spread_before_they_chart },
+    // In the 28 live Deity eliminations of 2026-11-22..27 a shooter stacked
+    // on one of our City Centers with another soldier of ours, an enemy in
+    // its range, fired on 17% of turns (68 of 408) against 84% alone on a
+    // centre; the host offers a stacked shooter no target and nothing moved
+    // the second soldier out. One shooter keeps the centre and the rest step
+    // beside it. Opt-in; see `advanced/stacked_shooter_steps_out.rs`.
+    Gene { tag: "stacked-shooter-steps-out", field: "stacked_shooter_steps_out", kind: Kind::OptIn, enable: AdvancedAi::enable_stacked_shooter_steps_out, disable: AdvancedAi::disable_stacked_shooter_steps_out },
     // Live Tournament 7 Science seats (36 seats, 2026-11-27): 39% of their
     // cities held a Monument at t100 and their Culture ran a median 35 a
     // turn against the best rival's 168, so 30 of 32 still sat in Monarchy

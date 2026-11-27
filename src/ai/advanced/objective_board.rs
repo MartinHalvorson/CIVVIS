@@ -1276,7 +1276,21 @@ impl AdvancedAi {
         // while their owner is at war with us; the arena's flag.
         let mut siege_cities: Vec<u32> = Vec::new();
         if let Some(target) = plan.target_city {
-            siege_cities.push(target);
+            // `city-campaign-3`: one objective per war, and none in a war
+            // that reads no-go. `false` with the gene off. See
+            // `advanced/city_campaign.rs`.
+            if self.campaign_withholds_the_siege(g, pid, target) {
+                think!(self.journal(), Military, Detail,
+                "No Siege row on {}", g.cities[&target].name;
+                "city-campaign-3: {} — the army holds rather than walk into the walls a unit at a time",
+                if self.campaign.as_ref().is_some_and(|campaign| campaign.target == g.cities[&target].owner) {
+                    "the campaign takes another city of theirs first, everything at once"
+                } else {
+                    "no city of theirs is one the field army can take and hold"
+                });
+            } else {
+                siege_cities.push(target);
+            }
         }
         if self.city_campaign_stands(g, pid) {
             if let Some(campaign) = self.campaign.as_ref() {

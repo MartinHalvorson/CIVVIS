@@ -39,3 +39,8 @@ beta/__pycache__/
 # dirty, and `civvis_collab.py start` refuses to open a task worktree from a
 # dirty main management worktree — so the mirror running blocked new work.
 /status.json
+
+# Civilization VI's own art, cut off an installed game by tools/civ6_* for the
+# local server of somebody who owns it (docs/CIV6_ART.md). It is never
+# committed or published; tools/art_provenance.py refuses it in either place.
+/local/
