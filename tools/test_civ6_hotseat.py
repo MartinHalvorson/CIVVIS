@@ -982,6 +982,52 @@ class SelfPlayTableTest(unittest.TestCase):
         self.assertEqual(hotseat.attached_table(old), (4, None))
 
 
+class HostStrainTest(unittest.TestCase):
+    """Live 2026-11-27: macOS ran out of application memory with Civ VI at
+    6.87 GB, and at a load average of 40 System Events stopped answering.
+    Neither failure looked like what it was, so the harness says what the Mac
+    has to spare before it starts a game on it."""
+
+    @staticmethod
+    def host(free: str, swap: str = "total = 4096.00M  used = 3178.94M  free = 917.06M  (encrypted)"):
+        answers = {"memory_pressure": f"...\nSystem-wide memory free percentage: {free}\n",
+                   "hw.memsize": "17179869184\n", "vm.swapusage": swap}
+
+        def run(command, **_):
+            return argparse.Namespace(stdout=answers[command[-1]])
+        return run
+
+    def test_the_reading_is_macos_own(self) -> None:
+        with patch.object(hotseat.play, "host_load", return_value=[8.2, 18.9, 23.7]), \
+                patch.object(hotseat.os, "cpu_count", return_value=10):
+            strain = hotseat.host_strain(self.host("62%"))
+        self.assertEqual(strain, {"memory_free": 0.62, "memory_free_gb": 9.9, "swap_used_mb": 3179,
+                                  "swap_total_mb": 4096, "load": [8.2, 18.9, 23.7], "cores": 10})
+        self.assertEqual(hotseat.strain_warnings(strain), [])
+        self.assertEqual(hotseat.strain_line(strain),
+                         "host: 9.9 GB memory free (62%), swap 3179 of 4096 MB, load 8 on 10 cores")
+
+    def test_too_little_memory_or_too_much_load_is_said_before_the_game_starts(self) -> None:
+        with patch.object(hotseat.play, "host_load", return_value=[41.0, 60.0, 66.0]), \
+                patch.object(hotseat.os, "cpu_count", return_value=10):
+            strain = hotseat.host_strain(self.host("30%"))
+        memory, load = hotseat.strain_warnings(strain)
+        self.assertIn("only 4.8 GB of memory is free (30%)", memory)
+        self.assertIn("load average is 41 on 10 cores", load)
+        source = (hotseat.HERE / "civ6_hotseat.py").read_text()
+        self.assertLess(source.index('began["host"] = host_strain()'),
+                        source.index("process = launcher.launch("), "said before Civ VI is started")
+
+    def test_a_host_that_does_not_say_is_not_a_host_under_strain(self) -> None:
+        def nothing(command, **_):
+            raise OSError("no such tool")
+        with patch.object(hotseat.play, "host_load", return_value=None):
+            strain = hotseat.host_strain(nothing)
+        self.assertIsNone(strain["memory_free"])
+        self.assertEqual(hotseat.strain_warnings(strain), [])
+        self.assertEqual(hotseat.strain_line(strain), "host: memory unread")
+
+
 class ClosingCivTest(unittest.TestCase):
     """Live 2026-11-27 (selfplay-duel-20261127T0654Z): a re-attached harness
     left Civ VI on the Victory screen, the supervisor re-attached to the

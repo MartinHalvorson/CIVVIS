@@ -1478,6 +1478,72 @@ def table_record(monitor: Monitor, args: argparse.Namespace, seats: list[int],
     return record
 
 
+#: What Civ VI was seen to hold with a late duel loaded (6.87 GB, 2026-11-27)
+#: and a little to breathe: with less memory than this to spare, macOS closes
+#: it. And the load average, per core, past which a look at the screen takes
+#: ten seconds and System Events stops answering (measured the same night).
+CIV_MEMORY_GB = 8.0
+LOAD_PER_CORE = 2.0
+
+
+def host_strain(run=subprocess.run) -> dict:
+    """What this Mac has to spare as a game starts: memory free (macOS's own
+    `memory_pressure` figure, as a share and in GB), swap in use, the load
+    averages and the cores. A reading the host does not give is `None`."""
+    strain: dict = {"memory_free": None, "memory_free_gb": None, "swap_used_mb": None,
+                    "swap_total_mb": None, "load": play.host_load(), "cores": os.cpu_count()}
+
+    def said(*command: str) -> str:
+        try:
+            return run(list(command), capture_output=True, text=True, check=False, timeout=20).stdout
+        except (OSError, subprocess.SubprocessError):
+            return ""
+
+    free = re.search(r"free percentage:\s*(\d+)%", said("memory_pressure"))
+    total = re.search(r"\d+", said("sysctl", "-n", "hw.memsize"))
+    if free:
+        strain["memory_free"] = int(free[1]) / 100
+        if total:
+            strain["memory_free_gb"] = round(strain["memory_free"] * int(total[0]) / 2 ** 30, 1)
+    swap = said("sysctl", "-n", "vm.swapusage")
+    for key, label in (("swap_total_mb", "total"), ("swap_used_mb", "used")):
+        found = re.search(rf"{label} = ([\d.]+)M", swap)
+        if found:
+            strain[key] = round(float(found[1]))
+    return strain
+
+
+def strain_warnings(strain: dict) -> list[str]:
+    """What to say before a game starts on a Mac with too little to spare.
+
+    Live 2026-11-27, one evening, a dozen sessions compiling beside the game:
+    macOS ran out of application memory with Civ VI at 6.87 GB and offered to
+    force-quit it (the game fell back to its main menu from the staging
+    room), and at a load average of 40 the window query went unanswered and
+    START GAME was taken as pressed. Neither looked like what it was."""
+    warnings = []
+    free = strain.get("memory_free_gb")
+    if free is not None and free < CIV_MEMORY_GB:
+        warnings.append(f"only {free:.1f} GB of memory is free ({strain['memory_free']:.0%}); Civ VI "
+                        f"takes about {CIV_MEMORY_GB - 1:.0f} GB and macOS closes it when there "
+                        "is none: quit other apps, or stop the builds, first")
+    load, cores = strain.get("load"), strain.get("cores")
+    if load and cores and load[0] > LOAD_PER_CORE * cores:
+        warnings.append(f"the load average is {load[0]:.0f} on {cores} cores; the setup's "
+                        "screen reads and clicks will be slow and may need a second try")
+    return warnings
+
+
+def strain_line(strain: dict) -> str:
+    free, load = strain.get("memory_free_gb"), strain.get("load")
+    return ("host: "
+            + (f"{free:.1f} GB memory free ({strain['memory_free']:.0%})" if free is not None
+               else "memory unread")
+            + (f", swap {strain['swap_used_mb']} of {strain['swap_total_mb']} MB"
+               if strain.get("swap_used_mb") is not None and strain.get("swap_total_mb") else "")
+            + (f", load {load[0]:.0f} on {strain.get('cores')} cores" if load else ""))
+
+
 #: In the run directory: the Civ VI process this run launched.
 LAUNCHED = "launched.json"
 
@@ -1819,6 +1885,11 @@ def run(args: argparse.Namespace) -> int:
             log(f"game: {args.players} players on {args.map} {args.map_size}, "
                 f"{args.speed}, {args.difficulty}, turn limit {args.max_turns}; "
                 f"you: {args.leader or 'random leader'}; save every {args.save_every} turns")
+            # What the Mac has to spare, said before the game is started on it.
+            began["host"] = host_strain()
+            log(strain_line(began["host"]))
+            for warning in strain_warnings(began["host"]):
+                log(f"⚠ {warning}")
             apply_person_options(log)
             launcher.clear_run_logs()
             process = launcher.launch(stdout=run_dir / "stdout.log")
