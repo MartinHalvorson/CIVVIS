@@ -60,7 +60,7 @@ Understand attrition odds
 ## The live record
 
 **Source.**
-- The `ledger` branch, fetched 2026-11-27 05:20Z: run summaries plus the
+- The `ledger` branch through run `civvis-t8-20261127T051740Z`: run summaries plus the
   event logs of the 48 games in which we declared war.
 - Deity games only, since 2026-11-18, continuation sittings excluded: 611
   games, 539 of which reached turn 100.
