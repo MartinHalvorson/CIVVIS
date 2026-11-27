@@ -361,24 +361,30 @@ fn the_purchase_turn_is_known_to_the_alliance_desks() {
     campus(&mut g, 1);
     hold(&mut g, "margaret_mead");
     let ai = seat(true);
-    assert!(!ai.foreign_site_passage_bought(&g, 0), "nothing bought yet");
-    assert!(!seat(false).foreign_site_passage_bought(&g, 0));
+    let start = g.log.len();
+    assert!(
+        !ai.foreign_site_passage_bought(&g, 0, start),
+        "nothing bought yet"
+    );
 
     assert!(buy(&mut g, true));
-    assert!(ai.foreign_site_passage_bought(&g, 0));
-    assert!(!seat(false).foreign_site_passage_bought(&g, 0), "off");
-
-    g.turn += 1;
+    assert!(ai.foreign_site_passage_bought(&g, 0, start));
     assert!(
-        !ai.foreign_site_passage_bought(&g, 0),
-        "the next turn asks again"
+        !seat(false).foreign_site_passage_bought(&g, 0, start),
+        "off"
+    );
+    let later = g.log.len();
+    assert!(
+        !ai.foreign_site_passage_bought(&g, 0, later),
+        "only what the trade slot applied counts"
     );
 
     campus(&mut off_slot, 1);
     hold(&mut off_slot, "margaret_mead");
+    let start = off_slot.log.len();
     assert!(
         buy(&mut off_slot, true),
         "the purchase is made off the slot too"
     );
-    assert!(!ai.foreign_site_passage_bought(&off_slot, 0));
+    assert!(!ai.foreign_site_passage_bought(&off_slot, 0, start));
 }

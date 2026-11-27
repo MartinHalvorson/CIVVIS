@@ -62,7 +62,7 @@
 //! once, so only the live mirror can fire this; off, nothing changes.
 use super::passage_waits_past_the_opening::PassageHold;
 use super::AdvancedAi;
-use crate::game::Game;
+use crate::game::{Action, Game};
 use crate::think;
 use crate::Pos;
 use std::collections::{BTreeMap, BTreeSet};
@@ -152,19 +152,22 @@ impl AdvancedAi {
     }
 
     /// Whether the alliance desks wait this turn for a stranded person's
-    /// passage: the gene is on, such a person is held, an Open Borders
-    /// purchase of ours started this turn, and it is the seat's six-turn
-    /// trade slot. The live bridge holds a purchase sent beside an alliance
-    /// ask, and the live board never learns whether the host refused the
-    /// grant, so the purchase is retried every turn but the desks yield only
-    /// one turn in six.
-    pub(super) fn foreign_site_passage_bought(&self, g: &Game, pid: usize) -> bool {
+    /// passage: the gene is on, such a person is held, it is the seat's
+    /// six-turn trade slot, and an Open Borders purchase of ours was applied
+    /// since the action log stood at `since` entries. The log, not
+    /// `Game::active_trade_deals`: a mirrored seat's trade is a request to
+    /// the host and settles nothing on the board (`Game::do_trade`). The live
+    /// bridge holds a purchase sent beside an alliance ask, and the live
+    /// board never learns whether the host refused the grant, so the purchase
+    /// is retried every turn but the desks yield only one turn in six.
+    pub(super) fn foreign_site_passage_bought(&self, g: &Game, pid: usize, since: usize) -> bool {
         self.foreign_site_buys_the_open_border
             && g.turn % 6 == pid as u32 % 6
             && !Self::held_foreign_site_people(g, pid).is_empty()
-            && g.active_trade_deals
-                .iter()
-                .any(|deal| deal.from == pid && deal.started == g.turn && deal.request.open_borders)
+            && g.log.since(since).any(|(seat, action)| {
+                *seat == pid
+                    && matches!(action, Action::Trade { request, .. } if request.open_borders)
+            })
     }
 
     /// The sites the seat's held, unused persons need, each once. Empty in a

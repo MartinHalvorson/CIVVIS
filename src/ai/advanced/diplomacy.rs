@@ -1779,6 +1779,8 @@ impl AdvancedAi {
         // Quick deals can hide a Gold component inside a balanced quote. Hold
         // all elective bilateral spending while an exact upgrade bill is
         // reserved; trade resumes immediately when the appointment ends.
+        // `foreign-site-buys-the-open-border` reads what the trade slot did.
+        let log_before_trade = g.log.len();
         if self.war_plan.is_none() {
             self.strategic_bilateral_trade(g, pid, denied_trade_partner, plan.strategy);
         }
@@ -1804,7 +1806,7 @@ impl AdvancedAi {
         // Georgia every turn kept Mead's grant off the host for good
         // (civvis-t7-20261127T075243Z t132-t150). See
         // `advanced/foreign_site_open_border.rs`.
-        let site_passage_bought = self.foreign_site_passage_bought(g, pid);
+        let site_passage_bought = self.foreign_site_passage_bought(g, pid, log_before_trade);
         // `coalition_before_war`: an alliance with a neighbour of the war
         // desk's target, ahead of the stock cadence. See
         // `advanced/coalition.rs`.
