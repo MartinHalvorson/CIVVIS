@@ -764,6 +764,9 @@ impl AdvancedAi {
         /// Opt-in gene `tagma-timing-needs-the-edge`; see
         /// `advanced/tagma_timing_needs_the_edge.rs`.
         tagma_timing_needs_the_edge => enable_tagma_timing_needs_the_edge, disable_tagma_timing_needs_the_edge;
+        /// Opt-in gene `watched-capital-trains-its-defender`; see
+        /// `advanced/watched_capital_trains_its_defender.rs`.
+        watched_capital_trains_its_defender => enable_watched_capital_trains_its_defender, disable_watched_capital_trains_its_defender;
     }
 
     toggles! {

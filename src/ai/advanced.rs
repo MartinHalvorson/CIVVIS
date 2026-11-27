@@ -11226,6 +11226,12 @@ pub struct AdvancedAi {
     /// the bank. See `advanced/watched_capital_keeps_its_defender_gold.rs`.
     /// Off by default.
     watched_capital_keeps_its_defender_gold: bool,
+    /// `watched-capital-trains-its-defender`: while the capital watch reads
+    /// a major at 2.5x our power at an unwalled original capital short of
+    /// its garrison, the capital's queue goes to its strongest land
+    /// defender. See `advanced/watched_capital_trains_its_defender.rs`.
+    /// Off by default.
+    watched_capital_trains_its_defender: bool,
     /// `tribute-buys-the-friendship-2`: version one's tribute, aimed past
     /// the line where the host must turn an Unfriendly leader Neutral and
     /// paid from the whole treasury. See
@@ -11702,6 +11708,9 @@ mod war_target_walls;
 /// `watched-capital-keeps-its-defender-gold`: see
 /// `advanced/watched_capital_keeps_its_defender_gold.rs`.
 mod watched_capital_keeps_its_defender_gold;
+/// `watched-capital-trains-its-defender`: see
+/// `advanced/watched_capital_trains_its_defender.rs`.
+mod watched_capital_trains_its_defender;
 
 /// `centre-keeps-its-garrison`: see `advanced/centre_keeps_its_garrison.rs`.
 mod centre_keeps_its_garrison;
@@ -28248,6 +28257,10 @@ impl AdvancedAi {
         // handoffs below. Exact no-op while the gene is off. See
         // `advanced/capital_walls_before_the_surprise.rs`.
         self.claim_capital_walls_before_the_surprise(g, pid);
+        // `watched-capital-trains-its-defender`: behind the walls' claim, the
+        // watched capital's own defender while its garrison is short. Exact
+        // no-op while the gene is off.
+        self.claim_watched_capital_defender(g, pid);
         // `capital-archers-before-the-surprise`: behind the walls' claim, the
         // capital's second shooter ahead of the next Settler. Exact no-op
         // while the gene is off.
