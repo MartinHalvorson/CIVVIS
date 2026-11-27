@@ -344,6 +344,22 @@ sorting), and Diplo on col to the right"): Diplo off is its first column and
 opens sorted, and the agents, the Firaxis levels and the people are numbered
 in one ranking.
 
+**The scale of cheating.** The home page carries the ranking too, over its
+benchmark, in the operator's format (2026-11-27: "put the elo chart at the
+top of home/ too, above the benchmarks. expand the format to: Player. Scale
+of Cheating. ELO (Diplo Off). ELO (Diplo On)", and under it "Prince 0, King
+1, Emperor 2, Immortal 3, Deity 4", then "Mods"). The scale says how far the
+game helps a player. Civilization VI hands its own AI its bonuses by level,
+in steps over Prince, where it hands it none (`data/difficulties.json`: at
+each step more yield, experience and free units, and from Emperor Combat
+Strength), and the scale is the count of those steps, which
+`beta/home_elo_test.py` holds to that file. An agent is rated unhandicapped
+and a person plays as people do, so both stand at 0; that is what makes the
+column worth reading beside the Elo, a Deity AI at 4 against an agent at 0.
+There a level rated keeps its row whether or not the window holds a game of
+it, and the last row is kept for mods of the game's AI: none is rated yet,
+and the table says so.
+
 **The first reading** (2026-11-24; the agents from one run of 1,800 diplo-off
 tables, `2026-11-24-d27f49f`, so their margins are about ±60 against the
 stock fit's ±25 until the window fills). The difference is in the real game,
