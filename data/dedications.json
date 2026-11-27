@@ -20,7 +20,7 @@
   "exodus_of_the_evangelists": {
     "eras": [1, 3],
     "triggers": { "city_converted": 2 },
-    "normal": "Converting a city to your founded Religion for the first time earns +2 Era Score.",
+    "normal": "+2 Era Score whenever a city is first won over to the Religion you founded.",
     "golden": "+2 Movement and +2 Charges for Missionaries, Apostles and Inquisitors. +4 Great Prophet points per turn."
   },
   "hic_sunt_dracones": {

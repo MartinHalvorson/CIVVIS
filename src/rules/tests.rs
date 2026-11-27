@@ -356,7 +356,7 @@ fn shipped_ruleset_fingerprint_tracks_the_audited_firaxis_rows() {
     // number, name or rule changed.
     assert_eq!(
         Rules::shipped().source_fingerprint(),
-        "fnv1a64:d7367d7c8c2d804e"
+        "fnv1a64:177c5c9a2dbed120"
     );
 }
 
