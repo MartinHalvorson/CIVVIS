@@ -191,7 +191,10 @@ fn the_first_turn_of_each_era_is_kept_when_turns_are_thinned() {
     // More eras than there is room for: the oldest go, and the room holds.
     let mut crowded = with_eras(timeline_of(1..=100, 0), &(2..=100).collect::<Vec<_>>());
     crowded.thin();
-    assert_eq!(turns_of(&crowded), [1, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100]);
+    assert_eq!(
+        turns_of(&crowded),
+        [1, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100]
+    );
 }
 
 #[test]
