@@ -466,9 +466,9 @@ class HomeRankings(unittest.TestCase):
         # right", "Make the video Titles above the video and bigger or more
         # readable", "have the home upper right video start at 6 seconds in".
         tiles = re.findall(
-            r'<figure class="watch-tile" id="(watch-[a-z]+)" data-video="([\w-]{11})"( data-start="\d+")?>\s*'
-            r"<figcaption><b>([^<]+(?:<span data-watch-time>[^<]+</span>)?)</b> (?:<span data-watch-title>([^<]+)</span> )?<a [^>]+>[^<]+</a></figcaption>\s*"
-            r'<a class="watch-poster" href="https://www\.youtube\.com/watch\?v=([\w-]{11})((?:&amp;t=\d+s)?)" target="_blank" rel="noreferrer">\s*'
+            r'<figure class="watch-tile" id="(watch-[a-z]+)" data-video="([\w-]{11})"( data-start="\d+")?(?: data-tool="[^"]+")?>\s*'
+            r"<figcaption><b>([^<]+(?:<span data-watch-time>[^<]+</span>)?)</b> (?:<span data-watch-title>([^<]+)</span> )?<a [^>]+>(?:<svg [^>]+><path [^>]+/></svg>)?[^<]+</a></figcaption>\s*"
+            r'<a class="watch-poster" href="([^"]+)"((?: target="_blank" rel="noreferrer")?)>\s*'
             r'<img alt="" width="1280" height="720" decoding="async" referrerpolicy="no-referrer" '
             r'src="https://i\.ytimg\.com/vi_webp/([\w-]{11})/hq720\.webp">',
             LANDING,
@@ -502,23 +502,52 @@ class HomeRankings(unittest.TestCase):
                 ("watch-strange", "11wYuujdddk", "Doctor Strange's CIVVIS", ""),
             ],
         )
-        for _, video, _, _, _, link, _, picture in tiles:
-            self.assertEqual((link, picture), (video, video))
-        # Where there is more of each: the two victories lead to the
-        # playlist of them, CIVVIS.ai to the simulator, and the debugger,
-        # Edge of Tomorrow and Doctor Strange's CIVVIS to the modes
-        # themselves, as the site list names them.
-        more = re.findall(r'<figure class="watch-tile" id="(watch-[a-z]+)".*?<figcaption>.*?<a href="([^"]+)"[^>]*>([^<]+)</a></figcaption>', LANDING, re.S)
-        self.assertEqual(more, [
-            ("watch-fastest", "../charts/civvis-performance/", "CIVVIS Performance"),
-            ("watch-pov", "../charts/civvis-performance/", "CIVVIS Performance"),
-            ("watch-science", "https://www.youtube.com/playlist?list=PLWcKlP8e8iy4", "Lv 8 Deity Wins"),
-            ("watch-culture", "https://www.youtube.com/playlist?list=PLWcKlP8e8iy4", "Lv 8 Deity Wins"),
-            ("watch-civvis", "../", "CIVVIS"),
-            ("watch-debugger", "../debugger", "CIVVIS AI Debugger"),
-            ("watch-tomorrow", "../edge-of-tomorrow", "CIVVIS: Edge of Tomorrow"),
-            ("watch-strange", "../doctor-strange", "Doctor Strange's CIVVIS"),
+        for _, video, _, _, _, _, _, picture in tiles:
+            self.assertEqual(picture, video)
+        # Pressing a video: the four of the site's own tools open the tool,
+        # CIVVIS.ai the simulator and the debugger, Edge of Tomorrow and
+        # Doctor Strange's CIVVIS the modes themselves, as the site list
+        # names them, in the same tab; the other four play, or open on
+        # YouTube in a new tab (operator 2026-11-27: "for civvis.ai, ai
+        # debugger, edge of tomorrow, doctor strange, can we have clicking on
+        # the video link to the right tool and a Youtube link maybe where the
+        # existing link is, upper right of the video").
+        youtube = "https://www.youtube.com/watch?v="
+        new_tab = ' target="_blank" rel="noreferrer"'
+        self.assertEqual([(ident, poster, tab) for ident, _, _, _, _, poster, tab, _ in tiles], [
+            ("watch-fastest", youtube + "iHlUWPIqr5g", new_tab),
+            ("watch-pov", youtube + "9c8m87e3rCg&amp;t=6s", new_tab),
+            ("watch-science", youtube + "rVDor7Xb4Mg", new_tab),
+            ("watch-culture", youtube + "6PCd4R08UPM", new_tab),
+            ("watch-civvis", "../", ""),
+            ("watch-debugger", "../debugger", ""),
+            ("watch-tomorrow", "../edge-of-tomorrow", ""),
+            ("watch-strange", "../doctor-strange", ""),
         ])
+        tools = re.findall(r'<figure class="watch-tile" id="(watch-[a-z]+)" data-video="[\w-]{11}" data-tool="([^"]+)">', LANDING)
+        self.assertEqual(tools, [(ident, poster) for ident, _, _, _, _, poster, tab, _ in tiles if not tab])
+        # The link at the upper right of a video: the two records lead to
+        # CIVVIS Performance, the two victories to the playlist of them, and
+        # a tool's video to itself on YouTube, with YouTube's mark.
+        more = re.findall(r'<figure class="watch-tile" id="(watch-[a-z]+)".*?<figcaption>.*?<a href="([^"]+)"[^>]*>(<svg [^>]+><path [^>]+/></svg>)?([^<]+)</a></figcaption>', LANDING, re.S)
+        self.assertEqual([(ident, href, text, bool(mark)) for ident, href, mark, text in more], [
+            ("watch-fastest", "../charts/civvis-performance/", "CIVVIS Performance", False),
+            ("watch-pov", "../charts/civvis-performance/", "CIVVIS Performance", False),
+            ("watch-science", "https://www.youtube.com/playlist?list=PLWcKlP8e8iy4", "Lv 8 Deity Wins", False),
+            ("watch-culture", "https://www.youtube.com/playlist?list=PLWcKlP8e8iy4", "Lv 8 Deity Wins", False),
+            ("watch-civvis", youtube + "U0iwoVTK5q8", "YouTube", True),
+            ("watch-debugger", youtube + "6W5t0hcR_N4", "YouTube", True),
+            ("watch-tomorrow", youtube + "kcDyO_tOpmQ", "YouTube", True),
+            ("watch-strange", youtube + "11wYuujdddk", "YouTube", True),
+        ])
+        # A tool's player takes clicks for itself, so a link to the tool lies
+        # over it once it plays, and pressing the picture before then is
+        # never turned into playing it here.
+        self.assertIn('const tool = tile.dataset.tool || "";', LANDING)
+        self.assertIn("        if (tool) return;\n", LANDING)
+        self.assertIn('go.className = "watch-go";', LANDING)
+        self.assertIn('(tool ? "&controls=0" : "")', LANDING)
+        self.assertIn(".watch-go { position: absolute; inset: 0; z-index: 1; border-radius: inherit; }", LANDING)
         for href, name in (
             ("../", "CIVVIS"),
             ("../debugger", "CIVVIS AI Debugger"),
@@ -529,14 +558,14 @@ class HomeRankings(unittest.TestCase):
         # The single player's game starts 6 seconds in, on the page and on
         # YouTube; the other seven start at their start.
         self.assertEqual(
-            [(start, at) for _, _, start, _, _, _, at, _ in tiles],
-            [("", ""), (' data-start="6"', "&amp;t=6s")] + [("", "")] * 6,
+            [(start, poster.endswith("&amp;t=6s")) for _, _, start, _, _, poster, _, _ in tiles],
+            [("", False), (' data-start="6"', True)] + [("", False)] * 6,
         )
         # A tile with no second line is named by its title alone.
         self.assertIn('const second = tile.querySelector("[data-watch-title]");', LANDING)
         self.assertIn('const title = tile.querySelector("b").textContent + (second ? ": " + second.textContent : "");', LANDING)
         self.assertIn('const start = /^[1-9]\\d*$/.test(tile.dataset.start || "") ? tile.dataset.start : "";', LANDING)
-        self.assertIn('poster.href = "https://www.youtube.com/watch?v=" + id + (start ? "&t=" + start + "s" : "");', LANDING)
+        self.assertIn('        poster.href = "https://www.youtube.com/watch?v=" + id + (start ? "&t=" + start + "s" : "");', LANDING)
         # The titles are the largest type under the page's name, and whole.
         self.assertIn(".watch-tile figcaption b { color: #fff; font-size: 20px; font-weight: 700; line-height: 1.3; }", LANDING)
         self.assertIn(".watch-tile figcaption span { order: 3; flex-basis: 100%; min-width: 0; color: var(--text); font-size: 15px; line-height: 1.4; }", LANDING)
@@ -567,7 +596,7 @@ class HomeRankings(unittest.TestCase):
         # indefinitely"): YouTube loops a video that is its own playlist.
         self.assertIn(
             'player.src = PLAYER + "/embed/" + id + "?autoplay=1&rel=0&playsinline=1&loop=1&playlist=" + id'
-            ' + (muted ? "&mute=1" : "") + (start ? "&start=" + start + "&enablejsapi=1" : "");',
+            ' + (muted ? "&mute=1" : "") + (tool ? "&controls=0" : "") + (start ? "&start=" + start + "&enablejsapi=1" : "");',
             LANDING,
         )
         # Its loop comes round to 0 s, so a tile with a start sends its
