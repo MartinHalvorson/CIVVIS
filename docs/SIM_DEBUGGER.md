@@ -1580,8 +1580,19 @@ path). these should alert on the top section out in the distance."
   two boxes are narrower and so shorter, and one box is taller and takes the
   line up with it. It never goes above the cards at the top. It can be
   dragged, and a double-click gives it back to the page. The turn and its
-  era are written on the line, beside the board ("Move turn count up to the
-  center line, as that is the current turn"). Two boxes have the trunk's
+  era are written on the line ("Move turn count up to the center line, as
+  that is the current turn"), right of the tree since 2026-11-27 ("please
+  move turn count to the right side of the box. and move in a bit (if there
+  aren't too many lines) to line up with the edge of the center green path
+  with all the historical lines"): its left edge is on the edge of the green
+  path the lines run down between the boxes (half a lane out, which is the
+  right box's left edge with two worlds), or just past the outermost lane on
+  that side when the lanes reach further, and never under the column on the
+  right (`strangeTurnLeft`). With so many lanes right of the followed world
+  that there is no room past them, it is written left of the tree the same
+  way where that side is clear (a dozen worlds following A, the leftmost).
+  It stood left of the board before, and went off the window with a dozen
+  worlds. Two boxes have the trunk's
   column between them. Three or more leave a strip clear under the line
   where the worlds stand on it, and one box's plate is cut away there.
 - **Each yield is a figure a turn and a total so far.** Operator, 2026-11-23:

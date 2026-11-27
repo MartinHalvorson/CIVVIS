@@ -3656,8 +3656,16 @@ def check_doctor_strange(bar: Bar, address: str) -> None:
     inks = ("strange.order.map(letter => [strange.tint[letter], getComputedStyle(debugSplit.panes[letter].frame).borderLeftColor,"
             " getComputedStyle(document.querySelector(`#strange-hud [data-strange-world=\"${letter}\"]`)).borderTopColor])")
     assert bar.ev(inks) == [["#ff8f6b", "rgb(255, 143, 107)", "rgb(255, 143, 107)"], ["#6fd3e0", "rgb(111, 211, 224)", "rgb(111, 211, 224)"]]
+    # The turn is written on the line, right of the tree, its left edge on
+    # the edge of the green path the lines run down between the two boxes,
+    # which is B's box's left edge (operator 2026-11-27: "please move turn
+    # count to the right side of the box. and move in a bit (if there aren't
+    # too many lines) to line up with the edge of the center green path with
+    # all the historical lines").
     assert bar.ev("(() => { const chip = document.querySelector('#strange-hud .strange-turn'), turn = chip.getBoundingClientRect(), g = strangeGeometry();"
-                  " return [Math.round(turn.bottom) === g.cy, turn.right < g.cx, turn.right > g.cx - 260, chip.textContent]; })()") == \
+                  " const b = debugSplit.panes.b.frame.getBoundingClientRect();"
+                  " return [Math.round(turn.bottom) === g.cy, Math.round(turn.left) === Math.round(g.cx + g.lane / 2), Math.abs(turn.left - b.left) <= 1,"
+                  " chip.textContent]; })()") == \
         [True, True, True, "TURN1Ancient era"]
     # One world so far, and one line on the tree. A turn played by two player strategies forks it there.
     assert bar.ev("[strangeTree().splits === Infinity, strange.order.join(''), strange.follow]") == [True, "ab", "a"]
@@ -4434,6 +4442,16 @@ def check_doctor_strange_send_it(bar: Bar, address: str) -> None:
         rows = bar.ev("(() => { const g = strangeGeometry(), tops = new Map(); for (const letter of strange.order) {"
                       " const box = g.boxes[letter]; tops.set(Math.round(box.y), (tops.get(Math.round(box.y)) || 0) + 1); } return [...tops.values()]; })()")
         assert rows == [4, 4, 4], rows
+        # With a dozen lanes, eleven of them right of A, the one followed,
+        # there is no room for the turn past them on the right: it stands
+        # left of the tree, on the edge of the green path there, on the
+        # window and clear of every lane and of the column on the right.
+        clear = bar.ev("""(() => { const turn = document.querySelector('#strange-hud .strange-turn').getBoundingClientRect(), g = strangeGeometry();
+          const column = document.querySelector('#strange-hud .strange-right').getBoundingClientRect(), mine = strangeOpen().indexOf(strange.follow);
+          const lanes = strangeOpen().map((_, at) => g.cx + g.near * (at - mine));
+          return [Math.round(turn.right) === Math.round(g.cx - g.lane / 2), turn.left >= 12, lanes.every(x => x + 12 <= turn.left || x - 12 >= turn.right),
+            column.bottom <= g.cy - 50 || turn.right <= column.left - 9]; })()""")
+        assert clear == [True, True, True, True], clear
         bar.until("strange.order.slice(1, 11).every(letter => debugSplit.panes[letter].frame.contentWindow.eval('engine.seat') === debugSplit.panes[letter].strategy)",
                   "each new world is seated with its own strategy")
         copies = bar.ev("strange.order.slice(1, 11).map(letter => debugSplit.panes[letter].frame.contentWindow.eval("
