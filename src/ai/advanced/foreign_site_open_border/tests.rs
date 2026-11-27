@@ -5,10 +5,11 @@ use crate::game::LiveGreatPersonActivationNeed;
 
 const TAG: &str = "foreign-site-buys-the-open-border";
 
-/// Four majors and a city-state, each with one city; seat 0 has met them all,
-/// every major can trade passage and holds Gold, and no natural wonder is on
-/// the map until a test lays one. Turn 151 is off seat 0's six-turn trade
-/// cadence, so any grant on the board came from this gene.
+/// Four majors and a city-state, each with one city; seat 0 has met them all
+/// and explored the whole map, every major can trade passage and holds Gold,
+/// and no natural wonder is on the map until a test lays one. Turn 151 is off
+/// seat 0's six-turn trade cadence, so any grant on the board came from this
+/// gene.
 fn board() -> Game {
     let mut g = Game::new_full(4, 30, 16, 79_104, 200, 1, false);
     for pid in 0..g.players.len() {
@@ -40,6 +41,8 @@ fn board() -> Game {
     for pos in wonders {
         g.map.tiles.get_mut(&pos).unwrap().feature = None;
     }
+    let everywhere: Vec<Pos> = g.map.tiles.iter().map(|(pos, _)| *pos).collect();
+    g.players[0].explored.extend(everywhere);
     g
 }
 
@@ -269,6 +272,15 @@ fn darwin_beside_open_or_own_ground_buys_nothing() {
     wonder_inside(&mut ours, 0);
     assert!(!buy(&mut ours, true), "a wonder in our own land");
     assert!(grants(&ours).is_empty());
+
+    // Unowned but never explored: the live mirror's fog, not open ground.
+    let mut fogged = unowned.clone();
+    fogged.players[0].explored.remove(&open);
+    for near in fogged.nbrs(open) {
+        fogged.players[0].explored.remove(&near);
+    }
+    assert!(buy(&mut fogged, true));
+    assert_eq!(grants(&fogged), [2]);
 
     // Unowned but sealed: a seat whose city we have not seen holds it.
     let mut sealed = unowned;

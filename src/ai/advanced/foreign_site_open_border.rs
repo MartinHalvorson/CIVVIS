@@ -39,9 +39,9 @@
 //! [`AdvancedAi::open_borders_affordable`]'s reserve), with the view's hidden
 //! civics revealed for the purchase and restored after it
 //! ([`AdvancedAi::reveal_enforcing_civics`]). A site is reachable when it is
-//! ours (Darwin only), unowned and unsealed (Darwin only), or held by a seat
-//! at peace that lets us in (`Game::has_open_borders`; for Mead a
-//! city-state only as its Suzerain). Once the person is used the need is
+//! ours (Darwin only), explored, unowned and unsealed (Darwin only), or
+//! held by a seat at peace that lets us in (`Game::has_open_borders`; for
+//! Mead a city-state only as its Suzerain). Once the person is used the need is
 //! gone and nothing more happens. Headless games retire Great People at
 //! once, so only the live mirror can fire this; off, nothing changes.
 use super::AdvancedAi;
@@ -178,8 +178,16 @@ impl AdvancedAi {
         owner: Option<usize>,
     ) -> bool {
         match owner {
-            // Sealed ground belongs to a seat whose city we have not seen.
-            None => site == ForeignSite::NaturalWonder && !g.closed_borders.contains(&pos),
+            // Only ground the seat has explored reads as unowned: a live
+            // mirror fills the fog with invented, ownerless tiles (beside
+            // Torres del Paine three of ten were never revealed on
+            // civvis-t7-20261126T230955Z-cont1). Sealed ground belongs to a
+            // seat whose city we have not seen.
+            None => {
+                site == ForeignSite::NaturalWonder
+                    && g.players[pid].explored.contains(&pos)
+                    && !g.closed_borders.contains(&pos)
+            }
             Some(owner) if owner == pid => site == ForeignSite::NaturalWonder,
             Some(owner) => {
                 if g.is_at_war(pid, owner) {
