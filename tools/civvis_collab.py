@@ -28,6 +28,9 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 import urllib.error
 import urllib.request
 
+# A sibling in tools/, which is sys.path[0] whenever this script runs.
+import commit_identity
+
 
 REPOSITORY = "MartinHalvorson/CIVVIS"
 DEFAULT_BRANCH = "main"
@@ -1051,6 +1054,20 @@ def pr_commit_subjects(repository: str, number: int, token: str) -> List[str]:
     return [str(row["commit"]["message"]).splitlines()[0] for row in rows]
 
 
+def pr_commits(repository: str, number: int, token: str) -> List[Dict[str, Any]]:
+    """Every commit GitHub lists for the PR (the endpoint stops at 250)."""
+    rows: List[Dict[str, Any]] = []
+    for page in range(1, 4):
+        batch = github_json(
+            f"/repos/{repository}/pulls/{number}/commits?per_page=100&page={page}",
+            token,
+        )
+        rows.extend(batch or [])
+        if len(batch or []) < 100:
+            break
+    return rows
+
+
 # A PR that models or drives a live-game interaction quotes what it is
 # modelled on (AGENTS.md, "A claim is not a check"). Two things make a PR one
 # of those: a path under the control mod, or added lines in `src/game.rs`
@@ -1137,6 +1154,15 @@ def check_pr_action(event_path: Path, token: str, repository: str) -> int:
         other_coordination=other_coordination,
         advisories=advisories,
         added_lines=pr_added_lines(repository, number, token),
+    )
+    # Who GitHub would credit: checked on drafts too, because a draft's
+    # commits are already public and its body is the squash message.
+    errors.extend(
+        commit_identity.identity_errors(
+            pr_commits(repository, number, token),
+            str(current.get("body") or ""),
+            expected_commits=current.get("commits"),
+        )
     )
     if not current["isDraft"]:
         base_sha = str(current.get("base", {}).get("sha") or "")

@@ -103,6 +103,15 @@ order, and read the same report on the next games to confirm it.
   now; a richer computer ID can replace the value later without moving it. Put
   the same `- Computer:` line in the PR ownership block too — squash merge
   writes the PR body onto `main` and throws the branch's own messages away.
+- Commit only as yourself. The only accounts that may author, commit or
+  co-author CIVVIS work are martbot-1, MartinHalvorson and Claude
+  (`noreply@anthropic.com`). Never invent an identity (`-c user.email=d@d`,
+  `GIT_AUTHOR_EMAIL=...`, a `Co-authored-by:` for anyone else): GitHub credits
+  a commit to whoever owns its address, and the squash merge carries every
+  commit's authors and trailers onto `main`. A placeholder in #5753 made an
+  unrelated stranger a public CIVVIS contributor. `collaboration-policy`
+  refuses any other identity (`tools/commit_identity.py`); a tool that needs a
+  fallback identity uses `commit_identity.FLEET_IDENTITY`.
 - Do not force-push. Do not rebase a branch after it has been pushed. To update
   a task branch, fetch and merge `origin/main` into it once, resolve carefully,
   rerun validation, and push normally.

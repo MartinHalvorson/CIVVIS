@@ -343,10 +343,13 @@ def snapshot(repo: str, tree_path: str, branch: str) -> str | None:
         # same empty identity and is what caught it.
         env = {
             "GIT_INDEX_FILE": os.path.join(tmp, "index"),
-            "GIT_AUTHOR_NAME": "civvis-worktree-audit",
-            "GIT_AUTHOR_EMAIL": "civvis-worktree-audit@localhost",
-            "GIT_COMMITTER_NAME": "civvis-worktree-audit",
-            "GIT_COMMITTER_EMAIL": "civvis-worktree-audit@localhost",
+            # martbot-1's noreply address, never a made-up one: a rescue
+            # snapshot that reaches a PR is credited to whoever owns its
+            # address (#5753 credited a stranger). commit_identity.FLEET_IDENTITY
+            "GIT_AUTHOR_NAME": "martbot-1",
+            "GIT_AUTHOR_EMAIL": "285244636+martbot-1@users.noreply.github.com",
+            "GIT_COMMITTER_NAME": "martbot-1",
+            "GIT_COMMITTER_EMAIL": "285244636+martbot-1@users.noreply.github.com",
         }
         # Seed the scratch index from HEAD so unchanged files are already staged,
         # then add everything the tree currently holds.
@@ -548,10 +551,13 @@ def rescue_loose(repo: str, scan_root: str, paths: list[str], label: str) -> str
     with tempfile.TemporaryDirectory() as tmp:
         env = {
             "GIT_INDEX_FILE": os.path.join(tmp, "index"),
-            "GIT_AUTHOR_NAME": "civvis-worktree-audit",
-            "GIT_AUTHOR_EMAIL": "civvis-worktree-audit@localhost",
-            "GIT_COMMITTER_NAME": "civvis-worktree-audit",
-            "GIT_COMMITTER_EMAIL": "civvis-worktree-audit@localhost",
+            # martbot-1's noreply address, never a made-up one: a rescue
+            # snapshot that reaches a PR is credited to whoever owns its
+            # address (#5753 credited a stranger). commit_identity.FLEET_IDENTITY
+            "GIT_AUTHOR_NAME": "martbot-1",
+            "GIT_AUTHOR_EMAIL": "285244636+martbot-1@users.noreply.github.com",
+            "GIT_COMMITTER_NAME": "martbot-1",
+            "GIT_COMMITTER_EMAIL": "285244636+martbot-1@users.noreply.github.com",
         }
         entries = []
         for i in range(0, len(paths), 400):
@@ -890,7 +896,7 @@ def selftest() -> int:
         remote, work = os.path.join(tmp, "remote.git"), os.path.join(tmp, "work")
         subprocess.run(["git", "init", "-q", "--bare", remote], check=True)
         subprocess.run(["git", "init", "-q", "-b", "main", work], check=True)
-        cfg = ["-c", "user.email=t@t", "-c", "user.name=t"]
+        cfg = ["-c", "user.email=285244636+martbot-1@users.noreply.github.com", "-c", "user.name=martbot-1"]
         open(os.path.join(work, "a.txt"), "w").write("one\n")
         subprocess.run(["git", "-C", work, "add", "-A"], check=True)
         subprocess.run(["git", "-C", work, *cfg, "commit", "-qm", "one"], check=True)
