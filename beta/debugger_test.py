@@ -75,6 +75,16 @@ body { display: flex; }
 </div>
 <script>
 "use strict";
+// ---- the computer
+// The memory the browser says this computer has (`navigator.deviceMemory`),
+// which Doctor Strange's worlds are held under (`tabMemoryGB`): the checks
+// of a dozen worlds are on a computer with room for a dozen, and a check
+// that asks for another says so where every page of the origin reads it,
+// the worlds' pages too.
+{
+  const gb = Number(localStorage.getItem("civvis-toy-memory") || 64);
+  Object.defineProperty(Navigator.prototype, "deviceMemory", {get: () => gb, configurable: true});
+}
 // ---- what the viewer gives the bar
 // Which of the simulator's pages this is, as the viewer's head script says
 // it: the address names it (/debugger, /doctor-strange, /edge-of-tomorrow),
@@ -753,7 +763,10 @@ class Bar:
         self.until(f"!debugBusy && !debugRunning && !autoplaying && ({expression})", why)
 
     def sent(self) -> list:
-        return self.ev("engine.sent.filter(call => call.path === '/debug').map(call => call.body)")
+        # Not the line the page tells its engine to keep its turns under
+        # (`debugRoomAsk`): that is told whenever the deck is drawn idle and
+        # the engine does not hold it yet, between whatever a check presses.
+        return self.ev("engine.sent.filter(call => call.path === '/debug' && call.body.op !== 'room').map(call => call.body)")
 
     def forget(self) -> None:
         self.ev("engine.sent.length = 0, true")
@@ -4100,6 +4113,90 @@ def check_doctor_strange(bar: Bar, address: str) -> None:
     assert not bar.dev.console, f"the page complained: {bar.dev.console}"
 
 
+def check_doctor_strange_memory(bar: Bar, address: str) -> None:
+    """Doctor Strange's CIVVIS holds its worlds under the tab's memory ceiling.
+
+    Operator, a standing rule since 2026-11-23: "please be careful about a
+    memory blowup on civvis. considering the typical amount of memory people
+    computres have". On the 8 GB budget (`navigator.deviceMemory` 8, which
+    is the most Chrome says, or not said) a tab is kept under 1.5 GB, which
+    holds two worlds: each one's box, its engine at the least it is told and
+    one future played beside them (`strangeBudgetOf`; measured in PR #5939).
+    A third is refused with words that say why, Branch Next Best, Branch 5
+    Next Best and All 14,000,605 make none, no page is made ahead for one,
+    each world's engine is told its share of the ceiling, and deleting a
+    world makes room for one again. A link that says the computer has more
+    (`?memory=16`) has room for more.
+    """
+    ready = "typeof drawDebugBar === 'function' && typeof engineState === 'function'"
+    said = "document.querySelector('#strange-hud [data-strange=\"say\"]').textContent"
+    full = "2 worlds are open, which is the most this computer's memory holds (a tab is kept under 1.5 GB)"
+    lines = "strange.order.map(letter => debugSplit.panes[letter].frame.contentWindow.eval('engine.line'))"
+    frames = "document.querySelectorAll('#debugsplit iframe').length"
+    two = "debugSplit && debugSplit.shown && strange.order.length === 2 && strange.order.every(letter => debugSplit.panes[letter].turn === 1) && strangeIdle()"
+    buttons = ("['branch', 'next1', 'next5', 'all'].map(action => document.querySelector(`#strange-hud [data-strange=\"${action}\"]`))"
+               ".map(held => [held.disabled, held.title])")
+    # Two strategies more than the two worlds seat, so there is always one to branch.
+    more = json.dumps(json.dumps([["s3", 990], ["s4", 980]]))
+    bar.ev(f"localStorage.setItem('civvis-toy-memory', '8'), localStorage.setItem('civvis-toy-strategies', {more}), true")
+    try:
+        bar.dev.call("Page.navigate", {"url": f"{address}?mode=strange"})
+        bar.until(f"{ready} && location.search === '?mode=strange' && state === null", "Doctor Strange's CIVVIS on an 8 GB laptop")
+        bar.ev("engine.scores = {1: 0}, strange.futures = false, render(engineState()), true")
+        bar.settled()
+        bar.until(two, "its two worlds are there")
+        assert bar.ev("[navigator.deviceMemory, tabMemoryGB(), tabCeilingMB(), DEBUG_SMALL_DEVICE]") == [8, 8, 1536, False]
+        assert bar.ev("strangeBudget()") == {"ceilingMB": 1536, "most": 2, "futures": 1, "roomMB": 135}, bar.ev("strangeBudget()")
+        # Each world's engine is told the line its share of the ceiling allows.
+        bar.until(f"{lines}.every(line => line === 135)", "each world's engine is told its share", seconds=30)
+        # Full: each way of making a world is off, and says why.
+        state = bar.ev(buttons)
+        assert [disabled for disabled, _ in state] == [True] * 4, state
+        assert state[0][1] == state[1][1] == state[2][1] == f"{full}. Delete one to branch again", state
+        assert state[3][1] == f"{full}. Delete some to branch every player strategy", state
+        # Asked anyway, none is made, and the page says why.
+        assert bar.ev("strangeBranch('jack')") is None
+        assert bar.ev(said) == f"{full}. Delete one to branch again", bar.ev(said)
+        assert bar.ev("strangeNext(5)") == []
+        assert bar.ev(said) == f"{full}. Delete one to branch again", bar.ev(said)
+        bar.ev("strangeAll(), true")
+        assert bar.ev(f"[strange.all, {said}, strange.order.length]") == [None, f"{full}. Delete some to branch them all", 2]
+        # And no page is made ahead for a world that would not fit
+        # (`strangeSpare`: after STRANGE_SPARE_STILL_MS standing still).
+        bar.ev("new Promise(done => setTimeout(() => done(true), 3500))")
+        assert bar.ev(frames) == 2, bar.ev(frames)
+        # B deleted: one world, and room for one more, made in B's box. The
+        # world left is told a larger line, B's box still being a page.
+        bar.click('#strange-hud [data-strange="close-b"]')
+        bar.until("strange.order.join('') === 'a' && strangeIdle()", "B is deleted")
+        assert bar.ev("strangeBudget()") == {"ceilingMB": 1536, "most": 2, "futures": 1, "roomMB": 203}, bar.ev("strangeBudget()")
+        bar.until(f"{lines}.every(line => line === 203)", "the world left is told its larger share", seconds=30)
+        assert bar.ev(buttons)[0][0] is False
+        assert bar.ev("strangeBranch('jack')") == "b"
+        bar.until(two, "the branch is a world in B's box", seconds=30)
+        assert bar.ev(f"[{frames}, strangeBudget().roomMB, {buttons}.map(([disabled]) => disabled)]") == [2, 135, [True] * 4]
+        assert not bar.dev.console, f"the page complained: {bar.dev.console}"
+    finally:
+        bar.ev("localStorage.removeItem('civvis-toy-memory'), true")
+    # A link that says the computer has 16 GB: a 3 GB tab holds nine worlds,
+    # and two futures are played at once.
+    bar.ev("localStorage.setItem('civvis-toy-memory', '8'), true")
+    try:
+        bar.dev.call("Page.navigate", {"url": f"{address}?mode=strange&memory=16"})
+        bar.until(f"{ready} && location.search === '?mode=strange&memory=16' && state === null", "Doctor Strange's CIVVIS, told 16 GB")
+        bar.ev("engine.scores = {1: 0}, strange.futures = false, render(engineState()), true")
+        bar.settled()
+        bar.until(two, "its two worlds are there")
+        budget = "(({ceilingMB, most, futures}) => [tabMemoryGB(), ceilingMB, most, futures])(strangeBudget())"
+        assert bar.ev(budget) == [16, 3072, 9, 2], bar.ev(budget)
+        assert bar.ev(buttons)[0][0] is False
+        assert bar.ev("strangeBranch('jack')") == "c"
+        bar.until("strange.order.length === 3 && strangeIdle()", "a third world", seconds=30)
+        assert not bar.dev.console, f"the page complained: {bar.dev.console}"
+    finally:
+        bar.ev("localStorage.removeItem('civvis-toy-memory'), localStorage.removeItem('civvis-toy-strategies'), true")
+
+
 def check_doctor_strange_autosearch(bar: Bar, address: str) -> None:
     """Doctor Strange's CIVVIS has Autosearch: it searches from the base timeline on copies of that world, and the path found is made a branch.
 
@@ -5113,6 +5210,12 @@ def main() -> int:
               "page's game alone, finds the best line and lets its copies go; the line is played on the "
               "one timeline or in either half of a split, and says what it came to beside what was found.")
         check_doctor_strange(bar, f"http://127.0.0.1:{port}/")
+        check_doctor_strange_memory(bar, f"http://127.0.0.1:{port}/")
+        print("Doctor Strange's CIVVIS holds its worlds under the tab's memory ceiling: on an 8 GB laptop a tab is "
+              "kept under 1.5 GB, which holds two worlds; a third is refused by Branch, Branch Next Best, Branch 5 Next "
+              "Best and All 14,000,605 with words that say why, no page is made ahead for one, each world's engine is "
+              "told its share of the ceiling, deleting a world makes room for one again, and a link that says the "
+              "computer has 16 GB holds nine.")
         print("Doctor Strange's CIVVIS is the split shown as worlds in boxes under the tree of their timelines: it "
               "opens on the top rated player strategy on the right and its challenger on the left; the open turn is "
               "the line across the window, which is the divide between the tree and the boxes and has the turn "

@@ -2631,12 +2631,11 @@ function debugDrawDeck(bar, deck) {
     `<button data-dbg-goto="${point.id}" title="Put this world back on the table">Go</button>` +
     `<button data-dbg-drop="${point.id}" title="Remove this save point" aria-label="Remove this save point">×</button></div>`).join("")
     : `<p>No save points yet.</p>`);
-  // The host of a split asks nothing of its own world, which waits.
-  if (DEBUG_SMALL_DEVICE && !debugSplit && idle && timeline.memory_line == null && Date.now() - debugRoomAskedAt > 10000) {
-    debugRoomAskedAt = Date.now();
-    debugOp({op: "room", megabytes: 384});
-  }
-  // A world of Doctor Strange's Civ 6 keeps its share of the room instead.
+  // The host of a split asks nothing of its own world, which waits. A page
+  // of its own keeps its turns under the tab's ceiling (`debugRoomMB`).
+  if (DEBUG_PANE === null && !debugSplit && idle) debugRoomAsk(timeline);
+  // A world of Doctor Strange's Civ 6 keeps its share of the room instead,
+  // and a half of the AI Debugger's split its engine's line.
   if (DEBUG_PANE !== null && idle) strangePaneRoom(timeline);
 
   const layersOn = timeline.layers.filter(layer => layer.on).length;
@@ -4371,6 +4370,9 @@ async function debugSearchStart() {
         ` (${(made && made.error) || "it has no forks"}). It runs in the browser build`);
     }
     search.memory = made.memory_bytes || 0;
+    // As many cores as copies were made: the tab may have had room for
+    // fewer than were asked for (`tabEnginesMB`).
+    search.cores = made.forks;
     const half = root.pane ? `&pane=${encodeURIComponent(root.pane)}` : "";
     search.forks = Array.from({length: made.forks}, (_, at) => ({n: at + 1, path: `/debug?fork=${at + 1}${half}`,
       at: search.from, from: search.from, plan: null, series: [], busy: false, dead: false}));
@@ -6044,23 +6046,135 @@ function strangeFrame(letter, born = null) {
   frame.src = debugPaneAddress(pane.id);
   return pane;
 }
-// The room a world's turns are kept in. Each world plays on an engine of its
-// own (`beta/shim.js`), and an engine keeps its turns up to its memory line
-// (`room`, 1 GB unless told): where one engine held every world under that
-// line, a dozen engines would hold a dozen, about 600 MB a world by the end
-// of a six-seat game and a full copy of it for every branch made from it.
-// The worlds share STRANGE_ROOM_MB between them instead (less on a small
-// device), each told its part as worlds are opened and deleted, and never
-// under the engine's least. Past its line a world gives back its oldest
-// turns first, as one engine did.
-const STRANGE_ROOM_MB = 2048, STRANGE_ROOM_SMALL_MB = 384, STRANGE_ROOM_LEAST_MB = 128;
+// ---- What a tab may hold
+//
+// Operator 2026-11-23, a standing rule: "please be careful about a memory
+// blowup on civvis. considering the typical amount of memory people
+// computres have". A visitor is an 8 GB laptop with other things open, and
+// a tab is all it costs that computer: the page's own process, its part of
+// the GPU process, and every engine's memory (`beta/worker.js`). An engine's
+// memory never shrinks, so what counts is the most it has held.
+//
+// Doctor Strange's worlds are each a page and an engine of their own
+// (`strangeFrame`, `beta/shim.js`), and nothing held them under a ceiling.
+// Measured on the published engine (PR #5939: headless Chrome, its
+// four-seat Pangaea, the page's process and the GPU process added up), two
+// worlds were 1.2 GB on turn 1 and 1.7-2.0 GB by turn 120, four were 2.3-2.4
+// GB by turn 120, and All 14,000,605 went on past that. What a tab is made
+// of, there: the page itself, with its own engine and its part of the GPU
+// process, about 950 MB by the late game (`pageMB`); each world's box, the
+// viewer again in a frame, about 90 MB more (`boxMB`); and each world's
+// engine, which keeps every turn played until it passes the line it is told
+// (`room`, 1 GB unless told; the engine's least is 128 MB), with a copy of
+// it for each future played ahead at once (`strangeForesee`). A world's
+// engine was about 55 MB on turn 60 and 200 MB on turn 120.
+//
+// So a tab is given a ceiling, 3/16 of the memory the browser says the
+// computer has (`navigator.deviceMemory`): 1.5 GB on the 8 GB budget, where
+// a browser that does not say is put too, and Chrome never says more than
+// 8. A link may say how much the computer has instead (`?memory=32`, in GB),
+// for one that has more. A phone or a small device opens on the one
+// timeline, as before, with its 384 MB line. The worlds live inside the
+// ceiling (`strangeBudgetOf`):
+//   - as many worlds may be open as fit with each box and each world's
+//     engine at its least, and one future played beside them; past that a
+//     branch is refused and the page says why (`strangeFullWords`), and All
+//     14,000,605 and Branch 5 Next Best make as many as fit;
+//   - what is left is the worlds' kept turns, the same line for each world,
+//     and as many futures are played at once as fit beside them;
+//   - a world deleted, or a page waiting to be one, holds no engine (`shim.js`
+//     lets go of the engine of a world out of sight), a world's future played
+//     to its end lets go of its copy (`strangeSeen`), and no page is made
+//     ahead for a branch that would not fit (`strangeSpare`).
+// The AI Debugger and Edge of Tomorrow keep their turns under the same
+// ceiling (`debugRoomMB`).
+const TAB_MEMORY = {share: 3 / 16, budgetGB: 8, mostGB: 64, pageMB: 950, boxMB: 90, engineLeastMB: 128, engineMostMB: 3072, smallMB: 384};
+// The memory this computer is taken to have, in GB: what a link says, or
+// else what the browser says, but never less than the 8 GB budget, which is
+// what a browser that says nothing is given.
+function tabMemoryGB(told = navigator.deviceMemory, asked = new URLSearchParams(location.search).get("memory")) {
+  const linked = asked === null || asked === "" ? NaN : Number(asked);
+  if (Number.isFinite(linked) && linked > 0) return Math.min(TAB_MEMORY.mostGB, Math.max(1, linked));
+  const gb = Number(told);
+  return Math.min(TAB_MEMORY.mostGB, Math.max(TAB_MEMORY.budgetGB, Number.isFinite(gb) ? gb : 0));
+}
+// The ceiling for the whole tab, in MB.
+function tabCeilingMB(gb = tabMemoryGB()) {
+  return Math.round(gb * 1024 * TAB_MEMORY.share);
+}
+// The line an engine is told, kept where the engine keeps it (`room`).
+function tabEngineMB(megabytes) {
+  return Math.max(TAB_MEMORY.engineLeastMB, Math.min(TAB_MEMORY.engineMostMB, Math.floor(megabytes)));
+}
+// Doctor Strange under a ceiling, with `worlds` open in `boxes` boxes (a
+// box out of sight is a page still: one closed, or one made ahead):
+//   most     the most worlds that may be open: each box, each world's
+//            engine at its least and one future beside them fit;
+//   roomMB   the line each open world's engine is told: what the boxes
+//            leave, shared by the worlds and the futures played at once;
+//   futures  how many futures are played at once: every world's where each
+//            world and its copy fit at the least, else one at a time.
+function strangeBudgetOf(ceilingMB, worlds, boxes = worlds) {
+  const {pageMB, boxMB, engineLeastMB: least} = TAB_MEMORY;
+  const engines = count => ceilingMB - pageMB - count * boxMB;
+  let most = 1;
+  while (most < STRANGE_LETTERS.length && engines(most + 1) >= (most + 2) * least) most++;
+  const open = Math.max(1, worlds), held = Math.max(0, engines(Math.max(open, boxes)));
+  const futures = Math.max(1, Math.min(open, Math.floor(held / least) - open));
+  return {ceilingMB, most, futures, roomMB: tabEngineMB(held / (open + futures))};
+}
+// This page's: the ceiling of this computer, the worlds open and the boxes there are.
+function strangeBudget() {
+  const split = debugSplit, open = strangeOpen().length;
+  return strangeBudgetOf(tabCeilingMB(), open, split ? Math.max(open, Object.keys(split.panes).length) : open);
+}
+// What the page says when no more worlds fit: the dozen there are names
+// for, or what this computer's memory holds. `are` says they are open now.
+function strangeFullWords(budget = strangeBudget(), are = true) {
+  const most = budget.most, gb = (budget.ceilingMB / 1024).toFixed(1);
+  if (most >= STRANGE_LETTERS.length) return are ? `${STRANGE_LETTERS.length} worlds are open, which is the most` : `${STRANGE_LETTERS.length} worlds is the most`;
+  return `${most} world${most === 1 ? "" : "s"} ${are ? `${most === 1 ? "is" : "are"} open, which is` : "is"} the most this computer's memory holds` +
+    ` (a tab is kept under ${gb} GB)`;
+}
+// The line the engine of the AI Debugger's page, or of Edge of Tomorrow, is
+// told: what the page and the boxes of a split leave under the ceiling. The
+// halves of a split are worlds on the page's one engine, so each is told the
+// same line; a small device keeps its own.
+function debugRoomMB() {
+  if (DEBUG_SMALL_DEVICE) return TAB_MEMORY.smallMB;
+  const boxes = debugSplit ? Object.keys(debugSplit.panes).length : 0;
+  return tabEngineMB(tabCeilingMB() - TAB_MEMORY.pageMB - boxes * TAB_MEMORY.boxMB);
+}
+// What every engine of this tab may hold together, the page's own, each
+// world's and every copy of one: what the page and its boxes leave under the
+// ceiling. A fork for Autosearch is made only where it fits in that
+// (`beta/shim.js`, `forksThatFit`).
+function tabEnginesMB() {
+  return tabCeilingMB() - TAB_MEMORY.pageMB - (debugSplit ? Object.keys(debugSplit.panes).length : 0) * TAB_MEMORY.boxMB;
+}
+// The page's own engine, told its line while the deck is drawn idle, and
+// told again if a new game forgot it.
+function debugRoomAsk(timeline) {
+  const megabytes = debugRoomMB();
+  if (timeline.memory_line === megabytes || Date.now() - debugRoomAskedAt < 10000) return;
+  debugRoomAskedAt = Date.now();
+  // Asked of the engine as it is, not as a step of the bar's (`debugOp`): it
+  // changes nothing in the game, so the bar is not made busy by it and
+  // nothing pressed meanwhile, nor the game's opening, waits on it.
+  fetchJSON("/debug", {method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({op: "room", megabytes})}).catch(() => {});
+}
+// The room a world's turns are kept in. Each world of Doctor Strange plays
+// on an engine of its own (`beta/shim.js`), and an engine keeps its turns up
+// to its memory line: each is told the line its share of the ceiling allows
+// (`strangeBudget`), again as worlds are opened and deleted. Past its line a
+// world gives back its oldest turns first. A half of the AI Debugger's split
+// is a world on the page's one engine, and is told that engine's line.
 let strangeRoomTold = null;
 function strangePaneRoom(timeline) {
-  if (!STRANGE_PANE) return;
-  let worlds = 1;
-  try { worlds = Math.max(1, window.parent.strangeOpen().length); } catch (_) { return; }
-  const room = DEBUG_SMALL_DEVICE ? STRANGE_ROOM_SMALL_MB : STRANGE_ROOM_MB;
-  const megabytes = Math.max(STRANGE_ROOM_LEAST_MB, Math.floor(room / worlds));
+  let megabytes;
+  try { megabytes = STRANGE_PANE ? window.parent.strangeBudget().roomMB : window.parent.debugRoomMB(); } catch (_) { return; }
+  if (DEBUG_SMALL_DEVICE) megabytes = TAB_MEMORY.smallMB;
   if (timeline.memory_line === megabytes || strangeRoomTold === megabytes) return;
   strangeRoomTold = megabytes;
   // Told in turn with what the host tells this world (`debugInTurn`), never
@@ -6086,7 +6200,8 @@ function strangeSpare() {
   if (now - strange.stillSince < STRANGE_SPARE_STILL_MS) return;
   if (Object.keys(split.panes).some(letter => !strange.order.includes(letter))) return;
   const letter = [...STRANGE_LETTERS].find(free => !strange.order.includes(free));
-  if (!letter) return;
+  // Nor one for a branch there is no room for (`strangeBudget`).
+  if (!letter || strangeOpen().length >= strangeBudget().most) return;
   strangeFrame(letter).frame.classList.add("strange-shut");
 }
 // A branch, made in one step by picking the player strategy that plays it
@@ -6103,7 +6218,7 @@ function strangeSpare() {
 function strangeBranch(name, from = strange.follow, plan = null) {
   if (!strangeIdle() || !name) return null;
   const letter = strangeMake(name, from, from, plan);
-  if (!letter) { strangeSay(`${STRANGE_LETTERS.length} worlds are open, which is the most. Delete one to branch again`); return null; }
+  if (!letter) { strangeSay(`${strangeFullWords()}. Delete one to branch again`); return null; }
   strangeSay(`Branch ${debugSplit.panes[from].turn}-${strangeHandle(name)} is world ${letter.toUpperCase()}, from ${from.toUpperCase()}`);
   return letter;
 }
@@ -6112,7 +6227,7 @@ function strangeBranch(name, from = strange.follow, plan = null) {
 function strangeMake(name, from, after = from, plan = null) {
   const split = debugSplit;
   const letter = [...STRANGE_LETTERS].find(free => !strange.order.includes(free));
-  if (!letter) return null;
+  if (!letter || strangeOpen().length >= strangeBudget().most) return null;
   strange.order.splice(strange.order.indexOf(after) + 1, 0, letter);
   strange.born[letter] = strange.births++;
   strange.made[letter] = {from, turn: split.panes[from] ? split.panes[from].turn : null};
@@ -6193,9 +6308,9 @@ function strangeNext(count) {
   const split = debugSplit;
   if (!split || !strangeIdle() || strange.all) return [];
   const base = strange.follow, turn = split.panes[base].turn, names = strangeNextNames(base).slice(0, count);
-  const room = STRANGE_LETTERS.length - strangeOpen().length;
+  const room = strangeBudget().most - strangeOpen().length;
   if (names.length === 0) { strangeSay(`Every player strategy has a world of its own on turn ${turn} already`); return []; }
-  if (room <= 0) { strangeSay(`${STRANGE_LETTERS.length} worlds are open, which is the most. Delete one to branch again`); return []; }
+  if (room <= 0) { strangeSay(`${strangeFullWords()}. Delete one to branch again`); return []; }
   const letters = [];
   for (const name of names.slice(0, room)) {
     const letter = strangeMake(name, base, letters.length ? letters[letters.length - 1] : base);
@@ -6206,7 +6321,7 @@ function strangeNext(count) {
   const made = letters.map((letter, at) => `${letter.toUpperCase()} ${turn}-${strangeHandle(names[at])}`).join(", ");
   strangeSay(count === 1 && letters.length === 1
     ? `Branch ${turn}-${strangeHandle(names[0])} is world ${letters[0].toUpperCase()}, from ${base.toUpperCase()}: the best player strategy without a world there`
-    : `Branch ${count} Next Best: ${made}, from ${base.toUpperCase()}${short > 0 ? `. ${short} more did not fit: ${STRANGE_LETTERS.length} worlds is the most` : ""}`);
+    : `Branch ${count} Next Best: ${made}, from ${base.toUpperCase()}${short > 0 ? `. ${short} more did not fit: ${strangeFullWords(undefined, false)}` : ""}`);
   return letters;
 }
 function strangeAll() {
@@ -6225,11 +6340,11 @@ function strangeAll() {
 }
 function strangeAllSpawn(base) {
   const split = debugSplit, names = strangeAllNames(base), turn = split.panes[base].turn;
-  const room = STRANGE_LETTERS.length - strangeOpen().length;
+  const room = strangeBudget().most - strangeOpen().length;
   if (names.length === 0 || room <= 0) {
     strange.all = null;
     strangeSay(names.length === 0 ? `Each of the top ${STRANGE_ALL_TOP} player strategies has a world of its own on turn ${turn} already`
-      : `${STRANGE_LETTERS.length} worlds are open, which is the most. Delete some to branch them all`);
+      : `${strangeFullWords()}. Delete some to branch them all`);
     return;
   }
   // Making a world draws the split, which looks here again (`strangeStep`):
@@ -6272,7 +6387,7 @@ function strangeAllWatch() {
   const made = all.letters.filter(letter => strangeOpen().includes(letter)).length, open = strangeOpen().length;
   strangePlay();
   const runs = split.running > 0 || strange.run !== null;
-  const left = all.short > 0 ? ` ${all.short} more did not fit: ${STRANGE_LETTERS.length} worlds is the most.` : "";
+  const left = all.short > 0 ? ` ${all.short} more did not fit: ${strangeFullWords(undefined, false)}.` : "";
   strangeSay(`All 14,000,605: ${made} branch${made === 1 ? "" : "es"} of ${all.base.toUpperCase()} from turn ${all.turn}` +
     `${runs ? `, and time runs on for all ${open} worlds, to the end.` : "."}${left}`);
 }
@@ -6731,6 +6846,12 @@ function strangeForesee() {
   const open = strangeOpen(), own = strangeScouts(), now = performance.now();
   if (!own && (!strangeIdle() || Object.keys(strange.peeks).length > 0)) return;
   const most = Math.max(1, (navigator.hardwareConcurrency || 4) - (own ? open.length : 0) - 1);
+  // A future on an engine of its own is played on a copy of its world's
+  // engine, its scout, from the time it is begun until it is played to its
+  // end (`strangeSeen` lets it go then): no more are begun than the tab has
+  // room for (`strangeBudget`), and the rest wait for one to end.
+  const copies = own ? strangeBudget().futures : Infinity;
+  let copied = open.filter(name => !!strange.seeing[name] || (!!split.panes[name].sight && !split.panes[name].sight.done)).length;
   let out = Object.keys(strange.seeing).length;
   for (const letter of [strange.follow, ...open.filter(name => name !== strange.follow)]) {
     if (out >= most) break;
@@ -6742,9 +6863,17 @@ function strangeForesee() {
     if (pane.strategy === undefined) continue;
     // A future that is no longer the world's is begun again, and not more
     // than once in a while: a world that is still changing is left to.
-    if (pane.sight && strangeSightStale(letter)) { pane.sight = null; pane.sightAfter = Math.max(pane.sightAfter || 0, (pane.sightBegan || 0) + STRANGE_SEE_ANEW_MS); }
+    if (pane.sight && strangeSightStale(letter)) {
+      // Its scout is a copy of the world as it was, and is made anew.
+      if (!pane.sight.done) copied--;
+      pane.sight = null; pane.sightAfter = Math.max(pane.sightAfter || 0, (pane.sightBegan || 0) + STRANGE_SEE_ANEW_MS);
+    }
     if ((pane.sight && pane.sight.done) || now < (pane.sightAfter || 0)) continue;
-    if (!pane.sight) pane.sightBegan = now;
+    if (!pane.sight) {
+      if (copied >= copies) continue;
+      copied++;
+      pane.sightBegan = now;
+    }
     strangeSee(letter);
     out++;
   }
@@ -7110,7 +7239,7 @@ function strangeSearchOffer(search, best, live) {
   const gone = !base || base.id !== search.pane || !strangeOpen().includes(search.letter);
   const moved = !gone && base.turn !== search.from;
   const same = !gone && best.plan.length === 1 && best.plan[0][1] === base.strategy;
-  const full = strangeOpen().length >= STRANGE_LETTERS.length;
+  const full = strangeOpen().length >= strangeBudget().most;
   const path = strangeSearchPath(best.plan, best.last);
   const off = live || !!search.playing || gone || moved || same || full || !strangeIdle();
   const note = gone ? `${name}, the world searched, is closed: search again to branch a path.`
@@ -7118,7 +7247,7 @@ function strangeSearchOffer(search, best, live) {
     : live ? "Stop the search to branch the best path so far."
     : search.said ? search.said
     : same ? `That is ${name}'s own path: nothing beat the strategy it seats.`
-    : full ? `${STRANGE_LETTERS.length} worlds are open, which is the most. Delete one to branch this path.`
+    : full ? `${strangeFullWords()}. Delete one to branch this path.`
     : `${path}, from turn ${search.from}.`;
   const title = `Branch it: a new world, a copy of ${name} on turn ${search.from}, plays ${path} to turn ${best.last}` +
     (strange.locked ? `, and the other worlds play on to turn ${best.last} beside it` : "");
@@ -7651,7 +7780,7 @@ function strangeDraw() {
   // Branch is a picker of who plays the branch, and picking makes it. Each
   // choice is what the branch's name gains: the open turn and the strategy.
   // The one the base timeline seats is not offered: that is the same world.
-  const full = open.length >= STRANGE_LETTERS.length;
+  const budget = strangeBudget(), full = open.length >= budget.most;
   const branch = hud.querySelector('[data-strange="branch"]');
   const offers = `<option value="">⑂ ${turn}-(player strategy)</option>` + strangeAgents().filter(name => name !== panes[follow].strategy)
     .map(name => `<option value="${escapeAttr(name)}">${turn}-${escapeAttr(strangeHandle(name))}</option>`).join("");
@@ -7661,18 +7790,18 @@ function strangeDraw() {
     branch.value = "";
   }
   branch.disabled = !idle || full;
-  branch.title = full ? `${STRANGE_LETTERS.length} worlds are open, which is the most. Delete one to branch again`
+  branch.title = full ? `${strangeFullWords(budget)}. Delete one to branch again`
     : `Create a branch of the timeline followed, ${follow.toUpperCase()}, on turn ${turn}: pick the player strategy that plays the branch from here, and it is made, a world of its own in a box of its own`;
   // All 14,000,605: the best player strategies, each branched from the base
   // timeline on this turn, and time run on for every world (`strangeAll`).
   // Time running is stopped for it first, so it can be pressed then too.
   const everyone = hud.querySelector('[data-strange="all"]'), fresh = strangeAllNames(follow);
-  const room = STRANGE_LETTERS.length - open.length, waiting = !!strange.all;
+  const room = budget.most - open.length, waiting = !!strange.all;
   everyone.classList.toggle("on", waiting);
   everyone.setAttribute("aria-busy", waiting ? "true" : "false");
   everyone.disabled = waiting || room <= 0 || (!idle && !going) || split.busy || !!(strange.run && strange.run.stop) || (!going && fresh.length === 0);
   everyone.title = waiting ? "Branching the best player strategies from the timeline followed, then time runs on for all of them"
-    : room <= 0 ? `${STRANGE_LETTERS.length} worlds are open, which is the most. Delete some to branch every player strategy`
+    : room <= 0 ? `${strangeFullWords(budget)}. Delete some to branch every player strategy`
     : !going && fresh.length === 0 ? `Each of the top ${STRANGE_ALL_TOP} player strategies has a world of its own on turn ${turn} already`
     : `Every player strategy (the top ${STRANGE_ALL_TOP} for now) branches the timeline followed, ${follow.toUpperCase()}, on ` +
       `${going ? "the turn time stops on" : `turn ${turn}`}, each in a window of its own, and time runs on for all the worlds to the end of the game` +
@@ -7683,7 +7812,7 @@ function strangeDraw() {
   for (const [action, count] of [["next1", 1], ["next5", STRANGE_NEXT_MANY]]) {
     const button = hud.querySelector(`[data-strange="${action}"]`), take = nextBest.slice(0, Math.min(count, room));
     button.disabled = !idle || full || waiting || nextBest.length === 0;
-    button.title = full ? `${STRANGE_LETTERS.length} worlds are open, which is the most. Delete one to branch again`
+    button.title = full ? `${strangeFullWords(budget)}. Delete one to branch again`
       : nextBest.length === 0 ? `Every player strategy has a world of its own on turn ${turn} already`
       : `Branch the timeline followed, ${follow.toUpperCase()}, on turn ${turn} for the ` +
         (count === 1 ? "best player strategy without a world of its own there, a world" : `${count} best player strategies without a world of their own there, each a world`) +
