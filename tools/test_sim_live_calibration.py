@@ -109,6 +109,13 @@ class Engine(unittest.TestCase):
             self.assertEqual(levels["deity"]["wins"], 1)
             self.assertEqual(levels["deity"]["games"], 3)
             self.assertIn("rival_rung=-2", fields[0])
+            mixed = self.write(folder, "mixed.jsonl", [
+                header(rivals="firaxis-mix", handicap="rivals", rival_chairs=5),
+                seat(3, True, difficulty="deity"), seat(3, False, kind="rival", rival_mix="legacy"),
+                seat(4, False, difficulty="deity"), seat(4, False, kind="rival", rival_mix="random")])
+            legacy, _ = cal.engine_levels([mixed], "legacy")
+            self.assertEqual((legacy["deity"]["wins"], legacy["deity"]["games"]), (1, 1))
+            self.assertEqual(cal.engine_levels([mixed])[0]["deity"]["games"], 2)
             selfplay = self.write(folder, "selfplay.jsonl", [
                 header(all_seats=True), *[seat(1, i == 0) for i in range(6)]])
             with self.assertRaises(SystemExit) as refused:

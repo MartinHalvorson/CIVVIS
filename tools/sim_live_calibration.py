@@ -184,7 +184,7 @@ def implied_rival_elo(games: list[dict], ratings: dict) -> dict | None:
     return elo_page.fit_level(rated)
 
 
-def engine_levels(paths: list[str]) -> tuple[dict[str, dict], list[str]]:
+def engine_levels(paths: list[str], rival_kind: str | None = None) -> tuple[dict[str, dict], list[str]]:
     """Measured-seat wins per level from `gene_screen` rows, and the fields
     (rivals / handicap / chairs and the calibration knobs) they played.
 
@@ -192,7 +192,12 @@ def engine_levels(paths: list[str]) -> tuple[dict[str, dict], list[str]]:
     chairs is the live arrangement; any other is refused with its reason, so
     a self-play batch (every seat ours, a win rate of 1/players by symmetry)
     cannot pass for a prediction of the live seat. Every file given is pooled
-    per level, so give one field's files per run (`fields` names each)."""
+    per level, so give one field's files per run (`fields` names each).
+
+    `rival_kind` keeps only the games whose rival chairs played that kind
+    (their rows' `rival_mix`): `--rivals firaxis-mix` deals one kind a game
+    by seed, `legacy` (the `oldguard` agent), `firaxis-mix` (`stock` on a
+    lane) or `random` (the deployment genome under `--deployment-genome`)."""
     levels: dict[str, dict] = {}
     fields: list[str] = []
     for path in paths:
@@ -211,9 +216,14 @@ def engine_levels(paths: list[str]) -> tuple[dict[str, dict], list[str]]:
         knobs = [f"{key}={header[key]}" for key in (
             "rivals", "rival_rung", "rival_pace", "rival_late_science", "rival_space_floor",
             "rival_victory_pace", "rival_war_pace", "target_mix") if header.get(key) not in (None, "", False)]
-        fields.append(f"{Path(path).name}: " + " ".join(knobs))
+        kinds = {(row.get("seed"), row.get("arm", 0)): row.get("rival_mix")
+                 for row in rows if row.get("kind") == "rival"}
+        fields.append(f"{Path(path).name}: " + " ".join(knobs)
+                      + (f" rival-kind={rival_kind}" if rival_kind else ""))
         for row in rows:
             if row.get("kind") != "game":
+                continue
+            if rival_kind and kinds.get((row.get("seed"), row.get("arm", 0))) != rival_kind:
                 continue
             level = level_of(row.get("difficulty") or header.get("difficulty") or "prince")
             cell = levels.setdefault(level, {"wins": 0, "games": 0, "turns": []})
@@ -345,13 +355,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--elo", default=str(ELO_DEFAULT), help="strategy_elo rating file")
     parser.add_argument("--engine", nargs="*", default=[],
                         help="gene_screen rows: one measured seat against handicapped rival chairs")
+    parser.add_argument("--rival-kind", help="only engine games whose rival chairs played this kind "
+                        "(legacy, firaxis-mix, random, firaxis-faithful)")
     parser.add_argument("--since-tag", default=SINCE_DEFAULT,
                         help="count live games whose tag sorts at or after this (default: the benchmark's start)")
     parser.add_argument("--max-miss", type=float, help="exit 1 when any level misses by more than this many points")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
     ratings = json.loads(Path(args.elo).read_text(encoding="utf-8")).get("ratings", {})
-    engine, fields = engine_levels(args.engine) if args.engine else ({}, [])
+    engine, fields = engine_levels(args.engine, args.rival_kind) if args.engine else ({}, [])
     rows = calibrate(load_results(args.results), ratings, engine, args.since_tag)
     if args.json:
         print(json.dumps({"since_tag": args.since_tag, "elo": args.elo, "engine_fields": fields,
