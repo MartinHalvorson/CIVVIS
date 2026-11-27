@@ -1,0 +1,24 @@
+{
+ "kind": "captured_native_action_pairs_v1",
+ "tag": "recovery-holds-the-muster",
+ "scope": "Recorded proposal activation on captured live input only, not host execution or strength. 13 boards from five live T8 benchmark games of 2026-11-26 (Deity 6p, Online, Religion seats) that logged 'will muster for Siege ...' while the plan read 'recovery | at war and losing ground at home' (civvis-t8-20261126T122815Z Arabia t45 t48 t76, -T154251Z Ethiopia t94 t110 t122, -T121510Z Ethiopia t88 t100 t125, -T153826Z Mali t54 t58, -T090737Z Arabia t77 t82). Each board is the run's events.jsonl cut after turn N+1 and replayed at turn N. Both arms run one frozen ci-profile civvis_orders --resumed built from the branch with the run's own requested genome (why.log line 1 forced); the on arm adds --with recovery-holds-the-muster. 13 of 13 boards completed in both arms; every replay read Recovery; orders differ on 7. The on arms journal 12 'recovery-holds-the-muster:' lines (Siege rows on Brisbane, Adelaide, Novgorod, Fukuoka, Bydgoszcz and Damascus stand down), the off arms 0; 'will muster for Siege' task-force lines fall from 7 to 0. -T154251Z t122 raised no Siege row in either arm.",
+ "archive": {
+  "path": "docs/eval/2026-11-26-recovery-holds-the-muster.native-queries.tar.xz",
+  "sha256": "4b774d32b9a319c7b4bad45f9197cb8c781c37b25559e2a30b14f073897f25ec"
+ },
+ "members": [
+  "native-queries-01/0000/result.json",
+  "native-queries-01/0001/result.json",
+  "native-queries-01/0002/result.json",
+  "native-queries-01/0003/result.json",
+  "native-queries-01/0004/result.json",
+  "native-queries-01/0005/result.json",
+  "native-queries-01/0006/result.json",
+  "native-queries-01/0007/result.json",
+  "native-queries-01/0008/result.json",
+  "native-queries-01/0009/result.json",
+  "native-queries-01/0010/result.json",
+  "native-queries-01/0011/result.json",
+  "native-queries-01/0012/result.json"
+ ]
+}
