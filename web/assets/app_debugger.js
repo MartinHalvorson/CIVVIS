@@ -5544,10 +5544,18 @@ const STRANGE_STYLE = `
      (operator 2026-11-27: "under the title, lets have a 2P Pangaea New Game
      option and 6P Continents New Game option"), in the gold New game had. */
   #strange-hud .strange-title .strange-news { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; margin-top: 8px; }
+  /* Each on two lines, the world over "New Game", as the AI Debugger's
+     pair are: on one line "6P Continents New Game" was cut short where the
+     fonts run wider (Linux's), in half of a 360px card. */
   #strange-hud .strange-title .strange-news button {
-    width: 100%; padding: 0 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    color: ${STRANGE_GOLD}; border-color: #8a7440; font-size: 11.5px; font-weight: 700; letter-spacing: 0;
+    width: 100%; height: auto; min-height: 36px; padding: 3px 4px; overflow: hidden;
+    color: ${STRANGE_GOLD}; border-color: #8a7440; line-height: 1.15; letter-spacing: 0;
   }
+  #strange-hud .strange-title .strange-news button > span {
+    display: block; margin: 0; color: inherit; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  #strange-hud .strange-title .strange-news .strange-news-map { font-size: 12.5px; font-weight: 700; }
+  #strange-hud .strange-title .strange-news .strange-news-new { margin-top: 1px; font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; opacity: .78; }
   #strange-hud .strange-title .strange-news button:hover:not(:disabled) { color: #10140f; background: ${STRANGE_GOLD}; border-color: transparent; }
   #strange-hud .strange-title span { display: block; margin-top: 4px; color: #bccac4; }
   /* What the page costs, in the top right corner (operator 2026-11-24: "we
@@ -7903,8 +7911,8 @@ function strangeMount() {
       </nav>
       <b title="One world, many timelines. Forward in time is up: the line across the window is the open turn, what was played runs down from it and each world's future is played out ahead">Doctor Strange's CIVVIS</b>
       <div class="strange-news" role="group" aria-label="New game">
-        <button data-strange="new2" data-players="2" data-map="pangaea" title="A new game: a new world of 2 civilizations on a Pangaea, one timeline again. The worlds open now are let go of">2P Pangaea New Game</button>
-        <button data-strange="new6" data-players="6" data-map="continents" title="A new game: a new world of 6 civilizations on Continents, one timeline again. The worlds open now are let go of">6P Continents New Game</button>
+        <button data-strange="new2" data-players="2" data-map="pangaea" title="A new game: a new world of 2 civilizations on a Pangaea, one timeline again. The worlds open now are let go of"><span class="strange-news-map">2P Pangaea</span> <span class="strange-news-new">New Game</span></button>
+        <button data-strange="new6" data-players="6" data-map="continents" title="A new game: a new world of 6 civilizations on Continents, one timeline again. The worlds open now are let go of"><span class="strange-news-map">6P Continents</span> <span class="strange-news-new">New Game</span></button>
       </div>
       <div class="strange-deck strange-time" role="toolbar" aria-label="Timeline">
         <div class="strange-steps">

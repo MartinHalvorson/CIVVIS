@@ -3717,7 +3717,7 @@ def check_doctor_strange(bar: Bar, address: str) -> None:
                   " return [Math.abs(size - Math.min(25, Math.max(17, innerWidth * .025))) < .5,"
                   " box(title).height < size * 1.6, title.scrollWidth <= title.clientWidth, deck.firstElementChild.className,"
                   " box(title).bottom <= box(news).top, box(news).bottom <= box(deck).top, Math.round(two.top) === Math.round(six.top) && two.right <= six.left,"
-                  " [...news.children].every(held => held.scrollWidth <= held.clientWidth),"
+                  " [...news.querySelectorAll('button > span')].every(held => held.scrollWidth <= held.clientWidth),"
                   " !!card.querySelector('[data-strange=\"fork\"], [data-strange=\"futures\"]')]; })()")
     assert head == [True, True, True, "strange-steps", True, True, True, True, False], head
     # Each is a new game on its world: the page again, with no game named,
