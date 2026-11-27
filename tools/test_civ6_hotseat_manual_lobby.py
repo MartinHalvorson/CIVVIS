@@ -391,6 +391,17 @@ class LobbyTest(unittest.TestCase):
         self.assertIn("Nothing here clicks", lines[0])
         self.assertIn("NEXT TURN", lines[0])
 
+    def test_a_stall_is_said_on_a_machine_booted_moments_ago(self) -> None:
+        # `time.monotonic()` counts from boot: a CI runner up 40 s reads 40.
+        lines: list[str] = []
+        with tempfile.TemporaryDirectory() as tmp:
+            monitor = hotseat.Monitor(Path(tmp), TAG, hotseat.MANUAL_SEATS,
+                                      manual_args(auto_human=None, no_notify=True), lines.append)
+            monitor.active, monitor.last_event = 1, 0.0
+            self.assertTrue(hotseat.manual_stall_note(monitor, lines.append, 40.0))
+            monitor.close()
+        self.assertEqual(len(lines), 1)
+
     def test_stop_leaves_the_persons_game_up(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             current = {"pid": 1234, "tag": TAG, "run_dir": tmp, "manual_lobby": True}
@@ -475,7 +486,7 @@ CHILD = textwrap.dedent(r"""
         steps += [lambda: event(**LOBBY), lambda: turn(0, "begin", True), lambda: turn(0, "end", True),
                   lambda: turn(1, "begin", False)]
     if scenario == "stall":
-        steps += [lambda: None] * 30
+        steps += [lambda: None] * 30           # 15 s on the harness's clock, past --stall-seconds 5
     if scenario not in ("nomod", "alone"):
         steps += [lambda: event(ctx="agent", kind="turn", run=TAG + "-p1", turn=1, orders_applied=3,
                                 orders_source="civvis", cities=1, units=2, score=5),
@@ -484,14 +495,19 @@ CHILD = textwrap.dedent(r"""
         steps += [lambda: pids.clear()]
     else:
         steps += [lambda: None] * 6 + [lambda: os.kill(os.getpid(), signal.SIGTERM)]
-    real_sleep = time.sleep
+    # The game drives the harness's clock: each of its loop sleeps advances
+    # `time.monotonic` by exactly what it asked for and plays the next step, so
+    # nothing depends on how fast this machine runs. It starts at 10 s, as on a
+    # CI runner booted moments ago.
+    clock = [10.0]
+    time.monotonic = lambda: clock[0]
     def fake_sleep(seconds):
-        real_sleep(0.02)
+        clock[0] += seconds
         if steps:
             steps.pop(0)()
     time.sleep = fake_sleep
     binary = tmp / "civvis_orders"; binary.write_text("#!/bin/sh\n"); binary.chmod(0o755)
-    extra = ["--stall-seconds", "0.2"] if scenario == "stall" else []
+    extra = ["--stall-seconds", "5"] if scenario == "stall" else []
     rc = hotseat.main(["--manual-lobby", "--tag", TAG, "--orders-bin", str(binary),
                        "--no-notify", *extra])
     run_dir = hotseat.RUN_ROOT / TAG

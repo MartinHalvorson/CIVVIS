@@ -1217,6 +1217,8 @@ class Monitor:
         # `--manual-lobby`: the game the person set up, as the HUD read it
         # back (`hotseat_lobby`, CivvisControlHeartbeat.lua), oldest first.
         self.lobbies: list[dict] = []
+        # `--manual-lobby`: when the last stall note was said (None: never).
+        self.stall_noted_at: float | None = None
 
     def catch_up(self) -> None:
         """Read the record so far without replaying it (`--attach`): learn whose
@@ -1952,9 +1954,11 @@ def describe_lobby(lobby: dict, civvis: list[int], stub: bool = False) -> str:
 
 def manual_stall_note(monitor: Monitor, log: Log, now: float) -> bool:
     """A CIVVIS turn gone quiet, said in the terminal; nothing is clicked."""
-    if now - monitor.rescued_at < MANUAL_STALL_NOTE_S:
+    # Never noted is not "noted at 0": `time.monotonic()` counts from boot, so
+    # a machine up less than MANUAL_STALL_NOTE_S would never say anything.
+    if monitor.stall_noted_at is not None and now - monitor.stall_noted_at < MANUAL_STALL_NOTE_S:
         return False
-    monitor.rescued_at = now
+    monitor.stall_noted_at = now
     log(f"⚠ {monitor.name(monitor.active)} has made no move for "
         f"{int(now - monitor.last_event)} s on its turn. Nothing here clicks in --manual-lobby "
         "mode: if Civ VI shows a screen waiting for a click, close it (its own button, or Esc); "
