@@ -59,8 +59,9 @@ localPlayer = nil
 assert(broken.mine() == false)
 
 -- 2. Every entry point of the agent goes through the gate. -----------------
-local init = assert(agent:match("\nfunction Initialize%(%)(.-)\nend\n\nInitialize%(%);"),
-	"Initialize is the agent's last definition")
+local init = assert(agent:match(
+	"\nfunction Initialize%(%)(.-)\nend\n.-\nif not CivvisHarness%.dormant%(%) then Initialize%(%); end\n?$"),
+	"Initialize is the agent's last definition, called unless the install is dormant")
 local adds = 0
 for line in init:gmatch("[^\n]+") do
 	if line:find("%.Add%(") and not line:match("^%s*%-%-") then

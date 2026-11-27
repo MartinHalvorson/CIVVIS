@@ -355,6 +355,26 @@ def hotseat_modinfo(text: str, seats: list[int], cover: bool = False) -> str:
     return text.replace("\t</InGameActions>", actions + "\t</InGameActions>", 1)
 
 
+#: The FrontEnd block of the modinfo: the one `UpdateDatabase` that rewrites the
+#: Create Game defaults (CivvisControlConfig.xml).
+_FRONTEND_ACTIONS = re.compile(r"\t<FrontEndActions>.*?</FrontEndActions>\n", re.S)
+
+
+def person_facing_modinfo(text: str) -> str:
+    """The modinfo for `RequireHarness` (`civ6_hotseat.py --manual-lobby`).
+
+    That install is left in place by a person who plays other games with it,
+    so it must not re-default their Create Game screen: the FrontEnd block goes
+    and only InGameActions remain, the shape shipped DLC already has
+    (`DLC/ScoutCat/ScoutCat.modinfo`: InGameActions only). The settings file
+    stays listed under <Files>, unreferenced, like CivvisControlSetup.lua.
+    """
+    text, removed = _FRONTEND_ACTIONS.subn("", text, count=1)
+    if removed != 1 or "<FrontEndActions>" in text:
+        raise SystemExit("CivvisControl.modinfo has no single FrontEndActions block to drop")
+    return text
+
+
 def _write_mod(target: Path, config: dict) -> None:
     """Materialize a fully configured control mod into a writable directory."""
     target.mkdir(parents=True, exist_ok=True)
@@ -391,6 +411,9 @@ def _write_mod(target: Path, config: dict) -> None:
         else:
             shutil.copy2(src, target / src.name)
     seats = hotseat_agent_seats(config)
+    if config.get("RequireHarness") and not (seats and config.get("HarnessRun")):
+        # Its gate (`CivvisHarness`) is a hotseat seat's, keyed on the run.
+        raise SystemExit("RequireHarness is a hotseat install: it needs HotseatSeats and HarnessRun")
     if seats:
         agent = installed_lua((MOD_SOURCE / "CivvisControlAgent.lua").read_text())
         context = (MOD_SOURCE / "CivvisControlAgent.xml").read_text()
@@ -400,8 +423,11 @@ def _write_mod(target: Path, config: dict) -> None:
                           prelude(hotseat_seat_config(config, seat)) + agent)
             (target / f"{name}.xml").write_text(context)
         modinfo = target / "CivvisControl.modinfo"
-        modinfo.write_text(hotseat_modinfo(
-            (MOD_SOURCE / "CivvisControl.modinfo").read_text(), seats, cover=cover))
+        text = hotseat_modinfo((MOD_SOURCE / "CivvisControl.modinfo").read_text(), seats,
+                               cover=cover)
+        if config.get("RequireHarness"):
+            text = person_facing_modinfo(text)
+        modinfo.write_text(text)
     # Kept beside the scripts so the active settings are readable in the
     # install without reading a whole script.
     # ⚠⚠ THE RUN TAG IN THIS FILE IS THE GAME LOCK'S IDENTITY. `gamelock.foreign_run`

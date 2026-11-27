@@ -1246,6 +1246,45 @@ class ClosingCivTest(unittest.TestCase):
         self.assertEqual(len(clicks), 2)
         self.assertEqual(stops, [])
 
+    @staticmethod
+    def question(*, yes: bool) -> list[dict]:
+        """The pause menu with its inline question, as read on 2026-11-27."""
+        rows = [("MENU", 855, 333), ("RETURN TO GAME", 855, 397), ("ARE YOU SURE?", 856, 502),
+                ("Are you sure you wish to quit your game?", 856, 536), ("No", 953, 588),
+                ("EXIT TO DESKTOP", 853, 641)]
+        if yes:
+            rows.append(("YES", 759, 588))
+        return [{"text": label, "x": x, "y": y, "norm": hotseat._norm(label)} for label, x, y in rows]
+
+    def test_a_yes_the_screen_reader_misses_is_pressed_where_it_stands(self) -> None:
+        # duel-dev-smoke-20261127T0845Z: nine looks, never the white-on-red YES.
+        unread = self.question(yes=False)
+        self.assertEqual([(row["x"], row["y"]) for row in
+                          hotseat.mirrored_yes(unread, hotseat.find(unread, "ARE YOU SURE", exact=False))],
+                         [(759, 588)], "NO mirrored about the heading")
+        closed, clicks, _, stops = self.quit([unread], pids_after=1)
+        self.assertTrue(closed)
+        self.assertEqual((clicks, stops), ([(759, 588)], []))
+        # A YES that is read is pressed where it was read.
+        closed, clicks, _, _ = self.quit([self.question(yes=True)], pids_after=1)
+        self.assertEqual(clicks, [(759, 588)])
+        # No question, or no NO under it: nothing is made up.
+        self.assertEqual(hotseat.mirrored_yes(unread, []), [])
+        above = [row for row in unread if row["text"] != "No"] + text("NO")[:0]
+        self.assertEqual(hotseat.mirrored_yes(above, hotseat.find(above, "ARE YOU SURE", exact=False)), [])
+
+    def test_the_quits_clock_has_an_end_whatever_is_read(self) -> None:
+        # A menu that never goes away renews the answer window every look; the
+        # clock still runs out, and the launcher's stop gets its turn.
+        menu = [row for row in self.question(yes=False) if row["text"] not in
+                ("ARE YOU SURE?", "Are you sure you wish to quit your game?", "No")]
+        closed, clicks, _, stops = self.quit([menu] * 500, pids_after=10 ** 6, stop_closes=False)
+        self.assertFalse(closed)
+        self.assertEqual(stops, [hotseat.QUIT_STOP_SECONDS])
+        looks = len(clicks)
+        self.assertLessEqual(looks * 12, hotseat.QUIT_SECONDS + hotseat.QUIT_OVERTIME_SECONDS + 12)
+        self.assertGreater(looks * 12, hotseat.QUIT_SECONDS, "past the clock, as far as it may go")
+
     def test_a_civ_that_shows_no_menu_gets_the_launchers_stop_and_a_longer_one(self) -> None:
         closed, clicks, asked_menu, stops = self.quit([], pids_after=1, stop_closes=True)
         self.assertTrue(closed)
