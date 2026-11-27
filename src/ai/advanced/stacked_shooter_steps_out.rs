@@ -60,7 +60,9 @@
 //!    tile's defence (hills, woods and rainforest +3: "hide behind a river,
 //!    hills, woods/jungle"), plus [`STEP_OUT_OWN_GROUND`] on our own land;
 //!    the lowest tile on a tie. When the engine refuses the step (zone of
-//!    control, a cost it cannot pay), the next tile is tried.
+//!    control, a cost it cannot pay), the next tile is tried. With no tile it
+//!    can take (a coastal centre ringed by our own soldiers: Lisbon t56) the
+//!    stack stands and a Detail line says so.
 //! 3. **Nothing else.** The step is the gene's only order. The shot, and
 //!    the rest of the unit's turn, are the battle plan's and the per-unit
 //!    ladder's, which now see a shooter that may fire.
@@ -307,7 +309,10 @@ impl AdvancedAi {
             );
             for uid in movers {
                 let kind = g.units[&uid].kind;
-                for (score, tile, shot) in Self::step_out_tiles(g, pid, uid, centre, &enemies) {
+                let tiles = Self::step_out_tiles(g, pid, uid, centre, &enemies);
+                let open = tiles.len();
+                let mut moved = false;
+                for (score, tile, shot) in tiles {
                     if g.apply(
                         pid,
                         &Action::Move {
@@ -320,6 +325,7 @@ impl AdvancedAi {
                         continue;
                     }
                     stepped += 1;
+                    moved = true;
                     think!(self.journal(), Military, Decision,
                         "The {} steps out of {city}'s crowded City Center", plain(kind.as_str());
                         "stacked-shooter-steps-out: {} of our soldiers shared the centre, which \
@@ -327,6 +333,16 @@ impl AdvancedAi {
                         soldiers.len(),
                         if shot { ", a shot from there" } else { "" });
                     break;
+                }
+                if !moved {
+                    // Every tile beside the centre is water, a city, foreign
+                    // or held by a soldier of ours, or the engine refused the
+                    // step: the stack stands this turn.
+                    think!(self.journal(), Military, Detail,
+                        "The {} stays on {city}'s crowded City Center", plain(kind.as_str());
+                        "stacked-shooter-steps-out: {} of our soldiers share the centre and \
+                         {open} tile(s) beside it are open, none of them a step it can take",
+                        soldiers.len());
                 }
             }
         }

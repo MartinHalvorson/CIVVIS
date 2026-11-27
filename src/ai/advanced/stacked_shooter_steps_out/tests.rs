@@ -4,8 +4,8 @@ use crate::ai::Ai;
 use crate::game::Game;
 use crate::name;
 
-/// A flat grassland board of `capitals.len()` empires, every starting unit
-/// cleared, the map explored and everyone met, nobody at war, turn 60.
+/// A flat grassland board of `capitals.len()` empires, no rivers, every
+/// starting unit cleared, the map explored and everyone met, nobody at war, turn 60.
 fn flat_board(seed: u64, capitals: &[Pos]) -> Game {
     let mut game = Game::new_full(capitals.len(), 36, 22, seed, 1_000, 0, false);
     for unit in game.units.keys().copied().collect::<Vec<_>>() {
@@ -13,6 +13,9 @@ fn flat_board(seed: u64, capitals: &[Pos]) -> Game {
     }
     game.barb_camps.clear();
     game.barb_naval_camps.clear();
+    // A river edge costs a step its whole allowance: the shot tests read flat
+    // ground.
+    game.map.clear_rivers();
     for tile in game.map.tiles.values_mut() {
         tile.terrain = name!("grassland");
         tile.feature = None;
@@ -195,6 +198,40 @@ fn of_two_archers_the_other_steps_to_a_tile_with_a_shot() {
     );
     assert!(g.units[&second].moves_left > 0.0, "with movement to fire");
     assert!(legal_shot(&g, second, enemy), "and the shot is legal");
+}
+
+#[test]
+fn a_step_across_a_river_is_no_shot() {
+    let (mut g, home) = board();
+    war(&mut g, 0, 1);
+    let first = spawn(&mut g, "archer", 0, home);
+    let second = spawn(&mut g, "archer", 0, home);
+    g.units.get_mut(&second).unwrap().hp = 80;
+    let enemy = east(&g, home, 3);
+    spawn(&mut g, "swordsman", 1, enemy);
+    // A river between the centre and the tile east of it: crossing it costs
+    // the Archer its whole allowance, so that tile is no firing stand.
+    let across = east(&g, home, 1);
+    assert!(g.map.set_river_edge(home, across, true));
+    let tiles = AdvancedAi::step_out_tiles(
+        &g,
+        0,
+        second,
+        home,
+        &AdvancedAi::step_out_enemies(&g, 0, home, STEP_OUT_THREAT_TILES + 2),
+    );
+    let (_, _, shot) = tiles
+        .iter()
+        .copied()
+        .find(|(_, tile, _)| *tile == across)
+        .expect("the tile across the river is open");
+    assert!(!shot, "no shot after a crossing: {tiles:?}");
+    let mut ai = gene_on();
+    assert_eq!(ai.step_stacked_soldiers_out(&mut g, 0), 1);
+    assert_eq!(g.units[&first].pos, home);
+    let stand = g.units[&second].pos;
+    assert_ne!(stand, across, "it did not wade the river for nothing");
+    assert_eq!(g.wdist(stand, home), 1);
 }
 
 #[test]
