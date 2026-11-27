@@ -143,7 +143,7 @@ fn a_stranded_mead_buys_one_grant_from_the_nearest_campus_holder() {
 
     assert!(buy(&mut g, true));
 
-    assert_eq!(grants(&g), vec![nearest], "one grant, from the nearest");
+    assert_eq!(grants(&g), [nearest], "one grant, from the nearest");
     assert!(g.players[0].gold < gold, "paid for in Gold");
     assert!(!buy(&mut g, true), "a held grant is not bought twice");
 }
@@ -155,7 +155,7 @@ fn the_strategic_trade_turn_buys_it_in_any_lane() {
     hold(&mut g, "margaret_mead");
 
     seat(true).strategic_bilateral_trade(&mut g, 0, None, GrandStrategy::Science);
-    assert_eq!(grants(&g), vec![1]);
+    assert_eq!(grants(&g), [1]);
 
     let mut off = board();
     campus(&mut off, 1);
@@ -174,7 +174,7 @@ fn a_grant_already_held_from_a_campus_holder_buys_nothing() {
     g.players[2].open_borders_until.insert(0, turn + 10);
 
     assert!(!buy(&mut g, true));
-    assert_eq!(grants(&g), vec![2]);
+    assert_eq!(grants(&g), [2]);
 }
 
 #[test]
@@ -195,7 +195,7 @@ fn a_campus_city_state_we_lead_buys_nothing() {
 
     // Not its Suzerain, the same city-state's Campus is no site.
     assert!(buy(&mut follower, true));
-    assert_eq!(grants(&follower), vec![1]);
+    assert_eq!(grants(&follower), [1]);
 }
 
 #[test]
@@ -240,7 +240,7 @@ fn a_stranded_darwin_buys_passage_to_the_wonder_holder() {
     hold(&mut g, "charles_darwin");
 
     assert!(buy(&mut g, true));
-    assert_eq!(grants(&g), vec![2]);
+    assert_eq!(grants(&g), [2]);
 }
 
 #[test]
@@ -276,5 +276,5 @@ fn darwin_beside_open_or_own_ground_buys_nothing() {
     closed.extend(sealed.nbrs(open));
     sealed.closed_borders.extend(closed);
     assert!(buy(&mut sealed, true));
-    assert_eq!(grants(&sealed), vec![2]);
+    assert_eq!(grants(&sealed), [2]);
 }
