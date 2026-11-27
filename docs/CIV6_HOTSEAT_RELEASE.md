@@ -160,7 +160,8 @@ on a runner with no game.
 | bundle builds (PyInstaller 6.22.3, Python 3.12) | measured, locally and in CI | measured, in CI |
 | `--help`, `--status`, `--stop`, `doctor` from the unpacked archive | measured | measured, in CI |
 | `selfcheck`: mod installs from the bundle into a scratch install tree, the `Automation.log` relay, a frozen worker answers a recorded board into SQLite with a `ready` row, the worker is recognised and stopped, a stale game lock is taken over | measured | measured, in CI |
-| Steam install and user folder resolution | measured | unit-tested over fake trees only (`tools/test_civ6_env.py`) |
+| Steam install and user folder resolution | measured | unit-tested over fake trees (`tools/test_civ6_env.py`); on the runner, with no game, `doctor` reports the install not found and the user folder as `C:\Users\runneradmin\Documents\My Games\Sid Meier's Civilization VI` |
+| reading the process table and a process's command line | measured (`ps`) | measured, in CI: the Toolhelp table names the program, and PowerShell's command line lets `--status` recognise it |
 | the game discovers the mod | measured: install `DLC` only, never the user `Mods` | **unmeasured** |
 | `Automation.Log` writes, and where | measured: `<user dir>/Logs/Automation.log`, newline-terminated | **unmeasured** |
 | `DB.Query("ATTACH DATABASE ...")` reaches our SQLite file | measured | **unmeasured** |
@@ -204,14 +205,31 @@ Windows; each is fixed behind a platform check, so macOS runs exactly as before.
   `install.py` would fail on its first read. The bundle runs in Python's UTF-8
   mode; a run from a checkout on Windows needs `set PYTHONUTF8=1`. The Windows
   job records this as a finding step.
+- **Every decision worker died on its first board** (measured: the first
+  Windows run of the bundle job). `civ6_decision_trace.py` checks that the
+  decider binary did not change while it hashed it by comparing `os.stat` of
+  the path with `os.fstat` of the open handle. On the Windows runner the two
+  disagreed for the decider copied into the run directory, so it raised
+  "decision binary changed while recording provenance" on the first decision
+  and the worker died. Windows now asks `os.stat` both times. The job's
+  findings step compares the two on a checkout file and on that copied
+  decider, idle and running: STAT_FINDING
 - **A frozen copy of the decider named `civvis_orders` would not start**:
   CreateProcess appends `.exe` to a name without one. The pinned copy keeps
   `civvis_orders.exe`.
 - `civ6_env.quit_game()` refuses on Windows rather than hard-kill the game.
 
-Off the bundle's path and not changed: `watch.GameLiveness` (used by
-`civ6_play.py`'s relay) still probes with `os.kill(pid, 0)`, and `--resume`
-looks for saves in the macOS folder only.
+Seen, and left as they are:
+
+- `install.py` writes the configured scripts in text mode, so on Windows they
+  land with CRLF line endings: the seat agent is 779,549 bytes there against
+  755,639 on macOS (measured in the bundle job). Lua reads either. The size
+  guard against the game's silent drop of a script near 1 MiB
+  (`LUA_SIZE_KNOWN_GOOD`) counts the bytes before that translation, and the
+  drop itself was measured on macOS only.
+- Off the bundle's path: `watch.GameLiveness` (used by `civ6_play.py`'s relay)
+  still probes with `os.kill(pid, 0)`, and `--resume` looks for saves in the
+  macOS folder only.
 
 ### What must be measured on a Mac before the bundle is called supported there
 
