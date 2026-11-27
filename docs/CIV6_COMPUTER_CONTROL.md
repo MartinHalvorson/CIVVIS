@@ -598,6 +598,15 @@ quiet for 90 s, 180 s with no seat active, or the person's own turn waiting
 `yield_*`), and the harness's screen rescue, which does not read the screen
 while the cover is up, sees the game again.
 
+The test arrangement `--auto-human gated` puts a stub in the person's seat
+(`HotseatHumanSeats` and `HotseatStubSeats` both list seat 0): the cover and
+the pressed hand-over treat it as the person, but the closers act on its turn
+(`CivvisHotseatScreen.personTurn`) and the HUD's seat watch ends its quiet
+turns (`CivvisSeatWatch.watched`), because nobody is there. Run `cover-live-6`
+parked on turn 1 behind the stub's own "Roman Empire Makes History" card: the
+stub ignores UI pulses (`controller_clock` `standalone`) and hears only game-core
+events, which stopped. A real person's seat is never closed for or ended.
+
 ⚠⚠ **Measured 2026-11-27: the first cut killed the game.** It put the cover
 ABOVE the hand-over (the EndGameMenu slot) and kept the hand-over drawn under
 it with an injected `AlwaysVisibleInQueue`. In both live duels tried that way

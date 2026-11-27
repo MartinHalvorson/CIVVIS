@@ -186,7 +186,7 @@ end
 --
 -- Only seconds this watch itself saw pass are counted (at most 3 a reading),
 -- so a leader screen that hides the HUD for a minute is not a quiet minute.
--- A person's seat (`HotseatHumanSeats`), a game held by the operator
+-- A person's seat (`HotseatHumanSeats`, unless a test stub plays it), a game held by the operator
 -- (`CivvisOperatorHold`), a finished game and every single-player run are
 -- left alone: the watch arms only when `cfg.Hotseat` is set.
 CivvisSeatWatch = { quiet = 0, forces = 0, over = false };
@@ -203,6 +203,17 @@ function CivvisSeatWatch.listed(list, pid)
 		if tonumber(seat) == pid then return true; end
 	end
 	return false;
+end
+-- The seats this watches: every CIVVIS seat, and a test stub's
+-- (`HotseatStubSeats`, only ever listed by `civ6_hotseat.py --auto-human`)
+-- even where `--auto-human gated` also lists it as the person's, because no
+-- person is there to end its turn (run cover-live-6, 2026-11-27: the stub
+-- went quiet on turn 1 and nothing ended it). A real person's seat, listed
+-- human and played by no stub, is never watched.
+function CivvisSeatWatch.watched(pid)
+	local w = CivvisSeatWatch;
+	if w.listed(cfg.HotseatStubSeats, pid) then return true; end
+	return w.listed(cfg.HotseatSeats, pid) and not w.listed(cfg.HotseatHumanSeats, pid);
 end
 function CivvisSeatWatch.reset()
 	local w = CivvisSeatWatch;
@@ -272,8 +283,7 @@ function CivvisSeatWatch.beat(source)
 	w.checked = now;
 	local pid = -1;
 	pcall(function() pid = Game.GetLocalPlayer(); end);
-	if type(pid) ~= "number" or pid < 0 or not w.listed(cfg.HotseatSeats, pid)
-			or w.listed(cfg.HotseatHumanSeats, pid) then
+	if type(pid) ~= "number" or pid < 0 or not w.watched(pid) then
 		w.reset();
 		return;
 	end

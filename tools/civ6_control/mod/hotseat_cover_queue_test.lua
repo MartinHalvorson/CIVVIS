@@ -273,4 +273,38 @@ do
 	assert(select(2, none.CivvisCoverQueue.install()) == "no_uimanager")
 end
 
+-- 3. The card that parked run cover-live-6: the whole closer, loaded as the
+-- HistoricMoments context (as popup_retry_test.lua loads it), on seat 0's turn.
+local function card(config)
+	local h = { hidden = false, closes = 0, logs = {} }
+	local env = setmetatable({ CivvisControlConfig = config, ExposedMembers = {} }, { __index = _G })
+	env.include = function() end
+	env.OnClose = function() h.closes = h.closes + 1; h.hidden = true end
+	env.OnShow = function() end
+	env.Controls = {}
+	env.Game = { GetLocalPlayer = function() return 0 end, GetCurrentGameTurn = function() return 1 end }
+	env.ContextPtr = {
+		GetID = function() return "HistoricMoments" end, IsHidden = function() return h.hidden end,
+		SetUpdate = function(_, f) h.tick = f end, SetShowHandler = function(_, f) h.show = f end,
+	}
+	env.Automation = { Log = function(line) h.logs[#h.logs + 1] = line end }
+	env.LuaEvents = {}
+	local chunk = assert(loadfile(here .. "/CivvisControlAutoClose.lua"))
+	setfenv(chunk, env)
+	chunk()
+	return h
+end
+local gated = { Hotseat = true, HotseatSeats = { 1 }, HotseatHumanSeats = { 0 },
+                HotseatStubSeats = { 0 }, HotseatCover = true, HotseatAutoStart = true,
+                AnnouncementSeconds = 0.25, EraAnnouncementSeconds = 0.25 }
+local stubCard = card(gated)
+for _ = 1, 40 do if not stubCard.hidden then stubCard.tick(0.25) end end
+assert(stubCard.closes > 0 and stubCard.hidden, "the gated stub's own card is closed for it")
+local person = {}
+for k, v in pairs(gated) do person[k] = v end
+person.HotseatStubSeats = {}
+local personCard = card(person)
+for _ = 1, 400 do personCard.tick(0.25) end
+assert(personCard.closes == 0 and not personCard.hidden, "a real person's card is theirs to close")
+
 print("hotseat_cover_queue_test: ok")

@@ -1183,7 +1183,9 @@ end
 --
 -- 1. The operator's turn is theirs. While the local player is one of
 --    `HotseatHumanSeats`, no screen here is closed, answered or escaped: the
---    announcement, the leader and the deal are the person's to read.
+--    announcement, the leader and the deal are the person's to read. The one
+--    exception is a seat the `--auto-human gated` test stub plays
+--    (`personTurn` below): nobody is there to read them.
 -- 2. PlayerChange is the hand-over screen. PlayerChange.lua shows it on every
 --    human seat's turn (BuildTurnControls :121, which also pauses the game)
 --    and only its Start Turn button (`OnOk` :54) unpauses and dequeues it. On
@@ -1216,6 +1218,18 @@ end
 function CivvisHotseatScreen.humanTurn()
 	if cfg.Hotseat ~= true then return false; end
 	return CivvisHotseatScreen.listed(cfg.HotseatHumanSeats,
+		CivvisHotseatScreen.localPlayer());
+end
+-- Whose screens no closer touches: a real person's. The `--auto-human gated`
+-- test stub sits in a person's seat (`HotseatHumanSeats` AND
+-- `HotseatStubSeats`) so the cover and the pressed hand-over treat it as the
+-- person, but nobody is there to dismiss its announcements: run cover-live-6
+-- (2026-11-27) parked on turn 1 behind its own "Roman Empire Makes History"
+-- card. So the closers stand down for a person's seat only when no stub plays
+-- it. A stub seat is only ever listed by the `--auto-human` test arrangements.
+function CivvisHotseatScreen.personTurn()
+	if not CivvisHotseatScreen.humanTurn() then return false; end
+	return not CivvisHotseatScreen.listed(cfg.HotseatStubSeats,
 		CivvisHotseatScreen.localPlayer());
 end
 function CivvisHotseatScreen.announce(phase)
@@ -1703,7 +1717,7 @@ else
 	pcall(function()
 		LuaEvents.CivvisCloseBehindDeal.Add(function(holder, id)
 			if holder ~= NAME or END_SCREENS[NAME] or operatorHolds()
-					or CivvisHotseatScreen.humanTurn() then return; end
+					or CivvisHotseatScreen.personTurn() then return; end
 			if NAME == "DiplomacyActionView" or NAME == "DiplomacyDealView"
 					or NAME == "WonderBuiltPopup" then return; end
 			-- Only while this context still holds that lock: a popup that
@@ -1783,7 +1797,7 @@ else
 		end
 		-- After the pulse above, which is how a held agent hears the resume
 		-- while a leader screen hides TopPanel. The clock restarts on resume.
-		if operatorHolds() or CivvisHotseatScreen.humanTurn() then
+		if operatorHolds() or CivvisHotseatScreen.personTurn() then
 			showing = false;
 			return;
 		end

@@ -54,8 +54,9 @@ says which are on).
 
 Testing: ``--auto-human --turns N`` replaces you with a stub (the mod's own
 fallback ladder playing seat 0) and stops after turn N with a per-seat report.
-``--auto-human gated`` keeps seat 0 "the person" for every gate, the cover and
-the pressed hand-over included, so a person's game runs with nobody at the Mac.
+``--auto-human gated`` keeps seat 0 "the person" for the cover and the pressed
+hand-over, so a person's game runs with nobody at the Mac; only the stub's own
+announcements are closed for it, and its quiet turns ended, as nobody is there.
 """
 
 from __future__ import annotations
@@ -1409,9 +1410,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--auto-human", nargs="?", const="stub", choices=["stub", "gated"],
                     default=None,
                     help="TEST: a stub plays seat 0 instead of you; `gated` keeps seat 0 "
-                         "the operator's in every gate: covered on the jack seats' turns, "
-                         "its Start Turn pressed only as yours would be (not with "
-                         "--keep-handover)")
+                         "the operator's for the cover and the hand-over (covered on the jack "
+                         "seats' turns, its Start Turn pressed only as yours would be), while "
+                         "the stub's own announcements are closed and its quiet turns ended")
     ap.add_argument("--turns", type=int, default=None,
                     help="stop after this game turn (with --auto-human: then report)")
     args = ap.parse_args(argv)
