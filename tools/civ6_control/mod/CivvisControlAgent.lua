@@ -8897,6 +8897,13 @@ local function exportState(player, pid, turn, frame, eventKind)
 			-- activation/movement orders otherwise bypass the fallback driver.
 			local spaceTargets = CivvisSpaceBoost.forUnit(player, unit, turn);
 			activationPlots = CivvisSpaceBoost.filterPlots(player, spaceTargets, activationPlots);
+			-- A held Korolev/Sagan with no link worth the charge yet exports its
+			-- Spaceport stage instead of nothing, so civvis_orders walks it there
+			-- and holds it (`can_activate` stays false off a target city), and the
+			-- mirror does not read an owned Spaceport as a missing one.
+			if spaceTargets ~= nil and #activationPlots == 0 then
+				activationPlots = CivvisSpaceBoost.stagePlots(player, unit);
+			end
 			local comandanteTargets = CivvisComandante.forUnit(player, unit);
 			activationPlots = CivvisComandante.filterPlots(comandanteTargets, activationPlots);
 			greatPerson = {
@@ -18013,6 +18020,21 @@ local function applyOrder(player, pid, row, turn)
 			if activated and spaceTargets ~= nil then
 				CivvisSpaceBoost.spent[spaceCity] = turn;
 			end
+			-- The fallback driver reports its own activations as `gp` events;
+			-- report CIVVIS's too, as DELETE's `retired_by_civvis` does. Without
+			-- it the bench review read 172854Z's Sagan (t178) and Korolev (t183,
+			-- t185) and 211309Z's Korolev (t196) as "never activated".
+			if activated then
+				emit("gp", { turn = turn, unit = subject, action = "activated_by_civvis",
+					kind_name = unitTypeName(unit),
+					individual = try(function()
+						local row = GameInfo.GreatPersonIndividuals[
+							unit:GetGreatPerson():GetIndividual()];
+						return row and row.GreatPersonIndividualType or nil;
+					end, nil),
+					x = try(function() return unit:GetX(); end, -1),
+					y = try(function() return unit:GetY(); end, -1) });
+			end
 			return activated, verb;
 		end
 		if verb == "DELETE" then
@@ -21159,52 +21181,100 @@ end
 -- movement must inspect that city's current project. Shipped GreatPeople_
 -- Engineers.xml:39,70 and GreatPeople_Scientists.xml:47,87 identify these two
 -- charge consumers; Goddard/von Braun/Kwolek grant permanent modifiers instead.
-CivvisSpaceBoost = { spent = {} };
+--
+-- ★★★ SPEND ON THE FIRST LINK WORTH THE CHARGE, AND WAIT ON THE PAD
+-- (2026-11-27). The launches are serial (each project's PrereqProjectType is
+-- the one before), so a link finished instantly takes its whole remaining
+-- build off the victory date. The old policy (#3350) named a target only
+-- while a city already built the Exoplanet, a laser after it, or Mars with a
+-- spare charge, and filtered the person's plots to nothing until then, so
+-- it stood wherever it was born. In the ten T7 science games of 2026-11-26
+-- holding a Korolev or Sagan, 6 of 12 were never used (4 of them through
+-- launches they could have taken) and one more waited 18 turns: 170741Z
+-- held Sagan t134-t182 through a 5-turn Satellite, a 9-turn Moon and an
+-- 8-turn Mars and lost; 211309Z spent Korolev on the t196 Exoplanet (about
+-- 4 turns) after passing a 12-turn Moon at t178. Replaying both versions of
+-- this code on those games' recorded boards: a spend target for 9 of the 12
+-- instead of 6, worth 69.0 turns of build at the first target instead of 36.3.
+--
+-- Hold only when the next link would take at least twice what this one still
+-- can: 204504Z's Sagan, born beside a Mars Base 709/900 done (4 turns to
+-- save), spent on the Exoplanet four turns later (10). A fresh link always
+-- qualifies (each costs over half the next). The grant is `ScaleByGameSpeed`
+-- and `KeepOverflow=false` (Engineers.xml:378-386, Scientists.xml:712-720):
+-- live 172854Z t183 took an Online Exoplanet from 129 to 876 of 1050 (+747,
+-- 1500 at 50%). Comparing in standard-speed units makes the speed cancel.
+CivvisSpaceBoost = { spent = {}, padReported = {} };
+-- Standard-speed Amount of each finite grant (`..._EARLY_SPACE_RACE`,
+-- `..._LATE_SPACE_RACE`).
+CivvisSpaceBoost.grant = {
+	GREAT_PERSON_INDIVIDUAL_SERGEI_KOROLEV = 1500,
+	GREAT_PERSON_INDIVIDUAL_CARL_SAGAN = 3000,
+};
+-- Every space-race project (Projects.xml:29-33, Expansion2_Projects.xml:32-35,
+-- all `SpaceRace="true"`) and the link it opens (PrereqProjectType rows,
+-- Expansion2_Projects.xml:72-75). The first row this ruleset has prices the
+-- next link; Vanilla's Mars parts open each other, and the lasers repeat.
+CivvisSpaceBoost.after = {
+	PROJECT_LAUNCH_EARTH_SATELLITE = { "PROJECT_LAUNCH_MOON_LANDING" },
+	PROJECT_LAUNCH_MOON_LANDING = { "PROJECT_LAUNCH_MARS_BASE", "PROJECT_LAUNCH_MARS_REACTOR" },
+	PROJECT_LAUNCH_MARS_BASE = { "PROJECT_LAUNCH_EXOPLANET_EXPEDITION" },
+	PROJECT_LAUNCH_MARS_REACTOR = { "PROJECT_LAUNCH_EXOPLANET_EXPEDITION", "PROJECT_LAUNCH_MARS_HABITATION" },
+	PROJECT_LAUNCH_MARS_HABITATION = { "PROJECT_LAUNCH_EXOPLANET_EXPEDITION", "PROJECT_LAUNCH_MARS_HYDROPONICS" },
+	PROJECT_LAUNCH_MARS_HYDROPONICS = { "PROJECT_LAUNCH_EXOPLANET_EXPEDITION", "PROJECT_LAUNCH_MARS_REACTOR" },
+	PROJECT_LAUNCH_EXOPLANET_EXPEDITION = { "PROJECT_TERRESTRIAL_LASER", "PROJECT_ORBITAL_LASER" },
+	PROJECT_TERRESTRIAL_LASER = { "PROJECT_TERRESTRIAL_LASER" },
+	PROJECT_ORBITAL_LASER = { "PROJECT_ORBITAL_LASER" },
+};
 CivvisSpaceBoost.finite = function(individual)
-	return individual == "GREAT_PERSON_INDIVIDUAL_SERGEI_KOROLEV"
-		or individual == "GREAT_PERSON_INDIVIDUAL_CARL_SAGAN";
+	return individual ~= nil and CivvisSpaceBoost.grant[individual] ~= nil;
+end
+-- Standard-speed cost of the link `project` opens; 0 when the ruleset has none.
+CivvisSpaceBoost.nextCost = function(project)
+	for _, name in ipairs(CivvisSpaceBoost.after[project] or {}) do
+		local row = try(function() return GameInfo.Projects[name]; end, nil);
+		local cost = row ~= nil and tonumber(row.Cost) or nil;
+		if cost ~= nil and cost > 0 then return cost; end
+	end
+	return 0;
+end
+-- Whether `individual`'s charge belongs in this link now. `progress`/`cost`
+-- are the host queue's own (speed-scaled) numbers; anything unreadable spends.
+CivvisSpaceBoost.worthNow = function(individual, row, progress, cost)
+	local grant = CivvisSpaceBoost.grant[individual];
+	local base = row ~= nil and tonumber(row.Cost) or nil;
+	if grant == nil or base == nil or base <= 0 or type(cost) ~= "number"
+			or cost <= 0 or type(progress) ~= "number" or progress < 0 then
+		return true;
+	end
+	local remaining = math.max(0, cost - progress) * base / cost;
+	return 2 * math.min(remaining, grant)
+		>= math.min(grant, CivvisSpaceBoost.nextCost(row.ProjectType));
 end
 CivvisSpaceBoost.targets = function(player, individual, turn)
 	if not CivvisSpaceBoost.finite(individual) then return nil; end
-	local charges = 0;
-	try(function()
-		for _, other in player:GetUnits():Members() do
-			local person = greatPersonOf(other);
-			if person ~= nil and CivvisSpaceBoost.finite(gpName(person)) then
-				charges = charges + math.max(0, person:GetActionCharges());
-			end
-		end
-	end);
-	local exoplanet = try(function()
-		return GameInfo.Projects["PROJECT_LAUNCH_EXOPLANET_EXPEDITION"];
-	end, nil);
-	local launched = exoplanet ~= nil and try(function()
-		return player:GetStats():GetNumProjectsAdvanced(exoplanet.Index) > 0;
-	end, false);
 	local cities = {};
 	try(function()
 		for _, city in player:GetCities():Members() do
 			local queue = city:GetBuildQueue();
 			local row = GameInfo.Projects[queue:GetCurrentProductionTypeHash()];
 			local project = row and row.ProjectType;
-			local late = project == "PROJECT_LAUNCH_EXOPLANET_EXPEDITION"
-				or (launched and (project == "PROJECT_ORBITAL_LASER"
-					or project == "PROJECT_TERRESTRIAL_LASER"))
-				or ((exoplanet == nil or charges > 1) and (
-					project == "PROJECT_LAUNCH_MARS_BASE"
-					or project == "PROJECT_LAUNCH_MARS_REACTOR"
-					or project == "PROJECT_LAUNCH_MARS_HABITATION"
-					or project == "PROJECT_LAUNCH_MARS_HYDROPONICS"));
-			-- Keep the last charge for Exoplanet even while its technology is
-			-- locked. Early launches can finish during that research wait.
 			-- Never spend a charge on a project completing naturally next turn.
 			local turns = row and try(function()
 				return queue:GetTurnsLeft(row.ProjectType);
 			end, -1) or -1;
 			local key = tostring(city:GetOwner()) .. ":" .. tostring(city:GetID());
-			if late and (turns < 0 or turns > 1)
+			if project ~= nil and CivvisSpaceBoost.after[project] ~= nil
+					and (turns < 0 or turns > 1)
 					and CivvisSpaceBoost.spent[key] ~= turn then
-				cities[city:GetID()] = key;
+				-- `row.Index`, never the hash: see `productionProgress`.
+				local progress = try(function()
+					return queue:GetProjectProgress(row.Index);
+				end, -1);
+				local cost = try(function() return queue:GetProjectCost(row.Index); end, -1);
+				if CivvisSpaceBoost.worthNow(individual, row, progress, cost) then
+					cities[city:GetID()] = key;
+				end
 			end
 		end
 	end);
@@ -21233,6 +21303,115 @@ CivvisSpaceBoost.filterPlots = function(player, targets, plots)
 		end
 	end
 	return eligible;
+end
+
+-- The host pathfinder's verdict on walking `unit` to (x, y), as
+-- `orderGreatPerson` reads it: nil when this host has no path API (callers
+-- keep the old nearest-plot behaviour), false only when the host proves the
+-- plot unreachable.
+CivvisGreatPersonReachable = function(unit, x, y)
+	local pathFinder = try(function() return UnitManager.GetMoveToPathEx; end, nil);
+	local plotIndexer = try(function() return Map.GetPlotIndex; end, nil);
+	if type(pathFinder) ~= "function" or type(plotIndexer) ~= "function" then
+		return nil;
+	end
+	local destination = try(function() return plotIndexer(x, y); end, nil);
+	if destination == nil then return false; end
+	local path = try(function() return pathFinder(unit, destination); end, nil);
+	if path == nil or type(path.plots) ~= "table" then return false; end
+	local n = 0;
+	for _ in pairs(path.plots) do n = n + 1; end
+	-- A one-entry path is the host's no-progress/no-route result. Also
+	-- require the endpoint to be the requested plot: a partial route or
+	-- stale path must not turn into another endless MOVE_TO.
+	if n <= 1 or path.plots[n] ~= destination then return false; end
+	return true;
+end
+
+-- Where a held finite space person waits: a completed, unpillaged Spaceport
+-- tile (the plot `DISTRICT_IN_TILE` attaches the grant through). First the
+-- city running a space-race project now, then the tile it already stands on,
+-- then the most Production, then the nearest. A tile a sibling finite person
+-- holds is skipped: one civilian per plot. Returns { x, y, d } or nil.
+CivvisSpaceBoost.stage = function(player, unit)
+	local ux = try(function() return unit:GetX(); end, nil);
+	local uy = try(function() return unit:GetY(); end, nil);
+	local uid = try(function() return unit:GetID(); end, nil);
+	if ux == nil or uy == nil then return nil; end
+	local held = {};
+	try(function()
+		for _, other in player:GetUnits():Members() do
+			local person = greatPersonOf(other);
+			if person ~= nil and other:GetID() ~= uid
+					and CivvisSpaceBoost.finite(gpName(person)) then
+				held[tostring(other:GetX()) .. "," .. tostring(other:GetY())] = true;
+			end
+		end
+	end);
+	local best = nil;
+	eachCity(player, function(city)
+		local queue = try(function() return city:GetBuildQueue(); end, nil);
+		local row = queue ~= nil and try(function()
+			return GameInfo.Projects[queue:GetCurrentProductionTypeHash()];
+		end, nil) or nil;
+		local launching = row ~= nil and CivvisSpaceBoost.after[row.ProjectType] ~= nil;
+		local production = tonumber(try(function()
+			return city:GetYield(YieldTypes.PRODUCTION);
+		end, 0)) or 0;
+		for _, district in city:GetDistricts():Members() do
+			local drow = try(function() return GameInfo.Districts[district:GetType()]; end, nil);
+			local dx = try(function() return district:GetX(); end, nil);
+			local dy = try(function() return district:GetY(); end, nil);
+			if drow ~= nil and drow.DistrictType == "DISTRICT_SPACEPORT"
+					and dx ~= nil and dy ~= nil
+					and try(function() return district:IsComplete(); end, false) == true
+					and try(function() return district:IsPillaged(); end, false) ~= true then
+				local here = dx == ux and dy == uy;
+				if here or (not held[tostring(dx) .. "," .. tostring(dy)]
+						and CivvisGreatPersonReachable(unit, dx, dy) ~= false) then
+					local d = try(function() return Map.GetPlotDistance(ux, uy, dx, dy); end, 9999);
+					local rank = { launching and 1 or 0, here and 1 or 0, production, -d };
+					local better = best == nil;
+					if not better then
+						for i = 1, #rank do
+							if rank[i] ~= best.rank[i] then
+								better = rank[i] > best.rank[i];
+								break;
+							end
+						end
+					end
+					if better then best = { x = dx, y = dy, d = d, rank = rank }; end
+				end
+			end
+		end
+	end);
+	return best;
+end
+-- The stage as an activation plot for the export, so civvis_orders walks the
+-- person there and then holds it (`distance == 0` is its stand-still case).
+CivvisSpaceBoost.stagePlots = function(player, unit)
+	local stage = CivvisSpaceBoost.stage(player, unit);
+	if stage == nil then return {}; end
+	return { { x = stage.x, y = stage.y, distance = stage.d } };
+end
+-- The fallback driver's walk to the stage. Returns the stage with
+-- `moving = true` once a MOVE_TO is accepted, the stage when the person
+-- already stands on it, or nil.
+CivvisSpaceBoost.walk = function(player, unit, id, turn, individual, class)
+	local stage = CivvisSpaceBoost.stage(player, unit);
+	if stage == nil or stage.d == 0 then return stage; end
+	local params = {};
+	params[UnitOperationTypes.PARAM_X] = stage.x;
+	params[UnitOperationTypes.PARAM_Y] = stage.y;
+	if not operate(unit, OP["UNITOPERATION_MOVE_TO"], params) then return nil; end
+	local pend = gpPending[id];
+	if pend == nil or pend.x ~= stage.x or pend.y ~= stage.y then
+		emit("gp", { turn = turn, unit = id, individual = individual, class = class,
+			action = "moving_to_spaceport", x = stage.x, y = stage.y, dist = stage.d });
+	end
+	gpPending[id] = { x = stage.x, y = stage.y };
+	stage.moving = true;
+	return stage;
 end
 
 -- Urdaneta consumes his aura to reset nearby movement/attacks, or to heal
@@ -21768,22 +21947,7 @@ local function orderGreatPerson(player, unit, id, turn, supportAllowed, controll
 		-- historical nearest-highlight behavior; return false only when the host
 		-- explicitly proves that the destination cannot be reached.
 		local function activationReachable(x, y)
-			local pathFinder = try(function() return UnitManager.GetMoveToPathEx; end, nil);
-			local plotIndexer = try(function() return Map.GetPlotIndex; end, nil);
-			if type(pathFinder) ~= "function" or type(plotIndexer) ~= "function" then
-				return nil;
-			end
-			local destination = try(function() return plotIndexer(x, y); end, nil);
-			if destination == nil then return false; end
-			local path = try(function() return pathFinder(unit, destination); end, nil);
-			if path == nil or type(path.plots) ~= "table" then return false; end
-			local n = 0;
-			for _ in pairs(path.plots) do n = n + 1; end
-			-- A one-entry path is the host's no-progress/no-route result. Also
-			-- require the endpoint to be the requested plot: a partial route or
-			-- stale path must not turn into another endless MOVE_TO.
-			if n <= 1 or path.plots[n] ~= destination then return false; end
-			return true;
+			return CivvisGreatPersonReachable(unit, x, y);
 		end
 		for _, idx in ipairs(plots) do
 			local plot = try(function() return Map.GetPlotByIndex(idx); end, nil);
@@ -21841,18 +22005,29 @@ local function orderGreatPerson(player, unit, id, turn, supportAllowed, controll
 	end
 	if class == "GREAT_PERSON_CLASS_COMANDANTE_GENERAL" and supportAllowed
 			and CivvisComandante.support(player, unit, id, turn, controllerRows) then return "moving"; end
+	-- 2b. A finite space person with no link worth its charge yet waits on a
+	-- Spaceport, not where it was born (`CivvisSpaceBoost.stage`).
+	local staged = nil;
+	if spaceTargets ~= nil then
+		staged = CivvisSpaceBoost.walk(player, unit, id, turn, individual, class);
+		if staged ~= nil and staged.moving then return "moving"; end
+	end
+	local onPad = staged ~= nil and staged.d == 0 or nil;
 	-- 3. Nowhere legal to activate — no empty Great Work slot, no qualifying
 	-- district built yet, or the one legal plot is occupied. A real constraint,
 	-- reported sparsely; the unit stays put and is retried every turn.
 	-- `empty_slots` rides along (absent when unknowable) so an idle Writer
 	-- with slots on the board reads as the driver's failure, not the empire's.
+	-- A space person's arrival on its pad is reported once as well.
 	gpPending[id] = nil;
 	local before = CivvisK.gpIdleReported[id];
-	if before == nil or (turn - before) >= 25 then
+	if before == nil or (turn - before) >= 25
+			or (onPad and CivvisSpaceBoost.padReported[id] == nil) then
 		CivvisK.gpIdleReported[id] = turn;
+		if onPad then CivvisSpaceBoost.padReported[id] = turn; end
 		emit("gp", { turn = turn, unit = id, individual = individual,
 			class = class, action = spaceTargets ~= nil and "reserved_space_boost" or "idle",
-			empty_slots = slotCount,
+			empty_slots = slotCount, on_spaceport = onPad,
 			x = try(function() return unit:GetX(); end, -1),
 			y = try(function() return unit:GetY(); end, -1) });
 	end
