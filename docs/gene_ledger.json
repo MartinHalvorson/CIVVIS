@@ -434,7 +434,6 @@
       "war-economy",
       "war-raids-the-pads"
     ],
-    "retained_selection_note": "Evidence-floor reselection (operator /goal 2026-11-18; operator 2026-11-13: include beneficial genes, exclude harmful ones, no drastic changes): the recorded +3 latest-three reselection proposed +261/-84; over the newest 10 reports (15,626 games) this publication turns on only flips with window win z >= 2 (3 on), and turns off only flips with z <= -2 or a family swap to a sibling at z >= 2 (3 off). Compute charge (operator 2026-11-22): a gene whose window compute cost is resolved at z >= 2 is charged 0.25 pp of win per 1% of compute per seat before those tests (26 genes charged), and an incumbent costing at least 1% per seat whose charged z is <= -2 is ripped out, at most 2 a publication (0 this time).",
     "batch_columns": {
       "acropolis-before-the-deterrent": [
         21,
@@ -7326,7 +7325,8 @@
         "ships": "city-campaign",
         "versions": {
           "city-campaign": null,
-          "city-campaign-2": null
+          "city-campaign-2": null,
+          "city-campaign-3": null
         }
       },
       "coalition-before-war": {
