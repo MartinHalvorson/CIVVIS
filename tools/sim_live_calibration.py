@@ -47,7 +47,8 @@ bounds the tags counted, so the default reads the benchmark and every
 tournament after it.
 
 `--max-miss PP` exits 1 when any level with games on both sides misses by
-more than PP points (a calibration check for a field meant to match live).
+more than PP points: the engine batch's miss when `--engine` is given, the Elo
+table's otherwise. It is the check a field meant to match live must pass.
 Reads the files and the fetched ledger branch; writes nothing.
 """
 
@@ -332,10 +333,10 @@ def render(rows: list[dict], fields: list[str], elo_path: str) -> str:
     return "\n".join(lines)
 
 
-def worst_miss(rows: list[dict]) -> float:
-    misses = [abs(row[key]) for row in rows for key in ("elo_miss_pp", "engine_miss_pp")
-              if row.get(key) is not None]
-    return max(misses, default=0.0)
+def worst_miss(rows: list[dict], key: str) -> float:
+    """The largest miss in points of one prediction (`elo_miss_pp` or
+    `engine_miss_pp`) over the levels that have it."""
+    return max((abs(row[key]) for row in rows if row.get(key) is not None), default=0.0)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -358,9 +359,12 @@ def main(argv: list[str] | None = None) -> int:
     else:
         shown = Path(args.elo).resolve()
         print(render(rows, fields, str(shown.relative_to(ROOT)) if shown.is_relative_to(ROOT) else args.elo))
-    if args.max_miss is not None and worst_miss(rows) > args.max_miss:
-        print(f"calibration: a level misses live by {worst_miss(rows):.1f} points, over {args.max_miss}",
-              file=sys.stderr)
+    # The gate is on the field under test: the engine batch when one is
+    # given, the Elo table otherwise.
+    key = "engine_miss_pp" if args.engine else "elo_miss_pp"
+    if args.max_miss is not None and worst_miss(rows, key) > args.max_miss:
+        print(f"calibration: a level misses live by {worst_miss(rows, key):.1f} points "
+              f"({key}), over {args.max_miss}", file=sys.stderr)
         return 1
     return 0
 

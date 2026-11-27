@@ -135,8 +135,9 @@ class Engine(unittest.TestCase):
             self.assertLess(row["elo_miss_pp"], -20)  # the Elo table's stand-in is far too strong
             with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
                 self.assertEqual(cal.main(["--results", results, "--elo", str(elo), "--max-miss", "5"]), 1)
+                # With a batch the gate is the batch's miss, here none, not the Elo table's.
                 self.assertEqual(cal.main(["--results", results, "--elo", str(elo), "--engine", engine,
-                                           "--max-miss", "100"]), 0)
+                                           "--max-miss", "5"]), 0)
             table = io.StringIO()
             with redirect_stdout(table):
                 cal.main(["--results", results, "--elo", str(elo), "--engine", engine])
