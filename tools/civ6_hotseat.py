@@ -1154,8 +1154,24 @@ class Journal:
 #: quit is asked again, and the launcher's own stop behind it all.
 QUIT_SECONDS = 150.0
 QUIT_ANSWER_SECONDS = 30.0
+#: ...and the most that giving can add: the clock has an end whatever is read.
+QUIT_OVERTIME_SECONDS = 60.0
 QUIT_ASK_AGAIN = 3
 QUIT_STOP_SECONDS = 90.0
+
+
+def mirrored_yes(rows: list[dict], sure: list[dict]) -> list[dict]:
+    """Where the quit question's YES stands when the screen reader did not
+    return it: its NO, mirrored about the question's heading (the topmost
+    ARE YOU SURE row). Nothing without both a heading and a NO beneath it."""
+    if not sure:
+        return []
+    heading = min(sure, key=lambda row: row["y"])
+    below = [row for row in find(rows, "NO") if row["y"] > heading["y"]]
+    if not below:
+        return []
+    no = min(below, key=lambda row: row["y"])
+    return [{"text": "YES", "x": 2 * heading["x"] - no["x"], "y": no["y"], "norm": _norm("YES")}]
 
 
 def quit_civ(run_dir: Path, log: Log, timeout_s: float = QUIT_SECONDS) -> bool:
@@ -1175,11 +1191,28 @@ def quit_civ(run_dir: Path, log: Log, timeout_s: float = QUIT_SECONDS) -> bool:
     game. So the quit is asked again every few unanswered looks, a question
     that is up is always given the time to be answered, and the stop behind it
     waits longer.
+
+    The YES is pressed where it stands when it cannot be read. Live the same
+    night (duel-dev-smoke-20261127T0845Z, the person's turn, a full-screen
+    window): the screen reader returned ARE YOU SURE?, the sentence under it
+    and "No", and never the white-on-red YES, in nine looks out of nine. With
+    no YES to press the pause menu's EXIT TO DESKTOP behind the question was
+    pressed again each look, each press renewing the clock, and the harness
+    never came back. YES and NO stand either side of the heading
+    (InGameTopOptionsMenu's inline question), so an unread YES is NO mirrored
+    about it (pressed by hand there: Civ VI closed at once). And the time a
+    question is given is bounded: the clock runs out `QUIT_OVERTIME_SECONDS`
+    past its length at the latest.
     """
     if not env.game_pids():
         return True
     env.request_macos_quit()
     deadline = time.monotonic() + timeout_s
+    limit = deadline + QUIT_OVERTIME_SECONDS
+
+    def given_time() -> float:
+        return min(limit, max(deadline, time.monotonic() + QUIT_ANSWER_SECONDS))
+
     step = unanswered = 0
     while time.monotonic() < deadline:
         time.sleep(2.0)
@@ -1188,10 +1221,11 @@ def quit_civ(run_dir: Path, log: Log, timeout_s: float = QUIT_SECONDS) -> bool:
         step += 1
         _, rows = read_screen(run_dir, f"quit-{step}")
         # In a game: the pause menu's inline ARE YOU SURE? / YES.
-        yes = find(rows, "YES")
-        if yes and find(rows, "ARE YOU SURE", exact=False):
+        sure = find(rows, "ARE YOU SURE", exact=False)
+        yes = find(rows, "YES") or mirrored_yes(rows, sure)
+        if yes and sure:
             play.click_at(yes[0]["x"], yes[0]["y"])
-            deadline = max(deadline, time.monotonic() + QUIT_ANSWER_SECONDS)
+            deadline = given_time()
             continue
         # On a setup screen: the EXIT TO DESKTOP / OK / Cancel modal, whose OK
         # the live lane finds as Cancel mirrored about the heading.
@@ -1201,13 +1235,13 @@ def quit_civ(run_dir: Path, log: Log, timeout_s: float = QUIT_SECONDS) -> bool:
                 play.click_at(ok[0]["x"], ok[0]["y"])
             else:
                 play.confirm_exit_dialog(run_dir / "setup")
-            deadline = max(deadline, time.monotonic() + QUIT_ANSWER_SECONDS)
+            deadline = given_time()
             continue
         # The pause menu without its question yet.
         exit_row = find(rows, "EXIT TO DESKTOP")
         if exit_row and find(rows, "RETURN TO GAME"):
             play.click_at(exit_row[0]["x"], exit_row[0]["y"])
-            deadline = max(deadline, time.monotonic() + QUIT_ANSWER_SECONDS)
+            deadline = given_time()
             continue
         unanswered += 1
         if unanswered % QUIT_ASK_AGAIN == 0:
