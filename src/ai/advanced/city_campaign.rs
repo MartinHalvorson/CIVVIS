@@ -907,7 +907,11 @@ impl AdvancedAi {
             if !bill.holdable || army_strength + 1e-9 < bill.strength || army.len() < bill.bodies {
                 continue;
             }
-            let key = (bill.strength / army_strength.max(1.0), core_distance, city.id);
+            let key = (
+                bill.strength / army_strength.max(1.0),
+                core_distance,
+                city.id,
+            );
             if best.as_ref().is_none_or(|(held, _)| key < *held) {
                 best = Some((key, bill));
             }
@@ -2187,7 +2191,10 @@ mod tests {
         assert_eq!(plan.cities, vec![theirs]);
         assert_eq!(plan.planned, 60);
         assert_eq!(plan.declared, Some(60), "the war is already open");
-        assert_eq!(game.players[0].counters.get("campaign:war_planned"), Some(&1));
+        assert_eq!(
+            game.players[0].counters.get("campaign:war_planned"),
+            Some(&1)
+        );
         assert!(ai.city_campaign_stands(&game, 0));
         assert_eq!(ai.campaign_target(&game, 0), Some(1));
         assert!(!ai.campaign_withholds_the_siege(&game, 0, theirs));
@@ -2222,7 +2229,10 @@ mod tests {
         let mut v2 = AdvancedAi::new();
         v2.enable_city_campaign_2();
         v2.maintain_city_campaign(&mut game, 0);
-        assert!(!v2.campaign_withholds_the_siege(&game, 0, theirs), "off, nothing held");
+        assert!(
+            !v2.campaign_withholds_the_siege(&game, 0, theirs),
+            "off, nothing held"
+        );
 
         let mut ai = AdvancedAi::new();
         ai.enable_city_campaign_3();
@@ -2280,7 +2290,10 @@ mod tests {
         game.turn += 1;
         ai.maintain_city_campaign(&mut game, 0);
         assert_eq!(ai.campaign, None, "the clock has run out");
-        assert_eq!(game.players[0].counters.get("campaign:clock_expired"), Some(&1));
+        assert_eq!(
+            game.players[0].counters.get("campaign:clock_expired"),
+            Some(&1)
+        );
         assert!(ai.campaign_retry_after > game.turn);
         assert!(ai.campaign_withholds_the_siege(&game, 0, theirs));
         game.turn += 1;
