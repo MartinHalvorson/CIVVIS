@@ -1,0 +1,23 @@
+{
+ "kind": "captured_native_action_pairs_v1",
+ "tag": "religion-lane-outlasts-the-denial",
+ "scope": "Recorded proposal activation on captured live input only, not host execution or strength. 12 boards from four live T8 benchmark games of 2026-11-26 (Deity 6p, Online, Religion seats) whose founded Religion lane logged 'Grand strategy: science | countering a rival close to winning, ahead of the lane' ('its science race reads 84%') and won on Religion anyway (civvis-t8-20261126T083455Z Mali t155 t160 t167 t178, -T141906Z Ethiopia t159 t164 t169, -T114544Z Ethiopia t150 t155 t160, -T091342Z Mali t164 t166). Each board is the run's events.jsonl cut after turn N+1 and replayed at turn N. Both arms run one frozen ci-profile civvis_orders --resumed built from the branch with the run's own requested genome (why.log line 1 forced); the on arm adds --with religion-lane-outlasts-the-denial. 12 of 12 boards completed in both arms; every off arm reproduces the live 'Grand strategy: science' line (12) and every on arm reads 'religion | following the assigned victory lane' (0 science lines) with one 'religion-lane-outlasts-the-denial:' journal line each (12 on, 0 off); orders differ on 3 (t167, t178 of 083455Z, t155 of 114544Z).",
+ "archive": {
+  "path": "docs/eval/2026-11-26-religion-lane-outlasts-the-denial.native-queries.tar.xz",
+  "sha256": "b607a4658311870ecbb0800e627e7ba58f03e444310db3a8bae5045c57ee29f1"
+ },
+ "members": [
+  "native-queries-01/0000/result.json",
+  "native-queries-01/0001/result.json",
+  "native-queries-01/0002/result.json",
+  "native-queries-01/0003/result.json",
+  "native-queries-01/0004/result.json",
+  "native-queries-01/0005/result.json",
+  "native-queries-01/0006/result.json",
+  "native-queries-01/0007/result.json",
+  "native-queries-01/0008/result.json",
+  "native-queries-01/0009/result.json",
+  "native-queries-01/0010/result.json",
+  "native-queries-01/0011/result.json"
+ ]
+}
