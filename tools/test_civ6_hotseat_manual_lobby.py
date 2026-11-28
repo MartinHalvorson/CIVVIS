@@ -466,14 +466,20 @@ CHILD = textwrap.dedent(r"""
         raise AssertionError("the manual lobby launched or set something up")
     hotseat.launcher.launch = refuse
     hotseat.apply_person_options = refuse
-    started = []
+    started, lanes, recorded = [], [], []
     class FakeBrains:
         def __init__(self, run_dir, tag, seats, orders_db, binary, victory, log, treatments=None):
             started.append(list(seats))
+            lanes.append(victory)
         def start_all(self): pass
         def keep_alive(self): pass
         def stop(self): pass
     hotseat.Brains = FakeBrains
+    # The people's record as the harness posts to it: what the summary said then.
+    def record(run_dir, log, resigned=False):
+        recorded.append({"resigned": resigned,
+                         "summary": json.loads((run_dir / "summary.json").read_text())})
+    hotseat.record_person_game = record
     # How often the log is relayed against how often the loop's upkeep runs.
     counts = {"pumps": 0, "beats": 0}
     RealPump, RealBeat = hotseat.watch.EventLogBridge.pump, hotseat.HarnessBeat.beat
@@ -499,8 +505,10 @@ CHILD = textwrap.dedent(r"""
     players = {"alone": ["human", "computer"]}.get(scenario, ["human", "human", "human", "computer"])
     LOBBY = dict(ctx="heartbeat", kind="hotseat_lobby", run=TAG, turn=1, hotseat=True,
                  map="Pangaea.lua", size="MAPSIZE_TINY", speed="GAMESPEED_ONLINE", max_turns=250,
-                 players=[{"id": i, "slot": s, "human": s == "human",
-                           "difficulty": "DIFFICULTY_PRINCE"} for i, s in enumerate(players)])
+                 t=1795800000,
+                 players=[{"id": i, "slot": s, "human": s == "human", "leader": f"LEADER_{i}",
+                           "difficulty": "DIFFICULTY_KING" if i == 0 else "DIFFICULTY_PRINCE"}
+                          for i, s in enumerate(players)])
     def turn(seat, phase, human):
         event(ctx="autoclose", screen="PlayerChange", kind="hotseat_turn", run=TAG, phase=phase,
               player=seat, turn=1, human=human, civvis=not human)
@@ -514,7 +522,17 @@ CHILD = textwrap.dedent(r"""
         steps += [lambda: event(ctx="agent", kind="turn", run=TAG + "-p1", turn=1, orders_applied=3,
                                 orders_source="civvis", cities=1, units=2, score=5),
                   lambda: turn(1, "end", False)]
-    if scenario in ("close", "stall"):
+    if scenario == "won":
+        # The table's own record of the person's victory (CivvisControlHeartbeat.lua
+        # `CivvisEnding.onVictory`), then "one more turn" and Civ VI closed later.
+        steps += [lambda: event(ctx="heartbeat", kind="victory", run=TAG, turn=1, t=1795803600,
+                                team=0, victory=3, victory_type="VICTORY_TECHNOLOGY", members=[0],
+                                source="table", local_player=0)] + [lambda: None] * 4
+    if scenario == "resign":
+        # `--stop --resign`: its request, then the signal (stop_command).
+        steps += [lambda: (hotseat.RUN_ROOT / TAG / "stop.json").write_text(
+            json.dumps({"quit_game": False, "resign": True})), lambda: os.kill(os.getpid(), signal.SIGTERM)]
+    elif scenario in ("close", "stall", "won"):
         steps += [lambda: pids.clear()]
     else:
         steps += [lambda: None] * 6 + [lambda: os.kill(os.getpid(), signal.SIGTERM)]
@@ -538,6 +556,8 @@ CHILD = textwrap.dedent(r"""
     time.sleep = fake_sleep
     binary = tmp / "civvis_orders"; binary.write_text("#!/bin/sh\n"); binary.chmod(0o755)
     extra = ["--stall-seconds", "5"] if scenario == "stall" else []
+    if scenario in ("won", "resign"):
+        extra += ["--name", "dev", "--agents", "holy,tourist"]
     rc = hotseat.main(["--manual-lobby", "--tag", TAG, "--orders-bin", str(binary),
                        "--no-notify", *extra])
     run_dir = hotseat.RUN_ROOT / TAG
@@ -549,7 +569,7 @@ CHILD = textwrap.dedent(r"""
     except Exception as error:
         rows = [str(error)]
     print("RESULT " + json.dumps({
-        "rc": rc, "started": started, "spawned": spawned,
+        "rc": rc, "started": started, "lanes": lanes, "recorded": recorded, "spawned": spawned,
         "real": screen_free.loaded_for_real(),
         "pil": [m for m in sys.modules if m == "PIL" or m.startswith("PIL.")],
         "installed": (tmp / "Assets" / "DLC" / "CivvisControl").exists(),
@@ -595,7 +615,7 @@ class ManualLobbyEndToEndTest(unittest.TestCase):
         self.assertIn("the game: Hot Seat, 4 players on Pangaea.lua MAPSIZE_TINY", log)
         self.assertEqual(result["started"], [[1, 2]], "workers for the Human rows after yours")
         self.assertIn("CIVVIS plays row 2 and row 3", log)
-        self.assertIn("3 orders applied (civvis)", log)
+        self.assertIn("3 opening orders applied (civvis)", log)
         self.assertIn("Civ VI has closed", log)
         self.assertIn("removed the CIVVIS mod", log)
         self.assertFalse(result["installed"], "removed once Civ VI is not running")
@@ -607,6 +627,62 @@ class ManualLobbyEndToEndTest(unittest.TestCase):
         counts = result["counts"]
         self.assertGreater(counts["beats"], 5)
         self.assertGreaterEqual(counts["pumps"], 6 * 25 * (counts["beats"] - 2))
+
+    def test_a_named_persons_game_reaches_the_peoples_record_at_its_ending(self) -> None:
+        import people_elo  # noqa: PLC0415
+        result = self.run_child("won")
+        log = result["log"]
+        self.assertIn("row 1 dev (you) (human, DIFFICULTY_KING, LEADER_0)", log)
+        self.assertIn("row 2 CIVVIS HolyRoller", log)
+        self.assertIn("row 3 CIVVIS TouristTrap", log)
+        # Each seat plays its own agent's lane, as the install names it.
+        self.assertEqual(result["lanes"], [{"1": "religious", "2": "culture"}])
+        # Posted at the decision, before Civ VI closed, and again at the end
+        # (the record keeps one line however often it is posted).
+        self.assertEqual([r["resigned"] for r in result["recorded"]], [False, False])
+        decided = result["recorded"][0]["summary"]
+        self.assertEqual(decided["reason"], "game over")
+        for summary in (decided, result["summary"]):
+            self.assertEqual((summary["result"]["kind"], summary["result"]["person"]), ("victory", True))
+            self.assertEqual((summary["person"], summary["person_seat"], summary["leader"]),
+                             ("dev", 0, "LEADER_0"))
+            self.assertEqual((summary["players"], summary["map"], summary["map_size"], summary["speed"],
+                              summary["max_turns"], summary["difficulty"]),
+                             (4, "Pangaea.lua", "MAPSIZE_TINY", "GAMESPEED_ONLINE", 250, "DIFFICULTY_KING"))
+            self.assertEqual(summary["seat_agents"], {"1": "holy", "2": "tourist"})
+            self.assertEqual(summary["started"], "2026-11-27T17:20:00Z", "the HUD's clock at the read-back")
+        row = people_elo.game_row(result["summary"])
+        self.assertEqual((row["winner"], row["agents"], row["victory"], row["person"]),
+                         ("person", ["holy", "tourist"], "VICTORY_TECHNOLOGY", "dev"))
+
+    def test_stop_resign_gives_a_manual_lobby_game_to_civvis(self) -> None:
+        import people_elo  # noqa: PLC0415
+        result = self.run_child("resign")
+        self.assertEqual([r["resigned"] for r in result["recorded"]], [True])
+        summary = result["recorded"][0]["summary"]
+        self.assertIsNone(summary["result"])
+        self.assertEqual(summary["person"], "dev")
+        row = people_elo.game_row(summary, winner="civvis", victory="resignation")
+        self.assertEqual((row["winner"], row["agents"]), ("civvis", ["holy", "tourist"]))
+
+    def test_a_game_with_no_name_is_not_recorded(self) -> None:
+        result = self.run_child("close")
+        self.assertEqual(result["recorded"], [])
+        self.assertIsNone(result["summary"]["person"])
+        self.assertEqual(result["lanes"], ["civvis"], "without --agents every seat plays --victory")
+
+    def test_name_and_agents_are_read_as_a_launched_table_reads_them(self) -> None:
+        with patch.object(hotseat, "run_manual", side_effect=lambda a: a), \
+                patch.object(hotseat.screen_free, "engaged", return_value=True), \
+                patch.object(hotseat, "read_current", return_value=None):
+            args = hotseat.main(["--manual-lobby", "--agents", "Holy, jack", "--name", "dev"])
+            self.assertEqual(args.agents, ["holy", "jack"])
+            for bad in (["--agents", "holy,nobody"], ["--name", "'); drop"]):
+                with patch("sys.stderr"):
+                    self.assertEqual(hotseat.main(["--manual-lobby", *bad]), 2, bad)
+        # Row 3 is the third agent whether or not row 2 is seated.
+        self.assertEqual(hotseat.manual_seat_agents(argparse.Namespace(agents=["holy", "tourist", "siege"]),
+                                                    [1, 3]), {1: "holy", 3: "siege"})
 
     def test_stopping_with_civ_up_leaves_the_mod_and_the_game(self) -> None:
         result = self.run_child("stop")

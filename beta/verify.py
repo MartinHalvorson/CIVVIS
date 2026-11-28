@@ -353,6 +353,12 @@ def lane_page_problems(dist: pathlib.Path, mount: str, build: dict) -> list:
 # when it is not, so the required-files list asks for the unit-flag atlas the
 # viewer draws in whichever form this build actually chose. (publish.sh leaves
 # out art the viewer no longer references, so a retired atlas is no witness.)
+#
+# A lane pinned to a revision from between #5940 and #5965 draws its units
+# with the unit-glyph atlas instead, and the front page is pinned there until
+# a promotion moves it: requiring only the unit-flag atlas failed every
+# deploy from 2026-11-27 23:41Z (the stable lane at 7f620d7), so neither lane
+# reached the site until it was taken back.
 def required(mount: str, pages=None) -> list:
     lane = "" if mount == "root" else "test/"
     pages = list(PAGES) if pages is None else pages
@@ -362,7 +368,8 @@ def required(mount: str, pages=None) -> list:
         f"{lane}shim.js",
         f"{lane}worker.js",
         f"{lane}build.json",
-        (f"{lane}assets/civ6-unit-flags.webp", f"{lane}assets/civ6-unit-flags.png"),
+        (f"{lane}assets/civ6-unit-flags.webp", f"{lane}assets/civ6-unit-flags.png",
+         f"{lane}assets/unit-glyphs.webp", f"{lane}assets/unit-glyphs.png"),
         # The landing photographs are deliberately not pinned by name here:
         # each lane ships its own revision's art, so the stable lane's set
         # legitimately differs from head's. The page's own references are

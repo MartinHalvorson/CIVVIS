@@ -5962,6 +5962,7 @@ const STRANGE_PANE_STYLE = `
 
 // The host's record of the highway, beside the split's own.
 const strange = {
+  paintFrame: 0,
   // The timeline being followed: the one in the middle.
   follow: "a",
   // The turn on the line across the window, which follows the followed
@@ -6157,9 +6158,12 @@ function strangeTurnLeft(g, wide = strange.turnWide || 0, column = strange.turnC
   const open = strangeOpen(), mine = Math.max(0, open.indexOf(strange.follow));
   const clear = lanes => Math.max(g.lane / 2, g.near * lanes + 16);
   const right = g.cx + clear(open.length - 1 - mine), left = g.cx - clear(mine) - wide;
-  const most = (column && column.bottom > g.cy - 50 ? column.left - 10 : g.W - 12) - wide;
+  const most = (column && column.bottom > g.cy - 50 ? column.left - 10 : g.W - 12) - Math.ceil(wide);
   if (right <= most) return Math.round(right);
-  if (left >= 12) return Math.round(left);
+  // Left of the tree it stands by its right edge, so it is placed to the
+  // fraction of a pixel its width is: rounded, and its width rounded up, its
+  // edge fell a pixel or more short of the green path.
+  if (left >= 12) return +left.toFixed(2);
   return Math.round(Math.max(12, most));
 }
 function strangeY(g, turn, cam) {
@@ -6853,6 +6857,32 @@ function strangeShow() {
     debugSplitTell(letter, ahead > 0 ? {civvis: "pane-show", ahead} : {civvis: "pane-show"});
   }
 }
+// Every turn is on the screen for at least one frame (operator 2026-11-27:
+// "doc strange should show 1 frame from every turn at least"). A world draws
+// the turn it is shown at once (`render`), but a world whose next turn it
+// already holds can be shown that in the same frame, and a turn drawn and
+// drawn over before the browser paints is never seen. So once every world
+// has drawn a turn, the next is asked for at once but shown only after a
+// frame has been painted: the frame asked for here is painted with every
+// world's turn on it, and the next turn is shown in a task after it, so not
+// even its count is painted early. A window nobody sees paints nothing and
+// waits for nothing.
+function strangeAwaitPaint(run) {
+  if (document.hidden) return;
+  run.painted = false;
+  const frame = ++strange.paintFrame;
+  const painted = () => {
+    if (strange.paintFrame !== frame || run.painted) return;
+    run.painted = true;
+    if (strange.run === run) strangeStep();
+  };
+  requestAnimationFrame(() => setTimeout(painted, 0));
+  // rAF stops for a window hidden meanwhile.
+  setTimeout(painted, 250);
+}
+function strangePainted(run) {
+  return run.painted !== false || document.hidden;
+}
 // The turn on the screen. While time runs, it is the one the worlds were
 // last told to show (`strangeStep`), and the label says it in the same
 // breath, so it changes with the maps: read off the followed world, it
@@ -6962,7 +6992,7 @@ function strangeStep() {
   };
   const letters = run.letters.filter(letter => strange.order.includes(letter) && split.panes[letter] && !strangeEnded(letter, run.asked));
   if (letters.length === 0) { strangeRunOver(run, strangeOverNote()); return; }
-  if (!run.shown && letters.every(ready)) {
+  if (!run.shown && letters.every(ready) && strangePainted(run)) {
     run.shown = true;
     run.showing = run.asked;
     strangeShow();
@@ -6971,9 +7001,11 @@ function strangeStep() {
   const there = letter => split.panes[letter].turn === run.asked;
   if (letters.every(there)) {
     // Time runs as fast as the worlds are played and drawn: a turn is on
-    // the screen for as long as the next takes, and no longer.
+    // the screen for as long as the next takes, and no longer, but for at
+    // least one frame (`strangePainted`). The next is asked for at once.
     run.at = run.asked;
     run.asked = null;
+    strangeAwaitPaint(run);
     strangeAsk(run);
     return;
   }
@@ -8092,7 +8124,14 @@ function strangeMount() {
 // `strange.shape`), the line moving moves the worlds' card with it, and a
 // card that has grown by itself, a number gaining a figure, is seen by the
 // browser once it has laid the page out anyway (`strangeMount`).
-const STRANGE_CARDS = [".strange-title", ".strange-right", ".strange-standings", ".strange-versus", ".strange-omen", ".strange-send"];
+// The turn on the line is one of them: when its number grows a digit (9 to
+// 10, 99 to 100) it is wider, and standing left of the tree it is placed by
+// its right edge (`strangeTurnLeft`), so it is measured again. Measured only
+// when the other cards changed, it stood a digit off the green path from
+// turn 10 on (published-build red on `check_doctor_strange_send_it` since
+// #5982).
+const STRANGE_CARDS = [".strange-title", ".strange-right", ".strange-standings", ".strange-versus", ".strange-omen", ".strange-send",
+  ".strange-turn"];
 function strangeCards() {
   const hud = strange.hud;
   const box = name => hud.querySelector(name).getBoundingClientRect();
@@ -8112,7 +8151,7 @@ function strangeCards() {
   // line would be under it there: then it stands over the turn.
   const turn = box(".strange-turn"), foot = box(".strange-send");
   // What the turn on the line needs to stand clear of the column on the right.
-  strange.turnWide = Math.ceil(turn.width);
+  strange.turnWide = turn.width;
   strange.turnColumn = {left: column.left, bottom: column.bottom};
   const lift = turn.right > foot.left - 10 && turn.left < foot.right + 10 ? Math.ceil(turn.height) + 8 : 0;
   if (hud.style.getPropertyValue("--strange-send-lift") !== `${lift}px`) hud.style.setProperty("--strange-send-lift", `${lift}px`);

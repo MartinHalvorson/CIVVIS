@@ -346,7 +346,7 @@ print("all real-seconds heartbeat checks passed")
 -- active while its controller's stamp does not move. Tournament 6, 2026-11-21:
 -- 12 minutes at civvis-t6-20261121T131243Z t61 and 7 at
 -- civvis-t6-20261121T135836Z t180, the map on NEXT TURN and no record at all.
-local function seatHost(cfg)
+local function seatHost(cfg, before)
     local h = { clock = 1000, logs = {}, requests = {}, broadcasts = 0, stockTicks = 0,
                 local_player = 0, turn = 61, active = true, paused = false, sent = false,
                 handover_hidden = true, dialog_hidden = true, end_game_hidden = true,
@@ -377,6 +377,7 @@ local function seatHost(cfg)
                  GetCurrentGameTurn = function() return h.turn end }
     env.Players = setmetatable({}, { __index = function() return {
         IsTurnActive = function() return h.active end,
+        CanUnreadyTurn = function() return h.can_unready == true end,
         GetUnits = function() return { GetFirstReadyUnit = function()
             if h.ready == nil then return nil end
             return { GetUnitType = function() return h.ready end }
@@ -396,11 +397,26 @@ local function seatHost(cfg)
             h.requests[#h.requests + 1] = { action = action, reason = parameters and parameters.REASON }
         end,
     }
-    env.ActionTypes = { ACTION_ENDTURN = "ACTION_ENDTURN" }
+    env.ActionTypes = { ACTION_ENDTURN = "ACTION_ENDTURN", ACTION_UNREADYTURN = "ACTION_UNREADYTURN" }
+    env.GameConfiguration = { IsPaused = function() return h.game_paused == true end }
     env.EndTurnBlockingTypes = { NO_ENDTURN_BLOCKING = 0, ENDTURN_BLOCKING_UNITS = 7 }
     env.NotificationManager = { GetFirstEndTurnBlocking = function() return h.blocker end }
     env.ExposedMembers = { CivvisSeatBeat = {} }
-    env.Events = { TeamVictory = { Add = function(listener) h.victory = listener end } }
+    -- Every listener an event is given, called in the order added.
+    h.listeners = {}
+    env.Events = setmetatable({}, { __index = function(events, name)
+        local event = { Add = function(listener)
+            h.listeners[name] = h.listeners[name] or {}
+            table.insert(h.listeners[name], listener)
+        end }
+        rawset(events, name, event)
+        return event
+    end })
+    h.fire = function(name, ...)
+        for _, listener in ipairs(h.listeners[name] or {}) do listener(...) end
+    end
+    h.victory = function(...) h.fire("TeamVictory", ...) end
+    if before ~= nil then before(env, h) end
     local chunk = assert(loadfile(here .. "/CivvisControlHeartbeat.lua"))
     setfenv(chunk, env)
     chunk()
@@ -666,11 +682,35 @@ do
     assert(#h.requests == 6, "turn 6 starts its own clock")
     h.second(true)
     assert(#h.requests == 7)
-    -- A stub turn already sent complete is reported and left to the engine.
+    -- A stub turn that reads as sent and still stands was dropped: the engine
+    -- ignores a turn complete sent while the game is paused
+    -- (live-6p-20261128T0405Z t3, `PlayerTurnComplete ignored due to game
+    -- paused.`) and the UI keeps it as sent. It is asked again at 30 s:
+    -- unreadied where the game allows, else sent with SHIFT+ENTER's request.
     h = seatHost(GATED)
     h.sent = true
-    for _ = 1, 120 do h.second(true) end
-    assert(#h.requests == 0 and count(h, "seat_stuck") == 2, "a sent turn is the engine's to finish")
+    for _ = 1, 30 do h.second(true) end
+    assert(#h.requests == 0, "29 s of a sent stub turn are nothing")
+    h.second(true)
+    assert(#h.requests == 1 and h.requests[1].action == "ACTION_ENDTURN"
+        and h.requests[1].reason == "UserForced", "a dropped turn complete is sent again")
+    assert(h.kinds("seat_stuck_end_turn")[1]:find('"how":"end_turn"', 1, true))
+    assert(h.kinds("seat_stuck")[1]:find('"sent":true', 1, true)
+        and h.kinds("seat_stuck")[1]:find('"game_paused":false', 1, true))
+    h = seatHost(GATED)
+    h.sent, h.can_unready = true, true
+    for _ = 1, 31 do h.second(true) end
+    assert(#h.requests == 1 and h.requests[1].action == "ACTION_UNREADYTURN",
+        "where the game allows it, the sent turn is unreadied first")
+    assert(h.kinds("seat_stuck_end_turn")[1]:find('"how":"unready"', 1, true))
+    h.sent = false                         -- the unready landed
+    for _ = 1, 20 do h.second(true) end
+    assert(#h.requests == 2 and h.requests[2].action == "ACTION_ENDTURN", "and the next request ends it")
+    -- The game's own pause is named in every report.
+    h = seatHost(GATED)
+    h.game_paused = true
+    for _ = 1, 31 do h.second(true) end
+    assert(h.kinds("seat_stuck")[1]:find('"game_paused":true', 1, true), "the game's pause is reported")
     -- Its hand-over standing paused, with its dialog on screen, is not its turn yet.
     h = seatHost(GATED)
     h.paused, h.handover_hidden, h.dialog_hidden = true, false, false
@@ -702,6 +742,16 @@ do
     assert(#h.requests == 1 and stuck and stuck:find('"why":"long_turn"', 1, true)
         and stuck:find('"player":3', 1, true) and stuck:find('"age":180', 1, true),
         "a CIVVIS turn standing 180 s is ended: " .. tostring(stuck))
+    -- A CIVVIS turn that reads as sent: quiet, the engine's to finish; past
+    -- its 180 s it was dropped, and is sent again.
+    h = seatHost(GATED)
+    h.local_player, h.sent = 4, true
+    h.second(true)
+    for _ = 1, 179 do h.second(false) end
+    assert(#h.requests == 0 and count(h, "seat_quiet") >= 1, "a sent quiet turn is reported, not ended")
+    h.second(false)
+    assert(#h.requests == 1 and h.kinds("seat_quiet_end_turn")[1]:find('"why":"quiet"', 1, true),
+        "a sent turn standing 180 s is sent again")
     -- Configurable, and the stub's 30 s is the stub's alone.
     h = seatHost({ CivvisDecides = true, Hotseat = true, HotseatSeats = { 1, 2 },
                    HotseatHumanSeats = { 0 }, HotseatStubSeats = { 0 }, SeatLongTurnSeconds = 60,
@@ -775,3 +825,174 @@ do
     end
 end
 print("all seat watch checks passed")
+
+-- The game's ending, written by the table (`CivvisEnding`). Each seat's agent
+-- writes `victory`/`defeat` only while its own seat is local (CivvisSeat.gate),
+-- so an ending on the person's own turn reached nobody's log. The HUD writes
+-- each ending once under the table's tag, whoever is local.
+local PERSON_TABLE = { CivvisDecides = true, Hotseat = true, HotseatSeats = { 1, 2, 3, 4, 5 },
+                       HotseatHumanSeats = { 0 }, RunTag = "hs" }
+local function endingHost(cfg, before)
+    local h = seatHost(cfg, before)
+    h.alive, h.cities = {}, {}
+    for seat = 0, 5 do h.alive[seat], h.cities[seat] = true, 2 end
+    h.env.Players = setmetatable({}, { __index = function(_, id) return {
+        IsTurnActive = function() return h.active end,
+        IsAlive = function()
+            if h.alive[id] == nil then error("no such player") end
+            return h.alive[id]
+        end,
+        GetCities = function() return { GetCount = function() return h.cities[id] end } end,
+        GetUnits = function() return { GetFirstReadyUnit = function() return nil end } end,
+    } end })
+    h.env.Teams = { [0] = { 0 }, [1] = { 1 }, [2] = { 2 }, [3] = { 3 }, [4] = { 4 }, [5] = { 5 } }
+    h.env.GameInfo.Victories = { [0] = { VictoryType = "VICTORY_SCORE" }, [3] = { VictoryType = "VICTORY_CULTURE" },
+                                 [5] = { VictoryType = "VICTORY_TECHNOLOGY" } }
+    h.env.GameInfo.Defeats = { [0] = { DefeatType = "DEFEAT_DEFAULT" }, [1] = { DefeatType = "DEFEAT_TIME" } }
+    h.has = function(line, pieces)
+        for _, piece in ipairs(pieces) do
+            assert(line and line:find(piece, 1, true), "the record lacks " .. piece .. ": " .. tostring(line))
+        end
+    end
+    return h
+end
+do
+    -- A culture win on the person's own turn: local player 0, no CIVVIS
+    -- context open. Written once, with the winning team's players.
+    local h = endingHost(PERSON_TABLE)
+    h.local_player, h.turn = 0, 201
+    h.second(false)
+    h.victory(0, 3, 77)
+    local won = h.kinds("victory")
+    assert(#won == 1, "the person's victory is written by the table")
+    h.has(won[1], { '"ctx":"heartbeat"', '"kind":"victory"', '"run":"hs"', '"t":1001', '"turn":201',
+        '"team":0', '"victory":3', '"victory_type":"VICTORY_CULTURE"', '"members":[0]', '"source":"table"',
+        '"local_player":0' })
+    assert(h.logs[#h.logs]:find('"kind":"ending_flush"', 1, true), "and delivered by the record behind it")
+    -- However often it is raised, and whoever is local then: once.
+    h.local_player = 3
+    h.victory(0, 3, 78)
+    h.victory(2, 5, 79)
+    assert(#h.kinds("victory") == 1, "one ending per game")
+    -- A raise with no team is not a victory.
+    local q = endingHost(PERSON_TABLE)
+    q.victory(nil, 3)
+    assert(#q.kinds("victory") == 0, "no team, no victory")
+    q.victory(4, 5)
+    q.has(q.kinds("victory")[1], { '"team":4', '"members":[4]', '"victory_type":"VICTORY_TECHNOLOGY"' })
+    -- A team the UI cannot list keeps its number; an unnamed type is null.
+    q = endingHost(PERSON_TABLE)
+    q.env.Teams = {}
+    q.victory(2, 9)
+    q.has(q.kinds("victory")[1], { '"team":2', '"members":[]', '"victory":9', '"victory_type":null' })
+end
+do
+    -- The person eliminated: one city went to seat 2, the last to seat 3.
+    local h = endingHost(PERSON_TABLE)
+    h.local_player, h.turn = 3, 88
+    h.second(true)                          -- the city counts' baseline: 2 each
+    h.cities[0] = 1; h.cities[2] = 3
+    h.fire("CityTransfered", 2, 65536)
+    h.cities[0] = 0; h.cities[3] = 3
+    h.fire("CityOccupationChanged", 3, 131072)
+    h.fire("PlayerDefeat", 0, 0, 12)
+    local gone = h.kinds("defeat")
+    assert(#gone == 1, "the person's defeat is written")
+    h.has(gone[1], { '"ctx":"heartbeat"', '"run":"hs"', '"turn":88', '"player":0', '"defeat":0',
+        '"defeat_type":"DEFEAT_DEFAULT"', '"by":3', '"how":"event"', '"source":"table"', '"local_player":3' })
+    -- Raised again, or gone on the next readings too: still one.
+    h.fire("PlayerDefeat", 0, 0, 13)
+    h.alive[0] = false
+    for _ = 1, 5 do h.second(true) end
+    assert(#h.kinds("defeat") == 1, "one record per seat")
+    -- A CIVVIS seat whose last city the person took (a transfer, no occupation event).
+    h = endingHost(PERSON_TABLE)
+    h.second(true)
+    h.cities[1] = 0; h.cities[0] = 3
+    h.fire("CityTransfered", 0, 9)
+    h.fire("PlayerDefeat", 1, 0)
+    h.has(h.kinds("defeat")[1], { '"player":1', '"by":0' })
+    -- A city a seat took back from no one, or a count with no baseline, names nobody.
+    h = endingHost(PERSON_TABLE)
+    h.fire("CityTransfered", 2, 1)          -- no reading yet: nothing to compare
+    h.cities[2] = 1
+    h.fire("CityTransfered", 2, 2)          -- seat 2's own city event
+    h.fire("PlayerDefeat", 2, 0)
+    h.has(h.kinds("defeat")[1], { '"player":2', '"by":null' })
+    -- The turn limit with the Score victory off: every seat's DEFEAT_TIME.
+    h = endingHost(PERSON_TABLE)
+    h.turn = 251
+    for seat = 0, 5 do h.fire("PlayerDefeat", seat, 1) end
+    assert(#h.kinds("defeat") == 6, "each seat's time defeat")
+    h.has(h.kinds("defeat")[1], { '"player":0', '"defeat_type":"DEFEAT_TIME"', '"turn":251' })
+end
+do
+    -- Gone with no PlayerDefeat (civvis-20260730T170738Z): a seat seen alive,
+    -- then not alive on two readings in a row.
+    local h = endingHost(PERSON_TABLE)
+    h.second(true)
+    h.alive[4] = false
+    h.second(true)
+    assert(#h.kinds("defeat") == 0, "one reading is not an elimination")
+    h.alive[4] = true
+    h.second(true)
+    h.alive[4] = false
+    h.second(true)
+    assert(#h.kinds("defeat") == 0, "a reading between resets it")
+    h.second(true)
+    local gone = h.kinds("defeat")
+    assert(#gone == 1, "two readings in a row are")
+    h.has(gone[1], { '"player":4', '"defeat":null', '"defeat_type":null', '"by":null', '"how":"not_alive"' })
+    h.fire("PlayerDefeat", 4, 0)
+    assert(#h.kinds("defeat") == 1, "and the event after it adds nothing")
+    -- A seat never seen alive (closed, or not yet in the game) is not defeated.
+    h = endingHost(PERSON_TABLE)
+    h.alive[5] = false
+    for _ = 1, 10 do h.second(true) end
+    assert(#h.kinds("defeat") == 0, "never alive, never defeated")
+    -- A player the UI cannot read is left alone.
+    h.alive[5] = nil
+    for _ = 1, 10 do h.second(true) end
+    assert(#h.kinds("defeat") == 0)
+end
+do
+    -- Not a hotseat game (the ladder's single seat): its agent writes its own
+    -- ending, and the HUD neither listens nor writes.
+    for _, cfg in ipairs({ { CivvisDecides = true, RunTag = "ladder" },
+                           { CivvisDecides = true, Hotseat = false, RunTag = "ladder" },
+                           { CivvisDecides = true, Hotseat = true, Play = false, RunTag = "ladder" } }) do
+        local h = endingHost(cfg)
+        h.victory(0, 3)
+        h.fire("PlayerDefeat", 0, 0)
+        h.alive[0] = false
+        if h.update ~= nil then for _ = 1, 5 do h.second(true) end end
+        assert(#h.kinds("victory") == 0 and #h.kinds("defeat") == 0, "no ending of ours outside hotseat")
+        assert(h.listeners.PlayerDefeat == nil and h.listeners.CityTransfered == nil, "and no listener")
+    end
+    -- The person-facing install with its harness gone writes nothing.
+    local beat = false
+    local function harnessed(env)
+        env.GameConfiguration.IsHotseat = function() return true end
+        env.DB = { Query = function(sql)
+            if sql:find("civvis.harness", 1, true) and beat then return { { age = 1 } } end
+            return {}
+        end }
+    end
+    local REQUIRE = { CivvisDecides = true, Hotseat = true, HotseatSeats = { 1 }, HotseatHumanSeats = { 0 },
+                      RunTag = "hs", RequireHarness = true, HarnessRun = "hs", OrdersDb = "/r/o.sqlite" }
+    local h = endingHost(REQUIRE, harnessed)
+    h.victory(0, 3)
+    h.fire("PlayerDefeat", 1, 0)
+    assert(#h.kinds("victory") == 0 and #h.kinds("defeat") == 0, "no harness, no line")
+    beat = true
+    h = endingHost(REQUIRE, harnessed)
+    h.victory(0, 3)
+    assert(#h.kinds("victory") == 1, "and with it live, the ending is written")
+    -- An unattended table (every seat CIVVIS's) is written the same way.
+    h = endingHost({ CivvisDecides = true, Hotseat = true, HotseatSeats = { 0, 1 }, HotseatHumanSeats = {},
+                     RunTag = "sp" })
+    h.local_player = 0
+    h.victory(1, 3)
+    h.has(h.kinds("victory")[1], { '"run":"sp"', '"team":1', '"members":[1]', '"local_player":0' })
+end
+print("all table ending checks passed")

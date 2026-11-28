@@ -580,7 +580,18 @@ them off, and no other install carries them):
   in `CivvisControlAutoClose.lua`). The cover lifts on that press, which the
   shipped screen announces (`LuaEvents.PlayerChange_Close`, PlayerChange.lua:59),
   after the camera and zoom go back where the person ended their last turn
-  and another seat's selection is dropped.
+  and another seat's selection is dropped. As their turn begins (still under
+  the cover) two things a CIVVIS turn leaves are cleared: the status lines on
+  screen (Panels/StatusMessagePanel.lua drops gossip at a seat's end of turn,
+  :317-320, but keeps combat and other plain lines their full 7 s, :10/:254,
+  and rollover gossip has no end of turn after it), which are hidden; and an
+  emergency screen (XP2 WorldCrisisPopup.lua, raised for whoever is local,
+  :43-45, queued at :221, not a screen the closer serves) queued since the
+  person's turn ended, which is taken off the queue: it opened on their turn
+  with the CIVVIS seat's view, and its OK accepted the emergency for them
+  (:287-292). Their own emergencies still open from their notification (:404).
+  One `hotseat_left_behind` record says what went. ⚠ Tests only
+  (`hotseat_cover_test.lua` 10).
 
 ⚠ **A popup queued under a higher one is held hidden, and a hidden context
 does not tick.** That is why the shipped hotseat background asks for
@@ -604,10 +615,15 @@ closed under the cover like the rest. ⚠ Tests only so far
 (`hotseat_cover_queue_test.lua` 2b). The cover's own clock is the backstop: a seat's
 hand-over pause still standing 1.5 s in is pressed by event
 (`LuaEvents.CivvisHotseatStartTurn`), which reaches a hidden context. A seat
-quiet for 90 s, 180 s with no seat active, or the person's own turn waiting
-10 s makes the cover stand aside for that turn (`hotseat_cover`, reason
-`yield_*`), and the harness's screen rescue, which does not read the screen
-while the cover is up, sees the game again.
+quiet for 90 s, a CIVVIS seat's turn standing 240 s however its controller
+beats (`HotseatCoverLongSeconds`, `yield_long`: a controller past its forfeit
+ladder still stamps every pass, so `quiet` never grows on that wedge; the seat
+watch below forces such a turn at 180 s and two retries fit before 240), 180 s
+with no seat active, or the person's own turn waiting 10 s makes the cover
+stand aside for that turn (`hotseat_cover`, reason `yield_*`, the lift record's
+`seat_turn` the seconds that turn had stood), and the harness's screen rescue,
+which does not read the screen while the cover is up, sees the game again.
+600 CIVVIS seat turns on this Mac took 0.5-36 s. ⚠ `yield_long` is tests only.
 
 **A seat's defeat on a CIVVIS turn keeps the cover.** Hotseat shows any human
 seat's defeat to whoever's turn it is (EndGameMenu.lua:1012-1013), and the
@@ -722,6 +738,48 @@ record is the stand-in stepping in: the turn should still end, with `forced`
 above 0 in that turn's `end_turn_wait`. The same `blocker` and `refusing`
 reported again 30 s later is the next thing to fix, and the record names it.
 Neither record on a stalled turn means the stand-in never got its pulse.
+
+**Its end of turn was being lost to the hand-over's pause** (2026-11-28). In
+`live-6p-20261128T0405Z` (at 698089e4, before the stand-in above) the stub's
+turn 3 stood fourteen minutes with NEXT TURN lit, and Civ VI's own
+`Logs/net_message_debug.log` said why:
+
+    Player 0 set TurnActive 1, TurnActiveCount: 1
+    GameCore SEND: GamePaused: gamePaused=1
+    GameCore SEND: PlayerTurnComplete: ePlayer=0, eReason=0xb6fa1284
+    GameCore SEND: GamePaused: gamePaused=0
+    GameCore RECV (0): PlayerTurnComplete: ePlayer=0, eReason=0xb6fa1284
+    PlayerTurnComplete ignored due to game paused.
+
+Start Turn releases the seat's own pause at once (`SetWantsPause(false)`,
+PlayerChange.lua:229-230), and the game's pause is lifted by a `GamePaused`
+message a moment later. The stub plays in a frame, so it sent its turn complete
+in between. The engine dropped it, and `UI.HasSentTurnComplete()` kept
+answering true, so neither the agent (`requestEndTurn` returns at that flag) nor
+the seat watch (which left a sent turn to the engine) asked again. The earlier
+wedges fit the same pattern (holds refused at turn begin, every later request a
+no-op), but their net logs are gone. Three changes, all for the stand-in's own
+turn unless said otherwise:
+
+- while its turn is active, its seat gate stays shut until
+  `GameConfiguration.IsPaused()` reads false. The shipped unit panel waits the
+  same way after the hand-over closes (UnitPanel.lua:2843-2858);
+- a step that finds the turn still active but reading as sent unreadies it
+  where the game allows (ActionPanel.lua:535-537,
+  `UI.RequestAction(ActionTypes.ACTION_UNREADYTURN)`), or else sends SHIFT+ENTER's
+  request past that flag (`resent` in `stand_in_stuck`);
+- for every watched seat, the seat watch asks again on a sent turn once it has
+  stood its age limit (30 s for a stub, 180 s for any seat; `how` in
+  `seat_stuck_end_turn`/`seat_quiet_end_turn`). Within the quiet rule alone, a
+  sent turn is still left to the engine.
+
+Every seat-watch report and `stand_in_stuck` carries `game_paused`. A CIVVIS
+seat's gate is unchanged: it asks for its end of turn only once its board is
+answered, well after the game unpauses. ⚠ Tests only. In the first live check,
+a `PlayerTurnComplete ignored due to game paused.` line in
+`~/Library/Application Support/Sid Meier's Civilization VI/Firaxis Games/Sid Meier's Civilization VI/Logs/net_message_debug.log`
+(rewritten at every launch, so read it before Civ VI restarts) means the gate
+did not hold.
 
 ⚠⚠ **Measured 2026-11-27: the first cut killed the game.** It put the cover
 ABOVE the hand-over (the EndGameMenu slot) and kept the hand-over drawn under

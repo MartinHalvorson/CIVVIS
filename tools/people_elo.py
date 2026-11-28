@@ -28,17 +28,29 @@ run's tag:
      "leader": "LEADER_GILGAMESH", "agents": ["holy"], "winner": "person" or
      the agent that won, "victory": "VICTORY_RELIGIOUS", "turn": 143,
      "players": 2, "map": ..., "map_size": ..., "speed": ..., "difficulty": ...,
-     "diplomatic": true, "revision": the decider's}
+     "diplomatic": true, "revision": the decider's,
+     "genome": what the CIVVIS seats were armed with (`genome_line`)}
+
+`genome` is on the lines of games whose run said (`civ6_hotseat.py
+--genome`, from 2026-11-28); a line without it reads as it always has.
 
 `record` reads the run's `summary.json` (`civ6_hotseat.py` writes the ending
 for a person's table as it does for an unattended one). The harness calls it
-when a named person's game ends with a victory or an elimination on record;
-a game that ended any other way (the person conceded, or closed the game) has
+when a named person's game ends with a victory or an elimination on record:
+a victory is the winner's; every CIVVIS seat eliminated is the person's win;
+the person eliminated while CIVVIS seats play on is their loss (`victory`
+`elimination`), to the seat that took their last city where the game said
+which. The turn limit with the Score victory off ends a game nobody won, and
+is not recorded; a game that ended any other way (the person conceded, or closed the game) has
 no ending the game itself declared, and is recorded only when someone says who
 won: `--winner person` or `--winner civvis` (`civ6_hotseat.py --stop --resign`
 does the second for the person who is giving the game up). Recording the same
 game twice changes nothing; recording it again with a different answer
-corrects the line.
+corrects the line. A game is one line whatever its runs: a game resumed from
+a save (`civ6_hotseat.py --resume`) is played under a new tag but keeps the
+time it began (`at`), and a second ending of a game already on record under
+another tag (a save from before its ending, played to another) is not added:
+the first ending stands.
 
 **The rating** is fitted where the page is built (`beta/elo_page.py`,
 `people`): each game is a table of the person and the agents they met, each
@@ -54,6 +66,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import hashlib
 import json
 import subprocess
 import sys
@@ -73,6 +86,9 @@ CIVVIS = "civvis"
 FLAGSHIP = "jack"
 #: `victory` for a game nobody won by the game's own rules.
 CONCESSION = "concession"
+#: `victory` for the person eliminated while CIVVIS seats played on: no
+#: victory of the game's, the person's game over.
+ELIMINATION = "elimination"
 
 
 class NotRecorded(ValueError):
@@ -85,6 +101,32 @@ def table_agents(summary: dict) -> list[str]:
     seats = [int(seat) for seat in summary.get("civvis_seats") or []]
     named = {int(seat): agent for seat, agent in (summary.get("seat_agents") or {}).items()}
     return [named.get(seat, FLAGSHIP) for seat in seats]
+
+
+def genome_line(genome) -> dict | None:
+    """What the CIVVIS seats were armed with, as a line keeps it: the run
+    summary's `genome` (`civ6_hotseat.live_genome`: `live` or `stock`, where
+    its list came from, how many genes it listed) with the genes it played
+    beyond the decider's deployment genome and those it could not play
+    counted, not named (210 names at the 2026-11-28 live list; they stay in
+    the run's `genome.json`). `forced_digest` names that set exactly: the
+    first 12 hex digits of the SHA-256 of its sorted names, one a line, so
+    two games are seen to be against the same genes. None for a run that
+    did not say."""
+    if not isinstance(genome, dict) or not genome.get("genome"):
+        return None
+    line = {"genome": genome.get("genome"), "source": genome.get("source"),
+            "listed": genome.get("listed")}
+    forced = genome.get("forced")
+    if isinstance(forced, list):
+        line["forced"] = len(forced)
+        line["forced_digest"] = hashlib.sha256(
+            "\n".join(sorted(str(tag) for tag in forced)).encode()).hexdigest()[:12]
+    if isinstance(genome.get("dropped"), list):
+        line["dropped"] = len(genome["dropped"])
+    if genome.get("note"):
+        line["note"] = genome["note"]
+    return line
 
 
 def game_row(summary: dict, *, winner: str | None = None, victory: str | None = None,
@@ -119,12 +161,16 @@ def game_row(summary: dict, *, winner: str | None = None, victory: str | None = 
                           "with --winner person or --winner civvis")
     elif result.get("kind") == "victory":
         # Every other seat at a person's table is ours, so a victory that is
-        # not one of our seats' is the person's.
+        # not one of our seats' is the person's, unless the table's own record
+        # named the winning players and the person is not among them.
         if result.get("ours"):
             won_seat = result.get("winner_seat")
             if won_seat is None or int(won_seat) not in seats:
                 raise NotRecorded("the summary does not say which CIVVIS seat won")
             winner = agents[seats.index(int(won_seat))]
+        elif result.get("person") is False:
+            raise NotRecorded(f"team {result.get('team')} won (players {result.get('members')}): neither "
+                              "the person nor a CIVVIS seat. Say who won with --winner")
         else:
             winner = PERSON
         victory = victory or result.get("victory_type") or result.get("victory")
@@ -132,10 +178,23 @@ def game_row(summary: dict, *, winner: str | None = None, victory: str | None = 
     elif result.get("kind") == "defeat":
         # Every CIVVIS seat eliminated with the game still on: the person's.
         winner, victory, turn = PERSON, victory or "VICTORY_CONQUEST", result.get("turn")
+    elif result.get("kind") == "eliminated":
+        # The person eliminated while CIVVIS seats played on: theirs lost, to
+        # the seat that took their last city where the game said which, else
+        # to the table (its one agent at a duel).
+        taker = result.get("winner_seat") if result.get("ours") else None
+        if taker is not None and int(taker) in seats:
+            winner = agents[seats.index(int(taker))]
+        else:
+            winner = agents[0] if len(set(agents)) == 1 else CIVVIS
+        victory, turn = victory or ELIMINATION, result.get("turn")
+    elif result.get("kind") == "time":
+        raise NotRecorded("the game reached its turn limit with the Score victory off, so nobody "
+                          "won it; the people's record rates games somebody won")
     else:
         raise NotRecorded(f"the summary's ending is not one this reads: {result!r}")
     off = summary.get("victories_off")
-    return {
+    row = {
         "tag": summary.get("tag"),
         "at": summary.get("started") or summary.get("utc"),
         # The game's own word for when, where it gave one: the same line
@@ -155,6 +214,12 @@ def game_row(summary: dict, *, winner: str | None = None, victory: str | None = 
         "diplomatic": "VICTORY_DIPLOMATIC" not in off if isinstance(off, list) else None,
         "revision": summary.get("revision"),
     }
+    genome = genome_line(summary.get("genome"))
+    if genome is not None:
+        # Only where the run said: a game recorded before runs did is the same
+        # line recorded again.
+        row["genome"] = genome
+    return row
 
 
 def parse_rows(text: str) -> dict[str, dict]:
@@ -207,10 +272,24 @@ def branch_record(repo: Path, branch: str = LEDGER_BRANCH, api=gh_api) -> tuple[
     return text, listed.get("sha")
 
 
+def same_game(rows: dict[str, dict], row: dict) -> str | None:
+    """The tag another line of the record holds this game under: the same
+    person, and the same moment it began. A resumed game (`civ6_hotseat.py
+    --resume`) is a new run with a new tag and keeps its first run's start."""
+    if not row.get("at") or not row.get("person"):
+        return None
+    for tag, held in rows.items():
+        if tag != row.get("tag") and held.get("person") == row["person"] and held.get("at") == row["at"]:
+            return tag
+    return None
+
+
 def publish(row: dict, *, branch: str = LEDGER_BRANCH, repo: Path | None = None,
             api=gh_api, attempts: int = 3) -> str:
-    """Put one game's line on the ledger branch. Returns "published", or
-    "already" when the branch's line for the game says the same.
+    """Put one game's line on the ledger branch. Returns "published",
+    "already" when the branch's line for the game says the same, or
+    "already, as TAG" when the game is on record under another run's tag
+    (the first ending stands; nothing is written).
 
     The write names the file it read; one that lost a race with another
     writer is refused by GitHub, read again and redone, never forced."""
@@ -223,6 +302,9 @@ def publish(row: dict, *, branch: str = LEDGER_BRANCH, repo: Path | None = None,
         rows = parse_rows(text)
         if rows.get(row["tag"]) == row:
             return "already"
+        held = same_game(rows, row)
+        if held is not None:
+            return f"already, as {held}"
         rows[row["tag"]] = row
         body = {"message": f"ledger: people ({row['person']}, {row['tag']})",
                 "content": base64.b64encode(rows_text(rows).encode()).decode(),
@@ -297,7 +379,8 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(row, sort_keys=True, indent=2))
             return 0
         state = publish(row, branch=args.branch, repo=args.repo)
-        print(f"people_elo: {state}: {said(row)}")
+        kept = " (the game's first ending stands)" if state.startswith("already, as") else ""
+        print(f"people_elo: {state}{kept}: {said(row)}")
     text, _ = branch_record(args.repo, args.branch)
     if args.command == "list":
         print("\n".join(said(row) for row in parse_rows(rows_text(parse_rows(text))).values())
