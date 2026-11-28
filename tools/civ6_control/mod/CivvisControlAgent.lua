@@ -29637,6 +29637,8 @@ local function onTeamVictory(team, victoryType, eventID)
 		end
 	end);
 	if not exported then emit("final_state_error", {error = tostring(exportError)}); end
+	-- Hotseat: "Just One More Turn" plays on with this seat (`CivvisSeat.oneMoreTurn`).
+	if cfg.Hotseat == true and not finished then CivvisSeat.victoryStop = true; end
 	finished = true;
 	emit("victory", {
 		turn = try(function() return Game.GetCurrentGameTurn(); end, -1),
@@ -29661,12 +29663,35 @@ local function onPlayerDefeat(player, defeat, eventID)
 	local pid = try(function() return Game.GetLocalPlayer(); end, -1);
 	if player == pid then
 		finished = true;
+		-- A seat defeated is done, one more turn or not.
+		CivvisSeat.victoryStop = nil;
 		pcall(CivvisQueue.resetTimescale, "defeated");
 	end
 	emit("defeat", {
 		turn = try(function() return Game.GetCurrentGameTurn(); end, -1),
 		player = player, defeat = defeat, local_player = pid,
 		ours = (player == pid),
+	});
+end
+
+-- ★ "JUST ONE MORE TURN" PLAYS ON (hotseat only). A victory stops the seat
+-- that was local when it came (`onTeamVictory`: `finished`, for good on the
+-- ladder, whose harness ends the game there). In a person's game the end
+-- screen offers to play on (Base/Assets/UI/EndGame/EndGameMenu.lua:349-351
+-- `function OnBack() Close(); LuaEvents.EndGameMenu_OneMoreTurn(); end`),
+-- and the game goes on with every seat: before 2026-11-28 the seat this
+-- context plays was then played by nobody, its turn standing until the
+-- cover stood aside. A seat the victory stopped plays again; one defeated
+-- (`onPlayerDefeat`, "no cities remain") stays stopped. Every context hears
+-- the event (LuaEvents reach hidden contexts too) and only the one the
+-- victory stopped answers it.
+function CivvisSeat.oneMoreTurn()
+	if cfg.Hotseat ~= true or CivvisSeat.victoryStop ~= true then return; end
+	CivvisSeat.victoryStop = nil;
+	finished = false;
+	emit("one_more_turn", {
+		turn = try(function() return Game.GetCurrentGameTurn(); end, -1),
+		local_player = try(function() return Game.GetLocalPlayer(); end, -1),
 	});
 end
 
@@ -30640,6 +30665,10 @@ function Initialize()
 	end
 	-- A second listener: an open escape is re-read when our turn begins.
 	pcall(function() Events.LocalPlayerTurnBegin.Add(CivvisSeat.gate(CivvisLedger.flushSpyMissions)); end);
+	-- Hotseat: the end screen's "Just One More Turn" (`CivvisSeat.oneMoreTurn`).
+	if cfg.Hotseat == true then
+		pcall(function() LuaEvents.EndGameMenu_OneMoreTurn.Add(CivvisSeat.oneMoreTurn); end);
+	end
 	if cfg.FiraxisSelfPlay == true then CivvisSelfPlay.wire(); end
 end
 

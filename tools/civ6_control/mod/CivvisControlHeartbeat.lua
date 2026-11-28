@@ -540,6 +540,12 @@ function CivvisSeatWatch.arm()
 	pcall(function()
 		Events.TeamVictory.Add(function() CivvisSeatWatch.over = true; end);
 	end);
+	-- "Just One More Turn" (EndGameMenu.lua:349-351 `OnBack` raises
+	-- `LuaEvents.EndGameMenu_OneMoreTurn()`) plays the game on, so the watch
+	-- watches again: before 2026-11-28 it stood down for the rest of the game.
+	pcall(function()
+		LuaEvents.EndGameMenu_OneMoreTurn.Add(function() CivvisSeatWatch.over = false; end);
+	end);
 	CivvisVSyncAB.log("seat_watch_armed", string.format('"clock":%s,"quiet_seconds":%s',
 		tostring(type(stockTick) == "function"),
 		CivvisSeatWatch.field(tonumber(cfg.SeatQuietSeconds) or 45)));
