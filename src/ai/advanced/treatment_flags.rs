@@ -608,6 +608,10 @@ impl AdvancedAi {
         /// science run brings the Spy-slot civics forward off a Science aim;
         /// see `advanced/rival_science_run_opens_the_spy_civics.rs`.
         rival_science_run_opens_the_spy_civics => enable_rival_science_run_opens_the_spy_civics, disable_rival_science_run_opens_the_spy_civics;
+        /// Opt-in gene `person-units-threaten-civilians` (hotseat): a person's
+        /// soldiers threaten our civilians at any war state; see
+        /// `advanced/person_units_threaten_civilians.rs`.
+        person_units_threaten_civilians => enable_person_units_threaten_civilians, disable_person_units_threaten_civilians;
         // ---- append: s-s --------------------------------------------
         /// Opt-in gene `siege-goes-on-the-forecast`: the siege train goes,
         /// holds and stands down on the capture forecast, and Siege rows rank

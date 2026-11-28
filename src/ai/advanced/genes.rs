@@ -6438,6 +6438,14 @@ pub const GENES: &[Gene] = &[
     // ahead of the government ladder. Opt-in; see
     // `advanced/rival_science_run_opens_the_spy_civics.rs`.
     Gene { tag: "rival-science-run-opens-the-spy-civics", field: "rival_science_run_opens_the_spy_civics", kind: Kind::OptIn, enable: AdvancedAi::enable_rival_science_run_opens_the_spy_civics, disable: AdvancedAi::disable_rival_science_run_opens_the_spy_civics },
+    // Hotseat 2026-11-27 (hotseat-20261128T031456Z p1 t9-t12): the person's
+    // Scout shadowed the religion seat's first Settler at peace, the Settler
+    // walked out ahead of its guard because "nothing visible can reach this
+    // tile", and a surprise war took it. A person can declare and capture on
+    // one turn, so a person's soldiers threaten our civilians at any war
+    // state. No-op unless a rival carries the host's `person` mark (hotseat
+    // only). Opt-in; see `advanced/person_units_threaten_civilians.rs`.
+    Gene { tag: "person-units-threaten-civilians", field: "person_units_threaten_civilians", kind: Kind::OptIn, enable: AdvancedAi::enable_person_units_threaten_civilians, disable: AdvancedAi::disable_person_units_threaten_civilians },
     // ---- append: s-s ------------------------------------------------
     // Kristina Deity 11-10 reached Nationalism at t122 with 8 cities on three
     // terrain classes and built no Open-Air Museum by t150 (+48 Culture and
