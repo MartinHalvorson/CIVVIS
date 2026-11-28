@@ -28,6 +28,7 @@
 use super::{Deal, Item};
 use crate::ai::VictoryTarget;
 use crate::mirror::{StateCity, StateRival, StateSnapshot};
+use crate::shared_sort::SharedSort;
 use std::collections::BTreeMap;
 
 // ---- the clock -------------------------------------------------------------
@@ -161,7 +162,7 @@ pub fn board_purchase_rate(state: &StateSnapshot) -> f64 {
     if rates.is_empty() {
         return GOLD_PER_PRODUCTION_PURCHASE;
     }
-    rates.sort_by(f64::total_cmp);
+    rates.sort_by_shared(f64::total_cmp);
     rates[rates.len() / 2].clamp(1.0, 8.0)
 }
 
@@ -587,7 +588,7 @@ impl Position {
                 .filter(|index| luxury_left[*index].is_none_or(|left| left > 0))
                 .map(|index| (step(index, delta[index], -1), index))
                 .collect();
-            order.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+            order.sort_by_shared(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
             for (_, index) in order.into_iter().take(CITIES_PER_LUXURY) {
                 delta[index] -= 1;
                 if let Some(left) = luxury_left[index].as_mut() {
@@ -599,7 +600,7 @@ impl Position {
             let mut order: Vec<(f64, usize)> = (0..count)
                 .map(|index| (step(index, delta[index], 1), index))
                 .collect();
-            order.sort_by(|a, b| b.0.total_cmp(&a.0).then(a.1.cmp(&b.1)));
+            order.sort_by_shared(|a, b| b.0.total_cmp(&a.0).then(a.1.cmp(&b.1)));
             for (_, index) in order.into_iter().take(CITIES_PER_LUXURY) {
                 delta[index] += 1;
             }
