@@ -9348,6 +9348,20 @@ local function exportState(player, pid, turn, frame, eventKind)
 				-- (`CivvisRivalWars`): an ally already at war with our enemy
 				-- is the Military Alliance's +5.
 				at_war_with = CivvisRivalWars(pid, otherId),
+				-- Hotseat only: whether a person plays this rival. The harness
+				-- lists the person's seat in `HotseatHumanSeats`; a person can
+				-- declare war and take a civilian on one turn, so the decider's
+				-- opt-in `person-units-threaten-civilians` reads their soldiers as
+				-- able to take ours whatever the war state. nil on every other
+				-- install and for every rival a CIVVIS seat plays, so a
+				-- single-player or ladder board is byte for byte as before.
+				person = (function()
+					if cfg.Hotseat ~= true then return nil; end
+					for _, seat in ipairs(cfg.HotseatHumanSeats or {}) do
+						if tonumber(seat) == otherId then return true; end
+					end
+					return nil;
+				end)(),
 				-- Whether this rival currently grants OUR seat Open Borders —
 				-- the shipped overview's "received" direction
 				-- (DiplomacyActionView.lua:1429, HasOpenBordersFrom). The
@@ -13926,9 +13940,11 @@ CivvisTrade.seatBoard = function(player, pid, turn)
 		-- (DLC/CivRoyaleScenario/UI/Replacements/NotificationPanel_CivRoyaleScenario.lua:33-36,
 		-- `NotificationManager.GetList(playerID)` then `Find` by id), and the one
 		-- type asked directly (`FindType`, Base/Assets/UI/ActionPanel.lua:454).
-		probe.diplomacy_session = try(function()
-			return NotificationManager.FindType(NotificationTypes.DIPLOMACY_SESSION, pid) ~= nil;
-		end, nil);
+		if NotificationTypes ~= nil then
+			probe.diplomacy_session = try(function()
+				return NotificationManager.FindType(NotificationTypes.DIPLOMACY_SESSION, pid) ~= nil;
+			end, nil);
+		end
 		local diplo, total = {}, 0;
 		CivvisK.guard(function()
 			for _, id in pairs(NotificationManager.GetList(pid) or {}) do

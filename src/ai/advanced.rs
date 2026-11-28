@@ -8004,6 +8004,10 @@ pub struct AdvancedAi {
     /// nearest major holding one. See `advanced/foreign_site_open_border.rs`.
     /// Off by default.
     foreign_site_buys_the_open_border: bool,
+    /// `founding-voyage-2`: version one's voyage, and the soldier at sea
+    /// beside the Settler sails with it. See
+    /// `advanced/maori_founds_from_the_sea.rs`. Off by default.
+    founding_voyage_2: bool,
     // ---- append: g-k ------------------------------------------------
     /// `guru-walks-to-the-wounded`: a Guru with nothing to heal this turn
     /// walks to the wounded of its faith instead of at the nearest rival. See
@@ -9796,6 +9800,10 @@ pub struct AdvancedAi {
     /// government ladder. See
     /// `advanced/rival_science_run_opens_the_spy_civics.rs`. Off by default.
     rival_science_run_opens_the_spy_civics: bool,
+    /// `person-units-threaten-civilians` (hotseat): the soldiers of a rival
+    /// a person plays threaten our civilians whatever the war state. See
+    /// `advanced/person_units_threaten_civilians.rs`. Off by default.
+    person_units_threaten_civilians: bool,
     // ---- append: s-s ------------------------------------------------
     /// `score-seat-raises-wonders`: a Score seat keeps a wonder going in its
     /// capital from turn 40 (Online) and in a second city from turn 90, as a
@@ -12772,6 +12780,9 @@ mod emptied_camp_is_taken;
 /// `first-ship-closes-the-dark-age`: see
 /// `advanced/first_ship_closes_the_age.rs`.
 mod first_ship_closes_the_age;
+/// `person-units-threaten-civilians`: see
+/// `advanced/person_units_threaten_civilians.rs`.
+mod person_units_threaten_civilians;
 /// `raiders-holding-a-settler-are-hunted`: see
 /// `advanced/raiders_holding_a_settler.rs`.
 mod raiders_holding_a_settler;
@@ -25145,8 +25156,10 @@ impl AdvancedAi {
                 .is_some_and(|tile| g.rules.is_water(tile))
         });
         g.units.values().any(|unit| {
+            // `person-units-threaten-civilians`: a person's soldier takes a
+            // civilian at any war state. Off, exactly `is_at_war`.
             if unit.owner == pid
-                || !g.is_at_war(pid, unit.owner)
+                || !self.civilian_threat_owner(g, pid, unit.owner)
                 || !g.unit_visible_to(unit.id, pid)
             {
                 return false;
