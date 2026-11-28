@@ -27,6 +27,8 @@ mod acropolis_before_the_deterrent;
 mod adopted_faith_sanctuary;
 /// The turn's assessment: `assess` and how it reads war and land. See
 /// `advanced/assessment.rs`.
+/// `asks-go-once-a-turn`: see `advanced/asks_go_once_a_turn.rs`.
+mod asks_go_once_a_turn;
 mod assessment;
 mod builder_operation_refusals;
 /// Builders: job ranking, improvement values, the Builder and special-improver
@@ -5692,6 +5694,11 @@ pub struct AdvancedAi {
     /// `breaker-walks-under-a-shield`: where the breaker and its shield last
     /// stood, for the journal of its loss. `None` while the gene is off.
     breaker_shield_memory: Option<breaker_walks_under_a_shield::BreakerShieldMemory>,
+    /// `asks-go-once-a-turn`: the live bridge sends a delegation, friendship,
+    /// denouncement, alliance, deal or Trader route at most once in a host
+    /// turn, however many frames the turn has. See
+    /// `advanced/asks_go_once_a_turn.rs`. Off by default.
+    asks_go_once_a_turn: bool,
     // ---- append: c-d ------------------------------------------------
     /// `culture-and-religion-build-the-statue`: a Culture or Religious seat
     /// claims the Statue of Liberty from turn 120 (its Harbor too) and, with

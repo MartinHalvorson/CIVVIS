@@ -150,6 +150,10 @@ impl AdvancedAi {
         /// `BasicAi::opening_defense_spares_the_holy_site`; opt-in gene
         /// `opening-defense-spares-the-holy-site`.
         base.opening_defense_spares_the_holy_site => enable_opening_defense_spares_the_holy_site, disable_opening_defense_spares_the_holy_site;
+        /// Opt-in gene `asks-go-once-a-turn`: a diplomatic ask, a deal or a
+        /// Trader route goes to the host once a turn, not once a frame; see
+        /// `advanced/asks_go_once_a_turn.rs`.
+        asks_go_once_a_turn => enable_asks_go_once_a_turn, disable_asks_go_once_a_turn;
         // ---- append: c-d --------------------------------------------
         /// Opt-in gene `culture-and-religion-build-the-statue`; see
         /// `advanced/diplo_wonder_claim.rs`.

@@ -5511,6 +5511,13 @@ pub const GENES: &[Gene] = &[
     // none, four for one, no trip for two). Opt-in; see
     // `advanced/band_plays_the_stage_at_hand.rs`.
     Gene { tag: "band-plays-the-stage-at-hand", field: "band_plays_the_stage_at_hand", kind: Kind::OptIn, enable: AdvancedAi::enable_band_plays_the_stage_at_hand, disable: AdvancedAi::disable_band_plays_the_stage_at_hand },
+    // Hotseat `hotseat-20261128T031456Z`, turns 12-16: every diplomatic ask
+    // and Trader route a seat sent in a turn's first frame was sent again in
+    // its replan frame and refused there (three delegations after the first
+    // had gone, a Great Work purchase, a route refused `no_route` twice). A
+    // turn's second frame cannot change those answers. The live bridge sends
+    // each ask once a turn. Opt-in; see `src/bin/civvis_orders/asks_once_a_turn.rs`.
+    Gene { tag: "asks-go-once-a-turn", field: "asks_go_once_a_turn", kind: Kind::OptIn, enable: AdvancedAi::enable_asks_go_once_a_turn, disable: AdvancedAi::disable_asks_go_once_a_turn },
     // ---- append: c-d ------------------------------------------------
     // `culture-and-religion-build-the-statue`: a Culture or Religious seat
     // claims the Statue of Liberty (and its Harbor) from turn 120 and holds it
