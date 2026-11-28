@@ -1094,6 +1094,86 @@ class MonitorTest(unittest.TestCase):
         self.assertEqual(stats["last"]["orders_source"], "civvis")
 
 
+class NoSilentGiveUpTest(unittest.TestCase):
+    """Places the harness used to give up, or warn, without a word a person
+    could act on."""
+
+    class Proc:
+        def __init__(self, code):
+            self.returncode = code
+
+        def poll(self):
+            return self.returncode
+
+    def test_a_worker_that_keeps_dying_is_restarted_later_each_time_then_said_to_be_down(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            lines: list[str] = []
+            brains = hotseat.Brains(Path(tmp), "hs", [3], Path(tmp) / "o.sqlite", Path("/bin/x"),
+                                    "science", lines.append)
+            seat_dir = brains.seat_dir(3)
+            seat_dir.mkdir(parents=True)
+            (seat_dir / "brain.log").write_text("[brain] up\ncivvis-orders: unknown --with treatment \"x\"\n")
+            starts: list[float] = []
+            clock = [0.0]
+
+            def start(seat):
+                starts.append(clock[0])
+                brains.procs[seat] = self.Proc(2)
+
+            brains.procs[3] = self.Proc(2)
+            with patch.object(brains, "start", side_effect=start):
+                for _ in range(4000):
+                    brains.keep_alive(clock=lambda: clock[0])
+                    clock[0] += 0.5
+            self.assertEqual(len(starts), hotseat.WORKER_RESTARTS)
+            gaps = [b - a for a, b in zip(starts, starts[1:])]
+            self.assertTrue(all(b >= a for a, b in zip(gaps, gaps[1:])), "never sooner than the last wait")
+            self.assertGreaterEqual(gaps[-1], hotseat.WORKER_BACKOFF_MAX_S)
+            self.assertIn('its last words: civvis-orders: unknown --with treatment "x"', lines[0])
+            down = [line for line in lines if "is left down" in line]
+            self.assertEqual(len(down), 1, "said once")
+            self.assertIn("plays the mod's stand-in ladder, not CIVVIS", down[0])
+            self.assertIn(str(seat_dir / "brain.log"), down[0])
+
+    def test_a_missed_start_turn_says_whose_screen_to_press(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            lines: list[str] = []
+            monitor = hotseat.Monitor(Path(tmp), "hs", [1, 2], game_args(players=3, agents=["holy", "tourist"]),
+                                      lines.append)
+            self.addCleanup(monitor.close)
+            for seat in (0, 2):
+                monitor.on_base({"kind": "hotseat_start_turn", "pressed": False, "player": seat})
+            self.assertEqual(lines, ["⚠ could not press Start Turn for seat 0: press it on your hand-over screen",
+                                     "⚠ could not press Start Turn for seat 2: its hand-over screen is waiting; "
+                                     "press Start Turn there for CIVVIS TouristTrap (seat 2)"])
+
+    def test_the_report_counts_every_frames_orders(self) -> None:
+        # The live game: 235 orders applied, 33 of them on a turn's later frames,
+        # which the turn rows' `orders_applied` (its first frame) leaves out.
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp)
+            lines: list[str] = []
+            monitor = hotseat.Monitor(run_dir, "hs", [1], game_args(players=2), lines.append)
+            self.addCleanup(monitor.close)
+            (run_dir / "hs-p1").mkdir()
+            with (run_dir / "hs-p1" / "events.jsonl").open("a") as out:
+                for event in ({"kind": "orders", "applied": 3}, {"kind": "orders", "applied": 2},
+                              {"kind": "turn", "turn": 5, "orders_applied": 3, "orders_source": "civvis"}):
+                    out.write(json.dumps(event) + "\n")
+            monitor.poll()
+            self.assertIn("turn 5: CIVVIS jack 1 (seat 1) — 3 opening orders applied (civvis)", lines[0])
+            report = hotseat.smoke_report(monitor, lines.append)
+            self.assertEqual(report["seats"]["1"]["orders_all"], 5)
+            self.assertIn("5 orders applied", lines[-1])
+
+    def test_a_launch_that_never_reaches_the_menu_says_what_to_look_for(self) -> None:
+        source = (hotseat.HERE / "civ6_hotseat.py").read_text()
+        block = source[source.index("if not launcher.wait_for_launched_main_menu(process, 420):"):]
+        block = block[:block.index("return 3")]
+        self.assertIn("an update, a \"\n                    \"Steam or 2K dialog", block)
+        self.assertIn("`civ6-hotseat.sh --stop --quit-game` and the same command again", block)
+
+
 class ResumeTest(unittest.TestCase):
     def test_the_newest_hotseat_save_is_staged_under_one_name(self) -> None:
         import os

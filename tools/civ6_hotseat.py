@@ -751,6 +751,24 @@ def worker_session() -> dict:
     return {"start_new_session": True}
 
 
+#: A worker that keeps dying is restarted this many times, the wait before each
+#: doubling from 1 s up to this cap, and then left down (and said so).
+WORKER_RESTARTS = 20
+WORKER_BACKOFF_MAX_S = 60.0
+
+
+def last_words(seat_dir: Path) -> str:
+    """The last line of a seat's brain.log, for the line that says it died."""
+    try:
+        with (seat_dir / "brain.log").open("rb") as handle:
+            handle.seek(0, os.SEEK_END)
+            handle.seek(max(0, handle.tell() - 2048))
+            tail = handle.read().decode("utf-8", "replace").strip().splitlines()
+    except OSError:
+        return ""
+    return f"; its last words: {tail[-1][:160]}" if tail else ""
+
+
 class Brains:
     """One `civ6_brain.py` per jack seat, restarted if one dies."""
 
@@ -761,6 +779,8 @@ class Brains:
         self.treatments = list(treatments or [])
         self.procs: dict[int, subprocess.Popen] = {}
         self.restarts: dict[int, int] = {seat: 0 for seat in seats}
+        self.retry_at: dict[int, float] = {}
+        self.given_up: set[int] = set()
         self.retired: set[int] = set()
 
     def seat_dir(self, seat: int) -> Path:
@@ -805,13 +825,32 @@ class Brains:
         if proc is not None and proc.poll() is None:
             proc.terminate()
 
-    def keep_alive(self) -> None:
+    def keep_alive(self, clock=None) -> None:
+        """Restart a worker that exited, a little later each time (a worker
+        that dies at once, on a bad flag or a locked database, used to spend
+        its 20 restarts in ten seconds), and say so when one is given up: its
+        seat then plays the mod's stand-in ladder, and the person should know
+        why their opponent went quiet. It used to stop restarting silently."""
+        now = (clock or time.monotonic)()
         for seat, proc in list(self.procs.items()):
-            if proc.poll() is not None and self.restarts[seat] < 20:
-                self.restarts[seat] += 1
-                self.log(f"seat {seat}'s decision worker exited ({proc.returncode}); "
-                         f"restarting ({self.restarts[seat]})")
-                self.start(seat)
+            if proc.poll() is None or seat in self.given_up:
+                continue
+            if self.restarts[seat] >= WORKER_RESTARTS:
+                self.given_up.add(seat)
+                self.log(f"⚠ seat {seat}'s decision worker died {WORKER_RESTARTS} times and is left "
+                         f"down: from here that seat plays the mod's stand-in ladder, not CIVVIS. "
+                         f"Why it died is at the end of {self.seat_dir(seat) / 'brain.log'}; "
+                         "`civ6-hotseat.sh --stop`, then `civ6-hotseat.sh --attach`, starts it afresh.")
+                continue
+            due = self.retry_at.setdefault(seat, now + min(WORKER_BACKOFF_MAX_S,
+                                                           2.0 ** self.restarts[seat]))
+            if now < due:
+                continue
+            self.retry_at.pop(seat, None)
+            self.restarts[seat] += 1
+            self.log(f"seat {seat}'s decision worker exited ({proc.returncode}); restarting "
+                     f"({self.restarts[seat]} of {WORKER_RESTARTS}){last_words(self.seat_dir(seat))}")
+            self.start(seat)
 
     def stop(self) -> None:
         for proc in self.procs.values():
@@ -2206,7 +2245,11 @@ class Monitor:
         elif kind == "hotseat_saved":
             self.say(f"saved the game as {event.get('name')!r} (Load Game -> Hot Seat)")
         elif kind == "hotseat_start_turn" and event.get("pressed") is False:
-            self.say(f"⚠ could not press Start Turn for seat {event.get('player')}")
+            seat = event.get("player")
+            self.say(f"⚠ could not press Start Turn for seat {seat}: "
+                     + ("press it on your hand-over screen" if seat == HUMAN_SEAT and not self.unattended
+                        else f"its hand-over screen is waiting; press Start Turn there for "
+                             f"{self.name(seat) if isinstance(seat, int) else 'it'}"))
         # The HUD's seat watch (CivvisControlHeartbeat.lua, `CivvisSeatWatch`): a
         # CIVVIS seat whose turn is active while its controller does not move.
         elif kind == "seat_quiet":
@@ -2320,10 +2363,14 @@ class Monitor:
             stats["last"] = {k: event.get(k) for k in
                              ("turn", "cities", "units", "army", "score", "met",
                               "orders_source", "orders_applied", "gold")}
+            # `orders_applied` is the turn's first frame; the orders of its
+            # later frames are counted from the `orders` rows below.
             self.say(f"turn {event.get('turn')}: {self.name(seat)} — "
-                     f"{event.get('orders_applied')} orders applied "
+                     f"{event.get('orders_applied')} opening orders applied "
                      f"({event.get('orders_source')}), cities {event.get('cities')}, "
                      f"units {event.get('units')}, score {event.get('score')}")
+        elif kind == "orders":
+            stats["orders_all"] = stats.get("orders_all", 0) + int(event.get("applied") or 0)
         elif kind == "found":
             stats["found"] += 1
         elif kind == "error":
@@ -2432,7 +2479,8 @@ def smoke_report(monitor: Monitor, log: Log) -> dict:
         report["seats"][str(seat)] = dict(stats, name=monitor.names.get(seat))
         last = stats["last"]
         log(f"report: {monitor.names.get(seat)}: {stats['turns']} turns played, "
-            f"{stats['orders_applied']} orders applied, {stats['found']} cities founded, "
+            f"{stats.get('orders_all') or stats['orders_applied']} orders applied, "
+            f"{stats['found']} cities founded, "
             f"now {last.get('cities')} cities / {last.get('units')} units, "
             f"score {last.get('score')}, source {last.get('orders_source')}")
     return report
@@ -3510,7 +3558,9 @@ def run(args: argparse.Namespace) -> int:
             write_current({"pid": os.getpid(), "tag": args.tag, "run_dir": str(run_dir),
                            "started": utc(), "players": args.players, "launched_civ": True})
             if not launcher.wait_for_launched_main_menu(process, 420):
-                log("Civ VI never reached its main menu")
+                log("⚠ Civ VI did not reach its main menu in 7 minutes. Look at it: an update, a "
+                    "Steam or 2K dialog, or a crash report can stand in the way. Close what is in "
+                    "the way, then `civ6-hotseat.sh --stop --quit-game` and the same command again.")
                 return 3
             # The verification seat's half-screen window leaves room for its
             # viewer; a person playing wants the whole screen. The stub test
