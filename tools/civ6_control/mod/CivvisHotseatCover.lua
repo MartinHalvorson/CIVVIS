@@ -828,6 +828,81 @@ function CivvisHotseatCover.showWait()
 	return share;
 end
 
+-- ------------------------------------------------------------ left behind
+
+-- ★ WHAT A CIVVIS TURN LEAVES FOR THE PERSON'S TURN. Two shipped panels keep
+-- what they were given for the local player across a hotseat seat change, so
+-- the person's turn began with a CIVVIS seat's things on screen:
+--  * the status lines, Panels/StatusMessagePanel.lua. A gossip line goes at
+--    the seat's end of turn (:317 `function OnLocalTurnEnd( a,b,c )` -> :320
+--    `RemoveAllGossip();`), but the plain lines (combat and the like, :229
+--    `function AddDefault( message, displayTime )`) stay their full time (:10
+--    `local DEFAULT_TIME_TO_DISPLAY :number = 7;`, :254
+--    `uiInstance.Anim:SetEndPauseTime( displayTime );`) and a gossip line
+--    raised in the rollover after the last CIVVIS seat has no end of turn
+--    after it. The last seconds of the last CIVVIS seats, read as "your ...".
+--  * an emergency, DLC/Expansion2/UI/Additions/WorldCrisisPopup.lua: raised
+--    on `Events.EmergencyAvailable` (:399) for whoever is local (:45
+--    `local localPlayerID :number = Game.GetLocalPlayer();`) and queued
+--    (:221 `UIManager:QueuePopup(ContextPtr, PopupPriority.Low, { DelayShow = true });`).
+--    It is not a screen CivvisControlAutoClose.lua serves, so under the cover
+--    it waits in the queue, and it opened on the person's turn with the CIVVIS
+--    seat's view of the emergency; its OK then accepts it for whoever is
+--    local (:287 `function Close()` -> :292
+--    `UI.RequestPlayerOperation(Game.GetLocalPlayer(), PlayerOperations.ACCEPT_EMERGENCY, kParameters);`):
+--    the person.
+-- So as the person's turn begins, under the cover, the status lines on screen
+-- are hidden (each comes back as its instance is reused, InstanceManager.lua:40)
+-- and an emergency screen queued since their turn ended is taken off the
+-- queue. Their own emergencies still reach them: their notification opens
+-- the same screen for them (:404 `LuaEvents.NotificationPanel_EmergencyClicked`).
+CivvisHotseatCover.HELD = { "WorldCrisisPopup" };
+CivvisHotseatCover.LINES = { "/InGame/StatusMessagePanel/DefaultStack",
+	"/InGame/StatusMessagePanel/GossipStack" };
+-- Screen -> queued already when the person's turn ended (theirs, kept).
+CivvisHotseatCover.held = {};
+function CivvisHotseatCover.queued(name)
+	local up, context = false, nil;
+	pcall(function()
+		context = ContextPtr:LookUpControl("/InGame/" .. name);
+		up = context ~= nil and UIManager:IsInPopupQueue(context) == true;
+	end);
+	return up, context;
+end
+-- The person's turn ends: what of theirs is queued is theirs.
+function CivvisHotseatCover.noteHeld()
+	local c = CivvisHotseatCover;
+	for _, name in ipairs(c.HELD) do c.held[name] = c.queued(name); end
+end
+-- The person's turn begins with the cover up over it.
+function CivvisHotseatCover.leftBehind(pid)
+	local c = CivvisHotseatCover;
+	local dropped, lines = {}, 0;
+	for _, name in ipairs(c.HELD) do
+		local up, context = c.queued(name);
+		if up and not c.held[name]
+				and pcall(function() UIManager:DequeuePopup(context); end) then
+			dropped[#dropped + 1] = name;
+		end
+	end
+	for _, path in ipairs(c.LINES) do
+		pcall(function()
+			local stack = ContextPtr:LookUpControl(path);
+			for _, line in ipairs(stack:GetChildren()) do
+				if not line:IsHidden() then
+					line:SetHide(true);
+					lines = lines + 1;
+				end
+			end
+		end);
+	end
+	if #dropped > 0 or lines > 0 then
+		c.report("hotseat_left_behind", { { "player", pid }, { "turn", c.turn() },
+			{ "dropped", table.concat(dropped, ",") }, { "lines", lines } });
+	end
+	return dropped, lines;
+end
+
 -- ------------------------------------------------------------------ events
 
 function CivvisHotseatCover.onTurnEnd()
@@ -835,6 +910,9 @@ function CivvisHotseatCover.onTurnEnd()
 	CivvisHotseatCover.theirTurn = false;
 	if CivvisHotseatCover.person(pid) and CivvisHotseatCover.viewKept() then
 		CivvisHotseatCover.saveView(pid);
+	end
+	if CivvisHotseatCover.person(pid) and CivvisHotseatCover.enabled() then
+		CivvisHotseatCover.noteHeld();
 	end
 	if CivvisHotseatCover.civvis(pid) then CivvisHotseatCover.seatEnds(pid); end
 	if CivvisHotseatCover.raise("turn_end", true) and CivvisHotseatCover.person(pid) then
@@ -847,6 +925,10 @@ function CivvisHotseatCover.onTurnBegin()
 	local pid = CivvisHotseatCover.localPlayer();
 	CivvisHotseatCover.theirTurn = CivvisHotseatCover.person(pid);
 	if CivvisHotseatCover.person(pid) then
+		-- Nothing of a CIVVIS turn's is left on screen for theirs.
+		if CivvisHotseatCover.up and CivvisHotseatCover.harnessed(pid) then
+			CivvisHotseatCover.leftBehind(pid);
+		end
 		-- Their hand-over is pressed for them and the cover lifts on the press;
 		-- a person who presses their own sees it as soon as their turn begins.
 		if CivvisHotseatCover.autoStart(pid) then

@@ -45,6 +45,11 @@ local function load(config)
 			end end })
 	end
 	local endGameMenu, gameMenu = {}, {}
+	-- XP2's emergency screen, and the status panel's two stacks of lines.
+	local crisis = {}
+	world.crisisQueued, did.dropped = false, 0
+	world.lines = { ["/InGame/StatusMessagePanel/DefaultStack"] = {},
+	                ["/InGame/StatusMessagePanel/GossipStack"] = {} }
 	local env = {
 		CivvisControlConfig = config,
 		include = function() end,
@@ -57,10 +62,17 @@ local function load(config)
 			QueuePopup = function(self, ctx, priority, params)
 				did.queued[#did.queued + 1] = { ctx = ctx, priority = priority, params = params }
 			end,
-			DequeuePopup = function(self, ctx) did.dequeued = did.dequeued + 1 end,
+			DequeuePopup = function(self, ctx)
+				if ctx == crisis then
+					world.crisisQueued, did.dropped = false, did.dropped + 1
+				else
+					did.dequeued = did.dequeued + 1
+				end
+			end,
 			IsInPopupQueue = function(self, ctx)
 				return (ctx == endGameMenu and world.endGameQueued)
 					or (ctx == gameMenu and world.menuQueued)
+					or (ctx == crisis and world.crisisQueued)
 			end,
 		},
 		Options = {
@@ -142,6 +154,10 @@ local function load(config)
 		LookUpControl = function(self, path)
 			if path == "/InGame/EndGameMenu" then return endGameMenu end
 			if path == "/InGame/TopOptionsMenu" then return gameMenu end
+			if path == "/InGame/WorldCrisisPopup" then return world.noCrisis and nil or crisis end
+			if world.lines[path] then
+				return { GetChildren = function() return world.lines[path] end }
+			end
 		end,
 		SetShutdown = function(self, f) handlers.shutdown = f end,
 		SetInputHandler = function(self, f) handlers.input = f end,
@@ -1230,6 +1246,103 @@ do
 	assert(cover.tailTimes[2][1] == 1 and #cover.tailTimes[0] == 1)
 	assert(#cover.lineups[0] == 1 and cover.lineups[0][1] == 1 and cover.lineups[2][1] == 3)
 	assert(cover.seatTimes[1][1] == 9 and cover.seatTimes[3][1] == 4)
+end
+
+-- 10. Nothing of a CIVVIS turn's is left on screen for the person's turn. -----
+local function line(hidden)
+	return { hidden = hidden, IsHidden = function(self) return self.hidden end,
+	         SetHide = function(self, hide) self.hidden = hide end }
+end
+local DEFAULT, GOSSIP = "/InGame/StatusMessagePanel/DefaultStack", "/InGame/StatusMessagePanel/GossipStack"
+do
+	local cover, world, did, handlers = load(HOTSEAT())
+	-- Their own emergency screen is up as they end their turn: it is theirs.
+	world.crisisQueued = true
+	handlers.LocalPlayerTurnEnd()
+	world.pid, world.active[1] = 1, true
+	handlers.LocalPlayerTurnBegin()
+	-- Seat 1's turn: combat lines and a gossip line; one already gone.
+	local fight, gone, gossip = line(false), line(true), line(false)
+	world.lines[DEFAULT] = { fight, gone }
+	world.lines[GOSSIP] = { gossip }
+	world.active[1] = false
+	handlers.LocalPlayerTurnEnd()
+	-- The person's turn begins under the cover.
+	world.pid, world.turn, world.active[0], world.paused[0] = 0, 2, true, true
+	handlers.LocalPlayerTurnBegin()
+	assert(fight.hidden and gossip.hidden, "seat 1's lines are not the person's to read")
+	assert(world.crisisQueued and did.dropped == 0, "their own emergency screen stays")
+	assert(last(did, "hotseat_left_behind"):find('"lines":2', 1, true)
+		and last(did, "hotseat_left_behind"):find('"dropped":""', 1, true), last(did, "hotseat_left_behind"))
+	handlers.PlayerChange_Close(0)
+	assert(not cover.up)
+	-- Lines raised on their own turn are theirs.
+	local own = line(false)
+	world.lines[DEFAULT] = { own }
+	handlers.update(0.1)
+	assert(not own.hidden)
+	-- An emergency raised on a CIVVIS seat's turn (WorldCrisisPopup.lua:43-45,
+	-- :221): taken off the queue as their turn begins, never shown to them.
+	world.crisisQueued = false
+	world.active[0] = false
+	handlers.LocalPlayerTurnEnd()
+	world.pid, world.active[1] = 1, true
+	handlers.LocalPlayerTurnBegin()
+	world.crisisQueued = true
+	world.active[1] = false
+	handlers.LocalPlayerTurnEnd()
+	world.pid, world.turn, world.active[0], world.paused[0] = 0, 3, true, true
+	handlers.LocalPlayerTurnBegin()
+	assert(not world.crisisQueued and did.dropped == 1, "the CIVVIS seat's emergency screen is gone")
+	assert(own.hidden, "and the lines on screen as the turn begins")
+	assert(last(did, "hotseat_left_behind"):find('"dropped":"WorldCrisisPopup"', 1, true))
+	handlers.PlayerChange_Close(0)
+	-- Nothing left behind: nothing said.
+	local before = #kinds(did, "hotseat_left_behind")
+	world.active[0] = false
+	handlers.LocalPlayerTurnEnd()
+	world.pid, world.turn, world.active[0], world.paused[0] = 0, 4, true, true
+	handlers.LocalPlayerTurnBegin()
+	assert(#kinds(did, "hotseat_left_behind") == before)
+end
+-- --keep-handover: the same, before their own hand-over shows.
+do
+	local cover, world, did, handlers = load(HOTSEAT({ HotseatAutoStart = false }))
+	handlers.LocalPlayerTurnEnd()
+	world.crisisQueued = true
+	local fight = line(false)
+	world.lines[DEFAULT] = { fight }
+	world.turn, world.active[0], world.paused[0] = 2, true, true
+	handlers.LocalPlayerTurnBegin()
+	assert(not cover.up and fight.hidden and did.dropped == 1)
+end
+-- --no-cover (the turns are on screen anyway), a game without the expansion
+-- or the panel, and a turn the cover stood aside in: nothing is touched.
+do
+	local cover, world, did, handlers = load(HOTSEAT({ HotseatCover = false }))
+	handlers.LocalPlayerTurnEnd()
+	world.crisisQueued = true
+	local fight = line(false)
+	world.lines[DEFAULT] = { fight }
+	world.turn, world.active[0] = 2, true
+	handlers.LocalPlayerTurnBegin()
+	assert(not fight.hidden and world.crisisQueued and did.dropped == 0)
+	local cover2, world2, did2, handlers2 = load(HOTSEAT())
+	world2.noCrisis, world2.lines = true, {}
+	handlers2.LocalPlayerTurnEnd()
+	world2.turn, world2.active[0], world2.paused[0] = 2, true, true
+	handlers2.LocalPlayerTurnBegin()
+	assert(cover2.up, "nothing to look at, nothing broken")
+	local cover3, world3, did3, handlers3 = load(HOTSEAT())
+	handlers3.LocalPlayerTurnEnd()
+	world3.pid, world3.active[1] = 1, true
+	handlers3.LocalPlayerTurnBegin()
+	ticks(handlers3, 91)
+	assert(not cover3.up)
+	world3.crisisQueued = true
+	world3.turn, world3.pid, world3.active[0], world3.paused[0] = 2, 0, true, false
+	handlers3.LocalPlayerTurnBegin()
+	assert(world3.crisisQueued and did3.dropped == 0, "the person saw that turn; it is as it ships")
 end
 
 print("hotseat_cover_test: ok")

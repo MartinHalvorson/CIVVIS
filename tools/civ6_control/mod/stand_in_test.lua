@@ -36,6 +36,7 @@ local function world(cfg, opts)
 		now = 100, blocker = nil, events = {}, requests = {}, ticks = 0, dismissed = 0,
 		answered = {}, considered = 0, cancels = 0, screens = opts.screens or {},
 		lastRequest = nil, units = {}, ledger = opts.locks, errors = {},
+		actions = {}, canUnready = false, corePaused = false,
 	}
 	function w.unit(spec)
 		spec.ready = spec.ready ~= false
@@ -69,10 +70,17 @@ local function world(cfg, opts)
 		CivvisSeat = { seat = cfg.HotseatSeat },
 		-- The agent's guard reports and carries on; every error is kept here
 		-- and no scenario may raise one.
-		CivvisK = { guard = function(fn)
-			local ok, err = pcall(fn)
-			if not ok then w.errors[#w.errors + 1] = tostring(err) end
-		end },
+		CivvisK = {
+			guard = function(fn)
+				local ok, err = pcall(fn)
+				if not ok then w.errors[#w.errors + 1] = tostring(err) end
+			end,
+			attempt = function(fn)
+				local ok, err = pcall(fn)
+				if not ok then w.errors[#w.errors + 1] = tostring(err) end
+				return ok
+			end,
+		},
 		-- The agent's `try`: the answer, nil included; the fallback on a throw.
 		try = function(fn, fallback)
 			local ok, value = pcall(fn)
@@ -146,7 +154,20 @@ local function world(cfg, opts)
 			return true
 		end,
 		CivvisQueue = { requestEndTurn = function(turn, parameters) return w.request(turn, parameters) end },
+		ActionTypes = { ACTION_ENDTURN = "ACTION_ENDTURN", ACTION_UNREADYTURN = "ACTION_UNREADYTURN" },
+		GameConfiguration = { IsPaused = function() return w.corePaused end },
 		UI = {
+			-- Straight to the engine, past `requestEndTurn`'s guards: an
+			-- unready clears the sent flag; a forced end turn ends the turn
+			-- when nothing stands in its way.
+			RequestAction = function(action, parameters)
+				w.actions[#w.actions + 1] = { action = action, reason = parameters and parameters.REASON }
+				if action == "ACTION_UNREADYTURN" then
+					w.sent = false
+				elseif #w.screens == 0 and w.anyReady() == nil and w.blocker == nil then
+					w.active = false
+				end
+			end,
 			HasSentTurnComplete = function() return w.sent end,
 			CanEndTurn = function() return w.anyReady() == nil end,
 			IsGameCoreBusy = function() return false end,
@@ -169,6 +190,7 @@ local function world(cfg, opts)
 	}
 	local player = {
 		IsTurnActive = function() return w.active end,
+		CanUnreadyTurn = function() return w.canUnready end,
 		GetUnits = function() return { GetFirstReadyUnit = function() return w.anyReady() end } end,
 	}
 	env.localPlayer = function() return player, w.pid end
@@ -385,12 +407,16 @@ do
 	for _ = 1, 10 do w.second() end
 	assert(w.ticks == 10 and #w.kinds("stand_in_stuck") == 0 and w.cancels == 0,
 		"an unplayed turn is only ticked")
+	-- A turn the UI says is sent while it is still active: `requestEndTurn`
+	-- will not ask, so the step sends SHIFT+ENTER's request itself.
 	local s = world(STUB)
 	s.sent = true
 	s.unit({ id = 196608, kind = "UNIT_SCOUT", activity = "operation" })
 	for _ = 1, 5 do s.second() end
 	local r = s.kinds("stand_in_stuck")[1]
-	assert(r and r.sent == true and r.requested == false, "a sent turn is reported, not asked again")
+	assert(r and r.sent == true and r.requested == false and r.resent == "forced",
+		"a sent turn that stands is sent again: " .. tostring(r and r.resent))
+	assert(s.actions[1].action == "ACTION_ENDTURN" and s.actions[1].reason == "UserForced")
 	local p = world(STUB)
 	p.active = false
 	for _ = 1, 10 do p.second() end
@@ -406,6 +432,66 @@ do
 	n.second()
 	assert(#n.kinds("stand_in_stuck") == 2 and n.kinds("stand_in_stuck")[2].turn == 6)
 	w.clean(); s.clean(); p.clean(); n.clean()
+end
+
+-- 6b. live-6p-20261128T0405Z turn 3, as the game logged it: the stub's turn
+--     complete went out while the game was still paused (`PlayerTurnComplete
+--     ignored due to game paused.`), the UI kept it as sent, and the stub's own
+--     requests stopped there. The step unreadies it where the game allows, and
+--     the next pass sends it again. --------------------------------------------
+do
+	local w = world(STUB, { turn = 3 })
+	w.sent, w.canUnready = true, true
+	for _ = 1, 4 do w.second() end
+	assert(w.active and w.ticks == 4 and #w.requests == 0, "the loop's requests stop at the sent flag")
+	w.second()
+	local r = w.kinds("stand_in_stuck")[1]
+	assert(r and r.blocker == "NO_ENDTURN_BLOCKING" and r.resent == "unready" and r.game_paused == false,
+		"the dropped turn complete is unreadied: " .. tostring(r and r.resent))
+	assert(w.actions[1].action == "ACTION_UNREADYTURN" and not w.sent)
+	assert(w.active, "an unready alone ends nothing")
+	w.second()
+	assert(not w.active and w.requests[1].reason == nil, "the next pass sends the turn again and it ends")
+	w.clean()
+end
+
+-- 6c. The seat gate: the stand-in waits for the GAME's pause to lift, not only
+--     its own seat's (UnitPanel.lua:2843-2858 waits the same way); a CIVVIS
+--     seat's gate is as it was. ----------------------------------------------------
+do
+	local gateBlock = assert(agent:match("(CivvisSeat = { seat = .-\nfunction CivvisSeat%.gate.-\nend\n)"),
+		"the agent defines CivvisSeat.mine and CivvisSeat.gate")
+	local g = { pid = 0, wants = false, corePaused = true, stub = true, active = true }
+	local env = {
+		cfg = { HotseatSeat = 0 }, tonumber = tonumber, type = type, pcall = pcall,
+		Game = { GetLocalPlayer = function() return g.pid end },
+		PlayerConfigurations = setmetatable({}, { __index = function()
+			return { GetWantsPause = function() return g.wants end }
+		end }),
+		GameConfiguration = { IsPaused = function() return g.corePaused end },
+		Players = setmetatable({}, { __index = function()
+			return { IsTurnActive = function() return g.active end }
+		end }),
+	}
+	local chunk = assert(loadstring(gateBlock))
+	setfenv(chunk, env)
+	chunk()
+	local seat = env.CivvisSeat
+	assert(seat.mine() == true, "without the stand-in's predicate the gate is as before")
+	seat.standsIn = function() return g.stub end
+	assert(seat.mine() == false, "the stand-in waits while the game is still paused")
+	g.corePaused = false
+	assert(seat.mine() == true, "and plays once it is not")
+	g.corePaused, g.active = true, false
+	assert(seat.mine() == true, "its turn over, the next seat's pause does not hold its turn-end bookkeeping")
+	g.corePaused, g.active = false, true
+	g.wants = true
+	assert(seat.mine() == false, "its own pause still closes it")
+	g.wants, g.corePaused, g.stub = false, true, false
+	assert(seat.mine() == true, "a CIVVIS seat's gate does not read the game's pause")
+	g.stub = true
+	env.GameConfiguration.IsPaused = function() error("no such call") end
+	assert(seat.mine() == true, "an unreadable game pause is not a pause")
 end
 
 -- 7. The agent wires it: the pulse through the seat gate, and the stub waits

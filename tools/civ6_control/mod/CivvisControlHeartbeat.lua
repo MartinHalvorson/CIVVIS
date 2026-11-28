@@ -337,6 +337,9 @@ function CivvisSeatWatch.read(pid)
 	pcall(function() s.can_end = UI.CanEndTurn() == true; end);
 	pcall(function() s.busy = UI.IsGameCoreBusy() == true; end);
 	pcall(function() s.processing = UI.IsProcessingMessages() == true; end);
+	-- The game's own pause, which a seat's Start Turn lifts a message after it
+	-- releases the seat's (`paused`); a turn complete sent between is dropped.
+	pcall(function() s.game_paused = GameConfiguration.IsPaused() == true; end);
 	-- The event locks the AutoClose contexts' screens hold (their ledger), and
 	-- the first unit the engine still waits on for orders.
 	pcall(function() s.locks = tonumber(ExposedMembers.CivvisEventLocks.count); end);
@@ -377,8 +380,8 @@ function CivvisSeatWatch.report(kind, s, extra)
 	-- `t` first: it dates the record, and keeps the event bridge from taking
 	-- a later turn's identical report for one it has already copied.
 	local parts = { string.format('"t":%s', CivvisSeatWatch.field(CivvisSeatWatch.now())) };
-	for _, key in ipairs({ "turn", "player", "active", "paused", "sent", "can_end", "busy",
-			"processing", "blocker", "ready", "locks", "handover_hidden", "dialog_hidden" }) do
+	for _, key in ipairs({ "turn", "player", "active", "paused", "game_paused", "sent", "can_end",
+			"busy", "processing", "blocker", "ready", "locks", "handover_hidden", "dialog_hidden" }) do
 		parts[#parts + 1] = string.format('"%s":%s', key, CivvisSeatWatch.field(s[key]));
 	end
 	for _, pair in ipairs(extra or {}) do
@@ -458,17 +461,24 @@ function CivvisSeatWatch.beat(source)
 	else
 		w.quiet = w.quiet + dt;
 	end
-	local why = nil;
-	if w.quiet >= (tonumber(cfg.SeatQuietSeconds) or 45) then
-		why = "quiet";
-	elseif w.listed(cfg.HotseatStubSeats, pid) and w.age >= (tonumber(cfg.StubTurnSeconds) or 30) then
-		why = "stub_turn";
+	local aged = nil;
+	if w.listed(cfg.HotseatStubSeats, pid) and w.age >= (tonumber(cfg.StubTurnSeconds) or 30) then
+		aged = "stub_turn";
 	elseif w.age >= (tonumber(cfg.SeatLongTurnSeconds) or 180) then
-		why = "long_turn";
+		aged = "long_turn";
 	end
+	local why = w.quiet >= (tonumber(cfg.SeatQuietSeconds) or 45) and "quiet" or aged;
 	if why == nil then return; end
 	local kind = why == "quiet" and "seat_quiet" or "seat_stuck";
-	local forceNow = type(beat) == "number" and s.sent ~= true
+	-- ★ A SENT TURN THAT STANDS WAS DROPPED. A turn complete sent while the
+	-- game is still paused is ignored by the engine (live-6p-20261128T0405Z t3,
+	-- net_message_debug.log: `PlayerTurnComplete ignored due to game paused.`)
+	-- and `UI.HasSentTurnComplete()` keeps answering true. So once a turn has
+	-- stood its age limit, sent or not, it is asked again; a sent one is
+	-- unreadied first where the game allows (ActionPanel.lua:535-537), and the
+	-- next request sends it afresh. Within the quiet rule alone a sent turn is
+	-- still the engine's to finish.
+	local forceNow = type(beat) == "number" and (s.sent ~= true or aged ~= nil)
 		and w.forces < (tonumber(cfg.SeatQuietMaxForces) or 6)
 		and (w.forced == nil or now - w.forced >= (tonumber(cfg.SeatQuietForceEvery) or 20));
 	if w.reported == nil or now - w.reported >= 60 then
@@ -482,11 +492,20 @@ function CivvisSeatWatch.beat(source)
 	-- already sent complete is the engine's to finish.
 	if not forceNow then return; end
 	w.forced, w.forces = now, w.forces + 1;
+	local unready = false;
+	if s.sent == true then
+		pcall(function() unready = Players[pid]:CanUnreadyTurn() == true; end);
+	end
 	local asked = pcall(function()
-		UI.RequestAction(ActionTypes.ACTION_ENDTURN, { REASON = "UserForced" });
+		if unready then
+			UI.RequestAction(ActionTypes.ACTION_UNREADYTURN);
+		else
+			UI.RequestAction(ActionTypes.ACTION_ENDTURN, { REASON = "UserForced" });
+		end
 	end);
 	w.report(kind .. "_end_turn", s, {
 		{ "why", why }, { "quiet", w.quiet }, { "age", w.age }, { "asked", asked },
+		{ "how", unready and "unready" or "end_turn" },
 		{ "forces", w.forces }, { "source", source } });
 end
 -- A watched seat that is the local player with its turn not active: between
