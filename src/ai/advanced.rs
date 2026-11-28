@@ -8019,6 +8019,25 @@ pub struct AdvancedAi {
     /// nearest major holding one. See `advanced/foreign_site_open_border.rs`.
     /// Off by default.
     foreign_site_buys_the_open_border: bool,
+    /// `fresh-war-holds-the-home`: for ten standard turns after a major
+    /// declares on us, while its military is at least ours, Settlers keep off
+    /// the ground its soldiers were seen on and one shooter is bought. See
+    /// `advanced/fresh_war_holds_the_home.rs`. Off by default.
+    fresh_war_holds_the_home: bool,
+    /// `fresh-war-holds-the-home`: the met majors at peace with us at the end
+    /// of our last turn.
+    fresh_war_peace_seen: BTreeSet<usize>,
+    /// `fresh-war-holds-the-home`: each major that declared on us, and the
+    /// first turn of that war, while its window is open.
+    fresh_war_onsets: BTreeMap<usize, u32>,
+    /// `fresh-war-holds-the-home`: where we saw each declarer's soldiers
+    /// since its declaration, by (declarer, tile), and the last turn.
+    fresh_war_seen: BTreeMap<(usize, Pos), u32>,
+    /// `fresh-war-holds-the-home`: the tiles no Settler takes this turn.
+    fresh_war_held_ground: BTreeSet<Pos>,
+    /// `fresh-war-holds-the-home`: the windows, by (declarer, first turn),
+    /// that have bought their shooter.
+    fresh_war_bought: BTreeSet<(usize, u32)>,
     /// `founding-voyage-2`: version one's voyage, and the soldier at sea
     /// beside the Settler sails with it. See
     /// `advanced/maori_founds_from_the_sea.rs`. Off by default.
@@ -12829,6 +12848,8 @@ mod emptied_camp_is_taken;
 /// `first-ship-closes-the-dark-age`: see
 /// `advanced/first_ship_closes_the_age.rs`.
 mod first_ship_closes_the_age;
+/// `fresh-war-holds-the-home`: see `advanced/fresh_war_holds_the_home.rs`.
+mod fresh_war_holds_the_home;
 /// `person-units-threaten-civilians`: see
 /// `advanced/person_units_threaten_civilians.rs`.
 mod person_units_threaten_civilians;
@@ -27520,6 +27541,10 @@ impl AdvancedAi {
         self.base.minor = g.players[pid].is_minor;
         self.base.barb = g.players[pid].is_barbarian;
         self.maintain_victory_portfolio(g, pid);
+        // `fresh-war-holds-the-home`: a war declared on us since our last
+        // turn, and the ground its soldiers hold. Exact no-op with the gene
+        // off.
+        self.observe_fresh_wars(g, pid);
         // `religion-lane-hands-over`: a Religion seat that lost the Prophet
         // race takes Science before the turn reads its target. See
         // `advanced/religion_lane_hands_over.rs`.
@@ -27775,10 +27800,13 @@ impl AdvancedAi {
         // `advanced/capital_walls_before_the_surprise.rs`.
         // `capital-archers-before-the-surprise`: likewise the capital's
         // missing shooter, bought at once. `false` with the gene off.
+        // `fresh-war-holds-the-home`: one shooter while a fresh war at parity
+        // holds the home. `false` with the gene off.
         let surprise_defense_purchase = !emergency_city_defense
             && (self.surprise_defense_purchase(g, pid)
                 || self.capital_garrison_purchase(g, pid)
-                || self.capital_archers_purchase(g, pid));
+                || self.capital_archers_purchase(g, pid)
+                || self.fresh_war_defender_purchase(g, pid));
         // `breaker-bought-for-the-siege`: after the city-saving purchases,
         // the wall-breaker a held siege is waiting for. See
         // `advanced/siege_train/breaker_purchase.rs`.
@@ -28565,6 +28593,9 @@ impl AdvancedAi {
         // `districts-price-the-improvement`: a fresh District on a Farm,
         // Mine or bonus resource moves to a clean site before the turn ends.
         self.resite_bulldozing_districts(g, pid);
+        // `fresh-war-holds-the-home`: the majors at peace with us once our
+        // own declarations are made. Exact no-op with the gene off.
+        self.note_fresh_war_peace(g, pid);
         if g.winner.is_none() && g.current == pid {
             let _ = g.apply(pid, &Action::EndTurn);
         }
