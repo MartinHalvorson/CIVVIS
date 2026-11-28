@@ -529,10 +529,17 @@ GENOMES = ("live", "stock")
 #: `CIVVIS_WITH` environment, else the file `CIVVIS_WITH_FILE` names (an empty
 #: one is the stock genome), else this host's `~/.civvis-live-force-on` while
 #: it is not empty, else the checkout's own `deploy/live-force-on.txt`.
-LIVE_FORCE_FILE = HERE.parent / "deploy" / "live-force-on.txt"
+#: Where both live lists are: the checkout's `deploy/`, or in the frozen bundle
+#: its own copy (`tools/package_hotseat.py` ships them under `_internal/deploy/`
+#: from the revision its decider is built from), as `BUNDLED_BIN` is its own
+#: decider. Before 2026-11-28 a bundle shipped neither: its log said "no live
+#: list in this install", and its seats played the bare genome with no mod arms.
+DEPLOY_DIR = (Path(getattr(sys, "_MEIPASS", HERE)) / "deploy" if FROZEN
+              else HERE.parent / "deploy")
+LIVE_FORCE_FILE = DEPLOY_DIR / "live-force-on.txt"
 LOCAL_FORCE_FILE = Path.home() / ".civvis-live-force-on"
-#: The ladder's mod arms (`civ6_play.TREE_MOD_ARMS_FILE`).
-MOD_ARMS_FILE = play.TREE_MOD_ARMS_FILE
+#: The ladder's mod arms (`civ6_play.TREE_MOD_ARMS_FILE`, the same file from a checkout).
+MOD_ARMS_FILE = DEPLOY_DIR / "live-mod-arms.txt" if FROZEN else play.TREE_MOD_ARMS_FILE
 #: In the run directory: what the seats were armed with, for `--attach`.
 GENOME_RECORD = "genome.json"
 
@@ -625,7 +632,9 @@ def armed_treatments(binary: Path, wanted: list[str], scratch: Path, run=None) -
         for tag in tags:
             command += ["--with", tag]
         try:
-            done = run(command, capture_output=True, text=True, timeout=60, check=False)
+            # Never the harness's own stdin: the empty board is all it is given.
+            done = run(command, capture_output=True, text=True, timeout=60, check=False,
+                       stdin=subprocess.DEVNULL)
         except (OSError, subprocess.SubprocessError) as error:
             return {"with": [], "forced": [], "dropped": dropped + tags,
                     "note": f"the decider could not be asked ({error}); its stock genome plays"}

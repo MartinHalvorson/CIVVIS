@@ -452,6 +452,10 @@ end
 --   HistoricMoments.lua:520-524   OnUIIdle: if UI.CanShowPopup(...) then ShowNextQueuedPopup()
 --   BoostUnlockedPopup.lua:256-258 CanShow: UI.CanShowPopup(PopupPriority.Low) and m_isOnQueue==false
 --   BoostUnlockedPopup.lua:352-357 OnUIIdle, the same way
+--   EventPopup.lua:303-306         OnUIIdle: if UI.CanShowPopup(PopupPriority.Medium) then
+--                                     ShowNextQueuedPopup(); its second popup and later
+--                                     wait in its own list (:39-46), served only in
+--                                     hotseat (install.py HOTSEAT_EVENT_POPUP)
 -- Under the cover the answer is no for the whole of a CIVVIS seat's turn (the
 -- cover is a higher popup), so the announcement was never queued, never drawn
 -- under the cover and never closed: it waited in the screen's own list until
@@ -466,7 +470,7 @@ end
 -- game's own answer stands. `UI` is read with a dot everywhere in both scripts
 -- (no `UI:` call), so a table that answers this one question and reads every
 -- other name from the real one is the whole proxy.
-CivvisCoverQueue.ASKS = { HistoricMoments = true, BoostUnlockedPopup = true };
+CivvisCoverQueue.ASKS = { HistoricMoments = true, BoostUnlockedPopup = true, EventPopup = true };
 CivvisCoverQueue.let = 0;
 function CivvisCoverQueue.installAsk()
 	if not CivvisCoverQueue.on() or not CivvisCoverQueue.ASKS[NAME] then return false, "off"; end
