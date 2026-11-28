@@ -27,6 +27,8 @@ mod acropolis_before_the_deterrent;
 mod adopted_faith_sanctuary;
 /// The turn's assessment: `assess` and how it reads war and land. See
 /// `advanced/assessment.rs`.
+/// `asks-go-once-a-turn`: see `advanced/asks_go_once_a_turn.rs`.
+mod asks_go_once_a_turn;
 mod assessment;
 mod builder_operation_refusals;
 /// Builders: job ranking, improvement values, the Builder and special-improver
@@ -5692,6 +5694,11 @@ pub struct AdvancedAi {
     /// `breaker-walks-under-a-shield`: where the breaker and its shield last
     /// stood, for the journal of its loss. `None` while the gene is off.
     breaker_shield_memory: Option<breaker_walks_under_a_shield::BreakerShieldMemory>,
+    /// `asks-go-once-a-turn`: the live bridge sends a delegation, friendship,
+    /// denouncement, alliance, deal or Trader route at most once in a host
+    /// turn, however many frames the turn has. See
+    /// `advanced/asks_go_once_a_turn.rs`. Off by default.
+    asks_go_once_a_turn: bool,
     // ---- append: c-d ------------------------------------------------
     /// `culture-and-religion-build-the-statue`: a Culture or Religious seat
     /// claims the Statue of Liberty from turn 120 (its Harbor too) and, with
@@ -10809,6 +10816,12 @@ pub struct AdvancedAi {
     /// shooters can fire. See `advanced/stacked_shooter_steps_out.rs`. Off by
     /// default.
     stacked_shooter_steps_out: bool,
+    /// `settler-pump-leans-on-production`: `civvis_orders` asks the host for
+    /// a Production focus in a city training a Settler on a Food surplus of 4
+    /// or more and a Production of 5 or less, and releases its own focus
+    /// once the Settler is done. See
+    /// `advanced/settler_pump_leans_on_production.rs`. Off by default.
+    settler_pump_leans_on_production: bool,
     /// `spreaders-spread-before-they-chart-2`: version one, and the corps'
     /// searchers share one budget: the last-charge scouts already walking
     /// the fog count against the seekers' and the scouts' quotas, the surplus
@@ -10823,6 +10836,12 @@ pub struct AdvancedAi {
     /// begun after the band turn. See `advanced/settler_walk_deadline.rs`.
     /// Off by default.
     settler_walk_clock_runs_all_game: bool,
+    /// `stacked-soldiers-step-apart`: when the unit pass is over, two or
+    /// more of our soldiers of one stacking layer still on one tile keep one
+    /// there and step the others onto free tiles beside it; the host refuses
+    /// a stacked unit every hold. See `advanced/stacked_soldiers_step_apart.rs`.
+    /// Off by default.
+    stacked_soldiers_step_apart: bool,
     // ---- append: t-z ------------------------------------------------
     /// `world-religion-condemns-the-faith`: our soldiers condemn a faith
     /// World Religion's option B names, at peace, and the agent's ballot asks
@@ -11283,6 +11302,11 @@ pub struct AdvancedAi {
     /// weakest rival. See `advanced/tagma_timing_needs_the_edge.rs`. Off by
     /// default.
     tagma_timing_needs_the_edge: bool,
+    /// `wounded-spreader-spends-far-from-home`: a wounded Missionary or
+    /// Apostle more than a two-turn walk from any healing Holy Site spends its
+    /// charge at a target in this turn's reach instead of walking home. See
+    /// `advanced/apostle_army.rs`. Off by default.
+    wounded_spreader_spends_far_from_home: bool,
     /// `walls-for-the-war-front`: while at war with a major, an unwalled city
     /// that major's soldier was seen near starts its Walls. See
     /// `advanced/walls_for_the_war_front.rs`. Off by default.
@@ -12616,6 +12640,9 @@ mod settler_admission_journal;
 mod settler_brake_counts_the_wanderer;
 mod settler_departure;
 mod settler_path_clear;
+/// `settler-pump-leans-on-production`: see
+/// `advanced/settler_pump_leans_on_production.rs`.
+mod settler_pump_leans_on_production;
 /// `shooters-man-the-capital`: see `advanced/shooters_man_the_capital.rs`.
 mod shooters_man_the_capital;
 /// `siege-shortfall-claims-the-projects`: see
@@ -12660,6 +12687,8 @@ mod spy_patience_reads_the_host;
 mod spy_targets;
 /// `stacked-shooter-steps-out`: see `advanced/stacked_shooter_steps_out.rs`.
 mod stacked_shooter_steps_out;
+/// `stacked-soldiers-step-apart`: see `advanced/stacked_soldiers_step_apart.rs`.
+mod stacked_soldiers_step_apart;
 /// `sweden-builds-open-air-museums`: see
 /// `advanced/sweden_builds_open_air_museums.rs`.
 mod sweden_builds_open_air_museums;

@@ -9937,6 +9937,8 @@ const MONEYBALL_STYLE = `
   .mb-table td.is-top small { color: #1f4a1c; }
   .mb-table td.is-waiting { color: #5e7a59; }
   .mb-table tr.mb-ends td, .mb-table tr.mb-ends th { color: #b7cdb0; font-size: 12px; }
+  .mb-table thead th.mb-same { color: #e9f1e6; letter-spacing: 0.04em; }
+  .mb-table .mb-end-each { display: block; }
   .mb-table tfoot td { border-bottom: 0; padding-top: 10px; }
   .mb-pick { width: 100%; padding: 6px 8px; font-size: 13px; font-weight: 700; background: #2f8a4a; border-color: #8fe07a; }
   .mb-pick:hover:not(:disabled) { background: #38a057; }
@@ -10006,7 +10008,7 @@ async function moneyballDealBoard() {
   moneyball.dealt = {
     seed: String(state.seed ?? ""), turn, turns, now: null,
     columns: shuffled.map((which, at) => ({letter: MONEYBALL_LETTERS[at], name: names[which], seat: null, readings: [],
-      finished: false, winner: null, end: null, error: null})),
+      world: null, finished: false, winner: null, end: null, error: null})),
   };
   moneyballSay("");
   if (!names.length) { moneyballSay("This page offers no player strategy to pick from"); return; }
@@ -10045,6 +10047,7 @@ async function moneyballPlay(deal, path, column, turn, turns) {
     if (played.error && !/no turn left/.test(played.error)) throw new Error(played.error);
     column.readings = Array.isArray(played.readings) ? played.readings : [];
     column.seat = played.seat || column.readings[column.readings.length - 1] || there.seat || null;
+    column.world = moneyballPrint(played);
     column.finished = played.finished === true;
     column.winner = played.winner ?? null;
     moneyballDraw();
@@ -10079,7 +10082,8 @@ async function moneyballPick(letter) {
   moneyball.playing = true;
   moneyball.deal += 1;
   const to = dealt.turn + dealt.turns;
-  moneyball.picks.push({from: dealt.turn, to, letter, name: column.name});
+  const group = moneyballGroups(dealt.columns).find(held => held.columns.includes(column));
+  moneyball.picks.push({from: dealt.turn, to, letter: group ? group.label : letter, name: column.name});
   moneyballSay(`Playing column ${letter} to turn ${to}…`);
   let played = null;
   try {
@@ -10092,6 +10096,38 @@ async function moneyballPick(letter) {
   moneyball.said = played && !played.ok ? played.note || "The pick could not be played" : "";
   moneyball.dealt = null;
   moneyballWatch();
+}
+// The print of the world an answer stands on (`world_print`), with its
+// turn: two copies on the same turn with the same print hold the same world,
+// as Doctor Strange reads two of its panes (`strangeSame`). `null` when the
+// answer does not say.
+function moneyballPrint(answer) {
+  const marks = answer && answer.debug, turn = answer && answer.turn;
+  if (!marks || typeof turn !== "number" || !Array.isArray(marks.turns) || !Array.isArray(marks.worlds)
+    || marks.worlds.length !== marks.turns.length) return null;
+  const at = marks.turns.indexOf(turn);
+  return at >= 0 && marks.worlds[at] !== null && marks.worlds[at] !== undefined ? `${turn}|${marks.worlds[at]}` : null;
+}
+// The columns as the board draws them (operator 2026-11-28: "civvis
+// moneyball we can merge identical states"): columns whose strategies played
+// the turns of a pick to the same world are one column, named by all their
+// letters, in the place of the first of them. A column not yet played, or
+// whose world was not said, stands alone.
+function moneyballGroups(columns) {
+  const groups = [], held = new Map();
+  for (const column of columns) {
+    const same = column.world && !column.error ? held.get(column.world) : undefined;
+    if (same) { same.columns.push(column); continue; }
+    const group = {columns: [column]};
+    groups.push(group);
+    if (column.world && !column.error) held.set(column.world, group);
+  }
+  for (const group of groups) {
+    group.first = group.columns[0];
+    group.letters = group.columns.map(column => column.letter);
+    group.label = group.letters.join("=");
+  }
+  return groups;
 }
 function moneyballRead(row, seat) {
   if (!seat) return null;
@@ -10230,6 +10266,7 @@ function moneyballDraw() {
     let order = [...dealt.columns];
     const sortRow = rows.find(row => row[0] === moneyball.sort);
     if (sortRow) order.sort((one, other) => (moneyballRead(sortRow, other.seat) ?? -Infinity) - (moneyballRead(sortRow, one.seat) ?? -Infinity));
+    const groups = moneyballGroups(order);
     const cell = (tag, text, cls) => {
       const node = document.createElement(tag);
       if (cls) node.className = cls;
@@ -10241,9 +10278,16 @@ function moneyballDraw() {
     const nowHead = cell("th", "Now", "mb-now");
     nowHead.appendChild(cell("small", `turn ${dealt.turn}`));
     headRow.appendChild(nowHead);
-    for (const column of order) {
-      const th = cell("th", column.letter);
-      th.appendChild(cell("small", moneyball.set.names ? debugSearchAgent(column.name) : `turn ${dealt.turn + dealt.turns}`));
+    for (const group of groups) {
+      const th = cell("th", group.label);
+      th.dataset.mbLetters = group.letters.join("");
+      if (group.columns.length > 1) {
+        th.classList.add("mb-same");
+        th.title = `${group.letters.slice(0, -1).join(", ")} and ${group.letters[group.letters.length - 1]} are the same world on turn ` +
+          `${dealt.turn + dealt.turns}: their strategies played these turns alike`;
+      }
+      th.appendChild(cell("small", moneyball.set.names ? group.columns.map(column => debugSearchAgent(column.name)).join(" / ")
+        : `turn ${dealt.turn + dealt.turns}`));
       headRow.appendChild(th);
     }
     head.appendChild(headRow);
@@ -10262,10 +10306,10 @@ function moneyballDraw() {
       tr.appendChild(th);
       const now = moneyballRead(row, dealt.now);
       tr.appendChild(cell("td", moneyballNumber(now), "mb-now"));
-      const values = order.map(column => moneyballRead(row, column.seat));
+      const values = groups.map(group => moneyballRead(row, group.first.seat));
       const known = values.filter(value => value !== null);
       const top = known.length > 1 ? Math.max(...known) : null;
-      order.forEach((column, at) => {
+      groups.forEach(({first: column}, at) => {
         const value = values[at];
         const td = cell("td", column.error ? "×" : value === null ? (column.seat ? "–" : "…") : moneyballNumber(value),
           value !== null && top !== null && value === top && known.some(other => other !== top) ? "is-top" : !column.seat && !column.error ? "is-waiting" : "");
@@ -10280,19 +10324,26 @@ function moneyballDraw() {
     ends.className = "mb-ends";
     ends.appendChild(cell("th", "Game ends"));
     ends.appendChild(cell("td", "", "mb-now"));
-    for (const column of order) {
+    // A merged column's strategies part after the pick, so each says where
+    // its own game ends, unless they all end alike.
+    const endWords = column => {
       const end = column.end;
-      const words = column.error ? "×" : !end ? "…" : end.done ? `turn ${end.turn}${end.victory ? ` · ${titleCase(String(end.victory))}` : ""}` : `past turn ${end.turn}…`;
-      ends.appendChild(cell("td", words));
+      return column.error ? "×" : !end ? "…" : end.done ? `turn ${end.turn}${end.victory ? ` · ${titleCase(String(end.victory))}` : ""}` : `past turn ${end.turn}…`;
+    };
+    for (const group of groups) {
+      const said = group.columns.map(endWords);
+      const td = cell("td", new Set(said).size === 1 ? said[0] : null);
+      if (new Set(said).size > 1) group.columns.forEach((column, at) => td.appendChild(cell("span", `${column.letter}: ${said[at]}`, "mb-end-each")));
+      ends.appendChild(td);
     }
     body.appendChild(ends);
     table.appendChild(body);
     const foot = document.createElement("tfoot"), footRow = document.createElement("tr");
     footRow.append(cell("td"), cell("td"));
     const free = moneyballIdle() && !gameFinished(state) && state.turn === dealt.turn;
-    for (const column of order) {
+    for (const {first: column, label} of groups) {
       const td = document.createElement("td");
-      const pick = cell("button", `Pick ${column.letter}`, "mb-pick");
+      const pick = cell("button", `Pick ${label}`, "mb-pick");
       pick.type = "button";
       pick.dataset.mbPick = column.letter;
       pick.disabled = !free || !column.seat;

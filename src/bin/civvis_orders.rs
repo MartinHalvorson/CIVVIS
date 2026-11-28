@@ -65,6 +65,9 @@ mod walk_steps;
 mod air_assault;
 #[path = "civvis_orders/air_assault_continuation.rs"]
 mod air_assault_continuation;
+/// `asks-go-once-a-turn`: a diplomatic ask, deal or Trader route once a turn.
+#[path = "civvis_orders/asks_once_a_turn.rs"]
+mod asks_once_a_turn;
 #[path = "civvis_orders/campus_above_sea.rs"]
 mod campus_above_sea;
 #[path = "civvis_orders/citizen_growth.rs"]
@@ -574,9 +577,15 @@ fn append_citizen_growth_orders(
     snapshot: &mirror::Snapshot,
     state: &mirror::StateSnapshot,
     widened: bool,
+    settler_pump: bool,
     orders: &mut Vec<Order>,
 ) -> usize {
-    let choices = citizen_growth::choices(snapshot, state, widened);
+    let mut choices = citizen_growth::choices(snapshot, state, widened);
+    // `settler-pump-leans-on-production`: see
+    // `citizen_growth::settler_pump_choices`. Nothing with the gene off.
+    if settler_pump {
+        choices.extend(citizen_growth::settler_pump_choices(state));
+    }
     let count = choices.len();
     orders.extend(choices.into_iter().map(|choice| Order {
         kind: "city_focus",
@@ -5216,10 +5225,13 @@ fn decide(
         note_bits.push(format!("builder_operations_held={builder_operations_held}"));
     }
     // `food-focus-grows-the-small-city`: see `citizen_growth::choices`.
+    // `settler-pump-leans-on-production`: see
+    // `citizen_growth::settler_pump_choices`.
     let citizen_growth_orders = append_citizen_growth_orders(
         snapshot,
         state,
         ai.food_focus_grows_the_small_city(),
+        ai.settler_pump_leans_on_production(),
         &mut orders,
     );
     if citizen_growth_orders > 0 {
@@ -6672,6 +6684,21 @@ fn decide(
         let rolled_back = ai.note_host_moves(&mirror_state.game, own_column_before, &sent, &unsent);
         if rolled_back > 0 {
             note_bits.push(format!("own_column_rolled_back={rolled_back}"));
+        }
+    }
+    // `asks-go-once-a-turn`: an ask an earlier frame of this host turn sent is
+    // not sent again. Last of all, once every writer has appended (the Great
+    // Work purchase and the leases come after the refused-order filter), so
+    // the memory holds exactly what the reply carries. Nothing is read or kept
+    // with the gene off. See `asks_once_a_turn`.
+    if ai.asks_go_once_a_turn_enabled() {
+        let repeated = host_move_refusals.asks.keep_once(&mut orders, state.turn);
+        if !repeated.is_empty() {
+            note_bits.push(format!(
+                "asks_sent_this_turn={} [{}]",
+                repeated.len(),
+                repeated.join("; ")
+            ));
         }
     }
     let body = orders

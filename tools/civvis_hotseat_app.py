@@ -136,6 +136,7 @@ def bundle_contents() -> dict:
         "live_force_on": str(genes),
         "live_genes": (len(civ6_hotseat.force_tags(genes.read_text(encoding="utf-8")))
                        if genes.is_file() else None),
+        "hotseat_genes": len(civ6_hotseat.hotseat_treatments()),
         "live_mod_arms": str(arms),
         "mod_arms": civ6_hotseat.play.read_tree_mod_arms(arms) if arms.is_file() else None,
         "root": str(BUNDLE_ROOT),
@@ -264,7 +265,8 @@ def print_report(report: dict) -> None:
                               f"{'present' if bundle['civvis_orders_present'] else 'MISSING'})")
     line("live genes", f"{bundle['live_force_on']} ("
                        + (f"{bundle['live_genes']} genes" if bundle["live_genes"] is not None
-                          else "MISSING: the seats play the bare genome") + ")")
+                          else "MISSING: the seats play the bare genome")
+                       + f"; {bundle['hotseat_genes']} hotseat-only on top)")
     line("live mod arms", f"{bundle['live_mod_arms']} ("
                           + (", ".join(bundle["mod_arms"]) or "none listed"
                              if bundle["mod_arms"] is not None else "MISSING") + ")")
@@ -537,9 +539,12 @@ def _check_live_genome(state: dict, root: Path, orders_bin: str | None) -> str:
     if FROZEN:
         for path in (genes, arms_file):
             _need(path.is_relative_to(BUNDLE_ROOT), f"{path} is not this bundle's own")
-    # The shipped list itself: not this computer's override, nor the environment's.
+    # The shipped list itself: not this computer's override, nor the environment's,
+    # and the hotseat-only genes on top as a game arms them (`live_genome`).
     wanted, source = hotseat.live_treatments(environ={}, local_file=root / "no-host-override")
     _need(bool(wanted), f"no live gene list ({source}; looked for {genes})")
+    extra = [tag for tag in hotseat.hotseat_treatments() if tag not in wanted]
+    wanted = wanted + extra
     binary = hotseat.resolve_orders_bin(orders_bin)
     _need(binary is not None, "no civvis_orders (pass --orders-bin)")
     armed = hotseat.armed_treatments(binary, wanted, root)
@@ -552,8 +557,9 @@ def _check_live_genome(state: dict, root: Path, orders_bin: str | None) -> str:
     _need(bool(arms) and not unknown,
           f"mod arms {arms_file}: " + (f"unknown {unknown}" if unknown else "none listed"))
     state["live_listed"] = len(wanted)
-    return (f"{binary.name} takes all {len(wanted)} genes of {genes.name} "
-            f"({len(armed['forced'])} beyond its deployment genome); mod arms {', '.join(arms)}")
+    return (f"{binary.name} takes all {len(wanted)} genes of {genes.name} and "
+            f"{hotseat.HOTSEAT_FORCE_FILE.name} ({len(extra)} hotseat-only; "
+            f"{len(armed['forced'])} beyond its deployment genome); mod arms {', '.join(arms)}")
 
 
 def _tail(seat_dir: Path, lines: int = 12) -> str:

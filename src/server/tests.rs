@@ -2312,9 +2312,10 @@ fn viewer_marks_the_selected_revision_and_its_compact_ages_above_the_minimap() {
 /// can be civvis.ai/debugger and civvis.ai/doctor-strange"), where they
 /// were the viewer's address with `?mode=strange`, `?mode=play` and
 /// `?mode=tomorrow`.
-/// CIVVIS: Moneyball stands after Edge of Tomorrow since 2026-11-27
-/// (operator: "add CIVVIS: Moneyball. This is a minigame where a user only
-/// looks at the stats and tries to play the best game").
+/// CIVVIS: Moneyball (2026-11-27, operator: "add CIVVIS: Moneyball. This is
+/// a minigame where a user only looks at the stats and tries to play the best
+/// game") stands right below Charts/ since 2026-11-28 ("please place
+/// moneyball right below charts").
 #[test]
 fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
     assert!(EMBEDDED_INDEX.contains(concat!(
@@ -2322,9 +2323,9 @@ fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
         "        <a class=\"home-link\" id=\"homelink\" href=\"/home\" target=\"_top\">Home</a>\n",
         "        <a class=\"home-link\" id=\"tourlink\" href=\"/tournaments\" target=\"_top\">Tournaments</a>\n",
         "        <a class=\"home-link\" id=\"chartslink\" href=\"/charts/ai-insights\" target=\"_top\">Charts/</a>\n",
+        "        <a class=\"home-link\" id=\"moneyballlink\" href=\"moneyball\" target=\"_top\">CIVVIS: Moneyball</a>\n",
         "        <a class=\"home-link\" id=\"strangelink\" href=\"doctor-strange\" target=\"_top\">Doctor Strange's CIVVIS</a>\n",
         "        <a class=\"home-link\" id=\"tomorrowlink\" href=\"edge-of-tomorrow\" target=\"_top\">CIVVIS: Edge of Tomorrow</a>\n",
-        "        <a class=\"home-link\" id=\"moneyballlink\" href=\"moneyball\" target=\"_top\">CIVVIS: Moneyball</a>\n",
         "        <a class=\"home-link\" id=\"watchlink\" href=\"./\" target=\"_top\">CIVVIS</a>\n",
         "        <a class=\"home-link\" id=\"playlink\" href=\"debugger\" target=\"_top\">CIVVIS AI Debugger</a>\n",
         "        <a class=\"home-link\" id=\"civ6link\" ",
@@ -2886,12 +2887,12 @@ fn the_home_page_lists_the_sites_with_itself_ringed() {
             "or talked over.\">Unreviewed Gen AI Charts</a>\n",
             "        </div>\n",
             "      </div>\n",
+            "      <a class=\"site-link\" href=\"../moneyball\" ",
+            "title=\"Only the numbers: pick a player strategy by its stats, ten turns at a time, and try to play the best game.\">CIVVIS: Moneyball</a>\n",
             "      <a class=\"site-link\" href=\"../doctor-strange\" ",
             "title=\"One world, two timelines: the same game played two ways, side by side, on a timeline that branches.\">Doctor Strange's CIVVIS</a>\n",
             "      <a class=\"site-link\" href=\"../edge-of-tomorrow\" ",
             "title=\"You play one civilization, with a jump back: the world returns to the turn you woke on, as it stood.\">CIVVIS: Edge of Tomorrow</a>\n",
-            "      <a class=\"site-link\" href=\"../moneyball\" ",
-            "title=\"Only the numbers: pick a player strategy by its stats, ten turns at a time, and try to play the best game.\">CIVVIS: Moneyball</a>\n",
             "      <a class=\"site-link\" href=\"../\" ",
             "title=\"Every civilization is played by a CIVVIS AI agent.\">CIVVIS</a>\n",
             "      <a class=\"site-link\" href=\"../debugger\" ",

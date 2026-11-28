@@ -5511,6 +5511,13 @@ pub const GENES: &[Gene] = &[
     // none, four for one, no trip for two). Opt-in; see
     // `advanced/band_plays_the_stage_at_hand.rs`.
     Gene { tag: "band-plays-the-stage-at-hand", field: "band_plays_the_stage_at_hand", kind: Kind::OptIn, enable: AdvancedAi::enable_band_plays_the_stage_at_hand, disable: AdvancedAi::disable_band_plays_the_stage_at_hand },
+    // Hotseat `hotseat-20261128T031456Z`, turns 12-16: every diplomatic ask
+    // and Trader route a seat sent in a turn's first frame was sent again in
+    // its replan frame and refused there (three delegations after the first
+    // had gone, a Great Work purchase, a route refused `no_route` twice). A
+    // turn's second frame cannot change those answers. The live bridge sends
+    // each ask once a turn. Opt-in; see `src/bin/civvis_orders/asks_once_a_turn.rs`.
+    Gene { tag: "asks-go-once-a-turn", field: "asks_go_once_a_turn", kind: Kind::OptIn, enable: AdvancedAi::enable_asks_go_once_a_turn, disable: AdvancedAi::disable_asks_go_once_a_turn },
     // ---- append: c-d ------------------------------------------------
     // `culture-and-religion-build-the-statue`: a Culture or Religious seat
     // claims the Statue of Liberty (and its Harbor) from turn 120 and holds it
@@ -6701,6 +6708,14 @@ pub const GENES: &[Gene] = &[
     // seat from its third city; science heads keep their queue. Opt-in; see
     // `advanced/culture_monuments.rs`.
     Gene { tag: "science-seat-monuments", field: "science_seat_monuments", kind: Kind::OptIn, enable: AdvancedAi::enable_science_seat_monuments, disable: AdvancedAi::disable_science_seat_monuments },
+    // Hotseat `hotseat-20261128T031456Z`, seat p3 (Cree, Science): the
+    // capital trained its first Settler from turn 7 past turn 16 at 3-4
+    // Production on a Food surplus of 4-8, with no citizen preference set.
+    // A Settler pump with Food to spare and Production of 5 or less asks the
+    // host for a Production focus until the Settler is done. Native seat
+    // only, and inert until the agent mod takes a Production focus. Opt-in;
+    // see `advanced/settler_pump_leans_on_production.rs`.
+    Gene { tag: "settler-pump-leans-on-production", field: "settler_pump_leans_on_production", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_pump_leans_on_production, disable: AdvancedAi::disable_settler_pump_leans_on_production },
     // Version one armed, the reviewer still named "spreaders scout instead of
     // spreading" in 35 of 40 Lv 8 tourney games (2026-11-27). Three searches
     // each took their own share of the corps: in t8-20261127T064630Z at t90
@@ -6718,6 +6733,13 @@ pub const GENES: &[Gene] = &[
     // after the band turn (t60 on Online), where most long walks began.
     // Opt-in; see `advanced/settler_walk_deadline.rs`.
     Gene { tag: "settler-walk-clock-runs-all-game", field: "settler_walk_clock_runs_all_game", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_walk_clock_runs_all_game, disable: AdvancedAi::disable_settler_walk_clock_runs_all_game },
+    // Hotseat `hotseat-20261128T031456Z` seat p2, turns 15-16: Kraków
+    // trained a Warrior onto a centre another Warrior held, the unit pass
+    // gave neither an order, the host refused all 22 holds the bridge tried
+    // and both turns ended by force with two of three soldiers idle. A stack
+    // left by the unit pass keeps one unit and steps the rest beside it.
+    // Opt-in; see `advanced/stacked_soldiers_step_apart.rs`.
+    Gene { tag: "stacked-soldiers-step-apart", field: "stacked_soldiers_step_apart", kind: Kind::OptIn, enable: AdvancedAi::enable_stacked_soldiers_step_apart, disable: AdvancedAi::disable_stacked_soldiers_step_apart },
     // Hotseat `hotseat-20261128T031456Z` seat p3 (Science, Cree, one city):
     // Animal Husbandry, Mining, Pottery, then Sailing at t12, each "the most
     // valuable step toward rocketry"; no Writing, no Campus and five Science
@@ -6795,6 +6817,14 @@ pub const GENES: &[Gene] = &[
     // reviewed Lv 8 games; conquest took 0 cities by t150 in all four. See
     // `advanced/tagma_timing_needs_the_edge.rs`.
     Gene { tag: "tagma-timing-needs-the-edge", field: "tagma_timing_needs_the_edge", kind: Kind::OptIn, enable: AdvancedAi::enable_tagma_timing_needs_the_edge, disable: AdvancedAi::disable_tagma_timing_needs_the_edge },
+    // Deity Lv 8 benchmark 11-26/27, 8 of 40 reviewed games: 70-90 wounded
+    // spreader-turns a game sat more than 8 tiles from any Holy Site of ours
+    // with an unconverted rival city within one turn's move; the walk home
+    // was a median 12-23 tiles, and 100 trips lost the unit (most within a
+    // turn) against 157 that reached a ring.
+    // A wounded Missionary or Apostle far from home spends its charge at the
+    // nearest target in reach instead. Opt-in; see `advanced/apostle_army.rs`.
+    Gene { tag: "wounded-spreader-spends-far-from-home", field: "wounded_spreader_spends_far_from_home", kind: Kind::OptIn, enable: AdvancedAi::enable_wounded_spreader_spends_far_from_home, disable: AdvancedAi::disable_wounded_spreader_spends_far_from_home },
     // T8 benchmark 2026-11-27: with the Gold gene above armed, early cities
     // still fell in 6 of 40 reviewed Lv 8 games: the watch read a 2.9-7.4x
     // neighbour while the treasury held 10-45 of the 70-160 Gold reserved,

@@ -150,6 +150,10 @@ impl AdvancedAi {
         /// `BasicAi::opening_defense_spares_the_holy_site`; opt-in gene
         /// `opening-defense-spares-the-holy-site`.
         base.opening_defense_spares_the_holy_site => enable_opening_defense_spares_the_holy_site, disable_opening_defense_spares_the_holy_site;
+        /// Opt-in gene `asks-go-once-a-turn`: a diplomatic ask, a deal or a
+        /// Trader route goes to the host once a turn, not once a frame; see
+        /// `advanced/asks_go_once_a_turn.rs`.
+        asks_go_once_a_turn => enable_asks_go_once_a_turn, disable_asks_go_once_a_turn;
         // ---- append: c-d --------------------------------------------
         /// Opt-in gene `culture-and-religion-build-the-statue`; see
         /// `advanced/diplo_wonder_claim.rs`.
@@ -738,6 +742,10 @@ impl AdvancedAi {
         /// claim their Monument from the third city; see
         /// `advanced/culture_monuments.rs`.
         science_seat_monuments => enable_science_seat_monuments, disable_science_seat_monuments;
+        /// Opt-in gene `settler-pump-leans-on-production`: a slow settler pump
+        /// asks the host for a Production focus until the Settler is done;
+        /// see `advanced/settler_pump_leans_on_production.rs`.
+        settler_pump_leans_on_production => enable_settler_pump_leans_on_production, disable_settler_pump_leans_on_production;
         /// Opt-in gene `spreaders-spread-before-they-chart-2`: version one,
         /// and the corps' searchers share one budget; see
         /// `advanced/spreaders_spread_before_they_chart.rs`.
@@ -746,6 +754,10 @@ impl AdvancedAi {
         /// out counts on the Settler walk clock, and the walk deadline holds
         /// past the band turn; see `advanced/settler_walk_deadline.rs`.
         settler_walk_clock_runs_all_game => enable_settler_walk_clock_runs_all_game, disable_settler_walk_clock_runs_all_game;
+        /// Opt-in gene `stacked-soldiers-step-apart`: soldiers of ours the
+        /// unit pass leaves on one tile step apart, so each can take a hold;
+        /// see `advanced/stacked_soldiers_step_apart.rs`.
+        stacked_soldiers_step_apart => enable_stacked_soldiers_step_apart, disable_stacked_soldiers_step_apart;
         /// Opt-in gene `science-seat-writes-first`: a Science seat's research
         /// takes Writing once it knows two techs; see
         /// `advanced/science_seat_writes_first.rs`.
@@ -784,6 +796,9 @@ impl AdvancedAi {
         /// Opt-in gene `tagma-timing-needs-the-edge`; see
         /// `advanced/tagma_timing_needs_the_edge.rs`.
         tagma_timing_needs_the_edge => enable_tagma_timing_needs_the_edge, disable_tagma_timing_needs_the_edge;
+        /// Opt-in gene `wounded-spreader-spends-far-from-home`; see
+        /// `advanced/apostle_army.rs`.
+        wounded_spreader_spends_far_from_home => enable_wounded_spreader_spends_far_from_home, disable_wounded_spreader_spends_far_from_home;
         /// Opt-in gene `watched-capital-trains-its-defender`; see
         /// `advanced/watched_capital_trains_its_defender.rs`.
         watched_capital_trains_its_defender => enable_watched_capital_trains_its_defender, disable_watched_capital_trains_its_defender;

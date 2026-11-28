@@ -72,8 +72,9 @@ not have.
    way `--manual-lobby` does, feeds a recorded opening board through a scratch
    `Automation.log`, has a real decision worker answer it and stops it, checks
    that the bundled decider takes every gene on the live ladder's list the
-   bundle ships (`deploy/live-force-on.txt`, with its mod arms
-   `deploy/live-mod-arms.txt`: what the CIVVIS seats play), then starts
+   bundle ships (`deploy/live-force-on.txt` and the hotseat-only genes on top,
+   `deploy/hotseat-force-on.txt`, with its mod arms `deploy/live-mod-arms.txt`:
+   what the CIVVIS seats play), then starts
    `--manual-lobby` itself and stops it with `--stop` (about twenty seconds).
 
 5. **macOS only:** the control mod is installed inside the game's application

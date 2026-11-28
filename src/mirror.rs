@@ -2789,6 +2789,8 @@ const CITY_KEYS: &[&str] = &[
     "food_favored",
     "food_disfavored",
     "food_focus_managed",
+    "production_favored",
+    "production_focus_managed",
     "yield_sources",
     "center_yields",
     "incoming_routes",

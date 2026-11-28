@@ -560,3 +560,87 @@ fn a_tile_under_our_own_soldier_is_a_refuge() {
         "the rival must beat the guard before it can condemn"
     );
 }
+
+fn spends_far_from_home() -> AdvancedAi {
+    let mut ai = home_alive();
+    ai.enable_wounded_spreader_spends_far_from_home();
+    ai
+}
+
+#[test]
+fn a_wounded_spreader_far_from_home_spends_beside_a_rival_city() {
+    let (mut g, _, site, abroad) = field();
+    let rival = g.cities[&abroad].pos;
+    let beside = (rival.0 - 1, rival.1);
+    let walker = spawn(&mut g, "missionary", 0, beside, 40, 3);
+    assert!(
+        g.wdist(beside, site) > FAR_FROM_HOME,
+        "fixture: home is far"
+    );
+    assert_eq!(
+        home_alive().wounded_preacher_goes_home(&mut g, 0, walker),
+        Some(true)
+    );
+    assert_eq!(
+        g.units[&walker].charges, 3,
+        "off, it walks home and spends nothing"
+    );
+    assert!(g.wdist(g.units[&walker].pos, site) < g.wdist(beside, site));
+
+    let (mut g, _, _, abroad) = field();
+    let spender = spawn(&mut g, "missionary", 0, beside, 40, 3);
+    let before = g.cities[&abroad].pressure.get(OURS).copied().unwrap_or(0.0);
+    assert_eq!(
+        spends_far_from_home().wounded_preacher_goes_home(&mut g, 0, spender),
+        Some(true)
+    );
+    assert_eq!(g.units[&spender].charges, 2, "on, the charge is spent here");
+    assert!(g.cities[&abroad].pressure.get(OURS).copied().unwrap_or(0.0) > before);
+}
+
+#[test]
+fn a_wounded_spreader_far_from_home_steps_toward_a_city_in_reach() {
+    let (mut g, _, _, abroad) = field();
+    let rival = g.cities[&abroad].pos;
+    let start = (rival.0 - SPEND_REACH, rival.1);
+    let walker = spawn(&mut g, "missionary", 0, start, 40, 3);
+    assert_eq!(
+        spends_far_from_home().wounded_preacher_goes_home(&mut g, 0, walker),
+        Some(true)
+    );
+    assert!(g.wdist(g.units[&walker].pos, rival) < SPEND_REACH);
+    assert_eq!(g.units[&walker].charges, 3);
+}
+
+#[test]
+fn a_wounded_spreader_with_nothing_in_reach_still_walks_home() {
+    let (mut g, _, site, abroad) = field();
+    let rival = g.cities[&abroad].pos;
+    let start = (rival.0 - SPEND_REACH - 4, rival.1);
+    let walker = spawn(&mut g, "missionary", 0, start, 40, 3);
+    assert!(g.wdist(start, site) > FAR_FROM_HOME);
+    assert_eq!(
+        spends_far_from_home().wounded_preacher_goes_home(&mut g, 0, walker),
+        Some(true)
+    );
+    assert!(g.wdist(g.units[&walker].pos, site) < g.wdist(start, site));
+    assert_eq!(g.units[&walker].charges, 3);
+}
+
+#[test]
+fn a_wounded_army_apostle_keeps_its_last_charge_and_walks_home() {
+    let (mut g, _, site, abroad) = field();
+    let rival = g.cities[&abroad].pos;
+    let beside = (rival.0 - 1, rival.1);
+    let kept = spawn(&mut g, "apostle", 0, beside, 40, 1);
+    let mut ai = army();
+    ai.enable_corps_comes_home_alive();
+    ai.enable_wounded_spreader_spends_far_from_home();
+    assert!(
+        ai.keeps_its_last_charge(&g, 0, kept),
+        "fixture: an army Apostle"
+    );
+    assert_eq!(ai.wounded_preacher_goes_home(&mut g, 0, kept), Some(true));
+    assert_eq!(g.units[&kept].charges, 1);
+    assert!(g.wdist(g.units[&kept].pos, site) < g.wdist(beside, site));
+}
