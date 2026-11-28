@@ -264,11 +264,11 @@ do
 	world.pid, world.active[1] = 1, true
 	handlers.LocalPlayerTurnBegin()
 	local beat = 0
-	ticks(handlers, 240, function()
+	ticks(handlers, 200, function()
 		beat = beat + 1
 		env.ExposedMembers.CivvisSeatBeat[1] = beat
 	end)
-	assert(cover.up, "a seat that keeps playing is never uncovered")
+	assert(cover.up, "a seat that keeps playing is not uncovered (short of the long clock, 240 s)")
 	-- The seat moves the camera, selects its own unit, leaves a targeting mode.
 	world.camX, world.camY = 40, 41
 	world.unit = { GetOwner = function() return 1 end }
@@ -357,6 +357,50 @@ do
 	world.paused[1] = true
 	ticks(handlers, 91)
 	assert(not cover.up and last(did, "hotseat_cover"):find('"reason":"yield_quiet"', 1, true))
+end
+-- A turn that runs on although its controller beats (a controller past its
+-- forfeit ladder still stamps every pass): not hidden for good either.
+do
+	local cover, world, did, handlers, env = load(HOTSEAT())
+	handlers.LocalPlayerTurnEnd()
+	world.pid, world.active[1] = 1, true
+	handlers.LocalPlayerTurnBegin()
+	local beat = 0
+	local function stamp()
+		beat = beat + 1
+		env.ExposedMembers.CivvisSeatBeat[world.pid] = beat
+	end
+	ticks(handlers, 239, stamp)
+	assert(cover.up, "239 s of a beating turn: still covered")
+	ticks(handlers, 1, stamp)
+	assert(not cover.up and last(did, "hotseat_cover"):find('"reason":"yield_long"', 1, true),
+		"240 s: the cover stands aside")
+	assert(last(did, "hotseat_cover"):find('"seat_turn":240', 1, true), last(did, "hotseat_cover"))
+	-- That turn stays uncovered; the next seat's turn is covered and counted afresh.
+	handlers.LocalPlayerTurnBegin()
+	assert(not cover.up)
+	world.active[1] = false
+	handlers.LocalPlayerTurnEnd()
+	assert(cover.up)
+	world.pid, world.active[2] = 2, true
+	handlers.LocalPlayerTurnBegin()
+	ticks(handlers, 200, stamp)
+	assert(cover.up and cover.turnFor == 200, "a new turn, a new clock: " .. cover.turnFor)
+	-- The person's own turn is not on this clock (it has its own, 10 s paused).
+	world.active[2] = false
+	handlers.LocalPlayerTurnEnd()
+	world.pid, world.turn, world.active[0], world.paused[0] = 0, 2, true, false
+	handlers.PlayerChange_Close(0)
+	world.active[0] = false
+	handlers.LocalPlayerTurnEnd()
+	assert(cover.up)
+	-- A config may set its own length.
+	local cover2, world2, did2, handlers2, env2 = load(HOTSEAT({ HotseatCoverLongSeconds = 30 }))
+	handlers2.LocalPlayerTurnEnd()
+	world2.pid, world2.active[1] = 1, true
+	handlers2.LocalPlayerTurnBegin()
+	ticks(handlers2, 31, function() beat = beat + 1; env2.ExposedMembers.CivvisSeatBeat[1] = beat end)
+	assert(not cover2.up and last(did2, "hotseat_cover"):find('"reason":"yield_long"', 1, true))
 end
 do
 	local cover, world, did, handlers = load(HOTSEAT())
