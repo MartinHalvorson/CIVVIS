@@ -12,8 +12,8 @@
     "A stop or a goal that is `amortized` plays many games at once, and its time is the time from one finished game to the next: the stopwatch's time over the games finished, which no single game takes (operator 2026-11-24: \"starting left of CIVVIS self-play (but not including that), we should note that estimates are amortized games\"). A projected stop is amortized when the stop it multiplies is. Every amortized entry has its games per second beside its time and leads with them (operator, the same day: \"on the left side of the timeline, at more than 1 game / second, we should also provide the games per second as the standard measure and (time per game amoritized as the second measure)\"; and later that day of the M5 Max's stop, which is under a game a second: \"lest have m5 max blurb list amortiized games per second as the primary unit. as this is really amortiization at play\"). A stop that is amortized has its goal worded in games a second too.",
     "`line_to` is the multiplier the line runs out to, where that is past the largest goal (operator 2026-11-24: \"maybe extend timeline out to 10,000,000x\"). It is the line's end and no goal: nothing is aimed at it and nothing is costed to it. The million stands on the line at its own place, a tenfold short of the end, and the distributed fleet, which is past a million, stands on the line too, where it was an arrow off the end. Without `line_to`, or with one short of the largest goal, the line ends at the largest goal as it did.",
     "`gap` names two stops of the line, `slow` and `fast`, and the page says under the line why the second is so many times faster than the first (operator 2026-11-24: \"what is the main reason civvis is so much faster than firaxis civ 6? please try to explain that gap in the chart/timeline\"). What it is drawn from is in the readings. A reading of a real game may say the turn it ended on (`turns`) and its seconds in three `parts`: `setup`, from launching Civilization VI to the first turn, `play`, and `ending`. A reading of the simulator may say its `turns`, the mean of its games, and its `cpu_seconds`, the processor time one game took by the games' own count. And `gap.threads` is what `tools/civ6_thread_time.py` read of a real game's process while it played: the day (`taken`), the `run`, the turns the recording covers (`from_turn` to `to_turn`), the seconds of play between them by the clock (`play_seconds`), the processor seconds the whole process used in them (`cpu_seconds`) and those of the game's own thread, the window's thread and the worker threads (`game_seconds`, `window_seconds`, `workers_seconds`); `stacks`, the samples of the threads' stacks taken during it (on which `turns`, how many `samples` of each thread, and in how many the game thread was parked or passing its turn and the window's thread passing its turn); `from`, the whole account, and `note`, the few words of it the page shows. The slower game's bar is its newest reading's `parts`, with its play split by the game thread's share of `play_seconds`. Shares and factors are worked out when the site is published and none is written here.",
-    "Nothing derived is written here. `beta/speedup_timeline.py` works out every multiplier, text and place on the line when the site is published."
-,
+    "Nothing derived is written here. `beta/speedup_timeline.py` works out every multiplier, text and place on the line when the site is published.",
+    "`runs` is what a stop is played on, as the line says it under its figures (operator 2026-11-27: \"note that firaxis (native app) and civvis (browser)\", \"if we have different speeds for browser and native speeds too we should note that\"): `native app` for Civilization VI itself, `native` for the CIVVIS program built for the machine, which is what the simulator stops are timed on. A stop's `browser` is how much longer the same games take in the browser, on the site's WebAssembly build (`ratio`, with `taken` and `from`); the line gives the browser's time as the stop's reading times it.",
     "`lanes` split the line into rows, top to bottom (operator 2026-11-27: \"we should split the synthetic data pipeline up into a few rows. first row is today's software scale-up, second row is hardware scale up, third row is additional optimizations (hyperscale can start where hardwaer scale up ends and point left (Many OOMs). third row should also have start from civvis self-play (which can be a range (6s-34s) and point left to \"Civ 6 computational irreducability). can have a range here, with maybe 1-10x???? being the width. maybe actually add a top row for firaxis (human player, CIVVIS->Firaxis..., Firaxis self play. the old first row is now second row and can be CIVVIS. change name to synthetic data speed and scale up\"). Every row is drawn on the one scale. A lane has a `key`, its `name`, the stops, projected stops and goals it holds (`entries`), and, where it carries on from a stop of another row, that stop (`after`): its line starts at that stop's place. `spans` are a lane's stretches with no single figure: a stop as a `range` from its own reading to the fastest game on record (`fastest`, the record videos), a guess `times` past the span it is `after` (its two ends that many times faster than that span's fast end), and an `open` arrow from a stop to the line's end. A projected stop no lane holds is still worked out (the M5 Max's theoretical most stands on the irreducible game) and is not drawn. The distributed RL fleet stood on the line as a projected stop from 2026-11-22 (\"potential distributed RL fleet: up to 1000+x\") until hyperscale took its place."
   ],
   "goals": [
@@ -72,6 +72,7 @@
     },
     {
       "key": "control",
+      "runs": "native app",
       "benchmark": "control",
       "readings": [
         {"taken": "2026-11-22", "seconds": 757, "from": "The middle game of the 238 complete Lv 8 (Deity) verification games played from 2026-11-16 to 2026-11-22 (results.jsonl on the ledger branch; a game recorded once, ending in a victory of ours or a rival's), each timed from the stamp in its tag to the stamp of its result. A tenth took under 10.1 minutes and a tenth over 16.3."},
@@ -80,6 +81,7 @@
     },
     {
       "key": "firaxis_self_play",
+      "runs": "native app",
       "readings": [
         {"taken": "2026-11-24", "seconds": 549, "worked": true, "from": "Worked out from our own games and not timed: no game has been played yet with Firaxis's AI in every seat on this setup. In the 40 newest complete Lv 8 (Deity) computer control games with a run folder (results 2026-11-23 17:22Z to 2026-11-24 14:48Z; six players, Continents, Online speed), the middle game's parts were 47.8 s of setup, 238.7 s of our own seat's turns, 409.4 s of Firaxis's AI playing its five seats with the city-states and barbarians, and 9.9 s of ending, 717.5 s in all over 180 turns. A game of that length with a sixth Firaxis seat in place of ours is the setup, the AI's turns and the ending: 467 s if the sixth seat cost nothing and 549 s if it cost a fifth more, and the slower is shown. Timing one needs the control harness to leave our seat to the game's own autoplay, which it cannot do yet."},
         {"taken": "2026-11-24", "seconds": 331.9, "turns": 171, "parts": {"setup": 48.0, "play": 275.2, "ending": 8.7}, "from": "Timed: one game of Civilization VI itself with Firaxis's own AI in every seat, played by the verification lane between two of its own games on 2026-11-24 (run firaxis-selfplay-20261124T174852Z, `tools/civ6_play.py --firaxis-self-play`). The lane's setup at Lv 8 (Deity): six players, Continents, a small map, Online speed, the control mod's time scale 3, our seat's view drawn. On its first turn the mod handed our seat to the game's autoplay manager and issued no order. Germany won a science victory on turn 171. The whole run took 331.9 s by the harness's run clock, the clock the computer control games are timed by: 48.0 s of setup, 275.2 s of play at 1.61 s a turn, and 8.7 s of ending. The machine's load was about 13 throughout, with the self-play tournament running beside it. It is one game, and a game's length moves with the turn it is won on."}
@@ -96,6 +98,12 @@
     },
     {
       "key": "self_play",
+      "runs": "native",
+      "browser": {
+        "ratio": 1.7,
+        "taken": "2026-11-27",
+        "from": "measured 2026-11-27 on an M5 Max with other work running (load about 13 of 18 cores), the same game in both, six seats on 74x46 Continents at Online speed, played through the routes the site uses (/new, then /step ten at a time until it is finished): the native program, a release build of main ac20a692 (`civvis play`), and the site's civvis.wasm from /test (7f620d7, the same engine) in Node's V8, the engine Chrome runs it on. Seed 20261127, one game in both, 130 turns: 17.0 s native (17.4 and 16.5) and 29.5 s in the browser's engine, 1.74 times as long. Seed 31415: 43.6 s native over 195 turns and 71.7 s in the browser's engine over 201 (71.4 and 72.0; the two builds part ways in that game), 1.59 times as long a turn. Rounded to 1.7."
+      },
       "cores": 1,
       "tournament": true,
       "goal_seconds": 10,
@@ -109,6 +117,7 @@
     },
     {
       "key": "all_cores",
+      "runs": "native",
       "of": "self_play",
       "amortized": true,
       "goal_seconds": 1,

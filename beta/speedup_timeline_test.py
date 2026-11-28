@@ -514,8 +514,59 @@ class Ledger(unittest.TestCase):
                          [(goal["key"], speedup_timeline.times(goal["times"]), speedup_timeline.clock(base / goal["times"])) for goal in LEDGER["goals"]])
         self.assertEqual([goal["at"] for goal in shown["goals"]], [round(6 / 7, 4)])
         self.assertEqual((shown["goals"][-1]["times"], shown["goals"][-1]["time"]), ("1,000,000x", "18 ms"))
-        self.assertEqual(shown["ticks"][-1], {"times": "10 million x", "at": 1.0})
+        self.assertEqual(shown["ticks"][-1], {"times": "10 million x", "at": 1.0, "per_game": "1.8 ms/game", "per_time": "556 games/s"})
         self.assertRegex(shown["speedup"], r"^\d{1,3}(,\d{3})*x$")
+
+    def test_each_tenfold_is_also_a_time_a_game_and_games_in_a_time(self):
+        # Operator 2026-11-27: "we can also have a time / game measure along
+        # the top and a games / time measure along the bottom". 1x is a game
+        # by hand, five hours, which is 0.2 games an hour; each tenfold a
+        # tenth of the time and ten times the games, in the unit that leaves
+        # at least one.
+        shown = speedup_timeline.timeline(ROOT)
+        self.assertEqual([(tick["times"], tick["per_game"], tick["per_time"]) for tick in shown["ticks"]], [
+            ("1x", "5 h/game", "0.2 games/h"), ("10x", "30 min/game", "2 games/h"), ("100x", "3 min/game", "20 games/h"),
+            ("1,000x", "18 s/game", "3.3 games/min"), ("10,000x", "1.8 s/game", "33.3 games/min"),
+            ("100,000x", "180 ms/game", "5.6 games/s"), ("1 million x", "18 ms/game", "56 games/s"),
+            ("10 million x", "1.8 ms/game", "556 games/s")])
+        self.assertEqual(speedup_timeline.per_time(1 / 3600), "1 game/h")
+        self.assertEqual(speedup_timeline.fine_clock(0.0018), "1.8 ms")
+        # The page draws them over the track and under it, at the tenfolds'
+        # own places.
+        section = PAGE[PAGE.index('<section class="res-section" id="perf-line"'):PAGE.index("</section>", PAGE.index('id="perf-line"'))]
+        top, track, bottom = (section.index(piece) for piece in (
+            '<div class="speed-scale is-top" data-scale="game"', '<div class="speed-track">', '<div class="speed-scale is-bottom" data-scale="rate"'))
+        self.assertLess(top, track)
+        self.assertLess(track, bottom)
+        self.assertIn('for (const [name, words] of [["game", tick.per_game], ["rate", tick.per_time]]) {', PAGE)
+
+    def test_a_stop_says_what_it_is_played_on_and_its_time_in_the_browser(self):
+        # Operator 2026-11-27: "note that firaxis (native app) and civvis
+        # (browser)", "if thats true", "if we have different speeds for
+        # browser and native speeds too we should note that". Civilization
+        # VI is a native app; CIVVIS's games are timed on its native
+        # program, and the same games take longer in the browser's
+        # WebAssembly build, by the ratio the ledger measured.
+        shown = speedup_timeline.timeline(ROOT)
+        stops = {stop["key"]: stop for stop in shown["stops"]}
+        self.assertEqual(stops["control"]["where"], "native app")
+        self.assertEqual(stops["firaxis_self_play"]["where"], "native app")
+        self.assertEqual(stops["all_cores"]["where"], "native")
+        self.assertNotIn("where", stops["hand"])
+        ledger = {stop["key"]: stop for stop in LEDGER["stops"]}
+        ratio = ledger["self_play"]["browser"]["ratio"]
+        self.assertGreater(ratio, 1)
+        browser = stops["self_play"]["seconds"] * ratio
+        self.assertEqual(stops["self_play"]["where"], f"native · {speedup_timeline.clock(browser)} in the browser")
+        self.assertEqual(stops["self_play"]["browser_seconds"], round(browser, 3))
+        self.assertIn("WebAssembly", stops["self_play"]["where_from"])
+        # Each measured stop has the line for it on the page, under its
+        # figures and over its goal, and the page writes it in.
+        blocks = dict(re.findall(r'<li class="speed-stop[^"]*" data-stop="(\w+)">(.*?)</li>', PAGE, re.S))
+        for key in ("control", "firaxis_self_play", "self_play", "all_cores"):
+            block = blocks[key]
+            self.assertLess(block.index('data-speed="where"'), block.index('data-speed="goal"'), key)
+        self.assertIn('put(entry, "where", stop.where);', PAGE)
 
     def test_the_line_runs_out_past_its_last_goal(self):
         # Operator 2026-11-24: "maybe extend timeline out to 10,000,000x".
@@ -545,7 +596,7 @@ class Ledger(unittest.TestCase):
         with tempfile.TemporaryDirectory() as scratch:
             short = speedup_timeline.timeline(tree(scratch, ledger, runs))
         self.assertEqual([goal["at"] for goal in short["goals"]], [1.0])
-        self.assertEqual(short["ticks"][-1], {"times": "1 million x", "at": 1.0})
+        self.assertEqual(short["ticks"][-1], {"times": "1 million x", "at": 1.0, "per_game": "18 ms/game", "per_time": "56 games/s"})
         ledger["projected"].append({"key": "fleet", "over": "all_cores", "estimates": [
             {"taken": "2026-11-22", "times": 1000, "or_more": True, "from": "a potential and not a run"}]})
         with tempfile.TemporaryDirectory() as scratch:
@@ -754,7 +805,8 @@ class Following(unittest.TestCase):
         room = speedup_timeline.ROOM
         self.assertAlmostEqual(room, 170 / (1000 - speedup_timeline.GUTTER))
         self.assertEqual(speedup_timeline.GUTTER, 120)
-        self.assertIn(".speed-track.is-laned { --gutter: 120px;", PAGE)
+        self.assertIn(".speed.is-laned { --gutter: 120px; }", PAGE)
+        self.assertIn(".speed.is-laned .speed-scale { margin-left: var(--gutter); }", PAGE)
         tight = 150 / 1000
         self.assertEqual(speedup_timeline.rows([0.0, 0.28, 0.42], ["below", "below", "below"], tight), [False, False, True])
         self.assertEqual(speedup_timeline.rows([0.0, 0.28, 0.42], ["below", "above", "below"], tight), [False, False, False])
