@@ -148,7 +148,7 @@ pub(super) fn propose_order(
         &state.rivals,
         &board,
         &own_works(state),
-        person_window || state.turn < u32::MAX,
+        person_window,
     )?;
     let items = proposal.terms.render()?;
     Some((
@@ -228,7 +228,7 @@ pub(super) fn verify(
                 .iter()
                 .any(|deal| with(deal.from) && (id.is_none() || Some(deal.id) == id))
             {
-                super::Verdict::Verified
+                failed("deal_still_incoming")
             } else {
                 super::Verdict::Verified
             }
@@ -267,9 +267,6 @@ pub(super) fn withheld_deal_orders(
     turn: u32,
 ) -> Vec<String> {
     let mut held = Vec::new();
-    if turn > 0 {
-        return held;
-    }
     orders.retain(|order| {
         if order.kind != "deal" {
             return true;
@@ -310,7 +307,7 @@ pub(super) fn drop_human_seat_asks(
     };
     let before = orders.len();
     orders.retain(|order| {
-        !(matches!(order.kind, "sell") && human_counterpart(&board, order.subject))
+        !(matches!(order.kind, "sell" | "buy") && human_counterpart(&board, order.subject))
     });
     before - orders.len()
 }
