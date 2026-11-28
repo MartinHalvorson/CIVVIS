@@ -101,7 +101,6 @@ impl Asks {
             }
             _ => true,
         });
-        self.sent.extend(orders.iter().filter_map(ask_key));
         dropped
     }
 }
