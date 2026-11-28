@@ -663,7 +663,7 @@ publishes almost none. Now, on its own turn only:
 - after 4 s, every 3 s, it answers what the game says it waits on itself: ready
   units are held in place, one refusing every hold has its stale operation or
   queued path cancelled (`UNITCOMMAND_CANCEL`, UnitCommands.xml:36) and is held
-  again, an envoy prompt is marked considered (CityStates.lua:451), any other
+  again, an envoy prompt is marked considered (CityStates.lua:452), any other
   blocker gets the ladder's answer; then the notification is dismissed and the
   end of turn asked with SHIFT+ENTER's request (ActionPanel.lua:1099,
   `UI.RequestAction(ActionTypes.ACTION_ENDTURN, { REASON = "UserForced" } )`);

@@ -30220,7 +30220,7 @@ end
 --      first), and one that refuses every hold has its stale operation or queued
 --      path cancelled (`UNITCOMMAND_CANCEL`, UnitCommands.xml:36, the shipped
 --      Cancel button) and is held again; an envoy prompt is marked considered
---      (CityStates.lua:451); any other blocker gets the ladder's answer
+--      (CityStates.lua:452); any other blocker gets the ladder's answer
 --      (research, civic, production, policies, pantheon, governor, dedication,
 --      government). Then the notification is dismissed and the end of turn
 --      asked with the shipped SHIFT+ENTER request (ActionPanel.lua:1099
