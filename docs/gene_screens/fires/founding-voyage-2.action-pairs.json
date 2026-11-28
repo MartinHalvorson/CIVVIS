@@ -1,0 +1,23 @@
+{
+ "kind": "captured_native_action_pairs_v1",
+ "tag": "founding-voyage-2",
+ "scope": "Recorded proposal activation on captured hotseat input only, not host execution or strength. 12 boards from two hotseat runs on martins-m4-air, 2026-11-27/28 (6 players, Continents, Small, Prince, Online): seat p1 of live-6p-20261128T0446Zd (Kupe / Maori, whose embarked Settler and Warrior never moved and which never founded) on turns 1-5, and land starts as controls (seats p2-p5 of that run on turn 1, p2 on turn 5 after founding, seats p1 and p3 of hotseat-20261128T031456Z on turn 1). Each board is the seat's own events.jsonl cut after turn N+1 and replayed at turn N with `civvis_orders --resumed`, both arms with that seat's own requested genome from its brain.log line 1 (`forced=[...]` as --with, `withheld=` as --without) and its own victory target and civilization; the on arm adds --with founding-voyage-2. The decider is one frozen binary: the hotseat-bundle macOS arm64 build (release profile, LTO off; run 46110953297) of probe commit 27a95ad9, which is main 16a8bb23 with this pull request's src/ at fa9783e0 (no Rust changed on main between 16a8bb23 and this branch's base; the probe exists because the bundle workflow's --status self-check fails on later main before uploading). 12 of 12 complete; 5 of 12 change. The Kupe boards, turns 1-5: the off arm (the live failure) proposes no unit order at all; the on arm sends the Settler MOVE_TO (42,22) and the Warrior MOVE_TO (41,23), beside it, with three `founding-voyage-2:` journal lines each. Unchanged: all seven land-start controls (every unit order identical in both arms).",
+ "archive": {
+  "path": "docs/eval/2026-11-28-founding-voyage-2.native-queries.tar.xz",
+  "sha256": "b601457d295059d4a61223944f1a1db451150fc5855dda1a5852ed47801a37bb"
+ },
+ "members": [
+  "founding-voyage-2-queries/0000/result.json",
+  "founding-voyage-2-queries/0001/result.json",
+  "founding-voyage-2-queries/0002/result.json",
+  "founding-voyage-2-queries/0003/result.json",
+  "founding-voyage-2-queries/0004/result.json",
+  "founding-voyage-2-queries/0005/result.json",
+  "founding-voyage-2-queries/0006/result.json",
+  "founding-voyage-2-queries/0007/result.json",
+  "founding-voyage-2-queries/0008/result.json",
+  "founding-voyage-2-queries/0009/result.json",
+  "founding-voyage-2-queries/0010/result.json",
+  "founding-voyage-2-queries/0011/result.json"
+ ]
+}

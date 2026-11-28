@@ -22,5 +22,7 @@
     "    --json docs/gene_screens/fires/<tag>.json",
     "-- then DELETE the entry here, or the stale-waiver check fails."
   ],
-  "waivers": {}
+  "waivers": {
+    "person-units-threaten-civilians": "Hotseat only, and no board that exists yet can show it: it reads rivals[].person, which only a hotseat install exports, and this PR adds that export (2026-11-27). No native screen seats a person and no captured live board carries the mark, so every replay reads exactly as off. Prove it with an action pair on the first hotseat board recorded with the new mod, then delete this waiver."
+  }
 }

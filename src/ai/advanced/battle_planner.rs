@@ -1161,6 +1161,10 @@ struct Target {
     /// carries the premium at that scale; a wound earns the damage premium at
     /// it. Zero with the gene off.
     wall_threat: f64,
+    /// `taken-settler-is-retaken`: what the civilians taken from us that
+    /// share this tile are worth. A kill frees them and earns all of it; a
+    /// wound earns its share of the hit points. Zero with the gene off.
+    hostage: f64,
 }
 
 /// One legal blow: a shooter, from a stand, at a target, with the exact
@@ -1300,7 +1304,7 @@ impl BeamState {
         let dealt = self.dealt[candidate.target] + damage;
         let kill = dealt >= f64::from(target.hp) * KILL_MARGIN;
         let gain = if kill {
-            target.kill_value
+            target.kill_value + target.hostage
         } else {
             damage_value(
                 damage.min(remaining),
@@ -1310,6 +1314,7 @@ impl BeamState {
             ) + super::siege_at_the_walls_dies_first::WALL_THREAT_DAMAGE_PREMIUM
                 * target.wall_threat
                 * damage.min(remaining)
+                + target.hostage * damage.min(remaining) / f64::from(target.hp.max(1))
         };
         let mut cost = 0.0;
         let mut returned = 0.0;
@@ -2174,6 +2179,9 @@ impl AdvancedAi {
                     siege: spec.siege,
                     captures: spec.is_melee_capable(),
                     wall_threat,
+                    // `taken-settler-is-retaken`: see
+                    // `advanced/taken_settler_is_retaken.rs`.
+                    hostage: self.taken_civilian_value_at(g, pid, pos),
                 }
             })
             .collect();
