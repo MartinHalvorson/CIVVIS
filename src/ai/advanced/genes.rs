@@ -5911,6 +5911,15 @@ pub const GENES: &[Gene] = &[
     // ten; sites beside that camp lose value. Opt-in; see
     // `advanced/camp_stall_goes_home.rs`.
     Gene { tag: "camp-stall-goes-home", field: "camp_stall_goes_home", kind: Kind::OptIn, enable: AdvancedAi::enable_camp_stall_goes_home, disable: AdvancedAi::disable_camp_stall_goes_home },
+    // Hotseat check game crash-p4-fa (2026-11-28, seat p1, Greece): the
+    // first Settler stood on its chosen site on turn 3, retreated from a
+    // barbarian Scout three tiles off (risk 38), fled that Scout's remembered
+    // envelope on turns 4-8, walked back on turn 9 and was taken beside a camp
+    // on turn 10; the cityless seat was eliminated. A seat with no city founds
+    // where its Settler stands once a threat is in reach, after three turns,
+    // or rather than walk more than two. Opt-in; see
+    // `advanced/capital_founds_before_it_flees.rs`.
+    Gene { tag: "capital-founds-before-it-flees", field: "capital_founds_before_it_flees", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_founds_before_it_flees, disable: AdvancedAi::disable_capital_founds_before_it_flees },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the

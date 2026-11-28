@@ -353,6 +353,11 @@ impl AdvancedAi {
         /// no blow for three turns goes home for ten; see
         /// `advanced/camp_stall_goes_home.rs`.
         camp_stall_goes_home => enable_camp_stall_goes_home, disable_camp_stall_goes_home;
+        /// Opt-in gene `capital-founds-before-it-flees`: a seat with no city
+        /// founds where its Settler stands rather than retreat, detour or
+        /// walk more than two turns; see
+        /// `advanced/capital_founds_before_it_flees.rs`.
+        capital_founds_before_it_flees => enable_capital_founds_before_it_flees, disable_capital_founds_before_it_flees;
         // ---- append: e-f --------------------------------------------
         /// Opt-in `faith-strike-wipes-the-spreaders`; see
         /// `AdvancedAi::faith_strike_wipes_the_spreaders`.
