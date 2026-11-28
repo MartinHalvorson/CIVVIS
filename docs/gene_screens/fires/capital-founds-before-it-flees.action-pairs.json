@@ -1,0 +1,19 @@
+{
+ "kind": "captured_native_action_pairs_v1",
+ "tag": "capital-founds-before-it-flees",
+ "scope": "Recorded proposal activation on captured live input only, not host execution or strength. One board sequence from the gated six-seat hot seat check game crash-p4-fa (2026-11-28, main at about 5f5bcad0, --genome live, seat p1, Greece, agent jack, victory civvis), whose seat never founded a city and was eliminated on turn 10: the seat's own events.jsonl, fed frame by frame from turn 1 through turn N (N = 3..10, one case each, each cut after turn N+1) to one --serve --fresh-board --explain --victory civvis --civ CIVILIZATION_GREECE process, the way the live brain runs it, with the game's own genome (genome.json 'with', 292 tags, all passed as --with in both arms). Both arms run one frozen civvis_orders built by CI from this PR at 865c6851 (hotseat-bundle run 46135264302, macos-arm64; sha256 ea29b1811a7b8f2f456d08db29edc38ad8d04ef148d567cd76bc1424b50c5002). The on arm adds --with capital-founds-before-it-flees. Off: every frame's orders equal the live seat's recorded decisions (turn 3 the Settler steps off its site, turns 4-8 it flees, turn 10 it walks to (23,29) beside the barbarian camp). On: FOUND_CITY for the Settler on turn 3 frame 0 at its site civ6 (25,34) (tile risk 38 from the barbarian Scout), and on each later recorded board it is shown: turn 3 frame 1 (26,34), turn 4 (26,34) and turns 5-8 at (26,33), (26,31), (26,29), (26,28) (the Scout remembered or in sight), and turn 10 one step to (23,27) and FOUND_CITY there (the site was more than two turns away and the Settler stood within three tiles of the city-state Auckland). Turn 9: no plot within one step can take a city (Auckland), so it walks as before. Boards after turn 3 are the recorded ones, which with the gene would not have existed; they show the rule on each.",
+ "archive": {
+  "path": "docs/eval/2026-11-28-capital-founds-before-it-flees.native-queries.tar.xz",
+  "sha256": "ede09bbbbeb82e441aef330884e02262ce6b669e6eabb9328ab6fd060ff13488"
+ },
+ "members": [
+  "native-queries-01/0000/result.json",
+  "native-queries-01/0001/result.json",
+  "native-queries-01/0002/result.json",
+  "native-queries-01/0003/result.json",
+  "native-queries-01/0004/result.json",
+  "native-queries-01/0005/result.json",
+  "native-queries-01/0006/result.json",
+  "native-queries-01/0007/result.json"
+ ]
+}

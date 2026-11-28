@@ -353,6 +353,11 @@ impl AdvancedAi {
         /// no blow for three turns goes home for ten; see
         /// `advanced/camp_stall_goes_home.rs`.
         camp_stall_goes_home => enable_camp_stall_goes_home, disable_camp_stall_goes_home;
+        /// Opt-in gene `capital-founds-before-it-flees`: a seat with no city
+        /// founds where its Settler stands rather than retreat, detour or
+        /// walk more than two turns; see
+        /// `advanced/capital_founds_before_it_flees.rs`.
+        capital_founds_before_it_flees => enable_capital_founds_before_it_flees, disable_capital_founds_before_it_flees;
         // ---- append: e-f --------------------------------------------
         /// Opt-in `faith-strike-wipes-the-spreaders`; see
         /// `AdvancedAi::faith_strike_wipes_the_spreaders`.
@@ -462,6 +467,9 @@ impl AdvancedAi {
         /// `advanced/guns_keep_the_oil.rs`.
         guns_keep_the_oil => enable_guns_keep_the_oil, disable_guns_keep_the_oil;
         // ---- append: l-o --------------------------------------------
+        /// Opt-in gene `lane-once-taken-holds`; see
+        /// `advanced/lane_once_taken_holds.rs`.
+        lane_once_taken_holds => enable_lane_once_taken_holds, disable_lane_once_taken_holds;
         /// Native land upgrade materials use a bounded host cash quote.
         land_army_asks_the_host_price => enable_land_army_asks_the_host_price, disable_land_army_asks_the_host_price;
         /// Opt-in gene `last-charge-joins-the-army`; see

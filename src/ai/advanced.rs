@@ -7149,6 +7149,14 @@ pub struct AdvancedAi {
     /// `camp-stall-goes-home`: each camp's contact and struck turns and the
     /// turn its closed row reopens. Empty with the gene off.
     camp_stalls: BTreeMap<Pos, camp_stall_goes_home::CampStall>,
+    /// `capital-founds-before-it-flees`: a seat with no city founds where its
+    /// Settler stands rather than retreat, detour or walk far. See
+    /// `advanced/capital_founds_before_it_flees.rs`. Off by default.
+    capital_founds_before_it_flees: bool,
+    /// `capital-founds-before-it-flees`: the turn this seat first stepped a
+    /// Settler while it held no city; cleared once it holds one. Empire
+    /// memory, so a rebuilt board's new unit ids do not restart it.
+    capital_founds_clock: Option<u32>,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -8417,6 +8425,14 @@ pub struct AdvancedAi {
     /// `advanced/guns_keep_the_oil.rs`. Opt-in.
     guns_keep_the_oil: bool,
     // ---- append: l-o ------------------------------------------------
+    /// `lane-once-taken-holds`: an assigned lane that has once followed its
+    /// lane does not hand the plan back to Expansion when the city target
+    /// rises or a new site opens. See `advanced/lane_once_taken_holds.rs`.
+    /// Off by default.
+    lane_once_taken_holds: bool,
+    /// `lane-once-taken-holds`: the assigned lane `assess` last followed.
+    /// See `advanced/lane_once_taken_holds.rs`.
+    lane_taken: std::cell::Cell<Option<VictoryTarget>>,
     /// Ask the host for a cash price for a native land upgrade material bill.
     /// Opt-in; see `advanced/army_upgrade_materials.rs`.
     land_army_asks_the_host_price: bool,
@@ -12194,6 +12210,8 @@ mod first_capital_defense;
 /// An assigned lane's first-half production dispatch. Opt-in gene
 /// `lane-delegates-production`; see `advanced/lane_delegates_production.rs`.
 mod lane_delegates_production;
+/// `lane-once-taken-holds`: see `advanced/lane_once_taken_holds.rs`.
+mod lane_once_taken_holds;
 /// A Military Alliance with the empire fighting our enemy or the neighbour
 /// at our border. Opt-in gene `military-alliance-shield`; see
 /// `advanced/military_alliance_shield.rs`.
@@ -12829,6 +12847,9 @@ pub use gene_ledger::{
 mod camp_buyout;
 /// `camp-stall-goes-home`: see `advanced/camp_stall_goes_home.rs`.
 mod camp_stall_goes_home;
+/// `capital-founds-before-it-flees`: see
+/// `advanced/capital_founds_before_it_flees.rs`.
+mod capital_founds_before_it_flees;
 
 /// `camps-close-the-age`: ClearCamp rows close a first-era Age gap. One
 /// opt-in gene; see `advanced/camps_close_the_age.rs`.

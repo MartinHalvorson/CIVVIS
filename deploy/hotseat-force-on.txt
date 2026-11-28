@@ -34,6 +34,12 @@ refused-friendship-waits
 # 9-16) goes home and the sites beside the camp lose value. A trial: watch its journal
 # lines in the first armed game (#6026).
 camp-stall-goes-home
+# A seat with no city founds where its first Settler stands once a raider is in reach (seen
+# or remembered), after three turns, or rather than walk more than two: jack's Settler fled
+# a barbarian Scout from its own site turns 3-8, was taken beside a camp on turn 10 and the
+# seat was eliminated with no city (crash-p4-fa p1; #6078). Also what stops a person's Scout
+# parked beside the first Settler (person-units-threaten-civilians) from chasing it off.
+capital-founds-before-it-flees
 # A deal another seat or the person proposes to a CIVVIS seat is answered on that seat's next
 # turn by its own price: accept, counter or refuse. Seen working in gated check games
 # trade-live-3..7 (accepted deals moved Gold, luxuries, Horses and per-turn payments on both

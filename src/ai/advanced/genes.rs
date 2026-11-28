@@ -5911,6 +5911,15 @@ pub const GENES: &[Gene] = &[
     // ten; sites beside that camp lose value. Opt-in; see
     // `advanced/camp_stall_goes_home.rs`.
     Gene { tag: "camp-stall-goes-home", field: "camp_stall_goes_home", kind: Kind::OptIn, enable: AdvancedAi::enable_camp_stall_goes_home, disable: AdvancedAi::disable_camp_stall_goes_home },
+    // Hotseat check game crash-p4-fa (2026-11-28, seat p1, Greece): the
+    // first Settler stood on its chosen site on turn 3, retreated from a
+    // barbarian Scout three tiles off (risk 38), fled that Scout's remembered
+    // envelope on turns 4-8, walked back on turn 9 and was taken beside a camp
+    // on turn 10; the cityless seat was eliminated. A seat with no city founds
+    // where its Settler stands once a threat is in reach, after three turns,
+    // or rather than walk more than two. Opt-in; see
+    // `advanced/capital_founds_before_it_flees.rs`.
+    Gene { tag: "capital-founds-before-it-flees", field: "capital_founds_before_it_flees", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_founds_before_it_flees, disable: AdvancedAi::disable_capital_founds_before_it_flees },
     // ---- append: e-f ------------------------------------------------
     // Live Deity Online Indonesia 11-05: Gitarja may buy naval units with
     // Faith and the host quotes them (Quadrireme 120 Faith from ~t56), but the
@@ -6294,6 +6303,11 @@ pub const GENES: &[Gene] = &[
     // session it cannot answer. Opt-in, hotseat only (it reads the `deals`
     // board); see `advanced/own_price_proposes_the_deal.rs`.
     Gene { tag: "own-price-proposes-the-deal", field: "own_price_proposes_the_deal", kind: Kind::OptIn, enable: AdvancedAi::enable_own_price_proposes_the_deal, disable: AdvancedAi::disable_own_price_proposes_the_deal },
+    // `lane-once-taken-holds`: an assigned lane that has once followed its
+    // lane does not return to Expansion when the city target rises or a site
+    // opens; the Settlers read the same target. Opt-in; see
+    // `advanced/lane_once_taken_holds.rs`.
+    Gene { tag: "lane-once-taken-holds", field: "lane_once_taken_holds", kind: Kind::OptIn, enable: AdvancedAi::enable_lane_once_taken_holds, disable: AdvancedAi::disable_lane_once_taken_holds },
     // ---- append: p-r ------------------------------------------------
     // `racer-seat-statue-civic-first`: Civil Engineering first for a Science,
     // Culture or Religious seat that reaches for the Statue of Liberty, as
