@@ -629,6 +629,7 @@ if END_SCREENS[NAME] and Controls ~= nil and Controls.Movie ~= nil then
     if type(nativeMovieFinished) == "function" then
         Controls.Movie:SetMovieFinishedCallback(function()
             report("victory_movie_finished");
+            pcall(function() CivvisSeatDefeat.movie = false; end);
             nativeMovieFinished();
         end);
     end
@@ -638,6 +639,7 @@ if END_SCREENS[NAME] and Controls ~= nil and Controls.Movie ~= nil then
             nativeReplay(...);
             if Controls.MovieFill ~= nil and Controls.MovieFill:IsVisible() then
                 report("victory_movie_started");
+                pcall(function() CivvisSeatDefeat.movie = true; end);
             end
         end;
         if Controls.ReplayMovieButton ~= nil then
@@ -1779,6 +1781,57 @@ function CivvisHotseatScreen.arm()
 	report("hotseat_armed", string.format(',"start_turn":%s', tostring(type(OnOk) == "function")));
 end
 
+-- ★★ A CIVVIS SEAT'S DEFEAT DOES NOT HOLD THE GAME (EndGameMenu, hotseat).
+-- In hotseat the end screen shows ANY human seat's defeat to whoever's turn it
+-- is (EndGameMenu.lua:1012-1013 `or (GameConfiguration.IsHotseat() and
+-- defeatPlayer ~= nil and defeatPlayer:IsHuman())`) and holds the game's
+-- events until it is closed (:1024 `UI.SetPauseEventID( eventID )`). Every
+-- CIVVIS seat is a human seat to the engine, so a CIVVIS seat's defeat on
+-- another CIVVIS seat's turn stood with nobody to press it: gated check game
+-- crash-p4-fa (2026-11-28), seat 1 (Pericles, no city by turn 10) eliminated
+-- on seat 5's turn, the screen up five minutes, the cover kept under it
+-- (CivvisHotseatCover.lua `keptUnder`), the game stopped. In a person's game
+-- the person saw it over the cover and the game waited on their click, with
+-- Main Menu beside the button that plays on. So on a turn that is not a
+-- person's (`personTurn`), a CIVVIS seat's defeat screen is closed the way its
+-- own Next Player closes it (:304-318 `OnNextPlayer`: "the screen will simply
+-- pop and the current turn active player can keep playing"; an end of turn
+-- only for a viewer who is the local, turn-active player), once the defeat
+-- movie has finished and `HotseatDefeatSeconds` (8) of real time have passed,
+-- long enough for a person watching to read it. Never for a person's defeat,
+-- on a person's turn, or after a victory (the harness's to close).
+CivvisSeatDefeat = { defeated = nil, up = 0, over = false, movie = nil, MOVIE_CAP = 40 };
+function CivvisSeatDefeat.onDefeat(player)
+	local s = CivvisSeatDefeat;
+	s.defeated, s.up = tonumber(player), 0;
+end
+function CivvisSeatDefeat.tick(realDT)
+	local s = CivvisSeatDefeat;
+	if cfg.Hotseat ~= true or s.over or s.defeated == nil then return false; end
+	if cfg.RequireHarness == true and not CivvisHarness.live() then return false; end
+	local h = CivvisHotseatScreen;
+	-- `HotseatSeats` lists the CIVVIS seats only: a person's defeat is never one.
+	if not h.listed(cfg.HotseatSeats, s.defeated) or h.personTurn() then
+		return false;
+	end
+	s.up = s.up + (tonumber(realDT) or 0);
+	if s.movie == true and s.up < s.MOVIE_CAP then return false; end
+	if s.up < (tonumber(cfg.HotseatDefeatSeconds) or 8) then return false; end
+	local defeated = s.defeated;
+	s.defeated, s.up, s.movie = nil, 0, nil;
+	local closed = type(OnNextPlayer) == "function" and pcall(OnNextPlayer) == true;
+	report("hotseat_defeat_closed", string.format(',"defeated":%d,"player":%d,"turn":%d,"closed":%s',
+		defeated, h.localPlayer(), h.turn(), tostring(closed)) .. h.clock());
+	return closed;
+end
+function CivvisSeatDefeat.arm()
+	pcall(function() Events.PlayerDefeat.Add(CivvisSeatDefeat.onDefeat); end);
+	pcall(function() Events.TeamVictory.Add(function() CivvisSeatDefeat.over = true; end); end);
+	pcall(function()
+		LuaEvents.EndGameMenu_OneMoreTurn.Add(function() CivvisSeatDefeat.over = false; end);
+	end);
+end
+
 if NAME == "PlayerChange" then
 	CivvisHotseatScreen.arm();
 elseif not haveScreen() then
@@ -1788,6 +1841,7 @@ elseif not haveScreen() then
 	-- reads as a quiet game rather than a game missing a screen.
 	report("autoclose_unarmed");
 else
+	if END_SCREENS[NAME] and cfg.Hotseat == true then CivvisSeatDefeat.arm(); end
 	-- A popup context is hidden except while its popup is up, which is how the
 	-- shipped code itself tests for showing (ExclusivePopupManager checks
 	-- IsHidden before it unlocks). Watching that rather than a show handler
@@ -2178,7 +2232,12 @@ else
 			dealForceClose = false;
 			return;
 		end
-		if END_SCREENS[NAME] then return; end -- the harness owns native victory playback
+		if END_SCREENS[NAME] then
+			-- A CIVVIS seat's defeat shown on a CIVVIS turn is not left standing
+			-- (`CivvisSeatDefeat`); a victory stays the harness's.
+			pcall(CivvisSeatDefeat.tick, realDT);
+			return;
+		end -- the harness owns native victory playback
 		-- A leader screen can hide TopPanel while its own UI clock continues.
 		-- Use the same guarded agent wakeup here; keep deal holds and native
 		-- close handling below intact. One long frame produces only one pulse.
