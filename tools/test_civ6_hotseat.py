@@ -753,7 +753,10 @@ class ResumeRestoresTheGameTest(unittest.TestCase):
         args = self.resumed("--resume", "--tag", "resumed-1")
         installed = {}
         stage = self.saves / "civvis-hotseat-resume.Civ6Save"
-        with patch.object(hotseat, "CURRENT", self.root / "current.json"), \
+        # `run` sets SIGTERM/SIGINT handlers and leaves them ignored: in this
+        # process that would outlive the test (CI runs every tool test in one).
+        with patch.object(hotseat.signal, "signal"), \
+                patch.object(hotseat, "CURRENT", self.root / "current.json"), \
                 patch.object(hotseat.env, "game_pids", return_value=[]), \
                 patch.object(hotseat.gamelock, "acquire", return_value=True), \
                 patch.object(hotseat.gamelock, "release"), \
@@ -790,7 +793,8 @@ class ResumeRestoresTheGameTest(unittest.TestCase):
         self.assertEqual((again.resume_save.name, again.leader, again.name, again.resumed["started"]),
                          ("resumed-1-T020.Civ6Save", "LEADER_GILGAMESH", "dev", "2026-11-28T03:14:56Z"))
         # ...and so does a harness that re-attaches to it.
-        with patch.object(hotseat.modinstall, "installed_config", return_value=installed), \
+        with patch.object(hotseat.signal, "signal"), \
+                patch.object(hotseat.modinstall, "installed_config", return_value=installed), \
                 patch.object(hotseat.env, "game_pids", return_value=[4242]), \
                 patch.object(hotseat.gamelock, "acquire", return_value=False), \
                 patch.object(hotseat.gamelock, "foreign_run", return_value="another run"), \
