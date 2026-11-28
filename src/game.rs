@@ -7433,6 +7433,11 @@ pub struct HostMirror {
     /// fact reaches only the readers that ask for it
     /// ([`Game::rivals_at_war`]). Empty in native CIVVIS games.
     pub observed_rival_wars: Arc<BTreeSet<(usize, usize)>>,
+    /// Hotseat: the met rival seats a person plays, as the live host's
+    /// export marks them (`rivals[].person`, written only on a hotseat
+    /// install). Read only by the opt-in `person-units-threaten-civilians`.
+    /// Empty in native CIVVIS games and on every single-player board.
+    pub observed_person_rivals: Arc<BTreeSet<usize>>,
     /// Current host Palace locations, distinct from original capitals required
     /// for Domination. Empty in simulated games and older host snapshots.
     pub observed_city_palaces: Arc<BTreeMap<u32, bool>>,
@@ -8611,6 +8616,8 @@ struct GameSer {
     #[serde(default)]
     observed_rival_wars: BTreeSet<(usize, usize)>,
     #[serde(default)]
+    observed_person_rivals: BTreeSet<usize>,
+    #[serde(default)]
     observed_city_palaces: BTreeMap<u32, bool>,
     #[serde(default)]
     observed_city_religion_markers: BTreeSet<u32>,
@@ -8914,6 +8921,7 @@ impl From<GameSer> for Game {
                 host_maintenance: Arc::new(s.host_maintenance),
                 observed_score: Arc::new(s.observed_score),
                 observed_rival_wars: Arc::new(s.observed_rival_wars),
+                observed_person_rivals: Arc::new(s.observed_person_rivals),
                 observed_city_palaces: Arc::new(s.observed_city_palaces),
                 observed_city_religion_markers: Arc::new(s.observed_city_religion_markers),
                 observed_city_faiths: Arc::new(s.observed_city_faiths),
@@ -9160,6 +9168,7 @@ impl From<Game> for GameSer {
             host_maintenance: Arc::unwrap_or_clone(host.host_maintenance),
             observed_score: Arc::unwrap_or_clone(host.observed_score),
             observed_rival_wars: Arc::unwrap_or_clone(host.observed_rival_wars),
+            observed_person_rivals: Arc::unwrap_or_clone(host.observed_person_rivals),
             observed_city_palaces: Arc::unwrap_or_clone(host.observed_city_palaces),
             observed_city_religion_markers: Arc::unwrap_or_clone(
                 host.observed_city_religion_markers,
@@ -9731,6 +9740,7 @@ impl Game {
                 host_maintenance: Arc::new(BTreeMap::new()),
                 observed_score: Arc::new(BTreeMap::new()),
                 observed_rival_wars: Arc::new(BTreeSet::new()),
+                observed_person_rivals: Arc::new(BTreeSet::new()),
                 observed_city_palaces: Arc::new(BTreeMap::new()),
                 observed_city_religion_markers: Arc::new(BTreeSet::new()),
                 observed_city_faiths: Arc::new(BTreeMap::new()),
