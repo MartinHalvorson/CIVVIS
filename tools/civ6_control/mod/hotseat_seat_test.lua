@@ -69,10 +69,20 @@ for line in init:gmatch("[^\n]+") do
 		-- One exception: "Just One More Turn" only clears the stop a victory put
 		-- on this context (`CivvisSeat.oneMoreTurn`), whoever is local when it is
 		-- pressed; every tick it lets run is still gated (one_more_turn_test.lua).
+		-- A second: the answer to this seat's own deal proposal is made on the
+		-- other seat's turn, so `CivvisTrade.seatHeard` hears it ungated and
+		-- only writes it down (checked below; hotseat_deals_test.lua).
 		assert(line:find("CivvisSeat.gate(", 1, true)
-			or line:find("LuaEvents.EndGameMenu_OneMoreTurn.Add(CivvisSeat.oneMoreTurn)", 1, true),
+			or line:find("LuaEvents.EndGameMenu_OneMoreTurn.Add(CivvisSeat.oneMoreTurn)", 1, true)
+			or line:find("Events.DiplomacyIncomingDeal.Add(CivvisTrade.seatHeard)", 1, true),
 			"an Initialize registration skips the seat gate: " .. line)
 	end
+end
+local heard = assert(agent:match("\nCivvisTrade%.seatHeard = function%(fromPlayer, toPlayer, action%)\n(.-)\nend;\n"))
+for call in heard:gmatch("([%w_%.:]+)%(") do
+	assert(call == "function" or call == "try" or call == "pairs" or call == "tostring"
+		or call == "CivvisK.guard" or call == "CivvisHarness.live" or call:match("^Game%.Get"),
+		"the ungated deal listener only writes down what it heard: it calls " .. call)
 end
 local resume = assert(agent:match("\nfunction CivvisSeat%.oneMoreTurn%(%)\n(.-)\nend\n"))
 for call in resume:gmatch("([%w_%.:]+)%(") do
