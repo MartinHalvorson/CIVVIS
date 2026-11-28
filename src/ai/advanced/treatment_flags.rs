@@ -746,6 +746,10 @@ impl AdvancedAi {
         /// out counts on the Settler walk clock, and the walk deadline holds
         /// past the band turn; see `advanced/settler_walk_deadline.rs`.
         settler_walk_clock_runs_all_game => enable_settler_walk_clock_runs_all_game, disable_settler_walk_clock_runs_all_game;
+        /// Opt-in gene `stacked-soldiers-step-apart`: soldiers of ours the
+        /// unit pass leaves on one tile step apart, so each can take a hold;
+        /// see `advanced/stacked_soldiers_step_apart.rs`.
+        stacked_soldiers_step_apart => enable_stacked_soldiers_step_apart, disable_stacked_soldiers_step_apart;
         /// Opt-in gene `science-seat-writes-first`: a Science seat's research
         /// takes Writing once it knows two techs; see
         /// `advanced/science_seat_writes_first.rs`.
