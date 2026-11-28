@@ -195,6 +195,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `seen-pad-starts-the-denial` | off (unmeasured) | Opt-in gene `seen-pad-starts-the-denial`: a racer's seen Spaceport takes a Spy that disrupts it before the first launch; see `advanced/seen_pad_starts_the_denial.rs`. | 1 \| 1 |
 | `settler-walk-clock-runs-all-game` | off (unmeasured) | Opt-in gene `settler-walk-clock-runs-all-game`: every stepped turn out counts on the Settler walk clock, and the walk deadline holds past the band turn; see `advanced/settler_walk_deadline.rs`. | 1 \| 1 |
 | `stacked-shooter-steps-out` | off (unmeasured) | Opt-in gene `stacked-shooter-steps-out`: a crowded City Center keeps one shooter and steps our other soldiers beside it, so the shooters can fire; see `advanced/stacked_shooter_steps_out.rs`. | 1 \| 1 |
+| `stacked-soldiers-step-apart` | off (unmeasured) | Opt-in gene `stacked-soldiers-step-apart`: soldiers of ours the unit pass leaves on one tile step apart, so each can take a hold; see `advanced/stacked_soldiers_step_apart.rs`. | 1 \| 1 |
 | `tagma-timing-needs-the-edge` | off (unmeasured) | Opt-in gene `tagma-timing-needs-the-edge`; see `advanced/tagma_timing_needs_the_edge.rs`. | 1 \| 1 |
 | `walls-for-the-war-front` | off (unmeasured) | Opt-in gene `walls-for-the-war-front`; see `advanced/walls_for_the_war_front.rs`. | 1 \| 1 |
 | `war-threat-holds-recovery` | off (unmeasured) | Opt-in gene `war-threat-holds-recovery`; see `advanced/war_threat_holds_recovery.rs`. | 1 \| 1 |
