@@ -14457,6 +14457,63 @@ CivvisTrade.seatBuild = function(pid, other, give, get)
 	end
 	return deal, id;
 end;
+-- ★★ AN ACCEPT SENDS THE DEAL IT ACCEPTS (live trade-live-2c, 2026-11-28).
+-- In hotseat a deal one seat proposes never reaches the other seat's
+-- INCOMING working deal: on every recipient's turn the board read it from
+-- the proposer's OUTGOING one (`source: their_outgoing`, `incoming_items`
+-- 0 in each `deal_probe`). The shipped screen's accept (copy INCOMING to
+-- OUTGOING, then ACCEPTED, DiplomacyDealView.lua:2811 and :539-545) so sent
+-- an EMPTY deal: the engine took it (DiplomacyManager.csv `30, 3, 1,
+-- MAKE_DEAL, HUMAN_ACCEPT_DEAL, POSITIVE, Processing Immediately`), the
+-- proposal stopped pending, and nothing changed hands (seat 1 kept its 30
+-- Gold, seat 3 its Furs; the stand-in's 25 Gold gift to seat 1 at turn 31
+-- likewise). So when INCOMING is empty, OUR OUTGOING working deal is built
+-- as the exact copy of theirs, item by item as the deal screen builds an
+-- item (DiplomacyDealView.lua:870-879 one-time Gold, duration first;
+-- :1336-1342 a resource by index; :1554-1555 a Great Work by subtype and
+-- instance), and sent ACCEPTED. It must hash to the very deal the decider
+-- priced (`id`), or nothing is sent (`mirror_differs`).
+CivvisTrade.seatMirror = function(pid, other, id)
+	local theirs = try(function() return DealManager.GetWorkingDeal(DealDirection.OUTGOING, other, pid); end, nil);
+	if theirs == nil or (try(function() return theirs:GetItemCount(); end, 0) or 0) == 0 then
+		return nil, "mirror_nothing";
+	end
+	local plain = {};
+	for _, name in ipairs({ "GOLD", "FAVOR" }) do
+		if DealItemTypes[name] ~= nil then plain[DealItemTypes[name]] = true; end
+	end
+	local ran, deal, why = pcall(function()
+		DealManager.ClearWorkingDeal(DealDirection.OUTGOING, pid, other);
+		local ours = DealManager.GetWorkingDeal(DealDirection.OUTGOING, pid, other);
+		if ours == nil then return nil, "deal_no_working_deal"; end
+		for item in theirs:Items() do
+			local kind = item:GetType();
+			local copy = ours:AddItemOfType(kind, item:GetFromPlayerID());
+			if copy == nil then return nil, "mirror_item_refused"; end
+			if not plain[kind] then
+				local sub = try(function() return item:GetSubType(); end, nil);
+				if sub ~= nil then copy:SetSubType(sub); end
+				local value = try(function() return item:GetValueType(); end, nil);
+				if value ~= nil then copy:SetValueType(value); end
+			end
+			copy:SetDuration(try(function() return item:GetDuration(); end, 0) or 0);
+			local amount = try(function() return item:GetAmount(); end, nil);
+			if type(amount) == "number" and amount > 0 then copy:SetAmount(amount); end
+		end
+		ours:Validate();
+		if not ours:IsValid() then return nil, "deal_invalid"; end
+		return ours, nil;
+	end);
+	if not ran then deal, why = nil, "mirror_throw"; end
+	if deal ~= nil and id ~= nil then
+		local _, _, ourId = CivvisTrade.seatSides(deal, pid);
+		if ourId ~= id then deal, why = nil, "mirror_differs"; end
+	end
+	if deal == nil then
+		pcall(function() DealManager.ClearWorkingDeal(DealDirection.OUTGOING, pid, other); end);
+	end
+	return deal, why;
+end;
 -- The `deal` order arm (`applyOrder`). Checks, builds what is to be sent,
 -- and opens the session; `seatSend` sends from inside it.
 CivvisTrade.seatOrder = function(player, pid, other, verb, x, turn)
@@ -14475,7 +14532,25 @@ CivvisTrade.seatOrder = function(player, pid, other, verb, x, turn)
 	local action, give, get = CivvisTrade.seatParse(verb);
 	if action == nil then return false, give; end
 	local trade, seat = CivvisTrade, CivvisTrade.seat;
+	-- ★ ONE SESSION AT A TIME, AND NONE LEFT OVER (live trade-live-2c,
+	-- 2026-11-28). The engine runs one diplomacy session at a time for a
+	-- player: seat 3 sent an ACCEPT to seat 1 and a PROPOSE to the person in
+	-- the same frame of turn 30, and DiplomacyManager.csv has `30, 3, 0,
+	-- MAKE_DEAL, NONE, INITIAL, Adding To Queue`, then `Game Turn Ended:
+	-- Close 1 Open Sessions`: the second session never opened, its entry
+	-- here was never closed, and every later deal with the person was
+	-- refused `deal_session_busy` (turns 31-38). So a second hotseat session
+	-- waits for a later frame (`deal_session_open`), and one of ours from an
+	-- earlier turn is closed before anything else is asked of that seat.
+	for subject, open in pairs(trade.sessions) do
+		if type(open) == "table" and open.kind == "hotseat" and open.turn ~= turn then
+			CivvisTrade.close(pid, subject, "stale_hotseat_session");
+		end
+	end
 	if trade.sessions[other] ~= nil then return false, "deal_session_busy"; end
+	for _, open in pairs(trade.sessions) do
+		if type(open) == "table" and open.kind == "hotseat" then return false, "deal_session_open"; end
+	end
 	local id, round = nil, 1;
 	if action == "ACCEPT" or action == "REJECT" or action == "COUNTER" then
 		local theirs, deal = CivvisTrade.seatTheirs(pid, other);
@@ -14541,7 +14616,14 @@ end;
 CivvisTrade.seatSend = function(pid, other, session, sessionID, turn)
 	session.sent = true;
 	local sent, why = false, nil;
-	if session.verb == "ACCEPT" then
+	local incomingItems = try(function()
+		return DealManager.GetWorkingDeal(DealDirection.INCOMING, pid, other):GetItemCount();
+	end, 0) or 0;
+	if session.verb == "ACCEPT" and incomingItems == 0 then
+		-- See `seatMirror`: their deal never reached our INCOMING copy.
+		local mirrored, mirrorWhy = CivvisTrade.seatMirror(pid, other, session.id);
+		if mirrored == nil then why = mirrorWhy; else session.mirrored = true; end
+	elseif session.verb == "ACCEPT" then
 		pcall(function() DealManager.CopyIncomingToOutgoingWorkingDeal(pid, other); end);
 		if try(function() return DealManager.AreWorkingDealsEqual(pid, other); end, false) ~= true then
 			why = "deals_not_equal";
@@ -14569,6 +14651,7 @@ CivvisTrade.seatSend = function(pid, other, session, sessionID, turn)
 	emit("deal_answer", { turn = turn, to = other, to_kind = CivvisTrade.seatKind(other),
 		verb = session.verb, action = session.action, id = session.id, round = session.round,
 		session = sessionID or -1, sent = sent, why = why, held_ms = heldMs,
+		incoming_items = incomingItems, mirrored = session.mirrored,
 		pending_from_them = theirs, pending_from_us = ours });
 	if sent and CivvisTrade.seatKind(other) == "person" then
 		pcall(CivvisTrade.seatNote, pid, other, session, turn);

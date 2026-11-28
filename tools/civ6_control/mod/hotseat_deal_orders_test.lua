@@ -285,6 +285,58 @@ check("unequal deals: no ACCEPTED", logged("send:"), 0)
 check("says why", field(last("deal_answer"), "why"), "deals_not_equal")
 check("and still closes", logged("close:55"), 1)
 
+-- ★ The person's deal never reached our INCOMING copy (live trade-live-2c:
+-- every recipient read it from the proposer's OUTGOING deal). An ACCEPT then
+-- sends our OUTGOING deal rebuilt as the exact copy of theirs, not the empty
+-- copy of an empty INCOMING deal.
+reset()
+pending[0] = { [2] = true }
+working.incoming[2][0] = {}
+working.outgoing = working.outgoing or {}
+working.outgoing[0] = { [2] = {
+	{ kind = "resources", from = 0, value = 12, amount = 1, duration = 30 },
+	{ kind = "gold", from = 2, amount = 5, duration = 30 },
+} }
+local theirs = idOf("outgoing", 0, 2, 2)
+check("their deal, priced from our chair", theirs, offer)
+check("accepted from their outgoing deal", order("deal", 0, "ACCEPT", theirs), "deal_accepted")
+check("nothing copied from the empty INCOMING", logged("copy:2>0"), 0)
+check("ACCEPTED sent", logged("send:ACCEPTED:2>0"), 1)
+check("what we sent is their deal, item by item", idOf("outgoing", 2, 0, 2), theirs)
+check("two items", #items("outgoing", 2, 0), 2)
+check("the Dyes come from them", items("outgoing", 2, 0)[1].from, 0)
+check("the Gold a turn from us", items("outgoing", 2, 0)[2].from, 2)
+check("for 30 turns", items("outgoing", 2, 0)[2].duration, 30)
+check("deal_answer says it was rebuilt", field(last("deal_answer"), "mirrored"), "true")
+check("and that INCOMING was empty", field(last("deal_answer"), "incoming_items"), "0")
+-- A rebuilt deal that does not hash to the deal the decider priced is not sent.
+reset()
+check("a different deal is not rebuilt", trade.seatMirror(2, 0, theirs + 1), nil)
+check("and leaves nothing behind", #items("outgoing", 2, 0), 0)
+check("nothing to rebuild", select(2, trade.seatMirror(2, 1, nil)), "mirror_nothing")
+working.incoming[2][0] = {
+	{ kind = "resources", from = 0, value = 12, amount = 1, duration = 30 },
+	{ kind = "gold", from = 2, amount = 5, duration = 30 },
+}
+
+-- One hotseat session at a time; one left from an earlier turn is closed.
+reset()
+pending[0] = { [2] = true }
+trade.sessions[3] = { kind = "hotseat", turn = turn, sent = false, sessionID = 77 }
+check("a second session waits for a later frame", order("deal", 0, "REJECT"), "deal_session_open")
+check("no session asked", logged("session:"), 0)
+trade.sessions[3].turn = turn - 1
+check("one from an earlier turn is closed first", order("deal", 0, "REJECT"), "deal_rejected")
+check("the stale one closed", logged("close:77"), 1)
+check("and dropped", trade.sessions[3], nil)
+check("the new one went out", logged("send:REJECTED:2>0"), 1)
+trade.sessions[3] = { kind = "sell", turn = turn - 1 }
+pending[0] = { [2] = true }
+check("a ladder session is not ours to close", order("deal", 0, "REJECT"), "deal_rejected")
+check("still there", trade.sessions[3] ~= nil, true)
+trade.sessions[3] = nil
+pending[0] = { [2] = true }
+
 -- Reject.
 reset()
 check("rejected", order("deal", 0, "REJECT"), "deal_rejected")
