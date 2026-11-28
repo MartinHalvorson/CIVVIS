@@ -233,11 +233,12 @@ class Pages(unittest.TestCase):
                 # Strange's and Edge of Tomorrow (2026-11-28: "move
                 # tournaments above charts in the ordering", "move civvis
                 # above the civvis ai debugger in the ordering"); Civ 6 ends it.
-                # CIVVIS: Moneyball stands after Edge of Tomorrow (2026-11-27:
-                # "add CIVVIS: Moneyball"), keeping CIVVIS above AI Debugger.
+                # CIVVIS: Moneyball (2026-11-27: "add CIVVIS: Moneyball")
+                # stands right below Charts/ since 2026-11-28 ("please place
+                # moneyball right below charts"), keeping CIVVIS above AI Debugger.
                 self.assertEqual([name for name in worn if name not in under_names(source)],
-                                 ["Home", "Tournaments", "Charts/", "Doctor Strange's CIVVIS", "CIVVIS: Edge of Tomorrow",
-                                  "CIVVIS: Moneyball", "CIVVIS", "CIVVIS AI Debugger", "Civ 6"])
+                                 ["Home", "Tournaments", "Charts/", "CIVVIS: Moneyball", "Doctor Strange's CIVVIS",
+                                  "CIVVIS: Edge of Tomorrow", "CIVVIS", "CIVVIS AI Debugger", "Civ 6"])
                 self.assertEqual({name for name, kind in worn.items() if kind == "strange"}, {"Doctor Strange's CIVVIS"})
                 self.assertEqual({name for name, kind in worn.items() if kind == "steam"}, {"Civ 6"})
                 # The list ends at Civ 6: Wizard Chess, which stood below
@@ -299,7 +300,7 @@ class Simulator(unittest.TestCase):
         nav = nav[:nav.index("</nav>")]
         self.assertEqual(
             re.findall(r'<a class="home-link" id="([a-z0-9]+)"', nav),
-            ["homelink", "tourlink", "chartslink", "strangelink", "tomorrowlink", "moneyballlink", "watchlink", "playlink", "civ6link"])
+            ["homelink", "tourlink", "chartslink", "moneyballlink", "strangelink", "tomorrowlink", "watchlink", "playlink", "civ6link"])
         self.assertNotRegex(VIEWER, SET_ASIDE)
 
     def test_doctor_strange_is_in_his_colours(self):
