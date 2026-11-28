@@ -1747,9 +1747,13 @@ class Page(unittest.TestCase):
             'title="Charts the AI agents added on their own, kept here until they are asked for or talked over.">Unreviewed Gen AI Charts</a>\n'
             '        </div>\n'
             '      </div>\n'
-            '      <a class="site-link" href="../../doctor-strange" ',
+            '      <a class="site-link" href="../../moneyball" ',
             PAGE,
         )
+        # CIVVIS: Moneyball stands right below Charts/ since 2026-11-28
+        # (operator: "please place moneyball right below charts"), Doctor
+        # Strange's after it.
+        self.assertRegex(PAGE, r'href="\.\./\.\./moneyball"[^>]*>CIVVIS: Moneyball</a>\s*<a class="site-link" href="\.\./\.\./doctor-strange"')
         nav = PAGE[PAGE.index('<nav class="site-nav"'):PAGE.index("</nav>")]
         self.assertEqual(nav.count('aria-current="page"'), 1)
         self.assertIn("  .site-folder:hover > .site-menu,\n  .site-folder:focus-within > .site-menu,\n  .site-folder.is-open > .site-menu { display: grid; }\n", PAGE)

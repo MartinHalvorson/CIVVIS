@@ -132,6 +132,19 @@ class HotseatInstallTest(unittest.TestCase):
         self.assertEqual(served, ["CivvisControlAutoClose.lua"])
         self.assertNotIn("<LuaContext>EventPopup</LuaContext>",
                          (install.MOD_SOURCE / "CivvisControl.modinfo").read_text())
+        # The leader screen's closer sits above Quick Deals' replacement of the same
+        # context (LoadOrder 99999), in hotseat only.
+        orders = {p.findtext("LuaContext"): p.findtext("LoadOrder") for p in
+                  tree.findall("./InGameActions/ReplaceUIScript/Properties")}
+        self.assertEqual(orders["DiplomacyActionView"], str(install.HOTSEAT_LOAD_ORDER))
+        self.assertGreater(install.HOTSEAT_LOAD_ORDER, 99999)
+        shipped = ET.fromstring((install.MOD_SOURCE / "CivvisControl.modinfo").read_text())
+        shipped_orders = {p.findtext("LuaContext"): p.findtext("LoadOrder") for p in
+                          shipped.findall("./InGameActions/ReplaceUIScript/Properties")}
+        self.assertIsNone(shipped_orders["DiplomacyActionView"], "a single-player install's is as it was")
+        self.assertEqual({k: orders[k] for k in shipped_orders if k != "DiplomacyActionView"},
+                         {k: v for k, v in shipped_orders.items() if k != "DiplomacyActionView"},
+                         "no other screen's order changes")
         # The screens and the HUD keep the run's own tag.
         closer = (out / "CivvisControlAutoClose.lua").read_text().split("}\n", 1)[0]
         self.assertIn('RunTag = "hotseat-test",', closer)
@@ -888,6 +901,7 @@ class LiveGenomeTest(unittest.TestCase):
             with patch.object(hotseat, "live_treatments",
                               return_value=(["age-closer-2", "recon-replacement", "no-such-tag"],
                                             "deploy/live-force-on.txt")), \
+                    patch.object(hotseat, "hotseat_treatments", return_value=[]), \
                     patch.object(hotseat.subprocess, "run", side_effect=run):
                 hotseat.live_genome(args, Path("/bin/civvis_orders"), run_dir, lines.append)
             self.assertEqual(args.treatments, ["age-closer-2", "recon-replacement"])
@@ -915,6 +929,58 @@ class LiveGenomeTest(unittest.TestCase):
             asked.assert_not_called()
             self.assertEqual(stock.treatments, [])
             self.assertIn("decider genome: stock", lines[0])
+
+    def test_the_hotseat_only_genes_go_on_top_of_the_ladders(self) -> None:
+        # The gameplay lanes' genes for a person's game (findings/for-launcher.md,
+        # 2026-11-28): before, `CIVVIS_WITH` was the only way, and it replaces the
+        # ladder's whole list.
+        with tempfile.TemporaryDirectory() as tmp:
+            listed = Path(tmp) / "hotseat-force-on.txt"
+            listed.write_text("# a note\nmonument-first  # the ladder has it already\n\n"
+                              "gold-buys-the-opening-builder\ngold-buys-the-opening-builder\n"
+                              "science-seat-writes-first,taken-settler-is-retaken\n")
+            self.assertEqual(hotseat.hotseat_treatments(listed),
+                             ["monument-first", "gold-buys-the-opening-builder", "science-seat-writes-first",
+                              "taken-settler-is-retaken"])
+            self.assertEqual(hotseat.hotseat_treatments(Path(tmp) / "none.txt"), [])
+            run_dir, lines, asked = Path(tmp), [], []
+
+            def run(command, **_):
+                asked.append([word for word in command[3:] if word != "--with"])
+                return argparse.Namespace(returncode=0, stderr="", stdout="")
+            args = game_args(genome="live")
+            with patch.object(hotseat, "HOTSEAT_FORCE_FILE", listed), \
+                    patch.object(hotseat, "live_treatments",
+                                 return_value=(["recon-replacement", "monument-first"],
+                                               "deploy/live-force-on.txt")), \
+                    patch.object(hotseat.subprocess, "run", side_effect=run):
+                record = hotseat.live_genome(args, Path("/bin/civvis_orders"), run_dir, lines.append)
+            self.assertEqual(args.treatments, ["recon-replacement", "monument-first",
+                                               "gold-buys-the-opening-builder", "science-seat-writes-first",
+                                               "taken-settler-is-retaken"], "after the ladder's, each once")
+            self.assertEqual(record["hotseat"], ["gold-buys-the-opening-builder", "science-seat-writes-first",
+                                                 "taken-settler-is-retaken"])
+            self.assertEqual(record["source"], "deploy/live-force-on.txt + deploy/hotseat-force-on.txt (3)")
+            self.assertIn("from deploy/live-force-on.txt + deploy/hotseat-force-on.txt (3): 5 of 5 listed", lines[0])
+            self.assertEqual(args.genome_record["hotseat"], record["hotseat"], "on the game's record")
+            self.assertEqual(json.loads((run_dir / hotseat.GENOME_RECORD).read_text())["hotseat"], record["hotseat"])
+            # `--genome stock` plays none of it.
+            stock = game_args(genome="stock")
+            with patch.object(hotseat, "HOTSEAT_FORCE_FILE", listed):
+                hotseat.live_genome(stock, Path("/bin/civvis_orders"), run_dir, lines.append)
+            self.assertEqual(stock.treatments, [])
+
+    def test_the_shipped_hotseat_list_names_genes_the_decider_registers(self) -> None:
+        # A tag the decider does not know is dropped at the start of a game; a tag
+        # the ladder already arms is no addition; one family is armed in one version.
+        tags = hotseat.hotseat_treatments()
+        self.assertTrue(tags, hotseat.HOTSEAT_FORCE_FILE)
+        genes = (hotseat.HERE.parent / "src" / "ai" / "advanced" / "genes.rs").read_text(encoding="utf-8")
+        registered = set(re.findall(r'Gene \{ tag: "([^"]+)"', genes))
+        self.assertEqual([tag for tag in tags if tag not in registered], [], "every tag is a registered gene")
+        ladder = hotseat.force_tags(hotseat.LIVE_FORCE_FILE.read_text(encoding="utf-8"))
+        self.assertEqual([tag for tag in tags if tag in ladder], [], "none the ladder's list already arms")
+        self.assertFalse({"founding-voyage", "founding-voyage-2"} <= set(tags), "one founding-voyage only")
 
     def test_live_is_the_default_and_stock_is_asked_for(self) -> None:
         for flags, want in (([], "live"), (["--genome", "stock"], "stock")):
@@ -1824,6 +1890,72 @@ class CoverTest(unittest.TestCase):
         source = Path(hotseat.__file__).read_text()
         attach = source.split("args.no_cover_timer = not attach_config.get", 1)[1][:200]
         self.assertIn('args.fast_turns = attach_config.get("HotseatFastTurns") is True', attach)
+
+    def test_fast_animations_is_off_unless_asked_and_only_over_a_covered_person(self) -> None:
+        # Absent from every install that did not ask: not even a nil key.
+        for overrides in ({}, {"auto_human": "gated"}, {"fast_turns": True}):
+            with self.subTest(**overrides):
+                config = self.config(**overrides)
+                self.assertNotIn("HotseatFastAnimations", config)
+                self.assertNotIn("HotseatFastRollover", config)
+        with patch.object(hotseat, "run", side_effect=lambda args: args) as ran, \
+                patch.object(hotseat, "read_current", return_value=None):
+            hotseat.main([])
+            self.assertIsNone(ran.call_args.args[0].fast_animations)
+            hotseat.main(["--fast-animations"])
+            plain = ran.call_args.args[0]
+            hotseat.main(["--fast-animations", "2", "--fast-animations-rollover"])
+            rolled = ran.call_args.args[0]
+        config = hotseat.hotseat_config(plain, Path("/tmp/r"), Path("/tmp/r/o.sqlite"))
+        self.assertEqual((config["HotseatFastAnimations"], config["HotseatFastRollover"]), (3.0, False),
+                         "the ladder's timescale by default")
+        self.assertEqual(hotseat.FAST_ANIMATIONS, 3.0)
+        config = hotseat.hotseat_config(rolled, Path("/tmp/r"), Path("/tmp/r/o.sqlite"))
+        self.assertEqual((config["HotseatFastAnimations"], config["HotseatFastRollover"]), (2.0, True))
+        # The ladder's own timescale keys stay off: this is not that path.
+        self.assertIsNone(config["DebugTimeScale"])
+        # Never without the cover over a person: not with --no-cover, not for a
+        # stub-only or unattended table.
+        for overrides in ({"no_cover": True}, {"auto_human": "stub"},
+                          {"players": 6, "civvis_seats": 2, "leader": None}):
+            with self.subTest(**overrides):
+                config = self.config(fast_animations=3.0, **overrides)
+                self.assertNotIn("HotseatFastAnimations", config)
+                self.assertIn("needs the cover", hotseat.fast_animations_note(
+                    game_args(fast_animations=3.0, **overrides), config))
+        on = self.config(fast_animations=3.0, auto_human="gated")
+        self.assertEqual(on["HotseatFastAnimations"], 3.0, "the gated stand-in is the person")
+        self.assertIn("timescale 3", hotseat.fast_animations_note(game_args(fast_animations=3.0), on))
+        self.assertIsNone(hotseat.fast_animations_note(game_args(), self.config()))
+        # Every context that reads it is given it: the agents, the cover, the
+        # HUD, the hand-over.
+        out = self.install(on)
+        for name in ("CivvisControlAutoClose.lua", "CivvisControlHeartbeat.lua", "CivvisHotseatCover.lua",
+                     "CivvisControlAgentSeat1.lua", "CivvisControlAgentSeat3.lua"):
+            head = (out / name).read_text().split("}\n", 1)[0]
+            self.assertIn("HotseatFastAnimations = 3.0,", head, name)
+        head = (self.install(self.config()) / "CivvisControlAgentSeat1.lua").read_text()
+        self.assertNotIn("HotseatFastAnimations", head.split("}\n", 1)[0])
+        # A manual-lobby install carries it; `--attach` re-installs the game's own.
+        lobby = hotseat.manual_lobby_config(plain, Path("/tmp/r"), Path("/tmp/r/o.sqlite"))
+        self.assertEqual(lobby["HotseatFastAnimations"], 3.0)
+        source = Path(hotseat.__file__).read_text()
+        attach = source.split('args.fast_turns = attach_config.get("HotseatFastTurns") is True', 1)[1][:240]
+        self.assertIn('args.fast_animations = attach_config.get("HotseatFastAnimations") or None', attach)
+        self.assertIn('args.fast_animations_rollover = attach_config.get("HotseatFastRollover") is True',
+                      attach)
+
+    def test_fast_animations_refuses_a_scale_it_cannot_play(self) -> None:
+        with patch.object(hotseat, "run") as ran, \
+                patch.object(hotseat, "read_current", return_value=None), \
+                contextlib.redirect_stderr(io.StringIO()) as err:
+            for argv in (["--fast-animations", "1"], ["--fast-animations", "6"],
+                         ["--fast-animations", "0.5"], ["--fast-animations-rollover"]):
+                with self.subTest(argv=argv):
+                    self.assertEqual(hotseat.main(argv), 2)
+            self.assertFalse(ran.called, "refused before anything starts")
+        self.assertIn("at most 4", err.getvalue())
+        self.assertIn("goes with --fast-animations", err.getvalue())
 
     def test_the_help_says_what_fast_turns_adds_to_the_live_genome(self) -> None:
         # The 20 ms orders peek is already the default game's: the live mod arms'

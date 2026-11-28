@@ -27,6 +27,8 @@ mod acropolis_before_the_deterrent;
 mod adopted_faith_sanctuary;
 /// The turn's assessment: `assess` and how it reads war and land. See
 /// `advanced/assessment.rs`.
+/// `asks-go-once-a-turn`: see `advanced/asks_go_once_a_turn.rs`.
+mod asks_go_once_a_turn;
 mod assessment;
 mod builder_operation_refusals;
 /// Builders: job ranking, improvement values, the Builder and special-improver
@@ -5692,6 +5694,11 @@ pub struct AdvancedAi {
     /// `breaker-walks-under-a-shield`: where the breaker and its shield last
     /// stood, for the journal of its loss. `None` while the gene is off.
     breaker_shield_memory: Option<breaker_walks_under_a_shield::BreakerShieldMemory>,
+    /// `asks-go-once-a-turn`: the live bridge sends a delegation, friendship,
+    /// denouncement, alliance, deal or Trader route at most once in a host
+    /// turn, however many frames the turn has. See
+    /// `advanced/asks_go_once_a_turn.rs`. Off by default.
+    asks_go_once_a_turn: bool,
     // ---- append: c-d ------------------------------------------------
     /// `culture-and-religion-build-the-statue`: a Culture or Religious seat
     /// claims the Statue of Liberty from turn 120 (its Harbor too) and, with
@@ -7134,6 +7141,14 @@ pub struct AdvancedAi {
     /// the verdict holds. Written by `maintain_city_campaign`, read by the
     /// Objective Board's Siege rows. Empty while the gene is off.
     campaign_war_no_go: BTreeMap<usize, u32>,
+    /// `camp-stall-goes-home`: a ClearCamp party that stands beside a guarded
+    /// camp three turns without a blow closes the row for ten, and sites
+    /// beside that camp lose value. See `advanced/camp_stall_goes_home.rs`.
+    /// Off by default.
+    camp_stall_goes_home: bool,
+    /// `camp-stall-goes-home`: each camp's contact and struck turns and the
+    /// turn its closed row reopens. Empty with the gene off.
+    camp_stalls: BTreeMap<Pos, camp_stall_goes_home::CampStall>,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -8004,6 +8019,25 @@ pub struct AdvancedAi {
     /// nearest major holding one. See `advanced/foreign_site_open_border.rs`.
     /// Off by default.
     foreign_site_buys_the_open_border: bool,
+    /// `fresh-war-holds-the-home`: for ten standard turns after a major
+    /// declares on us, while its military is at least ours, Settlers keep off
+    /// the ground its soldiers were seen on and one shooter is bought. See
+    /// `advanced/fresh_war_holds_the_home.rs`. Off by default.
+    fresh_war_holds_the_home: bool,
+    /// `fresh-war-holds-the-home`: the met majors at peace with us at the end
+    /// of our last turn.
+    fresh_war_peace_seen: BTreeSet<usize>,
+    /// `fresh-war-holds-the-home`: each major that declared on us, and the
+    /// first turn of that war, while its window is open.
+    fresh_war_onsets: BTreeMap<usize, u32>,
+    /// `fresh-war-holds-the-home`: where we saw each declarer's soldiers
+    /// since its declaration, by (declarer, tile), and the last turn.
+    fresh_war_seen: BTreeMap<(usize, Pos), u32>,
+    /// `fresh-war-holds-the-home`: the tiles no Settler takes this turn.
+    fresh_war_held_ground: BTreeSet<Pos>,
+    /// `fresh-war-holds-the-home`: the windows, by (declarer, first turn),
+    /// that have bought their shooter.
+    fresh_war_bought: BTreeSet<(usize, u32)>,
     /// `founding-voyage-2`: version one's voyage, and the soldier at sea
     /// beside the Settler sails with it. See
     /// `advanced/maori_founds_from_the_sea.rs`. Off by default.
@@ -9804,6 +9838,14 @@ pub struct AdvancedAi {
     /// government ladder. See
     /// `advanced/rival_science_run_opens_the_spy_civics.rs`. Off by default.
     rival_science_run_opens_the_spy_civics: bool,
+    /// `refused-friendship-waits`: a major whose last friendship ask the host
+    /// refused is not asked again for ten turns. See
+    /// `advanced/refused_friendship_waits.rs`. Off by default.
+    refused_friendship_waits: bool,
+    /// `refused-friendship-waits`: the turn of each major's latest refused
+    /// friendship ask, by seat, as the live bridge last handed it. Empty on a
+    /// native board.
+    refused_friendships: BTreeMap<usize, u32>,
     /// `person-units-threaten-civilians` (hotseat): the soldiers of a rival
     /// a person plays threaten our civilians whatever the war state. See
     /// `advanced/person_units_threaten_civilians.rs`. Off by default.
@@ -10813,6 +10855,12 @@ pub struct AdvancedAi {
     /// shooters can fire. See `advanced/stacked_shooter_steps_out.rs`. Off by
     /// default.
     stacked_shooter_steps_out: bool,
+    /// `settler-pump-leans-on-production`: `civvis_orders` asks the host for
+    /// a Production focus in a city training a Settler on a Food surplus of 4
+    /// or more and a Production of 5 or less, and releases its own focus
+    /// once the Settler is done. See
+    /// `advanced/settler_pump_leans_on_production.rs`. Off by default.
+    settler_pump_leans_on_production: bool,
     /// `spreaders-spread-before-they-chart-2`: version one, and the corps'
     /// searchers share one budget: the last-charge scouts already walking
     /// the fog count against the seekers' and the scouts' quotas, the surplus
@@ -10827,6 +10875,12 @@ pub struct AdvancedAi {
     /// begun after the band turn. See `advanced/settler_walk_deadline.rs`.
     /// Off by default.
     settler_walk_clock_runs_all_game: bool,
+    /// `stacked-soldiers-step-apart`: when the unit pass is over, two or
+    /// more of our soldiers of one stacking layer still on one tile keep one
+    /// there and step the others onto free tiles beside it; the host refuses
+    /// a stacked unit every hold. See `advanced/stacked_soldiers_step_apart.rs`.
+    /// Off by default.
+    stacked_soldiers_step_apart: bool,
     // ---- append: t-z ------------------------------------------------
     /// `world-religion-condemns-the-faith`: our soldiers condemn a faith
     /// World Religion's option B names, at peace, and the agent's ballot asks
@@ -11287,6 +11341,11 @@ pub struct AdvancedAi {
     /// weakest rival. See `advanced/tagma_timing_needs_the_edge.rs`. Off by
     /// default.
     tagma_timing_needs_the_edge: bool,
+    /// `wounded-spreader-spends-far-from-home`: a wounded Missionary or
+    /// Apostle more than a two-turn walk from any healing Holy Site spends its
+    /// charge at a target in this turn's reach instead of walking home. See
+    /// `advanced/apostle_army.rs`. Off by default.
+    wounded_spreader_spends_far_from_home: bool,
     /// `walls-for-the-war-front`: while at war with a major, an unwalled city
     /// that major's soldier was seen near starts its Walls. See
     /// `advanced/walls_for_the_war_front.rs`. Off by default.
@@ -12158,6 +12217,8 @@ mod recon_disruption;
 /// `recovery-holds-the-muster`: no siege muster while losing ground at
 /// home. Opt-in; see `advanced/recovery_holds_the_muster.rs`.
 mod recovery_holds_the_muster;
+/// `refused-friendship-waits`: see `advanced/refused_friendship_waits.rs`.
+mod refused_friendship_waits;
 /// The religious corps: the four opt-in genes for what a founder buys with
 /// Faith once its cities start slipping, and what it does with the units
 /// afterwards. See `advanced/religion.rs`.
@@ -12622,6 +12683,9 @@ mod settler_admission_journal;
 mod settler_brake_counts_the_wanderer;
 mod settler_departure;
 mod settler_path_clear;
+/// `settler-pump-leans-on-production`: see
+/// `advanced/settler_pump_leans_on_production.rs`.
+mod settler_pump_leans_on_production;
 /// `shooters-man-the-capital`: see `advanced/shooters_man_the_capital.rs`.
 mod shooters_man_the_capital;
 /// `siege-shortfall-claims-the-projects`: see
@@ -12666,6 +12730,8 @@ mod spy_patience_reads_the_host;
 mod spy_targets;
 /// `stacked-shooter-steps-out`: see `advanced/stacked_shooter_steps_out.rs`.
 mod stacked_shooter_steps_out;
+/// `stacked-soldiers-step-apart`: see `advanced/stacked_soldiers_step_apart.rs`.
+mod stacked_soldiers_step_apart;
 /// `sweden-builds-open-air-museums`: see
 /// `advanced/sweden_builds_open_air_museums.rs`.
 mod sweden_builds_open_air_museums;
@@ -12754,6 +12820,8 @@ pub use gene_ledger::{
 /// more than the plot's quote. One opt-in gene; see
 /// `advanced/camp_buyout.rs`.
 mod camp_buyout;
+/// `camp-stall-goes-home`: see `advanced/camp_stall_goes_home.rs`.
+mod camp_stall_goes_home;
 
 /// `camps-close-the-age`: ClearCamp rows close a first-era Age gap. One
 /// opt-in gene; see `advanced/camps_close_the_age.rs`.
@@ -12786,6 +12854,8 @@ mod emptied_camp_is_taken;
 /// `first-ship-closes-the-dark-age`: see
 /// `advanced/first_ship_closes_the_age.rs`.
 mod first_ship_closes_the_age;
+/// `fresh-war-holds-the-home`: see `advanced/fresh_war_holds_the_home.rs`.
+mod fresh_war_holds_the_home;
 /// `person-units-threaten-civilians`: see
 /// `advanced/person_units_threaten_civilians.rs`.
 mod person_units_threaten_civilians;
@@ -27478,6 +27548,10 @@ impl AdvancedAi {
         self.base.minor = g.players[pid].is_minor;
         self.base.barb = g.players[pid].is_barbarian;
         self.maintain_victory_portfolio(g, pid);
+        // `fresh-war-holds-the-home`: a war declared on us since our last
+        // turn, and the ground its soldiers hold. Exact no-op with the gene
+        // off.
+        self.observe_fresh_wars(g, pid);
         // `religion-lane-hands-over`: a Religion seat that lost the Prophet
         // race takes Science before the turn reads its target. See
         // `advanced/religion_lane_hands_over.rs`.
@@ -27733,10 +27807,13 @@ impl AdvancedAi {
         // `advanced/capital_walls_before_the_surprise.rs`.
         // `capital-archers-before-the-surprise`: likewise the capital's
         // missing shooter, bought at once. `false` with the gene off.
+        // `fresh-war-holds-the-home`: one shooter while a fresh war at parity
+        // holds the home. `false` with the gene off.
         let surprise_defense_purchase = !emergency_city_defense
             && (self.surprise_defense_purchase(g, pid)
                 || self.capital_garrison_purchase(g, pid)
-                || self.capital_archers_purchase(g, pid));
+                || self.capital_archers_purchase(g, pid)
+                || self.fresh_war_defender_purchase(g, pid));
         // `breaker-bought-for-the-siege`: after the city-saving purchases,
         // the wall-breaker a held siege is waiting for. See
         // `advanced/siege_train/breaker_purchase.rs`.
@@ -28523,6 +28600,9 @@ impl AdvancedAi {
         // `districts-price-the-improvement`: a fresh District on a Farm,
         // Mine or bonus resource moves to a clean site before the turn ends.
         self.resite_bulldozing_districts(g, pid);
+        // `fresh-war-holds-the-home`: the majors at peace with us once our
+        // own declarations are made. Exact no-op with the gene off.
+        self.note_fresh_war_peace(g, pid);
         if g.winner.is_none() && g.current == pid {
             let _ = g.apply(pid, &Action::EndTurn);
         }

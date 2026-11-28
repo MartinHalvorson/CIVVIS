@@ -412,6 +412,10 @@ function CivvisCoverQueue.install()
 			CivvisCoverQueue.visible = CivvisCoverQueue.visible + 1;
 			report("cover_queue_visible", string.format(',"count":%d', CivvisCoverQueue.visible));
 		end
+		-- Whose turn queued it, for `CivvisCoverQueue.leftBehind`.
+		if context == ContextPtr then
+			pcall(function() CivvisCoverQueue.owner = Game.GetLocalPlayer(); end);
+		end
 		if self == proxy then self = real; end
 		return queue(self, context, priority, pass, ...);
 	end
@@ -586,7 +590,20 @@ end
 -- The shipped screen, unchanged and unread. A context's id is the name of the
 -- script the game loads into it, so asking for that name asks for exactly the
 -- file this replacement stands in front of.
-if CHAINED[NAME] then pcall(function() include(CHAINED[NAME]); end); end
+-- ★ QUICK DEALS. The Workshop mod Quick Deals (2460661464, the owner's, on this
+-- Mac) replaces this same context at `<LoadOrder>99999</LoadOrder>`
+-- (QuickDeals.modinfo `qd_diplomacyactionview`), so it, not this file, was the
+-- leader screen in every hotseat game here (28 runs: `autoclose_armed` for
+-- DiplomacyDealView, never for DiplomacyActionView; Modding.log applies
+-- `qd_diplomacyactionview` after `CivvisControlAutoCloseDiplomacyActionView`).
+-- A hotseat install now sits above it (install.py `HOTSEAT_LOAD_ORDER`), and so
+-- loads it first where it is installed: its file includes the stock chain
+-- itself (diplomacyactionview_qd.lua:4-16, Expansion2 first) and keeps its own
+-- deal screen working (:28-57), which the shipped chain alone would drop.
+if NAME == "DiplomacyActionView" then pcall(function() include("diplomacyactionview_qd"); end); end
+if CHAINED[NAME] then
+	if type(QD_BASE_LateInitialize) ~= "function" then pcall(function() include(CHAINED[NAME]); end); end
+end
 if not haveScreen() then pcall(function() include(NAME); end); end
 
 -- ReplaceUIScript bypasses the expansion add-ons unless we chain them too.
@@ -1526,6 +1543,53 @@ function CivvisHotseatScreen.firstPause(covered)
 	if covered and cfg.HotseatFastTurns == true then return 0; end
 	return 0.3;
 end
+-- ★ REAL SECONDS, AND A PERSON'S TURN STARTED AT 1. The console's `timescale`
+-- (hotseat `--fast-animations`, `HotseatFastAnimations`; the agent's
+-- `CivvisClock.fastWant`) speeds this context's frame deltas up with the UI
+-- clock, so the press's 0.3 s and its 2 s retry count each delta divided by
+-- the scale the table shares (`ExposedMembers.CivvisTimeScale`; 1 when it is
+-- missing or nonsense, and outside hotseat). With the key, a person's Start
+-- Turn (theirs, or the test stub's that stands in for them) is pressed only
+-- once that scale reads 1: if it does not, every agent context is asked to
+-- put it back (`LuaEvents.CivvisFastAnimations("reset")`), and the press
+-- waits for it up to `SCALE_HOLD` real seconds, then goes ahead and says so
+-- (`hotseat_scale_unconfirmed`; `hotseat_scale_hold` when the wait began).
+CivvisHotseatScreen.SCALE_HOLD = 1.0;
+function CivvisHotseatScreen.scale()
+	if cfg.Hotseat ~= true then return 1; end
+	local s = nil;
+	pcall(function() s = tonumber(ExposedMembers.CivvisTimeScale); end);
+	if s == nil or s ~= s or s < 1 or s > 8 then return 1; end
+	return s;
+end
+function CivvisHotseatScreen.atOne()
+	local s = nil;
+	pcall(function() s = ExposedMembers.CivvisTimeScale; end);
+	return s == nil or tonumber(s) == 1;
+end
+-- Whether `pid`'s press may go now, as far as the scale is concerned.
+function CivvisHotseatScreen.scaleReady(pid, key, step)
+	local s = CivvisHotseatScreen;
+	if cfg.Hotseat ~= true or tonumber(cfg.HotseatFastAnimations) == nil
+			or not (s.listed(cfg.HotseatHumanSeats, pid) or s.listed(cfg.HotseatStubSeats, pid)) then
+		return true;
+	end
+	if s.atOne() then return true; end
+	pcall(function() LuaEvents.CivvisFastAnimations("reset", "person_handover"); end);
+	if s.atOne() then return true; end
+	if s.scaleHeldFor ~= key then
+		s.scaleHeldFor, s.scaleHeld = key, 0;
+		report("hotseat_scale_hold", string.format(',"player":%d,"turn":%d,"scale":"%s"',
+			pid, s.turn(), tostring(ExposedMembers and ExposedMembers.CivvisTimeScale)));
+		return false;
+	end
+	s.scaleHeld = s.scaleHeld + step;
+	if s.scaleHeld < s.SCALE_HOLD then return false; end
+	s.scaleHeldFor = nil;
+	report("hotseat_scale_unconfirmed", string.format(',"player":%d,"turn":%d,"held":%.2f',
+		pid, s.turn(), s.scaleHeld));
+	return true;
+end
 -- One press per seat and turn, after the screen has been up a moment (its
 -- own slide-in) and retried every two seconds while it stays up. Over the
 -- cover, a hand-over this presses is hidden on its first frame, the way
@@ -1558,10 +1622,12 @@ function CivvisHotseatScreen.frame(fDTime)
 		CivvisHotseatScreen.waited = 0;
 		return;
 	end
-	CivvisHotseatScreen.waited = CivvisHotseatScreen.waited + (tonumber(fDTime) or 0);
+	local step = (tonumber(fDTime) or 0) / CivvisHotseatScreen.scale();
+	CivvisHotseatScreen.waited = CivvisHotseatScreen.waited + step;
 	local pause = CivvisHotseatScreen.pressedFor == key and 2.0
 		or CivvisHotseatScreen.firstPause(covered);
 	if CivvisHotseatScreen.waited < pause then return; end
+	if not CivvisHotseatScreen.scaleReady(pid, key, step) then return; end
 	CivvisHotseatScreen.waited = 0;
 	CivvisHotseatScreen.press(pid, turn, "dialog");
 end
@@ -2269,4 +2335,102 @@ else
 
 	ContextPtr:SetUpdate(tick);
 	report("autoclose_armed", string.format(',"seconds":%.2f', SECONDS));
+end
+
+-- ★★ A CIVVIS SEAT'S ERA SCORE IS NOT LEFT FOR THE PERSON'S TURN. Owner,
+-- 2026-11-28, while playing: "make sure we do not get the era score updates
+-- from the last player when we start our turn". The screens below come up on
+-- a CIVVIS seat's turn (drawn under the cover, `CivvisCoverQueue.install`) and
+-- each closes itself at that seat's end of turn in hotseat:
+--   HistoricMoments.lua:533-538   OnLocalPlayerTurnEnd: if GameConfiguration.IsHotseat() and
+--                                     ContextPtr:IsVisible() then Close();
+--   TechCivicCompletedPopup.lua:398-402, BoostUnlockedPopup.lua:340-344, the same.
+-- One raised after it, in the rollover while the last CIVVIS seat is still
+-- the local player, or one its own close did not take (`Close` asks
+-- `ContextPtr:IsVisible()`, HistoricMoments.lua:446-447), is still in the popup
+-- queue when the person's turn begins, and opens for them as the cover lifts:
+-- a CIVVIS seat's timeline and era score (`ShowNewTimelineMoment` titles it
+-- for whoever is local, :128-135). In the owner's games the Historic Moments
+-- context was up 0.5-1.6 s into the person's turn after a CIVVIS seat's moment
+-- late in the round (hotseat-20261128T045523Z turns 16, 26, 29;
+-- hotseat-20261128T062253Z turn 3: `ui_heartbeat` "up":true), and this closer
+-- reported no close under the cover in either game. So in a cover game, as
+-- the person's turn begins (`Events.LocalPlayerTurnBegin`, under the cover:
+-- the hand-over is pressed after it), a screen of these still up or queued that
+-- a CIVVIS seat's turn queued (`CivvisCoverQueue.owner`) is closed with the
+-- shipped lines of its own close; one the person's turn queued is theirs.
+-- Late arrivals: each script ignores another player's event (HistoricMoments
+-- .lua:139, BoostUnlockedPopup.lua:267/:288); a moment kept in Historic
+-- Moments' own list for another player (`popupData.playerID`, :147) is dropped
+-- if it would open on the person's turn.
+CivvisCoverQueue.LEFT = { HistoricMoments = true, EraReviewPopup = true,
+	BoostUnlockedPopup = true, TechCivicCompletedPopup = true };
+CivvisCoverQueue.left = 0;
+function CivvisCoverQueue.person(pid)
+	return CivvisCoverQueue.listed(cfg.HotseatHumanSeats, pid);
+end
+function CivvisCoverQueue.civvis(pid)
+	return CivvisCoverQueue.listed(cfg.HotseatSeats, pid) and not CivvisCoverQueue.person(pid);
+end
+-- Each screen's own close, as shipped, less what needs it on screen first.
+function CivvisCoverQueue.closeLeft()
+	if NAME == "HistoricMoments" then
+		-- HistoricMoments.lua:446-452, without `if ContextPtr:IsVisible()` and the sound.
+		UIManager:DequeuePopup(ContextPtr);
+		LuaEvents.HistoricMoments_Closed();
+	elseif NAME == "TechCivicCompletedPopup" then
+		Close();          -- :303-308, which also drops its queued data
+	elseif NAME == "BoostUnlockedPopup" then
+		-- :313-319, and the boosts it kept in its own list, unshown (`ShowBoost` stands down).
+		CivvisCoverQueue.dropping = true;
+		pcall(OnClose);
+		if type(ShowNextQueuedPopup) == "function" then
+			for _ = 1, 16 do pcall(ShowNextQueuedPopup); end
+		end
+		CivvisCoverQueue.dropping = false;
+	elseif NAME == "EraReviewPopup" then
+		OnClose();        -- :241-243 (not Continue, which raises a dedication for whoever is local)
+	end
+end
+function CivvisCoverQueue.leftBehind()
+	local c = CivvisCoverQueue;
+	local pid = Game.GetLocalPlayer();
+	local owner = tonumber(c.owner);
+	if not c.person(pid) or owner == nil or owner == pid or not c.civvis(owner) then return false; end
+	local up = false;
+	pcall(function() up = ContextPtr:IsHidden() == false; end);
+	if not up then pcall(function() up = UIManager:IsInPopupQueue(ContextPtr) == true; end); end
+	if not up then return false; end
+	local closed = pcall(c.closeLeft);
+	c.left = c.left + 1;
+	report("hotseat_cover_left", string.format(',"owner":%d,"player":%d,"closed":%s',
+		owner, tonumber(pid) or -1, tostring(closed)));
+	return closed;
+end
+if CivvisCoverQueue.on() and CivvisCoverQueue.LEFT[NAME] then
+	pcall(function()
+		Events.LocalPlayerTurnBegin.Add(function() pcall(CivvisCoverQueue.leftBehind); end);
+	end);
+	if NAME == "HistoricMoments" and type(ShowNewTimelineMoment) == "function" then
+		local shown = ShowNewTimelineMoment;
+		ShowNewTimelineMoment = function(popupData, ...)
+			local owner = type(popupData) == "table" and tonumber(popupData.playerID) or nil;
+			local pid = nil;
+			pcall(function() pid = Game.GetLocalPlayer(); end);
+			if owner ~= nil and owner ~= pid and CivvisCoverQueue.person(pid) then
+				report("hotseat_cover_left", string.format(',"owner":%d,"player":%d,"dropped":true',
+					owner, tonumber(pid) or -1));
+				return;
+			end
+			if owner ~= nil then CivvisCoverQueue.owner = owner; end
+			return shown(popupData, ...);
+		end;
+	end
+	if NAME == "BoostUnlockedPopup" and type(ShowBoost) == "function" then
+		local boost = ShowBoost;
+		ShowBoost = function(...)
+			if CivvisCoverQueue.dropping then return; end
+			return boost(...);
+		end;
+	end
 end

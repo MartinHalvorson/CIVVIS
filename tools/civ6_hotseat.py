@@ -257,6 +257,12 @@ AGENT_HANDLES = {"jack": "JackOfAllTrades", "holy": "HolyRoller", "tourist": "To
 #: `BUSES`); the first is the default.
 COVER_SOUNDS = ("music", "silent", "all")
 COVER_SOUND = COVER_SOUNDS[0]
+#: `--fast-animations [N]`: the engine's debug timescale for the CIVVIS seats'
+#: covered turns. The default is the ladder's (`deploy/live-mod-arms.txt`
+#: `debug-timescale-3`); the mod takes 1 < N <= 4 (`CivvisClock.fastWant`), the
+#: scales the ladder has played (`civ6_play.TREE_MOD_ARMS`).
+FAST_ANIMATIONS = 3.0
+FAST_ANIMATIONS_MAX = 4.0
 #: `--agents strongest`: the roster agent the ELO Rankings page rates highest.
 STRONGEST = "strongest"
 PUBLISHED_ELO = HERE.parent / "data" / "strategy_elo.json"
@@ -471,9 +477,35 @@ def hotseat_config(args: argparse.Namespace, run_dir: Path, orders_db: Path) -> 
         "DebugTimeScaleAB": None,
         "VSyncABTurns": None,
     })
+    # `--fast-animations` (off unless asked; tests only so far): the CIVVIS
+    # seats' turns under the cover at the console's `timescale N`, every
+    # person's turn at 1 (CivvisControlAgent.lua `CivvisClock.fastApply` and
+    # its resets; the cover and the HUD guard it). Only over a person's covered
+    # seat, and set only when asked, so every other install is as it was.
+    fast = getattr(args, "fast_animations", None)
+    if fast and config["HotseatCover"]:
+        config.update({
+            "HotseatFastAnimations": float(fast),
+            # `--fast-animations-rollover`: through the game's own processing
+            # after the last CIVVIS seat too, until the person's turn begins.
+            "HotseatFastRollover": bool(getattr(args, "fast_animations_rollover", False)),
+        })
     if args.auto_human:
         config["HotseatNames"][str(HUMAN_SEAT)] = "Test stub"
     return config
+
+
+def fast_animations_note(args: argparse.Namespace, config: dict) -> str | None:
+    """What the log says about `--fast-animations`, when it was asked for."""
+    if getattr(args, "fast_animations", None) is None:
+        return None
+    if not config.get("HotseatFastAnimations"):
+        return ("--fast-animations needs the cover over your own seat (not with --no-cover, "
+                "--auto-human stub or an unattended table): off for this game")
+    rollover = (", and through the game's own turn processing after them"
+                if config.get("HotseatFastRollover") else "")
+    return (f"fast animations: the CIVVIS seats' turns under the cover run at timescale "
+            f"{config['HotseatFastAnimations']:g}{rollover}; your own turn at 1 (tests only so far)")
 
 
 # --------------------------------------------------------------- the decider
@@ -537,6 +569,9 @@ GENOMES = ("live", "stock")
 DEPLOY_DIR = (Path(getattr(sys, "_MEIPASS", HERE)) / "deploy" if FROZEN
               else HERE.parent / "deploy")
 LIVE_FORCE_FILE = DEPLOY_DIR / "live-force-on.txt"
+#: Genes armed for a person's hotseat game on top of the ladder's list
+#: (`hotseat_treatments`): read only here, never by the ladder.
+HOTSEAT_FORCE_FILE = DEPLOY_DIR / "hotseat-force-on.txt"
 LOCAL_FORCE_FILE = Path.home() / ".civvis-live-force-on"
 #: The ladder's mod arms (`civ6_play.TREE_MOD_ARMS_FILE`, the same file from a checkout).
 MOD_ARMS_FILE = DEPLOY_DIR / "live-mod-arms.txt" if FROZEN else play.TREE_MOD_ARMS_FILE
@@ -579,6 +614,18 @@ def live_treatments(environ=None, repo_file: Path | None = None,
     if repo is not None:
         return force_tags(repo), "deploy/live-force-on.txt"
     return [], "no live list in this install"
+
+
+def hotseat_treatments(path: Path | None = None) -> list[str]:
+    """The hotseat-only genes (`deploy/hotseat-force-on.txt`): one tag a line,
+    `#` to the end of a line a note. The gameplay lanes' genes for a person's
+    game (findings 2026-11-28): before this the only way to arm one for a
+    hotseat seat was `CIVVIS_WITH`, which replaces the ladder's whole list."""
+    try:
+        text = (HOTSEAT_FORCE_FILE if path is None else path).read_text(encoding="utf-8")
+    except OSError:
+        return []
+    return force_tags("\n".join(line.split("#", 1)[0] for line in text.splitlines()))
 
 
 def genome_forced(stderr: str) -> list[str] | None:
@@ -664,15 +711,20 @@ def live_genome(args: argparse.Namespace, binary: Path, run_dir: Path, log) -> d
     log and kept in the run directory (`GENOME_RECORD`); `args.treatments` is
     then the `--with` list for every seat's worker and the mod's keys."""
     if getattr(args, "genome", "live") == "stock":
-        record = {"genome": "stock", "source": "--genome stock", "listed": 0,
+        record = {"genome": "stock", "source": "--genome stock", "listed": 0, "hotseat": [],
                   "with": [], "forced": [], "dropped": [], "note": ""}
     else:
         wanted, source = live_treatments()
-        record = {"genome": "live", "source": source, "listed": len(wanted),
+        # The hotseat-only genes, after the ladder's, each once.
+        extra = [tag for tag in hotseat_treatments() if tag not in wanted]
+        if extra:
+            wanted = wanted + extra
+            source = f"{source} + deploy/hotseat-force-on.txt ({len(extra)})"
+        record = {"genome": "live", "source": source, "listed": len(wanted), "hotseat": extra,
                   **armed_treatments(binary, wanted, run_dir)}
     args.treatments = record["with"]
-    args.genome_record = {key: record[key] for key in ("genome", "source", "listed", "forced",
-                                                       "dropped", "note")}
+    args.genome_record = {key: record[key] for key in ("genome", "source", "listed", "hotseat",
+                                                       "forced", "dropped", "note")}
     (run_dir / GENOME_RECORD).write_text(json.dumps(record, indent=2))
     if record["genome"] == "stock":
         log("decider genome: stock (--genome stock): the deployment genome with no live genes "
@@ -702,8 +754,8 @@ def kept_genome(args: argparse.Namespace, run_dir: Path) -> None:
                   "with": [], "forced": [], "dropped": [], "note": ""}
     args.genome = record.get("genome") or "stock"
     args.treatments = list(record.get("with") or [])
-    args.genome_record = {key: record.get(key) for key in ("genome", "source", "listed", "forced",
-                                                           "dropped", "note")}
+    args.genome_record = {key: record.get(key) for key in ("genome", "source", "listed", "hotseat",
+                                                           "forced", "dropped", "note")}
 
 
 def brain_command(seat_dir: Path, orders_db: Path, binary: Path, victory: str,
@@ -3476,6 +3528,9 @@ def run_manual(args: argparse.Namespace) -> int:
         live_genome(args, binary, run_dir, log)
         civ_at_install = set(env.game_pids())
         config = manual_lobby_config(args, run_dir, orders_db)
+        note = fast_animations_note(args, config)
+        if note:
+            log(note)
         reset_orders_db(orders_db)
         import civ6_brain  # noqa: PLC0415 - screen-free here: the guard is engaged
         civ6_brain.connect(orders_db).close()
@@ -3727,6 +3782,20 @@ def main(argv: list[str] | None = None) -> int:
                          "the default `--genome live` already does (its mod arms' poll-20ms), "
                          "so that part adds something only with `--genome stock`. Played in "
                          "live games since 2026-11-28")
+    ap.add_argument("--fast-animations", nargs="?", type=float, const=FAST_ANIMATIONS,
+                    default=None, metavar="N",
+                    help="off by default: while the cover is up over the CIVVIS seats' turns "
+                         f"the game runs N times faster (default {FAST_ANIMATIONS:g}, the "
+                         "ladder's own debug timescale; above 1, at most "
+                         f"{FAST_ANIMATIONS_MAX:g}): their fights, walks and the waits on "
+                         "them. Your own turn always runs at normal speed: the scale is put "
+                         "back to 1 before it is shown, and if that ever fails the feature "
+                         "switches itself off for the rest of the game. Needs the cover; "
+                         "give it again with --resume. Tests only so far")
+    ap.add_argument("--fast-animations-rollover", action="store_true",
+                    help="with --fast-animations: also through the game's own turn "
+                         "processing after the last CIVVIS seat (barbarians, city-states, "
+                         "the autosave), until your turn begins")
     ap.add_argument("--no-cover-queue", action="store_true",
                     help="DIAGNOSTIC: under the cover, the jack seats' announcements keep "
                          "their shipped queueing (they wait until the cover stands aside)")
@@ -3763,9 +3832,10 @@ def main(argv: list[str] | None = None) -> int:
                          "(--play-flags='--dv-join-winner --luxury-quote-proposals')")
     ap.add_argument("--genome", choices=GENOMES, default="live",
                     help="what the CIVVIS seats play: `live` (default) the live ladder's "
-                         "genes (deploy/live-force-on.txt, or this host's override) and mod "
-                         "arms (deploy/live-mod-arms.txt), as far as the decider takes them; "
-                         "`stock` the bare deployment genome, for comparison")
+                         "genes (deploy/live-force-on.txt, or this host's override), the "
+                         "hotseat-only genes on top (deploy/hotseat-force-on.txt) and the "
+                         "ladder's mod arms (deploy/live-mod-arms.txt), as far as the decider "
+                         "takes them; `stock` the bare deployment genome, for comparison")
     ap.add_argument("--agents", default=None, metavar="AGENT[,...]",
                     help="roster agents for the CIVVIS seats in seat order (seat 1 first), "
                          f"from {', '.join(AGENT_LANES)}, or `{STRONGEST}` for the one the "
@@ -3802,6 +3872,13 @@ def main(argv: list[str] | None = None) -> int:
                                                    ("--quit-game", args.quit_game)) if on)
         print(f"{given} go{'es' if ' and ' not in given else ''} with --stop: "
               f"`--stop {given}`", file=sys.stderr)
+        return 2
+    if args.fast_animations is not None and not 1 < args.fast_animations <= FAST_ANIMATIONS_MAX:
+        print(f"--fast-animations takes a scale above 1 and at most {FAST_ANIMATIONS_MAX:g} "
+              f"(default {FAST_ANIMATIONS:g})", file=sys.stderr)
+        return 2
+    if args.fast_animations_rollover and args.fast_animations is None:
+        print("--fast-animations-rollover goes with --fast-animations", file=sys.stderr)
         return 2
     if args.stop:
         return stop_command(args)
@@ -3951,6 +4028,8 @@ def run(args: argparse.Namespace) -> int:
         args.cover_sound = attach_config.get("HotseatCoverSound") or "all"
         args.no_cover_timer = not attach_config.get("HotseatCoverTimer")
         args.fast_turns = attach_config.get("HotseatFastTurns") is True
+        args.fast_animations = attach_config.get("HotseatFastAnimations") or None
+        args.fast_animations_rollover = attach_config.get("HotseatFastRollover") is True
     elif env.game_pids():
         print("Civ VI is already running. Quit it first (this starts a fresh game), "
               "or pass --attach to drive a hotseat game you loaded.", file=sys.stderr)
@@ -4026,6 +4105,9 @@ def run(args: argparse.Namespace) -> int:
             (run_dir / TABLE).write_text(json.dumps(table_settings(args, began, resumed or None),
                                                     indent=2, sort_keys=True))
             log(f"installed the control mod for hotseat at {target}")
+            note = fast_animations_note(args, config)
+            if note:
+                log(note)
             if args.resume_save is not None:
                 staged = stage_save(args.resume_save)
                 log(f"resuming {args.resume_save} (staged as {staged.name})")

@@ -17,6 +17,12 @@ pub(super) const WIDE_MAX_SURPLUS: f64 = 2.0;
 /// is the settler pump whatever it is training. Live Online-speed games aim
 /// at a floor of six cities before turn 60.
 pub(super) const CAPITAL_PUMP_UNTIL: u32 = 60;
+/// `settler-pump-leans-on-production`: the smallest Food surplus and the
+/// largest Production at which a city training a Settler asks for a
+/// Production focus. See
+/// `src/ai/advanced/settler_pump_leans_on_production.rs`.
+pub(super) const SETTLER_PUMP_MIN_FOOD: f64 = 4.0;
+pub(super) const SETTLER_PUMP_MAX_PRODUCTION: f64 = 5.0;
 
 pub(super) struct Choice {
     pub city: i64,
@@ -132,6 +138,44 @@ pub(super) fn choices(
     choices
 }
 
+/// `settler-pump-leans-on-production`: the Production focus requests for
+/// this frame. A city whose queue head is a Settler, on a Food surplus of at
+/// least [`SETTLER_PUMP_MIN_FOOD`] and a Production of at most
+/// [`SETTLER_PUMP_MAX_PRODUCTION`], with no Food preference and no
+/// Production preference, asks for `FAVOR_PRODUCTION`. A Production
+/// preference the export says is ours is kept while the Settler trains and
+/// the city does not starve, then released. Unknown Production readback
+/// (an export from a mod that takes no Production focus) counts as no
+/// preference set, so the ask is made and refused there; nothing is ever
+/// released without readback.
+pub(super) fn settler_pump_choices(state: &mirror::StateSnapshot) -> Vec<Choice> {
+    let mut choices = Vec::new();
+    for city in &state.cities {
+        let settler = city.producing.as_deref() == Some("UNIT_SETTLER");
+        let verb = if city.production_focus_managed == Some(true) {
+            let starving = city.food_surplus.is_finite() && city.food_surplus < 0.0;
+            (!settler || starving).then_some("RELEASE_PRODUCTION")
+        } else {
+            (settler
+                && city.food_surplus.is_finite()
+                && city.food_surplus >= SETTLER_PUMP_MIN_FOOD
+                && city.production.is_finite()
+                && city.production >= 0.0
+                && city.production <= SETTLER_PUMP_MAX_PRODUCTION
+                && city.food_favored == Some(false)
+                && city.production_favored != Some(true))
+            .then_some("FAVOR_PRODUCTION")
+        };
+        if let Some(verb) = verb {
+            choices.push(Choice {
+                city: city.id,
+                verb,
+            });
+        }
+    }
+    choices
+}
+
 pub(super) fn verify(order: &IssuedOrder, after: &mirror::StateSnapshot) -> Verdict {
     let Some(city) = after
         .cities
@@ -140,6 +184,23 @@ pub(super) fn verify(order: &IssuedOrder, after: &mirror::StateSnapshot) -> Verd
     else {
         return Verdict::Failed("city_gone".into());
     };
+    // `settler-pump-leans-on-production`: a Production focus is read back
+    // from its own pair. An export without it comes from a mod that takes
+    // no Production focus, which refused the order: a failure, so the
+    // three-strike rule withholds the ask instead of repeating it every turn.
+    if let Some(verb @ ("FAVOR_PRODUCTION" | "RELEASE_PRODUCTION")) = order.verb.as_deref() {
+        let (Some(favored), Some(managed)) =
+            (city.production_favored, city.production_focus_managed)
+        else {
+            return Verdict::Failed("production_focus_not_exported".into());
+        };
+        return match (verb, favored, managed) {
+            ("FAVOR_PRODUCTION", true, true) | ("RELEASE_PRODUCTION", false, false) => {
+                Verdict::Verified
+            }
+            _ => Verdict::Failed("production_focus_unchanged".into()),
+        };
+    }
     let (Some(favored), Some(managed)) = (city.food_favored, city.food_focus_managed) else {
         return Verdict::Unverifiable;
     };
