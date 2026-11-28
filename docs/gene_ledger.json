@@ -7511,6 +7511,15 @@
           "first-luxury-first-2": null
         }
       },
+      "founding-voyage": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "founding-voyage": null,
+          "founding-voyage-2": null
+        }
+      },
       "front-weighted-floor": {
         "rule_on": [],
         "head": null,
@@ -7925,6 +7934,15 @@
         "versions": {
           "siege-tier-yields-to-the-bombers": null,
           "siege-tier-yields-to-the-bombers-2": null
+        }
+      },
+      "spreaders-spread-before-they-chart": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "spreaders-spread-before-they-chart": null,
+          "spreaders-spread-before-they-chart-2": null
         }
       },
       "staging-gun-trusts-its-escort": {

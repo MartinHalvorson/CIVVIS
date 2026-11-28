@@ -194,6 +194,44 @@ class BundleInputsTest(unittest.TestCase):
         self.assertIn("CivvisControl.modinfo", shipped)
         self.assertFalse([name for name in shipped if name.endswith("_test.lua")])
 
+    def test_the_bundle_ships_both_live_lists_or_is_not_built(self):
+        # Before 2026-11-28 it shipped neither: "no live list in this install",
+        # the bare genome and no mod arms in every bundle game.
+        shipped = package_hotseat.deploy_files()
+        self.assertEqual([path.name for path in shipped],
+                         ["live-force-on.txt", "live-mod-arms.txt", "hotseat-force-on.txt"])
+        self.assertTrue(all(path.is_file() for path in shipped))
+        self.assertEqual({path.name for path in shipped},
+                         {hotseat.LIVE_FORCE_FILE.name, hotseat.MOD_ARMS_FILE.name,
+                          hotseat.HOTSEAT_FORCE_FILE.name},
+                         "under the names the harness reads")
+        with tempfile.TemporaryDirectory() as temporary:
+            gone = package_hotseat.REPO / "deploy" / "no-such-list.txt"
+            with mock.patch.object(package_hotseat, "DEPLOY", (shipped[0], gone)):
+                with self.assertRaises(SystemExit) as stopped:
+                    package_hotseat.deploy_files()
+            self.assertIn("deploy/no-such-list.txt missing", str(stopped.exception))
+            del temporary
+
+    def test_frozen_the_harness_reads_the_bundles_own_lists(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            probe = ("import sys; sys.frozen = True; sys._MEIPASS = sys.argv[1]; "
+                     f"sys.path.insert(0, {str(HERE)!r}); import civ6_hotseat as h; "
+                     "print(h.LIVE_FORCE_FILE); print(h.MOD_ARMS_FILE); print(h.BUNDLED_BIN.parent); "
+                     "print(h.HOTSEAT_FORCE_FILE)")
+            done = subprocess.run([sys.executable, "-c", probe, temporary], capture_output=True,
+                                  text=True, timeout=120)
+            self.assertEqual(done.returncode, 0, done.stderr)
+            genes, arms, bundled, extra = done.stdout.split()
+            self.assertEqual(extra, str(Path(temporary, "deploy", "hotseat-force-on.txt")))
+            root = str(Path(temporary))
+            self.assertEqual(genes, str(Path(root, "deploy", "live-force-on.txt")))
+            self.assertEqual(arms, str(Path(root, "deploy", "live-mod-arms.txt")))
+            self.assertEqual(bundled, root, "beside its own decider")
+        # From a checkout: the checkout's, as the ladder's supervisor reads them.
+        self.assertEqual(hotseat.LIVE_FORCE_FILE, HERE.parent / "deploy" / "live-force-on.txt")
+        self.assertEqual(hotseat.MOD_ARMS_FILE, hotseat.play.TREE_MOD_ARMS_FILE)
+
     def test_the_platform_tag_names_system_and_architecture(self):
         system, machine = package_hotseat.platform_tag().split("-", 1)
         self.assertIn(system, ("macos", "windows", "linux"))
@@ -235,7 +273,12 @@ class SelfcheckTest(unittest.TestCase):
                            "--timeout", "60")
             output = done.stdout + done.stderr
             self.assertEqual(done.returncode, 0, output)
-            self.assertIn("9 of 9 checks passed", output)
+            self.assertIn("10 of 10 checks passed", output)
+            ladder = hotseat.force_tags(hotseat.LIVE_FORCE_FILE.read_text(encoding="utf-8"))
+            extra = [tag for tag in hotseat.hotseat_treatments() if tag not in ladder]
+            self.assertIn(f"PASS  live genome: civvis_orders takes all {len(ladder) + len(extra)} genes of "
+                          f"live-force-on.txt and hotseat-force-on.txt ({len(extra)} hotseat-only;", output)
+            self.assertIn(f"live genes from deploy/live-force-on.txt", output)
             self.assertIn("--status saw it running; --stop ended it", output)
             self.assertIn("RequireHarness in every prelude", output)
             self.assertIn("screen-free, 6 screen modules stood in, 0 loaded for real", output)
@@ -244,6 +287,63 @@ class SelfcheckTest(unittest.TestCase):
                              "the mod is uninstalled again")
             self.assertFalse((scratch / "game.lock").exists(), "the lock is released")
             self.assertTrue((scratch / "runs" / "selfcheck" / "orders.sqlite").is_file())
+
+
+
+#: A `civvis_orders` that refuses one gene by name, as the real one does
+#: (`unknown --with treatment "x"`), and takes every other.
+REFUSING_DECIDER = """#!/usr/bin/env python3
+import sys
+if "not-in-this-build" in sys.argv:
+    sys.stderr.write('civvis-orders: unknown --with treatment "not-in-this-build"; this binary can '
+                     'force: recon-replacement\\n')
+    sys.exit(2)
+"""
+
+
+@unittest.skipIf(os.name == "nt", "the fake decider is a POSIX script")
+class LiveGenomeCheckTest(unittest.TestCase):
+    """`selfcheck`'s live genome step: the shipped lists, every gene taken."""
+
+    def check(self, genes: str, arms: str, extra: str = "") -> str:
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            decider = base / "civvis_orders"
+            decider.write_text(REFUSING_DECIDER)
+            decider.chmod(decider.stat().st_mode | stat.S_IXUSR)
+            (base / "live-force-on.txt").write_text(genes)
+            (base / "live-mod-arms.txt").write_text(arms)
+            (base / "hotseat-force-on.txt").write_text(extra)
+            with mock.patch.object(hotseat, "LIVE_FORCE_FILE", base / "live-force-on.txt"), \
+                    mock.patch.object(hotseat, "HOTSEAT_FORCE_FILE", base / "hotseat-force-on.txt"), \
+                    mock.patch.object(hotseat, "MOD_ARMS_FILE", base / "live-mod-arms.txt"), \
+                    mock.patch.dict(os.environ, {"CIVVIS_WITH": "not-in-this-build"}):
+                return app._check_live_genome({"hotseat": hotseat}, base, str(decider))
+
+    def test_every_listed_gene_taken_passes(self):
+        said = self.check("recon-replacement,monument-first\n", "stalled-operation-release\npoll-20ms\n")
+        self.assertIn("takes all 2 genes of live-force-on.txt and hotseat-force-on.txt (0 hotseat-only;", said)
+        self.assertIn("mod arms stalled-operation-release, poll-20ms", said)
+        said = self.check("recon-replacement\n", "poll-20ms\n", "# note\nmonument-first\nrecon-replacement\n")
+        self.assertIn("takes all 2 genes of live-force-on.txt and hotseat-force-on.txt (1 hotseat-only;", said)
+
+    def test_a_hotseat_only_gene_the_decider_refuses_fails_it(self):
+        with self.assertRaises(app.Failed) as failed:
+            self.check("recon-replacement\n", "poll-20ms\n", "not-in-this-build\n")
+        self.assertIn("(not-in-this-build)", str(failed.exception))
+
+    def test_a_gene_the_decider_refuses_fails_it(self):
+        with self.assertRaises(app.Failed) as failed:
+            self.check("recon-replacement,not-in-this-build\n", "poll-20ms\n")
+        self.assertIn("does not take 1 of the 2 listed genes (not-in-this-build)", str(failed.exception))
+
+    def test_no_list_or_an_unknown_arm_fails_it(self):
+        with self.assertRaises(app.Failed) as failed:
+            self.check("", "poll-20ms\n")
+        self.assertIn("no live gene list", str(failed.exception))
+        with self.assertRaises(app.Failed) as failed:
+            self.check("recon-replacement\n", "poll-20ms\nno-such-arm\n")
+        self.assertIn("unknown ['no-such-arm']", str(failed.exception))
 
 
 if __name__ == "__main__":

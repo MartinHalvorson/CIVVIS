@@ -3033,6 +3033,11 @@ impl AdvancedAi {
             );
             cursor = end;
         }
+        // `stacked-soldiers-step-apart`: soldiers of ours the passes above
+        // left on one tile step apart, so the host can take a hold for each.
+        // Nothing with the gene off. See
+        // `advanced/stacked_soldiers_step_apart.rs`.
+        self.step_stacked_soldiers_apart(g, pid);
         // `breaker-walks-under-a-shield`: where the breaker ends our turn,
         // and this turn's strikes beside it. Nothing with the gene off.
         self.breaker_shield_note(g, pid);

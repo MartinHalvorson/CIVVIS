@@ -2502,6 +2502,7 @@ Over the map stands a board:
 | --- | --- |
 | Columns | The top rated player strategies the page offers (`RULES.strategies` by Elo; with nothing rated, `STRANGE_RIVALS`' order), as many as **Columns** says (3, 4, 6 or 8; 6 at first), named by a letter in an order drawn afresh at every deal. **Names** shows which strategy each is. |
 | What a column is | Its strategy seated on the open turn of a copy of the world (`POST /forks`, the copies Autosearch plays on), and played the turns of a pick (**Turns a pick**: 5, 10, 20, 25 or 50; 10 at first). |
+| Same worlds | Columns whose strategies played those turns to the same world (the same `world_print` on the same turn, as Doctor Strange tells its panes apart) are one column, named by all their letters (`B=D`) in the place of the first, its head saying so on hover (operator 2026-11-28: "civvis moneyball we can merge identical states"). Their strategies part after the pick, so **Game ends** gives each one's end unless they agree, and **Pick** plays the first of them. |
 | Rows | How the seat stands at the end of those turns (`obs::standing`): Score, Cities, Population, Military strength, Food, Happiness, Housing, Production, Science, Culture and Gold at first; Faith, Food surplus, Loyalty, Techs, Civics and Tourism besides. **Stats** chooses them. Each cell has its change since now beside it, and the left column is the seat now. |
 | The best of a row | Lit green, where the columns differ. |
 | Sorting | A row's name sorts the columns by it, the most first; again, back to the order drawn. |

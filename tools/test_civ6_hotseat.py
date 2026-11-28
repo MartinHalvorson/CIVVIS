@@ -124,6 +124,27 @@ class HotseatInstallTest(unittest.TestCase):
         replaced = {p.findtext("LuaContext") for p in
                     tree.findall("./InGameActions/ReplaceUIScript/Properties")}
         self.assertIn("PlayerChange", replaced)
+        # The scenarios' event popup is served in hotseat only (a single-player
+        # install's modinfo is the shipped one: below).
+        self.assertIn("EventPopup", replaced)
+        served = [p.findtext("LuaReplace") for p in tree.findall("./InGameActions/ReplaceUIScript/Properties")
+                  if p.findtext("LuaContext") == "EventPopup"]
+        self.assertEqual(served, ["CivvisControlAutoClose.lua"])
+        self.assertNotIn("<LuaContext>EventPopup</LuaContext>",
+                         (install.MOD_SOURCE / "CivvisControl.modinfo").read_text())
+        # The leader screen's closer sits above Quick Deals' replacement of the same
+        # context (LoadOrder 99999), in hotseat only.
+        orders = {p.findtext("LuaContext"): p.findtext("LoadOrder") for p in
+                  tree.findall("./InGameActions/ReplaceUIScript/Properties")}
+        self.assertEqual(orders["DiplomacyActionView"], str(install.HOTSEAT_LOAD_ORDER))
+        self.assertGreater(install.HOTSEAT_LOAD_ORDER, 99999)
+        shipped = ET.fromstring((install.MOD_SOURCE / "CivvisControl.modinfo").read_text())
+        shipped_orders = {p.findtext("LuaContext"): p.findtext("LoadOrder") for p in
+                          shipped.findall("./InGameActions/ReplaceUIScript/Properties")}
+        self.assertIsNone(shipped_orders["DiplomacyActionView"], "a single-player install's is as it was")
+        self.assertEqual({k: orders[k] for k in shipped_orders if k != "DiplomacyActionView"},
+                         {k: v for k, v in shipped_orders.items() if k != "DiplomacyActionView"},
+                         "no other screen's order changes")
         # The screens and the HUD keep the run's own tag.
         closer = (out / "CivvisControlAutoClose.lua").read_text().split("}\n", 1)[0]
         self.assertIn('RunTag = "hotseat-test",', closer)
@@ -453,6 +474,32 @@ class SeatCheckTest(unittest.TestCase):
             self.turns(run_dir, (2, 1), (3, 0))
             self.poll(monitor)
             self.assertEqual(monitor.take_unseated(), [], "checked once")
+
+    def test_a_seat_gone_from_a_game_picked_up_part_way_is_not_called_a_setup_fault(self) -> None:
+        # A resumed game (#6011's check, live 2026-11-28 review): row 5's seat was
+        # eliminated before this run began, so it takes no turn and nothing here
+        # recorded its end. It is retired as before, in words that fit both cases.
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp)
+            monitor, lines = self.monitor(run_dir, [1, 2, 3, 4, 5])
+            self.turns(run_dir, (57, 0), (57, 1), (57, 2), (57, 3), (57, 5), (58, 0))
+            self.poll(monitor)
+            self.assertEqual(monitor.take_unseated(), [4])
+            warned = [line for line in lines if line.startswith("⚠ row 5 took no turn 57")]
+            self.assertEqual(len(warned), 1, lines)
+            self.assertIn("eliminated earlier in this game, or not a Hot Seat human", warned[0])
+            self.assertIn("its decision worker is stopped", warned[0])
+            self.assertFalse([line for line in lines if "is not a Hot Seat human in this game" in line])
+        # One this run saw eliminated: said as such, no warning at all.
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp)
+            monitor, lines = self.monitor(run_dir, [1, 2])
+            monitor.defeated.add(2)
+            self.turns(run_dir, (1, 0), (1, 1), (2, 0))
+            self.poll(monitor)
+            self.assertEqual(monitor.take_unseated(), [2])
+            self.assertIn("row 3: eliminated, so its decision worker is stopped", lines)
+            self.assertFalse([line for line in lines if line.startswith("⚠")], lines)
 
     def test_every_seat_taking_its_turn_is_said_once_and_a_late_start_waits_for_a_whole_round(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -854,6 +901,7 @@ class LiveGenomeTest(unittest.TestCase):
             with patch.object(hotseat, "live_treatments",
                               return_value=(["age-closer-2", "recon-replacement", "no-such-tag"],
                                             "deploy/live-force-on.txt")), \
+                    patch.object(hotseat, "hotseat_treatments", return_value=[]), \
                     patch.object(hotseat.subprocess, "run", side_effect=run):
                 hotseat.live_genome(args, Path("/bin/civvis_orders"), run_dir, lines.append)
             self.assertEqual(args.treatments, ["age-closer-2", "recon-replacement"])
@@ -881,6 +929,58 @@ class LiveGenomeTest(unittest.TestCase):
             asked.assert_not_called()
             self.assertEqual(stock.treatments, [])
             self.assertIn("decider genome: stock", lines[0])
+
+    def test_the_hotseat_only_genes_go_on_top_of_the_ladders(self) -> None:
+        # The gameplay lanes' genes for a person's game (findings/for-launcher.md,
+        # 2026-11-28): before, `CIVVIS_WITH` was the only way, and it replaces the
+        # ladder's whole list.
+        with tempfile.TemporaryDirectory() as tmp:
+            listed = Path(tmp) / "hotseat-force-on.txt"
+            listed.write_text("# a note\nmonument-first  # the ladder has it already\n\n"
+                              "gold-buys-the-opening-builder\ngold-buys-the-opening-builder\n"
+                              "science-seat-writes-first,taken-settler-is-retaken\n")
+            self.assertEqual(hotseat.hotseat_treatments(listed),
+                             ["monument-first", "gold-buys-the-opening-builder", "science-seat-writes-first",
+                              "taken-settler-is-retaken"])
+            self.assertEqual(hotseat.hotseat_treatments(Path(tmp) / "none.txt"), [])
+            run_dir, lines, asked = Path(tmp), [], []
+
+            def run(command, **_):
+                asked.append([word for word in command[3:] if word != "--with"])
+                return argparse.Namespace(returncode=0, stderr="", stdout="")
+            args = game_args(genome="live")
+            with patch.object(hotseat, "HOTSEAT_FORCE_FILE", listed), \
+                    patch.object(hotseat, "live_treatments",
+                                 return_value=(["recon-replacement", "monument-first"],
+                                               "deploy/live-force-on.txt")), \
+                    patch.object(hotseat.subprocess, "run", side_effect=run):
+                record = hotseat.live_genome(args, Path("/bin/civvis_orders"), run_dir, lines.append)
+            self.assertEqual(args.treatments, ["recon-replacement", "monument-first",
+                                               "gold-buys-the-opening-builder", "science-seat-writes-first",
+                                               "taken-settler-is-retaken"], "after the ladder's, each once")
+            self.assertEqual(record["hotseat"], ["gold-buys-the-opening-builder", "science-seat-writes-first",
+                                                 "taken-settler-is-retaken"])
+            self.assertEqual(record["source"], "deploy/live-force-on.txt + deploy/hotseat-force-on.txt (3)")
+            self.assertIn("from deploy/live-force-on.txt + deploy/hotseat-force-on.txt (3): 5 of 5 listed", lines[0])
+            self.assertEqual(args.genome_record["hotseat"], record["hotseat"], "on the game's record")
+            self.assertEqual(json.loads((run_dir / hotseat.GENOME_RECORD).read_text())["hotseat"], record["hotseat"])
+            # `--genome stock` plays none of it.
+            stock = game_args(genome="stock")
+            with patch.object(hotseat, "HOTSEAT_FORCE_FILE", listed):
+                hotseat.live_genome(stock, Path("/bin/civvis_orders"), run_dir, lines.append)
+            self.assertEqual(stock.treatments, [])
+
+    def test_the_shipped_hotseat_list_names_genes_the_decider_registers(self) -> None:
+        # A tag the decider does not know is dropped at the start of a game; a tag
+        # the ladder already arms is no addition; one family is armed in one version.
+        tags = hotseat.hotseat_treatments()
+        self.assertTrue(tags, hotseat.HOTSEAT_FORCE_FILE)
+        genes = (hotseat.HERE.parent / "src" / "ai" / "advanced" / "genes.rs").read_text(encoding="utf-8")
+        registered = set(re.findall(r'Gene \{ tag: "([^"]+)"', genes))
+        self.assertEqual([tag for tag in tags if tag not in registered], [], "every tag is a registered gene")
+        ladder = hotseat.force_tags(hotseat.LIVE_FORCE_FILE.read_text(encoding="utf-8"))
+        self.assertEqual([tag for tag in tags if tag in ladder], [], "none the ladder's list already arms")
+        self.assertFalse({"founding-voyage", "founding-voyage-2"} <= set(tags), "one founding-voyage only")
 
     def test_live_is_the_default_and_stock_is_asked_for(self) -> None:
         for flags, want in (([], "live"), (["--genome", "stock"], "stock")):
@@ -1622,6 +1722,85 @@ class UnattendedTableTest(unittest.TestCase):
             self.assertIn("the HUD ended seat 1's quiet turn (asked True, request 1)", text)
             self.assertIn("seat 0's hand-over pause stood 6 s with no Start Turn on screen", text)
 
+    def test_a_stuck_seat_a_seat_between_turns_and_the_stand_in_are_said(self) -> None:
+        # The records #6004 and #6007 added (CivvisControlHeartbeat.lua `CivvisSeatWatch`,
+        # CivvisControlAgent.lua `CivvisSeat.standInStep`), in the fields their Lua
+        # tests read (heartbeat_test.lua, stand_in_test.lua). Before 2026-11-28 they
+        # reached only events.jsonl.
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp)
+            lines: list[str] = []
+            monitor = hotseat.Monitor(run_dir, "hs", [1, 2], game_args(players=3, auto_human="gated"),
+                                      lines.append)
+            self.addCleanup(monitor.close)
+            base = {"ctx": "heartbeat", "run": "hs"}
+            with (run_dir / "events.jsonl").open("a") as out:
+                for event in (
+                    {"kind": "seat_stuck", "turn": 5, "player": 0, "why": "stub_turn", "age": 30, "quiet": 0,
+                     "blocker": "ENDTURN_BLOCKING_UNITS", "ready": "UNIT_SCOUT", "locks": 1, "sent": False,
+                     "processing": False, "controller_ran": True, "forces": 0},
+                    {"kind": "seat_stuck_end_turn", "turn": 5, "player": 0, "why": "stub_turn", "asked": True,
+                     "how": "unready", "forces": 1},
+                    {"kind": "seat_stuck", "turn": 9, "player": 2, "why": "long_turn", "age": 180, "quiet": 12,
+                     "blocker": None, "sent": True, "processing": True, "controller_ran": False},
+                    {"kind": "seat_between", "turn": 9, "player": 1, "between": 60, "sent": True, "busy": False,
+                     "processing": True, "locks": 2},
+                ):
+                    out.write(json.dumps(dict(base, **event)) + "\n")
+            (run_dir / "hs-p0").mkdir()
+            with (run_dir / "hs-p0" / "events.jsonl").open("a") as out:
+                for event in (
+                    {"kind": "stand_in_stuck", "turn": 5, "seat": 0, "step": 1, "seconds": 4,
+                     "blocker": "ENDTURN_BLOCKING_UNITS", "answered": "held:0+cancelled:1", "forced": 1,
+                     "sent": False, "game_paused": False, "visible": ["HistoricMoments"],
+                     "held_locks": [{"id": "7", "ctx": "HistoricMoments", "turn": 5}],
+                     "refusing": [{"id": 196608, "kind": "UNIT_SCOUT", "activity": "operation", "moves": 3,
+                                   "max": 3, "why": "text:LOC_UNIT_BUSY_WITH_OPERATION"}]},
+                    {"kind": "stand_in_stuck", "turn": 5, "seat": 0, "step": 11, "seconds": 34,
+                     "blocker": "ENDTURN_BLOCKING_UNITS", "answered": "held:0+cancelled:0", "forced": 11},
+                    {"kind": "end_turn_wait", "turn": 5, "forced": 2},
+                    {"kind": "end_turn_wait", "turn": 6, "forced": 0},
+                    {"kind": "stand_in_stuck", "turn": 7, "seat": 0, "step": 1, "seconds": 4,
+                     "blocker": "NO_ENDTURN_BLOCKING", "answered": None, "forced": 1},
+                    {"kind": "turn", "turn": 7, "orders_applied": None, "orders_source": "none"},
+                ):
+                    out.write(json.dumps(dict(event, ctx="agent", run="hs-p0")) + "\n")
+            monitor.poll()
+            text = "\n".join(lines)
+            self.assertEqual(monitor.seat_stalls, 3, "two stuck reports and one between turns")
+            self.assertIn("⚠ turn 5: test stub (seat 0)'s turn has stood 30 s, past the 30 s a test stub's "
+                          "turn may take, its controller quiet 0 s; the game waits on a unit waiting for orders, "
+                          "first unit still waiting for orders UNIT_SCOUT, 1 event lock(s) held by a screen. "
+                          "The HUD ends it", text)
+            self.assertIn("look at the game for a screen waiting on a click", text)
+            self.assertIn("turn 5: the HUD unreadied its end of turn, which the game had dropped, so it is "
+                          "sent again for seat 0's stuck turn (asked True, request 1)", text)
+            self.assertIn("CIVVIS jack 2 (seat 2)'s turn has stood 180 s, longer than any CIVVIS turn takes",
+                          text)
+            self.assertIn("its end of turn already sent, the game still processing messages", text)
+            self.assertIn("No CIVVIS controller has run on this seat, so the HUD leaves the turn alone", text)
+            self.assertIn("⚠ turn 9: CIVVIS jack 1 (seat 1) has been between turns 60 s and the next seat has "
+                          "not begun (its end of turn sent, game core busy False, processing messages True, "
+                          "2 event lock(s) held by a screen)", text)
+            self.assertIn("resume the save (--resume)", text)
+            self.assertIn("⚠ turn 5: the test stub's turn stands after 4 s (the stand-in's step 1): the game "
+                          "waits on a unit waiting for orders, answered held:0+cancelled:1, refusing every hold: "
+                          "UNIT_SCOUT 196608 (operation, moves 3/3, text:LOC_UNIT_BUSY_WITH_OPERATION), "
+                          "screens up: HistoricMoments, event locks held by: HistoricMoments (turn 5), "
+                          "end of turn forced 1 time(s), sent False", text)
+            self.assertIn("the test stub's turn stands after 4 s (the stand-in's step 1): the game waits on "
+                          "nothing the game names (no end-turn blocker)", text)
+            self.assertIn("turn 7: test stub (seat 0) — 0 opening orders applied (none)", text)
+            del lines[:]
+            report = hotseat.smoke_report(monitor, lines.append)
+            self.assertEqual(report["seats"]["0"]["stand_in_turns"], [5, 7], "once a turn")
+            stub = next(line for line in lines if line.startswith("report: Test stub"))
+            self.assertTrue(stub.endswith(", 1 turns ended by force, the stand-in stepped in on 2 turns (5, 7)"),
+                            stub)
+            jack = next(line for line in lines if line.startswith("report: CIVVIS jack 1"))
+            self.assertNotIn("stand-in", jack)
+            self.assertNotIn("by force", jack)
+
     def test_the_table_is_lost_only_when_both_seats_are_eliminated(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             run_dir = Path(tmp)
@@ -1711,6 +1890,24 @@ class CoverTest(unittest.TestCase):
         source = Path(hotseat.__file__).read_text()
         attach = source.split("args.no_cover_timer = not attach_config.get", 1)[1][:200]
         self.assertIn('args.fast_turns = attach_config.get("HotseatFastTurns") is True', attach)
+
+    def test_the_help_says_what_fast_turns_adds_to_the_live_genome(self) -> None:
+        # The 20 ms orders peek is already the default game's: the live mod arms'
+        # `poll-20ms` (`deploy/live-mod-arms.txt`) sets `OrdersPeekSeconds`, which the
+        # mod reads before `HotseatFastTurns` (CivvisControlHeartbeat.lua `peekEvery`,
+        # CivvisControlAgent.lua `CivvisQueue.peekSeconds`).
+        live = hotseat.hotseat_config(game_args(genome="live", treatments=[]), Path("/tmp/r"),
+                                      Path("/tmp/r/o.sqlite"))
+        stock = hotseat.hotseat_config(game_args(genome="stock", treatments=[]), Path("/tmp/r"),
+                                       Path("/tmp/r/o.sqlite"))
+        self.assertEqual((live["OrdersPeekSeconds"], live["HotseatFastTurns"]), (0.02, False))
+        self.assertIsNone(stock["OrdersPeekSeconds"])
+        with contextlib.redirect_stdout(io.StringIO()) as out, self.assertRaises(SystemExit):
+            hotseat.main(["--help"])
+        said = " ".join(out.getvalue().split())
+        self.assertIn("which the default `--genome live` already does", said)
+        self.assertIn("adds something only with `--genome stock`", said)
+        self.assertNotIn("not yet checked in a live game", said)
 
     def test_the_cover_is_quiet_and_says_how_long_by_default(self) -> None:
         cases = {
@@ -2559,6 +2756,10 @@ class OneShotCommandTest(unittest.TestCase):
             said = self.status(manual)
             self.assertIn("a --manual-lobby run: the game: Hot Seat, 3 players on Pangaea.lua", said)
             self.assertIn("row 2 CIVVIS jack 1", said)
+            # The person and the agents, as the run's own record names them.
+            said = self.status(dict(manual, name="dev", agents={"1": "holy"}))
+            self.assertIn("row 1 dev (you) (human)", said)
+            self.assertIn("row 2 CIVVIS HolyRoller (human)", said)
         # No harness on record, but Civ VI up with a hotseat game installed.
         said = self.status(None, installed={"Hotseat": True, "RunTag": "hotseat-x"})
         self.assertIn("Civ VI is up with the hotseat game hotseat-x installed", said)
@@ -2566,6 +2767,24 @@ class OneShotCommandTest(unittest.TestCase):
         self.assertIn("Run the same `--manual-lobby` command again",
                       self.status(None, installed={"Hotseat": True, "RunTag": "m", "RequireHarness": True}))
         self.assertEqual(self.status(None, civ=False, installed=None).strip(), "no hotseat game on record")
+
+    def test_status_stop_and_resign_answer_where_civ_vi_is_not_installed(self) -> None:
+        # The bundle check's step "--status and --stop with nothing running" on a
+        # runner with no Civ VI: `installed_config` exits as `civ6_env.install_dir`
+        # does there. Red from #6015 (runs 46110252483, 46111136386).
+        missing = SystemExit("Civilization VI install not found; set $CIV6_INSTALL or $CIV6_DIR")
+        for civ in (False, True):  # True: a game up in a place no search looks
+            with patch.object(hotseat, "read_current", return_value=None), \
+                    patch.object(hotseat.env, "game_pids", return_value=[4242] if civ else []), \
+                    patch.object(hotseat.modinstall, "installed_config", side_effect=missing), \
+                    contextlib.redirect_stdout(io.StringIO()) as out:
+                self.assertEqual(hotseat.main(["--status"]), 0, civ)
+                self.assertEqual(hotseat.main(["--stop"]), 0, civ)
+                self.assertEqual(hotseat.main(["--stop", "--resign"]), 2, civ)
+            said = out.getvalue()
+            self.assertIn("no hotseat game on record", said)
+            self.assertIn("no hotseat harness is running", said)
+            self.assertIn("no hotseat game to resign: no harness is running", said)
 
 
 def text(*labels: str) -> list[dict]:

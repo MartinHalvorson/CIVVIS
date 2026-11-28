@@ -972,7 +972,11 @@ impl AdvancedAi {
                 // are. Empty with the gene off.
                 let holds =
                     super::raiders_holding_a_settler::holds_a_settler(g, unit.pos, field_settlers);
-                !barbarian || home || holds
+                // `taken-settler-is-retaken`: a barbarian standing on a
+                // civilian it took from us counts wherever it stands. False
+                // with the gene off.
+                let captor = self.holds_a_taken_civilian(g, pid, unit.pos);
+                !barbarian || home || holds || captor
             })
             .map(|unit| unit.id)
             .collect();
@@ -1507,9 +1511,14 @@ impl AdvancedAi {
             };
             let hostage =
                 super::raiders_holding_a_settler::settler_hostage_value(g, &force, &field_settlers);
+            // `taken-settler-is-retaken`: the civilians taken from us that a
+            // body of the force stands on. Zero with the gene off. See
+            // `advanced/taken_settler_is_retaken.rs`.
+            let taken = self.taken_civilian_value_in(g, pid, &force);
             // A Defend force holds its city; it does not walk out to free a
             // Settler, so a nearby Defend row does not cover these raiders.
             let covered = hostage <= 0.0
+                && taken <= 0.0
                 && our_cities.iter().any(|(cid, pos)| {
                     defended.contains(cid) && g.wdist(*pos, at) <= THREAT_RELIEF_RADIUS
                 })
@@ -1526,13 +1535,21 @@ impl AdvancedAi {
                      of ours in the field; the Destroy row carries the Settler's {:.0}",
                     force.len(), super::raiders_holding_a_settler::SETTLER_HOLD_RADIUS, hostage; at);
             }
+            if taken > 0.0 {
+                think!(self.journal(), Military, Detail,
+                    "The captor of our civilian is hunted";
+                    "taken-settler-is-retaken: {} hostile(s) stand on a civilian taken from us; \
+                     the Destroy row carries its {:.0}",
+                    force.len(), taken; at);
+            }
             let strength: f64 = force
                 .iter()
                 .map(|uid| {
                     effective_strength(g.unit_strength(&g.units[uid], true), g.units[uid].hp)
                 })
                 .sum();
-            let value: f64 = force.iter().map(|uid| unit_value(g, *uid)).sum::<f64>() + hostage;
+            let value: f64 =
+                force.iter().map(|uid| unit_value(g, *uid)).sum::<f64>() + hostage + taken;
             let naval = force.iter().any(|uid| BasicAi::waterborne(g, *uid));
             let land = force.iter().any(|uid| !BasicAi::waterborne(g, *uid));
             let kind = &g.units[&force[0]].kind;
@@ -4445,6 +4462,10 @@ mod camp_age_tests;
 
 #[cfg(test)]
 mod settler_hostage_tests;
+
+#[cfg(test)]
+#[path = "taken_settler_is_retaken/board_tests.rs"]
+mod taken_settler_board_tests;
 
 #[cfg(test)]
 mod capital_defender_tests;

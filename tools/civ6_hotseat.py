@@ -307,6 +307,24 @@ def record_person_game(run_dir: Path, log, resigned: bool = False) -> None:
             f"`{' '.join(['tools/people_elo.py', *command[2:]])}` tries again")
 
 
+def read_people_flags(args: argparse.Namespace) -> str | None:
+    """`--name` checked and `--agents` read into roster agents, for a launched
+    table and a `--manual-lobby` one alike; what is wrong, if anything. Before
+    2026-11-28 `--manual-lobby` skipped both: its `--agents holy` named the
+    seats `h`, `o`, `l`, `y` and its seats were recorded under no name check."""
+    if args.name is not None and not PERSON_NAME.fullmatch(args.name):
+        return ("--name: 1 to 24 letters, digits, spaces, . _ or -, starting with a "
+                "letter or digit")
+    if args.agents and isinstance(args.agents, str):
+        agents = [a.strip().lower() for a in args.agents.split(",") if a.strip()]
+        agents = [strongest_agent() if a == STRONGEST else a for a in agents]
+        bad = [a for a in agents if a not in AGENT_LANES]
+        if bad:
+            return f"--agents: {', '.join(bad)} not one of {', '.join(AGENT_LANES)}"
+        args.agents = agents
+    return None
+
+
 def person_name(args: argparse.Namespace) -> str | None:
     """The person at seat 0, when the table has one and `--name` named them."""
     if getattr(args, "civvis_seats", None) or getattr(args, "auto_human", None):
@@ -511,10 +529,20 @@ GENOMES = ("live", "stock")
 #: `CIVVIS_WITH` environment, else the file `CIVVIS_WITH_FILE` names (an empty
 #: one is the stock genome), else this host's `~/.civvis-live-force-on` while
 #: it is not empty, else the checkout's own `deploy/live-force-on.txt`.
-LIVE_FORCE_FILE = HERE.parent / "deploy" / "live-force-on.txt"
+#: Where both live lists are: the checkout's `deploy/`, or in the frozen bundle
+#: its own copy (`tools/package_hotseat.py` ships them under `_internal/deploy/`
+#: from the revision its decider is built from), as `BUNDLED_BIN` is its own
+#: decider. Before 2026-11-28 a bundle shipped neither: its log said "no live
+#: list in this install", and its seats played the bare genome with no mod arms.
+DEPLOY_DIR = (Path(getattr(sys, "_MEIPASS", HERE)) / "deploy" if FROZEN
+              else HERE.parent / "deploy")
+LIVE_FORCE_FILE = DEPLOY_DIR / "live-force-on.txt"
+#: Genes armed for a person's hotseat game on top of the ladder's list
+#: (`hotseat_treatments`): read only here, never by the ladder.
+HOTSEAT_FORCE_FILE = DEPLOY_DIR / "hotseat-force-on.txt"
 LOCAL_FORCE_FILE = Path.home() / ".civvis-live-force-on"
-#: The ladder's mod arms (`civ6_play.TREE_MOD_ARMS_FILE`).
-MOD_ARMS_FILE = play.TREE_MOD_ARMS_FILE
+#: The ladder's mod arms (`civ6_play.TREE_MOD_ARMS_FILE`, the same file from a checkout).
+MOD_ARMS_FILE = DEPLOY_DIR / "live-mod-arms.txt" if FROZEN else play.TREE_MOD_ARMS_FILE
 #: In the run directory: what the seats were armed with, for `--attach`.
 GENOME_RECORD = "genome.json"
 
@@ -554,6 +582,18 @@ def live_treatments(environ=None, repo_file: Path | None = None,
     if repo is not None:
         return force_tags(repo), "deploy/live-force-on.txt"
     return [], "no live list in this install"
+
+
+def hotseat_treatments(path: Path | None = None) -> list[str]:
+    """The hotseat-only genes (`deploy/hotseat-force-on.txt`): one tag a line,
+    `#` to the end of a line a note. The gameplay lanes' genes for a person's
+    game (findings 2026-11-28): before this the only way to arm one for a
+    hotseat seat was `CIVVIS_WITH`, which replaces the ladder's whole list."""
+    try:
+        text = (HOTSEAT_FORCE_FILE if path is None else path).read_text(encoding="utf-8")
+    except OSError:
+        return []
+    return force_tags("\n".join(line.split("#", 1)[0] for line in text.splitlines()))
 
 
 def genome_forced(stderr: str) -> list[str] | None:
@@ -607,7 +647,9 @@ def armed_treatments(binary: Path, wanted: list[str], scratch: Path, run=None) -
         for tag in tags:
             command += ["--with", tag]
         try:
-            done = run(command, capture_output=True, text=True, timeout=60, check=False)
+            # Never the harness's own stdin: the empty board is all it is given.
+            done = run(command, capture_output=True, text=True, timeout=60, check=False,
+                       stdin=subprocess.DEVNULL)
         except (OSError, subprocess.SubprocessError) as error:
             return {"with": [], "forced": [], "dropped": dropped + tags,
                     "note": f"the decider could not be asked ({error}); its stock genome plays"}
@@ -637,15 +679,20 @@ def live_genome(args: argparse.Namespace, binary: Path, run_dir: Path, log) -> d
     log and kept in the run directory (`GENOME_RECORD`); `args.treatments` is
     then the `--with` list for every seat's worker and the mod's keys."""
     if getattr(args, "genome", "live") == "stock":
-        record = {"genome": "stock", "source": "--genome stock", "listed": 0,
+        record = {"genome": "stock", "source": "--genome stock", "listed": 0, "hotseat": [],
                   "with": [], "forced": [], "dropped": [], "note": ""}
     else:
         wanted, source = live_treatments()
-        record = {"genome": "live", "source": source, "listed": len(wanted),
+        # The hotseat-only genes, after the ladder's, each once.
+        extra = [tag for tag in hotseat_treatments() if tag not in wanted]
+        if extra:
+            wanted = wanted + extra
+            source = f"{source} + deploy/hotseat-force-on.txt ({len(extra)})"
+        record = {"genome": "live", "source": source, "listed": len(wanted), "hotseat": extra,
                   **armed_treatments(binary, wanted, run_dir)}
     args.treatments = record["with"]
-    args.genome_record = {key: record[key] for key in ("genome", "source", "listed", "forced",
-                                                       "dropped", "note")}
+    args.genome_record = {key: record[key] for key in ("genome", "source", "listed", "hotseat",
+                                                       "forced", "dropped", "note")}
     (run_dir / GENOME_RECORD).write_text(json.dumps(record, indent=2))
     if record["genome"] == "stock":
         log("decider genome: stock (--genome stock): the deployment genome with no live genes "
@@ -675,8 +722,8 @@ def kept_genome(args: argparse.Namespace, run_dir: Path) -> None:
                   "with": [], "forced": [], "dropped": [], "note": ""}
     args.genome = record.get("genome") or "stock"
     args.treatments = list(record.get("with") or [])
-    args.genome_record = {key: record.get(key) for key in ("genome", "source", "listed", "forced",
-                                                           "dropped", "note")}
+    args.genome_record = {key: record.get(key) for key in ("genome", "source", "listed", "hotseat",
+                                                           "forced", "dropped", "note")}
 
 
 def brain_command(seat_dir: Path, orders_db: Path, binary: Path, victory: str,
@@ -1931,7 +1978,8 @@ RELAY_S = 0.02
 
 def relay_for(bridges: list, seconds: float = PASS_S, read_s: float = RELAY_S,
               clock=None, sleep=None) -> None:
-    """Relay the game's log to the workers every `read_s` for `seconds`.
+    """Relay the game's log to the workers every `read_s` for `seconds`
+    (`watch.relay_for`, #6003).
 
     A decider reads its board from its seat's events.jsonl (`civvis_orders
     --mirror`), which only these bridges write. Relayed once per half-second
@@ -1942,14 +1990,10 @@ def relay_for(bridges: list, seconds: float = PASS_S, read_s: float = RELAY_S,
     median (two passes), where the decider answers in 10 ms. The ladder relays
     every 50 ms between its passes for the same reason (`civ6_play.py`,
     `read_s`). Only the relay runs this often; everything else keeps the pass.
-    (The same loop as `watch.relay_for` in #6003, which this can call once
-    that is merged.)"""
-    clock, sleep = clock or time.monotonic, sleep or time.sleep
-    until = clock() + seconds
-    while (left := until - clock()) > 0:
-        sleep(min(read_s, left))
-        for bridge in bridges:
-            bridge.pump()
+    The clock and the sleep are read when called, not when `watch` was
+    imported, so a caller (and a test) that replaces `time`'s gets its own."""
+    watch.relay_for(bridges, seconds, read_s, clock=clock or time.monotonic,
+                    sleep=sleep or time.sleep)
 
 
 #: `quit_civ`'s clock: the whole attempt, the seconds a question that is up
@@ -2063,6 +2107,98 @@ def notify(title: str, message: str) -> None:
         subprocess.run(["osascript", "-e", script], capture_output=True, timeout=10)
     except (OSError, subprocess.SubprocessError):
         pass
+
+
+#: An end-turn blocker as the HUD's seat watch names it, in words.
+BLOCKER_WORDS = {
+    "ENDTURN_BLOCKING_UNITS": "a unit waiting for orders",
+    "ENDTURN_BLOCKING_UNIT_PROMOTION": "a unit promotion",
+    "ENDTURN_BLOCKING_PRODUCTION": "a city's production",
+    "ENDTURN_BLOCKING_RESEARCH": "the research choice",
+    "ENDTURN_BLOCKING_CIVIC": "the civic choice",
+    "ENDTURN_BLOCKING_POLICY_SLOT": "a policy slot",
+    "ENDTURN_BLOCKING_FILL_CIVIC_SLOT": "a policy slot",
+    "ENDTURN_BLOCKING_GOVERNOR_APPOINTMENT": "a governor appointment",
+    "ENDTURN_BLOCKING_PANTHEON": "the pantheon choice",
+    "ENDTURN_BLOCKING_GIVE_INFLUENCE_TOKEN": "an envoy to send",
+    "ENDTURN_BLOCKING_STACKED_UNITS": "units stacked on one tile",
+}
+
+
+def blocker_words(blocker) -> str:
+    if blocker in (None, "", "NO_ENDTURN_BLOCKING"):
+        return "nothing the game names (no end-turn blocker)"
+    return BLOCKER_WORDS.get(str(blocker), str(blocker))
+
+
+def seat_stuck_line(monitor: "Monitor", event: dict) -> str:
+    """The HUD's `seat_stuck` (CivvisControlHeartbeat.lua `CivvisSeatWatch`): a
+    watched seat's turn that has stood past its limit with its controller
+    beating or not, in words a person can act on."""
+    why = event.get("why")
+    what = {"stub_turn": "past the 30 s a test stub's turn may take",
+            "long_turn": "longer than any CIVVIS turn takes (180 s)"}.get(why, str(why))
+    player = event.get("player")
+    name = monitor.name(player) if isinstance(player, int) else f"seat {player}"
+    waits = [f"the game waits on {blocker_words(event.get('blocker'))}"]
+    if event.get("ready"):
+        waits.append(f"first unit still waiting for orders {event['ready']}")
+    if event.get("locks"):
+        waits.append(f"{event['locks']} event lock(s) held by a screen")
+    if event.get("sent"):
+        waits.append("its end of turn already sent")
+    if event.get("processing"):
+        waits.append("the game still processing messages")
+    if event.get("controller_ran") is False:
+        then = ("No CIVVIS controller has run on this seat, so the HUD leaves the turn alone: "
+                "it waits for a person to play it (Start Turn, then NEXT TURN)")
+    else:
+        then = ("The HUD ends it (every 20 s, up to six times a turn); if it still stands, "
+                "look at the game for a screen waiting on a click and close it")
+    return (f"⚠ turn {event.get('turn')}: {name}'s turn has stood {event.get('age')} s, {what}, "
+            f"its controller quiet {event.get('quiet')} s; " + ", ".join(waits) + f". {then}")
+
+
+def seat_between_line(monitor: "Monitor", event: dict) -> str:
+    """The HUD's `seat_between`: a watched seat that is the local player with its
+    turn not active, and the next seat not begun, for a minute or more."""
+    player = event.get("player")
+    name = monitor.name(player) if isinstance(player, int) else f"seat {player}"
+    state = [f"its end of turn {'sent' if event.get('sent') else 'NOT sent'}",
+             f"game core busy {event.get('busy')}", f"processing messages {event.get('processing')}",
+             f"{event.get('locks') or 0} event lock(s) held by a screen"]
+    return (f"⚠ turn {event.get('turn')}: {name} has been between turns {event.get('between')} s and "
+            f"the next seat has not begun (" + ", ".join(state) + "). Nothing in the game can end a "
+            "turn that is not active: if Civ VI shows a screen, close it; if this is said again a "
+            "minute from now, save from the game menu (Esc), quit, and resume the save (--resume).")
+
+
+def stand_in_stuck_line(monitor: "Monitor", event: dict) -> str:
+    """The test stub's own `stand_in_stuck` (CivvisControlAgent.lua
+    `CivvisSeat.standInStep`): what holds its turn, one line a record."""
+    refusing = []
+    for unit in event.get("refusing") or []:
+        if not isinstance(unit, dict):
+            continue
+        detail = [str(unit.get("activity") or "?"), f"moves {unit.get('moves')}/{unit.get('max')}"]
+        if unit.get("why"):
+            detail.append(str(unit["why"]))
+        refusing.append(f"{unit.get('kind')} {unit.get('id')} ({', '.join(detail)})")
+    held = [f"{lock.get('ctx') or '?'}" + (f" (turn {lock['turn']})" if lock.get("turn") is not None else "")
+            for lock in event.get("held_locks") or [] if isinstance(lock, dict)]
+    parts = [f"the game waits on {blocker_words(event.get('blocker'))}",
+             f"answered {event.get('answered')}"]
+    if refusing:
+        parts.append("refusing every hold: " + "; ".join(refusing))
+    if event.get("visible"):
+        parts.append("screens up: " + ", ".join(str(v) for v in event["visible"]))
+    if held:
+        parts.append("event locks held by: " + ", ".join(held))
+    parts.append(f"end of turn forced {event.get('forced')} time(s), sent {event.get('sent')}")
+    if event.get("game_paused"):
+        parts.append("the game still paused")
+    return (f"⚠ turn {event.get('turn')}: the test stub's turn stands after {event.get('seconds')} s "
+            f"(the stand-in's step {event.get('step')}): " + ", ".join(parts))
 
 
 def ended_at(event: dict) -> dict:
@@ -2358,6 +2494,19 @@ class Monitor:
         elif kind == "seat_quiet_end_turn":
             self.say(f"turn {event.get('turn')}: the HUD ended seat {event.get('player')}'s quiet "
                      f"turn (asked {event.get('asked')}, request {event.get('forces')})")
+        # The watch's turn-age rule (#6007): a turn that stands though its
+        # controller beats, and a seat stuck between turns.
+        elif kind == "seat_stuck":
+            self.seat_stalls += 1
+            self.say(seat_stuck_line(self, event))
+        elif kind == "seat_stuck_end_turn":
+            how = ("unreadied its end of turn, which the game had dropped, so it is sent again"
+                   if event.get("how") == "unready" else "asked the end of turn by force")
+            self.say(f"turn {event.get('turn')}: the HUD {how} for seat {event.get('player')}'s "
+                     f"stuck turn (asked {event.get('asked')}, request {event.get('forces')})")
+        elif kind == "seat_between":
+            self.seat_stalls += 1
+            self.say(seat_between_line(self, event))
         elif kind == "hotseat_pause_released":
             self.say(f"⚠ turn {event.get('turn')}: seat {event.get('player')}'s hand-over pause stood "
                      f"{event.get('waited')} s with no Start Turn on screen; released "
@@ -2406,7 +2555,24 @@ class Monitor:
                      "as a Hot Seat human")
             return
         self.unseated += missing
+        # A seat this run saw eliminated takes no turn either: no fault of the setup.
+        gone = [seat for seat in missing if seat in self.defeated]
+        if gone:
+            self.say(f"{_rows(gone)}: eliminated, so {'its decision worker is' if len(gone) == 1 else 'their decision workers are'} stopped")
+        missing = [seat for seat in missing if seat not in self.defeated]
+        if not missing:
+            return
         one = len(missing) == 1
+        if turn - 1 > 1:
+            # A game picked up part-way (`--resume`, `--attach`): a seat eliminated
+            # before this run began has no turn and no record of its end here.
+            self.log(f"⚠ {_rows(missing)} took no turn {turn - 1} on the hand-over screen: "
+                     f"eliminated earlier in this game, or not a Hot Seat human (Civ VI's own AI "
+                     f"plays {'it' if one else 'them'}, or the row is closed). CIVVIS does not play "
+                     f"{'it' if one else 'them'}, and {'its decision worker is' if one else 'their decision workers are'} "
+                     "stopped. If a CIVVIS seat should still be playing, quit to the main menu and "
+                     "load the game again with the row set to Human.")
+            return
         self.log(f"⚠ {_rows(missing)} {'is' if one else 'are'} not a Hot Seat human in this game "
                  f"(no turn {turn - 1} on the hand-over screen): Civ VI's own AI plays "
                  f"{'it' if one else 'them'}, or the row is closed, so CIVVIS does not, and "
@@ -2462,11 +2628,22 @@ class Monitor:
             # `orders_applied` is the turn's first frame; the orders of its
             # later frames are counted from the `orders` rows below.
             self.say(f"turn {event.get('turn')}: {self.name(seat)} — "
-                     f"{event.get('orders_applied')} opening orders applied "
+                     f"{event.get('orders_applied') or 0} opening orders applied "
                      f"({event.get('orders_source')}), cities {event.get('cities')}, "
                      f"units {event.get('units')}, score {event.get('score')}")
         elif kind == "orders":
             stats["orders_all"] = stats.get("orders_all", 0) + int(event.get("applied") or 0)
+        elif kind == "end_turn_wait":
+            # A turn its own controller had to end by force (`forced` requests).
+            if int(event.get("forced") or 0) > 0:
+                stats["forced_turns"] = stats.get("forced_turns", 0) + 1
+        elif kind == "stand_in_stuck":
+            # The test stub's stand-in stepped in (its first step, then every
+            # 30 s while the turn stands): counted once a turn.
+            stepped = stats.setdefault("stand_in_turns", [])
+            if event.get("turn") not in stepped:
+                stepped.append(event.get("turn"))
+            self.say(stand_in_stuck_line(self, event))
         elif kind == "found":
             stats["found"] += 1
         elif kind == "error":
@@ -2578,7 +2755,12 @@ def smoke_report(monitor: Monitor, log: Log) -> dict:
             f"{stats.get('orders_all') or stats['orders_applied']} orders applied, "
             f"{stats['found']} cities founded, "
             f"now {last.get('cities')} cities / {last.get('units')} units, "
-            f"score {last.get('score')}, source {last.get('orders_source')}")
+            f"score {last.get('score')}, source {last.get('orders_source')}"
+            + (f", {stats['forced_turns']} turns ended by force" if stats.get("forced_turns") else "")
+            + (f", the stand-in stepped in on {len(stats.get('stand_in_turns') or [])} turns"
+               + (f" ({', '.join(str(t) for t in stats['stand_in_turns'][:12])})"
+                  if stats.get("stand_in_turns") else "")
+               if seat == HUMAN_SEAT and monitor.args.auto_human else ""))
     return report
 
 
@@ -2760,6 +2942,21 @@ def stopped_news(log_path: Path, offset: int) -> list[str]:
     return [line for line in text.splitlines() if any(news in line for news in STOP_NEWS)]
 
 
+def installed_game_config() -> dict:
+    """The control mod's installed config, or {} where there is none to read:
+    no mod installed, or no Civilization VI found at all (`civ6_env.install_dir`
+    exits then). `--status` and `--stop --resign` answer on a computer with no
+    Civ VI where they expect one: the bundle's own check runs them on a bare
+    runner, and a player's game can sit where no search looks. From #6015 to
+    2026-11-28 both exited 1 there with "Civilization VI install not found"
+    (`hotseat-bundle` runs 46110252483 and 46111136386, which then uploaded no
+    bundle)."""
+    try:
+        return modinstall.installed_config() or {}
+    except SystemExit:
+        return {}
+
+
 def resign_unattended(current: dict | None, say=print) -> int:
     """`--stop --resign` with no harness running: the game's record is put
     on the people's record from the run's own summary, which every harness
@@ -2767,7 +2964,7 @@ def resign_unattended(current: dict | None, say=print) -> int:
     this printed "no hotseat harness is running" and the resignation was lost."""
     run_dir = Path(current["run_dir"]) if current and current.get("run_dir") else None
     if run_dir is None:
-        installed = modinstall.installed_config() or {}
+        installed = installed_game_config()
         if installed.get("Hotseat") and installed.get("RunTag"):
             run_dir = RUN_ROOT / installed["RunTag"]
     if run_dir is None:
@@ -2863,8 +3060,9 @@ def status_command() -> int:
     current = read_current()
     civ = bool(env.game_pids())
     if not current:
-        installed = modinstall.installed_config() or {}
-        if civ and installed.get("Hotseat") and installed.get("RunTag"):
+        # Only a running game makes an installed one worth naming.
+        installed = installed_game_config() if civ else {}
+        if installed.get("Hotseat") and installed.get("RunTag"):
             print(f"no harness is running, but Civ VI is up with the hotseat game "
                   f"{installed['RunTag']} installed: CIVVIS's seats are not being played. "
                   + ("Run the same `--manual-lobby` command again to pick it up."
@@ -2882,7 +3080,9 @@ def status_command() -> int:
             print("a --manual-lobby run: waiting for the Hot Seat game you set up to start")
         else:
             civvis, _ = lobby_seats(lobby)
-            print("a --manual-lobby run: " + describe_lobby(lobby, civvis))
+            print("a --manual-lobby run: " + describe_lobby(lobby, civvis,
+                                                           person=current.get("name"),
+                                                           agents=current.get("agents")))
     else:
         table = describe_table(run_dir)
         if table:
@@ -3159,17 +3359,20 @@ def lobby_seats(lobby: dict, installed: list[int] = MANUAL_SEATS) -> tuple[list[
     return civvis, problems
 
 
-def describe_lobby(lobby: dict, civvis: list[int], stub: bool = False) -> str:
-    """The game as Civ VI reports it, in one line."""
+def describe_lobby(lobby: dict, civvis: list[int], stub: bool = False,
+                   person: str | None = None, agents: dict | None = None) -> str:
+    """The game as Civ VI reports it, in one line: the person by `--name`
+    and each CIVVIS seat by its agent where the run names them."""
+    agents = {int(seat): agent for seat, agent in (agents or {}).items()}
     players = sorted((p for p in lobby.get("players") or [] if isinstance(p, dict)),
                      key=lambda p: p.get("id", 99))
     seats = []
     for player in players:
         seat = int(player.get("id", -1))
         if seat == HUMAN_SEAT:
-            who = "test stub" if stub else "you"
+            who = "test stub" if stub else f"{person} (you)" if person else "you"
         elif seat in civvis:
-            who = seat_name(seat)
+            who = seat_name(seat, agents.get(seat))
         elif player.get("slot") == "human":
             who = "a person"
         else:
@@ -3198,9 +3401,48 @@ def manual_stall_note(monitor: Monitor, log: Log, now: float) -> bool:
     return True
 
 
+def manual_seat_agents(args: argparse.Namespace, civvis: list[int]) -> dict[int, str]:
+    """Each CIVVIS seat's roster agent at a `--manual-lobby` table, as its install
+    names it: `--agents` in the order of every seat the install can play
+    (`MANUAL_SEATS`, `manual_lobby_config`), so row 3 is the third agent whether
+    or not row 2 is seated. Empty without `--agents` (jack on every seat)."""
+    if not getattr(args, "agents", None):
+        return {}
+    named = seat_agents(args, MANUAL_SEATS)
+    return {seat: named[seat] for seat in civvis if seat in named}
+
+
+def manual_table_record(monitor: Monitor, args: argparse.Namespace, civvis: list[int],
+                        lobby: dict, began: dict) -> dict:
+    """A `--manual-lobby` game's ending and setup, as `table_record` says a
+    launched one's, from the game the person set up (`hotseat_lobby`, the HUD's
+    read-back) and not the command line, whose game settings are not used:
+    the players in the game, its map, size, speed and turn limit, and the
+    person's difficulty and leader (row 1, seat 0). Before 2026-11-28 this run
+    wrote no ending at all, so a named person's game never reached the
+    people's record."""
+    players = sorted((p for p in lobby.get("players") or [] if isinstance(p, dict)),
+                     key=lambda p: p.get("id", 99))
+    person = next((p for p in players if p.get("id") == HUMAN_SEAT), {})
+    limit = lobby.get("max_turns")
+    table = argparse.Namespace(**vars(args))
+    table.players = len(players) or None
+    table.map, table.map_size, table.speed = lobby.get("map"), lobby.get("size"), lobby.get("speed")
+    table.max_turns = limit if isinstance(limit, int) and limit > 0 else None
+    table.difficulty, table.leader = person.get("difficulty"), person.get("leader")
+    agents = manual_seat_agents(args, civvis)
+    table.agents = [agents[seat] for seat in civvis] if agents else None
+    return table_record(monitor, table, civvis, began)
+
+
 def run_manual(args: argparse.Namespace) -> int:
     """`--manual-lobby`: install, say what to do, read the person's game back,
-    and play its CIVVIS seats until Civ VI closes or the harness is stopped."""
+    and play its CIVVIS seats until Civ VI closes or the harness is stopped.
+
+    A named person's game (`--name`) ends as a launched one does: the ending
+    and the table are in `summary.json` (`manual_table_record`), it goes on the
+    people's record the moment the game is decided, and `--stop --resign`
+    gives it to CIVVIS."""
     if not screen_free.engaged() or screen_free.loaded_for_real():
         print(f"{SCREEN_FREE_FLAG} runs screen-free from its first import: spell the flag out "
               f"in full ({SCREEN_FREE_FLAG})", file=sys.stderr)
@@ -3230,6 +3472,10 @@ def run_manual(args: argparse.Namespace) -> int:
     civvis: list[int] = []
     lobby: dict | None = None
     installed = False
+    # When the game began (the HUD's clock as it read the game back) and the
+    # revision that played it, for the people's record.
+    began: dict = {"started": None, "revision": checkout_revision()}
+    posted = False
 
     def on_term(signum, _frame):  # noqa: ANN001
         raise Stop(f"signal {signum}")
@@ -3237,7 +3483,9 @@ def run_manual(args: argparse.Namespace) -> int:
     signal.signal(signal.SIGTERM, on_term)
     signal.signal(signal.SIGINT, on_term)
     write_current({"pid": os.getpid(), "tag": args.tag, "run_dir": str(run_dir),
-                   "started": utc(), "manual_lobby": True})
+                   "started": utc(), "manual_lobby": True, "name": person_name(args),
+                   "agents": {str(seat): agent
+                              for seat, agent in manual_seat_agents(args, MANUAL_SEATS).items()}})
     try:
         binary = resolve_orders_bin(args.orders_bin)
         if binary is None:
@@ -3276,6 +3524,10 @@ def run_manual(args: argparse.Namespace) -> int:
         monitor = Monitor(run_dir, args.tag, MANUAL_SEATS, args, log)
         modding = ModdingLog()
         civ_up = bool(civ_at_install)
+        # Whether Civ VI runs, without a `ps` every pass, as `run` asks it
+        # (#6005): the relay reads nothing while one runs. A new or a closed
+        # game is still confirmed by a real listing (`watch.GameLiveness`).
+        liveness = watch.GameLiveness(clock=time.monotonic)
         loaded_at: float | None = None
         late_said = False
         while True:
@@ -3304,13 +3556,22 @@ def run_manual(args: argparse.Namespace) -> int:
                         f"with CIVVIS, run `tools/civ6_hotseat.py {SCREEN_FREE_FLAG}` again.")
                     raise Stop("another game")
                 lobby, loaded_at = event, None
+                began["started"] = ended_at(event).get("at") or utc()
+                if isinstance(event.get("max_turns"), int) and event["max_turns"] > 0:
+                    # The game's own limit, for a turn-limit ending (`time_defeat`).
+                    args.max_turns = event["max_turns"]
                 civvis, problems = lobby_seats(event)
-                log(describe_lobby(event, civvis, stub))
+                log(describe_lobby(event, civvis, stub, person_name(args),
+                                   manual_seat_agents(args, civvis)))
                 for problem in problems:
                     log(("⚠ " if civvis else "") + problem)
                 if civvis:
                     monitor.seats = civvis
-                    brains = Brains(run_dir, args.tag, civvis, orders_db, binary, args.victory, log,
+                    # Each seat plays its own agent's lane, as its install names it.
+                    agents = manual_seat_agents(args, civvis)
+                    lanes = ({seat: AGENT_LANES[agent] for seat, agent in agents.items()}
+                             if agents else args.victory)
+                    brains = Brains(run_dir, args.tag, civvis, orders_db, binary, lanes, log,
                                     treatments=args.treatments)
                     brains.start_all()
                     log(f"CIVVIS plays {_rows(civvis)}"
@@ -3328,7 +3589,18 @@ def run_manual(args: argparse.Namespace) -> int:
                 for seat in monitor.take_unseated():
                     brains.retire(seat)
                 brains.keep_alive()
-            pids = set(env.game_pids())
+            if (monitor.result is not None and not posted and lobby is not None and civvis
+                    and person_name(args)):
+                # The person's game is decided: on the record now, as `run`
+                # posts it, not when they get round to closing Civ VI (the
+                # Victory screen offers "one more turn").
+                posted = True
+                (run_dir / "summary.json").write_text(json.dumps(
+                    {"tag": args.tag, "utc": utc(), "reason": "game over", "manual_lobby": True,
+                     "lobby": lobby, **manual_table_record(monitor, args, civvis, lobby, began)},
+                    indent=2))
+                record_person_game(run_dir, log)
+            pids = set(liveness.known) if liveness.alive() else set()
             if pids and not civ_up:
                 civ_up = True
                 if restart_wanted and pids.isdisjoint(civ_at_install):
@@ -3375,7 +3647,22 @@ def run_manual(args: argparse.Namespace) -> int:
             monitor.stats = {seat: stats for seat, stats in monitor.stats.items()
                              if seat in civvis or (stub and seat == HUMAN_SEAT)}
             summary["report"] = smoke_report(monitor, log)
+            if lobby is not None and civvis:
+                summary.update(manual_table_record(monitor, args, civvis, lobby, began))
             monitor.close()
+        request = {}
+        try:
+            request = json.loads((run_dir / "stop.json").read_text())
+        except (OSError, ValueError):
+            pass
+        # The record first, as `run` writes it: people_elo reads the summary.
+        (run_dir / "summary.json").write_text(json.dumps(summary, indent=2))
+        if summary.get("person") and (summary.get("result") or request.get("resign")):
+            record_person_game(run_dir, log, resigned=not summary.get("result"))
+        elif request.get("resign"):
+            log("the game was played under no --name, so the resignation is not put on the "
+                "people's record" if lobby is not None and civvis else
+                "no Hot Seat game with a CIVVIS seat had started, so there is nothing to resign")
         if installed and env.game_pids():
             log("Civ VI is still running, so the CIVVIS mod stays installed; it does nothing "
                 "without this harness. To remove it after you quit Civ VI: "
@@ -3386,7 +3673,6 @@ def run_manual(args: argparse.Namespace) -> int:
                     log("removed the CIVVIS mod")
             except Exception as error:  # noqa: BLE001 - cleanup must finish
                 log(f"could not remove the CIVVIS mod: {error}")
-        (run_dir / "summary.json").write_text(json.dumps(summary, indent=2))
         gamelock.release()
         current = read_current()
         if current and current.get("pid") == os.getpid():
@@ -3455,10 +3741,12 @@ def main(argv: list[str] | None = None) -> int:
                     help="no wait bar on the cover (default: a bar and about how long is "
                          "left, from how long your recent waits took)")
     ap.add_argument("--fast-turns", action="store_true",
-                    help="EXPERIMENT, off by default: under the cover every hand-over (the "
-                         "CIVVIS seats' and yours) is pressed on its first frame instead of "
-                         "0.3 s in, and the CIVVIS seats look for their orders every 20 ms "
-                         "instead of 50 ms; not yet checked in a live game")
+                    help="off by default: under the cover every hand-over (the CIVVIS seats' "
+                         "and yours) is pressed on its first frame instead of 0.3 s in. It "
+                         "also has the CIVVIS seats look for their orders every 20 ms, which "
+                         "the default `--genome live` already does (its mod arms' poll-20ms), "
+                         "so that part adds something only with `--genome stock`. Played in "
+                         "live games since 2026-11-28")
     ap.add_argument("--no-cover-queue", action="store_true",
                     help="DIAGNOSTIC: under the cover, the jack seats' announcements keep "
                          "their shipped queueing (they wait until the cover stands aside)")
@@ -3495,9 +3783,10 @@ def main(argv: list[str] | None = None) -> int:
                          "(--play-flags='--dv-join-winner --luxury-quote-proposals')")
     ap.add_argument("--genome", choices=GENOMES, default="live",
                     help="what the CIVVIS seats play: `live` (default) the live ladder's "
-                         "genes (deploy/live-force-on.txt, or this host's override) and mod "
-                         "arms (deploy/live-mod-arms.txt), as far as the decider takes them; "
-                         "`stock` the bare deployment genome, for comparison")
+                         "genes (deploy/live-force-on.txt, or this host's override), the "
+                         "hotseat-only genes on top (deploy/hotseat-force-on.txt) and the "
+                         "ladder's mod arms (deploy/live-mod-arms.txt), as far as the decider "
+                         "takes them; `stock` the bare deployment genome, for comparison")
     ap.add_argument("--agents", default=None, metavar="AGENT[,...]",
                     help="roster agents for the CIVVIS seats in seat order (seat 1 first), "
                          f"from {', '.join(AGENT_LANES)}, or `{STRONGEST}` for the one the "
@@ -3549,6 +3838,10 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{SCREEN_FREE_FLAG} leaves the game to you, so {', '.join(clash)} has "
                   "nothing to do: load a save or switch victories off in Civ VI's own setup",
                   file=sys.stderr)
+            return 2
+        wrong = read_people_flags(args)
+        if wrong:
+            print(wrong, file=sys.stderr)
             return 2
         if argv is not None and not screen_free.engaged():
             print(f"{SCREEN_FREE_FLAG} must run screen-free from its first import "
@@ -3607,18 +3900,10 @@ def main(argv: list[str] | None = None) -> int:
         # flagship in the person's seat when nobody is at the Mac.
         args.agents = args.agents or (f"{STRATEGY},{STRONGEST}" if args.self_play or args.civvis_seats
                                       else STRONGEST)
-    if args.name is not None and not PERSON_NAME.fullmatch(args.name):
-        print("--name: 1 to 24 letters, digits, spaces, . _ or -, starting with a "
-              "letter or digit", file=sys.stderr)
+    wrong = read_people_flags(args)
+    if wrong:
+        print(wrong, file=sys.stderr)
         return 2
-    if args.agents:
-        args.agents = [a.strip().lower() for a in args.agents.split(",") if a.strip()]
-        args.agents = [strongest_agent() if a == STRONGEST else a for a in args.agents]
-        bad = [a for a in args.agents if a not in AGENT_LANES]
-        if bad:
-            print(f"--agents: {', '.join(bad)} not one of {', '.join(AGENT_LANES)}",
-                  file=sys.stderr)
-            return 2
     if args.self_play:
         if args.civvis_seats not in (None, args.players):
             print(f"--self-play seats CIVVIS on every one of the {args.players} seats; "

@@ -270,6 +270,25 @@ HOTSEAT_PLAYER_CHANGE = """		<!-- Hotseat only (install.py): the hand-over scree
 		</ReplaceUIScript>
 """
 
+#: Hotseat only (install.py): the scenarios' event popup (Base/Assets/UI/Popups/
+#: EventPopup.lua). Raised for one player (`:35` `if (kPopupData.ForPlayer ~= nil
+#: and kPopupData.ForPlayer ~= playerID) then return; end`) and queued at once
+#: (`:175` `UIManager:QueuePopup(ContextPtr, PopupPriority.Medium)`), with no
+#: closer it waited under the cover and opened on the person's turn, a CIVVIS
+#: seat's event in front of them (as Historic Moments did before #6000). On a
+#: CIVVIS seat's turn the closer now draws it under the cover and closes it the
+#: way its Continue button does (`:341`, `OnClose`); on the person's it is
+#: theirs. Never in a single-player install: the ladder's screens are as they were.
+HOTSEAT_EVENT_POPUP = """		<!-- Hotseat only (install.py): the scenarios' event popup. On a CIVVIS
+		     seat's turn the closer closes it; on a person's it is theirs. -->
+		<ReplaceUIScript id="CivvisControlHotseatEventPopup">
+			<Properties>
+				<LuaContext>EventPopup</LuaContext>
+				<LuaReplace>CivvisControlAutoClose.lua</LuaReplace>
+			</Properties>
+		</ReplaceUIScript>
+"""
+
 
 #: Hotseat with a person at the Mac only: the cover over every turn that is not
 #: theirs, and the view kept across those turns (CivvisHotseatCover.lua). A
@@ -334,6 +353,27 @@ def hotseat_seat_config(config: dict, seat: int) -> dict:
     return seat_config
 
 
+#: Hotseat only: the leader screen's closer above a UI mod that replaces the same
+#: context. The Workshop mod Quick Deals (2460661464) replaces DiplomacyActionView
+#: at `<LoadOrder>99999</LoadOrder>` (QuickDeals.modinfo `qd_diplomacyactionview`),
+#: and this mod's replacement, with none, lost to it in every hotseat game on this
+#: Mac: a CIVVIS seat's leader screen was closed by nobody. CivvisControlAutoClose.lua
+#: loads Quick Deals' file first where it is installed, so it keeps working.
+#: A single-player install's modinfo is the shipped one.
+HOTSEAT_LOAD_ORDER = 100000
+_LEADER_SCREEN = re.compile(r'(<ReplaceUIScript id="CivvisControlAutoCloseDiplomacyActionView">\s*'
+                            r'<Properties>\n)(\t*)')
+
+
+def hotseat_load_order(text: str) -> str:
+    found = _LEADER_SCREEN.search(text)
+    if found is None:
+        raise SystemExit("CivvisControl.modinfo has no leader-screen closer to order")
+    indent = found.group(2)
+    return (text[:found.end(1)] + f"{indent}<LoadOrder>{HOTSEAT_LOAD_ORDER}</LoadOrder>\n"
+            + text[found.end(1):])
+
+
 def hotseat_modinfo(text: str, seats: list[int], cover: bool = False) -> str:
     """The modinfo for a hotseat install: seat agents, the hand-over screen,
     and with `cover` the person's cover context."""
@@ -351,7 +391,8 @@ def hotseat_modinfo(text: str, seats: list[int], cover: bool = False) -> str:
     listed = "".join(f"\t\t<File>{name}.xml</File>\n\t\t<File>{name}.lua</File>\n"
                      for name in names + ([HOTSEAT_COVER] if cover else []))
     text = text.replace("\t</Files>", listed + "\t</Files>", 1)
-    actions = HOTSEAT_PLAYER_CHANGE + (HOTSEAT_COVER_ACTION if cover else "")
+    text = hotseat_load_order(text)
+    actions = HOTSEAT_PLAYER_CHANGE + HOTSEAT_EVENT_POPUP + (HOTSEAT_COVER_ACTION if cover else "")
     return text.replace("\t</InGameActions>", actions + "\t</InGameActions>", 1)
 
 

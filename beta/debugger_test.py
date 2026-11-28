@@ -5318,6 +5318,10 @@ def check_moneyball(bar: Bar, address: str) -> None:
     person to make. ... we can highlight top in each row. player strategy
     should be the top strategies but randomized on screen. user can chose a
     row to sort by though if they want."
+
+    Operator, 2026-11-28: "civvis moneyball we can merge identical states."
+    The stand-in plays every strategy but ByTheBook to the same world, so
+    five of the six columns are one.
     """
     ready = "typeof drawDebugBar === 'function' && typeof engineState === 'function'"
     # Six rated strategies on offer: the stand-in's two and four more.
@@ -5350,14 +5354,20 @@ def check_moneyball(bar: Bar, address: str) -> None:
     # order drawn afresh, and the seat now on the left.
     assert [letter for letter, _ in seen["names"]] == list("ABCDEF"), seen
     assert sorted(name for _, name in seen["names"]) == sorted(["jack", "stock", "holy", "moonshot", "siege", "tourist"]), seen
-    assert seen["heads"] == ["Stat", "Now", "A", "B", "C", "D", "E", "F"], seen
+    # Columns that played to the same world are one, named by all their
+    # letters in the place of the first: ByTheBook's alone, and the other
+    # five's together.
+    letters = dict((name, letter) for letter, name in seen["names"])
+    same = "=".join(letter for letter, name in seen["names"] if name != "stock")
+    assert seen["heads"] == ["Stat", "Now"] + sorted([letters["stock"], same]), seen
+    assert "are the same world on turn" in bar.ev("document.querySelector('#mb-table thead th.mb-same').title")
+    assert len(seen["picks"]) == 2 and len(seen["ends"]) == 3, seen
     assert (seen["dealt"], seen["turns"]) == (seen["turn"], 10), seen
     # The rows shown at first, in their order.
     assert [row for row, _ in seen["rows"]] == ["score", "cities", "population", "military", "food", "amenities", "housing",
                                                 "production", "science", "culture", "gold"], seen
     # ByTheBook makes two a turn where the rest make one: its column is the
     # best Score, and the only one lit in that row.
-    letters = dict((name, letter) for letter, name in seen["names"])
     score = dict(seen["rows"])["score"]
     lit = [seen["heads"][2 + at] for at, (_, top) in enumerate(score[1:]) if top]
     assert lit == [letters["stock"]], (lit, score)
@@ -5375,7 +5385,7 @@ def check_moneyball(bar: Bar, address: str) -> None:
     # Names says which strategy each column is.
     bar.ev("document.getElementById('mb-names').click(), true")
     assert bar.ev("[...document.querySelectorAll('#mb-table thead th small')].slice(1).map(small => small.textContent)") == \
-        [debug_agent for debug_agent in bar.ev("moneyball.dealt.columns.map(column => debugSearchAgent(column.name))")]
+        bar.ev("moneyballGroups(moneyball.dealt.columns).map(group => group.columns.map(column => debugSearchAgent(column.name)).join(' / '))")
     bar.ev("document.getElementById('mb-names').click(), true")
     # Picking a column plays its strategy ten turns on the world itself, and
     # the board is dealt again from there.
@@ -5390,6 +5400,15 @@ def check_moneyball(bar: Bar, address: str) -> None:
     # The seat is played by the picks alone: the left panel's Auto-play is put away.
     assert bar.ev("getComputedStyle(document.getElementById('humanfooter') || document.body).display") == "none"
     assert "1 made so far" in after["estimate"], after
+    # A merged column picked plays the first of its strategies, and the pick
+    # is named by all its letters.
+    first = next(name for _, name in after["names"] if name != "stock")
+    same = "=".join(letter for letter, name in after["names"] if name != "stock")
+    bar.ev(f"document.querySelector('#mb-table [data-mb-pick=\"{same[0]}\"]').click(), true")
+    bar.until(f"state.turn === {turn + 20} && moneyball.dealt && moneyball.dealt.turn === {turn + 20} && {played_out}",
+              "the merged column played ten turns and the board was dealt again")
+    assert bar.ev(board)["history"][1] == f"Turns {turn + 10}–{turn + 19}: {same}, {bar.ev(f'debugSearchAgent({first!r})')}"
+    assert bar.ev("document.getElementById('autoplaystrategy').value") == first
     # Turns a pick, and the stats shown, are the person's to choose.
     bar.ev("(() => { const turns = document.getElementById('mb-turns'); turns.value = '20'; turns.dispatchEvent(new Event('change')); return true; })()")
     bar.until(f"moneyball.dealt && moneyball.dealt.turns === 20 && {played_out}", "the board dealt again at twenty turns a pick")
@@ -5400,7 +5419,7 @@ def check_moneyball(bar: Bar, address: str) -> None:
     bar.ev("engine.over = {turn: state.turn, winner: 0}, engine.limit = state.turn, render(engineState()), true")
     bar.until("!!document.querySelector('#mb-over .mb-over')", "the game's end on the board")
     over = bar.ev("document.querySelector('#mb-over .mb-over').textContent")
-    assert "won on turn" in over and "Science victory" in over and "1 pick," in over and "Play again" in over, over
+    assert "won on turn" in over and "Science victory" in over and "2 picks," in over and "Play again" in over, over
     # And nothing is left to pick.
     assert all(off for _, off in bar.ev(board)["picks"]), bar.ev(board)["picks"]
     bar.ev("localStorage.removeItem('civvis-toy-strategies'), localStorage.removeItem('civvis-moneyball-v1'), true")

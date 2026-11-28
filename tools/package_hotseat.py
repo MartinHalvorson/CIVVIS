@@ -29,6 +29,12 @@ What goes in, each found rather than listed:
   directory and from a checkout. The harness starts workers with
   `--github-refresh-seconds 0`, so `civ6_brain.py`'s GitHub refresh never runs
   and the bundle needs no network.
+* The live ladder's two lists, `deploy/live-force-on.txt` (the genes every seat's
+  decider is armed with, `--genome live`) and `deploy/live-mod-arms.txt` (the mod's
+  arms), and the hotseat-only genes on top, `deploy/hotseat-force-on.txt`, under
+  `deploy/`, from this checkout: the revision the decider is built from with
+  `--build-orders`. Without them a bundle played the bare genome with no mod arms.
+  `selfcheck` proves the bundled decider takes every tag listed.
 * The self-check's recorded board, `tools/fixtures/hotseat_selfcheck_events.jsonl`.
 * `bundle.json`: revision, platform, tool versions and every input's sha256.
 
@@ -59,6 +65,9 @@ MOD = TOOLS / "civ6_control" / "mod"
 APP = TOOLS / "civvis_hotseat_app.py"
 FIXTURE = TOOLS / "fixtures" / "hotseat_selfcheck_events.jsonl"
 GUIDE = REPO / "docs" / "CIV6_HOTSEAT_RELEASE.md"
+#: The live lists the harness reads (`civ6_hotseat.DEPLOY_DIR`), shipped as `deploy/<name>`.
+DEPLOY = (REPO / "deploy" / "live-force-on.txt", REPO / "deploy" / "live-mod-arms.txt",
+          REPO / "deploy" / "hotseat-force-on.txt")
 NAME = "civvis-hotseat"
 DEFAULT_WORK = REPO / "target" / "hotseat-bundle"
 ORDERS_NAME = "civvis_orders.exe" if os.name == "nt" else "civvis_orders"
@@ -76,6 +85,15 @@ def mod_files() -> list[Path]:
     if missing:
         raise SystemExit(f"{MOD} lacks {missing}; the bundle would install a broken mod")
     return files
+
+
+def deploy_files() -> list[Path]:
+    """Every live list, or the build stops: a bundle without them plays the bare
+    genome while its log says it plays the ladder's."""
+    missing = [str(path.relative_to(REPO)) for path in DEPLOY if not path.is_file()]
+    if missing:
+        raise SystemExit(f"{', '.join(missing)} missing; the bundle would arm nothing")
+    return list(DEPLOY)
 
 
 def platform_tag() -> str:
@@ -135,6 +153,7 @@ def build(orders: Path, work: Path, archive: bool) -> Path:
     if not orders.is_file():
         raise SystemExit(f"no civvis_orders at {orders}")
     mod = mod_files()
+    deploy = deploy_files()
     work.mkdir(parents=True, exist_ok=True)
     stage, dist, scratch = work / "stage", work / "dist", work / "pyinstaller"
     shutil.rmtree(stage, ignore_errors=True)
@@ -153,6 +172,7 @@ def build(orders: Path, work: Path, archive: bool) -> Path:
         "civvis_orders": {"name": ORDERS_NAME, "bytes": pinned.stat().st_size,
                           "sha256": sha256(pinned), "built_from": str(orders)},
         "mod": {path.name: sha256(path) for path in mod},
+        "deploy": {path.name: sha256(path) for path in deploy},
         "fixture": sha256(FIXTURE),
     }
     (stage / "bundle.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n",
@@ -169,6 +189,8 @@ def build(orders: Path, work: Path, archive: bool) -> Path:
                "--add-data", f"{FIXTURE}{sep}fixtures"]
     for path in mod:
         command += ["--add-data", f"{path}{sep}civ6_control/mod"]
+    for path in deploy:
+        command += ["--add-data", f"{path}{sep}deploy"]
     subprocess.run([*command, str(APP)], check=True, cwd=work)
     folder = dist / NAME
     program = folder / (NAME + (".exe" if os.name == "nt" else ""))
@@ -177,7 +199,7 @@ def build(orders: Path, work: Path, archive: bool) -> Path:
     shutil.copy2(GUIDE, folder / "README.md")
     print(f"bundle: {folder} ({folder_bytes(folder) / 1e6:.1f} MB; program {program.name}, "
           f"civvis_orders {manifest['civvis_orders']['bytes'] / 1e6:.1f} MB, "
-          f"{len(mod)} mod files)", flush=True)
+          f"{len(mod)} mod files, {len(deploy)} live lists)", flush=True)
     if archive:
         made = make_archive(folder, work / f"{NAME}-{platform_tag()}.zip")
         print(f"archive: {made} ({made.stat().st_size / 1e6:.1f} MB)", flush=True)
