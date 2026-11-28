@@ -2111,6 +2111,12 @@ impl AdvancedAi {
                 self.settler_blocked_turns.remove(&uid);
             }
         }
+        // `capital-founds-before-it-flees`: a cityless seat's Settler founds
+        // where it stands before any retreat once a threat is in reach or its
+        // walk runs late. `false` with the gene off.
+        if self.capital_founds_before_it_flees_step(g, pid, uid) {
+            return true;
+        }
         // An expansion settler can replace its exposed civilian with a city
         // before the retreat rules run, even short of its preferred target.
         if self.settler_founds_for_shelter(g, pid, uid) {
@@ -2335,10 +2341,17 @@ impl AdvancedAi {
                 }
                 target
             });
+            let planned = target;
             let target = target.map(|target| {
                 self.detour_settler_around_visible_threat(g, pid, uid, target)
                     .unwrap_or(target)
             });
+            // `capital-founds-before-it-flees`: a long walk, a detour or no
+            // site at all gives way to the capital here. `false` with the gene
+            // off.
+            if self.capital_founds_instead_of_walking(g, pid, uid, planned, target) {
+                return true;
+            }
             if target == Some(current) && g.can_found_city(uid) {
                 // `capital-leaves-the-frost`: on snow or tundra, step toward
                 // warmer ground and look before founding, while the speed's

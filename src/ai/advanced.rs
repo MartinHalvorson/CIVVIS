@@ -7149,6 +7149,14 @@ pub struct AdvancedAi {
     /// `camp-stall-goes-home`: each camp's contact and struck turns and the
     /// turn its closed row reopens. Empty with the gene off.
     camp_stalls: BTreeMap<Pos, camp_stall_goes_home::CampStall>,
+    /// `capital-founds-before-it-flees`: a seat with no city founds where its
+    /// Settler stands rather than retreat, detour or walk far. See
+    /// `advanced/capital_founds_before_it_flees.rs`. Off by default.
+    capital_founds_before_it_flees: bool,
+    /// `capital-founds-before-it-flees`: the turn this seat first stepped a
+    /// Settler while it held no city; cleared once it holds one. Empire
+    /// memory, so a rebuilt board's new unit ids do not restart it.
+    capital_founds_clock: Option<u32>,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -12839,6 +12847,9 @@ pub use gene_ledger::{
 mod camp_buyout;
 /// `camp-stall-goes-home`: see `advanced/camp_stall_goes_home.rs`.
 mod camp_stall_goes_home;
+/// `capital-founds-before-it-flees`: see
+/// `advanced/capital_founds_before_it_flees.rs`.
+mod capital_founds_before_it_flees;
 
 /// `camps-close-the-age`: ClearCamp rows close a first-era Age gap. One
 /// opt-in gene; see `advanced/camps_close_the_age.rs`.
