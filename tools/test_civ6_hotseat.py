@@ -72,8 +72,7 @@ class HotseatConfigTest(unittest.TestCase):
         plain = hotseat.hotseat_config(game_args(auto_human="gated"), Path("/tmp/r"),
                                        Path("/tmp/r/o.sqlite"))
         self.assertFalse(set(keys) & set(plain), "not asked: no key at all")
-        asked = dict(stand_in_deal=["5:*:PROPOSE;give=GOLD=25;get=",
-                                    "9:3:PROPOSE;give=GOLD=5;get=GOLD=4@30"],
+        asked = dict(stand_in_deal="5:*:PROPOSE;give=GOLD=25;get=  9:3:PROPOSE;give=GOLD=5;get=GOLD=4@30",
                      stand_in_deal_hold=6.0, stand_in_deal_answer="ACCEPT")
         config = hotseat.hotseat_config(game_args(auto_human="gated", **asked), Path("/tmp/r"),
                                         Path("/tmp/r/o.sqlite"))
@@ -103,6 +102,7 @@ class HotseatConfigTest(unittest.TestCase):
         self.assertEqual(config["StandInDeals"], [{"turn": 7, "to": 2, "verb": "PROPOSE;give=GOLD=10;get="}])
         self.assertEqual(config["StandInDealHoldSeconds"], 4.0)
         self.assertNotIn("StandInDealAnswer", config)
+
 
     def test_a_random_leader_pins_nothing(self) -> None:
         config = hotseat.hotseat_config(game_args(leader=None), Path("/tmp/r"),
@@ -1465,6 +1465,18 @@ class ResumeRestoresTheGameTest(unittest.TestCase):
         self.assertIn("dev as LEADER_GILGAMESH, recorded for the people's Elo", said)
         self.assertIn("not used, the save decides them: --players 2 (the game has 6); "
                       "--map-size MAPSIZE_DUEL (the game has MAPSIZE_SMALL)", said)
+
+    def test_a_resumed_check_game_takes_the_stand_in_deals(self) -> None:
+        # Live trade-live-2 (2026-11-28): `--resume` reads the command line again
+        # through `typed_options`, where an `append` flag raised.
+        self.a_run(LIVE_6P, 1000)
+        fake_save(self.saves / "hotseat-20261128T031456Z-T010.Civ6Save", stamp=2000)
+        args = self.resumed("--resume", "--auto-human", "gated", "--stand-in-deal",
+                            "11:*:PROPOSE;give=GOLD=25;get= 13:2:PROPOSE;give=GOLD=5;get=",
+                            "--stand-in-deal-answer", "ACCEPT", "--stand-in-deal-hold", "6")
+        config = hotseat.hotseat_config(args, Path("/tmp/r"), Path("/tmp/r/o.sqlite"))
+        self.assertEqual([row["turn"] for row in config["StandInDeals"]], [11, 13])
+        self.assertEqual((config["StandInDealAnswer"], config["StandInDealHoldSeconds"]), ("ACCEPT", 6.0))
 
     def test_what_is_asked_again_wins_and_the_saves_own_table_does_not_change(self) -> None:
         self.a_run(LIVE_6P, 1000)

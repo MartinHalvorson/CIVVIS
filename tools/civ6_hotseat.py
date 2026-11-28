@@ -495,7 +495,7 @@ def hotseat_config(args: argparse.Namespace, run_dir: Path, orders_db: Path) -> 
         # `--stand-in-deal` / `--stand-in-deal-hold`: the check games' deals
         # from and to the stand-in (CivvisControlAgent.lua
         # `CivvisTrade.standInDeals`, `standInHolds`). Test tables only.
-        deals = stand_in_deals(getattr(args, "stand_in_deal", None) or [])
+        deals = stand_in_deals(str(getattr(args, "stand_in_deal", None) or "").split())
         if deals:
             config["StandInDeals"] = deals
         hold = getattr(args, "stand_in_deal_hold", None)
@@ -506,8 +506,10 @@ def hotseat_config(args: argparse.Namespace, run_dir: Path, orders_db: Path) -> 
     return config
 
 
-#: `--stand-in-deal TURN:SEAT:VERB`: the `deal` order grammar's verb
-#: (`PROPOSE;give=GOLD=40;get=`), one deal a flag; SEAT `*` is any CIVVIS seat.
+#: One `--stand-in-deal` deal, TURN:SEAT:VERB: the `deal` order grammar's verb
+#: (`PROPOSE;give=GOLD=40;get=`); SEAT `*` is any CIVVIS seat. The flag takes
+#: several, space-separated, in one argument (an `append` flag would not survive
+#: `typed_options`, which `--resume` reads the command line with).
 STAND_IN_DEAL = re.compile(r"^(\d+):(\d+|\*):((?:PROPOSE|WITHDRAW)(?:;(?:give|get)=[A-Z0-9_=@#,]*)*)$")
 
 
@@ -3915,11 +3917,11 @@ def main(argv: list[str] | None = None) -> int:
                          "the stub's own announcements are closed and its quiet turns ended")
     ap.add_argument("--turns", type=int, default=None,
                     help="stop after this game turn (with --auto-human: then report)")
-    ap.add_argument("--stand-in-deal", action="append", default=[], metavar="TURN:SEAT:VERB",
+    ap.add_argument("--stand-in-deal", default="", metavar="'TURN:SEAT:VERB ...'",
                     help="TEST (with --auto-human): on its first turn from TURN the stand-in "
                          "puts this deal to seat SEAT (`*`: any CIVVIS seat it has met) through the "
                          "game's own deal screen calls, e.g. '8:3:PROPOSE;give=GOLD=40;get=' (the "
-                         "`deal` order's verb); repeat for more")
+                         "`deal` order's verb); several deals separated by spaces, in one argument")
     ap.add_argument("--stand-in-deal-answer", choices=["ACCEPT", "REJECT"], default=None,
                     help="TEST (with --auto-human): a deal another seat puts to the stand-in is "
                          "answered so on its next turn after the one it was first seen on")
@@ -3955,7 +3957,7 @@ def main(argv: list[str] | None = None) -> int:
               "tables: they go with --auto-human", file=sys.stderr)
         return 2
     try:
-        stand_in_deals(args.stand_in_deal)
+        stand_in_deals(args.stand_in_deal.split())
     except ValueError as error:
         print(error, file=sys.stderr)
         return 2
