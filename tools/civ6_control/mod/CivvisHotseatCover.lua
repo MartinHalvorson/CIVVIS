@@ -955,6 +955,7 @@ end
 function CivvisHotseatCover.onTurnEnd()
 	local pid = CivvisHotseatCover.localPlayer();
 	CivvisHotseatCover.theirTurn = false;
+	CivvisHotseatCover.lingered = 0;
 	if CivvisHotseatCover.person(pid) and CivvisHotseatCover.viewKept() then
 		CivvisHotseatCover.saveView(pid);
 	end
@@ -1134,7 +1135,33 @@ function CivvisHotseatCover.tick(dt)
 		if c.wait ~= nil and c.menuUp() then c.wait.timed, c.wait.clean = false, false; end
 		c.sound("tick");
 	end
-	if not c.active(pid) then
+	-- ★ THE PERSON HAS ENDED THEIR TURN: THE COVER HOLDS UNTIL A TURN BEGINS.
+	-- For a frame or more after `LocalPlayerTurnEnd` the game can still read
+	-- the person's turn as active and unpaused (the end of turn is the game
+	-- core's to register, on its own thread). Read as "their turn is running",
+	-- that lifted the cover 18-38 ms after they pressed Next Turn, with the HUD
+	-- live under the pointer; a second click on the action button then un-ended
+	-- the turn (ActionPanel.lua:535-537 `UI.RequestAction(ActionTypes.ACTION_UNREADYTURN)`).
+	-- Live 2026-11-27/28, the owner's games hotseat-20261128T045523Z (turn 33)
+	-- and hotseat-20261128T062253Z (turn 18): `turn_end` up, `person_turn`
+	-- down 0.038 s / 0.018 s later, the person's same turn BEGUN AGAIN 164 ms /
+	-- 94 ms after its end, the hand-over pressed a second time by the backstop
+	-- (`again:true`, the only ones in 300 presses), and Civ VI gone within ten
+	-- seconds both times (a SIGSEGV on record for the first). So once the turn
+	-- events say the person's turn has ended, a turn that still reads active is
+	-- "between turns": the cover stays, taking every click and key, until a
+	-- turn-begin event says whose turn it is. (`theirTurn` is nil until the
+	-- first turn event of a loaded game: then the reading alone decides.)
+	-- Never a trap: a turn that still reads theirs `HotseatCoverLingerSeconds`
+	-- (5) after its end, with no event either way, is theirs after all.
+	local lingering = c.theirTurn == false and c.person(pid) and c.active(pid);
+	if lingering then
+		c.lingered = (c.lingered or 0) + dt;
+		lingering = c.lingered < c.seconds("HotseatCoverLingerSeconds", 5);
+	else
+		c.lingered = 0;
+	end
+	if not c.active(pid) or lingering then
 		-- Between turns: the game is processing, or the next seat's turn is
 		-- about to begin.
 		c.between = c.between + dt;

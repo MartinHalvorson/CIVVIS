@@ -639,6 +639,21 @@ it closes. A person's defeat, a win (`Events.TeamVictory`) or an end screen
 whose defeat is not known lift the cover as before. ⚠ Tests only
 (`hotseat_cover_test.lua` 8b); no seat has been defeated in a live cover game.
 
+⚠⚠ **Measured 2026-11-27/28: a cover that lifted on the frame after Next Turn
+ended two of the owner's games.** For a frame or more after
+`LocalPlayerTurnEnd` the game can still read the person's turn as active and
+unpaused, and the cover's "their turn is running" rule lifted it 38 ms and
+18 ms after their end of turn (`hotseat-20261128T045523Z` turn 33,
+`hotseat-20261128T062253Z` turn 18). With the HUD live under the pointer a
+second click un-ended the turn (ActionPanel.lua:535-537,
+`ACTION_UNREADYTURN`): the same turn began again 164 ms and 94 ms after its
+end, the hand-over was pressed a second time by the backstop (`again:true`),
+and Civ VI was gone within ten seconds both times (a SIGSEGV on record for the
+first). The cover now holds from the person's end of turn until a turn-begin
+event says whose turn it is; a turn that still reads theirs
+`HotseatCoverLingerSeconds` (5) later, with no event, is theirs after all.
+Why the engine then dies is not known; the un-ended turn no longer happens.
+
 **The cover is quiet, and says about how long** (`HotseatCoverSound`,
 `HotseatCoverTimer`; `--cover-sound music|silent|all`, `--no-cover-timer`).
 The cover hid pixels only: a CIVVIS seat's units, fights, chimes and voice
