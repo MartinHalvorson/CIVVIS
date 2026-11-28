@@ -720,8 +720,12 @@ So now, hotseat only (#6072):
 as a first press) is a diagnostic for crash check games only; no launcher sets
 it. ⚠ The reaction is tests only (`hotseat_returned_turn_test.lua`): no check
 game was handed a turn back after it was written, because none could be made
-to. To look for one in any run: a `hotseat_turn_returned` record, a seat's
-`begin` twice for one turn, or `again:true`; and, before Civ VI restarts,
+to. Six ordinary gated 15-turn games on it (`crash-p1-ft`..`p3-ft` with
+`--fast-turns`, `crash-p4-fa`..`p6-fa` with `--fast-animations` too; p4 ended
+at turn 10 on an unrelated defeat screen) had no hand-back, no `again:true`
+and no crash, and held 45-62 ends a game behind a walk with no slower round.
+To look for one in any run: a `hotseat_turn_returned` record, a seat's `begin`
+twice for one turn, or `again:true`; and, before Civ VI restarts,
 `Attempting to turn active player` in `net_message_debug.log`.
 
 **The cover is quiet, and says about how long** (`HotseatCoverSound`,
