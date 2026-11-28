@@ -751,6 +751,24 @@ def worker_session() -> dict:
     return {"start_new_session": True}
 
 
+#: A worker that keeps dying is restarted this many times, the wait before each
+#: doubling from 1 s up to this cap, and then left down (and said so).
+WORKER_RESTARTS = 20
+WORKER_BACKOFF_MAX_S = 60.0
+
+
+def last_words(seat_dir: Path) -> str:
+    """The last line of a seat's brain.log, for the line that says it died."""
+    try:
+        with (seat_dir / "brain.log").open("rb") as handle:
+            handle.seek(0, os.SEEK_END)
+            handle.seek(max(0, handle.tell() - 2048))
+            tail = handle.read().decode("utf-8", "replace").strip().splitlines()
+    except OSError:
+        return ""
+    return f"; its last words: {tail[-1][:160]}" if tail else ""
+
+
 class Brains:
     """One `civ6_brain.py` per jack seat, restarted if one dies."""
 
@@ -761,6 +779,8 @@ class Brains:
         self.treatments = list(treatments or [])
         self.procs: dict[int, subprocess.Popen] = {}
         self.restarts: dict[int, int] = {seat: 0 for seat in seats}
+        self.retry_at: dict[int, float] = {}
+        self.given_up: set[int] = set()
         self.retired: set[int] = set()
 
     def seat_dir(self, seat: int) -> Path:
@@ -805,13 +825,32 @@ class Brains:
         if proc is not None and proc.poll() is None:
             proc.terminate()
 
-    def keep_alive(self) -> None:
+    def keep_alive(self, clock=None) -> None:
+        """Restart a worker that exited, a little later each time (a worker
+        that dies at once, on a bad flag or a locked database, used to spend
+        its 20 restarts in ten seconds), and say so when one is given up: its
+        seat then plays the mod's stand-in ladder, and the person should know
+        why their opponent went quiet. It used to stop restarting silently."""
+        now = (clock or time.monotonic)()
         for seat, proc in list(self.procs.items()):
-            if proc.poll() is not None and self.restarts[seat] < 20:
-                self.restarts[seat] += 1
-                self.log(f"seat {seat}'s decision worker exited ({proc.returncode}); "
-                         f"restarting ({self.restarts[seat]})")
-                self.start(seat)
+            if proc.poll() is None or seat in self.given_up:
+                continue
+            if self.restarts[seat] >= WORKER_RESTARTS:
+                self.given_up.add(seat)
+                self.log(f"⚠ seat {seat}'s decision worker died {WORKER_RESTARTS} times and is left "
+                         f"down: from here that seat plays the mod's stand-in ladder, not CIVVIS. "
+                         f"Why it died is at the end of {self.seat_dir(seat) / 'brain.log'}; "
+                         "`civ6-hotseat.sh --stop`, then `civ6-hotseat.sh --attach`, starts it afresh.")
+                continue
+            due = self.retry_at.setdefault(seat, now + min(WORKER_BACKOFF_MAX_S,
+                                                           2.0 ** self.restarts[seat]))
+            if now < due:
+                continue
+            self.retry_at.pop(seat, None)
+            self.restarts[seat] += 1
+            self.log(f"seat {seat}'s decision worker exited ({proc.returncode}); restarting "
+                     f"({self.restarts[seat]} of {WORKER_RESTARTS}){last_words(self.seat_dir(seat))}")
+            self.start(seat)
 
     def stop(self) -> None:
         for proc in self.procs.values():
@@ -2138,23 +2177,63 @@ class Monitor:
         return {int(info.get("team", seat)) if info.get("team") is not None else seat: seat
                 for seat, info in ((seat, self.seat_info.get(seat, {})) for seat in self.seats)}
 
+    def victory_result(self, event: dict) -> dict | None:
+        """A `victory` record as the table's result. The table's own record
+        (CivvisControlHeartbeat.lua, `CivvisEnding`) names the winning team's
+        players (`members`), and the result is ours when one of them is one of
+        our seats, the person's when theirs is; a seat's own record names a
+        team only, taken as its seat's (`our_teams`)."""
+        team = event.get("team")
+        players = None
+        try:
+            if isinstance(event.get("members"), list) and event["members"]:
+                players = sorted({int(player) for player in event["members"]})
+            if team is not None:
+                team = int(team)
+        except (TypeError, ValueError):
+            return None
+        if players is not None:
+            won = [seat for seat in self.seats if seat in players]
+            ours, winner_seat = bool(won), (won[0] if won else None)
+        else:
+            teams = self.our_teams()
+            ours = team is not None and team in teams
+            winner_seat = teams.get(team) if ours else None
+        result = {"kind": "victory", "team": team, "victory": event.get("victory"),
+                  "turn": event.get("turn"), "ours": ours, "winner_seat": winner_seat}
+        if players is not None:
+            result["members"] = players
+            if not self.unattended:
+                result["person"] = HUMAN_SEAT in players
+        if event.get("victory_type"):
+            # The victory by name (`victory` is the host's own index).
+            result["victory_type"] = event["victory_type"]
+        result.update(ended_at(event))
+        return result
+
     def on_ending(self, seat: int | None, event: dict) -> None:
         """A victory ends the game for every seat; an elimination is one seat's.
-        The table's result is ours when the winning team is one of our seats'."""
+        The first ending stands: a game played on after "one more turn" keeps
+        the victory it had. Each ending can arrive twice (the table writes it,
+        and so does the seat context that was local, if any)."""
         kind = event.get("kind")
-        if kind == "victory" and self.result is None:
-            team = event.get("team")
-            teams = self.our_teams()
-            ours = team is not None and int(team) in teams
-            self.result = {"kind": "victory", "team": team, "victory": event.get("victory"),
-                           "turn": event.get("turn"), "ours": ours,
-                           "winner_seat": teams.get(int(team)) if ours else None}
-            if event.get("victory_type"):
-                # The victory by name (`victory` is the host's own index).
-                self.result["victory_type"] = event["victory_type"]
-            self.result.update(ended_at(event))
-            self.log(f"game over at turn {event.get('turn')}: team {team} won "
-                     f"({'ours' if ours else 'a rival'}), victory {event.get('victory')}")
+        if kind == "victory":
+            won = self.victory_result(event)
+            if won is None:
+                return
+            if self.result is None:
+                self.result = won
+                who = (self.name(won["winner_seat"]) if won["ours"]
+                       else self.name(HUMAN_SEAT) if won.get("person") else f"team {won['team']}")
+                self.log(f"game over at turn {event.get('turn')}: {who} won "
+                         f"({'ours' if won['ours'] else 'a rival'}), victory "
+                         f"{won.get('victory_type') or event.get('victory')}")
+            elif (self.result.get("kind") == "victory" and "members" not in self.result
+                  and "members" in won and self.result.get("team") == won["team"]):
+                # The same victory, the table's word after a seat's: its
+                # players say who won.
+                self.result.update({key: won[key] for key in ("ours", "winner_seat", "members",
+                                                              "person") if key in won})
         elif kind == "defeat" and event.get("ours") and seat is not None:
             self.defeated.add(seat)
             self.log(f"{self.name(seat)} was eliminated at turn {event.get('turn')}")
@@ -2206,7 +2285,11 @@ class Monitor:
         elif kind == "hotseat_saved":
             self.say(f"saved the game as {event.get('name')!r} (Load Game -> Hot Seat)")
         elif kind == "hotseat_start_turn" and event.get("pressed") is False:
-            self.say(f"⚠ could not press Start Turn for seat {event.get('player')}")
+            seat = event.get("player")
+            self.say(f"⚠ could not press Start Turn for seat {seat}: "
+                     + ("press it on your hand-over screen" if seat == HUMAN_SEAT and not self.unattended
+                        else f"its hand-over screen is waiting; press Start Turn there for "
+                             f"{self.name(seat) if isinstance(seat, int) else 'it'}"))
         # The HUD's seat watch (CivvisControlHeartbeat.lua, `CivvisSeatWatch`): a
         # CIVVIS seat whose turn is active while its controller does not move.
         elif kind == "seat_quiet":
@@ -2320,10 +2403,14 @@ class Monitor:
             stats["last"] = {k: event.get(k) for k in
                              ("turn", "cities", "units", "army", "score", "met",
                               "orders_source", "orders_applied", "gold")}
+            # `orders_applied` is the turn's first frame; the orders of its
+            # later frames are counted from the `orders` rows below.
             self.say(f"turn {event.get('turn')}: {self.name(seat)} — "
-                     f"{event.get('orders_applied')} orders applied "
+                     f"{event.get('orders_applied')} opening orders applied "
                      f"({event.get('orders_source')}), cities {event.get('cities')}, "
                      f"units {event.get('units')}, score {event.get('score')}")
+        elif kind == "orders":
+            stats["orders_all"] = stats.get("orders_all", 0) + int(event.get("applied") or 0)
         elif kind == "found":
             stats["found"] += 1
         elif kind == "error":
@@ -2432,7 +2519,8 @@ def smoke_report(monitor: Monitor, log: Log) -> dict:
         report["seats"][str(seat)] = dict(stats, name=monitor.names.get(seat))
         last = stats["last"]
         log(f"report: {monitor.names.get(seat)}: {stats['turns']} turns played, "
-            f"{stats['orders_applied']} orders applied, {stats['found']} cities founded, "
+            f"{stats.get('orders_all') or stats['orders_applied']} orders applied, "
+            f"{stats['found']} cities founded, "
             f"now {last.get('cities')} cities / {last.get('units')} units, "
             f"score {last.get('score')}, source {last.get('orders_source')}")
     return report
@@ -3638,7 +3726,9 @@ def run(args: argparse.Namespace) -> int:
             write_current({"pid": os.getpid(), "tag": args.tag, "run_dir": str(run_dir),
                            "started": utc(), "players": args.players, "launched_civ": True})
             if not launcher.wait_for_launched_main_menu(process, 420):
-                log("Civ VI never reached its main menu")
+                log("⚠ Civ VI did not reach its main menu in 7 minutes. Look at it: an update, a "
+                    "Steam or 2K dialog, or a crash report can stand in the way. Close what is in "
+                    "the way, then `civ6-hotseat.sh --stop --quit-game` and the same command again.")
                 return 3
             # The verification seat's half-screen window leaves room for its
             # viewer; a person playing wants the whole screen. The stub test

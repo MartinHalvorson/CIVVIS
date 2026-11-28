@@ -595,7 +595,7 @@ class ManualLobbyEndToEndTest(unittest.TestCase):
         self.assertIn("the game: Hot Seat, 4 players on Pangaea.lua MAPSIZE_TINY", log)
         self.assertEqual(result["started"], [[1, 2]], "workers for the Human rows after yours")
         self.assertIn("CIVVIS plays row 2 and row 3", log)
-        self.assertIn("3 orders applied (civvis)", log)
+        self.assertIn("3 opening orders applied (civvis)", log)
         self.assertIn("Civ VI has closed", log)
         self.assertIn("removed the CIVVIS mod", log)
         self.assertFalse(result["installed"], "removed once Civ VI is not running")

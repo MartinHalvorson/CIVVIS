@@ -148,6 +148,12 @@
   let nextId = 1;
 
   const answered = (event) => {
+    // How the engine's download goes (`worker.js`, "seen through"): only the
+    // page's own engine is the one a visitor waits on.
+    if (event.data && event.data.loading) {
+      if (event.target === worker) engineLoading(event.data.loading);
+      return;
+    }
     const { id, ok, answer, error, meter } = event.data;
     if (meter && event.target && event.target !== window) meters.set(event.target, meter);
     const waiting = pending.get(id);
@@ -1075,6 +1081,7 @@
         if (name !== "state") return;
         report.opening = { seed: OPENING_SEED, baked: true, ms: Math.round(performance.now()) };
         finishLoading();
+        engineNoteSoon();
       });
     });
   }
@@ -1631,10 +1638,83 @@
     curtain.classList.add("gone");
     setTimeout(() => curtain.remove(), 450);
   }
+  // ------------------------------------------------- the engine on its way
+  //
+  // A first visit's opening is drawn before the engine has arrived (`baked`),
+  // and stands still until it has: on a slow line that is a world with its
+  // clock running and nothing moving, which looked like a game that never
+  // started (operator 2026-11-27: "sometimes has map and clock starts but
+  // nothing moving"). So the page says what it is waiting for and how far it
+  // has got, under the curtain while it is up and in a note over the world
+  // once it has gone, from a moment after the world is handed over until
+  // the engine answers. A download that broke and is being asked for again
+  // says so.
+  const ENGINE_NOTE_DELAY_MS = 1500;
+  let engineLoad = null;
+  let engineNote = null;
+  let engineNoteTimer = null;
+  let engineBytes = null;
+  runningBuildManifest.then((manifest) => {
+    if (Number.isSafeInteger(manifest?.wasm_bytes) && manifest.wasm_bytes > 0) engineBytes = manifest.wasm_bytes;
+  });
+  function engineWords() {
+    const load = engineLoad;
+    if (!load) return "";
+    if (load.failed) return "The game engine could not load. Reload the page to try again";
+    if (load.retrying) return /stopped/.test(load.why || "")
+      ? "The download stalled · trying again"
+      : "The connection dropped · trying again";
+    if (load.done) return "Starting the game engine";
+    if (!load.bytes) return "Loading the game engine";
+    return engineBytes
+      ? `Loading the game engine · ${Math.min(99, Math.floor(100 * load.bytes / engineBytes))}%`
+      : `Loading the game engine · ${(load.bytes / 1048576).toFixed(1)} MB`;
+  }
+  function engineLoading(loading) {
+    engineLoad = loading;
+    report.download = loading;
+    if (report.ready) return;
+    const words = engineWords();
+    const detail = curtain.querySelector(".civvis-beta-detail");
+    if (detail) detail.textContent = "Runs in this browser" + (words ? " · " + words : "");
+    if (engineNote) engineNote.textContent = words;
+  }
+  function engineNoteSoon() {
+    if (report.ready || engineNoteTimer !== null) return;
+    engineNoteTimer = setTimeout(() => {
+      if (report.ready || engineNote || !document.body) return;
+      engineNote = document.createElement("div");
+      engineNote.id = "civvis-engine-note";
+      engineNote.setAttribute("role", "status");
+      engineNote.setAttribute("aria-live", "polite");
+      engineNote.textContent = engineWords() || "Loading the game engine";
+      const look = document.createElement("style");
+      look.textContent = `
+        #civvis-engine-note {
+          position: fixed; left: 50%; bottom: 64px; z-index: 99998; transform: translateX(-50%);
+          max-width: calc(100vw - 32px); padding: 7px 14px; border: 1px solid rgba(215, 182, 106, 0.45);
+          border-radius: 999px; background: rgba(7, 17, 15, 0.88); color: #d7b66a;
+          font: 13px/1.3 system-ui, sans-serif; letter-spacing: 0.02em; white-space: nowrap;
+          overflow: hidden; text-overflow: ellipsis; pointer-events: none;
+        }`;
+      document.head.appendChild(look);
+      document.body.appendChild(engineNote);
+    }, ENGINE_NOTE_DELAY_MS);
+  }
+  function dropEngineNote() {
+    clearTimeout(engineNoteTimer);
+    engineNoteTimer = null;
+    const detail = curtain.querySelector(".civvis-beta-detail");
+    if (detail) detail.textContent = "Runs in this browser";
+    if (engineNote) engineNote.remove();
+    engineNote = null;
+  }
+
   ensureOpeningPreset()
     .then(() => ask("GET", "/runtime", ""))
     .then(() => {
       report.ready = true;
+      dropEngineNote();
       // This build's engine is in the browser's cache from here on.
       try { localStorage.setItem(ENGINE_SEEN_KEY, WASM_URL); } catch (_) {}
       baked = null;
