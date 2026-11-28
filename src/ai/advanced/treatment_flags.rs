@@ -349,6 +349,10 @@ impl AdvancedAi {
         /// Opt-in gene `culture-trade-district-follows-the-theater`; see
         /// `advanced/trade_district_follows_the_campus.rs`.
         culture_trade_district_follows_the_theater => enable_culture_trade_district_follows_the_theater, disable_culture_trade_district_follows_the_theater;
+        /// Opt-in gene `camp-stall-goes-home`: a ClearCamp party that strikes
+        /// no blow for three turns goes home for ten; see
+        /// `advanced/camp_stall_goes_home.rs`.
+        camp_stall_goes_home => enable_camp_stall_goes_home, disable_camp_stall_goes_home;
         // ---- append: e-f --------------------------------------------
         /// Opt-in `faith-strike-wipes-the-spreaders`; see
         /// `AdvancedAi::faith_strike_wipes_the_spreaders`.
@@ -425,6 +429,10 @@ impl AdvancedAi {
         /// Darwin with no reachable site buys one Open Borders grant; see
         /// `advanced/foreign_site_open_border.rs`.
         foreign_site_buys_the_open_border => enable_foreign_site_buys_the_open_border, disable_foreign_site_buys_the_open_border;
+        /// Opt-in gene `fresh-war-holds-the-home`: a war declared on us at
+        /// parity keeps the Settlers off the declarer's ground and buys one
+        /// shooter; see `advanced/fresh_war_holds_the_home.rs`.
+        fresh_war_holds_the_home => enable_fresh_war_holds_the_home, disable_fresh_war_holds_the_home;
         /// Opt-in gene `founding-voyage-2`: a cityless seat's embarked
         /// Settler sails for land with its escort alongside; see
         /// `advanced/maori_founds_from_the_sea.rs`.
@@ -616,6 +624,10 @@ impl AdvancedAi {
         /// science run brings the Spy-slot civics forward off a Science aim;
         /// see `advanced/rival_science_run_opens_the_spy_civics.rs`.
         rival_science_run_opens_the_spy_civics => enable_rival_science_run_opens_the_spy_civics, disable_rival_science_run_opens_the_spy_civics;
+        /// Opt-in gene `refused-friendship-waits`: a major that refused our
+        /// friendship is not asked again for ten turns; see
+        /// `advanced/refused_friendship_waits.rs`.
+        refused_friendship_waits => enable_refused_friendship_waits, disable_refused_friendship_waits;
         /// Opt-in gene `person-units-threaten-civilians` (hotseat): a person's
         /// soldiers threaten our civilians at any war state; see
         /// `advanced/person_units_threaten_civilians.rs`.

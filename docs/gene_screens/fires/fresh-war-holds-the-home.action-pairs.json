@@ -1,0 +1,12 @@
+{
+ "kind": "captured_native_action_pairs_v1",
+ "tag": "fresh-war-holds-the-home",
+ "scope": "Recorded proposal activation on captured live input only, not host execution or strength. One board sequence from the person-played hotseat game hotseat-20261128T031456Z (6 players, Online, seat p1, Greece, the religion seat), where the person declared a surprise war between p1's turns 11 and 12: the seat's own events.jsonl lines 1-421 (through the turn-16 frame-0 state). Both arms run one frozen civvis_orders built by CI from the PR at 79e5472e (the next commit only swaps the city sort for the repository's shared stable sort, the same order) (hotseat-bundle on probe commit 2f7c1f55, whose only change is the bundle workflow's artifact upload; sha256 5325d4eb3e2ca496ce4ccf96eabfb4658aa999cddd82bd4a25d7d8574a05f415), the way the live brain runs it: --serve --fresh-board --explain --victory religious --civ CIVILIZATION_GREECE with the game's own genome (why.log line 1: forced []), fed turns 11-16 on one process. The on arm adds --with fresh-war-holds-the-home. Turns 11-13 and 16: identical orders. The on arm journals 'Sumeria declared war on us' on turn 12 (at peace at the end of turn 11) and on turn 14, at 45 power against 52 with 69 Gold, orders purchase UNIT_SLINGER in Athens for 65 Gold (the off arm, as the live seat, buys nothing); turn 15 differs by that purchase's verification row. The off arm journals no fresh-war-holds-the-home line. The Settler of turn 16 receives no order in either arm of this replay (the replayed agent started at turn 11, not turn 1), so the held-ground half of the gene is shown by the unit tests only, not here.",
+ "archive": {
+  "path": "docs/eval/2026-11-28-fresh-war-holds-the-home.native-queries.tar.xz",
+  "sha256": "a79b1744464f11b4c5af2c47e2cae0f0f898a52f88930b9e80e5d2b392d4fa4b"
+ },
+ "members": [
+  "native-queries-01/0000/result.json"
+ ]
+}

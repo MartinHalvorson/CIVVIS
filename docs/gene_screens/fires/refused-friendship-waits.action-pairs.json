@@ -1,0 +1,14 @@
+{
+ "kind": "captured_native_action_pairs_v1",
+ "tag": "refused-friendship-waits",
+ "scope": "Recorded proposal activation on captured live input only, not host execution or strength. Seat p1 (Arabia, religious target, score-seat-keeps-friends live) of the self-play duel selfplay-duel-20261127T0654Z (two CIVVIS seats on one hotseat table, 2026-11-27): its events.jsonl fed to the live decider's own mode, civvis_orders --serve --fresh-board, one recorded frame at a time from turn 50, so the order channel builds its own verdicts on its own asks as it did live. Both arms run one frozen macOS arm64 decider that the hotseat-bundle workflow built (run 46110881112) from probe commit 1d34dd2e: main 16a8bb23 with the src/ of this branch merged with #6024's (main changed no Rust after 16a8bb23); the on arm adds --with refused-friendship-waits. 3 of 3 complete. Turns 50-52 and 50-53: both arms ask seat p0 for a friendship in the three frames of turn 51 (as the live seat did); the order channel reads not_friends on turn 52; off asks again in every later frame, on asks nobody and journals the wait (changed). Control, turns 45-49 (before the first ask): unchanged.",
+ "archive": {
+  "path": "docs/eval/2026-11-28-refused-friendship-waits.native-queries.tar.xz",
+  "sha256": "5cac959d3581da49928fb2691760d4a68534fa7b9d6de5ea50d839f3ead954d2"
+ },
+ "members": [
+  "refused-friendship-waits-queries/0000/result.json",
+  "refused-friendship-waits-queries/0001/result.json",
+  "refused-friendship-waits-queries/0002/result.json"
+ ]
+}

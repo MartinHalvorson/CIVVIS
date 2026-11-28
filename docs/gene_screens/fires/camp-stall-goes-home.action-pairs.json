@@ -1,0 +1,18 @@
+{
+ "kind": "captured_native_action_pairs_v1",
+ "tag": "camp-stall-goes-home",
+ "scope": "Recorded proposal activation on captured live input only, not host execution or strength. Boards of the person-played hotseat game hotseat-20261128T031456Z (2026-11-27, 6 players, Small Continents; seats p2 Poland culture, p3 Cree science, p4 Phoenicia domination), from each seat's own events.jsonl. The gene remembers a stall over turns, so each case replays one seat from turn 1 through the live decider's own mode (civvis_orders --serve --fresh-board --explain --victory V --civ C, the seat's genome: forced none), the log grown and every recorded frame asked in order (20-32 frames a case); the payload is the reply to the case's last frame and every frame's orders are kept. Both arms run one civvis_orders built by hotseat-bundle run 46113646947 (macos-arm64, release, LTO off) from probe commit 93a2e948 = this PR's src/ at 90b83241 on 16a8bb23 (src/ unchanged from there to the PR base); the on arm adds --with camp-stall-goes-home. 7 of 7 complete. Stall (p4, turns 1-13..1-16): on, the camp at civ6 (45,20) closes on turn 13 (\"stood beside the guarded camp on turns 10-12 and struck no blow\"), the same turns the live journal shows the Warriors declining the Spearman; from t13 both released Warriors walk toward the Reserve's anchor at Tyre each frame where off they step around the camp ((46,19), (45,19), (46,20)), and Tyre's Settler takes another site at t14 ((50,22) for (49,23)); at t16 one Warrior with no safe second step home holds (FORTIFY) where the ladder would have stepped it on; 3 of 4 last-frame payloads differ (t1-15's last frame matches, its earlier frames differ). Controls: p4 turns 1-9 (the camp's guard unseen) and p2 turns 1-14 (no ClearCamp row): identical in every frame, no gene line. p3 turns 1-16: its camp at civ6 (11,6) closes on turn 16 (stalled 13-15); that last frame's orders match. A replayed board carries the host's recorded positions, so the on arm's walk home restarts from the camp each turn; this shows the proposals, not a trajectory.",
+ "archive": {
+  "path": "docs/eval/2026-11-28-camp-stall-goes-home.native-queries.tar.xz",
+  "sha256": "324dff88f351d54aea32a8f3d87d9267ffe99b7da5747f935d1c53101b4eb0f2"
+ },
+ "members": [
+  "native-queries-01/0000/result.json",
+  "native-queries-01/0001/result.json",
+  "native-queries-01/0002/result.json",
+  "native-queries-01/0003/result.json",
+  "native-queries-01/0004/result.json",
+  "native-queries-01/0005/result.json",
+  "native-queries-01/0006/result.json"
+ ]
+}

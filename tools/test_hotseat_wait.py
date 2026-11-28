@@ -388,6 +388,136 @@ class PiecesTest(unittest.TestCase):
         self.assertIn("round, sum of pieces", text)
 
 
+def scaled(root: Path, scale: float = 3.0, on: float = 100.1, off: float = 102.005,
+           person_scale: float = 1.0) -> Path:
+    """`timed_table` as a `--fast-animations` run records it: the engine at
+    `scale` from `on` to `off` (wall seconds after the fixture's base), so every
+    UI clock stamp in between runs `scale` times fast, and the agent's two
+    switch records say when. `person_scale`: the person's next turn (from the
+    lift) runs at that scale instead of 1, as a reset that did not take would."""
+    timed_table(root)
+    base = OFFSET + 1400
+    u_on = base + on - OFFSET
+    u_off = u_on + (off - on) * scale
+
+    def raw(real: float) -> float:
+        if real < u_on:
+            return real
+        if real < u_on + (off - on):
+            return u_on + (real - u_on) * scale
+        return u_off + (real - (u_on + off - on))
+
+    for path in [root / "events.jsonl"] + sorted(root.glob(f"{TAG}-p*/events.jsonl")):
+        rows = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+        for row in rows:
+            for key in ("ui", "ui_now", "at"):
+                if isinstance(row.get(key), (int, float)):
+                    row[key] = raw(row[key])
+        if path.parent.name == f"{TAG}-p1":
+            rows.append({"kind": "fast_animations", "phase": "on", "scale": scale, "ui": u_on,
+                         "turn": 7})
+        if path.parent.name == f"{TAG}-p2":
+            rows.append({"kind": "fast_animations", "phase": "off", "why": "last_seat_end",
+                         "scale": 1, "ui": u_off, "turn": 7})
+        if path.name == "events.jsonl" and path.parent == root:
+            # The cover's raise as the person's turn 8 ends, 6 s after the lift.
+            lift = next(row for row in rows if row.get("kind") == "hotseat_cover")
+            rows.append({"kind": "hotseat_cover", "ctx": "cover", "up": True, "reason": "turn_end",
+                         "player": 0, "turn": 8, "at": lift["at"] + 6.0 * person_scale,
+                         "relay_utc": stamp(base + 103.4 + 6.0)})
+        path.write_text("".join(json.dumps(row) + "\n" for row in rows))
+    config = json.loads((root / "config.json").read_text())
+    config["HotseatFastAnimations"] = scale
+    (root / "config.json").write_text(json.dumps(config))
+    return root
+
+
+class TimescaleTest(unittest.TestCase):
+    """`--fast-animations`: the UI clock runs N times fast under the cover, and
+    the split still reads seconds."""
+
+    def test_the_clock_is_itself_without_a_switch(self) -> None:
+        clock = hotseat_wait.RealClock([])
+        self.assertFalse(clock)
+        self.assertEqual(clock.real(123.25), 123.25)
+
+    def test_each_stretch_runs_at_its_scale(self) -> None:
+        clock = hotseat_wait.RealClock([(130.0, 1), (100.0, 3), (140.0, 99)])
+        self.assertEqual(clock.real(90.0), 90.0, "before the first switch: itself")
+        self.assertAlmostEqual(clock.real(103.0), 101.0)
+        self.assertAlmostEqual(clock.real(130.0), 110.0)
+        self.assertAlmostEqual(clock.real(140.0), 120.0, msg="a scale out of range is no switch")
+        self.assertEqual((clock.scale_at(99.0), clock.scale_at(101.0), clock.scale_at(131.0)), (1, 3, 1))
+
+    def test_a_run_at_three_splits_into_the_same_seconds_as_at_one(self) -> None:
+        with tempfile.TemporaryDirectory() as plain, tempfile.TemporaryDirectory() as fast:
+            want = hotseat_wait.split(hotseat_wait.Run(timed_table(Path(plain))))
+            got = hotseat_wait.split(hotseat_wait.Run(scaled(Path(fast))))
+        for mine, theirs in zip(got[0]["seats"], want[0]["seats"]):
+            for name, value in theirs["split"].items():
+                if value is None:
+                    self.assertIsNone(mine["split"][name], name)
+                else:
+                    self.assertAlmostEqual(mine["split"][name], value, places=3, msg=name)
+        self.assertAlmostEqual(got[0]["rollover"], want[0]["rollover"], places=3)
+        self.assertAlmostEqual(got[0]["tail"], want[0]["tail"], places=3)
+
+    def test_the_raw_clock_would_not_have(self) -> None:
+        # The same run read with no switch records: three times too long.
+        with tempfile.TemporaryDirectory() as fast:
+            root = scaled(Path(fast))
+            for path in root.glob(f"{TAG}-p*/events.jsonl"):
+                path.write_text("".join(line + "\n" for line in path.read_text().splitlines()
+                                        if "fast_animations" not in line))
+            rows = hotseat_wait.split(hotseat_wait.Run(root))
+        self.assertGreater(rows[0]["seats"][0]["split"]["frames.settle"], 0.4,
+                           "0.16 s of settle reads 0.48 s on the raw clock")
+
+    def test_the_audit_reads_the_switches_and_the_persons_turn(self) -> None:
+        with tempfile.TemporaryDirectory() as fast:
+            audit = hotseat_wait.timescale_audit(hotseat_wait.Run(scaled(Path(fast))))
+        self.assertEqual(audit["on"], 1)
+        self.assertEqual(audit["off"], {"last_seat_end": 1})
+        self.assertEqual(audit["person_turns"], 1)
+        self.assertAlmostEqual(audit["person_ratio_max"], 1.0, places=2)
+        self.assertEqual(audit["person_over_limit"], 0)
+        self.assertEqual(audit["guards"], {})
+
+    def test_a_persons_turn_at_three_is_flagged(self) -> None:
+        with tempfile.TemporaryDirectory() as fast:
+            audit = hotseat_wait.timescale_audit(hotseat_wait.Run(scaled(Path(fast), person_scale=3)))
+        self.assertEqual(audit["person_over_limit"], 1)
+        self.assertAlmostEqual(audit["person_ratio_max"], 3.0, places=2)
+
+    def test_what_must_never_appear_is_counted(self) -> None:
+        with tempfile.TemporaryDirectory() as fast:
+            root = scaled(Path(fast))
+            with (root / "events.jsonl").open("a") as handle:
+                for row in ({"kind": "fast_animations_guard", "why": "scale", "by": "heartbeat",
+                             "ui": 1.0, "turn": 8},
+                            {"kind": "hotseat_scale_hold", "player": 0, "turn": 8},
+                            {"kind": "hotseat_cover_scale", "held": True, "turn": 8},
+                            {"kind": "hotseat_cover_scale", "held": False, "confirmed": False,
+                             "turn": 8}):
+                    handle.write(json.dumps(row) + "\n")
+            run = hotseat_wait.Run(root)
+            audit = hotseat_wait.timescale_audit(run)
+            text = hotseat_wait.audit_report(audit)
+        self.assertEqual(audit["guards"], {"scale": 1})
+        self.assertEqual((audit["press_held"], audit["lift_held"], audit["lift_unconfirmed"]), (1, 1, 1))
+        self.assertIn("MUST BE NONE: guard scale 1", text)
+        self.assertIn("(MUST BE 0)", text)
+
+    def test_a_run_without_the_key_has_no_audit(self) -> None:
+        with tempfile.TemporaryDirectory() as plain:
+            run = hotseat_wait.Run(timed_table(Path(plain)))
+            self.assertIsNone(hotseat_wait.timescale_audit(run))
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                hotseat_wait.main([str(Path(plain))])
+        self.assertNotIn("timescale", out.getvalue())
+
+
 class ReportTest(unittest.TestCase):
     def test_the_report_names_every_stage_and_marks_what_has_no_clock(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

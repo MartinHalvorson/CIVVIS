@@ -1953,6 +1953,9 @@ impl AdvancedAi {
             .get(&uid)
             .is_some_and(|sites| sites.contains_key(&pos))
             || self.settler_capture_scars.contains_key(&pos)
+            // `fresh-war-holds-the-home`: ground near a fresh declarer's
+            // soldiers. False with the gene off.
+            || self.fresh_war_holds_the_ground(pos)
     }
 
     /// Whether another live Settler already owns this site for the current
@@ -2470,6 +2473,9 @@ impl AdvancedAi {
             }
             if self.settler_capture_scars.contains_key(&target) {
                 return Some("a settler was lost within three tiles");
+            }
+            if self.fresh_war_holds_the_ground(target) {
+                return Some("fresh-war-holds-the-home: the declarer's soldiers were seen near it");
             }
             if self.settler_site_is_dead(uid, target) {
                 return Some("marked dead for this settler");

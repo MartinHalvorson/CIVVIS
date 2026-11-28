@@ -411,11 +411,28 @@ function CivvisHotseatCover.raise(reason, force)
 	return queued;
 end
 -- Down. `yield` marks the seat's turn so nothing but its end raises it again.
+-- ★ Whatever is under the cover is seen at scale 1 (`--fast-animations`, see
+-- `resetScale`): every lift asks for it first. A person's own turn waits for
+-- it to read 1, up to `SCALE_HOLD` real seconds (the tick keeps asking, a
+-- frame at a time); a stand-aside, the end of the game or a quit lifts at once.
 function CivvisHotseatCover.lift(reason, yield)
 	local c = CivvisHotseatCover;
 	local pid = c.localPlayer();
 	if yield then c.yielded = c.keyFor(pid); end
 	if not c.up then return false; end
+	if not c.resetScale("lift_" .. tostring(reason)) and not yield
+			and (reason == "person_start" or reason == "person_turn") then
+		if c.scaleHeld == nil then
+			c.scaleHeld = 0;
+			c.report("hotseat_cover_scale", { { "held", true }, { "reason", reason }, { "player", pid },
+				{ "turn", c.turn() }, { "scale", c.sharedRaw() }, { "at", c.clock() } });
+		end
+		if c.scaleHeld < c.SCALE_HOLD then return false; end
+		c.report("hotseat_cover_scale", { { "held", false }, { "confirmed", false }, { "reason", reason },
+			{ "player", pid }, { "turn", c.turn() }, { "scale", c.sharedRaw() },
+			{ "waited", c.scaleHeld }, { "at", c.clock() } });
+	end
+	c.scaleHeld = nil;
 	pcall(function() UIManager:DequeuePopup(ContextPtr); end);
 	c.up = false;
 	-- Their turn is back: the wait ran its course unless the cover stood aside.
@@ -568,6 +585,57 @@ function CivvisHotseatCover.sound(reason)
 		return c.mute();
 	end
 	return c.unmute(reason);
+end
+
+-- ------------------------------------------------------------------- scale
+
+-- ★★ REAL SECONDS AT ANY TIMESCALE, AND 1 BEFORE THE PERSON SEES ANYTHING.
+-- Hotseat `--fast-animations` (`HotseatFastAnimations`, the agent's
+-- `CivvisClock.fastWant`) runs CIVVIS seats' covered turns at the console's
+-- `timescale N`, which speeds this context's frame deltas and the UI clock up
+-- with everything else. So every clock here counts real seconds: the wait's
+-- (`advance`: `waited`, the bar, the time left) and the stand-aside clocks
+-- (`HotseatCoverQuietSeconds`, `...LongSeconds`, `...BetweenSeconds`,
+-- `...PersonSeconds`) and the hand-over nudge, each step divided by the scale
+-- the table shares (`ExposedMembers.CivvisTimeScale`; 1 when it is missing or
+-- nonsense, so without the key nothing changes). `at` stays the raw UI clock,
+-- the one the seats' `ui` stamps read.
+-- And the cover puts the scale back to 1 (`resetScale`: every agent context
+-- is asked, `LuaEvents.CivvisFastAnimations("reset")`, the first one commands
+-- `timescale 1`; then this context's own console, where it has one) whenever
+-- what is under it is about to be seen or is the person's: on every lift, as
+-- a person's turn begins, the moment the game menu is opened, and on any frame
+-- the menu or an end screen is over it.
+CivvisHotseatCover.SCALE_HOLD = 1.0;
+function CivvisHotseatCover.fastWant()
+	return cfg.Hotseat == true and cfg.HotseatCover == true
+		and (tonumber(cfg.HotseatFastAnimations) or 0) > 1;
+end
+function CivvisHotseatCover.sharedRaw()
+	local s = nil;
+	pcall(function() s = ExposedMembers.CivvisTimeScale; end);
+	return s;
+end
+function CivvisHotseatCover.scale()
+	local s = tonumber(CivvisHotseatCover.sharedRaw());
+	if s == nil or s ~= s or s < 1 or s > 8 then return 1; end
+	return s;
+end
+function CivvisHotseatCover.atOne()
+	local s = CivvisHotseatCover.sharedRaw();
+	return s == nil or tonumber(s) == 1;
+end
+-- Back to 1; true when the table reads 1. Without the key, nothing is asked.
+function CivvisHotseatCover.resetScale(why)
+	local c = CivvisHotseatCover;
+	if not c.fastWant() or c.atOne() then return true; end
+	pcall(function() LuaEvents.CivvisFastAnimations("reset", why); end);
+	if c.atOne() then return true; end
+	if pcall(function() AutoProfiler.RunCommand("timescale 1"); end) then
+		pcall(function() ExposedMembers.CivvisTimeScale = 1; end);
+		pcall(function() LuaEvents.CivvisFastAnimations("follow", why); end);
+	end
+	return c.atOne();
 end
 
 -- -------------------------------------------------------------------- wait
@@ -730,7 +798,8 @@ function CivvisHotseatCover.startWait(seat)
 	return c.wait;
 end
 -- The wait's clock, by the UI clock where it answers and the frame's own `dt`
--- where it does not.
+-- where it does not; real seconds either way (`dt` comes from `tick` already
+-- divided, the UI clock's step is divided here: see `scale`).
 function CivvisHotseatCover.advance(dt)
 	local c = CivvisHotseatCover;
 	local w = c.wait;
@@ -738,7 +807,7 @@ function CivvisHotseatCover.advance(dt)
 	local now = c.clock();
 	local step = math.min(math.max(tonumber(dt) or 0, 0), 60);
 	if now ~= nil and w.at ~= nil and now >= w.at and now - w.at < 600 then
-		step = now - w.at;
+		step = (now - w.at) / c.scale();
 	end
 	w.at = now;
 	w.elapsed = w.elapsed + step;
@@ -955,6 +1024,7 @@ end
 function CivvisHotseatCover.onTurnEnd()
 	local pid = CivvisHotseatCover.localPlayer();
 	CivvisHotseatCover.theirTurn = false;
+	CivvisHotseatCover.lingered = 0;
 	if CivvisHotseatCover.person(pid) and CivvisHotseatCover.viewKept() then
 		CivvisHotseatCover.saveView(pid);
 	end
@@ -972,6 +1042,10 @@ end
 function CivvisHotseatCover.onTurnBegin()
 	local pid = CivvisHotseatCover.localPlayer();
 	CivvisHotseatCover.theirTurn = CivvisHotseatCover.person(pid);
+	-- A person's turn begins at scale 1 (a test stub's too: it stands in for them).
+	if CivvisHotseatCover.person(pid) or CivvisHotseatCover.listed(cfg.HotseatStubSeats, pid) then
+		CivvisHotseatCover.resetScale("person_turn_begin");
+	end
 	if CivvisHotseatCover.person(pid) then
 		-- Nothing of a CIVVIS turn's is left on screen for theirs.
 		if CivvisHotseatCover.up and CivvisHotseatCover.harnessed(pid) then
@@ -1084,8 +1158,10 @@ end
 -- Every frame the cover is up (a popup context ticks while it shows).
 function CivvisHotseatCover.tick(dt)
 	local c = CivvisHotseatCover;
-	dt = math.min(math.max(tonumber(dt) or 0, 0), 3);
+	-- Real seconds (see `scale`).
+	dt = math.min(math.max(tonumber(dt) or 0, 0), 3) / c.scale();
 	if not c.up then return; end
+	if c.scaleHeld ~= nil then c.scaleHeld = c.scaleHeld + dt; end
 	-- A harness that stopped or died takes the cover down within its freshness
 	-- window, and so does a turn that is neither the person's nor CIVVIS's.
 	if not c.harnessed(c.localPlayer()) then
@@ -1093,6 +1169,10 @@ function CivvisHotseatCover.tick(dt)
 		return;
 	end
 	local endUp = c.endGameUp();
+	-- The game menu or an end screen over the cover is the person's to look at.
+	if not c.atOne() and c.fastWant() and (endUp or c.endShown or c.menuUp()) then
+		c.resetScale((endUp or c.endShown) and "end_screen" or "menu");
+	end
 	-- Kept under a screen that has left the queue without saying so: closed.
 	if c.kept and not endUp and not c.endShown then c.onEndScreenClosed(); end
 	if endUp or c.endShown then
@@ -1134,7 +1214,33 @@ function CivvisHotseatCover.tick(dt)
 		if c.wait ~= nil and c.menuUp() then c.wait.timed, c.wait.clean = false, false; end
 		c.sound("tick");
 	end
-	if not c.active(pid) then
+	-- ★ THE PERSON HAS ENDED THEIR TURN: THE COVER HOLDS UNTIL A TURN BEGINS.
+	-- For a frame or more after `LocalPlayerTurnEnd` the game can still read
+	-- the person's turn as active and unpaused (the end of turn is the game
+	-- core's to register, on its own thread). Read as "their turn is running",
+	-- that lifted the cover 18-38 ms after they pressed Next Turn, with the HUD
+	-- live under the pointer; a second click on the action button then un-ended
+	-- the turn (ActionPanel.lua:535-537 `UI.RequestAction(ActionTypes.ACTION_UNREADYTURN)`).
+	-- Live 2026-11-27/28, the owner's games hotseat-20261128T045523Z (turn 33)
+	-- and hotseat-20261128T062253Z (turn 18): `turn_end` up, `person_turn`
+	-- down 0.038 s / 0.018 s later, the person's same turn BEGUN AGAIN 164 ms /
+	-- 94 ms after its end, the hand-over pressed a second time by the backstop
+	-- (`again:true`, the only ones in 300 presses), and Civ VI gone within ten
+	-- seconds both times (a SIGSEGV on record for the first). So once the turn
+	-- events say the person's turn has ended, a turn that still reads active is
+	-- "between turns": the cover stays, taking every click and key, until a
+	-- turn-begin event says whose turn it is. (`theirTurn` is nil until the
+	-- first turn event of a loaded game: then the reading alone decides.)
+	-- Never a trap: a turn that still reads theirs `HotseatCoverLingerSeconds`
+	-- (5) after its end, with no event either way, is theirs after all.
+	local lingering = c.theirTurn == false and c.person(pid) and c.active(pid);
+	if lingering then
+		c.lingered = (c.lingered or 0) + dt;
+		lingering = c.lingered < c.seconds("HotseatCoverLingerSeconds", 5);
+	else
+		c.lingered = 0;
+	end
+	if not c.active(pid) or lingering then
 		-- Between turns: the game is processing, or the next seat's turn is
 		-- about to begin.
 		c.between = c.between + dt;
@@ -1146,8 +1252,10 @@ function CivvisHotseatCover.tick(dt)
 	c.between = 0;
 	local paused = c.paused(pid);
 	if c.person(pid) then
-		-- Their turn is running: whoever pressed Start Turn, it is theirs.
-		if not paused then
+		-- Their turn is running: whoever pressed Start Turn, it is theirs. (A
+		-- lift held for the scale, `--fast-animations`, is asked again every
+		-- frame, also over a hand-over they press themselves.)
+		if not paused or (c.scaleHeld ~= nil and not c.autoStart(pid)) then
 			c.lift("person_turn");
 			return;
 		end
@@ -1206,6 +1314,13 @@ function CivvisHotseatCover.arm()
 	pcall(function() LuaEvents.EndGameMenu_Shown.Add(guarded(c.onEndScreenShown)); end);
 	pcall(function() LuaEvents.EndGameMenu_Closed.Add(guarded(c.onEndScreenClosed)); end);
 	pcall(function() LuaEvents.EndGameMenu_OneMoreTurn.Add(guarded(c.onOneMoreTurn)); end);
+	-- The game menu opened from anywhere (the cover's own Esc and button, the
+	-- hand-over's menu button: PlayerChange.lua:78-79 `OnMenu`) is at scale 1.
+	if c.fastWant() then
+		pcall(function()
+			LuaEvents.PlayerChange_OpenInGameOptionsMenu.Add(guarded(function() c.resetScale("menu"); end));
+		end);
+	end
 	pcall(function() Controls.MenuButton:RegisterCallback(Mouse.eLClick, guarded(c.openMenu)); end);
 	pcall(function()
 		ContextPtr:SetInputHandler(function(uiMsg, wParam, lParam)
@@ -1218,7 +1333,11 @@ function CivvisHotseatCover.arm()
 	pcall(function() ContextPtr:SetUpdate(guarded(c.tick)); end);
 	-- A context that goes away muted puts the volumes back (PausePanel.lua:75
 	-- registers its own the same way).
-	pcall(function() ContextPtr:SetShutdown(guarded(function() c.unmute("shutdown"); end)); end);
+	-- ...and at scale 1.
+	pcall(function() ContextPtr:SetShutdown(guarded(function()
+		c.unmute("shutdown");
+		c.resetScale("shutdown");
+	end)); end);
 	c.report("hotseat_cover_armed", { { "cover", c.enabled() }, { "view", c.viewKept() },
 		{ "auto_start", cfg.HotseatAutoStart == true }, { "priority", c.priority() },
 		{ "sound", cfg.HotseatCoverSound }, { "timer", cfg.HotseatCoverTimer == true } });
