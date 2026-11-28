@@ -609,6 +609,20 @@ quiet for 90 s, 180 s with no seat active, or the person's own turn waiting
 `yield_*`), and the harness's screen rescue, which does not read the screen
 while the cover is up, sees the game again.
 
+**A seat's defeat on a CIVVIS turn keeps the cover.** Hotseat shows any human
+seat's defeat to whoever's turn it is (EndGameMenu.lua:1012-1013), and the
+screen's Next Player only closes it (:304-318): the CIVVIS seat's turn under it
+goes on. The cover used to lift for every end screen, which left that seat's
+own map, HUD and units on screen, and clickable, from Next Player to its end
+of turn. Now a CIVVIS seat's defeat (`Events.PlayerDefeat`) shown on a turn
+that is not a person's keeps the cover queued under the end screen (which is
+above it and is read and pressed as it ships): one `hotseat_cover_kept` record,
+the person's own volumes while it is up, no stall clock (the screen holds the
+game until Next Player and is in plain sight), and the turn still covered after
+it closes. A person's defeat, a win (`Events.TeamVictory`) or an end screen
+whose defeat is not known lift the cover as before. ⚠ Tests only
+(`hotseat_cover_test.lua` 8b); no seat has been defeated in a live cover game.
+
 **The cover is quiet, and says about how long** (`HotseatCoverSound`,
 `HotseatCoverTimer`; `--cover-sound music|silent|all`, `--no-cover-timer`).
 The cover hid pixels only: a CIVVIS seat's units, fights, chimes and voice
@@ -625,14 +639,32 @@ while the game menu is open over the cover (its Options screen reads and can
 save them), on every lift, and when the context shuts down; a bus the person
 keeps at 0 is never touched. Each change is one `hotseat_cover_sound` record
 with the first bus's volume before and the game's own reading after. The bar
-under the seat's name fills over the person's own recent waits (their end of
-turn to the start of their next, by `UI.GetElapsedTime()`: the last four,
-newest weighted most, a tenth added), straight to 85% and then ever slower,
-with "About 12 s" or "Any moment now" under it; a wait with none on record, or
-joined part-way, sweeps instead. A wait the cover stood aside in, or the game
-menu was opened over, is not learned from. `hotseat_cover` records carry
-`waited`, `estimate` and `timed` when the cover comes down. ⚠ Not yet seen in a
-live game (2026-11-27): `hotseat_cover_test.lua` sections 8-9 only.
+under the seat's name counts the CIVVIS seats down, not the whole wait: the
+cover times each seat's turn (its `LocalPlayerTurnBegin` to its
+`LocalPlayerTurnEnd`, by `UI.GetElapsedTime()`), the moment before each, and
+the stretch from the last seat's end to the person's turn (the rollover and
+their hand-over), and keeps the last five of each. Time left = what is left of
+the seat playing now (never less than nothing: a seat that runs over holds the
+count until the next one starts) + each seat still to come + that last
+stretch, each a recency-weighted mean with nothing counted above twice its
+median (`CivvisHotseatCover.typical`), worked out again every frame. The line
+reads "3 of 5, about 6 s", and "Any moment now" only once no seat is left; the
+bar is the share of the wait gone by that reckoning, only ever forward, and
+near the end as the person's turn comes back. Before any seat's turn is known
+(the first seat of the first wait, a wait joined part-way) it sweeps; a seat
+with none of its own yet is taken to be like the others. What the game menu
+was opened over, and the end of a wait the cover stood aside in, are not
+learned from. Both `hotseat_cover` records carry `at` (the UI clock, as the
+seats' `end_turn_wait.ui_now`); the lift record also `waited`, `estimate` (the
+count at the wait's start), `timed`, `seats`, `took` (each seat's turn,
+`seat:seconds`) and `said` (the time left shown as each seat began), enough
+to replay the countdown from a live game. `hotseat_cover_wait_test.lua`
+replays the live game of 2026-11-27 (hotseat-20261128T031456Z) and a 118-turn
+self-play through it and through the whole-wait estimate it replaced: in the
+live game, mean error of the time left 0.87 s against 1.45 s at the seat
+changes, 1.07 s against 1.70 s over all frames, and no "Any moment now" with
+time to go (6.4 s of it before). ⚠ The countdown is tests and replay only, not
+yet seen in a live game (2026-11-28).
 
 The test arrangement `--auto-human gated` puts a stub in the person's seat
 (`HotseatHumanSeats` and `HotseatStubSeats` both list seat 0): the cover and
@@ -664,8 +696,10 @@ publishes almost none. Now, on its own turn only:
   units are held in place, one refusing every hold has its stale operation or
   queued path cancelled (`UNITCOMMAND_CANCEL`, UnitCommands.xml:36) and is held
   again, an envoy prompt is marked considered (CityStates.lua:452), any other
-  blocker gets the ladder's answer; then the notification is dismissed and the
-  end of turn asked with SHIFT+ENTER's request (ActionPanel.lua:1099,
+  blocker gets the ladder's answer, with a fresh pass each step (the loop can
+  spend the ladder's two research or civic passes in the turn's first tenth of
+  a second, while its requests are still refused); then the notification is
+  dismissed and the end of turn asked with SHIFT+ENTER's request (ActionPanel.lua:1099,
   `UI.RequestAction(ActionTypes.ACTION_ENDTURN, { REASON = "UserForced" } )`);
 - `stand_in_stuck` says in one record what still stands: the blocker and the
   answer, each unit still refusing (moves, activity, queued path, the engine's
@@ -699,6 +733,35 @@ control on the same Mac minutes later (`cover-control-3`, the old stub path,
 no cover) played three full turns. The placement above is the change that
 followed: the hand-over is never under another popup and never proxied. It
 still needs its own live run (see the PR).
+
+**The seat watch also ends a turn whose controller still beats**
+(`CivvisSeatWatch`, `CivvisControlHeartbeat.lua`). It ended a seat's turn only
+after 45 s with the controller's stamp (`ExposedMembers.CivvisSeatBeat`) not
+moving, and the cover stands aside on the same stamp (90 s). But a controller
+past its forfeit ladder keeps ticking on the HUD's pulse, so its stamp moves
+every second, and the check games' stand-in wedged three times without one
+seat-watch record (`smoke-6p-20261128T0244Zb` turn 2, ten minutes;
+`manual-live-1`, `manual-cover-1` turn 5). Now the watch also counts how long
+the seat's turn has stood, beat or no beat, the hand-over's pause not counted:
+a test stub's turn standing 30 s (`StubTurnSeconds`; its turns take half a
+second) and any watched seat's turn standing 180 s (`SeatLongTurnSeconds`;
+600 CIVVIS seat turns on this Mac took 0.5-36 s) are reported as
+`seat_stuck` (`why`: `stub_turn` or `long_turn`) and ended with SHIFT+ENTER's
+`UserForced` request on the quiet rule's budget (every 20 s, six a turn,
+`seat_stuck_end_turn`). A watched seat that is the local player while its turn
+is not active for 60 s (`SeatBetweenSeconds`) is reported once a minute as
+`seat_between`, and left alone: nothing in the shipped game ends a turn that is
+not active. Every report now also carries `processing`
+(`UI.IsProcessingMessages`), `ready` (the first unit still waiting for orders)
+and `locks` (event locks the closers' screens hold). A person's seat is still
+never watched. ⚠ Tests only (`heartbeat_test.lua`), not seen in a live game.
+In the first live check (`tools/civ6_hotseat.py --auto-human gated --players 6
+--map Continents.lua --map-size MAPSIZE_SMALL --agents
+holy,tourist,moonshot,siege,jack --turns 30`), no `seat_stuck` or `seat_quiet`
+in the run's `events.jsonl` is the good outcome. A `seat_stuck` with `why:
+stub_turn` means the stand-in could not end its own turn in 30 s: its
+`blocker`, `ready` and `locks` say why, and the `seat_stuck_end_turn` after it
+says the watch asked. A `seat_between` names a turn sent but never handed on.
 
 ## The lobby a run sets up
 

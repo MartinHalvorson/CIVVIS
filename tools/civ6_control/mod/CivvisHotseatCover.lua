@@ -83,12 +83,24 @@
 -- cover comes down, and this context shutting down, puts them back.
 --
 -- HOW LONG (`HotseatCoverTimer`). A bar and one line under the seat's name:
--- how far into the wait, and about how long is left. The estimate is the
--- person's own recent waits (their end of turn to the start of their next,
--- newest weighted most, a tenth added: a bar that finishes early is kinder
--- than one that sits full). The bar runs straight to 85% and then slows, never
--- full before the turn is back. A wait with no history (the first one, or a
--- game loaded part-way through one) shows a sweep instead of a guess.
+-- which CIVVIS seat of how many is playing, and about how long is left. The
+-- cover sees every seat's turn begin and end (the turn events, with the local
+-- player), so it keeps each seat's own recent turns, the moments between them
+-- and the stretch from the last seat to the person's turn (the turn's
+-- rollover and their hand-over), and counts down what is left: the rest of
+-- the seat playing now, every seat still to come, and that last stretch. Each
+-- is a robust average of its last few, so one slow turn does not linger
+-- (`typical`). It is worked out again every frame, so a seat that finishes
+-- early takes its time off at once, and a seat that runs over holds the count
+-- where it is until the next seat starts. The bar is the share of the wait
+-- gone by that reckoning: it only moves forward, and it reaches the end as the
+-- person's turn comes back. A wait with nothing known yet (the first seat of
+-- the first one, or a game loaded part-way through one) shows a sweep instead
+-- of a guess; after one seat's turn the count starts.
+-- (Live 2026-11-27, hotseat-20261128T031456Z, five CIVVIS seats: the
+-- whole-wait estimate this replaces read long on 11 of 15 waits, 3 s long on
+-- the one after a single slow turn, and said "Any moment now" for 6.4 s with
+-- more than 1.5 s still to go; hotseat_cover_wait_test.lua replays them.)
 --
 -- Nothing here runs outside a hotseat game a person plays: install.py adds
 -- this context only for one, and every entry point checks the settings too.
@@ -179,6 +191,9 @@ local RUN = tostring(cfg.RunTag or "unset");
 CivvisHotseatCover = {
 	up = false,        -- queued as the cover right now
 	over = false,      -- a team has won (until "one more turn")
+	defeated = nil,    -- the seat whose defeat the end screen shows (Events.PlayerDefeat)
+	kept = false,      -- the cover stays under that end screen (keptUnder)
+	endShown = false,  -- the end screen said it is up (EndGameMenu_Shown), until it closes
 	yielded = nil,     -- the seat:turn the cover stood aside for
 	key = nil,         -- the seat:turn the clocks below are counting
 	quiet = 0, lastBeat = nil, between = 0, personWait = 0, pausedFor = 0,
@@ -186,10 +201,16 @@ CivvisHotseatCover = {
 	views = {},        -- person seat -> { x, y, zoom } at the end of their turn
 	muted = nil,       -- sound bus -> the person's volume, while we hold it at 0
 	theirTurn = nil,   -- a person's turn is on, by the turn events (nil before the first)
-	wait = nil,        -- the wait the cover is up for: { seat, elapsed, at, timed, estimate }
-	waits = {},        -- person seat -> the waits after their turns that ran their course (s)
+	wait = nil,        -- the wait the cover is up for (startWait)
+	-- What the countdown is made of, each list oldest first, the last `KEEP` kept:
+	seatTimes = {},    -- CIVVIS seat -> its own turns, begin to end (s)
+	gapTimes = {},     -- CIVVIS seat -> from what came before to its turn's begin (s)
+	tailTimes = {},    -- person seat -> the last CIVVIS seat's end to their turn (s)
+	lineups = {},      -- person seat -> the CIVVIS seats, in order, of their last whole wait
 	waitOn = nil, waitText = nil,
 };
+-- How many of each are kept and averaged.
+CivvisHotseatCover.KEEP = 5;
 -- The track's width in CivvisHotseatCover.xml.
 CivvisHotseatCover.BAR = 320;
 -- `HotseatCoverSound` -> the buses turned down (Options.lua:225-229 names them).
@@ -297,7 +318,7 @@ function CivvisHotseatCover.priority()
 end
 -- HotSeatBackground.lua:10-17's own test for the end of the game. The end
 -- screen is above the cover anyway; the cover still goes, so the map is there
--- behind it for "one more turn".
+-- behind it for "one more turn" (but see `keptUnder`).
 function CivvisHotseatCover.endGameUp()
 	local up = false;
 	pcall(function()
@@ -375,8 +396,9 @@ function CivvisHotseatCover.raise(reason, force)
 		c.startWait(nil);
 		c.showWait();
 	end
+	-- `at`: the UI clock, so a wait can be laid against the seats' own records.
 	c.report("hotseat_cover", { { "up", queued }, { "reason", reason }, { "player", pid },
-		{ "turn", c.turn() } });
+		{ "turn", c.turn() }, { "at", c.clock() } });
 	c.sound(reason);
 	return queued;
 end
@@ -391,9 +413,12 @@ function CivvisHotseatCover.lift(reason, yield)
 	-- Their turn is back: the wait ran its course unless the cover stood aside.
 	local w = c.endWait(not yield and (reason == "person_start" or reason == "person_turn"));
 	c.report("hotseat_cover", { { "up", false }, { "reason", reason }, { "player", pid },
-		{ "turn", c.turn() }, { "quiet", c.quiet }, { "between", c.between },
+		{ "turn", c.turn() }, { "at", c.clock() }, { "quiet", c.quiet }, { "between", c.between },
 		{ "waited", w and w.elapsed }, { "estimate", w and w.estimate },
-		{ "timed", w and w.timed } });
+		{ "timed", w and w.timed }, { "seats", w and #w.seen },
+		-- Each seat's turn ("seat:seconds") and the time left the bar gave as
+		-- each one began: enough to replay the estimate from the record.
+		{ "took", w and table.concat(w.took, ",") }, { "said", w and table.concat(w.said, ",") } });
 	c.unmute(reason);
 	return true;
 end
@@ -545,41 +570,154 @@ function CivvisHotseatCover.clock()
 	pcall(function() now = tonumber(UI.GetElapsedTime()); end);
 	return now;
 end
--- About how long the wait after `seat`'s turn takes: its last four, newest
--- weighted most, and a tenth over. nil with no wait on record.
-function CivvisHotseatCover.estimate(seat)
-	local waits = CivvisHotseatCover.waits[seat];
-	if type(waits) ~= "table" or #waits == 0 then return nil; end
-	local sum, weight = 0, 0;
-	for back = 0, math.min(#waits, 4) - 1 do
-		local w = 4 - back;
-		sum, weight = sum + waits[#waits - back] * w, weight + w;
+-- One more of something timed, the last `KEEP` kept.
+function CivvisHotseatCover.note(book, key, seconds)
+	if key == nil or type(seconds) ~= "number" or seconds ~= seconds or seconds < 0 then return; end
+	local list = book[key] or {};
+	list[#list + 1] = seconds;
+	while #list > CivvisHotseatCover.KEEP do table.remove(list, 1); end
+	book[key] = list;
+end
+-- About how long one of these takes, from the last `KEEP` of them (`all`:
+-- every one, alike): a mean, the newer weighted more, with nothing counted at
+-- more than twice their median. A mean, not the median, because a wait is a
+-- sum and turns run long more often than short (the sum of the seats' medians
+-- read short on 12 of 15 waits of the live game, by 0.9 s at the median); the
+-- cap so that one slow turn moves the next estimates by a little, not by its
+-- whole length. nil with none on record.
+function CivvisHotseatCover.typical(list, all)
+	if type(list) ~= "table" or #list == 0 then return nil; end
+	local first = all and 1 or math.max(#list - CivvisHotseatCover.KEEP + 1, 1);
+	local recent, sorted = {}, {};
+	for i = first, #list do
+		recent[#recent + 1] = list[i];
+		sorted[#sorted + 1] = list[i];
 	end
-	return math.max(sum / weight * 1.1, 0.5);
+	table.sort(sorted);
+	local n = #sorted;
+	local median = sorted[math.floor((n + 1) / 2)];
+	if n % 2 == 0 then median = (sorted[n / 2] + sorted[n / 2 + 1]) / 2; end
+	local sum, weight = 0, 0;
+	for i, seconds in ipairs(recent) do
+		local w = all and 1 or i;
+		sum, weight = sum + math.min(seconds, 2 * median) * w, weight + w;
+	end
+	return sum / weight;
 end
--- How full the bar is `elapsed` seconds into a wait of about `estimate`:
--- straight to 85%, then ever slower, and never full while the wait lasts.
-function CivvisHotseatCover.progress(elapsed, estimate)
-	if type(estimate) ~= "number" or estimate <= 0 then return nil; end
-	local x = math.max(tonumber(elapsed) or 0, 0) / estimate;
-	if x <= 0.85 then return x; end
-	return math.min(0.85 + 0.15 * (1 - math.exp(-(x - 0.85) / 0.6)), 0.99);
+-- Every seat's last few together: a seat with nothing on record yet is taken
+-- to play like the others (the first round, after its first seat).
+function CivvisHotseatCover.pooled(book)
+	local all = {};
+	for _, list in pairs(book) do
+		for _, seconds in ipairs(list) do all[#all + 1] = seconds; end
+	end
+	return CivvisHotseatCover.typical(all, true);
 end
-function CivvisHotseatCover.remaining(elapsed, estimate)
-	if type(estimate) ~= "number" then return ""; end
-	local left = estimate - (tonumber(elapsed) or 0);
-	if left <= 0.5 then return "Any moment now"; end
-	local seconds = math.ceil(left);
+function CivvisHotseatCover.seatTime(seat)
+	local c = CivvisHotseatCover;
+	return c.typical(c.seatTimes[seat]) or c.pooled(c.seatTimes);
+end
+function CivvisHotseatCover.gapTime(seat)
+	local c = CivvisHotseatCover;
+	return c.typical(c.gapTimes[seat]) or c.pooled(c.gapTimes) or 0;
+end
+-- The CIVVIS seats that play between `person`'s turn and the next person's:
+-- the ones seen last time, or before any, the seats in turn order (a hotseat
+-- game plays its seats one by one by player number) after `person`, up to the
+-- next person's seat.
+function CivvisHotseatCover.lineup(person)
+	local c = CivvisHotseatCover;
+	if type(c.lineups[person]) == "table" and #c.lineups[person] > 0 then return c.lineups[person]; end
+	local seats = {};
+	for _, list in ipairs({ cfg.HotseatSeats or {}, cfg.HotseatHumanSeats or {} }) do
+		for _, seat in ipairs(list) do
+			seat = tonumber(seat);
+			if seat ~= nil then seats[#seats + 1] = seat; end
+		end
+	end
+	table.sort(seats);
+	local start = #seats + 1;
+	for i, seat in ipairs(seats) do
+		if seat > person then start = i; break; end
+	end
+	local out = {};
+	for step = 0, #seats - 1 do
+		local seat = seats[(start - 1 + step) % #seats + 1];
+		if c.person(seat) then break; end
+		if out[#out] ~= seat then out[#out + 1] = seat; end
+	end
+	return out;
+end
+-- The seats of the lineup that have not begun yet in this wait.
+function CivvisHotseatCover.toCome(w)
+	local out = {};
+	for _, seat in ipairs(CivvisHotseatCover.lineup(w.seat)) do
+		local seen = seat == w.playing;
+		for _, done in ipairs(w.seen) do
+			if done == seat then seen = true; end
+		end
+		if not seen then out[#out + 1] = seat; end
+	end
+	return out;
+end
+-- About how long is left of the wait `w`, and whether only the last stretch
+-- is (no seat playing or still to come). nil: nothing known to count with
+-- (a wait joined part-way, or no seat's turn seen yet).
+-- What is left of the seat playing now is never less than nothing: a seat
+-- that runs over holds the count at what comes after it.
+function CivvisHotseatCover.remaining(w)
+	local c = CivvisHotseatCover;
+	if w == nil or w.seat == nil then return nil, false; end
+	local since = w.elapsed - (w.mark or 0);
+	local left = 0;
+	if w.playing ~= nil then
+		local seconds = c.seatTime(w.playing);
+		if seconds == nil then return nil, false; end
+		left = math.max(seconds - since, 0);
+	end
+	local coming = c.toCome(w);
+	for i, seat in ipairs(coming) do
+		local seconds = c.seatTime(seat);
+		if seconds == nil then return nil, false; end
+		local gap = c.gapTime(seat);
+		if i == 1 and w.playing == nil then gap = math.max(gap - since, 0); end
+		left = left + gap + seconds;
+	end
+	local tail = c.typical(c.tailTimes[w.seat]) or 0;
+	if w.playing == nil and #coming == 0 then
+		return math.max(tail - since, 0), true;
+	end
+	return left + tail, false;
+end
+function CivvisHotseatCover.timeLeft(left, last)
+	if type(left) ~= "number" then return ""; end
+	-- "Any moment now" only once no seat is playing or still to come.
+	if left <= 0.5 and last then return "Any moment now"; end
+	local seconds = math.max(math.ceil(left), 1);
 	if seconds < 60 then return string.format("About %d s", seconds); end
 	return string.format("About %d min %02d s", math.floor(seconds / 60), seconds % 60);
 end
--- A wait begins. `seat` is the person whose turn just ended (a timed wait,
--- measured whole); nil for one joined part-way (a load, or after the cover
--- stood aside), which is shown as a sweep and never goes on record.
+-- The line under the bar: "3 of 5, about 6 s" while a seat plays or is to come.
+function CivvisHotseatCover.waitLine(w, left, last)
+	local c = CivvisHotseatCover;
+	local text = c.timeLeft(left, last);
+	if w.seat == nil or last or #w.seen == 0 then return text; end
+	local count = string.format("%d of %d", #w.seen, #w.seen + #c.toCome(w));
+	if text == "" then return count; end
+	return count .. ", " .. text:gsub("^About", "about");
+end
+-- A wait begins. `seat` is the person whose turn just ended (timed from its
+-- start); nil for one joined part-way (a load, or after the cover stood
+-- aside), which counts nothing down: a sweep.
 function CivvisHotseatCover.startWait(seat)
 	local c = CivvisHotseatCover;
 	c.wait = { seat = seat, elapsed = 0, at = c.clock(), timed = seat ~= nil,
-		estimate = seat ~= nil and c.estimate(seat) or nil };
+		-- `mark`: when the stretch now running began (nil: not seen);
+		-- `playing`: the CIVVIS seat whose turn it is; `seen`: every seat begun;
+		-- `clean`: the game menu was not opened over the stretch now running.
+		mark = seat ~= nil and 0 or nil, playing = nil, seen = {}, clean = true,
+		shown = 0, shownAt = 0, said = {}, took = {} };
+	c.wait.estimate = c.remaining(c.wait);
 	return c.wait;
 end
 -- The wait's clock, by the UI clock where it answers and the frame's own `dt`
@@ -597,19 +735,42 @@ function CivvisHotseatCover.advance(dt)
 	w.elapsed = w.elapsed + step;
 	return w.elapsed;
 end
+-- A CIVVIS seat's turn begins under the cover (`Events.LocalPlayerTurnBegin`).
+function CivvisHotseatCover.seatBegins(pid)
+	local c = CivvisHotseatCover;
+	local w = c.wait;
+	if w == nil or pid == w.playing then return; end
+	c.advance(0);
+	if w.mark ~= nil and w.playing == nil and w.clean then
+		c.note(c.gapTimes, pid, w.elapsed - w.mark);
+	end
+	w.playing, w.mark, w.clean = pid, w.elapsed, true;
+	w.seen[#w.seen + 1] = pid;
+	local left = c.remaining(w);
+	w.said[#w.said + 1] = left and string.format("%.1f", left) or "-";
+end
+-- ...and ends (`Events.LocalPlayerTurnEnd`).
+function CivvisHotseatCover.seatEnds(pid)
+	local c = CivvisHotseatCover;
+	local w = c.wait;
+	if w == nil or pid ~= w.playing then return; end
+	c.advance(0);
+	local took = w.elapsed - w.mark;
+	if w.clean then c.note(c.seatTimes, pid, took); end
+	w.took[#w.took + 1] = string.format("%d:%.2f", pid, took);
+	w.playing, w.mark, w.clean = nil, w.elapsed, true;
+end
 -- The wait is over. One that ran its course (their turn's end to the start of
--- their next, the game menu never opened over it) goes on that seat's record.
+-- their next) teaches the stretch after the last seat, and which seats play.
 function CivvisHotseatCover.endWait(ranItsCourse)
 	local c = CivvisHotseatCover;
 	local w = c.wait;
 	if w == nil then return nil; end
 	c.advance(0);
 	c.wait = nil;
-	if ranItsCourse and w.timed and w.elapsed > 0 then
-		local waits = c.waits[w.seat] or {};
-		waits[#waits + 1] = w.elapsed;
-		while #waits > 8 do table.remove(waits, 1); end
-		c.waits[w.seat] = waits;
+	if ranItsCourse and w.seat ~= nil and w.playing == nil and #w.seen > 0 then
+		if w.clean then c.note(c.tailTimes, w.seat, w.elapsed - w.mark); end
+		c.lineups[w.seat] = w.seen;
 	end
 	return w;
 end
@@ -624,21 +785,33 @@ function CivvisHotseatCover.showWait()
 		pcall(function() Controls.Lines:CalculateSize(); end);
 	end
 	if not on then return nil; end
-	local share = c.progress(w.elapsed, w.estimate);
+	local left, last = c.remaining(w);
+	local share = nil;
 	local width, offset = c.BAR / 5, 0;
-	if share ~= nil then
+	if left ~= nil then
+		-- The share of the wait gone by, never full while it lasts. It only
+		-- moves forward, and a step forward (a seat done early) is drawn over
+		-- about a quarter of a second rather than in one frame.
+		local whole = w.elapsed + left;
+		local target = whole > 0 and math.min(w.elapsed / whole, 0.99) or 0.99;
+		local step = math.max(w.elapsed - w.shownAt, 0);
+		if target > w.shown then
+			w.shown = w.shown + (target - w.shown) * math.min(step / 0.25, 1);
+		end
+		share = w.shown;
 		width = math.max(share * c.BAR, 1);
 	else
-		-- No estimate: a fifth of the track, there and back every 2.4 s.
+		-- Nothing to count with: a fifth of the track, there and back every 2.4 s.
 		local phase = (w.elapsed % 2.4) / 1.2;
 		if phase > 1 then phase = 2 - phase; end
 		offset = phase * (c.BAR - width);
 	end
+	w.shownAt = w.elapsed;
 	pcall(function()
 		Controls.WaitFill:SetSizeX(math.floor(width + 0.5));
 		Controls.WaitFill:SetOffsetX(math.floor(offset + 0.5));
 	end);
-	local text = c.remaining(w.elapsed, w.estimate);
+	local text = c.waitLine(w, left, last);
 	if text ~= c.waitText then
 		c.waitText = text;
 		pcall(function() Controls.WaitText:SetText(text); end);
@@ -654,6 +827,7 @@ function CivvisHotseatCover.onTurnEnd()
 	if CivvisHotseatCover.person(pid) and CivvisHotseatCover.viewKept() then
 		CivvisHotseatCover.saveView(pid);
 	end
+	if CivvisHotseatCover.civvis(pid) then CivvisHotseatCover.seatEnds(pid); end
 	if CivvisHotseatCover.raise("turn_end", true) and CivvisHotseatCover.person(pid) then
 		-- The wait for their next turn starts here, whole.
 		CivvisHotseatCover.startWait(pid);
@@ -674,6 +848,7 @@ function CivvisHotseatCover.onTurnBegin()
 		return;
 	end
 	CivvisHotseatCover.raise("civvis_turn");
+	if CivvisHotseatCover.civvis(pid) then CivvisHotseatCover.seatBegins(pid); end
 end
 -- PlayerChange.lua:59: the hand-over closed, by our press or theirs.
 function CivvisHotseatCover.onHandoverClosed(pid)
@@ -697,6 +872,42 @@ end
 function CivvisHotseatCover.onVictory()
 	CivvisHotseatCover.over = true;
 	CivvisHotseatCover.lift("end_game");
+end
+-- ★ A SEAT'S DEFEAT ON A CIVVIS TURN IS NOT THE END OF THAT TURN. In hotseat
+-- the end screen shows any human seat's defeat to whoever's turn it is
+-- (EndGameMenu.lua:1012-1013 `or (GameConfiguration.IsHotseat() and
+-- defeatPlayer ~= nil and defeatPlayer:IsHuman())) then -- Hotseat Only -
+-- Another human player was defeated`), and its Next Player only closes the
+-- screen (:304-318: `UI.RequestAction(ActionTypes.ACTION_ENDTURN)` only when
+-- the viewer is that seat and its turn is active, then `Close()`): the turn
+-- under it goes on. A cover that lifted for it left the CIVVIS seat's own map,
+-- HUD and units on screen, and in the person's hands, from Next Player to that
+-- seat's end of turn. So when the screen shows a CIVVIS seat's defeat on a
+-- turn that is not a person's, the cover stays queued under it (the screen is
+-- above it, PopupPriorityLoader_Base.lua:14 EndGameMenu, and is seen and
+-- pressed as it ships) and the turn stays covered after Next Player. A
+-- person's defeat, a win, or an end screen whose defeat is not known lift it
+-- as before.
+function CivvisHotseatCover.onDefeat(player)
+	CivvisHotseatCover.defeated = tonumber(player);
+end
+function CivvisHotseatCover.keptUnder()
+	local c = CivvisHotseatCover;
+	if c.over or c.defeated == nil or c.person(c.defeated) then return false; end
+	return not c.person(c.localPlayer());
+end
+-- EndGameMenu.lua:547 `LuaEvents.EndGameMenu_Shown()` is raised from inside
+-- the defeat's own handler (:1009 OnPlayerDefeat -> View -> OnShow), so this
+-- context's `onDefeat` may not have run yet: a win lifts at once (it has its
+-- own event, `onVictory`), anything else on the next frame.
+function CivvisHotseatCover.onEndScreenShown()
+	CivvisHotseatCover.endShown = true;
+	if CivvisHotseatCover.over then CivvisHotseatCover.lift("end_game"); end
+end
+-- :578 `LuaEvents.EndGameMenu_Closed()`, Next Player's `Close()` among others.
+function CivvisHotseatCover.onEndScreenClosed()
+	local c = CivvisHotseatCover;
+	c.defeated, c.kept, c.endShown = nil, false, false;
 end
 function CivvisHotseatCover.onOneMoreTurn()
 	CivvisHotseatCover.over = false;
@@ -742,9 +953,31 @@ function CivvisHotseatCover.tick(dt)
 		c.lift("no_harness");
 		return;
 	end
-	if c.endGameUp() then
-		c.lift("end_game");
-		return;
+	local endUp = c.endGameUp();
+	-- Kept under a screen that has left the queue without saying so: closed.
+	if c.kept and not endUp and not c.endShown then c.onEndScreenClosed(); end
+	if endUp or c.endShown then
+		if not c.keptUnder() then
+			c.endShown = false;
+			c.lift("end_game");
+			return;
+		end
+		if endUp then
+			-- Under the end screen: it holds the game until Next Player and the
+			-- person sees it, so no stall is hidden and nothing here counts one.
+			-- Its sound is theirs. Not a stretch of CIVVIS's to learn from.
+			if not c.kept then
+				c.kept = true;
+				c.report("hotseat_cover_kept", { { "reason", "defeat" }, { "defeated", c.defeated },
+					{ "player", c.localPlayer() }, { "turn", c.turn() } });
+			end
+			c.advance(dt);
+			if c.wait ~= nil then c.wait.timed, c.wait.clean = false, false; end
+			c.unmute("end_screen");
+			return;
+		end
+		-- Said to be up, and gone from the queue: closed.
+		c.onEndScreenClosed();
 	end
 	local pid = c.localPlayer();
 	local key = c.keyFor(pid);
@@ -757,8 +990,8 @@ function CivvisHotseatCover.tick(dt)
 		c.textAt = 0;
 		c.show(pid);
 		-- Twice a second: the sound follows the game menu (quiet again once it
-		-- closes), and a wait the menu was opened over is not one to learn from.
-		if c.wait ~= nil and c.wait.timed and c.menuUp() then c.wait.timed = false; end
+		-- closes), and what the menu was opened over is not one to learn from.
+		if c.wait ~= nil and c.menuUp() then c.wait.timed, c.wait.clean = false, false; end
 		c.sound("tick");
 	end
 	if not c.active(pid) then
@@ -825,7 +1058,9 @@ function CivvisHotseatCover.arm()
 	pcall(function() Events.TeamVictory.Add(guarded(c.onVictory)); end);
 	pcall(function() Events.UserRequestClose.Add(guarded(c.onQuitRequest)); end);
 	pcall(function() LuaEvents.PlayerChange_Close.Add(guarded(c.onHandoverClosed)); end);
-	pcall(function() LuaEvents.EndGameMenu_Shown.Add(guarded(function() c.lift("end_game"); end)); end);
+	pcall(function() Events.PlayerDefeat.Add(guarded(c.onDefeat)); end);
+	pcall(function() LuaEvents.EndGameMenu_Shown.Add(guarded(c.onEndScreenShown)); end);
+	pcall(function() LuaEvents.EndGameMenu_Closed.Add(guarded(c.onEndScreenClosed)); end);
 	pcall(function() LuaEvents.EndGameMenu_OneMoreTurn.Add(guarded(c.onOneMoreTurn)); end);
 	pcall(function() Controls.MenuButton:RegisterCallback(Mouse.eLClick, guarded(c.openMenu)); end);
 	pcall(function()

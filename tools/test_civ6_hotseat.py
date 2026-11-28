@@ -181,10 +181,15 @@ class StagingRoom:
 
     BOUNDS = (0, 0, 1710, 1107)
 
-    def __init__(self, kinds: list[str], dropped: dict[int, int] | None = None):
+    def __init__(self, kinds: list[str], dropped: dict[int, int] | None = None,
+                 stuck: dict[int, int] | None = None):
         self.kinds = list(kinds)
         self.open_list: int | None = None
         self.dropped = dict(dropped or {})      # reading number -> seat index not read
+        # seat index -> clicks on its type line that open nothing first
+        # (hotseat-20261128T031456Z: row 5's list did not open in 20 tries,
+        # `setup/slot-20-open.png`).
+        self.stuck = dict(stuck or {})
         self.readings = 0
         self.clicks: list[tuple[int, int]] = []
         self.parked = 0
@@ -197,7 +202,7 @@ class StagingRoom:
         if staging:
             self.readings += 1
         rows = [("Players", 427, 196), ("ADD PLAYER", 857, 240 + 45 * len(self.kinds) + 20),
-                ("START GAME", 855, 1090)]
+                ("START GAME", 855, 1090), ("STAGING ROOM", 855, 120)]
         for i, kind in enumerate(self.kinds):
             if staging and self.dropped.get(self.readings) == i:
                 continue
@@ -227,6 +232,9 @@ class StagingRoom:
             return
         for i in range(len(self.kinds)):
             if abs(y - self.type_y(i)) <= 8 and 412 <= x <= 600:
+                if self.stuck.get(i, 0) > 0:
+                    self.stuck[i] -= 1
+                    return
                 self.open_list = i
 
 
@@ -286,6 +294,277 @@ class SeatingTest(unittest.TestCase):
         self.assertTrue(done, said)
         self.assertEqual(room.kinds, ["host", "player"])
         self.assertEqual(room.clicks[0], (442 + 30, 240 + 45 * 2))
+
+
+#: The six-player room the person was left with on 2026-11-28
+#: (hotseat-20261128T031456Z `rescue.log`, `setup/staging-29.png`).
+LEFT_ROOM = ["host", "player", "player", "player", "computer", "player", "open"]
+
+
+class SetupHandOverTest(unittest.TestCase):
+    """hotseat-20261128T031456Z: the harness gave up seating the room after
+    29 tries ("could not seat the players; the staging room is left as it
+    is"), told the person "make Players 2-6 'Human'" while the room held a
+    Computer row and a seventh, Open row, started five decision workers for
+    seats nobody had seated, and five minutes later said "no hand-over event
+    five minutes after START GAME; is the game up?". The game began 10.5
+    minutes after launch, finished by hand from another session."""
+
+    def test_the_person_is_told_each_click_that_is_left(self) -> None:
+        want = hotseat.wanted_slots(6)
+        self.assertEqual(hotseat.seat_fixes(LEFT_ROOM, want),
+                         ["row 5 (Computer): open its list and choose Human",
+                          "row 7 (Open): open its list and choose Closed"])
+        self.assertEqual(hotseat.seat_fixes(["host", "computer"], hotseat.wanted_slots(4)),
+                         ["row 2 (Computer): open its list and choose Human",
+                          "ADD PLAYER, then row 3: choose Human", "ADD PLAYER, then row 4: choose Human"])
+        # An unattended table's Firaxis seats are Computer, not Human.
+        self.assertEqual(hotseat.seat_fixes(["host", "player", "player"], hotseat.wanted_slots(3, 2)),
+                         ["row 3 (Player): open its list and choose Computer"])
+        self.assertEqual(hotseat.seat_fixes(hotseat.wanted_slots(6), want), [])
+        # A room never read: the whole column, said plainly.
+        self.assertEqual(hotseat.seat_fixes(None, want),
+                         ["rows 2-6: open each row's list and choose Human", "any row after row 6: choose Closed"])
+        args = game_args(players=6, difficulty="DIFFICULTY_PRINCE")
+        steps = hotseat.setup_help({"step": "seats", "kinds": LEFT_ROOM}, args)
+        self.assertEqual(steps, ["row 5 (Computer): open its list and choose Human",
+                                 "row 7 (Open): open its list and choose Closed",
+                                 "every row's Difficulty: Prince", "START GAME (the orb at the bottom)"])
+        self.assertEqual(hotseat.setup_help({"step": "start"}, args), ["START GAME (the orb at the bottom)"])
+        menu = hotseat.setup_help({"step": "menu"}, game_args(players=6, map="Continents.lua",
+                                                              map_size="MAPSIZE_SMALL", difficulty="DIFFICULTY_PRINCE"))
+        self.assertIn("main menu -> Multiplayer -> Hot Seat; set Map Continents, Map Size Small", menu[0])
+        self.assertIn("Load Game -> civvis-hotseat-resume", hotseat.setup_help({"step": "load"}, args)[0])
+        said, told, lines = io.StringIO(), [], []
+        with contextlib.redirect_stdout(said):
+            hotseat.hand_over_setup(game_args(players=6, no_notify=False), {"step": "seats", "kinds": LEFT_ROOM},
+                                    lines.append, tell=lambda title, text: told.append(text))
+        self.assertIn("  1. row 5 (Computer): open its list and choose Human\n", said.getvalue())
+        self.assertIn("CIVVIS takes its seats the moment the game starts", said.getvalue())
+        self.assertTrue(lines[0].startswith("setup handed to the person: row 5 (Computer)"))
+        self.assertTrue(told and told[0].startswith("row 5 (Computer)"), "on screen too")
+        with contextlib.redirect_stdout(io.StringIO()):
+            hotseat.hand_over_setup(game_args(players=6, no_notify=True), {"step": "start"}, lines.append,
+                                    tell=lambda title, text: told.append(text))
+        self.assertEqual(len(told), 1, "--no-notify: no notification")
+
+    def set_up(self, room: StagingRoom) -> tuple[bool, argparse.Namespace, list[str]]:
+        args = game_args(players=6, resume_save=None, civvis_seats=None)
+        lines: list[str] = []
+
+        def read(run_dir, name, fallback=None):
+            bounds, rows = room.read(run_dir, name, fallback)
+            return bounds, rows + (ocr(("Confirm Settings", 1300, 1060)) if name == "host-settings" else [])
+
+        with patch.object(hotseat, "open_hotseat_setup", return_value=room.BOUNDS), \
+                patch.object(hotseat, "read_screen", side_effect=read), \
+                patch.object(hotseat, "check_host_settings", return_value=[]), \
+                patch.object(hotseat, "click", side_effect=room.click), \
+                patch.object(hotseat.time, "sleep"), \
+                patch.object(hotseat.play, "ensure_game_frontmost", return_value=True), \
+                patch.object(hotseat.play, "park_setup_pointer"), \
+                patch.object(hotseat.play.macos_input, "press_key"), \
+                patch.object(hotseat, "set_difficulties", return_value=True), \
+                patch.object(hotseat, "start_game", return_value=True):
+            done = hotseat.set_up_game(Path("/tmp/r"), args, lines.append)
+        return done, args, lines
+
+    def test_a_room_the_seating_gave_up_on_gets_one_more_shorter_pass(self) -> None:
+        # Tonight's room, its row 5 list opening only on the 31st click.
+        room = StagingRoom(list(LEFT_ROOM), stuck={4: 30})
+        done, args, lines = self.set_up(room)
+        self.assertTrue(done, lines)
+        self.assertIn("[setup] seating the players once more", lines)
+        self.assertEqual(room.kinds, ["host"] + ["player"] * 5)
+        # A row that never opens: the second pass is short, and what is left is kept.
+        room = StagingRoom(list(LEFT_ROOM), stuck={4: 10 ** 6})
+        done, args, lines = self.set_up(room)
+        self.assertFalse(done)
+        self.assertEqual(args.setup_failed, {"step": "seats", "kinds": ["host", "player", "player", "player",
+                                                                         "computer", "player"]})
+        self.assertLessEqual(room.readings, 29 + hotseat.SEAT_RETRY_STEPS)
+
+    def test_no_game_yet_is_read_off_the_screen_and_said_with_what_to_do(self) -> None:
+        def advice(rows, *, bounds=StagingRoom.BOUNDS, active=False, players=6):
+            with patch.object(hotseat, "read_screen", return_value=(bounds, rows)) as read, \
+                    patch.object(hotseat.operator_presence, "operator_active", return_value=active), \
+                    patch.object(hotseat, "host_strain", return_value={"memory_free_gb": 3.2}), \
+                    patch.object(hotseat.play, "ensure_game_frontmost") as front:
+                said = hotseat.not_started_advice(Path("/tmp/r"), game_args(players=players), 300.0)
+            front.assert_not_called()
+            return said, read.called
+
+        left = StagingRoom(list(LEFT_ROOM)).read(None, "x")[1]
+        said, _ = advice(left)
+        self.assertEqual(said, "the staging room is still up: row 5 (Computer): open its list and choose Human; "
+                               "row 7 (Open): open its list and choose Closed; then START GAME")
+        said, _ = advice(StagingRoom(["host"] + ["player"] * 5).read(None, "x")[1])
+        self.assertEqual(said, "the staging room reads right (6 seats): press START GAME")
+        said, _ = advice(text("SINGLE PLAYER", "MULTIPLAYER", "Options"))
+        self.assertIn("Civ VI is at its main menu", said)
+        self.assertIn("memory free now: 3.2 GB", said)
+        self.assertIn("`civ6-hotseat.sh --stop --quit-game`, then the same command again", said)
+        self.assertIn("still loading", advice(text("Loading, Please Wait..."))[0])
+        self.assertIn("bring Civ VI to the front", advice(text("martin@air ~ %"))[0])
+        self.assertIn("window was not found", advice([], bounds=None)[0])
+        said, read = advice(left, active=True)
+        self.assertFalse(read, "not read while someone is at the keyboard")
+        self.assertIn("the Mac is in use", said)
+
+
+class SeatCheckTest(unittest.TestCase):
+    """Which seats CIVVIS plays, from the game itself: a seat that never
+    takes a turn on the hand-over screen is Civ VI's AI, whatever the setup
+    meant."""
+
+    def monitor(self, run_dir: Path, seats: list[int], **args) -> tuple["hotseat.Monitor", list[str]]:
+        lines: list[str] = []
+        monitor = hotseat.Monitor(run_dir, "hs", seats, game_args(players=len(seats) + 1, **args), lines.append)
+        self.addCleanup(monitor.close)
+        return monitor, lines
+
+    @staticmethod
+    def poll(monitor) -> None:
+        with contextlib.redirect_stdout(io.StringIO()):
+            monitor.poll()
+
+    @staticmethod
+    def turns(run_dir: Path, *pairs) -> None:
+        with (run_dir / "events.jsonl").open("a") as out:
+            for turn, player in pairs:
+                out.write(json.dumps({"kind": "hotseat_turn", "phase": "begin", "player": player,
+                                      "turn": turn, "human": player == 0}) + "\n")
+
+    def test_a_civvis_seat_that_is_civs_ai_is_found_on_the_first_whole_round(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp)
+            monitor, lines = self.monitor(run_dir, [1, 2, 3, 4, 5])
+            # Row 5 (seat 4) left a Computer: it never gets a hand-over.
+            self.turns(run_dir, (1, 0), (1, 1), (1, 2), (1, 3), (1, 5))
+            self.poll(monitor)
+            self.assertEqual(monitor.take_unseated(), [], "not before the round is whole")
+            self.turns(run_dir, (2, 0))
+            self.poll(monitor)
+            self.assertEqual(monitor.take_unseated(), [4])
+            self.assertEqual(monitor.take_unseated(), [], "each once")
+            warned = [line for line in lines if line.startswith("⚠ row 5 is not a Hot Seat human")]
+            self.assertEqual(len(warned), 1, lines)
+            self.assertIn("its decision worker is stopped", warned[0])
+            self.turns(run_dir, (2, 1), (3, 0))
+            self.poll(monitor)
+            self.assertEqual(monitor.take_unseated(), [], "checked once")
+
+    def test_every_seat_taking_its_turn_is_said_once_and_a_late_start_waits_for_a_whole_round(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp)
+            monitor, lines = self.monitor(run_dir, [1, 2])
+            # Attached mid-round 7: round 7 is not whole, round 8 is.
+            self.turns(run_dir, (7, 2), (8, 0), (8, 1), (8, 2), (9, 0))
+            self.poll(monitor)
+            self.assertEqual(monitor.take_unseated(), [])
+            self.assertIn("seats verified: every CIVVIS seat (row 2 and row 3) took turn 8 as a Hot Seat human",
+                          lines)
+
+    def test_a_human_seat_civvis_does_not_play_is_said_at_once(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp)
+            monitor, lines = self.monitor(run_dir, [1, 2])
+            self.turns(run_dir, (1, 0), (1, 1), (1, 2), (1, 3), (2, 0), (2, 1), (2, 2), (2, 3))
+            self.poll(monitor)
+            foreign = [line for line in lines if "row 4 is a Human seat in this game that CIVVIS does not play" in line]
+            self.assertEqual(len(foreign), 1)
+            self.assertIn("press Start Turn and play it", foreign[0])
+        # A test stub's seat 0 is not such a seat.
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp)
+            monitor, lines = self.monitor(run_dir, [1], auto_human="gated")
+            self.turns(run_dir, (1, 0), (1, 1), (2, 0))
+            self.poll(monitor)
+            self.assertFalse([line for line in lines if "does not play" in line])
+
+    def test_a_handed_over_setup_starts_the_workers_with_the_game_and_retires_an_unseated_seat(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            clock = [1000.0]
+            started, retired, advised = [], [], []
+            script = {1200.0: [{"kind": "hotseat_armed"}],
+                      1201.0: [{"kind": "hotseat_turn", "phase": "begin", "player": p, "turn": 1, "human": p == 0}
+                               for p in (0, 1, 2)],
+                      1202.0: [{"kind": "hotseat_turn", "phase": "begin", "player": 0, "turn": 2, "human": True}]}
+
+            def sleep(seconds: float) -> None:
+                clock[0] += seconds
+                for at in [at for at in script if at <= clock[0]]:
+                    with (root / "hs" / "events.jsonl").open("a") as out:
+                        for event in script.pop(at):
+                            out.write(json.dumps(event) + "\n")
+
+            class Liveness:
+                def alive(self) -> bool:
+                    return clock[0] < 1210.0
+
+            class Brains:
+                def __init__(self, *a, **k):
+                    self.procs = {}
+
+                def start_all(self):
+                    started.append(clock[0])
+
+                def retire(self, seat):
+                    retired.append(seat)
+
+                def keep_alive(self): pass
+                def stop(self): pass
+
+            def set_up(run_dir, args, log):
+                args.setup_failed = {"step": "seats", "kinds": ["host", "player", "player", "computer"]}
+                return False
+
+            class Bridge:
+                def __init__(self, *a, **k): pass
+                def pump(self): return 0
+
+            args = game_args(players=4, tag="hs", attach=False, resume_save=None, resume_notes=[],
+                             orders_bin=None, stall_seconds=180.0, turns=None, no_notify=True, name=None,
+                             genome="stock")
+            said = io.StringIO()
+            with contextlib.ExitStack() as stack:
+                for target, name, value in (
+                        (hotseat.signal, "signal", None), (hotseat, "RUN_ROOT", root),
+                        (hotseat, "CURRENT", root / "current.json"), (hotseat.gamelock, "release", None),
+                        (hotseat, "reset_orders_db", None), (hotseat.modinstall, "uninstall", None),
+                        (hotseat, "apply_person_options", None), (hotseat.launcher, "clear_run_logs", None),
+                        (hotseat.play, "place_game", None), (hotseat, "fit_on_screen", None),
+                        (hotseat, "notify", None), (hotseat.watch, "EventLogBridge", Bridge),
+                        (hotseat.watch, "GameLiveness", Liveness), (hotseat, "Brains", Brains)):
+                    stack.enter_context(patch.object(target, name) if value is None
+                                        else patch.object(target, name, value))
+                for target, name, returned in (
+                        (hotseat.env, "game_pids", []), (hotseat.gamelock, "acquire", True),
+                        (hotseat.gamelock, "operator_halt_description", None),
+                        (hotseat, "resolve_orders_bin", Path("/bin/sh")), (hotseat, "freeze_binary", Path("/bin/sh")),
+                        (hotseat.modinstall, "install", "DLC"), (hotseat, "host_strain", {}),
+                        (hotseat.launcher, "launch", argparse.Namespace(pid=4242)),
+                        (hotseat.launcher, "wait_for_launched_main_menu", True)):
+                    stack.enter_context(patch.object(target, name, return_value=returned))
+                for target, name, effect in (
+                        (hotseat, "set_up_game", set_up),
+                        (hotseat, "not_started_advice",
+                         lambda *a: advised.append(clock[0]) or "the staging room is still up"),
+                        (hotseat.time, "monotonic", lambda: clock[0]), (hotseat.time, "sleep", sleep)):
+                    stack.enter_context(patch.object(target, name, side_effect=effect))
+                stack.enter_context(contextlib.redirect_stdout(said))
+                self.assertEqual(hotseat.run(args), 0)
+            log = (root / "hs" / "hotseat.log").read_text()
+            self.assertIn("setup handed to the person: row 4 (Computer): open its list and choose Human", log)
+            self.assertIn("1. row 4 (Computer)", said.getvalue())
+            self.assertEqual(len(started), 1)
+            self.assertGreaterEqual(started[0], 1200.0, "no worker before the game has started")
+            self.assertIn("the game has started: CIVVIS takes its seats", log)
+            self.assertEqual(retired, [3], "row 4 stayed Civ VI's AI: its worker goes")
+            self.assertTrue(advised and 1120.0 <= advised[0] < 1200.0,
+                            "the screen is read two minutes into the person's finishing")
+            self.assertNotIn("is the game up?", log)
 
 
 class MenuReadingTest(unittest.TestCase):
@@ -451,6 +730,174 @@ class FitOnScreenTest(unittest.TestCase):
 
     def test_no_window_no_move(self) -> None:
         self.assertEqual(self.fit(None), (None, []))
+
+
+#: What `civvis_orders` writes first on stderr: its genome (the live game's
+#: decider, 0512deb6, asked with the whole live list, 2026-11-28; shortened).
+GENOME_LINE = json.dumps({"civ": None, "forced": ["age-closer-2", "recon-replacement"], "kind": "genome",
+                          "lane": None, "ledger_withheld": ["war-reinforcement"]})
+#: ...and what it says when a `--with` is one it does not know (the same binary).
+REFUSED = ('civvis-orders: unknown --with treatment "no-such-tag"; this binary can force: '
+           "war-reinforcement, come-ashore, recon-replacement, age-closer-2\n")
+
+
+class LiveGenomeTest(unittest.TestCase):
+    """The live six-player game (hotseat-20261128T031456Z): every seat's
+    brain.log said `forced=none`, every why.log the stock genes; 182 of the
+    ladder's 285 live tags were off (`recon-replacement` among them: no seat
+    built a Scout), and its config held `StalledOperationRelease` false, so a
+    stalled Warrior held seat 3 for 7.9 s of the person's wait on turn 15."""
+
+    def test_the_list_is_resolved_as_the_ladders_supervisor_resolves_it(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, local, empty = Path(tmp) / "repo.txt", Path(tmp) / "local", Path(tmp) / "empty"
+            repo.write_text("recon-replacement,monument-first\n")
+            empty.write_text("")
+
+            def resolve(environ, local_text=None):
+                if local_text is None:
+                    local.unlink(missing_ok=True)
+                else:
+                    local.write_text(local_text)
+                return hotseat.live_treatments(environ, repo, local)
+
+            self.assertEqual(resolve({}), (["recon-replacement", "monument-first"], "deploy/live-force-on.txt"))
+            # A host's own list wins while it is not empty; an empty one is no override.
+            self.assertEqual(resolve({}, "chop-for-expansion")[0], ["chop-for-expansion"])
+            self.assertEqual(resolve({}, "  \n")[0], ["recon-replacement", "monument-first"])
+            # The environment's, and a named file's even when empty (the stock genome).
+            self.assertEqual(resolve({"CIVVIS_WITH": "a,b,a"}, "x")[0], ["a", "b"])
+            self.assertEqual(resolve({"CIVVIS_WITH_FILE": str(empty)}, "x"), ([], f"CIVVIS_WITH_FILE ({empty})"))
+            repo.unlink()
+            self.assertEqual(resolve({}), ([], "no live list in this install"))
+
+    @staticmethod
+    def decider(*answers):
+        """A `civvis_orders` that answers each ask in turn: (exit code, stderr)."""
+        asked = []
+
+        def run(command, **_):
+            asked.append([word for word in command[3:] if word != "--with"])
+            code, stderr = answers[min(len(asked), len(answers)) - 1]
+            return argparse.Namespace(returncode=code, stderr=stderr, stdout="")
+        return run, asked
+
+    def test_the_decider_is_asked_first_and_keeps_only_what_it_can_play(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            run, asked = self.decider((0, GENOME_LINE + "\n"))
+            armed = hotseat.armed_treatments(Path("/bin/civvis_orders"), ["age-closer-2", "recon-replacement",
+                                                                         "monument-first"], Path(tmp), run)
+            self.assertEqual(armed["with"], ["age-closer-2", "recon-replacement", "monument-first"])
+            self.assertEqual(armed["forced"], ["age-closer-2", "recon-replacement"], "the decider's own word")
+            self.assertEqual(asked, [["age-closer-2", "recon-replacement", "monument-first"]])
+            self.assertFalse((Path(tmp) / "genome-check").exists(), "the empty board is cleaned up")
+            # A tag this binary does not know would kill every worker at its start.
+            # Only the tags it names go: `monument-first` is not in its "can force"
+            # list because its deployment genome already plays it, and it is kept.
+            held = ('civvis-orders: --with treatment "not-held" is not a ledger-held live treatment or '
+                    'held-off opt-in (tag "not-held"); this binary can force: recon-replacement\n')
+            run, asked = self.decider((2, REFUSED), (2, held), (0, GENOME_LINE))
+            armed = hotseat.armed_treatments(Path("/bin/civvis_orders"),
+                                             ["recon-replacement", "no-such-tag", "monument-first", "not-held"],
+                                             Path(tmp), run)
+            self.assertEqual((armed["with"], armed["dropped"]),
+                             (["recon-replacement", "monument-first"], ["no-such-tag", "not-held"]))
+            self.assertEqual(asked[-1], ["recon-replacement", "monument-first"])
+            # A refusal that never ends is not asked forever.
+            run, asked = self.decider((2, REFUSED))
+            armed = hotseat.armed_treatments(Path("/bin/x"), ["no-such-tag"] * 1 + ["a"], Path(tmp), run)
+            self.assertEqual(armed["with"], [])
+            self.assertLessEqual(len(asked), hotseat.MOST_REFUSED)
+            # Refused with no list of its own, or not runnable: the stock genome, said.
+            run, _ = self.decider((2, "civvis-orders: something else\n"))
+            armed = hotseat.armed_treatments(Path("/bin/x"), ["recon-replacement"], Path(tmp), run)
+            self.assertEqual(armed["with"], [])
+            self.assertIn("the decider refused the list (civvis-orders: something else)", armed["note"])
+
+            def broken(command, **_):
+                raise OSError("no such file")
+            armed = hotseat.armed_treatments(Path("/bin/x"), ["recon-replacement"], Path(tmp), broken)
+            self.assertEqual((armed["with"], armed["dropped"]), ([], ["recon-replacement"]))
+            run, _ = self.decider((2, "civvis-orders: --with treatment(s) x already ship in the "
+                                      "deployment genome; name at least one\n"))
+            self.assertEqual(hotseat.armed_treatments(Path("/bin/x"), ["x"], Path(tmp), run)["with"], [])
+
+    def test_every_seats_worker_and_the_mod_play_the_live_arms(self) -> None:
+        command = hotseat.brain_command(Path("/r/hs-p2"), Path("/r/o.sqlite"), Path("/r/civvis_orders"),
+                                        "culture", ["recon-replacement", "culture-seat-allies"])
+        self.assertEqual(command[-4:], ["--with", "recon-replacement", "--with", "culture-seat-allies"])
+        with tempfile.TemporaryDirectory() as tmp:
+            arms = Path(tmp) / "live-mod-arms.txt"
+            arms.write_text("stalled-operation-release\ndebug-timescale-3\npoll-20ms\n")
+            with patch.object(hotseat, "MOD_ARMS_FILE", arms):
+                live = hotseat.hotseat_config(game_args(genome="live", treatments=["culture-seat-allies"]),
+                                              Path("/tmp/r"), Path("/tmp/r/o.sqlite"))
+                stock = hotseat.hotseat_config(game_args(genome="stock", treatments=[]),
+                                               Path("/tmp/r"), Path("/tmp/r/o.sqlite"))
+        self.assertTrue(live["StalledOperationRelease"])
+        self.assertEqual(live["OrdersPeekSeconds"], 0.02)
+        # The key a live gene switches on in the mod, as on the ladder (`civ6_play.build_config`).
+        self.assertTrue(live["CultureAllies"])
+        # The ladder's debug timescale is not a person's game's.
+        self.assertIsNone(live["DebugTimeScale"])
+        self.assertIsNone(live["DebugTimeScaleAB"])
+        self.assertFalse(stock["StalledOperationRelease"])
+        self.assertIsNone(stock["OrdersPeekSeconds"])
+        self.assertFalse(stock["CultureAllies"])
+
+    def test_a_run_says_and_keeps_what_its_seats_play_and_an_attach_plays_the_same(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp)
+            lines: list[str] = []
+            args = game_args(genome="live")
+            run, _ = self.decider((2, REFUSED), (0, GENOME_LINE))
+            with patch.object(hotseat, "live_treatments",
+                              return_value=(["age-closer-2", "recon-replacement", "no-such-tag"],
+                                            "deploy/live-force-on.txt")), \
+                    patch.object(hotseat.subprocess, "run", side_effect=run):
+                hotseat.live_genome(args, Path("/bin/civvis_orders"), run_dir, lines.append)
+            self.assertEqual(args.treatments, ["age-closer-2", "recon-replacement"])
+            self.assertIn("decider genome: the live ladder's, from deploy/live-force-on.txt: 2 of 3 listed "
+                          "genes armed, 2 of them beyond this decider's deployment genome", lines[0])
+            self.assertIn("cannot play 1 listed gene(s), so they are off: no-such-tag", lines[1])
+            # What a rated game was against is on its record.
+            monitor = hotseat.Monitor(run_dir, "hs", [1], game_args(players=2, name="dev", victories_off=[]),
+                                      lambda m: None)
+            self.addCleanup(monitor.close)
+            record = hotseat.table_record(monitor, args, [1], {})
+            self.assertEqual((record["genome"]["genome"], record["genome"]["forced"]),
+                             ("live", ["age-closer-2", "recon-replacement"]))
+            # A re-attached harness restarts the workers on the same list.
+            again = game_args()
+            hotseat.kept_genome(again, run_dir)
+            self.assertEqual((again.genome, again.treatments), ("live", ["age-closer-2", "recon-replacement"]))
+            # A run from before this armed nothing, and its re-attach arms nothing.
+            hotseat.kept_genome(again, run_dir / "older")
+            self.assertEqual((again.genome, again.treatments), ("stock", []))
+            # `--genome stock` asks nothing and arms nothing.
+            stock, lines = game_args(genome="stock"), []
+            with patch.object(hotseat.subprocess, "run") as asked:
+                hotseat.live_genome(stock, Path("/bin/civvis_orders"), run_dir, lines.append)
+            asked.assert_not_called()
+            self.assertEqual(stock.treatments, [])
+            self.assertIn("decider genome: stock", lines[0])
+
+    def test_live_is_the_default_and_stock_is_asked_for(self) -> None:
+        for flags, want in (([], "live"), (["--genome", "stock"], "stock")):
+            with patch.object(hotseat, "run", side_effect=lambda a: 0) as run, \
+                    patch.object(hotseat, "read_current", return_value=None):
+                hotseat.main(flags)
+            self.assertEqual(run.call_args.args[0].genome, want)
+        source = (hotseat.HERE / "civ6_hotseat.py").read_text()
+        # Both loops' workers are started with the list...
+        self.assertEqual(source.count("treatments=args.treatments)"), 2)
+        # ...decided before the install that carries its mod keys, and kept by an attach.
+        run = source[source.index("def run(args"):]
+        self.assertLess(run.index("live_genome(args, binary, run_dir, log)"), run.index("config = hotseat_config("))
+        self.assertLess(run.index("kept_genome(args, run_dir)"), run.index("brains = Brains("))
+        manual = source[source.index("def run_manual("):source.index("def main(")]
+        self.assertLess(manual.index("live_genome(args, binary, run_dir, log)"),
+                        manual.index("config = manual_lobby_config("))
 
 
 class RelayTest(unittest.TestCase):
@@ -1152,6 +1599,38 @@ class CoverTest(unittest.TestCase):
         config = hotseat.hotseat_config(args, Path("/tmp/r"), Path("/tmp/r/o.sqlite"))
         self.assertEqual((config["HotseatCover"], config["HotseatAutoStart"],
                           config["HotseatCoverQueue"]), (False, False, False))
+
+    def test_fast_turns_is_off_unless_asked_and_reaches_every_context(self) -> None:
+        # Off by default, and in every table that did not ask (the person's,
+        # the stubs', the unattended ones): the shipped press and peek.
+        for overrides in ({}, {"auto_human": "gated"}, {"auto_human": "stub"},
+                          {"players": 6, "civvis_seats": 2, "leader": None}):
+            with self.subTest(**overrides):
+                self.assertIs(self.config(**overrides)["HotseatFastTurns"], False)
+        with patch.object(hotseat, "run", side_effect=lambda args: args) as ran, \
+                patch.object(hotseat, "read_current", return_value=None):
+            hotseat.main([])
+            self.assertFalse(ran.call_args.args[0].fast_turns)
+            hotseat.main(["--fast-turns"])
+            asked = ran.call_args.args[0]
+        config = hotseat.hotseat_config(asked, Path("/tmp/r"), Path("/tmp/r/o.sqlite"))
+        self.assertIs(config["HotseatFastTurns"], True)
+        # The contexts that read it: the hand-over (AutoClose), the peek pulse
+        # (Heartbeat) and every seat's agent, from the settings each is given.
+        out = self.install(config)
+        for name in ("CivvisControlAutoClose.lua", "CivvisControlHeartbeat.lua",
+                     "CivvisControlAgentSeat1.lua", "CivvisControlAgentSeat3.lua"):
+            head = (out / name).read_text().split("}\n", 1)[0]
+            self.assertIn("HotseatFastTurns = true,", head, name)
+        head = (self.install(self.config()) / "CivvisControlAutoClose.lua").read_text()
+        self.assertIn("HotseatFastTurns = false,", head.split("}\n", 1)[0])
+        # A manual-lobby install carries the same key.
+        lobby = hotseat.manual_lobby_config(asked, Path("/tmp/r"), Path("/tmp/r/o.sqlite"))
+        self.assertIs(lobby["HotseatFastTurns"], True)
+        # `--attach` re-installs the game's own settings, this one among them.
+        source = Path(hotseat.__file__).read_text()
+        attach = source.split("args.no_cover_timer = not attach_config.get", 1)[1][:200]
+        self.assertIn('args.fast_turns = attach_config.get("HotseatFastTurns") is True', attach)
 
     def test_the_cover_is_quiet_and_says_how_long_by_default(self) -> None:
         cases = {

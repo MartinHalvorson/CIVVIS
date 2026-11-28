@@ -118,10 +118,12 @@ What to expect:
   while the cover is up, your saved volumes are untouched. Music that belongs
   to a CIVVIS turn (a leader's theme, an era fanfare) is on the music bus and
   still plays with `music`.
-- **A bar says about how long.** Under the seat's name: how far into the wait,
-  and "About 12 s". The estimate is your own last few waits, so the first wait
-  of a session (and one you load into) shows a moving bar and no number, and a
-  turn that runs long ends on "Any moment now". `--no-cover-timer` hides it.
+- **A bar says about how long.** Under the seat's name: which CIVVIS seat is
+  playing and about how long is left ("3 of 5, about 6 s"), counted from each
+  seat's own recent turns, so a seat that finishes early takes its time off
+  at once and one that runs long holds the count until the next seat starts.
+  Until one seat's turn has been seen (the first seat of a session, or a wait
+  you load into) it shows a moving bar and no number. `--no-cover-timer` hides it.
 - **A CIVVIS turn that stalls is not hidden for good.** The cover stands aside
   for the rest of that turn after 90 s of a quiet CIVVIS seat (180 s with no
   seat active), and the harness window says what you can do: close a screen
@@ -217,9 +219,10 @@ on a runner with no game.
 | the two together | **seen live** for 4 turns (`manual-cover-1`) | **unmeasured** |
 | the mod silent once the harness stops | **seen live** (both manual runs: the game's CIVVIS lines did not grow in the 60 s after the stop) | **unmeasured** |
 | Esc on the cover; the cover lifting from up when the harness stops or dies; the stall stand-aside timers | tests only (`hotseat_cover_test.lua`, `harness_gate_test.lua`) | tests only |
-| the wait bar and its time left | **seen live** (`smoke-6p-20261128T0244Zb`: the bar on the cover; 8.9 s recorded for five seats' turn 1) | **unmeasured** |
+| the wait bar and its time left | the bar **seen live** (`smoke-6p-20261128T0244Zb`, `hotseat-20261128T031456Z`); the per-seat countdown tests and replay only (`hotseat_cover_wait_test.lua` replays that live game) | **unmeasured** |
 | the cover quiet while CIVVIS plays and the volumes back on the person's turn | the records fire live; silence itself is not measurable from the log (`Options.GetAudioOption` reads the saved volume) and no person has confirmed it yet | tests only |
 | a CIVVIS seat's Historic Moments and boost popups closed under the cover, not kept for the person's turn | tests only (`hotseat_cover_queue_test.lua` 2b); the fault itself was seen live (`hotseat-20261128T031456Z`) | tests only |
+| a seat's defeat shown on a CIVVIS turn: the end screen over the cover, that turn still covered after Next Player | tests only (`hotseat_cover_test.lua` 8b) | tests only |
 | the game's process names | measured (`Civ6_Exe_Child`) | **unmeasured** (`CivilizationVI.exe`, `CivilizationVI_DX12.exe` from the Steam depot) |
 | a whole game played by the **frozen bundle** (not a checkout) | **unmeasured**: no game was launched while it was built | **unmeasured** |
 | a browser-downloaded copy past Gatekeeper / SmartScreen | **unmeasured** | **unmeasured** |

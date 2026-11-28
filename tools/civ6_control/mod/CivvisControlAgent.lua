@@ -7546,6 +7546,18 @@ CivvisClock.raw = function()
 	if type(ui) ~= "number" or ui ~= ui then return nil; end
 	return ui;
 end;
+-- The UI clock to the millisecond on the records that time a hotseat seat's
+-- turn (`export_timing`, `await`, `orders_peek_wake`, `orders`, a frame's
+-- opening), as `"ui"`: the clock `end_turn_wait.ui_now` reads, so
+-- `tools/hotseat_wait.py` can split a frame's round trip, which the
+-- whole-second `t` cannot. Hotseat installs only: every other record stays
+-- byte for byte as it was (nil drops the field).
+CivvisClock.stamp = function()
+	if cfg.Hotseat ~= true then return nil; end
+	local ui = CivvisClock.raw();
+	if ui == nil then return nil; end
+	return math.floor(ui * 1000 + 0.5) / 1000;
+end;
 CivvisClock.now = function()
 	local ui = CivvisClock.raw();
 	if ui == nil then return nil; end
@@ -7634,6 +7646,7 @@ CivvisExportClock.report = function(turn, frame)
 	end
 	emit("export_timing", {
 		turn = turn, frame = frame, ms = sections, city_ms = cityMs, clock = CivvisExportClock.kind,
+		ui = CivvisClock.stamp(),
 		total_ms = delta(marks[1].at, marks[#marks].at),
 		auto_total = delta(CivvisExportClock.auto0, try(function() return Automation.GetTime(); end, nil)),
 		cpu_total_ms = delta(CivvisExportClock.cpu0, try(function() return os.clock(); end, nil)),
@@ -25232,6 +25245,7 @@ CivvisFrames.begin = function(player, pid, turn, requestedReason)
 	emit(reason == "strike" and "combat_frame" or "replan_frame", {
 		turn = turn, frame = CivvisFrames.current, reason = reason,
 		strikes = strikes, revealed = revealed, movers = CivvisFrames.movers,
+		ui = CivvisClock.stamp(),
 	});
 	CivvisK.guard(function() exportState(player, pid, turn, CivvisFrames.current); end);
 	return true;
@@ -25753,7 +25767,7 @@ local function applyOrders(player, pid, turn, rows)
 	end
 
 	emit("orders", {
-		turn = turn, frame = awaiting.frame or 0, source = "civvis",
+		turn = turn, frame = awaiting.frame or 0, source = "civvis", ui = CivvisClock.stamp(),
 		seen = #rows - deferred - verdicts - shadowRows,
 		applied = applied, refused = refused, by = byKind, refusals = whyNot,
 		seen_by = seenByKind, refused_by = refusedByKind,
@@ -26496,7 +26510,7 @@ local function settleTurn(player, pid, turn, playFallback)
 	--
 	-- One line per poll terminates the previous one, so the state reaches the brain
 	-- on the first poll. `polls` doubles as the wait's own telemetry.
-	emit("await", { turn = turn, polls = awaiting.polls });
+	emit("await", { turn = turn, polls = awaiting.polls, ui = CivvisClock.stamp() });
 
 	local frame = awaiting.frame or 0;
 	local ready = ordersReady(turn, frame);
@@ -29386,6 +29400,14 @@ end
 -- what deadlocked civvis-20260730T110209Z, and 20 a second at most is two
 -- orders of magnitude short of that. The poll's own cadence, and the poll
 -- budgets counted in it, are untouched; a miss changes nothing.
+-- `HotseatFastTurns` (`tools/civ6_hotseat.py --fast-turns`, off unless asked)
+-- peeks every 20 ms, the ladder's live `poll-20ms` arm: G104 waited a median
+-- 0.095 s between an answer being ready and its being applied, these 50 ms
+-- waits (`civ6_play.py`'s `read_s` note). An explicit `OrdersPeekSeconds`
+-- wins. The Heartbeat's peek pulse reads the same rule.
+CivvisQueue.peekSeconds = function()
+	return tonumber(cfg.OrdersPeekSeconds) or (cfg.HotseatFastTurns == true and 0.02) or 0.05;
+end;
 CivvisQueue.ordersLanded = function()
 	if cfg.Play == false or not cfg.CivvisDecides or awaiting.done
 			or awaiting.turn == nil or awaiting.turn < 0 then
@@ -29395,7 +29417,7 @@ CivvisQueue.ordersLanded = function()
 	if type(now) ~= "number" or now ~= now then return false; end
 	local last = CivvisQueue.ordersPeekAt;
 	if last ~= nil and now >= last
-			and now - last < (tonumber(cfg.OrdersPeekSeconds) or 0.05) then
+			and now - last < CivvisQueue.peekSeconds() then
 		return false;
 	end
 	CivvisQueue.ordersPeekAt = now;
@@ -29554,7 +29576,7 @@ CivvisQueue.onPeekPulse = function()
 	local now = CivvisClock.now();
 	local last = CivvisQueue.lastTickAt;
 	emit("orders_peek_wake", {
-		turn = awaiting.turn, frame = awaiting.frame or 0,
+		turn = awaiting.turn, frame = awaiting.frame or 0, ui = CivvisClock.stamp(),
 		since_tick = (type(now) == "number" and type(last) == "number")
 			and math.floor((now - last) * 1000 + 0.5) / 1000 or nil,
 	});
@@ -30222,7 +30244,7 @@ end
 --      Cancel button) and is held again; an envoy prompt is marked considered
 --      (CityStates.lua:452); any other blocker gets the ladder's answer
 --      (research, civic, production, policies, pantheon, governor, dedication,
---      government). Then the notification is dismissed and the end of turn
+--      government), with a fresh pass of its budget each step. Then the notification is dismissed and the end of turn
 --      asked with the shipped SHIFT+ENTER request (ActionPanel.lua:1099
 --      `UI.RequestAction(ActionTypes.ACTION_ENDTURN, { REASON = "UserForced" } )`).
 --   3. `stand_in_stuck` says, in one record, exactly what stands: the blocker,
@@ -30364,7 +30386,16 @@ function CivvisSeat.standInStep(player, pid, turn, st, now, source)
 		elseif name == "ENDTURN_BLOCKING_GIVE_INFLUENCE_TOKEN" then
 			answered = CivvisMarkEnvoyConsidered(player) and "considered" or "considered_unavailable";
 		else
+			-- One fresh answer a step. The ladder's per-turn budgets (`spend`:
+			-- two passes for research or a civic) can all go in the turn's first
+			-- tenth of a second, every game-core tick answering again while the
+			-- first request has not landed, and a hard blocker with no answer
+			-- left is a turn that cannot end: a forced end turn is refused under
+			-- it. The loop's own budgets are put back as they were.
+			local spent = {};
+			for key, used in pairs(passes) do spent[key], passes[key] = used, nil; end
 			answered = answerBlocker(player, pid, blocker, turn, true);
+			for key, used in pairs(spent) do passes[key] = math.max(used, passes[key] or 0); end
 		end
 		dismissed = dismissBlocker(pid, blocker);
 	end
