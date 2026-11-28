@@ -173,6 +173,16 @@ class SplitTest(unittest.TestCase):
         self.assertAlmostEqual(second["remote"], 102.300 - 101.620, places=2)
         self.assertAlmostEqual(rounds[0]["tail"], 104.0 - 103.005, places=2)
 
+    def test_the_hand_over_is_the_first_press_not_a_retry(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = table(Path(temporary), stamped=True)
+            with (root / "events.jsonl").open("a") as output:
+                output.write(json.dumps({"kind": "hotseat_start_turn", "player": 1, "turn": 7,
+                                         "again": True,
+                                         "relay_utc": stamp(OFFSET + 1400 + 102.35)}) + "\n")
+            rounds = hotseat_wait.split(hotseat_wait.Run(root))
+            self.assertAlmostEqual(rounds[0]["seats"][0]["stages"]["handover"], 0.350, places=2)
+
     def test_a_seat_after_a_turn_with_no_clock_gets_no_start(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = table(Path(temporary), stamped=True)

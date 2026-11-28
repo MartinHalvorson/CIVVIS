@@ -242,7 +242,8 @@ class Run:
             at = self.wall(row)
             if at is None:
                 continue
-            if kind == "hotseat_start_turn" and not row.get("again"):
+            if kind == "hotseat_start_turn":
+                # The first press; a retry (`again`) two seconds on is not the hand-over.
                 marks["press"].setdefault((turn, player), at)
             elif kind == "hotseat_turn" and row.get("phase") == "end":
                 marks["end"][(turn, player)] = at
