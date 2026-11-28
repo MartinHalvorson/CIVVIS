@@ -46,7 +46,7 @@ impl AdvancedAi {
     pub(super) fn refused_friendship_waits_for(&self, g: &Game, other: usize) -> bool {
         self.refused_friendship_waits
             && self.refused_friendships.get(&other).is_some_and(|refused| {
-                *refused <= g.turn && g.turn - *refused < REFUSED_FRIENDSHIP_WAIT_TURNS
+                *refused <= g.turn && g.turn - *refused <= REFUSED_FRIENDSHIP_WAIT_TURNS
             })
     }
 }
