@@ -1710,6 +1710,8 @@ end
 function CivvisHotseatScreen.onBuild()
 	local s = CivvisHotseatScreen;
 	if cfg.Hotseat ~= true then return false; end
+	-- `RequireHarness` with no live harness: the shipped hand-over, as ever.
+	if cfg.RequireHarness == true and not CivvisHarness.live() then return false; end
 	local pid, turn = s.localPlayer(), s.turn();
 	local key = pid .. ":" .. turn;
 	if s.ended ~= key then return false; end

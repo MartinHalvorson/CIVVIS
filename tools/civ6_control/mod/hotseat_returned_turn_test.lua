@@ -187,11 +187,20 @@ do
 	assert(p.oks == 2, "press: one first press only")
 end
 
--- 4. Outside hotseat nothing is wrapped. -------------------------------------
+-- 4. Outside hotseat nothing is wrapped; the person-facing install with no
+--    live harness keeps the shipped hand-over. --------------------------------
 do
 	local h = handover({ HotseatCover = true })
 	h.begin(0, 6); h.finish(); h.begin(0, 6)
 	assert(h.built == 2 and #h.kinds("hotseat_turn_returned") == 0, "no hotseat, no wrap")
+	local live = false
+	local m = handover(covered({ RequireHarness = true }))
+	m.env.CivvisHarness = { live = function() return live end }
+	m.begin(0, 6); m.finish(); m.begin(0, 6)
+	assert(m.built == 2 and m.oks == 0, "no live harness: the shipped hand-over")
+	live = true
+	m.finish(); m.begin(0, 6)
+	assert(m.built == 2 and m.oks == 1, "a live harness: not handed over again")
 end
 print("hand-over checks passed")
 
