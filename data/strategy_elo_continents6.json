@@ -1,0 +1,124 @@
+{
+  "diplomatic": true,
+  "ladder": {},
+  "map": "continents",
+  "players": 6,
+  "prince_elo": 1000.0,
+  "protocol": 1,
+  "ratings": {
+    "civ6:prince": {
+      "bound": "",
+      "elo": 1000.0,
+      "games": 287,
+      "margin95": 0.0,
+      "sd": 0.0,
+      "wins": 2
+    },
+    "forward": {
+      "bound": "",
+      "elo": 1407.2,
+      "games": 302,
+      "margin95": 194.0,
+      "sd": 99.0,
+      "wins": 30
+    },
+    "holy": {
+      "bound": "",
+      "elo": 1919.9,
+      "games": 287,
+      "margin95": 176.0,
+      "sd": 89.7,
+      "wins": 226
+    },
+    "jack": {
+      "bound": "",
+      "elo": 1412.0,
+      "games": 288,
+      "margin95": 186.0,
+      "sd": 95.1,
+      "wins": 30
+    },
+    "moonshot": {
+      "bound": "",
+      "elo": 1418.3,
+      "games": 288,
+      "margin95": 181.0,
+      "sd": 92.6,
+      "wins": 29
+    },
+    "oldguard": {
+      "bound": "",
+      "elo": 930.5,
+      "games": 274,
+      "margin95": 251.0,
+      "sd": 128.1,
+      "wins": 1
+    },
+    "siege": {
+      "bound": "",
+      "elo": 1408.9,
+      "games": 295,
+      "margin95": 195.0,
+      "sd": 99.3,
+      "wins": 29
+    },
+    "stock": {
+      "bound": "",
+      "elo": 1000.0,
+      "games": 287,
+      "margin95": 0.0,
+      "sd": 0.0,
+      "wins": 2
+    },
+    "swing": {
+      "bound": "",
+      "elo": 1440.8,
+      "games": 285,
+      "margin95": 186.0,
+      "sd": 94.7,
+      "wins": 36
+    },
+    "tourist": {
+      "bound": "",
+      "elo": 1657.6,
+      "games": 288,
+      "margin95": 183.0,
+      "sd": 93.6,
+      "wins": 96
+    },
+    "wheels": {
+      "bound": "",
+      "elo": 927.0,
+      "games": 286,
+      "margin95": 239.0,
+      "sd": 121.8,
+      "wins": 1
+    }
+  },
+  "reference": "stock",
+  "runs": [
+    {
+      "run": "2026-11-27-setups-seed",
+      "tables": 480
+    }
+  ],
+  "setup": "continents6",
+  "speed": "online",
+  "tables": 480,
+  "turns": 250,
+  "victories": {
+    "culture": 109,
+    "diplomatic": 25,
+    "domination": 2,
+    "religious": 235,
+    "science": 109
+  },
+  "victory_conditions": [
+    "science",
+    "culture",
+    "religious",
+    "diplomatic",
+    "domination",
+    "score"
+  ]
+}
