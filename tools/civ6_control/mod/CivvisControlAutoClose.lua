@@ -2322,7 +2322,9 @@ function CivvisCoverQueue.closeLeft()
 		-- :313-319, and the boosts it kept in its own list, unshown (`ShowBoost` stands down).
 		CivvisCoverQueue.dropping = true;
 		pcall(OnClose);
-		for _ = 1, 16 do pcall(ShowNextQueuedPopup); end
+		if type(ShowNextQueuedPopup) == "function" then
+			for _ = 1, 16 do pcall(ShowNextQueuedPopup); end
+		end
 		CivvisCoverQueue.dropping = false;
 	elseif NAME == "EraReviewPopup" then
 		OnClose();        -- :241-243 (not Continue, which raises a dedication for whoever is local)
