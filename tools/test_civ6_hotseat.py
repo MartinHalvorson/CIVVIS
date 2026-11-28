@@ -571,6 +571,240 @@ class ResumeTest(unittest.TestCase):
             os.utime(staged, (10 ** 10, 10 ** 10))
             self.assertEqual(hotseat.newest_save(saves), new)
 
+    def test_a_quicksave_is_a_save_to_go_on_from(self) -> None:
+        # The live six-player game of 2026-11-28 made Saves/Hotseat/quick/quicksave
+        # at 21:44, newer than every autosave: the save its person means.
+        import os
+        with tempfile.TemporaryDirectory() as tmp:
+            saves = Path(tmp)
+            for name, stamp in (("auto/AutoSave_0016.Civ6Save", 100), ("quick/quicksave.Civ6Save", 200),
+                                ("hotseat-x-T010.Civ6Save", 50)):
+                (saves / name).parent.mkdir(exist_ok=True)
+                (saves / name).write_text(name)
+                os.utime(saves / name, (stamp, stamp))
+            self.assertEqual([p.name for p in hotseat.hotseat_saves(saves)],
+                             ["quicksave.Civ6Save", "AutoSave_0016.Civ6Save", "hotseat-x-T010.Civ6Save"])
+            self.assertEqual(hotseat.newest_save(saves).name, "quicksave.Civ6Save")
+
+
+#: The live six-player game's installed config (hotseat-20261128T031456Z/config.json,
+#: 2026-11-28), the keys a resume reads.
+LIVE_6P = {
+    "RunTag": "hotseat-20261128T031456Z", "Hotseat": True, "HotseatSeats": [1, 2, 3, 4, 5],
+    "HotseatHumanSeats": [0], "HotseatStubSeats": [],
+    "HotseatNames": {"1": "CIVVIS HolyRoller", "2": "CIVVIS TouristTrap", "3": "CIVVIS MoonshotMaven",
+                     "4": "CIVVIS SiegeTheDay", "5": "CIVVIS JackOfAllTrades"},
+    "HotseatSeatAgents": {"1": "holy", "2": "tourist", "3": "moonshot", "4": "siege", "5": "jack"},
+    "HotseatPersonName": "dev", "HotseatPlayers": 6, "HotseatSaveEvery": 10,
+    "HotseatSaveName": "hotseat-20261128T031456Z", "HotseatCover": True, "HotseatAutoStart": True,
+    "HotseatCoverQueue": True, "HotseatCoverSound": "music", "HotseatCoverTimer": True,
+    "PlayerDifficulty": "DIFFICULTY_PRINCE", "Difficulty": "DIFFICULTY_PRINCE",
+    "Leader": "LEADER_GILGAMESH", "HumanPlayers": 6, "MapScript": "Continents.lua",
+    "MapSize": "MAPSIZE_SMALL", "GameSpeed": "GAMESPEED_ONLINE", "MaxTurns": 250,
+    "VictoryLane": "civvis", "VictoriesOff": [], "HotseatStarted": "2026-11-28T03:14:56Z",
+    "HotseatRevision": "0512deb6"}
+#: An evening rehearsal on the same Mac (smoke-6p-20261128T0244Zb): the test stub in seat 0.
+SMOKE_6P = dict(LIVE_6P, RunTag="smoke-6p-20261128T0244Zb", HotseatStubSeats=[0],
+                HotseatPersonName="", HotseatStarted="2026-11-28T02:44:00Z")
+
+
+def fake_save(path: Path, *names: str, stamp: float) -> Path:
+    """A save as Civ VI writes one, for what a resume reads of it: the names
+    its seats carry, in among compressed bytes (in the live game's saves
+    "CIVVIS HolyRoller" stands at byte 39729 and "dev" at 57232, and the mod's
+    own "CIVVIS Control" ahead of them)."""
+    import os
+    import random
+    filler = random.Random(7)
+    body = bytearray(b"CIV6" + b'{"CIVVIS Control":[]}')
+    for name in names:
+        body += bytes(filler.randrange(256) for _ in range(4000)) + name.encode() + b"\x00"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(bytes(body))
+    os.utime(path, (stamp, stamp))
+    return path
+
+
+class ResumeRestoresTheGameTest(unittest.TestCase):
+    """A resumed run is a fresh harness. Before 2026-11-28 a bare `--resume`
+    of the person's six-player game (dev as Gilgamesh against holy, tourist,
+    moonshot, siege and jack) would have been played as the wrapper's duel
+    defaults with jack on its one CIVVIS seat, no name, and no record."""
+
+    PERSON_SAVE_NAMES = ("CIVVIS HolyRoller", "CIVVIS JackOfAllTrades", "CIVVIS SiegeTheDay", "dev",
+                         "CIVVIS TouristTrap", "CIVVIS MoonshotMaven")
+
+    def setUp(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name) / "runs"
+        self.saves = Path(tmp.name) / "Saves" / "Hotseat"
+        self.saves.mkdir(parents=True)
+        for target, value in ((hotseat, "RUN_ROOT"), (hotseat, "HOTSEAT_SAVES")):
+            patcher = patch.object(target, value, self.root if value == "RUN_ROOT" else self.saves)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def a_run(self, config: dict, stamp: float, **files) -> Path:
+        import os
+        run_dir = self.root / config["RunTag"]
+        run_dir.mkdir(parents=True)
+        (run_dir / "config.json").write_text(json.dumps(config))
+        os.utime(run_dir / "config.json", (stamp, stamp))
+        for name, payload in files.items():
+            (run_dir / name).write_text(json.dumps(payload))
+        return run_dir
+
+    def resumed(self, *flags: str) -> argparse.Namespace:
+        with patch.object(hotseat, "run", side_effect=lambda a: 0) as run, \
+                patch.object(hotseat, "read_current", return_value=None), \
+                patch.object(hotseat, "strongest_agent", return_value="holy"):
+            self.assertEqual(hotseat.main(list(flags)), 0)
+        return run.call_args.args[0]
+
+    def test_a_bare_resume_plays_the_game_the_save_is_of(self) -> None:
+        self.a_run(LIVE_6P, 1000)
+        fake_save(self.saves / "auto" / "AutoSave_0016.Civ6Save", *self.PERSON_SAVE_NAMES, stamp=2000)
+        # Exactly what the wrapper sends for `civ6-hotseat.sh --resume`.
+        args = self.resumed("--players", "2", "--map-size", "MAPSIZE_DUEL", "--resume")
+        self.assertEqual(args.resume_save.name, "AutoSave_0016.Civ6Save")
+        self.assertEqual((args.players, args.map, args.map_size, args.speed, args.difficulty),
+                         (6, "Continents.lua", "MAPSIZE_SMALL", "GAMESPEED_ONLINE", "DIFFICULTY_PRINCE"))
+        self.assertEqual(args.agents, ["holy", "tourist", "moonshot", "siege", "jack"])
+        self.assertEqual((args.name, args.leader, args.max_turns, args.victories_off), ("dev", "LEADER_GILGAMESH", 250, []))
+        self.assertEqual(hotseat.seat_lanes(args, hotseat.jack_seats(args.players)),
+                         {1: "religious", 2: "culture", 3: "science", 4: "domination", 5: "civvis"})
+        self.assertEqual(hotseat.person_name(args), "dev", "recorded for the people's Elo")
+        self.assertEqual(args.resumed["started"], "2026-11-28T03:14:56Z")
+        said = "\n".join(args.resume_notes)
+        self.assertIn("the game of hotseat-20261128T031456Z", said)
+        self.assertIn("seat 1 holy, seat 2 tourist, seat 3 moonshot, seat 4 siege, seat 5 jack", said)
+        self.assertIn("dev as LEADER_GILGAMESH, recorded for the people's Elo", said)
+        self.assertIn("not used, the save decides them: --players 2 (the game has 6); "
+                      "--map-size MAPSIZE_DUEL (the game has MAPSIZE_SMALL)", said)
+
+    def test_what_is_asked_again_wins_and_the_saves_own_table_does_not_change(self) -> None:
+        self.a_run(LIVE_6P, 1000)
+        fake_save(self.saves / "hotseat-20261128T031456Z-T010.Civ6Save", stamp=2000)
+        args = self.resumed("--resume", "--agents", "jack,jack,jack,jack,jack", "--no-cover-timer",
+                            "--duel", "--leader", "LEADER_SALADIN")
+        self.assertEqual(args.agents, ["jack"] * 5)
+        self.assertTrue(args.no_cover_timer)
+        # The name, the cover and the save cadence come back as they were.
+        self.assertEqual((args.name, args.no_cover, args.cover_sound, args.save_every), ("dev", False, "music", 10))
+        # The leader and the table are the save's: --duel and --leader cannot change them.
+        self.assertEqual((args.players, args.map_size, args.leader), (6, "MAPSIZE_SMALL", "LEADER_GILGAMESH"))
+        said = "\n".join(args.resume_notes)
+        self.assertIn("as asked now: --agents, --no-cover-timer", said)
+        self.assertIn("--leader LEADER_SALADIN (the game has LEADER_GILGAMESH)", said)
+        self.assertIn("--duel (the game has 6 players on MAPSIZE_SMALL)", said)
+
+    def test_an_autosave_is_the_game_of_the_run_that_was_playing_when_it_was_written(self) -> None:
+        person = self.a_run(LIVE_6P, 1000)
+        # A rehearsal started before the person's run, one after the save, and
+        # one between whose game never got going (no save names its seats).
+        self.a_run(dict(SMOKE_6P, RunTag="smoke-before"), 500)
+        self.a_run(dict(SMOKE_6P, RunTag="smoke-after"), 3000)
+        self.a_run(dict(LIVE_6P, RunTag="failed-setup", HotseatNames={"1": "CIVVIS jack 1"},
+                        HotseatSeatAgents={}), 1500)
+        save = fake_save(self.saves / "auto" / "AutoSave_0016.Civ6Save", *self.PERSON_SAVE_NAMES, stamp=2000)
+        self.assertEqual(hotseat.save_run(save), person)
+        # A save the mod made says its run outright.
+        tagged = fake_save(self.saves / "smoke-after-T010.Civ6Save", stamp=4000)
+        self.assertEqual(hotseat.save_run(tagged), self.root / "smoke-after")
+
+    def test_a_persons_resume_passes_over_a_rehearsals_newer_save(self) -> None:
+        self.a_run(LIVE_6P, 1000)
+        self.a_run(SMOKE_6P, 3000)
+        fake_save(self.saves / "quick" / "quicksave.Civ6Save", *self.PERSON_SAVE_NAMES, stamp=2000)
+        fake_save(self.saves / "smoke-6p-20261128T0244Zb-T010.Civ6Save", "Test stub", stamp=4000)
+        fake_save(self.saves / "auto" / "AutoSave_0001.Civ6Save", "Test stub",
+                  *self.PERSON_SAVE_NAMES[:3], *self.PERSON_SAVE_NAMES[4:], stamp=3500)
+        args = self.resumed("--resume")
+        self.assertEqual(args.resume_save.name, "quicksave.Civ6Save")
+        self.assertEqual(args.name, "dev")
+        said = "\n".join(args.resume_notes)
+        self.assertIn("passed over smoke-6p-20261128T0244Zb-T010.Civ6Save", said)
+        self.assertIn("passed over AutoSave_0001.Civ6Save", said)
+        # A test's command takes the newest save, whoever's it is; so does a path.
+        self.assertEqual(self.resumed("--resume", "--auto-human", "gated").resume_save.name,
+                         "smoke-6p-20261128T0244Zb-T010.Civ6Save")
+        given = str(self.saves / "smoke-6p-20261128T0244Zb-T010.Civ6Save")
+        self.assertEqual(str(self.resumed("--resume", given).resume_save), given)
+
+    def test_a_save_no_run_recorded_is_played_as_typed_only_when_it_fits(self) -> None:
+        fake_save(self.saves / "auto" / "AutoSave_0016.Civ6Save", *self.PERSON_SAVE_NAMES, stamp=2000)
+        with patch.object(hotseat, "run") as run, patch.object(hotseat, "read_current", return_value=None), \
+                contextlib.redirect_stderr(io.StringIO()) as err:
+            self.assertEqual(hotseat.main(["--players", "2", "--map-size", "MAPSIZE_DUEL", "--resume"]), 2)
+            run.assert_not_called()
+        said = err.getvalue()
+        self.assertIn("the save has 5 CIVVIS seats", said)
+        self.assertIn("where this command plays 1", said)
+        self.assertIn("--players 6 --agents holy,jack,siege,tourist,moonshot --name YOU", said)
+        args = self.resumed("--resume", "--players", "6", "--name", "dev")
+        self.assertEqual((args.players, args.name, args.agents), (6, "dev", None))
+        self.assertIn("no run in", args.resume_notes[0])
+        self.assertIn("played as this command says (6 players, agents jack, name dev)", args.resume_notes[0])
+
+    def test_a_resumed_run_keeps_the_persons_leader_and_the_games_beginning(self) -> None:
+        self.a_run(LIVE_6P, 1000)
+        fake_save(self.saves / "auto" / "AutoSave_0016.Civ6Save", *self.PERSON_SAVE_NAMES, stamp=2000)
+        args = self.resumed("--resume", "--tag", "resumed-1")
+        installed = {}
+        stage = self.saves / "civvis-hotseat-resume.Civ6Save"
+        # `run` sets SIGTERM/SIGINT handlers and leaves them ignored: in this
+        # process that would outlive the test (CI runs every tool test in one).
+        with patch.object(hotseat.signal, "signal"), \
+                patch.object(hotseat, "CURRENT", self.root / "current.json"), \
+                patch.object(hotseat.env, "game_pids", return_value=[]), \
+                patch.object(hotseat.gamelock, "acquire", return_value=True), \
+                patch.object(hotseat.gamelock, "release"), \
+                patch.object(hotseat.gamelock, "operator_halt_description", return_value=None), \
+                patch.object(hotseat, "resolve_orders_bin", return_value=Path("/bin/sh")), \
+                patch.object(hotseat, "freeze_binary", return_value=Path("/bin/sh")), \
+                patch.object(hotseat, "checkout_revision", return_value="abcd1234"), \
+                patch.object(hotseat, "reset_orders_db"), \
+                patch.object(hotseat.modinstall, "install", side_effect=lambda c: installed.update(c) or "DLC"), \
+                patch.object(hotseat.modinstall, "uninstall"), \
+                patch.object(hotseat, "stage_save", return_value=stage), \
+                patch.object(hotseat, "host_strain", return_value={}), \
+                patch.object(hotseat, "apply_person_options"), \
+                patch.object(hotseat.launcher, "clear_run_logs"), \
+                patch.object(hotseat.launcher, "launch", side_effect=hotseat.Stop("test")), \
+                contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(hotseat.run(args), 0)
+        run_dir = self.root / "resumed-1"
+        # The install names no leader (the save's staging room would refuse one)...
+        self.assertIsNone(installed["Leader"])
+        self.assertEqual(installed["HotseatSeatAgents"], LIVE_6P["HotseatSeatAgents"])
+        self.assertEqual((installed["HotseatPersonName"], installed["HotseatPlayers"]), ("dev", 6))
+        # ...and the game began when its first run did, not at the resume.
+        self.assertEqual(installed["HotseatStarted"], "2026-11-28T03:14:56Z")
+        table = json.loads((run_dir / "table.json").read_text())
+        self.assertEqual((table["leader"], table["name"], table["resumed_from"], table["started"]),
+                         ("LEADER_GILGAMESH", "dev", "hotseat-20261128T031456Z", "2026-11-28T03:14:56Z"))
+        self.assertEqual(table["names"], LIVE_6P["HotseatNames"])
+        self.assertIn("resuming AutoSave_0016.Civ6Save, the game of hotseat-20261128T031456Z",
+                      (run_dir / "hotseat.log").read_text())
+        # A resume of the resumed game reads its table.json: the leader is still there.
+        fake_save(self.saves / "resumed-1-T020.Civ6Save", stamp=5000)
+        again = self.resumed("--resume")
+        self.assertEqual((again.resume_save.name, again.leader, again.name, again.resumed["started"]),
+                         ("resumed-1-T020.Civ6Save", "LEADER_GILGAMESH", "dev", "2026-11-28T03:14:56Z"))
+        # ...and so does a harness that re-attaches to it.
+        with patch.object(hotseat.signal, "signal"), \
+                patch.object(hotseat.modinstall, "installed_config", return_value=installed), \
+                patch.object(hotseat.env, "game_pids", return_value=[4242]), \
+                patch.object(hotseat.gamelock, "acquire", return_value=False), \
+                patch.object(hotseat.gamelock, "foreign_run", return_value="another run"), \
+                patch.object(hotseat, "CURRENT", self.root / "current.json"), \
+                contextlib.redirect_stdout(io.StringIO()):
+            attach = game_args(attach=True, leader="LEADER_SALADIN", name=None, tag=None)
+            self.assertEqual(hotseat.run(attach), 6)
+        self.assertEqual((attach.leader, attach.name, attach.agents), ("LEADER_GILGAMESH", "dev",
+                                                                        ["holy", "tourist", "moonshot", "siege", "jack"]))
+
 
 class LockTest(unittest.TestCase):
     def test_the_operators_own_game_is_not_held_by_the_lane_halt(self) -> None:
