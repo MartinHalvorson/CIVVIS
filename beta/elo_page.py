@@ -463,7 +463,11 @@ def agents(source: pathlib.Path, points: list[dict]) -> list[dict]:
 
 def simulator(points: list[dict]) -> list[dict]:
     """The simulator's Difficulty dial at the levels rated: the stand-in's
-    ladder in the newest fit."""
+    ladder in the newest fit, and where a fit keeps no ladder, the stand-ins
+    it rated as entrants. A setup's fit (`strategy_elo --setup`) seats only
+    the stand-in at Prince, the scale's anchor, so its one rung is read there
+    and ELO Rankings shows Prince in every column (operator 2026-11-28: "fill
+    out as completely as possible")."""
     if not points:
         return []
     ladder = points[-1].get("ladder") or {}
@@ -471,9 +475,12 @@ def simulator(points: list[dict]) -> list[dict]:
     out = []
     for level in LEVELS[::-1]:
         rung = ranks.CIV6_RUNGS[level - 1]
+        rated = ratings.get(f"civ6:{rung}")
         if rung in ladder:
-            margin = (ratings.get(f"civ6:{rung}") or [0, 0])[1]
+            margin = (rated or [0, 0])[1]
             out.append({"level": level, "name": rung.title(), "elo": ladder[rung], "margin": margin})
+        elif rated:
+            out.append({"level": level, "name": rung.title(), "elo": rated[0], "margin": rated[1]})
     return out
 
 

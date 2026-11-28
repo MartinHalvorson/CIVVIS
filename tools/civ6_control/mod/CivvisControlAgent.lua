@@ -2281,6 +2281,13 @@ end
 local function operate(unit, hash, params)
 	if hash == nil then return false; end
 	if not canOperate(unit, hash, params) then return false; end
+	-- When the last walk went out: a hotseat end of turn waits a moment behind
+	-- it (`CivvisQueue.unitsSettling`). A stamp only; nothing reads it outside
+	-- a hotseat game.
+	if (hash == OP["UNITOPERATION_MOVE_TO"] or hash == OP["UNITOPERATION_SWAP_UNITS"])
+			and CivvisQueue ~= nil and CivvisClock ~= nil then
+		CivvisQueue.unitOrderAt = CivvisClock.now();
+	end
 	if params == nil or next(params) == nil then
 		-- UnitPanel.lua:2535 calls parameterless operations with exactly two
 		-- arguments. Passing `{}` as a third argument is not equivalent on the
@@ -28712,6 +28719,91 @@ function CivvisBoard.mirrorHold(turn)
 	return true;
 end
 
+-- ★★★ HOTSEAT: A TURN THE ENGINE HANDS BACK, AND WHY. Live 2026-11-28
+-- (live-6p-20261128T0819Zg turn 6, the stand-in's seat; Civ VI's own
+-- net_message_debug.log): two Scouts' MOVE_TO to one plot and the seat's
+-- plain end of turn went out in one pass; Scout 196608 took the plot, Scout
+-- 262146 stopped one plot out with movement left, and after the turn complete
+-- the engine gave the turn back by itself:
+--   GameCore SEND: UnitOperation: Unit=262146, Owner=0, ... UNITOPERATION_MOVE_TO, dest: 46, 23
+--   GameCore SEND: UnitOperation: Unit=196608, Owner=0, ... UNITOPERATION_MOVE_TO, dest: 46, 23
+--   GameCore SEND: PlayerTurnComplete: ePlayer=0, eReason=0xb6fa1284
+--   GameCore RECV (0): PlayerTurnComplete: ePlayer=0, eReason=0xb6fa1284
+--   Player 0 set TurnActive 0, TurnActiveCount: 0
+--   Player 0 Unit 262146 has movement remaining after completing automation.  Attempting to turn active player.
+--   AppRequestTurnUnready: Player 0, eRequestType: 83914202
+--   Player 0 set TurnActive 1, TurnActiveCount: 1
+-- The same seat's turn then began a second time, its hand-over paused the
+-- game again, and Civ VI died 1.6 s later, 0.1 s after that hand-over was
+-- pressed a second time (the crash report's capture time, 02:21:29.228).
+-- (Five check games that sent walks and an end of turn in one pass on
+-- purpose, forced and plain, one plot and two units to one plot, were never
+-- handed back: the engine's condition is narrower than "a walk in flight",
+-- and is not known exactly.) The
+-- hand-over's side is CivvisControlAutoClose.lua's (`CivvisHotseatScreen.onBuild`);
+-- here, a hotseat seat's own end of turn does not invite it:
+--   * `unitsSettling`: no end of turn goes out in the same breath as a walk
+--     (MOVE_TO, SWAP_UNITS; `operate` stamps it): it waits
+--     `HotseatOrderSettleSeconds` (0.15) of real time behind the last one, at
+--     most `HotseatOrderSettleHolds` (20) requests a turn, and the unit's own
+--     settle event asks again (`onUnitSettled`, through `endTurnRetryTurn`).
+--     A CIVVIS seat already waits for its watched walks to land before it
+--     asks, which takes longer than that, so it rarely waits at all.
+--   * `settleReturned`: a turn that was handed back anyway (the hand-over says
+--     so in `ExposedMembers.CivvisTurnReturned`) first has every unit that
+--     still has movement and a path or operation running cancelled
+--     (`UNITCOMMAND_CANCEL`, UnitCommands.xml:36, the shipped Cancel button) and
+--     held where it stands (`orderIdle`), once per hand-back; the next pass ends it.
+-- Both only with `cfg.Hotseat`: the ladder's end of turn is as it was.
+CivvisQueue.unitsSettling = function(turn, now)
+	local at = CivvisQueue.unitOrderAt;
+	if type(now) ~= "number" or type(at) ~= "number" or now ~= now or now < at then return false; end
+	local since = now - at;
+	if since >= (tonumber(cfg.HotseatOrderSettleSeconds) or 0.15) then return false; end
+	local held = CivvisQueue.settleHeld;
+	if held == nil or held.turn ~= turn then
+		held = { turn = turn, n = 0 };
+		CivvisQueue.settleHeld = held;
+	end
+	if held.n >= (tonumber(cfg.HotseatOrderSettleHolds) or 20) then return false; end
+	held.n = held.n + 1;
+	if held.n == 1 then
+		emit("end_turn_settle_hold", { turn = turn, since_order_ms = math.floor(since * 1000 + 0.5) });
+	end
+	return true;
+end;
+CivvisQueue.settleReturned = function(turn)
+	local back = try(function() return ExposedMembers.CivvisTurnReturned; end, nil);
+	local player, pid = localPlayer();
+	if type(back) ~= "table" or player == nil or back.player ~= pid or back.turn ~= turn then
+		return false;
+	end
+	local n = tonumber(back.n) or 1;
+	local seen = CivvisQueue.returnedSeen;
+	if seen ~= nil and seen.player == pid and seen.turn == turn and seen.n >= n then return false; end
+	CivvisQueue.returnedSeen = { player = pid, turn = turn, n = n };
+	local moving, cancelled, held = 0, 0, 0;
+	local cancel = CMD["UNITCOMMAND_CANCEL"];
+	eachUnit(player, function(unit)
+		if (try(function() return unit:GetMovesRemaining(); end, 0) or 0) <= 0 then return; end
+		moving = moving + 1;
+		local running = try(function() return UnitManager.GetQueuedDestination(unit); end, nil) ~= nil
+			or try(function()
+				return UnitManager.GetActivityType(unit) == ActivityTypes.ACTIVITY_OPERATION;
+			end, false) == true;
+		if running and cancel ~= nil and try(function()
+				return UnitManager.CanStartCommand(unit, cancel, false, true) == true;
+			end, false) == true and pcall(function() UnitManager.RequestCommand(unit, cancel); end) then
+			cancelled = cancelled + 1;
+		end
+		if orderIdle(unit) ~= nil then held = held + 1; end
+	end);
+	CivvisQueue.unitOrderAt = CivvisClock.now();
+	emit("turn_returned_units", { turn = turn, returned = n, moving = moving,
+		cancelled = cancelled, held = held });
+	return true;
+end;
+
 -- Submission is not acceptance: the host may still be settling a movement.
 CivvisQueue.requestEndTurn = function(turn, parameters)
 	if CivvisCitizenGrowth ~= nil and CivvisCitizenGrowth.pending() then return false; end
@@ -28739,6 +28831,14 @@ CivvisQueue.requestEndTurn = function(turn, parameters)
 				CivvisQueue.endTurnRateObservedTurn = turn;
 				emit("end_turn_retry_deferred", { turn = turn, elapsed = now - previous });
 			end
+			return false;
+		end
+	end
+	-- Hotseat only: a turn the engine handed back has its units settled first,
+	-- and no end goes out in the same breath as a unit order (see below).
+	if cfg.Hotseat == true then
+		if CivvisQueue.settleReturned(turn) or CivvisQueue.unitsSettling(turn, now) then
+			CivvisQueue.endTurnRetryTurn = turn;
 			return false;
 		end
 	end
@@ -31436,21 +31536,18 @@ function CivvisSeat.standInStep(player, pid, turn, st, now, source)
 	-- the game was paused is ignored by the engine (see `CivvisSeat.mine`), and
 	-- `UI.HasSentTurnComplete()` keeps answering true, so `requestEndTurn`
 	-- never asks again and the turn stands. A turn still active this long after
-	-- it was sent was dropped: unready it the shipped way where the game allows
-	-- (ActionPanel.lua:535-537, `if pPlayer:CanUnreadyTurn() ...
-	-- UI.RequestAction(ActionTypes.ACTION_UNREADYTURN);`), so the next step
-	-- sends it afresh, and otherwise send SHIFT+ENTER's request past that guard.
+	-- it was sent was dropped: SHIFT+ENTER's request goes out again past that
+	-- guard. ★★ NEVER AN UNREADY. #6014 unreadied such a turn first where the
+	-- game allowed (ActionPanel.lua:535-537 `UI.RequestAction(ActionTypes.ACTION_UNREADYTURN)`);
+	-- an unready of a turn complete the engine did take hands the turn back,
+	-- and a turn handed back in hotseat begins again and was followed by a
+	-- crash three times out of three on 2026-11-28 (see
+	-- `CivvisQueue.unitsSettling`). Nothing of ours requests one any more.
 	local resent = nil;
 	if not requested and try(function() return UI.HasSentTurnComplete(); end, false) == true then
-		if try(function() return player:CanUnreadyTurn(); end, false) == true then
-			resent = CivvisK.attempt(function()
-				UI.RequestAction(ActionTypes.ACTION_UNREADYTURN);
-			end) and "unready" or "unready_threw";
-		else
-			resent = CivvisK.attempt(function()
-				UI.RequestAction(ActionTypes.ACTION_ENDTURN, { REASON = "UserForced" });
-			end) and "forced" or "forced_threw";
-		end
+		resent = CivvisK.attempt(function()
+			UI.RequestAction(ActionTypes.ACTION_ENDTURN, { REASON = "UserForced" });
+		end) and "forced" or "forced_threw";
 	end
 	if st.said ~= nil and now >= st.said and now - st.said < 30 then return; end
 	st.said = now;
