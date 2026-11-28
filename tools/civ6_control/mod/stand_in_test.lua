@@ -549,6 +549,22 @@ do
 		and b.moves == 0, "before the next end: what it does")
 	w.seat.standInDiag(4)
 	assert(#w.kinds("stand_in_diag_before_end") == 2, "said once a turn")
+	w.turn = 5
+	assert(w.seat.diagHolds(warrior) == false, "a walk is ours again after the turn it ends on")
+	-- `HotseatDiagLinger`: a turn handed back is kept open that long, then ended.
+	local l = diagWorld({ HotseatDiagWalkTurns = { 3 }, HotseatDiagLinger = 3 }, 4)
+	l.env.ExposedMembers.CivvisTurnReturned = { player = 0, turn = 4, n = 1 }
+	assert(l.seat.standInDiag(4) == true, "held open at the hand-back")
+	assert(l.kinds("stand_in_diag_linger")[1].seconds == 3)
+	l.now = l.now + 2.9
+	assert(l.seat.standInDiag(4) == true, "for its seconds")
+	l.now = l.now + 0.2
+	assert(not l.seat.standInDiag(4), "and then let go")
+	l.env.ExposedMembers.CivvisTurnReturned = { player = 0, turn = 4, n = 2 }
+	assert(l.seat.standInDiag(4) == true, "a second hand-back is held open again")
+	local nl = diagWorld({ HotseatDiagWalkTurns = { 3 } }, 4)
+	nl.env.ExposedMembers.CivvisTurnReturned = { player = 0, turn = 4, n = 1 }
+	assert(not nl.seat.standInDiag(4), "without the key nothing is held open")
 	-- A Scout with full moves: the walk's first leg goes now, its short last
 	-- leg (open plots only: the forest side is refused) when the next turn ends.
 	local s2 = diagWorld({ HotseatDiagWalkTurns = { 5 } }, 5)
@@ -566,6 +582,10 @@ do
 	local eo = e.kinds("stand_in_diag_order")[1]
 	assert(eo and eo.how == "explore" and eo.unit == 2 and eo.ordered and e.orders[1].hash == "op:explore")
 	assert(e.seat.diagHolds(scout) and not e.seat.diagHolds(e.units[1]))
+	e.turn = 13
+	assert(e.seat.diagHolds(scout), "an exploration is held ten turns")
+	e.turn = 14
+	assert(not e.seat.diagHolds(scout), "and no longer")
 	-- Without a key, on a turn not listed, or for a seat that does not stand in: nothing.
 	local plain = diagWorld({}, 3)
 	unit(plain, { id = 1, kind = "UNIT_WARRIOR", x = 10, moves = 2, max = 2 })

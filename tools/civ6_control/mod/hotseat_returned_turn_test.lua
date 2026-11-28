@@ -454,9 +454,9 @@ end
 -- Wired into `requestEndTurn` for a hotseat game only, after its own guards.
 do
 	local body = assert(agent:match("(CivvisQueue%.requestEndTurn = function%(turn, parameters%).-\nend;)"))
-	local wired = body:find("\tif cfg.Hotseat == true then\n\t\tif CivvisSeat.standInDiag ~= nil then "
-		.. "pcall(CivvisSeat.standInDiag, turn); end\n\t\tif CivvisQueue.settleReturned(turn) "
+	local wired = body:find("\t\tif diagHeld or CivvisQueue.settleReturned(turn) "
 		.. "or CivvisQueue.unitsSettling(turn, now) then", 1, true)
+		and body:find("\tif cfg.Hotseat == true then\n\t\tlocal diagHeld = false;", 1, true)
 	assert(wired, "requestEndTurn holds a hotseat end of turn behind both")
 	assert(body:find("HasSentTurnComplete", 1, true) < wired, "after the sent-turn guard")
 	-- The stamp: walks only.

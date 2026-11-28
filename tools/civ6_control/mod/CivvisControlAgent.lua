@@ -28842,8 +28842,12 @@ CivvisQueue.requestEndTurn = function(turn, parameters)
 	-- Hotseat only: a turn the engine handed back has its units settled first,
 	-- and no end goes out in the same breath as a unit order (see below).
 	if cfg.Hotseat == true then
-		if CivvisSeat.standInDiag ~= nil then pcall(CivvisSeat.standInDiag, turn); end
-		if CivvisQueue.settleReturned(turn) or CivvisQueue.unitsSettling(turn, now) then
+		local diagHeld = false;
+		if CivvisSeat.standInDiag ~= nil then
+			local called, held = pcall(CivvisSeat.standInDiag, turn);
+			diagHeld = called and held == true;
+		end
+		if diagHeld or CivvisQueue.settleReturned(turn) or CivvisQueue.unitsSettling(turn, now) then
 			CivvisQueue.endTurnRetryTurn = turn;
 			return false;
 		end
@@ -31418,15 +31422,22 @@ end
 --     runs at each end of turn.
 -- Either unit then gets no order of ours (`diagHolds`: `operate` and
 -- `commandUnit` refuse it) until a hand-back releases it
--- (`CivvisQueue.settleReturned`), and every end of turn while it is held says
--- what it is doing (`stand_in_diag_before_end`: moves, queued destination,
--- activity). Only for a stand-in seat (`standsIn`); a hotseat key only.
+-- (`CivvisQueue.settleReturned`), a walk at the latest after the turn it ends
+-- on, an exploration after ten; every end of turn while it is held says what
+-- it is doing (`stand_in_diag_before_end`: moves, queued destination,
+-- activity). `HotseatDiagLinger` keeps a turn handed back open that many
+-- seconds before it is ended again. Only for a stand-in seat (`standsIn`); a
+-- hotseat key only.
 CivvisSeat.diag = { hold = {} };
 function CivvisSeat.diagHolds(unit)
 	local hold = CivvisSeat.diag.hold;
 	if next(hold) == nil then return false; end
 	local id = try(function() return unit:GetID(); end, nil);
-	return id ~= nil and hold[id] == true;
+	local through = id ~= nil and hold[id] or nil;
+	if through == nil then return false; end
+	-- A walk is held through the turn it finishes on, an exploration for ten.
+	local turn = try(function() return Game.GetCurrentGameTurn(); end, nil);
+	return type(turn) ~= "number" or turn <= through;
 end
 function CivvisSeat.diagListed(list, turn)
 	if type(list) ~= "table" then return false; end
@@ -31519,7 +31530,7 @@ function CivvisSeat.standInDiag(turn)
 		if how ~= nil then
 			d.orderedTurn = turn;
 			local id = unit ~= nil and try(function() return unit:GetID(); end, nil) or nil;
-			if ok and id ~= nil then d.hold[id] = true; end
+			if ok and id ~= nil then d.hold[id] = turn + (how == "walk" and 1 or 10); end
 			emit("stand_in_diag_order", { turn = turn, how = how, unit = id, ordered = ok,
 				unit_kind = unit ~= nil and unitTypeName(unit) or nil,
 				from = unit ~= nil and { unit:GetX(), unit:GetY() } or nil,
@@ -31528,6 +31539,22 @@ function CivvisSeat.standInDiag(turn)
 				moves = unit ~= nil and try(function() return unit:GetMovesRemaining(); end, nil) or nil,
 				max = plan and plan.max });
 			return;
+		end
+	end
+	-- `HotseatDiagLinger` (seconds): a turn handed back is not ended again at
+	-- once, so a check game's screenshots see what a person would.
+	local back = try(function() return ExposedMembers.CivvisTurnReturned; end, nil);
+	local linger = tonumber(cfg.HotseatDiagLinger) or 0;
+	if linger > 0 and type(back) == "table" and back.player == pid and back.turn == turn then
+		local now = CivvisClock.now();
+		local key = turn .. ":" .. tostring(back.n);
+		if d.lingerKey ~= key then
+			d.lingerKey, d.lingerAt = key, now;
+			emit("stand_in_diag_linger", { turn = turn, returned = back.n, seconds = linger });
+		end
+		if type(now) == "number" and type(d.lingerAt) == "number" and now >= d.lingerAt
+				and now - d.lingerAt < linger then
+			return true;
 		end
 	end
 	if next(d.hold) == nil or d.saidTurn == turn then return; end
