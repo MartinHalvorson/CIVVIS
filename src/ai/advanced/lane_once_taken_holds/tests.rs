@@ -6,11 +6,11 @@ fn lane_once_taken_holds_is_opt_in() {
     opt_in_off_in_both_controllers("lane-once-taken-holds", |ai| ai.lane_once_taken_holds);
 }
 
-/// A Science seat at turn 40 of 250 with two cities, short of its city
-/// target. While no site is in reach it follows its lane; once a site comes
-/// into reach (041325Z: science at t49, expansion at t54) the stock seat goes
-/// back to Expansion, and the gene keeps the lane it took. The city target
-/// the Settler pipeline reads does not move.
+/// A Science seat with one city, short of its city target, on open land.
+/// Once it has followed its lane, the Expansion branch's conditions holding
+/// again (041325Z: science at t49, expansion at t54) send the stock seat back
+/// to Expansion, and the gene keeps the lane it took. The city target the
+/// Settler pipeline reads does not move.
 #[test]
 fn a_taken_lane_does_not_return_to_expansion() {
     let mut game = Game::new_full(2, 40, 28, 7_931, 250, 0, false);
@@ -23,9 +23,13 @@ fn a_taken_lane_does_not_return_to_expansion() {
         game.found_city_for(pid, game.units[&settler].pos, None);
         game.remove_unit(settler);
     }
+    let all: Vec<_> = game.map.tiles.keys().copied().collect();
+    game.players[0].explored.extend(all);
     game.game_speed = crate::setup::GameSpeed::Online;
     game.current = 0;
-    game.turn = 40;
+    // Past the stock specialization clock (halfway, t125): every seat takes
+    // its lane whatever its city count.
+    game.turn = 130;
 
     let mut stock = AdvancedAi::targeting(VictoryTarget::Science);
     stock.city_target_floor = 8;
@@ -36,17 +40,19 @@ fn a_taken_lane_does_not_return_to_expansion() {
     let mut fresh = AdvancedAi::targeting(VictoryTarget::Science);
     fresh.city_target_floor = 8;
     fresh.enable_lane_once_taken_holds();
-    assert!(!stock.phase_specialization_active(&game));
+    assert!(stock.phase_specialization_active(&game));
 
-    // No site in reach yet: both follow the lane.
+    // The lane is taken: both follow it.
     assert_eq!(stock.assess(&game, 0).strategy, GrandStrategy::Science);
     assert_eq!(held.assess(&game, 0).strategy, GrandStrategy::Science);
     assert_eq!(held.lane_taken.get(), Some(VictoryTarget::Science));
     assert_eq!(stock.lane_taken.get(), None, "off: no state is kept");
 
-    // A site comes into reach.
-    let all: Vec<_> = game.map.tiles.keys().copied().collect();
-    game.players[0].explored.extend(all);
+    // Back in the Expansion half with sites in reach and the target short:
+    // the same pair of conditions the reviewed relapses met again after the
+    // lane was taken (a risen target, a site back in reach).
+    game.turn = 40;
+    assert!(!stock.phase_specialization_active(&game));
     let stock_plan = stock.assess(&game, 0);
     assert_eq!(
         stock_plan.strategy,
