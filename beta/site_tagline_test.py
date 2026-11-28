@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
 """The site's tagline says what the project is for.
 
-Operator, 2026-11-27: change "A civ VI simulator for ai reasoning insights"
+Operator, 2026-11-27, last: "change (fan project, open source, free) to a
+newline on home/ and civvis.ai. on civvis, make it a little lower, and
+smaller. mayb 30% smaller": every header's tagline is three lines, the note
+on its own; the simulator's note is a size smaller and a little lower.
+
+Before that, operator, 2026-11-27: change "A civ VI simulator for ai reasoning insights"
 to "A Civilization VI Simulator for fixing the Civ AI", then the same day
 "change to ... fixing the Civ AI (fan project, free)". The simulator's
 lockup reads exactly that in three lines, each phrase whole, because the
@@ -28,7 +33,8 @@ BETA = pathlib.Path(__file__).resolve().parent
 ROOT = BETA.parent
 SIMULATOR = ROOT / "web" / "index.html"
 
-PURPOSE = "for fixing the Civ AI (fan project, free)"
+PURPOSE = "for fixing the Civ AI"
+NOTE = "(fan project, open source, free)"
 # Each wording the tagline has had, newest last: "for AI strategy
 # development" until #5741 (2026-11-23), "for AI reasoning insights" until
 # 2026-11-27, and "for interpretability & forecasting insights", asked for on
@@ -38,6 +44,7 @@ RETIRED = (
     "for AI reasoning insights",
     "for interpretability &amp; forecasting insights",
     "for interpretability & forecasting insights",
+    "(fan project, free)",
 )
 
 
@@ -50,7 +57,7 @@ class TheTaglineIsForFixingTheCivAI(unittest.TestCase):
         page = SIMULATOR.read_text(encoding="utf-8")
         self.assertIn(
             '<div class="tagline"><span>A <i>Civilization VI</i> Simulator</span>'
-            "<span>for fixing the Civ AI</span><span>(fan project, free)</span></div>",
+            "<span>for fixing the Civ AI</span><span class=\"tagline-note\"><small>(fan project, open source, free)</small></span></div>",
             page,
         )
 
@@ -62,7 +69,7 @@ class TheTaglineIsForFixingTheCivAI(unittest.TestCase):
                 headed += 1
                 self.assertEqual(
                     tagline,
-                    f"<span>An open source Civilization VI Simulator</span> <span>{PURPOSE}</span>",
+                    f"<span>An open source Civilization VI Simulator</span> <span>{PURPOSE}</span> <span>{NOTE}</span>",
                     path.name,
                 )
         # Home, Tournaments and the pages of Charts/ all have a header.
@@ -71,7 +78,7 @@ class TheTaglineIsForFixingTheCivAI(unittest.TestCase):
     def test_the_home_page_describes_itself_the_same_way(self):
         landing = (BETA / "landing.html").read_text(encoding="utf-8")
         self.assertIn(
-            f'<meta name="description" content="An open source Civilization VI Simulator {PURPOSE}.">',
+            f'<meta name="description" content="An open source Civilization VI Simulator {PURPOSE} {NOTE}.">',
             landing,
         )
 
