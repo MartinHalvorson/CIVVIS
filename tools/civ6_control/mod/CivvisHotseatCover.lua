@@ -903,6 +903,53 @@ function CivvisHotseatCover.leftBehind(pid)
 	return dropped, lines;
 end
 
+-- ------------------------------------------------------------ deal notes
+
+-- ★ WHAT A CIVVIS SEAT DID WITH THE PERSON'S DEAL. A seat answers a deal the
+-- person proposed on its own turn, under this cover, and nothing in the
+-- shipped game says so to the person (a pending deal shows only to whoever
+-- opens that leader's screen, DiplomacyDealView.lua:1145/:1172). The seat's
+-- agent writes each answer it sent to a person into `ExposedMembers.
+-- CivvisDealNotes` (CivvisControlAgent.lua `CivvisTrade.seatNote`), and the
+-- newest one for this cover's person is put on it, one line, until their
+-- next turn ends. Nothing else: no record of the deal's items is shown.
+CivvisHotseatCover.NOTE_WORDS = {
+	ACCEPT = "accepted your deal", REJECT = "turned down your deal",
+	COUNTER = "answered your deal with one of its own", PROPOSE = "proposed a deal to you",
+	WITHDRAW = "withdrew its deal" };
+CivvisHotseatCover.noteSeen = 0;
+function CivvisHotseatCover.dealNote()
+	local c = CivvisHotseatCover;
+	local notes = nil;
+	pcall(function() notes = ExposedMembers.CivvisDealNotes; end);
+	if type(notes) ~= "table" then return nil; end
+	local newest = nil;
+	for _, note in ipairs(notes) do
+		local n = type(note) == "table" and tonumber(note.n) or nil;
+		if n ~= nil and n > c.noteSeen and c.person(tonumber(note.to)) and c.NOTE_WORDS[note.verb] then
+			newest = note;
+		end
+	end
+	if newest == nil then return nil; end
+	c.noteSeen = tonumber(newest.n);
+	local text = string.format("%s %s.", c.seatName(tonumber(newest.seat)), c.NOTE_WORDS[newest.verb]);
+	c.noteText = text;
+	pcall(function() Controls.Note:SetText(text); end);
+	pcall(function() Controls.Note:SetHide(false); end);
+	pcall(function() Controls.Lines:CalculateSize(); end);
+	c.report("hotseat_cover_deal_note", { { "seat", tonumber(newest.seat) }, { "to", tonumber(newest.to) },
+		{ "verb", newest.verb }, { "deal_turn", tonumber(newest.turn) }, { "turn", c.turn() } });
+	return text;
+end
+-- The person's turn ends: the note they had a turn to read goes.
+function CivvisHotseatCover.clearNote()
+	local c = CivvisHotseatCover;
+	if c.noteText == nil then return; end
+	c.noteText = nil;
+	pcall(function() Controls.Note:SetText(""); end);
+	pcall(function() Controls.Note:SetHide(true); end);
+end
+
 -- ------------------------------------------------------------------ events
 
 function CivvisHotseatCover.onTurnEnd()
@@ -913,6 +960,7 @@ function CivvisHotseatCover.onTurnEnd()
 	end
 	if CivvisHotseatCover.person(pid) and CivvisHotseatCover.enabled() then
 		CivvisHotseatCover.noteHeld();
+		CivvisHotseatCover.clearNote();
 	end
 	if CivvisHotseatCover.civvis(pid) then CivvisHotseatCover.seatEnds(pid); end
 	if CivvisHotseatCover.raise("turn_end", true) and CivvisHotseatCover.person(pid) then
@@ -1080,6 +1128,7 @@ function CivvisHotseatCover.tick(dt)
 	if c.textAt >= 0.5 then
 		c.textAt = 0;
 		c.show(pid);
+		pcall(c.dealNote);
 		-- Twice a second: the sound follows the game menu (quiet again once it
 		-- closes), and what the menu was opened over is not one to learn from.
 		if c.wait ~= nil and c.menuUp() then c.wait.timed, c.wait.clean = false, false; end

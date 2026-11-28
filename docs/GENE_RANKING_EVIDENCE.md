@@ -184,6 +184,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 
 | Gene | Default | Description | Best version \| Total versions |
 |---|---|---|---:|
+| `asks-go-once-a-turn` | off (unmeasured) | Opt-in gene `asks-go-once-a-turn`: a diplomatic ask, a deal or a Trader route goes to the host once a turn, not once a frame; see `advanced/asks_go_once_a_turn.rs`. | 1 \| 1 |
 | `city-campaign-3` | off (unmeasured) | Version two's staged opportunity at peace, and the war in hand: a major war already open draws a one-city plan against that rival when the field army carries the city's bill, keeps it for a twenty-turn clock, offers peace once the city is ours, and holds the generic Siege row against a rival none of whose cities the army can take. | 1 \| 3 |
 | `foreign-site-buys-the-open-border` | off (unmeasured) | Opt-in gene `foreign-site-buys-the-open-border`: a held Mead or Darwin with no reachable site buys one Open Borders grant; see `advanced/foreign_site_open_border.rs`. | 1 \| 1 |
 | `founding-voyage-2` | off (unmeasured) | Opt-in gene `founding-voyage-2`: a cityless seat's embarked Settler sails for land with its escort alongside; see `advanced/maori_founds_from_the_sea.rs`. | 1 \| 2 |
@@ -196,6 +197,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `science-seat-monuments` | off (unmeasured) | Opt-in gene `science-seat-monuments`: a Science seat's cities claim their Monument from the third city; see `advanced/culture_monuments.rs`. | 1 \| 1 |
 | `science-seat-writes-first` | off (unmeasured) | Opt-in gene `science-seat-writes-first`: a Science seat's research takes Writing once it knows two techs; see `advanced/science_seat_writes_first.rs`. | 1 \| 1 |
 | `seen-pad-starts-the-denial` | off (unmeasured) | Opt-in gene `seen-pad-starts-the-denial`: a racer's seen Spaceport takes a Spy that disrupts it before the first launch; see `advanced/seen_pad_starts_the_denial.rs`. | 1 \| 1 |
+| `settler-pump-leans-on-production` | off (unmeasured) | Opt-in gene `settler-pump-leans-on-production`: a slow settler pump asks the host for a Production focus until the Settler is done; see `advanced/settler_pump_leans_on_production.rs`. | 1 \| 1 |
 | `settler-walk-clock-runs-all-game` | off (unmeasured) | Opt-in gene `settler-walk-clock-runs-all-game`: every stepped turn out counts on the Settler walk clock, and the walk deadline holds past the band turn; see `advanced/settler_walk_deadline.rs`. | 1 \| 1 |
 | `spreaders-spread-before-they-chart-2` | off (unmeasured) | Opt-in gene `spreaders-spread-before-they-chart-2`: version one, and the corps' searchers share one budget; see `advanced/spreaders_spread_before_they_chart.rs`. | 1 \| 2 |
 | `stacked-shooter-steps-out` | off (unmeasured) | Opt-in gene `stacked-shooter-steps-out`: a crowded City Center keeps one shooter and steps our other soldiers beside it, so the shooters can fire; see `advanced/stacked_shooter_steps_out.rs`. | 1 \| 1 |

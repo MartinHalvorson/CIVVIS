@@ -132,6 +132,19 @@ class HotseatInstallTest(unittest.TestCase):
         self.assertEqual(served, ["CivvisControlAutoClose.lua"])
         self.assertNotIn("<LuaContext>EventPopup</LuaContext>",
                          (install.MOD_SOURCE / "CivvisControl.modinfo").read_text())
+        # The leader screen's closer sits above Quick Deals' replacement of the same
+        # context (LoadOrder 99999), in hotseat only.
+        orders = {p.findtext("LuaContext"): p.findtext("LoadOrder") for p in
+                  tree.findall("./InGameActions/ReplaceUIScript/Properties")}
+        self.assertEqual(orders["DiplomacyActionView"], str(install.HOTSEAT_LOAD_ORDER))
+        self.assertGreater(install.HOTSEAT_LOAD_ORDER, 99999)
+        shipped = ET.fromstring((install.MOD_SOURCE / "CivvisControl.modinfo").read_text())
+        shipped_orders = {p.findtext("LuaContext"): p.findtext("LoadOrder") for p in
+                          shipped.findall("./InGameActions/ReplaceUIScript/Properties")}
+        self.assertIsNone(shipped_orders["DiplomacyActionView"], "a single-player install's is as it was")
+        self.assertEqual({k: orders[k] for k in shipped_orders if k != "DiplomacyActionView"},
+                         {k: v for k, v in shipped_orders.items() if k != "DiplomacyActionView"},
+                         "no other screen's order changes")
         # The screens and the HUD keep the run's own tag.
         closer = (out / "CivvisControlAutoClose.lua").read_text().split("}\n", 1)[0]
         self.assertIn('RunTag = "hotseat-test",', closer)
@@ -888,6 +901,7 @@ class LiveGenomeTest(unittest.TestCase):
             with patch.object(hotseat, "live_treatments",
                               return_value=(["age-closer-2", "recon-replacement", "no-such-tag"],
                                             "deploy/live-force-on.txt")), \
+                    patch.object(hotseat, "hotseat_treatments", return_value=[]), \
                     patch.object(hotseat.subprocess, "run", side_effect=run):
                 hotseat.live_genome(args, Path("/bin/civvis_orders"), run_dir, lines.append)
             self.assertEqual(args.treatments, ["age-closer-2", "recon-replacement"])
@@ -915,6 +929,58 @@ class LiveGenomeTest(unittest.TestCase):
             asked.assert_not_called()
             self.assertEqual(stock.treatments, [])
             self.assertIn("decider genome: stock", lines[0])
+
+    def test_the_hotseat_only_genes_go_on_top_of_the_ladders(self) -> None:
+        # The gameplay lanes' genes for a person's game (findings/for-launcher.md,
+        # 2026-11-28): before, `CIVVIS_WITH` was the only way, and it replaces the
+        # ladder's whole list.
+        with tempfile.TemporaryDirectory() as tmp:
+            listed = Path(tmp) / "hotseat-force-on.txt"
+            listed.write_text("# a note\nmonument-first  # the ladder has it already\n\n"
+                              "gold-buys-the-opening-builder\ngold-buys-the-opening-builder\n"
+                              "science-seat-writes-first,taken-settler-is-retaken\n")
+            self.assertEqual(hotseat.hotseat_treatments(listed),
+                             ["monument-first", "gold-buys-the-opening-builder", "science-seat-writes-first",
+                              "taken-settler-is-retaken"])
+            self.assertEqual(hotseat.hotseat_treatments(Path(tmp) / "none.txt"), [])
+            run_dir, lines, asked = Path(tmp), [], []
+
+            def run(command, **_):
+                asked.append([word for word in command[3:] if word != "--with"])
+                return argparse.Namespace(returncode=0, stderr="", stdout="")
+            args = game_args(genome="live")
+            with patch.object(hotseat, "HOTSEAT_FORCE_FILE", listed), \
+                    patch.object(hotseat, "live_treatments",
+                                 return_value=(["recon-replacement", "monument-first"],
+                                               "deploy/live-force-on.txt")), \
+                    patch.object(hotseat.subprocess, "run", side_effect=run):
+                record = hotseat.live_genome(args, Path("/bin/civvis_orders"), run_dir, lines.append)
+            self.assertEqual(args.treatments, ["recon-replacement", "monument-first",
+                                               "gold-buys-the-opening-builder", "science-seat-writes-first",
+                                               "taken-settler-is-retaken"], "after the ladder's, each once")
+            self.assertEqual(record["hotseat"], ["gold-buys-the-opening-builder", "science-seat-writes-first",
+                                                 "taken-settler-is-retaken"])
+            self.assertEqual(record["source"], "deploy/live-force-on.txt + deploy/hotseat-force-on.txt (3)")
+            self.assertIn("from deploy/live-force-on.txt + deploy/hotseat-force-on.txt (3): 5 of 5 listed", lines[0])
+            self.assertEqual(args.genome_record["hotseat"], record["hotseat"], "on the game's record")
+            self.assertEqual(json.loads((run_dir / hotseat.GENOME_RECORD).read_text())["hotseat"], record["hotseat"])
+            # `--genome stock` plays none of it.
+            stock = game_args(genome="stock")
+            with patch.object(hotseat, "HOTSEAT_FORCE_FILE", listed):
+                hotseat.live_genome(stock, Path("/bin/civvis_orders"), run_dir, lines.append)
+            self.assertEqual(stock.treatments, [])
+
+    def test_the_shipped_hotseat_list_names_genes_the_decider_registers(self) -> None:
+        # A tag the decider does not know is dropped at the start of a game; a tag
+        # the ladder already arms is no addition; one family is armed in one version.
+        tags = hotseat.hotseat_treatments()
+        self.assertTrue(tags, hotseat.HOTSEAT_FORCE_FILE)
+        genes = (hotseat.HERE.parent / "src" / "ai" / "advanced" / "genes.rs").read_text(encoding="utf-8")
+        registered = set(re.findall(r'Gene \{ tag: "([^"]+)"', genes))
+        self.assertEqual([tag for tag in tags if tag not in registered], [], "every tag is a registered gene")
+        ladder = hotseat.force_tags(hotseat.LIVE_FORCE_FILE.read_text(encoding="utf-8"))
+        self.assertEqual([tag for tag in tags if tag in ladder], [], "none the ladder's list already arms")
+        self.assertFalse({"founding-voyage", "founding-voyage-2"} <= set(tags), "one founding-voyage only")
 
     def test_live_is_the_default_and_stock_is_asked_for(self) -> None:
         for flags, want in (([], "live"), (["--genome", "stock"], "stock")):

@@ -37,7 +37,15 @@ fn orders(snapshot: &Snapshot, state: &StateSnapshot) -> Vec<Order> {
 
 fn orders_widened(snapshot: &Snapshot, state: &StateSnapshot, widened: bool) -> Vec<Order> {
     let mut proposed = Vec::new();
-    super::super::append_citizen_growth_orders(snapshot, state, widened, &mut proposed);
+    super::super::append_citizen_growth_orders(snapshot, state, widened, false, &mut proposed);
+    proposed
+}
+
+/// `settler-pump-leans-on-production` on, `food-focus-grows-the-small-city`
+/// off.
+fn orders_pump(snapshot: &Snapshot, state: &StateSnapshot) -> Vec<Order> {
+    let mut proposed = Vec::new();
+    super::super::append_citizen_growth_orders(snapshot, state, false, true, &mut proposed);
     proposed
 }
 
@@ -273,4 +281,137 @@ fn the_widened_request_spares_the_capital_in_the_opening() {
     let proposed = orders_widened(&later, &grown, true);
     assert_eq!(proposed.len(), 1, "past the opening it is served again");
     assert_eq!(proposed[0].verb.as_deref(), Some("FAVOR_FOOD"));
+}
+
+/// Seat p3's capital on turn 11 of `hotseat-20261128T031456Z`, as its first
+/// `state` frame exported it (the fields the rule reads): four citizens, a
+/// Settler half built at 4 Production a turn on a Food surplus of 7, no
+/// citizen preference set. It started the 40-Production Settler on turn 7
+/// and was still training it on turn 16.
+fn cree_capital_turn_11() -> (Snapshot, StateSnapshot) {
+    let state: StateSnapshot = serde_json::from_value(serde_json::json!({"turn":11,"cities":[{
+        "id":65536,"name":"Mikisiw-Wac\u{ee}hk","x":14,"y":13,"pop":4,"capital":true,
+        "production":4,"production_cost":40,"production_progress":20,
+        "producing":"UNIT_SETTLER","food_surplus":7,"housing":7,
+        "damage":0,"wall_damage":0,"overall_growth_mult":1,
+        "food_favored":false,"food_disfavored":false,"food_focus_managed":false
+    }]}))
+    .unwrap();
+    let chunk: TilesChunk = serde_json::from_value(serde_json::json!({
+        "turn":11, "width":44, "height":26, "plots":[]
+    }))
+    .unwrap();
+    (Snapshot::from_chunks(&[chunk]), state)
+}
+
+#[test]
+fn the_slow_settler_pump_asks_for_a_production_focus() {
+    let (snapshot, state) = cree_capital_turn_11();
+    assert!(
+        orders(&snapshot, &state).is_empty(),
+        "off, the Cree capital is asked nothing: +7 Food is no stall"
+    );
+    assert!(orders_widened(&snapshot, &state, true).is_empty());
+    let proposed = orders_pump(&snapshot, &state);
+    assert_eq!(proposed.len(), 1);
+    assert_eq!(proposed[0].kind, "city_focus");
+    assert_eq!(proposed[0].subject, Some(65536));
+    assert_eq!(proposed[0].verb.as_deref(), Some("FAVOR_PRODUCTION"));
+    // Exactly at both edges it still asks.
+    let mut edge = state.clone();
+    edge.cities[0].food_surplus = SETTLER_PUMP_MIN_FOOD;
+    edge.cities[0].production = SETTLER_PUMP_MAX_PRODUCTION;
+    assert_eq!(orders_pump(&snapshot, &edge).len(), 1);
+}
+
+#[test]
+fn only_a_slow_settler_pump_with_food_to_spare_and_no_preference_asks() {
+    let (snapshot, state) = cree_capital_turn_11();
+    for change in 0..9 {
+        let mut altered = state.clone();
+        let city = &mut altered.cities[0];
+        match change {
+            0 => city.producing = Some("UNIT_WARRIOR".into()),
+            1 => city.producing = None,
+            2 => city.production = 5.5,
+            3 => city.food_surplus = 3.5,
+            4 => city.food_favored = Some(true),
+            5 => city.food_favored = None,
+            6 => city.production_favored = Some(true),
+            7 => city.production = f64::NAN,
+            _ => city.food_surplus = f64::NAN,
+        }
+        assert!(orders_pump(&snapshot, &altered).is_empty(), "case {change}");
+    }
+}
+
+#[test]
+fn an_owned_production_focus_holds_until_the_settler_is_done() {
+    let (snapshot, mut state) = cree_capital_turn_11();
+    {
+        let city = &mut state.cities[0];
+        city.production_favored = Some(true);
+        city.production_focus_managed = Some(true);
+        // The focus traded Food for Production: past both thresholds now.
+        city.production = 8.0;
+        city.food_surplus = 2.0;
+    }
+    assert!(
+        orders_pump(&snapshot, &state).is_empty(),
+        "while the Settler trains the focus stays and is not asked again"
+    );
+    for change in 0..3 {
+        let mut altered = state.clone();
+        let city = &mut altered.cities[0];
+        match change {
+            0 => city.producing = Some("BUILDING_MONUMENT".into()),
+            1 => city.producing = None,
+            _ => city.food_surplus = -1.0,
+        }
+        let proposed = orders_pump(&snapshot, &altered);
+        assert_eq!(proposed.len(), 1, "case {change}");
+        assert_eq!(proposed[0].verb.as_deref(), Some("RELEASE_PRODUCTION"));
+        assert!(orders(&snapshot, &altered).is_empty(), "off: no release");
+        altered.cities[0].production_focus_managed = Some(false);
+        assert!(
+            orders_pump(&snapshot, &altered).is_empty(),
+            "a Production preference set elsewhere is never released: case {change}"
+        );
+    }
+}
+
+#[test]
+fn a_production_focus_is_read_back_from_its_own_pair() {
+    let (_, mut after) = cree_capital_turn_11();
+    let mut order = IssuedOrder {
+        kind: "city_focus".into(),
+        subject: Some(65536),
+        verb: Some("FAVOR_PRODUCTION".into()),
+        pos: None,
+    };
+    // Today's mod takes no Production focus and exports no readback for it.
+    assert_eq!(
+        verify(&order, &after),
+        Verdict::Failed("production_focus_not_exported".into())
+    );
+    after.cities[0].production_favored = Some(false);
+    after.cities[0].production_focus_managed = Some(false);
+    assert_eq!(
+        verify(&order, &after),
+        Verdict::Failed("production_focus_unchanged".into())
+    );
+    after.cities[0].production_favored = Some(true);
+    after.cities[0].production_focus_managed = Some(true);
+    assert_eq!(verify(&order, &after), Verdict::Verified);
+    order.verb = Some("RELEASE_PRODUCTION".into());
+    assert!(matches!(verify(&order, &after), Verdict::Failed(_)));
+    after.cities[0].production_favored = Some(false);
+    after.cities[0].production_focus_managed = Some(false);
+    assert_eq!(verify(&order, &after), Verdict::Verified);
+    // A Food order is still read from the Food pair.
+    order.verb = Some("FAVOR_FOOD".into());
+    assert_eq!(
+        verify(&order, &after),
+        Verdict::Failed("food_focus_unchanged".into())
+    );
 }
