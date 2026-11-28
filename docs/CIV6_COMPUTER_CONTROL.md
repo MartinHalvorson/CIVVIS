@@ -697,6 +697,39 @@ changes, 1.07 s against 1.70 s over all frames, and no "Any moment now" with
 time to go (6.4 s of it before). ⚠ The countdown is tests and replay only, not
 yet seen in a live game (2026-11-28).
 
+**The CIVVIS seats' turns can run at the ladder's timescale, the person's never**
+(`--fast-animations [N]`, off by default; `HotseatFastAnimations`, and
+`--fast-animations-rollover`, `HotseatFastRollover`). The person's wait is
+mostly the game animating what nobody sees: a fight holds its seat ~0.8 s even
+with Quick Combat, walks hold the end of every turn. At a CIVVIS seat's own
+`LocalPlayerTurnBegin`, with the cover up (`ExposedMembers.CivvisCoverUp`), no
+game menu or end screen queued, the feature not stood down and, in the
+person-facing install, a live harness, that seat's agent context commands the
+console's `timescale N` (3 by default, the ladder's `debug-timescale-3`;
+`CivvisClock.fastApply`). One engine scale serves the whole table
+(`ExposedMembers.CivvisTimeScale`): every seat's context rebases its own
+`CivvisClock` on it (`CivvisClock.follow`), and every clock that counts real
+seconds divides by it: the cover's wait, bar, estimate and stand-aside clocks,
+the hand-over's press, the HUD's pulse and peek, the screen closers' holds; the
+seat watch and the harness run on the wall clock already. It goes back to 1,
+each independently: when the last CIVVIS seat before a person ends its turn
+(with the rollover key, after the game's own processing instead), at every
+person's `LocalPlayerTurnBegin` (the stand-in's too) in every agent context and
+in the cover, before a person's Start Turn is pressed and before the cover lifts
+for them (each waits for it, up to a second), on every other lift (a stand-aside
+at once), whenever the game menu or an end screen is over the cover, after every
+load, and on any HUD frame of a person's turn that reads otherwise
+(`fast_animations_guard`), where the HUD also compares the UI clock with the
+wall clock and, finding it fast, forces 1 and stands the feature down for the
+game, as a refused reset does. Records: `fast_animations` (`on`, `off`, `held`
+with its reason, `loaded`, `reset_failed`, `apply_failed`, each with `ui` and
+`scale`), `hotseat_scale_hold`/`hotseat_scale_unconfirmed`,
+`hotseat_cover_scale`; `tools/hotseat_wait.py` turns the scaled UI clock back
+into seconds and audits each person's turn from the cover's records.
+`hotseat_fast_animations_test.lua`. ⚠ Tests only, not seen in a live game
+(2026-11-28); whether the timescale changes the soundtrack's pitch or tempo
+under the cover is not known.
+
 The test arrangement `--auto-human gated` puts a stub in the person's seat
 (`HotseatHumanSeats` and `HotseatStubSeats` both list seat 0): the cover and
 the pressed hand-over treat it as the person, but the closers act on its turn
