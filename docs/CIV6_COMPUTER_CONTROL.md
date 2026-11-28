@@ -609,6 +609,20 @@ quiet for 90 s, 180 s with no seat active, or the person's own turn waiting
 `yield_*`), and the harness's screen rescue, which does not read the screen
 while the cover is up, sees the game again.
 
+**A seat's defeat on a CIVVIS turn keeps the cover.** Hotseat shows any human
+seat's defeat to whoever's turn it is (EndGameMenu.lua:1012-1013), and the
+screen's Next Player only closes it (:304-318): the CIVVIS seat's turn under it
+goes on. The cover used to lift for every end screen, which left that seat's
+own map, HUD and units on screen, and clickable, from Next Player to its end
+of turn. Now a CIVVIS seat's defeat (`Events.PlayerDefeat`) shown on a turn
+that is not a person's keeps the cover queued under the end screen (which is
+above it and is read and pressed as it ships): one `hotseat_cover_kept` record,
+the person's own volumes while it is up, no stall clock (the screen holds the
+game until Next Player and is in plain sight), and the turn still covered after
+it closes. A person's defeat, a win (`Events.TeamVictory`) or an end screen
+whose defeat is not known lift the cover as before. ⚠ Tests only
+(`hotseat_cover_test.lua` 8b); no seat has been defeated in a live cover game.
+
 **The cover is quiet, and says about how long** (`HotseatCoverSound`,
 `HotseatCoverTimer`; `--cover-sound music|silent|all`, `--no-cover-timer`).
 The cover hid pixels only: a CIVVIS seat's units, fights, chimes and voice
@@ -682,8 +696,10 @@ publishes almost none. Now, on its own turn only:
   units are held in place, one refusing every hold has its stale operation or
   queued path cancelled (`UNITCOMMAND_CANCEL`, UnitCommands.xml:36) and is held
   again, an envoy prompt is marked considered (CityStates.lua:452), any other
-  blocker gets the ladder's answer; then the notification is dismissed and the
-  end of turn asked with SHIFT+ENTER's request (ActionPanel.lua:1099,
+  blocker gets the ladder's answer, with a fresh pass each step (the loop can
+  spend the ladder's two research or civic passes in the turn's first tenth of
+  a second, while its requests are still refused); then the notification is
+  dismissed and the end of turn asked with SHIFT+ENTER's request (ActionPanel.lua:1099,
   `UI.RequestAction(ActionTypes.ACTION_ENDTURN, { REASON = "UserForced" } )`);
 - `stand_in_stuck` says in one record what still stands: the blocker and the
   answer, each unit still refusing (moves, activity, queued path, the engine's

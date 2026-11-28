@@ -641,8 +641,13 @@ if cfg.Play ~= false and cfg.CivvisDecides then
 	-- The agent's landed-orders peek on this clock, which keeps running while
 	-- the game core publishes nothing (`CivvisQueue.onPeekPulse`). The agent
 	-- bounds the query itself; this only offers it a chance each interval.
+	-- `HotseatFastTurns` (`tools/civ6_hotseat.py --fast-turns`) offers it every
+	-- 20 ms, the ladder's live `poll-20ms` arm (`OrdersPeekSeconds` 0.02), unless
+	-- `OrdersPeekSeconds` says otherwise; the agent's own bound follows the same
+	-- rule (`CivvisQueue.peekSeconds`).
 	local peekElapsed = 0;
-	local peekEvery = math.max(0.02, tonumber(cfg.OrdersPeekSeconds) or 0.05);
+	local peekEvery = math.max(0.02, tonumber(cfg.OrdersPeekSeconds)
+		or (cfg.HotseatFastTurns == true and 0.02) or 0.05);
 	ContextPtr:SetUpdate(function(dt)
 		local uiBefore = CivvisFrameClock.last;
 		local delta = CivvisFrameClock.frame(math.max(0, tonumber(dt) or 0));

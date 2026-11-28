@@ -134,11 +134,19 @@ local function world(cfg, opts)
 		blockerName = function(id) return NAMES[id] or tostring(id) end,
 		UNIT_BLOCKERS = { ENDTURN_BLOCKING_UNITS = true, ENDTURN_BLOCKING_UNIT_NEEDS_ORDERS = true,
 			ENDTURN_BLOCKING_STACKED_UNITS = true },
+		-- The ladder: research costs one of its two passes a turn (`spend`).
 		answerBlocker = function(_, _, blocker, _, residual)
 			w.answered[#w.answered + 1] = { blocker = NAMES[blocker], residual = residual }
-			if blocker == RESEARCH then w.blocker = nil; return "TECH_POTTERY" end
+			if blocker == RESEARCH then
+				local passes = w.env.passes
+				if (passes.research or 0) >= 2 then return nil end
+				passes.research = (passes.research or 0) + 1
+				w.blocker = nil
+				return "TECH_POTTERY"
+			end
 			return nil
 		end,
+		passes = {},
 		dismissBlocker = function() w.dismissed = w.dismissed + 1; return true end,
 		CivvisMarkEnvoyConsidered = function()
 			w.considered = w.considered + 1
@@ -371,6 +379,23 @@ do
 	assert(e.considered == 1 and #e.answered == 0, "an envoy prompt is marked considered, not spent")
 	assert(not e.active)
 	w.clean(); e.clean()
+end
+
+-- 5b. The loop spent the ladder's research budget in the turn's first tenth of
+--     a second while its requests were refused: each step still gets one fresh
+--     answer, and the loop's budgets are put back as they were. -------------------
+do
+	local w = world(STUB)
+	w.blocker = RESEARCH
+	w.env.passes.research, w.env.passes.soft = 2, 3
+	for _ = 1, 4 do w.second() end
+	assert(w.active and #w.answered == 0, "the loop's ticks have no research answer left")
+	w.second()
+	assert(#w.answered == 1 and w.kinds("stand_in_stuck")[1].answered == "TECH_POTTERY",
+		"the step answers with a fresh pass")
+	assert(not w.active, "and the turn ends")
+	assert(w.env.passes.research == 2 and w.env.passes.soft == 3, "the loop's budgets are as they were")
+	w.clean()
 end
 
 -- 6. Not before the turn is played, not past its end, never while sent. -------
