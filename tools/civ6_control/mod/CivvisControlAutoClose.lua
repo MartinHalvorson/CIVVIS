@@ -1539,6 +1539,53 @@ function CivvisHotseatScreen.firstPause(covered)
 	if covered and cfg.HotseatFastTurns == true then return 0; end
 	return 0.3;
 end
+-- ★ REAL SECONDS, AND A PERSON'S TURN STARTED AT 1. The console's `timescale`
+-- (hotseat `--fast-animations`, `HotseatFastAnimations`; the agent's
+-- `CivvisClock.fastWant`) speeds this context's frame deltas up with the UI
+-- clock, so the press's 0.3 s and its 2 s retry count each delta divided by
+-- the scale the table shares (`ExposedMembers.CivvisTimeScale`; 1 when it is
+-- missing or nonsense, and outside hotseat). With the key, a person's Start
+-- Turn (theirs, or the test stub's that stands in for them) is pressed only
+-- once that scale reads 1: if it does not, every agent context is asked to
+-- put it back (`LuaEvents.CivvisFastAnimations("reset")`), and the press
+-- waits for it up to `SCALE_HOLD` real seconds, then goes ahead and says so
+-- (`hotseat_scale_unconfirmed`; `hotseat_scale_hold` when the wait began).
+CivvisHotseatScreen.SCALE_HOLD = 1.0;
+function CivvisHotseatScreen.scale()
+	if cfg.Hotseat ~= true then return 1; end
+	local s = nil;
+	pcall(function() s = tonumber(ExposedMembers.CivvisTimeScale); end);
+	if s == nil or s ~= s or s < 1 or s > 8 then return 1; end
+	return s;
+end
+function CivvisHotseatScreen.atOne()
+	local s = nil;
+	pcall(function() s = ExposedMembers.CivvisTimeScale; end);
+	return s == nil or tonumber(s) == 1;
+end
+-- Whether `pid`'s press may go now, as far as the scale is concerned.
+function CivvisHotseatScreen.scaleReady(pid, key, step)
+	local s = CivvisHotseatScreen;
+	if cfg.Hotseat ~= true or tonumber(cfg.HotseatFastAnimations) == nil
+			or not (s.listed(cfg.HotseatHumanSeats, pid) or s.listed(cfg.HotseatStubSeats, pid)) then
+		return true;
+	end
+	if s.atOne() then return true; end
+	pcall(function() LuaEvents.CivvisFastAnimations("reset", "person_handover"); end);
+	if s.atOne() then return true; end
+	if s.scaleHeldFor ~= key then
+		s.scaleHeldFor, s.scaleHeld = key, 0;
+		report("hotseat_scale_hold", string.format(',"player":%d,"turn":%d,"scale":"%s"',
+			pid, s.turn(), tostring(ExposedMembers and ExposedMembers.CivvisTimeScale)));
+		return false;
+	end
+	s.scaleHeld = s.scaleHeld + step;
+	if s.scaleHeld < s.SCALE_HOLD then return false; end
+	s.scaleHeldFor = nil;
+	report("hotseat_scale_unconfirmed", string.format(',"player":%d,"turn":%d,"held":%.2f',
+		pid, s.turn(), s.scaleHeld));
+	return true;
+end
 -- One press per seat and turn, after the screen has been up a moment (its
 -- own slide-in) and retried every two seconds while it stays up. Over the
 -- cover, a hand-over this presses is hidden on its first frame, the way
@@ -1571,10 +1618,12 @@ function CivvisHotseatScreen.frame(fDTime)
 		CivvisHotseatScreen.waited = 0;
 		return;
 	end
-	CivvisHotseatScreen.waited = CivvisHotseatScreen.waited + (tonumber(fDTime) or 0);
+	local step = (tonumber(fDTime) or 0) / CivvisHotseatScreen.scale();
+	CivvisHotseatScreen.waited = CivvisHotseatScreen.waited + step;
 	local pause = CivvisHotseatScreen.pressedFor == key and 2.0
 		or CivvisHotseatScreen.firstPause(covered);
 	if CivvisHotseatScreen.waited < pause then return; end
+	if not CivvisHotseatScreen.scaleReady(pid, key, step) then return; end
 	CivvisHotseatScreen.waited = 0;
 	CivvisHotseatScreen.press(pid, turn, "dialog");
 end

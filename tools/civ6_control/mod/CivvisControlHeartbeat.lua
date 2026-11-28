@@ -194,6 +194,121 @@ function CivvisFrameClock.frame(raw)
 	return raw / scale;
 end
 
+-- ★★ HOTSEAT `--fast-animations`: NO FRAME OF A PERSON'S TURN AT ANY SCALE BUT 1.
+-- `HotseatFastAnimations` runs CIVVIS seats' covered turns at the console's
+-- `timescale N` (CivvisControlAgent.lua, `CivvisClock.fastWant` and its
+-- resets). This HUD draws every frame of a person's turn (a person's seat:
+-- `HotseatHumanSeats`, and the test stub's, `HotseatStubSeats`, which stands
+-- in for them), so it is the last guard, and two readings are its own:
+--   * the scale the table shares reads anything but 1 on such a frame: every
+--     agent context is asked to put it back (`CivvisFastAnimations("reset")`,
+--     the first one commands it), and, if it still does not read 1, this
+--     context's own console where it has one. Once per turn it says so
+--     (`fast_animations_guard`, `why` `scale`);
+--   * the UI clock against the wall clock (`Automation.GetTime`, whole
+--     seconds, which no timescale moves) over every `WINDOW` seconds of the
+--     person's turn: more than `RATIO` times faster means the engine still
+--     runs scaled whatever the table says, so `timescale 1` is commanded again
+--     (`force`) and the feature stands down for the rest of the game
+--     (`why` `clock`).
+-- A reset that does not take stands the feature down the same way. Without
+-- the key, outside hotseat, and on every CIVVIS seat's frame, nothing here runs.
+CivvisFastGuard = { WINDOW = 10, RATIO = 1.5, frames = 0 };
+function CivvisFastGuard.want()
+	if cfg.Hotseat ~= true or cfg.HotseatCover ~= true then return false; end
+	local want = tonumber(cfg.HotseatFastAnimations);
+	return want ~= nil and want == want and want > 1;
+end
+function CivvisFastGuard.person(pid)
+	for _, list in ipairs({ cfg.HotseatHumanSeats or {}, cfg.HotseatStubSeats or {} }) do
+		for _, seat in ipairs(list) do
+			if tonumber(seat) == pid then return true; end
+		end
+	end
+	return false;
+end
+-- The shared scale; never set reads 1, anything not a number reads -1.
+function CivvisFastGuard.shared()
+	local s = nil;
+	pcall(function() s = ExposedMembers.CivvisTimeScale; end);
+	if s == nil then return 1; end
+	return tonumber(s) or -1;
+end
+-- Back to 1. Returns whether the table reads 1 now, and who put it there.
+function CivvisFastGuard.reset(why, op)
+	local g = CivvisFastGuard;
+	pcall(function() LuaEvents.CivvisFastAnimations(op or "reset", why); end);
+	if op ~= "force" and g.shared() == 1 then return true, "agents"; end
+	local ran = pcall(function() AutoProfiler.RunCommand("timescale 1"); end);
+	if ran then
+		pcall(function() ExposedMembers.CivvisTimeScale = 1; end);
+		pcall(function() LuaEvents.CivvisFastAnimations("follow", why); end);
+		return true, "heartbeat";
+	end
+	return g.shared() == 1, g.shared() == 1 and "agents" or "none";
+end
+function CivvisFastGuard.standDown(why)
+	pcall(function()
+		local st = ExposedMembers.CivvisFastAnim;
+		if type(st) ~= "table" then
+			st = { on = false };
+			ExposedMembers.CivvisFastAnim = st;
+		end
+		st.off = st.off or why;
+	end);
+end
+function CivvisFastGuard.say(why, pid, turn, fields)
+	local f = CivvisSeatWatch.field;
+	local parts = { string.format('"why":"%s","player":%s,"turn":%s', why, f(pid), f(turn)) };
+	for _, pair in ipairs(fields) do
+		parts[#parts + 1] = string.format('"%s":%s', pair[1], f(pair[2]));
+	end
+	CivvisVSyncAB.log("fast_animations_guard", table.concat(parts, ","));
+end
+function CivvisFastGuard.frame()
+	local g = CivvisFastGuard;
+	if not g.want() then return; end
+	local pid, turn = -1, -1;
+	pcall(function() pid = Game.GetLocalPlayer(); end);
+	if not g.person(pid) then
+		g.window = nil;
+		return;
+	end
+	pcall(function() turn = Game.GetCurrentGameTurn(); end);
+	local key = tostring(pid) .. ":" .. tostring(turn);
+	local ui, wall = nil, nil;
+	pcall(function() ui = UI.GetElapsedTime(); end);
+	pcall(function() wall = Automation.GetTime(); end);
+	local scale = g.shared();
+	if scale ~= 1 then
+		g.frames = g.frames + 1;
+		local ok, by = g.reset("guard");
+		if not ok then g.standDown("guard_reset_failed"); end
+		if g.said ~= key then
+			g.said = key;
+			g.say("scale", pid, turn, { { "scale", scale }, { "reset", ok }, { "by", by },
+				{ "frames", g.frames }, { "ui", ui } });
+		end
+		g.window = nil;
+		return;
+	end
+	if type(ui) ~= "number" or type(wall) ~= "number" then return; end
+	local w = g.window;
+	if w == nil or w.key ~= key or ui < w.ui or wall < w.wall then
+		g.window = { key = key, ui = ui, wall = wall };
+		return;
+	end
+	local elapsed = wall - w.wall;
+	if elapsed < g.WINDOW then return; end
+	local ratio = (ui - w.ui) / elapsed;
+	g.window = { key = key, ui = ui, wall = wall };
+	if ratio <= g.RATIO then return; end
+	local ok, by = g.reset("guard_clock", "force");
+	g.standDown("clock_fast");
+	g.say("clock", pid, turn, { { "ratio", math.floor(ratio * 100 + 0.5) / 100 },
+		{ "wall_seconds", elapsed }, { "reset", ok }, { "by", by }, { "ui", ui } });
+end
+
 -- RECORD-ONLY: how long this frame loop stops. G115 (civvis-20261005T091120Z)
 -- went silent 18 times for 2.5-5.4 s, 13 of them inside our own turn. At t20
 -- a strike's 30 grace ticks then landed in the same instant as the next board,
@@ -796,6 +911,8 @@ if cfg.Play ~= false and cfg.CivvisDecides then
 	local peekEvery = math.max(0.02, tonumber(cfg.OrdersPeekSeconds)
 		or (cfg.HotseatFastTurns == true and 0.02) or 0.05);
 	ContextPtr:SetUpdate(function(dt)
+		-- First: a person's frame is put back to 1 before anything counts it.
+		pcall(CivvisFastGuard.frame);
 		local uiBefore = CivvisFrameClock.last;
 		local delta = CivvisFrameClock.frame(math.max(0, tonumber(dt) or 0));
 		pcall(CivvisUiGap.frame, dt, uiBefore);
