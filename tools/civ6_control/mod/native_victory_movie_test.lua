@@ -32,5 +32,9 @@ assert(callback and replayButton);
 env.OnReplayMovie(); assert(stockPlayed == 1 and started == 1 and completed == 0);
 callback(); assert(stockFinished == 1 and completed == 1);
 replayButton(); assert(stockPlayed == 2 and started == 2);
-assert(source:find('if END_SCREENS[NAME] then return; end', 1, true), "end screens must not reach the ordinary close ladder");
+-- The end screen's tick returns before the close ladder; all it may do first is
+-- close a CIVVIS seat's defeat the shipped way (`CivvisSeatDefeat`, never a victory).
+assert(source:find('\t\tif END_SCREENS[NAME] then\n\t\t\t-- A CIVVIS seat\'s defeat shown on a CIVVIS turn is not left standing\n'
+	.. '\t\t\t-- (`CivvisSeatDefeat`); a victory stays the harness\'s.\n\t\t\tpcall(CivvisSeatDefeat.tick, realDT);\n'
+	.. '\t\t\treturn;\n\t\tend', 1, true), "end screens must not reach the ordinary close ladder");
 print("native victory movie hooks passed");

@@ -2280,6 +2280,8 @@ end
 -- no-op into an observable refusal, so a fallback can actually run.
 local function operate(unit, hash, params)
 	if hash == nil then return false; end
+	-- A crash check game's diagnostic walk is left alone (`CivvisSeat.diagHolds`).
+	if CivvisSeat.diagHolds ~= nil and CivvisSeat.diagHolds(unit) then return false; end
 	if not canOperate(unit, hash, params) then return false; end
 	-- When the last walk went out: a hotseat end of turn waits a moment behind
 	-- it (`CivvisQueue.unitsSettling`). A stamp only; nothing reads it outside
@@ -2322,6 +2324,7 @@ end
 -- and shows up as a repeat under the same id.
 local function commandUnit(unit, hash, loose)
 	if hash == nil then return false; end
+	if CivvisSeat.diagHolds ~= nil and CivvisSeat.diagHolds(unit) then return false; end
 	local ok, can = pcall(function()
 		if loose == true then
 			return UnitManager.CanStartCommand(unit, hash, true);
@@ -28782,6 +28785,8 @@ CivvisQueue.settleReturned = function(turn)
 	local seen = CivvisQueue.returnedSeen;
 	if seen ~= nil and seen.player == pid and seen.turn == turn and seen.n >= n then return false; end
 	CivvisQueue.returnedSeen = { player = pid, turn = turn, n = n };
+	-- A check game's diagnostic walk did its job: the unit is ours again.
+	if type(CivvisSeat.diag) == "table" then CivvisSeat.diag.hold = {}; end
 	local moving, cancelled, held = 0, 0, 0;
 	local cancel = CMD["UNITCOMMAND_CANCEL"];
 	eachUnit(player, function(unit)
@@ -28837,6 +28842,7 @@ CivvisQueue.requestEndTurn = function(turn, parameters)
 	-- Hotseat only: a turn the engine handed back has its units settled first,
 	-- and no end goes out in the same breath as a unit order (see below).
 	if cfg.Hotseat == true then
+		if CivvisSeat.standInDiag ~= nil then pcall(CivvisSeat.standInDiag, turn); end
 		if CivvisQueue.settleReturned(turn) or CivvisQueue.unitsSettling(turn, now) then
 			CivvisQueue.endTurnRetryTurn = turn;
 			return false;
@@ -31393,6 +31399,148 @@ function CivvisSeat.standsIn()
 		if tonumber(seat) == CivvisSeat.seat then return true; end
 	end
 	return false;
+end
+-- ★ DIAGNOSTIC ONLY, for crash check games (no launcher of a person's game
+-- sets these keys): make the engine hand the stand-in's turn back the way a
+-- person's go-to order does. A unit with a QUEUED multi-turn walk finishes it
+-- when its player ends a later turn, and one that arrives with movement left
+-- gives that player the turn back ("unit needs orders"): Civ VI's
+-- `net_message_debug.log` writes `Unit N has movement remaining after
+-- completing automation.  Attempting to turn active player.`
+--   * `HotseatDiagWalkTurns`: on a listed turn, as the stand-in asks for its
+--     end of turn, ONE land combat unit is sent to a plot the pathfinder
+--     reaches on the NEXT turn (UnitManager.GetMoveToPathEx, its `turns` read
+--     as WorldInput.lua:1052-1053 reads them: 1 is this turn) with fewer plots
+--     in that last leg than the unit's moves, all of them open (no feature,
+--     no hills), so it lands with movement left;
+--   * `HotseatDiagExploreTurns`: on a listed turn a Scout is set exploring
+--     (UNITOPERATION_AUTOMATE_EXPLORE, UnitOperations.xml:8), automation that
+--     runs at each end of turn.
+-- Either unit then gets no order of ours (`diagHolds`: `operate` and
+-- `commandUnit` refuse it) until a hand-back releases it
+-- (`CivvisQueue.settleReturned`), and every end of turn while it is held says
+-- what it is doing (`stand_in_diag_before_end`: moves, queued destination,
+-- activity). Only for a stand-in seat (`standsIn`); a hotseat key only.
+CivvisSeat.diag = { hold = {} };
+function CivvisSeat.diagHolds(unit)
+	local hold = CivvisSeat.diag.hold;
+	if next(hold) == nil then return false; end
+	local id = try(function() return unit:GetID(); end, nil);
+	return id ~= nil and hold[id] == true;
+end
+function CivvisSeat.diagListed(list, turn)
+	if type(list) ~= "table" then return false; end
+	for _, t in ipairs(list) do if tonumber(t) == turn then return true; end end
+	return false;
+end
+-- The walk: the unit, its destination and the path's last leg, or nil. The
+-- last leg is walked when the stand-in ends its NEXT turn (a unit with no
+-- moves left now walks all of it then), so it must be shorter than the
+-- unit's moves. At most `PATH_READS` path reads.
+CivvisSeat.diag.PATH_READS = 400;
+function CivvisSeat.diagWalkPlan(player)
+	local best, reads = nil, 0;
+	eachUnit(player, function(unit)
+		if best ~= nil then return; end
+		local row = try(function() return GameInfo.Units[unit:GetUnitType()]; end, nil);
+		local max = try(function() return unit:GetMaxMoves(); end, 0) or 0;
+		if row == nil or row.FormationClass ~= "FORMATION_CLASS_LAND_COMBAT" or max < 2 then return; end
+		local x, y = unit:GetX(), unit:GetY();
+		local reach = 2 * max;
+		for dx = -reach, reach do
+			for dy = -reach, reach do
+				local plot = (best == nil and reads < CivvisSeat.diag.PATH_READS)
+					and try(function() return Map.GetPlot(x + dx, y + dy); end, nil) or nil;
+				local d = plot ~= nil and try(function()
+					return Map.GetPlotDistance(x, y, plot:GetX(), plot:GetY());
+				end, 0) or 0;
+				if d >= 1 and d < 2 * max and try(function()
+						return not plot:IsWater() and not plot:IsImpassable() and plot:GetUnitCount() == 0;
+					end, false) == true then
+					reads = reads + 1;
+					local path = try(function()
+						return UnitManager.GetMoveToPathEx(unit, plot:GetIndex());
+					end, nil);
+					local plots = type(path) == "table" and type(path.plots) == "table" and path.plots or {};
+					local turns = type(path) == "table" and type(path.turns) == "table" and path.turns or {};
+					local n = #plots;
+					if n > 1 and tonumber(turns[n]) == 2 then
+						local last, open = 0, true;
+						for i = 2, n do
+							if tonumber(turns[i]) == 2 then
+								last = last + 1;
+								local step = try(function() return Map.GetPlotByIndex(plots[i]); end, nil);
+								open = open and step ~= nil and try(function()
+									return step:GetFeatureType() < 0 and not step:IsHills();
+								end, false) == true;
+							end
+						end
+						if open and last >= 1 and last < max then
+							best = { unit = unit, x = plot:GetX(), y = plot:GetY(), plots = n,
+								last_leg = last, max = max };
+						end
+					end
+				end
+			end
+		end
+	end);
+	return best;
+end
+-- From `requestEndTurn`, on the stand-in's hotseat turn: order a listed turn's
+-- walk or exploration once, and say what a held unit is doing before each end.
+function CivvisSeat.standInDiag(turn)
+	if (cfg.HotseatDiagWalkTurns == nil and cfg.HotseatDiagExploreTurns == nil)
+			or not CivvisSeat.standsIn() then
+		return;
+	end
+	local d = CivvisSeat.diag;
+	local player, pid = localPlayer();
+	if player == nil or pid ~= CivvisSeat.seat then return; end
+	if d.orderedTurn ~= turn then
+		local how, unit, plan, ok = nil, nil, nil, false;
+		if CivvisSeat.diagListed(cfg.HotseatDiagWalkTurns, turn) then
+			how = "walk";
+			plan = CivvisSeat.diagWalkPlan(player);
+			if plan ~= nil then
+				unit = plan.unit;
+				local params = {};
+				params[UnitOperationTypes.PARAM_X] = plan.x;
+				params[UnitOperationTypes.PARAM_Y] = plan.y;
+				ok = operate(unit, OP["UNITOPERATION_MOVE_TO"], params) == true;
+			end
+		elseif CivvisSeat.diagListed(cfg.HotseatDiagExploreTurns, turn) then
+			how = "explore";
+			local explore = try(function() return GameInfo.UnitOperations["UNITOPERATION_AUTOMATE_EXPLORE"].Hash; end, nil);
+			eachUnit(player, function(u)
+				if unit ~= nil then return; end
+				if unitTypeName(u) == "UNIT_SCOUT" and operate(u, explore) == true then unit, ok = u, true; end
+			end);
+		end
+		if how ~= nil then
+			d.orderedTurn = turn;
+			local id = unit ~= nil and try(function() return unit:GetID(); end, nil) or nil;
+			if ok and id ~= nil then d.hold[id] = true; end
+			emit("stand_in_diag_order", { turn = turn, how = how, unit = id, ordered = ok,
+				unit_kind = unit ~= nil and unitTypeName(unit) or nil,
+				from = unit ~= nil and { unit:GetX(), unit:GetY() } or nil,
+				to = plan ~= nil and { plan.x, plan.y } or nil,
+				plots = plan and plan.plots, last_leg = plan and plan.last_leg,
+				moves = unit ~= nil and try(function() return unit:GetMovesRemaining(); end, nil) or nil,
+				max = plan and plan.max });
+			return;
+		end
+	end
+	if next(d.hold) == nil or d.saidTurn == turn then return; end
+	d.saidTurn = turn;
+	eachUnit(player, function(unit)
+		if not CivvisSeat.diagHolds(unit) then return; end
+		local queued = try(function() return UnitManager.GetQueuedDestination(unit); end, nil);
+		emit("stand_in_diag_before_end", { turn = turn, unit = unit:GetID(), unit_kind = unitTypeName(unit),
+			x = unit:GetX(), y = unit:GetY(),
+			moves = try(function() return unit:GetMovesRemaining(); end, nil),
+			queued = queued ~= nil,
+			activity = try(function() return CivvisBoard.activityName(UnitManager.GetActivityType(unit)); end, nil) });
+	end);
 end
 -- Hold one unit where it stands; the hold's name, or nil when none starts.
 function CivvisSeat.standInHold(unit)

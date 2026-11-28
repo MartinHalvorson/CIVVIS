@@ -204,6 +204,66 @@ do
 end
 print("hand-over checks passed")
 
+-- 4b. A CIVVIS seat's defeat screen (EndGameMenu, `CivvisSeatDefeat`): closed
+--     by the shipped Next Player once its movie is over and 8 s have passed,
+--     on a turn that is not a person's; never a person's defeat, never on a
+--     person's turn, never after a victory, never outside hotseat. --------------
+do
+	local function endScreen(cfgExtra, localPlayer)
+		local h = handover(covered(cfgExtra))
+		h.player = localPlayer or 2
+		h.nexts = 0
+		h.env.OnNextPlayer = function() h.nexts = h.nexts + 1 end
+		return h, h.env.CivvisSeatDefeat
+	end
+	local h, d = endScreen()
+	d.onDefeat(1)                               -- seat 1 out, on seat 2's turn
+	for _ = 1, 7 do assert(d.tick(1.0) == false) end
+	assert(h.nexts == 0, "the person may read it first")
+	assert(d.tick(1.0) == true and h.nexts == 1, "Next Player at 8 s")
+	local r = h.kinds("hotseat_defeat_closed")[1]
+	assert(r and r.fields:find('"defeated":1,"player":2,"turn":6,"closed":true', 1, true), r and r.fields)
+	assert(d.tick(1.0) == false and h.nexts == 1, "once")
+	-- The defeat movie first (EndGameMenu's own movie, reported as it plays).
+	local m, dm = endScreen()
+	dm.onDefeat(1); dm.movie = true
+	for _ = 1, 20 do dm.tick(1.0) end
+	assert(m.nexts == 0, "not over its movie")
+	dm.movie = false
+	dm.tick(1.0)
+	assert(m.nexts == 1, "pressed once the movie is over")
+	local c, dc = endScreen()
+	dc.onDefeat(1); dc.movie = true
+	for _ = 1, 40 do dc.tick(1.0) end
+	assert(c.nexts == 1, "a movie that never says it ended holds it 40 s at most")
+	-- Never a person's defeat, on a person's turn, after a victory, outside hotseat.
+	local p, dp = endScreen()
+	dp.onDefeat(0)
+	for _ = 1, 30 do dp.tick(1.0) end
+	assert(p.nexts == 0, "a person's defeat is theirs to read")
+	local q, dq = endScreen({ HotseatStubSeats = {} }, 0)
+	dq.onDefeat(1)
+	for _ = 1, 30 do dq.tick(1.0) end
+	assert(q.nexts == 0, "on a person's turn the screen is theirs")
+	local g, dg = endScreen({}, 0)               -- the gated stand-in's turn: nobody there
+	dg.onDefeat(1)
+	for _ = 1, 8 do dg.tick(1.0) end
+	assert(g.nexts == 1, "on the stand-in's turn it is pressed")
+	local v, dv = endScreen()
+	dv.onDefeat(1); dv.over = true
+	for _ = 1, 30 do dv.tick(1.0) end
+	assert(v.nexts == 0, "after a victory the screen is the harness's")
+	local n, dn = endScreen({ Hotseat = false })
+	dn.onDefeat(1)
+	for _ = 1, 30 do dn.tick(1.0) end
+	assert(n.nexts == 0, "not outside hotseat")
+	assert(closer:find('\t\tif END_SCREENS[NAME] then\n\t\t\t-- A CIVVIS seat\'s defeat shown on a CIVVIS turn is not left standing\n'
+		.. '\t\t\t-- (`CivvisSeatDefeat`); a victory stays the harness\'s.\n\t\t\tpcall(CivvisSeatDefeat.tick, realDT);', 1, true),
+		"the end screen's tick asks it")
+	assert(closer:find("if END_SCREENS[NAME] and cfg.Hotseat == true then CivvisSeatDefeat.arm(); end", 1, true))
+end
+print("defeat screen checks passed")
+
 -- 5. The cover. ---------------------------------------------------------------
 local coverText = read("CivvisHotseatCover.lua")
 local function cover(cfg)
@@ -324,6 +384,7 @@ local function agentHost(cfg)
 	local env = {
 		cfg = cfg, tonumber = tonumber, type = type, pcall = pcall, math = math, ipairs = ipairs,
 		CivvisQueue = {}, CivvisClock = { now = function() return a.now end },
+		CivvisSeat = { diag = { hold = { [1] = true } } },
 		emit = function(kind, payload) payload = payload or {}; payload.kind = kind; a.events[#a.events + 1] = payload end,
 		try = function(fn, fallback) local ok, v = pcall(fn); if ok then return v end; return fallback end,
 		ExposedMembers = {},
@@ -376,7 +437,9 @@ do
 	assert(b.q.settleReturned(6) == false, "nothing handed back: nothing to do")
 	b.env.ExposedMembers.CivvisTurnReturned = { player = 0, turn = 6, n = 1 }
 	assert(b.q.settleReturned(5) == false, "another turn's hand-back is not this one's")
+	assert(b.env.CivvisSeat.diag.hold[1] == true, "a check game's diagnostic walk is held...")
 	assert(b.q.settleReturned(6) == true, "this turn's: settled, and this request waits")
+	assert(next(b.env.CivvisSeat.diag.hold) == nil, "...until its hand-back releases it")
 	assert(b.cancels == 2 and b.holds == 3, "cancelled " .. b.cancels .. ", held " .. b.holds)
 	assert(b.units[1].held and b.units[2].held and b.units[3].held and not b.units[4].held)
 	local e = b.events[#b.events]
@@ -391,7 +454,8 @@ end
 -- Wired into `requestEndTurn` for a hotseat game only, after its own guards.
 do
 	local body = assert(agent:match("(CivvisQueue%.requestEndTurn = function%(turn, parameters%).-\nend;)"))
-	local wired = body:find("\tif cfg.Hotseat == true then\n\t\tif CivvisQueue.settleReturned(turn) "
+	local wired = body:find("\tif cfg.Hotseat == true then\n\t\tif CivvisSeat.standInDiag ~= nil then "
+		.. "pcall(CivvisSeat.standInDiag, turn); end\n\t\tif CivvisQueue.settleReturned(turn) "
 		.. "or CivvisQueue.unitsSettling(turn, now) then", 1, true)
 	assert(wired, "requestEndTurn holds a hotseat end of turn behind both")
 	assert(body:find("HasSentTurnComplete", 1, true) < wired, "after the sent-turn guard")
