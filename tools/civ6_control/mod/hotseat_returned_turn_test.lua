@@ -306,4 +306,91 @@ do
 	assert(l.started == 1, "legacy: the backstop presses at 1.5 s")
 end
 print("cover checks passed")
+
+-- 6. The seat's own end of turn (CivvisControlAgent.lua): no end in the same
+--    breath as a walk, and a turn handed back has its units settled first. --
+local agent = read("CivvisControlAgent.lua")
+local function agentHost(cfg)
+	local a = { now = 100, events = {}, units = {}, cancels = 0, holds = 0, pid = 0 }
+	local env = {
+		cfg = cfg, tonumber = tonumber, type = type, pcall = pcall, math = math, ipairs = ipairs,
+		CivvisQueue = {}, CivvisClock = { now = function() return a.now end },
+		emit = function(kind, payload) payload = payload or {}; payload.kind = kind; a.events[#a.events + 1] = payload end,
+		try = function(fn, fallback) local ok, v = pcall(fn); if ok then return v end; return fallback end,
+		ExposedMembers = {},
+		localPlayer = function() return {}, a.pid end,
+		eachUnit = function(_, fn) for _, u in ipairs(a.units) do fn(u) end end,
+		CMD = { UNITCOMMAND_CANCEL = "cmd:cancel" },
+		ActivityTypes = { ACTIVITY_OPERATION = "operation" },
+		UnitManager = {
+			GetQueuedDestination = function(u) return u.queued and 1 or nil end,
+			GetActivityType = function(u) return u.activity end,
+			CanStartCommand = function(u) return u.queued or u.activity == "operation" end,
+			RequestCommand = function(u) a.cancels = a.cancels + 1; u.cancelled = true end,
+		},
+		orderIdle = function(u) a.holds = a.holds + 1; u.held = true; return "UNITOPERATION_SKIP_TURN" end,
+	}
+	for _, pattern in ipairs({ "(CivvisQueue%.unitsSettling = function%(.-\nend;)",
+	                           "(CivvisQueue%.settleReturned = function%(.-\nend;)" }) do
+		local chunk = assert(loadstring(assert(agent:match(pattern), pattern)))
+		setfenv(chunk, env)
+		chunk()
+	end
+	a.env, a.q = env, env.CivvisQueue
+	return a
+end
+do
+	local a = agentHost({ Hotseat = true })
+	assert(a.q.unitsSettling(6, 100) == false, "no walk yet: no hold")
+	a.q.unitOrderAt = 100
+	assert(a.q.unitsSettling(6, 100) == true, "an end in the same breath as a walk waits")
+	assert(a.events[1].kind == "end_turn_settle_hold" and a.events[1].since_order_ms == 0)
+	assert(a.q.unitsSettling(6, 100.149) == true, "for 0.15 s")
+	assert(a.q.unitsSettling(6, 100.15) == false, "and no longer")
+	assert(#a.events == 1, "said once a turn")
+	a.q.unitOrderAt = 200
+	for _ = 1, 18 do assert(a.q.unitsSettling(6, 200)) end   -- two held above
+	assert(a.q.unitsSettling(6, 200) == false, "twenty holds a turn at most")
+	assert(a.q.unitsSettling(7, 200) == true, "a new turn its own")
+	local set = agentHost({ Hotseat = true, HotseatOrderSettleSeconds = 0.5 })
+	set.q.unitOrderAt = 100
+	assert(set.q.unitsSettling(3, 100.4) == true, "the config's own window")
+	-- Handed back: every unit with movement left is held where it stands,
+	-- its running path or operation cancelled first, once per hand-back.
+	local b = agentHost({ Hotseat = true })
+	b.units = {
+		{ id = 1, GetMovesRemaining = function() return 2 end, queued = true },
+		{ id = 2, GetMovesRemaining = function() return 3 end, activity = "operation" },
+		{ id = 3, GetMovesRemaining = function() return 1 end },
+		{ id = 4, GetMovesRemaining = function() return 0 end, queued = true },
+	}
+	assert(b.q.settleReturned(6) == false, "nothing handed back: nothing to do")
+	b.env.ExposedMembers.CivvisTurnReturned = { player = 0, turn = 6, n = 1 }
+	assert(b.q.settleReturned(5) == false, "another turn's hand-back is not this one's")
+	assert(b.q.settleReturned(6) == true, "this turn's: settled, and this request waits")
+	assert(b.cancels == 2 and b.holds == 3, "cancelled " .. b.cancels .. ", held " .. b.holds)
+	assert(b.units[1].held and b.units[2].held and b.units[3].held and not b.units[4].held)
+	local e = b.events[#b.events]
+	assert(e.kind == "turn_returned_units" and e.moving == 3 and e.cancelled == 2 and e.held == 3 and e.returned == 1)
+	assert(b.q.unitOrderAt == b.now, "and the settle hold covers the holds")
+	assert(b.q.settleReturned(6) == false, "once per hand-back")
+	b.env.ExposedMembers.CivvisTurnReturned = { player = 0, turn = 6, n = 2 }
+	assert(b.q.settleReturned(6) == true, "a second hand-back: again")
+	b.env.ExposedMembers.CivvisTurnReturned = { player = 1, turn = 6, n = 3 }
+	assert(b.q.settleReturned(6) == false, "another seat's hand-back is not this seat's")
+end
+-- Wired into `requestEndTurn` for a hotseat game only, after its own guards.
+do
+	local body = assert(agent:match("(CivvisQueue%.requestEndTurn = function%(turn, parameters%).-\nend;)"))
+	local wired = body:find("\tif cfg.Hotseat == true then\n\t\tif CivvisSeat.standInDiag ~= nil and "
+		.. "CivvisSeat.standInDiag(turn, now) then return true; end\n\t\tif CivvisQueue.settleReturned(turn) "
+		.. "or CivvisQueue.unitsSettling(turn, now) then", 1, true)
+	assert(wired, "requestEndTurn holds a hotseat end of turn behind both")
+	assert(body:find("HasSentTurnComplete", 1, true) < wired, "after the sent-turn guard")
+	-- The stamp: walks only.
+	assert(agent:find('if (hash == OP["UNITOPERATION_MOVE_TO"] or hash == OP["UNITOPERATION_SWAP_UNITS"])\n'
+		.. '\t\t\tand CivvisQueue ~= nil and CivvisClock ~= nil then\n\t\tCivvisQueue.unitOrderAt = CivvisClock.now();', 1, true),
+		"operate stamps a walk")
+end
+print("seat checks passed")
 print("all returned-turn checks passed")

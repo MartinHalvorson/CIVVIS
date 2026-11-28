@@ -497,24 +497,34 @@ do
 	assert(cover2.up)
 	ticks(handlers2, 2)
 	assert(not cover2.up)
-	-- Handed back with a turn-begin event, paused behind its hand-over, then started.
+	-- Handed back with a turn-begin event: no hand-over is built for it any
+	-- more (CivvisControlAutoClose.lua `CivvisHotseatScreen.onBuild`), so the
+	-- cover lifts on the begin itself (hotseat_returned_turn_test.lua).
 	local cover3, world3, did3, handlers3 = load(HOTSEAT())
 	world3.pid, world3.turn, world3.active[0] = 0, 18, true
 	handlers3.LocalPlayerTurnEnd()
 	handlers3.update(0.1)
 	assert(cover3.up)
-	world3.paused[0] = true
 	handlers3.LocalPlayerTurnBegin()
-	assert(cover3.up, "covered over the hand-over that came back")
-	world3.paused[0] = false
-	handlers3.update(0.1)
-	assert(not cover3.up and last(did3, "hotseat_cover"):find('"reason":"person_turn"', 1, true),
-		"a turn begun again is theirs at once")
+	assert(not cover3.up and last(did3, "hotseat_cover"):find('"reason":"person_returned"', 1, true),
+		"a turn handed back is theirs at once")
 	-- A new end of turn starts the count afresh.
 	world3.active[0] = true
 	handlers3.LocalPlayerTurnEnd()
 	for _ = 1, 30 do handlers3.update(0.1) end
 	assert(cover3.up)
+	-- The old reaction (`HotseatReturnedTurn` "legacy", crash check games only):
+	-- covered over the hand-over that came back, lifted once it is started.
+	local cover4, world4, did4, handlers4 = load(HOTSEAT({ HotseatReturnedTurn = "legacy" }))
+	world4.pid, world4.turn, world4.active[0] = 0, 18, true
+	handlers4.LocalPlayerTurnEnd()
+	handlers4.update(0.1)
+	world4.paused[0] = true
+	handlers4.LocalPlayerTurnBegin()
+	assert(cover4.up, "legacy: covered over the hand-over that came back")
+	world4.paused[0] = false
+	handlers4.update(0.1)
+	assert(not cover4.up and last(did4, "hotseat_cover"):find('"reason":"person_turn"', 1, true))
 end
 
 -- 6. The end of the game, and a quit, are never covered. ---------------------

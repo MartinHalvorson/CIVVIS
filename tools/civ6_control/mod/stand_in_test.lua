@@ -513,16 +513,28 @@ do
 	unit(w, 1, "UNIT_WARRIOR", 10, 2)
 	unit(w, 2, "UNIT_SCOUT", 13, 3)
 	assert(w.seat.standInDiag(3, 100) == true, "a listed turn sends the end of turn itself")
-	assert(#w.walked == 2 and w.walked[1].id == 1 and w.walked[2].id == 2,
-		"the one beside the plot first, then the one two plots away: " .. #w.walked)
-	assert(w.walked[1].x == 8 and w.walked[2].x == 8 and w.walked[1].y == 5 and w.walked[2].y == 5,
-		"both to the same free plot beside the first (the first free direction)")
+	assert(#w.walked == 3 and w.walked[1].id == 2 and w.walked[2].id == 2 and w.walked[3].id == 1,
+		"the one two plots away first, twice, then the one beside the plot: " .. #w.walked)
+	for i = 1, 3 do
+		assert(w.walked[i].x == 8 and w.walked[i].y == 5,
+			"all to the same free plot beside the near one (the first free direction)")
+	end
 	assert(#w.actions == 1 and w.actions[1].action == "ACTION_ENDTURN" and w.actions[1].reason == "UserForced",
 		"in the same pass, forced")
 	local rec = w.kinds("stand_in_diag_rebegin")[1]
-	assert(rec and rec.turn == 3 and rec.sent == true and rec.x == 8 and #rec.walks == 2
-		and rec.walks[2].sent == true)
+	assert(rec and rec.turn == 3 and rec.sent == true and rec.x == 8 and #rec.walks == 3
+		and rec.walks[3].sent == true)
+	assert(rec.behind == false, "no unit beside the near one here")
 	assert(w.seat.standInDiag(3, 101) == false and #w.actions == 1, "once a turn")
+	-- With a unit beside the near one, the plot beyond it is chosen: the far
+	-- walk waits behind the near unit, as 262146 waited behind 196608.
+	local b = diagWorld({ HotseatDiagRebegin = { 3 } }, 3)
+	unit(b, 1, "UNIT_WARRIOR", 10, 2)
+	unit(b, 2, "UNIT_SCOUT", 9, 3)
+	assert(b.seat.standInDiag(3, 100) == true)
+	local brec = b.kinds("stand_in_diag_rebegin")[1]
+	assert(brec.behind == true and brec.x == 11, "the plot beyond the near unit: " .. tostring(brec.x))
+	assert(b.walked[1].id == 2 and b.walked[3].id == 1)
 	assert(w.seat.standInDiag(4, 102) == false, "a turn not listed is ordinary")
 	w.clean()
 	-- A second unit with one move only, or none two plots away: the end of
@@ -538,7 +550,7 @@ do
 	unit(h, 2, "UNIT_SCOUT", 13, 3)
 	assert(h.seat.standInDiag(3, 100) == false and #h.walked == 0 and #h.actions == 0)
 	h.blocker = nil
-	assert(h.seat.standInDiag(3, 101) == true and #h.walked == 2, "a units blocker alone is no bar")
+	assert(h.seat.standInDiag(3, 101) == true and #h.walked == 3, "a units blocker alone is no bar")
 	-- Without the key, or on a seat that does not stand in: nothing.
 	local plain = diagWorld({}, 3)
 	unit(plain, 1, "UNIT_WARRIOR", 10, 2)

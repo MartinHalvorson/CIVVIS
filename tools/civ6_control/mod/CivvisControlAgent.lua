@@ -31398,9 +31398,10 @@ end
 -- moves and two plots away, was sent to the same plot; it stopped short with
 -- movement left, and the engine handed the turn back. Here: a land combat
 -- unit A walks to a free plot beside it, and a second one B with at least two
--- moves, two or more plots from that plot, is sent there too (two land combat
--- units never share a plot). Once a turn, only with nothing but units
--- blocking; true when it sent the end of turn.
+-- moves, two or more plots from that plot (best: beside A, the plot beyond A,
+-- as 262146 stood behind 196608), is sent there too (two land combat units
+-- never share a plot), B first and twice, as the turn-6 stand-in sent 262146. Once a turn, only with nothing but units blocking; true when it sent
+-- the end of turn.
 function CivvisSeat.standInDiag(turn, now)
 	local turns = cfg.HotseatDiagRebegin;
 	if type(turns) ~= "table" or not CivvisSeat.standsIn() then return false; end
@@ -31431,7 +31432,7 @@ function CivvisSeat.standInDiag(turn, now)
 	local plan = nil;
 	for _, a in ipairs(land) do
 		for direction = 0, 5 do
-			local plot = plan == nil and try(function()
+			local plot = (plan == nil or not plan.behind) and try(function()
 				return Map.GetAdjacentPlot(a:GetX(), a:GetY(), direction);
 			end, nil) or nil;
 			if plot ~= nil and try(function()
@@ -31441,16 +31442,24 @@ function CivvisSeat.standInDiag(turn, now)
 					local d = b ~= a and try(function()
 						return Map.GetPlotDistance(b:GetX(), b:GetY(), plot:GetX(), plot:GetY());
 					end, 0) or 0;
-					if plan == nil and d >= 2 and (try(function() return b:GetMovesRemaining(); end, 0) or 0) >= 2 then
-						plan = { a = a, b = b, x = plot:GetX(), y = plot:GetY() };
+					-- Best with A between: B beside A, the plot beyond it, so
+					-- B's walk waits behind A and finishes after the turn complete.
+					local behind = d == 2 and try(function()
+						return Map.GetPlotDistance(b:GetX(), b:GetY(), a:GetX(), a:GetY());
+					end, 0) == 1;
+					if (plan == nil or (behind and not plan.behind)) and d >= 2
+							and (try(function() return b:GetMovesRemaining(); end, 0) or 0) >= 2 then
+						plan = { a = a, b = b, x = plot:GetX(), y = plot:GetY(), behind = behind };
 					end
 				end
 			end
 		end
 	end
+	-- In the turn-6 order: the far unit's walk twice, then the near one's
+	-- (net_message_debug.log :833-835).
 	local walks = {};
 	if plan ~= nil then
-		for _, unit in ipairs({ plan.a, plan.b }) do
+		for _, unit in ipairs({ plan.b, plan.b, plan.a }) do
 			walks[#walks + 1] = { id = unit:GetID(), from = { unit:GetX(), unit:GetY() },
 				sent = walk(unit, plan.x, plan.y) == true };
 		end
@@ -31462,7 +31471,7 @@ function CivvisSeat.standInDiag(turn, now)
 		CivvisQueue.endTurnSubmittedTurn, CivvisQueue.endTurnSubmittedAt = turn, now;
 	end
 	emit("stand_in_diag_rebegin", { turn = turn, x = plan and plan.x, y = plan and plan.y,
-		walks = walks, sent = sent });
+		behind = plan and plan.behind, walks = walks, sent = sent });
 	return true;
 end
 -- Hold one unit where it stands; the hold's name, or nil when none starts.
