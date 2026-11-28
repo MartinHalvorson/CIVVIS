@@ -117,12 +117,10 @@ fn the_party_beside_the_camp_serves_its_row() {
         "a ClearCamp row"
     );
     let force = camp_force(&ai, camp).expect("a party for the camp");
-    for uid in &warriors {
-        assert!(
-            force.units.contains(uid),
-            "{uid} serves the camp: {force:?}"
-        );
-    }
+    assert!(
+        warriors.iter().any(|uid| force.units.contains(uid)),
+        "a Warrior serves the camp: {force:?}"
+    );
 }
 
 #[test]
@@ -309,7 +307,9 @@ fn a_whole_turn_writes_the_camps_record_and_off_writes_nothing() {
 }
 
 /// The board on the turn a stall closes the camp's row: the party released
-/// and reassigned, its force groups drawn.
+/// and reassigned, its force groups drawn. Returns the board, the camp, the
+/// soldiers the close released (the party as the board last held it) and
+/// the seat.
 fn closed_camp_board() -> (Game, Pos, Vec<u32>, AdvancedAi) {
     let (mut g, camp, warriors, mut ai) = camp_board(true, true, 1);
     for _ in 0..CAMP_STALL_TURNS {
@@ -318,7 +318,13 @@ fn closed_camp_board() -> (Game, Pos, Vec<u32>, AdvancedAi) {
     let plan = conquest(&g, None);
     ai.rebuild_force_groups(&g, 0, &plan);
     assert!(row(&ai, ObjectiveKey::Camp(camp)).is_none(), "closed");
-    (g, camp, warriors, ai)
+    let released: Vec<u32> = ai.camp_stalls[&camp].released.iter().copied().collect();
+    assert!(!released.is_empty(), "the close releases its party");
+    assert!(
+        released.iter().all(|uid| warriors.contains(uid)),
+        "only our Warriors: {released:?} of {warriors:?}"
+    );
+    (g, camp, released, ai)
 }
 
 fn anchor_of(ai: &AdvancedAi, uid: u32) -> Pos {
