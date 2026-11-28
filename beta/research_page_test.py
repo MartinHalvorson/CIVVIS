@@ -1745,6 +1745,8 @@ class Page(unittest.TestCase):
             'title="How fast the simulator plays: the fastest game on video and how long a self-play game takes.">CIVVIS Performance</a>\n'
             '          <a class="site-link sub-link" href="../unreviewed-gen-ai-charts/" '
             'title="Charts the AI agents added on their own, kept here until they are asked for or talked over.">Unreviewed Gen AI Charts</a>\n'
+            '          <a class="site-link sub-link" href="../project-chronology/" '
+            'title="The project&#8217;s milestones along a timeline: AI capability, simulator performance, new features.">Project Chronology</a>\n'
             '        </div>\n'
             '      </div>\n'
             '      <a class="site-link" href="../../moneyball" ',
@@ -1778,7 +1780,8 @@ class Page(unittest.TestCase):
                     ("ai-insights", "AI Insights"),
                     ("civ-ai-interpretability", "Civ AI Interpretability"), ("civ-analytics", "Civ Analytics"),
                     ("win-analytics", "Win Analytics"), ("elo-rankings", "ELO Rankings"),
-                    ("civvis-performance", "CIVVIS Performance"), ("unreviewed-gen-ai-charts", "Unreviewed Gen AI Charts"))],
+                    ("civvis-performance", "CIVVIS Performance"), ("unreviewed-gen-ai-charts", "Unreviewed Gen AI Charts"),
+                    ("project-chronology", "Project Chronology"))],
             )
             self.assertEqual(nav.count('aria-current="page"'), 1)
             self.assertIn(f'<a class="site-link sub-link" href="./" aria-current="page">{name}</a>', nav)
