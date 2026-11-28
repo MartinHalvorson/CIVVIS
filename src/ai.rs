@@ -4138,7 +4138,7 @@ impl BasicAi {
             (true, true) => {
                 "the capital-settler-after-completion and rapid-city-expansion-2 genes reserve"
             }
-            (false, true) => "the rapid-city-expansion-2 gene reserves",
+            (false, true) => "the capital-settler-after-completion gene reserves",
             _ => "the capital-settler-after-completion gene reserves",
         }
     }
