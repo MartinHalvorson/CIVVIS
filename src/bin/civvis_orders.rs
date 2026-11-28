@@ -85,8 +85,6 @@ mod governor_exchange;
 mod great_works_never_wait;
 #[path = "civvis_orders/host_ledgers.rs"]
 mod host_ledgers;
-#[path = "civvis_orders/hotseat_deals.rs"]
-mod hotseat_deals;
 #[path = "civvis_orders/host_move_audit.rs"]
 mod host_move_audit;
 #[path = "civvis_orders/host_move_postconditions.rs"]
@@ -95,6 +93,8 @@ mod host_move_postconditions;
 mod host_ranged_history;
 #[path = "civvis_orders/host_refusals.rs"]
 mod host_refusals;
+#[path = "civvis_orders/hotseat_deals.rs"]
+mod hotseat_deals;
 #[path = "civvis_orders/kristina_fills_to_theme.rs"]
 mod kristina_fills_to_theme;
 #[path = "civvis_orders/spaceport_above_sea.rs"]

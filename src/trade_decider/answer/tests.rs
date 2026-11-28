@@ -69,7 +69,13 @@ fn a_deal_worth_it_by_our_own_price_is_accepted() {
     );
     let person = seen(OTTOMAN_T32, 0);
     assert_eq!(
-        answer(&ottoman(), &deal, Some(&person), &none(), &Exchange::default()),
+        answer(
+            &ottoman(),
+            &deal,
+            Some(&person),
+            &none(),
+            &Exchange::default()
+        ),
         Some(Answer::Accept)
     );
 }
@@ -82,13 +88,22 @@ fn a_deal_short_of_the_margin_is_countered_with_gold_the_other_side_holds() {
     // Gold and earn 2 a turn, so the ask is a Gold a turn, not a lump.
     let deal = offer(1, vec![horses(10)], vec![]);
     let ottomans = seen(CANADA_T32, 1);
-    let answered = answer(&canada(), &deal, Some(&ottomans), &none(), &Exchange::default());
+    let answered = answer(
+        &canada(),
+        &deal,
+        Some(&ottomans),
+        &none(),
+        &Exchange::default(),
+    );
     let Some(Answer::Counter(terms)) = answered else {
         panic!("{answered:?}");
     };
     assert_eq!(terms.give, vec![horses(10)]);
     assert_eq!(terms.get, vec![BoardItem::gold_per_turn(1)]);
-    assert_eq!(terms.render().as_deref(), Some("give=RESOURCE_HORSES=10;get=GOLD=1@30"));
+    assert_eq!(
+        terms.render().as_deref(),
+        Some("give=RESOURCE_HORSES=10;get=GOLD=1@30")
+    );
 }
 
 #[test]
@@ -187,7 +202,10 @@ fn exchange(
         give: opening.get.clone(),
         get: opening.give.clone(),
     };
-    let mut seats = [(b, b_sees_a, Exchange::default()), (a, a_sees_b, Exchange::default())];
+    let mut seats = [
+        (b, b_sees_a, Exchange::default()),
+        (a, a_sees_b, Exchange::default()),
+    ];
     for crossed in 1..=12 {
         let mover = (crossed - 1) % 2;
         let (seat, partner, history) = &seats[mover];
@@ -213,7 +231,10 @@ fn exchange(
                 // seat's next answer reads it as refused.
                 let key = terms.key().expect("renders");
                 let history = &mut seats[mover].2;
-                assert!(history.refused.insert(key.clone()), "the same terms sent twice: {key}");
+                assert!(
+                    history.refused.insert(key.clone()),
+                    "the same terms sent twice: {key}"
+                );
                 history.counters_sent += 1;
                 on_table = Terms {
                     give: terms.get,
@@ -296,7 +317,11 @@ fn the_exchange_history_is_read_from_the_board() {
     assert!(!parsed.is_person(2));
     let incoming = &parsed.incoming[0];
     assert_eq!(incoming.terms.give, vec![luxury("RESOURCE_FURS")]);
-    assert_eq!(counters_sent(incoming, &parsed.outcomes, 32), 1, "round 3: one of ours");
+    assert_eq!(
+        counters_sent(incoming, &parsed.outcomes, 32),
+        1,
+        "round 3: one of ours"
+    );
     let mut unnumbered = incoming.clone();
     unnumbered.round = None;
     unnumbered.from = 2;

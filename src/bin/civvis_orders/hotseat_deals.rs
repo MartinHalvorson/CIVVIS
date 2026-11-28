@@ -39,7 +39,20 @@ pub(super) fn answer_orders(
     let Some(board) = state.deals.as_ref().and_then(DealBoard::from_json) else {
         return (orders, notes);
     };
-    let position = Position::from_board(state, lane);
+    let mut position = Position::from_board(state, lane);
+    // What the board says that the plain state does not: the free Great Work
+    // walls, and the stockpile cap (one cap for every strategic resource in
+    // Gathering Storm; the smallest is taken).
+    position.great_work_room = board.great_work_room.clone();
+    if let Some(cap) = board
+        .strategic_caps
+        .values()
+        .copied()
+        .filter(|cap| *cap > 0.0)
+        .min_by(f64::total_cmp)
+    {
+        position.strategic_cap = cap;
+    }
     let works = own_works(state);
     let turn = i64::from(state.turn);
     let mut seen: BTreeSet<usize> = BTreeSet::new();
@@ -145,7 +158,10 @@ mod tests {
             "the person's second deal waits for the first to be answered"
         );
         assert_eq!(notes.len(), 2, "{notes:?}");
-        assert!(notes[0].starts_with("own_price_deal=1:COUNTER:net="), "{notes:?}");
+        assert!(
+            notes[0].starts_with("own_price_deal=1:COUNTER:net="),
+            "{notes:?}"
+        );
     }
 
     #[test]

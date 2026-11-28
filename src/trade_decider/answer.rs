@@ -170,9 +170,10 @@ fn counter_terms(
 
 /// ★ THE ANSWER to a deal proposed to this seat. `None` when the deal holds
 /// an item the valuation cannot price (a city, a war, an alliance): it is
-/// left as it stands, as before. Otherwise: a gift is accepted; a deal worth at least [`margin`] is accepted; else the smallest
-/// counter worth it ([`counter_terms`]) while fewer than [`MAX_COUNTERS`] have
-/// been sent; else rejected.
+/// left as it stands, as before. Otherwise: a gift is accepted; a deal worth
+/// at least [`margin`] is accepted; else the smallest counter worth it
+/// ([`counter_terms`]) while fewer than [`MAX_COUNTERS`] have been sent; else
+/// it is rejected.
 pub fn answer(
     position: &Position,
     deal: &IncomingDeal,
@@ -204,7 +205,11 @@ pub fn answer(
 /// board's round count when it carries one (deals crossed both ways, from 1:
 /// ours are every second one after the first), else the outcomes of our
 /// proposals to that seat that it countered within [`REFUSED_TERMS_TURNS`].
-pub fn counters_sent(deal: &IncomingDeal, outcomes: &[super::board::DealOutcome], turn: i64) -> u32 {
+pub fn counters_sent(
+    deal: &IncomingDeal,
+    outcomes: &[super::board::DealOutcome],
+    turn: i64,
+) -> u32 {
     if let Some(round) = deal.round {
         return u32::try_from((round - 1).max(0) / 2).unwrap_or(u32::MAX);
     }

@@ -94,12 +94,19 @@ pub struct DealBoard {
     pub refused_by_person: Vec<(i64, i64, Terms)>,
     /// Who each counterpart is, by host player id.
     pub counterparts: BTreeMap<usize, String>,
+    /// Free Great Work slots by the object class they take (decider need 5).
+    pub great_work_room: BTreeMap<String, i64>,
+    /// Each strategic resource's stockpile cap (decider need 6).
+    pub strategic_caps: BTreeMap<String, f64>,
 }
 
 fn int(value: &Value) -> Option<i64> {
-    value
-        .as_i64()
-        .or_else(|| value.as_f64().filter(|v| v.is_finite()).map(|v| v.round() as i64))
+    value.as_i64().or_else(|| {
+        value
+            .as_f64()
+            .filter(|v| v.is_finite())
+            .map(|v| v.round() as i64)
+    })
 }
 
 fn int_at(value: &Value, key: &str) -> Option<i64> {
@@ -128,6 +135,24 @@ fn terms_at(value: &Value) -> Terms {
         give: items_at(value, "give"),
         get: items_at(value, "get"),
     }
+}
+
+/// A `{name: number}` map; anything else (a Lua empty table is `[]`) is empty.
+fn numbers_at(value: &Value, key: &str) -> BTreeMap<String, f64> {
+    value
+        .get(key)
+        .and_then(Value::as_object)
+        .map(|map| {
+            map.iter()
+                .filter_map(|(name, number)| {
+                    number
+                        .as_f64()
+                        .filter(|n| n.is_finite())
+                        .map(|n| (name.clone(), n))
+                })
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn list_at<'a>(value: &'a Value, key: &str) -> impl Iterator<Item = &'a Value> {
@@ -197,6 +222,11 @@ impl DealBoard {
             outcomes,
             refused_by_person,
             counterparts,
+            great_work_room: numbers_at(deals, "great_work_room")
+                .into_iter()
+                .map(|(object, slots)| (object, slots.floor() as i64))
+                .collect(),
+            strategic_caps: numbers_at(deals, "strategic_caps"),
         })
     }
 
@@ -351,7 +381,11 @@ impl Terms {
                     .join(","),
             )
         };
-        Some(format!("give={};get={}", side(&self.give)?, side(&self.get)?))
+        Some(format!(
+            "give={};get={}",
+            side(&self.give)?,
+            side(&self.get)?
+        ))
     }
 
     /// The terms in a canonical form, items sorted on each side, so two sets
@@ -365,7 +399,11 @@ impl Terms {
             rendered.sort();
             Some(rendered.join(","))
         };
-        Some(format!("give={};get={}", side(&self.give)?, side(&self.get)?))
+        Some(format!(
+            "give={};get={}",
+            side(&self.give)?,
+            side(&self.get)?
+        ))
     }
 
     /// The terms with `extra` more Gold from the other side, of the kind
