@@ -331,13 +331,19 @@ def sides(places: list[float]) -> list[str]:
     return chosen
 
 
+#: The room at the left of the lines that the rows' names take, in px
+#: (the page's `--gutter`), since the line was split into rows on 2026-11-27.
+GUTTER = 120
+
 #: How far apart along the line two stops' words must stand to share a row,
-#: as a share of the line: the words are 150px wide, and the line is 1000px
+#: as a share of the line: the words are 150px wide and a line of them can
+#: run 20px past that (a goal's cost, an amortized time), and the line is 880px
 #: long or longer wherever the page draws it. That is the inside of a panel
-#: of CIVVIS Performance from 1120px of window, where the line is drawn:
-#: 1026px, or 1009px with a scrollbar's 17px taken. It was 1040px while the
-#: line stood on Home, in no panel.
-ROOM = 150 / 1000
+#: of CIVVIS Performance from 1120px of window, where the line is drawn,
+#: 1026px, or 1009px with a scrollbar's 17px taken, less the rows' names
+#: (`GUTTER`). It was 1040px while the line stood on Home, in no panel, and
+#: the whole 1000px until it was split into rows.
+ROOM = 170 / (1000 - GUTTER)
 
 
 #: A stop this near an end of the line has its words begin or end at its
@@ -373,6 +379,137 @@ def rows(places: list[float], chosen: list[str], room: float = ROOM) -> list[boo
         far[index] = at - last[(side, False)] < room
         last[(side, far[index])] = at
     return far
+
+
+def place(multiplier: float, goal: float) -> float:
+    """Where a multiplier stands along the line that ends at `goal`: 0 at
+    1x, its right end, and 1 at the end."""
+    return round(min(1.0, max(0.0, math.log(multiplier) / math.log(goal))), 4)
+
+
+def fastest(source: pathlib.Path, path: str) -> float:
+    """The fewest seconds in a record of games on video (the record videos,
+    `data/performance/fastest_game_videos.json`): the fastest game on record."""
+    return min(float(video["seconds"]) for video in json.loads((source / path).read_text(encoding="utf-8"))["videos"])
+
+
+def spans(source: pathlib.Path, lane: dict, measured: list[tuple[dict, list[dict]]], laid: dict, base: float,
+          goal: float) -> list[dict]:
+    """A row's stretches with no single figure (its `spans`; operator
+    2026-11-27: "civvis self-play (which can be a range (6s-34s) and point
+    left to \"Civ 6 computational irreducability). can have a range here,
+    with maybe 1-10x???? being the width", and "hyperscale can start where
+    hardwaer scale up ends and point left (Many OOMs)"), for the stops as
+    read (`measured`), the places of the line's entries (`laid`, by key), the
+    baseline's seconds (`base`) and the multiplier the line ends at
+    (`goal`).
+
+    A `range` runs from a stop's own reading to the fastest game on record
+    (`fastest`); a span that is `times` past the one it is `after` runs from
+    that span's fast end so many times faster to so many more, the first
+    figure first; an `open` one runs from an entry of the line to its end.
+    A row has the places of its slow end and its fast end (`start`, `end`)
+    and the middle between them (`at`), where its words stand; a range and a
+    guess have their times fastest first (`time`, `seconds`) and their
+    multipliers slowest first (`times`, `multiplier`), and a guess the
+    figures it was taken to be (`by`)."""
+    seconds = {stop["key"]: taken[-1]["seconds"] for stop, taken in measured}
+    ends: dict[str, float] = {}
+    out = []
+    for span in lane.get("spans") or []:
+        row: dict = {"key": span["key"], "lane": lane["key"]}
+        if span.get("open"):
+            if span.get("after") not in laid:
+                continue
+            row.update(start=laid[span["after"]], end=1.0, open=True)
+        else:
+            if "range" in span:
+                # A range runs out to the fastest game on record; a revision
+                # without the record has no range, and no guess past it.
+                try:
+                    quick = fastest(source, span["fastest"])
+                except (OSError, ValueError, KeyError, TypeError):
+                    continue
+                slow = seconds[span["range"]]
+            elif span.get("after") not in ends:
+                continue
+            else:
+                low, high = span["times"]
+                slow, quick = ends[span["after"]] / low, ends[span["after"]] / high
+                row["by"] = f"{figure(low)}–{times(high)}"
+            ends[span["key"]] = quick
+            row.update(
+                seconds=[round(quick, 6), round(slow, 6)],
+                time=f"{clock(quick)} – {clock(slow)}",
+                multiplier=[round(base / slow, 2), round(base / quick, 2)],
+                times=f"{times(base / slow)} – {times(base / quick)}",
+                start=place(base / slow, goal),
+                end=place(base / quick, goal),
+            )
+        row["at"] = round((row["start"] + row["end"]) / 2, 4)
+        if span.get("from"):
+            row["from"] = span["from"]
+        out.append(row)
+    return out
+
+
+def lanes(ledger: dict, stops: list[dict], ahead: list[dict], goals: list[dict]) -> list[dict]:
+    """The line's rows, top to bottom (operator 2026-11-27: "we should split
+    the synthetic data pipeline up into a few rows"), for the line's stops,
+    projected stops and goals, each of which gains the `lane` it stands in.
+    A row has its `key`, its `name`, the `entries` it holds in the line's
+    order, and where it has a stop or a projected stop, the stretch of the
+    line between them (`from`, `to`), drawn as measured where one of them is
+    a stop that was played (`measured`). One that carries on from a stop of
+    another row starts at that stop's place (`start`, its `after`)."""
+    kind = {**{row["key"]: ("stop", row) for row in stops}, **{row["key"]: ("ahead", row) for row in ahead},
+            **{row["key"]: ("goal", row) for row in goals}}
+    out = []
+    for lane in ledger["lanes"]:
+        held = [kind[key] for key in lane.get("entries", []) if key in kind]
+        row: dict = {"key": lane["key"], "name": lane["name"], "entries": [entry["key"] for _, entry in held]}
+        for _, entry in held:
+            entry["lane"] = lane["key"]
+        drawn = [(what, entry) for what, entry in held if what != "goal"]
+        if drawn:
+            row["from"] = min(entry["at"] for _, entry in drawn)
+            row["to"] = max(entry["at"] for _, entry in drawn)
+            row["measured"] = any(what == "stop" for what, _ in drawn)
+        if lane.get("after") in kind:
+            row["after"] = lane["after"]
+            row["start"] = kind[lane["after"]][1]["at"]
+        out.append(row)
+    return out
+
+
+def headline(ledger: dict, stops: list[dict], ranged: list[dict]) -> dict | None:
+    """The three figures under the title, over the line (operator 2026-11-27:
+    "below the title and above the chart, lets track: self-play speed: Nx
+    (range ok), self-play games throughput: answer, person-played games
+    throughput scaleup: answer"), for the line's stops and its spans: the
+    self-play stop's multiplier (`speed`), the range of it where a span
+    runs it out to the fastest game on record; the games a second the
+    every-core stop plays (`throughput`), with a day's games at that rate;
+    and that stop's multiplier, which is how many times as many games as a
+    person playing by hand (`scaleup`). The stops are the ledger's `head`.
+    None where it names none, or a stop the line does not have."""
+    named = ledger.get("head")
+    by_key = {row["key"]: row for row in stops}
+    if not named or named.get("speed") not in by_key or named.get("throughput") not in by_key:
+        return None
+    speed, many = by_key[named["speed"]], by_key[named["throughput"]]
+    span = next((row for row in ranged if row["key"] == named["speed"] and "times" in row), None)
+    daily = 86400 / many["seconds"]
+    out = {
+        "speed": {"key": speed["key"], "times": span["times"] if span else speed["times"],
+                  "time": span["time"] if span else speed["time"]},
+        "throughput": {"key": many["key"], "rate": per_second(1 / many["seconds"]),
+                       "day": f"{round(float(f'{daily:.3g}')):,} games a day"},
+        "scaleup": {"key": many["key"], "times": many["times"]},
+    }
+    if "was" in many:
+        out["scaleup"]["was"] = many["was"]
+    return out
 
 
 def scale(multiplier: float) -> str:
@@ -807,18 +944,28 @@ def timeline(source: pathlib.Path) -> dict | None:
             if mark.get("amortized"):
                 amortize(row, base / mark["times"])
         ahead = projected(ledger, measured, base, goal)
+        # The line in rows, where the ledger splits it (2026-11-27), each
+        # with its stretches that have no single figure.
+        rowed = lanes(ledger, stops, ahead, goals) if ledger.get("lanes") else []
+        laid = {row["key"]: row["at"] for row in stops + ahead + goals}
+        stretches = [span for lane in ledger.get("lanes") or [] for span in spans(source, lane, measured, laid, base, goal)]
     except (OSError, ValueError, KeyError, TypeError, IndexError, ZeroDivisionError):
         return None
     # Every entry of the line takes its side with the others, a stop, a
     # projected stop or a goal: the line holds more of them than one side
     # has room for, and two that stand close together go one over the line
-    # and one under it (see `sides`).
-    entries = stops + ahead + goals
-    for row, side in zip(entries, sides([row["at"] for row in entries])):
-        row["side"] = side
-    for row, far in zip(entries, rows([row["at"] for row in entries], [row["side"] for row in entries])):
-        if far:
-            row["far"] = True
+    # and one under it (see `sides`). Where the line is in rows, an entry
+    # takes it with the others of its row, a span's words among them.
+    entries = stops + ahead + goals + stretches
+    groups: dict = {}
+    for row in entries:
+        groups.setdefault(row.get("lane"), []).append(row)
+    for group in groups.values():
+        for row, side in zip(group, sides([row["at"] for row in group])):
+            row["side"] = side
+        for row, far in zip(group, rows([row["at"] for row in group], [row["side"] for row in group])):
+            if far:
+                row["far"] = True
     fastest = max(stops, key=lambda row: row["multiplier"])
     shown = {
         "speedup": fastest["times"],
@@ -832,6 +979,13 @@ def timeline(source: pathlib.Path) -> dict | None:
         shown["was"] = fastest["was"]
     if ahead:
         shown["projected"] = ahead
+    if rowed:
+        shown["lanes"] = rowed
+    if stretches:
+        shown["spans"] = stretches
+    head = headline(ledger, stops, stretches)
+    if head:
+        shown["head"] = head
     # Why one stop is so many times faster than another, where the ledger
     # asks for it and the two are on the line.
     try:

@@ -2311,20 +2311,21 @@ fn viewer_marks_the_selected_revision_and_its_compact_ages_above_the_minimap() {
 /// url for this to be of the form: civvis.ai/edge-of-tomorrow. the others
 /// can be civvis.ai/debugger and civvis.ai/doctor-strange"), where they
 /// were the viewer's address with `?mode=strange`, `?mode=play` and
-/// `?mode=tomorrow`. CIVVIS: Moneyball stands after Edge of Tomorrow since
-/// 2026-11-27 (operator: "add CIVVIS: Moneyball. This is a minigame where a
-/// user only looks at the stats and tries to play the best game").
+/// `?mode=tomorrow`.
+/// CIVVIS: Moneyball stands after Edge of Tomorrow since 2026-11-27
+/// (operator: "add CIVVIS: Moneyball. This is a minigame where a user only
+/// looks at the stats and tries to play the best game").
 #[test]
 fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
     assert!(EMBEDDED_INDEX.contains(concat!(
         "<nav class=\"head-links\" id=\"headlinks\" aria-label=\"CIVVIS sites\" hidden>\n",
         "        <a class=\"home-link\" id=\"homelink\" href=\"/home\" target=\"_top\">Home</a>\n",
-        "        <a class=\"home-link\" id=\"chartslink\" href=\"/charts/ai-insights\" target=\"_top\">Charts/</a>\n",
         "        <a class=\"home-link\" id=\"tourlink\" href=\"/tournaments\" target=\"_top\">Tournaments</a>\n",
-        "        <a class=\"home-link\" id=\"watchlink\" href=\"./\" target=\"_top\">CIVVIS</a>\n",
+        "        <a class=\"home-link\" id=\"chartslink\" href=\"/charts/ai-insights\" target=\"_top\">Charts/</a>\n",
         "        <a class=\"home-link\" id=\"strangelink\" href=\"doctor-strange\" target=\"_top\">Doctor Strange's CIVVIS</a>\n",
         "        <a class=\"home-link\" id=\"tomorrowlink\" href=\"edge-of-tomorrow\" target=\"_top\">CIVVIS: Edge of Tomorrow</a>\n",
         "        <a class=\"home-link\" id=\"moneyballlink\" href=\"moneyball\" target=\"_top\">CIVVIS: Moneyball</a>\n",
+        "        <a class=\"home-link\" id=\"watchlink\" href=\"./\" target=\"_top\">CIVVIS</a>\n",
         "        <a class=\"home-link\" id=\"playlink\" href=\"debugger\" target=\"_top\">CIVVIS AI Debugger</a>\n",
         "        <a class=\"home-link\" id=\"civ6link\" ",
         "href=\"https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/\" ",
@@ -2385,6 +2386,9 @@ fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
     // wake point was moved to.
     assert!(include_str!("../../beta/shim.js")
         .contains("else if (mode === \"tomorrow\") payload.spectate = false;"));
+    // CIVVIS: Moneyball's seat is the visitor's too, played by the picks.
+    assert!(include_str!("../../beta/shim.js")
+        .contains("else if (mode === \"moneyball\") payload.spectate = false;"));
     // Each opens on a world of its own (operator, 2026-11-25: "lets use 4p
     // pangaea maps for doctor strange's civ 6. 2p Duel maps for edge of
     // tomorrow"), and a link's own players, map or shape still wins.
@@ -2393,6 +2397,10 @@ fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
         "      play: {map_topology: \"flat\"},\n",
         "      strange: {num_players: 4, map_script: \"pangaea\", map_topology: \"flat\"},\n",
         "      tomorrow: {num_players: 2, map_script: \"continents\", map_topology: \"flat\"},\n",
+        "      // CIVVIS: Moneyball plays every column's future on a copy of the\n",
+        "      // world before each pick, so it has Doctor Strange's small world, four\n",
+        "      // civilizations on a Pangaea, whose turns are the quickest to play.\n",
+        "      moneyball: {num_players: 4, map_script: \"pangaea\", map_topology: \"flat\"},\n",
         "    };\n",
         "    for (const [setting, value] of Object.entries(MODE_WORLDS[mode] || {})) {\n",
         "      if (!(setting in payload)) payload[setting] = value;\n",
@@ -2638,10 +2646,17 @@ fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
     // the system face, AUTO-TOURNEYS is 91.3px in this type and half a row
     // holds 84px at its narrowest (a 195px band), six tenths 103.8px;
     // CIVVIS is 36px in the 64.2px left to it.
+    // Since 2026-11-28 Tournaments stands before Charts/ and CIVVIS just
+    // above AI Debugger (operator: "move tournaments above charts in the
+    // ordering", "move civvis above the civvis ai debugger in the
+    // ordering"): HOME takes four tenths beside TOURNAMENTS' six, and
+    // CHARTS/ and CIVVIS, each beside a name with a row of its own, whole
+    // rows.
     assert!(EMBEDDED_INDEX.contains(concat!(
         "  .head-links > .home-link { grid-column: span 5; }\n",
+        "  .head-links > #homelink { grid-column: span 4; }\n",
         "  .head-links > #tourlink { grid-column: span 6; }\n",
-        "  .head-links > #watchlink { grid-column: span 4; }\n",
+        "  .head-links > #chartslink, .head-links > #watchlink { grid-column: 1 / -1; }\n",
     )));
     // Doctor Strange's Civ 6 is the one name longer than half a row and has
     // a row of its own, AI Debugger and Civ 6 keep theirs, and Edge of
@@ -2855,6 +2870,9 @@ fn the_home_page_lists_the_sites_with_itself_ringed() {
         concat!(
             "<nav class=\"site-nav\" aria-label=\"CIVVIS sites\">\n",
             "      <a class=\"site-link\" href=\"./\" aria-current=\"page\">Home</a>\n",
+            "      <a class=\"site-link\" href=\"../tournaments/\" ",
+            "title=\"Series of verification games against Civilization VI&#8217;s own AI: ",
+            "running, scheduled and finished.\">Tournaments</a>\n",
             "      <div class=\"site-folder\">\n",
             "        <a class=\"site-link\" href=\"../charts/ai-insights/\" ",
             "title=\"What the games show: charts read off the CIVVIS AI agents&#8217; games.\">Charts/</a>\n",
@@ -2868,15 +2886,14 @@ fn the_home_page_lists_the_sites_with_itself_ringed() {
             "or talked over.\">Unreviewed Gen AI Charts</a>\n",
             "        </div>\n",
             "      </div>\n",
-            "      <a class=\"site-link\" href=\"../tournaments/\" ",
-            "title=\"Series of verification games against Civilization VI&#8217;s own AI: ",
-            "running, scheduled and finished.\">Tournaments</a>\n",
-            "      <a class=\"site-link\" href=\"../\" ",
-            "title=\"Every civilization is played by a CIVVIS AI agent.\">CIVVIS</a>\n",
             "      <a class=\"site-link\" href=\"../doctor-strange\" ",
             "title=\"One world, two timelines: the same game played two ways, side by side, on a timeline that branches.\">Doctor Strange's CIVVIS</a>\n",
             "      <a class=\"site-link\" href=\"../edge-of-tomorrow\" ",
             "title=\"You play one civilization, with a jump back: the world returns to the turn you woke on, as it stood.\">CIVVIS: Edge of Tomorrow</a>\n",
+            "      <a class=\"site-link\" href=\"../moneyball\" ",
+            "title=\"Only the numbers: pick a player strategy by its stats, ten turns at a time, and try to play the best game.\">CIVVIS: Moneyball</a>\n",
+            "      <a class=\"site-link\" href=\"../\" ",
+            "title=\"Every civilization is played by a CIVVIS AI agent.\">CIVVIS</a>\n",
             "      <a class=\"site-link\" href=\"../debugger\" ",
             "title=\"You play one civilization. CIVVIS AI agents play the rest.\">CIVVIS AI Debugger</a>\n",
             "      <a class=\"site-link\" ",

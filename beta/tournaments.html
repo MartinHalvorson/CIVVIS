@@ -259,14 +259,17 @@
      until it is filled the record stays hidden and one sentence says so. */
   .tour-record { display: grid; gap: 16px; min-width: 0; }
   .tour-main, .tour-side { display: grid; gap: 16px; align-content: start; min-width: 0; }
-  /* With the room for it, the tournaments are the left 60% and what is
-     scheduled and the benchmark are the right 40%, one over the other
-     (operator, 2026-11-25: "put the experiments list on the left 60%. the
-     scheduled games & benchmark can be on the right"). Scheduled stood in a
-     300px column off on the right from 2026-11-21 ("lets have schedule in a
-     col off on the right"). The key to the squares and how a game is
-     counted run under both. In a narrower window it is all one column, in
-     the order the markup has it. */
+  /* With the room for it, two columns: on the left 60%, ELO Rankings over
+     the benchmark; on the right 40%, what is scheduled over the tournaments
+     running and finished (operator, 2026-11-27: "in tournaments, move elo
+     rankings to left side at the top. lets put the tournament on the rigth.
+     scheudel can stay top right. benchmark left."). The tournaments were the
+     left 60% from 2026-11-25 ("put the experiments list on the left 60%. the
+     scheduled games & benchmark can be on the right"), and ELO Rankings ran
+     across the top. Scheduled has stood at the top of the right since
+     2026-11-21 ("lets have schedule in a col off on the right"). The key to
+     the squares and how a game is counted run under both. In a narrower
+     window it is all one column, in the order the markup has it. */
   @media (min-width: 1100px) {
     .tour-record { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); align-items: start; }
     .tour-record > :not(.tour-main):not(.tour-side) { grid-column: 1 / -1; }
@@ -530,6 +533,7 @@
          lane's page opens the test lane's other pages and viewer. -->
     <nav class="site-nav" aria-label="CIVVIS sites">
       <a class="site-link" href="../home/">Home</a>
+      <a class="site-link" href="./" aria-current="page">Tournaments</a>
       <div class="site-folder">
         <a class="site-link" href="../charts/ai-insights/" title="What the games show: charts read off the CIVVIS AI agents&#8217; games.">Charts/</a>
         <div class="site-menu">
@@ -542,11 +546,10 @@
           <a class="site-link sub-link" href="../charts/unreviewed-gen-ai-charts/" title="Charts the AI agents added on their own, kept here until they are asked for or talked over.">Unreviewed Gen AI Charts</a>
         </div>
       </div>
-      <a class="site-link" href="./" aria-current="page">Tournaments</a>
-      <a class="site-link" href="../" title="Every civilization is played by a CIVVIS AI agent.">CIVVIS</a>
       <a class="site-link" href="../doctor-strange" title="One world, two timelines: the same game played two ways, side by side, on a timeline that branches.">Doctor Strange's CIVVIS</a>
       <a class="site-link" href="../edge-of-tomorrow" title="You play one civilization, with a jump back: the world returns to the turn you woke on, as it stood.">CIVVIS: Edge of Tomorrow</a>
       <a class="site-link" href="../moneyball" title="Only the numbers: pick a player strategy by its stats, ten turns at a time, and try to play the best game.">CIVVIS: Moneyball</a>
+      <a class="site-link" href="../" title="Every civilization is played by a CIVVIS AI agent.">CIVVIS</a>
       <a class="site-link" href="../debugger" title="You play one civilization. CIVVIS AI agents play the rest.">CIVVIS AI Debugger</a>
       <a class="site-link" href="https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/" target="_blank" rel="noopener" title="Buy Civilization VI on Steam">Civ 6</a>
     </nav>
@@ -575,7 +578,7 @@
     <div class="site-brand">
       <div class="site-lockup">
         <h1 class="site-title">CIVVIS<span>.ai</span></h1>
-        <p class="site-tagline"><span>An open source Civilization VI Simulator</span> <span>for fixing the Civ AI (fan project, free)</span></p>
+        <p class="site-tagline"><span>An open source Civilization VI Simulator</span> <span>for fixing the Civ AI</span> <span>(fan project, open source, free)</span></p>
       </div>
     </div>
     <nav class="utility-nav" aria-label="CIVVIS links">
@@ -617,16 +620,21 @@
 
     <!-- The record, all read from the run ledger and the definitions in
          `data/tournaments.json` when the site is published
-         (`beta/tournaments_page.py`). On the left, the tournaments: the one
-         being played and the ones that have finished. On the right, the
-         ones scheduled and the benchmark, which is not a tournament
-         (operator, 2026-11-25: "tourney 7 is benchmark. please remove from
-         experiments and make the official benchmark for now"). The script
+         (`beta/tournaments_page.py`). On the left, ELO Rankings at the top
+         and the benchmark under it, which is not a tournament (operator,
+         2026-11-25: "tourney 7 is benchmark. please remove from experiments
+         and make the official benchmark for now"). On the right, the ones
+         scheduled at the top, then the tournaments: the one being played
+         and the ones that have finished (operator, 2026-11-27: "in
+         tournaments, move elo rankings to left side at the top. lets put
+         the tournament on the rigth. scheudel can stay top right. benchmark
+         left."). The script
          below builds them from the `tournaments-data` slot; a page whose
          slot still reads `null` (this file opened as it is committed, or a
          build with no ledger) shows the one sentence instead. -->
     <p class="tour-empty" id="tour-empty">This copy of the page has no tournament record. It is written in when the site is published.</p>
     <div class="tour-record" id="tour-record" hidden>
+      <div class="tour-main">
       <section class="tour-section" id="tour-elo" hidden aria-labelledby="tour-elo-title">
         <h2 class="rank-title" id="tour-elo-title"><a href="../charts/elo-rankings/" title="ELO Rankings: the ratings now and over time">ELO Rankings</a></h2>
         <p class="rank-sub">CIVVIS AI strategies, the classic Firaxis AI and people, on one Elo scale. Left: measured in Civilization VI under computer control. Right: CIVVIS self-play. Any column sorts both. Our stand-in for Prince is 1000.</p>
@@ -671,7 +679,21 @@
           </p>
         </details>
       </section>
-      <div class="tour-main">
+      <section class="tour-section" id="tour-benchmark" hidden aria-labelledby="tour-benchmark-title">
+        <h2 class="rank-title" id="tour-benchmark-title">Benchmark</h2>
+        <p class="rank-sub" data-sub></p>
+        <div data-cards></div>
+      </section>
+      </div>
+      <div class="tour-side">
+      <section class="tour-section" id="tour-scheduled" aria-labelledby="tour-scheduled-title">
+        <h2 class="rank-title" id="tour-scheduled-title">Scheduled</h2>
+        <p class="rank-sub" data-sub></p>
+        <ol class="tour-queue"></ol>
+        <p class="rank-note">
+          Scheduled in <a href="https://github.com/MartinHalvorson/CIVVIS/blob/main/data/tournaments.json" target="_blank" rel="noreferrer">data/tournaments.json</a>.
+        </p>
+      </section>
       <section class="tour-section" id="tour-running" hidden aria-labelledby="tour-running-title">
         <h2 class="rank-title" id="tour-running-title">Running</h2>
         <p class="rank-sub" data-sub></p>
@@ -690,21 +712,6 @@
           <span data-rank-note></span>
           <a href="https://github.com/MartinHalvorson/CIVVIS/blob/ledger/results.jsonl" target="_blank" rel="noreferrer">Every game</a>
         </p>
-      </section>
-      </div>
-      <div class="tour-side">
-      <section class="tour-section" id="tour-scheduled" aria-labelledby="tour-scheduled-title">
-        <h2 class="rank-title" id="tour-scheduled-title">Scheduled</h2>
-        <p class="rank-sub" data-sub></p>
-        <ol class="tour-queue"></ol>
-        <p class="rank-note">
-          Scheduled in <a href="https://github.com/MartinHalvorson/CIVVIS/blob/main/data/tournaments.json" target="_blank" rel="noreferrer">data/tournaments.json</a>.
-        </p>
-      </section>
-      <section class="tour-section" id="tour-benchmark" hidden aria-labelledby="tour-benchmark-title">
-        <h2 class="rank-title" id="tour-benchmark-title">Benchmark</h2>
-        <p class="rank-sub" data-sub></p>
-        <div data-cards></div>
       </section>
       </div>
       <p class="tour-legend">
