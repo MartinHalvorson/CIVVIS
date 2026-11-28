@@ -41,7 +41,7 @@ fn camp_board(gene: bool, guarded: bool, apart: i32) -> (Game, Pos, Vec<u32>, Ad
             g.wdist(*pos, camp) == apart
                 && g.city_at(*pos).is_none()
                 && g.unit_ids_at(*pos).is_empty()
-                && g.wdist(*pos, at(6, 8)) < g.wdist(camp, at(6, 8))
+                && g.wdist(*pos, at(6, 8)) <= g.wdist(camp, at(6, 8))
         })
         .collect();
     ring.sort();
