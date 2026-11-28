@@ -77,6 +77,40 @@ def played_turn(turn: int, frames: int = 1) -> list[dict]:
 LOADED = {"kind": "loaded", "ctx": "agent", "run": "live"}
 
 
+class PollTest(unittest.TestCase):
+    """How often the journal is read: 25 ms, and a hotseat `--fast-turns`
+    game's 10 ms (`--poll-seconds`); never under 5 ms."""
+
+    def naps(self, *extra: str) -> list[float]:
+        pending = [[json.dumps(LOADED) + "\n"], [], []]
+        slept: list[float] = []
+
+        def scripted(events: Path, offset: int) -> tuple[list[str], int]:
+            if not pending:
+                raise _JournalRead
+            return pending.pop(0), offset + 1
+
+        with tempfile.TemporaryDirectory() as temporary:
+            run_dir = Path(temporary) / "live"
+            run_dir.mkdir()
+            (run_dir / "events.jsonl").touch()
+            argv = ["civ6_brain.py", "--run-dir", str(run_dir), "--mode", "stub", *extra]
+            with mock.patch.object(sys, "argv", argv), \
+                    mock.patch.object(civ6_brain, "read_event_lines", scripted), \
+                    mock.patch.object(civ6_brain.time, "sleep", slept.append), \
+                    mock.patch("sys.stdout", io.StringIO()):
+                try:
+                    civ6_brain.main()
+                except _JournalRead:
+                    pass
+        return slept
+
+    def test_the_journal_is_read_every_25_ms_unless_asked(self) -> None:
+        self.assertEqual(self.naps()[-1], 0.025)
+        self.assertEqual(self.naps("--poll-seconds", "0.01")[-1], 0.01)
+        self.assertEqual(self.naps("--poll-seconds", "0")[-1], 0.005, "never a busy loop")
+
+
 class ReloadedGameTest(unittest.TestCase):
     """A brain started on, or running through, a game resumed from an earlier save."""
 

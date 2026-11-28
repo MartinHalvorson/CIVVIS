@@ -36,7 +36,8 @@ SOURCES = sorted(set(re.findall(r'_page="\$source_tree/beta/([a-z_]+\.html)"', P
 #: analytics, win analytics. elo rankings.. civvis performanc"; and, later
 #: that day, "we want a new ai insights", which is listed over them; and,
 #: 2026-11-26, "please add another chart to the end of charts/ called random
-#: ai charts", the last).
+#: ai charts"; and, 2026-11-28, "add a project chronology to charts/ at the
+#: end for now", the last).
 CHARTS = [
     ("ai-insights", "AI Insights"),
     ("civ-ai-interpretability", "Civ AI Interpretability"),
@@ -45,6 +46,7 @@ CHARTS = [
     ("elo-rankings", "ELO Rankings"),
     ("civvis-performance", "CIVVIS Performance"),
     ("unreviewed-gen-ai-charts", "Unreviewed Gen AI Charts"),
+    ("project-chronology", "Project Chronology"),
 ]
 LINK = re.compile(r'<a class="(site-link(?: sub-link)?)" href="([^"]*)"([^>]*)>([^<]+)</a>')
 
@@ -69,6 +71,7 @@ class Row(unittest.TestCase):
         self.assertGreaterEqual(set(headed()), {
             "landing.html", "tournaments.html", "research.html", "elo.html",
             "civs.html", "performance.html", "interpretability.html", "insights.html",
+            "random.html", "chronology.html",
         })
 
     def test_the_list_is_first_in_the_header_over_the_title(self):

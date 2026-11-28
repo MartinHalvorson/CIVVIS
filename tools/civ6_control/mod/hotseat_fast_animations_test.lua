@@ -1,6 +1,6 @@
 -- Hotseat `--fast-animations` (`HotseatFastAnimations`): every mod clock that
 -- counts real seconds still does at the console's `timescale N`, and every
--- way back to 1 (no switch to N here: that is the launcher's flag).
+-- way back to 1, and the one way up (`--fast-animations`).
 --
 --   A. The agent (`CivvisClock`, run from the shipped file): a context follows
 --      a scale another context set without a jump; a person's turn begin, the
@@ -16,6 +16,10 @@
 --      the key are left alone.
 --   D. The hand-over: its 0.3 s and 2 s in real seconds; a person's Start Turn
 --      waits for 1 (a second at most); a CIVVIS seat's does not.
+--   E. The switch: a CIVVIS seat's own turn under the cover commands N; every
+--      reason not to (no cover, the menu, an end screen, stood down, the
+--      ladder's own timescale, no live harness, a person's seat) holds it at 1
+--      and says why; a refused command stands it down; the rollover key.
 --
 -- Run: lua5.1 tools/civ6_control/mod/hotseat_fast_animations_test.lua
 
@@ -89,7 +93,14 @@ local function agentHost(cfg)
 			return { IsAlive = function() return not h.dead[pid] end }
 		end }),
 		CivvisSeat = { seat = tonumber(cfg.HotseatSeat) },
+		-- The popup queue (`h.popups[path]`), the person-facing harness, the
+		-- ladder's own timescale: what `fastBlocked` reads.
+		ContextPtr = { LookUpControl = function(_, path) return path end },
+		UIManager = { IsInPopupQueue = function(_, context) return h.popups[context] == true end },
+		CivvisHarness = { live = function() return h.harness ~= false end },
+		CivvisQueue = {},
 	}
+	h.popups = {}
 	env.AutoProfiler = h.autoprofiler
 	local chunk = assert(loadstring(clockBlock .. "\nif true then\n" .. initBlock .. "end\n"))
 	setfenv(chunk, env)
@@ -228,6 +239,95 @@ check("A8. a refused reset stands the feature down", h.exposed.CivvisFastAnim.of
 check("…says so", h.last("fast_animations").phase == "reset_failed" and h.last("fast_animations").scale == 3)
 check("…and keeps counting real seconds at 3", h.c.scale == 3 and h.exposed.CivvisTimeScale == 3)
 h.refuse = false
+
+-- E. The one way up: this CIVVIS seat's own turn begins under the cover.
+local function seatHost(extra)
+	local e = agentHost(tableCfg(extra))
+	e.exposed.CivvisCoverUp = true
+	e.local_ = 5
+	return e
+end
+local function phase(e) return e.last("fast_animations") and e.last("fast_animations").phase end
+local e = seatHost()
+e.fire("LocalPlayerTurnBegin")
+check("E1. its own turn under the cover commands timescale 3", e.commands[1] == "timescale 3" and #e.commands == 1)
+check("…the table reads 3, this clock too", e.exposed.CivvisTimeScale == 3 and e.c.scale == 3
+	and e.exposed.CivvisFastAnim.on == true)
+check("…recorded with the scale and the UI clock", phase(e) == "on" and e.last("fast_animations").scale == 3
+	and e.last("fast_animations").ui == e.clock)
+check("…and the other contexts are told to follow", (e.raised[#e.raised] or {}).name == "CivvisFastAnimations"
+	and e.raised[#e.raised].args[1] == "follow")
+local t1 = e.c.now()
+e.clock = e.clock + 3
+check("E1. a real second later this clock says one", near(e.c.now() - t1, 1))
+-- The next CIVVIS seat finds it at 3: nothing commanded, its clock follows.
+local nxt = seatHost({ HotseatSeat = 4 })
+nxt.exposed.CivvisTimeScale, nxt.exposed.CivvisFastAnim = 3, { on = true }
+nxt.local_ = 4
+nxt.fire("LocalPlayerTurnBegin")
+check("E2. a seat that finds 3 commands nothing and follows", #nxt.commands == 0 and nxt.c.scale == 3)
+-- Every reason not to, each leaving it at 1 and saying which.
+for label, setup in pairs({
+	not_covered = function(x) x.exposed.CivvisCoverUp = false end,
+	menu = function(x) x.popups["/InGame/TopOptionsMenu"] = true end,
+	end_screen = function(x) x.popups["/InGame/EndGameMenu"] = true end,
+	stood_down = function(x) x.exposed.CivvisFastAnim = { off = "reset_failed" } end,
+	ladder_timescale = function(x) x.env.CivvisQueue.timescale = { want = 3 } end,
+}) do
+	local x = seatHost()
+	setup(x)
+	x.fire("LocalPlayerTurnBegin")
+	check("E3. " .. label .. ": nothing commanded", #x.commands == 0)
+	check("…held, saying " .. label, phase(x) == "held" and x.last("fast_animations").why == label)
+end
+local nh = seatHost({ RequireHarness = true })
+nh.harness = false
+nh.fire("LocalPlayerTurnBegin")
+check("E3. a person-facing install with no live harness: nothing", #nh.commands == 0
+	and nh.last("fast_animations").why == "no_harness")
+-- Held while the table still reads 3 (the cover stood aside, say): back to 1.
+local back = seatHost()
+back.exposed.CivvisCoverUp = false
+back.exposed.CivvisTimeScale, back.exposed.CivvisFastAnim = 3, { on = true }
+back.fire("LocalPlayerTurnBegin")
+check("E3. held at 3: put back to 1", back.commands[1] == "timescale 1" and back.exposed.CivvisTimeScale == 1)
+-- A seat that is a person's never raises it: the stand-in's context, or a
+-- second person at the table.
+for label, extra in pairs({ ["the stand-in"] = { HotseatSeat = 0, HotseatHumanSeats = { 0 }, HotseatStubSeats = { 0 } },
+		["a second person"] = { HotseatSeat = 3, HotseatHumanSeats = { 0, 3 } } }) do
+	local x = seatHost(extra)
+	x.local_ = tonumber(extra.HotseatSeat)
+	x.fire("LocalPlayerTurnBegin")
+	check("E4. " .. label .. "'s own turn: nothing raised", #x.commands == 0 and x.exposed.CivvisTimeScale ~= 3)
+	-- The second defence, behind the turn event's own person branch.
+	check("E4. …and asked directly, " .. label .. "'s seat is held", x.c.fastApply(x.local_) == false
+		and #x.commands == 0 and x.last("fast_animations").why == "person_seat")
+end
+-- A seat the table does not list as CIVVIS's is not one.
+local unlisted = seatHost({ HotseatSeats = { 1, 2, 3, 4 } })
+check("E4. a seat not listed as CIVVIS's is held", unlisted.c.fastApply(5) == false
+	and #unlisted.commands == 0 and unlisted.last("fast_animations").why == "person_seat")
+-- The console refuses the command: stood down, the table still at 1.
+local refused = seatHost()
+refused.refuse = true
+refused.fire("LocalPlayerTurnBegin")
+check("E5. a refused timescale 3 stands the feature down", phase(refused) == "apply_failed"
+	and refused.exposed.CivvisFastAnim.off == "apply_failed" and refused.exposed.CivvisTimeScale ~= 3
+	and refused.c.scale == 1)
+-- `HotseatFastRollover`: the last seat's end leaves it for the rollover; the
+-- person's turn begin is the reset.
+local roll = seatHost({ HotseatFastRollover = true })
+roll.fire("LocalPlayerTurnBegin")
+roll.fire("LocalPlayerTurnEnd")
+check("E6. rollover: the last seat's end leaves it at 3", #roll.commands == 1 and roll.exposed.CivvisTimeScale == 3)
+roll.local_ = 0
+roll.fire("LocalPlayerTurnBegin")
+check("E6. …and the person's turn begin puts it back", roll.commands[2] == "timescale 1"
+	and roll.exposed.CivvisTimeScale == 1)
+local plain = seatHost()
+plain.fire("LocalPlayerTurnBegin")
+plain.fire("LocalPlayerTurnEnd")
+check("E6. without it, the last seat's end puts it back", plain.commands[2] == "timescale 1")
 
 -- ===================================================================== B
 local coverSource = read("CivvisHotseatCover.lua")
@@ -421,6 +521,18 @@ seatPlays(w, 0)
 w.at(1)
 w.frames(60)
 check("B6. at scale 1 the wait is the UI clock, as before", near(w.cover.wait.elapsed, 1, 0.001))
+
+-- B7. The cover says whether it is up, for the seat whose turn begins under
+-- it: up as it is queued, down on every lift; never written without the key.
+w = coverHost()
+check("B7. down until it is queued", w.exposed.CivvisCoverUp == false)
+seatPlays(w, 0.1)
+check("B7. up once queued", w.exposed.CivvisCoverUp == true)
+w.cover.lift("yield_quiet", true)
+check("B7. down when it stands aside", w.exposed.CivvisCoverUp == false)
+w = coverHost({ HotseatFastAnimations = false })
+seatPlays(w, 0.1)
+check("B7. without the key it is never written", w.exposed.CivvisCoverUp == nil)
 
 -- ===================================================================== C
 local function hudHost(extra, agents)

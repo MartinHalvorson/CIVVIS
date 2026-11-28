@@ -397,6 +397,7 @@ function CivvisHotseatCover.raise(reason, force)
 		UIManager:QueuePopup(ContextPtr, c.priority(), { AlwaysVisibleInQueue = true });
 	end);
 	c.up = queued;
+	c.publishUp();
 	c.reset(key);
 	c.show(pid);
 	if queued then
@@ -435,6 +436,7 @@ function CivvisHotseatCover.lift(reason, yield)
 	c.scaleHeld = nil;
 	pcall(function() UIManager:DequeuePopup(ContextPtr); end);
 	c.up = false;
+	c.publishUp();
 	-- Their turn is back: the wait ran its course unless the cover stood aside.
 	local w = c.endWait(not yield and (reason == "person_start" or reason == "person_turn"));
 	c.report("hotseat_cover", { { "up", false }, { "reason", reason }, { "player", pid },
@@ -624,6 +626,15 @@ end
 function CivvisHotseatCover.atOne()
 	local s = CivvisHotseatCover.sharedRaw();
 	return s == nil or tonumber(s) == 1;
+end
+-- Whether the cover is up, for the CIVVIS seat whose turn begins under it:
+-- the only scale a seat raises is under the cover (the agent's
+-- `CivvisClock.fastBlocked`). Written as it is queued and taken down (a cover
+-- that stood aside is down), and false as this context shuts down; only with
+-- the key.
+function CivvisHotseatCover.publishUp()
+	if not CivvisHotseatCover.fastWant() then return; end
+	pcall(function() ExposedMembers.CivvisCoverUp = CivvisHotseatCover.up == true; end);
 end
 -- Back to 1; true when the table reads 1. Without the key, nothing is asked.
 function CivvisHotseatCover.resetScale(why)
@@ -1024,6 +1035,7 @@ end
 function CivvisHotseatCover.onTurnEnd()
 	local pid = CivvisHotseatCover.localPlayer();
 	CivvisHotseatCover.theirTurn = false;
+	CivvisHotseatCover.lingered = 0;
 	if CivvisHotseatCover.person(pid) and CivvisHotseatCover.viewKept() then
 		CivvisHotseatCover.saveView(pid);
 	end
@@ -1213,7 +1225,33 @@ function CivvisHotseatCover.tick(dt)
 		if c.wait ~= nil and c.menuUp() then c.wait.timed, c.wait.clean = false, false; end
 		c.sound("tick");
 	end
-	if not c.active(pid) then
+	-- ★ THE PERSON HAS ENDED THEIR TURN: THE COVER HOLDS UNTIL A TURN BEGINS.
+	-- For a frame or more after `LocalPlayerTurnEnd` the game can still read
+	-- the person's turn as active and unpaused (the end of turn is the game
+	-- core's to register, on its own thread). Read as "their turn is running",
+	-- that lifted the cover 18-38 ms after they pressed Next Turn, with the HUD
+	-- live under the pointer; a second click on the action button then un-ended
+	-- the turn (ActionPanel.lua:535-537 `UI.RequestAction(ActionTypes.ACTION_UNREADYTURN)`).
+	-- Live 2026-11-27/28, the owner's games hotseat-20261128T045523Z (turn 33)
+	-- and hotseat-20261128T062253Z (turn 18): `turn_end` up, `person_turn`
+	-- down 0.038 s / 0.018 s later, the person's same turn BEGUN AGAIN 164 ms /
+	-- 94 ms after its end, the hand-over pressed a second time by the backstop
+	-- (`again:true`, the only ones in 300 presses), and Civ VI gone within ten
+	-- seconds both times (a SIGSEGV on record for the first). So once the turn
+	-- events say the person's turn has ended, a turn that still reads active is
+	-- "between turns": the cover stays, taking every click and key, until a
+	-- turn-begin event says whose turn it is. (`theirTurn` is nil until the
+	-- first turn event of a loaded game: then the reading alone decides.)
+	-- Never a trap: a turn that still reads theirs `HotseatCoverLingerSeconds`
+	-- (5) after its end, with no event either way, is theirs after all.
+	local lingering = c.theirTurn == false and c.person(pid) and c.active(pid);
+	if lingering then
+		c.lingered = (c.lingered or 0) + dt;
+		lingering = c.lingered < c.seconds("HotseatCoverLingerSeconds", 5);
+	else
+		c.lingered = 0;
+	end
+	if not c.active(pid) or lingering then
 		-- Between turns: the game is processing, or the next seat's turn is
 		-- about to begin.
 		c.between = c.between + dt;
@@ -1309,8 +1347,12 @@ function CivvisHotseatCover.arm()
 	-- ...and at scale 1.
 	pcall(function() ContextPtr:SetShutdown(guarded(function()
 		c.unmute("shutdown");
+		c.up = false;
+		c.publishUp();
 		c.resetScale("shutdown");
 	end)); end);
+	-- Down until it is queued (a loaded game's table may still say otherwise).
+	c.publishUp();
 	c.report("hotseat_cover_armed", { { "cover", c.enabled() }, { "view", c.viewKept() },
 		{ "auto_start", cfg.HotseatAutoStart == true }, { "priority", c.priority() },
 		{ "sound", cfg.HotseatCoverSound }, { "timer", cfg.HotseatCoverTimer == true } });

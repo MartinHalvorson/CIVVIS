@@ -639,6 +639,21 @@ it closes. A person's defeat, a win (`Events.TeamVictory`) or an end screen
 whose defeat is not known lift the cover as before. ⚠ Tests only
 (`hotseat_cover_test.lua` 8b); no seat has been defeated in a live cover game.
 
+⚠⚠ **Measured 2026-11-27/28: a cover that lifted on the frame after Next Turn
+ended two of the owner's games.** For a frame or more after
+`LocalPlayerTurnEnd` the game can still read the person's turn as active and
+unpaused, and the cover's "their turn is running" rule lifted it 38 ms and
+18 ms after their end of turn (`hotseat-20261128T045523Z` turn 33,
+`hotseat-20261128T062253Z` turn 18). With the HUD live under the pointer a
+second click un-ended the turn (ActionPanel.lua:535-537,
+`ACTION_UNREADYTURN`): the same turn began again 164 ms and 94 ms after its
+end, the hand-over was pressed a second time by the backstop (`again:true`),
+and Civ VI was gone within ten seconds both times (a SIGSEGV on record for the
+first). The cover now holds from the person's end of turn until a turn-begin
+event says whose turn it is; a turn that still reads theirs
+`HotseatCoverLingerSeconds` (5) later, with no event, is theirs after all.
+Why the engine then dies is not known; the un-ended turn no longer happens.
+
 **The cover is quiet, and says about how long** (`HotseatCoverSound`,
 `HotseatCoverTimer`; `--cover-sound music|silent|all`, `--no-cover-timer`).
 The cover hid pixels only: a CIVVIS seat's units, fights, chimes and voice
@@ -681,6 +696,39 @@ live game, mean error of the time left 0.87 s against 1.45 s at the seat
 changes, 1.07 s against 1.70 s over all frames, and no "Any moment now" with
 time to go (6.4 s of it before). ⚠ The countdown is tests and replay only, not
 yet seen in a live game (2026-11-28).
+
+**The CIVVIS seats' turns can run at the ladder's timescale, the person's never**
+(`--fast-animations [N]`, off by default; `HotseatFastAnimations`, and
+`--fast-animations-rollover`, `HotseatFastRollover`). The person's wait is
+mostly the game animating what nobody sees: a fight holds its seat ~0.8 s even
+with Quick Combat, walks hold the end of every turn. At a CIVVIS seat's own
+`LocalPlayerTurnBegin`, with the cover up (`ExposedMembers.CivvisCoverUp`), no
+game menu or end screen queued, the feature not stood down and, in the
+person-facing install, a live harness, that seat's agent context commands the
+console's `timescale N` (3 by default, the ladder's `debug-timescale-3`;
+`CivvisClock.fastApply`). One engine scale serves the whole table
+(`ExposedMembers.CivvisTimeScale`): every seat's context rebases its own
+`CivvisClock` on it (`CivvisClock.follow`), and every clock that counts real
+seconds divides by it: the cover's wait, bar, estimate and stand-aside clocks,
+the hand-over's press, the HUD's pulse and peek, the screen closers' holds; the
+seat watch and the harness run on the wall clock already. It goes back to 1,
+each independently: when the last CIVVIS seat before a person ends its turn
+(with the rollover key, after the game's own processing instead), at every
+person's `LocalPlayerTurnBegin` (the stand-in's too) in every agent context and
+in the cover, before a person's Start Turn is pressed and before the cover lifts
+for them (each waits for it, up to a second), on every other lift (a stand-aside
+at once), whenever the game menu or an end screen is over the cover, after every
+load, and on any HUD frame of a person's turn that reads otherwise
+(`fast_animations_guard`), where the HUD also compares the UI clock with the
+wall clock and, finding it fast, forces 1 and stands the feature down for the
+game, as a refused reset does. Records: `fast_animations` (`on`, `off`, `held`
+with its reason, `loaded`, `reset_failed`, `apply_failed`, each with `ui` and
+`scale`), `hotseat_scale_hold`/`hotseat_scale_unconfirmed`,
+`hotseat_cover_scale`; `tools/hotseat_wait.py` turns the scaled UI clock back
+into seconds and audits each person's turn from the cover's records.
+`hotseat_fast_animations_test.lua`. ⚠ Tests only, not seen in a live game
+(2026-11-28); whether the timescale changes the soundtrack's pitch or tempo
+under the cover is not known.
 
 The test arrangement `--auto-human gated` puts a stub in the person's seat
 (`HotseatHumanSeats` and `HotseatStubSeats` both list seat 0): the cover and
