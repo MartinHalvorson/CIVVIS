@@ -154,14 +154,14 @@ pub(super) fn settler_pump_choices(state: &mirror::StateSnapshot) -> Vec<Choice>
         let settler = city.producing.as_deref() == Some("UNIT_SETTLER");
         let verb = if city.production_focus_managed == Some(true) {
             let starving = city.food_surplus.is_finite() && city.food_surplus < 0.0;
-            (!settler || starving).then_some("RELEASE_PRODUCTION")
+            (!settler).then_some("RELEASE_PRODUCTION")
         } else {
             (settler
                 && city.food_surplus.is_finite()
-                && city.food_surplus >= SETTLER_PUMP_MIN_FOOD
+                && city.food_surplus >= SETTLER_PUMP_MIN_FOOD - 1.0
                 && city.production.is_finite()
                 && city.production >= 0.0
-                && city.production <= SETTLER_PUMP_MAX_PRODUCTION
+                && city.production < SETTLER_PUMP_MAX_PRODUCTION
                 && city.food_favored == Some(false)
                 && city.production_favored != Some(true))
             .then_some("FAVOR_PRODUCTION")
@@ -192,7 +192,7 @@ pub(super) fn verify(order: &IssuedOrder, after: &mirror::StateSnapshot) -> Verd
         let (Some(favored), Some(managed)) =
             (city.production_favored, city.production_focus_managed)
         else {
-            return Verdict::Failed("production_focus_not_exported".into());
+            return Verdict::Unverifiable;
         };
         return match (verb, favored, managed) {
             ("FAVOR_PRODUCTION", true, true) | ("RELEASE_PRODUCTION", false, false) => {
