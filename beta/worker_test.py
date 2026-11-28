@@ -483,6 +483,7 @@ def main(argv: list[str] | None = None) -> int:
             ("/charts/civ-ai-interpretability/", "Civ AI Interpretability"),
             ("/charts/ai-insights/", "AI Insights"),
             ("/charts/unreviewed-gen-ai-charts/", "Unreviewed Gen AI Charts"),
+            ("/charts/project-chronology/", "Project Chronology"),
             ("/tournaments/", "Tournaments"),
         ):
             passed = hit(path=address)
@@ -866,6 +867,7 @@ def main(argv: list[str] | None = None) -> int:
             ("/test/charts/civ-ai-interpretability/", "Civ AI Interpretability"),
             ("/test/charts/ai-insights/", "AI Insights"),
             ("/test/charts/unreviewed-gen-ai-charts/", "Unreviewed Gen AI Charts"),
+            ("/test/charts/project-chronology/", "Project Chronology"),
         ):
             passed = hit(path=address)
             check(problems, f"{address} passes through to the test {name} page",
