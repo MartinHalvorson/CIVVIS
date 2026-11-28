@@ -2165,6 +2165,19 @@ and the page was next drawn (once a frame at most): measured on /test with
 two worlds, a world's map was a turn ahead of the count in one look in seven,
 and a turn the page was not drawn on was never written at all.
 
+Every turn is painted at least once (operator 2026-11-27: "doc strange
+should show 1 frame from every turn at least. skipping 2-3 now"). A world
+draws the turn it is shown at once (`render`), but a world already holding
+its next turn can be shown that one in the same frame, and a turn drawn over
+before the browser paints is never seen. So once every world stands on a
+turn, the next is asked for at once but shown only after a frame has been
+painted (`strangeAwaitPaint`, `strangePainted`): the frame asked for is
+painted with every world on the turn, and the next is shown in a task after
+it, so not even its count is painted early. A hidden window paints nothing
+and waits for nothing. Measured on /test, ten worlds under Send it: before
+#5984 a world's painted map went up two, three or four turns at a time;
+after it and this, one, on every world (1,597 steps in 40 s), and as fast.
+
 ### Send it
 
 Operator 2026-11-26: "add a button to the left side top half but the bottom
