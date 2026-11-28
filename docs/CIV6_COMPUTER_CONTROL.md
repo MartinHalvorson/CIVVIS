@@ -625,14 +625,32 @@ while the game menu is open over the cover (its Options screen reads and can
 save them), on every lift, and when the context shuts down; a bus the person
 keeps at 0 is never touched. Each change is one `hotseat_cover_sound` record
 with the first bus's volume before and the game's own reading after. The bar
-under the seat's name fills over the person's own recent waits (their end of
-turn to the start of their next, by `UI.GetElapsedTime()`: the last four,
-newest weighted most, a tenth added), straight to 85% and then ever slower,
-with "About 12 s" or "Any moment now" under it; a wait with none on record, or
-joined part-way, sweeps instead. A wait the cover stood aside in, or the game
-menu was opened over, is not learned from. `hotseat_cover` records carry
-`waited`, `estimate` and `timed` when the cover comes down. ⚠ Not yet seen in a
-live game (2026-11-27): `hotseat_cover_test.lua` sections 8-9 only.
+under the seat's name counts the CIVVIS seats down, not the whole wait: the
+cover times each seat's turn (its `LocalPlayerTurnBegin` to its
+`LocalPlayerTurnEnd`, by `UI.GetElapsedTime()`), the moment before each, and
+the stretch from the last seat's end to the person's turn (the rollover and
+their hand-over), and keeps the last five of each. Time left = what is left of
+the seat playing now (never less than nothing: a seat that runs over holds the
+count until the next one starts) + each seat still to come + that last
+stretch, each a recency-weighted mean with nothing counted above twice its
+median (`CivvisHotseatCover.typical`), worked out again every frame. The line
+reads "3 of 5, about 6 s", and "Any moment now" only once no seat is left; the
+bar is the share of the wait gone by that reckoning, only ever forward, and
+near the end as the person's turn comes back. Before any seat's turn is known
+(the first seat of the first wait, a wait joined part-way) it sweeps; a seat
+with none of its own yet is taken to be like the others. What the game menu
+was opened over, and the end of a wait the cover stood aside in, are not
+learned from. Both `hotseat_cover` records carry `at` (the UI clock, as the
+seats' `end_turn_wait.ui_now`); the lift record also `waited`, `estimate` (the
+count at the wait's start), `timed`, `seats`, `took` (each seat's turn,
+`seat:seconds`) and `said` (the time left shown as each seat began), enough
+to replay the countdown from a live game. `hotseat_cover_wait_test.lua`
+replays the live game of 2026-11-27 (hotseat-20261128T031456Z) and a 118-turn
+self-play through it and through the whole-wait estimate it replaced: in the
+live game, mean error of the time left 0.87 s against 1.45 s at the seat
+changes, 1.07 s against 1.70 s over all frames, and no "Any moment now" with
+time to go (6.4 s of it before). ⚠ The countdown is tests and replay only, not
+yet seen in a live game (2026-11-28).
 
 The test arrangement `--auto-human gated` puts a stub in the person's seat
 (`HotseatHumanSeats` and `HotseatStubSeats` both list seat 0): the cover and
