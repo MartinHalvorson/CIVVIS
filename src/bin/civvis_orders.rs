@@ -77,6 +77,8 @@ mod culture_ski_resorts;
 mod diagnostics;
 #[path = "civvis_orders/formation_refusals.rs"]
 mod formation_refusals;
+#[path = "civvis_orders/friendship_refusals.rs"]
+mod friendship_refusals;
 #[path = "civvis_orders/generals_lead_the_army.rs"]
 mod generals_lead_the_army;
 #[path = "civvis_orders/governor_exchange.rs"]
@@ -5124,6 +5126,16 @@ fn decide(
     air_assault::observe(ai, snapshot, state);
     ai.set_refused_combinations(formation_refusals::refused_pairs(
         &mirror_state.civ6_of,
+        state.turn,
+        host_order_refusals,
+    ));
+    // `refused-friendship-waits`: the majors whose last friendship ask the
+    // host refused, on this board's seats. Read only with the gene on.
+    ai.set_refused_friendships(friendship_refusals::refused_seats(
+        &civvis::mirror::host_major_seat_map(
+            state,
+            civvis::mirror::modeled_major_player_count(&mirror_state.game),
+        ),
         state.turn,
         host_order_refusals,
     ));

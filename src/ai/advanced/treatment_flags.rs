@@ -608,6 +608,10 @@ impl AdvancedAi {
         /// science run brings the Spy-slot civics forward off a Science aim;
         /// see `advanced/rival_science_run_opens_the_spy_civics.rs`.
         rival_science_run_opens_the_spy_civics => enable_rival_science_run_opens_the_spy_civics, disable_rival_science_run_opens_the_spy_civics;
+        /// Opt-in gene `refused-friendship-waits`: a major that refused our
+        /// friendship is not asked again for ten turns; see
+        /// `advanced/refused_friendship_waits.rs`.
+        refused_friendship_waits => enable_refused_friendship_waits, disable_refused_friendship_waits;
         // ---- append: s-s --------------------------------------------
         /// Opt-in gene `siege-goes-on-the-forecast`: the siege train goes,
         /// holds and stands down on the capture forecast, and Siege rows rank

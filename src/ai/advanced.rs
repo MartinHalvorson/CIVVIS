@@ -9796,6 +9796,14 @@ pub struct AdvancedAi {
     /// government ladder. See
     /// `advanced/rival_science_run_opens_the_spy_civics.rs`. Off by default.
     rival_science_run_opens_the_spy_civics: bool,
+    /// `refused-friendship-waits`: a major whose last friendship ask the host
+    /// refused is not asked again for ten turns. See
+    /// `advanced/refused_friendship_waits.rs`. Off by default.
+    refused_friendship_waits: bool,
+    /// `refused-friendship-waits`: the turn of each major's latest refused
+    /// friendship ask, by seat, as the live bridge last handed it. Empty on a
+    /// native board.
+    refused_friendships: BTreeMap<usize, u32>,
     // ---- append: s-s ------------------------------------------------
     /// `score-seat-raises-wonders`: a Score seat keeps a wonder going in its
     /// capital from turn 40 (Online) and in a second city from turn 90, as a
@@ -12117,6 +12125,8 @@ mod recon_disruption;
 /// `recovery-holds-the-muster`: no siege muster while losing ground at
 /// home. Opt-in; see `advanced/recovery_holds_the_muster.rs`.
 mod recovery_holds_the_muster;
+/// `refused-friendship-waits`: see `advanced/refused_friendship_waits.rs`.
+mod refused_friendship_waits;
 /// The religious corps: the four opt-in genes for what a founder buys with
 /// Faith once its cities start slipping, and what it does with the units
 /// afterwards. See `advanced/religion.rs`.

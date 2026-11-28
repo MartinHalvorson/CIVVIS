@@ -6438,6 +6438,13 @@ pub const GENES: &[Gene] = &[
     // ahead of the government ladder. Opt-in; see
     // `advanced/rival_science_run_opens_the_spy_civics.rs`.
     Gene { tag: "rival-science-run-opens-the-spy-civics", field: "rival_science_run_opens_the_spy_civics", kind: Kind::OptIn, enable: AdvancedAi::enable_rival_science_run_opens_the_spy_civics, disable: AdvancedAi::disable_rival_science_run_opens_the_spy_civics },
+    // Self-play duel selfplay-duel-20261127T0654Z, 2026-11-27: seat p1 asked
+    // the other seat for a friendship on every turn from 51 to 89, two or
+    // three times a turn (105 offers, 32 refused by the mod, 33 `not_friends`
+    // verdicts), and asked nobody else. A major whose last ask was refused
+    // waits ten turns; the others are asked meanwhile. Opt-in; see
+    // `advanced/refused_friendship_waits.rs`.
+    Gene { tag: "refused-friendship-waits", field: "refused_friendship_waits", kind: Kind::OptIn, enable: AdvancedAi::enable_refused_friendship_waits, disable: AdvancedAi::disable_refused_friendship_waits },
     // ---- append: s-s ------------------------------------------------
     // Kristina Deity 11-10 reached Nationalism at t122 with 8 cities on three
     // terrain classes and built no Open-Air Museum by t150 (+48 Culture and
