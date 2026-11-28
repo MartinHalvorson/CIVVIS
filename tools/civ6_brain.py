@@ -1168,6 +1168,13 @@ class OperatorHoldClock:
         return self.held_since is not None or now < self.deadline
 
 
+#: Seconds between reads of the journal for a new board (`--poll-seconds`).
+#: A board waits half of it on average: a hotseat game's `--fast-turns` asks
+#: 10 ms (`tools/civ6_hotseat.py`, `FAST_POLL_S`), five workers at once.
+POLL_S = 0.025
+MIN_POLL_S = 0.005
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--run-dir", required=True)
@@ -1283,6 +1290,9 @@ def main() -> int:
                          "process, under RUN_DIR/input-captures; record returned "
                          "capture status (not execution or archive integrity proof)")
     ap.add_argument("--seconds", type=float, default=7200.0)
+    ap.add_argument("--poll-seconds", type=float, default=POLL_S,
+                    help=f"how often the journal is read for a new board (default {POLL_S:g}; "
+                         f"at least {MIN_POLL_S:g}); a hotseat game's --fast-turns asks 0.01")
     ap.add_argument(
         "--replay-turn", action="append", type=int, default=[], metavar="TURN",
         help="serve this opening turn again even if the append-only game journal "
@@ -1290,6 +1300,7 @@ def main() -> int:
              "reload that resumes before its old turn record (repeatable)",
     )
     args = ap.parse_args()
+    poll_s = max(MIN_POLL_S, float(args.poll_seconds))
 
     run_dir = Path(args.run_dir).expanduser()
     run_tag = run_dir.name
@@ -1536,7 +1547,7 @@ def main() -> int:
         # The journal is read incrementally, so an idle pass is one open and
         # one seek. At 0.1 s this wait was a quarter of the board-to-orders
         # time once the decider answered in 0.17 s (G61, t170-215).
-        time.sleep(0.025)
+        time.sleep(poll_s)
     if decider is not None:
         decider.stop()
     if updater is not None:

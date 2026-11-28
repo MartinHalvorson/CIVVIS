@@ -919,7 +919,12 @@ if cfg.Play ~= false and cfg.CivvisDecides then
 		if abTurns > 0 then CivvisVSyncAB.frame(delta); end
 		peekElapsed = peekElapsed + delta;
 		if peekElapsed >= peekEvery then
-			peekElapsed = 0;
+			-- `HotseatFastTurns`: the remainder is kept (at most one interval), so
+			-- a 60 Hz HUD offers the peek on five frames in six, every 20 ms on
+			-- average, where starting each interval at 0 made it every second
+			-- frame (33 ms) and every board waited ~8 ms more for its answer.
+			peekElapsed = cfg.HotseatFastTurns == true
+				and math.min(peekElapsed - peekEvery, peekEvery) or 0;
 			pcall(function() LuaEvents.CivvisControlPeek(); end);
 		end
 		elapsed = elapsed + delta;

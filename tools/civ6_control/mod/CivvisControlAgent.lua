@@ -30248,8 +30248,14 @@ CivvisQueue.ordersLanded = function()
 	local now = CivvisClock.now();
 	if type(now) ~= "number" or now ~= now then return false; end
 	local last = CivvisQueue.ordersPeekAt;
+	-- Hotseat `--fast-turns`: the HUD keeps its peek's remainder, so its pulses
+	-- come one 60 Hz frame (16.7 ms) or two apart around their 20 ms; a bound of
+	-- the whole interval would refuse every other one. Three quarters of it
+	-- takes them, and still bounds the publish batches' peeks to ~66 a second.
+	local bound = CivvisQueue.peekSeconds();
+	if cfg.Hotseat == true and cfg.HotseatFastTurns == true then bound = bound * 0.75; end
 	if last ~= nil and now >= last
-			and now - last < CivvisQueue.peekSeconds() then
+			and now - last < bound then
 		return false;
 	end
 	CivvisQueue.ordersPeekAt = now;
