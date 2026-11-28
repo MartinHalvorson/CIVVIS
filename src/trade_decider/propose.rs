@@ -75,7 +75,9 @@ pub fn person_slot_open(me: i64, players: i64, turn: i64) -> bool {
     } else {
         PERSON_TABLE_SLOTS
     };
-    me >= 0 && turn >= 0 && slots > 0
+    me >= 0
+        && turn >= 0
+        && (turn / PERSON_TABLE_WINDOW_TURNS).rem_euclid(slots) == me.rem_euclid(slots)
 }
 
 /// One deal this seat proposes: to whom, the terms from our side, and our
@@ -308,7 +310,7 @@ pub fn propose(
             continue;
         }
         let person = kind == Some("person");
-        if person && !person_window && false {
+        if person && !person_window {
             continue;
         }
         let history = History::from_board(board, partner.player, turn);
