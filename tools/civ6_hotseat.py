@@ -2639,9 +2639,67 @@ def harness_alive(pid: int) -> bool:
     return is_harness_command(env.process_command(pid))
 
 
+#: How long `--stop` waits for the harness to finish: its workers, the
+#: record, and with `--quit-game` the whole of `quit_civ` (which can take
+#: minutes on a loaded host) on top.
+STOP_WAIT_S = 120.0
+
+
+def stop_wait(quit_game: bool) -> float:
+    return STOP_WAIT_S + (QUIT_SECONDS + QUIT_OVERTIME_SECONDS + QUIT_STOP_SECONDS if quit_game else 0.0)
+
+
+#: Lines of a stopping harness's log that the person who ran `--stop` needs to
+#: see: what became of the record, and of Civ VI.
+STOP_NEWS = ("[people]", "people's record", "closing Civ VI", "did not close", "resignation")
+
+
+def stopped_news(log_path: Path, offset: int) -> list[str]:
+    try:
+        with log_path.open("r", errors="replace") as handle:
+            handle.seek(offset)
+            text = handle.read()
+    except OSError:
+        return []
+    return [line for line in text.splitlines() if any(news in line for news in STOP_NEWS)]
+
+
+def resign_unattended(current: dict | None, say=print) -> int:
+    """`--stop --resign` with no harness running: the game's record is put
+    on the people's record from the run's own summary, which every harness
+    writes as it stops (`--stop`, Ctrl-C, Civ VI closed). Before 2026-11-28
+    this printed "no hotseat harness is running" and the resignation was lost."""
+    run_dir = Path(current["run_dir"]) if current and current.get("run_dir") else None
+    if run_dir is None:
+        installed = modinstall.installed_config() or {}
+        if installed.get("Hotseat") and installed.get("RunTag"):
+            run_dir = RUN_ROOT / installed["RunTag"]
+    if run_dir is None:
+        say("no hotseat game to resign: no harness is running and no hotseat game is installed. "
+            "To record a game you gave up: tools/people_elo.py record <run_dir> --winner civvis")
+        return 2
+    try:
+        summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        say(f"{run_dir.name} has no summary yet (its harness did not finish). Attach to the game "
+            "and stop it again (`--attach`, then `--stop --resign`), or record it by hand: "
+            f"tools/people_elo.py record {run_dir} --winner civvis --victory resignation")
+        return 2
+    if not summary.get("person"):
+        say(f"{run_dir.name} was played under no --name, so there is no people's record to put the "
+            "resignation on")
+        return 0
+    say(f"no harness is running; putting {run_dir.name} on the people's record as "
+        + ("its ending says" if summary.get("result") else "given up (CIVVIS's)"))
+    record_person_game(run_dir, say, resigned=not summary.get("result"))
+    return 0
+
+
 def stop_command(args: argparse.Namespace) -> int:
     current = read_current()
     if not current or not harness_alive(current.get("pid", -1)):
+        if args.resign:
+            return resign_unattended(current)
         print("no hotseat harness is running")
         if args.quit_game and env.game_pids():
             print("Civ VI is still up; it was not started by a running harness, so it is "
@@ -2651,6 +2709,10 @@ def stop_command(args: argparse.Namespace) -> int:
     if args.quit_game and current.get("manual_lobby"):
         print(f"{SCREEN_FREE_FLAG}: Civ VI and the game are yours, so they stay up "
               "(quit Civ VI from its own menu)")
+    try:
+        offset = (run_dir / "hotseat.log").stat().st_size
+    except OSError:
+        offset = 0
     (run_dir / "stop.json").write_text(json.dumps({"quit_game": bool(args.quit_game),
                                                    "resign": bool(args.resign),
                                                    "utc": utc()}))
@@ -2658,25 +2720,83 @@ def stop_command(args: argparse.Namespace) -> int:
     # skips the teardown below); the harness polls for stop.json instead.
     if os.name != "nt":
         os.kill(int(current["pid"]), signal.SIGTERM)
-    deadline = time.monotonic() + 120
+    if args.quit_game:
+        print("stopping, and closing Civ VI from its menu (a minute or two)", flush=True)
+    deadline = time.monotonic() + stop_wait(bool(args.quit_game))
     while time.monotonic() < deadline and harness_alive(current["pid"]):
         time.sleep(1.0)
+    for line in stopped_news(run_dir / "hotseat.log", offset):
+        print(line)
     if harness_alive(current["pid"]):
-        print(f"the harness (pid {current['pid']}) is still shutting down")
+        print(f"the harness (pid {current['pid']}) is still shutting down; its log: "
+              f"{run_dir / 'hotseat.log'}")
         return 1
     print(f"stopped hotseat {current.get('tag')}; log: {run_dir / 'hotseat.log'}")
     return 0
 
 
+def describe_table(run_dir: Path) -> str | None:
+    """The game a run plays, in one line, from its own record."""
+    settings = run_settings(run_dir)
+    if not settings:
+        return None
+    seats = jack_seats(int(settings.get("players") or 0), settings.get("civvis_seats"))
+    agents = settings.get("agents") or []
+    table = ", ".join(f"seat {seat} {agents[i] if i < len(agents) else STRATEGY}"
+                      for i, seat in enumerate(seats))
+    who = ("nobody's seat (" + ("a test stub" if settings.get("auto_human") else "CIVVIS on every seat") + ")"
+           if settings.get("civvis_seats") or settings.get("auto_human")
+           else f"{settings.get('name') or 'you'} (seat 0, {settings.get('leader') or 'random leader'})")
+    return (f"{settings.get('players')} players on {settings.get('map')} {settings.get('map_size')}: "
+            f"{who}; {table}")
+
+
+def last_lobby(run_dir: Path) -> dict | None:
+    """A `--manual-lobby` run's game, as the HUD read it back (`hotseat_lobby`)."""
+    found = None
+    for event in Journal(run_dir / "events.jsonl").read():
+        if event.get("kind") == "hotseat_lobby":
+            found = event
+    return found
+
+
 def status_command() -> int:
+    """What runs, said for a person: the record as JSON (scripts read it),
+    then the game in a line, and what to do when the harness and Civ VI
+    disagree. A `--manual-lobby` run says the game the person set up."""
     current = read_current()
+    civ = bool(env.game_pids())
     if not current:
+        installed = modinstall.installed_config() or {}
+        if civ and installed.get("Hotseat") and installed.get("RunTag"):
+            print(f"no harness is running, but Civ VI is up with the hotseat game "
+                  f"{installed['RunTag']} installed: CIVVIS's seats are not being played. "
+                  + ("Run the same `--manual-lobby` command again to pick it up."
+                     if installed.get("RequireHarness") else
+                     "`civ6-hotseat.sh --attach` picks it up."))
+            return 0
         print("no hotseat game on record")
         return 0
     alive = harness_alive(current.get("pid", -1))
-    print(json.dumps(dict(current, harness_running=alive,
-                          civ_running=bool(env.game_pids())), indent=2))
-    turns = Path(current["run_dir"]) / "turns.jsonl"
+    print(json.dumps(dict(current, harness_running=alive, civ_running=civ), indent=2))
+    run_dir = Path(current["run_dir"])
+    if current.get("manual_lobby"):
+        lobby = last_lobby(run_dir)
+        if lobby is None:
+            print("a --manual-lobby run: waiting for the Hot Seat game you set up to start")
+        else:
+            civvis, _ = lobby_seats(lobby)
+            print("a --manual-lobby run: " + describe_lobby(lobby, civvis))
+    else:
+        table = describe_table(run_dir)
+        if table:
+            print(f"the game: {table}")
+    if not alive and civ:
+        print(f"the harness (pid {current.get('pid')}) is gone and Civ VI is up: CIVVIS's seats "
+              "are not being played. `civ6-hotseat.sh --attach` picks the game up.")
+    elif alive and not civ:
+        print("Civ VI is not running; the harness ends by itself once it sees that")
+    turns = run_dir / "turns.jsonl"
     if turns.is_file():
         for line in turns.read_text().splitlines()[-8:]:
             print(line)
@@ -3311,6 +3431,14 @@ def main(argv: list[str] | None = None) -> int:
                          "game's settings are yours: --players/--map/--speed/--difficulty/"
                          "--leader are not used")
     args = ap.parse_args(argv)
+    if (args.resign or args.quit_game) and not args.stop:
+        # Alone they are no command at all, and the rest of `main` would start
+        # a new game (the wrapper adds its duel defaults to anything else).
+        given = " and ".join(flag for flag, on in (("--resign", args.resign),
+                                                   ("--quit-game", args.quit_game)) if on)
+        print(f"{given} go{'es' if ' and ' not in given else ''} with --stop: "
+              f"`--stop {given}`", file=sys.stderr)
+        return 2
     if args.stop:
         return stop_command(args)
     if args.status:
@@ -3698,6 +3826,9 @@ def run(args: argparse.Namespace) -> int:
         (run_dir / "summary.json").write_text(json.dumps(summary, indent=2))
         if summary.get("person") and (summary.get("result") or request.get("resign")):
             record_person_game(run_dir, log, resigned=not summary.get("result"))
+        elif request.get("resign") and not summary.get("person"):
+            log("the game was played under no --name, so the resignation is not put on the "
+                "people's record")
         # An unattended table always closes Civ VI: the next table starts clean.
         quit_game = launched and (bool(request.get("quit_game"))
                                   or (args.auto_human and args.turns is not None)
