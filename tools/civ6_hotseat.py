@@ -125,7 +125,8 @@ import subprocess
 import sys
 import threading
 import time
-from contextlib import closing
+import io
+from contextlib import closing, redirect_stdout
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -372,7 +373,20 @@ def hotseat_config(args: argparse.Namespace, run_dir: Path, orders_db: Path) -> 
     # `--play-flags`: civ6_play switches every jack seat plays with (Tournament 6
     # passes the policy arms with a measured gain, e.g. --dv-join-winner).
     flags += shlex.split(getattr(args, "play_flags", None) or "")
+    # The live ladder's decider genes (`live_genome`): through `--civvis-with`,
+    # as the ladder hands them to civ6_play, so the mod keys some of them
+    # switch on (`CultureAllies`, `ScienceCongressRacer`, ...) follow them
+    # exactly as they do there (`civ6_play.build_config`).
+    for tag in getattr(args, "treatments", None) or []:
+        flags += ["--civvis-with", tag]
     settings = play.build_parser().parse_args(flags)
+    if getattr(args, "genome", None) == "live":
+        # ...and the mod arms the ladder's tree lists (`deploy/live-mod-arms.txt`,
+        # `civ6_play.apply_tree_mod_arms`: the release of a stalled move, the
+        # 20 ms orders peek). A debug timescale it lists is set aside below
+        # with the ladder's other timescales: the game is a person's.
+        with redirect_stdout(io.StringIO()):
+            play.apply_tree_mod_arms(settings, MOD_ARMS_FILE)
     if not args.leader:
         settings.leader = None
     # `--victories-off`: civ6_play takes this list from the host policy
@@ -472,21 +486,215 @@ def freeze_binary(source: Path, run_dir: Path) -> Path:
     return target
 
 
-def brain_command(seat_dir: Path, orders_db: Path, binary: Path, victory: str) -> list[str]:
-    """One jack seat's decision worker: the live seat's brain, pinned binary.
+# ----------------------------------------------------------- the live genome
+#
+# The live ladder does not play the bare deployment genome: its supervisor
+# arms the decider with `deploy/live-force-on.txt` (`--with`, each tag) and the
+# mod with `deploy/live-mod-arms.txt`. Before 2026-11-28 a hotseat seat got
+# neither. In the live six-player game every seat's brain.log said
+# `forced=none` and every why.log the same stock genes on all five seats; 182
+# of the list's 285 tags were off, `recon-replacement` among them (no seat ever
+# built a Scout and by turn 16 none had seen a rival city), and a stalled move
+# held seat 3 for 7.9 s of the person's wait on turn 15 that the ladder's
+# `stalled-operation-release` answers at once. `--genome stock` plays the bare
+# genome, as before, for comparison.
+
+#: `--genome`: the live ladder's arms (the default), or none.
+GENOMES = ("live", "stock")
+#: The live list, in the order the ladder's supervisor resolves it
+#: (`tools/ops/civvis-game-supervisor.sh`, `resolve_forced_arm`): the
+#: `CIVVIS_WITH` environment, else the file `CIVVIS_WITH_FILE` names (an empty
+#: one is the stock genome), else this host's `~/.civvis-live-force-on` while
+#: it is not empty, else the checkout's own `deploy/live-force-on.txt`.
+LIVE_FORCE_FILE = HERE.parent / "deploy" / "live-force-on.txt"
+LOCAL_FORCE_FILE = Path.home() / ".civvis-live-force-on"
+#: The ladder's mod arms (`civ6_play.TREE_MOD_ARMS_FILE`).
+MOD_ARMS_FILE = play.TREE_MOD_ARMS_FILE
+#: In the run directory: what the seats were armed with, for `--attach`.
+GENOME_RECORD = "genome.json"
+
+
+def force_tags(text: str) -> list[str]:
+    """The tags of a force-on line: comma-separated, each once, in order."""
+    tags: list[str] = []
+    for tag in text.replace("\n", ",").split(","):
+        tag = tag.strip()
+        if tag and tag not in tags:
+            tags.append(tag)
+    return tags
+
+
+def live_treatments(environ=None, repo_file: Path | None = None,
+                    local_file: Path | None = None) -> tuple[list[str], str]:
+    """The genes the live ladder would arm on this host, and where they came from."""
+    environ = os.environ if environ is None else environ
+    repo_file = LIVE_FORCE_FILE if repo_file is None else repo_file
+    local_file = LOCAL_FORCE_FILE if local_file is None else local_file
+
+    def read(path: Path) -> str | None:
+        try:
+            return path.read_text(encoding="utf-8")
+        except OSError:
+            return None
+
+    if environ.get("CIVVIS_WITH"):
+        return force_tags(environ["CIVVIS_WITH"]), "the CIVVIS_WITH environment"
+    if environ.get("CIVVIS_WITH_FILE"):
+        named = environ["CIVVIS_WITH_FILE"]
+        return force_tags(read(Path(named)) or ""), f"CIVVIS_WITH_FILE ({named})"
+    local = read(local_file)
+    if local and local.strip():
+        return force_tags(local), f"this host's override {local_file}"
+    repo = read(repo_file)
+    if repo is not None:
+        return force_tags(repo), "deploy/live-force-on.txt"
+    return [], "no live list in this install"
+
+
+def genome_forced(stderr: str) -> list[str] | None:
+    """The genes a decider says it plays beyond its deployment genome: the
+    `forced` list of the `genome` line it writes to stderr as it starts."""
+    for line in stderr.splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            said = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(said, dict) and said.get("kind") == "genome":
+            forced = said.get("forced")
+            return [str(tag) for tag in forced] if isinstance(forced, list) else None
+    return None
+
+
+#: The tag `civvis_orders` names when it refuses a `--with` (`unknown --with
+#: treatment "x"`, `--with treatment "x" is not a ledger-held ...`): one per
+#: refusal, the first it met.
+REFUSED_TAG = re.compile(r'--with treatment "([^"]+)"')
+#: The most refusals one list is allowed before the stock genome plays.
+MOST_REFUSED = 40
+
+
+def armed_treatments(binary: Path, wanted: list[str], scratch: Path, run=None) -> dict:
+    """Arm `wanted` on this decider, keeping what it takes.
+
+    `civvis_orders` checks every `--with` before it plays and exits 2 on a
+    name it does not know or cannot force, naming what it can: a worker
+    started with such a list would die at once, and its seat play on the
+    mod's stand-in ladder for the whole game. So the binary is asked first,
+    with an empty board (it answers in about 10 ms): a list it refuses loses
+    the tag it names, and is asked again. (Its refusal also lists what it can
+    force, but that list leaves out the tags its deployment genome already
+    plays, which it accepts and skips: 103 of the 285 live tags against the
+    live game's decider.) Returns the tags
+    to pass (`with`), the decider's own word for what that plays beyond its
+    deployment genome (`forced`), the tags it could not take (`dropped`), and
+    a note when the answer is not a plain yes."""
+    run = run or subprocess.run
+    tags, dropped = list(wanted), []
+    probe = scratch / "genome-check"
+    for _ in range(MOST_REFUSED):
+        if not tags:
+            return {"with": [], "forced": [], "dropped": dropped, "note": ""}
+        probe.mkdir(parents=True, exist_ok=True)
+        command = [str(binary), "--mirror", str(probe)]
+        for tag in tags:
+            command += ["--with", tag]
+        try:
+            done = run(command, capture_output=True, text=True, timeout=60, check=False)
+        except (OSError, subprocess.SubprocessError) as error:
+            return {"with": [], "forced": [], "dropped": dropped + tags,
+                    "note": f"the decider could not be asked ({error}); its stock genome plays"}
+        finally:
+            shutil.rmtree(probe, ignore_errors=True)
+        said = done.stderr or ""
+        if done.returncode == 0:
+            forced = genome_forced(said)
+            return {"with": tags, "forced": tags if forced is None else forced,
+                    "dropped": dropped, "note": ""}
+        if "already ship in the deployment genome" in said:
+            return {"with": [], "forced": [], "dropped": dropped,
+                    "note": "every listed gene already ships in this decider's deployment genome"}
+        named = REFUSED_TAG.search(said)
+        if not named or named[1] not in tags:
+            break
+        dropped.append(named[1])
+        tags = [tag for tag in tags if tag != named[1]]
+    return {"with": [], "forced": [], "dropped": dropped + tags,
+            "note": "the decider refused the list ("
+                    + (said.strip().splitlines() or ["no reason given"])[0][:200]
+                    + "); its stock genome plays"}
+
+
+def live_genome(args: argparse.Namespace, binary: Path, run_dir: Path, log) -> dict:
+    """What the CIVVIS seats are armed with, decided once per run, said in the
+    log and kept in the run directory (`GENOME_RECORD`); `args.treatments` is
+    then the `--with` list for every seat's worker and the mod's keys."""
+    if getattr(args, "genome", "live") == "stock":
+        record = {"genome": "stock", "source": "--genome stock", "listed": 0,
+                  "with": [], "forced": [], "dropped": [], "note": ""}
+    else:
+        wanted, source = live_treatments()
+        record = {"genome": "live", "source": source, "listed": len(wanted),
+                  **armed_treatments(binary, wanted, run_dir)}
+    args.treatments = record["with"]
+    args.genome_record = {key: record[key] for key in ("genome", "source", "listed", "forced",
+                                                       "dropped", "note")}
+    (run_dir / GENOME_RECORD).write_text(json.dumps(record, indent=2))
+    if record["genome"] == "stock":
+        log("decider genome: stock (--genome stock): the deployment genome with no live genes "
+            "and no live mod arms")
+    elif not record["listed"]:
+        log(f"decider genome: no live genes ({source}): the deployment genome, with the live "
+            "mod arms this install lists")
+    else:
+        log(f"decider genome: the live ladder's, from {source}: {len(record['with'])} of "
+            f"{record['listed']} listed genes armed, {len(record['forced'])} of them beyond this "
+            f"decider's deployment genome; and the live mod arms")
+    if record["dropped"]:
+        log(f"⚠ this decider cannot play {len(record['dropped'])} listed gene(s), so they are off: "
+            + ", ".join(record["dropped"][:12]) + (" ..." if len(record["dropped"]) > 12 else ""))
+    if record["note"]:
+        log(f"⚠ {record['note']}")
+    return record
+
+
+def kept_genome(args: argparse.Namespace, run_dir: Path) -> None:
+    """`--attach`: the workers it restarts play what the run's first workers
+    did. A run from before `GENOME_RECORD` played the stock genome."""
+    try:
+        record = json.loads((run_dir / GENOME_RECORD).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        record = {"genome": "stock", "source": "a run from before live genes", "listed": 0,
+                  "with": [], "forced": [], "dropped": [], "note": ""}
+    args.genome = record.get("genome") or "stock"
+    args.treatments = list(record.get("with") or [])
+    args.genome_record = {key: record.get(key) for key in ("genome", "source", "listed", "forced",
+                                                           "dropped", "note")}
+
+
+def brain_command(seat_dir: Path, orders_db: Path, binary: Path, victory: str,
+                  treatments: list[str] | None = None) -> list[str]:
+    """One jack seat's decision worker: the live seat's brain, pinned binary,
+    with the live genes it is armed with (`--with`, as the ladder's
+    `civ6_play.civvis_brain_command` passes them).
 
     Frozen, `sys.executable` is the bundle's program and there is no script to
     hand it, so it is asked to be the worker by name (`WORKER_COMMAND`).
     """
     worker = WORKER_COMMAND if FROZEN else str(HERE / "civ6_brain.py")
-    return [sys.executable, worker,
-            "--run-dir", str(seat_dir), "--orders-db", str(orders_db),
-            "--mode", "civvis", "--bin", str(binary), "--victory", victory,
-            # One program for the whole game, and its heartbeat kept out of the
-            # live lane's cache (`write_disabled_heartbeat`).
-            "--github-refresh-seconds", "0",
-            "--github-cache", str(seat_dir.parent / "runtime-cache"),
-            "--seconds", str(14 * 24 * 3600)]
+    command = [sys.executable, worker,
+               "--run-dir", str(seat_dir), "--orders-db", str(orders_db),
+               "--mode", "civvis", "--bin", str(binary), "--victory", victory,
+               # One program for the whole game, and its heartbeat kept out of the
+               # live lane's cache (`write_disabled_heartbeat`).
+               "--github-refresh-seconds", "0",
+               "--github-cache", str(seat_dir.parent / "runtime-cache"),
+               "--seconds", str(14 * 24 * 3600)]
+    for tag in treatments or []:
+        command += ["--with", tag]
+    return command
 
 
 def stop_stale_worker(seat_dir: Path, *, grace_s: float = 5.0) -> int | None:
@@ -542,9 +750,10 @@ class Brains:
     """One `civ6_brain.py` per jack seat, restarted if one dies."""
 
     def __init__(self, run_dir: Path, tag: str, seats: list[int], orders_db: Path,
-                 binary: Path, victory: str, log: Log):
+                 binary: Path, victory: str, log: Log, treatments: list[str] | None = None):
         self.run_dir, self.tag, self.seats = run_dir, tag, seats
         self.orders_db, self.binary, self.victory, self.log = orders_db, binary, victory, log
+        self.treatments = list(treatments or [])
         self.procs: dict[int, subprocess.Popen] = {}
         self.restarts: dict[int, int] = {seat: 0 for seat in seats}
         self.retired: set[int] = set()
@@ -562,7 +771,8 @@ class Brains:
         out = (seat_dir / "brain.log").open("a", buffering=1)
         self.procs[seat] = subprocess.Popen(
             brain_command(seat_dir, self.orders_db, self.binary,
-                          self.victory[seat] if isinstance(self.victory, dict) else self.victory),
+                          self.victory[seat] if isinstance(self.victory, dict) else self.victory,
+                          self.treatments),
             cwd=str(HERE.parent), stdout=out, stderr=subprocess.STDOUT, text=True,
             **worker_session())
         out.close()
@@ -580,7 +790,8 @@ class Brains:
             self.start(seat)
             time.sleep(0.3)
         self.log(f"decision workers up for seats {self.seats} "
-                 f"(strategy {STRATEGY}, victory {self.victory}, bin {self.binary})")
+                 f"(strategy {STRATEGY}, victory {self.victory}, bin {self.binary}, "
+                 f"{len(self.treatments)} live genes)")
 
     def retire(self, seat: int) -> None:
         """Stop a seat's worker for good: the game has no such CIVVIS seat."""
@@ -2241,7 +2452,10 @@ def table_record(monitor: Monitor, args: argparse.Namespace, seats: list[int],
         "seat_agents": seat_agents(args, seats) if getattr(args, "agents", None) else None,
         "victories_off": monitor.victories_off, "victories": monitor.victories,
         "setup_fault": monitor.setup_fault,
-        "seat_stalls": monitor.seat_stalls}
+        "seat_stalls": monitor.seat_stalls,
+        # What the CIVVIS seats played: the live ladder's genes or the stock
+        # genome (`live_genome`), so a rated game says what it was against.
+        "genome": getattr(args, "genome_record", None)}
     record.update(began)
     if not monitor.unattended:
         record.update({"person": person_name(args), "person_seat": HUMAN_SEAT,
@@ -2762,6 +2976,7 @@ def run_manual(args: argparse.Namespace) -> int:
                 "(cargo build --release --locked --bin civvis_orders)")
             return 4
         binary = freeze_binary(binary, run_dir)
+        live_genome(args, binary, run_dir, log)
         civ_at_install = set(env.game_pids())
         config = manual_lobby_config(args, run_dir, orders_db)
         reset_orders_db(orders_db)
@@ -2826,7 +3041,8 @@ def run_manual(args: argparse.Namespace) -> int:
                     log(("⚠ " if civvis else "") + problem)
                 if civvis:
                     monitor.seats = civvis
-                    brains = Brains(run_dir, args.tag, civvis, orders_db, binary, args.victory, log)
+                    brains = Brains(run_dir, args.tag, civvis, orders_db, binary, args.victory, log,
+                                    treatments=args.treatments)
                     brains.start_all()
                     log(f"CIVVIS plays {_rows(civvis)}"
                         + (" and the test stub row 1" if stub else "")
@@ -3003,6 +3219,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--play-flags", default="", metavar="FLAGS",
                     help="civ6_play switches every jack seat plays with, as one string "
                          "(--play-flags='--dv-join-winner --luxury-quote-proposals')")
+    ap.add_argument("--genome", choices=GENOMES, default="live",
+                    help="what the CIVVIS seats play: `live` (default) the live ladder's "
+                         "genes (deploy/live-force-on.txt, or this host's override) and mod "
+                         "arms (deploy/live-mod-arms.txt), as far as the decider takes them; "
+                         "`stock` the bare deployment genome, for comparison")
     ap.add_argument("--agents", default=None, metavar="AGENT[,...]",
                     help="roster agents for the CIVVIS seats in seat order (seat 1 first), "
                          f"from {', '.join(AGENT_LANES)}, or `{STRONGEST}` for the one the "
@@ -3235,6 +3456,10 @@ def run(args: argparse.Namespace) -> int:
         elif (run_dir / ORDERS_NAME).is_file():
             binary = run_dir / ORDERS_NAME
         log(f"jack seats {seats} play with {binary}")
+        if args.attach:
+            kept_genome(args, run_dir)
+        else:
+            live_genome(args, binary, run_dir, log)
         if not args.attach:
             for note in getattr(args, "resume_notes", None) or []:
                 log(note)
@@ -3309,7 +3534,7 @@ def run(args: argparse.Namespace) -> int:
             threading.Thread(target=park_upper_left, args=(log,), name="upper-left",
                              daemon=True).start()
         brains = Brains(run_dir, args.tag, seats, orders_db, binary,
-                        seat_lanes(args, seats), log)
+                        seat_lanes(args, seats), log, treatments=args.treatments)
         workers_up = handed is None
         if workers_up:
             brains.start_all()
