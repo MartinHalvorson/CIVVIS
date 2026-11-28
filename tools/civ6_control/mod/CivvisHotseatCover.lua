@@ -397,6 +397,7 @@ function CivvisHotseatCover.raise(reason, force)
 		UIManager:QueuePopup(ContextPtr, c.priority(), { AlwaysVisibleInQueue = true });
 	end);
 	c.up = queued;
+	c.publishUp();
 	c.reset(key);
 	c.show(pid);
 	if queued then
@@ -435,6 +436,7 @@ function CivvisHotseatCover.lift(reason, yield)
 	c.scaleHeld = nil;
 	pcall(function() UIManager:DequeuePopup(ContextPtr); end);
 	c.up = false;
+	c.publishUp();
 	-- Their turn is back: the wait ran its course unless the cover stood aside.
 	local w = c.endWait(not yield and (reason == "person_start" or reason == "person_turn"));
 	c.report("hotseat_cover", { { "up", false }, { "reason", reason }, { "player", pid },
@@ -624,6 +626,15 @@ end
 function CivvisHotseatCover.atOne()
 	local s = CivvisHotseatCover.sharedRaw();
 	return s == nil or tonumber(s) == 1;
+end
+-- Whether the cover is up, for the CIVVIS seat whose turn begins under it:
+-- the only scale a seat raises is under the cover (the agent's
+-- `CivvisClock.fastBlocked`). Written as it is queued and taken down (a cover
+-- that stood aside is down), and false as this context shuts down; only with
+-- the key.
+function CivvisHotseatCover.publishUp()
+	if not CivvisHotseatCover.fastWant() then return; end
+	pcall(function() ExposedMembers.CivvisCoverUp = CivvisHotseatCover.up == true; end);
 end
 -- Back to 1; true when the table reads 1. Without the key, nothing is asked.
 function CivvisHotseatCover.resetScale(why)
@@ -1336,8 +1347,12 @@ function CivvisHotseatCover.arm()
 	-- ...and at scale 1.
 	pcall(function() ContextPtr:SetShutdown(guarded(function()
 		c.unmute("shutdown");
+		c.up = false;
+		c.publishUp();
 		c.resetScale("shutdown");
 	end)); end);
+	-- Down until it is queued (a loaded game's table may still say otherwise).
+	c.publishUp();
 	c.report("hotseat_cover_armed", { { "cover", c.enabled() }, { "view", c.viewKept() },
 		{ "auto_start", cfg.HotseatAutoStart == true }, { "priority", c.priority() },
 		{ "sound", cfg.HotseatCoverSound }, { "timer", cfg.HotseatCoverTimer == true } });

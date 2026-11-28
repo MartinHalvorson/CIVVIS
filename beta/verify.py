@@ -191,6 +191,7 @@ PAGES = {
     # Its figures arrive in the slots of the pages its charts came from, so it
     # is known by its own record of where each chart came from instead.
     "charts/unreviewed-gen-ai-charts": b'id="random-moved"',
+    "charts/project-chronology": b'id="chronology-data"',
     "download": b"releases/latest/download/",
 }
 

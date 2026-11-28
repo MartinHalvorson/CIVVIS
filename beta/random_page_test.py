@@ -53,17 +53,20 @@ def style() -> str:
 
 
 class ThePage(unittest.TestCase):
-    def test_it_is_the_last_page_under_charts_and_ringed(self):
+    def test_it_is_under_charts_before_project_chronology_and_ringed(self):
         self.assertIn("<title>Unreviewed Gen AI Charts · CIVVIS.ai</title>", PAGE)
         self.assertIn('<link rel="canonical" href="https://civvis.ai/charts/unreviewed-gen-ai-charts/">', PAGE)
         nav = PAGE[PAGE.index('<nav class="site-nav"'):PAGE.index("</nav>")]
         menu = nav[nav.index('<div class="site-menu">'):nav.index("</div>", nav.index('<div class="site-menu">'))]
         names = re.findall(r'<a class="site-link sub-link" href="([^"]+)"[^>]*>([^<]+)</a>', menu)
-        self.assertEqual(names[-1], ("./", "Unreviewed Gen AI Charts"))
+        # The last page under Charts/ until 2026-11-28, when Project
+        # Chronology was put after it (operator: "add a project chronology
+        # to charts/ at the end for now").
+        self.assertEqual(names[-2:], [("./", "Unreviewed Gen AI Charts"), ("../project-chronology/", "Project Chronology")])
         self.assertEqual(
             [name for _, name in names],
             ["AI Insights", "Civ AI Interpretability", "Civ Analytics", "Win Analytics", "ELO Rankings",
-             "CIVVIS Performance", "Unreviewed Gen AI Charts"],
+             "CIVVIS Performance", "Unreviewed Gen AI Charts", "Project Chronology"],
         )
         self.assertIn('<a class="site-link sub-link" href="./" aria-current="page">Unreviewed Gen AI Charts</a>', nav)
         # Charts/ itself opens the folder's first page, as on every page.

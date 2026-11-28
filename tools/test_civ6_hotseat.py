@@ -86,6 +86,30 @@ class HotseatConfigTest(unittest.TestCase):
         self.assertIn("--github-cache /r/runtime-cache", joined)
         # jack is the deployment genome, which civvis_orders plays unasked.
         self.assertNotIn("--strategy", command)
+        self.assertNotIn("--poll-seconds", command, "the worker's own 25 ms unless asked")
+
+    def test_fast_turns_has_each_worker_and_the_relay_read_every_10_ms(self) -> None:
+        self.assertIsNone(hotseat.poll_seconds(game_args()))
+        self.assertEqual(hotseat.relay_seconds(game_args()), 0.02)
+        fast = game_args(fast_turns=True)
+        self.assertEqual((hotseat.poll_seconds(fast), hotseat.relay_seconds(fast)), (0.01, 0.01))
+        command = hotseat.brain_command(Path("/r/hs-p2"), Path("/r/o.sqlite"),
+                                        Path("/r/civvis_orders"), "civvis", poll_s=0.01)
+        self.assertEqual(command[-2:], ["--poll-seconds", "0.01"])
+        with tempfile.TemporaryDirectory() as tmp, \
+                patch.object(hotseat.subprocess, "Popen") as popen, \
+                patch.object(hotseat, "stop_stale_worker", return_value=None):
+            popen.return_value.pid = 4242
+            brains = hotseat.Brains(Path(tmp), "hs", [1], Path(tmp) / "o.sqlite",
+                                    Path("/r/civvis_orders"), "civvis", lambda *_: None,
+                                    poll_s=hotseat.poll_seconds(fast))
+            brains.start(1)
+            self.assertEqual(popen.call_args.args[0][-2:], ["--poll-seconds", "0.01"],
+                             "a started worker is given it")
+        # Both relay loops (the started game's and the manual lobby's) ask the table's own.
+        source = Path(hotseat.__file__).read_text()
+        self.assertEqual(source.count("relay_for(bridges, read_s=relay_seconds(args))"), 2)
+        self.assertEqual(source.count("brains.poll_s = poll_seconds(args)"), 2)
 
     def test_an_explicit_binary_must_exist(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1890,6 +1914,72 @@ class CoverTest(unittest.TestCase):
         source = Path(hotseat.__file__).read_text()
         attach = source.split("args.no_cover_timer = not attach_config.get", 1)[1][:200]
         self.assertIn('args.fast_turns = attach_config.get("HotseatFastTurns") is True', attach)
+
+    def test_fast_animations_is_off_unless_asked_and_only_over_a_covered_person(self) -> None:
+        # Absent from every install that did not ask: not even a nil key.
+        for overrides in ({}, {"auto_human": "gated"}, {"fast_turns": True}):
+            with self.subTest(**overrides):
+                config = self.config(**overrides)
+                self.assertNotIn("HotseatFastAnimations", config)
+                self.assertNotIn("HotseatFastRollover", config)
+        with patch.object(hotseat, "run", side_effect=lambda args: args) as ran, \
+                patch.object(hotseat, "read_current", return_value=None):
+            hotseat.main([])
+            self.assertIsNone(ran.call_args.args[0].fast_animations)
+            hotseat.main(["--fast-animations"])
+            plain = ran.call_args.args[0]
+            hotseat.main(["--fast-animations", "2", "--fast-animations-rollover"])
+            rolled = ran.call_args.args[0]
+        config = hotseat.hotseat_config(plain, Path("/tmp/r"), Path("/tmp/r/o.sqlite"))
+        self.assertEqual((config["HotseatFastAnimations"], config["HotseatFastRollover"]), (3.0, False),
+                         "the ladder's timescale by default")
+        self.assertEqual(hotseat.FAST_ANIMATIONS, 3.0)
+        config = hotseat.hotseat_config(rolled, Path("/tmp/r"), Path("/tmp/r/o.sqlite"))
+        self.assertEqual((config["HotseatFastAnimations"], config["HotseatFastRollover"]), (2.0, True))
+        # The ladder's own timescale keys stay off: this is not that path.
+        self.assertIsNone(config["DebugTimeScale"])
+        # Never without the cover over a person: not with --no-cover, not for a
+        # stub-only or unattended table.
+        for overrides in ({"no_cover": True}, {"auto_human": "stub"},
+                          {"players": 6, "civvis_seats": 2, "leader": None}):
+            with self.subTest(**overrides):
+                config = self.config(fast_animations=3.0, **overrides)
+                self.assertNotIn("HotseatFastAnimations", config)
+                self.assertIn("needs the cover", hotseat.fast_animations_note(
+                    game_args(fast_animations=3.0, **overrides), config))
+        on = self.config(fast_animations=3.0, auto_human="gated")
+        self.assertEqual(on["HotseatFastAnimations"], 3.0, "the gated stand-in is the person")
+        self.assertIn("timescale 3", hotseat.fast_animations_note(game_args(fast_animations=3.0), on))
+        self.assertIsNone(hotseat.fast_animations_note(game_args(), self.config()))
+        # Every context that reads it is given it: the agents, the cover, the
+        # HUD, the hand-over.
+        out = self.install(on)
+        for name in ("CivvisControlAutoClose.lua", "CivvisControlHeartbeat.lua", "CivvisHotseatCover.lua",
+                     "CivvisControlAgentSeat1.lua", "CivvisControlAgentSeat3.lua"):
+            head = (out / name).read_text().split("}\n", 1)[0]
+            self.assertIn("HotseatFastAnimations = 3.0,", head, name)
+        head = (self.install(self.config()) / "CivvisControlAgentSeat1.lua").read_text()
+        self.assertNotIn("HotseatFastAnimations", head.split("}\n", 1)[0])
+        # A manual-lobby install carries it; `--attach` re-installs the game's own.
+        lobby = hotseat.manual_lobby_config(plain, Path("/tmp/r"), Path("/tmp/r/o.sqlite"))
+        self.assertEqual(lobby["HotseatFastAnimations"], 3.0)
+        source = Path(hotseat.__file__).read_text()
+        attach = source.split('args.fast_turns = attach_config.get("HotseatFastTurns") is True', 1)[1][:240]
+        self.assertIn('args.fast_animations = attach_config.get("HotseatFastAnimations") or None', attach)
+        self.assertIn('args.fast_animations_rollover = attach_config.get("HotseatFastRollover") is True',
+                      attach)
+
+    def test_fast_animations_refuses_a_scale_it_cannot_play(self) -> None:
+        with patch.object(hotseat, "run") as ran, \
+                patch.object(hotseat, "read_current", return_value=None), \
+                contextlib.redirect_stderr(io.StringIO()) as err:
+            for argv in (["--fast-animations", "1"], ["--fast-animations", "6"],
+                         ["--fast-animations", "0.5"], ["--fast-animations-rollover"]):
+                with self.subTest(argv=argv):
+                    self.assertEqual(hotseat.main(argv), 2)
+            self.assertFalse(ran.called, "refused before anything starts")
+        self.assertIn("at most 4", err.getvalue())
+        self.assertIn("goes with --fast-animations", err.getvalue())
 
     def test_the_help_says_what_fast_turns_adds_to_the_live_genome(self) -> None:
         # The 20 ms orders peek is already the default game's: the live mod arms'
