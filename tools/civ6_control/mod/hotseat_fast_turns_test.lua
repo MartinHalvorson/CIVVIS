@@ -174,6 +174,21 @@ local set = peekHost({ CivvisDecides = true, HotseatFastTurns = true, OrdersPeek
 for _ = 1, 4 do set.update(0.021) end
 assert(set.peeks == 0, "an explicit OrdersPeekSeconds wins over the key")
 set.update(0.021); assert(set.peeks == 1)
+-- A 60 Hz HUD: with the key the remainder is kept, so a second of frames offers
+-- 50 peeks (every 20 ms on average); starting each interval at 0 gave 30
+-- (every second frame), which is what an install without the key still does.
+local sixty = peekHost({ CivvisDecides = true, HotseatFastTurns = true })
+for _ = 1, 60 do sixty.update(1 / 60) end
+assert(sixty.peeks >= 49 and sixty.peeks <= 50, "a 60 Hz second offers ~50 peeks: " .. sixty.peeks)
+local reset = peekHost({ CivvisDecides = true, OrdersPeekSeconds = 0.02 })
+for _ = 1, 60 do reset.update(1 / 60) end
+assert(reset.peeks == 30, "the ladder's 20 ms peek keeps every second frame: " .. reset.peeks)
+-- ...and a long frame is still one peek, never a burst.
+local long = peekHost({ CivvisDecides = true, HotseatFastTurns = true })
+long.update(0.5); long.update(1 / 60)
+assert(long.peeks == 2, "one peek per frame at most: " .. long.peeks)
+for _ = 1, 10 do long.update(1 / 60) end
+assert(long.peeks <= 11, "the long frame's time is not paid back as a peek every frame: " .. long.peeks)
 print("peek pulse checks passed")
 
 -- 4. The agent. -------------------------------------------------------------
@@ -217,6 +232,16 @@ assert(queriesAt(landedHost({ CivvisDecides = true, HotseatFastTurns = true }),
 	{ 100, 100.019, 100.021, 100.03, 100.042 }) == 3, "one query per 20 ms with the key")
 assert(queriesAt(landedHost({ CivvisDecides = true }),
 	{ 100, 100.021, 100.042, 100.049, 100.051 }) == 2, "one query per 50 ms without it")
+-- A hotseat game with the key takes the HUD's pulses one 60 Hz frame apart
+-- (the bound is three quarters of the interval, 15 ms); the ladder's 20 ms
+-- peek (`OrdersPeekSeconds` 0.02, no key) and a single-player install are as before.
+local FRAMES = { 100, 100.0167, 100.0334, 100.040, 100.0501 }
+assert(queriesAt(landedHost({ CivvisDecides = true, Hotseat = true, HotseatFastTurns = true }), FRAMES) == 4,
+	"hotseat with the key: a query on each 60 Hz pulse")
+assert(queriesAt(landedHost({ CivvisDecides = true, Hotseat = true, OrdersPeekSeconds = 0.02 }), FRAMES) == 2,
+	"hotseat without the key: every second pulse, as before")
+assert(queriesAt(landedHost({ CivvisDecides = true, OrdersPeekSeconds = 0.02, HotseatFastTurns = true }), FRAMES) == 2,
+	"outside hotseat the bound is the whole interval")
 
 -- The UI clock on the timing records: hotseat installs only.
 local function stamp(cfg, raw)
