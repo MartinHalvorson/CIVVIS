@@ -422,7 +422,7 @@ function CivvisHotseatCover.lift(reason, yield)
 	if yield then c.yielded = c.keyFor(pid); end
 	if not c.up then return false; end
 	if not c.resetScale("lift_" .. tostring(reason)) and not yield
-			and (reason == "person_start" or reason == "person_turn") then
+			and (reason == "person_start" or reason == "person_turn" or reason == "person_returned") then
 		if c.scaleHeld == nil then
 			c.scaleHeld = 0;
 			c.report("hotseat_cover_scale", { { "held", true }, { "reason", reason }, { "player", pid },
@@ -1032,8 +1032,33 @@ end
 
 -- ------------------------------------------------------------------ events
 
+-- ★★★ A TURN HANDED BACK (CivvisControlAutoClose.lua `CivvisHotseatScreen.onBuild`
+-- has the whole account): the engine gives a seat its turn back after its end
+-- when a unit still has movement once its walk is done, and the same seat's
+-- turn begins again with no other seat's begin between. The hand-over is not
+-- built again for it and the game is not paused (`HotseatReturnedTurn`, a
+-- diagnostic for crash check games only, else "safe"), so for a person's
+-- seat the cover simply lifts and their turn goes on: no second hand-over,
+-- no backstop press (`nudge`), the camera left where it is (the cover was up
+-- for a moment and they did not move it), the sound theirs. A CIVVIS seat's
+-- turn stays covered, as any CIVVIS turn.
+CivvisHotseatCover.ended = nil;     -- seat:turn of the last turn end, until another begin
+CivvisHotseatCover.returned = nil;  -- seat:turn handed back
+function CivvisHotseatCover.safeReturn()
+	local mode = cfg.HotseatReturnedTurn;
+	return mode ~= "legacy" and mode ~= "press";
+end
+function CivvisHotseatCover.handedBack(pid)
+	local c = CivvisHotseatCover;
+	local key = c.keyFor(pid);
+	local back = c.ended == key;
+	c.ended = nil;
+	if back then c.returned = key; end
+	return back;
+end
 function CivvisHotseatCover.onTurnEnd()
 	local pid = CivvisHotseatCover.localPlayer();
+	CivvisHotseatCover.ended = CivvisHotseatCover.keyFor(pid);
 	CivvisHotseatCover.theirTurn = false;
 	CivvisHotseatCover.lingered = 0;
 	if CivvisHotseatCover.person(pid) and CivvisHotseatCover.viewKept() then
@@ -1053,9 +1078,16 @@ end
 function CivvisHotseatCover.onTurnBegin()
 	local pid = CivvisHotseatCover.localPlayer();
 	CivvisHotseatCover.theirTurn = CivvisHotseatCover.person(pid);
+	local back = CivvisHotseatCover.handedBack(pid);
 	-- A person's turn begins at scale 1 (a test stub's too: it stands in for them).
 	if CivvisHotseatCover.person(pid) or CivvisHotseatCover.listed(cfg.HotseatStubSeats, pid) then
 		CivvisHotseatCover.resetScale("person_turn_begin");
+	end
+	if back and CivvisHotseatCover.person(pid) and CivvisHotseatCover.safeReturn() then
+		CivvisHotseatCover.report("hotseat_cover_returned", { { "player", pid },
+			{ "turn", CivvisHotseatCover.turn() }, { "up", CivvisHotseatCover.up } });
+		CivvisHotseatCover.lift("person_returned");
+		return;
 	end
 	if CivvisHotseatCover.person(pid) then
 		-- Nothing of a CIVVIS turn's is left on screen for theirs.
@@ -1078,6 +1110,11 @@ end
 function CivvisHotseatCover.onHandoverClosed(pid)
 	pid = tonumber(pid);
 	if pid == nil or not CivvisHotseatCover.person(pid) then return; end
+	-- A turn handed back: its "please wait" screen closing is no hand-over.
+	if CivvisHotseatCover.returned == CivvisHotseatCover.keyFor(pid) and CivvisHotseatCover.safeReturn() then
+		CivvisHotseatCover.lift("person_returned");
+		return;
+	end
 	if CivvisHotseatCover.viewKept() and CivvisHotseatCover.harnessed(pid) then
 		CivvisHotseatCover.restoreView(pid);
 	end
@@ -1156,9 +1193,11 @@ function CivvisHotseatCover.onInput(uiMsg, wParam)
 end
 
 -- The hand-over of the seat now playing still holds its pause: ask it to
--- press (CivvisControlAutoClose.lua, `CivvisHotseatScreen.fromCover`).
+-- press (CivvisControlAutoClose.lua, `CivvisHotseatScreen.fromCover`). Never
+-- for a turn handed back (see `handedBack`): no second press.
 function CivvisHotseatCover.nudge(pid, dt)
 	local c = CivvisHotseatCover;
+	if c.returned == c.keyFor(pid) and c.safeReturn() then return false; end
 	c.pausedFor = c.pausedFor + dt;
 	if c.pausedFor < 1.5 then return false; end
 	c.pausedFor = 0;
