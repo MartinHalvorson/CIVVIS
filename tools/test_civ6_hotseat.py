@@ -124,6 +124,14 @@ class HotseatInstallTest(unittest.TestCase):
         replaced = {p.findtext("LuaContext") for p in
                     tree.findall("./InGameActions/ReplaceUIScript/Properties")}
         self.assertIn("PlayerChange", replaced)
+        # The scenarios' event popup is served in hotseat only (a single-player
+        # install's modinfo is the shipped one: below).
+        self.assertIn("EventPopup", replaced)
+        served = [p.findtext("LuaReplace") for p in tree.findall("./InGameActions/ReplaceUIScript/Properties")
+                  if p.findtext("LuaContext") == "EventPopup"]
+        self.assertEqual(served, ["CivvisControlAutoClose.lua"])
+        self.assertNotIn("<LuaContext>EventPopup</LuaContext>",
+                         (install.MOD_SOURCE / "CivvisControl.modinfo").read_text())
         # The screens and the HUD keep the run's own tag.
         closer = (out / "CivvisControlAutoClose.lua").read_text().split("}\n", 1)[0]
         self.assertIn('RunTag = "hotseat-test",', closer)

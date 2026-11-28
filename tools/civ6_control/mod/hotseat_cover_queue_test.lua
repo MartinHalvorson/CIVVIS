@@ -394,4 +394,114 @@ local personCard = card(person)
 for _ = 1, 400 do personCard.tick(0.25) end
 assert(personCard.closes == 0 and not personCard.hidden, "a real person's card is theirs to close")
 
+-- 4. The scenarios' event popup (install.py HOTSEAT_EVENT_POPUP): the whole
+-- closer loaded as the EventPopup context over a model of the shipped script,
+-- Base/Assets/UI/Popups/EventPopup.lua:
+--   :35    if (kPopupData.ForPlayer ~= nil and kPopupData.ForPlayer ~= playerID) then return; end
+--   :41-46 shown at once if none is up, else kept in its own list (m_kQueuedPopups)
+--   :175   UIManager:QueuePopup(ContextPtr, PopupPriority.Medium);
+--   :253-256 OnClose: UIManager:DequeuePopup(ContextPtr); ShowNextQueuedPopup();
+--   :303-306 OnUIIdle: if UI.CanShowPopup(PopupPriority.Medium) then ShowNextQueuedPopup(); end
+-- Under the cover a queued popup is held hidden unless it is AlwaysVisibleInQueue,
+-- and the cover is a higher popup, so `UI.CanShowPopup` says no.
+local function eventPopup(config, pid)
+	local h = { hidden = true, inQueue = false, covered = pid ~= 0, visible = {}, shown = {}, logs = {} }
+	local env = setmetatable({ CivvisControlConfig = config, ExposedMembers = {} }, { __index = _G })
+	local manager = {}
+	function manager:QueuePopup(context, priority, params)
+		local always = type(params) == "table" and params.AlwaysVisibleInQueue == true
+		h.visible[#h.visible + 1] = always
+		h.inQueue = true
+		h.hidden = h.covered and not always
+	end
+	function manager:DequeuePopup() h.inQueue, h.hidden = false, true end
+	function manager:IsInPopupQueue() return h.inQueue end
+	env.UIManager = manager
+	env.UI = { CanShowPopup = function() return not h.covered end, PlaySound = function() end }
+	-- The model runs in the context's own environment, as the shipped script
+	-- would: `UIManager`, `UI`, `Game` and `ContextPtr` are read when called.
+	env.include = function(name)
+		if name ~= "EventPopup" then return end
+		local model = assert(loadstring([[
+			local waiting, queued = false, {}
+			function ShowCompletedPopup(data)
+				h.shown[#h.shown + 1] = data.EventKey
+				UIManager:QueuePopup(ContextPtr, 30)
+				waiting = true
+			end
+			function ShowNextQueuedPopup()
+				for i, entry in ipairs(queued) do
+					ShowCompletedPopup(entry)
+					table.remove(queued, i)
+					break
+				end
+				if #queued == 0 then waiting = false end
+			end
+			function OnAddEventPopupRequest(data)
+				if data.ForPlayer ~= nil and data.ForPlayer ~= Game.GetLocalPlayer() then return end
+				if not waiting then ShowCompletedPopup(data) else table.insert(queued, data) end
+			end
+			function OnClose()
+				h.closes = (h.closes or 0) + 1
+				UIManager:DequeuePopup(ContextPtr)
+				ShowNextQueuedPopup()
+			end
+			function OnUIIdle()
+				if UI.CanShowPopup(30) then ShowNextQueuedPopup() end
+			end
+			h.queued = function() return #queued end
+		]], "EventPopup"))
+		setfenv(model, env)
+		model()
+	end
+	env.h = h
+	env.Controls = {}
+	env.Game = { GetLocalPlayer = function() return pid end, GetCurrentGameTurn = function() return 40 end }
+	env.ContextPtr = {
+		GetID = function() return "EventPopup" end, IsHidden = function() return h.hidden end,
+		SetUpdate = function(_, f) h.tick = f end, SetShowHandler = function() end,
+	}
+	env.Automation = { Log = function(line) h.logs[#h.logs + 1] = line end }
+	env.LuaEvents = {}
+	local chunk = assert(loadfile(here .. "/CivvisControlAutoClose.lua"))
+	setfenv(chunk, env)
+	chunk()
+	h.env = env
+	h.run = function(seconds)
+		for _ = 1, seconds * 4 do if not h.hidden then h.tick(0.25) end end
+	end
+	return h
+end
+local scenario = { Hotseat = true, HotseatSeats = { 1, 2 }, HotseatHumanSeats = { 0 }, HotseatStubSeats = {},
+                   HotseatCover = true, HotseatAutoStart = true, AnnouncementSeconds = 0.25 }
+do
+	-- A CIVVIS seat's two events on its own turn: drawn under the cover, closed in turn.
+	local h = eventPopup(scenario, 1)
+	h.env.OnAddEventPopupRequest({ ForPlayer = 1, EventKey = "SCENARIO_EVENT_A" })
+	h.env.OnAddEventPopupRequest({ ForPlayer = 1, EventKey = "SCENARIO_EVENT_B" })
+	assert(h.visible[1] == true and not h.hidden, "drawn under the cover, not held for the person")
+	assert(h.queued() == 1, "the second waits in the screen's own list")
+	h.run(10)
+	assert(h.closes == 2 and h.hidden and h.queued() == 0 and not h.inQueue,
+		"both closed on the seat's own turn: " .. tostring(h.closes))
+	assert(h.visible[2] == true and h.shown[2] == "SCENARIO_EVENT_B")
+	-- Its own list drains on UIIdle too: the cover is not a reason to keep it.
+	assert(h.env.UI.CanShowPopup(30) == true, "a CIVVIS seat's turn: told yes")
+	assert(eventPopup(scenario, 2).env.UI.CanShowPopup(30) == true)
+	-- Another player's event is the shipped script's to ignore (:35).
+	local other = eventPopup(scenario, 1)
+	other.env.OnAddEventPopupRequest({ ForPlayer = 0, EventKey = "SCENARIO_EVENT_A" })
+	assert(#other.shown == 0 and other.hidden)
+end
+do
+	-- The person's own event on their turn is theirs to read and close.
+	local h = eventPopup(scenario, 0)
+	h.env.OnAddEventPopupRequest({ ForPlayer = 0, EventKey = "SCENARIO_EVENT_A" })
+	assert(not h.hidden and h.visible[1] == false, "the shipped queueing on the person's turn")
+	h.run(100)
+	assert((h.closes or 0) == 0 and not h.hidden, "never closed for the person")
+	h.covered = true
+	assert(h.env.UI.CanShowPopup(30) == false, "and the game answers for itself on the person's turn")
+end
+
 print("hotseat_cover_queue_test: ok")
