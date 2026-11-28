@@ -205,15 +205,15 @@ fn a_soldier_alone_or_beside_a_civilian_or_a_ship_is_no_stack() {
 #[test]
 fn a_soldier_with_no_movement_keeps_the_tile_and_the_fresh_one_steps() {
     let (mut g, home) = board();
-    // The stronger Spearman would keep the centre, but it has spent its
-    // movement: the Warrior that can still step is the one that goes.
-    let spear = spawn(&mut g, "spearman", 0, home);
-    g.units.get_mut(&spear).unwrap().moves_left = 0.0;
+    // The Warrior has spent its movement, so it keeps the centre although
+    // the Spearman is the stronger: the Spearman, which can still step, goes.
     let warrior = spawn(&mut g, "warrior", 0, home);
+    g.units.get_mut(&warrior).unwrap().moves_left = 0.0;
+    let spear = spawn(&mut g, "spearman", 0, home);
     let mut ai = gene_on();
     assert_eq!(ai.step_stacked_soldiers_apart(&mut g, 0), 1);
-    assert_eq!(g.units[&spear].pos, home);
-    assert_eq!(g.wdist(g.units[&warrior].pos, home), 1);
+    assert_eq!(g.units[&warrior].pos, home);
+    assert_eq!(g.wdist(g.units[&spear].pos, home), 1);
 }
 
 #[test]

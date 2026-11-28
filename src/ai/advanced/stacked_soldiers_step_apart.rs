@@ -186,7 +186,7 @@ impl AdvancedAi {
             .filter(|uid| {
                 **uid != keeper
                     && (!Self::step_apart_can_step(g, **uid) || self.step_out_guard(g, **uid))
-                    && g.units.get(*uid).is_some_and(|unit| unit.pos == tile)
+                    && g.units.get(uid).is_some_and(|unit| unit.pos == tile)
             })
             .count();
         if stuck > 0 {
