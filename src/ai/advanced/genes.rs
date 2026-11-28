@@ -6088,6 +6088,15 @@ pub const GENES: &[Gene] = &[
     // held one with no reachable site buys one grant. Opt-in; see
     // `advanced/foreign_site_open_border.rs`.
     Gene { tag: "foreign-site-buys-the-open-border", field: "foreign_site_buys_the_open_border", kind: Kind::OptIn, enable: AdvancedAi::enable_foreign_site_buys_the_open_border, disable: AdvancedAi::disable_foreign_site_buys_the_open_border },
+    // Hotseat 2026-11-27 (hotseat-20261128T031456Z p1 t12-t16): a person
+    // declared, took the first Settler, and four turns later, at war and at
+    // 47 power to 51, the seat sent another Settler toward the same ground
+    // with 77-85 Gold idle; Recovery waits for 1.25 times our power. For ten
+    // standard turns after a declaration on us, while the declarer's
+    // military is at least ours, Settlers keep off the ground its soldiers
+    // were seen on and one shooter is bought. Opt-in; see
+    // `advanced/fresh_war_holds_the_home.rs`.
+    Gene { tag: "fresh-war-holds-the-home", field: "fresh_war_holds_the_home", kind: Kind::OptIn, enable: AdvancedAi::enable_fresh_war_holds_the_home, disable: AdvancedAi::disable_fresh_war_holds_the_home },
     // ---- append: g-k ------------------------------------------------
     // `gutted-rival-passes-the-edge`: a Domination lane's staged declaration
     // passes the peak edge against a target at 60% or less of its 30-turn

@@ -421,6 +421,10 @@ impl AdvancedAi {
         /// Darwin with no reachable site buys one Open Borders grant; see
         /// `advanced/foreign_site_open_border.rs`.
         foreign_site_buys_the_open_border => enable_foreign_site_buys_the_open_border, disable_foreign_site_buys_the_open_border;
+        /// Opt-in gene `fresh-war-holds-the-home`: a war declared on us at
+        /// parity keeps the Settlers off the declarer's ground and buys one
+        /// shooter; see `advanced/fresh_war_holds_the_home.rs`.
+        fresh_war_holds_the_home => enable_fresh_war_holds_the_home, disable_fresh_war_holds_the_home;
         // ---- append: g-k --------------------------------------------
         /// `gutted-rival-passes-the-edge`: a staged declaration by a Domination
         /// lane passes the peak edge against a target at 60% or less of its
