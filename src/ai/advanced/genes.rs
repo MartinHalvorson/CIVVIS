@@ -6718,6 +6718,13 @@ pub const GENES: &[Gene] = &[
     // after the band turn (t60 on Online), where most long walks began.
     // Opt-in; see `advanced/settler_walk_deadline.rs`.
     Gene { tag: "settler-walk-clock-runs-all-game", field: "settler_walk_clock_runs_all_game", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_walk_clock_runs_all_game, disable: AdvancedAi::disable_settler_walk_clock_runs_all_game },
+    // Hotseat `hotseat-20261128T031456Z` seat p2, turns 15-16: Kraków
+    // trained a Warrior onto a centre another Warrior held, the unit pass
+    // gave neither an order, the host refused all 22 holds the bridge tried
+    // and both turns ended by force with two of three soldiers idle. A stack
+    // left by the unit pass keeps one unit and steps the rest beside it.
+    // Opt-in; see `advanced/stacked_soldiers_step_apart.rs`.
+    Gene { tag: "stacked-soldiers-step-apart", field: "stacked_soldiers_step_apart", kind: Kind::OptIn, enable: AdvancedAi::enable_stacked_soldiers_step_apart, disable: AdvancedAi::disable_stacked_soldiers_step_apart },
     // Hotseat `hotseat-20261128T031456Z` seat p3 (Science, Cree, one city):
     // Animal Husbandry, Mining, Pottery, then Sailing at t12, each "the most
     // valuable step toward rocketry"; no Writing, no Campus and five Science

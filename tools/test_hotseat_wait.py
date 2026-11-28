@@ -146,7 +146,18 @@ def timed_table(root: Path, handed_back: bool = False) -> Path:
          request=100.850, end=100.995)
     fx.seat[1].append({"kind": "combat", "turn": 7, "ours": True, "our_turn": True,
                        "vis_seconds": 0.7})
+    # `--fast-turns` pulse ticks (#6053): seat 1's opening 13 ms after its
+    # press, and the settle of its last frame; seat 2 has none.
+    fx.seat[1].append({"kind": "pulse_tick", "turn": 7, "frame": 0, "why": "open", "n": 1,
+                       "ui": ui(100.230)})
+    fx.seat[1].append({"kind": "pulse_tick", "turn": 7, "frame": 1, "why": "settle", "n": 1,
+                       "ui": ui(100.720)})
+    fx.seat[1].append({"kind": "pulse_tick", "turn": 7, "frame": 1, "why": "settle", "n": 2,
+                       "ui": ui(100.740)})
     fx.seat[1].append({"kind": "combat", "turn": 7, "ours": False, "vis_seconds": 0.5})
+    # Seat 2's only pulse tick is a settle: no opening pulse, no unpause.
+    fx.seat[2].append({"kind": "pulse_tick", "turn": 7, "frame": 0, "why": "settle", "n": 1,
+                       "ui": ui(101.300)})
     seat(2, shown=100.995, press=101.012,
          frames=[{"export": 101.100, "board": 101.150, "answer": 101.170, "applied_at": 101.200}],
          request=101.400, end=102.005)
@@ -308,6 +319,11 @@ class PiecesTest(unittest.TestCase):
         self.assertEqual(first["units"], 4)
         self.assertGreater(first["board_kb"], 2.0, "the opening board's size, not a frame's")
         self.assertEqual(second["extra_frames"], 0)
+        self.assertEqual((first["pulse_open"], first["pulse_settle"]), (1, 2))
+        self.assertAlmostEqual(first["unpause_ms"], 13, delta=2,
+                               msg="Start Turn pressed -> the opening's pulse tick")
+        self.assertEqual((second["pulse_open"], second["pulse_settle"]), (0, 1))
+        self.assertIsNone(second["unpause_ms"], "a settle pulse is not the unpause")
 
     def test_a_band_adds_up_to_the_wait(self) -> None:
         table = hotseat_wait.bands(self.rounds())
@@ -320,6 +336,21 @@ class PiecesTest(unittest.TestCase):
         self.assertAlmostEqual(band["seat_turn_median"]["close.host"], (0.145 + 0.605) / 2,
                                places=2)
         self.assertAlmostEqual(band["drivers"]["extra_frames"], 0.5)
+        self.assertAlmostEqual(band["drivers"]["pulse_settle"], 1.5, msg="a mean per seat-turn")
+        self.assertAlmostEqual(band["drivers"]["unpause_ms"], 13, delta=2,
+                               msg="a median over the seat-turns that have one")
+
+    def test_the_unpause_is_a_median_and_frames_a_mean(self) -> None:
+        def seat_row(unpause: float, frames: int) -> dict:
+            drivers = dict.fromkeys(hotseat_wait.DRIVERS, 0)
+            drivers.update(unpause_ms=unpause, extra_frames=frames)
+            return {"turn": 3, "stages": {"total": 1.0}, "drivers": drivers, "split": dict.fromkeys(
+                f"{part}.{name}" for part, name in hotseat_wait.PIECES)}
+        round_ = {"seats": [seat_row(10, 0), seat_row(20, 0), seat_row(90, 3)], "waited": 1.0,
+                  "rollover": None, "person_handover": None}
+        band = hotseat_wait.summarise(1, 10, [round_])
+        self.assertEqual(band["drivers"]["unpause_ms"], 20)
+        self.assertEqual(band["drivers"]["extra_frames"], 1)
 
     def test_bands_are_width_turns_and_a_short_last_one_joins_the_one_before(self) -> None:
         def fake(turn: int) -> dict:

@@ -1,0 +1,18 @@
+{
+ "kind": "captured_native_action_pairs_v1",
+ "tag": "stacked-soldiers-step-apart",
+ "scope": "Recorded proposal activation on captured live input only, not host execution or strength. 7 boards from the person-played hotseat game hotseat-20261128T031456Z (2026-11-27, 6 players, Continents, Small, Prince), every CIVVIS seat's own events.jsonl cut after turn N+1 and replayed at turn N. Both arms run one frozen civvis_orders --resumed, the macOS arm64 decider the hotseat-bundle workflow built from this branch at ecb17f82 (run 46108939631; the head adds only a clippy fix), with the seat's own victory target and civilization and no forced genes (the game's brains ran forced=none); the on arm adds --with stacked-soldiers-step-apart. 7 of 7 complete. Stacked boards: seat p2 (Poland) turns 15 and 16, two Warriors on Krakow's centre (12,36) that the live decider named in no order while the host refused every hold: both change, the fresh Warrior 262146 steps west to (11,36), away from the barbarians east of the city (off: no order for it). Controls, no two of our soldiers on one tile: p2 t13, p1 t16, p3 t14, p4 t14, p5 t14, all unchanged and no gene line.",
+ "archive": {
+  "path": "docs/eval/2026-11-28-stacked-soldiers-step-apart.native-queries.tar.xz",
+  "sha256": "02653f8ceda939c2023dbaa5c07a12fb17c7e4c98801893c590236b8e82ba248"
+ },
+ "members": [
+  "stacked-soldiers-step-apart-queries/0000/result.json",
+  "stacked-soldiers-step-apart-queries/0001/result.json",
+  "stacked-soldiers-step-apart-queries/0002/result.json",
+  "stacked-soldiers-step-apart-queries/0003/result.json",
+  "stacked-soldiers-step-apart-queries/0004/result.json",
+  "stacked-soldiers-step-apart-queries/0005/result.json",
+  "stacked-soldiers-step-apart-queries/0006/result.json"
+ ]
+}
