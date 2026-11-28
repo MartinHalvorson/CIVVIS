@@ -366,6 +366,60 @@ check("released record", field(last("stand_in_deal_hold"), "phase"), "released")
 check("and stays released", trade.holdsEndTurn(24), false)
 check("released once", count("stand_in_deal_hold"), 2)
 
+-- `StandInDealActivate`: the first deal put to the stand-in is opened through
+-- the turn's newest DIPLOMACY_SESSION notification, as a person's click does,
+-- once a game; the leader screens are kept from closing it for the hold, and
+-- the hold's end says what the turn showed.
+local sessionHolds = {}
+LuaEvents = { CivvisDealSession = function(subject, open, seconds)
+	sessionHolds[#sessionHolds + 1] = tostring(subject) .. ":" .. tostring(open) .. ":" .. tostring(seconds)
+end }
+NotificationManager = {
+	GetList = function() return { 11, 12, 14 } end,
+	FindType = function() return nil end,
+	Find = function(_, id)
+		return {
+			GetTypeName = function()
+				return (id == 12 or id == 14) and "NOTIFICATION_DIPLOMACY_SESSION" or "NOTIFICATION_OTHER"
+			end,
+			Activate = function(_, byUser) note("activate:" .. id .. ":" .. tostring(byUser)) end,
+		}
+	end,
+}
+cfg.StandInDealActivate = true
+cfg.StandInDealAnswer = "ACCEPT"
+trade.standIn.answered = {}
+pending = { [3] = { [0] = true } }
+working.outgoing = { [3] = { [0] = { { kind = "gold", from = 3, amount = 20, duration = 0 } } } }
+play(30)
+check("activated: the newest diplomacy notification", logged("activate:14:true"), 1)
+check("only that one", logged("activate:"), 1)
+check("the record says so", field(last("stand_in_deal_activate"), "activated"), "true")
+check("from the seat whose deal it is", field(last("stand_in_deal_activate"), "from"), "3")
+check("two diplomacy notifications seen", field(last("stand_in_deal_activate"), "notifications"), "2")
+check("the leader screens held off for the hold", sessionHolds[#sessionHolds], "3:true:6")
+clock = 500
+check("the turn is held over it", trade.holdsEndTurn(30), true)
+clock = 506.5
+check("released", trade.holdsEndTurn(30), false)
+local released = last("stand_in_deal_hold")
+check("the release says what INCOMING held", field(released, "incoming_items"), "0")
+check("and whether it is still pending", field(released, "pending_from_them"), "true")
+check("the leader screens released", sessionHolds[#sessionHolds], "3:false:0")
+-- Once a game: the next deal is answered as before, not opened.
+reset()
+play(31)
+check("not activated again", logged("activate:"), 0)
+check("answered instead", logged("send:ACCEPTED:0>3"), 1)
+pending = { [1] = { [0] = true } }
+working.outgoing[1] = { [0] = { { kind = "gold", from = 1, amount = 7, duration = 0 } } }
+reset()
+play(32)
+check("a new deal later in the game is not opened either", logged("activate:"), 0)
+cfg.StandInDealActivate = nil
+cfg.StandInDealAnswer = nil
+pending = {}
+
 -- A CIVVIS seat's context (deciding, not the stub's seat) does none of it.
 trade.standIn.done, trade.standIn.answered, trade.standIn.hold = {}, {}, nil
 pending = { [1] = { [0] = true } }

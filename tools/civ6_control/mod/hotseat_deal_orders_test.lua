@@ -34,6 +34,8 @@ end })
 -- Firaxis AI, 5 a seat we have not met.
 CivvisControlConfig = { Hotseat = true, HotseatSeat = 2, HotseatSeats = { 1, 2, 3 },
 	HotseatHumanSeats = { 0 }, TradeRetryTurns = 3, TradeResponseTurns = 2 }
+-- Shared by every UI context in the game (`seatSaid`, `seatNote`).
+ExposedMembers = {}
 
 local events = {}
 local realPrint = print
@@ -314,6 +316,27 @@ reset()
 check("a different deal is not rebuilt", trade.seatMirror(2, 0, theirs + 1), nil)
 check("and leaves nothing behind", #items("outgoing", 2, 0), 0)
 check("nothing to rebuild", select(2, trade.seatMirror(2, 1, nil)), "mirror_nothing")
+-- The answer is written down for the proposer's context, keyed
+-- "proposer:answerer", with the deal's id as the proposer reckons it.
+local said = ExposedMembers.CivvisDealAnswers and ExposedMembers.CivvisDealAnswers["0:2"]
+check("the answer is written down for the proposer", said ~= nil and said.verb, "ACCEPT")
+check("under the proposer's own id of the deal", said ~= nil and said.id, idOf("outgoing", 0, 2, 0))
+-- ★ A stale INCOMING copy (live trade-live-3 t46: seat 4's counter of turn
+-- 38 still there while its counter of turn 45 was pending): the proposer's
+-- OUTGOING deal is the one read, priced and accepted.
+reset()
+pending[0] = { [2] = true }
+working.incoming[2][0] = { { kind = "gold", from = 0, amount = 9, duration = 0 } }
+working.outgoing[0][2] = {
+	{ kind = "resources", from = 0, value = 12, amount = 1, duration = 30 },
+	{ kind = "gold", from = 2, amount = 5, duration = 30 },
+}
+local _, staleRead, _, staleSource = trade.seatTheirs(2, 0)
+check("their outgoing deal is read first", staleSource, "their_outgoing")
+check("the stale copy's id is no deal to accept", order("deal", 0, "ACCEPT", idOf("incoming", 2, 0, 2)), "deal_changed")
+check("their pending deal is", order("deal", 0, "ACCEPT", theirs), "deal_accepted")
+check("rebuilt from theirs, not copied from the stale one", logged("copy:2>0"), 0)
+check("what we sent is their pending deal", idOf("outgoing", 2, 0, 2), theirs)
 working.incoming[2][0] = {
 	{ kind = "resources", from = 0, value = 12, amount = 1, duration = 30 },
 	{ kind = "gold", from = 2, amount = 5, duration = 30 },
@@ -454,6 +477,29 @@ check("a strategic says so", trade.seatItem({ GetType = function() return "resou
 	GetValueType = function() return 44 end, GetAmount = function() return 10 end,
 	GetDuration = function() return 0 end, GetSubType = function() return nil end }).class, "strategic")
 check("a Great Work says its object", b.incoming[1].give[1].object, "GREATWORKOBJECT_WRITING")
+
+-- Our proposal's outcome, said by the seat that answered it (`seatSaid`):
+-- the engine's own answer event never reaches us on their turn.
+turn = 90
+reset()
+pending = {}
+possible[1] = { resources = { { ForType = 44, IsValid = true } } }
+check("proposed again", order("deal", 1, "PROPOSE;give=GOLD=5;get=RESOURCE_IRON=10"), "deal_proposed")
+local proposal = trade.seat.mine[1].id
+ExposedMembers.CivvisDealAnswers["2:1"] = { id = proposal, verb = "ACCEPT", turn = 90 }
+pending = {}
+turn = 91
+local answered = trade.seatBoard(player, 2, turn)
+check("an accepted proposal reads accepted", answered.outcomes[#answered.outcomes].outcome, "accepted")
+check("and says who said so", answered.outcomes[#answered.outcomes].said, "ACCEPT")
+turn = 95
+check("proposed once more", order("deal", 1, "PROPOSE;give=GOLD=6;get=RESOURCE_IRON=10"), "deal_proposed")
+ExposedMembers.CivvisDealAnswers["2:1"] = { id = proposal, verb = "ACCEPT", turn = 90 }
+pending = {}
+turn = 96
+local older = trade.seatBoard(player, 2, turn)
+check("an answer to another deal is not this one's", older.outcomes[#older.outcomes].outcome, "closed")
+ExposedMembers.CivvisDealAnswers = nil
 
 -- A statement in a session already sent sends nothing more.
 reset()

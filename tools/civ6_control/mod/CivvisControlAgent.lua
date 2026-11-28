@@ -14135,6 +14135,12 @@ CivvisTrade.SEAT_OUTCOME = { ACCEPTED = "accepted", REJECTED = "rejected",
 	REJECTED_PERMANENT = "rejected", ADJUSTED = "countered", CLOSED = "closed" };
 -- Their pending deal to us, as the board and the `deal` order both read it:
 -- (pending, deal, items on our INCOMING working deal, which deal was read).
+-- ★ THEIR OUTGOING DEAL FIRST (live trade-live-3, 2026-11-28). Our INCOMING
+-- copy is filled only by some sends (an ADJUSTED, a peace session) and is
+-- never cleared by the next one: on turn 46 seat 1's INCOMING still held seat
+-- 4's counter of turn 38 while seat 4's pending deal was its counter of turn
+-- 45, and seat 1 accepted the old terms. The proposer's OUTGOING working deal
+-- is the deal it sent, so it is read first whenever it holds items.
 CivvisTrade.seatTheirs = function(pid, other)
 	local theirs = try(function() return DealManager.HasPendingDeal(other, pid); end, nil);
 	local incoming = try(function()
@@ -14142,9 +14148,12 @@ CivvisTrade.seatTheirs = function(pid, other)
 	end, nil);
 	local inCount = incoming ~= nil and try(function() return incoming:GetItemCount(); end, 0) or 0;
 	local deal, source = incoming, "incoming";
-	if theirs == true and (inCount or 0) == 0 then
-		deal = try(function() return DealManager.GetWorkingDeal(DealDirection.OUTGOING, other, pid); end, nil);
-		source = "their_outgoing";
+	if theirs == true then
+		local out = try(function() return DealManager.GetWorkingDeal(DealDirection.OUTGOING, other, pid); end, nil);
+		local outCount = out ~= nil and try(function() return out:GetItemCount(); end, 0) or 0;
+		if (outCount or 0) > 0 or (inCount or 0) == 0 then
+			deal, source = out, "their_outgoing";
+		end
 	end
 	return theirs, deal, inCount or 0, source;
 end;
@@ -14216,10 +14225,17 @@ CivvisTrade.seatBoard = function(player, pid, turn)
 				local heard = seat.heard[other];
 				seat.heard[other] = nil;
 				local outcome = heard ~= nil and CivvisTrade.SEAT_OUTCOME[heard.action] or nil;
+				local said = try(function()
+					local answer = ExposedMembers.CivvisDealAnswers[tostring(pid) .. ":" .. tostring(other)];
+					if type(answer) == "table" and answer.id == mine.id then return answer; end
+					return nil;
+				end, nil);
+				if outcome == nil and said ~= nil then outcome = CivvisTrade.SEAT_SAID[said.verb]; end
 				if outcome == nil and theirs == true then outcome = "countered"; end
 				local entry = { with = other, kind = kind, id = mine.id, proposed_turn = mine.first,
 					turn = turn, outcome = outcome or "closed", round = mine.round,
-					heard = heard ~= nil and heard.action or nil, give = mine.give, get = mine.get };
+					heard = heard ~= nil and heard.action or nil, said = said ~= nil and said.verb or nil,
+					give = mine.give, get = mine.get };
 				table.insert(seat.outcomes, entry);
 				while #seat.outcomes > 8 do table.remove(seat.outcomes, 1); end
 				if entry.outcome == "countered" then
@@ -14551,11 +14567,15 @@ CivvisTrade.seatOrder = function(player, pid, other, verb, x, turn)
 	for _, open in pairs(trade.sessions) do
 		if type(open) == "table" and open.kind == "hotseat" then return false, "deal_session_open"; end
 	end
-	local id, round = nil, 1;
+	local id, round, answers = nil, 1, nil;
 	if action == "ACCEPT" or action == "REJECT" or action == "COUNTER" then
 		local theirs, deal = CivvisTrade.seatTheirs(pid, other);
 		local count;
-		if theirs == true and deal ~= nil then _, _, id, count = CivvisTrade.seatSides(deal, pid); end
+		if theirs == true and deal ~= nil then
+			_, _, id, count = CivvisTrade.seatSides(deal, pid);
+			-- The same deal's id as its proposer reckons it (`seatSaid`).
+			_, _, answers = CivvisTrade.seatSides(deal, other);
+		end
 		if theirs ~= true or (count or 0) == 0 then return false, "deal_none_incoming"; end
 		if x ~= nil and math.floor(x) ~= id then return false, "deal_changed"; end
 		local seen = seat.seen[other];
@@ -14584,7 +14604,7 @@ CivvisTrade.seatOrder = function(player, pid, other, verb, x, turn)
 	local send = ({ ACCEPT = "ACCEPTED", REJECT = "REJECTED", COUNTER = "ADJUSTED",
 		PROPOSE = "PROPOSED", WITHDRAW = "CLOSED" })[action];
 	trade.sessions[other] = { kind = "hotseat", action = send, verb = action, id = id,
-		round = round, give = give, get = get, turn = turn, sent = false,
+		answers = answers, round = round, give = give, get = get, turn = turn, sent = false,
 		opened_at = try(function() return CivvisClock.now(); end, nil) };
 	pcall(function() LuaEvents.CivvisDealSession(other, true, cfg.DealSessionHoldSeconds or 4); end);
 	local ok = CivvisK.attempt(function() DiplomacyManager.RequestSession(pid, other, "MAKE_DEAL"); end);
@@ -14619,7 +14639,10 @@ CivvisTrade.seatSend = function(pid, other, session, sessionID, turn)
 	local incomingItems = try(function()
 		return DealManager.GetWorkingDeal(DealDirection.INCOMING, pid, other):GetItemCount();
 	end, 0) or 0;
-	if session.verb == "ACCEPT" and incomingItems == 0 then
+	local theirItems = try(function()
+		return DealManager.GetWorkingDeal(DealDirection.OUTGOING, other, pid):GetItemCount();
+	end, 0) or 0;
+	if session.verb == "ACCEPT" and (theirItems > 0 or incomingItems == 0) then
 		-- See `seatMirror`: their deal never reached our INCOMING copy.
 		local mirrored, mirrorWhy = CivvisTrade.seatMirror(pid, other, session.id);
 		if mirrored == nil then why = mirrorWhy; else session.mirrored = true; end
@@ -14656,7 +14679,26 @@ CivvisTrade.seatSend = function(pid, other, session, sessionID, turn)
 	if sent and CivvisTrade.seatKind(other) == "person" then
 		pcall(CivvisTrade.seatNote, pid, other, session, turn);
 	end
+	if sent and session.answers ~= nil then pcall(CivvisTrade.seatSaid, pid, other, session, turn); end
 	CivvisTrade.close(pid, other, sent and "hotseat_sent" or "hotseat_not_sent");
+end;
+-- ★ WHAT BECAME OF OUR PROPOSAL, SAID BY THE SEAT THAT ANSWERED IT (live
+-- trade-live-3, 2026-11-28). The answer comes on the other seat's turn and
+-- `Events.DiplomacyIncomingDeal` never reached the proposer's context there
+-- (`seatHeard`): every one of the game's 20 outcomes read `closed`, the
+-- eight accepted deals among them, so the decider took accepted terms for
+-- refused ones. Agent contexts share `ExposedMembers` (as the cover reads
+-- `CivvisDealNotes`), so the answering seat writes its answer down under
+-- "proposer:answerer" with the deal's id as the proposer reckons it, and the
+-- proposer's board reads it when its deal stops pending (`seatBoard`).
+CivvisTrade.SEAT_SAID = { ACCEPT = "accepted", REJECT = "rejected", COUNTER = "countered" };
+CivvisTrade.seatSaid = function(pid, other, session, turn)
+	local said = ExposedMembers.CivvisDealAnswers;
+	if type(said) ~= "table" then
+		said = {};
+		ExposedMembers.CivvisDealAnswers = said;
+	end
+	said[tostring(other) .. ":" .. tostring(pid)] = { id = session.answers, verb = session.verb, turn = turn };
 end;
 -- ★ THE PERSON HEARS WHAT A CIVVIS SEAT DID WITH THEIR DEAL (hotseat). The
 -- answer is sent on the seat's own turn, under the cover, and nothing in the
@@ -14703,7 +14745,7 @@ end;
 -- Records `stand_in_deal` (each try) and `stand_in_deal_hold`. Only the
 -- stand-in's own context acts (`CivvisSeat.standsIn`): a CIVVIS seat, a
 -- person's seat (it has no context) and every single-player run read false.
-CivvisTrade.standIn = { done = {}, answered = {}, tried = nil, hold = nil };
+CivvisTrade.standIn = { done = {}, answered = {}, tried = nil, hold = nil, activated = nil };
 CivvisTrade.STAND_IN_RETRY = { deal_not_met = true, deal_at_war = true, deal_session_busy = true,
 	deal_pending_exists = true, deal_cooldown = true, deal_no_seat = true };
 -- The seat a `to` of -1 (`*`) means: the lowest CIVVIS seat met, at peace,
@@ -14743,6 +14785,36 @@ CivvisTrade.standInDeals = function(player, pid, turn)
 					first_seen_turn = seen.first, ok = ok == true, why = why });
 				-- One session a turn.
 				if ok then return; end
+			end
+		end
+	end
+	-- `StandInDealActivate`: the first deal another seat puts to the
+	-- stand-in is opened as a person opens it, by activating the turn's
+	-- DIPLOMACY_SESSION notification (the shipped panel's click,
+	-- Base/Assets/UI/Panels/NotificationPanel.lua:1106 `pNotification:Activate(true)`;
+	-- the activation itself "is handled by the C++ side", :1403-1405). The
+	-- leader screens are kept from closing it for the hold (`CivvisDealSession`),
+	-- and what came up is recorded when the hold ends (`standInHolds`).
+	if cfg.StandInDealActivate == true then
+		for other, seen in pairs(CivvisTrade.seat.seen) do
+			if st.activated == nil and type(seen) == "table" and seen.first == turn then
+				local notes = {};
+				CivvisK.guard(function()
+					for _, id in pairs(NotificationManager.GetList(pid) or {}) do
+						local note = NotificationManager.Find(pid, id);
+						if note ~= nil and note:GetTypeName() == "NOTIFICATION_DIPLOMACY_SESSION" then
+							notes[#notes + 1] = { id = id, note = note };
+						end
+					end
+				end);
+				table.sort(notes, function(a, b) return a.id > b.id; end);
+				st.activated = { turn = turn, from = other };
+				local hold = tonumber(cfg.StandInDealHoldSeconds) or 6;
+				pcall(function() LuaEvents.CivvisDealSession(other, true, hold); end);
+				local activated = notes[1] ~= nil and CivvisK.attempt(function() notes[1].note:Activate(true); end) == true;
+				emit("stand_in_deal_activate", { turn = turn, from = other, id = seen.id,
+					notifications = #notes, activated = activated, note = notes[1] ~= nil and notes[1].id or nil });
+				return;
 			end
 		end
 	end
@@ -14793,8 +14865,22 @@ CivvisTrade.standInHolds = function(turn)
 	if hold.released then return false; end
 	if now >= hold.at and now - hold.at < seconds then return true; end
 	hold.released = true;
+	-- What the turn shows when the hold ends: their deal in our INCOMING copy,
+	-- a session open with them, the screens up (after an activation).
+	local pid = CivvisSeat.seat;
+	local visible = nil;
+	pcall(function() visible = CivvisSeat.standInScreens(); end);
 	emit("stand_in_deal_hold", { turn = turn, from = hold.from, phase = "released",
-		held = math.floor((now - hold.at) * 10 + 0.5) / 10 });
+		held = math.floor((now - hold.at) * 10 + 0.5) / 10,
+		incoming_items = try(function()
+			return DealManager.GetWorkingDeal(DealDirection.INCOMING, pid, hold.from):GetItemCount();
+		end, nil),
+		pending_from_them = try(function() return DealManager.HasPendingDeal(hold.from, pid); end, nil),
+		open_session = try(function() return DiplomacyManager.FindOpenSessionID(pid, hold.from); end, nil),
+		visible = visible });
+	if CivvisTrade.standIn.activated ~= nil and CivvisTrade.standIn.activated.turn == turn then
+		pcall(function() LuaEvents.CivvisDealSession(hold.from, false, 0); end);
+	end
 	return false;
 end;
 

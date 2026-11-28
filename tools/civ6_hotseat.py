@@ -503,6 +503,8 @@ def hotseat_config(args: argparse.Namespace, run_dir: Path, orders_db: Path) -> 
             config["StandInDealHoldSeconds"] = float(hold)
         if getattr(args, "stand_in_deal_answer", None):
             config["StandInDealAnswer"] = args.stand_in_deal_answer
+        if getattr(args, "stand_in_deal_activate", False):
+            config["StandInDealActivate"] = True
     return config
 
 
@@ -3925,6 +3927,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--stand-in-deal-answer", choices=["ACCEPT", "REJECT"], default=None,
                     help="TEST (with --auto-human): a deal another seat puts to the stand-in is "
                          "answered so on its next turn after the one it was first seen on")
+    ap.add_argument("--stand-in-deal-activate", action="store_true",
+                    help="TEST (with --auto-human): the first deal another seat puts to the "
+                         "stand-in is opened as a person opens it, through the turn's diplomacy "
+                         "notification (photographed with --stand-in-deal-hold)")
     ap.add_argument("--stand-in-deal-hold", type=float, default=None, metavar="SECONDS",
                     help="TEST (with --auto-human): while another seat's deal waits for the "
                          "stand-in, its end of turn is held this long (to photograph that turn)")
@@ -3951,10 +3957,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.fast_animations_rollover and args.fast_animations is None:
         print("--fast-animations-rollover goes with --fast-animations", file=sys.stderr)
         return 2
-    if (args.stand_in_deal or args.stand_in_deal_hold or args.stand_in_deal_answer) \
-            and not args.auto_human:
-        print("--stand-in-deal, --stand-in-deal-answer and --stand-in-deal-hold are for test "
-              "tables: they go with --auto-human", file=sys.stderr)
+    if (args.stand_in_deal or args.stand_in_deal_hold or args.stand_in_deal_answer
+            or args.stand_in_deal_activate) and not args.auto_human:
+        print("--stand-in-deal, --stand-in-deal-answer, --stand-in-deal-activate and "
+              "--stand-in-deal-hold are for test tables: they go with --auto-human", file=sys.stderr)
         return 2
     try:
         stand_in_deals(args.stand_in_deal.split())

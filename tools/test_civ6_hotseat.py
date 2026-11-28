@@ -68,19 +68,19 @@ class HotseatConfigTest(unittest.TestCase):
         self.assertEqual(hotseat.agent_seats(3, False), [1, 2])
 
     def test_the_stand_in_deals_are_for_test_tables_only(self) -> None:
-        keys = ("StandInDeals", "StandInDealHoldSeconds", "StandInDealAnswer")
+        keys = ("StandInDeals", "StandInDealHoldSeconds", "StandInDealAnswer", "StandInDealActivate")
         plain = hotseat.hotseat_config(game_args(auto_human="gated"), Path("/tmp/r"),
                                        Path("/tmp/r/o.sqlite"))
         self.assertFalse(set(keys) & set(plain), "not asked: no key at all")
         asked = dict(stand_in_deal="5:*:PROPOSE;give=GOLD=25;get=  9:3:PROPOSE;give=GOLD=5;get=GOLD=4@30",
-                     stand_in_deal_hold=6.0, stand_in_deal_answer="ACCEPT")
+                     stand_in_deal_hold=6.0, stand_in_deal_answer="ACCEPT", stand_in_deal_activate=True)
         config = hotseat.hotseat_config(game_args(auto_human="gated", **asked), Path("/tmp/r"),
                                         Path("/tmp/r/o.sqlite"))
         self.assertEqual(config["StandInDeals"], [
             {"turn": 5, "to": -1, "verb": "PROPOSE;give=GOLD=25;get="},
             {"turn": 9, "to": 3, "verb": "PROPOSE;give=GOLD=5;get=GOLD=4@30"}])
-        self.assertEqual((config["StandInDealHoldSeconds"], config["StandInDealAnswer"]),
-                         (6.0, "ACCEPT"))
+        self.assertEqual((config["StandInDealHoldSeconds"], config["StandInDealAnswer"],
+                          config["StandInDealActivate"]), (6.0, "ACCEPT", True))
         # A person's table never carries them, whatever the namespace holds.
         person = hotseat.hotseat_config(game_args(**asked), Path("/tmp/r"), Path("/tmp/r/o.sqlite"))
         self.assertFalse(set(keys) & set(person))
@@ -89,6 +89,7 @@ class HotseatConfigTest(unittest.TestCase):
                 contextlib.redirect_stderr(io.StringIO()) as err:
             self.assertEqual(hotseat.main(["--stand-in-deal", "5:*:PROPOSE;give=GOLD=25;get="]), 2)
             self.assertEqual(hotseat.main(["--stand-in-deal-answer", "ACCEPT"]), 2)
+            self.assertEqual(hotseat.main(["--stand-in-deal-activate"]), 2)
             self.assertEqual(hotseat.main(["--auto-human", "gated", "--stand-in-deal", "5:x:BRIBE"]), 2)
             run.assert_not_called()
         self.assertIn("go with --auto-human", err.getvalue())
