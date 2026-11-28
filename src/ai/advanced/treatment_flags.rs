@@ -738,6 +738,10 @@ impl AdvancedAi {
         /// out counts on the Settler walk clock, and the walk deadline holds
         /// past the band turn; see `advanced/settler_walk_deadline.rs`.
         settler_walk_clock_runs_all_game => enable_settler_walk_clock_runs_all_game, disable_settler_walk_clock_runs_all_game;
+        /// Opt-in gene `science-seat-writes-first`: a Science seat's research
+        /// takes Writing once it knows two techs; see
+        /// `advanced/science_seat_writes_first.rs`.
+        science_seat_writes_first => enable_science_seat_writes_first, disable_science_seat_writes_first;
         // ---- append: t-z --------------------------------------------
         /// Opt-in gene `theology-fights-count-the-host-edge`; see
         /// `advanced/theology_fights.rs`.
