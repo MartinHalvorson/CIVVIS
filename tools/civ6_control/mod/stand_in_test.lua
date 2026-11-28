@@ -543,17 +543,18 @@ do
 	unit(o, 1, "UNIT_WARRIOR", 10, 1)
 	unit(o, 2, "UNIT_SCOUT", 11, 1)
 	assert(o.seat.standInDiag(3, 100) == true and #o.walked == 0 and #o.actions == 1)
-	-- A blocker standing, any blocker: not then (a plain end of turn is
-	-- refused under it), and the turn's try is not spent.
+	-- A hard blocker standing: not then (a plain end of turn is refused under
+	-- it), and the turn's try is not spent; the units blocker is dismissed
+	-- first, as the turn-6 stand-in had just done.
 	local h = diagWorld({ HotseatDiagRebegin = { 3 } }, 3)
 	h.blocker = RESEARCH
 	unit(h, 1, "UNIT_WARRIOR", 10, 2)
 	unit(h, 2, "UNIT_SCOUT", 13, 3)
-	assert(h.seat.standInDiag(3, 100) == false and #h.walked == 0 and #h.actions == 0)
+	assert(h.seat.standInDiag(3, 100) == false and #h.walked == 0 and #h.actions == 0 and h.dismissed == 0)
 	h.blocker = UNITS
-	assert(h.seat.standInDiag(3, 100) == false and #h.walked == 0 and #h.actions == 0, "nor units")
-	h.blocker = nil
-	assert(h.seat.standInDiag(3, 101) == true and #h.walked == 3, "once nothing blocks")
+	assert(h.seat.standInDiag(3, 101) == true and #h.walked == 3 and h.dismissed == 1, "the units blocker: dismissed")
+	assert(h.actions[1].reason == nil and h.kinds("stand_in_diag_rebegin")[1].dismissed == true)
+	assert(w.dismissed == 0 and w.kinds("stand_in_diag_rebegin")[1].dismissed == nil, "nothing to dismiss: nothing")
 	-- Without the key, or on a seat that does not stand in: nothing.
 	local plain = diagWorld({}, 3)
 	unit(plain, 1, "UNIT_WARRIOR", 10, 2)

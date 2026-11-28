@@ -31402,8 +31402,10 @@ end
 -- land combat unit A beside a free plot and a second one B with at least two
 -- moves, two or more plots from that plot (best: beside A, the plot beyond A,
 -- as 262146 stood behind 196608), are both sent there (two land combat units
--- never share a plot), B first and twice. Once a turn, only with no blocker
--- standing (a plain end of turn is refused under any); true when it sent the
+-- never share a plot), B first and twice. With the units blocker up, its
+-- notification is dismissed first, as the turn-6 stand-in had just done
+-- (`dismissed ENDTURN_BLOCKING_UNITS`). Once a turn, never under any other
+-- blocker (a plain end of turn is refused under it); true when it sent the
 -- end of turn.
 function CivvisSeat.standInDiag(turn, now)
 	local turns = cfg.HotseatDiagRebegin;
@@ -31416,7 +31418,8 @@ function CivvisSeat.standInDiag(turn, now)
 	if player == nil or pid ~= CivvisSeat.seat then return false; end
 	local blocker = currentBlocker(pid);
 	local none = try(function() return EndTurnBlockingTypes.NO_ENDTURN_BLOCKING; end, 0);
-	if blocker ~= nil and blocker ~= none then return false; end
+	local units = blocker ~= nil and blocker ~= none and UNIT_BLOCKERS[blockerName(blocker)] == true;
+	if blocker ~= nil and blocker ~= none and not units then return false; end
 	st.diagTurn = turn;
 	local land = {};
 	eachUnit(player, function(unit)
@@ -31467,12 +31470,13 @@ function CivvisSeat.standInDiag(turn, now)
 				sent = walk(unit, plan.x, plan.y) == true };
 		end
 	end
+	local dismissed = units and dismissBlocker(pid, blocker) or nil;
 	local sent = CivvisK.attempt(function() UI.RequestAction(ActionTypes.ACTION_ENDTURN); end);
 	if type(now) == "number" then
 		CivvisQueue.endTurnSubmittedTurn, CivvisQueue.endTurnSubmittedAt = turn, now;
 	end
 	emit("stand_in_diag_rebegin", { turn = turn, x = plan and plan.x, y = plan and plan.y,
-		behind = plan and plan.behind, walks = walks, sent = sent });
+		behind = plan and plan.behind, walks = walks, dismissed = dismissed, sent = sent });
 	return true;
 end
 -- Hold one unit where it stands; the hold's name, or nil when none starts.
