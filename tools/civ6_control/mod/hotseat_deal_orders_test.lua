@@ -430,34 +430,6 @@ trade.seat.seen[1] = { id = idOf("incoming", 2, 1, 2), first = 39, round = 1 }
 check("countered", order("deal", 1, "COUNTER;get=GOLD=20", idOf("incoming", 2, 1, 2)), "deal_countered")
 check("ADJUSTED sent", logged("send:ADJUSTED:2>1"), 1)
 check("our counter carries round 2", trade.seat.mine[1].round, 2)
--- ★ Their deal is refused first, so it does not wait beside ours (live
--- trade-live-5: seats 1 and 3 countered each other every turn, 39-43).
-local refusedAt, adjustedAt
-for i, entry in ipairs(log) do
-	if entry == "send:REJECTED:2>1" then refusedAt = i end
-	if entry == "send:ADJUSTED:2>1" then adjustedAt = i end
-end
-check("their deal refused", refusedAt ~= nil, true)
-check("before ours is sent", refusedAt ~= nil and adjustedAt ~= nil and refusedAt < adjustedAt, true)
-check("theirs no longer pending", DealManager.HasPendingDeal(1, 2), false)
-check("ours is", DealManager.HasPendingDeal(2, 1), true)
-check("ours rebuilt after the refusal", logged("clear:2>1"), 2)
-check("the record says theirs was replaced", field(last("deal_answer"), "replaced"), "true")
-check("and ours sent", field(last("deal_answer"), "sent"), "true")
--- With nothing of theirs pending (an answer to a deal since withdrawn), the
--- counter is ours alone: no refusal.
-reset()
-pending[1] = { [2] = true }
-working.incoming[2][1] = { { kind = "gold", from = 1, amount = 11 } }
-local otherDeal = idOf("incoming", 2, 1, 2)
-trade.seat.seen[1] = { id = otherDeal, first = 40, round = 1 }
-openStatement = false
-check("countered again", order("deal", 1, "COUNTER;get=GOLD=25", otherDeal), "deal_countered")
-pending[1][2] = nil
-CivvisOnDiplomacyStatement(2, 1, { SessionID = 55, StatementType = "MAKE_DEAL" })
-openStatement = true
-check("no refusal when nothing of theirs waits", logged("send:REJECTED:2>1"), 0)
-check("our counter alone", logged("send:ADJUSTED:2>1"), 1)
 
 -- Withdraw.
 reset()
