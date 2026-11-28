@@ -148,6 +148,8 @@ class ManualConfigTest(unittest.TestCase):
         # both gated on this harness in the mod (harness_gate_test.lua part 6).
         self.assertTrue(config["HotseatCover"] and config["HotseatAutoStart"])
         self.assertTrue(install.hotseat_cover_wanted(config))
+        # And the cover's own: quiet, with a wait bar (asked otherwise, as asked).
+        self.assertEqual((config["HotseatCoverSound"], config["HotseatCoverTimer"]), ("music", True))
 
     def test_nothing_is_set_on_the_persons_game(self) -> None:
         config = hotseat.manual_lobby_config(manual_args(), Path("/r"), Path("/r/o.sqlite"))

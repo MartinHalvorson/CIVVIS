@@ -64,6 +64,32 @@
 -- rescue sees the game again. A quit request (Cmd-Q, or the harness closing
 -- the game) lifts it too, so the shipped confirmation is on screen.
 --
+-- IT IS QUIET (`HotseatCoverSound`). The cover hides pixels; a CIVVIS seat's
+-- units, fights, chimes and voice lines were still heard through it. So while
+-- it is up over a turn that is not the person's, the sound buses that carry
+-- them are turned to 0 and put back the moment the person's turn begins: the
+-- shipped way to silence a bus for a while, EndGameMenu.lua:434-435
+--   m_savedMusicVol = Options.GetAudioOption("Sound", "Music Volume");
+--   Options.SetAudioOption("Sound", "Music Volume", 0, 0);
+-- and :452 `Options.SetAudioOption("Sound", "Music Volume", m_savedMusicVol, 0)`.
+-- The last argument 0 is "this session only": Options.lua:225-229 passes 1 only
+-- under "Confirm clicked: set audio system's .ini to slider values", so a game
+-- that dies muted starts the next time at the person's own volumes. `music`
+-- (the default) silences SFX, Ambience and Speech and lets the soundtrack play
+-- on, as it does through an AI's turn in single player; `silent` turns the
+-- Master bus down instead; anything else leaves the sound alone. With the game
+-- menu open over the cover the volumes are the person's again (its Options
+-- screen reads and can save them: Options.lua:1508, :225), and every way the
+-- cover comes down, and this context shutting down, puts them back.
+--
+-- HOW LONG (`HotseatCoverTimer`). A bar and one line under the seat's name:
+-- how far into the wait, and about how long is left. The estimate is the
+-- person's own recent waits (their end of turn to the start of their next,
+-- newest weighted most, a tenth added: a bar that finishes early is kinder
+-- than one that sits full). The bar runs straight to 85% and then slows, never
+-- full before the turn is back. A wait with no history (the first one, or a
+-- game loaded part-way through one) shows a sweep instead of a guess.
+--
 -- Nothing here runs outside a hotseat game a person plays: install.py adds
 -- this context only for one, and every entry point checks the settings too.
 
@@ -158,6 +184,18 @@ CivvisHotseatCover = {
 	quiet = 0, lastBeat = nil, between = 0, personWait = 0, pausedFor = 0,
 	textAt = 0,
 	views = {},        -- person seat -> { x, y, zoom } at the end of their turn
+	muted = nil,       -- sound bus -> the person's volume, while we hold it at 0
+	theirTurn = nil,   -- a person's turn is on, by the turn events (nil before the first)
+	wait = nil,        -- the wait the cover is up for: { seat, elapsed, at, timed, estimate }
+	waits = {},        -- person seat -> the waits after their turns that ran their course (s)
+	waitOn = nil, waitText = nil,
+};
+-- The track's width in CivvisHotseatCover.xml.
+CivvisHotseatCover.BAR = 320;
+-- `HotseatCoverSound` -> the buses turned down (Options.lua:225-229 names them).
+CivvisHotseatCover.BUSES = {
+	music = { "SFX Volume", "Ambience Volume", "Speech Volume" },
+	silent = { "Master Volume" },
 };
 
 function CivvisHotseatCover.listed(list, pid)
@@ -321,6 +359,9 @@ function CivvisHotseatCover.raise(reason, force)
 	end
 	if c.up then
 		c.show(pid);
+		-- Still up as the person's own turn begins (their hand-over is about to
+		-- be pressed): its sounds are theirs from this moment.
+		c.sound(reason);
 		return true;
 	end
 	local queued = pcall(function()
@@ -329,8 +370,14 @@ function CivvisHotseatCover.raise(reason, force)
 	c.up = queued;
 	c.reset(key);
 	c.show(pid);
+	if queued then
+		-- Joined part-way until `onTurnEnd` says a person's turn just ended.
+		c.startWait(nil);
+		c.showWait();
+	end
 	c.report("hotseat_cover", { { "up", queued }, { "reason", reason }, { "player", pid },
 		{ "turn", c.turn() } });
+	c.sound(reason);
 	return queued;
 end
 -- Down. `yield` marks the seat's turn so nothing but its end raises it again.
@@ -341,8 +388,13 @@ function CivvisHotseatCover.lift(reason, yield)
 	if not c.up then return false; end
 	pcall(function() UIManager:DequeuePopup(ContextPtr); end);
 	c.up = false;
+	-- Their turn is back: the wait ran its course unless the cover stood aside.
+	local w = c.endWait(not yield and (reason == "person_start" or reason == "person_turn"));
 	c.report("hotseat_cover", { { "up", false }, { "reason", reason }, { "player", pid },
-		{ "turn", c.turn() }, { "quiet", c.quiet }, { "between", c.between } });
+		{ "turn", c.turn() }, { "quiet", c.quiet }, { "between", c.between },
+		{ "waited", w and w.elapsed }, { "estimate", w and w.estimate },
+		{ "timed", w and w.timed } });
+	c.unmute(reason);
 	return true;
 end
 
@@ -406,17 +458,211 @@ function CivvisHotseatCover.restoreView(pid)
 	return done;
 end
 
+-- ------------------------------------------------------------------- sound
+
+-- The game menu over the cover: InGame.xml:137 `<LuaContext ID="TopOptionsMenu"`,
+-- which queues itself (Menus/InGameTopOptionsMenu.lua:553) and stays queued
+-- under its own Options screen (:199 queues that one on top).
+function CivvisHotseatCover.menuUp()
+	local up = false;
+	pcall(function()
+		local menu = ContextPtr:LookUpControl("/InGame/TopOptionsMenu");
+		up = menu ~= nil and UIManager:IsInPopupQueue(menu) == true;
+	end);
+	return up;
+end
+-- Down to 0, each bus's own volume kept. A bus already at 0 is the person's
+-- choice and is left out, so it is never "restored" to anything.
+function CivvisHotseatCover.mute()
+	local c = CivvisHotseatCover;
+	local buses = c.BUSES[cfg.HotseatCoverSound];
+	if buses == nil or c.muted ~= nil then return false; end
+	local saved, count = {}, 0;
+	for _, bus in ipairs(buses) do
+		local volume = nil;
+		pcall(function() volume = tonumber(Options.GetAudioOption("Sound", bus)); end);
+		if volume ~= nil and volume > 0
+				and pcall(function() Options.SetAudioOption("Sound", bus, 0, 0); end) then
+			saved[bus], count = volume, count + 1;
+		end
+	end
+	if count == 0 then return false; end
+	c.muted = saved;
+	-- What the game says the first bus is at now: 0 if the call took.
+	local now = nil;
+	pcall(function() now = tonumber(Options.GetAudioOption("Sound", buses[1])); end);
+	c.report("hotseat_cover_sound", { { "muted", true }, { "mode", cfg.HotseatCoverSound },
+		{ "buses", count }, { "was", saved[buses[1]] }, { "now", now } });
+	return true;
+end
+-- Back to the person's volumes. A bus that would not take its volume stays on
+-- the list and is tried again on the next call.
+function CivvisHotseatCover.unmute(reason)
+	local c = CivvisHotseatCover;
+	local saved = c.muted;
+	if saved == nil then return false; end
+	local left, count = nil, 0;
+	for bus, volume in pairs(saved) do
+		if pcall(function() Options.SetAudioOption("Sound", bus, volume, 0); end) then
+			count = count + 1;
+		else
+			left = left or {};
+			left[bus] = volume;
+		end
+	end
+	c.muted = left;
+	c.report("hotseat_cover_sound", { { "muted", false }, { "reason", reason },
+		{ "buses", count }, { "left", left ~= nil } });
+	return left == nil;
+end
+-- Whether a person's turn is on. The local player stays the person's seat from
+-- the end of their turn until the next seat's begins, so the seat alone does
+-- not say: the turn events do, and `IsTurnActive` before the first of them (a
+-- game just loaded).
+function CivvisHotseatCover.theirs()
+	local c = CivvisHotseatCover;
+	local pid = c.localPlayer();
+	if not c.person(pid) then return false; end
+	if c.theirTurn ~= nil then return c.theirTurn; end
+	return c.active(pid);
+end
+-- Quiet exactly while the cover is up over a turn that is not the person's and
+-- the game menu is closed.
+function CivvisHotseatCover.sound(reason)
+	local c = CivvisHotseatCover;
+	if c.up and not c.theirs() and not c.menuUp() then
+		return c.mute();
+	end
+	return c.unmute(reason);
+end
+
+-- -------------------------------------------------------------------- wait
+
+-- The UI clock (PlotToolTip.lua:879 reads it the same way): sub-second, and
+-- it keeps time across a frame the engine caps the `dt` of.
+function CivvisHotseatCover.clock()
+	local now = nil;
+	pcall(function() now = tonumber(UI.GetElapsedTime()); end);
+	return now;
+end
+-- About how long the wait after `seat`'s turn takes: its last four, newest
+-- weighted most, and a tenth over. nil with no wait on record.
+function CivvisHotseatCover.estimate(seat)
+	local waits = CivvisHotseatCover.waits[seat];
+	if type(waits) ~= "table" or #waits == 0 then return nil; end
+	local sum, weight = 0, 0;
+	for back = 0, math.min(#waits, 4) - 1 do
+		local w = 4 - back;
+		sum, weight = sum + waits[#waits - back] * w, weight + w;
+	end
+	return math.max(sum / weight * 1.1, 0.5);
+end
+-- How full the bar is `elapsed` seconds into a wait of about `estimate`:
+-- straight to 85%, then ever slower, and never full while the wait lasts.
+function CivvisHotseatCover.progress(elapsed, estimate)
+	if type(estimate) ~= "number" or estimate <= 0 then return nil; end
+	local x = math.max(tonumber(elapsed) or 0, 0) / estimate;
+	if x <= 0.85 then return x; end
+	return math.min(0.85 + 0.15 * (1 - math.exp(-(x - 0.85) / 0.6)), 0.99);
+end
+function CivvisHotseatCover.remaining(elapsed, estimate)
+	if type(estimate) ~= "number" then return ""; end
+	local left = estimate - (tonumber(elapsed) or 0);
+	if left <= 0.5 then return "Any moment now"; end
+	local seconds = math.ceil(left);
+	if seconds < 60 then return string.format("About %d s", seconds); end
+	return string.format("About %d min %02d s", math.floor(seconds / 60), seconds % 60);
+end
+-- A wait begins. `seat` is the person whose turn just ended (a timed wait,
+-- measured whole); nil for one joined part-way (a load, or after the cover
+-- stood aside), which is shown as a sweep and never goes on record.
+function CivvisHotseatCover.startWait(seat)
+	local c = CivvisHotseatCover;
+	c.wait = { seat = seat, elapsed = 0, at = c.clock(), timed = seat ~= nil,
+		estimate = seat ~= nil and c.estimate(seat) or nil };
+	return c.wait;
+end
+-- The wait's clock, by the UI clock where it answers and the frame's own `dt`
+-- where it does not.
+function CivvisHotseatCover.advance(dt)
+	local c = CivvisHotseatCover;
+	local w = c.wait;
+	if w == nil then return nil; end
+	local now = c.clock();
+	local step = math.min(math.max(tonumber(dt) or 0, 0), 60);
+	if now ~= nil and w.at ~= nil and now >= w.at and now - w.at < 600 then
+		step = now - w.at;
+	end
+	w.at = now;
+	w.elapsed = w.elapsed + step;
+	return w.elapsed;
+end
+-- The wait is over. One that ran its course (their turn's end to the start of
+-- their next, the game menu never opened over it) goes on that seat's record.
+function CivvisHotseatCover.endWait(ranItsCourse)
+	local c = CivvisHotseatCover;
+	local w = c.wait;
+	if w == nil then return nil; end
+	c.advance(0);
+	c.wait = nil;
+	if ranItsCourse and w.timed and w.elapsed > 0 then
+		local waits = c.waits[w.seat] or {};
+		waits[#waits + 1] = w.elapsed;
+		while #waits > 8 do table.remove(waits, 1); end
+		c.waits[w.seat] = waits;
+	end
+	return w;
+end
+-- The bar and its line, every frame the cover is up.
+function CivvisHotseatCover.showWait()
+	local c = CivvisHotseatCover;
+	local w = c.wait;
+	local on = cfg.HotseatCoverTimer == true and w ~= nil;
+	if on ~= c.waitOn then
+		c.waitOn = on;
+		pcall(function() Controls.Wait:SetHide(not on); end);
+		pcall(function() Controls.Lines:CalculateSize(); end);
+	end
+	if not on then return nil; end
+	local share = c.progress(w.elapsed, w.estimate);
+	local width, offset = c.BAR / 5, 0;
+	if share ~= nil then
+		width = math.max(share * c.BAR, 1);
+	else
+		-- No estimate: a fifth of the track, there and back every 2.4 s.
+		local phase = (w.elapsed % 2.4) / 1.2;
+		if phase > 1 then phase = 2 - phase; end
+		offset = phase * (c.BAR - width);
+	end
+	pcall(function()
+		Controls.WaitFill:SetSizeX(math.floor(width + 0.5));
+		Controls.WaitFill:SetOffsetX(math.floor(offset + 0.5));
+	end);
+	local text = c.remaining(w.elapsed, w.estimate);
+	if text ~= c.waitText then
+		c.waitText = text;
+		pcall(function() Controls.WaitText:SetText(text); end);
+	end
+	return share;
+end
+
 -- ------------------------------------------------------------------ events
 
 function CivvisHotseatCover.onTurnEnd()
 	local pid = CivvisHotseatCover.localPlayer();
+	CivvisHotseatCover.theirTurn = false;
 	if CivvisHotseatCover.person(pid) and CivvisHotseatCover.viewKept() then
 		CivvisHotseatCover.saveView(pid);
 	end
-	CivvisHotseatCover.raise("turn_end", true);
+	if CivvisHotseatCover.raise("turn_end", true) and CivvisHotseatCover.person(pid) then
+		-- The wait for their next turn starts here, whole.
+		CivvisHotseatCover.startWait(pid);
+		CivvisHotseatCover.showWait();
+	end
 end
 function CivvisHotseatCover.onTurnBegin()
 	local pid = CivvisHotseatCover.localPlayer();
+	CivvisHotseatCover.theirTurn = CivvisHotseatCover.person(pid);
 	if CivvisHotseatCover.person(pid) then
 		-- Their hand-over is pressed for them and the cover lifts on the press;
 		-- a person who presses their own sees it as soon as their turn begins.
@@ -459,6 +705,8 @@ function CivvisHotseatCover.onQuitRequest()
 	CivvisHotseatCover.lift("quit_request");
 end
 function CivvisHotseatCover.openMenu()
+	-- The person's volumes before the menu (and its Options screen) is up.
+	CivvisHotseatCover.unmute("menu");
 	pcall(function() LuaEvents.PlayerChange_OpenInGameOptionsMenu(); end);
 	CivvisHotseatCover.report("hotseat_cover_menu", { { "player", CivvisHotseatCover.localPlayer() },
 		{ "turn", CivvisHotseatCover.turn() } });
@@ -501,10 +749,17 @@ function CivvisHotseatCover.tick(dt)
 	local pid = c.localPlayer();
 	local key = c.keyFor(pid);
 	if key ~= c.key then c.reset(key); end
+	-- The wait's clock and bar, every frame.
+	c.advance(dt);
+	c.showWait();
 	c.textAt = c.textAt + dt;
 	if c.textAt >= 0.5 then
 		c.textAt = 0;
 		c.show(pid);
+		-- Twice a second: the sound follows the game menu (quiet again once it
+		-- closes), and a wait the menu was opened over is not one to learn from.
+		if c.wait ~= nil and c.wait.timed and c.menuUp() then c.wait.timed = false; end
+		c.sound("tick");
 	end
 	if not c.active(pid) then
 		-- Between turns: the game is processing, or the next seat's turn is
@@ -582,8 +837,12 @@ function CivvisHotseatCover.arm()
 		end);
 	end);
 	pcall(function() ContextPtr:SetUpdate(guarded(c.tick)); end);
+	-- A context that goes away muted puts the volumes back (PausePanel.lua:75
+	-- registers its own the same way).
+	pcall(function() ContextPtr:SetShutdown(guarded(function() c.unmute("shutdown"); end)); end);
 	c.report("hotseat_cover_armed", { { "cover", c.enabled() }, { "view", c.viewKept() },
-		{ "auto_start", cfg.HotseatAutoStart == true }, { "priority", c.priority() } });
+		{ "auto_start", cfg.HotseatAutoStart == true }, { "priority", c.priority() },
+		{ "sound", cfg.HotseatCoverSound }, { "timer", cfg.HotseatCoverTimer == true } });
 	return true;
 end
 

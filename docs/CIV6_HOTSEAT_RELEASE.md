@@ -109,9 +109,19 @@ What to expect:
   left it, with no hand-over dialog. `--no-cover` shows CIVVIS's turns as they
   play; `--keep-handover` leaves the hand-over screen for you to press.
 - **Esc on the cover** opens the game menu (save, load, quit).
-- **Sound plays through the cover.** It hides pixels only: CIVVIS's leader
-  voice lines, diplomacy music, combat and unit sounds, fanfares and
-  notification chimes are all audible.
+- **The cover is quiet.** While it is up, CIVVIS's unit and combat sounds,
+  notification chimes and voice lines are silenced, and the soundtrack plays
+  on. Your own volumes are back the moment your turn begins, and whenever the
+  game menu is open. `--cover-sound silent` silences the music too;
+  `--cover-sound all` leaves every sound on. It is done by turning Civ VI's
+  own volume sliders down for the session, never saved: if the game closes
+  while the cover is up, your saved volumes are untouched. Music that belongs
+  to a CIVVIS turn (a leader's theme, an era fanfare) is on the music bus and
+  still plays with `music`.
+- **A bar says about how long.** Under the seat's name: how far into the wait,
+  and "About 12 s". The estimate is your own last few waits, so the first wait
+  of a session (and one you load into) shows a moving bar and no number, and a
+  turn that runs long ends on "Any moment now". `--no-cover-timer` hides it.
 - **A CIVVIS turn that stalls is not hidden for good.** The cover stands aside
   for the rest of that turn after 90 s of a quiet CIVVIS seat (180 s with no
   seat active), and the harness window says what you can do: close a screen
@@ -207,6 +217,7 @@ on a runner with no game.
 | the two together | **seen live** for 4 turns (`manual-cover-1`) | **unmeasured** |
 | the mod silent once the harness stops | **seen live** (both manual runs: the game's CIVVIS lines did not grow in the 60 s after the stop) | **unmeasured** |
 | Esc on the cover; the cover lifting from up when the harness stops or dies; the stall stand-aside timers | tests only (`hotseat_cover_test.lua`, `harness_gate_test.lua`) | tests only |
+| the cover quiet while CIVVIS plays and the volumes back on the person's turn; the wait bar and its time left | tests only (`hotseat_cover_test.lua` sections 8-9) | tests only |
 | the game's process names | measured (`Civ6_Exe_Child`) | **unmeasured** (`CivilizationVI.exe`, `CivilizationVI_DX12.exe` from the Steam depot) |
 | a whole game played by the **frozen bundle** (not a checkout) | **unmeasured**: no game was launched while it was built | **unmeasured** |
 | a browser-downloaded copy past Gatekeeper / SmartScreen | **unmeasured** | **unmeasured** |

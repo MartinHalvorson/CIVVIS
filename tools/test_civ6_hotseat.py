@@ -680,6 +680,52 @@ class CoverTest(unittest.TestCase):
         self.assertEqual((config["HotseatCover"], config["HotseatAutoStart"],
                           config["HotseatCoverQueue"]), (False, False, False))
 
+    def test_the_cover_is_quiet_and_says_how_long_by_default(self) -> None:
+        cases = {
+            # A person's game: CIVVIS's sounds silenced, the soundtrack on; a wait bar.
+            "person": ({}, ("music", True)),
+            "gated stub": ({"auto_human": "gated"}, ("music", True)),
+            "no music either": ({"cover_sound": "silent"}, ("silent", True)),
+            "every sound, as before": ({"cover_sound": "all"}, ("all", True)),
+            "no bar": ({"no_cover_timer": True}, ("music", False)),
+            # They are the cover's own: without it nothing is quieted or timed.
+            "no cover": ({"no_cover": True}, ("all", False)),
+            "no cover, asked silent": ({"no_cover": True, "cover_sound": "silent"}, ("all", False)),
+            "stub": ({"auto_human": "stub"}, ("all", False)),
+            "unattended": ({"players": 6, "civvis_seats": 2, "leader": None}, ("all", False)),
+        }
+        for name, (overrides, want) in cases.items():
+            with self.subTest(name):
+                config = self.config(**overrides)
+                self.assertEqual((config["HotseatCoverSound"], config["HotseatCoverTimer"]), want)
+        # The modes are the ones the cover script knows (its BUSES table), plus `all`.
+        script = (Path(install.__file__).parent / "mod" / "CivvisHotseatCover.lua").read_text()
+        buses = script.split("CivvisHotseatCover.BUSES = {", 1)[1].split("};", 1)[0]
+        for mode in hotseat.COVER_SOUNDS:
+            self.assertEqual(f"\t{mode} = {{" in buses, mode != "all", mode)
+        self.assertEqual(hotseat.COVER_SOUND, "music")
+
+    def test_the_sound_and_timer_flags_reach_the_install(self) -> None:
+        with patch.object(hotseat, "run", side_effect=lambda args: args) as ran, \
+                patch.object(hotseat, "read_current", return_value=None):
+            hotseat.main([])
+            plain = ran.call_args.args[0]
+            hotseat.main(["--cover-sound", "silent", "--no-cover-timer"])
+            asked = ran.call_args.args[0]
+            with self.assertRaises(SystemExit), patch("sys.stderr"):
+                hotseat.main(["--cover-sound", "loud"])
+        self.assertEqual((plain.cover_sound, plain.no_cover_timer), ("music", False))
+        self.assertEqual((asked.cover_sound, asked.no_cover_timer), ("silent", True))
+        config = hotseat.hotseat_config(asked, Path("/tmp/r"), Path("/tmp/r/o.sqlite"))
+        self.assertEqual((config["HotseatCoverSound"], config["HotseatCoverTimer"]), ("silent", False))
+        # In the cover context's own settings, as the script reads them.
+        head = (self.install(self.config()) / "CivvisHotseatCover.lua").read_text().split("}\n", 1)[0]
+        self.assertIn('HotseatCoverSound = "music",', head)
+        self.assertIn("HotseatCoverTimer = true,", head)
+        head = (self.install(config) / "CivvisHotseatCover.lua").read_text().split("}\n", 1)[0]
+        self.assertIn('HotseatCoverSound = "silent",', head)
+        self.assertIn("HotseatCoverTimer = false,", head)
+
     def test_the_cover_context_is_installed_for_a_persons_game(self) -> None:
         out = self.install(self.config())
         tree = ET.fromstring((out / "CivvisControl.modinfo").read_text())
