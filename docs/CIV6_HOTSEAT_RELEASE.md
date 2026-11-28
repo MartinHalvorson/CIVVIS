@@ -217,7 +217,9 @@ on a runner with no game.
 | the two together | **seen live** for 4 turns (`manual-cover-1`) | **unmeasured** |
 | the mod silent once the harness stops | **seen live** (both manual runs: the game's CIVVIS lines did not grow in the 60 s after the stop) | **unmeasured** |
 | Esc on the cover; the cover lifting from up when the harness stops or dies; the stall stand-aside timers | tests only (`hotseat_cover_test.lua`, `harness_gate_test.lua`) | tests only |
-| the cover quiet while CIVVIS plays and the volumes back on the person's turn; the wait bar and its time left | tests only (`hotseat_cover_test.lua` sections 8-9) | tests only |
+| the wait bar and its time left | **seen live** (`smoke-6p-20261128T0244Zb`: the bar on the cover; 8.9 s recorded for five seats' turn 1) | **unmeasured** |
+| the cover quiet while CIVVIS plays and the volumes back on the person's turn | the records fire live; silence itself is not measurable from the log (`Options.GetAudioOption` reads the saved volume) and no person has confirmed it yet | tests only |
+| a CIVVIS seat's Historic Moments and boost popups closed under the cover, not kept for the person's turn | tests only (`hotseat_cover_queue_test.lua` 2b); the fault itself was seen live (`hotseat-20261128T031456Z`) | tests only |
 | the game's process names | measured (`Civ6_Exe_Child`) | **unmeasured** (`CivilizationVI.exe`, `CivilizationVI_DX12.exe` from the Steam depot) |
 | a whole game played by the **frozen bundle** (not a checkout) | **unmeasured**: no game was launched while it was built | **unmeasured** |
 | a browser-downloaded copy past Gatekeeper / SmartScreen | **unmeasured** | **unmeasured** |

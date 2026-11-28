@@ -590,7 +590,18 @@ alone would stop the game: an announcement holding the engine's event lock
 closed. So in a cover game every screen the closer serves (but the hand-over
 and the end screens) queues itself `AlwaysVisibleInQueue` on a CIVVIS seat's
 turn (`CivvisCoverQueue`, a `UIManager` proxy in that shim; `--no-cover-queue`
-turns it off for diagnosis). The cover's own clock is the backstop: a seat's
+turns it off for diagnosis). Two of those screens ask before they queue
+(`UI.CanShowPopup`: HistoricMoments.lua:163, BoostUnlockedPopup.lua:257) and,
+told no, keep the announcement in a list of their own until `Events.UIIdle`.
+Under the cover the answer was no for the whole of a CIVVIS seat's turn, so the
+announcement waited there and opened on the person's next turn: live 2026-11-27
+(`hotseat-20261128T031456Z`), five seats' first Historic Moments came one after
+another at the start of the person's turn 2, each drawn as the person's own
+empty timeline. On a CIVVIS seat's turn in a cover game those two screens are
+now told yes (`CivvisCoverQueue.installAsk`, a `UI` that answers that one
+question and reads every other name through), so they queue themselves and are
+closed under the cover like the rest. ⚠ Tests only so far
+(`hotseat_cover_queue_test.lua` 2b). The cover's own clock is the backstop: a seat's
 hand-over pause still standing 1.5 s in is pressed by event
 (`LuaEvents.CivvisHotseatStartTurn`), which reaches a hidden context. A seat
 quiet for 90 s, 180 s with no seat active, or the person's own turn waiting

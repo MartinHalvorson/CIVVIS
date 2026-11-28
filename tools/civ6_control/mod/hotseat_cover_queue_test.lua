@@ -273,6 +273,93 @@ do
 	assert(select(2, none.CivvisCoverQueue.install()) == "no_uimanager")
 end
 
+-- 2b. The screens that ask first are let up on a CIVVIS seat's turn. ---------
+-- HistoricMoments.lua:163 and BoostUnlockedPopup.lua:257 ask `UI.CanShowPopup`
+-- and, told no, keep the announcement for later: under the cover that was the
+-- person's next turn (five seats' first moments at once, 2026-11-27).
+assert(closer:find("pcall(CivvisCoverQueue.installAsk)", 1, true)
+	< closer:find("if not haveScreen() then pcall(function() include(NAME); end); end", 1, true),
+	"the answer is in place before the shipped screen is loaded")
+local function fakeUI(answer)
+	local real = { asked = {}, sounds = {}, Version = 7 }
+	function real.CanShowPopup(priority)
+		real.asked[#real.asked + 1] = priority
+		return answer
+	end
+	function real.PlaySound(name) real.sounds[#real.sounds + 1] = name end
+	return real
+end
+local function askEnv(config, name, ui, extra)
+	local env = queueEnv(config, name, fakeManager())
+	env.UI = ui
+	for k, v in pairs(extra or {}) do env[k] = v end
+	return env
+end
+for _, name in ipairs({ "HistoricMoments", "BoostUnlockedPopup" }) do
+	for _, answer in ipairs({ false, true }) do
+		local ui = fakeUI(answer)
+		local env = askEnv(coverGame, name, ui)
+		local ok, how = env.CivvisCoverQueue.installAsk()
+		assert(ok == true and how == "table" and env.UI ~= ui, name .. ": " .. tostring(how))
+		-- A CIVVIS seat's turn: yes, whatever the game says (the cover is why it says no).
+		localPlayer = 1
+		assert(env.UI.CanShowPopup(30) == true and #ui.asked == 0, name)
+		localPlayer = 2
+		assert(env.UI.CanShowPopup(30) == true and env.CivvisCoverQueue.let == 2)
+		-- The person's turn: the game's own answer, asked with what was passed.
+		localPlayer = 0
+		assert(env.UI.CanShowPopup(30) == answer and #ui.asked == 1 and ui.asked[1] == 30,
+			name .. ": the person's turn is the game's to answer")
+		assert(env.CivvisCoverQueue.let == 2)
+		-- Every other name is the real one's.
+		env.UI.PlaySound("Pride_Moment")
+		assert(ui.sounds[1] == "Pride_Moment" and env.UI.Version == 7)
+		env.UI.Flag = true
+		assert(ui.Flag == true, "writes go through")
+	end
+end
+localPlayer = 1
+-- No other screen's `UI` is touched, and none without the cover and its queue.
+for _, case in ipairs({
+	{ coverGame, "TechCivicCompletedPopup" }, { coverGame, "WonderBuiltPopup" },
+	{ coverGame, "PlayerChange" }, { coverGame, "EndGameMenu" },
+	{ with({ HotseatCover = false }), "HistoricMoments" },
+	{ with({ HotseatCover = true, HotseatCoverQueue = false }), "BoostUnlockedPopup" },
+	{ {}, "HistoricMoments" },
+}) do
+	local ui = fakeUI(false)
+	local env = askEnv(case[1], case[2], ui)
+	local ok, why = env.CivvisCoverQueue.installAsk()
+	assert(ok == false and why == "off" and env.UI == ui, case[2])
+	assert(env.UI.CanShowPopup(30) == false)
+end
+-- The person-facing install: yes only while its harness is live and the seat is CIVVIS's.
+do
+	local live = false
+	local gated = with({ HotseatCover = true, HotseatSeats = { 1, 2 }, RequireHarness = true })
+	local ui = fakeUI(false)
+	local env = askEnv(gated, "HistoricMoments", ui, { CivvisHarness = {
+		dormant = function() return false end,
+		mine = function(pid) return live and pid ~= 0 end } })
+	assert(env.CivvisCoverQueue.installAsk() == true)
+	localPlayer = 1
+	assert(env.UI.CanShowPopup(30) == false, "no live harness: the seat is a person's, as shipped")
+	live = true
+	assert(env.UI.CanShowPopup(30) == true)
+	localPlayer = 0
+	assert(env.UI.CanShowPopup(30) == false)
+end
+-- Fail open: a game whose `UI` has no such question, or no `UI`, is left alone.
+do
+	local bare = { PlaySound = function() end }
+	local env = askEnv(coverGame, "HistoricMoments", bare)
+	local ok, why = env.CivvisCoverQueue.installAsk()
+	assert(ok == false and why == "no_can_show" and env.UI == bare)
+	local none = askEnv(coverGame, "HistoricMoments", nil)
+	assert(select(2, none.CivvisCoverQueue.installAsk()) == "no_ui")
+end
+localPlayer = 0
+
 -- 3. The card that parked run cover-live-6: the whole closer, loaded as the
 -- HistoricMoments context (as popup_retry_test.lua loads it), on seat 0's turn.
 local function card(config)
