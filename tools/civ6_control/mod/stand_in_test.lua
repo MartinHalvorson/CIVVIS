@@ -437,8 +437,10 @@ end
 -- 6b. live-6p-20261128T0405Z turn 3, as the game logged it: the stub's turn
 --     complete went out while the game was still paused (`PlayerTurnComplete
 --     ignored due to game paused.`), the UI kept it as sent, and the stub's own
---     requests stopped there. The step unreadies it where the game allows, and
---     the next pass sends it again. --------------------------------------------
+--     requests stopped there. The step sends SHIFT+ENTER's request again, and
+--     NEVER an unready, even where the game would take one: an unready of a
+--     turn the engine did take hands the turn back (live-6p-20261128T0819Zg
+--     turn 6), and a turn handed back in hotseat crashed Civ VI three times. --
 do
 	local w = world(STUB, { turn = 3 })
 	w.sent, w.canUnready = true, true
@@ -446,13 +448,104 @@ do
 	assert(w.active and w.ticks == 4 and #w.requests == 0, "the loop's requests stop at the sent flag")
 	w.second()
 	local r = w.kinds("stand_in_stuck")[1]
-	assert(r and r.blocker == "NO_ENDTURN_BLOCKING" and r.resent == "unready" and r.game_paused == false,
-		"the dropped turn complete is unreadied: " .. tostring(r and r.resent))
-	assert(w.actions[1].action == "ACTION_UNREADYTURN" and not w.sent)
-	assert(w.active, "an unready alone ends nothing")
-	w.second()
-	assert(not w.active and w.requests[1].reason == nil, "the next pass sends the turn again and it ends")
+	assert(r and r.blocker == "NO_ENDTURN_BLOCKING" and r.resent == "forced" and r.game_paused == false,
+		"the dropped turn complete is sent again: " .. tostring(r and r.resent))
+	assert(#w.actions == 1 and w.actions[1].action == "ACTION_ENDTURN" and w.actions[1].reason == "UserForced",
+		"SHIFT+ENTER's request, past the sent flag")
+	assert(not w.active, "and the turn ends")
+	for _, a in ipairs(w.actions) do assert(a.action ~= "ACTION_UNREADYTURN", "never an unready") end
+	assert(not agent:gsub("%-%-[^\n]*", ""):find("ACTION_UNREADYTURN", 1, true),
+		"no request of the agent's asks for an unready")
 	w.clean()
+end
+
+-- 6d. The diagnostic `HotseatDiagRebegin` (a crash check game's own config,
+--     set by no shipped launcher): on a listed turn, with nothing but units
+--     blocking, the stand-in does what live-6p-20261128T0819Zg's did by
+--     accident on turn 6 (Scout 196608 one plot onto (46,23), Scout 262146
+--     sent there from two plots away) and forces the end of turn in the same
+--     pass; once a turn; never for a seat that does not stand in, nor on a
+--     turn not listed. --------------------------------------------------------
+do
+	local function diagWorld(cfgExtra, turn)
+		local c = {}
+		for k, v in pairs(STUB) do c[k] = v end
+		for k, v in pairs(cfgExtra or {}) do c[k] = v end
+		local w = world(c, { turn = turn or 3 })
+		local walked = {}
+		local occupied = {}
+		w.occupied = occupied
+		-- A hex row along x: direction 0 is water, d = 1..5 is x + d - 3.
+		w.env.Map = {
+			GetAdjacentPlot = function(x, y, dir)
+				if dir == 0 then return { IsWater = function() return true end } end
+				local px = x + dir - 3
+				return {
+					IsWater = function() return false end, IsImpassable = function() return false end,
+					GetUnitCount = function() return occupied[px] and 1 or 0 end,
+					GetX = function() return px end, GetY = function() return y end,
+				}
+			end,
+			GetPlotDistance = function(x1, y1, x2, y2) return math.abs(x1 - x2) + math.abs(y1 - y2) end,
+		}
+		w.env.GameInfo = { Units = setmetatable({}, { __index = function(_, kind)
+			return { FormationClass = (kind == "UNIT_BUILDER") and "FORMATION_CLASS_CIVILIAN"
+				or "FORMATION_CLASS_LAND_COMBAT" }
+		end }) }
+		w.env.UnitOperationTypes = { PARAM_X = "px", PARAM_Y = "py" }
+		w.env.OP.UNITOPERATION_MOVE_TO = "op:move"
+		w.env.operate = function(unit, hash, params)
+			if hash ~= "op:move" then return false end
+			walked[#walked + 1] = { id = unit.id, x = params.px, y = params.py }
+			return true
+		end
+		w.walked = walked
+		return w
+	end
+	local function unit(w, id, kind, x, moves)
+		local u = w.unit({ id = id, kind = kind, x = x, y = 5, moves = moves, max = 3, ready = false })
+		u.GetUnitType = function(self) return self.kind end
+		w.occupied[x] = true
+		return u
+	end
+	local w = diagWorld({ HotseatDiagRebegin = { 3, 7 } }, 3)
+	unit(w, 9, "UNIT_BUILDER", 20, 2)             -- a civilian never walks
+	unit(w, 1, "UNIT_WARRIOR", 10, 2)
+	unit(w, 2, "UNIT_SCOUT", 13, 3)
+	assert(w.seat.standInDiag(3, 100) == true, "a listed turn sends the end of turn itself")
+	assert(#w.walked == 2 and w.walked[1].id == 1 and w.walked[2].id == 2,
+		"the one beside the plot first, then the one two plots away: " .. #w.walked)
+	assert(w.walked[1].x == 8 and w.walked[2].x == 8 and w.walked[1].y == 5 and w.walked[2].y == 5,
+		"both to the same free plot beside the first (the first free direction)")
+	assert(#w.actions == 1 and w.actions[1].action == "ACTION_ENDTURN" and w.actions[1].reason == "UserForced",
+		"in the same pass, forced")
+	local rec = w.kinds("stand_in_diag_rebegin")[1]
+	assert(rec and rec.turn == 3 and rec.sent == true and rec.x == 8 and #rec.walks == 2
+		and rec.walks[2].sent == true)
+	assert(w.seat.standInDiag(3, 101) == false and #w.actions == 1, "once a turn")
+	assert(w.seat.standInDiag(4, 102) == false, "a turn not listed is ordinary")
+	w.clean()
+	-- A second unit with one move only, or none two plots away: the end of
+	-- turn still goes, with no walk.
+	local o = diagWorld({ HotseatDiagRebegin = { 3 } }, 3)
+	unit(o, 1, "UNIT_WARRIOR", 10, 1)
+	unit(o, 2, "UNIT_SCOUT", 11, 1)
+	assert(o.seat.standInDiag(3, 100) == true and #o.walked == 0 and #o.actions == 1)
+	-- A hard blocker standing: not then (a forced end of turn is refused under it).
+	local h = diagWorld({ HotseatDiagRebegin = { 3 } }, 3)
+	h.blocker = RESEARCH
+	unit(h, 1, "UNIT_WARRIOR", 10, 2)
+	unit(h, 2, "UNIT_SCOUT", 13, 3)
+	assert(h.seat.standInDiag(3, 100) == false and #h.walked == 0 and #h.actions == 0)
+	h.blocker = nil
+	assert(h.seat.standInDiag(3, 101) == true and #h.walked == 2, "a units blocker alone is no bar")
+	-- Without the key, or on a seat that does not stand in: nothing.
+	local plain = diagWorld({}, 3)
+	unit(plain, 1, "UNIT_WARRIOR", 10, 2)
+	assert(plain.seat.standInDiag(3, 100) == false and #plain.actions == 0, "no key, nothing")
+	local civvis = diagWorld({ HotseatDiagRebegin = { 3 }, CivvisDecides = true }, 3)
+	unit(civvis, 1, "UNIT_WARRIOR", 10, 2)
+	assert(civvis.seat.standInDiag(3, 100) == false and #civvis.actions == 0, "a CIVVIS seat never")
 end
 
 -- 6c. The seat gate: the stand-in waits for the GAME's pause to lift, not only

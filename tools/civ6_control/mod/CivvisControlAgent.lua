@@ -31392,12 +31392,15 @@ end
 -- ★ DIAGNOSTIC ONLY: `HotseatDiagRebegin`, a list of game turns, set by no
 -- shipped launcher (a crash check game's own config). On a listed turn the
 -- stand-in does on purpose what live-6p-20261128T0819Zg's stand-in did by
--- accident on turn 6: up to two units with two moves or more each walk one
--- free land plot (MOVE_TO) and the end of the turn goes out in the same pass,
--- forced (ActionPanel.lua:1099 `{ REASON = "UserForced" }`), past the settle
--- guards above. The engine then finishes the walks after the turn complete
--- and hands the turn back (`CivvisQueue.settleReturned`). Once a turn, only
--- with nothing but units blocking; true when it sent the end of turn.
+-- accident on turn 6, in the same pass as a forced end of turn
+-- (ActionPanel.lua:1099 `{ REASON = "UserForced" }`), past the settle guards
+-- above: Scout 196608 walked one plot onto (46,23) and Scout 262146, three
+-- moves and two plots away, was sent to the same plot; it stopped short with
+-- movement left, and the engine handed the turn back. Here: a land combat
+-- unit A walks to a free plot beside it, and a second one B with at least two
+-- moves, two or more plots from that plot, is sent there too (two land combat
+-- units never share a plot). Once a turn, only with nothing but units
+-- blocking; true when it sent the end of turn.
 function CivvisSeat.standInDiag(turn, now)
 	local turns = cfg.HotseatDiagRebegin;
 	if type(turns) ~= "table" or not CivvisSeat.standsIn() then return false; end
@@ -31411,31 +31414,55 @@ function CivvisSeat.standInDiag(turn, now)
 	local none = try(function() return EndTurnBlockingTypes.NO_ENDTURN_BLOCKING; end, 0);
 	if blocker ~= nil and blocker ~= none and not UNIT_BLOCKERS[blockerName(blocker)] then return false; end
 	st.diagTurn = turn;
-	local walks = {};
+	local land = {};
 	eachUnit(player, function(unit)
-		if #walks >= 2 or (try(function() return unit:GetMovesRemaining(); end, 0) or 0) < 2 then return; end
+		local row = try(function() return GameInfo.Units[unit:GetUnitType()]; end, nil);
+		if row ~= nil and row.FormationClass == "FORMATION_CLASS_LAND_COMBAT"
+				and (try(function() return unit:GetMovesRemaining(); end, 0) or 0) >= 1 then
+			land[#land + 1] = unit;
+		end
+	end);
+	local function walk(unit, x, y)
+		local params = {};
+		params[UnitOperationTypes.PARAM_X] = x;
+		params[UnitOperationTypes.PARAM_Y] = y;
+		return operate(unit, OP["UNITOPERATION_MOVE_TO"], params);
+	end
+	local plan = nil;
+	for _, a in ipairs(land) do
 		for direction = 0, 5 do
-			local plot = try(function() return Map.GetAdjacentPlot(unit:GetX(), unit:GetY(), direction); end, nil);
+			local plot = plan == nil and try(function()
+				return Map.GetAdjacentPlot(a:GetX(), a:GetY(), direction);
+			end, nil) or nil;
 			if plot ~= nil and try(function()
 					return not plot:IsWater() and not plot:IsImpassable() and plot:GetUnitCount() == 0;
 				end, false) == true then
-				local params = {};
-				params[UnitOperationTypes.PARAM_X] = plot:GetX();
-				params[UnitOperationTypes.PARAM_Y] = plot:GetY();
-				if operate(unit, OP["UNITOPERATION_MOVE_TO"], params) then
-					walks[#walks + 1] = { id = unit:GetID(), x = plot:GetX(), y = plot:GetY() };
-					return;
+				for _, b in ipairs(land) do
+					local d = b ~= a and try(function()
+						return Map.GetPlotDistance(b:GetX(), b:GetY(), plot:GetX(), plot:GetY());
+					end, 0) or 0;
+					if plan == nil and d >= 2 and (try(function() return b:GetMovesRemaining(); end, 0) or 0) >= 2 then
+						plan = { a = a, b = b, x = plot:GetX(), y = plot:GetY() };
+					end
 				end
 			end
 		end
-	end);
+	end
+	local walks = {};
+	if plan ~= nil then
+		for _, unit in ipairs({ plan.a, plan.b }) do
+			walks[#walks + 1] = { id = unit:GetID(), from = { unit:GetX(), unit:GetY() },
+				sent = walk(unit, plan.x, plan.y) == true };
+		end
+	end
 	local sent = CivvisK.attempt(function()
 		UI.RequestAction(ActionTypes.ACTION_ENDTURN, { REASON = "UserForced" });
 	end);
 	if type(now) == "number" then
 		CivvisQueue.endTurnSubmittedTurn, CivvisQueue.endTurnSubmittedAt = turn, now;
 	end
-	emit("stand_in_diag_rebegin", { turn = turn, walks = walks, sent = sent });
+	emit("stand_in_diag_rebegin", { turn = turn, x = plan and plan.x, y = plan and plan.y,
+		walks = walks, sent = sent });
 	return true;
 end
 -- Hold one unit where it stands; the hold's name, or nil when none starts.
