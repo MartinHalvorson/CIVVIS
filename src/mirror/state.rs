@@ -2320,6 +2320,14 @@ pub struct StateSnapshot {
     /// copies by this.
     #[serde(default, deserialize_with = "map_or_empty_sequence")]
     pub luxury_counts: Option<BTreeMap<String, f64>>,
+    /// The hotseat deal board (contract "deals v1",
+    /// `crate::trade_decider::board`): deals waiting for this seat, its own
+    /// waiting proposals, how its recent ones ended, who each counterpart is.
+    /// Kept as raw JSON and read field by field by
+    /// `trade_decider::board::DealBoard::from_json`, so a shape this build does
+    /// not expect can never lose the whole board. `None` off hotseat.
+    #[serde(default)]
+    pub deals: Option<serde_json::Value>,
     /// Gross host strategic income: accumulation + imports + bonuses, before
     /// unit or power demand. Missing entries retain the modeled estimate.
     #[serde(default, deserialize_with = "map_or_empty_sequence")]

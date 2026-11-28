@@ -98,6 +98,8 @@ mod host_move_postconditions;
 mod host_ranged_history;
 #[path = "civvis_orders/host_refusals.rs"]
 mod host_refusals;
+#[path = "civvis_orders/hotseat_deals.rs"]
+mod hotseat_deals;
 #[path = "civvis_orders/kristina_fills_to_theme.rs"]
 mod kristina_fills_to_theme;
 #[path = "civvis_orders/spaceport_above_sea.rs"]
@@ -6419,6 +6421,13 @@ fn decide(
                 note_bits.push("culture_work_buy=1".to_string());
             }
         }
+    }
+    // `own-price-answers-the-deal`: every deal waiting for this seat at a
+    // hotseat table, answered by its own price. See `hotseat_deals`.
+    if ai.own_price_answers_the_deal_enabled() {
+        let (answers, notes) = hotseat_deals::answer_orders(state, ai.victory_target());
+        orders.extend(answers);
+        note_bits.extend(notes);
     }
     let session_conflicts = drop_deals_beside_war_or_peace(&mut orders);
     if session_conflicts > 0 {
