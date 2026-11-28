@@ -41,6 +41,7 @@
 //! orders. Settlers already built go to other sites or wait.
 
 use super::*;
+use crate::shared_sort::SharedSort;
 
 /// Standard-speed turns a declaration on us holds the home.
 pub(super) const FRESH_WAR_TURNS: u32 = 10;
@@ -196,7 +197,7 @@ impl AdvancedAi {
             .map(|(_, pos)| *pos)
             .collect();
         let mut cities = g.player_city_ids(pid);
-        cities.sort_by_key(|cid| {
+        cities.sort_by_key_shared(|cid| {
             let at = g.cities[cid].pos;
             let near = seen
                 .iter()
