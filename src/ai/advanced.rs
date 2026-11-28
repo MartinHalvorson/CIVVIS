@@ -9107,6 +9107,10 @@ pub struct AdvancedAi {
     /// second, a third plan of the same turn, is not asked. See
     /// `ai::player::take_turn`. Off by default.
     one_replan_per_turn: bool,
+    /// `own-price-answers-the-deal`: a CIVVIS seat at a hotseat table answers
+    /// a deal another seat proposed to it by its own price: accept, counter
+    /// or reject. See `advanced/own_price_answers_the_deal.rs`. Off by default.
+    own_price_answers_the_deal: bool,
     // ---- append: p-r ------------------------------------------------
     /// `racer-seat-statue-civic-first`: Civil Engineering as the civic goal of
     /// a Science, Culture or Religious seat that reaches for the Statue of
@@ -11835,6 +11839,8 @@ mod faith_war_is_no_front;
 mod faithless_seat_holds_its_faith_strikes;
 /// `own-flip-faith-war-asks-no-power`: see `advanced/own_flip_faith_war.rs`.
 mod own_flip_faith_war;
+/// `own-price-answers-the-deal`: see `advanced/own_price_answers_the_deal.rs`.
+mod own_price_answers_the_deal;
 
 /// `open-capital-declares-at-twice`: see
 /// `advanced/open_capital_declares_at_twice.rs`.
@@ -13560,6 +13566,7 @@ impl AdvancedAi {
             nusantara_settles_the_shore: false,
             outmatched_war_prices_the_army: false,
             opening_ranged_support: false,
+            own_price_answers_the_deal: false,
             // ---- append: p-r ----------------------------------------
             racer_seat_statue_civic_first: false,
             parity_upgrades_before_it_buys_2: false,
