@@ -4357,6 +4357,10 @@ def main(argv=None) -> int:
         retained_deployment_genome = (
             tuple(current_rules.get("deployment_genome", ()))
             if deployment_policy == RETAINED_DEPLOYMENT_POLICY else None)
+        # A plain write keeps the recorded selection, so it keeps the reason
+        # recorded for it too (it used to drop the note silently).
+        if deployment_policy == RETAINED_DEPLOYMENT_POLICY:
+            retained_selection_note = current_rules.get("retained_selection_note")
     if getattr(args, "sources", None):
         notes: dict[str, str] = {}
         # New sources are appended to the ones the ledger already records.
