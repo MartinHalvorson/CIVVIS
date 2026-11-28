@@ -629,6 +629,7 @@ if END_SCREENS[NAME] and Controls ~= nil and Controls.Movie ~= nil then
     if type(nativeMovieFinished) == "function" then
         Controls.Movie:SetMovieFinishedCallback(function()
             report("victory_movie_finished");
+            pcall(function() CivvisSeatDefeat.movie = false; end);
             nativeMovieFinished();
         end);
     end
@@ -638,6 +639,7 @@ if END_SCREENS[NAME] and Controls ~= nil and Controls.Movie ~= nil then
             nativeReplay(...);
             if Controls.MovieFill ~= nil and Controls.MovieFill:IsVisible() then
                 report("victory_movie_started");
+                pcall(function() CivvisSeatDefeat.movie = true; end);
             end
         end;
         if Controls.ReplayMovieButton ~= nil then
@@ -1624,11 +1626,14 @@ function CivvisHotseatScreen.frame(fDTime)
 	end
 	local step = (tonumber(fDTime) or 0) / CivvisHotseatScreen.scale();
 	CivvisHotseatScreen.waited = CivvisHotseatScreen.waited + step;
-	local pause = CivvisHotseatScreen.pressedFor == key and 2.0
+	-- (A handed-back turn's hand-over in the diagnostic `press` reaction is
+	-- pressed as a first one, see `onBuild`.)
+	local pause = (CivvisHotseatScreen.pressedFor == key and CivvisHotseatScreen.pressAgain ~= key) and 2.0
 		or CivvisHotseatScreen.firstPause(covered);
 	if CivvisHotseatScreen.waited < pause then return; end
 	if not CivvisHotseatScreen.scaleReady(pid, key, step) then return; end
 	CivvisHotseatScreen.waited = 0;
+	CivvisHotseatScreen.pressAgain = nil;
 	CivvisHotseatScreen.press(pid, turn, "dialog");
 end
 -- The cover's backstop (CivvisHotseatCover.lua, `nudge`): the seat now
@@ -1648,15 +1653,122 @@ function CivvisHotseatScreen.fromCover(pid, turn)
 	pcall(function() active = Players[pid]:IsTurnActive() == true; end);
 	pcall(function() held = ExposedMembers.CivvisOperatorHold == true; end);
 	if not paused or not active or held then return false; end
-	return CivvisHotseatScreen.press(pid, CivvisHotseatScreen.turn(), "cover");
+	-- Never a second press of a turn handed back (see `onBuild`).
+	local turn = CivvisHotseatScreen.turn();
+	if CivvisHotseatScreen.returned == pid .. ":" .. turn and CivvisHotseatScreen.reaction() == "safe" then
+		return false;
+	end
+	return CivvisHotseatScreen.press(pid, turn, "cover");
+end
+-- ★★★ A TURN THE ENGINE HANDS BACK IS NOT HANDED OVER A SECOND TIME.
+-- The engine gives a seat its turn back by itself when, at the turn complete,
+-- a unit's walk ends short with movement left (net_message_debug.log,
+-- live-6p-20261128T0819Zg turn 6: `Player 0 Unit 262146 has movement
+-- remaining after completing automation.  Attempting to turn active
+-- player.`, `AppRequestTurnUnready: Player 0`), as single player gives the
+-- turn back to a unit needing orders. In hotseat that seat's turn
+-- then BEGINS AGAIN: `LocalPlayerTurnEnd` and `LocalPlayerTurnBegin` for the
+-- same seat and turn with no other seat's begin between (the same frame in
+-- the stand-in's game; 94 ms and 164 ms apart in the owner's games
+-- hotseat-20261128T062253Z turn 18 and hotseat-20261128T045523Z turn 33).
+-- PlayerChange.lua shows the hand-over for it as for a new seat
+-- (OnLocalPlayerTurnBegin :83-91 -> BuildTurnControls :121-140,
+-- `SetPause(true)` :125, the game really pausing: `GameCore SEND:
+-- GamePaused: gamePaused=1`), this screen took it for a retry of a press
+-- already made (2 s), the cover's backstop pressed it at 1.5 s (`again:true`,
+-- `via:"cover"`), and Civ VI died: in all three games of the night that had
+-- one, and the stand-in's report puts the crash 0.1 s after that press.
+-- So in a hotseat game a turn handed back is not handed over again
+-- (`HotseatReturnedTurn`, a diagnostic for crash check games only, else
+-- "safe"): the shipped `BuildTurnControls` is not called for it, the game is
+-- not paused, and the "please wait" screen its end of turn raised
+-- (OnLocalPlayerTurnEnd :93-106) is closed at once the way its Start Turn
+-- closes it (`OnOk` :54-64: resume the effects, `SetPause(false)` (a no-op,
+-- nothing is paused), `PlayerChange_Close`, dequeue). The seat's turn simply
+-- goes on; the cover lifts for a person's (CivvisHotseatCover.lua) and the
+-- seat's agent settles its units before ending it again
+-- (CivvisControlAgent.lua `CivvisQueue.settleReturned`, told through
+-- `ExposedMembers.CivvisTurnReturned`). `legacy` keeps the old hand-over;
+-- `press` keeps the pause and presses it as a first press, on its first frame.
+CivvisHotseatScreen.ended, CivvisHotseatScreen.returned = nil, nil;
+function CivvisHotseatScreen.reaction()
+	local mode = cfg.HotseatReturnedTurn;
+	if mode == "legacy" or mode == "press" then return mode; end
+	return "safe";
+end
+-- The turn events, as they come: the seat and turn of the last end, until a
+-- different seat's or turn's begin.
+function CivvisHotseatScreen.noteTurn(phase)
+	local s = CivvisHotseatScreen;
+	local key = s.localPlayer() .. ":" .. s.turn();
+	if phase == "end" then
+		s.ended = key;
+	elseif s.ended ~= key then
+		s.ended = nil;
+	end
+end
+-- In place of the shipped `BuildTurnControls` (see `wrapBuild`): true when it
+-- handled a turn handed back, so the shipped hand-over is not built.
+function CivvisHotseatScreen.onBuild()
+	local s = CivvisHotseatScreen;
+	if cfg.Hotseat ~= true then return false; end
+	-- `RequireHarness` with no live harness: the shipped hand-over, as ever.
+	if cfg.RequireHarness == true and not CivvisHarness.live() then return false; end
+	local pid, turn = s.localPlayer(), s.turn();
+	local key = pid .. ":" .. turn;
+	if s.ended ~= key then return false; end
+	s.ended = nil;
+	s.returned = key;
+	local count = 1;
+	pcall(function()
+		local back = ExposedMembers.CivvisTurnReturned;
+		if type(back) == "table" and back.player == pid and back.turn == turn then
+			count = (tonumber(back.n) or 0) + 1;
+		end
+		ExposedMembers.CivvisTurnReturned = { player = pid, turn = turn, n = count };
+	end);
+	local mode = s.reaction();
+	local closed = false;
+	if mode == "safe" then
+		closed = type(OnOk) == "function" and pcall(OnOk) == true;
+	elseif mode == "press" then
+		s.pressAgain, s.waited = key, 0;
+	end
+	report("hotseat_turn_returned", string.format(
+		',"player":%d,"turn":%d,"returned":%d,"reaction":"%s","closed":%s,"pressed_before":%s,"person":%s',
+		pid, turn, count, mode, tostring(closed), tostring(s.pressedFor == key),
+		tostring(s.listed(cfg.HotseatHumanSeats, pid))) .. s.clock());
+	return mode == "safe" and closed;
+end
+-- PlayerChange.lua's `OnLocalPlayerTurnBegin` (:89) and `OnLoadScreenClose`
+-- (:150, through it) call the global `BuildTurnControls` by name, so it is
+-- replaced here, in this context only, and calls the shipped one for every
+-- turn that is not handed back. Hotseat only (the PlayerChange context is
+-- installed for nothing else).
+function CivvisHotseatScreen.wrapBuild()
+	local stock = BuildTurnControls;
+	if cfg.Hotseat ~= true or type(stock) ~= "function" then return false; end
+	BuildTurnControls = function(...)
+		local ok, handled = pcall(CivvisHotseatScreen.onBuild);
+		if ok and handled then return; end
+		return stock(...);
+	end;
+	return true;
 end
 function CivvisHotseatScreen.arm()
 	pcall(function()
-		Events.LocalPlayerTurnBegin.Add(function() CivvisHotseatScreen.announce("begin"); end);
+		Events.LocalPlayerTurnBegin.Add(function()
+			CivvisHotseatScreen.announce("begin");
+			pcall(CivvisHotseatScreen.noteTurn, "begin");
+		end);
 	end);
 	pcall(function()
-		Events.LocalPlayerTurnEnd.Add(function() CivvisHotseatScreen.announce("end"); end);
+		Events.LocalPlayerTurnEnd.Add(function()
+			CivvisHotseatScreen.announce("end");
+			pcall(CivvisHotseatScreen.noteTurn, "end");
+		end);
 	end);
+	pcall(CivvisHotseatScreen.wrapBuild);
 	if cfg.HotseatCover == true then
 		pcall(function()
 			LuaEvents.CivvisHotseatStartTurn.Add(function(pid, turn)
@@ -1669,6 +1781,57 @@ function CivvisHotseatScreen.arm()
 	report("hotseat_armed", string.format(',"start_turn":%s', tostring(type(OnOk) == "function")));
 end
 
+-- ★★ A CIVVIS SEAT'S DEFEAT DOES NOT HOLD THE GAME (EndGameMenu, hotseat).
+-- In hotseat the end screen shows ANY human seat's defeat to whoever's turn it
+-- is (EndGameMenu.lua:1012-1013 `or (GameConfiguration.IsHotseat() and
+-- defeatPlayer ~= nil and defeatPlayer:IsHuman())`) and holds the game's
+-- events until it is closed (:1024 `UI.SetPauseEventID( eventID )`). Every
+-- CIVVIS seat is a human seat to the engine, so a CIVVIS seat's defeat on
+-- another CIVVIS seat's turn stood with nobody to press it: gated check game
+-- crash-p4-fa (2026-11-28), seat 1 (Pericles, no city by turn 10) eliminated
+-- on seat 5's turn, the screen up five minutes, the cover kept under it
+-- (CivvisHotseatCover.lua `keptUnder`), the game stopped. In a person's game
+-- the person saw it over the cover and the game waited on their click, with
+-- Main Menu beside the button that plays on. So on a turn that is not a
+-- person's (`personTurn`), a CIVVIS seat's defeat screen is closed the way its
+-- own Next Player closes it (:304-318 `OnNextPlayer`: "the screen will simply
+-- pop and the current turn active player can keep playing"; an end of turn
+-- only for a viewer who is the local, turn-active player), once the defeat
+-- movie has finished and `HotseatDefeatSeconds` (8) of real time have passed,
+-- long enough for a person watching to read it. Never for a person's defeat,
+-- on a person's turn, or after a victory (the harness's to close).
+CivvisSeatDefeat = { defeated = nil, up = 0, over = false, movie = nil, MOVIE_CAP = 40 };
+function CivvisSeatDefeat.onDefeat(player)
+	local s = CivvisSeatDefeat;
+	s.defeated, s.up = tonumber(player), 0;
+end
+function CivvisSeatDefeat.tick(realDT)
+	local s = CivvisSeatDefeat;
+	if cfg.Hotseat ~= true or s.over or s.defeated == nil then return false; end
+	if cfg.RequireHarness == true and not CivvisHarness.live() then return false; end
+	local h = CivvisHotseatScreen;
+	-- `HotseatSeats` lists the CIVVIS seats only: a person's defeat is never one.
+	if not h.listed(cfg.HotseatSeats, s.defeated) or h.personTurn() then
+		return false;
+	end
+	s.up = s.up + (tonumber(realDT) or 0);
+	if s.movie == true and s.up < s.MOVIE_CAP then return false; end
+	if s.up < (tonumber(cfg.HotseatDefeatSeconds) or 8) then return false; end
+	local defeated = s.defeated;
+	s.defeated, s.up, s.movie = nil, 0, nil;
+	local closed = type(OnNextPlayer) == "function" and pcall(OnNextPlayer) == true;
+	report("hotseat_defeat_closed", string.format(',"defeated":%d,"player":%d,"turn":%d,"closed":%s',
+		defeated, h.localPlayer(), h.turn(), tostring(closed)) .. h.clock());
+	return closed;
+end
+function CivvisSeatDefeat.arm()
+	pcall(function() Events.PlayerDefeat.Add(CivvisSeatDefeat.onDefeat); end);
+	pcall(function() Events.TeamVictory.Add(function() CivvisSeatDefeat.over = true; end); end);
+	pcall(function()
+		LuaEvents.EndGameMenu_OneMoreTurn.Add(function() CivvisSeatDefeat.over = false; end);
+	end);
+end
+
 if NAME == "PlayerChange" then
 	CivvisHotseatScreen.arm();
 elseif not haveScreen() then
@@ -1678,6 +1841,7 @@ elseif not haveScreen() then
 	-- reads as a quiet game rather than a game missing a screen.
 	report("autoclose_unarmed");
 else
+	if END_SCREENS[NAME] and cfg.Hotseat == true then CivvisSeatDefeat.arm(); end
 	-- A popup context is hidden except while its popup is up, which is how the
 	-- shipped code itself tests for showing (ExclusivePopupManager checks
 	-- IsHidden before it unlocks). Watching that rather than a show handler
@@ -2068,7 +2232,12 @@ else
 			dealForceClose = false;
 			return;
 		end
-		if END_SCREENS[NAME] then return; end -- the harness owns native victory playback
+		if END_SCREENS[NAME] then
+			-- A CIVVIS seat's defeat shown on a CIVVIS turn is not left standing
+			-- (`CivvisSeatDefeat`); a victory stays the harness's.
+			pcall(CivvisSeatDefeat.tick, realDT);
+			return;
+		end -- the harness owns native victory playback
 		-- A leader screen can hide TopPanel while its own UI clock continues.
 		-- Use the same guarded agent wakeup here; keep deal holds and native
 		-- close handling below intact. One long frame produces only one pulse.

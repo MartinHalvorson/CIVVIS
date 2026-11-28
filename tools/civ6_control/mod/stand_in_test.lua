@@ -66,7 +66,7 @@ local function world(cfg, opts)
 	local env = {
 		cfg = cfg,
 		ipairs = ipairs, pairs = pairs, tonumber = tonumber, tostring = tostring, type = type,
-		pcall = pcall, math = math, table = table, string = string,
+		pcall = pcall, math = math, table = table, string = string, next = next,
 		CivvisSeat = { seat = cfg.HotseatSeat },
 		-- The agent's guard reports and carries on; every error is kept here
 		-- and no scenario may raise one.
@@ -437,8 +437,10 @@ end
 -- 6b. live-6p-20261128T0405Z turn 3, as the game logged it: the stub's turn
 --     complete went out while the game was still paused (`PlayerTurnComplete
 --     ignored due to game paused.`), the UI kept it as sent, and the stub's own
---     requests stopped there. The step unreadies it where the game allows, and
---     the next pass sends it again. --------------------------------------------
+--     requests stopped there. The step sends SHIFT+ENTER's request again, and
+--     NEVER an unready, even where the game would take one: an unready of a
+--     turn the engine did take hands the turn back (live-6p-20261128T0819Zg
+--     turn 6), and a turn handed back in hotseat crashed Civ VI three times. --
 do
 	local w = world(STUB, { turn = 3 })
 	w.sent, w.canUnready = true, true
@@ -446,14 +448,165 @@ do
 	assert(w.active and w.ticks == 4 and #w.requests == 0, "the loop's requests stop at the sent flag")
 	w.second()
 	local r = w.kinds("stand_in_stuck")[1]
-	assert(r and r.blocker == "NO_ENDTURN_BLOCKING" and r.resent == "unready" and r.game_paused == false,
-		"the dropped turn complete is unreadied: " .. tostring(r and r.resent))
-	assert(w.actions[1].action == "ACTION_UNREADYTURN" and not w.sent)
-	assert(w.active, "an unready alone ends nothing")
-	w.second()
-	assert(not w.active and w.requests[1].reason == nil, "the next pass sends the turn again and it ends")
+	assert(r and r.blocker == "NO_ENDTURN_BLOCKING" and r.resent == "forced" and r.game_paused == false,
+		"the dropped turn complete is sent again: " .. tostring(r and r.resent))
+	assert(#w.actions == 1 and w.actions[1].action == "ACTION_ENDTURN" and w.actions[1].reason == "UserForced",
+		"SHIFT+ENTER's request, past the sent flag")
+	assert(not w.active, "and the turn ends")
+	for _, a in ipairs(w.actions) do assert(a.action ~= "ACTION_UNREADYTURN", "never an unready") end
+	assert(not agent:gsub("%-%-[^\n]*", ""):find("ACTION_UNREADYTURN", 1, true),
+		"no request of the agent's asks for an unready")
 	w.clean()
 end
+
+-- 6d. The diagnostic hand-back (`HotseatDiagWalkTurns`, `HotseatDiagExploreTurns`:
+--     a crash check game's own config, set by no launcher of a person's game).
+--     A listed turn's end sends ONE land combat unit on a walk whose last leg,
+--     walked when the NEXT turn ends, is shorter than its moves (so it lands
+--     with movement left and the engine hands the turn back); that unit then
+--     gets no order of ours, and each later end says what it is doing. --------
+do
+	local function diagWorld(cfgExtra, turn)
+		local c = {}
+		for k, v in pairs(STUB) do c[k] = v end
+		for k, v in pairs(cfgExtra or {}) do c[k] = v end
+		local w = world(c, { turn = turn or 3 })
+		-- A row of plots along x at y = 5; index = x. Plots 7 and below are forest.
+		local function plot(x, y)
+			return {
+				GetX = function() return x end, GetY = function() return y end,
+				GetIndex = function() return x end,
+				IsWater = function() return y ~= 5 end, IsImpassable = function() return false end,
+				GetUnitCount = function() return 0 end,
+				GetFeatureType = function() return x <= 7 and 4 or -1 end,
+				IsHills = function() return false end,
+			}
+		end
+		w.env.Map = {
+			GetPlot = function(x, y) return plot(x, y) end,
+			GetPlotByIndex = function(i) return plot(i, 5) end,
+			GetPlotDistance = function(x1, y1, x2, y2) return math.abs(x1 - x2) + math.abs(y1 - y2) end,
+		}
+		-- The pathfinder: one plot per move, this turn's moves first (turn 1).
+		w.env.UnitManager.GetMoveToPathEx = function(unit, index)
+			local plots, turns = { unit.x }, { 1 }
+			local step = unit.x < index and 1 or -1
+			local left, turn = unit.moves, 1
+			for x = unit.x + step, index, step do
+				if left == 0 then turn, left = turn + 1, unit.max end
+				left = left - 1
+				plots[#plots + 1], turns[#turns + 1] = x, turn
+			end
+			return { plots = plots, turns = turns }
+		end
+		w.env.UnitManager.GetQueuedDestination = function(unit) return unit.queued and 1 or nil end
+		w.env.GameInfo = {
+			Units = setmetatable({}, { __index = function(_, kind)
+				return { FormationClass = kind == "UNIT_BUILDER" and "FORMATION_CLASS_CIVILIAN"
+					or "FORMATION_CLASS_LAND_COMBAT" }
+			end }),
+			UnitOperations = { UNITOPERATION_AUTOMATE_EXPLORE = { Hash = "op:explore" } },
+		}
+		w.env.UnitOperationTypes = { PARAM_X = "px", PARAM_Y = "py" }
+		w.env.OP.UNITOPERATION_MOVE_TO = "op:move"
+		w.orders = {}
+		w.env.operate = function(unit, hash, params)
+			if w.seat.diagHolds(unit) then return false end
+			w.orders[#w.orders + 1] = { id = unit.id, hash = hash, x = params and params.px }
+			if hash == "op:move" then unit.queued = true end
+			return true
+		end
+		return w
+	end
+	local function unit(w, spec)
+		spec.y, spec.ready = 5, false
+		local u = w.unit(spec)
+		u.GetUnitType = function(self) return self.kind end
+		return u
+	end
+	-- A Warrior (2 moves) at x = 10 with no moves left now: a plot one along is
+	-- its whole last leg next turn (1 of 2 moves). A Builder never walks.
+	local w = diagWorld({ HotseatDiagWalkTurns = { 3 } }, 3)
+	unit(w, { id = 9, kind = "UNIT_BUILDER", x = 20, moves = 2, max = 2 })
+	local warrior = unit(w, { id = 1, kind = "UNIT_WARRIOR", x = 10, moves = 0, max = 2 })
+	w.seat.standInDiag(3)
+	local o = w.kinds("stand_in_diag_order")[1]
+	assert(o and o.how == "walk" and o.unit == 1 and o.ordered == true and o.unit_kind == "UNIT_WARRIOR",
+		"one land unit is sent on the walk")
+	assert(o.last_leg >= 1 and o.last_leg < 2 and o.max == 2 and o.moves == 0, "a last leg shorter than its moves")
+	assert(#w.orders == 1 and w.orders[1].hash == "op:move" and w.orders[1].x ~= 10)
+	assert(#w.actions == 0, "the diagnostic sends no end of turn of its own: the stand-in's own plain one goes")
+	-- From then on the unit gets no order of ours, and each end says what it does.
+	assert(w.seat.diagHolds(warrior) == true and w.env.operate(warrior, "op:skip") == false,
+		"no order of ours for the walking unit")
+	w.seat.standInDiag(3)
+	assert(#w.kinds("stand_in_diag_order") == 1, "ordered once a turn")
+	assert(#w.kinds("stand_in_diag_before_end") == 1, "a later request of the same turn says what it does")
+	w.turn = 4
+	w.seat.standInDiag(4)
+	local b = w.kinds("stand_in_diag_before_end")[2]
+	assert(b and b.turn == 4 and b.unit == 1 and b.unit_kind == "UNIT_WARRIOR" and b.queued == true
+		and b.moves == 0, "before the next end: what it does")
+	w.seat.standInDiag(4)
+	assert(#w.kinds("stand_in_diag_before_end") == 2, "said once a turn")
+	w.turn = 5
+	assert(w.seat.diagHolds(warrior) == false, "a walk is ours again after the turn it ends on")
+	-- `HotseatDiagLinger`: a turn handed back is kept open that long, then ended.
+	local l = diagWorld({ HotseatDiagWalkTurns = { 3 }, HotseatDiagLinger = 3 }, 4)
+	l.env.ExposedMembers.CivvisTurnReturned = { player = 0, turn = 4, n = 1 }
+	assert(l.seat.standInDiag(4) == true, "held open at the hand-back")
+	assert(l.kinds("stand_in_diag_linger")[1].seconds == 3)
+	l.now = l.now + 2.9
+	assert(l.seat.standInDiag(4) == true, "for its seconds")
+	l.now = l.now + 0.2
+	assert(not l.seat.standInDiag(4), "and then let go")
+	l.env.ExposedMembers.CivvisTurnReturned = { player = 0, turn = 4, n = 2 }
+	assert(l.seat.standInDiag(4) == true, "a second hand-back is held open again")
+	local nl = diagWorld({ HotseatDiagWalkTurns = { 3 } }, 4)
+	nl.env.ExposedMembers.CivvisTurnReturned = { player = 0, turn = 4, n = 1 }
+	assert(not nl.seat.standInDiag(4), "without the key nothing is held open")
+	-- A Scout with full moves: the walk's first leg goes now, its short last
+	-- leg (open plots only: the forest side is refused) when the next turn ends.
+	local s2 = diagWorld({ HotseatDiagWalkTurns = { 5 } }, 5)
+	unit(s2, { id = 2, kind = "UNIT_SCOUT", x = 10, moves = 3, max = 3 })
+	s2.seat.standInDiag(5)
+	local o2 = s2.kinds("stand_in_diag_order")[1]
+	assert(o2 and o2.ordered and o2.last_leg >= 1 and o2.last_leg < 3, "a Scout's last leg is shorter than 3")
+	local dest = s2.orders[1].x
+	assert(dest == 14 or dest == 15, "beyond this turn's reach, on the open side: " .. dest)
+	-- The exploration recipe: a Scout set exploring, held the same way.
+	local e = diagWorld({ HotseatDiagExploreTurns = { 3 } }, 3)
+	unit(e, { id = 1, kind = "UNIT_WARRIOR", x = 10, moves = 2, max = 2 })
+	local scout = unit(e, { id = 2, kind = "UNIT_SCOUT", x = 12, moves = 3, max = 3 })
+	e.seat.standInDiag(3)
+	local eo = e.kinds("stand_in_diag_order")[1]
+	assert(eo and eo.how == "explore" and eo.unit == 2 and eo.ordered and e.orders[1].hash == "op:explore")
+	assert(e.seat.diagHolds(scout) and not e.seat.diagHolds(e.units[1]))
+	e.turn = 13
+	assert(e.seat.diagHolds(scout), "an exploration is held ten turns")
+	e.turn = 14
+	assert(not e.seat.diagHolds(scout), "and no longer")
+	-- Without a key, on a turn not listed, or for a seat that does not stand in: nothing.
+	local plain = diagWorld({}, 3)
+	unit(plain, { id = 1, kind = "UNIT_WARRIOR", x = 10, moves = 2, max = 2 })
+	plain.seat.standInDiag(3)
+	assert(#plain.orders == 0 and #plain.events == 0, "no key, nothing")
+	local other = diagWorld({ HotseatDiagWalkTurns = { 3 } }, 4)
+	unit(other, { id = 1, kind = "UNIT_WARRIOR", x = 10, moves = 2, max = 2 })
+	other.seat.standInDiag(4)
+	assert(#other.orders == 0, "a turn not listed: nothing")
+	local civvis = diagWorld({ HotseatDiagWalkTurns = { 3 }, CivvisDecides = true }, 3)
+	unit(civvis, { id = 1, kind = "UNIT_WARRIOR", x = 10, moves = 2, max = 2 })
+	civvis.seat.standInDiag(3)
+	assert(#civvis.orders == 0, "a CIVVIS seat never")
+	w.clean(); s2.clean(); e.clean()
+end
+-- The hold is in both of the agent's order funnels.
+assert(agent:find("local function operate(unit, hash, params)\n\tif hash == nil then return false; end\n"
+	.. "\t-- A crash check game's diagnostic walk is left alone (`CivvisSeat.diagHolds`).\n"
+	.. "\tif CivvisSeat.diagHolds ~= nil and CivvisSeat.diagHolds(unit) then return false; end", 1, true))
+assert(agent:find("local function commandUnit(unit, hash, loose)\n\tif hash == nil then return false; end\n"
+	.. "\tif CivvisSeat.diagHolds ~= nil and CivvisSeat.diagHolds(unit) then return false; end", 1, true))
 
 -- 6c. The seat gate: the stand-in waits for the GAME's pause to lift, not only
 --     its own seat's (UnitPanel.lua:2843-2858 waits the same way); a CIVVIS

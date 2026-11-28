@@ -636,8 +636,19 @@ above it and is read and pressed as it ships): one `hotseat_cover_kept` record,
 the person's own volumes while it is up, no stall clock (the screen holds the
 game until Next Player and is in plain sight), and the turn still covered after
 it closes. A person's defeat, a win (`Events.TeamVictory`) or an end screen
-whose defeat is not known lift the cover as before. ⚠ Tests only
-(`hotseat_cover_test.lua` 8b); no seat has been defeated in a live cover game.
+whose defeat is not known lift the cover as before.
+**And the screen does not stand there (#6076).** It holds the game's events
+until it is closed (EndGameMenu.lua:1024 `UI.SetPauseEventID( eventID )`). In
+the gated check game `crash-p4-fa` (2026-11-28) seat 1 was eliminated on seat
+5's turn and the screen stood five minutes with nobody to press it; in a
+person's game the person would have seen it over the cover and had to press
+Next Player (or One More Turn, with Main Menu beside them) before CIVVIS
+played on. Now, on a turn that is not a person's, a CIVVIS seat's defeat
+screen is closed by its own Next Player (`OnNextPlayer` :304-318) once its
+movie is over and 8 s have passed (`HotseatDefeatSeconds`;
+`hotseat_defeat_closed`); a person's defeat, a person's turn and a victory are
+left as they were. ⚠ Tests only (`hotseat_returned_turn_test.lua` 4b,
+`hotseat_cover_test.lua` 8b).
 
 ⚠⚠ **Measured 2026-11-27/28: a cover that lifted on the frame after Next Turn
 ended two of the owner's games.** For a frame or more after
@@ -652,7 +663,112 @@ and Civ VI was gone within ten seconds both times (a SIGSEGV on record for the
 first). The cover now holds from the person's end of turn until a turn-begin
 event says whose turn it is; a turn that still reads theirs
 `HotseatCoverLingerSeconds` (5) later, with no event, is theirs after all.
-Why the engine then dies is not known; the un-ended turn no longer happens.
+
+⚠⚠⚠ **The same crash came a third time with that fix and nobody at the
+mouse, and the engine's own log names the un-ender** (`live-6p-20261128T0819Zg`,
+the gated stand-in, turn 6; Civ VI's `net_message_debug.log` kept in
+`~/civvis-civ6-runs/hotseat/findings/crash/`):
+
+    GameCore SEND: UnitOperation: Unit=262146 ... UNITOPERATION_MOVE_TO, dest: 46, 23   (twice)
+    GameCore SEND: UnitOperation: Unit=196608 ... UNITOPERATION_MOVE_TO, dest: 46, 23
+    GameCore SEND: PlayerTurnComplete: ePlayer=0, eReason=0xb6fa1284
+    GameCore RECV (0): PlayerTurnComplete: ePlayer=0, eReason=0xb6fa1284
+    Player 0 set TurnActive 0, TurnActiveCount: 0
+    Player 0 Unit 262146 has movement remaining after completing automation.  Attempting to turn active player.
+    AppRequestTurnUnready: Player 0, eRequestType: 83914202
+    Player 0 set TurnActive 1, TurnActiveCount: 1
+    GameCore SEND: GamePaused: gamePaused=1
+
+The ENGINE handed the turn back: one Scout took the plot, the other stopped
+one plot short with movement left, and after the plain turn complete
+(`0xb6fa1284` is the code of every plain end of turn; SHIFT+ENTER's
+`UserForced` is `0x720b6468`) the seat was made active again, as single player
+gives a turn back to a unit needing orders. In hotseat that seat's turn then
+BEGINS AGAIN (`LocalPlayerTurnEnd` and `LocalPlayerTurnBegin` for the same
+seat and turn, no other seat's begin between: the same frame there, 94 ms and
+164 ms apart in the owner's two games), PlayerChange.lua builds its hand-over
+again (BuildTurnControls :121-140, `SetPause(true)` :125, and the game really
+paused), the closer took it for a retry of a press already made (2 s), the
+cover's backstop pressed it at 1.5 s, and the crash report's capture time
+(02:21:29.228) is 0.1 s after that press (`again:true`, relay 08:21:29.128Z).
+Every turn handed back in a cover game this night crashed (3 of 3); the two in
+the self-play duel `selfplay-duel-20261127T0654Z` (no cover, no
+`--fast-turns`, the dialog's 2 s retry) did not. Which step is fatal was not
+isolated: five check games that sent walks and an end of turn in one pass on
+purpose, forced and plain (`crash-g1`..`g5-legacy`), were never handed back,
+so the engine's condition is narrower than "a walk in flight". The owner's two
+games cannot be pinned the same way (their net logs were overwritten by the
+next launch); they have the same signature, their seat's last walks were 14
+and 17 s before the end (`~/civ-record/meta/events_raw.jsonl`), and the
+recording of the turn-18 game shows the pointer on the map, not on NEXT TURN.
+
+So now, hotseat only (#6072):
+
+- **a turn handed back is not handed over again**
+  (CivvisControlAutoClose.lua `CivvisHotseatScreen.onBuild`, in place of the
+  shipped `BuildTurnControls`, which PlayerChange.lua's `OnLocalPlayerTurnBegin`
+  :89 calls by name): no pause, no dialog, no press; the "please wait" screen
+  the end of turn raised (:93-106) is closed at once by the shipped Start Turn
+  (`OnOk` :54-64), and `hotseat_turn_returned` says so. The cover lifts for a
+  person's turn (`hotseat_cover` reason `person_returned`, no camera move, no
+  backstop press); a CIVVIS seat's stays covered and its agent holds every
+  unit with movement left before ending again (`turn_returned_units`,
+  told through `ExposedMembers.CivvisTurnReturned`);
+- **no hotseat end of turn goes out in the same breath as a walk**
+  (`end_turn_settle_hold`: 0.15 s behind the last MOVE_TO or SWAP, 20 holds a
+  turn at most): the turn-6 stand-in's walks and end went out in one pass;
+- **nothing of ours requests an unready any more**: the stand-in's step and
+  the seat watch both re-send a dropped turn with SHIFT+ENTER's request.
+  Nothing of ours calls the action panel's `DoEndTurn` (whose first act is
+  that unready, ActionPanel.lua:535-537), and after setup the harness never
+  presses a key or clicks for a person's seat (its popup rescue clicks NEXT
+  TURN only for a stalled CIVVIS seat, never under the cover;
+  `civ6_hotseat.py` `rescue_popup`/`end_stalled_turn`). The action panel itself is not
+  wrapped: the cover takes every click and key from the person's end of turn
+  on (#6065), and a turn handed back is now harmless.
+
+`HotseatReturnedTurn` (`legacy`: the old hand-over; `press`: pause kept, pressed
+as a first press) is a diagnostic for crash check games only; no launcher sets
+it.
+
+**Made on purpose and seen live (#6076).** The hand-back is a person's
+everyday go-to order: a unit with a QUEUED multi-turn walk finishes it when its
+player ends a later turn, and one that arrives with movement left hands the
+turn back. The stand-in does it on purpose in a check game
+(`HotseatDiagWalkTurns`: on a listed turn one land combat unit is sent to a
+plot the pathfinder reaches next turn, `UnitManager.GetMoveToPathEx` `turns`,
+with a last leg shorter than its moves over open plots; the unit then gets no
+order of ours; `HotseatDiagExploreTurns` sets a Scout exploring;
+`HotseatDiagLinger` keeps the handed-back turn open N seconds for screenshots;
+records `stand_in_diag_order`, `stand_in_diag_before_end`, `stand_in_diag_linger`).
+Gated six-seat games, all with `--fast-turns`:
+
+| run | reaction | hand-backs (engine: `Attempting to turn active player`) | result |
+|---|---|---|---|
+| `crash-h1-walk` | safe (#6072) | 2 (turns 4, 7) | ran to turn 16; no `GamePaused`, no `again:true` |
+| `crash-h2-walk-fa` (`--fast-animations`) | safe | 3 (turns 4, 7, 13) | ran to turn 16; no `GamePaused`, no `again:true` |
+| `crash-h3-explore` | safe | 2 (turns 9, 12; the exploration recipe found no Scout to start) | ran to turn 16; no `GamePaused`, no `again:true` |
+| `crash-c1-legacy` | legacy (the old hand-over) | 1 (turn 4) | `GamePaused: gamePaused=1`, backstop `again:true via cover` at 10:17:45.659Z, Civ VI dead at 10:17:45.717Z: SIGSEGV on a TBB worker, the same three frames as the night's crashes |
+| `crash-c2-press` | press (pause asked, pressed on the next frame) | 2 (turns 4, 7) | ran to turn 16; the pause never reached the engine (no `GamePaused`) |
+
+So the fatal step is the second hand-over's pause reaching the engine
+(`GamePaused=1`) and its release 1.5 s later by the cover's backstop; whether
+the pause or that press path is the lethal half is not separated (the
+self-play duel's two hand-backs, paused 2 s and pressed by the dialog with no
+cover, survived). With #6072 nothing is paused. The screenshots taken during
+the held-open hand-back (`crash-h2-walk-fa/evidence/handback/`) show the
+person's map with the HUD, no cover, no Start Turn dialog, the unit that
+arrived selected (Warrior, movement 1/2) and NEXT TURN; the stand-in's next end
+went through and the next seat began. Not seen: a real person's click or key
+on that turn (no person played these games).
+
+Six ordinary gated 15-turn games on #6072 (`crash-p1-ft`..`p3-ft` with
+`--fast-turns`, `crash-p4-fa`..`p6-fa` with `--fast-animations` too; p4 ended
+at turn 10 on an unrelated defeat screen) had no hand-back, no `again:true`
+and no crash, and held 45-62 ends a game behind a walk with no slower round.
+To look for one in any run: a `hotseat_turn_returned` record, a seat's `begin`
+twice for one turn, or `again:true`; and, before Civ VI restarts,
+`Attempting to turn active player` in `net_message_debug.log`.
 
 **The cover is quiet, and says about how long** (`HotseatCoverSound`,
 `HotseatCoverTimer`; `--cover-sound music|silent|all`, `--no-cover-timer`).
@@ -812,14 +928,15 @@ turn unless said otherwise:
 - while its turn is active, its seat gate stays shut until
   `GameConfiguration.IsPaused()` reads false. The shipped unit panel waits the
   same way after the hand-over closes (UnitPanel.lua:2843-2858);
-- a step that finds the turn still active but reading as sent unreadies it
-  where the game allows (ActionPanel.lua:535-537,
-  `UI.RequestAction(ActionTypes.ACTION_UNREADYTURN)`), or else sends SHIFT+ENTER's
-  request past that flag (`resent` in `stand_in_stuck`);
+- a step that finds the turn still active but reading as sent sends
+  SHIFT+ENTER's request past that flag (`resent` in `stand_in_stuck`). (#6014
+  unreadied it first where the game allowed; an unready of a turn the engine
+  did take hands it back, see the crash above, so since #6072 it never does);
 - for every watched seat, the seat watch asks again on a sent turn once it has
   stood its age limit (30 s for a stub, 180 s for any seat; `how` in
-  `seat_stuck_end_turn`/`seat_quiet_end_turn`). Within the quiet rule alone, a
-  sent turn is still left to the engine.
+  `seat_stuck_end_turn`/`seat_quiet_end_turn`: `resent` or `end_turn`, never an
+  unready since #6072). Within the quiet rule alone, a sent turn is still left
+  to the engine.
 
 Every seat-watch report and `stand_in_stuck` carries `game_paused`. A CIVVIS
 seat's gate is unchanged: it asks for its end of turn only once its board is

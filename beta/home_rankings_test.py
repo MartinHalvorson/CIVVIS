@@ -29,7 +29,7 @@ ROOT = BETA.parent
 # add another page: Civ Analytics. First can be the civ records (pulled from
 # win analytics), then early build order"). The home page is its videos,
 # with the Firaxis Civ 6 AI benchmark copied over them from Win Analytics
-# and, over that since 2026-11-27, ELO Rankings (`home_elo_test.py`).
+# and, over that since 2026-11-27, ELO Rankings (`elo_table_test.py`).
 CHARTS = (BETA / "research.html").read_text(encoding="utf-8")
 ELO = (BETA / "elo.html").read_text(encoding="utf-8")
 CIVS = (BETA / "civs.html").read_text(encoding="utf-8")
@@ -117,7 +117,7 @@ class HomeRankings(unittest.TestCase):
         self.assertEqual(margins["jack"], 78)
         self.assertEqual(margins["holy"], 50.0)
         self.assertEqual((ranking["runs"], ranking["latest_run"]), (2, "2026-11-23"))
-        self.assertIn('" \\u00b1 is the 95% margin of error."', ELO)
+        self.assertIn('" ± is the 95% margin of error."', ELO)
 
     def test_the_agents_are_ranked_by_published_elo_under_their_handles(self):
         published = json.loads((ROOT / "data" / "strategy_elo.json").read_text(encoding="utf-8"))
@@ -419,7 +419,7 @@ class HomeRankings(unittest.TestCase):
         self.assertEqual((sections[0], sections[-3:]), ("res-side-builds", ["civ-civs", "rank-civs", "rank-civs-self"]))
         # Since 2026-11-24 the list has two readings, the Diplomatic victory
         # on and off, each a record of the same fields (`elo_page.record`).
-        self.assertIn("const rows = view.strategies && Array.isArray(view.strategies.rows) ? view.strategies.rows : [];", ELO)
+        self.assertIn("const rowsOf = (view) => (view && view.strategies && Array.isArray(view.strategies.rows) ? view.strategies.rows : []);", ELO)
         self.assertIn("const civs = data.civs;", CIVS)
         # The Tournaments table stood above the two lists until the operator
         # gave tournaments their own page (2026-11-21: "The tournament tables
@@ -439,7 +439,7 @@ class HomeRankings(unittest.TestCase):
         )
         # And the home page has neither list left, nor their slot. Since
         # 2026-11-27 it has ELO Rankings over its benchmark, drawn from ELO
-        # Rankings' own record (`home_elo_test.py`): a table of its own, not
+        # Rankings' own record (`elo_table_test.py`): a table of its own, not
         # the list that moved.
         for gone in ("rankings-data", "rank-civs", "rank-strategies", 'id="rankings"'):
             self.assertNotIn(gone, LANDING)

@@ -334,15 +334,17 @@ everything above) and for games with the Diplomatic victory switched off.
   history, and `check` fails a revision whose diplo-off history does not end at
   its published fit, as it does for the stock one.
 
-ELO Rankings shows both side by side: Player strategies has a column for
-each (its head sorts the list; it opens sorted by Diplo off, operator
-2026-11-26: "player strategies should default diplo off"), the levels table
-each reading's benchmark and simulator figures, and the graph a switch between
-the two. Tournaments carries the same table as ELO Rankings, over the Official
-Benchmark (operator 2026-11-27: "list Diplo off first (and default for
-sorting), and Diplo on col to the right"): Diplo off is its first column and
-opens sorted, and the agents, the Firaxis levels and the people are numbered
-in one ranking.
+ELO Rankings shows both, and every other rating, in the one ELO Rankings
+table Home and Tournaments show too (operator 2026-11-28: "merge the home elo
+ranking and the elo chart together into the same elo ranking table and replace
+both copies with this new merged results. fill out as completely as
+possible"): on the left what Civilization VI measured, the Firaxis levels and
+people at 6P Continents Online with Diplo off and on; on the right CIVVIS
+self-play, a column for each setup's fit, the four-player fits above (4P
+Pangaea, Diplo off and on) among them, a level's figure there the simulator's
+stand-in for it. Any column sorts both tables, and the table opens on Diplo
+off (2026-11-26: "player strategies should default diplo off"). The graph has
+a switch between the two readings.
 
 **The scale of cheating.** The home page carries the ranking too, over its
 benchmark, in the operator's format (2026-11-27: "put the elo chart at the
