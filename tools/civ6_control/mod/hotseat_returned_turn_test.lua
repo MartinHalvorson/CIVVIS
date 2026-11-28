@@ -1,8 +1,8 @@
 -- A hotseat turn the engine hands back (CivvisControlAutoClose.lua
 -- `CivvisHotseatScreen.onBuild`, CivvisHotseatCover.lua `handedBack`).
 --
--- The engine gives a seat its turn back by itself when a unit still has
--- movement once the walk it was on is finished at the turn complete
+-- The engine gives a seat its turn back by itself when, at the turn
+-- complete, a unit's walk ends short with movement left
 -- (live-6p-20261128T0819Zg turn 6, net_message_debug.log: `Player 0 Unit
 -- 262146 has movement remaining after completing automation.  Attempting to
 -- turn active player.`, `AppRequestTurnUnready: Player 0`). The same seat's
@@ -382,8 +382,7 @@ end
 -- Wired into `requestEndTurn` for a hotseat game only, after its own guards.
 do
 	local body = assert(agent:match("(CivvisQueue%.requestEndTurn = function%(turn, parameters%).-\nend;)"))
-	local wired = body:find("\tif cfg.Hotseat == true then\n\t\tif CivvisSeat.standInDiag ~= nil and "
-		.. "CivvisSeat.standInDiag(turn, now) then return true; end\n\t\tif CivvisQueue.settleReturned(turn) "
+	local wired = body:find("\tif cfg.Hotseat == true then\n\t\tif CivvisQueue.settleReturned(turn) "
 		.. "or CivvisQueue.unitsSettling(turn, now) then", 1, true)
 	assert(wired, "requestEndTurn holds a hotseat end of turn behind both")
 	assert(body:find("HasSentTurnComplete", 1, true) < wired, "after the sent-turn guard")

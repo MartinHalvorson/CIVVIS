@@ -1034,7 +1034,7 @@ end
 
 -- ★★★ A TURN HANDED BACK (CivvisControlAutoClose.lua `CivvisHotseatScreen.onBuild`
 -- has the whole account): the engine gives a seat its turn back after its end
--- when a unit still has movement once its walk is done, and the same seat's
+-- when a unit's walk ends short with movement left, and the same seat's
 -- turn begins again with no other seat's begin between. The hand-over is not
 -- built again for it and the game is not paused (`HotseatReturnedTurn`, a
 -- diagnostic for crash check games only, else "safe"), so for a person's

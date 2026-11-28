@@ -28721,19 +28721,25 @@ end
 
 -- ★★★ HOTSEAT: A TURN THE ENGINE HANDS BACK, AND WHY. Live 2026-11-28
 -- (live-6p-20261128T0819Zg turn 6, the stand-in's seat; Civ VI's own
--- net_message_debug.log): the seat's Scouts' MOVE_TO and its end of turn went
--- out in one pass, and the engine finished the walk after the turn complete
--- and gave the turn back by itself:
---   GameCore SEND: UnitOperation: Unit=262146, Owner=0, ... UNITOPERATION_MOVE_TO
---   GameCore SEND: PlayerTurnComplete: ePlayer=0
---   GameCore RECV (0): PlayerTurnComplete: ePlayer=0
+-- net_message_debug.log): two Scouts' MOVE_TO to one plot and the seat's
+-- plain end of turn went out in one pass; Scout 196608 took the plot, Scout
+-- 262146 stopped one plot out with movement left, and after the turn complete
+-- the engine gave the turn back by itself:
+--   GameCore SEND: UnitOperation: Unit=262146, Owner=0, ... UNITOPERATION_MOVE_TO, dest: 46, 23
+--   GameCore SEND: UnitOperation: Unit=196608, Owner=0, ... UNITOPERATION_MOVE_TO, dest: 46, 23
+--   GameCore SEND: PlayerTurnComplete: ePlayer=0, eReason=0xb6fa1284
+--   GameCore RECV (0): PlayerTurnComplete: ePlayer=0, eReason=0xb6fa1284
 --   Player 0 set TurnActive 0, TurnActiveCount: 0
 --   Player 0 Unit 262146 has movement remaining after completing automation.  Attempting to turn active player.
 --   AppRequestTurnUnready: Player 0, eRequestType: 83914202
 --   Player 0 set TurnActive 1, TurnActiveCount: 1
 -- The same seat's turn then began a second time, its hand-over paused the
 -- game again, and Civ VI died 1.6 s later, 0.1 s after that hand-over was
--- pressed a second time (the crash report's capture time, 02:21:29.228). The
+-- pressed a second time (the crash report's capture time, 02:21:29.228).
+-- (Five check games that sent walks and an end of turn in one pass on
+-- purpose, forced and plain, one plot and two units to one plot, were never
+-- handed back: the engine's condition is narrower than "a walk in flight",
+-- and is not known exactly.) The
 -- hand-over's side is CivvisControlAutoClose.lua's (`CivvisHotseatScreen.onBuild`);
 -- here, a hotseat seat's own end of turn does not invite it:
 --   * `unitsSettling`: no end of turn goes out in the same breath as a walk
@@ -28831,7 +28837,6 @@ CivvisQueue.requestEndTurn = function(turn, parameters)
 	-- Hotseat only: a turn the engine handed back has its units settled first,
 	-- and no end goes out in the same breath as a unit order (see below).
 	if cfg.Hotseat == true then
-		if CivvisSeat.standInDiag ~= nil and CivvisSeat.standInDiag(turn, now) then return true; end
 		if CivvisQueue.settleReturned(turn) or CivvisQueue.unitsSettling(turn, now) then
 			CivvisQueue.endTurnRetryTurn = turn;
 			return false;
@@ -31388,96 +31393,6 @@ function CivvisSeat.standsIn()
 		if tonumber(seat) == CivvisSeat.seat then return true; end
 	end
 	return false;
-end
--- ★ DIAGNOSTIC ONLY: `HotseatDiagRebegin`, a list of game turns, set by no
--- shipped launcher (a crash check game's own config). On a listed turn the
--- stand-in does on purpose what live-6p-20261128T0819Zg's stand-in did by
--- accident on turn 6, past the settle guards above: walks and a PLAIN end of
--- turn in one pass. That turn complete went out without a reason
--- (`eReason=0xb6fa1284`, the code every CIVVIS seat's plain request carries;
--- SHIFT+ENTER's `UserForced`, ActionPanel.lua:1099, is `0x720b6468`, and
--- three check games of forced ends with walks in flight were never handed
--- back): Scout 262146 was sent twice to (46,23) from two plots off, then
--- Scout 196608 one plot onto it, and the engine handed the turn back. Here: a
--- land combat unit A beside a free plot and a second one B with at least two
--- moves, two or more plots from that plot (best: beside A, the plot beyond A,
--- as 262146 stood behind 196608), are both sent there (two land combat units
--- never share a plot), B first and twice. With the units blocker up, its
--- notification is dismissed first, as the turn-6 stand-in had just done
--- (`dismissed ENDTURN_BLOCKING_UNITS`). Once a turn, never under any other
--- blocker (a plain end of turn is refused under it); true when it sent the
--- end of turn.
-function CivvisSeat.standInDiag(turn, now)
-	local turns = cfg.HotseatDiagRebegin;
-	if type(turns) ~= "table" or not CivvisSeat.standsIn() then return false; end
-	local listed = false;
-	for _, t in ipairs(turns) do if tonumber(t) == turn then listed = true; end end
-	local st = CivvisSeat.standIn;
-	if not listed or st.diagTurn == turn then return false; end
-	local player, pid = localPlayer();
-	if player == nil or pid ~= CivvisSeat.seat then return false; end
-	local blocker = currentBlocker(pid);
-	local none = try(function() return EndTurnBlockingTypes.NO_ENDTURN_BLOCKING; end, 0);
-	local units = blocker ~= nil and blocker ~= none and UNIT_BLOCKERS[blockerName(blocker)] == true;
-	if blocker ~= nil and blocker ~= none and not units then return false; end
-	st.diagTurn = turn;
-	local land = {};
-	eachUnit(player, function(unit)
-		local row = try(function() return GameInfo.Units[unit:GetUnitType()]; end, nil);
-		if row ~= nil and row.FormationClass == "FORMATION_CLASS_LAND_COMBAT"
-				and (try(function() return unit:GetMovesRemaining(); end, 0) or 0) >= 1 then
-			land[#land + 1] = unit;
-		end
-	end);
-	local function walk(unit, x, y)
-		local params = {};
-		params[UnitOperationTypes.PARAM_X] = x;
-		params[UnitOperationTypes.PARAM_Y] = y;
-		return operate(unit, OP["UNITOPERATION_MOVE_TO"], params);
-	end
-	local plan = nil;
-	for _, a in ipairs(land) do
-		for direction = 0, 5 do
-			local plot = (plan == nil or not plan.behind) and try(function()
-				return Map.GetAdjacentPlot(a:GetX(), a:GetY(), direction);
-			end, nil) or nil;
-			if plot ~= nil and try(function()
-					return not plot:IsWater() and not plot:IsImpassable() and plot:GetUnitCount() == 0;
-				end, false) == true then
-				for _, b in ipairs(land) do
-					local d = b ~= a and try(function()
-						return Map.GetPlotDistance(b:GetX(), b:GetY(), plot:GetX(), plot:GetY());
-					end, 0) or 0;
-					-- Best with A between: B beside A, the plot beyond it, so
-					-- B's walk waits behind A and finishes after the turn complete.
-					local behind = d == 2 and try(function()
-						return Map.GetPlotDistance(b:GetX(), b:GetY(), a:GetX(), a:GetY());
-					end, 0) == 1;
-					if (plan == nil or (behind and not plan.behind)) and d >= 2
-							and (try(function() return b:GetMovesRemaining(); end, 0) or 0) >= 2 then
-						plan = { a = a, b = b, x = plot:GetX(), y = plot:GetY(), behind = behind };
-					end
-				end
-			end
-		end
-	end
-	-- In the turn-6 order: the far unit's walk twice, then the near one's
-	-- (net_message_debug.log :833-835).
-	local walks = {};
-	if plan ~= nil then
-		for _, unit in ipairs({ plan.b, plan.b, plan.a }) do
-			walks[#walks + 1] = { id = unit:GetID(), from = { unit:GetX(), unit:GetY() },
-				sent = walk(unit, plan.x, plan.y) == true };
-		end
-	end
-	local dismissed = units and dismissBlocker(pid, blocker) or nil;
-	local sent = CivvisK.attempt(function() UI.RequestAction(ActionTypes.ACTION_ENDTURN); end);
-	if type(now) == "number" then
-		CivvisQueue.endTurnSubmittedTurn, CivvisQueue.endTurnSubmittedAt = turn, now;
-	end
-	emit("stand_in_diag_rebegin", { turn = turn, x = plan and plan.x, y = plan and plan.y,
-		behind = plan and plan.behind, walks = walks, dismissed = dismissed, sent = sent });
-	return true;
 end
 -- Hold one unit where it stands; the hold's name, or nil when none starts.
 function CivvisSeat.standInHold(unit)

@@ -1659,12 +1659,12 @@ function CivvisHotseatScreen.fromCover(pid, turn)
 	return CivvisHotseatScreen.press(pid, turn, "cover");
 end
 -- ★★★ A TURN THE ENGINE HANDS BACK IS NOT HANDED OVER A SECOND TIME.
--- The engine gives a seat its turn back by itself when a unit still has
--- movement after the walk it was on is finished at the turn complete
--- (net_message_debug.log, live-6p-20261128T0819Zg turn 6: `Player 0 Unit
--- 262146 has movement remaining after completing automation.  Attempting to
--- turn active player.`, `AppRequestTurnUnready: Player 0`), as single player
--- gives the turn back to a unit needing orders. In hotseat that seat's turn
+-- The engine gives a seat its turn back by itself when, at the turn complete,
+-- a unit's walk ends short with movement left (net_message_debug.log,
+-- live-6p-20261128T0819Zg turn 6: `Player 0 Unit 262146 has movement
+-- remaining after completing automation.  Attempting to turn active
+-- player.`, `AppRequestTurnUnready: Player 0`), as single player gives the
+-- turn back to a unit needing orders. In hotseat that seat's turn
 -- then BEGINS AGAIN: `LocalPlayerTurnEnd` and `LocalPlayerTurnBegin` for the
 -- same seat and turn with no other seat's begin between (the same frame in
 -- the stand-in's game; 94 ms and 164 ms apart in the owner's games
