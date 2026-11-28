@@ -34,6 +34,8 @@ end })
 -- Firaxis AI, 5 a seat we have not met.
 CivvisControlConfig = { Hotseat = true, HotseatSeat = 2, HotseatSeats = { 1, 2, 3 },
 	HotseatHumanSeats = { 0 }, TradeRetryTurns = 3, TradeResponseTurns = 2 }
+-- Shared by every UI context in the game (`seatSaid`, `seatNote`).
+ExposedMembers = {}
 
 local events = {}
 local realPrint = print
@@ -247,6 +249,10 @@ check("not ourselves", order("deal", 2, "PROPOSE;give=GOLD=5"), "deal_target_unm
 check("nothing incoming to accept", order("deal", 0, "ACCEPT"), "deal_none_incoming")
 check("nothing pending to withdraw", order("deal", 1, "WITHDRAW"), "deal_not_pending")
 check("no session for a refusal", logged("session:"), 0)
+check("a refusal is written down for the verdict", last("deal_refused") ~= nil, true)
+check("with the seat", field(last("deal_refused"), "to"), "1")
+check("the verb", field(last("deal_refused"), "verb"), "WITHDRAW")
+check("and the mod's reason", field(last("deal_refused"), "why"), "deal_not_pending")
 check("no send for a refusal", logged("send:"), 0)
 
 -- The person's offer: Dyes for 30 turns against 5 Gold a turn.
@@ -280,6 +286,79 @@ opts.unequal = false
 check("unequal deals: no ACCEPTED", logged("send:"), 0)
 check("says why", field(last("deal_answer"), "why"), "deals_not_equal")
 check("and still closes", logged("close:55"), 1)
+
+-- ★ The person's deal never reached our INCOMING copy (live trade-live-2c:
+-- every recipient read it from the proposer's OUTGOING deal). An ACCEPT then
+-- sends our OUTGOING deal rebuilt as the exact copy of theirs, not the empty
+-- copy of an empty INCOMING deal.
+reset()
+pending[0] = { [2] = true }
+working.incoming[2][0] = {}
+working.outgoing = working.outgoing or {}
+working.outgoing[0] = { [2] = {
+	{ kind = "resources", from = 0, value = 12, amount = 1, duration = 30 },
+	{ kind = "gold", from = 2, amount = 5, duration = 30 },
+} }
+local theirs = idOf("outgoing", 0, 2, 2)
+check("their deal, priced from our chair", theirs, offer)
+check("accepted from their outgoing deal", order("deal", 0, "ACCEPT", theirs), "deal_accepted")
+check("nothing copied from the empty INCOMING", logged("copy:2>0"), 0)
+check("ACCEPTED sent", logged("send:ACCEPTED:2>0"), 1)
+check("what we sent is their deal, item by item", idOf("outgoing", 2, 0, 2), theirs)
+check("two items", #items("outgoing", 2, 0), 2)
+check("the Dyes come from them", items("outgoing", 2, 0)[1].from, 0)
+check("the Gold a turn from us", items("outgoing", 2, 0)[2].from, 2)
+check("for 30 turns", items("outgoing", 2, 0)[2].duration, 30)
+check("deal_answer says it was rebuilt", field(last("deal_answer"), "mirrored"), "true")
+check("and that INCOMING was empty", field(last("deal_answer"), "incoming_items"), "0")
+-- A rebuilt deal that does not hash to the deal the decider priced is not sent.
+reset()
+check("a different deal is not rebuilt", trade.seatMirror(2, 0, theirs + 1), nil)
+check("and leaves nothing behind", #items("outgoing", 2, 0), 0)
+check("nothing to rebuild", select(2, trade.seatMirror(2, 1, nil)), "mirror_nothing")
+-- The answer is written down for the proposer's context, keyed
+-- "proposer:answerer", with the deal's id as the proposer reckons it.
+local said = ExposedMembers.CivvisDealAnswers and ExposedMembers.CivvisDealAnswers["0:2"]
+check("the answer is written down for the proposer", said ~= nil and said.verb, "ACCEPT")
+check("under the proposer's own id of the deal", said ~= nil and said.id, idOf("outgoing", 0, 2, 0))
+-- ★ A stale INCOMING copy (live trade-live-3 t46: seat 4's counter of turn
+-- 38 still there while its counter of turn 45 was pending): the proposer's
+-- OUTGOING deal is the one read, priced and accepted.
+reset()
+pending[0] = { [2] = true }
+working.incoming[2][0] = { { kind = "gold", from = 0, amount = 9, duration = 0 } }
+working.outgoing[0][2] = {
+	{ kind = "resources", from = 0, value = 12, amount = 1, duration = 30 },
+	{ kind = "gold", from = 2, amount = 5, duration = 30 },
+}
+local _, staleRead, _, staleSource = trade.seatTheirs(2, 0)
+check("their outgoing deal is read first", staleSource, "their_outgoing")
+check("the stale copy's id is no deal to accept", order("deal", 0, "ACCEPT", idOf("incoming", 2, 0, 2)), "deal_changed")
+check("their pending deal is", order("deal", 0, "ACCEPT", theirs), "deal_accepted")
+check("rebuilt from theirs, not copied from the stale one", logged("copy:2>0"), 0)
+check("what we sent is their pending deal", idOf("outgoing", 2, 0, 2), theirs)
+working.incoming[2][0] = {
+	{ kind = "resources", from = 0, value = 12, amount = 1, duration = 30 },
+	{ kind = "gold", from = 2, amount = 5, duration = 30 },
+}
+
+-- One hotseat session at a time; one left from an earlier turn is closed.
+reset()
+pending[0] = { [2] = true }
+trade.sessions[3] = { kind = "hotseat", turn = turn, sent = false, sessionID = 77 }
+check("a second session waits for a later frame", order("deal", 0, "REJECT"), "deal_session_open")
+check("no session asked", logged("session:"), 0)
+trade.sessions[3].turn = turn - 1
+check("one from an earlier turn is closed first", order("deal", 0, "REJECT"), "deal_rejected")
+check("the stale one closed", logged("close:77"), 1)
+check("and dropped", trade.sessions[3], nil)
+check("the new one went out", logged("send:REJECTED:2>0"), 1)
+trade.sessions[3] = { kind = "sell", turn = turn - 1 }
+pending[0] = { [2] = true }
+check("a ladder session is not ours to close", order("deal", 0, "REJECT"), "deal_rejected")
+check("still there", trade.sessions[3] ~= nil, true)
+trade.sessions[3] = nil
+pending[0] = { [2] = true }
 
 -- Reject.
 reset()
@@ -398,6 +477,29 @@ check("a strategic says so", trade.seatItem({ GetType = function() return "resou
 	GetValueType = function() return 44 end, GetAmount = function() return 10 end,
 	GetDuration = function() return 0 end, GetSubType = function() return nil end }).class, "strategic")
 check("a Great Work says its object", b.incoming[1].give[1].object, "GREATWORKOBJECT_WRITING")
+
+-- Our proposal's outcome, said by the seat that answered it (`seatSaid`):
+-- the engine's own answer event never reaches us on their turn.
+turn = 90
+reset()
+pending = {}
+possible[1] = { resources = { { ForType = 44, IsValid = true } } }
+check("proposed again", order("deal", 1, "PROPOSE;give=GOLD=5;get=RESOURCE_IRON=10"), "deal_proposed")
+local proposal = trade.seat.mine[1].id
+ExposedMembers.CivvisDealAnswers["2:1"] = { id = proposal, verb = "ACCEPT", turn = 90 }
+pending = {}
+turn = 91
+local answered = trade.seatBoard(player, 2, turn)
+check("an accepted proposal reads accepted", answered.outcomes[#answered.outcomes].outcome, "accepted")
+check("and says who said so", answered.outcomes[#answered.outcomes].said, "ACCEPT")
+turn = 95
+check("proposed once more", order("deal", 1, "PROPOSE;give=GOLD=6;get=RESOURCE_IRON=10"), "deal_proposed")
+ExposedMembers.CivvisDealAnswers["2:1"] = { id = proposal, verb = "ACCEPT", turn = 90 }
+pending = {}
+turn = 96
+local older = trade.seatBoard(player, 2, turn)
+check("an answer to another deal is not this one's", older.outcomes[#older.outcomes].outcome, "closed")
+ExposedMembers.CivvisDealAnswers = nil
 
 -- A statement in a session already sent sends nothing more.
 reset()
