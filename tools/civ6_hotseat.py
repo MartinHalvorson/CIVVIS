@@ -437,6 +437,11 @@ def hotseat_config(args: argparse.Namespace, run_dir: Path, orders_db: Path) -> 
                               if person and not getattr(args, "no_cover", False) else "all"),
         "HotseatCoverTimer": (person and not getattr(args, "no_cover", False)
                               and not getattr(args, "no_cover_timer", False)),
+        # `--fast-turns` (off unless asked; tests only so far): a covered
+        # hand-over is pressed on its first frame and landed orders are peeked
+        # every 20 ms (CivvisControlAutoClose.lua `firstPause`, the Heartbeat's
+        # peek, the agent's `CivvisQueue.peekSeconds`).
+        "HotseatFastTurns": bool(getattr(args, "fast_turns", False)),
         # The operator's seat's difficulty, and every jack seat's: hotseat
         # difficulty is per player (the staging room's Difficulty column).
         "PlayerDifficulty": args.difficulty,
@@ -2985,6 +2990,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--no-cover-timer", action="store_true",
                     help="no wait bar on the cover (default: a bar and about how long is "
                          "left, from how long your recent waits took)")
+    ap.add_argument("--fast-turns", action="store_true",
+                    help="EXPERIMENT, off by default: under the cover every hand-over (the "
+                         "CIVVIS seats' and yours) is pressed on its first frame instead of "
+                         "0.3 s in, and the CIVVIS seats look for their orders every 20 ms "
+                         "instead of 50 ms; not yet checked in a live game")
     ap.add_argument("--no-cover-queue", action="store_true",
                     help="DIAGNOSTIC: under the cover, the jack seats' announcements keep "
                          "their shipped queueing (they wait until the cover stands aside)")
@@ -3204,6 +3214,7 @@ def run(args: argparse.Namespace) -> int:
         args.keep_handover = not attach_config.get("HotseatAutoStart")
         args.cover_sound = attach_config.get("HotseatCoverSound") or "all"
         args.no_cover_timer = not attach_config.get("HotseatCoverTimer")
+        args.fast_turns = attach_config.get("HotseatFastTurns") is True
     elif env.game_pids():
         print("Civ VI is already running. Quit it first (this starts a fresh game), "
               "or pass --attach to drive a hotseat game you loaded.", file=sys.stderr)

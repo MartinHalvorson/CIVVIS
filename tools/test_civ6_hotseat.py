@@ -1321,6 +1321,38 @@ class CoverTest(unittest.TestCase):
         self.assertEqual((config["HotseatCover"], config["HotseatAutoStart"],
                           config["HotseatCoverQueue"]), (False, False, False))
 
+    def test_fast_turns_is_off_unless_asked_and_reaches_every_context(self) -> None:
+        # Off by default, and in every table that did not ask (the person's,
+        # the stubs', the unattended ones): the shipped press and peek.
+        for overrides in ({}, {"auto_human": "gated"}, {"auto_human": "stub"},
+                          {"players": 6, "civvis_seats": 2, "leader": None}):
+            with self.subTest(**overrides):
+                self.assertIs(self.config(**overrides)["HotseatFastTurns"], False)
+        with patch.object(hotseat, "run", side_effect=lambda args: args) as ran, \
+                patch.object(hotseat, "read_current", return_value=None):
+            hotseat.main([])
+            self.assertFalse(ran.call_args.args[0].fast_turns)
+            hotseat.main(["--fast-turns"])
+            asked = ran.call_args.args[0]
+        config = hotseat.hotseat_config(asked, Path("/tmp/r"), Path("/tmp/r/o.sqlite"))
+        self.assertIs(config["HotseatFastTurns"], True)
+        # The contexts that read it: the hand-over (AutoClose), the peek pulse
+        # (Heartbeat) and every seat's agent, from the settings each is given.
+        out = self.install(config)
+        for name in ("CivvisControlAutoClose.lua", "CivvisControlHeartbeat.lua",
+                     "CivvisControlAgentSeat1.lua", "CivvisControlAgentSeat3.lua"):
+            head = (out / name).read_text().split("}\n", 1)[0]
+            self.assertIn("HotseatFastTurns = true,", head, name)
+        head = (self.install(self.config()) / "CivvisControlAutoClose.lua").read_text()
+        self.assertIn("HotseatFastTurns = false,", head.split("}\n", 1)[0])
+        # A manual-lobby install carries the same key.
+        lobby = hotseat.manual_lobby_config(asked, Path("/tmp/r"), Path("/tmp/r/o.sqlite"))
+        self.assertIs(lobby["HotseatFastTurns"], True)
+        # `--attach` re-installs the game's own settings, this one among them.
+        source = Path(hotseat.__file__).read_text()
+        attach = source.split("args.no_cover_timer = not attach_config.get", 1)[1][:200]
+        self.assertIn('args.fast_turns = attach_config.get("HotseatFastTurns") is True', attach)
+
     def test_the_cover_is_quiet_and_says_how_long_by_default(self) -> None:
         cases = {
             # A person's game: CIVVIS's sounds silenced, the soundtrack on; a wait bar.
