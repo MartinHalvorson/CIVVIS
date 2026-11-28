@@ -776,10 +776,84 @@ def pinned_before_pricing(rules: dict) -> tuple[str, ...]:
     return tuple(sorted(tag for tag in (rules.get("operator_default_on") or ())
                         if tag not in columns))
 
-#: ⭐ THE OPERATOR'S HOLDS. The mirror of `OPERATOR_DEFAULT_ON` is empty for
-#: the same reason: a gene that does not meet the explicit evidence rule is
-#: already off, without a named exception.
-OPERATOR_DEFAULT_OFF = ()
+#: ⭐ THE OPERATOR'S HOLDS (operator, 2026-11-28, verbatim: *"turn off all genes
+#: with win rate diff <-0.2pp"*, then *"and everything less than 20% sure it
+#: helps"*). Every gene the deployment genome carried whose ranking *Diff*
+#: (`pooled_win_diff_pp`) was below -0.2 pp or whose *P(>0)* (`posterior_of`)
+#: was below 20% on the ranking published at f5903bb3d0 — 68 genes; each one
+#: under 20% was also below -0.2 pp. A hold ships off whatever the retained
+#: selection reads, so a later batch cannot turn one back on: take a name out of
+#: this list to let the evidence decide it again.
+OPERATOR_DEFAULT_OFF = (
+    "age-closer",
+    "anvil",
+    "band-plays-what-it-can-reach",
+    "barbarian-bargain",
+    "blind-objective-strength",
+    "bombers-fly-on-a-small-stock",
+    "bombers-open-the-siege-walls",
+    "breaker-to-the-fastest",
+    "builder-before-the-army-3",
+    "builder-supply-floor",
+    "campus-through-expansion",
+    "capital-campaign-router",
+    "capital-prey-opens-a-front-2",
+    "chain-payback-window",
+    "coastal-city-sites",
+    "commercial-hub-and-traders",
+    "conquest-opening-needs-the-production",
+    "counter-out-of-reach-takes-the-weak",
+    "counterweight-from-the-first-convert",
+    "counterweight-spends-the-bank",
+    "culture-seat-allies",
+    "diplomatic-lane-forecast",
+    "domination-ignores-city-states",
+    "doomed-blow-veto",
+    "early-cities-keep-their-distance",
+    "first-builder-reserve-2",
+    "founder-defends-its-cities",
+    "founder-keeps-two-sources",
+    "friendship-spares-the-prey",
+    "housing-bound-city-builds-its-granary",
+    "industry-before-the-army-2",
+    "lane-great-people",
+    "launcher-war-fights-the-faster-racer",
+    "launcher-war-ignores-the-edge",
+    "naval-recon-2",
+    "naval-threat-triage",
+    "never-an-empty-queue-2",
+    "pass-picket",
+    "pingala-follows-research-2",
+    "plant-reads-the-grid",
+    "prod-tiles-call-the-builders",
+    "quest-production",
+    "quest-trade-route",
+    "raid-pillage-prizes",
+    "ranged-hp-reserve",
+    "recovery-keeps-a-winning-war",
+    "recovery-needs-the-deficit",
+    "research-alliance-first",
+    "research-building-catchup",
+    "science-denial-war",
+    "science-opening-band",
+    "settle-sooner",
+    "settler-before-the-navy",
+    "settler-walk-deadline",
+    "siege-is-progress-3",
+    "siege-needs-a-breaker",
+    "siege-target-needs-a-road",
+    "siege-tier-before-the-beeline",
+    "siege-tier-yields-to-the-bombers-2",
+    "siege-train",
+    "siege-train-scales-with-walls",
+    "strategic-deposit-prey",
+    "tower-assault",
+    "trade-production-to-launch",
+    "walls-after-districts",
+    "walls-release-the-one-blow",
+    "war-economy",
+    "war-raids-the-pads",
+)
 
 #: A gene is named by at most one of the two lists — the pair is one selection,
 #: not a precedence puzzle, so an overlap is a mistake rather than a rule to
