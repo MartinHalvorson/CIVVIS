@@ -2177,30 +2177,126 @@ class Monitor:
         return {int(info.get("team", seat)) if info.get("team") is not None else seat: seat
                 for seat, info in ((seat, self.seat_info.get(seat, {})) for seat in self.seats)}
 
+    def victory_result(self, event: dict) -> dict | None:
+        """A `victory` record as the table's result. The table's own record
+        (CivvisControlHeartbeat.lua, `CivvisEnding`) names the winning team's
+        players (`members`), and the result is ours when one of them is one of
+        our seats, the person's when theirs is; a seat's own record names a
+        team only, taken as its seat's (`our_teams`)."""
+        team = event.get("team")
+        players = None
+        try:
+            if isinstance(event.get("members"), list) and event["members"]:
+                players = sorted({int(player) for player in event["members"]})
+            if team is not None:
+                team = int(team)
+        except (TypeError, ValueError):
+            return None
+        if players is not None:
+            won = [seat for seat in self.seats if seat in players]
+            ours, winner_seat = bool(won), (won[0] if won else None)
+        else:
+            teams = self.our_teams()
+            ours = team is not None and team in teams
+            winner_seat = teams.get(team) if ours else None
+        result = {"kind": "victory", "team": team, "victory": event.get("victory"),
+                  "turn": event.get("turn"), "ours": ours, "winner_seat": winner_seat}
+        if players is not None:
+            result["members"] = players
+            if not self.unattended:
+                result["person"] = HUMAN_SEAT in players
+        if event.get("victory_type"):
+            # The victory by name (`victory` is the host's own index).
+            result["victory_type"] = event["victory_type"]
+        result.update(ended_at(event))
+        return result
+
     def on_ending(self, seat: int | None, event: dict) -> None:
         """A victory ends the game for every seat; an elimination is one seat's.
-        The table's result is ours when the winning team is one of our seats'."""
+        The first ending stands: a game played on after "one more turn" keeps
+        the victory it had. Each ending can arrive twice (the table writes it,
+        and so does the seat context that was local, if any)."""
         kind = event.get("kind")
-        if kind == "victory" and self.result is None:
-            team = event.get("team")
-            teams = self.our_teams()
-            ours = team is not None and int(team) in teams
-            self.result = {"kind": "victory", "team": team, "victory": event.get("victory"),
-                           "turn": event.get("turn"), "ours": ours,
-                           "winner_seat": teams.get(int(team)) if ours else None}
-            if event.get("victory_type"):
-                # The victory by name (`victory` is the host's own index).
-                self.result["victory_type"] = event["victory_type"]
-            self.result.update(ended_at(event))
-            self.log(f"game over at turn {event.get('turn')}: team {team} won "
-                     f"({'ours' if ours else 'a rival'}), victory {event.get('victory')}")
-        elif kind == "defeat" and event.get("ours") and seat is not None:
-            self.defeated.add(seat)
-            self.log(f"{self.name(seat)} was eliminated at turn {event.get('turn')}")
+        if kind == "victory":
+            won = self.victory_result(event)
+            if won is None:
+                return
+            if self.result is None:
+                self.result = won
+                who = (self.name(won["winner_seat"]) if won["ours"]
+                       else self.name(HUMAN_SEAT) if won.get("person") else f"team {won['team']}")
+                self.log(f"game over at turn {event.get('turn')}: {who} won "
+                         f"({'ours' if won['ours'] else 'a rival'}), victory "
+                         f"{won.get('victory_type') or event.get('victory')}")
+            elif (self.result.get("kind") == "victory" and "members" not in self.result
+                  and "members" in won and self.result.get("team") == won["team"]):
+                # The same victory, the table's word after a seat's: its
+                # players say who won.
+                self.result.update({key: won[key] for key in ("ours", "winner_seat", "members",
+                                                              "person") if key in won})
+        elif kind == "defeat":
+            self.on_defeat(seat, event)
+
+    def time_defeat(self, event: dict) -> bool:
+        """Whether a `defeat` is the turn limit's with the Score victory off
+        (`DEFEAT_TIME`, every seat's at once: Victories.xml:31 `Global="true"`,
+        its requirements the Score victory disabled and the max turn reached),
+        an ending nobody won. The table's record names the type; a seat's own
+        names only the host's index, and is that defeat when it falls on the
+        turn limit of a game whose Score victory is off."""
+        if event.get("defeat_type"):
+            return event["defeat_type"] == "DEFEAT_TIME"
+        score_off = "VICTORY_SCORE" in self.victories_off or (
+            isinstance(self.victories, dict) and self.victories.get("score") is False)
+        try:
+            return bool(score_off and int(event.get("turn")) >= int(self.args.max_turns))
+        except (AttributeError, TypeError, ValueError):
+            return False
+
+    def on_defeat(self, seat: int | None, event: dict) -> None:
+        """One player's elimination: a seat's own (its context's record,
+        `ours`), or any watched seat's as the table writes it
+        (CivvisControlHeartbeat.lua `CivvisEnding`: `player`, `defeat_type`,
+        `by`). A seat's record of another player is left to the table's.
+        Every CIVVIS seat gone with the game still on is the person's game
+        (`defeat`); the person gone while CIVVIS seats play on is theirs lost
+        (`eliminated`), to the seat that took their last city where the table
+        says (`by`); the turn limit with no Score victory is nobody's (`time`)."""
+        try:
+            if seat is not None:
+                if not event.get("ours"):
+                    return
+                player = seat
+            else:
+                player = int(event["player"])
+        except (KeyError, TypeError, ValueError):
+            return
+        turn = event.get("turn")
+        if self.time_defeat(event):
+            if self.result is None:
+                self.result = {"kind": "time", "turn": turn, "ours": False, **ended_at(event)}
+                self.log(f"game over at turn {turn}: the turn limit with the Score victory off; "
+                         "nobody won")
+            return
+        if player in self.seats:
+            if player not in self.defeated:
+                self.defeated.add(player)
+                self.log(f"{self.name(player)} was eliminated at turn {turn}")
             if self.result is None and self.defeated >= set(self.seats):
-                self.result = {"kind": "defeat", "turn": event.get("turn"), "ours": False,
-                               **ended_at(event)}
+                self.result = {"kind": "defeat", "turn": turn, "ours": False, **ended_at(event)}
                 self.log("every CIVVIS seat is eliminated")
+        elif player == HUMAN_SEAT and not self.unattended and self.result is None:
+            try:
+                taker = int(event["by"]) if event.get("by") is not None else None
+            except (TypeError, ValueError):
+                taker = None
+            ours = taker in self.seats
+            self.result = {"kind": "eliminated", "player": HUMAN_SEAT, "turn": turn, "ours": ours,
+                           "winner_seat": taker if ours else None, "by": taker,
+                           "defeat_type": event.get("defeat_type"), **ended_at(event)}
+            self.log(f"{self.name(HUMAN_SEAT)} eliminated at turn {turn}"
+                     + (f"; the last city fell to {self.name(taker)}" if taker is not None else "")
+                     + "; the CIVVIS seats play on")
 
     def on_base(self, event: dict) -> None:
         kind = event.get("kind")
