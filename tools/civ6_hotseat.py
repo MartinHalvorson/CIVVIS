@@ -761,6 +761,7 @@ class Brains:
         self.treatments = list(treatments or [])
         self.procs: dict[int, subprocess.Popen] = {}
         self.restarts: dict[int, int] = {seat: 0 for seat in seats}
+        self.retired: set[int] = set()
 
     def seat_dir(self, seat: int) -> Path:
         return self.run_dir / modinstall.hotseat_seat_tag(self.tag, seat)
@@ -789,11 +790,20 @@ class Brains:
         import civ6_brain
         civ6_brain.connect(self.orders_db).close()
         for seat in self.seats:
+            if seat in self.retired:
+                continue
             self.start(seat)
             time.sleep(0.3)
         self.log(f"decision workers up for seats {self.seats} "
                  f"(strategy {STRATEGY}, victory {self.victory}, bin {self.binary}, "
                  f"{len(self.treatments)} live genes)")
+
+    def retire(self, seat: int) -> None:
+        """Stop a seat's worker for good: the game has no such CIVVIS seat."""
+        self.retired.add(seat)
+        proc = self.procs.pop(seat, None)
+        if proc is not None and proc.poll() is None:
+            proc.terminate()
 
     def keep_alive(self) -> None:
         for seat, proc in list(self.procs.items()):
@@ -1128,13 +1138,18 @@ def slots_match(kinds: list[str], want: list[str]) -> bool:
             and kinds[1:] == want[1:])
 
 
+#: The staging room's seat column as `seat_the_players` last read it: what a
+#: person finishing the setup by hand is told to change (`seat_fixes`).
+LAST_ROOM: dict = {"kinds": None}
+
+
 def seat_the_players(run_dir: Path, bounds: tuple, players: int, log: Log,
-                     humans: int | None = None) -> bool:
+                     humans: int | None = None, steps: int = 29, first: int = 1) -> bool:
     """Make rows 1..humans-1 hotseat humans, the rest up to `players` Firaxis
     AI, and close every row after them (every seat human by default)."""
     want = wanted_slots(players, humans)
     short = 0
-    for step in range(1, 30):
+    for step in range(first, first + steps):
         # A staging room behind another window reads as that window.
         play.ensure_game_frontmost()
         _, rows = read_screen(run_dir, f"staging-{step}")
@@ -1143,6 +1158,7 @@ def seat_the_players(run_dir: Path, bounds: tuple, players: int, log: Log,
         if not seats:
             time.sleep(2.0)
             continue
+        LAST_ROOM["kinds"] = kinds
         if slots_match(kinds, want):
             log(f"[setup] staging room: {want.count('player') + 1} hotseat seats and "
                 f"{want.count('computer')} Firaxis AI, verified")
@@ -1175,6 +1191,56 @@ def seat_the_players(run_dir: Path, bounds: tuple, players: int, log: Log,
             choose_from_dropdown(run_dir, log, seats[index], "AI", bounds, step)
     log("[setup] could not seat the players; the staging room is left as it is")
     return False
+
+
+#: A seat type as the staging room's Players column shows it.
+SLOT_SHOWN = {"host": "Host", "player": "Player", "computer": "Computer", "open": "Open",
+              "closed": "Closed", "human": "Player"}
+
+
+def seat_fixes(kinds: list[str] | None, want: list[str]) -> list[str]:
+    """What to click in the staging room to turn the seat column `kinds` (as
+    read) into `want`, one step a line, rows numbered as the room shows them.
+    A row's type is its list under its name: Human makes a hotseat seat (it
+    then reads "Player"), Computer one of Civ VI's own AI, Closed removes it."""
+    choose = {"player": "Human", "computer": "Computer"}
+    if not kinds:
+        humans = want.count("player") + 1
+        fixes = [f"rows 2-{humans}: open each row's list and choose Human"] if humans > 1 else []
+        if want.count("computer"):
+            fixes.append(f"rows {humans + 1}-{len(want)}: choose Computer")
+        return fixes + [f"any row after row {len(want)}: choose Closed"]
+    fixes = []
+    for i, kind in enumerate(kinds):
+        if i >= len(want):
+            fixes.append(f"row {i + 1} ({SLOT_SHOWN.get(kind, kind)}): open its list and choose Closed")
+        elif i and kind != want[i]:
+            fixes.append(f"row {i + 1} ({SLOT_SHOWN.get(kind, kind)}): open its list and choose "
+                         f"{choose[want[i]]}")
+    for i in range(len(kinds), len(want)):
+        fixes.append(f"ADD PLAYER, then row {i + 1}: choose {choose[want[i]]}")
+    return fixes
+
+
+def setup_help(failed: dict, args: argparse.Namespace) -> list[str]:
+    """What the person does to finish a setup that stopped at `failed["step"]`,
+    each line one thing to do in Civ VI, ending with START GAME."""
+    want = wanted_slots(args.players, getattr(args, "civvis_seats", None))
+    level = play._setup_option_label(args.difficulty)
+    room = seat_fixes(failed.get("kinds"), want)
+    steps = {
+        "menu": [f"main menu -> Multiplayer -> Hot Seat; set Map {play._setup_option_label(args.map)}, "
+                 f"Map Size {play._setup_option_label(args.map_size)}, Game Speed "
+                 f"{play._setup_option_label(args.speed)}; Confirm Settings", *seat_fixes(None, want),
+                 f"every row's Difficulty: {level}"],
+        "settings": [*(f"on the setup page: {problem}" for problem in failed.get("problems") or []),
+                     "Confirm Settings", *seat_fixes(None, want), f"every row's Difficulty: {level}"],
+        "seats": [*room, f"every row's Difficulty: {level}"],
+        "difficulty": [f"every row's Difficulty: {level} (its list, right of the leader)"],
+        "start": [],
+        "load": ["on the Hot Seat setup page: Load Game -> " + RESUME_STEM + " -> Load Game"],
+    }.get(failed.get("step"), [*seat_fixes(None, want), f"every row's Difficulty: {level}"])
+    return [*steps, "START GAME (the orb at the bottom)"]
 
 
 DIFFICULTY_LABELS = {_norm(play._setup_option_label(d)) for d in play.LADDER}
@@ -1277,6 +1343,62 @@ def start_game(run_dir: Path, bounds: tuple, log: Log, attempts: int = 10) -> bo
 #: A started game's first event is due well inside this many seconds; with
 #: none, the staging room is looked at again (`press_start_again`).
 START_CHECK_SECONDS = 60.0
+#: With no game yet this long after the setup (or after the person was handed
+#: it), the screen is looked at and what to do is said (`not_started_advice`).
+NOT_STARTED_S = 300.0
+NOT_STARTED_HANDED_S = 120.0
+
+
+def hand_over_setup(args: argparse.Namespace, failed: dict, log: Log, tell=None) -> list[str]:
+    """The setup stopped short: tell the person, in the terminal, the log and a
+    notification, exactly what is left to click, step by step, from where it
+    stopped. Before 2026-11-28 this said "make Players 2-N 'Human'" whatever
+    the room held: the six-player room that night held a Computer row and an
+    extra Open row, and the person had no idea what to do (10.5 minutes from
+    launch to turn 1, finished by hand from another session)."""
+    steps = setup_help(failed, args)
+    listed = "\n".join(f"  {i}. {step}" for i, step in enumerate(steps, 1))
+    print(f"\a\nThe setup could not finish by itself. In Civ VI, please:\n{listed}\n"
+          "CIVVIS takes its seats the moment the game starts; this window says so.\n", flush=True)
+    log("setup handed to the person: " + "; ".join(steps))
+    if not getattr(args, "no_notify", False):
+        (tell or notify)("CIVVIS: please finish the setup in Civ VI", "; ".join(steps)[:220])
+    return steps
+
+
+def not_started_advice(run_dir: Path, args: argparse.Namespace, waited_s: float) -> str:
+    """No game yet: what the screen shows, and what to do about it. Read only
+    (nothing clicked or brought forward), and not while someone is at the
+    keyboard. Replaces "no hand-over event five minutes after START GAME; is
+    the game up?", which nobody could act on."""
+    waited = f"{waited_s / 60:.0f} min"
+    if operator_presence.operator_active(5.0):
+        return f"the game has not started after {waited}; the screen was not read (the Mac is in use)"
+    bounds, rows = read_screen(run_dir, "not-started")
+    want = wanted_slots(args.players, getattr(args, "civvis_seats", None))
+    if bounds is None:
+        return (f"the game has not started after {waited} and Civ VI's window was not found: is it "
+                "still running? `civ6-hotseat.sh --stop --quit-game` and the same command again "
+                "starts over")
+    if find(rows, "STAGING ROOM") or find(rows, "START GAME"):
+        kinds = [seat["slot"] for seat in slot_rows(rows, bounds)]
+        fixes = seat_fixes(kinds, want) if kinds else []
+        if kinds and not fixes:
+            return f"the staging room reads right ({len(kinds)} seats): press START GAME"
+        return ("the staging room is still up: " + "; ".join(fixes or setup_help({"step": "seats"}, args)[:-1])
+                + "; then START GAME")
+    if find(rows, "Confirm Settings"):
+        return ("Civ VI is on the Hot Seat setup page: " + "; ".join(setup_help({"step": "settings"}, args)))
+    if find(rows, "Multiplayer") or find(rows, "Single Player"):
+        free = host_strain().get("memory_free_gb")
+        return ("Civ VI is at its main menu: the game did not start, or it closed back to the menu"
+                + (f" (memory free now: {free:.1f} GB; Civ VI needs about {CIV_MEMORY_GB - 1:.0f})"
+                   if free is not None else "")
+                + ". Start over: `civ6-hotseat.sh --stop --quit-game`, then the same command again")
+    if find(rows, "Loading", exact=False) or find(rows, "Please Wait", exact=False):
+        return f"Civ VI is still loading the game after {waited}"
+    return (f"the game has not started after {waited}, and the screen shows neither the staging "
+            "room, the setup page nor the main menu: bring Civ VI to the front and look at it")
 
 
 def press_start_again(run_dir: Path, log: Log, waited_s: float) -> bool:
@@ -1664,40 +1786,62 @@ def load_saved_game(run_dir: Path, bounds: tuple, log: Log) -> bool:
     return False
 
 
+#: A second pass at the seats after the first gave up: the room is read anew at
+#: every step, so a pass that ran out of tries on one row can still finish.
+SEAT_RETRY_STEPS = 12
+
+
 def set_up_game(run_dir: Path, args: argparse.Namespace, log: Log) -> bool:
+    """Set the game up through Civ VI's menus. When a step cannot be finished,
+    `args.setup_failed` says which (`step`) and, for the seats, how the room
+    last read (`kinds`), for the person to finish it from (`setup_help`)."""
+    args.setup_failed = None
+    LAST_ROOM["kinds"] = None
+
+    def failed(step: str, **more) -> bool:
+        args.setup_failed = {"step": step, **more}
+        return False
+
     bounds = open_hotseat_setup(run_dir, log)
     if bounds is None:
         log("[setup] never reached the Hot Seat setup page")
-        return False
+        return failed("menu")
     if args.resume_save is not None:
         if not load_saved_game(run_dir, bounds, log):
-            return False
+            return failed("load")
         _, rows = read_screen(run_dir, "resume-staging")
         kinds = [s["slot"] for s in slot_rows(rows, bounds)]
         log(f"[setup] the save's seats: {kinds}")
         if len(kinds) != args.players or any(k not in ("host", "player") for k in kinds):
             log(f"[setup] ⚠ the save does not read as {args.players} hotseat humans; "
-                "the jack seats are the seats after yours")
+                "the CIVVIS seats are the seats after yours")
         if not start_game(run_dir, bounds, log):
             log("[setup] START GAME did not start the saved game")
-            return False
+            return failed("start")
         log("[setup] saved game starting")
         return True
     _, rows = read_screen(run_dir, "host-settings")
     problems = check_host_settings(rows, args)
     if problems:
         log("[setup] the setup page is not what was asked: " + "; ".join(problems))
-        return False
+        return failed("settings", problems=problems)
     log("[setup] setup page verified: " + ", ".join(
         f"{label} {value_beside(rows, label)}" for label in ("Game Speed", "Map", "Map Size")))
     confirm = find(rows, "Confirm Settings")
     click(log, (confirm[0]["x"], confirm[0]["y"]))
     time.sleep(4.0)
-    if not seat_the_players(run_dir, bounds, args.players, log,
-                            humans=getattr(args, "civvis_seats", None)):
-        return False
+    humans = getattr(args, "civvis_seats", None)
+    if not seat_the_players(run_dir, bounds, args.players, log, humans=humans):
+        # Once more, shorter, from where the room now is (each step reads it
+        # again), with the pointer off the rows: tonight's room sat on one row
+        # whose list did not open for 20 tries (hotseat-20261128T031456Z).
+        log("[setup] seating the players once more")
+        play.park_setup_pointer(bounds)
+        if not seat_the_players(run_dir, bounds, args.players, log, humans=humans,
+                                steps=SEAT_RETRY_STEPS, first=30):
+            return failed("seats", kinds=LAST_ROOM["kinds"])
     if not set_difficulties(run_dir, bounds, args.difficulty, log):
-        return False
+        return failed("difficulty")
     if getattr(args, "hold_start", False):
         log("[setup] staging room ready; HOLDING for the person: set Teams, then START GAME")
         print("\a\nStaging room is set. Set the Team column, then press START GAME.\n",
@@ -1705,7 +1849,7 @@ def set_up_game(run_dir: Path, args: argparse.Namespace, log: Log) -> bool:
         return True
     if not start_game(run_dir, bounds, log):
         log("[setup] START GAME did not start the game")
-        return False
+        return failed("start")
     log("[setup] game starting")
     return True
 
@@ -1943,6 +2087,13 @@ class Monitor:
         self.cover_up = False
         self.cover_since = time.monotonic()
         self.cover_yields = 0
+        # Which seats began a turn as Hot Seat humans, by game turn: a CIVVIS
+        # seat that never does is Civ VI's AI (or closed), whatever the setup
+        # meant (`note_turn`).
+        self.round_seats: dict[int, set[int]] = {}
+        self.seats_checked = False
+        self.unseated: list[int] = []
+        self.foreign_said: set[int] = set()
 
     def catch_up(self) -> None:
         """Read the record so far without replaying it (`--attach`): learn whose
@@ -2030,6 +2181,7 @@ class Monitor:
             player, turn = int(event.get("player", -1)), int(event.get("turn", -1))
             now = time.monotonic()
             if event.get("phase") == "begin":
+                self.note_turn(player, turn)
                 self.active, self.turn, self.active_since = player, turn, now
                 self.active_human = bool(event.get("human"))
                 if self.active_human:
@@ -2046,7 +2198,7 @@ class Monitor:
                     self.timings.write(json.dumps(row) + "\n")
                 took_text = f" in {took:.1f} s" if took is not None else ""
                 if event.get("human"):
-                    self.say(f"turn {turn}: you ended your turn{took_text}; the jack seats play now")
+                    self.say(f"turn {turn}: you ended your turn{took_text}; the CIVVIS seats play now")
                 else:
                     self.say(f"turn {turn}: {self.name(player)} ended its turn{took_text}")
                 if self.active == player:
@@ -2082,6 +2234,52 @@ class Monitor:
                          f"{event.get('quiet')} s, between turns {event.get('between')} s); "
                          "the game is on screen until that turn ends")
 
+    def note_turn(self, player: int, turn: int) -> None:
+        """A seat's turn began on the hand-over screen, so it is a Hot Seat
+        human in this game: Civ VI's own AI seats never get one.
+
+        The game's own word on which seats CIVVIS really plays, whoever set the
+        room up: on 2026-11-28 the harness gave up seating a six-player room,
+        the person finished it by hand, and the workers had been started for
+        five seats before anything said which of them were seated. Checked on
+        the first whole round (from seat 0's turn to its next): a CIVVIS seat
+        that took no turn in it is not ours to play, and its worker goes
+        (`take_unseated`); a Human seat that is not CIVVIS's is said at once,
+        as its turns wait for a person."""
+        if player < 0 or turn < 0:
+            return
+        ours = set(self.seats)
+        if (player not in ours and (self.unattended or player != HUMAN_SEAT)
+                and player not in self.foreign_said):
+            self.foreign_said.add(player)
+            self.log(f"⚠ row {player + 1} is a Human seat in this game that CIVVIS does not play: "
+                     "each of its turns waits on its hand-over screen for a person to press Start "
+                     "Turn and play it. To leave it to Civ VI's AI instead, quit to the main menu and "
+                     "set the game up again with that row set to Computer.")
+        self.round_seats.setdefault(turn, set()).add(player)
+        whole = self.round_seats.get(turn - 1)
+        if player != 0 or self.seats_checked or not whole or 0 not in whole:
+            return
+        self.seats_checked = True
+        missing = [seat for seat in self.seats if seat not in whole]
+        if not missing:
+            self.say(f"seats verified: every CIVVIS seat ({_rows(self.seats)}) took turn {turn - 1} "
+                     "as a Hot Seat human")
+            return
+        self.unseated += missing
+        one = len(missing) == 1
+        self.log(f"⚠ {_rows(missing)} {'is' if one else 'are'} not a Hot Seat human in this game "
+                 f"(no turn {turn - 1} on the hand-over screen): Civ VI's own AI plays "
+                 f"{'it' if one else 'them'}, or the row is closed, so CIVVIS does not, and "
+                 f"{'its decision worker is' if one else 'their decision workers are'} stopped. "
+                 "For CIVVIS to play it, quit to the main menu and set the game up again with the "
+                 "row set to Human.")
+
+    def take_unseated(self) -> list[int]:
+        """The CIVVIS seats found not to be Hot Seat humans, each once."""
+        taken, self.unseated = self.unseated, []
+        return taken
+
     def your_turn(self, turn: int) -> None:
         if turn == self.notified_turn:
             return
@@ -2096,7 +2294,7 @@ class Monitor:
               flush=True)
         self.log(f"turn {turn}: your turn")
         if not self.args.no_notify:
-            notify("Civ VI — your turn", f"Turn {turn}: the jack seats are done. Your move.")
+            notify("Civ VI — your turn", f"Turn {turn}: the CIVVIS seats are done. Your move.")
 
     def on_seat(self, seat: int, event: dict) -> None:
         kind = event.get("kind")
@@ -2983,6 +3181,8 @@ def run_manual(args: argparse.Namespace) -> int:
                     "or unreadable, CIVVIS cannot see that it should play. Quit to the main menu, "
                     f"restart `tools/civ6_hotseat.py {SCREEN_FREE_FLAG}`, and start the game again.")
             if brains is not None:
+                for seat in monitor.take_unseated():
+                    brains.retire(seat)
                 brains.keep_alive()
             pids = set(env.game_pids())
             if pids and not civ_up:
@@ -3455,6 +3655,9 @@ def run(args: argparse.Namespace) -> int:
                 tag=modinstall.hotseat_seat_tag(args.tag, seat)))
         # Whether START GAME was this harness's to press (and so to press again).
         ours_to_start = not args.attach and not getattr(args, "hold_start", False)
+        # A setup the person finishes: what was left, and the workers wait for
+        # the game rather than start for seats nobody has seated yet.
+        handed: dict | None = None
         if not args.attach and not set_up_game(run_dir, args, log):
             ours_to_start = False
             if args.auto_human or getattr(args, "civvis_seats", None):
@@ -3463,19 +3666,17 @@ def run(args: argparse.Namespace) -> int:
                 return 5
             # A person is at the Mac: the rest of the setup is a few clicks, and
             # everything after it is the same game. Wait for it instead of quitting.
-            print(f"\a\nSetup could not finish by itself (see above). Finish it in Civ VI:\n"
-                  f"  Hot Seat setup -> Confirm Settings; in the staging room make Players 2-"
-                  f"{args.players} 'Human', then START GAME.\n"
-                  f"  CIVVIS takes over the jack seats as soon as the game starts.\n",
-                  flush=True)
-            log("setup handed to the operator; waiting for the game to start")
+            handed = getattr(args, "setup_failed", None) or {"step": None}
+            hand_over_setup(args, handed, log)
         elif not args.attach and (args.auto_human or getattr(args, "civvis_seats", None)):
             # In the background: the brains start while the map loads.
             threading.Thread(target=park_upper_left, args=(log,), name="upper-left",
                              daemon=True).start()
         brains = Brains(run_dir, args.tag, seats, orders_db, binary,
                         seat_lanes(args, seats), log, treatments=args.treatments)
-        brains.start_all()
+        workers_up = handed is None
+        if workers_up:
+            brains.start_all()
         monitor = Monitor(run_dir, args.tag, seats, args, log)
         if args.attach:
             for bridge in bridges:
@@ -3493,6 +3694,12 @@ def run(args: argparse.Namespace) -> int:
             for bridge in bridges:
                 bridge.pump()
             monitor.poll()
+            if not workers_up and monitor.started:
+                workers_up = True
+                log("the game has started: CIVVIS takes its seats")
+                brains.start_all()
+            for seat in monitor.take_unseated():
+                brains.retire(seat)
             brains.keep_alive()
             if os.name == "nt" and (run_dir / "stop.json").is_file():
                 raise Stop("stop requested")
@@ -3533,9 +3740,10 @@ def run(args: argparse.Namespace) -> int:
                     and time.monotonic() - checked_start > START_CHECK_SECONDS:
                 checked_start = time.monotonic()
                 press_start_again(run_dir, log, checked_start - began_waiting)
-            if not monitor.started and time.monotonic() - waited_for_game > 300:
-                log("⚠ no hand-over event five minutes after START GAME; is the game up?")
+            if not monitor.started and time.monotonic() - waited_for_game > (
+                    NOT_STARTED_HANDED_S if handed else NOT_STARTED_S):
                 waited_for_game = time.monotonic()
+                log("⚠ " + not_started_advice(run_dir, args, waited_for_game - began_waiting))
             if monitor.stalled(args.stall_seconds):
                 rescue_popup(monitor, log)
             relay_for(bridges)
