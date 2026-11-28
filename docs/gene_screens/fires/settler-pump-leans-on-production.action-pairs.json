@@ -1,0 +1,24 @@
+{
+ "kind": "captured_native_action_pairs_v1",
+ "tag": "settler-pump-leans-on-production",
+ "scope": "Recorded proposal activation on captured live input only, not host execution or strength (the agent mod takes only a Food focus today and refuses this order as unknown_food_focus). 13 boards from the person-played hotseat game hotseat-20261128T031456Z (2026-11-27, 6 players, Small Continents, Online), from each CIVVIS seat's own events.jsonl cut after turn N+1 and replayed at turn N. Both arms run one civvis_orders --resumed built by the hotseat-bundle workflow (run 46110237214, macOS arm64, release profile without LTO) from ef620bf9, which is this PR's commit 43b7659d cherry-picked onto main 91899654 (no Rust file differs from the PR base; bundles on later mains fail their --status step before uploading), with the seat's own victory target and civilization and the stock genome it played (forced=none); the on arm adds --with settler-pump-leans-on-production. 13 of 13 complete. The 8 settler-pump boards all change, each by exactly one added order, city_focus FAVOR_PRODUCTION for the capital: p3 (Cree, Science) turns 7, 9, 11, 13, 15 and 16, a Settler at 3-4 Production on +4-8 Food; p2 (Poland, Culture) turns 8 and 11, +4 Food at 4-5 Production. The 5 controls are unchanged: p3 turn 5 (a Warrior), p2 turn 13 (a Warrior), p1 turn 8, p4 turn 8 and p5 turn 10 (Settlers at 7-8 Production on +2-3 Food).",
+ "archive": {
+  "path": "docs/eval/2026-11-28-settler-pump-leans-on-production.native-queries.tar.xz",
+  "sha256": "a321097287945563e6ac5ff4e101f163955d325e1e9d39549b943ba3385795cc"
+ },
+ "members": [
+  "native-queries-01/0000/result.json",
+  "native-queries-01/0001/result.json",
+  "native-queries-01/0002/result.json",
+  "native-queries-01/0003/result.json",
+  "native-queries-01/0004/result.json",
+  "native-queries-01/0005/result.json",
+  "native-queries-01/0006/result.json",
+  "native-queries-01/0007/result.json",
+  "native-queries-01/0008/result.json",
+  "native-queries-01/0009/result.json",
+  "native-queries-01/0010/result.json",
+  "native-queries-01/0011/result.json",
+  "native-queries-01/0012/result.json"
+ ]
+}
