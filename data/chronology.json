@@ -1,0 +1,400 @@
+{
+  "about": [
+    "The project's milestones, for Charts/Project Chronology (`beta/chronology.html`, written into its `chronology-data` slot by `beta/chronology_page.py` when the site is published).",
+    "Operator 2026-11-28: \"add a project chronology to charts/ at the end for now. post the important milestones along a timeline. show the progress we've made. ai capability, simulator performance, new features, other\".",
+    "A milestone is `date` (the UTC day it happened), `category` (a key of `categories`), `title`, `detail` (one or two sentences, every figure in them dated) and `sources`, where a reader can check it. `major` marks the few the timeline names on the chart itself, each by its short `label`.",
+    "`progress` is the row of figures over the timeline, each a before and an after: `label` (what was measured), `was` and `now` (the two readings), `span` (the days they were read on) and the `category` whose colour it wears. Each restates milestones below it.",
+    "A source is one of: `pr` (a pull request number), `commit` (a commit on main, for the first days, before pull requests), `ledger` (a game's tag on the ledger branch, under `runs/`), `data` (a file in this repository), `video` (a YouTube address) or `release` (a release tag). `says` is what the link reads as; without one the page words it from the kind.",
+    "Dates are UTC days: a game's is the day its result was recorded (`utc` on its line of `results.jsonl`), a pull request's or commit's the day it reached main. A milestone that sums a stretch of days is dated on the stretch's last day.",
+    "`beta/chronology_page_test.py` holds every milestone to this shape and checks the ones that restate a file in this repository against that file (`docs/civ6_ladder.json`, `data/performance/*.json`, `data/tournaments.json`). A figure read off the ledger branch says so in `checked` and names the day it was read: the ledger is not in this tree, so no test here can read it again.",
+    "To add a milestone, add a line here in date order. The page needs no other change."
+  ],
+  "checked": "The ledger figures (first wins, weekly Deity records, game counts) were read off `results.jsonl` on the ledger branch as it stood at 2026-11-28T06:43:27Z, counting a game once by its best run as `tools/live_status.py` does. The commit count is `git rev-list --count main` at 6daa2053 the same day.",
+  "categories": [
+    {
+      "key": "capability",
+      "name": "AI capability",
+      "says": "How well the CIVVIS AI agents play, measured in Civilization VI itself against the game's own AI."
+    },
+    {
+      "key": "performance",
+      "name": "Simulator performance",
+      "says": "How fast the simulator plays a game, and how many games one machine gets through."
+    },
+    {
+      "key": "features",
+      "name": "New features",
+      "says": "What a visitor or a player can do that they could not do before."
+    },
+    {
+      "key": "other",
+      "name": "Other",
+      "says": "The project itself: its start, its licence, how it is built."
+    }
+  ],
+  "progress": [
+    {
+      "category": "capability",
+      "label": "Highest level beaten in Civilization VI",
+      "was": "Lv 1 Settler",
+      "now": "Lv 8 Deity",
+      "span": "81 days: 2026-08-16 to 11-05"
+    },
+    {
+      "category": "capability",
+      "label": "Wins against the Lv 8 Deity AI",
+      "was": "1 in 340",
+      "now": "59 in 340",
+      "span": "The week of 2026-11-09, then 11-22 to 11-28"
+    },
+    {
+      "category": "performance",
+      "label": "A self-play game, the median",
+      "was": "630 s",
+      "now": "93 s",
+      "span": "Games of 2026-10-09 to 10-15, then of 11-21 to 11-22"
+    },
+    {
+      "category": "performance",
+      "label": "Fastest whole game on video",
+      "was": "52 s",
+      "now": "under 6 s",
+      "span": "2026-11-11, then 11-21"
+    }
+  ],
+  "milestones": [
+    {
+      "date": "2026-07-21",
+      "category": "other",
+      "major": true,
+      "label": "Project starts",
+      "title": "The project starts",
+      "detail": "The first commit is civ65 v0.1, a headless engine in the style of Civilization VI. It is renamed CIVVIS the same day.",
+      "sources": [{"kind": "commit", "ref": "67c2dd9"}, {"kind": "commit", "ref": "73e42fc"}]
+    },
+    {
+      "date": "2026-07-21",
+      "category": "performance",
+      "title": "A Rust core on day one",
+      "detail": "The engine begins in Python, gets a Rust core at v0.3 and is pure Rust at v0.6, all on the first day.",
+      "sources": [{"kind": "commit", "ref": "78f9536"}, {"kind": "commit", "ref": "1490dbc"}]
+    },
+    {
+      "date": "2026-07-22",
+      "category": "features",
+      "title": "Watch a game in the browser",
+      "detail": "Spectator mode: every seat is played by the AI and the game is drawn in a browser page the engine serves.",
+      "sources": [{"kind": "commit", "ref": "624df9a"}]
+    },
+    {
+      "date": "2026-07-22",
+      "category": "capability",
+      "title": "Strategies are rated, bred and gated",
+      "detail": "Within two days the AI strategies have an Elo rating from games against each other, a genetic loop that evolves their weights, and a statistical gate a new champion has to pass.",
+      "sources": [{"kind": "commit", "ref": "2dcbaf1"}, {"kind": "commit", "ref": "f224d55"}, {"kind": "commit", "ref": "f3a4dae"}]
+    },
+    {
+      "date": "2026-07-25",
+      "category": "features",
+      "title": "Planet maps and single player",
+      "detail": "A globe of hexagons and twelve pentagons, a True Start Earth on it, and a game you start and play from the browser.",
+      "sources": [{"kind": "pr", "ref": 184}, {"kind": "pr", "ref": 192}, {"kind": "pr", "ref": 150}]
+    },
+    {
+      "date": "2026-07-25",
+      "category": "other",
+      "title": "Public, and built by a fleet of AI agents",
+      "detail": "The repository is public by this day, and a collaboration policy checked on every pull request keeps many AI coding agents working on one trunk.",
+      "sources": [{"kind": "pr", "ref": 224}, {"kind": "pr", "ref": 125}]
+    },
+    {
+      "date": "2026-07-29",
+      "category": "capability",
+      "major": true,
+      "label": "Plays the real Civ VI",
+      "title": "CIVVIS takes a seat in the real Civilization VI",
+      "detail": "Computer control lands: a mod and a harness let the agent play a seat of Firaxis's own game. The first run on the ledger lasts 23 turns.",
+      "sources": [{"kind": "pr", "ref": 541}, {"kind": "ledger", "ref": "lad-7"}]
+    },
+    {
+      "date": "2026-07-30",
+      "category": "performance",
+      "title": "One game across many cores, the same game",
+      "detail": "A deterministic executor runs a game's AI phases in parallel without changing the game that gets played.",
+      "sources": [{"kind": "pr", "ref": 654}, {"kind": "pr", "ref": 657}]
+    },
+    {
+      "date": "2026-08-02",
+      "category": "features",
+      "major": true,
+      "label": "civvis.ai live",
+      "title": "civvis.ai goes live",
+      "detail": "The site publishes the browser build of the simulator and the downloads.",
+      "sources": [{"kind": "pr", "ref": 829}]
+    },
+    {
+      "date": "2026-08-03",
+      "category": "features",
+      "title": "v0.6.0, the first release",
+      "detail": "The engine as one self-contained program for Windows, macOS and Linux, to download and run offline. v0.6.1 follows on 2026-08-07.",
+      "sources": [{"kind": "release", "ref": "v0.6.0"}, {"kind": "release", "ref": "v0.6.1"}]
+    },
+    {
+      "date": "2026-08-04",
+      "category": "features",
+      "title": "Two lanes: a promoted site and a test site",
+      "detail": "civvis.ai serves a build that was promoted on purpose, while a second lane follows main as it changes.",
+      "sources": [{"kind": "pr", "ref": 1104}]
+    },
+    {
+      "date": "2026-08-05",
+      "category": "performance",
+      "title": "The same seed makes the same world on every build",
+      "detail": "Globe geometry goes through one maths library, so map generation is bit-identical across builds.",
+      "sources": [{"kind": "pr", "ref": 1254}]
+    },
+    {
+      "date": "2026-08-16",
+      "category": "capability",
+      "title": "First win against Civilization VI's own AI",
+      "detail": "At Lv 1 Settler, in a game played the full 250 turns: the first win on the ledger, 18 days after the first run.",
+      "sources": [{"kind": "ledger", "ref": "civvis-20260816T054344Z"}, {"kind": "data", "ref": "docs/civ6_ladder.json"}]
+    },
+    {
+      "date": "2026-08-19",
+      "category": "capability",
+      "title": "The gene screen",
+      "detail": "A change to how the AI plays ships as a gene that can be switched on or off, and one batch of games with random genomes prices every gene at once. Six days later the screen publishes its first 5,000-game batch.",
+      "sources": [{"kind": "pr", "ref": 2099}, {"kind": "pr", "ref": 2478}]
+    },
+    {
+      "date": "2026-08-23",
+      "category": "capability",
+      "title": "Up the ladder to Lv 4 Prince in a week",
+      "detail": "First wins at Lv 2 Chieftain (08-18), Lv 3 Warlord (08-22) and Lv 4 Prince (08-23), each over the full 250 turns.",
+      "sources": [
+        {"kind": "ledger", "ref": "civvis-20260818T175125Z"},
+        {"kind": "ledger", "ref": "civvis-20260822T020434Z-cont-timeout1"},
+        {"kind": "ledger", "ref": "civvis-20260823T163705Z"},
+        {"kind": "data", "ref": "docs/civ6_ladder.json"}
+      ]
+    },
+    {
+      "date": "2026-09-01",
+      "category": "capability",
+      "title": "First win at Lv 5 King",
+      "detail": "Rome, a Science victory on turn 234, six players on Continents.",
+      "sources": [{"kind": "ledger", "ref": "civvis-20260901T033000Z-cont8"}, {"kind": "data", "ref": "docs/civ6_ladder.json"}]
+    },
+    {
+      "date": "2026-09-09",
+      "category": "capability",
+      "title": "First win at Lv 6 Emperor",
+      "detail": "Rome again, a Science victory on turn 213.",
+      "sources": [{"kind": "ledger", "ref": "civvis-20260909T091009Z"}, {"kind": "data", "ref": "docs/civ6_ladder.json"}]
+    },
+    {
+      "date": "2026-10-05",
+      "category": "capability",
+      "title": "The 1,000th game against Civilization VI",
+      "detail": "Counting finished games on the ledger since the first on 2026-07-31. The 5,000th follows on 2026-11-20.",
+      "sources": [{"kind": "ledger", "ref": "civvis-20261005T204728Z"}, {"kind": "ledger", "ref": "civvis-20261120T101840Z"}]
+    },
+    {
+      "date": "2026-10-15",
+      "category": "performance",
+      "title": "The baseline: ten minutes a self-play game",
+      "detail": "In a batch of 3,480 six-player games played from 10-09 to 10-15, the median game takes 630 s, 2.9 s a turn.",
+      "sources": [{"kind": "data", "ref": "data/performance/self_play_times.json"}]
+    },
+    {
+      "date": "2026-10-30",
+      "category": "capability",
+      "title": "First win at Lv 7 Immortal",
+      "detail": "Greece, a Diplomatic victory on turn 194 on a four-player Pangaea. The first on six-player Continents follows on 11-03: Korea, Science, turn 198.",
+      "sources": [{"kind": "ledger", "ref": "civvis-20261030T204643Z"}, {"kind": "ledger", "ref": "civvis-20261103T025902Z"}]
+    },
+    {
+      "date": "2026-11-05",
+      "category": "capability",
+      "major": true,
+      "label": "First Deity win",
+      "title": "First win at Lv 8 Deity",
+      "detail": "Korea, a Science victory on turn 205 against five Deity AIs on Continents, 81 days after the first win at Lv 1.",
+      "sources": [{"kind": "ledger", "ref": "civvis-20261105T122513Z"}]
+    },
+    {
+      "date": "2026-11-11",
+      "category": "performance",
+      "title": "A whole game in 52 seconds, on video",
+      "detail": "The site plays a complete game in real time, 199 turns to a Science victory. The record falls to 14 seconds two days later.",
+      "sources": [
+        {"kind": "video", "ref": "https://www.youtube.com/watch?v=C4wAsdenSpI", "says": "the 52-second game"},
+        {"kind": "data", "ref": "data/performance/fastest_game_videos.json"}
+      ]
+    },
+    {
+      "date": "2026-11-16",
+      "category": "capability",
+      "title": "Deity beaten four ways",
+      "detail": "After Science: a Diplomatic victory (11-06, turn 172), a Religious one (11-10, turn 175) and a Culture one (11-16, turn 179).",
+      "sources": [
+        {"kind": "ledger", "ref": "civvis-20261106T180143Z"},
+        {"kind": "ledger", "ref": "civvis-20261110T113856Z"},
+        {"kind": "ledger", "ref": "civvis-20261116T050606Z"}
+      ]
+    },
+    {
+      "date": "2026-11-17",
+      "category": "features",
+      "title": "First hot seat game against a person",
+      "detail": "CIVVIS's flagship agent plays three seats of a real Civilization VI Hot Seat game against the project owner.",
+      "sources": [{"kind": "pr", "ref": 5426}]
+    },
+    {
+      "date": "2026-11-18",
+      "category": "performance",
+      "title": "A self-play game in under two and a half minutes",
+      "detail": "In a batch of 3,862 games played from 11-15 to 11-18 the median game takes 139 s, 0.66 s a turn: 4.5 times faster than October's, after dozens of changes that each play the same games in less time.",
+      "sources": [{"kind": "data", "ref": "data/performance/self_play_times.json"}]
+    },
+    {
+      "date": "2026-11-19",
+      "category": "features",
+      "title": "The AI Debugger",
+      "detail": "A timeline to step back along, jump on and set breakpoints on, then a screen split into two simulators.",
+      "sources": [{"kind": "pr", "ref": 5498}, {"kind": "pr", "ref": 5506}]
+    },
+    {
+      "date": "2026-11-19",
+      "category": "capability",
+      "title": "Tournaments begin",
+      "detail": "Series of games against the Lv 8 Deity AI, each with its own record. The first is ten games and one win.",
+      "sources": [{"kind": "pr", "ref": 5541}, {"kind": "data", "ref": "data/tournaments.json"}]
+    },
+    {
+      "date": "2026-11-21",
+      "category": "performance",
+      "title": "A whole game in under 6 seconds",
+      "detail": "Four players on a Tennis Ball map at Online speed, start to victory, on video. The record was 9 seconds on 11-17.",
+      "sources": [
+        {"kind": "video", "ref": "https://www.youtube.com/watch?v=iHlUWPIqr5g", "says": "the game in under 6 seconds"},
+        {"kind": "data", "ref": "data/performance/fastest_game_videos.json"}
+      ]
+    },
+    {
+      "date": "2026-11-22",
+      "category": "capability",
+      "title": "Deity wins stop being rare",
+      "detail": "The week of 11-09: 1 win in 340 Deity games on six-player Continents. The week of 11-16: 46 in 385, or 12%.",
+      "sources": [{"kind": "ledger", "ref": "results.jsonl", "says": "the ledger's results"}]
+    },
+    {
+      "date": "2026-11-22",
+      "category": "capability",
+      "title": "The official benchmark starts",
+      "detail": "One CIVVIS agent against five of the game's AI at Lv 4 to Lv 8, played whenever no tournament is running. Its win rate at each level is the project's primary benchmark.",
+      "sources": [{"kind": "ledger", "ref": "civvis-t7-20261122T064905Z"}, {"kind": "data", "ref": "data/tournaments.json"}]
+    },
+    {
+      "date": "2026-11-22",
+      "category": "performance",
+      "title": "Games per minute: 18 on one machine",
+      "detail": "A new benchmark counts the self-play games finished in a minute with a worker on every core: 18.3 on an 18-core M5 Max. In the newest batch of games, played from 11-21 to 11-22, the median game takes 93 s.",
+      "sources": [{"kind": "pr", "ref": 5654}, {"kind": "data", "ref": "data/performance/games_per_minute.json"}, {"kind": "data", "ref": "data/performance/self_play_times.json"}]
+    },
+    {
+      "date": "2026-11-22",
+      "category": "features",
+      "title": "Charts/",
+      "detail": "Win Analytics and CIVVIS Performance open a Charts/ section on the site. AI Interpretability, ELO Rankings, Civ Analytics and AI Insights join it within three days.",
+      "sources": [{"kind": "pr", "ref": 5650}, {"kind": "pr", "ref": 5664}, {"kind": "pr", "ref": 5736}, {"kind": "pr", "ref": 5805}]
+    },
+    {
+      "date": "2026-11-23",
+      "category": "features",
+      "title": "Autosearch",
+      "detail": "The AI Debugger searches for a line of play that meets conditions you set: what you need, must avoid, want and don't want.",
+      "sources": [{"kind": "pr", "ref": 5686}, {"kind": "pr", "ref": 5733}]
+    },
+    {
+      "date": "2026-11-23",
+      "category": "features",
+      "title": "Doctor Strange's CIVVIS",
+      "detail": "One world, two timelines: the same game played two ways, side by side, on a timeline that branches.",
+      "sources": [{"kind": "pr", "ref": 5722}]
+    },
+    {
+      "date": "2026-11-24",
+      "category": "capability",
+      "title": "Fog-honest by default",
+      "detail": "The AI seats on the site decide from what a player in their seat could see, and nothing behind the fog.",
+      "sources": [{"kind": "pr", "ref": 5729}]
+    },
+    {
+      "date": "2026-11-24",
+      "category": "performance",
+      "title": "24 games a minute: 35,000 a day",
+      "detail": "The same benchmark two days on: 24.3 games a minute on one machine, 7,299 times the pace of a person playing a five-hour game by hand.",
+      "sources": [{"kind": "data", "ref": "data/performance/games_per_minute.json"}, {"kind": "data", "ref": "data/performance/speedup_timeline.json"}]
+    },
+    {
+      "date": "2026-11-25",
+      "category": "features",
+      "title": "CIVVIS: Edge of Tomorrow",
+      "detail": "You play one civilization, with a jump back: the world returns to the turn you woke on, as it stood.",
+      "sources": [{"kind": "pr", "ref": 5839}]
+    },
+    {
+      "date": "2026-11-27",
+      "category": "performance",
+      "title": "What the browser costs: 1.7 times",
+      "detail": "One game played both ways, same seed, same 130 turns: 17.0 s on the native program and 29.5 s on the site's WebAssembly build.",
+      "sources": [{"kind": "data", "ref": "docs/SPEEDUP_TIMELINE.md"}]
+    },
+    {
+      "date": "2026-11-27",
+      "category": "features",
+      "major": true,
+      "label": "Playable in Civ VI",
+      "title": "Playable in your own Civilization VI",
+      "detail": "Hot seat becomes something to hand to a player: a cover hides CIVVIS's turns, you set the game up yourself, and the mod does nothing without its program running. Setup steps reach the README the next day.",
+      "sources": [{"kind": "pr", "ref": 5943}, {"kind": "pr", "ref": 5944}, {"kind": "pr", "ref": 5997}]
+    },
+    {
+      "date": "2026-11-27",
+      "category": "features",
+      "title": "People on the Elo list",
+      "detail": "A hot seat duel played under your name is rated among the agents on ELO Rankings.",
+      "sources": [{"kind": "pr", "ref": 5946}]
+    },
+    {
+      "date": "2026-11-27",
+      "category": "other",
+      "title": "MIT licence",
+      "detail": "CIVVIS's own code goes under the MIT licence, with notices for the work of others it carries and a statement that it is a fan project. It was GPL from 2026-08-02 until the licence was taken off for review on 11-25.",
+      "sources": [{"kind": "pr", "ref": 5933}, {"kind": "pr", "ref": 899}, {"kind": "pr", "ref": 5830}]
+    },
+    {
+      "date": "2026-11-28",
+      "category": "features",
+      "title": "CIVVIS: Moneyball",
+      "detail": "A minigame of numbers only: pick a player strategy by its stats, ten turns at a time.",
+      "sources": [{"kind": "pr", "ref": 5991}]
+    },
+    {
+      "date": "2026-11-28",
+      "category": "capability",
+      "title": "Deity at even odds",
+      "detail": "Since 11-22: 59 wins in 340 Deity games, 17%, where an even seat among six would take 16.7%. Lv 4 Prince stands at 41 of 41. Tournament 8, a hundred Deity games with the Diplomatic victory off, ends 21 to 79.",
+      "sources": [{"kind": "pr", "ref": 5997}, {"kind": "data", "ref": "data/tournaments.json"}]
+    },
+    {
+      "date": "2026-11-28",
+      "category": "other",
+      "title": "Pull request 6,000",
+      "detail": "130 days in, main holds 6,290 commits. Pull request 2,000 merged on 08-18 and 4,000 on 10-09.",
+      "sources": [{"kind": "pr", "ref": 6000}, {"kind": "pr", "ref": 2000}, {"kind": "pr", "ref": 4000}]
+    }
+  ]
+}
