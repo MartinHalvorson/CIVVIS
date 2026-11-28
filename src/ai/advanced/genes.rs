@@ -6694,6 +6694,13 @@ pub const GENES: &[Gene] = &[
     // after the band turn (t60 on Online), where most long walks began.
     // Opt-in; see `advanced/settler_walk_deadline.rs`.
     Gene { tag: "settler-walk-clock-runs-all-game", field: "settler_walk_clock_runs_all_game", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_walk_clock_runs_all_game, disable: AdvancedAi::disable_settler_walk_clock_runs_all_game },
+    // Hotseat `hotseat-20261128T031456Z` seat p3 (Science, Cree, one city):
+    // Animal Husbandry, Mining, Pottery, then Sailing at t12, each "the most
+    // valuable step toward rocketry"; no Writing, no Campus and five Science
+    // at t16. `science-writing-before-the-luxury` waits for a second city.
+    // Writing is the forced goal from the second known tech. Opt-in; see
+    // `advanced/science_seat_writes_first.rs`.
+    Gene { tag: "science-seat-writes-first", field: "science_seat_writes_first", kind: Kind::OptIn, enable: AdvancedAi::enable_science_seat_writes_first, disable: AdvancedAi::disable_science_seat_writes_first },
     // ---- append: t-z ------------------------------------------------
     // Host previews of our religious strikes, 11-09: rival defenders carry +4
     // for difficulty (68 of 75) and +3/+6 Intel (55 of 75), which the fight

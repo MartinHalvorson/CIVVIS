@@ -9875,6 +9875,10 @@ pub struct AdvancedAi {
     science_specializes_earlier: bool,
     /// Finish the missing Science-lane Campus unlock before optional detours.
     science_writing_before_the_luxury: bool,
+    /// `science-seat-writes-first`: a Science-target seat that knows two
+    /// technologies and not Writing makes Writing its forced research goal.
+    /// See `advanced/science_seat_writes_first.rs`. Off by default.
+    science_seat_writes_first: bool,
     /// Prefer a legal non-lowland site for a new native Spaceport. Opt-in.
     spaceport_above_the_sea: bool,
     /// Native fuel bridge for ready research power. Off by default.
@@ -12387,6 +12391,8 @@ pub(crate) mod city_state_quests;
 
 /// `science-core-ends-expansion`: see `advanced/science_core_ends_expansion.rs`.
 mod science_core_ends_expansion;
+/// `science-seat-writes-first`: see `advanced/science_seat_writes_first.rs`.
+mod science_seat_writes_first;
 /// `science-specializes-earlier`: see `advanced/science_specializes_earlier.rs`.
 mod science_specializes_earlier;
 /// A known Galápagos or Bermuda science job just beyond the ordinary
