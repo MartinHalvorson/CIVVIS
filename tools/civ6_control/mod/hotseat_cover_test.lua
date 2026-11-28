@@ -130,10 +130,11 @@ local function load(config)
 		Events = {}, LuaEvents = {},
 	}
 	for _, name in ipairs({ "LocalPlayerTurnEnd", "LocalPlayerTurnBegin", "LoadScreenClose",
-			"TeamVictory", "UserRequestClose" }) do
+			"TeamVictory", "UserRequestClose", "PlayerDefeat" }) do
 		env.Events[name] = event(name)
 	end
 	for _, name in ipairs({ "PlayerChange_Close", "EndGameMenu_Shown", "EndGameMenu_OneMoreTurn",
+			"EndGameMenu_Closed",
 			"PlayerChange_OpenInGameOptionsMenu", "CivvisHotseatStartTurn" }) do
 		env.LuaEvents[name] = event(name)
 	end
@@ -400,7 +401,8 @@ do
 	handlers.LocalPlayerTurnEnd()
 	assert(cover.up, "one more turn: covered again")
 	handlers.EndGameMenu_Shown()
-	assert(not cover.up)
+	handlers.update(0.1)
+	assert(not cover.up, "an end screen whose defeat is not known: lifted, as it ships")
 	handlers.LocalPlayerTurnEnd()
 	handlers.UserRequestClose()
 	assert(not cover.up and last(did, "hotseat_cover"):find('"reason":"quit_request"', 1, true),
@@ -633,6 +635,125 @@ do
 	assert(cover.muted ~= nil and volumes(world) == "0/60/70/50/40")
 	world.audioThrows = false
 	assert(cover.unmute("again") == true and volumes(world) == OWN and cover.muted == nil)
+end
+
+-- 8b. A CIVVIS seat's defeat shown on a CIVVIS seat's turn (EndGameMenu.lua:1011-1012):
+-- the screen is over the cover and is the person's to read and press; the
+-- turn under it stays covered through Next Player and after.
+do
+	local cover, world, did, handlers = load(HOTSEAT({ HotseatCoverSound = "music",
+		HotseatSeats = { 1, 2, 3 } }))
+	handlers.LocalPlayerTurnEnd()
+	world.pid, world.active[1] = 1, true
+	handlers.LocalPlayerTurnBegin()
+	assert(cover.up and volumes(world) == "80/60/0/0/0")
+	-- Seat 1 takes seat 2's last city: the defeat event, then the screen.
+	world.endGameQueued = true
+	handlers.EndGameMenu_Shown()            -- raised from inside the defeat's own handler
+	handlers.PlayerDefeat(2, 1, 77)
+	handlers.update(0.1)
+	assert(cover.up and did.dequeued == 0, "still covered under the end screen")
+	assert(last(did, "hotseat_cover_kept"):find('"defeated":2', 1, true))
+	assert(volumes(world) == OWN, "the end screen is the person's to hear: " .. volumes(world))
+	-- Nobody presses Next Player for minutes: nothing is hidden, so no stand-aside.
+	ticks(handlers, 300)
+	assert(cover.up and #kinds(did, "hotseat_cover_kept") == 1, "said once")
+	assert(not last(did, "hotseat_cover"):find('"yield_', 1, true))
+	-- Next Player (:304-318): the screen closes and seat 1's turn goes on, covered.
+	world.endGameQueued = false
+	handlers.EndGameMenu_Closed()
+	ticks(handlers, 1)
+	assert(cover.up and did.dequeued == 0, "seat 1's map is never on screen")
+	assert(volumes(world) == "80/60/0/0/0", "quiet again: " .. volumes(world))
+	world.active[1] = false
+	handlers.LocalPlayerTurnEnd()
+	world.pid, world.active[3] = 3, true
+	handlers.LocalPlayerTurnBegin()
+	assert(cover.up and did.dequeued == 0 and #did.queued == 1)
+	-- A screen that leaves the queue without saying so is closed all the same.
+	world.endGameQueued = true
+	handlers.PlayerDefeat(2, 1, 78)
+	handlers.update(0.1)
+	assert(cover.up and cover.kept)
+	world.endGameQueued = false
+	handlers.update(0.1)
+	assert(cover.up and not cover.kept and cover.defeated == nil)
+	ticks(handlers, 91)
+	assert(not cover.up and last(did, "hotseat_cover"):find('"reason":"yield_quiet"', 1, true),
+		"and the stall clock runs again")
+	-- Shown and kept, then gone from the queue with no closing word: the same.
+	world.active[3], world.turn = false, 2
+	handlers.LocalPlayerTurnEnd()
+	world.pid, world.active[1] = 1, true
+	handlers.LocalPlayerTurnBegin()
+	assert(cover.up)
+	world.endGameQueued = true
+	handlers.EndGameMenu_Shown()
+	handlers.PlayerDefeat(3, 1, 79)
+	handlers.update(0.1)
+	assert(cover.up and cover.kept)
+	world.endGameQueued = false
+	handlers.update(0.1)
+	assert(cover.up and not cover.kept and not cover.endShown)
+	ticks(handlers, 91)
+	assert(not cover.up, "the stall clock runs again")
+end
+-- An end screen on a CIVVIS turn whose defeat is not known: lifted, as it
+-- ships; and once it has gone (even unannounced) the cover comes back.
+do
+	local cover, world, did, handlers = load(HOTSEAT())
+	handlers.LocalPlayerTurnEnd()
+	world.pid, world.active[1] = 1, true
+	handlers.LocalPlayerTurnBegin()
+	world.endGameQueued = true
+	handlers.EndGameMenu_Shown()
+	handlers.update(0.1)
+	assert(not cover.up and last(did, "hotseat_cover"):find('"reason":"end_game"', 1, true))
+	world.endGameQueued = false
+	world.active[1] = false
+	handlers.LocalPlayerTurnEnd()
+	ticks(handlers, 2)
+	assert(cover.up, "covered again at the turn's end")
+end
+-- The person's own defeat, a defeat shown on the person's turn, and a win:
+-- lifted as before.
+do
+	local cover, world, did, handlers = load(HOTSEAT())
+	handlers.LocalPlayerTurnEnd()
+	world.pid, world.active[1] = 1, true
+	handlers.LocalPlayerTurnBegin()
+	handlers.PlayerDefeat(0, 1, 5)
+	world.endGameQueued = true
+	handlers.EndGameMenu_Shown()
+	handlers.update(0.1)
+	assert(not cover.up and last(did, "hotseat_cover"):find('"reason":"end_game"', 1, true),
+		"the person's defeat is theirs to see")
+	world.endGameQueued = false
+	handlers.EndGameMenu_Closed()
+	handlers.LocalPlayerTurnEnd()
+	assert(cover.up)
+	-- Their own hand-over is up (the cover over it) and a CIVVIS seat is defeated.
+	world.pid, world.turn, world.active[0], world.paused[0] = 0, 2, true, true
+	handlers.LocalPlayerTurnBegin()
+	assert(cover.up)
+	handlers.PlayerDefeat(1, 1, 6)
+	world.endGameQueued = true
+	handlers.update(0.1)
+	assert(not cover.up, "on the person's turn the map behind it is theirs")
+	world.endGameQueued = false
+	handlers.EndGameMenu_Closed()
+	-- A CIVVIS seat wins: the game is over, the cover goes.
+	world.active[0], world.paused[0] = false, false
+	handlers.LocalPlayerTurnEnd()
+	world.pid, world.active[1] = 1, true
+	handlers.LocalPlayerTurnBegin()
+	handlers.PlayerDefeat(2, 1, 7)
+	handlers.TeamVictory(1, 2, 3)
+	assert(not cover.up and cover.over)
+	world.endGameQueued = true
+	handlers.EndGameMenu_Shown()
+	handlers.update(0.1)
+	assert(not cover.up)
 end
 
 -- 9. How long (`HotseatCoverTimer`). ------------------------------------------
