@@ -8180,8 +8180,10 @@ const EVIDENCE_KINDS: &[&str] = &[
     // does not propose the identical pair again.
     "range_attack_refused",
     "war_refused",
-    // A hotseat `deal` order sent from its session: `sent:false` with the
-    // mod's reason fails the order by name (`hotseat_deals::verify`).
+    // A hotseat `deal` order refused as it was applied, or sent from its
+    // session and failed: the mod's reason fails the order by name
+    // (`hotseat_deals::verify`).
+    "deal_refused",
     "deal_answer",
 ];
 

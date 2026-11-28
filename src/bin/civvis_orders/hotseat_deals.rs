@@ -176,8 +176,9 @@ pub(super) fn propose_order(
 ///     is already off `outgoing` when we look);
 ///   * WITHDRAW is verified once nothing of ours waits for that seat.
 ///
-/// A send that went out of the session and failed (`deal_answer` with
-/// `sent:false`) fails with the mod's own reason. A board with no readable
+/// An order the mod refused when it applied it (`deal_refused`) or a send
+/// that failed inside its session (`deal_answer` with `sent:false`) fails
+/// with the mod's own reason. A board with no readable
 /// `deals` (a mod from before #6045) proves nothing either way. So a
 /// proposal the mod refuses (`deal_item_refused:…`, `deal_invalid`) fails
 /// the same way on every turn it is sent, and `HostOrderRefusals` withholds
@@ -200,16 +201,23 @@ pub(super) fn verify(
         .as_deref()
         .and_then(|verb| verb.split(';').next())
         .unwrap_or("");
-    let unsent = evidence.iter().find_map(|event| {
-        let mine = event["kind"] == "deal_answer"
+    let ours = |event: &serde_json::Value, kind: &str| {
+        event["kind"] == kind
             && event["turn"].as_u64() == Some(u64::from(turn))
             && event["to"].as_i64() == Some(subject)
             && event["verb"].as_str() == Some(action)
-            && event["sent"].as_bool() == Some(false);
-        mine.then(|| event["why"].as_str().unwrap_or("unknown").to_string())
-    });
-    if let Some(why) = unsent {
-        return super::Verdict::Failed(format!("deal_not_sent:{why}"));
+    };
+    let why = |event: &serde_json::Value| event["why"].as_str().unwrap_or("unknown").to_string();
+    // Refused when it was applied (`deal_refused`, a mod with #6079), or
+    // sent from its session and failed there.
+    if let Some(refused) = evidence.iter().find(|event| ours(event, "deal_refused")) {
+        return super::Verdict::Failed(format!("deal_refused:{}", why(refused)));
+    }
+    if let Some(unsent) = evidence
+        .iter()
+        .find(|event| ours(event, "deal_answer") && event["sent"].as_bool() == Some(false))
+    {
+        return super::Verdict::Failed(format!("deal_not_sent:{}", why(unsent)));
     }
     let with = |player: usize| i64::try_from(player).ok() == Some(subject);
     match action {
@@ -539,6 +547,15 @@ mod tests {
         assert_eq!(
             verdict(&accept, &empty, &unsent),
             Verdict::Failed("deal_not_sent:deals_not_equal".to_string())
+        );
+        // Refused when it was applied: the mod's reason, ahead of the board.
+        let refused = [
+            serde_json::json!({"kind": "deal_refused", "turn": 32, "to": 1,
+            "verb": "COUNTER", "why": "deal_item_refused:RESOURCE_HORSES"}),
+        ];
+        assert_eq!(
+            verdict(&counter, &still, &refused),
+            Verdict::Failed("deal_refused:deal_item_refused:RESOURCE_HORSES".to_string())
         );
         // Another seat's, another verb's or another turn's record is not ours.
         for other in [
