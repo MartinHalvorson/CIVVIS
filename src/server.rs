@@ -3961,6 +3961,7 @@ fn viewer_path(path: &str) -> bool {
             | "/debugger"
             | "/doctor-strange"
             | "/edge-of-tomorrow"
+            | "/moneyball"
     )
 }
 

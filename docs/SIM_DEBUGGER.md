@@ -2462,6 +2462,54 @@ turn 1, under the launch buttons, and (698, 515) on turn 11, to (786, 564) and
 `beta/debugger_test.py` (`check_edge_of_tomorrow`) drives all of it in a
 browser against the toy engine.
 
+## CIVVIS: Moneyball
+
+Operator 2026-11-27: "add CIVVIS: Moneyball. This is a minigame where a user
+only looks at the stats and tries to play the best game. WE can have a default
+set of stats but users should get to see there own. User essentially has N
+columns, each with a different player strategy simulated out N turns. rows are
+different stats. cities, mil strength, food, happiness, hous, prod, science
+yield, culture yield, etc. User selects how many turns out they want to skip
+at a time (default can be 10). We can also estimate how long the game will go
+(given the strategies, how long do we think the game will go)? How many
+guesses we expect a person to make. if game 200 turns and increment 10, then
+20 guesses. we can highlight top in each row. player strategy should be the
+top strategies but randomized on screen. user can chose a row to sort by
+though if they want."
+
+`/moneyball` (the last section of `web/assets/app_debugger.js`) is a played
+game whose seat is played, a stretch of turns at a time, by the player strategy
+the person picks, and they pick it by its numbers alone. The world is Doctor
+Strange's, four civilizations on a flat Pangaea (`MODE_WORLDS` in
+`beta/shim.js`), the quickest to play many futures of.
+
+Over the map stands a board:
+
+| Part | What it is |
+| --- | --- |
+| Columns | The top rated player strategies the page offers (`RULES.strategies` by Elo; with nothing rated, `STRANGE_RIVALS`' order), as many as **Columns** says (3, 4, 6 or 8; 6 at first), named by a letter in an order drawn afresh at every deal. **Names** shows which strategy each is. |
+| What a column is | Its strategy seated on the open turn of a copy of the world (`POST /forks`, the copies Autosearch plays on), and played the turns of a pick (**Turns a pick**: 5, 10, 20, 25 or 50; 10 at first). |
+| Rows | How the seat stands at the end of those turns (`obs::standing`): Score, Cities, Population, Military strength, Food, Happiness, Housing, Production, Science, Culture and Gold at first; Faith, Food surplus, Loyalty, Techs, Civics and Tourism besides. **Stats** chooses them. Each cell has its change since now beside it, and the left column is the seat now. |
+| The best of a row | Lit green, where the columns differ. |
+| Sorting | A row's name sorts the columns by it, the most first; again, back to the order drawn. |
+| Game ends | The turn the column's game ends on, and how, if its strategy played on: the copy plays on without keeping its turns (`foresee`, 25 turns a request). |
+| The estimate | The middle of the columns' ends, the spread of them, and how many picks that leaves at the turns a pick: a 200-turn game at 10 turns a pick is 20 picks. |
+| Pick | Plays that strategy those turns on the world itself (`debugPlayPlan`), which comes out as its column said, the engine being deterministic; then the board is dealt again. |
+
+The choices (turns, columns, rows, names) are kept in `localStorage` as
+`civvis-moneyball-v1`; the picks are the page's and gone with it. A game that
+is over says how it ended and how many picks it took, with **Play again**.
+**Map** folds the board up to look at the map. The Debugger's bar is out of
+sight on this page, as on Edge of Tomorrow, and the page sends no action of
+its own for the seat (`civvisSeatHandsOff`).
+
+`obs::standing` carries, since this page, military strength, the four city
+averages the player HUD shows (amenities over need, spare housing, loyalty a
+turn and Food Surplus) and the techs, civics and tourism earned, beside what
+it carried for Autosearch. It runs where copies of the engine can be made:
+on civvis.ai, in the browser. The desktop program has none, and the board
+says so.
+
 ## `POST /autosearch`
 
 The climb, for a page that plays its lines on copies of the engine

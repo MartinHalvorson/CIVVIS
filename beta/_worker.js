@@ -353,8 +353,8 @@ const NO_SUCH_PAGE = "/__no-such-page__";
 // the old address, which is that viewer's way to the page. An old address
 // forwards the other way, in a lane that has the new one: the old addresses
 // are in links this site does not control.
-const SIMULATOR_PAGES = {debugger: "play", "doctor-strange": "strange", "edge-of-tomorrow": "tomorrow"};
-const SIMULATOR_ADDRESS = /^(\/test)?\/(debugger|doctor-strange|edge-of-tomorrow)(\/(?:index\.html)?)?$/;
+const SIMULATOR_PAGES = {debugger: "play", "doctor-strange": "strange", "edge-of-tomorrow": "tomorrow", moneyball: "moneyball"};
+const SIMULATOR_ADDRESS = /^(\/test)?\/(debugger|doctor-strange|edge-of-tomorrow|moneyball)(\/(?:index\.html)?)?$/;
 const VIEWER_ADDRESS = /^(\/test)?\/(?:index\.html)?$/;
 
 /// What one of the simulator's pages answers, asked at its address or at the

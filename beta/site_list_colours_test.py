@@ -149,6 +149,8 @@ def ground(href: str) -> str:
         return "black"
     if href.endswith("/edge-of-tomorrow"):
         return "tomorrow"
+    if href.endswith("/moneyball"):
+        return "moneyball"
     if href.endswith("/doctor-strange"):
         return "strange"
     if href.startswith("https://store.steampowered.com/"):
@@ -225,14 +227,17 @@ class Pages(unittest.TestCase):
                 self.assertEqual({name for name, kind in worn.items() if kind == "gold"}, {"CIVVIS"})
                 self.assertEqual({name for name, kind in worn.items() if kind == "black"}, {"CIVVIS AI Debugger"})
                 self.assertEqual({name for name, kind in worn.items() if kind == "tomorrow"}, {"CIVVIS: Edge of Tomorrow"})
+                self.assertEqual({name for name, kind in worn.items() if kind == "moneyball"}, {"CIVVIS: Moneyball"})
                 # The list in the operator's order: Tournaments before
                 # Charts/, and CIVVIS just above AI Debugger after Doctor
                 # Strange's and Edge of Tomorrow (2026-11-28: "move
                 # tournaments above charts in the ordering", "move civvis
                 # above the civvis ai debugger in the ordering"); Civ 6 ends it.
+                # CIVVIS: Moneyball stands after Edge of Tomorrow (2026-11-27:
+                # "add CIVVIS: Moneyball"), keeping CIVVIS above AI Debugger.
                 self.assertEqual([name for name in worn if name not in under_names(source)],
                                  ["Home", "Tournaments", "Charts/", "Doctor Strange's CIVVIS", "CIVVIS: Edge of Tomorrow",
-                                  "CIVVIS", "CIVVIS AI Debugger", "Civ 6"])
+                                  "CIVVIS: Moneyball", "CIVVIS", "CIVVIS AI Debugger", "Civ 6"])
                 self.assertEqual({name for name, kind in worn.items() if kind == "strange"}, {"Doctor Strange's CIVVIS"})
                 self.assertEqual({name for name, kind in worn.items() if kind == "steam"}, {"Civ 6"})
                 # The list ends at Civ 6: Wizard Chess, which stood below
@@ -269,6 +274,7 @@ class Simulator(unittest.TestCase):
             ("playlink", "CIVVIS AI Debugger"),
             ("strangelink", "Doctor Strange's CIVVIS"),
             ("tomorrowlink", "CIVVIS: Edge of Tomorrow"),
+            ("moneyballlink", "CIVVIS: Moneyball"),
             ("civ6link", "Civ 6"),
         ):
             self.assertRegex(VIEWER, rf'<a class="home-link" id="{mark}" [^>]*>{re.escape(name)}</a>')
@@ -293,7 +299,7 @@ class Simulator(unittest.TestCase):
         nav = nav[:nav.index("</nav>")]
         self.assertEqual(
             re.findall(r'<a class="home-link" id="([a-z0-9]+)"', nav),
-            ["homelink", "tourlink", "chartslink", "strangelink", "tomorrowlink", "watchlink", "playlink", "civ6link"])
+            ["homelink", "tourlink", "chartslink", "strangelink", "tomorrowlink", "moneyballlink", "watchlink", "playlink", "civ6link"])
         self.assertNotRegex(VIEWER, SET_ASIDE)
 
     def test_doctor_strange_is_in_his_colours(self):
@@ -387,9 +393,10 @@ class Simulator(unittest.TestCase):
         # other two ways of showing it.
         self.assertIn(
             "  body.watching-sim #watchlink,\n"
-            "  html.seat-known:not(.strange):not(.tomorrow) body:not(.watching-sim) #playlink,\n"
+            "  html.seat-known:not(.strange):not(.tomorrow):not(.moneyball) body:not(.watching-sim) #playlink,\n"
             "  html.seat-known.strange body:not(.watching-sim) #strangelink,\n"
-            "  html.seat-known.tomorrow body:not(.watching-sim) #tomorrowlink {\n"
+            "  html.seat-known.tomorrow body:not(.watching-sim) #tomorrowlink,\n"
+            "  html.seat-known.moneyball body:not(.watching-sim) #moneyballlink {\n"
             "    border-color: #fff; box-shadow: inset 0 0 0 1px #fff;\n"
             "  }\n",
             VIEWER,

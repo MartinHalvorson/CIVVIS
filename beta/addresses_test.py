@@ -69,6 +69,8 @@ SIMULATOR = {
     "Doctor Strange's CIVVIS": "doctor-strange",
     "CIVVIS AI Debugger": "debugger",
     "CIVVIS: Edge of Tomorrow": "edge-of-tomorrow",
+    # Operator 2026-11-27: "add CIVVIS: Moneyball".
+    "CIVVIS: Moneyball": "moneyball",
 }
 
 #: The pages `publish.sh` publishes, found in the script rather than listed
@@ -211,7 +213,7 @@ class Addresses(unittest.TestCase):
         served = set(re.findall(r'"?([a-z][a-z-]*)"?\s*:', table))
         self.assertEqual(served, set(SIMULATOR.values()))
         # And the publish check knows no file stands at them.
-        self.assertIn('{"debugger", "doctor-strange", "edge-of-tomorrow"}', PUBLISH)
+        self.assertIn('{"debugger", "doctor-strange", "edge-of-tomorrow", "moneyball"}', PUBLISH)
 
     def test_the_folder_opens_the_same_page_from_everywhere(self):
         opens = set()

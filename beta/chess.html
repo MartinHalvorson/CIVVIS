@@ -133,6 +133,21 @@
     background: linear-gradient(135deg, #2b3b47 35%, #c2541a); color: #fff;
     box-shadow: inset 0 0 0 1px #b9c8d6, 0 0 10px rgba(255, 130, 50, 0.8);
   }
+  /* CIVVIS: Moneyball (operator, 2026-11-27: "add CIVVIS: Moneyball. This
+     is a minigame where a user only looks at the stats and tries to play the
+     best game") stands out in a ballpark's colours, the film's: the outfield
+     grass under the lights running into a scoreboard's green, ringed in the
+     chalk of the base lines and lit by the floodlights, the name in chalk
+     white (the colours are this lane's choice). */
+  .site-link[href$="/moneyball"] {
+    background: linear-gradient(135deg, #123d27 35%, #2f8a4a); color: #f3f6ee;
+    box-shadow: inset 0 0 0 1px #cfe6c4, 0 0 6px rgba(150, 230, 140, 0.45);
+  }
+  .site-link[href$="/moneyball"]:hover,
+  .site-link[href$="/moneyball"]:focus-visible {
+    background: linear-gradient(135deg, #1a5034 35%, #38a057); color: #fff;
+    box-shadow: inset 0 0 0 1px #e6f4de, 0 0 10px rgba(170, 240, 150, 0.75);
+  }
   .site-link[href$="/doctor-strange"] {
     background: linear-gradient(135deg, #1c2a7a 30%, #a3122f); color: #ffe3a3;
     box-shadow: inset 0 0 0 1px #ff9a2e, 0 0 6px rgba(255, 138, 30, 0.6);
@@ -280,6 +295,7 @@
         <a class="site-link" href="../charts/ai-insights/" title="What the games show: charts read off the CIVVIS AI agents&#8217; games.">Charts/</a>
         <a class="site-link" href="../doctor-strange" title="One world, two timelines: the same game played two ways, side by side, on a timeline that branches.">Doctor Strange's CIVVIS</a>
         <a class="site-link" href="../edge-of-tomorrow" title="You play one civilization, with a jump back: the world returns to the turn you woke on, as it stood.">CIVVIS: Edge of Tomorrow</a>
+        <a class="site-link" href="../moneyball" title="Only the numbers: pick a player strategy by its stats, ten turns at a time, and try to play the best game.">CIVVIS: Moneyball</a>
         <a class="site-link" href="../" title="Every civilization is played by a CIVVIS AI agent.">CIVVIS</a>
         <a class="site-link" href="../debugger" title="You play one civilization. CIVVIS AI agents play the rest.">CIVVIS AI Debugger</a>
         <a class="site-link" href="https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/" target="_blank" rel="noopener" title="Buy Civilization VI on Steam">Civ 6</a>
