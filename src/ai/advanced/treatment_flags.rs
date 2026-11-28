@@ -462,6 +462,9 @@ impl AdvancedAi {
         /// `advanced/guns_keep_the_oil.rs`.
         guns_keep_the_oil => enable_guns_keep_the_oil, disable_guns_keep_the_oil;
         // ---- append: l-o --------------------------------------------
+        /// Opt-in gene `lane-once-taken-holds`; see
+        /// `advanced/lane_once_taken_holds.rs`.
+        lane_once_taken_holds => enable_lane_once_taken_holds, disable_lane_once_taken_holds;
         /// Native land upgrade materials use a bounded host cash quote.
         land_army_asks_the_host_price => enable_land_army_asks_the_host_price, disable_land_army_asks_the_host_price;
         /// Opt-in gene `last-charge-joins-the-army`; see

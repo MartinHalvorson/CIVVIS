@@ -704,6 +704,11 @@ impl AdvancedAi {
                 // same city target. False with the gene off. See
                 // `advanced/science_core_ends_expansion.rs`.
                 && !self.science_core_ends_expansion_for(Some(target), cities.len())
+                // `lane-once-taken-holds`: a lane this seat has already
+                // followed does not come back here when the city target
+                // rises or a site opens. False with the gene off. See
+                // `advanced/lane_once_taken_holds.rs`.
+                && !self.lane_once_taken_holds_for(target)
                 // `religion-core-ends-expansion`: a Religion lane that has
                 // founded and holds its core of cities follows the lane; the
                 // Settlers read the same city target. False with the gene
@@ -732,6 +737,7 @@ impl AdvancedAi {
                     "the first half is reserved for expansion and defense",
                 )
             } else {
+                self.note_lane_taken(target);
                 (target.strategy(), "following the assigned victory lane")
             }
         } else if let Some((_, counter)) = actionable_denial {

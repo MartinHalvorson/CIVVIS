@@ -8417,6 +8417,14 @@ pub struct AdvancedAi {
     /// `advanced/guns_keep_the_oil.rs`. Opt-in.
     guns_keep_the_oil: bool,
     // ---- append: l-o ------------------------------------------------
+    /// `lane-once-taken-holds`: an assigned lane that has once followed its
+    /// lane does not hand the plan back to Expansion when the city target
+    /// rises or a new site opens. See `advanced/lane_once_taken_holds.rs`.
+    /// Off by default.
+    lane_once_taken_holds: bool,
+    /// `lane-once-taken-holds`: the assigned lane `assess` last followed.
+    /// See `advanced/lane_once_taken_holds.rs`.
+    lane_taken: std::cell::Cell<Option<VictoryTarget>>,
     /// Ask the host for a cash price for a native land upgrade material bill.
     /// Opt-in; see `advanced/army_upgrade_materials.rs`.
     land_army_asks_the_host_price: bool,
@@ -12194,6 +12202,8 @@ mod first_capital_defense;
 /// An assigned lane's first-half production dispatch. Opt-in gene
 /// `lane-delegates-production`; see `advanced/lane_delegates_production.rs`.
 mod lane_delegates_production;
+/// `lane-once-taken-holds`: see `advanced/lane_once_taken_holds.rs`.
+mod lane_once_taken_holds;
 /// A Military Alliance with the empire fighting our enemy or the neighbour
 /// at our border. Opt-in gene `military-alliance-shield`; see
 /// `advanced/military_alliance_shield.rs`.
