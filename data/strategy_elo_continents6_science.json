@@ -1,0 +1,115 @@
+{
+  "diplomatic": false,
+  "ladder": {},
+  "map": "continents",
+  "players": 6,
+  "prince_elo": 1000.0,
+  "protocol": 1,
+  "ratings": {
+    "civ6:prince": {
+      "bound": "upper",
+      "elo": 1000.0,
+      "games": 287,
+      "margin95": 0.0,
+      "sd": 0.0,
+      "wins": 0
+    },
+    "forward": {
+      "bound": "",
+      "elo": 1823.1,
+      "games": 302,
+      "margin95": 37.0,
+      "sd": 18.8,
+      "wins": 95
+    },
+    "holy": {
+      "bound": "",
+      "elo": 1627.4,
+      "games": 287,
+      "margin95": 64.0,
+      "sd": 32.6,
+      "wins": 33
+    },
+    "jack": {
+      "bound": "",
+      "elo": 1817.6,
+      "games": 288,
+      "margin95": 38.0,
+      "sd": 19.4,
+      "wins": 87
+    },
+    "moonshot": {
+      "bound": "",
+      "elo": 1860.1,
+      "games": 288,
+      "margin95": 35.0,
+      "sd": 18.1,
+      "wins": 106
+    },
+    "oldguard": {
+      "bound": "upper",
+      "elo": 1010.0,
+      "games": 274,
+      "margin95": 17.0,
+      "sd": 8.7,
+      "wins": 0
+    },
+    "siege": {
+      "bound": "",
+      "elo": 1826.3,
+      "games": 295,
+      "margin95": 38.0,
+      "sd": 19.4,
+      "wins": 94
+    },
+    "stock": {
+      "bound": "upper",
+      "elo": 1000.0,
+      "games": 287,
+      "margin95": 0.0,
+      "sd": 0.0,
+      "wins": 0
+    },
+    "swing": {
+      "bound": "",
+      "elo": 1665.6,
+      "games": 285,
+      "margin95": 54.0,
+      "sd": 27.6,
+      "wins": 40
+    },
+    "tourist": {
+      "bound": "",
+      "elo": 1579.5,
+      "games": 288,
+      "margin95": 67.0,
+      "sd": 34.3,
+      "wins": 25
+    },
+    "wheels": {
+      "bound": "upper",
+      "elo": 1002.5,
+      "games": 286,
+      "margin95": 16.0,
+      "sd": 7.9,
+      "wins": 0
+    }
+  },
+  "reference": "stock",
+  "runs": [
+    {
+      "run": "2026-11-27-setups-seed",
+      "tables": 480
+    }
+  ],
+  "setup": "continents6-science",
+  "speed": "online",
+  "tables": 480,
+  "turns": 250,
+  "victories": {
+    "science": 480
+  },
+  "victory_conditions": [
+    "science"
+  ]
+}

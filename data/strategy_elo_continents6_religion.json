@@ -1,0 +1,116 @@
+{
+  "diplomatic": false,
+  "ladder": {},
+  "map": "continents",
+  "players": 6,
+  "prince_elo": 1000.0,
+  "protocol": 1,
+  "ratings": {
+    "civ6:prince": {
+      "bound": "",
+      "elo": 1000.0,
+      "games": 287,
+      "margin95": 0.0,
+      "sd": 0.0,
+      "wins": 6
+    },
+    "forward": {
+      "bound": "",
+      "elo": 1343.4,
+      "games": 302,
+      "margin95": 155.0,
+      "sd": 78.9,
+      "wins": 49
+    },
+    "holy": {
+      "bound": "",
+      "elo": 1658.9,
+      "games": 287,
+      "margin95": 144.0,
+      "sd": 73.5,
+      "wins": 184
+    },
+    "jack": {
+      "bound": "",
+      "elo": 1360.8,
+      "games": 288,
+      "margin95": 148.0,
+      "sd": 75.5,
+      "wins": 51
+    },
+    "moonshot": {
+      "bound": "",
+      "elo": 1348.2,
+      "games": 288,
+      "margin95": 146.0,
+      "sd": 74.4,
+      "wins": 46
+    },
+    "oldguard": {
+      "bound": "upper",
+      "elo": 662.2,
+      "games": 274,
+      "margin95": 141.0,
+      "sd": 72.0,
+      "wins": 0
+    },
+    "siege": {
+      "bound": "",
+      "elo": 1325.0,
+      "games": 295,
+      "margin95": 157.0,
+      "sd": 80.1,
+      "wins": 43
+    },
+    "stock": {
+      "bound": "",
+      "elo": 1000.0,
+      "games": 287,
+      "margin95": 0.0,
+      "sd": 0.0,
+      "wins": 6
+    },
+    "swing": {
+      "bound": "",
+      "elo": 1349.5,
+      "games": 285,
+      "margin95": 150.0,
+      "sd": 76.6,
+      "wins": 49
+    },
+    "tourist": {
+      "bound": "",
+      "elo": 1367.9,
+      "games": 288,
+      "margin95": 144.0,
+      "sd": 73.7,
+      "wins": 52
+    },
+    "wheels": {
+      "bound": "upper",
+      "elo": 657.6,
+      "games": 286,
+      "margin95": 141.0,
+      "sd": 72.1,
+      "wins": 0
+    }
+  },
+  "reference": "stock",
+  "runs": [
+    {
+      "run": "2026-11-27-setups-seed",
+      "tables": 480
+    }
+  ],
+  "setup": "continents6-religion",
+  "speed": "online",
+  "tables": 480,
+  "turns": 250,
+  "victories": {
+    "religious": 200,
+    "score-at-cap": 280
+  },
+  "victory_conditions": [
+    "religious"
+  ]
+}
