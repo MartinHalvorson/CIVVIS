@@ -715,27 +715,31 @@ do
     -- A stub turn that reads as sent and still stands was dropped: the engine
     -- ignores a turn complete sent while the game is paused
     -- (live-6p-20261128T0405Z t3, `PlayerTurnComplete ignored due to game
-    -- paused.`) and the UI keeps it as sent. It is asked again at 30 s:
-    -- unreadied where the game allows, else sent with SHIFT+ENTER's request.
-    h = seatHost(GATED)
-    h.sent = true
-    for _ = 1, 30 do h.second(true) end
-    assert(#h.requests == 0, "29 s of a sent stub turn are nothing")
-    h.second(true)
-    assert(#h.requests == 1 and h.requests[1].action == "ACTION_ENDTURN"
-        and h.requests[1].reason == "UserForced", "a dropped turn complete is sent again")
-    assert(h.kinds("seat_stuck_end_turn")[1]:find('"how":"end_turn"', 1, true))
-    assert(h.kinds("seat_stuck")[1]:find('"sent":true', 1, true)
-        and h.kinds("seat_stuck")[1]:find('"game_paused":false', 1, true))
-    h = seatHost(GATED)
-    h.sent, h.can_unready = true, true
-    for _ = 1, 31 do h.second(true) end
-    assert(#h.requests == 1 and h.requests[1].action == "ACTION_UNREADYTURN",
-        "where the game allows it, the sent turn is unreadied first")
-    assert(h.kinds("seat_stuck_end_turn")[1]:find('"how":"unready"', 1, true))
-    h.sent = false                         -- the unready landed
-    for _ = 1, 20 do h.second(true) end
-    assert(#h.requests == 2 and h.requests[2].action == "ACTION_ENDTURN", "and the next request ends it")
+    -- paused.`) and the UI keeps it as sent. It is asked again at 30 s with
+    -- SHIFT+ENTER's request, and NEVER unreadied, even where the game would
+    -- take one: an unready of a turn the engine did take hands the turn back,
+    -- and in hotseat a turn handed back begins again (three crashes on
+    -- 2026-11-28, CivvisControlAutoClose.lua `CivvisHotseatScreen.onBuild`).
+    for _, can in ipairs({ false, true }) do
+        h = seatHost(GATED)
+        h.sent, h.can_unready = true, can
+        for _ = 1, 30 do h.second(true) end
+        assert(#h.requests == 0, "29 s of a sent stub turn are nothing")
+        h.second(true)
+        assert(#h.requests == 1 and h.requests[1].action == "ACTION_ENDTURN"
+            and h.requests[1].reason == "UserForced", "a dropped turn complete is sent again")
+        assert(h.kinds("seat_stuck_end_turn")[1]:find('"how":"resent"', 1, true))
+        assert(h.kinds("seat_stuck")[1]:find('"sent":true', 1, true)
+            and h.kinds("seat_stuck")[1]:find('"game_paused":false', 1, true))
+        for _ = 1, 200 do h.second(true) end
+        for _, r in ipairs(h.requests) do
+            assert(r.action ~= "ACTION_UNREADYTURN", "never an unready (CanUnreadyTurn " .. tostring(can) .. ")")
+        end
+    end
+    do
+        local code = io.open(here .. "/CivvisControlHeartbeat.lua"):read("*a"):gsub("%-%-[^\n]*", "")
+        assert(not code:find("ACTION_UNREADYTURN", 1, true), "the seat watch asks for no unready at all")
+    end
     -- The game's own pause is named in every report.
     h = seatHost(GATED)
     h.game_paused = true
