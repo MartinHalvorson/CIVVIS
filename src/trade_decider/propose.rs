@@ -16,6 +16,10 @@
 //! ★ THE PERSON IS NOT NAGGED. A person is asked at most once every
 //! [`PERSON_PROPOSE_GAP_TURNS`] turns by a seat, never twice with the same
 //! terms, and only with a deal that gains us at least [`PERSON_MIN_GAIN`].
+//! And the table takes turns at it ([`person_slot_open`]): one seat at a
+//! time may ask the person, in its own window of
+//! [`PERSON_TABLE_WINDOW_TURNS`] turns, so five seats never ask the person
+//! in the same turn or more than once a window between them.
 
 use super::answer::{margin, REFUSED_TERMS_TURNS};
 use super::board::{BoardItem, DealBoard, Terms};
@@ -33,6 +37,13 @@ pub const PERSON_PROPOSE_GAP_TURNS: i64 = 10;
 /// GUESS. The least a proposal to the person must gain us: a person's
 /// attention is worth more than a Gold or two.
 pub const PERSON_MIN_GAIN: f64 = 25.0;
+/// Turns in one seat's window to ask the person ([`person_slot_open`]): the
+/// whole table asks the person at most once in this many turns.
+pub const PERSON_TABLE_WINDOW_TURNS: i64 = 3;
+/// Seats in the rotation when the board does not say how many players the
+/// table has: a hotseat table seats at most six (`civ6_hotseat.py
+/// --players`, 2 to 6), so its seats are players 0 to 5.
+pub const PERSON_TABLE_SLOTS: i64 = 6;
 /// GUESS. What share of an item's worth to us we offer for it, by how many
 /// times that seat has already turned down an offer for the same item within
 /// [`REFUSED_TERMS_TURNS`]: open low, then move toward the other side.
@@ -45,6 +56,29 @@ pub const SPARE_ASK_SHARE: f64 = 0.8;
 pub const STRATEGIC_ASK_GOLD: f64 = 4.0;
 /// Strategic units offered or asked for in one proposal.
 pub const STRATEGIC_LOT: i64 = 10;
+
+/// ★ WHOSE TURN IT IS TO ASK THE PERSON. Each seat of the table, by its
+/// player id, owns one window of [`PERSON_TABLE_WINDOW_TURNS`] turns in a
+/// rotation of `players` windows (`players` the table's player count, else
+/// [`PERSON_TABLE_SLOTS`]), and asks the person only inside its own. Each
+/// seat's decider decides alone, from its own board; the rotation needs
+/// nothing but the turn and the seat's own id, so no two seats ever hold the
+/// window at once. With [`PERSON_PROPOSE_GAP_TURNS`] longer than a window, a
+/// seat asks at most once in it: the person is asked at most once every
+/// [`PERSON_TABLE_WINDOW_TURNS`] turns by the whole table, never twice in one
+/// turn, and by one seat at most once a rotation (18 turns at six players).
+/// The person's own window is never used. An unknown seat (`me` below 0) is
+/// never in its window.
+pub fn person_slot_open(me: i64, players: i64, turn: i64) -> bool {
+    let slots = if players >= 2 {
+        players
+    } else {
+        PERSON_TABLE_SLOTS
+    };
+    me >= 0
+        && turn >= 0
+        && (turn / PERSON_TABLE_WINDOW_TURNS).rem_euclid(slots) == me.rem_euclid(slots)
+}
 
 /// One deal this seat proposes: to whom, the terms from our side, and our
 /// own gain from them.
@@ -250,12 +284,15 @@ pub fn candidates(position: &Position, partner: &StateRival, history: &History) 
 /// way, outside the cooldown), the candidate with the largest gain for us
 /// that clears the margin (and [`PERSON_MIN_GAIN`] for the person, whose
 /// candidates also rank that much lower, so a CIVVIS seat is asked first) and
-/// was not refused before. `None` when there is none: most turns.
+/// was not refused before. The person is a candidate only when
+/// `person_window` says this turn is this seat's to ask them
+/// ([`person_slot_open`]). `None` when there is none: most turns.
 pub fn propose(
     position: &Position,
     rivals: &[StateRival],
     board: &DealBoard,
     own_works: &BTreeMap<String, String>,
+    person_window: bool,
 ) -> Option<Proposal> {
     let turn = i64::from(position.turn);
     let mut best: Option<(Proposal, f64)> = None;
@@ -273,6 +310,9 @@ pub fn propose(
             continue;
         }
         let person = kind == Some("person");
+        if person && !person_window {
+            continue;
+        }
         let history = History::from_board(board, partner.player, turn);
         let gap = if person {
             PERSON_PROPOSE_GAP_TURNS
