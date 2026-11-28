@@ -68,9 +68,13 @@ STAGES = ("open", "handover", "start", "brain", "frames", "remote", "close", "to
 PIECES = (("open", "shown"), ("open", "press"), ("open", "to_export"), ("open", "export"),
           ("open", "brain"), ("open", "seen"), ("frames", "settle"), ("frames", "export"),
           ("frames", "brain"), ("frames", "seen"), ("close", "settle"), ("close", "host"))
-#: What a band also counts per seat-turn, beside the time: the reasons it grows.
+#: What a band also counts per seat-turn, beside the time: the reasons it grows,
+#: and the pulse ticks of `--fast-turns` (`pulse_tick`, the agent's
+#: `CivvisQueue.pulseTickDue`) with the unpause they waited for.
 DRIVERS = ("extra_frames", "strike_frames", "empty_frames", "fights", "fight_s",
-           "board_kb", "orders", "units")
+           "board_kb", "orders", "units", "pulse_open", "pulse_settle", "unpause_ms")
+#: Drivers a band gives as a median, not a mean.
+MEDIAN_DRIVERS = ("board_kb", "unpause_ms")
 
 
 def parse_stamp(stamp: object) -> float | None:
@@ -297,6 +301,14 @@ class Run:
                 mark["fight_s"] += float(row["vis_seconds"])
         elif kind == "turn" and isinstance(row.get("units"), int):
             self._seat_marks(marks, turn).setdefault("units", row["units"])
+        elif kind == "pulse_tick" and row.get("why") in ("open", "settle"):
+            mark = self._seat_marks(marks, turn)
+            mark["pulses"] = mark.get("pulses", {})
+            mark["pulses"][row["why"]] = mark["pulses"].get(row["why"], 0) + 1
+            at = self.wall(row) if isinstance(row.get("ui"), (int, float)) else None
+            if row["why"] == "open" and at is not None:
+                # The opening's pulse tick fires once the game reads unpaused.
+                mark.setdefault("unpaused", at)
 
     def base_marks(self) -> dict:
         """Wall times of the hand-over records, where they carry a clock."""
@@ -381,7 +393,7 @@ def split(run: Run) -> list[dict]:
         row["stages"] = stages
         row["extra_frames"] = max(0, len(answers) - 1)
         row["split"] = pieces(row, prev_end, marks["shown"].get(key), press)
-        row["drivers"] = drivers(row)
+        row["drivers"] = drivers(row, press)
     rounds = []
     for (turn, person), waited in sorted(marks["waited"].items()):
         if person not in run.people:
@@ -445,9 +457,12 @@ def pieces(row: dict, prev_end: float | None, shown: float | None,
     return out
 
 
-def drivers(row: dict) -> dict[str, float | None]:
-    """What a seat-turn carried: the things its time grows with."""
+def drivers(row: dict, press: float | None = None) -> dict[str, float | None]:
+    """What a seat-turn carried: the things its time grows with, and its
+    pulse ticks. `unpause_ms`: Start Turn pressed -> the opening's pulse tick
+    (the game unpaused), when both are on record."""
     mark = row.get("marks") or {}
+    pulses = mark.get("pulses", {})
     extra = [frame for frame, _ in row["answers"] if frame > 0]
     counts = mark.get("count", {})
     return {
@@ -460,6 +475,10 @@ def drivers(row: dict) -> dict[str, float | None]:
         "board_kb": mark.get("board_kb"),
         "orders": row["orders"],
         "units": mark.get("units"),
+        "pulse_open": pulses.get("open", 0),
+        "pulse_settle": pulses.get("settle", 0),
+        "unpause_ms": (None if span(press, mark.get("unpaused")) is None
+                       else span(press, mark.get("unpaused")) * 1000),
     }
 
 
@@ -519,7 +538,7 @@ def summarise(low: int, high: int, rounds: list[dict]) -> dict:
         "round_sum": sum(present) if complete else None,
         "waited_mean": mean([round_["waited"] for round_ in rounds]),
         "waited_median": median([round_["waited"] for round_ in rounds]),
-        "drivers": {name: (median if name == "board_kb" else mean)(
+        "drivers": {name: (median if name in MEDIAN_DRIVERS else mean)(
             [row["drivers"][name] for row in seats]) for name in DRIVERS},
     }
 
@@ -604,7 +623,7 @@ def band_report(table: list[dict]) -> str:
                  + "   |" + "".join(f"{ms(band['waited_median']):>10}" for band in table))
     lines.append(row("rounds / seat-turns", [f"{band['rounds']}/{band['seat_turns']}"
                                              for band in table]))
-    lines.append("  per seat-turn, mean (board: median KB)")
+    lines.append("  per seat-turn, mean (board_kb and unpause_ms: median)")
     for name in DRIVERS:
         cells = []
         for band in table:
