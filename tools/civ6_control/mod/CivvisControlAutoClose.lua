@@ -597,8 +597,8 @@ end
 -- itself (diplomacyactionview_qd.lua:4-16, Expansion2 first) and keeps its own
 -- deal screen working (:28-57), which the shipped chain alone would drop.
 if NAME == "DiplomacyActionView" then pcall(function() include("diplomacyactionview_qd"); end); end
-if CHAINED[NAME] and type(QD_BASE_LateInitialize) ~= "function" then
-	pcall(function() include(CHAINED[NAME]); end);
+if CHAINED[NAME] then
+	if type(QD_BASE_LateInitialize) ~= "function" then pcall(function() include(CHAINED[NAME]); end); end
 end
 if not haveScreen() then pcall(function() include(NAME); end); end
 

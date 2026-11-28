@@ -9,7 +9,7 @@ local here = arg[0]:match("(.*)/[^/]*$") or "."
 local handle = assert(io.open(here .. "/CivvisControlAutoClose.lua", "r"))
 local source = handle:read("*a")
 handle:close()
-local block = assert(source:match("\n(%-%- ★ QUICK DEALS%..-\nif CHAINED%[NAME%] and type%(QD_BASE_LateInitialize%) ~= \"function\" then\n.-\nend\n)"),
+local block = assert(source:match("\n(%-%- ★ QUICK DEALS%..-\nif CHAINED%[NAME%] then\n\tif type%(QD_BASE_LateInitialize%) ~= \"function\" then .-\nend\n)"),
 	"the Quick Deals chain sits before the shipped screen loads")
 assert(source:find(block, 1, true) < source:find("if not haveScreen() then pcall(function() include(NAME); end); end", 1, true))
 
