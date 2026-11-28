@@ -179,6 +179,34 @@ class MenuReadingTest(unittest.TestCase):
                          ["host", "player", "computer", "computer", "computer"])
         self.assertEqual([r["y"] for r in rows], [443, 470, 495, 521, 547])
 
+    def test_a_misread_seat_word_is_still_that_seat(self) -> None:
+        # The first 6-player table (2026-11-27, Small map, window (0, 0, 1710, 1107)):
+        # the fifth row's "Computer" read "Comouter" on every reading. Uncounted,
+        # it made five seats of six, and ADD PLAYER was pressed for a seventh.
+        six = ocr(("Players", 427, 196), ("Team", 627, 194), ("Player 1", 508, 223), ("HOST", 449, 240),
+                  ("Player 2", 508, 268), ("Player", 432, 286),
+                  ("Random Leader", 508, 313), ("Computer", 442, 331),
+                  ("Random Leader", 507, 358), ("Computer", 441, 376),
+                  ("Random Leader", 507, 403), ("Comouter", 441, 421),
+                  ("Random Leader", 507, 450), ("Computer", 442, 467),
+                  ("ADD PLAYER", 857, 505), ("START GAME", 855, 1090))
+        rows = hotseat.slot_rows(six, (0, 0, 1710, 1107))
+        self.assertEqual([r["slot"] for r in rows],
+                         ["host", "player", "computer", "computer", "computer", "computer"])
+        self.assertEqual(rows[4]["y"], 421, "the misread row, where it is")
+        self.assertTrue(hotseat.slots_match([r["slot"] for r in rows][:2] + ["player"] * 4,
+                                            hotseat.wanted_slots(6)))
+        for read, want in {"computer": "computer", "comouter": "computer", "compuler": "computer",
+                           "plaver": "player", "closad": "closed", "humon": "human",
+                           "host": "host", "open": "open",
+                           # Short words match exactly only; a name is not a seat.
+                           "hast": None, "opan": None, "leader": None, "2": None, "": None,
+                           "commuters": None}.items():
+            self.assertEqual(hotseat.slot_word(read), want, read)
+        # The seat's name line is never a seat type, misread or not.
+        self.assertEqual([r["slot"] for r in hotseat.slot_rows(STAGING, BOUNDS)],
+                         ["host", "player", "computer", "computer", "computer"])
+
     def test_the_setup_page_is_read_back(self) -> None:
         rows = ocr(("Game Speed", 336, 562), ("Online", 439, 563), ("Map", 350, 576),
                    ("Pangaea", 440, 577), ("Map Size", 342, 590), ("Small", 440, 590))

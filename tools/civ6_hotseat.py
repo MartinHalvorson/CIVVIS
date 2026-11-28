@@ -841,11 +841,25 @@ def slot_rows(rows: list[dict], bounds: tuple) -> list[dict]:
     bottom = add[0]["y"] if add else 10 ** 6
     out = []
     for row in rows:
-        word = row["norm"].split()[-1] if row["norm"] else ""
-        if (word in SLOT_WORDS and len(row["norm"].split()) <= 2
+        word = slot_word(row["norm"].split()[-1] if row["norm"] else "")
+        if (word and len(row["norm"].split()) <= 2
                 and x + 0.12 * w <= row["x"] <= x + 0.36 * w and top < row["y"] < bottom):
             out.append(dict(row, slot=word))
     return sorted(out, key=lambda r: r["y"])
+
+
+def slot_word(word: str) -> str | None:
+    """The seat type a word reads as, give or take an OCR misread (`near`).
+
+    Live 2026-11-27, the first 6-player table (Small map): the fifth row's
+    "Computer" came back "Comouter" on every reading. The row was not counted,
+    five seats read as too few, ADD PLAYER was pressed, and the seventh, open
+    row that made was never closed: setup gave up after 29 tries. A seat word
+    one letter off is still that seat.
+    """
+    if word in SLOT_WORDS:
+        return word
+    return next((known for known in sorted(SLOT_WORDS) if near(word, known)), None)
 
 
 def choose_from_dropdown(run_dir: Path, log: Log, row: dict, option: str,
