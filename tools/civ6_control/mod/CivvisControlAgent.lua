@@ -14661,6 +14661,29 @@ CivvisTrade.seatSend = function(pid, other, session, sessionID, turn)
 		if try(function() return DealManager.AreWorkingDealsEqual(pid, other); end, false) ~= true then
 			why = "deals_not_equal";
 		end
+	elseif session.verb == "COUNTER"
+			and try(function() return DealManager.HasPendingDeal(other, pid); end, nil) == true then
+		-- ★ A COUNTER REPLACES THEIR DEAL (live trade-live-5, 2026-11-28). Sent
+		-- from a session of ours, ADJUSTED left their deal pending beside ours
+		-- (`pending_from_them: true` after every counter), so neither seat's
+		-- proposal ever resolved, no exchange counted its rounds, and seats 1
+		-- and 3 countered each other every turn from 39 to 43 (27 counters in
+		-- 16 turns). Their deal is refused first, as the deal screen refuses a
+		-- human's (:635-641), and ours, rebuilt (the refusal may consume the
+		-- working deal), goes out as the counter; the answering seat's word
+		-- (`seatSaid`, COUNTER) tells them it was a counter, not a refusal.
+		sent = CivvisK.attempt(function()
+			DealManager.SendWorkingDeal(DealProposalAction.REJECTED, pid, other);
+		end) == true;
+		if not sent then
+			why = "refuse_threw";
+		else
+			local rebuilt, rebuiltId = CivvisTrade.seatBuild(pid, other, session.give or {}, session.get or {});
+			if rebuilt == nil then why = "counter_" .. tostring(rebuiltId);
+			elseif rebuiltId ~= session.id then why = "counter_differs"; end
+			session.replaced = true;
+		end
+		sent = false;
 	end
 	if why == nil then
 		sent = CivvisK.attempt(function()
@@ -14684,7 +14707,7 @@ CivvisTrade.seatSend = function(pid, other, session, sessionID, turn)
 	emit("deal_answer", { turn = turn, to = other, to_kind = CivvisTrade.seatKind(other),
 		verb = session.verb, action = session.action, id = session.id, round = session.round,
 		session = sessionID or -1, sent = sent, why = why, held_ms = heldMs,
-		incoming_items = incomingItems, mirrored = session.mirrored,
+		incoming_items = incomingItems, mirrored = session.mirrored, replaced = session.replaced,
 		pending_from_them = theirs, pending_from_us = ours });
 	if sent and CivvisTrade.seatKind(other) == "person" then
 		pcall(CivvisTrade.seatNote, pid, other, session, turn);
