@@ -34,3 +34,12 @@ refused-friendship-waits
 # 9-16) goes home and the sites beside the camp lose value. A trial: watch its journal
 # lines in the first armed game (#6026).
 camp-stall-goes-home
+# A deal another seat or the person proposes to a CIVVIS seat is answered on that seat's next
+# turn by its own price: accept, counter or refuse. Seen working in gated check games
+# trade-live-3..7 (accepted deals moved Gold, luxuries, Horses and per-turn payments on both
+# boards next turn); needs the mod of #6079 (#6049).
+own-price-answers-the-deal
+# A CIVVIS seat proposes the one deal a turn it gains most from, to the person at most once
+# every 10 turns per seat and one seat per window across the table (#6077), and asks a human
+# seat no friendship, delegation or alliance session it cannot answer (#6054).
+own-price-proposes-the-deal
