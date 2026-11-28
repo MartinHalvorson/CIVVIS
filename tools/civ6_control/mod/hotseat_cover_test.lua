@@ -637,7 +637,7 @@ do
 	assert(cover.unmute("again") == true and volumes(world) == OWN and cover.muted == nil)
 end
 
--- 8b. A CIVVIS seat's defeat shown on a CIVVIS seat's turn (EndGameMenu.lua:1011-1012):
+-- 8b. A CIVVIS seat's defeat shown on a CIVVIS seat's turn (EndGameMenu.lua:1012-1013):
 -- the screen is over the cover and is the person's to read and press; the
 -- turn under it stays covered through Next Player and after.
 do

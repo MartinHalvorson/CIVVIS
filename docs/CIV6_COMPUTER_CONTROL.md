@@ -610,7 +610,7 @@ quiet for 90 s, 180 s with no seat active, or the person's own turn waiting
 while the cover is up, sees the game again.
 
 **A seat's defeat on a CIVVIS turn keeps the cover.** Hotseat shows any human
-seat's defeat to whoever's turn it is (EndGameMenu.lua:1011-1012), and the
+seat's defeat to whoever's turn it is (EndGameMenu.lua:1012-1013), and the
 screen's Next Player only closes it (:304-318): the CIVVIS seat's turn under it
 goes on. The cover used to lift for every end screen, which left that seat's
 own map, HUD and units on screen, and clickable, from Next Player to its end

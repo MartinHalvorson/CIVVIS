@@ -875,7 +875,7 @@ function CivvisHotseatCover.onVictory()
 end
 -- ★ A SEAT'S DEFEAT ON A CIVVIS TURN IS NOT THE END OF THAT TURN. In hotseat
 -- the end screen shows any human seat's defeat to whoever's turn it is
--- (EndGameMenu.lua:1011-1012 `or (GameConfiguration.IsHotseat() and
+-- (EndGameMenu.lua:1012-1013 `or (GameConfiguration.IsHotseat() and
 -- defeatPlayer ~= nil and defeatPlayer:IsHuman())) then -- Hotseat Only -
 -- Another human player was defeated`), and its Next Player only closes the
 -- screen (:304-318: `UI.RequestAction(ActionTypes.ACTION_ENDTURN)` only when
