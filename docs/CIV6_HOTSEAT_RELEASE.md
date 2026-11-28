@@ -223,6 +223,7 @@ on a runner with no game.
 | the cover quiet while CIVVIS plays and the volumes back on the person's turn | the records fire live; silence itself is not measurable from the log (`Options.GetAudioOption` reads the saved volume) and no person has confirmed it yet | tests only |
 | a CIVVIS turn's status lines and emergency screen not left on screen for the person's turn | tests only (`hotseat_cover_test.lua` 10) | tests only |
 | a CIVVIS seat's Historic Moments and boost popups closed under the cover, not kept for the person's turn | tests only (`hotseat_cover_queue_test.lua` 2b); the fault itself was seen live (`hotseat-20261128T031456Z`) | tests only |
+| a seat's defeat shown on a CIVVIS turn: the end screen over the cover, that turn still covered after Next Player | tests only (`hotseat_cover_test.lua` 8b) | tests only |
 | the game's process names | measured (`Civ6_Exe_Child`) | **unmeasured** (`CivilizationVI.exe`, `CivilizationVI_DX12.exe` from the Steam depot) |
 | a whole game played by the **frozen bundle** (not a checkout) | **unmeasured**: no game was launched while it was built | **unmeasured** |
 | a browser-downloaded copy past Gatekeeper / SmartScreen | **unmeasured** | **unmeasured** |

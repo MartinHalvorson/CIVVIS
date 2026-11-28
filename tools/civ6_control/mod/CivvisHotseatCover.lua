@@ -191,6 +191,9 @@ local RUN = tostring(cfg.RunTag or "unset");
 CivvisHotseatCover = {
 	up = false,        -- queued as the cover right now
 	over = false,      -- a team has won (until "one more turn")
+	defeated = nil,    -- the seat whose defeat the end screen shows (Events.PlayerDefeat)
+	kept = false,      -- the cover stays under that end screen (keptUnder)
+	endShown = false,  -- the end screen said it is up (EndGameMenu_Shown), until it closes
 	yielded = nil,     -- the seat:turn the cover stood aside for
 	key = nil,         -- the seat:turn the clocks below are counting
 	quiet = 0, lastBeat = nil, between = 0, personWait = 0, pausedFor = 0,
@@ -315,7 +318,7 @@ function CivvisHotseatCover.priority()
 end
 -- HotSeatBackground.lua:10-17's own test for the end of the game. The end
 -- screen is above the cover anyway; the cover still goes, so the map is there
--- behind it for "one more turn".
+-- behind it for "one more turn" (but see `keptUnder`).
 function CivvisHotseatCover.endGameUp()
 	local up = false;
 	pcall(function()
@@ -952,6 +955,42 @@ function CivvisHotseatCover.onVictory()
 	CivvisHotseatCover.over = true;
 	CivvisHotseatCover.lift("end_game");
 end
+-- ★ A SEAT'S DEFEAT ON A CIVVIS TURN IS NOT THE END OF THAT TURN. In hotseat
+-- the end screen shows any human seat's defeat to whoever's turn it is
+-- (EndGameMenu.lua:1012-1013 `or (GameConfiguration.IsHotseat() and
+-- defeatPlayer ~= nil and defeatPlayer:IsHuman())) then -- Hotseat Only -
+-- Another human player was defeated`), and its Next Player only closes the
+-- screen (:304-318: `UI.RequestAction(ActionTypes.ACTION_ENDTURN)` only when
+-- the viewer is that seat and its turn is active, then `Close()`): the turn
+-- under it goes on. A cover that lifted for it left the CIVVIS seat's own map,
+-- HUD and units on screen, and in the person's hands, from Next Player to that
+-- seat's end of turn. So when the screen shows a CIVVIS seat's defeat on a
+-- turn that is not a person's, the cover stays queued under it (the screen is
+-- above it, PopupPriorityLoader_Base.lua:14 EndGameMenu, and is seen and
+-- pressed as it ships) and the turn stays covered after Next Player. A
+-- person's defeat, a win, or an end screen whose defeat is not known lift it
+-- as before.
+function CivvisHotseatCover.onDefeat(player)
+	CivvisHotseatCover.defeated = tonumber(player);
+end
+function CivvisHotseatCover.keptUnder()
+	local c = CivvisHotseatCover;
+	if c.over or c.defeated == nil or c.person(c.defeated) then return false; end
+	return not c.person(c.localPlayer());
+end
+-- EndGameMenu.lua:547 `LuaEvents.EndGameMenu_Shown()` is raised from inside
+-- the defeat's own handler (:1009 OnPlayerDefeat -> View -> OnShow), so this
+-- context's `onDefeat` may not have run yet: a win lifts at once (it has its
+-- own event, `onVictory`), anything else on the next frame.
+function CivvisHotseatCover.onEndScreenShown()
+	CivvisHotseatCover.endShown = true;
+	if CivvisHotseatCover.over then CivvisHotseatCover.lift("end_game"); end
+end
+-- :578 `LuaEvents.EndGameMenu_Closed()`, Next Player's `Close()` among others.
+function CivvisHotseatCover.onEndScreenClosed()
+	local c = CivvisHotseatCover;
+	c.defeated, c.kept, c.endShown = nil, false, false;
+end
 function CivvisHotseatCover.onOneMoreTurn()
 	CivvisHotseatCover.over = false;
 end
@@ -996,9 +1035,31 @@ function CivvisHotseatCover.tick(dt)
 		c.lift("no_harness");
 		return;
 	end
-	if c.endGameUp() then
-		c.lift("end_game");
-		return;
+	local endUp = c.endGameUp();
+	-- Kept under a screen that has left the queue without saying so: closed.
+	if c.kept and not endUp and not c.endShown then c.onEndScreenClosed(); end
+	if endUp or c.endShown then
+		if not c.keptUnder() then
+			c.endShown = false;
+			c.lift("end_game");
+			return;
+		end
+		if endUp then
+			-- Under the end screen: it holds the game until Next Player and the
+			-- person sees it, so no stall is hidden and nothing here counts one.
+			-- Its sound is theirs. Not a stretch of CIVVIS's to learn from.
+			if not c.kept then
+				c.kept = true;
+				c.report("hotseat_cover_kept", { { "reason", "defeat" }, { "defeated", c.defeated },
+					{ "player", c.localPlayer() }, { "turn", c.turn() } });
+			end
+			c.advance(dt);
+			if c.wait ~= nil then c.wait.timed, c.wait.clean = false, false; end
+			c.unmute("end_screen");
+			return;
+		end
+		-- Said to be up, and gone from the queue: closed.
+		c.onEndScreenClosed();
 	end
 	local pid = c.localPlayer();
 	local key = c.keyFor(pid);
@@ -1079,7 +1140,9 @@ function CivvisHotseatCover.arm()
 	pcall(function() Events.TeamVictory.Add(guarded(c.onVictory)); end);
 	pcall(function() Events.UserRequestClose.Add(guarded(c.onQuitRequest)); end);
 	pcall(function() LuaEvents.PlayerChange_Close.Add(guarded(c.onHandoverClosed)); end);
-	pcall(function() LuaEvents.EndGameMenu_Shown.Add(guarded(function() c.lift("end_game"); end)); end);
+	pcall(function() Events.PlayerDefeat.Add(guarded(c.onDefeat)); end);
+	pcall(function() LuaEvents.EndGameMenu_Shown.Add(guarded(c.onEndScreenShown)); end);
+	pcall(function() LuaEvents.EndGameMenu_Closed.Add(guarded(c.onEndScreenClosed)); end);
 	pcall(function() LuaEvents.EndGameMenu_OneMoreTurn.Add(guarded(c.onOneMoreTurn)); end);
 	pcall(function() Controls.MenuButton:RegisterCallback(Mouse.eLClick, guarded(c.openMenu)); end);
 	pcall(function()
