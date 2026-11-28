@@ -421,6 +421,10 @@ impl AdvancedAi {
         /// Darwin with no reachable site buys one Open Borders grant; see
         /// `advanced/foreign_site_open_border.rs`.
         foreign_site_buys_the_open_border => enable_foreign_site_buys_the_open_border, disable_foreign_site_buys_the_open_border;
+        /// Opt-in gene `founding-voyage-2`: a cityless seat's embarked
+        /// Settler sails for land with its escort alongside; see
+        /// `advanced/maori_founds_from_the_sea.rs`.
+        founding_voyage_2 => enable_founding_voyage_2, disable_founding_voyage_2;
         // ---- append: g-k --------------------------------------------
         /// `gutted-rival-passes-the-edge`: a staged declaration by a Domination
         /// lane passes the peak edge against a target at 60% or less of its
@@ -612,6 +616,10 @@ impl AdvancedAi {
         /// science run brings the Spy-slot civics forward off a Science aim;
         /// see `advanced/rival_science_run_opens_the_spy_civics.rs`.
         rival_science_run_opens_the_spy_civics => enable_rival_science_run_opens_the_spy_civics, disable_rival_science_run_opens_the_spy_civics;
+        /// Opt-in gene `person-units-threaten-civilians` (hotseat): a person's
+        /// soldiers threaten our civilians at any war state; see
+        /// `advanced/person_units_threaten_civilians.rs`.
+        person_units_threaten_civilians => enable_person_units_threaten_civilians, disable_person_units_threaten_civilians;
         // ---- append: s-s --------------------------------------------
         /// Opt-in gene `siege-goes-on-the-forecast`: the siege train goes,
         /// holds and stands down on the capture forecast, and Siege rows rank
@@ -742,6 +750,10 @@ impl AdvancedAi {
         /// out counts on the Settler walk clock, and the walk deadline holds
         /// past the band turn; see `advanced/settler_walk_deadline.rs`.
         settler_walk_clock_runs_all_game => enable_settler_walk_clock_runs_all_game, disable_settler_walk_clock_runs_all_game;
+        /// Opt-in gene `science-seat-writes-first`: a Science seat's research
+        /// takes Writing once it knows two techs; see
+        /// `advanced/science_seat_writes_first.rs`.
+        science_seat_writes_first => enable_science_seat_writes_first, disable_science_seat_writes_first;
         // ---- append: t-z --------------------------------------------
         /// Opt-in gene `theology-fights-count-the-host-edge`; see
         /// `advanced/theology_fights.rs`.

@@ -36,7 +36,8 @@ use std::collections::BTreeMap;
 /// the shipped deal screen's default for every timed item,
 /// `Base/Assets/UI/DiplomacyDealView.lua:84`
 /// (`local ms_DefaultMultiTurnGoldDuration = 30;`) and `:1340`
-/// (`pDealItem:SetDuration(30);	-- Default to this many turns`).
+/// (`pDealItem:SetDuration(30); -- Default to this many turns`, a tab in
+/// the shipped line).
 pub const DEAL_TURNS: u32 = 30;
 
 /// GUESS. What a turn's delay costs at Standard speed: 1.5% a turn, so 30

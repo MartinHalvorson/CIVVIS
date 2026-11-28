@@ -1,0 +1,17 @@
+{
+ "kind": "captured_native_action_pairs_v1",
+ "tag": "science-seat-writes-first",
+ "scope": "Recorded proposal activation on captured live input only, not host execution or strength. 6 research boards of the person-played hotseat game hotseat-20261128T031456Z (2026-11-27, 6 human seats, Small Continents, Prince, Online), each a CIVVIS seat's own events.jsonl cut after the turn's frame-0 state (the board the seat chose its research on; later frames already carry the choice), replayed with --turn N --resumed --explain and the seat's own --victory and --civ as its live worker passed them (the seats ran forced=none, so no --with). Both arms run one frozen civvis_orders: the macOS arm64 release binary (LTO off) of hotseat-bundle workflow run 46110676865, built from revision 0b1dc127 = main 91899654 plus this PR's src/ diff at 7cf008f9 (no src/ change between 91899654 and the PR's base b897174e; the bundle uploads no artifact from a base that holds #6015). The on arm adds --with science-seat-writes-first. 6 of 6 complete; the off arms reproduce every live research choice. Fire: seat p3 (Science, Cree) t12, AH/Mining/Pottery known: off Sailing (as live), on Writing; nothing else in the orders differs. Same orders, gene journalled: p3 t10 (two techs, no Pottery: the walk to Writing takes Pottery, as the off arm and the live seat did). Same, gene silent: p3 t6 (one tech); controls p2 Culture t14 (Sailing), p4 Domination t14 (Mining), p5 adaptive t14 (Sailing).",
+ "archive": {
+  "path": "docs/eval/2026-11-28-science-seat-writes-first.native-queries.tar.xz",
+  "sha256": "450ac6b9eb8efeeb915b4c9bc54101b7da11c0115bf08680f9edbc1f71dc30ac"
+ },
+ "members": [
+  "native-queries-01/0000/result.json",
+  "native-queries-01/0001/result.json",
+  "native-queries-01/0002/result.json",
+  "native-queries-01/0003/result.json",
+  "native-queries-01/0004/result.json",
+  "native-queries-01/0005/result.json"
+ ]
+}
