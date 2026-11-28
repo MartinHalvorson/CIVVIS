@@ -643,6 +643,52 @@ parked on turn 1 behind the stub's own "Roman Empire Makes History" card: the
 stub ignores UI pulses (`controller_clock` `standalone`) and hears only game-core
 events, which stopped. A real person's seat is never closed for or ended.
 
+**The stand-in plays its turn to the end** (`CivvisSeat.standIn`,
+`CivvisControlAgent.lua`). Every check game wedged on the stub's turn:
+`smoke-6p-20261128T0244Zb` turn 2 (one pass, `NO_ENDTURN_BLOCKING`, its end of
+turn asked while the Historic Moments screens the CIVVIS seats had kept were
+coming up, then ten minutes of nothing), `manual-live-1` and `manual-cover-1`
+turn 5 (the Scout sent on a multi-turn `probe` the turn before refused SKIP_TURN,
+FORTIFY, ALERT and SLEEP at turn begin, the forfeit ladder's three forced end
+turns went inside two seconds, `wedged`). The common half: the stub heard only
+game-core events, since the UI pulse turns a controller with no decision worker
+away (`controller_clock` `standalone`), and a game waiting on its local player
+publishes almost none. Now, on its own turn only:
+
+- the stub takes the HUD's one-second pulse (`LuaEvents.CivvisControlPulse`,
+  through the seat gate) and runs the ordinary loop on it, which answers the
+  blocker and asks for the end of turn again;
+- its turn opens once its units have their movement back, as a CIVVIS seat's
+  does (`movementNotYetRestored`);
+- after 4 s, every 3 s, it answers what the game says it waits on itself: ready
+  units are held in place, one refusing every hold has its stale operation or
+  queued path cancelled (`UNITCOMMAND_CANCEL`, UnitCommands.xml:36) and is held
+  again, an envoy prompt is marked considered (CityStates.lua:452), any other
+  blocker gets the ladder's answer; then the notification is dismissed and the
+  end of turn asked with SHIFT+ENTER's request (ActionPanel.lua:1099,
+  `UI.RequestAction(ActionTypes.ACTION_ENDTURN, { REASON = "UserForced" } )`);
+- `stand_in_stuck` says in one record what still stands: the blocker and the
+  answer, each unit still refusing (moves, activity, queued path, the engine's
+  own refusal reasons from `CanStartOperation`), whether the turn is already
+  sent, `UI.CanEndTurn`/`IsGameCoreBusy`/`IsProcessingMessages`, the screens up
+  and the event locks they hold. On the first step and every 30 s after.
+
+Only a test stub's context does any of this (`CivvisSeat.standsIn`:
+`HotseatStubSeats` lists its seat and no decision worker plays it); a person's
+seat has no agent context at all. ⚠ Tests only (`stand_in_test.lua`), not seen
+in a live game. The first live check (one game on the Mac at a time, memory at
+least 50% free, no `rustc` running):
+
+    tools/civ6_hotseat.py --auto-human gated --players 6 --map Continents.lua \
+      --map-size MAPSIZE_SMALL --agents holy,tourist,moonshot,siege,jack --turns 30
+
+It works if `turns.jsonl` has a seat-0 row for every turn to 30 and the stub's
+`…-p0/events.jsonl` an `end_turn_wait` for each of them. A `stand_in_stuck`
+record is the stand-in stepping in: the turn should still end, with `forced`
+above 0 in that turn's `end_turn_wait`. The same `blocker` and `refusing`
+reported again 30 s later is the next thing to fix, and the record names it.
+Neither record on a stalled turn means the stand-in never got its pulse.
+
 ⚠⚠ **Measured 2026-11-27: the first cut killed the game.** It put the cover
 ABOVE the hand-over (the EndGameMenu slot) and kept the hand-over drawn under
 it with an injected `AlwaysVisibleInQueue`. In both live duels tried that way

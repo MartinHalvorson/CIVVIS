@@ -16,6 +16,7 @@ from the start rather than silently reporting nothing for the rest of a run.
 from __future__ import annotations
 
 from collections import Counter
+from datetime import datetime, timezone
 import json
 import os
 import sys
@@ -27,10 +28,38 @@ import civ6_env as env  # noqa: E402
 
 PREFIX = "CIVVISJSON "
 
+#: ★ WHEN A RECORD REACHED THE RELAY. `EventLogBridge` writes this beside every
+#: record it copies, in the `utc` layout `civ6_play.record` uses. `Automation.log`
+#: has no clock finer than the mod's whole-second `t`, so a hotseat run said how
+#: long a seat took but never which part of it was the hand-over, the export, the
+#: relay or the worker (`tools/hotseat_wait.py` reads it). Its own key, not `utc`:
+#: an `--attach-running` relay copies into a journal `civ6_play.record` wrote,
+#: whose lines carry `utc`, and its record matching stays exactly as it was.
+RELAY_STAMP = "relay_utc"
+
+#: Seconds between `relay_for`'s pumps. The ladder relays at 50 ms (20 ms in its
+#: `poll-20ms` arm, `civ6_play.py`'s `read_s`); a caller's half-second upkeep
+#: pass costs every board up to a whole pass (hotseat-20261128T031456Z: 47 mid-turn
+#: frames answered a median 523 ms apart, 45 of them one 0.5 s pass apart).
+RELAY_READ_S = 0.02
+
 
 def _encoded_event(event: dict) -> str:
     """Return the canonical on-disk representation for one controller event."""
     return json.dumps(event, sort_keys=True, separators=(",", ":"))
+
+
+def _identity(event: dict) -> str:
+    """The record as the game wrote it: its encoding without the relay's stamp."""
+    if RELAY_STAMP in event:
+        event = {key: value for key, value in event.items() if key != RELAY_STAMP}
+    return _encoded_event(event)
+
+
+def receipt_stamp(now: datetime | None = None) -> str:
+    """`now` (UTC) to the millisecond, as `civ6_play.record` stamps `utc`."""
+    now = now or datetime.now(timezone.utc)
+    return now.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
 
 
 class LogTail:
@@ -140,37 +169,48 @@ class EventLogBridge:
     """
 
     def __init__(self, run_dir: Path, *, tag: str | None = None,
-                 log_path: Path | None = None):
+                 log_path: Path | None = None, clock=None):
         self.run_dir = Path(run_dir)
         self.tag = tag or self.run_dir.name
         self.events_path = self.run_dir / "events.jsonl"
         self.tail = LogTail(log_path)
+        #: Wall clock for `RELAY_STAMP` (UTC `datetime`); tests pass their own.
+        self.clock = clock or (lambda: datetime.now(timezone.utc))
         self._already_written: Counter[str] = Counter()
         self.run_dir.mkdir(parents=True, exist_ok=True)
         self.events_path.touch(exist_ok=True)
         self._read_existing()
 
     def _read_existing(self) -> None:
-        """Count completed current-run lines so a restarted bridge is lossless."""
+        """Count completed current-run lines so a restarted bridge is lossless.
+
+        A line is counted as the game wrote it (`_identity`): a restarted bridge
+        meets its predecessor's stamped copies and must not copy them again."""
         for line in self.events_path.read_text(errors="replace").splitlines():
             try:
                 event = json.loads(line)
             except json.JSONDecodeError:
                 continue
             if isinstance(event, dict) and event.get("run") == self.tag:
-                self._already_written[_encoded_event(event)] += 1
+                self._already_written[_identity(event)] += 1
 
     def pump(self) -> int:
-        """Append newly seen events and return how many were copied."""
+        """Append newly seen events and return how many were copied.
+
+        Each copy carries `RELAY_STAMP`: one stamp per pump, the moment this
+        read found the records (they reached the relay together)."""
         lines: list[str] = []
+        stamp = None
         for event in self.tail.poll():
             if event.get("run") != self.tag:
                 continue
-            encoded = _encoded_event(event)
-            if self._already_written[encoded]:
-                self._already_written[encoded] -= 1
+            identity = _identity(event)
+            if self._already_written[identity]:
+                self._already_written[identity] -= 1
                 continue
-            lines.append(encoded)
+            if stamp is None:
+                stamp = receipt_stamp(self.clock())
+            lines.append(_encoded_event({**event, RELAY_STAMP: stamp}))
         if not lines:
             return 0
         with self.events_path.open("a", buffering=1) as output:
@@ -189,6 +229,29 @@ class EventLogBridge:
                 on_write(wrote)
             time.sleep(poll_s)
         return copied
+
+
+def relay_for(bridges, seconds: float, read_s: float = RELAY_READ_S, *,
+              clock=time.monotonic, sleep=time.sleep) -> int:
+    """Spend ``seconds`` relaying: pump every bridge every ``read_s``.
+
+    For a caller whose loop does slow upkeep once a pass and used to sleep the
+    rest of it: put this where the sleep was, and a board the mod writes reaches
+    its worker within ``read_s`` instead of at the next pass. The upkeep keeps
+    its cadence (this returns after ``seconds``, as the sleep did); only how
+    soon a record is copied changes, never what is copied. Returns how many
+    records were copied. A non-positive ``read_s`` sleeps once and pumps once.
+    """
+    step = read_s if read_s is not None and read_s > 0 else seconds
+    until = clock() + seconds
+    copied = 0
+    while True:
+        left = until - clock()
+        if left <= 0:
+            return copied
+        sleep(min(step, left))
+        for bridge in bridges:
+            copied += bridge.pump()
 
 
 def turns_left_seconds(first_turn: int | None, first_turn_at: float,
