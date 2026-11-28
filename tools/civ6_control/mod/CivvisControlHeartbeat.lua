@@ -267,6 +267,29 @@ end
 --     seat turns took 5-8 s each; a seat idle 45 s on its own active turn is
 --     not thinking.
 --
+-- ★★ A TURN CAN STAND WITH ITS CONTROLLER STILL BEATING. A controller that has
+-- spent its forfeit ladder keeps ticking on the HUD's pulse (CIVVIS seats:
+-- `controller_wake`; the test stub: `CivvisSeat.standInPulse`), so its stamp
+-- moves every second and the quiet rule above never fires, and neither does
+-- the cover's own stand-aside (`yield_quiet` reads the same stamp). And the
+-- check games' stand-in wedged on its turn three times in a row
+-- (smoke-6p-20261128T0244Zb t2 for ten minutes, manual-live-1 and
+-- manual-cover-1 t5) without one seat-watch record. So the watch also counts
+-- how long the seat's turn has stood, beat or no beat:
+--
+--   * a test stub's turn (`HotseatStubSeats`; its turns take half a second and
+--     its stand-in steps in after 4) standing `StubTurnSeconds` (30), and
+--   * any watched seat's turn standing `SeatLongTurnSeconds` (180: 600 CIVVIS
+--     seat turns on this Mac took 0.5-36 s, and the cover stands aside after
+--     180 s with no seat active)
+-- are reported as `seat_stuck` (`why`: `stub_turn` or `long_turn`, with the
+-- same fields as `seat_quiet` and the first unit still waiting for orders)
+-- and ended the same way, on the same budget (`seat_stuck_end_turn`).
+--   * A watched seat that is the local player while its turn is NOT active for
+--     `SeatBetweenSeconds` (60) is reported once a minute (`seat_between`:
+--     turn complete sent, core busy, processing, the event locks a screen
+--     holds) and left to the engine, which nothing in the shipped game can end.
+--
 -- Only seconds this watch itself saw pass are counted (at most 3 a reading),
 -- so a leader screen that hides the HUD for a minute is not a quiet minute.
 -- A person's seat (`HotseatHumanSeats`, unless a test stub plays it), a game held by the operator
@@ -301,7 +324,7 @@ end
 function CivvisSeatWatch.reset()
 	local w = CivvisSeatWatch;
 	w.key, w.prev, w.lastBeat, w.pausedFor = nil, nil, nil, nil;
-	w.quiet, w.forces, w.reported, w.forced = 0, 0, nil, nil;
+	w.quiet, w.age, w.forces, w.reported, w.forced = 0, 0, 0, nil, nil;
 end
 -- What the engine says about the seat's turn; every read guarded, a failed
 -- one left nil (and written as null).
@@ -313,6 +336,14 @@ function CivvisSeatWatch.read(pid)
 	pcall(function() s.sent = UI.HasSentTurnComplete() == true; end);
 	pcall(function() s.can_end = UI.CanEndTurn() == true; end);
 	pcall(function() s.busy = UI.IsGameCoreBusy() == true; end);
+	pcall(function() s.processing = UI.IsProcessingMessages() == true; end);
+	-- The event locks the AutoClose contexts' screens hold (their ledger), and
+	-- the first unit the engine still waits on for orders.
+	pcall(function() s.locks = tonumber(ExposedMembers.CivvisEventLocks.count); end);
+	pcall(function()
+		local unit = Players[pid]:GetUnits():GetFirstReadyUnit();
+		if unit ~= nil then s.ready = tostring(GameInfo.Units[unit:GetUnitType()].UnitType); end
+	end);
 	pcall(function()
 		local blocker = NotificationManager.GetFirstEndTurnBlocking(pid);
 		if blocker ~= nil and blocker ~= EndTurnBlockingTypes.NO_ENDTURN_BLOCKING then
@@ -347,7 +378,7 @@ function CivvisSeatWatch.report(kind, s, extra)
 	-- a later turn's identical report for one it has already copied.
 	local parts = { string.format('"t":%s', CivvisSeatWatch.field(CivvisSeatWatch.now())) };
 	for _, key in ipairs({ "turn", "player", "active", "paused", "sent", "can_end", "busy",
-			"blocker", "handover_hidden", "dialog_hidden" }) do
+			"processing", "blocker", "ready", "locks", "handover_hidden", "dialog_hidden" }) do
 		parts[#parts + 1] = string.format('"%s":%s', key, CivvisSeatWatch.field(s[key]));
 	end
 	for _, pair in ipairs(extra or {}) do
@@ -369,13 +400,20 @@ function CivvisSeatWatch.beat(source)
 	if type(pid) ~= "number" or pid < 0 or not w.watched(pid)
 			or (cfg.RequireHarness == true and not CivvisHarness.mine(pid)) then
 		w.reset();
+		w.waiting = nil;
 		return;
 	end
 	local s = w.read(pid);
 	if s.active ~= true or s.end_game == true or s.held == true then
 		w.reset();
+		if s.active == false and s.end_game ~= true and s.held ~= true then
+			w.between(pid, s, now, source);
+		else
+			w.waiting = nil;
+		end
 		return;
 	end
+	w.waiting = nil;
 	local key = pid .. ":" .. tostring(s.turn);
 	if w.key ~= key then
 		w.reset();
@@ -411,21 +449,33 @@ function CivvisSeatWatch.beat(source)
 		return;
 	end
 	w.pausedFor = nil;
+	-- How long this turn has stood (its hand-over's pause not counted).
+	w.age = w.age + dt;
 	local beat = nil;
 	pcall(function() beat = ExposedMembers.CivvisSeatBeat[pid]; end);
 	if beat ~= w.lastBeat then
 		w.lastBeat, w.quiet = beat, 0;
-		return;
+	else
+		w.quiet = w.quiet + dt;
 	end
-	w.quiet = w.quiet + dt;
-	if w.quiet < (tonumber(cfg.SeatQuietSeconds) or 45) then return; end
+	local why = nil;
+	if w.quiet >= (tonumber(cfg.SeatQuietSeconds) or 45) then
+		why = "quiet";
+	elseif w.listed(cfg.HotseatStubSeats, pid) and w.age >= (tonumber(cfg.StubTurnSeconds) or 30) then
+		why = "stub_turn";
+	elseif w.age >= (tonumber(cfg.SeatLongTurnSeconds) or 180) then
+		why = "long_turn";
+	end
+	if why == nil then return; end
+	local kind = why == "quiet" and "seat_quiet" or "seat_stuck";
 	local forceNow = type(beat) == "number" and s.sent ~= true
 		and w.forces < (tonumber(cfg.SeatQuietMaxForces) or 6)
 		and (w.forced == nil or now - w.forced >= (tonumber(cfg.SeatQuietForceEvery) or 20));
 	if w.reported == nil or now - w.reported >= 60 then
 		w.reported = now;
-		w.report("seat_quiet", s, {
-			{ "quiet", w.quiet }, { "controller_ran", type(beat) == "number" },
+		w.report(kind, s, {
+			{ "why", why }, { "quiet", w.quiet }, { "age", w.age },
+			{ "controller_ran", type(beat) == "number" },
 			{ "forces", w.forces }, { "source", source } });
 	end
 	-- A seat no controller ever ran on has nothing of ours to end, and a turn
@@ -435,8 +485,28 @@ function CivvisSeatWatch.beat(source)
 	local asked = pcall(function()
 		UI.RequestAction(ActionTypes.ACTION_ENDTURN, { REASON = "UserForced" });
 	end);
-	w.report("seat_quiet_end_turn", s, {
-		{ "quiet", w.quiet }, { "asked", asked }, { "forces", w.forces }, { "source", source } });
+	w.report(kind .. "_end_turn", s, {
+		{ "why", why }, { "quiet", w.quiet }, { "age", w.age }, { "asked", asked },
+		{ "forces", w.forces }, { "source", source } });
+end
+-- A watched seat that is the local player with its turn not active: between
+-- its end of turn and the next seat's start, normally a moment. Reported, not
+-- acted on: no shipped request ends a turn that is not active.
+function CivvisSeatWatch.between(pid, s, now, source)
+	local w = CivvisSeatWatch;
+	local key = pid .. ":" .. tostring(s.turn);
+	local idle = w.waiting;
+	if idle == nil or idle.key ~= key then
+		idle = { key = key, seconds = 0 };
+		w.waiting = idle;
+	end
+	local dt = (type(idle.prev) == "number" and now > idle.prev) and math.min(now - idle.prev, 3) or 0;
+	idle.prev = now;
+	idle.seconds = idle.seconds + dt;
+	if idle.seconds < (tonumber(cfg.SeatBetweenSeconds) or 60) then return; end
+	if idle.said ~= nil and now - idle.said < 60 then return; end
+	idle.said = now;
+	w.report("seat_between", s, { { "between", idle.seconds }, { "source", source } });
 end
 function CivvisSeatWatch.arm()
 	-- The shipped clock label's timer, kept: LateInitialize registers whatever

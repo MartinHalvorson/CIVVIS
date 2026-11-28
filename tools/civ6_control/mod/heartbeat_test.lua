@@ -376,7 +376,13 @@ local function seatHost(cfg)
     env.Game = { GetLocalPlayer = function() return h.local_player end,
                  GetCurrentGameTurn = function() return h.turn end }
     env.Players = setmetatable({}, { __index = function() return {
-        IsTurnActive = function() return h.active end } end })
+        IsTurnActive = function() return h.active end,
+        GetUnits = function() return { GetFirstReadyUnit = function()
+            if h.ready == nil then return nil end
+            return { GetUnitType = function() return h.ready end }
+        end } end } end })
+    env.GameInfo = { Units = setmetatable({}, { __index = function(_, index)
+        return { UnitType = index } end }) }
     env.PlayerConfigurations = setmetatable({}, { __index = function() return {
         GetWantsPause = function() return h.paused end,
         SetWantsPause = function(_, value) h.paused = value; h.pause_set = value end } end })
@@ -385,6 +391,7 @@ local function seatHost(cfg)
         HasSentTurnComplete = function() return h.sent end,
         CanEndTurn = function() return true end,
         IsGameCoreBusy = function() return false end,
+        IsProcessingMessages = function() return h.processing == true end,
         RequestAction = function(action, parameters)
             h.requests[#h.requests + 1] = { action = action, reason = parameters and parameters.REASON }
         end,
@@ -424,8 +431,9 @@ do
     assert(h.logs[1]:find('"clock":true', 1, true), "armed on the shipped clock timer")
     h.registered()
     assert(h.stockTicks == 1, "the shipped clock tick still runs")
-    -- A seat being played is left alone, however long the game is.
-    for _ = 1, 300 do h.second(true) end
+    -- A seat being played is left alone (until its turn has stood
+    -- `SeatLongTurnSeconds`, 180 s: see the long-turn checks below).
+    for _ = 1, 100 do h.second(true) end
     assert(#h.requests == 0 and #h.kinds("seat_quiet") == 0, "a playing seat is never ended")
     -- The controller stops: 44 quiet seconds are nothing, the 45th is a stall.
     for _ = 1, 44 do h.second(false) end
@@ -554,6 +562,8 @@ do
     -- The `--auto-human` test stubs are watched like a CIVVIS seat: `gated`
     -- lists seat 0 as the person's AND the stub's (run cover-live-6 went quiet
     -- on the stub's turn 1 and nothing ended it), `stub` lists it as a stub only.
+    -- A stub's turn takes half a second, so its whole turn standing
+    -- `StubTurnSeconds` (30) is ended, before the 45 quiet seconds would be.
     for _, stub in ipairs({
         { CivvisDecides = true, Hotseat = true, HotseatSeats = { 1 }, HotseatHumanSeats = { 0 },
           HotseatStubSeats = { 0 }, RunTag = "table" },
@@ -562,11 +572,14 @@ do
     }) do
         h = seatHost(stub)
         h.second(true)
-        for _ = 1, 44 do h.second(false) end
-        assert(#h.requests == 0, "44 quiet seconds of a stub are nothing")
+        for _ = 1, 29 do h.second(false) end
+        assert(#h.requests == 0, "29 s of a stub's turn are nothing")
         h.second(false)
-        assert(#h.requests == 1 and h.kinds("seat_quiet")[1]:find('"player":0', 1, true),
-            "a stub's quiet turn is ended like a CIVVIS seat's")
+        local stuck = h.kinds("seat_stuck")[1]
+        assert(#h.requests == 1 and stuck and stuck:find('"player":0', 1, true)
+            and stuck:find('"why":"stub_turn"', 1, true) and stuck:find('"age":30', 1, true),
+            "a stub's turn standing 30 s is ended: " .. tostring(stuck))
+        assert(h.kinds("seat_stuck_end_turn")[1], "and the request is reported")
     end
     -- A HUD hidden for a minute (a leader screen stops both clocks) is not a quiet minute.
     h = seatHost(HOTSEAT)
@@ -601,6 +614,164 @@ do
         chunk()
         assert(env.OnRefreshTimeTick == stock, "outside hotseat the shipped clock tick is not wrapped")
         assert(#h.logs == 0, "outside hotseat the watch is not armed")
+    end
+end
+-- A turn that stands with its controller still beating. The test stub's
+-- stand-in, and a CIVVIS seat past its forfeit ladder, keep ticking on the
+-- HUD's pulse, so the quiet rule never fires (smoke-6p-20261128T0244Zb: the
+-- gated stub's turn 2 stood ten minutes and the watch wrote nothing).
+local GATED = { CivvisDecides = true, Hotseat = true, HotseatSeats = { 1, 2, 3, 4, 5 },
+                HotseatHumanSeats = { 0 }, HotseatStubSeats = { 0 }, RunTag = "table" }
+local function count(h, kind) return #h.kinds(kind) end
+do
+    -- smoke-6p t2 as it was: the stub beat once (its one pass) and went quiet,
+    -- with no blocker standing. Ended at 30 s, not 45.
+    local h = seatHost(GATED)
+    h.turn = 2
+    h.second(true)
+    for _ = 1, 30 do h.second(false) end
+    assert(#h.requests == 1 and h.requests[1].reason == "UserForced", "the stub's turn 2 is ended at 30 s")
+    local stuck = h.kinds("seat_stuck")[1]
+    for _, piece in ipairs({ '"turn":2', '"player":0', '"why":"stub_turn"', '"blocker":null',
+            '"sent":false', '"processing":false', '"controller_ran":true', '"quiet":30', '"age":30' }) do
+        assert(stuck:find(piece, 1, true), "seat_stuck lacks " .. piece .. ": " .. stuck)
+    end
+    assert(count(h, "seat_quiet") == 0, "named for what it is, not as a quiet seat")
+    -- The stand-in beating every second: still ended at 30 s, and the record
+    -- names the unit the engine waits on and the event locks a screen holds.
+    h = seatHost(GATED)
+    h.turn, h.blocker, h.ready = 5, 7, "UNIT_SCOUT"
+    h.env.ExposedMembers.CivvisEventLocks = { count = 1, held = {} }
+    for _ = 1, 30 do h.second(true) end
+    assert(#h.requests == 0, "29 beating seconds of a stub's turn are nothing")
+    h.second(true)
+    assert(#h.requests == 1, "a beating stub standing 30 s is ended")
+    stuck = h.kinds("seat_stuck")[1]
+    for _, piece in ipairs({ '"blocker":"ENDTURN_BLOCKING_UNITS"', '"ready":"UNIT_SCOUT"',
+            '"locks":1', '"quiet":0', '"age":30' }) do
+        assert(stuck:find(piece, 1, true), "seat_stuck lacks " .. piece .. ": " .. stuck)
+    end
+    -- Same budget as a quiet seat: every 20 s, six a turn, reported once a minute.
+    for _ = 1, 19 do h.second(true) end
+    assert(#h.requests == 1, "not asked again inside 20 s")
+    h.second(true)
+    assert(#h.requests == 2, "asked again after 20 s")
+    for _ = 1, 400 do h.second(true) end
+    assert(#h.requests == 6, "six forced requests a turn at most: " .. #h.requests)
+    assert(count(h, "seat_stuck") == 8, "reported once a minute: " .. count(h, "seat_stuck"))
+    assert(count(h, "seat_stuck_end_turn") == 6)
+    -- A new turn gets its own 30 s.
+    h.turn = 6
+    for _ = 1, 30 do h.second(true) end
+    assert(#h.requests == 6, "turn 6 starts its own clock")
+    h.second(true)
+    assert(#h.requests == 7)
+    -- A stub turn already sent complete is reported and left to the engine.
+    h = seatHost(GATED)
+    h.sent = true
+    for _ = 1, 120 do h.second(true) end
+    assert(#h.requests == 0 and count(h, "seat_stuck") == 2, "a sent turn is the engine's to finish")
+    -- Its hand-over standing paused, with its dialog on screen, is not its turn yet.
+    h = seatHost(GATED)
+    h.paused, h.handover_hidden, h.dialog_hidden = true, false, false
+    for _ = 1, 100 do h.second(false) end
+    h.paused = false
+    for _ = 1, 29 do h.second(true) end
+    assert(#h.requests == 0, "the hand-over's pause is not counted")
+    h.second(true)
+    assert(#h.requests == 1)
+    -- A gap the watch slept through counts 3 s, not 600.
+    h = seatHost(GATED)
+    h.second(true)
+    for _ = 1, 10 do h.second(true) end
+    h.clock = h.clock + 600
+    for _ = 1, 16 do h.second(true) end
+    assert(#h.requests == 0, "a gap the watch slept through is not a stuck turn")
+    for _ = 1, 2 do h.second(true) end
+    assert(#h.requests == 1, "30 watched seconds are")
+end
+do
+    -- A CIVVIS seat's turn: a beating controller is left alone for 179 s and
+    -- ended at 180 (`SeatLongTurnSeconds`).
+    local h = seatHost(GATED)
+    h.local_player = 3
+    for _ = 1, 180 do h.second(true) end
+    assert(#h.requests == 0 and count(h, "seat_stuck") == 0, "179 s of a CIVVIS turn are nothing")
+    h.second(true)
+    local stuck = h.kinds("seat_stuck")[1]
+    assert(#h.requests == 1 and stuck and stuck:find('"why":"long_turn"', 1, true)
+        and stuck:find('"player":3', 1, true) and stuck:find('"age":180', 1, true),
+        "a CIVVIS turn standing 180 s is ended: " .. tostring(stuck))
+    -- Configurable, and the stub's 30 s is the stub's alone.
+    h = seatHost({ CivvisDecides = true, Hotseat = true, HotseatSeats = { 1, 2 },
+                   HotseatHumanSeats = { 0 }, HotseatStubSeats = { 0 }, SeatLongTurnSeconds = 60,
+                   RunTag = "table" })
+    h.local_player = 2
+    for _ = 1, 60 do h.second(true) end
+    assert(#h.requests == 0, "a CIVVIS seat is not a stub")
+    h.second(true)
+    assert(#h.requests == 1, "SeatLongTurnSeconds is read")
+    -- The quiet rule still comes first and keeps its name.
+    h = seatHost(GATED)
+    h.local_player = 1
+    h.second(true)
+    for _ = 1, 45 do h.second(false) end
+    assert(#h.requests == 1 and count(h, "seat_quiet") == 1 and count(h, "seat_stuck") == 0)
+    assert(h.kinds("seat_quiet")[1]:find('"why":"quiet"', 1, true))
+    -- A person's own turn, beating or not, is never ended or reported.
+    h = seatHost({ CivvisDecides = true, Hotseat = true, HotseatSeats = { 1, 2 },
+                   HotseatHumanSeats = { 0 }, RunTag = "table" })
+    for _ = 1, 600 do h.second(true) end
+    h.active = false
+    for _ = 1, 600 do h.second(false) end
+    assert(#h.requests == 0 and #h.logs == 1, "the person's seat: only the armed record")
+end
+do
+    -- The local player a watched seat whose turn is not active: between its
+    -- end of turn and the next seat's start. Reported after 60 s, once a
+    -- minute, never acted on.
+    local h = seatHost(GATED)
+    h.second(true)
+    h.active, h.sent, h.processing = false, true, true
+    h.env.ExposedMembers.CivvisEventLocks = { count = 2, held = {} }
+    for _ = 1, 60 do h.second(false) end
+    assert(count(h, "seat_between") == 0, "59 s between turns are nothing")
+    h.second(false)
+    local between = h.kinds("seat_between")[1]
+    for _, piece in ipairs({ '"active":false', '"sent":true', '"processing":true', '"locks":2',
+            '"between":60', '"player":0' }) do
+        assert(between and between:find(piece, 1, true), "seat_between lacks " .. piece .. ": " .. tostring(between))
+    end
+    for _ = 1, 59 do h.second(false) end
+    assert(count(h, "seat_between") == 1, "once a minute")
+    h.second(false)
+    assert(count(h, "seat_between") == 2)
+    assert(#h.requests == 0 and h.pause_set == nil, "nothing is asked of a turn that is not active")
+    -- The next seat's turn (or the person's) clears it.
+    h.local_player = 0
+    h.active = true
+    h.second(true)
+    h.active = false
+    for _ = 1, 60 do h.second(false) end
+    assert(count(h, "seat_between") == 2, "a new wait starts its own 60 s")
+    h.second(false)
+    assert(count(h, "seat_between") == 3)
+    -- Another seat's turn in between (a Firaxis AI's, unwatched) clears it too.
+    h.local_player = 7
+    h.second(false)
+    h.local_player = 0
+    for _ = 1, 59 do h.second(false) end
+    assert(count(h, "seat_between") == 3, "an unwatched seat's turn clears the wait")
+    -- Not for the end screen or an operator's hold.
+    for _, change in ipairs({
+        function(x) x.end_game_hidden = false end,
+        function(x) x.env.ExposedMembers.CivvisOperatorHold = true end,
+    }) do
+        local q = seatHost(GATED)
+        q.active = false
+        change(q)
+        for _ = 1, 200 do q.second(false) end
+        assert(count(q, "seat_between") == 0, "a finished or held game is not between turns")
     end
 end
 print("all seat watch checks passed")
