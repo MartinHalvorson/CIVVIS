@@ -30172,6 +30172,74 @@ end;
 -- per 50 ms shared with the publish-batch path, nothing at all unless a CIVVIS
 -- board is out. A hit ticks with the forced poll, exactly as a batch hit does.
 -- `orders_peek_wake` says how long the controller had gone without a tick.
+--
+-- ★★ HOTSEAT `--fast-turns`: A SEAT WAITING FOR ITS NEXT TICK GETS IT FROM
+-- THIS PULSE, NOT FROM THE NEXT SIXTEENTH PUBLISH BATCH. Two waits in every
+-- CIVVIS seat-turn are for nothing but a tick (hotseat-20261128T045523Z, the
+-- owner's 33 turns, `tools/hotseat_wait.py`): Start Turn pressed -> the
+-- opening board exported, median 78 ms at turns 1-10 and 166 ms at 21-32
+-- (0.87 s a round of five seats), every export in the first tick after the
+-- press; and an answer applied -> the tick that ends the turn or opens the
+-- next frame, which `settleTurn` defers on purpose ("one more tick"): after
+-- an answer that moved nothing it took 156-200 ms (median, 68 closes), one
+-- whole tick period, as `orders_peek_wake.since_tick` reads it (median
+-- 71-112 ms after the board, no tick in between). So, behind `--fast-turns`
+-- (`HotseatFastTurns`), the pulse ticks a seat whose turn is active and
+-- unpaused, at most twice per wait (`PULSE_TICKS`), in exactly two states:
+--   * `open`: the turn is not yet opened (`lastTurnSeen`). The shipped hand-
+--     over unpauses by a message after Start Turn (PlayerChange.lua:54-57,
+--     `SetPause(false)` -> `SetWantsPause` + `Network.BroadcastPlayerInfo()`),
+--     and the shipped unit panel waits for `GameConfiguration.IsPaused()` to
+--     read false before it acts (UnitPanel.lua:2845-2858); so does this.
+--   * `settle`: the frame's answer is applied and nothing it started is in
+--     flight: no queued or watched unit (`pendingCount`), no ranged shot
+--     waiting for its fight (`pendingStrikes`), and no end turn asked yet.
+-- Never while a unit walks or a shot flies: the queue's and the shot's waits
+-- are counted in ticks (the idle probe at 2, the no-op probe at 8, the grace
+-- at 30), and a faster tick would shorten every one of them. Those still
+-- move on the host's own unit events and the publish batches, as before.
+-- Every other install never reaches it. `pulse_tick` says when it ticked.
+CivvisQueue.PULSE_TICKS = 2;
+CivvisQueue.pulseTickDue = function()
+	-- `started`: the seat is claimed and the actions resolved (`ensureStarted`).
+	if not started or cfg.Hotseat ~= true or cfg.HotseatFastTurns ~= true
+			or CivvisBoard.hold.pacing then
+		return false;
+	end
+	local turn = tonumber(try(function() return Game.GetCurrentGameTurn(); end, -1)) or -1;
+	if turn < 0 or try(function() return GameConfiguration.IsPaused(); end, true) ~= false
+			or try(function() return Players[Game.GetLocalPlayer()]:IsTurnActive(); end, false) ~= true then
+		return false;
+	end
+	local why;
+	if turn ~= lastTurnSeen then
+		why = "open";
+	elseif awaiting.turn == turn and awaiting.done and CivvisQueue.pendingCount() == 0
+			and CivvisQueue.endTurnSubmittedTurn ~= turn then
+		for _, shot in pairs(CivvisFrames.pendingStrikes or {}) do
+			if shot.turn == turn then return false; end
+		end
+		why = "settle";
+	else
+		return false;
+	end
+	local frame = why == "open" and 0 or (awaiting.frame or 0);
+	local key = why .. ":" .. tostring(turn) .. ":" .. tostring(frame);
+	local spent = CivvisQueue.pulseSpent;
+	if spent == nil or spent.key ~= key then
+		spent = { key = key, n = 0 };
+		CivvisQueue.pulseSpent = spent;
+	end
+	if spent.n >= CivvisQueue.PULSE_TICKS then return false; end
+	spent.n = spent.n + 1;
+	local now, last = CivvisClock.now(), CivvisQueue.lastTickAt;
+	emit("pulse_tick", {
+		turn = turn, frame = frame, why = why, n = spent.n, ui = CivvisClock.stamp(),
+		since_tick = (type(now) == "number" and type(last) == "number")
+			and math.floor((now - last) * 1000 + 0.5) / 1000 or nil,
+	});
+	return true;
+end;
 CivvisQueue.onPeekPulse = function()
 	if finished or inTick or cfg.Play == false or not cfg.CivvisDecides then return; end
 	-- Orders the brain wrote for a held turn stay landed until it resumes; the
@@ -30185,6 +30253,7 @@ CivvisQueue.onPeekPulse = function()
 		tick();
 		return;
 	end
+	if CivvisQueue.pulseTickDue() then tick(); return; end
 	if not CivvisQueue.ordersLanded() then return; end
 	-- A turn held to the watch pace: tick quietly until its wait is up.
 	if CivvisBoard.hold.pacing then tick(); return; end

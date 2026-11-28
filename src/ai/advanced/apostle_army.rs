@@ -74,6 +74,15 @@ const SCOUT_CEILING: usize = 3;
 /// A city of ours needing support this close takes the last charge.
 const LOCAL_EMERGENCY: i32 = 6;
 
+/// `wounded-spreader-spends-far-from-home`: beyond this many tiles from a
+/// healing ring, two turns of a spreader's four moves, the trip home and back
+/// costs more turns than a wounded charge loses.
+const FAR_FROM_HOME: i32 = 8;
+
+/// `wounded-spreader-spends-far-from-home`: a target this near is one turn
+/// of a spreader's movement on open ground.
+const SPEND_REACH: i32 = 4;
+
 /// How far from a religious unit a soldier at war with us is read. A unit
 /// takes one step at a time, and no land soldier's turn carries it farther.
 const CONDEMNER_RADIUS: i32 = 8;
@@ -183,12 +192,97 @@ impl AdvancedAi {
             return Some(false);
         }
         let site = Self::nearest_healing_site(g, pid, uid)?;
+        // `wounded-spreader-spends-far-from-home`: see
+        // `wounded_spreader_spends_where_it_is`.
+        if self.wounded_spreader_spends_where_it_is(g, pid, uid, site, &religion) {
+            return Some(true);
+        }
         think!(self.journal(), Faith, Decision,
             "{} {} walks home to heal", kind.as_str(), uid;
             "corps-comes-home-alive: {} hit points; 68 of 74 units rival Apostles killed were at {} or less, and each death hands the rival faith 250 pressure around it", hp, RETREAT_FLOOR;
             site);
         let stepped = self.religious_step_toward_range(g, pid, uid, site, 1);
         Some(stepped || self.preacher_runs_for_home(g, pid, uid))
+    }
+
+    /// `wounded-spreader-spends-far-from-home`: a wounded Missionary or
+    /// Apostle whose nearest healing ring is more than [`FAR_FROM_HOME`] tiles
+    /// away spends its charge at the nearest city it would convert within
+    /// [`SPEND_REACH`] tiles: on the spot when the city is on or beside it,
+    /// else one safe step toward it. `false` leaves the walk home to the
+    /// caller: the gene is off, the unit keeps its last charge for the army,
+    /// the ring is near, no target is in reach, or no safe step closes on it.
+    ///
+    /// Live Deity Lv 8 benchmark, 2026-11-26/27, eight reviewed games: a
+    /// spreader at 60 hit points or less was a median 12 to 23 tiles from
+    /// its ring, so a heal cost ten to fifteen turns out and back, and 100 of
+    /// those trips lost the unit (most within a turn) against 157 that
+    /// arrived. In the same games 70 to 90 wounded spreader-turns a game
+    /// were spent more than 8 tiles from home with a city of another faith
+    /// within 4 tiles. A charge spent at 40 hit points buys 40% of a charge
+    /// now; the last one spent takes the unit off the board, so no rival's
+    /// kill can hand its faith the 250 pressure a death gives.
+    pub(super) fn wounded_spreader_spends_where_it_is(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+        site: Pos,
+        religion: &str,
+    ) -> bool {
+        if !self.wounded_spreader_spends_far_from_home {
+            return false;
+        }
+        let Some(unit) = g.units.get(&uid) else {
+            return false;
+        };
+        if !matches!(unit.kind.as_str(), "missionary" | "apostle")
+            || unit.charges <= 0
+            || g.rules.units[unit.kind].religious_spread <= 0.0
+            || g.players[pid].religion.as_deref() != Some(religion)
+            || self.keeps_its_last_charge(g, pid, uid)
+        {
+            return false;
+        }
+        let (here, kind, hp) = (unit.pos, unit.kind, unit.hp);
+        let home = g.wdist(here, site);
+        if home <= FAR_FROM_HOME {
+            return false;
+        }
+        // The same cities the spreader's own target list would take with an
+        // offensive posture: ours that need the faith back, and rivals' at
+        // peace that do not already hold it.
+        let Some((target, name)) = g
+            .cities
+            .values()
+            .filter(|city| g.wdist(here, city.pos) <= SPEND_REACH)
+            .filter(|city| {
+                Self::city_needs_religious_support(g, pid, city, religion)
+                    || (city.owner != pid
+                        && !g.is_at_war(pid, city.owner)
+                        && g.city_religion(city) != Some(religion)
+                        && self.religion_campaign_needs_city(g, pid, city, religion))
+            })
+            .min_by_key(|city| (g.wdist(here, city.pos), city.id))
+            .map(|city| (city.pos, city.name.clone()))
+        else {
+            return false;
+        };
+        if g.wdist(here, target) <= 1 {
+            think!(self.journal(), Faith, Decision,
+                "{} {} spends its charge on {} instead of walking home", kind.as_str(), uid, name;
+                "wounded-spreader-spends-far-from-home: {} hit points and {} tiles from a healing ring, so the trip out and back costs more than the charge loses here", hp, home;
+                target);
+            return g.apply(pid, &Action::Spread { unit: uid }).is_ok();
+        }
+        if !self.religious_step_toward_range(g, pid, uid, target, 1) {
+            return false;
+        }
+        think!(self.journal(), Faith, Decision,
+            "{} {} walks to {} to spend its charge instead of walking home", kind.as_str(), uid, name;
+            "wounded-spreader-spends-far-from-home: {} hit points and {} tiles from a healing ring, and {} is {} tiles away", hp, home, name, g.wdist(here, target);
+            target);
+        true
     }
 
     /// `corps-comes-home-alive`: with no safe step left, a religious unit
