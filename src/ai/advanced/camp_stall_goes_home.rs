@@ -224,8 +224,9 @@ impl AdvancedAi {
     /// [`CAMP_STALL_HOME_WATCH`] of it. Without it the ladder's barbarian
     /// response (`BasicAi::barbarian_response_objective`, which counts a
     /// camp within nine of a city and its guard within six as threats at
-    /// home) walks the party straight back to the camp. `None` with the gene
-    /// off, for any other unit, or with another enemy near.
+    /// home) walks the party straight back to the camp. When the movement
+    /// planner finds no step home this frame it holds where it stands. `None`
+    /// with the gene off, for any other unit, or with another enemy near.
     pub(super) fn camp_stall_home_step(
         &mut self,
         g: &mut Game,
@@ -274,7 +275,10 @@ impl AdvancedAi {
             return Some(self.base.fortify_or_stop(g, pid, uid));
         }
         if !self.base.step_toward(g, pid, uid, anchor) {
-            return None;
+            // The movement planner holds it this frame (no safe step home):
+            // it holds where it stands rather than going back to the ladder,
+            // whose barbarian response would walk it to the camp.
+            return Some(self.base.fortify_or_stop(g, pid, uid));
         }
         let now = g.units.get(&uid).map_or(at, |unit| unit.pos);
         think!(self.journal(), Military, Detail,

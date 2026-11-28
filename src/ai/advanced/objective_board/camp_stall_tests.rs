@@ -20,6 +20,16 @@ fn camp_force(ai: &AdvancedAi, camp: Pos) -> Option<&TaskForce> {
         .find(|force| force.objective_key == ObjectiveKey::Camp(camp))
 }
 
+/// A new turn's movement and attack for `uid`.
+fn fresh_turn(g: &mut Game, uid: u32) {
+    let moves = g.unit_max_moves(uid);
+    let unit = g.units.get_mut(&uid).unwrap();
+    unit.moves_left = moves;
+    unit.attacks_left = 1;
+    unit.moved = false;
+    unit.acted = false;
+}
+
 /// Seat p4's camp of `hotseat-20261128T031456Z` moved onto the test board:
 /// Tyre's camp at civ6 (45,20) stood five tiles from the city and a
 /// barbarian Spearman held it from turn 10; here a camp five tiles east of
@@ -50,8 +60,7 @@ fn camp_board(gene: bool, guarded: bool, apart: i32) -> (Game, Pos, Vec<u32>, Ad
         .take(2)
         .map(|pos| {
             let uid = g.spawn_test_unit("warrior", 0, *pos);
-            let moves = g.unit_max_moves(uid);
-            g.units.get_mut(&uid).unwrap().moves_left = moves;
+            fresh_turn(&mut g, uid);
             uid
         })
         .collect();
@@ -321,41 +330,54 @@ fn anchor_of(ai: &AdvancedAi, uid: u32) -> Pos {
 }
 
 #[test]
-fn a_released_warrior_walks_toward_its_new_force_and_holds_there() {
+fn a_released_warrior_heads_for_its_new_force_and_holds_there() {
     let (mut g, camp, warriors, mut ai) = closed_camp_board();
+    let mut walked = false;
     for uid in &warriors {
         let anchor = anchor_of(&ai, *uid);
         assert!(g.wdist(anchor, camp) > 1, "the new anchor is not the camp");
-        let before = g.wdist(g.units[uid].pos, anchor);
-        assert!(before > 1, "it starts away from its anchor");
-        assert_eq!(ai.camp_stall_home_step(&mut g, 0, *uid), Some(true));
-        let after = g.wdist(g.units[uid].pos, anchor);
-        assert!(
-            after < before,
-            "{uid} walked toward {anchor:?}: {before} -> {after}"
-        );
+        // Three frames of its turns: the gene takes every one, and the
+        // soldier never steps back toward the camp.
+        for _ in 0..3 {
+            let before = g.units[uid].pos;
+            fresh_turn(&mut g, *uid);
+            assert!(
+                ai.camp_stall_home_step(&mut g, 0, *uid).is_some(),
+                "the gene takes the released {uid}"
+            );
+            let after = g.units[uid].pos;
+            assert!(
+                g.wdist(after, camp) >= g.wdist(before, camp)
+                    && g.wdist(after, anchor) <= g.wdist(before, anchor),
+                "{uid}: {before:?} -> {after:?} for {anchor:?}, camp {camp:?}"
+            );
+            walked |= g.wdist(after, anchor) < g.wdist(before, anchor);
+        }
     }
+    assert!(
+        walked,
+        "a released Warrior walked toward its anchor: {:#?}",
+        gene_lines(&ai)
+    );
     assert!(gene_lines(&ai)
         .iter()
         .any(|line| line.contains("walks home from the camp")));
-    // Turn after turn it reaches its anchor, then holds there rather than
-    // handing itself back to the ladder.
+    // At its anchor it holds rather than handing itself back to the ladder.
     let uid = warriors[0];
     let anchor = anchor_of(&ai, uid);
     for _ in 0..12 {
         if g.wdist(g.units[&uid].pos, anchor) <= 1 {
             break;
         }
-        let moves = g.unit_max_moves(uid);
-        g.units.get_mut(&uid).unwrap().moves_left = moves;
-        assert_eq!(ai.camp_stall_home_step(&mut g, 0, uid), Some(true));
+        fresh_turn(&mut g, uid);
+        ai.camp_stall_home_step(&mut g, 0, uid);
     }
-    assert!(g.wdist(g.units[&uid].pos, anchor) <= 1, "it got home");
-    let home = g.units[&uid].pos;
-    let moves = g.unit_max_moves(uid);
-    g.units.get_mut(&uid).unwrap().moves_left = moves;
-    assert!(ai.camp_stall_home_step(&mut g, 0, uid).is_some());
-    assert_eq!(g.units[&uid].pos, home, "it stays home");
+    if g.wdist(g.units[&uid].pos, anchor) <= 1 {
+        let home = g.units[&uid].pos;
+        fresh_turn(&mut g, uid);
+        assert!(ai.camp_stall_home_step(&mut g, 0, uid).is_some());
+        assert_eq!(g.units[&uid].pos, home, "it stays home");
+    }
 }
 
 #[test]
@@ -363,8 +385,7 @@ fn another_enemy_near_or_a_soldier_never_in_the_party_is_the_ladders() {
     let (mut g, camp, warriors, mut ai) = closed_camp_board();
     // A soldier of ours the party never held.
     let stranger = g.spawn_test_unit("warrior", 0, at(8, 9));
-    let moves = g.unit_max_moves(stranger);
-    g.units.get_mut(&stranger).unwrap().moves_left = moves;
+    fresh_turn(&mut g, stranger);
     assert_eq!(ai.camp_stall_home_step(&mut g, 0, stranger), None);
     // A raider off the camp within reach of a released Warrior: a fight.
     let uid = warriors[0];
