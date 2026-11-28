@@ -6095,6 +6095,13 @@ pub const GENES: &[Gene] = &[
     // held one with no reachable site buys one grant. Opt-in; see
     // `advanced/foreign_site_open_border.rs`.
     Gene { tag: "foreign-site-buys-the-open-border", field: "foreign_site_buys_the_open_border", kind: Kind::OptIn, enable: AdvancedAi::enable_foreign_site_buys_the_open_border, disable: AdvancedAi::disable_foreign_site_buys_the_open_border },
+    // Hotseat live-6p-20261128T0446Zd seat p1 (Kupe, 2026-11-28): with
+    // `founding-voyage` armed nowhere, the embarked Settler and Warrior stood
+    // on ocean turns 1-6 and the seat never founded. Replayed, version one
+    // sails the Settler four plots east every turn and leaves the Warrior
+    // behind. Version two sails the soldier at sea beside it too. Opt-in;
+    // see `advanced/maori_founds_from_the_sea.rs`.
+    Gene { tag: "founding-voyage-2", field: "founding_voyage_2", kind: Kind::OptIn, enable: AdvancedAi::enable_founding_voyage_2, disable: AdvancedAi::disable_founding_voyage_2 },
     // ---- append: g-k ------------------------------------------------
     // `gutted-rival-passes-the-edge`: a Domination lane's staged declaration
     // passes the peak edge against a target at 60% or less of its 30-turn
@@ -6445,6 +6452,14 @@ pub const GENES: &[Gene] = &[
     // ahead of the government ladder. Opt-in; see
     // `advanced/rival_science_run_opens_the_spy_civics.rs`.
     Gene { tag: "rival-science-run-opens-the-spy-civics", field: "rival_science_run_opens_the_spy_civics", kind: Kind::OptIn, enable: AdvancedAi::enable_rival_science_run_opens_the_spy_civics, disable: AdvancedAi::disable_rival_science_run_opens_the_spy_civics },
+    // Hotseat 2026-11-27 (hotseat-20261128T031456Z p1 t9-t12): the person's
+    // Scout shadowed the religion seat's first Settler at peace, the Settler
+    // walked out ahead of its guard because "nothing visible can reach this
+    // tile", and a surprise war took it. A person can declare and capture on
+    // one turn, so a person's soldiers threaten our civilians at any war
+    // state. No-op unless a rival carries the host's `person` mark (hotseat
+    // only). Opt-in; see `advanced/person_units_threaten_civilians.rs`.
+    Gene { tag: "person-units-threaten-civilians", field: "person_units_threaten_civilians", kind: Kind::OptIn, enable: AdvancedAi::enable_person_units_threaten_civilians, disable: AdvancedAi::disable_person_units_threaten_civilians },
     // ---- append: s-s ------------------------------------------------
     // Kristina Deity 11-10 reached Nationalism at t122 with 8 cities on three
     // terrain classes and built no Open-Air Museum by t150 (+48 Culture and

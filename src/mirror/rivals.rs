@@ -55,6 +55,30 @@ pub(crate) fn apply_rival_wars(
     }
 }
 
+/// Mirror the met rivals a person plays into [`Game::observed_person_rivals`].
+///
+/// Only a hotseat install writes `person` (the mod reads it from
+/// `HotseatHumanSeats`), so on every single-player and ladder board the set
+/// stays empty and nothing that reads it changes. Rebuilt from the export
+/// each time, like the wars between rivals. Our own seat and unmapped
+/// players are skipped.
+pub(crate) fn apply_person_rivals(
+    game: &mut crate::game::Game,
+    state: &StateSnapshot,
+    seat_of_host: &BTreeMap<usize, usize>,
+) {
+    let persons: BTreeSet<usize> = state
+        .rivals
+        .iter()
+        .filter(|rival| rival.person == Some(true))
+        .filter_map(|rival| seat_of_host.get(&rival.player).copied())
+        .filter(|seat| *seat != 0 && *seat < game.players.len())
+        .collect();
+    if *game.observed_person_rivals != persons {
+        game.observed_person_rivals = Arc::new(persons);
+    }
+}
+
 /// Put fog-safe host standings on a reconstructed seat without manufacturing
 /// the hidden cities, wonders, or weapons that produced them.
 pub(super) fn apply_public_empire_stats(
