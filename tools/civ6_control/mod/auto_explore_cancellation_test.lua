@@ -198,8 +198,18 @@ end
 local sourceFile = assert(io.open(here .. "/CivvisControlAgent.lua", "r"))
 local agentSource = sourceFile:read("*a")
 sourceFile:close()
+-- The one exception is the crash check games' diagnostic (`CivvisSeat.standInDiag`,
+-- keyed by `HotseatDiagExploreTurns`, which no launcher of a person's game or the
+-- ladder sets): it sets the stand-in's Scout exploring on purpose so the engine
+-- hands a turn back. Outside that block the name may not appear.
+local diagFirst = agentSource:find("-- ★ DIAGNOSTIC ONLY, for crash check games", 1, true)
+local diagLast = diagFirst and agentSource:find("\n-- Hold one unit where it stands;", diagFirst, true)
+local outsideDiag = diagFirst and diagLast
+	and (agentSource:sub(1, diagFirst - 1) .. agentSource:sub(diagLast)) or agentSource
 check("agent never requests host auto-explore",
-	agentSource:find("UNITOPERATION_AUTOMATE_EXPLORE", 1, true) == nil, true)
+	outsideDiag:find("UNITOPERATION_AUTOMATE_EXPLORE", 1, true) == nil, true)
+check("...except the check games' diagnostic, behind its own key",
+	diagFirst ~= nil and agentSource:sub(diagFirst, diagLast):find("cfg.HotseatDiagExploreTurns", 1, true) ~= nil, true)
 
 -- 1. An active legacy operation has no queued destination, but must be
 -- cancelled at turn start before it can spend another movement point.
