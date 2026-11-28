@@ -6405,6 +6405,19 @@ fn decide(
         orders.extend(answers);
         note_bits.extend(notes);
     }
+    // `own-price-proposes-the-deal`: no session a hotseat human cannot
+    // answer, and this turn's one proposal by the seat's own price. See
+    // `hotseat_deals`.
+    if ai.own_price_proposes_the_deal_enabled() {
+        let held = hotseat_deals::hold_human_sessions(state, &mut orders);
+        if held > 0 {
+            note_bits.push(format!("own_price_human_sessions_held={held}"));
+        }
+        if let Some((order, note)) = hotseat_deals::propose_order(state, ai.victory_target()) {
+            orders.push(order);
+            note_bits.push(note);
+        }
+    }
     let session_conflicts = drop_deals_beside_war_or_peace(&mut orders);
     if session_conflicts > 0 {
         note_bits.push(format!(

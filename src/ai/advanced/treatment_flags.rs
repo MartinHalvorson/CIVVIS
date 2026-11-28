@@ -497,6 +497,10 @@ impl AdvancedAi {
         /// deal proposed to it by its own price (accept, counter, reject); see
         /// `advanced/own_price_answers_the_deal.rs`.
         own_price_answers_the_deal => enable_own_price_answers_the_deal, disable_own_price_answers_the_deal;
+        /// Opt-in gene `own-price-proposes-the-deal`: a hotseat seat proposes
+        /// the deal it gains most from and asks a human seat no session it
+        /// cannot answer; see `advanced/own_price_proposes_the_deal.rs`.
+        own_price_proposes_the_deal => enable_own_price_proposes_the_deal, disable_own_price_proposes_the_deal;
         // ---- append: p-r --------------------------------------------
         /// Opt-in gene `racer-seat-statue-civic-first`; see
         /// `AdvancedAi::diplo_statue_civic_goal`.

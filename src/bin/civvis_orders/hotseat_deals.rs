@@ -24,6 +24,29 @@ fn own_works(state: &civvis::mirror::StateSnapshot) -> BTreeMap<String, String> 
         .collect()
 }
 
+/// This seat's position for pricing, with what the deal board says that the
+/// plain state does not: the free Great Work walls, and the stockpile cap
+/// (one cap for every strategic resource in Gathering Storm; the smallest is
+/// taken).
+fn position_for(
+    state: &civvis::mirror::StateSnapshot,
+    board: &DealBoard,
+    lane: Option<civvis::ai::VictoryTarget>,
+) -> Position {
+    let mut position = Position::from_board(state, lane);
+    position.great_work_room = board.great_work_room.clone();
+    if let Some(cap) = board
+        .strategic_caps
+        .values()
+        .copied()
+        .filter(|cap| *cap > 0.0)
+        .min_by(f64::total_cmp)
+    {
+        position.strategic_cap = cap;
+    }
+    position
+}
+
 /// The `deal` orders answering every deal on `state`'s board, one per
 /// proposer, and a journal note for each. Nothing off the opening frame, and
 /// nothing on a board with no readable `deals`.
@@ -39,20 +62,7 @@ pub(super) fn answer_orders(
     let Some(board) = state.deals.as_ref().and_then(DealBoard::from_json) else {
         return (orders, notes);
     };
-    let mut position = Position::from_board(state, lane);
-    // What the board says that the plain state does not: the free Great Work
-    // walls, and the stockpile cap (one cap for every strategic resource in
-    // Gathering Storm; the smallest is taken).
-    position.great_work_room = board.great_work_room.clone();
-    if let Some(cap) = board
-        .strategic_caps
-        .values()
-        .copied()
-        .filter(|cap| *cap > 0.0)
-        .min_by(f64::total_cmp)
-    {
-        position.strategic_cap = cap;
-    }
+    let position = position_for(state, &board, lane);
     let works = own_works(state);
     let turn = i64::from(state.turn);
     let mut seen: BTreeSet<usize> = BTreeSet::new();
@@ -113,6 +123,68 @@ pub(super) fn answer_orders(
     (orders, notes)
 }
 
+/// `own-price-proposes-the-deal`: this turn's one proposal, if the seat has
+/// a deal worth proposing (`trade_decider::propose`), as a `PROPOSE` order,
+/// with its journal note. Nothing off the opening frame or without a board.
+pub(super) fn propose_order(
+    state: &civvis::mirror::StateSnapshot,
+    lane: Option<civvis::ai::VictoryTarget>,
+) -> Option<(super::Order, String)> {
+    if state.frame != 0 {
+        return None;
+    }
+    let board = state.deals.as_ref().and_then(DealBoard::from_json)?;
+    let position = position_for(state, &board, lane);
+    let proposal = civvis::trade_decider::propose::propose(
+        &position,
+        &state.rivals,
+        &board,
+        &own_works(state),
+    )?;
+    let items = proposal.terms.render()?;
+    Some((
+        super::Order {
+            kind: "deal",
+            subject: Some(proposal.to as i64),
+            verb: Some(format!("PROPOSE;{items}")),
+            pos: None,
+        },
+        format!(
+            "own_price_propose={}:gain={:.0}",
+            proposal.to, proposal.gain
+        ),
+    ))
+}
+
+/// `own-price-proposes-the-deal`: drop the session asks a hotseat human seat
+/// cannot answer (friendship, delegation and embassy, alliance) toward a
+/// `person` or `civvis` counterpart. Each such session opens and closes on
+/// the asker's own turn, before the other seat ever plays: the owner's game
+/// `hotseat-20261128T045523Z` (DiplomacyManager.csv, t16 1->0 and 2->1
+/// delegations, t27 1->2, t28 3->1 and t30 1->0 friendships, each
+/// "Processing Immediately" then "Closing Session"; DiplomacySummary.csv has
+/// none), and 33 `order_failed friendship not_friends` in
+/// `selfplay-duel-20261127T0654Z-p1`. Returns how many were dropped.
+pub(super) fn hold_human_sessions(
+    state: &civvis::mirror::StateSnapshot,
+    orders: &mut Vec<super::Order>,
+) -> usize {
+    let Some(board) = state.deals.as_ref().and_then(DealBoard::from_json) else {
+        return 0;
+    };
+    let human = |subject: Option<i64>| {
+        subject
+            .and_then(|player| usize::try_from(player).ok())
+            .and_then(|player| board.counterparts.get(&player))
+            .is_some_and(|kind| kind == "person" || kind == "civvis")
+    };
+    let before = orders.len();
+    orders.retain(|order| {
+        !(matches!(order.kind, "friendship" | "delegation" | "alliance") && human(order.subject))
+    });
+    before - orders.len()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -143,6 +215,77 @@ mod tests {
 
     fn rendered(orders: &[super::super::Order]) -> Vec<String> {
         orders.iter().map(super::super::Order::to_json).collect()
+    }
+
+    /// Seat p1 (Ottoman) of the same game and turn, two Displeased cities
+    /// and no luxury, with a `deals` board that has nothing pending.
+    fn ottoman_with_table() -> civvis::mirror::StateSnapshot {
+        let mut state: civvis::mirror::StateSnapshot = serde_json::from_str(
+            r#"{"turn":32,"frame":0,"gold":47,"gold_per_turn":2,"favor":0,"military":53,"world_era":1,"cities":[{"id":65536,"name":"Istanbul","x":18,"y":18,"pop":4,"housing":6,"amenities":2,"amenities_needed":2,"amenities_luxuries":0,"happiness_yield_mult":0,"growth_turns":3,"food_surplus":7,"yields":{"culture":2.19922,"food":15,"gold":5,"production":9,"science":4},"loyalty_per_turn":28},{"id":131073,"name":"Trabzon","x":17,"y":22,"pop":3,"housing":5,"amenities":0,"amenities_needed":2,"amenities_luxuries":0,"happiness_yield_mult":-10,"growth_turns":3,"food_surplus":2,"yields":{"culture":0.808594,"faith":3.60156,"food":8,"production":7.20312,"science":1.35156},"loyalty_per_turn":17},{"id":196610,"name":"Ankara","x":17,"y":14,"pop":1,"housing":5,"amenities":0,"amenities_needed":1,"amenities_luxuries":0,"happiness_yield_mult":-10,"growth_turns":2,"food_surplus":1,"yields":{"culture":0.269531,"food":3,"production":4.5,"science":0.453125},"loyalty_per_turn":10.2812}],
+               "rivals":[{"player":0,"civ":"CIVILIZATION_SUMERIA","military":123,"at_war":false,"gold":26,"gold_per_turn":9,"tradeable_luxuries":["RESOURCE_SILVER","RESOURCE_SUGAR"]},{"player":3,"civ":"CIVILIZATION_CANADA","military":38,"at_war":false,"gold":65,"gold_per_turn":8,"tradeable_luxuries":["RESOURCE_FURS"],"tradeable_strategics":{"RESOURCE_HORSES":10}}],
+               "deals":{"v":1,"incoming":[],"outgoing":[],"outcomes":[],"refused_by_person":[],
+                 "counterparts":[{"player":0,"kind":"person"},{"player":3,"kind":"civvis"}]}}"#,
+        )
+        .expect("the board parses");
+        state.seat.speed = "GAMESPEED_ONLINE".to_string();
+        state.seat.max_turns = 250;
+        state
+    }
+
+    #[test]
+    fn the_seat_proposes_the_deal_it_gains_most_from_to_a_seat_first() {
+        let state = ottoman_with_table();
+        let (order, note) =
+            propose_order(&state, Some(civvis::ai::VictoryTarget::Religion)).expect("a proposal");
+        assert_eq!(
+            order.to_json(),
+            r#"{"kind":"deal","subject":3,"verb":"PROPOSE;give=GOLD=2@30,GOLD=30;get=RESOURCE_FURS=1@30","x":null,"y":null}"#
+        );
+        assert!(note.starts_with("own_price_propose=3:gain="), "{note}");
+        let mut later = state.clone();
+        later.frame = 1;
+        assert!(
+            propose_order(&later, None).is_none(),
+            "the opening frame only"
+        );
+        let mut bare = state;
+        bare.deals = None;
+        assert!(propose_order(&bare, None).is_none());
+    }
+
+    #[test]
+    fn a_session_a_human_seat_cannot_answer_is_not_asked() {
+        let state = ottoman_with_table();
+        let ask = |kind: &'static str, subject: i64| super::super::Order {
+            kind,
+            subject: Some(subject),
+            verb: Some("DECLARE_FRIEND".to_string()),
+            pos: None,
+        };
+        let mut orders = vec![
+            ask("friendship", 0),
+            ask("delegation", 3),
+            ask("alliance", 3),
+            ask("friendship", 7),
+            ask("research", 0),
+        ];
+        assert_eq!(hold_human_sessions(&state, &mut orders), 3);
+        assert_eq!(
+            orders
+                .iter()
+                .map(|o| (o.kind, o.subject))
+                .collect::<Vec<_>>(),
+            [("friendship", Some(7)), ("research", Some(0))],
+            "a seat the board does not call human, and every other order, stay"
+        );
+        let mut bare = state;
+        bare.deals = None;
+        let mut kept = vec![ask("friendship", 0)];
+        assert_eq!(
+            hold_human_sessions(&bare, &mut kept),
+            0,
+            "off hotseat, nothing changes"
+        );
     }
 
     #[test]

@@ -9111,6 +9111,11 @@ pub struct AdvancedAi {
     /// a deal another seat proposed to it by its own price: accept, counter
     /// or reject. See `advanced/own_price_answers_the_deal.rs`. Off by default.
     own_price_answers_the_deal: bool,
+    /// `own-price-proposes-the-deal`: a CIVVIS seat at a hotseat table proposes
+    /// the one deal a turn it gains most from by its own price, and asks a
+    /// human seat no session it cannot answer. See
+    /// `advanced/own_price_proposes_the_deal.rs`. Off by default.
+    own_price_proposes_the_deal: bool,
     // ---- append: p-r ------------------------------------------------
     /// `racer-seat-statue-civic-first`: Civil Engineering as the civic goal of
     /// a Science, Culture or Religious seat that reaches for the Statue of
@@ -11841,6 +11846,8 @@ mod faithless_seat_holds_its_faith_strikes;
 mod own_flip_faith_war;
 /// `own-price-answers-the-deal`: see `advanced/own_price_answers_the_deal.rs`.
 mod own_price_answers_the_deal;
+/// `own-price-proposes-the-deal`: see `advanced/own_price_proposes_the_deal.rs`.
+mod own_price_proposes_the_deal;
 
 /// `open-capital-declares-at-twice`: see
 /// `advanced/open_capital_declares_at_twice.rs`.
@@ -13567,6 +13574,7 @@ impl AdvancedAi {
             outmatched_war_prices_the_army: false,
             opening_ranged_support: false,
             own_price_answers_the_deal: false,
+            own_price_proposes_the_deal: false,
             // ---- append: p-r ----------------------------------------
             racer_seat_statue_civic_first: false,
             parity_upgrades_before_it_buys_2: false,
