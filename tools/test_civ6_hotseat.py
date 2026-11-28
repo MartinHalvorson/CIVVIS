@@ -462,6 +462,32 @@ class SeatCheckTest(unittest.TestCase):
             self.poll(monitor)
             self.assertEqual(monitor.take_unseated(), [], "checked once")
 
+    def test_a_seat_gone_from_a_game_picked_up_part_way_is_not_called_a_setup_fault(self) -> None:
+        # A resumed game (#6011's check, live 2026-11-28 review): row 5's seat was
+        # eliminated before this run began, so it takes no turn and nothing here
+        # recorded its end. It is retired as before, in words that fit both cases.
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp)
+            monitor, lines = self.monitor(run_dir, [1, 2, 3, 4, 5])
+            self.turns(run_dir, (57, 0), (57, 1), (57, 2), (57, 3), (57, 5), (58, 0))
+            self.poll(monitor)
+            self.assertEqual(monitor.take_unseated(), [4])
+            warned = [line for line in lines if line.startswith("⚠ row 5 took no turn 57")]
+            self.assertEqual(len(warned), 1, lines)
+            self.assertIn("eliminated earlier in this game, or not a Hot Seat human", warned[0])
+            self.assertIn("its decision worker is stopped", warned[0])
+            self.assertFalse([line for line in lines if "is not a Hot Seat human in this game" in line])
+        # One this run saw eliminated: said as such, no warning at all.
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp)
+            monitor, lines = self.monitor(run_dir, [1, 2])
+            monitor.defeated.add(2)
+            self.turns(run_dir, (1, 0), (1, 1), (2, 0))
+            self.poll(monitor)
+            self.assertEqual(monitor.take_unseated(), [2])
+            self.assertIn("row 3: eliminated, so its decision worker is stopped", lines)
+            self.assertFalse([line for line in lines if line.startswith("⚠")], lines)
+
     def test_every_seat_taking_its_turn_is_said_once_and_a_late_start_waits_for_a_whole_round(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             run_dir = Path(tmp)
@@ -1798,6 +1824,24 @@ class CoverTest(unittest.TestCase):
         source = Path(hotseat.__file__).read_text()
         attach = source.split("args.no_cover_timer = not attach_config.get", 1)[1][:200]
         self.assertIn('args.fast_turns = attach_config.get("HotseatFastTurns") is True', attach)
+
+    def test_the_help_says_what_fast_turns_adds_to_the_live_genome(self) -> None:
+        # The 20 ms orders peek is already the default game's: the live mod arms'
+        # `poll-20ms` (`deploy/live-mod-arms.txt`) sets `OrdersPeekSeconds`, which the
+        # mod reads before `HotseatFastTurns` (CivvisControlHeartbeat.lua `peekEvery`,
+        # CivvisControlAgent.lua `CivvisQueue.peekSeconds`).
+        live = hotseat.hotseat_config(game_args(genome="live", treatments=[]), Path("/tmp/r"),
+                                      Path("/tmp/r/o.sqlite"))
+        stock = hotseat.hotseat_config(game_args(genome="stock", treatments=[]), Path("/tmp/r"),
+                                       Path("/tmp/r/o.sqlite"))
+        self.assertEqual((live["OrdersPeekSeconds"], live["HotseatFastTurns"]), (0.02, False))
+        self.assertIsNone(stock["OrdersPeekSeconds"])
+        with contextlib.redirect_stdout(io.StringIO()) as out, self.assertRaises(SystemExit):
+            hotseat.main(["--help"])
+        said = " ".join(out.getvalue().split())
+        self.assertIn("which the default `--genome live` already does", said)
+        self.assertIn("adds something only with `--genome stock`", said)
+        self.assertNotIn("not yet checked in a live game", said)
 
     def test_the_cover_is_quiet_and_says_how_long_by_default(self) -> None:
         cases = {

@@ -461,7 +461,12 @@ CHILD = textwrap.dedent(r"""
     install._drop_mod_index = lambda: None
     install.check_syntax = lambda path: None
     pids = []
-    env.game_pids = lambda *a, **k: list(pids)
+    def listed(*a, **k):
+        counts["ps"] += 1
+        return list(pids)
+    env.game_pids = listed
+    # The scripted game's pids, as `os.kill(pid, 0)` would find them.
+    hotseat.watch.GameLiveness._running = staticmethod(lambda pid: pid in pids)
     def refuse(*a, **k):
         raise AssertionError("the manual lobby launched or set something up")
     hotseat.launcher.launch = refuse
@@ -481,7 +486,7 @@ CHILD = textwrap.dedent(r"""
                          "summary": json.loads((run_dir / "summary.json").read_text())})
     hotseat.record_person_game = record
     # How often the log is relayed against how often the loop's upkeep runs.
-    counts = {"pumps": 0, "beats": 0}
+    counts = {"pumps": 0, "beats": 0, "ps": 0}
     RealPump, RealBeat = hotseat.watch.EventLogBridge.pump, hotseat.HarnessBeat.beat
     def counted_pump(self):
         counts["pumps"] += 1
@@ -628,6 +633,7 @@ class ManualLobbyEndToEndTest(unittest.TestCase):
         self.assertGreater(counts["beats"], 5)
         self.assertGreaterEqual(counts["pumps"], 6 * 25 * (counts["beats"] - 2))
 
+
     def test_a_named_persons_game_reaches_the_peoples_record_at_its_ending(self) -> None:
         import people_elo  # noqa: PLC0415
         result = self.run_child("won")
@@ -705,6 +711,12 @@ class ManualLobbyEndToEndTest(unittest.TestCase):
         result = self.run_child("stall")
         self.assertIn("has made no move for", result["log"])
         self.assertIn("Nothing here clicks in --manual-lobby mode", result["log"])
+        # 20 s of a running game on the harness's clock with no `ps` every pass
+        # (`watch.GameLiveness`, as `run` asks since #6005): the relay reads
+        # nothing while one runs. Before, one listing a pass.
+        counts = result["counts"]
+        self.assertGreater(counts["beats"], 35, counts)
+        self.assertLessEqual(counts["ps"], 8, counts)
 
 
 if __name__ == "__main__":
