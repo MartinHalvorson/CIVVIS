@@ -1,0 +1,13 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "own-price-proposes-the-deal",
+  "scope": "Recorded proposal activation on captured input only, not host execution or strength. Two real boards of the owner's hotseat game hotseat-20261128T045523Z (seat p1 Ottoman, religious; seat p3 Canada, science), each the seat's events.jsonl cut at the turn-32 frame-0 state record, with one thing added by hand: a `deals` key in the deals v1 shape (#6045, #6050) with nothing pending and who each met seat is (person or civvis), because no recorded game carries a deal board yet (inputs/<seat>.deals.json in the archive). Both arms run one frozen civvis_orders --resumed built by the hotseat-bundle workflow from 7e90cab2 (this branch); the on arm adds --with own-price-proposes-the-deal. Off: the planner's own friendship ask to the person (p1), and a friendship to the Ottoman seat and a delegation to the person (p3), sessions a human seat cannot answer. On: those are dropped (own_price_human_sessions_held) and one PROPOSE goes out: p1 asks Canada for its Furs for 2 Gold a turn and 30 Gold (own_price_propose=3:gain=68); p3 offers the Ottoman seat 10 spare Horses for 2 Gold a turn and 1 Gold. Every other order is the same in both arms.",
+  "archive": {
+    "path": "docs/eval/2026-11-28-own-price-proposes-the-deal.native-queries.tar.xz",
+    "sha256": "e7b92aac6aef4157a9363487c39bfe6feaeff978a570c7565a813e5de589552c"
+  },
+  "members": [
+    "native-queries/0000/result.json",
+    "native-queries/0001/result.json"
+  ]
+}

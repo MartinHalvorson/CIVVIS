@@ -6284,6 +6284,16 @@ pub const GENES: &[Gene] = &[
     // the smallest change worth it, or reject. Opt-in, hotseat only (it reads
     // the `deals` board); see `advanced/own_price_answers_the_deal.rs`.
     Gene { tag: "own-price-answers-the-deal", field: "own_price_answers_the_deal", kind: Kind::OptIn, enable: AdvancedAi::enable_own_price_answers_the_deal, disable: AdvancedAi::disable_own_price_answers_the_deal },
+    // Hotseat 2026-11-27/28: no CIVVIS seat ever proposed a deal another
+    // seat could answer (its sell/buy asks wait for a Firaxis leader's
+    // price, which a human seat never gives), and every friendship and
+    // delegation it asked of a human seat opened and closed on its own turn.
+    // A seat proposes the one deal a turn it gains most from by its own
+    // price, within what the other seat can give and pay, the person rarely
+    // and never twice with refused terms; and it asks a human seat no
+    // session it cannot answer. Opt-in, hotseat only (it reads the `deals`
+    // board); see `advanced/own_price_proposes_the_deal.rs`.
+    Gene { tag: "own-price-proposes-the-deal", field: "own_price_proposes_the_deal", kind: Kind::OptIn, enable: AdvancedAi::enable_own_price_proposes_the_deal, disable: AdvancedAi::disable_own_price_proposes_the_deal },
     // ---- append: p-r ------------------------------------------------
     // `racer-seat-statue-civic-first`: Civil Engineering first for a Science,
     // Culture or Religious seat that reaches for the Statue of Liberty, as

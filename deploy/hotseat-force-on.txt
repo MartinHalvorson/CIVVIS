@@ -24,3 +24,13 @@ stacked-soldiers-step-apart
 # A delegation, deal or Trader route refused in frame 0 was sent again in the next frame,
 # one more round trip inside the person's wait each time (for-gameplay.md G2; #6024).
 asks-go-once-a-turn
+# A surprise war at even strength left the seat in its peacetime posture: a new Settler
+# sent toward the declarer with 77-85 Gold idle (holy, turn 16; #6035).
+fresh-war-holds-the-home
+# A friendship ask a seat refused was sent again every turn (105 offers in one self-play
+# duel); at a hotseat table nobody answers during another seat's turn (#6029).
+refused-friendship-waits
+# A party that sat beside a barbarian camp declining every blow for turns (siege, turns
+# 9-16) goes home and the sites beside the camp lose value. A trial: watch its journal
+# lines in the first armed game (#6026).
+camp-stall-goes-home
