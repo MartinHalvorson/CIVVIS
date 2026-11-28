@@ -377,6 +377,7 @@ local function seatHost(cfg)
                  GetCurrentGameTurn = function() return h.turn end }
     env.Players = setmetatable({}, { __index = function() return {
         IsTurnActive = function() return h.active end,
+        CanUnreadyTurn = function() return h.can_unready == true end,
         GetUnits = function() return { GetFirstReadyUnit = function()
             if h.ready == nil then return nil end
             return { GetUnitType = function() return h.ready end }
@@ -396,7 +397,8 @@ local function seatHost(cfg)
             h.requests[#h.requests + 1] = { action = action, reason = parameters and parameters.REASON }
         end,
     }
-    env.ActionTypes = { ACTION_ENDTURN = "ACTION_ENDTURN" }
+    env.ActionTypes = { ACTION_ENDTURN = "ACTION_ENDTURN", ACTION_UNREADYTURN = "ACTION_UNREADYTURN" }
+    env.GameConfiguration = { IsPaused = function() return h.game_paused == true end }
     env.EndTurnBlockingTypes = { NO_ENDTURN_BLOCKING = 0, ENDTURN_BLOCKING_UNITS = 7 }
     env.NotificationManager = { GetFirstEndTurnBlocking = function() return h.blocker end }
     env.ExposedMembers = { CivvisSeatBeat = {} }
@@ -666,11 +668,35 @@ do
     assert(#h.requests == 6, "turn 6 starts its own clock")
     h.second(true)
     assert(#h.requests == 7)
-    -- A stub turn already sent complete is reported and left to the engine.
+    -- A stub turn that reads as sent and still stands was dropped: the engine
+    -- ignores a turn complete sent while the game is paused
+    -- (live-6p-20261128T0405Z t3, `PlayerTurnComplete ignored due to game
+    -- paused.`) and the UI keeps it as sent. It is asked again at 30 s:
+    -- unreadied where the game allows, else sent with SHIFT+ENTER's request.
     h = seatHost(GATED)
     h.sent = true
-    for _ = 1, 120 do h.second(true) end
-    assert(#h.requests == 0 and count(h, "seat_stuck") == 2, "a sent turn is the engine's to finish")
+    for _ = 1, 30 do h.second(true) end
+    assert(#h.requests == 0, "29 s of a sent stub turn are nothing")
+    h.second(true)
+    assert(#h.requests == 1 and h.requests[1].action == "ACTION_ENDTURN"
+        and h.requests[1].reason == "UserForced", "a dropped turn complete is sent again")
+    assert(h.kinds("seat_stuck_end_turn")[1]:find('"how":"end_turn"', 1, true))
+    assert(h.kinds("seat_stuck")[1]:find('"sent":true', 1, true)
+        and h.kinds("seat_stuck")[1]:find('"game_paused":false', 1, true))
+    h = seatHost(GATED)
+    h.sent, h.can_unready = true, true
+    for _ = 1, 31 do h.second(true) end
+    assert(#h.requests == 1 and h.requests[1].action == "ACTION_UNREADYTURN",
+        "where the game allows it, the sent turn is unreadied first")
+    assert(h.kinds("seat_stuck_end_turn")[1]:find('"how":"unready"', 1, true))
+    h.sent = false                         -- the unready landed
+    for _ = 1, 20 do h.second(true) end
+    assert(#h.requests == 2 and h.requests[2].action == "ACTION_ENDTURN", "and the next request ends it")
+    -- The game's own pause is named in every report.
+    h = seatHost(GATED)
+    h.game_paused = true
+    for _ = 1, 31 do h.second(true) end
+    assert(h.kinds("seat_stuck")[1]:find('"game_paused":true', 1, true), "the game's pause is reported")
     -- Its hand-over standing paused, with its dialog on screen, is not its turn yet.
     h = seatHost(GATED)
     h.paused, h.handover_hidden, h.dialog_hidden = true, false, false
@@ -702,6 +728,16 @@ do
     assert(#h.requests == 1 and stuck and stuck:find('"why":"long_turn"', 1, true)
         and stuck:find('"player":3', 1, true) and stuck:find('"age":180', 1, true),
         "a CIVVIS turn standing 180 s is ended: " .. tostring(stuck))
+    -- A CIVVIS turn that reads as sent: quiet, the engine's to finish; past
+    -- its 180 s it was dropped, and is sent again.
+    h = seatHost(GATED)
+    h.local_player, h.sent = 4, true
+    h.second(true)
+    for _ = 1, 179 do h.second(false) end
+    assert(#h.requests == 0 and count(h, "seat_quiet") >= 1, "a sent quiet turn is reported, not ended")
+    h.second(false)
+    assert(#h.requests == 1 and h.kinds("seat_quiet_end_turn")[1]:find('"why":"quiet"', 1, true),
+        "a sent turn standing 180 s is sent again")
     -- Configurable, and the stub's 30 s is the stub's alone.
     h = seatHost({ CivvisDecides = true, Hotseat = true, HotseatSeats = { 1, 2 },
                    HotseatHumanSeats = { 0 }, HotseatStubSeats = { 0 }, SeatLongTurnSeconds = 60,
