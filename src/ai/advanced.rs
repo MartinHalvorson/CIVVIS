@@ -7124,6 +7124,16 @@ pub struct AdvancedAi {
     /// holding or queueing a Spaceport or space project, nor a Builder. See
     /// `advanced/denial_spies_fill_every_slot.rs`. Opt-in.
     denial_spies_fill_every_slot_3: bool,
+    /// `city-campaign-3`: version two at peace, and the war in hand — a
+    /// major war already open (whoever opened it) draws a one-city plan
+    /// against that rival when the field army carries the city's bill, keeps
+    /// it for a twenty-turn clock, and holds the generic Siege row against a
+    /// rival with no such city. See `advanced/city_campaign.rs`. Opt-in.
+    city_campaign_3: bool,
+    /// `city-campaign-3`: rivals whose war reads no-go, each to the last turn
+    /// the verdict holds. Written by `maintain_city_campaign`, read by the
+    /// Objective Board's Siege rows. Empty while the gene is off.
+    campaign_war_no_go: BTreeMap<usize, u32>,
     // ---- append: e-f ------------------------------------------------
     /// `faith-strike-wipes-the-spreaders`: declare on a rival faith on the
     /// turn several of its spreaders can be condemned at once. See
@@ -10781,6 +10791,19 @@ pub struct AdvancedAi {
     /// their Monument from the third city, through the Culture lane's claim.
     /// See `advanced/culture_monuments.rs`. Off by default.
     science_seat_monuments: bool,
+    /// `stacked-shooter-steps-out`: a City Center of ours where a shooter
+    /// shares the tile with another of our soldiers, with an enemy soldier in
+    /// sight nearby, keeps one shooter and steps the rest beside it, so the
+    /// shooters can fire. See `advanced/stacked_shooter_steps_out.rs`. Off by
+    /// default.
+    stacked_shooter_steps_out: bool,
+    /// `settler-walk-clock-runs-all-game`: the Settler walk clock that
+    /// `settler-walk-deadline` and `stalled-settler-takes-a-safe-site` read
+    /// ticks on every turn the Settler is stepped (retreats, flights and
+    /// walks to shelter included), and the walk deadline applies to walks
+    /// begun after the band turn. See `advanced/settler_walk_deadline.rs`.
+    /// Off by default.
+    settler_walk_clock_runs_all_game: bool,
     // ---- append: t-z ------------------------------------------------
     /// `world-religion-condemns-the-faith`: our soldiers condemn a faith
     /// World Religion's option B names, at peace, and the agent's ballot asks
@@ -11210,6 +11233,12 @@ pub struct AdvancedAi {
     /// the bank. See `advanced/watched_capital_keeps_its_defender_gold.rs`.
     /// Off by default.
     watched_capital_keeps_its_defender_gold: bool,
+    /// `watched-capital-trains-its-defender`: while the capital watch reads
+    /// a major at 2.5x our power at an unwalled original capital short of
+    /// its garrison, the capital's queue goes to its strongest land
+    /// defender. See `advanced/watched_capital_trains_its_defender.rs`.
+    /// Off by default.
+    watched_capital_trains_its_defender: bool,
     /// `tribute-buys-the-friendship-2`: version one's tribute, aimed past
     /// the line where the host must turn an Unfriendly leader Neutral and
     /// paid from the whole treasury. See
@@ -11240,6 +11269,20 @@ pub struct AdvancedAi {
     /// charge at a target in this turn's reach instead of walking home. See
     /// `advanced/apostle_army.rs`. Off by default.
     wounded_spreader_spends_far_from_home: bool,
+    /// `walls-for-the-war-front`: while at war with a major, an unwalled city
+    /// that major's soldier was seen near starts its Walls. See
+    /// `advanced/walls_for_the_war_front.rs`. Off by default.
+    walls_for_the_war_front: bool,
+    /// `walls-for-the-war-front`: last turn an enemy soldier was seen near our
+    /// unwalled city, by (city tile, enemy).
+    war_front_sightings: BTreeMap<(Pos, usize), u32>,
+    /// `war-threat-holds-recovery`: a city threatened in the last few turns
+    /// of a major war still holds the plan in Recovery. See
+    /// `advanced/war_threat_holds_recovery.rs`. Off by default.
+    war_threat_holds_recovery: bool,
+    /// `war-threat-holds-recovery`: the last turn of the current major war on
+    /// which one of our cities was threatened. `None` at peace.
+    war_threat_seen: Option<u32>,
 }
 
 /// Science weight floor at the start of a game, and at its very end.
@@ -11680,6 +11723,8 @@ mod tactics;
 /// The unit turn: the per-unit step, kill priorities, and the religious,
 /// Trader and explorer steps. See `advanced/units.rs`.
 mod units;
+/// `walls-for-the-war-front`: see `advanced/walls_for_the_war_front.rs`.
+mod walls_for_the_war_front;
 /// `war-defense-spends-the-runway`: see
 /// `advanced/war_defense_spends_the_runway.rs`.
 mod war_defense_spends_the_runway;
@@ -11688,9 +11733,14 @@ mod war_defense_spends_the_runway;
 mod war_plans;
 /// `war-target-prices-the-walls`: see `advanced/war_target_walls.rs`.
 mod war_target_walls;
+/// `war-threat-holds-recovery`: see `advanced/war_threat_holds_recovery.rs`.
+mod war_threat_holds_recovery;
 /// `watched-capital-keeps-its-defender-gold`: see
 /// `advanced/watched_capital_keeps_its_defender_gold.rs`.
 mod watched_capital_keeps_its_defender_gold;
+/// `watched-capital-trains-its-defender`: see
+/// `advanced/watched_capital_trains_its_defender.rs`.
+mod watched_capital_trains_its_defender;
 
 /// `centre-keeps-its-garrison`: see `advanced/centre_keeps_its_garrison.rs`.
 mod centre_keeps_its_garrison;
@@ -12576,6 +12626,8 @@ mod spy_patience_reads_the_host;
 /// One spy per target city: the reading the spy-posting genes share. See
 /// `advanced/spy_targets.rs`.
 mod spy_targets;
+/// `stacked-shooter-steps-out`: see `advanced/stacked_shooter_steps_out.rs`.
+mod stacked_shooter_steps_out;
 /// `sweden-builds-open-air-museums`: see
 /// `advanced/sweden_builds_open_air_museums.rs`.
 mod sweden_builds_open_air_museums;
@@ -13547,6 +13599,9 @@ impl AdvancedAi {
         // door, from the same frame. No-op with the gene off.
         self.remember_threatened_capital(g, pid);
         self.remember_frontier_watch_sightings(g, pid);
+        // `walls-for-the-war-front`: the enemy's soldiers near our unwalled
+        // cities, from the same frame. No-op with the gene off.
+        self.remember_war_front_sightings(g, pid);
         // `surprise-watch-holds-its-ratio`: see `advanced/surprise_watch_latch.rs`.
         self.remember_surprise_watch_latches(g, pid);
         if !self.live_formationless_settler_shadow || self.turn_start_hostiles_turn == Some(g.turn)
@@ -14087,6 +14142,9 @@ impl AdvancedAi {
         } else {
             self.major_war_since = None;
         }
+        // `war-threat-holds-recovery`: the war's last threatened turn; exact
+        // no-op with the gene off. See `advanced/war_threat_holds_recovery.rs`.
+        self.observe_war_threat(g, pid, major_war);
         // `prey-reads-a-steady-power`: before the front is chosen. See
         // `one_war::steady_rival_power`.
         self.record_rival_power(g, pid);
@@ -28235,6 +28293,10 @@ impl AdvancedAi {
         // handoffs below. Exact no-op while the gene is off. See
         // `advanced/capital_walls_before_the_surprise.rs`.
         self.claim_capital_walls_before_the_surprise(g, pid);
+        // `watched-capital-trains-its-defender`: behind the walls' claim, the
+        // watched capital's own defender while its garrison is short. Exact
+        // no-op while the gene is off.
+        self.claim_watched_capital_defender(g, pid);
         // `capital-archers-before-the-surprise`: behind the walls' claim, the
         // capital's second shooter ahead of the next Settler. Exact no-op
         // while the gene is off.
@@ -28288,6 +28350,8 @@ impl AdvancedAi {
         // gene is off. See `advanced/score_sprints_to_the_tally.rs`.
         self.claim_score_sprint_queues(g, pid, &plan);
         self.claim_frontier_walls_before_the_surprise(g, pid);
+        // `walls-for-the-war-front`: see `advanced/walls_for_the_war_front.rs`.
+        self.claim_walls_for_the_war_front(g, pid);
         // Make the declaration response the final authority over queues this
         // turn. Earlier governors can continue to express their peaceful
         // plan; switching banks that progress and this bounded pass reclaims

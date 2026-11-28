@@ -173,6 +173,11 @@ def clear_operator_halt() -> bool:
 
 
 def _alive(pid: int) -> bool:
+    if sys.platform == "win32":
+        # ⚠ `os.kill(pid, 0)` is a console Ctrl-C on Windows, not a probe: a
+        # stale holder would read as alive forever (`civ6_env.pid_alive`).
+        import civ6_env as env  # noqa: PLC0415 - avoids a cycle at import time
+        return env.pid_alive(pid)
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
@@ -205,6 +210,10 @@ def _processes() -> list[tuple[int, str]]:
     """Every process as (pid, argv), or an empty list if `ps` cannot be read."""
     import subprocess  # noqa: PLC0415 - only needed on this path
 
+    if sys.platform == "win32":
+        # No `ps`; an empty table would fail closed and refuse every run.
+        import civ6_env as env  # noqa: PLC0415 - avoids a cycle at import time
+        return env.windows_command_lines()
     try:
         out = subprocess.run(
             ["ps", "-Ao", "pid=,args="],

@@ -133,7 +133,7 @@
   // reads the same (`CIVVIS_PAGE_MODE`, web/index.html), after this has run,
   // and beta/_worker.js serves the viewer at those addresses; the three hold
   // one table (`SIMULATOR_PAGES`).
-  const SIMULATOR_PAGES = {debugger: "play", "doctor-strange": "strange", "edge-of-tomorrow": "tomorrow"};
+  const SIMULATOR_PAGES = {debugger: "play", "doctor-strange": "strange", "edge-of-tomorrow": "tomorrow", moneyball: "moneyball"};
   const PAGE_MODE = (() => {
     const page = window.location.pathname.replace(/\/(?:index\.html)?$/, "").split("/").pop();
     if (Object.hasOwn(SIMULATOR_PAGES, page)) return SIMULATOR_PAGES[page];
@@ -148,6 +148,12 @@
   let nextId = 1;
 
   const answered = (event) => {
+    // How the engine's download goes (`worker.js`, "seen through"): only the
+    // page's own engine is the one a visitor waits on.
+    if (event.data && event.data.loading) {
+      if (event.target === worker) engineLoading(event.data.loading);
+      return;
+    }
     const { id, ok, answer, error, meter } = event.data;
     if (meter && event.target && event.target !== window) meters.set(event.target, meter);
     const waiting = pending.get(id);
@@ -185,7 +191,12 @@
   // imports nothing, so it has no way to vary on its own — without this every
   // visitor watches the same six civilizations play the same map for ever.
   // `?game=<n>` pins it, which is what makes a world worth showing shareable.
-  const OPENING_SEED = (() => {
+  // A first visit may trade it for one of the build's baked openings
+  // (`baked`, below), which are random seeds too, drawn when the build was.
+  // The build's baked openings: `null` until beta/bake_openings.mjs writes
+  // `{settings, engine_pace, seeds: {<seed>: <content hash>}}` here.
+  const OPENING_BANK = null;
+  let OPENING_SEED = (() => {
     const asked = Number(new URL(window.location.href).searchParams.get("game"));
     if (Number.isSafeInteger(asked) && asked > 0) return asked;
     return Math.floor(Math.random() * 0xffffffff) + 1;
@@ -254,6 +265,8 @@
     else if (mode === "strange") payload.spectate = false;
     // Edge of Tomorrow is a played game too: the same seat, with a jump back.
     else if (mode === "tomorrow") payload.spectate = false;
+    // And so is CIVVIS: Moneyball, its seat played by the strategy picked.
+    else if (mode === "moneyball") payload.spectate = false;
     else if (mode === "watch") payload.spectate = true;
     // Two of the played pages open on a world of their own, and a link that
     // names its own players, map or shape still has those. Doctor Strange's
@@ -271,6 +284,10 @@
       play: {map_topology: "flat"},
       strange: {num_players: 4, map_script: "pangaea", map_topology: "flat"},
       tomorrow: {num_players: 2, map_script: "continents", map_topology: "flat"},
+      // CIVVIS: Moneyball plays every column's future on a copy of the
+      // world before each pick, so it has Doctor Strange's small world, four
+      // civilizations on a Pangaea, whose turns are the quickest to play.
+      moneyball: {num_players: 4, map_script: "pangaea", map_topology: "flat"},
     };
     for (const [setting, value] of Object.entries(MODE_WORLDS[mode] || {})) {
       if (!(setting in payload)) payload[setting] = value;
@@ -941,9 +958,7 @@
   const FINALE_KEY = "civvis-between-game-countdown";
   const DEFAULT_FINALE_MS = 5000;
   let openingSettingsSent = false;
-  function sendOpeningSettings() {
-    if (openingSettingsSent) return;
-    openingSettingsSent = true;
+  function openingSettings() {
     const stored = (key) => {
       try {
         const value = localStorage.getItem(key);
@@ -960,12 +975,115 @@
     }
     const hold = stored(FINALE_KEY);
     settings.between_game_countdown_ms = FINALE_OPTIONS_MS.has(hold) ? hold : DEFAULT_FINALE_MS;
+    return settings;
+  }
+  function sendOpeningSettings() {
+    if (openingSettingsSent) return;
+    openingSettingsSent = true;
+    const settings = openingSettings();
     if (typeof settings.ms === "number") pace = settings.ms;
     betweenGameCountdownMs = settings.between_game_countdown_ms;
     // The answer is a whole state nobody reads; taken as bytes, it is never
     // parsed. Requests reach the engine in the order they are posted, so the
     // page's first read is answered at this pace without waiting here.
     ask("POST", "/pace", JSON.stringify(settings), true).catch(() => {});
+  }
+
+  // The first visit's world, drawn before the engine has arrived.
+  //
+  // On a first visit the engine is ~3.2 MB of the ~4 MB the page fetches, and
+  // nothing could be drawn until it had downloaded, compiled and answered.
+  // But the answers the first frame needs — the opening `/state`, `/rules`
+  // and `/gene-program` — are fixed by the build and the seed, so publish.sh
+  // asks the lane's own engine for them ahead of time for a small bank of
+  // seeds (`beta/bake_openings.mjs`, which fills `OPENING_BANK` in). A visit
+  // that would open on the stock world with the settings the bank was baked
+  // at takes one of those seeds, fetches its ~190 KB of answers, and draws
+  // the world from them. The engine is still asked every request, in the
+  // same order, so the world it builds is the one on screen; whichever
+  // answers a read first is the answer, and the next turn is the engine's.
+  //
+  // Only while this browser does not hold this build's engine: a returning
+  // visit has it in its cache, is drawn about as soon either way, and keeps
+  // a world nobody else has.
+  const ENGINE_SEEN_KEY = "civvis-engine-seen";
+  let baked = (() => {
+    if (!OPENING_BANK || PANE !== null || OPENING_PRESET !== null || PAGE_MODE !== null) return null;
+    if (new URL(window.location.href).searchParams.has("game")) return null;
+    if (typeof DecompressionStream !== "function") return null;
+    try {
+      if (localStorage.getItem(ENGINE_SEEN_KEY) === WASM_URL) return null;
+    } catch (_) {
+      return null;
+    }
+    // The engine keeps its own pace when the shim names none (off the
+    // published site), and the bank records which that is.
+    const settings = openingSettings();
+    const sentPace = typeof settings.ms === "number" ? settings.ms : OPENING_BANK.engine_pace;
+    if (sentPace !== OPENING_BANK.settings.ms ||
+        settings.between_game_countdown_ms !== OPENING_BANK.settings.between_game_countdown_ms) return null;
+    const seeds = Object.keys(OPENING_BANK.seeds);
+    if (!seeds.length) return null;
+    const seed = seeds[Math.floor(Math.random() * seeds.length)];
+    const url = new URL(`assets/openings/${seed}.json.gz?v=${OPENING_BANK.seeds[seed]}`, here).href;
+    const read = networkFetch(url, { priority: "high" })
+      .then(async (response) => {
+        if (!response.ok) return null;
+        const bytes = new Uint8Array(await response.arrayBuffer());
+        // A host that served it with `Content-Encoding: gzip` has already
+        // decoded it.
+        const text = bytes[0] === 0x1f && bytes[1] === 0x8b
+          ? await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"))).text()
+          : new TextDecoder().decode(bytes);
+        const opening = JSON.parse(text);
+        return opening && opening.state && opening.rules && opening.gene_program ? opening : null;
+      })
+      .catch(() => null);
+    return { seed: Number(seed), read, left: new Set(["state", "rules", "gene_program"]) };
+  })();
+  if (baked) OPENING_SEED = baked.seed;
+
+  // Which baked answer a request is, the first time it is asked: the page's
+  // opening read of the world (whatever its viewer id, which the answer does
+  // not depend on), the rules, the gene program.
+  function bakedAnswerFor(method, target) {
+    if (!baked || method !== "GET") return null;
+    const url = new URL(target, "https://engine.invalid");
+    const query = url.searchParams;
+    let name = null;
+    if (url.pathname === "/rules" && !url.search) name = "rules";
+    else if (url.pathname === "/gene-program" && !url.search) name = "gene_program";
+    else if (url.pathname === "/state" &&
+             [...query.keys()].sort().join(",") === "painted,planet,think,viewer" &&
+             query.get("painted") === "" && query.get("think") === "0" && query.get("planet") === "1") {
+      name = "state";
+    }
+    if (name === null || !baked.left.delete(name)) return null;
+    return name;
+  }
+
+  // The engine's answer or the baked one, whichever comes first. The engine
+  // is always asked: it must hear every request the page makes, in order.
+  function askOpening(method, target, body) {
+    const engineAnswer = ask(method, target, body);
+    const name = bakedAnswerFor(method, target);
+    if (name === null) return engineAnswer;
+    const read = baked.read;
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      engineAnswer.then(
+        (answer) => { if (!settled) { settled = true; resolve(answer); } },
+        (error) => { if (!settled) { settled = true; reject(error); } });
+      read.then((opening) => {
+        if (!opening || settled) return;
+        settled = true;
+        resolve(opening[name]);
+        if (name !== "state") return;
+        report.opening = { seed: OPENING_SEED, baked: true, ms: Math.round(performance.now()) };
+        finishLoading();
+        engineNoteSoon();
+      });
+    });
   }
 
   async function installedSuccessorBuild() {
@@ -1284,7 +1402,7 @@
 
     const started = performance.now();
     const worldRead = method === "GET" && path === "/state";
-    let answer = await ((worldRead && takeAhead(target)) || ask(method, target, body));
+    let answer = await ((worldRead && takeAhead(target)) || askOpening(method, target, body));
     // The page's own read of the world — the watching loop's, or the read it
     // opens on — and so the one whose successor it will ask for next. The
     // planet's geometry is read through `/state` too and is neither.
@@ -1510,19 +1628,99 @@
   // cheapest question there is — it builds no observation at all. A preset
   // visit applies its settings first, so the curtain holds until the world
   // the link named exists rather than dropping on the stock one.
+  //
+  // A baked opening (`baked`) lifts it sooner, when its world is handed over.
+  function finishLoading() {
+    if (loadingFinished) return;
+    loadingFinished = true;
+    clearTimeout(loadingNoticeTimer);
+    if (!curtain.isConnected) return;
+    curtain.classList.add("gone");
+    setTimeout(() => curtain.remove(), 450);
+  }
+  // ------------------------------------------------- the engine on its way
+  //
+  // A first visit's opening is drawn before the engine has arrived (`baked`),
+  // and stands still until it has: on a slow line that is a world with its
+  // clock running and nothing moving, which looked like a game that never
+  // started (operator 2026-11-27: "sometimes has map and clock starts but
+  // nothing moving"). So the page says what it is waiting for and how far it
+  // has got, under the curtain while it is up and in a note over the world
+  // once it has gone, from a moment after the world is handed over until
+  // the engine answers. A download that broke and is being asked for again
+  // says so.
+  const ENGINE_NOTE_DELAY_MS = 1500;
+  let engineLoad = null;
+  let engineNote = null;
+  let engineNoteTimer = null;
+  let engineBytes = null;
+  runningBuildManifest.then((manifest) => {
+    if (Number.isSafeInteger(manifest?.wasm_bytes) && manifest.wasm_bytes > 0) engineBytes = manifest.wasm_bytes;
+  });
+  function engineWords() {
+    const load = engineLoad;
+    if (!load) return "";
+    if (load.failed) return "The game engine could not load. Reload the page to try again";
+    if (load.retrying) return /stopped/.test(load.why || "")
+      ? "The download stalled · trying again"
+      : "The connection dropped · trying again";
+    if (load.done) return "Starting the game engine";
+    if (!load.bytes) return "Loading the game engine";
+    return engineBytes
+      ? `Loading the game engine · ${Math.min(99, Math.floor(100 * load.bytes / engineBytes))}%`
+      : `Loading the game engine · ${(load.bytes / 1048576).toFixed(1)} MB`;
+  }
+  function engineLoading(loading) {
+    engineLoad = loading;
+    report.download = loading;
+    if (report.ready) return;
+    const words = engineWords();
+    const detail = curtain.querySelector(".civvis-beta-detail");
+    if (detail) detail.textContent = "Runs in this browser" + (words ? " · " + words : "");
+    if (engineNote) engineNote.textContent = words;
+  }
+  function engineNoteSoon() {
+    if (report.ready || engineNoteTimer !== null) return;
+    engineNoteTimer = setTimeout(() => {
+      if (report.ready || engineNote || !document.body) return;
+      engineNote = document.createElement("div");
+      engineNote.id = "civvis-engine-note";
+      engineNote.setAttribute("role", "status");
+      engineNote.setAttribute("aria-live", "polite");
+      engineNote.textContent = engineWords() || "Loading the game engine";
+      const look = document.createElement("style");
+      look.textContent = `
+        #civvis-engine-note {
+          position: fixed; left: 50%; bottom: 64px; z-index: 99998; transform: translateX(-50%);
+          max-width: calc(100vw - 32px); padding: 7px 14px; border: 1px solid rgba(215, 182, 106, 0.45);
+          border-radius: 999px; background: rgba(7, 17, 15, 0.88); color: #d7b66a;
+          font: 13px/1.3 system-ui, sans-serif; letter-spacing: 0.02em; white-space: nowrap;
+          overflow: hidden; text-overflow: ellipsis; pointer-events: none;
+        }`;
+      document.head.appendChild(look);
+      document.body.appendChild(engineNote);
+    }, ENGINE_NOTE_DELAY_MS);
+  }
+  function dropEngineNote() {
+    clearTimeout(engineNoteTimer);
+    engineNoteTimer = null;
+    const detail = curtain.querySelector(".civvis-beta-detail");
+    if (detail) detail.textContent = "Runs in this browser";
+    if (engineNote) engineNote.remove();
+    engineNote = null;
+  }
+
   ensureOpeningPreset()
     .then(() => ask("GET", "/runtime", ""))
     .then(() => {
       report.ready = true;
+      dropEngineNote();
+      // This build's engine is in the browser's cache from here on.
+      try { localStorage.setItem(ENGINE_SEEN_KEY, WASM_URL); } catch (_) {}
+      baked = null;
     })
     .catch((error) => {
       report.error = String(error.message || error);
     })
-    .then(() => {
-      loadingFinished = true;
-      clearTimeout(loadingNoticeTimer);
-      if (!curtain.isConnected) return;
-      curtain.classList.add("gone");
-      setTimeout(() => curtain.remove(), 450);
-    });
+    .then(finishLoading);
 })();

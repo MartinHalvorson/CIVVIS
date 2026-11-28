@@ -29,10 +29,10 @@ Of 72 priced genes the interval clears zero for **20 upward** and **0 downward**
 | `opportunistic-war` | +48 [+20, +76] | 100.0% | 3 | off | **on** |
 | `peacetime-deterrence` | +18 [+1, +35] | 98.2% | 5 | off | **on** |
 | `price-the-suzerainty` | +56 [+18, +93] | 99.8% | 1 | off | **on** |
-| `raid-pillage-prizes` | +54 [+25, +83] | 100.0% | 3 | on | **on** |
+| `raid-pillage-prizes` | +54 [+25, +83] | 100.0% | 3 | off | **on** |
 | `recon-replacement` | +51 [+30, +72] | 100.0% | 5 | off | **on** |
 | `recorded-tactical-step` | +17 [+0, +33] | 97.5% | 5 | on | **on** |
-| `settle-sooner` | +35 [+14, +55] | 100.0% | 3 | on | **on** |
+| `settle-sooner` | +35 [+14, +55] | 100.0% | 3 | off | **on** |
 | `wide-map-capacity` | +61 [+28, +93] | 100.0% | 5 | on | **on** |
 
 ## The two shapes, apart
@@ -103,18 +103,21 @@ Genes priced at both shapes. **A row whose two intervals do not overlap is not a
 | Gene | Posterior (95% CI) | P(>0) | Default | Buys | Pairs to resolve |
 |---|---:|---:|---|---:|---:|
 | `holy-lane-parity` | +32 [-6, +71] | 95.0% | off | +32.4 | 5,971 |
+| `war-economy` | +13 [-89, +115] | 60.1% | off | +25.8 | 116,162 |
 | `settler-threat-detour` | +24 [-2, +51] | 96.4% | off | +24.3 | 5,630 |
 | `war-reinforcement` | +17 [-4, +37] | 94.7% | off | +16.8 | 24,014 |
+| `barbarian-bargain` | +16 [-5, +38] | 93.3% | off | +16.4 | 32,522 |
 | `competition-victory-points` | +16 [-19, +50] | 81.3% | off | +16.0 | 67,501 |
 | `garrison-under-fire` | +15 [-17, +48] | 82.6% | off | +15.5 | 68,721 |
 | `settlement-gap-target` | +14 [-23, +52] | 77.5% | off | +14.8 | 87,669 |
+| `lane-great-people` | +13 [-22, +48] | 77.0% | off | +13.6 | 103,314 |
 | `district-planning` | +12 [-25, +49] | 74.1% | off | +12.9 | 125,973 |
 | `lane-policy-deck` | +13 [-16, +42] | 80.9% | off | +12.9 | 103,406 |
-| `war-economy` | +13 [-89, +115] | 60.1% | on | +12.4 | 116,162 |
 | `whole-turn-backtrack-guard` | +12 [-8, +31] | 88.2% | off | +11.8 | 96,625 |
 | `amenity-district-path` | +12 [-5, +28] | 91.2% | off | +11.5 | 83,886 |
 | `one-launch-pad` | +11 [-5, +28] | 91.6% | off | +11.4 | 81,761 |
 | `barbarian-ranged-answer` | +11 [-10, +32] | 85.1% | off | +10.9 | 126,996 |
+| `blind-objective-strength` | +11 [-10, +31] | 84.9% | off | +10.8 | 131,056 |
 | `research-tier-premium` | +10 [-24, +43] | 71.2% | off | +10.3 | 208,314 |
 | `relief-targets-the-siege` | +10 [-7, +26] | 87.0% | off | +9.6 | 153,392 |
 | `slot-kind-tiebreak` | +9 [-7, +26] | 87.4% | off | +9.4 | 156,019 |
@@ -143,14 +146,11 @@ Genes priced at both shapes. **A row whose two intervals do not overlap is not a
 | `blind-objective-units` | +0 [-16, +16] | 51.4% | off | +1.1 | 245,127,417 |
 | `unit-objective-memory` | +10 [-28, +47] | 69.7% | on | +1.1 | 201,764 |
 | `settler-target-hysteresis` | +0 [-16, +16] | 50.7% | on | +0.9 | 1,036,197,883 |
-| `lane-great-people` | +13 [-22, +48] | 77.0% | on | +0.4 | 103,314 |
 | `siege-commitment` | -2 [-18, +14] | 40.5% | off | +0.3 | 5,199,392 |
 | `unit-cost-efficiency` | +17 [-20, +55] | 81.7% | on | +0.3 | 55,043 |
 | `naval-recon` | -3 [-19, +13] | 35.6% | off | +0.1 | 2,174,265 |
 | `apostle-promotion-by-role` | +6 [-15, +27] | 71.4% | on | +0.1 | 520,461 |
 | `settler-guard-holds` | +3 [-13, +19] | 65.5% | on | +0.1 | 1,871,682 |
-| `blind-objective-strength` | +11 [-10, +31] | 84.9% | on | +0.0 | 131,056 |
-| `barbarian-bargain` | +16 [-5, +38] | 93.3% | on | +0.0 | 32,522 |
 | `camp-party` | +22 [-3, +47] | 96.1% | on | +0.0 | 8,154 |
 | `stranded-settler-discount` | +11 [-5, +27] | 90.8% | on | +0.0 | 93,635 |
 | `strike-opening` | +12 [-4, +29] | 92.5% | on | +0.0 | 65,525 |
@@ -158,7 +158,7 @@ Genes priced at both shapes. **A row whose two intervals do not overlap is not a
 The top 6 that one batch could actually resolve (≤ 60,000 seat pairs each), as an argument list:
 
 ```sh
-gene_screen --genes holy-lane-parity,settler-threat-detour,war-reinforcement,unit-cost-efficiency,barbarian-bargain,camp-party
+gene_screen --genes holy-lane-parity,settler-threat-detour,war-reinforcement,barbarian-bargain,unit-cost-efficiency,camp-party
 ```
 
 `python3 tools/genes.py boundary` prints this list on its own, with `--arm-pairs` and `--max-arm-pairs` to size it.
@@ -171,7 +171,7 @@ The set is discovered from the code: every gene whose flag field `src/ai/advance
 
 | Lane gene | Default | ± Wins / 10k seats | Share Δpp (z) | Posterior (95% CI) | Status |
 |---|---|---:|---|---:|---|
-| `lane-great-people` | **on** | +33 | +0.10 (z +1.26) ~ | +13 [-22, +48] | unresolved |
+| `lane-great-people` | off | +33 | +0.10 (z +1.26) ~ | +13 [-22, +48] | unresolved |
 | `lane-policy-deck` | off | +29 | +0.08 (z +1.07) ~ | +13 [-16, +42] | unresolved |
 | `lane-culture-spending` | off | +9 | -0.01 (z -0.13) ~ | +9 [-15, +32] | unresolved |
 | `lane-space-race` | off | -12 | -0.10 (z -1.32) ~ | +1 [-22, +25] | unresolved |
@@ -184,14 +184,21 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 
 | Gene | Default | Description | Best version \| Total versions |
 |---|---|---|---:|
+| `city-campaign-3` | off (unmeasured) | Version two's staged opportunity at peace, and the war in hand: a major war already open draws a one-city plan against that rival when the field army carries the city's bill, keeps it for a twenty-turn clock, offers peace once the city is ours, and holds the generic Siege row against a rival none of whose cities the army can take. | 1 \| 3 |
 | `foreign-site-buys-the-open-border` | off (unmeasured) | Opt-in gene `foreign-site-buys-the-open-border`: a held Mead or Darwin with no reachable site buys one Open Borders grant; see `advanced/foreign_site_open_border.rs`. | 1 \| 1 |
+| `opening-defense-spares-the-holy-site` | off (unmeasured) | `BasicAi::opening_defense_spares_the_holy_site`; opt-in gene `opening-defense-spares-the-holy-site`. | 1 \| 1 |
 | `recovery-holds-the-muster` | off (unmeasured) | Opt-in gene `recovery-holds-the-muster`: no Siege row is mustered while the plan reads Recovery; see `advanced/recovery_holds_the_muster.rs`. | 1 \| 1 |
 | `religion-lane-outlasts-the-denial` | off (unmeasured) | Opt-in gene `religion-lane-outlasts-the-denial`: a founded Religion lane keeps its plan against a Science counter; see `advanced/religion_lane_outlasts_the_denial.rs`. | 1 \| 1 |
 | `religion-seat-third-city-first` | off (unmeasured) | Opt-in gene `religion-seat-third-city-first`: a two-city Religion seat's next Settler before the first Shrine and Prayers; see `advanced/religion_seat_third_city_first.rs`. | 1 \| 1 |
 | `rival-science-run-opens-the-spy-civics` | off (unmeasured) | Opt-in gene `rival-science-run-opens-the-spy-civics`: a rival's science run brings the Spy-slot civics forward off a Science aim; see `advanced/rival_science_run_opens_the_spy_civics.rs`. | 1 \| 1 |
 | `science-seat-monuments` | off (unmeasured) | Opt-in gene `science-seat-monuments`: a Science seat's cities claim their Monument from the third city; see `advanced/culture_monuments.rs`. | 1 \| 1 |
 | `seen-pad-starts-the-denial` | off (unmeasured) | Opt-in gene `seen-pad-starts-the-denial`: a racer's seen Spaceport takes a Spy that disrupts it before the first launch; see `advanced/seen_pad_starts_the_denial.rs`. | 1 \| 1 |
+| `settler-walk-clock-runs-all-game` | off (unmeasured) | Opt-in gene `settler-walk-clock-runs-all-game`: every stepped turn out counts on the Settler walk clock, and the walk deadline holds past the band turn; see `advanced/settler_walk_deadline.rs`. | 1 \| 1 |
+| `stacked-shooter-steps-out` | off (unmeasured) | Opt-in gene `stacked-shooter-steps-out`: a crowded City Center keeps one shooter and steps our other soldiers beside it, so the shooters can fire; see `advanced/stacked_shooter_steps_out.rs`. | 1 \| 1 |
 | `tagma-timing-needs-the-edge` | off (unmeasured) | Opt-in gene `tagma-timing-needs-the-edge`; see `advanced/tagma_timing_needs_the_edge.rs`. | 1 \| 1 |
+| `walls-for-the-war-front` | off (unmeasured) | Opt-in gene `walls-for-the-war-front`; see `advanced/walls_for_the_war_front.rs`. | 1 \| 1 |
+| `war-threat-holds-recovery` | off (unmeasured) | Opt-in gene `war-threat-holds-recovery`; see `advanced/war_threat_holds_recovery.rs`. | 1 \| 1 |
+| `watched-capital-trains-its-defender` | off (unmeasured) | Opt-in gene `watched-capital-trains-its-defender`; see `advanced/watched_capital_trains_its_defender.rs`. | 1 \| 1 |
 | `wounded-spreader-spends-far-from-home` | off (unmeasured) | Opt-in gene `wounded-spreader-spends-far-from-home`; see `advanced/apostle_army.rs`. | 1 \| 1 |
 
 ## Removed from the code

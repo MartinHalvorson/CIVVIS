@@ -32,6 +32,7 @@ is where every other file of a lane comes from.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import pathlib
@@ -111,7 +112,7 @@ ADDRESSES = {
     "performance": "charts/civvis-performance",
     "interpretability": "charts/civ-ai-interpretability",
     "insights": "charts/ai-insights",
-    "random": "charts/random-ai-charts",
+    "random": "charts/unreviewed-gen-ai-charts",
     "download": "download",
 }
 
@@ -270,6 +271,7 @@ class Lanes(unittest.TestCase):
         # lanes: the script itself and the pass that versions a lane's files.
         shutil.copy(BETA / "publish.sh", beta / "publish.sh")
         shutil.copy(BETA / "cache_bust.py", beta / "cache_bust.py")
+        shutil.copy(BETA / "bake_openings.mjs", beta / "bake_openings.mjs")
         # The serving shell, one per deployment.
         (beta / "_worker.js").write_text(f"// shell of {revision}\n", encoding="utf-8")
         (beta / "404.html").write_text(f"<!-- shell of {revision} -->\n", encoding="utf-8")
@@ -320,7 +322,7 @@ class Lanes(unittest.TestCase):
         self.assertTrue((self.test / "charts" / "ai-insights" / "index.html").is_file())
         self.assertFalse((self.stable / "interpretability").exists())
         self.assertFalse((self.stable / "charts").exists())
-        self.assertIn("published without: ai-insights interpretability civ-analytics elo-rankings random-ai-charts\n", self.stable_said)
+        self.assertIn("published without: ai-insights interpretability civ-analytics elo-rankings unreviewed-gen-ai-charts\n", self.stable_said)
         # And each lane says which pages it carries, by address, for the
         # checks and for the router.
         self.assertEqual(
@@ -331,10 +333,10 @@ class Lanes(unittest.TestCase):
             json.loads(self.read(self.test, "build.json"))["pages"],
             # In the order of Charts/ (since 2026-11-24: AI Insights, Civ AI
             # Interpretability, Civ Analytics, Win Analytics, ELO Rankings,
-            # CIVVIS Performance; Random AI Charts last since 2026-11-26),
+            # CIVVIS Performance; Unreviewed Gen AI Charts last since 2026-11-26),
             # because the router opens a folder's first page in this list.
             ["home", "tournaments", "charts/ai-insights", "charts/civ-ai-interpretability", "charts/civ-analytics",
-             "charts/win-analytics", "charts/elo-rankings", "charts/civvis-performance", "charts/random-ai-charts", "download"],
+             "charts/win-analytics", "charts/elo-rankings", "charts/civvis-performance", "charts/unreviewed-gen-ai-charts", "download"],
         )
         # And the publish check reads each list in the order it was written.
         # It asks a folder for the first page the list has in it, which is
@@ -424,7 +426,7 @@ class Lanes(unittest.TestCase):
             sorted(str(found.relative_to(self.test)) for found in self.test.glob("**/index.html")),
             ["charts/ai-insights/index.html", "charts/civ-ai-interpretability/index.html",
              "charts/civ-analytics/index.html", "charts/civvis-performance/index.html",
-             "charts/elo-rankings/index.html", "charts/random-ai-charts/index.html",
+             "charts/elo-rankings/index.html", "charts/unreviewed-gen-ai-charts/index.html",
              "charts/win-analytics/index.html",
              "download/index.html", "home/index.html", "index.html", "tournaments/index.html"],
         )
@@ -522,6 +524,27 @@ class Lanes(unittest.TestCase):
             self.assertNotIn('href="/', viewer)
             self.assertNotIn('src="/', viewer)
 
+    # ------------------------------------------------- what is asked for early
+
+    def test_every_page_but_the_viewer_fetches_the_engine_ahead(self):
+        # Discovered, as cache_bust.py discovers them: every page below the
+        # lane root, from as many directories up as it is deep, by the
+        # engine's own content version.
+        for lane in (self.stable, self.test):
+            version = hashlib.sha256((lane / "civvis.wasm").read_bytes()).hexdigest()
+            self.assertNotIn("data-engine-prefetch", self.read(lane, "index.html"))
+            pages = sorted(lane.glob("*/**/index.html"))
+            self.assertTrue(pages, f"{lane.name} has no pages to check")
+            for found in pages:
+                up = "../" * (len(found.relative_to(lane).parts) - 1)
+                self.assertEqual(found.read_text(encoding="utf-8").count("data-engine-prefetch"), 1, found)
+                self.assertIn(f'new URL("{up}civvis.wasm?v={version}", location.href)',
+                              found.read_text(encoding="utf-8"), found)
+
+    def test_the_viewer_names_its_scripts_in_its_head(self):
+        head = self.read(self.test, "index.html").split("</head>", 1)[0]
+        self.assertRegex(head, r'<link rel="preload" href="assets/app\.js\?v=[0-9a-f]{64}" as="script">')
+
     # ------------------------------------------------------------- the shell
 
     def test_the_serving_shell_is_the_invoking_trees_in_both_lanes(self):
@@ -550,6 +573,7 @@ class Script(unittest.TestCase):
             [
                 "beta/404.html",
                 "beta/_worker.js",
+                "beta/bake_openings.mjs",
                 "beta/cache_bust.py",
                 "beta/dist",
                 "tools/site_wasm_symbols.py",

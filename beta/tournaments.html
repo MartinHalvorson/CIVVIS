@@ -187,6 +187,21 @@
     background: linear-gradient(135deg, #2b3b47 35%, #c2541a); color: #fff;
     box-shadow: inset 0 0 0 1px #b9c8d6, 0 0 10px rgba(255, 130, 50, 0.8);
   }
+  /* CIVVIS: Moneyball (operator, 2026-11-27: "add CIVVIS: Moneyball. This
+     is a minigame where a user only looks at the stats and tries to play the
+     best game") stands out in a ballpark's colours, the film's: the outfield
+     grass under the lights running into a scoreboard's green, ringed in the
+     chalk of the base lines and lit by the floodlights, the name in chalk
+     white (the colours are this lane's choice). */
+  .site-link[href$="/moneyball"] {
+    background: linear-gradient(135deg, #123d27 35%, #2f8a4a); color: #f3f6ee;
+    box-shadow: inset 0 0 0 1px #cfe6c4, 0 0 6px rgba(150, 230, 140, 0.45);
+  }
+  .site-link[href$="/moneyball"]:hover,
+  .site-link[href$="/moneyball"]:focus-visible {
+    background: linear-gradient(135deg, #1a5034 35%, #38a057); color: #fff;
+    box-shadow: inset 0 0 0 1px #e6f4de, 0 0 10px rgba(170, 240, 150, 0.75);
+  }
   /* Doctor Strange's Civ 6 (strange mode, the same game shown as a tree of
      two timelines) stands out in Doctor Strange's own colours (operator,
      2026-11-23: "highlight dr strange civ 6 button in dr strange colors"):
@@ -244,14 +259,17 @@
      until it is filled the record stays hidden and one sentence says so. */
   .tour-record { display: grid; gap: 16px; min-width: 0; }
   .tour-main, .tour-side { display: grid; gap: 16px; align-content: start; min-width: 0; }
-  /* With the room for it, the tournaments are the left 60% and what is
-     scheduled and the benchmark are the right 40%, one over the other
-     (operator, 2026-11-25: "put the experiments list on the left 60%. the
-     scheduled games & benchmark can be on the right"). Scheduled stood in a
-     300px column off on the right from 2026-11-21 ("lets have schedule in a
-     col off on the right"). The key to the squares and how a game is
-     counted run under both. In a narrower window it is all one column, in
-     the order the markup has it. */
+  /* With the room for it, two columns: on the left 60%, ELO Rankings over
+     the benchmark; on the right 40%, what is scheduled over the tournaments
+     running and finished (operator, 2026-11-27: "in tournaments, move elo
+     rankings to left side at the top. lets put the tournament on the rigth.
+     scheudel can stay top right. benchmark left."). The tournaments were the
+     left 60% from 2026-11-25 ("put the experiments list on the left 60%. the
+     scheduled games & benchmark can be on the right"), and ELO Rankings ran
+     across the top. Scheduled has stood at the top of the right since
+     2026-11-21 ("lets have schedule in a col off on the right"). The key to
+     the squares and how a game is counted run under both. In a narrower
+     window it is all one column, in the order the markup has it. */
   @media (min-width: 1100px) {
     .tour-record { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); align-items: start; }
     .tour-record > :not(.tour-main):not(.tour-side) { grid-column: 1 / -1; }
@@ -349,6 +367,72 @@
   .fine > summary { width: max-content; max-width: 100%; color: var(--faint); font-size: 11.5px; cursor: pointer; }
   .fine > summary:hover, .fine[open] > summary { color: var(--accent); }
   details.fine > .tour-legend { max-width: 860px; margin-top: 6px; }
+
+  /* ELO Rankings, across the top of the record (operator 2026-11-27: "lets
+     add victory type cols to elo rankings and move elo rankings to the top
+     full wdith of tournaments. 6p Continents Online (Diplo off, Diplo on,
+     science, culture, religion, diplomacy, domination, score) , 2P Pangaea
+     (religion off, religion on). we can elo for each, sortable by score"; it
+     stood on the right over the benchmark from earlier that day, "List
+     CIVVIS AI strategies, classic Firaxis AI, and dev all together in the
+     ranking. list Diplo off first (and default for sorting)"). A column a
+     setup, each a fit of its own (`strategy_elo --setup`); a column head
+     sorts the table by it. Each row is faintly the colour of what it is, so
+     the three kinds read as one comparison ("we can highlight dev blue,
+     civvis gold, and firaxis red in the elo table. faint"). Its rules are
+     held to its card. */
+  #tour-elo .tour-scroll { overflow-x: auto; }
+  /* The two tables side by side, Civilization VI's on the left and CIVVIS
+     self-play's on the right. A row is the same player in both, so every
+     row and every head row is one fixed height and the two line up. */
+  #tour-elo .elo-pair { display: grid; grid-template-columns: minmax(0, auto) minmax(0, 1fr); gap: 0 14px; align-items: start; }
+  #tour-elo .elo-pair .elo-scroll { min-width: 0; }
+  #tour-elo .elo-pair thead tr { height: 24px; }
+  #tour-elo .elo-pair tbody tr { height: 28px; }
+  /* Separate borders and cells of a set height, so a row is exactly as tall
+     in both tables whatever its cells hold. */
+  #tour-elo .elo-pair table { border-collapse: separate; border-spacing: 0; }
+  #tour-elo .elo-pair th, #tour-elo .elo-pair td { box-sizing: border-box; padding-top: 0; padding-bottom: 0; overflow: hidden; }
+  #tour-elo .elo-pair thead th { height: 24px; line-height: 23px; }
+  #tour-elo .elo-pair tbody tr { border-top: 0; }
+  #tour-elo .elo-pair tbody td { height: 28px; line-height: 27px; border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent); }
+  /* Smaller words beside a figure or a name sit in its line, not a taller one. */
+  #tour-elo .elo-pair td small { line-height: 1; }
+  #tour-elo th.elo-side-head { color: var(--text); font-size: 11.5px; letter-spacing: .06em; text-align: left; border-bottom: 1px solid var(--border); }
+  #tour-elo tbody tr.is-hover td { box-shadow: inset 0 0 0 999px color-mix(in srgb, #fff 7%, transparent); }
+  @media (max-width: 719px) { #tour-elo .elo-pair { gap: 0 8px; } }
+  #tour-elo table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  #tour-elo th, #tour-elo td { padding: 4px 6px; text-align: right; white-space: nowrap; }
+  #tour-elo thead th { color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+  #tour-elo thead th.is-group { color: var(--text); text-align: center; border-bottom: 1px solid var(--border); }
+  #tour-elo thead th.is-ident, #tour-elo td.is-ident { text-align: left; }
+  #tour-elo tbody tr { border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent); }
+  #tour-elo tbody tr.is-agent { background: color-mix(in srgb, var(--gold) 8%, transparent); }
+  #tour-elo tbody tr.is-level { background: color-mix(in srgb, #e5534b 10%, transparent); }
+  #tour-elo tbody tr.is-person { background: color-mix(in srgb, var(--accent) 11%, transparent); }
+  #tour-elo td.is-n { width: 1%; color: var(--faint); font-size: 11.5px; }
+  #tour-elo td.is-ident { max-width: 20em; overflow: hidden; color: var(--text); font-weight: 600; text-overflow: ellipsis; }
+  #tour-elo td.is-ident small { margin-left: 6px; color: var(--muted); font-size: 11.5px; font-weight: 400; }
+  #tour-elo td.is-value { color: #fff; font-weight: 700; }
+  #tour-elo td.is-value small { margin-left: 3px; color: var(--faint); font-size: 10.5px; font-weight: 400; }
+  #tour-elo td.is-none { color: var(--faint); font-weight: 400; }
+  #tour-elo td.is-sorted { box-shadow: inset 0 0 0 999px color-mix(in srgb, #fff 3%, transparent); }
+  #tour-elo td.is-split, #tour-elo th.is-split { border-left: 1px solid var(--border); }
+  #tour-elo .rank-sort {
+    padding: 0; border: 0; background: none; color: inherit; font: inherit; letter-spacing: inherit;
+    text-transform: inherit; cursor: pointer;
+  }
+  #tour-elo .rank-sort:hover { color: var(--text); }
+  #tour-elo .rank-sort[aria-pressed="true"] { color: #fff; font-weight: 700; }
+  #tour-elo .rank-sort[aria-pressed="true"]::after { content: " \25BE"; }
+  #tour-elo .rank-sort:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  #tour-elo .elo-kinds { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0 0 6px; color: var(--muted); font-size: 11.5px; }
+  #tour-elo .elo-kind::before { content: ""; display: inline-block; width: 10px; height: 10px; margin-right: 5px; border-radius: 2px; vertical-align: -1px; }
+  #tour-elo .elo-kind.is-agent::before { background: color-mix(in srgb, var(--gold) 45%, transparent); }
+  #tour-elo .elo-kind.is-level::before { background: color-mix(in srgb, #e5534b 50%, transparent); }
+  #tour-elo .elo-kind.is-person::before { background: color-mix(in srgb, var(--accent) 50%, transparent); }
+  #tour-elo .rank-title a { color: inherit; text-decoration: none; }
+  #tour-elo .rank-title a:hover, #tour-elo .rank-title a:focus-visible { color: var(--accent); }
 
   /* The counts under the squares, a line each: wins by victory, losses by
      how they were lost, the record per level when the levels differ, and
@@ -449,6 +533,7 @@
          lane's page opens the test lane's other pages and viewer. -->
     <nav class="site-nav" aria-label="CIVVIS sites">
       <a class="site-link" href="../home/">Home</a>
+      <a class="site-link" href="./" aria-current="page">Tournaments</a>
       <div class="site-folder">
         <a class="site-link" href="../charts/ai-insights/" title="What the games show: charts read off the CIVVIS AI agents&#8217; games.">Charts/</a>
         <div class="site-menu">
@@ -458,13 +543,13 @@
           <a class="site-link sub-link" href="../charts/win-analytics/" title="Who wins, how and when: the games against Civilization VI&#8217;s own AI beside the CIVVIS self-play games.">Win Analytics</a>
           <a class="site-link sub-link" href="../charts/elo-rankings/" title="The Civ AI Agents and Civilization VI&#8217;s own AI on one Elo scale, now and over time.">ELO Rankings</a>
           <a class="site-link sub-link" href="../charts/civvis-performance/" title="How fast the simulator plays: the fastest game on video and how long a self-play game takes.">CIVVIS Performance</a>
-          <a class="site-link sub-link" href="../charts/random-ai-charts/" title="Charts the AI agents added on their own, kept here until they are asked for or talked over.">Random AI Charts</a>
+          <a class="site-link sub-link" href="../charts/unreviewed-gen-ai-charts/" title="Charts the AI agents added on their own, kept here until they are asked for or talked over.">Unreviewed Gen AI Charts</a>
         </div>
       </div>
-      <a class="site-link" href="./" aria-current="page">Tournaments</a>
-      <a class="site-link" href="../" title="Every civilization is played by a CIVVIS AI agent.">CIVVIS</a>
       <a class="site-link" href="../doctor-strange" title="One world, two timelines: the same game played two ways, side by side, on a timeline that branches.">Doctor Strange's CIVVIS</a>
       <a class="site-link" href="../edge-of-tomorrow" title="You play one civilization, with a jump back: the world returns to the turn you woke on, as it stood.">CIVVIS: Edge of Tomorrow</a>
+      <a class="site-link" href="../moneyball" title="Only the numbers: pick a player strategy by its stats, ten turns at a time, and try to play the best game.">CIVVIS: Moneyball</a>
+      <a class="site-link" href="../" title="Every civilization is played by a CIVVIS AI agent.">CIVVIS</a>
       <a class="site-link" href="../debugger" title="You play one civilization. CIVVIS AI agents play the rest.">CIVVIS AI Debugger</a>
       <a class="site-link" href="https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/" target="_blank" rel="noopener" title="Buy Civilization VI on Steam">Civ 6</a>
     </nav>
@@ -493,7 +578,7 @@
     <div class="site-brand">
       <div class="site-lockup">
         <h1 class="site-title">CIVVIS<span>.ai</span></h1>
-        <p class="site-tagline"><span>An open source Civilization VI Simulator</span> <span>for AI reasoning insights</span></p>
+        <p class="site-tagline"><span>An open source Civilization VI Simulator</span> <span>for fixing the Civ AI</span> <span>(fan project, open source, free)</span></p>
       </div>
     </div>
     <nav class="utility-nav" aria-label="CIVVIS links">
@@ -535,17 +620,80 @@
 
     <!-- The record, all read from the run ledger and the definitions in
          `data/tournaments.json` when the site is published
-         (`beta/tournaments_page.py`). On the left, the tournaments: the one
-         being played and the ones that have finished. On the right, the
-         ones scheduled and the benchmark, which is not a tournament
-         (operator, 2026-11-25: "tourney 7 is benchmark. please remove from
-         experiments and make the official benchmark for now"). The script
+         (`beta/tournaments_page.py`). On the left, ELO Rankings at the top
+         and the benchmark under it, which is not a tournament (operator,
+         2026-11-25: "tourney 7 is benchmark. please remove from experiments
+         and make the official benchmark for now"). On the right, the ones
+         scheduled at the top, then the tournaments: the one being played
+         and the ones that have finished (operator, 2026-11-27: "in
+         tournaments, move elo rankings to left side at the top. lets put
+         the tournament on the rigth. scheudel can stay top right. benchmark
+         left."). The script
          below builds them from the `tournaments-data` slot; a page whose
          slot still reads `null` (this file opened as it is committed, or a
          build with no ledger) shows the one sentence instead. -->
     <p class="tour-empty" id="tour-empty">This copy of the page has no tournament record. It is written in when the site is published.</p>
     <div class="tour-record" id="tour-record" hidden>
       <div class="tour-main">
+      <section class="tour-section" id="tour-elo" hidden aria-labelledby="tour-elo-title">
+        <h2 class="rank-title" id="tour-elo-title"><a href="../charts/elo-rankings/" title="ELO Rankings: the ratings now and over time">ELO Rankings</a></h2>
+        <p class="rank-sub">CIVVIS AI strategies, the classic Firaxis AI and people, on one Elo scale. Left: measured in Civilization VI under computer control. Right: CIVVIS self-play. Any column sorts both. Our stand-in for Prince is 1000.</p>
+        <p class="elo-kinds"><span class="elo-kind is-agent">CIVVIS AI</span><span class="elo-kind is-level">Classic Firaxis AI</span><span class="elo-kind is-person">Dev</span></p>
+        <!-- Two tables, a row for each player running across both (operator
+             2026-11-27: "we should have two tables: one on the left for
+             computer control firaxis civ 6 games and one on the right for
+             CIVVIS self-play. 2 separate tables but scrolling horizontally in
+             one should move the other as well. rows should cross over all the
+             way. any col in either table should sort all rows in both
+             tables"). The left is what Civilization VI itself measured: the
+             classic Firaxis AI from the benchmark and people from their
+             hot-seat games. The right is CIVVIS self-play, the simulator's
+             fits a setup each. -->
+        <div class="elo-pair">
+          <div class="tour-scroll elo-scroll" data-elo-side="control">
+            <table aria-label="ELO measured in Civilization VI under computer control">
+              <thead>
+                <tr><th scope="colgroup" colspan="4" class="elo-side-head">Civilization VI &#183; computer control</th></tr>
+                <tr><th scope="col" rowspan="2"></th><th scope="col" rowspan="2" class="is-ident">Player</th><th scope="colgroup" colspan="2" class="is-group is-split">6P Continents Online</th></tr>
+                <tr><th scope="col" class="is-split"><button type="button" class="rank-sort" data-sort="control:continents6_no_diplo" aria-pressed="true" title="6P Continents Online: Every victory but the Diplomatic, measured in Civilization VI under computer control (the benchmark) and in hot-seat games. Sort both tables by this column">Diplo off</button></th><th scope="col"><button type="button" class="rank-sort" data-sort="control:continents6" aria-pressed="false" title="6P Continents Online: Every victory on, measured in Civilization VI under computer control (the benchmark) and in hot-seat games. Sort both tables by this column">Diplo on</button></th></tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <div class="tour-scroll elo-scroll" data-elo-side="self">
+            <table aria-label="ELO measured in CIVVIS self-play">
+              <thead>
+                <tr><th scope="colgroup" colspan="10" class="elo-side-head">CIVVIS self-play</th></tr>
+                <tr><th scope="colgroup" colspan="8" class="is-group is-split">6P Continents Online</th><th scope="colgroup" colspan="2" class="is-group is-split">2P Pangaea</th></tr>
+                <tr><th scope="col" class="is-split"><button type="button" class="rank-sort" data-sort="self:continents6_no_diplo" aria-pressed="true" title="6P Continents Online: Every victory but the Diplomatic. Sort both tables by this column">Diplo off</button></th><th scope="col"><button type="button" class="rank-sort" data-sort="self:continents6" aria-pressed="false" title="6P Continents Online: Every victory on. Sort both tables by this column">Diplo on</button></th><th scope="col"><button type="button" class="rank-sort" data-sort="self:continents6_science" aria-pressed="false" title="6P Continents Online: The Science victory alone. Sort both tables by this column">Science</button></th><th scope="col"><button type="button" class="rank-sort" data-sort="self:continents6_culture" aria-pressed="false" title="6P Continents Online: The Culture victory alone. Sort both tables by this column">Culture</button></th><th scope="col"><button type="button" class="rank-sort" data-sort="self:continents6_religion" aria-pressed="false" title="6P Continents Online: The Religious victory alone. Sort both tables by this column">Religion</button></th><th scope="col"><button type="button" class="rank-sort" data-sort="self:continents6_diplomacy" aria-pressed="false" title="6P Continents Online: The Diplomatic victory alone. Sort both tables by this column">Diplomacy</button></th><th scope="col"><button type="button" class="rank-sort" data-sort="self:continents6_domination" aria-pressed="false" title="6P Continents Online: The Domination victory alone. Sort both tables by this column">Domination</button></th><th scope="col"><button type="button" class="rank-sort" data-sort="self:continents6_score" aria-pressed="false" title="6P Continents Online: The Score victory alone. Sort both tables by this column">Score</button></th><th scope="col" class="is-split"><button type="button" class="rank-sort" data-sort="self:pangaea2_no_religion" aria-pressed="false" title="2P Pangaea: Every victory but the Religious. Sort both tables by this column">Religion off</button></th><th scope="col"><button type="button" class="rank-sort" data-sort="self:pangaea2" aria-pressed="false" title="2P Pangaea: Every victory on. Sort both tables by this column">Religion on</button></th></tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+        <details class="fine">
+          <summary>How it is counted</summary>
+          <p class="rank-note">
+            <span data-rank-note></span>
+            <a href="https://github.com/MartinHalvorson/CIVVIS/blob/main/docs/ELO.md" target="_blank" rel="noreferrer">How the Elo works</a>
+          </p>
+        </details>
+      </section>
+      <section class="tour-section" id="tour-benchmark" hidden aria-labelledby="tour-benchmark-title">
+        <h2 class="rank-title" id="tour-benchmark-title">Benchmark</h2>
+        <p class="rank-sub" data-sub></p>
+        <div data-cards></div>
+      </section>
+      </div>
+      <div class="tour-side">
+      <section class="tour-section" id="tour-scheduled" aria-labelledby="tour-scheduled-title">
+        <h2 class="rank-title" id="tour-scheduled-title">Scheduled</h2>
+        <p class="rank-sub" data-sub></p>
+        <ol class="tour-queue"></ol>
+        <p class="rank-note">
+          Scheduled in <a href="https://github.com/MartinHalvorson/CIVVIS/blob/main/data/tournaments.json" target="_blank" rel="noreferrer">data/tournaments.json</a>.
+        </p>
+      </section>
       <section class="tour-section" id="tour-running" hidden aria-labelledby="tour-running-title">
         <h2 class="rank-title" id="tour-running-title">Running</h2>
         <p class="rank-sub" data-sub></p>
@@ -564,21 +712,6 @@
           <span data-rank-note></span>
           <a href="https://github.com/MartinHalvorson/CIVVIS/blob/ledger/results.jsonl" target="_blank" rel="noreferrer">Every game</a>
         </p>
-      </section>
-      </div>
-      <div class="tour-side">
-      <section class="tour-section" id="tour-scheduled" aria-labelledby="tour-scheduled-title">
-        <h2 class="rank-title" id="tour-scheduled-title">Scheduled</h2>
-        <p class="rank-sub" data-sub></p>
-        <ol class="tour-queue"></ol>
-        <p class="rank-note">
-          Scheduled in <a href="https://github.com/MartinHalvorson/CIVVIS/blob/main/data/tournaments.json" target="_blank" rel="noreferrer">data/tournaments.json</a>.
-        </p>
-      </section>
-      <section class="tour-section" id="tour-benchmark" hidden aria-labelledby="tour-benchmark-title">
-        <h2 class="rank-title" id="tour-benchmark-title">Benchmark</h2>
-        <p class="rank-sub" data-sub></p>
-        <div data-cards></div>
       </section>
       </div>
       <p class="tour-legend">
@@ -918,6 +1051,183 @@
       label.parentNode.style.setProperty(first ? "--lead" : "--trail",
         (first ? Math.ceil((wide + 4) / 14) * 14 : Math.ceil(wide + 5)) + "px");
     });
+  })();
+  </script>
+  <!-- ELO Rankings' figures: `beta/publish.sh` fills this slot with the
+       ELO Rankings page's own record (`beta/elo_page.py`), the same fits. -->
+  <script type="application/json" id="elo-data">null</script>
+  <script>
+  // ELO Rankings (`#tour-elo`): the CIVVIS AI strategies, Civilization VI's
+  // own AI at Lv 4 to Lv 8 and the people who play the agents in
+  // Civilization VI itself, in one ranking, a column for each game the
+  // ratings are measured at (`strategy_elo --setup`, the record's `setups`):
+  // 6P Continents Online with the Diplomatic victory off and on and with each
+  // victory alone, then 2P Pangaea with the Religious victory off and on. Diplo
+  // off and Diplo on read the four-player fits (`off` and the record itself)
+  // until their own six-player fits are published. A column head sorts the
+  // table by it; it opens on Diplo off. Every figure arrives through
+  // textContent.
+  (() => {
+    let data = null;
+    try { data = JSON.parse(document.getElementById("elo-data").textContent); } catch (_) { return; }
+    if (!data || typeof data !== "object") return;
+    const el = (tag, cls, text) => {
+      const node = document.createElement(tag);
+      if (cls) node.className = cls;
+      if (text != null) node.textContent = text;
+      return node;
+    };
+    const count = (n) => Number(n).toLocaleString("en-US");
+    const day = (iso) => new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+    // An entrant that never lost is rated "at least", one that never won "at most".
+    const elo = (r) => (r.bound === "upper" ? "≤" : "") + Math.round(r.elo) + (r.bound === "lower" ? "+" : "");
+    const pm = (m) => (m ? "±" + Math.round(m) : "");
+    // [setup, its head, the four-player reading it stands in for until published]
+    const COLUMNS = [
+      ["continents6_no_diplo", "Diplo off", "off"], ["continents6", "Diplo on", "on"],
+      ["continents6_science", "Science"], ["continents6_culture", "Culture"], ["continents6_religion", "Religion"],
+      ["continents6_diplomacy", "Diplomacy"], ["continents6_domination", "Domination"], ["continents6_score", "Score"],
+      ["pangaea2_no_religion", "Religion off"], ["pangaea2", "Religion on"],
+    ];
+    const GROUP = (key) => (key.startsWith("pangaea2") ? "2P Pangaea" : "6P Continents Online");
+    const setups = data.setups && typeof data.setups === "object" ? data.setups : {};
+    const fourPlayer = { off: data.off || null, on: data };
+    const viewOf = ([key, , stands]) => setups[key] || (stands ? fourPlayer[stands] : null);
+    const standsIn = ([key, , stands]) => !setups[key] && !!stands && !!fourPlayer[stands];
+    const reading = (r) => ({ elo: r.elo, margin: r.margin, bound: r.bound, games: r.games, wins: r.wins });
+    // The left table's columns: the setups Civilization VI itself was
+    // measured at, under computer control (the benchmark's levels) and in
+    // people's hot-seat games. The right table's are COLUMNS, CIVVIS
+    // self-play's fits.
+    const CONTROL = COLUMNS.filter((column) => column[2]);
+    const entries = new Map();
+    const entry = (key, base) => {
+      if (!entries.has(key)) entries.set(key, { ...base, at: { control: {}, self: {} } });
+      return entries.get(key);
+    };
+    for (const column of COLUMNS) {
+      const view = viewOf(column), key = column[0];
+      if (!view) continue;
+      const rows = view.strategies && Array.isArray(view.strategies.rows) ? view.strategies.rows : [];
+      for (const r of rows) {
+        if (r.kind === "agent") entry("agent:" + r.id, { kind: "agent", name: r.name, tilt: r.tilt }).at.self[key] = reading(r);
+      }
+    }
+    for (const column of CONTROL) {
+      const view = viewOf(column), key = column[0];
+      if (!view) continue;
+      const levels = view.firaxis && Array.isArray(view.firaxis.levels) ? view.firaxis.levels : [];
+      for (const l of levels) {
+        if (l.now) entry("level:" + l.level, { kind: "level", name: "Lv " + l.level + " " + l.name, tilt: "Classic Firaxis AI" }).at.control[key] = reading(l.now);
+      }
+      for (const pl of Array.isArray(view.people) ? view.people : []) {
+        entry("person:" + pl.name, { kind: "person", name: pl.name, tilt: "Person" }).at.control[key] = reading(pl);
+      }
+    }
+    const card = document.getElementById("tour-elo");
+    if (!card || !entries.size) return;
+    const bodies = { control: card.querySelector('[data-elo-side="control"] tbody'), self: card.querySelector('[data-elo-side="self"] tbody') };
+    const said = (r, side, column) => {
+      const x = r.at[side][column[0]];
+      if (!x) return "";
+      const interval = x.margin ? "; 95% interval " + Math.round(x.elo - x.margin) + "–" + Math.round(x.elo + x.margin) : "";
+      return (side === "control" ? "Civilization VI, " : "CIVVIS self-play, ") + GROUP(column[0]) + ", " + column[1] + ": " + (r.kind === "level"
+        ? "our seat won " + x.wins + " of " + x.games + " benchmark games against five of it"
+        : r.kind === "person"
+        ? "won " + x.wins + " of " + x.games + (x.games === 1 ? " game" : " games") + " against the Civ AI Agents in Civilization VI"
+        : "won " + x.wins + " of " + x.games + " rated tables" + (standsIn(column) ? " (four-player tables)" : "")) + interval;
+    };
+    // A sort is a side and a setup ("self:continents6_science"), or both
+    // sides' Diplo off together ("both:"), the ranking the page opens on:
+    // every player on the one scale by its Diplo off figure, wherever it was
+    // measured. Strongest first; a row with no figure in the column sorted
+    // by follows every row that has one, in that Diplo off ranking, then by
+    // name. At a tie an agent stands above a level, and a level above a
+    // person.
+    const rank = { agent: 0, level: 1, person: 2 };
+    const OPEN = "both:" + COLUMNS[0][0];
+    const figure = (r, sort) => {
+      const [side, key] = sort.split(":");
+      const of = (where) => (r.at[where][key] ? r.at[where][key].elo : null);
+      return side === "both" ? of("self") ?? of("control") : of(side);
+    };
+    const order = (sort) => [...entries.values()].sort((a, b) =>
+      ((figure(a, sort) === null) - (figure(b, sort) === null))
+      || ((figure(b, sort) ?? figure(b, OPEN) ?? -Infinity) - (figure(a, sort) ?? figure(a, OPEN) ?? -Infinity))
+      || (rank[a.kind] - rank[b.kind]) || a.name.localeCompare(b.name));
+    const cells = (row, r, side, columns, sort, splits) => {
+      columns.forEach((column, at) => {
+        const x = r.at[side][column[0]];
+        const sorted = sort === side + ":" + column[0] || (sort === OPEN && column[0] === COLUMNS[0][0]);
+        const cell = el("td", (x ? "is-value" : "is-none") + (splits.includes(at) ? " is-split" : "") + (sorted ? " is-sorted" : ""), x ? elo(x) : "–");
+        if (x && x.margin) cell.append(el("small", "", pm(x.margin)));
+        if (x) cell.title = said(r, side, column);
+        row.append(cell);
+      });
+    };
+    const show = (sort) => {
+      let place = 0;
+      bodies.control.textContent = "";
+      bodies.self.textContent = "";
+      for (const r of order(sort)) {
+        const title = [r.name, ...CONTROL.map((column) => said(r, "control", column)), ...COLUMNS.map((column) => said(r, "self", column))].filter(Boolean).join("\n");
+        const left = el("tr", "is-" + r.kind), right = el("tr", "is-" + r.kind);
+        left.title = right.title = title;
+        left.dataset.eloRow = right.dataset.eloRow = String(place);
+        left.append(el("td", "is-n", String(++place)));
+        const name = el("td", "is-ident", r.name);
+        if (r.tilt) name.append(el("small", "", r.tilt));
+        left.append(name);
+        cells(left, r, "control", CONTROL, sort, [0]);
+        cells(right, r, "self", COLUMNS, sort, [0, 8]);
+        bodies.control.append(left);
+        bodies.self.append(right);
+      }
+      for (const button of card.querySelectorAll(".rank-sort"))
+        button.setAttribute("aria-pressed", String(button.dataset.sort === sort || (sort === OPEN && button.dataset.sort.endsWith(":" + COLUMNS[0][0]))));
+    };
+    for (const button of card.querySelectorAll(".rank-sort")) button.addEventListener("click", () => show(button.dataset.sort));
+    show(OPEN);
+    // A row is one player across both tables: pointing at it in either
+    // lights it in both.
+    const light = (index) => {
+      for (const row of card.querySelectorAll("tbody tr")) row.classList.toggle("is-hover", row.dataset.eloRow === index);
+    };
+    for (const body of Object.values(bodies)) {
+      body.addEventListener("mouseover", (event) => { const row = event.target.closest("tr"); if (row) light(row.dataset.eloRow); });
+      body.addEventListener("mouseleave", () => light(null));
+    }
+    // Scrolling either table sideways scrolls the other the same share of
+    // its own width.
+    const panes = [...card.querySelectorAll(".elo-scroll")];
+    let leading = null;
+    for (const pane of panes) {
+      pane.addEventListener("scroll", () => {
+        if (leading && leading !== pane) return;
+        leading = pane;
+        const span = pane.scrollWidth - pane.clientWidth, share = span > 0 ? pane.scrollLeft / span : 0;
+        for (const other of panes) if (other !== pane) other.scrollLeft = Math.round(share * (other.scrollWidth - other.clientWidth));
+        requestAnimationFrame(() => requestAnimationFrame(() => { if (leading === pane) leading = null; }));
+      });
+    }
+    // How each column was measured, and where the four-player fits stand in.
+    const fitted = COLUMNS.map((column) => {
+      const s = viewOf(column) && viewOf(column).strategies;
+      return s && s.tables ? column[1] + " " + count(s.tables) : null;
+    }).filter(Boolean);
+    const standing = COLUMNS.filter(standsIn).map((column) => column[1]);
+    const levels = ["continents6_no_diplo", "continents6"].map((key) => viewOf(COLUMNS.find((c) => c[0] === key))).map((v) => v && v.firaxis).filter(Boolean);
+    const newest = levels.map((f) => f.to).sort().pop();
+    const played = COLUMNS.flatMap((column) => (viewOf(column) && Array.isArray(viewOf(column).people) ? viewOf(column).people : []));
+    const met = played.reduce((n, pl) => n + pl.games, 0);
+    card.querySelector("[data-rank-note]").textContent =
+      (fitted.length ? "Simulator tables of 250 turns, Online, at each setup: " + fitted.join(", ") + "." : "")
+      + (standing.length ? " " + standing.join(" and ") + " read the four-player Pangaea tables until the six-player Continents fit is published." : "")
+      + " A victory alone that nobody reaches by the turn limit is settled on score."
+      + (met ? " People: " + count(met) + (met === 1 ? " hot seat game" : " hot seat games") + " against the agents in Civilization VI itself, each agent at its Elo when the game began." : "")
+      + (levels.length ? " The classic Firaxis AI: 6P Continents Online benchmark games of the last " + levels[0].days + " days through " + day(newest) + "." : "")
+      + " ± is the 95% margin of error.";
+    card.hidden = false;
   })();
   </script>
 </body>

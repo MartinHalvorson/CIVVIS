@@ -202,6 +202,43 @@ class ThePlans(unittest.TestCase):
         self.assertEqual(sum(score["playing"]), 30)
         self.assertEqual(sum(score["posture"]["recovery"]), 13)
 
+    def test_by_how_far_through_the_game_every_seat_counts_once_in_each_part(self):
+        # Operator 2026-11-27: "produce another the plan through a game chart
+        # where the x axis is % through the game". A game of 100 turns has two
+        # turns in each of the fifty parts, one of 110 has two or three, and a
+        # seat is one in every part it plays through however many turns that is.
+        self.assertEqual(interpretability_page.game_parts(100), (2,) * 50)
+        self.assertEqual(sum(interpretability_page.game_parts(110)), 110)
+        self.assertEqual(set(interpretability_page.game_parts(110)), {2, 3})
+        self.assertEqual(interpretability_page.game_parts(250), (5,) * 50)
+        rows = [
+            # Half its game on Expansion, half on Science.
+            seat(1, 0, "science", [point(1, "expansion"), point(51, "science")], end=100),
+            # A game twice as long: three quarters on Expansion, then Conquest.
+            seat(2, 0, "domination", [point(1, "expansion"), point(151, "conquest")], end=200),
+        ]
+        taken = self.snapshot(rows)
+        self.assertEqual(taken["through"], interpretability_page.THROUGH)
+        science, domination, everyone = (taken["targets"][name]["through"] for name in ("science", "domination", "all"))
+        self.assertEqual(science["playing"], [1.0] * 50)
+        self.assertEqual(science["posture"]["expansion"], [1.0] * 25 + [0.0] * 25)
+        self.assertEqual(science["posture"]["science"], [0.0] * 25 + [1.0] * 25)
+        # Turns 149 to 152 are the 38th part: two on Expansion, two on Conquest.
+        self.assertEqual(domination["posture"]["expansion"][36:39], [1.0, 0.5, 0.0])
+        self.assertEqual(domination["posture"]["conquest"][36:39], [0.0, 0.5, 1.0])
+        # The long game weighs no more than the short one: one seat each.
+        self.assertEqual(everyone["playing"], [2.0] * 50)
+        self.assertEqual(everyone["posture"]["expansion"][:25], [2.0] * 25)
+
+    def test_a_seat_that_did_not_live_counts_by_how_far_through_its_game_it_got(self):
+        # Out at its last point on turn 101 of a game that went on to turn 200:
+        # half of the game, the last part it played a quarter of.
+        rows = [seat(1, 0, "score", [point(1, "expansion"), point(101, "recovery")], end=200, alive=False)]
+        through = self.snapshot(rows)["targets"]["score"]["through"]
+        self.assertEqual(through["playing"][:25], [1.0] * 25)
+        self.assertEqual(through["playing"][25:27], [0.25, 0.0])
+        self.assertEqual(through["posture"]["recovery"][25], 0.25)
+
     def test_the_marks_are_the_middle_seat_of_those_still_playing(self):
         rows = [
             seat(1, n, "culture", [point(1, "expansion")], marks={25: {"cities": cities, "science": 5.0, "culture": 4.0, "military": 50.0}})
@@ -244,6 +281,23 @@ class ThePlans(unittest.TestCase):
             self.assertEqual(sum(counted["won_by"].values()), counted["wins"], name)
             for column, playing in enumerate(counted["playing"]):
                 self.assertEqual(sum(counted["posture"][p][column] for p in interpretability_page.POSTURES), playing, name)
+        # By how far through the game: fifty parts, each counting every seat
+        # that played through it once, the postures making up the whole.
+        for name, counted in plans["targets"].items():
+            through = counted["through"]
+            self.assertEqual(len(through["playing"]), interpretability_page.THROUGH, name)
+            self.assertEqual(set(through["posture"]), set(interpretability_page.POSTURES), name)
+            self.assertEqual(through["playing"][0], counted["seats"], name)
+            self.assertTrue(all(0 < playing <= counted["seats"] for playing in through["playing"]), name)
+            for part, playing in enumerate(through["playing"]):
+                self.assertAlmostEqual(sum(through["posture"][p][part] for p in interpretability_page.POSTURES), playing, delta=0.05)
+        # Its sentence, said of the snapshot it draws: most open on Expansion
+        # and turn to the victory a little past halfway.
+        expanding = [part_e / playing for part_e, playing in zip(everyone["through"]["posture"]["expansion"], everyone["through"]["playing"])]
+        turned = next(part for part, share in enumerate(expanding) if share < 0.5) / interpretability_page.THROUGH
+        self.assertGreater(expanding[0], 0.5)
+        self.assertTrue(0.5 <= turned < 0.6, turned)
+        self.assertIn("Most seats open on Expansion and turn to the victory a little past halfway.", PAGE)
         # The page's sentence about the chart, said of the snapshot it draws.
         share = lambda column: everyone["posture"]["expansion"][column] / everyone["playing"][column]
         self.assertGreater(share(0), 0.5)
@@ -263,10 +317,11 @@ class ThePlans(unittest.TestCase):
             root = pathlib.Path(tmp)
             (root / "data" / "interpretability").mkdir(parents=True)
             taken = json.loads((ROOT / interpretability_page.PLANS).read_text(encoding="utf-8"))
-            (root / interpretability_page.PLANS).write_text(json.dumps({**taken, "span": 10}), encoding="utf-8")
-            with contextlib.redirect_stderr(io.StringIO()) as said:
-                self.assertIsNone(interpretability_page.plans(root))
-            self.assertIn("rebuild it", said.getvalue())
+            for wrong in ({"span": 10}, {"through": 20}, {"through": None}):
+                (root / interpretability_page.PLANS).write_text(json.dumps({**taken, **wrong}), encoding="utf-8")
+                with contextlib.redirect_stderr(io.StringIO()) as said:
+                    self.assertIsNone(interpretability_page.plans(root), wrong)
+                self.assertIn("rebuild it", said.getvalue())
 
 
 class ThePage(unittest.TestCase):
@@ -287,6 +342,17 @@ class ThePage(unittest.TestCase):
         self.assertEqual(sorted(key for key, value in record.items() if value), ["genes", "plans", "turn"])
         with tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stderr(io.StringIO()):
             self.assertIsNone(interpretability_page.interpretability(pathlib.Path(tmp)))
+
+    def test_the_plan_is_drawn_by_turn_and_by_how_far_through_the_game(self):
+        # The second chart stands under the first pair, hidden until the
+        # snapshot is seen to have counted it, and is drawn by the one
+        # function that draws the first, by its own axis.
+        self.assertIn('<div class="res-kind" id="int-through" hidden>', MARKUP)
+        self.assertIn('<h3 class="res-kind-title">What the turn is for, by how far through the game</h3>', MARKUP)
+        self.assertLess(MARKUP.index('id="int-posture-plot"'), MARKUP.index('id="int-through-plot"'))
+        self.assertIn('const drawPostures = () => { drawPosture("turn"); if (throughShown) drawPosture("through"); };', SCRIPT)
+        self.assertIn('title: (group) => "How far through its game · a column is " + +(STEP * group).toFixed(1) + "%"', SCRIPT)
+        self.assertNotIn("drawPosture();", SCRIPT)
 
     def test_the_script_draws_from_data_never_markup(self):
         self.assertNotIn("innerHTML", SCRIPT)
@@ -327,6 +393,7 @@ class TheSiteList(unittest.TestCase):
             re.findall(r'<a class="([^"]+)" href="([^"]+)"[^>]*>([^<]+)</a>', nav),
             [
                 ("site-link", "../../home/", "Home"),
+                ("site-link", "../../tournaments/", "Tournaments"),
                 ("site-link", "../ai-insights/", "Charts/"),
                 ("site-link sub-link", "../ai-insights/", "AI Insights"),
                 ("site-link sub-link", "./", "Civ AI Interpretability"),
@@ -334,11 +401,11 @@ class TheSiteList(unittest.TestCase):
                 ("site-link sub-link", "../win-analytics/", "Win Analytics"),
                 ("site-link sub-link", "../elo-rankings/", "ELO Rankings"),
                 ("site-link sub-link", "../civvis-performance/", "CIVVIS Performance"),
-                ("site-link sub-link", "../random-ai-charts/", "Random AI Charts"),
-                ("site-link", "../../tournaments/", "Tournaments"),
-                ("site-link", "../../", "CIVVIS"),
+                ("site-link sub-link", "../unreviewed-gen-ai-charts/", "Unreviewed Gen AI Charts"),
                 ("site-link", "../../doctor-strange", "Doctor Strange's CIVVIS"),
                 ("site-link", "../../edge-of-tomorrow", "CIVVIS: Edge of Tomorrow"),
+                ("site-link", "../../moneyball", "CIVVIS: Moneyball"),
+                ("site-link", "../../", "CIVVIS"),
                 ("site-link", "../../debugger", "CIVVIS AI Debugger"),
                 ("site-link", "https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/", "Civ 6"),
             ],

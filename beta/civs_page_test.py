@@ -77,7 +77,7 @@ class TheOrderOfThePage(unittest.TestCase):
             "civ-invaded", "civ-science100",
             "civ-civs", "rank-civs", "rank-civs-self",
         ])
-        # The chart of the victory aimed for is on Random AI Charts (operator
+        # The chart of the victory aimed for is on Unreviewed Gen AI Charts (operator
         # 2026-11-25: "please move all the ai generated charts that i havent
         # approved of or we have discussed to here"); decision 6 stays, its
         # card a link to the chart there.
@@ -85,7 +85,7 @@ class TheOrderOfThePage(unittest.TestCase):
         self.assertNotIn("Victory aimed for", PAGE)
         self.assertNotIn("targeted(", PAGE)
         card = PAGE[PAGE.index('id="civ-step-victory"'):PAGE.index("</details>", PAGE.index('id="civ-step-victory"'))]
-        self.assertIn('<p class="rank-sub"><a href="../random-ai-charts/#civ-victories">Its chart is on Random AI Charts.</a></p>', card)
+        self.assertIn('<p class="rank-sub"><a href="../unreviewed-gen-ai-charts/#civ-victories">Its chart is on Unreviewed Gen AI Charts.</a></p>', card)
         self.assertIn('<h2 class="res-side-title" id="res-title-builds">Early build order: win rate against Lv 8 Deity AI</h2>', PAGE)
         self.assertIn('<h2 class="res-side-title" id="civ-civs-title">Winningest civs</h2>', PAGE)
         # Two tables of civs: against Deity, and the self-play seats.

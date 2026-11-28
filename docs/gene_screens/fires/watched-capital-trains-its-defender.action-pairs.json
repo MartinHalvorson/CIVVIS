@@ -1,0 +1,22 @@
+{
+ "kind": "captured_native_action_pairs_v1",
+ "tag": "watched-capital-trains-its-defender",
+ "scope": "Recorded proposal activation on captured live input only, not host execution or strength. 11 boards from four live T8 benchmark games of 2026-11-26/27 (Lv 8 Deity 6p, Online) whose capital or first cities fell to an early war while watched-capital-keeps-its-defender-gold (armed) held a reserve the treasury never reached (civvis-t8-20261127T050644Z Ethiopia t5 t9 t12 t16 t22, -T161152Z Russia t21 t23, -T162313Z Byzantium t23 t24, -T042704Z Byzantium t29 t30): turns where the live watch's Gold line read, plus an early control. Each board is the run's events.jsonl cut after turn N+1 and replayed at turn N. Both arms run one frozen ci-profile civvis_orders --resumed built from the branch with the run's own requested genome (why.log line 1 forced); the on arm adds --with watched-capital-trains-its-defender. 11 of 11 boards completed in both arms; orders differ on 3: Russia t21 (Mapuche 3.7x, 0 of 2 defenders at the capital: a Warrior is queued), Byzantium T162313Z t23 (Cree 6.8x, 1 of 2: a Warrior over the Settler) and Byzantium T042704Z t30 (China 3.2x, 0 of 2: an Archer). The on arms journal 3 'watched-capital-trains-its-defender:' lines, the off arms 0. The Ethiopia replays issue no production order in either arm and their watch does not read (the replayed turn carries no sighting memory from earlier turns), so they show no change.",
+ "archive": {
+  "path": "docs/eval/2026-11-27-watched-capital-trains-its-defender.native-queries.tar.xz",
+  "sha256": "3367c789e9006b90d2a0157e5afac68ad334c4a6a0fb0842c12e377314b834d8"
+ },
+ "members": [
+  "native-queries-01/0000/result.json",
+  "native-queries-01/0001/result.json",
+  "native-queries-01/0002/result.json",
+  "native-queries-01/0003/result.json",
+  "native-queries-01/0004/result.json",
+  "native-queries-01/0005/result.json",
+  "native-queries-01/0006/result.json",
+  "native-queries-01/0007/result.json",
+  "native-queries-01/0008/result.json",
+  "native-queries-01/0009/result.json",
+  "native-queries-01/0010/result.json"
+ ]
+}

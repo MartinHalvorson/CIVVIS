@@ -301,3 +301,218 @@ class ExitConfirmationWiringTests(unittest.TestCase):
         with mock.patch.object(civ6_play, "confirm_exit_dialog",
                                side_effect=RuntimeError("no capture")):
             self.assertFalse(civ6_env.confirm_exit_dialog())
+
+
+class MacosResolutionIsUnchanged(unittest.TestCase):
+    """⚠ The ladder hosts play ~90 unattended games a day through these paths.
+    The Windows half is reached only behind `on_windows()`; off Windows every
+    answer is the one this module gave before it existed."""
+
+    def test_the_macos_layout_constants(self):
+        support = Path.home() / "Library/Application Support"
+        self.assertEqual(civ6_env.SUPPORT, support)
+        self.assertEqual(civ6_env.LEGACY_USER_DIR, support / "Sid Meier's Civilization VI")
+        self.assertEqual(civ6_env.NESTED_USER_DIR, support / "Sid Meier's Civilization VI"
+                         / "Firaxis Games/Sid Meier's Civilization VI")
+        self.assertEqual(civ6_env.INSTALL_CANDIDATES[:2], (
+            support / "Steam/steamapps/common/Sid Meier's Civilization VI",
+            Path("/Applications/Sid Meier's Civilization VI")))
+
+    def test_off_windows_the_windows_resolvers_are_never_asked(self):
+        refuse = mock.Mock(side_effect=AssertionError("asked a Windows resolver"))
+        with tempfile.TemporaryDirectory() as temporary, \
+                mock.patch.object(civ6_env, "on_windows", return_value=False), \
+                mock.patch.object(civ6_env, "windows_install_candidates", refuse), \
+                mock.patch.object(civ6_env, "windows_user_dir", refuse), \
+                mock.patch.object(civ6_env, "windows_processes", refuse), \
+                mock.patch.dict(os.environ, {"CIV6_INSTALL": temporary, "CIV6_DIR": "",
+                                             "CIV6_USER_DIR": ""}), \
+                mock.patch.object(civ6_env.subprocess, "run",
+                                  return_value=mock.Mock(stdout="")):
+            self.assertEqual(civ6_env.install_dir(), Path(temporary))
+            self.assertIn(civ6_env.user_dir(), (civ6_env.NESTED_USER_DIR,
+                                                civ6_env.LEGACY_USER_DIR))
+            self.assertEqual(civ6_env.game_pids(), [])
+
+    def test_the_user_dir_is_still_the_freshest_of_the_two(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            legacy = Path(temporary) / "legacy"
+            nested = legacy / "Firaxis Games" / "nested"
+            nested.mkdir(parents=True)
+            with mock.patch.object(civ6_env, "on_windows", return_value=False), \
+                    mock.patch.object(civ6_env, "LEGACY_USER_DIR", legacy), \
+                    mock.patch.object(civ6_env, "NESTED_USER_DIR", nested), \
+                    mock.patch.dict(os.environ, {"CIV6_USER_DIR": ""}):
+                self.assertEqual(civ6_env.user_dir(), nested, "untouched: nested wins")
+                (legacy / "AppOptions.txt").write_text("x")
+                (nested / "AppOptions.txt").write_text("x")
+                os.utime(legacy / "AppOptions.txt", (1, 1))
+                self.assertEqual(civ6_env.user_dir(), nested)
+                os.utime(nested / "AppOptions.txt", (0, 0))
+                self.assertEqual(civ6_env.user_dir(), legacy)
+
+    def test_the_posix_command_line_is_read_with_the_same_ps(self):
+        with mock.patch.object(civ6_env, "on_windows", return_value=False), \
+                mock.patch.object(civ6_env.subprocess, "run",
+                                  return_value=mock.Mock(stdout="python civ6_brain.py\n")) as ran:
+            self.assertEqual(civ6_env.process_command(77), "python civ6_brain.py\n")
+        self.assertEqual(ran.call_args.args[0], ["ps", "-o", "command=", "-p", "77"])
+        self.assertEqual(ran.call_args.kwargs.get("timeout"), 5)
+
+    def test_a_pid_is_alive_only_when_it_is_a_real_process(self):
+        self.assertTrue(civ6_env.pid_alive(os.getpid()))
+        for nonsense in (0, -1, "x", None):
+            with self.subTest(pid=nonsense):
+                self.assertFalse(civ6_env.pid_alive(nonsense))
+
+
+def _vdf_path(path: Path) -> str:
+    """A path as Steam writes it into a .vdf: backslashes doubled."""
+    return str(path).replace("\\", "\\\\")
+
+
+class WindowsSteamResolution(unittest.TestCase):
+    """The Windows install, resolved over fake Steam trees (on any host)."""
+
+    def test_libraryfolders_in_the_current_nested_layout(self):
+        text = r'''
+"libraryfolders"
+{
+	"0"
+	{
+		"path"		"C:\\Program Files (x86)\\Steam"
+		"label"		""
+		"apps"		{ "228980"	"1" }
+	}
+	"1"
+	{
+		"path"		"D:\\SteamLibrary"   // a second drive
+		"apps"		{ "289070"	"30000000000" }
+	}
+}'''
+        data = civ6_env.parse_vdf(text)
+        self.assertEqual(data["libraryfolders"]["1"]["path"], r"D:\SteamLibrary")
+        self.assertEqual(data["libraryfolders"]["1"]["apps"], {"289070": "30000000000"})
+
+    def test_libraryfolders_in_the_older_flat_layout(self):
+        data = civ6_env.parse_vdf('"LibraryFolders"\n{\n\t"TimeNextStatsReport"\t"1"\n'
+                                  '\t"1"\t\t"E:\\\\Games\\\\Steam"\n}\n')
+        self.assertEqual(data["LibraryFolders"]["1"], r"E:\Games\Steam")
+
+    def _library(self, root: Path, manifest: str | None = None) -> Path:
+        apps = root / "steamapps"
+        apps.mkdir(parents=True, exist_ok=True)
+        if manifest is not None:
+            (apps / f"appmanifest_{civ6_env.STEAM_APP_ID}.acf").write_text(
+                '"AppState"\n{\n\t"appid"\t"289070"\n\t"installdir"\t"%s"\n}\n' % manifest)
+        return root
+
+    def test_the_game_is_found_in_a_second_library(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            steam = self._library(base / "Steam")
+            second = self._library(base / "SteamLibrary", manifest="Civ VI Here")
+            game = second / "steamapps" / "common" / "Civ VI Here"
+            (game / "DLC").mkdir(parents=True)
+            (steam / "steamapps" / "libraryfolders.vdf").write_text(
+                '"libraryfolders"\n{\n\t"0"\n\t{\n\t\t"path"\t"%s"\n\t}\n'
+                '\t"1"\n\t{\n\t\t"path"\t"%s"\n\t}\n}\n'
+                % (_vdf_path(steam), _vdf_path(second)))
+            self.assertEqual(civ6_env.steam_libraries(steam), [steam, second])
+            candidates = civ6_env.windows_install_candidates([steam])
+            self.assertEqual(candidates[0], game, "the library with the manifest comes first")
+            with mock.patch.object(civ6_env, "on_windows", return_value=True), \
+                    mock.patch.object(civ6_env, "windows_steam_roots", return_value=[steam]), \
+                    mock.patch.dict(os.environ, {"CIV6_INSTALL": "", "CIV6_DIR": ""}):
+                self.assertEqual(civ6_env.install_dir(), game)
+                # No Civ6.app on Windows: the install root is the assets root,
+                # so install.py's DLC folder is <install>\DLC.
+                self.assertEqual(civ6_env.assets_dir(), game)
+
+    def test_a_library_without_a_manifest_uses_the_depot_folder_name(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            library = self._library(Path(temporary))
+            self.assertEqual(civ6_env.steam_app_dir(library),
+                             library / "steamapps" / "common" / civ6_env.STEAM_INSTALL_NAME)
+
+    def test_the_program_files_defaults_follow_the_registry(self):
+        roots = civ6_env.windows_steam_roots(
+            {"ProgramFiles(x86)": "X86", "ProgramFiles": "X64"}, read_registry=False)
+        self.assertEqual(roots, [Path("X86") / "Steam", Path("X64") / "Steam"])
+
+
+class WindowsUserDirectory(unittest.TestCase):
+    def test_documents_my_games_is_the_user_dir(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            documents = Path(temporary) / "Documents"
+            user = documents / "My Games" / "Sid Meier's Civilization VI"
+            self.assertEqual(civ6_env.windows_user_dir_candidates(documents, environ={}), [user])
+            with mock.patch.object(civ6_env, "on_windows", return_value=True), \
+                    mock.patch.object(civ6_env, "windows_documents_dir", return_value=documents), \
+                    mock.patch.dict(os.environ, {"CIV6_USER_DIR": "", "USERPROFILE": "",
+                                                 "OneDrive": ""}):
+                self.assertEqual(civ6_env.user_dir(), user)
+                self.assertEqual(civ6_env.logs_dir(), user / "Logs")
+                self.assertEqual(civ6_env.mods_dir(), user / "Mods")
+                self.assertEqual(civ6_env.app_options_path(), user / "AppOptions.txt")
+
+    def test_a_redirected_documents_folder_is_chosen_by_its_fresh_options(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            shell = base / "OneDrive" / "Documents"
+            profile = base / "Profile"
+            candidates = civ6_env.windows_user_dir_candidates(
+                shell, environ={"USERPROFILE": str(profile)})
+            self.assertEqual(candidates, [shell / civ6_env.WINDOWS_USER_SUBPATH,
+                                          profile / "Documents" / civ6_env.WINDOWS_USER_SUBPATH])
+            self.assertEqual(civ6_env.windows_user_dir(candidates), candidates[0],
+                             "nothing written yet: the shell's Documents")
+            for candidate, stamp in zip(candidates, (1, 2)):
+                candidate.mkdir(parents=True)
+                (candidate / "AppOptions.txt").write_text("x")
+                os.utime(candidate / "AppOptions.txt", (stamp, stamp))
+            self.assertEqual(civ6_env.windows_user_dir(candidates), candidates[1])
+
+    def test_mod_locations_say_they_are_unmeasured(self):
+        with tempfile.TemporaryDirectory() as temporary, \
+                mock.patch.object(civ6_env, "on_windows", return_value=True), \
+                mock.patch.dict(os.environ, {"CIV6_INSTALL": temporary,
+                                             "CIV6_USER_DIR": temporary}):
+            rows = civ6_env.mod_install_candidates()
+        self.assertEqual([(name, path) for name, path, _ in rows],
+                         [("install DLC", Path(temporary) / "DLC"),
+                          ("user Mods", Path(temporary) / "Mods")])
+        self.assertTrue(all("UNMEASURED" in evidence for _, _, evidence in rows))
+
+
+class WindowsProcesses(unittest.TestCase):
+    def test_the_game_is_found_by_its_executable_names(self):
+        table = [(4, "System"), (88, "civilizationvi_dx12.exe"), (90, "CivilizationVI.exe"),
+                 (91, "LaunchPad.exe"), (92, "python.exe")]
+        with mock.patch.object(civ6_env, "on_windows", return_value=True), \
+                mock.patch.object(civ6_env, "windows_processes", return_value=table):
+            self.assertEqual(civ6_env.game_pids(), [88, 90])
+        with mock.patch.object(civ6_env, "on_windows", return_value=True), \
+                mock.patch.object(civ6_env, "windows_processes", side_effect=OSError("no")):
+            self.assertEqual(civ6_env.game_pids(), [])
+
+    def test_command_lines_are_parsed_from_powershell(self):
+        # A byte-order mark, should PowerShell write one, must not hide the first row.
+        out = "\ufeff12 \"C:\\b\\civvis-hotseat.exe\" civ6_brain.py --run-dir C:\\r\n13 \n\nnoise\n"
+        with mock.patch.object(civ6_env.subprocess, "run",
+                               return_value=mock.Mock(stdout=out)) as ran:
+            rows = civ6_env.windows_command_lines(12)
+        self.assertEqual(rows, [(12, '"C:\\b\\civvis-hotseat.exe" civ6_brain.py --run-dir C:\\r'),
+                                (13, "")])
+        self.assertIn("ProcessId=12", ran.call_args.args[0][-1])
+        with mock.patch.object(civ6_env.subprocess, "run", side_effect=OSError("none")):
+            self.assertEqual(civ6_env.windows_command_lines(), [])
+
+    def test_windows_never_hard_kills_the_game(self):
+        """`os.kill(pid, SIGTERM)` there is TerminateProcess."""
+        with mock.patch.object(civ6_env, "on_windows", return_value=True), \
+                mock.patch.object(civ6_env, "game_pids", return_value=[4242]), \
+                mock.patch.object(civ6_env.os, "kill",
+                                  side_effect=AssertionError("killed the game")), \
+                mock.patch("sys.stderr"):
+            self.assertFalse(civ6_env.quit_game(timeout_s=1.0))

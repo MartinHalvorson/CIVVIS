@@ -44,6 +44,18 @@ that turn until its next point. A seat is counted from its first point to the
 turn its game ended, or to its last point if it did not live to the end. A
 column of the chart is `SPAN` turns, and counts seat-turns.
 
+The same plan is also counted by how far through its game each turn is
+(operator 2026-11-27: "produce another the plan through a game chart where
+the x axis is % through the game"): a game that ended on turn L is cut into
+`THROUGH` equal parts, turn t falling in part `(t - 1) * THROUGH // L`, so
+its first turn is at 0% and the turn it ended on in the last part, before
+100%. A turn weighs one over the turns its game has in that part
+(`game_parts`), so every seat counts as one in every part it played
+through, however long its game was: a game of 250 turns would otherwise
+outweigh one of 110 two to one. A seat that did not live to the end stops
+where its trace stops, as in the turns, and counts for the share of the part
+it lived through.
+
 Like the other pages' scripts this runs inside the script that publishes the
 whole site, so what it cannot read costs the page that part, said on stderr,
 and never costs the site its publish. A lane is filled by its own revision's
@@ -54,6 +66,7 @@ copy of this script from its own revision's tree (`fill` in
 from __future__ import annotations
 
 import datetime
+import functools
 import json
 import pathlib
 import re
@@ -89,6 +102,8 @@ SETUP = {"speed": "online", "turns": 250, "players": 6, "map": "continents", "al
 #: Turns to a column of the plan chart.
 SPAN = 5
 TURNS = 250
+#: Columns of the plan chart by how far through the game: 2% each.
+THROUGH = 50
 
 #: The postures (`GrandStrategy::as_str`), the victories a game ends in, and
 #: what a seat can be told to aim for (`civvis` is told nothing and chooses),
@@ -216,11 +231,23 @@ def seat_spans(row: dict) -> list[tuple[int, int, str, str]] | None:
     return out
 
 
+@functools.lru_cache(maxsize=None)
+def game_parts(length: int) -> tuple[int, ...]:
+    """How many turns of a game `length` turns long fall in each of the
+    `THROUGH` parts of it: 2 or 3 of 110 turns, 5 of 250, none of some parts
+    of a game shorter than `THROUGH`."""
+    counts = [0] * THROUGH
+    for turn_ in range(1, length + 1):
+        counts[min(THROUGH - 1, (turn_ - 1) * THROUGH // length)] += 1
+    return tuple(counts)
+
+
 def tally() -> dict:
     spans = TURNS // SPAN
     return {
         "seats": 0, "forecasting": 0, "wins": 0, "won_by": dict.fromkeys(VICTORIES, 0),
         "playing": [0] * spans, "posture": {name: [0] * spans for name in POSTURES},
+        "through": {"playing": [0.0] * THROUGH, "posture": {name: [0.0] * THROUGH for name in POSTURES}},
         "bottleneck": {}, "named": 0, "turns": 0,
         "marks": {measure: [[] for _ in MARKS] for measure in MEASURES},
     }
@@ -236,6 +263,9 @@ def count(into: dict, row: dict, spans: list[tuple[int, int, str, str]]) -> None
         into["wins"] += 1
         if row.get("victory") in into["won_by"]:
             into["won_by"][row["victory"]] += 1
+    # How long the seat's game was, for the chart by how far through it.
+    length = max(1, min(int(row["turn"]), TURNS))
+    held_in = game_parts(length)
     for start, upto, posture, bottleneck in spans:
         held = upto - start + 1
         into["turns"] += held
@@ -247,6 +277,10 @@ def count(into: dict, row: dict, spans: list[tuple[int, int, str, str]]) -> None
             into["playing"][column] += 1
             if posture in into["posture"]:
                 into["posture"][posture][column] += 1
+            part = min(THROUGH - 1, (turn_ - 1) * THROUGH // length)
+            into["through"]["playing"][part] += 1 / held_in[part]
+            if posture in into["through"]["posture"]:
+                into["through"]["posture"][posture][part] += 1 / held_in[part]
     for point in row.get("trajectory") or []:
         if not isinstance(point, dict) or point.get("turn") not in MARKS or not point.get("alive"):
             continue
@@ -300,6 +334,11 @@ def batch_plans(directory: pathlib.Path) -> dict | None:
             for measure, marks in into["marks"].items()
         }
         into["bottleneck"] = dict(sorted(into["bottleneck"].items(), key=lambda item: (-item[1], item[0])))
+        # Seats, to the hundredth: a seat that played a part through is one.
+        into["through"] = {
+            "playing": [round(value, 2) for value in into["through"]["playing"]],
+            "posture": {name: [round(value, 2) for value in values] for name, values in into["through"]["posture"].items()},
+        }
     return {"games": len(seeds), "seats": tallies["all"]["seats"], "commit": commit[:7], "targets": tallies}
 
 
@@ -324,6 +363,7 @@ def snapshot(batches: pathlib.Path) -> dict:
             "games": plans["games"],
             "seats": plans["seats"],
             "span": SPAN,
+            "through": THROUGH,
             "marks": MARKS,
             "postures": POSTURES,
             "victories": VICTORIES,
@@ -346,7 +386,8 @@ def plans(source: pathlib.Path) -> dict | None:
     another span or other names than this script's."""
     try:
         taken = json.loads((source / PLANS).read_text(encoding="utf-8"))
-        if taken.get("span") != SPAN or taken.get("postures") != POSTURES or taken.get("marks") != MARKS:
+        if (taken.get("span") != SPAN or taken.get("through") != THROUGH or taken.get("postures") != POSTURES
+                or taken.get("marks") != MARKS):
             raise ValueError("the snapshot was taken with another span or other postures; rebuild it")
         if not taken["targets"]["all"]["seats"]:
             raise ValueError("no seat")

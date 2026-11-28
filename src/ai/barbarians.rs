@@ -18,6 +18,11 @@
 
 use super::*;
 
+/// `opening-defense-spares-the-holy-site`: a capital attacked within this
+/// many turns lets the opening defense take its Holy Site's queue again.
+/// The same window `religion-seat-founds-first` reads before it places one.
+const HOLY_SITE_HOLD_QUIET_TURNS: u32 = 4;
+
 impl BasicAi {
     pub(super) fn opening_barbarian_defense_item(
         &self,
@@ -46,6 +51,72 @@ impl BasicAi {
         }
         self.barbarian_defense_item(g, pid, cid)
             .filter(|item| matches!(item, Item::Unit { .. }))
+    }
+
+    /// `opening-defense-spares-the-holy-site`: whether the capital's founding
+    /// Holy Site keeps its queue against the opening's barbarian defense.
+    ///
+    /// **Why (Lv 8 Deity, 2026-11-26/27).** Three Religion-target seats lost
+    /// the Prophet race to this displacement and never founded.
+    /// `civvis-t8-20261126T132453Z`: Constantinople's Holy Site was asked on
+    /// t22-26 and each turn "archer takes the queue before a holy site
+    /// district", with an Archer adjacent; the site was never placed and all
+    /// four Prophets were gone by t40. `civvis-t8-20261126T160109Z`: the site
+    /// was placed at t16 (8/34), a Slinger took the queue at t17 with a
+    /// Warrior in the city, and the capital never resumed it.
+    /// `civvis-t8-20261127T025659Z`: Niani's Holy Site, pillaged at t15, was
+    /// 28/29 into its repair at t17 when a Warrior took the queue with a
+    /// Warrior and a Slinger home; it stayed pillaged until t42, after the
+    /// last Prophet went at t28. In none of them had the city been hit.
+    ///
+    /// **What the gene does.** When the head of the capital's queue is a Holy
+    /// Site (a new one or a repair of one of its own), our religion is
+    /// unfounded, a Prophet is still open (one is pending, or fewer religions
+    /// are founded than the map allows and the host has not reported the
+    /// class exhausted), at least one land defender stands at home
+    /// ([`BasicAi::barbarian_local_defenders_for_controller`]) and the city
+    /// was not attacked in the last [`HOLY_SITE_HOLD_QUIET_TURNS`] turns, the
+    /// opening defense stands aside for this turn (read in `BasicAi::cities`
+    /// before the defender is applied). The defender comes once
+    /// the site is done. A naked or freshly hit capital still yields. Off,
+    /// nothing changes.
+    pub(super) fn holy_site_holds_the_opening_defense(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+    ) -> bool {
+        if !self.opening_defense_spares_the_holy_site {
+            return false;
+        }
+        let Some(city) = g.cities.get(&cid).filter(|city| city.owner == pid) else {
+            return false;
+        };
+        let holy_site = crate::name!("holy_site");
+        let head_is_holy_site = city.queue.first().is_some_and(|item| match item {
+            Item::District { district, .. } => g.district_family(*district) == holy_site,
+            Item::Repair { pos, .. } => city
+                .districts
+                .iter()
+                .any(|(district, at)| at == pos && g.district_family(*district) == holy_site),
+            _ => false,
+        });
+        if !head_is_holy_site {
+            return false;
+        }
+        let player = &g.players[pid];
+        let exhausted = player
+            .live_great_person_exhausted
+            .as_ref()
+            .is_some_and(|classes| classes.contains("prophet"));
+        let prophet_open =
+            player.prophet_pending || (!exhausted && g.religions_founded() < g.max_religions());
+        if player.religion.is_some() || !prophet_open {
+            return false;
+        }
+        let recently_hit = city.last_attacked > 0
+            && g.turn.saturating_sub(city.last_attacked) <= HOLY_SITE_HOLD_QUIET_TURNS;
+        !recently_hit && self.barbarian_local_defenders_for_controller(g, pid, cid) >= 1
     }
 
     /// Land defenders that can answer a barbarian raid from this city's tile.

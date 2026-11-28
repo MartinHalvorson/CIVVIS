@@ -793,8 +793,14 @@ class TheOperatorHolds(unittest.TestCase):
     def test_the_checked_in_holds_follow_the_operator_default_policy(self):
         ledger = json.loads(gene_ledger.LEDGER_JSON.read_text())
         rules = ledger["rules"]
-        expected_holds = set()
-        self.assertEqual(tuple(sorted(expected_holds)), gene_ledger.OPERATOR_DEFAULT_OFF)
+        # The operator's 2026-11-28 holds (`tools/genes.py`, *THE OPERATOR'S
+        # HOLDS*): every gene the genome carried at Diff < -0.2 pp or
+        # P(>0) < 20%. The evidence moves with every batch, so the test holds
+        # the list to its invariants rather than re-deriving it.
+        expected_holds = set(gene_ledger.OPERATOR_DEFAULT_OFF)
+        self.assertEqual(tuple(sorted(expected_holds)), gene_ledger.OPERATOR_DEFAULT_OFF,
+                         "sorted, unique")
+        self.assertEqual(len(expected_holds), 68)
         self.assertEqual(rules["operator_default_off"], sorted(expected_holds))
         screenable = set(gene_ledger.screenable_tags())
         genome = set(rules["deployment_genome"])
@@ -802,7 +808,6 @@ class TheOperatorHolds(unittest.TestCase):
             self.assertIn(tag, screenable, tag)
             self.assertNotIn(tag, genome, f"{tag} is held off but ships anyway")
             self.assertNotIn(tag, rules["operator_default_on"], tag)
-        # The explicit selection carries no manual off overrides.
         self.assertEqual(rules["deployment_policy"],
                          gene_ledger.RETAINED_DEPLOYMENT_POLICY)
 
@@ -1083,7 +1088,8 @@ class TheDeploymentGenomeFollowsItsRecordedPolicy(unittest.TestCase):
         rules = ledger["rules"]
         self.assertEqual(rules["deployment_policy"], gene_ledger.RETAINED_DEPLOYMENT_POLICY)
         self.assertEqual(rules["operator_default_on"], [])
-        self.assertEqual(rules["operator_default_off"], [])
+        holds = set(gene_ledger.OPERATOR_DEFAULT_OFF)
+        self.assertEqual(rules["operator_default_off"], sorted(holds))
         batches = ranking.load_reporting_batches(ledger)
         # A new player contract opens a fresh epoch with fewer than three columns.
         self.assertTrue(1 <= len(batches) <= len(ranking.REPORTING_BATCH_LABELS))
@@ -1106,8 +1112,9 @@ class TheDeploymentGenomeFollowsItsRecordedPolicy(unittest.TestCase):
                 self.assertLessEqual(
                     len([tag for tag in family if tag in rules["deployment_genome"]]), 1, family)
             return
+        # The operator's holds ship off whatever the rule reads.
         eligible = set(gene_ledger.retained_deployment_genome_from_batches(
-            batches, tags, prior_on=prior))
+            batches, tags, prior_on=prior)) - holds
         # The exact set is the regression oracle. Its count intentionally
         # moves whenever a completed reporting batch enters the three-batch
         # window, so a fixed number would reject a correct table rotation.

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import functools
+import gzip
 import http.server
 import json
 import pathlib
@@ -39,9 +40,13 @@ const watched = (path) => /[?&]viewer=watch/.test(path) || /[?&]have=11:/.test(p
 // needs to attach and read it. A fixed delay here raced Chrome's startup: the
 // notice came and went before DevTools attached on a busy CI runner.
 window.holdRuntime = new URL(location.href).searchParams.has("slow");
+// `?cold=1` holds every reply, as an engine still downloading would.
+window.holdAll = new URL(location.href).searchParams.has("cold");
+window.workerSeeds = [];
 window.heldRuntime = [];
 window.releaseRuntime = () => {
   window.holdRuntime = false;
+  window.holdAll = false;
   window.heldRuntime.splice(0).forEach((deliver) => deliver());
 };
 window.Worker = class {
@@ -49,6 +54,7 @@ window.Worker = class {
   postMessage(message) {
     workerCalls.push(message.path);
     workerBodies.push([message.path, message.body]);
+    workerSeeds.push(message.seed);
     let answer;
     if (message.path === "/runtime") {
       answer = { commit: new URL(location.href).searchParams.get("build") || "test" };
@@ -98,7 +104,7 @@ window.Worker = class {
     const deliver = () => setTimeout(() => this.onmessage({
       data: { id: message.id, ok: true, answer: bytes },
     }), 0);
-    if (message.path === "/runtime" && window.holdRuntime) window.heldRuntime.push(deliver);
+    if ((message.path === "/runtime" && window.holdRuntime) || window.holdAll) window.heldRuntime.push(deliver);
     else deliver();
   }
 };
@@ -365,6 +371,78 @@ def wait_for_harness(dev, url_part: str) -> None:
     raise AssertionError(f"the page at {url_part} never reported ready")
 
 
+BAKED_SEED = 424242
+
+
+def stage_a_baked_opening(stage: pathlib.Path) -> None:
+    """A copy of the harness whose shim carries a bank of one baked opening,
+    as `bake_openings.mjs` leaves a published lane."""
+    shim = (stage / "shim.js").read_text(encoding="utf-8")
+    placeholder = "const OPENING_BANK = null;"
+    assert shim.count(placeholder) == 1, "shim.js lost the bank placeholder bake_openings.mjs fills"
+    bank = {"settings": {"ms": 0, "between_game_countdown_ms": 5000}, "engine_pace": 500,
+            "seeds": {str(BAKED_SEED): "0123456789abcdef"}}
+    (stage / "shim-baked.js").write_text(
+        shim.replace(placeholder, f"const OPENING_BANK = {json.dumps(bank)};"), encoding="utf-8")
+    openings = stage / "assets" / "openings"
+    openings.mkdir(parents=True, exist_ok=True)
+    opening = {"state": {"seed": BAKED_SEED, "turn": 1, "baked": "opening"},
+               "rules": {"baked": "rules"}, "gene_program": {"baked": "genes"}}
+    (openings / f"{BAKED_SEED}.json.gz").write_bytes(gzip.compress(json.dumps(opening).encode()))
+    (stage / "baked.html").write_text(
+        HARNESS.replace('<script src="shim.js">', '<script src="shim-baked.js">'), encoding="utf-8")
+
+
+def check_a_first_visit_draws_a_baked_opening(dev, port: int) -> None:
+    """While the engine is still on its way, a first visit's opening reads are
+    answered from the baked bank, on the bank's seed, and the engine is asked
+    them all the same; once this browser holds the engine, it is not."""
+    dev.evaluate(
+        "['civvis-watch-pace', 'civvis-between-game-countdown', 'civvis-engine-seen']"
+        ".forEach((key) => localStorage.removeItem(key)), true"
+    )
+    dev.call("Page.navigate", {"url": f"http://127.0.0.1:{port}/baked.html?site=1&cold=1&visit=baked"})
+    deadline = time.time() + 15
+    while time.time() < deadline:
+        try:
+            if dev.evaluate("location.href.includes('visit=baked') && !!window.__civvisBeta"):
+                break
+        except Exception:
+            pass
+        time.sleep(0.1)
+    opening = dev.evaluate("fetch('/state?painted=&viewer=x&think=0&planet=1').then(r => r.json())")
+    assert opening.get("baked") == "opening", opening
+    assert dev.evaluate("fetch('/rules').then(r => r.json())") == {"baked": "rules"}
+    assert dev.evaluate("fetch('/gene-program').then(r => r.json())") == {"baked": "genes"}
+    calls = dev.evaluate("window.workerCalls")
+    assert "/state?painted=&viewer=x&think=0&planet=1" in calls and "/rules" in calls, calls
+    seeds = set(dev.evaluate("window.workerSeeds"))
+    assert seeds == {BAKED_SEED}, seeds
+    assert dev.evaluate("window.__civvisBeta.opening && window.__civvisBeta.opening.baked") is True
+    assert not dev.evaluate("window.__civvisBeta.ready")
+    dev.evaluate("window.releaseRuntime(), true")
+    deadline = time.time() + 10
+    while time.time() < deadline and not dev.evaluate("window.__civvisBeta.ready"):
+        time.sleep(0.1)
+    seen = dev.evaluate("localStorage.getItem('civvis-engine-seen')") or ""
+    assert seen.endswith("civvis.wasm"), seen
+    # The next visit has the engine: a world of its own, from the engine.
+    dev.call("Page.navigate", {"url": f"http://127.0.0.1:{port}/baked.html?site=1&cold=1&visit=again"})
+    deadline = time.time() + 15
+    while time.time() < deadline:
+        try:
+            if dev.evaluate("location.href.includes('visit=again') && !!window.__civvisBeta"):
+                break
+        except Exception:
+            pass
+        time.sleep(0.1)
+    dev.evaluate("fetch('/rules'), true")
+    time.sleep(0.3)
+    assert not dev.evaluate("!!window.__civvisBeta.opening")
+    assert BAKED_SEED not in dev.evaluate("window.workerSeeds")
+    dev.evaluate("window.releaseRuntime(), true")
+
+
 def check_a_split_pane_asks_its_hosts_engine(dev) -> None:
     """One half of a split Sim debugger starts no engine of its own.
 
@@ -443,6 +521,7 @@ def main() -> int:
     # machine having a bad day — the worst time to discover it is wrong.
     check_stderr_tail(stage)
     check_opening_settings_match_the_viewer(here)
+    stage_a_baked_opening(stage)
 
     port = free_port()
     server = socketserver.TCPServer(
@@ -729,11 +808,12 @@ def main() -> int:
         calls = dev.evaluate("window.workerCalls")
         assert calls[0] == "/new", calls
         assert not [path for path in calls if "have=11:" in path], calls
+        check_a_first_visit_draws_a_baked_opening(dev, port)
         check_a_split_pane_asks_its_hosts_engine(dev)
         print(
             "the WASM clock reads one frame ahead and never two, sends the viewer's "
-            "opening settings first, honors selected holds, and opens an installed "
-            "successor build."
+            "opening settings first, honors selected holds, opens an installed "
+            "successor build, and draws a first visit's baked opening."
         )
         return 0
     finally:

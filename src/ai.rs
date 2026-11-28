@@ -2731,6 +2731,13 @@ pub struct BasicAi {
     /// `OPENING_DEFENSE_SETTLER_PREEMPTS` times. See
     /// `opening_defense_settler_preempts`. Opt-in gene, off by default.
     pub(crate) opening_defense_preempts_once: bool,
+    /// `opening-defense-spares-the-holy-site`: the opening's barbarian
+    /// defense does not displace a Holy Site (new or a repair) at the head of
+    /// the capital's queue while our religion is unfounded and a Prophet is
+    /// still open, once a land defender already stands at home and the city
+    /// has not been hit. See `holy_site_holds_the_opening_defense` in
+    /// `ai/barbarians.rs`. Opt-in gene, off by default.
+    pub(crate) opening_defense_spares_the_holy_site: bool,
     /// Version two preserves every wonder pocket V1 would scout, but among
     /// goals no more than one tile beyond V1's nearest it picks the tile that
     /// reveals the most of the pocket. It therefore buys information without
@@ -4117,6 +4124,25 @@ impl BasicAi {
         self.capital_settler_after_completion = true;
     }
 
+    /// Which on gene reserves the capital's next build for a Settler at
+    /// population two (`cities`, `pick_item`): the clause the journal line
+    /// names it by. Both genes open the same branch; the line used to name
+    /// `capital-settler-after-completion` whichever was on, and the live seat
+    /// runs `rapid-city-expansion-2` with that one off (hotseat
+    /// `hotseat-20261128T031456Z`: ten such lines, every seat `forced=none`).
+    pub(crate) fn capital_settler_reserved_by(&self) -> &'static str {
+        match (
+            self.capital_settler_after_completion,
+            self.rapid_city_expansion_2,
+        ) {
+            (true, true) => {
+                "the capital-settler-after-completion and rapid-city-expansion-2 genes reserve"
+            }
+            (false, true) => "the rapid-city-expansion-2 gene reserves",
+            _ => "the capital-settler-after-completion gene reserves",
+        }
+    }
+
     /// Disable the baseline half of the capital-settler-after-completion gene.
     pub(crate) fn disable_capital_settler_after_completion(&mut self) {
         self.capital_settler_after_completion = false;
@@ -4439,6 +4465,7 @@ impl BasicAi {
             wonder_ring_recon: false,
             opening_defense_preempts: 0,
             opening_defense_preempts_once: false,
+            opening_defense_spares_the_holy_site: false,
             wonder_ring_recon_2: false,
             hut_collection: false,
             village_seeking: false,
@@ -5908,7 +5935,16 @@ impl BasicAi {
                 let displaces_settler =
                     matches!(&displaced, Some(Item::Unit { unit }) if unit == "settler");
                 let live = pid == crate::game::MIRRORED_SEAT && !g.host_observed.is_empty();
-                if live
+                // `opening-defense-spares-the-holy-site`: see
+                // `holy_site_holds_the_opening_defense` in `ai/barbarians.rs`.
+                if self.holy_site_holds_the_opening_defense(g, pid, *cid) {
+                    think!(self.journal, Military, Decision,
+                           "{} keeps its Holy Site despite nearby barbarians", g.cities[cid].name;
+                           "opening-defense-spares-the-holy-site: {} waits for the Holy Site; \
+                            {} defender(s) home, our religion unfounded and a Prophet still open",
+                           Self::item_label(&item),
+                           self.barbarian_local_defenders_for_controller(g, pid, *cid));
+                } else if live
                     && displaces_settler
                     && self.opening_defense_preempts >= self.opening_defense_settler_preempts()
                 {
@@ -6025,9 +6061,10 @@ impl BasicAi {
                     let item = opening_item.expect("the matched opening item is a Settler");
                     if g.apply(pid, &Action::Produce { city: *cid, item }).is_ok() {
                         settlers += 1;
+                        let reserved_by = self.capital_settler_reserved_by();
                         think!(self.journal, Cities, Decision,
                                "{} starts a Settler after completing its prior production", g.cities[cid].name;
-                               "the capital is population two with an empty queue; the capital-settler-after-completion gene reserves this next build while preserving the rest of the opening book");
+                               "the capital is population two with an empty queue; {reserved_by} this next build while preserving the rest of the opening book");
                         continue;
                     }
                 }

@@ -2768,6 +2768,14 @@ impl AdvancedAi {
                 BTreeSet::new()
             }
         });
+        // `stacked-shooter-steps-out`: a City Center where a shooter shares
+        // the tile with another soldier of ours, an enemy soldier in sight
+        // nearby, keeps one shooter and steps the others beside it, before
+        // the capital's shooters are called and the battle is planned.
+        // Nothing with the gene off. See `advanced/stacked_shooter_steps_out.rs`.
+        self.owned_pass(g, pid, OrderStep::CentreGarrison, |ai, g| {
+            ai.step_stacked_soldiers_out(g, pid)
+        });
         // `shooters-man-the-capital`: with a war party or a siege engine in
         // sight of the original capital, the called shooters take their
         // orders before the battle is planned and are held for the turn (the

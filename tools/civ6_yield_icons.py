@@ -31,13 +31,7 @@ the spectator draws itself (``drawYieldPlate``).  So the cut is the coloured
 disc alone, and the plate's 13% pad puts the ring back.
 
 Usage:
-    python3 tools/civ6_yield_icons.py            # local/civ6-art/yield-icons.png
-
-The cut is for the local server of somebody who owns the game, and for nobody
-else: it lands in the git-ignored ``local/civ6-art/`` and carries
-``art_provenance.LOCAL_MARK``, which ``tools/art_provenance.py`` refuses in the
-repository and in a published build. The site ships CIVVIS's own signs, drawn by
-``tools/own_art.py`` (docs/CIV6_ART.md).
+    python3 tools/civ6_yield_icons.py web/assets/civ6-yield-icons.png
 """
 
 import struct
@@ -47,7 +41,6 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import civ6_env as env  # noqa: E402
-import art_provenance  # noqa: E402
 
 #: The map overlay the game draws its own tile yields with, under the assets
 #: root. ``TEXTURE_<name>_FOW`` beside it is the fogged variant.
@@ -133,7 +126,6 @@ def write_png(path, width, height, pixels):
     png += chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0))
     png += chunk(b"IDAT", zlib.compress(raw, 9))
     png += chunk(b"IEND", b"")
-    png = art_provenance.mark_local(png)
     with open(path, "wb") as handle:
         handle.write(png)
 
@@ -221,5 +213,4 @@ def main(destination):
 
 
 if __name__ == "__main__":
-    main(sys.argv[1] if len(sys.argv) > 1
-         else art_provenance.local_destination("yield-icons.png"))
+    main(sys.argv[1] if len(sys.argv) > 1 else "web/assets/civ6-yield-icons.png")

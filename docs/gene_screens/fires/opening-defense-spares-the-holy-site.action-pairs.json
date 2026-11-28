@@ -1,0 +1,18 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "opening-defense-spares-the-holy-site",
+  "scope": "Recorded proposal activation on captured live input only, not host execution or strength. 7 boards of three Lv 8 Deity Religion-target benchmark games (civvis-t8-20261126T132453Z t22-26, 160109Z t17, 20261127T025659Z t17), each the run's events.jsonl cut after turn N+1 and replayed at N, at the turns where the live why.log reads '<unit> takes the queue before a holy site district'. Both arms run one frozen civvis_orders built from the branch (no --resumed: the live seats were still in the opening book, the only place the opening defense runs) with the run's own requested genome; the on arm adds --with opening-defense-spares-the-holy-site. The off arm reproduces the live displacement on 6/7 boards. The gene fires on 2/7 (132453Z t23 Archer and 160109Z t17 Slinger become the Holy Site, journalling '1 defender(s) home, our religion unfounded and a Prophet still open'); on 132453Z t24-26 the Archer has left the 3-tile ring, so the capital reads naked and the defender still comes, as designed; on 025659Z t17 the one-shot frame does not carry the live repair at the queue head (the unit test covers the repair case).",
+  "archive": {
+    "path": "docs/eval/2026-11-27-opening-defense-spares-the-holy-site.native-queries.tar.xz",
+    "sha256": "2fba9958ea85aebbf6296a34612c6ed33e70d0c16740d0e6dc087d980725dd46"
+  },
+  "members": [
+    "native-queries-01/0000/result.json",
+    "native-queries-01/0001/result.json",
+    "native-queries-01/0002/result.json",
+    "native-queries-01/0003/result.json",
+    "native-queries-01/0004/result.json",
+    "native-queries-01/0005/result.json",
+    "native-queries-01/0006/result.json"
+  ]
+}

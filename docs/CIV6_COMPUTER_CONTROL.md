@@ -555,6 +555,272 @@ frame rate a loaded machine was managing, not drift.
   `GameInfo.UnitOperations` / `GameInfo.UnitCommands` and their resolution is
   reported at startup.
 
+### A person's hotseat game plays like single player
+
+`tools/civ6_hotseat.py` seats a person at seat 0 and CIVVIS everywhere else.
+Two things, both only in an install for a game a person plays
+(`HotseatCover`, `HotseatAutoStart`; `--no-cover` and `--keep-handover` turn
+them off, and no other install carries them):
+
+- **A cover over every turn that is not theirs** (`CivvisHotseatCover.lua`, an
+  `AddUserInterfaces` context of its own). It is a popup, and popups are drawn
+  in priority order (Loaders/PopupPriorityLoader_Base.lua:11-15). It takes the
+  `PausePanel` slot, Utmost+2, which a hotseat game never fills
+  (Panels/PausePanel.lua:77/:86): over the shipped hotseat backdrop (+1) and
+  every screen a CIVVIS seat raises (High or lower, or not a popup at all,
+  like the leader screens), under the hand-over (+3), the end screen (+4) and
+  the game menu (+5), which Esc on the cover opens through the hand-over's own
+  route (`LuaEvents.PlayerChange_OpenInGameOptionsMenu`). It goes up on the
+  person's `LocalPlayerTurnEnd`, so it is up long before a CIVVIS seat's
+  hand-over is pressed. Over it the hand-over shows only its menu button: the
+  closer hides its dialog on the first frame and its "please wait" line, as
+  PlayerChange.lua hides them itself (:61/:194, :172), and presses it on the
+  shipped path.
+- **The person's hand-over pressed for them** (`CivvisHotseatScreen.autoStart`
+  in `CivvisControlAutoClose.lua`). The cover lifts on that press, which the
+  shipped screen announces (`LuaEvents.PlayerChange_Close`, PlayerChange.lua:59),
+  after the camera and zoom go back where the person ended their last turn
+  and another seat's selection is dropped. As their turn begins (still under
+  the cover) two things a CIVVIS turn leaves are cleared: the status lines on
+  screen (Panels/StatusMessagePanel.lua drops gossip at a seat's end of turn,
+  :317-320, but keeps combat and other plain lines their full 7 s, :10/:254,
+  and rollover gossip has no end of turn after it), which are hidden; and an
+  emergency screen (XP2 WorldCrisisPopup.lua, raised for whoever is local,
+  :43-45, queued at :221, not a screen the closer serves) queued since the
+  person's turn ended, which is taken off the queue: it opened on their turn
+  with the CIVVIS seat's view, and its OK accepted the emergency for them
+  (:287-292). Their own emergencies still open from their notification (:404).
+  One `hotseat_left_behind` record says what went. ⚠ Tests only
+  (`hotseat_cover_test.lua` 10).
+
+⚠ **A popup queued under a higher one is held hidden, and a hidden context
+does not tick.** That is why the shipped hotseat background asks for
+`AlwaysVisibleInQueue` (HotSeatBackground.lua:27), and it is why a cover
+alone would stop the game: an announcement holding the engine's event lock
+(`ExclusivePopupManager:Lock`, PopupManager.lua:52-61) under it would never be
+closed. So in a cover game every screen the closer serves (but the hand-over
+and the end screens) queues itself `AlwaysVisibleInQueue` on a CIVVIS seat's
+turn (`CivvisCoverQueue`, a `UIManager` proxy in that shim; `--no-cover-queue`
+turns it off for diagnosis). Two of those screens ask before they queue
+(`UI.CanShowPopup`: HistoricMoments.lua:163, BoostUnlockedPopup.lua:257) and,
+told no, keep the announcement in a list of their own until `Events.UIIdle`.
+Under the cover the answer was no for the whole of a CIVVIS seat's turn, so the
+announcement waited there and opened on the person's next turn: live 2026-11-27
+(`hotseat-20261128T031456Z`), five seats' first Historic Moments came one after
+another at the start of the person's turn 2, each drawn as the person's own
+empty timeline. On a CIVVIS seat's turn in a cover game those two screens are
+now told yes (`CivvisCoverQueue.installAsk`, a `UI` that answers that one
+question and reads every other name through), so they queue themselves and are
+closed under the cover like the rest. ⚠ Tests only so far
+(`hotseat_cover_queue_test.lua` 2b). The cover's own clock is the backstop: a seat's
+hand-over pause still standing 1.5 s in is pressed by event
+(`LuaEvents.CivvisHotseatStartTurn`), which reaches a hidden context. A seat
+quiet for 90 s, a CIVVIS seat's turn standing 240 s however its controller
+beats (`HotseatCoverLongSeconds`, `yield_long`: a controller past its forfeit
+ladder still stamps every pass, so `quiet` never grows on that wedge; the seat
+watch below forces such a turn at 180 s and two retries fit before 240), 180 s
+with no seat active, or the person's own turn waiting 10 s makes the cover
+stand aside for that turn (`hotseat_cover`, reason `yield_*`, the lift record's
+`seat_turn` the seconds that turn had stood), and the harness's screen rescue,
+which does not read the screen while the cover is up, sees the game again.
+600 CIVVIS seat turns on this Mac took 0.5-36 s. ⚠ `yield_long` is tests only.
+
+**A seat's defeat on a CIVVIS turn keeps the cover.** Hotseat shows any human
+seat's defeat to whoever's turn it is (EndGameMenu.lua:1012-1013), and the
+screen's Next Player only closes it (:304-318): the CIVVIS seat's turn under it
+goes on. The cover used to lift for every end screen, which left that seat's
+own map, HUD and units on screen, and clickable, from Next Player to its end
+of turn. Now a CIVVIS seat's defeat (`Events.PlayerDefeat`) shown on a turn
+that is not a person's keeps the cover queued under the end screen (which is
+above it and is read and pressed as it ships): one `hotseat_cover_kept` record,
+the person's own volumes while it is up, no stall clock (the screen holds the
+game until Next Player and is in plain sight), and the turn still covered after
+it closes. A person's defeat, a win (`Events.TeamVictory`) or an end screen
+whose defeat is not known lift the cover as before. ⚠ Tests only
+(`hotseat_cover_test.lua` 8b); no seat has been defeated in a live cover game.
+
+**The cover is quiet, and says about how long** (`HotseatCoverSound`,
+`HotseatCoverTimer`; `--cover-sound music|silent|all`, `--no-cover-timer`).
+The cover hid pixels only: a CIVVIS seat's units, fights, chimes and voice
+lines were heard through it. While it is up over a turn that is not the
+person's, the script turns the sound buses that carry them to 0 the way the
+shipped end screen silences the music around its movie (EndGameMenu.lua:434-435
+`Options.SetAudioOption("Sound", "Music Volume", 0, 0)`, restored at :452):
+`music` (the default) turns down SFX, Ambience and Speech and lets the
+soundtrack play on, `silent` turns down Master. The last argument 0 is never
+the 1 that Options.lua:225-229 passes under "Confirm clicked: set audio
+system's .ini to slider values", so nothing is saved. The volumes are the
+person's again when their turn begins (before their hand-over is pressed),
+while the game menu is open over the cover (its Options screen reads and can
+save them), on every lift, and when the context shuts down; a bus the person
+keeps at 0 is never touched. Each change is one `hotseat_cover_sound` record
+with the first bus's volume before and the game's own reading after. The bar
+under the seat's name counts the CIVVIS seats down, not the whole wait: the
+cover times each seat's turn (its `LocalPlayerTurnBegin` to its
+`LocalPlayerTurnEnd`, by `UI.GetElapsedTime()`), the moment before each, and
+the stretch from the last seat's end to the person's turn (the rollover and
+their hand-over), and keeps the last five of each. Time left = what is left of
+the seat playing now (never less than nothing: a seat that runs over holds the
+count until the next one starts) + each seat still to come + that last
+stretch, each a recency-weighted mean with nothing counted above twice its
+median (`CivvisHotseatCover.typical`), worked out again every frame. The line
+reads "3 of 5, about 6 s", and "Any moment now" only once no seat is left; the
+bar is the share of the wait gone by that reckoning, only ever forward, and
+near the end as the person's turn comes back. Before any seat's turn is known
+(the first seat of the first wait, a wait joined part-way) it sweeps; a seat
+with none of its own yet is taken to be like the others. What the game menu
+was opened over, and the end of a wait the cover stood aside in, are not
+learned from. Both `hotseat_cover` records carry `at` (the UI clock, as the
+seats' `end_turn_wait.ui_now`); the lift record also `waited`, `estimate` (the
+count at the wait's start), `timed`, `seats`, `took` (each seat's turn,
+`seat:seconds`) and `said` (the time left shown as each seat began), enough
+to replay the countdown from a live game. `hotseat_cover_wait_test.lua`
+replays the live game of 2026-11-27 (hotseat-20261128T031456Z) and a 118-turn
+self-play through it and through the whole-wait estimate it replaced: in the
+live game, mean error of the time left 0.87 s against 1.45 s at the seat
+changes, 1.07 s against 1.70 s over all frames, and no "Any moment now" with
+time to go (6.4 s of it before). ⚠ The countdown is tests and replay only, not
+yet seen in a live game (2026-11-28).
+
+The test arrangement `--auto-human gated` puts a stub in the person's seat
+(`HotseatHumanSeats` and `HotseatStubSeats` both list seat 0): the cover and
+the pressed hand-over treat it as the person, but the closers act on its turn
+(`CivvisHotseatScreen.personTurn`) and the HUD's seat watch ends its quiet
+turns (`CivvisSeatWatch.watched`), because nobody is there. Run `cover-live-6`
+parked on turn 1 behind the stub's own "Roman Empire Makes History" card: the
+stub ignores UI pulses (`controller_clock` `standalone`) and hears only game-core
+events, which stopped. A real person's seat is never closed for or ended.
+
+**The stand-in plays its turn to the end** (`CivvisSeat.standIn`,
+`CivvisControlAgent.lua`). Every check game wedged on the stub's turn:
+`smoke-6p-20261128T0244Zb` turn 2 (one pass, `NO_ENDTURN_BLOCKING`, its end of
+turn asked while the Historic Moments screens the CIVVIS seats had kept were
+coming up, then ten minutes of nothing), `manual-live-1` and `manual-cover-1`
+turn 5 (the Scout sent on a multi-turn `probe` the turn before refused SKIP_TURN,
+FORTIFY, ALERT and SLEEP at turn begin, the forfeit ladder's three forced end
+turns went inside two seconds, `wedged`). The common half: the stub heard only
+game-core events, since the UI pulse turns a controller with no decision worker
+away (`controller_clock` `standalone`), and a game waiting on its local player
+publishes almost none. Now, on its own turn only:
+
+- the stub takes the HUD's one-second pulse (`LuaEvents.CivvisControlPulse`,
+  through the seat gate) and runs the ordinary loop on it, which answers the
+  blocker and asks for the end of turn again;
+- its turn opens once its units have their movement back, as a CIVVIS seat's
+  does (`movementNotYetRestored`);
+- after 4 s, every 3 s, it answers what the game says it waits on itself: ready
+  units are held in place, one refusing every hold has its stale operation or
+  queued path cancelled (`UNITCOMMAND_CANCEL`, UnitCommands.xml:36) and is held
+  again, an envoy prompt is marked considered (CityStates.lua:452), any other
+  blocker gets the ladder's answer, with a fresh pass each step (the loop can
+  spend the ladder's two research or civic passes in the turn's first tenth of
+  a second, while its requests are still refused); then the notification is
+  dismissed and the end of turn asked with SHIFT+ENTER's request (ActionPanel.lua:1099,
+  `UI.RequestAction(ActionTypes.ACTION_ENDTURN, { REASON = "UserForced" } )`);
+- `stand_in_stuck` says in one record what still stands: the blocker and the
+  answer, each unit still refusing (moves, activity, queued path, the engine's
+  own refusal reasons from `CanStartOperation`), whether the turn is already
+  sent, `UI.CanEndTurn`/`IsGameCoreBusy`/`IsProcessingMessages`, the screens up
+  and the event locks they hold. On the first step and every 30 s after.
+
+Only a test stub's context does any of this (`CivvisSeat.standsIn`:
+`HotseatStubSeats` lists its seat and no decision worker plays it); a person's
+seat has no agent context at all. ⚠ Tests only (`stand_in_test.lua`), not seen
+in a live game. The first live check (one game on the Mac at a time, memory at
+least 50% free, no `rustc` running):
+
+    tools/civ6_hotseat.py --auto-human gated --players 6 --map Continents.lua \
+      --map-size MAPSIZE_SMALL --agents holy,tourist,moonshot,siege,jack --turns 30
+
+It works if `turns.jsonl` has a seat-0 row for every turn to 30 and the stub's
+`…-p0/events.jsonl` an `end_turn_wait` for each of them. A `stand_in_stuck`
+record is the stand-in stepping in: the turn should still end, with `forced`
+above 0 in that turn's `end_turn_wait`. The same `blocker` and `refusing`
+reported again 30 s later is the next thing to fix, and the record names it.
+Neither record on a stalled turn means the stand-in never got its pulse.
+
+**Its end of turn was being lost to the hand-over's pause** (2026-11-28). In
+`live-6p-20261128T0405Z` (at 698089e4, before the stand-in above) the stub's
+turn 3 stood fourteen minutes with NEXT TURN lit, and Civ VI's own
+`Logs/net_message_debug.log` said why:
+
+    Player 0 set TurnActive 1, TurnActiveCount: 1
+    GameCore SEND: GamePaused: gamePaused=1
+    GameCore SEND: PlayerTurnComplete: ePlayer=0, eReason=0xb6fa1284
+    GameCore SEND: GamePaused: gamePaused=0
+    GameCore RECV (0): PlayerTurnComplete: ePlayer=0, eReason=0xb6fa1284
+    PlayerTurnComplete ignored due to game paused.
+
+Start Turn releases the seat's own pause at once (`SetWantsPause(false)`,
+PlayerChange.lua:229-230), and the game's pause is lifted by a `GamePaused`
+message a moment later. The stub plays in a frame, so it sent its turn complete
+in between. The engine dropped it, and `UI.HasSentTurnComplete()` kept
+answering true, so neither the agent (`requestEndTurn` returns at that flag) nor
+the seat watch (which left a sent turn to the engine) asked again. The earlier
+wedges fit the same pattern (holds refused at turn begin, every later request a
+no-op), but their net logs are gone. Three changes, all for the stand-in's own
+turn unless said otherwise:
+
+- while its turn is active, its seat gate stays shut until
+  `GameConfiguration.IsPaused()` reads false. The shipped unit panel waits the
+  same way after the hand-over closes (UnitPanel.lua:2843-2858);
+- a step that finds the turn still active but reading as sent unreadies it
+  where the game allows (ActionPanel.lua:535-537,
+  `UI.RequestAction(ActionTypes.ACTION_UNREADYTURN)`), or else sends SHIFT+ENTER's
+  request past that flag (`resent` in `stand_in_stuck`);
+- for every watched seat, the seat watch asks again on a sent turn once it has
+  stood its age limit (30 s for a stub, 180 s for any seat; `how` in
+  `seat_stuck_end_turn`/`seat_quiet_end_turn`). Within the quiet rule alone, a
+  sent turn is still left to the engine.
+
+Every seat-watch report and `stand_in_stuck` carries `game_paused`. A CIVVIS
+seat's gate is unchanged: it asks for its end of turn only once its board is
+answered, well after the game unpauses. ⚠ Tests only. In the first live check,
+a `PlayerTurnComplete ignored due to game paused.` line in
+`~/Library/Application Support/Sid Meier's Civilization VI/Firaxis Games/Sid Meier's Civilization VI/Logs/net_message_debug.log`
+(rewritten at every launch, so read it before Civ VI restarts) means the gate
+did not hold.
+
+⚠⚠ **Measured 2026-11-27: the first cut killed the game.** It put the cover
+ABOVE the hand-over (the EndGameMenu slot) and kept the hand-over drawn under
+it with an injected `AlwaysVisibleInQueue`. In both live duels tried that way
+(`cover-live-1`, `cover-live-2`) Civ VI exited within a second of a Start Turn
+press, once on the CIVVIS seat's and once on the person's, with no crash
+report, no minidump and the net log ending on `GamePaused: gamePaused=1`. A
+control on the same Mac minutes later (`cover-control-3`, the old stub path,
+no cover) played three full turns. The placement above is the change that
+followed: the hand-over is never under another popup and never proxied. It
+still needs its own live run (see the PR).
+
+**The seat watch also ends a turn whose controller still beats**
+(`CivvisSeatWatch`, `CivvisControlHeartbeat.lua`). It ended a seat's turn only
+after 45 s with the controller's stamp (`ExposedMembers.CivvisSeatBeat`) not
+moving, and the cover stands aside on the same stamp (90 s). But a controller
+past its forfeit ladder keeps ticking on the HUD's pulse, so its stamp moves
+every second, and the check games' stand-in wedged three times without one
+seat-watch record (`smoke-6p-20261128T0244Zb` turn 2, ten minutes;
+`manual-live-1`, `manual-cover-1` turn 5). Now the watch also counts how long
+the seat's turn has stood, beat or no beat, the hand-over's pause not counted:
+a test stub's turn standing 30 s (`StubTurnSeconds`; its turns take half a
+second) and any watched seat's turn standing 180 s (`SeatLongTurnSeconds`;
+600 CIVVIS seat turns on this Mac took 0.5-36 s) are reported as
+`seat_stuck` (`why`: `stub_turn` or `long_turn`) and ended with SHIFT+ENTER's
+`UserForced` request on the quiet rule's budget (every 20 s, six a turn,
+`seat_stuck_end_turn`). A watched seat that is the local player while its turn
+is not active for 60 s (`SeatBetweenSeconds`) is reported once a minute as
+`seat_between`, and left alone: nothing in the shipped game ends a turn that is
+not active. Every report now also carries `processing`
+(`UI.IsProcessingMessages`), `ready` (the first unit still waiting for orders)
+and `locks` (event locks the closers' screens hold). A person's seat is still
+never watched. ⚠ Tests only (`heartbeat_test.lua`), not seen in a live game.
+In the first live check (`tools/civ6_hotseat.py --auto-human gated --players 6
+--map Continents.lua --map-size MAPSIZE_SMALL --agents
+holy,tourist,moonshot,siege,jack --turns 30`), no `seat_stuck` or `seat_quiet`
+in the run's `events.jsonl` is the good outcome. A `seat_stuck` with `why:
+stub_turn` means the stand-in could not end its own turn in 30 s: its
+`blocker`, `ready` and `locks` say why, and the `seat_stuck_end_turn` after it
+says the watch asked. A `seat_between` names a turn sent but never handed on.
+
 ## The lobby a run sets up
 
 **The map size IS the player count.** There is no separate player-count control on
@@ -623,6 +889,94 @@ keeps every other cause, and any other setup row that will not verify keeps the
 whole `BOOTSTRAP_ATTEMPTS` budget. The climb files the launch as it files any
 launch that reached no board, so a seat that draws its leader per game moves on
 within about a minute.
+
+## The person-facing install (`civ6_hotseat.py --manual-lobby`)
+
+`tools/civ6_hotseat.py --manual-lobby` is the hotseat game for somebody who is
+not this project's operator. The person starts Civ VI and sets the Hot Seat
+game up by hand (main menu -> Multiplayer -> Hot Seat -> make every player
+CIVVIS should play Human, the first row is theirs -> Start Game); the harness
+only installs the mod, reads `Automation.log` and writes orders.
+
+**Screen-free by construction.** The flag sets `CIVVIS_SCREEN_FREE=1` before
+`civ6_control` loads, and `civ6_control/__init__.py` then engages
+`civ6_control/screen_free.py`: every module that clicks, types, captures,
+reads the screen or moves a window (`macos_capture`, `macos_input`,
+`macos_ocr`, `macos_window`, `popup_clear`, `vision`) imports as a stand-in
+that refuses every use, and Pillow reads as absent. The decision workers
+inherit the variable. Nothing needs Screen Recording or Accessibility
+permission, Pillow, `swiftc` or `cliclick`, and nothing compiles a helper.
+`tools/test_civ6_hotseat_manual_lobby.py` imports the harness and a worker that
+way and runs a whole session against a scripted game, failing if a screen module
+loads for real, Pillow loads, or a screen tool is started.
+
+**Seats are discovered, not declared.** The install writes an agent context for
+each of seats 1-5 whatever the lobby will hold (a copy of the ~750 KB installed
+agent each; about 2.4 MB of Lua heap and 0.08 s apiece under stock Lua 5.1).
+A declared count would have to match the lobby the person builds, and a
+different count means a different file list, which Civ VI notices only at its
+next launch (`Mods.sqlite` is an mtime index) -- a failure that reads as CIVVIS
+not playing. A context whose seat is not a Human row never acts, because the
+hotseat local player is always a Human row and each context acts on its own
+seat only. The HUD then reads the lobby back once per game (`hotseat_lobby`:
+every participating full civ, its slot, difficulty, leader, and the map, size,
+speed and turn limit), and the harness starts one worker per Human row after
+the first. What it says when the lobby does not fit: only the person is Human
+(no CIVVIS seat), a Human row past row 6 (its turns wait for a person), or a
+first row that is not Human. Civ VI's own `Modding.log` is read beside it, so a
+Hot Seat game started without the mod (Civ VI was running when it was
+installed) or a single-player game is named in one sentence with the fix.
+
+**Inert without its harness.** The install sets `RequireHarness`, and four
+copies of one `CivvisHarness` block (agent, screen closer, HUD, the person's cover;
+`mod/harness_gate_test.lua` holds them identical) apply two rules:
+
+- *Outside a hotseat game* (`GameConfiguration.IsHotseat()`, the shipped test,
+  `ActionPanel.lua:1213`) the install is **dormant**: no agent context
+  registers a listener; each replaced screen and the HUD load their shipped
+  script and stop there -- no clock, no wrapped `UI`, no listener, no line.
+- *In a hotseat game* it acts and writes only while the harness is **live**: a
+  `harness` row under `HarnessRun` in the orders database whose `beat` (Unix
+  seconds, rewritten every 2 s) is at most `HarnessFreshSeconds` (20) old by
+  SQLite's own clock (`SELECT CAST(strftime('%s','now') AS INTEGER) - beat`).
+  It is read at most every 3 s of `Automation.GetTime()`. `--stop` and Ctrl-C
+  delete the row and a killed harness lets it go stale; either way every seat is
+  a person's again within seconds, with its hand-over screen waiting for them.
+  While live, a turn is CIVVIS's only on its installed seats.
+- The person's cover (`CivvisHotseatCover.lua`, #5943) carries the same block: while live it covers CIVVIS's seats' turns and presses the person's own Start Turn exactly as for the operator; it never covers a seat that is neither the person's nor CIVVIS's.
+
+The person-facing install also sets no Create Game default: `install.py` drops
+the modinfo's `FrontEndActions` (the `UpdateDatabase` of
+`CivvisControlConfig.xml`), leaving the InGameActions-only shape shipped DLC
+already have (`DLC/ScoutCat/ScoutCat.modinfo`). The agent imposes no turn
+limit (`MaxTurns` nil) and does not confirm a person's Exit
+(`UserRequestClose`). The mod is removed only when Civ VI is not running; under
+a running game it stays, inert, and the harness says how to remove it later.
+
+| A hotseat install left in place, then | Before (`civ6_hotseat.py` install) | `--manual-lobby` install |
+|---|---|---|
+| (a) a single-player game | popup closers armed, standing down only because seat 0 is in `HotseatHumanSeats`, each writing `autoclose_armed` and a heartbeat a minute; `UI` wrapped; each seat context writing `loaded`; the HUD's seat watch armed | the shipped screens and HUD: no listener, no wrapper (`UI`, `UIManager`), no line; the person's cover context kept hidden |
+| (b) a hotseat game, no harness | each installed CIVVIS seat's turn played (the fallback ladder after the order wait), its Start Turn pressed, its popups closed and its diplomacy answered; lines written; with #5943's cover, the screen covered from the end of the person's turn and their own Start Turn pressed | every seat is a person's: nothing closed, pressed, answered, ordered or written; no cover, no key taken, no camera or selection change, the hand-over's own text shown and the popup queue as shipped |
+| (b′) a hotseat game whose harness stops or dies under the cover | — | the cover comes down within the freshness window (3 s after a stop deletes the beat, at most 23 s after a crash lets it go stale) and every seat is a person's again |
+| (c) the front end | Create Game defaults rewritten: difficulty, speed, map, size, a custom turn limit | untouched |
+
+What could not be made stock, and why:
+
+- **One replacement per context.** The ~30 `ReplaceUIScript` actions (the
+  popups, `PlayerChange`, and `TopPanel` at `LoadOrder` 100000) each load the
+  shipped script, so the screens behave as shipped, but the engine loads one
+  replacement per context: a person's own UI mod that replaces the same
+  context is displaced while this is installed. A modinfo is static; no
+  setting can withdraw an action per game.
+- **The mod index is rebuilt.** Install and uninstall drop `Mods.sqlite`, or the
+  new folder is never discovered. Civ VI rebuilds it at its next launch; any
+  state Additional Content kept there is rebuilt from each mod's defaults.
+- **The bundle's seal** is broken while installed and restored on uninstall
+  (issue #1342, above).
+- **Load cost.** Five agent contexts load in every game, single player included
+  (dormant, but parsed); in a hotseat game the gated listeners and pass-through
+  wrappers stay registered, and the HUD and hand-over screen read the beat
+  every 3 s.
 
 ## The ladder
 

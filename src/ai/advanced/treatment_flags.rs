@@ -147,6 +147,9 @@ impl AdvancedAi {
         /// Opt-in gene `four-faces-bars-the-surprise`; see
         /// `advanced/four_faces_bars_the_surprise.rs`.
         base.four_faces_bars_the_surprise => enable_four_faces_bars_the_surprise, disable_four_faces_bars_the_surprise;
+        /// `BasicAi::opening_defense_spares_the_holy_site`; opt-in gene
+        /// `opening-defense-spares-the-holy-site`.
+        base.opening_defense_spares_the_holy_site => enable_opening_defense_spares_the_holy_site, disable_opening_defense_spares_the_holy_site;
         // ---- append: c-d --------------------------------------------
         /// Opt-in gene `culture-and-religion-build-the-statue`; see
         /// `advanced/diplo_wonder_claim.rs`.
@@ -719,10 +722,18 @@ impl AdvancedAi {
         /// Opt-in gene `spreaders-spread-before-they-chart`; see
         /// `advanced/spreaders_spread_before_they_chart.rs`.
         spreaders_spread_before_they_chart => enable_spreaders_spread_before_they_chart, disable_spreaders_spread_before_they_chart;
+        /// Opt-in gene `stacked-shooter-steps-out`: a crowded City Center keeps
+        /// one shooter and steps our other soldiers beside it, so the shooters
+        /// can fire; see `advanced/stacked_shooter_steps_out.rs`.
+        stacked_shooter_steps_out => enable_stacked_shooter_steps_out, disable_stacked_shooter_steps_out;
         /// Opt-in gene `science-seat-monuments`: a Science seat's cities
         /// claim their Monument from the third city; see
         /// `advanced/culture_monuments.rs`.
         science_seat_monuments => enable_science_seat_monuments, disable_science_seat_monuments;
+        /// Opt-in gene `settler-walk-clock-runs-all-game`: every stepped turn
+        /// out counts on the Settler walk clock, and the walk deadline holds
+        /// past the band turn; see `advanced/settler_walk_deadline.rs`.
+        settler_walk_clock_runs_all_game => enable_settler_walk_clock_runs_all_game, disable_settler_walk_clock_runs_all_game;
         // ---- append: t-z --------------------------------------------
         /// Opt-in gene `theology-fights-count-the-host-edge`; see
         /// `advanced/theology_fights.rs`.
@@ -760,6 +771,15 @@ impl AdvancedAi {
         /// Opt-in gene `wounded-spreader-spends-far-from-home`; see
         /// `advanced/apostle_army.rs`.
         wounded_spreader_spends_far_from_home => enable_wounded_spreader_spends_far_from_home, disable_wounded_spreader_spends_far_from_home;
+        /// Opt-in gene `watched-capital-trains-its-defender`; see
+        /// `advanced/watched_capital_trains_its_defender.rs`.
+        watched_capital_trains_its_defender => enable_watched_capital_trains_its_defender, disable_watched_capital_trains_its_defender;
+        /// Opt-in gene `walls-for-the-war-front`; see
+        /// `advanced/walls_for_the_war_front.rs`.
+        walls_for_the_war_front => enable_walls_for_the_war_front, disable_walls_for_the_war_front;
+        /// Opt-in gene `war-threat-holds-recovery`; see
+        /// `advanced/war_threat_holds_recovery.rs`.
+        war_threat_holds_recovery => enable_war_threat_holds_recovery, disable_war_threat_holds_recovery;
     }
 
     toggles! {
@@ -3882,6 +3902,7 @@ impl AdvancedAi {
     pub fn enable_city_campaign(&mut self) {
         self.city_campaign = true;
         self.city_campaign_2 = false;
+        self.city_campaign_3 = false;
     }
 
     /// The twin of `enable_city_campaign`.
@@ -4851,11 +4872,31 @@ impl AdvancedAi {
     pub fn enable_city_campaign_2(&mut self) {
         self.city_campaign = false;
         self.city_campaign_2 = true;
+        self.city_campaign_3 = false;
     }
 
     /// The twin of `enable_city_campaign_2`.
     pub fn disable_city_campaign_2(&mut self) {
         self.city_campaign_2 = false;
+    }
+
+    /// Version two's staged opportunity at peace, and the war in hand: a
+    /// major war already open draws a one-city plan against that rival when
+    /// the field army carries the city's bill, keeps it for a twenty-turn
+    /// clock, offers peace once the city is ours, and holds the generic Siege
+    /// row against a rival none of whose cities the army can take. Opt-in
+    /// gene `city-campaign-3`; see `advanced/city_campaign.rs` and
+    /// `docs/OFFENSIVE_CAMPAIGN.md`.
+    pub fn enable_city_campaign_3(&mut self) {
+        self.city_campaign = false;
+        self.city_campaign_2 = false;
+        self.city_campaign_3 = true;
+    }
+
+    /// The twin of `enable_city_campaign_3`.
+    pub fn disable_city_campaign_3(&mut self) {
+        self.city_campaign_3 = false;
+        self.campaign_war_no_go.clear();
     }
 
     /// `doomed-blow-veto`: a unit whose every blow this turn would leave it

@@ -10,6 +10,87 @@ if type(LateInitialize) ~= "function" then include("TopPanel"); end
 
 local cfg = CivvisControlConfig or {};
 
+-- >>> CivvisHarness: the same block in CivvisControlAgent.lua,
+-- CivvisControlAutoClose.lua and CivvisControlHeartbeat.lua (harness_gate_test.lua).
+-- ★★ THE PERSON-FACING INSTALL DOES NOTHING WITHOUT A LIVE HARNESS.
+-- `RequireHarness` is set only by `tools/civ6_hotseat.py --manual-lobby`, the
+-- install a person who is not this project's operator may leave in place and
+-- play every other game with. Two rules keep it stock for them:
+--   * outside a hotseat game it is dormant (`dormant`): the shipped screen or
+--     HUD and nothing of ours, and no agent context registers anything;
+--   * in a hotseat game it acts and writes only while the harness that
+--     installed it is live (`live`): a `harness` row under `HarnessRun` in the
+--     orders database whose `beat` (Unix seconds, rewritten every 2 s) is at
+--     most `HarnessFreshSeconds` old by SQLite's own clock. A stopped harness
+--     deletes the row and a killed one goes stale; either way every seat is a
+--     person's again, as Civ VI ships it.
+-- Read at most every 3 s of `Automation.GetTime()`, never per tick: a
+-- `DB.Query` per game-core tick starves the log flush. Unset, `live` is true,
+-- `dormant` false, and nothing here runs.
+CivvisHarness = { ok = false, calls = 0 };
+function CivvisHarness.hotseat()
+	local on = false;
+	pcall(function() on = GameConfiguration.IsHotseat() == true; end);
+	return on;
+end
+function CivvisHarness.dormant()
+	return cfg.RequireHarness == true and not CivvisHarness.hotseat();
+end
+function CivvisHarness.read()
+	if not CivvisHarness.hotseat() then return false; end
+	local path = string.gsub(tostring(cfg.OrdersDb or ""), "['\\]", "");
+	local run = string.gsub(tostring(cfg.HarnessRun or ""), "['\\]", "");
+	if path == "" or run == "" then return false; end
+	if not CivvisHarness.attached then
+		-- One connection serves every context: a second ATTACH of the alias
+		-- fails, and the read below goes through whichever context's took.
+		pcall(function() DB.Query("ATTACH DATABASE '" .. path .. "' AS civvis"); end);
+	end
+	local fresh = tonumber(cfg.HarnessFreshSeconds) or 20;
+	local live = false;
+	local rows = DB.Query("SELECT CAST(strftime('%s','now') AS INTEGER) - beat AS age"
+			.. " FROM civvis.harness WHERE run = '" .. run .. "'");
+	-- Attached once a read went through; until then each reading tries again.
+	CivvisHarness.attached = true;
+	for _, row in ipairs(rows) do
+		local age = tonumber(row.age);
+		if age ~= nil and age >= -5 and age <= fresh then live = true; end
+	end
+	return live;
+end
+function CivvisHarness.live()
+	if cfg.RequireHarness ~= true then return true; end
+	local h = CivvisHarness;
+	if h.checking then return h.ok; end
+	local now = nil;
+	pcall(function() now = Automation.GetTime(); end);
+	h.calls = h.calls + 1;
+	if h.at ~= nil then
+		if type(now) == "number" and now >= h.at and now - h.at < 3 then return h.ok; end
+		if type(now) ~= "number" and h.calls % 200 ~= 0 then return h.ok; end
+	end
+	h.checking, h.at = true, type(now) == "number" and now or -1;
+	local ok, live = pcall(h.read);
+	h.ok, h.checking = ok and live == true, false;
+	return h.ok;
+end
+-- Whether the local player's turn is CIVVIS's: one of the installed seats (or
+-- the test stub) while the harness is live. Every other turn is a person's.
+function CivvisHarness.mine(pid)
+	if not CivvisHarness.live() then return false; end
+	for _, list in ipairs({ cfg.HotseatSeats or {}, cfg.HotseatStubSeats or {} }) do
+		for _, seat in ipairs(list) do
+			if tonumber(seat) == pid then return true; end
+		end
+	end
+	return false;
+end
+-- <<< CivvisHarness
+
+-- The person-facing install outside a hotseat game: the shipped HUD, as
+-- included above, and nothing of ours after it.
+if CivvisHarness.dormant() then return; end
+
 -- ★ AN IN-GAME VSYNC A/B, OFF UNLESS `VSyncABTurns` IS SET. The rival-AI
 -- phase is ~3 s of a 7-9 s turn, and during it the Game Core thread sits in
 -- its message wait 82-91% of the time while this app's frame loop runs at the
@@ -24,6 +105,8 @@ local cfg = CivvisControlConfig or {};
 -- a block's setting written back on exit cannot leak into the next game.
 CivvisVSyncAB = { frames = 0, seconds = 0 };
 function CivvisVSyncAB.log(kind, fields)
+	-- The person-facing install writes nothing without a live harness.
+	if not CivvisHarness.live() then return; end
 	pcall(function()
 		Automation.Log("CIVVISJSON " .. string.format(
 			'{"ctx":"heartbeat","kind":"%s","run":"%s",%s}\n',
@@ -184,9 +267,32 @@ end
 --     seat turns took 5-8 s each; a seat idle 45 s on its own active turn is
 --     not thinking.
 --
+-- ★★ A TURN CAN STAND WITH ITS CONTROLLER STILL BEATING. A controller that has
+-- spent its forfeit ladder keeps ticking on the HUD's pulse (CIVVIS seats:
+-- `controller_wake`; the test stub: `CivvisSeat.standInPulse`), so its stamp
+-- moves every second and the quiet rule above never fires, and neither does
+-- the cover's own stand-aside (`yield_quiet` reads the same stamp). And the
+-- check games' stand-in wedged on its turn three times in a row
+-- (smoke-6p-20261128T0244Zb t2 for ten minutes, manual-live-1 and
+-- manual-cover-1 t5) without one seat-watch record. So the watch also counts
+-- how long the seat's turn has stood, beat or no beat:
+--
+--   * a test stub's turn (`HotseatStubSeats`; its turns take half a second and
+--     its stand-in steps in after 4) standing `StubTurnSeconds` (30), and
+--   * any watched seat's turn standing `SeatLongTurnSeconds` (180: 600 CIVVIS
+--     seat turns on this Mac took 0.5-36 s, and the cover stands aside after
+--     180 s with no seat active)
+-- are reported as `seat_stuck` (`why`: `stub_turn` or `long_turn`, with the
+-- same fields as `seat_quiet` and the first unit still waiting for orders)
+-- and ended the same way, on the same budget (`seat_stuck_end_turn`).
+--   * A watched seat that is the local player while its turn is NOT active for
+--     `SeatBetweenSeconds` (60) is reported once a minute (`seat_between`:
+--     turn complete sent, core busy, processing, the event locks a screen
+--     holds) and left to the engine, which nothing in the shipped game can end.
+--
 -- Only seconds this watch itself saw pass are counted (at most 3 a reading),
 -- so a leader screen that hides the HUD for a minute is not a quiet minute.
--- A person's seat (`HotseatHumanSeats`), a game held by the operator
+-- A person's seat (`HotseatHumanSeats`, unless a test stub plays it), a game held by the operator
 -- (`CivvisOperatorHold`), a finished game and every single-player run are
 -- left alone: the watch arms only when `cfg.Hotseat` is set.
 CivvisSeatWatch = { quiet = 0, forces = 0, over = false };
@@ -204,10 +310,21 @@ function CivvisSeatWatch.listed(list, pid)
 	end
 	return false;
 end
+-- The seats this watches: every CIVVIS seat, and a test stub's
+-- (`HotseatStubSeats`, only ever listed by `civ6_hotseat.py --auto-human`)
+-- even where `--auto-human gated` also lists it as the person's, because no
+-- person is there to end its turn (run cover-live-6, 2026-11-27: the stub
+-- went quiet on turn 1 and nothing ended it). A real person's seat, listed
+-- human and played by no stub, is never watched.
+function CivvisSeatWatch.watched(pid)
+	local w = CivvisSeatWatch;
+	if w.listed(cfg.HotseatStubSeats, pid) then return true; end
+	return w.listed(cfg.HotseatSeats, pid) and not w.listed(cfg.HotseatHumanSeats, pid);
+end
 function CivvisSeatWatch.reset()
 	local w = CivvisSeatWatch;
 	w.key, w.prev, w.lastBeat, w.pausedFor = nil, nil, nil, nil;
-	w.quiet, w.forces, w.reported, w.forced = 0, 0, nil, nil;
+	w.quiet, w.age, w.forces, w.reported, w.forced = 0, 0, 0, nil, nil;
 end
 -- What the engine says about the seat's turn; every read guarded, a failed
 -- one left nil (and written as null).
@@ -219,6 +336,17 @@ function CivvisSeatWatch.read(pid)
 	pcall(function() s.sent = UI.HasSentTurnComplete() == true; end);
 	pcall(function() s.can_end = UI.CanEndTurn() == true; end);
 	pcall(function() s.busy = UI.IsGameCoreBusy() == true; end);
+	pcall(function() s.processing = UI.IsProcessingMessages() == true; end);
+	-- The game's own pause, which a seat's Start Turn lifts a message after it
+	-- releases the seat's (`paused`); a turn complete sent between is dropped.
+	pcall(function() s.game_paused = GameConfiguration.IsPaused() == true; end);
+	-- The event locks the AutoClose contexts' screens hold (their ledger), and
+	-- the first unit the engine still waits on for orders.
+	pcall(function() s.locks = tonumber(ExposedMembers.CivvisEventLocks.count); end);
+	pcall(function()
+		local unit = Players[pid]:GetUnits():GetFirstReadyUnit();
+		if unit ~= nil then s.ready = tostring(GameInfo.Units[unit:GetUnitType()].UnitType); end
+	end);
 	pcall(function()
 		local blocker = NotificationManager.GetFirstEndTurnBlocking(pid);
 		if blocker ~= nil and blocker ~= EndTurnBlockingTypes.NO_ENDTURN_BLOCKING then
@@ -252,8 +380,8 @@ function CivvisSeatWatch.report(kind, s, extra)
 	-- `t` first: it dates the record, and keeps the event bridge from taking
 	-- a later turn's identical report for one it has already copied.
 	local parts = { string.format('"t":%s', CivvisSeatWatch.field(CivvisSeatWatch.now())) };
-	for _, key in ipairs({ "turn", "player", "active", "paused", "sent", "can_end", "busy",
-			"blocker", "handover_hidden", "dialog_hidden" }) do
+	for _, key in ipairs({ "turn", "player", "active", "paused", "game_paused", "sent", "can_end",
+			"busy", "processing", "blocker", "ready", "locks", "handover_hidden", "dialog_hidden" }) do
 		parts[#parts + 1] = string.format('"%s":%s', key, CivvisSeatWatch.field(s[key]));
 	end
 	for _, pair in ipairs(extra or {}) do
@@ -272,16 +400,23 @@ function CivvisSeatWatch.beat(source)
 	w.checked = now;
 	local pid = -1;
 	pcall(function() pid = Game.GetLocalPlayer(); end);
-	if type(pid) ~= "number" or pid < 0 or not w.listed(cfg.HotseatSeats, pid)
-			or w.listed(cfg.HotseatHumanSeats, pid) then
+	if type(pid) ~= "number" or pid < 0 or not w.watched(pid)
+			or (cfg.RequireHarness == true and not CivvisHarness.mine(pid)) then
 		w.reset();
+		w.waiting = nil;
 		return;
 	end
 	local s = w.read(pid);
 	if s.active ~= true or s.end_game == true or s.held == true then
 		w.reset();
+		if s.active == false and s.end_game ~= true and s.held ~= true then
+			w.between(pid, s, now, source);
+		else
+			w.waiting = nil;
+		end
 		return;
 	end
+	w.waiting = nil;
 	local key = pid .. ":" .. tostring(s.turn);
 	if w.key ~= key then
 		w.reset();
@@ -317,32 +452,80 @@ function CivvisSeatWatch.beat(source)
 		return;
 	end
 	w.pausedFor = nil;
+	-- How long this turn has stood (its hand-over's pause not counted).
+	w.age = w.age + dt;
 	local beat = nil;
 	pcall(function() beat = ExposedMembers.CivvisSeatBeat[pid]; end);
 	if beat ~= w.lastBeat then
 		w.lastBeat, w.quiet = beat, 0;
-		return;
+	else
+		w.quiet = w.quiet + dt;
 	end
-	w.quiet = w.quiet + dt;
-	if w.quiet < (tonumber(cfg.SeatQuietSeconds) or 45) then return; end
-	local forceNow = type(beat) == "number" and s.sent ~= true
+	local aged = nil;
+	if w.listed(cfg.HotseatStubSeats, pid) and w.age >= (tonumber(cfg.StubTurnSeconds) or 30) then
+		aged = "stub_turn";
+	elseif w.age >= (tonumber(cfg.SeatLongTurnSeconds) or 180) then
+		aged = "long_turn";
+	end
+	local why = w.quiet >= (tonumber(cfg.SeatQuietSeconds) or 45) and "quiet" or aged;
+	if why == nil then return; end
+	local kind = why == "quiet" and "seat_quiet" or "seat_stuck";
+	-- ★ A SENT TURN THAT STANDS WAS DROPPED. A turn complete sent while the
+	-- game is still paused is ignored by the engine (live-6p-20261128T0405Z t3,
+	-- net_message_debug.log: `PlayerTurnComplete ignored due to game paused.`)
+	-- and `UI.HasSentTurnComplete()` keeps answering true. So once a turn has
+	-- stood its age limit, sent or not, it is asked again; a sent one is
+	-- unreadied first where the game allows (ActionPanel.lua:535-537), and the
+	-- next request sends it afresh. Within the quiet rule alone a sent turn is
+	-- still the engine's to finish.
+	local forceNow = type(beat) == "number" and (s.sent ~= true or aged ~= nil)
 		and w.forces < (tonumber(cfg.SeatQuietMaxForces) or 6)
 		and (w.forced == nil or now - w.forced >= (tonumber(cfg.SeatQuietForceEvery) or 20));
 	if w.reported == nil or now - w.reported >= 60 then
 		w.reported = now;
-		w.report("seat_quiet", s, {
-			{ "quiet", w.quiet }, { "controller_ran", type(beat) == "number" },
+		w.report(kind, s, {
+			{ "why", why }, { "quiet", w.quiet }, { "age", w.age },
+			{ "controller_ran", type(beat) == "number" },
 			{ "forces", w.forces }, { "source", source } });
 	end
 	-- A seat no controller ever ran on has nothing of ours to end, and a turn
 	-- already sent complete is the engine's to finish.
 	if not forceNow then return; end
 	w.forced, w.forces = now, w.forces + 1;
+	local unready = false;
+	if s.sent == true then
+		pcall(function() unready = Players[pid]:CanUnreadyTurn() == true; end);
+	end
 	local asked = pcall(function()
-		UI.RequestAction(ActionTypes.ACTION_ENDTURN, { REASON = "UserForced" });
+		if unready then
+			UI.RequestAction(ActionTypes.ACTION_UNREADYTURN);
+		else
+			UI.RequestAction(ActionTypes.ACTION_ENDTURN, { REASON = "UserForced" });
+		end
 	end);
-	w.report("seat_quiet_end_turn", s, {
-		{ "quiet", w.quiet }, { "asked", asked }, { "forces", w.forces }, { "source", source } });
+	w.report(kind .. "_end_turn", s, {
+		{ "why", why }, { "quiet", w.quiet }, { "age", w.age }, { "asked", asked },
+		{ "how", unready and "unready" or "end_turn" },
+		{ "forces", w.forces }, { "source", source } });
+end
+-- A watched seat that is the local player with its turn not active: between
+-- its end of turn and the next seat's start, normally a moment. Reported, not
+-- acted on: no shipped request ends a turn that is not active.
+function CivvisSeatWatch.between(pid, s, now, source)
+	local w = CivvisSeatWatch;
+	local key = pid .. ":" .. tostring(s.turn);
+	local idle = w.waiting;
+	if idle == nil or idle.key ~= key then
+		idle = { key = key, seconds = 0 };
+		w.waiting = idle;
+	end
+	local dt = (type(idle.prev) == "number" and now > idle.prev) and math.min(now - idle.prev, 3) or 0;
+	idle.prev = now;
+	idle.seconds = idle.seconds + dt;
+	if idle.seconds < (tonumber(cfg.SeatBetweenSeconds) or 60) then return; end
+	if idle.said ~= nil and now - idle.said < 60 then return; end
+	idle.said = now;
+	w.report("seat_between", s, { { "between", idle.seconds }, { "source", source } });
 end
 function CivvisSeatWatch.arm()
 	-- The shipped clock label's timer, kept: LateInitialize registers whatever
@@ -361,8 +544,237 @@ function CivvisSeatWatch.arm()
 		tostring(type(stockTick) == "function"),
 		CivvisSeatWatch.field(tonumber(cfg.SeatQuietSeconds) or 45)));
 end
+-- ★ THE LOBBY THE PERSON MADE, READ BACK ONCE A GAME (`RequireHarness` only).
+-- `tools/civ6_hotseat.py --manual-lobby` leaves the Hot Seat setup to the
+-- person and learns what the game is from this record: each participating
+-- full civ (StagingRoom.lua:1122, `GetCivilizationLevelTypeID() ==
+-- CivilizationLevelTypes.CIVILIZATION_LEVEL_FULL_CIV`), whether its slot is a
+-- person's (`SlotStatus.SS_TAKEN`, :1397) or Civ VI's AI (`SS_COMPUTER`,
+-- :880), its own difficulty (hotseat difficulty is per player:
+-- InGameTopOptionsMenu.lua:437-438, `GetHandicapTypeID()` into
+-- `GameInfo.Difficulties`), and the map, size and speed (:442). Written on the
+-- first HUD pulse of a started game while the harness is live, then a second
+-- line so the game writes the first one out at once.
+CivvisLobby = { sent = false };
+function CivvisLobby.typeOf(rows, hash, column)
+	local name = nil;
+	pcall(function()
+		local row = rows[hash];
+		if row ~= nil then name = row[column]; end
+	end);
+	return name;
+end
+function CivvisLobby.player(id)
+	local f = CivvisSeatWatch.field;
+	local pc = PlayerConfigurations[id];
+	if pc == nil then return nil; end
+	local full = false;
+	pcall(function()
+		full = pc:GetCivilizationLevelTypeID() == CivilizationLevelTypes.CIVILIZATION_LEVEL_FULL_CIV;
+	end);
+	if not full then return nil; end
+	local slot = "other";
+	pcall(function()
+		local status = pc:GetSlotStatus();
+		if status == SlotStatus.SS_TAKEN then slot = "human";
+		elseif status == SlotStatus.SS_COMPUTER then slot = "computer"; end
+	end);
+	if slot == "other" then return nil; end
+	local human, alive, name, civ, leader, handicap = nil, nil, nil, nil, nil, nil;
+	pcall(function() human = pc:IsHuman() == true; end);
+	pcall(function() alive = Players[id]:IsAlive() == true; end);
+	pcall(function() name = pc:GetPlayerName(); end);
+	pcall(function() civ = pc:GetCivilizationTypeName(); end);
+	pcall(function() leader = pc:GetLeaderTypeName(); end);
+	pcall(function() handicap = pc:GetHandicapTypeID(); end);
+	return string.format(
+		'{"id":%s,"slot":%s,"human":%s,"alive":%s,"name":%s,"civ":%s,"leader":%s,"difficulty":%s}',
+		f(id), f(slot), f(human), f(alive), f(name), f(civ), f(leader),
+		f(CivvisLobby.typeOf(GameInfo.Difficulties, handicap, "DifficultyType")));
+end
+function CivvisLobby.players()
+	local ids = nil;
+	pcall(function() ids = GameConfiguration.GetParticipatingPlayerIDs(); end);
+	if type(ids) ~= "table" or #ids == 0 then
+		ids = {};
+		for id = 0, 63 do ids[#ids + 1] = id; end
+	end
+	local out = {};
+	for _, id in ipairs(ids) do
+		local row = nil;
+		pcall(function() row = CivvisLobby.player(id); end);
+		if row ~= nil then out[#out + 1] = row; end
+	end
+	return out;
+end
+function CivvisLobby.pulse()
+	if CivvisLobby.sent or cfg.RequireHarness ~= true or not CivvisHarness.live() then return; end
+	local turn = nil;
+	pcall(function() turn = tonumber(Game.GetCurrentGameTurn()); end);
+	if turn == nil or turn < 1 then return; end
+	CivvisLobby.sent = true;
+	local f = CivvisSeatWatch.field;
+	local pid, script, size, speed, ruleset, maxTurns = nil, nil, nil, nil, nil, nil;
+	pcall(function() pid = Game.GetLocalPlayer(); end);
+	pcall(function() script = MapConfiguration.GetScript(); end);
+	pcall(function() size = MapConfiguration.GetMapSize(); end);
+	pcall(function() speed = GameConfiguration.GetGameSpeedType(); end);
+	pcall(function() ruleset = GameConfiguration.GetRuleSet(); end);
+	pcall(function() maxTurns = Game.GetMaxGameTurns(); end);
+	CivvisVSyncAB.log("hotseat_lobby", string.format(
+		'"t":%s,"turn":%d,"local_player":%s,"hotseat":%s,"map":%s,"size":%s,"speed":%s,'
+		.. '"ruleset":%s,"max_turns":%s,"players":[%s]',
+		f(CivvisSeatWatch.now()), turn, f(pid), f(CivvisHarness.hotseat()), f(script),
+		f(CivvisLobby.typeOf(GameInfo.Maps, size, "MapSizeType")),
+		f(CivvisLobby.typeOf(GameInfo.GameSpeeds, speed, "GameSpeedType")),
+		f(type(ruleset) == "string" and ruleset or nil), f(maxTurns),
+		table.concat(CivvisLobby.players(), ",")));
+	CivvisVSyncAB.log("hotseat_lobby_flush", string.format('"turn":%d', turn));
+end
+
+-- ★★★ THE GAME'S ENDING, WRITTEN BY THE TABLE (hotseat only).
+--
+-- Each seat's agent context writes `victory` and `defeat` only while its own
+-- seat is the local player: CivvisControlAgent.lua registers `TeamVictory`
+-- and `PlayerDefeat` through `CivvisSeat.gate`, like every other entry point.
+-- In a person's game nobody's context is open on the person's own turn, so a
+-- victory raised there (a capital taken, a last spaceport project landing, a
+-- culture or religion win) was written by no one, the harness never heard of
+-- it, and the game never reached the people's record. Most eliminations were
+-- lost the same way, and the turn limit's Score victory too whenever the
+-- engine raised it between seats (its requirement, Victories.xml:553
+-- `VICTORY_SCORE_REQUIRES_MAX_TURN_REACHED`, is met at the end of a turn).
+--
+-- This context is not gated per seat and is the only one of its kind, so it
+-- writes each ending once to the table's own log (the run's tag, the
+-- harness's `events.jsonl`), whoever is local, as the shipped end screen
+-- reads the same events (EndGame/EndGameMenu.lua):
+--   * `victory`: :1039 `function OnTeamVictory(team, victory, eventID)`, the
+--     type by :1052-1053 `GameInfo.Victories[victory]` ... `.VictoryType`,
+--     and the winning team's players by :908-909 `local team =
+--     Teams[winningTeamID]; for i, v in ipairs(team) do` (`members`), so the
+--     harness need not guess a team from a seat;
+--   * `defeat`: :1009 `function OnPlayerDefeat( player, defeat, eventID)`,
+--     the type by :1025-1026 `GameInfo.Defeats[defeat]` ... `.DefeatType`.
+--     `DEFEAT_TIME` is the turn limit with the Score victory off
+--     (Victories.xml:31, `Global="true"`): nobody won. In hotseat the screen
+--     shows any human seat's defeat (:1013 "Hotseat Only - Another human
+--     player was defeated"), and so this writes every watched seat's.
+-- `by` is who took the seat's last city to fall, where the game said so:
+-- `Events.CityTransfered(playerID, city)` (Expansion2
+-- UI/Loaders/TutorialLoader_Expansion1.lua:282, the new owner) or
+-- `Events.CityOccupationChanged` (LaunchBar.lua:814's capture hook), with the
+-- seat's city count fallen since the last reading (`GetCities():GetCount()`,
+-- RazeCity.lua:87's own wiped-out test). Unknown, it is null.
+-- ★ An empire can be gone with no `PlayerDefeat` at all (run
+-- civvis-20260730T170738Z: the DEFEAT screen and no event, see "AN EMPIRE
+-- WITH NO CITIES" in CivvisControlAgent.lua), so a watched seat seen alive
+-- and then not alive on two readings in a row is written too (`how`:
+-- `not_alive`). Once per seat, once per victory: the harness keeps the first
+-- ending, through "one more turn" and after it.
+-- Hotseat only (`cfg.Hotseat`, with the seat watch): a single-player game's
+-- agent writes its own ending as it always has, and nothing here runs there.
+CivvisEnding = { won = false, defeated = {}, alive = {}, gone = {}, cities = {}, lostTo = {} };
+function CivvisEnding.seats()
+	local out, seen = {}, {};
+	for _, list in ipairs({ cfg.HotseatHumanSeats or {}, cfg.HotseatSeats or {}, cfg.HotseatStubSeats or {} }) do
+		for _, seat in ipairs(list) do
+			local id = tonumber(seat);
+			if id ~= nil and not seen[id] then
+				seen[id] = true;
+				out[#out + 1] = id;
+			end
+		end
+	end
+	return out;
+end
+function CivvisEnding.write(kind, fields)
+	local f = CivvisSeatWatch.field;
+	local pid, turn = nil, nil;
+	pcall(function() pid = Game.GetLocalPlayer(); end);
+	pcall(function() turn = Game.GetCurrentGameTurn(); end);
+	local parts = { string.format('"t":%s,"turn":%s', f(CivvisSeatWatch.now()), f(tonumber(turn))) };
+	for _, pair in ipairs(fields) do
+		parts[#parts + 1] = string.format('"%s":%s', pair[1],
+			type(pair[2]) == "table" and pair[2].raw or f(pair[2]));
+	end
+	parts[#parts + 1] = string.format('"local_player":%s', f(tonumber(pid)));
+	CivvisVSyncAB.log(kind, table.concat(parts, ","));
+	-- The game writes its latest record only when the next one is logged.
+	CivvisVSyncAB.log("ending_flush", string.format('"after":"%s"', kind));
+end
+function CivvisEnding.onVictory(team, victory)
+	local e = CivvisEnding;
+	if e.won or tonumber(team) == nil then return; end
+	e.won = true;
+	local members = {};
+	pcall(function()
+		for _, id in ipairs(Teams[team]) do
+			if tonumber(id) ~= nil then members[#members + 1] = string.format("%d", tonumber(id)); end
+		end
+	end);
+	local name = nil;
+	pcall(function() name = GameInfo.Victories[victory].VictoryType; end);
+	e.write("victory", { { "team", tonumber(team) }, { "victory", tonumber(victory) },
+		{ "victory_type", type(name) == "string" and name or nil },
+		{ "members", { raw = "[" .. table.concat(members, ",") .. "]" } }, { "source", "table" } });
+end
+function CivvisEnding.defeat(player, how, defeat)
+	local e = CivvisEnding;
+	if player == nil or e.defeated[player] then return; end
+	e.defeated[player] = true;
+	local name = nil;
+	pcall(function() name = GameInfo.Defeats[defeat].DefeatType; end);
+	e.write("defeat", { { "player", player }, { "defeat", tonumber(defeat) },
+		{ "defeat_type", type(name) == "string" and name or nil }, { "by", e.lostTo[player] },
+		{ "how", how }, { "source", "table" } });
+end
+function CivvisEnding.onDefeat(player, defeat)
+	CivvisEnding.defeat(tonumber(player), "event", defeat);
+end
+-- Each watched seat's city count; one that fell since the last reading lost
+-- its city to `taker` (the new owner a city event names).
+function CivvisEnding.count(taker)
+	local e = CivvisEnding;
+	for _, seat in ipairs(e.seats()) do
+		local n = nil;
+		pcall(function() n = tonumber(Players[seat]:GetCities():GetCount()); end);
+		if n ~= nil then
+			local was = e.cities[seat];
+			if taker ~= nil and taker ~= seat and was ~= nil and n < was then e.lostTo[seat] = taker; end
+			e.cities[seat] = n;
+		end
+	end
+end
+function CivvisEnding.onCity(owner)
+	CivvisEnding.count(tonumber(owner));
+end
+-- Once a second, from the HUD's clock: the city counts' baseline, and a seat
+-- that is gone without a `PlayerDefeat`.
+function CivvisEnding.pulse()
+	local e = CivvisEnding;
+	e.count(nil);
+	for _, seat in ipairs(e.seats()) do
+		local alive = nil;
+		pcall(function() alive = Players[seat]:IsAlive() == true; end);
+		if alive == true then
+			e.alive[seat], e.gone[seat] = true, nil;
+		elseif alive == false and e.alive[seat] then
+			e.gone[seat] = (e.gone[seat] or 0) + 1;
+			if e.gone[seat] >= 2 then e.defeat(seat, "not_alive", nil); end
+		end
+	end
+end
+function CivvisEnding.arm()
+	local e = CivvisEnding;
+	pcall(function() Events.TeamVictory.Add(function(team, victory) pcall(e.onVictory, team, victory); end); end);
+	pcall(function() Events.PlayerDefeat.Add(function(player, defeat) pcall(e.onDefeat, player, defeat); end); end);
+	pcall(function() Events.CityTransfered.Add(function(owner) pcall(e.onCity, owner); end); end);
+	pcall(function() Events.CityOccupationChanged.Add(function(owner) pcall(e.onCity, owner); end); end);
+end
+
 local seatWatch = cfg.Play ~= false and cfg.CivvisDecides and cfg.Hotseat == true;
-if seatWatch then CivvisSeatWatch.arm(); end
+if seatWatch then CivvisSeatWatch.arm(); CivvisEnding.arm(); end
 
 if cfg.Play ~= false and cfg.CivvisDecides then
 	local elapsed = 0;
@@ -370,8 +782,13 @@ if cfg.Play ~= false and cfg.CivvisDecides then
 	-- The agent's landed-orders peek on this clock, which keeps running while
 	-- the game core publishes nothing (`CivvisQueue.onPeekPulse`). The agent
 	-- bounds the query itself; this only offers it a chance each interval.
+	-- `HotseatFastTurns` (`tools/civ6_hotseat.py --fast-turns`) offers it every
+	-- 20 ms, the ladder's live `poll-20ms` arm (`OrdersPeekSeconds` 0.02), unless
+	-- `OrdersPeekSeconds` says otherwise; the agent's own bound follows the same
+	-- rule (`CivvisQueue.peekSeconds`).
 	local peekElapsed = 0;
-	local peekEvery = math.max(0.02, tonumber(cfg.OrdersPeekSeconds) or 0.05);
+	local peekEvery = math.max(0.02, tonumber(cfg.OrdersPeekSeconds)
+		or (cfg.HotseatFastTurns == true and 0.02) or 0.05);
 	ContextPtr:SetUpdate(function(dt)
 		local uiBefore = CivvisFrameClock.last;
 		local delta = CivvisFrameClock.frame(math.max(0, tonumber(dt) or 0));
@@ -388,7 +805,11 @@ if cfg.Play ~= false and cfg.CivvisDecides then
 		elapsed = 0;
 		pcall(function() CivvisMapView.Pulse(); end);
 		pcall(function() LuaEvents.CivvisControlPulse("TopPanel"); end);
-		if seatWatch then pcall(CivvisSeatWatch.beat, "frame"); end
+		if seatWatch then
+			pcall(CivvisSeatWatch.beat, "frame");
+			pcall(CivvisEnding.pulse);
+		end
+		if cfg.RequireHarness == true then pcall(CivvisLobby.pulse); end
 		if abTurns > 0 then pcall(CivvisVSyncAB.pulse, abTurns); end
 	end);
 end

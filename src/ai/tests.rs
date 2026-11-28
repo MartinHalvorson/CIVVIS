@@ -4513,6 +4513,85 @@ fn capital_settler_after_completion_waits_for_an_empty_capital_queue() {
     assert!(!strategic.capital_settler_after_completion);
 }
 
+/// The capital's population-two Settler line names the gene that opened it.
+/// Both `capital-settler-after-completion` and `rapid-city-expansion-2` take
+/// this branch; the line used to name the first whichever was on, and the
+/// hotseat seats (`hotseat-20261128T031456Z`, ten such lines) ran only the
+/// second.
+#[test]
+fn the_capital_settler_line_names_the_gene_that_fired() {
+    let line = |capital_settler: bool, rapid: bool| -> Option<String> {
+        let mut game = Game::new_full(
+            1,
+            24,
+            16,
+            crate::rng::fixture_seed("CAPITALSETTLER", 91_779),
+            250,
+            0,
+            false,
+        );
+        let founding = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: founding })
+            .unwrap();
+        let capital = game.player_city_ids(0)[0];
+        let home = game.cities[&capital].pos;
+        game.cities.get_mut(&capital).unwrap().pop = 2;
+        game.cities.get_mut(&capital).unwrap().queue.clear();
+        game.turn = 20;
+        game.spawn_unit("settler", 0, home);
+        game.spawn_unit("scout", 0, home);
+        game.spawn_unit("warrior", 0, home);
+        let mut ai = BasicAi::new();
+        ai.book_pos = 1;
+        ai.w.city_target = 4.0;
+        if capital_settler {
+            ai.enable_capital_settler_after_completion();
+        }
+        if rapid {
+            ai.enable_rapid_city_expansion_2();
+        }
+        ai.journal = crate::reasoning::Journal::recording();
+        ai.cities(&mut game, 0);
+        ai.journal
+            .since(u64::MAX)
+            .thoughts
+            .into_iter()
+            .find(|thought| {
+                thought
+                    .headline
+                    .contains("starts a Settler after completing its prior production")
+            })
+            .map(|thought| thought.detail)
+    };
+    let rapid = line(false, true).expect("rapid-city-expansion-2 alone opens the branch");
+    assert!(
+        rapid.contains("the rapid-city-expansion-2 gene reserves"),
+        "{rapid}"
+    );
+    assert!(
+        !rapid.contains("capital-settler-after-completion"),
+        "{rapid}"
+    );
+    let own = line(true, false).expect("capital-settler-after-completion alone opens it");
+    assert!(
+        own.contains("the capital-settler-after-completion gene reserves"),
+        "{own}"
+    );
+    assert!(!own.contains("rapid-city-expansion-2"), "{own}");
+    let both = line(true, true).expect("both genes open it");
+    assert!(
+        both.contains(
+            "the capital-settler-after-completion and rapid-city-expansion-2 genes reserve"
+        ),
+        "{both}"
+    );
+    assert_eq!(line(false, false), None, "neither gene: no such line");
+}
+
 /// The land grab's early Cities route: the pipeline is two walkers from
 /// the first city and one more per three cities, bounded by the seats
 /// still short; the window stays open until a settler can no longer
@@ -8562,6 +8641,103 @@ fn a_live_opening_keeps_its_settler_after_one_preempt_with_the_gene() {
         ai.cities(&mut g, 0);
         let kept = g.cities[&city].queue.first() == Some(&settler);
         assert_eq!(!kept, yields, "gene {gene}, preempts {preempts}");
+    }
+}
+
+/// `opening-defense-spares-the-holy-site`: a capital with a defender home
+/// keeps its founding Holy Site (new, or a repair of its own) against the
+/// opening's barbarian defense; without the gene, a naked capital, or with
+/// our religion founded, the defender takes the queue as before. Live
+/// `civvis-t8-20261126T160109Z` t17: "slinger takes the queue before a holy
+/// site district" with a Warrior in Constantinople.
+#[test]
+fn the_opening_defense_spares_the_founding_holy_site_with_the_gene() {
+    let staged = |gene: bool, defender: bool, founded: bool, repair: bool| {
+        let (mut g, city, _raider) = barbarian_at_the_gates_game(91_503);
+        let cpos = g.cities[&city].pos;
+        for uid in g.player_unit_ids(0) {
+            if !defender || g.units[&uid].kind != "warrior" {
+                g.remove_unit(uid);
+            }
+        }
+        if defender {
+            let warrior = g
+                .player_unit_ids(0)
+                .into_iter()
+                .find(|uid| g.units[uid].kind == "warrior")
+                .expect("the start Warrior");
+            assert!(
+                g.wdist(g.units[&warrior].pos, cpos) <= 2,
+                "the Warrior is home"
+            );
+        }
+        grant_tech_with_prerequisites(&mut g, 0, "astrology");
+        let site = g
+            .producible_items(0, city)
+            .into_iter()
+            .find(|item| {
+                matches!(item, Item::District { district, .. }
+                    if g.district_family(*district) == "holy_site")
+            })
+            .expect("a Holy Site placement after Astrology");
+        let head = if repair {
+            let Item::District { district, pos } = site else {
+                unreachable!()
+            };
+            g.cities
+                .get_mut(&city)
+                .unwrap()
+                .districts
+                .insert(district, pos);
+            Item::Repair {
+                repair: crate::name!("district"),
+                pos,
+            }
+        } else {
+            site
+        };
+        g.cities.get_mut(&city).unwrap().queue = vec![head.clone()];
+        if founded {
+            g.players[0].religion = Some("religion_buddhism".to_string());
+        }
+        let mut ai = BasicAi::new();
+        ai.garrison_under_fire = true;
+        ai.opening_defense_spares_the_holy_site = gene;
+        assert!(
+            matches!(
+                ai.opening_barbarian_defense_item(&g, 0, city),
+                Some(Item::Unit { .. })
+            ),
+            "the opening wants a defender here"
+        );
+        let holds = ai.holy_site_holds_the_opening_defense(&g, 0, city);
+        (g, city, ai, holds, head)
+    };
+    for repair in [false, true] {
+        let (.., holds, head) = staged(false, true, false, repair);
+        assert!(!holds, "off, nothing holds {head:?}");
+        let (.., holds, head) = staged(true, true, false, repair);
+        assert!(holds, "on, {head:?} holds the queue");
+    }
+    let (.., holds, _) = staged(true, false, false, false);
+    assert!(!holds, "a naked capital still takes its defender");
+    let (.., holds, _) = staged(true, true, true, false);
+    assert!(
+        !holds,
+        "a founded seat's Holy Site does not hold the defense"
+    );
+    // End to end: the city turn keeps the Holy Site at the head with the gene
+    // and gives it to a defender without.
+    for gene in [false, true] {
+        let (mut g, city, mut ai, _, head) = staged(gene, true, false, false);
+        ai.cities(&mut g, 0);
+        let kept = g.cities[&city].queue.first() == Some(&head);
+        assert_eq!(
+            kept,
+            gene,
+            "gene {gene}: head {:?}",
+            g.cities[&city].queue.first()
+        );
     }
 }
 

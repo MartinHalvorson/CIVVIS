@@ -300,6 +300,10 @@ const PAGE_ADDRESS =
 // (/interpretability) is followed move by move to wherever the lane has the
 // page: /charts/ai-interpretability in a lane pinned to a revision from
 // before the new name, /charts/civ-ai-interpretability in one from after.
+//
+// Random AI Charts was named Unreviewed Gen AI Charts on 2026-11-27
+// (operator: "change random ai charts to unreviewed gen AI charts"), and its
+// address followed the name.
 const MOVED = {
   research: "charts/win-analytics",
   performance: "charts/civvis-performance",
@@ -307,6 +311,7 @@ const MOVED = {
   "charts/ai-interpretability": "charts/civ-ai-interpretability",
   experiments: "tournaments",
   "auto-tourneys": "tournaments",
+  "charts/random-ai-charts": "charts/unreviewed-gen-ai-charts",
 };
 
 // A page that went back to an address it had left, by that address, and the
@@ -348,8 +353,8 @@ const NO_SUCH_PAGE = "/__no-such-page__";
 // the old address, which is that viewer's way to the page. An old address
 // forwards the other way, in a lane that has the new one: the old addresses
 // are in links this site does not control.
-const SIMULATOR_PAGES = {debugger: "play", "doctor-strange": "strange", "edge-of-tomorrow": "tomorrow"};
-const SIMULATOR_ADDRESS = /^(\/test)?\/(debugger|doctor-strange|edge-of-tomorrow)(\/(?:index\.html)?)?$/;
+const SIMULATOR_PAGES = {debugger: "play", "doctor-strange": "strange", "edge-of-tomorrow": "tomorrow", moneyball: "moneyball"};
+const SIMULATOR_ADDRESS = /^(\/test)?\/(debugger|doctor-strange|edge-of-tomorrow|moneyball)(\/(?:index\.html)?)?$/;
 const VIEWER_ADDRESS = /^(\/test)?\/(?:index\.html)?$/;
 
 /// What one of the simulator's pages answers, asked at its address or at the
@@ -460,6 +465,52 @@ async function pageAnswer(request, env, url) {
   return { absent: true };
 }
 
+// A page's validator: the build its lane was published from.
+//
+// A page is a moving pointer (`max-age=0, must-revalidate`), so a browser
+// asks for it again on every visit. It went out with nothing to ask about:
+// the edge drops the asset layer's `ETag` from every text/html response (it
+// rewrites them), so each visit downloaded the whole page again, ~120 KB
+// over the wire, 477 KB of it raw, before the browser could find what the
+// page loads. Nothing about a page changes between publishes, so the lane's
+// build is what it is: one build, one validator, for every page of the lane.
+//
+// A page asked about with the validator it went out with is answered `304`.
+// Only an exact match counts: a lane can be promoted back to an older build,
+// and an `If-Modified-Since` later than that build is not proof the copy the
+// browser holds is still the one served.
+async function laneStamp(env, url) {
+  const lane = url.pathname === "/test" || url.pathname.startsWith("/test/") ? "/test" : "";
+  try {
+    const shipped = await env.ASSETS.fetch(new Request(new URL(`${lane}/build.json`, url)));
+    if (!shipped.ok) return null;
+    const build = await shipped.json();
+    const id = String(build.commit || build.short || "").slice(0, 12);
+    const at = Date.parse(build.built_at || "");
+    if (!id && !Number.isFinite(at)) return null;
+    const when = Number.isFinite(at) ? Math.floor(at / 1000) : null;
+    return {
+      etag: `W/"${[lane.slice(1) || "stable", id, when === null ? "" : when.toString(36)].filter(Boolean).join("-")}"`,
+      lastModified: when === null ? null : new Date(when * 1000).toUTCString(),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/// Whether the browser's copy is the page this build serves: its
+/// `If-None-Match` names the lane's validator (weakly compared, as a GET may
+/// be) or, when it sends none, its `If-Modified-Since` is the build's own date.
+function unchanged(request, stamp) {
+  const tags = request.headers.get("If-None-Match");
+  if (tags !== null) {
+    const bare = (tag) => tag.trim().replace(/^W\//, "");
+    return tags.trim() === "*" || tags.split(",").some((tag) => bare(tag) === bare(stamp.etag));
+  }
+  const since = request.headers.get("If-Modified-Since");
+  return Boolean(since && stamp.lastModified && since.trim() === stamp.lastModified);
+}
+
 /// Serve a file, with the headers a `_headers` file would have carried — that
 /// file is ignored once a `_worker.js` exists, so the rules live here instead.
 async function asset(request, env, gated) {
@@ -536,6 +587,20 @@ async function asset(request, env, gated) {
     // `manual`: these bytes are already encoded, so the runtime must not encode
     // them again or decode them to re-encode at a weaker setting.
     return new Response(response.body, { status: response.status, headers, encodeBody: "manual" });
+  }
+  const page = /text\/html/.test(headers.get("Content-Type") || "");
+  if (page && !absent && response.status === 200 && (request.method === "GET" || request.method === "HEAD")) {
+    const stamp = await laneStamp(env, url);
+    if (stamp) {
+      headers.set("ETag", stamp.etag);
+      if (stamp.lastModified) headers.set("Last-Modified", stamp.lastModified);
+      if (unchanged(request, stamp)) {
+        await response.body?.cancel();
+        headers.delete("Content-Length");
+        headers.delete("Content-Encoding");
+        return new Response(null, { status: 304, headers });
+      }
+    }
   }
   return new Response(response.body, { status: absent ? 404 : response.status, headers });
 }

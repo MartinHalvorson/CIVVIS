@@ -107,11 +107,13 @@ impl AdvancedAi {
     /// with the hostile memory; the wall or Slinger-upgrade policy can ask
     /// for this observation without enabling the other policy's actions.
     pub(super) fn remember_capital_watch_sightings(&mut self, g: &Game, pid: usize) {
-        // `near-rival-deterrence-opens-early` and
-        // `watched-capital-keeps-its-defender-gold` read the same watch.
+        // `near-rival-deterrence-opens-early`,
+        // `watched-capital-keeps-its-defender-gold` and
+        // `watched-capital-trains-its-defender` read the same watch.
         if !self.capital_walls_before_the_surprise
             && !self.capital_watch_arms_the_slinger
             && !self.watched_capital_keeps_its_defender_gold
+            && !self.watched_capital_trains_its_defender
             && !self.capital_archers_on()
             && !self.near_rival_deterrence_opens_early
         {

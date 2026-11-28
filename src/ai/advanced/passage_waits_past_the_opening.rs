@@ -55,7 +55,7 @@ pub enum PassageHold {
 }
 
 impl PassageHold {
-    fn reason(&self, turn: u32) -> String {
+    pub(super) fn reason(&self, turn: u32) -> String {
         match *self {
             PassageHold::Opening { until } => {
                 format!("turn {turn} is inside the opening, which ends at turn {until}")

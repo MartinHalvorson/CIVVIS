@@ -86,6 +86,27 @@
 //! `docs/gene_screens/fires/settler-walk-deadline.json`. The live claim is
 //! the table above; the live measurement to read is cities@60 and the
 //! settler fates on the next runs with the tag in `~/.civvis-live-force-on`.
+//!
+//! ## `settler-walk-clock-runs-all-game` (2026-11-27)
+//!
+//! Live Tournament 7 (Lv 8 Deity, Online): the reviewer named "no city for
+//! 58 turns while settlers were held short" in 4 of 40 games. In those four,
+//! 23 Settlers walked 10 turns or more, up to 112, and this gene fired in
+//! none of them, nor did `stalled-settler-takes-a-safe-site`, though both
+//! were armed. Across all 40 games the deadline fired in 3. Two gaps:
+//!
+//! - The clock ticked only on turns that reached the deadline check. The
+//!   flee, the walk to shelter (`settler-shelters-from-the-war`) and the
+//!   retreat from a threatened tile return before it, so their turns out of
+//!   a city were never counted: up to 39 shelter-walk turns and 20 retreat
+//!   turns a game in the four.
+//! - The deadline ignored every walk begun after the band turn (t60 on
+//!   Online). 19 of the 23 long walks began after it (104911Z: one walk from
+//!   t80 to t192).
+//!
+//! With the gene on, the clock ticks at the top of every Settler step (the
+//! same once-a-turn note, with the same home and embarked exclusions), and
+//! the deadline applies to every walk. Off, every path is byte-identical.
 
 use super::settler_never_idles::STRANDED_SITE_MIN_HOLD_TURNS;
 use super::{AdvancedAi, SiteForecast, VictoryTarget};
@@ -264,7 +285,10 @@ impl AdvancedAi {
         }
         let (began, out) = self.note_settler_walk(g, pid, uid);
         let deadline = Self::settler_walk_deadline_turns(g);
-        if began > Self::expansion_band_turn(g) || out < deadline {
+        // `settler-walk-clock-runs-all-game` holds every walk to the
+        // deadline, however late it began.
+        let opening = began <= Self::expansion_band_turn(g);
+        if !(opening || self.settler_walk_clock_runs_all_game) || out < deadline {
             return None;
         }
         let here = g.units[&uid].pos;

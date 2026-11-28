@@ -134,15 +134,25 @@ if command -v wasm-opt >/dev/null; then
   # identical trace and save hashes: rustc `opt-level = "s"` shrank the module
   # 18.37 -> 12.50 MB (3.97 -> 3.05 MB brotli) and cost about 23% engine time
   # (median 94.7 s against 76.9 s a game). wasm-opt alone barely matters:
-  # -O3, -Os and -Oz on the same input land within 0.5% of each other.
+  # -O3, -Os and -Oz on the same input land within 0.5% of each other in
+  # raw bytes, but raw bytes are not what a visitor downloads.
+  #
+  # `-ocimfs=0` keeps Binaryen from inlining functions that have one caller.
+  # Measured 2026-11-27 (origin/main 4ebd4ad, rustc 1.99.1 + Binaryen 120 as
+  # in CI): that inlining takes 1.2 MB off the raw module but adds ~3% to its
+  # brotli, the copy every browser fetches; without it the engine is
+  # 3,299,528 -> 3,223,763 bytes brotli (-2.3%), engine instructions
+  # unchanged (-0.00/-0.06/+0.03% on seeds 7/11/23), CPU fully compiled
+  # -3.4% and compile time -13%, every game identical (watched, played and
+  # save/load answer hashes).
   if [ -n "$symbols_out" ]; then
     # The printing pass leaves the optimized module byte-for-byte unchanged.
     # Its indexes name the final functions, after inlining and reordering.
-    wasm-opt -O3 "$raw_wasm" --symbolmap -o "$out/civvis.wasm" > "$symbols_out/functions.map"
+    wasm-opt -O3 -ocimfs=0 "$raw_wasm" --symbolmap -o "$out/civvis.wasm" > "$symbols_out/functions.map"
     python3 "$repo_root/tools/site_wasm_symbols.py" \
       "$out/civvis.wasm" "$symbols_out/functions.map" "$commit"
   else
-    wasm-opt -O3 "$raw_wasm" -o "$out/civvis.wasm"
+    wasm-opt -O3 -ocimfs=0 "$raw_wasm" -o "$out/civvis.wasm"
   fi
 else
   echo "==> wasm-opt is not installed; publishing the unshrunk module" >&2
@@ -229,8 +239,8 @@ interpretability_at="$(address "$interpretability_page" interpretability)"
 # AI Insights was written after pages stated their addresses, so it has no
 # former one: a revision without the page has no page to place.
 insights_at="$(address "$insights_page" charts/ai-insights)"
-# Random AI Charts likewise: written on 2026-11-26, with its address stated.
-random_at="$(address "$random_page" charts/random-ai-charts)"
+# Unreviewed Gen AI Charts likewise: written on 2026-11-26, with its address stated.
+random_at="$(address "$random_page" charts/unreviewed-gen-ai-charts)"
 download_at="$(address "$download_page" download)"
 
 # A lane built from some other revision than the invoking tree's is pinned:
@@ -287,6 +297,12 @@ if [ -f "$landing_page" ]; then
   # (2026-11-24) still carries it, and its own revision's copy of the script
   # fills it; since then it is written with that page's record, below.
   fill home_rankings.py "$out/$home_at/index.html"
+  # Over the benchmark stands ELO Rankings, the table Tournaments carries
+  # (operator 2026-11-27: "put the elo chart at the top of home/ too, above
+  # the benchmarks"): ELO Rankings' own record, written by the same script
+  # into a slot of the same name; a revision whose home page has no such
+  # slot is left as it is.
+  fill elo_page.py "$out/$home_at/index.html"
   pages+=("$home_at")
 else
   without+=(home)
@@ -300,6 +316,11 @@ if [ -f "$tournaments_page" ]; then
   mkdir -p "$out/$tournaments_at"
   cp "$tournaments_page" "$out/$tournaments_at/index.html"
   fill tournaments_page.py "$out/$tournaments_at/index.html"
+  # Its ELO Rankings table over the benchmark is ELO Rankings' own record
+  # (operator 2026-11-27: "lets copy the player straegies table over to
+  # tournaments"), written by the same script into a slot of the same name;
+  # a revision whose page has no such slot is left as it is.
+  fill elo_page.py "$out/$tournaments_at/index.html"
   pages+=("$tournaments_at")
 else
   without+=(tournaments)
@@ -395,7 +416,7 @@ if [ -f "$performance_page" ]; then
 else
   without+=(performance)
 fi
-# Random AI Charts, the last page under Charts/ (operator 2026-11-26:
+# Unreviewed Gen AI Charts, the last page under Charts/ (operator 2026-11-26:
 # "please add another chart to the end of charts/ called random ai charts.
 # please move all the ai generated charts that i havent approved of or we
 # have discussed to here"): the charts an agent added to the other pages on
@@ -412,7 +433,7 @@ if [ -f "$random_page" ]; then
   done
   pages+=("$random_at")
 else
-  without+=(random-ai-charts)
+  without+=(unreviewed-gen-ai-charts)
 fi
 # The home page carries no art of its own any more, so there is usually no
 # directory to ship; a pinned revision from when it had photographs still does.
@@ -447,18 +468,6 @@ cp "$repo_root/beta/_worker.js" "$out/_worker.js"
 # Its very existence switches Pages from single-page-app fallback (unknown
 # path -> the front page, 200) to honest 404s. See the comment inside it.
 cp "$repo_root/beta/404.html" "$out/404.html"
-
-# Only CIVVIS's own art is published. The lane's own revision says what that
-# is (`web/assets/art-manifest.json`, by sha256), and its
-# `tools/art_provenance.py` fails the build on any image here it does not list,
-# and on anything the `tools/civ6_*` cutters marked as cut from an installed
-# Civilization VI -- their output belongs in the git-ignored local/civ6-art/
-# for a local server, never on civvis.ai (docs/CIV6_ART.md). It runs before
-# the WebP pass, which would drop the marker. A revision from before the check
-# (a stable lane awaiting promotion) has neither file and builds as it did.
-if [ -f "$source_tree/tools/art_provenance.py" ]; then
-  python3 "$source_tree/tools/art_provenance.py" --bundle "$out"
-fi
 
 # The viewer, copied and then made lane-relative. Each substitution is
 # checked, because a silently unmatched one publishes a page whose strategic
@@ -645,6 +654,22 @@ page = page.replace(
     1,
 )
 
+# The viewer's own scripts are at the end of the page, after ~380 KB of style,
+# so a browser learned of them only once the whole page had arrived (measured
+# 2026-11-26: the page's first byte at 0.32 s, the scripts asked for at 0.50 s).
+# A first visit's world is drawn from a baked opening before the engine
+# arrives, so these scripts are what that first frame waits on; named in the
+# head, they are asked for with the page's first bytes. cache_bust.py versions
+# these links with the tags they stand for, so each is one request.
+named = re.findall(r'<script src="(assets/[^"?#]+\.js)"></script>', page)
+if named:
+    page = page.replace(
+        '\n<script src="shim.js"></script>',
+        '\n<script src="shim.js"></script>'
+        + "".join(f'\n<link rel="preload" href="{src}" as="script">' for src in named),
+        1,
+    )
+
 target.write_text(page, encoding="utf-8")
 print(f"   viewer written to {target} ({len(page):,} bytes)")
 PY
@@ -729,7 +754,7 @@ PLAIN = re.compile(r"[A-Za-z0-9._~/?#=&%+-]+")
 # (beta/_worker.js, `SIMULATOR_PAGES`): no file stands at them, and the lane
 # has them when its viewer reads which page it is off its address.
 viewer = out / "index.html"
-SIMULATOR = ({"debugger", "doctor-strange", "edge-of-tomorrow"}
+SIMULATOR = ({"debugger", "doctor-strange", "edge-of-tomorrow", "moneyball"}
              if viewer.is_file() and "CIVVIS_PAGE_MODE" in viewer.read_text(encoding="utf-8") else set())
 
 
@@ -772,6 +797,25 @@ for address in carried:
     path.write_text(text, encoding="utf-8")
 PY
 
+# The first visit's world, played ahead of time. On a first visit the engine
+# is most of what the page fetches and nothing could be drawn until it had
+# arrived; `bake_openings.mjs` asks this lane's own engine now for the answers
+# the first frame needs, for a bank of seeds drawn from this build, and
+# writes the bank into shim.js, which draws a first visit's world from them
+# while the engine downloads (measured 2026-11-27: the engine's ~3.2 MB was
+# the whole wait before the first frame). Before cache_bust: the bank changes
+# the shim's bytes, and so the address the page asks for it by. A failure
+# here costs only the head start, so it warns rather than stopping the build.
+if command -v node >/dev/null; then
+  echo "==> baking the opening worlds"
+  node "$repo_root/beta/bake_openings.mjs" "$out" "$commit" "${CIVVIS_OPENINGS:-8}" || {
+    echo "::warning::the opening worlds could not be baked; a first visit waits for the engine"
+    rm -rf "$out/assets/openings"
+  }
+else
+  echo "   node is not installed; no baked openings (a first visit waits for the engine)"
+fi
+
 # Browser caches cannot be purged by a deployment. Give every JS, WASM, and
 # atlas dependency a URL derived from its actual bytes, so fresh HTML always
 # asks for fresh content while unchanged files remain reusable across builds.
@@ -788,9 +832,12 @@ python3 "$repo_root/beta/cache_bust.py" "$out"
 # `index.html.br` of 85,864 bytes was served as 109,582 bytes of brotli, the
 # page byte-identical, and brotli quality 4 of that page is 109,317. So no
 # copy is written for it, and the count below prices it at quality 4.
+#
+# The baked openings are a bank a visit takes one file of, so they are left
+# out here and the largest is added to the count below.
 viewer_files() {
   { find "$out/civvis.wasm" "$out/index.html" "$out/shim.js" "$out/worker.js" "$out/assets" \
-      -type f ! -name '*.br' 2>/dev/null || true; } | sort
+      -path "$out/assets/openings" -prune -o -type f ! -name '*.br' -print 2>/dev/null || true; } | sort
 }
 if command -v brotli >/dev/null; then
   viewer_files | while read -r file; do
@@ -816,6 +863,12 @@ while read -r file; do
   fi
   download_bytes=$(( download_bytes + $(echo "$bytes" | tr -d ' ') ))
 done < <(viewer_files)
+# A first visit also fetches one baked opening.
+if [ -d "$out/assets/openings" ]; then
+  opening_bytes=$(find "$out/assets/openings" -type f -name '*.json.gz' -exec wc -c {} + 2>/dev/null \
+    | awk '$2 != "total" && $1 > max { max = $1 } END { print max + 0 }')
+  download_bytes=$(( download_bytes + opening_bytes ))
+fi
 
 # `status.json`: the live ledger's state, exactly as `tools/live_status.py
 # --json` prints it, for anything that reads the site rather than the
@@ -846,7 +899,7 @@ for page in ${pages[@]+"${pages[@]}"}; do pages_json="$pages_json${pages_json:+,
 # the list out, so the worker forwards the new addresses there to the old.
 simulator_json=""
 if grep -q "CIVVIS_PAGE_MODE" "$source_tree/web/index.html"; then
-  simulator_json='  "simulator_pages": ["debugger", "doctor-strange", "edge-of-tomorrow"],'
+  simulator_json='  "simulator_pages": ["debugger", "doctor-strange", "edge-of-tomorrow", "moneyball"],'
 fi
 cat > "$out/build.json" <<JSON
 {

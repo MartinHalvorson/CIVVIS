@@ -552,6 +552,8 @@ function updateRestartSimulationButton() {
   // Keep the launch action beside the choices as well as above the deck.
   // Both controls use the same validation and request path.
   const setupStart = document.getElementById("setup-start");
+  // The two set worlds are this engine's, not Civilization VI's.
+  for (const preset of document.querySelectorAll("#preset-games button")) preset.disabled = civ6 || newSimulationBusy;
   setupStart.hidden = !human || civ6;
   setupStart.disabled = button.disabled || newSimulationBusy;
   setupStart.textContent = button.querySelector(".lbl").textContent;
@@ -583,6 +585,7 @@ function setNewSimulationBusy(busy) {
     document.getElementById("restart-sim"), document.getElementById("specpause"),
     document.getElementById("collapsepause"),
     document.getElementById("setup-start"),
+    ...document.querySelectorAll("#preset-games button"),
   ].filter(Boolean);
   if (busy) {
     for (const control of controls) {
@@ -1423,6 +1426,25 @@ async function playOnPastVictory(mode, paused) {
 }
 document.getElementById("restart-sim").onclick = startNewSimulation;
 document.getElementById("setup-start").onclick = startNewSimulation;
+// 2P Pangaea New Game and 6P Continents New Game (operator 2026-11-27: "these
+// function the same as the new game except set the player count and map as
+// well to the claimed settings"): World size and Map are set on Game Setup,
+// as a person picking them would (each select's own listener re-fits what
+// follows from it, and the panel stages them), and the game is started as
+// Start new game starts it, with every other setting as it stands.
+function startPresetGame(players, map) {
+  if (newSimulationBusy) return;
+  for (const [id, value] of [["np", String(players)], ["maptype", map]]) {
+    const select = document.getElementById(id);
+    if (!select || ![...select.options].some(option => option.value === value)) continue;
+    if (select.value === value) continue;
+    select.value = value;
+    select.dispatchEvent(new Event("change", {bubbles: true}));
+  }
+  startNewSimulation();
+}
+for (const button of document.querySelectorAll("#preset-games [data-preset-players]"))
+  button.onclick = () => startPresetGame(Number(button.dataset.presetPlayers), button.dataset.presetMap);
 document.getElementById("mapseed-replay").onclick = replayShownWorldSeed;
 document.getElementById("newgame-options").addEventListener("change", stageSelectedSimulationSettings);
 
