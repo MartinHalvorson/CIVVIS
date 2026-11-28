@@ -158,10 +158,10 @@ pub(super) fn settler_pump_choices(state: &mirror::StateSnapshot) -> Vec<Choice>
         } else {
             (settler
                 && city.food_surplus.is_finite()
-                && city.food_surplus >= SETTLER_PUMP_MIN_FOOD - 1.0
+                && city.food_surplus >= SETTLER_PUMP_MIN_FOOD
                 && city.production.is_finite()
                 && city.production >= 0.0
-                && city.production < SETTLER_PUMP_MAX_PRODUCTION
+                && city.production <= SETTLER_PUMP_MAX_PRODUCTION
                 && city.food_favored == Some(false)
                 && city.production_favored != Some(true))
             .then_some("FAVOR_PRODUCTION")
