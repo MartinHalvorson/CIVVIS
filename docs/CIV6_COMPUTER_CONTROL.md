@@ -636,8 +636,19 @@ above it and is read and pressed as it ships): one `hotseat_cover_kept` record,
 the person's own volumes while it is up, no stall clock (the screen holds the
 game until Next Player and is in plain sight), and the turn still covered after
 it closes. A person's defeat, a win (`Events.TeamVictory`) or an end screen
-whose defeat is not known lift the cover as before. ⚠ Tests only
-(`hotseat_cover_test.lua` 8b); no seat has been defeated in a live cover game.
+whose defeat is not known lift the cover as before.
+**And the screen does not stand there (#6076).** It holds the game's events
+until it is closed (EndGameMenu.lua:1024 `UI.SetPauseEventID( eventID )`). In
+the gated check game `crash-p4-fa` (2026-11-28) seat 1 was eliminated on seat
+5's turn and the screen stood five minutes with nobody to press it; in a
+person's game the person would have seen it over the cover and had to press
+Next Player (or One More Turn, with Main Menu beside them) before CIVVIS
+played on. Now, on a turn that is not a person's, a CIVVIS seat's defeat
+screen is closed by its own Next Player (`OnNextPlayer` :304-318) once its
+movie is over and 8 s have passed (`HotseatDefeatSeconds`;
+`hotseat_defeat_closed`); a person's defeat, a person's turn and a victory are
+left as they were. ⚠ Tests only (`hotseat_returned_turn_test.lua` 4b,
+`hotseat_cover_test.lua` 8b).
 
 ⚠⚠ **Measured 2026-11-27/28: a cover that lifted on the frame after Next Turn
 ended two of the owner's games.** For a frame or more after
@@ -718,9 +729,40 @@ So now, hotseat only (#6072):
 
 `HotseatReturnedTurn` (`legacy`: the old hand-over; `press`: pause kept, pressed
 as a first press) is a diagnostic for crash check games only; no launcher sets
-it. ⚠ The reaction is tests only (`hotseat_returned_turn_test.lua`): no check
-game was handed a turn back after it was written, because none could be made
-to. Six ordinary gated 15-turn games on it (`crash-p1-ft`..`p3-ft` with
+it.
+
+**Made on purpose and seen live (#6076).** The hand-back is a person's
+everyday go-to order: a unit with a QUEUED multi-turn walk finishes it when its
+player ends a later turn, and one that arrives with movement left hands the
+turn back. The stand-in does it on purpose in a check game
+(`HotseatDiagWalkTurns`: on a listed turn one land combat unit is sent to a
+plot the pathfinder reaches next turn, `UnitManager.GetMoveToPathEx` `turns`,
+with a last leg shorter than its moves over open plots; the unit then gets no
+order of ours; `HotseatDiagExploreTurns` sets a Scout exploring;
+`HotseatDiagLinger` keeps the handed-back turn open N seconds for screenshots;
+records `stand_in_diag_order`, `stand_in_diag_before_end`, `stand_in_diag_linger`).
+Gated six-seat games, all with `--fast-turns`:
+
+| run | reaction | hand-backs (engine: `Attempting to turn active player`) | result |
+|---|---|---|---|
+| `crash-h1-walk` | safe (#6072) | 2 (turns 4, 7) | ran to turn 16; no `GamePaused`, no `again:true` |
+| `crash-h2-walk-fa` (`--fast-animations`) | safe | 3 (turns 4, 7, 13) | ran to turn 16; no `GamePaused`, no `again:true` |
+| `crash-h3-explore` | safe | 2 (turns 9, 12; the exploration recipe found no Scout to start) | ran to turn 16; no `GamePaused`, no `again:true` |
+| `crash-c1-legacy` | legacy (the old hand-over) | 1 (turn 4) | `GamePaused: gamePaused=1`, backstop `again:true via cover` at 10:17:45.659Z, Civ VI dead at 10:17:45.717Z: SIGSEGV on a TBB worker, the same three frames as the night's crashes |
+| `crash-c2-press` | press (pause asked, pressed on the next frame) | 2 (turns 4, 7) | ran to turn 16; the pause never reached the engine (no `GamePaused`) |
+
+So the fatal step is the second hand-over's pause reaching the engine
+(`GamePaused=1`) and its release 1.5 s later by the cover's backstop; whether
+the pause or that press path is the lethal half is not separated (the
+self-play duel's two hand-backs, paused 2 s and pressed by the dialog with no
+cover, survived). With #6072 nothing is paused. The screenshots taken during
+the held-open hand-back (`crash-h2-walk-fa/evidence/handback/`) show the
+person's map with the HUD, no cover, no Start Turn dialog, the unit that
+arrived selected (Warrior, movement 1/2) and NEXT TURN; the stand-in's next end
+went through and the next seat began. Not seen: a real person's click or key
+on that turn (no person played these games).
+
+Six ordinary gated 15-turn games on #6072 (`crash-p1-ft`..`p3-ft` with
 `--fast-turns`, `crash-p4-fa`..`p6-fa` with `--fast-animations` too; p4 ended
 at turn 10 on an unrelated defeat screen) had no hand-back, no `again:true`
 and no crash, and held 45-62 ends a game behind a walk with no slower round.
