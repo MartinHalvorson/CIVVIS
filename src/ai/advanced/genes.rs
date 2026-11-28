@@ -6103,6 +6103,15 @@ pub const GENES: &[Gene] = &[
     // held one with no reachable site buys one grant. Opt-in; see
     // `advanced/foreign_site_open_border.rs`.
     Gene { tag: "foreign-site-buys-the-open-border", field: "foreign_site_buys_the_open_border", kind: Kind::OptIn, enable: AdvancedAi::enable_foreign_site_buys_the_open_border, disable: AdvancedAi::disable_foreign_site_buys_the_open_border },
+    // Hotseat 2026-11-27 (hotseat-20261128T031456Z p1 t12-t16): a person
+    // declared, took the first Settler, and four turns later, at war and at
+    // 47 power to 51, the seat sent another Settler toward the same ground
+    // with 77-85 Gold idle; Recovery waits for 1.25 times our power. For ten
+    // standard turns after a declaration on us, while the declarer's
+    // military is at least ours, Settlers keep off the ground its soldiers
+    // were seen on and one shooter is bought. Opt-in; see
+    // `advanced/fresh_war_holds_the_home.rs`.
+    Gene { tag: "fresh-war-holds-the-home", field: "fresh_war_holds_the_home", kind: Kind::OptIn, enable: AdvancedAi::enable_fresh_war_holds_the_home, disable: AdvancedAi::disable_fresh_war_holds_the_home },
     // Hotseat live-6p-20261128T0446Zd seat p1 (Kupe, 2026-11-28): with
     // `founding-voyage` armed nowhere, the embarked Settler and Warrior stood
     // on ocean turns 1-6 and the seat never founded. Replayed, version one
@@ -6460,6 +6469,13 @@ pub const GENES: &[Gene] = &[
     // ahead of the government ladder. Opt-in; see
     // `advanced/rival_science_run_opens_the_spy_civics.rs`.
     Gene { tag: "rival-science-run-opens-the-spy-civics", field: "rival_science_run_opens_the_spy_civics", kind: Kind::OptIn, enable: AdvancedAi::enable_rival_science_run_opens_the_spy_civics, disable: AdvancedAi::disable_rival_science_run_opens_the_spy_civics },
+    // Self-play duel selfplay-duel-20261127T0654Z, 2026-11-27: seat p1 asked
+    // the other seat for a friendship on every turn from 51 to 89, two or
+    // three times a turn (105 offers, 32 refused by the mod, 33 `not_friends`
+    // verdicts), and asked nobody else. A major whose last ask was refused
+    // waits ten turns; the others are asked meanwhile. Opt-in; see
+    // `advanced/refused_friendship_waits.rs`.
+    Gene { tag: "refused-friendship-waits", field: "refused_friendship_waits", kind: Kind::OptIn, enable: AdvancedAi::enable_refused_friendship_waits, disable: AdvancedAi::disable_refused_friendship_waits },
     // Hotseat 2026-11-27 (hotseat-20261128T031456Z p1 t9-t12): the person's
     // Scout shadowed the religion seat's first Settler at peace, the Settler
     // walked out ahead of its guard because "nothing visible can reach this
