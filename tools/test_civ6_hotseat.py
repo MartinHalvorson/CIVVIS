@@ -2559,6 +2559,10 @@ class OneShotCommandTest(unittest.TestCase):
             said = self.status(manual)
             self.assertIn("a --manual-lobby run: the game: Hot Seat, 3 players on Pangaea.lua", said)
             self.assertIn("row 2 CIVVIS jack 1", said)
+            # The person and the agents, as the run's own record names them.
+            said = self.status(dict(manual, name="dev", agents={"1": "holy"}))
+            self.assertIn("row 1 dev (you) (human)", said)
+            self.assertIn("row 2 CIVVIS HolyRoller (human)", said)
         # No harness on record, but Civ VI up with a hotseat game installed.
         said = self.status(None, installed={"Hotseat": True, "RunTag": "hotseat-x"})
         self.assertIn("Civ VI is up with the hotseat game hotseat-x installed", said)
