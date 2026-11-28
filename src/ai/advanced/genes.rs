@@ -6795,6 +6795,14 @@ pub const GENES: &[Gene] = &[
     // reviewed Lv 8 games; conquest took 0 cities by t150 in all four. See
     // `advanced/tagma_timing_needs_the_edge.rs`.
     Gene { tag: "tagma-timing-needs-the-edge", field: "tagma_timing_needs_the_edge", kind: Kind::OptIn, enable: AdvancedAi::enable_tagma_timing_needs_the_edge, disable: AdvancedAi::disable_tagma_timing_needs_the_edge },
+    // Deity Lv 8 benchmark 11-26/27, 8 of 40 reviewed games: 70-90 wounded
+    // spreader-turns a game sat more than 8 tiles from any Holy Site of ours
+    // with an unconverted rival city within one turn's move; the walk home
+    // was a median 12-23 tiles, and 100 trips lost the unit (most within a
+    // turn) against 157 that reached a ring.
+    // A wounded Missionary or Apostle far from home spends its charge at the
+    // nearest target in reach instead. Opt-in; see `advanced/apostle_army.rs`.
+    Gene { tag: "wounded-spreader-spends-far-from-home", field: "wounded_spreader_spends_far_from_home", kind: Kind::OptIn, enable: AdvancedAi::enable_wounded_spreader_spends_far_from_home, disable: AdvancedAi::disable_wounded_spreader_spends_far_from_home },
     // T8 benchmark 2026-11-27: with the Gold gene above armed, early cities
     // still fell in 6 of 40 reviewed Lv 8 games: the watch read a 2.9-7.4x
     // neighbour while the treasury held 10-45 of the 70-160 Gold reserved,
