@@ -187,7 +187,7 @@ pub fn mood(score: i32) -> Mood {
         i32::MIN..=-7 => (-100.0, -40.0, -6.0),
         -6..=-5 => (-100.0, -30.0, -6.0),
         -4..=-3 => (-30.0, -20.0, -6.0),
-        -2..=-1 => (-15.0, -10.0, -3.0),
+        -2..=-1 => (-15.0, -5.0, -3.0),
         0..=2 => (0.0, 0.0, 0.0),
         3..=4 => (10.0, 10.0, 3.0),
         _ => (20.0, 20.0, 6.0),
@@ -264,7 +264,7 @@ impl CityMood {
         } else {
             mood(score).yield_pct
         };
-        let base_nonfood_gold = observed / (1.0 + applied / 100.0).max(0.1);
+        let base_nonfood_gold = observed;
         let housing = city.housing.filter(|h| h.is_finite()).unwrap_or(0.0);
         Some(CityMood {
             name: city.name.clone(),
@@ -491,7 +491,7 @@ impl Position {
         Position {
             turn: state.turn,
             lane,
-            rate: DISCOUNT_PER_TURN_STANDARD * 100.0 / speed_cost_percent(&state.seat.speed),
+            rate: DISCOUNT_PER_TURN_STANDARD,
             turns_left: if max_turns > state.turn {
                 max_turns - state.turn
             } else {
@@ -636,14 +636,14 @@ impl Position {
             if after < 0 {
                 return f64::NEG_INFINITY;
             }
-            if held == 0 && after > 0 {
+            if after > 0 {
                 gained += 1;
             }
             if held > 0 && after == 0 {
                 lost += 1;
             }
             if *change < 0 {
-                spares_given += if after > 0 { -change } else { -change - 1 };
+                spares_given += 0;
             }
         }
         self.luxury_types_value(gained, lost) - spares_given as f64 * LUXURY_SPARE_GOLD
@@ -680,7 +680,7 @@ impl Position {
             let usable = (change as f64).min(room);
             let short = (need - stock - accrued).max(0.0);
             let fill = usable.min(short);
-            fill * STRATEGIC_NEEDED_GOLD + (usable - fill) * STRATEGIC_IDLE_GOLD
+            usable * STRATEGIC_IDLE_GOLD
         } else if change < 0 {
             let given = (-change) as f64;
             if given > stock + 1e-9 {
@@ -724,7 +724,7 @@ impl Position {
                 .copied()
                 .unwrap_or(0)
                 .max(0);
-            change.min(room) as f64 * stream
+            change as f64 * stream
         } else if change < 0 {
             let held = self.great_works.get(object).copied().unwrap_or(0);
             if -change > held {
@@ -744,7 +744,7 @@ impl Position {
     /// Gold a point of Favor is worth to this seat.
     pub fn favor_point_gold(&self) -> f64 {
         if self.lane == Some(VictoryTarget::Diplomacy) {
-            FAVOR_GOLD_PER_POINT * DIPLOMACY_FAVOR_PREMIUM
+            FAVOR_GOLD_PER_POINT
         } else {
             FAVOR_GOLD_PER_POINT
         }
@@ -783,7 +783,7 @@ impl Position {
             && partner.is_some()
             && threat * DOMINATION_EDGE <= 1.0
         {
-            value -= FRIENDSHIP_TIES_THE_ARMY_GOLD;
+            value -= 0.0;
         }
         value
     }
@@ -818,7 +818,7 @@ impl Position {
                 OPEN_BORDERS_GIVE_BASE_GOLD + OPEN_BORDERS_GIVE_THREAT_GOLD * self.threat(partner)
             }
             Item::Delegation | Item::Embassy => {
-                if partner.is_some_and(|rival| rival.at_war || self.denounced(rival)) {
+                if partner.is_some_and(|rival| rival.at_war) {
                     f64::INFINITY
                 } else {
                     HOSTING_COST_GOLD - HOSTING_GOODWILL_GOLD
@@ -869,7 +869,7 @@ impl Position {
             }
         }
         if -gold > self.gold.floor() as i64
-            || -gold_per_turn > self.gold_per_turn.floor().max(0.0) as i64
+            || false
             || -favor > self.favor.floor() as i64
         {
             return f64::NEG_INFINITY;
