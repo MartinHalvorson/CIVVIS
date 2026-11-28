@@ -30,15 +30,18 @@
 //!    sight or remembered, the reach every flee reads) could take its tile
 //!    next turn and nothing guards it there, or the tile's risk passes the
 //!    step limit, it founds where it stands, unless the visible attackers in
-//!    reach would break the new city (`raiders_spare_the_city`). Where the
-//!    engine refuses that tile, it takes the best neighbouring plot it can
-//!    still found on this turn: one step and the city, the pair the agent's
-//!    one-step founding hand-off sends together.
+//!    reach would break the new city (`raiders_spare_the_city`).
 //! 2. *Deadline.* From [`CAPITAL_DEADLINE_TURNS`] turns after the seat first
 //!    stepped a Settler without a city, it founds where it stands.
 //! 3. *Walk.* In the opening branch, a walk longer than
 //!    [`CAPITAL_WALK_TURNS`] turns (or of unknown length), a detour around a
 //!    threat, or no site at all gives way to founding where it stands.
+//!
+//! Where the engine refuses the plot it stands on (a city-state three tiles
+//! off, say), each rule takes the best neighbouring plot it can still found
+//! this turn: one step with movement left and the city, the pair the agent's
+//! one-step founding hand-off (`allowImmediateFoundingShelterLegs`) sends
+//! together. With none, the old rules play on.
 //!
 //! A seat with a city, a Settler at sea and every board with the gene off
 //! are untouched. A person's soldier counts as the threat it already is
@@ -93,73 +96,25 @@ impl AdvancedAi {
             return false;
         }
         let why = if threatened {
+            let mut reasons = Vec::new();
+            if raiders > 0 {
+                reasons.push(format!("{raiders} raider(s) could take its tile next turn"));
+            }
+            if risk > SETTLER_STEP_RISK_LIMIT {
+                reasons.push(format!(
+                    "its tile's risk is {risk:.0} (limit {SETTLER_STEP_RISK_LIMIT:.0})"
+                ));
+            }
             format!(
-                "{raiders} raider(s) could take this tile next turn and its risk is {risk:.0} \
-                 (limit {SETTLER_STEP_RISK_LIMIT:.0}); a Settler is taken by a step, a city is not"
+                "{}; a Settler is taken by a step, a city is not",
+                reasons.join(" and ")
             )
         } else {
             format!(
                 "it has walked since turn {first}, {CAPITAL_DEADLINE_TURNS} turns without a city"
             )
         };
-        if g.can_found_city(uid)
-            && (!threatened || self.raiders_spare_the_city(g, pid, uid, here, &visible))
-        {
-            return self.found_the_capital_where_it_stands(g, pid, uid, &why);
-        }
-        if !threatened {
-            return false;
-        }
-        // The engine refuses this tile: the best neighbouring plot founded on
-        // this same turn, which needs movement left after the step.
-        let mut best: Option<(f64, Pos)> = None;
-        for step in g.nbrs(here) {
-            if !g.can_move(uid, step) {
-                continue;
-            }
-            let mut trial = g.speculative_clone();
-            if trial
-                .apply(
-                    pid,
-                    &Action::Move {
-                        unit: uid,
-                        to: step,
-                    },
-                )
-                .is_err()
-                || trial
-                    .units
-                    .get(&uid)
-                    .is_none_or(|moved| moved.pos != step || moved.moves_left <= 0.0)
-                || !trial.can_found_city(uid)
-                || !self.raiders_spare_the_city(&trial, pid, uid, step, &visible)
-            {
-                continue;
-            }
-            let worth = self.settle_value(g, pid, step);
-            if best.is_none_or(|(value, _)| worth > value) {
-                best = Some((worth, step));
-            }
-        }
-        let Some((_, step)) = best else {
-            return false;
-        };
-        if g.apply(
-            pid,
-            &Action::Move {
-                unit: uid,
-                to: step,
-            },
-        )
-        .is_err()
-            || g.units
-                .get(&uid)
-                .is_none_or(|moved| moved.pos != step || moved.moves_left <= 0.0)
-        {
-            return false;
-        }
-        let why = format!("{why}; the engine refuses {here:?}, so it steps to {step:?}");
-        self.found_the_capital_where_it_stands(g, pid, uid, &why)
+        self.found_here_or_one_step_off(g, pid, uid, &why, threatened)
     }
 
     /// Rule 3, in the opening branch once its target is known (`planned`
@@ -186,7 +141,6 @@ impl AdvancedAi {
             || unit.kind != "settler"
             || unit.moves_left <= 0.0
             || target == Some(here)
-            || !g.can_found_city(uid)
         {
             return false;
         }
@@ -204,6 +158,75 @@ impl AdvancedAi {
                 }
             }
         };
+        self.found_here_or_one_step_off(g, pid, uid, &why, false)
+    }
+
+    /// Found where the Settler stands, or, where the engine refuses that
+    /// plot, on the best neighbouring plot it can still found this turn
+    /// (movement left after the step). Under a threat each city must also
+    /// outlast the visible attackers in reach (`raiders_spare_the_city`).
+    fn found_here_or_one_step_off(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+        why: &str,
+        threatened: bool,
+    ) -> bool {
+        let here = g.units[&uid].pos;
+        let visible = self.battlefront_visibility(g, pid);
+        if g.can_found_city(uid)
+            && (!threatened || self.raiders_spare_the_city(g, pid, uid, here, &visible))
+        {
+            return self.found_the_capital_where_it_stands(g, pid, uid, why);
+        }
+        let mut best: Option<(f64, Pos)> = None;
+        for step in g.nbrs(here) {
+            if !g.can_move(uid, step) {
+                continue;
+            }
+            let mut trial = g.speculative_clone();
+            if trial
+                .apply(
+                    pid,
+                    &Action::Move {
+                        unit: uid,
+                        to: step,
+                    },
+                )
+                .is_err()
+                || trial
+                    .units
+                    .get(&uid)
+                    .is_none_or(|moved| moved.pos != step || moved.moves_left <= 0.0)
+                || !trial.can_found_city(uid)
+                || (threatened && !self.raiders_spare_the_city(&trial, pid, uid, step, &visible))
+            {
+                continue;
+            }
+            let worth = self.settle_value(g, pid, step);
+            if best.is_none_or(|(value, _)| worth > value) {
+                best = Some((worth, step));
+            }
+        }
+        let Some((_, step)) = best else {
+            return false;
+        };
+        if g.apply(
+            pid,
+            &Action::Move {
+                unit: uid,
+                to: step,
+            },
+        )
+        .is_err()
+            || g.units
+                .get(&uid)
+                .is_none_or(|moved| moved.pos != step || moved.moves_left <= 0.0)
+        {
+            return false;
+        }
+        let why = format!("{why}; the engine refuses {here:?}, so it steps to {step:?}");
         self.found_the_capital_where_it_stands(g, pid, uid, &why)
     }
 

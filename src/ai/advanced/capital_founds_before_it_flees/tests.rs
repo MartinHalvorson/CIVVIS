@@ -230,6 +230,34 @@ fn a_walk_longer_than_two_turns_gives_way_to_the_capital() {
 }
 
 #[test]
+fn a_long_walk_from_a_refused_plot_founds_one_step_off() {
+    // Recorded turn 10: the Settler stood three tiles from a city-state, its
+    // site more than two turns off; the plot beside it was legal.
+    let mut g = world();
+    let here = site();
+    let uid = settler_at(&mut g, here);
+    g.blocked_city_sites = Arc::new([here].into_iter().collect());
+    let mut ai = seat(true);
+    ai.settler_targets.insert(uid, (here.0 + 4, here.1));
+    assert!(ai.advanced_settler_step(&mut g, 0, uid));
+    assert!(g.city_at(here).is_none());
+    let city = g.player_city_ids(0)[0];
+    assert_eq!(g.wdist(g.cities[&city].pos, here), 1);
+
+    // Nowhere legal within a step: the walk goes on.
+    let mut g = world();
+    let uid = settler_at(&mut g, here);
+    let mut blocked: BTreeSet<Pos> = g.wdisk(here, 1).into_iter().collect();
+    blocked.insert(here);
+    g.blocked_city_sites = Arc::new(blocked);
+    let mut ai = seat(true);
+    ai.settler_targets.insert(uid, (here.0 + 4, here.1));
+    ai.advanced_settler_step(&mut g, 0, uid);
+    assert!(g.player_city_ids(0).is_empty());
+    assert!(g.units.contains_key(&uid));
+}
+
+#[test]
 fn the_deadline_founds_wherever_it_stands() {
     // A two-turn walk (allowed on its own), no threat, a clock started on
     // turn `first`; it is turn 3.
