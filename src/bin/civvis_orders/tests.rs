@@ -3200,11 +3200,11 @@ fn finishing_survival_policy_does_not_restore_the_unsafe_wounded_followup() {
     );
     let mut ai = victory_lane("science").unwrap();
     ai.enable_doomed_blow_veto_2();
-    // The healthy warrior's blow on the raider clears the attack floor only
-    // with the raider's life priced below a major's; the operator held
-    // `barbarian-bargain` off the deployment genome (2026-11-28), and with no
-    // strike in the reply there is no survival policy to carry.
-    ai.enable_barbarian_bargain();
+    // This board strikes only with `anvil` on: of the 68 genes the operator
+    // held off the deployment genome on 2026-11-28, `anvil` alone restores
+    // the strike and all the others together do not. With no strike in the
+    // reply there is no survival policy to carry.
+    ai.enable_anvil();
     // `enable_battle_planner_2` clears version one only; clear whichever
     // later version the published batch rule ships so v2 plays alone.
     ai.disable_battle_planner_3();
