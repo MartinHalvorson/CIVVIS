@@ -16,9 +16,12 @@
 //! both sides at once, which a real table cannot.
 //!
 //! [`value`] is the valuation: one common unit, Gold now, for every item, from
-//! this seat's board at this moment. Answering, countering and proposing build
-//! on it.
+//! this seat's board at this moment. [`board`] reads the hotseat deal board
+//! and writes the `deal` order's items; [`answer`] accepts, counters or
+//! rejects a deal proposed to the seat.
 
+pub mod answer;
+pub mod board;
 pub mod value;
 
 #[cfg(test)]
