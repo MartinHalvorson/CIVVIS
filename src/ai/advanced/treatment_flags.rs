@@ -730,6 +730,10 @@ impl AdvancedAi {
         /// claim their Monument from the third city; see
         /// `advanced/culture_monuments.rs`.
         science_seat_monuments => enable_science_seat_monuments, disable_science_seat_monuments;
+        /// Opt-in gene `settler-pump-leans-on-production`: a slow settler pump
+        /// asks the host for a Production focus until the Settler is done;
+        /// see `advanced/settler_pump_leans_on_production.rs`.
+        settler_pump_leans_on_production => enable_settler_pump_leans_on_production, disable_settler_pump_leans_on_production;
         /// Opt-in gene `settler-walk-clock-runs-all-game`: every stepped turn
         /// out counts on the Settler walk clock, and the walk deadline holds
         /// past the band turn; see `advanced/settler_walk_deadline.rs`.

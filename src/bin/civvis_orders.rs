@@ -574,9 +574,15 @@ fn append_citizen_growth_orders(
     snapshot: &mirror::Snapshot,
     state: &mirror::StateSnapshot,
     widened: bool,
+    settler_pump: bool,
     orders: &mut Vec<Order>,
 ) -> usize {
-    let choices = citizen_growth::choices(snapshot, state, widened);
+    let mut choices = citizen_growth::choices(snapshot, state, widened);
+    // `settler-pump-leans-on-production`: see
+    // `citizen_growth::settler_pump_choices`. Nothing with the gene off.
+    if settler_pump {
+        choices.extend(citizen_growth::settler_pump_choices(state));
+    }
     let count = choices.len();
     orders.extend(choices.into_iter().map(|choice| Order {
         kind: "city_focus",
@@ -5216,10 +5222,13 @@ fn decide(
         note_bits.push(format!("builder_operations_held={builder_operations_held}"));
     }
     // `food-focus-grows-the-small-city`: see `citizen_growth::choices`.
+    // `settler-pump-leans-on-production`: see
+    // `citizen_growth::settler_pump_choices`.
     let citizen_growth_orders = append_citizen_growth_orders(
         snapshot,
         state,
         ai.food_focus_grows_the_small_city(),
+        ai.settler_pump_leans_on_production(),
         &mut orders,
     );
     if citizen_growth_orders > 0 {

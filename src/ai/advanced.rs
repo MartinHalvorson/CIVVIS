@@ -10797,6 +10797,12 @@ pub struct AdvancedAi {
     /// shooters can fire. See `advanced/stacked_shooter_steps_out.rs`. Off by
     /// default.
     stacked_shooter_steps_out: bool,
+    /// `settler-pump-leans-on-production`: `civvis_orders` asks the host for
+    /// a Production focus in a city training a Settler on a Food surplus of 4
+    /// or more and a Production of 5 or less, and releases its own focus
+    /// once the Settler is done. See
+    /// `advanced/settler_pump_leans_on_production.rs`. Off by default.
+    settler_pump_leans_on_production: bool,
     /// `settler-walk-clock-runs-all-game`: the Settler walk clock that
     /// `settler-walk-deadline` and `stalled-settler-takes-a-safe-site` read
     /// ticks on every turn the Settler is stepped (retreats, flights and
@@ -12579,6 +12585,9 @@ mod settler_admission_journal;
 mod settler_brake_counts_the_wanderer;
 mod settler_departure;
 mod settler_path_clear;
+/// `settler-pump-leans-on-production`: see
+/// `advanced/settler_pump_leans_on_production.rs`.
+mod settler_pump_leans_on_production;
 /// `shooters-man-the-capital`: see `advanced/shooters_man_the_capital.rs`.
 mod shooters_man_the_capital;
 /// `siege-shortfall-claims-the-projects`: see

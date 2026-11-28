@@ -681,6 +681,13 @@ pub struct StateCity {
     /// Preferences set elsewhere are observed but never claimed as ours.
     #[serde(default)]
     pub food_focus_managed: Option<bool>,
+    /// The same pair for a Production preference
+    /// (`settler-pump-leans-on-production`). `None` from a mod that takes no
+    /// Production focus, which is every mod before that half lands.
+    #[serde(default)]
+    pub production_favored: Option<bool>,
+    #[serde(default)]
+    pub production_focus_managed: Option<bool>,
     /// Where each yield comes from, in the host's own words: the text behind the
     /// city panel's per-yield tooltip (`City:GetYieldToolTip`), icon markup
     /// stripped, one entry per yield name. Diagnostic — nothing in the
