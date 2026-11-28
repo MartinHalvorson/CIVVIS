@@ -6310,20 +6310,6 @@ fn decide(
     if friendship_spared > 0 {
         note_bits.push(format!("friendship_ask_spared={friendship_spared}"));
     }
-    // `asks-go-once-a-turn`: an ask an earlier frame of this host turn sent is
-    // not sent again; after every other filter, so the memory holds only what
-    // really went. Nothing is read or kept with the gene off. See
-    // `asks_once_a_turn`.
-    if ai.asks_go_once_a_turn_enabled() {
-        let repeated = host_move_refusals.asks.keep_once(&mut orders, state.turn);
-        if !repeated.is_empty() {
-            note_bits.push(format!(
-                "asks_sent_this_turn={} [{}]",
-                repeated.len(),
-                repeated.join("; ")
-            ));
-        }
-    }
     if !refused_before.is_empty() {
         note_bits.push(format!(
             "withheld_refused={} [{}]",
@@ -6689,6 +6675,21 @@ fn decide(
         let rolled_back = ai.note_host_moves(&mirror_state.game, own_column_before, &sent, &unsent);
         if rolled_back > 0 {
             note_bits.push(format!("own_column_rolled_back={rolled_back}"));
+        }
+    }
+    // `asks-go-once-a-turn`: an ask an earlier frame of this host turn sent is
+    // not sent again. Last of all, once every writer has appended (the Great
+    // Work purchase and the leases come after the refused-order filter), so
+    // the memory holds exactly what the reply carries. Nothing is read or kept
+    // with the gene off. See `asks_once_a_turn`.
+    if ai.asks_go_once_a_turn_enabled() {
+        let repeated = host_move_refusals.asks.keep_once(&mut orders, state.turn);
+        if !repeated.is_empty() {
+            note_bits.push(format!(
+                "asks_sent_this_turn={} [{}]",
+                repeated.len(),
+                repeated.join("; ")
+            ));
         }
     }
     let body = orders
