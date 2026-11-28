@@ -154,7 +154,7 @@ pub(super) fn settler_pump_choices(state: &mirror::StateSnapshot) -> Vec<Choice>
         let settler = city.producing.as_deref() == Some("UNIT_SETTLER");
         let verb = if city.production_focus_managed == Some(true) {
             let starving = city.food_surplus.is_finite() && city.food_surplus < 0.0;
-            (!settler).then_some("RELEASE_PRODUCTION")
+            (!settler || starving).then_some("RELEASE_PRODUCTION")
         } else {
             (settler
                 && city.food_surplus.is_finite()
