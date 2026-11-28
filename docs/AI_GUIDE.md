@@ -257,7 +257,7 @@ read as a null.
 
 ```bash
 cargo run --features developer-tools --profile ci --bin victory_eval -- \
-  --denial-pair science:religion --games 1 --start-seed 940000 \
+  --denial-pair science:religion --games 1 --start-seed 940003 \
   --players 2 --width 24 --height 16 --turns 200 --speed online
 ```
 
