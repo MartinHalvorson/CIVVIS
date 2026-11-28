@@ -1726,6 +1726,8 @@ class Page(unittest.TestCase):
         self.assertIn(
             '<nav class="site-nav" aria-label="CIVVIS sites">\n'
             '      <a class="site-link" href="../../home/">Home</a>\n'
+            '      <a class="site-link" href="../../tournaments/" '
+            'title="Series of verification games against Civilization VI&#8217;s own AI: running, scheduled and finished.">Tournaments</a>\n'
             '      <div class="site-folder">\n'
             '        <a class="site-link" href="../ai-insights/" '
             'title="What the games show: charts read off the CIVVIS AI agents&#8217; games.">Charts/</a>\n'
@@ -1745,7 +1747,7 @@ class Page(unittest.TestCase):
             'title="Charts the AI agents added on their own, kept here until they are asked for or talked over.">Unreviewed Gen AI Charts</a>\n'
             '        </div>\n'
             '      </div>\n'
-            '      <a class="site-link" href="../../tournaments/" ',
+            '      <a class="site-link" href="../../doctor-strange" ',
             PAGE,
         )
         nav = PAGE[PAGE.index('<nav class="site-nav"'):PAGE.index("</nav>")]
@@ -1786,13 +1788,15 @@ class Page(unittest.TestCase):
             self.assertNotIn(">Musings</a>", page)
             self.assertNotIn(">Charts</a>", page)
         for page, pattern in (
-            (LANDING, r'aria-current="page">Home</a>\s*<div class="site-folder">\s*<a class="site-link" href="\.\./charts/ai-insights/"[^>]*>Charts/</a>'
-                      r'[\s\S]*?</div>\s*</div>\s*<a class="site-link" href="\.\./tournaments/"'),
-            (TOURNAMENTS, r'href="\.\./home/">Home</a>\s*<div class="site-folder">\s*<a class="site-link" href="\.\./charts/ai-insights/"[^>]*>Charts/</a>'
-                          r'[\s\S]*?</div>\s*</div>\s*<a class="site-link" href="\./" aria-current="page">Tournaments</a>'),
+            # Charts/ third, after Tournaments, since 2026-11-28 (operator:
+            # "move tournaments above charts in the ordering").
+            (LANDING, r'aria-current="page">Home</a>\s*<a class="site-link" href="\.\./tournaments/"[^>]*>Tournaments</a>'
+                      r'\s*<div class="site-folder">\s*<a class="site-link" href="\.\./charts/ai-insights/"[^>]*>Charts/</a>'),
+            (TOURNAMENTS, r'href="\.\./home/">Home</a>\s*<a class="site-link" href="\./" aria-current="page">Tournaments</a>'
+                          r'\s*<div class="site-folder">\s*<a class="site-link" href="\.\./charts/ai-insights/"[^>]*>Charts/</a>'),
             (VIEWER, r'id="homelink" href="/home" target="_top">Home</a>\s*'
-                     r'<a class="home-link" id="chartslink" href="/charts/ai-insights" target="_top">Charts/</a>\s*'
-                     r'<a class="home-link" id="tourlink" href="/tournaments" target="_top">Tournaments</a>'),
+                     r'<a class="home-link" id="tourlink" href="/tournaments" target="_top">Tournaments</a>\s*'
+                     r'<a class="home-link" id="chartslink" href="/charts/ai-insights" target="_top">Charts/</a>'),
         ):
             self.assertRegex(page, pattern)
 

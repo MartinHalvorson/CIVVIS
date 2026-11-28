@@ -555,28 +555,32 @@ class TournamentsPage(unittest.TestCase):
         # title), and Charts/ drops its pages down.
         self.assertRegex(PAGE, r'<header class=\"shell site-header\">\s*<!--[\s\S]*?-->\s*<nav class=\"site-nav\"[^>]*>[\s\S]*?</nav>\s*<script data-site-folder>[\s\S]*?</script>\s*<div class=\"site-brand\">\s*<div class=\"site-lockup\">')
         self.assertRegex(LANDING, r'<header class=\"shell site-header\">\s*<!--[\s\S]*?-->\s*<nav class=\"site-nav\"[^>]*>[\s\S]*?</nav>\s*<script data-site-folder>[\s\S]*?</script>\s*<div class=\"site-brand\">\s*<div class=\"site-lockup\">')
+        # Tournaments stands second, before Charts/, and CIVVIS just above AI
+        # Debugger (operator 2026-11-28: "move tournaments above charts in
+        # the ordering", "move civvis above the civvis ai debugger in the
+        # ordering").
+        self.assertIn(
+            '<nav class="site-nav" aria-label="CIVVIS sites">\n'
+            '      <a class="site-link" href="../home/">Home</a>\n'
+            '      <a class="site-link" href="./" aria-current="page">Tournaments</a>\n'
+            '      <div class="site-folder">\n'
+            '        <a class="site-link" href="../charts/ai-insights/" '
+            'title="What the games show: charts read off the CIVVIS AI agents&#8217; games.">Charts/</a>\n'
+            '        <div class="site-menu">\n',
+            PAGE,
+        )
         self.assertIn(
             '      </div>\n'
-            '      <a class="site-link" href="./" aria-current="page">Tournaments</a>\n'
-            '      <a class="site-link" href="../" title="Every civilization is played by a CIVVIS AI agent.">CIVVIS</a>\n'
             '      <a class="site-link" href="../doctor-strange" '
             'title="One world, two timelines: the same game played two ways, side by side, on a timeline that branches.">Doctor Strange\'s CIVVIS</a>\n'
             '      <a class="site-link" href="../edge-of-tomorrow" '
             'title="You play one civilization, with a jump back: the world returns to the turn you woke on, as it stood.">CIVVIS: Edge of Tomorrow</a>\n'
+            '      <a class="site-link" href="../" title="Every civilization is played by a CIVVIS AI agent.">CIVVIS</a>\n'
             '      <a class="site-link" href="../debugger" '
             'title="You play one civilization. CIVVIS AI agents play the rest.">CIVVIS AI Debugger</a>\n'
             '      <a class="site-link" href="https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/" '
             'target="_blank" rel="noopener" title="Buy Civilization VI on Steam">Civ 6</a>\n'
             "    </nav>",
-            PAGE,
-        )
-        self.assertIn(
-            '<nav class="site-nav" aria-label="CIVVIS sites">\n'
-            '      <a class="site-link" href="../home/">Home</a>\n'
-            '      <div class="site-folder">\n'
-            '        <a class="site-link" href="../charts/ai-insights/" '
-            'title="What the games show: charts read off the CIVVIS AI agents&#8217; games.">Charts/</a>\n'
-            '        <div class="site-menu">\n',
             PAGE,
         )
         self.assertIn('  .site-link[aria-current="page"],\n  .site-folder:has([aria-current="page"]) > .site-link { box-shadow: inset 0 0 0 2px #fff; }\n', PAGE)
@@ -593,17 +597,22 @@ class TournamentsPage(unittest.TestCase):
             self.assertNotIn("Strat Debugger", page)
         for page in (PAGE, LANDING):
             self.assertNotIn("min-content", page)
-        # The home page and the viewer name it third, after Charts (which
-        # joined between Home and this page the same day as Research; its
-        # own test is `research_page_test.py`), each in its own markup.
+        # The home page and the viewer name it second, before Charts/ (since
+        # 2026-11-28; Charts joined between Home and this page on 2026-11-21
+        # as Research, its own test is `research_page_test.py`), each in its
+        # own markup, and CIVVIS just above AI Debugger.
         for page, pattern in (
-            (LANDING, r'aria-current="page">Home</a>\s*<div class="site-folder">\s*<a class="site-link" href="\.\./charts/ai-insights/"[^>]*>Charts/</a>'
-                      r'[\s\S]*?</div>\s*</div>\s*<a class="site-link" href="\.\./tournaments/"[^>]*>Tournaments</a>'
-                      r'\s*<a class="site-link" href="\.\./"[^>]*>CIVVIS</a>'),
+            (LANDING, r'aria-current="page">Home</a>\s*<a class="site-link" href="\.\./tournaments/"[^>]*>Tournaments</a>'
+                      r'\s*<div class="site-folder">\s*<a class="site-link" href="\.\./charts/ai-insights/"[^>]*>Charts/</a>'
+                      r'[\s\S]*?>CIVVIS: Edge of Tomorrow</a>\s*<a class="site-link" href="\.\./"[^>]*>CIVVIS</a>'
+                      r'\s*<a class="site-link" href="\.\./debugger"'),
             (VIEWER, r'id="homelink" href="/home" target="_top">Home</a>\s*'
-                     r'<a class="home-link" id="chartslink" href="/charts/ai-insights" target="_top">Charts/</a>\s*'
                      r'<a class="home-link" id="tourlink" href="/tournaments" target="_top">Tournaments</a>\s*'
-                     r'<a class="home-link" id="watchlink" href="\./" target="_top">CIVVIS</a>'),
+                     r'<a class="home-link" id="chartslink" href="/charts/ai-insights" target="_top">Charts/</a>\s*'
+                     r'<a class="home-link" id="strangelink" href="doctor-strange" target="_top">[^<]*</a>\s*'
+                     r'<a class="home-link" id="tomorrowlink" href="edge-of-tomorrow" target="_top">[^<]*</a>\s*'
+                     r'<a class="home-link" id="watchlink" href="\./" target="_top">CIVVIS</a>\s*'
+                     r'<a class="home-link" id="playlink" href="debugger"'),
         ):
             self.assertRegex(page, pattern)
         for page in (PAGE, LANDING, VIEWER):
