@@ -6294,6 +6294,11 @@ pub const GENES: &[Gene] = &[
     // session it cannot answer. Opt-in, hotseat only (it reads the `deals`
     // board); see `advanced/own_price_proposes_the_deal.rs`.
     Gene { tag: "own-price-proposes-the-deal", field: "own_price_proposes_the_deal", kind: Kind::OptIn, enable: AdvancedAi::enable_own_price_proposes_the_deal, disable: AdvancedAi::disable_own_price_proposes_the_deal },
+    // `lane-once-taken-holds`: an assigned lane that has once followed its
+    // lane does not return to Expansion when the city target rises or a site
+    // opens; the Settlers read the same target. Opt-in; see
+    // `advanced/lane_once_taken_holds.rs`.
+    Gene { tag: "lane-once-taken-holds", field: "lane_once_taken_holds", kind: Kind::OptIn, enable: AdvancedAi::enable_lane_once_taken_holds, disable: AdvancedAi::disable_lane_once_taken_holds },
     // ---- append: p-r ------------------------------------------------
     // `racer-seat-statue-civic-first`: Civil Engineering first for a Science,
     // Culture or Religious seat that reaches for the Statue of Liberty, as
