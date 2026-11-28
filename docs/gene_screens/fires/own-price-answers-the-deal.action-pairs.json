@@ -1,0 +1,13 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "own-price-answers-the-deal",
+  "scope": "Recorded proposal activation on captured input only, not host execution or strength. Two real boards of the owner's hotseat game hotseat-20261128T045523Z (seat p3 Canada, science; seat p1 Ottoman, religious), each the seat's events.jsonl cut at the turn-32 frame-0 state record, with one thing added by hand: a `deals` key in the deals v1 shape (#6045, #6050), because no recorded game carries a deal board yet (inputs/<seat>.deals.json in the archive has it). Both arms run one frozen civvis_orders --resumed built by the hotseat-bundle workflow from 8a46f5e7 (this branch); the on arm adds --with own-price-answers-the-deal. Off: no deal order. On: Canada counters the person's 20 Gold for its only Furs with 2 Gold a turn added and the Ottoman seat's 10-Horses ask with 1 Gold a turn; the Ottoman seat accepts the person's Silver for 2 Gold a turn and 20 Gold (journal own_price_deal=0:ACCEPT:net=78). Every other order is the same in both arms.",
+  "archive": {
+    "path": "docs/eval/2026-11-28-own-price-answers-the-deal.native-queries.tar.xz",
+    "sha256": "afa8a477ac29961ae7243c30b94b728a3b95c9b41c5c188fb4f917f74f967c4d"
+  },
+  "members": [
+    "native-queries/0000/result.json",
+    "native-queries/0001/result.json"
+  ]
+}
