@@ -957,8 +957,11 @@ mod tests {
             turns: 200,
             pair,
         };
-        let treatment = run_denial_trial(run, 940_000, true);
-        let control = run_denial_trial(run, 940_000, false);
+        // Seed 940_003: 940_000 stopped reaching the branch when the f198 batch (2026-11-28)
+        // turned on idle-faith-patronage and pantheon-board, so the Religion rival won at t56
+        // before the defender was ever targeted. 940_003 lasts to t82 with 10 selections.
+        let treatment = run_denial_trial(run, 940_003, true);
+        let control = run_denial_trial(run, 940_003, false);
         assert!(
             treatment.selections > 0,
             "the documented smoke must reach the enabled denial branch: {treatment:?}"
