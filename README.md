@@ -14,7 +14,7 @@ Or try the AI Debugger to walk forward and backwards through time to study the A
 
 ## Play against CIVVIS in your own Civ 6
 
-Works today on a Mac with Apple silicon and the Steam version of Civ 6 with Gathering Storm. Windows isn't tested with the game yet. You need Apple's Command Line Tools (`xcode-select --install`, for git and Python 3) and [Rust](https://rustup.rs).
+Runs on a Mac with Apple silicon and the Steam version of Civ 6 with Gathering Storm. Windows isn't tested with the game yet. It's brand new, so expect rough edges. You need Apple's Command Line Tools (`xcode-select --install`, for git and Python 3) and [Rust](https://rustup.rs).
 
 1. In Terminal:
 
