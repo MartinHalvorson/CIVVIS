@@ -1,0 +1,116 @@
+{
+  "diplomatic": true,
+  "ladder": {},
+  "map": "continents",
+  "players": 6,
+  "prince_elo": 1000.0,
+  "protocol": 1,
+  "ratings": {
+    "civ6:prince": {
+      "bound": "",
+      "elo": 1000.0,
+      "games": 287,
+      "margin95": 0.0,
+      "sd": 0.0,
+      "wins": 27
+    },
+    "forward": {
+      "bound": "",
+      "elo": 1249.5,
+      "games": 302,
+      "margin95": 78.0,
+      "sd": 39.9,
+      "wins": 104
+    },
+    "holy": {
+      "bound": "",
+      "elo": 792.0,
+      "games": 287,
+      "margin95": 135.0,
+      "sd": 69.0,
+      "wins": 8
+    },
+    "jack": {
+      "bound": "",
+      "elo": 1236.5,
+      "games": 288,
+      "margin95": 82.0,
+      "sd": 42.0,
+      "wins": 91
+    },
+    "moonshot": {
+      "bound": "",
+      "elo": 849.7,
+      "games": 288,
+      "margin95": 121.0,
+      "sd": 61.6,
+      "wins": 11
+    },
+    "oldguard": {
+      "bound": "",
+      "elo": 946.9,
+      "games": 274,
+      "margin95": 99.0,
+      "sd": 50.5,
+      "wins": 19
+    },
+    "siege": {
+      "bound": "upper",
+      "elo": 406.5,
+      "games": 295,
+      "margin95": 69.0,
+      "sd": 35.3,
+      "wins": 0
+    },
+    "stock": {
+      "bound": "",
+      "elo": 1000.0,
+      "games": 287,
+      "margin95": 0.0,
+      "sd": 0.0,
+      "wins": 27
+    },
+    "swing": {
+      "bound": "",
+      "elo": 1351.4,
+      "games": 285,
+      "margin95": 81.0,
+      "sd": 41.6,
+      "wins": 146
+    },
+    "tourist": {
+      "bound": "",
+      "elo": 814.4,
+      "games": 288,
+      "margin95": 124.0,
+      "sd": 63.4,
+      "wins": 9
+    },
+    "wheels": {
+      "bound": "",
+      "elo": 1167.0,
+      "games": 286,
+      "margin95": 85.0,
+      "sd": 43.4,
+      "wins": 65
+    }
+  },
+  "reference": "stock",
+  "runs": [
+    {
+      "run": "2026-11-27-setups-seed",
+      "tables": 480
+    }
+  ],
+  "setup": "continents6-diplomacy",
+  "speed": "online",
+  "tables": 480,
+  "turns": 250,
+  "victories": {
+    "diplomatic": 429,
+    "score-at-cap": 51
+  },
+  "victory_conditions": [
+    "diplomatic"
+  ]
+}

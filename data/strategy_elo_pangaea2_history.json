@@ -1,0 +1,6 @@
+{
+ "_doc": "Every published strategy Elo fit, oldest first (tools/strategy_elo_history.py). A point: `at`, when it was published (the commit's time, UTC); `tables` and `runs`, what it was fitted on; `ratings`, each entrant as [elo, margin95, bound] (bound '' when the fit places it from both sides); `ladder`, the rungs as a person is shown them. Drawn over time by Charts/ELO Rankings (beta/elo_page.py).",
+ "points": [
+  {"at":"2026-11-28T12:00:42Z","tables":480,"runs":["2026-11-27-setups-seed"],"ratings":{"civ6:prince":[1000.0,0,""],"forward":[1094.8,97,""],"holy":[1301.0,128,""],"jack":[1076.9,110,""],"moonshot":[668.0,108,""],"oldguard":[682.9,117,""],"siege":[1024.0,106,""],"stock":[1000.0,0,""],"swing":[929.7,100,""],"tourist":[1024.8,127,""],"wheels":[653.9,105,""]},"ladder":{}}
+ ]
+}

@@ -1,0 +1,116 @@
+{
+  "diplomatic": false,
+  "ladder": {},
+  "map": "continents",
+  "players": 6,
+  "prince_elo": 1000.0,
+  "protocol": 1,
+  "ratings": {
+    "civ6:prince": {
+      "bound": "upper",
+      "elo": 1000.0,
+      "games": 287,
+      "margin95": 0.0,
+      "sd": 0.0,
+      "wins": 0
+    },
+    "forward": {
+      "bound": "",
+      "elo": 1750.4,
+      "games": 302,
+      "margin95": 38.0,
+      "sd": 19.6,
+      "wins": 68
+    },
+    "holy": {
+      "bound": "",
+      "elo": 1741.0,
+      "games": 287,
+      "margin95": 46.0,
+      "sd": 23.6,
+      "wins": 62
+    },
+    "jack": {
+      "bound": "",
+      "elo": 1727.9,
+      "games": 288,
+      "margin95": 43.0,
+      "sd": 22.0,
+      "wins": 57
+    },
+    "moonshot": {
+      "bound": "",
+      "elo": 1746.7,
+      "games": 288,
+      "margin95": 47.0,
+      "sd": 24.0,
+      "wins": 63
+    },
+    "oldguard": {
+      "bound": "upper",
+      "elo": 1007.7,
+      "games": 274,
+      "margin95": 17.0,
+      "sd": 8.8,
+      "wins": 0
+    },
+    "siege": {
+      "bound": "",
+      "elo": 1823.9,
+      "games": 295,
+      "margin95": 39.0,
+      "sd": 20.0,
+      "wins": 95
+    },
+    "stock": {
+      "bound": "upper",
+      "elo": 1000.0,
+      "games": 287,
+      "margin95": 0.0,
+      "sd": 0.0,
+      "wins": 0
+    },
+    "swing": {
+      "bound": "",
+      "elo": 1749.0,
+      "games": 285,
+      "margin95": 43.0,
+      "sd": 22.0,
+      "wins": 64
+    },
+    "tourist": {
+      "bound": "",
+      "elo": 1771.0,
+      "games": 288,
+      "margin95": 44.0,
+      "sd": 22.5,
+      "wins": 71
+    },
+    "wheels": {
+      "bound": "upper",
+      "elo": 1001.4,
+      "games": 286,
+      "margin95": 16.0,
+      "sd": 8.1,
+      "wins": 0
+    }
+  },
+  "reference": "stock",
+  "runs": [
+    {
+      "run": "2026-11-27-setups-seed",
+      "tables": 480
+    }
+  ],
+  "setup": "continents6-domination",
+  "speed": "online",
+  "tables": 480,
+  "turns": 250,
+  "victories": {
+    "domination": 2,
+    "score-at-cap": 478
+  },
+  "victory_conditions": [
+    "domination"
+  ]
+}
