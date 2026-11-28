@@ -2760,6 +2760,21 @@ def stopped_news(log_path: Path, offset: int) -> list[str]:
     return [line for line in text.splitlines() if any(news in line for news in STOP_NEWS)]
 
 
+def installed_game_config() -> dict:
+    """The control mod's installed config, or {} where there is none to read:
+    no mod installed, or no Civilization VI found at all (`civ6_env.install_dir`
+    exits then). `--status` and `--stop --resign` answer on a computer with no
+    Civ VI where they expect one: the bundle's own check runs them on a bare
+    runner, and a player's game can sit where no search looks. From #6015 to
+    2026-11-28 both exited 1 there with "Civilization VI install not found"
+    (`hotseat-bundle` runs 46110252483 and 46111136386, which then uploaded no
+    bundle)."""
+    try:
+        return modinstall.installed_config() or {}
+    except SystemExit:
+        return {}
+
+
 def resign_unattended(current: dict | None, say=print) -> int:
     """`--stop --resign` with no harness running: the game's record is put
     on the people's record from the run's own summary, which every harness
@@ -2767,7 +2782,7 @@ def resign_unattended(current: dict | None, say=print) -> int:
     this printed "no hotseat harness is running" and the resignation was lost."""
     run_dir = Path(current["run_dir"]) if current and current.get("run_dir") else None
     if run_dir is None:
-        installed = modinstall.installed_config() or {}
+        installed = installed_game_config()
         if installed.get("Hotseat") and installed.get("RunTag"):
             run_dir = RUN_ROOT / installed["RunTag"]
     if run_dir is None:
@@ -2863,8 +2878,9 @@ def status_command() -> int:
     current = read_current()
     civ = bool(env.game_pids())
     if not current:
-        installed = modinstall.installed_config() or {}
-        if civ and installed.get("Hotseat") and installed.get("RunTag"):
+        # Only a running game makes an installed one worth naming.
+        installed = installed_game_config() if civ else {}
+        if installed.get("Hotseat") and installed.get("RunTag"):
             print(f"no harness is running, but Civ VI is up with the hotseat game "
                   f"{installed['RunTag']} installed: CIVVIS's seats are not being played. "
                   + ("Run the same `--manual-lobby` command again to pick it up."
