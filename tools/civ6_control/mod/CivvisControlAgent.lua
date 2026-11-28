@@ -14076,11 +14076,11 @@ end;
 -- calculation knows what we are doing", then clipped to `GetMaxAmount`
 -- (DiplomacyDealView.lua:870-879 `OnClickAvailableOneTimeGold`, :935-944
 -- multi-turn); a resource by its index, amount and duration, then
--- `IsValid` (:1328-1338 `OnClickAvailableResource`); Open Borders by subtype
--- and the duration the possible-items entry carries (:1374-1377,
+-- `IsValid` (:1336-1342 `OnClickAvailableResource`); Open Borders by subtype
+-- and the duration the possible-items entry carries (:1377-1378,
 -- `PopulateAvailableAgreements` reads `entry.Duration`); a Great Work by its
 -- possible-items entry, SubType = `ForTypeDescriptionID`, ValueType =
--- instance (:1553-1556 `OnClickAvailableGreatWork`). Returns nil or the
+-- instance (:1554-1555 `OnClickAvailableGreatWork`). Returns nil or the
 -- refusal.
 CivvisTrade.seatAdd = function(deal, from, to, spec)
 	local name = spec.name;
