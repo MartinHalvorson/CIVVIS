@@ -204,6 +204,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `walls-for-the-war-front` | off (unmeasured) | Opt-in gene `walls-for-the-war-front`; see `advanced/walls_for_the_war_front.rs`. | 1 \| 1 |
 | `war-threat-holds-recovery` | off (unmeasured) | Opt-in gene `war-threat-holds-recovery`; see `advanced/war_threat_holds_recovery.rs`. | 1 \| 1 |
 | `watched-capital-trains-its-defender` | off (unmeasured) | Opt-in gene `watched-capital-trains-its-defender`; see `advanced/watched_capital_trains_its_defender.rs`. | 1 \| 1 |
+| `wounded-spreader-spends-far-from-home` | off (unmeasured) | Opt-in gene `wounded-spreader-spends-far-from-home`; see `advanced/apostle_army.rs`. | 1 \| 1 |
 
 ## Removed from the code
 
