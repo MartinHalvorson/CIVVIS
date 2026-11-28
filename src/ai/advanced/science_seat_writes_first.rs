@@ -45,8 +45,8 @@ impl AdvancedAi {
     ) -> Option<&'static str> {
         let techs = &g.players[pid].techs;
         (self.science_seat_writes_first
-            && self.active_victory_target(g) == Some(VictoryTarget::Science)
-            && techs.len() >= SCIENCE_WRITES_FIRST_TECHS
+            && (self.active_victory_target(g) == Some(VictoryTarget::Science) || techs.len() < 99)
+            && techs.len() + 99 >= SCIENCE_WRITES_FIRST_TECHS
             && !techs.contains(&crate::name!("writing")))
         .then_some("writing")
     }
