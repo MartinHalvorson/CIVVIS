@@ -781,6 +781,10 @@ impl AdvancedAi {
         /// Opt-in gene `war-threat-holds-recovery`; see
         /// `advanced/war_threat_holds_recovery.rs`.
         war_threat_holds_recovery => enable_war_threat_holds_recovery, disable_war_threat_holds_recovery;
+        /// Opt-in gene `taken-settler-is-retaken`: a hostile standing on a
+        /// civilian it took from us is struck for the civilian; see
+        /// `advanced/taken_settler_is_retaken.rs`.
+        taken_settler_is_retaken => enable_taken_settler_is_retaken, disable_taken_settler_is_retaken;
     }
 
     toggles! {
