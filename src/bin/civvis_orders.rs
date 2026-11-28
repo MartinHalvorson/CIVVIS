@@ -65,6 +65,9 @@ mod walk_steps;
 mod air_assault;
 #[path = "civvis_orders/air_assault_continuation.rs"]
 mod air_assault_continuation;
+/// `asks-go-once-a-turn`: a diplomatic ask, deal or Trader route once a turn.
+#[path = "civvis_orders/asks_once_a_turn.rs"]
+mod asks_once_a_turn;
 #[path = "civvis_orders/campus_above_sea.rs"]
 mod campus_above_sea;
 #[path = "civvis_orders/citizen_growth.rs"]
@@ -6306,6 +6309,20 @@ fn decide(
         });
     if friendship_spared > 0 {
         note_bits.push(format!("friendship_ask_spared={friendship_spared}"));
+    }
+    // `asks-go-once-a-turn`: an ask an earlier frame of this host turn sent is
+    // not sent again; after every other filter, so the memory holds only what
+    // really went. Nothing is read or kept with the gene off. See
+    // `asks_once_a_turn`.
+    if ai.asks_go_once_a_turn_enabled() {
+        let repeated = host_move_refusals.asks.keep_once(&mut orders, state.turn);
+        if !repeated.is_empty() {
+            note_bits.push(format!(
+                "asks_sent_this_turn={} [{}]",
+                repeated.len(),
+                repeated.join("; ")
+            ));
+        }
     }
     if !refused_before.is_empty() {
         note_bits.push(format!(
