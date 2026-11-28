@@ -542,19 +542,16 @@ const EMBEDDED_APP_SETUP_JS: &str = include_str!("../web/assets/app_setup.js");
 const EMBEDDED_APP_FRONTDOOR_JS: &str = include_str!("../web/assets/app_frontdoor.js");
 const EMBEDDED_APP_MOMENTS_JS: &str = include_str!("../web/assets/app_moments.js");
 const EMBEDDED_APP_DEBUGGER_JS: &str = include_str!("../web/assets/app_debugger.js");
+const EMBEDDED_FEATURE_ATLAS: &[u8] = include_bytes!("../web/assets/feature-atlas.png");
+const EMBEDDED_ENVIRONMENT_FEATURE_ATLAS: &[u8] =
+    include_bytes!("../web/assets/environment-feature-atlas.png");
 const EMBEDDED_HIDDEN_MAP_MONSTERS: &[u8] = include_bytes!("../web/assets/hidden-map-monsters.png");
-// The map's sprite sheets are CIVVIS's own (`tools/own_art.py`,
-// `web/assets/ART_CREDITS.md`); nothing compiled in or published is cut from
-// a game.
-const EMBEDDED_UNIT_GLYPHS: &[u8] = include_bytes!("../web/assets/unit-glyphs.png");
-const EMBEDDED_YIELD_ICONS: &[u8] = include_bytes!("../web/assets/yield-icons.png");
-const EMBEDDED_UNIT_PLATES: &[u8] = include_bytes!("../web/assets/unit-plates.png");
-const EMBEDDED_CITY_WALL_MARK: &[u8] = include_bytes!("../web/assets/city-wall-mark.png");
-/// Where the `tools/civ6_*` cutters write Civilization VI's own art, for
-/// somebody who owns the game. Git ignores it and no build publishes it; when a
-/// sheet of the same name is there, this local server draws it instead of
-/// CIVVIS's own (docs/CIV6_ART.md).
-const LOCAL_CIV6_ART: &str = "local/civ6-art";
+const EMBEDDED_CIV6_UNIT_FLAGS: &[u8] = include_bytes!("../web/assets/civ6-unit-flags.png");
+const EMBEDDED_CIV6_YIELD_ICONS: &[u8] = include_bytes!("../web/assets/civ6-yield-icons.png");
+const EMBEDDED_CIV6_UNIT_FLAG_PLATES: &[u8] =
+    include_bytes!("../web/assets/civ6-unit-flag-plates.png");
+const EMBEDDED_CIV6_CITY_BANNER_SHIELDS: &[u8] =
+    include_bytes!("../web/assets/civ6-city-banner-shields.png");
 
 #[derive(Clone)]
 pub struct Params {
@@ -3694,17 +3691,39 @@ fn app_setup_js() -> Vec<u8> {
     EMBEDDED_APP_SETUP_JS.as_bytes().to_vec()
 }
 
+fn feature_atlas() -> Vec<u8> {
+    std::fs::read("web/assets/feature-atlas.png")
+        .unwrap_or_else(|_| EMBEDDED_FEATURE_ATLAS.to_vec())
+}
+
+fn environment_feature_atlas() -> Vec<u8> {
+    std::fs::read("web/assets/environment-feature-atlas.png")
+        .unwrap_or_else(|_| EMBEDDED_ENVIRONMENT_FEATURE_ATLAS.to_vec())
+}
+
 fn hidden_map_monsters() -> Vec<u8> {
     std::fs::read("web/assets/hidden-map-monsters.png")
         .unwrap_or_else(|_| EMBEDDED_HIDDEN_MAP_MONSTERS.to_vec())
 }
 
-/// One of the map's sprite sheets: the owner's local cut of the game's own art
-/// when there is one, else the copy on disk, else the one compiled in.
-fn map_sheet(name: &str, embedded: &'static [u8]) -> Vec<u8> {
-    std::fs::read(format!("{LOCAL_CIV6_ART}/{name}"))
-        .or_else(|_| std::fs::read(format!("web/assets/{name}")))
-        .unwrap_or_else(|_| embedded.to_vec())
+fn civ6_unit_flags() -> Vec<u8> {
+    std::fs::read("web/assets/civ6-unit-flags.png")
+        .unwrap_or_else(|_| EMBEDDED_CIV6_UNIT_FLAGS.to_vec())
+}
+
+fn civ6_yield_icons() -> Vec<u8> {
+    std::fs::read("web/assets/civ6-yield-icons.png")
+        .unwrap_or_else(|_| EMBEDDED_CIV6_YIELD_ICONS.to_vec())
+}
+
+fn civ6_unit_flag_plates() -> Vec<u8> {
+    std::fs::read("web/assets/civ6-unit-flag-plates.png")
+        .unwrap_or_else(|_| EMBEDDED_CIV6_UNIT_FLAG_PLATES.to_vec())
+}
+
+fn civ6_city_banner_shields() -> Vec<u8> {
+    std::fs::read("web/assets/civ6-city-banner-shields.png")
+        .unwrap_or_else(|_| EMBEDDED_CIV6_CITY_BANNER_SHIELDS.to_vec())
 }
 
 /// Where a single-player game keeps its own saves, relative to the process's
@@ -3942,6 +3961,7 @@ fn viewer_path(path: &str) -> bool {
             | "/debugger"
             | "/doctor-strange"
             | "/edge-of-tomorrow"
+            | "/moneyball"
     )
 }
 
@@ -5175,24 +5195,26 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                 &app_frontdoor_js(),
             );
         }
+        ("GET", "/assets/feature-atlas.png") => {
+            respond(stream, "200 OK", "image/png", &feature_atlas());
+        }
+        ("GET", "/assets/environment-feature-atlas.png") => {
+            respond(stream, "200 OK", "image/png", &environment_feature_atlas());
+        }
         ("GET", "/assets/hidden-map-monsters.png") => {
             respond(stream, "200 OK", "image/png", &hidden_map_monsters());
         }
-        ("GET", "/assets/unit-glyphs.png") => {
-            let sheet = map_sheet("unit-glyphs.png", EMBEDDED_UNIT_GLYPHS);
-            respond(stream, "200 OK", "image/png", &sheet);
+        ("GET", "/assets/civ6-unit-flags.png") => {
+            respond(stream, "200 OK", "image/png", &civ6_unit_flags());
         }
-        ("GET", "/assets/yield-icons.png") => {
-            let sheet = map_sheet("yield-icons.png", EMBEDDED_YIELD_ICONS);
-            respond(stream, "200 OK", "image/png", &sheet);
+        ("GET", "/assets/civ6-yield-icons.png") => {
+            respond(stream, "200 OK", "image/png", &civ6_yield_icons());
         }
-        ("GET", "/assets/unit-plates.png") => {
-            let sheet = map_sheet("unit-plates.png", EMBEDDED_UNIT_PLATES);
-            respond(stream, "200 OK", "image/png", &sheet);
+        ("GET", "/assets/civ6-unit-flag-plates.png") => {
+            respond(stream, "200 OK", "image/png", &civ6_unit_flag_plates());
         }
-        ("GET", "/assets/city-wall-mark.png") => {
-            let sheet = map_sheet("city-wall-mark.png", EMBEDDED_CITY_WALL_MARK);
-            respond(stream, "200 OK", "image/png", &sheet);
+        ("GET", "/assets/civ6-city-banner-shields.png") => {
+            respond(stream, "200 OK", "image/png", &civ6_city_banner_shields());
         }
         // A lock-free identity probe for supervised process handoffs. The
         // browser used to fetch the multi-megabyte `/state` document here and

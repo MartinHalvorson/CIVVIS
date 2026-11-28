@@ -272,6 +272,15 @@ impl Condition {
     }
 }
 
+/// The id of the last nuclear strike on a world's record, which changes on
+/// the turn a device goes off.
+fn last_strike(game: &Game) -> Option<u32> {
+    game.chronicle
+        .nuclear_strikes
+        .last()
+        .map(|strike| strike.id)
+}
+
 /// A reading as a number, when it is something that can be held to a line.
 pub(super) fn as_number(reading: &Value) -> Option<f64> {
     match reading {
@@ -352,6 +361,9 @@ pub struct Breakpoints {
     conditions: Vec<Condition>,
     /// Stop on the first turn of a new world era.
     eras: bool,
+    /// Stop on the turn a nuclear device goes off anywhere (operator
+    /// 2026-11-27: "a nuclear war breakpoint could have a dashed line too").
+    nuclear: bool,
 }
 
 impl Breakpoints {
@@ -443,7 +455,15 @@ impl Breakpoints {
             every_seat: request["every_seat"].as_bool().unwrap_or(false),
             conditions,
             eras: request["eras"].as_bool().unwrap_or(false),
+            nuclear: request["nuclear"].as_bool().unwrap_or(false),
         })
+    }
+
+    /// A nuclear device went off between two worlds of the line, when the
+    /// nuclear breakpoint is set.
+    fn detonated(&self, before: &Game, after: &Game) -> Option<Value> {
+        (self.nuclear && last_strike(after) != last_strike(before))
+            .then(|| json!({"kind": "nuclear", "turn": after.turn}))
     }
 
     /// The first condition a freshly played turn made true: one that holds
@@ -492,6 +512,7 @@ impl Breakpoints {
             "every_seat": self.every_seat,
             "conditions": self.conditions.iter().map(Condition::json).collect::<Vec<_>>(),
             "eras": self.eras,
+            "nuclear": self.nuclear,
             // The vocabulary a page offers, read from the engine's own lists.
             "known_categories": crate::game::EVENT_CATEGORIES,
             "known_tests": Test::ALL.map(Test::sign),
@@ -1216,6 +1237,14 @@ impl Timeline {
     /// oldest turns go first and the odd ones before the even, so a long
     /// game's early turns are kept one in two, then one in four, and so on to
     /// one in `COARSEST_STRIDE`. If that is still too many, the oldest go.
+    ///
+    /// The first turn of each world era stays too, as the first turn does,
+    /// for as long as the room holds them: Era Back and Era Next, and Doctor
+    /// Strange's Turn 1, Era back and Era forward, go there, and a turn kept
+    /// is a jump where one let go is turns played again (operator
+    /// 2026-11-27: "we should make sure to save these turns for fast
+    /// jumping"). They go only in a last pass, oldest first, when the room
+    /// is smaller than they are.
     fn thin(&mut self) {
         if let Some(in_use) = memory_in_use() {
             self.squeeze(in_use);
@@ -1227,21 +1256,38 @@ impl Timeline {
         while over > 0 {
             let old = self.marks.len().saturating_sub(dense);
             let last_pass = stride > COARSEST_STRIDE;
+            let eras_go = stride > 2 * COARSEST_STRIDE;
+            let dawns = Self::dawns(&self.marks);
             let mut index = 0;
             self.marks.retain(|mark| {
                 let kept_by_stride = !last_pass && mark.turn % stride == 0;
-                let goes = over > 0 && index > 0 && index < old && !kept_by_stride;
+                let kept_by_era = !eras_go && dawns[index];
+                let goes = over > 0 && index > 0 && index < old && !kept_by_stride && !kept_by_era;
                 index += 1;
                 if goes {
                     over -= 1;
                 }
                 !goes
             });
-            if last_pass {
+            if eras_go {
                 break;
             }
             stride *= 2;
         }
+    }
+
+    /// Which marks are the first kept turn of their world era: the first
+    /// mark, and each whose era is not the one before it's.
+    fn dawns(marks: &[Mark]) -> Vec<bool> {
+        let mut era = None;
+        marks
+            .iter()
+            .map(|mark| {
+                let dawn = era != Some(mark.game.world_era);
+                era = Some(mark.game.world_era);
+                dawn
+            })
+            .collect()
     }
 
     /// Keep a world under a name. A name already taken is given to this
@@ -1827,6 +1873,7 @@ impl Session {
                             || json!({"kind": "era", "turn": game.turn, "era": game.world_era}),
                         )
                     })
+                    .or_else(|| breakpoints.detonated(before, game))
                     .or_else(|| {
                         let after = readings(game, &breakpoints.conditions);
                         let hit = breakpoints.crossed(game.turn, &read, &after);
@@ -1948,6 +1995,7 @@ impl Session {
             .unwrap_or_else(|| readings(&self.game, &self.debugger.breakpoints.conditions));
         let mut read_after = None;
         let era_before = self.game.world_era;
+        let struck_before = last_strike(&self.game);
         // In the middle of a round the next whole thing to play is the rest
         // of it: the rivals finish, and the turn that opens is the person's.
         let played = if self.debug_mid_round() {
@@ -1974,6 +2022,12 @@ impl Session {
                     (self.debugger.breakpoints.eras && self.game.world_era != era_before).then(
                         || json!({"kind": "era", "turn": self.game.turn, "era": self.game.world_era}),
                     )
+                })
+                .or_else(|| {
+                    // A nuclear device went off in the turn played.
+                    (self.debugger.breakpoints.nuclear
+                        && last_strike(&self.game) != struck_before)
+                        .then(|| json!({"kind": "nuclear", "turn": self.game.turn}))
                 })
                 .or_else(|| {
                     let after = readings(&self.game, &self.debugger.breakpoints.conditions);

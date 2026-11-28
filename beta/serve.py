@@ -12,7 +12,7 @@ import urllib.parse
 # Operator 2026-11-26: "maybe change the url for this to be of the form:
 # civvis.ai/edge-of-tomorrow. the others can be civvis.ai/debugger and
 # civvis.ai/doctor-strange".
-SIMULATOR_PAGES = ("/debugger", "/doctor-strange", "/edge-of-tomorrow")
+SIMULATOR_PAGES = ("/debugger", "/doctor-strange", "/edge-of-tomorrow", "/moneyball")
 
 
 def channel_path(path):

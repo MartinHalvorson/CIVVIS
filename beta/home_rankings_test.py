@@ -27,8 +27,9 @@ ROOT = BETA.parent
 # Analytics (operator: "add that to a new page: Charts/ELO Rankings ... at
 # the top of this page is the player straetgies, pulled from win analytics,
 # add another page: Civ Analytics. First can be the civ records (pulled from
-# win analytics), then early build order"). The home page is six videos,
-# with the Firaxis Civ 6 AI benchmark copied over them from Win Analytics.
+# win analytics), then early build order"). The home page is its videos,
+# with the Firaxis Civ 6 AI benchmark copied over them from Win Analytics
+# and, over that since 2026-11-27, ELO Rankings (`home_elo_test.py`).
 CHARTS = (BETA / "research.html").read_text(encoding="utf-8")
 ELO = (BETA / "elo.html").read_text(encoding="utf-8")
 CIVS = (BETA / "civs.html").read_text(encoding="utf-8")
@@ -436,8 +437,11 @@ class HomeRankings(unittest.TestCase):
             f'href="https://github.com/MartinHalvorson/CIVVIS/blob/{civ6_ladder.LEDGER_BRANCH}/{civ6_ladder.RESULTS_PATH}"',
             CIVS,
         )
-        # And the home page has neither list left, nor their slot.
-        for gone in ("rankings-data", "rank-civs", "rank-strategies", "rank-list", 'id="rankings"'):
+        # And the home page has neither list left, nor their slot. Since
+        # 2026-11-27 it has ELO Rankings over its benchmark, drawn from ELO
+        # Rankings' own record (`home_elo_test.py`): a table of its own, not
+        # the list that moved.
+        for gone in ("rankings-data", "rank-civs", "rank-strategies", 'id="rankings"'):
             self.assertNotIn(gone, LANDING)
 
     def test_the_home_page_is_eight_videos_two_to_a_row(self):
@@ -466,9 +470,9 @@ class HomeRankings(unittest.TestCase):
         # right", "Make the video Titles above the video and bigger or more
         # readable", "have the home upper right video start at 6 seconds in".
         tiles = re.findall(
-            r'<figure class="watch-tile" id="(watch-[a-z]+)" data-video="([\w-]{11})"( data-start="\d+")?>\s*'
-            r"<figcaption><b>([^<]+(?:<span data-watch-time>[^<]+</span>)?)</b> (?:<span data-watch-title>([^<]+)</span> )?<a [^>]+>[^<]+</a></figcaption>\s*"
-            r'<a class="watch-poster" href="https://www\.youtube\.com/watch\?v=([\w-]{11})((?:&amp;t=\d+s)?)" target="_blank" rel="noreferrer">\s*'
+            r'<figure class="watch-tile" id="(watch-[a-z]+)" data-video="([\w-]{11})"( data-start="\d+")?(?: data-tool="[^"]+")?>\s*'
+            r"<figcaption><b>([^<]+(?:<span data-watch-time>[^<]+</span>)?)</b> (?:<span data-watch-title>([^<]+)</span> )?<a [^>]+>(?:<svg [^>]+><path [^>]+/></svg>)?[^<]+</a></figcaption>\s*"
+            r'<a class="watch-poster" href="([^"]+)"((?: target="_blank" rel="noreferrer")?)>\s*'
             r'<img alt="" width="1280" height="720" decoding="async" referrerpolicy="no-referrer" '
             r'src="https://i\.ytimg\.com/vi_webp/([\w-]{11})/hq720\.webp">',
             LANDING,
@@ -477,8 +481,13 @@ class HomeRankings(unittest.TestCase):
         # row: his spaces 1 to 8. A tile's title is the first thing in it,
         # over its video, which the pattern above reads in that order. A
         # title that says everything has no second line: the two victories
-        # are titled as he wrote them, and so are CIVVIS.ai, Edge of
-        # Tomorrow and Doctor Strange's CIVVIS. The
+        # are titled as he wrote them, and so is CIVVIS.ai. Edge of
+        # Tomorrow's and Doctor Strange's second lines say what they are for
+        # (operator 2026-11-27: "to home/ edge of tomorrow - add
+        # desecription: play and replay sequences throughout a Civ game with
+        # top CIVVIS AI strategies to discover and experiment with optimal
+        # play", and "to home/ doctor strange's civvis, change to: Enter
+        # Doctor Strange's fifth dimension ..."). The
         # culture win is still at the right (2026-11-22), of the second row.
         # Since 2026-11-25 the fastest game's title ends with its time
         # ("throw a time on fastest recorded civvis game home/.:: <6s") and
@@ -493,27 +502,58 @@ class HomeRankings(unittest.TestCase):
                 ("watch-culture", "6PCd4R08UPM", "Lv 8 Deity Win - Maya, Culture", ""),
                 ("watch-civvis", "U0iwoVTK5q8", "CIVVIS.ai", ""),
                 ("watch-debugger", "6W5t0hcR_N4", "CIVVIS AI Debugger", "Multiverse, Time Travel"),
-                ("watch-tomorrow", "kcDyO_tOpmQ", "CIVVIS: Edge of Tomorrow", ""),
-                ("watch-strange", "11wYuujdddk", "Doctor Strange's CIVVIS", ""),
+                ("watch-tomorrow", "kcDyO_tOpmQ", "CIVVIS: Edge of Tomorrow",
+                 "Play and replay sequences throughout a Civ game with top CIVVIS AI strategies to discover and experiment with optimal play"),
+                ("watch-strange", "11wYuujdddk", "Doctor Strange's CIVVIS",
+                 "Enter Doctor Strange's fifth dimension to visually explore alternate paths through time. Watch 12 different CIVVIS strategies simultaneously play out 12 copies of the same full Civ game in 60s and analyze the outcomes."),
             ],
         )
-        for _, video, _, _, _, link, _, picture in tiles:
-            self.assertEqual((link, picture), (video, video))
-        # Where there is more of each: the two victories lead to the
-        # playlist of them, CIVVIS.ai to the simulator, and the debugger,
-        # Edge of Tomorrow and Doctor Strange's CIVVIS to the modes
-        # themselves, as the site list names them.
-        more = re.findall(r'<figure class="watch-tile" id="(watch-[a-z]+)".*?<figcaption>.*?<a href="([^"]+)"[^>]*>([^<]+)</a></figcaption>', LANDING, re.S)
-        self.assertEqual(more, [
-            ("watch-fastest", "../charts/civvis-performance/", "CIVVIS Performance"),
-            ("watch-pov", "../charts/civvis-performance/", "CIVVIS Performance"),
-            ("watch-science", "https://www.youtube.com/playlist?list=PLWcKlP8e8iy4", "Lv 8 Deity Wins"),
-            ("watch-culture", "https://www.youtube.com/playlist?list=PLWcKlP8e8iy4", "Lv 8 Deity Wins"),
-            ("watch-civvis", "../", "CIVVIS"),
-            ("watch-debugger", "../debugger", "CIVVIS AI Debugger"),
-            ("watch-tomorrow", "../edge-of-tomorrow", "CIVVIS: Edge of Tomorrow"),
-            ("watch-strange", "../doctor-strange", "Doctor Strange's CIVVIS"),
+        for _, video, _, _, _, _, _, picture in tiles:
+            self.assertEqual(picture, video)
+        # Pressing a video: the four of the site's own tools open the tool,
+        # CIVVIS.ai the simulator and the debugger, Edge of Tomorrow and
+        # Doctor Strange's CIVVIS the modes themselves, as the site list
+        # names them, in the same tab; the other four play, or open on
+        # YouTube in a new tab (operator 2026-11-27: "for civvis.ai, ai
+        # debugger, edge of tomorrow, doctor strange, can we have clicking on
+        # the video link to the right tool and a Youtube link maybe where the
+        # existing link is, upper right of the video").
+        youtube = "https://www.youtube.com/watch?v="
+        new_tab = ' target="_blank" rel="noreferrer"'
+        self.assertEqual([(ident, poster, tab) for ident, _, _, _, _, poster, tab, _ in tiles], [
+            ("watch-fastest", youtube + "iHlUWPIqr5g", new_tab),
+            ("watch-pov", youtube + "9c8m87e3rCg&amp;t=6s", new_tab),
+            ("watch-science", youtube + "rVDor7Xb4Mg", new_tab),
+            ("watch-culture", youtube + "6PCd4R08UPM", new_tab),
+            ("watch-civvis", "../", ""),
+            ("watch-debugger", "../debugger", ""),
+            ("watch-tomorrow", "../edge-of-tomorrow", ""),
+            ("watch-strange", "../doctor-strange", ""),
         ])
+        tools = re.findall(r'<figure class="watch-tile" id="(watch-[a-z]+)" data-video="[\w-]{11}" data-tool="([^"]+)">', LANDING)
+        self.assertEqual(tools, [(ident, poster) for ident, _, _, _, _, poster, tab, _ in tiles if not tab])
+        # The link at the upper right of a video: the two records lead to
+        # CIVVIS Performance, the two victories to the playlist of them, and
+        # a tool's video to itself on YouTube, with YouTube's mark.
+        more = re.findall(r'<figure class="watch-tile" id="(watch-[a-z]+)".*?<figcaption>.*?<a href="([^"]+)"[^>]*>(<svg [^>]+><path [^>]+/></svg>)?([^<]+)</a></figcaption>', LANDING, re.S)
+        self.assertEqual([(ident, href, text, bool(mark)) for ident, href, mark, text in more], [
+            ("watch-fastest", "../charts/civvis-performance/", "CIVVIS Performance", False),
+            ("watch-pov", "../charts/civvis-performance/", "CIVVIS Performance", False),
+            ("watch-science", "https://www.youtube.com/playlist?list=PLWcKlP8e8iy4", "Lv 8 Deity Wins", False),
+            ("watch-culture", "https://www.youtube.com/playlist?list=PLWcKlP8e8iy4", "Lv 8 Deity Wins", False),
+            ("watch-civvis", youtube + "U0iwoVTK5q8", "YouTube", True),
+            ("watch-debugger", youtube + "6W5t0hcR_N4", "YouTube", True),
+            ("watch-tomorrow", youtube + "kcDyO_tOpmQ", "YouTube", True),
+            ("watch-strange", youtube + "11wYuujdddk", "YouTube", True),
+        ])
+        # A tool's player takes clicks for itself, so a link to the tool lies
+        # over it once it plays, and pressing the picture before then is
+        # never turned into playing it here.
+        self.assertIn('const tool = tile.dataset.tool || "";', LANDING)
+        self.assertIn("        if (tool) return;\n", LANDING)
+        self.assertIn('go.className = "watch-go";', LANDING)
+        self.assertIn('(tool ? "&controls=0" : "")', LANDING)
+        self.assertIn(".watch-go { position: absolute; inset: 0; z-index: 1; border-radius: inherit; }", LANDING)
         for href, name in (
             ("../", "CIVVIS"),
             ("../debugger", "CIVVIS AI Debugger"),
@@ -524,14 +564,14 @@ class HomeRankings(unittest.TestCase):
         # The single player's game starts 6 seconds in, on the page and on
         # YouTube; the other seven start at their start.
         self.assertEqual(
-            [(start, at) for _, _, start, _, _, _, at, _ in tiles],
-            [("", ""), (' data-start="6"', "&amp;t=6s")] + [("", "")] * 6,
+            [(start, poster.endswith("&amp;t=6s")) for _, _, start, _, _, poster, _, _ in tiles],
+            [("", False), (' data-start="6"', True)] + [("", False)] * 6,
         )
         # A tile with no second line is named by its title alone.
         self.assertIn('const second = tile.querySelector("[data-watch-title]");', LANDING)
         self.assertIn('const title = tile.querySelector("b").textContent + (second ? ": " + second.textContent : "");', LANDING)
         self.assertIn('const start = /^[1-9]\\d*$/.test(tile.dataset.start || "") ? tile.dataset.start : "";', LANDING)
-        self.assertIn('poster.href = "https://www.youtube.com/watch?v=" + id + (start ? "&t=" + start + "s" : "");', LANDING)
+        self.assertIn('        poster.href = "https://www.youtube.com/watch?v=" + id + (start ? "&t=" + start + "s" : "");', LANDING)
         # The titles are the largest type under the page's name, and whole.
         self.assertIn(".watch-tile figcaption b { color: #fff; font-size: 20px; font-weight: 700; line-height: 1.3; }", LANDING)
         self.assertIn(".watch-tile figcaption span { order: 3; flex-basis: 100%; min-width: 0; color: var(--text); font-size: 15px; line-height: 1.4; }", LANDING)
@@ -562,7 +602,7 @@ class HomeRankings(unittest.TestCase):
         # indefinitely"): YouTube loops a video that is its own playlist.
         self.assertIn(
             'player.src = PLAYER + "/embed/" + id + "?autoplay=1&rel=0&playsinline=1&loop=1&playlist=" + id'
-            ' + (muted ? "&mute=1" : "") + (start ? "&start=" + start + "&enablejsapi=1" : "");',
+            ' + (muted ? "&mute=1" : "") + (tool ? "&controls=0" : "") + (start ? "&start=" + start + "&enablejsapi=1" : "");',
             LANDING,
         )
         # Its loop comes round to 0 s, so a tile with a start sends its
@@ -646,19 +686,22 @@ class HomeRankings(unittest.TestCase):
         # Operator 2026-11-24: "above the videos, lets copy the Firaxis Civ 6
         # Benchmarks showing our win rate (both diplo on and off), same as
         # the chart is now. then the videos below".
-        # It is the page's first part since the speed timeline that stood
-        # over it went to CIVVIS Performance, later that day ("move the
-        # civvis performance timeline thing from home/ to the civvis
-        # performance section"; `beta/speedup_timeline_test.py`).
+        # It was the page's first part from the day the speed timeline
+        # that stood over it went to CIVVIS Performance, later that day
+        # ("move the civvis performance timeline thing from home/ to the
+        # civvis performance section"; `beta/speedup_timeline_test.py`),
+        # until 2026-11-27, when ELO Rankings went over it ("put the elo
+        # chart at the top of home/ too, above the benchmarks").
         places = [LANDING.index(mark) for mark in (
             '<p class="intro">',
+            '<section class="res-block home-elo" id="elo" aria-labelledby="home-elo-title" hidden>',
             '<section class="res-block home-bench" id="bench" aria-labelledby="res-title-tourney" hidden>',
             '<section class="watch"',
         )]
         self.assertEqual(places, sorted(places))
         main = LANDING[LANDING.index('<main class="shell">'):LANDING.index("</main>")]
-        self.assertEqual(re.findall(r"<section [^>]*\bid=\"([\w-]+)\"", main), ["bench", "watch"])
-        section = LANDING[places[1]:places[2]]
+        self.assertEqual(re.findall(r"<section [^>]*\bid=\"([\w-]+)\"", main), ["elo", "bench", "watch"])
+        section = LANDING[places[2]:places[3]]
         bare = lambda text: [line.strip() for line in text.strip().split("\n")]  # noqa: E731
         # Its title and the line under it are Win Analytics' own, and so is
         # everything from the pair's opening to the end of the two tables:

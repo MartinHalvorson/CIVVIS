@@ -2971,3 +2971,52 @@ fn tenth_percentile_interpolates_and_names_the_nearest_city() {
         Some((5, -1.0))
     );
 }
+
+/// A seat's standing, which the debugger's lean answers carry and CIVVIS:
+/// Moneyball compares futures by (operator 2026-11-27: "rows are different
+/// stats. cities, mil strength, food, happiness, hous, prod, science yield,
+/// culture yield, etc."), carries the standings' other figures too: the same
+/// military strength and city averages the player HUD shows the seat, and
+/// the techs, civics and tourism it has. With no city there is no average.
+#[test]
+fn a_seats_standing_carries_what_the_standings_show() {
+    let mut game = Game::new_full(2, 24, 16, 91_806, 200, 0, false);
+    let before = standing(&game, 0);
+    assert_eq!(before["cities"], json!(0));
+    for key in ["amenities", "housing", "loyalty", "food_surplus"] {
+        assert_eq!(before[key], Value::Null, "{key} with no city");
+    }
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .expect("every seat starts with a Settler");
+    game.found_city_for(0, game.units[&settler].pos, None);
+    game.remove_unit(settler);
+
+    let read = standing(&game, 0);
+    let shown = &observation(&game, 0)["players"][0];
+    assert_eq!(read["military"], json!(game.military_power(0).round()));
+    assert_eq!(read["amenities"], shown["avg_amenity_surplus"]);
+    assert_eq!(read["housing"], shown["avg_housing_surplus"]);
+    assert_eq!(read["loyalty"], shown["avg_loyalty_per_turn"]);
+    assert_eq!(read["food_surplus"], shown["avg_food_surplus"]);
+    assert_eq!(read["techs"], json!(game.players[0].techs.len()));
+    assert_eq!(read["civics"], json!(game.players[0].civics.len()));
+    assert_eq!(
+        read["tourism"],
+        json!(round1(game.players[0].tourism_lifetime))
+    );
+    // What it carried before is as it was.
+    for key in [
+        "turn",
+        "alive",
+        "score",
+        "cities",
+        "population",
+        "gold_per_turn",
+        "yields",
+    ] {
+        assert!(read.get(key).is_some(), "{key} is still there");
+    }
+}

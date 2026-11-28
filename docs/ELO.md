@@ -338,7 +338,27 @@ ELO Rankings shows both side by side: Player strategies has a column for
 each (its head sorts the list; it opens sorted by Diplo off, operator
 2026-11-26: "player strategies should default diplo off"), the levels table
 each reading's benchmark and simulator figures, and the graph a switch between
-the two.
+the two. Tournaments carries the same table as ELO Rankings, over the Official
+Benchmark (operator 2026-11-27: "list Diplo off first (and default for
+sorting), and Diplo on col to the right"): Diplo off is its first column and
+opens sorted, and the agents, the Firaxis levels and the people are numbered
+in one ranking.
+
+**The scale of cheating.** The home page carries the ranking too, over its
+benchmark, in the operator's format (2026-11-27: "put the elo chart at the
+top of home/ too, above the benchmarks. expand the format to: Player. Scale
+of Cheating. ELO (Diplo Off). ELO (Diplo On)", and under it "Prince 0, King
+1, Emperor 2, Immortal 3, Deity 4", then "Mods"). The scale says how far the
+game helps a player. Civilization VI hands its own AI its bonuses by level,
+in steps over Prince, where it hands it none (`data/difficulties.json`: at
+each step more yield, experience and free units, and from Emperor Combat
+Strength), and the scale is the count of those steps, which
+`beta/home_elo_test.py` holds to that file. An agent is rated unhandicapped
+and a person plays as people do, so both stand at 0; that is what makes the
+column worth reading beside the Elo, a Deity AI at 4 against an agent at 0.
+There a level rated keeps its row whether or not the window holds a game of
+it, and the last row is kept for mods of the game's AI: none is rated yet,
+and the table says so.
 
 **The first reading** (2026-11-24; the agents from one run of 1,800 diplo-off
 tables, `2026-11-24-d27f49f`, so their margins are about ±60 against the
@@ -362,6 +382,44 @@ stand-in ladder reads Deity 1915, Immortal 1737 and Emperor 1574 against 1971,
 1661 and 1513. The simulator's tables end in a Diplomatic victory too seldom
 (270 of the stock fit's 10,920, 2.5%) for the switch to move them much; the
 benchmark's do not.
+
+## One rating for each setup
+
+Operator 2026-11-27: "lets add victory type cols to elo rankings and move elo
+rankings to the top full wdith of tournaments. 6p Continents Online (Diplo
+off, Diplo on, science, culture, religion, diplomacy, domination, score) , 2P
+Pangaea (religion off, religion on). we can elo for each, sortable by score".
+
+`strategy_elo --setup <name>` plays every table at one named setup (`SETUPS`
+in `src/bin/strategy_elo.rs`): its seats, its map and the victories that can
+end it. Each keeps its own log, fit and history, `data/strategy_elo_<name>_games.jsonl`,
+`data/strategy_elo_<name>.json` and `data/strategy_elo_<name>_history.json`
+(the name with `_` for `-`), and every logged table carries `"setup"`, so a
+fit reads only its own tables and the stock and diplo-off fits, which carry
+none, read none of these.
+
+| Setup | Seats, map | Victories that can end a table |
+|---|---|---|
+| `continents6` | 6, Continents | all six |
+| `continents6-no-diplo` | 6, Continents | all but Diplomatic |
+| `continents6-science` | 6, Continents | Science alone |
+| `continents6-culture` | 6, Continents | Culture alone |
+| `continents6-religion` | 6, Continents | Religious alone |
+| `continents6-diplomacy` | 6, Continents | Diplomatic alone |
+| `continents6-domination` | 6, Continents | Domination alone |
+| `continents6-score` | 6, Continents | Score alone |
+| `pangaea2` | 2, Pangaea | all six |
+| `pangaea2-no-religion` | 2, Pangaea | all but Religious |
+
+All are Online speed, 250 turns, at Prince. A table nobody wins by its one
+victory before the turn limit is settled on score, as every table the engine
+leaves undecided is (`"score-at-cap"`), and the published `victories` count
+how many were: a victory the simulator seldom reaches (Diplomatic, 2.5% of
+stock tables) is mostly a reading of score.
+
+The stock and diplo-off fits are four-player tables on the default map
+(Pangaea); `continents6` and `continents6-no-diplo` are the same two games at
+the benchmark's own size and map.
 
 ## What the Civilization VI mapping does and does not prove
 

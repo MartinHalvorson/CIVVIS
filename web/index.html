@@ -18,7 +18,7 @@
     // the others can be civvis.ai/debugger and civvis.ai/doctor-strange"):
     // the address names it, or an old link's `?mode=` does. The same table
     // is in beta/shim.js and beta/_worker.js (`SIMULATOR_PAGES`).
-    const SIMULATOR_PAGES = {debugger: "play", "doctor-strange": "strange", "edge-of-tomorrow": "tomorrow"};
+    const SIMULATOR_PAGES = {debugger: "play", "doctor-strange": "strange", "edge-of-tomorrow": "tomorrow", moneyball: "moneyball"};
     const page = location.pathname.replace(/\/(?:index\.html)?$/, "").split("/").pop();
     window.CIVVIS_PAGE_MODE = (Object.hasOwn(SIMULATOR_PAGES, page) ? SIMULATOR_PAGES[page] : null) ||
       new URLSearchParams(location.search).get("mode");
@@ -346,12 +346,23 @@
     margin-top: 9px; color: #f0f2ee; font-size: var(--type-body);
     font-weight: 600; letter-spacing: 0; line-height: 1.36;
   }
-  /* The lockup is always the same two lines: the simulator's name, then its
-     purpose. Each phrase owns exactly one line at every band — never joined
+  /* The lockup is always the same three lines: the simulator's name, its
+     purpose, then "(fan project, open source, free)" (operator, 2026-11-27,
+     the note first added to the purpose and then put on a line of its own;
+     on the purpose's line it would not fit the lane even at the fitter's
+     floor). Each phrase owns exactly
+     one line at every band — never joined
      into a sentence, never folded mid-phrase — so the spans are unbreakable
      and the text fitter shrinks the type into the lane instead of wrapping. */
   .tagline span { display: block; white-space: nowrap; }
   .tagline span + span { color: #d6ddd9; }
+  /* The note under the purpose sits a little lower and 30% smaller
+     (operator, 2026-11-27: "change (fan project, open source, free) to a
+     newline ... on civvis, make it a little lower, and smaller. mayb 30%
+     smaller"). Its span is fitted with the other two, so the size is set on
+     a child: 70% of whatever size the fitter gives the lines above it. */
+  .tagline span.tagline-note { margin-top: 3px; }
+  .tagline .tagline-note small { font-size: 70%; }
   /* The site's pages from the top down: Home, Charts, Tournaments, CIVVIS
      and AI Debugger, and under them the game all five are built on. The block below is how they stand
      when there is no room beside the lockup, or no way to ask whether they
@@ -377,9 +388,16 @@
      tool"), so this page, which is CIVVIS, AI Debugger, Doctor Strange's
      Civ 6 and Edge of Tomorrow, lists the eight top-level names and no
      branch. */
+  /* Tournaments stands before Charts/ and CIVVIS just above AI Debugger
+     since 2026-11-28 (operator: "move tournaments above charts in the
+     ordering", "move civvis above the civvis ai debugger in the ordering"),
+     so the first row is HOME in four tenths and TOURNAMENTS in six, and
+     CHARTS/ and CIVVIS, each now beside a name with a row of its own, take
+     whole rows. */
   .head-links > .home-link { grid-column: span 5; }
+  .head-links > #homelink { grid-column: span 4; }
   .head-links > #tourlink { grid-column: span 6; }
-  .head-links > #watchlink { grid-column: span 4; }
+  .head-links > #chartslink, .head-links > #watchlink { grid-column: 1 / -1; }
   /* Doctor Strange's Civ 6 (operator, 2026-11-23: "lest move dr strange civ
      6 above ai debugger", after CIVVIS) is the one name longer than half a
      row and has a row of its own. AI Debugger and Civ 6 keep the rows of
@@ -388,7 +406,7 @@
      the second longest name, has one too, between Doctor Strange's and AI
      Debugger since 2026-11-26 ("lets move civvis: edge of tomorrow above
      civvis ai debugger in the ordering"). */
-  .head-links > #playlink, .head-links > #strangelink, .head-links > #tomorrowlink, .head-links > #civ6link { grid-column: 1 / -1; }
+  .head-links > #playlink, .head-links > #strangelink, .head-links > #tomorrowlink, .head-links > #moneyballlink, .head-links > #civ6link { grid-column: 1 / -1; }
   /* A name stands on one line wherever it fits, and every one of them
      does in the typefaces measured. In a wider one a name of two words
      takes two lines, a word to each, and the link beside it in a row is as
@@ -465,6 +483,16 @@
     box-shadow: 0 0 6px rgba(255, 120, 40, 0.5);
   }
   #tomorrowlink:hover { color: #fff; border-color: #b9c8d6; background: linear-gradient(135deg, #2b3b47 35%, #c2541a) border-box; box-shadow: 0 0 10px rgba(255, 130, 50, 0.8); }
+  /* CIVVIS: Moneyball, which opens this page too, in a ballpark's colours,
+     the same on every page that lists it (operator, 2026-11-27: "add CIVVIS:
+     Moneyball"): the outfield grass under the lights into a scoreboard's
+     green, ringed in the base lines' chalk. */
+  #moneyballlink {
+    color: #f3f6ee; border-color: #cfe6c4;
+    background: linear-gradient(135deg, #123d27 35%, #2f8a4a) border-box;
+    box-shadow: 0 0 6px rgba(150, 230, 140, 0.45);
+  }
+  #moneyballlink:hover { color: #fff; border-color: #e6f4de; background: linear-gradient(135deg, #1a5034 35%, #38a057) border-box; box-shadow: 0 0 10px rgba(170, 240, 150, 0.75); }
   /* The page on screen keeps the colour of what it is and is ringed in
      white, as on the pages. It was gold until 2026-11-24, when gold
      became CIVVIS's own. This page is four of them:
@@ -476,13 +504,15 @@
      Which of them is known once the first observation arrives
      (`seat-known`); until then none is lit. */
   body.watching-sim #watchlink,
-  html.seat-known:not(.strange):not(.tomorrow) body:not(.watching-sim) #playlink,
+  html.seat-known:not(.strange):not(.tomorrow):not(.moneyball) body:not(.watching-sim) #playlink,
   html.seat-known.strange body:not(.watching-sim) #strangelink,
-  html.seat-known.tomorrow body:not(.watching-sim) #tomorrowlink {
+  html.seat-known.tomorrow body:not(.watching-sim) #tomorrowlink,
+  html.seat-known.moneyball body:not(.watching-sim) #moneyballlink {
     border-color: #fff; box-shadow: inset 0 0 0 1px #fff;
   }
   html.seat-known.strange body:not(.watching-sim) #strangelink { box-shadow: inset 0 0 0 1px #fff, 0 0 6px rgba(255, 138, 30, 0.6); }
   html.seat-known.tomorrow body:not(.watching-sim) #tomorrowlink { box-shadow: inset 0 0 0 1px #fff, 0 0 6px rgba(255, 120, 40, 0.5); }
+  html.seat-known.moneyball body:not(.watching-sim) #moneyballlink { box-shadow: inset 0 0 0 1px #fff, 0 0 6px rgba(150, 230, 140, 0.45); }
   /* With 233px or more across the band the links leave the lockup's foot and
      stand in a column on its left, at the box's left edge (operator,
      2026-11-21: the list goes "to the left side" of the civvis.ai title, as
@@ -2145,8 +2175,14 @@
   #livepause[hidden] { display: none; }
   /* A full-screen dialog (a tree, the Civilopedia, an empire screen) covers
      the map, and the controls go under it with the map rather than float on
-     top of the dialog's columns. */
-  body:has(#empire.open, #diplomacy.open, #cityscreen.open, #pedia.open, #tree.open, #trade.open) #livepause {
+     top of the dialog's columns. Every one of those dialogs follows the box
+     in #maparea, so the box asks its own later siblings, not the body. A
+     `:has()` anchor is re-checked whenever text anywhere under it is
+     replaced, and the page's shared `:has()` invalidation reaches every
+     descendant, so on the body that was the whole page restyled at each
+     layout read after any HUD number changed: six 2-3 ms recalcs of ~900
+     elements per rendered turn, measured on /test. */
+  #livepause:has(~ #empire.open, ~ #diplomacy.open, ~ #cityscreen.open, ~ #pedia.open, ~ #tree.open, ~ #trade.open) {
     z-index: 14;
   }
   .livepause-buttons {
@@ -2387,6 +2423,23 @@
     grid-template-columns: minmax(0, 1fr); margin: 0 0 7px;
   }
   body:not(.watching-sim) .spec-controls #specpause { display: none; }
+  /* 2P Pangaea New Game and 6P Continents New Game, side by side over Start
+     new game in a played game (the AI Debugger, Edge of Tomorrow): each sets
+     World size and Map on Game Setup and starts the game as Start new game
+     does (`startPresetGame`). Edge of Tomorrow wears the Civilization VI
+     screen, so it is not the debugger view, and is named for itself.
+     Watching, there is no Start new game to stand over. */
+  .preset-games { display: none; }
+  body.debugger-view .preset-games, html.tomorrow .preset-games { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; margin: 0 0 7px; }
+  .preset-games button {
+    width: 100%; min-width: 0; min-height: 40px; margin: 0; padding: 6px 6px; line-height: 1.15;
+    font-size: var(--type-control); font-weight: 800; letter-spacing: .02em;
+  }
+  .preset-games button .lbl { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .preset-games button .sub {
+    display: block; margin-top: 2px; color: var(--muted); font-size: var(--type-label); font-weight: 700;
+    letter-spacing: .07em; text-transform: uppercase; white-space: nowrap;
+  }
   /* Civ 6 conducts diplomacy leader by leader: who they are, what they want,
      how they feel about you, and what you can do about it. Quick Deals
      already compares every acceptable trade at once; this is the other half —
@@ -2502,7 +2555,7 @@
   .city-yields { display: grid; gap: 5px; grid-template-columns: repeat(6, minmax(0, 1fr)); margin-bottom: 9px; }
   .city-yield-icon {
     width: 26px; height: 26px; border-radius: 50%;
-    background: url("/assets/yield-icons.png") calc(var(--cell) * 20%) 0 / 600% 100% no-repeat,
+    background: url("/assets/civ6-yield-icons.png") calc(var(--cell) * 20%) 0 / 600% 100% no-repeat,
       var(--fill);
   }
   .city-meters { display: grid; gap: 4px 14px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -2658,9 +2711,6 @@
   }
   #buildmark-commit:hover { color: #eef8f4; text-decoration-color: currentColor; }
   #buildmark-commit:focus-visible { outline: 1px solid #b8d8cb; outline-offset: 2px; }
-  /* CC BY 3.0 asks for the icons' authors to be credited where they are used. */
-  #buildmark-credits { color: inherit; text-decoration-color: transparent; text-underline-offset: 2px; }
-  #buildmark-credits:hover { color: #eef8f4; text-decoration-color: currentColor; }
   .tip-primary, .tip-unit {
     display: inline-block; color: #fffaf0; font-size: var(--type-body); font-weight: 400; line-height: 1.45;
   }
@@ -2672,14 +2722,14 @@
   .tip-yield-marker {
     flex: 0 0 auto; width: 13px; height: 13px; display: inline-block; box-sizing: border-box;
     border: 1px solid #0c1012cc; border-radius: 50%;
-    /* The map's own sign, off the same sheet the map draws, dimmed
+    /* Civilization VI's own sign, off the same sheet the map draws, dimmed
        above the earned portion exactly as a fractional sign is on the map. The
        coloured disc stays underneath as the layer that survives a sheet the
        browser could not fetch. */
     background:
       linear-gradient(to top, #0000 0 var(--tip-yield-portion),
         #08110ec2 var(--tip-yield-portion) 100%),
-      url("/assets/yield-icons.png") calc(var(--tip-yield-cell) * 20%) 0 / 600% 100% no-repeat,
+      url("/assets/civ6-yield-icons.png") calc(var(--tip-yield-cell) * 20%) 0 / 600% 100% no-repeat,
       linear-gradient(to top, var(--tip-yield-fill) 0 var(--tip-yield-portion),
         color-mix(in srgb, var(--tip-yield-fill) 17%, #08110e) var(--tip-yield-portion) 100%);
     box-shadow: 0 1px 2px #0009;
@@ -4775,8 +4825,11 @@
   }
   /* With no masthead across the top — hidden, or folded down to its turn
      box — the tracker climbs back to the corner. `:where` keeps this at the
-     rail's own weight, so the stacked compact bands below still place it. */
-  :where(body.overlay-players-hidden, #maparea:has(> #playerhud.standings-collapsed)) #victoryhud {
+     rail's own weight, so the stacked compact bands below still place it.
+     The masthead is the tracker's next sibling, so the fold is asked of the
+     tracker itself: anchored on #maparea it made the whole map area restyle
+     whenever any text inside it changed (see the live controls above). */
+  :where(body.overlay-players-hidden) #victoryhud, #victoryhud:where(:has(~ #playerhud.standings-collapsed)) {
     top: var(--panel-edge);
   }
   /* Two sections share the rail panel: the arena stats above, the victory
@@ -4900,11 +4953,20 @@
   #victoryhud > .victory-region > .hud-region-bar { grid-area: 1 / 1 / 2 / -1; }
   #victoryhud > .victory-region > .victory-off-note { grid-area: 2 / 1 / 3 / -1; }
   #victoryhud > .victory-region > .hud-rail { grid-area: 3 / 2; }
+  /* The bar's height is one value that glides, and everything drawn at the
+     turn reads it: the gold's cut, its head, and both copies of the scale.
+     Each of them used to glide on its own transition, and the head's fell
+     behind the gold on every climb and caught up when it stopped (operator,
+     2026-11-27: "theres a white line that lags behind and catches up to the
+     rising gold bar. please fix so it stays aligned"). With one height there
+     is nothing for the head to lag. */
+  @property --rise { syntax: "<percentage>"; inherits: true; initial-value: 0%; }
   .turn-gauge {
     grid-area: 3 / 1; position: relative; width: 30px; margin: 2px 5px 2px 0;
     overflow: hidden; border-radius: 5px; container: turn-gauge / size;
     background: color-mix(in srgb, var(--gold) 8%, transparent);
     box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--gold) 24%, transparent);
+    transition: --rise .45s ease-out;
   }
   /* The gold stands the whole height and is cut off at the turn, so its
      colour belongs to the height and not to the bar: deep at the foot,
@@ -4913,7 +4975,6 @@
     position: absolute; inset: 0;
     background: linear-gradient(to top, color-mix(in srgb, var(--gold) 78%, #2a2008), var(--gold) 50%, var(--gold-bright));
     clip-path: inset(calc(100% - var(--rise, 0%)) 0 0 0);
-    transition: clip-path .45s ease-out;
   }
   /* The bar's head: a bright line that is all there is of it on turn 1. */
   .turn-gauge > i {
@@ -4921,7 +4982,6 @@
     bottom: clamp(0px, calc(var(--rise, 0%) - 2px), calc(100% - 2px));
     background: color-mix(in srgb, var(--gold-bright) 70%, #fff);
     box-shadow: 0 0 7px color-mix(in srgb, var(--gold-bright) 70%, transparent);
-    transition: bottom .45s ease-out;
   }
   /* The scale: a hairline across the bar at the height it stands at on a
      round turn, and the turn's figure hung just under it, so the bar's head
@@ -4931,7 +4991,7 @@
      cap's line is the top of the bar itself. */
   .turn-gauge-scale {
     position: absolute; inset: 0; color: color-mix(in srgb, var(--gold) 72%, transparent);
-    clip-path: inset(0 0 var(--rise, 0%) 0); transition: clip-path .45s ease-out;
+    clip-path: inset(0 0 var(--rise, 0%) 0);
   }
   .turn-gauge-scale.lit { color: #2a2008d9; clip-path: inset(calc(100% - var(--rise, 0%)) 0 0 0); }
   .turn-gauge-scale > b {
@@ -4955,16 +5015,14 @@
   }
   #victoryhud.victory-collapsed .turn-gauge { display: none; }
   @media (prefers-reduced-motion: reduce) {
-    .turn-gauge-fill, .turn-gauge > i, .turn-gauge-scale { transition: none; }
+    .turn-gauge { transition: none; }
   }
   /* A new game's bar starts where that game is, with no glide down from
      where the last game ended (operator, 2026-11-24: "have gold bar
      immediately start at 1/250 rather than a motion down", "between games
      that is"). `settleTurnGauge` in app_clock.js puts the bar at the new
      game's turn while this holds its motion off, and takes it away again. */
-  .turn-gauge.turn-gauge-settling > .turn-gauge-fill,
-  .turn-gauge.turn-gauge-settling > i,
-  .turn-gauge.turn-gauge-settling > .turn-gauge-scale { transition: none; }
+  .turn-gauge.turn-gauge-settling { transition: none; }
 
 
   .overlay-options { margin-top: 11px; padding-top: 10px; border-top: 1px solid var(--line-soft); }
@@ -6782,7 +6840,7 @@
       </div>
       <div class="brand-copy">
         <h1>CIVVIS<span class="brand-suffix">.ai</span></h1>
-        <div class="tagline"><span>A <i>Civilization VI</i> Simulator</span><span>for AI reasoning insights</span></div>
+        <div class="tagline"><span>A <i>Civilization VI</i> Simulator</span><span>for fixing the Civ AI</span><span class="tagline-note"><small>(fan project, open source, free)</small></span></div>
       </div>
       <!-- The site is five pages, Home, Charts, Tournaments, CIVVIS and AI
            Debugger, and every one of them lists all five in that order with
@@ -6815,11 +6873,12 @@
            is Charts' own page and is listed under it there, not here. -->
       <nav class="head-links" id="headlinks" aria-label="CIVVIS sites" hidden>
         <a class="home-link" id="homelink" href="/home" target="_top">Home</a>
-        <a class="home-link" id="chartslink" href="/charts/ai-insights" target="_top">Charts/</a>
         <a class="home-link" id="tourlink" href="/tournaments" target="_top">Tournaments</a>
-        <a class="home-link" id="watchlink" href="./" target="_top">CIVVIS</a>
+        <a class="home-link" id="chartslink" href="/charts/ai-insights" target="_top">Charts/</a>
         <a class="home-link" id="strangelink" href="doctor-strange" target="_top">Doctor Strange's CIVVIS</a>
         <a class="home-link" id="tomorrowlink" href="edge-of-tomorrow" target="_top">CIVVIS: Edge of Tomorrow</a>
+        <a class="home-link" id="moneyballlink" href="moneyball" target="_top">CIVVIS: Moneyball</a>
+        <a class="home-link" id="watchlink" href="./" target="_top">CIVVIS</a>
         <a class="home-link" id="playlink" href="debugger" target="_top">CIVVIS AI Debugger</a>
         <a class="home-link" id="civ6link" href="https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/" target="_blank" rel="noopener" title="Buy Civilization VI on Steam">Civ 6</a>
       </nav>
@@ -6828,6 +6887,16 @@
   <div class="side-scroll">
     <div class="side-actions" aria-label="Simulation controls">
       <div id="specbar" style="display:none">
+        <!-- Two new games the settings are often asked for, over Start new
+             game in a played game (operator 2026-11-27: "in civvis debugger,
+             above start new game with seclected settings, add a 2P pangaea
+             New Game, 6P Continents New Game on teh right. theses function the
+             same as the new game except set the player count and map as well
+             to the claimed settings. same for civvis: edge of tomorrow"). -->
+        <div class="preset-games" id="preset-games" role="group" aria-label="New game on a set world">
+          <button type="button" data-preset-players="2" data-preset-map="pangaea" title="Start a new game on a Pangaea for 2 civilizations (a Duel world), with the other selected settings"><span class="lbl">2P Pangaea</span> <span class="sub">New Game</span></button>
+          <button type="button" data-preset-players="6" data-preset-map="continents" title="Start a new game on Continents for 6 civilizations (a Small world), with the other selected settings"><span class="lbl">6P Continents</span> <span class="sub">New Game</span></button>
+        </div>
         <div class="spec-controls">
           <button class="primary" id="specpause">⏸ Pause</button>
           <button id="restart-sim" title="Start a new game with the same settings, on a fresh map"><span class="lbl">Restart sim</span><span class="sub">same settings</span></button>
@@ -7663,7 +7732,6 @@
 </div>
 <div id="buildmark" hidden>
   <a id="buildmark-commit" target="_blank" rel="noopener noreferrer"></a><span id="buildmark-details"></span>
-  · <a id="buildmark-credits" href="https://github.com/MartinHalvorson/CIVVIS/blob/main/web/assets/ART_CREDITS.md" target="_blank" rel="noopener noreferrer" title="Unit and yield icons from game-icons.net (CC BY 3.0), each author credited">Icons: game-icons.net</a>
 </div>
 <script src="/assets/app_palette.js"></script>
 <script src="/assets/app_arena.js"></script>

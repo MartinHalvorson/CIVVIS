@@ -157,6 +157,46 @@ fn every_turn_keeps_its_mark_while_there_is_room_and_the_oldest_go_first() {
     assert_eq!(longest.marks.len(), MIN_MARKS);
 }
 
+/// A timeline whose world era changes on each of these turns.
+fn with_eras(mut timeline: Timeline, dawns: &[u32]) -> Timeline {
+    for mark in &mut timeline.marks {
+        mark.game.world_era = dawns.iter().filter(|dawn| **dawn <= mark.turn).count();
+    }
+    timeline
+}
+
+#[test]
+fn the_first_turn_of_each_era_is_kept_when_turns_are_thinned() {
+    // Operator 2026-11-27: "lets add era back and era forward to the
+    // controls. lets add a turn 1 option too ... we should make sure to save
+    // these turns for fast jumping". The turns those go to stay, as the
+    // first turn always has: an era's first turn among the odd ones the
+    // stride lets go, and the room is still never exceeded.
+    let dawns = [39, 77, 113, 151];
+    let mut short = with_eras(timeline_of(1..=200, 2 * DENSE_MARKS), &dawns);
+    short.thin();
+    let left = turns_of(&short);
+    assert_eq!(left.len(), 2 * DENSE_MARKS);
+    for turn in [1, 39, 77, 113, 151] {
+        assert!(left.contains(&turn), "turn {turn} was let go: {left:?}");
+    }
+    // With hardly any room they stay beside the newest turns.
+    let mut least = with_eras(timeline_of(1..=100, 0), &[23, 47, 71]);
+    least.thin();
+    let left = turns_of(&least);
+    assert_eq!(left.len(), MIN_MARKS);
+    for turn in [1, 23, 47, 71, 95, 96, 97, 98, 99, 100] {
+        assert!(left.contains(&turn), "turn {turn} was let go: {left:?}");
+    }
+    // More eras than there is room for: the oldest go, and the room holds.
+    let mut crowded = with_eras(timeline_of(1..=100, 0), &(2..=100).collect::<Vec<_>>());
+    crowded.thin();
+    assert_eq!(
+        turns_of(&crowded),
+        [1, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100]
+    );
+}
+
 #[test]
 fn memory_past_the_line_takes_room_away_a_fifth_at_a_time() {
     let step = MEMORY_LINE / MEMORY_STEPS;
@@ -329,6 +369,62 @@ fn a_step_plays_one_turn_and_stops_on_the_turn_it_was_told_to() {
         json!({"kind": "turn", "turn": 3})
     );
     assert_eq!(marked(&session), [1, 2, 3]);
+}
+
+/// A nuclear breakpoint (operator 2026-11-27: "a nuclear war breakpoint could
+/// have a dashed line too") is set and read back like the others, and stops
+/// on the turn a device goes off: the strike record grows.
+#[test]
+fn a_nuclear_breakpoint_stops_on_the_turn_a_device_goes_off() {
+    let mut session = played();
+    let set = session.debug(&json!({"op": "breakpoints", "nuclear": true}));
+    assert_eq!(set["error"], Value::Null);
+    assert_eq!(set["debug"]["breakpoints"]["nuclear"], json!(true));
+    assert_eq!(set["debug"]["breakpoints"]["eras"], json!(false));
+    let before = session.game.clone();
+    let turn = session.game.turn;
+    std::sync::Arc::make_mut(&mut session.game.chronicle.nuclear_strikes).push(
+        crate::game::NuclearStrike {
+            id: 1,
+            turn,
+            attacker: 1,
+            target: (3, 3),
+            thermonuclear: false,
+            platform: "city".to_string(),
+            launched_from: (2, 2),
+            blast_radius: 1,
+            fallout_until: turn + 10,
+            victims: BTreeSet::from([0]),
+            cities: Vec::new(),
+            units_destroyed: 0,
+        },
+    );
+    assert_eq!(
+        session
+            .debugger
+            .breakpoints
+            .detonated(&before, &session.game),
+        Some(json!({"kind": "nuclear", "turn": turn}))
+    );
+    // Nothing went off between two worlds with the same record.
+    assert_eq!(
+        session
+            .debugger
+            .breakpoints
+            .detonated(&session.game, &session.game),
+        None
+    );
+    // Off, the same strike stops nothing; a request that leaves it out
+    // clears it, as every breakpoint is cleared.
+    let cleared = session.debug(&json!({"op": "breakpoints"}));
+    assert_eq!(cleared["debug"]["breakpoints"]["nuclear"], json!(false));
+    assert_eq!(
+        session
+            .debugger
+            .breakpoints
+            .detonated(&before, &session.game),
+        None
+    );
 }
 
 /// An era breakpoint stops a run on the first turn of a new world era, and

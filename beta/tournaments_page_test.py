@@ -23,6 +23,7 @@ import time
 import unittest
 import urllib.request
 
+import elo_page
 import home_rankings
 import tournaments_page
 from verify import Devtools, find_chrome, free_port, fresh_profile, tether
@@ -36,6 +37,41 @@ PUBLISH = (BETA / "publish.sh").read_text(encoding="utf-8")
 
 ON = {"players": 6, "map": "Continents.lua"}
 MATCH = {"players": 6, "map": "Continents.lua"}
+
+
+def rated(elo: float, margin: float, games: int, wins: int, **more) -> dict:
+    return {"elo": elo, "margin": margin, "games": games, "wins": wins, **more}
+
+
+def elo_record() -> dict:
+    """ELO Rankings' record (`beta/elo_page.py`) as the ELO Rankings table on
+    this page reads it: two agents, two Firaxis levels and one person, in
+    each reading. Diplo off and Diplo on order them differently."""
+    def reading(holy, jack, deity, king, dev):
+        return {
+            "strategies": {"rows": [
+                {"kind": "agent", "id": "holy", "name": "HolyRoller", "tilt": "Religion", **rated(holy, 30, 400, 250)},
+                {"kind": "agent", "id": "jack", "name": "JackOfAllTrades", "tilt": "Balanced", **rated(jack, 29, 400, 200)},
+                {"kind": "rung", "name": "Deity", "elo": 1955},
+            ], "tables": 900, "players": 4, "turns": 250, "runs": 3, "latest_run": "2026-11-27"},
+            "firaxis": {"days": 7, "games": 40, "to": "2026-11-27T10:00:00Z", "levels": [
+                {"level": 8, "name": "Deity", "now": rated(deity, 90, 30, 9)},
+                {"level": 5, "name": "King", "now": rated(king, 150, 10, 7)},
+                {"level": 4, "name": "Prince", "now": None},
+            ]},
+            "people": [{"name": "dev", **rated(dev, 180, 3, 2)}],
+        }
+    on = reading(holy=1547, jack=1155, deity=1042, king=595, dev=1210)
+    on["off"] = reading(holy=1543, jack=1191, deity=1452, king=799, dev=1100)
+    # Two of the named setups' fits (`strategy_elo --setup`): the agents
+    # alone, no Firaxis level or person read beside them.
+    def agents_only(holy, jack):
+        rows = [{"kind": "agent", "id": "holy", "name": "HolyRoller", "tilt": "Religion", **rated(holy, 40, 100, 40)}]
+        if jack is not None:
+            rows.append({"kind": "agent", "id": "jack", "name": "JackOfAllTrades", "tilt": "Balanced", **rated(jack, 40, 100, 50)})
+        return {"strategies": {"rows": rows, "tables": 120, "players": 6, "turns": 250, "runs": 1}, "firaxis": None, "people": []}
+    on["setups"] = {"continents6_science": agents_only(1300, 1400), "pangaea2": agents_only(1200, None)}
+    return on
 
 
 def run(tag: str, outcome: str, civ: str | None, minute: int, **more) -> dict:
@@ -325,9 +361,13 @@ class TournamentsPage(unittest.TestCase):
         self.assertEqual([(t["id"], t["description"], t["games"], t["size"]) for t in during["running"]],
                          [(7, "100 Lv 8 Deity games, no Diplo allowed", 1, 100)])
         self.assertEqual(during["benchmark"]["games"], 1)
-        # The page draws it in the right-hand column, under Scheduled.
-        side = PAGE[PAGE.index('<div class="tour-side">'):PAGE.index('<p class="tour-legend">')]
-        self.assertLess(side.index('id="tour-scheduled"'), side.index('id="tour-benchmark"'))
+        # The page draws it in the left-hand column, under ELO Rankings
+        # (operator 2026-11-27: "in tournaments, move elo rankings to left
+        # side at the top. lets put the tournament on the rigth. scheudel can
+        # stay top right. benchmark left."); it stood under Scheduled on the
+        # right before.
+        main = PAGE[PAGE.index('<div class="tour-main">'):PAGE.index('<div class="tour-side">')]
+        self.assertLess(main.index('id="tour-elo"'), main.index('id="tour-benchmark"'))
         for piece in (
             '<section class="tour-section" id="tour-benchmark" hidden aria-labelledby="tour-benchmark-title">',
             '<h2 class="rank-title" id="tour-benchmark-title">Benchmark</h2>',
@@ -400,6 +440,78 @@ class TournamentsPage(unittest.TestCase):
         # The page is authored lane-relative: nothing in it links the site root.
         self.assertEqual(re.findall(r'(?:href|src)="(/[^"]*)"', PAGE), [])
 
+    def test_elo_rankings_stands_across_the_top_with_a_column_a_setup_and_publishing_fills_it(self):
+        # Operator 2026-11-27: "lets add victory type cols to elo rankings
+        # and move elo rankings to the top full wdith of tournaments. 6p
+        # Continents Online (Diplo off, Diplo on, science, culture, religion,
+        # diplomacy, domination, score) , 2P Pangaea (religion off, religion
+        # on). we can elo for each, sortable by score". It stood on the right
+        # over the benchmark from earlier that day ("list Diplo off first (and
+        # default for sorting)"), then across the top of the page; since the
+        # same evening ("in tournaments, move elo rankings to left side at
+        # the top. lets put the tournament on the rigth. scheudel can stay
+        # top right. benchmark left.") it is the first thing in the left
+        # column, over the benchmark, and the right column is Scheduled over
+        # the tournaments running and finished.
+        record = PAGE[PAGE.index('<div class="tour-record" id="tour-record" hidden>'):PAGE.index('<p class="tour-legend">')]
+        main = record[record.index('<div class="tour-main">'):record.index('<div class="tour-side">')]
+        side = record[record.index('<div class="tour-side">'):]
+        self.assertEqual([main.index(f'id="tour-{name}"') for name in ("elo", "benchmark")], sorted(main.index(f'id="tour-{name}"') for name in ("elo", "benchmark")))
+        self.assertLess(main.index('<section'), main.index('id="tour-elo"') + 1)
+        order = [side.index(f'id="tour-{name}"') for name in ("scheduled", "running", "finished")]
+        self.assertEqual(order, sorted(order))
+        for name in ("running", "finished", "scheduled"):
+            self.assertNotIn(f'id="tour-{name}"', main)
+        self.assertIn('>ELO Rankings</a></h2>', record)
+        # A column for each setup, in the operator's order, under its game;
+        # Diplo off first and pressed, the order it opens in.
+        # Two tables (operator, the same evening: "we should have two
+        # tables: one on the left for computer control firaxis civ 6 games
+        # and one on the right for CIVVIS self-play"): Civilization VI's
+        # Diplo off and on, then CIVVIS self-play's ten. Both Diplo off heads
+        # stand pressed: the page opens on the one-scale ranking by Diplo
+        # off, wherever a player's figure was measured.
+        heads = re.findall(r'class="rank-sort" data-sort="([\w:]+)" aria-pressed="(\w+)"[^>]*>([^<]+)<', record)
+        self.assertEqual(heads, [
+            ("control:continents6_no_diplo", "true", "Diplo off"), ("control:continents6", "false", "Diplo on"),
+            ("self:continents6_no_diplo", "true", "Diplo off"), ("self:continents6", "false", "Diplo on"),
+            ("self:continents6_science", "false", "Science"), ("self:continents6_culture", "false", "Culture"),
+            ("self:continents6_religion", "false", "Religion"), ("self:continents6_diplomacy", "false", "Diplomacy"),
+            ("self:continents6_domination", "false", "Domination"), ("self:continents6_score", "false", "Score"),
+            ("self:pangaea2_no_religion", "false", "Religion off"), ("self:pangaea2", "false", "Religion on")])
+        pair = record[record.index('<div class="elo-pair">'):]
+        self.assertLess(pair.index('data-elo-side="control"'), pair.index('data-elo-side="self"'))
+        self.assertIn('>Civilization VI &#183; computer control</th>', pair)
+        self.assertIn('>CIVVIS self-play</th>', pair)
+        self.assertIn('colspan="8" class="is-group is-split">6P Continents Online</th>', record)
+        self.assertIn('colspan="2" class="is-group is-split">2P Pangaea</th>', record)
+        self.assertEqual(record.count('class="is-group is-split">6P Continents Online</th>'), 2)
+        self.assertIn("show(OPEN);", PAGE)
+        # A row is one fixed height in both tables, so the two line up.
+        self.assertIn("#tour-elo .elo-pair tbody tr { height: 28px; }", PAGE)
+        self.assertIn("#tour-elo .elo-pair thead tr { height: 24px; }", PAGE)
+        # Each kind faintly its colour ("we can highlight dev blue, civvis
+        # gold, and firaxis red in the elo table. faint"), with a key.
+        for kind, ink in (("agent", "var(--gold) 8%"), ("level", "#e5534b 10%"), ("person", "var(--accent) 11%")):
+            self.assertIn(f"#tour-elo tbody tr.is-{kind} {{ background: color-mix(in srgb, {ink}, transparent); }}", PAGE)
+            self.assertIn(f'<span class="elo-kind is-{kind}">', record)
+        # Its figures are ELO Rankings' own record, written by the same
+        # script into a slot of the same name, once.
+        self.assertEqual(PAGE.count('<script type="application/json" id="elo-data">null</script>'), 1)
+        self.assertLess(PUBLISH.index('fill tournaments_page.py "$out/$tournaments_at/index.html"'),
+                        PUBLISH.index('fill elo_page.py "$out/$tournaments_at/index.html"'))
+        filled = elo_page.fill(tournaments_page.fill(PAGE, self.record()), elo_record())
+        self.assertEqual(json.loads(elo_page.SLOT.search(filled)[2]), elo_record())
+        self.assertEqual(json.loads(tournaments_page.SLOT.search(filled)[2]), self.record())
+        self.assertEqual(filled.count("</script>"), PAGE.count("</script>"))
+        # Its rules are its own card's: the page's own `.rank-*` are not touched.
+        style = re.sub(r"/\*.*?\*/", "", PAGE[:PAGE.index("</style>")], flags=re.S)
+        rules = [part.rsplit("{", 1)[0].split("{")[-1].strip() for part in style.split("}") if "{" in part]
+        for rule in rules:
+            if any(name in rule for name in (".rank-sort", ".elo-kind", "tr.is-agent", "tr.is-level", "tr.is-person",
+                                             "td.is-value", "td.is-sorted", "td.is-split")):
+                self.assertTrue(all(part.strip().startswith("#tour-elo") for part in rule.split(",")), rule)
+
     def test_without_a_ledger_the_page_says_it_has_no_record(self):
         with tempfile.TemporaryDirectory() as empty:
             source = pathlib.Path(empty)
@@ -456,28 +568,34 @@ class TournamentsPage(unittest.TestCase):
         # title), and Charts/ drops its pages down.
         self.assertRegex(PAGE, r'<header class=\"shell site-header\">\s*<!--[\s\S]*?-->\s*<nav class=\"site-nav\"[^>]*>[\s\S]*?</nav>\s*<script data-site-folder>[\s\S]*?</script>\s*<div class=\"site-brand\">\s*<div class=\"site-lockup\">')
         self.assertRegex(LANDING, r'<header class=\"shell site-header\">\s*<!--[\s\S]*?-->\s*<nav class=\"site-nav\"[^>]*>[\s\S]*?</nav>\s*<script data-site-folder>[\s\S]*?</script>\s*<div class=\"site-brand\">\s*<div class=\"site-lockup\">')
+        # Tournaments stands second, before Charts/, and CIVVIS just above AI
+        # Debugger (operator 2026-11-28: "move tournaments above charts in
+        # the ordering", "move civvis above the civvis ai debugger in the
+        # ordering").
+        self.assertIn(
+            '<nav class="site-nav" aria-label="CIVVIS sites">\n'
+            '      <a class="site-link" href="../home/">Home</a>\n'
+            '      <a class="site-link" href="./" aria-current="page">Tournaments</a>\n'
+            '      <div class="site-folder">\n'
+            '        <a class="site-link" href="../charts/ai-insights/" '
+            'title="What the games show: charts read off the CIVVIS AI agents&#8217; games.">Charts/</a>\n'
+            '        <div class="site-menu">\n',
+            PAGE,
+        )
         self.assertIn(
             '      </div>\n'
-            '      <a class="site-link" href="./" aria-current="page">Tournaments</a>\n'
-            '      <a class="site-link" href="../" title="Every civilization is played by a CIVVIS AI agent.">CIVVIS</a>\n'
             '      <a class="site-link" href="../doctor-strange" '
             'title="One world, two timelines: the same game played two ways, side by side, on a timeline that branches.">Doctor Strange\'s CIVVIS</a>\n'
             '      <a class="site-link" href="../edge-of-tomorrow" '
             'title="You play one civilization, with a jump back: the world returns to the turn you woke on, as it stood.">CIVVIS: Edge of Tomorrow</a>\n'
+            '      <a class="site-link" href="../moneyball" '
+            'title="Only the numbers: pick a player strategy by its stats, ten turns at a time, and try to play the best game.">CIVVIS: Moneyball</a>\n'
+            '      <a class="site-link" href="../" title="Every civilization is played by a CIVVIS AI agent.">CIVVIS</a>\n'
             '      <a class="site-link" href="../debugger" '
             'title="You play one civilization. CIVVIS AI agents play the rest.">CIVVIS AI Debugger</a>\n'
             '      <a class="site-link" href="https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/" '
             'target="_blank" rel="noopener" title="Buy Civilization VI on Steam">Civ 6</a>\n'
             "    </nav>",
-            PAGE,
-        )
-        self.assertIn(
-            '<nav class="site-nav" aria-label="CIVVIS sites">\n'
-            '      <a class="site-link" href="../home/">Home</a>\n'
-            '      <div class="site-folder">\n'
-            '        <a class="site-link" href="../charts/ai-insights/" '
-            'title="What the games show: charts read off the CIVVIS AI agents&#8217; games.">Charts/</a>\n'
-            '        <div class="site-menu">\n',
             PAGE,
         )
         self.assertIn('  .site-link[aria-current="page"],\n  .site-folder:has([aria-current="page"]) > .site-link { box-shadow: inset 0 0 0 2px #fff; }\n', PAGE)
@@ -494,17 +612,24 @@ class TournamentsPage(unittest.TestCase):
             self.assertNotIn("Strat Debugger", page)
         for page in (PAGE, LANDING):
             self.assertNotIn("min-content", page)
-        # The home page and the viewer name it third, after Charts (which
-        # joined between Home and this page the same day as Research; its
-        # own test is `research_page_test.py`), each in its own markup.
+        # The home page and the viewer name it second, before Charts/ (since
+        # 2026-11-28; Charts joined between Home and this page on 2026-11-21
+        # as Research, its own test is `research_page_test.py`), each in its
+        # own markup, and CIVVIS just above AI Debugger.
         for page, pattern in (
-            (LANDING, r'aria-current="page">Home</a>\s*<div class="site-folder">\s*<a class="site-link" href="\.\./charts/ai-insights/"[^>]*>Charts/</a>'
-                      r'[\s\S]*?</div>\s*</div>\s*<a class="site-link" href="\.\./tournaments/"[^>]*>Tournaments</a>'
-                      r'\s*<a class="site-link" href="\.\./"[^>]*>CIVVIS</a>'),
+            (LANDING, r'aria-current="page">Home</a>\s*<a class="site-link" href="\.\./tournaments/"[^>]*>Tournaments</a>'
+                      r'\s*<div class="site-folder">\s*<a class="site-link" href="\.\./charts/ai-insights/"[^>]*>Charts/</a>'
+                      r'[\s\S]*?>CIVVIS: Edge of Tomorrow</a>\s*<a class="site-link" href="\.\./moneyball"[^>]*>CIVVIS: Moneyball</a>'
+                      r'\s*<a class="site-link" href="\.\./"[^>]*>CIVVIS</a>'
+                      r'\s*<a class="site-link" href="\.\./debugger"'),
             (VIEWER, r'id="homelink" href="/home" target="_top">Home</a>\s*'
-                     r'<a class="home-link" id="chartslink" href="/charts/ai-insights" target="_top">Charts/</a>\s*'
                      r'<a class="home-link" id="tourlink" href="/tournaments" target="_top">Tournaments</a>\s*'
-                     r'<a class="home-link" id="watchlink" href="\./" target="_top">CIVVIS</a>'),
+                     r'<a class="home-link" id="chartslink" href="/charts/ai-insights" target="_top">Charts/</a>\s*'
+                     r'<a class="home-link" id="strangelink" href="doctor-strange" target="_top">[^<]*</a>\s*'
+                     r'<a class="home-link" id="tomorrowlink" href="edge-of-tomorrow" target="_top">[^<]*</a>\s*'
+                     r'<a class="home-link" id="moneyballlink" href="moneyball" target="_top">[^<]*</a>\s*'
+                     r'<a class="home-link" id="watchlink" href="\./" target="_top">CIVVIS</a>\s*'
+                     r'<a class="home-link" id="playlink" href="debugger"'),
         ):
             self.assertRegex(page, pattern)
         for page in (PAGE, LANDING, VIEWER):
@@ -787,10 +912,11 @@ class TournamentsPage(unittest.TestCase):
             "Dates are UTC, on the 24-hour clock.",
             "Wall time is from a tournament&#8217;s first game starting to its last game ending.",
             "Run time is the time its games were in play, added up, without the time between them.",
-            # The tournaments are the left 60%, and what is scheduled and
-            # the benchmark the right 40% (operator 2026-11-25: "put the
-            # experiments list on the left 60%. the scheduled games &
-            # benchmark can be on the right"); narrower, one column.
+            # Two columns, the left 60% and the right 40% (operator
+            # 2026-11-25: "put the experiments list on the left 60%. the
+            # scheduled games & benchmark can be on the right"; 2026-11-27:
+            # "move elo rankings to left side at the top. lets put the
+            # tournament on the rigth"); narrower, one column.
             "  @media (min-width: 1100px) {\n"
             "    .tour-record { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); align-items: start; }\n"
             "    .tour-record > :not(.tour-main):not(.tour-side) { grid-column: 1 / -1; }\n"
@@ -862,7 +988,7 @@ class Drawn(unittest.TestCase):
         record["finished"] = record["finished"] + [single]
         cls.record = record
         page = cls.stage / "index.html"
-        page.write_text(tournaments_page.fill(PAGE, record), encoding="utf-8")
+        page.write_text(elo_page.fill(tournaments_page.fill(PAGE, record), elo_record()), encoding="utf-8")
         cls.address = page.as_uri()
         chrome = os.environ.get("CIVVIS_TEST_CHROME") or find_chrome()
         if not pathlib.Path(chrome).exists() and not shutil.which(chrome):
@@ -920,6 +1046,107 @@ class Drawn(unittest.TestCase):
                 time.sleep(0.1)
             print(f"attempt {attempt}: the page had not drawn its rows after 15s; opening it again.")
         self.fail(f"the page never drew its rows ({self.dev.console[-5:]})")
+
+    def test_elo_rankings_ranks_everyone_together_across_the_page_a_column_a_setup(self):
+        # Two tables, a row for each player across both (operator
+        # 2026-11-27: "two tables: one on the left for computer control
+        # firaxis civ 6 games and one on the right for CIVVIS self-play. 2
+        # separate tables but scrolling horizontally in one should move the
+        # other as well. rows should cross over all the way. any col in
+        # either table should sort all rows in both tables").
+        self.rows(1500)
+        read = """(() => { const card = document.getElementById('tour-elo');
+          const side = name => card.querySelector('[data-elo-side="' + name + '"]');
+          const rows = name => [...side(name).querySelectorAll('tbody tr')].map(row => [...row.children].map(cell => cell.firstChild ? cell.firstChild.textContent : ''));
+          const tops = name => [...side(name).querySelectorAll('tbody tr')].map(row => { const r = row.getBoundingClientRect(); return [Math.round(r.top), Math.round(r.height)]; });
+          const kinds = [...card.querySelectorAll('tbody tr')].map(row => [row.className.replace(' is-hover', ''), getComputedStyle(row).backgroundColor]);
+          const box = id => document.getElementById(id).getBoundingClientRect();
+          const record = box('tour-record'), elo = box('tour-elo');
+          return {hidden: card.hidden, left: rows('control'), right: rows('self'), lefts: tops('control'), rights: tops('self'),
+            heads: ['control', 'self'].map(name => Math.round(side(name).querySelector('thead').getBoundingClientRect().height)),
+            kinds, pressed: [...card.querySelectorAll('.rank-sort')].filter(b => b.getAttribute('aria-pressed') === 'true').map(b => b.dataset.sort),
+            top: [Math.abs(elo.top - box('tour-scheduled').top) <= 1, elo.left === record.left && elo.right < box('tour-scheduled').left,
+              elo.bottom <= box('tour-benchmark').top || box('tour-benchmark').height === 0, box('tour-scheduled').bottom <= box('tour-running').top || box('tour-running').height === 0],
+            note: card.querySelector('[data-rank-note]').textContent}; })()"""
+        names = lambda drawn: [row[1] for row in drawn["left"]]
+        drawn = self.dev.evaluate(read)
+        self.assertFalse(drawn["hidden"])
+        self.assertEqual(drawn["top"], [True, True, True, True])
+        # It opens on the one-scale ranking by Diplo off, both Diplo off
+        # heads pressed: every row numbered, wherever its figure was measured.
+        self.assertEqual(drawn["pressed"], ["control:continents6_no_diplo", "self:continents6_no_diplo"])
+        # Left, Civilization VI: the Firaxis levels and the person; right,
+        # CIVVIS self-play: the agents, a column a setup. Diplo off and Diplo
+        # on read the four-player fits until the six-player ones are
+        # published; a column without a figure is a dash.
+        dash = ["–"] * 5
+        self.assertEqual(drawn["left"], [
+            ["1", "HolyRoller", "–", "–"],
+            ["2", "Lv 8 Deity", "1452", "1042"],
+            ["3", "JackOfAllTrades", "–", "–"],
+            ["4", "dev", "1100", "1210"],
+            ["5", "Lv 5 King", "799", "595"],
+        ])
+        self.assertEqual(drawn["right"], [
+            ["1543", "1547", "1300", *dash, "–", "1200"],
+            ["–"] * 10,
+            ["1191", "1155", "1400", *dash, "–", "–"],
+            ["–"] * 10,
+            ["–"] * 10,
+        ])
+        # A row runs across: each row of the left stands level with its row
+        # on the right, and the two heads are one height.
+        self.assertEqual(drawn["lefts"], drawn["rights"])
+        self.assertEqual(drawn["heads"][0], drawn["heads"][1])
+        # Each kind faintly its own colour, and the three apart.
+        kinds = {cls: ink for cls, ink in drawn["kinds"]}
+        self.assertEqual(sorted(kinds), ["is-agent", "is-level", "is-person"])
+        self.assertEqual(len(set(kinds.values())), 3, kinds)
+        self.assertTrue(all(ink not in ("rgba(0, 0, 0, 0)", "transparent") for ink in kinds.values()), kinds)
+        self.assertIn("Diplo off and Diplo on read the four-player Pangaea tables until the six-player Continents fit is published.", drawn["note"])
+        self.assertIn("Science 120", drawn["note"])
+        # Any head of either table sorts both: Science (right) puts those
+        # rated there first and the rest in the Diplo off ranking.
+        self.dev.evaluate("document.querySelector('#tour-elo [data-sort=\"self:continents6_science\"]').click(), true")
+        drawn = self.dev.evaluate(read)
+        self.assertEqual(drawn["pressed"], ["self:continents6_science"])
+        self.assertEqual(names(drawn), ["JackOfAllTrades", "HolyRoller", "Lv 8 Deity", "dev", "Lv 5 King"])
+        self.assertEqual(drawn["right"][0][2], "1400")
+        # Civilization VI's Diplo on (left) sorts both by it.
+        self.dev.evaluate("document.querySelector('#tour-elo [data-sort=\"control:continents6\"]').click(), true")
+        drawn = self.dev.evaluate(read)
+        self.assertEqual(names(drawn), ["dev", "Lv 8 Deity", "Lv 5 King", "HolyRoller", "JackOfAllTrades"])
+        self.assertEqual(drawn["right"][3][1], "1547")
+        self.assertEqual(drawn["lefts"], drawn["rights"])
+        # Pointing at a row in one table lights it in the other.
+        lit = self.dev.evaluate("""(() => { const card = document.getElementById('tour-elo');
+          card.querySelectorAll('[data-elo-side="control"] tbody tr')[1].children[1].dispatchEvent(new MouseEvent('mouseover', {bubbles: true}));
+          return [...card.querySelectorAll('[data-elo-side="self"] tbody tr')].map(row => row.classList.contains('is-hover')); })()""")
+        self.assertEqual(lit, [False, True, False, False, False])
+        self.assertEqual(self.dev.console, [])
+
+    def test_the_two_elo_tables_scroll_sideways_together(self):
+        # On a phone both tables are wider than their room: scrolling one
+        # sideways scrolls the other the same share of its width.
+        self.rows(390)
+        moved = self.dev.evaluate("""new Promise(done => {
+          const card = document.getElementById('tour-elo');
+          const [left, right] = ['control', 'self'].map(name => card.querySelector('[data-elo-side="' + name + '"]'));
+          const span = pane => pane.scrollWidth - pane.clientWidth;
+          right.scrollLeft = span(right);
+          setTimeout(() => {
+            const after = [span(left), span(right), left.scrollLeft, right.scrollLeft];
+            left.scrollLeft = 0;
+            setTimeout(() => done([...after, left.scrollLeft, right.scrollLeft]), 300);
+          }, 300);
+        })""")
+        span_left, span_right, left_at, right_at, left_back, right_back = moved
+        self.assertGreater(span_left, 0, moved)
+        self.assertGreater(span_right, 0, moved)
+        self.assertEqual(right_at, span_right, moved)
+        self.assertLessEqual(abs(left_at - span_left), 1, moved)
+        self.assertEqual((left_back, right_back), (0, 0), moved)
+        self.assertEqual(self.dev.console, [])
 
     def test_a_row_of_games_is_labelled_first_and_last(self):
         # Operator 2026-11-24: "in tourneys we should label the first game

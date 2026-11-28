@@ -90,6 +90,7 @@ const DEBUG_BAR_STYLE = `
   #debugbar[hidden], #debugbar [hidden] { display: none !important; }
   /* Edge of Tomorrow has a bar of its own and none of the debugger's tools. */
   html.tomorrow #debugbar { display: none !important; }
+  html.moneyball #debugbar { display: none !important; }
   /* While the screen is split the box stays up, over the two halves, and has
      the window's whole width: the halves cover the left panel. */
   html.dbg-split-open #debugbar { z-index: 100001; left: 0; }
@@ -539,9 +540,29 @@ const DEBUG_BAR_STYLE = `
   }
   #debugbar .dbg-marks i.auto { background: #8fb4a8; }
   #debugbar .dbg-marks i.stop { top: auto; bottom: -5px; border-radius: 50%; background: #e2574c; }
+  /* On the one timeline a breakpoint is a red line down through the rail,
+     as a debugger draws one, named at its head (operator, 2026-11-27:
+     "breakpoints should add a vertical red line through the spot on the
+     timeline. like a debugger"). A line whose turn is worked out of the
+     game's future, not set (the next era, a nuclear war), is dashed. */
+  #debugbar:not(.dbg-split-on) .dbg-marks i.stop {
+    top: 0; bottom: 0; width: 0; height: auto; margin-left: -1px; border: 0; border-radius: 0;
+    border-left: 2px solid #e2574c; background: none; box-shadow: 0 0 0 1px #10140f40;
+  }
+  #debugbar:not(.dbg-split-on) .dbg-marks i.stop.dbg-ahead { border-left-style: dashed; box-shadow: none; }
+  #debugbar .dbg-marks i.stop b {
+    position: absolute; top: 2px; left: 3px; padding: 0 5px; border-radius: 3px; white-space: nowrap;
+    font: 700 10px/15px system-ui, sans-serif; color: #fff; background: #b8322a; cursor: pointer;
+  }
+  #debugbar .dbg-marks i.stop.dbg-ahead b { background: #10140fcc; color: #ff8a80; border: 1px dashed #e2574c; line-height: 13px; }
+  #debugbar .dbg-marks i.stop.dbg-row2 b { top: 20px; }
+  /* A name stands over every line, not under the next line along. */
+  #debugbar .dbg-marks i.stop b { z-index: 3; }
+  #debugbar.dbg-split-on .dbg-marks i.stop b { display: none; }
   /* On a tree's slim rails a mark keeps closer to its own rail. */
   #debugbar.dbg-split-on .dbg-marks i { top: -2px; }
   #debugbar.dbg-split-on .dbg-marks i.stop { top: auto; bottom: -2px; }
+  #debugbar.dbg-split-on .dbg-marks i.stop.dbg-ahead { display: none; }
   /* The first turn of each era the game has been through: a line down the
      rail with the era's name at its foot. The name is the thing to click. */
   #debugbar .dbg-marks u {
@@ -985,6 +1006,125 @@ function debugSeat() {
   const name = debugStrategy();
   return name && debugTimeline() ? debugOp({op: "status", strategy: name}) : null;
 }
+// ---- Breakpoints as lines on the timeline
+//
+// Operator, 2026-11-27: "breakpoints should add a vertical red line through
+// the spot on the timeline. like a debugger. for uncretain lines, like future
+// eras, we can make the line dashed. label lines with turn and/or era or
+// whatever. a nuclear war breakpoint could have a dashed line too. actually
+// we can just compute these out so you should be able to figure out the turn
+// from it".
+//
+// A turn breakpoint is a solid line at its turn, named by the turn and the
+// era that turn falls in. The era breakpoint is a solid line at each era the
+// line has begun, and a dashed one at each era the game's future begins; the
+// nuclear breakpoint a dashed one at the turn the future first sees a device
+// go off. The future is the engine's own (`foresee`, `debug_foresee` in
+// `src/server/debugger.rs`): a copy of the world at the end of the line,
+// played on by the same Civ AI to the end of the game with nothing kept but
+// what it saw. The engine is deterministic, so that is the turn the line
+// itself reaches it on for as long as it is played the same way; it is
+// dashed because a turn played another way, or another Civ AI, makes it
+// another future, which is then asked for anew.
+//
+// The future is asked for only on the one timeline, while the era or the
+// nuclear breakpoint is set, and only while nothing else is asked of the
+// engine: a stretch of turns at a time, about `DEBUG_SIGHT_MS` of the
+// engine's time each, so a click is never kept waiting long behind it.
+const DEBUG_SIGHT_MS = 250;
+let debugSight = null, debugSightOut = false, debugSightAfter = 0;
+function debugSightWanted(timeline) {
+  const breaks = (timeline || {}).breakpoints || {};
+  return !!timeline && DEBUG_PANE === null && !debugSplit && (breaks.eras === true || breaks.nuclear === true);
+}
+// Which future a line has: the end of the line, the print of its world there
+// and the Civ AI that plays on from it. Another of any is another future.
+function debugSightKey(timeline) {
+  const worlds = timeline.worlds || [];
+  return JSON.stringify([timeline.last ?? null, worlds.length ? worlds[worlds.length - 1] : null,
+    timeline.seat ?? null, debugStrategy() || null]);
+}
+async function debugForesee() {
+  const timeline = debugTimeline();
+  if (!debugSightWanted(timeline) || debugSightOut || debugBusy || debugRunning || turnAdvancePending) return;
+  if (performance.now() < debugSightAfter) return;
+  const key = debugSightKey(timeline);
+  if (debugSight && debugSight.key !== key) debugSight = null;
+  if (debugSight && debugSight.done) return;
+  const sight = debugSight, strategy = debugStrategy();
+  const turns = !sight ? 4 : Math.max(1, Math.min(40, Math.round(DEBUG_SIGHT_MS / Math.max(1, sight.pace))));
+  debugSightOut = true;
+  const since = performance.now();
+  let told = null;
+  try {
+    told = await fetchJSON("/debug", {method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({op: "foresee", turns, lean: true, ...(strategy ? {strategy} : {}),
+        ...(sight ? {known: sight.turn} : {anew: true})})}, 20000);
+  } catch (_) { told = null; }
+  debugSightOut = false;
+  const seen = told && !told.error ? told.foresight : null;
+  // An engine that cannot say is asked again in a while; nothing is said.
+  if (!seen || typeof seen.turn !== "number") { debugSightAfter = performance.now() + 15000; return; }
+  const now = debugTimeline();
+  if (!now || debugSightKey(now) !== key) { drawDebugBar(false); return; }
+  let next = debugSight;
+  if (!next || seen.anew === true || typeof seen.since !== "number") next = {key, seen: [], eras: [], pace: 50};
+  else next.seen = next.seen.filter(event => event.turn < seen.since);
+  next.seen.push(...(Array.isArray(seen.seen) ? seen.seen : []).filter(event => event && typeof event.turn === "number"));
+  Object.assign(next, {turn: seen.turn, from: seen.from, done: seen.done === true,
+    eras: Array.isArray(seen.eras) ? seen.eras : next.eras});
+  if (seen.played > 0) next.pace = (performance.now() - since) / seen.played;
+  debugSight = next;
+  drawDebugBar(false);
+}
+// Two names that would overlap are set one under the other: a line's name
+// takes the second row when it would run into the name before it on the
+// first. `along` is how far along the lane a turn stands, in pixels; a lane
+// not yet measured keeps them all on the first.
+function debugLineRows(lines, along) {
+  const ends = [-Infinity, -Infinity];
+  return lines.map(line => {
+    const from = along(line.turn) + 3, wide = 12 + 6.2 * [...line.label].length;
+    const row = from >= ends[0] ? 0 : from >= ends[1] ? 1 : 0;
+    ends[row] = Math.max(ends[row], from + wide + 4);
+    return [line, row];
+  });
+}
+// The lines on the one timeline: {turn, ahead, label, title}, one a turn.
+function debugBreakLines(timeline, first, last) {
+  const breaks = timeline.breakpoints || {};
+  const sight = debugSight && debugSight.key === debugSightKey(timeline) ? debugSight : null;
+  const begun = timeline.eras || [];
+  const coming = sight ? sight.eras.filter(era => era.turn > last) : [];
+  const eraOn = turn => [...begun, ...coming].filter(era => era.turn <= turn).sort((one, other) => one.turn - other.turn).pop() || null;
+  const lines = new Map();
+  const put = (turn, ahead, label, title) => {
+    const had = lines.get(turn);
+    if (!had) { lines.set(turn, {turn, ahead, label, title}); return; }
+    // A set turn is certain whatever else falls on it.
+    had.ahead = had.ahead && ahead;
+    if (!had.label.includes(label)) had.label += ` · ${label}`;
+    had.title += `; ${title}`;
+  };
+  for (const turn of breaks.turns || []) {
+    const era = eraOn(turn);
+    put(turn, false, `T${turn}${era ? ` · ${debugEraName(era)}` : ""}`, `Breakpoint on turn ${turn}`);
+  }
+  if (breaks.eras === true) {
+    for (const era of begun.filter(era => era.turn > first))
+      put(era.turn, false, `T${era.turn}`, `The ${debugEraName(era)} era began on turn ${era.turn}`);
+    for (const era of coming)
+      put(era.turn, true, `${debugEraName(era)} ~T${era.turn}`,
+        `The ${debugEraName(era)} era begins on turn ${era.turn} if this line is played on as it is (the game's future, worked out)`);
+  }
+  if (breaks.nuclear === true && sight) {
+    const blast = sight.seen.find(event => event.kind === "nuclear" && event.turn > last);
+    if (blast)
+      put(blast.turn, true, `☢ ~T${blast.turn}`,
+        `${blast.text || "A nuclear device goes off"} on turn ${blast.turn}${blast.era_name ? `, in the ${titleCase(blast.era_name)} era` : ""}, if this line is played on as it is`);
+  }
+  return [...lines.values()].sort((one, other) => one.turn - other.turn);
+}
 // Why the engine stopped a run, in a line, with somewhere to look if it has one.
 function debugSayStop(stopped) {
   if (!stopped) return;
@@ -993,6 +1133,7 @@ function debugSayStop(stopped) {
     const era = ((debugTimeline() || {}).eras || []).find(began => began.era === stopped.era) || {era: stopped.era};
     debugSay(`Stopped on turn ${stopped.turn}: the ${debugEraName(era)} era began`);
   }
+  else if (stopped.kind === "nuclear") debugSay(`Stopped on turn ${stopped.turn}: a nuclear device went off`);
   else if (stopped.kind === "event")
     debugSay(`Stopped on ${stopped.category}: ${stopped.text}`, stopped.pos || null);
   else if (stopped.kind === "condition") {
@@ -1316,6 +1457,7 @@ function debugBreakpointsFromForm() {
     important: pop.querySelector("[data-dbg-field=important]").checked,
     every_seat: pop.querySelector("[data-dbg-field=every_seat]").checked,
     eras: pop.querySelector("[data-dbg-field=eras]").checked,
+    nuclear: pop.querySelector("[data-dbg-field=nuclear]").checked,
     // Conditions are added and removed one at a time; the engine holds the set.
     conditions: [...(debugTimeline().breakpoints.conditions || [])],
   };
@@ -1503,6 +1645,7 @@ function debugBuildBar() {
       <h4>Breakpoints</h4>
       <p>Auto-play, and a turn played to on the timeline, stop when one of these happens.</p>
       <label title="Stop on the first turn of each new era. The eras already played are named on the timeline at the turn they began"><input type="checkbox" data-dbg-field="eras"> A new era begins</label>
+      <label title="Stop on the turn a nuclear device goes off, anyone's. The turn the game's future says it comes is drawn on the timeline as a dashed line"><input type="checkbox" data-dbg-field="nuclear"> A nuclear weapon is used</label>
       <div class="dbg-line"><span>Turns</span>
         <input type="text" data-dbg-field="turns" inputmode="numeric" placeholder="50, 75" aria-label="Stop when these turns open">
         <button data-dbg="break-plus" title="Add the turn ten from now">+10</button></div>
@@ -2117,9 +2260,13 @@ function debugDrawLane(key, model) {
     (model.eras || []).filter(era => era.turn >= lo && era.turn <= hi).map(era =>
       `<u${era.both ? ` class="dbg-both${era.still ? " dbg-still" : ""}"` : ""} style="left:${at(era.turn)}%${moved(era.turn)}"><b data-dbg-turn="${era.turn}" title="The ${escapeAttr(titleCase(String(era.name || `era ${era.era}`)))} era began on turn ${era.turn}. Click to go there">${
         escapeAttr(titleCase(String(era.name || `era ${era.era}`)))}</b></u>`).join("") +
-    (model.stops || []).filter(turn => turn >= lo && turn <= hi).map(turn =>
-      `<i class="stop" data-dbg-turn="${turn}" style="left:${at(turn)}%${moved(turn, tree ? tree.lean : 0)}" title="Breakpoint on turn ${turn}. Click to ${
-        turn > last ? "play to it" : "go there"}"></i>`).join("") +
+    (model.lines
+      ? debugLineRows(model.lines.filter(line => line.turn >= lo && line.turn <= hi), along).map(([line, row]) =>
+        `<i class="stop${line.ahead ? " dbg-ahead" : ""}${row ? " dbg-row2" : ""}" data-dbg-turn="${line.turn}" style="left:${at(line.turn)}%" title="${escapeAttr(line.title)}. Click to ${
+          line.turn > last ? "play to it" : "go there"}"><b>${escapeAttr(line.label)}</b></i>`).join("")
+      : (model.stops || []).filter(turn => turn >= lo && turn <= hi).map(turn =>
+        `<i class="stop" data-dbg-turn="${turn}" style="left:${at(turn)}%${moved(turn, tree ? tree.lean : 0)}" title="Breakpoint on turn ${turn}. Click to ${
+          turn > last ? "play to it" : "go there"}"></i>`).join("")) +
     (model.flags || []).filter(point => point.turn >= lo && point.turn <= hi).map(point =>
       `<i${point.auto ? ' class="auto"' : ""} data-dbg-goto="${point.id}" style="left:${at(point.turn)}%${moved(point.turn, tree ? tree.lean : 0)}"` +
       ` title="${escapeAttr(point.name)}: turn ${point.turn}. Click to go there"></i>`).join(""));
@@ -2213,7 +2360,7 @@ function debugMapLeft() {
 // shows it (`html.tomorrow #debugbar`).
 function debugBarUnseen() {
   const page = document.documentElement.classList;
-  return page.contains("strange-pane") || page.contains("tomorrow") || (page.contains("strange") && debugSplit !== null);
+  return page.contains("strange-pane") || page.contains("tomorrow") || page.contains("moneyball") || (page.contains("strange") && debugSplit !== null);
 }
 function debugDock(bar) {
   if (debugBarUnseen()) return;
@@ -2404,6 +2551,7 @@ function drawDebugBar(measure = true) {
     debugDrawLane("", {name: "", ...debugAxis(first, Math.max(last, beyond ? beyond.to : 0)), first, last, turn: state.turn,
       fork: null, beyond, kept: thinned ? new Set(kept) : null, turns: thinned ? kept : null,
       flags: [...(timeline.saves || [])].sort((a, b) => a.turn - b.turn || a.id - b.id), stops: timeline.breakpoints.turns,
+      lines: debugBreakLines(timeline, first, last),
       by: timeline.played_by || [], played: timeline.played_by || [],
       travel: deck.idle && !debugRunning,
       eras: timeline.eras || [], goal: debugRunning ? debugGoal : null, idle: deck.idle});
@@ -2413,6 +2561,7 @@ function drawDebugBar(measure = true) {
   debugDrawSearch(bar);
   if (DEBUG_PANE !== null) { debugPaneDeck(deck); debugPaneMarks(timeline); }
   if (measure) debugDock(bar);
+  if (debugSightWanted(timeline)) setTimeout(debugForesee, 0);
 }
 // What the box asks, or null. Both are asked on the one timeline, and
 // nothing is done until one is answered. `branch`: Branch was pressed, and
@@ -2642,7 +2791,7 @@ function debugDrawDeck(bar, deck) {
   document.getElementById("dbg-layer-count").textContent = layersOn ? `${layersOn}` : "";
   const conditions = breaks.conditions || [];
   const breakCount = breaks.turns.length + breaks.categories.length + breaks.phrases.length +
-    conditions.length + (breaks.important ? 1 : 0) + (breaks.eras ? 1 : 0);
+    conditions.length + (breaks.important ? 1 : 0) + (breaks.eras ? 1 : 0) + (breaks.nuclear ? 1 : 0);
   document.getElementById("dbg-break-count").textContent = breakCount ? `${breakCount}` : "";
   // A pane is already one half of a split, and a split does not split again.
   const split = bar.querySelector('[data-dbg="split"]');
@@ -2705,6 +2854,7 @@ function debugDrawDeck(bar, deck) {
   field("important").checked = breaks.important;
   field("every_seat").checked = breaks.every_seat;
   field("eras").checked = breaks.eras === true;
+  field("nuclear").checked = breaks.nuclear === true;
 
   const note = document.getElementById("dbg-note");
   const html = escapeAttr(deck.note) +
@@ -3131,8 +3281,8 @@ function debugSplitSettle() {
     ask({op: "layers", layers: mine.layers.filter(layer => layer.on).map(layer => layer.id)});
   if (mine.reveal !== theirs.reveal) ask({op: "reveal", on: mine.reveal === true});
   if (differ(mine.breakpoints, theirs.breakpoints)) {
-    const {turns, categories, phrases, important, every_seat, eras, conditions} = mine.breakpoints;
-    ask({op: "breakpoints", turns, categories, phrases, important, every_seat, eras, conditions});
+    const {turns, categories, phrases, important, every_seat, eras, nuclear, conditions} = mine.breakpoints;
+    ask({op: "breakpoints", turns, categories, phrases, important, every_seat, eras, nuclear: nuclear === true, conditions});
   }
 }
 // A control on the deck, named so that the same control can be found on
@@ -5230,12 +5380,20 @@ if (TOMORROW) {
   document.documentElement.classList.add("tomorrow");
   SOLO_UI = true;
 }
+// Whether this page is CIVVIS: Moneyball (`/moneyball`, the last section of
+// this file): the seat is played by the player strategy the person picks, a
+// stretch of turns at a time, by its numbers alone.
+const MONEYBALL = (() => {
+  try { return DEBUG_PANE === null && window.CIVVIS_PAGE_MODE === "moneyball"; }
+  catch (_) { return false; }
+})();
+if (MONEYBALL) document.documentElement.classList.add("moneyball");
 // In Edge of Tomorrow the seat's only decisions are Auto-play and the jump
 // (operator, 2026-11-26: "a player's only controls are the auto play stuff
 // and the jump back / wake here"): the page sends no action, citizen or
 // focus of its own for the seat. Auto-play, Jump back and Checkpoint here go to the
 // engine by their own routes.
-window.civvisSeatHandsOff = TOMORROW;
+window.civvisSeatHandsOff = TOMORROW || MONEYBALL;
 // And it shows the seat's research box (governors, research, civic,
 // government and policies; `liveTrackerShown` in app.js), as the Debugger
 // view does, and opens on the standings and the victory tracker.
@@ -5261,11 +5419,11 @@ const STRANGE_SPARE_STILL_MS = 1500, STRANGE_SPARE_EVERY_MS = 1000;
 const STRANGE_HEAD = 34, STRANGE_BOX_LEAST = 120, STRANGE_SILL = 30;
 // The longest a branch's name is written on the tree, where room is short.
 const STRANGE_NAME_MOST = 36;
-// All 14,000,605 (`strangeAll`): how many of the best player strategies it
-// branches the base timeline for (operator 2026-11-26: "every ai-strategy we
-// have (we can say top 10 for now)"), and how long it waits for their worlds
-// to be there before it lets time run on without the rest.
-const STRANGE_ALL_TOP = 10, STRANGE_ALL_WAIT_MS = 90000;
+// Send it (`strangeSendIt`): how many worlds it fills the page up to
+// (operator 2026-11-27: "lets have the button spawn up to a total of 12
+// worlds. so we can have a nice grid down below"), and how long it waits for
+// their worlds to be there before it lets time run on without the rest.
+const STRANGE_SEND_WORLDS = 12, STRANGE_SEND_WAIT_MS = 90000;
 // How many worlds Branch 5 Next Best makes (`strangeNext`).
 const STRANGE_NEXT_MANY = 5;
 // How far ahead of the open turn each world's future is played, and the most
@@ -5288,8 +5446,8 @@ const STRANGE_SEE_WAIT_MS = 120000, STRANGE_SEE_AGAIN_MS = 3000, STRANGE_SEE_ANE
 // of it; the room left between two, and where the first row stands.
 const STRANGE_FATES = {full: [292, 56], line: [178, 24], word: [88, 24]};
 const STRANGE_FATE_GAP = 6, STRANGE_FATE_TOP = 50;
-// The right-hand column at the top: what the page costs, the predicted paths
-// and the defeat tracker.
+// The right-hand column at the top: what the page costs, the black swan, the
+// victory tracker of the world followed and the defeat tracker.
 const STRANGE_RIGHT_WIDE = 300;
 // How often what the page costs is read, and how many readings are drawn.
 const STRANGE_METER_MS = 2000, STRANGE_METER_KEPT = 60;
@@ -5321,7 +5479,7 @@ const STRANGE_STYLE = `
     --strange-head: ${STRANGE_HEAD}px;
     /* Where the line of the open turn is and how wide the board is at it:
        the page's to say (\`strangeLayout\`). */
-    --strange-line: 50%; --strange-board: 160px;
+    --strange-line: 50%; --strange-board: 160px; --strange-turn-left: calc(50% + 110px);
   }
   html.strange #debugsplit .dbg-divider { display: none !important; }
   /* The worlds: a box each under the line of the open turn, in the colour of
@@ -5338,38 +5496,72 @@ const STRANGE_STYLE = `
   #strange-hud {
     position: absolute; inset: 0; z-index: 2; pointer-events: none; user-select: none;
     color: #e8e3d2; font: 12px/1.25 system-ui, sans-serif;
+    /* The title's card, which the cards beside it stand clear of. */
+    --strange-card: min(360px, 36vw);
   }
   #strange-hud > * { pointer-events: auto; }
-  #strange-hud button, #strange-hud select {
+  /* The highway's own controls. The simulator's standings and victory
+     tracker, which stand on it (\`strangeStandingsMount\`), keep theirs as
+     the simulator draws them, and the simulator's type. */
+  #strange-hud button:where(:not(:is(.strange-standings, .strange-victory) *)), #strange-hud select:where(:not(:is(.strange-standings, .strange-victory) *)) {
     height: 26px; padding: 0 8px; border-radius: 8px; font: inherit; line-height: 1; cursor: pointer;
     color: inherit; background: #14231f; border: 1px solid #35504a;
   }
-  #strange-hud select { min-width: 0; max-width: 100%; background: #060d0b; }
-  #strange-hud button:hover:not(:disabled) { border-color: ${STRANGE_GOLD}; }
-  #strange-hud button:disabled { opacity: .38; cursor: default; }
+  #strange-hud select:where(:not(:is(.strange-standings, .strange-victory) *)) { min-width: 0; max-width: 100%; background: #060d0b; }
+  #strange-hud button:where(:not(:is(.strange-standings, .strange-victory) *)):hover:not(:disabled) { border-color: ${STRANGE_GOLD}; }
+  #strange-hud button:where(:not(:is(.strange-standings, .strange-victory) *)):disabled { opacity: .38; cursor: default; }
+  #strange-hud :is(.strange-standings, .strange-victory) {
+    font: var(--type-body)/1.5 var(--font-ui); color: var(--text); letter-spacing: .005em; user-select: text;
+  }
   #strange-hud .strange-card { border: 1px solid #35504a; border-radius: 12px; background: #07110fd9; }
   #strange-hud .strange-title {
-    position: absolute; left: 14px; top: 12px; box-sizing: border-box; width: min(330px, 34vw); padding: 10px 12px 10px;
+    position: absolute; left: 14px; top: 12px; box-sizing: border-box; width: var(--strange-card); padding: 10px 12px 10px;
   }
-  /* The title a size up (operator 2026-11-26: "title can be a bit bigger"):
-     22px fills the 330px card to its edges less 16px; a narrower window
-     narrows the card (34vw) and the title with it, to stay one line. */
+  /* The title a size up again and plainer to read (operator 2026-11-27:
+     "Make the title line a bit bigger. and more readable"; 2026-11-26: "title
+     can be a bit bigger"): 25px, a lighter gold with a shadow under it, in a
+     card 30px wider than it was so it stays one line; a narrower window
+     narrows the card (36vw) and the title with it. */
   #strange-hud .strange-title b {
-    display: block; color: ${STRANGE_GOLD}; font: 700 clamp(16px, 2.2vw, 22px)/1.15 Georgia, serif; letter-spacing: .02em;
+    display: block; color: #ffe2a0; font: 700 clamp(17px, 2.5vw, 25px)/1.2 Georgia, serif; letter-spacing: .01em;
+    text-shadow: 0 1px 2px #000c; white-space: nowrap;
   }
-  /* Home, CIVVIS and New game over the title (operator 2026-11-26: "to the
-     top of dr strange game, above the title, lets add home, civvis, new game
-     buttons. new game can be gold"): three buttons of a size, New game in
-     the gold of Play. */
-  #strange-hud .strange-title .strange-top { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; margin-bottom: 9px; }
-  #strange-hud .strange-title .strange-top > * {
+  /* Home, Charts/ and CIVVIS over the title (operator 2026-11-27: "make the
+     top buttons Home, Charts/, and CIVVIS and color code them appropriately
+     ... maybe make the buttons above it a bit different section"): the
+     site's own colours for them, as every page's list has them (Home and
+     Charts/ blue, CIVVIS gold), in a strip of their own over a rule. They
+     were Home, CIVVIS and a gold New game (2026-11-26); the new games are
+     under the title now. */
+  #strange-hud .strange-title .strange-top {
+    display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px;
+    margin: -2px -4px 10px; padding: 0 4px 9px; border-bottom: 1px solid #35504a;
+  }
+  #strange-hud .strange-title .strange-top > a {
     box-sizing: border-box; height: 26px; padding: 0 8px; display: flex; align-items: center; justify-content: center;
-    border: 1px solid #35504a; border-radius: 6px; background: #14231f; color: #dfe8e3;
+    border: 1px solid #3b6788; border-radius: 6px; background: #274b66; color: #a8d8f5;
     font-size: 12px; font-weight: 700; letter-spacing: normal; text-transform: none; text-decoration: none; white-space: nowrap;
   }
-  #strange-hud .strange-title .strange-top > a:hover { color: ${STRANGE_GOLD}; border-color: ${STRANGE_GOLD}; }
-  #strange-hud .strange-title .strange-top > .strange-new { color: #10140f; background: ${STRANGE_GOLD}; border-color: transparent; }
-  #strange-hud .strange-title .strange-top > .strange-new:hover { filter: brightness(1.08); }
+  #strange-hud .strange-title .strange-top > a:hover { color: #fff; border-color: #66c0f4; background: #315d7e; }
+  #strange-hud .strange-title .strange-top > a.strange-civvis { color: #17130c; border-color: #efd184; background: linear-gradient(145deg, #dec176, #aa7d30); }
+  #strange-hud .strange-title .strange-top > a.strange-civvis:hover { color: #000; border-color: #fff3c9; background: linear-gradient(145deg, #f0d68e, #c0913c); }
+  /* 2P Pangaea New Game and 6P Continents New Game under the title
+     (operator 2026-11-27: "under the title, lets have a 2P Pangaea New Game
+     option and 6P Continents New Game option"), in the gold New game had. */
+  #strange-hud .strange-title .strange-news { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; margin-top: 8px; }
+  /* Each on two lines, the world over "New Game", as the AI Debugger's
+     pair are: on one line "6P Continents New Game" was cut short where the
+     fonts run wider (Linux's), in half of a 360px card. */
+  #strange-hud .strange-title .strange-news button {
+    width: 100%; height: auto; min-height: 36px; padding: 3px 4px; overflow: hidden;
+    color: ${STRANGE_GOLD}; border-color: #8a7440; line-height: 1.15; letter-spacing: 0;
+  }
+  #strange-hud .strange-title .strange-news button > span {
+    display: block; margin: 0; color: inherit; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  #strange-hud .strange-title .strange-news .strange-news-map { font-size: 12.5px; font-weight: 700; }
+  #strange-hud .strange-title .strange-news .strange-news-new { margin-top: 1px; font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; opacity: .78; }
+  #strange-hud .strange-title .strange-news button:hover:not(:disabled) { color: #10140f; background: ${STRANGE_GOLD}; border-color: transparent; }
   #strange-hud .strange-title span { display: block; margin-top: 4px; color: #bccac4; }
   /* What the page costs, in the top right corner (operator 2026-11-24: "we
      should also monitor resource usage - maybe track memory used and cpu %
@@ -5399,7 +5591,7 @@ const STRANGE_STYLE = `
     overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin;
   }
   #strange-hud .strange-versus {
-    position: absolute; top: 12px; left: calc(14px + min(330px, 34vw) + 12px);
+    position: absolute; top: var(--strange-versus-top, 12px); left: calc(14px + var(--strange-card) + 12px);
     right: calc(14px + ${STRANGE_RIGHT_WIDE}px + 12px); box-sizing: border-box; max-height: 34vh; overflow: auto;
     padding: 8px 12px 9px; display: grid; gap: 3px 0; align-items: baseline; font-variant-numeric: tabular-nums;
   }
@@ -5414,27 +5606,69 @@ const STRANGE_STYLE = `
      number is one line high, and the band leaves the tree its room. */
   #strange-hud .strange-versus b small { display: inline; margin-left: .7em; font-size: 10.5px; font-weight: 400; color: #8fa39b; }
   #strange-hud .strange-versus b small.lead { color: ${STRANGE_GOLD}; font-weight: 700; }
-  /* The predicted paths: each world's future as it has been played out
-     to the end of its game, one to a row, the best first. */
-  #strange-hud .strange-paths { flex: none; padding: 7px 10px 8px; }
-  #strange-hud .strange-paths:empty { display: none; }
-  #strange-hud .strange-paths h3 {
-    margin: 0 0 6px; font: 800 11px/1.2 system-ui, sans-serif; letter-spacing: .12em; text-transform: uppercase; color: #e8e3d2;
+  /* The world followed, as the simulator shows a world (operator 2026-11-27:
+     "in doc stranges civvis, i can't actually tell what civ we are. please
+     add the player hud in for the "Following" game. we can have this player
+     hud above the path hud that has all the paths listed. lets add the
+     victory track to the right as well"): the page's own standings over the
+     worlds' numbers, and its own victory tracker in the column on the right,
+     both drawn from the world followed (\`strangeStandingsDraw\`). The seat
+     the worlds play is the standings' gold row. The turn is the line's, so
+     the standings leave out their turn box; the tracker leaves out the
+     record of games; and neither keeps what moves, sizes or hides a panel,
+     because the highway says where these two stand. */
+  #strange-hud .strange-standings {
+    position: absolute; top: 12px; left: calc(14px + var(--strange-card) + 12px);
+    right: calc(14px + ${STRANGE_RIGHT_WIDE}px + 12px);
   }
-  #strange-hud .strange-paths ol { margin: 0; padding: 0; list-style: none; display: grid; gap: 5px; }
-  #strange-hud .strange-paths li {
-    display: grid; grid-template-columns: 16px minmax(0, 1fr); column-gap: 7px; padding: 4px 7px 5px;
-    border-left: 3px solid var(--strange-tint); border-radius: 6px; background: #ffffff07;
+  #strange-hud .strange-standings:empty, #strange-hud .strange-victory:empty { display: none; }
+  html.strange #strange-hud #playerhud {
+    position: relative !important; inset: auto !important; width: auto !important; height: auto !important;
+    max-height: 30vh; display: grid !important; grid-template-columns: minmax(0, 1fr) !important;
   }
-  #strange-hud .strange-paths li > b { grid-row: span 3; font: 700 14px/18px Georgia, serif; color: #9fb3ab; }
-  #strange-hud .strange-paths li > span, #strange-hud .strange-paths li > strong {
-    min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  html.strange #strange-hud #playerhud > :is(.victory-turn, .turn-plate-seam, .turn-plate-restore, .standings-restore, .overlay-close, .widget-resize-handle) { display: none !important; }
+  html.strange #strange-hud #playerhud > .player-standings { grid-column: 1 !important; display: flex !important; }
+  #strange-hud .strange-victory { flex: 1 1 auto; min-height: 250px; display: flex; }
+  html.strange #strange-hud #victoryhud {
+    position: relative !important; inset: auto !important; width: auto !important; height: auto !important;
+    flex: 1 1 auto; min-height: 0; display: grid !important; grid-template-rows: minmax(0, 1fr) !important;
   }
-  #strange-hud .strange-paths li > span { font-size: 11.5px; font-weight: 700; color: var(--strange-tint); }
-  #strange-hud .strange-paths li > strong { font-size: 12px; line-height: 16px; }
-  #strange-hud .strange-paths li > small { min-width: 0; font-size: 11px; line-height: 14px; color: #9fb3ab; }
-  #strange-hud .strange-paths li[data-outcome="won"] > strong { color: ${STRANGE_GOLD}; }
-  #strange-hud .strange-paths li[data-outcome="lost"] > strong { color: #ff8a80; }
+  html.strange #strange-hud #victoryhud > :is(.sim-stats-region, .sim-stats-seam, .overlay-close, .widget-resize-handle) { display: none !important; }
+  html.strange #strange-hud #victoryhud > .victory-region { grid-row: 1 !important; }
+  /* A civilization's name flies the simulator's own map to it, and that map
+     is not shown here; a panel's heading drags the panel. */
+  html.strange #strange-hud :is(#playerhud, #victoryhud) :is([data-hud-action="capital"], [data-widget-drag]) { pointer-events: none; cursor: default; }
+  /* Under each column's letters, the player strategy that holds the seat
+     there now (operator 2026-11-27: "add the names of the active strategy to
+     the header of the paths hud"). */
+  #strange-hud .strange-versus .strange-who {
+    padding: 0 6px 3px; text-align: center; font-size: 11px; font-weight: 700;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  /* End outcome, the last row (operator 2026-11-27: "lets merge the
+     predicted paths into the path hud. make another row that is end outcome:
+     and list the XXX wins, turnXXX, no wars, no nuclear wars"): how each
+     world's future ends, as it has been played out to the end of its game
+     (\`strangeEndOutcome\`). Worlds that share a column each have a line,
+     led by the letter. The best is lit as the most of a row is. */
+  /* The row is two lines high whatever it says, so the band, and the line
+     of the open turn under it, stay where they are while the words change
+     and while worlds share a column and part: a world alone in its column
+     has both lines, two worlds sharing one have a line each, and past two
+     the first world's line is followed by how many more there are. What is
+     cut short is said whole on the pointer. */
+  #strange-hud .strange-versus .strange-end {
+    align-self: start; box-sizing: border-box; min-width: 0; height: 30px; padding: 2px 6px 0; overflow: hidden;
+    text-align: center; font-size: 11px; line-height: 14px; color: #dfe8e3;
+  }
+  #strange-hud .strange-versus .strange-end > span { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #strange-hud .strange-versus .strange-end > span:only-child {
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal;
+  }
+  #strange-hud .strange-versus .strange-end [data-outcome="won"] { color: ${STRANGE_GOLD}; }
+  #strange-hud .strange-versus .strange-end [data-outcome="lost"] { color: #ff8a80; }
+  #strange-hud .strange-versus .strange-end b { font-weight: 700; }
+  #strange-hud .strange-versus em.strange-end-head { align-self: start; padding-top: 3px; }
   /* The outcomes are listed there now, not signed over each branch. */
   #strange-hud .strange-fate { display: none !important; }
   /* The defeat tracker (operator 2026-11-26: "add an inverse victory tracker
@@ -5478,21 +5712,21 @@ const STRANGE_STYLE = `
   /* All 14,000,605 (operator 2026-11-26: "add a button to the left side top
      half but the bottom of it"): at the foot of the tree on the left, where
      the worlds' numbers stand on the right, and over the turn written on the
-     line when that would be under it (\`--strange-all-lift\`). In Doctor
+     line when that would be under it (\`--strange-send-lift\`). In Doctor
      Strange's colours, as his button in the site list is. */
-  #strange-hud .strange-all {
-    position: absolute; left: 14px; bottom: calc(100% - var(--strange-line) + 12px + var(--strange-all-lift, 0px));
+  #strange-hud .strange-send {
+    position: absolute; left: 14px; bottom: calc(100% - var(--strange-line) + 12px + var(--strange-send-lift, 0px));
     box-sizing: border-box; width: min(250px, 30vw); height: 36px; padding: 0 14px;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     font: 700 15px/1 Georgia, serif; letter-spacing: .03em; font-variant-numeric: tabular-nums;
     color: #ffe3a3; background: linear-gradient(135deg, #1c2a7a 30%, #a3122f); border: 1px solid #ff9a2e;
     box-shadow: 0 0 6px rgba(255, 138, 30, .6);
   }
-  #strange-hud .strange-all:hover:not(:disabled) {
+  #strange-hud .strange-send:hover:not(:disabled) {
     color: #fff; background: linear-gradient(135deg, #2638a0 30%, #c8193d); border-color: #ffb85c;
     box-shadow: 0 0 10px rgba(255, 138, 30, .6);
   }
-  #strange-hud .strange-all.on, #strange-hud .strange-all.on:disabled { opacity: 1; cursor: progress; box-shadow: 0 0 18px rgba(255, 138, 30, .9); }
+  #strange-hud .strange-send.on, #strange-hud .strange-send.on:disabled { opacity: 1; cursor: progress; box-shadow: 0 0 18px rgba(255, 138, 30, .9); }
   /* The divide between the tree and the boxes is the line of the open turn,
      and is taken hold of there. */
   #strange-hud .strange-divide {
@@ -5607,7 +5841,7 @@ const STRANGE_STYLE = `
   /* What struck, under the button for as long as it is news. */
   #strange-hud .strange-omen {
     position: absolute; left: 50%; top: calc(var(--strange-band, 40px) + 10px); transform: translateX(-50%); box-sizing: border-box;
-    width: max-content; max-width: min(470px, calc(100% - 2 * min(330px, 34vw) - 64px)); padding: 9px 14px 10px;
+    width: max-content; max-width: min(470px, calc(100% - 2 * var(--strange-card) - 64px)); padding: 9px 14px 10px;
     text-align: center; cursor: pointer; color: ${STRANGE_SWAN_INK}; background: #000000eb;
     border: 1px solid ${STRANGE_SWAN_INK}; border-radius: 12px; box-shadow: 0 0 34px -4px ${STRANGE_SWAN_INK}99;
   }
@@ -5646,8 +5880,15 @@ const STRANGE_STYLE = `
   #strange-hud .strange-fate[data-fate="none"] strong { color: #9fb3ab; font-weight: 400; }
   #strange-hud .strange-fate.strange-over { background: color-mix(in srgb, var(--strange-tint) 22%, #07110f); }
   #strange-hud .strange-swans, #strange-hud .strange-omen { z-index: 1; }
-  #strange-hud .strange-steps { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; }
+  /* Turn 1, Era back, −10, −1, +1, +10, Era forward, in one row (operator
+     2026-11-27: "this should be a clean set of controls. lets try to put in
+     order: turn 1, era back ..."): the four steps share what the three
+     named ends leave. */
+  #strange-hud .strange-steps { grid-column: 1 / -1; display: grid; grid-template-columns: max-content max-content repeat(4, minmax(0, 1fr)) max-content; gap: 5px; }
   #strange-hud .strange-steps button { padding: 0; font-variant-numeric: tabular-nums; }
+  #strange-hud .strange-steps [data-strange="first"], #strange-hud .strange-steps [data-strange^="era-"] { padding: 0 7px; }
+  #strange-hud .strange-steps button i { font-style: normal; font-size: 9px; letter-spacing: -.15em; margin: 0 4px 0 -1px; }
+  #strange-hud .strange-steps [data-strange="era-on"] i { margin: 0 0 0 4px; }
   #strange-hud .strange-title .strange-say { margin-top: 7px; color: #9fb3ab; font-size: 11px; min-height: 2.5em; }
   /* Operator 2026-11-26: "move "to the fork" up to be below the title on the
      left. move futures up to be right of this. then the -10, -1, 1, 10 line.
@@ -5661,14 +5902,22 @@ const STRANGE_STYLE = `
      highway, or the steps, go back. */
   #strange-hud .strange-title .strange-say + .strange-deck { margin-top: 4px; }
   /* The open turn is the line across the window, and is written on it, with
-     its era: to one side of the board, so that the tree where it meets the
-     line is left in sight, and the worlds' card has the other side. */
+     its era, on the right of the tree, its left edge on the edge of the
+     green path the worlds' lines run down between the boxes, or past the
+     lanes on that side when they reach further (operator 2026-11-27: "please
+     move turn count to the right side of the box. and move in a bit (if
+     there aren't too many lines) to line up with the edge of the center
+     green path with all the historical lines"; it stood left of the board
+     before, off the window once a dozen worlds widened it). With so many
+     lanes right of the followed world that it would stand over them, it is
+     written left of the tree instead, the same way, where that is clear.
+     Where is the page's to say (\`--strange-turn-left\`, \`strangeTurnLeft\`). */
   #strange-hud .strange-now {
     position: absolute; bottom: calc(100% - var(--strange-line)); box-sizing: border-box; height: 38px; padding: 0 11px;
     display: flex; align-items: center; gap: 6px; white-space: nowrap; pointer-events: none;
     border: 1px solid ${STRANGE_GOLD}88; border-bottom: 0; border-radius: 11px 11px 0 0; background: #07110fe6;
   }
-  #strange-hud .strange-turn { right: calc(50% + var(--strange-board)); align-items: baseline; padding-top: 5px; color: #9fb3ab; font-weight: 700; letter-spacing: .12em; }
+  #strange-hud .strange-turn { left: var(--strange-turn-left); align-items: baseline; padding-top: 5px; color: #9fb3ab; font-weight: 700; letter-spacing: .12em; }
   #strange-hud .strange-turn b { color: ${STRANGE_GOLD}; font: 700 28px/1 Georgia, serif; letter-spacing: 0; font-variant-numeric: tabular-nums; }
   #strange-hud .strange-era { margin-left: 4px; color: #bccac4; letter-spacing: .08em; text-transform: uppercase; }
   #strange-hud .strange-era::before { content: "· "; }
@@ -5713,6 +5962,7 @@ const STRANGE_PANE_STYLE = `
 
 // The host's record of the highway, beside the split's own.
 const strange = {
+  paintFrame: 0,
   // The timeline being followed: the one in the middle.
   follow: "a",
   // The turn on the line across the window, which follows the followed
@@ -5769,10 +6019,10 @@ const strange = {
   // A branch playing a path Autosearch found (`strangeSearchBranch`):
   // {letter, from, search}. Null when none is.
   planning: null,
-  // All 14,000,605 under way (`strangeAll`): {base, turn, letters, short,
+  // All 14,000,605 under way (`strangeSendIt`): {base, turn, letters, short,
   // since}, with `turn` null while time is still stopping for it. Null when
   // it is not.
-  all: null,
+  send: null,
   // Whether the controls were last drawn as free to press.
   idleWas: null,
 };
@@ -5894,6 +6144,25 @@ function strangeGeometry() {
 }
 // How wide the board is on the line of the open turn, to either side.
 function strangeBoard(g) { return g.near * Math.max(2.7, g.reach * 2 + .7) + 40; }
+// Where the turn on the line stands, by its left edge: right of the middle,
+// on the edge of the green path the worlds' lines run down between the
+// boxes, half a lane out, unless the lanes on that side reach further, then
+// just past the outermost of them; never so far that it runs under the
+// column on the right, which comes down near the line, or off the window.
+// Where the lanes on the right leave it no room, it stands left of the tree
+// the same way, if the lanes on that side do; with neither side clear, on
+// the right as far out as there is room. `wide` is how wide the turn's chip
+// is, and `column` where that column stands, as last measured
+// (`strangeCards`).
+function strangeTurnLeft(g, wide = strange.turnWide || 0, column = strange.turnColumn || null) {
+  const open = strangeOpen(), mine = Math.max(0, open.indexOf(strange.follow));
+  const clear = lanes => Math.max(g.lane / 2, g.near * lanes + 16);
+  const right = g.cx + clear(open.length - 1 - mine), left = g.cx - clear(mine) - wide;
+  const most = (column && column.bottom > g.cy - 50 ? column.left - 10 : g.W - 12) - wide;
+  if (right <= most) return Math.round(right);
+  if (left >= 12) return Math.round(left);
+  return Math.round(Math.max(12, most));
+}
 function strangeY(g, turn, cam) {
   const ahead = turn - cam;
   return ahead >= 0 ? g.cy - g.up * (1 - Math.exp(-ahead / g.tauUp)) : g.cy + g.down * (1 - Math.exp(ahead / g.tauDown));
@@ -5992,10 +6261,19 @@ function strangeSame(open = strangeOpen()) {
 // the page again, at its own address, which opens on a world of its own
 // with a seed of its own (`OPENING_SEED` in beta/shim.js). An address that
 // pins a world with `?game=` is let go of.
-function strangeNewGame() {
-  const next = new URL(window.location.href);
+// A new game is the page again on a new world (the published page draws a
+// new opening seed each visit): one of `players` civilizations on `map` when
+// they are named (2P Pangaea New Game, 6P Continents New Game), which the
+// page reads from its address as any link's (`beta/shim.js`).
+function strangeNewGameAddress(players = null, map = null, from = window.location.href) {
+  const next = new URL(from);
   next.searchParams.delete("game");
-  window.location.assign(next.href);
+  if (players) next.searchParams.set("players", String(players));
+  if (map) next.searchParams.set("map", map);
+  return next.href;
+}
+function strangeNewGame(players = null, map = null) {
+  window.location.assign(strangeNewGameAddress(players, map));
 }
 
 // A world's box is made: its name plate, and for a world past the split's
@@ -6248,25 +6526,37 @@ function strangeMake(name, from, after = from, plan = null) {
   return letter;
 }
 
-// ---- All 14,000,605
+// ---- Send it
 //
 // Operator 2026-11-26: "add a button to the left side top half but the
 // bottom of it in doctor strange that says "All 14,000,605" and when clicked
 // every ai-strategy we have (we can say top 10 for now) spawns from the
 // current point and all start simulating towards the end. time carries
-// forward for all. spawn a window for each".
+// forward for all. spawn a window for each". Then 2026-11-27: "change the
+// all 14,000,000... button to "Send it". hover text can say spwan 10
+// branches and run all out to the end. also, work to optimize this process
+// so we are runing branches as fast as possible. we should be utilizing free
+// cores to speed up other world. actually lets have the button spawn up to a
+// total of 12 worlds. so we can have a nice grid down below."
 //
 // So the button stands at the foot of the tree on the left, where the
 // worlds' numbers stand on the right. Pressed, the base timeline is branched
-// on its open turn once for each of the best `STRANGE_ALL_TOP` player
-// strategies, best first, each a world in a box of its own, and once they
-// are all there time runs on for every open world, to the end of the game.
-// A strategy that already has its world there is not given another: the
-// one the base timeline seats, and one seated in a world that is still the
-// same world as the base on this turn. Time already running is stopped
-// first and the worlds branch from the turn it stops on. Past the most
-// worlds that can be open, the best are branched and the page says how many
-// were left out.
+// on its open turn for the best player strategies that have no world of
+// their own there yet, best first, each a world in a box of its own, until
+// `STRANGE_SEND_WORLDS` worlds are open (twelve: three rows of four boxes),
+// or as many as this computer's memory holds (`strangeBudget`), or until
+// every player strategy has its world. A strategy that already has its
+// world there is not given another: the one the base timeline seats, and
+// one seated in a world that is still the same world as the base on this
+// turn (`strangeSeated`), since that would be the same game played again.
+// Once they are all there, time runs on for every open world to the end of
+// the game, as fast as the worlds are played (`strangeAsk`, `fast`): the
+// page shows the furthest turn every world holds instead of each turn in
+// between, so drawing a dozen boxes a turn no longer holds the worlds back,
+// and each world's engine plays on ahead the whole time, on a core of its
+// own. Time already running is stopped first and the worlds branch from the
+// turn it stops on. With nothing left to branch, it runs time on for the
+// worlds that are open.
 
 // The player strategies that have a world of their own on the base
 // timeline's open turn: the one it seats, and each seated in a world that is
@@ -6285,10 +6575,11 @@ function strangeSeated(base) {
   return new Set([pane.strategy, ...strangeOpen().filter(letter => letter !== base && (coming(letter) || split.panes[letter].turn === turn &&
     mine !== undefined && print(letter) === mine)).map(letter => split.panes[letter].strategy)]);
 }
-// The player strategies All branches the base timeline for, best first.
-function strangeAllNames(base = strange.follow) {
-  const seated = strangeSeated(base), offered = strangeAgents();
-  return strangeRanked().names.filter(name => offered.includes(name)).slice(0, STRANGE_ALL_TOP).filter(name => !seated.has(name));
+// The player strategies Send it branches the base timeline for, best first:
+// as many as there is room for up to `STRANGE_SEND_WORLDS` open worlds.
+function strangeSendNames(base = strange.follow) {
+  const room = Math.min(STRANGE_SEND_WORLDS, strangeBudget().most) - strangeOpen().length;
+  return room > 0 ? strangeNextNames(base).slice(0, room) : [];
 }
 
 // ---- Branch Next Best
@@ -6313,7 +6604,7 @@ function strangeNextNames(base = strange.follow) {
 }
 function strangeNext(count) {
   const split = debugSplit;
-  if (!split || !strangeIdle() || strange.all) return [];
+  if (!split || !strangeIdle() || strange.send) return [];
   const base = strange.follow, turn = split.panes[base].turn, names = strangeNextNames(base).slice(0, count);
   const room = strangeBudget().most - strangeOpen().length;
   if (names.length === 0) { strangeSay(`Every player strategy has a world of its own on turn ${turn} already`); return []; }
@@ -6331,72 +6622,84 @@ function strangeNext(count) {
     : `Branch ${count} Next Best: ${made}, from ${base.toUpperCase()}${short > 0 ? `. ${short} more did not fit: ${strangeFullWords(undefined, false)}` : ""}`);
   return letters;
 }
-function strangeAll() {
+function strangeSendIt() {
   const split = debugSplit;
-  if (!split || strange.all) return;
+  if (!split || strange.send) return;
   const going = split.running > 0 || strange.run !== null;
   if (going) {
+    // With no room for another world, the worlds running now are run out to
+    // the end as fast as they are played.
+    if (strangeSendRoom().room <= 0) {
+      if (strange.run && !strange.run.stop && !strange.run.fast) {
+        strange.run.fast = true;
+        strangeSay(`Send it: time runs on for all ${strangeOpen().length} worlds, to the end.`);
+      }
+      return;
+    }
     // Time stops first, and the worlds branch from the turn it stops on.
-    strange.all = {base: strange.follow, turn: null, letters: [], short: 0, since: performance.now()};
+    strange.send = {base: strange.follow, turn: null, letters: [], short: 0, since: performance.now()};
     if (!(strange.run && strange.run.stop)) strangePlay();
     strangeDraw();
     return;
   }
   if (!strangeIdle()) return;
-  strangeAllSpawn(strange.follow);
+  strangeSendSpawn(strange.follow);
 }
-function strangeAllSpawn(base) {
-  const split = debugSplit, names = strangeAllNames(base), turn = split.panes[base].turn;
-  const room = strangeBudget().most - strangeOpen().length;
-  if (names.length === 0 || room <= 0) {
-    strange.all = null;
-    strangeSay(names.length === 0 ? `Each of the top ${STRANGE_ALL_TOP} player strategies has a world of its own on turn ${turn} already`
-      : `${strangeFullWords()}. Delete some to branch them all`);
-    return;
-  }
+// The room Send it has: for how many more worlds, up to the twelve, and how
+// many of those this computer's memory holds.
+function strangeSendRoom(budget = strangeBudget(), open = strangeOpen().length) {
+  return {room: Math.max(0, Math.min(STRANGE_SEND_WORLDS, budget.most) - open), wanted: Math.max(0, STRANGE_SEND_WORLDS - open)};
+}
+function strangeSendSpawn(base) {
+  const split = debugSplit, turn = split.panes[base].turn, {room, wanted} = strangeSendRoom();
+  const names = strangeNextNames(base).slice(0, wanted);
   // Making a world draws the split, which looks here again (`strangeStep`):
   // until the last is made, there is nothing to do yet.
-  const all = strange.all = {base, turn, letters: [], short: 0, since: performance.now(), making: true};
+  const send = strange.send = {base, turn, letters: [], short: 0, none: names.length === 0, since: performance.now(), making: true};
   try {
     for (const name of names.slice(0, room)) {
-      const letter = strangeMake(name, base, all.letters.length ? all.letters[all.letters.length - 1] : base);
+      const letter = strangeMake(name, base, send.letters.length ? send.letters[send.letters.length - 1] : base);
       if (!letter) break;
-      all.letters.push(letter);
+      send.letters.push(letter);
     }
-  } finally { all.making = false; }
-  all.short = names.length - all.letters.length;
-  strangeSay(`All 14,000,605: ${all.letters.length} world${all.letters.length === 1 ? "" : "s"} branch ${base.toUpperCase()} on turn ${turn}…`);
+  } finally { send.making = false; }
+  send.short = names.length - send.letters.length;
+  if (send.letters.length) strangeSay(`Send it: ${send.letters.length} world${send.letters.length === 1 ? "" : "s"} branch ${base.toUpperCase()} on turn ${turn}…`);
+  strangeSendWatch();
 }
 // Each time the split is drawn, and now and then besides: once time has
-// stopped, the worlds are branched, and once they are all there, time runs.
-function strangeAllWatch() {
-  const all = strange.all, split = debugSplit;
-  if (!all || all.making || !split) return;
-  const late = performance.now() - all.since > STRANGE_ALL_WAIT_MS;
-  if (all.turn === null) {
+// stopped, the worlds are branched, and once they are all there, time runs,
+// as fast as the worlds are played (`fast`).
+function strangeSendWatch() {
+  const send = strange.send, split = debugSplit;
+  if (!send || send.making || !split) return;
+  const late = performance.now() - send.since > STRANGE_SEND_WAIT_MS;
+  if (send.turn === null) {
     if (split.running > 0 || strange.run !== null || !strangeIdle()) {
-      if (late) { strange.all = null; strangeSay("The worlds did not stop, so nothing was branched"); }
+      if (late) { strange.send = null; strangeSay("The worlds did not stop, so nothing was branched"); }
       return;
     }
-    strangeAllSpawn(strangeOpen().includes(all.base) ? all.base : strange.follow);
+    strangeSendSpawn(strangeOpen().includes(send.base) ? send.base : strange.follow);
     return;
   }
   // Time was set running by hand meanwhile, which is what was to be done.
-  if (split.running > 0 || strange.run !== null) { strange.all = null; strangeDraw(); return; }
+  if (split.running > 0 || strange.run !== null) { strange.send = null; strangeDraw(); return; }
   // A new world's page opens on the game's first turn and is a copy of the
   // base once it says it stands on the base's turn: time runs from there.
-  const copied = all.letters.every(letter => !strange.order.includes(letter) || !split.panes[letter] || split.panes[letter].turn === all.turn);
+  const copied = send.letters.every(letter => !strange.order.includes(letter) || !split.panes[letter] || split.panes[letter].turn === send.turn);
   if (!strangeIdle() || (!copied && !late)) {
-    if (late && !strangeIdle()) { strange.all = null; strangeSay("Not every branch has opened yet: press Play Time once they have"); }
+    if (late && !strangeIdle()) { strange.send = null; strangeSay("Not every branch has opened yet: press Send it again once they have"); }
     return;
   }
-  strange.all = null;
-  const made = all.letters.filter(letter => strangeOpen().includes(letter)).length, open = strangeOpen().length;
-  strangePlay();
+  strange.send = null;
+  const made = send.letters.filter(letter => strangeOpen().includes(letter)).length, open = strangeOpen().length;
+  strangePlay(null, true);
   const runs = split.running > 0 || strange.run !== null;
-  const left = all.short > 0 ? ` ${all.short} more did not fit: ${strangeFullWords(undefined, false)}.` : "";
-  strangeSay(`All 14,000,605: ${made} branch${made === 1 ? "" : "es"} of ${all.base.toUpperCase()} from turn ${all.turn}` +
-    `${runs ? `, and time runs on for all ${open} worlds, to the end.` : "."}${left}`);
+  const left = send.short > 0 ? ` ${send.short} more did not fit: ${strangeFullWords(undefined, false)}.` : "";
+  const why = send.none && open < STRANGE_SEND_WORLDS ? `Every player strategy has a world of its own on turn ${send.turn}` : "";
+  const what = made > 0 ? `Send it: ${made} branch${made === 1 ? "" : "es"} of ${send.base.toUpperCase()} from turn ${send.turn}` : why || "Send it";
+  strangeSay(runs ? `${what}${made > 0 ? ", and" : ":"} time runs on for all ${open} worlds, to the end.${left}`
+    : `${what}.${left}`);
 }
 // A world that is there is made what it was opened to be: the world it
 // branches from, as that stands, with its own strategy in the seat.
@@ -6452,7 +6755,7 @@ function strangeClose(letter) {
 //
 // `play` is time running, which shows every turn; a step to a turn goes as
 // far at once as every world has already played.
-function strangeTravel(end, play = false) {
+function strangeTravel(end, play = false, fast = false) {
   const split = debugSplit;
   const at = strangeNow();
   if (!strange.locked) {
@@ -6462,7 +6765,7 @@ function strangeTravel(end, play = false) {
   }
   // A world left standing short of a turn (`strangeStep`) is asked again.
   for (const letter of strangeOpen()) delete split.panes[letter].stood;
-  strange.run = {end, at, asked: null, stop: false, play, letters: strangeOpen()};
+  strange.run = {end, at, asked: null, stop: false, play, fast: play && fast, letters: strangeOpen()};
   strangeAsk(strange.run);
 }
 // The turn the worlds stand on: the followed world's, unless the worlds are
@@ -6485,7 +6788,28 @@ function strangeKept(letter) {
 function strangeAsk(run) {
   const split = debugSplit;
   run.letters = run.letters.filter(letter => strange.order.includes(letter) && split.panes[letter]);
+  // Era forward plays on to the first turn of the followed world's next era,
+  // which the world holds before time comes to it, its turns played ahead
+  // being kept: time stops there. The followed world's game over first, it
+  // stops where that is.
+  if (run.era && !run.stop) {
+    const dawn = split.panes[run.era.letter] ? (split.panes[run.era.letter].marks || {}).eras || [] : [];
+    const began = dawn.find(era => era.turn > run.era.from);
+    if (began && began.turn < run.end) {
+      run.end = Math.max(run.at, began.turn);
+      run.said = `The ${debugEraName(began)} era began on turn ${began.turn}`;
+    } else if (!split.panes[run.era.letter] || strangeEnded(run.era.letter, run.at + 1)) {
+      run.end = run.at;
+      run.said = `${run.era.letter.toUpperCase()}'s game is over`;
+    }
+  }
   if (run.stop || run.at === run.end || run.letters.length === 0) { strangeRunOver(run); return; }
+  // Time running shows every turn on the way, one after another (operator
+  // 2026-11-27: "turn count appears to be skipping turns ... please fix such
+  // that the turn counts iterates more smoothly and the mapstate match the
+  // turn count"). Send it (`fast`) is no exception: its worlds' engines play
+  // on ahead of the turn shown the whole time, so each turn it shows is one
+  // its worlds already hold, and showing it is a walk along their lines.
   const next = run.end < run.at ? run.end
     : run.play ? run.at + 1 : Math.min(run.end, Math.max(run.at + 1, Math.min(...run.letters.map(strangeKept))));
   // A world whose game is over by then stays on the turn it ended on, and
@@ -6529,6 +6853,46 @@ function strangeShow() {
     if (ahead > 0) strange.peeks[letter] = {turns: ahead, since: performance.now()};
     debugSplitTell(letter, ahead > 0 ? {civvis: "pane-show", ahead} : {civvis: "pane-show"});
   }
+}
+// Every turn is on the screen for at least one frame (operator 2026-11-27:
+// "doc strange should show 1 frame from every turn at least"). A world draws
+// the turn it is shown at once (`render`), but a world whose next turn it
+// already holds can be shown that in the same frame, and a turn drawn and
+// drawn over before the browser paints is never seen. So once every world
+// has drawn a turn, the next is asked for at once but shown only after a
+// frame has been painted: the frame asked for here is painted with every
+// world's turn on it, and the next turn is shown in a task after it, so not
+// even its count is painted early. A window nobody sees paints nothing and
+// waits for nothing.
+function strangeAwaitPaint(run) {
+  if (document.hidden) return;
+  run.painted = false;
+  const frame = ++strange.paintFrame;
+  const painted = () => {
+    if (strange.paintFrame !== frame || run.painted) return;
+    run.painted = true;
+    if (strange.run === run) strangeStep();
+  };
+  requestAnimationFrame(() => setTimeout(painted, 0));
+  // rAF stops for a window hidden meanwhile.
+  setTimeout(painted, 250);
+}
+function strangePainted(run) {
+  return run.painted !== false || document.hidden;
+}
+// The turn on the screen. While time runs, it is the one the worlds were
+// last told to show (`strangeStep`), and the label says it in the same
+// breath, so it changes with the maps: read off the followed world, it
+// changed only once that world had said it was there and the page was next
+// drawn, a turn behind the maps one look in seven, and a turn the page was
+// not drawn on was never said at all.
+function strangeShowing() {
+  const run = strange.run;
+  return run && typeof run.showing === "number" ? run.showing : strangeNow();
+}
+function strangeTurnSay(turn) {
+  const held = strange.hud && strange.hud.querySelector('[data-strange="turn"]');
+  if (held && typeof turn === "number" && held.textContent !== String(turn)) held.textContent = String(turn);
 }
 // Whether a world's game is over before `turn`: it ended on an earlier one
 // (`pane-over`), or the world stands short of a turn it could not play while
@@ -6577,7 +6941,7 @@ function strangeEndedHere(letter) {
 function strangeQuiet() {
   const split = debugSplit;
   return !!split && split.shown && !split.busy && split.running === 0 && !strange.lockWanted && !strange.swan &&
-    !strange.planning && !strange.all;
+    !strange.planning && !strange.send;
 }
 // Whether a world may be deleted now: the last one open stays, and a world
 // goes while the worlds stand still, or while time runs on locked, the rest
@@ -6615,7 +6979,7 @@ function strangeStep() {
       strangeSay(`${short.toUpperCase()} could not come to turn ${turn}, so the worlds stay unlocked`);
     }
   }
-  if (strange.all) strangeAllWatch();
+  if (strange.send) strangeSendWatch();
   if (!run || run.asked === null) { strangeAheadNext(); return; }
   // Each world holds the turn it has played until the rest have played
   // their own; one that was there already holds nothing.
@@ -6625,13 +6989,20 @@ function strangeStep() {
   };
   const letters = run.letters.filter(letter => strange.order.includes(letter) && split.panes[letter] && !strangeEnded(letter, run.asked));
   if (letters.length === 0) { strangeRunOver(run, strangeOverNote()); return; }
-  if (!run.shown && letters.every(ready)) { run.shown = true; strangeShow(); }
+  if (!run.shown && letters.every(ready) && strangePainted(run)) {
+    run.shown = true;
+    run.showing = run.asked;
+    strangeShow();
+    strangeTurnSay(run.showing);
+  }
   const there = letter => split.panes[letter].turn === run.asked;
   if (letters.every(there)) {
     // Time runs as fast as the worlds are played and drawn: a turn is on
-    // the screen for as long as the next takes, and no longer.
+    // the screen for as long as the next takes, and no longer, but for at
+    // least one frame (`strangePainted`). The next is asked for at once.
     run.at = run.asked;
     run.asked = null;
+    strangeAwaitPaint(run);
     strangeAsk(run);
     return;
   }
@@ -6761,6 +7132,10 @@ function strangeAheadDone(letter, data) {
     pane.spent = data.error || readings.length < peek.turns ? {seat: pane.strategy, last: strangeKept(letter)} : null;
   }
   if (strange.run && strange.run.asked === null) strangeAsk(strange.run);
+  // While Send it runs time on, a world that has answered is asked for the
+  // next of its turns at once: its engine plays on the whole time, and the
+  // turns shown catch up with it as often as the page can draw them.
+  else if (strange.run && strange.run.fast && !strange.run.stop) strangeAheadNext(true);
   else strangeAheadNext();
   strangeDraw();
 }
@@ -6850,6 +7225,11 @@ function strangeForesee() {
   // begun beside it: one on its way plays its stretch out, and the rest
   // carry on when the search is over.
   if (debugSearch && debugSearch.live) return;
+  // While Send it runs time on, no future is begun either: the worlds are
+  // playing their futures themselves, each on its engine, and are only as
+  // fast as the slowest of them, which a scout on a core beside it slows.
+  // The futures carry on once time stops, from wherever the worlds are.
+  if (strange.run && strange.run.fast) return;
   const open = strangeOpen(), own = strangeScouts(), now = performance.now();
   if (!own && (!strangeIdle() || Object.keys(strange.peeks).length > 0)) return;
   const most = Math.max(1, (navigator.hardwareConcurrency || 4) - (own ? open.length : 0) - 1);
@@ -7080,24 +7460,70 @@ function strangeOutcome(letter) {
     : sight.done ? "No wars ahead" : `No war in the next ${turns(reach)}`;
   return {rank, outcome: won ? "won" : lost ? "lost" : first ? "nuclear" : "clear", head, nuclear: fate.head, wars, title: fate.title};
 }
-function strangePathsDraw(hud, open, tree) {
-  const card = hud.querySelector("[data-strange-paths]");
-  if (!card) return;
-  const read = open.map(letter => ({letter, ...strangeOutcome(letter)}))
-    .sort((one, other) => one.rank[0] - other.rank[0] || one.rank[1] - other.rank[1] || open.indexOf(one.letter) - open.indexOf(other.letter));
-  const html = `<h3>Predicted Paths</h3><ol>` + read.map((path, at) => {
-    const name = `${path.letter.toUpperCase()} · ${strangeSeries(path.letter, tree)}`;
-    return `<li data-path-world="${path.letter}" data-outcome="${path.outcome}" style="--strange-tint:${strange.tint[path.letter]}" title="${escapeAttr(path.title)}">` +
-      `<b>${at + 1}</b><span>${escapeAttr(name)}</span><strong>${escapeAttr(path.head)}</strong>` +
-      `<small>${escapeAttr([path.nuclear, path.wars].filter(Boolean).join(" · "))}</small></li>`;
-  }).join("") + `</ol>`;
-  if (card.dataset.drawn !== html) {
-    const grew = card.dataset.rows !== String(open.length);
-    card.dataset.drawn = html;
-    card.dataset.rows = String(open.length);
-    card.innerHTML = html;
-    if (grew) strange.stale = true;
-  }
+// A world's end outcome, as the paths table's last row says it (operator
+// 2026-11-27: "make another row that is end outcome: and list the XXX wins,
+// turnXXX, no wars, no nuclear wars"): who wins and on what turn, then the
+// wars and the nuclear wars still to come on the way there, from the future
+// played out to the end of its game. A future still being played says how
+// far it has got, and what it has seen so far. It ranks as `strangeOutcome`
+// does, which was the order of the predicted paths it replaces.
+function strangeEndOutcome(letter) {
+  const pane = debugSplit.panes[letter], sight = pane.sight, turn = pane.turn;
+  const told = strangeOutcome(letter);
+  if (!sight || typeof turn !== "number" || typeof sight.turn !== "number") return {...told, text: "Looking ahead…"};
+  const end = sight.done ? [...sight.seen].reverse().find(seen => seen.kind === "won" || seen.kind === "over") || null : null;
+  const first = sight.seen.find(seen => seen.kind === "nuclear") || null;
+  const wars = sight.seen.filter(seen => seen.kind === "war" && seen.turn >= turn).length;
+  const yet = sight.done ? "" : " so far";
+  const who = !end ? `Not decided by turn ${sight.turn}`
+    : end.text === "The game ends" ? "No winner"
+    : String(end.text).replace(" wins the game", " wins").replace(" is out of the game", " is out");
+  const text = [who, ...(end ? [`turn ${end.turn}`] : []),
+    wars ? `${wars} war${wars === 1 ? "" : "s"}${yet}` : `no wars${yet}`,
+    !first ? `no nuclear wars${yet}` : first.turn < turn ? `nuclear war since turn ${first.turn}` : `nuclear war turn ${first.turn}`].join(", ");
+  return {...told, text};
+}
+// The standings and the victory tracker of the world followed (operator
+// 2026-11-27: "i can't actually tell what civ we are. please add the player
+// hud in for the "Following" game"). They are the simulator's own two
+// panels, which the highway covers where they stand: they are moved onto it
+// (`strangeStandingsMount`), and the simulator draws them as it always
+// does, reading the world followed in place of its own (`drawPlayerHud`,
+// wrapped where this page is made). Each world hands over the world it holds
+// (`strangeWorldNow`, said in each world's page), and they are drawn again
+// when that world has another turn to show or another world is followed.
+// The panels are kept here, so that a highway made again takes them up, and
+// a highway gone hands them back to the map they came from.
+let strangePanels = null;
+function strangeStandingsMount(hud) {
+  const players = strangePanels ? strangePanels.players : document.getElementById("playerhud");
+  const victory = strangePanels ? strangePanels.victory : document.getElementById("victoryhud");
+  strange.standings = typeof drawPlayerHud === "function" && !!players && !!victory;
+  strange.standingsWorld = null;
+  if (!strange.standings) return;
+  strangePanels = {players, victory};
+  hud.querySelector(".strange-standings").append(players);
+  hud.querySelector(".strange-victory").append(victory);
+}
+function strangeStandingsHome() {
+  const area = document.getElementById("maparea");
+  if (!strangePanels || !area) return;
+  for (const panel of [strangePanels.players, strangePanels.victory]) if (!panel.isConnected) area.prepend(panel);
+}
+function strangeFollowedWorld() {
+  try {
+    const pane = debugSplit && debugSplit.panes[strange.follow], frame = pane && pane.frame;
+    const world = frame && frame.contentWindow && typeof frame.contentWindow.strangeWorldNow === "function"
+      ? frame.contentWindow.strangeWorldNow() : null;
+    return world && Array.isArray(world.players) ? world : null;
+  } catch (_) { return null; }
+}
+function strangeStandingsDraw() {
+  if (!strange.standings) return;
+  const world = strangeFollowedWorld();
+  if (!world || world === strange.standingsWorld) return;
+  strange.standingsWorld = world;
+  try { drawPlayerHud(); } catch (error) { console.error("doctor strange standings", error); }
 }
 // The defeat tracker: the victory tracker's format, with a path for a
 // nuclear war and one for losing, each counting the turns away.
@@ -7154,7 +7580,9 @@ function strangeFates(g, open) {
 
 // Time runs on from the open turn, each world with its own player strategy,
 // or stops.
-function strangePlay(until = null) {
+// `fast` is Send it's: time shows the furthest turn every world holds
+// (`strangeAsk`), not each turn on the way.
+function strangePlay(until = null, fast = false) {
   const split = debugSplit;
   if (!split || split.busy || !split.shown) return;
   // Paused, the worlds stop on the same turn: the one they were asked for,
@@ -7177,7 +7605,7 @@ function strangePlay(until = null) {
   const end = until ?? strangeLimit() ?? reached + 250;
   if (end <= reached) return;
   strangeSay("");
-  if (strange.locked) strangeTravel(end, true);
+  if (strange.locked) strangeTravel(end, true, fast);
   else debugSplitRun(end, strangeOpen());
   strangeDraw();
 }
@@ -7192,6 +7620,52 @@ function strangeGoTo(turn) {
   if (to === strangeNow()) return;
   strangeSay("");
   strangeTravel(to);
+}
+// ---- Turn 1, Era back and Era forward
+//
+// Operator 2026-11-27: "lets add era back and era forward to the controls.
+// lets add a turn 1 option too. this should be a clean set of controls. lets
+// try to put in order: turn 1, era back (which goes to the start of the era,
+// then the last era start). we should make sure to save these turns for fast
+// jumping. we have another thread working to cut out half the turns".
+//
+// The steps read, left to right: Turn 1, Era back, −10, −1, +1, +10, Era
+// forward, and each takes every world, together, as the steps do. An era is
+// the followed world's: its engine says the first turn of each world era it
+// has been through (`marks.eras`, the turns played ahead included), and
+// keeps that turn whatever else it lets go of to save room
+// (`Timeline::thin`), as it keeps the first. Going back to one is a jump to a
+// turn held, not turns played again.
+
+// Era back: the first turn of the era the followed world stands in, or,
+// standing on that, of the era before.
+function strangeEraBack(turn = strangeNow()) {
+  const eras = ((debugSplit.panes[strange.follow].marks || {}).eras || []).filter(era => era.turn < turn);
+  return eras.length ? eras[eras.length - 1] : null;
+}
+// The first turn of the next era along the followed world's line, once it
+// has played that far.
+function strangeEraNext(turn = strangeNow()) {
+  return ((debugSplit.panes[strange.follow].marks || {}).eras || []).find(era => era.turn > turn) || null;
+}
+// The era the followed world stands in.
+function strangeEraNow(turn = strangeNow()) {
+  const came = ((debugSplit.panes[strange.follow].marks || {}).eras || []).filter(era => era.turn <= turn).pop();
+  return came ? came.era : typeof state.world_era === "number" ? state.world_era : 0;
+}
+// Era forward: on to the first turn of the next era, when the followed world
+// has played it; otherwise time runs on, every world with its own player
+// strategy, until the followed world comes into a new era (`strangeAsk`).
+function strangeEraOn() {
+  if (!strangeIdle()) return;
+  const next = strangeEraNext();
+  if (next) { strangeGoTo(next.turn); return; }
+  const now = strangeNow() ?? 0, limit = strangeLimit();
+  if (limit !== null && now >= limit) return;
+  strangeSay("");
+  strangeTravel(limit ?? now + 250, true);
+  if (strange.run) strange.run.era = {letter: strange.follow, from: now};
+  strangeDraw();
 }
 // Open or close the lock. Worlds on different turns are locked on the
 // followed one's: the rest are brought to it first.
@@ -7487,7 +7961,7 @@ function strangeMount() {
   Object.assign(strange, {follow: "a", cam: null, lanes: {a: 0, b: 1}, order: ["a", "b"], born: {a: 0, b: 1}, births: 2, made: {},
     tint: {a: STRANGE_INKS[0], b: STRANGE_INKS[1]}, inks: 2, tree: null, parted: {}, locked: true, lockWanted: false,
     divide: null, over: null, peek: null, run: null, swan: null, omen: null, said: "", drawn: "", meter: [], metered: null,
-    seeing: {}, fates: [], fateMode: "full", planning: null, all: null});
+    seeing: {}, fates: [], fateMode: "full", planning: null, send: null});
   const canvas = document.createElement("canvas");
   canvas.id = "strange-sky";
   canvas.setAttribute("role", "img");
@@ -7496,17 +7970,23 @@ function strangeMount() {
   hud.id = "strange-hud";
   hud.innerHTML = `
     <div class="strange-title strange-card">
-      <div class="strange-top" role="group" aria-label="Pages and a new game">
-        <a href="home" target="_top">Home</a><a href="./" target="_top">CIVVIS</a>
-        <button class="strange-new" data-strange="new" title="A new game: a new world of four civilizations on a Pangaea, one timeline again. The worlds open now are let go of">New game</button>
-      </div>
+      <nav class="strange-top" aria-label="Pages">
+        <a href="home" target="_top">Home</a><a href="charts/ai-insights/" target="_top">Charts/</a><a class="strange-civvis" href="./" target="_top">CIVVIS</a>
+      </nav>
       <b title="One world, many timelines. Forward in time is up: the line across the window is the open turn, what was played runs down from it and each world's future is played out ahead">Doctor Strange's CIVVIS</b>
+      <div class="strange-news" role="group" aria-label="New game">
+        <button data-strange="new2" data-players="2" data-map="pangaea" title="A new game: a new world of 2 civilizations on a Pangaea, one timeline again. The worlds open now are let go of"><span class="strange-news-map">2P Pangaea</span> <span class="strange-news-new">New Game</span></button>
+        <button data-strange="new6" data-players="6" data-map="continents" title="A new game: a new world of 6 civilizations on Continents, one timeline again. The worlds open now are let go of"><span class="strange-news-map">6P Continents</span> <span class="strange-news-new">New Game</span></button>
+      </div>
       <div class="strange-deck strange-time" role="toolbar" aria-label="Timeline">
         <div class="strange-steps">
+          <button data-strange="first" aria-label="Turn 1">Turn 1</button>
+          <button data-strange="era-back" aria-label="Era back"><i>◀◀</i>Era</button>
           <button data-strange="back10" title="The worlds go back ten turns, as they stood">−10</button>
           <button data-strange="back1" title="The worlds go back a turn, as they stood">−1</button>
           <button data-strange="on1" title="The worlds play a turn, each with its own player strategy">+1</button>
           <button data-strange="on10" title="The worlds play ten turns, each with its own player strategy">+10</button>
+          <button data-strange="era-on" aria-label="Era forward">Era<i>▶▶</i></button>
         </div>
         <button class="strange-play" data-strange="play"></button>
       </div>
@@ -7531,26 +8011,30 @@ function strangeMount() {
         <button class="strange-swan" data-strange="swan"></button>
         <select data-strange="swan-kind" aria-label="Which black swan"></select>
       </div>
-      <section class="strange-paths strange-card" data-strange-paths aria-label="Predicted paths: each world's computed outcome, best first"></section>
+      <div class="strange-victory" data-strange-victory></div>
       <section class="strange-defeat strange-card" data-strange-defeat aria-label="Defeat tracker: how near each world is to a nuclear war and to losing the game"></section>
     </div>
+    <div class="strange-standings" data-strange-standings></div>
     <div class="strange-versus strange-card" data-strange="numbers"></div>
-    <button class="strange-all" data-strange="all">All 14,000,605</button>
+    <button class="strange-send" data-strange="send">Send it</button>
     <div class="strange-omen" data-strange="omen" role="alert" title="Click to put away" hidden></div>
     <div class="strange-divide" title="Drag to give the tree or the worlds more room. Double-click to let the page place it"></div>
     <div class="strange-now strange-turn"><span>TURN</span><b data-strange="turn"></b><span data-strange="limit"></span><span class="strange-era" data-strange="era"></span></div>`;
   hud.addEventListener("click", event => {
     const button = event.target.closest("[data-strange]");
-    if (button && button.dataset.strange === "new") { strangeNewGame(); return; }
+    if (button && button.dataset.players) { strangeNewGame(Number(button.dataset.players), button.dataset.map); return; }
     if (!button || button.disabled || !debugSplit) return;
     const action = button.dataset.strange, now = strangeNow() ?? 1;
     if (action === "play") strangePlay();
+    else if (action === "first") strangeGoTo(1);
+    else if (action === "era-back") { const began = strangeEraBack(); if (began) strangeGoTo(began.turn); }
+    else if (action === "era-on") strangeEraOn();
     else if (action === "back10") strangeGoTo(now - 10);
     else if (action === "back1") strangeGoTo(now - 1);
     else if (action === "on1") strangeGoTo(now + 1);
     else if (action === "on10") strangeGoTo(now + 10);
     else if (action === "search") debugSearchShow(!debugSearchShown);
-    else if (action === "all") strangeAll();
+    else if (action === "send") strangeSendIt();
     else if (action === "next1") strangeNext(1);
     else if (action === "next5") strangeNext(STRANGE_NEXT_MANY);
     else if (action === "swan") strangeSwan(hud.querySelector('[data-strange="swan-kind"]').value);
@@ -7605,6 +8089,7 @@ function strangeMount() {
   split.host.appendChild(hud);
   strange.canvas = canvas; strange.hud = hud;
   strange.then = 0;
+  strangeStandingsMount(hud);
   for (const letter of strange.order) strangeWorldOpen(letter);
   // A card that has changed its size is measured once the browser has laid
   // the page out, which is when it says so.
@@ -7618,7 +8103,7 @@ function strangeMount() {
   strange.stale = true;
   strangeLayout();
   clearInterval(strange.meterTimer);
-  strange.meterTimer = setInterval(() => { strangeAheadWatch(); strangeSwanWatch(); strangeSearchWatch(); strangeAllWatch(); strangeForesee(); strangeMeasure(); }, STRANGE_METER_MS);
+  strange.meterTimer = setInterval(() => { strangeAheadWatch(); strangeSwanWatch(); strangeSearchWatch(); strangeSendWatch(); strangeForesee(); strangeMeasure(); }, STRANGE_METER_MS);
   strangeMeasure();
   requestAnimationFrame(strangePaint);
 }
@@ -7636,10 +8121,15 @@ function strangeMount() {
 // `strange.shape`), the line moving moves the worlds' card with it, and a
 // card that has grown by itself, a number gaining a figure, is seen by the
 // browser once it has laid the page out anyway (`strangeMount`).
-const STRANGE_CARDS = [".strange-title", ".strange-right", ".strange-versus", ".strange-omen", ".strange-all"];
+const STRANGE_CARDS = [".strange-title", ".strange-right", ".strange-standings", ".strange-versus", ".strange-omen", ".strange-send"];
 function strangeCards() {
   const hud = strange.hud;
   const box = name => hud.querySelector(name).getBoundingClientRect();
+  // The worlds' numbers stand under the standings of the world followed,
+  // where those are shown.
+  const standings = hud.querySelector(".strange-standings"), shown = standings.childElementCount > 0;
+  const under = shown ? Math.ceil(standings.getBoundingClientRect().bottom + 8) : 12;
+  if (hud.style.getPropertyValue("--strange-versus-top") !== `${under}px`) hud.style.setProperty("--strange-versus-top", `${under}px`);
   const title = box(".strange-title"), versus = box(".strange-versus"), column = box(".strange-right");
   // The tree is drawn under the worlds' numbers, and the line stands low
   // enough to leave it room.
@@ -7649,20 +8139,27 @@ function strangeCards() {
   // All 14,000,605 stands at the foot of the tree on the left, on the line
   // as the worlds' numbers do on the right, unless the turn written on the
   // line would be under it there: then it stands over the turn.
-  const turn = box(".strange-turn"), foot = box(".strange-all");
+  const turn = box(".strange-turn"), foot = box(".strange-send");
+  // What the turn on the line needs to stand clear of the column on the right.
+  strange.turnWide = Math.ceil(turn.width);
+  strange.turnColumn = {left: column.left, bottom: column.bottom};
   const lift = turn.right > foot.left - 10 && turn.left < foot.right + 10 ? Math.ceil(turn.height) + 8 : 0;
-  if (hud.style.getPropertyValue("--strange-all-lift") !== `${lift}px`) hud.style.setProperty("--strange-all-lift", `${lift}px`);
+  if (hud.style.getPropertyValue("--strange-send-lift") !== `${lift}px`) hud.style.setProperty("--strange-send-lift", `${lift}px`);
   strange.floor = Math.ceil(Math.max(title.bottom + 46, title.bottom + 10 + foot.height + 12 + lift, versus.bottom + 170));
   strange.cards = [{left: title.left, right: title.right, top: title.top, bottom: title.bottom, side: -1},
     {left: column.left, right: column.right, top: column.top, bottom: column.bottom, side: 1},
     {left: versus.left, right: versus.right, top: versus.top, bottom: versus.bottom, side: 1}];
+  if (shown) {
+    const held = standings.getBoundingClientRect();
+    strange.cards.push({left: held.left, right: held.right, top: held.top, bottom: held.bottom, side: 1});
+  }
   // And off what the black swan says while it says it.
   for (const held of [hud.querySelector(".strange-omen")]) {
     if (held.hidden) continue;
     const said = held.getBoundingClientRect();
     strange.cards.push({left: said.left, right: said.right, top: said.top, bottom: said.bottom, side: 1});
   }
-  const all = box(".strange-all");
+  const all = box(".strange-send");
   strange.cards.push({left: all.left, right: all.right, top: all.top, bottom: all.bottom, side: -1});
   strange.stale = false;
 }
@@ -7678,8 +8175,10 @@ function strangeLayout() {
   };
   // The worlds' card stands on the line, and has moved if the line has.
   if (put(host, "--strange-line", `${g.cy}px`)) strangeCards();
-  // The turn on the line moves with the board, and All 14,000,605 with it.
+  // The turn on the line moves with the board and the lanes, and Send it
+  // with it (`strangeCards`).
   if (put(host, "--strange-board", `${Math.round(strangeBoard(g) + 6)}px`)) strangeCards();
+  if (put(host, "--strange-turn-left", `${strangeTurnLeft(g)}px`)) strangeCards();
   for (const letter of open) {
     const at = g.boxes[letter], pane = split.panes[letter], plate = hud.querySelector(`[data-strange-world="${letter}"]`);
     if (!at || !plate) continue;
@@ -7720,13 +8219,13 @@ function strangeDraw() {
   if (!open.includes(strange.follow)) strange.follow = open[0];
   const tree = strange.tree = strangeTree(), panes = split.panes, follow = strange.follow;
   const idle = strangeIdle(), many = open.length > 1, one = !Number.isFinite(tree.splits);
-  const turn = strangeNow() ?? tree.from, limit = strangeLimit();
+  const turn = strangeNow() ?? tree.from, limit = strangeLimit(), showing = strangeShowing() ?? turn;
   const set = (name, text) => { const held = hud.querySelector(`[data-strange="${name}"]`); if (held.textContent !== text) held.textContent = text; return held; };
-  set("turn", String(turn));
+  set("turn", String(showing));
   set("limit", limit ? `/ ${limit}` : "");
   // The era is the last the followed world says it came into by the open turn.
-  const came = ((panes[follow].marks || {}).eras || []).filter(era => era.turn <= turn).pop();
-  set("era", came ? `${debugEraName(came)} era` : typeof state.world_era === "number" && turn === state.turn ? `${debugEraName({era: state.world_era})} era` : "");
+  const came = ((panes[follow].marks || {}).eras || []).filter(era => era.turn <= showing).pop();
+  set("era", came ? `${debugEraName(came)} era` : typeof state.world_era === "number" && showing === state.turn ? `${debugEraName({era: state.world_era})} era` : "");
   const going = split.running > 0 || strange.run !== null;
   const play = set("play", going ? (strange.run && strange.run.stop ? "⏸ Pausing…" : "⏸ Pause Time") : "▶ Play Time");
   play.disabled = !split.shown || split.busy || (!going && (!idle || (limit !== null && turn >= limit)));
@@ -7768,9 +8267,21 @@ function strangeDraw() {
   if (omen.dataset.drawn !== told) { omen.dataset.drawn = told; omen.innerHTML = told; }
   omen.hidden = !news;
   const first = Math.max(...open.map(letter => panes[letter].first ?? 1));
-  for (const [name, off] of [["back10", turn <= first], ["back1", turn <= first],
-    ["on1", limit !== null && turn >= limit], ["on10", limit !== null && turn >= limit]])
+  // Turn 1, Era back and Era forward (`strangeEraBack`, `strangeEraOn`).
+  const eraBack = strangeEraBack(turn), eraNext = strangeEraNext(turn), lastEra = strangeEraNow(turn) >= ERA_NAMES.length - 1;
+  for (const [name, off] of [["first", turn <= first], ["era-back", !eraBack || turn <= first], ["back10", turn <= first], ["back1", turn <= first],
+    ["on1", limit !== null && turn >= limit], ["on10", limit !== null && turn >= limit],
+    ["era-on", (limit !== null && turn >= limit) || (!eraNext && lastEra)]])
     hud.querySelector(`[data-strange="${name}"]`).disabled = !idle || off;
+  hud.querySelector('[data-strange="first"]').title = first > 1 ? `The worlds go back to turn ${first}, the first every world holds, as they stood`
+    : "The worlds go back to turn 1, as they stood";
+  hud.querySelector('[data-strange="era-back"]').title = eraBack
+    ? `Era back: the worlds go back to turn ${eraBack.turn}, where the ${debugEraName(eraBack)} era began for ${follow.toUpperCase()}. Pressed there, to the start of the era before`
+    : "Era back: to the start of this era, then the era before. This is the first turn of the first era";
+  hud.querySelector('[data-strange="era-on"]').title = eraNext
+    ? `Era forward: the worlds go on to turn ${eraNext.turn}, where the ${debugEraName(eraNext)} era begins for ${follow.toUpperCase()}`
+    : lastEra ? `Era forward: ${follow.toUpperCase()} is in the last era`
+    : `Era forward: the worlds play on, each with its own player strategy, until ${follow.toUpperCase()} comes into a new era`;
   // Before Branch, the base timeline: the world the branch is made from
   // (operator 2026-11-25: "the option to branch in the simulator should be
   // preceded by a selection of the base timeline"). Every open world is on
@@ -7799,20 +8310,25 @@ function strangeDraw() {
   branch.disabled = !idle || full;
   branch.title = full ? `${strangeFullWords(budget)}. Delete one to branch again`
     : `Create a branch of the timeline followed, ${follow.toUpperCase()}, on turn ${turn}: pick the player strategy that plays the branch from here, and it is made, a world of its own in a box of its own`;
-  // All 14,000,605: the best player strategies, each branched from the base
-  // timeline on this turn, and time run on for every world (`strangeAll`).
-  // Time running is stopped for it first, so it can be pressed then too.
-  const everyone = hud.querySelector('[data-strange="all"]'), fresh = strangeAllNames(follow);
-  const room = budget.most - open.length, waiting = !!strange.all;
-  everyone.classList.toggle("on", waiting);
-  everyone.setAttribute("aria-busy", waiting ? "true" : "false");
-  everyone.disabled = waiting || room <= 0 || (!idle && !going) || split.busy || !!(strange.run && strange.run.stop) || (!going && fresh.length === 0);
-  everyone.title = waiting ? "Branching the best player strategies from the timeline followed, then time runs on for all of them"
-    : room <= 0 ? `${strangeFullWords(budget)}. Delete some to branch every player strategy`
-    : !going && fresh.length === 0 ? `Each of the top ${STRANGE_ALL_TOP} player strategies has a world of its own on turn ${turn} already`
-    : `Every player strategy (the top ${STRANGE_ALL_TOP} for now) branches the timeline followed, ${follow.toUpperCase()}, on ` +
-      `${going ? "the turn time stops on" : `turn ${turn}`}, each in a window of its own, and time runs on for all the worlds to the end of the game` +
-      (!going && fresh.length <= room ? `: ${fresh.length} new world${fresh.length === 1 ? "" : "s"}` : !going ? `: the best ${room}, as many as there is room for` : "");
+  // Send it: the best player strategies without a world there, each
+  // branched from the base timeline on this turn, up to twelve worlds, and
+  // time run on for every world to the end (`strangeSendIt`). Time running
+  // is stopped for it first, so it can be pressed then too.
+  const send = hud.querySelector('[data-strange="send"]'), {room, wanted} = strangeSendRoom(budget, open.length);
+  const fresh = strangeNextNames(follow).slice(0, wanted), take = fresh.slice(0, room), waiting = !!strange.send;
+  const ended = limit !== null && turn >= limit, fast = !!(strange.run && strange.run.fast);
+  send.classList.toggle("on", waiting || fast);
+  send.setAttribute("aria-busy", waiting ? "true" : "false");
+  send.disabled = waiting || split.busy || !!(strange.run && strange.run.stop) || (going ? room <= 0 && (fast || !strange.run) : !idle || ended);
+  const all = open.length + take.length, short = fresh.length - take.length;
+  send.title = waiting ? "Spawning the branches, then every world runs out to the end"
+    : going && room <= 0 ? (fast ? `Running all ${open.length} worlds out to the end` : `Run all ${open.length} worlds out to the end, as fast as they are played`)
+    : going ? `Stop time, spawn branches of ${follow.toUpperCase()} on the turn it stops on, up to ${STRANGE_SEND_WORLDS} worlds, and run all out to the end`
+    : ended ? "The game is over in every world"
+    : take.length === 0 ? `${room <= 0 ? strangeFullWords(budget) : `Every player strategy has a world of its own on turn ${turn}`}: run all ${open.length} worlds out to the end`
+    : `Spawn ${take.length} branch${take.length === 1 ? "" : "es"} of ${follow.toUpperCase()} and run all ${all} worlds out to the end` +
+      (short > 0 ? ` (${short} more do not fit: ${strangeFullWords(budget, false)})`
+        : all < STRANGE_SEND_WORLDS ? `: every player strategy has a world then` : "");
   // Branch Next Best and Branch 5 Next Best, over Branch (`strangeNext`): the
   // best player strategies without a world of their own on this turn.
   const nextBest = strangeNextNames(follow);
@@ -7924,21 +8440,43 @@ function strangeDraw() {
     return `<span class="strange-letter"${said}>` +
       group.map(letter => `${exit(letter)}<span style="color:${strange.tint[letter]}">${letter.toUpperCase()}</span>`).join(",") + "</span>";
   };
-  const table = `<i></i>` + columns.map(head).join("") + STRANGE_VERSUS_ROWS.map(([key, label, title]) => {
+  const who = group => `<span class="strange-who">` + group.map(letter => {
+    const held = strangeHandle(panes[letter].strategy);
+    return `<span style="color:${strange.tint[letter]}" title="${escapeAttr(`${letter.toUpperCase()} · ${strangeSeries(letter, tree)}: ${held} holds the seat now`)}">${escapeAttr(held)}</span>`;
+  }).join(", ") + `</span>`;
+  // End outcome, each world's own (`strangeEndOutcome`): the best is lit,
+  // unless every world comes to the same.
+  const ends = Object.fromEntries(open.map(letter => [letter, strangeEndOutcome(letter)]));
+  const before = (one, other) => one.rank[0] - other.rank[0] || one.rank[1] - other.rank[1];
+  const best = open.map(letter => ends[letter]).reduce((one, other) => before(other, one) < 0 ? other : one, ends[open[0]]);
+  const even = open.every(letter => before(ends[letter], best) === 0);
+  const end = group => {
+    const shown = group.length > 2 ? group.slice(0, 1) : group, more = group.slice(shown.length);
+    return `<span class="strange-end">` + shown.map(letter => {
+      const at = ends[letter], line = escapeAttr(at.text);
+      const lead = group.length > 1 ? `<b style="color:${strange.tint[letter]}">${letter.toUpperCase()}:</b> ` : "";
+      return `<span data-end-world="${letter}" data-outcome="${at.outcome}" title="${escapeAttr(`${at.text}\n${at.title}`)}">${lead}` +
+        `${lit(!even && before(at, best) === 0, line)}</span>`;
+    }).join("") + (more.length === 0 ? "" : `<span class="strange-end-more" title="${escapeAttr(more.map(letter =>
+      `${letter.toUpperCase()}: ${ends[letter].text}`).join("\n"))}">+${more.length} more: ${more.map(letter => letter.toUpperCase()).join(", ")}</span>`) +
+      `</span>`;
+  };
+  const table = `<i></i>` + columns.map(head).join("") + `<i></i>` + columns.map(who).join("") + STRANGE_VERSUS_ROWS.map(([key, label, title]) => {
     const summed = STRANGE_TOTALS.includes(key);
     const short = STRANGE_VERSUS_SHORT[key] || label;
     return `<em title="${summed && wide ? `${title}: a turn, and beside it made over the game so far${key === "gold" ? " (net of upkeep)" : ""}` : title}">` +
       `<span class="strange-long">${label}</span><span class="strange-short">${short}</span></em>` +
       columns.map(group => cell(key, group)).join("");
-  }).join("");
+  }).join("") + `<em class="strange-end-head" title="How each world's game ends, as its future has been played out to the end: who wins and on what turn, then the wars and nuclear wars still to come"><span class="strange-long">End outcome</span><span class="strange-short">Outcome</span></em>` +
+    columns.map(end).join("");
   if (strange.drawn !== table) {
     strange.drawn = table;
     const card = hud.querySelector('[data-strange="numbers"]');
     card.style.gridTemplateColumns = `auto repeat(${columns.length}, minmax(0, 1fr))`;
     card.innerHTML = table;
   }
-  strangePathsDraw(hud, open, tree);
   strangeDefeatDraw(hud, open, tree);
+  strangeStandingsDraw();
   const count = `${open.length} world${open.length === 1 ? "" : "s"} open`;
   const said = hud.querySelector("[data-strange-worlds]");
   if (said.textContent !== count) said.textContent = count;
@@ -8358,6 +8896,10 @@ if (STRANGE_PANE) {
   // (The viewer's own, where the page has them.)
   debugDock = () => {};
   if (typeof drawPlayerHud === "function") drawPlayerHud = () => {};
+  // The page that holds the worlds draws the standings and the victory
+  // tracker of the one it follows, from the world as this page holds it
+  // (`strangeStandingsDraw`).
+  window.strangeWorldNow = () => state;
   // A world whose game is over is not started again on a countdown: that
   // would end the world (`strangeWorldFate`).
   if (typeof finaleHoldsForTheReader === "function") finaleHoldsForTheReader = () => true;
@@ -8370,7 +8912,12 @@ if (STRANGE_PANE) {
   // worlds these were about a third of what the worlds' pages spent on a
   // turn; four worlds played 11 to 22% more turns a second without them.
   // Nor is the minimap a box no longer shows drawn (`drawMini`).
-  for (const name of ["advanceToNextActionUnit", "drawSoloHud", "paintLivePause", "placeLivePause", "drawMini"])
+  // Nor is the build's label placed beside the minimap, both of which a box
+  // hides (`updateBuildMarker`, `syncBuildMarkerPosition`): placing it
+  // measured the page every turn, the browser laying it out to say where the
+  // minimap stood. With ten worlds that was 3% of the thread they share.
+  for (const name of ["advanceToNextActionUnit", "drawSoloHud", "paintLivePause", "placeLivePause", "drawMini",
+    "updateBuildMarker", "syncBuildMarkerPosition"])
     if (typeof window[name] === "function") window[name] = () => {};
   if (typeof responsiveTypeMutationObserver !== "undefined") responsiveTypeMutationObserver.disconnect();
   // While the worlds move, a world draws a turn once, when it is handed it
@@ -8398,6 +8945,14 @@ if (STRANGE_PANE) {
       return tick(now);
     };
   }
+  // Nor, while the worlds move, is the hidden minimap's frame fitted to the
+  // box at each turn drawn (`syncDefaultMinimapGeometry`, which measured the
+  // page to place it: 4% of the thread with ten worlds). A box fits it again
+  // at the first turn drawn once the worlds stand still.
+  if (typeof syncDefaultMinimapGeometry === "function") {
+    const fit = syncDefaultMinimapGeometry;
+    syncDefaultMinimapGeometry = function (...given) { if (!moving()) return fit.apply(this, given); };
+  }
 }
 if (STRANGE) {
   document.documentElement.classList.add("strange");
@@ -8411,6 +8966,27 @@ if (STRANGE) {
     return opened;
   };
   setInterval(() => { try { strangeSpare(); } catch (error) { console.error("doctor strange", error); } }, STRANGE_SPARE_EVERY_MS);
+  // The standings and the victory tracker are the world followed
+  // (`strangeStandingsDraw`): the simulator's own drawing, given that world
+  // to read for as long as it draws. Until a world can be read it draws the
+  // page's own, which is the same game.
+  // Watch as is not a column of them here: it turns the simulator's own map
+  // to a civilization's eyes, and that map is not shown.
+  if (typeof playerHudColumnExists === "function") {
+    const exists = playerHudColumnExists;
+    playerHudColumnExists = column => column.key !== "watch" && exists(column);
+  }
+  if (typeof drawPlayerHud === "function") {
+    const drawStandings = drawPlayerHud;
+    drawPlayerHud = function () {
+      if (strangePanels && !strangePanels.players.isConnected) strangeStandingsHome();
+      const world = strange.standings && strangePanels && strangePanels.players.isConnected ? strangeFollowedWorld() : null;
+      if (!world) return drawStandings();
+      const own = state;
+      state = world;
+      try { return drawStandings(); } finally { state = own; }
+    };
+  }
   // What the worlds do next is worked out at once, every time; the split
   // and the highway are drawn once a frame. Each world says several things
   // a turn (its turn, its marks, its numbers, that it followed, that it is
@@ -8710,7 +9286,14 @@ const TOMORROW_STYLE = `
      report buttons, the map and the left panel stay, and the seat is moved
      only by Auto-play (\`civvisSeatHandsOff\`). */
   html.tomorrow #ubar, html.tomorrow #actionpanel, html.tomorrow #worldtracker,
-  html.tomorrow #notify .notice.tone-action { display: none !important; }
+  html.tomorrow #notify .notice.tone-action, html.tomorrow #civtop { display: none !important; }
+  /* Operator 2026-11-27: "from edge of tomorrow we can remove the old yield
+     hud with science, culture, etc." Civ 6's yield strip (\`#civtop\`, in
+     the rule above) is gone, and so is the room the screen keeps for it: the
+     standings take the top of the window, and the launch bar, the hooks and
+     the tracker stand under them, by the screen's own rules, which all count
+     the strip's height. */
+  html.tomorrow body.civ6-frame #maparea { --civtop-height: 0px; }
   /* Operator 2026-11-26: "civvis: edge of tomortrow should not have the
      world minimap or <...(spin)x thing showing". The minimap and the map's
      controls (deck, compass, zoom, spin, close) are put away, and the map is
@@ -8725,53 +9308,19 @@ const TOMORROW_STYLE = `
      box stands as it does in the Debugger view (\`civvisSeatTracker\`),
      without the live mirror's Pause and New game. */
   html.tomorrow .livepause-buttons, html.tomorrow #livepause-note { display: none !important; }
-  /* Operator 2026-11-26: "move the menu with quick deals and other stuff
-     inside, to the left of the victory tracker". While the Rankings are
-     open, Civ 6's upper-right hooks (Rankings, Diplomacy, Reports, Era,
-     Trade routes, City-States, Espionage) stand in a column down the
-     tracker's left side, and the tracker climbs into the band they took
-     under the standings. The notifications step inboard of the column. A
-     map area narrow enough to stack the Rankings into one band keeps the
-     hooks where they were. */
-  html.tomorrow body.civ6-frame.rankings-open #maparea:not(.player-hud-compact) #hooksbar {
-    top: var(--solo-bar-top); right: calc(var(--panel-edge) + var(--victory-hud-width) + var(--panel-gap));
-    max-width: none; max-height: calc(100% - var(--solo-bar-top) - var(--panel-edge));
-    flex-direction: column; overflow: hidden auto;
-  }
-  html.tomorrow body.civ6-frame.rankings-open #maparea:not(.player-hud-compact) #hooktabs { flex-direction: column; }
-  html.tomorrow body.civ6-frame.rankings-open #maparea:not(.player-hud-compact) #hooksbar .launch-rule {
-    width: 26px; height: 1px; margin: 3px 0; background: linear-gradient(90deg, transparent, #77978b, transparent);
-  }
-  html.tomorrow body.civ6-frame.rankings-open #maparea:not(.player-hud-compact) #victoryhud { top: var(--solo-bar-top); }
-  html.tomorrow body.civ6-frame.rankings-open #maparea:not(.player-hud-compact) #notify {
-    right: calc(var(--panel-edge) + var(--victory-hud-width) + 2 * var(--panel-gap) + 62px);
-  }
+  /* The hooks (Rankings, Diplomacy, Reports, Era, Trade routes, City-States,
+     Espionage) stand as on every Civilization VI screen: a row in the upper
+     right, in their own order, under the standings (operator 2026-11-27:
+     "the bar with espioage should be in the normal order and horizontal").
+     They stood in a column beside the tracker from 2026-11-26 ("move the
+     menu with quick deals and other stuff inside, to the left of the victory
+     tracker"). */
   /* The standings open short here (\`measureTurnPlateNeed\`, below), so the
      turn box is shorter than what it lists. Its rows down to the turn count
      keep their own height rather than giving way (the age, which hides its
      overflow, would fold to nothing and the turn's numeral ride up over it),
      and the box's own edge covers the rest. */
   html.tomorrow #playerhud .victory-turn > :not(.turn-settings) { min-height: min-content; }
-  /* Operator 2026-11-26: "on civvis edge of tomorrow the top bar with
-     science, cul yields, etc should move below the player hud". The
-     standings take the top of the window and Civ 6's yield strip
-     (\`#civtop\`) runs across under them; the launch bar, the hooks and the
-     tracker still begin under both (\`--solo-bar-top\` counts the strip
-     after the standings rather than before them). With the standings folded
-     away the strip is at the top again. */
-  html.tomorrow body.civ6-frame #maparea {
-    --tmr-civtop-top: 0px;
-    --solo-bar-top: calc(var(--tmr-civtop-top) + var(--civtop-height) + var(--panel-gap));
-  }
-  html.tomorrow body.civ6-frame.rankings-open:not(.overlay-players-hidden) #maparea {
-    --tmr-civtop-top: calc(var(--panel-gap) + var(--solo-masthead));
-  }
-  html.tomorrow body.civ6-frame #civtop { top: var(--tmr-civtop-top); }
-  html.tomorrow body.civ6-frame.rankings-open #playerhud,
-  html.tomorrow body.civ6-frame.rankings-open #maparea.player-hud-compact #playerhud { top: var(--panel-gap); }
-  html.tomorrow body.civ6-frame.rankings-open #maparea.player-hud-compact #victoryhud {
-    top: calc(2 * var(--panel-gap) + min(var(--player-hud-height, 106px), var(--player-hud-max-height)));
-  }
 `;
 
 const tomorrow = {
@@ -9223,4 +9772,557 @@ if (TOMORROW) {
     return Math.ceil(count.getBoundingClientRect().bottom - box.top + 8 + hud.getBoundingClientRect().height - box.height);
   };
   if (state) { tomorrowWatch(); tomorrowDraw(); tomorrowWords(); }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CIVVIS: Moneyball
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Operator 2026-11-27: "add CIVVIS: Moneyball. This is a minigame where a
+// user only looks at the stats and tries to play the best game. WE can have a
+// default set of stats but users should get to see there own. User
+// essentially has N columns, each with a different player strategy simulated
+// out N turns. rows are different stats. cities, mil strength, food,
+// happiness, hous, prod, science yield, culture yield, etc. User selects how
+// many turns out they want to skip at a time (default can be 10). We can also
+// estimate how long the game will go (given the strategies, how long do we
+// think the game will go)? How many guesses we expect a person to make. if
+// game 200 turns and increment 10, then 20 guesses. we can highlight top in
+// each row. player strategy should be the top strategies but randomized on
+// screen. user can chose a row to sort by though if they want."
+//
+// `/moneyball` is a played game whose seat is played, a stretch of turns at a
+// time, by the player strategy the person picks, and they pick it by its
+// numbers alone. Over the map stands a board: a column for each of the top
+// rated player strategies, in an order drawn afresh each time and named only
+// by a letter, each played out that stretch of turns on a copy of the world
+// (the copies Autosearch plays on, `POST /forks`), and a row for each figure
+// of how the seat stands at the end of it (`obs::standing`). The best of each
+// row is lit, and a row's name sorts the columns by it. Picking a column
+// plays that strategy those turns on the world itself (`debugPlayPlan`), which
+// comes out as its column said, the engine being deterministic, and the board
+// is dealt again from there.
+//
+// Each copy then plays its strategy on to the end of the game, without
+// keeping its turns (`foresee`), and where they end says how long the game
+// will likely go, and so how many picks are left.
+//
+// Nothing here is the engine's but the copies and their answers, and what
+// the board holds is gone with the page.
+
+// The figures a row can show: the key the person's choice is kept under, its
+// name, how it reads off a seat's standing, whether it is shown before the
+// person chooses, and what it is.
+const MONEYBALL_ROWS = [
+  ["score", "Score", seat => seat.score, true, "The game's score"],
+  ["cities", "Cities", seat => seat.cities, true, "Cities held"],
+  ["population", "Population", seat => seat.population, true, "Citizens in every city together"],
+  ["military", "Military strength", seat => seat.military, true, "The army's strength, as the standings show it"],
+  ["food", "Food", seat => seat.yields && seat.yields.food, true, "Food a turn"],
+  ["amenities", "Happiness", seat => seat.amenities, true, "Amenities over what a city needs, the average of the cities"],
+  ["housing", "Housing", seat => seat.housing, true, "Housing to spare, the average of the cities"],
+  ["production", "Production", seat => seat.yields && seat.yields.production, true, "Production a turn"],
+  ["science", "Science", seat => seat.yields && seat.yields.science, true, "Science a turn"],
+  ["culture", "Culture", seat => seat.yields && seat.yields.culture, true, "Culture a turn"],
+  ["gold", "Gold", seat => seat.gold_per_turn, true, "Gold a turn, after upkeep"],
+  ["faith", "Faith", seat => seat.yields && seat.yields.faith, false, "Faith a turn"],
+  ["food_surplus", "Food surplus", seat => seat.food_surplus, false, "Food a city grows on, after its citizens eat, the average of the cities"],
+  ["loyalty", "Loyalty", seat => seat.loyalty, false, "Loyalty a turn, the average of the cities"],
+  ["techs", "Techs", seat => seat.techs, false, "Technologies researched"],
+  ["civics", "Civics", seat => seat.civics, false, "Civics adopted"],
+  ["tourism", "Tourism", seat => seat.tourism, false, "Tourism earned over the game"],
+];
+// How many turns a pick plays, and how many columns there are to pick from.
+const MONEYBALL_TURNS = [5, 10, 20, 25, 50];
+const MONEYBALL_COLUMNS = [3, 4, 6, 8];
+const MONEYBALL_LETTERS = "ABCDEFGH";
+// A copy plays on to the end of the game this many turns at a time, so a
+// pick made meanwhile waits no longer than one stretch of it.
+const MONEYBALL_SIGHT_TURNS = 25;
+const MONEYBALL_SAVE = "civvis-moneyball-v1";
+
+const moneyball = {
+  // What the person chose: turns a pick, columns, the rows shown, and
+  // whether the strategies' names are shown.
+  set: (() => {
+    const kept = {turns: 10, columns: 6, rows: MONEYBALL_ROWS.filter(row => row[3]).map(row => row[0]), names: false};
+    try {
+      const saved = JSON.parse(localStorage.getItem(MONEYBALL_SAVE) || "null");
+      if (saved && MONEYBALL_TURNS.includes(saved.turns)) kept.turns = saved.turns;
+      if (saved && MONEYBALL_COLUMNS.includes(saved.columns)) kept.columns = saved.columns;
+      if (saved && Array.isArray(saved.rows)) kept.rows = saved.rows.filter(key => MONEYBALL_ROWS.some(row => row[0] === key));
+      if (saved && typeof saved.names === "boolean") kept.names = saved.names;
+    } catch (_) { /* the stock choice */ }
+    return kept;
+  })(),
+  // The deal on the board: the world it was dealt from (its seed and turn),
+  // the seat as it stands there, and a column for each strategy.
+  dealt: null,
+  // A count that grows with every deal: an answer to an older one is let go.
+  deal: 0,
+  // The row the columns are sorted by, or null for the order they were drawn.
+  sort: null,
+  // The picks made, oldest first: {from, to, letter, name}.
+  picks: [],
+  // A pick being played on the world.
+  playing: false,
+  // The board shows the map instead.
+  away: false,
+  said: "",
+};
+let moneyballBoard = null;
+
+const MONEYBALL_STYLE = `
+  /* The board stands over the map (operator 2026-11-27: "a minigame where a
+     user only looks at the stats"), from the map's left edge to the
+     window's right. */
+  #moneyball {
+    position: fixed; z-index: 9000; top: 0; right: 0; bottom: 0; left: var(--mb-left, 0px);
+    display: flex; flex-direction: column; gap: 10px; padding: 14px 18px 16px; overflow: auto;
+    background: radial-gradient(120% 90% at 50% 0%, #143525 0%, #0b1a13 55%, #08110d 100%);
+    color: #e9f1e6; font: 13px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+  }
+  #moneyball[hidden] { display: none; }
+  /* The seat is played by the picks alone: the left panel's Auto-play, which
+     would hand it to a Civ AI for a run of turns past the board, is put
+     away (its picker stays in the page, which seats each pick by it). */
+  html.moneyball #humanfooter { display: none !important; }
+  #moneyball.is-away { bottom: auto; overflow: visible; background: #0b1a13ee; border-bottom: 1px solid #2f8a4a; }
+  #moneyball.is-away .mb-body { display: none; }
+  .mb-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px; }
+  .mb-title { margin: 0; font-size: 18px; font-weight: 800; letter-spacing: 0.04em; color: #f3f6ee; }
+  .mb-title i { font-style: normal; color: #8fe07a; }
+  .mb-turn { color: #cfe6c4; font-size: 14px; font-variant-numeric: tabular-nums; }
+  .mb-turn b { color: #fff; }
+  .mb-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin-left: auto; }
+  .mb-tools label { display: inline-flex; align-items: center; gap: 5px; color: #b7cdb0; font-size: 12px; }
+  .mb-tools select, .mb-tools button, .mb-pick, .mb-rows summary {
+    font: inherit; font-size: 12px; color: #f3f6ee; background: #16301f; border: 1px solid #2f6a43; border-radius: 4px; padding: 3px 8px; cursor: pointer;
+  }
+  .mb-tools button[aria-pressed="true"] { background: #2f8a4a; border-color: #8fe07a; }
+  .mb-rows { position: relative; }
+  .mb-rows summary { list-style: none; }
+  .mb-rows summary::-webkit-details-marker { display: none; }
+  .mb-rows[open] .mb-row-list { display: grid; }
+  .mb-row-list {
+    display: none; position: absolute; z-index: 2; right: 0; top: calc(100% + 4px); grid-template-columns: repeat(2, max-content); gap: 4px 14px;
+    padding: 8px 10px; background: #0d2017; border: 1px solid #2f6a43; border-radius: 6px; box-shadow: 0 8px 24px #000a;
+  }
+  .mb-row-list label { color: #e9f1e6; }
+  .mb-estimate { margin: 0; color: #cfe6c4; font-size: 13px; }
+  .mb-estimate b { color: #fff; font-variant-numeric: tabular-nums; }
+  .mb-said { margin: 0; min-height: 1.3em; color: #ffd27a; font-size: 12.5px; }
+  .mb-table { border-collapse: separate; border-spacing: 0; width: 100%; font-variant-numeric: tabular-nums; }
+  .mb-table th, .mb-table td { padding: 6px 10px; border-bottom: 1px solid #1f3d2b; text-align: right; white-space: nowrap; }
+  .mb-table thead th { position: sticky; top: 0; z-index: 1; background: #0e2218; color: #cfe6c4; font-weight: 700; vertical-align: bottom; }
+  .mb-table thead th small { display: block; color: #8fb38a; font-size: 11px; font-weight: 500; }
+  .mb-table tbody th { text-align: left; font-weight: 600; }
+  .mb-table .mb-sort { font: inherit; color: #e9f1e6; background: none; border: 0; padding: 0; cursor: pointer; text-align: left; }
+  .mb-table .mb-sort:hover, .mb-table .mb-sort:focus-visible { color: #8fe07a; outline: none; text-decoration: underline; }
+  .mb-table .mb-sort[aria-sort="descending"] { color: #8fe07a; }
+  .mb-table .mb-sort[aria-sort="descending"]::after { content: " \\25BE"; }
+  .mb-table .mb-now { color: #9fb99a; background: #0c1c14; }
+  .mb-table td.is-top { color: #10200f; background: linear-gradient(180deg, #a8f08f, #6fcf62); font-weight: 800; border-radius: 3px; }
+  .mb-table td small { margin-left: 5px; font-size: 11px; color: #8fb38a; }
+  .mb-table td.is-top small { color: #1f4a1c; }
+  .mb-table td.is-waiting { color: #5e7a59; }
+  .mb-table tr.mb-ends td, .mb-table tr.mb-ends th { color: #b7cdb0; font-size: 12px; }
+  .mb-table tfoot td { border-bottom: 0; padding-top: 10px; }
+  .mb-pick { width: 100%; padding: 6px 8px; font-size: 13px; font-weight: 700; background: #2f8a4a; border-color: #8fe07a; }
+  .mb-pick:hover:not(:disabled) { background: #38a057; }
+  .mb-pick:disabled { cursor: default; opacity: 0.45; }
+  .mb-picks { margin: 0; padding: 0 0 0 18px; color: #9fb99a; font-size: 12px; columns: 2 280px; }
+  .mb-over { margin: 0; padding: 10px 12px; border: 1px solid #8fe07a; border-radius: 6px; background: #12301f; color: #f3f6ee; font-size: 14px; }
+  .mb-over button { margin-left: 10px; }
+  @media (max-width: 760px) {
+    #moneyball { padding: 10px; }
+    .mb-tools { margin-left: 0; }
+    .mb-table th, .mb-table td { padding: 5px 6px; }
+  }
+`;
+
+function moneyballSave() {
+  try { localStorage.setItem(MONEYBALL_SAVE, JSON.stringify(moneyball.set)); } catch (_) { /* not kept */ }
+}
+function moneyballIdle() {
+  return !!debugTimeline() && !debugBusy && !debugRunning && !autoplaying && !turnAdvancePending && !moneyball.playing;
+}
+// The top rated player strategies the page offers, as many as there are
+// columns, best first (`RULES.strategies`, which the picker lists by Elo).
+// With nothing rated, those the page offers in Doctor Strange's order.
+function moneyballStrategies(count) {
+  const offered = strangeAgents();
+  const roster = typeof RULES !== "undefined" && RULES && Array.isArray(RULES.strategies) ? RULES.strategies : [];
+  const rated = roster.filter(entry => entry && offered.includes(entry.name) && Number.isFinite(Number(entry.elo)))
+    .sort((one, other) => Number(other.elo) - Number(one.elo)).map(entry => entry.name);
+  const rest = [...STRANGE_RIVALS, ...offered].filter(name => offered.includes(name) && !rated.includes(name));
+  return [...new Set([...rated, ...rest])].slice(0, count);
+}
+// The order the columns are drawn in: shuffled afresh each deal, so a column
+// is not known by where it stands.
+function moneyballShuffled(count) {
+  const order = Array.from({length: count}, (_, at) => at);
+  for (let at = order.length - 1; at > 0; at -= 1) {
+    const other = Math.floor(Math.random() * (at + 1));
+    [order[at], order[other]] = [order[other], order[at]];
+  }
+  return order;
+}
+function moneyballSay(text) {
+  moneyball.said = text || "";
+  moneyballDraw();
+}
+// One request to one copy, answered lean. An answer to a deal that has been
+// replaced is not wanted.
+async function moneyballAsk(deal, path, body) {
+  const answer = await debugSearchPost(path, {...body, lean: true});
+  if (deal !== moneyball.deal) throw new Error(MONEYBALL_GONE);
+  if (!answer) throw new Error("the engine gave no answer");
+  return answer;
+}
+const MONEYBALL_GONE = "the board was dealt again";
+
+// The board is dealt from the world as it stands: each column's strategy
+// plays the turns of a pick on a copy of the world, and then plays on to the
+// end of the game. Copies are made for as many columns as the tab has room
+// for (`tabEnginesMB`); where there are fewer, columns wait their turn.
+async function moneyballDealBoard() {
+  if (!moneyballIdle() || !state) return;
+  const deal = ++moneyball.deal;
+  const turn = state.turn, turns = moneyball.set.turns;
+  const names = moneyballStrategies(moneyball.set.columns);
+  const shuffled = moneyballShuffled(names.length);
+  moneyball.sort = null;
+  moneyball.dealt = {
+    seed: String(state.seed ?? ""), turn, turns, now: null,
+    columns: shuffled.map((which, at) => ({letter: MONEYBALL_LETTERS[at], name: names[which], seat: null, readings: [],
+      finished: false, winner: null, end: null, error: null})),
+  };
+  moneyballSay("");
+  if (!names.length) { moneyballSay("This page offers no player strategy to pick from"); return; }
+  let made;
+  try {
+    made = await debugSearchPost("/forks", {count: names.length});
+  } catch (error) {
+    made = {error: String(error.message || error)};
+  }
+  if (deal !== moneyball.deal) return;
+  if (!made || made.error || !(made.forks > 0)) {
+    moneyballSay("Moneyball plays its columns on copies of the engine, and this build could not make them" +
+      ` (${(made && made.error) || "it has no forks"}). It runs on civvis.ai, in the browser`);
+    return;
+  }
+  const queue = [...moneyball.dealt.columns];
+  const copy = async at => {
+    const path = `/debug?fork=${at + 1}`;
+    for (let column = queue.shift(); column; column = queue.shift()) await moneyballPlay(deal, path, column, turn, turns);
+  };
+  try {
+    await Promise.all(Array.from({length: Math.min(made.forks, queue.length)}, (_, at) => copy(at)));
+  } catch (error) {
+    if (error.message !== MONEYBALL_GONE) moneyballSay(`A column could not be played: ${error.message || error}`);
+  }
+}
+// One column: its strategy seated on the turn the board was dealt on, the
+// turns of a pick played, and then the rest of the game seen.
+async function moneyballPlay(deal, path, column, turn, turns) {
+  try {
+    await moneyballAsk(deal, path, {op: "breakpoints"});
+    const there = await moneyballAsk(deal, path, {op: "jump", turn, strategy: column.name});
+    if (there.error || there.turn !== turn) throw new Error(there.error || `turn ${turn} is not kept`);
+    if (!moneyball.dealt.now && there.seat) moneyball.dealt.now = there.seat;
+    const played = await moneyballAsk(deal, path, {op: "play", turns, strategy: column.name});
+    if (played.error && !/no turn left/.test(played.error)) throw new Error(played.error);
+    column.readings = Array.isArray(played.readings) ? played.readings : [];
+    column.seat = played.seat || column.readings[column.readings.length - 1] || there.seat || null;
+    column.finished = played.finished === true;
+    column.winner = played.winner ?? null;
+    moneyballDraw();
+    if (column.finished) {
+      column.end = {turn: played.turn, done: true, victory: null};
+      moneyballDraw();
+      return;
+    }
+    // On to the end of the game, a stretch at a time.
+    let seen = null;
+    for (let stretch = 0; stretch < 40; stretch += 1) {
+      const asked = await moneyballAsk(deal, path, {op: "foresee", turns: MONEYBALL_SIGHT_TURNS, strategy: column.name,
+        ...(seen ? {known: seen.turn} : {anew: true})});
+      const sight = asked && asked.foresight;
+      if (!sight || typeof sight.turn !== "number") break;
+      seen = sight;
+      column.end = {turn: sight.turn, done: sight.done === true, victory: sight.victory || null, limit: sight.limit ?? null};
+      moneyballDraw();
+      if (sight.done || !(sight.played > 0)) break;
+    }
+  } catch (error) {
+    if (error.message === MONEYBALL_GONE) throw error;
+    column.error = String(error.message || error);
+    moneyballDraw();
+  }
+}
+// A column picked: its strategy plays the turns of a pick on the world itself.
+async function moneyballPick(letter) {
+  const dealt = moneyball.dealt;
+  const column = dealt && dealt.columns.find(held => held.letter === letter);
+  if (!column || !column.seat || !moneyballIdle() || !state || state.turn !== dealt.turn) return;
+  moneyball.playing = true;
+  moneyball.deal += 1;
+  const to = dealt.turn + dealt.turns;
+  moneyball.picks.push({from: dealt.turn, to, letter, name: column.name});
+  moneyballSay(`Playing column ${letter} to turn ${to}…`);
+  let played = null;
+  try {
+    played = await debugPlayPlan({from: dealt.turn, print: null, stretches: [{name: column.name, to}]});
+  } catch (error) {
+    played = {ok: false, note: String(error.message || error)};
+  } finally {
+    moneyball.playing = false;
+  }
+  moneyball.said = played && !played.ok ? played.note || "The pick could not be played" : "";
+  moneyball.dealt = null;
+  moneyballWatch();
+}
+function moneyballRead(row, seat) {
+  if (!seat) return null;
+  const value = row[2](seat);
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+function moneyballNumber(value) {
+  if (value === null) return "–";
+  const whole = Math.abs(value) >= 100 || Number.isInteger(value);
+  return whole ? Math.round(value).toLocaleString("en-US") : (Math.round(value * 10) / 10).toFixed(1);
+}
+// How long the game will likely go: where the columns' futures end, the
+// middle of them, and how many picks that leaves.
+function moneyballEstimate(dealt) {
+  const ends = dealt.columns.filter(column => column.end && column.end.done).map(column => column.end.turn).sort((one, other) => one - other);
+  const waiting = dealt.columns.some(column => !column.error && !(column.end && column.end.done));
+  if (!ends.length) return {words: waiting ? "Working out how long the game will go…" : "", ends};
+  const middle = ends[Math.floor((ends.length - 1) / 2)];
+  const left = Math.max(0, Math.ceil((middle - dealt.turn) / dealt.turns));
+  const spread = ends[0] === ends[ends.length - 1] ? `turn ${ends[0]}` : `turns ${ends[0]}–${ends[ends.length - 1]}`;
+  return {middle, left, ends,
+    words: `The game looks set to end around turn ${middle} (${spread} if a column played on${waiting ? ", still working" : ""}): ` +
+      `about ${left} more ${left === 1 ? "pick" : "picks"} at ${dealt.turns} turns a pick, ${moneyball.picks.length} made so far.`};
+}
+
+function moneyballMount() {
+  const style = document.createElement("style");
+  style.id = "moneyball-style";
+  style.textContent = MONEYBALL_STYLE;
+  document.head.appendChild(style);
+  const board = document.createElement("section");
+  board.id = "moneyball";
+  board.hidden = true;
+  board.setAttribute("aria-label", "CIVVIS: Moneyball");
+  board.innerHTML = `
+    <div class="mb-head">
+      <h2 class="mb-title">CIVVIS: <i>Moneyball</i></h2>
+      <span class="mb-turn" id="mb-turn"></span>
+      <div class="mb-tools">
+        <label>Turns a pick <select id="mb-turns"></select></label>
+        <label>Columns <select id="mb-columns"></select></label>
+        <details class="mb-rows"><summary>Stats</summary><div class="mb-row-list" id="mb-row-list"></div></details>
+        <button type="button" id="mb-names" aria-pressed="false" title="Show which player strategy each column is">Names</button>
+        <button type="button" id="mb-away" aria-pressed="false" title="Fold the board up to look at the map">Map</button>
+      </div>
+    </div>
+    <div class="mb-body">
+      <p class="mb-estimate" id="mb-estimate"></p>
+      <p class="mb-said" id="mb-said" role="status"></p>
+      <div id="mb-over"></div>
+      <table class="mb-table" id="mb-table"></table>
+      <ol class="mb-picks" id="mb-picks"></ol>
+    </div>`;
+  document.body.appendChild(board);
+  const turns = board.querySelector("#mb-turns"), columns = board.querySelector("#mb-columns");
+  for (const value of MONEYBALL_TURNS) turns.add(new Option(String(value), String(value)));
+  for (const value of MONEYBALL_COLUMNS) columns.add(new Option(String(value), String(value)));
+  turns.value = String(moneyball.set.turns);
+  columns.value = String(moneyball.set.columns);
+  const again = () => { moneyballSave(); moneyball.dealt = null; moneyball.deal += 1; moneyballWatch(); };
+  turns.addEventListener("change", () => { moneyball.set.turns = Number(turns.value); again(); });
+  columns.addEventListener("change", () => { moneyball.set.columns = Number(columns.value); again(); });
+  const list = board.querySelector("#mb-row-list");
+  for (const [key, name, , , what] of MONEYBALL_ROWS) {
+    const label = document.createElement("label");
+    label.title = what;
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.value = key;
+    box.checked = moneyball.set.rows.includes(key);
+    box.addEventListener("change", () => {
+      moneyball.set.rows = MONEYBALL_ROWS.map(row => row[0]).filter(row => row === key ? box.checked : moneyball.set.rows.includes(row));
+      moneyballSave();
+      moneyballDraw();
+    });
+    label.append(box, name);
+    list.appendChild(label);
+  }
+  const names = board.querySelector("#mb-names");
+  names.addEventListener("click", () => { moneyball.set.names = !moneyball.set.names; moneyballSave(); moneyballDraw(); });
+  board.querySelector("#mb-away").addEventListener("click", () => { moneyball.away = !moneyball.away; moneyballDraw(); });
+  // A row's name sorts the columns by it, the most first; again, back to
+  // the order they were drawn in.
+  board.querySelector("#mb-table").addEventListener("click", event => {
+    const sort = event.target.closest("[data-mb-sort]");
+    if (sort) { moneyball.sort = moneyball.sort === sort.dataset.mbSort ? null : sort.dataset.mbSort; moneyballDraw(); return; }
+    const pick = event.target.closest("[data-mb-pick]");
+    if (pick) moneyballPick(pick.dataset.mbPick);
+  });
+  moneyballBoard = board;
+}
+// The board as it stands: the deal's columns in the order drawn or sorted,
+// a row for each figure chosen with the best lit, where the game will likely
+// end, and the picks made.
+function moneyballDraw() {
+  const board = moneyballBoard;
+  if (!board) return;
+  board.hidden = !state;
+  board.classList.toggle("is-away", moneyball.away);
+  board.querySelector("#mb-away").setAttribute("aria-pressed", String(moneyball.away));
+  board.querySelector("#mb-names").setAttribute("aria-pressed", String(moneyball.set.names));
+  document.documentElement.style.setProperty("--mb-left", `${debugMapLeft()}px`);
+  if (!state) return;
+  const dealt = moneyball.dealt;
+  const turnLine = board.querySelector("#mb-turn");
+  turnLine.textContent = "";
+  const shown = document.createElement("b");
+  shown.textContent = `Turn ${state.turn}`;
+  turnLine.append(shown, ` · pick ${moneyball.picks.length + 1}`);
+  board.querySelector("#mb-said").textContent = moneyball.said;
+  const over = board.querySelector("#mb-over");
+  over.textContent = "";
+  if (gameFinished(state)) {
+    const me = (state.players || [])[0] || {};
+    const winners = Array.isArray(state.winners) && state.winners.length ? state.winners
+      : state.winner !== null && state.winner !== undefined ? [state.winner] : [];
+    const card = document.createElement("p");
+    card.className = "mb-over";
+    card.textContent = `${winners.includes(0) ? `${me.civ || "You"} won` : "Game over"} on turn ${state.turn}: ` +
+      `${victoryVerdict(state.victory_type, state.victory_label)}. ${moneyball.picks.length} ${moneyball.picks.length === 1 ? "pick" : "picks"}, score ${moneyballNumber(typeof me.score === "number" ? me.score : null)}.`;
+    const fresh = document.createElement("button");
+    fresh.type = "button";
+    fresh.className = "mb-pick";
+    fresh.style.width = "auto";
+    fresh.textContent = "Play again";
+    fresh.addEventListener("click", () => location.reload());
+    card.appendChild(fresh);
+    over.appendChild(card);
+  }
+  const estimate = dealt ? moneyballEstimate(dealt) : {words: ""};
+  board.querySelector("#mb-estimate").textContent = estimate.words;
+  const table = board.querySelector("#mb-table");
+  table.textContent = "";
+  if (dealt) {
+    const rows = MONEYBALL_ROWS.filter(row => moneyball.set.rows.includes(row[0]));
+    let order = [...dealt.columns];
+    const sortRow = rows.find(row => row[0] === moneyball.sort);
+    if (sortRow) order.sort((one, other) => (moneyballRead(sortRow, other.seat) ?? -Infinity) - (moneyballRead(sortRow, one.seat) ?? -Infinity));
+    const cell = (tag, text, cls) => {
+      const node = document.createElement(tag);
+      if (cls) node.className = cls;
+      if (text !== undefined && text !== null) node.textContent = text;
+      return node;
+    };
+    const head = document.createElement("thead"), headRow = document.createElement("tr");
+    headRow.appendChild(cell("th", "Stat"));
+    const nowHead = cell("th", "Now", "mb-now");
+    nowHead.appendChild(cell("small", `turn ${dealt.turn}`));
+    headRow.appendChild(nowHead);
+    for (const column of order) {
+      const th = cell("th", column.letter);
+      th.appendChild(cell("small", moneyball.set.names ? debugSearchAgent(column.name) : `turn ${dealt.turn + dealt.turns}`));
+      headRow.appendChild(th);
+    }
+    head.appendChild(headRow);
+    table.appendChild(head);
+    const body = document.createElement("tbody");
+    for (const row of rows) {
+      const tr = document.createElement("tr");
+      tr.dataset.row = row[0];
+      const th = document.createElement("th");
+      const sort = cell("button", row[1], "mb-sort");
+      sort.type = "button";
+      sort.dataset.mbSort = row[0];
+      sort.title = `${row[4]}. Sort the columns by it`;
+      if (moneyball.sort === row[0]) sort.setAttribute("aria-sort", "descending");
+      th.appendChild(sort);
+      tr.appendChild(th);
+      const now = moneyballRead(row, dealt.now);
+      tr.appendChild(cell("td", moneyballNumber(now), "mb-now"));
+      const values = order.map(column => moneyballRead(row, column.seat));
+      const known = values.filter(value => value !== null);
+      const top = known.length > 1 ? Math.max(...known) : null;
+      order.forEach((column, at) => {
+        const value = values[at];
+        const td = cell("td", column.error ? "×" : value === null ? (column.seat ? "–" : "…") : moneyballNumber(value),
+          value !== null && top !== null && value === top && known.some(other => other !== top) ? "is-top" : !column.seat && !column.error ? "is-waiting" : "");
+        if (value !== null && now !== null && value !== now) td.appendChild(cell("small", `${value > now ? "+" : "−"}${moneyballNumber(Math.abs(value - now))}`));
+        if (column.error) td.title = column.error;
+        tr.appendChild(td);
+      });
+      body.appendChild(tr);
+    }
+    // Where each column's game would end if it played on.
+    const ends = document.createElement("tr");
+    ends.className = "mb-ends";
+    ends.appendChild(cell("th", "Game ends"));
+    ends.appendChild(cell("td", "", "mb-now"));
+    for (const column of order) {
+      const end = column.end;
+      const words = column.error ? "×" : !end ? "…" : end.done ? `turn ${end.turn}${end.victory ? ` · ${titleCase(String(end.victory))}` : ""}` : `past turn ${end.turn}…`;
+      ends.appendChild(cell("td", words));
+    }
+    body.appendChild(ends);
+    table.appendChild(body);
+    const foot = document.createElement("tfoot"), footRow = document.createElement("tr");
+    footRow.append(cell("td"), cell("td"));
+    const free = moneyballIdle() && !gameFinished(state) && state.turn === dealt.turn;
+    for (const column of order) {
+      const td = document.createElement("td");
+      const pick = cell("button", `Pick ${column.letter}`, "mb-pick");
+      pick.type = "button";
+      pick.dataset.mbPick = column.letter;
+      pick.disabled = !free || !column.seat;
+      td.appendChild(pick);
+      footRow.appendChild(td);
+    }
+    foot.appendChild(footRow);
+    table.appendChild(foot);
+  }
+  const picks = board.querySelector("#mb-picks");
+  picks.textContent = "";
+  for (const pick of moneyball.picks) {
+    const item = document.createElement("li");
+    // The turns it played: from the turn picked on to the one before the
+    // turn the world then stands on.
+    item.textContent = `Turns ${pick.from}–${pick.to - 1}: ${pick.letter}, ${debugSearchAgent(pick.name)}`;
+    picks.appendChild(item);
+  }
+}
+// The state that was just drawn: a world that stands still on a turn the
+// board was not dealt from is dealt again.
+function moneyballWatch() {
+  if (!moneyballBoard || !state) return;
+  const dealt = moneyball.dealt;
+  const fresh = !dealt || dealt.turn !== state.turn || dealt.seed !== String(state.seed ?? "") || dealt.turns !== moneyball.set.turns
+    || dealt.columns.length !== Math.min(moneyball.set.columns, Math.max(1, strangeAgents().length));
+  if (fresh && moneyballIdle() && !gameFinished(state)) moneyballDealBoard();
+  moneyballDraw();
+}
+
+if (MONEYBALL) {
+  moneyballMount();
+  const drawState = render;
+  render = function (st, ...rest) {
+    const drawn = drawState(st, ...rest);
+    try { moneyballWatch(); } catch (error) { console.error("moneyball", error); }
+    return drawn;
+  };
+  window.addEventListener("resize", () => moneyballDraw());
+  // A world that stands still is dealt from once it is idle, whatever drew it last.
+  setInterval(() => { try { if (!moneyball.dealt && state) moneyballWatch(); } catch (error) { console.error("moneyball", error); } }, 1000);
+  if (state) moneyballWatch();
 }

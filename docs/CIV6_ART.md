@@ -1,62 +1,13 @@
-# Civilization VI's own art: the formats, and why it stays on your machine
+# Reading Civilization VI's own art off the installed game
 
-**Nothing civvis.ai or this repository ships is cut from Civilization VI.**
-Every sprite sheet the viewer draws is CIVVIS's own, drawn by
-`tools/own_art.py` and credited in `web/assets/ART_CREDITS.md`:
+CIVVIS' spectator is judged against a game that is installed on the same disk.
+Every mark on its map is therefore either **cut** from that install or
+**imitated**, and the difference is visible: an imitation is somebody's memory
+of a shape, and it reads as a different game's counter no matter how carefully
+it is drawn.
 
-| sheet | what it is |
-|---|---|
-| `unit-glyphs.png` (+ `.json`) | a game-icons.net silhouette (CC BY 3.0, author per cell) for every unit, 12 x 12 cells of 64 px in sorted roster order |
-| `unit-plates.png` | eight counter shapes of CIVVIS's own, 60 px cells in one row |
-| `yield-icons.png` | six lit discs drawn here, each carrying a game-icons.net pictograph, 80 px cells |
-| `city-wall-mark.png` | a battlement, 21 x 18 |
-| `hidden-map-monsters.png` | the unexplored-chart vignettes added in #391; not the game's art, though how they were made is not recorded (`THIRD_PARTY_NOTICES.md`, Unresolved) |
-
-Until #5940 the first four were cut out of an installed game by the tools this
-document describes, and a fifth and sixth sheet (`feature-atlas.png`,
-`environment-feature-atlas.png`) sat unused in the tree. A public site and a
-public repository cannot carry another company's art, so they are gone from
-both (they remain in git history before #5940).
-
-## Bring your own install: the game's art, locally only
-
-Somebody who owns the game can still see its own marks on their own machine.
-The cutters write into **`local/civ6-art/`**, which git ignores, under the
-names of the sheets above and on the same cell layouts:
-
-```bash
-python3 tools/civ6_unit_glyphs.py         # unit-glyphs.png + .json
-python3 tools/civ6_unit_flag_plates.py    # unit-plates.png
-python3 tools/civ6_yield_icons.py         # yield-icons.png
-python3 tools/civ6_city_banner_art.py     # city-wall-mark.png
-```
-
-The **native** server (`civvis play`, run from the checkout) serves a sheet from
-`local/civ6-art/` when one is there and CIVVIS's own otherwise
-(`map_sheet` in `src/server.rs`). The published build has no such path: the
-browser engine never reads the disk, and `beta/publish.sh` copies only
-`web/assets`. Delete the directory to go back to CIVVIS's own art.
-
-Three things keep a cut where it belongs, all run by
-`tools/test_art_provenance.py` with the other `tools/test_*.py`:
-
-- every PNG a cutter writes carries a `civvis-provenance` text chunk saying it
-  is local-only (`art_provenance.mark_local`);
-- `tools/art_provenance.py` fails if any tracked image is not listed, by
-  sha256, in `web/assets/art-manifest.json` (or explained in its
-  `NOT_SHIPPED`), or if any tracked file carries that marker;
-- `beta/publish.sh` runs `tools/art_provenance.py --bundle` on every lane it
-  builds, before the WebP pass, and fails on any image the manifest does not
-  list or that carries the marker.
-
-So: never copy a file from `local/civ6-art/` into `web/assets/`, and never
-record video or screenshots for publication from a server that has one.
-
-## The formats
-
-CIVVIS' live seat plays a game that is installed on the same disk, and the
-cutters read that install. This part records the container formats, so the
-next reading of it is a morning's work rather than a week's.
+This document records the container formats, so the next piece of art is a
+morning's work rather than a week's.
 
 Two rules hold for all of it:
 
@@ -67,7 +18,7 @@ Two rules hold for all of it:
 - **This Mac's `python3` has neither Pillow nor numpy.** Decoders and PNG
   writers here are stdlib: `struct` and `zlib` are enough for both.
 
-### `TEXTURE_*` — the `CIVBIG` container
+## `TEXTURE_*` — the `CIVBIG` container
 
 Loose files under `Base/Platforms/Windows/BLPs/**`, one texture each.
 `tools/civ6_yield_icons.py` reads them.
@@ -82,7 +33,7 @@ Loose files under `Base/Platforms/Windows/BLPs/**`, one texture each.
 
 A hand-written BC3 decoder is about forty lines.
 
-### `*.blp` — the `CIVBLP` package
+## `*.blp` — the `CIVBLP` package
 
 `Base/Platforms/Windows/BLPs/UI/InWorld.blp` and its neighbours are *not* that
 format and hold no loose textures. A `.blp` is a serialized C++ object graph
@@ -143,7 +94,7 @@ Two more package shapes that `InWorld.blp` does not have and most others do:
 - **no shared page at all.** `page()` returns `None` rather than refusing the
   package; a `BLP::TextureEntry` is the exception, not the rule.
 
-#### Sprites inside a UI package
+### Sprites inside a UI package
 
 `InWorld.blp` holds 122 named sprites — every city banner, unit flag, meter and
 promotion tag the in-world UI draws. One of them lives on a shared 256×256
@@ -160,7 +111,7 @@ with `edge` ∈ {1, 2, 4, 8}. At `edge = 1` that degenerates to an ordinary
 palettised image; at 8 it is a coarse tile dictionary. Nothing in it is
 DXT/BC despite the class being named `BCTexturePackageEntry`.
 
-#### How to know a parse of one of these is right
+### How to know a parse of one of these is right
 
 Three cheap oracles, all asserted by `_check` in
 `tools/civ6_unit_flag_plates.py`:
@@ -196,7 +147,7 @@ recognisable flag silhouette, and concluded it had found the military flag. It
 had found `BuilderRecommendation`, the improvement-recommendation banner, which
 shares the flag family's shape. None of the eight real flags is at that offset.
 
-### Naming a cell: the game's own icon tables
+## Naming a cell: the game's own icon tables
 
 A texture is half of a cut. The other half is which cell is which, and
 Civilization VI answers that in data rather than in art. Every icon in the game
@@ -228,22 +179,23 @@ learned by getting them wrong:
 - ⚠ **The reverse census does not hold.** `Units256` inks cells 26, 46 and 98
   and no icon definition anywhere in the install names any of them.
 
-### What the cutters read (into `local/civ6-art/` only)
+## What has been cut so far
 
-| local sheet | tool | source |
+| asset | tool | source |
 |---|---|---|
-| `yield-icons.png` | `tools/civ6_yield_icons.py` | `TEXTURE_YieldOverlayAtlas` |
-| `unit-plates.png` | `tools/civ6_unit_flag_plates.py` | `BLPs/UI/InWorld.blp` |
-| `unit-glyphs.png` | `tools/civ6_unit_glyphs.py` | `ICON_ATLAS_*_UNITS` in 8 `Icons.blp` |
-| `city-wall-mark.png` | `tools/civ6_city_banner_art.py` | `Banner_StrengthIcon_Shields` in `BLPs/UI/InWorld.blp` |
+| tile yield signs | `tools/civ6_yield_icons.py` | `TEXTURE_YieldOverlayAtlas` |
+| unit flag plates | `tools/civ6_unit_flag_plates.py` | `BLPs/UI/InWorld.blp` |
+| unit glyphs | `tools/civ6_unit_glyphs.py` | `ICON_ATLAS_*_UNITS` in 8 `Icons.blp` |
+| city-banner wall shields | `tools/civ6_city_banner_art.py` | `Banner_StrengthIcon_Shields` in `BLPs/UI/InWorld.blp` |
+| district colours | inline in `web/assets/app.js` | `Base/Assets/UI/Civ6_ColorAtlas.xml` |
 
-The district colours in `web/assets/app.js` are colour values read from
-`Base/Assets/UI/Civ6_ColorAtlas.xml`: numbers, not art.
-`tools/civ6_unit_flags.swift` -- 89 Civilopedia cards downloaded from the
+Every mark CIVVIS draws is now cut, not imitated and not scraped.
+`tools/civ6_unit_flags.swift` — 89 Civilopedia cards downloaded from the
 Civilization Wiki, their shared background removed by a low per-pixel
-percentile across the set -- was retired before the cutters, and stays gone.
+percentile across the set — is gone, and with it the last third-party
+dependency in this repository's art.
 
-#### ⚠ `UnitFlagAtlasWhite` is not the in-world glyph sheet
+### ⚠ `UnitFlagAtlasWhite` is not the in-world glyph sheet
 
 This document used to say it was, and left cutting it as the follow-up. That
 was wrong on all three counts that matter:
@@ -267,7 +219,7 @@ was wrong on all three counts that matter:
 It is still a real, decodable 512×256 sheet, and `UnitFlagAtlas22` in
 `Icons.blp` is the same set at 22px. Nobody knows what either is for.
 
-#### The cross-check that caught a wrong cell
+### The cross-check that caught a wrong cell
 
 Two independent renderings of the same 90 units — the sheet cut from the
 install, and the retired wiki scrape — should look alike unit for unit, because
@@ -292,7 +244,7 @@ for the next cut. It is not a standing test — the scrape it compares against i
 deleted — but it is the only check here that could catch a *plausible* wrong
 cell, and it did.
 
-### When measuring, measure the set
+## When measuring, measure the set
 
 Two lessons, learned twice:
 

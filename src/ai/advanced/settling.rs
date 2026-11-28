@@ -2038,6 +2038,13 @@ impl AdvancedAi {
         if self.settler_never_idles {
             self.note_settler_idle(g, uid);
         }
+        // `settler-walk-clock-runs-all-game`: the walk clock ticks here, on
+        // every stepped turn, so the turns the branches below spend retreating,
+        // fleeing or walking to shelter count toward the walk limits. See
+        // `advanced/settler_walk_deadline.rs`.
+        if self.settler_walk_clock_runs_all_game {
+            self.note_settler_walk(g, pid, uid);
+        }
         if self.settle_sooner || self.fog_yields_to_a_stranded_settler {
             // The walk clock starts the first turn the Settler is stepped,
             // whichever branch below steps it. See `settle_sooner` and

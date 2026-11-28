@@ -266,7 +266,32 @@ class Readings(unittest.TestCase):
         self.assertEqual([r["elo"] for r in record["off"]["strategies"]["rows"]], [1300.0])
         self.assertEqual(record["off"]["agents"][0]["series"], [["2026-11-20T00:00:00Z", 1300.0, 20, ""]])
         # The diplo-off reading carries every field the stock one does.
-        self.assertEqual(set(record["off"]), set(record) - {"off", "unswitched"})
+        self.assertEqual(set(record["off"]), set(record) - {"off", "unswitched", "setups"})
+
+    def test_each_published_setup_is_a_reading_of_its_own(self):
+        # Operator 2026-11-27: "6p Continents Online (Diplo off, Diplo on,
+        # science, culture, religion, diplomacy, domination, score) , 2P
+        # Pangaea (religion off, religion on). we can elo for each". Each
+        # published setup fit is a reading of its own fit; the 6P Continents
+        # Diplo on and off ones carry the benchmark's Firaxis levels played
+        # their way, rated against their own twin, and the others none.
+        root = self.tree(1000.0, 1300.0)
+        for name, jack in (("continents6", 1100.0), ("continents6_no_diplo", 1400.0), ("continents6_science", 900.0)):
+            (root / f"data/strategy_elo_{name}.json").write_text(json.dumps({"tables": 60, "players": 6, "setup": name, "ratings": {
+                "jack": {"elo": jack, "sd": 10.0, "margin95": 20.0, "games": 60, "wins": 10}}}), encoding="utf-8")
+            (root / f"data/strategy_elo_{name}_history.json").write_text(
+                json.dumps({"points": [point("2026-11-20T00:00:00Z", jack=(jack, 20, ""))]}), encoding="utf-8")
+        record = self.record(root, sorted(self.games(True) + self.games(False), key=lambda g: g["at"]))
+        self.assertEqual(sorted(record["setups"]), ["continents6", "continents6_no_diplo", "continents6_science"])
+        on, off, science = (record["setups"][name] for name in ("continents6", "continents6_no_diplo", "continents6_science"))
+        self.assertEqual([r["elo"] for r in on["strategies"]["rows"]], [1100.0])
+        self.assertAlmostEqual(on["firaxis"]["levels"][0]["now"]["elo"], 1100.0, delta=0.5)
+        self.assertAlmostEqual(off["firaxis"]["levels"][0]["now"]["elo"], 1400.0, delta=0.5)
+        self.assertEqual([r["elo"] for r in science["strategies"]["rows"]], [900.0])
+        self.assertIsNone(science["firaxis"])
+        self.assertEqual(science["people"], [])
+        # A revision with none of them published has an empty set.
+        self.assertEqual(self.record(self.tree(1000.0, None), [])["setups"], {})
 
     def test_a_revision_from_before_the_diplo_off_fit_has_no_second_reading(self):
         record = self.record(self.tree(1000.0, None), self.games(False))
@@ -446,7 +471,7 @@ class Page(unittest.TestCase):
         record = PAGE[PAGE.index('<div class="elo-record" id="elo-record" hidden>'):]
         sections = re.findall(r'<section [^>]*id="([a-z-]+)"', record)
         # The two readings of each Firaxis level stood beside the strategies
-        # until 2026-11-26, and are on Random AI Charts since (operator:
+        # until 2026-11-26, and are on Unreviewed Gen AI Charts since (operator:
         # "please move all the ai generated charts that i havent approved of
         # or we have discussed to here"); `random_page_test.py` holds them.
         self.assertEqual(sections, ["rank-strategies", "elo-over-time"])

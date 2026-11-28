@@ -443,10 +443,75 @@ function CivvisCoverQueue.install()
 	CivvisCoverQueue.installed = true;
 	return true, kind;
 end
+-- ★ AND IT IS LET UP. Two of these screens ask before they queue themselves
+-- whether a popup of their priority can be shown now, and when it cannot they
+-- keep the announcement in a list of their own and show it later, on
+-- `Events.UIIdle`:
+--   HistoricMoments.lua:163-166   if not UI.CanShowPopup(GetPopupPriority()) then
+--                                     table.insert(m_kQueuedPopups, popupData); return;
+--   HistoricMoments.lua:520-524   OnUIIdle: if UI.CanShowPopup(...) then ShowNextQueuedPopup()
+--   BoostUnlockedPopup.lua:256-258 CanShow: UI.CanShowPopup(PopupPriority.Low) and m_isOnQueue==false
+--   BoostUnlockedPopup.lua:352-357 OnUIIdle, the same way
+-- Under the cover the answer is no for the whole of a CIVVIS seat's turn (the
+-- cover is a higher popup), so the announcement was never queued, never drawn
+-- under the cover and never closed: it waited in the screen's own list until
+-- the cover lifted and then opened on the PERSON's turn. Live 2026-11-27
+-- (hotseat-20261128T031456Z, five CIVVIS seats): each seat's first Historic
+-- Moment came up one after another at the start of the person's turn 2, drawn
+-- for the local player, so each read "Your civilization hasn't experienced any
+-- Historic Moments." The same game's stand-in run parked on its turn 2 behind
+-- them. So on a CIVVIS seat's turn in a cover game these screens are told yes:
+-- they queue themselves (the proxy above keeps them drawn under the cover) and
+-- are closed as they were before the cover existed. On every other turn the
+-- game's own answer stands. `UI` is read with a dot everywhere in both scripts
+-- (no `UI:` call), so a table that answers this one question and reads every
+-- other name from the real one is the whole proxy.
+CivvisCoverQueue.ASKS = { HistoricMoments = true, BoostUnlockedPopup = true };
+CivvisCoverQueue.let = 0;
+function CivvisCoverQueue.installAsk()
+	if not CivvisCoverQueue.on() or not CivvisCoverQueue.ASKS[NAME] then return false, "off"; end
+	local real = UI;
+	local kind = type(real);
+	if kind ~= "table" and kind ~= "userdata" then return false, "no_ui"; end
+	local can = nil;
+	pcall(function() can = real.CanShowPopup; end);
+	if type(can) ~= "function" then return false, "no_can_show"; end
+	local function canShowPopup(...)
+		local ok, want = pcall(function()
+			return CivvisCoverQueue.wanted(NAME, Game.GetLocalPlayer());
+		end);
+		if ok and want then
+			CivvisCoverQueue.let = CivvisCoverQueue.let + 1;
+			return true;
+		end
+		return can(...);
+	end
+	local proxy = setmetatable({ CanShowPopup = canShowPopup }, {
+		__index = function(_, key) return real[key]; end,
+		__newindex = function(_, key, value) real[key] = value; end,
+	});
+	-- Used only if every other name reads through to the real one.
+	local through = false;
+	pcall(function() through = proxy.PlaySound == real.PlaySound; end);
+	if not through then return false, "proxy_refused"; end
+	local swapped = pcall(function() UI = proxy; end);
+	local current = nil;
+	pcall(function() current = UI; end);
+	if not swapped or current ~= proxy then
+		pcall(function() UI = real; end);
+		return false, "global_not_replaced";
+	end
+	return true, kind;
+end
 if CivvisCoverQueue.on() then
 	local ran, installed, how = pcall(CivvisCoverQueue.install);
 	report("cover_queue", string.format(',"installed":%s,"how":"%s"',
 		tostring(ran and installed == true), (tostring(ran and how or installed):gsub('["\\]', "'"))));
+	if CivvisCoverQueue.ASKS[NAME] then
+		ran, installed, how = pcall(CivvisCoverQueue.installAsk);
+		report("cover_queue_ask", string.format(',"installed":%s,"how":"%s"',
+			tostring(ran and installed == true), (tostring(ran and how or installed):gsub('["\\]', "'"))));
+	end
 end
 
 -- One screen is already replaced by a DLC, on a criterion true of every run
@@ -1345,6 +1410,17 @@ function CivvisHotseatScreen.namePerson()
 	end
 	CivvisHotseatScreen.personNamed = all;
 end
+-- The UI clock on the hand-over's records, `"ui"` in seconds: the clock the
+-- agent's `end_turn_wait.ui_now` and the cover's `waited` read, so
+-- `tools/hotseat_wait.py` can tell the hand-over and the press apart from the
+-- rest of a seat's opening (the mod's other clock, `Automation.GetTime`, ticks
+-- whole seconds). Empty where there is no such clock.
+function CivvisHotseatScreen.clock()
+	local ui = nil;
+	pcall(function() ui = UI.GetElapsedTime(); end);
+	if type(ui) ~= "number" or ui ~= ui or ui < 0 or ui > 1e12 then return ""; end
+	return string.format(',"ui":%.3f', ui);
+end
 function CivvisHotseatScreen.announce(phase)
 	pcall(CivvisHotseatScreen.namePerson);
 	local pid = CivvisHotseatScreen.localPlayer();
@@ -1352,7 +1428,8 @@ function CivvisHotseatScreen.announce(phase)
 		',"phase":"%s","player":%d,"turn":%d,"human":%s,"civvis":%s',
 		phase, pid, CivvisHotseatScreen.turn(),
 		tostring(CivvisHotseatScreen.listed(cfg.HotseatHumanSeats, pid)),
-		tostring(CivvisHotseatScreen.listed(cfg.HotseatSeats, pid))));
+		tostring(CivvisHotseatScreen.listed(cfg.HotseatSeats, pid)))
+		.. CivvisHotseatScreen.clock());
 end
 function CivvisHotseatScreen.save(pid, turn)
 	local every = tonumber(cfg.HotseatSaveEvery) or 0;
@@ -1409,7 +1486,8 @@ function CivvisHotseatScreen.press(pid, turn, via)
 	report("hotseat_start_turn", string.format(
 		',"player":%d,"turn":%d,"pressed":%s,"again":%s,"person":%s,"via":"%s"',
 		pid, turn, tostring(pressed), tostring(CivvisHotseatScreen.pressedFor == key),
-		tostring(CivvisHotseatScreen.listed(cfg.HotseatHumanSeats, pid)), tostring(via)));
+		tostring(CivvisHotseatScreen.listed(cfg.HotseatHumanSeats, pid)), tostring(via))
+		.. CivvisHotseatScreen.clock());
 	CivvisHotseatScreen.pressedFor = key;
 	return pressed;
 end
@@ -1424,6 +1502,25 @@ function CivvisHotseatScreen.paused(pid)
 	local paused = false;
 	pcall(function() paused = PlayerConfigurations[pid]:GetWantsPause() == true; end);
 	return paused;
+end
+-- How long the hand-over is up before its first press. 0.3 s lets it slide in
+-- for whoever watches; under the cover nobody does (it is hidden on its first
+-- frame, below), and the seat's whole turn waits on the press: the agent does
+-- nothing while the hand-over's pause stands (`CivvisSeat.mine`; in the live
+-- game hotseat-20261128T031456Z every seat's first record followed its
+-- `hotseat_start_turn` in Automation.log, 75 of 75). Six presses a round at
+-- five CIVVIS seats (theirs and the person's own) is 1.8 s of every wait.
+-- `HotseatFastTurns` (`tools/civ6_hotseat.py --fast-turns`, off unless asked)
+-- presses a covered hand-over on its first frame up. PlayerChange.lua pauses
+-- before it shows (`BuildTurnControls` :125 `SetPause(true)`, then
+-- `QueuePopup` :135) and its Start Turn is `OnOk` (:54), which unpauses
+-- (:57) and dequeues (:60), so the press finds the pause it lifts. An
+-- explicit `HotseatPressSeconds` still wins; a retry still waits 2 s.
+function CivvisHotseatScreen.firstPause(covered)
+	local set = tonumber(cfg.HotseatPressSeconds);
+	if set ~= nil then return set; end
+	if covered and cfg.HotseatFastTurns == true then return 0; end
+	return 0.3;
 end
 -- One press per seat and turn, after the screen has been up a moment (its
 -- own slide-in) and retried every two seconds while it stays up. Over the
@@ -1459,7 +1556,7 @@ function CivvisHotseatScreen.frame(fDTime)
 	end
 	CivvisHotseatScreen.waited = CivvisHotseatScreen.waited + (tonumber(fDTime) or 0);
 	local pause = CivvisHotseatScreen.pressedFor == key and 2.0
-		or (tonumber(cfg.HotseatPressSeconds) or 0.3);
+		or CivvisHotseatScreen.firstPause(covered);
 	if CivvisHotseatScreen.waited < pause then return; end
 	CivvisHotseatScreen.waited = 0;
 	CivvisHotseatScreen.press(pid, turn, "dialog");

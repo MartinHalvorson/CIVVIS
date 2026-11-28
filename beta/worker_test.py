@@ -98,13 +98,14 @@ const worker = (await import("./_worker.js")).default;
 // Each lane states its own build, as the published lanes do, so a check can
 // tell which lane's build.json something read.
 const laneBuilds = { "/build.json": "stable01", "/test/build.json": "head0002" };
+const laneBuilt = { "/build.json": "2026-11-26T17:48:29Z", "/test/build.json": "2026-11-26T18:12:03Z" };
 
 const env = {
   ASSETS: {
     fetch: (request) => {
       const path = new URL(request.url).pathname;
       if (path in laneBuilds) {
-        return new Response(JSON.stringify({ short: laneBuilds[path] }), {
+        return new Response(JSON.stringify({ short: laneBuilds[path], built_at: laneBuilt[path] }), {
           status: 200,
           headers: { "Content-Type": "application/json" },
         });
@@ -181,11 +182,11 @@ const listingEnv = (listed, simulator = {}) => ({
   },
 });
 
-window.hit = async ({ path, method = "GET", body, json, cookie, env: overrides, accepts, compressed, listed, simulator }) => {
+window.hit = async ({ path, method = "GET", body, json, cookie, env: overrides, accepts, compressed, listed, simulator, ask }) => {
   const init = { method, redirect: "manual" };
   if (body) init.body = new URLSearchParams(body);
   if (json !== undefined) init.body = JSON.stringify(json);
-  if (cookie) init.headers = { Cookie: cookie };
+  if (cookie || ask) init.headers = { ...(cookie ? { Cookie: cookie } : {}), ...(ask || {}) };
   const request = new Request("https://civvis.ai" + path, init);
   if (accepts) Object.defineProperty(request, "cf", { value: { clientAcceptEncoding: accepts } });
   const response = await worker.fetch(
@@ -201,6 +202,8 @@ window.hit = async ({ path, method = "GET", body, json, cookie, env: overrides, 
     cacheControl: response.headers.get("Cache-Control"),
     contentEncoding: response.headers.get("Content-Encoding"),
     vary: response.headers.get("Vary"),
+    etag: response.headers.get("ETag"),
+    lastModified: response.headers.get("Last-Modified"),
     body: await response.text(),
   };
 };
@@ -225,6 +228,15 @@ def serve(directory: pathlib.Path, port: int) -> socketserver.TCPServer:
     )
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     return httpd
+
+
+def format_b36(number: int) -> str:
+    digits = "0123456789abcdefghijklmnopqrstuvwxyz"
+    out = ""
+    while number:
+        number, rest = divmod(number, 36)
+        out = digits[rest] + out
+    return out or "0"
 
 
 def check(problems: list[str], name: str, condition: bool, detail: str = "") -> None:
@@ -352,6 +364,41 @@ def main(argv: list[str] | None = None) -> int:
         check(problems, "ROOT_REDIRECT=off still serves the site",
               off["status"] == 200 and off["body"].strip() == "asset:/")
 
+        print("==> a page asked about again is answered 304 while its lane's build stands")
+        # The edge drops the asset layer's ETag from text/html, so the worker
+        # gives each page its lane's build as a validator, and a browser that
+        # names it is told its copy stands, with no page sent.
+        tag, since = root["etag"], root["lastModified"]
+        head_page = hit(path="/test/")
+        check(problems, "a page carries its lane's build as a validator",
+              tag == 'W/"stable-stable01-' + format_b36(1795715309) + '"' and since == "Thu, 26 Nov 2026 17:48:29 GMT",
+              f"got {tag!r} {since!r}")
+        check(problems, "each lane's pages have their own validator",
+              head_page["etag"] not in (None, tag) and head_page["lastModified"] == "Thu, 26 Nov 2026 18:12:03 GMT",
+              f"got {head_page['etag']!r} {head_page['lastModified']!r}")
+        again = hit(path="/", ask={"If-None-Match": tag})
+        check(problems, "the page asked about with its validator is a 304 with no body",
+              again["status"] == 304 and again["body"] == "" and again["etag"] == tag
+              and "must-revalidate" in (again["cacheControl"] or ""),
+              f"got {again['status']} {again['body'][:40]!r} {again['etag']!r} {again['cacheControl']!r}")
+        check(problems, "a strong copy of the same validator counts too",
+              hit(path="/", ask={"If-None-Match": tag.removeprefix("W/")})["status"] == 304)
+        check(problems, "the stable lane's validator does not hold for the test lane",
+              hit(path="/test/", ask={"If-None-Match": tag})["status"] == 200)
+        check(problems, "another build's validator gets the page",
+              hit(path="/", ask={"If-None-Match": 'W/"stable-stable00-0"'})["body"].strip() == "asset:/")
+        check(problems, "the build's own date is a 304",
+              hit(path="/", ask={"If-Modified-Since": since})["status"] == 304)
+        # A lane can be promoted back to an older build: a date later than the
+        # build's is no proof the copy held is the one served.
+        later = hit(path="/", ask={"If-Modified-Since": "Fri, 27 Nov 2026 00:00:00 GMT"})
+        check(problems, "only the build's own date counts", later["status"] == 200, f"got {later['status']}")
+        check(problems, "If-None-Match outranks If-Modified-Since",
+              hit(path="/", ask={"If-None-Match": 'W/"x"', "If-Modified-Since": since})["status"] == 200)
+        nothing = hit(path="/charts/nope/", listed={"": ["home"], "/test": ["home"]})
+        check(problems, "the 404 page has no validator", nothing["status"] == 404 and nothing["etag"] is None,
+              f"got {nothing['status']} {nothing['etag']!r}")
+
         print("==> the game page is served at maximum compression")
         engine = hit(path="/test/civvis.wasm?v=abc", accepts="gzip, br", compressed=True)
         check(problems, "the engine is served from its .br copy",
@@ -394,9 +441,9 @@ def main(argv: list[str] | None = None) -> int:
                   f"got {page['body']!r} {page['contentEncoding']!r}")
             check(problems, f"{door} is still revalidated on every visit",
                   "must-revalidate" in (page["cacheControl"] or ""), f"got {page['cacheControl']!r}")
-        art = hit(path="/test/assets/unit-glyphs.webp?v=abc", accepts="br", compressed=True)
+        art = hit(path="/test/assets/civ6-unit-flags.webp?v=abc", accepts="br", compressed=True)
         check(problems, "images, already compressed, look for no copy",
-              art["body"] == "asset:/test/assets/unit-glyphs.webp", f"got {art['body']!r}")
+              art["body"] == "asset:/test/assets/civ6-unit-flags.webp", f"got {art['body']!r}")
         landing = hit(path="/home/", accepts="br", compressed=True)
         check(problems, "nor does a page outside the game",
               landing["body"] == "asset:/home/", f"got {landing['body']!r}")
@@ -435,7 +482,7 @@ def main(argv: list[str] | None = None) -> int:
             ("/charts/civvis-performance/", "CIVVIS Performance"),
             ("/charts/civ-ai-interpretability/", "Civ AI Interpretability"),
             ("/charts/ai-insights/", "AI Insights"),
-            ("/charts/random-ai-charts/", "Random AI Charts"),
+            ("/charts/unreviewed-gen-ai-charts/", "Unreviewed Gen AI Charts"),
             ("/tournaments/", "Tournaments"),
         ):
             passed = hit(path=address)
@@ -818,7 +865,7 @@ def main(argv: list[str] | None = None) -> int:
             ("/test/charts/civvis-performance/", "CIVVIS Performance"),
             ("/test/charts/civ-ai-interpretability/", "Civ AI Interpretability"),
             ("/test/charts/ai-insights/", "AI Insights"),
-            ("/test/charts/random-ai-charts/", "Random AI Charts"),
+            ("/test/charts/unreviewed-gen-ai-charts/", "Unreviewed Gen AI Charts"),
         ):
             passed = hit(path=address)
             check(problems, f"{address} passes through to the test {name} page",
@@ -850,11 +897,11 @@ def main(argv: list[str] | None = None) -> int:
                   module["contentType"] == "application/wasm", f"got {module['contentType']!r}")
             check(problems, f"{which} module is revalidated rather than trusted",
                   "must-revalidate" in (module["cacheControl"] or ""), f"got {module['cacheControl']!r}")
-            atlas = hit(path=f"{prefix}/assets/unit-plates.webp")
+            atlas = hit(path=f"{prefix}/assets/feature-atlas.webp")
             check(problems, f"{which} old atlas URLs are revalidated",
                   "must-revalidate" in (atlas["cacheControl"] or ""),
                   f"got {atlas['cacheControl']!r}")
-            for filename in ("shim.js", "worker.js", "civvis.wasm", "assets/unit-plates.webp"):
+            for filename in ("shim.js", "worker.js", "civvis.wasm", "assets/feature-atlas.webp"):
                 versioned = hit(path=f"{prefix}/{filename}?v=content-hash")
                 check(problems, f"{which} versioned {filename} is immutable",
                       "max-age=31536000" in (versioned["cacheControl"] or "")

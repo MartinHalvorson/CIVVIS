@@ -17,28 +17,139 @@ let compiled = null;
 
 function boot(wasmUrl) {
   if (!ready) {
+    ready = download(wasmUrl).then((result) => {
+      compiled = result.module;
+      engine = result.instance.exports;
+      return engine;
+    });
+  }
+  return ready;
+}
+
+// The engine's download, seen through. A first visit draws a baked opening
+// before the engine has arrived (`shim.js`, "baked"), and it was asked for
+// once: a download that failed kept its failure for every request after it,
+// and one that stopped was waited on for ever. Either way the opening stood
+// on screen with its clock running and nothing moving (operator 2026-11-27:
+// "civvis,.ai doesnt always appear to start a game", "sometimes has map and
+// clock starts but nothing moving"). Now a download that goes STALL_MS
+// without a byte is given up, and one that broke on the way is asked for
+// again after a pause that grows, for as long as the page is open. A slow
+// download is never given up while bytes are still arriving.
+//
+// What it has got so far goes to the page as it comes (`loading`), so a page
+// with a world on screen and no engine yet can say so.
+const STALL_MS = 15000;
+const RETRY_AFTER_MS = [1000, 2000, 4000, 8000, 15000];
+const TOLD_EVERY_MS = 250;
+
+async function download(wasmUrl) {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      const result = await downloadOnce(wasmUrl, attempt);
+      tell({ attempt, done: true });
+      return result;
+    } catch (error) {
+      if (!error || !error.retry) {
+        tell({ attempt, failed: String((error && error.message) || error) });
+        throw error;
+      }
+      const pause = RETRY_AFTER_MS[Math.min(attempt, RETRY_AFTER_MS.length - 1)];
+      tell({ attempt, retrying: pause, why: error.message });
+      await new Promise((resolve) => setTimeout(resolve, pause));
+    }
+  }
+}
+
+let toldAt = -Infinity;
+function tell(loading, often = true) {
+  const now = performance.now();
+  if (!often && now - toldAt < TOLD_EVERY_MS) return;
+  toldAt = now;
+  self.postMessage({ loading });
+}
+
+function retryable(error) {
+  const again = new Error((error && error.message) || String(error));
+  again.retry = true;
+  return again;
+}
+
+async function downloadOnce(wasmUrl, attempt) {
+  const abort = new AbortController();
+  let stalled = false;
+  let broken = false;
+  let timer = 0;
+  const watch = () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => { stalled = true; abort.abort(); }, STALL_MS);
+  };
+  watch();
+  try {
+    let response;
+    try {
+      // A try after the first goes to the network itself: the browser would
+      // otherwise hand it the copy the try before it stopped on.
+      response = await fetch(wasmUrl, { signal: abort.signal, cache: attempt ? "no-store" : "default" });
+    } catch (error) {
+      throw retryable(stalled ? new Error("the engine's download stopped") : error);
+    }
+    if (!response.ok) {
+      const error = new Error(`could not load CIVVIS (${response.status})`);
+      error.retry = response.status >= 500 || response.status === 408 || response.status === 429;
+      throw error;
+    }
     // The module imports nothing, so there is no glue to keep in step with it
     // and nothing to pass in. Decide from the response MIME type before
     // trying streaming: a basic static host that mistypes the module can fall
     // straight back to bytes instead of downloading the whole module again.
-    ready = fetch(wasmUrl)
-      .then(async (response) => {
-        if (!response.ok) throw new Error(`could not load CIVVIS (${response.status})`);
-        const mime = (response.headers.get("Content-Type") || "")
-          .split(";", 1)[0].trim().toLowerCase();
-        if (mime === "application/wasm" &&
-            typeof WebAssembly.instantiateStreaming === "function") {
-          return WebAssembly.instantiateStreaming(Promise.resolve(response), {});
+    const mime = (response.headers.get("Content-Type") || "")
+      .split(";", 1)[0].trim().toLowerCase();
+    // The bytes are counted on their way to the compiler: each one puts the
+    // stall off again.
+    const reader = response.body.getReader();
+    let bytes = 0;
+    const counted = new ReadableStream({
+      async pull(controller) {
+        let part;
+        try {
+          part = await reader.read();
+        } catch (error) {
+          broken = true;
+          controller.error(error);
+          return;
         }
-        return WebAssembly.instantiate(await response.arrayBuffer(), {});
-      })
-      .then((result) => {
-        compiled = result.module;
-        engine = result.instance.exports;
-        return engine;
-      });
+        if (part.done) {
+          clearTimeout(timer);
+          controller.close();
+          return;
+        }
+        bytes += part.value.byteLength;
+        watch();
+        tell({ attempt, bytes }, false);
+        controller.enqueue(part.value);
+      },
+      cancel(reason) {
+        return reader.cancel(reason);
+      },
+    });
+    const body = new Response(counted, { headers: { "Content-Type": "application/wasm" } });
+    try {
+      if (mime === "application/wasm" &&
+          typeof WebAssembly.instantiateStreaming === "function") {
+        return await WebAssembly.instantiateStreaming(body, {});
+      }
+      return await WebAssembly.instantiate(await body.arrayBuffer(), {});
+    } catch (error) {
+      // A module cut off on its way is not a broken module: it is asked for
+      // again. One that arrived whole and does not compile is.
+      if (stalled) throw retryable(new Error("the engine's download stopped"));
+      if (broken) throw retryable(error);
+      throw error;
+    }
+  } finally {
+    clearTimeout(timer);
   }
-  return ready;
 }
 
 // ---------------------------------------------------------------------- forks

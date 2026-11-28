@@ -7,8 +7,8 @@ use super::{
     viewer_path, ChronicleSnapshot, ChronicleState, FrameDelivery, Params, RequestSender, Session,
     Shared, SpectatorFrame, BETWEEN_GAME_COUNTDOWN_OPTIONS_MS, DEFAULT_BETWEEN_GAME_COUNTDOWN_MS,
     EMBEDDED_APP_FRONTDOOR_JS, EMBEDDED_APP_JS, EMBEDDED_APP_MOMENTS_JS, EMBEDDED_APP_SETUP_JS,
-    EMBEDDED_CITY_WALL_MARK, EMBEDDED_HIDDEN_MAP_MONSTERS, EMBEDDED_INDEX, EMBEDDED_INDEX_HTML,
-    EMBEDDED_UNIT_GLYPHS, EMBEDDED_UNIT_PLATES, EMBEDDED_YIELD_ICONS, LOCAL_CIV6_ART,
+    EMBEDDED_CIV6_UNIT_FLAGS, EMBEDDED_CIV6_UNIT_FLAG_PLATES, EMBEDDED_CIV6_YIELD_ICONS,
+    EMBEDDED_HIDDEN_MAP_MONSTERS, EMBEDDED_INDEX, EMBEDDED_INDEX_HTML,
     MAX_EXACT_JAVASCRIPT_INTEGER, SAVE_DIR, STATE_LONG_POLL, VIEWER_ACTIVE,
 };
 use crate::game::{Action, Game, LeaderPool, PlayOnMode, VictoryConditions, CIV6_LEADER_POOL};
@@ -328,6 +328,64 @@ fn a_unit_is_offered_only_the_orders_it_can_carry_out() {
     assert!(EMBEDDED_APP_JS.contains("if (soldier && standing !== \"explore\")"));
     // A journey is described, not located by coordinates.
     assert!(!EMBEDDED_APP_JS.contains("`Travelling to ${travel.to.join(\",\")}`"));
+}
+
+/// 2P Pangaea New Game and 6P Continents New Game stand side by side over
+/// Start new game in a played game, the AI Debugger and Edge of Tomorrow
+/// (operator 2026-11-27: "in civvis debugger, above start new game with
+/// seclected settings, add a 2P pangaea New Game, 6P Continents New Game on
+/// teh right. theses function the same as the new game except set the player
+/// count and map as well to the claimed settings. same for civvis: edge of
+/// tomorrow"). Each sets World size and Map on Game Setup and starts the game
+/// as Start new game does.
+#[test]
+fn a_played_game_offers_two_set_worlds_over_start_new_game() {
+    let row = EMBEDDED_INDEX
+        .find("<div class=\"preset-games\" id=\"preset-games\"")
+        .expect("the row of set worlds");
+    let start = EMBEDDED_INDEX
+        .find("<button id=\"restart-sim\"")
+        .expect("Start new game");
+    assert!(row < start, "the set worlds stand over Start new game");
+    let markup = &EMBEDDED_INDEX[row..start];
+    let two = markup
+        .find("data-preset-players=\"2\" data-preset-map=\"pangaea\"")
+        .expect("2P Pangaea");
+    let six = markup
+        .find("data-preset-players=\"6\" data-preset-map=\"continents\"")
+        .expect("6P Continents");
+    assert!(
+        two < six,
+        "2P Pangaea on the left, 6P Continents on the right"
+    );
+    assert!(markup.contains(
+        "><span class=\"lbl\">2P Pangaea</span> <span class=\"sub\">New Game</span></button>"
+    ));
+    assert!(markup.contains(
+        "><span class=\"lbl\">6P Continents</span> <span class=\"sub\">New Game</span></button>"
+    ));
+    // Only a played game has a Start new game to stand over.
+    assert!(EMBEDDED_INDEX.contains(".preset-games { display: none; }"));
+    assert!(EMBEDDED_INDEX.contains(
+        "body.debugger-view .preset-games, html.tomorrow .preset-games { display: grid;"
+    ));
+    for piece in [
+        "function startPresetGame(players, map) {",
+        "for (const [id, value] of [[\"np\", String(players)], [\"maptype\", map]]) {",
+        "select.dispatchEvent(new Event(\"change\", {bubbles: true}));",
+        "button.onclick = () => startPresetGame(Number(button.dataset.presetPlayers), button.dataset.presetMap);",
+        "...document.querySelectorAll(\"#preset-games button\"),",
+    ] {
+        assert!(
+            EMBEDDED_APP_SETUP_JS.contains(piece),
+            "missing set-world piece: {piece}"
+        );
+    }
+    let body = &EMBEDDED_APP_SETUP_JS[EMBEDDED_APP_SETUP_JS
+        .find("function startPresetGame(players, map) {")
+        .unwrap()..];
+    let body = &body[..body.find("\n}\n").unwrap()];
+    assert!(body.trim_end().ends_with("startNewSimulation();"));
 }
 
 #[test]
@@ -2254,16 +2312,20 @@ fn viewer_marks_the_selected_revision_and_its_compact_ages_above_the_minimap() {
 /// can be civvis.ai/debugger and civvis.ai/doctor-strange"), where they
 /// were the viewer's address with `?mode=strange`, `?mode=play` and
 /// `?mode=tomorrow`.
+/// CIVVIS: Moneyball stands after Edge of Tomorrow since 2026-11-27
+/// (operator: "add CIVVIS: Moneyball. This is a minigame where a user only
+/// looks at the stats and tries to play the best game").
 #[test]
 fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
     assert!(EMBEDDED_INDEX.contains(concat!(
         "<nav class=\"head-links\" id=\"headlinks\" aria-label=\"CIVVIS sites\" hidden>\n",
         "        <a class=\"home-link\" id=\"homelink\" href=\"/home\" target=\"_top\">Home</a>\n",
-        "        <a class=\"home-link\" id=\"chartslink\" href=\"/charts/ai-insights\" target=\"_top\">Charts/</a>\n",
         "        <a class=\"home-link\" id=\"tourlink\" href=\"/tournaments\" target=\"_top\">Tournaments</a>\n",
-        "        <a class=\"home-link\" id=\"watchlink\" href=\"./\" target=\"_top\">CIVVIS</a>\n",
+        "        <a class=\"home-link\" id=\"chartslink\" href=\"/charts/ai-insights\" target=\"_top\">Charts/</a>\n",
         "        <a class=\"home-link\" id=\"strangelink\" href=\"doctor-strange\" target=\"_top\">Doctor Strange's CIVVIS</a>\n",
         "        <a class=\"home-link\" id=\"tomorrowlink\" href=\"edge-of-tomorrow\" target=\"_top\">CIVVIS: Edge of Tomorrow</a>\n",
+        "        <a class=\"home-link\" id=\"moneyballlink\" href=\"moneyball\" target=\"_top\">CIVVIS: Moneyball</a>\n",
+        "        <a class=\"home-link\" id=\"watchlink\" href=\"./\" target=\"_top\">CIVVIS</a>\n",
         "        <a class=\"home-link\" id=\"playlink\" href=\"debugger\" target=\"_top\">CIVVIS AI Debugger</a>\n",
         "        <a class=\"home-link\" id=\"civ6link\" ",
         "href=\"https://store.steampowered.com/app/289070/Sid_Meiers_Civilization_VI/\" ",
@@ -2304,7 +2366,7 @@ fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
     // Which page it is, the address says: the head script reads the
     // simulator's page off it, or an old link's `?mode=`, and the shim, which
     // runs before it, reads the same table.
-    let table = "const SIMULATOR_PAGES = {debugger: \"play\", \"doctor-strange\": \"strange\", \"edge-of-tomorrow\": \"tomorrow\"};";
+    let table = "const SIMULATOR_PAGES = {debugger: \"play\", \"doctor-strange\": \"strange\", \"edge-of-tomorrow\": \"tomorrow\", moneyball: \"moneyball\"};";
     assert!(EMBEDDED_INDEX.contains(table));
     assert!(include_str!("../../beta/shim.js").contains(table));
     assert!(include_str!("../../beta/_worker.js").contains(table));
@@ -2324,6 +2386,9 @@ fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
     // wake point was moved to.
     assert!(include_str!("../../beta/shim.js")
         .contains("else if (mode === \"tomorrow\") payload.spectate = false;"));
+    // CIVVIS: Moneyball's seat is the visitor's too, played by the picks.
+    assert!(include_str!("../../beta/shim.js")
+        .contains("else if (mode === \"moneyball\") payload.spectate = false;"));
     // Each opens on a world of its own (operator, 2026-11-25: "lets use 4p
     // pangaea maps for doctor strange's civ 6. 2p Duel maps for edge of
     // tomorrow"), and a link's own players, map or shape still wins.
@@ -2332,6 +2397,10 @@ fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
         "      play: {map_topology: \"flat\"},\n",
         "      strange: {num_players: 4, map_script: \"pangaea\", map_topology: \"flat\"},\n",
         "      tomorrow: {num_players: 2, map_script: \"continents\", map_topology: \"flat\"},\n",
+        "      // CIVVIS: Moneyball plays every column's future on a copy of the\n",
+        "      // world before each pick, so it has Doctor Strange's small world, four\n",
+        "      // civilizations on a Pangaea, whose turns are the quickest to play.\n",
+        "      moneyball: {num_players: 4, map_script: \"pangaea\", map_topology: \"flat\"},\n",
         "    };\n",
         "    for (const [setting, value] of Object.entries(MODE_WORLDS[mode] || {})) {\n",
         "      if (!(setting in payload)) payload[setting] = value;\n",
@@ -2394,9 +2463,10 @@ fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
     // hides one any more.
     assert!(EMBEDDED_INDEX.contains(concat!(
         "  body.watching-sim #watchlink,\n",
-        "  html.seat-known:not(.strange):not(.tomorrow) body:not(.watching-sim) #playlink,\n",
+        "  html.seat-known:not(.strange):not(.tomorrow):not(.moneyball) body:not(.watching-sim) #playlink,\n",
         "  html.seat-known.strange body:not(.watching-sim) #strangelink,\n",
-        "  html.seat-known.tomorrow body:not(.watching-sim) #tomorrowlink {\n",
+        "  html.seat-known.tomorrow body:not(.watching-sim) #tomorrowlink,\n",
+        "  html.seat-known.moneyball body:not(.watching-sim) #moneyballlink {\n",
         "    border-color: #fff; box-shadow: inset 0 0 0 1px #fff;\n",
         "  }",
     )));
@@ -2464,9 +2534,9 @@ fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
         // And, last (2026-11-26: "please add another chart to the end of
         // charts/ called random ai charts"), the charts an agent added on
         // its own.
-        "          <a class=\"site-link sub-link\" href=\"../random-ai-charts/\" ",
+        "          <a class=\"site-link sub-link\" href=\"../unreviewed-gen-ai-charts/\" ",
         "title=\"Charts the AI agents added on their own, kept here until they are asked for ",
-        "or talked over.\">Random AI Charts</a>\n",
+        "or talked over.\">Unreviewed Gen AI Charts</a>\n",
         "        </div>\n",
     )));
     assert!(include_str!("../../beta/research.html").contains(concat!(
@@ -2576,16 +2646,23 @@ fn viewer_masthead_lists_the_sites_with_this_page_ringed() {
     // the system face, AUTO-TOURNEYS is 91.3px in this type and half a row
     // holds 84px at its narrowest (a 195px band), six tenths 103.8px;
     // CIVVIS is 36px in the 64.2px left to it.
+    // Since 2026-11-28 Tournaments stands before Charts/ and CIVVIS just
+    // above AI Debugger (operator: "move tournaments above charts in the
+    // ordering", "move civvis above the civvis ai debugger in the
+    // ordering"): HOME takes four tenths beside TOURNAMENTS' six, and
+    // CHARTS/ and CIVVIS, each beside a name with a row of its own, whole
+    // rows.
     assert!(EMBEDDED_INDEX.contains(concat!(
         "  .head-links > .home-link { grid-column: span 5; }\n",
+        "  .head-links > #homelink { grid-column: span 4; }\n",
         "  .head-links > #tourlink { grid-column: span 6; }\n",
-        "  .head-links > #watchlink { grid-column: span 4; }\n",
+        "  .head-links > #chartslink, .head-links > #watchlink { grid-column: 1 / -1; }\n",
     )));
     // Doctor Strange's Civ 6 is the one name longer than half a row and has
     // a row of its own, AI Debugger and Civ 6 keep theirs, and Edge of
     // Tomorrow has one between those two.
     assert!(EMBEDDED_INDEX.contains(
-        "  .head-links > #playlink, .head-links > #strangelink, .head-links > #tomorrowlink, .head-links > #civ6link { grid-column: 1 / -1; }\n"
+        "  .head-links > #playlink, .head-links > #strangelink, .head-links > #tomorrowlink, .head-links > #moneyballlink, .head-links > #civ6link { grid-column: 1 / -1; }\n"
     ));
     for gone in [
         ".head-links > :last-child:nth-child(odd)",
@@ -2793,6 +2870,9 @@ fn the_home_page_lists_the_sites_with_itself_ringed() {
         concat!(
             "<nav class=\"site-nav\" aria-label=\"CIVVIS sites\">\n",
             "      <a class=\"site-link\" href=\"./\" aria-current=\"page\">Home</a>\n",
+            "      <a class=\"site-link\" href=\"../tournaments/\" ",
+            "title=\"Series of verification games against Civilization VI&#8217;s own AI: ",
+            "running, scheduled and finished.\">Tournaments</a>\n",
             "      <div class=\"site-folder\">\n",
             "        <a class=\"site-link\" href=\"../charts/ai-insights/\" ",
             "title=\"What the games show: charts read off the CIVVIS AI agents&#8217; games.\">Charts/</a>\n",
@@ -2801,20 +2881,19 @@ fn the_home_page_lists_the_sites_with_itself_ringed() {
         ),
         concat!(
             "CIVVIS Performance</a>\n",
-            "          <a class=\"site-link sub-link\" href=\"../charts/random-ai-charts/\" ",
+            "          <a class=\"site-link sub-link\" href=\"../charts/unreviewed-gen-ai-charts/\" ",
             "title=\"Charts the AI agents added on their own, kept here until they are asked for ",
-            "or talked over.\">Random AI Charts</a>\n",
+            "or talked over.\">Unreviewed Gen AI Charts</a>\n",
             "        </div>\n",
             "      </div>\n",
-            "      <a class=\"site-link\" href=\"../tournaments/\" ",
-            "title=\"Series of verification games against Civilization VI&#8217;s own AI: ",
-            "running, scheduled and finished.\">Tournaments</a>\n",
-            "      <a class=\"site-link\" href=\"../\" ",
-            "title=\"Every civilization is played by a CIVVIS AI agent.\">CIVVIS</a>\n",
             "      <a class=\"site-link\" href=\"../doctor-strange\" ",
             "title=\"One world, two timelines: the same game played two ways, side by side, on a timeline that branches.\">Doctor Strange's CIVVIS</a>\n",
             "      <a class=\"site-link\" href=\"../edge-of-tomorrow\" ",
             "title=\"You play one civilization, with a jump back: the world returns to the turn you woke on, as it stood.\">CIVVIS: Edge of Tomorrow</a>\n",
+            "      <a class=\"site-link\" href=\"../moneyball\" ",
+            "title=\"Only the numbers: pick a player strategy by its stats, ten turns at a time, and try to play the best game.\">CIVVIS: Moneyball</a>\n",
+            "      <a class=\"site-link\" href=\"../\" ",
+            "title=\"Every civilization is played by a CIVVIS AI agent.\">CIVVIS</a>\n",
             "      <a class=\"site-link\" href=\"../debugger\" ",
             "title=\"You play one civilization. CIVVIS AI agents play the rest.\">CIVVIS AI Debugger</a>\n",
             "      <a class=\"site-link\" ",
@@ -7769,7 +7848,7 @@ fn browser_orders_controls_interface_setup_and_logs() {
         "right: var(--panel-edge);\n    top: calc(var(--player-hud-top, var(--panel-edge)) + min(var(--player-hud-height, 106px), var(--player-hud-max-height)) + var(--panel-gap));"
     ));
     assert!(EMBEDDED_INDEX.contains(
-        ":where(body.overlay-players-hidden, #maparea:has(> #playerhud.standings-collapsed)) #victoryhud {\n    top: var(--panel-edge);"
+        ":where(body.overlay-players-hidden) #victoryhud, #victoryhud:where(:has(~ #playerhud.standings-collapsed)) {\n    top: var(--panel-edge);"
     ));
     // "Under the masthead" is its actual bottom in every layout. A masthead
     // the viewer moved publishes its top beside its height, and all four
@@ -9801,31 +9880,31 @@ fn browser_key_bindings_match_the_requested_set() {
 }
 
 #[test]
-fn strategic_units_use_a_complete_unit_glyph_atlas() {
-    assert!(EMBEDDED_UNIT_GLYPHS.starts_with(b"\x89PNG\r\n\x1a\n"));
-    assert!(EMBEDDED_UNIT_GLYPHS.len() > 50_000);
-    assert!(EMBEDDED_INDEX.contains("CIV6_UNIT_ICON_ATLAS.src = \"/assets/unit-glyphs.png\""));
+fn strategic_units_use_a_complete_civ6_icon_atlas() {
+    assert!(EMBEDDED_CIV6_UNIT_FLAGS.starts_with(b"\x89PNG\r\n\x1a\n"));
+    assert!(EMBEDDED_CIV6_UNIT_FLAGS.len() > 50_000);
+    assert!(EMBEDDED_INDEX.contains("CIV6_UNIT_ICON_ATLAS.src = \"/assets/civ6-unit-flags.png\""));
 
     let ids = EMBEDDED_INDEX
         .split("const CIV6_UNIT_ICON_TYPES = [")
         .nth(1)
         .and_then(|tail| tail.split("];\nconst CIV6_UNIT_ICON_INDEX").next())
-        .expect("ordered unit icon IDs");
+        .expect("ordered Civilization VI unit icon IDs");
     let rules = crate::rules::Rules::embedded();
     assert_eq!(ids.matches('"').count() / 2, rules.units.len());
     for unit in rules.units.keys() {
         assert!(
             ids.contains(&format!("\"{unit}\"")),
-            "unit {unit} has no glyph cell"
+            "unit {unit} has no Civilization VI icon cell"
         );
     }
     // Naming every unit is not enough: `nihang` was named here, and its
-    // cell held a duplicate of `warrior_monk`'s picture because the tool
-    // drawing the sheet never learned about it. What follows is the rest of that contract --
+    // cell held a duplicate of `warrior_monk`'s picture because the cutter
+    // never learned about it. What follows is the rest of that contract --
     // the sheet is the ruleset's roster, in the ruleset's order, and every
     // cell of it has ink.
     let manifest = civ6_unit_glyph_manifest();
-    let drawn: Vec<&str> = manifest["units"]
+    let cut: Vec<&str> = manifest["units"]
         .as_array()
         .expect("the glyph manifest's unit rows")
         .iter()
@@ -9833,8 +9912,8 @@ fn strategic_units_use_a_complete_unit_glyph_atlas() {
         .collect();
     let roster: Vec<&str> = rules.units.keys().map(|name| name.as_str()).collect();
     assert_eq!(
-        drawn, roster,
-        "the drawn sheet is the ruleset's units in the ruleset's order"
+        cut, roster,
+        "the cut sheet is the ruleset's units in the ruleset's order"
     );
     let named: Vec<&str> = ids.split('"').skip(1).step_by(2).collect();
     assert_eq!(
@@ -9851,7 +9930,7 @@ fn strategic_units_use_a_complete_unit_glyph_atlas() {
         );
         assert!(
             row["ink"].as_u64().unwrap_or(0) > 0,
-            "{unit} was drawn into a blank cell"
+            "{unit} was cut from a blank cell"
         );
         let cell = manifest["cell_size"].as_u64().unwrap();
         let box_ = row["box"].as_array().expect("a measured silhouette");
@@ -9915,7 +9994,7 @@ fn strategic_units_use_a_complete_unit_glyph_atlas() {
         .contains("drawUnitPictogram(it.unit, seat.x, seat.y, seat.size, \"#f0ead8\")"));
 
     // Religious units are ordinary units of the map: each has its own
-    // cell and rides the same token as everything else.
+    // Civilization VI cell and rides the same token as everything else.
     for religious in [
         "missionary",
         "apostle",
@@ -9929,7 +10008,7 @@ fn strategic_units_use_a_complete_unit_glyph_atlas() {
         );
         assert!(
             ids.contains(&format!("\"{religious}\"")),
-            "{religious} has no glyph cell"
+            "{religious} has no Civilization VI icon cell"
         );
     }
 }
@@ -9940,9 +10019,9 @@ fn repository_file(path: &str) -> String {
         .unwrap_or_else(|error| panic!("{path}: {error}"))
 }
 
-/// What `tools/own_art.py` recorded about the sheet it drew.
+/// What `tools/civ6_unit_glyphs.py` recorded about the sheet it cut.
 fn civ6_unit_glyph_manifest() -> serde_json::Value {
-    serde_json::from_str(&repository_file("web/assets/unit-glyphs.json"))
+    serde_json::from_str(&repository_file("web/assets/civ6-unit-flags.json"))
         .expect("the unit glyph manifest is JSON")
 }
 
@@ -9953,18 +10032,34 @@ fn fnv1a64(bytes: &[u8]) -> u64 {
     })
 }
 
-/// The unit glyphs are openly licensed silhouettes, credited one by one, and
-/// nothing the site ships is cut from Civilization VI.
+/// The unit glyphs are cut off the installed game, not scraped from an
+/// archive of it.
 ///
-/// They used to be cut off the installed game (`tools/civ6_unit_glyphs.py`),
-/// and before that scraped from Civilopedia cards on the Civilization Wiki
-/// (`tools/civ6_unit_flags.swift`). Both put somebody else's art on a public
-/// site. `tools/own_art.py` now draws a game-icons.net silhouette (CC BY 3.0)
-/// into every cell from path data kept in `tools/own_art_icons.json`; the
-/// cutter still exists, for an owner of the game, and writes only into the
-/// git-ignored `local/civ6-art/` that this local server prefers when present.
+/// They were the last CIVVIS art that was not. `tools/civ6_unit_flags.swift`
+/// downloaded 89 Civilopedia cards from the Civilization Wiki and recovered
+/// the white symbols by subtracting a per-pixel percentile of the set --
+/// which worked, and which meant the spectator's unit markers depended on a
+/// third party's copy of a file sitting on the same disk. The cards are
+/// gone; `tools/civ6_unit_glyphs.py` reads
+/// `Base/Platforms/Windows/BLPs/UI/Icons.blp` and its DLC siblings.
+///
+/// The point of this test is the *chain*: which Civilization VI unit a
+/// CIVVIS unit is, which icon that unit's flag asks for, and which cell of
+/// which atlas that icon is. A roster written down beside the renderer
+/// instead is what put a Warrior Monk's picture on every Nihang.
 #[test]
-fn the_unit_glyphs_are_drawn_from_credited_open_icons() {
+fn the_unit_glyphs_are_cut_from_the_installed_game() {
+    let cutter = repository_file("tools/civ6_unit_glyphs.py");
+    assert!(
+        cutter.contains("import civ6_env as env"),
+        "the install is resolved by the one module allowed to look for it"
+    );
+    assert!(
+        cutter.contains("import civ6_unit_flag_plates as blp"),
+        "one parser reads the package format, not two"
+    );
+    assert!(cutter.contains("assets.rglob(\"Icons.blp\")"));
+    assert!(cutter.contains("ICON_ATLAS_UNITS"));
     // The scrape is retired, not merely unused: a fallback nothing runs is
     // a fallback nobody notices has rotted.
     assert!(
@@ -9979,78 +10074,95 @@ fn the_unit_glyphs_are_drawn_from_credited_open_icons() {
     let manifest = civ6_unit_glyph_manifest();
     assert_eq!(
         manifest["png_bytes"].as_u64(),
-        Some(EMBEDDED_UNIT_GLYPHS.len() as u64)
+        Some(EMBEDDED_CIV6_UNIT_FLAGS.len() as u64)
     );
     assert_eq!(
         manifest["png_fnv1a64"].as_str(),
-        Some(format!("{:#018x}", fnv1a64(EMBEDDED_UNIT_GLYPHS)).as_str()),
+        Some(format!("{:#018x}", fnv1a64(EMBEDDED_CIV6_UNIT_FLAGS)).as_str()),
         "the manifest was written for a different atlas than the one here"
     );
     let cell = manifest["cell_size"].as_u64().unwrap();
     let columns = manifest["columns"].as_u64().unwrap();
-    let width = u32::from_be_bytes(EMBEDDED_UNIT_GLYPHS[16..20].try_into().unwrap());
-    let height = u32::from_be_bytes(EMBEDDED_UNIT_GLYPHS[20..24].try_into().unwrap());
+    let width = u32::from_be_bytes(EMBEDDED_CIV6_UNIT_FLAGS[16..20].try_into().unwrap());
+    let height = u32::from_be_bytes(EMBEDDED_CIV6_UNIT_FLAGS[20..24].try_into().unwrap());
     assert_eq!(u64::from(width), columns * cell);
     assert_eq!(u64::from(height), manifest["rows"].as_u64().unwrap() * cell);
     assert!(EMBEDDED_INDEX.contains(&format!(
         "const CIV6_UNIT_ICON_CELL = {cell}, CIV6_UNIT_ICON_COLUMNS = {columns};"
     )));
 
-    // Every cell names the icon it was drawn from, its author and its
-    // licence, and that icon is both kept in the repository and credited.
-    let icons: serde_json::Value =
-        serde_json::from_str(&repository_file("tools/own_art_icons.json"))
-            .expect("the icon path data");
-    let credits = repository_file("web/assets/ART_CREDITS.md");
+    // Every Civilization VI name the cut resolved is a name Civilization VI
+    // actually ships. `tools/civ6_type_names.py` harvests that list off the
+    // install for the live order channel, which learned the hard way that a
+    // name the game does not have is discarded in silence.
+    let shipped: std::collections::BTreeSet<String> =
+        serde_json::from_str(&repository_file("data/civ6_type_names.json"))
+            .expect("the harvested Civilization VI type names");
+    let rules = crate::rules::Rules::embedded();
+    let mut borrowed = 0;
     for row in manifest["units"].as_array().unwrap() {
         let unit = row["type"].as_str().unwrap();
-        let icon = row["icon"].as_str().expect("an icon name");
-        assert_eq!(row["licence"].as_str(), Some("CC BY 3.0"), "{unit}");
+        let kind = row["civ6_type"].as_str().expect("a Civilization VI type");
         assert!(
-            icons["icons"][icon]["paths"]
-                .as_array()
-                .is_some_and(|paths| !paths.is_empty()),
-            "{unit} is drawn from {icon}, whose paths are not kept"
+            shipped.contains(kind),
+            "{unit} is cut as {kind}, which Civilization VI does not ship"
         );
-        assert_eq!(icons["icons"][icon]["author"], row["author"], "{unit}");
-        assert!(
-            credits.contains(&format!("https://game-icons.net/1x1/{icon}.html")),
-            "{icon} is drawn but not credited"
-        );
+        assert!(row["icon"].as_str().unwrap().starts_with("ICON_UNIT_"));
+        assert!(row["package"].as_str().unwrap().ends_with("Icons.blp"));
+        // A unit with no symbol icon of its own borrows one, and only from
+        // the unit the ruleset says it replaces -- never from a default.
+        if let Some(stand_in) = row["via"].as_str() {
+            borrowed += 1;
+            assert_eq!(
+                rules.units[unit].replaces.as_deref(),
+                Some(stand_in),
+                "{unit} borrows {stand_in}'s glyph without replacing it"
+            );
+        }
     }
-
-    // The cutter is still there for an owner of the game, and it writes
-    // nowhere the site is built from.
-    let cutter = repository_file("tools/civ6_unit_glyphs.py");
-    assert!(cutter.contains("import civ6_env as env"));
-    assert!(cutter.contains("art_provenance.LOCAL_ART"));
-    assert!(!cutter.contains("ROOT / \"web/assets"));
-    assert_eq!(LOCAL_CIV6_ART, "local/civ6-art");
+    assert_eq!(
+        borrowed, 2,
+        "Civilization VI defines a symbol icon for every unit of this \
+             ruleset but the Oromo Cavalry, which stands on the Courser's, \
+             and the Hul'che, which stands on the Archer's"
+    );
 }
 
-/// The command counter stands on one of eight plates, one per kind of unit
-/// as Civilization VI tells them apart, in shapes of CIVVIS's own drawn by
-/// `tools/own_art.py`. This is the same contract the yield signs keep: every
-/// question the counter answers is measured from that one sheet rather than
-/// restated beside it, so the game's own flags, cut into `local/civ6-art/`
-/// for a local server, are measured by the same code.
+/// The command counter is Civilization VI's own unit flag, not a shape of
+/// this viewer's. Both retired shapes -- the circle and the rounded
+/// triangle, point *down* -- were invented here; the base game authors
+/// eight silhouettes, points its civilian triangle *up*, stands a
+/// fortified soldier on a shield and an embarked one on a boat cut. This
+/// is the same contract the yield signs already keep: the sheet is cut off
+/// the installed game, and every question the counter answers is measured
+/// from that one sheet rather than restated beside it.
 #[test]
-fn a_unit_counter_stands_on_one_of_eight_drawn_plates() {
-    assert!(EMBEDDED_UNIT_PLATES.starts_with(b"\x89PNG\r\n\x1a\n"));
-    assert!(EMBEDDED_UNIT_PLATES.len() > 5_000);
-    // Drawn here, and the tool says how.
-    let tool = repository_file("tools/own_art.py");
-    assert!(tool.contains("def draw_unit_plates():"));
-    assert!(EMBEDDED_INDEX.contains("CIV6_FLAG_PLATE_ATLAS.src = \"/assets/unit-plates.png\""));
+fn a_unit_counter_is_the_base_games_own_flag() {
+    assert!(EMBEDDED_CIV6_UNIT_FLAG_PLATES.starts_with(b"\x89PNG\r\n\x1a\n"));
+    assert!(EMBEDDED_CIV6_UNIT_FLAG_PLATES.len() > 5_000);
+    // Cut, not imitated, and the cutter says where from.
+    let cutter = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tools/civ6_unit_flag_plates.py"),
+    )
+    .expect("the flag-plate cutter");
+    assert!(cutter.contains("Base/Platforms/Windows/BLPs/UI/InWorld.blp"));
+    assert!(
+        cutter.contains("import civ6_env as env"),
+        "the install is resolved by the one module allowed to look for it"
+    );
+    assert!(EMBEDDED_INDEX
+        .contains("CIV6_FLAG_PLATE_ATLAS.src = \"/assets/civ6-unit-flag-plates.png\""));
     assert!(EMBEDDED_INDEX.contains(
         "const CIV6_FLAG_PLATE_STYLES = [\"base\", \"civilian\", \"naval\", \"support\",\n                                \"trade\", \"religion\", \"fortify\", \"embark\"];"
     ));
 
     // The sheet really carries those eight styles, in that order, as
     // square cells -- the one fact a re-cut could break silently.
-    let cell =
-        usize::from(u32::from_be_bytes(EMBEDDED_UNIT_PLATES[20..24].try_into().unwrap()) as u16);
-    let width = u32::from_be_bytes(EMBEDDED_UNIT_PLATES[16..20].try_into().unwrap()) as usize;
+    let cell = usize::from(u32::from_be_bytes(
+        EMBEDDED_CIV6_UNIT_FLAG_PLATES[20..24].try_into().unwrap(),
+    ) as u16);
+    let width =
+        u32::from_be_bytes(EMBEDDED_CIV6_UNIT_FLAG_PLATES[16..20].try_into().unwrap()) as usize;
     assert!(cell > 0, "the plate sheet has a height");
     assert_eq!(
         width,
@@ -10158,49 +10270,6 @@ fn a_unit_counter_stands_on_one_of_eight_drawn_plates() {
     assert!(
         EMBEDDED_INDEX.contains("const bw = Math.min(r * 1.28, Math.max(0, room - frame) * 2);")
     );
-}
-
-/// Every sprite sheet the map draws is CIVVIS's own, and the only way the
-/// game's own art reaches a screen is a cut the owner made into the
-/// git-ignored `local/civ6-art/`, served by this native server alone.
-#[test]
-fn the_map_sheets_are_our_own_and_a_local_cut_only_ever_reaches_the_local_server() {
-    // The wall mark keeps the cut sprite's size, so a local cut drops in.
-    assert!(EMBEDDED_CITY_WALL_MARK.starts_with(b"\x89PNG\r\n\x1a\n"));
-    let width = u32::from_be_bytes(EMBEDDED_CITY_WALL_MARK[16..20].try_into().unwrap());
-    let height = u32::from_be_bytes(EMBEDDED_CITY_WALL_MARK[20..24].try_into().unwrap());
-    assert_eq!((width, height), (21, 18));
-    // Nothing compiled in is marked as a cut, and each sheet is listed art.
-    let marker = b"civvis-provenance\0cut from an installed Civilization VI";
-    let manifest: serde_json::Value =
-        serde_json::from_str(&repository_file("web/assets/art-manifest.json"))
-            .expect("the art manifest");
-    for (name, sheet) in [
-        ("unit-glyphs.png", EMBEDDED_UNIT_GLYPHS),
-        ("unit-plates.png", EMBEDDED_UNIT_PLATES),
-        ("yield-icons.png", EMBEDDED_YIELD_ICONS),
-        ("city-wall-mark.png", EMBEDDED_CITY_WALL_MARK),
-        ("hidden-map-monsters.png", EMBEDDED_HIDDEN_MAP_MONSTERS),
-    ] {
-        assert!(
-            !sheet.windows(marker.len()).any(|window| window == marker),
-            "{name} is art cut from the game"
-        );
-        assert!(
-            manifest["files"][name]["sha256"].is_string(),
-            "{name} is not listed in art-manifest.json"
-        );
-    }
-    // The native server prefers a local cut; the published build has no
-    // such path at all, because its router never reads the disk.
-    let server = repository_file("src/server.rs");
-    assert!(server.contains(
-        "std::fs::read(format!(\"{LOCAL_CIV6_ART}/{name}\"))\n        .or_else(|_| std::fs::read(format!(\"web/assets/{name}\")))"
-    ));
-    assert!(!repository_file("src/wasm.rs").contains("LOCAL_CIV6_ART"));
-    assert!(!repository_file("src/wasm.rs").contains("local/civ6-art"));
-    // The retired terrain atlases are gone with their routes: nothing drew them.
-    assert!(!server.contains("feature-atlas.png"));
 }
 
 #[test]
@@ -11903,19 +11972,15 @@ fn browser_tile_yields_are_compact_electric_and_centered_at_sixty_three_percent(
     assert!(EMBEDDED_INDEX.contains("--tip-yield-portion:${Math.round(portion * 100)}%"));
 }
 
-/// The signs on the plate are drawn by `tools/own_art.py`: a lit disc in the
-/// yield's colour carrying a credited game-icons.net pictograph. Each is one
-/// finished circular icon, so nothing paints a disc under one -- the disc and
-/// the pictograph are what the viewer drew while it had no sheet to draw.
+/// The signs on the plate are Civilization VI's own, cut from the very
+/// texture the plate geometry was measured against. Each is one finished
+/// circular icon, so nothing paints a disc under one -- the disc and the
+/// pictograph are what the viewer drew while it had no sheet to draw.
 #[test]
-fn browser_tile_yield_signs_are_drawn_icons_off_one_sheet() {
-    assert!(EMBEDDED_YIELD_ICONS.starts_with(b"\x89PNG\r\n\x1a\n"));
-    assert!(EMBEDDED_YIELD_ICONS.len() > 8_000);
-    assert!(EMBEDDED_INDEX.contains("CIV6_YIELD_ICON_ATLAS.src = \"/assets/yield-icons.png\""));
-    // Six square cells in one row, as the viewer slices them.
-    let width = u32::from_be_bytes(EMBEDDED_YIELD_ICONS[16..20].try_into().unwrap());
-    let height = u32::from_be_bytes(EMBEDDED_YIELD_ICONS[20..24].try_into().unwrap());
-    assert_eq!((width, height), (6 * 80, 80));
+fn browser_tile_yield_signs_are_the_base_games_own_icons() {
+    assert!(EMBEDDED_CIV6_YIELD_ICONS.starts_with(b"\x89PNG\r\n\x1a\n"));
+    assert!(EMBEDDED_CIV6_YIELD_ICONS.len() > 8_000);
+    assert!(EMBEDDED_INDEX.contains("CIV6_YIELD_ICON_ATLAS.src = \"/assets/civ6-yield-icons.png\""));
     assert!(EMBEDDED_INDEX.contains(
         "const CIV6_YIELD_ICON_KINDS = [\"food\", \"production\", \"gold\",\n                               \"science\", \"culture\", \"faith\"];"
     ));
@@ -11943,7 +12008,7 @@ fn browser_tile_yield_signs_are_drawn_icons_off_one_sheet() {
     // hover is never a second, private vocabulary for the same yield.
     assert!(EMBEDDED_INDEX.contains("--tip-yield-cell:${cell};"));
     assert!(EMBEDDED_INDEX.contains(
-        "url(\"/assets/yield-icons.png\") calc(var(--tip-yield-cell) * 20%) 0 / 600% 100% no-repeat,"
+        "url(\"/assets/civ6-yield-icons.png\") calc(var(--tip-yield-cell) * 20%) 0 / 600% 100% no-repeat,"
     ));
 }
 
@@ -12198,7 +12263,12 @@ fn native_channel_routes_to_the_embedded_page() {
 /// civvis.ai/doctor-strange"), on a desktop build as on the site.
 #[test]
 fn the_simulators_pages_route_to_the_embedded_page() {
-    for page in ["/debugger", "/doctor-strange", "/edge-of-tomorrow"] {
+    for page in [
+        "/debugger",
+        "/doctor-strange",
+        "/edge-of-tomorrow",
+        "/moneyball",
+    ] {
         assert!(viewer_path(page), "{page} is not the viewer");
     }
     assert!(viewer_path(request_path("/edge-of-tomorrow?instance=9232")));
@@ -13746,6 +13816,61 @@ fn the_civ6_endpoints_answer_on_any_host() {
             "the live pause is missing {piece}"
         );
     }
+}
+
+/// No `:has()` is anchored on the body or on the map area. Chrome cannot
+/// tell what a replaced run of children (`textContent`, `innerHTML`) might
+/// have matched, so it re-checks every `:has()` anchor above the change, and
+/// the page's shared `:has()` invalidation set reaches every descendant of
+/// an anchor. Anchored on the body, any HUD number changing restyled the
+/// whole page at the next layout read: on /test, six forced recalcs of ~900
+/// elements, 2-3 ms each, in every rendered turn, and 65% of the forced
+/// style and layout time while spectating. The two rules that did it ask the
+/// same question of the element itself through its later siblings, which
+/// only holds while those siblings follow it in `#maparea` — pinned here.
+#[test]
+fn no_has_selector_is_anchored_on_the_body_or_the_map_area() {
+    for anchor in ["body:has(", "html:has(", ":root:has(", "#maparea:has("] {
+        assert!(
+            !EMBEDDED_INDEX.contains(anchor),
+            "a `{anchor}` rule restyles the whole subtree at every text change inside it"
+        );
+    }
+    for piece in [
+        "#livepause:has(~ #empire.open, ~ #diplomacy.open, ~ #cityscreen.open, ~ #pedia.open, ~ #tree.open, ~ #trade.open) {\n    z-index: 14;",
+        ":where(body.overlay-players-hidden) #victoryhud, #victoryhud:where(:has(~ #playerhud.standings-collapsed)) {",
+    ] {
+        assert!(
+            EMBEDDED_INDEX.contains(piece),
+            "the sibling form of the rule is missing {piece}"
+        );
+    }
+    let area = EMBEDDED_INDEX
+        .split_once("<div id=\"maparea\">")
+        .expect("the map area")
+        .1;
+    let at = |tag: &str| {
+        area.find(tag)
+            .unwrap_or_else(|| panic!("{tag} is not in the map area"))
+    };
+    let livepause = at("<div id=\"livepause\"");
+    for dialog in [
+        "<div id=\"pedia\"",
+        "<div id=\"tree\"",
+        "<section id=\"empire\"",
+        "<section id=\"diplomacy\"",
+        "<section id=\"cityscreen\"",
+        "<section id=\"trade\"",
+    ] {
+        assert!(
+            livepause < at(dialog),
+            "{dialog} must follow the live controls for `#livepause:has(~ ...)` to see it"
+        );
+    }
+    assert!(
+        at("<aside id=\"victoryhud\"") < at("<aside id=\"playerhud\""),
+        "the masthead must follow the tracker for `#victoryhud:has(~ #playerhud...)` to see it"
+    );
 }
 
 /// The live mirror's research box and its Pause / New game buttons stand

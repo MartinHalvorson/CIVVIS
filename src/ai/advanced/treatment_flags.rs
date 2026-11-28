@@ -734,6 +734,10 @@ impl AdvancedAi {
         /// and the corps' searchers share one budget; see
         /// `advanced/spreaders_spread_before_they_chart.rs`.
         spreaders_spread_before_they_chart_2 => enable_spreaders_spread_before_they_chart_2, disable_spreaders_spread_before_they_chart_2;
+        /// Opt-in gene `settler-walk-clock-runs-all-game`: every stepped turn
+        /// out counts on the Settler walk clock, and the walk deadline holds
+        /// past the band turn; see `advanced/settler_walk_deadline.rs`.
+        settler_walk_clock_runs_all_game => enable_settler_walk_clock_runs_all_game, disable_settler_walk_clock_runs_all_game;
         // ---- append: t-z --------------------------------------------
         /// Opt-in gene `theology-fights-count-the-host-edge`; see
         /// `advanced/theology_fights.rs`.
@@ -768,6 +772,15 @@ impl AdvancedAi {
         /// Opt-in gene `tagma-timing-needs-the-edge`; see
         /// `advanced/tagma_timing_needs_the_edge.rs`.
         tagma_timing_needs_the_edge => enable_tagma_timing_needs_the_edge, disable_tagma_timing_needs_the_edge;
+        /// Opt-in gene `watched-capital-trains-its-defender`; see
+        /// `advanced/watched_capital_trains_its_defender.rs`.
+        watched_capital_trains_its_defender => enable_watched_capital_trains_its_defender, disable_watched_capital_trains_its_defender;
+        /// Opt-in gene `walls-for-the-war-front`; see
+        /// `advanced/walls_for_the_war_front.rs`.
+        walls_for_the_war_front => enable_walls_for_the_war_front, disable_walls_for_the_war_front;
+        /// Opt-in gene `war-threat-holds-recovery`; see
+        /// `advanced/war_threat_holds_recovery.rs`.
+        war_threat_holds_recovery => enable_war_threat_holds_recovery, disable_war_threat_holds_recovery;
     }
 
     toggles! {

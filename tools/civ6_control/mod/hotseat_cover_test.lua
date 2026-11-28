@@ -20,7 +20,12 @@ local PRIORITY = { Utmost = 100, HotSeatBackground = 101, PausePanel = 102, Play
 local function newWorld()
 	return { pid = 0, turn = 1, active = {}, paused = {}, password = {}, capital = {},
 	         camX = 3, camY = 4, zoom = 0.5, unit = nil, city = nil, mode = 1,
-	         looks = {}, endGameQueued = false }
+	         looks = {}, endGameQueued = false, menuQueued = false,
+	         -- The person's own volume sliders (Options.lua:225-229), and the UI
+	         -- clock (nil: the cover falls back on each frame's dt).
+	         volumes = { ["Master Volume"] = 80, ["Music Volume"] = 60, ["SFX Volume"] = 70,
+	                     ["Ambience Volume"] = 50, ["Speech Volume"] = 40 },
+	         audioThrows = false, clock = nil }
 end
 
 -- Load the cover into a fresh context with `config`. Returns the cover table,
@@ -28,7 +33,7 @@ end
 local function load(config)
 	local world = newWorld()
 	local did = { queued = {}, dequeued = 0, logs = {}, menus = 0, nudges = {}, detail = nil,
-	              texture = nil }
+	              texture = nil, audio = {}, bar = { hides = {} } }
 	local handlers = {}
 	local function event(name)
 		return setmetatable({ Add = function(f) handlers[name] = f end },
@@ -39,7 +44,12 @@ local function load(config)
 				did.nudges[#did.nudges + 1] = pid .. ":" .. turn
 			end end })
 	end
-	local endGameMenu = {}
+	local endGameMenu, gameMenu = {}, {}
+	-- XP2's emergency screen, and the status panel's two stacks of lines.
+	local crisis = {}
+	world.crisisQueued, did.dropped = false, 0
+	world.lines = { ["/InGame/StatusMessagePanel/DefaultStack"] = {},
+	                ["/InGame/StatusMessagePanel/GossipStack"] = {} }
 	local env = {
 		CivvisControlConfig = config,
 		include = function() end,
@@ -52,14 +62,43 @@ local function load(config)
 			QueuePopup = function(self, ctx, priority, params)
 				did.queued[#did.queued + 1] = { ctx = ctx, priority = priority, params = params }
 			end,
-			DequeuePopup = function(self, ctx) did.dequeued = did.dequeued + 1 end,
-			IsInPopupQueue = function(self, ctx) return ctx == endGameMenu and world.endGameQueued end,
+			DequeuePopup = function(self, ctx)
+				if ctx == crisis then
+					world.crisisQueued, did.dropped = false, did.dropped + 1
+				else
+					did.dequeued = did.dequeued + 1
+				end
+			end,
+			IsInPopupQueue = function(self, ctx)
+				return (ctx == endGameMenu and world.endGameQueued)
+					or (ctx == gameMenu and world.menuQueued)
+					or (ctx == crisis and world.crisisQueued)
+			end,
+		},
+		Options = {
+			GetAudioOption = function(section, name)
+				assert(section == "Sound")
+				return world.volumes[name]
+			end,
+			SetAudioOption = function(section, name, value, save)
+				assert(section == "Sound")
+				if world.audioThrows then error("no audio") end
+				did.audio[#did.audio + 1] = { name = name, value = value, save = save }
+				world.volumes[name] = value
+			end,
 		},
 		Controls = {
 			Detail = { SetText = function(self, text) did.detail = text end },
 			Lines = { CalculateSize = function() end },
 			Backdrop = { SetTexture = function(self, name) did.texture = name end },
 			MenuButton = { RegisterCallback = function(self, kind, f) handlers.menuButton = f end },
+			Wait = { SetHide = function(self, hide)
+				did.bar.hidden = hide
+				did.bar.hides[#did.bar.hides + 1] = hide
+			end },
+			WaitFill = { SetSizeX = function(self, x) did.bar.width = x end,
+			             SetOffsetX = function(self, x) did.bar.offset = x end },
+			WaitText = { SetText = function(self, text) did.bar.text = text end },
 		},
 		Mouse = { eLClick = 1 },
 		KeyEvents = { KeyDown = 1, KeyUp = 2 },
@@ -98,21 +137,29 @@ local function load(config)
 			DeselectAllCities = function() world.city = nil end,
 			GetInterfaceMode = function() return world.mode end,
 			SetInterfaceMode = function(mode) world.mode = mode end,
+			GetElapsedTime = function() return world.clock end,
 		},
 		Events = {}, LuaEvents = {},
 	}
 	for _, name in ipairs({ "LocalPlayerTurnEnd", "LocalPlayerTurnBegin", "LoadScreenClose",
-			"TeamVictory", "UserRequestClose" }) do
+			"TeamVictory", "UserRequestClose", "PlayerDefeat" }) do
 		env.Events[name] = event(name)
 	end
 	for _, name in ipairs({ "PlayerChange_Close", "EndGameMenu_Shown", "EndGameMenu_OneMoreTurn",
+			"EndGameMenu_Closed",
 			"PlayerChange_OpenInGameOptionsMenu", "CivvisHotseatStartTurn" }) do
 		env.LuaEvents[name] = event(name)
 	end
 	env.ContextPtr = {
 		LookUpControl = function(self, path)
 			if path == "/InGame/EndGameMenu" then return endGameMenu end
+			if path == "/InGame/TopOptionsMenu" then return gameMenu end
+			if path == "/InGame/WorldCrisisPopup" then return world.noCrisis and nil or crisis end
+			if world.lines[path] then
+				return { GetChildren = function() return world.lines[path] end }
+			end
 		end,
+		SetShutdown = function(self, f) handlers.shutdown = f end,
 		SetInputHandler = function(self, f) handlers.input = f end,
 		SetUpdate = function(self, f) handlers.update = f end,
 	}
@@ -233,11 +280,11 @@ do
 	world.pid, world.active[1] = 1, true
 	handlers.LocalPlayerTurnBegin()
 	local beat = 0
-	ticks(handlers, 240, function()
+	ticks(handlers, 200, function()
 		beat = beat + 1
 		env.ExposedMembers.CivvisSeatBeat[1] = beat
 	end)
-	assert(cover.up, "a seat that keeps playing is never uncovered")
+	assert(cover.up, "a seat that keeps playing is not uncovered (short of the long clock, 240 s)")
 	-- The seat moves the camera, selects its own unit, leaves a targeting mode.
 	world.camX, world.camY = 40, 41
 	world.unit = { GetOwner = function() return 1 end }
@@ -327,6 +374,50 @@ do
 	ticks(handlers, 91)
 	assert(not cover.up and last(did, "hotseat_cover"):find('"reason":"yield_quiet"', 1, true))
 end
+-- A turn that runs on although its controller beats (a controller past its
+-- forfeit ladder still stamps every pass): not hidden for good either.
+do
+	local cover, world, did, handlers, env = load(HOTSEAT())
+	handlers.LocalPlayerTurnEnd()
+	world.pid, world.active[1] = 1, true
+	handlers.LocalPlayerTurnBegin()
+	local beat = 0
+	local function stamp()
+		beat = beat + 1
+		env.ExposedMembers.CivvisSeatBeat[world.pid] = beat
+	end
+	ticks(handlers, 239, stamp)
+	assert(cover.up, "239 s of a beating turn: still covered")
+	ticks(handlers, 1, stamp)
+	assert(not cover.up and last(did, "hotseat_cover"):find('"reason":"yield_long"', 1, true),
+		"240 s: the cover stands aside")
+	assert(last(did, "hotseat_cover"):find('"seat_turn":240', 1, true), last(did, "hotseat_cover"))
+	-- That turn stays uncovered; the next seat's turn is covered and counted afresh.
+	handlers.LocalPlayerTurnBegin()
+	assert(not cover.up)
+	world.active[1] = false
+	handlers.LocalPlayerTurnEnd()
+	assert(cover.up)
+	world.pid, world.active[2] = 2, true
+	handlers.LocalPlayerTurnBegin()
+	ticks(handlers, 200, stamp)
+	assert(cover.up and cover.turnFor == 200, "a new turn, a new clock: " .. cover.turnFor)
+	-- The person's own turn is not on this clock (it has its own, 10 s paused).
+	world.active[2] = false
+	handlers.LocalPlayerTurnEnd()
+	world.pid, world.turn, world.active[0], world.paused[0] = 0, 2, true, false
+	handlers.PlayerChange_Close(0)
+	world.active[0] = false
+	handlers.LocalPlayerTurnEnd()
+	assert(cover.up)
+	-- A config may set its own length.
+	local cover2, world2, did2, handlers2, env2 = load(HOTSEAT({ HotseatCoverLongSeconds = 30 }))
+	handlers2.LocalPlayerTurnEnd()
+	world2.pid, world2.active[1] = 1, true
+	handlers2.LocalPlayerTurnBegin()
+	ticks(handlers2, 31, function() beat = beat + 1; env2.ExposedMembers.CivvisSeatBeat[1] = beat end)
+	assert(not cover2.up and last(did2, "hotseat_cover"):find('"reason":"yield_long"', 1, true))
+end
 do
 	local cover, world, did, handlers = load(HOTSEAT())
 	handlers.LocalPlayerTurnEnd()          -- the person ended; no seat begins
@@ -370,7 +461,8 @@ do
 	handlers.LocalPlayerTurnEnd()
 	assert(cover.up, "one more turn: covered again")
 	handlers.EndGameMenu_Shown()
-	assert(not cover.up)
+	handlers.update(0.1)
+	assert(not cover.up, "an end screen whose defeat is not known: lifted, as it ships")
 	handlers.LocalPlayerTurnEnd()
 	handlers.UserRequestClose()
 	assert(not cover.up and last(did, "hotseat_cover"):find('"reason":"quit_request"', 1, true),
@@ -416,6 +508,841 @@ do
 	world.turn, world.active[0], world.paused[0] = 2, true, true
 	handlers.LocalPlayerTurnBegin()
 	assert(not cover.up, "a password seat types it on its own hand-over")
+end
+
+-- 8. Quiet while CIVVIS plays (`HotseatCoverSound`). --------------------------
+local QUIETED = { "SFX Volume", "Ambience Volume", "Speech Volume" }
+local function volumes(world)
+	local v = world.volumes
+	return string.format("%d/%d/%d/%d/%d", v["Master Volume"], v["Music Volume"], v["SFX Volume"],
+		v["Ambience Volume"], v["Speech Volume"])
+end
+local OWN = "80/60/70/50/40"
+do
+	local cover, world, did, handlers = load(HOTSEAT({ HotseatCoverSound = "music" }))
+	assert(last(did, "hotseat_cover_armed"):find('"sound":"music"', 1, true))
+	-- Their turn 1 is theirs: the cover over their own hand-over mutes nothing.
+	world.pid, world.turn, world.active[0], world.paused[0] = 0, 1, true, true
+	handlers.LoadScreenClose()
+	assert(cover.up and #did.audio == 0 and volumes(world) == OWN, "their own turn is heard")
+	ticks(handlers, 2)
+	assert(#did.audio == 0)
+	world.paused[0] = false
+	handlers.PlayerChange_Close(0)
+	-- They end it. The local player is still their seat until the next seat's
+	-- turn begins: quiet from this moment all the same.
+	world.active[0] = false
+	handlers.LocalPlayerTurnEnd()
+	assert(cover.up and volumes(world) == "80/60/0/0/0",
+		"units, fights, chimes and voices are silent; the soundtrack plays on: " .. volumes(world))
+	assert(#did.audio == 3)
+	for i, set in ipairs(did.audio) do
+		assert(set.name == QUIETED[i] and set.value == 0, "one call per bus")
+		assert(set.save == 0, "this session only: the .ini is never written (Options.lua:225)")
+	end
+	assert(last(did, "hotseat_cover_sound"):find('"muted":true', 1, true)
+		and last(did, "hotseat_cover_sound"):find('"was":70,"now":0', 1, true))
+	-- Through the CIVVIS seats' turns: nothing more is touched.
+	world.pid, world.active[1] = 1, true
+	handlers.LocalPlayerTurnBegin()
+	ticks(handlers, 5)
+	world.active[1] = false
+	handlers.LocalPlayerTurnEnd()
+	world.pid, world.active[2] = 2, true
+	handlers.LocalPlayerTurnBegin()
+	ticks(handlers, 5)
+	assert(#did.audio == 3 and volumes(world) == "80/60/0/0/0", "muted once, held")
+	world.active[2] = false
+	handlers.LocalPlayerTurnEnd()
+	-- Their turn begins: their volumes are back before the hand-over is pressed.
+	world.pid, world.turn, world.active[0], world.paused[0] = 0, 2, true, true
+	handlers.LocalPlayerTurnBegin()
+	assert(cover.up, "the cover still stands over their hand-over")
+	assert(volumes(world) == OWN, "their turn's own sounds are theirs: " .. volumes(world))
+	assert(#did.audio == 6 and did.audio[6].save == 0)
+	ticks(handlers, 2)
+	assert(#did.audio == 6, "and stay theirs while the hand-over waits")
+	world.paused[0] = false
+	handlers.PlayerChange_Close(0)
+	assert(not cover.up and #did.audio == 6 and volumes(world) == OWN)
+	assert(cover.muted == nil)
+end
+-- A bus the person keeps at 0 is theirs: never set, never "restored".
+do
+	local cover, world, did, handlers = load(HOTSEAT({ HotseatCoverSound = "music" }))
+	world.volumes["Speech Volume"] = 0
+	handlers.LocalPlayerTurnEnd()
+	assert(#did.audio == 2 and volumes(world) == "80/60/0/0/0")
+	cover.lift("test")
+	assert(#did.audio == 4 and volumes(world) == "80/60/70/50/0", volumes(world))
+	-- Every bus at 0 already: nothing to do, and nothing logged.
+	world.volumes["SFX Volume"], world.volumes["Ambience Volume"] = 0, 0
+	local before = #kinds(did, "hotseat_cover_sound")
+	handlers.LocalPlayerTurnEnd()
+	ticks(handlers, 3)
+	assert(#did.audio == 4 and cover.muted == nil)
+	assert(#kinds(did, "hotseat_cover_sound") == before)
+end
+-- `silent`: the master bus alone. `all`, or an install from before the key: nothing.
+do
+	local cover, world, did, handlers = load(HOTSEAT({ HotseatCoverSound = "silent" }))
+	handlers.LocalPlayerTurnEnd()
+	assert(#did.audio == 1 and did.audio[1].name == "Master Volume" and did.audio[1].save == 0)
+	assert(volumes(world) == "0/60/70/50/40")
+	cover.lift("test")
+	assert(volumes(world) == OWN)
+end
+for _, mode in ipairs({ "all", "", false }) do
+	local cover, world, did, handlers = load(HOTSEAT({ HotseatCoverSound = mode or nil }))
+	handlers.LocalPlayerTurnEnd()
+	world.pid, world.active[1] = 1, true
+	handlers.LocalPlayerTurnBegin()
+	ticks(handlers, 3)
+	assert(cover.up and #did.audio == 0 and #kinds(did, "hotseat_cover_sound") == 0,
+		"the sound is left alone: " .. tostring(mode))
+end
+-- The turn events decide, not `IsTurnActive` at the instant they fire: still
+-- "active" as their turn ends is quiet, not yet "active" as it begins is heard.
+do
+	local cover, world, did, handlers = load(HOTSEAT({ HotseatCoverSound = "music" }))
+	world.pid, world.active[0] = 0, true
+	handlers.LocalPlayerTurnEnd()
+	assert(volumes(world) == "80/60/0/0/0", "their turn has ended, whatever the flag says")
+	world.pid, world.active[0], world.active[1] = 1, false, true
+	handlers.LocalPlayerTurnBegin()
+	world.active[1] = false
+	handlers.LocalPlayerTurnEnd()
+	world.pid, world.turn, world.paused[0] = 0, 2, true
+	handlers.LocalPlayerTurnBegin()
+	assert(cover.up and volumes(world) == OWN, "their turn has begun, whatever the flag says")
+	ticks(handlers, 2)
+	assert(cover.up and volumes(world) == OWN and #did.audio == 6, "and no flicker while it waits")
+end
+-- A game loaded on a CIVVIS seat's turn is quiet without any turn event.
+do
+	local cover, world, did, handlers = load(HOTSEAT({ HotseatCoverSound = "music" }))
+	world.pid, world.turn, world.active[1] = 1, 9, true
+	handlers.LoadScreenClose()
+	assert(cover.up and volumes(world) == "80/60/0/0/0")
+end
+-- The game menu over the cover: the person's volumes while it is open (its
+-- Options screen reads them and can save them), quiet again once it closes,
+-- and a volume changed in it is the one that comes back.
+do
+	local cover, world, did, handlers = load(HOTSEAT({ HotseatCoverSound = "music" }))
+	handlers.LocalPlayerTurnEnd()
+	world.pid, world.active[1] = 1, true
+	handlers.LocalPlayerTurnBegin()
+	assert(volumes(world) == "80/60/0/0/0")
+	handlers.input(2, 27)
+	assert(did.menus == 1 and volumes(world) == OWN, "theirs before the menu is drawn")
+	world.menuQueued = true
+	ticks(handlers, 4)
+	assert(volumes(world) == OWN and cover.muted == nil, "and for as long as it is open")
+	world.volumes["SFX Volume"] = 30     -- changed and confirmed in Options
+	world.menuQueued = false
+	ticks(handlers, 1)
+	assert(volumes(world) == "80/60/0/0/0", "quiet again within a second of its closing")
+	world.active[1] = false
+	handlers.LocalPlayerTurnEnd()
+	world.pid, world.turn, world.active[0], world.paused[0] = 0, 2, true, true
+	handlers.LocalPlayerTurnBegin()
+	assert(volumes(world) == "80/60/30/50/40", "their new volume, not the old one: " .. volumes(world))
+end
+-- Every way the cover comes down puts the volumes back.
+for _, way in ipairs({ "yield_quiet", "end_game", "quit_request", "victory", "shutdown", "no_harness" }) do
+	local cover, world, did, handlers = load(HOTSEAT({ HotseatCoverSound = "music" }))
+	handlers.LocalPlayerTurnEnd()
+	world.pid, world.active[1] = 1, true
+	handlers.LocalPlayerTurnBegin()
+	assert(volumes(world) == "80/60/0/0/0")
+	if way == "yield_quiet" then
+		ticks(handlers, 91)
+		assert(last(did, "hotseat_cover"):find('"reason":"yield_quiet"', 1, true))
+	elseif way == "end_game" then
+		world.endGameQueued = true
+		ticks(handlers, 1)
+	elseif way == "quit_request" then
+		handlers.UserRequestClose()
+	elseif way == "victory" then
+		handlers.TeamVictory()
+	elseif way == "shutdown" then
+		assert(handlers.shutdown, "a shutdown handler is registered (PausePanel.lua:75)")
+		handlers.shutdown()
+	else
+		cover.lift(way)
+	end
+	assert(volumes(world) == OWN, way .. ": " .. volumes(world))
+	assert(cover.muted == nil)
+end
+-- A game whose audio calls fail, or has none: the cover is still a cover.
+do
+	local cover, world, did, handlers, env = load(HOTSEAT({ HotseatCoverSound = "music" }))
+	world.audioThrows = true
+	handlers.LocalPlayerTurnEnd()
+	assert(cover.up and cover.muted == nil and volumes(world) == OWN)
+	env.Options = nil
+	ticks(handlers, 2)
+	cover.lift("test")
+	assert(not cover.up)
+end
+-- A bus that will not take its volume back is tried again.
+do
+	local cover, world, did, handlers = load(HOTSEAT({ HotseatCoverSound = "silent" }))
+	handlers.LocalPlayerTurnEnd()
+	world.audioThrows = true
+	cover.lift("test")
+	assert(cover.muted ~= nil and volumes(world) == "0/60/70/50/40")
+	world.audioThrows = false
+	assert(cover.unmute("again") == true and volumes(world) == OWN and cover.muted == nil)
+end
+
+-- 8b. A CIVVIS seat's defeat shown on a CIVVIS seat's turn (EndGameMenu.lua:1012-1013):
+-- the screen is over the cover and is the person's to read and press; the
+-- turn under it stays covered through Next Player and after.
+do
+	local cover, world, did, handlers = load(HOTSEAT({ HotseatCoverSound = "music",
+		HotseatSeats = { 1, 2, 3 } }))
+	handlers.LocalPlayerTurnEnd()
+	world.pid, world.active[1] = 1, true
+	handlers.LocalPlayerTurnBegin()
+	assert(cover.up and volumes(world) == "80/60/0/0/0")
+	-- Seat 1 takes seat 2's last city: the defeat event, then the screen.
+	world.endGameQueued = true
+	handlers.EndGameMenu_Shown()            -- raised from inside the defeat's own handler
+	handlers.PlayerDefeat(2, 1, 77)
+	handlers.update(0.1)
+	assert(cover.up and did.dequeued == 0, "still covered under the end screen")
+	assert(last(did, "hotseat_cover_kept"):find('"defeated":2', 1, true))
+	assert(volumes(world) == OWN, "the end screen is the person's to hear: " .. volumes(world))
+	-- Nobody presses Next Player for minutes: nothing is hidden, so no stand-aside.
+	ticks(handlers, 300)
+	assert(cover.up and #kinds(did, "hotseat_cover_kept") == 1, "said once")
+	assert(not last(did, "hotseat_cover"):find('"yield_', 1, true))
+	-- Next Player (:304-318): the screen closes and seat 1's turn goes on, covered.
+	world.endGameQueued = false
+	handlers.EndGameMenu_Closed()
+	ticks(handlers, 1)
+	assert(cover.up and did.dequeued == 0, "seat 1's map is never on screen")
+	assert(volumes(world) == "80/60/0/0/0", "quiet again: " .. volumes(world))
+	world.active[1] = false
+	handlers.LocalPlayerTurnEnd()
+	world.pid, world.active[3] = 3, true
+	handlers.LocalPlayerTurnBegin()
+	assert(cover.up and did.dequeued == 0 and #did.queued == 1)
+	-- A screen that leaves the queue without saying so is closed all the same.
+	world.endGameQueued = true
+	handlers.PlayerDefeat(2, 1, 78)
+	handlers.update(0.1)
+	assert(cover.up and cover.kept)
+	world.endGameQueued = false
+	handlers.update(0.1)
+	assert(cover.up and not cover.kept and cover.defeated == nil)
+	ticks(handlers, 91)
+	assert(not cover.up and last(did, "hotseat_cover"):find('"reason":"yield_quiet"', 1, true),
+		"and the stall clock runs again")
+	-- Shown and kept, then gone from the queue with no closing word: the same.
+	world.active[3], world.turn = false, 2
+	handlers.LocalPlayerTurnEnd()
+	world.pid, world.active[1] = 1, true
+	handlers.LocalPlayerTurnBegin()
+	assert(cover.up)
+	world.endGameQueued = true
+	handlers.EndGameMenu_Shown()
+	handlers.PlayerDefeat(3, 1, 79)
+	handlers.update(0.1)
+	assert(cover.up and cover.kept)
+	world.endGameQueued = false
+	handlers.update(0.1)
+	assert(cover.up and not cover.kept and not cover.endShown)
+	ticks(handlers, 91)
+	assert(not cover.up, "the stall clock runs again")
+end
+-- An end screen on a CIVVIS turn whose defeat is not known: lifted, as it
+-- ships; and once it has gone (even unannounced) the cover comes back.
+do
+	local cover, world, did, handlers = load(HOTSEAT())
+	handlers.LocalPlayerTurnEnd()
+	world.pid, world.active[1] = 1, true
+	handlers.LocalPlayerTurnBegin()
+	world.endGameQueued = true
+	handlers.EndGameMenu_Shown()
+	handlers.update(0.1)
+	assert(not cover.up and last(did, "hotseat_cover"):find('"reason":"end_game"', 1, true))
+	world.endGameQueued = false
+	world.active[1] = false
+	handlers.LocalPlayerTurnEnd()
+	ticks(handlers, 2)
+	assert(cover.up, "covered again at the turn's end")
+end
+-- The person's own defeat, a defeat shown on the person's turn, and a win:
+-- lifted as before.
+do
+	local cover, world, did, handlers = load(HOTSEAT())
+	handlers.LocalPlayerTurnEnd()
+	world.pid, world.active[1] = 1, true
+	handlers.LocalPlayerTurnBegin()
+	handlers.PlayerDefeat(0, 1, 5)
+	world.endGameQueued = true
+	handlers.EndGameMenu_Shown()
+	handlers.update(0.1)
+	assert(not cover.up and last(did, "hotseat_cover"):find('"reason":"end_game"', 1, true),
+		"the person's defeat is theirs to see")
+	world.endGameQueued = false
+	handlers.EndGameMenu_Closed()
+	handlers.LocalPlayerTurnEnd()
+	assert(cover.up)
+	-- Their own hand-over is up (the cover over it) and a CIVVIS seat is defeated.
+	world.pid, world.turn, world.active[0], world.paused[0] = 0, 2, true, true
+	handlers.LocalPlayerTurnBegin()
+	assert(cover.up)
+	handlers.PlayerDefeat(1, 1, 6)
+	world.endGameQueued = true
+	handlers.update(0.1)
+	assert(not cover.up, "on the person's turn the map behind it is theirs")
+	world.endGameQueued = false
+	handlers.EndGameMenu_Closed()
+	-- A CIVVIS seat wins: the game is over, the cover goes.
+	world.active[0], world.paused[0] = false, false
+	handlers.LocalPlayerTurnEnd()
+	world.pid, world.active[1] = 1, true
+	handlers.LocalPlayerTurnBegin()
+	handlers.PlayerDefeat(2, 1, 7)
+	handlers.TeamVictory(1, 2, 3)
+	assert(not cover.up and cover.over)
+	world.endGameQueued = true
+	handlers.EndGameMenu_Shown()
+	handlers.update(0.1)
+	assert(not cover.up)
+end
+
+-- 9. How long (`HotseatCoverTimer`). ------------------------------------------
+do
+	local track = layout:match('<Box ID="WaitTrack"[^>]*>')
+	local cover = load(HOTSEAT())
+	assert(track and track:find('Size="' .. cover.BAR .. ',', 1, true),
+		"the script's bar width is the layout's track: " .. tostring(track))
+	assert(layout:find('<Container ID="Wait"[^>]*Hidden="1"'), "hidden until a wait is on")
+	assert(layout:find('ID="WaitFill"', 1, true) and layout:find('ID="WaitText"', 1, true))
+
+	-- About how long one of these takes: nothing without any on record; a mean,
+	-- the newer weighted more; nothing counted at more than twice the median.
+	local near = function(a, b) return math.abs(a - b) < 1e-9 end
+	assert(cover.typical(nil) == nil and cover.typical({}) == nil)
+	assert(cover.typical({ 2 }) == 2)
+	assert(near(cover.typical({ 1, 2 }), (1 + 2 * 2) / 3), "the newer weighs more")
+	assert(near(cover.typical({ 1, 1, 1, 1, 9 }), (1 + 2 + 3 + 4 + 2 * 5) / 15),
+		"a 9 s turn among 1 s ones counts as 2 s: " .. cover.typical({ 1, 1, 1, 1, 9 }))
+	assert(cover.typical({ 30, 1, 1, 1, 1, 1 }) == 1, "the last five only")
+	assert(near(cover.typical({ 3, 1, 2 }, true), 2), "`all`: every one, alike")
+	assert(near(cover.typical({ 0.2, 0.3 }), (0.2 + 0.6) / 3), "a fast seat stays fast")
+
+	-- Which seats play before the person's turn is back, in turn order.
+	local function same(a, b)
+		if #a ~= #b then return false end
+		for i = 1, #a do if a[i] ~= b[i] then return false end end
+		return true
+	end
+	assert(same(cover.lineup(0), { 1, 2 }))
+	local other = load(HOTSEAT({ HotseatSeats = { 0, 1, 3 }, HotseatHumanSeats = { 2 } }))
+	assert(same(other.lineup(2), { 3, 0, 1 }), "after the person's seat, round to the start")
+	local two = load(HOTSEAT({ HotseatSeats = { 1, 3 }, HotseatHumanSeats = { 0, 2 } }))
+	assert(same(two.lineup(0), { 1 }) and same(two.lineup(2), { 3 }), "up to the next person")
+
+	assert(cover.timeLeft(nil, false) == "")
+	assert(cover.timeLeft(12, false) == "About 12 s" and cover.timeLeft(11.2, false) == "About 12 s")
+	assert(cover.timeLeft(0.4, true) == "Any moment now", "nothing but the last stretch left")
+	assert(cover.timeLeft(0.4, false) == "About 1 s" and cover.timeLeft(0, false) == "About 1 s",
+		"never 'any moment' while a seat still plays")
+	assert(cover.timeLeft(59.5, false) == "About 1 min 00 s")
+	assert(cover.timeLeft(125, false) == "About 2 min 05 s")
+end
+
+-- Frames of 0.1 s; `each` after every one.
+local function frames(handlers, seconds, each)
+	for _ = 1, math.floor(seconds / 0.1 + 0.5) do
+		handlers.update(0.1)
+		if each then each() end
+	end
+end
+-- One wait: the person (seat 0) ends turn `turn`; each { seat, gap, took }
+-- plays in order; `tail` s later their next turn begins and its hand-over is
+-- pressed.
+local function wait(world, handlers, turn, seats, tail, each)
+	world.pid, world.turn, world.active[0] = 0, turn, false
+	handlers.LocalPlayerTurnEnd()
+	for _, s in ipairs(seats) do
+		frames(handlers, s[2], each)
+		world.pid, world.active[s[1]] = s[1], true
+		handlers.LocalPlayerTurnBegin()
+		frames(handlers, s[3], each)
+		world.active[s[1]] = false
+		handlers.LocalPlayerTurnEnd()
+	end
+	frames(handlers, tail, each)
+	world.pid, world.turn, world.active[0], world.paused[0] = 0, turn + 1, true, true
+	handlers.LocalPlayerTurnBegin()
+	world.paused[0] = false
+	handlers.PlayerChange_Close(0)
+end
+local function field(line, name)
+	return line:match('"' .. name .. '":"?([^,"}]*)')
+end
+
+-- The first wait counts as soon as one seat's turn is known.
+do
+	local cover, world, did, handlers = load(HOTSEAT({ HotseatCoverTimer = true }))
+	assert(last(did, "hotseat_cover_armed"):find('"timer":true', 1, true))
+	world.pid, world.active[0] = 0, false
+	handlers.LocalPlayerTurnEnd()
+	assert(cover.wait and cover.wait.timed and cover.wait.seat == 0 and cover.wait.estimate == nil)
+	assert(did.bar.hidden == false, "the bar is shown")
+	assert(did.bar.text == "", "nothing to say yet")
+	frames(handlers, 0.3)
+	world.pid, world.active[1] = 1, true
+	handlers.LocalPlayerTurnBegin()
+	-- Nothing on record: a fifth of the track sweeping there and back, no number.
+	local seen = {}
+	for _ = 1, 24 do
+		handlers.update(0.1)
+		assert(did.bar.width == cover.BAR / 5, "a fifth of the track")
+		assert(did.bar.offset >= 0 and did.bar.offset + did.bar.width <= cover.BAR, "inside it")
+		seen[did.bar.offset] = true
+	end
+	local distinct = 0
+	for _ in pairs(seen) do distinct = distinct + 1 end
+	assert(distinct >= 10, "and it moves: " .. distinct)
+	assert(did.bar.text == "1 of 2", "which seat, and no guess: " .. did.bar.text)
+	frames(handlers, 0.6)
+	world.active[1] = false
+	handlers.LocalPlayerTurnEnd()
+	-- Seat 1 took 3 s: seat 2 is taken to be like it.
+	assert(math.abs(cover.seatTimes[1][1] - 3) < 1e-6 and math.abs(cover.gapTimes[1][1] - 0.3) < 1e-6)
+	handlers.update(0.1)
+	assert(did.bar.text == "1 of 2, about 4 s", did.bar.text)
+	assert(did.bar.offset == 0 and did.bar.width > 1 and did.bar.width < cover.BAR / 2, did.bar.width)
+	frames(handlers, 0.2)
+	world.pid, world.active[2] = 2, true
+	handlers.LocalPlayerTurnBegin()
+	handlers.update(0.1)
+	assert(did.bar.text == "2 of 2, about 3 s", did.bar.text)
+	frames(handlers, 1.9)
+	world.active[2] = false
+	handlers.LocalPlayerTurnEnd()
+	assert(cover.wait.timed and cover.wait.seat == 0, "a CIVVIS seat's end of turn starts no wait")
+	-- Only the last stretch is left, and none is on record yet.
+	handlers.update(0.1)
+	assert(did.bar.text == "Any moment now", did.bar.text)
+	frames(handlers, 1.4)
+	world.pid, world.turn, world.active[0], world.paused[0] = 0, 2, true, true
+	handlers.LocalPlayerTurnBegin()
+	world.paused[0] = false
+	handlers.PlayerChange_Close(0)
+	assert(cover.wait == nil)
+	local lifted = last(did, "hotseat_cover")
+	assert(math.abs(tonumber(field(lifted, "waited")) - 7.1) < 1e-6, lifted)
+	assert(field(lifted, "timed") == "true" and field(lifted, "estimate") == "null"
+		and field(lifted, "seats") == "2", lifted)
+	assert(lifted:find('"took":"1:3.00,2:2.00"', 1, true) and lifted:find('"said":"-,3.0"', 1, true), lifted)
+	assert(math.abs(cover.tailTimes[0][1] - 1.5) < 1e-6, "the last stretch: " .. cover.tailTimes[0][1])
+	assert(#cover.lineups[0] == 2)
+
+	-- Their next wait counts down from the start: every part of it, as it goes.
+	world.active[0] = false
+	handlers.LocalPlayerTurnEnd()
+	-- gap, seat 1, gap, seat 2, the last stretch
+	assert(math.abs(cover.wait.estimate - (0.3 + 3 + 0.3 + 2 + 1.5)) < 1e-6, cover.wait.estimate)
+	assert(did.bar.width == 1 and did.bar.text == "About 8 s", did.bar.text)
+end
+
+-- A seat that runs over holds the count; one that finishes early takes its
+-- time off at once; the bar only moves forward, is never full, and is nearly
+-- there when the person's turn is back. The last seat running over never says
+-- "any moment".
+do
+	local cover, world, did, handlers = load(HOTSEAT({ HotseatCoverTimer = true }))
+	local usual = { { 1, 0.1, 2 }, { 2, 0.1, 2 } }
+	for turn = 1, 3 do wait(world, handlers, turn, usual, 1.2, nil) end
+	local widths, texts, previous = {}, {}, 0
+	local function watch()
+		assert(did.bar.width >= previous, "never backwards: " .. previous .. " -> " .. did.bar.width)
+		assert(did.bar.width < cover.BAR, "never full")
+		previous = did.bar.width
+		widths[#widths + 1], texts[#texts + 1] = did.bar.width, did.bar.text
+	end
+	-- Seat 1 takes 8 s instead of 2.
+	world.pid, world.turn, world.active[0] = 0, 4, false
+	handlers.LocalPlayerTurnEnd()
+	previous = 0
+	frames(handlers, 0.1, watch)
+	world.pid, world.active[1] = 1, true
+	handlers.LocalPlayerTurnBegin()
+	frames(handlers, 1.0, watch)
+	assert(did.bar.text == "1 of 2, about 5 s", did.bar.text)
+	frames(handlers, 1.5, watch)
+	local held = did.bar.text
+	assert(held == "1 of 2, about 4 s", held)
+	local widthThen = did.bar.width
+	frames(handlers, 5.5, watch)
+	assert(did.bar.text == held, "held while it runs over: " .. did.bar.text)
+	assert(did.bar.width > widthThen, "and the bar still creeps forward")
+	world.active[1] = false
+	handlers.LocalPlayerTurnEnd()
+	frames(handlers, 0.1, watch)
+	world.pid, world.active[2] = 2, true
+	handlers.LocalPlayerTurnBegin()
+	frames(handlers, 1.0, watch)
+	assert(did.bar.text == "2 of 2, about 3 s", "moving again: " .. did.bar.text)
+	-- The last seat runs over too: the count holds at the last stretch, a number.
+	frames(handlers, 6, watch)
+	assert(did.bar.text == "2 of 2, about 2 s", did.bar.text)
+	for _, text in ipairs(texts) do assert(text ~= "Any moment now", "not while a seat plays") end
+	world.active[2] = false
+	handlers.LocalPlayerTurnEnd()
+	frames(handlers, 1, watch)
+	world.pid, world.turn, world.active[0], world.paused[0] = 0, 5, true, true
+	handlers.LocalPlayerTurnBegin()
+	handlers.PlayerChange_Close(0)
+
+	-- An ordinary wait again: nearly full at the lift.
+	previous = 0
+	wait(world, handlers, 5, usual, 1.2, watch)
+	assert(widths[#widths] >= 0.9 * cover.BAR, "there as the turn is: " .. widths[#widths])
+
+	-- Seat 1 done in 0.5 s: its 1.5 s comes off at once (in text), and the bar
+	-- steps forward over a few frames, not one.
+	world.pid, world.turn, world.active[0] = 0, 6, false
+	handlers.LocalPlayerTurnEnd()
+	previous = 0
+	frames(handlers, 0.1, watch)
+	world.pid, world.active[1] = 1, true
+	handlers.LocalPlayerTurnBegin()
+	frames(handlers, 0.5, watch)
+	local before, textBefore = did.bar.width, did.bar.text
+	world.active[1] = false
+	handlers.LocalPlayerTurnEnd()
+	frames(handlers, 0.1, watch)
+	local jump = did.bar.width - before
+	assert(textBefore == "1 of 2, about 6 s" and did.bar.text == "1 of 2, about 4 s",
+		textBefore .. " -> " .. did.bar.text)
+	frames(handlers, 0.5, watch)
+	assert(did.bar.width - before > jump, "the step is drawn over more than one frame")
+end
+
+-- One slow turn moves the next estimates by a little, and not for long.
+do
+	local cover, world, did, handlers = load(HOTSEAT({ HotseatCoverTimer = true }))
+	local usual = { { 1, 0.1, 2 }, { 2, 0.1, 2 } }
+	for turn = 1, 4 do wait(world, handlers, turn, usual, 1) end
+	local base = cover.remaining(cover.startWait(0))
+	cover.wait = nil
+	wait(world, handlers, 5, { { 1, 0.1, 20 }, { 2, 0.1, 2 } }, 1)
+	local after = cover.remaining(cover.startWait(0))
+	cover.wait = nil
+	assert(after - base < 0.2 * 18, "18 s over moves the next by " .. (after - base))
+	for turn = 6, 10 do wait(world, handlers, turn, usual, 1) end
+	assert(math.abs(cover.remaining(cover.startWait(0)) - base) < 1e-6, "and five waits on, not at all")
+	cover.wait = nil
+	assert(#cover.seatTimes[1] == cover.KEEP and #cover.tailTimes[0] == cover.KEEP, "the last five kept")
+end
+
+-- The bar never goes back, even when the count goes up (the first wait: seat 2
+-- far slower than the seat 1 the others were taken to be like), and is never
+-- full while the wait lasts, however long the last stretch runs over.
+do
+	local cover, world, did, handlers = load(HOTSEAT({ HotseatCoverTimer = true,
+		HotseatSeats = { 1, 2, 3, 4 } }))
+	local previous, rose = 0, false
+	local before = nil
+	local function watch()
+		local left = cover.remaining(cover.wait)
+		if left == nil then return end          -- the sweep, before seat 1's turn is known
+		assert(did.bar.width >= previous, "never backwards: " .. previous .. " -> " .. did.bar.width)
+		assert(did.bar.width < cover.BAR, "never full: " .. did.bar.width)
+		previous = did.bar.width
+		if before and left > before + 1 then rose = true end
+		before = left
+	end
+	wait(world, handlers, 1, { { 1, 0.1, 1 }, { 2, 0.1, 6 }, { 3, 0.1, 1 }, { 4, 0.1, 1 } }, 0.5, watch)
+	assert(rose, "the count did go up")
+	previous, before = 0, nil
+	wait(world, handlers, 2, { { 1, 0.1, 1 }, { 2, 0.1, 6 }, { 3, 0.1, 1 }, { 4, 0.1, 1 } }, 20, watch)
+	assert(did.bar.width >= 0.95 * cover.BAR, "and close to the end: " .. did.bar.width)
+end
+-- A long stretch before the first seat counts down too.
+do
+	local cover, world, did, handlers = load(HOTSEAT({ HotseatCoverTimer = true }))
+	for turn = 1, 3 do wait(world, handlers, turn, { { 1, 4, 1.2 }, { 2, 0.1, 1.2 } }, 0.5) end
+	world.pid, world.turn, world.active[0] = 0, 4, false
+	handlers.LocalPlayerTurnEnd()
+	handlers.update(0.1)
+	assert(did.bar.text == "About 7 s", did.bar.text)
+	frames(handlers, 2)
+	assert(did.bar.text == "About 5 s", did.bar.text)
+end
+-- What is not a seat's own stretch is not learnt as one: a turn begun while
+-- another seat's never ended, the end of a wait the cover stood aside in.
+do
+	local cover, world, did, handlers = load(HOTSEAT({ HotseatCoverTimer = true }))
+	world.pid, world.active[0] = 0, false
+	handlers.LocalPlayerTurnEnd()
+	world.pid, world.active[1] = 1, true
+	handlers.LocalPlayerTurnBegin()
+	frames(handlers, 0.5)
+	handlers.LocalPlayerTurnBegin()          -- the same turn said twice: one seat, still counting
+	assert(#cover.wait.seen == 1 and cover.wait.mark == 0, "seen " .. #cover.wait.seen)
+	frames(handlers, 0.5)
+	world.pid, world.active[2] = 2, true      -- seat 1's end never came
+	handlers.LocalPlayerTurnBegin()
+	assert(cover.gapTimes[2] == nil and cover.seatTimes[1] == nil and cover.wait.playing == 2)
+	frames(handlers, 1)
+	world.active[1], world.active[2] = false, false
+	handlers.LocalPlayerTurnEnd()
+	assert(#cover.seatTimes[2] == 1)
+	-- Nothing begins for three minutes: the cover stands aside, nothing is learnt.
+	frames(handlers, 181)
+	assert(not cover.up and last(did, "hotseat_cover"):find('"reason":"yield_between"', 1, true))
+	assert(cover.tailTimes[0] == nil and cover.lineups[0] == nil)
+end
+
+-- Fast turns and slow ones are counted alike: tenths of a second, or minutes.
+for _, scale in ipairs({ 0.1, 15 }) do
+	local cover, world, did, handlers = load(HOTSEAT({ HotseatCoverTimer = true }))
+	local seats = { { 1, 0.1, 2 * scale }, { 2, 0.1, 2 * scale } }
+	for turn = 1, 3 do wait(world, handlers, turn, seats, 1, nil) end
+	local w = cover.startWait(0)
+	local left = cover.remaining(w)
+	assert(math.abs(left - (0.2 + 4 * scale + 1)) < 0.11, scale .. ": " .. left)
+	cover.wait = nil
+end
+
+-- The UI clock decides where it answers: a frame the engine caps the dt of.
+do
+	local cover, world, did, handlers = load(HOTSEAT({ HotseatCoverTimer = true }))
+	world.clock = 1000
+	world.pid, world.active[0] = 0, false
+	handlers.LocalPlayerTurnEnd()
+	world.pid, world.active[1] = 1, true
+	world.clock = 1000.5
+	handlers.LocalPlayerTurnBegin()
+	world.clock = 1005.5
+	handlers.update(0.1)
+	assert(math.abs(cover.wait.elapsed - 5.5) < 1e-9, "the clock's 5.5 s, not the frame's 0.1")
+	world.clock = 900    -- a clock that jumped back: the frame's own dt
+	handlers.update(0.25)
+	assert(math.abs(cover.wait.elapsed - 5.75) < 1e-9)
+	-- The stretch between the last frame and an event counts too.
+	world.clock = 902
+	world.active[1] = false
+	handlers.LocalPlayerTurnEnd()
+	assert(math.abs(cover.seatTimes[1][1] - 7.25) < 1e-9, "seat 1, begin to end: " .. cover.seatTimes[1][1])
+	world.clock = 903
+	world.pid, world.turn, world.active[0], world.paused[0] = 0, 2, true, false
+	handlers.LocalPlayerTurnBegin()
+	handlers.PlayerChange_Close(0)
+	assert(math.abs(tonumber(field(last(did, "hotseat_cover"), "waited")) - 8.75) < 1e-9)
+	assert(math.abs(cover.tailTimes[0][1] - 1) < 1e-9)
+	-- Up and down are stamped with the UI clock (the seats' `end_turn_wait.ui_now`).
+	assert(kinds(did, "hotseat_cover")[1]:find('"at":1000', 1, true), kinds(did, "hotseat_cover")[1])
+	assert(last(did, "hotseat_cover"):find('"at":903', 1, true))
+end
+
+-- What does not go on record: what the game menu was opened over, a wait the
+-- cover stood aside in, a wait joined part-way (which only sweeps).
+do
+	local cover, world, did, handlers = load(HOTSEAT({ HotseatCoverTimer = true }))
+	wait(world, handlers, 1, { { 1, 0.1, 2 } }, 1)
+	assert(#cover.seatTimes[1] == 1 and #cover.tailTimes[0] == 1)
+	-- The game menu opened over seat 1's turn: not how long CIVVIS takes.
+	world.pid, world.turn, world.active[0] = 0, 2, false
+	handlers.LocalPlayerTurnEnd()
+	world.pid, world.active[1] = 1, true
+	handlers.LocalPlayerTurnBegin()
+	world.menuQueued = true
+	frames(handlers, 40)
+	world.menuQueued = false
+	world.active[1] = false
+	handlers.LocalPlayerTurnEnd()
+	frames(handlers, 1)
+	world.pid, world.turn, world.active[0], world.paused[0] = 0, 3, true, false
+	handlers.LocalPlayerTurnBegin()
+	handlers.PlayerChange_Close(0)
+	assert(#cover.seatTimes[1] == 1, "40 s in the menu is not a seat's turn")
+	assert(#cover.tailTimes[0] == 2, "the stretch after it, clean, is")
+	assert(last(did, "hotseat_cover"):find('"timed":false', 1, true))
+	-- The cover stood aside for a stalled seat; raised again, it only sweeps.
+	world.active[0] = false
+	handlers.LocalPlayerTurnEnd()
+	world.pid, world.active[1] = 1, true
+	handlers.LocalPlayerTurnBegin()
+	frames(handlers, 91)
+	assert(not cover.up and cover.wait == nil, "a stall is not a wait")
+	assert(#cover.seatTimes[1] == 1 and #cover.tailTimes[0] == 2)
+	world.active[1] = false
+	handlers.LocalPlayerTurnEnd()
+	assert(cover.up and cover.wait and not cover.wait.timed and cover.wait.estimate == nil,
+		"joined part-way: no countdown")
+	frames(handlers, 1)
+	assert(did.bar.width == cover.BAR / 5 and did.bar.text == "", "a sweep: " .. did.bar.text)
+	world.pid, world.turn, world.active[0], world.paused[0] = 0, 4, true, false
+	handlers.LocalPlayerTurnBegin()
+	handlers.PlayerChange_Close(0)
+	assert(#cover.tailTimes[0] == 2, "the end of a wait joined part-way is not on record")
+	-- A game loaded on a CIVVIS turn: a sweep; the seats seen whole are learnt.
+	local cover2, world2, did2, handlers2 = load(HOTSEAT({ HotseatCoverTimer = true }))
+	world2.pid, world2.turn, world2.active[1] = 1, 30, true
+	handlers2.LoadScreenClose()
+	assert(cover2.wait and not cover2.wait.timed)
+	frames(handlers2, 3)
+	assert(did2.bar.width == cover2.BAR / 5 and did2.bar.text == "")
+	world2.active[1] = false
+	handlers2.LocalPlayerTurnEnd()
+	world2.pid, world2.active[2] = 2, true
+	handlers2.LocalPlayerTurnBegin()
+	frames(handlers2, 2)
+	world2.active[2] = false
+	handlers2.LocalPlayerTurnEnd()
+	world2.pid, world2.turn, world2.active[0], world2.paused[0] = 0, 31, true, false
+	handlers2.LocalPlayerTurnBegin()
+	handlers2.PlayerChange_Close(0)
+	assert(cover2.seatTimes[1] == nil and #cover2.seatTimes[2] == 1, "seat 2's turn was seen whole")
+	assert(cover2.tailTimes[0] == nil and cover2.lineups[0] == nil)
+end
+-- `--no-cover-timer` and an older install show no bar.
+for _, timer in ipairs({ false, "unset" }) do
+	local cover, world, did, handlers = load(HOTSEAT({ HotseatCoverTimer = timer ~= "unset" and timer or nil }))
+	wait(world, handlers, 1, { { 1, 0.1, 5 } }, 1)
+	world.active[0] = false
+	handlers.LocalPlayerTurnEnd()
+	ticks(handlers, 2)
+	assert(did.bar.hidden == true and did.bar.width == nil and did.bar.text == nil, "no bar")
+end
+-- Two people at one table: each waits their own wait.
+do
+	local cover, world, did, handlers = load(HOTSEAT({ HotseatCoverTimer = true,
+		HotseatHumanSeats = { 0, 2 }, HotseatSeats = { 1, 3 }, HotseatAutoStart = false }))
+	world.pid, world.active[0] = 0, false
+	handlers.LocalPlayerTurnEnd()
+	world.pid, world.active[1] = 1, true
+	handlers.LocalPlayerTurnBegin()
+	ticks(handlers, 9)
+	assert(did.bar.text == "1 of 1", did.bar.text)
+	world.active[1] = false
+	handlers.LocalPlayerTurnEnd()
+	world.pid, world.active[2], world.paused[2] = 2, true, true
+	handlers.LocalPlayerTurnBegin()
+	assert(not cover.up and #cover.tailTimes[0] == 1 and cover.tailTimes[0][1] == 0)
+	world.active[2] = false
+	handlers.LocalPlayerTurnEnd()
+	assert(cover.wait.seat == 2)
+	world.pid, world.active[3] = 3, true
+	handlers.LocalPlayerTurnBegin()
+	ticks(handlers, 4)
+	world.active[3] = false
+	handlers.LocalPlayerTurnEnd()
+	ticks(handlers, 1)
+	world.pid, world.turn, world.active[0], world.paused[0] = 0, 2, true, true
+	handlers.LocalPlayerTurnBegin()
+	assert(cover.tailTimes[2][1] == 1 and #cover.tailTimes[0] == 1)
+	assert(#cover.lineups[0] == 1 and cover.lineups[0][1] == 1 and cover.lineups[2][1] == 3)
+	assert(cover.seatTimes[1][1] == 9 and cover.seatTimes[3][1] == 4)
+end
+
+-- 10. Nothing of a CIVVIS turn's is left on screen for the person's turn. -----
+local function line(hidden)
+	return { hidden = hidden, IsHidden = function(self) return self.hidden end,
+	         SetHide = function(self, hide) self.hidden = hide end }
+end
+local DEFAULT, GOSSIP = "/InGame/StatusMessagePanel/DefaultStack", "/InGame/StatusMessagePanel/GossipStack"
+do
+	local cover, world, did, handlers = load(HOTSEAT())
+	-- Their own emergency screen is up as they end their turn: it is theirs.
+	world.crisisQueued = true
+	handlers.LocalPlayerTurnEnd()
+	world.pid, world.active[1] = 1, true
+	handlers.LocalPlayerTurnBegin()
+	-- Seat 1's turn: combat lines and a gossip line; one already gone.
+	local fight, gone, gossip = line(false), line(true), line(false)
+	world.lines[DEFAULT] = { fight, gone }
+	world.lines[GOSSIP] = { gossip }
+	world.active[1] = false
+	handlers.LocalPlayerTurnEnd()
+	-- The person's turn begins under the cover.
+	world.pid, world.turn, world.active[0], world.paused[0] = 0, 2, true, true
+	handlers.LocalPlayerTurnBegin()
+	assert(fight.hidden and gossip.hidden, "seat 1's lines are not the person's to read")
+	assert(world.crisisQueued and did.dropped == 0, "their own emergency screen stays")
+	assert(last(did, "hotseat_left_behind"):find('"lines":2', 1, true)
+		and last(did, "hotseat_left_behind"):find('"dropped":""', 1, true), last(did, "hotseat_left_behind"))
+	handlers.PlayerChange_Close(0)
+	assert(not cover.up)
+	-- Lines raised on their own turn are theirs.
+	local own = line(false)
+	world.lines[DEFAULT] = { own }
+	handlers.update(0.1)
+	assert(not own.hidden)
+	-- An emergency raised on a CIVVIS seat's turn (WorldCrisisPopup.lua:43-45,
+	-- :221): taken off the queue as their turn begins, never shown to them.
+	world.crisisQueued = false
+	world.active[0] = false
+	handlers.LocalPlayerTurnEnd()
+	world.pid, world.active[1] = 1, true
+	handlers.LocalPlayerTurnBegin()
+	world.crisisQueued = true
+	world.active[1] = false
+	handlers.LocalPlayerTurnEnd()
+	world.pid, world.turn, world.active[0], world.paused[0] = 0, 3, true, true
+	handlers.LocalPlayerTurnBegin()
+	assert(not world.crisisQueued and did.dropped == 1, "the CIVVIS seat's emergency screen is gone")
+	assert(own.hidden, "and the lines on screen as the turn begins")
+	assert(last(did, "hotseat_left_behind"):find('"dropped":"WorldCrisisPopup"', 1, true))
+	handlers.PlayerChange_Close(0)
+	-- Nothing left behind: nothing said.
+	local before = #kinds(did, "hotseat_left_behind")
+	world.active[0] = false
+	handlers.LocalPlayerTurnEnd()
+	world.pid, world.turn, world.active[0], world.paused[0] = 0, 4, true, true
+	handlers.LocalPlayerTurnBegin()
+	assert(#kinds(did, "hotseat_left_behind") == before)
+end
+-- --keep-handover: the same, before their own hand-over shows.
+do
+	local cover, world, did, handlers = load(HOTSEAT({ HotseatAutoStart = false }))
+	handlers.LocalPlayerTurnEnd()
+	world.crisisQueued = true
+	local fight = line(false)
+	world.lines[DEFAULT] = { fight }
+	world.turn, world.active[0], world.paused[0] = 2, true, true
+	handlers.LocalPlayerTurnBegin()
+	assert(not cover.up and fight.hidden and did.dropped == 1)
+end
+-- --no-cover (the turns are on screen anyway), a game without the expansion
+-- or the panel, and a turn the cover stood aside in: nothing is touched.
+do
+	local cover, world, did, handlers = load(HOTSEAT({ HotseatCover = false }))
+	handlers.LocalPlayerTurnEnd()
+	world.crisisQueued = true
+	local fight = line(false)
+	world.lines[DEFAULT] = { fight }
+	world.turn, world.active[0] = 2, true
+	handlers.LocalPlayerTurnBegin()
+	assert(not fight.hidden and world.crisisQueued and did.dropped == 0)
+	local cover2, world2, did2, handlers2 = load(HOTSEAT())
+	world2.noCrisis, world2.lines = true, {}
+	handlers2.LocalPlayerTurnEnd()
+	world2.turn, world2.active[0], world2.paused[0] = 2, true, true
+	handlers2.LocalPlayerTurnBegin()
+	assert(cover2.up, "nothing to look at, nothing broken")
+	local cover3, world3, did3, handlers3 = load(HOTSEAT())
+	handlers3.LocalPlayerTurnEnd()
+	world3.pid, world3.active[1] = 1, true
+	handlers3.LocalPlayerTurnBegin()
+	ticks(handlers3, 91)
+	assert(not cover3.up)
+	world3.crisisQueued = true
+	world3.turn, world3.pid, world3.active[0], world3.paused[0] = 2, 0, true, false
+	handlers3.LocalPlayerTurnBegin()
+	assert(world3.crisisQueued and did3.dropped == 0, "the person saw that turn; it is as it ships")
 end
 
 print("hotseat_cover_test: ok")

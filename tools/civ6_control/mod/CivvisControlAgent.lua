@@ -54,6 +54,22 @@ function CivvisSeat.mine()
 	if cfg.RequireHarness == true and not CivvisHarness.live() then return false; end
 	local held = false;
 	pcall(function() held = PlayerConfigurations[pid]:GetWantsPause() == true; end);
+	-- The hotseat test stand-in (`CivvisSeat.standsIn`) plays its turn at once,
+	-- so it also waits for the GAME to unpause. Start Turn releases the seat's
+	-- own pause locally; the game's pause is lifted by a message a moment later,
+	-- and a turn complete sent in between is dropped: live-6p-20261128T0405Z t3,
+	-- net_message_debug.log `GameCore SEND: PlayerTurnComplete: ePlayer=0`, then
+	-- `GameCore SEND: GamePaused: gamePaused=0`, then `PlayerTurnComplete
+	-- ignored due to game paused.`, and the stub's turn stood 14 minutes.
+	-- The shipped unit panel waits the same way after the hand-over closes
+	-- (UnitPanel.lua:2843-2858, `GameConfigChanged` until `not
+	-- GameConfiguration.IsPaused()`). Only while its turn is active: its
+	-- `LocalPlayerTurnEnd` bookkeeping runs as the next seat's hand-over pauses.
+	if not held and CivvisSeat.standsIn ~= nil and CivvisSeat.standsIn() then
+		pcall(function()
+			held = GameConfiguration.IsPaused() == true and Players[pid]:IsTurnActive() == true;
+		end);
+	end
 	return not held;
 end
 function CivvisSeat.gate(handler)
@@ -7546,6 +7562,18 @@ CivvisClock.raw = function()
 	if type(ui) ~= "number" or ui ~= ui then return nil; end
 	return ui;
 end;
+-- The UI clock to the millisecond on the records that time a hotseat seat's
+-- turn (`export_timing`, `await`, `orders_peek_wake`, `orders`, a frame's
+-- opening), as `"ui"`: the clock `end_turn_wait.ui_now` reads, so
+-- `tools/hotseat_wait.py` can split a frame's round trip, which the
+-- whole-second `t` cannot. Hotseat installs only: every other record stays
+-- byte for byte as it was (nil drops the field).
+CivvisClock.stamp = function()
+	if cfg.Hotseat ~= true then return nil; end
+	local ui = CivvisClock.raw();
+	if ui == nil then return nil; end
+	return math.floor(ui * 1000 + 0.5) / 1000;
+end;
 CivvisClock.now = function()
 	local ui = CivvisClock.raw();
 	if ui == nil then return nil; end
@@ -7634,6 +7662,7 @@ CivvisExportClock.report = function(turn, frame)
 	end
 	emit("export_timing", {
 		turn = turn, frame = frame, ms = sections, city_ms = cityMs, clock = CivvisExportClock.kind,
+		ui = CivvisClock.stamp(),
 		total_ms = delta(marks[1].at, marks[#marks].at),
 		auto_total = delta(CivvisExportClock.auto0, try(function() return Automation.GetTime(); end, nil)),
 		cpu_total_ms = delta(CivvisExportClock.cpu0, try(function() return os.clock(); end, nil)),
@@ -25232,6 +25261,7 @@ CivvisFrames.begin = function(player, pid, turn, requestedReason)
 	emit(reason == "strike" and "combat_frame" or "replan_frame", {
 		turn = turn, frame = CivvisFrames.current, reason = reason,
 		strikes = strikes, revealed = revealed, movers = CivvisFrames.movers,
+		ui = CivvisClock.stamp(),
 	});
 	CivvisK.guard(function() exportState(player, pid, turn, CivvisFrames.current); end);
 	return true;
@@ -25753,7 +25783,7 @@ local function applyOrders(player, pid, turn, rows)
 	end
 
 	emit("orders", {
-		turn = turn, frame = awaiting.frame or 0, source = "civvis",
+		turn = turn, frame = awaiting.frame or 0, source = "civvis", ui = CivvisClock.stamp(),
 		seen = #rows - deferred - verdicts - shadowRows,
 		applied = applied, refused = refused, by = byKind, refusals = whyNot,
 		seen_by = seenByKind, refused_by = refusedByKind,
@@ -26362,14 +26392,37 @@ local function beginTurn(player, pid, turn)
 	--
 	-- Losing every city is the definition of elimination here, and it is observable
 	-- from inside without relying on an event that does not arrive.
-	if not defeatReported and turn > 5 then
+	--
+	-- ⚠ LOSING, not "having none". A seat that has not founded its first city yet
+	-- has no cities either, and it is very much in the game. Live 2026-11-27
+	-- (hotseat check `live-6p-20261128T0446Zd`): seat 1 drew Kupe, who starts at
+	-- sea; on turn 6 it still held its Settler and its Warrior ("cities 0, units
+	-- 2" every turn), this rule wrote `defeat … no cities remain`, the controller
+	-- stopped for good (`finished`), and from then on that seat's turn stood until
+	-- the HUD's seat watch ended it: 45 s of a person's wait, every round. So a
+	-- seat with no cities is defeated only once it has had one, or once it has
+	-- nothing left to found one with (`Units.FoundCity`, the Settler's own row).
+	-- `CivvisSeat.founded` is this context's memory of having held a city; a game
+	-- loaded onto a seat that already lost its last one never plays that seat again.
+	if not defeatReported then
 		local alive = 0;
 		eachCity(player, function() alive = alive + 1; end);
-		if alive == 0 then
-			defeatReported = true;
-			finished = true;
-			emit("defeat", { turn = turn, ours = true, reason = "no cities remain",
-			                 local_player = pid });
+		if alive > 0 then
+			CivvisSeat.founded = true;
+		elseif turn > 5 then
+			local founder = false;
+			if not CivvisSeat.founded then
+				eachUnit(player, function(unit)
+					local info = GameInfo.Units[unitTypeName(unit)];
+					if info ~= nil and info.FoundCity == true then founder = true; end
+				end);
+			end
+			if not founder then
+				defeatReported = true;
+				finished = true;
+				emit("defeat", { turn = turn, ours = true, reason = "no cities remain",
+				                 local_player = pid });
+			end
 		end
 	end
 
@@ -26496,7 +26549,7 @@ local function settleTurn(player, pid, turn, playFallback)
 	--
 	-- One line per poll terminates the previous one, so the state reaches the brain
 	-- on the first poll. `polls` doubles as the wait's own telemetry.
-	emit("await", { turn = turn, polls = awaiting.polls });
+	emit("await", { turn = turn, polls = awaiting.polls, ui = CivvisClock.stamp() });
 
 	local frame = awaiting.frame or 0;
 	local ready = ordersReady(turn, frame);
@@ -28675,7 +28728,10 @@ local function tick()
 		if turn ~= lastTurnSeen then
 			-- See `movementNotYetRestored`: the board waits for the engine to
 			-- hand the units their turn's movement, not the previous turn's dregs.
-			if cfg.CivvisDecides and not (cfg.IsolatedActionProbes == true and CivvisActionProbe.preparing == turn)
+			-- The hotseat stand-in waits too (`CivvisSeat.standsIn`): it ordered
+			-- its units at turn begin and saw every hold refused (manual-live-1 t5).
+			if (cfg.CivvisDecides or CivvisSeat.standsIn())
+				and not (cfg.IsolatedActionProbes == true and CivvisActionProbe.preparing == turn)
 				and CivvisBoard.movementNotYetRestored(player, turn) then return; end
 			if CivvisActionProbe.tick(player, pid, turn) then return; end
 			lastTurnSeen = turn;
@@ -29383,6 +29439,14 @@ end
 -- what deadlocked civvis-20260730T110209Z, and 20 a second at most is two
 -- orders of magnitude short of that. The poll's own cadence, and the poll
 -- budgets counted in it, are untouched; a miss changes nothing.
+-- `HotseatFastTurns` (`tools/civ6_hotseat.py --fast-turns`, off unless asked)
+-- peeks every 20 ms, the ladder's live `poll-20ms` arm: G104 waited a median
+-- 0.095 s between an answer being ready and its being applied, these 50 ms
+-- waits (`civ6_play.py`'s `read_s` note). An explicit `OrdersPeekSeconds`
+-- wins. The Heartbeat's peek pulse reads the same rule.
+CivvisQueue.peekSeconds = function()
+	return tonumber(cfg.OrdersPeekSeconds) or (cfg.HotseatFastTurns == true and 0.02) or 0.05;
+end;
 CivvisQueue.ordersLanded = function()
 	if cfg.Play == false or not cfg.CivvisDecides or awaiting.done
 			or awaiting.turn == nil or awaiting.turn < 0 then
@@ -29392,7 +29456,7 @@ CivvisQueue.ordersLanded = function()
 	if type(now) ~= "number" or now ~= now then return false; end
 	local last = CivvisQueue.ordersPeekAt;
 	if last ~= nil and now >= last
-			and now - last < (tonumber(cfg.OrdersPeekSeconds) or 0.05) then
+			and now - last < CivvisQueue.peekSeconds() then
 		return false;
 	end
 	CivvisQueue.ordersPeekAt = now;
@@ -29551,7 +29615,7 @@ CivvisQueue.onPeekPulse = function()
 	local now = CivvisClock.now();
 	local last = CivvisQueue.lastTickAt;
 	emit("orders_peek_wake", {
-		turn = awaiting.turn, frame = awaiting.frame or 0,
+		turn = awaiting.turn, frame = awaiting.frame or 0, ui = CivvisClock.stamp(),
 		since_tick = (type(now) == "number" and type(last) == "number")
 			and math.floor((now - last) * 1000 + 0.5) / 1000 or nil,
 	});
@@ -30185,6 +30249,286 @@ function CivvisSelfPlay.wire()
 	end); end);
 end
 
+-- ★★ THE HOTSEAT STAND-IN PLAYS ITS TURN TO THE END.
+--
+-- `tools/civ6_hotseat.py --auto-human` puts a test stub in seat 0 so a hotseat
+-- game runs with nobody at the Mac: its own agent context, no decision worker
+-- (`CivvisDecides` false, install.py `hotseat_seat_config`), the fallback
+-- ladder (`playTurn`). Every such check game wedged on the stub's turn:
+--   * smoke-6p-20261128T0244Zb t2 (6 players): one pass, blocker
+--     `NO_ENDTURN_BLOCKING`, its end-turn request asked while the Historic
+--     Moments screens the CIVVIS seats had kept came up (#6000), then nothing
+--     for 10 minutes. Its last record: `controller_clock` source
+--     `HistoricMoments` disposition `standalone`.
+--   * manual-live-1 and manual-cover-1 t5: the Scout sent on a multi-turn
+--     `probe` the turn before refused SKIP_TURN, FORTIFY, ALERT and SLEEP at
+--     turn begin, the whole forfeit ladder (three forced end turns) ran inside
+--     two seconds, `wedged`, then `controller_clock` source `TopPanel`
+--     disposition `standalone`, and silence.
+-- The common half: the stub was driven by game-core events alone. The UI pulse
+-- that wakes a quiet controller every second (`CivvisQueue.onUiPulse`) turns a
+-- controller with no decision worker away as `standalone`, and a game waiting
+-- on its local player publishes almost nothing. So a request refused once (a
+-- screen up, a unit still walking its queued path) was never made again.
+--
+-- So the stub gets the HUD's one-second pulse here, on its own turn only:
+--   1. `tick()`, the ordinary loop: whatever blocker stands is answered and
+--      the end of turn requested again, as a game-core tick would.
+--   2. After `StandInGraceSeconds` (4) of its turn, every
+--      `StandInEverySeconds` (3), it answers what the game says it waits on
+--      itself: ready units are held in place (SKIP_TURN, FORTIFY, ALERT, SLEEP,
+--      the `orderIdle` list, by `operate`, which asks `CanStartOperation`
+--      first), and one that refuses every hold has its stale operation or queued
+--      path cancelled (`UNITCOMMAND_CANCEL`, UnitCommands.xml:36, the shipped
+--      Cancel button) and is held again; an envoy prompt is marked considered
+--      (CityStates.lua:452); any other blocker gets the ladder's answer
+--      (research, civic, production, policies, pantheon, governor, dedication,
+--      government), with a fresh pass of its budget each step. Then the notification is dismissed and the end of turn
+--      asked with the shipped SHIFT+ENTER request (ActionPanel.lua:1099
+--      `UI.RequestAction(ActionTypes.ACTION_ENDTURN, { REASON = "UserForced" } )`).
+--   3. `stand_in_stuck` says, in one record, exactly what stands: the blocker,
+--      the answer, every unit still refusing (moves, activity, queued path, the
+--      engine's own refusal reasons), whether the turn is already sent, what
+--      `UI.CanEndTurn`/`IsGameCoreBusy`/`IsProcessingMessages` say, the
+--      event locks a screen holds and which screens are up. On the first step
+--      and every 30 s after; `stand_in_stuck_flush` behind it delivers it.
+-- Only a test stub's context does any of this (`standsIn`): a person's seat
+-- has no agent context at all, and every CIVVIS seat and every single-player
+-- run reads false. A bare global's fields: the main chunk has no register to
+-- spare (register_budget_test.lua).
+CivvisSeat.standIn = { key = nil };
+function CivvisSeat.standsIn()
+	if cfg.Hotseat ~= true or cfg.CivvisDecides == true or CivvisSeat.seat == nil then
+		return false;
+	end
+	for _, seat in ipairs(cfg.HotseatStubSeats or {}) do
+		if tonumber(seat) == CivvisSeat.seat then return true; end
+	end
+	return false;
+end
+-- Hold one unit where it stands; the hold's name, or nil when none starts.
+function CivvisSeat.standInHold(unit)
+	for _, name in ipairs({ "UNITOPERATION_SKIP_TURN", "UNITOPERATION_FORTIFY",
+			"UNITOPERATION_ALERT", "UNITOPERATION_SLEEP" }) do
+		if operate(unit, OP[name]) then return name; end
+	end
+	return nil;
+end
+-- What the engine says about a unit that will not hold: its movement, its
+-- activity (`CivvisBoard.activityName`), a queued path, and why SKIP_TURN
+-- cannot start, in the engine's words (the results form of
+-- `CanStartOperation`, UnitPanel.lua:630).
+function CivvisSeat.standInUnit(unit, cancelled)
+	local why = nil;
+	CivvisK.guard(function()
+		local _, results = UnitManager.CanStartOperation(unit, OP["UNITOPERATION_SKIP_TURN"],
+			nil, false, OperationResultsTypes.ALL);
+		local reasons = type(results) == "table" and results[UnitOperationResults.FAILURE_REASONS];
+		if type(reasons) == "table" and #reasons > 0 then
+			local parts = {};
+			for _, key in ipairs(reasons) do
+				parts[#parts + 1] = try(function() return Locale.Lookup(key); end, tostring(key));
+			end
+			why = table.concat(parts, " | ");
+		end
+	end);
+	return {
+		id = try(function() return unit:GetID(); end, -1),
+		kind = unitTypeName(unit),
+		x = try(function() return unit:GetX(); end, -1),
+		y = try(function() return unit:GetY(); end, -1),
+		moves = try(function() return unit:GetMovesRemaining(); end, nil),
+		max = try(function() return unit:GetMaxMoves(); end, nil),
+		activity = try(function()
+			return CivvisBoard.activityName(UnitManager.GetActivityType(unit));
+		end, nil),
+		queued = try(function() return UnitManager.GetQueuedDestination(unit) ~= nil; end, nil),
+		cancelled = cancelled,
+		why = why,
+	};
+end
+-- Every unit the engine still calls ready: its own ready query first (bounded,
+-- and a jammed unit ends it), then the roster (`IsReadyToSelect`, the test
+-- UnitFlagManager.lua:380 dims a flag by), for the ones behind a jam.
+function CivvisSeat.standInUnits(player)
+	local out = { parked = 0, cancelled = 0, refusing = {} };
+	local seen = {};
+	local function settle(unit)
+		local id = try(function() return unit:GetID(); end, -1);
+		if seen[id] then return false; end
+		seen[id] = true;
+		if CivvisSeat.standInHold(unit) ~= nil then
+			out.parked = out.parked + 1;
+			return true;
+		end
+		local cancel = CMD["UNITCOMMAND_CANCEL"];
+		local cancelled = cancel ~= nil and try(function()
+			return UnitManager.CanStartCommand(unit, cancel, false, true) == true;
+		end, false) == true and pcall(function() UnitManager.RequestCommand(unit, cancel); end);
+		if cancelled then
+			out.cancelled = out.cancelled + 1;
+			if CivvisSeat.standInHold(unit) ~= nil then
+				out.parked = out.parked + 1;
+				return true;
+			end
+		end
+		if #out.refusing < 6 then
+			out.refusing[#out.refusing + 1] = CivvisSeat.standInUnit(unit, cancelled == true);
+		end
+		return true;
+	end
+	for _ = 1, (cfg.MaxUnitOrders or 40) do
+		local unit = try(function() return player:GetUnits():GetFirstReadyUnit(); end);
+		if unit == nil or not settle(unit) then break; end
+	end
+	eachUnit(player, function(unit)
+		if try(function() return unit:IsReadyToSelect(); end, false) == true then settle(unit); end
+	end);
+	return out;
+end
+-- What else could hold the turn: the screens the AutoClose contexts serve
+-- that are up, and the event locks they hold (`ExposedMembers.CivvisEventLocks`,
+-- the ledger `ai_phase_stall` reads too).
+function CivvisSeat.standInScreens()
+	local visible, held = {}, {};
+	for _, name in ipairs({
+		"HistoricMoments", "BoostUnlockedPopup", "TechCivicCompletedPopup", "EraCompletePopup",
+		"EraReviewPopup", "WonderBuiltPopup", "NaturalWonderPopup", "ProjectBuiltPopup",
+		"NaturalDisasterPopup", "DedicationPopup", "GreatWorkShowcase", "RockBandMoviePopup",
+		"DiplomacyActionView", "DiplomacyDealView", "LeaderScene", "WorldCongressPopup",
+		"WorldCongressIntro", "WorldCongressBetweenTurns", "InGamePopup", "PlayerChange",
+		"EndGameMenu",
+	}) do
+		-- `pcall`, not `try`: a screen this ruleset lacks is not an error.
+		local ok, hidden = pcall(function() return ContextPtr:LookUpControl("/InGame/" .. name):IsHidden(); end);
+		if ok and hidden == false then visible[#visible + 1] = name; end
+	end
+	local ledger = try(function() return ExposedMembers.CivvisEventLocks; end, nil);
+	if type(ledger) == "table" and type(ledger.held) == "table" then
+		for id, entry in pairs(ledger.held) do
+			held[#held + 1] = { id = id, ctx = type(entry) == "table" and entry.ctx or nil,
+				turn = type(entry) == "table" and entry.turn or nil };
+		end
+	end
+	return visible, held;
+end
+function CivvisSeat.standInStep(player, pid, turn, st, now, source)
+	st.steps = st.steps + 1;
+	local blocker = currentBlocker(pid);
+	local none = try(function() return EndTurnBlockingTypes.NO_ENDTURN_BLOCKING; end, 0);
+	local name = (blocker ~= nil and blocker ~= none) and blockerName(blocker) or nil;
+	local answered, units, dismissed = nil, nil, nil;
+	if name ~= nil then
+		if UNIT_BLOCKERS[name] then
+			units = CivvisSeat.standInUnits(player);
+			answered = "held:" .. units.parked .. "+cancelled:" .. units.cancelled;
+		elseif name == "ENDTURN_BLOCKING_GIVE_INFLUENCE_TOKEN" then
+			answered = CivvisMarkEnvoyConsidered(player) and "considered" or "considered_unavailable";
+		else
+			-- One fresh answer a step. The ladder's per-turn budgets (`spend`:
+			-- two passes for research or a civic) can all go in the turn's first
+			-- tenth of a second, every game-core tick answering again while the
+			-- first request has not landed, and a hard blocker with no answer
+			-- left is a turn that cannot end: a forced end turn is refused under
+			-- it. The loop's own budgets are put back as they were.
+			local spent = {};
+			for key, used in pairs(passes) do spent[key], passes[key] = used, nil; end
+			answered = answerBlocker(player, pid, blocker, turn, true);
+			for key, used in pairs(spent) do passes[key] = math.max(used, passes[key] or 0); end
+		end
+		dismissed = dismissBlocker(pid, blocker);
+	end
+	-- `requestEndTurn` keeps the request in this turn's `end_turn_wait`; it
+	-- returns false when it did not ask (the turn already sent, a deal reply
+	-- still owed, its quarter-second guard).
+	local called, result = pcall(CivvisQueue.requestEndTurn, turn, { REASON = "UserForced" });
+	local requested = called and result ~= false;
+	if requested then st.forced = st.forced + 1; end
+	-- ★ A TURN COMPLETE THE GAME DROPPED STILL READS AS SENT. One sent while
+	-- the game was paused is ignored by the engine (see `CivvisSeat.mine`), and
+	-- `UI.HasSentTurnComplete()` keeps answering true, so `requestEndTurn`
+	-- never asks again and the turn stands. A turn still active this long after
+	-- it was sent was dropped: unready it the shipped way where the game allows
+	-- (ActionPanel.lua:535-537, `if pPlayer:CanUnreadyTurn() ...
+	-- UI.RequestAction(ActionTypes.ACTION_UNREADYTURN);`), so the next step
+	-- sends it afresh, and otherwise send SHIFT+ENTER's request past that guard.
+	local resent = nil;
+	if not requested and try(function() return UI.HasSentTurnComplete(); end, false) == true then
+		if try(function() return player:CanUnreadyTurn(); end, false) == true then
+			resent = CivvisK.attempt(function()
+				UI.RequestAction(ActionTypes.ACTION_UNREADYTURN);
+			end) and "unready" or "unready_threw";
+		else
+			resent = CivvisK.attempt(function()
+				UI.RequestAction(ActionTypes.ACTION_ENDTURN, { REASON = "UserForced" });
+			end) and "forced" or "forced_threw";
+		end
+	end
+	if st.said ~= nil and now >= st.said and now - st.said < 30 then return; end
+	st.said = now;
+	local visible, held = CivvisSeat.standInScreens();
+	if units == nil and try(function() return player:GetUnits():GetFirstReadyUnit(); end) ~= nil then
+		-- Not the blocker, but say who is still waiting for orders.
+		local unit = try(function() return player:GetUnits():GetFirstReadyUnit(); end);
+		units = { refusing = { CivvisSeat.standInUnit(unit, false) } };
+	end
+	emit("stand_in_stuck", {
+		turn = turn, seat = pid, source = source, step = st.steps,
+		seconds = math.floor((now - st.since) * 10 + 0.5) / 10,
+		blocker = name or "NO_ENDTURN_BLOCKING", answered = answered, dismissed = dismissed,
+		held = units and units.parked, cancelled = units and units.cancelled,
+		refusing = units and units.refusing,
+		requested = requested, forced = st.forced, resent = resent,
+		sent = try(function() return UI.HasSentTurnComplete(); end, nil),
+		game_paused = try(function() return GameConfiguration.IsPaused(); end, nil),
+		can_end = try(function() return UI.CanEndTurn(); end, nil),
+		busy = try(function() return UI.IsGameCoreBusy(); end, nil),
+		processing = try(function() return UI.IsProcessingMessages(); end, nil),
+		paused = try(function() return PlayerConfigurations[pid]:GetWantsPause(); end, nil),
+		visible = visible, held_locks = held,
+	});
+	emit("stand_in_stuck_flush", { turn = turn });
+end
+-- The HUD's pulse (`LuaEvents.CivvisControlPulse`, once a second from the
+-- TopPanel and from every screen the AutoClose contexts serve), through the
+-- seat gate: only on this seat's own turn, with its hand-over pressed.
+function CivvisSeat.standInPulse(source)
+	if not CivvisSeat.standsIn() or finished or inTick or cfg.Play == false then return; end
+	local player, pid = localPlayer();
+	if player == nil or pid ~= CivvisSeat.seat then return; end
+	local st = CivvisSeat.standIn;
+	if not try(function() return player:IsTurnActive(); end, false) then
+		st.key = nil;
+		return;
+	end
+	local now = CivvisClock.now();
+	if type(now) ~= "number" or now ~= now then return; end
+	local turn = try(function() return Game.GetCurrentGameTurn(); end, -1);
+	local key = pid .. ":" .. tostring(turn);
+	if st.key ~= key or now < st.since then
+		st.key, st.since, st.steps, st.forced, st.at, st.said = key, now, 0, 0, nil, nil;
+	end
+	ensureStarted();
+	-- A step is due once the turn has been played (`lastTurnSeen`: the
+	-- movement wait above can hold the first pass back), its grace is over, and
+	-- the last step is `StandInEverySeconds` old. A pulse with no step due runs
+	-- the ordinary loop instead; never both, or the loop's plain request would
+	-- leave the forced one inside `requestEndTurn`'s quarter-second guard.
+	local due = lastTurnSeen == turn
+		and now - st.since >= (tonumber(cfg.StandInGraceSeconds) or 4)
+		and not (st.at ~= nil and now >= st.at
+			and now - st.at < (tonumber(cfg.StandInEverySeconds) or 3))
+		and st.steps < (tonumber(cfg.StandInMaxSteps) or 200);
+	if not due then
+		tick();
+		return;
+	end
+	st.at = now;
+	CivvisK.guard(function()
+		CivvisSeat.standInStep(player, pid, turn, st, now, type(source) == "string" and source or "unknown");
+	end);
+end
+
 function Initialize()
 	emit("loaded", { version = 2, play = cfg.Play ~= false,
 		strategic_quote_proposals = 4,
@@ -30221,6 +30565,9 @@ function Initialize()
 	-- The timescale waits for turn 1: see CivvisQueue.startPendingTimescale.
 	CivvisQueue.timescalePending = true;
 	pcall(function() LuaEvents.CivvisControlPulse.Add(CivvisSeat.gate(CivvisQueue.onUiPulse)); end);
+	-- The hotseat test stand-in's own clock on the same pulse; a no-op in
+	-- every other context (`CivvisSeat.standInPulse`).
+	pcall(function() LuaEvents.CivvisControlPulse.Add(CivvisSeat.gate(CivvisSeat.standInPulse)); end);
 	pcall(function() LuaEvents.CivvisControlPeek.Add(CivvisSeat.gate(CivvisQueue.onPeekPulse)); end);
 	-- `DealCounterRefuse`: the leader screens' closer says what it saw.
 	pcall(function() LuaEvents.CivvisDealDialogue.Add(CivvisSeat.gate(function(from, statement, subType)

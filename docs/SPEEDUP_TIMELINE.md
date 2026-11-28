@@ -1,21 +1,63 @@
 # The speed timeline
 
 How many times faster than a person a game of Civilization VI gets played.
-CIVVIS Performance shows it in the middle of the page, under its tables of
-sums and over its charts of each stop over time, under the title the project
-owner gave it on 2026-11-24, "Civ Game Speedup - Synthetic Data Pipeline":
-one number, and under it a line with five ways of playing one game, each
-standing at its multiplier. It stood on the home page, over the videos, until
+CIVVIS Performance shows it at the top of the page, over the computer control
+chart and its tables of sums, under the title the project owner gave it on
+2026-11-27, "Synthetic Data Speed and Scale Up" (from 2026-11-24 until then
+"Civ Game Speedup - Synthetic Data Pipeline"): three figures, and under them
+a line with five ways of playing one game, each standing at its multiplier,
+drawn in four rows: [The rows](#the-rows) and [The three
+figures](#the-three-figures). It stood on the home page, over the videos, until
 later that day ("move the civvis performance timeline thing from home/ to the
-civvis performance section. middle of the page or so"). Among and past them stand four stops nothing has
+civvis performance section. middle of the page or so"), and went to the top
+of that page on 2026-11-27 ("move civ game speedup - synthetic data pipeline
+up to the top of civvis.ai performance"). Among and past them stand four stops nothing has
 played yet:
 [The stops past what was measured](#the-stops-past-what-was-measured).
 Left of CIVVIS self-play the games play many at once, and a time there is
-amortized: [Amortized games](#amortized-games).
+amortized: [Amortized games](#amortized-games). Over the line and under it
+are its two other scales, and each measured stop says what it is played on:
+[Two scales, native and browser](#two-scales-native-and-browser).
 
 The readings are `data/performance/speedup_timeline.json`. The page's figures
 are worked out from them by `beta/speedup_timeline.py` when the site is
 published. Nothing derived is committed.
+
+## Two scales, native and browser
+
+The project owner, 2026-11-27: "we can also have a time / game measure along
+the top and a games / time measure along the bottom". The line's tenfolds
+(1x, 10x, ... 10 million x, under the line) are drawn again over the track as
+the time one game takes at that pace, and under it as the games that is in an
+hour, a minute or a second: 1x is a game by hand, `5 h/game` and `0.2
+games/h`; 1,000x is `18 s/game` and `3.3 games/min`; 10 million x is `1.8
+ms/game` and `556 games/s` (`ticks`, `per_game` and `per_time`, from the hand
+stop's time). The narrow layout is a list and has no scale.
+
+The same day: "note that firaxis (native app) and civvis (browser)", "if
+thats true", "if we have different speeds for browser and native speeds too we
+should note that". A measured stop says under its figures what it is played
+on, from the ledger's `runs`: `native app` for the two Civilization VI stops
+(computer control and Firaxis self-play), `native` for CIVVIS self-play and
+the parallel games, whose games are timed on the native `civvis` program, not
+in a browser. The site's games run in the browser, on its WebAssembly build of
+the same engine, and take longer there: the ledger's `browser` on CIVVIS
+self-play is the measured ratio, and the line says `native · 59 s in the
+browser`, the stop's reading times it.
+
+The ratio was measured on 2026-11-27 with one game played both ways, through
+the routes the site uses (`/new`, then `/step` ten turns at a time until it is
+finished), six seats on 74x46 Continents at Online speed: a release build of
+main (`civvis play --no-open --port N`) and the site's `civvis.wasm` from /test
+in Node's V8, the engine Chrome runs it on, with nothing changed in the engine
+between them. Seed 20261127 played the same game both ways (130 turns, a
+culture win): 17.0 s native and 29.5 s in the browser's engine, 1.74 times as
+long. Seed 31415 played 195 turns native in 43.6 s and 201 in the browser's
+engine in 71.7 s (the two builds part ways in that game), 1.59 times as long a
+turn. The ledger keeps 1.7. To measure it again, play the same seeds both ways
+with a script that times `/new` and `/step` against the native server and
+against `civvis.wasm` called through its `civvis_request` export, and put the
+new ratio and how it was measured in `browser`.
 
 The CIVVIS Performance page opens on the same readings as two tables, each
 figure beside the sum that gives it. They are described under
@@ -25,6 +67,80 @@ third table there puts the same benchmarks on other processors:
 renting the rest of the way to the goal would cost:
 [The goals and the cloud's cost](#the-goals-and-the-clouds-cost). Under the
 tables each stop is charted over time: [Each stop over time](#each-stop-over-time).
+
+## The rows
+
+The project owner, 2026-11-27: "we should split the synthetic data pipeline
+up into a few rows. first row is today's software scale-up, second row is
+hardware scale up, third row is additional optimizations (hyperscale can
+start where hardwaer scale up ends and point left (Many OOMs). third row
+should also have start from civvis self-play (which can be a range (6s-34s)
+and point left to "Civ 6 computational irreducability). can have a range
+here, with maybe 1-10x???? being the width. maybe actually add a top row for
+firaxis (human player, CIVVIS->Firaxis..., Firaxis self play. the old first
+row is now second row and can be CIVVIS. change name to synthetic data speed
+and scale up".
+
+The line is four rows, top to bottom, all on the one scale of multipliers,
+right to left. The ledger's `lanes` say which entries stand in which row:
+
+| Row | What stands in it |
+| --- | --- |
+| Firaxis | Human Player (me), CIVVIS → Firaxis computer control and Firaxis self-play: the real game. |
+| CIVVIS | CIVVIS self-play and Parallel games, M5 Max, all 18 cores: the simulator as it plays today. It starts at Firaxis self-play's place, and the stretch from there to CIVVIS self-play is the gold gap with its figure (see [Why CIVVIS self-play is faster than Firaxis self-play](#why-civvis-self-play-is-faster-than-firaxis-self-play)). |
+| Hardware scale-up | From the M5 Max as it plays today to the M5 Max's theoretical most, then Reasonable Local Hardware Scale-up Theoretical. The 1,000,000x goal's words stand in this row; its place is a broken gold rule down every row. |
+| Additional optimizations | Three spans: CIVVIS self-play as a range, the irreducible game as a guess past it, and hyperscale. |
+
+A row has its `key`, its `name`, the stops, projected stops and goals it holds
+(`entries`), and, where it carries on from a stop of another row, that stop
+(`after`). On the page its name stands at the left, its stretch of the line is
+solid where it holds a stop that was played and broken where it holds only
+guesses, and a faint broken hand-off joins it to the stop it carries on from.
+The tenfolds are faint rules down every row, and the scale's marks stand once,
+under the last. In the narrow layout each row is its name over its list.
+
+A span has no single figure (`spans` of a row):
+
+- **A range** (`range`, the self-play span): from the stop's own reading (the
+  standard game, six players on Continents on one core, 34.5 s) to the fastest
+  game on record, the fewest seconds of the record videos
+  (`data/performance/fastest_game_videos.json`, the "<6s" game, 4P Tennis Ball,
+  Online). Drawn as a pale solid bar.
+- **A guess past a span** (`after` and `times`, the irreducible game): from
+  that span's fast end so many times faster to so many more, here 1x to 10x
+  past the fastest game on record. The project owner asked for a range "1-10x"
+  wide; this page reads it from the fastest game, so the guess starts where
+  the range ends: 600 ms to 6 s. Drawn hatched, with an arrow at its far end.
+- **An open arrow** (`open`, hyperscale): from an entry of the line, the
+  scale-up, to the line's end, worded "Many OOMs" and with no figure.
+
+The irreducible game is still a projected stop (`irreducible`, ten times
+CIVVIS self-play), because the M5 Max's theoretical most stands on it. No row
+holds it as a point, so the line does not draw it; its span stands for it.
+Each row's words take their sides in turn along that row
+(`speedup_timeline.sides`), and stand a row further out where they would meet
+(`speedup_timeline.rows`): words are given 170px (`ROOM`) of the 880px line,
+which is the panel less the rows' names (`GUTTER`, 120px).
+
+`speedup_timeline.lanes` works the rows out and `speedup_timeline.spans` the
+spans; `speedup_timeline.timeline` returns them as `lanes` and `spans`, and
+every entry with the `lane` it stands in. A ledger with no `lanes` keeps the
+one line.
+
+## The three figures
+
+The project owner, 2026-11-27: "below the title and above the chart, lets
+track: self-play speed: Nx (range ok), self-play games throughput: answer,
+person-played games throughput scaleup: answer".
+
+| Figure | What it is | From |
+| --- | --- | --- |
+| Self-play speed | How many times faster one game on one core is than a game by hand, as the range the bottom row draws: `522x – 3,000x`. | The self-play stop, and its range where there is one. |
+| Self-play games throughput | The games a second one machine plays on every core, with a day of games at that rate: `0.41 games/s`, `35,000 games a day`. | The every-core stop. |
+| Person-played games throughput scale-up | How many times as many games one machine plays as a person by hand: the page's one number until then, `7,299x`. | The every-core stop's multiplier. |
+
+The ledger's `head` names the two stops (`speed`, `throughput`), and
+`speedup_timeline.headline` works the figures out as the record's `head`.
 
 ## The five stops
 
@@ -296,17 +412,19 @@ multiplies (`over`) is a measured one, or a projected one listed before it.
 | Civ 6 Computational Irreducibility (`irreducible`) | One game on one core with nothing left in it that the game does not need. A guess: nobody knows where it is. | `10 × CIVVIS self-play's multiplier` |
 | M5 Max, Theoretical Max Civ 6 Throughput (`m5_max`) | The most games one M5 Max could finish: the irreducible game on every core at once. A guess on a guess, and amortized. | `10 × the irreducible game's multiplier` |
 | Reasonable Local Hardware Scale-up Theoretical (`scale_up`) | Hardware of our own, scaled up within reason past the one M5 Max. Theoretical. | `10 × the M5 Max theoretical's multiplier` |
-| Distributed RL fleet (`fleet`) | Many machines playing self-play at once for reinforcement learning. A potential, and open at its top. | `1,000 × the M5 Max's multiplier`, and more |
 
 Every figure is the project owner's. The first two are his guesses and stand
 on CIVVIS self-play, so the M5 Max's theoretical most is a hundred times one
 self-play game, whatever the M5 Max measures today. The scale-up is ten times
 that theoretical most (until 2026-11-26 it was ten times the M5 Max as
-measured, which left it close over the theoretical stop). The fleet is over
-the M5 Max's every-core stop as it was measured. No machine was sized or
-priced for either. Whether his 1,000 is over the one M5 Max or over the
-scaled-up hardware is this page's reading of his sentence, and it reads the
-first.
+measured, which left it close over the theoretical stop). No machine was
+sized or priced for it.
+
+A fourth, the distributed RL fleet (`fleet`, "potential distributed RL fleet:
+up to 1000+x", a thousand times the M5 Max's every-core stop and more), stood
+on the line from 2026-11-22 until 2026-11-27, when hyperscale took its place
+as an arrow with no figure on the bottom row ("hyperscale can start where
+hardwaer scale up ends and point left (Many OOMs)").
 What a game takes now, in steps and instructions, and the plan for taking
 steps out of it, is [`docs/PATH_STEPS.md`](PATH_STEPS.md).
 
@@ -315,11 +433,8 @@ line, a stop, a projected stop or a goal, takes its side of the line in turn
 (`speedup_timeline.sides`), so two that stand close together go one over the
 line and one under it. The page's number is never a projected stop: it is the
 fastest stop that was measured, and the line is drawn solid only as far as
-that stop. A thousand M5 Maxes are past the 1,000,000x goal and short of the
-10,000,000x the line runs out to, so the fleet stands on the line at its own
-place, left of the goal. Until the line was extended it stood at the line's
-end as an arrow that pointed on from it, and a stop past the end of the line
-still does (`past` in the record), with its own figure beside it.
+that stop. A stop past the end of the line stands at its end as an arrow that
+points on from it (`past` in the record), with its own figure beside it.
 
 A projected stop is an entry of `projected`:
 
@@ -327,7 +442,7 @@ A projected stop is an entry of `projected`:
 - `over` is the key of the measured stop it multiplies.
 - `estimates` are dated, oldest first, and the newest is shown. Each has the
   day it was `taken`, the figure (`times`), `or_more` when the figure is open
-  at its top (his "1000+", shown as `1,000x+`), and `from`, which says whose
+  at its top (the fleet's "1000+" was shown as `1,000x+`), and `from`, which says whose
   figure it is and what it stands for.
 
 A changed figure is a new estimate after the ones there, as a new reading
