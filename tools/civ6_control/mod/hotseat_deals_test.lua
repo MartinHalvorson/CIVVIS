@@ -303,6 +303,31 @@ check("our own, emptied, is still listed", #board().outgoing, 1)
 check("by its id", board().outgoing[1].id, 4444)
 pending[2][4] = nil
 
+-- ★ Their deal arriving while ours waits for them answers ours (live
+-- trade-live-6: both deals stay pending, so ours never resolved and every
+-- counter read round 1, seats 1 and 3 countering each other for 8 turns).
+trade.seat.seen[3] = nil
+trade.seat.counter[3] = nil
+trade.seat.mine[3] = { id = 5555, first = 26, give = {}, get = {}, round = 2 }
+pending = { [2] = { [3] = true }, [3] = { [2] = true } }
+working.outgoing[2][3] = { { kind = "gold", from = 2, amount = 6 } }
+working.incoming[2][3] = { { kind = "gold", from = 3, amount = 9 } }
+local exchange = board()
+local theirsNow
+for _, deal in ipairs(exchange.incoming) do if deal.from == 3 then theirsNow = deal end end
+check("their deal answers ours", theirsNow ~= nil and theirsNow.counter_of, 5555)
+check("one round past ours", theirsNow ~= nil and theirsNow.round, 3)
+-- With nothing of ours waiting, a deal of theirs opens an exchange.
+pending[2][3] = nil
+trade.seat.mine[3] = nil
+trade.seat.seen[3] = nil
+working.incoming[2][3] = { { kind = "gold", from = 3, amount = 8 } }
+local fresh
+for _, deal in ipairs(board().incoming) do if deal.from == 3 then fresh = deal end end
+check("a fresh deal is round 1", fresh ~= nil and fresh.round, 1)
+check("answering nothing", fresh ~= nil and fresh.counter_of, nil)
+pending = {}
+
 -- Heard outside hotseat: nothing kept.
 CivvisControlConfig.Hotseat = false
 trade.seatHeard(1, 2, DealProposalAction.ACCEPTED)

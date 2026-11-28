@@ -14267,6 +14267,18 @@ CivvisTrade.seatBoard = function(player, pid, turn)
 					if seen == nil or seen.id ~= id then
 						local counter = seat.counter[other];
 						seat.counter[other] = nil;
+						-- ★ A deal of theirs that arrives while ours waits for them
+						-- answers ours (live trade-live-5 and -6, 2026-11-28). A
+						-- counter is a new deal of the counterer's, and in hotseat
+						-- the deal it answers stays pending beside it (every
+						-- COUNTER's `pending_from_them: true`, a refusal sent first
+						-- changed nothing), so ours never resolved as `countered`,
+						-- each counter read as round 1, and seats 1 and 3 countered
+						-- each other every turn from 39 to 46. Its round follows
+						-- ours, and the decider's two-counter limit holds.
+						if counter == nil and ours == true and mine ~= nil then
+							counter = { of = mine.id, round = (tonumber(mine.round) or 1) + 1 };
+						end
 						seen = { id = id, first = turn, counter_of = counter ~= nil and counter.of or nil,
 							round = counter ~= nil and counter.round or 1 };
 						seat.seen[other] = seen;
