@@ -5378,7 +5378,9 @@ def check_moneyball(bar: Bar, address: str) -> None:
     after = bar.ev(board)
     assert bar.ev("document.getElementById('autoplaystrategy').value") == "stock"
     stock = bar.ev("debugSearchAgent('stock')")
-    assert after["history"] == [f"Turns {turn}–{turn + 10}: {letters['stock']}, {stock}"], after
+    assert after["history"] == [f"Turns {turn}–{turn + 9}: {letters['stock']}, {stock}"], after
+    # The seat is played by the picks alone: the left panel's Auto-play is put away.
+    assert bar.ev("getComputedStyle(document.getElementById('humanfooter') || document.body).display") == "none"
     assert "1 made so far" in after["estimate"], after
     # Turns a pick, and the stats shown, are the person's to choose.
     bar.ev("(() => { const turns = document.getElementById('mb-turns'); turns.value = '20'; turns.dispatchEvent(new Event('change')); return true; })()")

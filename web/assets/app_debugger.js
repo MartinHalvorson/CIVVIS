@@ -9854,6 +9854,10 @@ const MONEYBALL_STYLE = `
     color: #e9f1e6; font: 13px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
   }
   #moneyball[hidden] { display: none; }
+  /* The seat is played by the picks alone: the left panel's Auto-play, which
+     would hand it to a Civ AI for a run of turns past the board, is put
+     away (its picker stays in the page, which seats each pick by it). */
+  html.moneyball #humanfooter { display: none !important; }
   #moneyball.is-away { bottom: auto; overflow: visible; background: #0b1a13ee; border-bottom: 1px solid #2f8a4a; }
   #moneyball.is-away .mb-body { display: none; }
   .mb-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px; }
@@ -10263,7 +10267,9 @@ function moneyballDraw() {
   picks.textContent = "";
   for (const pick of moneyball.picks) {
     const item = document.createElement("li");
-    item.textContent = `Turns ${pick.from}–${pick.to}: ${pick.letter}, ${debugSearchAgent(pick.name)}`;
+    // The turns it played: from the turn picked on to the one before the
+    // turn the world then stands on.
+    item.textContent = `Turns ${pick.from}–${pick.to - 1}: ${pick.letter}, ${debugSearchAgent(pick.name)}`;
     picks.appendChild(item);
   }
 }
