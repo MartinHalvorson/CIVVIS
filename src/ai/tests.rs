@@ -4513,6 +4513,85 @@ fn capital_settler_after_completion_waits_for_an_empty_capital_queue() {
     assert!(!strategic.capital_settler_after_completion);
 }
 
+/// The capital's population-two Settler line names the gene that opened it.
+/// Both `capital-settler-after-completion` and `rapid-city-expansion-2` take
+/// this branch; the line used to name the first whichever was on, and the
+/// hotseat seats (`hotseat-20261128T031456Z`, ten such lines) ran only the
+/// second.
+#[test]
+fn the_capital_settler_line_names_the_gene_that_fired() {
+    let line = |capital_settler: bool, rapid: bool| -> Option<String> {
+        let mut game = Game::new_full(
+            1,
+            24,
+            16,
+            crate::rng::fixture_seed("CAPITALSETTLER", 91_779),
+            250,
+            0,
+            false,
+        );
+        let founding = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: founding })
+            .unwrap();
+        let capital = game.player_city_ids(0)[0];
+        let home = game.cities[&capital].pos;
+        game.cities.get_mut(&capital).unwrap().pop = 2;
+        game.cities.get_mut(&capital).unwrap().queue.clear();
+        game.turn = 20;
+        game.spawn_unit("settler", 0, home);
+        game.spawn_unit("scout", 0, home);
+        game.spawn_unit("warrior", 0, home);
+        let mut ai = BasicAi::new();
+        ai.book_pos = 1;
+        ai.w.city_target = 4.0;
+        if capital_settler {
+            ai.enable_capital_settler_after_completion();
+        }
+        if rapid {
+            ai.enable_rapid_city_expansion_2();
+        }
+        ai.journal = crate::reasoning::Journal::recording();
+        ai.cities(&mut game, 0);
+        ai.journal
+            .since(u64::MAX)
+            .thoughts
+            .into_iter()
+            .find(|thought| {
+                thought
+                    .headline
+                    .contains("starts a Settler after completing its prior production")
+            })
+            .map(|thought| thought.detail)
+    };
+    let rapid = line(false, true).expect("rapid-city-expansion-2 alone opens the branch");
+    assert!(
+        rapid.contains("the rapid-city-expansion-2 gene reserves"),
+        "{rapid}"
+    );
+    assert!(
+        !rapid.contains("capital-settler-after-completion"),
+        "{rapid}"
+    );
+    let own = line(true, false).expect("capital-settler-after-completion alone opens it");
+    assert!(
+        own.contains("the capital-settler-after-completion gene reserves"),
+        "{own}"
+    );
+    assert!(!own.contains("rapid-city-expansion-2"), "{own}");
+    let both = line(true, true).expect("both genes open it");
+    assert!(
+        both.contains(
+            "the capital-settler-after-completion and rapid-city-expansion-2 genes reserve"
+        ),
+        "{both}"
+    );
+    assert_eq!(line(false, false), None, "neither gene: no such line");
+}
+
 /// The land grab's early Cities route: the pipeline is two walkers from
 /// the first city and one more per three cities, bounded by the seats
 /// still short; the window stays open until a settler can no longer

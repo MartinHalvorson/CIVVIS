@@ -4124,6 +4124,25 @@ impl BasicAi {
         self.capital_settler_after_completion = true;
     }
 
+    /// Which on gene reserves the capital's next build for a Settler at
+    /// population two (`cities`, `pick_item`): the clause the journal line
+    /// names it by. Both genes open the same branch; the line used to name
+    /// `capital-settler-after-completion` whichever was on, and the live seat
+    /// runs `rapid-city-expansion-2` with that one off (hotseat
+    /// `hotseat-20261128T031456Z`: ten such lines, every seat `forced=none`).
+    pub(crate) fn capital_settler_reserved_by(&self) -> &'static str {
+        match (
+            self.capital_settler_after_completion,
+            self.rapid_city_expansion_2,
+        ) {
+            (true, true) => {
+                "the capital-settler-after-completion and rapid-city-expansion-2 genes reserve"
+            }
+            (false, true) => "the rapid-city-expansion-2 gene reserves",
+            _ => "the capital-settler-after-completion gene reserves",
+        }
+    }
+
     /// Disable the baseline half of the capital-settler-after-completion gene.
     pub(crate) fn disable_capital_settler_after_completion(&mut self) {
         self.capital_settler_after_completion = false;
@@ -6042,9 +6061,10 @@ impl BasicAi {
                     let item = opening_item.expect("the matched opening item is a Settler");
                     if g.apply(pid, &Action::Produce { city: *cid, item }).is_ok() {
                         settlers += 1;
+                        let reserved_by = self.capital_settler_reserved_by();
                         think!(self.journal, Cities, Decision,
                                "{} starts a Settler after completing its prior production", g.cities[cid].name;
-                               "the capital is population two with an empty queue; the capital-settler-after-completion gene reserves this next build while preserving the rest of the opening book");
+                               "the capital is population two with an empty queue; {reserved_by} this next build while preserving the rest of the opening book");
                         continue;
                     }
                 }
