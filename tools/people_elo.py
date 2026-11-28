@@ -32,8 +32,12 @@ run's tag:
 
 `record` reads the run's `summary.json` (`civ6_hotseat.py` writes the ending
 for a person's table as it does for an unattended one). The harness calls it
-when a named person's game ends with a victory or an elimination on record;
-a game that ended any other way (the person conceded, or closed the game) has
+when a named person's game ends with a victory or an elimination on record:
+a victory is the winner's; every CIVVIS seat eliminated is the person's win;
+the person eliminated while CIVVIS seats play on is their loss (`victory`
+`elimination`), to the seat that took their last city where the game said
+which. The turn limit with the Score victory off ends a game nobody won, and
+is not recorded; a game that ended any other way (the person conceded, or closed the game) has
 no ending the game itself declared, and is recorded only when someone says who
 won: `--winner person` or `--winner civvis` (`civ6_hotseat.py --stop --resign`
 does the second for the person who is giving the game up). Recording the same
@@ -73,6 +77,9 @@ CIVVIS = "civvis"
 FLAGSHIP = "jack"
 #: `victory` for a game nobody won by the game's own rules.
 CONCESSION = "concession"
+#: `victory` for the person eliminated while CIVVIS seats played on: no
+#: victory of the game's, the person's game over.
+ELIMINATION = "elimination"
 
 
 class NotRecorded(ValueError):
@@ -119,12 +126,16 @@ def game_row(summary: dict, *, winner: str | None = None, victory: str | None = 
                           "with --winner person or --winner civvis")
     elif result.get("kind") == "victory":
         # Every other seat at a person's table is ours, so a victory that is
-        # not one of our seats' is the person's.
+        # not one of our seats' is the person's, unless the table's own record
+        # named the winning players and the person is not among them.
         if result.get("ours"):
             won_seat = result.get("winner_seat")
             if won_seat is None or int(won_seat) not in seats:
                 raise NotRecorded("the summary does not say which CIVVIS seat won")
             winner = agents[seats.index(int(won_seat))]
+        elif result.get("person") is False:
+            raise NotRecorded(f"team {result.get('team')} won (players {result.get('members')}): neither "
+                              "the person nor a CIVVIS seat. Say who won with --winner")
         else:
             winner = PERSON
         victory = victory or result.get("victory_type") or result.get("victory")
@@ -132,6 +143,19 @@ def game_row(summary: dict, *, winner: str | None = None, victory: str | None = 
     elif result.get("kind") == "defeat":
         # Every CIVVIS seat eliminated with the game still on: the person's.
         winner, victory, turn = PERSON, victory or "VICTORY_CONQUEST", result.get("turn")
+    elif result.get("kind") == "eliminated":
+        # The person eliminated while CIVVIS seats played on: theirs lost, to
+        # the seat that took their last city where the game said which, else
+        # to the table (its one agent at a duel).
+        taker = result.get("winner_seat") if result.get("ours") else None
+        if taker is not None and int(taker) in seats:
+            winner = agents[seats.index(int(taker))]
+        else:
+            winner = agents[0] if len(set(agents)) == 1 else CIVVIS
+        victory, turn = victory or ELIMINATION, result.get("turn")
+    elif result.get("kind") == "time":
+        raise NotRecorded("the game reached its turn limit with the Score victory off, so nobody "
+                          "won it; the people's record rates games somebody won")
     else:
         raise NotRecorded(f"the summary's ending is not one this reads: {result!r}")
     off = summary.get("victories_off")

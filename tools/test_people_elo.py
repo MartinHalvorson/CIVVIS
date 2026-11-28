@@ -91,6 +91,42 @@ class Row(unittest.TestCase):
         self.assertEqual((row["winner"], row["victory"], row["turn"]),
                          (people_elo.PERSON, "VICTORY_CONQUEST", 90))
 
+    def test_the_person_eliminated_while_civvis_plays_on_is_their_loss(self):
+        # `civ6_hotseat.Monitor.on_defeat`'s result for the person's seat.
+        table = summary(players=6, civvis_seats=[1, 2, 3, 4, 5],
+                        seat_agents={"1": "holy", "2": "tourist", "3": "moonshot", "4": "siege", "5": "jack"})
+        gone = {"kind": "eliminated", "player": 0, "turn": 88, "ours": True, "winner_seat": 3, "by": 3,
+                "defeat_type": "DEFEAT_DEFAULT", "at": "2026-11-28T07:13:20Z"}
+        row = people_elo.game_row({**table, "result": gone})
+        self.assertEqual((row["winner"], row["victory"], row["turn"], row["ended"]),
+                         ("moonshot", people_elo.ELIMINATION, 88, "2026-11-28T07:13:20Z"))
+        self.assertIn("dev lost to moonshot  (elimination, turn 88", people_elo.said(row))
+        # Nobody named (no city event), or a taker that is not a CIVVIS seat:
+        # to the table; at a duel, to its one agent.
+        for unnamed in ({**gone, "ours": False, "winner_seat": None, "by": None},
+                        {**gone, "ours": False, "winner_seat": None, "by": 9}):
+            self.assertEqual(people_elo.game_row({**table, "result": unnamed})["winner"], people_elo.CIVVIS)
+            self.assertEqual(people_elo.game_row(summary(result=unnamed))["winner"], "holy")
+        # Not the person's win, as `defeat` (every CIVVIS seat gone) is.
+        self.assertNotEqual(people_elo.game_row({**table, "result": gone})["winner"], people_elo.PERSON)
+
+    def test_a_game_nobody_won_or_won_by_a_stranger_is_not_guessed(self):
+        timed = summary(result={"kind": "time", "turn": 250, "ours": False, "at": "2026-11-28T09:00:00Z"})
+        with self.assertRaisesRegex(people_elo.NotRecorded, "nobody won it"):
+            people_elo.game_row(timed)
+        # The table's record named the winning players, and they are neither
+        # the person nor a CIVVIS seat (a Firaxis AI at a table set up by hand).
+        stranger = summary(result={"kind": "victory", "team": 7, "victory": 5, "victory_type": "VICTORY_TECHNOLOGY",
+                                   "turn": 201, "ours": False, "winner_seat": None, "members": [7],
+                                   "person": False})
+        with self.assertRaisesRegex(people_elo.NotRecorded, r"team 7 won \(players \[7\]\).*--winner"):
+            people_elo.game_row(stranger)
+        # Said by someone: recorded as said.
+        self.assertEqual(people_elo.game_row(stranger, winner="civvis")["winner"], "holy")
+        # The person's own, named by the table.
+        mine = summary(result={**stranger["result"], "team": 0, "members": [0], "person": True})
+        self.assertEqual(people_elo.game_row(mine)["winner"], people_elo.PERSON)
+
     def test_the_agent_that_won_is_named_at_a_table_of_several(self):
         table = summary(players=4, civvis_seats=[1, 2, 3], seat_agents={"1": "holy", "3": "tourist"},
                         result={"kind": "victory", "team": 3, "victory": 2, "turn": 180,
