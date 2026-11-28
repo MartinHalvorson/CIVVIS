@@ -732,6 +732,35 @@ no cover) played three full turns. The placement above is the change that
 followed: the hand-over is never under another popup and never proxied. It
 still needs its own live run (see the PR).
 
+**The seat watch also ends a turn whose controller still beats**
+(`CivvisSeatWatch`, `CivvisControlHeartbeat.lua`). It ended a seat's turn only
+after 45 s with the controller's stamp (`ExposedMembers.CivvisSeatBeat`) not
+moving, and the cover stands aside on the same stamp (90 s). But a controller
+past its forfeit ladder keeps ticking on the HUD's pulse, so its stamp moves
+every second, and the check games' stand-in wedged three times without one
+seat-watch record (`smoke-6p-20261128T0244Zb` turn 2, ten minutes;
+`manual-live-1`, `manual-cover-1` turn 5). Now the watch also counts how long
+the seat's turn has stood, beat or no beat, the hand-over's pause not counted:
+a test stub's turn standing 30 s (`StubTurnSeconds`; its turns take half a
+second) and any watched seat's turn standing 180 s (`SeatLongTurnSeconds`;
+600 CIVVIS seat turns on this Mac took 0.5-36 s) are reported as
+`seat_stuck` (`why`: `stub_turn` or `long_turn`) and ended with SHIFT+ENTER's
+`UserForced` request on the quiet rule's budget (every 20 s, six a turn,
+`seat_stuck_end_turn`). A watched seat that is the local player while its turn
+is not active for 60 s (`SeatBetweenSeconds`) is reported once a minute as
+`seat_between`, and left alone: nothing in the shipped game ends a turn that is
+not active. Every report now also carries `processing`
+(`UI.IsProcessingMessages`), `ready` (the first unit still waiting for orders)
+and `locks` (event locks the closers' screens hold). A person's seat is still
+never watched. ⚠ Tests only (`heartbeat_test.lua`), not seen in a live game.
+In the first live check (`tools/civ6_hotseat.py --auto-human gated --players 6
+--map Continents.lua --map-size MAPSIZE_SMALL --agents
+holy,tourist,moonshot,siege,jack --turns 30`), no `seat_stuck` or `seat_quiet`
+in the run's `events.jsonl` is the good outcome. A `seat_stuck` with `why:
+stub_turn` means the stand-in could not end its own turn in 30 s: its
+`blocker`, `ready` and `locks` say why, and the `seat_stuck_end_turn` after it
+says the watch asked. A `seat_between` names a turn sent but never handed on.
+
 ## The lobby a run sets up
 
 **The map size IS the player count.** There is no separate player-count control on
