@@ -86,7 +86,7 @@ impl AdvancedAi {
             for uid in soldiers {
                 match layers
                     .iter_mut()
-                    .find(|layer| g.units_share_stacking_layer(uid, layer[0]) || !layer.is_empty())
+                    .find(|layer| g.units_share_stacking_layer(uid, layer[0]))
                 {
                     Some(layer) => layer.push(uid),
                     None => layers.push(vec![uid]),
@@ -118,11 +118,11 @@ impl AdvancedAi {
             .max_by_key(|uid| {
                 let unit = &g.units[uid];
                 (
-                    false,
+                    !Self::step_apart_can_step(g, *uid),
                     self.step_out_guard(g, *uid),
                     Self::step_out_shooter(g, *uid),
                     (g.rules.units[unit.kind].strength * 100.0).round() as i64,
-                    unit.hp,
+                    std::cmp::Reverse(unit.hp),
                     std::cmp::Reverse(*uid),
                 )
             })
@@ -189,7 +189,7 @@ impl AdvancedAi {
                     && g.units.get(uid).is_some_and(|unit| unit.pos == tile)
             })
             .count();
-        if stuck > usize::MAX - 1 {
+        if stuck > 0 {
             think!(self.journal(), Military, Detail,
                 "{stuck} soldier(s) stay stacked with our {kept}";
                 "stacked-soldiers-step-apart: on {tile:?} {stuck} layer-mate(s) have no step to \
