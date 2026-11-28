@@ -122,6 +122,70 @@ def fit_ui_offset(ends: list[tuple[float, float]]) -> tuple[float, float] | None
     return (low + high) / 2, (high - low) / 2
 
 
+#: A timescale switch's record (`--fast-animations`): the agent's
+#: `fast_animations` with these phases carries the raw UI clock at the switch
+#: (`ui`) and the scale after it (`scale`).
+SWITCH_PHASES = ("on", "off", "loaded")
+#: The keys a record carries the UI clock under (`at`: the cover's records'
+#: only; elsewhere `at` is a plot or another clock).
+UI_KEYS = ("ui", "ui_now", "at")
+
+
+class RealClock:
+    """The UI clock back into seconds.
+
+    `UI.GetElapsedTime` runs `scale` times faster under the console's
+    `timescale`, and `--fast-animations` switches it between 1 and N around
+    the CIVVIS seats' turns, so a span of the raw clock is not a span of time.
+    Each switch (`ui`, `scale`) starts a stretch at its scale; before the first
+    the clock is itself, so a run without a switch reads exactly as before."""
+
+    def __init__(self, switches: list[tuple[float, float]]):
+        self.knots: list[tuple[float, float, float]] = []  # (raw ui, real, scale from it)
+        real_at, last_ui, scale = None, None, 1.0
+        for ui, new in sorted((float(ui), float(new)) for ui, new in switches
+                              if isinstance(ui, (int, float)) and isinstance(new, (int, float))
+                              and 1 <= new <= 8):
+            real_at = ui if real_at is None else real_at + (ui - last_ui) / scale
+            last_ui, scale = ui, new
+            self.knots.append((ui, real_at, scale))
+
+    def __bool__(self) -> bool:
+        return bool(self.knots)
+
+    def real(self, ui: float) -> float:
+        out = ui
+        for start, real_at, scale in self.knots:
+            if ui < start:
+                break
+            out = real_at + (ui - start) / scale
+        return out
+
+    def scale_at(self, ui: float) -> float:
+        scale = 1.0
+        for start, _, after in self.knots:
+            if ui < start:
+                break
+            scale = after
+        return scale
+
+
+def switches(rows: list[dict]) -> list[tuple[float, float]]:
+    """The timescale switches in a journal: the agent's commands, and the
+    HUD's own (`fast_animations_guard` put back `by` the heartbeat)."""
+    out = []
+    for row in rows:
+        kind, ui = row.get("kind"), row.get("ui")
+        if not isinstance(ui, (int, float)):
+            continue
+        if kind == "fast_animations" and row.get("phase") in SWITCH_PHASES \
+                and isinstance(row.get("scale"), (int, float)):
+            out.append((float(ui), float(row["scale"])))
+        elif kind == "fast_animations_guard" and row.get("by") == "heartbeat":
+            out.append((float(ui), 1.0))
+    return out
+
+
 class ClockFit:
     """`fit_ui_offset` over the turn ends near each turn.
 
@@ -197,6 +261,7 @@ class Run:
             config = json.loads((self.run_dir / "config.json").read_text())
         except (OSError, ValueError):
             pass
+        self.config = config if isinstance(config, dict) else {}
         self.tag = config.get("RunTag") or self.run_dir.name
         self.people = [int(seat) for seat in config.get("HotseatHumanSeats") or []]
         seats = config.get("HotseatSeats")
@@ -207,6 +272,24 @@ class Run:
         self.base = read_jsonl(self.run_dir / "events.jsonl")
         self.seat_events = {seat: read_jsonl(self.run_dir / f"{self.tag}-p{seat}" / "events.jsonl")
                             for seat in self.seats}
+        # `--fast-animations`: every UI clock stamp into seconds before anything
+        # is placed or subtracted (the raw stamp kept as `_raw_<key>`). The test
+        # stand-in's context (`-p0`) switches it too.
+        stub = read_jsonl(self.run_dir / f"{self.tag}-p0" / "events.jsonl") if 0 not in self.seats else []
+        self.stub_events = stub
+        every = [self.base, stub] + list(self.seat_events.values())
+        self.clock = RealClock([switch for rows in every for switch in switches(rows)])
+        if self.clock:
+            for rows in every:
+                for row in rows:
+                    for key in UI_KEYS:
+                        # `at` is the UI clock on the cover's records only.
+                        if key == "at" and row.get("ctx") != "cover" \
+                                and not str(row.get("kind", "")).startswith("hotseat_cover"):
+                            continue
+                        if isinstance(row.get(key), (int, float)):
+                            row[f"_raw_{key}"] = row[key]
+                            row[key] = self.clock.real(float(row[key]))
         self.fit = ClockFit([
             (row["turn"], float(row["t"]), float(row["ui_now"]))
             for rows in self.seat_events.values() for row in rows
@@ -350,6 +433,109 @@ class Run:
 
 def span(a: float | None, b: float | None) -> float | None:
     return None if a is None or b is None else b - a
+
+
+#: A person's turn whose UI clock ran faster than the wall clock by more than
+#: this is one that ran scaled (the relay's stamps are good to ~20 ms a record).
+PERSON_RATIO_LIMIT = 1.15
+#: ...measured only over turns at least this long (wall seconds).
+PERSON_SPAN_MIN_S = 2.0
+
+
+def timescale_audit(run: Run) -> dict | None:
+    """`--fast-animations`: what switched, what put it back, and how fast the
+    UI clock ran on the person's turns and under the cover.
+
+    A person's turn is from the cover's lift for them to its raise as their turn
+    ends (`hotseat_cover`, `at` on the raw UI clock, `relay_utc` on the wall
+    clock); its UI clock should run at the wall clock's pace. None for a run
+    with neither the key nor any of these records."""
+    every = [run.base, run.stub_events] + list(run.seat_events.values())
+    rows = [row for journal in every for row in journal]
+    kinds = ("fast_animations", "fast_animations_guard", "hotseat_scale_hold",
+             "hotseat_scale_unconfirmed", "hotseat_cover_scale")
+    if not run.config.get("HotseatFastAnimations") and not any(row.get("kind") in kinds for row in rows):
+        return None
+    out: dict = {"want": run.config.get("HotseatFastAnimations"), "on": 0, "off": {},
+                 "reset_failed": 0, "guards": {}, "press_held": 0, "press_unconfirmed": 0,
+                 "lift_held": 0, "lift_unconfirmed": 0}
+    for row in rows:
+        kind = row.get("kind")
+        if kind == "fast_animations":
+            phase = row.get("phase")
+            if phase == "on":
+                out["on"] += 1
+            elif phase in ("off", "loaded"):
+                why = str(row.get("why"))
+                out["off"][why] = out["off"].get(why, 0) + 1
+            elif phase == "reset_failed":
+                out["reset_failed"] += 1
+        elif kind == "fast_animations_guard":
+            why = str(row.get("why"))
+            out["guards"][why] = out["guards"].get(why, 0) + 1
+        elif kind == "hotseat_scale_hold":
+            out["press_held"] += 1
+        elif kind == "hotseat_scale_unconfirmed":
+            out["press_unconfirmed"] += 1
+        elif kind == "hotseat_cover_scale":
+            if row.get("held") is True:
+                out["lift_held"] += 1
+            elif row.get("confirmed") is False:
+                out["lift_unconfirmed"] += 1
+    ends = [row for journal in run.seat_events.values() for row in journal
+            if row.get("kind") == "end_turn_wait"]
+    out["seat_turns"] = len(ends)
+    out["scaled_seat_turns"] = sum(1 for row in ends if isinstance(row.get("scale"), (int, float))
+                                   and row["scale"] > 1)
+    # The cover's records in order: lifts for a person, raises as a turn ends.
+    marks = []
+    for row in run.base:
+        if row.get("kind") != "hotseat_cover":
+            continue
+        raw = row.get("_raw_at", row.get("at"))
+        wall = parse_stamp(row.get("relay_utc"))
+        if not isinstance(raw, (int, float)) or wall is None:
+            continue
+        if row.get("up") is False and row.get("reason") in ("person_start", "person_turn"):
+            marks.append(("lift", raw, wall))
+        elif row.get("up") is True and row.get("reason") == "turn_end":
+            marks.append(("raise", raw, wall))
+    person, covered = [], []
+    for (a, ui_a, wall_a), (b, ui_b, wall_b) in zip(marks, marks[1:]):
+        if wall_b - wall_a < PERSON_SPAN_MIN_S:
+            continue
+        ratio = (ui_b - ui_a) / (wall_b - wall_a)
+        if a == "lift" and b == "raise":
+            person.append(ratio)
+        elif a == "raise" and b == "lift":
+            covered.append(ratio)
+    out["person_turns"] = len(person)
+    out["person_ratio_max"] = max(person) if person else None
+    out["person_over_limit"] = sum(1 for ratio in person if ratio > PERSON_RATIO_LIMIT)
+    out["covered_ratio_median"] = median(covered)
+    return out
+
+
+def audit_report(audit: dict | None) -> str:
+    if audit is None:
+        return ""
+    def counts(table: dict) -> str:
+        return ", ".join(f"{key} {value}" for key, value in sorted(table.items())) or "none"
+    ratio = audit["person_ratio_max"]
+    covered = audit["covered_ratio_median"]
+    return "\n".join([
+        "", "",
+        f"timescale (--fast-animations {audit['want']}): switched on {audit['on']} times; "
+        f"back to 1 by {counts(audit['off'])}; refused {audit['reset_failed']}",
+        f"  seat-turns run scaled {audit['scaled_seat_turns']} of {audit['seat_turns']}; "
+        f"UI clock / wall under the cover, median {'-' if covered is None else f'{covered:.2f}'}",
+        f"  MUST BE NONE: guard {counts(audit['guards'])}; person's press held "
+        f"{audit['press_held']} (unconfirmed {audit['press_unconfirmed']}); lift held "
+        f"{audit['lift_held']} (unconfirmed {audit['lift_unconfirmed']})",
+        f"  person's turns: {audit['person_turns']} of {PERSON_SPAN_MIN_S:.0f} s or more, UI clock / "
+        f"wall at most {'-' if ratio is None else f'{ratio:.2f}'}; over {PERSON_RATIO_LIMIT}: "
+        f"{audit['person_over_limit']} (MUST BE 0)",
+    ])
 
 
 def split(run: Run) -> list[dict]:
@@ -650,9 +836,10 @@ def main(argv: list[str] | None = None) -> int:
     table = bands(rounds, args.band)
     if args.json:
         print(json.dumps({"tag": run.tag, "fit": run.fit.at(None), "rounds": rounds,
-                          "bands": table}, indent=1))
+                          "bands": table, "timescale": timescale_audit(run)}, indent=1))
     else:
-        print(report(run, rounds, args.rounds) + band_report(table))
+        print(report(run, rounds, args.rounds) + band_report(table)
+              + audit_report(timescale_audit(run)))
     return 0
 
 
